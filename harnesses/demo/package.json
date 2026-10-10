@@ -5,6 +5,12 @@
   "type": "module",
   "dependencies": {
     "@humanharness/harness-sdk": "workspace:*",
+    "@humanharness/ui": "workspace:*",
+    "react": "^19.3.0",
+    "react-i18next": "^17.0.16",
     "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0"
   }
 }

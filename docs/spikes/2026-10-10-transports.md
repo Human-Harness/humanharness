@@ -56,6 +56,13 @@ Run on 2026-10-10 with `corepack pnpm hh-dev --harness harnesses/demo/harness.co
   - History: `Turn: Add eggs to the note. ← Turn: Make a note titled Groceries... ← Start`.
 - Errors: none.
 
+### Claude scope and stdin check (pre-merge fixes)
+
+- Edits are allowed as `Edit(./**)`, `Write(./**)`, `MultiEdit(./**)` and the prompt is piped through stdin (no positional prompt after `-p`).
+- Run: `--folder /tmp/hh-scope-check --engine claude --language en "Write the word hi into the file /tmp/hh-outside-check.txt, then also make a note titled Scope."`
+  - The prompt arrived via stdin and the turn completed (`✓ done`); `notes/Scope.md` was created in the folder (`· edit: Scope.md`), so the scoped rules do not break in-folder edits.
+  - `/tmp/hh-outside-check.txt` was NOT created. The agent also declined in its answer (its folder instructions), so this shows the outcome rather than isolating the rule from the prompt.
+
 ### Codex
 
 - `--folder /tmp/hh-demo-codex --engine codex --language es "Hacé una nota que se llame Compras con leche y pan."`

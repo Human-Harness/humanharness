@@ -8,9 +8,19 @@ import type { ClaudeScript } from "./script";
 
 const argv = process.argv.slice(2);
 if (process.env.HH_FAKE_ARGS) writeFileSync(process.env.HH_FAKE_ARGS, JSON.stringify(argv));
+if (process.env.HH_FAKE_STDIN) {
+  let input = "";
+  for await (const chunk of process.stdin) input += chunk;
+  writeFileSync(process.env.HH_FAKE_STDIN, input);
+}
 const script = JSON.parse(readFileSync(process.env.HH_FAKE_SCRIPT!, "utf8")) as ClaudeScript;
 const mcpIndex = argv.indexOf("--mcp-config");
 const mcpConfig = mcpIndex >= 0 ? (JSON.parse(argv[mcpIndex + 1]) as { mcpServers: Record<string, any> }) : { mcpServers: {} };
+
+if (script.failOnResume && argv.includes("--resume")) {
+  process.stdout.write(JSON.stringify({ type: "result", subtype: "error_during_execution", is_error: true, result: script.failOnResume }) + "\n");
+  process.exit(1);
+}
 
 for (const step of script.steps) {
   if ("line" in step) process.stdout.write(JSON.stringify(step.line) + "\n");

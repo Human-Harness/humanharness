@@ -31,6 +31,8 @@ export interface ClaudeScript {
   steps: ClaudeStep[];
   stderr?: string;
   exitCode?: number;
+  /** Fail with this error result (exit 1) instead of running `steps`, but only when argv contains `--resume`. */
+  failOnResume?: string;
 }
 
 export type AcpStep =
@@ -52,6 +54,8 @@ export interface AcpScript {
   sessionId?: string;
   /** Reported as agentInfo.version at initialize. */
   agentVersion?: string;
+  /** Make `session/load` fail with a generic (non-login) error. */
+  failLoad?: boolean;
   turns: AcpStep[][];
 }
 

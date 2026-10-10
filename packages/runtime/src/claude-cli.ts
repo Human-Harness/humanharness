@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 import type { McpServerSpec } from "@humanharness/blocks";
 import type { Permissions } from "@humanharness/harness-sdk";
@@ -8,11 +9,12 @@ import type { Transport, TransportOptions } from "./transport";
 
 const UI_TOOL_PREFIX = "mcp__ui__";
 /** Plumbing tools the user should never see as activity. */
+const NO_CONVERSATION = /no conversation found/i;
 const HIDDEN_TOOLS = new Set(["ToolSearch", "TodoWrite"]);
 
 export function allowedTools(permissions: Permissions, mcp: McpServerSpec[]): string[] {
   const tools = ["Read", "Glob", "Grep", "TodoWrite"];
-  if (permissions.edit === "folder") tools.push("Edit", "Write", "MultiEdit");
+  if (permissions.edit === "folder") tools.push("Edit(./**)", "Write(./**)", "MultiEdit(./**)");
   if (permissions.web) tools.push("WebSearch", "WebFetch");
   if (permissions.exec) tools.push("Bash");
   for (const server of mcp) tools.push(`mcp__${server.name}`);
@@ -29,13 +31,13 @@ export function disallowedTools(permissions: Permissions): string[] {
   return tools;
 }
 
-/** Arguments for the unmodified official `claude` binary. Never touches credentials or auth settings. */
-export function claudeArgs(message: string, o: Pick<TransportOptions, "session" | "mcp" | "permissions">): string[] {
+/** Arguments for the unmodified official `claude` binary; the prompt goes in via stdin. Never touches credentials or auth settings. */
+export function claudeArgs(o: Pick<TransportOptions, "session" | "mcp" | "permissions">): string[] {
   const mcpServers = Object.fromEntries(
     o.mcp.map((s) => [s.name, { type: "stdio", command: s.command, args: s.args, env: s.env }]),
   );
   return [
-    "-p", message,
+    "-p",
     "--output-format", "stream-json",
     "--verbose",
     "--include-partial-messages",
@@ -169,7 +171,20 @@ export class ClaudeCliTransport implements Transport {
     this.o.onSessionStarted(this.o.session);
   };
 
-  turn(message: string, rawEmit: (e: Event) => void, signal: AbortSignal): Promise<void> {
+  async turn(message: string, emit: (e: Event) => void, signal: AbortSignal): Promise<void> {
+    const wasResume = this.o.session.started;
+    let last = await this.attempt(message, emit, signal);
+    if (wasResume && last.type === "done" && !last.ok && last.error?.detail && NO_CONVERSATION.test(last.error.detail) && !signal.aborted) {
+      // The stored session is gone on the CLI side: continue the chat in a fresh one.
+      this.o.session = { id: randomUUID(), started: false };
+      last = await this.attempt(message, emit, signal);
+      if (last.type === "done" && last.ok) this.markStarted();
+    }
+    emit(last);
+  }
+
+  /** Runs one process; resolves with the terminal event instead of emitting it. */
+  private attempt(message: string, rawEmit: (e: Event) => void, signal: AbortSignal): Promise<Event> {
     return new Promise((resolve) => {
       let finished = false;
       let killTimer: NodeJS.Timeout | undefined;
@@ -179,20 +194,21 @@ export class ClaudeCliTransport implements Transport {
       };
       const finish = (e: Event) => {
         if (finished) return;
-        rawEmit(e);
         finished = true;
         clearTimeout(graceTimer);
         signal.removeEventListener("abort", onAbort);
-        resolve();
+        resolve(e);
       };
       const useGroup = process.platform !== "win32";
       const [binary, ...leading] = this.o.command;
-      const child = spawn(binary, [...leading, ...claudeArgs(message, this.o)], {
+      const child = spawn(binary, [...leading, ...claudeArgs(this.o)], {
         cwd: this.o.folder,
         env: { ...process.env, ...this.o.env },
-        stdio: ["ignore", "pipe", "pipe"],
+        stdio: ["pipe", "pipe", "pipe"],
         detached: useGroup,
       });
+      child.stdin!.on("error", () => {}); // the child may exit before reading the prompt
+      child.stdin!.end(message);
       const killTree = (sig: NodeJS.Signals) => {
         try {
           if (useGroup && child.pid) process.kill(-child.pid, sig);

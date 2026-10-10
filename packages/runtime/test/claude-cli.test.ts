@@ -16,6 +16,7 @@ const uiServer = { name: "ui", command: "node", args: ["ui.js"], env: { HH_BRIDG
 function setup(script: ClaudeScript, session: Session = { id: "11111111-1111-1111-1111-111111111111", started: false }) {
   const folder = fs.mkdtempSync(path.join(root, "t-"));
   const argsFile = path.join(folder, "..", `args-${path.basename(folder)}.json`);
+  const stdinFile = path.join(folder, "..", `stdin-${path.basename(folder)}.txt`);
   const started: Session[] = [];
   const opts: TransportOptions = {
     folder,
@@ -23,10 +24,10 @@ function setup(script: ClaudeScript, session: Session = { id: "11111111-1111-111
     mcp: [uiServer],
     permissions,
     command: fakeClaudeCommand(),
-    env: { HH_FAKE_SCRIPT: writeScript(root, script), HH_FAKE_ARGS: argsFile },
+    env: { HH_FAKE_SCRIPT: writeScript(root, script), HH_FAKE_ARGS: argsFile, HH_FAKE_STDIN: stdinFile },
     onSessionStarted: (s) => started.push(s),
   };
-  return { transport: new ClaudeCliTransport(opts), folder, started, args: () => JSON.parse(fs.readFileSync(argsFile, "utf8")) as string[] };
+  return { transport: new ClaudeCliTransport(opts), folder, started, args: () => JSON.parse(fs.readFileSync(argsFile, "utf8")) as string[], stdin: () => fs.readFileSync(stdinFile, "utf8") };
 }
 
 async function run(t: ClaudeCliTransport, message = "hi", signal = new AbortController().signal) {
@@ -38,7 +39,7 @@ async function run(t: ClaudeCliTransport, message = "hi", signal = new AbortCont
 describe("allowedTools", () => {
   it("derives the whitelist from permissions and MCP servers", () => {
     expect(allowedTools({ edit: "folder", exec: false, web: true }, [uiServer])).toEqual([
-      "Read", "Glob", "Grep", "TodoWrite", "Edit", "Write", "MultiEdit", "WebSearch", "WebFetch", "mcp__ui",
+      "Read", "Glob", "Grep", "TodoWrite", "Edit(./**)", "Write(./**)", "MultiEdit(./**)", "WebSearch", "WebFetch", "mcp__ui",
     ]);
     expect(allowedTools({ edit: "none", exec: true, web: false }, [])).toEqual(["Read", "Glob", "Grep", "TodoWrite", "Bash"]);
   });
@@ -56,8 +57,9 @@ describe("disallowedTools", () => {
 
 describe("claudeArgs", () => {
   it("starts a new session with a fixed id and inline MCP config", () => {
-    const args = claudeArgs("hello", { session: { id: "abc", started: false }, mcp: [uiServer], permissions });
-    expect(args.slice(0, 2)).toEqual(["-p", "hello"]);
+    const args = claudeArgs({ session: { id: "abc", started: false }, mcp: [uiServer], permissions });
+    expect(args[0]).toBe("-p");
+    expect(args[1]).toBe("--output-format");
     expect(args).toContain("--strict-mcp-config");
     expect(args[args.indexOf("--session-id") + 1]).toBe("abc");
     expect(args[args.indexOf("--permission-mode") + 1]).toBe("acceptEdits");
@@ -67,7 +69,7 @@ describe("claudeArgs", () => {
   });
 
   it("resumes a started session", () => {
-    const args = claudeArgs("hello", { session: { id: "abc", started: true }, mcp: [], permissions });
+    const args = claudeArgs({ session: { id: "abc", started: true }, mcp: [], permissions });
     expect(args[args.indexOf("--resume") + 1]).toBe("abc");
     expect(args).not.toContain("--session-id");
   });
@@ -75,11 +77,36 @@ describe("claudeArgs", () => {
 
 describe("ClaudeCliTransport", () => {
   it("streams text and reports success", async () => {
-    const { transport, started, args } = setup({ steps: [...claudeTextLines("Hello there"), claudeResultLine(true, "Hello there")] });
+    const { transport, started, args, stdin } = setup({ steps: [...claudeTextLines("Hello there"), claudeResultLine(true, "Hello there")] });
     const events = await run(transport, "say hi");
     expect(events).toEqual([{ type: "text", delta: "Hello there" }, { type: "done", ok: true }]);
     expect(started).toEqual([{ id: "11111111-1111-1111-1111-111111111111", started: true }]);
-    expect(args()[1]).toBe("say hi");
+    expect(stdin()).toBe("say hi");
+    expect(args()).not.toContain("say hi");
+  });
+
+  it("retries once with a fresh session when the resumed session is gone", async () => {
+    const { transport, started, args } = setup(
+      { steps: [...claudeTextLines("fresh"), claudeResultLine(true)], failOnResume: "No conversation found with session ID: 1111" },
+      { id: "11111111-1111-1111-1111-111111111111", started: true },
+    );
+    const events = await run(transport, "again");
+    expect(events).toEqual([{ type: "text", delta: "fresh" }, { type: "done", ok: true }]);
+    expect(args()).not.toContain("--resume");
+    const fresh = args()[args().indexOf("--session-id") + 1];
+    expect(fresh).toMatch(/^[0-9a-f-]{36}$/);
+    expect(fresh).not.toBe("11111111-1111-1111-1111-111111111111");
+    expect(started).toEqual([{ id: fresh, started: true }]);
+  });
+
+  it("does not retry other resume failures", async () => {
+    const { transport, started } = setup(
+      { steps: [], failOnResume: "something else broke" },
+      { id: "11111111-1111-1111-1111-111111111111", started: true },
+    );
+    const events = await run(transport);
+    expect(events).toEqual([{ type: "done", ok: false, error: { code: "agent-crashed", detail: "something else broke" } }]);
+    expect(started).toEqual([]);
   });
 
   it("reports tool activity and hides ui tools", async () => {

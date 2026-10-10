@@ -73,6 +73,7 @@ Package dependencies (no cycles):
 
 ```
 harness-sdk ← engines, workspace, blocks, i18n
+workspace → engines
 engines, workspace, blocks ← runtime ← shell
 mcp-kit ← (a harness's MCP servers)
 ui ← (the harness's renderer)
@@ -139,6 +140,8 @@ Install and login data are added in the desktop-app plan, where onboarding uses 
 - **Codex `workspace-write`:** Codex edits through sandboxed shell commands without asking, so the manifest's `exec: false` is enforced by Codex's sandbox scope (the folder only, no network) rather than command by command.
 - **Claude settings:** Claude runs with `--setting-sources project`, so users whose Claude login relies on user-level settings (`apiKeyHelper`, Bedrock/Vertex environment) are not supported in v1.
 - **Folder containment:** it uses path resolution, not `realpath`. Symlinks inside the folder that point outside it are a known v1 limitation.
+- **Codex `web: false`:** it cannot be enforced if the user's own Codex config enables network or web search; the manifest flag only controls what the runtime itself allows and approves.
+- **Codex and `.claude/**`:** the Codex shell can write `.claude/**` inside the folder. This matters only if the folder later switches to Claude: Claude denies `.claude/**` writes, but files already there would still load. Documented limitation.
 - **Codex usage:** Codex reports token and context-window usage but no plan-limit windows.
 
 ## 6. Turn flow

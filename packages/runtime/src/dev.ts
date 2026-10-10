@@ -1,5 +1,6 @@
 // Development runner: one harness turn in the terminal against a real engine.
 // pnpm hh-dev --harness harnesses/demo/harness.config.ts --folder ~/tmp/demo --engine claude "make a note"
+import { createHash } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { parseArgs } from "node:util";
@@ -39,7 +40,7 @@ const runtime = await createRuntime({
   harness,
   engine,
   folder,
-  gitdir: path.join(os.homedir(), ".humanharness", "dev", "history", harness.id),
+  gitdir: path.join(os.homedir(), ".humanharness", "dev", "history", `${harness.id}-${createHash("sha256").update(folder).digest("hex").slice(0, 12)}`),
   language: values.language as Language,
 });
 

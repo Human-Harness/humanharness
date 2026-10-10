@@ -134,6 +134,13 @@ Install and login data are added in the desktop-app plan, where onboarding uses 
 
 **Plan B** (if Claude or Codex change their terms): API-key mode, where the user enters their own key through the CLI's official flow. Not built unless needed.
 
+### Engine-specific notes
+
+- **Codex `workspace-write`:** Codex edits through sandboxed shell commands without asking, so the manifest's `exec: false` is enforced by Codex's sandbox scope (the folder only, no network) rather than command by command.
+- **Claude settings:** Claude runs with `--setting-sources project`, so users whose Claude login relies on user-level settings (`apiKeyHelper`, Bedrock/Vertex environment) are not supported in v1.
+- **Folder containment:** it uses path resolution, not `realpath`. Symlinks inside the folder that point outside it are a known v1 limitation.
+- **Codex usage:** Codex reports token and context-window usage but no plan-limit windows.
+
 ## 6. Turn flow
 
 ```

@@ -14,7 +14,17 @@ export interface SleepStep {
   ignoreCancel?: boolean;
 }
 
-export type ClaudeStep = { line: unknown } | McpStep | WriteStep | SleepStep;
+export type ClaudeStep =
+  | { line: unknown }
+  | McpStep
+  | WriteStep
+  | SleepStep
+  /** Starts a grandchild that ignores SIGTERM. */
+  | { spawnStubborn: true }
+  /** Writes `raw` to stdout verbatim (no newline added). */
+  | { raw: string }
+  /** Kills the fake-claude process with this signal. */
+  | { signal: NodeJS.Signals };
 
 /** Script for fake-claude: printed lines, side effects, then exit. */
 export interface ClaudeScript {

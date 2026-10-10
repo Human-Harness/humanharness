@@ -68,84 +68,85 @@ export async function createRuntime(opts: RuntimeOptions): Promise<HarnessRuntim
   }
 
   async function buildRuntime(bridge: Bridge): Promise<HarnessRuntime> {
-  let sessionWrite: Promise<void> = Promise.resolve();
-  const transportOptions: TransportOptions = {
-    folder,
-    session,
-    mcp: [uiServerSpec({ harnessConfig: harness.configPath, bridge, launcher }), ...harnessMcpServers(harness, launcher)],
-    permissions: harness.permissions,
-    sessionMode:
-      engine.transport.kind === "acp"
-        ? engine.transport.modes?.[harness.permissions.edit === "folder" ? "edit" : "readOnly"]
-        : undefined,
-    command: opts.command ?? (engine.transport.kind === "claude-cli" ? [engine.transport.binary] : engine.transport.command),
-    env: opts.env,
-    onSessionStarted: (s) => {
-      sessionWrite = writeSession(folder, engine.id, s).catch(() => {});
-    },
-  };
-  const transport: Transport =
-    engine.transport.kind === "claude-cli" ? new ClaudeCliTransport(transportOptions) : new AcpTransport(transportOptions);
+    let sessionWrite: Promise<void> = Promise.resolve();
+    const transportOptions: TransportOptions = {
+      folder,
+      session,
+      mcp: [uiServerSpec({ harnessConfig: harness.configPath, bridge, launcher }), ...harnessMcpServers(harness, launcher)],
+      permissions: harness.permissions,
+      sessionMode:
+        engine.transport.kind === "acp"
+          ? engine.transport.modes?.[harness.permissions.edit === "folder" ? "edit" : "readOnly"]
+          : undefined,
+      minAdapterVersion: engine.transport.kind === "acp" ? engine.transport.minAdapterVersion : undefined,
+      command: opts.command ?? (engine.transport.kind === "claude-cli" ? [engine.transport.binary] : engine.transport.command),
+      env: opts.env,
+      onSessionStarted: (s) => {
+        sessionWrite = writeSession(folder, engine.id, s).catch(() => {});
+      },
+    };
+    const transport: Transport =
+      engine.transport.kind === "claude-cli" ? new ClaudeCliTransport(transportOptions) : new AcpTransport(transportOptions);
 
-  let busy = false;
-  let current: { controller: AbortController; done: Promise<void> } | null = null;
+    let busy = false;
+    let current: { controller: AbortController; done: Promise<void> } | null = null;
 
-  return {
-    history,
-    send(message, emit) {
-      if (busy) throw new Error("A turn is already running");
-      busy = true;
-      const controller = new AbortController();
-      let doneEmitted = false;
-      const emitOnce = (e: Event) => {
-        if (e.type === "done") {
-          if (doneEmitted) return;
-          doneEmitted = true;
+    return {
+      history,
+      send(message, emit) {
+        if (busy) throw new Error("A turn is already running");
+        busy = true;
+        const controller = new AbortController();
+        let doneEmitted = false;
+        const emitOnce = (e: Event) => {
+          if (e.type === "done") {
+            if (doneEmitted) return;
+            doneEmitted = true;
+          }
+          emit(e);
+        };
+        const done = (async () => {
+          try {
+            const before = (await history.save("Before message")) ?? (await history.last())!;
+            let final: Event | undefined;
+            emitCurrent = emitOnce;
+            await transport.turn(
+              message,
+              (e) => {
+                if (final) return;
+                if (e.type === "done") final = e;
+                else emitOnce(e);
+              },
+              controller.signal,
+            );
+            emitCurrent = null;
+            await sessionWrite;
+            const f: Event = final ?? { type: "done", ok: false, error: { code: "agent-crashed" } };
+            if (f.type === "done" && f.ok) await history.save(`Turn: ${message.slice(0, 60)}`);
+            else if (f.type === "done" && f.error.code === "agent-crashed") await history.restore(before, "Undo: the turn did not finish");
+            else await history.save(`Stopped: ${message.slice(0, 60)}`);
+            emitOnce(f);
+          } catch (err) {
+            emitOnce({ type: "done", ok: false, error: { code: "agent-crashed", detail: err instanceof Error ? err.message : String(err) } });
+          } finally {
+            emitCurrent = null;
+            busy = false;
+          }
+        })();
+        current = { controller, done };
+        return { cancel: () => controller.abort(), done };
+      },
+      async close() {
+        if (current) {
+          current.controller.abort();
+          await current.done;
         }
-        emit(e);
-      };
-      const done = (async () => {
         try {
-          const before = (await history.save("Before message")) ?? (await history.last())!;
-          let final: Event | undefined;
-          emitCurrent = emitOnce;
-          await transport.turn(
-            message,
-            (e) => {
-              if (final) return;
-              if (e.type === "done") final = e;
-              else emitOnce(e);
-            },
-            controller.signal,
-          );
-          emitCurrent = null;
-          await sessionWrite;
-          const f: Event = final ?? { type: "done", ok: false, error: { code: "agent-crashed" } };
-          if (f.type === "done" && f.ok) await history.save(`Turn: ${message.slice(0, 60)}`);
-          else if (f.type === "done" && f.error.code === "agent-crashed") await history.restore(before, "Undo: the turn did not finish");
-          else await history.save(`Stopped: ${message.slice(0, 60)}`);
-          emitOnce(f);
-        } catch (err) {
-          emitOnce({ type: "done", ok: false, error: { code: "agent-crashed", detail: err instanceof Error ? err.message : String(err) } });
+          await transport.close();
         } finally {
-          emitCurrent = null;
-          busy = false;
+          await bridge.close();
         }
-      })();
-      current = { controller, done };
-      return { cancel: () => controller.abort(), done };
-    },
-    async close() {
-      if (current) {
-        current.controller.abort();
-        await current.done;
-      }
-      try {
-        await transport.close();
-      } finally {
-        await bridge.close();
-      }
-    },
-  };
+      },
+    };
   }
 }

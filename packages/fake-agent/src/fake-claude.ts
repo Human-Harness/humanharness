@@ -12,11 +12,7 @@ const script = JSON.parse(readFileSync(process.env.HH_FAKE_SCRIPT!, "utf8")) as 
 const mcpIndex = argv.indexOf("--mcp-config");
 const mcpConfig = mcpIndex >= 0 ? (JSON.parse(argv[mcpIndex + 1]) as { mcpServers: Record<string, any> }) : { mcpServers: {} };
 
-// Extra step kinds (cast, so script.ts stays untouched): { spawnStubborn: true } starts a grandchild that
-// ignores SIGTERM, { raw: string } writes without a newline, { signal: "SIGKILL" } kills this process.
-type FakeStep = ClaudeScript["steps"][number] | { spawnStubborn: true } | { raw: string } | { signal: NodeJS.Signals };
-
-for (const step of script.steps as FakeStep[]) {
+for (const step of script.steps) {
   if ("line" in step) process.stdout.write(JSON.stringify(step.line) + "\n");
   else if ("raw" in step) process.stdout.write(step.raw);
   else if ("sleep" in step) await new Promise((r) => setTimeout(r, step.sleep));

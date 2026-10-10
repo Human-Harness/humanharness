@@ -2,12 +2,15 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, describe, expect, it } from "vitest";
 import { getEngine } from "@humanharness/engines";
-import { type ClaudeScript, claudeResultLine, claudeTextLines, fakeClaudeCommand, writeScript } from "@humanharness/fake-agent";
+import { type ClaudeScript, claudeResultLine, claudeTextLines, fakeAcpCommand, fakeClaudeCommand, writeScript } from "@humanharness/fake-agent";
 import { loadHarness } from "@humanharness/harness-sdk";
 import type { Event } from "../src/events";
 import { type HarnessRuntime, createRuntime } from "../src/runtime";
+
+const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
+afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
 
 const DEMO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../harnesses/demo/harness.config.ts");
 let runtime: HarnessRuntime | undefined;
@@ -17,8 +20,8 @@ afterEach(async () => {
   runtime = undefined;
 });
 
-async function setup(script: ClaudeScript, folder = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "hh-")), "Work")) {
-  const argsFile = path.join(os.tmpdir(), `args-${Date.now()}-${Math.random()}.json`);
+async function setup(script: ClaudeScript, folder = path.join(fs.mkdtempSync(path.join(root, "t-")), "Work")) {
+  const argsFile = path.join(root, `args-${Date.now()}-${Math.random()}.json`);
   runtime = await createRuntime({
     harness: await loadHarness(DEMO),
     engine: getEngine("claude"),
@@ -26,7 +29,7 @@ async function setup(script: ClaudeScript, folder = path.join(fs.mkdtempSync(pat
     gitdir: path.join(path.dirname(folder), "history.git"),
     language: "en",
     command: fakeClaudeCommand(),
-    env: { HH_FAKE_SCRIPT: writeScript(os.tmpdir(), script), HH_FAKE_ARGS: argsFile },
+    env: { HH_FAKE_SCRIPT: writeScript(root, script), HH_FAKE_ARGS: argsFile },
   });
   return { runtime, folder, args: () => JSON.parse(fs.readFileSync(argsFile, "utf8")) as string[] };
 }
@@ -38,6 +41,26 @@ async function send(r: HarnessRuntime, message = "hi") {
 }
 
 describe("createRuntime", () => {
+  it("enforces the engine's minAdapterVersion on ACP engines", async () => {
+    const codex = getEngine("codex");
+    if (codex.transport.kind !== "acp") throw new Error("codex must use ACP");
+    const engine = {
+      ...codex,
+      transport: { kind: "acp" as const, command: fakeAcpCommand(), modes: codex.transport.modes, minAdapterVersion: "9.0.0" },
+    };
+    const folder = path.join(fs.mkdtempSync(path.join(root, "t-")), "Work");
+    runtime = await createRuntime({
+      harness: await loadHarness(DEMO),
+      engine,
+      folder,
+      gitdir: path.join(path.dirname(folder), "history.git"),
+      language: "en",
+      env: { HH_FAKE_SCRIPT: writeScript(root, { agentVersion: "2.2.2", turns: [[]] }) },
+    });
+    const events = await send(runtime);
+    expect(events.at(-1)).toMatchObject({ type: "done", ok: false, error: { code: "outdated-version" } });
+  });
+
   it("prepares the folder: seed, AGENTS.md with managed section, CLAUDE.md", async () => {
     const { folder } = await setup({ steps: [] });
     expect(fs.readFileSync(path.join(folder, "README.md"), "utf8")).toContain("demo app");

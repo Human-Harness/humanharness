@@ -2,9 +2,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { blockToolName, defineBlock, defineHarness, loadHarness, resolveInHarness } from "../src";
+
+const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
+afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
 
 const DEMO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../harnesses/demo/harness.config.ts");
 
@@ -77,7 +80,7 @@ describe("loadHarness", () => {
   });
 
   it("throws when the module has no default export", async () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "hh-sdk-"));
+    const dir = fs.mkdtempSync(path.join(root, "t-"));
     const file = path.join(dir, "harness.config.ts");
     fs.writeFileSync(file, "export const x = 1;");
     await expect(loadHarness(file)).rejects.toThrow(`${file} has no default export`);

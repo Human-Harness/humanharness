@@ -1,17 +1,20 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import { type ClaudeScript, claudeResultLine, claudeTextLines, fakeClaudeCommand, writeScript } from "@humanharness/fake-agent";
 import { ClaudeCliTransport, allowedTools, claudeArgs, disallowedTools } from "../src/claude-cli";
 import type { Event } from "../src/events";
 import type { Session, TransportOptions } from "../src/transport";
 
+const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
+afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
+
 const permissions = { edit: "folder" as const, exec: false, web: false };
 const uiServer = { name: "ui", command: "node", args: ["ui.js"], env: { HH_BRIDGE: "/tmp/x.sock" } };
 
 function setup(script: ClaudeScript, session: Session = { id: "11111111-1111-1111-1111-111111111111", started: false }) {
-  const folder = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
+  const folder = fs.mkdtempSync(path.join(root, "t-"));
   const argsFile = path.join(folder, "..", `args-${path.basename(folder)}.json`);
   const started: Session[] = [];
   const opts: TransportOptions = {
@@ -20,7 +23,7 @@ function setup(script: ClaudeScript, session: Session = { id: "11111111-1111-111
     mcp: [uiServer],
     permissions,
     command: fakeClaudeCommand(),
-    env: { HH_FAKE_SCRIPT: writeScript(os.tmpdir(), script), HH_FAKE_ARGS: argsFile },
+    env: { HH_FAKE_SCRIPT: writeScript(root, script), HH_FAKE_ARGS: argsFile },
     onSessionStarted: (s) => started.push(s),
   };
   return { transport: new ClaudeCliTransport(opts), folder, started, args: () => JSON.parse(fs.readFileSync(argsFile, "utf8")) as string[] };
@@ -172,7 +175,7 @@ describe("ClaudeCliTransport", () => {
   });
 
   it("reports a missing binary", async () => {
-    const folder = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
+    const folder = fs.mkdtempSync(path.join(root, "t-"));
     const t = new ClaudeCliTransport({
       folder,
       session: { id: "x", started: false },
@@ -194,7 +197,6 @@ describe("ClaudeCliTransport", () => {
   });
 });
 
-const step = (s: object) => s as unknown as ClaudeScript["steps"][number];
 const toolUse = (id: string, name: string, input: unknown) => ({
   line: { type: "assistant", parent_tool_use_id: null, message: { content: [{ type: "tool_use", id, name, input }] } },
 });
@@ -202,7 +204,7 @@ const blockEvent = (e: unknown) => ({ line: { type: "stream_event", parent_tool_
 
 describe("ClaudeCliTransport hardening", () => {
   it("cancels even when a grandchild ignores SIGTERM", async () => {
-    const { transport } = setup({ steps: [step({ spawnStubborn: true }), { sleep: 30_000 }] });
+    const { transport } = setup({ steps: [{ spawnStubborn: true }, { sleep: 30_000 }] });
     const controller = new AbortController();
     setTimeout(() => controller.abort(), 500);
     const started = Date.now();
@@ -258,14 +260,14 @@ describe("ClaudeCliTransport hardening", () => {
 
   it("feeds a final stdout line without a newline", async () => {
     const { transport } = setup({
-      steps: [step({ raw: JSON.stringify({ type: "result", subtype: "error_during_execution", is_error: true, result: "boom" }) })],
+      steps: [{ raw: JSON.stringify({ type: "result", subtype: "error_during_execution", is_error: true, result: "boom" }) }],
     });
     const events = await run(transport);
     expect(events.at(-1)).toMatchObject({ type: "done", ok: false, error: { detail: "boom" } });
   });
 
   it("reports a signal-killed child", async () => {
-    const { transport } = setup({ steps: [step({ signal: "SIGKILL" })] });
+    const { transport } = setup({ steps: [{ signal: "SIGKILL" }] });
     const events = await run(transport);
     expect(events).toEqual([{ type: "done", ok: false, error: { code: "agent-crashed", detail: "exit signal SIGKILL" } }]);
   });

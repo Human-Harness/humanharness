@@ -1,8 +1,11 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { History } from "../src";
+
+const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
+afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
 
 let folder: string;
 let gitdir: string;
@@ -15,7 +18,7 @@ const write = (rel: string, content: string) => {
 const read = (rel: string) => fs.readFileSync(path.join(folder, rel), "utf8");
 
 beforeEach(async () => {
-  const base = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
+  const base = fs.mkdtempSync(path.join(root, "t-"));
   folder = path.join(base, "work");
   gitdir = path.join(base, "history.git");
   fs.mkdirSync(folder);

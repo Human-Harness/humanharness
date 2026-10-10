@@ -1,11 +1,14 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, describe, expect, it } from "vitest";
 import { type AcpScript, fakeAcpCommand, writeScript } from "@humanharness/fake-agent";
 import { AcpTransport, type PermissionPolicy, decidePermission, isUiTool } from "../src/acp";
 import type { Event } from "../src/events";
 import type { Session } from "../src/transport";
+
+const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
+afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
 
 const permissions = { edit: "folder" as "folder" | "none", exec: false, web: false };
 let transport: AcpTransport | undefined;
@@ -20,7 +23,7 @@ function setup(
   session: Session = { id: "local-id", started: false },
   extra: { minAdapterVersion?: string } = {},
 ) {
-  const folder = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
+  const folder = fs.mkdtempSync(path.join(root, "t-"));
   const script = typeof scriptOrFn === "function" ? scriptOrFn(folder) : scriptOrFn;
   const logFile = path.join(folder, "..", `log-${path.basename(folder)}.jsonl`);
   const started: Session[] = [];
@@ -32,7 +35,7 @@ function setup(
     sessionMode: "workspace-write",
     ...extra,
     command: fakeAcpCommand(),
-    env: { HH_FAKE_SCRIPT: writeScript(os.tmpdir(), script), HH_FAKE_LOG: logFile },
+    env: { HH_FAKE_SCRIPT: writeScript(root, script), HH_FAKE_LOG: logFile },
     onSessionStarted: (s) => started.push(s),
   });
   const log = () =>
@@ -298,7 +301,7 @@ describe("AcpTransport", () => {
   });
 
   it("reports a missing binary", async () => {
-    const folder = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
+    const folder = fs.mkdtempSync(path.join(root, "t-"));
     transport = new AcpTransport({
       folder,
       session: { id: "x", started: false },

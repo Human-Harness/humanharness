@@ -1,11 +1,14 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { defineBlock } from "@humanharness/harness-sdk";
 import { getEngine } from "@humanharness/engines";
 import { MANAGED_END, MANAGED_START, managedSection, writeInstructions } from "../src";
+
+const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
+afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
 
 const blocks = {
   note: defineBlock({
@@ -22,7 +25,7 @@ const blocks = {
   }),
 };
 
-const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
+const tmp = () => fs.mkdtempSync(path.join(root, "t-"));
 
 describe("managedSection", () => {
   it("is delimited and states the answer language", () => {

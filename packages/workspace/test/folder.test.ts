@@ -1,10 +1,13 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import { prepareFolder } from "../src";
 
-const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
+const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
+afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
+
+const tmp = () => fs.mkdtempSync(path.join(root, "t-"));
 
 function seedDir(): string {
   const seed = tmp();

@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -49,7 +51,14 @@ describe("defineHarness", () => {
   });
 
   it("rejects invalid block names", () => {
-    expect(() => defineHarness({ ...base, languages: [...base.languages], blocks: { "Bad-Name": block } })).toThrow();
+    expect(() => defineHarness({ ...base, languages: [...base.languages], blocks: { "Bad-Name": block } })).toThrow(/Bad-Name/);
+  });
+
+  it("rejects things that are not real blocks", () => {
+    const run = (b: unknown) => () => defineHarness({ ...base, languages: [...base.languages], blocks: { note: b as never } });
+    expect(run({ schema: 1, description: "x", visible: true, example: {} })).toThrow();
+    expect(run({ schema: z.object({}), description: "x", example: {} })).toThrow();
+    expect(run({ schema: z.object({ n: z.number() }), description: "x", visible: true, example: { n: "no" } })).toThrow();
   });
 
   it("rejects an unknown language", () => {
@@ -65,5 +74,19 @@ describe("loadHarness", () => {
     expect(h.configPath).toBe(DEMO);
     expect(resolveInHarness(h, h.instructions)).toBe(path.join(path.dirname(DEMO), "agent/AGENTS.md"));
     expect(Object.keys(h.blocks)).toEqual(["note", "progress"]);
+  });
+
+  it("throws when the module has no default export", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "hh-sdk-"));
+    const file = path.join(dir, "harness.config.ts");
+    fs.writeFileSync(file, "export const x = 1;");
+    await expect(loadHarness(file)).rejects.toThrow(`${file} has no default export`);
+  });
+});
+
+describe("resolveInHarness", () => {
+  it("rejects paths that escape the harness folder", async () => {
+    const h = await loadHarness(DEMO);
+    expect(() => resolveInHarness(h, "../../etc/passwd")).toThrow("Path escapes the harness folder: ../../etc/passwd");
   });
 });

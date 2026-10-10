@@ -27,7 +27,16 @@ export function blockToolName(name: string, block: Pick<Block, "visible">): stri
 
 const localizedText = z.object({ es: z.string().min(1), en: z.string().min(1) });
 const blockSchema = z.custom<Block>(
-  (b) => typeof b === "object" && b !== null && "schema" in b && "description" in b,
+  (b) => {
+    if (typeof b !== "object" || b === null) return false;
+    const x = b as Partial<Block>;
+    return (
+      typeof x.description === "string" &&
+      typeof x.visible === "boolean" &&
+      x.schema instanceof z.ZodObject &&
+      x.schema.safeParse(x.example).success
+    );
+  },
   { message: "Expected a block created with defineBlock()" },
 );
 
@@ -66,11 +75,17 @@ export interface LoadedHarness extends Harness {
 
 export async function loadHarness(configPath: string): Promise<LoadedHarness> {
   const absolute = path.resolve(configPath);
-  const mod = (await import(pathToFileURL(absolute).href)) as { default: unknown };
+  const mod = (await import(pathToFileURL(absolute).href)) as { default?: unknown };
+  if (mod.default === undefined) throw new Error(`${absolute} has no default export`);
   const harness = manifestSchema.parse(mod.default);
   return { ...harness, root: path.dirname(absolute), configPath: absolute };
 }
 
 export function resolveInHarness(harness: LoadedHarness, relative: string): string {
-  return path.resolve(harness.root, relative);
+  const resolved = path.resolve(harness.root, relative);
+  const rel = path.relative(harness.root, resolved);
+  if (rel === ".." || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) {
+    throw new Error(`Path escapes the harness folder: ${relative}`);
+  }
+  return resolved;
 }

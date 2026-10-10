@@ -1,0 +1,16 @@
+import { fileURLToPath } from "node:url";
+
+export * from "./script";
+
+const tsx = () => import.meta.resolve("tsx");
+const entry = (file: string) => fileURLToPath(new URL(file, import.meta.url));
+
+/** Command that starts the fake `claude` CLI. Pass it as the transport command. */
+export function fakeClaudeCommand(): string[] {
+  return [process.execPath, "--import", tsx(), entry("./fake-claude.ts")];
+}
+
+/** Command that starts the fake ACP agent. */
+export function fakeAcpCommand(): string[] {
+  return [process.execPath, "--import", tsx(), entry("./fake-acp.ts")];
+}

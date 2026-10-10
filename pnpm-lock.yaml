@@ -209,6 +209,18 @@ importers:
         specifier: workspace:*
         version: link:../harness-sdk
 
+  packages/fake-agent:
+    dependencies:
+      '@agentclientprotocol/sdk':
+        specifier: ^1.8.0
+        version: 1.8.0(zod@4.6.5)
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.32.1
+        version: 1.32.1(zod@4.6.5)
+      tsx:
+        specifier: ^4.23.15
+        version: 4.23.15
+
   packages/harness-sdk:
     dependencies:
       zod:
@@ -231,6 +243,11 @@ importers:
         version: 4.6.5
 
 packages:
+
+  '@agentclientprotocol/sdk@1.8.0':
+    resolution: {integrity: sha512-fbP7qHZsFyTJVT0/RPrcWJ8An26qLXHEuGCHHEKDyxD1xpXV+Ejyh2LAE6vBAFePkpVjZeeohnbgvuEhZ7wLMg==}
+    peerDependencies:
+      zod: ^3.25.0 || ^4.0.0
 
   '@esbuild/aix-ppc64@0.28.2':
     resolution: {integrity: sha512-XExcO+dvLKvVtNTibSTBej1NCAbaGhWn9Ww1ZPx80qsahhPFe/8jgWP0IchNe0F3HwkU7n8ejhH8bjonqht8mQ==}
@@ -1420,6 +1437,10 @@ packages:
     resolution: {integrity: sha512-v5l/aFXZQeai4awLbOpSoHecE9UiMrnfx75tEXLjNonXVARxQ5mOeipTjROUchszUNCqnE+hqAMujRsRHsut2Q==}
 
 snapshots:
+
+  '@agentclientprotocol/sdk@1.8.0(zod@4.6.5)':
+    dependencies:
+      zod: 4.6.5
 
   '@esbuild/aix-ppc64@0.28.2':
     optional: true

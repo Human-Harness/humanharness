@@ -2567,16 +2567,91 @@ git commit -m "feat(runtime): claude-cli transport over the official binary"
 
 ---
 
-### Task 12: runtime — ACP transport
+### Task 12: runtime — ACP transport (revised after the Codex spike)
+
+The Codex spike (`docs/spikes/2026-10-10-transports.md`) changed several assumptions, so this task also touches `engines`, `fake-agent` and the transport contract:
+
+- Codex is `npx -y @agentclientprotocol/codex-acp@2.2.2` (the `@zed-industries` package is deprecated). It reports `agentInfo.version` at `initialize`.
+- Sessions must be put in an explicit mode right after `session/new` / `session/load`: `workspace-write` when the harness edits its folder, `read-only` otherwise. The default (`agent`) can come from the user's own Codex config.
+- MCP tool calls arrive as `tool_call` with title `mcp.<server>.<tool>`, kind `execute`, `rawInput: { server, tool, arguments }`. Their permission requests carry `_meta.is_mcp_tool_approval: true` and a bare `toolCall` (`{ toolCallId, kind: "execute" }`, no title/rawInput) — they must be matched to the earlier `tool_call` by id.
+- In `workspace-write`, edits inside the folder need no approval; Codex writes through shell commands inside its own sandbox.
+- `tool_call`s of kind `think` ("Guardian Review") are noise: no activity events.
+- The prompt response carries `usage: { inputTokens, outputTokens, cachedReadTokens, cachedWriteTokens, … }`. Codex reports no plan-limit windows.
 
 **Files:**
+- Modify: `packages/engines/src/index.ts`, `packages/engines/test/engines.test.ts`
+- Modify: `packages/fake-agent/src/script.ts`, `packages/fake-agent/src/fake-acp.ts`
+- Modify: `packages/runtime/src/transport.ts`
 - Create: `packages/runtime/src/acp.ts`
 - Modify: `packages/runtime/src/index.ts`
 - Test: `packages/runtime/test/acp.test.ts`
 
-Use the spike findings: if the MCP `tool_call` title does not contain `show_<name>`/`update_<name>`, change `isUiTool` to match what the spike recorded, and adjust the "hides ui tools" test fixture to that title. If the spike showed MCP calls arriving as permission requests with a kind other than `other`, add that kind to the allow rule for MCP tools.
+- [ ] **Step 1: Engines — Codex entry and ACP modes**
 
-- [ ] **Step 1: Write the failing tests**
+In `packages/engines/src/index.ts` change the ACP variant of `TransportDef` to:
+```ts
+  | {
+      kind: "acp";
+      command: string[];
+      /** Session modes to set right after session/new|load, by harness edit permission. */
+      modes?: { edit: string; readOnly: string };
+    };
+```
+and the Codex entry's `detect` and `transport` to:
+```ts
+    // The adapter bundles its own Codex core; `codex` itself is only needed for `codex login`.
+    // minVersion gates the adapter version reported as agentInfo.version at initialize.
+    detect: { binary: "codex", versionArgs: ["--version"], minVersion: "2.2.2" },
+    transport: {
+      kind: "acp",
+      command: ["npx", "-y", "@agentclientprotocol/codex-acp@2.2.2"],
+      modes: { edit: "workspace-write", readOnly: "read-only" },
+    },
+```
+Add to `packages/engines/test/engines.test.ts` inside `describe("ENGINES")`:
+```ts
+  it("pins the Codex ACP adapter and its session modes", () => {
+    expect(getEngine("codex").transport).toEqual({
+      kind: "acp",
+      command: ["npx", "-y", "@agentclientprotocol/codex-acp@2.2.2"],
+      modes: { edit: "workspace-write", readOnly: "read-only" },
+    });
+  });
+```
+Run: `corepack pnpm vitest run packages/engines` → PASS (8 tests).
+
+- [ ] **Step 2: Transport options — session mode**
+
+In `packages/runtime/src/transport.ts` add to `TransportOptions`, after `permissions`:
+```ts
+  /** ACP only: session mode to set after session/new|load (e.g. "workspace-write"). */
+  sessionMode?: string;
+```
+
+- [ ] **Step 3: fake-acp — modes, MCP permission meta, usage**
+
+In `packages/fake-agent/src/script.ts`:
+- change the permission step to `| { permission: { toolCall: Record<string, unknown>; _meta?: Record<string, unknown> } }`
+- add to `AcpScript`: `/** Returned as \`usage\` in every prompt response. */ usage?: Record<string, number>;`
+
+In `packages/fake-agent/src/fake-acp.ts`:
+- register, next to `session/load`:
+```ts
+  .onRequest("session/set_mode", (ctx) => {
+    log("session/set_mode", ctx.params);
+    return {};
+  })
+```
+- in the permission branch, pass the meta through: add `...(step.permission._meta ? { _meta: step.permission._meta } : {}),` to the `session/request_permission` params.
+- make every prompt response include the script's usage: replace each `return { stopReason: … }` inside the `session/prompt` handler with `return withUsage({ stopReason: … })`, where
+```ts
+const withUsage = <T extends object>(r: T) => (script.usage ? { ...r, usage: script.usage } : r);
+```
+is declared next to `log`. Cast as needed for the SDK's types (`as never`), as the file already does.
+
+Run: `corepack pnpm typecheck` → clean.
+
+- [ ] **Step 4: Write the failing tests**
 
 `packages/runtime/test/acp.test.ts`:
 ```ts
@@ -2585,7 +2660,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { type AcpScript, fakeAcpCommand, writeScript } from "@humanharness/fake-agent";
-import { AcpTransport, decidePermission, isUiTool } from "../src/acp";
+import { AcpTransport, type PermissionPolicy, decidePermission, isUiTool } from "../src/acp";
 import type { Event } from "../src/events";
 import type { Session } from "../src/transport";
 
@@ -2607,6 +2682,7 @@ function setup(scriptOrFn: AcpScript | ((folder: string) => AcpScript), session:
     session,
     mcp: [{ name: "ui", command: "node", args: ["ui.js"], env: { HH_BRIDGE: "/tmp/x.sock" } }],
     permissions,
+    sessionMode: "workspace-write",
     command: fakeAcpCommand(),
     env: { HH_FAKE_SCRIPT: writeScript(os.tmpdir(), script), HH_FAKE_LOG: logFile },
     onSessionStarted: (s) => started.push(s),
@@ -2625,48 +2701,77 @@ async function run(t: AcpTransport, message = "hi", signal = new AbortController
 }
 
 const chunk = (text: string) => ({ update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text } } });
-
-describe("decidePermission", () => {
-  const options = [
-    { optionId: "allow", name: "Allow", kind: "allow_once" as const },
-    { optionId: "reject", name: "Reject", kind: "reject_once" as const },
-  ];
-  const ask = (toolCall: Record<string, unknown>, perms = permissions) =>
-    decidePermission({ sessionId: "s", toolCall: { toolCallId: "t", ...toolCall }, options } as never, "/work", perms);
-  const selected = (r: ReturnType<typeof decidePermission>) => (r.outcome.outcome === "selected" ? r.outcome.optionId : "cancelled");
-
-  it("allows edits inside the folder only", () => {
-    expect(selected(ask({ kind: "edit", locations: [{ path: "/work/a.md" }] }))).toBe("allow");
-    expect(selected(ask({ kind: "edit", locations: [{ path: "/etc/passwd" }] }))).toBe("reject");
-    expect(selected(ask({ kind: "edit", locations: [{ path: "/work/../etc/x" }] }))).toBe("reject");
-  });
-
-  it("follows the manifest for exec and web", () => {
-    expect(selected(ask({ kind: "execute" }))).toBe("reject");
-    expect(selected(ask({ kind: "execute" }, { ...permissions, exec: true }))).toBe("allow");
-    expect(selected(ask({ kind: "fetch" }))).toBe("reject");
-  });
-
-  it("allows ui tools and reads inside the folder", () => {
-    expect(selected(ask({ kind: "other", title: "ui.show_note" }))).toBe("allow");
-    expect(selected(ask({ kind: "read", locations: [{ path: "/work/x" }] }))).toBe("allow");
-  });
-
-  it("rejects edits when the harness cannot edit", () => {
-    expect(selected(ask({ kind: "edit", locations: [{ path: "/work/a.md" }] }, { ...permissions, edit: "none" }))).toBe("reject");
-  });
+const mcpCall = (id: string, server: string, tool: string) => ({
+  update: {
+    sessionUpdate: "tool_call",
+    toolCallId: id,
+    title: `mcp.${server}.${tool}`,
+    kind: "execute",
+    status: "pending",
+    rawInput: { server, tool, arguments: {} },
+    _meta: { is_mcp_tool_call: true },
+  },
 });
 
 describe("isUiTool", () => {
-  it("matches block tools only", () => {
-    expect(isUiTool("ui.show_note")).toBe(true);
-    expect(isUiTool("mcp__ui__update_progress")).toBe(true);
-    expect(isUiTool("Read file")).toBe(false);
+  it("recognizes ui MCP calls from Claude and Codex", () => {
+    expect(isUiTool("mcp.ui.show_note", { server: "ui" })).toBe(true);
+    expect(isUiTool("mcp__ui__update_progress", undefined)).toBe(true);
+    expect(isUiTool("anything", { server: "ui", tool: "show_note" })).toBe(true);
+    expect(isUiTool("mcp.notes.search", { server: "notes" })).toBe(false);
+    expect(isUiTool("Run command", { command: "ls" })).toBe(false);
+  });
+});
+
+describe("decidePermission", () => {
+  const options = [
+    { optionId: "allow", name: "Allow", kind: "allow_once" },
+    { optionId: "always", name: "Always", kind: "allow_always" },
+    { optionId: "cancel", name: "Cancel", kind: "reject_once" },
+  ];
+  const known = new Map<string, { server?: string }>([
+    ["ui-1", { server: "ui" }],
+    ["other-1", { server: "elsewhere" }],
+  ]);
+  const policy = (perms = permissions): PermissionPolicy => ({
+    folder: "/work",
+    permissions: perms,
+    mcpServers: ["ui", "demo"],
+    lookup: (id) => known.get(id),
+  });
+  const ask = (toolCall: Record<string, unknown>, extra: Record<string, unknown> = {}, perms = permissions) =>
+    decidePermission({ sessionId: "s", toolCall: { toolCallId: "t", ...toolCall }, options, ...extra } as never, policy(perms));
+  const chosen = (r: ReturnType<typeof decidePermission>) => (r.outcome.outcome === "selected" ? r.outcome.optionId : "cancelled");
+
+  it("allows MCP approvals only for the harness's own servers, matched by toolCallId", () => {
+    const meta = { _meta: { is_mcp_tool_approval: true } };
+    expect(chosen(ask({ toolCallId: "ui-1", kind: "execute" }, meta))).toBe("allow");
+    expect(chosen(ask({ toolCallId: "other-1", kind: "execute" }, meta))).toBe("cancel");
+    expect(chosen(ask({ toolCallId: "unknown", kind: "execute" }, meta))).toBe("cancel");
+  });
+
+  it("allows edits inside the folder only", () => {
+    expect(chosen(ask({ kind: "edit", locations: [{ path: "/work/a.md" }] }))).toBe("allow");
+    expect(chosen(ask({ kind: "edit", locations: [{ path: "/etc/passwd" }] }))).toBe("cancel");
+    expect(chosen(ask({ kind: "edit", locations: [{ path: "/work/../etc/x" }] }))).toBe("cancel");
+    expect(chosen(ask({ kind: "edit", locations: [{ path: "/work/a.md" }] }, {}, { ...permissions, edit: "none" }))).toBe("cancel");
+  });
+
+  it("follows the manifest for commands, unknown kinds and web", () => {
+    expect(chosen(ask({ kind: "execute", title: "Run command" }))).toBe("cancel");
+    expect(chosen(ask({ kind: "execute" }, {}, { ...permissions, exec: true }))).toBe("allow");
+    expect(chosen(ask({ kind: "other" }))).toBe("cancel");
+    expect(chosen(ask({ kind: "fetch" }))).toBe("cancel");
+    expect(chosen(ask({ kind: "fetch" }, {}, { ...permissions, web: true }))).toBe("allow");
+  });
+
+  it("never picks an 'always' option", () => {
+    expect(chosen(ask({ kind: "read", locations: [{ path: "/work/x" }] }))).toBe("allow");
   });
 });
 
 describe("AcpTransport", () => {
-  it("creates a session with cwd and MCP servers, then streams text", async () => {
+  it("creates a session with cwd and MCP servers, sets the mode, then streams text", async () => {
     const { transport, folder, started, log } = setup({ sessionId: "agent-1", turns: [[chunk("Hello"), { stop: "end_turn" }]] });
     const events = await run(transport);
     expect(events).toEqual([{ type: "text", delta: "Hello" }, { type: "done", ok: true }]);
@@ -2676,6 +2781,7 @@ describe("AcpTransport", () => {
     expect(newSession.params.mcpServers).toEqual([
       { name: "ui", command: "node", args: ["ui.js"], env: [{ name: "HH_BRIDGE", value: "/tmp/x.sock" }] },
     ]);
+    expect(log().find((l) => l.method === "session/set_mode")?.params).toEqual({ sessionId: "agent-1", modeId: "workspace-write" });
   });
 
   it("reuses one agent process across turns", async () => {
@@ -2686,18 +2792,22 @@ describe("AcpTransport", () => {
     expect(log().filter((l) => l.method === "session/prompt")).toHaveLength(2);
   });
 
-  it("loads a started session when the agent supports it", async () => {
+  it("loads a started session and sets the mode again", async () => {
     const { transport, log } = setup({ loadSession: true, turns: [[chunk("again")]] }, { id: "old-1", started: true });
     await run(transport);
     expect(log().find((l) => l.method === "session/load")?.params.sessionId).toBe("old-1");
     expect(log().some((l) => l.method === "session/new")).toBe(false);
+    expect(log().find((l) => l.method === "session/set_mode")?.params.sessionId).toBe("old-1");
   });
 
-  it("answers permission requests from the manifest policy", async () => {
-    const { transport, log } = setup((folder) => ({ turns: [[
-      { permission: { toolCall: { toolCallId: "e1", title: "Write", kind: "edit", locations: [{ path: path.join(folder, "a.md") }] } } },
-      { permission: { toolCall: { toolCallId: "x1", title: "rm -rf", kind: "execute" } } },
-    ]] }));
+  it("approves ui MCP calls and refuses shell commands", async () => {
+    const { transport, log } = setup({
+      turns: [[
+        mcpCall("m1", "ui", "show_note"),
+        { permission: { toolCall: { toolCallId: "m1", kind: "execute", status: "pending" }, _meta: { is_mcp_tool_approval: true } } },
+        { permission: { toolCall: { toolCallId: "x1", title: "Run command", kind: "execute", rawInput: { command: "rm -rf /" } } } },
+      ]],
+    });
     await run(transport);
     expect(log().filter((l) => l.method === "permission-outcome").map((l) => l.params)).toEqual([
       { outcome: "selected", optionId: "allow" },
@@ -2705,15 +2815,26 @@ describe("AcpTransport", () => {
     ]);
   });
 
-  it("reports tool activity, hides ui tools and adds a paragraph after tools", async () => {
-    const { transport } = setup({ turns: [[
-      chunk("Looking"),
-      { update: { sessionUpdate: "tool_call", toolCallId: "r1", title: "Read notes/a.md", kind: "read", status: "pending" } },
-      { update: { sessionUpdate: "tool_call_update", toolCallId: "r1", status: "completed" } },
-      { update: { sessionUpdate: "tool_call", toolCallId: "u1", title: "ui.show_note", kind: "other", status: "pending" } },
-      { update: { sessionUpdate: "tool_call_update", toolCallId: "u1", status: "completed" } },
-      chunk("Done"),
-    ]] });
+  it("allows edits inside the real folder", async () => {
+    const { transport, log } = setup((folder) => ({
+      turns: [[{ permission: { toolCall: { toolCallId: "e1", title: "Write", kind: "edit", locations: [{ path: path.join(folder, "a.md") }] } } }]],
+    }));
+    await run(transport);
+    expect(log().find((l) => l.method === "permission-outcome")?.params).toEqual({ outcome: "selected", optionId: "allow" });
+  });
+
+  it("reports activity, hides ui and think calls, and adds a paragraph after tools", async () => {
+    const { transport } = setup({
+      turns: [[
+        chunk("Looking"),
+        { update: { sessionUpdate: "tool_call", toolCallId: "g1", title: "Guardian Review", kind: "think", status: "pending" } },
+        { update: { sessionUpdate: "tool_call", toolCallId: "r1", title: "Read notes/a.md", kind: "read", status: "pending" } },
+        { update: { sessionUpdate: "tool_call_update", toolCallId: "r1", status: "completed" } },
+        mcpCall("u1", "ui", "show_note"),
+        { update: { sessionUpdate: "tool_call_update", toolCallId: "u1", status: "completed" } },
+        chunk("Done"),
+      ]],
+    });
     const events = await run(transport);
     expect(events).toEqual([
       { type: "text", delta: "Looking" },
@@ -2721,6 +2842,18 @@ describe("AcpTransport", () => {
       { type: "activity", id: "r1", kind: "read", detail: "Read notes/a.md", state: "end", error: false },
       { type: "paragraph" },
       { type: "text", delta: "Done" },
+      { type: "done", ok: true },
+    ]);
+  });
+
+  it("reports token usage from the prompt response", async () => {
+    const { transport } = setup({
+      usage: { totalTokens: 62085, inputTokens: 5603, cachedReadTokens: 56320, cachedWriteTokens: 0, outputTokens: 162, thoughtTokens: 0 },
+      turns: [[chunk("ok")]],
+    });
+    const events = await run(transport);
+    expect(events.slice(-2)).toEqual([
+      { type: "usage", inputTokens: 5603, outputTokens: 162, cacheReadTokens: 56320, cacheWriteTokens: 0 },
       { type: "done", ok: true },
     ]);
   });
@@ -2762,12 +2895,14 @@ describe("AcpTransport", () => {
 });
 ```
 
-- [ ] **Step 2: Run to verify they fail**
+Note: fake-acp offers options `allow` (allow_once) and `reject` (reject_once); `decidePermission` picks only `allow_once` / `reject_once` kinds.
 
-Run: `pnpm vitest run packages/runtime/test/acp.test.ts`
+- [ ] **Step 5: Run to verify they fail**
+
+Run: `corepack pnpm vitest run packages/runtime/test/acp.test.ts`
 Expected: FAIL — cannot resolve `../src/acp`.
 
-- [ ] **Step 3: Implement**
+- [ ] **Step 6: Implement**
 
 `packages/runtime/src/acp.ts`:
 ```ts
@@ -2782,15 +2917,37 @@ import type { Transport, TransportOptions } from "./transport";
 
 type PermissionOption = { optionId: string; kind: string };
 type PermissionRequest = {
-  toolCall: { title?: string | null; kind?: string | null; locations?: { path: string }[] | null };
+  toolCall: {
+    toolCallId: string;
+    title?: string | null;
+    kind?: string | null;
+    locations?: { path: string }[] | null;
+    rawInput?: unknown;
+  };
   options: PermissionOption[];
+  _meta?: Record<string, unknown> | null;
 };
 type PermissionResponse = { outcome: { outcome: "selected"; optionId: string } | { outcome: "cancelled" } };
 
-const UI_TOOL = /(^|[._])(show|update)_[a-z0-9_]+$/;
+export interface PermissionPolicy {
+  folder: string;
+  permissions: Permissions;
+  /** MCP servers the harness configured (always includes "ui"). */
+  mcpServers: string[];
+  /** Earlier tool_call info by id (Codex permission requests carry only the id). */
+  lookup: (toolCallId: string) => { server?: string } | undefined;
+}
 
-export function isUiTool(title: string | null | undefined): boolean {
-  return UI_TOOL.test(title ?? "");
+const UI_TITLE = /^mcp(__|\.)ui(__|\.)/;
+
+function serverOf(rawInput: unknown): string | undefined {
+  const server = (rawInput as { server?: unknown } | null | undefined)?.server;
+  return typeof server === "string" ? server : undefined;
+}
+
+/** Block tools of the core `ui` MCP server, as Claude (`mcp__ui__x`) or Codex (`mcp.ui.x`, rawInput.server) report them. */
+export function isUiTool(title: string | null | undefined, rawInput: unknown): boolean {
+  return serverOf(rawInput) === "ui" || UI_TITLE.test(title ?? "");
 }
 
 function inside(folder: string, target: string): boolean {
@@ -2799,19 +2956,35 @@ function inside(folder: string, target: string): boolean {
   return resolved === root || resolved.startsWith(root + path.sep);
 }
 
-/** Answers ACP permission requests from the harness manifest, without asking the user. */
-export function decidePermission(params: PermissionRequest, folder: string, permissions: Permissions): PermissionResponse {
-  const { kind = "other", locations = [], title } = params.toolCall;
-  const allInside = (locations ?? []).every((l) => inside(folder, l.path));
+/** Answers ACP permission requests from the harness manifest, without asking the user. Never picks "always" options. */
+export function decidePermission(params: PermissionRequest, policy: PermissionPolicy): PermissionResponse {
+  const { toolCallId, kind, locations, rawInput } = params.toolCall;
+  const isMcp = params._meta?.is_mcp_tool_approval === true || serverOf(rawInput) !== undefined;
   let allow: boolean;
-  if (isUiTool(title)) allow = true;
-  else if (kind === "read" || kind === "search" || kind === "think") allow = allInside;
-  else if (kind === "edit" || kind === "delete" || kind === "move") allow = permissions.edit === "folder" && allInside;
-  else if (kind === "fetch") allow = permissions.web;
-  else if (kind === "execute") allow = permissions.exec;
-  else allow = true; // "other": MCP tools bundled with the harness
-  const wanted = allow ? ["allow_once", "allow_always"] : ["reject_once", "reject_always"];
-  const option = params.options.find((o) => wanted.includes(o.kind));
+  if (isMcp) {
+    const server = serverOf(rawInput) ?? policy.lookup(toolCallId)?.server;
+    allow = server !== undefined && policy.mcpServers.includes(server);
+  } else {
+    const allInside = (locations ?? []).every((l) => inside(policy.folder, l.path));
+    switch (kind) {
+      case "read":
+      case "search":
+      case "think":
+        allow = allInside;
+        break;
+      case "edit":
+      case "delete":
+      case "move":
+        allow = policy.permissions.edit === "folder" && allInside;
+        break;
+      case "fetch":
+        allow = policy.permissions.web;
+        break;
+      default: // "execute", "other", unknown
+        allow = policy.permissions.exec;
+    }
+  }
+  const option = params.options.find((o) => o.kind === (allow ? "allow_once" : "reject_once"));
   return option ? { outcome: { outcome: "selected", optionId: option.optionId } } : { outcome: { outcome: "cancelled" } };
 }
 
@@ -2827,13 +3000,16 @@ function errorFrom(e: unknown): Event {
   return fail(classifyError(message), message);
 }
 
+type AcpUsage = { inputTokens?: number; outputTokens?: number; cachedReadTokens?: number; cachedWriteTokens?: number };
+
 /** Long-lived ACP agent per window; one `session/prompt` per turn. */
 export class AcpTransport implements Transport {
   private child?: ChildProcess;
   private conn?: acp.ClientConnection;
   private sessionId?: string;
   private emit: ((e: Event) => void) | null = null;
-  private uiCalls = new Set<string>();
+  private calls = new Map<string, { server?: string }>();
+  private hidden = new Set<string>();
   private activities = new Map<string, { kind: ActivityKind; detail: string }>();
   private afterTool = false;
 
@@ -2854,15 +3030,19 @@ export class AcpTransport implements Transport {
     });
     child.stderr!.resume();
 
+    const policy: PermissionPolicy = {
+      folder: this.o.folder,
+      permissions: this.o.permissions,
+      mcpServers: this.o.mcp.map((s) => s.name),
+      lookup: (id) => this.calls.get(id),
+    };
     const stream = acp.ndJsonStream(
       Writable.toWeb(child.stdin!) as WritableStream<Uint8Array>,
       Readable.toWeb(child.stdout!) as ReadableStream<Uint8Array>,
     );
     this.conn = acp
       .client({ name: "humanharness" })
-      .onRequest("session/request_permission", (ctx) =>
-        decidePermission(ctx.params as PermissionRequest, this.o.folder, this.o.permissions) as never,
-      )
+      .onRequest("session/request_permission", (ctx) => decidePermission(ctx.params as PermissionRequest, policy) as never)
       .onNotification("session/update", (ctx) => this.onUpdate(ctx.params.update as Record<string, any>))
       .connect(stream);
 
@@ -2886,6 +3066,9 @@ export class AcpTransport implements Transport {
       this.o.session = { id: created.sessionId, started: true };
       this.o.onSessionStarted(this.o.session);
     }
+    if (this.o.sessionMode) {
+      await agent.request("session/set_mode", { sessionId: this.sessionId, modeId: this.o.sessionMode });
+    }
   }
 
   private reset(): void {
@@ -2907,8 +3090,9 @@ export class AcpTransport implements Transport {
         emit({ type: "text", delta: u.content.text });
         return;
       case "tool_call": {
-        if (isUiTool(u.title)) {
-          this.uiCalls.add(u.toolCallId);
+        this.calls.set(u.toolCallId, { server: serverOf(u.rawInput) });
+        if (u.kind === "think" || isUiTool(u.title, u.rawInput)) {
+          this.hidden.add(u.toolCallId);
           return;
         }
         const activity = { kind: KINDS[u.kind] ?? ("other" as const), detail: String(u.title ?? "") };
@@ -2918,7 +3102,7 @@ export class AcpTransport implements Transport {
         return;
       }
       case "tool_call_update": {
-        if (this.uiCalls.has(u.toolCallId)) return;
+        if (this.hidden.has(u.toolCallId)) return;
         const activity = this.activities.get(u.toolCallId);
         if (!activity || (u.status !== "completed" && u.status !== "failed")) return;
         this.activities.delete(u.toolCallId);
@@ -2946,7 +3130,19 @@ export class AcpTransport implements Transport {
     const onAbort = () => void agent.notify("session/cancel", { sessionId });
     signal.addEventListener("abort", onAbort, { once: true });
     try {
-      const res = await agent.request("session/prompt", { sessionId, prompt: [{ type: "text", text: message }] });
+      const res = (await agent.request("session/prompt", {
+        sessionId,
+        prompt: [{ type: "text", text: message }],
+      })) as { stopReason: string; usage?: AcpUsage | null };
+      if (res.usage) {
+        emit({
+          type: "usage",
+          inputTokens: res.usage.inputTokens ?? 0,
+          outputTokens: res.usage.outputTokens ?? 0,
+          cacheReadTokens: res.usage.cachedReadTokens ?? 0,
+          cacheWriteTokens: res.usage.cachedWriteTokens ?? 0,
+        });
+      }
       if (res.stopReason === "cancelled" || signal.aborted) emit(fail("cancelled"));
       else if (res.stopReason === "refusal") emit(fail("agent-crashed", "refusal"));
       else emit({ type: "done", ok: true });
@@ -2968,19 +3164,19 @@ export class AcpTransport implements Transport {
 
 Append to `packages/runtime/src/index.ts`:
 ```ts
-export { AcpTransport, decidePermission, isUiTool } from "./acp";
+export { AcpTransport, decidePermission, isUiTool, type PermissionPolicy } from "./acp";
 ```
 
-- [ ] **Step 4: Run to verify they pass**
+- [ ] **Step 7: Run to verify they pass**
 
-Run: `pnpm vitest run packages/runtime && pnpm typecheck`
-Expected: PASS. If `typecheck` rejects a request/notify call shape, align it with `packages/runtime/node_modules/@agentclientprotocol/sdk/dist/acp.d.ts` (the method strings above are the SDK's `methods` constants) without changing behavior.
+Run: `corepack pnpm vitest run packages/runtime && corepack pnpm vitest run packages/engines && corepack pnpm typecheck`
+Expected: PASS. If `typecheck` rejects a request/notify call shape, align it with `packages/runtime/node_modules/@agentclientprotocol/sdk/dist/acp.d.ts` without changing behavior.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
-git add -A
-git commit -m "feat(runtime): ACP transport with manifest-driven permissions"
+git add packages/engines packages/fake-agent packages/runtime
+git commit -m "feat(runtime): ACP transport with session modes and manifest-driven permissions"
 ```
 
 ---
@@ -3181,6 +3377,10 @@ export async function createRuntime(opts: RuntimeOptions): Promise<HarnessRuntim
     session: await readSession(folder, engine.id),
     mcp: [uiServerSpec({ harnessConfig: harness.configPath, bridge, launcher }), ...harnessMcpServers(harness, launcher)],
     permissions: harness.permissions,
+    sessionMode:
+      engine.transport.kind === "acp"
+        ? engine.transport.modes?.[harness.permissions.edit === "folder" ? "edit" : "readOnly"]
+        : undefined,
     command: opts.command ?? (engine.transport.kind === "claude-cli" ? [engine.transport.binary] : engine.transport.command),
     env: opts.env,
     onSessionStarted: (s) => {

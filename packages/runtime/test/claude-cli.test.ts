@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { type ClaudeScript, claudeResultLine, claudeTextLines, fakeClaudeCommand, writeScript } from "@humanharness/fake-agent";
-import { ClaudeCliTransport, allowedTools, claudeArgs } from "../src/claude-cli";
+import { ClaudeCliTransport, allowedTools, claudeArgs, disallowedTools } from "../src/claude-cli";
 import type { Event } from "../src/events";
 import type { Session, TransportOptions } from "../src/transport";
 
@@ -41,6 +41,16 @@ describe("allowedTools", () => {
   });
 });
 
+describe("disallowedTools", () => {
+  it("denies every tool the manifest excludes and the settings dir", () => {
+    const settings = ["Edit(.claude/**)", "Write(.claude/**)", "MultiEdit(.claude/**)"];
+    expect(disallowedTools({ edit: "none", exec: false, web: false })).toEqual([
+      "AskUserQuestion", "Edit", "Write", "MultiEdit", "NotebookEdit", "Bash", "WebSearch", "WebFetch", ...settings,
+    ]);
+    expect(disallowedTools({ edit: "folder", exec: true, web: true })).toEqual(["AskUserQuestion", ...settings]);
+  });
+});
+
 describe("claudeArgs", () => {
   it("starts a new session with a fixed id and inline MCP config", () => {
     const args = claudeArgs("hello", { session: { id: "abc", started: false }, mcp: [uiServer], permissions });
@@ -48,7 +58,7 @@ describe("claudeArgs", () => {
     expect(args).toContain("--strict-mcp-config");
     expect(args[args.indexOf("--session-id") + 1]).toBe("abc");
     expect(args[args.indexOf("--permission-mode") + 1]).toBe("acceptEdits");
-    expect(args[args.indexOf("--disallowedTools") + 1]).toBe("AskUserQuestion");
+    expect(args[args.indexOf("--disallowedTools") + 1]).toBe(disallowedTools(permissions).join(","));
     const config = JSON.parse(args[args.indexOf("--mcp-config") + 1]);
     expect(config).toEqual({ mcpServers: { ui: { type: "stdio", command: "node", args: ["ui.js"], env: { HH_BRIDGE: "/tmp/x.sock" } } } });
   });
@@ -181,5 +191,97 @@ describe("ClaudeCliTransport", () => {
     setTimeout(() => controller.abort(), 300);
     const events = await run(transport, "hi", controller.signal);
     expect(events).toEqual([{ type: "done", ok: false, error: { code: "cancelled" } }]);
+  });
+});
+
+const step = (s: object) => s as unknown as ClaudeScript["steps"][number];
+const toolUse = (id: string, name: string, input: unknown) => ({
+  line: { type: "assistant", parent_tool_use_id: null, message: { content: [{ type: "tool_use", id, name, input }] } },
+});
+const blockEvent = (e: unknown) => ({ line: { type: "stream_event", parent_tool_use_id: null, event: e } });
+
+describe("ClaudeCliTransport hardening", () => {
+  it("cancels even when a grandchild ignores SIGTERM", async () => {
+    const { transport } = setup({ steps: [step({ spawnStubborn: true }), { sleep: 30_000 }] });
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), 500);
+    const started = Date.now();
+    const events = await run(transport, "hi", controller.signal);
+    expect(events).toEqual([{ type: "done", ok: false, error: { code: "cancelled" } }]);
+    expect(Date.now() - started).toBeLessThan(6000);
+  }, 10_000);
+
+  it("never reports ToolSearch or TodoWrite", async () => {
+    const { transport } = setup({
+      steps: [toolUse("t1", "ToolSearch", { query: "select:mcp__ui__show_note" }), toolUse("t2", "TodoWrite", { todos: [] }), claudeResultLine(true)],
+    });
+    expect(await run(transport)).toEqual([{ type: "done", ok: true }]);
+  });
+
+  it("emits a paragraph only before the first delta of a later text block", async () => {
+    const empty = [
+      blockEvent({ type: "content_block_start", index: 0, content_block: { type: "text", text: "" } }),
+      blockEvent({ type: "content_block_stop", index: 0 }),
+    ];
+    const a = setup({ steps: [...empty, ...claudeTextLines("One"), claudeResultLine(true)] });
+    expect((await run(a.transport)).map((e) => e.type)).toEqual(["text", "done"]);
+    const b = setup({ steps: [...claudeTextLines("One"), ...empty, ...claudeTextLines("Two"), claudeResultLine(true)] });
+    expect((await run(b.transport)).map((e) => e.type)).toEqual(["text", "paragraph", "text", "done"]);
+  });
+
+  it("does not start the same tool twice", async () => {
+    const { transport } = setup({
+      steps: [toolUse("t1", "Read", { file_path: "/a/b.md" }), toolUse("t1", "Read", { file_path: "/a/b.md" }), claudeResultLine(true)],
+    });
+    const events = await run(transport);
+    expect(events.filter((e) => e.type === "activity")).toHaveLength(1);
+  });
+
+  it("derives the detail per tool", async () => {
+    const long = "x".repeat(120);
+    const { transport } = setup({
+      steps: [
+        toolUse("1", "Edit", { file_path: "/a/b/c.ts" }),
+        toolUse("2", "Grep", { pattern: "foo", path: "/a/b" }),
+        toolUse("3", "Glob", { pattern: "**/*.md", path: "/a" }),
+        toolUse("4", "WebFetch", { url: "https://x.dev", prompt: "p" }),
+        toolUse("5", "WebSearch", { query: "q" }),
+        toolUse("6", "Bash", { command: `ls -la\necho hi` }),
+        toolUse("7", "Bash", { command: long }),
+        toolUse("8", "Whatever", { file_path: "/a/b" }),
+        claudeResultLine(true),
+      ],
+    });
+    const details = (await run(transport)).flatMap((e) => (e.type === "activity" ? [e.detail] : []));
+    expect(details).toEqual(["c.ts", "foo", "**/*.md", "https://x.dev", "q", "ls -la", "x".repeat(80), ""]);
+  });
+
+  it("feeds a final stdout line without a newline", async () => {
+    const { transport } = setup({
+      steps: [step({ raw: JSON.stringify({ type: "result", subtype: "error_during_execution", is_error: true, result: "boom" }) })],
+    });
+    const events = await run(transport);
+    expect(events.at(-1)).toMatchObject({ type: "done", ok: false, error: { detail: "boom" } });
+  });
+
+  it("reports a signal-killed child", async () => {
+    const { transport } = setup({ steps: [step({ signal: "SIGKILL" })] });
+    const events = await run(transport);
+    expect(events).toEqual([{ type: "done", ok: false, error: { code: "agent-crashed", detail: "exit signal SIGKILL" } }]);
+  });
+
+  it("treats exit 0 without a result as a crash", async () => {
+    const { transport } = setup({ steps: [...claudeTextLines("hi")] });
+    const events = await run(transport);
+    expect(events.at(-1)).toEqual({ type: "done", ok: false, error: { code: "agent-crashed", detail: "no result" } });
+  });
+
+  it("reports cancelled when aborted before the process ends with any outcome", async () => {
+    const { transport } = setup({ steps: [{ sleep: 200 }, claudeResultLine(true)] });
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), 100);
+    const events = await run(transport, "hi", controller.signal);
+    expect(events.at(-1)).toEqual({ type: "done", ok: false, error: { code: "cancelled" } });
+    expect(events.filter((e) => e.type === "done")).toHaveLength(1);
   });
 });

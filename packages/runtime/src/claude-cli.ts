@@ -7,6 +7,8 @@ import { type ActivityKind, type Event, fail } from "./events";
 import type { Transport, TransportOptions } from "./transport";
 
 const UI_TOOL_PREFIX = "mcp__ui__";
+/** Plumbing tools the user should never see as activity. */
+const HIDDEN_TOOLS = new Set(["ToolSearch", "TodoWrite"]);
 
 export function allowedTools(permissions: Permissions, mcp: McpServerSpec[]): string[] {
   const tools = ["Read", "Glob", "Grep", "TodoWrite"];
@@ -14,6 +16,16 @@ export function allowedTools(permissions: Permissions, mcp: McpServerSpec[]): st
   if (permissions.web) tools.push("WebSearch", "WebFetch");
   if (permissions.exec) tools.push("Bash");
   for (const server of mcp) tools.push(`mcp__${server.name}`);
+  return tools;
+}
+
+/** Deny rules beat allow rules, so project settings or hooks cannot re-enable what the manifest excludes. */
+export function disallowedTools(permissions: Permissions): string[] {
+  const tools = ["AskUserQuestion"];
+  if (permissions.edit === "none") tools.push("Edit", "Write", "MultiEdit", "NotebookEdit");
+  if (!permissions.exec) tools.push("Bash");
+  if (!permissions.web) tools.push("WebSearch", "WebFetch");
+  tools.push("Edit(.claude/**)", "Write(.claude/**)", "MultiEdit(.claude/**)");
   return tools;
 }
 
@@ -30,7 +42,7 @@ export function claudeArgs(message: string, o: Pick<TransportOptions, "session" 
     "--setting-sources", "project",
     "--permission-mode", o.permissions.edit === "folder" ? "acceptEdits" : "default",
     "--allowedTools", allowedTools(o.permissions, o.mcp).join(","),
-    "--disallowedTools", "AskUserQuestion",
+    "--disallowedTools", disallowedTools(o.permissions).join(","),
     "--strict-mcp-config",
     "--mcp-config", JSON.stringify({ mcpServers }),
     ...(o.session.started ? ["--resume", o.session.id] : ["--session-id", o.session.id]),
@@ -42,20 +54,27 @@ const KINDS: Record<string, ActivityKind> = {
   NotebookEdit: "edit", WebSearch: "web", WebFetch: "web", Bash: "exec",
 };
 
-function detailOf(input: Record<string, unknown>): string {
-  for (const key of ["file_path", "path", "pattern", "url", "query", "command"]) {
-    const value = input[key];
-    if (typeof value === "string") return key === "file_path" || key === "path" ? path.basename(value) : value;
+function detailOf(tool: string, input: Record<string, unknown>): string {
+  const str = (key: string) => (typeof input[key] === "string" ? (input[key] as string) : "");
+  switch (tool) {
+    case "Read": case "Edit": case "Write": case "MultiEdit": case "NotebookEdit":
+      return path.basename(str("file_path") || str("notebook_path"));
+    case "Glob": case "Grep": return str("pattern");
+    case "WebFetch": return str("url");
+    case "WebSearch": return str("query");
+    case "Bash": return str("command").split("\n")[0].slice(0, 80);
+    default: return "";
   }
-  return "";
 }
 
 /** Turns Claude Code's stream-json lines into normalized events. */
 export class StreamJsonReader {
   private textOpen = false;
+  private newBlock = false;
   private hasText = false;
   private tools = new Map<string, { kind: ActivityKind; detail: string }>();
   resultError: string | null = null;
+  sawResult = false;
 
   constructor(
     private readonly emit: (e: Event) => void,
@@ -86,9 +105,11 @@ export class StreamJsonReader {
     if (o.type === "stream_event") {
       const ev = o.event ?? {};
       if (ev.type === "content_block_start" && ev.content_block?.type === "text") {
-        if (this.hasText) this.emit({ type: "paragraph" });
         this.textOpen = true;
+        this.newBlock = true;
       } else if (ev.type === "content_block_delta" && ev.delta?.type === "text_delta" && this.textOpen && ev.delta.text) {
+        if (this.newBlock && this.hasText) this.emit({ type: "paragraph" });
+        this.newBlock = false;
         this.hasText = true;
         this.emit({ type: "text", delta: ev.delta.text });
       } else if (ev.type === "content_block_stop") {
@@ -99,8 +120,9 @@ export class StreamJsonReader {
 
     if (o.type === "assistant") {
       for (const b of o.message?.content ?? []) {
-        if (b.type !== "tool_use" || String(b.name).startsWith(UI_TOOL_PREFIX)) continue;
-        const activity = { kind: KINDS[b.name] ?? ("other" as const), detail: detailOf(b.input ?? {}) };
+        if (b.type !== "tool_use" || String(b.name).startsWith(UI_TOOL_PREFIX) || HIDDEN_TOOLS.has(b.name)) continue;
+        if (this.tools.has(b.id)) continue;
+        const activity = { kind: KINDS[b.name] ?? ("other" as const), detail: detailOf(b.name, b.input ?? {}) };
         this.tools.set(b.id, activity);
         this.emit({ type: "activity", id: b.id, ...activity, state: "start" });
       }
@@ -119,6 +141,7 @@ export class StreamJsonReader {
     }
 
     if (o.type === "result") {
+      this.sawResult = true;
       if (o.usage) {
         this.emit({
           type: "usage",
@@ -146,23 +169,44 @@ export class ClaudeCliTransport implements Transport {
     this.o.onSessionStarted(this.o.session);
   };
 
-  turn(message: string, emit: (e: Event) => void, signal: AbortSignal): Promise<void> {
+  turn(message: string, rawEmit: (e: Event) => void, signal: AbortSignal): Promise<void> {
     return new Promise((resolve) => {
       let finished = false;
+      let killTimer: NodeJS.Timeout | undefined;
+      let graceTimer: NodeJS.Timeout | undefined;
+      const emit = (e: Event) => {
+        if (!finished) rawEmit(e);
+      };
       const finish = (e: Event) => {
         if (finished) return;
+        rawEmit(e);
         finished = true;
+        clearTimeout(graceTimer);
         signal.removeEventListener("abort", onAbort);
-        emit(e);
         resolve();
       };
+      const useGroup = process.platform !== "win32";
       const [binary, ...leading] = this.o.command;
       const child = spawn(binary, [...leading, ...claudeArgs(message, this.o)], {
         cwd: this.o.folder,
         env: { ...process.env, ...this.o.env },
         stdio: ["ignore", "pipe", "pipe"],
+        detached: useGroup,
       });
-      const onAbort = () => child.kill("SIGTERM");
+      const killTree = (sig: NodeJS.Signals) => {
+        try {
+          if (useGroup && child.pid) process.kill(-child.pid, sig);
+          else child.kill(sig);
+        } catch {
+          try { child.kill(sig); } catch { /* already gone */ }
+        }
+      };
+      const onAbort = () => {
+        killTree("SIGTERM");
+        // Escalate: kill the whole group (including stragglers that ignore SIGTERM) after 3 s.
+        killTimer = setTimeout(() => killTree("SIGKILL"), 3000);
+        killTimer.unref();
+      };
       signal.addEventListener("abort", onAbort, { once: true });
       if (signal.aborted) onAbort();
 
@@ -182,14 +226,34 @@ export class ClaudeCliTransport implements Transport {
       child.stderr!.setEncoding("utf8");
       child.stderr!.on("data", (c: string) => (stderr = (stderr + c).slice(-4000)));
 
-      child.on("error", (e: NodeJS.ErrnoException) =>
-        finish(fail(e.code === "ENOENT" ? "engine-not-installed" : "agent-crashed", e.message)),
-      );
-      child.on("close", (code) => {
+      const settle = (code: number | null, sig: NodeJS.Signals | null) => {
+        if (finished) return;
+        clearTimeout(killTimer);
+        if (useGroup && child.pid) {
+          // Leave no stragglers behind once the leader is gone.
+          try { process.kill(-child.pid, "SIGKILL"); } catch { /* none left */ }
+        }
+        const tail = rest.trim();
+        rest = "";
+        if (tail) reader.feed(tail);
         if (signal.aborted) finish(fail("cancelled"));
         else if (reader.resultError) finish(fail(classifyError(reader.resultError), reader.resultError));
+        else if (sig) finish(fail(classifyError(stderr), stderr.trim() || `exit signal ${sig}`));
         else if (code !== 0) finish(fail(classifyError(stderr), stderr.trim() || `exit code ${code}`));
+        else if (!reader.sawResult) finish(fail("agent-crashed", "no result"));
         else finish({ type: "done", ok: true });
+      };
+
+      child.on("error", (e: NodeJS.ErrnoException) => {
+        finish(fail(e.code === "ENOENT" ? "engine-not-installed" : "agent-crashed", e.message));
+      });
+      // `exit` fires when the leader dies even if a grandchild holds the pipes open; give stdout a moment to drain.
+      child.on("exit", (code, sig) => {
+        graceTimer = setTimeout(() => settle(code, sig), 200);
+      });
+      child.on("close", (code, sig) => {
+        clearTimeout(graceTimer);
+        settle(code, sig);
       });
     });
   }

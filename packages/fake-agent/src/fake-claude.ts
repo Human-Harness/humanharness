@@ -1,5 +1,6 @@
 // Stand-in for `claude -p ... --output-format stream-json`. Reads its script from HH_FAKE_SCRIPT
 // and records its argv in HH_FAKE_ARGS so tests can assert on the flags the runtime passed.
+import { spawn } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { callMcpTool } from "./mcp-call";
@@ -11,16 +12,27 @@ const script = JSON.parse(readFileSync(process.env.HH_FAKE_SCRIPT!, "utf8")) as 
 const mcpIndex = argv.indexOf("--mcp-config");
 const mcpConfig = mcpIndex >= 0 ? (JSON.parse(argv[mcpIndex + 1]) as { mcpServers: Record<string, any> }) : { mcpServers: {} };
 
-for (const step of script.steps) {
+// Extra step kinds (cast, so script.ts stays untouched): { spawnStubborn: true } starts a grandchild that
+// ignores SIGTERM, { raw: string } writes without a newline, { signal: "SIGKILL" } kills this process.
+type FakeStep = ClaudeScript["steps"][number] | { spawnStubborn: true } | { raw: string } | { signal: NodeJS.Signals };
+
+for (const step of script.steps as FakeStep[]) {
   if ("line" in step) process.stdout.write(JSON.stringify(step.line) + "\n");
+  else if ("raw" in step) process.stdout.write(step.raw);
   else if ("sleep" in step) await new Promise((r) => setTimeout(r, step.sleep));
-  else if ("write" in step) {
+  else if ("spawnStubborn" in step) {
+    spawn(process.execPath, ["-e", "process.on('SIGTERM',()=>{});setInterval(()=>{},1000)"], { stdio: ["ignore", "ignore", "inherit"] });
+  } else if ("signal" in step) {
+    process.kill(process.pid, step.signal);
+    await new Promise((r) => setTimeout(r, 5000));
+  } else if ("write" in step) {
     mkdirSync(path.dirname(path.resolve(step.write.path)), { recursive: true });
     writeFileSync(path.resolve(step.write.path), step.write.content);
   } else if ("mcp" in step) {
     const s = mcpConfig.mcpServers[step.mcp.server];
+    if (!s) throw new Error(`fake-claude: mcp step names unknown server "${step.mcp.server}" (configured: ${Object.keys(mcpConfig.mcpServers).join(", ") || "none"})`);
     await callMcpTool({ command: s.command, args: s.args ?? [], env: s.env ?? {} }, step.mcp.tool, step.mcp.args);
   }
 }
 if (script.stderr) process.stderr.write(script.stderr);
-process.exit(script.exitCode ?? 0);
+process.exitCode = script.exitCode ?? 0;

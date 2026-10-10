@@ -25,7 +25,7 @@ Hoy ese patrón existe repetido en ariadna-web y socrates-app (Next.js local que
 | Tema | Decisión |
 |---|---|
 | Distribución | Una app instalable por harness |
-| Código | Open source (core MIT). Cada dev responde por lo que construye o extiende |
+| Código | Open source (core Apache-2.0). Cada dev responde por lo que construye o extiende |
 | Repos | Monorepo público `humanharness` (core + Socrates de referencia). Paquetes publicados en npm como `@humanharness/*`. Otros harnesses (incluidos los de Marco, como Ariadna) en repos propios |
 | Shell | Electron. Su Node embebido (`ELECTRON_RUN_AS_NODE`) corre adapters npm y servidores MCP sin que el usuario instale Node |
 | Protocolo con el motor | ACP (Agent Client Protocol) para todos los motores |

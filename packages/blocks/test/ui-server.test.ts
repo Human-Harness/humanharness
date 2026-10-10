@@ -17,7 +17,7 @@ afterEach(async () => {
 
 async function connect(received: BlockMessage[]) {
   bridge = await openBridge((m) => received.push(m));
-  const spec = uiServerSpec({ harnessConfig: DEMO, bridge: bridge.path, launcher: devLauncher() });
+  const spec = uiServerSpec({ harnessConfig: DEMO, bridge: { path: bridge.path, token: bridge.token }, launcher: devLauncher() });
   client = new Client({ name: "test", version: "0.0.0" });
   await client.connect(
     new StdioClientTransport({
@@ -43,6 +43,15 @@ describe("ui MCP server", () => {
     const result = await c.callTool({ name: "show_note", arguments: { title: "Hello", body: "World" } });
     expect(result.isError).toBeFalsy();
     expect(received).toEqual([{ name: "note", data: { title: "Hello", body: "World" } }]);
+  });
+
+  it("returns a tool error when the bridge is down", async () => {
+    const c = await connect([]);
+    await bridge?.close();
+    const result = await c.callTool({ name: "show_note", arguments: { title: "Hello", body: "World" } });
+    expect(result.isError).toBe(true);
+    const text = (result.content as { text: string }[])[0].text;
+    expect(text).toMatch(/^Could not reach the app \(.+\)\. The person did not see this; do not retry in a loop\.$/);
   });
 
   it("rejects calls that break the schema and forwards nothing", async () => {

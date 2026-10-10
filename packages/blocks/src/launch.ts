@@ -19,12 +19,12 @@ export function devLauncher(): Launcher {
   return { command: process.execPath, args: ["--import", import.meta.resolve("tsx")], env: {} };
 }
 
-export function uiServerSpec(opts: { harnessConfig: string; bridge: string; launcher: Launcher }): McpServerSpec {
+export function uiServerSpec(opts: { harnessConfig: string; bridge: { path: string; token: string }; launcher: Launcher }): McpServerSpec {
   const entry = fileURLToPath(new URL("./ui-server-bin.ts", import.meta.url));
   return {
     name: "ui",
     command: opts.launcher.command,
     args: [...opts.launcher.args, entry],
-    env: { ...opts.launcher.env, HH_HARNESS: opts.harnessConfig, HH_BRIDGE: opts.bridge },
+    env: { ...opts.launcher.env, HH_HARNESS: opts.harnessConfig, HH_BRIDGE: opts.bridge.path, HH_BRIDGE_TOKEN: opts.bridge.token },
   };
 }

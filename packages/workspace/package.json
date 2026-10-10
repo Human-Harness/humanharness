@@ -1,0 +1,13 @@
+{
+  "name": "@humanharness/workspace",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "MIT",
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": {
+    "@humanharness/engines": "workspace:*",
+    "@humanharness/harness-sdk": "workspace:*",
+    "isomorphic-git": "^1.43.3",
+    "zod": "^4.6.5"
+  }
+}

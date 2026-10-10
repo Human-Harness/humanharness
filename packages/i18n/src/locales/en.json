@@ -32,7 +32,14 @@
     "title": "History",
     "restore": "Go back to this point",
     "empty": "Nothing yet.",
-    "close": "Close"
+    "close": "Close",
+    "confirm": "Go back to this point? Files changed after it will be undone.",
+    "confirmYes": "Yes, go back",
+    "cancel": "Cancel",
+    "restored": "I went back to that point. Files changed after it were undone."
+  },
+  "app": {
+    "loadError": "The app couldn't start. Close it and open it again."
   },
   "errors": {
     "engine-not-installed": "I can't find {{engine}} on this computer.",

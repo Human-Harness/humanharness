@@ -24,7 +24,9 @@ export interface ChatState {
   limits: LimitWindow[] | null;
 }
 
-export type ChatAction = Event | { type: "user"; text: string; at: string } | { type: "loaded"; entries: ChatEntry[] };
+export type ChatAction = Event | { type: "user"; text: string; at: string } | { type: "loaded"; entries: ChatEntry[] }
+  /** A local assistant message that the UI shows but never saves. */
+  | { type: "notice"; text: string; at: string };
 
 export function initialChat(entries: ChatEntry[], stateBlocks: string[] = []): ChatState {
   return { entries, live: null, blockState: {}, stateBlocks: new Set(stateBlocks), limits: null };
@@ -36,7 +38,12 @@ export function reduceChat(state: ChatState, action: ChatAction): ChatState {
   const live = state.live;
   switch (action.type) {
     case "loaded":
-      return { ...state, entries: action.entries };
+      return { ...state, entries: [...action.entries, ...state.entries.filter((e) => !action.entries.some((s) => s.id === e.id))] };
+    case "notice":
+      return {
+        ...state,
+        entries: [...state.entries, { id: newId(), role: "assistant", text: action.text, blocks: [], activities: [], at: action.at }],
+      };
     case "user":
       return {
         ...state,

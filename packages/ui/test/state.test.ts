@@ -52,4 +52,17 @@ describe("reduceChat", () => {
     const s = run([{ type: "limits", status: "allowed", windows }]);
     expect(s.limits).toEqual(windows);
   });
+
+  it("merges loaded entries before the ones already in state", () => {
+    const saved = { id: "1", role: "user" as const, text: "old", blocks: [], activities: [], at: "t" };
+    const s = run([{ type: "user", text: "new", at: "t" }, { type: "loaded", entries: [saved] }]);
+    expect(s.entries.map((e) => e.text)).toEqual(["old", "new"]);
+    expect(run([{ type: "loaded", entries: [saved] }, { type: "loaded", entries: [saved] }]).entries).toHaveLength(1);
+  });
+
+  it("adds a local notice as an assistant entry without starting a turn", () => {
+    const s = run([{ type: "notice", text: "restored", at: "t" }]);
+    expect(s.entries.map((e) => [e.role, e.text])).toEqual([["assistant", "restored"]]);
+    expect(s.live).toBeNull();
+  });
 });

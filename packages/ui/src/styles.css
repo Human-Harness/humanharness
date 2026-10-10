@@ -5,7 +5,7 @@
   --hh-muted: #6b6a66;
   --hh-accent: #2f5d50;
   --hh-accent-text: #ffffff;
-  --hh-border: #e4e1da;
+  --hh-border: #8a877f;
   --hh-error-bg: #fbeaea;
   --hh-radius: 10px;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -18,7 +18,7 @@
     --hh-muted: #a3a29d;
     --hh-accent: #7fb7a4;
     --hh-accent-text: #10201b;
-    --hh-border: #33322f;
+    --hh-border: #6f6c66;
     --hh-error-bg: #3a2222;
   }
 }
@@ -47,3 +47,8 @@ button { font: inherit; border-radius: var(--hh-radius); border: 1px solid var(-
 .hh-history li { display: grid; gap: 4px; margin-bottom: 12px; }
 .hh-history time { color: var(--hh-muted); font-size: 0.8em; }
 @media (max-width: 640px) { .hh-body { grid-template-columns: 1fr; } .hh-side { display: none; } }
+.hh-message p { white-space: pre-wrap; }
+.hh-setup fieldset { border: 1px solid var(--hh-border); border-radius: var(--hh-radius); padding: 12px 16px; }
+.hh-confirm { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.hh-confirm p { flex-basis: 100%; margin: 0; }
+.hh-sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }

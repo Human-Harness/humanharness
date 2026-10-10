@@ -7,13 +7,14 @@ const LANGUAGE_NAMES: Record<Language, string> = { es: "Español", en: "English"
 
 export function SetupScreen({ client, state, onDone }: { client: HarnessClient; state: AppState; onDone: (s: AppState) => void }) {
   const { t, i18n } = useTranslation();
-  const lang = (state.config.language ?? (i18n.language as Language)) || "en";
+  const [lang, setLang] = useState<Language>(() => (state.config.language ?? (i18n.language as Language)) || "en");
   const [folder, setFolder] = useState(state.config.folder ?? state.suggestedFolder);
   const [engineId, setEngineId] = useState(state.config.engineId ?? state.engines[0]?.id);
 
   const changeLanguage = (language: Language) => {
+    setLang(language);
     void i18n.changeLanguage(language);
-    void client.saveConfig({ language });
+    client.saveConfig({ language }).catch(() => {});
   };
   const start = async () => {
     const config: AppConfig = { language: lang, folder, engineId };
@@ -24,26 +25,26 @@ export function SetupScreen({ client, state, onDone }: { client: HarnessClient; 
     <main className="hh-setup">
       <h1>{t("setup.title", { name: state.harness.name[lang] })}</h1>
 
-      <section>
-        <h2>{t("setup.language")}</h2>
+      <fieldset>
+        <legend>{t("setup.language")}</legend>
         {state.harness.languages.map((l) => (
           <label key={l}>
             <input type="radio" name="language" checked={lang === l} onChange={() => changeLanguage(l)} />
             {LANGUAGE_NAMES[l]}
           </label>
         ))}
-      </section>
+      </fieldset>
 
-      <section>
-        <h2>{t("setup.folder")}</h2>
+      <fieldset>
+        <legend>{t("setup.folder")}</legend>
         <p>{t("setup.folderHint")}</p>
         <code>{folder}</code>
         <button onClick={() => void client.pickFolder(folder).then((f) => f && setFolder(f))}>{t("setup.folderChange")}</button>
         <p className="hh-warning">{t("setup.folderWarning")}</p>
-      </section>
+      </fieldset>
 
-      <section>
-        <h2>{t("setup.engine")}</h2>
+      <fieldset>
+        <legend>{t("setup.engine")}</legend>
         <p>{t("setup.engineHint")}</p>
         {state.engines.map((e) => (
           <label key={e.id} className="hh-engine">
@@ -54,7 +55,7 @@ export function SetupScreen({ client, state, onDone }: { client: HarnessClient; 
             {e.status === "pending" && <em>{t("setup.enginePending")}</em>}
           </label>
         ))}
-      </section>
+      </fieldset>
 
       <button className="hh-primary" disabled={!folder || !engineId} onClick={() => void start()}>
         {t("setup.start")}

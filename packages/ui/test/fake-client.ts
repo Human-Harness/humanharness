@@ -7,6 +7,10 @@ export class FakeClient implements HarnessClient {
   cancelled = 0;
   chat: ChatEntry[] = [];
   items: HistoryItem[] = [{ sha: "abc", message: "Turn: hi", date: "2026-10-10T12:00:00.000Z" }];
+  sendError: Error | null = null;
+  stateError: Error | null = null;
+  getStateCalls = 0;
+  loadChatGate: Promise<void> | null = null;
   private listeners = new Set<(e: Event) => void>();
 
   constructor(config: AppConfig = {}) {
@@ -25,6 +29,8 @@ export class FakeClient implements HarnessClient {
   }
 
   async getState() {
+    this.getStateCalls++;
+    if (this.stateError) throw this.stateError;
     return this.state;
   }
   async pickFolder() {
@@ -35,10 +41,12 @@ export class FakeClient implements HarnessClient {
     return this.state;
   }
   async loadChat() {
+    if (this.loadChatGate) await this.loadChatGate;
     return this.chat;
   }
   async send(message: string) {
     this.sent.push(message);
+    if (this.sendError) throw this.sendError;
   }
   async cancel() {
     this.cancelled++;

@@ -32,7 +32,14 @@
     "title": "Historial",
     "restore": "Volver a este punto",
     "empty": "Todavía no hay nada.",
-    "close": "Cerrar"
+    "close": "Cerrar",
+    "confirm": "¿Volver a este punto? Se deshacen los cambios posteriores en tus archivos.",
+    "confirmYes": "Sí, volver",
+    "cancel": "Cancelar",
+    "restored": "Volví a ese punto. Se deshicieron los cambios posteriores en tus archivos."
+  },
+  "app": {
+    "loadError": "La app no pudo arrancar. Cerrala y volvé a abrirla."
   },
   "errors": {
     "engine-not-installed": "No encuentro {{engine}} en esta compu.",

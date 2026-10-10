@@ -2,9 +2,11 @@ packages:
   - "packages/*"
   - "harnesses/*"
 allowBuilds:
+  electron: true
   esbuild: true
 minimumReleaseAgeExclude:
   - "@types/node@26.6.5"
   - isomorphic-git@1.43.3
   - "@agentclientprotocol/sdk@1.8.0"
   - i18next@26.4.3
+  - "@agentclientprotocol/codex-acp@2.2.2"

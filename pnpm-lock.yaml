@@ -188,6 +188,12 @@ importers:
         specifier: ^4.6.5
         version: 4.6.5
 
+  packages/engines:
+    dependencies:
+      '@humanharness/harness-sdk':
+        specifier: workspace:*
+        version: link:../harness-sdk
+
   packages/harness-sdk:
     dependencies:
       zod:

@@ -1,0 +1,8 @@
+{
+  "name": "@humanharness/engines",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "MIT",
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": { "@humanharness/harness-sdk": "workspace:*" }
+}

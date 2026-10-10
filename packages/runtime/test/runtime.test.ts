@@ -82,7 +82,56 @@ describe("createRuntime", () => {
     turn.cancel();
     await turn.done;
     expect(fs.existsSync(path.join(folder, "kept.md"))).toBe(true);
+  }, 10_000);
+
+  it("commits user edits between turns and keeps them when the next turn crashes", async () => {
+    const { runtime, folder } = await setup({
+      steps: [{ write: { path: "README.md", content: "half-written" } }],
+      stderr: "boom",
+      exitCode: 1,
+    });
+    fs.writeFileSync(path.join(folder, "mine.md"), "user edit");
+    const events = await send(runtime);
+    expect(events.at(-1)).toMatchObject({ type: "done", ok: false, error: { code: "agent-crashed" } });
+    expect(fs.readFileSync(path.join(folder, "mine.md"), "utf8")).toBe("user edit");
+    expect(fs.readFileSync(path.join(folder, "README.md"), "utf8")).toContain("demo app");
+    expect((await runtime.history.list()).map((c) => c.message)).toContain("Before message");
   });
+
+  it("emits exactly one failed done when history fails, and recovers on the next turn", async () => {
+    const { runtime, folder } = await setup({ steps: [...claudeTextLines("ok"), claudeResultLine(true)] });
+    const gitdir = path.join(path.dirname(folder), "history.git");
+    fs.writeFileSync(path.join(folder, "mine.md"), "edit");
+    const locked = [
+      [gitdir, 0o500],
+      [path.join(gitdir, "index"), 0o400],
+      [path.join(gitdir, "refs/heads"), 0o500],
+      [path.join(gitdir, "refs/heads/main"), 0o400],
+    ] as const;
+    const modes = locked.map(([p]) => (fs.existsSync(p) ? fs.statSync(p).mode & 0o777 : undefined));
+    for (const [p, m] of locked) if (fs.existsSync(p)) fs.chmodSync(p, m);
+    let events: Event[];
+    try {
+      events = await send(runtime);
+    } finally {
+      locked.forEach(([p], i) => modes[i] !== undefined && fs.chmodSync(p, modes[i]!));
+    }
+    expect(events.filter((e) => e.type === "done")).toHaveLength(1);
+    expect(events.at(-1)).toMatchObject({ type: "done", ok: false, error: { code: "agent-crashed" } });
+    const next = await send(runtime);
+    expect(next.filter((e) => e.type === "done")).toEqual([{ type: "done", ok: true }]);
+  });
+
+  it("close() during a turn cancels it and resolves", async () => {
+    const { folder } = await setup({ steps: [{ write: { path: "kept.md", content: "x" } }, { sleep: 10_000 }] });
+    const events: Event[] = [];
+    const turn = runtime!.send("hi", (e) => events.push(e));
+    while (!fs.existsSync(path.join(folder, "kept.md"))) await new Promise((r) => setTimeout(r, 50));
+    await runtime!.close();
+    await turn.done;
+    expect(events.filter((e) => e.type === "done")).toEqual([{ type: "done", ok: false, error: { code: "cancelled" } }]);
+    runtime = undefined;
+  }, 10_000);
 
   it("persists the session and resumes it in the next runtime", async () => {
     const script: ClaudeScript = { steps: [...claudeTextLines("ok"), claudeResultLine(true)] };

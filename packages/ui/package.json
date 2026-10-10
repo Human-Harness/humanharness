@@ -1,0 +1,23 @@
+{
+  "name": "@humanharness/ui",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "Apache-2.0",
+  "exports": { ".": "./src/index.ts", "./styles.css": "./src/styles.css" },
+  "dependencies": {
+    "@humanharness/harness-sdk": "workspace:*",
+    "@humanharness/i18n": "workspace:*",
+    "@humanharness/runtime": "workspace:*",
+    "i18next": "^26.4.3",
+    "react-i18next": "^17.0.16"
+  },
+  "peerDependencies": { "react": "^19.0.0", "react-dom": "^19.0.0" },
+  "devDependencies": {
+    "@testing-library/react": "^16.3.3",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "happy-dom": "^20.14.6",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  }
+}

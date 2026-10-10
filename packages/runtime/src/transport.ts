@@ -13,6 +13,8 @@ export interface TransportOptions {
   session: Session;
   mcp: McpServerSpec[];
   permissions: Permissions;
+  /** ACP only: session mode to set after session/new|load (e.g. "workspace-write"). */
+  sessionMode?: string;
   /** The CLI to run: [binary, ...leading args]. */
   command: string[];
   /** Extra environment for the CLI (tests and dev only; never credentials). */

@@ -2,6 +2,13 @@ import { describe, expect, it } from "vitest";
 import { ENGINES, availableEngines, getEngine } from "../src";
 
 describe("ENGINES", () => {
+  it("pins the Codex ACP adapter and its session modes", () => {
+    expect(getEngine("codex").transport).toEqual({
+      kind: "acp",
+      command: ["npx", "-y", "@agentclientprotocol/codex-acp@2.2.2"],
+      modes: { edit: "workspace-write", readOnly: "read-only" },
+    });
+  });
   it("has unique ids and a dated source for every status", () => {
     const ids = ENGINES.map((e) => e.id);
     expect(new Set(ids).size).toBe(ids.length);

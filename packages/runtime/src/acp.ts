@@ -1,0 +1,257 @@
+import { type ChildProcess, spawn } from "node:child_process";
+import path from "node:path";
+import { Readable, Writable } from "node:stream";
+import * as acp from "@agentclientprotocol/sdk";
+import type { Permissions } from "@humanharness/harness-sdk";
+import { classifyError } from "./classify";
+import { type ActivityKind, type Event, fail } from "./events";
+import type { Transport, TransportOptions } from "./transport";
+
+type PermissionOption = { optionId: string; kind: string };
+type PermissionRequest = {
+  toolCall: {
+    toolCallId: string;
+    title?: string | null;
+    kind?: string | null;
+    locations?: { path: string }[] | null;
+    rawInput?: unknown;
+  };
+  options: PermissionOption[];
+  _meta?: Record<string, unknown> | null;
+};
+type PermissionResponse = { outcome: { outcome: "selected"; optionId: string } | { outcome: "cancelled" } };
+
+export interface PermissionPolicy {
+  folder: string;
+  permissions: Permissions;
+  /** MCP servers the harness configured (always includes "ui"). */
+  mcpServers: string[];
+  /** Earlier tool_call info by id (Codex permission requests carry only the id). */
+  lookup: (toolCallId: string) => { server?: string } | undefined;
+}
+
+const UI_TITLE = /^mcp(__|\.)ui(__|\.)/;
+
+function serverOf(rawInput: unknown): string | undefined {
+  const server = (rawInput as { server?: unknown } | null | undefined)?.server;
+  return typeof server === "string" ? server : undefined;
+}
+
+/** Block tools of the core `ui` MCP server, as Claude (`mcp__ui__x`) or Codex (`mcp.ui.x`, rawInput.server) report them. */
+export function isUiTool(title: string | null | undefined, rawInput: unknown): boolean {
+  return serverOf(rawInput) === "ui" || UI_TITLE.test(title ?? "");
+}
+
+function inside(folder: string, target: string): boolean {
+  const root = path.resolve(folder);
+  const resolved = path.resolve(root, target);
+  return resolved === root || resolved.startsWith(root + path.sep);
+}
+
+/** Answers ACP permission requests from the harness manifest, without asking the user. Never picks "always" options. */
+export function decidePermission(params: PermissionRequest, policy: PermissionPolicy): PermissionResponse {
+  const { toolCallId, kind, locations, rawInput } = params.toolCall;
+  const isMcp = params._meta?.is_mcp_tool_approval === true || serverOf(rawInput) !== undefined;
+  let allow: boolean;
+  if (isMcp) {
+    const server = serverOf(rawInput) ?? policy.lookup(toolCallId)?.server;
+    allow = server !== undefined && policy.mcpServers.includes(server);
+  } else {
+    const allInside = (locations ?? []).every((l) => inside(policy.folder, l.path));
+    switch (kind) {
+      case "read":
+      case "search":
+      case "think":
+        allow = allInside;
+        break;
+      case "edit":
+      case "delete":
+      case "move":
+        allow = policy.permissions.edit === "folder" && allInside;
+        break;
+      case "fetch":
+        allow = policy.permissions.web;
+        break;
+      default: // "execute", "other", unknown
+        allow = policy.permissions.exec;
+    }
+  }
+  const option = params.options.find((o) => o.kind === (allow ? "allow_once" : "reject_once"));
+  return option ? { outcome: { outcome: "selected", optionId: option.optionId } } : { outcome: { outcome: "cancelled" } };
+}
+
+const KINDS: Record<string, ActivityKind> = {
+  read: "read", search: "search", edit: "edit", delete: "edit", move: "edit", fetch: "web", execute: "exec",
+};
+
+function errorFrom(e: unknown): Event {
+  const err = e as { code?: unknown; message?: string };
+  if (err?.code === "ENOENT") return fail("engine-not-installed", err.message);
+  if (e instanceof acp.RequestError && e.code === -32000) return fail("session-expired", e.message);
+  const message = err?.message ?? String(e);
+  return fail(classifyError(message), message);
+}
+
+type AcpUsage = { inputTokens?: number; outputTokens?: number; cachedReadTokens?: number; cachedWriteTokens?: number };
+
+/** Long-lived ACP agent per window; one `session/prompt` per turn. */
+export class AcpTransport implements Transport {
+  private child?: ChildProcess;
+  private conn?: acp.ClientConnection;
+  private sessionId?: string;
+  private emit: ((e: Event) => void) | null = null;
+  private calls = new Map<string, { server?: string }>();
+  private hidden = new Set<string>();
+  private activities = new Map<string, { kind: ActivityKind; detail: string }>();
+  private afterTool = false;
+
+  constructor(private readonly o: TransportOptions) {}
+
+  private async start(): Promise<void> {
+    const [binary, ...args] = this.o.command;
+    const child = spawn(binary, args, {
+      cwd: this.o.folder,
+      env: { ...process.env, ...this.o.env },
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    this.child = child;
+    child.on("exit", () => this.reset());
+    await new Promise<void>((resolve, reject) => {
+      child.once("spawn", () => resolve());
+      child.once("error", reject);
+    });
+    child.stderr!.resume();
+
+    const policy: PermissionPolicy = {
+      folder: this.o.folder,
+      permissions: this.o.permissions,
+      mcpServers: this.o.mcp.map((s) => s.name),
+      lookup: (id) => this.calls.get(id),
+    };
+    const stream = acp.ndJsonStream(
+      Writable.toWeb(child.stdin!) as WritableStream<Uint8Array>,
+      Readable.toWeb(child.stdout!) as ReadableStream<Uint8Array>,
+    );
+    this.conn = acp
+      .client({ name: "humanharness" })
+      .onRequest("session/request_permission", (ctx) => decidePermission(ctx.params as PermissionRequest, policy) as never)
+      .onNotification("session/update", (ctx) => this.onUpdate(ctx.params.update as Record<string, any>))
+      .connect(stream);
+
+    const agent = this.conn.agent;
+    const init = await agent.request("initialize", {
+      protocolVersion: acp.PROTOCOL_VERSION,
+      clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
+    });
+    const mcpServers = this.o.mcp.map((s) => ({
+      name: s.name,
+      command: s.command,
+      args: s.args,
+      env: Object.entries(s.env).map(([name, value]) => ({ name, value })),
+    }));
+    if (this.o.session.started && init.agentCapabilities?.loadSession) {
+      await agent.request("session/load", { sessionId: this.o.session.id, cwd: this.o.folder, mcpServers });
+      this.sessionId = this.o.session.id;
+    } else {
+      const created = (await agent.request("session/new", { cwd: this.o.folder, mcpServers })) as { sessionId: string };
+      this.sessionId = created.sessionId;
+      this.o.session = { id: created.sessionId, started: true };
+      this.o.onSessionStarted(this.o.session);
+    }
+    if (this.o.sessionMode) {
+      await agent.request("session/set_mode", { sessionId: this.sessionId, modeId: this.o.sessionMode });
+    }
+  }
+
+  private reset(): void {
+    this.conn = undefined;
+    this.child = undefined;
+    this.sessionId = undefined;
+  }
+
+  private onUpdate(u: Record<string, any>): void {
+    const emit = this.emit;
+    if (!emit) return;
+    switch (u.sessionUpdate) {
+      case "agent_message_chunk":
+        if (u.content?.type !== "text" || !u.content.text) return;
+        if (this.afterTool) {
+          emit({ type: "paragraph" });
+          this.afterTool = false;
+        }
+        emit({ type: "text", delta: u.content.text });
+        return;
+      case "tool_call": {
+        this.calls.set(u.toolCallId, { server: serverOf(u.rawInput) });
+        if (u.kind === "think" || isUiTool(u.title, u.rawInput)) {
+          this.hidden.add(u.toolCallId);
+          return;
+        }
+        const activity = { kind: KINDS[u.kind] ?? ("other" as const), detail: String(u.title ?? "") };
+        this.activities.set(u.toolCallId, activity);
+        this.afterTool = true;
+        emit({ type: "activity", id: u.toolCallId, ...activity, state: "start" });
+        return;
+      }
+      case "tool_call_update": {
+        if (this.hidden.has(u.toolCallId)) return;
+        const activity = this.activities.get(u.toolCallId);
+        if (!activity || (u.status !== "completed" && u.status !== "failed")) return;
+        this.activities.delete(u.toolCallId);
+        emit({ type: "activity", id: u.toolCallId, ...activity, state: "end", error: u.status === "failed" });
+        return;
+      }
+    }
+  }
+
+  async turn(message: string, emit: (e: Event) => void, signal: AbortSignal): Promise<void> {
+    if (!this.conn) {
+      try {
+        await this.start();
+      } catch (e) {
+        this.child?.kill();
+        this.reset();
+        emit(errorFrom(e));
+        return;
+      }
+    }
+    const agent = this.conn!.agent;
+    const sessionId = this.sessionId!;
+    this.emit = emit;
+    this.afterTool = false;
+    const onAbort = () => void agent.notify("session/cancel", { sessionId });
+    signal.addEventListener("abort", onAbort, { once: true });
+    try {
+      const pending = agent.request("session/prompt", {
+        sessionId,
+        prompt: [{ type: "text", text: message }],
+      });
+      // The signal may have fired while the agent was starting, before the listener existed.
+      if (signal.aborted) onAbort();
+      const res = (await pending) as { stopReason: string; usage?: AcpUsage | null };
+      if (res.usage) {
+        emit({
+          type: "usage",
+          inputTokens: res.usage.inputTokens ?? 0,
+          outputTokens: res.usage.outputTokens ?? 0,
+          cacheReadTokens: res.usage.cachedReadTokens ?? 0,
+          cacheWriteTokens: res.usage.cachedWriteTokens ?? 0,
+        });
+      }
+      if (res.stopReason === "cancelled" || signal.aborted) emit(fail("cancelled"));
+      else if (res.stopReason === "refusal") emit(fail("agent-crashed", "refusal"));
+      else emit({ type: "done", ok: true });
+    } catch (e) {
+      emit(signal.aborted ? fail("cancelled") : errorFrom(e));
+    } finally {
+      signal.removeEventListener("abort", onAbort);
+      this.emit = null;
+    }
+  }
+
+  async close(): Promise<void> {
+    this.conn?.close();
+    this.child?.kill();
+    this.reset();
+  }
+}

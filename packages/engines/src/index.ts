@@ -4,7 +4,12 @@ export type LegalStatus = "allowed" | "pending" | "excluded";
 
 export type TransportDef =
   | { kind: "claude-cli"; binary: string }
-  | { kind: "acp"; command: string[] };
+  | {
+      kind: "acp";
+      command: string[];
+      /** Session modes to set right after session/new|load, by harness edit permission. */
+      modes?: { edit: string; readOnly: string };
+    };
 
 export interface EngineDef {
   id: string;
@@ -54,8 +59,14 @@ export const ENGINES: readonly EngineDef[] = [
     },
     termsUrl: "https://openai.com/policies/terms-of-use/",
     privacyUrl: "https://openai.com/policies/privacy-policy/",
-    detect: { binary: "codex", versionArgs: ["--version"], minVersion: "0.50.0" },
-    transport: { kind: "acp", command: ["npx", "-y", "@zed-industries/codex-acp"] },
+    // The adapter bundles its own Codex core; `codex` itself is only needed for `codex login`.
+    // minVersion gates the adapter version reported as agentInfo.version at initialize.
+    detect: { binary: "codex", versionArgs: ["--version"], minVersion: "2.2.2" },
+    transport: {
+      kind: "acp",
+      command: ["npx", "-y", "@agentclientprotocol/codex-acp@2.2.2"],
+      modes: { edit: "workspace-write", readOnly: "read-only" },
+    },
   },
   {
     id: "kimi",

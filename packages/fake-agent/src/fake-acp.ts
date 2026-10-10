@@ -12,6 +12,8 @@ const log = (method: string, params: unknown) => {
   if (process.env.HH_FAKE_LOG) appendFileSync(process.env.HH_FAKE_LOG, JSON.stringify({ method, params }) + "\n");
 };
 
+const withUsage = <T extends object>(r: T) => (script.usage ? { ...r, usage: script.usage } : r);
+
 type StdioMcp = { name: string; command: string; args: string[]; env: { name: string; value: string }[] };
 let mcpServers: StdioMcp[] = [];
 let cwd = process.cwd();
@@ -41,6 +43,10 @@ acp
     cwd = ctx.params.cwd;
     return {};
   })
+  .onRequest("session/set_mode", (ctx) => {
+    log("session/set_mode", ctx.params);
+    return {};
+  })
   .onNotification("session/cancel", (ctx) => {
     log("session/cancel", ctx.params);
     cancelled = true;
@@ -50,13 +56,14 @@ acp
     cancelled = false;
     const sessionId = ctx.params.sessionId;
     for (const step of script.turns[turn++] ?? [{ stop: "end_turn" }]) {
-      if (cancelled) return { stopReason: "cancelled" as const };
+      if (cancelled) return withUsage({ stopReason: "cancelled" as const }) as never;
       if ("update" in step) {
         await ctx.client.notify("session/update", { sessionId, update: step.update as never });
       } else if ("permission" in step) {
         const res = await ctx.client.request("session/request_permission", {
           sessionId,
           toolCall: step.permission.toolCall as never,
+          ...(step.permission._meta ? { _meta: step.permission._meta } : {}),
           options: [
             { optionId: "allow", name: "Allow", kind: "allow_once" },
             { optionId: "reject", name: "Reject", kind: "reject_once" },
@@ -76,9 +83,9 @@ acp
       } else if ("error" in step) {
         throw new acp.RequestError(step.error.code, step.error.message);
       } else if ("stop" in step) {
-        return { stopReason: step.stop };
+        return withUsage({ stopReason: step.stop }) as never;
       }
     }
-    return { stopReason: cancelled ? ("cancelled" as const) : ("end_turn" as const) };
+    return withUsage({ stopReason: cancelled ? ("cancelled" as const) : ("end_turn" as const) }) as never;
   })
   .connect(stream);

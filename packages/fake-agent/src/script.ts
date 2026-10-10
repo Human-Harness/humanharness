@@ -23,7 +23,7 @@ export interface ClaudeScript {
 
 export type AcpStep =
   | { update: Record<string, unknown> }
-  | { permission: { toolCall: Record<string, unknown> } }
+  | { permission: { toolCall: Record<string, unknown>; _meta?: Record<string, unknown> } }
   | McpStep
   | WriteStep
   | SleepStep
@@ -33,6 +33,8 @@ export type AcpStep =
 /** Script for fake-acp: one array of steps per prompt turn. */
 export interface AcpScript {
   loadSession?: boolean;
+  /** Returned as `usage` in every prompt response. */
+  usage?: Record<string, number>;
   sessionId?: string;
   turns: AcpStep[][];
 }

@@ -3179,7 +3179,7 @@ export async function createRuntime(opts: RuntimeOptions): Promise<HarnessRuntim
   const transportOptions: TransportOptions = {
     folder,
     session: await readSession(folder, engine.id),
-    mcp: [uiServerSpec({ harnessConfig: harness.configPath, bridge: bridge.path, launcher }), ...harnessMcpServers(harness, launcher)],
+    mcp: [uiServerSpec({ harnessConfig: harness.configPath, bridge, launcher }), ...harnessMcpServers(harness, launcher)],
     permissions: harness.permissions,
     command: opts.command ?? (engine.transport.kind === "claude-cli" ? [engine.transport.binary] : engine.transport.command),
     env: opts.env,

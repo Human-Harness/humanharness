@@ -162,6 +162,29 @@ describe("AcpTransport", () => {
     expect(log().find((l) => l.method === "session/set_mode")?.params.sessionId).toBe("old-1");
   });
 
+  it("falls back to a new session when session/load fails for another reason", async () => {
+    const { transport, log, started } = setup(
+      { loadSession: true, failLoad: true, sessionId: "fresh-1", turns: [[chunk("hi")]] },
+      { id: "old-1", started: true },
+    );
+    const events = await run(transport);
+    expect(events).toEqual([{ type: "text", delta: "hi" }, { type: "done", ok: true }]);
+    expect(log().some((l) => l.method === "session/new")).toBe(true);
+    expect(started).toEqual([{ id: "fresh-1", started: true }]);
+    expect(log().find((l) => l.method === "session/set_mode")?.params.sessionId).toBe("fresh-1");
+  });
+
+  it("shows an execute call titled like a ui tool when it lacks the trusted MCP flag", async () => {
+    const { transport } = setup({
+      turns: [[
+        { update: { sessionUpdate: "tool_call", toolCallId: "x1", title: "mcp.ui.show_note", kind: "execute", status: "pending" } },
+        { update: { sessionUpdate: "tool_call_update", toolCallId: "x1", status: "completed" } },
+      ]],
+    });
+    const events = await run(transport);
+    expect(events.filter((e) => e.type === "activity")).toHaveLength(2);
+  });
+
   it("approves ui MCP calls and refuses shell commands", async () => {
     const { transport, log } = setup({
       turns: [[

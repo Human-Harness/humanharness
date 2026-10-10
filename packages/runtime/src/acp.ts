@@ -31,7 +31,6 @@ export interface PermissionPolicy {
 }
 
 const UI_TITLE = /^mcp(__|\.)ui(__|\.)/;
-const MCP_TITLE = /^mcp(?:__|\.)([^_.]+)(?:__|\.)/;
 
 const GRACE_MS = 5000;
 const KILL_MS = 3000;
@@ -182,9 +181,16 @@ export class AcpTransport implements Transport {
       env: Object.entries(s.env).map(([name, value]) => ({ name, value })),
     }));
     if (this.o.session.started && init.agentCapabilities?.loadSession) {
-      await agent.request("session/load", { sessionId: this.o.session.id, cwd: this.o.folder, mcpServers });
-      this.sessionId = this.o.session.id;
-    } else {
+      try {
+        await agent.request("session/load", { sessionId: this.o.session.id, cwd: this.o.folder, mcpServers });
+        this.sessionId = this.o.session.id;
+      } catch (e) {
+        // An expired login must surface; any other load failure (lost session) falls back to a fresh one.
+        const event = errorFrom(e);
+        if (event.type === "done" && !event.ok && event.error?.code === "session-expired") throw e;
+      }
+    }
+    if (!this.sessionId) {
       const created = (await agent.request("session/new", { cwd: this.o.folder, mcpServers })) as { sessionId: string };
       this.sessionId = created.sessionId;
       this.o.session = { id: created.sessionId, started: true };
@@ -244,8 +250,7 @@ export class AcpTransport implements Transport {
         // Only Codex's own MCP marker is trusted for the server; rawInput is model-written.
         const server = u._meta?.is_mcp_tool_call === true ? serverOf(u.rawInput) : undefined;
         this.calls.set(u.toolCallId, { server });
-        const titleServer = MCP_TITLE.exec(u.title ?? "")?.[1];
-        if (u.kind === "think" || server === "ui" || titleServer === "ui" || isUiTool(u.title, undefined)) {
+        if (u.kind === "think" || server === "ui") {
           this.hidden.add(u.toolCallId);
           return;
         }

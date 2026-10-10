@@ -44,6 +44,7 @@ acp
   })
   .onRequest("session/load", (ctx) => {
     log("session/load", ctx.params);
+    if (script.failLoad) throw new acp.RequestError(-32603, "Session not found");
     mcpServers = (ctx.params.mcpServers ?? []) as StdioMcp[];
     cwd = ctx.params.cwd;
     return {};

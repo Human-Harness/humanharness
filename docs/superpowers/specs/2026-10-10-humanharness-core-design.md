@@ -225,7 +225,9 @@ Nunca hay credenciales de suscripción en CI.
 - Windows y Linux (empaquetado, firma, prerrequisitos de cada CLI).
 - Modo API key (solo si el gate legal lo exige).
 
-## 13. Pendientes que bloquean la implementación
+## 13. Pendientes y qué bloquea cada uno
 
 1. **Investigación legal por motor** (Anthropic, OpenAI, Google, Qwen, Kimi y coding plans): define el `estado` de cada uno. Incluye la revisión del descargo y las advertencias de privacidad para motores con datos fuera de la región del usuario.
-2. **Spike de ACP** con cada motor candidato (sección 5).
+   - **Bloquea solo la distribución** de builds firmados de harnesses oficiales a usuarios finales (y que un motor aparezca como `permitido` en el onboarding).
+   - **No bloquea** el repo público, los paquetes npm, el harness de referencia ni el uso por parte de devs: el framework se publica igual, y cada dev decide bajo su responsabilidad con qué motor lo corre. En modo desarrollo (`pnpm dev`) se pueden usar motores en `pendiente`.
+2. **Spike de ACP** con cada motor candidato (sección 5). Bloquea la implementación del motor; es la primera tarea del plan.

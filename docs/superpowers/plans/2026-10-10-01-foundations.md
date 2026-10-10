@@ -1666,12 +1666,31 @@ export interface EngineError {
   detail?: string;
 }
 
+/** One plan-limit window as reported by the engine (e.g. Claude's five_hour / seven_day). */
+export interface LimitWindow {
+  kind: string;
+  /** 0..1 share of the window already used. */
+  utilization: number;
+  /** ISO timestamp when the window resets. */
+  resetsAt: string;
+}
+
 /** Normalized events every transport emits. Each turn ends with exactly one `done`. */
 export type Event =
   | { type: "text"; delta: string }
   | { type: "paragraph" }
   | { type: "activity"; id: string; kind: ActivityKind; detail: string; state: "start" | "end"; error?: boolean }
   | { type: "block"; name: string; data: unknown }
+  | { type: "limits"; status: string; windows: LimitWindow[] }
+  | {
+      type: "usage";
+      inputTokens: number;
+      outputTokens: number;
+      cacheReadTokens: number;
+      cacheWriteTokens: number;
+      /** API-equivalent cost when the engine reports it. Not what the user pays. */
+      costEquivalentUsd?: number;
+    }
   | { type: "done"; ok: true }
   | { type: "done"; ok: false; error: EngineError };
 
@@ -2230,6 +2249,54 @@ describe("ClaudeCliTransport", () => {
     ]);
   });
 
+  it("reports plan limits and token usage", async () => {
+    const { transport } = setup({
+      steps: [
+        {
+          line: {
+            type: "rate_limit_event",
+            rate_limit_info: {
+              status: "allowed",
+              unifiedWindows: {
+                five_hour: { utilization: 0.16, resetsAt: 1791648000 },
+                seven_day: { utilization: 0.09, resetsAt: 1792004400 },
+              },
+            },
+          },
+        },
+        ...claudeTextLines("ok"),
+        {
+          line: {
+            type: "result",
+            subtype: "success",
+            is_error: false,
+            result: "ok",
+            total_cost_usd: 0.07,
+            usage: { input_tokens: 6, output_tokens: 142, cache_read_input_tokens: 44968, cache_creation_input_tokens: 6812 },
+          },
+        },
+      ],
+    });
+    const events = await run(transport);
+    expect(events).toContainEqual({
+      type: "limits",
+      status: "allowed",
+      windows: [
+        { kind: "five_hour", utilization: 0.16, resetsAt: new Date(1791648000 * 1000).toISOString() },
+        { kind: "seven_day", utilization: 0.09, resetsAt: new Date(1792004400 * 1000).toISOString() },
+      ],
+    });
+    expect(events).toContainEqual({
+      type: "usage",
+      inputTokens: 6,
+      outputTokens: 142,
+      cacheReadTokens: 44968,
+      cacheWriteTokens: 6812,
+      costEquivalentUsd: 0.07,
+    });
+    expect(events.at(-1)).toEqual({ type: "done", ok: true });
+  });
+
   it("separates text blocks with a paragraph event", async () => {
     const { transport } = setup({ steps: [...claudeTextLines("One"), ...claudeTextLines("Two"), claudeResultLine(true)] });
     const events = await run(transport);
@@ -2355,6 +2422,17 @@ export class StreamJsonReader {
     if (typeof o.session_id === "string") this.onSessionId(o.session_id);
     if ((o.parent_tool_use_id ?? null) !== null) return;
 
+    if (o.type === "rate_limit_event") {
+      const info = o.rate_limit_info ?? {};
+      const windows = Object.entries((info.unifiedWindows ?? {}) as Record<string, any>).map(([kind, w]) => ({
+        kind,
+        utilization: Number(w.utilization),
+        resetsAt: new Date(Number(w.resetsAt) * 1000).toISOString(),
+      }));
+      this.emit({ type: "limits", status: String(info.status ?? "allowed"), windows });
+      return;
+    }
+
     if (o.type === "stream_event") {
       const ev = o.event ?? {};
       if (ev.type === "content_block_start" && ev.content_block?.type === "text") {
@@ -2390,8 +2468,20 @@ export class StreamJsonReader {
       return;
     }
 
-    if (o.type === "result" && (o.is_error || (o.subtype && o.subtype !== "success"))) {
-      this.resultError = (typeof o.result === "string" && o.result) || "Claude Code could not finish the request.";
+    if (o.type === "result") {
+      if (o.usage) {
+        this.emit({
+          type: "usage",
+          inputTokens: o.usage.input_tokens ?? 0,
+          outputTokens: o.usage.output_tokens ?? 0,
+          cacheReadTokens: o.usage.cache_read_input_tokens ?? 0,
+          cacheWriteTokens: o.usage.cache_creation_input_tokens ?? 0,
+          ...(typeof o.total_cost_usd === "number" ? { costEquivalentUsd: o.total_cost_usd } : {}),
+        });
+      }
+      if (o.is_error || (o.subtype && o.subtype !== "success")) {
+        this.resultError = (typeof o.result === "string" && o.result) || "Claude Code could not finish the request.";
+      }
     }
   }
 }

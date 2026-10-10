@@ -167,6 +167,23 @@ All errors are typed and always come with an action for the user:
 | `cancelled` | — | Stop the turn; changes are kept and can be undone from History |
 | `outdated-version` | "{engine} needs an update" | Update |
 
+### Usage awareness
+
+Harnesses can trigger token-heavy workflows, and the user pays with their plan's limits. Every app helps the user understand where they stand **before** and **after** spending.
+
+**Data (only what the engine reports; never estimated from credentials or provider accounts):**
+- `limits` event: plan windows with utilization (0–1) and reset time. Claude reports them in every turn through stream-json's `rate_limit_event` (`five_hour` and `seven_day` windows, verified in the spike). Codex/ACP: to be confirmed in the Codex spike; if an engine doesn't report limits, the UI says so instead of inventing numbers.
+- `usage` event: per-turn tokens (input, output, cache read/write) and, when reported, the API-equivalent cost (Claude's `total_cost_usd`). Shown as relative weight, never as money the user pays.
+- Local log `<folder>/.harness/usage.jsonl`: per turn, the action that triggered it, tokens, and the change in each limit window. Never leaves the machine.
+
+**Harness contract:** the manifest declares its heavy actions with a cost hint, e.g. `actions: { research: { label: {…}, cost: "heavy" } }`. The UI tags turns with the action that started them.
+
+**UI (plan 2):**
+- A compact meter, always visible: "5 h: 16 % used · resets 15:00 — week: 9 %".
+- Before a `heavy` action: an estimate calibrated from the local log ("this usually uses about 8 % of your 5-hour window; you have 84 % left"), with Continue / Not now. Before there is history, the harness's cost hint is shown in words.
+- Warnings at 80 % and 95 % of a window; at `out-of-quota`, the reset time and the conversation kept.
+- Onboarding explains in one screen what each plan tier allows in practice for this harness (e.g. Pro vs Max), using the harness's own description.
+
 ## 7. Folder, instructions and history (`packages/workspace`)
 
 - **Folder:** suggested by the manifest (e.g. `Documents/Socrates`), chosen during onboarding and stored in the app config. It cannot be changed later. The first time, `folder.seed` is copied into it.

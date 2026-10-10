@@ -25,7 +25,7 @@ The pattern already exists, duplicated, in ariadna-web and socrates-app (a local
 | Topic | Decision |
 |---|---|
 | Distribution | One installable app per harness |
-| Code | Open source (core under MIT). Each developer is responsible for what they build or extend |
+| Code | Open source (core under Apache-2.0). Each developer is responsible for what they build or extend |
 | Language | Code identifiers, docs and Markdown in English. The apps' UI ships in es and en |
 | Repos | Public monorepo `humanharness` (core + Socrates as reference). Packages published to npm as `@humanharness/*`. Other harnesses (including Marco's, like Ariadna) live in their own repos |
 | Shell | Electron. Its embedded Node (`ELECTRON_RUN_AS_NODE`) runs npm adapters and MCP servers without the user installing Node |

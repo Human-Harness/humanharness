@@ -2,7 +2,7 @@
   "name": "@humanharness/runtime",
   "version": "0.1.0",
   "type": "module",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "exports": { ".": "./src/index.ts" },
   "dependencies": {
     "@agentclientprotocol/sdk": "^1.8.0",

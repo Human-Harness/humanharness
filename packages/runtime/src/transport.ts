@@ -15,6 +15,8 @@ export interface TransportOptions {
   permissions: Permissions;
   /** ACP only: session mode to set after session/new|load (e.g. "workspace-write"). */
   sessionMode?: string;
+  /** ACP only: fail with `outdated-version` if the adapter reports an older agentInfo.version. */
+  minAdapterVersion?: string;
   /** The CLI to run: [binary, ...leading args]. */
   command: string[];
   /** Extra environment for the CLI (tests and dev only; never credentials). */

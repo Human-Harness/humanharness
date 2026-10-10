@@ -31,6 +31,22 @@ export interface PermissionPolicy {
 }
 
 const UI_TITLE = /^mcp(__|\.)ui(__|\.)/;
+const MCP_TITLE = /^mcp(?:__|\.)([^_.]+)(?:__|\.)/;
+
+const GRACE_MS = 5000;
+const KILL_MS = 3000;
+const STDERR_KEEP = 4096;
+
+class OutdatedAdapterError extends Error {}
+
+function versionLess(a: string, b: string): boolean {
+  const parse = (v: string) => v.split(/[-+]/)[0].split(".").map((n) => Number.parseInt(n, 10) || 0);
+  const [x, y] = [parse(a), parse(b)];
+  for (let i = 0; i < 3; i++) {
+    if ((x[i] ?? 0) !== (y[i] ?? 0)) return (x[i] ?? 0) < (y[i] ?? 0);
+  }
+  return false;
+}
 
 function serverOf(rawInput: unknown): string | undefined {
   const server = (rawInput as { server?: unknown } | null | undefined)?.server;
@@ -51,10 +67,11 @@ function inside(folder: string, target: string): boolean {
 /** Answers ACP permission requests from the harness manifest, without asking the user. Never picks "always" options. */
 export function decidePermission(params: PermissionRequest, policy: PermissionPolicy): PermissionResponse {
   const { toolCallId, kind, locations, rawInput } = params.toolCall;
-  const isMcp = params._meta?.is_mcp_tool_approval === true || serverOf(rawInput) !== undefined;
+  // rawInput is model-written: only the recorded server of a trusted tool_call counts.
+  const recorded = params._meta?.is_mcp_tool_approval === true ? policy.lookup(toolCallId)?.server : undefined;
   let allow: boolean;
-  if (isMcp) {
-    const server = serverOf(rawInput) ?? policy.lookup(toolCallId)?.server;
+  if (recorded !== undefined) {
+    const server = recorded;
     allow = server !== undefined && policy.mcpServers.includes(server);
   } else {
     const allInside = (locations ?? []).every((l) => inside(policy.folder, l.path));
@@ -67,7 +84,7 @@ export function decidePermission(params: PermissionRequest, policy: PermissionPo
       case "edit":
       case "delete":
       case "move":
-        allow = policy.permissions.edit === "folder" && allInside;
+        allow = policy.permissions.edit === "folder" && (locations ?? []).length > 0 && allInside;
         break;
       case "fetch":
         allow = policy.permissions.web;
@@ -84,11 +101,14 @@ const KINDS: Record<string, ActivityKind> = {
   read: "read", search: "search", edit: "edit", delete: "edit", move: "edit", fetch: "web", execute: "exec",
 };
 
-function errorFrom(e: unknown): Event {
+function errorFrom(e: unknown, stderr = ""): Event {
   const err = e as { code?: unknown; message?: string };
   if (err?.code === "ENOENT") return fail("engine-not-installed", err.message);
+  if (e instanceof OutdatedAdapterError) return fail("outdated-version", e.message);
   if (e instanceof acp.RequestError && e.code === -32000) return fail("session-expired", e.message);
   const message = err?.message ?? String(e);
+  // A plain (non-RPC) error means the connection closed under us: the agent's stderr says why.
+  if (!(e instanceof acp.RequestError) && stderr.trim()) return fail(classifyError(`${message}\n${stderr}`), stderr.trim());
   return fail(classifyError(message), message);
 }
 
@@ -104,6 +124,7 @@ export class AcpTransport implements Transport {
   private hidden = new Set<string>();
   private activities = new Map<string, { kind: ActivityKind; detail: string }>();
   private afterTool = false;
+  private stderrTail = "";
 
   constructor(private readonly o: TransportOptions) {}
 
@@ -113,14 +134,21 @@ export class AcpTransport implements Transport {
       cwd: this.o.folder,
       env: { ...process.env, ...this.o.env },
       stdio: ["pipe", "pipe", "pipe"],
+      detached: process.platform !== "win32",
     });
     this.child = child;
-    child.on("exit", () => this.reset());
+    this.stderrTail = "";
+    child.on("exit", () => {
+      if (this.child === child) this.reset();
+    });
     await new Promise<void>((resolve, reject) => {
       child.once("spawn", () => resolve());
       child.once("error", reject);
     });
-    child.stderr!.resume();
+    child.on("error", () => {}); // late errors (e.g. a failed kill) must not be uncaught
+    child.stderr!.on("data", (d: Buffer) => {
+      this.stderrTail = (this.stderrTail + d.toString()).slice(-STDERR_KEEP);
+    });
 
     const policy: PermissionPolicy = {
       folder: this.o.folder,
@@ -143,6 +171,10 @@ export class AcpTransport implements Transport {
       protocolVersion: acp.PROTOCOL_VERSION,
       clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
     });
+    const version = (init as { agentInfo?: { version?: string } | null }).agentInfo?.version;
+    if (this.o.minAdapterVersion && version && versionLess(version, this.o.minAdapterVersion)) {
+      throw new OutdatedAdapterError(`ACP adapter ${version} is older than required ${this.o.minAdapterVersion}`);
+    }
     const mcpServers = this.o.mcp.map((s) => ({
       name: s.name,
       command: s.command,
@@ -167,6 +199,33 @@ export class AcpTransport implements Transport {
     this.conn = undefined;
     this.child = undefined;
     this.sessionId = undefined;
+    this.calls.clear();
+    this.hidden.clear();
+    this.activities.clear();
+  }
+
+  private signalGroup(child: ChildProcess, sig: NodeJS.Signals): void {
+    try {
+      if (process.platform !== "win32" && child.pid) process.kill(-child.pid, sig);
+      else child.kill(sig);
+    } catch {
+      try {
+        child.kill(sig);
+      } catch {}
+    }
+  }
+
+  /** SIGTERM the process group, SIGKILL after a delay; resolves when the child has exited. */
+  private async terminate(child: ChildProcess): Promise<void> {
+    if (child.exitCode !== null || child.signalCode !== null) return;
+    await new Promise<void>((resolve) => {
+      const timer = setTimeout(() => this.signalGroup(child, "SIGKILL"), KILL_MS);
+      child.once("exit", () => {
+        clearTimeout(timer);
+        resolve();
+      });
+      this.signalGroup(child, "SIGTERM");
+    });
   }
 
   private onUpdate(u: Record<string, any>): void {
@@ -182,8 +241,11 @@ export class AcpTransport implements Transport {
         emit({ type: "text", delta: u.content.text });
         return;
       case "tool_call": {
-        this.calls.set(u.toolCallId, { server: serverOf(u.rawInput) });
-        if (u.kind === "think" || isUiTool(u.title, u.rawInput)) {
+        // Only Codex's own MCP marker is trusted for the server; rawInput is model-written.
+        const server = u._meta?.is_mcp_tool_call === true ? serverOf(u.rawInput) : undefined;
+        this.calls.set(u.toolCallId, { server });
+        const titleServer = MCP_TITLE.exec(u.title ?? "")?.[1];
+        if (u.kind === "think" || server === "ui" || titleServer === "ui" || isUiTool(u.title, undefined)) {
           this.hidden.add(u.toolCallId);
           return;
         }
@@ -205,28 +267,42 @@ export class AcpTransport implements Transport {
   }
 
   async turn(message: string, emit: (e: Event) => void, signal: AbortSignal): Promise<void> {
+    this.calls.clear();
+    this.hidden.clear();
+    this.activities.clear();
     if (!this.conn) {
       try {
         await this.start();
       } catch (e) {
-        this.child?.kill();
-        this.reset();
-        emit(errorFrom(e));
+        const event = errorFrom(e, this.stderrTail);
+        await this.close();
+        emit(event);
         return;
       }
     }
+    if (signal.aborted) {
+      emit(fail("cancelled"));
+      return;
+    }
     const agent = this.conn!.agent;
+    const child = this.child!;
     const sessionId = this.sessionId!;
     this.emit = emit;
     this.afterTool = false;
-    const onAbort = () => void agent.notify("session/cancel", { sessionId });
+    let grace: ReturnType<typeof setTimeout> | undefined;
+    const onAbort = () => {
+      void agent.notify("session/cancel", { sessionId });
+      // An agent that ignores the cancel must not hang the turn.
+      grace ??= setTimeout(() => void this.terminate(child), GRACE_MS);
+    };
     signal.addEventListener("abort", onAbort, { once: true });
+    let expired = false;
     try {
       const pending = agent.request("session/prompt", {
         sessionId,
         prompt: [{ type: "text", text: message }],
       });
-      // The signal may have fired while the agent was starting, before the listener existed.
+      // The signal may have fired while the prompt was being sent.
       if (signal.aborted) onAbort();
       const res = (await pending) as { stopReason: string; usage?: AcpUsage | null };
       if (res.usage) {
@@ -242,16 +318,25 @@ export class AcpTransport implements Transport {
       else if (res.stopReason === "refusal") emit(fail("agent-crashed", "refusal"));
       else emit({ type: "done", ok: true });
     } catch (e) {
-      emit(signal.aborted ? fail("cancelled") : errorFrom(e));
+      if (signal.aborted) emit(fail("cancelled"));
+      else {
+        const event = errorFrom(e, this.stderrTail);
+        expired = event.type === "done" && !event.ok && event.error?.code === "session-expired";
+        emit(event);
+      }
     } finally {
+      clearTimeout(grace);
       signal.removeEventListener("abort", onAbort);
       this.emit = null;
     }
+    // Close after an expired login so the next turn starts a fresh process that sees a new login.
+    if (expired) await this.close();
   }
 
   async close(): Promise<void> {
+    const child = this.child;
     this.conn?.close();
-    this.child?.kill();
     this.reset();
+    if (child) await this.terminate(child);
   }
 }

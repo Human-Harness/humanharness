@@ -7,7 +7,9 @@ describe("ENGINES", () => {
       kind: "acp",
       command: ["npx", "-y", "@agentclientprotocol/codex-acp@2.2.2"],
       modes: { edit: "workspace-write", readOnly: "read-only" },
+      minAdapterVersion: "2.2.2",
     });
+    expect(getEngine("codex").detect.minVersion).toBe("0.160.1");
   });
   it("has unique ids and a dated source for every status", () => {
     const ids = ENGINES.map((e) => e.id);

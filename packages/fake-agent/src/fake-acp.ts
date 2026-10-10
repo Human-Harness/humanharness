@@ -19,6 +19,7 @@ let mcpServers: StdioMcp[] = [];
 let cwd = process.cwd();
 let turn = 0;
 let cancelled = false;
+let wake: (() => void) | undefined;
 
 const stream = acp.ndJsonStream(
   Writable.toWeb(process.stdout) as WritableStream<Uint8Array>,
@@ -29,7 +30,11 @@ acp
   .agent({ name: "fake-acp" })
   .onRequest("initialize", (ctx) => {
     log("initialize", ctx.params);
-    return { protocolVersion: acp.PROTOCOL_VERSION, agentCapabilities: { loadSession: Boolean(script.loadSession) } };
+    return {
+      protocolVersion: acp.PROTOCOL_VERSION,
+      agentCapabilities: { loadSession: Boolean(script.loadSession) },
+      ...(script.agentVersion ? { agentInfo: { name: "fake-acp", version: script.agentVersion } } : {}),
+    };
   })
   .onRequest("session/new", (ctx) => {
     log("session/new", ctx.params);
@@ -50,6 +55,7 @@ acp
   .onNotification("session/cancel", (ctx) => {
     log("session/cancel", ctx.params);
     cancelled = true;
+    wake?.();
   })
   .onRequest("session/prompt", async (ctx) => {
     log("session/prompt", ctx.params);
@@ -79,7 +85,14 @@ acp
         mkdirSync(path.dirname(file), { recursive: true });
         writeFileSync(file, step.write.content);
       } else if ("sleep" in step) {
-        await new Promise((r) => setTimeout(r, step.sleep));
+        await new Promise<void>((resolve) => {
+          const timer = setTimeout(resolve, step.sleep);
+          wake = step.ignoreCancel ? undefined : () => (clearTimeout(timer), resolve());
+        });
+        wake = undefined;
+      } else if ("crash" in step) {
+        process.stderr.write(step.crash.stderr, () => process.exit(step.crash.code ?? 1));
+        await new Promise(() => {});
       } else if ("error" in step) {
         throw new acp.RequestError(step.error.code, step.error.message);
       } else if ("stop" in step) {

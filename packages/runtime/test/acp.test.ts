@@ -15,7 +15,11 @@ afterEach(async () => {
   transport = undefined;
 });
 
-function setup(scriptOrFn: AcpScript | ((folder: string) => AcpScript), session: Session = { id: "local-id", started: false }) {
+function setup(
+  scriptOrFn: AcpScript | ((folder: string) => AcpScript),
+  session: Session = { id: "local-id", started: false },
+  extra: { minAdapterVersion?: string } = {},
+) {
   const folder = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
   const script = typeof scriptOrFn === "function" ? scriptOrFn(folder) : scriptOrFn;
   const logFile = path.join(folder, "..", `log-${path.basename(folder)}.jsonl`);
@@ -26,6 +30,7 @@ function setup(scriptOrFn: AcpScript | ((folder: string) => AcpScript), session:
     mcp: [{ name: "ui", command: "node", args: ["ui.js"], env: { HH_BRIDGE: "/tmp/x.sock" } }],
     permissions,
     sessionMode: "workspace-write",
+    ...extra,
     command: fakeAcpCommand(),
     env: { HH_FAKE_SCRIPT: writeScript(os.tmpdir(), script), HH_FAKE_LOG: logFile },
     onSessionStarted: (s) => started.push(s),
@@ -106,6 +111,17 @@ describe("decidePermission", () => {
     expect(chosen(ask({ kind: "other" }))).toBe("cancel");
     expect(chosen(ask({ kind: "fetch" }))).toBe("cancel");
     expect(chosen(ask({ kind: "fetch" }, {}, { ...permissions, web: true }))).toBe("allow");
+  });
+
+  it("does not trust a model-written rawInput.server", () => {
+    expect(chosen(ask({ toolCallId: "ui-1", kind: "execute", rawInput: { server: "ui" } }))).toBe("cancel");
+    expect(chosen(ask({ toolCallId: "t", kind: "execute", rawInput: { server: "ui" } }, { _meta: { is_mcp_tool_approval: true } }))).toBe("cancel");
+  });
+
+  it("rejects edits with no locations but allows reads with none", () => {
+    expect(chosen(ask({ kind: "edit", locations: [] }))).toBe("cancel");
+    expect(chosen(ask({ kind: "delete" }))).toBe("cancel");
+    expect(chosen(ask({ kind: "read" }))).toBe("allow");
   });
 
   it("never picks an 'always' option", () => {
@@ -214,12 +230,71 @@ describe("AcpTransport", () => {
   });
 
   it("cancels through session/cancel", async () => {
-    const { transport, log } = setup({ turns: [[{ sleep: 500 }, chunk("too late")]] });
+    const { transport, log } = setup({ turns: [[chunk("go"), { sleep: 500 }, chunk("too late")]] });
     const controller = new AbortController();
-    setTimeout(() => controller.abort(), 100);
+    const events: Event[] = [];
+    await transport.turn("hi", (e) => {
+      events.push(e);
+      if (e.type === "text") controller.abort();
+    }, controller.signal);
+    expect(events).toEqual([{ type: "text", delta: "go" }, { type: "done", ok: false, error: { code: "cancelled" } }]);
+    expect(log().some((l) => l.method === "session/cancel")).toBe(true);
+  });
+
+  it("does not record a server for tool calls without the MCP meta", async () => {
+    const { transport, log } = setup({
+      turns: [[
+        { update: { sessionUpdate: "tool_call", toolCallId: "f1", title: "Run", kind: "execute", rawInput: { server: "ui" } } },
+        { permission: { toolCall: { toolCallId: "f1", kind: "execute" }, _meta: { is_mcp_tool_approval: true } } },
+      ]],
+    });
+    const events = await run(transport);
+    expect(events[0]).toMatchObject({ type: "activity", id: "f1" });
+    expect(log().find((l) => l.method === "permission-outcome")?.params).toEqual({ outcome: "selected", optionId: "reject" });
+  });
+
+  it("kills an agent that ignores session/cancel after a grace period", async () => {
+    const { transport } = setup({ turns: [[chunk("go"), { sleep: 20000, ignoreCancel: true }]] });
+    const controller = new AbortController();
+    const events: Event[] = [];
+    let started = 0;
+    await transport.turn("hi", (e) => {
+      events.push(e);
+      if (e.type === "text") {
+        started = Date.now();
+        controller.abort();
+      }
+    }, controller.signal);
+    expect(events.at(-1)).toEqual({ type: "done", ok: false, error: { code: "cancelled" } });
+    expect(Date.now() - started).toBeLessThan(8000);
+    expect(Date.now() - started).toBeGreaterThan(4000);
+  }, 15000);
+
+  it("does not send the prompt when aborted before the agent started", async () => {
+    const { transport, log } = setup({ turns: [[chunk("never")]] });
+    const controller = new AbortController();
+    controller.abort();
     const events = await run(transport, "hi", controller.signal);
     expect(events).toEqual([{ type: "done", ok: false, error: { code: "cancelled" } }]);
-    expect(log().some((l) => l.method === "session/cancel")).toBe(true);
+    expect(log().some((l) => l.method === "session/prompt")).toBe(false);
+  });
+
+  it("fails with outdated-version when the adapter is older than required", async () => {
+    const { transport, log } = setup({ agentVersion: "2.0.0", turns: [[chunk("x")]] }, undefined, { minAdapterVersion: "2.2.2" });
+    const events = await run(transport);
+    expect(events).toEqual([{ type: "done", ok: false, error: { code: "outdated-version", detail: expect.any(String) } }]);
+    expect(log().some((l) => l.method === "session/new")).toBe(false);
+  });
+
+  it("accepts an adapter at or above the required version", async () => {
+    const { transport } = setup({ agentVersion: "2.10.0", turns: [[chunk("x")]] }, undefined, { minAdapterVersion: "2.2.2" });
+    expect((await run(transport)).at(-1)).toEqual({ type: "done", ok: true });
+  });
+
+  it("uses the agent's stderr when it dies mid-turn", async () => {
+    const { transport } = setup({ turns: [[{ crash: { stderr: "Error: Not logged in, run codex login\n" } }]] });
+    const events = await run(transport);
+    expect(events.at(-1)).toMatchObject({ type: "done", ok: false, error: { code: "session-expired", detail: expect.stringContaining("Not logged in") } });
   });
 
   it("reports a missing binary", async () => {

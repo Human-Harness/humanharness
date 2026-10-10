@@ -10,6 +10,8 @@ export interface WriteStep {
 }
 export interface SleepStep {
   sleep: number;
+  /** fake-acp only: keep sleeping even after session/cancel. */
+  ignoreCancel?: boolean;
 }
 
 export type ClaudeStep = { line: unknown } | McpStep | WriteStep | SleepStep;
@@ -28,6 +30,8 @@ export type AcpStep =
   | WriteStep
   | SleepStep
   | { error: { code: number; message: string } }
+  /** Writes `stderr` and exits the process (simulates an agent crash). */
+  | { crash: { stderr: string; code?: number } }
   | { stop: "end_turn" | "cancelled" | "refusal" };
 
 /** Script for fake-acp: one array of steps per prompt turn. */
@@ -36,6 +40,8 @@ export interface AcpScript {
   /** Returned as `usage` in every prompt response. */
   usage?: Record<string, number>;
   sessionId?: string;
+  /** Reported as agentInfo.version at initialize. */
+  agentVersion?: string;
   turns: AcpStep[][];
 }
 

@@ -39,3 +39,33 @@ Re-run after reinstalling codex and `codex login` (ChatGPT). The old `@zed-indus
 - Session mode: default is `agent` (Auto review, no prompts for either the MCP call or workspace writes; a guardian model reviews risky actions). For a controlled harness use `workspace-write` via `session/set_mode` right after `session/new`: edits inside cwd need no approval, MCP calls still arrive as permission requests (the harness approves `ui` calls itself). `read-only` asks for every write and MCP call. Avoid `agent-full-access`. Note the default `agent` may reflect the user's own Codex config, so always set the mode explicitly.   (Task 11/12)
 - Usage / limits for Codex: token usage only (`usage_update` context used/size during the turn; `usage` and `_meta.quota.token_count` on the prompt response). No plan rate-limit windows or reset times observed, so the UI must treat limits as unavailable for Codex (show tokens/context only). Claude has full five_hour / seven_day utilization.   (Task 11)
 - `loadSession` is true and verified: persist the ACP `sessionId` and resume with `session/load` (re-pass `cwd` and `mcpServers`, re-set the mode).   (Task 11)
+
+## Plan 1 end-to-end
+
+Run on 2026-10-10 with `corepack pnpm hh-dev --harness harnesses/demo/harness.config.ts ...` against the real engines (claude 2.1.296, codex-acp 2.2.2). The dev CLI also prints `limits` and `usage` events.
+
+### Claude
+
+- Turn 1: `--folder /tmp/hh-demo-claude --engine claude --language en "Make a note titled Groceries with milk and bread."`
+  - Blocks: `[note] {"title":"Groceries","body":"- Milk\n- Bread"}` and `[progress] {"percent":100}` both arrived; `· edit: Groceries.md` activity; `✓ done`.
+  - `[limits] five_hour 27% (resets 01:00:00) · seven_day 10%` and `[usage] in 8 · out 379 · cache read 63046` arrived.
+  - Files: `notes/Groceries.md`, `README.md`, `AGENTS.md`, `CLAUDE.md`, `.harness/session.json`.
+  - History: `Turn: Make a note titled Groceries with milk and bread. ← Start`.
+- Turn 2: `"Add eggs to the note."` (same folder)
+  - Session resumed: the agent knew the note and emitted `[note]` with `- Milk\n- Bread\n- Eggs`; `Groceries.md` now has all three items. `[progress]`, `[limits]`, `[usage] in 6 · out 303 · cache read 53934`, `✓ done`.
+  - History: `Turn: Add eggs to the note. ← Turn: Make a note titled Groceries... ← Start`.
+- Errors: none.
+
+### Codex
+
+- `--folder /tmp/hh-demo-codex --engine codex --language es "Hacé una nota que se llame Compras con leche y pan."`
+  - Answered in Spanish; `[note]` and `[progress] {"percent":100}` blocks arrived; `· exec:` activity (shell write); `✓ done`.
+  - `[usage] in 14473 · out 514 · cache read 70400` arrived. No `limits` event (as expected for Codex, see Decisions).
+  - Files: `notes/Compras con leche y pan.md`, `README.md`, `AGENTS.md`, `.harness/session.json`.
+  - Resume not tested for Codex (single turn, per plan).
+  - Errors: none.
+
+### Observations
+
+- The agent titled the Codex note "Compras con leche y pan" instead of "Compras" (model interpretation of the prompt, not a runtime issue).
+- The dev CLI's history gitdir is `~/.humanharness/dev/history/<harness.id>`, shared across `--folder`s, so the Codex run's history list also showed entries from the Claude folder (`Start`, `Turn: Add eggs to the note.`). Dev-only quirk.

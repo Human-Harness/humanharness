@@ -85,6 +85,12 @@ describe("loadHarness", () => {
     fs.writeFileSync(file, "export const x = 1;");
     await expect(loadHarness(file)).rejects.toThrow(`${file} has no default export`);
   });
+
+  it("accepts a root override for compiled manifests", async () => {
+    const h = await loadHarness(DEMO, { root: "/somewhere/else" });
+    expect(h.root).toBe("/somewhere/else");
+    expect(h.configPath).toBe(DEMO);
+  });
 });
 
 describe("resolveInHarness", () => {

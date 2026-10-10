@@ -10,6 +10,8 @@ import { readSession, writeSession } from "./session-store";
 import type { Transport, TransportOptions } from "./transport";
 
 export interface RuntimeOptions {
+  /** Built `ui` MCP server entry (app). Defaults to the TS source (dev). */
+  uiServerEntry?: string;
   harness: LoadedHarness;
   engine: EngineDef;
   /** The user's visible folder. */
@@ -72,7 +74,7 @@ export async function createRuntime(opts: RuntimeOptions): Promise<HarnessRuntim
     const transportOptions: TransportOptions = {
       folder,
       session,
-      mcp: [uiServerSpec({ harnessConfig: harness.configPath, bridge, launcher }), ...harnessMcpServers(harness, launcher)],
+      mcp: [uiServerSpec({ harnessConfig: harness.configPath, bridge, launcher, entry: opts.uiServerEntry }), ...harnessMcpServers(harness, launcher)],
       permissions: harness.permissions,
       sessionMode:
         engine.transport.kind === "acp"

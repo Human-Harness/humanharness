@@ -73,12 +73,12 @@ export interface LoadedHarness extends Harness {
   configPath: string;
 }
 
-export async function loadHarness(configPath: string): Promise<LoadedHarness> {
+export async function loadHarness(configPath: string, options: { root?: string } = {}): Promise<LoadedHarness> {
   const absolute = path.resolve(configPath);
   const mod = (await import(pathToFileURL(absolute).href)) as { default?: unknown };
   if (mod.default === undefined) throw new Error(`${absolute} has no default export`);
   const harness = manifestSchema.parse(mod.default);
-  return { ...harness, root: path.dirname(absolute), configPath: absolute };
+  return { ...harness, root: options.root ? path.resolve(options.root) : path.dirname(absolute), configPath: absolute };
 }
 
 export function resolveInHarness(harness: LoadedHarness, relative: string): string {

@@ -39,6 +39,16 @@ describe("managedSection", () => {
     expect(s).toContain("`update_progress`");
     expect(s).toContain('{"title":"Hi"}');
     expect(s).toContain('"percent"');
+    expect(s).not.toContain("$schema");
+  });
+
+  it("leads the tools section with a one-line intro", () => {
+    expect(managedSection({ language: "es", blocks })).toContain(
+      "Llamá estas herramientas para mostrarle cosas a la persona o actualizar su estado.",
+    );
+    expect(managedSection({ language: "en", blocks })).toContain(
+      "Call these tools to show things to the person or update their state.",
+    );
   });
 });
 
@@ -63,6 +73,13 @@ describe("writeInstructions", () => {
     const written = await writeInstructions({ folder, base: "x", language: "en", blocks, engine: getEngine("codex") });
     expect(written).toEqual(["AGENTS.md"]);
     expect(fs.existsSync(path.join(folder, "CLAUDE.md"))).toBe(false);
+  });
+
+  it("rejects an engine file path that is not a plain file name", async () => {
+    const engine = { ...getEngine("codex"), instructionsFile: { path: "../evil.md", content: "x" } };
+    await expect(
+      writeInstructions({ folder: tmp(), base: "x", language: "en", blocks, engine }),
+    ).rejects.toThrow();
   });
 
   it("is idempotent", async () => {

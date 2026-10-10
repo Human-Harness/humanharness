@@ -88,4 +88,59 @@ describe("History", () => {
     expect(entries.map((e) => e.message)).toEqual(["two", "one"]);
     expect(entries[0].date).toBeInstanceOf(Date);
   });
+
+  it("detects a same-size rewrite right after a save", async () => {
+    write("a.md", "1");
+    expect(await history.save("one")).not.toBeNull();
+    write("a.md", "2");
+    expect(await history.save("two")).toMatch(/^[0-9a-f]{40}$/);
+  });
+
+  it("restore leaves unchanged files untouched", async () => {
+    write("a.md", "1");
+    write("b.md", "b");
+    const before = (await history.save("before"))!;
+    const old = new Date("2020-01-01T00:00:00Z");
+    fs.utimesSync(path.join(folder, "b.md"), old, old);
+    write("a.md", "2");
+    await history.restore(before, "undo");
+    expect(read("a.md")).toBe("1");
+    expect(fs.statSync(path.join(folder, "b.md")).mtime.getTime()).toBe(old.getTime());
+  });
+
+  it("restore never writes ignored paths from old commits", async () => {
+    const loose = new History(folder, gitdir, []);
+    write(".harness/session.json", "old");
+    write("a.md", "1");
+    const old = (await loose.save("with ignored"))!;
+    write(".harness/session.json", "current");
+    await history.restore(old, "undo");
+    expect(read(".harness/session.json")).toBe("current");
+  });
+
+  it("restore prunes directories it empties but keeps the root", async () => {
+    write("a.md", "1");
+    const before = (await history.save("before"))!;
+    write("x/y/z.md", "z");
+    await history.save("more");
+    await history.restore(before, "undo");
+    expect(fs.existsSync(path.join(folder, "x"))).toBe(false);
+    expect(fs.existsSync(folder)).toBe(true);
+    const empty = (await history.list()).at(-1)!.sha;
+    await history.restore(empty, "back");
+    expect(fs.existsSync(folder)).toBe(true);
+  });
+
+  it("serializes overlapping save and restore", async () => {
+    write("a.md", "1");
+    const before = (await history.save("before"))!;
+    write("a.md", "2");
+    write("c.md", "new");
+    const [saved, restored] = await Promise.all([history.save("turn"), history.restore(before, "undo")]);
+    expect(saved).not.toBeNull();
+    expect(restored).not.toBeNull();
+    expect(read("a.md")).toBe("1");
+    expect(fs.existsSync(path.join(folder, "c.md"))).toBe(false);
+    expect(await history.save("noop")).toBeNull();
+  });
 });

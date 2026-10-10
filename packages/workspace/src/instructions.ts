@@ -7,7 +7,7 @@ import { type Block, type Language, blockToolName } from "@humanharness/harness-
 export const MANAGED_START = "<!-- humanharness:start -->";
 export const MANAGED_END = "<!-- humanharness:end -->";
 
-const TEXT: Record<Language, { title: string; rules: string[]; tools: string; example: string; schema: string }> = {
+const TEXT: Record<Language, { title: string; rules: string[]; tools: string; toolsIntro: string; example: string; schema: string }> = {
   es: {
     title: "## Entorno (lo genera Human Harness; no editar)",
     rules: [
@@ -17,6 +17,7 @@ const TEXT: Record<Language, { title: string; rules: string[]; tools: string; ex
       "Trabajá solo dentro de esta carpeta. Mensajes cortos y claros.",
     ],
     tools: "### Herramientas de interfaz",
+    toolsIntro: "Llamá estas herramientas para mostrarle cosas a la persona o actualizar su estado.",
     example: "Ejemplo",
     schema: "Schema",
   },
@@ -29,22 +30,28 @@ const TEXT: Record<Language, { title: string; rules: string[]; tools: string; ex
       "Work only inside this folder. Keep messages short and clear.",
     ],
     tools: "### Interface tools",
+    toolsIntro: "Call these tools to show things to the person or update their state.",
     example: "Example",
     schema: "Schema",
   },
 };
+
+function toolSchema(schema: Block["schema"]): string {
+  const { $schema: _omit, ...rest } = z.toJSONSchema(schema) as Record<string, unknown>;
+  return JSON.stringify(rest);
+}
 
 export function managedSection(opts: { language: Language; blocks: Record<string, Block> }): string {
   const t = TEXT[opts.language];
   const lines = [MANAGED_START, t.title, "", ...t.rules.map((r) => `- ${r}`)];
   const entries = Object.entries(opts.blocks);
   if (entries.length > 0) {
-    lines.push("", t.tools, "");
+    lines.push("", t.tools, "", t.toolsIntro, "");
     for (const [name, block] of entries) {
       lines.push(
         `- \`${blockToolName(name, block)}\`: ${block.description}`,
         `  ${t.example}: \`${JSON.stringify(block.example)}\``,
-        `  ${t.schema}: \`${JSON.stringify(z.toJSONSchema(block.schema))}\``,
+        `  ${t.schema}: \`${toolSchema(block.schema)}\``,
       );
     }
   }
@@ -60,6 +67,10 @@ export async function writeInstructions(opts: {
   blocks: Record<string, Block>;
   engine: EngineDef;
 }): Promise<string[]> {
+  const extraPath = opts.engine.instructionsFile?.path;
+  if (extraPath !== undefined && path.basename(extraPath) !== extraPath) {
+    throw new Error(`Engine instructions file must be a plain file name, got "${extraPath}"`);
+  }
   await fs.mkdir(opts.folder, { recursive: true });
   const agents = `${opts.base.trimEnd()}\n\n${managedSection({ language: opts.language, blocks: opts.blocks })}`;
   await fs.writeFile(path.join(opts.folder, "AGENTS.md"), agents);

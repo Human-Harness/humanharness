@@ -1,0 +1,46 @@
+{
+  "setup": {
+    "title": "Preparemos {{name}}",
+    "language": "Idioma",
+    "folder": "Tu carpeta",
+    "folderHint": "Acá se guarda tu trabajo.",
+    "folderChange": "Elegir otra carpeta",
+    "folderWarning": "No muevas, renombres ni edites esta carpeta a mano: la app depende de ella.",
+    "engine": "Motor de IA",
+    "engineHint": "Usa tu propia cuenta. Asegurate de tener la sesión iniciada en su app en esta compu.",
+    "engineRequires": "Necesitás: {{plan}}",
+    "engineData": "Tus datos van a: {{where}}",
+    "enginePending": "Todavía no habilitado para distribución (solo desarrollo)",
+    "start": "Empezar"
+  },
+  "chat": {
+    "placeholder": "Escribí un mensaje…",
+    "send": "Enviar",
+    "stop": "Detener",
+    "working": "Trabajando…",
+    "you": "Vos"
+  },
+  "activity": {
+    "read": "Leyendo {{detail}}",
+    "edit": "Editando {{detail}}",
+    "search": "Buscando {{detail}}",
+    "web": "Consultando {{detail}}",
+    "exec": "Ejecutando {{detail}}",
+    "other": "Trabajando en {{detail}}"
+  },
+  "history": {
+    "title": "Historial",
+    "restore": "Volver a este punto",
+    "empty": "Todavía no hay nada.",
+    "close": "Cerrar"
+  },
+  "errors": {
+    "engine-not-installed": "No encuentro {{engine}} en esta compu.",
+    "session-expired": "Se cerró tu sesión de {{engine}}. Volvé a entrar en la app de {{engine}} y reintentá.",
+    "out-of-quota": "Llegaste al límite de tu plan por ahora. Tu conversación quedó guardada; probá más tarde.",
+    "agent-crashed": "Algo falló y no cambié nada.",
+    "cancelled": "Detenido.",
+    "outdated-version": "Hace falta actualizar {{engine}}.",
+    "retry": "Reintentar"
+  }
+}

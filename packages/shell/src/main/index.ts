@@ -310,7 +310,11 @@ function registerIpc() {
       const cli = step === "install" ? null : await cliCommand(engine, commandDeps);
       const cmd = setupCommand(engine, step, cli, await loginShellPath(commandDeps));
       if (!cmd) return { ok: false };
-      if (step === "logout") await dropRuntime();
+      if (step === "logout") {
+        // A turn may have started while the command was being found.
+        if (turns.isBusy()) throw new Error("A turn is running");
+        await dropRuntime();
+      }
       if (quitting) throw new Error("The app is closing");
       const run = runSetupProcess(cmd, (output) => sendToWindow("hh:setupOutput", output));
       setupRun = run;

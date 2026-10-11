@@ -29,16 +29,26 @@ export function SettingsSheet({
 }) {
   const { t } = useTranslation();
   const doneRef = useRef<HTMLButtonElement>(null);
+  const sheetRef = useRef<HTMLDivElement>(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
 
   useEffect(() => {
+    // Whatever opened the sheet (the gear, the engine pill) gets focus back when it closes.
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     doneRef.current?.focus();
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onCloseRef.current();
+      const sheet = sheetRef.current;
+      if (!sheet) return;
+      // An install or sign-in in progress (aria-busy) keeps the sheet open: Escape is too easy to hit by accident.
+      if (e.key === "Escape" && !sheet.querySelector('[aria-busy="true"]')) onCloseRef.current();
+      if (e.key === "Tab") trapTab(sheet, e);
     };
     document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      if (opener?.isConnected) opener.focus();
+    };
   }, []);
 
   return (
@@ -48,7 +58,7 @@ export function SettingsSheet({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="hh-sheet" role="dialog" aria-modal="true" aria-label={t("settings.title")}>
+      <div ref={sheetRef} className="hh-sheet" role="dialog" aria-modal="true" aria-label={t("settings.title")}>
         <div className="hh-sheet-head">
           <div className="hh-segmented" role="tablist" aria-label={t("settings.title")}>
             {TABS.map((id) => (
@@ -69,6 +79,27 @@ export function SettingsSheet({
       </div>
     </div>
   );
+}
+
+const FOCUSABLE = 'button:not([disabled]), a[href], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+/** Keeps Tab and Shift+Tab cycling inside the sheet (it is modal). */
+function trapTab(sheet: HTMLElement, e: KeyboardEvent) {
+  const items = [...sheet.querySelectorAll<HTMLElement>(FOCUSABLE)];
+  if (items.length === 0) return;
+  const first = items[0];
+  const last = items[items.length - 1];
+  const active = document.activeElement;
+  if (!sheet.contains(active)) {
+    e.preventDefault();
+    first.focus();
+  } else if (e.shiftKey && active === first) {
+    e.preventDefault();
+    last.focus();
+  } else if (!e.shiftKey && active === last) {
+    e.preventDefault();
+    first.focus();
+  }
 }
 
 function GeneralTab({ client, state, onChange }: { client: HarnessClient; state: AppState; onChange: (s: AppState) => void }) {

@@ -330,6 +330,16 @@ describe("HarnessApp", () => {
     expect(screen.getByRole("button", { name: "Start Demo" })).toBeTruthy();
   });
 
+  it("gives focus back to the gear when Settings closes", async () => {
+    render(<HarnessApp client={new FakeClient(ready)} />);
+    const gear = await screen.findByRole("button", { name: "Settings" });
+    gear.focus();
+    fireEvent.click(gear);
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Done" }));
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    expect(document.activeElement).toBe(gear);
+  });
+
   it("shows a signed-out engine as not connected, and the pill leads to sign-in", async () => {
     const client = new FakeClient(ready);
     client.status = { ...client.status, loggedIn: false };

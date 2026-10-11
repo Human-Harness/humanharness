@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AppState } from "../src/client";
@@ -31,6 +31,35 @@ describe("SettingsSheet", () => {
     fireEvent.click(screen.getByRole("button", { name: "Done" }));
     fireEvent.keyDown(document, { key: "Escape" });
     expect(onClose).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps Tab inside the sheet", async () => {
+    await renderIn("en", <Sheet client={new FakeClient(ready)} />);
+    const dialog = screen.getByRole("dialog", { name: "Settings" });
+    const focusable = [...dialog.querySelectorAll<HTMLElement>("button, a[href], input, textarea, select")];
+    const [first, last] = [focusable[0], focusable.at(-1)!];
+    last.focus();
+    fireEvent.keyDown(last, { key: "Tab" });
+    expect(document.activeElement).toBe(first);
+    fireEvent.keyDown(first, { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(last);
+  });
+
+  it("ignores Escape while a setup step is running", async () => {
+    const client = new FakeClient(ready);
+    client.status = { ...client.status, loggedIn: false };
+    let finish!: () => void;
+    client.setupGate = new Promise((r) => (finish = r));
+    const onClose = vi.fn();
+    await renderIn("en", <Sheet client={client} initialTab="engine" onClose={onClose} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Sign in" }));
+    await screen.findByText(/Finish signing in on your browser/);
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(onClose).not.toHaveBeenCalled();
+    await act(async () => finish());
+    await waitFor(() => expect(screen.queryByText(/Finish signing in on your browser/)).toBeNull());
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it("General: changes language and appearance, shows the fixed folder and the About card", async () => {

@@ -288,6 +288,9 @@ importers:
       '@humanharness/ui':
         specifier: workspace:*
         version: link:../ui
+      '@humanharness/workspace':
+        specifier: workspace:*
+        version: link:../workspace
     devDependencies:
       '@types/react':
         specifier: ^19.3.0

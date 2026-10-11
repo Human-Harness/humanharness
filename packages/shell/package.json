@@ -15,7 +15,8 @@
     "@humanharness/engines": "workspace:*",
     "@humanharness/harness-sdk": "workspace:*",
     "@humanharness/runtime": "workspace:*",
-    "@humanharness/ui": "workspace:*"
+    "@humanharness/ui": "workspace:*",
+    "@humanharness/workspace": "workspace:*"
   },
   "devDependencies": {
     "@types/react": "^19.3.0",

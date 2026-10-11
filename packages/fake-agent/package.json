@@ -1,0 +1,12 @@
+{
+  "name": "@humanharness/fake-agent",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "Apache-2.0",
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": {
+    "@agentclientprotocol/sdk": "^1.8.0",
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "tsx": "^4.23.15"
+  }
+}

@@ -1,0 +1,5 @@
+node_modules/
+dist/
+tmp-spike/
+.DS_Store
+*.log

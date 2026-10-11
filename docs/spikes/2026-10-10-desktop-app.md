@@ -32,3 +32,14 @@ Same folder as Claude (the tester did not switch folders), engine changed to Cod
 - **Raw shell commands in the activity list.** Codex reports `exec` activities with the full command (`pwd && rg --files …`), which non-technical users should not see. Fixed: `activity.exec` is now a fixed phrase ("Revisando la carpeta…" / "Checking the folder…"); the command stays in the chat log.
 - **Engine switch in the same folder.** The UI shows the earlier Claude conversation, but Codex starts a fresh session and does not know it. Acceptable for 2a (the engine is chosen once). Follow-up for 2b: when the engine changes, either start a new chat or hand the new engine a short summary.
 - **Sandbox warning.** Launching from the Claude Code sandbox prints `sandbox_extension_issue_file failed … Electron Helper.app/Contents/Resources: 1 (Operation not permitted)`. Harmless: the window opens and works.
+
+## After the review fixes (2026-10-11)
+
+Fresh config, Claude, same folder as before.
+
+| Check | Result |
+|---|---|
+| Earlier conversation restored after picking the existing folder | OK |
+| Plain chat turn | OK |
+| Cmd+Q during a turn: turn saved as `cancelled`, app quits without hanging | OK |
+| Earlier run: `~/Documents` rejected; cancel right after send stops the turn in ~1 s; closing the window mid-turn keeps the entry in the log | OK |

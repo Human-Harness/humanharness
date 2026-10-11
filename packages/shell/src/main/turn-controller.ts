@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { type Event, type HarnessRuntime, type RunningTurn, fail } from "@humanharness/runtime";
-import type { ChatEntry } from "@humanharness/ui/client";
+import type { ChatEntry, SendOptions } from "@humanharness/ui/client";
 import { TurnRecorder } from "./chat-log";
 
 type Done = Extract<Event, { type: "done" }>;
@@ -9,17 +9,26 @@ export interface ChatLogLike {
   append(entry: ChatEntry): Promise<void>;
 }
 
+/** Thrown by `ensureRuntime` when the engine can't run turns: the turn ends with this error code. */
+export class EngineUnavailable extends Error {
+  constructor(readonly code: "engine-not-installed" | "outdated-version" | "session-expired") {
+    super(`The engine can't run: ${code}`);
+  }
+}
+
 export interface TurnDeps {
-  /** Starts (or returns) the runtime. Null when the engine CLI isn't installed. */
+  /** Starts (or returns) the runtime. Null when the engine CLI isn't installed. May throw EngineUnavailable. */
   ensureRuntime: () => Promise<HarnessRuntime | null>;
   /** The chat log of the configured folder, or null when the app isn't configured yet. */
   chatLog: () => Promise<ChatLogLike | null>;
   stateBlocks: () => Set<string>;
   /** Sends an event to the window. May throw (window gone): that never loses the log entry. */
   emit: (e: Event) => void;
+  /** Saves the finished turn's usage (usage.jsonl). Failures are logged, never thrown. */
+  recordUsage?: (entry: ChatEntry, action: string | undefined) => Promise<void>;
 }
 
-/** One message's lifecycle: log, start the runtime, run the turn, log the reply, then tell the window. */
+/** One message's lifecycle: log, start the runtime, run the turn, log the reply and its usage, then tell the window. */
 export class TurnController {
   private turn: { cancelled: boolean; running: RunningTurn | null } | null = null;
   private writes: Promise<void> = Promise.resolve();
@@ -56,23 +65,33 @@ export class TurnController {
   }
 
   /** Rejects when the app is closing, a turn is already running, or the app isn't set up. */
-  send(message: string): Promise<void> {
+  send(message: string, options: SendOptions = {}): Promise<void> {
     if (this.closed) return Promise.reject(new Error("The app is closing"));
     if (this.turn) return Promise.reject(new Error("A turn is already running"));
-    this.active = this.run(message);
+    this.active = this.run(message, options.action);
     return this.active;
   }
 
-  private async run(message: string): Promise<void> {
+  private async run(message: string, action: string | undefined): Promise<void> {
     const turn: { cancelled: boolean; running: RunningTurn | null } = { cancelled: false, running: null };
     this.turn = turn;
     try {
       const log = await this.deps.chatLog();
       if (!log) throw new Error("The app is not set up yet");
-      void this.write(log, { id: randomUUID(), role: "user", text: message, blocks: [], activities: [], at: new Date().toISOString() });
+      void this.write(log, {
+        id: randomUUID(),
+        role: "user",
+        text: message,
+        blocks: [],
+        activities: [],
+        at: new Date().toISOString(),
+        ...(action ? { action } : {}),
+      });
       const recorder = new TurnRecorder(this.deps.stateBlocks());
       const finish = async (done: Done) => {
-        await this.write(log, recorder.finish(done));
+        const entry = recorder.finish(done);
+        await this.write(log, entry);
+        await this.recordUsage(entry, action);
         this.emit(done);
       };
 
@@ -81,6 +100,7 @@ export class TurnController {
       try {
         rt = await this.deps.ensureRuntime();
       } catch (e) {
+        if (e instanceof EngineUnavailable) return await finish(fail(e.code) as Done);
         return await finish(fail("agent-crashed", e instanceof Error ? e.message : String(e)) as Done);
       }
       if (turn.cancelled) return await finish(fail("cancelled") as Done);
@@ -106,6 +126,14 @@ export class TurnController {
       this.deps.emit(e);
     } catch (err) {
       console.error("Could not send an event to the window", err);
+    }
+  }
+
+  private async recordUsage(entry: ChatEntry, action: string | undefined): Promise<void> {
+    try {
+      await this.deps.recordUsage?.(entry, action);
+    } catch (err) {
+      console.error("Could not save usage", err);
     }
   }
 

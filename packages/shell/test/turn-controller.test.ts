@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Event, HarnessRuntime } from "@humanharness/runtime";
 import type { ChatEntry } from "@humanharness/ui";
-import { TurnController, memoise } from "../src/main/turn-controller";
+import { EngineUnavailable, TurnController, memoise } from "../src/main/turn-controller";
 
 type Emit = (e: Event) => void;
 
@@ -229,5 +229,78 @@ describe("memoise", () => {
     expect(await m.get()).toBeNull();
     expect(await m.get()).toBe("ok");
     expect(fn).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe("TurnController usage and actions", () => {
+  it("tags the turn with its action and records usage before telling the window", async () => {
+    const fake = fakeRuntime();
+    const order: string[] = [];
+    const entries: ChatEntry[] = [];
+    const recorded: [ChatEntry, string | undefined][] = [];
+    const controller = new TurnController({
+      ensureRuntime: async () => fake.runtime,
+      chatLog: async () => ({
+        append: async (e) => {
+          entries.push(e);
+          order.push(`log:${e.role}`);
+        },
+      }),
+      stateBlocks: () => new Set(["progress"]),
+      emit: (e) => order.push(`emit:${e.type}`),
+      recordUsage: async (entry, action) => {
+        recorded.push([entry, action]);
+        order.push("usage");
+      },
+    });
+    const sent = controller.send("tidy up", { action: "tidy" });
+    await vi.waitFor(() => expect(fake.send).toHaveBeenCalled());
+    const windows = [{ kind: "five_hour", utilization: 0.2, resetsAt: "2026-10-11T15:00:00.000Z" }];
+    fake.finish([
+      { type: "block", name: "progress", data: { percent: 50 } },
+      { type: "limits", status: "allowed", windows },
+      { type: "usage", inputTokens: 10, outputTokens: 5, cacheReadTokens: 100, cacheWriteTokens: 0 },
+      { type: "done", ok: true },
+    ]);
+    await sent;
+    expect(entries[0]).toMatchObject({ role: "user", text: "tidy up", action: "tidy" });
+    expect(entries[1]).toMatchObject({
+      role: "assistant",
+      usage: { inputTokens: 10, outputTokens: 5, cacheReadTokens: 100, cacheWriteTokens: 0 },
+      limits: windows,
+      state: { progress: { percent: 50 } },
+    });
+    expect(recorded).toEqual([[entries[1], "tidy"]]);
+    expect(order.slice(-3)).toEqual(["log:assistant", "usage", "emit:done"]);
+  });
+
+  it("still ends the turn when recording usage fails", async () => {
+    const fake = fakeRuntime();
+    const events: Event[] = [];
+    const controller = new TurnController({
+      ensureRuntime: async () => fake.runtime,
+      chatLog: async () => ({ append: async () => {} }),
+      stateBlocks: () => new Set(),
+      emit: (e) => events.push(e),
+      recordUsage: async () => {
+        throw new Error("disk full");
+      },
+    });
+    const sent = controller.send("hi");
+    await vi.waitFor(() => expect(fake.send).toHaveBeenCalled());
+    fake.finish([{ type: "done", ok: true }]);
+    await sent;
+    expect(events.at(-1)).toEqual({ type: "done", ok: true });
+  });
+
+  it("ends the turn with the engine's own error when it can't run", async () => {
+    const { controller, events, entries } = setup({
+      ensureRuntime: async () => {
+        throw new EngineUnavailable("outdated-version");
+      },
+    });
+    await controller.send("hi");
+    expect(events.at(-1)).toEqual({ type: "done", ok: false, error: { code: "outdated-version" } });
+    expect(entries.at(-1)?.error).toEqual({ code: "outdated-version" });
   });
 });

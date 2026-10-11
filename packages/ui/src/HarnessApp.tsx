@@ -2,9 +2,9 @@ import { type ComponentType, type ReactNode, useCallback, useEffect, useRef, use
 import { I18nextProvider } from "react-i18next";
 import type { i18n } from "i18next";
 import { type Locales, createI18n } from "@humanharness/i18n";
-import { ChatView } from "./ChatView";
+import { ChatView, type SendFn } from "./ChatView";
 import { TopBar } from "./chrome";
-import { type AppState, type EngineStatus, type HarnessClient, type LimitWindow, isConfigured } from "./client";
+import { type AppState, type EngineStatus, type HarnessClient, type LimitWindow, engineProblem, isConfigured } from "./client";
 import { Home } from "./Home";
 import type { BlockProps } from "./Message";
 import { type SettingsTab, SettingsSheet } from "./SettingsSheet";
@@ -13,7 +13,8 @@ export interface HarnessAppProps {
   client: HarnessClient;
   blocks?: Record<string, ComponentType<BlockProps>>;
   stateBlocks?: string[];
-  renderSide?: (blockState: Record<string, unknown>) => ReactNode;
+  /** The side panel: gets the latest state blocks and `send` for buttons that start harness actions. */
+  renderSide?: (blockState: Record<string, unknown>, send: SendFn) => ReactNode;
   locales?: Locales;
 }
 
@@ -139,7 +140,18 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
   return (
     <I18nextProvider i18n={i18n}>
       {screen === "work" && configured ? (
-        <ChatView key={engineId} client={client} state={state} components={blocks} stateBlocks={stateBlocks} renderSide={renderSide} />
+        <ChatView
+          key={engineId}
+          client={client}
+          state={state}
+          components={blocks}
+          stateBlocks={stateBlocks}
+          renderSide={renderSide}
+          engineProblem={status ? engineProblem(status) : null}
+          onHome={() => setScreen("home")}
+          onSettings={() => setSettings("general")}
+          onFixEngine={() => setSettings("engine")}
+        />
       ) : (
         <Home
           state={state}

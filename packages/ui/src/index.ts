@@ -3,3 +3,4 @@ export * from "./state";
 export * from "./usage";
 export { HarnessApp, type HarnessAppProps } from "./HarnessApp";
 export type { BlockProps } from "./Message";
+export type { SendFn } from "./ChatView";

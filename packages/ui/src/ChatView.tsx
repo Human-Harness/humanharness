@@ -1,15 +1,20 @@
-import { type ComponentType, type FormEvent, useEffect, useLayoutEffect, useReducer, useRef, useState } from "react";
+import { type ComponentType, type FormEvent, type ReactNode, useEffect, useLayoutEffect, useReducer, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ActivityList } from "./ActivityList";
-import { TopBar } from "./chrome";
-import type { AppState, HarnessClient } from "./client";
-import { ErrorCard } from "./ErrorCard";
+import { GearIcon, TopBar } from "./chrome";
+import type { AppState, EngineProblem, HarnessClient, SendOptions } from "./client";
+import { ErrorCard, problemError } from "./ErrorCard";
+import { uiLanguage } from "./FolderStep";
 import { HistoryPanel } from "./HistoryPanel";
 import { type BlockProps, Blocks, Message } from "./Message";
 import { initialChat, reduceChat } from "./state";
+import { UsageMeter } from "./UsageMeter";
+import { type Preflight, lastTurnTokens, percent, preflight } from "./usage";
 
 /** How close to the bottom (px) the user must be for new content to keep the chat pinned. */
 const STICK_THRESHOLD = 80;
+
+export type SendFn = (text: string, options?: SendOptions) => boolean;
 
 export function ChatView({
   client,
@@ -17,28 +22,51 @@ export function ChatView({
   components,
   stateBlocks,
   renderSide,
+  engineProblem,
+  onHome,
+  onSettings,
+  onFixEngine,
 }: {
   client: HarnessClient;
   state: AppState;
   components: Record<string, ComponentType<BlockProps>>;
   stateBlocks: string[];
-  renderSide?: (blockState: Record<string, unknown>) => React.ReactNode;
+  renderSide?: (blockState: Record<string, unknown>, send: SendFn) => ReactNode;
+  /** What the background check found wrong with the engine, if anything. */
+  engineProblem?: EngineProblem | null;
+  onHome?: () => void;
+  onSettings?: () => void;
+  onFixEngine?: () => void;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [chat, dispatch] = useReducer(reduceChat, undefined, () => initialChat([], stateBlocks));
   const [draft, setDraft] = useState("");
   const [showHistory, setShowHistory] = useState(false);
   const [announcement, setAnnouncement] = useState("");
+  const [estimates, setEstimates] = useState<Record<string, number>>({});
+  const [pending, setPending] = useState<{ text: string; options: SendOptions; check: Preflight } | null>(null);
   const chatRef = useRef<HTMLElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const stick = useRef(true);
   // Set synchronously on send so two quick clicks can't both pass before the live turn renders.
   const busy = useRef(false);
   const wasLive = useRef(false);
-  const engine = state.engines.find((e) => e.id === state.config.engineId)?.name ?? state.config.engineId ?? "";
+  const lang = uiLanguage(state, i18n.language);
+  const engineOption = state.engines.find((e) => e.id === state.config.engineId);
+  const engine = engineOption?.name ?? state.config.engineId ?? "";
 
   useEffect(() => {
-    void client.loadChat().then(({ entries }) => dispatch({ type: "loaded", entries }));
+    void client.loadChat().then(({ entries, switchedFrom }) => {
+      dispatch({ type: "loaded", entries });
+      if (switchedFrom) dispatch({ type: "notice", text: t("chat.switched", { engine }), at: new Date().toISOString() });
+    });
+    client.getUsage().then(
+      (u) => {
+        setEstimates(u.estimates);
+        if (u.limits) dispatch({ type: "limits", status: "allowed", windows: u.limits });
+      },
+      () => {},
+    );
     return client.onEvent((e) => dispatch(e));
   }, [client]);
 
@@ -56,23 +84,33 @@ export function ChatView({
     if (!chat.live && wasLive.current) {
       setAnnouncement(chat.entries.findLast((e) => e.role === "assistant")?.text ?? "");
       inputRef.current?.focus();
+      client.getUsage().then((u) => setEstimates(u.estimates), () => {});
     }
     wasLive.current = Boolean(chat.live);
-  }, [chat.live, chat.entries, t]);
+  }, [chat.live, chat.entries, t, client]);
 
-  /** Returns true only if the message was actually sent. */
-  const send = (text: string): boolean => {
+  /** True when the message was sent, or is waiting for the user to confirm a heavy action. */
+  const send = (text: string, options: SendOptions = {}, confirmed = false): boolean => {
     const message = text.trim();
-    if (!message || chat.live || busy.current) return false;
+    if (!message || chat.live || busy.current || (pending && !confirmed)) return false;
+    if (!confirmed && options.action) {
+      const check = preflight(state.actions[options.action]?.cost, chat.limits, estimates[options.action]);
+      if (check) {
+        setPending({ text: message, options, check });
+        return true;
+      }
+    }
     busy.current = true;
     stick.current = true;
-    dispatch({ type: "user", text: message, at: new Date().toISOString() });
-    client.send(message).catch((err: unknown) => {
+    dispatch({ type: "user", text: message, at: new Date().toISOString(), ...(options.action ? { action: options.action } : {}) });
+    client.send(message, options).catch((err: unknown) => {
       dispatch({ type: "done", ok: false, error: { code: "agent-crashed", detail: err instanceof Error ? err.message : String(err) } });
     });
     inputRef.current?.focus();
     return true;
   };
+  /** What harness UI gets: it can't skip the pre-flight check. */
+  const sendFromHarness: SendFn = (text, options) => send(text, options);
   const onSubmit = (e: FormEvent) => {
     e.preventDefault();
     if (send(draft)) setDraft("");
@@ -84,18 +122,43 @@ export function ChatView({
   const last = chat.entries.at(-1);
   const lastUser = chat.entries.findLast((e) => e.role === "user");
 
+  let preflightText = "";
+  if (pending) {
+    const action = pending.options.action ?? "";
+    const label = state.actions[action]?.label[lang] ?? action;
+    const left = percent(pending.check.left);
+    preflightText =
+      pending.check.estimate !== null
+        ? t("preflight.estimate", { action: label, estimate: Math.max(1, percent(pending.check.estimate)), left })
+        : t("preflight.hint", { action: label, left });
+  }
+
   return (
     <div className="hh-app">
-      <TopBar title={state.harness.name[state.config.language ?? "en"]}>
+      <TopBar title={state.harness.name[lang]}>
+        <UsageMeter engine={engineOption} limits={chat.limits} lastTokens={lastTurnTokens(chat.entries)} />
+        {onHome && <button onClick={onHome}>{t("chat.home")}</button>}
         <button onClick={() => setShowHistory(true)}>{t("history.title")}</button>
+        {onSettings && (
+          <button className="hh-icon-button" aria-label={t("home.settings")} onClick={onSettings}>
+            <GearIcon />
+          </button>
+        )}
       </TopBar>
       <div className="hh-body">
         <section className="hh-chat" ref={chatRef} onScroll={onScroll}>
+          {engineProblem && <ErrorCard error={problemError(engineProblem)} engine={engine} onFix={onFixEngine} />}
           {chat.entries.map((entry) => (
             <div key={entry.id}>
-              <Message entry={entry} components={components} respond={send} />
+              <Message entry={entry} components={components} respond={sendFromHarness} />
               {entry.error && entry === last && (
-                <ErrorCard error={entry.error} engine={engine} onRetry={lastUser ? () => send(lastUser.text) : undefined} />
+                <ErrorCard
+                  error={entry.error}
+                  engine={engine}
+                  limits={chat.limits}
+                  onFix={onFixEngine}
+                  onRetry={lastUser ? () => send(lastUser.text, lastUser.action ? { action: lastUser.action } : {}) : undefined}
+                />
               )}
             </div>
           ))}
@@ -103,11 +166,30 @@ export function ChatView({
             <article className="hh-message assistant live">
               <ActivityList items={chat.live.activities} />
               {chat.live.text ? chat.live.text.split("\n\n").map((p, i) => <p key={i}>{p}</p>) : <p className="hh-working">{t("chat.working")}</p>}
-              <Blocks blocks={chat.live.blocks} components={components} respond={send} />
+              <Blocks blocks={chat.live.blocks} components={components} respond={sendFromHarness} />
             </article>
           )}
+          {pending && (
+            <div className="hh-confirm" role="alertdialog" aria-labelledby="hh-preflight-title">
+              <p id="hh-preflight-title">
+                <strong className="hh-warn">{t("preflight.title")}</strong>
+              </p>
+              <p>{preflightText}</p>
+              <button
+                className="hh-primary"
+                onClick={() => {
+                  const p = pending;
+                  setPending(null);
+                  send(p.text, p.options, true);
+                }}
+              >
+                {t("preflight.continue")}
+              </button>
+              <button onClick={() => setPending(null)}>{t("preflight.notNow")}</button>
+            </div>
+          )}
         </section>
-        {renderSide && <aside className="hh-side">{renderSide(chat.blockState)}</aside>}
+        {renderSide && <aside className="hh-side">{renderSide(chat.blockState, sendFromHarness)}</aside>}
       </div>
       <div className="hh-sr-only" aria-live="polite">
         {announcement}

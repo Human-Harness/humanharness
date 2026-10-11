@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { ReactElement } from "react";
 import { cleanup } from "@testing-library/react";
 import { HarnessApp, type BlockProps } from "../src";
+import { formatReset } from "../src/usage";
 import { FakeClient } from "./fake-client";
 
 afterEach(cleanup);
@@ -366,5 +367,117 @@ describe("HarnessApp", () => {
     fireEvent.click(screen.getByRole("button", { name: "English" }));
     await screen.findByRole("button", { name: "Start Demo" });
     expect(document.documentElement.lang).toBe("en");
+  });
+
+  const in2h = () => new Date(Date.now() + 2 * 3600_000).toISOString();
+  const in4d = () => new Date(Date.now() + 4 * 86400_000).toISOString();
+
+  it("shows Claude's plan windows in the top bar, from the log and then live", async () => {
+    const client = new FakeClient(ready);
+    const fiveHourReset = in2h();
+    client.usage = {
+      limits: [
+        { kind: "five_hour", utilization: 0.16, resetsAt: fiveHourReset },
+        { kind: "seven_day", utilization: 0.09, resetsAt: in4d() },
+      ],
+      estimates: {},
+    };
+    await startWork(<HarnessApp client={client} />);
+    await screen.findByText(`5 h: 16% used · resets at ${formatReset(fiveHourReset, "en")} — week: 9% used`);
+    act(() => client.emit({ type: "limits", status: "allowed", windows: [{ kind: "five_hour", utilization: 0.85, resetsAt: fiveHourReset }] }));
+    expect(screen.getByText(/Close to your limit/)).toBeTruthy();
+  });
+
+  it("before any message, says usage shows up later", async () => {
+    await startWork(<HarnessApp client={new FakeClient(ready)} />);
+    await screen.findByText("Your plan's usage shows up after the first message.");
+  });
+
+  it("says when the engine doesn't report limits and shows the last reply's tokens", async () => {
+    const client = new FakeClient({ ...ready, engineId: "codex" });
+    client.state.engines = [{ ...client.state.engines[0], id: "codex", name: "Codex", provider: "OpenAI", reportsLimits: false }];
+    client.chat = [
+      { id: "1", role: "assistant", text: "hi", blocks: [], activities: [], at: "t", usage: { inputTokens: 1000, outputTokens: 200, cacheReadTokens: 0, cacheWriteTokens: 0 } },
+    ];
+    await startWork(<HarnessApp client={client} />);
+    await screen.findByText(/Codex doesn't report your plan's limits\. Last message: 1\.2K tokens\./);
+  });
+
+  it("asks before a heavy action when the 5-hour window is high, and sends only on Continue", async () => {
+    const client = new FakeClient(ready);
+    client.state.actions = { tidy: { label: { es: "Ordenar", en: "Tidy up" }, cost: "heavy" } };
+    client.usage = { limits: [{ kind: "five_hour", utilization: 0.75, resetsAt: in2h() }], estimates: { tidy: 0.08 } };
+    await startWork(<HarnessApp client={client} renderSide={(_s, send) => <button onClick={() => send("Tidy all notes", { action: "tidy" })}>tidy</button>} />);
+    await screen.findByText(/5 h: 75% used/);
+    fireEvent.click(screen.getByRole("button", { name: "tidy" }));
+    const dialog = await screen.findByRole("alertdialog");
+    expect(dialog.textContent).toContain('"Tidy up" usually uses about 8% of your 5-hour window. You have 25% left.');
+    fireEvent.click(within(dialog).getByRole("button", { name: "Not now" }));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(client.sent).toEqual([]);
+    fireEvent.click(screen.getByRole("button", { name: "tidy" }));
+    fireEvent.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Continue" }));
+    await waitFor(() => expect(client.sent).toEqual(["Tidy all notes"]));
+    expect(client.sentOptions).toEqual([{ action: "tidy" }]);
+  });
+
+  it("goes straight ahead with a heavy action when there is room", async () => {
+    const client = new FakeClient(ready);
+    client.state.actions = { tidy: { label: { es: "Ordenar", en: "Tidy up" }, cost: "heavy" } };
+    client.usage = { limits: [{ kind: "five_hour", utilization: 0.2, resetsAt: in2h() }], estimates: {} };
+    await startWork(<HarnessApp client={client} renderSide={(_s, send) => <button onClick={() => send("Tidy all notes", { action: "tidy" })}>tidy</button>} />);
+    await screen.findByText(/5 h: 20% used/);
+    fireEvent.click(screen.getByRole("button", { name: "tidy" }));
+    await waitFor(() => expect(client.sent).toEqual(["Tidy all notes"]));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+  });
+
+  it("tells when the limit resets on an out-of-quota card", async () => {
+    const client = new FakeClient(ready);
+    const reset = in2h();
+    client.usage = { limits: [{ kind: "five_hour", utilization: 1, resetsAt: reset }], estimates: {} };
+    await startWork(<HarnessApp client={client} />);
+    await screen.findByText(/5 h: 100% used/);
+    await typeAndSend(client, "go");
+    act(() => client.emit({ type: "done", ok: false, error: { code: "out-of-quota" } }));
+    expect(screen.getByText(`Your limit resets: ${formatReset(reset, "en")}.`)).toBeTruthy();
+  });
+
+  it("shows a card for a signed-out engine whose button opens the sign-in step", async () => {
+    const client = new FakeClient(ready);
+    client.status = { ...client.status, loggedIn: false };
+    await startWork(<HarnessApp client={client} />);
+    await screen.findByText("Your Claude session ended. Sign in again to continue.");
+    fireEvent.click(screen.getByRole("button", { name: "Sign in again" }));
+    await screen.findByRole("heading", { name: "Sign in to Claude" });
+  });
+
+  it("changes engine from Settings → Engine and starts a new conversation", async () => {
+    const client = new FakeClient(ready);
+    client.state.engines = [...client.state.engines, { ...client.state.engines[0], id: "codex", name: "Codex", provider: "OpenAI", reportsLimits: false }];
+    await startWork(<HarnessApp client={client} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Engine" }));
+    fireEvent.click(await screen.findByRole("button", { name: /Codex/ }));
+    client.switchedFrom = "claude";
+    fireEvent.click(await screen.findByRole("button", { name: "Use Codex" }));
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    await screen.findByText("You're now using Codex, so I started a new conversation. The earlier one is saved in your folder.");
+    expect(client.state.config.engineId).toBe("codex");
+  });
+
+  it("goes back Home from the work screen", async () => {
+    await startWork(<HarnessApp client={new FakeClient(ready)} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Home" }));
+    await screen.findByRole("button", { name: "Start Demo" });
+  });
+
+  it("restores the side panel from the saved conversation", async () => {
+    const client = new FakeClient(ready);
+    client.chat = [{ id: "1", role: "assistant", text: "", blocks: [], activities: [], at: "t", state: { progress: { percent: 60 } } }];
+    await startWork(
+      <HarnessApp client={client} stateBlocks={["progress"]} renderSide={(s) => <p>Progress {(s.progress as { percent: number } | undefined)?.percent ?? 0}%</p>} />,
+    );
+    await screen.findByText("Progress 60%");
   });
 });

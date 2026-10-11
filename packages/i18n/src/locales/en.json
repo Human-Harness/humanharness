@@ -26,10 +26,6 @@
     "support": "Support"
   },
   "setup": {
-    "title": "Let's get {{name}} ready",
-    "start": "Start",
-    "engine": "AI engine",
-    "engineHint": "It uses your own account. Make sure you are signed in to its app on this computer.",
     "welcome": "{{name}} works with an AI plan you already have, using your own account. The app doesn't see or keep anything outside your computer: your work stays in a folder you choose.",
     "language": "Language",
     "folder": "Your folder",

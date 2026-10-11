@@ -64,16 +64,23 @@ describe("summarizeUsage", () => {
     expect(summarizeUsage([rec(0.3, R1)], now).limits).toEqual([{ kind: "seven_day", utilization: 0.05, resetsAt: WEEK }]);
   });
 
-  it("estimates each action from the rise of the five-hour window in the same window", () => {
+  it("credits each action with the rise up to the next snapshot (the limits arrive mid-turn)", () => {
+    // Each turn's snapshot is taken while it runs, so its cost shows in the next turn's snapshot.
     const records = [
-      rec(0.1, R1),
-      rec(0.18, R1, "tidy"), // +0.08
-      rec(0.2, R1),
-      rec(0.3, R1, "tidy"), // +0.10
-      rec(0.05, R2, "tidy"), // the window reset: not measured
+      rec(0.1, R1, "tidy"),
+      rec(0.18, R1), // tidy: +0.08
+      rec(0.2, R1, "tidy"),
+      rec(0.3, R1, "tidy"), // tidy: +0.10
+      rec(0.05, R2), // the window reset: not measured
+      rec(0.5, R2, "tidy"), // the latest turn: nothing after it yet
     ];
     const { estimates } = summarizeUsage(records, now);
     expect(Object.keys(estimates)).toEqual(["tidy"]);
     expect(estimates.tidy).toBeCloseTo(0.09);
+  });
+
+  it("does not credit an action with the next turn when the next one has no snapshot", () => {
+    const records = [rec(0.1, R1, "tidy"), { at: "t", engine: "claude", ok: true }, rec(0.4, R1)];
+    expect(summarizeUsage(records, now).estimates).toEqual({});
   });
 });

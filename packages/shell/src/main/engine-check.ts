@@ -16,8 +16,10 @@ export const TEST_PROMPT = "Reply with the single word OK.";
 const TIMEOUT_MS = 90_000;
 
 /**
- * Runs one tiny turn in an empty temporary folder: read-only, no MCP servers, nothing saved.
- * It proves the CLI starts, the user is signed in and the plan answers.
+ * Runs one tiny turn in an empty temporary folder: read-only, no MCP servers, no project files.
+ * Claude runs with `--no-session-persistence`, so it keeps no transcript of it; an ACP engine may
+ * keep its own session record, as it does for any session. It proves the CLI starts, the user is
+ * signed in and the plan answers. The timeout covers start-up too.
  */
 export async function testPrompt(
   engine: EngineDef,
@@ -32,6 +34,7 @@ export async function testPrompt(
     permissions: { edit: "none", exec: false, web: false },
     sessionMode: engine.transport.kind === "acp" ? engine.transport.modes?.readOnly : undefined,
     minAdapterVersion: engine.transport.kind === "acp" ? engine.transport.minAdapterVersion : undefined,
+    persistSession: false,
     command: cmd.command,
     env: cmd.env,
     onSessionStarted: () => {},
@@ -39,14 +42,27 @@ export async function testPrompt(
   const transport: Transport = engine.transport.kind === "claude-cli" ? new ClaudeCliTransport(options) : new AcpTransport(options);
   const events: Event[] = [];
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), opts.timeoutMs ?? TIMEOUT_MS);
+  let timer: NodeJS.Timeout | undefined;
+  const timedOut = new Promise<"timeout">((resolve) => {
+    timer = setTimeout(() => resolve("timeout"), opts.timeoutMs ?? TIMEOUT_MS);
+  });
+  let outcome: "done" | "timeout";
   try {
-    await transport.turn(TEST_PROMPT, (e) => events.push(e), controller.signal);
+    // Race the whole turn (start-up included): a transport may not watch the signal while it starts.
+    outcome = await Promise.race([
+      transport.turn(TEST_PROMPT, (e) => events.push(e), controller.signal).then(
+        () => "done" as const,
+        () => "done" as const,
+      ),
+      timedOut,
+    ]);
   } finally {
     clearTimeout(timer);
+    controller.abort();
     await transport.close().catch(() => undefined);
-    await fs.rm(folder, { recursive: true, force: true });
+    await fs.rm(folder, { recursive: true, force: true }).catch(() => undefined);
   }
+  if (outcome === "timeout") return { ok: false, error: { code: "agent-crashed", detail: "timed out" } };
   const done = events.find((e): e is Extract<Event, { type: "done" }> => e.type === "done");
   if (done?.ok) return { ok: true };
   return { ok: false, error: done && !done.ok ? done.error : { code: "agent-crashed" } };

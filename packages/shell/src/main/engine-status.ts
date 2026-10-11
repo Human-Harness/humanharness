@@ -4,16 +4,37 @@ import { type CommandDeps, cliCommand } from "./engine-command";
 import { type SharedConfigStore, noticeAccepted } from "./shared-config";
 
 /**
- * Whether the status command says the user is signed in. For JSON output only `loggedIn` is read:
- * the rest (email, organization) is never kept or logged.
+ * The `loggedIn` flag of the last JSON object in `stdout` (a CLI may print notices before it), or
+ * undefined when there is none. Only that flag is read: the rest (email, organization) is never
+ * kept or logged.
+ */
+function lastLoggedIn(stdout: string): boolean | undefined {
+  const end = stdout.lastIndexOf("}");
+  if (end < 0) return undefined;
+  for (let start = stdout.lastIndexOf("{", end); start >= 0; start = stdout.lastIndexOf("{", start - 1)) {
+    try {
+      const value = JSON.parse(stdout.slice(start, end + 1)) as unknown;
+      if (value && typeof value === "object" && typeof (value as { loggedIn?: unknown }).loggedIn === "boolean") {
+        return (value as { loggedIn: boolean }).loggedIn;
+      }
+    } catch {
+      // not a whole object yet: try an earlier "{"
+    }
+    if (start === 0) break;
+  }
+  return undefined;
+}
+
+/**
+ * Whether the status command says the user is signed in: the JSON `loggedIn` flag when there is
+ * one, otherwise the exit code (0 signed in, anything else signed out).
  */
 export function parseLoggedIn(format: EngineSetup["status"]["format"], out: { stdout: string; code: number }): boolean {
-  if (format === "exit-code") return out.code === 0;
-  try {
-    return (JSON.parse(out.stdout) as { loggedIn?: unknown }).loggedIn === true;
-  } catch {
-    return false;
+  if (format === "json-logged-in") {
+    const flag = lastLoggedIn(out.stdout);
+    if (flag !== undefined) return flag;
   }
+  return out.code === 0;
 }
 
 /** Checks the engine's CLI: installed, version against `detect.minVersion`, signed in. Reads nothing from the CLI's own files. */
@@ -30,15 +51,15 @@ export async function detectEngine(engine: EngineDef, d: CommandDeps, shared: Sh
   if (!cli) return missing;
   const [binary, ...leading] = cli.command;
   const v = await d.run(binary, [...leading, ...engine.detect.versionArgs], cli.env);
+  // The binary is there even when --version fails or times out: don't send the user to reinstall it.
   const version = v.code === 0 ? parseVersion(v.stdout) : null;
-  if (!version) return missing;
 
-  const outdated = !meetsMinVersion(version, engine.detect.minVersion);
+  const outdated = version !== null && !meetsMinVersion(version, engine.detect.minVersion);
   let loggedIn: boolean | null = null;
   if (engine.setup && !outdated) {
     const s = await d.run(binary, [...leading, ...engine.setup.status.args], cli.env);
     loggedIn = parseLoggedIn(engine.setup.status.format, s);
   }
-  await shared.update(engine.id, { binary: cli.bundled ? null : binary, version }).catch(() => undefined);
+  await shared.update(engine.id, { binary: cli.bundled ? null : binary, ...(version ? { version } : {}) }).catch(() => undefined);
   return { ...base, installed: true, version, outdated, loggedIn, verified: Boolean(record.verifiedAt) && loggedIn !== false };
 }

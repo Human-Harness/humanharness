@@ -81,6 +81,8 @@ export interface ChatEntry {
   limits?: LimitWindow[];
   /** Assistant entries: latest data of each state-only block emitted during the turn. */
   state?: Record<string, unknown>;
+  /** The engine the app was set to when the entry was saved. */
+  engine?: string;
 }
 
 export interface ChatLoad {

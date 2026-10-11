@@ -38,6 +38,8 @@ declare const __HARNESS_DIR__: string;
 /** The window's background before the page paints (the `paper` token), so there is no white flash. */
 const PAPER = { light: "#F4F4F1", dark: "#161819" };
 const SETUP_STEPS: SetupStep[] = ["install", "update", "login", "logout"];
+/** How long each setup step may run before it is stopped (a sign-in left open in the browser, a stuck download). */
+const SETUP_TIMEOUT_MS: Record<SetupStep, number> = { install: 20 * 60_000, update: 20 * 60_000, login: 10 * 60_000, logout: 60_000 };
 
 const requireFromHere = createRequire(import.meta.url);
 const commandDeps: CommandDeps = {
@@ -223,7 +225,7 @@ const turns = new TurnController({
     if (!isConfigured(c)) return null;
     // An invalid saved config still runs the turn, so the runtime start fails with the reason;
     // nothing is written into a folder that didn't pass validation.
-    return (await configProblem(c, validation())) === null ? new ChatLog(c.folder) : { append: async () => {} };
+    return (await configProblem(c, validation())) === null ? new ChatLog(c.folder, c.engineId) : { append: async () => {} };
   },
   stateBlocks,
   emit,
@@ -316,7 +318,7 @@ function registerIpc() {
         await dropRuntime();
       }
       if (quitting) throw new Error("The app is closing");
-      const run = runSetupProcess(cmd, (output) => sendToWindow("hh:setupOutput", output));
+      const run = runSetupProcess(cmd, (output) => sendToWindow("hh:setupOutput", output), { timeoutMs: SETUP_TIMEOUT_MS[step] });
       setupRun = run;
       return { ok: (await run.exit) === 0 };
     } finally {

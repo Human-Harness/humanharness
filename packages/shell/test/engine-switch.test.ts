@@ -36,6 +36,20 @@ describe("startNewChatIfEngineChanged", () => {
     expect(await new ChatLog(none).load()).toHaveLength(1);
   });
 
+  it("stamps the engine on each saved entry", async () => {
+    const folder = await folderWith(null, false);
+    await new ChatLog(folder, "claude").append({ id: "1", role: "user", text: "hi", blocks: [], activities: [], at: "t" });
+    expect((await new ChatLog(folder).load())[0]).toMatchObject({ engine: "claude" });
+  });
+
+  it("falls back to the last entry's engine when there is no session file", async () => {
+    const folder = await folderWith(null, true);
+    await new ChatLog(folder, "claude").append({ id: "2", role: "user", text: "the engine never started", blocks: [], activities: [], at: "t" });
+    expect(await startNewChatIfEngineChanged(folder, "claude")).toBeNull();
+    expect(await startNewChatIfEngineChanged(folder, "codex")).toBe("claude");
+    expect(await new ChatLog(folder).load()).toEqual([]);
+  });
+
   it("only forgets the session when there was no chat to archive", async () => {
     const folder = await folderWith("claude", false);
     expect(await startNewChatIfEngineChanged(folder, "codex")).toBeNull();

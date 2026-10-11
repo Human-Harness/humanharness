@@ -83,3 +83,78 @@ describe("runSetupProcess", () => {
     expect(lines.length).toBeGreaterThan(0);
   });
 });
+
+const alive = (pid: number) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
+const waitFor = async (check: () => boolean, ms = 3000) => {
+  const end = Date.now() + ms;
+  while (!check() && Date.now() < end) await new Promise((r) => setTimeout(r, 50));
+  return check();
+};
+// A process that starts a grandchild sharing its output pipes, prints the grandchild's pid, then runs `after`.
+const withGrandchild = (after: string) =>
+  node(
+    `const {spawn}=require("node:child_process");` +
+      `const g=spawn(process.execPath,["-e","setInterval(()=>{},1000)"],{stdio:"inherit"});` +
+      `console.log("grandchild:"+g.pid);${after}`,
+  );
+
+describe("runSetupProcess process tree", () => {
+  it("cancel stops the grandchildren too", async () => {
+    let pid = 0;
+    const running = runSetupProcess(withGrandchild("setInterval(()=>{},1000)"), (o) => {
+      if (o.kind === "line" && o.text.startsWith("grandchild:")) {
+        pid = Number(o.text.slice(11));
+        running.cancel();
+      }
+    });
+    expect(await running.exit).toBeNull();
+    expect(pid).toBeGreaterThan(0);
+    expect(await waitFor(() => !alive(pid))).toBe(true);
+  });
+
+  it("ends when the process exits, even if a grandchild still holds its output", async () => {
+    let pid = 0;
+    const running = runSetupProcess(withGrandchild("setTimeout(()=>process.exit(0),100)"), (o) => {
+      if (o.kind === "line" && o.text.startsWith("grandchild:")) pid = Number(o.text.slice(11));
+    });
+    expect(await running.exit).toBe(0);
+    if (pid && alive(pid)) process.kill(pid, "SIGKILL");
+  });
+
+  it("escalates to SIGKILL when the process ignores SIGTERM", async () => {
+    const running = runSetupProcess(node(`process.on("SIGTERM",()=>{});console.log("ready");setInterval(()=>{},1000)`), (o) => {
+      if (o.kind === "line" && o.text === "ready") running.cancel();
+    });
+    expect(await running.exit).toBeNull();
+  }, 8000);
+
+  it("gives up after the timeout", async () => {
+    const running = runSetupProcess(node("setInterval(()=>{},1000)"), () => {}, { timeoutMs: 200 });
+    expect(await running.exit).toBeNull();
+  });
+});
+
+describe("runSetupProcess web addresses", () => {
+  it("drops punctuation that ends the sentence", async () => {
+    const { out } = await collect(node(`console.log("Visit (https://claude.ai/oauth/x?a=1).")`));
+    expect(out.filter((o) => o.kind === "url")).toEqual([{ kind: "url", url: "https://claude.ai/oauth/x?a=1" }]);
+  });
+
+  it("strips terminal hyperlinks ended by ESC \\ and takes their target", async () => {
+    const e = "\\u001b";
+    const { out } = await collect(
+      node(`console.log("Open ${e}]8;;https://claude.ai/oauth/y${e}\\\\sign-in page${e}]8;;${e}\\\\ now")`),
+    );
+    expect(out).toEqual([
+      { kind: "line", text: "Open sign-in page now" },
+      { kind: "url", url: "https://claude.ai/oauth/y" },
+    ]);
+  });
+});

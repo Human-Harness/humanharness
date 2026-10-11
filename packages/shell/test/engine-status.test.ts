@@ -42,9 +42,19 @@ describe("parseLoggedIn", () => {
   it("reads only the loggedIn flag from JSON, or the exit code", () => {
     expect(parseLoggedIn("json-logged-in", { stdout: signedIn, code: 0 })).toBe(true);
     expect(parseLoggedIn("json-logged-in", { stdout: signedOut, code: 1 })).toBe(false);
-    expect(parseLoggedIn("json-logged-in", { stdout: "not json", code: 0 })).toBe(false);
     expect(parseLoggedIn("exit-code", { stdout: "", code: 0 })).toBe(true);
     expect(parseLoggedIn("exit-code", { stdout: "", code: 1 })).toBe(false);
+  });
+
+  it("reads the last JSON block when the CLI prints something before it", () => {
+    const nested = JSON.stringify({ loggedIn: true, org: { id: "x" } });
+    expect(parseLoggedIn("json-logged-in", { stdout: `Warning: {odd} text\n${nested}\n`, code: 0 })).toBe(true);
+    expect(parseLoggedIn("json-logged-in", { stdout: `Notice\n${signedOut}`, code: 1 })).toBe(false);
+  });
+
+  it("falls back to the exit code when there is no usable JSON", () => {
+    expect(parseLoggedIn("json-logged-in", { stdout: "not json", code: 0 })).toBe(true);
+    expect(parseLoggedIn("json-logged-in", { stdout: "not json", code: 1 })).toBe(false);
   });
 });
 
@@ -81,12 +91,20 @@ describe("detectEngine", () => {
     expect(calls.map((c) => c.args.join(" "))).toEqual(["--version"]);
   });
 
-  it("reports a missing Claude, or one whose --version fails, as not installed", async () => {
+  it("reports a missing Claude as not installed", async () => {
     const missing = deps({}, { isExecutable: async () => false });
     expect(await detectEngine(getEngine("claude"), missing.d, store())).toMatchObject({ installed: false, version: null, loggedIn: null });
     expect(missing.calls).toEqual([]);
-    const broken = deps({ "--version": { code: 1 } });
-    expect(await detectEngine(getEngine("claude"), broken.d, store())).toMatchObject({ installed: false });
+  });
+
+  it("keeps a Claude whose --version fails or times out as installed, with an unknown version", async () => {
+    const broken = deps({ "--version": { code: 1 }, "auth status --json": { stdout: signedIn, code: 0 } });
+    expect(await detectEngine(getEngine("claude"), broken.d, store())).toMatchObject({
+      installed: true,
+      version: null,
+      outdated: false,
+      loggedIn: true,
+    });
   });
 
   it("checks Codex through the bundled CLI under Electron's Node", async () => {

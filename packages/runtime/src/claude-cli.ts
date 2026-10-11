@@ -32,7 +32,7 @@ export function disallowedTools(permissions: Permissions): string[] {
 }
 
 /** Arguments for the unmodified official `claude` binary; the prompt goes in via stdin. Never touches credentials or auth settings. */
-export function claudeArgs(o: Pick<TransportOptions, "session" | "mcp" | "permissions">): string[] {
+export function claudeArgs(o: Pick<TransportOptions, "session" | "mcp" | "permissions" | "persistSession">): string[] {
   const mcpServers = Object.fromEntries(
     o.mcp.map((s) => [s.name, { type: "stdio", command: s.command, args: s.args, env: s.env }]),
   );
@@ -48,6 +48,7 @@ export function claudeArgs(o: Pick<TransportOptions, "session" | "mcp" | "permis
     "--strict-mcp-config",
     "--mcp-config", JSON.stringify({ mcpServers }),
     ...(o.session.started ? ["--resume", o.session.id] : ["--session-id", o.session.id]),
+    ...(o.persistSession === false ? ["--no-session-persistence"] : []),
   ];
 }
 

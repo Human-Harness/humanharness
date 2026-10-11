@@ -49,6 +49,22 @@ describe("testPrompt", () => {
       { command: fakeClaudeCommand(), env: { HH_FAKE_SCRIPT: writeScript(root, { steps: [{ sleep: 5000 }] }) } },
       { timeoutMs: 200 },
     );
-    expect(r).toMatchObject({ ok: false, error: { code: "cancelled" } });
+    expect(r).toMatchObject({ ok: false, error: { code: "agent-crashed", detail: "timed out" } });
+  });
+
+  it("gives up when the engine never finishes starting", async () => {
+    const started = Date.now();
+    const r = await testPrompt(getEngine("codex"), { command: [process.execPath, "-e", "setInterval(()=>{},1000)"], env: {} }, { timeoutMs: 300 });
+    expect(r).toMatchObject({ ok: false, error: { code: "agent-crashed", detail: "timed out" } });
+    expect(Date.now() - started).toBeLessThan(5000);
+  });
+
+  it("asks Claude not to keep the test conversation", async () => {
+    const args = path.join(root, "args.json");
+    await testPrompt(getEngine("claude"), {
+      command: fakeClaudeCommand(),
+      env: { HH_FAKE_SCRIPT: writeScript(root, { steps: [claudeResultLine(true, "OK")] }), HH_FAKE_ARGS: args },
+    });
+    expect(JSON.parse(fs.readFileSync(args, "utf8"))).toContain("--no-session-persistence");
   });
 });

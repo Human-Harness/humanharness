@@ -20,7 +20,8 @@ export async function sessionEngine(folder: string): Promise<string | null> {
  * a chat was archived.
  */
 export async function startNewChatIfEngineChanged(folder: string, engineId: string): Promise<string | null> {
-  const previous = await sessionEngine(folder);
+  // No session file (e.g. the engine never started a session): the chat's last entry tells.
+  const previous = (await sessionEngine(folder)) ?? (await new ChatLog(folder).load()).findLast((e) => e.engine)?.engine ?? null;
   if (!previous || previous === engineId) return null;
   const archived = await new ChatLog(folder).archive(previous);
   await fs.rm(sessionFile(folder), { force: true });

@@ -7,13 +7,17 @@ import type { ChatEntry, TurnUsage } from "@humanharness/ui/client";
 export class ChatLog {
   private readonly file: string;
 
-  constructor(folder: string) {
+  /** `engine`, when given, is stamped on every appended entry (used to notice an engine switch). */
+  constructor(
+    folder: string,
+    private readonly engine?: string,
+  ) {
     this.file = path.join(folder, ".harness", "chats", "main.jsonl");
   }
 
   async append(entry: ChatEntry): Promise<void> {
     await fs.mkdir(path.dirname(this.file), { recursive: true });
-    await fs.appendFile(this.file, JSON.stringify(entry) + "\n");
+    await fs.appendFile(this.file, JSON.stringify(this.engine ? { ...entry, engine: this.engine } : entry) + "\n");
   }
 
   async load(limit = 200): Promise<ChatEntry[]> {

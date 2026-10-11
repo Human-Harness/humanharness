@@ -58,9 +58,19 @@ describe("SharedConfigStore", () => {
     expect(fs.readFileSync(file, "utf8")).toBe(newer);
   });
 
-  it("rewrites a broken file", async () => {
+  it("never overwrites a file it can't read or parse", async () => {
     const dir = newDir();
-    fs.writeFileSync(path.join(dir, "engines.json"), "{nope");
+    const file = path.join(dir, "engines.json");
+    fs.writeFileSync(file, "{nope");
+    await expect(new SharedConfigStore(dir).update("claude", { version: "2.1.296" })).rejects.toThrow();
+    expect(fs.readFileSync(file, "utf8")).toBe("{nope");
+    const other = newDir();
+    fs.mkdirSync(path.join(other, "engines.json"));
+    await expect(new SharedConfigStore(other).update("claude", { version: "2.1.296" })).rejects.toThrow();
+  });
+
+  it("creates the file when there is none yet", async () => {
+    const dir = path.join(newDir(), "nested");
     await new SharedConfigStore(dir).update("claude", { version: "2.1.296" });
     expect(await new SharedConfigStore(dir).engine("claude")).toEqual({ version: "2.1.296" });
   });
@@ -84,8 +94,18 @@ describe("SharedConfigStore", () => {
       version: 1,
       engines: { claude: { binary: "/bin/claude", notice: { version: 1, acceptedAt: "t" }, verifiedAt: "t" }, codex: {} },
     });
-    await store.update("claude", { version: "2.1.296" });
-    expect(fs.readFileSync(path.join(dir, "engines.json"), "utf8")).not.toContain("someone@example.com");
+  });
+
+  it("keeps fields and engines it doesn't know when it writes (another app may use them)", async () => {
+    const dir = newDir();
+    const file = path.join(dir, "engines.json");
+    fs.writeFileSync(file, JSON.stringify({ version: 1, engines: { claude: { binary: "/bin/claude", future: { a: 1 } }, other: "x" } }));
+    const store = new SharedConfigStore(dir);
+    await store.update("claude", { version: "2.1.296", future: 2 } as never);
+    const saved = JSON.parse(fs.readFileSync(file, "utf8"));
+    expect(saved.engines.claude).toEqual({ binary: "/bin/claude", future: { a: 1 }, version: "2.1.296" });
+    expect(saved.engines.other).toBe("x");
+    expect(await store.engine("claude")).toEqual({ binary: "/bin/claude", version: "2.1.296" });
   });
 
   it("deletes a field updated to null", async () => {

@@ -67,24 +67,32 @@ export class SharedConfigStore {
 
   /**
    * Merges `patch` into the engine's record: `null` deletes a field; undefined values and unknown
-   * fields are ignored. Rejects without writing when the file has an unknown (e.g. newer) format.
+   * patch fields are ignored. Fields and engines in the file that this app doesn't know are kept
+   * as they are. Rejects without writing when the file can't be read or parsed, or has an unknown
+   * (e.g. newer) format; a missing file is created.
    */
   update(id: string, patch: SharedEnginePatch): Promise<SharedEngineRecord> {
     const run = this.queue.then(async () => {
-      const { config, foreign } = await this.read();
-      if (foreign) throw new Error(`${this.file} has an unknown format version; not overwriting it`);
-      const merged: Record<string, unknown> = { ...config.engines[id] };
+      const { raw, unwritable } = await this.read();
+      if (unwritable) throw new Error(`${this.file} ${unwritable}; not overwriting it`);
+      const engines = isPlainObject(raw?.engines) ? raw.engines : {};
+      const current = isPlainObject(engines[id]) ? engines[id] : {};
+      // Unknown fields stay as they are; known ones are re-cleaned after the patch.
+      const merged: Record<string, unknown> = { ...current };
+      for (const k of FIELDS) delete merged[k];
+      Object.assign(merged, cleanRecord(current));
       for (const [k, v] of Object.entries(patch)) {
         if (!FIELDS.includes(k) || v === undefined) continue;
         if (v === null) delete merged[k];
         else merged[k] = v;
       }
       const next = cleanRecord(merged);
-      config.engines[id] = next;
+      for (const k of FIELDS) delete merged[k];
+      const file = { ...raw, version: 1, engines: { ...engines, [id]: { ...merged, ...next } } };
       await fs.mkdir(path.dirname(this.file), { recursive: true });
       const tmp = `${this.file}.${randomUUID()}.tmp`;
       try {
-        await fs.writeFile(tmp, JSON.stringify(config, null, 2) + "\n");
+        await fs.writeFile(tmp, JSON.stringify(file, null, 2) + "\n");
         await fs.rename(tmp, this.file);
       } catch (err) {
         await fs.rm(tmp, { force: true });
@@ -97,24 +105,25 @@ export class SharedConfigStore {
   }
 
   /**
-   * The file's contents, cleaned (missing or unparseable → empty). `foreign` is true for a readable
-   * file of another format version, which this app must not overwrite.
+   * The file's contents, cleaned, plus the raw object for writing back. A missing file is empty and
+   * writable; `unwritable` says why any other file (unreadable, unparseable, unknown format) must
+   * not be overwritten.
    */
-  private async read(): Promise<{ config: SharedConfig; foreign: boolean }> {
+  private async read(): Promise<{ config: SharedConfig; raw: Record<string, unknown> | null; unwritable?: string }> {
     let raw: unknown;
     try {
       raw = JSON.parse(await fs.readFile(this.file, "utf8"));
-    } catch {
-      return { config: empty(), foreign: false };
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") return { config: empty(), raw: null };
+      return { config: empty(), raw: null, unwritable: "could not be read" };
     }
-    if (!isPlainObject(raw)) return { config: empty(), foreign: false };
-    if (raw.version !== 1) return { config: empty(), foreign: raw.version !== undefined };
-    if (!isPlainObject(raw.engines)) return { config: empty(), foreign: false };
+    if (!isPlainObject(raw) || raw.version !== 1) return { config: empty(), raw: null, unwritable: "has an unknown format version" };
+    if (raw.engines !== undefined && !isPlainObject(raw.engines)) return { config: empty(), raw: null, unwritable: "has an unknown format" };
     const engines: Record<string, SharedEngineRecord> = {};
-    for (const [id, record] of Object.entries(raw.engines)) {
+    for (const [id, record] of Object.entries(raw.engines ?? {})) {
       if (isPlainObject(record)) engines[id] = cleanRecord(record);
     }
-    return { config: { version: 1, engines }, foreign: false };
+    return { config: { version: 1, engines }, raw };
   }
 }
 

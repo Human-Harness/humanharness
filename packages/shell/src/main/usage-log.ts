@@ -61,19 +61,21 @@ export function usageRecord(entry: ChatEntry, engine: string, action?: string): 
 const FIVE_HOUR = "five_hour";
 
 /**
- * Current limits and per-action estimates. An action's estimate is the mean rise of the five-hour
- * window over its turns, each measured against the previous snapshot of the same window. Other use
- * of the same account counts too, so it is a rough guide.
+ * Current limits and per-action estimates. Claude reports the windows mid-turn (after the first
+ * API response), so a turn's snapshot shows usage from before most of that turn: a turn's cost is
+ * the rise of the five-hour window from its snapshot to the next turn's, when the next turn has one
+ * and the window hasn't reset in between. Other use of the same account counts too, so it is a
+ * rough guide.
  */
 export function summarizeUsage(records: UsageRecord[], now: Date = new Date()): UsageSummary {
-  const snapshots = records.filter((r) => r.limits && r.limits.length > 0);
-  const last = snapshots.at(-1);
+  const fiveHour = (r: UsageRecord | undefined) => r?.limits?.find((w) => w.kind === FIVE_HOUR);
+  const last = records.filter((r) => r.limits && r.limits.length > 0).at(-1);
   const sums: Record<string, { total: number; n: number }> = {};
-  for (let i = 1; i < snapshots.length; i++) {
-    const r = snapshots[i];
+  for (let i = 0; i < records.length - 1; i++) {
+    const r = records[i];
     if (!r.action) continue;
-    const before = snapshots[i - 1].limits!.find((w) => w.kind === FIVE_HOUR);
-    const after = r.limits!.find((w) => w.kind === FIVE_HOUR);
+    const before = fiveHour(r);
+    const after = fiveHour(records[i + 1]);
     if (!before || !after || before.resetsAt !== after.resetsAt) continue;
     const sum = (sums[r.action] ??= { total: 0, n: 0 });
     sum.total += Math.max(0, after.utilization - before.utilization);

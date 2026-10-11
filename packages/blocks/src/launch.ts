@@ -19,8 +19,19 @@ export function devLauncher(): Launcher {
   return { command: process.execPath, args: ["--import", import.meta.resolve("tsx")], env: {} };
 }
 
-export function uiServerSpec(opts: { harnessConfig: string; bridge: { path: string; token: string }; launcher: Launcher }): McpServerSpec {
-  const entry = fileURLToPath(new URL("./ui-server-bin.ts", import.meta.url));
+/** Runs Electron's embedded Node (packaged and dev app). */
+export function electronLauncher(electronPath: string): Launcher {
+  return { command: electronPath, args: [], env: { ELECTRON_RUN_AS_NODE: "1" } };
+}
+
+export function uiServerSpec(opts: {
+  harnessConfig: string;
+  bridge: { path: string; token: string };
+  launcher: Launcher;
+  /** Built entry for the ui server (app); defaults to the TS source (dev). */
+  entry?: string;
+}): McpServerSpec {
+  const entry = opts.entry ?? fileURLToPath(new URL("./ui-server-bin.ts", import.meta.url));
   return {
     name: "ui",
     command: opts.launcher.command,

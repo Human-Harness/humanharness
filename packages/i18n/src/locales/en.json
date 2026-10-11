@@ -1,0 +1,62 @@
+{
+  "setup": {
+    "title": "Let's get {{name}} ready",
+    "language": "Language",
+    "folder": "Your folder",
+    "folderHint": "Your work will be saved here.",
+    "folderChange": "Choose another folder",
+    "folderWarning": "Don't move, rename or edit this folder by hand: the app depends on it.",
+    "engine": "AI engine",
+    "engineHint": "It uses your own account. Make sure you are signed in to its app on this computer.",
+    "engineRequires": "Requires: {{plan}}",
+    "engineData": "Your data goes to: {{where}}",
+    "enginePending": "Not yet cleared for distribution (development only)",
+    "start": "Start",
+    "folderProblem": {
+      "not-absolute": "I couldn't use that folder. Pick another one.",
+      "root": "That's the top of the disk. Pick or create a folder for your work.",
+      "home": "That's your whole home folder. Pick or create a folder inside it.",
+      "too-broad": "That folder is too general. Pick or create a folder inside it.",
+      "protected": "That folder belongs to the system or other apps. Pick another one, for example inside Documents."
+    },
+    "saveError": "I couldn't save your settings. Try again or pick another folder."
+  },
+  "chat": {
+    "placeholder": "Write a message…",
+    "send": "Send",
+    "stop": "Stop",
+    "working": "Working…",
+    "you": "You"
+  },
+  "activity": {
+    "read": "Reading {{detail}}",
+    "edit": "Editing {{detail}}",
+    "search": "Searching {{detail}}",
+    "web": "Looking up {{detail}}",
+    "exec": "Checking the folder…",
+    "other": "Working on {{detail}}"
+  },
+  "history": {
+    "title": "History",
+    "restore": "Go back to this point",
+    "empty": "Nothing yet.",
+    "close": "Close",
+    "confirm": "Go back to this point? Files changed after it will be undone.",
+    "confirmYes": "Yes, go back",
+    "cancel": "Cancel",
+    "restored": "I went back to that point. Files changed after it were undone.",
+    "restoreFailed": "I couldn't go back to that point. Try again in a moment."
+  },
+  "app": {
+    "loadError": "The app couldn't start. Close it and open it again."
+  },
+  "errors": {
+    "engine-not-installed": "I can't find {{engine}} on this computer.",
+    "session-expired": "Your {{engine}} session ended. Sign in again in the {{engine}} app and retry.",
+    "out-of-quota": "You've reached your plan's limit for now. Your conversation is saved; try again later.",
+    "agent-crashed": "Something failed and I didn't change anything.",
+    "cancelled": "Stopped.",
+    "outdated-version": "{{engine}} needs an update.",
+    "retry": "Try again"
+  }
+}

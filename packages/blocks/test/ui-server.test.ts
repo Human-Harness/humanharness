@@ -64,3 +64,14 @@ describe("ui MCP server", () => {
     expect(received).toEqual([]);
   });
 });
+
+describe("launchers", () => {
+  it("runs Electron as Node and lets the caller choose the ui server entry", async () => {
+    const { electronLauncher, uiServerSpec: spec } = await import("../src");
+    const launcher = electronLauncher("/Applications/Demo.app/Contents/MacOS/Demo");
+    expect(launcher).toEqual({ command: "/Applications/Demo.app/Contents/MacOS/Demo", args: [], env: { ELECTRON_RUN_AS_NODE: "1" } });
+    const s = spec({ harnessConfig: "/x/harness.js", bridge: { path: "/b", token: "t" }, launcher, entry: "/x/ui-server.js" });
+    expect(s.args).toEqual(["/x/ui-server.js"]);
+    expect(s.env).toMatchObject({ ELECTRON_RUN_AS_NODE: "1", HH_HARNESS: "/x/harness.js" });
+  });
+});

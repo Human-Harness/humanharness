@@ -1,0 +1,11 @@
+{
+  "name": "@humanharness/i18n",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "Apache-2.0",
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": {
+    "@humanharness/harness-sdk": "workspace:*",
+    "i18next": "^26.4.3"
+  }
+}

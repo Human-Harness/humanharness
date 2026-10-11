@@ -25,6 +25,8 @@ export class EngineGuards {
   /** The running step is a logout or update of the engine in use: turns wait for it. */
   private setupBlocksTurns = false;
   private test: { engineId: string; controller: AbortController; result: Promise<unknown> } | null = null;
+  /** The app is quitting: no new test prompt starts. */
+  private closed = false;
   /** The user cancelled the running setup step (maybe before its process started). */
   private setupCancel = false;
 
@@ -110,10 +112,13 @@ export class EngineGuards {
    * for another engine waits for it to end. The signal aborts it (e.g. on quit).
    */
   async runTest<T>(engineId: string, run: (signal: AbortSignal) => Promise<T>): Promise<T> {
+    if (this.closed) throw new Error("The app is closing");
     for (let current = this.test; current; current = this.test) {
       if (current.engineId === engineId) return current.result as Promise<T>;
       await current.result.catch(() => undefined);
     }
+    // Checked after the wait too: a test waiting for another one must not start once the app quits.
+    if (this.closed) throw new Error("The app is closing");
     const controller = new AbortController();
     // Started after the slot is taken, so nothing can slip in between.
     const result = Promise.resolve().then(() => run(controller.signal));
@@ -134,5 +139,11 @@ export class EngineGuards {
       () => undefined,
       () => undefined,
     );
+  }
+
+  /** For quitting: no test prompt starts from now on, and the running one is stopped (see abortTest). */
+  close(): Promise<void> {
+    this.closed = true;
+    return this.abortTest();
   }
 }

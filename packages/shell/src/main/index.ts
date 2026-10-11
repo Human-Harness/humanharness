@@ -17,7 +17,6 @@ import {
   type RunningSetup as SetupInfo,
   type SendOptions,
   type SetupOutput,
-  type SetupResult,
   type SetupStep,
   type TestResult,
   type UsageSummary,
@@ -32,8 +31,10 @@ import { type CommandDeps, cliCommand, engineCommand, loginShellPath } from "./e
 import { EngineGuards } from "./engine-guards";
 import { installCommandOf, terminalCommand } from "./install-help";
 import { detectEngine, hasAcceptedNotice } from "./engine-status";
+import { requireNoticeForChoice, requireNoticeForTurn } from "./notice-policy";
 import { startNewChatIfEngineChanged } from "./engine-switch";
 import { type RunningSetup, runSetupProcess, setupCommand, stopSetupProcess } from "./setup-runner";
+import { runSetupStep } from "./setup-step";
 import { SharedConfigStore, sharedConfigDir } from "./shared-config";
 import { EngineUnavailable, TurnController, memoise } from "./turn-controller";
 import { UsageLog, summarizeUsage, usageRecord } from "./usage-log";
@@ -234,14 +235,14 @@ function sendToWindow(channel: string, value: unknown) {
   }
 }
 const emit = (event: Event) => sendToWindow("hh:event", event);
+const hasNotice = (engineId: string) => hasAcceptedNotice(shared, engineId);
 
 const turns = new TurnController({
   ensureRuntime: async () => {
     const blocked = guards.turnBlocked();
     if (blocked) throw new Error(blocked);
     // Checked on every turn: the notice may have been reset (Start over) while a runtime runs.
-    const { engineId } = await config.load();
-    if (engineId && !(await hasAcceptedNotice(shared, engineId))) throw new EngineUnavailable("notice-required");
+    await requireNoticeForTurn((await config.load()).engineId, hasNotice);
     return runtime.get();
   },
   chatLog: async () => {
@@ -285,9 +286,7 @@ function registerIpc() {
     if (problem) throw new Error(problem);
     const before = await config.load();
     // Spec §9: an engine is only used once its notice is accepted.
-    if (patch.engineId && patch.engineId !== before.engineId && !(await hasAcceptedNotice(shared, patch.engineId))) {
-      throw new Error("The engine's notice has not been accepted");
-    }
+    await requireNoticeForChoice(patch.engineId, before.engineId, hasNotice);
     if (patch.engineId && before.engineId && patch.engineId !== before.engineId) {
       const engineId = patch.engineId;
       await guards.switchEngine(
@@ -353,43 +352,34 @@ function registerIpc() {
   handle("hh:runSetup", async (engineId: string, step: SetupStep) => {
     const engine = engineFor(engineId);
     if (!SETUP_STEPS.includes(step)) throw new Error("Unknown setup step");
-    if (quitting) throw new Error("The app is closing");
-    // Onboarding starts with the notice (spec §9); signing out is always allowed.
-    if (step !== "logout" && !(await hasAcceptedNotice(shared, engineId))) throw new Error("The engine's notice has not been accepted");
-    // Only a logout or update of the engine in use touches the runtime and blocks turns.
-    const current = (await config.load()).engineId === engineId;
-    // Reserve the slot synchronously after the read, so a second call can't slip in while this one starts.
-    guards.beginSetup({ engineId, step, current }, () => turns.isBusy());
-    setupUrl = undefined;
+    // Start and end are only reported by the call that holds the setup slot, so only it resets these.
     const output = (o: SetupOutput) => {
+      if (o.kind === "start") setupUrl = undefined;
       if (o.kind === "url") setupUrl ??= o.url;
+      if (o.kind === "end") {
+        setupRun = null;
+        setupUrl = undefined;
+      }
       sendToWindow("hh:setupOutput", o);
     };
-    output({ kind: "start", engineId, step });
-    let result: SetupResult = { ok: false };
-    try {
-      const cli = step === "install" ? null : await cliCommand(engine, commandDeps);
-      const cmd = setupCommand(engine, step, cli, await loginShellPath(commandDeps));
-      if (!cmd) return result;
-      if (current && (step === "logout" || step === "update")) {
-        // Turns are refused from beginSetup on; this re-check is a safety net before the runtime goes.
-        if (turns.isBusy()) throw new Error("A turn is running");
-        await dropRuntime();
-      }
-      if (quitting) throw new Error("The app is closing");
-      // Cancelled while the CLI was being found: the process never starts.
-      if (guards.setupCancelled()) return (result = { ok: false, cancelled: true });
-      const run = runSetupProcess(cmd, output, { timeoutMs: SETUP_TIMEOUT_MS[step] });
-      setupRun = run;
-      const ok = (await run.exit) === 0;
-      result = { ok, ...(!ok && guards.setupCancelled() ? { cancelled: true } : {}), ...(!ok && run.timedOut() ? { timedOut: true } : {}) };
-      return result;
-    } finally {
-      setupRun = null;
-      setupUrl = undefined;
-      guards.endSetup();
-      output({ kind: "end", engineId, step, ...result });
-    }
+    return runSetupStep(
+      {
+        guards,
+        hasNotice,
+        currentEngine: async () => (await config.load()).engineId,
+        isBusy: () => turns.isBusy(),
+        quitting: () => quitting,
+        command: async () => {
+          const cli = step === "install" ? null : await cliCommand(engine, commandDeps);
+          return setupCommand(engine, step, cli, await loginShellPath(commandDeps));
+        },
+        dropRuntime,
+        spawn: (cmd) => (setupRun = runSetupProcess(cmd, output, { timeoutMs: SETUP_TIMEOUT_MS[step] })),
+        output,
+      },
+      engineId,
+      step,
+    );
   });
   handle("hh:getSetup", (): SetupInfo | null => {
     const s = guards.setup;
@@ -408,9 +398,11 @@ function registerIpc() {
     if (quitting) throw new Error("The app is closing");
     // A second request for the same engine (the screen was reopened) gets the running test's result.
     return guards.runTest(engineId, async (signal): Promise<TestResult> => {
-      if (!(await hasAcceptedNotice(shared, engineId))) return { ok: false, error: { code: "notice-required" } };
+      if (!(await hasNotice(engineId))) return { ok: false, error: { code: "notice-required" } };
       const cmd = await engineCommand(engine, commandDeps);
       if (!cmd) return { ok: false, error: { code: "engine-not-installed" } };
+      // The app may have started quitting while the CLI was being found.
+      if (quitting || signal.aborted) return { ok: false, error: { code: "cancelled" } };
       const result = await testPrompt(engine, cmd, { signal });
       if (!result.ok) return result;
       try {
@@ -503,7 +495,7 @@ if (loaded) {
     event.preventDefault();
     turns.close();
     // The test prompt cleans up (its CLI, its temporary folder) before the app goes; bounded wait.
-    const testStopped = Promise.race([guards.abortTest(), new Promise<void>((r) => setTimeout(r, QUIT_TEST_WAIT_MS))]);
+    const testStopped = Promise.race([guards.close(), new Promise<void>((r) => setTimeout(r, QUIT_TEST_WAIT_MS))]);
     const setupStopped = setupRun ? stopSetupProcess(setupRun) : Promise.resolve();
     void (async () => {
       await Promise.all([setupStopped, testStopped]);

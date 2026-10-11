@@ -20,8 +20,12 @@ export async function sessionEngine(folder: string): Promise<string | null> {
  * a chat was archived.
  */
 export async function startNewChatIfEngineChanged(folder: string, engineId: string): Promise<string | null> {
-  // No session file (e.g. the engine never started a session): the chat's last entry tells.
-  const previous = (await sessionEngine(folder)) ?? (await new ChatLog(folder).load()).findLast((e) => e.engine)?.engine ?? null;
+  // The session file names the engine that ran last. When it is this one (or there is none), the
+  // chat itself tells: any entry from another engine (an earlier change that couldn't archive it,
+  // or an engine that never started a session) means it belongs to that conversation.
+  const session = await sessionEngine(folder);
+  const previous =
+    (session && session !== engineId ? session : null) ?? (await new ChatLog(folder).load()).find((e) => e.engine && e.engine !== engineId)?.engine ?? null;
   if (!previous || previous === engineId) return null;
   const archived = await new ChatLog(folder).archive(previous);
   await fs.rm(sessionFile(folder), { force: true });

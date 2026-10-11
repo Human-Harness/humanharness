@@ -50,6 +50,16 @@ describe("startNewChatIfEngineChanged", () => {
     expect(await new ChatLog(folder).load()).toEqual([]);
   });
 
+  it("still archives an earlier engine's chat that a failed change left behind, after the new engine has run", async () => {
+    for (const session of ["codex", null]) {
+      const folder = await folderWith(session, false);
+      await new ChatLog(folder, "claude").append({ id: "1", role: "user", text: "with claude", blocks: [], activities: [], at: "t" });
+      await new ChatLog(folder, "codex").append({ id: "2", role: "user", text: "with codex", blocks: [], activities: [], at: "t" });
+      expect(await startNewChatIfEngineChanged(folder, "codex")).toBe("claude");
+      expect(await new ChatLog(folder).load()).toEqual([]);
+    }
+  });
+
   it("only forgets the session when there was no chat to archive", async () => {
     const folder = await folderWith("claude", false);
     expect(await startNewChatIfEngineChanged(folder, "codex")).toBeNull();

@@ -168,6 +168,25 @@ describe("EngineGuards", () => {
     await guards.abortTest();
   });
 
+  it("on quit, stops the running test and never starts one that was waiting", async () => {
+    const guards = new EngineGuards();
+    let finish!: () => void;
+    const running = guards.runTest("claude", (signal) => {
+      signal.addEventListener("abort", () => finish());
+      return new Promise<void>((r) => (finish = r));
+    });
+    let waiterRan = false;
+    const waiting = guards.runTest("codex", async () => {
+      waiterRan = true;
+    });
+    await Promise.resolve();
+    await guards.close();
+    await running;
+    await expect(waiting).rejects.toThrow(/closing/);
+    expect(waiterRan).toBe(false);
+    await expect(guards.runTest("claude", async () => "late")).rejects.toThrow(/closing/);
+  });
+
   it("keeps the new engine when closing the old runtime or archiving the chat fails after the save", async () => {
     const guards = new EngineGuards();
     const { deps, calls, release } = switchDeps(guards);

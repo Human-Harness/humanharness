@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { getEngine } from "@humanharness/engines";
-import { type CommandDeps, engineCommand, loginShellPath, resolveBinary } from "../src/main/engine-command";
+import { type CommandDeps, cliCommand, engineCommand, loginShellPath, resolveBinary } from "../src/main/engine-command";
 
 function deps(overrides: Partial<CommandDeps> = {}): CommandDeps {
   return {
@@ -63,5 +63,42 @@ describe("engineCommand", () => {
 
   it("reports a missing Claude as null so the runtime says engine-not-installed", async () => {
     expect(await engineCommand(getEngine("claude"), deps())).toBeNull();
+  });
+});
+
+describe("resolveBinary fallbacks", () => {
+  it("also looks in the folders official installers use, which a login PATH may miss", async () => {
+    const d = deps({ isExecutable: async (p) => p === "/Users/me/.local/bin/claude" });
+    expect(await resolveBinary("claude", "/usr/bin", d)).toBe("/Users/me/.local/bin/claude");
+  });
+});
+
+describe("cliCommand", () => {
+  it("runs the Codex CLI bundled with the adapter, under Electron's Node", async () => {
+    const d = deps({
+      resolveModule: (id, from) =>
+        from ? `${from}>${id}` : `/app/node_modules/${id}`,
+    });
+    expect(await cliCommand(getEngine("codex"), d)).toEqual({
+      command: ["/App/Electron", "/app/node_modules/@agentclientprotocol/codex-acp/dist/index.js>@openai/codex/bin/codex.js"],
+      env: { PATH: "/Users/me/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin", ELECTRON_RUN_AS_NODE: "1" },
+      bundled: true,
+    });
+  });
+
+  it("falls back to an installed codex when the bundle can't be found", async () => {
+    const d = deps({
+      resolveModule: () => {
+        throw new Error("not found");
+      },
+      isExecutable: async (p) => p === "/opt/homebrew/bin/codex",
+    });
+    expect(await cliCommand(getEngine("codex"), d)).toMatchObject({ command: ["/opt/homebrew/bin/codex"], bundled: false });
+  });
+
+  it("finds Claude by absolute path, or returns null", async () => {
+    const found = deps({ isExecutable: async (p) => p === "/Users/me/.local/bin/claude" });
+    expect(await cliCommand(getEngine("claude"), found)).toMatchObject({ command: ["/Users/me/.local/bin/claude"], bundled: false });
+    expect(await cliCommand(getEngine("claude"), deps())).toBeNull();
   });
 });

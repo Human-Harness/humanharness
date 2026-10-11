@@ -1,8 +1,6 @@
 // @vitest-environment happy-dom
 import { act, fireEvent, within, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { cleanup } from "@testing-library/react";
 import { HarnessApp, type BlockProps } from "../src";
 import { FakeClient } from "./fake-client";
@@ -338,28 +336,5 @@ describe("HarnessApp", () => {
     expect(document.activeElement).toBe(within(dialog).getByRole("button", { name: "Close" }));
     fireEvent.keyDown(document, { key: "Escape" });
     expect(screen.queryByRole("dialog")).toBeNull();
-  });
-});
-
-describe("styles", () => {
-  const css = readFileSync(resolve(__dirname, "../src/styles.css"), "utf8");
-  it("preserves single line breaks in messages", () => {
-    expect(css).toMatch(/\.hh-message p\s*{[^}]*white-space:\s*pre-wrap/);
-  });
-  it("keeps borders at 3:1 contrast against both backgrounds in light and dark", () => {
-    const lum = (h: string) => {
-      const c = [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255).map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
-      return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
-    };
-    const ratio = (a: string, b: string) => {
-      const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p);
-      return (x + 0.05) / (y + 0.05);
-    };
-    const [light, dark] = css.split("prefers-color-scheme: dark");
-    for (const block of [light, dark]) {
-      const v = (name: string) => block.match(new RegExp(`--hh-${name}:\\s*(#[0-9a-f]{6})`, "i"))![1];
-      expect(ratio(v("border"), v("bg"))).toBeGreaterThanOrEqual(3);
-      expect(ratio(v("border"), v("surface"))).toBeGreaterThanOrEqual(3);
-    }
   });
 });

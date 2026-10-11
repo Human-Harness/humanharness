@@ -1,54 +1,133 @@
+/* Human Harness look: docs/superpowers/specs/2026-10-11-app-look-design.md. Colours only through these tokens. */
 :root {
-  --hh-bg: #fbfaf7;
+  --hh-paper: #f4f4f1;
+  --hh-sheet: #fbfbfa;
   --hh-surface: #ffffff;
-  --hh-text: #1d1d1b;
-  --hh-muted: #6b6a66;
-  --hh-accent: #2f5d50;
-  --hh-accent-text: #ffffff;
-  --hh-border: #8a877f;
+  --hh-ink: #191e24;
+  --hh-on-ink: #ffffff;
+  --hh-slate: #3f4852;
+  --hh-muted: #5b636c;
+  --hh-line-strong: #cfcfcb;
+  --hh-line: #e1e1dd;
+  --hh-segment: #e7e7e3;
+  --hh-ok: #2e6b4f;
+  --hh-ok-dot: #2e8a5c;
+  --hh-warn: #9a4a12;
   --hh-error-bg: #fbeaea;
-  --hh-radius: 10px;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --hh-backdrop: rgba(25, 30, 36, 0.18);
+  --hh-font: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --hh-display: "Lexend", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  font-family: var(--hh-font);
+  font-size: 13px;
+  color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --hh-bg: #161615;
-    --hh-surface: #1f1f1d;
-    --hh-text: #ecebe7;
-    --hh-muted: #a3a29d;
-    --hh-accent: #7fb7a4;
-    --hh-accent-text: #10201b;
-    --hh-border: #6f6c66;
+    --hh-paper: #161819;
+    --hh-sheet: #1d2023;
+    --hh-surface: #24282c;
+    --hh-ink: #ecedee;
+    --hh-on-ink: #191e24;
+    --hh-slate: #c2c7cd;
+    --hh-muted: #9aa1a9;
+    --hh-line-strong: #4a5057;
+    --hh-line: #33383e;
+    --hh-segment: #2c3136;
+    --hh-ok: #6cc497;
+    --hh-ok-dot: #4fb07f;
+    --hh-warn: #e39a5e;
     --hh-error-bg: #3a2222;
+    --hh-backdrop: rgba(0, 0, 0, 0.45);
+    color-scheme: dark;
   }
 }
-body { margin: 0; background: var(--hh-bg); color: var(--hh-text); }
-button { font: inherit; border-radius: var(--hh-radius); border: 1px solid var(--hh-border); background: var(--hh-surface); color: var(--hh-text); padding: 6px 12px; cursor: pointer; }
-.hh-primary, .hh-composer button[type="submit"] { background: var(--hh-accent); color: var(--hh-accent-text); border-color: transparent; }
-.hh-setup { max-width: 640px; margin: 40px auto; padding: 0 16px; display: grid; gap: 24px; }
-.hh-setup label { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
-.hh-warning { color: var(--hh-muted); font-size: 0.9em; }
-.hh-app { display: grid; grid-template-rows: auto 1fr auto; height: 100vh; }
-.hh-header { display: flex; justify-content: space-between; align-items: center; padding: 8px 16px; border-bottom: 1px solid var(--hh-border); }
-.hh-header h1 { font-size: 1.1em; margin: 0; }
+
+html, body, #root { height: 100%; }
+body { margin: 0; background: var(--hh-paper); color: var(--hh-ink); overflow: hidden; -webkit-font-smoothing: antialiased; }
+h1, h2, h3 { margin: 0; }
+h3 { font-size: 13px; font-weight: 600; color: var(--hh-slate); }
+p { margin: 0; }
+code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; overflow-wrap: anywhere; }
+a { color: var(--hh-ink); }
+button, .hh-button { font: inherit; display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 28px; padding: 0 12px; border-radius: 6px; border: 1px solid var(--hh-line-strong); background: var(--hh-surface); color: var(--hh-ink); text-decoration: none; cursor: default; }
+button:disabled { opacity: 0.5; }
+button:focus-visible, .hh-button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid var(--hh-ink); outline-offset: 2px; }
+input[type="text"], input:not([type]) { font: inherit; height: 28px; padding: 0 8px; border-radius: 6px; border: 1px solid var(--hh-line-strong); background: var(--hh-surface); color: var(--hh-ink); }
+.hh-primary { background: var(--hh-ink); color: var(--hh-on-ink); border-color: transparent; font-weight: 600; }
+/* The big call to action: chamfered corners echo the logo's bevel. */
+.hh-start { height: 46px; padding: 0 28px; font-size: 15px; border-radius: 0; clip-path: polygon(9px 0, 100% 0, 100% calc(100% - 9px), calc(100% - 9px) 100%, 0 100%, 0 9px); }
+.hh-display { font-family: var(--hh-display); }
+.hh-caption { color: var(--hh-muted); font-size: 12px; margin: 0; }
+.hh-warn { color: var(--hh-warn); }
+.hh-ok { color: var(--hh-ok); }
+.hh-logo { color: var(--hh-ink); }
+.hh-save-error, .hh-folder-problem { color: var(--hh-warn); margin: 0; }
+.hh-loading, .hh-load-error { padding: 24px; }
+.hh-sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+/* Top bar: the window's drag region (hiddenInset title bar), leaving room for the traffic lights. */
+.hh-topbar { height: 52px; box-sizing: border-box; display: flex; align-items: center; gap: 8px; padding: 0 12px 0 80px; -webkit-app-region: drag; user-select: none; border-bottom: 1px solid var(--hh-line); }
+.hh-topbar button, .hh-topbar a, .hh-topbar input { -webkit-app-region: no-drag; }
+.hh-title { font-family: var(--hh-display); font-weight: 600; font-size: 14px; white-space: nowrap; }
+.hh-spacer { flex: 1; }
+.hh-icon-button { width: 30px; padding: 0; }
+.hh-segmented { display: inline-flex; padding: 2px; gap: 2px; border-radius: 7px; background: var(--hh-segment); }
+.hh-segmented button { height: 24px; border: none; background: transparent; border-radius: 5px; }
+.hh-segmented button[aria-pressed="true"], .hh-segmented button[aria-selected="true"] { background: var(--hh-surface); box-shadow: 0 1px 2px rgba(25, 30, 36, 0.15); }
+
+/* Home */
+.hh-home { height: 100vh; display: grid; grid-template-rows: 52px 1fr auto; }
+.hh-home .hh-topbar { border-bottom: none; }
+.hh-home-main { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; text-align: center; padding: 0 16px; }
+.hh-home-logo { width: 112px; height: 112px; object-fit: contain; }
+.hh-home-name { font-family: var(--hh-display); font-weight: 600; font-size: 34px; }
+.hh-home-tagline { color: var(--hh-slate); font-size: 15px; margin-bottom: 8px; }
+.hh-pill { height: 30px; border-radius: 15px; border-color: var(--hh-line); gap: 8px; }
+.hh-pill img { width: 18px; height: 18px; }
+.hh-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--hh-muted); }
+.hh-dot.ok { background: var(--hh-ok-dot); }
+.hh-footer { display: flex; justify-content: space-between; gap: 16px; padding: 12px 20px; color: var(--hh-muted); font-size: 12px; }
+.hh-wordmark { font-family: var(--hh-display); font-weight: 500; color: var(--hh-slate); }
+
+/* Settings sheet, attached under the top bar */
+.hh-sheet-backdrop { position: fixed; inset: 52px 0 0 0; background: var(--hh-backdrop); display: flex; justify-content: center; align-items: flex-start; }
+.hh-sheet { width: min(620px, calc(100% - 32px)); max-height: calc(100% - 24px); box-sizing: border-box; overflow-y: auto; background: var(--hh-sheet); border: 1px solid var(--hh-line-strong); border-top: none; border-radius: 0 0 12px 12px; padding: 16px 20px 20px; display: grid; gap: 16px; box-shadow: 0 12px 32px rgba(25, 30, 36, 0.18); }
+.hh-sheet-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.hh-tab { display: grid; gap: 12px; }
+.hh-rows { background: var(--hh-surface); border: 1px solid var(--hh-line); border-radius: 10px; }
+.hh-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border-top: 1px solid var(--hh-line); }
+.hh-row:first-child { border-top: none; }
+.hh-row-label { color: var(--hh-slate); }
+.hh-onboarding { display: grid; gap: 10px; justify-items: start; }
+.hh-onboarding pre { max-height: 160px; overflow: auto; font-size: 11px; color: var(--hh-muted); white-space: pre-wrap; }
+.hh-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.hh-tile { position: relative; height: auto; min-height: 104px; flex-direction: column; padding: 14px; gap: 4px; border-radius: 12px; border-color: var(--hh-line); }
+.hh-tile[aria-pressed="true"] { border: 2px solid var(--hh-ink); padding: 13px; }
+.hh-tile img { width: 40px; height: 40px; }
+.hh-tile.more { display: flex; align-items: center; justify-content: center; border: 1px dashed var(--hh-line-strong); color: var(--hh-muted); background: transparent; }
+.hh-check { position: absolute; top: 8px; right: 8px; width: 18px; height: 18px; border-radius: 50%; background: var(--hh-ink); color: var(--hh-on-ink); font-size: 11px; display: grid; place-items: center; }
+
+/* Work screen: the 2a chat layout with the tokens (its own design comes later). */
+.hh-app { display: grid; grid-template-rows: 52px 1fr auto; height: 100vh; }
+.hh-usage { margin: 0; color: var(--hh-muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .hh-body { display: grid; grid-template-columns: 1fr auto; overflow: hidden; }
 .hh-chat { overflow-y: auto; padding: 16px; display: grid; gap: 12px; align-content: start; }
-.hh-side { width: 240px; padding: 16px; border-left: 1px solid var(--hh-border); }
+.hh-side { width: 240px; padding: 16px; border-left: 1px solid var(--hh-line); }
 .hh-message { max-width: 720px; }
-.hh-message.user { justify-self: end; background: var(--hh-surface); border: 1px solid var(--hh-border); border-radius: var(--hh-radius); padding: 8px 12px; }
-.hh-who { color: var(--hh-muted); font-size: 0.8em; }
-.hh-activity { list-style: none; padding: 0; margin: 0 0 4px; color: var(--hh-muted); font-size: 0.85em; }
+.hh-message p { white-space: pre-wrap; margin: 0 0 8px; }
+.hh-message.user { justify-self: end; background: var(--hh-surface); border: 1px solid var(--hh-line); border-radius: 10px; padding: 8px 12px; }
+.hh-who { color: var(--hh-muted); font-size: 12px; }
+.hh-activity { list-style: none; padding: 0; margin: 0 0 4px; color: var(--hh-muted); font-size: 12px; }
 .hh-activity .running::after { content: " …"; }
 .hh-block { margin: 8px 0; }
-.hh-error { background: var(--hh-error-bg); border-radius: var(--hh-radius); padding: 8px 12px; }
-.hh-composer { display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--hh-border); }
-.hh-composer textarea { flex: 1; min-height: 44px; resize: vertical; font: inherit; border-radius: var(--hh-radius); border: 1px solid var(--hh-border); background: var(--hh-surface); color: var(--hh-text); padding: 8px; }
-.hh-history { position: fixed; inset: 0 0 0 auto; width: min(360px, 100%); background: var(--hh-surface); border-left: 1px solid var(--hh-border); padding: 16px; overflow-y: auto; }
+.hh-error { background: var(--hh-error-bg); border-radius: 10px; padding: 8px 12px; display: grid; gap: 8px; justify-items: start; }
+.hh-confirm { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; background: var(--hh-surface); border: 1px solid var(--hh-line); border-radius: 10px; padding: 10px 12px; }
+.hh-confirm p { flex-basis: 100%; }
+.hh-composer { display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--hh-line); }
+.hh-composer textarea { flex: 1; min-height: 44px; resize: vertical; font: inherit; border-radius: 8px; border: 1px solid var(--hh-line-strong); background: var(--hh-surface); color: var(--hh-ink); padding: 8px; }
+.hh-composer button { height: auto; }
+.hh-composer button[type="submit"] { background: var(--hh-ink); color: var(--hh-on-ink); border-color: transparent; font-weight: 600; }
+.hh-history { position: fixed; inset: 52px 0 0 auto; width: min(360px, 100%); box-sizing: border-box; background: var(--hh-sheet); border-left: 1px solid var(--hh-line-strong); padding: 16px; overflow-y: auto; }
 .hh-history li { display: grid; gap: 4px; margin-bottom: 12px; }
-.hh-history time { color: var(--hh-muted); font-size: 0.8em; }
+.hh-history time { color: var(--hh-muted); font-size: 12px; }
 @media (max-width: 640px) { .hh-body { grid-template-columns: 1fr; } .hh-side { display: none; } }
-.hh-message p { white-space: pre-wrap; }
-.hh-setup fieldset { border: 1px solid var(--hh-border); border-radius: var(--hh-radius); padding: 12px 16px; }
-.hh-confirm { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-.hh-confirm p { flex-basis: 100%; margin: 0; }
-.hh-sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }

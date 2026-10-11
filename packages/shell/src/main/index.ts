@@ -8,7 +8,7 @@ import { electronLauncher } from "@humanharness/blocks";
 import { availableEngines, getEngine } from "@humanharness/engines";
 import { type LoadedHarness, loadHarness } from "@humanharness/harness-sdk";
 import { type Event, type HarnessRuntime, createRuntime } from "@humanharness/runtime";
-import { type AppConfig, type AppState, type FolderPick, isConfigured } from "@humanharness/ui";
+import { type AppConfig, type AppState, type ConfiguredApp, type FolderPick, isConfigured } from "@humanharness/ui/client";
 import { History } from "@humanharness/workspace";
 import { ChatLog } from "./chat-log";
 import { ConfigStore, historyDir } from "./config";
@@ -55,21 +55,36 @@ const validation = (): ValidationContext => ({
 
 async function appState(): Promise<AppState> {
   return {
-    harness: { id: harness.id, name: harness.name, languages: harness.languages },
+    harness: {
+      id: harness.id,
+      name: harness.name,
+      languages: harness.languages,
+      ...(harness.tagline ? { tagline: harness.tagline } : {}),
+      author: harness.author,
+      ...(harness.donate ? { donate: harness.donate } : {}),
+      version: app.getVersion(),
+    },
     config: await config.load(),
     suggestedFolder: path.join(os.homedir(), harness.folder.suggested),
     engines: availableEngines(harness.engines, mode()).map((e) => ({
       id: e.id,
       name: e.name,
       status: e.status as "allowed" | "pending",
+      provider: e.provider,
       requires: e.requires,
       dataLocation: e.dataLocation,
+      trainsOnData: e.trainsOnData,
+      termsUrl: e.termsUrl,
+      privacyUrl: e.privacyUrl,
+      reportsLimits: e.reportsLimits,
+      ...(e.setup?.install ? { installCommand: e.setup.install.command, installDocsUrl: e.setup.install.docsUrl } : {}),
     })),
+    actions: harness.actions,
   };
 }
 
 /** The saved config, only when it is complete and valid. */
-async function validConfig(): Promise<Required<AppConfig> | null> {
+async function validConfig(): Promise<ConfiguredApp | null> {
   const c = await config.load();
   return isConfigured(c) && (await configProblem(c, validation())) === null ? c : null;
 }
@@ -154,7 +169,7 @@ function registerIpc() {
   });
   handle("hh:loadChat", async () => {
     const c = await config.load();
-    return c.folder ? new ChatLog(c.folder).load() : [];
+    return { entries: c.folder ? await new ChatLog(c.folder).load() : [] };
   });
   handle("hh:send", (message: string) => turns.send(message));
   handle("hh:cancel", () => turns.cancel());

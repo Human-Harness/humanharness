@@ -37,7 +37,7 @@ export function ChatView({
   const engine = state.engines.find((e) => e.id === state.config.engineId)?.name ?? state.config.engineId ?? "";
 
   useEffect(() => {
-    void client.loadChat().then((entries) => dispatch({ type: "loaded", entries }));
+    void client.loadChat().then(({ entries }) => dispatch({ type: "loaded", entries }));
     return client.onEvent((e) => dispatch(e));
   }, [client]);
 

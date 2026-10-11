@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { type Event, type HarnessRuntime, type RunningTurn, fail } from "@humanharness/runtime";
-import type { ChatEntry } from "@humanharness/ui";
+import type { ChatEntry } from "@humanharness/ui/client";
 import { TurnRecorder } from "./chat-log";
 
 type Done = Extract<Event, { type: "done" }>;

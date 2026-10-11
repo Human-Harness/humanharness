@@ -1,20 +1,31 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { HarnessClient } from "@humanharness/ui";
+import type { Event, HarnessClient, SetupOutput } from "@humanharness/ui/client";
+
+function subscribe<T>(channel: string, listener: (value: T) => void): () => void {
+  const handler = (_e: unknown, value: T) => listener(value);
+  ipcRenderer.on(channel, handler);
+  return () => ipcRenderer.removeListener(channel, handler);
+}
 
 const client: HarnessClient = {
   getState: () => ipcRenderer.invoke("hh:getState"),
   pickFolder: (defaultPath) => ipcRenderer.invoke("hh:pickFolder", defaultPath),
   saveConfig: (patch) => ipcRenderer.invoke("hh:saveConfig", patch),
   loadChat: () => ipcRenderer.invoke("hh:loadChat"),
-  send: (message) => ipcRenderer.invoke("hh:send", message),
+  send: (message, options) => ipcRenderer.invoke("hh:send", message, options ?? {}),
   cancel: () => ipcRenderer.invoke("hh:cancel"),
-  onEvent: (listener) => {
-    const handler = (_e: unknown, event: Parameters<typeof listener>[0]) => listener(event);
-    ipcRenderer.on("hh:event", handler);
-    return () => ipcRenderer.removeListener("hh:event", handler);
-  },
+  onEvent: (listener) => subscribe<Event>("hh:event", listener),
   history: () => ipcRenderer.invoke("hh:history"),
   restore: (sha) => ipcRenderer.invoke("hh:restore", sha),
+  engineStatus: (engineId) => ipcRenderer.invoke("hh:engineStatus", engineId),
+  acceptNotice: (engineId) => ipcRenderer.invoke("hh:acceptNotice", engineId),
+  runSetup: (engineId, step) => ipcRenderer.invoke("hh:runSetup", engineId, step),
+  setupInput: (text) => ipcRenderer.invoke("hh:setupInput", text),
+  cancelSetup: () => ipcRenderer.invoke("hh:cancelSetup"),
+  onSetupOutput: (listener) => subscribe<SetupOutput>("hh:setupOutput", listener),
+  testEngine: (engineId) => ipcRenderer.invoke("hh:testEngine", engineId),
+  getUsage: () => ipcRenderer.invoke("hh:getUsage"),
+  revealFolder: () => ipcRenderer.invoke("hh:revealFolder"),
 };
 
 contextBridge.exposeInMainWorld("hh", client);

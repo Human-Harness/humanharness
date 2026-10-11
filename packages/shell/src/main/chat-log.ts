@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import type { Event } from "@humanharness/runtime";
-import type { ChatEntry } from "@humanharness/ui";
+import type { ChatEntry } from "@humanharness/ui/client";
 
 export class ChatLog {
   private readonly file: string;

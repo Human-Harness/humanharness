@@ -3,7 +3,7 @@ import { constants, promises as fs } from "node:fs";
 import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
-import { BrowserWindow, type IpcMainInvokeEvent, app, dialog, ipcMain, nativeTheme, shell } from "electron";
+import { BrowserWindow, type IpcMainInvokeEvent, app, clipboard, dialog, ipcMain, nativeTheme, shell } from "electron";
 import { electronLauncher } from "@humanharness/blocks";
 import { type EngineDef, NOTICE_VERSION, availableEngines, getEngine } from "@humanharness/engines";
 import { type LoadedHarness, loadHarness, resolveInHarness } from "@humanharness/harness-sdk";
@@ -30,6 +30,7 @@ import { ConfigStore, historyDir } from "./config";
 import { testPrompt } from "./engine-check";
 import { type CommandDeps, cliCommand, engineCommand, loginShellPath } from "./engine-command";
 import { EngineGuards } from "./engine-guards";
+import { installCommandOf, terminalCommand } from "./install-help";
 import { detectEngine, hasAcceptedNotice } from "./engine-status";
 import { startNewChatIfEngineChanged } from "./engine-switch";
 import { type RunningSetup, runSetupProcess, setupCommand, stopSetupProcess } from "./setup-runner";
@@ -427,6 +428,14 @@ function registerIpc() {
     return summarizeUsage((await new UsageLog(c.folder).load()).filter((r) => r.engine === c.engineId));
   });
   handle("hh:revealSharedConfig", () => shell.showItemInFolder(shared.path));
+  // Installing by hand: copy the official command (chosen here by engine id) and open Terminal,
+  // where the user pastes it. Nothing is run for them.
+  handle("hh:copyInstallCommand", (engineId: string) => clipboard.writeText(installCommandOf(engineFor(engineId))));
+  handle("hh:openTerminal", async () => {
+    const terminal = terminalCommand(process.platform);
+    if (!terminal) throw new Error("No Terminal app to open here");
+    await new Promise<void>((resolve, reject) => execFile(terminal.command, terminal.args, (err) => (err ? reject(err) : resolve())));
+  });
   handle("hh:resetSharedConfig", async () => {
     await shared.reset();
   });

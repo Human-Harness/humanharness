@@ -42,6 +42,11 @@ export function EngineOnboarding({
   const [reset, setReset] = useState<null | "confirm" | "running" | "failed">(null);
   /** getSetup has answered: until then a step may be running that this screen would reattach to. */
   const [checkedSetup, setCheckedSetup] = useState(false);
+  /** Installing by hand: whether copying the command worked, and the last "check again". */
+  const [copy, setCopy] = useState<null | "copied" | "failed">(null);
+  const [rechecking, setRechecking] = useState(false);
+  /** "Check again" ran and the screen is still on this step (the CLI isn't there yet). */
+  const [stillMissing, setStillMissing] = useState(false);
   const autoTested = useRef(false);
   /** Showing a step this screen didn't start (it was reopened while the step runs): its end comes as an event. */
   const attached = useRef(false);
@@ -157,6 +162,24 @@ export function EngineOnboarding({
     await refresh();
   };
 
+  const copyCommand = async () => {
+    try {
+      await client.copyInstallCommand(engine.id);
+      setCopy("copied");
+    } catch {
+      setCopy("failed");
+    }
+  };
+
+  /** "I installed it, check again": detects the CLI again, and says so when it still isn't there. */
+  const recheck = async () => {
+    setRechecking(true);
+    setStillMissing(false);
+    await refresh();
+    setRechecking(false);
+    setStillMissing(true);
+  };
+
   const accept = async () => {
     setBusy("notice");
     setFailed(false);
@@ -198,6 +221,37 @@ export function EngineOnboarding({
     </>
   );
 
+  const recheckButton = (
+    <button disabled={busy !== null || rechecking} onClick={() => void recheck()}>
+      {t("engine.installedRecheck")}
+    </button>
+  );
+  /** Installing by hand: the app copies the official command and opens Terminal; the user runs it. */
+  const manualInstall = (
+    <div className="hh-manual">
+      {!failed && (
+        <p>
+          <strong>{t("engine.manualTitle")}</strong>
+        </p>
+      )}
+      <ol aria-label={t("engine.manualTitle")}>
+        <li>{t("engine.manualStep1")}</li>
+        <li>{t("engine.manualStep2")}</li>
+        <li>{t("engine.manualStep3")}</li>
+      </ol>
+      <p>
+        <button onClick={() => void copyCommand()}>{t("engine.copyCommand")}</button>{" "}
+        <button onClick={() => void client.openTerminal().catch(() => {})}>{t("engine.openTerminal")}</button>{" "}
+        {recheckButton} {copy === "copied" && <span role="status">{t("engine.copied")}</span>}
+      </p>
+      {copy === "failed" && (
+        <p className="hh-save-error" role="alert">
+          {t("engine.copyFailed")}
+        </p>
+      )}
+    </div>
+  );
+
   let body: ReactNode;
   if (problem === "notice") {
     body = (
@@ -226,23 +280,30 @@ export function EngineOnboarding({
           <>
             <p>{t("engine.installText", v)}</p>
             <code>{engine.installCommand}</code>
+            {/* After a failed install, doing it by hand comes first; trying again stays possible. */}
+            {failed === "step" && (
+              <p className="hh-save-error" role="alert">
+                {t("engine.manualFailed")}
+              </p>
+            )}
+            {failed && manualInstall}
             {busy === "install" ? (
               <p role="status">{t("engine.installing")}</p>
             ) : (
-              <button className="hh-primary" disabled={busy !== null} onClick={() => void runStep("install")}>
+              <button className={failed ? undefined : "hh-primary"} disabled={busy !== null} onClick={() => void runStep("install")}>
                 {failed ? t("engine.retry") : t("engine.installRun")}
               </button>
             )}
+            {!failed && manualInstall}
           </>
         ) : (
           <>
             <p>{t("engine.installManual", v)}</p>
-            <button disabled={busy !== null} onClick={() => void refresh()}>
-              {t("engine.recheck")}
-            </button>
+            {recheckButton}
           </>
         )}
         {engine.installDocsUrl && <p>{link(engine.installDocsUrl, t("engine.installDocs"))}</p>}
+        {stillMissing && <p role="status">{t("engine.stillMissing", v)}</p>}
       </>
     );
   } else if (problem === "outdated") {
@@ -335,7 +396,8 @@ export function EngineOnboarding({
           {t("engine.timedOut")}
         </p>
       )}
-      {failed === "step" && (
+      {/* A failed install says so above, with the way to do it by hand. */}
+      {failed === "step" && problem !== "not-installed" && (
         <p className="hh-save-error" role="alert">
           {testError ? t(`errors.${testError.code}`, { ...v, defaultValue: t("errors.agent-crashed", v) }) : t("engine.failed")}
         </p>

@@ -199,6 +199,10 @@ export interface HarnessClient {
   getSetup(): Promise<RunningSetup | null>;
   /** Sends a tiny prompt to check the engine works; marks it verified when it does. */
   testEngine(engineId: string): Promise<TestResult>;
+  /** Copies the engine's official install command, for the user to paste in Terminal. */
+  copyInstallCommand(engineId: string): Promise<void>;
+  /** Opens the Terminal app (it runs nothing). */
+  openTerminal(): Promise<void>;
   /** Shows ~/.humanharness/engines.json in Finder. */
   revealSharedConfig(): Promise<void>;
   /** Starts ~/.humanharness/engines.json over, keeping a dated copy of the old one. */

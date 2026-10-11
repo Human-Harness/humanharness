@@ -61,6 +61,11 @@ export class FakeClient implements HarnessClient {
   running: RunningSetup | null = null;
   sharedRevealed = 0;
   sharedReset = 0;
+  /** Engines whose install command was copied. */
+  copied: string[] = [];
+  /** When set, copyInstallCommand rejects with it. */
+  copyError: Error | null = null;
+  terminalOpened = 0;
   /** When set, resetSharedConfig waits for it. */
   resetGate: Promise<void> | null = null;
   /** When set, resetSharedConfig rejects with it. */
@@ -206,6 +211,13 @@ export class FakeClient implements HarnessClient {
   }
   async revealSharedConfig() {
     this.sharedRevealed++;
+  }
+  async copyInstallCommand(engineId: string) {
+    if (this.copyError) throw this.copyError;
+    this.copied.push(engineId);
+  }
+  async openTerminal() {
+    this.terminalOpened++;
   }
   async resetSharedConfig() {
     this.sharedReset++;

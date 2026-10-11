@@ -224,6 +224,66 @@ describe("EngineTab", () => {
     expect(client.tested).toEqual(["claude", "claude"]);
   });
 
+  it("offers to install by hand: copy the command, open Terminal, then check again", async () => {
+    const client = withFolder();
+    client.status = { ...client.status, installed: false };
+    await renderIn("en", <Tab client={client} />);
+    await screen.findByRole("heading", { name: "Install Claude" });
+    const steps = screen.getByRole("list", { name: "Install it yourself" });
+    expect([...steps.querySelectorAll("li")].map((li) => li.textContent)).toEqual([
+      "Open Terminal.",
+      "Paste the command and press Enter.",
+      'When it finishes, come back here and press "I installed it, check again".',
+    ]);
+    fireEvent.click(screen.getByRole("button", { name: "Copy command" }));
+    await screen.findByText("Copied");
+    expect(client.copied).toEqual(["claude"]);
+    fireEvent.click(screen.getByRole("button", { name: "Open Terminal" }));
+    await waitFor(() => expect(client.terminalOpened).toBe(1));
+    // Nothing was run for the user.
+    expect(client.setupRuns).toEqual([]);
+    fireEvent.click(screen.getByRole("button", { name: "I installed it, check again" }));
+    await screen.findByText("I still can't find Claude. If Terminal showed an error, try the official instructions.");
+    client.status = { ...client.status, installed: true };
+    fireEvent.click(screen.getByRole("button", { name: "I installed it, check again" }));
+    await screen.findByRole("button", { name: "Use Claude" });
+  });
+
+  it("when the automatic install fails, leads with installing by hand", async () => {
+    const client = withFolder();
+    client.status = { ...client.status, installed: false };
+    client.setupResult = { ok: false };
+    await renderIn("es", <Tab client={client} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Instalar" }));
+    expect((await screen.findByRole("alert")).textContent).toBe("La instalación automática no funcionó. Podés instalarlo vos en un minuto:");
+    expect(screen.getByRole("button", { name: "Copiar comando" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Abrir Terminal" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Instrucciones oficiales" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Reintentar" })).toBeTruthy();
+  });
+
+  it("says so when the command can't be copied", async () => {
+    const client = withFolder();
+    client.status = { ...client.status, installed: false };
+    client.copyError = new Error("clipboard");
+    await renderIn("en", <Tab client={client} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Copy command" }));
+    await screen.findByText("I couldn't copy it. Select the command above and copy it.");
+  });
+
+  it("for an engine without an install command, links the instructions and checks again", async () => {
+    const client = withFolder();
+    client.state.engines = [{ ...client.state.engines[0], installCommand: undefined }];
+    client.status = { ...client.status, installed: false };
+    await renderIn("en", <Tab client={client} />);
+    await screen.findByText(/I can't install Claude myself/);
+    expect(screen.getByRole("link", { name: "Official instructions" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Copy command" })).toBeNull();
+    client.status = { ...client.status, installed: true };
+    fireEvent.click(screen.getByRole("button", { name: "I installed it, check again" }));
+    await screen.findByRole("button", { name: "Use Claude" });
+  });
+
   it("shows no error when the user cancels a step", async () => {
     const client = withFolder();
     client.status = { ...client.status, installed: false };

@@ -292,6 +292,9 @@ importers:
         specifier: workspace:*
         version: link:../workspace
     devDependencies:
+      '@humanharness/fake-agent':
+        specifier: workspace:*
+        version: link:../fake-agent
       '@types/react':
         specifier: ^19.3.0
         version: 19.3.0

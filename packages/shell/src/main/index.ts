@@ -3,36 +3,61 @@ import { constants, promises as fs } from "node:fs";
 import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
-import { BrowserWindow, type IpcMainInvokeEvent, app, dialog, ipcMain, shell } from "electron";
+import { BrowserWindow, type IpcMainInvokeEvent, app, dialog, ipcMain, nativeTheme, shell } from "electron";
 import { electronLauncher } from "@humanharness/blocks";
-import { availableEngines, getEngine } from "@humanharness/engines";
-import { type LoadedHarness, loadHarness } from "@humanharness/harness-sdk";
+import { type EngineDef, NOTICE_VERSION, availableEngines, getEngine } from "@humanharness/engines";
+import { type LoadedHarness, loadHarness, resolveInHarness } from "@humanharness/harness-sdk";
 import { type Event, type HarnessRuntime, createRuntime } from "@humanharness/runtime";
-import { type AppConfig, type AppState, type ConfiguredApp, type FolderPick, isConfigured } from "@humanharness/ui/client";
+import {
+  type AppConfig,
+  type AppState,
+  type ChatLoad,
+  type ConfiguredApp,
+  type FolderPick,
+  type SendOptions,
+  type SetupStep,
+  type UsageSummary,
+  isConfigured,
+} from "@humanharness/ui/client";
 import { History } from "@humanharness/workspace";
+import { imageDataUrl } from "./assets";
 import { ChatLog } from "./chat-log";
 import { ConfigStore, historyDir } from "./config";
-import { type CommandDeps, engineCommand } from "./engine-command";
-import { TurnController, memoise } from "./turn-controller";
+import { testPrompt } from "./engine-check";
+import { type CommandDeps, cliCommand, engineCommand, loginShellPath } from "./engine-command";
+import { detectEngine } from "./engine-status";
+import { startNewChatIfEngineChanged } from "./engine-switch";
+import { type RunningSetup, runSetupProcess, setupCommand } from "./setup-runner";
+import { SharedConfigStore, sharedConfigDir } from "./shared-config";
+import { EngineUnavailable, TurnController, memoise } from "./turn-controller";
+import { UsageLog, summarizeUsage, usageRecord } from "./usage-log";
 import { type ValidationContext, checkFolder, configProblem, isAppUrl } from "./validate";
 
 declare const __HARNESS_DIR__: string;
+
+/** The window's background before the page paints (the `paper` token), so there is no white flash. */
+const PAPER = { light: "#F4F4F1", dark: "#161819" };
+const SETUP_STEPS: SetupStep[] = ["install", "update", "login", "logout"];
 
 const requireFromHere = createRequire(import.meta.url);
 const commandDeps: CommandDeps = {
   shell: process.env.SHELL || "/bin/zsh",
   home: os.homedir(),
-  run: (cmd, args) =>
+  run: (cmd, args, env) =>
     new Promise((resolve) => {
-      execFile(cmd, args, { timeout: 5000 }, (err, stdout) => resolve({ stdout: String(stdout), code: err ? 1 : 0 }));
+      execFile(cmd, args, { timeout: 10_000, env: { ...process.env, ...env } }, (err, stdout) => {
+        const code = err ? (typeof (err as { code?: unknown }).code === "number" ? (err as { code: number }).code : 1) : 0;
+        resolve({ stdout: String(stdout), code });
+      });
     }),
   isExecutable: (file) => fs.access(file, constants.X_OK).then(() => true, () => false),
   electronPath: process.execPath,
-  resolveModule: (id) => requireFromHere.resolve(id),
+  resolveModule: (id, from) => (from ? createRequire(from) : requireFromHere).resolve(id),
 };
 
 let harness: LoadedHarness;
 let config: ConfigStore;
+let shared: SharedConfigStore;
 let window: BrowserWindow | null = null;
 /** Settles when the last restore done without a runtime has finished. */
 let restoring: Promise<unknown> = Promise.resolve();
@@ -40,6 +65,12 @@ let restoring: Promise<unknown> = Promise.resolve();
 let restorePending = false;
 /** Set on the first before-quit: from then on, no new turns or restores. */
 let quitting = false;
+/** The install, update, login or logout running now, if any (one at a time). */
+let setupRun: RunningSetup | null = null;
+/** A setup step has been asked for and hasn't finished (including finding its command). */
+let setupBusy = false;
+/** Logos as data: URLs, read once. */
+const logos = new Map<string, Promise<string | null>>();
 
 const mode = () => (app.isPackaged ? "distribution" : "development");
 const stateBlocks = () => new Set(Object.entries(harness.blocks).filter(([, b]) => !b.visible).map(([n]) => n));
@@ -53,32 +84,67 @@ const validation = (): ValidationContext => ({
   home: os.homedir(),
 });
 
+/** An engine this harness offers in this build. The id comes from the window, so anything else throws. */
+function engineFor(id: unknown): EngineDef {
+  const engine = availableEngines(harness.engines, mode()).find((e) => e.id === id);
+  if (!engine) throw new Error("This engine is not available");
+  return engine;
+}
+
+function logo(key: string, file: () => string): Promise<string | null> {
+  if (!logos.has(key)) {
+    logos.set(
+      key,
+      (async () => {
+        try {
+          return await imageDataUrl(file());
+        } catch {
+          return null;
+        }
+      })(),
+    );
+  }
+  return logos.get(key)!;
+}
+
+const harnessLogo = () => (harness.logo ? logo("harness", () => resolveInHarness(harness, harness.logo!)) : Promise.resolve(null));
+// Engine logos ship in the engines package (exported as "./assets/*").
+const engineLogo = (e: EngineDef) => (e.logo ? logo(e.id, () => requireFromHere.resolve(`@humanharness/engines/${e.logo}`)) : Promise.resolve(null));
+
 async function appState(): Promise<AppState> {
+  const harnessImage = await harnessLogo();
   return {
     harness: {
       id: harness.id,
       name: harness.name,
       languages: harness.languages,
       ...(harness.tagline ? { tagline: harness.tagline } : {}),
+      ...(harnessImage ? { logo: harnessImage } : {}),
       author: harness.author,
       ...(harness.donate ? { donate: harness.donate } : {}),
       version: app.getVersion(),
     },
     config: await config.load(),
     suggestedFolder: path.join(os.homedir(), harness.folder.suggested),
-    engines: availableEngines(harness.engines, mode()).map((e) => ({
-      id: e.id,
-      name: e.name,
-      status: e.status as "allowed" | "pending",
-      provider: e.provider,
-      requires: e.requires,
-      dataLocation: e.dataLocation,
-      trainsOnData: e.trainsOnData,
-      termsUrl: e.termsUrl,
-      privacyUrl: e.privacyUrl,
-      reportsLimits: e.reportsLimits,
-      ...(e.setup?.install ? { installCommand: e.setup.install.command, installDocsUrl: e.setup.install.docsUrl } : {}),
-    })),
+    engines: await Promise.all(
+      availableEngines(harness.engines, mode()).map(async (e) => {
+        const image = await engineLogo(e);
+        return {
+          id: e.id,
+          name: e.name,
+          status: e.status as "allowed" | "pending",
+          provider: e.provider,
+          requires: e.requires,
+          dataLocation: e.dataLocation,
+          trainsOnData: e.trainsOnData,
+          termsUrl: e.termsUrl,
+          privacyUrl: e.privacyUrl,
+          reportsLimits: e.reportsLimits,
+          ...(e.setup?.install ? { installCommand: e.setup.install.command, installDocsUrl: e.setup.install.docsUrl } : {}),
+          ...(image ? { logo: image } : {}),
+        };
+      }),
+    ),
     actions: harness.actions,
   };
 }
@@ -89,6 +155,11 @@ async function validConfig(): Promise<ConfiguredApp | null> {
   return isConfigured(c) && (await configProblem(c, validation())) === null ? c : null;
 }
 
+function applyAppearance(appearance: AppConfig["appearance"]) {
+  nativeTheme.themeSource = appearance ?? "system";
+  window?.setBackgroundColor(nativeTheme.shouldUseDarkColors ? PAPER.dark : PAPER.light);
+}
+
 const runtime = memoise<HarnessRuntime>(async () => {
   const c = await config.load();
   if (!isConfigured(c)) throw new Error("The app is not set up yet");
@@ -96,6 +167,11 @@ const runtime = memoise<HarnessRuntime>(async () => {
   if (problem) throw new Error(problem);
   await restoring;
   const engine = getEngine(c.engineId);
+  // Spec §9 "every start": enforce detect.minVersion and a signed-in CLI before the first turn.
+  const status = await detectEngine(engine, commandDeps, shared);
+  if (!status.installed) return null;
+  if (status.outdated) throw new EngineUnavailable("outdated-version");
+  if (status.loggedIn === false) throw new EngineUnavailable("session-expired");
   const cmd = await engineCommand(engine, commandDeps);
   if (!cmd) return null;
   return createRuntime({
@@ -111,6 +187,13 @@ const runtime = memoise<HarnessRuntime>(async () => {
   });
 });
 
+/** Closes the running runtime (e.g. the engine changed); the next turn starts a new one. */
+async function dropRuntime() {
+  const rt = await runtime.peek()?.catch(() => null);
+  runtime.clear();
+  await rt?.close();
+}
+
 /** The running runtime's history, or one opened on the configured folder when there is no runtime. */
 async function currentHistory(): Promise<History | null> {
   const rt = await runtime.peek()?.catch(() => null);
@@ -124,13 +207,14 @@ async function currentHistory(): Promise<History | null> {
   return history;
 }
 
-function emit(event: Event) {
+function sendToWindow(channel: string, value: unknown) {
   try {
-    if (window && !window.isDestroyed()) window.webContents.send("hh:event", event);
+    if (window && !window.isDestroyed()) window.webContents.send(channel, value);
   } catch (err) {
-    console.error("Could not send an event to the window", err);
+    console.error("Could not send to the window", err);
   }
 }
+const emit = (event: Event) => sendToWindow("hh:event", event);
 
 const turns = new TurnController({
   ensureRuntime: () => runtime.get(),
@@ -143,6 +227,11 @@ const turns = new TurnController({
   },
   stateBlocks,
   emit,
+  recordUsage: async (entry, action) => {
+    const c = await validConfig();
+    const record = c ? usageRecord(entry, c.engineId, action) : null;
+    if (c && record) await new UsageLog(c.folder).append(record);
+  },
 });
 
 /** Registers an IPC handler that only answers the app's own page. */
@@ -164,14 +253,25 @@ function registerIpc() {
   handle("hh:saveConfig", async (patch: AppConfig) => {
     const problem = await configProblem(patch, validation());
     if (problem) throw new Error(problem);
+    const before = await config.load();
+    if (patch.engineId && before.engineId && patch.engineId !== before.engineId) {
+      if (turns.isBusy()) throw new Error("A turn is running");
+      await dropRuntime();
+    }
     await config.save(patch);
+    if (patch.appearance) applyAppearance(patch.appearance);
     return appState();
   });
-  handle("hh:loadChat", async () => {
-    const c = await config.load();
-    return { entries: c.folder ? await new ChatLog(c.folder).load() : [] };
+  handle("hh:loadChat", async (): Promise<ChatLoad> => {
+    const c = await validConfig();
+    if (!c) return { entries: [] };
+    const switchedFrom = turns.isBusy() ? null : await startNewChatIfEngineChanged(c.folder, c.engineId);
+    return { entries: await new ChatLog(c.folder).load(), ...(switchedFrom ? { switchedFrom } : {}) };
   });
-  handle("hh:send", (message: string) => turns.send(message));
+  handle("hh:send", (message: string, options?: SendOptions) => {
+    const action = typeof options?.action === "string" && Object.hasOwn(harness.actions, options.action) ? options.action : undefined;
+    return turns.send(message, action ? { action } : {});
+  });
   handle("hh:cancel", () => turns.cancel());
   handle("hh:history", async () => {
     const history = await currentHistory();
@@ -193,13 +293,67 @@ function registerIpc() {
       restorePending = false;
     }
   });
+  handle("hh:engineStatus", (engineId: string) => detectEngine(engineFor(engineId), commandDeps, shared));
+  handle("hh:acceptNotice", async (engineId: string) => {
+    engineFor(engineId);
+    await shared.update(engineId, { notice: { version: NOTICE_VERSION, acceptedAt: new Date().toISOString() } });
+  });
+  handle("hh:runSetup", async (engineId: string, step: SetupStep) => {
+    const engine = engineFor(engineId);
+    if (!SETUP_STEPS.includes(step)) throw new Error("Unknown setup step");
+    if (quitting) throw new Error("The app is closing");
+    if (setupBusy) throw new Error("A setup step is already running");
+    if (step === "logout" && turns.isBusy()) throw new Error("A turn is running");
+    // Reserve the slot before any await, so a second call can't slip in while this one starts.
+    setupBusy = true;
+    try {
+      const cli = step === "install" ? null : await cliCommand(engine, commandDeps);
+      const cmd = setupCommand(engine, step, cli, await loginShellPath(commandDeps));
+      if (!cmd) return { ok: false };
+      if (step === "logout") await dropRuntime();
+      if (quitting) throw new Error("The app is closing");
+      const run = runSetupProcess(cmd, (output) => sendToWindow("hh:setupOutput", output));
+      setupRun = run;
+      return { ok: (await run.exit) === 0 };
+    } finally {
+      setupRun = null;
+      setupBusy = false;
+    }
+  });
+  handle("hh:setupInput", (text: string) => {
+    if (typeof text === "string") setupRun?.write(text.slice(0, 2000));
+  });
+  handle("hh:cancelSetup", () => setupRun?.cancel());
+  handle("hh:testEngine", async (engineId: string) => {
+    const engine = engineFor(engineId);
+    const cmd = await engineCommand(engine, commandDeps);
+    if (!cmd) return { ok: false, error: { code: "engine-not-installed" } };
+    const result = await testPrompt(engine, cmd);
+    if (result.ok) await shared.update(engineId, { verifiedAt: new Date().toISOString() });
+    return result;
+  });
+  handle("hh:getUsage", async (): Promise<UsageSummary> => {
+    const c = await validConfig();
+    if (!c) return { limits: null, estimates: {} };
+    return summarizeUsage((await new UsageLog(c.folder).load()).filter((r) => r.engine === c.engineId));
+  });
+  handle("hh:revealFolder", async () => {
+    const c = await validConfig();
+    if (c) await shell.openPath(c.folder);
+  });
 }
 
 async function createWindow() {
   const win = new BrowserWindow({
     width: 1100,
-    height: 760,
+    height: 720,
+    minWidth: 900,
+    minHeight: 600,
     title: harness.name.en,
+    // Native look (spec 2026-10-11-app-look-design.md): the page draws the 52 px top bar.
+    titleBarStyle: "hiddenInset",
+    trafficLightPosition: { x: 20, y: 18 },
+    backgroundColor: nativeTheme.shouldUseDarkColors ? PAPER.dark : PAPER.light,
     webPreferences: { preload: path.join(__dirname, "../preload/index.mjs"), contextIsolation: true, sandbox: false },
   });
   window = win;
@@ -233,6 +387,9 @@ if (loaded) {
 
   app.whenReady().then(async () => {
     config = new ConfigStore(app.getPath("userData"));
+    shared = new SharedConfigStore(sharedConfigDir());
+    nativeTheme.themeSource = (await config.load()).appearance ?? "system";
+    nativeTheme.on("updated", () => window?.setBackgroundColor(nativeTheme.shouldUseDarkColors ? PAPER.dark : PAPER.light));
     registerIpc();
     await createWindow();
   });
@@ -244,11 +401,10 @@ if (loaded) {
     quitting = true;
     event.preventDefault();
     turns.close();
+    setupRun?.cancel();
     void (async () => {
       try {
-        const rt = await runtime.peek()?.catch(() => null);
-        runtime.clear();
-        await rt?.close();
+        await dropRuntime();
       } catch (err) {
         console.error("Could not close the agent cleanly", err);
       }

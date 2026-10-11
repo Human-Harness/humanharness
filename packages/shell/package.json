@@ -19,6 +19,7 @@
     "@humanharness/workspace": "workspace:*"
   },
   "devDependencies": {
+    "@fontsource/lexend": "5.3.0",
     "@humanharness/fake-agent": "workspace:*",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",

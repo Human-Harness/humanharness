@@ -35,6 +35,29 @@ describe("HarnessApp", () => {
     await screen.findByText("/Users/me/Elsewhere");
   });
 
+  it("explains a folder that can't be used, keeps the previous one, and clears the message on a good pick", async () => {
+    const client = new FakeClient({ language: "es" });
+    client.pickResult = { folder: "/Users/me/Documents", problem: "too-broad" };
+    render(<HarnessApp client={client} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Elegir otra carpeta" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toBe("Esa carpeta es muy general. Elegí o creá una carpeta adentro de ella.");
+    expect(screen.getByText("/Users/me/Documents/Demo")).toBeTruthy();
+    client.pickResult = { folder: "/Users/me/Documents/Mine", problem: null };
+    fireEvent.click(screen.getByRole("button", { name: "Elegir otra carpeta" }));
+    await screen.findByText("/Users/me/Documents/Mine");
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("shows a message when the settings can't be saved", async () => {
+    const client = new FakeClient({ language: "en" });
+    client.saveError = new Error("protected");
+    render(<HarnessApp client={client} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Start" }));
+    expect((await screen.findByRole("alert")).textContent).toMatch(/couldn't save/i);
+    expect(screen.getByRole("button", { name: "Start" })).toBeTruthy();
+  });
+
   it("sends a message, streams the answer and renders blocks", async () => {
     const client = new FakeClient(ready);
     render(<HarnessApp client={client} blocks={{ note: Note }} />);
@@ -101,6 +124,18 @@ describe("HarnessApp", () => {
     fireEvent.click(screen.getByRole("button", { name: "Go back to this point" }));
     fireEvent.click(screen.getByRole("button", { name: "Yes, go back" }));
     await waitFor(() => expect(client.restored).toEqual(["abc"]));
+  });
+
+  it("tells the user when going back failed", async () => {
+    const client = new FakeClient(ready);
+    client.restoreError = new Error("busy");
+    render(<HarnessApp client={client} />);
+    await screen.findByPlaceholderText("Write a message…");
+    fireEvent.click(screen.getByRole("button", { name: "History" }));
+    await screen.findByText("Turn: hi");
+    fireEvent.click(screen.getByRole("button", { name: "Go back to this point" }));
+    fireEvent.click(screen.getByRole("button", { name: "Yes, go back" }));
+    expect((await screen.findByRole("alert")).textContent).toMatch(/couldn't go back/i);
   });
 
   it("loads the saved conversation", async () => {

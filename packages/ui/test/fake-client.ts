@@ -1,4 +1,4 @@
-import type { AppConfig, AppState, ChatEntry, Event, HarnessClient, HistoryItem } from "../src/client";
+import type { AppConfig, AppState, ChatEntry, Event, FolderPick, HarnessClient, HistoryItem } from "../src/client";
 
 export class FakeClient implements HarnessClient {
   state: AppState;
@@ -8,6 +8,9 @@ export class FakeClient implements HarnessClient {
   chat: ChatEntry[] = [];
   items: HistoryItem[] = [{ sha: "abc", message: "Turn: hi", date: "2026-10-10T12:00:00.000Z" }];
   sendError: Error | null = null;
+  saveError: Error | null = null;
+  restoreError: Error | null = null;
+  pickResult: FolderPick | null = { folder: "/Users/me/Elsewhere", problem: null };
   stateError: Error | null = null;
   getStateCalls = 0;
   loadChatGate: Promise<void> | null = null;
@@ -34,9 +37,10 @@ export class FakeClient implements HarnessClient {
     return this.state;
   }
   async pickFolder() {
-    return "/Users/me/Elsewhere";
+    return this.pickResult;
   }
   async saveConfig(patch: AppConfig) {
+    if (this.saveError) throw this.saveError;
     this.state = { ...this.state, config: { ...this.state.config, ...patch } };
     return this.state;
   }
@@ -59,6 +63,7 @@ export class FakeClient implements HarnessClient {
     return this.items;
   }
   async restore(sha: string) {
+    if (this.restoreError) throw this.restoreError;
     this.restored.push(sha);
   }
 }

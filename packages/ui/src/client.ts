@@ -39,10 +39,20 @@ export interface HistoryItem {
   date: string;
 }
 
+/** Why a folder can't be the harness folder. */
+export type FolderProblem = "not-absolute" | "root" | "home" | "too-broad" | "protected";
+
+/** A folder the user picked, and why it can't be used (null when it can). */
+export interface FolderPick {
+  folder: string;
+  problem: FolderProblem | null;
+}
+
 /** Everything the renderer can ask the main process. Implemented by the preload as `window.hh`. */
 export interface HarnessClient {
   getState(): Promise<AppState>;
-  pickFolder(defaultPath: string): Promise<string | null>;
+  /** Null when the user cancelled the dialog. */
+  pickFolder(defaultPath: string): Promise<FolderPick | null>;
   saveConfig(patch: AppConfig): Promise<AppState>;
   loadChat(): Promise<ChatEntry[]>;
   send(message: string): Promise<void>;

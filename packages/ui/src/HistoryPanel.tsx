@@ -18,6 +18,7 @@ export function HistoryPanel({
   const { t, i18n } = useTranslation();
   const [items, setItems] = useState<HistoryItem[] | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
   const closeRef = useRef<HTMLButtonElement>(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
@@ -34,12 +35,16 @@ export function HistoryPanel({
   }, []);
 
   const restore = (sha: string) => {
+    setFailed(false);
     client.restore(sha).then(
       () => {
         onRestored?.();
         onClose();
       },
-      () => setConfirming(null),
+      () => {
+        setConfirming(null);
+        setFailed(true);
+      },
     );
   };
 
@@ -51,6 +56,7 @@ export function HistoryPanel({
           {t("history.close")}
         </button>
       </header>
+      {failed && <p role="alert">{t("history.restoreFailed")}</p>}
       {items?.length === 0 && <p>{t("history.empty")}</p>}
       <ol>
         {items?.map((item) => (

@@ -8,13 +8,13 @@ import { electronLauncher } from "@humanharness/blocks";
 import { availableEngines, getEngine } from "@humanharness/engines";
 import { type LoadedHarness, loadHarness } from "@humanharness/harness-sdk";
 import { type Event, type HarnessRuntime, createRuntime } from "@humanharness/runtime";
-import { type AppConfig, type AppState, isConfigured } from "@humanharness/ui";
+import { type AppConfig, type AppState, type FolderPick, isConfigured } from "@humanharness/ui";
 import { History } from "@humanharness/workspace";
 import { ChatLog } from "./chat-log";
 import { ConfigStore, historyDir } from "./config";
 import { type CommandDeps, engineCommand } from "./engine-command";
 import { TurnController, memoise } from "./turn-controller";
-import { type ValidationContext, configProblem, isAppUrl } from "./validate";
+import { type ValidationContext, checkFolder, configProblem, isAppUrl } from "./validate";
 
 declare const __HARNESS_DIR__: string;
 
@@ -36,11 +36,17 @@ let config: ConfigStore;
 let window: BrowserWindow | null = null;
 /** Settles when the last restore done without a runtime has finished. */
 let restoring: Promise<unknown> = Promise.resolve();
+/** A restore was asked for and hasn't finished (including finding the history). */
+let restorePending = false;
+/** Set on the first before-quit: from then on, no new turns or restores. */
+let quitting = false;
 
 const mode = () => (app.isPackaged ? "distribution" : "development");
 const stateBlocks = () => new Set(Object.entries(harness.blocks).filter(([, b]) => !b.visible).map(([n]) => n));
 const rendererFile = path.join(__dirname, "../renderer/index.html");
-const appUrl = (url: string) => isAppUrl(url, { devUrl: process.env.ELECTRON_RENDERER_URL, rendererFile });
+// The dev server is only trusted in development: a packaged app always loads its own file.
+const devUrl = app.isPackaged ? undefined : process.env.ELECTRON_RENDERER_URL;
+const appUrl = (url: string) => isAppUrl(url, { devUrl, rendererFile });
 const validation = (): ValidationContext => ({
   engineIds: availableEngines(harness.engines, mode()).map((e) => e.id),
   languages: harness.languages,
@@ -65,13 +71,13 @@ async function appState(): Promise<AppState> {
 /** The saved config, only when it is complete and valid. */
 async function validConfig(): Promise<Required<AppConfig> | null> {
   const c = await config.load();
-  return isConfigured(c) && configProblem(c, validation()) === null ? c : null;
+  return isConfigured(c) && (await configProblem(c, validation())) === null ? c : null;
 }
 
 const runtime = memoise<HarnessRuntime>(async () => {
   const c = await config.load();
   if (!isConfigured(c)) throw new Error("The app is not set up yet");
-  const problem = configProblem(c, validation());
+  const problem = await configProblem(c, validation());
   if (problem) throw new Error(problem);
   await restoring;
   const engine = getEngine(c.engineId);
@@ -118,7 +124,7 @@ const turns = new TurnController({
     if (!isConfigured(c)) return null;
     // An invalid saved config still runs the turn, so the runtime start fails with the reason;
     // nothing is written into a folder that didn't pass validation.
-    return configProblem(c, validation()) === null ? new ChatLog(c.folder) : { append: async () => {} };
+    return (await configProblem(c, validation())) === null ? new ChatLog(c.folder) : { append: async () => {} };
   },
   stateBlocks,
   emit,
@@ -136,10 +142,12 @@ function registerIpc() {
   handle("hh:getState", () => appState());
   handle("hh:pickFolder", async (defaultPath: string) => {
     const result = await dialog.showOpenDialog(window!, { defaultPath, properties: ["openDirectory", "createDirectory"] });
-    return result.canceled ? null : result.filePaths[0];
+    const folder = result.canceled ? undefined : result.filePaths[0];
+    if (!folder) return null;
+    return { folder, problem: await checkFolder(folder, os.homedir()) } satisfies FolderPick;
   });
   handle("hh:saveConfig", async (patch: AppConfig) => {
-    const problem = configProblem(patch, validation());
+    const problem = await configProblem(patch, validation());
     if (problem) throw new Error(problem);
     await config.save(patch);
     return appState();
@@ -155,12 +163,20 @@ function registerIpc() {
     return history ? (await history.list()).map((h) => ({ ...h, date: h.date.toISOString() })) : [];
   });
   handle("hh:restore", async (sha: string) => {
-    if (turns.isBusy()) return;
-    const history = await currentHistory();
-    if (!history || turns.isBusy()) return;
-    const done = history.restore(sha, "Went back to an earlier point");
-    restoring = done.catch(() => undefined);
-    await done;
+    if (quitting) throw new Error("The app is closing");
+    if (restorePending) throw new Error("Already going back");
+    if (turns.isBusy()) throw new Error("A turn is running");
+    restorePending = true;
+    try {
+      const history = await currentHistory();
+      if (!history) throw new Error("The app is not set up yet");
+      if (quitting || turns.isBusy()) throw new Error("A turn is running");
+      const done = history.restore(sha, "Went back to an earlier point");
+      restoring = done.catch(() => undefined);
+      await done;
+    } finally {
+      restorePending = false;
+    }
   });
 }
 
@@ -182,7 +198,7 @@ async function createWindow() {
   win.webContents.on("will-navigate", (event) => {
     if (!appUrl(event.url)) event.preventDefault();
   });
-  if (process.env.ELECTRON_RENDERER_URL) await win.loadURL(process.env.ELECTRON_RENDERER_URL);
+  if (devUrl) await win.loadURL(devUrl);
   else await win.loadFile(rendererFile);
 }
 
@@ -208,12 +224,11 @@ if (loaded) {
 
   app.on("window-all-closed", () => app.quit());
 
-  let quitting = false;
   app.on("before-quit", (event) => {
     if (quitting) return;
     quitting = true;
     event.preventDefault();
-    turns.cancel();
+    turns.close();
     void (async () => {
       try {
         const rt = await runtime.peek()?.catch(() => null);

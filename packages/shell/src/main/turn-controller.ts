@@ -24,6 +24,7 @@ export class TurnController {
   private turn: { cancelled: boolean; running: RunningTurn | null } | null = null;
   private writes: Promise<void> = Promise.resolve();
   private active: Promise<void> = Promise.resolve();
+  private closed = false;
 
   constructor(private readonly deps: TurnDeps) {}
 
@@ -38,6 +39,12 @@ export class TurnController {
     this.turn.running?.cancel();
   }
 
+  /** For quitting: cancels the current turn and rejects every later send. */
+  close(): void {
+    this.closed = true;
+    this.cancel();
+  }
+
   /** Resolves once the current turn has ended and every queued chat-log write has settled. */
   async flush(): Promise<void> {
     await this.active.catch(() => undefined);
@@ -48,8 +55,10 @@ export class TurnController {
     } while (seen !== this.writes);
   }
 
+  /** Rejects when the app is closing, a turn is already running, or the app isn't set up. */
   send(message: string): Promise<void> {
-    if (this.turn) return Promise.resolve();
+    if (this.closed) return Promise.reject(new Error("The app is closing"));
+    if (this.turn) return Promise.reject(new Error("A turn is already running"));
     this.active = this.run(message);
     return this.active;
   }
@@ -59,7 +68,7 @@ export class TurnController {
     this.turn = turn;
     try {
       const log = await this.deps.chatLog();
-      if (!log) return;
+      if (!log) throw new Error("The app is not set up yet");
       void this.write(log, { id: randomUUID(), role: "user", text: message, blocks: [], activities: [], at: new Date().toISOString() });
       const recorder = new TurnRecorder(this.deps.stateBlocks());
       const finish = async (done: Done) => {
@@ -67,6 +76,7 @@ export class TurnController {
         this.emit(done);
       };
 
+      if (turn.cancelled) return await finish(fail("cancelled") as Done);
       let rt: HarnessRuntime | null;
       try {
         rt = await this.deps.ensureRuntime();

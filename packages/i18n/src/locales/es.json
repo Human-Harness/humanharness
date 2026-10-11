@@ -11,7 +11,15 @@
     "engineRequires": "Necesitás: {{plan}}",
     "engineData": "Tus datos van a: {{where}}",
     "enginePending": "Todavía no habilitado para distribución (solo desarrollo)",
-    "start": "Empezar"
+    "start": "Empezar",
+    "folderProblem": {
+      "not-absolute": "No pude usar esa carpeta. Elegí otra.",
+      "root": "Esa es la raíz del disco. Elegí o creá una carpeta para tu trabajo.",
+      "home": "Esa es tu carpeta personal entera. Elegí o creá una carpeta adentro de ella.",
+      "too-broad": "Esa carpeta es muy general. Elegí o creá una carpeta adentro de ella.",
+      "protected": "Esa carpeta es del sistema o de otras apps. Elegí otra, por ejemplo una dentro de Documentos."
+    },
+    "saveError": "No pude guardar la configuración. Probá de nuevo o elegí otra carpeta."
   },
   "chat": {
     "placeholder": "Escribí un mensaje…",
@@ -36,7 +44,8 @@
     "confirm": "¿Volver a este punto? Se deshacen los cambios posteriores en tus archivos.",
     "confirmYes": "Sí, volver",
     "cancel": "Cancelar",
-    "restored": "Volví a ese punto. Se deshicieron los cambios posteriores en tus archivos."
+    "restored": "Volví a ese punto. Se deshicieron los cambios posteriores en tus archivos.",
+    "restoreFailed": "No pude volver a ese punto. Probá de nuevo en un momento."
   },
   "app": {
     "loadError": "La app no pudo arrancar. Cerrala y volvé a abrirla."

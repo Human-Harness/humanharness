@@ -11,7 +11,15 @@
     "engineRequires": "Requires: {{plan}}",
     "engineData": "Your data goes to: {{where}}",
     "enginePending": "Not yet cleared for distribution (development only)",
-    "start": "Start"
+    "start": "Start",
+    "folderProblem": {
+      "not-absolute": "I couldn't use that folder. Pick another one.",
+      "root": "That's the top of the disk. Pick or create a folder for your work.",
+      "home": "That's your whole home folder. Pick or create a folder inside it.",
+      "too-broad": "That folder is too general. Pick or create a folder inside it.",
+      "protected": "That folder belongs to the system or other apps. Pick another one, for example inside Documents."
+    },
+    "saveError": "I couldn't save your settings. Try again or pick another folder."
   },
   "chat": {
     "placeholder": "Write a message…",
@@ -36,7 +44,8 @@
     "confirm": "Go back to this point? Files changed after it will be undone.",
     "confirmYes": "Yes, go back",
     "cancel": "Cancel",
-    "restored": "I went back to that point. Files changed after it were undone."
+    "restored": "I went back to that point. Files changed after it were undone.",
+    "restoreFailed": "I couldn't go back to that point. Try again in a moment."
   },
   "app": {
     "loadError": "The app couldn't start. Close it and open it again."

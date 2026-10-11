@@ -81,13 +81,13 @@ describe("TurnController", () => {
     expect(controller.isBusy()).toBe(false);
   });
 
-  it("is busy as soon as send is called and refuses a second send", async () => {
+  it("is busy as soon as send is called and rejects a second send", async () => {
     const startup = deferred<HarnessRuntime | null>();
     const ensureRuntime = vi.fn(() => startup.promise);
     const { controller, entries } = setup({ ensureRuntime });
     const first = controller.send("one");
     expect(controller.isBusy()).toBe(true);
-    await controller.send("two");
+    await expect(controller.send("two")).rejects.toThrow();
     startup.resolve(null);
     await first;
     expect(ensureRuntime).toHaveBeenCalledTimes(1);
@@ -170,10 +170,37 @@ describe("TurnController", () => {
     await sent;
   });
 
-  it("ignores send when there is no chat log (not configured)", async () => {
+  it("cancelled before startup never starts the runtime", async () => {
+    const log = deferred<{ append: (e: ChatEntry) => Promise<void> } | null>();
+    const ensureRuntime = vi.fn(async () => null);
+    const events: Event[] = [];
+    const controller = new TurnController({ ensureRuntime, chatLog: () => log.promise, stateBlocks: () => new Set(), emit: (e) => events.push(e) });
+    const sent = controller.send("hi");
+    controller.cancel();
+    log.resolve({ append: async () => {} });
+    await sent;
+    expect(ensureRuntime).not.toHaveBeenCalled();
+    expect(events.at(-1)).toEqual({ type: "done", ok: false, error: { code: "cancelled" } });
+  });
+
+  it("close cancels the current turn and rejects later sends", async () => {
+    const fake = fakeRuntime();
+    const { controller, events } = setup({ ensureRuntime: async () => fake.runtime });
+    const sent = controller.send("hi");
+    await vi.waitFor(() => expect(fake.send).toHaveBeenCalled());
+    controller.close();
+    await sent;
+    expect(fake.cancel).toHaveBeenCalled();
+    expect(events.at(-1)).toMatchObject({ type: "done", ok: false, error: { code: "cancelled" } });
+    await expect(controller.send("again")).rejects.toThrow();
+    expect(fake.send).toHaveBeenCalledTimes(1);
+    expect(controller.isBusy()).toBe(false);
+  });
+
+  it("rejects send when there is no chat log (not configured)", async () => {
     const ensureRuntime = vi.fn(async () => null);
     const controller = new TurnController({ ensureRuntime, chatLog: async () => null, stateBlocks: () => new Set(), emit: () => {} });
-    await controller.send("hi");
+    await expect(controller.send("hi")).rejects.toThrow();
     expect(ensureRuntime).not.toHaveBeenCalled();
     expect(controller.isBusy()).toBe(false);
   });

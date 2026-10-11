@@ -102,6 +102,20 @@ describe("runSetupStep", () => {
     expect(calls).toEqual(["drop", "spawn cmd"]);
   });
 
+  it("leaves the engine in use to the quit when the app starts quitting while the CLI is being found", async () => {
+    let quitting = false;
+    const { d, calls } = deps({
+      quitting: () => quitting,
+      command: async () => {
+        quitting = true;
+        return "cmd";
+      },
+    });
+    await expect(runSetupStep(d, "claude", "update")).rejects.toThrow(/closing/);
+    // Quitting closes the runtime itself: the step doesn't close it a second time.
+    expect(calls).toEqual([]);
+  });
+
   it("refuses to start while the app quits", async () => {
     const { d, calls } = deps({ quitting: () => true });
     await expect(runSetupStep(d, "claude", "install")).rejects.toThrow(/closing/);

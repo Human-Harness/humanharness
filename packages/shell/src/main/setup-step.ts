@@ -38,6 +38,8 @@ export async function runSetupStep<Cmd>(d: SetupStepDeps<Cmd>, engineId: string,
     if (!cmd) return result;
     // Cancelled while the CLI was being found: nothing starts and the engine in use stays.
     if (d.guards.setupCancelled()) return (result = { ok: false, cancelled: true });
+    // Quitting closes the runtime itself: don't close it a second time at once.
+    if (d.quitting()) throw new Error("The app is closing");
     if (current && (step === "logout" || step === "update")) {
       // Turns are refused from beginSetup on; this re-check is a safety net before the runtime goes.
       if (d.isBusy()) throw new Error("A turn is running");

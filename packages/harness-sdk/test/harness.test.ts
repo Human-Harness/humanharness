@@ -67,6 +67,33 @@ describe("defineHarness", () => {
   it("rejects an unknown language", () => {
     expect(() => defineHarness({ ...base, languages: ["fr" as never] })).toThrow();
   });
+
+  it("declares actions with a cost hint, empty by default", () => {
+    expect(defineHarness({ ...base, languages: [...base.languages] }).actions).toEqual({});
+    const h = defineHarness({
+      ...base,
+      languages: [...base.languages],
+      actions: { research: { label: { es: "Investigar", en: "Research" }, cost: "heavy" } },
+    });
+    expect(h.actions.research).toEqual({ label: { es: "Investigar", en: "Research" }, cost: "heavy" });
+    expect(() =>
+      defineHarness({ ...base, languages: [...base.languages], actions: { research: { label: { es: "x", en: "x" }, cost: "huge" as never } } }),
+    ).toThrow();
+    expect(() =>
+      defineHarness({ ...base, languages: [...base.languages], actions: { "Bad Name": { label: { es: "x", en: "x" }, cost: "light" } } }),
+    ).toThrow();
+  });
+
+  it("takes an optional tagline and logo for the home screen", () => {
+    const h = defineHarness({
+      ...base,
+      languages: [...base.languages],
+      tagline: { es: "Tus notas, ordenadas", en: "Your notes, tidy" },
+      logo: "./ui/logo.svg",
+    });
+    expect([h.tagline?.en, h.logo]).toEqual(["Your notes, tidy", "./ui/logo.svg"]);
+    expect(defineHarness({ ...base, languages: [...base.languages] }).tagline).toBeUndefined();
+  });
 });
 
 describe("loadHarness", () => {

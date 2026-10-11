@@ -13,9 +13,35 @@ export type TransportDef =
       minAdapterVersion?: string;
     };
 
+/** How the app gets an engine ready, always through the provider's own CLI and installer. */
+export interface EngineSetup {
+  /** Official install command (run with `/bin/bash -c`, shown to the user first) and its docs. */
+  install?: { command: string; docsUrl: string };
+  /** CLI args for the official login flow (it opens the browser). */
+  login: string[];
+  /** CLI args for the login status check, and how to read its result. */
+  status: { args: string[]; format: "json-logged-in" | "exit-code" };
+  /** CLI args for the official self-update, when there is one. */
+  update?: string[];
+  /** CLI args for the official sign-out (Settings → Engine → Sign out, only when the user asks). */
+  logout: string[];
+}
+
 export interface EngineDef {
   id: string;
   name: string;
+  /** Company that runs the service; named in the legal notice. */
+  provider: string;
+  /** Whether the engine reports plan-limit windows (Claude) or only tokens (Codex). */
+  reportsLimits: boolean;
+  /** Install / login / status / update / logout. Absent for engines the app can't set up itself. */
+  setup?: EngineSetup;
+  /**
+   * Logo file inside this package (`assets/<id>.svg`), shown on the engine tiles. The files are
+   * placeholders: the providers' official logos go here once their brand guidelines are checked
+   * (part of the legal gate before distribution).
+   */
+  logo?: string;
   status: LegalStatus;
   /** Where the status comes from: "<url> (<yyyy-mm-dd>)". */
   statusSource: string;
@@ -47,6 +73,16 @@ export const ENGINES: readonly EngineDef[] = [
     detect: { binary: "claude", versionArgs: ["--version"], minVersion: "2.1.296" },
     transport: { kind: "claude-cli", binary: "claude" },
     instructionsFile: { path: "CLAUDE.md", content: "@AGENTS.md\n" },
+    provider: "Anthropic",
+    reportsLimits: true,
+    setup: {
+      install: { command: "curl -fsSL https://claude.ai/install.sh | bash", docsUrl: "https://code.claude.com/docs/en/setup" },
+      login: ["auth", "login"],
+      status: { args: ["auth", "status", "--json"], format: "json-logged-in" },
+      update: ["update"],
+      logout: ["auth", "logout"],
+    },
+    logo: "assets/claude.svg",
   },
   {
     id: "codex",
@@ -70,10 +106,23 @@ export const ENGINES: readonly EngineDef[] = [
       modes: { edit: "workspace-write", readOnly: "read-only" },
       minAdapterVersion: "2.2.2",
     },
+    provider: "OpenAI",
+    reportsLimits: false,
+    // The app runs the official Codex CLI bundled with the ACP adapter (status, login), so it never
+    // installs Codex itself; the official install command is kept for builds without the bundle.
+    setup: {
+      install: { command: "curl -fsSL https://chatgpt.com/codex/install.sh | sh", docsUrl: "https://learn.chatgpt.com/docs/codex/cli" },
+      login: ["login"],
+      status: { args: ["login", "status"], format: "exit-code" },
+      logout: ["logout"],
+    },
+    logo: "assets/codex.svg",
   },
   {
     id: "kimi",
     name: "Kimi",
+    provider: "Moonshot AI",
+    reportsLimits: false,
     status: "pending",
     statusSource: "https://www.kimi.com/en/help/kimi-code/membership-guide (2026-10-10)",
     requires: { es: "Membresía Kimi Code", en: "Kimi Code membership" },
@@ -87,6 +136,8 @@ export const ENGINES: readonly EngineDef[] = [
   {
     id: "gemini",
     name: "Gemini",
+    provider: "Google",
+    reportsLimits: false,
     status: "excluded",
     statusSource: "https://github.com/google-gemini/gemini-cli/discussions/27274 (2026-10-10)",
     requires: { es: "—", en: "—" },
@@ -100,6 +151,8 @@ export const ENGINES: readonly EngineDef[] = [
   {
     id: "qwen",
     name: "Qwen",
+    provider: "Alibaba Cloud",
+    reportsLimits: false,
     status: "excluded",
     statusSource: "https://qwenlm.github.io/qwen-code-docs/en/users/configuration/auth/ (2026-10-10)",
     requires: { es: "—", en: "—" },
@@ -126,4 +179,24 @@ export function availableEngines(harnessEngineIds: string[], mode: Mode): Engine
   return harnessEngineIds
     .map((id) => ENGINES.find((e) => e.id === id))
     .filter((e): e is EngineDef => e !== undefined && accepted.includes(e.status));
+}
+
+/** Bumped whenever the legal notice text changes, so users accept it again. */
+export const NOTICE_VERSION = 1;
+
+/** The first x.y.z in a CLI's version output ("2.1.296 (Claude Code)", "codex-cli 0.160.1"). */
+export function parseVersion(output: string): string | null {
+  return /\d+\.\d+\.\d+/.exec(output)?.[0] ?? null;
+}
+
+/** True when `version` is `min` or newer (numeric x.y.z comparison). */
+export function meetsMinVersion(version: string, min: string): boolean {
+  const a = version.split(".").map(Number);
+  const b = min.split(".").map(Number);
+  for (let i = 0; i < 3; i++) {
+    const x = a[i] ?? 0;
+    const y = b[i] ?? 0;
+    if (x !== y) return x > y;
+  }
+  return true;
 }

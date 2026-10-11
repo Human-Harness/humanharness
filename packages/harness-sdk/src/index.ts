@@ -26,6 +26,11 @@ export function blockToolName(name: string, block: Pick<Block, "visible">): stri
 }
 
 const localizedText = z.object({ es: z.string().min(1), en: z.string().min(1) });
+export const ACTION_COSTS = ["light", "medium", "heavy"] as const;
+export type ActionCost = (typeof ACTION_COSTS)[number];
+/** A workflow the harness can start (e.g. from a button), with how much of the plan it tends to use. */
+const actionSchema = z.object({ label: localizedText, cost: z.enum(ACTION_COSTS) });
+export type HarnessAction = z.output<typeof actionSchema>;
 const blockSchema = z.custom<Block>(
   (b) => {
     if (typeof b !== "object" || b === null) return false;
@@ -50,6 +55,11 @@ const manifestSchema = z.object({
   instructions: z.string().min(1),
   permissions: z.object({ edit: z.enum(["folder", "none"]), exec: z.boolean(), web: z.boolean() }),
   blocks: z.record(z.string().regex(/^[a-z][a-z0-9_]*$/), blockSchema),
+  actions: z.record(z.string().regex(/^[a-z][a-z0-9_-]*$/), actionSchema).default({}),
+  /** One line under the name on the home screen. */
+  tagline: localizedText.optional(),
+  /** Logo file in the harness folder (SVG, PNG or JPEG); defaults to the Human Harness H. */
+  logo: z.string().optional(),
   mcp: z.array(z.string()).default([]),
   ui: z.string().optional(),
   locales: z.string().optional(),

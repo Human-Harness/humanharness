@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { ENGINES, availableEngines, getEngine } from "../src";
+import fs from "node:fs";
+import { fileURLToPath } from "node:url";
+import { ENGINES, NOTICE_VERSION, availableEngines, getEngine, meetsMinVersion, parseVersion } from "../src";
 
 describe("ENGINES", () => {
   it("pins the Codex ACP adapter and its session modes", () => {
@@ -43,5 +45,61 @@ describe("availableEngines", () => {
 describe("getEngine", () => {
   it("throws for unknown ids", () => {
     expect(() => getEngine("nope")).toThrow(/Unknown engine/);
+  });
+});
+
+describe("engine setup data", () => {
+  it("installs, signs in, checks and updates Claude through its official CLI", () => {
+    expect(getEngine("claude").setup).toEqual({
+      install: { command: "curl -fsSL https://claude.ai/install.sh | bash", docsUrl: "https://code.claude.com/docs/en/setup" },
+      login: ["auth", "login"],
+      status: { args: ["auth", "status", "--json"], format: "json-logged-in" },
+      update: ["update"],
+      logout: ["auth", "logout"],
+    });
+  });
+
+  it("signs in to Codex with `codex login` and reads the status from the exit code", () => {
+    expect(getEngine("codex").setup).toMatchObject({
+      install: { command: "curl -fsSL https://chatgpt.com/codex/install.sh | sh" },
+      login: ["login"],
+      status: { args: ["login", "status"], format: "exit-code" },
+      logout: ["logout"],
+    });
+    expect(getEngine("codex").setup?.update).toBeUndefined();
+  });
+
+  it("ships a logo file for each engine the app sets up (placeholders until the official assets pass brand review)", () => {
+    for (const id of ["claude", "codex"]) {
+      const logo = getEngine(id).logo;
+      expect(logo).toBe(`assets/${id}.svg`);
+      expect(fs.readFileSync(fileURLToPath(new URL(`../${logo}`, import.meta.url)), "utf8")).toMatch(/^<svg /);
+    }
+  });
+
+  it("names the provider and whether the engine reports plan limits", () => {
+    expect([getEngine("claude").provider, getEngine("claude").reportsLimits]).toEqual(["Anthropic", true]);
+    expect([getEngine("codex").provider, getEngine("codex").reportsLimits]).toEqual(["OpenAI", false]);
+    for (const e of ENGINES) expect(e.provider.length).toBeGreaterThan(0);
+  });
+
+  it("starts the legal notice at version 1", () => {
+    expect(NOTICE_VERSION).toBe(1);
+  });
+});
+
+describe("versions", () => {
+  it("reads x.y.z from CLI version output", () => {
+    expect(parseVersion("2.1.296 (Claude Code)\n")).toBe("2.1.296");
+    expect(parseVersion("codex-cli 0.160.1")).toBe("0.160.1");
+    expect(parseVersion("command not found")).toBeNull();
+  });
+
+  it("compares versions numerically", () => {
+    expect(meetsMinVersion("2.1.296", "2.1.296")).toBe(true);
+    expect(meetsMinVersion("2.1.300", "2.1.296")).toBe(true);
+    expect(meetsMinVersion("3.0.0", "2.9.9")).toBe(true);
+    expect(meetsMinVersion("2.1.29", "2.1.296")).toBe(false);
+    expect(meetsMinVersion("0.159.9", "0.160.1")).toBe(false);
   });
 });

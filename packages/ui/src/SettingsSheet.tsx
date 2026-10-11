@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Language } from "@humanharness/harness-sdk";
 import { Segmented } from "./chrome";
-import type { AppConfig, AppState, Appearance, HarnessClient, UsageSummary } from "./client";
+import type { AppConfig, AppState, Appearance, HarnessClient, RunningSetup, UsageSummary } from "./client";
 import { EngineTab } from "./EngineTab";
 import { FolderStep, uiLanguage } from "./FolderStep";
 import { WARN_AT, formatReset, percent } from "./usage";
@@ -28,14 +28,15 @@ export function SettingsSheet({
   onClose: () => void;
 }) {
   const { t } = useTranslation();
+  const runningId = useId();
   const doneRef = useRef<HTMLButtonElement>(null);
   const sheetRef = useRef<HTMLDivElement>(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   /** An install, update, sign-in or sign-out is running: the sheet stays open (it shows how it goes). */
-  const [running, setRunning] = useState(false);
+  const [running, setRunning] = useState<RunningSetup | null>(null);
   const runningRef = useRef(false);
-  runningRef.current = running;
+  runningRef.current = running !== null;
   const close = () => {
     if (!runningRef.current) onCloseRef.current();
   };
@@ -45,13 +46,13 @@ export function SettingsSheet({
     const off = client.onSetupOutput((o) => {
       if (o.kind === "start" || o.kind === "end") {
         heard = true;
-        setRunning(o.kind === "start");
+        setRunning(o.kind === "start" ? { engineId: o.engineId, step: o.step } : null);
       }
     });
     // A step may already be running (started before this sheet opened, e.g. before a reload).
     client.getSetup().then(
       (r) => {
-        if (!heard && r) setRunning(true);
+        if (!heard && r) setRunning({ engineId: r.engineId, step: r.step });
       },
       () => {},
     );
@@ -91,13 +92,31 @@ export function SettingsSheet({
               </button>
             ))}
           </div>
-          <button ref={doneRef} className="hh-primary" disabled={running} onClick={close}>
+          <button
+            ref={doneRef}
+            className="hh-primary"
+            disabled={running !== null}
+            aria-describedby={running ? runningId : undefined}
+            onClick={close}
+          >
             {t("settings.done")}
           </button>
         </div>
+        {running && (
+          <div className="hh-sheet-running">
+            <p id={runningId} role="status">
+              {t(`settings.running.${running.step}`, { engine: state.engines.find((e) => e.id === running.engineId)?.name ?? running.engineId })}{" "}
+              {t("settings.runningWait")}
+            </p>
+            {/* A sign-in shown on the Engine tab has its own Cancel next to the code field. */}
+            {!(running.step === "login" && tab === "engine") && (
+              <button onClick={() => void client.cancelSetup().catch(() => {})}>{t("settings.runningCancel")}</button>
+            )}
+          </div>
+        )}
         <div role="tabpanel" aria-label={t(`settings.tabs.${tab}`)}>
           {tab === "general" && <GeneralTab client={client} state={state} onChange={onChange} />}
-          {tab === "engine" && <EngineTab client={client} state={state} onChange={onChange} />}
+          {tab === "engine" && <EngineTab client={client} state={state} onChange={onChange} setupEngine={running?.engineId} />}
           {tab === "usage" && <UsageTab client={client} state={state} />}
         </div>
       </div>

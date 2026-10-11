@@ -97,6 +97,8 @@ input[type="text"], input:not([type]) { font: inherit; height: 28px; padding: 0 
 .hh-sheet-backdrop { position: fixed; inset: 52px 0 0 0; background: var(--hh-backdrop); display: flex; justify-content: center; align-items: flex-start; }
 .hh-sheet { width: min(620px, calc(100% - 32px)); max-height: calc(100% - 24px); box-sizing: border-box; overflow-y: auto; background: var(--hh-sheet); border: 1px solid var(--hh-line-strong); border-top: none; border-radius: 0 0 12px 12px; padding: 16px 20px 20px; display: grid; gap: 16px; box-shadow: 0 12px 32px rgba(25, 30, 36, 0.18); }
 .hh-sheet-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.hh-sheet-running { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.hh-sheet-running p { margin: 0; color: var(--hh-slate); }
 .hh-tab { display: grid; gap: 12px; }
 .hh-rows { background: var(--hh-surface); border: 1px solid var(--hh-line); border-radius: 10px; }
 .hh-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border-top: 1px solid var(--hh-line); }

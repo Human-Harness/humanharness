@@ -90,6 +90,30 @@ describe("SettingsSheet", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  it("says at sheet level what is running and why Done waits, with a Cancel, and keeps the engine tiles on it", async () => {
+    const client = new FakeClient(ready);
+    client.state.engines = [...client.state.engines, { ...client.state.engines[0], id: "codex", name: "Codex", provider: "OpenAI" }];
+    client.statusFor.claude = { ...client.status, installed: false };
+    let finish!: () => void;
+    client.setupGate = new Promise((r) => (finish = r));
+    await renderIn("en", <Sheet client={client} initialTab="engine" />);
+    fireEvent.click(await screen.findByRole("button", { name: "Install" }));
+    const line = await screen.findByText(/Installing Claude…/);
+    expect(line.textContent).toBe("Installing Claude… Settings stays open until it finishes.");
+    const done = screen.getByRole("button", { name: "Done" }) as HTMLButtonElement;
+    expect(done.disabled).toBe(true);
+    expect(document.getElementById(done.getAttribute("aria-describedby")!)).toBe(line);
+    expect((screen.getByRole("button", { name: /Codex/ }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("tab", { name: "General" }));
+    expect(screen.getByText(/Installing Claude…/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(client.setupCancelled).toBe(1));
+    await act(async () => finish());
+    await waitFor(() => expect(screen.queryByText(/Installing Claude…/)).toBeNull());
+    expect(done.disabled).toBe(false);
+    expect(done.hasAttribute("aria-describedby")).toBe(false);
+  });
+
   it("General: changes language and appearance, shows the fixed folder and the About card", async () => {
     const client = new FakeClient(ready);
     await renderIn("en", <Sheet client={client} />);

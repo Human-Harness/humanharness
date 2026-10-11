@@ -5,7 +5,18 @@ import { EngineOnboarding } from "./EngineOnboarding";
 import { FolderStep, uiLanguage } from "./FolderStep";
 
 /** Settings → Engine: the folder on first launch, then engine tiles, onboarding and the engine in use. */
-export function EngineTab({ client, state, onChange }: { client: HarnessClient; state: AppState; onChange: (s: AppState) => void }) {
+export function EngineTab({
+  client,
+  state,
+  onChange,
+  setupEngine,
+}: {
+  client: HarnessClient;
+  state: AppState;
+  onChange: (s: AppState) => void;
+  /** The engine whose install, update, sign-in or sign-out is running: its tile stays selected until it ends. */
+  setupEngine?: string;
+}) {
   const { t, i18n } = useTranslation();
   const lang = uiLanguage(state, i18n.language);
   const current = state.config.engineId;
@@ -30,6 +41,11 @@ export function EngineTab({ client, state, onChange }: { client: HarnessClient; 
     },
     [client],
   );
+
+  // A running step keeps its engine on screen (its progress is shown only there).
+  useEffect(() => {
+    if (setupEngine) setSelected(setupEngine);
+  }, [setupEngine]);
 
   useEffect(() => {
     if (!hasFolder) return;
@@ -72,7 +88,14 @@ export function EngineTab({ client, state, onChange }: { client: HarnessClient; 
           const label =
             checkErrors[e.id] !== undefined ? t("home.notConnected") : !s ? t("home.checking") : engineProblem(s) === null ? t("home.connected") : t("home.notConnected");
           return (
-            <button key={e.id} type="button" className="hh-tile" aria-pressed={selected === e.id} onClick={() => setSelected(e.id)}>
+            <button
+              key={e.id}
+              type="button"
+              className="hh-tile"
+              aria-pressed={selected === e.id}
+              disabled={setupEngine !== undefined && e.id !== setupEngine}
+              onClick={() => setSelected(e.id)}
+            >
               {selected === e.id && (
                 <span className="hh-check" aria-hidden="true">
                   ✓

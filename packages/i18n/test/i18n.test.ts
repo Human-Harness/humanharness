@@ -16,7 +16,7 @@ describe("core locales", () => {
 describe("createI18n", () => {
   it("translates core keys with interpolation", async () => {
     const i18n = await createI18n("es");
-    expect(i18n.t("setup.title", { name: "Demo" })).toBe("Preparemos Demo");
+    expect(i18n.t("home.start", { name: "Demo" })).toBe("Iniciar Demo");
     expect(i18n.t("errors.engine-not-installed", { engine: "Claude" })).toBe("No encuentro Claude en esta compu.");
   });
 
@@ -30,5 +30,34 @@ describe("createI18n", () => {
     const i18n = await createI18n("es");
     await i18n.changeLanguage("en");
     expect(i18n.t("chat.send")).toBe("Send");
+  });
+
+  it("has the Home, Settings, legal notice, usage and pre-flight strings in both languages", async () => {
+    const en = await createI18n("en");
+    expect(en.t("engine.noticeAccount", { provider: "Anthropic", plan: "Claude Pro or Max plan" })).toBe(
+      "You use your own Anthropic account (Claude Pro or Max plan) under their terms. This app is not made or endorsed by Anthropic.",
+    );
+    expect(en.t("usage.window", { label: "5 h", percent: 16 })).toBe("5 h: 16% used");
+    expect(en.t("preflight.estimate", { action: "Research", estimate: 8, left: 84 })).toBe(
+      "\"Research\" usually uses about 8% of your 5-hour window. You have 84% left.",
+    );
+    expect(en.t("preflight.hint", { action: "Research", left: 84 })).toBe(
+      "\"Research\" can use a large part of your 5-hour window. You have 84% left.",
+    );
+    expect(en.t("home.usage", { label: "5 h", percent: 42 })).toBe("5 h · 42%");
+    expect(en.t("usage.estimate", { percent: 8 })).toBe("Usually about 8% of the 5-hour window");
+    expect(en.t("engine.loggingIn")).toBe("Finish signing in using your browser…");
+    expect(en.t("engine.noticeProvider", { engine: "Claude", provider: "Anthropic", where: "Anthropic, USA" })).toBe(
+      "Claude is a service of Anthropic. What you write here, and the files in your folder that the AI reads, are sent to Anthropic, USA.",
+    );
+    expect(en.t("settings.madeBy", { author: "Marco" })).toBe("Made by Marco with Human Harness");
+    const es = await createI18n("es");
+    expect(es.t("settings.tabs.engine")).toBe("Motor");
+    expect(es.t("engine.accept")).toBe("Entiendo y acepto");
+    expect(es.t("errors.fix.session-expired")).toBe("Volver a entrar");
+    expect(es.t("usage.window", { label: "5 h", percent: 16 })).toBe("5 h: 16 % usado");
+    expect(es.t("engine.noticeProvider", { engine: "Claude", provider: "Anthropic", where: "Anthropic, EE. UU." })).toBe(
+      "Claude es un servicio de Anthropic. Lo que escribas acá, y los archivos de tu carpeta que lea la IA, se envían a Anthropic, EE. UU. para ser procesados.",
+    );
   });
 });

@@ -6,7 +6,9 @@ export type ErrorCode =
   | "out-of-quota"
   | "agent-crashed"
   | "cancelled"
-  | "outdated-version";
+  | "outdated-version"
+  /** The user hasn't accepted the engine's legal notice (at its current version) in this app. */
+  | "notice-required";
 
 export interface EngineError {
   code: ErrorCode;

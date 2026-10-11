@@ -103,18 +103,18 @@ Each engine is a data entry, not code:
 
 Install and login data are added in the desktop-app plan, where onboarding uses them.
 
-### Status of each engine (research on 2026-10-10)
+### Status of each engine (research on 2026-10-10, updated 2026-10-11)
 
 | Engine | Route | Status | Why |
 |---|---|---|---|
 | Claude | unmodified official binary `claude -p`, user's own login | **allowed** | Claude Code's docs allow an end user to use their subscription in the unmodified binary even when a third-party product runs it. Conditions: accept the Commercial Terms (Console account), don't modify the binary, don't intermediate usage |
 | Claude | ACP adapter (Agent SDK) | **excluded** | The Agent SDK requires prior approval for claude.ai login. Reconsidered if Anthropic approves in writing |
 | Codex | `codex-acp` (or `codex exec --json`) with the user's ChatGPT login | **allowed** | OpenAI documents ChatGPT plan usage in open-source, locally hosted apps. A paid or server-hosted app requires filling their form |
-| Gemini CLI | Google account login | **excluded** | Since 2026-06-18 it no longer serves free or AI Pro/Ultra accounts |
+| Gemini CLI | Google account login | **excluded** | Since 2026-06-18 it no longer serves free or AI Pro/Ultra accounts. Update 2026-10-11: Gemini Code Assist Standard/Enterprise went off sale on 2026-10-09 (auto-renewal ends in 2027); Google points individuals to Antigravity CLI |
 | Antigravity | official `agy_acp_server` | **pending** | Its terms forbid access through third-party software; no official permission |
 | Qwen Code | Qwen OAuth | **excluded** | The free tier closed on 2026-04-15 and there is no paid OAuth |
 | Qwen Code | pay-as-you-go Model Studio key | **pending** | Allowed, but the user must configure the key in the CLI; evaluated together with key mode |
-| Kimi Code | `kimi acp`, user's login | **pending** | The plan targets programming scenarios; non-coding workflows are a gray area. Data in China, trains by default |
+| Kimi Code | Kimi Code CLI (`kimi acp`), user's login | **pending** | Update 2026-10-11: the old kimi-cli (Python, Apache-2.0) was archived on 2026-09-23; its successor is Kimi Code CLI (MIT, github.com/MoonshotAI/kimi-code, installed with `curl -fsSL https://code.kimi.com/kimi-code/install.sh \| bash`), still run as `kimi acp`. ToS §2(c) bans "automated workflows" unless Moonshot authorizes them in writing; Moonshot documents ACP use from Zed/JetBrains. The plan is "designed specifically for programming scenarios". Content trains by default; opt-out is by email only, from then on. Users must be 18+. Data location unclear (the Chinese-language terms store data in the PRC). Before signed distribution: written confirmation from Moonshot, and onboarding that discloses data location, training, the opt-out and 18+. Experimental use in development mode only |
 | GLM Coding Plan | Claude Code against Z.ai's endpoint | **excluded** | The terms exclude third-party integrations |
 | MiniMax / DeepSeek | Claude Code against a compatible endpoint | **pending** | DeepSeek allows it, but the user configures the endpoint. MiniMax's binding terms unread. Both have strong data implications |
 

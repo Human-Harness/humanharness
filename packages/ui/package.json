@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "type": "module",
   "license": "Apache-2.0",
-  "exports": { ".": "./src/index.ts", "./styles.css": "./src/styles.css" },
+  "exports": { ".": "./src/index.ts", "./client": "./src/client.ts", "./styles.css": "./src/styles.css" },
   "dependencies": {
     "@humanharness/harness-sdk": "workspace:*",
     "@humanharness/i18n": "workspace:*",

@@ -292,6 +292,12 @@ importers:
         specifier: workspace:*
         version: link:../workspace
     devDependencies:
+      '@fontsource/lexend':
+        specifier: 5.3.0
+        version: 5.3.0
+      '@humanharness/fake-agent':
+        specifier: workspace:*
+        version: link:../fake-agent
       '@types/react':
         specifier: ^19.3.0
         version: 19.3.0
@@ -780,6 +786,9 @@ packages:
     engines: {node: '>=18'}
     cpu: [x64]
     os: [win32]
+
+  '@fontsource/lexend@5.3.0':
+    resolution: {integrity: sha512-4igbsooynC6xwfagkAW6eo9JMrw8ALFGkWn1YChYmYchufMJSPgWihD+cy5ruX5YX/gDk/gllcl1Oj7q6KUZmw==}
 
   '@hono/node-server@2.1.4':
     resolution: {integrity: sha512-2g1qeHl4BduwDn6L8nkAvDrPUWPMlkQ//a5NhP/zIyaXKMjZNRV+cG9Csu+BiJFf6+68pqzjf4Hi5sJGKHuS1g==}
@@ -2486,6 +2495,8 @@ snapshots:
 
   '@esbuild/win32-x64@0.28.2':
     optional: true
+
+  '@fontsource/lexend@5.3.0': {}
 
   '@hono/node-server@2.1.4(hono@4.13.13)':
     dependencies:

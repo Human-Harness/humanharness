@@ -25,5 +25,9 @@ export default defineHarness({
   instructions: "./agent/AGENTS.md",
   permissions: { edit: "folder", exec: false, web: false },
   blocks: { note, progress },
+  actions: {
+    tidy: { label: { es: "Ordenar mis notas", en: "Tidy up my notes" }, cost: "heavy" },
+  },
+  tagline: { es: "Notas de prueba para Human Harness", en: "Test notes for Human Harness" },
   author: "Marco Zanger",
 });

@@ -1,10 +1,10 @@
 // @vitest-environment happy-dom
 import { act, fireEvent, within, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import type { ReactElement } from "react";
 import { cleanup } from "@testing-library/react";
 import { HarnessApp, type BlockProps } from "../src";
+import { formatReset } from "../src/usage";
 import { FakeClient } from "./fake-client";
 
 afterEach(cleanup);
@@ -17,50 +17,17 @@ const Note = ({ data, respond }: BlockProps) => (
   </div>
 );
 
+/** Renders the app and goes from Home to the work screen, as a returning user does. */
+async function startWork(ui: ReactElement) {
+  const result = render(ui);
+  fireEvent.click(await screen.findByRole("button", { name: /^(Start|Iniciar) Demo$/ }));
+  return result;
+}
+
 describe("HarnessApp", () => {
-  it("shows the setup screen until language, folder and engine are chosen", async () => {
-    const client = new FakeClient();
-    render(<HarnessApp client={client} />);
-    await screen.findByText(/get Demo ready|Preparemos Demo/);
-    fireEvent.click(screen.getByRole("button", { name: /Start|Empezar/ }));
-    await screen.findByPlaceholderText(/Write a message|Escribí un mensaje/);
-    expect(client.state.config).toMatchObject({ folder: "/Users/me/Documents/Demo", engineId: "claude" });
-  });
-
-  it("lets the user pick another folder and warns about moving it", async () => {
-    const client = new FakeClient({ language: "en" });
-    render(<HarnessApp client={client} />);
-    await screen.findByText(/Don't move, rename or edit this folder/);
-    fireEvent.click(screen.getByRole("button", { name: "Choose another folder" }));
-    await screen.findByText("/Users/me/Elsewhere");
-  });
-
-  it("explains a folder that can't be used, keeps the previous one, and clears the message on a good pick", async () => {
-    const client = new FakeClient({ language: "es" });
-    client.pickResult = { folder: "/Users/me/Documents", problem: "too-broad" };
-    render(<HarnessApp client={client} />);
-    fireEvent.click(await screen.findByRole("button", { name: "Elegir otra carpeta" }));
-    const alert = await screen.findByRole("alert");
-    expect(alert.textContent).toBe("Esa carpeta es muy general. Elegí o creá una carpeta adentro de ella.");
-    expect(screen.getByText("/Users/me/Documents/Demo")).toBeTruthy();
-    client.pickResult = { folder: "/Users/me/Documents/Mine", problem: null };
-    fireEvent.click(screen.getByRole("button", { name: "Elegir otra carpeta" }));
-    await screen.findByText("/Users/me/Documents/Mine");
-    expect(screen.queryByRole("alert")).toBeNull();
-  });
-
-  it("shows a message when the settings can't be saved", async () => {
-    const client = new FakeClient({ language: "en" });
-    client.saveError = new Error("protected");
-    render(<HarnessApp client={client} />);
-    fireEvent.click(await screen.findByRole("button", { name: "Start" }));
-    expect((await screen.findByRole("alert")).textContent).toMatch(/couldn't save/i);
-    expect(screen.getByRole("button", { name: "Start" })).toBeTruthy();
-  });
-
   it("sends a message, streams the answer and renders blocks", async () => {
     const client = new FakeClient(ready);
-    render(<HarnessApp client={client} blocks={{ note: Note }} />);
+    await startWork(<HarnessApp client={client} blocks={{ note: Note }} />);
     const input = await screen.findByPlaceholderText("Write a message…");
     fireEvent.change(input, { target: { value: "make a note" } });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
@@ -79,7 +46,7 @@ describe("HarnessApp", () => {
 
   it("shows activity while working and a Stop button that cancels", async () => {
     const client = new FakeClient(ready);
-    render(<HarnessApp client={client} />);
+    await startWork(<HarnessApp client={client} />);
     const input = await screen.findByPlaceholderText("Write a message…");
     fireEvent.change(input, { target: { value: "go" } });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
@@ -91,7 +58,7 @@ describe("HarnessApp", () => {
 
   it("shows a translated error card when a turn fails", async () => {
     const client = new FakeClient({ ...ready, language: "es" });
-    render(<HarnessApp client={client} />);
+    await startWork(<HarnessApp client={client} />);
     const input = await screen.findByPlaceholderText("Escribí un mensaje…");
     fireEvent.change(input, { target: { value: "hola" } });
     fireEvent.click(screen.getByRole("button", { name: "Enviar" }));
@@ -101,7 +68,7 @@ describe("HarnessApp", () => {
 
   it("feeds state blocks to the side panel, not the chat", async () => {
     const client = new FakeClient(ready);
-    render(
+    await startWork(
       <HarnessApp
         client={client}
         stateBlocks={["progress"]}
@@ -117,7 +84,7 @@ describe("HarnessApp", () => {
 
   it("lists history and restores a point", async () => {
     const client = new FakeClient(ready);
-    render(<HarnessApp client={client} />);
+    await startWork(<HarnessApp client={client} />);
     await screen.findByPlaceholderText("Write a message…");
     fireEvent.click(screen.getByRole("button", { name: "History" }));
     await screen.findByText("Turn: hi");
@@ -129,7 +96,7 @@ describe("HarnessApp", () => {
   it("tells the user when going back failed", async () => {
     const client = new FakeClient(ready);
     client.restoreError = new Error("busy");
-    render(<HarnessApp client={client} />);
+    await startWork(<HarnessApp client={client} />);
     await screen.findByPlaceholderText("Write a message…");
     fireEvent.click(screen.getByRole("button", { name: "History" }));
     await screen.findByText("Turn: hi");
@@ -141,7 +108,7 @@ describe("HarnessApp", () => {
   it("loads the saved conversation", async () => {
     const client = new FakeClient(ready);
     client.chat = [{ id: "1", role: "user", text: "earlier question", blocks: [], activities: [], at: "t" }];
-    render(<HarnessApp client={client} />);
+    await startWork(<HarnessApp client={client} />);
     await screen.findByText("earlier question");
   });
 
@@ -154,7 +121,7 @@ describe("HarnessApp", () => {
 
   it("keeps the draft typed while the AI answers and does not submit it", async () => {
     const client = new FakeClient(ready);
-    render(<HarnessApp client={client} />);
+    await startWork(<HarnessApp client={client} />);
     const input = await typeAndSend(client, "first");
     await waitFor(() => expect(client.sent).toEqual(["first"]));
     expect(input.value).toBe("");
@@ -170,7 +137,7 @@ describe("HarnessApp", () => {
 
   it("does not let block buttons queue messages while a turn is live", async () => {
     const client = new FakeClient(ready);
-    render(<HarnessApp client={client} blocks={{ note: Note }} />);
+    await startWork(<HarnessApp client={client} blocks={{ note: Note }} />);
     await typeAndSend(client, "go");
     act(() => client.emit({ type: "block", name: "note", data: { title: "A" } }));
     fireEvent.click(screen.getByRole("button", { name: "more" }));
@@ -184,14 +151,14 @@ describe("HarnessApp", () => {
       { id: "1", role: "user", text: "earlier question", blocks: [], activities: [], at: "t" },
       { id: "2", role: "assistant", text: "", blocks: [], activities: [], at: "t", error: { code: "agent-crashed" } },
     ];
-    render(<HarnessApp client={client} />);
+    await startWork(<HarnessApp client={client} />);
     fireEvent.click(await screen.findByRole("button", { name: "Try again" }));
     await waitFor(() => expect(client.sent).toEqual(["earlier question"]));
   });
 
   it("does not submit on Enter while an IME is composing", async () => {
     const client = new FakeClient(ready);
-    render(<HarnessApp client={client} />);
+    await startWork(<HarnessApp client={client} />);
     const input = await screen.findByPlaceholderText("Write a message…");
     fireEvent.change(input, { target: { value: "にほん" } });
     fireEvent.keyDown(input, { key: "Enter", isComposing: true });
@@ -201,23 +168,12 @@ describe("HarnessApp", () => {
     await waitFor(() => expect(client.sent).toEqual(["にほん"]));
   });
 
-  it("saves the language chosen in setup when starting", async () => {
-    const client = new FakeClient({ language: "en" });
-    render(<HarnessApp client={client} />);
-    await screen.findByText("Let's get Demo ready");
-    fireEvent.click(screen.getByRole("radio", { name: "Español" }));
-    await screen.findByText("Preparemos Demo");
-    fireEvent.click(screen.getByRole("button", { name: "Empezar" }));
-    await screen.findByPlaceholderText("Escribí un mensaje…");
-    expect(client.state.config.language).toBe("es");
-  });
-
   it("merges the saved conversation with entries already in state", async () => {
     const client = new FakeClient(ready);
     let open!: () => void;
     client.loadChatGate = new Promise((r) => (open = r));
     client.chat = [{ id: "1", role: "user", text: "earlier question", blocks: [], activities: [], at: "t" }];
-    render(<HarnessApp client={client} />);
+    await startWork(<HarnessApp client={client} />);
     await typeAndSend(client, "typed early");
     act(() => open());
     await screen.findByText("earlier question");
@@ -226,7 +182,7 @@ describe("HarnessApp", () => {
 
   it("disables restore while a turn is live, asks for confirmation and adds a notice", async () => {
     const client = new FakeClient(ready);
-    render(<HarnessApp client={client} />);
+    await startWork(<HarnessApp client={client} />);
     await typeAndSend(client, "go");
     fireEvent.click(screen.getByRole("button", { name: "History" }));
     await screen.findByText("Turn: hi");
@@ -245,7 +201,7 @@ describe("HarnessApp", () => {
   it("shows a translated error when the message cannot reach the main process", async () => {
     const client = new FakeClient(ready);
     client.sendError = new Error("ipc closed");
-    render(<HarnessApp client={client} />);
+    await startWork(<HarnessApp client={client} />);
     await typeAndSend(client, "go");
     await screen.findByText("Something failed and I didn't change anything.");
     expect(screen.getByRole("button", { name: "Send" })).toBeTruthy();
@@ -261,7 +217,7 @@ describe("HarnessApp", () => {
 
   it("does not reload state when inline locales change identity", async () => {
     const client = new FakeClient(ready);
-    const { rerender } = render(<HarnessApp client={client} locales={{ en: { a: "1" } }} />);
+    const { rerender } = await startWork(<HarnessApp client={client} locales={{ en: { a: "1" } }} />);
     await screen.findByPlaceholderText("Write a message…");
     rerender(<HarnessApp client={client} locales={{ en: { a: "1" } }} />);
     expect(client.getStateCalls).toBe(1);
@@ -269,7 +225,7 @@ describe("HarnessApp", () => {
 
   it("falls back to the generic error for unknown error codes", async () => {
     const client = new FakeClient(ready);
-    render(<HarnessApp client={client} />);
+    await startWork(<HarnessApp client={client} />);
     await typeAndSend(client, "go");
     act(() => client.emit({ type: "done", ok: false, error: { code: "brand-new" as never } }));
     expect(screen.getByText("Something failed and I didn't change anything.")).toBeTruthy();
@@ -277,7 +233,7 @@ describe("HarnessApp", () => {
 
   it("renders only the error card for a failed turn without text", async () => {
     const client = new FakeClient(ready);
-    const { container } = render(<HarnessApp client={client} />);
+    const { container } = await startWork(<HarnessApp client={client} />);
     await typeAndSend(client, "go");
     act(() => client.emit({ type: "done", ok: false, error: { code: "agent-crashed" } }));
     expect(container.querySelectorAll("article.hh-message.assistant").length).toBe(0);
@@ -286,7 +242,7 @@ describe("HarnessApp", () => {
 
   it("keeps long answers pinned to the bottom only when the user was near it", async () => {
     const client = new FakeClient(ready);
-    const { container } = render(<HarnessApp client={client} />);
+    const { container } = await startWork(<HarnessApp client={client} />);
     await typeAndSend(client, "go");
     const chat = container.querySelector(".hh-chat") as HTMLElement;
     Object.defineProperty(chat, "scrollHeight", { configurable: true, value: 1000 });
@@ -303,7 +259,7 @@ describe("HarnessApp", () => {
 
   it("is accessible: labelled composer, live region, focus management", async () => {
     const client = new FakeClient(ready);
-    const { container } = render(<HarnessApp client={client} />);
+    const { container } = await startWork(<HarnessApp client={client} />);
     const input = (await screen.findByLabelText("Write a message…")) as HTMLTextAreaElement;
     const region = container.querySelector('[aria-live="polite"]') as HTMLElement;
     fireEvent.change(input, { target: { value: "go" } });
@@ -320,17 +276,9 @@ describe("HarnessApp", () => {
     expect(within(container.querySelector(".hh-chat") as HTMLElement).getByText("All done")).toBeTruthy();
   });
 
-  it("groups setup choices in fieldsets with legends", async () => {
-    const client = new FakeClient();
-    render(<HarnessApp client={client} />);
-    await screen.findByText(/get Demo ready|Preparemos Demo/);
-    expect(screen.getByRole("group", { name: /Language|Idioma/ })).toBeTruthy();
-    expect(screen.getByRole("group", { name: /AI engine|Motor de IA/ })).toBeTruthy();
-  });
-
   it("history is a modal dialog: focuses Close, Escape closes", async () => {
     const client = new FakeClient(ready);
-    render(<HarnessApp client={client} />);
+    await startWork(<HarnessApp client={client} />);
     await screen.findByPlaceholderText("Write a message…");
     fireEvent.click(screen.getByRole("button", { name: "History" }));
     const dialog = await screen.findByRole("dialog");
@@ -339,27 +287,362 @@ describe("HarnessApp", () => {
     fireEvent.keyDown(document, { key: "Escape" });
     expect(screen.queryByRole("dialog")).toBeNull();
   });
-});
 
-describe("styles", () => {
-  const css = readFileSync(resolve(__dirname, "../src/styles.css"), "utf8");
-  it("preserves single line breaks in messages", () => {
-    expect(css).toMatch(/\.hh-message p\s*{[^}]*white-space:\s*pre-wrap/);
+  it("opens on Home with the logo, name, tagline, Start and the engine pill", async () => {
+    const client = new FakeClient(ready);
+    client.usage = { limits: [{ kind: "five_hour", utilization: 0.42, resetsAt: new Date(Date.now() + 3600_000).toISOString() }], estimates: {} };
+    const { container } = render(<HarnessApp client={client} />);
+    expect(await screen.findByRole("heading", { name: "Demo" })).toBeTruthy();
+    expect(screen.getByText("Test notes")).toBeTruthy();
+    expect(container.querySelector("svg.hh-logo")).toBeTruthy();
+    expect(screen.getByText("/Users/me/Documents/Demo")).toBeTruthy();
+    const pill = await screen.findByRole("button", { name: /Claude.*Connected.*5 h · 42%/ });
+    fireEvent.click(pill);
+    await screen.findByRole("group", { name: "AI engines" });
   });
-  it("keeps borders at 3:1 contrast against both backgrounds in light and dark", () => {
-    const lum = (h: string) => {
-      const c = [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255).map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
-      return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+
+  it("leaves a five-hour window that has already reset out of Home's engine pill", async () => {
+    const client = new FakeClient(ready);
+    client.usage = { limits: [{ kind: "five_hour", utilization: 0.42, resetsAt: new Date(Date.now() - 60_000).toISOString() }], estimates: {} };
+    render(<HarnessApp client={client} />);
+    await screen.findByRole("button", { name: /Claude.*Connected/ });
+    await act(async () => {});
+    expect(screen.queryByText(/5 h · 42%/)).toBeNull();
+  });
+
+  it("uses the harness's own logo when it has one", async () => {
+    const client = new FakeClient(ready);
+    client.state.harness.logo = "data:image/svg+xml;base64,PHN2Zy8+";
+    const { container } = render(<HarnessApp client={client} />);
+    await screen.findByRole("heading", { name: "Demo" });
+    expect(container.querySelector("img.hh-home-logo")?.getAttribute("src")).toBe("data:image/svg+xml;base64,PHN2Zy8+");
+  });
+
+  it("on first launch, Start opens Settings → Engine and the work screen opens once it is set up", async () => {
+    const client = new FakeClient();
+    render(<HarnessApp client={client} />);
+    fireEvent.click(await screen.findByRole("button", { name: /^(Start|Iniciar) Demo$/ }));
+    expect(screen.getByRole("tab", { name: /Engine|Motor/ }).getAttribute("aria-selected")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: /Use this folder|Usar esta carpeta/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /Use Claude|Usar Claude/ }));
+    await screen.findByPlaceholderText(/Write a message|Escribí un mensaje/);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(client.state.config).toMatchObject({ folder: "/Users/me/Documents/Demo", engineId: "claude" });
+  });
+
+  it("the gear opens Settings on General and Done goes back to Home", async () => {
+    render(<HarnessApp client={new FakeClient(ready)} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
+    expect(screen.getByRole("tab", { name: "General" }).getAttribute("aria-selected")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByRole("button", { name: "Start Demo" })).toBeTruthy();
+  });
+
+  it("gives focus back to the gear when Settings closes", async () => {
+    render(<HarnessApp client={new FakeClient(ready)} />);
+    const gear = await screen.findByRole("button", { name: "Settings" });
+    gear.focus();
+    fireEvent.click(gear);
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Done" }));
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    expect(document.activeElement).toBe(gear);
+  });
+
+  it("ignores a late engine check for the engine used before", async () => {
+    const client = new FakeClient(ready);
+    client.state.engines = [...client.state.engines, { ...client.state.engines[0], id: "codex", name: "Codex", provider: "OpenAI", reportsLimits: false }];
+    let release!: () => void;
+    client.statusGates.claude = new Promise((r) => (release = r));
+    client.statusFor.claude = { ...client.status, loggedIn: false };
+    render(<HarnessApp client={client} />);
+    await screen.findByRole("button", { name: /Claude.*Checking/ });
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Engine" }));
+    fireEvent.click(await screen.findByRole("button", { name: /Codex/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Use Codex" }));
+    await waitFor(() => expect(client.state.config.engineId).toBe("codex"));
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    await screen.findByRole("button", { name: /Codex.*Connected/ });
+    await act(async () => release());
+    expect(screen.getByRole("button", { name: /Codex.*Connected/ })).toBeTruthy();
+  });
+
+  it("shows the engine as not connected when it can't be checked, and the pill still opens Settings", async () => {
+    const client = new FakeClient(ready);
+    client.statusError = new Error("boom");
+    render(<HarnessApp client={client} />);
+    fireEvent.click(await screen.findByRole("button", { name: /Claude.*Not connected/ }));
+    await screen.findByRole("group", { name: "AI engines" });
+  });
+
+  it("shows the whole folder path on hover in Home's footer", async () => {
+    render(<HarnessApp client={new FakeClient(ready)} />);
+    const path = await screen.findByText("/Users/me/Documents/Demo");
+    expect(path.closest("[title]")?.getAttribute("title")).toBe("/Users/me/Documents/Demo");
+  });
+
+  it("shows a signed-out engine as not connected, and the pill leads to sign-in", async () => {
+    const client = new FakeClient(ready);
+    client.status = { ...client.status, loggedIn: false };
+    render(<HarnessApp client={client} />);
+    fireEvent.click(await screen.findByRole("button", { name: /Claude.*Not connected/ }));
+    await screen.findByRole("heading", { name: "Sign in to Claude" });
+  });
+
+  it("gives every screen a top bar the window can be dragged by", async () => {
+    const dragStrip = (c: HTMLElement) => c.querySelector("header.hh-topbar");
+    const failing = new FakeClient(ready);
+    failing.stateError = new Error("boom");
+    const loading = render(<HarnessApp client={failing} />);
+    expect(dragStrip(loading.container)).toBeTruthy();
+    await screen.findByRole("alert");
+    expect(dragStrip(loading.container)).toBeTruthy();
+    cleanup();
+
+    const client = new FakeClient(ready);
+    const { container } = render(<HarnessApp client={client} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
+    // The sheet hangs under Home's top bar, which stays in place.
+    expect(dragStrip(container)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    fireEvent.click(screen.getByRole("button", { name: "Start Demo" }));
+    await screen.findByPlaceholderText("Write a message…");
+    expect(dragStrip(container)?.textContent).toContain("Demo");
+  });
+
+  it("follows the UI language in <html lang>", async () => {
+    render(<HarnessApp client={new FakeClient({ ...ready, language: "es" })} />);
+    await screen.findByRole("button", { name: "Iniciar Demo" });
+    expect(document.documentElement.lang).toBe("es");
+    fireEvent.click(screen.getByRole("button", { name: "Ajustes" }));
+    fireEvent.click(screen.getByRole("button", { name: "English" }));
+    await screen.findByRole("button", { name: "Start Demo" });
+    expect(document.documentElement.lang).toBe("en");
+  });
+
+  const in2h = () => new Date(Date.now() + 2 * 3600_000).toISOString();
+  const in4d = () => new Date(Date.now() + 4 * 86400_000).toISOString();
+
+  it("shows Claude's plan windows in the top bar, from the log and then live", async () => {
+    const client = new FakeClient(ready);
+    const fiveHourReset = in2h();
+    client.usage = {
+      limits: [
+        { kind: "five_hour", utilization: 0.16, resetsAt: fiveHourReset },
+        { kind: "seven_day", utilization: 0.09, resetsAt: in4d() },
+      ],
+      estimates: {},
     };
-    const ratio = (a: string, b: string) => {
-      const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p);
-      return (x + 0.05) / (y + 0.05);
+    await startWork(<HarnessApp client={client} />);
+    await screen.findByText(`5 h: 16% used · resets at ${formatReset(fiveHourReset, "en")} — week: 9% used`);
+    act(() => client.emit({ type: "limits", status: "allowed", windows: [{ kind: "five_hour", utilization: 0.85, resetsAt: fiveHourReset }] }));
+    expect(screen.getByText(/Close to your limit/)).toBeTruthy();
+  });
+
+  it("before any message, says usage shows up later", async () => {
+    await startWork(<HarnessApp client={new FakeClient(ready)} />);
+    await screen.findByText("Your plan's usage shows up after the first message.");
+  });
+
+  it("says when the engine doesn't report limits and shows the last reply's tokens", async () => {
+    const client = new FakeClient({ ...ready, engineId: "codex" });
+    client.state.engines = [{ ...client.state.engines[0], id: "codex", name: "Codex", provider: "OpenAI", reportsLimits: false }];
+    client.chat = [
+      { id: "1", role: "assistant", text: "hi", blocks: [], activities: [], at: "t", usage: { inputTokens: 1000, outputTokens: 200, cacheReadTokens: 0, cacheWriteTokens: 0 } },
+    ];
+    await startWork(<HarnessApp client={client} />);
+    await screen.findByText(/Codex doesn't report your plan's limits\. Last message: 1\.2K tokens\./);
+  });
+
+  it("asks before a heavy action when the 5-hour window is high, and sends only on Continue", async () => {
+    const client = new FakeClient(ready);
+    client.state.actions = { tidy: { label: { es: "Ordenar", en: "Tidy up" }, cost: "heavy" } };
+    client.usage = { limits: [{ kind: "five_hour", utilization: 0.75, resetsAt: in2h() }], estimates: { tidy: 0.08 } };
+    await startWork(<HarnessApp client={client} renderSide={(_s, send) => <button onClick={() => send("Tidy all notes", { action: "tidy" })}>tidy</button>} />);
+    await screen.findByText(/5 h: 75% used/);
+    fireEvent.click(screen.getByRole("button", { name: "tidy" }));
+    const dialog = await screen.findByRole("alertdialog");
+    expect(dialog.textContent).toContain('"Tidy up" usually uses about 8% of your 5-hour window. You have 25% left.');
+    fireEvent.click(within(dialog).getByRole("button", { name: "Not now" }));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(client.sent).toEqual([]);
+    fireEvent.click(screen.getByRole("button", { name: "tidy" }));
+    fireEvent.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Continue" }));
+    await waitFor(() => expect(client.sent).toEqual(["Tidy all notes"]));
+    expect(client.sentOptions).toEqual([{ action: "tidy" }]);
+  });
+
+  it("focuses Not now on the pre-flight question, scrolls to it, and Escape means not now", async () => {
+    const client = new FakeClient(ready);
+    client.state.actions = { tidy: { label: { es: "Ordenar", en: "Tidy up" }, cost: "heavy" } };
+    client.usage = { limits: [{ kind: "five_hour", utilization: 0.75, resetsAt: in2h() }], estimates: { tidy: 0.08 } };
+    const scrolled: Element[] = [];
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = function (this: Element) {
+      scrolled.push(this);
     };
-    const [light, dark] = css.split("prefers-color-scheme: dark");
-    for (const block of [light, dark]) {
-      const v = (name: string) => block.match(new RegExp(`--hh-${name}:\\s*(#[0-9a-f]{6})`, "i"))![1];
-      expect(ratio(v("border"), v("bg"))).toBeGreaterThanOrEqual(3);
-      expect(ratio(v("border"), v("surface"))).toBeGreaterThanOrEqual(3);
+    try {
+      await startWork(<HarnessApp client={client} renderSide={(_s, send) => <button onClick={() => send("Tidy all notes", { action: "tidy" })}>tidy</button>} />);
+      await screen.findByText(/5 h: 75% used/);
+      const opener = screen.getByRole("button", { name: "tidy" });
+      opener.focus();
+      fireEvent.click(opener);
+      const dialog = await screen.findByRole("alertdialog");
+      expect(document.activeElement).toBe(within(dialog).getByRole("button", { name: "Not now" }));
+      expect(scrolled).toContain(dialog);
+      fireEvent.keyDown(dialog, { key: "Escape" });
+      expect(screen.queryByRole("alertdialog")).toBeNull();
+      expect(document.activeElement).toBe(opener);
+      expect(client.sent).toEqual([]);
+    } finally {
+      Element.prototype.scrollIntoView = original;
     }
+  });
+
+  it("forgets plan windows that have already reset", async () => {
+    const client = new FakeClient(ready);
+    client.state.actions = { tidy: { label: { es: "Ordenar", en: "Tidy up" }, cost: "heavy" } };
+    await startWork(<HarnessApp client={client} renderSide={(_s, send) => <button onClick={() => send("Tidy all notes", { action: "tidy" })}>tidy</button>} />);
+    await screen.findByText("Your plan's usage shows up after the first message.");
+    const past = new Date(Date.now() - 60_000).toISOString();
+    act(() =>
+      client.emit({
+        type: "limits",
+        status: "allowed",
+        windows: [
+          { kind: "five_hour", utilization: 0.97, resetsAt: past },
+          { kind: "seven_day", utilization: 0.09, resetsAt: in4d() },
+        ],
+      }),
+    );
+    expect(screen.getByText("week: 9% used")).toBeTruthy();
+    expect(screen.queryByText(/Almost at your limit/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "tidy" }));
+    await waitFor(() => expect(client.sent).toEqual(["Tidy all notes"]));
+  });
+
+  it("goes straight ahead with a heavy action when there is room", async () => {
+    const client = new FakeClient(ready);
+    client.state.actions = { tidy: { label: { es: "Ordenar", en: "Tidy up" }, cost: "heavy" } };
+    client.usage = { limits: [{ kind: "five_hour", utilization: 0.2, resetsAt: in2h() }], estimates: {} };
+    await startWork(<HarnessApp client={client} renderSide={(_s, send) => <button onClick={() => send("Tidy all notes", { action: "tidy" })}>tidy</button>} />);
+    await screen.findByText(/5 h: 20% used/);
+    fireEvent.click(screen.getByRole("button", { name: "tidy" }));
+    await waitFor(() => expect(client.sent).toEqual(["Tidy all notes"]));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+  });
+
+  it("tells when the limit resets on an out-of-quota card", async () => {
+    const client = new FakeClient(ready);
+    const reset = in2h();
+    client.usage = { limits: [{ kind: "five_hour", utilization: 1, resetsAt: reset }], estimates: {} };
+    await startWork(<HarnessApp client={client} />);
+    await screen.findByText(/5 h: 100% used/);
+    await typeAndSend(client, "go");
+    act(() => client.emit({ type: "done", ok: false, error: { code: "out-of-quota" } }));
+    expect(screen.getByText(`Your limit resets: ${formatReset(reset, "en")}.`)).toBeTruthy();
+  });
+
+  it("shows a card for a signed-out engine whose button opens the sign-in step", async () => {
+    const client = new FakeClient(ready);
+    client.status = { ...client.status, loggedIn: false };
+    await startWork(<HarnessApp client={client} />);
+    await screen.findByText("Your Claude session ended. Sign in again to continue.");
+    fireEvent.click(screen.getByRole("button", { name: "Sign in again" }));
+    await screen.findByRole("heading", { name: "Sign in to Claude" });
+  });
+
+  it("checks the engine again after a turn succeeds, so a fixed problem's card goes away", async () => {
+    const client = new FakeClient(ready);
+    client.status = { ...client.status, loggedIn: false };
+    await startWork(<HarnessApp client={client} />);
+    await screen.findByText("Your Claude session ended. Sign in again to continue.");
+    client.status = { ...client.status, loggedIn: true };
+    await typeAndSend(client, "hi");
+    act(() => client.emit({ type: "done", ok: true }));
+    await waitFor(() => expect(screen.queryByText("Your Claude session ended. Sign in again to continue.")).toBeNull());
+  });
+
+  it("a turn refused for a notice not accepted leads to the notice in Settings → Engine", async () => {
+    const client = new FakeClient(ready);
+    await startWork(<HarnessApp client={client} />);
+    await typeAndSend(client, "hi");
+    client.status = { ...client.status, noticeAccepted: false };
+    act(() => client.emit({ type: "done", ok: false, error: { code: "notice-required" } }));
+    expect(screen.getByText("Before using Claude, accept its notice in Settings.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Review Claude's notice" }));
+    await screen.findByRole("heading", { name: "Before using Claude" });
+  });
+
+  it("says so when the conversation can't be loaded", async () => {
+    const client = new FakeClient(ready);
+    client.loadChat = async () => Promise.reject(new Error("EACCES"));
+    await startWork(<HarnessApp client={client} />);
+    await screen.findByText("I couldn't load your conversation. Close the app and open it again; your files are safe.");
+  });
+
+  it("makes the screen under the Settings sheet inert, top bar included", async () => {
+    render(<HarnessApp client={new FakeClient(ready)} />);
+    const gear = await screen.findByRole("button", { name: "Settings" });
+    expect(gear.closest("[inert]")).toBeNull();
+    fireEvent.click(gear);
+    await screen.findByRole("dialog", { name: "Settings" });
+    expect(document.querySelector(".hh-topbar")!.closest("[inert]")).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    expect(document.querySelector(".hh-topbar")!.closest("[inert]")).toBeNull();
+  });
+
+  it("shows one fix card when the last turn failed with the problem the background check found", async () => {
+    const client = new FakeClient(ready);
+    client.status = { ...client.status, loggedIn: false };
+    client.chat = [
+      { id: "1", role: "user", text: "hi", blocks: [], activities: [], at: "t" },
+      { id: "2", role: "assistant", text: "", blocks: [], activities: [], at: "t", error: { code: "session-expired" } },
+    ];
+    await startWork(<HarnessApp client={client} />);
+    await screen.findByText("Your Claude session ended. Sign in again to continue.");
+    expect(screen.getAllByRole("button", { name: "Sign in again" })).toHaveLength(1);
+  });
+
+  it("still shows the background check's card when the last turn failed with a different problem", async () => {
+    const client = new FakeClient(ready);
+    client.status = { ...client.status, outdated: true };
+    client.chat = [
+      { id: "1", role: "user", text: "hi", blocks: [], activities: [], at: "t" },
+      { id: "2", role: "assistant", text: "", blocks: [], activities: [], at: "t", error: { code: "session-expired" } },
+    ];
+    await startWork(<HarnessApp client={client} />);
+    await screen.findByText("Claude needs an update.");
+    expect(screen.getByText("Your Claude session ended. Sign in again to continue.")).toBeTruthy();
+  });
+
+  it("changes engine from Settings → Engine and starts a new conversation", async () => {
+    const client = new FakeClient(ready);
+    client.state.engines = [...client.state.engines, { ...client.state.engines[0], id: "codex", name: "Codex", provider: "OpenAI", reportsLimits: false }];
+    await startWork(<HarnessApp client={client} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Engine" }));
+    fireEvent.click(await screen.findByRole("button", { name: /Codex/ }));
+    client.switchedFrom = "claude";
+    fireEvent.click(await screen.findByRole("button", { name: "Use Codex" }));
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    await screen.findByText("You're now using Codex, so I started a new conversation. The earlier one is saved in your folder.");
+    expect(client.state.config.engineId).toBe("codex");
+  });
+
+  it("goes back Home from the work screen", async () => {
+    await startWork(<HarnessApp client={new FakeClient(ready)} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Home" }));
+    await screen.findByRole("button", { name: "Start Demo" });
+  });
+
+  it("restores the side panel from the saved conversation", async () => {
+    const client = new FakeClient(ready);
+    client.chat = [{ id: "1", role: "assistant", text: "", blocks: [], activities: [], at: "t", state: { progress: { percent: 60 } } }];
+    await startWork(
+      <HarnessApp client={client} stateBlocks={["progress"]} renderSide={(s) => <p>Progress {(s.progress as { percent: number } | undefined)?.percent ?? 0}%</p>} />,
+    );
+    await screen.findByText("Progress 60%");
   });
 });

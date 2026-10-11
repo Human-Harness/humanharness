@@ -73,6 +73,11 @@ describe("claudeArgs", () => {
     expect(args[args.indexOf("--resume") + 1]).toBe("abc");
     expect(args).not.toContain("--session-id");
   });
+
+  it("keeps the session on disk unless told not to", () => {
+    expect(claudeArgs({ session: { id: "abc", started: false }, mcp: [], permissions })).not.toContain("--no-session-persistence");
+    expect(claudeArgs({ session: { id: "abc", started: false }, mcp: [], permissions, persistSession: false })).toContain("--no-session-persistence");
+  });
 });
 
 describe("ClaudeCliTransport", () => {

@@ -121,6 +121,11 @@ describe("configProblem", () => {
     expect(await configProblem({ language: "fr" as never }, ctx)).toBe("language-unavailable");
   });
 
+  it("accepts only the known appearances", async () => {
+    expect(await configProblem({ appearance: "dark" }, ctx)).toBeNull();
+    expect(await configProblem({ appearance: "neon" as never }, ctx)).toBe("invalid");
+  });
+
   it("rejects a bad folder, with the folder's code", async () => {
     expect(await configProblem({ folder: "/Users/ana" }, ctx)).toBe("home");
     expect(await configProblem({ folder: "/Users/ana/Work/link" }, ctx)).toBe("protected");

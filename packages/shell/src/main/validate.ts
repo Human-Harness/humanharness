@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import type { AppConfig, FolderProblem } from "@humanharness/ui";
+import type { AppConfig, FolderProblem } from "@humanharness/ui/client";
 
 /** Home folders the user keeps other things in: too broad to hand to an agent as a whole (~/Library is PROTECTED). */
 const STANDARD_HOME_FOLDERS = ["Desktop", "Documents", "Downloads", "Pictures", "Movies", "Music", "Public", "Applications"];
@@ -110,6 +110,7 @@ export async function configProblem(c: AppConfig, ctx: ValidationContext): Promi
   if (c.language !== undefined && (typeof c.language !== "string" || !ctx.languages.includes(c.language))) {
     return "language-unavailable";
   }
+  if (c.appearance !== undefined && !["system", "light", "dark"].includes(c.appearance as string)) return "invalid";
   if (c.folder !== undefined) return checkFolder(c.folder, ctx.home, ctx.realpath);
   return null;
 }

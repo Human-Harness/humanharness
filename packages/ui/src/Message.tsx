@@ -1,11 +1,12 @@
 import type { ComponentType } from "react";
 import { useTranslation } from "react-i18next";
 import { ActivityList } from "./ActivityList";
-import type { ChatEntry } from "./client";
+import type { ChatEntry, SendOptions } from "./client";
 
 export interface BlockProps {
   data: any;
-  respond: (text: string) => boolean;
+  /** Sends a message as the user (e.g. the chosen option); `options.action` tags a harness action. */
+  respond: (text: string, options?: SendOptions) => boolean;
 }
 
 export function Blocks({
@@ -15,7 +16,7 @@ export function Blocks({
 }: {
   blocks: ChatEntry["blocks"];
   components: Record<string, ComponentType<BlockProps>>;
-  respond: (text: string) => boolean;
+  respond: (text: string, options?: SendOptions) => boolean;
 }) {
   return (
     <>
@@ -38,7 +39,7 @@ export function Message({
 }: {
   entry: Pick<ChatEntry, "role" | "text" | "blocks" | "activities">;
   components: Record<string, ComponentType<BlockProps>>;
-  respond: (text: string) => boolean;
+  respond: (text: string, options?: SendOptions) => boolean;
 }) {
   const { t } = useTranslation();
   if (entry.role === "assistant" && !entry.text && entry.blocks.length === 0 && entry.activities.length === 0) return null;

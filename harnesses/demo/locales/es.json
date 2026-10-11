@@ -1,1 +1,6 @@
-{ "progress": "Progreso: {{percent}} %", "noteTitle": "Nota" }
+{
+  "progress": "Progreso: {{percent}} %",
+  "noteTitle": "Nota",
+  "tidy": "Ordenar mis notas",
+  "tidyMessage": "Revisá todas mis notas, uní las repetidas y dale a cada una un título claro."
+}

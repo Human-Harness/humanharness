@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import type { AppConfig } from "@humanharness/ui";
+import type { AppConfig } from "@humanharness/ui/client";
 
 /** Where the hidden history of `folder` lives: one gitdir per folder. */
 export function historyDir(userData: string, folder: string): string {

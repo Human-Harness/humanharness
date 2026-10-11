@@ -52,3 +52,55 @@ describe("ChatLog", () => {
     expect((await new ChatLog(folder).load(1)).map((e) => e.text)).toEqual(["b"]);
   });
 });
+
+describe("TurnRecorder usage", () => {
+  it("keeps tokens, limits and the latest state blocks on the reply", () => {
+    const r = new TurnRecorder(new Set(["progress"]));
+    const windows = [{ kind: "five_hour", utilization: 0.3, resetsAt: "2026-10-11T15:00:00.000Z" }];
+    r.add({ type: "block", name: "progress", data: { percent: 10 } });
+    r.add({ type: "block", name: "progress", data: { percent: 40 } });
+    r.add({ type: "limits", status: "allowed", windows });
+    r.add({ type: "usage", inputTokens: 1, outputTokens: 2, cacheReadTokens: 3, cacheWriteTokens: 4, costEquivalentUsd: 0.5 });
+    expect(r.finish({ type: "done", ok: true })).toMatchObject({
+      usage: { inputTokens: 1, outputTokens: 2, cacheReadTokens: 3, cacheWriteTokens: 4 },
+      limits: windows,
+      state: { progress: { percent: 40 } },
+    });
+  });
+
+  it("keeps the turn's first limits snapshot apart from the last one, which goes on the reply", () => {
+    const r = new TurnRecorder(new Set());
+    const first = [{ kind: "five_hour", utilization: 0.3, resetsAt: "2026-10-11T15:00:00.000Z" }];
+    const last = [{ kind: "five_hour", utilization: 0.36, resetsAt: "2026-10-11T15:00:00.000Z" }];
+    expect(r.firstLimits).toBeUndefined();
+    r.add({ type: "limits", status: "allowed", windows: first });
+    r.add({ type: "limits", status: "allowed", windows: last });
+    expect(r.firstLimits).toEqual(first);
+    const entry = r.finish({ type: "done", ok: true });
+    expect(entry.limits).toEqual(last);
+    expect("firstLimits" in entry).toBe(false);
+  });
+
+  it("adds nothing when the engine reported nothing", () => {
+    const entry = new TurnRecorder(new Set()).finish({ type: "done", ok: true });
+    expect("usage" in entry || "limits" in entry || "state" in entry).toBe(false);
+  });
+});
+
+describe("ChatLog.archive", () => {
+  it("moves the conversation to chats/archive and starts empty", async () => {
+    const folder = fs.mkdtempSync(path.join(root, "f-"));
+    const log = new ChatLog(folder);
+    await log.append({ id: "1", role: "user", text: "hi", blocks: [], activities: [], at: "t1" });
+    const target = await log.archive("claude");
+    expect(target).toMatch(/\.harness\/chats\/archive\/.+-claude\.jsonl$/);
+    expect(fs.readFileSync(target!, "utf8")).toContain('"hi"');
+    expect(await log.load()).toEqual([]);
+  });
+
+  it("does nothing when there is no conversation", async () => {
+    const folder = fs.mkdtempSync(path.join(root, "f-"));
+    expect(await new ChatLog(folder).archive("claude")).toBeNull();
+    expect(fs.existsSync(path.join(folder, ".harness", "chats", "archive"))).toBe(false);
+  });
+});

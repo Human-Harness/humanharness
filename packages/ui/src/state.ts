@@ -1,4 +1,4 @@
-import type { ChatEntry, Event, LimitWindow } from "./client";
+import type { ChatEntry, Event, LimitWindow, TurnUsage } from "./client";
 
 export interface LiveActivity {
   id: string;
@@ -12,6 +12,10 @@ export interface LiveTurn {
   text: string;
   blocks: { name: string; data: unknown }[];
   activities: LiveActivity[];
+  usage?: TurnUsage;
+  limits?: LimitWindow[];
+  /** State-only blocks emitted during this turn (saved on the entry). */
+  state?: Record<string, unknown>;
 }
 
 export interface ChatState {
@@ -24,7 +28,10 @@ export interface ChatState {
   limits: LimitWindow[] | null;
 }
 
-export type ChatAction = Event | { type: "user"; text: string; at: string } | { type: "loaded"; entries: ChatEntry[] }
+export type ChatAction =
+  | Event
+  | { type: "user"; text: string; at: string; action?: string }
+  | { type: "loaded"; entries: ChatEntry[] }
   /** A local assistant message that the UI shows but never saves. */
   | { type: "notice"; text: string; at: string };
 
@@ -37,8 +44,14 @@ const newId = () => Math.random().toString(36).slice(2);
 export function reduceChat(state: ChatState, action: ChatAction): ChatState {
   const live = state.live;
   switch (action.type) {
-    case "loaded":
-      return { ...state, entries: [...action.entries, ...state.entries.filter((e) => !action.entries.some((s) => s.id === e.id))] };
+    case "loaded": {
+      const restored: Record<string, unknown> = Object.assign({}, ...action.entries.map((e) => e.state ?? {}));
+      return {
+        ...state,
+        entries: [...action.entries, ...state.entries.filter((e) => !action.entries.some((s) => s.id === e.id))],
+        blockState: { ...restored, ...state.blockState },
+      };
+    }
     case "notice":
       return {
         ...state,
@@ -47,7 +60,18 @@ export function reduceChat(state: ChatState, action: ChatAction): ChatState {
     case "user":
       return {
         ...state,
-        entries: [...state.entries, { id: newId(), role: "user", text: action.text, blocks: [], activities: [], at: action.at }],
+        entries: [
+          ...state.entries,
+          {
+            id: newId(),
+            role: "user",
+            text: action.text,
+            blocks: [],
+            activities: [],
+            at: action.at,
+            ...(action.action ? { action: action.action } : {}),
+          },
+        ],
         live: { text: "", blocks: [], activities: [] },
       };
     case "text":
@@ -64,12 +88,31 @@ export function reduceChat(state: ChatState, action: ChatAction): ChatState {
       return { ...state, live: { ...live, activities } };
     }
     case "block":
-      if (state.stateBlocks.has(action.name)) return { ...state, blockState: { ...state.blockState, [action.name]: action.data } };
+      if (state.stateBlocks.has(action.name)) {
+        return {
+          ...state,
+          blockState: { ...state.blockState, [action.name]: action.data },
+          live: live ? { ...live, state: { ...live.state, [action.name]: action.data } } : live,
+        };
+      }
       return live ? { ...state, live: { ...live, blocks: [...live.blocks, { name: action.name, data: action.data }] } } : state;
     case "limits":
-      return { ...state, limits: action.windows };
+      return { ...state, limits: action.windows, live: live ? { ...live, limits: action.windows } : live };
     case "usage":
-      return state;
+      return live
+        ? {
+            ...state,
+            live: {
+              ...live,
+              usage: {
+                inputTokens: action.inputTokens,
+                outputTokens: action.outputTokens,
+                cacheReadTokens: action.cacheReadTokens,
+                cacheWriteTokens: action.cacheWriteTokens,
+              },
+            },
+          }
+        : state;
     case "done": {
       if (!live) return state;
       const entry: ChatEntry = {
@@ -79,6 +122,9 @@ export function reduceChat(state: ChatState, action: ChatAction): ChatState {
         blocks: live.blocks,
         activities: live.activities.map(({ kind, detail }) => ({ kind, detail })),
         at: new Date().toISOString(),
+        ...(live.usage ? { usage: live.usage } : {}),
+        ...(live.limits ? { limits: live.limits } : {}),
+        ...(live.state ? { state: live.state } : {}),
         ...(action.ok ? {} : { error: action.error }),
       };
       return { ...state, entries: [...state.entries, entry], live: null };

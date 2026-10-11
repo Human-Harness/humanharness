@@ -65,4 +65,33 @@ describe("reduceChat", () => {
     expect(s.entries.map((e) => [e.role, e.text])).toEqual([["assistant", "restored"]]);
     expect(s.live).toBeNull();
   });
+
+  it("keeps the action, tokens, limits and state blocks on the entries", () => {
+    const windows = [{ kind: "five_hour", utilization: 0.3, resetsAt: "2026-10-11T15:00:00.000Z" }];
+    const s = run(
+      [
+        { type: "user", text: "hi", at: "t", action: "tidy" },
+        { type: "block", name: "progress", data: { percent: 10 } },
+        { type: "limits", status: "allowed", windows },
+        { type: "usage", inputTokens: 1, outputTokens: 2, cacheReadTokens: 3, cacheWriteTokens: 4 },
+        { type: "done", ok: true },
+      ],
+      { ...initialChat([]), stateBlocks: new Set(["progress"]) },
+    );
+    expect(s.entries[0]).toMatchObject({ role: "user", action: "tidy" });
+    expect(s.entries[1]).toMatchObject({
+      usage: { inputTokens: 1, outputTokens: 2, cacheReadTokens: 3, cacheWriteTokens: 4 },
+      limits: windows,
+      state: { progress: { percent: 10 } },
+    });
+  });
+
+  it("restores state blocks from the saved conversation; newer live data wins", () => {
+    const saved = [
+      { id: "1", role: "assistant" as const, text: "", blocks: [], activities: [], at: "t", state: { progress: { percent: 20 }, phase: { n: 1 } } },
+      { id: "2", role: "assistant" as const, text: "", blocks: [], activities: [], at: "t", state: { progress: { percent: 60 } } },
+    ];
+    const s = run([{ type: "loaded", entries: saved }], { ...initialChat([]), blockState: { phase: { n: 2 } } });
+    expect(s.blockState).toEqual({ progress: { percent: 60 }, phase: { n: 2 } });
+  });
 });

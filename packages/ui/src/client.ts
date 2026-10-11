@@ -139,7 +139,14 @@ export type SetupOutput =
   | { kind: "url"; url: string }
   /** A step started or ended (any window may be showing it, or reopen it later). */
   | { kind: "start"; engineId: string; step: SetupStep }
-  | { kind: "end"; engineId: string; step: SetupStep; ok: boolean };
+  | ({ kind: "end"; engineId: string; step: SetupStep } & SetupResult);
+
+/** How a setup step ended. `cancelled`: the user stopped it; `timedOut`: it ran too long and was stopped. */
+export interface SetupResult {
+  ok: boolean;
+  cancelled?: boolean;
+  timedOut?: boolean;
+}
 
 /** The setup step running now in the main process, so a reopened screen can show it. */
 export interface RunningSetup {
@@ -183,7 +190,7 @@ export interface HarnessClient {
   engineStatus(engineId: string): Promise<EngineStatus>;
   acceptNotice(engineId: string): Promise<void>;
   /** Runs the official install, update, login or logout; resolves when it exits. */
-  runSetup(engineId: string, step: SetupStep): Promise<{ ok: boolean }>;
+  runSetup(engineId: string, step: SetupStep): Promise<SetupResult>;
   /** Types one line into the running login (e.g. a code the sign-in page shows). */
   setupInput(text: string): Promise<void>;
   cancelSetup(): Promise<void>;

@@ -112,20 +112,91 @@ describe("EngineGuards", () => {
     await switching;
   });
 
-  it("runs one test prompt at a time; aborting it resolves once it has cleaned up", async () => {
+  it("shares a running test prompt with a second request for the same engine", async () => {
     const guards = new EngineGuards();
-    const signal = guards.beginTest();
-    expect(() => guards.beginTest()).toThrow(/already running/);
+    let finish!: (v: string) => void;
+    let runs = 0;
+    const run = () => {
+      runs++;
+      return new Promise<string>((r) => (finish = r));
+    };
+    const first = guards.runTest("claude", run);
+    const second = guards.runTest("claude", run);
+    await Promise.resolve();
+    expect(runs).toBe(1);
+    finish("ok");
+    expect(await first).toBe("ok");
+    expect(await second).toBe("ok");
+  });
+
+  it("runs another engine's test prompt after the running one ends", async () => {
+    const guards = new EngineGuards();
+    const order: string[] = [];
+    let finish!: () => void;
+    const first = guards.runTest("claude", async () => {
+      order.push("claude start");
+      await new Promise<void>((r) => (finish = r));
+      order.push("claude end");
+    });
+    const second = guards.runTest("codex", async () => void order.push("codex"));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(order).toEqual(["claude start"]);
+    finish();
+    await Promise.all([first, second]);
+    expect(order).toEqual(["claude start", "claude end", "codex"]);
+  });
+
+  it("aborting the test prompt resolves once it has cleaned up, and a failed one frees the slot", async () => {
+    const guards = new EngineGuards();
+    let signal!: AbortSignal;
+    let finish!: () => void;
+    const running = guards.runTest("claude", (s) => {
+      signal = s;
+      return new Promise<void>((r) => (finish = r));
+    });
+    await Promise.resolve();
     let stopped = false;
     const stopping = guards.abortTest().then(() => (stopped = true));
     expect(signal.aborted).toBe(true);
     await Promise.resolve();
     expect(stopped).toBe(false);
-    guards.endTest();
+    finish();
+    await running;
     await stopping;
-    expect(stopped).toBe(true);
-    expect(guards.beginTest().aborted).toBe(false);
-    guards.endTest();
+    await expect(guards.runTest("claude", async () => Promise.reject(new Error("boom")))).rejects.toThrow("boom");
+    expect(await guards.runTest("claude", async () => "again")).toBe("again");
     await guards.abortTest();
+  });
+
+  it("keeps the new engine when closing the old runtime or archiving the chat fails after the save", async () => {
+    const guards = new EngineGuards();
+    const { deps, calls, release } = switchDeps(guards);
+    release();
+    const errors: unknown[] = [];
+    const from = await guards.switchEngine(
+      {
+        ...deps,
+        dropRuntime: async () => Promise.reject(new Error("close failed")),
+        archiveChat: async () => Promise.reject(new Error("archive failed")),
+      },
+      (err) => errors.push(err),
+    );
+    expect(from).toBeNull();
+    expect(calls).toEqual(["save (blocked: true)"]);
+    expect(errors.map((e) => (e as Error).message)).toEqual(["close failed", "archive failed"]);
+    expect(guards.turnBlocked()).toBeNull();
+  });
+
+  it("remembers a cancel asked for before the step's process starts", () => {
+    const guards = new EngineGuards();
+    expect(guards.cancelSetup()).toBe(false);
+    guards.beginSetup({ engineId: "claude", step: "install", current: false }, () => false);
+    expect(guards.setupCancelled()).toBe(false);
+    expect(guards.cancelSetup()).toBe(true);
+    expect(guards.setupCancelled()).toBe(true);
+    guards.endSetup();
+    guards.beginSetup({ engineId: "claude", step: "install", current: false }, () => false);
+    expect(guards.setupCancelled()).toBe(false);
+    guards.endSetup();
   });
 });

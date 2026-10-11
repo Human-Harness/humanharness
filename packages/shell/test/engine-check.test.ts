@@ -65,6 +65,19 @@ describe("testPrompt", () => {
     expect(Date.now() - started).toBeLessThan(3000);
   });
 
+  it("on abort, ends only once the CLI is gone, even one that ignores SIGTERM (no orphan after quitting)", async () => {
+    const pidFile = path.join(root, "stubborn.pid");
+    const code = `process.on("SIGTERM",()=>{});require("fs").writeFileSync(${JSON.stringify(pidFile)},String(process.pid));setInterval(()=>{},1000)`;
+    const script = path.join(root, "stubborn.cjs");
+    fs.writeFileSync(script, code);
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), 300);
+    const r = await testPrompt(getEngine("claude"), { command: [process.execPath, script], env: {} }, { signal: controller.signal });
+    expect(r).toMatchObject({ ok: false, error: { code: "cancelled" } });
+    const pid = Number(fs.readFileSync(pidFile, "utf8"));
+    expect(() => process.kill(pid, 0)).toThrow();
+  }, 10_000);
+
   it("gives up when the engine never finishes starting", async () => {
     const started = Date.now();
     const r = await testPrompt(getEngine("codex"), { command: [process.execPath, "-e", "setInterval(()=>{},1000)"], env: {} }, { timeoutMs: 300 });

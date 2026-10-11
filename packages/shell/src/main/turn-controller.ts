@@ -11,7 +11,7 @@ export interface ChatLogLike {
 
 /** Thrown by `ensureRuntime` when the engine can't run turns: the turn ends with this error code. */
 export class EngineUnavailable extends Error {
-  constructor(readonly code: "engine-not-installed" | "outdated-version" | "session-expired") {
+  constructor(readonly code: "engine-not-installed" | "outdated-version" | "session-expired" | "notice-required") {
     super(`The engine can't run: ${code}`);
   }
 }

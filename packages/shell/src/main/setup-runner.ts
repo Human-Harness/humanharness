@@ -39,6 +39,8 @@ export interface RunningSetup {
   cancel(): void;
   /** Stops the process and everything it started right away (SIGKILL to the group). */
   kill(): void;
+  /** It was stopped because it ran longer than `timeoutMs`. */
+  timedOut(): boolean;
   /** The exit code; null when it was killed, timed out or couldn't start. */
   exit: Promise<number | null>;
 }
@@ -60,6 +62,7 @@ export function runSetupProcess(cmd: ProcessCommand, onOutput: (o: SetupOutput) 
   // Once cancelled, nothing more is reported: late output belongs to a run the user abandoned.
   let cancelled = false;
   let finished = false;
+  let timedOut = false;
 
   const killTree = (sig: NodeJS.Signals) => {
     try {
@@ -113,7 +116,7 @@ export function runSetupProcess(cmd: ProcessCommand, onOutput: (o: SetupOutput) 
 
   const timeout = opts.timeoutMs
     ? setTimeout(() => {
-        if (!finished && !cancelled) onOutput({ kind: "line", text: "Stopped: this took too long." });
+        if (!finished && !cancelled) timedOut = true;
         cancel();
       }, opts.timeoutMs)
     : undefined;
@@ -145,6 +148,7 @@ export function runSetupProcess(cmd: ProcessCommand, onOutput: (o: SetupOutput) 
       if (child.stdin!.writable) child.stdin!.write(`${text.trim()}\n`);
     },
     cancel,
+    timedOut: () => timedOut,
     kill: () => {
       cancelled = true;
       killTree("SIGKILL");

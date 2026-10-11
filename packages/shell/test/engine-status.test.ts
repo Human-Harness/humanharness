@@ -4,7 +4,7 @@ import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { NOTICE_VERSION, getEngine } from "@humanharness/engines";
 import type { CommandDeps } from "../src/main/engine-command";
-import { detectEngine, parseLoggedIn } from "../src/main/engine-status";
+import { detectEngine, hasAcceptedNotice, parseLoggedIn } from "../src/main/engine-status";
 import { SharedConfigStore } from "../src/main/shared-config";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
@@ -138,5 +138,18 @@ describe("detectEngine", () => {
     await s.update("claude", { notice: { version: NOTICE_VERSION - 1, acceptedAt: "t" } });
     const { d } = deps({ "--version": { stdout: "2.1.296", code: 0 }, "auth status --json": { stdout: signedIn, code: 0 } });
     expect((await detectEngine(getEngine("claude"), d, s)).noticeAccepted).toBe(false);
+  });
+});
+
+describe("hasAcceptedNotice", () => {
+  it("is true only for the current notice version, and false again after a reset", async () => {
+    const shared = store();
+    expect(await hasAcceptedNotice(shared, "claude")).toBe(false);
+    await shared.update("claude", { notice: { version: NOTICE_VERSION - 1, acceptedAt: "t" } });
+    expect(await hasAcceptedNotice(shared, "claude")).toBe(false);
+    await shared.update("claude", { notice: { version: NOTICE_VERSION, acceptedAt: "t" } });
+    expect(await hasAcceptedNotice(shared, "claude")).toBe(true);
+    await shared.reset();
+    expect(await hasAcceptedNotice(shared, "claude")).toBe(false);
   });
 });

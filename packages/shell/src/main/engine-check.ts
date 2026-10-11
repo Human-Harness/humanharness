@@ -14,6 +14,8 @@ import {
 
 export const TEST_PROMPT = "Reply with the single word OK.";
 const TIMEOUT_MS = 90_000;
+/** After stopping it, how long to wait for the CLI to exit (its transport escalates to SIGKILL after 3 s). */
+const STOP_WAIT_MS = 4_000;
 
 /**
  * Runs one tiny turn in an empty temporary folder: read-only, no MCP servers, no project files.
@@ -53,21 +55,22 @@ export async function testPrompt(
     if (opts.signal?.aborted) onAbort();
     else opts.signal?.addEventListener("abort", onAbort, { once: true });
   });
+  const turn = transport.turn(TEST_PROMPT, (e) => events.push(e), controller.signal).then(
+    () => "done" as const,
+    () => "done" as const,
+  );
   try {
     // Race the whole turn (start-up included): a transport may not watch the signal while it starts.
-    outcome = await Promise.race([
-      transport.turn(TEST_PROMPT, (e) => events.push(e), controller.signal).then(
-        () => "done" as const,
-        () => "done" as const,
-      ),
-      timedOut,
-      aborted,
-    ]);
+    outcome = await Promise.race([turn, timedOut, aborted]);
   } finally {
     clearTimeout(timer);
     if (onAbort) opts.signal?.removeEventListener("abort", onAbort);
     controller.abort();
     await transport.close().catch(() => undefined);
+    // Wait (bounded) for the CLI to be gone, so quitting right after leaves no process behind.
+    let stopTimer: NodeJS.Timeout | undefined;
+    await Promise.race([turn, new Promise<void>((r) => (stopTimer = setTimeout(r, STOP_WAIT_MS)))]);
+    clearTimeout(stopTimer);
     await fs.rm(folder, { recursive: true, force: true }).catch(() => undefined);
   }
   if (outcome === "aborted") return { ok: false, error: { code: "cancelled" } };

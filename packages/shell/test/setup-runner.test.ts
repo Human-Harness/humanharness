@@ -152,8 +152,13 @@ describe("runSetupProcess process tree", () => {
   });
 
   it("gives up after the timeout", async () => {
-    const running = runSetupProcess(node("setInterval(()=>{},1000)"), () => {}, { timeoutMs: 200 });
+    const out: unknown[] = [];
+    const running = runSetupProcess(node("setInterval(()=>{},1000)"), (o) => out.push(o), { timeoutMs: 200 });
+    expect(running.timedOut()).toBe(false);
     expect(await running.exit).toBeNull();
+    // Said by the app in the user's language, not as an English output line.
+    expect(running.timedOut()).toBe(true);
+    expect(out).toEqual([]);
   });
 });
 

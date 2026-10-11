@@ -17,7 +17,9 @@ import {
   type RunningSetup as SetupInfo,
   type SendOptions,
   type SetupOutput,
+  type SetupResult,
   type SetupStep,
+  type TestResult,
   type UsageSummary,
   isConfigured,
 } from "@humanharness/ui/client";
@@ -28,7 +30,7 @@ import { ConfigStore, historyDir } from "./config";
 import { testPrompt } from "./engine-check";
 import { type CommandDeps, cliCommand, engineCommand, loginShellPath } from "./engine-command";
 import { EngineGuards } from "./engine-guards";
-import { detectEngine } from "./engine-status";
+import { detectEngine, hasAcceptedNotice } from "./engine-status";
 import { startNewChatIfEngineChanged } from "./engine-switch";
 import { type RunningSetup, runSetupProcess, setupCommand, stopSetupProcess } from "./setup-runner";
 import { SharedConfigStore, sharedConfigDir } from "./shared-config";
@@ -236,6 +238,9 @@ const turns = new TurnController({
   ensureRuntime: async () => {
     const blocked = guards.turnBlocked();
     if (blocked) throw new Error(blocked);
+    // Checked on every turn: the notice may have been reset (Start over) while a runtime runs.
+    const { engineId } = await config.load();
+    if (engineId && !(await hasAcceptedNotice(shared, engineId))) throw new EngineUnavailable("notice-required");
     return runtime.get();
   },
   chatLog: async () => {
@@ -278,18 +283,26 @@ function registerIpc() {
     const problem = await configProblem(patch, validation());
     if (problem) throw new Error(problem);
     const before = await config.load();
+    // Spec §9: an engine is only used once its notice is accepted.
+    if (patch.engineId && patch.engineId !== before.engineId && !(await hasAcceptedNotice(shared, patch.engineId))) {
+      throw new Error("The engine's notice has not been accepted");
+    }
     if (patch.engineId && before.engineId && patch.engineId !== before.engineId) {
       const engineId = patch.engineId;
-      await guards.switchEngine({
-        isBusy: () => turns.isBusy(),
-        idle: () => turns.flush(),
-        save: () => config.save(patch).then(() => undefined),
-        dropRuntime,
-        archiveChat: async () => {
-          const c = await validConfig();
-          return c && c.engineId === engineId ? startNewChatIfEngineChanged(c.folder, engineId) : null;
+      await guards.switchEngine(
+        {
+          isBusy: () => turns.isBusy(),
+          idle: () => turns.flush(),
+          save: () => config.save(patch).then(() => undefined),
+          dropRuntime,
+          archiveChat: async () => {
+            const c = await validConfig();
+            return c && c.engineId === engineId ? startNewChatIfEngineChanged(c.folder, engineId) : null;
+          },
         },
-      });
+        // The new engine is saved: the window gets the new state; the next chat load archives the old chat.
+        (err) => console.error("Could not finish changing the engine", err),
+      );
     } else {
       await config.save(patch);
     }
@@ -340,6 +353,8 @@ function registerIpc() {
     const engine = engineFor(engineId);
     if (!SETUP_STEPS.includes(step)) throw new Error("Unknown setup step");
     if (quitting) throw new Error("The app is closing");
+    // Onboarding starts with the notice (spec §9); signing out is always allowed.
+    if (step !== "logout" && !(await hasAcceptedNotice(shared, engineId))) throw new Error("The engine's notice has not been accepted");
     // Only a logout or update of the engine in use touches the runtime and blocks turns.
     const current = (await config.load()).engineId === engineId;
     // Reserve the slot synchronously after the read, so a second call can't slip in while this one starts.
@@ -350,26 +365,29 @@ function registerIpc() {
       sendToWindow("hh:setupOutput", o);
     };
     output({ kind: "start", engineId, step });
-    let ok = false;
+    let result: SetupResult = { ok: false };
     try {
       const cli = step === "install" ? null : await cliCommand(engine, commandDeps);
       const cmd = setupCommand(engine, step, cli, await loginShellPath(commandDeps));
-      if (!cmd) return { ok };
+      if (!cmd) return result;
       if (current && (step === "logout" || step === "update")) {
         // Turns are refused from beginSetup on; this re-check is a safety net before the runtime goes.
         if (turns.isBusy()) throw new Error("A turn is running");
         await dropRuntime();
       }
       if (quitting) throw new Error("The app is closing");
+      // Cancelled while the CLI was being found: the process never starts.
+      if (guards.setupCancelled()) return (result = { ok: false, cancelled: true });
       const run = runSetupProcess(cmd, output, { timeoutMs: SETUP_TIMEOUT_MS[step] });
       setupRun = run;
-      ok = (await run.exit) === 0;
-      return { ok };
+      const ok = (await run.exit) === 0;
+      result = { ok, ...(!ok && guards.setupCancelled() ? { cancelled: true } : {}), ...(!ok && run.timedOut() ? { timedOut: true } : {}) };
+      return result;
     } finally {
       setupRun = null;
       setupUrl = undefined;
       guards.endSetup();
-      output({ kind: "end", engineId, step, ok });
+      output({ kind: "end", engineId, step, ...result });
     }
   });
   handle("hh:getSetup", (): SetupInfo | null => {
@@ -379,12 +397,17 @@ function registerIpc() {
   handle("hh:setupInput", (text: string) => {
     if (typeof text === "string") setupRun?.write(text.slice(0, 2000));
   });
-  handle("hh:cancelSetup", () => setupRun?.cancel());
+  handle("hh:cancelSetup", () => {
+    // Remembered too, for a step whose process hasn't started yet.
+    guards.cancelSetup();
+    setupRun?.cancel();
+  });
   handle("hh:testEngine", async (engineId: string) => {
     const engine = engineFor(engineId);
     if (quitting) throw new Error("The app is closing");
-    const signal = guards.beginTest();
-    try {
+    // A second request for the same engine (the screen was reopened) gets the running test's result.
+    return guards.runTest(engineId, async (signal): Promise<TestResult> => {
+      if (!(await hasAcceptedNotice(shared, engineId))) return { ok: false, error: { code: "notice-required" } };
       const cmd = await engineCommand(engine, commandDeps);
       if (!cmd) return { ok: false, error: { code: "engine-not-installed" } };
       const result = await testPrompt(engine, cmd, { signal });
@@ -396,9 +419,7 @@ function registerIpc() {
         return { ok: true, recorded: false };
       }
       return { ok: true };
-    } finally {
-      guards.endTest();
-    }
+    });
   });
   handle("hh:getUsage", async (): Promise<UsageSummary> => {
     const c = await validConfig();

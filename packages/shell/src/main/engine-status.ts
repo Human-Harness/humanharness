@@ -64,3 +64,8 @@ export async function detectEngine(engine: EngineDef, d: CommandDeps, shared: Sh
   await shared.update(engine.id, { binary: cli.bundled ? null : binary, ...(version ? { version } : {}) }).catch(() => undefined);
   return { ...base, installed: true, version, outdated, loggedIn, verified: Boolean(record.verifiedAt) && loggedIn !== false };
 }
+
+/** Whether the user accepted the engine's legal notice at the current version (spec §9: nothing runs before). */
+export async function hasAcceptedNotice(shared: SharedConfigStore, engineId: string): Promise<boolean> {
+  return noticeAccepted(await shared.engine(engineId), NOTICE_VERSION);
+}

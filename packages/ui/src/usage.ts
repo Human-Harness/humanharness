@@ -31,7 +31,13 @@ export function formatReset(iso: string, language: string, now: Date = new Date(
     : date.toLocaleString(language, { weekday: "short", ...time });
 }
 
-export const fiveHour = (limits: LimitWindow[] | null): LimitWindow | undefined => limits?.find((w) => w.kind === "five_hour");
+/** The windows that haven't reset yet (a reset window's utilization no longer says anything). */
+export function currentWindows(limits: LimitWindow[] | null, now: number = Date.now()): LimitWindow[] | null {
+  return limits ? limits.filter((w) => Date.parse(w.resetsAt) > now) : null;
+}
+
+export const fiveHour = (limits: LimitWindow[] | null, now: number = Date.now()): LimitWindow | undefined =>
+  currentWindows(limits, now)?.find((w) => w.kind === "five_hour");
 
 /** The window an out-of-quota card should mention: the fullest, and among those the one that resets last. */
 export function resetWindow(limits: LimitWindow[] | null): LimitWindow | undefined {
@@ -50,9 +56,14 @@ export interface Preflight {
  * Whether to ask before an action: only heavy ones, only when the engine reports a five-hour window,
  * and only when the action would likely take it to WARN_AT or beyond. Null means go ahead.
  */
-export function preflight(cost: ActionCost | undefined, limits: LimitWindow[] | null, estimate: number | undefined): Preflight | null {
+export function preflight(
+  cost: ActionCost | undefined,
+  limits: LimitWindow[] | null,
+  estimate: number | undefined,
+  now: number = Date.now(),
+): Preflight | null {
   if (cost !== "heavy") return null;
-  const window = fiveHour(limits);
+  const window = fiveHour(limits, now);
   if (!window) return null;
   if (window.utilization + (estimate ?? HEAVY_DEFAULT) < WARN_AT) return null;
   return { estimate: estimate ?? null, left: Math.max(0, 1 - window.utilization) };

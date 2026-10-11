@@ -464,6 +464,55 @@ describe("HarnessApp", () => {
     expect(client.sentOptions).toEqual([{ action: "tidy" }]);
   });
 
+  it("focuses Not now on the pre-flight question, scrolls to it, and Escape means not now", async () => {
+    const client = new FakeClient(ready);
+    client.state.actions = { tidy: { label: { es: "Ordenar", en: "Tidy up" }, cost: "heavy" } };
+    client.usage = { limits: [{ kind: "five_hour", utilization: 0.75, resetsAt: in2h() }], estimates: { tidy: 0.08 } };
+    const scrolled: Element[] = [];
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = function (this: Element) {
+      scrolled.push(this);
+    };
+    try {
+      await startWork(<HarnessApp client={client} renderSide={(_s, send) => <button onClick={() => send("Tidy all notes", { action: "tidy" })}>tidy</button>} />);
+      await screen.findByText(/5 h: 75% used/);
+      const opener = screen.getByRole("button", { name: "tidy" });
+      opener.focus();
+      fireEvent.click(opener);
+      const dialog = await screen.findByRole("alertdialog");
+      expect(document.activeElement).toBe(within(dialog).getByRole("button", { name: "Not now" }));
+      expect(scrolled).toContain(dialog);
+      fireEvent.keyDown(dialog, { key: "Escape" });
+      expect(screen.queryByRole("alertdialog")).toBeNull();
+      expect(document.activeElement).toBe(opener);
+      expect(client.sent).toEqual([]);
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
+  });
+
+  it("forgets plan windows that have already reset", async () => {
+    const client = new FakeClient(ready);
+    client.state.actions = { tidy: { label: { es: "Ordenar", en: "Tidy up" }, cost: "heavy" } };
+    await startWork(<HarnessApp client={client} renderSide={(_s, send) => <button onClick={() => send("Tidy all notes", { action: "tidy" })}>tidy</button>} />);
+    await screen.findByText("Your plan's usage shows up after the first message.");
+    const past = new Date(Date.now() - 60_000).toISOString();
+    act(() =>
+      client.emit({
+        type: "limits",
+        status: "allowed",
+        windows: [
+          { kind: "five_hour", utilization: 0.97, resetsAt: past },
+          { kind: "seven_day", utilization: 0.09, resetsAt: in4d() },
+        ],
+      }),
+    );
+    expect(screen.getByText("week: 9% used")).toBeTruthy();
+    expect(screen.queryByText(/Almost at your limit/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "tidy" }));
+    await waitFor(() => expect(client.sent).toEqual(["Tidy all notes"]));
+  });
+
   it("goes straight ahead with a heavy action when there is room", async () => {
     const client = new FakeClient(ready);
     client.state.actions = { tidy: { label: { es: "Ordenar", en: "Tidy up" }, cost: "heavy" } };

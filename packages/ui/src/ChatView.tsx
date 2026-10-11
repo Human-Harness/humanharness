@@ -45,6 +45,10 @@ export function ChatView({
   const [announcement, setAnnouncement] = useState("");
   const [estimates, setEstimates] = useState<Record<string, number>>({});
   const [pending, setPending] = useState<{ text: string; options: SendOptions; check: Preflight } | null>(null);
+  const preflightRef = useRef<HTMLDivElement>(null);
+  const notNowRef = useRef<HTMLButtonElement>(null);
+  /** What had focus when the pre-flight question opened (the action's button): it gets focus back on "Not now". */
+  const preflightOpener = useRef<HTMLElement | null>(null);
   const chatRef = useRef<HTMLElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const stick = useRef(true);
@@ -74,6 +78,14 @@ export function ChatView({
     if (!chat.live) busy.current = false;
   }, [chat.live]);
 
+  // The pre-flight question gets focus on its safe answer ("Not now") and comes into view.
+  const asking = pending !== null;
+  useEffect(() => {
+    if (!asking) return;
+    preflightRef.current?.scrollIntoView?.({ block: "nearest" });
+    notNowRef.current?.focus();
+  }, [asking]);
+
   useLayoutEffect(() => {
     const el = chatRef.current;
     if (el && stick.current) el.scrollTop = el.scrollHeight;
@@ -96,6 +108,7 @@ export function ChatView({
     if (!confirmed && options.action) {
       const check = preflight(state.actions[options.action]?.cost, chat.limits, estimates[options.action]);
       if (check) {
+        preflightOpener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
         setPending({ text: message, options, check });
         return true;
       }
@@ -108,6 +121,14 @@ export function ChatView({
     });
     inputRef.current?.focus();
     return true;
+  };
+  /** "Not now" (or Escape): nothing is sent, and focus goes back to whatever asked. */
+  const closePreflight = () => {
+    setPending(null);
+    const opener = preflightOpener.current;
+    preflightOpener.current = null;
+    if (opener?.isConnected) opener.focus();
+    else inputRef.current?.focus();
   };
   /** What harness UI gets: it can't skip the pre-flight check. */
   const sendFromHarness: SendFn = (text, options) => send(text, options);
@@ -170,11 +191,22 @@ export function ChatView({
             </article>
           )}
           {pending && (
-            <div className="hh-confirm" role="alertdialog" aria-labelledby="hh-preflight-title">
+            <div
+              ref={preflightRef}
+              className="hh-confirm"
+              role="alertdialog"
+              aria-labelledby="hh-preflight-title"
+              aria-describedby="hh-preflight-text"
+              onKeyDown={(e) => {
+                if (e.key !== "Escape") return;
+                e.preventDefault();
+                closePreflight();
+              }}
+            >
               <p id="hh-preflight-title">
                 <strong className="hh-warn">{t("preflight.title")}</strong>
               </p>
-              <p>{preflightText}</p>
+              <p id="hh-preflight-text">{preflightText}</p>
               <button
                 className="hh-primary"
                 onClick={() => {
@@ -185,7 +217,9 @@ export function ChatView({
               >
                 {t("preflight.continue")}
               </button>
-              <button onClick={() => setPending(null)}>{t("preflight.notNow")}</button>
+              <button ref={notNowRef} onClick={closePreflight}>
+                {t("preflight.notNow")}
+              </button>
             </div>
           )}
         </section>

@@ -60,6 +60,12 @@ export class FakeClient implements HarnessClient {
   running: RunningSetup | null = null;
   sharedRevealed = 0;
   sharedReset = 0;
+  /** When set, resetSharedConfig waits for it. */
+  resetGate: Promise<void> | null = null;
+  /** When set, resetSharedConfig rejects with it. */
+  resetError: Error | null = null;
+  /** When set, getSetup waits for it. */
+  getSetupGate: Promise<void> | null = null;
   setupRuns: { engineId: string; step: SetupStep }[] = [];
   setupResult = { ok: true };
   /** When set, runSetup waits for it (a login in progress). */
@@ -194,6 +200,7 @@ export class FakeClient implements HarnessClient {
     return this.testResult;
   }
   async getSetup() {
+    if (this.getSetupGate) await this.getSetupGate;
     return this.running;
   }
   async revealSharedConfig() {
@@ -201,6 +208,8 @@ export class FakeClient implements HarnessClient {
   }
   async resetSharedConfig() {
     this.sharedReset++;
+    if (this.resetGate) await this.resetGate;
+    if (this.resetError) throw this.resetError;
     this.acceptError = null;
     this.testUnrecorded = false;
   }

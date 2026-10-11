@@ -26,6 +26,11 @@ export interface TurnDeps {
   emit: (e: Event) => void;
   /** Saves the finished turn's usage (usage.jsonl), with the turn's first limits snapshot. Failures are logged, never thrown. */
   recordUsage?: (entry: ChatEntry, action: string | undefined, firstLimits: LimitWindow[] | undefined) => Promise<void>;
+  /**
+   * A turn ended with `session-expired`: forget the engine's passed test prompt, so Settings → Engine
+   * asks to sign in (or test) again instead of saying it is ready. Failures are logged, never thrown.
+   */
+  sessionExpired?: () => Promise<void>;
 }
 
 /** One message's lifecycle: log, start the runtime, run the turn, log the reply and its usage, then tell the window. */
@@ -92,6 +97,7 @@ export class TurnController {
         const entry = recorder.finish(done);
         await this.write(log, entry);
         await this.recordUsage(entry, action, recorder.firstLimits);
+        if (!done.ok && done.error?.code === "session-expired") await this.forgetSession();
         this.emit(done);
       };
 
@@ -134,6 +140,14 @@ export class TurnController {
       await this.deps.recordUsage?.(entry, action, firstLimits);
     } catch (err) {
       console.error("Could not save usage", err);
+    }
+  }
+
+  private async forgetSession(): Promise<void> {
+    try {
+      await this.deps.sessionExpired?.();
+    } catch (err) {
+      console.error("Could not forget the expired session", err);
     }
   }
 

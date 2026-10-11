@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { promises as fs } from "node:fs";
+import { constants as fsConstants, promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
@@ -64,25 +64,37 @@ export class SharedConfigStore {
 
   /**
    * Starts the file over when it can't be used (damaged, or from a newer app): the old one is kept
-   * next to it as `engines.json.bak-<date>-<time>`, whose path is returned (null when there was none).
+   * next to it as `engines.json.bak-<date>-<time>` (`-2`, `-3`… when that name is taken), whose path is returned (null when there was none).
    * Every engine then asks for its notice and test again.
    */
   reset(now: Date = new Date()): Promise<string | null> {
     const run = this.queue.then(async () => {
       await fs.mkdir(path.dirname(this.file), { recursive: true });
       const stamp = now.toISOString().replace(/\.\d+Z$/, "").replace(/-|:/g, "").replace("T", "-");
-      let backup: string | null = `${this.file}.bak-${stamp}`;
-      try {
-        await fs.rename(this.file, backup);
-      } catch (err) {
-        if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
-        backup = null;
-      }
+      const backup = await this.backup(`${this.file}.bak-${stamp}`);
       await this.write(empty());
       return backup;
     });
     this.queue = run.catch(() => undefined);
     return run;
+  }
+
+  /**
+   * Copies the file to `base` (or `base-2`, `base-3`… when taken), never replacing an existing
+   * backup. Returns the backup's path, or null when there is no file.
+   */
+  private async backup(base: string): Promise<string | null> {
+    for (let n = 1; ; n++) {
+      const target = n === 1 ? base : `${base}-${n}`;
+      try {
+        await fs.copyFile(this.file, target, fsConstants.COPYFILE_EXCL);
+        return target;
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException).code;
+        if (code === "ENOENT") return null;
+        if (code !== "EEXIST" || n >= 1000) throw err;
+      }
+    }
   }
 
   private async write(content: unknown): Promise<void> {

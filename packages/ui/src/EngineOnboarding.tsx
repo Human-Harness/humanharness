@@ -32,6 +32,10 @@ export function EngineOnboarding({
   const [code, setCode] = useState("");
   /** Why the last test prompt failed. */
   const [testError, setTestError] = useState<EngineError | null>(null);
+  /** Starting ~/.humanharness/engines.json over: "confirm" asks first, "running" while it runs, "failed" after an error. */
+  const [reset, setReset] = useState<null | "confirm" | "running" | "failed">(null);
+  /** getSetup has answered: until then a step may be running that this screen would reattach to. */
+  const [checkedSetup, setCheckedSetup] = useState(false);
   const autoTested = useRef(false);
   /** Showing a step this screen didn't start (it was reopened while the step runs): its end comes as an event. */
   const attached = useRef(false);
@@ -46,6 +50,8 @@ export function EngineOnboarding({
       else if (o.kind === "url") setUrl(o.url);
       else if (o.kind === "end" && o.engineId === engine.id && attached.current) {
         attached.current = false;
+        // Signed in again: the test prompt runs by itself again.
+        if (o.ok && o.step === "login") autoTested.current = false;
         setBusy(null);
         if (!o.ok) setFailed("step");
         void refreshRef.current();
@@ -54,12 +60,16 @@ export function EngineOnboarding({
     // Re-attach to a step that is still running for this engine.
     client.getSetup().then(
       (running) => {
-        if (!live || !running || running.engineId !== engine.id) return;
+        if (!live) return;
+        setCheckedSetup(true);
+        if (!running || running.engineId !== engine.id) return;
         attached.current = true;
         setBusy(running.step);
         setUrl(running.url ?? null);
       },
-      () => {},
+      () => {
+        if (live) setCheckedSetup(true);
+      },
     );
     return () => {
       live = false;
@@ -82,13 +92,14 @@ export function EngineOnboarding({
     await refresh();
   }, [client, engine.id, refresh]);
 
-  // The test prompt runs by itself once; after a failure the user retries.
+  // The test prompt runs by itself once (never alongside a step this screen reattaches to);
+  // after a failure the user retries.
   useEffect(() => {
-    if (problem === "untested" && busy === null && !autoTested.current) {
+    if (checkedSetup && problem === "untested" && busy === null && !autoTested.current) {
       autoTested.current = true;
       void runTest();
     }
-  }, [problem, busy, runTest]);
+  }, [checkedSetup, problem, busy, runTest]);
 
   const runStep = async (step: SetupStep) => {
     setBusy(step);
@@ -106,12 +117,26 @@ export function EngineOnboarding({
   };
 
   /** Starts ~/.humanharness/engines.json over (a copy of the old one is kept), then tries again. */
+  const resetting = useRef(false);
   const resetShared = async () => {
+    // One reset at a time, even for a double click that lands before the re-render.
+    if (resetting.current) return;
+    resetting.current = true;
+    setReset("running");
+    try {
+      await resetAndRetry();
+    } finally {
+      resetting.current = false;
+    }
+  };
+  const resetAndRetry = async () => {
     try {
       await client.resetSharedConfig();
     } catch {
+      setReset("failed");
       return;
     }
+    setReset(null);
     setFailed(false);
     if (problem === "untested") await runTest();
     else await refresh();
@@ -247,7 +272,7 @@ export function EngineOnboarding({
               {t("engine.retry")}
             </button>
             {/* The CLI can't say whether it is signed in: signing in again may be the fix. */}
-            {failed === "step" && status.loggedIn === null && (
+            {failed === "step" && (status.loggedIn === null || testError?.code === "session-expired") && (
               <button onClick={() => void runStep("login")}>{t("errors.fix.session-expired", v)}</button>
             )}
           </>
@@ -267,9 +292,28 @@ export function EngineOnboarding({
             {t("engine.sharedConfigError")}
           </p>
           <p>
-            <button onClick={() => void client.revealSharedConfig().catch(() => {})}>{t("engine.sharedConfigReveal")}</button>{" "}
-            <button onClick={() => void resetShared()}>{t("engine.sharedConfigReset")}</button>
+            <button disabled={reset === "running"} onClick={() => void client.revealSharedConfig().catch(() => {})}>
+              {t("engine.sharedConfigReveal")}
+            </button>{" "}
+            <button disabled={reset === "running" || reset === "confirm"} onClick={() => setReset("confirm")}>
+              {t("engine.sharedConfigReset")}
+            </button>
           </p>
+          {reset === "confirm" && (
+            <div role="group" aria-label={t("engine.sharedConfigReset")}>
+              <p>{t("engine.sharedConfigConfirm")}</p>
+              <button className="hh-primary" onClick={() => void resetShared()}>
+                {t("engine.sharedConfigConfirmYes")}
+              </button>{" "}
+              <button onClick={() => setReset(null)}>{t("engine.cancel")}</button>
+            </div>
+          )}
+          {reset === "running" && <p role="status">{t("engine.sharedConfigResetting")}</p>}
+          {reset === "failed" && (
+            <p className="hh-save-error" role="alert">
+              {t("engine.sharedConfigResetError")}
+            </p>
+          )}
         </>
       )}
       {failed === "step" && (

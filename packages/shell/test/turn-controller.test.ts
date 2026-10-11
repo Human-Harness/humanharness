@@ -305,4 +305,39 @@ describe("TurnController usage and actions", () => {
     expect(events.at(-1)).toEqual({ type: "done", ok: false, error: { code: "outdated-version" } });
     expect(entries.at(-1)?.error).toEqual({ code: "outdated-version" });
   });
+
+  it("forgets the engine's test prompt before telling the window a session expired", async () => {
+    const fake = fakeRuntime();
+    const order: string[] = [];
+    const controller = new TurnController({
+      ensureRuntime: async () => fake.runtime,
+      chatLog: async () => ({ append: async () => {} }),
+      stateBlocks: () => new Set(),
+      emit: (e) => order.push(`emit:${e.type}`),
+      sessionExpired: async () => {
+        order.push("expired");
+        throw new Error("disk full");
+      },
+    });
+    const sent = controller.send("hi");
+    await vi.waitFor(() => expect(fake.send).toHaveBeenCalled());
+    fake.finish([{ type: "done", ok: false, error: { code: "session-expired" } }]);
+    await sent;
+    expect(order).toEqual(["expired", "emit:done"]);
+
+    const other = fakeRuntime();
+    const calls = vi.fn(async () => {});
+    const c2 = new TurnController({
+      ensureRuntime: async () => other.runtime,
+      chatLog: async () => ({ append: async () => {} }),
+      stateBlocks: () => new Set(),
+      emit: () => {},
+      sessionExpired: calls,
+    });
+    const s2 = c2.send("hi");
+    await vi.waitFor(() => expect(other.send).toHaveBeenCalled());
+    other.finish([{ type: "done", ok: false, error: { code: "out-of-quota" } }]);
+    await s2;
+    expect(calls).not.toHaveBeenCalled();
+  });
 });

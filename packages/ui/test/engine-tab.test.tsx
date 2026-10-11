@@ -211,9 +211,77 @@ describe("EngineTab", () => {
     fireEvent.click(screen.getByRole("button", { name: "Show in Finder" }));
     await waitFor(() => expect(client.sharedRevealed).toBe(1));
     fireEvent.click(screen.getByRole("button", { name: "Start over" }));
+    expect(screen.getByText(/Every AI engine on this computer will ask you to accept its notice/)).toBeTruthy();
+    expect(client.sharedReset).toBe(0);
+    fireEvent.click(screen.getByRole("button", { name: "Yes, start over" }));
     await waitFor(() => expect(client.sharedReset).toBe(1));
     await screen.findByRole("button", { name: "Use Claude" });
     expect(client.tested).toEqual(["claude", "claude"]);
+  });
+
+  it("can cancel starting over, and starts over only once while it runs", async () => {
+    const client = withFolder();
+    client.status = { ...client.status, verified: false };
+    client.testUnrecorded = true;
+    let finish!: () => void;
+    client.resetGate = new Promise((r) => (finish = r));
+    await renderIn("en", <Tab client={client} />);
+    await screen.findByRole("alert");
+    fireEvent.click(screen.getByRole("button", { name: "Start over" }));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("button", { name: "Yes, start over" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Start over" }));
+    const yes = screen.getByRole("button", { name: "Yes, start over" });
+    fireEvent.click(yes);
+    fireEvent.click(yes);
+    await screen.findByText("Starting over…");
+    expect((screen.getByRole("button", { name: "Show in Finder" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByRole("button", { name: "Yes, start over" })).toBeNull();
+    await act(async () => finish());
+    await screen.findByRole("button", { name: "Use Claude" });
+    expect(client.sharedReset).toBe(1);
+  });
+
+  it("says so when starting over fails", async () => {
+    const client = withFolder();
+    client.status = { ...client.status, verified: false };
+    client.testUnrecorded = true;
+    client.resetError = new Error("EACCES");
+    await renderIn("es", <Tab client={client} />);
+    await screen.findByRole("alert");
+    fireEvent.click(screen.getByRole("button", { name: "Restablecer" }));
+    fireEvent.click(screen.getByRole("button", { name: "Sí, restablecer" }));
+    await screen.findByText("No pude restablecer el archivo. Probá otra vez o miralo en Finder.");
+    expect((screen.getByRole("button", { name: "Restablecer" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("offers to sign in again when the test prompt says the session expired, even if the CLI says it is signed in", async () => {
+    const client = withFolder();
+    client.status = { ...client.status, verified: false, loggedIn: true };
+    client.testResult = { ok: false, error: { code: "session-expired" } };
+    await renderIn("en", <Tab client={client} />);
+    await screen.findByRole("alert");
+    fireEvent.click(screen.getByRole("button", { name: "Sign in again" }));
+    await waitFor(() => expect(client.setupRuns).toEqual([{ engineId: "claude", step: "login" }]));
+  });
+
+  it("reattached to a running sign-in, waits for it before the test prompt, then tests once it ends", async () => {
+    const client = withFolder();
+    client.status = { ...client.status, verified: false, loggedIn: null };
+    client.running = { engineId: "claude", step: "login" };
+    let answer!: () => void;
+    client.getSetupGate = new Promise((r) => (answer = r));
+    await renderIn("en", <Tab client={client} />);
+    await screen.findByRole("heading", { name: "One last check" });
+    await act(async () => {});
+    expect(client.tested).toEqual([]);
+    await act(async () => answer());
+    await screen.findByText(/Finish signing in using your browser/);
+    expect(client.tested).toEqual([]);
+    client.running = null;
+    act(() => client.emitSetup({ kind: "end", engineId: "claude", step: "login", ok: true }));
+    await screen.findByRole("button", { name: "Use Claude" });
+    expect(client.tested).toEqual(["claude"]);
   });
 
   it("says when checking an engine failed, with the reason and a way to check again", async () => {

@@ -252,6 +252,10 @@ const turns = new TurnController({
     const record = c ? usageRecord(entry, c.engineId, action, firstLimits) : null;
     if (c && record) await new UsageLog(c.folder).append(record);
   },
+  sessionExpired: async () => {
+    const c = await config.load();
+    if (c.engineId) await shared.update(c.engineId, { verifiedAt: null });
+  },
 });
 
 /** Registers an IPC handler that only answers the app's own page. */

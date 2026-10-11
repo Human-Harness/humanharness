@@ -23,7 +23,15 @@
     "about": "Acerca de",
     "version": "Versión {{version}}",
     "madeBy": "Hecho por {{author}} con Human Harness",
-    "support": "Apoyar"
+    "support": "Apoyar",
+    "running": {
+      "install": "Instalando {{engine}}…",
+      "update": "Actualizando {{engine}}…",
+      "login": "Iniciando sesión en {{engine}}…",
+      "logout": "Cerrando sesión en {{engine}}…"
+    },
+    "runningWait": "Ajustes queda abierto hasta que termine.",
+    "runningCancel": "Cancelar"
   },
   "setup": {
     "welcome": "{{name}} funciona con un plan de IA que ya tenés, con tu propia cuenta. La app no ve ni guarda nada fuera de tu compu: tu trabajo queda en una carpeta que elegís vos.",
@@ -90,6 +98,10 @@
     "sharedConfigError": "No pude guardar los ajustes de los motores de IA de esta computadora. El archivo que los guarda (engines.json, en una carpeta oculta llamada .humanharness) puede estar dañado o ser de una versión más nueva de la app. Podés verlo en Finder o empezarlo de nuevo: guardo una copia del anterior.",
     "sharedConfigReveal": "Mostrar en Finder",
     "sharedConfigReset": "Restablecer",
+    "sharedConfigConfirm": "¿Restablecer? Todos los motores de IA de esta computadora te van a pedir que aceptes su aviso y hagas la prueba otra vez. Guardo una copia del archivo actual al lado.",
+    "sharedConfigConfirmYes": "Sí, restablecer",
+    "sharedConfigResetting": "Restableciendo…",
+    "sharedConfigResetError": "No pude restablecer el archivo. Probá otra vez o miralo en Finder.",
     "retry": "Reintentar",
     "recheck": "Revisar de nuevo",
     "checkFailed": "No pude revisar {{engine}} en esta computadora.",

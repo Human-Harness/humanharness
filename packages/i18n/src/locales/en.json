@@ -23,7 +23,15 @@
     "about": "About",
     "version": "Version {{version}}",
     "madeBy": "Made by {{author}} with Human Harness",
-    "support": "Support"
+    "support": "Support",
+    "running": {
+      "install": "Installing {{engine}}…",
+      "update": "Updating {{engine}}…",
+      "login": "Signing in to {{engine}}…",
+      "logout": "Signing out of {{engine}}…"
+    },
+    "runningWait": "Settings stays open until it finishes.",
+    "runningCancel": "Cancel"
   },
   "setup": {
     "welcome": "{{name}} works with an AI plan you already have, using your own account. The app doesn't see or keep anything outside your computer: your work stays in a folder you choose.",
@@ -90,6 +98,10 @@
     "sharedConfigError": "I couldn't save this computer's AI engine settings. The file that keeps them (engines.json, in a hidden folder called .humanharness) may be damaged or come from a newer version of the app. You can see it in Finder, or start it over: I'll keep a copy of the old one.",
     "sharedConfigReveal": "Show in Finder",
     "sharedConfigReset": "Start over",
+    "sharedConfigConfirm": "Start over? Every AI engine on this computer will ask you to accept its notice and run the test again. I'll keep a copy of the current file next to it.",
+    "sharedConfigConfirmYes": "Yes, start over",
+    "sharedConfigResetting": "Starting over…",
+    "sharedConfigResetError": "I couldn't start the file over. Try again, or look at it in Finder.",
     "retry": "Try again",
     "recheck": "Check again",
     "checkFailed": "I couldn't check {{engine}} on this computer.",

@@ -137,6 +137,18 @@ describe("noticeAccepted", () => {
     expect(await store.engine("claude")).toEqual({ version: "1" });
   });
 
+  it("never overwrites an earlier backup, even for two resets in the same second", async () => {
+    const dir = newDir();
+    fs.writeFileSync(path.join(dir, "engines.json"), "{ original");
+    const store = new SharedConfigStore(dir);
+    const now = new Date("2026-10-11T14:05:06.000Z");
+    const [first, second] = await Promise.all([store.reset(now), store.reset(now)]);
+    expect(path.basename(first!)).toBe("engines.json.bak-20261011-140506");
+    expect(path.basename(second!)).toBe("engines.json.bak-20261011-140506-2");
+    expect(fs.readFileSync(first!, "utf8")).toBe("{ original");
+    expect(JSON.parse(fs.readFileSync(second!, "utf8"))).toEqual({ version: 1, engines: {} });
+  });
+
   it("reset of a missing file just creates an empty one", async () => {
     const dir = newDir();
     const store = new SharedConfigStore(dir);

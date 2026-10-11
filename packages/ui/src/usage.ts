@@ -14,7 +14,7 @@ export const percent = (share: number): number => Math.round(Math.min(1, Math.ma
  * `input_tokens`; codex-acp subtracts cached and cache-write input before reporting), so adding the
  * cache counts doesn't count them twice.
  */
-export const totalTokens =(u: TurnUsage): number => u.inputTokens + u.outputTokens + u.cacheReadTokens + u.cacheWriteTokens;
+export const totalTokens = (u: TurnUsage): number => u.inputTokens + u.outputTokens + u.cacheReadTokens + u.cacheWriteTokens;
 
 /** Tokens of the latest reply that reported any. */
 export function lastTurnTokens(entries: ChatEntry[]): number | null {
@@ -45,9 +45,10 @@ export const fiveHour = (limits: LimitWindow[] | null, now: number = Date.now())
   currentWindows(limits, now)?.find((w) => w.kind === "five_hour");
 
 /** The window an out-of-quota card should mention: the fullest, and among those the one that resets last. */
-export function resetWindow(limits: LimitWindow[] | null): LimitWindow | undefined {
-  if (!limits?.length) return undefined;
-  return [...limits].sort((a, b) => b.utilization - a.utilization || Date.parse(b.resetsAt) - Date.parse(a.resetsAt))[0];
+export function resetWindow(limits: LimitWindow[] | null, now: number = Date.now()): LimitWindow | undefined {
+  const current = currentWindows(limits, now);
+  if (!current?.length) return undefined;
+  return [...current].sort((a, b) => b.utilization - a.utilization || Date.parse(b.resetsAt) - Date.parse(a.resetsAt))[0];
 }
 
 export interface Preflight {

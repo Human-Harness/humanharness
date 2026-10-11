@@ -6,6 +6,7 @@ import type { AppConfig, AppState, Appearance, HarnessClient, RunningSetup, Usag
 import { EngineTab } from "./EngineTab";
 import { FolderStep, uiLanguage } from "./FolderStep";
 import { WARN_AT, formatReset, percent } from "./usage";
+import { useCurrentWindows } from "./UsageMeter";
 
 export type SettingsTab = "general" | "engine" | "usage";
 const TABS: SettingsTab[] = ["general", "engine", "usage"];
@@ -215,17 +216,18 @@ function UsageTab({ client, state }: { client: HarnessClient; state: AppState })
   useEffect(() => {
     client.getUsage().then(setUsage, () => setUsage({ limits: null, estimates: {} }));
   }, [client]);
+  const limits = useCurrentWindows(usage?.limits ?? null);
   const engine = state.engines.find((e) => e.id === state.config.engineId);
   const actions = Object.entries(state.actions);
 
   let plan;
   if (!engine) plan = <p className="hh-caption">{t("home.noEngine")}</p>;
   else if (!engine.reportsLimits) plan = <p className="hh-caption">{t("usage.noLimits", { engine: engine.name })}</p>;
-  else if (!usage?.limits?.length) plan = <p className="hh-caption">{t("usage.unknown")}</p>;
+  else if (!limits?.length) plan = <p className="hh-caption">{t("usage.unknown")}</p>;
   else
     plan = (
       <div className="hh-rows">
-        {usage.limits.map((w) => (
+        {limits.map((w) => (
           <div key={w.kind} className="hh-row">
             <span className={w.utilization >= WARN_AT ? "hh-warn" : undefined}>
               {t("usage.window", { label: t(`usage.${w.kind}`, { defaultValue: w.kind }), percent: percent(w.utilization) })}

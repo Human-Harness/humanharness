@@ -3,6 +3,7 @@ import { GearIcon, HHLogo, TopBar } from "./chrome";
 import { type AppState, type EngineStatus, type LimitWindow, engineProblem } from "./client";
 import { uiLanguage } from "./FolderStep";
 import { WARN_AT, fiveHour, percent } from "./usage";
+import { useCurrentWindows } from "./UsageMeter";
 
 /** The first screen of every launch (spec 2026-10-11 "Home"). */
 export function Home({
@@ -29,7 +30,8 @@ export function Home({
   const name = state.harness.name[lang];
   const engine = state.engines.find((e) => e.id === state.config.engineId);
   const connected = checkFailed ? false : status ? engineProblem(status) === null : null;
-  const window = engine?.reportsLimits ? fiveHour(limits) : undefined;
+  const current = useCurrentWindows(limits);
+  const window = engine?.reportsLimits ? fiveHour(current) : undefined;
 
   return (
     <div className="hh-home">

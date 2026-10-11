@@ -142,6 +142,7 @@ export function ChatView({
   };
   const last = chat.entries.at(-1);
   const lastUser = chat.entries.findLast((e) => e.role === "user");
+  const backgroundError = engineProblem ? problemError(engineProblem) : null;
 
   let preflightText = "";
   if (pending) {
@@ -168,8 +169,10 @@ export function ChatView({
       </TopBar>
       <div className="hh-body">
         <section className="hh-chat" ref={chatRef} onScroll={onScroll}>
-          {/* The last turn's card already offers a fix: one fix button is enough. */}
-          {engineProblem && !isFixable(last?.error) && <ErrorCard error={problemError(engineProblem)} engine={engine} onFix={onFixEngine} />}
+          {/* The last turn's card already offers the fix for this same problem: one fix button is enough. */}
+          {backgroundError && !(isFixable(last?.error) && last?.error?.code === backgroundError.code) && (
+            <ErrorCard error={backgroundError} engine={engine} onFix={onFixEngine} />
+          )}
           {chat.entries.map((entry) => (
             <div key={entry.id}>
               <Message entry={entry} components={components} respond={sendFromHarness} />

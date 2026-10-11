@@ -6,18 +6,26 @@ import { HIGH_AT, WARN_AT, compactTokens, currentWindows, formatReset, percent }
 /** Longest delay setTimeout accepts. */
 const MAX_DELAY = 2 ** 31 - 1;
 
-/** Where the user stands on their plan (spec §6), in one line: only what the engine reports. */
-export function UsageMeter({ engine, limits: reported, lastTokens }: { engine?: EngineOption; limits: LimitWindow[] | null; lastTokens: number | null }) {
-  const { t, i18n } = useTranslation();
+/**
+ * The windows that haven't reset yet; the component redraws when the next one resets, so it drops
+ * out on time.
+ */
+export function useCurrentWindows(reported: LimitWindow[] | null): LimitWindow[] | null {
   const [, rerender] = useReducer((n: number) => n + 1, 0);
   const limits = currentWindows(reported);
-  // Redraw when the next window resets, so it drops out of the meter.
   const nextReset = limits?.length ? Math.min(...limits.map((w) => Date.parse(w.resetsAt))) : null;
   useEffect(() => {
     if (nextReset === null) return;
     const timer = setTimeout(rerender, Math.min(MAX_DELAY, Math.max(0, nextReset - Date.now()) + 1000));
     return () => clearTimeout(timer);
   }, [nextReset]);
+  return limits;
+}
+
+/** Where the user stands on their plan (spec §6), in one line: only what the engine reports. */
+export function UsageMeter({ engine, limits: reported, lastTokens }: { engine?: EngineOption; limits: LimitWindow[] | null; lastTokens: number | null }) {
+  const { t, i18n } = useTranslation();
+  const limits = useCurrentWindows(reported);
   if (!engine) return null;
   if (!engine.reportsLimits) {
     const tokens = lastTokens !== null ? ` ${t("usage.lastTurn", { tokens: compactTokens(lastTokens, i18n.language) })}` : "";

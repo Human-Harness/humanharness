@@ -146,6 +146,22 @@ describe("SettingsSheet", () => {
     expect(screen.getByText("Light")).toBeTruthy();
   });
 
+  it("Usage: leaves out plan windows that have already reset", async () => {
+    const client = new FakeClient(ready);
+    const past = new Date(Date.now() - 60_000).toISOString();
+    const later = new Date(Date.now() + 4 * 86400_000).toISOString();
+    client.usage = {
+      limits: [
+        { kind: "five_hour", utilization: 0.97, resetsAt: past },
+        { kind: "seven_day", utilization: 0.3, resetsAt: later },
+      ],
+      estimates: {},
+    };
+    await renderIn("en", <Sheet client={client} initialTab="usage" />);
+    await screen.findByText("week: 30% used");
+    expect(screen.queryByText(/5 h:/)).toBeNull();
+  });
+
   it("Usage: says when the engine doesn't report limits, and when the app has no actions", async () => {
     const client = new FakeClient({ ...ready, engineId: "codex" });
     client.state.engines = [{ ...client.state.engines[0], id: "codex", name: "Codex", provider: "OpenAI", reportsLimits: false }];

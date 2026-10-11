@@ -301,6 +301,15 @@ describe("HarnessApp", () => {
     await screen.findByRole("group", { name: "AI engines" });
   });
 
+  it("leaves a five-hour window that has already reset out of Home's engine pill", async () => {
+    const client = new FakeClient(ready);
+    client.usage = { limits: [{ kind: "five_hour", utilization: 0.42, resetsAt: new Date(Date.now() - 60_000).toISOString() }], estimates: {} };
+    render(<HarnessApp client={client} />);
+    await screen.findByRole("button", { name: /Claude.*Connected/ });
+    await act(async () => {});
+    expect(screen.queryByText(/5 h · 42%/)).toBeNull();
+  });
+
   it("uses the harness's own logo when it has one", async () => {
     const client = new FakeClient(ready);
     client.state.harness.logo = "data:image/svg+xml;base64,PHN2Zy8+";
@@ -554,6 +563,18 @@ describe("HarnessApp", () => {
     await startWork(<HarnessApp client={client} />);
     await screen.findByText("Your Claude session ended. Sign in again to continue.");
     expect(screen.getAllByRole("button", { name: "Sign in again" })).toHaveLength(1);
+  });
+
+  it("still shows the background check's card when the last turn failed with a different problem", async () => {
+    const client = new FakeClient(ready);
+    client.status = { ...client.status, outdated: true };
+    client.chat = [
+      { id: "1", role: "user", text: "hi", blocks: [], activities: [], at: "t" },
+      { id: "2", role: "assistant", text: "", blocks: [], activities: [], at: "t", error: { code: "session-expired" } },
+    ];
+    await startWork(<HarnessApp client={client} />);
+    await screen.findByText("Claude needs an update.");
+    expect(screen.getByText("Your Claude session ended. Sign in again to continue.")).toBeTruthy();
   });
 
   it("changes engine from Settings → Engine and starts a new conversation", async () => {

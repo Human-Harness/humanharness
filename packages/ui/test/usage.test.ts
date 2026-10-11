@@ -76,8 +76,12 @@ describe("formatting", () => {
   });
 
   it("mentions the fullest window, the one that frees up last, when out of quota", () => {
-    expect(resetWindow([w("five_hour", 1), w("seven_day", 1, "2026-10-14T15:00:00.000Z")])?.kind).toBe("seven_day");
-    expect(resetWindow([w("five_hour", 1), w("seven_day", 0.4)])?.kind).toBe("five_hour");
-    expect(resetWindow(null)).toBeUndefined();
+    expect(resetWindow([w("five_hour", 1), w("seven_day", 1, "2026-10-14T15:00:00.000Z")], NOW)?.kind).toBe("seven_day");
+    expect(resetWindow([w("five_hour", 1), w("seven_day", 0.4)], NOW)?.kind).toBe("five_hour");
+    expect(resetWindow(null, NOW)).toBeUndefined();
+    // A window that has already reset says nothing about when the limit frees up.
+    const later = Date.parse("2026-10-12T00:00:00.000Z");
+    expect(resetWindow([w("five_hour", 1), w("seven_day", 0.4, "2026-10-14T15:00:00.000Z")], later)?.kind).toBe("seven_day");
+    expect(resetWindow([w("five_hour", 1)], later)).toBeUndefined();
   });
 });

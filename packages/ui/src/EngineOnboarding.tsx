@@ -77,6 +77,11 @@ export function EngineOnboarding({
     };
   }, [client, engine.id]);
 
+  // A new attempt (or a new failure) leaves the last "Start over" behind.
+  useEffect(() => {
+    if (failed !== "shared") setReset(null);
+  }, [failed]);
+
   const runTest = useCallback(async () => {
     setBusy("test");
     setFailed(false);

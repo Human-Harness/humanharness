@@ -253,6 +253,11 @@ describe("EngineTab", () => {
     fireEvent.click(screen.getByRole("button", { name: "Sí, restablecer" }));
     await screen.findByText("No pude restablecer el archivo. Probá otra vez o miralo en Finder.");
     expect((screen.getByRole("button", { name: "Restablecer" }) as HTMLButtonElement).disabled).toBe(false);
+    // A later failure to save is a new problem: the old reset error goes away.
+    fireEvent.click(screen.getByRole("button", { name: "Reintentar" }));
+    await waitFor(() => expect(client.tested).toEqual(["claude", "claude"]));
+    await screen.findByText(/No pude guardar los ajustes de los motores de IA/);
+    expect(screen.queryByText("No pude restablecer el archivo. Probá otra vez o miralo en Finder.")).toBeNull();
   });
 
   it("offers to sign in again when the test prompt says the session expired, even if the CLI says it is signed in", async () => {

@@ -42,6 +42,10 @@ export class FakeClient implements HarnessClient {
     verified: true,
   };
   accepted: string[] = [];
+  /** When set, acceptNotice rejects (e.g. ~/.humanharness/engines.json can't be written). */
+  acceptError: Error | null = null;
+  /** When set, testEngine rejects (the result couldn't be recorded). */
+  testError: Error | null = null;
   setupRuns: { engineId: string; step: SetupStep }[] = [];
   setupResult = { ok: true };
   /** When set, runSetup waits for it (a login in progress). */
@@ -136,6 +140,7 @@ export class FakeClient implements HarnessClient {
     return { ...this.status, engineId };
   }
   async acceptNotice(engineId: string) {
+    if (this.acceptError) throw this.acceptError;
     this.accepted.push(engineId);
     this.status = { ...this.status, noticeAccepted: true };
   }
@@ -162,6 +167,7 @@ export class FakeClient implements HarnessClient {
   }
   async testEngine(engineId: string) {
     this.tested.push(engineId);
+    if (this.testError) throw this.testError;
     if (this.testResult.ok) this.status = { ...this.status, verified: true };
     return this.testResult;
   }

@@ -91,6 +91,7 @@
     "testing": "Sending {{engine}} a tiny test message…",
     "ready": "{{engine}} is ready ✓",
     "failed": "That didn't work. Try again.",
+    "sharedConfigError": "I couldn't save the shared settings in ~/.humanharness. Check that ~/.humanharness/engines.json isn't damaged or from a newer version of the app, then try again.",
     "retry": "Try again",
     "recheck": "Check again",
     "details": "Details"

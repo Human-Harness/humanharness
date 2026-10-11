@@ -91,6 +91,7 @@
     "testing": "Le mando a {{engine}} un mensaje de prueba cortito…",
     "ready": "Todo listo con {{engine}} ✓",
     "failed": "Eso no funcionó. Probá de nuevo.",
+    "sharedConfigError": "No pude guardar la configuración compartida en ~/.humanharness. Revisá que ~/.humanharness/engines.json no esté dañado ni sea de una versión más nueva de la app, y probá de nuevo.",
     "retry": "Reintentar",
     "recheck": "Revisar de nuevo",
     "details": "Detalles"

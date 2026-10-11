@@ -38,10 +38,12 @@ export function runSetupProcess(cmd: ProcessCommand, onOutput: (o: SetupOutput) 
   const [binary, ...args] = cmd.command;
   const child = spawn(binary, args, { env: { ...process.env, ...cmd.env }, stdio: ["pipe", "pipe", "pipe"] });
   let urlSent = false;
+  // Once cancelled, nothing more is reported: late output belongs to a run the user abandoned.
+  let cancelled = false;
 
   const emitLine = (raw: string) => {
     const text = raw.replace(ANSI, "").trim();
-    if (!text) return;
+    if (!text || cancelled) return;
     onOutput({ kind: "line", text });
     const url = urlSent ? undefined : URL_RE.exec(text)?.[0];
     if (url) {
@@ -72,7 +74,7 @@ export function runSetupProcess(cmd: ProcessCommand, onOutput: (o: SetupOutput) 
       onOutput({ kind: "line", text: err.message });
       resolve(null);
     });
-    child.on("close", (code) => resolve(code));
+    child.on("close", (code) => resolve(cancelled ? null : code));
   });
 
   return {
@@ -80,6 +82,7 @@ export function runSetupProcess(cmd: ProcessCommand, onOutput: (o: SetupOutput) 
       if (child.stdin!.writable) child.stdin!.write(`${text.trim()}\n`);
     },
     cancel: () => {
+      cancelled = true;
       child.kill("SIGTERM");
     },
     exit,

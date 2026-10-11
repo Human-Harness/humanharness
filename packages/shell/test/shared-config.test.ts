@@ -48,6 +48,52 @@ describe("SharedConfigStore", () => {
     fs.writeFileSync(path.join(dir, "engines.json"), JSON.stringify({ version: 2, engines: { claude: {} } }));
     expect(await new SharedConfigStore(dir).load()).toEqual({ version: 1, engines: {} });
   });
+
+  it("never overwrites a file of an unknown (e.g. newer) version", async () => {
+    const dir = newDir();
+    const file = path.join(dir, "engines.json");
+    const newer = JSON.stringify({ version: 2, engines: { claude: { future: true } } });
+    fs.writeFileSync(file, newer);
+    await expect(new SharedConfigStore(dir).update("claude", { version: "2.1.296" })).rejects.toThrow(/version/);
+    expect(fs.readFileSync(file, "utf8")).toBe(newer);
+  });
+
+  it("rewrites a broken file", async () => {
+    const dir = newDir();
+    fs.writeFileSync(path.join(dir, "engines.json"), "{nope");
+    await new SharedConfigStore(dir).update("claude", { version: "2.1.296" });
+    expect(await new SharedConfigStore(dir).engine("claude")).toEqual({ version: "2.1.296" });
+  });
+
+  it("loads only known, well-typed fields of plain-object records", async () => {
+    const dir = newDir();
+    fs.writeFileSync(
+      path.join(dir, "engines.json"),
+      JSON.stringify({
+        version: 1,
+        engines: {
+          claude: { binary: "/bin/claude", version: 2, email: "someone@example.com", notice: { version: 1, acceptedAt: "t", extra: 1 }, verifiedAt: "t" },
+          codex: { notice: { version: "1", acceptedAt: "t" } },
+          broken: "nope",
+          list: [1, 2],
+        },
+      }),
+    );
+    const store = new SharedConfigStore(dir);
+    expect(await store.load()).toEqual({
+      version: 1,
+      engines: { claude: { binary: "/bin/claude", notice: { version: 1, acceptedAt: "t" }, verifiedAt: "t" }, codex: {} },
+    });
+    await store.update("claude", { version: "2.1.296" });
+    expect(fs.readFileSync(path.join(dir, "engines.json"), "utf8")).not.toContain("someone@example.com");
+  });
+
+  it("deletes a field updated to null", async () => {
+    const store = new SharedConfigStore(newDir());
+    await store.update("codex", { binary: "/opt/homebrew/bin/codex", version: "0.160.1" });
+    await store.update("codex", { binary: null, version: undefined });
+    expect(await store.engine("codex")).toEqual({ version: "0.160.1" });
+  });
 });
 
 describe("noticeAccepted", () => {

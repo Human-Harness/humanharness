@@ -98,6 +98,14 @@ describe("detectEngine", () => {
     expect(calls[0]).toMatchObject({ cmd: "/App/Electron", args: ["/app/codex.js", "--version"], env: { ELECTRON_RUN_AS_NODE: "1" } });
   });
 
+  it("forgets an installed CLI's path once the bundled one is used", async () => {
+    const s = store();
+    await s.update("codex", { binary: "/opt/homebrew/bin/codex", version: "0.150.0" });
+    const { d } = deps({ "--version": { stdout: "codex-cli 0.160.1", code: 0 }, "login status": { code: 0 } }, { resolveModule: (id, from) => (from ? "/app/codex.js" : "/app/acp.js") });
+    await detectEngine(getEngine("codex"), d, s);
+    expect(await s.engine("codex")).toEqual({ version: "0.160.1" });
+  });
+
   it("asks for the notice again after its version changes", async () => {
     const s = store();
     await s.update("claude", { notice: { version: NOTICE_VERSION - 1, acceptedAt: "t" } });

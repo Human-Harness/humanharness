@@ -64,6 +64,19 @@ describe("runSetupProcess", () => {
     expect(code).toBeNull();
   });
 
+  it("drops output printed after it was cancelled", async () => {
+    const out: SetupOutput[] = [];
+    const running = runSetupProcess(
+      node(`process.on("SIGTERM",()=>{console.log("late https://example.com/late");process.exit(0)});console.log("ready");setInterval(()=>{},1000)`),
+      (o) => {
+        out.push(o);
+        if (o.kind === "line" && o.text === "ready") running.cancel();
+      },
+    );
+    expect(await running.exit).toBeNull();
+    expect(out).toEqual([{ kind: "line", text: "ready" }]);
+  });
+
   it("reports a program that can't start", async () => {
     const { lines, code } = await collect({ command: ["/nonexistent/hh-cli"], env: {} });
     expect(code).toBeNull();

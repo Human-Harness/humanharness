@@ -60,7 +60,7 @@
     "signOut": "Cerrar sesión",
     "signingOut": "Cerrando sesión…",
     "noticeTitle": "Antes de usar {{engine}}",
-    "noticeProvider": "{{engine}} es un servicio de {{provider}}. Lo que escribas acá, y los archivos de tu carpeta que lea la IA, se envían a {{provider}} ({{where}}).",
+    "noticeProvider": "{{engine}} es un servicio de {{provider}}. Lo que escribas acá, y los archivos de tu carpeta que lea la IA, se envían a {{where}} para ser procesados.",
     "noticeTraining": "Entrenamiento con tus datos: {{trains}}",
     "noticeAccount": "Usás tu propia cuenta y tu plan de {{provider}} ({{plan}}), bajo sus términos. Esta app no está hecha ni respaldada por {{provider}}.",
     "noticeContent": "Las respuestas las escribe la IA de {{provider}} con tu cuenta. Revisá lo importante: esta app no se hace responsable de lo que escribe la IA.",

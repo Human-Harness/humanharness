@@ -39,6 +39,6 @@ export async function detectEngine(engine: EngineDef, d: CommandDeps, shared: Sh
     const s = await d.run(binary, [...leading, ...engine.setup.status.args], cli.env);
     loggedIn = parseLoggedIn(engine.setup.status.format, s);
   }
-  await shared.update(engine.id, { binary: cli.bundled ? undefined : binary, version }).catch(() => undefined);
+  await shared.update(engine.id, { binary: cli.bundled ? null : binary, version }).catch(() => undefined);
   return { ...base, installed: true, version, outdated, loggedIn, verified: Boolean(record.verifiedAt) && loggedIn !== false };
 }

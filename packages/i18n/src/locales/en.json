@@ -5,7 +5,7 @@
     "connected": "Connected",
     "notConnected": "Not connected",
     "checking": "Checking…",
-    "usage": "{{label}} · {{percent}} %",
+    "usage": "{{label}} · {{percent}}%",
     "noEngine": "No AI engine yet"
   },
   "settings": {
@@ -60,9 +60,9 @@
     "signOut": "Sign out",
     "signingOut": "Signing out…",
     "noticeTitle": "Before using {{engine}}",
-    "noticeProvider": "{{engine}} is a service of {{provider}}. What you write here, and the files in your folder that the AI reads, are sent to {{provider}} ({{where}}).",
+    "noticeProvider": "{{engine}} is a service of {{provider}}. What you write here, and the files in your folder that the AI reads, are sent to {{where}}.",
     "noticeTraining": "Training on your data: {{trains}}",
-    "noticeAccount": "You use your own {{provider}} account and plan ({{plan}}) under their terms. This app is not made or endorsed by {{provider}}.",
+    "noticeAccount": "You use your own {{provider}} account ({{plan}}) under their terms. This app is not made or endorsed by {{provider}}.",
     "noticeContent": "Answers are written by {{provider}}'s AI with your account. Check what matters: this app is not responsible for what the AI writes.",
     "terms": "{{provider}} terms",
     "privacy": "{{provider}} privacy policy",
@@ -83,7 +83,7 @@
     "loginTitle": "Sign in to {{engine}}",
     "loginText": "Sign in with your {{provider}} account. Your browser will open the official sign-in page.",
     "loginRun": "Sign in",
-    "loggingIn": "Waiting for you to finish signing in in your browser…",
+    "loggingIn": "Finish signing in on your browser…",
     "loginOpen": "Open the sign-in page",
     "loginCode": "If the page shows a code, paste it here",
     "loginCodeSend": "Send code",
@@ -98,7 +98,7 @@
   "usage": {
     "five_hour": "5 h",
     "seven_day": "week",
-    "window": "{{label}}: {{percent}} % used",
+    "window": "{{label}}: {{percent}}% used",
     "resets": "resets at {{time}}",
     "resetsFull": "Resets {{time}}",
     "unknown": "Your plan's usage shows up after the first message.",
@@ -109,13 +109,13 @@
     "planTitle": "Your plan",
     "actionsTitle": "What this app can do",
     "cost": { "light": "Light", "medium": "Medium", "heavy": "Heavy" },
-    "estimate": "Usually about {{percent}} % of the 5-hour window",
+    "estimate": "Usually about {{percent}}% of the 5-hour window",
     "noActions": "This app doesn't declare any actions."
   },
   "preflight": {
     "title": "This is a heavy task",
-    "estimate": "\"{{action}}\" usually uses about {{estimate}} % of your 5-hour window. You have {{left}} % left.",
-    "hint": "\"{{action}}\" can use a large part of your 5-hour window. You have {{left}} % left.",
+    "estimate": "\"{{action}}\" usually uses about {{estimate}}% of your 5-hour window. You have {{left}}% left.",
+    "hint": "\"{{action}}\" can use a large part of your 5-hour window. You have {{left}}% left.",
     "continue": "Continue",
     "notNow": "Not now"
   },

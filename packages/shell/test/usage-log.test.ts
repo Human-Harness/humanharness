@@ -52,6 +52,16 @@ describe("usageRecord", () => {
   });
 });
 
+describe("usageRecord first snapshot", () => {
+  it("keeps the turn's first limits snapshot when there is one", () => {
+    const entry: ChatEntry = { id: "a", role: "assistant", text: "", blocks: [], activities: [], at: "t" };
+    const first = [{ kind: "five_hour", utilization: 0.1, resetsAt: R1 }];
+    const last = [{ kind: "five_hour", utilization: 0.2, resetsAt: R1 }];
+    expect(usageRecord({ ...entry, limits: last }, "claude", "tidy", first)).toMatchObject({ limits: last, firstLimits: first });
+    expect("firstLimits" in usageRecord({ ...entry, limits: last }, "claude")!).toBe(false);
+  });
+});
+
 describe("summarizeUsage", () => {
   const now = new Date("2026-10-11T16:00:00.000Z");
 
@@ -77,6 +87,16 @@ describe("summarizeUsage", () => {
     const { estimates } = summarizeUsage(records, now);
     expect(Object.keys(estimates)).toEqual(["tidy"]);
     expect(estimates.tidy).toBeCloseTo(0.09);
+  });
+
+  it("measures from each turn's first snapshot when the turn reported more than one", () => {
+    const records: UsageRecord[] = [
+      { ...rec(0.2, R2, "tidy"), firstLimits: [{ kind: "five_hour", utilization: 0.1, resetsAt: R2 }] },
+      { ...rec(0.3, R2), firstLimits: [{ kind: "five_hour", utilization: 0.25, resetsAt: R2 }] },
+    ];
+    const summary = summarizeUsage(records, now);
+    expect(summary.estimates.tidy).toBeCloseTo(0.15);
+    expect(summary.limits).toEqual(rec(0.3, R2).limits);
   });
 
   it("does not credit an action with the next turn when the next one has no snapshot", () => {

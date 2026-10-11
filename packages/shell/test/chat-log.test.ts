@@ -68,6 +68,19 @@ describe("TurnRecorder usage", () => {
     });
   });
 
+  it("keeps the turn's first limits snapshot apart from the last one, which goes on the reply", () => {
+    const r = new TurnRecorder(new Set());
+    const first = [{ kind: "five_hour", utilization: 0.3, resetsAt: "2026-10-11T15:00:00.000Z" }];
+    const last = [{ kind: "five_hour", utilization: 0.36, resetsAt: "2026-10-11T15:00:00.000Z" }];
+    expect(r.firstLimits).toBeUndefined();
+    r.add({ type: "limits", status: "allowed", windows: first });
+    r.add({ type: "limits", status: "allowed", windows: last });
+    expect(r.firstLimits).toEqual(first);
+    const entry = r.finish({ type: "done", ok: true });
+    expect(entry.limits).toEqual(last);
+    expect("firstLimits" in entry).toBe(false);
+  });
+
   it("adds nothing when the engine reported nothing", () => {
     const entry = new TurnRecorder(new Set()).finish({ type: "done", ok: true });
     expect("usage" in entry || "limits" in entry || "state" in entry).toBe(false);

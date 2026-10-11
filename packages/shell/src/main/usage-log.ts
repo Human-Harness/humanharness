@@ -10,7 +10,10 @@ export interface UsageRecord {
   action?: string;
   ok: boolean;
   usage?: TurnUsage;
+  /** Latest windows the turn reported. */
   limits?: LimitWindow[];
+  /** The turn's first snapshot, when it reported any: estimates measure from it. */
+  firstLimits?: LimitWindow[];
 }
 
 export class UsageLog {
@@ -46,7 +49,7 @@ export class UsageLog {
 }
 
 /** The usage record for a finished turn, or null when the engine reported nothing. */
-export function usageRecord(entry: ChatEntry, engine: string, action?: string): UsageRecord | null {
+export function usageRecord(entry: ChatEntry, engine: string, action?: string, firstLimits?: LimitWindow[]): UsageRecord | null {
   if (!entry.usage && !entry.limits) return null;
   return {
     at: entry.at,
@@ -55,6 +58,7 @@ export function usageRecord(entry: ChatEntry, engine: string, action?: string): 
     ok: !entry.error,
     ...(entry.usage ? { usage: entry.usage } : {}),
     ...(entry.limits ? { limits: entry.limits } : {}),
+    ...(firstLimits ? { firstLimits } : {}),
   };
 }
 
@@ -63,12 +67,12 @@ const FIVE_HOUR = "five_hour";
 /**
  * Current limits and per-action estimates. Claude reports the windows mid-turn (after the first
  * API response), so a turn's snapshot shows usage from before most of that turn: a turn's cost is
- * the rise of the five-hour window from its snapshot to the next turn's, when the next turn has one
- * and the window hasn't reset in between. Other use of the same account counts too, so it is a
+ * the rise of the five-hour window from its first snapshot to the next turn's first, when the next
+ * turn has one and the window hasn't reset in between. Other use of the same account counts too, so it is a
  * rough guide.
  */
 export function summarizeUsage(records: UsageRecord[], now: Date = new Date()): UsageSummary {
-  const fiveHour = (r: UsageRecord | undefined) => r?.limits?.find((w) => w.kind === FIVE_HOUR);
+  const fiveHour = (r: UsageRecord | undefined) => (r?.firstLimits ?? r?.limits)?.find((w) => w.kind === FIVE_HOUR);
   const last = records.filter((r) => r.limits && r.limits.length > 0).at(-1);
   const sums: Record<string, { total: number; n: number }> = {};
   for (let i = 0; i < records.length - 1; i++) {

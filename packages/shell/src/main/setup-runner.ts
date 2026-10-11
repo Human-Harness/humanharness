@@ -37,6 +37,8 @@ export interface RunningSetup {
   /** Writes one line to the process (e.g. a code from the sign-in page). */
   write(text: string): void;
   cancel(): void;
+  /** Stops the process and everything it started right away (SIGKILL to the group). */
+  kill(): void;
   /** The exit code; null when it was killed, timed out or couldn't start. */
   exit: Promise<number | null>;
 }
@@ -143,6 +145,24 @@ export function runSetupProcess(cmd: ProcessCommand, onOutput: (o: SetupOutput) 
       if (child.stdin!.writable) child.stdin!.write(`${text.trim()}\n`);
     },
     cancel,
+    kill: () => {
+      cancelled = true;
+      killTree("SIGKILL");
+    },
     exit,
   };
+}
+
+/** For quitting: cancels the run, waits up to `graceMs` for it to end, then kills its whole group. */
+export async function stopSetupProcess(run: RunningSetup, graceMs = 3000): Promise<void> {
+  run.cancel();
+  let timer: NodeJS.Timeout | undefined;
+  const ended = await Promise.race([
+    run.exit.then(() => true),
+    new Promise<false>((resolve) => {
+      timer = setTimeout(() => resolve(false), graceMs);
+    }),
+  ]);
+  clearTimeout(timer);
+  if (!ended) run.kill();
 }

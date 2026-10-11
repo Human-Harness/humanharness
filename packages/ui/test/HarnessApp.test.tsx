@@ -337,6 +337,27 @@ describe("HarnessApp", () => {
     await screen.findByRole("heading", { name: "Sign in to Claude" });
   });
 
+  it("gives every screen a top bar the window can be dragged by", async () => {
+    const dragStrip = (c: HTMLElement) => c.querySelector("header.hh-topbar");
+    const failing = new FakeClient(ready);
+    failing.stateError = new Error("boom");
+    const loading = render(<HarnessApp client={failing} />);
+    expect(dragStrip(loading.container)).toBeTruthy();
+    await screen.findByRole("alert");
+    expect(dragStrip(loading.container)).toBeTruthy();
+    cleanup();
+
+    const client = new FakeClient(ready);
+    const { container } = render(<HarnessApp client={client} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
+    // The sheet hangs under Home's top bar, which stays in place.
+    expect(dragStrip(container)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    fireEvent.click(screen.getByRole("button", { name: "Start Demo" }));
+    await screen.findByPlaceholderText("Write a message…");
+    expect(dragStrip(container)?.textContent).toContain("Demo");
+  });
+
   it("follows the UI language in <html lang>", async () => {
     render(<HarnessApp client={new FakeClient({ ...ready, language: "es" })} />);
     await screen.findByRole("button", { name: "Iniciar Demo" });

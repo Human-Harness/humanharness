@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { Event, HarnessRuntime } from "@humanharness/runtime";
+import type { Event, HarnessRuntime, LimitWindow } from "@humanharness/runtime";
 import type { ChatEntry } from "@humanharness/ui";
 import { EngineUnavailable, TurnController, memoise } from "../src/main/turn-controller";
 
@@ -237,7 +237,7 @@ describe("TurnController usage and actions", () => {
     const fake = fakeRuntime();
     const order: string[] = [];
     const entries: ChatEntry[] = [];
-    const recorded: [ChatEntry, string | undefined][] = [];
+    const recorded: [ChatEntry, string | undefined, LimitWindow[] | undefined][] = [];
     const controller = new TurnController({
       ensureRuntime: async () => fake.runtime,
       chatLog: async () => ({
@@ -248,15 +248,17 @@ describe("TurnController usage and actions", () => {
       }),
       stateBlocks: () => new Set(["progress"]),
       emit: (e) => order.push(`emit:${e.type}`),
-      recordUsage: async (entry, action) => {
-        recorded.push([entry, action]);
+      recordUsage: async (entry, action, firstLimits) => {
+        recorded.push([entry, action, firstLimits]);
         order.push("usage");
       },
     });
     const sent = controller.send("tidy up", { action: "tidy" });
     await vi.waitFor(() => expect(fake.send).toHaveBeenCalled());
+    const first = [{ kind: "five_hour", utilization: 0.15, resetsAt: "2026-10-11T15:00:00.000Z" }];
     const windows = [{ kind: "five_hour", utilization: 0.2, resetsAt: "2026-10-11T15:00:00.000Z" }];
     fake.finish([
+      { type: "limits", status: "allowed", windows: first },
       { type: "block", name: "progress", data: { percent: 50 } },
       { type: "limits", status: "allowed", windows },
       { type: "usage", inputTokens: 10, outputTokens: 5, cacheReadTokens: 100, cacheWriteTokens: 0 },
@@ -270,7 +272,7 @@ describe("TurnController usage and actions", () => {
       limits: windows,
       state: { progress: { percent: 50 } },
     });
-    expect(recorded).toEqual([[entries[1], "tidy"]]);
+    expect(recorded).toEqual([[entries[1], "tidy", first]]);
     expect(order.slice(-3)).toEqual(["log:assistant", "usage", "emit:done"]);
   });
 

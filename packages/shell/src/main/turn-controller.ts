@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { type Event, type HarnessRuntime, type RunningTurn, fail } from "@humanharness/runtime";
+import { type Event, type HarnessRuntime, type LimitWindow, type RunningTurn, fail } from "@humanharness/runtime";
 import type { ChatEntry, SendOptions } from "@humanharness/ui/client";
 import { TurnRecorder } from "./chat-log";
 
@@ -24,8 +24,8 @@ export interface TurnDeps {
   stateBlocks: () => Set<string>;
   /** Sends an event to the window. May throw (window gone): that never loses the log entry. */
   emit: (e: Event) => void;
-  /** Saves the finished turn's usage (usage.jsonl). Failures are logged, never thrown. */
-  recordUsage?: (entry: ChatEntry, action: string | undefined) => Promise<void>;
+  /** Saves the finished turn's usage (usage.jsonl), with the turn's first limits snapshot. Failures are logged, never thrown. */
+  recordUsage?: (entry: ChatEntry, action: string | undefined, firstLimits: LimitWindow[] | undefined) => Promise<void>;
 }
 
 /** One message's lifecycle: log, start the runtime, run the turn, log the reply and its usage, then tell the window. */
@@ -91,7 +91,7 @@ export class TurnController {
       const finish = async (done: Done) => {
         const entry = recorder.finish(done);
         await this.write(log, entry);
-        await this.recordUsage(entry, action);
+        await this.recordUsage(entry, action, recorder.firstLimits);
         this.emit(done);
       };
 
@@ -129,9 +129,9 @@ export class TurnController {
     }
   }
 
-  private async recordUsage(entry: ChatEntry, action: string | undefined): Promise<void> {
+  private async recordUsage(entry: ChatEntry, action: string | undefined, firstLimits: LimitWindow[] | undefined): Promise<void> {
     try {
-      await this.deps.recordUsage?.(entry, action);
+      await this.deps.recordUsage?.(entry, action, firstLimits);
     } catch (err) {
       console.error("Could not save usage", err);
     }

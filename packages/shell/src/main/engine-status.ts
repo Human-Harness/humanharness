@@ -58,7 +58,8 @@ export async function detectEngine(engine: EngineDef, d: CommandDeps, shared: Sh
   let loggedIn: boolean | null = null;
   if (engine.setup && !outdated) {
     const s = await d.run(binary, [...leading, ...engine.setup.status.args], cli.env);
-    loggedIn = parseLoggedIn(engine.setup.status.format, s);
+    // A check that timed out or couldn't start says nothing about the session: unknown, not signed out.
+    loggedIn = s.timedOut || s.spawnError ? null : parseLoggedIn(engine.setup.status.format, s);
   }
   await shared.update(engine.id, { binary: cli.bundled ? null : binary, ...(version ? { version } : {}) }).catch(() => undefined);
   return { ...base, installed: true, version, outdated, loggedIn, verified: Boolean(record.verifiedAt) && loggedIn !== false };

@@ -25,9 +25,10 @@ import { ChatLog } from "./chat-log";
 import { ConfigStore, historyDir } from "./config";
 import { testPrompt } from "./engine-check";
 import { type CommandDeps, cliCommand, engineCommand, loginShellPath } from "./engine-command";
+import { EngineGuards } from "./engine-guards";
 import { detectEngine } from "./engine-status";
 import { startNewChatIfEngineChanged } from "./engine-switch";
-import { type RunningSetup, runSetupProcess, setupCommand } from "./setup-runner";
+import { type RunningSetup, runSetupProcess, setupCommand, stopSetupProcess } from "./setup-runner";
 import { SharedConfigStore, sharedConfigDir } from "./shared-config";
 import { EngineUnavailable, TurnController, memoise } from "./turn-controller";
 import { UsageLog, summarizeUsage, usageRecord } from "./usage-log";
@@ -48,8 +49,15 @@ const commandDeps: CommandDeps = {
   run: (cmd, args, env) =>
     new Promise((resolve) => {
       execFile(cmd, args, { timeout: 10_000, env: { ...process.env, ...env } }, (err, stdout) => {
-        const code = err ? (typeof (err as { code?: unknown }).code === "number" ? (err as { code: number }).code : 1) : 0;
-        resolve({ stdout: String(stdout), code });
+        const e = err as (Error & { code?: unknown; killed?: boolean }) | null;
+        const code = e ? (typeof e.code === "number" ? e.code : 1) : 0;
+        resolve({
+          stdout: String(stdout),
+          code,
+          // Killed by the timeout, or never started (e.g. ENOENT): no real answer.
+          ...(e?.killed ? { timedOut: true } : {}),
+          ...(e && typeof e.code === "string" ? { spawnError: true } : {}),
+        });
       });
     }),
   isExecutable: (file) => fs.access(file, constants.X_OK).then(() => true, () => false),
@@ -67,10 +75,10 @@ let restoring: Promise<unknown> = Promise.resolve();
 let restorePending = false;
 /** Set on the first before-quit: from then on, no new turns or restores. */
 let quitting = false;
-/** The install, update, login or logout running now, if any (one at a time). */
+/** The install, update, login or logout process running now, if any. */
 let setupRun: RunningSetup | null = null;
-/** A setup step has been asked for and hasn't finished (including finding its command). */
-let setupBusy = false;
+/** Engine changes, setup steps and test prompts against turns (see EngineGuards). */
+const guards = new EngineGuards();
 /** Logos as data: URLs, read once. */
 const logos = new Map<string, Promise<string | null>>();
 
@@ -219,7 +227,11 @@ function sendToWindow(channel: string, value: unknown) {
 const emit = (event: Event) => sendToWindow("hh:event", event);
 
 const turns = new TurnController({
-  ensureRuntime: () => runtime.get(),
+  ensureRuntime: async () => {
+    const blocked = guards.turnBlocked();
+    if (blocked) throw new Error(blocked);
+    return runtime.get();
+  },
   chatLog: async () => {
     const c = await config.load();
     if (!isConfigured(c)) return null;
@@ -229,9 +241,9 @@ const turns = new TurnController({
   },
   stateBlocks,
   emit,
-  recordUsage: async (entry, action) => {
+  recordUsage: async (entry, action, firstLimits) => {
     const c = await validConfig();
-    const record = c ? usageRecord(entry, c.engineId, action) : null;
+    const record = c ? usageRecord(entry, c.engineId, action, firstLimits) : null;
     if (c && record) await new UsageLog(c.folder).append(record);
   },
 });
@@ -257,20 +269,34 @@ function registerIpc() {
     if (problem) throw new Error(problem);
     const before = await config.load();
     if (patch.engineId && before.engineId && patch.engineId !== before.engineId) {
-      if (turns.isBusy()) throw new Error("A turn is running");
-      await dropRuntime();
+      const engineId = patch.engineId;
+      await guards.switchEngine({
+        isBusy: () => turns.isBusy(),
+        idle: () => turns.flush(),
+        save: () => config.save(patch).then(() => undefined),
+        dropRuntime,
+        archiveChat: async () => {
+          const c = await validConfig();
+          return c && c.engineId === engineId ? startNewChatIfEngineChanged(c.folder, engineId) : null;
+        },
+      });
+    } else {
+      await config.save(patch);
     }
-    await config.save(patch);
     if (patch.appearance) applyAppearance(patch.appearance);
     return appState();
   });
   handle("hh:loadChat", async (): Promise<ChatLoad> => {
     const c = await validConfig();
     if (!c) return { entries: [] };
-    const switchedFrom = turns.isBusy() ? null : await startNewChatIfEngineChanged(c.folder, c.engineId);
+    // The engine change archives the chat; the check here only catches a change made while the app was closed.
+    const switchedFrom =
+      guards.takeSwitchedFrom() ?? (turns.isBusy() || guards.turnBlocked() ? null : await startNewChatIfEngineChanged(c.folder, c.engineId));
     return { entries: await new ChatLog(c.folder).load(), ...(switchedFrom ? { switchedFrom } : {}) };
   });
   handle("hh:send", (message: string, options?: SendOptions) => {
+    const blocked = guards.turnBlocked();
+    if (blocked) throw new Error(blocked);
     const action = typeof options?.action === "string" && Object.hasOwn(harness.actions, options.action) ? options.action : undefined;
     return turns.send(message, action ? { action } : {});
   });
@@ -304,16 +330,14 @@ function registerIpc() {
     const engine = engineFor(engineId);
     if (!SETUP_STEPS.includes(step)) throw new Error("Unknown setup step");
     if (quitting) throw new Error("The app is closing");
-    if (setupBusy) throw new Error("A setup step is already running");
-    if (step === "logout" && turns.isBusy()) throw new Error("A turn is running");
     // Reserve the slot before any await, so a second call can't slip in while this one starts.
-    setupBusy = true;
+    guards.beginSetup(step, () => turns.isBusy());
     try {
       const cli = step === "install" ? null : await cliCommand(engine, commandDeps);
       const cmd = setupCommand(engine, step, cli, await loginShellPath(commandDeps));
       if (!cmd) return { ok: false };
-      if (step === "logout") {
-        // A turn may have started while the command was being found.
+      if (step === "logout" || step === "update") {
+        // Turns are refused from beginSetup on; this re-check is a safety net before the runtime goes.
         if (turns.isBusy()) throw new Error("A turn is running");
         await dropRuntime();
       }
@@ -323,7 +347,7 @@ function registerIpc() {
       return { ok: (await run.exit) === 0 };
     } finally {
       setupRun = null;
-      setupBusy = false;
+      guards.endSetup();
     }
   });
   handle("hh:setupInput", (text: string) => {
@@ -332,11 +356,17 @@ function registerIpc() {
   handle("hh:cancelSetup", () => setupRun?.cancel());
   handle("hh:testEngine", async (engineId: string) => {
     const engine = engineFor(engineId);
-    const cmd = await engineCommand(engine, commandDeps);
-    if (!cmd) return { ok: false, error: { code: "engine-not-installed" } };
-    const result = await testPrompt(engine, cmd);
-    if (result.ok) await shared.update(engineId, { verifiedAt: new Date().toISOString() });
-    return result;
+    if (quitting) throw new Error("The app is closing");
+    const signal = guards.beginTest();
+    try {
+      const cmd = await engineCommand(engine, commandDeps);
+      if (!cmd) return { ok: false, error: { code: "engine-not-installed" } };
+      const result = await testPrompt(engine, cmd, { signal });
+      if (result.ok) await shared.update(engineId, { verifiedAt: new Date().toISOString() });
+      return result;
+    } finally {
+      guards.endTest();
+    }
   });
   handle("hh:getUsage", async (): Promise<UsageSummary> => {
     const c = await validConfig();
@@ -356,9 +386,8 @@ async function createWindow() {
     minWidth: 900,
     minHeight: 600,
     title: harness.name.en,
-    // Native look (spec 2026-10-11-app-look-design.md): the page draws the 52 px top bar.
-    titleBarStyle: "hiddenInset",
-    trafficLightPosition: { x: 20, y: 18 },
+    // Native look (spec 2026-10-11-app-look-design.md): on macOS the page draws the 52 px top bar.
+    ...(process.platform === "darwin" ? { titleBarStyle: "hiddenInset" as const, trafficLightPosition: { x: 20, y: 18 } } : {}),
     backgroundColor: nativeTheme.shouldUseDarkColors ? PAPER.dark : PAPER.light,
     webPreferences: { preload: path.join(__dirname, "../preload/index.mjs"), contextIsolation: true, sandbox: false },
   });
@@ -407,8 +436,10 @@ if (loaded) {
     quitting = true;
     event.preventDefault();
     turns.close();
-    setupRun?.cancel();
+    guards.abortTest();
+    const setupStopped = setupRun ? stopSetupProcess(setupRun) : Promise.resolve();
     void (async () => {
+      await setupStopped;
       try {
         await dropRuntime();
       } catch (err) {

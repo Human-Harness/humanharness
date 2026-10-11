@@ -1,11 +1,23 @@
 import path from "node:path";
 import type { EngineDef } from "@humanharness/engines";
 
+export interface RunResult {
+  stdout: string;
+  code: number;
+  /** It was stopped for taking too long. */
+  timedOut?: boolean;
+  /** It couldn't be started. */
+  spawnError?: boolean;
+}
+
 export interface CommandDeps {
   shell: string;
   home: string;
-  /** Runs a command to completion. `env` is added to the app's own environment (PATH and the like, never credentials). */
-  run: (cmd: string, args: string[], env?: Record<string, string>) => Promise<{ stdout: string; code: number }>;
+  /**
+   * Runs a command to completion. `env` is added to the app's own environment (PATH and the like,
+   * never credentials). `timedOut` / `spawnError` say the command gave no real answer.
+   */
+  run: (cmd: string, args: string[], env?: Record<string, string>) => Promise<RunResult>;
   isExecutable: (file: string) => Promise<boolean>;
   electronPath: string;
   /** Resolves a module path, from this package or (with `from`) from another module's location. */

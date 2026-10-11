@@ -1,6 +1,7 @@
 import { type ComponentType, type FormEvent, useEffect, useLayoutEffect, useReducer, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ActivityList } from "./ActivityList";
+import { TopBar } from "./chrome";
 import type { AppState, HarnessClient } from "./client";
 import { ErrorCard } from "./ErrorCard";
 import { HistoryPanel } from "./HistoryPanel";
@@ -85,10 +86,9 @@ export function ChatView({
 
   return (
     <div className="hh-app">
-      <header className="hh-header">
-        <h1>{state.harness.name[state.config.language ?? "en"]}</h1>
+      <TopBar title={state.harness.name[state.config.language ?? "en"]}>
         <button onClick={() => setShowHistory(true)}>{t("history.title")}</button>
-      </header>
+      </TopBar>
       <div className="hh-body">
         <section className="hh-chat" ref={chatRef} onScroll={onScroll}>
           {chat.entries.map((entry) => (

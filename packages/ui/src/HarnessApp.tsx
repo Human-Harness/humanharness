@@ -3,6 +3,7 @@ import { I18nextProvider } from "react-i18next";
 import type { i18n } from "i18next";
 import { type Locales, createI18n } from "@humanharness/i18n";
 import { ChatView } from "./ChatView";
+import { TopBar } from "./chrome";
 import { type AppState, type EngineStatus, type HarnessClient, type LimitWindow, isConfigured } from "./client";
 import { Home } from "./Home";
 import type { BlockProps } from "./Message";
@@ -107,12 +108,22 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
 
   if (failed && i18n) {
     return (
-      <p className="hh-load-error" role="alert">
-        {i18n.t("app.loadError")}
-      </p>
+      <>
+        <TopBar />
+        <p className="hh-load-error" role="alert">
+          {i18n.t("app.loadError")}
+        </p>
+      </>
     );
   }
-  if (!state || !i18n) return <div className="hh-loading" role="status" aria-busy="true" />;
+  // Even before anything loads, the window keeps its drag strip.
+  if (!state || !i18n)
+    return (
+      <>
+        <TopBar />
+        <div className="hh-loading" role="status" aria-busy="true" />
+      </>
+    );
 
   const start = () => {
     if (isConfigured(state.config)) return setScreen("work");

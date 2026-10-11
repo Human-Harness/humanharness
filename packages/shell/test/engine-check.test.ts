@@ -52,6 +52,19 @@ describe("testPrompt", () => {
     expect(r).toMatchObject({ ok: false, error: { code: "agent-crashed", detail: "timed out" } });
   });
 
+  it("stops when its signal is aborted (the app is quitting)", async () => {
+    const controller = new AbortController();
+    const started = Date.now();
+    setTimeout(() => controller.abort(), 100);
+    const r = await testPrompt(
+      getEngine("claude"),
+      { command: fakeClaudeCommand(), env: { HH_FAKE_SCRIPT: writeScript(root, { steps: [{ sleep: 5000 }] }) } },
+      { signal: controller.signal },
+    );
+    expect(r).toMatchObject({ ok: false, error: { code: "cancelled" } });
+    expect(Date.now() - started).toBeLessThan(3000);
+  });
+
   it("gives up when the engine never finishes starting", async () => {
     const started = Date.now();
     const r = await testPrompt(getEngine("codex"), { command: [process.execPath, "-e", "setInterval(()=>{},1000)"], env: {} }, { timeoutMs: 300 });

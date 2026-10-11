@@ -11,7 +11,7 @@ const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
 const store = () => new SharedConfigStore(fs.mkdtempSync(path.join(root, "s-")));
 
-type Reply = { stdout?: string; code?: number };
+type Reply = { stdout?: string; code?: number; timedOut?: boolean; spawnError?: boolean };
 
 /** Fake commands answered by their args (bundled `.js` entries left out); the login shell gives /usr/bin. */
 function deps(replies: Record<string, Reply>, overrides: Partial<CommandDeps> = {}) {
@@ -23,7 +23,7 @@ function deps(replies: Record<string, Reply>, overrides: Partial<CommandDeps> = 
       if (cmd === "/bin/zsh") return { stdout: "/usr/bin", code: 0 };
       calls.push({ cmd, args, env });
       const reply = replies[args.filter((a) => !a.endsWith(".js")).join(" ")];
-      return { stdout: reply?.stdout ?? "", code: reply?.code ?? 1 };
+      return { stdout: reply?.stdout ?? "", code: reply?.code ?? 1, ...(reply?.timedOut ? { timedOut: true } : {}), ...(reply?.spawnError ? { spawnError: true } : {}) };
     },
     isExecutable: async (p) => p === "/Users/me/.local/bin/claude",
     electronPath: "/App/Electron",
@@ -122,6 +122,15 @@ describe("detectEngine", () => {
     const { d } = deps({ "--version": { stdout: "codex-cli 0.160.1", code: 0 }, "login status": { code: 0 } }, { resolveModule: (id, from) => (from ? "/app/codex.js" : "/app/acp.js") });
     await detectEngine(getEngine("codex"), d, s);
     expect(await s.engine("codex")).toEqual({ version: "0.160.1" });
+  });
+
+  it("reports the session as unknown, not signed out, when the status check times out or can't start", async () => {
+    const s = store();
+    await s.update("claude", { verifiedAt: "t" });
+    for (const fault of [{ timedOut: true }, { spawnError: true }]) {
+      const { d } = deps({ "--version": { stdout: "2.1.296", code: 0 }, "auth status --json": { code: 1, ...fault } });
+      expect(await detectEngine(getEngine("claude"), d, s)).toMatchObject({ installed: true, loggedIn: null, verified: true });
+    }
   });
 
   it("asks for the notice again after its version changes", async () => {

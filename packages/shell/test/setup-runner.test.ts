@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { getEngine } from "@humanharness/engines";
 import type { SetupOutput } from "@humanharness/ui/client";
-import { type RunningSetup, runSetupProcess, setupCommand } from "../src/main/setup-runner";
+import { type RunningSetup, runSetupProcess, setupCommand, stopSetupProcess } from "../src/main/setup-runner";
 
 const node = (script: string) => ({ command: [process.execPath, "-e", script], env: {} });
 
@@ -134,6 +134,22 @@ describe("runSetupProcess process tree", () => {
     });
     expect(await running.exit).toBeNull();
   }, 8000);
+
+  it("stopSetupProcess waits a short grace period, then kills the whole group", async () => {
+    let pid = 0;
+    let ready!: () => void;
+    const started = new Promise<void>((r) => (ready = r));
+    const running = runSetupProcess(withGrandchild(`process.on("SIGTERM",()=>{});console.log("ready");setInterval(()=>{},1000)`), (o) => {
+      if (o.kind === "line" && o.text.startsWith("grandchild:")) pid = Number(o.text.slice(11));
+      if (o.kind === "line" && o.text === "ready") ready();
+    });
+    await started;
+    const t0 = Date.now();
+    await stopSetupProcess(running, 200);
+    expect(Date.now() - t0).toBeLessThan(2000);
+    expect(await running.exit).toBeNull();
+    expect(await waitFor(() => !alive(pid))).toBe(true);
+  });
 
   it("gives up after the timeout", async () => {
     const running = runSetupProcess(node("setInterval(()=>{},1000)"), () => {}, { timeoutMs: 200 });

@@ -62,6 +62,8 @@ export class TurnRecorder {
   private activities: ChatEntry["activities"] = [];
   private usage: TurnUsage | undefined;
   private limits: LimitWindow[] | undefined;
+  /** The turn's first limits snapshot (the reply keeps the last): usage estimates measure from it. */
+  firstLimits: LimitWindow[] | undefined;
   private state: Record<string, unknown> = {};
 
   constructor(private readonly stateBlocks: Set<string>) {}
@@ -73,7 +75,10 @@ export class TurnRecorder {
     else if (e.type === "block") {
       if (this.stateBlocks.has(e.name)) this.state[e.name] = e.data;
       else this.blocks.push({ name: e.name, data: e.data });
-    } else if (e.type === "limits") this.limits = e.windows;
+    } else if (e.type === "limits") {
+      this.firstLimits ??= e.windows;
+      this.limits = e.windows;
+    }
     else if (e.type === "usage") {
       this.usage = {
         inputTokens: e.inputTokens,

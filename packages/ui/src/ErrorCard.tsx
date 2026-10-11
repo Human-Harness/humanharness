@@ -8,6 +8,9 @@ export type CardError = EngineError | { code: "notice"; detail?: string };
 /** Errors the user fixes in Settings → Engine. */
 const FIXABLE = new Set(["engine-not-installed", "session-expired", "outdated-version", "notice"]);
 
+/** Whether the card for this error offers to fix it in Settings → Engine. */
+export const isFixable = (error: CardError | undefined): boolean => error !== undefined && FIXABLE.has(error.code);
+
 /** The card for an engine that can't run yet (the background check). */
 export function problemError(problem: EngineProblem): CardError {
   if (problem === "not-installed") return { code: "engine-not-installed" };

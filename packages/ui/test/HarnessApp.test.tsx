@@ -544,6 +544,18 @@ describe("HarnessApp", () => {
     await screen.findByRole("heading", { name: "Sign in to Claude" });
   });
 
+  it("shows one fix card when the last turn failed with the problem the background check found", async () => {
+    const client = new FakeClient(ready);
+    client.status = { ...client.status, loggedIn: false };
+    client.chat = [
+      { id: "1", role: "user", text: "hi", blocks: [], activities: [], at: "t" },
+      { id: "2", role: "assistant", text: "", blocks: [], activities: [], at: "t", error: { code: "session-expired" } },
+    ];
+    await startWork(<HarnessApp client={client} />);
+    await screen.findByText("Your Claude session ended. Sign in again to continue.");
+    expect(screen.getAllByRole("button", { name: "Sign in again" })).toHaveLength(1);
+  });
+
   it("changes engine from Settings → Engine and starts a new conversation", async () => {
     const client = new FakeClient(ready);
     client.state.engines = [...client.state.engines, { ...client.state.engines[0], id: "codex", name: "Codex", provider: "OpenAI", reportsLimits: false }];

@@ -9,7 +9,12 @@ export const HEAVY_DEFAULT = 0.1;
 
 export const percent = (share: number): number => Math.round(Math.min(1, Math.max(0, share)) * 100);
 
-export const totalTokens = (u: TurnUsage): number => u.inputTokens + u.outputTokens + u.cacheReadTokens + u.cacheWriteTokens;
+/**
+ * All of a reply's tokens. `inputTokens` excludes cached input for both transports (Claude's
+ * `input_tokens`; codex-acp subtracts cached and cache-write input before reporting), so adding the
+ * cache counts doesn't count them twice.
+ */
+export const totalTokens =(u: TurnUsage): number => u.inputTokens + u.outputTokens + u.cacheReadTokens + u.cacheWriteTokens;
 
 /** Tokens of the latest reply that reported any. */
 export function lastTurnTokens(entries: ChatEntry[]): number | null {

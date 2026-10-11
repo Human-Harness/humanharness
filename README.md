@@ -60,8 +60,8 @@ A harness is a folder with a manifest, instructions for the AI, its own UI and i
 
 1. Copy `harnesses/demo` to `harnesses/<your-id>` and change `name` in its `package.json`.
 2. Edit `harness.config.ts`:
-   - `id`, `name`, `tagline`, `languages`, `author`, and optionally `logo`, `repo` and `donate` (shown on Home and in Settings → About).
-   - `engines`: the engines you tested with. Users only see the ones whose terms allow this use (see the spec, §5).
+   - `id`, `name`, `tagline`, `languages`, `author`, and optionally `logo` (shown on Home), `donate` (a Support link in Settings → About) and `repo` (your source repository; kept in the manifest, the app doesn't show it yet).
+   - `engines`: the engines you tested with. Users only see the ones whose terms allow this use (see §5 of the core spec, [`docs/superpowers/specs/2026-10-10-humanharness-core-design.md`](docs/superpowers/specs/2026-10-10-humanharness-core-design.md)).
    - `folder.suggested` and `folder.seed`: where the user's work lives and what is copied there the first time.
    - `permissions`: `edit: "folder"` or `"none"`, `exec`, `web`.
    - `blocks`: one `defineBlock({ description, visible, schema, example })` per piece of UI the AI can show (`visible: true`) or update silently (`visible: false`).

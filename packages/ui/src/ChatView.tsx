@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { ActivityList } from "./ActivityList";
 import { GearIcon, TopBar } from "./chrome";
 import type { AppState, EngineProblem, HarnessClient, SendOptions } from "./client";
-import { ErrorCard, problemError } from "./ErrorCard";
+import { ErrorCard, isFixable, problemError } from "./ErrorCard";
 import { uiLanguage } from "./FolderStep";
 import { HistoryPanel } from "./HistoryPanel";
 import { type BlockProps, Blocks, Message } from "./Message";
@@ -168,7 +168,8 @@ export function ChatView({
       </TopBar>
       <div className="hh-body">
         <section className="hh-chat" ref={chatRef} onScroll={onScroll}>
-          {engineProblem && <ErrorCard error={problemError(engineProblem)} engine={engine} onFix={onFixEngine} />}
+          {/* The last turn's card already offers a fix: one fix button is enough. */}
+          {engineProblem && !isFixable(last?.error) && <ErrorCard error={problemError(engineProblem)} engine={engine} onFix={onFixEngine} />}
           {chat.entries.map((entry) => (
             <div key={entry.id}>
               <Message entry={entry} components={components} respond={sendFromHarness} />

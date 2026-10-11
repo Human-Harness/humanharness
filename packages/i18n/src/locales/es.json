@@ -105,7 +105,8 @@
     "retry": "Reintentar",
     "recheck": "Revisar de nuevo",
     "checkFailed": "No pude revisar {{engine}} en esta computadora.",
-    "details": "Detalles"
+    "details": "Detalles",
+    "timedOut": "Tardó demasiado, así que lo detuve. Probá otra vez."
   },
   "usage": {
     "five_hour": "5 h",
@@ -138,7 +139,8 @@
     "working": "Trabajando…",
     "you": "Vos",
     "home": "Inicio",
-    "switched": "Ahora usás {{engine}}, así que empecé una conversación nueva. La anterior quedó guardada en tu carpeta."
+    "switched": "Ahora usás {{engine}}, así que empecé una conversación nueva. La anterior quedó guardada en tu carpeta.",
+    "loadError": "No pude cargar tu conversación. Cerrá la app y abrila de nuevo; tus archivos están a salvo."
   },
   "activity": {
     "read": "Leyendo {{detail}}",
@@ -170,13 +172,15 @@
     "cancelled": "Detenido.",
     "outdated-version": "Hace falta actualizar {{engine}}.",
     "notice": "{{engine}} todavía no está del todo configurado en esta app.",
+    "notice-required": "Antes de usar {{engine}}, aceptá su aviso en Ajustes.",
     "resetsAt": "Tu límite se renueva: {{time}}.",
     "retry": "Reintentar",
     "fix": {
       "engine-not-installed": "Instalar {{engine}}",
       "session-expired": "Volver a entrar",
       "outdated-version": "Actualizar {{engine}}",
-      "notice": "Terminar de configurar {{engine}}"
+      "notice": "Terminar de configurar {{engine}}",
+      "notice-required": "Ver el aviso de {{engine}}"
     }
   }
 }

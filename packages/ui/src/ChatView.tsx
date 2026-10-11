@@ -26,6 +26,7 @@ export function ChatView({
   onHome,
   onSettings,
   onFixEngine,
+  onTurnOk,
 }: {
   client: HarnessClient;
   state: AppState;
@@ -37,6 +38,8 @@ export function ChatView({
   onHome?: () => void;
   onSettings?: () => void;
   onFixEngine?: () => void;
+  /** A turn has just ended without an error (the engine works: its background check can be redone). */
+  onTurnOk?: () => void;
 }) {
   const { t, i18n } = useTranslation();
   const [chat, dispatch] = useReducer(reduceChat, undefined, () => initialChat([], stateBlocks));
@@ -44,6 +47,8 @@ export function ChatView({
   const [showHistory, setShowHistory] = useState(false);
   const [announcement, setAnnouncement] = useState("");
   const [estimates, setEstimates] = useState<Record<string, number>>({});
+  /** The saved conversation couldn't be read. */
+  const [loadFailed, setLoadFailed] = useState(false);
   const [pending, setPending] = useState<{ text: string; options: SendOptions; check: Preflight } | null>(null);
   const preflightRef = useRef<HTMLDivElement>(null);
   const notNowRef = useRef<HTMLButtonElement>(null);
@@ -60,10 +65,13 @@ export function ChatView({
   const engine = engineOption?.name ?? state.config.engineId ?? "";
 
   useEffect(() => {
-    void client.loadChat().then(({ entries, switchedFrom }) => {
-      dispatch({ type: "loaded", entries });
-      if (switchedFrom) dispatch({ type: "notice", text: t("chat.switched", { engine }), at: new Date().toISOString() });
-    });
+    client.loadChat().then(
+      ({ entries, switchedFrom }) => {
+        dispatch({ type: "loaded", entries });
+        if (switchedFrom) dispatch({ type: "notice", text: t("chat.switched", { engine }), at: new Date().toISOString() });
+      },
+      () => setLoadFailed(true),
+    );
     client.getUsage().then(
       (u) => {
         setEstimates(u.estimates);
@@ -97,9 +105,10 @@ export function ChatView({
       setAnnouncement(chat.entries.findLast((e) => e.role === "assistant")?.text ?? "");
       inputRef.current?.focus();
       client.getUsage().then((u) => setEstimates(u.estimates), () => {});
+      if (!chat.entries.at(-1)?.error) onTurnOk?.();
     }
     wasLive.current = Boolean(chat.live);
-  }, [chat.live, chat.entries, t, client]);
+  }, [chat.live, chat.entries, t, client, onTurnOk]);
 
   /** True when the message was sent, or is waiting for the user to confirm a heavy action. */
   const send = (text: string, options: SendOptions = {}, confirmed = false): boolean => {
@@ -169,6 +178,11 @@ export function ChatView({
       </TopBar>
       <div className="hh-body">
         <section className="hh-chat" ref={chatRef} onScroll={onScroll}>
+          {loadFailed && (
+            <p className="hh-error" role="alert">
+              {t("chat.loadError")}
+            </p>
+          )}
           {/* The last turn's card already offers the fix for this same problem: one fix button is enough. */}
           {backgroundError && !(isFixable(last?.error) && last?.error?.code === backgroundError.code) && (
             <ErrorCard error={backgroundError} engine={engine} onFix={onFixEngine} />

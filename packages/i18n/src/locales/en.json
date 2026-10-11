@@ -105,7 +105,8 @@
     "retry": "Try again",
     "recheck": "Check again",
     "checkFailed": "I couldn't check {{engine}} on this computer.",
-    "details": "Details"
+    "details": "Details",
+    "timedOut": "This took too long, so I stopped it. Try again."
   },
   "usage": {
     "five_hour": "5 h",
@@ -138,7 +139,8 @@
     "working": "Working…",
     "you": "You",
     "home": "Home",
-    "switched": "You're now using {{engine}}, so I started a new conversation. The earlier one is saved in your folder."
+    "switched": "You're now using {{engine}}, so I started a new conversation. The earlier one is saved in your folder.",
+    "loadError": "I couldn't load your conversation. Close the app and open it again; your files are safe."
   },
   "activity": {
     "read": "Reading {{detail}}",
@@ -170,13 +172,15 @@
     "cancelled": "Stopped.",
     "outdated-version": "{{engine}} needs an update.",
     "notice": "{{engine}} isn't fully set up in this app yet.",
+    "notice-required": "Before using {{engine}}, accept its notice in Settings.",
     "resetsAt": "Your limit resets: {{time}}.",
     "retry": "Try again",
     "fix": {
       "engine-not-installed": "Install {{engine}}",
       "session-expired": "Sign in again",
       "outdated-version": "Update {{engine}}",
-      "notice": "Finish setting up {{engine}}"
+      "notice": "Finish setting up {{engine}}",
+      "notice-required": "Review {{engine}}'s notice"
     }
   }
 }

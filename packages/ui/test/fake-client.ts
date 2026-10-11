@@ -11,6 +11,7 @@ import type {
   RunningSetup,
   SendOptions,
   SetupOutput,
+  SetupResult,
   SetupStep,
   TestResult,
   UsageSummary,
@@ -67,7 +68,7 @@ export class FakeClient implements HarnessClient {
   /** When set, getSetup waits for it. */
   getSetupGate: Promise<void> | null = null;
   setupRuns: { engineId: string; step: SetupStep }[] = [];
-  setupResult = { ok: true };
+  setupResult: SetupResult = { ok: true };
   /** When set, runSetup waits for it (a login in progress). */
   setupGate: Promise<void> | null = null;
   setupInputs: string[] = [];
@@ -179,7 +180,7 @@ export class FakeClient implements HarnessClient {
       if (step === "logout") this.status = { ...this.status, loggedIn: false };
     }
     this.running = null;
-    this.emitSetup({ kind: "end", engineId, step, ok: this.setupResult.ok });
+    this.emitSetup({ kind: "end", engineId, step, ...this.setupResult });
     return this.setupResult;
   }
   async setupInput(text: string) {
@@ -211,6 +212,8 @@ export class FakeClient implements HarnessClient {
     if (this.resetGate) await this.resetGate;
     if (this.resetError) throw this.resetError;
     this.acceptError = null;
+    // Every engine asks for its notice and test again.
+    this.status = { ...this.status, noticeAccepted: false, verified: false };
     this.testUnrecorded = false;
   }
   async getUsage() {

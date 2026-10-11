@@ -159,14 +159,14 @@ describe("EngineTab", () => {
     client.status = { ...client.status, installed: false };
     let finish!: () => void;
     client.setupGate = new Promise((r) => (finish = r));
-    client.setupResult = { ok: false };
+    client.setupResult = { ok: false, timedOut: true };
     await renderIn("en", <Tab client={client} />);
     fireEvent.click(await screen.findByRole("button", { name: "Install" }));
     await screen.findByText("Installing… this can take a minute.");
-    act(() => client.emitSetup({ kind: "line", text: "Stopped: this took too long." }));
+    act(() => client.emitSetup({ kind: "line", text: "Downloading…" }));
     await act(async () => finish());
-    expect((await screen.findByRole("alert")).textContent).toBe("That didn't work. Try again.");
-    expect(screen.getByText("Stopped: this took too long.")).toBeTruthy();
+    expect((await screen.findByRole("alert")).textContent).toBe("This took too long, so I stopped it. Try again.");
+    expect(screen.getByText("Downloading…")).toBeTruthy();
     client.setupGate = null;
     client.setupResult = { ok: true };
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
@@ -215,8 +215,24 @@ describe("EngineTab", () => {
     expect(client.sharedReset).toBe(0);
     fireEvent.click(screen.getByRole("button", { name: "Yes, start over" }));
     await waitFor(() => expect(client.sharedReset).toBe(1));
+    // Starting over forgets the notice: nothing is sent to the engine before it is accepted again.
+    await screen.findByRole("heading", { name: "Before using Claude" });
+    expect(client.tested).toEqual(["claude"]);
+    fireEvent.click(screen.getByRole("checkbox", { name: "I understand and accept" }));
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
     await screen.findByRole("button", { name: "Use Claude" });
     expect(client.tested).toEqual(["claude", "claude"]);
+  });
+
+  it("shows no error when the user cancels a step", async () => {
+    const client = withFolder();
+    client.status = { ...client.status, installed: false };
+    client.setupResult = { ok: false, cancelled: true };
+    await renderIn("en", <Tab client={client} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Install" }));
+    await waitFor(() => expect(client.setupRuns).toHaveLength(1));
+    await screen.findByRole("button", { name: "Install" });
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("can cancel starting over, and starts over only once while it runs", async () => {
@@ -238,7 +254,7 @@ describe("EngineTab", () => {
     expect((screen.getByRole("button", { name: "Show in Finder" }) as HTMLButtonElement).disabled).toBe(true);
     expect(screen.queryByRole("button", { name: "Yes, start over" })).toBeNull();
     await act(async () => finish());
-    await screen.findByRole("button", { name: "Use Claude" });
+    await screen.findByRole("heading", { name: "Before using Claude" });
     expect(client.sharedReset).toBe(1);
   });
 
@@ -291,11 +307,14 @@ describe("EngineTab", () => {
 
   it("says when checking an engine failed, with the reason and a way to check again", async () => {
     const client = withFolder();
-    client.statusError = new Error("spawn EACCES");
+    client.statusError = new Error("Error invoking remote method 'hh:engineStatus': Error: spawn EACCES");
     await renderIn("en", <Tab client={client} />);
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toMatch(/I couldn't check Claude on this computer\./);
-    expect(alert.textContent).toMatch(/spawn EACCES/);
+    // The raw reason, without Electron's English wrapper, is under Details.
+    expect(screen.getByText("Details")).toBeTruthy();
+    expect(screen.getByText("spawn EACCES")).toBeTruthy();
+    expect(alert.textContent).not.toMatch(/invoking remote method/);
     expect(screen.queryByText("Checking Claude on this computer…")).toBeNull();
     client.statusError = null;
     fireEvent.click(screen.getByRole("button", { name: "Check again" }));

@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { type KeyboardEvent as ReactKeyboardEvent, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Language } from "@humanharness/harness-sdk";
 import { Segmented } from "./chrome";
@@ -30,6 +30,9 @@ export function SettingsSheet({
 }) {
   const { t } = useTranslation();
   const runningId = useId();
+  const baseId = useId();
+  const tabId = (id: SettingsTab) => `${baseId}-tab-${id}`;
+  const panelId = `${baseId}-panel`;
   const doneRef = useRef<HTMLButtonElement>(null);
   const sheetRef = useRef<HTMLDivElement>(null);
   const onCloseRef = useRef(onClose);
@@ -60,6 +63,27 @@ export function SettingsSheet({
     return off;
   }, [client]);
 
+  // A disabled Done can't hold focus: while a step runs, focus goes to the selected tab instead.
+  const isRunning = running !== null;
+  useEffect(() => {
+    const active = document.activeElement;
+    if (isRunning && (active === doneRef.current || active === document.body || active === null)) {
+      document.getElementById(tabId(tab))?.focus();
+    }
+    // Only when a step starts (or is found running); the tab is read as it is then.
+  }, [isRunning]);
+
+  /** Arrow keys (and Home/End) move between tabs, as in any tab list. */
+  const onTabKey = (e: ReactKeyboardEvent<HTMLButtonElement>, id: SettingsTab) => {
+    const i = TABS.indexOf(id);
+    const next =
+      e.key === "ArrowRight" ? TABS[(i + 1) % TABS.length] : e.key === "ArrowLeft" ? TABS[(i - 1 + TABS.length) % TABS.length] : e.key === "Home" ? TABS[0] : e.key === "End" ? TABS[TABS.length - 1] : null;
+    if (!next) return;
+    e.preventDefault();
+    onTab(next);
+    document.getElementById(tabId(next))?.focus();
+  };
+
   useEffect(() => {
     // Whatever opened the sheet (the gear, the engine pill) gets focus back when it closes.
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -88,7 +112,17 @@ export function SettingsSheet({
         <div className="hh-sheet-head">
           <div className="hh-segmented" role="tablist" aria-label={t("settings.title")}>
             {TABS.map((id) => (
-              <button key={id} type="button" role="tab" aria-selected={tab === id} onClick={() => onTab(id)}>
+              <button
+                key={id}
+                id={tabId(id)}
+                type="button"
+                role="tab"
+                aria-selected={tab === id}
+                aria-controls={panelId}
+                tabIndex={tab === id ? 0 : -1}
+                onClick={() => onTab(id)}
+                onKeyDown={(e) => onTabKey(e, id)}
+              >
                 {t(`settings.tabs.${id}`)}
               </button>
             ))}
@@ -109,13 +143,10 @@ export function SettingsSheet({
               {t(`settings.running.${running.step}`, { engine: state.engines.find((e) => e.id === running.engineId)?.name ?? running.engineId })}{" "}
               {t("settings.runningWait")}
             </p>
-            {/* A sign-in shown on the Engine tab has its own Cancel next to the code field. */}
-            {!(running.step === "login" && tab === "engine") && (
-              <button onClick={() => void client.cancelSetup().catch(() => {})}>{t("settings.runningCancel")}</button>
-            )}
+            <button onClick={() => void client.cancelSetup().catch(() => {})}>{t("settings.runningCancel")}</button>
           </div>
         )}
-        <div role="tabpanel" aria-label={t(`settings.tabs.${tab}`)}>
+        <div id={panelId} role="tabpanel" aria-labelledby={tabId(tab)}>
           {tab === "general" && <GeneralTab client={client} state={state} onChange={onChange} />}
           {tab === "engine" && <EngineTab client={client} state={state} onChange={onChange} setupEngine={running?.engineId} />}
           {tab === "usage" && <UsageTab client={client} state={state} />}

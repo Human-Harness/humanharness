@@ -94,6 +94,8 @@ input[type="text"], input:not([type]) { font: inherit; height: 28px; padding: 0 
 .hh-wordmark { font-family: var(--hh-display); font-weight: 500; color: var(--hh-slate); }
 
 /* Settings sheet, attached under the top bar */
+/* Wraps Home or the work screen without changing its layout (it is made inert under the sheet). */
+.hh-screen { display: contents; }
 .hh-sheet-backdrop { position: fixed; inset: 52px 0 0 0; background: var(--hh-backdrop); display: flex; justify-content: center; align-items: flex-start; }
 .hh-sheet { width: min(620px, calc(100% - 32px)); max-height: calc(100% - 24px); box-sizing: border-box; overflow-y: auto; background: var(--hh-sheet); border: 1px solid var(--hh-line-strong); border-top: none; border-radius: 0 0 12px 12px; padding: 16px 20px 20px; display: grid; gap: 16px; box-shadow: 0 12px 32px rgba(25, 30, 36, 0.18); }
 .hh-sheet-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }

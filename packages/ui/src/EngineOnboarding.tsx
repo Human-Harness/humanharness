@@ -1,9 +1,12 @@
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Language } from "@humanharness/harness-sdk";
-import { type EngineError, type EngineOption, type EngineStatus, type HarnessClient, type SetupStep, type TestResult, engineProblem } from "./client";
+import { type EngineError, type EngineOption, type EngineStatus, type HarnessClient, type SetupResult, type SetupStep, type TestResult, engineProblem } from "./client";
 
 type Busy = null | "notice" | "test" | SetupStep;
+
+/** What a finished step leaves on screen: nothing when it worked or the user cancelled it. */
+const stepFailure = (r: SetupResult): false | "step" | "timeout" => (r.ok || r.cancelled ? false : r.timedOut ? "timeout" : "step");
 
 /**
  * The step an engine still needs (spec §9): legal notice, install, update, sign in, test prompt.
@@ -24,8 +27,11 @@ export function EngineOnboarding({
   const { t, i18n } = useTranslation();
   const lang: Language = i18n.language === "es" ? "es" : "en";
   const [busy, setBusy] = useState<Busy>(null);
-  /** "step": the last step failed (or timed out); "shared": ~/.humanharness/engines.json couldn't be written. */
-  const [failed, setFailed] = useState<false | "step" | "shared">(false);
+  /**
+   * "step": the last step failed; "timeout": it ran too long and was stopped; "shared":
+   * ~/.humanharness/engines.json couldn't be written. A step the user cancelled isn't a failure.
+   */
+  const [failed, setFailed] = useState<false | "step" | "timeout" | "shared">(false);
   const [accepted, setAccepted] = useState(false);
   const [lines, setLines] = useState<string[]>([]);
   const [url, setUrl] = useState<string | null>(null);
@@ -53,7 +59,7 @@ export function EngineOnboarding({
         // Signed in again: the test prompt runs by itself again.
         if (o.ok && o.step === "login") autoTested.current = false;
         setBusy(null);
-        if (!o.ok) setFailed("step");
+        setFailed(stepFailure(o));
         void refreshRef.current();
       }
     });
@@ -113,15 +119,18 @@ export function EngineOnboarding({
     setLines([]);
     setUrl(null);
     setCode("");
-    const result = await client.runSetup(engine.id, step).catch(() => ({ ok: false }));
+    const result: SetupResult = await client.runSetup(engine.id, step).catch(() => ({ ok: false }));
     // Signed in again: the test prompt runs by itself again.
     if (result.ok && step === "login") autoTested.current = false;
     setBusy(null);
     await refresh();
-    if (!result.ok) setFailed("step");
+    setFailed(stepFailure(result));
   };
 
-  /** Starts ~/.humanharness/engines.json over (a copy of the old one is kept), then tries again. */
+  /**
+   * Starts ~/.humanharness/engines.json over (a copy of the old one is kept). The notice is then
+   * asked for again before anything is sent to the engine, so only the status is re-read.
+   */
   const resetting = useRef(false);
   const resetShared = async () => {
     // One reset at a time, even for a double click that lands before the re-render.
@@ -143,8 +152,9 @@ export function EngineOnboarding({
     }
     setReset(null);
     setFailed(false);
-    if (problem === "untested") await runTest();
-    else await refresh();
+    // Once the notice is accepted again, the test prompt runs by itself.
+    autoTested.current = false;
+    await refresh();
   };
 
   const accept = async () => {
@@ -185,7 +195,6 @@ export function EngineOnboarding({
         </label>{" "}
         <button type="submit">{t("engine.loginCodeSend")}</button>
       </form>
-      <button onClick={() => void client.cancelSetup()}>{t("engine.cancel")}</button>
     </>
   );
 
@@ -320,6 +329,11 @@ export function EngineOnboarding({
             </p>
           )}
         </>
+      )}
+      {failed === "timeout" && (
+        <p className="hh-save-error" role="alert">
+          {t("engine.timedOut")}
+        </p>
       )}
       {failed === "step" && (
         <p className="hh-save-error" role="alert">

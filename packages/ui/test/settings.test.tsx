@@ -114,6 +114,35 @@ describe("SettingsSheet", () => {
     expect(done.hasAttribute("aria-describedby")).toBe(false);
   });
 
+  it("moves between tabs with the arrow keys; each tab controls its panel", async () => {
+    await renderIn("en", <Sheet client={new FakeClient(ready)} />);
+    const general = screen.getByRole("tab", { name: "General" });
+    const panel = screen.getByRole("tabpanel");
+    expect(general.getAttribute("aria-controls")).toBe(panel.id);
+    expect(panel.getAttribute("aria-labelledby")).toBe(general.id);
+    general.focus();
+    fireEvent.keyDown(general, { key: "ArrowRight" });
+    const engine = screen.getByRole("tab", { name: "Engine" });
+    expect(engine.getAttribute("aria-selected")).toBe("true");
+    expect(document.activeElement).toBe(engine);
+    fireEvent.keyDown(engine, { key: "ArrowLeft" });
+    fireEvent.keyDown(screen.getByRole("tab", { name: "General" }), { key: "ArrowLeft" });
+    expect(screen.getByRole("tab", { name: "Usage" }).getAttribute("aria-selected")).toBe("true");
+    expect(general.getAttribute("tabindex")).toBe("-1");
+  });
+
+  it("opened while a step runs, puts focus on the tab instead of the disabled Done, and always offers Cancel", async () => {
+    const client = new FakeClient(ready);
+    client.running = { engineId: "claude", step: "login" };
+    client.statusGates.claude = new Promise(() => {});
+    await renderIn("en", <Sheet client={client} initialTab="engine" />);
+    await screen.findByText(/Signing in to Claude…/);
+    expect(document.activeElement).toBe(screen.getByRole("tab", { name: "Engine" }));
+    // The engine's status is still loading: the sheet's Cancel is the way out.
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(client.setupCancelled).toBe(1));
+  });
+
   it("General: changes language and appearance, shows the fixed folder and the About card", async () => {
     const client = new FakeClient(ready);
     await renderIn("en", <Sheet client={client} />);

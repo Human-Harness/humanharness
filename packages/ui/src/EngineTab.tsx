@@ -4,6 +4,12 @@ import { type AppState, type EngineStatus, type HarnessClient, engineProblem } f
 import { EngineOnboarding } from "./EngineOnboarding";
 import { FolderStep, uiLanguage } from "./FolderStep";
 
+/** The reason behind a failed call, without Electron's English "Error invoking remote method …: Error:" wrapper. */
+export function errorDetail(err: unknown): string {
+  const text = err instanceof Error ? err.message : String(err);
+  return text.replace(/^Error invoking remote method '[^']*': (?:\w*Error: )?/, "");
+}
+
 /** Settings → Engine: the folder on first launch, then engine tiles, onboarding and the engine in use. */
 export function EngineTab({
   client,
@@ -36,7 +42,7 @@ export function EngineTab({
         const status = await client.engineStatus(id);
         setStatuses((all) => ({ ...all, [id]: status }));
       } catch (err) {
-        setCheckErrors((all) => ({ ...all, [id]: err instanceof Error ? err.message : String(err) }));
+        setCheckErrors((all) => ({ ...all, [id]: errorDetail(err) }));
       }
     },
     [client],
@@ -118,7 +124,12 @@ export function EngineTab({
         <div className="hh-onboarding">
           <div role="alert">
             <p>{t("engine.checkFailed", { engine: engine.name })}</p>
-            {checkError && <pre>{checkError}</pre>}
+            {checkError && (
+              <details>
+                <summary>{t("engine.details")}</summary>
+                <pre>{checkError}</pre>
+              </details>
+            )}
           </div>
           <button onClick={() => void refresh(engine.id)}>{t("engine.recheck")}</button>
         </div>

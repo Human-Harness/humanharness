@@ -153,30 +153,34 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
 
   return (
     <I18nextProvider i18n={i18n}>
-      {screen === "work" && configured ? (
-        <ChatView
-          key={engineId}
-          client={client}
-          state={state}
-          components={blocks}
-          stateBlocks={stateBlocks}
-          renderSide={renderSide}
-          engineProblem={status ? engineProblem(status) : null}
-          onHome={() => setScreen("home")}
-          onSettings={() => setSettings("general")}
-          onFixEngine={() => setSettings("engine")}
-        />
-      ) : (
-        <Home
-          state={state}
-          status={status}
-          checkFailed={checkFailed}
-          limits={limits}
-          onStart={start}
-          onSettings={() => setSettings("general")}
-          onEngine={() => setSettings("engine")}
-        />
-      )}
+      {/* Under the open Settings sheet, the whole screen (top bar included) can't be reached. */}
+      <div className="hh-screen" inert={settings !== null}>
+        {screen === "work" && configured ? (
+          <ChatView
+            key={engineId}
+            client={client}
+            state={state}
+            components={blocks}
+            stateBlocks={stateBlocks}
+            renderSide={renderSide}
+            engineProblem={status ? engineProblem(status) : null}
+            onHome={() => setScreen("home")}
+            onSettings={() => setSettings("general")}
+            onFixEngine={() => setSettings("engine")}
+            onTurnOk={checkEngine}
+          />
+        ) : (
+          <Home
+            state={state}
+            status={status}
+            checkFailed={checkFailed}
+            limits={limits}
+            onStart={start}
+            onSettings={() => setSettings("general")}
+            onEngine={() => setSettings("engine")}
+          />
+        )}
+      </div>
       {settings && <SettingsSheet client={client} state={state} tab={settings} onTab={setSettings} onChange={setState} onClose={closeSettings} />}
     </I18nextProvider>
   );

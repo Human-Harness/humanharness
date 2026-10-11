@@ -6,7 +6,7 @@ import { formatReset, resetWindow } from "./usage";
 export type CardError = EngineError | { code: "notice"; detail?: string };
 
 /** Errors the user fixes in Settings → Engine. */
-const FIXABLE = new Set(["engine-not-installed", "session-expired", "outdated-version", "notice"]);
+const FIXABLE = new Set(["engine-not-installed", "session-expired", "outdated-version", "notice", "notice-required"]);
 
 /** Whether the card for this error offers to fix it in Settings → Engine. */
 export const isFixable = (error: CardError | undefined): boolean => error !== undefined && FIXABLE.has(error.code);
@@ -16,6 +16,8 @@ export function problemError(problem: EngineProblem): CardError {
   if (problem === "not-installed") return { code: "engine-not-installed" };
   if (problem === "outdated") return { code: "outdated-version" };
   if (problem === "logged-out") return { code: "session-expired" };
+  // Same code as a turn refused for it, so the chat shows one card.
+  if (problem === "notice") return { code: "notice-required" };
   return { code: "notice" };
 }
 
@@ -44,7 +46,7 @@ export function ErrorCard({
           {t(`errors.fix.${error.code}`, { engine })}
         </button>
       )}
-      {onRetry && error.code !== "cancelled" && error.code !== "notice" && <button onClick={onRetry}>{t("errors.retry")}</button>}
+      {onRetry && error.code !== "cancelled" && error.code !== "notice" && error.code !== "notice-required" && <button onClick={onRetry}>{t("errors.retry")}</button>}
     </div>
   );
 }

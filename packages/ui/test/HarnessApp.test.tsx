@@ -553,6 +553,46 @@ describe("HarnessApp", () => {
     await screen.findByRole("heading", { name: "Sign in to Claude" });
   });
 
+  it("checks the engine again after a turn succeeds, so a fixed problem's card goes away", async () => {
+    const client = new FakeClient(ready);
+    client.status = { ...client.status, loggedIn: false };
+    await startWork(<HarnessApp client={client} />);
+    await screen.findByText("Your Claude session ended. Sign in again to continue.");
+    client.status = { ...client.status, loggedIn: true };
+    await typeAndSend(client, "hi");
+    act(() => client.emit({ type: "done", ok: true }));
+    await waitFor(() => expect(screen.queryByText("Your Claude session ended. Sign in again to continue.")).toBeNull());
+  });
+
+  it("a turn refused for a notice not accepted leads to the notice in Settings → Engine", async () => {
+    const client = new FakeClient(ready);
+    await startWork(<HarnessApp client={client} />);
+    await typeAndSend(client, "hi");
+    client.status = { ...client.status, noticeAccepted: false };
+    act(() => client.emit({ type: "done", ok: false, error: { code: "notice-required" } }));
+    expect(screen.getByText("Before using Claude, accept its notice in Settings.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Review Claude's notice" }));
+    await screen.findByRole("heading", { name: "Before using Claude" });
+  });
+
+  it("says so when the conversation can't be loaded", async () => {
+    const client = new FakeClient(ready);
+    client.loadChat = async () => Promise.reject(new Error("EACCES"));
+    await startWork(<HarnessApp client={client} />);
+    await screen.findByText("I couldn't load your conversation. Close the app and open it again; your files are safe.");
+  });
+
+  it("makes the screen under the Settings sheet inert, top bar included", async () => {
+    render(<HarnessApp client={new FakeClient(ready)} />);
+    const gear = await screen.findByRole("button", { name: "Settings" });
+    expect(gear.closest("[inert]")).toBeNull();
+    fireEvent.click(gear);
+    await screen.findByRole("dialog", { name: "Settings" });
+    expect(document.querySelector(".hh-topbar")!.closest("[inert]")).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    expect(document.querySelector(".hh-topbar")!.closest("[inert]")).toBeNull();
+  });
+
   it("shows one fix card when the last turn failed with the problem the background check found", async () => {
     const client = new FakeClient(ready);
     client.status = { ...client.status, loggedIn: false };

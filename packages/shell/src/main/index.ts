@@ -139,8 +139,13 @@ async function createWindow() {
   else await window.loadFile(path.join(__dirname, "../renderer/index.html"));
 }
 
+// Each harness is its own app: keep its config, history and caches apart from other harnesses.
+// Set before "ready" (ESM top-level await delays it) so Chromium uses the same folder.
+harness = await loadHarness(path.join(__dirname, "harness.js"), { root: __HARNESS_DIR__ });
+app.setName(harness.name.en);
+app.setPath("userData", path.join(app.getPath("appData"), "Human Harness", harness.id));
+
 app.whenReady().then(async () => {
-  harness = await loadHarness(path.join(__dirname, "harness.js"), { root: __HARNESS_DIR__ });
   config = new ConfigStore(app.getPath("userData"));
   registerIpc();
   await createWindow();

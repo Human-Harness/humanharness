@@ -25,7 +25,7 @@
     "edit": "Editando {{detail}}",
     "search": "Buscando {{detail}}",
     "web": "Consultando {{detail}}",
-    "exec": "Ejecutando {{detail}}",
+    "exec": "Revisando la carpeta…",
     "other": "Trabajando en {{detail}}"
   },
   "history": {

@@ -53,12 +53,40 @@ describe("SettingsSheet", () => {
     const onClose = vi.fn();
     await renderIn("en", <Sheet client={client} initialTab="engine" onClose={onClose} />);
     fireEvent.click(await screen.findByRole("button", { name: "Sign in" }));
-    await screen.findByText(/Finish signing in on your browser/);
+    await screen.findByText(/Finish signing in using your browser/);
     fireEvent.keyDown(document, { key: "Escape" });
     expect(onClose).not.toHaveBeenCalled();
     await act(async () => finish());
-    await waitFor(() => expect(screen.queryByText(/Finish signing in on your browser/)).toBeNull());
+    await waitFor(() => expect(screen.queryByText(/Finish signing in using your browser/)).toBeNull());
     fireEvent.keyDown(document, { key: "Escape" });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("stays open while a setup step runs, even on another tab, and shows the step again on return", async () => {
+    const client = new FakeClient(ready);
+    client.status = { ...client.status, loggedIn: false };
+    let finish!: () => void;
+    client.setupGate = new Promise((r) => (finish = r));
+    const onClose = vi.fn();
+    const { container } = await renderIn("en", <Sheet client={client} initialTab="engine" onClose={onClose} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Sign in" }));
+    await screen.findByText(/Finish signing in using your browser/);
+    act(() => client.emitSetup({ kind: "url", url: "https://claude.ai/oauth/authorize?x=1" }));
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    fireEvent.click(container.querySelector(".hh-sheet-backdrop")!);
+    fireEvent.click(screen.getByRole("tab", { name: "General" }));
+    fireEvent.keyDown(document, { key: "Escape" });
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    expect(onClose).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("tab", { name: "Engine" }));
+    await screen.findByText(/Finish signing in using your browser/);
+    expect(screen.getByRole("link", { name: "Open the sign-in page" }).getAttribute("href")).toBe("https://claude.ai/oauth/authorize?x=1");
+    expect(screen.getByLabelText("If the page shows a code, paste it here")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(client.setupCancelled).toBe(1));
+    await act(async () => finish());
+    await screen.findByText("Claude is ready ✓");
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 

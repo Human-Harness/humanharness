@@ -79,7 +79,7 @@
     "loginTitle": "Sign in to {{engine}}",
     "loginText": "Sign in with your {{provider}} account. Your browser will open the official sign-in page.",
     "loginRun": "Sign in",
-    "loggingIn": "Finish signing in on your browser…",
+    "loggingIn": "Finish signing in using your browser…",
     "loginOpen": "Open the sign-in page",
     "loginCode": "If the page shows a code, paste it here",
     "loginCodeSend": "Send code",
@@ -87,9 +87,12 @@
     "testing": "Sending {{engine}} a tiny test message…",
     "ready": "{{engine}} is ready ✓",
     "failed": "That didn't work. Try again.",
-    "sharedConfigError": "I couldn't save the shared settings in ~/.humanharness. Check that ~/.humanharness/engines.json isn't damaged or from a newer version of the app, then try again.",
+    "sharedConfigError": "I couldn't save this computer's AI engine settings. The file that keeps them (engines.json, in a hidden folder called .humanharness) may be damaged or come from a newer version of the app. You can see it in Finder, or start it over: I'll keep a copy of the old one.",
+    "sharedConfigReveal": "Show in Finder",
+    "sharedConfigReset": "Start over",
     "retry": "Try again",
     "recheck": "Check again",
+    "checkFailed": "I couldn't check {{engine}} on this computer.",
     "details": "Details"
   },
   "usage": {

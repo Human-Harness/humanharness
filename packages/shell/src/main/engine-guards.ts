@@ -20,14 +20,16 @@ export interface SwitchDeps {
 export class EngineGuards {
   private switching = false;
   private switchedFrom: string | null = null;
-  /** The install, update, login or logout running now, if any (one at a time). */
-  setupStep: SetupStep | null = null;
-  private test: AbortController | null = null;
+  /** The install, update, login or logout running now, if any (one at a time), and for which engine. */
+  setup: { engineId: string; step: SetupStep } | null = null;
+  /** The running step is a logout or update of the engine in use: turns wait for it. */
+  private setupBlocksTurns = false;
+  private test: { controller: AbortController; done: Promise<void>; finish: () => void } | null = null;
 
   /** Why a turn can't start now, or null when it can. */
   turnBlocked(): string | null {
     if (this.switching) return "The engine is being changed";
-    if (this.setupStep === "logout" || this.setupStep === "update") return "The engine is being updated or signed out";
+    if (this.setupBlocksTurns) return "The engine is being updated or signed out";
     return null;
   }
 
@@ -37,6 +39,7 @@ export class EngineGuards {
    */
   async switchEngine(d: SwitchDeps): Promise<string | null> {
     if (this.switching) throw new Error("The engine is already being changed");
+    if (this.setup?.step === "logout" || this.setup?.step === "update") throw new Error("An engine is being updated or signed out");
     if (d.isBusy()) throw new Error("A turn is running");
     this.switching = true;
     try {
@@ -59,30 +62,43 @@ export class EngineGuards {
     return from;
   }
 
-  /** Reserves the setup slot. Logout and update also need no turn running (they pull the CLI from under it). */
-  beginSetup(step: SetupStep, isBusy: () => boolean): void {
-    if (this.setupStep) throw new Error("A setup step is already running");
+  /**
+   * Reserves the setup slot. A logout or update of the engine in use (`current`) also needs no turn
+   * running, and blocks turns until it ends (it pulls the CLI from under them).
+   */
+  beginSetup(run: { engineId: string; step: SetupStep; current: boolean }, isBusy: () => boolean): void {
+    if (this.setup) throw new Error("A setup step is already running");
     if (this.switching) throw new Error("The engine is being changed");
-    if ((step === "logout" || step === "update") && isBusy()) throw new Error("A turn is running");
-    this.setupStep = step;
+    const blocks = run.current && (run.step === "logout" || run.step === "update");
+    if (blocks && isBusy()) throw new Error("A turn is running");
+    this.setup = { engineId: run.engineId, step: run.step };
+    this.setupBlocksTurns = blocks;
   }
 
   endSetup(): void {
-    this.setupStep = null;
+    this.setup = null;
+    this.setupBlocksTurns = false;
   }
 
   /** Reserves the test-prompt slot; the signal aborts it (e.g. on quit). */
   beginTest(): AbortSignal {
     if (this.test) throw new Error("A test is already running");
-    this.test = new AbortController();
-    return this.test.signal;
+    let finish!: () => void;
+    const done = new Promise<void>((r) => (finish = r));
+    this.test = { controller: new AbortController(), done, finish };
+    return this.test.controller.signal;
   }
 
+  /** The test prompt has finished and cleaned up after itself. */
   endTest(): void {
+    this.test?.finish();
     this.test = null;
   }
 
-  abortTest(): void {
-    this.test?.abort();
+  /** Aborts the running test prompt; resolves once it has cleaned up (endTest), or now if none runs. */
+  abortTest(): Promise<void> {
+    if (!this.test) return Promise.resolve();
+    this.test.controller.abort();
+    return this.test.done;
   }
 }

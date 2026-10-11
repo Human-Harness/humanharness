@@ -55,6 +55,8 @@ button:focus-visible, .hh-button:focus-visible, a:focus-visible, input:focus-vis
 input[type="text"], input:not([type]) { font: inherit; height: 28px; padding: 0 8px; border-radius: 6px; border: 1px solid var(--hh-line-strong); background: var(--hh-surface); color: var(--hh-ink); }
 .hh-primary { background: var(--hh-ink); color: var(--hh-on-ink); border-color: transparent; font-weight: 600; }
 /* The big call to action: chamfered corners echo the logo's bevel. */
+/* The clip-path cuts off an outside outline: draw the focus ring inside the button. */
+.hh-start:focus-visible { outline: 2px solid var(--hh-on-ink); outline-offset: -5px; }
 .hh-start { height: 46px; padding: 0 28px; font-size: 15px; border-radius: 0; clip-path: polygon(9px 0, 100% 0, 100% calc(100% - 9px), calc(100% - 9px) 100%, 0 100%, 0 9px); }
 .hh-display { font-family: var(--hh-display); }
 .hh-caption { color: var(--hh-muted); font-size: 12px; margin: 0; }
@@ -87,6 +89,8 @@ input[type="text"], input:not([type]) { font: inherit; height: 28px; padding: 0 
 .hh-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--hh-muted); }
 .hh-dot.ok { background: var(--hh-ok-dot); }
 .hh-footer { display: flex; justify-content: space-between; gap: 16px; padding: 12px 20px; color: var(--hh-muted); font-size: 12px; }
+/* Long paths keep their end (the folder's own name) visible: the ellipsis goes at the start. */
+.hh-footer-path { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; direction: rtl; text-align: left; }
 .hh-wordmark { font-family: var(--hh-display); font-weight: 500; color: var(--hh-slate); }
 
 /* Settings sheet, attached under the top bar */

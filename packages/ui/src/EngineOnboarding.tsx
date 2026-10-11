@@ -1,7 +1,7 @@
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Language } from "@humanharness/harness-sdk";
-import { type EngineOption, type EngineStatus, type HarnessClient, type SetupStep, engineProblem } from "./client";
+import { type EngineError, type EngineOption, type EngineStatus, type HarnessClient, type SetupStep, type TestResult, engineProblem } from "./client";
 
 type Busy = null | "notice" | "test" | SetupStep;
 
@@ -30,26 +30,55 @@ export function EngineOnboarding({
   const [lines, setLines] = useState<string[]>([]);
   const [url, setUrl] = useState<string | null>(null);
   const [code, setCode] = useState("");
+  /** Why the last test prompt failed. */
+  const [testError, setTestError] = useState<EngineError | null>(null);
   const autoTested = useRef(false);
+  /** Showing a step this screen didn't start (it was reopened while the step runs): its end comes as an event. */
+  const attached = useRef(false);
+  const refreshRef = useRef(refresh);
+  refreshRef.current = refresh;
   const problem = engineProblem(status);
 
-  useEffect(
-    () =>
-      client.onSetupOutput((o) => {
-        if (o.kind === "line") setLines((l) => [...l.slice(-19), o.text]);
-        else setUrl(o.url);
-      }),
-    [client],
-  );
+  useEffect(() => {
+    let live = true;
+    const off = client.onSetupOutput((o) => {
+      if (o.kind === "line") setLines((l) => [...l.slice(-19), o.text]);
+      else if (o.kind === "url") setUrl(o.url);
+      else if (o.kind === "end" && o.engineId === engine.id && attached.current) {
+        attached.current = false;
+        setBusy(null);
+        if (!o.ok) setFailed("step");
+        void refreshRef.current();
+      }
+    });
+    // Re-attach to a step that is still running for this engine.
+    client.getSetup().then(
+      (running) => {
+        if (!live || !running || running.engineId !== engine.id) return;
+        attached.current = true;
+        setBusy(running.step);
+        setUrl(running.url ?? null);
+      },
+      () => {},
+    );
+    return () => {
+      live = false;
+      off();
+    };
+  }, [client, engine.id]);
 
   const runTest = useCallback(async () => {
     setBusy("test");
     setFailed(false);
-    // A rejection means the test passed or failed but the result couldn't be recorded in ~/.humanharness.
-    const result = await client.testEngine(engine.id).catch(() => null);
+    setTestError(null);
+    // A rejection (the app couldn't run it) is a plain failure.
+    const result: TestResult = await client.testEngine(engine.id).catch(() => ({ ok: false }));
     setBusy(null);
-    if (!result) setFailed("shared");
-    else if (!result.ok) setFailed("step");
+    if (result.ok && result.recorded === false) setFailed("shared");
+    else if (!result.ok) {
+      setFailed("step");
+      setTestError(result.error ?? { code: "agent-crashed" });
+    }
     await refresh();
   }, [client, engine.id, refresh]);
 
@@ -64,13 +93,28 @@ export function EngineOnboarding({
   const runStep = async (step: SetupStep) => {
     setBusy(step);
     setFailed(false);
+    setTestError(null);
     setLines([]);
     setUrl(null);
     setCode("");
     const result = await client.runSetup(engine.id, step).catch(() => ({ ok: false }));
+    // Signed in again: the test prompt runs by itself again.
+    if (result.ok && step === "login") autoTested.current = false;
     setBusy(null);
     await refresh();
     if (!result.ok) setFailed("step");
+  };
+
+  /** Starts ~/.humanharness/engines.json over (a copy of the old one is kept), then tries again. */
+  const resetShared = async () => {
+    try {
+      await client.resetSharedConfig();
+    } catch {
+      return;
+    }
+    setFailed(false);
+    if (problem === "untested") await runTest();
+    else await refresh();
   };
 
   const accept = async () => {
@@ -92,6 +136,27 @@ export function EngineOnboarding({
     <a href={href} target="_blank" rel="noreferrer">
       {text}
     </a>
+  );
+
+  const loginProgress = (
+    <>
+      <p role="status">{t("engine.loggingIn")}</p>
+      {url && <p>{link(url, t("engine.loginOpen"))}</p>}
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (!code.trim()) return;
+          void client.setupInput(code.trim());
+          setCode("");
+        }}
+      >
+        <label>
+          {t("engine.loginCode")} <input value={code} onChange={(e) => setCode(e.target.value)} />
+        </label>{" "}
+        <button type="submit">{t("engine.loginCodeSend")}</button>
+      </form>
+      <button onClick={() => void client.cancelSetup()}>{t("engine.cancel")}</button>
+    </>
   );
 
   let body: ReactNode;
@@ -162,24 +227,7 @@ export function EngineOnboarding({
         <h3>{t("engine.loginTitle", v)}</h3>
         <p>{t("engine.loginText", v)}</p>
         {busy === "login" ? (
-          <>
-            <p role="status">{t("engine.loggingIn")}</p>
-            {url && <p>{link(url, t("engine.loginOpen"))}</p>}
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (!code.trim()) return;
-                void client.setupInput(code.trim());
-                setCode("");
-              }}
-            >
-              <label>
-                {t("engine.loginCode")} <input value={code} onChange={(e) => setCode(e.target.value)} />
-              </label>{" "}
-              <button type="submit">{t("engine.loginCodeSend")}</button>
-            </form>
-            <button onClick={() => void client.cancelSetup()}>{t("engine.cancel")}</button>
-          </>
+          loginProgress
         ) : (
           <button className="hh-primary" disabled={busy !== null} onClick={() => void runStep("login")}>
             {failed ? t("engine.retry") : t("engine.loginRun")}
@@ -191,10 +239,18 @@ export function EngineOnboarding({
     body = (
       <>
         <h3>{t("engine.testTitle")}</h3>
-        {failed && busy === null ? (
-          <button className="hh-primary" onClick={() => void runTest()}>
-            {t("engine.retry")}
-          </button>
+        {busy === "login" ? (
+          loginProgress
+        ) : failed && busy === null ? (
+          <>
+            <button className="hh-primary" onClick={() => void runTest()}>
+              {t("engine.retry")}
+            </button>
+            {/* The CLI can't say whether it is signed in: signing in again may be the fix. */}
+            {failed === "step" && status.loggedIn === null && (
+              <button onClick={() => void runStep("login")}>{t("errors.fix.session-expired", v)}</button>
+            )}
+          </>
         ) : (
           <p role="status">{t("engine.testing", v)}</p>
         )}
@@ -205,9 +261,20 @@ export function EngineOnboarding({
   return (
     <section className="hh-onboarding" aria-busy={busy !== null}>
       {body}
-      {failed && (
+      {failed === "shared" && (
+        <>
+          <p className="hh-save-error" role="alert">
+            {t("engine.sharedConfigError")}
+          </p>
+          <p>
+            <button onClick={() => void client.revealSharedConfig().catch(() => {})}>{t("engine.sharedConfigReveal")}</button>{" "}
+            <button onClick={() => void resetShared()}>{t("engine.sharedConfigReset")}</button>
+          </p>
+        </>
+      )}
+      {failed === "step" && (
         <p className="hh-save-error" role="alert">
-          {failed === "shared" ? t("engine.sharedConfigError") : t("engine.failed")}
+          {testError ? t(`errors.${testError.code}`, { ...v, defaultValue: t("errors.agent-crashed", v) }) : t("engine.failed")}
         </p>
       )}
       {lines.length > 0 && (

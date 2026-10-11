@@ -46,7 +46,7 @@ describe("createI18n", () => {
     );
     expect(en.t("home.usage", { label: "5 h", percent: 42 })).toBe("5 h · 42%");
     expect(en.t("usage.estimate", { percent: 8 })).toBe("Usually about 8% of the 5-hour window");
-    expect(en.t("engine.loggingIn")).toBe("Finish signing in on your browser…");
+    expect(en.t("engine.loggingIn")).toBe("Finish signing in using your browser…");
     expect(en.t("engine.noticeProvider", { engine: "Claude", provider: "Anthropic", where: "Anthropic, USA" })).toBe(
       "Claude is a service of Anthropic. What you write here, and the files in your folder that the AI reads, are sent to Anthropic, USA.",
     );

@@ -26,6 +26,7 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
   const [settings, setSettings] = useState<SettingsTab | null>(null);
   /** Background check of the configured engine (spec §9 "every start"). */
   const [status, setStatus] = useState<EngineStatus | null>(null);
+  const [checkFailed, setCheckFailed] = useState(false);
   const [limits, setLimits] = useState<LimitWindow[] | null>(null);
   /** Start was pressed before setup was complete: open the work screen as soon as it is. */
   const startWhenReady = useRef(false);
@@ -72,13 +73,26 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
   const engineId = state?.config.engineId;
   const configured = state ? isConfigured(state.config) : false;
 
+  // A reply for the engine used before (the check was slow and the engine changed) is ignored.
+  const currentEngine = useRef(engineId);
+  currentEngine.current = engineId;
   const checkEngine = useCallback(() => {
     if (!engineId) return setStatus(null);
-    client.engineStatus(engineId).then(setStatus, () => {});
+    client.engineStatus(engineId).then(
+      (s) => {
+        if (currentEngine.current !== engineId) return;
+        setCheckFailed(false);
+        setStatus(s);
+      },
+      () => {
+        if (currentEngine.current === engineId) setCheckFailed(true);
+      },
+    );
   }, [client, engineId]);
 
   useEffect(() => {
     setStatus(null);
+    setCheckFailed(false);
     checkEngine();
   }, [checkEngine]);
 
@@ -156,6 +170,7 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
         <Home
           state={state}
           status={status}
+          checkFailed={checkFailed}
           limits={limits}
           onStart={start}
           onSettings={() => setSettings("general")}

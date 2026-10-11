@@ -134,7 +134,27 @@ export function engineProblem(s: EngineStatus): EngineProblem | null {
 export type SetupStep = "install" | "update" | "login" | "logout";
 
 /** Output of a running install, update or login: its lines, and the first web address it printed. */
-export type SetupOutput = { kind: "line"; text: string } | { kind: "url"; url: string };
+export type SetupOutput =
+  | { kind: "line"; text: string }
+  | { kind: "url"; url: string }
+  /** A step started or ended (any window may be showing it, or reopen it later). */
+  | { kind: "start"; engineId: string; step: SetupStep }
+  | { kind: "end"; engineId: string; step: SetupStep; ok: boolean };
+
+/** The setup step running now in the main process, so a reopened screen can show it. */
+export interface RunningSetup {
+  engineId: string;
+  step: SetupStep;
+  /** The first web address the step printed (the sign-in page). */
+  url?: string;
+}
+
+/** Result of the test prompt. `recorded: false`: it passed, but ~/.humanharness/engines.json couldn't be written. */
+export interface TestResult {
+  ok: boolean;
+  error?: EngineError;
+  recorded?: boolean;
+}
 
 export interface UsageSummary {
   /** Latest plan-limit windows that haven't reset yet; null when the engine never reported any. */
@@ -168,8 +188,14 @@ export interface HarnessClient {
   setupInput(text: string): Promise<void>;
   cancelSetup(): Promise<void>;
   onSetupOutput(listener: (output: SetupOutput) => void): () => void;
+  /** The setup step running now, if any. */
+  getSetup(): Promise<RunningSetup | null>;
   /** Sends a tiny prompt to check the engine works; marks it verified when it does. */
-  testEngine(engineId: string): Promise<{ ok: boolean; error?: EngineError }>;
+  testEngine(engineId: string): Promise<TestResult>;
+  /** Shows ~/.humanharness/engines.json in Finder. */
+  revealSharedConfig(): Promise<void>;
+  /** Starts ~/.humanharness/engines.json over, keeping a dated copy of the old one. */
+  resetSharedConfig(): Promise<void>;
   getUsage(): Promise<UsageSummary>;
   /** Shows the configured folder in Finder. */
   revealFolder(): Promise<void>;

@@ -23,7 +23,10 @@ const client: HarnessClient = {
   setupInput: (text) => ipcRenderer.invoke("hh:setupInput", text),
   cancelSetup: () => ipcRenderer.invoke("hh:cancelSetup"),
   onSetupOutput: (listener) => subscribe<SetupOutput>("hh:setupOutput", listener),
+  getSetup: () => ipcRenderer.invoke("hh:getSetup"),
   testEngine: (engineId) => ipcRenderer.invoke("hh:testEngine", engineId),
+  revealSharedConfig: () => ipcRenderer.invoke("hh:revealSharedConfig"),
+  resetSharedConfig: () => ipcRenderer.invoke("hh:resetSharedConfig"),
   getUsage: () => ipcRenderer.invoke("hh:getUsage"),
   revealFolder: () => ipcRenderer.invoke("hh:revealFolder"),
 };

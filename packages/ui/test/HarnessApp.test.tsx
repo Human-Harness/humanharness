@@ -340,6 +340,39 @@ describe("HarnessApp", () => {
     expect(document.activeElement).toBe(gear);
   });
 
+  it("ignores a late engine check for the engine used before", async () => {
+    const client = new FakeClient(ready);
+    client.state.engines = [...client.state.engines, { ...client.state.engines[0], id: "codex", name: "Codex", provider: "OpenAI", reportsLimits: false }];
+    let release!: () => void;
+    client.statusGates.claude = new Promise((r) => (release = r));
+    client.statusFor.claude = { ...client.status, loggedIn: false };
+    render(<HarnessApp client={client} />);
+    await screen.findByRole("button", { name: /Claude.*Checking/ });
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Engine" }));
+    fireEvent.click(await screen.findByRole("button", { name: /Codex/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Use Codex" }));
+    await waitFor(() => expect(client.state.config.engineId).toBe("codex"));
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    await screen.findByRole("button", { name: /Codex.*Connected/ });
+    await act(async () => release());
+    expect(screen.getByRole("button", { name: /Codex.*Connected/ })).toBeTruthy();
+  });
+
+  it("shows the engine as not connected when it can't be checked, and the pill still opens Settings", async () => {
+    const client = new FakeClient(ready);
+    client.statusError = new Error("boom");
+    render(<HarnessApp client={client} />);
+    fireEvent.click(await screen.findByRole("button", { name: /Claude.*Not connected/ }));
+    await screen.findByRole("group", { name: "AI engines" });
+  });
+
+  it("shows the whole folder path on hover in Home's footer", async () => {
+    render(<HarnessApp client={new FakeClient(ready)} />);
+    const path = await screen.findByText("/Users/me/Documents/Demo");
+    expect(path.closest("[title]")?.getAttribute("title")).toBe("/Users/me/Documents/Demo");
+  });
+
   it("shows a signed-out engine as not connected, and the pill leads to sign-in", async () => {
     const client = new FakeClient(ready);
     client.status = { ...client.status, loggedIn: false };

@@ -8,9 +8,11 @@ import type {
   FolderPick,
   HarnessClient,
   HistoryItem,
+  RunningSetup,
   SendOptions,
   SetupOutput,
   SetupStep,
+  TestResult,
   UsageSummary,
 } from "../src/client";
 
@@ -41,11 +43,23 @@ export class FakeClient implements HarnessClient {
     noticeAccepted: true,
     verified: true,
   };
+  /** Per-engine statuses that win over `status`. */
+  statusFor: Record<string, EngineStatus> = {};
+  /** Per-engine: engineStatus waits for it. */
+  statusGates: Record<string, Promise<void>> = {};
+  /** When set, engineStatus rejects with it. */
+  statusError: Error | null = null;
   accepted: string[] = [];
   /** When set, acceptNotice rejects (e.g. ~/.humanharness/engines.json can't be written). */
   acceptError: Error | null = null;
-  /** When set, testEngine rejects (the result couldn't be recorded). */
+  /** When set, testEngine rejects (e.g. the IPC failed). */
   testError: Error | null = null;
+  /** The test passes but ~/.humanharness/engines.json can't record it. */
+  testUnrecorded = false;
+  /** The setup step running now (getSetup). */
+  running: RunningSetup | null = null;
+  sharedRevealed = 0;
+  sharedReset = 0;
   setupRuns: { engineId: string; step: SetupStep }[] = [];
   setupResult = { ok: true };
   /** When set, runSetup waits for it (a login in progress). */
@@ -53,7 +67,7 @@ export class FakeClient implements HarnessClient {
   setupInputs: string[] = [];
   setupCancelled = 0;
   tested: string[] = [];
-  testResult: { ok: boolean; error?: EngineError } = { ok: true };
+  testResult: TestResult & { error?: EngineError } = { ok: true };
   usage: UsageSummary = { limits: null, estimates: {} };
   revealed = 0;
   private listeners = new Set<(e: Event) => void>();
@@ -97,6 +111,7 @@ export class FakeClient implements HarnessClient {
     for (const l of this.listeners) l(e);
   }
   emitSetup(o: SetupOutput) {
+    if (o.kind === "url" && this.running) this.running = { ...this.running, url: this.running.url ?? o.url };
     for (const l of this.setupListeners) l(o);
   }
 
@@ -137,7 +152,9 @@ export class FakeClient implements HarnessClient {
     this.restored.push(sha);
   }
   async engineStatus(engineId: string) {
-    return { ...this.status, engineId };
+    await this.statusGates[engineId];
+    if (this.statusError) throw this.statusError;
+    return { ...(this.statusFor[engineId] ?? this.status), engineId };
   }
   async acceptNotice(engineId: string) {
     if (this.acceptError) throw this.acceptError;
@@ -146,6 +163,8 @@ export class FakeClient implements HarnessClient {
   }
   async runSetup(engineId: string, step: SetupStep) {
     this.setupRuns.push({ engineId, step });
+    this.running = { engineId, step };
+    this.emitSetup({ kind: "start", engineId, step });
     if (this.setupGate) await this.setupGate;
     if (this.setupResult.ok) {
       if (step === "install") this.status = { ...this.status, installed: true };
@@ -153,6 +172,8 @@ export class FakeClient implements HarnessClient {
       if (step === "login") this.status = { ...this.status, loggedIn: true };
       if (step === "logout") this.status = { ...this.status, loggedIn: false };
     }
+    this.running = null;
+    this.emitSetup({ kind: "end", engineId, step, ok: this.setupResult.ok });
     return this.setupResult;
   }
   async setupInput(text: string) {
@@ -168,8 +189,20 @@ export class FakeClient implements HarnessClient {
   async testEngine(engineId: string) {
     this.tested.push(engineId);
     if (this.testError) throw this.testError;
+    if (this.testResult.ok && this.testUnrecorded) return { ok: true, recorded: false };
     if (this.testResult.ok) this.status = { ...this.status, verified: true };
     return this.testResult;
+  }
+  async getSetup() {
+    return this.running;
+  }
+  async revealSharedConfig() {
+    this.sharedRevealed++;
+  }
+  async resetSharedConfig() {
+    this.sharedReset++;
+    this.acceptError = null;
+    this.testUnrecorded = false;
   }
   async getUsage() {
     return this.usage;

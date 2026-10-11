@@ -14,7 +14,9 @@ import {
   type ChatLoad,
   type ConfiguredApp,
   type FolderPick,
+  type RunningSetup as SetupInfo,
   type SendOptions,
+  type SetupOutput,
   type SetupStep,
   type UsageSummary,
   isConfigured,
@@ -77,6 +79,10 @@ let restorePending = false;
 let quitting = false;
 /** The install, update, login or logout process running now, if any. */
 let setupRun: RunningSetup | null = null;
+/** The first web address the running step printed, for a screen that reopens while it runs. */
+let setupUrl: string | undefined;
+/** How long quitting waits for the test prompt to clean up (its temporary folder, the CLI it started). */
+const QUIT_TEST_WAIT_MS = 5_000;
 /** Engine changes, setup steps and test prompts against turns (see EngineGuards). */
 const guards = new EngineGuards();
 /** Logos as data: URLs, read once. */
@@ -330,25 +336,41 @@ function registerIpc() {
     const engine = engineFor(engineId);
     if (!SETUP_STEPS.includes(step)) throw new Error("Unknown setup step");
     if (quitting) throw new Error("The app is closing");
-    // Reserve the slot before any await, so a second call can't slip in while this one starts.
-    guards.beginSetup(step, () => turns.isBusy());
+    // Only a logout or update of the engine in use touches the runtime and blocks turns.
+    const current = (await config.load()).engineId === engineId;
+    // Reserve the slot synchronously after the read, so a second call can't slip in while this one starts.
+    guards.beginSetup({ engineId, step, current }, () => turns.isBusy());
+    setupUrl = undefined;
+    const output = (o: SetupOutput) => {
+      if (o.kind === "url") setupUrl ??= o.url;
+      sendToWindow("hh:setupOutput", o);
+    };
+    output({ kind: "start", engineId, step });
+    let ok = false;
     try {
       const cli = step === "install" ? null : await cliCommand(engine, commandDeps);
       const cmd = setupCommand(engine, step, cli, await loginShellPath(commandDeps));
-      if (!cmd) return { ok: false };
-      if (step === "logout" || step === "update") {
+      if (!cmd) return { ok };
+      if (current && (step === "logout" || step === "update")) {
         // Turns are refused from beginSetup on; this re-check is a safety net before the runtime goes.
         if (turns.isBusy()) throw new Error("A turn is running");
         await dropRuntime();
       }
       if (quitting) throw new Error("The app is closing");
-      const run = runSetupProcess(cmd, (output) => sendToWindow("hh:setupOutput", output), { timeoutMs: SETUP_TIMEOUT_MS[step] });
+      const run = runSetupProcess(cmd, output, { timeoutMs: SETUP_TIMEOUT_MS[step] });
       setupRun = run;
-      return { ok: (await run.exit) === 0 };
+      ok = (await run.exit) === 0;
+      return { ok };
     } finally {
       setupRun = null;
+      setupUrl = undefined;
       guards.endSetup();
+      output({ kind: "end", engineId, step, ok });
     }
+  });
+  handle("hh:getSetup", (): SetupInfo | null => {
+    const s = guards.setup;
+    return s ? { ...s, ...(setupUrl ? { url: setupUrl } : {}) } : null;
   });
   handle("hh:setupInput", (text: string) => {
     if (typeof text === "string") setupRun?.write(text.slice(0, 2000));
@@ -362,8 +384,14 @@ function registerIpc() {
       const cmd = await engineCommand(engine, commandDeps);
       if (!cmd) return { ok: false, error: { code: "engine-not-installed" } };
       const result = await testPrompt(engine, cmd, { signal });
-      if (result.ok) await shared.update(engineId, { verifiedAt: new Date().toISOString() });
-      return result;
+      if (!result.ok) return result;
+      try {
+        await shared.update(engineId, { verifiedAt: new Date().toISOString() });
+      } catch (err) {
+        console.error("Could not record the test prompt", err);
+        return { ok: true, recorded: false };
+      }
+      return { ok: true };
     } finally {
       guards.endTest();
     }
@@ -372,6 +400,10 @@ function registerIpc() {
     const c = await validConfig();
     if (!c) return { limits: null, estimates: {} };
     return summarizeUsage((await new UsageLog(c.folder).load()).filter((r) => r.engine === c.engineId));
+  });
+  handle("hh:revealSharedConfig", () => shell.showItemInFolder(shared.path));
+  handle("hh:resetSharedConfig", async () => {
+    await shared.reset();
   });
   handle("hh:revealFolder", async () => {
     const c = await validConfig();
@@ -436,10 +468,11 @@ if (loaded) {
     quitting = true;
     event.preventDefault();
     turns.close();
-    guards.abortTest();
+    // The test prompt cleans up (its CLI, its temporary folder) before the app goes; bounded wait.
+    const testStopped = Promise.race([guards.abortTest(), new Promise<void>((r) => setTimeout(r, QUIT_TEST_WAIT_MS))]);
     const setupStopped = setupRun ? stopSetupProcess(setupRun) : Promise.resolve();
     void (async () => {
-      await setupStopped;
+      await Promise.all([setupStopped, testStopped]);
       try {
         await dropRuntime();
       } catch (err) {

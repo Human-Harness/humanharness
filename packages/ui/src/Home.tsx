@@ -8,6 +8,7 @@ import { WARN_AT, fiveHour, percent } from "./usage";
 export function Home({
   state,
   status,
+  checkFailed = false,
   limits,
   onStart,
   onSettings,
@@ -16,6 +17,8 @@ export function Home({
   state: AppState;
   /** Background check of the configured engine; null while it runs. */
   status: EngineStatus | null;
+  /** The background check itself failed: shown as not connected. */
+  checkFailed?: boolean;
   limits: LimitWindow[] | null;
   onStart: () => void;
   onSettings: () => void;
@@ -25,7 +28,7 @@ export function Home({
   const lang = uiLanguage(state, i18n.language);
   const name = state.harness.name[lang];
   const engine = state.engines.find((e) => e.id === state.config.engineId);
-  const connected = status ? engineProblem(status) === null : null;
+  const connected = checkFailed ? false : status ? engineProblem(status) === null : null;
   const window = engine?.reportsLimits ? fiveHour(limits) : undefined;
 
   return (
@@ -60,7 +63,11 @@ export function Home({
       </main>
       <footer className="hh-footer">
         <span className="hh-wordmark">Human Harness</span>
-        <span>{state.config.folder ?? ""}</span>
+        {state.config.folder && (
+          <span className="hh-footer-path" title={state.config.folder}>
+            <bdi dir="ltr">{state.config.folder}</bdi>
+          </span>
+        )}
       </footer>
     </div>
   );

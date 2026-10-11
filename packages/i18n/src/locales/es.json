@@ -87,9 +87,12 @@
     "testing": "Le mando a {{engine}} un mensaje de prueba cortito…",
     "ready": "Todo listo con {{engine}} ✓",
     "failed": "Eso no funcionó. Probá de nuevo.",
-    "sharedConfigError": "No pude guardar la configuración compartida en ~/.humanharness. Revisá que ~/.humanharness/engines.json no esté dañado ni sea de una versión más nueva de la app, y probá de nuevo.",
+    "sharedConfigError": "No pude guardar los ajustes de los motores de IA de esta computadora. El archivo que los guarda (engines.json, en una carpeta oculta llamada .humanharness) puede estar dañado o ser de una versión más nueva de la app. Podés verlo en Finder o empezarlo de nuevo: guardo una copia del anterior.",
+    "sharedConfigReveal": "Mostrar en Finder",
+    "sharedConfigReset": "Restablecer",
     "retry": "Reintentar",
     "recheck": "Revisar de nuevo",
+    "checkFailed": "No pude revisar {{engine}} en esta computadora.",
     "details": "Detalles"
   },
   "usage": {

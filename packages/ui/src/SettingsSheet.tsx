@@ -32,6 +32,31 @@ export function SettingsSheet({
   const sheetRef = useRef<HTMLDivElement>(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
+  /** An install, update, sign-in or sign-out is running: the sheet stays open (it shows how it goes). */
+  const [running, setRunning] = useState(false);
+  const runningRef = useRef(false);
+  runningRef.current = running;
+  const close = () => {
+    if (!runningRef.current) onCloseRef.current();
+  };
+
+  useEffect(() => {
+    let heard = false;
+    const off = client.onSetupOutput((o) => {
+      if (o.kind === "start" || o.kind === "end") {
+        heard = true;
+        setRunning(o.kind === "start");
+      }
+    });
+    // A step may already be running (started before this sheet opened, e.g. before a reload).
+    client.getSetup().then(
+      (r) => {
+        if (!heard && r) setRunning(true);
+      },
+      () => {},
+    );
+    return off;
+  }, [client]);
 
   useEffect(() => {
     // Whatever opened the sheet (the gear, the engine pill) gets focus back when it closes.
@@ -40,8 +65,7 @@ export function SettingsSheet({
     const onKey = (e: KeyboardEvent) => {
       const sheet = sheetRef.current;
       if (!sheet) return;
-      // An install or sign-in in progress (aria-busy) keeps the sheet open: Escape is too easy to hit by accident.
-      if (e.key === "Escape" && !sheet.querySelector('[aria-busy="true"]')) onCloseRef.current();
+      if (e.key === "Escape" && !runningRef.current) onCloseRef.current();
       if (e.key === "Tab") trapTab(sheet, e);
     };
     document.addEventListener("keydown", onKey);
@@ -55,7 +79,7 @@ export function SettingsSheet({
     <div
       className="hh-sheet-backdrop"
       onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
+        if (e.target === e.currentTarget) close();
       }}
     >
       <div ref={sheetRef} className="hh-sheet" role="dialog" aria-modal="true" aria-label={t("settings.title")}>
@@ -67,7 +91,7 @@ export function SettingsSheet({
               </button>
             ))}
           </div>
-          <button ref={doneRef} className="hh-primary" onClick={onClose}>
+          <button ref={doneRef} className="hh-primary" disabled={running} onClick={close}>
             {t("settings.done")}
           </button>
         </div>

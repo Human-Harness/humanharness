@@ -49,4 +49,8 @@ describe("styles", () => {
   it("preserves single line breaks in messages", () => {
     expect(css).toMatch(/\.hh-message p\s*{[^}]*white-space:\s*pre-wrap/);
   });
+
+  it("gives the clipped Start button a focus ring drawn inside it", () => {
+    expect(css).toMatch(/\.hh-start:focus-visible\s*\{[^}]*outline-offset:\s*-\d/);
+  });
 });

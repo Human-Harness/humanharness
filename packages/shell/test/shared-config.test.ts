@@ -122,4 +122,25 @@ describe("noticeAccepted", () => {
     expect(noticeAccepted({ notice: { version: 1, acceptedAt: "t" } }, 1)).toBe(true);
     expect(noticeAccepted({ notice: { version: 1, acceptedAt: "t" } }, 2)).toBe(false);
   });
+
+  it("resets a damaged file, keeping a dated copy of it next to it", async () => {
+    const dir = newDir();
+    fs.writeFileSync(path.join(dir, "engines.json"), "{ not json");
+    const store = new SharedConfigStore(dir);
+    expect(store.path).toBe(path.join(dir, "engines.json"));
+    await expect(store.update("claude", { version: "1" })).rejects.toThrow(/not overwriting/);
+    const backup = await store.reset(new Date("2026-10-11T14:05:06.000Z"));
+    expect(path.basename(backup!)).toBe("engines.json.bak-20261011-140506");
+    expect(fs.readFileSync(backup!, "utf8")).toBe("{ not json");
+    expect(await store.load()).toEqual({ version: 1, engines: {} });
+    await store.update("claude", { version: "1" });
+    expect(await store.engine("claude")).toEqual({ version: "1" });
+  });
+
+  it("reset of a missing file just creates an empty one", async () => {
+    const dir = newDir();
+    const store = new SharedConfigStore(dir);
+    expect(await store.reset()).toBeNull();
+    expect(JSON.parse(fs.readFileSync(path.join(dir, "engines.json"), "utf8"))).toEqual({ version: 1, engines: {} });
+  });
 });

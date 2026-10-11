@@ -81,7 +81,7 @@ describe("EngineTab", () => {
     client.setupGate = new Promise((r) => (finish = r));
     await renderIn("en", <Tab client={client} />);
     fireEvent.click(await screen.findByRole("button", { name: "Sign in" }));
-    await screen.findByText(/Finish signing in on your browser/);
+    await screen.findByText(/Finish signing in using your browser/);
     act(() => {
       client.emitSetup({ kind: "line", text: "Opening browser…" });
       client.emitSetup({ kind: "url", url: "https://claude.ai/oauth/authorize?x=1" });
@@ -100,7 +100,7 @@ describe("EngineTab", () => {
     client.status = { ...client.status, verified: false };
     client.testResult = { ok: false, error: { code: "agent-crashed" } };
     await renderIn("en", <Tab client={client} />);
-    expect((await screen.findByRole("alert")).textContent).toBe("That didn't work. Try again.");
+    expect((await screen.findByRole("alert")).textContent).toBe("Something failed and I didn't change anything.");
     client.testResult = { ok: true };
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
     await screen.findByRole("button", { name: "Use Claude" });
@@ -138,7 +138,7 @@ describe("EngineTab", () => {
     await screen.findByRole("heading", { name: "Before using Claude" });
     fireEvent.click(screen.getByRole("checkbox", { name: "I understand and accept" }));
     fireEvent.click(screen.getByRole("button", { name: "Continue" }));
-    expect((await screen.findByRole("alert")).textContent).toMatch(/couldn't save the shared settings in ~\/\.humanharness/);
+    expect((await screen.findByRole("alert")).textContent).toMatch(/couldn't save this computer's AI engine settings/);
     expect(screen.getByRole("heading", { name: "Before using Claude" })).toBeTruthy();
     expect((screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement).disabled).toBe(false);
   });
@@ -146,10 +146,10 @@ describe("EngineTab", () => {
   it("says so when a passed test prompt can't be recorded, and lets the user retry", async () => {
     const client = withFolder();
     client.status = { ...client.status, verified: false };
-    client.testError = new Error("engines.json is damaged; not overwriting it");
+    client.testUnrecorded = true;
     await renderIn("es", <Tab client={client} />);
-    expect((await screen.findByRole("alert")).textContent).toMatch(/No pude guardar la configuración compartida en ~\/\.humanharness/);
-    client.testError = null;
+    expect((await screen.findByRole("alert")).textContent).toMatch(/No pude guardar los ajustes de los motores de IA de esta computadora/);
+    client.testUnrecorded = false;
     fireEvent.click(screen.getByRole("button", { name: "Reintentar" }));
     await screen.findByRole("button", { name: "Usar Claude" });
   });
@@ -172,5 +172,61 @@ describe("EngineTab", () => {
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
     await screen.findByRole("button", { name: "Use Claude" });
     expect(client.setupRuns.map((r) => r.step)).toEqual(["install", "install"]);
+  });
+
+  it("says why the test prompt failed", async () => {
+    const client = withFolder();
+    client.status = { ...client.status, verified: false };
+    client.testResult = { ok: false, error: { code: "out-of-quota" } };
+    await renderIn("en", <Tab client={client} />);
+    expect((await screen.findByRole("alert")).textContent).toMatch(/You've reached your plan's limit/);
+    expect(screen.queryByRole("button", { name: "Sign in again" })).toBeNull();
+  });
+
+  it("offers to sign in again after a failed test when the CLI can't say whether it is signed in", async () => {
+    const client = withFolder();
+    client.status = { ...client.status, verified: false, loggedIn: null };
+    client.testResult = { ok: false, error: { code: "session-expired" } };
+    await renderIn("en", <Tab client={client} />);
+    expect((await screen.findByRole("alert")).textContent).toBe("Your Claude session ended. Sign in again to continue.");
+    client.testResult = { ok: true };
+    fireEvent.click(screen.getByRole("button", { name: "Sign in again" }));
+    await waitFor(() => expect(client.setupRuns).toEqual([{ engineId: "claude", step: "login" }]));
+  });
+
+  it("treats a test prompt that can't reach the app as a plain failure", async () => {
+    const client = withFolder();
+    client.status = { ...client.status, verified: false };
+    client.testError = new Error("ipc closed");
+    await renderIn("en", <Tab client={client} />);
+    expect((await screen.findByRole("alert")).textContent).toBe("Something failed and I didn't change anything.");
+  });
+
+  it("offers to show or start over the shared settings file when it can't be written", async () => {
+    const client = withFolder();
+    client.status = { ...client.status, verified: false };
+    client.testUnrecorded = true;
+    await renderIn("en", <Tab client={client} />);
+    await screen.findByRole("alert");
+    fireEvent.click(screen.getByRole("button", { name: "Show in Finder" }));
+    await waitFor(() => expect(client.sharedRevealed).toBe(1));
+    fireEvent.click(screen.getByRole("button", { name: "Start over" }));
+    await waitFor(() => expect(client.sharedReset).toBe(1));
+    await screen.findByRole("button", { name: "Use Claude" });
+    expect(client.tested).toEqual(["claude", "claude"]);
+  });
+
+  it("says when checking an engine failed, with the reason and a way to check again", async () => {
+    const client = withFolder();
+    client.statusError = new Error("spawn EACCES");
+    await renderIn("en", <Tab client={client} />);
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toMatch(/I couldn't check Claude on this computer\./);
+    expect(alert.textContent).toMatch(/spawn EACCES/);
+    expect(screen.queryByText("Checking Claude on this computer…")).toBeNull();
+    client.statusError = null;
+    fireEvent.click(screen.getByRole("button", { name: "Check again" }));
+    await screen.findByRole("button", { name: "Use Claude" });
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 });

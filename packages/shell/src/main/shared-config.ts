@@ -57,6 +57,46 @@ export class SharedConfigStore {
     this.file = path.join(dir, "engines.json");
   }
 
+  /** Where the file is (for "Show in Finder"). */
+  get path(): string {
+    return this.file;
+  }
+
+  /**
+   * Starts the file over when it can't be used (damaged, or from a newer app): the old one is kept
+   * next to it as `engines.json.bak-<date>-<time>`, whose path is returned (null when there was none).
+   * Every engine then asks for its notice and test again.
+   */
+  reset(now: Date = new Date()): Promise<string | null> {
+    const run = this.queue.then(async () => {
+      await fs.mkdir(path.dirname(this.file), { recursive: true });
+      const stamp = now.toISOString().replace(/\.\d+Z$/, "").replace(/-|:/g, "").replace("T", "-");
+      let backup: string | null = `${this.file}.bak-${stamp}`;
+      try {
+        await fs.rename(this.file, backup);
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+        backup = null;
+      }
+      await this.write(empty());
+      return backup;
+    });
+    this.queue = run.catch(() => undefined);
+    return run;
+  }
+
+  private async write(content: unknown): Promise<void> {
+    await fs.mkdir(path.dirname(this.file), { recursive: true });
+    const tmp = `${this.file}.${randomUUID()}.tmp`;
+    try {
+      await fs.writeFile(tmp, JSON.stringify(content, null, 2) + "\n");
+      await fs.rename(tmp, this.file);
+    } catch (err) {
+      await fs.rm(tmp, { force: true });
+      throw err;
+    }
+  }
+
   async load(): Promise<SharedConfig> {
     return (await this.read()).config;
   }
@@ -89,15 +129,7 @@ export class SharedConfigStore {
       const next = cleanRecord(merged);
       for (const k of FIELDS) delete merged[k];
       const file = { ...raw, version: 1, engines: { ...engines, [id]: { ...merged, ...next } } };
-      await fs.mkdir(path.dirname(this.file), { recursive: true });
-      const tmp = `${this.file}.${randomUUID()}.tmp`;
-      try {
-        await fs.writeFile(tmp, JSON.stringify(file, null, 2) + "\n");
-        await fs.rename(tmp, this.file);
-      } catch (err) {
-        await fs.rm(tmp, { force: true });
-        throw err;
-      }
+      await this.write(file);
       return next;
     });
     this.queue = run.catch(() => undefined);

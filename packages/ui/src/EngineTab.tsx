@@ -13,16 +13,19 @@ export function EngineTab({ client, state, onChange }: { client: HarnessClient; 
   const [statuses, setStatuses] = useState<Record<string, EngineStatus>>({});
   const [busy, setBusy] = useState<null | "use" | "logout">(null);
   const [failed, setFailed] = useState(false);
+  /** Why checking an engine failed, by engine id. */
+  const [checkErrors, setCheckErrors] = useState<Record<string, string>>({});
   const ids = state.engines.map((e) => e.id).join(",");
   const hasFolder = Boolean(state.config.folder);
 
   const refresh = useCallback(
     async (id: string) => {
+      setCheckErrors(({ [id]: _, ...rest }) => rest);
       try {
         const status = await client.engineStatus(id);
         setStatuses((all) => ({ ...all, [id]: status }));
-      } catch {
-        setFailed(true);
+      } catch (err) {
+        setCheckErrors((all) => ({ ...all, [id]: err instanceof Error ? err.message : String(err) }));
       }
     },
     [client],
@@ -36,7 +39,8 @@ export function EngineTab({ client, state, onChange }: { client: HarnessClient; 
   if (!hasFolder) return <FolderStep client={client} state={state} onSaved={onChange} />;
 
   const engine = state.engines.find((e) => e.id === selected);
-  const status = selected ? statuses[selected] : undefined;
+  const checkError = selected ? checkErrors[selected] : undefined;
+  const status = selected && checkError === undefined ? statuses[selected] : undefined;
   const ready = status ? engineProblem(status) === null : false;
 
   const use = async () => {
@@ -65,7 +69,8 @@ export function EngineTab({ client, state, onChange }: { client: HarnessClient; 
       <div className="hh-tiles" role="group" aria-label={t("engine.tilesLabel")}>
         {state.engines.map((e) => {
           const s = statuses[e.id];
-          const label = !s ? t("home.checking") : engineProblem(s) === null ? t("home.connected") : t("home.notConnected");
+          const label =
+            checkErrors[e.id] !== undefined ? t("home.notConnected") : !s ? t("home.checking") : engineProblem(s) === null ? t("home.connected") : t("home.notConnected");
           return (
             <button key={e.id} type="button" className="hh-tile" aria-pressed={selected === e.id} onClick={() => setSelected(e.id)}>
               {selected === e.id && (
@@ -86,7 +91,16 @@ export function EngineTab({ client, state, onChange }: { client: HarnessClient; 
         </div>
       </div>
 
-      {engine && !status && <p role="status">{t("engine.checking", { engine: engine.name })}</p>}
+      {engine && checkError !== undefined && (
+        <div className="hh-onboarding">
+          <div role="alert">
+            <p>{t("engine.checkFailed", { engine: engine.name })}</p>
+            {checkError && <pre>{checkError}</pre>}
+          </div>
+          <button onClick={() => void refresh(engine.id)}>{t("engine.recheck")}</button>
+        </div>
+      )}
+      {engine && checkError === undefined && !status && <p role="status">{t("engine.checking", { engine: engine.name })}</p>}
       {engine && status && !ready && (
         <EngineOnboarding key={engine.id} client={client} engine={engine} status={status} refresh={() => refresh(engine.id)} />
       )}

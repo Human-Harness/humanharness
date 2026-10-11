@@ -31,3 +31,14 @@ export async function startNewChatIfEngineChanged(folder: string, engineId: stri
   await fs.rm(sessionFile(folder), { force: true });
   return archived ? previous : null;
 }
+
+/**
+ * For a chat load: archives a chat that belongs to another engine (see startNewChatIfEngineChanged)
+ * and then closes the running agent, whose session still holds the archived conversation; the next
+ * turn starts a fresh one. Returns the archived chat's engine.
+ */
+export async function archiveStaleChat(folder: string, engineId: string, dropRuntime: () => Promise<void>): Promise<string | null> {
+  const archived = await startNewChatIfEngineChanged(folder, engineId);
+  if (archived) await dropRuntime();
+  return archived;
+}

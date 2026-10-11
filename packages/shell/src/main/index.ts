@@ -32,7 +32,7 @@ import { EngineGuards } from "./engine-guards";
 import { installCommandOf, terminalCommand } from "./install-help";
 import { detectEngine, hasAcceptedNotice } from "./engine-status";
 import { requireNoticeForChoice, requireNoticeForTurn } from "./notice-policy";
-import { startNewChatIfEngineChanged } from "./engine-switch";
+import { archiveStaleChat, startNewChatIfEngineChanged } from "./engine-switch";
 import { type RunningSetup, runSetupProcess, setupCommand, stopSetupProcess } from "./setup-runner";
 import { runSetupStep } from "./setup-step";
 import { SharedConfigStore, sharedConfigDir } from "./shared-config";
@@ -314,7 +314,7 @@ function registerIpc() {
     if (!c) return { entries: [] };
     // The engine change archives the chat; the check here only catches a change made while the app was closed.
     const switchedFrom =
-      guards.takeSwitchedFrom() ?? (turns.isBusy() || guards.turnBlocked() ? null : await startNewChatIfEngineChanged(c.folder, c.engineId));
+      guards.takeSwitchedFrom() ?? (turns.isBusy() || guards.turnBlocked() ? null : await archiveStaleChat(c.folder, c.engineId, dropRuntime));
     return { entries: await new ChatLog(c.folder).load(), ...(switchedFrom ? { switchedFrom } : {}) };
   });
   handle("hh:send", (message: string, options?: SendOptions) => {

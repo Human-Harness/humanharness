@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { ChatLog } from "../src/main/chat-log";
-import { sessionEngine, startNewChatIfEngineChanged } from "../src/main/engine-switch";
+import { archiveStaleChat, sessionEngine, startNewChatIfEngineChanged } from "../src/main/engine-switch";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -58,6 +58,18 @@ describe("startNewChatIfEngineChanged", () => {
       expect(await startNewChatIfEngineChanged(folder, "codex")).toBe("claude");
       expect(await new ChatLog(folder).load()).toEqual([]);
     }
+  });
+
+  it("on load, closes the running agent when it archives a chat, so it forgets that conversation", async () => {
+    const folder = await folderWith("codex", false);
+    await new ChatLog(folder, "claude").append({ id: "1", role: "user", text: "with claude", blocks: [], activities: [], at: "t" });
+    await new ChatLog(folder, "codex").append({ id: "2", role: "user", text: "with codex", blocks: [], activities: [], at: "t" });
+    let dropped = 0;
+    const dropRuntime = async () => void dropped++;
+    expect(await archiveStaleChat(folder, "codex", dropRuntime)).toBe("claude");
+    expect(dropped).toBe(1);
+    expect(await archiveStaleChat(folder, "codex", dropRuntime)).toBeNull();
+    expect(dropped).toBe(1);
   });
 
   it("only forgets the session when there was no chat to archive", async () => {

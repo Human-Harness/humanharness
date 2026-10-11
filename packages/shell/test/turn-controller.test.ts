@@ -309,21 +309,25 @@ describe("TurnController usage and actions", () => {
   it("forgets the engine's test prompt before telling the window a session expired", async () => {
     const fake = fakeRuntime();
     const order: string[] = [];
+    let engine = "codex";
     const controller = new TurnController({
       ensureRuntime: async () => fake.runtime,
       chatLog: async () => ({ append: async () => {} }),
       stateBlocks: () => new Set(),
       emit: (e) => order.push(`emit:${e.type}`),
-      sessionExpired: async () => {
-        order.push("expired");
+      engineId: async () => engine,
+      sessionExpired: async (id) => {
+        order.push(`expired:${id}`);
         throw new Error("disk full");
       },
     });
     const sent = controller.send("hi");
     await vi.waitFor(() => expect(fake.send).toHaveBeenCalled());
+    // The engine the turn ran on, even if the setting changed meanwhile.
+    engine = "claude";
     fake.finish([{ type: "done", ok: false, error: { code: "session-expired" } }]);
     await sent;
-    expect(order).toEqual(["expired", "emit:done"]);
+    expect(order).toEqual(["expired:codex", "emit:done"]);
 
     const other = fakeRuntime();
     const calls = vi.fn(async () => {});

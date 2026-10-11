@@ -252,9 +252,9 @@ const turns = new TurnController({
     const record = c ? usageRecord(entry, c.engineId, action, firstLimits) : null;
     if (c && record) await new UsageLog(c.folder).append(record);
   },
-  sessionExpired: async () => {
-    const c = await config.load();
-    if (c.engineId) await shared.update(c.engineId, { verifiedAt: null });
+  engineId: async () => (await config.load()).engineId,
+  sessionExpired: async (engineId) => {
+    await shared.update(engineId, { verifiedAt: null });
   },
 });
 

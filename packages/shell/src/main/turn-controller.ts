@@ -30,7 +30,9 @@ export interface TurnDeps {
    * A turn ended with `session-expired`: forget the engine's passed test prompt, so Settings → Engine
    * asks to sign in (or test) again instead of saying it is ready. Failures are logged, never thrown.
    */
-  sessionExpired?: () => Promise<void>;
+  sessionExpired?: (engineId: string) => Promise<void>;
+  /** The configured engine, read when the turn starts: the one `sessionExpired` is told about. */
+  engineId?: () => Promise<string | undefined>;
 }
 
 /** One message's lifecycle: log, start the runtime, run the turn, log the reply and its usage, then tell the window. */
@@ -82,6 +84,7 @@ export class TurnController {
     this.turn = turn;
     try {
       const log = await this.deps.chatLog();
+      const engineId = await this.deps.engineId?.().catch(() => undefined);
       if (!log) throw new Error("The app is not set up yet");
       void this.write(log, {
         id: randomUUID(),
@@ -97,7 +100,7 @@ export class TurnController {
         const entry = recorder.finish(done);
         await this.write(log, entry);
         await this.recordUsage(entry, action, recorder.firstLimits);
-        if (!done.ok && done.error?.code === "session-expired") await this.forgetSession();
+        if (!done.ok && done.error?.code === "session-expired" && engineId) await this.forgetSession(engineId);
         this.emit(done);
       };
 
@@ -143,9 +146,9 @@ export class TurnController {
     }
   }
 
-  private async forgetSession(): Promise<void> {
+  private async forgetSession(engineId: string): Promise<void> {
     try {
-      await this.deps.sessionExpired?.();
+      await this.deps.sessionExpired?.(engineId);
     } catch (err) {
       console.error("Could not forget the expired session", err);
     }

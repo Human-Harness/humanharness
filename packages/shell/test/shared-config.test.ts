@@ -149,6 +149,33 @@ describe("noticeAccepted", () => {
     expect(JSON.parse(fs.readFileSync(second!, "utf8"))).toEqual({ version: 1, engines: {} });
   });
 
+  it("starts over a file it can't read, keeping it as the backup", async () => {
+    const dir = newDir();
+    const file = path.join(dir, "engines.json");
+    fs.writeFileSync(file, "{ secret");
+    fs.chmodSync(file, 0o000);
+    const store = new SharedConfigStore(dir);
+    const backup = await store.reset(new Date("2026-10-11T14:05:06.000Z"));
+    expect(path.basename(backup!)).toBe("engines.json.bak-20261011-140506");
+    fs.chmodSync(backup!, 0o600);
+    expect(fs.readFileSync(backup!, "utf8")).toBe("{ secret");
+    expect(await store.load()).toEqual({ version: 1, engines: {} });
+  });
+
+  it("starts over when engines.json is a directory, moving it aside under a free name", async () => {
+    const dir = newDir();
+    const file = path.join(dir, "engines.json");
+    fs.mkdirSync(file);
+    fs.writeFileSync(path.join(file, "inside"), "x");
+    fs.writeFileSync(`${file}.bak-20261011-140506`, "earlier backup");
+    const store = new SharedConfigStore(dir);
+    const backup = await store.reset(new Date("2026-10-11T14:05:06.000Z"));
+    expect(path.basename(backup!)).toBe("engines.json.bak-20261011-140506-2");
+    expect(fs.readFileSync(path.join(backup!, "inside"), "utf8")).toBe("x");
+    expect(fs.readFileSync(`${file}.bak-20261011-140506`, "utf8")).toBe("earlier backup");
+    expect(await store.load()).toEqual({ version: 1, engines: {} });
+  });
+
   it("reset of a missing file just creates an empty one", async () => {
     const dir = newDir();
     const store = new SharedConfigStore(dir);

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { constants as fsConstants, promises as fs } from "node:fs";
+import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
@@ -41,6 +41,15 @@ function cleanRecord(raw: Record<string, unknown>): SharedEngineRecord {
   return record;
 }
 
+async function exists(p: string): Promise<boolean> {
+  try {
+    await fs.lstat(p);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function sharedConfigDir(home: string = os.homedir()): string {
   return path.join(home, ".humanharness");
 }
@@ -80,21 +89,32 @@ export class SharedConfigStore {
   }
 
   /**
-   * Copies the file to `base` (or `base-2`, `base-3`… when taken), never replacing an existing
-   * backup. Returns the backup's path, or null when there is no file.
+   * Keeps the file as `base` (or `base-2`, `base-3`… when taken), never replacing an existing
+   * backup. A hard link needs no read permission (the file may be unreadable: that's why it is
+   * reset) and is never half-written; where links aren't possible (a directory, a file system
+   * without them) the file is moved to a free name instead. Returns the backup's path, or null
+   * when there is no file.
    */
   private async backup(base: string): Promise<string | null> {
-    for (let n = 1; ; n++) {
+    for (let n = 1; n <= 1000; n++) {
       const target = n === 1 ? base : `${base}-${n}`;
       try {
-        await fs.copyFile(this.file, target, fsConstants.COPYFILE_EXCL);
+        await fs.link(this.file, target);
         return target;
       } catch (err) {
         const code = (err as NodeJS.ErrnoException).code;
         if (code === "ENOENT") return null;
-        if (code !== "EEXIST" || n >= 1000) throw err;
+        if (code === "EEXIST" || (await exists(target))) continue;
+      }
+      try {
+        await fs.rename(this.file, target);
+        return target;
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
+        throw err;
       }
     }
+    throw new Error(`No free backup name next to ${this.file}`);
   }
 
   private async write(content: unknown): Promise<void> {

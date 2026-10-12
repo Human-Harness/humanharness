@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { type ClaudeScript, claudeResultLine, claudeTextLines, fakeClaudeCommand, writeScript } from "@humanharness/fake-agent";
-import { ClaudeCliTransport, allowedTools, claudeArgs, disallowedTools } from "../src/claude-cli";
+import { ClaudeCliTransport, allowedTools, claudeArgs, disallowedTools, referenceRulePath } from "../src/claude-cli";
 import type { Event } from "../src/events";
 import type { Session, TransportOptions } from "../src/transport";
 
@@ -348,6 +348,14 @@ describe("reference folders", () => {
       expect.arrayContaining(["Edit(//Users/me/code/hh/**)", "Write(//Users/me/code/hh/**)", "MultiEdit(//Users/me/code/hh/**)", "Edit(//opt/docs/**)"]),
     );
     expect(claudeArgs({ session: { id: "a", started: false }, mcp: [], permissions })).not.toContain("--add-dir");
+  });
+
+  it("normalizes reference paths before building the deny rules", () => {
+    const denied = disallowedTools({ edit: "folder", exec: false, web: false }, ["/opt/docs/", "/opt/a/../b//"]);
+    expect(denied).toEqual(expect.arrayContaining(["Edit(//opt/docs/**)", "Write(//opt/b/**)"]));
+    expect(denied.some((d) => d.includes("docs//"))).toBe(false);
+    expect(referenceRulePath("C:\\Users\\me\\code\\", "win32")).toBe("/c/Users/me/code");
+    expect(referenceRulePath("/opt/docs/", "darwin")).toBe("/opt/docs");
   });
 
   it("keeps the read tools allowed", () => {

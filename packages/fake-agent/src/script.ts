@@ -63,6 +63,8 @@ export interface AcpScript {
   failLoad?: boolean;
   /** Advertise `sessionCapabilities.close` and answer `session/close`. */
   closeSession?: boolean;
+  /** Never answer `session/close` (an agent stuck on it). */
+  hangClose?: boolean;
   turns: AcpStep[][];
 }
 

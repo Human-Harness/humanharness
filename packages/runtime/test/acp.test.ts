@@ -362,13 +362,26 @@ describe("AcpTransport", () => {
     expect(log().filter((l) => l.method === "session/set_mode").map((l) => l.params.sessionId)).toEqual(["s", "s-2"]);
   });
 
-  it("skips session/close when the agent doesn't offer it, and still starts a new session", async () => {
+  it("closes the process when the agent doesn't offer session/close, so the next turn reconnects", async () => {
     const { transport, log } = setup({ turns: [[chunk("a")], [chunk("b")]] });
     await run(transport);
     await transport.endSession();
-    await run(transport);
+    expect(await run(transport)).toEqual([{ type: "text", delta: "a" }, { type: "done", ok: true }]);
     expect(log().some((l) => l.method === "session/close")).toBe(false);
     expect(log().filter((l) => l.method === "session/new")).toHaveLength(2);
+    expect(log().filter((l) => l.method === "initialize")).toHaveLength(2);
+  });
+
+  it("gives up on a session/close that never answers and reconnects on the next turn", async () => {
+    const { transport, log } = setup({ closeSession: true, hangClose: true, turns: [[chunk("a")]] });
+    transport.sessionCloseTimeoutMs = 200;
+    await run(transport);
+    const t0 = Date.now();
+    await transport.endSession();
+    expect(Date.now() - t0).toBeLessThan(2000);
+    expect(log().filter((l) => l.method === "session/close")).toHaveLength(1);
+    expect((await run(transport)).at(-1)).toEqual({ type: "done", ok: true });
+    expect(log().filter((l) => l.method === "initialize")).toHaveLength(2);
   });
 
   it("does nothing on endSession before the first turn", async () => {

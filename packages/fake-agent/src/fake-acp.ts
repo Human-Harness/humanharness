@@ -59,8 +59,9 @@ acp
     log("session/set_mode", ctx.params);
     return {};
   })
-  .onRequest("session/close", (ctx) => {
+  .onRequest("session/close", async (ctx) => {
     log("session/close", ctx.params);
+    if (script.hangClose) await new Promise(() => {});
     return {};
   })
   .onNotification("session/cancel", (ctx) => {

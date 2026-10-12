@@ -2,10 +2,11 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { getEngine } from "@humanharness/engines";
 import { type ClaudeScript, claudeResultLine, claudeTextLines, fakeAcpCommand, fakeClaudeCommand, writeScript } from "@humanharness/fake-agent";
 import { loadHarness } from "@humanharness/harness-sdk";
+import { ClaudeCliTransport } from "../src/claude-cli";
 import type { Event } from "../src/events";
 import { type HarnessRuntime, type RuntimeOptions, createRuntime } from "../src/runtime";
 import type { Session } from "../src/transport";
@@ -176,6 +177,21 @@ describe("createRuntime", () => {
     expect(fresh).not.toBe("given-1");
     expect(reported).toEqual([{ id: fresh, started: true }]);
     expect(fs.existsSync(path.join(folder, ".harness", "session.json"))).toBe(false);
+  });
+
+  it("refuses a turn while the session is being ended", async () => {
+    const { runtime } = await setup({ steps: [...claudeTextLines("ok"), claudeResultLine(true)] });
+    let release!: () => void;
+    const spy = vi.spyOn(ClaudeCliTransport.prototype, "endSession").mockImplementation(() => new Promise<void>((r) => (release = r)));
+    try {
+      const ending = runtime.endSession();
+      expect(() => runtime.send("now", () => {})).toThrow(/already running/);
+      release();
+      await ending;
+    } finally {
+      spy.mockRestore();
+    }
+    expect((await send(runtime)).at(-1)).toEqual({ type: "done", ok: true });
   });
 
   it("refuses to end the session during a turn", async () => {

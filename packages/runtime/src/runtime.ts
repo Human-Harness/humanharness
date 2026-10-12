@@ -153,7 +153,13 @@ export async function createRuntime(opts: RuntimeOptions): Promise<HarnessRuntim
       },
       async endSession() {
         if (busy) throw new Error("A turn is already running");
-        await transport.endSession();
+        // Held while the session closes, so a turn cannot start halfway through.
+        busy = true;
+        try {
+          await transport.endSession();
+        } finally {
+          busy = false;
+        }
       },
       async close() {
         if (current) {

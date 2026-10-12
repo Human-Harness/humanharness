@@ -357,17 +357,34 @@ export class AcpTransport implements Transport {
     if (expired) await this.close();
   }
 
-  /** Closes the session (`session/close`, when the agent offers it) and keeps the process for the next one. */
+  /** How long `endSession` waits for `session/close` before giving up on the process. */
+  sessionCloseTimeoutMs = 3000;
+
+  /**
+   * Closes the session with `session/close` and keeps the process for the next one. When the agent
+   * does not offer `session/close`, or does not answer it in time, the process is closed instead and
+   * the next turn reconnects.
+   */
   async endSession(): Promise<void> {
     const sessionId = this.sessionId;
     this.sessionId = undefined;
     this.o.session = { id: randomUUID(), started: false };
-    if (!sessionId || !this.conn || !this.closable) return;
-    try {
-      await this.conn.agent.request("session/close", { sessionId });
-    } catch {
-      // The next turn opens a new session anyway.
+    if (!sessionId || !this.conn) return;
+    if (!this.closable) {
+      await this.close();
+      return;
     }
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timedOut = new Promise<"timeout">((resolve) => {
+      timer = setTimeout(() => resolve("timeout"), this.sessionCloseTimeoutMs);
+    });
+    const closed = this.conn.agent.request("session/close", { sessionId }).then(
+      () => "closed" as const,
+      () => "closed" as const, // the next turn opens a new session anyway
+    );
+    const outcome = await Promise.race([closed, timedOut]);
+    clearTimeout(timer);
+    if (outcome === "timeout") await this.close();
   }
 
   async close(): Promise<void> {

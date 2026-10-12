@@ -336,4 +336,32 @@ describe("AcpTransport", () => {
     const events = await run(transport);
     expect(events).toEqual([{ type: "done", ok: false, error: { code: "engine-not-installed", detail: expect.any(String) } }]);
   });
+
+  it("closes the session on endSession and opens a new one on the next turn, in the same process", async () => {
+    const { transport, log, started } = setup({ closeSession: true, sessionId: "s", turns: [[chunk("a")], [chunk("b")]] });
+    await run(transport);
+    await transport.endSession();
+    const events = await run(transport);
+    expect(events).toEqual([{ type: "text", delta: "b" }, { type: "done", ok: true }]);
+    expect(log().filter((l) => l.method === "session/close").map((l) => l.params.sessionId)).toEqual(["s"]);
+    expect(log().filter((l) => l.method === "session/new")).toHaveLength(2);
+    expect(log().filter((l) => l.method === "initialize")).toHaveLength(1);
+    expect(started.map((s) => s.id)).toEqual(["s", "s-2"]);
+    expect(log().filter((l) => l.method === "session/set_mode").map((l) => l.params.sessionId)).toEqual(["s", "s-2"]);
+  });
+
+  it("skips session/close when the agent doesn't offer it, and still starts a new session", async () => {
+    const { transport, log } = setup({ turns: [[chunk("a")], [chunk("b")]] });
+    await run(transport);
+    await transport.endSession();
+    await run(transport);
+    expect(log().some((l) => l.method === "session/close")).toBe(false);
+    expect(log().filter((l) => l.method === "session/new")).toHaveLength(2);
+  });
+
+  it("does nothing on endSession before the first turn", async () => {
+    const { transport, log } = setup({ closeSession: true, turns: [] });
+    await transport.endSession();
+    expect(log()).toEqual([]);
+  });
 });

@@ -227,6 +227,19 @@ describe("ClaudeCliTransport", () => {
     const events = await run(transport, "hi", controller.signal);
     expect(events).toEqual([{ type: "done", ok: false, error: { code: "cancelled" } }]);
   });
+
+  it("starts a new session after endSession", async () => {
+    const { transport, args, started } = setup({ steps: [...claudeTextLines("ok"), claudeResultLine(true)] }, { id: "old-1", started: true });
+    await run(transport);
+    expect(args()[args().indexOf("--resume") + 1]).toBe("old-1");
+    await transport.endSession();
+    await run(transport);
+    const id = args()[args().indexOf("--session-id") + 1];
+    expect(id).toMatch(/^[0-9a-f-]{36}$/);
+    expect(id).not.toBe("old-1");
+    expect(args()).not.toContain("--resume");
+    expect(started).toEqual([{ id, started: true }]);
+  });
 });
 
 const toolUse = (id: string, name: string, input: unknown) => ({

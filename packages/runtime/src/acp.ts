@@ -1,4 +1,5 @@
 import { type ChildProcess, spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { Readable, Writable } from "node:stream";
 import * as acp from "@agentclientprotocol/sdk";
@@ -124,10 +125,14 @@ export class AcpTransport implements Transport {
   private activities = new Map<string, { kind: ActivityKind; detail: string }>();
   private afterTool = false;
   private stderrTail = "";
+  /** What the agent advertised at initialize. */
+  private loadable = false;
+  private closable = false;
 
   constructor(private readonly o: TransportOptions) {}
 
-  private async start(): Promise<void> {
+  /** Starts the agent process and initializes the connection. */
+  private async connect(): Promise<void> {
     const [binary, ...args] = this.o.command;
     const child = spawn(binary, args, {
       cwd: this.o.folder,
@@ -165,8 +170,7 @@ export class AcpTransport implements Transport {
       .onNotification("session/update", (ctx) => this.onUpdate(ctx.params.update as Record<string, any>))
       .connect(stream);
 
-    const agent = this.conn.agent;
-    const init = await agent.request("initialize", {
+    const init = await this.conn.agent.request("initialize", {
       protocolVersion: acp.PROTOCOL_VERSION,
       clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
     });
@@ -174,13 +178,24 @@ export class AcpTransport implements Transport {
     if (this.o.minAdapterVersion && version && versionLess(version, this.o.minAdapterVersion)) {
       throw new OutdatedAdapterError(`ACP adapter ${version} is older than required ${this.o.minAdapterVersion}`);
     }
-    const mcpServers = this.o.mcp.map((s) => ({
+    this.loadable = Boolean(init.agentCapabilities?.loadSession);
+    this.closable = Boolean(init.agentCapabilities?.sessionCapabilities?.close);
+  }
+
+  private mcpServers() {
+    return this.o.mcp.map((s) => ({
       name: s.name,
       command: s.command,
       args: s.args,
       env: Object.entries(s.env).map(([name, value]) => ({ name, value })),
     }));
-    if (this.o.session.started && init.agentCapabilities?.loadSession) {
+  }
+
+  /** Loads the saved session (when there is one and the agent can) or creates a new one, then sets its mode. */
+  private async openSession(): Promise<void> {
+    const agent = this.conn!.agent;
+    const mcpServers = this.mcpServers();
+    if (this.o.session.started && this.loadable) {
       try {
         await agent.request("session/load", { sessionId: this.o.session.id, cwd: this.o.folder, mcpServers });
         this.sessionId = this.o.session.id;
@@ -275,9 +290,10 @@ export class AcpTransport implements Transport {
     this.calls.clear();
     this.hidden.clear();
     this.activities.clear();
-    if (!this.conn) {
+    if (!this.conn || !this.sessionId) {
       try {
-        await this.start();
+        if (!this.conn) await this.connect();
+        await this.openSession();
       } catch (e) {
         const event = errorFrom(e, this.stderrTail);
         await this.close();
@@ -336,6 +352,19 @@ export class AcpTransport implements Transport {
     }
     // Close after an expired login so the next turn starts a fresh process that sees a new login.
     if (expired) await this.close();
+  }
+
+  /** Closes the session (`session/close`, when the agent offers it) and keeps the process for the next one. */
+  async endSession(): Promise<void> {
+    const sessionId = this.sessionId;
+    this.sessionId = undefined;
+    this.o.session = { id: randomUUID(), started: false };
+    if (!sessionId || !this.conn || !this.closable) return;
+    try {
+      await this.conn.agent.request("session/close", { sessionId });
+    } catch {
+      // The next turn opens a new session anyway.
+    }
   }
 
   async close(): Promise<void> {

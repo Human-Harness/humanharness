@@ -275,5 +275,10 @@ export class ClaudeCliTransport implements Transport {
     });
   }
 
+  /** Claude keeps the old session on its side; the app never resumes it. The next turn uses a new `--session-id`. */
+  async endSession(): Promise<void> {
+    this.o.session = { id: randomUUID(), started: false };
+  }
+
   async close(): Promise<void> {}
 }

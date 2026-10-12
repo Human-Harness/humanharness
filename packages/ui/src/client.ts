@@ -1,3 +1,4 @@
+import type { ModelsConfig } from "@humanharness/engines";
 import type { ActionCost, ChoiceOption, Language, LocalizedText } from "@humanharness/harness-sdk";
 import type { ActivityKind, EngineError, Event, LimitWindow } from "@humanharness/runtime";
 
@@ -9,6 +10,8 @@ export interface AppConfig {
   engineId?: string;
   /** Settings → General → Appearance. Absent means follow the system. */
   appearance?: Appearance;
+  /** Settings › Modelos: each task's tier or custom model, and the tier tables per engine. Cleaned when read. */
+  models?: ModelsConfig;
 }
 
 export interface EngineOption {

@@ -29,6 +29,7 @@ import { ConfigStore, historyDir } from "./config";
 import { testPrompt } from "./engine-check";
 import { type CommandDeps, cliCommand, engineCommand, loginShellPath } from "./engine-command";
 import { EngineGuards } from "./engine-guards";
+import { cleanModels } from "./models";
 import { installCommandOf, terminalCommand } from "./install-help";
 import { detectEngine, hasAcceptedNotice } from "./engine-status";
 import { requireNoticeForChoice, requireNoticeForTurn } from "./notice-policy";
@@ -165,7 +166,7 @@ async function appState(): Promise<AppState> {
       ...(harness.donate ? { donate: harness.donate } : {}),
       version: app.getVersion(),
     },
-    config: saved,
+    config: saved.models !== undefined ? { ...saved, models: cleanModels(saved.models) } : saved,
     suggestedFolder: path.join(os.homedir(), harness.folder.suggested),
     engines: await Promise.all(
       availableEngines(harness.engines, mode()).map(async (e) => {
@@ -386,9 +387,11 @@ function registerIpc() {
     if (!folder) return null;
     return { folder, problem: await checkFolder(folder, os.homedir()) } satisfies FolderPick;
   });
-  handle("hh:saveConfig", async (patch: AppConfig) => {
-    const problem = await configProblem(patch, validation());
+  handle("hh:saveConfig", async (input: AppConfig) => {
+    const problem = await configProblem(input, validation());
     if (problem) throw new Error(problem);
+    // Spec §7: a bad entry under models is dropped, never stored.
+    const patch: AppConfig = input.models !== undefined ? { ...input, models: cleanModels(input.models) } : input;
     const before = await config.load();
     // Spec §9: an engine is only used once its notice is accepted.
     await requireNoticeForChoice(patch.engineId, before.engineId, hasNotice);

@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
 import { z } from "zod";
-import { CORE_BLOCKS, allBlocks, blockToolName, choicesSchema, defineBlock, defineHarness, loadHarness, resolveInHarness, saveNoteSchema } from "../src";
+import { CORE_BLOCKS, TIERS, allBlocks, blockToolName, choicesSchema, defineBlock, defineHarness, loadHarness, resolveInHarness, saveNoteSchema } from "../src";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -211,5 +211,23 @@ describe("core blocks", () => {
     expect(CORE_BLOCKS.choices.description).not.toMatch(/2 to 4/);
     expect(CORE_BLOCKS.choices.description).toMatch(/up to 4/);
     expect(CORE_BLOCKS.choices.description).toMatch(/action.*next.*followUp/s);
+  });
+});
+
+describe("tiers", () => {
+  it("lists the three abstract tiers, lightest first", () => {
+    expect(TIERS).toEqual(["light", "standard", "deep"]);
+  });
+
+  it("lets actions and free questions declare a tier; custom is a user setting only", () => {
+    const research = { label: { es: "Investigar", en: "Research" }, prompt: "./agent/tasks/research.md", cost: "heavy" as const, tier: "deep" as const };
+    const h = defineHarness({ ...base, languages: [...base.languages], actions: { research }, questions: { tier: "light" } });
+    expect(h.actions.research.tier).toBe("deep");
+    expect(h.questions).toEqual({ tier: "light" });
+    const plain = defineHarness({ ...base, languages: [...base.languages], actions: { research: { ...research, tier: undefined } } });
+    expect(plain.actions.research.tier).toBeUndefined();
+    expect(plain.questions).toBeUndefined();
+    expect(() => defineHarness({ ...base, languages: [...base.languages], actions: { research: { ...research, tier: "custom" as never } } })).toThrow();
+    expect(() => defineHarness({ ...base, languages: [...base.languages], questions: { tier: "huge" as never } })).toThrow();
   });
 });

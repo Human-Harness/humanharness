@@ -4,6 +4,15 @@ import { type ChatState, initialChat, reduceChat } from "../src/state";
 const run = (events: Parameters<typeof reduceChat>[1][], from: ChatState = initialChat([])) => events.reduce(reduceChat, from);
 
 describe("reduceChat", () => {
+  it("tags a finished turn (and a failure without one) with the task it ended in", () => {
+    const s = run([{ type: "user", text: "hi", at: "t" }, { type: "done", ok: true, task: "t1" }, { type: "done", ok: false, error: { code: "agent-crashed" }, task: "t2" }]);
+    expect(s.entries.map((e) => [e.role, e.task])).toEqual([
+      ["user", undefined],
+      ["assistant", "t1"],
+      ["assistant", "t2"],
+    ]);
+  });
+
   it("adds the user's message and starts a live turn", () => {
     const s = run([{ type: "user", text: "hi", at: "2026-10-10T00:00:00Z" }]);
     expect(s.entries.map((e) => [e.role, e.text])).toEqual([["user", "hi"]]);

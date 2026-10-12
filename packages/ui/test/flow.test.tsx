@@ -41,6 +41,13 @@ const answer = (client: FakeClient, text: string, blocks: { name: string; data: 
   });
 const tasks = (client: FakeClient, view: Partial<FakeClient["tasks"]>) => act(() => client.emitTasks({ ...client.tasks, ...view }));
 const choices = (...options: object[]) => ({ name: "choices", data: { options } });
+const GROUP = "How do we continue?";
+const t1 = (status: "running" | "waiting" | "closing") => ({ id: "t1", action: "manifest", status });
+const in2h = () => new Date(Date.now() + 2 * 3600_000).toISOString();
+const NOTES = [
+  { slug: "manifest", title: "The manifest", action: "manifest", date: "2026-10-12T11:20:00.000Z", summary: ["It declares everything", "It is validated"], decisions: [], path: ".harness/notes/manifest.md" },
+  { slug: "q-chats", title: "Where chats live", date: "2026-10-11T10:00:00.000Z", summary: ["In .harness/chats"], decisions: [], path: ".harness/notes/q-chats.md" },
+];
 
 describe("flow mode", () => {
   it("opens on the start view: topics, the read-only folder, questions and the composer hint", async () => {
@@ -73,15 +80,17 @@ describe("flow mode", () => {
     const client = flowClient();
     await startWork(client);
     fireEvent.click(within(await startRegion()).getByRole("button", { name: /The manifest/ }));
+    tasks(client, { current: t1("running") });
     answer(client, "It declares everything.", [choices({ label: "Go deeper", followUp: "Tell me more" }, { label: "Next topic →", next: true })]);
-    tasks(client, { current: { id: "t1", action: "manifest", status: "waiting" } });
-    fireEvent.click(within(screen.getByRole("radiogroup", { name: "How do we continue?" })).getByRole("radio", { name: "Go deeper" }));
+    tasks(client, { current: t1("waiting") });
+    fireEvent.click(within(screen.getByRole("group", { name: GROUP })).getByRole("button", { name: "Go deeper" }));
     await waitFor(() => expect(client.chosen).toEqual([{ label: "Go deeper", followUp: "Tell me more" }]));
+    expect(client.chosenTasks).toEqual(["t1"]);
     expect(screen.getByText("Go deeper", { selector: ".hh-message.user p" })).toBeTruthy();
     answer(client, "More detail.", [choices({ label: "Next topic →", next: true })]);
-    const groups = screen.getAllByRole("radiogroup");
-    expect((within(groups[0]).getAllByRole("radio")[0] as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.click(within(groups.at(-1)!).getByRole("radio", { name: "Next topic →" }));
+    const groups = screen.getAllByRole("group", { name: GROUP });
+    expect((within(groups[0]).getAllByRole("button")[0] as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(within(groups.at(-1)!).getByRole("button", { name: "Next topic →" }));
     await waitFor(() => expect(client.chosen).toHaveLength(2));
     expect(screen.queryByText("It declares everything.")).toBeNull();
     expect(screen.getByText("Engines", { selector: ".hh-message.user p" })).toBeTruthy();
@@ -92,9 +101,10 @@ describe("flow mode", () => {
     client.state.path = ["manifest"];
     await startWork(client);
     fireEvent.click(within(await startRegion()).getByRole("button", { name: /The manifest/ }));
+    tasks(client, { current: t1("running") });
     answer(client, "It declares everything.", [choices({ label: "Done →", next: true })]);
-    tasks(client, { current: { id: "t1", action: "manifest", status: "waiting" } });
-    fireEvent.click(screen.getByRole("radio", { name: "Done →" }));
+    tasks(client, { current: t1("waiting") });
+    fireEvent.click(screen.getByRole("button", { name: "Done →" }));
     await waitFor(() => expect(client.chosen).toEqual([{ label: "Done →", next: true }]));
     expect(screen.queryAllByText("Done →", { selector: ".hh-message.user p" })).toHaveLength(0);
     tasks(client, { current: { id: "t1", action: "manifest", status: "closing" } });
@@ -112,10 +122,7 @@ describe("flow mode", () => {
     client.tasks = {
       current: null,
       actions: { manifest: "done" },
-      notes: [
-        { slug: "manifest", title: "The manifest", action: "manifest", date: "2026-10-12T11:20:00.000Z", summary: ["It declares everything", "It is validated"], decisions: [], path: ".harness/notes/manifest.md" },
-        { slug: "q-chats", title: "Where chats live", date: "2026-10-11T10:00:00.000Z", summary: ["In .harness/chats"], decisions: [], path: ".harness/notes/q-chats.md" },
-      ],
+      notes: NOTES,
     };
     await startWork(client);
     await startRegion();
@@ -146,6 +153,97 @@ describe("flow mode", () => {
     expect(screen.getByText("Copy the demo.")).toBeTruthy();
   });
 
+  it("asks before a heavy next topic; Not now leaves the options usable, and Continue sends the pick", async () => {
+    const client = flowClient();
+    client.state.actions.engines.cost = "heavy";
+    client.usage = { limits: [{ kind: "five_hour", utilization: 0.75, resetsAt: in2h() }], estimates: { engines: 0.08 } };
+    await startWork(client);
+    fireEvent.click(within(await startRegion()).getByRole("button", { name: /The manifest/ }));
+    tasks(client, { current: t1("running") });
+    answer(client, "It declares everything.", [choices({ label: "Next topic →", next: true })]);
+    tasks(client, { current: t1("waiting") });
+    const next = () => screen.getByRole("button", { name: "Next topic →" }) as HTMLButtonElement;
+    fireEvent.click(next());
+    fireEvent.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Not now" }));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(next().disabled).toBe(false);
+    expect(next().getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(next());
+    fireEvent.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Continue" }));
+    await waitFor(() => expect(client.chosen).toEqual([{ label: "Next topic →", next: true }]));
+    expect(client.chosenTasks).toEqual(["t1"]);
+  });
+
+  it("at the end of the path, a pick the app refuses shows the error and can be picked again", async () => {
+    const client = flowClient();
+    client.state.path = ["manifest"];
+    await startWork(client);
+    fireEvent.click(within(await startRegion()).getByRole("button", { name: /The manifest/ }));
+    tasks(client, { current: t1("running") });
+    answer(client, "It declares everything.", [choices({ label: "Done →", next: true })]);
+    tasks(client, { current: t1("waiting") });
+    client.chooseError = new Error("A turn is already running");
+    fireEvent.click(screen.getByRole("button", { name: "Done →" }));
+    await screen.findByRole("alert");
+    const done = screen.getByRole("button", { name: "Done →" }) as HTMLButtonElement;
+    expect(done.disabled).toBe(false);
+    client.chooseError = null;
+    fireEvent.click(done);
+    await waitFor(() => expect(client.chosen).toHaveLength(2));
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+  });
+
+  it("Try again after a failed follow-up option picks that option again", async () => {
+    const client = flowClient();
+    await startWork(client);
+    fireEvent.click(within(await startRegion()).getByRole("button", { name: /The manifest/ }));
+    tasks(client, { current: t1("running") });
+    answer(client, "It declares everything.", [choices({ label: "Go deeper", followUp: "Tell me more" })]);
+    tasks(client, { current: t1("waiting") });
+    fireEvent.click(screen.getByRole("button", { name: "Go deeper" }));
+    await waitFor(() => expect(client.chosen).toHaveLength(1));
+    act(() => client.emit({ type: "done", ok: false, error: { code: "agent-crashed" } }));
+    fireEvent.click(await screen.findByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(client.chosen).toEqual([{ label: "Go deeper", followUp: "Tell me more" }, { label: "Go deeper", followUp: "Tell me more" }]));
+    expect(client.sent).toEqual(["The manifest"]);
+    expect(client.chosenTasks).toEqual(["t1", "t1"]);
+  });
+
+  it("opens another note from the side panel while the panel is open, and gives focus back on Escape", async () => {
+    const client = flowClient();
+    client.tasks = { current: null, actions: { manifest: "done" }, notes: NOTES };
+    await startWork(client);
+    await startRegion();
+    const side = screen.getByRole("list", { name: "What's clear so far" });
+    const chats = within(side).getByRole("button", { name: "Where chats live" });
+    chats.focus();
+    fireEvent.click(chats);
+    const panel = screen.getByRole("dialog", { name: "What's clear so far" });
+    expect(within(panel).getByText("In .harness/chats")).toBeTruthy();
+    fireEvent.click(within(side).getByRole("button", { name: "The manifest" }));
+    expect(within(panel).getByText("It is validated")).toBeTruthy();
+    expect(within(panel).queryByText("In .harness/chats")).toBeNull();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.activeElement).toBe(chats);
+  });
+
+  it("opening the history closes the notes panel, so one Escape closes the one on top", async () => {
+    const client = flowClient();
+    client.tasks = { current: null, actions: { manifest: "done" }, notes: NOTES };
+    await startWork(client);
+    await startRegion();
+    fireEvent.click(within(screen.getByRole("list", { name: "What's clear so far" })).getByRole("button", { name: "Where chats live" }));
+    const history = screen.getByRole("button", { name: "History" });
+    history.focus();
+    fireEvent.click(history);
+    expect(screen.getAllByRole("dialog")).toHaveLength(1);
+    expect(screen.queryByRole("dialog", { name: "What's clear so far" })).toBeNull();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.activeElement).toBe(history);
+  });
+
   it("gives harness blocks a way to open files", async () => {
     const client = flowClient();
     const Files = ({ data, open }: BlockProps) => <button onClick={() => void open(data.path)}>open it</button>;
@@ -166,5 +264,38 @@ describe("flow mode", () => {
     await startWork(client);
     await screen.findByText("Engines are detected.");
     expect(screen.queryByRole("region", { name: TITLE })).toBeNull();
+  });
+});
+
+describe("choices of an earlier task", () => {
+  const entries = (task: string) => [
+    { id: "1", role: "user" as const, text: "hi", blocks: [], activities: [], at: "t", task },
+    { id: "2", role: "assistant" as const, text: "Pick one.", blocks: [choices({ label: "Tell me more" })], activities: [], at: "t", task },
+  ];
+
+  it("are disabled when the block's task is not the waiting one", async () => {
+    const client = new FakeClient(ready);
+    client.chat = entries("t1");
+    client.tasks = { current: { id: "t2", status: "waiting" }, actions: {}, notes: [] };
+    render(<HarnessApp client={client} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Start Demo" }));
+    await screen.findByText("Pick one.");
+    await waitFor(() => expect(client.tasks.current?.id).toBe("t2"));
+    expect((screen.getByRole("button", { name: "Tell me more" }) as HTMLButtonElement).disabled).toBe(true);
+    tasks(client, { current: null });
+    expect((screen.getByRole("button", { name: "Tell me more" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("send the task the block was shown for", async () => {
+    const client = new FakeClient(ready);
+    client.chat = entries("t1");
+    client.tasks = { current: { id: "t1", status: "waiting" }, actions: {}, notes: [] };
+    render(<HarnessApp client={client} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Start Demo" }));
+    await screen.findByText("Pick one.");
+    const more = screen.getByRole("button", { name: "Tell me more" }) as HTMLButtonElement;
+    await waitFor(() => expect(more.disabled).toBe(false));
+    fireEvent.click(more);
+    await waitFor(() => expect(client.chosenTasks).toEqual(["t1"]));
   });
 });

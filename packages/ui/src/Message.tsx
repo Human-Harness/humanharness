@@ -7,7 +7,10 @@ export interface BlockProps {
   data: any;
   /** Sends a message as the user (e.g. the chosen option); `options.action` starts a harness action. */
   respond: (text: string, options?: SendOptions) => boolean;
-  /** Picks an option of a `choices` block: the app follows up, starts another topic or moves along the path. */
+  /**
+   * Picks an option of a `choices` block: the app follows up, starts another topic or moves along the path.
+   * True only when the pick was sent; false when refused or still waiting for the person's go-ahead.
+   */
   choose: (option: ChoiceOption) => boolean;
   /** Opens a file inside the reference folders or the user's folder in its default app; false when it can't. */
   open: (path: string) => Promise<boolean>;

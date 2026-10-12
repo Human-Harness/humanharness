@@ -170,7 +170,8 @@
     "placeholderTask": "Ask about this topic…"
   },
   "choices": {
-    "title": "How do we continue?"
+    "title": "How do we continue?",
+    "failed": "That didn't go through. Pick an option again."
   },
   "notes": {
     "title": "What's clear so far",

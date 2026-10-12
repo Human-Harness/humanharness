@@ -177,7 +177,7 @@ input[type="text"], input:not([type]) { font: inherit; height: 28px; padding: 0 
 .hh-choices { display: grid; gap: 9px; padding: 12px 14px; border: 1px solid var(--hh-line); border-radius: 12px; background: var(--hh-sheet); }
 .hh-choice-list { display: flex; flex-wrap: wrap; gap: 8px; }
 .hh-choice { flex: 1 1 180px; height: auto; min-height: 36px; justify-content: flex-start; padding: 6px 10px; border-radius: 8px; text-align: left; }
-.hh-choice.next, .hh-choice[aria-checked="true"] { background: var(--hh-ink); color: var(--hh-on-ink); border-color: var(--hh-ink); }
+.hh-choice.next, .hh-choice[aria-pressed="true"] { background: var(--hh-ink); color: var(--hh-on-ink); border-color: var(--hh-ink); }
 .hh-notes { position: fixed; inset: 52px 0 0 auto; width: min(420px, 100%); box-sizing: border-box; padding: 16px 18px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; background: var(--hh-sheet); border-left: 1px solid var(--hh-line-strong); box-shadow: -18px 0 50px rgba(25, 30, 36, 0.16); }
 .hh-notes header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .hh-notes h2 { font-size: 15px; font-weight: 600; }

@@ -17,7 +17,7 @@ test("a topic answered with blocks, then next: the note is saved and the next to
     await expect(page.getByRole("figure", { name: "Del manifiesto a la app" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Abrir packages/harness-sdk/src/index.ts en el editor" })).toBeVisible();
 
-    await page.getByRole("radio", { name: "Seguir el recorrido →" }).click();
+    await page.getByRole("button", { name: "Seguir el recorrido →" }).click();
     await expect(page.getByRole("main").getByText("Los motores se detectan en cada inicio.")).toBeVisible();
 
     const note = fs.readFileSync(path.join(s.folder, ".harness", "notes", "manifest.md"), "utf8");
@@ -53,7 +53,7 @@ test("changing the engine keeps the notes, and the first task on the new engine 
     await page.getByRole("button", { name: "Iniciar Demo" }).click();
     await page.getByRole("region", { name: START }).getByRole("button", { name: /El manifiesto/ }).click();
     await expect(page.getByRole("main").getByText("El manifiesto declara todo el harness.")).toBeVisible();
-    await page.getByRole("radio", { name: "Seguir el recorrido →" }).click();
+    await page.getByRole("button", { name: "Seguir el recorrido →" }).click();
     await expect(page.getByRole("main").getByText("Los motores se detectan en cada inicio.")).toBeVisible();
 
     await page.getByRole("button", { name: "Ajustes" }).click();

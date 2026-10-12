@@ -24,8 +24,17 @@ export type SendFn = (text: string, options?: SendOptions) => boolean;
 /** A heavy action waiting for the user's go-ahead: a message to send, or a picked option. */
 type Pending = { action: string; check: Preflight } & (
   | { kind: "send"; text: string; options: SendOptions }
-  | { kind: "choose"; option: ChoiceOption }
+  | { kind: "choose"; option: ChoiceOption; task: string }
 );
+
+/** A pick the app couldn't take, and the task its block belongs to. */
+interface Pick {
+  option: ChoiceOption;
+  task: string;
+}
+
+/** The `choices` block of an answer outside the waiting task: shown, but it can't act. */
+const StaleChoices = (props: BlockProps) => <ChoicesBlock data={props.data} choose={props.choose} active={false} />;
 
 export function ChatView({
   client,
@@ -73,6 +82,15 @@ export function ChatView({
   /** A notice for the start view (the engine changed, the folder went back). */
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, setPending] = useState<Pending | null>(null);
+  /** End of the path: the pick that closes the task was refused (shown until the next pick or message). */
+  const [pickFailed, setPickFailed] = useState(false);
+  /** Bumped when a pick fails: the blocks are drawn afresh, so their options can be picked again. */
+  const [pickResets, setPickResets] = useState(0);
+  /** The last message sent came from a pick (Try again picks it again). */
+  const lastPick = useRef<Pick | null>(null);
+  /** The task open now, read when a turn ends to tag its entry. */
+  const openTask = useRef<string | undefined>(undefined);
+  openTask.current = tasks.current?.id;
   /** `since` was set (by the user or from the open task): loading must not move it. */
   const placed = useRef(false);
   const preflightRef = useRef<HTMLDivElement>(null);
@@ -93,6 +111,7 @@ export function ChatView({
   const path = state.path ?? [];
   const closing = tasks.current?.status === "closing";
   const all = useMemo(() => ({ ...components, choices: ChoicesBlock as ComponentType<BlockProps> }), [components]);
+  const stale = useMemo(() => ({ ...all, choices: StaleChoices }), [all]);
   const labelOf = (id: string) => state.actions[id]?.label[lang] ?? id;
 
   useEffect(() => {
@@ -126,7 +145,8 @@ export function ChatView({
       () => setTasksLoaded(true),
     );
     const offTasks = client.onTasks(setTasks);
-    const offEvents = client.onEvent((e) => dispatch(e));
+    // A turn's entry belongs to the task open when it ends (the app tells the window about a task before its turn).
+    const offEvents = client.onEvent((e) => dispatch(e.type === "done" ? { ...e, task: openTask.current } : e));
     return () => {
       offTasks();
       offEvents();
@@ -199,6 +219,8 @@ export function ChatView({
     }
     busy.current = true;
     stick.current = true;
+    lastPick.current = null;
+    setPickFailed(false);
     if (flow && (options.action || !tasks.current)) showNewTask();
     dispatch({ type: "user", text: message, at: new Date().toISOString(), ...(options.action ? { action: options.action } : {}) });
     client.send(message, options).catch(failTurn);
@@ -206,20 +228,27 @@ export function ChatView({
     return true;
   };
 
-  /** A pick in a `choices` block: a follow-up stays on screen; another topic replaces it; the end of the path just closes. */
-  const choose = (option: ChoiceOption, confirmed = false): boolean => {
+  /**
+   * A pick in a `choices` block of task `task`: a follow-up stays on screen; another topic replaces it; the end
+   * of the path just closes. True only when the pick was sent (not while the pre-flight question waits).
+   */
+  const choose = (option: ChoiceOption, task: string | undefined, confirmed = false): boolean => {
     if (blocked() || (pending && !confirmed)) return false;
+    // Only the waiting task's own blocks act: a pick never lands in another task.
+    if (!task || task !== tasks.current?.id || tasks.current.status !== "waiting") return false;
     const action = option.action && state.actions[option.action] ? option.action : undefined;
     const moves = Boolean(option.next || action);
     const target = option.next ? nextInPath(path, tasks.current?.action, tasks.actions) : (action ?? null);
     if (!confirmed && target) {
       const check = preflight(state.actions[target]?.cost, chat.limits, estimates[target]);
       if (check) {
-        openPreflight({ kind: "choose", action: target, check, option });
-        return true;
+        openPreflight({ kind: "choose", action: target, check, option, task });
+        return false;
       }
     }
     stick.current = true;
+    lastPick.current = { option, task };
+    setPickFailed(false);
     const at = new Date().toISOString();
     if (!moves) {
       busy.current = true;
@@ -229,8 +258,13 @@ export function ChatView({
       showNewTask();
       dispatch({ type: "user", text: labelOf(target), at, action: target });
     }
-    client.choose(option).catch((err: unknown) => {
+    client.choose(option, task).catch((err: unknown) => {
       if (!moves || target) failTurn(err);
+      else {
+        // Nothing ran on screen: say so, and let the block be picked again.
+        setPickFailed(true);
+        setPickResets((n) => n + 1);
+      }
     });
     return true;
   };
@@ -253,7 +287,16 @@ export function ChatView({
   /** What harness UI gets: it can't skip the pre-flight check. */
   const sendFromHarness: SendFn = (text, options) => send(text, options);
   const lastAssistant = chat.entries.findLast((e) => e.role === "assistant");
-  const blockActions = (active: boolean): BlockActions => ({ respond: sendFromHarness, choose: (o) => choose(o), open: openFile, active });
+  const blockActions = (active: boolean, task?: string): BlockActions => ({ respond: sendFromHarness, choose: (o) => choose(o, task), open: openFile, active });
+  /** The entry's answer belongs to the task waiting now: its `choices` block may act. */
+  const ofWaitingTask = (task: string | undefined) => task !== undefined && task === tasks.current?.id && tasks.current.status === "waiting";
+  /** Try again: a failed pick of the still-open task is picked again; anything else resends the last message. */
+  const retry = (): (() => void) | undefined => {
+    const pick = lastPick.current;
+    if (pick && pick.task === tasks.current?.id) return () => void choose(pick.option, pick.task);
+    if (lastUser) return () => void send(lastUser.text, lastUser.action ? { action: lastUser.action } : {});
+    return undefined;
+  };
   const onSubmit = (e: FormEvent) => {
     e.preventDefault();
     if (send(draft)) setDraft("");
@@ -284,7 +327,15 @@ export function ChatView({
       <TopBar title={state.harness.name[lang]}>
         <UsageMeter engine={engineOption} limits={chat.limits} lastTokens={lastTurnTokens(chat.entries)} />
         {onHome && <button onClick={onHome}>{t("chat.home")}</button>}
-        <button onClick={() => setShowHistory(true)}>{t("history.title")}</button>
+        <button
+          onClick={() => {
+            // One panel at a time: Escape closes the one on screen.
+            setNotesPanel(null);
+            setShowHistory(true);
+          }}
+        >
+          {t("history.title")}
+        </button>
         {onSettings && (
           <button className="hh-icon-button" aria-label={t("home.settings")} onClick={onSettings}>
             <GearIcon />
@@ -299,7 +350,10 @@ export function ChatView({
             tasks={tasks}
             disabled={blocked() || !loaded}
             onStart={startTopic}
-            onOpenNote={(slug) => setNotesPanel({ expanded: slug })}
+            onOpenNote={(slug) => {
+              setShowHistory(false);
+              setNotesPanel({ expanded: slug });
+            }}
           />
         )}
         <main className="hh-main">
@@ -332,18 +386,28 @@ export function ChatView({
             )}
             {shown.map((entry) => (
               <div key={entry.id}>
-                <Message entry={entry} components={all} actions={blockActions(entry === lastAssistant && !chat.live && !closing)} />
+                <Message
+                  key={pickResets}
+                  entry={entry}
+                  components={ofWaitingTask(entry.task) ? all : stale}
+                  actions={blockActions(entry === lastAssistant && !chat.live && !closing, entry.task)}
+                />
                 {entry.error && entry === last && (
                   <ErrorCard
                     error={entry.error}
                     engine={engine}
                     limits={chat.limits}
                     onFix={onFixEngine}
-                    onRetry={lastUser ? () => send(lastUser.text, lastUser.action ? { action: lastUser.action } : {}) : undefined}
+                    onRetry={retry()}
                   />
                 )}
               </div>
             ))}
+            {pickFailed && (
+              <p className="hh-error" role="alert">
+                {t("choices.failed")}
+              </p>
+            )}
             {chat.live && (
               <article className="hh-message assistant live">
                 <ActivityList items={chat.live.activities} />
@@ -379,7 +443,7 @@ export function ChatView({
                     const p = pending;
                     setPending(null);
                     if (p.kind === "send") send(p.text, p.options, true);
-                    else choose(p.option, true);
+                    else choose(p.option, p.task, true);
                   }}
                 >
                   {t("preflight.continue")}

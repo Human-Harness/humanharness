@@ -31,16 +31,16 @@ export function ChoicesBlock({ data, choose, active }: { data: unknown; choose: 
   return (
     <section className="hh-choices">
       <h3 id={id}>{t("choices.title")}</h3>
-      <div className="hh-choice-list" role="radiogroup" aria-labelledby={id}>
+      <div className="hh-choice-list" role="group" aria-labelledby={id}>
         {options.map((o, i) => (
           <button
             key={i}
             type="button"
-            role="radio"
-            aria-checked={picked === i}
+            aria-pressed={picked === i}
             className={o.next ? "hh-choice next" : "hh-choice"}
             disabled={!active || picked !== null}
             onClick={() => {
+              // Marked only once sent: a pick waiting for the go-ahead (or refused) leaves every option usable.
               if (choose(o)) setPicked(i);
             }}
           >

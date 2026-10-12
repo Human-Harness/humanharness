@@ -170,7 +170,8 @@
     "placeholderTask": "Preguntá sobre este tema…"
   },
   "choices": {
-    "title": "¿Cómo seguimos?"
+    "title": "¿Cómo seguimos?",
+    "failed": "No se pudo. Elegí una opción de nuevo."
   },
   "notes": {
     "title": "Lo que quedó claro",

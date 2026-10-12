@@ -28,8 +28,12 @@ export interface ChatState {
   limits: LimitWindow[] | null;
 }
 
+/** A turn's end, with the task the window had open then (its entry is tagged with it). */
+type DoneAction = Extract<Event, { type: "done" }> & { task?: string };
+
 export type ChatAction =
-  | Event
+  | Exclude<Event, { type: "done" }>
+  | DoneAction
   | { type: "user"; text: string; at: string; action?: string }
   | { type: "loaded"; entries: ChatEntry[] }
   /** A local assistant message that the UI shows but never saves. */
@@ -117,7 +121,16 @@ export function reduceChat(state: ChatState, action: ChatAction): ChatState {
       if (!live) {
         // A failure without a turn on screen (a quiet closing turn): show the error alone.
         if (action.ok) return state;
-        const error: ChatEntry = { id: newId(), role: "assistant", text: "", blocks: [], activities: [], at: new Date().toISOString(), error: action.error };
+        const error: ChatEntry = {
+          id: newId(),
+          role: "assistant",
+          text: "",
+          blocks: [],
+          activities: [],
+          at: new Date().toISOString(),
+          error: action.error,
+          ...(action.task ? { task: action.task } : {}),
+        };
         return { ...state, entries: [...state.entries, error] };
       }
       const entry: ChatEntry = {
@@ -131,6 +144,7 @@ export function reduceChat(state: ChatState, action: ChatAction): ChatState {
         ...(live.limits ? { limits: live.limits } : {}),
         ...(live.state ? { state: live.state } : {}),
         ...(action.ok ? {} : { error: action.error }),
+        ...(action.task ? { task: action.task } : {}),
       };
       return { ...state, entries: [...state.entries, entry], live: null };
     }

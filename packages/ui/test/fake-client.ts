@@ -86,6 +86,8 @@ export class FakeClient implements HarnessClient {
   revealed = 0;
   tasks: TaskView = { current: null, actions: {}, notes: [] };
   chosen: ChoiceOption[] = [];
+  /** The task each pick was sent for. */
+  chosenTasks: string[] = [];
   /** When set, choose rejects with it. */
   chooseError: Error | null = null;
   opened: string[] = [];
@@ -257,8 +259,9 @@ export class FakeClient implements HarnessClient {
       this.taskListeners.delete(listener);
     };
   }
-  async choose(option: ChoiceOption) {
+  async choose(option: ChoiceOption, task: string) {
     this.chosen.push(option);
+    this.chosenTasks.push(task);
     if (this.chooseError) throw this.chooseError;
   }
   async openPath(file: string) {

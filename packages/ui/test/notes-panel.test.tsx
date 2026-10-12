@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, screen, within } from "@testing-library/react";
+import { I18nextProvider } from "react-i18next";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { NoteView } from "../src/client";
 import { NotesPanel } from "../src/NotesPanel";
@@ -41,6 +42,55 @@ describe("NotesPanel", () => {
     expect((await within(panel).findByRole("alert")).textContent).toBe("I couldn't open that file.");
     fireEvent.keyDown(document, { key: "Escape" });
     expect(onClose).toHaveBeenCalled();
+  });
+
+  it("keeps the note's header button in place when it opens or closes, so focus stays on it", async () => {
+    await renderIn("en", <NotesPanel notes={notes} lang="en" disabled={false} onResume={() => {}} onOpen={async () => true} onClose={() => {}} />);
+    const panel = screen.getByRole("dialog", { name: "What's clear so far" });
+    const turn = within(panel).getByRole("button", { name: /A turn/ });
+    const chats = within(panel).getByRole("button", { name: /Where chats live/ });
+    expect(turn.getAttribute("aria-expanded")).toBe("true");
+    expect(chats.getAttribute("aria-expanded")).toBe("false");
+    chats.focus();
+    fireEvent.click(chats);
+    expect(chats.isConnected).toBe(true);
+    expect(document.activeElement).toBe(chats);
+    expect(chats.getAttribute("aria-expanded")).toBe("true");
+    expect(turn.getAttribute("aria-expanded")).toBe("false");
+    expect(within(panel).getByText("In .harness/chats")).toBeTruthy();
+    expect(within(panel).queryByText("Five pieces")).toBeNull();
+    fireEvent.click(chats);
+    expect(chats.getAttribute("aria-expanded")).toBe("false");
+    expect(within(panel).queryByText("In .harness/chats")).toBeNull();
+  });
+
+  it("follows the note asked for while it is open", async () => {
+    const props = { notes, lang: "en" as const, disabled: false, onResume: () => {}, onOpen: async () => true, onClose: () => {} };
+    const { rerender, i18n } = await renderIn("en", <NotesPanel {...props} expanded="turn" />);
+    expect(screen.getByText("Five pieces")).toBeTruthy();
+    rerender(
+      <I18nextProvider i18n={i18n}>
+        <NotesPanel {...props} expanded="q-chats" />
+      </I18nextProvider>,
+    );
+    expect(screen.getByText("In .harness/chats")).toBeTruthy();
+    expect(screen.queryByText("Five pieces")).toBeNull();
+  });
+
+  it("gives focus back to what opened it when it closes", async () => {
+    const opener = document.createElement("button");
+    document.body.append(opener);
+    opener.focus();
+    try {
+      const onClose = vi.fn();
+      await renderIn("en", <NotesPanel notes={notes} lang="en" disabled={false} onResume={() => {}} onOpen={async () => true} onClose={onClose} />);
+      expect(document.activeElement).toBe(screen.getByRole("button", { name: "Close" }));
+      fireEvent.click(screen.getByRole("button", { name: "Close" }));
+      expect(onClose).toHaveBeenCalled();
+      expect(document.activeElement).toBe(opener);
+    } finally {
+      opener.remove();
+    }
   });
 
   it("says there are no notes yet, and can't resume while a turn runs", async () => {

@@ -1,8 +1,8 @@
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { z } from "zod";
-import { type Block } from "./block";
-import { CORE_BLOCK_NAMES } from "./core-blocks";
+import { type Block, blockToolName } from "./block";
+import { CORE_BLOCKS, CORE_BLOCK_NAMES } from "./core-blocks";
 
 export * from "./block";
 export * from "./core-blocks";
@@ -39,6 +39,7 @@ const referenceSchema = z.object({
     }),
 });
 export type HarnessAction = z.output<typeof actionSchema>;
+const TOOL_NAME = /^[a-z][a-z0-9_]*$/;
 const blockSchema = z.custom<Block>(
   (b) => {
     if (typeof b !== "object" || b === null) return false;
@@ -46,6 +47,7 @@ const blockSchema = z.custom<Block>(
     return (
       typeof x.description === "string" &&
       typeof x.visible === "boolean" &&
+      (x.tool === undefined || (typeof x.tool === "string" && TOOL_NAME.test(x.tool))) &&
       x.schema instanceof z.ZodObject &&
       x.schema.safeParse(x.example).success
     );
@@ -65,7 +67,7 @@ const manifestSchema = z.object({
   blocks: z.record(z.string().regex(/^[a-z][a-z0-9_]*$/), blockSchema),
   actions: z.record(z.string().regex(/^[a-z][a-z0-9_-]*$/), actionSchema).default({}),
   /** Optional guided order of action ids (the "Recorrido"). */
-  path: z.array(z.string()).optional(),
+  path: z.array(z.string()).min(1).optional(),
   /** One line under the name on the home screen. */
   tagline: localizedText.optional(),
   /** Logo file in the harness folder (SVG, PNG or JPEG); defaults to the Human Harness H. */
@@ -79,6 +81,14 @@ const manifestSchema = z.object({
 }).superRefine((m, ctx) => {
   for (const name of Object.keys(m.blocks)) {
     if (CORE_BLOCK_NAMES.includes(name)) ctx.addIssue({ code: "custom", path: ["blocks", name], message: `"${name}" is a core block name` });
+  }
+  // Every block becomes an MCP tool: two blocks (core ones included) cannot share a tool name.
+  const tools = new Map<string, string>(Object.entries(CORE_BLOCKS).map(([name, b]) => [blockToolName(name, b), name]));
+  for (const [name, b] of Object.entries(m.blocks)) {
+    const tool = blockToolName(name, b);
+    const other = tools.get(tool);
+    if (other !== undefined) ctx.addIssue({ code: "custom", path: ["blocks", name], message: `Tool "${tool}" is already used by block "${other}"` });
+    else tools.set(tool, name);
   }
   const seen = new Set<string>();
   for (const id of m.path ?? []) {

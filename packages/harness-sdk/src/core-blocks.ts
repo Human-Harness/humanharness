@@ -26,7 +26,7 @@ export type SavedNote = z.infer<typeof saveNoteSchema>;
 export const CORE_BLOCKS = {
   choices: defineBlock({
     description:
-      "Ends every answer: offers the person 2 to 4 ways to continue. `label` is what the person reads. An option with `followUp` stays on this topic (the app sends that text as the person's next message); `action` starts another topic by its id; `next: true` moves on to the next topic of the guided path.",
+      "Ends every answer: offers the person up to 4 ways to continue. `label` is what the person reads. An option with `followUp` stays on this topic (the app sends that text as the person's next message); `action` starts another topic by its id; `next: true` moves on to the next topic of the guided path. If an option has several, the app uses `action`, then `next`, then `followUp`; an option with only a `label` is a follow-up whose text is its label.",
     visible: true,
     schema: choicesSchema,
     example: {

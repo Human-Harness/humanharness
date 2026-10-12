@@ -93,6 +93,7 @@ describe("defineHarness", () => {
     expect(defineHarness({ ...base, languages: [...base.languages], actions }).path).toBeUndefined();
     expect(() => defineHarness({ ...base, languages: [...base.languages], actions, path: ["turn", "nope"] })).toThrow(/nope/);
     expect(() => defineHarness({ ...base, languages: [...base.languages], actions, path: ["turn", "turn"] })).toThrow(/twice/);
+    expect(() => defineHarness({ ...base, languages: [...base.languages], actions, path: [] })).toThrow();
   });
 
   it("declares read-only reference folders", () => {
@@ -194,5 +195,21 @@ describe("core blocks", () => {
     expect(Object.keys(allBlocks(h))).toEqual(["choices", "save_note", "note"]);
     expect(() => defineHarness({ ...base, languages: [...base.languages], blocks: { choices: block } })).toThrow(/core block/);
     expect(() => defineHarness({ ...base, languages: [...base.languages], blocks: { save_note: block } })).toThrow(/core block/);
+  });
+
+  it("validates block tool names and keeps them unique, core tools included", () => {
+    const withBlocks = (blocks: Record<string, typeof block>) => () => defineHarness({ ...base, languages: [...base.languages], blocks });
+    expect(withBlocks({ note: { ...block, tool: "make_note" } })).not.toThrow();
+    expect(withBlocks({ note: { ...block, tool: "Bad-Tool" } })).toThrow();
+    expect(withBlocks({ note: { ...block, tool: "" } })).toThrow();
+    expect(withBlocks({ note: { ...block, tool: "save_note" } })).toThrow(/save_note/);
+    expect(withBlocks({ note: { ...block, tool: "show_choices" } })).toThrow(/show_choices/);
+    expect(withBlocks({ note: block, other: { ...block, tool: "show_note" } })).toThrow(/show_note/);
+  });
+
+  it("documents choices as up to 4 options and the action > next > followUp precedence", () => {
+    expect(CORE_BLOCKS.choices.description).not.toMatch(/2 to 4/);
+    expect(CORE_BLOCKS.choices.description).toMatch(/up to 4/);
+    expect(CORE_BLOCKS.choices.description).toMatch(/action.*next.*followUp/s);
   });
 });

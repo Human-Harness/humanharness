@@ -224,12 +224,18 @@ importers:
       '@agentclientprotocol/sdk':
         specifier: ^1.8.0
         version: 1.8.0(zod@4.6.5)
+      '@humanharness/harness-sdk':
+        specifier: workspace:*
+        version: link:../harness-sdk
       '@modelcontextprotocol/sdk':
         specifier: ^1.32.1
         version: 1.32.1(zod@4.6.5)
       tsx:
         specifier: ^4.23.15
         version: 4.23.15
+      zod:
+        specifier: ^4.6.5
+        version: 4.6.5
 
   packages/harness-sdk:
     dependencies:

@@ -5,7 +5,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { afterEach, describe, expect, it } from "vitest";
 import { type BlockMessage, type Bridge, devLauncher, openBridge, uiServerSpec } from "../src";
 
-const DEMO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../harnesses/demo/harness.config.ts");
+const FIXTURE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../fake-agent/fixtures/notes-harness/harness.config.ts");
 
 let bridge: Bridge | undefined;
 let client: Client | undefined;
@@ -17,7 +17,7 @@ afterEach(async () => {
 
 async function connect(received: BlockMessage[]) {
   bridge = await openBridge((m) => received.push(m));
-  const spec = uiServerSpec({ harnessConfig: DEMO, bridge: { path: bridge.path, token: bridge.token }, launcher: devLauncher() });
+  const spec = uiServerSpec({ harnessConfig: FIXTURE, bridge: { path: bridge.path, token: bridge.token }, launcher: devLauncher() });
   client = new Client({ name: "test", version: "0.0.0" });
   await client.connect(
     new StdioClientTransport({

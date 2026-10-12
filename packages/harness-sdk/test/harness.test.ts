@@ -9,7 +9,7 @@ import { blockToolName, defineBlock, defineHarness, loadHarness, resolveInHarnes
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
 
-const DEMO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../harnesses/demo/harness.config.ts");
+const FIXTURE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../fake-agent/fixtures/notes-harness/harness.config.ts");
 
 const block = defineBlock({
   description: "A note.",
@@ -98,11 +98,11 @@ describe("defineHarness", () => {
 
 describe("loadHarness", () => {
   it("loads a manifest and records its root", async () => {
-    const h = await loadHarness(DEMO);
-    expect(h.id).toBe("demo");
-    expect(h.root).toBe(path.dirname(DEMO));
-    expect(h.configPath).toBe(DEMO);
-    expect(resolveInHarness(h, h.instructions)).toBe(path.join(path.dirname(DEMO), "agent/AGENTS.md"));
+    const h = await loadHarness(FIXTURE);
+    expect(h.id).toBe("notes");
+    expect(h.root).toBe(path.dirname(FIXTURE));
+    expect(h.configPath).toBe(FIXTURE);
+    expect(resolveInHarness(h, h.instructions)).toBe(path.join(path.dirname(FIXTURE), "agent/AGENTS.md"));
     expect(Object.keys(h.blocks)).toEqual(["note", "progress"]);
   });
 
@@ -114,15 +114,15 @@ describe("loadHarness", () => {
   });
 
   it("accepts a root override for compiled manifests", async () => {
-    const h = await loadHarness(DEMO, { root: "/somewhere/else" });
+    const h = await loadHarness(FIXTURE, { root: "/somewhere/else" });
     expect(h.root).toBe("/somewhere/else");
-    expect(h.configPath).toBe(DEMO);
+    expect(h.configPath).toBe(FIXTURE);
   });
 });
 
 describe("resolveInHarness", () => {
   it("rejects paths that escape the harness folder", async () => {
-    const h = await loadHarness(DEMO);
+    const h = await loadHarness(FIXTURE);
     expect(() => resolveInHarness(h, "../../etc/passwd")).toThrow("Path escapes the harness folder: ../../etc/passwd");
   });
 });

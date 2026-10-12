@@ -6,7 +6,9 @@
   "exports": { ".": "./src/index.ts" },
   "dependencies": {
     "@agentclientprotocol/sdk": "^1.8.0",
+    "@humanharness/harness-sdk": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.32.1",
-    "tsx": "^4.23.15"
+    "tsx": "^4.23.15",
+    "zod": "^4.6.5"
   }
 }

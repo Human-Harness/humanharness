@@ -12,7 +12,7 @@ import { type HarnessRuntime, createRuntime } from "../src/runtime";
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
 
-const DEMO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../harnesses/demo/harness.config.ts");
+const FIXTURE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../fake-agent/fixtures/notes-harness/harness.config.ts");
 let runtime: HarnessRuntime | undefined;
 
 afterEach(async () => {
@@ -23,7 +23,7 @@ afterEach(async () => {
 async function setup(script: ClaudeScript, folder = path.join(fs.mkdtempSync(path.join(root, "t-")), "Work")) {
   const argsFile = path.join(root, `args-${Date.now()}-${Math.random()}.json`);
   runtime = await createRuntime({
-    harness: await loadHarness(DEMO),
+    harness: await loadHarness(FIXTURE),
     engine: getEngine("claude"),
     folder,
     gitdir: path.join(path.dirname(folder), "history.git"),
@@ -50,7 +50,7 @@ describe("createRuntime", () => {
     };
     const folder = path.join(fs.mkdtempSync(path.join(root, "t-")), "Work");
     runtime = await createRuntime({
-      harness: await loadHarness(DEMO),
+      harness: await loadHarness(FIXTURE),
       engine,
       folder,
       gitdir: path.join(path.dirname(folder), "history.git"),
@@ -63,7 +63,7 @@ describe("createRuntime", () => {
 
   it("prepares the folder: seed, AGENTS.md with managed section, CLAUDE.md", async () => {
     const { folder } = await setup({ steps: [] });
-    expect(fs.readFileSync(path.join(folder, "README.md"), "utf8")).toContain("demo app");
+    expect(fs.readFileSync(path.join(folder, "README.md"), "utf8")).toContain("test harness");
     const agents = fs.readFileSync(path.join(folder, "AGENTS.md"), "utf8");
     expect(agents).toContain("You are a test assistant");
     expect(agents).toContain("`show_note`");
@@ -95,7 +95,7 @@ describe("createRuntime", () => {
     });
     const events = await send(runtime);
     expect(events.at(-1)).toMatchObject({ type: "done", ok: false, error: { code: "agent-crashed" } });
-    expect(fs.readFileSync(path.join(folder, "README.md"), "utf8")).toContain("demo app");
+    expect(fs.readFileSync(path.join(folder, "README.md"), "utf8")).toContain("test harness");
   });
 
   it("keeps changes when the user cancels", async () => {
@@ -117,7 +117,7 @@ describe("createRuntime", () => {
     const events = await send(runtime);
     expect(events.at(-1)).toMatchObject({ type: "done", ok: false, error: { code: "agent-crashed" } });
     expect(fs.readFileSync(path.join(folder, "mine.md"), "utf8")).toBe("user edit");
-    expect(fs.readFileSync(path.join(folder, "README.md"), "utf8")).toContain("demo app");
+    expect(fs.readFileSync(path.join(folder, "README.md"), "utf8")).toContain("test harness");
     expect((await runtime.history.list()).map((c) => c.message)).toContain("Before message");
   });
 

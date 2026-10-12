@@ -1,0 +1,224 @@
+import { promises as fs } from "node:fs";
+import path from "node:path";
+import { ENGINES, type Mode, brandNames } from "@humanharness/engines";
+import { type LoadedHarness, loadHarness, resolveInHarness } from "@humanharness/harness-sdk";
+import { type HarnessDoc, PERMISSION_KEYS, type PermissionKey, QUESTIONS_ROW, parseHarnessMd } from "./harness-md";
+import { HARNESS_MD, MANIFEST } from "./paths";
+
+export type Severity = "error" | "warning";
+export type RuleId =
+  | "schema"
+  | "i18n"
+  | "brief-missing"
+  | "brand"
+  | "engine-not-allowed"
+  | "harness-md-missing"
+  | "harness-md-mismatch"
+  | "pillar-decisions"
+  | "pillar-flow"
+  | "pillar-context"
+  | "tier-cost"
+  | "permissions-wide"
+  | "open-questions";
+
+export interface Finding {
+  rule: RuleId;
+  severity: Severity;
+  message: string;
+  /** Relative to the harness folder. */
+  file: string;
+  line?: number;
+}
+
+export interface CheckResult {
+  findings: Finding[];
+  /** The loaded manifest; null when it failed the schema. */
+  harness: LoadedHarness | null;
+}
+
+const finding =
+  (severity: Severity) =>
+  (rule: RuleId, message: string, file: string, line?: number): Finding => ({ rule, severity, message, file, ...(line ? { line } : {}) });
+const error = finding("error");
+
+const read = (file: string) => fs.readFile(file, "utf8").catch(() => null);
+const exists = (p: string) => fs.access(p).then(() => true, () => false);
+
+/** Validates the harness in `dir` (spec §7). Errors make the CLI exit with 1. */
+export async function checkHarness(dir: string, opts: { mode?: Mode } = {}): Promise<CheckResult> {
+  const root = path.resolve(dir);
+  const findings: Finding[] = [];
+  const harness = await loadManifest(root, findings);
+  const mdText = await read(path.join(root, HARNESS_MD));
+  const doc = mdText === null ? null : parseHarnessMd(mdText);
+  if (!doc) findings.push(error("harness-md-missing", "HARNESS.md is missing: create it with `humanharness init` or the /new-harness guide.", HARNESS_MD));
+  else if (!doc.flow) findings.push(error("harness-md-missing", "HARNESS.md has no Flow table (| Action | Tier | Cost | Purpose |) under ## Flow.", HARNESS_MD, doc.sections.get("Flow")?.line));
+  if (!harness) return { findings, harness: null };
+
+  const briefs = await readBriefs(harness);
+  findings.push(...briefFindings(harness, briefs));
+  findings.push(...(await i18nFindings(harness)));
+  findings.push(...brandFindings(harness));
+  findings.push(...engineFindings(harness, opts.mode ?? "development"));
+  if (doc?.flow) findings.push(...mismatchFindings(harness, doc));
+  return { findings, harness };
+}
+
+async function loadManifest(root: string, findings: Finding[]): Promise<LoadedHarness | null> {
+  const file = path.join(root, MANIFEST);
+  if (!(await exists(file))) {
+    findings.push(error("schema", "harness.config.ts is missing.", MANIFEST));
+    return null;
+  }
+  try {
+    return await loadHarness(file);
+  } catch (err) {
+    const issues = (err as { issues?: { path: PropertyKey[]; message: string }[] }).issues;
+    if (Array.isArray(issues)) {
+      for (const issue of issues) findings.push(error("schema", `${issue.path.map(String).join(".") || "(manifest)"}: ${issue.message}`, MANIFEST));
+    } else findings.push(error("schema", err instanceof Error ? err.message : String(err), MANIFEST));
+    return null;
+  }
+}
+
+/** Each action's brief text; null when it can't be read. */
+async function readBriefs(h: LoadedHarness): Promise<Map<string, string | null>> {
+  const briefs = new Map<string, string | null>();
+  for (const [id, action] of Object.entries(h.actions)) briefs.set(id, await read(resolveInHarness(h, action.prompt)));
+  return briefs;
+}
+
+function briefFindings(h: LoadedHarness, briefs: Map<string, string | null>): Finding[] {
+  return Object.entries(h.actions).flatMap(([id, action]) => {
+    const text = briefs.get(id);
+    if (text === null || text === undefined) return [error("brief-missing", `Action "${id}": its brief ${action.prompt} does not exist.`, MANIFEST)];
+    if (!text.trim()) return [error("brief-missing", `Action "${id}": its brief ${action.prompt} is empty.`, path.relative(h.root, resolveInHarness(h, action.prompt)))];
+    return [];
+  });
+}
+
+/** Every key of a locale file, nested keys joined with dots. */
+export function flatKeys(o: Record<string, unknown>, prefix = ""): string[] {
+  return Object.entries(o).flatMap(([k, v]) =>
+    typeof v === "object" && v !== null && !Array.isArray(v) ? flatKeys(v as Record<string, unknown>, `${prefix}${k}.`) : [`${prefix}${k}`],
+  );
+}
+
+const UI_KEY = /\bt\(\s*["'`]([A-Za-z0-9_.-]+)["'`]/g;
+
+async function sourceFiles(dir: string): Promise<string[]> {
+  const entries = await fs.readdir(dir, { withFileTypes: true, recursive: true }).catch(() => []);
+  return entries
+    .filter((e) => e.isFile() && /\.tsx?$/.test(e.name))
+    .map((e) => path.join(e.parentPath, e.name))
+    .sort();
+}
+
+async function i18nFindings(h: LoadedHarness): Promise<Finding[]> {
+  const out: Finding[] = [];
+  const localesDir = h.locales ?? "locales";
+  const uiFiles = await sourceFiles(path.join(h.root, "ui"));
+  if (!(await exists(resolveInHarness(h, localesDir))) && uiFiles.length === 0) return out;
+  const keys = new Map<string, Set<string>>();
+  for (const lang of h.languages) {
+    const file = path.join(localesDir, `${lang}.json`);
+    const text = await read(resolveInHarness(h, file));
+    if (text === null) {
+      out.push(error("i18n", `${file} is missing: every declared language needs its strings.`, file));
+      continue;
+    }
+    try {
+      keys.set(lang, new Set(flatKeys(JSON.parse(text) as Record<string, unknown>)));
+    } catch {
+      out.push(error("i18n", `${file} is not valid JSON.`, file));
+    }
+  }
+  const all = [...new Set([...keys.values()].flatMap((s) => [...s]))];
+  for (const [lang, set] of keys) {
+    for (const key of all) if (!set.has(key)) out.push(error("i18n", `"${key}" is missing in ${lang}.`, path.join(localesDir, `${lang}.json`)));
+  }
+  for (const file of uiFiles) {
+    const text = await fs.readFile(file, "utf8");
+    for (const m of text.matchAll(UI_KEY)) {
+      const line = text.slice(0, m.index).split("\n").length;
+      for (const [lang, set] of keys) {
+        if (!set.has(m[1])) out.push(error("i18n", `"${m[1]}" is used here but missing in ${lang}.`, path.relative(h.root, file), line));
+      }
+    }
+  }
+  return out;
+}
+
+const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/** The first provider or model brand in `text` (whole words, any case), or null. */
+export function findBrand(text: string): string | null {
+  for (const brand of brandNames()) {
+    if (new RegExp(`(?<![A-Za-z0-9])${escapeRegExp(brand)}(?![A-Za-z0-9])`, "i").test(text)) return brand;
+  }
+  return null;
+}
+
+function brandFindings(h: LoadedHarness): Finding[] {
+  // Only the app's identity is checked: briefs and instructions may name engines freely, and a word
+  // that merely contains a brand ("Claudette", "codexes") is not one.
+  const places: [where: string, field: string, text: string | undefined][] = [
+    ["name (es)", "app name", h.name.es],
+    ["name (en)", "app name", h.name.en],
+    ["tagline (es)", "app tagline", h.tagline?.es],
+    ["tagline (en)", "app tagline", h.tagline?.en],
+    ["logo file name", "logo file name", h.logo ? path.basename(h.logo) : undefined],
+  ];
+  return places.flatMap(([where, field, text]) => {
+    const brand = text ? findBrand(text) : null;
+    if (!text || !brand) return [];
+    const message = `The ${where} "${text}" uses the word "${brand}", a provider or model brand in the ${field}: the app would look made or endorsed by that provider. Use no provider or model brands in names, taglines or logos.`;
+    return [error("brand", message, MANIFEST)];
+  });
+}
+
+function engineFindings(h: LoadedHarness, mode: Mode): Finding[] {
+  return h.engines.flatMap((id) => {
+    const engine = ENGINES.find((e) => e.id === id);
+    if (!engine) return [error("engine-not-allowed", `Unknown engine "${id}". Known: ${ENGINES.map((e) => e.id).join(", ")}.`, MANIFEST)];
+    if (engine.status === "excluded") return [error("engine-not-allowed", `${engine.name} is excluded: its terms don't allow this use (${engine.statusSource}).`, MANIFEST)];
+    if (engine.status === "pending" && mode === "distribution") {
+      return [error("engine-not-allowed", `${engine.name} is pending legal review: it can only be used in development.`, MANIFEST)];
+    }
+    return [];
+  });
+}
+
+function mismatchFindings(h: LoadedHarness, doc: HarnessDoc): Finding[] {
+  const out: Finding[] = [];
+  const mismatch = (message: string, line?: number) => out.push(error("harness-md-mismatch", message, HARNESS_MD, line));
+  const flow = doc.flow ?? [];
+  const flowLine = doc.sections.get("Flow")?.line;
+  const rows = new Map(flow.filter((r) => r.action !== QUESTIONS_ROW).map((r) => [r.action, r]));
+  for (const [id, action] of Object.entries(h.actions)) {
+    const row = rows.get(id);
+    const tier = action.tier ?? "standard";
+    if (!row) mismatch(`Action "${id}" is missing from the Flow table.`, flowLine);
+    else if (row.tier !== tier) mismatch(`"${id}": the Flow table says tier ${row.tier}, harness.config.ts says ${tier}.`, row.line);
+  }
+  for (const row of rows.values()) {
+    if (!Object.hasOwn(h.actions, row.action)) mismatch(`The Flow table lists "${row.action}", which harness.config.ts doesn't declare.`, row.line);
+  }
+  const questions = flow.find((r) => r.action === QUESTIONS_ROW);
+  const questionsTier = h.questions?.tier ?? "standard";
+  if (!questions) mismatch(`The Flow table has no ${QUESTIONS_ROW} row.`, flowLine);
+  else if (questions.tier !== questionsTier) mismatch(`${QUESTIONS_ROW}: the Flow table says tier ${questions.tier}, harness.config.ts says ${questionsTier}.`, questions.line);
+
+  const permsLine = doc.sections.get("Permissions and engines")?.line;
+  const manifest: Record<PermissionKey, string> = { edit: h.permissions.edit, exec: String(h.permissions.exec), web: String(h.permissions.web) };
+  for (const key of PERMISSION_KEYS) {
+    const p = doc.permissions.find((x) => x.key === key);
+    if (!p) mismatch(`Permissions and engines has no "${key}:" line.`, permsLine);
+    else if (p.value !== manifest[key]) mismatch(`${key}: HARNESS.md says ${p.value}, harness.config.ts says ${manifest[key]}.`, p.line);
+  }
+  if (!doc.engines) mismatch('Permissions and engines has no "engines:" line.', permsLine);
+  else if ([...doc.engines.ids].sort().join(",") !== [...h.engines].sort().join(",")) {
+    mismatch(`engines: HARNESS.md says ${doc.engines.ids.join(", ")}, harness.config.ts says ${h.engines.join(", ")}.`, doc.engines.line);
+  }
+  return out;
+}

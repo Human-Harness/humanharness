@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { getEngine } from "@humanharness/engines";
-import { readTestHooks, testEngineStatus } from "../src/main/test-hooks";
+import { devEngine, readTestHooks, testEngineStatus } from "../src/main/test-hooks";
 
 const engines = JSON.stringify({
   claude: { command: ["/usr/local/bin/node", "fake-claude.ts"], env: { HH_FAKE_SCRIPT: "/s.json", ANTHROPIC_API_KEY: "x", HOME: "/x" } },
@@ -39,5 +39,14 @@ describe("testEngineStatus", () => {
       verified: true,
     });
     expect(testEngineStatus(getEngine("codex"), false).noticeAccepted).toBe(false);
+  });
+});
+
+describe("devEngine", () => {
+  it("preselects an engine the harness offers, in development builds only", () => {
+    expect(devEngine({ HH_DEV_ENGINE: "codex" }, false, ["claude", "codex"])).toBe("codex");
+    expect(devEngine({ HH_DEV_ENGINE: "codex" }, true, ["claude", "codex"])).toBeUndefined();
+    expect(devEngine({ HH_DEV_ENGINE: "gemini" }, false, ["claude", "codex"])).toBeUndefined();
+    expect(devEngine({}, false, ["claude"])).toBeUndefined();
   });
 });

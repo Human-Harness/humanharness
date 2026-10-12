@@ -47,7 +47,7 @@ import { saveWithFolderChange } from "./folder-change";
 import { type ResolvedReference, displayPath, resolveReferences, usableReferences } from "./references";
 import { TaskManager } from "./task-manager";
 import { TaskStore, emptyTasks } from "./task-store";
-import { readTestHooks, testEngineStatus } from "./test-hooks";
+import { devEngine, readTestHooks, testEngineStatus } from "./test-hooks";
 
 declare const __HARNESS_DIR__: string;
 
@@ -650,6 +650,9 @@ if (loaded) {
   app.whenReady().then(async () => {
     config = new ConfigStore(app.getPath("userData"));
     shared = new SharedConfigStore(hooks.sharedDir ?? sharedConfigDir());
+    // `humanharness dev --engine <id>`: a fresh app starts with that engine chosen (development builds only).
+    const preselect = devEngine(process.env, app.isPackaged, availableEngines(harness.engines, mode()).map((e) => e.id));
+    if (preselect && !(await config.load()).engineId) await config.save({ engineId: preselect });
     references = resolveReferences(harness.folder.references, { harnessDir: __HARNESS_DIR__, home: os.homedir(), packaged: app.isPackaged });
     nativeTheme.themeSource = (await config.load()).appearance ?? "system";
     nativeTheme.on("updated", () => window?.setBackgroundColor(nativeTheme.shouldUseDarkColors ? PAPER.dark : PAPER.light));

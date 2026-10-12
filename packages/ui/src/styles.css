@@ -176,3 +176,15 @@ input[type="text"], input:not([type]) { font: inherit; height: 28px; padding: 0 
 .hh-choice-list { display: flex; flex-wrap: wrap; gap: 8px; }
 .hh-choice { flex: 1 1 180px; height: auto; min-height: 36px; justify-content: flex-start; padding: 6px 10px; border-radius: 8px; text-align: left; }
 .hh-choice.next, .hh-choice[aria-checked="true"] { background: var(--hh-ink); color: var(--hh-on-ink); border-color: var(--hh-ink); }
+.hh-notes { position: fixed; inset: 52px 0 0 auto; width: min(420px, 100%); box-sizing: border-box; padding: 16px 18px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; background: var(--hh-sheet); border-left: 1px solid var(--hh-line-strong); box-shadow: -18px 0 50px rgba(25, 30, 36, 0.16); }
+.hh-notes header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.hh-notes h2 { font-size: 15px; font-weight: 600; }
+.hh-note-cards { list-style: none; margin: 0; padding: 0; }
+.hh-note { display: grid; gap: 6px; padding: 11px 14px; border-top: 1px solid var(--hh-line); }
+.hh-note:first-child { border-top: none; }
+.hh-note.open { background: var(--hh-paper); }
+.hh-note ul { margin: 0; padding-left: 18px; display: grid; gap: 3px; color: var(--hh-slate); line-height: 1.45; }
+.hh-note-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.hh-note-toggle { width: 100%; height: auto; flex-direction: column; align-items: stretch; gap: 4px; padding: 0; border: none; background: transparent; text-align: left; }
+.hh-note-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.hh-notes-savings { padding: 10px 12px; border: 1px solid var(--hh-line); border-radius: 10px; background: var(--hh-surface); color: var(--hh-ok); line-height: 1.45; }

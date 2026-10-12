@@ -1,8 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import type { ModelProfile } from "@humanharness/engines";
 import type { Session } from "@humanharness/runtime";
 import type { ActionStatus, TaskStatus } from "@humanharness/ui/client";
+import { cleanProfile } from "./models";
 
 /** The task in progress: one engine session from its first turn to its note. */
 export interface CurrentTask {
@@ -19,6 +21,14 @@ export interface CurrentTask {
   turns: number;
   /** The agent's note for this task was written. */
   noteSaved?: boolean;
+  /** The model, effort and cap the task runs on, resolved when it started (resources spec §5). */
+  profile?: ModelProfile;
+  /** Context in use by the task's session after its last turn, and the window when the engine said. */
+  context?: { used: number; size?: number };
+  /** A checkpoint ran since the last compaction (spec §6). */
+  checkpointed?: boolean;
+  /** A checkpoint wrote this task's note; the closing turn still updates it. */
+  checkpointNote?: boolean;
 }
 
 /** `<folder>/.harness/tasks.json`: the current task and how each action ended. Replaces the runtime's session.json. */
@@ -33,7 +43,7 @@ export interface TasksFile {
 export const emptyTasks = (): TasksFile => ({ version: 1, current: null, actions: {} });
 
 const ACTION_STATUSES: readonly string[] = ["done", "unsaved", "unfinished"];
-const TASK_STATUSES: readonly string[] = ["running", "waiting", "closing"];
+const TASK_STATUSES: readonly string[] = ["running", "waiting", "closing", "checkpoint"];
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
 /**
@@ -51,6 +61,9 @@ function cleanSession(s: unknown): Session | undefined {
 function cleanCurrent(c: unknown): CurrentTask | null {
   if (!isObject(c) || typeof c.id !== "string" || !TASK_STATUSES.includes(c.status as string)) return null;
   const session = cleanSession(c.session);
+  const profile = cleanProfile(c.profile);
+  const tokens = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v) && v >= 0;
+  const ctx = isObject(c.context) && tokens(c.context.used) ? { used: c.context.used, ...(tokens(c.context.size) ? { size: c.context.size } : {}) } : undefined;
   return {
     id: c.id,
     ...(typeof c.action === "string" ? { action: c.action } : {}),
@@ -60,6 +73,10 @@ function cleanCurrent(c: unknown): CurrentTask | null {
     startedAt: typeof c.startedAt === "string" ? c.startedAt : "",
     turns: typeof c.turns === "number" && Number.isFinite(c.turns) ? c.turns : 0,
     ...(typeof c.noteSaved === "boolean" ? { noteSaved: c.noteSaved } : {}),
+    ...(profile ? { profile } : {}),
+    ...(ctx ? { context: ctx } : {}),
+    ...(typeof c.checkpointed === "boolean" ? { checkpointed: c.checkpointed } : {}),
+    ...(typeof c.checkpointNote === "boolean" ? { checkpointNote: c.checkpointNote } : {}),
   };
 }
 

@@ -196,8 +196,11 @@ export interface SendOptions {
   action?: string;
 }
 
-/** Where the current task is: running a turn, waiting for the person, or closing (asking for its note). */
-export type TaskStatus = "running" | "waiting" | "closing";
+/**
+ * Where the current task is: running a turn, waiting for the person, closing (asking for its note), or
+ * saving a checkpoint note before the context reaches its cap.
+ */
+export type TaskStatus = "running" | "waiting" | "closing" | "checkpoint";
 /** How an action's last task ended: its note was saved, the closing turn brought none, or it was interrupted. */
 export type ActionStatus = "done" | "unsaved" | "unfinished";
 

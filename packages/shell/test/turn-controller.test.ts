@@ -24,7 +24,7 @@ function fakeRuntime() {
     emit({ type: "done", ok: false, error: { code: "cancelled" } });
     end.resolve();
   });
-  const send = vi.fn((_m: string, e: Emit) => {
+  const send = vi.fn((_m: string, e: Emit, _options?: unknown) => {
     emit = e;
     return { cancel, done: end.promise };
   });
@@ -452,5 +452,49 @@ describe("TurnController for tasks", () => {
     await sent;
     expect(seen).toEqual(["context", "compaction", "done"]);
     expect(events.map((e) => e.type)).toEqual(["done"]);
+  });
+
+  it("runs the turn on the task's profile", async () => {
+    const fake = fakeRuntime();
+    const { controller } = setup({ ensureRuntime: async () => fake.runtime });
+    const profile = { engine: "claude", tier: "deep" as const, model: "opus", effort: "high" as const, cap: 400_000 };
+    const sent = controller.send("hi", { profile });
+    await vi.waitFor(() => expect(fake.send).toHaveBeenCalled());
+    fake.finish([{ type: "done", ok: true }]);
+    await sent;
+    expect(fake.send.mock.calls[0][2]).toEqual({ profile });
+  });
+
+  it("holds a model-unavailable end for a retry: nothing logged or shown, the caller told", async () => {
+    const fake = fakeRuntime();
+    const { controller, entries, events } = setup({ ensureRuntime: async () => fake.runtime });
+    const seen: Event[] = [];
+    const sent = controller.send("hi", { holdModelError: true, onEvent: (e) => seen.push(e) });
+    await vi.waitFor(() => expect(fake.send).toHaveBeenCalled());
+    fake.finish([{ type: "done", ok: false, error: { code: "model-unavailable" } }]);
+    await sent;
+    expect(entries.map((e) => e.role)).toEqual(["user"]);
+    expect(events).toEqual([]);
+    expect(seen).toEqual([{ type: "done", ok: false, error: { code: "model-unavailable" } }]);
+  });
+
+  it("shows any other failure of a held turn as usual", async () => {
+    const fake = fakeRuntime();
+    const { controller, events } = setup({ ensureRuntime: async () => fake.runtime });
+    const sent = controller.send("hi", { holdModelError: true });
+    await vi.waitFor(() => expect(fake.send).toHaveBeenCalled());
+    fake.finish([{ type: "done", ok: false, error: { code: "out-of-quota" } }]);
+    await sent;
+    expect(events).toEqual([{ type: "done", ok: false, error: { code: "out-of-quota" } }]);
+  });
+
+  it("logs no user entry for the retry of a held turn", async () => {
+    const fake = fakeRuntime();
+    const { controller, entries } = setup({ ensureRuntime: async () => fake.runtime });
+    const sent = controller.send("hi", { skipUserEntry: true });
+    await vi.waitFor(() => expect(fake.send).toHaveBeenCalled());
+    fake.finish([{ type: "text", delta: "ok" }, { type: "done", ok: true }]);
+    await sent;
+    expect(entries.map((e) => e.role)).toEqual(["assistant"]);
   });
 });

@@ -111,6 +111,20 @@ describe("TaskStore: the current task, field by field", () => {
     });
   });
 
+  it("keeps a task's profile, context and checkpoint flags; drops a profile whose model reads as a flag", async () => {
+    const folder = tmp();
+    const store = new TaskStore(folder);
+    const profile = { engine: "claude", tier: "deep" as const, model: "opus", effort: "high" as const, cap: 400_000, fallbackFrom: "opus-x" };
+    const current = { id: "t1", status: "checkpoint" as const, startedAt: "", turns: 1, profile, context: { used: 320_000, size: 1_000_000 }, checkpointed: true, checkpointNote: true };
+    await store.save({ version: 1, current, actions: {} });
+    expect((await store.load()).current).toEqual(current);
+    fs.writeFileSync(
+      store.file,
+      JSON.stringify({ version: 1, current: { id: "t1", status: "waiting", startedAt: "", turns: 1, profile: { ...profile, model: "--x" }, context: { used: -1 }, checkpointed: "yes" }, actions: {} }),
+    );
+    expect((await store.load()).current).toEqual({ id: "t1", status: "waiting", startedAt: "", turns: 1 });
+  });
+
   it("after an engine change: no task carries over, statuses stay, the engine is forgotten", async () => {
     const folder = tmp();
     const store = new TaskStore(folder);

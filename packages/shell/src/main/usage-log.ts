@@ -7,8 +7,11 @@ import type { ChatEntry, TurnUsage, UsageSummary } from "@humanharness/ui/client
 export interface UsageMeta {
   action?: string;
   task?: string;
-  /** `run`: the task's own turns; `close`: the turn that asks for its note. */
-  phase?: "run" | "close";
+  /**
+   * `run`: the task's own turns; `close`: the turn that asks for its note; `checkpoint`: the quiet turn that
+   * saves a note before the context reaches its cap.
+   */
+  phase?: "run" | "close" | "checkpoint";
 }
 
 /** One turn in `<folder>/.harness/usage.jsonl`. Only what the engine reported; never leaves the machine. */
@@ -17,7 +20,7 @@ export interface UsageRecord {
   engine: string;
   action?: string;
   task?: string;
-  phase?: "run" | "close";
+  phase?: "run" | "close" | "checkpoint";
   ok: boolean;
   usage?: TurnUsage;
   /** Latest windows the turn reported. */

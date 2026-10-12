@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
 import { type AcpScript, fakeAcpCommand, writeScript } from "@humanharness/fake-agent";
-import { AcpTransport, type PermissionPolicy, decidePermission, isUiTool } from "../src/acp";
+import { AcpTransport, type PermissionPolicy, activityDetail, decidePermission, isUiTool } from "../src/acp";
 import type { Event } from "../src/events";
 import type { Session } from "../src/transport";
 
@@ -21,7 +21,7 @@ afterEach(async () => {
 function setup(
   scriptOrFn: AcpScript | ((folder: string) => AcpScript),
   session: Session = { id: "local-id", started: false },
-  extra: { minAdapterVersion?: string } = {},
+  extra: { minAdapterVersion?: string; references?: string[] } = {},
 ) {
   const folder = fs.mkdtempSync(path.join(root, "t-"));
   const script = typeof scriptOrFn === "function" ? scriptOrFn(folder) : scriptOrFn;
@@ -71,6 +71,35 @@ describe("isUiTool", () => {
     expect(isUiTool("anything", { server: "ui", tool: "show_note" })).toBe(true);
     expect(isUiTool("mcp.notes.search", { server: "notes" })).toBe(false);
     expect(isUiTool("Run command", { command: "ls" })).toBe(false);
+  });
+});
+
+describe("activityDetail", () => {
+  const abs = "/Users/someone/work/repo/docs/architecture/manifest.md";
+  it("shows the file name of a file tool from its locations or rawInput, like Claude's lines", () => {
+    expect(activityDetail({ kind: "read", title: `Read file '${abs}'`, locations: [{ path: abs }] })).toBe("manifest.md");
+    expect(activityDetail({ kind: "edit", title: "Edit", rawInput: { path: abs } })).toBe("manifest.md");
+    expect(activityDetail({ kind: "read", title: "Read", rawInput: { parsed_cmd: [{ type: "read", path: abs }] } })).toBe("manifest.md");
+  });
+
+  it("falls back to the title without absolute paths or a repeated verb", () => {
+    expect(activityDetail({ kind: "read", title: `Read file '${abs}'` })).toBe("manifest.md");
+    expect(activityDetail({ kind: "read", title: "Read notes/a.md" })).toBe("a.md");
+    expect(activityDetail({ kind: "search", title: `Search "defineHarness" in ${path.dirname(abs)}` })).toBe('Search "defineHarness" in architecture');
+    expect(activityDetail({ kind: "search", title: "Search ~/work/repo/src for x" })).toBe("Search src for x");
+    expect(activityDetail({ kind: "other", title: "List C:\\Users\\someone\\repo" })).toBe("List repo");
+    expect(activityDetail({ kind: "fetch", title: "Fetch https://example.com/a/b" })).toBe("Fetch https://example.com/a/b");
+    expect(activityDetail({ kind: "read", title: "Read the manifest" })).toBe("the manifest");
+    expect(activityDetail({ kind: "read" })).toBe("");
+  });
+
+  it("never shows the home folder", () => {
+    const cases = [
+      { kind: "read", title: `Read file '${abs}'` },
+      { kind: "search", title: `grep -rn x ${abs}` },
+      { kind: "execute", title: `cat ${abs}`, locations: [{ path: abs }] },
+    ];
+    for (const c of cases) expect(activityDetail(c)).not.toContain("/Users/");
   });
 });
 
@@ -129,6 +158,18 @@ describe("decidePermission", () => {
 
   it("never picks an 'always' option", () => {
     expect(chosen(ask({ kind: "read", locations: [{ path: "/work/x" }] }))).toBe("allow");
+  });
+
+  it("allows reads in the reference folders but never edits there", () => {
+    const withRefs: PermissionPolicy = { ...policy(), readRoots: ["/ref"] };
+    const decide = (toolCall: Record<string, unknown>) =>
+      chosen(decidePermission({ sessionId: "s", toolCall: { toolCallId: "t", ...toolCall }, options } as never, withRefs));
+    expect(decide({ kind: "read", locations: [{ path: "/ref/docs/a.md" }] })).toBe("allow");
+    expect(decide({ kind: "search", locations: [{ path: "/ref" }] })).toBe("allow");
+    expect(decide({ kind: "read", locations: [{ path: "/work/a.md" }, { path: "/ref/b.md" }] })).toBe("allow");
+    expect(decide({ kind: "read", locations: [{ path: "/elsewhere/a.md" }] })).toBe("cancel");
+    expect(decide({ kind: "read", locations: [{ path: "/reference/a.md" }] })).toBe("cancel");
+    expect(decide({ kind: "edit", locations: [{ path: "/ref/a.md" }] })).toBe("cancel");
   });
 });
 
@@ -223,8 +264,8 @@ describe("AcpTransport", () => {
     const events = await run(transport);
     expect(events).toEqual([
       { type: "text", delta: "Looking" },
-      { type: "activity", id: "r1", kind: "read", detail: "Read notes/a.md", state: "start" },
-      { type: "activity", id: "r1", kind: "read", detail: "Read notes/a.md", state: "end", error: false },
+      { type: "activity", id: "r1", kind: "read", detail: "a.md", state: "start" },
+      { type: "activity", id: "r1", kind: "read", detail: "a.md", state: "end", error: false },
       { type: "paragraph" },
       { type: "text", delta: "Done" },
       { type: "done", ok: true },
@@ -335,5 +376,56 @@ describe("AcpTransport", () => {
     });
     const events = await run(transport);
     expect(events).toEqual([{ type: "done", ok: false, error: { code: "engine-not-installed", detail: expect.any(String) } }]);
+  });
+
+  it("closes the session on endSession and opens a new one on the next turn, in the same process", async () => {
+    const { transport, log, started } = setup({ closeSession: true, sessionId: "s", turns: [[chunk("a")], [chunk("b")]] });
+    await run(transport);
+    await transport.endSession();
+    const events = await run(transport);
+    expect(events).toEqual([{ type: "text", delta: "b" }, { type: "done", ok: true }]);
+    expect(log().filter((l) => l.method === "session/close").map((l) => l.params.sessionId)).toEqual(["s"]);
+    expect(log().filter((l) => l.method === "session/new")).toHaveLength(2);
+    expect(log().filter((l) => l.method === "initialize")).toHaveLength(1);
+    expect(started.map((s) => s.id)).toEqual(["s", "s-2"]);
+    expect(log().filter((l) => l.method === "session/set_mode").map((l) => l.params.sessionId)).toEqual(["s", "s-2"]);
+  });
+
+  it("closes the process when the agent doesn't offer session/close, so the next turn reconnects", async () => {
+    const { transport, log } = setup({ turns: [[chunk("a")], [chunk("b")]] });
+    await run(transport);
+    await transport.endSession();
+    expect(await run(transport)).toEqual([{ type: "text", delta: "a" }, { type: "done", ok: true }]);
+    expect(log().some((l) => l.method === "session/close")).toBe(false);
+    expect(log().filter((l) => l.method === "session/new")).toHaveLength(2);
+    expect(log().filter((l) => l.method === "initialize")).toHaveLength(2);
+  });
+
+  it("gives up on a session/close that never answers and reconnects on the next turn", async () => {
+    const { transport, log } = setup({ closeSession: true, hangClose: true, turns: [[chunk("a")]] });
+    transport.sessionCloseTimeoutMs = 200;
+    await run(transport);
+    const t0 = Date.now();
+    await transport.endSession();
+    expect(Date.now() - t0).toBeLessThan(2000);
+    expect(log().filter((l) => l.method === "session/close")).toHaveLength(1);
+    expect((await run(transport)).at(-1)).toEqual({ type: "done", ok: true });
+    expect(log().filter((l) => l.method === "initialize")).toHaveLength(2);
+  });
+
+  it("does nothing on endSession before the first turn", async () => {
+    const { transport, log } = setup({ closeSession: true, turns: [] });
+    await transport.endSession();
+    expect(log()).toEqual([]);
+  });
+
+  it("lets the agent read the reference folders", async () => {
+    const { transport, log } = setup(
+      { turns: [[{ permission: { toolCall: { toolCallId: "r1", kind: "read", locations: [{ path: "/ref/docs/a.md" }] } } }]] },
+      undefined,
+      { references: ["/ref"] },
+    );
+    await run(transport);
+    expect(log().find((l) => l.method === "permission-outcome")?.params).toEqual({ outcome: "selected", optionId: "allow" });
   });
 });

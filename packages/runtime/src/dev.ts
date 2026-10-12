@@ -7,6 +7,7 @@ import { parseArgs } from "node:util";
 import { availableEngines } from "@humanharness/engines";
 import { LANGUAGES, type Language, loadHarness } from "@humanharness/harness-sdk";
 import { createRuntime } from "./runtime";
+import { readSession, writeSession } from "./session-store";
 
 const { values, positionals } = parseArgs({
   allowPositionals: true,
@@ -42,6 +43,9 @@ const runtime = await createRuntime({
   folder,
   gitdir: path.join(os.homedir(), ".humanharness", "dev", "history", `${harness.id}-${createHash("sha256").update(folder).digest("hex").slice(0, 12)}`),
   language: values.language as Language,
+  // The dev CLI keeps one session per folder in .harness/session.json, so each run continues the last.
+  session: await readSession(folder, engine.id),
+  onSession: (s) => void writeSession(folder, engine.id, s).catch(() => {}),
 });
 
 const turn = runtime.send(message, (e) => {

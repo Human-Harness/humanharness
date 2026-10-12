@@ -22,17 +22,38 @@ export function allowedTools(permissions: Permissions, mcp: McpServerSpec[]): st
 }
 
 /** Deny rules beat allow rules, so project settings or hooks cannot re-enable what the manifest excludes. */
-export function disallowedTools(permissions: Permissions): string[] {
+export function disallowedTools(permissions: Permissions, references: string[] = []): string[] {
   const tools = ["AskUserQuestion"];
   if (permissions.edit === "none") tools.push("Edit", "Write", "MultiEdit", "NotebookEdit");
   if (!permissions.exec) tools.push("Bash");
   if (!permissions.web) tools.push("WebSearch", "WebFetch");
   tools.push("Edit(.claude/**)", "Write(.claude/**)", "MultiEdit(.claude/**)");
+  // `--add-dir` makes a reference folder a working directory, where acceptEdits would accept edits:
+  // deny them by absolute path (`//` starts an absolute path in permission rules).
+  for (const ref of references) {
+    const dir = referenceRulePath(ref);
+    tools.push(`Edit(/${dir}/**)`, `Write(/${dir}/**)`, `MultiEdit(/${dir}/**)`);
+  }
   return tools;
 }
 
+/**
+ * An absolute folder as permission rules spell it: resolved, without a trailing slash, with forward
+ * slashes (`C:\a\b` becomes `/c/a/b` on Windows). The root folder becomes "".
+ */
+export function referenceRulePath(dir: string, platform: NodeJS.Platform = process.platform): string {
+  if (platform === "win32") {
+    const resolved = path.win32.resolve(dir);
+    const drive = /^([a-zA-Z]):(.*)$/.exec(resolved);
+    const rest = (drive ? drive[2] : resolved).replace(/\\/g, "/").replace(/\/+$/, "");
+    return drive ? `/${drive[1].toLowerCase()}${rest}` : rest;
+  }
+  return path.posix.resolve(dir).replace(/\/+$/, "");
+}
+
 /** Arguments for the unmodified official `claude` binary; the prompt goes in via stdin. Never touches credentials or auth settings. */
-export function claudeArgs(o: Pick<TransportOptions, "session" | "mcp" | "permissions" | "persistSession">): string[] {
+export function claudeArgs(o: Pick<TransportOptions, "session" | "mcp" | "permissions" | "persistSession" | "references">): string[] {
+  if (o.session.id.startsWith("-")) throw new Error(`Refusing a session id that reads as a flag: ${JSON.stringify(o.session.id)}`);
   const mcpServers = Object.fromEntries(
     o.mcp.map((s) => [s.name, { type: "stdio", command: s.command, args: s.args, env: s.env }]),
   );
@@ -44,9 +65,10 @@ export function claudeArgs(o: Pick<TransportOptions, "session" | "mcp" | "permis
     "--setting-sources", "project",
     "--permission-mode", o.permissions.edit === "folder" ? "acceptEdits" : "default",
     "--allowedTools", allowedTools(o.permissions, o.mcp).join(","),
-    "--disallowedTools", disallowedTools(o.permissions).join(","),
+    "--disallowedTools", disallowedTools(o.permissions, o.references ?? []).join(","),
     "--strict-mcp-config",
     "--mcp-config", JSON.stringify({ mcpServers }),
+    ...(o.references ?? []).flatMap((dir) => ["--add-dir", dir]),
     ...(o.session.started ? ["--resume", o.session.id] : ["--session-id", o.session.id]),
     ...(o.persistSession === false ? ["--no-session-persistence"] : []),
   ];
@@ -273,6 +295,11 @@ export class ClaudeCliTransport implements Transport {
         settle(code, sig);
       });
     });
+  }
+
+  /** Claude keeps the old session on its side; the app never resumes it. The next turn uses a new `--session-id`. */
+  async endSession(): Promise<void> {
+    this.o.session = { id: randomUUID(), started: false };
   }
 
   async close(): Promise<void> {}

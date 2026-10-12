@@ -13,6 +13,8 @@ export interface TransportOptions {
   session: Session;
   mcp: McpServerSpec[];
   permissions: Permissions;
+  /** Folders the agent may read but never change (absolute paths). */
+  references?: string[];
   /** ACP only: session mode to set after session/new|load (e.g. "workspace-write"). */
   sessionMode?: string;
   /** ACP only: fail with `outdated-version` if the adapter reports an older agentInfo.version. */
@@ -29,5 +31,7 @@ export interface TransportOptions {
 export interface Transport {
   /** Runs one turn. Emits events and always finishes with exactly one `done` event before resolving. */
   turn(message: string, emit: (event: Event) => void, signal: AbortSignal): Promise<void>;
+  /** Ends the current engine session; the next turn starts a new one. Never called during a turn. */
+  endSession(): Promise<void>;
   close(): Promise<void>;
 }

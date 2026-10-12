@@ -4,7 +4,7 @@ Open-source framework for building **harnesses**: installable desktop apps that 
 
 Each user brings **their own AI subscription** through the provider's official CLI, which the app installs and configures. No developer API keys, no terminals, no Node or git in sight: harnesses are made for non-technical people.
 
-> **Status:** early development. The Node foundations (plan 1) and the desktop app (plans 2a and 2b) are in place: the demo harness runs as a macOS app with Claude and Codex, sets up the engine from inside the app (legal notice, install, sign-in, test) and shows plan usage. Design: [`docs/superpowers/specs/`](docs/superpowers/specs/). Roadmap: [`docs/superpowers/plans/`](docs/superpowers/plans/).
+> **Status:** early development. The Node foundations (plan 1), the desktop app (plans 2a and 2b) and the flow and context management (plan 3) are in place: harnesses run their actions as tasks with one engine session each, keep notes in the user's folder and start every session from them. The demo harness is an architecture explainer for developers. Design: [`docs/superpowers/specs/`](docs/superpowers/specs/). Roadmap: [`docs/superpowers/plans/`](docs/superpowers/plans/).
 
 ## How it works
 
@@ -32,8 +32,9 @@ packages/
   ui/            React kit: Home, Settings, onboarding, chat, blocks, usage
   shell/         the Electron app (main, preload, renderer)
 harnesses/
-  demo/          minimal harness used by the tests
+  demo/          architecture explainer (development only)
 docs/            specs, plans and spikes
+docs/architecture/  short curated docs the explainer starts from
 ```
 
 Planned: `harnesses/socrates`, `tooling/`.
@@ -48,7 +49,7 @@ Requires Node ≥ 22 and pnpm (via corepack).
 
 Run one harness turn against a real engine you are logged in to:
 
-    corepack pnpm hh-dev --harness harnesses/demo/harness.config.ts --folder /tmp/hh-demo --engine claude "Make a note titled Groceries"
+    corepack pnpm hh-dev --harness harnesses/demo/harness.config.ts --folder /tmp/hh-demo --engine claude "In two sentences, what is a harness?"
 
 Open the demo harness as a desktop app (macOS):
 
@@ -65,9 +66,11 @@ A harness is a folder with a manifest, instructions for the AI, its own UI and i
    - `folder.suggested` and `folder.seed`: where the user's work lives and what is copied there the first time.
    - `permissions`: `edit: "folder"` or `"none"`, `exec`, `web`.
    - `blocks`: one `defineBlock({ description, visible, schema, example })` per piece of UI the AI can show (`visible: true`) or update silently (`visible: false`).
-   - `actions`: workflows your UI can start, each with a `cost` of `light`, `medium` or `heavy`. Heavy ones may ask the user first when their plan is close to its limit.
-3. Write `agent/AGENTS.md`: what the AI does and when it calls each block's tool (`show_<block>` / `update_<block>`).
-4. Write `ui/App.tsx`: mount `HarnessApp` with a component per visible block, the state-only block names, an optional side panel (`renderSide(blockState, send)`; `send(text, { action })` starts an action) and your locales.
+   - `actions`: the tasks your harness offers, each with a `label`, an optional `description`, a `prompt` (a brief in your harness folder; `{{language}}` and `{{notesIndex}}` are filled in) and a `cost` of `light`, `medium` or `heavy`. Heavy ones may ask the user first when their plan is close to its limit. Each task runs in its own engine session and ends with a note in `.harness/notes/`.
+   - `path` (optional): the order of the guided path shown in the side panel.
+   - `folder.references` (optional): folders the AI may read but never change.
+3. Write `agent/AGENTS.md`: what the AI does and when it calls each block's tool (`show_<block>` / `update_<block>`). Every harness also has two core tools: `show_choices`, which ends each answer with ways to continue, and `save_note`, which the app asks for when a task closes.
+4. Write `ui/App.tsx`: mount `HarnessApp` with a component per visible block, your locales and, for the work screen's start view, `startView` (keys of your strings for its title, intro, frequent questions and the line under the composer). State-only blocks and a right-hand panel (`stateBlocks`, `renderSide`) are still available. Each block component gets `BlockProps`, which now also carries `choose`, `open`, `reveal` and `active` (all required): tests that build `BlockProps` by hand need to pass them too.
 5. Add `locales/es.json` and `locales/en.json` with every key in each language.
 6. Run it: `corepack pnpm install`, then `HH_HARNESS_DIR="$PWD/harnesses/<your-id>" corepack pnpm app:dev` (an absolute path: the app resolves it from `packages/shell`).
 

@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { type ClaudeScript, claudeResultLine, claudeTextLines, fakeClaudeCommand, writeScript } from "@humanharness/fake-agent";
-import { ClaudeCliTransport, allowedTools, claudeArgs, disallowedTools } from "../src/claude-cli";
+import { ClaudeCliTransport, allowedTools, claudeArgs, disallowedTools, referenceRulePath } from "../src/claude-cli";
 import type { Event } from "../src/events";
 import type { Session, TransportOptions } from "../src/transport";
 
@@ -77,6 +77,11 @@ describe("claudeArgs", () => {
   it("keeps the session on disk unless told not to", () => {
     expect(claudeArgs({ session: { id: "abc", started: false }, mcp: [], permissions })).not.toContain("--no-session-persistence");
     expect(claudeArgs({ session: { id: "abc", started: false }, mcp: [], permissions, persistSession: false })).toContain("--no-session-persistence");
+  });
+
+  it("refuses a session id that would read as a flag", () => {
+    expect(() => claudeArgs({ session: { id: "--dangerously-skip-permissions", started: true }, mcp: [], permissions })).toThrow(/session id/);
+    expect(() => claudeArgs({ session: { id: "-x", started: false }, mcp: [], permissions })).toThrow(/session id/);
   });
 });
 
@@ -227,6 +232,19 @@ describe("ClaudeCliTransport", () => {
     const events = await run(transport, "hi", controller.signal);
     expect(events).toEqual([{ type: "done", ok: false, error: { code: "cancelled" } }]);
   });
+
+  it("starts a new session after endSession", async () => {
+    const { transport, args, started } = setup({ steps: [...claudeTextLines("ok"), claudeResultLine(true)] }, { id: "old-1", started: true });
+    await run(transport);
+    expect(args()[args().indexOf("--resume") + 1]).toBe("old-1");
+    await transport.endSession();
+    await run(transport);
+    const id = args()[args().indexOf("--session-id") + 1];
+    expect(id).toMatch(/^[0-9a-f-]{36}$/);
+    expect(id).not.toBe("old-1");
+    expect(args()).not.toContain("--resume");
+    expect(started).toEqual([{ id, started: true }]);
+  });
 });
 
 const toolUse = (id: string, name: string, input: unknown) => ({
@@ -317,5 +335,31 @@ describe("ClaudeCliTransport hardening", () => {
     const events = await run(transport, "hi", controller.signal);
     expect(events.at(-1)).toEqual({ type: "done", ok: false, error: { code: "cancelled" } });
     expect(events.filter((e) => e.type === "done")).toHaveLength(1);
+  });
+});
+
+describe("reference folders", () => {
+  it("adds each reference folder with --add-dir and denies edits there", () => {
+    const args = claudeArgs({ session: { id: "a", started: false }, mcp: [], permissions, references: ["/Users/me/code/hh", "/opt/docs"] });
+    const at = args.indexOf("--add-dir");
+    expect(args.slice(at, at + 4)).toEqual(["--add-dir", "/Users/me/code/hh", "--add-dir", "/opt/docs"]);
+    const denied = args[args.indexOf("--disallowedTools") + 1].split(",");
+    expect(denied).toEqual(
+      expect.arrayContaining(["Edit(//Users/me/code/hh/**)", "Write(//Users/me/code/hh/**)", "MultiEdit(//Users/me/code/hh/**)", "Edit(//opt/docs/**)"]),
+    );
+    expect(claudeArgs({ session: { id: "a", started: false }, mcp: [], permissions })).not.toContain("--add-dir");
+  });
+
+  it("normalizes reference paths before building the deny rules", () => {
+    const denied = disallowedTools({ edit: "folder", exec: false, web: false }, ["/opt/docs/", "/opt/a/../b//"]);
+    expect(denied).toEqual(expect.arrayContaining(["Edit(//opt/docs/**)", "Write(//opt/b/**)"]));
+    expect(denied.some((d) => d.includes("docs//"))).toBe(false);
+    expect(referenceRulePath("C:\\Users\\me\\code\\", "win32")).toBe("/c/Users/me/code");
+    expect(referenceRulePath("/opt/docs/", "darwin")).toBe("/opt/docs");
+  });
+
+  it("keeps the read tools allowed", () => {
+    expect(allowedTools({ edit: "none", exec: false, web: false }, [])).toEqual(["Read", "Glob", "Grep", "TodoWrite"]);
+    expect(disallowedTools({ edit: "none", exec: false, web: false }, ["/r"])).toContain("Write(//r/**)");
   });
 });

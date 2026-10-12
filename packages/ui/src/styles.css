@@ -117,17 +117,40 @@ input[type="text"], input:not([type]) { font: inherit; height: 28px; padding: 0 
 .hh-check { position: absolute; top: 8px; right: 8px; width: 18px; height: 18px; border-radius: 50%; background: var(--hh-ink); color: var(--hh-on-ink); font-size: 11px; display: grid; place-items: center; }
 
 /* Work screen: the 2a chat layout with the tokens (its own design comes later). */
-.hh-app { display: grid; grid-template-rows: 52px 1fr auto; height: 100vh; }
+.hh-app { display: grid; grid-template-rows: 52px 1fr; height: 100vh; }
 .hh-usage { margin: 0; color: var(--hh-muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-.hh-body { display: grid; grid-template-columns: 1fr auto; overflow: hidden; }
-.hh-chat { overflow-y: auto; padding: 16px; display: grid; gap: 12px; align-content: start; }
-.hh-side { width: 240px; padding: 16px; border-left: 1px solid var(--hh-line); }
+.hh-body { display: flex; min-height: 0; overflow: hidden; }
+.hh-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.hh-chat { flex: 1; min-height: 0; overflow-y: auto; padding: 16px; display: grid; gap: 12px; align-content: start; }
+.hh-side { width: 240px; flex: none; padding: 16px; border-left: 1px solid var(--hh-line); }
+.hh-composer-hint { margin: -4px 16px 12px; text-align: center; color: var(--hh-muted); font-size: 11px; }
+.hh-back-topics { justify-self: start; }
 .hh-message { max-width: 720px; }
 .hh-message p { white-space: pre-wrap; margin: 0 0 8px; }
+.hh-message :not(pre) > code { padding: 1px 4px; border-radius: 4px; background: var(--hh-segment); }
+.hh-md-list { margin: 0 0 8px; padding-left: 22px; display: grid; gap: 2px; }
+.hh-md-heading { margin-top: 12px; }
+.hh-md-code { margin: 0 0 8px; padding: 10px 12px; overflow-x: auto; border: 1px solid var(--hh-line); border-radius: 8px; background: var(--hh-surface); }
+.hh-md-code code { white-space: pre; overflow-wrap: normal; }
+.hh-md-url { color: var(--hh-muted); overflow-wrap: anywhere; }
 .hh-message.user { justify-self: end; background: var(--hh-surface); border: 1px solid var(--hh-line); border-radius: 10px; padding: 8px 12px; }
 .hh-who { color: var(--hh-muted); font-size: 12px; }
-.hh-activity { list-style: none; padding: 0; margin: 0 0 4px; color: var(--hh-muted); font-size: 12px; }
-.hh-activity .running::after { content: " …"; }
+/* A turn at work (mockups "Trabajando", collapsed and expanded): one status row, the steps behind a toggle. */
+.hh-work { display: flex; flex-direction: column; min-width: min(340px, 100%); width: fit-content; max-width: 100%; margin: 0 0 8px; background: var(--hh-sheet); border: 1px solid var(--hh-line); border-radius: 10px; }
+.hh-work-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px 8px 12px; }
+.hh-work-status { flex: 1; display: flex; align-items: center; gap: 10px; color: var(--hh-slate); }
+.hh-work-toggle { height: 26px; gap: 5px; padding: 0 9px; background: transparent; font-size: 12px; color: var(--hh-slate); }
+.hh-work.done { min-width: 0; background: none; border: 0; }
+.hh-work.done > .hh-work-toggle { align-self: flex-start; border-color: transparent; padding: 0 6px; margin-left: -6px; color: var(--hh-muted); }
+.hh-loader { display: block; flex: none; }
+.hh-loader-static { display: block; flex: none; box-sizing: border-box; border-radius: 50%; border: 2px solid var(--hh-line-strong); border-top-color: var(--hh-muted); }
+.hh-activity { list-style: none; margin: 0; padding: 10px 14px 12px 38px; display: flex; flex-direction: column; gap: 7px; border-top: 1px solid var(--hh-line); color: var(--hh-muted); font-size: 12px; }
+.hh-activity[hidden] { display: none; }
+.hh-work.done .hh-activity { padding: 6px 0 4px; border-top: 0; }
+.hh-activity li { display: flex; align-items: center; gap: 8px; }
+.hh-activity li.running { color: var(--hh-ink); }
+.hh-activity-mark { width: 13px; height: 13px; flex: none; display: flex; align-items: center; justify-content: center; }
+.hh-activity li.done .hh-activity-mark { color: var(--hh-ok); }
 .hh-block { margin: 8px 0; }
 .hh-error { background: var(--hh-error-bg); border-radius: 10px; padding: 8px 12px; display: grid; gap: 8px; justify-items: start; }
 .hh-confirm { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; background: var(--hh-surface); border: 1px solid var(--hh-line); border-radius: 10px; padding: 10px 12px; }
@@ -139,4 +162,52 @@ input[type="text"], input:not([type]) { font: inherit; height: 28px; padding: 0 
 .hh-history { position: fixed; inset: 52px 0 0 auto; width: min(360px, 100%); box-sizing: border-box; background: var(--hh-sheet); border-left: 1px solid var(--hh-line-strong); padding: 16px; overflow-y: auto; }
 .hh-history li { display: grid; gap: 4px; margin-bottom: 12px; }
 .hh-history time { color: var(--hh-muted); font-size: 12px; }
-@media (max-width: 640px) { .hh-body { grid-template-columns: 1fr; } .hh-side { display: none; } }
+/* Flow mode (spec 2026-10-12, mockups "Plan 3 · Explicador"): side panel, start view, choices. */
+.hh-flow-side { width: 248px; flex: none; box-sizing: border-box; padding: 18px 14px; display: flex; flex-direction: column; gap: 18px; border-right: 1px solid var(--hh-line); overflow-y: auto; }
+.hh-flow-heading { margin: 0 0 6px; padding-left: 6px; font-size: 12px; font-weight: 600; color: var(--hh-muted); }
+.hh-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.hh-steps button { width: 100%; height: auto; justify-content: flex-start; gap: 9px; padding: 6px 8px; border-color: transparent; background: transparent; color: var(--hh-slate); text-align: left; }
+.hh-steps button[aria-current="step"] { background: var(--hh-surface); border-color: var(--hh-line); color: var(--hh-ink); font-weight: 600; }
+.hh-step-mark { width: 18px; height: 18px; flex: none; box-sizing: border-box; display: grid; place-items: center; border-radius: 50%; border: 1px solid var(--hh-line-strong); font-size: 11px; color: var(--hh-muted); }
+.hh-step-mark.done { border-color: transparent; color: var(--hh-ok); }
+[aria-current="step"] .hh-step-mark { border-color: transparent; background: var(--hh-ink); color: var(--hh-on-ink); }
+.hh-note-list { list-style: none; margin: 0; padding: 0; }
+.hh-note-list li + li { border-top: 1px solid var(--hh-line); }
+.hh-note-list button { width: 100%; height: auto; justify-content: flex-start; gap: 7px; padding: 8px 10px; border: none; border-radius: 0; background: transparent; text-align: left; }
+.hh-flow-refs { margin-top: auto; display: grid; gap: 8px; }
+.hh-flow-ref { padding-left: 6px; display: grid; gap: 3px; font-size: 12px; color: var(--hh-muted); }
+.hh-flow-ref span { display: flex; align-items: center; gap: 5px; }
+.hh-start-view { display: grid; gap: 18px; padding: 14px 24px; }
+.hh-start-head { display: grid; gap: 6px; }
+.hh-start-head h2 { font-family: var(--hh-display); font-size: 22px; font-weight: 600; }
+.hh-start-head p { color: var(--hh-slate); line-height: 1.5; }
+.hh-start-notice { color: var(--hh-slate); background: var(--hh-surface); border: 1px solid var(--hh-line); border-radius: 10px; padding: 8px 12px; }
+.hh-topics { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+.hh-topic { height: auto; min-height: 104px; flex-direction: column; align-items: flex-start; justify-content: flex-start; gap: 6px; padding: 14px 16px; border-radius: 12px; border-color: var(--hh-line); text-align: left; }
+.hh-topic.next { border: 2px solid var(--hh-ink); padding: 13px 15px; }
+.hh-topic.done .hh-topic-title { color: var(--hh-slate); }
+.hh-topic-head { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.hh-topic-title { font-size: 14px; font-weight: 600; }
+.hh-topic-text { color: var(--hh-slate); line-height: 1.45; }
+.hh-badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 7px; border-radius: 5px; background: var(--hh-segment); color: var(--hh-ink); font-size: 11px; font-weight: 600; white-space: nowrap; }
+.hh-badge.ok { padding: 0; background: transparent; color: var(--hh-ok); }
+.hh-faq { display: grid; gap: 8px; }
+.hh-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.hh-chip { height: 30px; border-radius: 15px; border-color: var(--hh-line-strong); background: var(--hh-sheet); }
+.hh-choices { display: grid; gap: 9px; padding: 12px 14px; border: 1px solid var(--hh-line); border-radius: 12px; background: var(--hh-sheet); }
+.hh-choice-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.hh-choice { flex: 1 1 180px; height: auto; min-height: 36px; justify-content: flex-start; padding: 6px 10px; border-radius: 8px; text-align: left; }
+.hh-choice.next, .hh-choice[aria-pressed="true"] { background: var(--hh-ink); color: var(--hh-on-ink); border-color: var(--hh-ink); }
+.hh-notes { position: fixed; inset: 52px 0 0 auto; width: min(420px, 100%); box-sizing: border-box; padding: 16px 18px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; background: var(--hh-sheet); border-left: 1px solid var(--hh-line-strong); box-shadow: -18px 0 50px rgba(25, 30, 36, 0.16); }
+.hh-notes header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.hh-notes h2 { font-size: 15px; font-weight: 600; }
+.hh-note-cards { list-style: none; margin: 0; padding: 0; }
+.hh-note { display: grid; gap: 6px; padding: 11px 14px; border-top: 1px solid var(--hh-line); }
+.hh-note:first-child { border-top: none; }
+.hh-note.open { background: var(--hh-paper); }
+.hh-note ul { margin: 0; padding-left: 18px; display: grid; gap: 3px; color: var(--hh-slate); line-height: 1.45; }
+.hh-note-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.hh-note-toggle { width: 100%; height: auto; flex-direction: column; align-items: stretch; gap: 4px; padding: 0; border: none; background: transparent; text-align: left; }
+.hh-note-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.hh-notes-savings { padding: 10px 12px; border: 1px solid var(--hh-line); border-radius: 10px; background: var(--hh-surface); color: var(--hh-ok); line-height: 1.45; }
+@media (max-width: 640px) { .hh-flow-side, .hh-side { display: none; } }

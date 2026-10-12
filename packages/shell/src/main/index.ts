@@ -6,7 +6,7 @@ import path from "node:path";
 import { BrowserWindow, type IpcMainInvokeEvent, app, clipboard, dialog, ipcMain, nativeTheme, shell } from "electron";
 import { electronLauncher } from "@humanharness/blocks";
 import { type EngineDef, NOTICE_VERSION, availableEngines, getEngine } from "@humanharness/engines";
-import { type LoadedHarness, loadHarness, resolveInHarness } from "@humanharness/harness-sdk";
+import { type LoadedHarness, allBlocks, choiceOptionSchema, loadHarness, resolveInHarness } from "@humanharness/harness-sdk";
 import { type Event, type HarnessRuntime, createRuntime } from "@humanharness/runtime";
 import {
   type AppConfig,
@@ -22,7 +22,7 @@ import {
   type UsageSummary,
   isConfigured,
 } from "@humanharness/ui/client";
-import { History } from "@humanharness/workspace";
+import { History, NOTES_PREFIX, readNotes, writeNote } from "@humanharness/workspace";
 import { imageDataUrl } from "./assets";
 import { ChatLog } from "./chat-log";
 import { ConfigStore, historyDir } from "./config";
@@ -39,6 +39,12 @@ import { SharedConfigStore, sharedConfigDir } from "./shared-config";
 import { EngineUnavailable, TurnController, memoise } from "./turn-controller";
 import { UsageLog, summarizeUsage, usageRecord } from "./usage-log";
 import { type ValidationContext, checkFolder, configProblem, isAppUrl } from "./validate";
+import { openIfStillSafe, openRoots, openableFile, revealIfStillSafe, revealableFile } from "./open-path";
+import { saveWithFolderChange } from "./folder-change";
+import { type ResolvedReference, displayPath, resolveReferences, usableReferences } from "./references";
+import { TaskManager } from "./task-manager";
+import { TaskStore, emptyTasks } from "./task-store";
+import { readTestHooks, testEngineStatus } from "./test-hooks";
 
 declare const __HARNESS_DIR__: string;
 
@@ -91,9 +97,23 @@ const QUIT_TEST_WAIT_MS = 5_000;
 const guards = new EngineGuards();
 /** Logos as data: URLs, read once. */
 const logos = new Map<string, Promise<string | null>>();
+/** End-to-end test settings (development builds only; see test-hooks.ts). */
+const hooks = readTestHooks(process.env, app.isPackaged);
+/** The manifest's reference folders on this machine, resolved once the app is ready. */
+let references: Promise<ResolvedReference[]> = Promise.resolve([]);
+
+/**
+ * The reference folders usable with the working folder: one that is or contains it is left out (its
+ * read-only rules would block the person's own files), with `log` saying why.
+ */
+async function referencesFor(folder: string | undefined, log = false): Promise<ResolvedReference[]> {
+  const refs = await references;
+  if (!folder) return refs;
+  return usableReferences(refs, folder, log ? (message) => console.error(message) : undefined);
+}
 
 const mode = () => (app.isPackaged ? "distribution" : "development");
-const stateBlocks = () => new Set(Object.entries(harness.blocks).filter(([, b]) => !b.visible).map(([n]) => n));
+const stateBlocks = () => new Set(Object.entries(allBlocks(harness)).filter(([, b]) => !b.visible).map(([n]) => n));
 const rendererFile = path.join(__dirname, "../renderer/index.html");
 // The dev server is only trusted in development: a packaged app always loads its own file.
 const devUrl = app.isPackaged ? undefined : process.env.ELECTRON_RENDERER_URL;
@@ -133,6 +153,7 @@ const engineLogo = (e: EngineDef) => (e.logo ? logo(e.id, () => requireFromHere.
 
 async function appState(): Promise<AppState> {
   const harnessImage = await harnessLogo();
+  const saved = await config.load();
   return {
     harness: {
       id: harness.id,
@@ -144,7 +165,7 @@ async function appState(): Promise<AppState> {
       ...(harness.donate ? { donate: harness.donate } : {}),
       version: app.getVersion(),
     },
-    config: await config.load(),
+    config: saved,
     suggestedFolder: path.join(os.homedir(), harness.folder.suggested),
     engines: await Promise.all(
       availableEngines(harness.engines, mode()).map(async (e) => {
@@ -165,7 +186,12 @@ async function appState(): Promise<AppState> {
         };
       }),
     ),
-    actions: harness.actions,
+    // What the screen needs of each action (never the prompt file).
+    actions: Object.fromEntries(
+      Object.entries(harness.actions).map(([id, a]) => [id, { label: a.label, cost: a.cost, ...(a.description ? { description: a.description } : {}) }]),
+    ),
+    path: harness.path ?? [],
+    references: (await referencesFor(saved.folder)).map((r) => ({ id: r.id, label: r.label, path: displayPath(r.path, os.homedir()) })),
   };
 }
 
@@ -187,12 +213,17 @@ const runtime = memoise<HarnessRuntime>(async () => {
   if (problem) throw new Error(problem);
   await restoring;
   const engine = getEngine(c.engineId);
-  // Spec §9 "every start": enforce detect.minVersion and a signed-in CLI before the first turn.
-  const status = await detectEngine(engine, commandDeps, shared);
-  if (!status.installed) return null;
-  if (status.outdated) throw new EngineUnavailable("outdated-version");
-  if (status.loggedIn === false) throw new EngineUnavailable("session-expired");
-  const cmd = await engineCommand(engine, commandDeps);
+  let cmd: { command: string[]; env: Record<string, string> } | null;
+  const fake = hooks.engines?.[engine.id];
+  if (fake) cmd = fake;
+  else {
+    // Spec §9 "every start": enforce detect.minVersion and a signed-in CLI before the first turn.
+    const status = await detectEngine(engine, commandDeps, shared);
+    if (!status.installed) return null;
+    if (status.outdated) throw new EngineUnavailable("outdated-version");
+    if (status.loggedIn === false) throw new EngineUnavailable("session-expired");
+    cmd = await engineCommand(engine, commandDeps);
+  }
   if (!cmd) return null;
   return createRuntime({
     harness,
@@ -204,11 +235,14 @@ const runtime = memoise<HarnessRuntime>(async () => {
     uiServerEntry: path.join(__dirname, "ui-server.js"),
     command: cmd.command,
     env: cmd.env,
+    references: (await referencesFor(c.folder, true)).map((r) => ({ label: r.label[c.language], path: r.path })),
+    onSession: (s) => void tasks.sessionStarted(s).catch((err: unknown) => console.error("Could not record the session", err)),
   });
 });
 
-/** Closes the running runtime (e.g. the engine changed); the next turn starts a new one. */
+/** Ends the open task, then closes the running runtime (e.g. the engine changed); the next turn starts a new one. */
 async function dropRuntime() {
+  await tasks.interrupt().catch((err: unknown) => console.error("Could not end the task", err));
   const rt = await runtime.peek()?.catch(() => null);
   runtime.clear();
   await rt?.close();
@@ -222,7 +256,7 @@ async function currentHistory(): Promise<History | null> {
   if (!c) return null;
   const extra = getEngine(c.engineId).instructionsFile?.path;
   // Same ignore list as the runtime's: its files under .harness/ and the generated instructions.
-  const history = new History(c.folder, historyDir(app.getPath("userData"), c.folder), [".harness/", "AGENTS.md", ...(extra ? [extra] : [])]);
+  const history = new History(c.folder, historyDir(app.getPath("userData"), c.folder), [".harness/", "AGENTS.md", ...(extra ? [extra] : [])], [NOTES_PREFIX]);
   await history.init();
   return history;
 }
@@ -254,9 +288,9 @@ const turns = new TurnController({
   },
   stateBlocks,
   emit,
-  recordUsage: async (entry, action, firstLimits) => {
+  recordUsage: async (entry, meta, firstLimits) => {
     const c = await validConfig();
-    const record = c ? usageRecord(entry, c.engineId, action, firstLimits) : null;
+    const record = c ? usageRecord(entry, c.engineId, meta, firstLimits) : null;
     if (c && record) await new UsageLog(c.folder).append(record);
   },
   engineId: async () => (await config.load()).engineId,
@@ -264,6 +298,77 @@ const turns = new TurnController({
     await shared.update(engineId, { verifiedAt: null });
   },
 });
+
+const tasks = new TaskManager({
+  store: {
+    load: async () => {
+      const c = await validConfig();
+      return c ? new TaskStore(c.folder).load() : emptyTasks();
+    },
+    save: async (state) => {
+      const c = await validConfig();
+      if (c) await new TaskStore(c.folder).save(state);
+    },
+  },
+  turns,
+  get actions() {
+    return harness.actions;
+  },
+  get path() {
+    return harness.path ?? [];
+  },
+  readPrompt: (action) => fs.readFile(resolveInHarness(harness, harness.actions[action].prompt), "utf8"),
+  language: async () => (await config.load()).language ?? harness.languages[0],
+  engine: async () => (await config.load()).engineId ?? "",
+  notes: async () => {
+    const c = await validConfig();
+    return c ? readNotes(c.folder) : [];
+  },
+  writeNote: async (slug, note, meta) => {
+    const c = await validConfig();
+    if (!c) throw new Error("The app is not set up yet");
+    await writeNote(c.folder, slug, note, meta);
+  },
+  noteExists: async (slug) => {
+    const c = await validConfig();
+    return c ? fs.access(path.join(c.folder, NOTES_PREFIX, `${slug}.md`)).then(() => true, () => false) : false;
+  },
+  endSession: async () => {
+    const rt = await runtime.peek()?.catch(() => null);
+    await rt?.endSession();
+  },
+  saveHistory: async (message) => {
+    await (await currentHistory())?.save(message);
+  },
+  changed: (view) => sendToWindow("hh:tasks", view),
+  emit,
+});
+
+/** Saves a config patch; an engine change ends the task, drops the runtime and archives the chat (see EngineGuards). */
+async function saveConfigPatch(patch: AppConfig, before: AppConfig): Promise<void> {
+  if (patch.engineId && before.engineId && patch.engineId !== before.engineId) {
+    const engineId = patch.engineId;
+    await guards.switchEngine(
+      {
+        isBusy: () => tasks.isBusy(),
+        idle: async () => {
+          await tasks.idle();
+          await turns.flush();
+        },
+        save: () => config.save(patch).then(() => undefined),
+        dropRuntime,
+        archiveChat: async () => {
+          const c = await validConfig();
+          return c && c.engineId === engineId ? startNewChatIfEngineChanged(c.folder, engineId) : null;
+        },
+      },
+      // The new engine is saved: the window gets the new state; the next chat load archives the old chat.
+      (err) => console.error("Could not finish changing the engine", err),
+    );
+  } else {
+    await config.save(patch);
+  }
+}
 
 /** Registers an IPC handler that only answers the app's own page. */
 function handle(channel: string, fn: (...args: never[]) => unknown) {
@@ -287,25 +392,11 @@ function registerIpc() {
     const before = await config.load();
     // Spec §9: an engine is only used once its notice is accepted.
     await requireNoticeForChoice(patch.engineId, before.engineId, hasNotice);
-    if (patch.engineId && before.engineId && patch.engineId !== before.engineId) {
-      const engineId = patch.engineId;
-      await guards.switchEngine(
-        {
-          isBusy: () => turns.isBusy(),
-          idle: () => turns.flush(),
-          save: () => config.save(patch).then(() => undefined),
-          dropRuntime,
-          archiveChat: async () => {
-            const c = await validConfig();
-            return c && c.engineId === engineId ? startNewChatIfEngineChanged(c.folder, engineId) : null;
-          },
-        },
-        // The new engine is saved: the window gets the new state; the next chat load archives the old chat.
-        (err) => console.error("Could not finish changing the engine", err),
-      );
-    } else {
-      await config.save(patch);
-    }
+    // A new folder: refused while a turn runs, and turns are refused until it is over; the old
+    // folder's task ends and its runtime goes.
+    await saveWithFolderChange(patch.folder, before.folder, { isBusy: () => tasks.isBusy(), guards, interrupt: () => tasks.interrupt(), dropRuntime }, () =>
+      saveConfigPatch(patch, before),
+    );
     if (patch.appearance) applyAppearance(patch.appearance);
     return appState();
   });
@@ -314,16 +405,49 @@ function registerIpc() {
     if (!c) return { entries: [] };
     // The engine change archives the chat; the check here only catches a change made while the app was closed.
     const switchedFrom =
-      guards.takeSwitchedFrom() ?? (turns.isBusy() || guards.turnBlocked() ? null : await archiveStaleChat(c.folder, c.engineId, dropRuntime));
+      guards.takeSwitchedFrom() ?? (tasks.isBusy() || guards.turnBlocked() ? null : await archiveStaleChat(c.folder, c.engineId, dropRuntime));
     return { entries: await new ChatLog(c.folder).load(), ...(switchedFrom ? { switchedFrom } : {}) };
   });
   handle("hh:send", (message: string, options?: SendOptions) => {
+    if (quitting) throw new Error("The app is closing");
     const blocked = guards.turnBlocked();
     if (blocked) throw new Error(blocked);
+    if (typeof message !== "string" || !message.trim() || message.length > 20_000) throw new Error("Invalid message");
     const action = typeof options?.action === "string" && Object.hasOwn(harness.actions, options.action) ? options.action : undefined;
-    return turns.send(message, action ? { action } : {});
+    // A message with an action starts that task (the message is what the chat shows); any other follows up or asks.
+    return action ? tasks.start(action, message) : tasks.ask(message);
   });
-  handle("hh:cancel", () => turns.cancel());
+  handle("hh:getTasks", () => tasks.view());
+  handle("hh:choose", (option: unknown, task: unknown) => {
+    if (quitting) throw new Error("The app is closing");
+    const blocked = guards.turnBlocked();
+    if (blocked) throw new Error(blocked);
+    const parsed = choiceOptionSchema.safeParse(option);
+    if (!parsed.success) throw new Error("Invalid choice");
+    // The task the block was shown for: a block of an earlier task is refused (TaskManager.choose).
+    if (typeof task !== "string" || !task || task.length > 100) throw new Error("Invalid choice");
+    return tasks.choose(parsed.data, task);
+  });
+  handle("hh:openPath", async (file: unknown) => {
+    const c = await validConfig();
+    if (!c) return false;
+    const roots = openRoots(c.folder, (await referencesFor(c.folder)).map((r) => r.path));
+    const target = await openableFile(file, roots);
+    if (!target) return false;
+    // Checked again right before opening: the file or a folder above it may have been swapped for a link meanwhile.
+    return openIfStillSafe(target, roots, (p) => shell.openPath(p));
+  });
+  // Shows a file in Finder (it never opens it): any kind of file, with the same checks as hh:openPath.
+  handle("hh:revealPath", async (file: unknown) => {
+    const c = await validConfig();
+    if (!c) return false;
+    const roots = openRoots(c.folder, (await referencesFor(c.folder)).map((r) => r.path));
+    const target = await revealableFile(file, roots);
+    if (!target) return false;
+    return revealIfStillSafe(target, roots, (p) => shell.showItemInFolder(p));
+  });
+  // Cancels the turn and stops the task operation (a closing turn never goes on to the next task).
+  handle("hh:cancel", () => tasks.cancel());
   handle("hh:history", async () => {
     const history = await currentHistory();
     return history ? (await history.list()).map((h) => ({ ...h, date: h.date.toISOString() })) : [];
@@ -331,12 +455,12 @@ function registerIpc() {
   handle("hh:restore", async (sha: string) => {
     if (quitting) throw new Error("The app is closing");
     if (restorePending) throw new Error("Already going back");
-    if (turns.isBusy()) throw new Error("A turn is running");
+    if (tasks.isBusy()) throw new Error("A turn is running");
     restorePending = true;
     try {
       const history = await currentHistory();
       if (!history) throw new Error("The app is not set up yet");
-      if (quitting || turns.isBusy()) throw new Error("A turn is running");
+      if (quitting || tasks.isBusy()) throw new Error("A turn is running");
       const done = history.restore(sha, "Went back to an earlier point");
       restoring = done.catch(() => undefined);
       await done;
@@ -344,7 +468,11 @@ function registerIpc() {
       restorePending = false;
     }
   });
-  handle("hh:engineStatus", (engineId: string) => detectEngine(engineFor(engineId), commandDeps, shared));
+  handle("hh:engineStatus", async (engineId: string) => {
+    const engine = engineFor(engineId);
+    if (hooks.engines?.[engine.id]) return testEngineStatus(engine, await hasNotice(engine.id));
+    return detectEngine(engine, commandDeps, shared);
+  });
   handle("hh:acceptNotice", async (engineId: string) => {
     engineFor(engineId);
     await shared.update(engineId, { notice: { version: NOTICE_VERSION, acceptedAt: new Date().toISOString() } });
@@ -367,7 +495,7 @@ function registerIpc() {
         guards,
         hasNotice,
         currentEngine: async () => (await config.load()).engineId,
-        isBusy: () => turns.isBusy(),
+        isBusy: () => tasks.isBusy(),
         quitting: () => quitting,
         command: async () => {
           const cli = step === "install" ? null : await cliCommand(engine, commandDeps);
@@ -476,14 +604,17 @@ const loaded = await loadHarness(path.join(__dirname, "harness.js"), { root: __H
 if (loaded) {
   harness = loaded;
   app.setName(harness.name.en);
-  app.setPath("userData", path.join(app.getPath("appData"), "Human Harness", harness.id));
+  app.setPath("userData", hooks.userData ?? path.join(app.getPath("appData"), "Human Harness", harness.id));
 
   app.whenReady().then(async () => {
     config = new ConfigStore(app.getPath("userData"));
-    shared = new SharedConfigStore(sharedConfigDir());
+    shared = new SharedConfigStore(hooks.sharedDir ?? sharedConfigDir());
+    references = resolveReferences(harness.folder.references, { harnessDir: __HARNESS_DIR__, home: os.homedir(), packaged: app.isPackaged });
     nativeTheme.themeSource = (await config.load()).appearance ?? "system";
     nativeTheme.on("updated", () => window?.setBackgroundColor(nativeTheme.shouldUseDarkColors ? PAPER.dark : PAPER.light));
     registerIpc();
+    // A task left open by an earlier run can't continue: its session is gone.
+    void tasks.interrupt().catch((err: unknown) => console.error("Could not settle the last task", err));
     await createWindow();
   });
 
@@ -493,6 +624,7 @@ if (loaded) {
     if (quitting) return;
     quitting = true;
     event.preventDefault();
+    tasks.close();
     turns.close();
     // The test prompt cleans up (its CLI, its temporary folder) before the app goes; bounded wait.
     const testStopped = Promise.race([guards.close(), new Promise<void>((r) => setTimeout(r, QUIT_TEST_WAIT_MS))]);

@@ -1,13 +1,13 @@
+import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { type Bridge, type Launcher, type McpServerSpec, devLauncher, openBridge, uiServerSpec } from "@humanharness/blocks";
 import type { EngineDef } from "@humanharness/engines";
-import { type Language, type LoadedHarness, resolveInHarness } from "@humanharness/harness-sdk";
-import { History, prepareFolder, writeInstructions } from "@humanharness/workspace";
+import { type Language, type LoadedHarness, allBlocks, resolveInHarness } from "@humanharness/harness-sdk";
+import { History, NOTES_PREFIX, type ReferenceFolder, prepareFolder, writeInstructions } from "@humanharness/workspace";
 import { AcpTransport } from "./acp";
 import { ClaudeCliTransport } from "./claude-cli";
 import type { Event } from "./events";
-import { readSession, writeSession } from "./session-store";
-import type { Transport, TransportOptions } from "./transport";
+import type { Session, Transport, TransportOptions } from "./transport";
 
 export interface RuntimeOptions {
   /** Built `ui` MCP server entry (app). Defaults to the TS source (dev). */
@@ -25,6 +25,12 @@ export interface RuntimeOptions {
   command?: string[];
   /** Extra CLI environment (tests, dev). Never credentials. */
   env?: Record<string, string>;
+  /** Folders the agent may read but never change (absolute paths), with the label `AGENTS.md` shows. */
+  references?: ReferenceFolder[];
+  /** The engine session to continue (the dev CLI). Default: a new one. */
+  session?: Session;
+  /** Called when the engine starts a session. */
+  onSession?: (session: Session) => void;
 }
 
 export interface RunningTurn {
@@ -34,6 +40,8 @@ export interface RunningTurn {
 
 export interface HarnessRuntime {
   send(message: string, emit: (e: Event) => void): RunningTurn;
+  /** Ends the engine session (Codex: `session/close`); the next turn starts a new one. Not while a turn runs. */
+  endSession(): Promise<void>;
   history: History;
   close(): Promise<void>;
 }
@@ -50,17 +58,19 @@ function harnessMcpServers(harness: LoadedHarness, launcher: Launcher): McpServe
 export async function createRuntime(opts: RuntimeOptions): Promise<HarnessRuntime> {
   const { harness, engine, folder } = opts;
   const launcher = opts.launcher ?? devLauncher();
+  const references = opts.references ?? [];
 
   await prepareFolder(folder, harness.folder.seed ? resolveInHarness(harness, harness.folder.seed) : undefined);
   const base = await fs.readFile(resolveInHarness(harness, harness.instructions), "utf8");
-  const generated = await writeInstructions({ folder, base, language: opts.language, blocks: harness.blocks, engine });
+  const generated = await writeInstructions({ folder, base, language: opts.language, blocks: allBlocks(harness), references, engine });
 
-  const history = new History(folder, opts.gitdir, [".harness/", ...generated]);
+  // The history skips the app's files under .harness/ (except the notes) and the generated instructions.
+  const history = new History(folder, opts.gitdir, [".harness/", ...generated], [NOTES_PREFIX]);
   await history.init();
   await history.save("Start");
 
   let emitCurrent: ((e: Event) => void) | null = null;
-  const session = await readSession(folder, engine.id);
+  const session: Session = opts.session ?? { id: randomUUID(), started: false };
   const bridge: Bridge = await openBridge((m) => emitCurrent?.({ type: "block", name: m.name, data: m.data }));
   try {
     return await buildRuntime(bridge);
@@ -70,12 +80,12 @@ export async function createRuntime(opts: RuntimeOptions): Promise<HarnessRuntim
   }
 
   async function buildRuntime(bridge: Bridge): Promise<HarnessRuntime> {
-    let sessionWrite: Promise<void> = Promise.resolve();
     const transportOptions: TransportOptions = {
       folder,
       session,
       mcp: [uiServerSpec({ harnessConfig: harness.configPath, bridge, launcher, entry: opts.uiServerEntry }), ...harnessMcpServers(harness, launcher)],
       permissions: harness.permissions,
+      references: references.map((r) => r.path),
       sessionMode:
         engine.transport.kind === "acp"
           ? engine.transport.modes?.[harness.permissions.edit === "folder" ? "edit" : "readOnly"]
@@ -84,7 +94,11 @@ export async function createRuntime(opts: RuntimeOptions): Promise<HarnessRuntim
       command: opts.command ?? (engine.transport.kind === "claude-cli" ? [engine.transport.binary] : engine.transport.command),
       env: opts.env,
       onSessionStarted: (s) => {
-        sessionWrite = writeSession(folder, engine.id, s).catch(() => {});
+        try {
+          opts.onSession?.(s);
+        } catch (err) {
+          console.error("Could not record the engine session", err);
+        }
       },
     };
     const transport: Transport =
@@ -122,7 +136,6 @@ export async function createRuntime(opts: RuntimeOptions): Promise<HarnessRuntim
               controller.signal,
             );
             emitCurrent = null;
-            await sessionWrite;
             const f: Event = final ?? { type: "done", ok: false, error: { code: "agent-crashed" } };
             if (f.type === "done" && f.ok) await history.save(`Turn: ${message.slice(0, 60)}`);
             else if (f.type === "done" && f.error.code === "agent-crashed") await history.restore(before, "Undo: the turn did not finish");
@@ -137,6 +150,16 @@ export async function createRuntime(opts: RuntimeOptions): Promise<HarnessRuntim
         })();
         current = { controller, done };
         return { cancel: () => controller.abort(), done };
+      },
+      async endSession() {
+        if (busy) throw new Error("A turn is already running");
+        // Held while the session closes, so a turn cannot start halfway through.
+        busy = true;
+        try {
+          await transport.endSession();
+        } finally {
+          busy = false;
+        }
       },
       async close() {
         if (current) {

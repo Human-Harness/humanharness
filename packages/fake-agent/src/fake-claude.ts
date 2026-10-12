@@ -1,19 +1,21 @@
-// Stand-in for `claude -p ... --output-format stream-json`. Reads its script from HH_FAKE_SCRIPT
-// and records its argv in HH_FAKE_ARGS so tests can assert on the flags the runtime passed.
+// Stand-in for `claude -p ... --output-format stream-json`. Reads its script from HH_FAKE_SCRIPT,
+// records its argv in HH_FAKE_ARGS, the prompt in HH_FAKE_STDIN, and appends {argv, prompt} for
+// every run to HH_FAKE_PROMPTS, so tests can assert on the flags and messages the runtime sent.
 import { spawn } from "node:child_process";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { callMcpTool } from "./mcp-call";
 import type { ClaudeScript } from "./script";
 
 const argv = process.argv.slice(2);
 if (process.env.HH_FAKE_ARGS) writeFileSync(process.env.HH_FAKE_ARGS, JSON.stringify(argv));
-if (process.env.HH_FAKE_STDIN) {
-  let input = "";
-  for await (const chunk of process.stdin) input += chunk;
-  writeFileSync(process.env.HH_FAKE_STDIN, input);
-}
 const script = JSON.parse(readFileSync(process.env.HH_FAKE_SCRIPT!, "utf8")) as ClaudeScript;
+let input = "";
+if (process.env.HH_FAKE_STDIN || process.env.HH_FAKE_PROMPTS || script.turns) {
+  for await (const chunk of process.stdin) input += chunk;
+  if (process.env.HH_FAKE_STDIN) writeFileSync(process.env.HH_FAKE_STDIN, input);
+  if (process.env.HH_FAKE_PROMPTS) appendFileSync(process.env.HH_FAKE_PROMPTS, JSON.stringify({ argv, prompt: input }) + "\n");
+}
 const mcpIndex = argv.indexOf("--mcp-config");
 const mcpConfig = mcpIndex >= 0 ? (JSON.parse(argv[mcpIndex + 1]) as { mcpServers: Record<string, any> }) : { mcpServers: {} };
 
@@ -22,7 +24,8 @@ if (script.failOnResume && argv.includes("--resume")) {
   process.exit(1);
 }
 
-for (const step of script.steps) {
+const steps = script.turns?.find((t) => new RegExp(t.match).test(input))?.steps ?? script.steps;
+for (const step of steps) {
   if ("line" in step) process.stdout.write(JSON.stringify(step.line) + "\n");
   else if ("raw" in step) process.stdout.write(step.raw);
   else if ("sleep" in step) await new Promise((r) => setTimeout(r, step.sleep));

@@ -1,11 +1,14 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { ChatLog } from "./chat-log";
+import { TaskStore } from "./task-store";
 
 const sessionFile = (folder: string) => path.join(folder, ".harness", "session.json");
 
-/** The engine of the folder's saved agent session (written by the runtime), if any. */
+/** The engine that ran the folder's last task (tasks.json), or of a plan 2 session.json, if any. */
 export async function sessionEngine(folder: string): Promise<string | null> {
+  const tasks = await new TaskStore(folder).load();
+  if (tasks.engine) return tasks.engine;
   try {
     const saved = JSON.parse(await fs.readFile(sessionFile(folder), "utf8")) as { engine?: unknown };
     return typeof saved.engine === "string" ? saved.engine : null;
@@ -29,6 +32,8 @@ export async function startNewChatIfEngineChanged(folder: string, engineId: stri
   if (!previous || previous === engineId) return null;
   const archived = await new ChatLog(folder).archive(previous);
   await fs.rm(sessionFile(folder), { force: true });
+  // The open task can't continue on another engine; the notes stay.
+  await new TaskStore(folder).forgetEngine();
   return archived ? previous : null;
 }
 

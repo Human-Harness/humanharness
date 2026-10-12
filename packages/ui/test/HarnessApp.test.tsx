@@ -4,10 +4,14 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { ReactElement } from "react";
 import { cleanup } from "@testing-library/react";
 import { HarnessApp, type BlockProps } from "../src";
+import { resetWorkDetail } from "../src/ActivityList";
 import { formatReset } from "../src/usage";
 import { FakeClient } from "./fake-client";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  resetWorkDetail();
+});
 
 const ready = { language: "en" as const, folder: "/Users/me/Documents/Demo", engineId: "claude" };
 const Note = ({ data, respond }: BlockProps) => (
@@ -51,9 +55,36 @@ describe("HarnessApp", () => {
     fireEvent.change(input, { target: { value: "go" } });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
     act(() => client.emit({ type: "activity", id: "a", kind: "read", detail: "notes.md", state: "start" }));
+    expect(screen.getByRole("status").textContent).toContain("Working…");
+    expect(screen.queryByText("Reading notes.md")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Show details" }));
     expect(screen.getByText("Reading notes.md")).toBeTruthy();
+    act(() => {
+      client.emit({ type: "activity", id: "a", kind: "read", detail: "notes.md", state: "end", error: false });
+      client.emit({ type: "text", delta: "Found it" });
+    });
+    // The answer streams in as it arrives, below the status row.
+    expect(screen.getAllByText("Found it").length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole("button", { name: "Stop" }));
     await waitFor(() => expect(client.cancelled).toBe(1));
+  });
+
+  it("after the turn, keeps what it did behind a collapsed toggle", async () => {
+    const client = new FakeClient(ready);
+    await startWork(<HarnessApp client={client} />);
+    const input = await screen.findByPlaceholderText("Write a message…");
+    fireEvent.change(input, { target: { value: "go" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    act(() => {
+      client.emit({ type: "activity", id: "a", kind: "read", detail: "notes.md", state: "start" });
+      client.emit({ type: "activity", id: "a", kind: "read", detail: "notes.md", state: "end", error: false });
+      client.emit({ type: "text", delta: "Done reading" });
+      client.emit({ type: "done", ok: true });
+    });
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(screen.queryByText("Reading notes.md")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "See what it did (1 step)" }));
+    expect(screen.getByText("Reading notes.md")).toBeTruthy();
   });
 
   it("shows a translated error card when a turn fails", async () => {
@@ -265,7 +296,9 @@ describe("HarnessApp", () => {
     fireEvent.change(input, { target: { value: "go" } });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
     expect(document.activeElement).toBe(input);
-    expect(region.textContent).toBe("Working…");
+    // "Working…" is announced once, by the status row; the shared region doesn't repeat it.
+    expect(screen.getByRole("status").textContent).toContain("Working…");
+    expect(region.textContent).toBe("");
     input.blur();
     act(() => {
       client.emit({ type: "text", delta: "All done" });

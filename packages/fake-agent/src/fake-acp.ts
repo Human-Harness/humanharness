@@ -18,6 +18,7 @@ type StdioMcp = { name: string; command: string; args: string[]; env: { name: st
 let mcpServers: StdioMcp[] = [];
 let cwd = process.cwd();
 let turn = 0;
+let sessions = 0;
 let cancelled = false;
 let wake: (() => void) | undefined;
 
@@ -32,7 +33,10 @@ acp
     log("initialize", ctx.params);
     return {
       protocolVersion: acp.PROTOCOL_VERSION,
-      agentCapabilities: { loadSession: Boolean(script.loadSession) },
+      agentCapabilities: {
+        loadSession: Boolean(script.loadSession),
+        ...(script.closeSession ? { sessionCapabilities: { close: {} } } : {}),
+      },
       ...(script.agentVersion ? { agentInfo: { name: "fake-acp", version: script.agentVersion } } : {}),
     };
   })
@@ -40,7 +44,9 @@ acp
     log("session/new", ctx.params);
     mcpServers = (ctx.params.mcpServers ?? []) as StdioMcp[];
     cwd = ctx.params.cwd;
-    return { sessionId: script.sessionId ?? "fake-acp-session" };
+    const base = script.sessionId ?? "fake-acp-session";
+    sessions++;
+    return { sessionId: sessions === 1 ? base : `${base}-${sessions}` };
   })
   .onRequest("session/load", (ctx) => {
     log("session/load", ctx.params);
@@ -51,6 +57,11 @@ acp
   })
   .onRequest("session/set_mode", (ctx) => {
     log("session/set_mode", ctx.params);
+    return {};
+  })
+  .onRequest("session/close", async (ctx) => {
+    log("session/close", ctx.params);
+    if (script.hangClose) await new Promise(() => {});
     return {};
   })
   .onNotification("session/cancel", (ctx) => {

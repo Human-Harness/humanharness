@@ -197,9 +197,24 @@ importers:
         specifier: ^4.6.5
         version: 4.6.5
     devDependencies:
+      '@humanharness/i18n':
+        specifier: workspace:*
+        version: link:../../packages/i18n
+      '@testing-library/react':
+        specifier: ^16.3.3
+        version: 16.3.3(@testing-library/dom@10.4.2)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@types/react':
         specifier: ^19.3.0
         version: 19.3.0
+      '@types/react-dom':
+        specifier: ^19.3.0
+        version: 19.3.0(@types/react@19.3.0)
+      happy-dom:
+        specifier: ^20.14.6
+        version: 20.14.6
+      react-dom:
+        specifier: ^19.3.0
+        version: 19.3.0(react@19.3.0)
 
   packages/blocks:
     dependencies:
@@ -213,6 +228,18 @@ importers:
         specifier: ^4.23.15
         version: 4.23.15
 
+  packages/e2e:
+    devDependencies:
+      '@humanharness/engines':
+        specifier: workspace:*
+        version: link:../engines
+      '@humanharness/fake-agent':
+        specifier: workspace:*
+        version: link:../fake-agent
+      '@playwright/test':
+        specifier: 1.63.0
+        version: 1.63.0
+
   packages/engines:
     dependencies:
       '@humanharness/harness-sdk':
@@ -224,12 +251,18 @@ importers:
       '@agentclientprotocol/sdk':
         specifier: ^1.8.0
         version: 1.8.0(zod@4.6.5)
+      '@humanharness/harness-sdk':
+        specifier: workspace:*
+        version: link:../harness-sdk
       '@modelcontextprotocol/sdk':
         specifier: ^1.32.1
         version: 1.32.1(zod@4.6.5)
       tsx:
         specifier: ^4.23.15
         version: 4.23.15
+      zod:
+        specifier: ^4.6.5
+        version: 4.6.5
 
   packages/harness-sdk:
     dependencies:
@@ -865,6 +898,11 @@ packages:
 
   '@oxc-project/types@0.153.0':
     resolution: {integrity: sha512-jSNrRIyvPVLL5E1z/tS5zLAprosGz/FuI1PWwEOz59j3E4TTTzSpqKb/RDGqJhhW0QHYISGXxq582wGx6T11Tw==}
+
+  '@playwright/test@1.63.0':
+    resolution: {integrity: sha512-oxMK4vllB9RK5NQ2l1pq1IfOf2AvnEuj/vYGDj0H2nMtmtZpKtCwt/l00GEO6xjGfpBNAvjovvYdCm50dRQkpQ==}
+    engines: {node: '>=20'}
+    hasBin: true
 
   '@rolldown/binding-android-arm-eabi@1.2.13':
     resolution: {integrity: sha512-Vu/NICrgdRvUOeaJZIyB2FP63s6fO/4ud5l8dXmxDx9yDyn+mN0y+gsvsVviSli+T361Aqo0h46EuMoobrwawA==}
@@ -1822,6 +1860,16 @@ packages:
     resolution: {integrity: sha512-wQ0b/W4Fr01qtpHlqSqspcj3EhBvimsdh0KlHhH8HRZnMsEa0ea2fTULOXOS9ccQr3om+GcGRk4e+isrZWV8qQ==}
     engines: {node: '>=16.20.0'}
 
+  playwright-core@1.63.0:
+    resolution: {integrity: sha512-rYCsBF/M5HjUch52bbtVONEFjv6Xu8sm8h72dNlR5bzIE1fvC/bxgspzkjSfU+MweEMmPM8KJebG6nnyxo5mCg==}
+    engines: {node: '>=20'}
+    hasBin: true
+
+  playwright@1.63.0:
+    resolution: {integrity: sha512-+7ziBLidS4NaNCdt57SUDT+wYmmd5fmiQejUic/kb+YsYSCPyOOE9sebzMjNmQrsnNpDJqd4WHvV/8lfKfUDUg==}
+    engines: {node: '>=20'}
+    hasBin: true
+
   possible-typed-array-names@1.1.0:
     resolution: {integrity: sha512-/+5VFTchJDoVj3bhoqi6UeymcD00DAwb1nJwamzPvHEszJ4FpF6SNNbUbOS8yI56qHzdV8eK0qEfOSiodkTdxg==}
     engines: {node: '>= 0.4'}
@@ -2571,6 +2619,10 @@ snapshots:
     optional: true
 
   '@oxc-project/types@0.153.0': {}
+
+  '@playwright/test@1.63.0':
+    dependencies:
+      playwright: 1.63.0
 
   '@rolldown/binding-android-arm-eabi@1.2.13':
     optional: true
@@ -3374,6 +3426,12 @@ snapshots:
   pify@4.0.1: {}
 
   pkce-challenge@5.0.1: {}
+
+  playwright-core@1.63.0: {}
+
+  playwright@1.63.0:
+    dependencies:
+      playwright-core: 1.63.0
 
   possible-typed-array-names@1.1.0: {}
 

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { Event, HarnessRuntime, LimitWindow } from "@humanharness/runtime";
 import type { ChatEntry } from "@humanharness/ui";
 import { EngineUnavailable, TurnController, memoise } from "../src/main/turn-controller";
+import type { UsageMeta } from "../src/main/usage-log";
 
 type Emit = (e: Event) => void;
 
@@ -237,7 +238,7 @@ describe("TurnController usage and actions", () => {
     const fake = fakeRuntime();
     const order: string[] = [];
     const entries: ChatEntry[] = [];
-    const recorded: [ChatEntry, string | undefined, LimitWindow[] | undefined][] = [];
+    const recorded: [ChatEntry, UsageMeta, LimitWindow[] | undefined][] = [];
     const controller = new TurnController({
       ensureRuntime: async () => fake.runtime,
       chatLog: async () => ({
@@ -272,7 +273,7 @@ describe("TurnController usage and actions", () => {
       limits: windows,
       state: { progress: { percent: 50 } },
     });
-    expect(recorded).toEqual([[entries[1], "tidy", first]]);
+    expect(recorded).toEqual([[entries[1], { action: "tidy" }, first]]);
     expect(order.slice(-3)).toEqual(["log:assistant", "usage", "emit:done"]);
   });
 
@@ -343,5 +344,101 @@ describe("TurnController usage and actions", () => {
     other.finish([{ type: "done", ok: false, error: { code: "out-of-quota" } }]);
     await s2;
     expect(calls).not.toHaveBeenCalled();
+  });
+});
+
+describe("TurnController for tasks", () => {
+  it("shows the display text and tags both entries with the task; the action only on the task's first turn", async () => {
+    const fake = fakeRuntime();
+    const { controller, entries } = setup({ ensureRuntime: async () => fake.runtime });
+    const sent = controller.send("# Topic: engines\n(brief)", { action: "engines", task: "t1", display: "Engines" });
+    await vi.waitFor(() => expect(fake.send).toHaveBeenCalled());
+    expect(fake.send.mock.calls[0][0]).toBe("# Topic: engines\n(brief)");
+    fake.finish([{ type: "text", delta: "Hi" }, { type: "done", ok: true }]);
+    await sent;
+    expect(entries[0]).toMatchObject({ role: "user", text: "Engines", action: "engines", task: "t1" });
+    expect(entries[1]).toMatchObject({ role: "assistant", text: "Hi", task: "t1" });
+
+    const next = fakeRuntime();
+    const second = setup({ ensureRuntime: async () => next.runtime });
+    const followUp = second.controller.send("And the blocks?", { action: "engines", task: "t1", followUp: true });
+    await vi.waitFor(() => expect(next.send).toHaveBeenCalled());
+    next.finish([{ type: "done", ok: true }]);
+    await followUp;
+    expect(second.entries[0].action).toBeUndefined();
+    expect(second.entries[0]).toMatchObject({ text: "And the blocks?", task: "t1" });
+  });
+
+  it("runs a quiet closing turn: nothing in the chat or the window, usage tagged close, every event to onEvent", async () => {
+    const fake = fakeRuntime();
+    const entries: ChatEntry[] = [];
+    const events: Event[] = [];
+    const seen: Event[] = [];
+    const recorded: [string | undefined, UsageMeta][] = [];
+    const controller = new TurnController({
+      ensureRuntime: async () => fake.runtime,
+      chatLog: async () => ({ append: async (e) => void entries.push(e) }),
+      stateBlocks: () => new Set(["save_note"]),
+      emit: (e) => events.push(e),
+      recordUsage: async (entry, meta) => void recorded.push([entry.task, meta]),
+    });
+    const sent = controller.send("close please", { action: "turn", task: "t1", phase: "close", quiet: true, onEvent: (e) => seen.push(e) });
+    await vi.waitFor(() => expect(fake.send).toHaveBeenCalled());
+    fake.finish([
+      { type: "block", name: "save_note", data: { title: "T" } },
+      { type: "usage", inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
+      { type: "done", ok: true },
+    ]);
+    await sent;
+    expect(entries).toEqual([]);
+    expect(events).toEqual([]);
+    expect(seen.map((e) => e.type)).toEqual(["block", "usage", "done"]);
+    expect(recorded).toEqual([["t1", { action: "turn", task: "t1", phase: "close" }]]);
+  });
+
+  it("still tells the window a quiet turn's plan limits and a failure, logging only the error", async () => {
+    const fake = fakeRuntime();
+    const entries: ChatEntry[] = [];
+    const events: Event[] = [];
+    const controller = new TurnController({
+      ensureRuntime: async () => fake.runtime,
+      chatLog: async () => ({ append: async (e) => void entries.push(e) }),
+      stateBlocks: () => new Set(),
+      emit: (e) => events.push(e),
+    });
+    const windows: LimitWindow[] = [{ kind: "five_hour", utilization: 0.4, resetsAt: "2026-10-12T18:00:00.000Z" }];
+    const sent = controller.send("close please", { task: "t1", phase: "close", quiet: true });
+    await vi.waitFor(() => expect(fake.send).toHaveBeenCalled());
+    fake.finish([
+      { type: "limits", status: "allowed", windows },
+      { type: "text", delta: "Saving" },
+      { type: "done", ok: false, error: { code: "session-expired" } },
+    ]);
+    await sent;
+    expect(events).toEqual([
+      { type: "limits", status: "allowed", windows },
+      { type: "done", ok: false, error: { code: "session-expired" } },
+    ]);
+    expect(entries).toEqual([
+      { id: expect.any(String), role: "assistant", text: "", blocks: [], activities: [], at: expect.any(String), error: { code: "session-expired" }, task: "t1" },
+    ]);
+  });
+
+  it("keeps a cancelled quiet turn out of the window", async () => {
+    const fake = fakeRuntime();
+    const { controller, events, entries } = setup({ ensureRuntime: async () => fake.runtime });
+    const sent = controller.send("close please", { quiet: true });
+    await vi.waitFor(() => expect(fake.send).toHaveBeenCalled());
+    controller.cancel();
+    await sent;
+    expect(events).toEqual([]);
+    expect(entries).toEqual([]);
+  });
+
+  it("tells onEvent how the turn ended even when the engine can't start", async () => {
+    const seen: Event[] = [];
+    const { controller } = setup({ ensureRuntime: async () => null });
+    await controller.send("hi", { onEvent: (e) => seen.push(e) });
+    expect(seen).toEqual([{ type: "done", ok: false, error: { code: "engine-not-installed" } }]);
   });
 });

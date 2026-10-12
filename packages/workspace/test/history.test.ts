@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import git from "isomorphic-git";
 import { History } from "../src";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
@@ -145,5 +146,28 @@ describe("History", () => {
     expect(read("a.md")).toBe("1");
     expect(fs.existsSync(path.join(folder, "c.md"))).toBe(false);
     expect(await history.save("noop")).toBeNull();
+  });
+
+  it("tracks the notes under .harness/ and nothing else there", async () => {
+    const h = new History(folder, gitdir, [".harness/", "AGENTS.md"], [".harness/notes/"]);
+    write(".harness/notes/turn.md", "note");
+    write(".harness/chats/main.jsonl", "chat");
+    write("mine.md", "mine");
+    const sha = (await h.save("with a note"))!;
+    fs.rmSync(path.join(folder, ".harness/notes/turn.md"));
+    write(".harness/chats/main.jsonl", "changed");
+    await h.restore(sha, "back");
+    expect(read(".harness/notes/turn.md")).toBe("note");
+    expect(read(".harness/chats/main.jsonl")).toBe("changed");
+  });
+
+  it("keeps the person's own .tmp files but not the notes' temp files", async () => {
+    const h = new History(folder, gitdir, [".harness/", "AGENTS.md"], [".harness/notes/"]);
+    write("draft.tmp", "mine");
+    write(".harness/notes/turn.md.0b7c2f1e-1111-4222-8333-944455556666.tmp", "partial");
+    await h.save("tmp files");
+    const files = await git.listFiles({ fs, gitdir, ref: "HEAD" });
+    expect(files).toContain("draft.tmp");
+    expect(files.some((f) => f.startsWith(".harness/notes/") && f.endsWith(".tmp"))).toBe(false);
   });
 });

@@ -42,6 +42,8 @@ describe("folderProblem", () => {
     "/Users/ana/.claude",
     "/Users/ana/.claude/projects",
     "/Users/ana/.codex/x",
+    "/Users/ana/.gemini",
+    "/Users/ana/.Gemini/tmp",
     "/Users/ana/Library/Application Support/x",
     "/Users/ana/Documents/../.claude",
   ])("rejects %j", (folder) => {

@@ -1,4 +1,5 @@
 import { type ChildProcess, spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { Readable, Writable } from "node:stream";
 import * as acp from "@agentclientprotocol/sdk";
@@ -23,6 +24,8 @@ type PermissionResponse = { outcome: { outcome: "selected"; optionId: string } |
 
 export interface PermissionPolicy {
   folder: string;
+  /** Reference folders: reads and searches there are allowed, never edits. */
+  readRoots?: string[];
   permissions: Permissions;
   /** MCP servers the harness configured (always includes "ui"). */
   mcpServers: string[];
@@ -78,7 +81,7 @@ export function decidePermission(params: PermissionRequest, policy: PermissionPo
       case "read":
       case "search":
       case "think":
-        allow = allInside;
+        allow = (locations ?? []).every((l) => [policy.folder, ...(policy.readRoots ?? [])].some((root) => inside(root, l.path)));
         break;
       case "edit":
       case "delete":
@@ -99,6 +102,45 @@ export function decidePermission(params: PermissionRequest, policy: PermissionPo
 const KINDS: Record<string, ActivityKind> = {
   read: "read", search: "search", edit: "edit", delete: "edit", move: "edit", fetch: "web", execute: "exec",
 };
+
+/** An absolute (or home-relative) path starting a word: `/Users/x/a.md`, `~/a.md`, `C:\\x\\a.md`. */
+const ABSOLUTE_PATH = /(?<![^\s'"`(])(?:~|[A-Za-z]:)?[\\/][^\s'"`)]*/g;
+const FILE_KINDS = new Set(["read", "edit", "delete", "move"]);
+const LEADING_VERB = /^(?:read|reading|view|open|edit|write|create|delete|remove|move|rename|update)(?:\s+files?)?\s*:?\s+/i;
+
+function baseName(p: string): string {
+  return path.posix.basename(p.replace(/\\/g, "/").replace(/\/+$/, "")) || p;
+}
+
+function pathOf(locations: unknown, rawInput: unknown): string | undefined {
+  const first = Array.isArray(locations) ? (locations[0] as { path?: unknown } | undefined)?.path : undefined;
+  if (typeof first === "string" && first) return first;
+  const input = (rawInput ?? {}) as Record<string, unknown>;
+  for (const key of ["path", "file_path", "abs_path", "filePath"]) {
+    if (typeof input[key] === "string" && input[key]) return input[key] as string;
+  }
+  const parsed = Array.isArray(input.parsed_cmd) ? (input.parsed_cmd[0] as Record<string, unknown> | undefined) : undefined;
+  if (typeof parsed?.path === "string" && parsed.path) return parsed.path;
+  if (typeof parsed?.name === "string" && parsed.name) return parsed.name;
+  return undefined;
+}
+
+/**
+ * What an activity line shows for an ACP tool call, in the style of Claude's ("manifest.md"):
+ * the file's name for file tools, otherwise the title without absolute paths (they leak the home folder).
+ */
+export function activityDetail(call: { kind?: unknown; title?: unknown; locations?: unknown; rawInput?: unknown }): string {
+  const kind = typeof call.kind === "string" ? call.kind : "";
+  const fileKind = FILE_KINDS.has(kind);
+  const where = pathOf(call.locations, call.rawInput);
+  if (fileKind && where) return baseName(where);
+  const title = String(call.title ?? "")
+    .replace(ABSOLUTE_PATH, (p) => baseName(p))
+    .trim();
+  if (!fileKind) return title;
+  const rest = title.replace(LEADING_VERB, "").replace(/^['"`](.*)['"`]$/, "$1");
+  return rest && !/\s/.test(rest) ? baseName(rest) : rest || title;
+}
 
 function errorFrom(e: unknown, stderr = ""): Event {
   const err = e as { code?: unknown; message?: string };
@@ -124,10 +166,14 @@ export class AcpTransport implements Transport {
   private activities = new Map<string, { kind: ActivityKind; detail: string }>();
   private afterTool = false;
   private stderrTail = "";
+  /** What the agent advertised at initialize. */
+  private loadable = false;
+  private closable = false;
 
   constructor(private readonly o: TransportOptions) {}
 
-  private async start(): Promise<void> {
+  /** Starts the agent process and initializes the connection. */
+  private async connect(): Promise<void> {
     const [binary, ...args] = this.o.command;
     const child = spawn(binary, args, {
       cwd: this.o.folder,
@@ -152,6 +198,7 @@ export class AcpTransport implements Transport {
     const policy: PermissionPolicy = {
       folder: this.o.folder,
       permissions: this.o.permissions,
+      readRoots: this.o.references ?? [],
       mcpServers: this.o.mcp.map((s) => s.name),
       lookup: (id) => this.calls.get(id),
     };
@@ -165,8 +212,7 @@ export class AcpTransport implements Transport {
       .onNotification("session/update", (ctx) => this.onUpdate(ctx.params.update as Record<string, any>))
       .connect(stream);
 
-    const agent = this.conn.agent;
-    const init = await agent.request("initialize", {
+    const init = await this.conn.agent.request("initialize", {
       protocolVersion: acp.PROTOCOL_VERSION,
       clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
     });
@@ -174,13 +220,24 @@ export class AcpTransport implements Transport {
     if (this.o.minAdapterVersion && version && versionLess(version, this.o.minAdapterVersion)) {
       throw new OutdatedAdapterError(`ACP adapter ${version} is older than required ${this.o.minAdapterVersion}`);
     }
-    const mcpServers = this.o.mcp.map((s) => ({
+    this.loadable = Boolean(init.agentCapabilities?.loadSession);
+    this.closable = Boolean(init.agentCapabilities?.sessionCapabilities?.close);
+  }
+
+  private mcpServers() {
+    return this.o.mcp.map((s) => ({
       name: s.name,
       command: s.command,
       args: s.args,
       env: Object.entries(s.env).map(([name, value]) => ({ name, value })),
     }));
-    if (this.o.session.started && init.agentCapabilities?.loadSession) {
+  }
+
+  /** Loads the saved session (when there is one and the agent can) or creates a new one, then sets its mode. */
+  private async openSession(): Promise<void> {
+    const agent = this.conn!.agent;
+    const mcpServers = this.mcpServers();
+    if (this.o.session.started && this.loadable) {
       try {
         await agent.request("session/load", { sessionId: this.o.session.id, cwd: this.o.folder, mcpServers });
         this.sessionId = this.o.session.id;
@@ -254,7 +311,7 @@ export class AcpTransport implements Transport {
           this.hidden.add(u.toolCallId);
           return;
         }
-        const activity = { kind: KINDS[u.kind] ?? ("other" as const), detail: String(u.title ?? "") };
+        const activity = { kind: KINDS[u.kind] ?? ("other" as const), detail: activityDetail(u) };
         this.activities.set(u.toolCallId, activity);
         this.afterTool = true;
         emit({ type: "activity", id: u.toolCallId, ...activity, state: "start" });
@@ -275,9 +332,10 @@ export class AcpTransport implements Transport {
     this.calls.clear();
     this.hidden.clear();
     this.activities.clear();
-    if (!this.conn) {
+    if (!this.conn || !this.sessionId) {
       try {
-        await this.start();
+        if (!this.conn) await this.connect();
+        await this.openSession();
       } catch (e) {
         const event = errorFrom(e, this.stderrTail);
         await this.close();
@@ -336,6 +394,36 @@ export class AcpTransport implements Transport {
     }
     // Close after an expired login so the next turn starts a fresh process that sees a new login.
     if (expired) await this.close();
+  }
+
+  /** How long `endSession` waits for `session/close` before giving up on the process. */
+  sessionCloseTimeoutMs = 3000;
+
+  /**
+   * Closes the session with `session/close` and keeps the process for the next one. When the agent
+   * does not offer `session/close`, or does not answer it in time, the process is closed instead and
+   * the next turn reconnects.
+   */
+  async endSession(): Promise<void> {
+    const sessionId = this.sessionId;
+    this.sessionId = undefined;
+    this.o.session = { id: randomUUID(), started: false };
+    if (!sessionId || !this.conn) return;
+    if (!this.closable) {
+      await this.close();
+      return;
+    }
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timedOut = new Promise<"timeout">((resolve) => {
+      timer = setTimeout(() => resolve("timeout"), this.sessionCloseTimeoutMs);
+    });
+    const closed = this.conn.agent.request("session/close", { sessionId }).then(
+      () => "closed" as const,
+      () => "closed" as const, // the next turn opens a new session anyway
+    );
+    const outcome = await Promise.race([closed, timedOut]);
+    clearTimeout(timer);
+    if (outcome === "timeout") await this.close();
   }
 
   async close(): Promise<void> {

@@ -29,6 +29,11 @@ export type ClaudeStep =
 /** Script for fake-claude: printed lines, side effects, then exit. */
 export interface ClaudeScript {
   steps: ClaudeStep[];
+  /**
+   * Per-prompt steps: the first entry whose `match` (a regular expression) matches the prompt read
+   * from stdin runs instead of `steps`.
+   */
+  turns?: { match: string; steps: ClaudeStep[] }[];
   stderr?: string;
   exitCode?: number;
   /** Fail with this error result (exit 1) instead of running `steps`, but only when argv contains `--resume`. */
@@ -56,6 +61,10 @@ export interface AcpScript {
   agentVersion?: string;
   /** Make `session/load` fail with a generic (non-login) error. */
   failLoad?: boolean;
+  /** Advertise `sessionCapabilities.close` and answer `session/close`. */
+  closeSession?: boolean;
+  /** Never answer `session/close` (an agent stuck on it). */
+  hangClose?: boolean;
   turns: AcpStep[][];
 }
 

@@ -2,17 +2,19 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { getEngine } from "@humanharness/engines";
 import { type ClaudeScript, claudeResultLine, claudeTextLines, fakeAcpCommand, fakeClaudeCommand, writeScript } from "@humanharness/fake-agent";
 import { loadHarness } from "@humanharness/harness-sdk";
+import { ClaudeCliTransport } from "../src/claude-cli";
 import type { Event } from "../src/events";
-import { type HarnessRuntime, createRuntime } from "../src/runtime";
+import { type HarnessRuntime, type RuntimeOptions, createRuntime } from "../src/runtime";
+import type { Session } from "../src/transport";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
 
-const DEMO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../harnesses/demo/harness.config.ts");
+const FIXTURE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../fake-agent/fixtures/notes-harness/harness.config.ts");
 let runtime: HarnessRuntime | undefined;
 
 afterEach(async () => {
@@ -20,18 +22,21 @@ afterEach(async () => {
   runtime = undefined;
 });
 
-async function setup(script: ClaudeScript, folder = path.join(fs.mkdtempSync(path.join(root, "t-")), "Work")) {
+async function setup(script: ClaudeScript, folder = path.join(fs.mkdtempSync(path.join(root, "t-")), "Work"), extra: Partial<RuntimeOptions> = {}) {
   const argsFile = path.join(root, `args-${Date.now()}-${Math.random()}.json`);
+  const prompts = path.join(root, `prompts-${Date.now()}-${Math.random()}.jsonl`);
   runtime = await createRuntime({
-    harness: await loadHarness(DEMO),
+    harness: await loadHarness(FIXTURE),
     engine: getEngine("claude"),
     folder,
     gitdir: path.join(path.dirname(folder), "history.git"),
     language: "en",
     command: fakeClaudeCommand(),
-    env: { HH_FAKE_SCRIPT: writeScript(root, script), HH_FAKE_ARGS: argsFile },
+    env: { HH_FAKE_SCRIPT: writeScript(root, script), HH_FAKE_ARGS: argsFile, HH_FAKE_PROMPTS: prompts },
+    ...extra,
   });
-  return { runtime, folder, args: () => JSON.parse(fs.readFileSync(argsFile, "utf8")) as string[] };
+  const runs = () => fs.readFileSync(prompts, "utf8").trim().split("\n").map((l) => JSON.parse(l) as { argv: string[]; prompt: string });
+  return { runtime, folder, args: () => JSON.parse(fs.readFileSync(argsFile, "utf8")) as string[], runs };
 }
 
 async function send(r: HarnessRuntime, message = "hi") {
@@ -50,7 +55,7 @@ describe("createRuntime", () => {
     };
     const folder = path.join(fs.mkdtempSync(path.join(root, "t-")), "Work");
     runtime = await createRuntime({
-      harness: await loadHarness(DEMO),
+      harness: await loadHarness(FIXTURE),
       engine,
       folder,
       gitdir: path.join(path.dirname(folder), "history.git"),
@@ -63,7 +68,7 @@ describe("createRuntime", () => {
 
   it("prepares the folder: seed, AGENTS.md with managed section, CLAUDE.md", async () => {
     const { folder } = await setup({ steps: [] });
-    expect(fs.readFileSync(path.join(folder, "README.md"), "utf8")).toContain("demo app");
+    expect(fs.readFileSync(path.join(folder, "README.md"), "utf8")).toContain("test harness");
     const agents = fs.readFileSync(path.join(folder, "AGENTS.md"), "utf8");
     expect(agents).toContain("You are a test assistant");
     expect(agents).toContain("`show_note`");
@@ -95,7 +100,7 @@ describe("createRuntime", () => {
     });
     const events = await send(runtime);
     expect(events.at(-1)).toMatchObject({ type: "done", ok: false, error: { code: "agent-crashed" } });
-    expect(fs.readFileSync(path.join(folder, "README.md"), "utf8")).toContain("demo app");
+    expect(fs.readFileSync(path.join(folder, "README.md"), "utf8")).toContain("test harness");
   });
 
   it("keeps changes when the user cancels", async () => {
@@ -117,7 +122,7 @@ describe("createRuntime", () => {
     const events = await send(runtime);
     expect(events.at(-1)).toMatchObject({ type: "done", ok: false, error: { code: "agent-crashed" } });
     expect(fs.readFileSync(path.join(folder, "mine.md"), "utf8")).toBe("user edit");
-    expect(fs.readFileSync(path.join(folder, "README.md"), "utf8")).toContain("demo app");
+    expect(fs.readFileSync(path.join(folder, "README.md"), "utf8")).toContain("test harness");
     expect((await runtime.history.list()).map((c) => c.message)).toContain("Before message");
   });
 
@@ -156,16 +161,64 @@ describe("createRuntime", () => {
     runtime = undefined;
   }, 10_000);
 
-  it("persists the session and resumes it in the next runtime", async () => {
-    const script: ClaudeScript = { steps: [...claudeTextLines("ok"), claudeResultLine(true)] };
-    const first = await setup(script);
-    await send(first.runtime);
-    const firstId = first.args()[first.args().indexOf("--session-id") + 1];
-    await first.runtime.close();
+  it("continues the session it is given, reports new ones, and starts a fresh one after endSession", async () => {
+    const reported: Session[] = [];
+    const { runtime, folder, runs } = await setup({ steps: [...claudeTextLines("ok"), claudeResultLine(true)] }, undefined, {
+      session: { id: "given-1", started: true },
+      onSession: (s) => reported.push(s),
+    });
+    await send(runtime, "first");
+    await runtime.endSession();
+    await send(runtime, "second");
+    const [one, two] = runs();
+    expect([one.prompt, two.prompt]).toEqual(["first", "second"]);
+    expect(one.argv[one.argv.indexOf("--resume") + 1]).toBe("given-1");
+    const fresh = two.argv[two.argv.indexOf("--session-id") + 1];
+    expect(fresh).not.toBe("given-1");
+    expect(reported).toEqual([{ id: fresh, started: true }]);
+    expect(fs.existsSync(path.join(folder, ".harness", "session.json"))).toBe(false);
+  });
 
-    const second = await setup(script, first.folder);
-    await send(second.runtime);
-    expect(second.args()[second.args().indexOf("--resume") + 1]).toBe(firstId);
+  it("refuses a turn while the session is being ended", async () => {
+    const { runtime } = await setup({ steps: [...claudeTextLines("ok"), claudeResultLine(true)] });
+    let release!: () => void;
+    const spy = vi.spyOn(ClaudeCliTransport.prototype, "endSession").mockImplementation(() => new Promise<void>((r) => (release = r)));
+    try {
+      const ending = runtime.endSession();
+      expect(() => runtime.send("now", () => {})).toThrow(/already running/);
+      release();
+      await ending;
+    } finally {
+      spy.mockRestore();
+    }
+    expect((await send(runtime)).at(-1)).toEqual({ type: "done", ok: true });
+  });
+
+  it("refuses to end the session during a turn", async () => {
+    const { runtime } = await setup({ steps: [{ sleep: 2000 }] });
+    const turn = runtime.send("one", () => {});
+    await expect(runtime.endSession()).rejects.toThrow(/already running/);
+    turn.cancel();
+    await turn.done;
+  });
+
+  it("documents the core blocks and the reference folders, and lets Claude read those folders", async () => {
+    const ref = fs.mkdtempSync(path.join(root, "ref-"));
+    const { runtime, folder, args } = await setup({ steps: [...claudeTextLines("ok"), claudeResultLine(true)] }, undefined, {
+      references: [{ label: "Source", path: ref }],
+    });
+    const agents = fs.readFileSync(path.join(folder, "AGENTS.md"), "utf8");
+    expect(agents).toContain("`show_choices`");
+    expect(agents).toContain("`save_note`");
+    expect(agents).toContain(`- Source: \`${ref}\``);
+    await send(runtime);
+    expect(args()[args().indexOf("--add-dir") + 1]).toBe(ref);
+  });
+
+  it("delivers a save_note call as a block event", async () => {
+    const note = { title: "T", summary: ["a"], decisions: [], files: [], open: [] };
+    const { runtime } = await setup({ steps: [{ mcp: { server: "ui", tool: "save_note", args: note } }, claudeResultLine(true)] });
+    expect(await send(runtime)).toContainEqual({ type: "block", name: "save_note", data: note });
   });
 
   it("refuses a second turn while one is running", async () => {

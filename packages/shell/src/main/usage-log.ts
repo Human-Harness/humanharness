@@ -3,11 +3,21 @@ import path from "node:path";
 import type { LimitWindow } from "@humanharness/runtime";
 import type { ChatEntry, TurnUsage, UsageSummary } from "@humanharness/ui/client";
 
+/** Which task (and which of its phases) a turn belongs to. */
+export interface UsageMeta {
+  action?: string;
+  task?: string;
+  /** `run`: the task's own turns; `close`: the turn that asks for its note. */
+  phase?: "run" | "close";
+}
+
 /** One turn in `<folder>/.harness/usage.jsonl`. Only what the engine reported; never leaves the machine. */
 export interface UsageRecord {
   at: string;
   engine: string;
   action?: string;
+  task?: string;
+  phase?: "run" | "close";
   ok: boolean;
   usage?: TurnUsage;
   /** Latest windows the turn reported. */
@@ -49,12 +59,14 @@ export class UsageLog {
 }
 
 /** The usage record for a finished turn, or null when the engine reported nothing. */
-export function usageRecord(entry: ChatEntry, engine: string, action?: string, firstLimits?: LimitWindow[]): UsageRecord | null {
+export function usageRecord(entry: ChatEntry, engine: string, meta: UsageMeta = {}, firstLimits?: LimitWindow[]): UsageRecord | null {
   if (!entry.usage && !entry.limits) return null;
   return {
     at: entry.at,
     engine,
-    ...(action ? { action } : {}),
+    ...(meta.action ? { action: meta.action } : {}),
+    ...(meta.task ? { task: meta.task } : {}),
+    ...(meta.phase ? { phase: meta.phase } : {}),
     ok: !entry.error,
     ...(entry.usage ? { usage: entry.usage } : {}),
     ...(entry.limits ? { limits: entry.limits } : {}),
@@ -68,21 +80,31 @@ const FIVE_HOUR = "five_hour";
  * Current limits and per-action estimates. Claude reports the windows mid-turn (after the first
  * API response), so a turn's snapshot shows usage from before most of that turn: a turn's cost is
  * the rise of the five-hour window from its first snapshot to the next turn's first, when the next
- * turn has one and the window hasn't reset in between. Other use of the same account counts too, so it is a
- * rough guide.
+ * turn has one and the window hasn't reset in between. A task costs the sum of its turns (follow-ups
+ * included, its closing turn left out); a task with a turn that can't be measured is left out, and an
+ * action's estimate is the average over its tasks. Lines from before tasks were logged count as a task
+ * each. Other use of the same account counts too, so it is a rough guide.
  */
 export function summarizeUsage(records: UsageRecord[], now: Date = new Date()): UsageSummary {
   const fiveHour = (r: UsageRecord | undefined) => (r?.firstLimits ?? r?.limits)?.find((w) => w.kind === FIVE_HOUR);
   const last = records.filter((r) => r.limits && r.limits.length > 0).at(-1);
-  const sums: Record<string, { total: number; n: number }> = {};
-  for (let i = 0; i < records.length - 1; i++) {
+  const tasks = new Map<string, { action: string; total: number; measured: boolean }>();
+  for (let i = 0; i < records.length; i++) {
     const r = records[i];
-    if (!r.action) continue;
+    if (!r.action || r.phase === "close") continue;
+    const key = r.task ? `task:${r.task}` : `line:${i}`;
+    const task = tasks.get(key) ?? { action: r.action, total: 0, measured: true };
+    tasks.set(key, task);
     const before = fiveHour(r);
     const after = fiveHour(records[i + 1]);
-    if (!before || !after || before.resetsAt !== after.resetsAt) continue;
-    const sum = (sums[r.action] ??= { total: 0, n: 0 });
-    sum.total += Math.max(0, after.utilization - before.utilization);
+    if (!before || !after || before.resetsAt !== after.resetsAt) task.measured = false;
+    else task.total += Math.max(0, after.utilization - before.utilization);
+  }
+  const sums: Record<string, { total: number; n: number }> = {};
+  for (const task of tasks.values()) {
+    if (!task.measured) continue;
+    const sum = (sums[task.action] ??= { total: 0, n: 0 });
+    sum.total += task.total;
     sum.n++;
   }
   return {

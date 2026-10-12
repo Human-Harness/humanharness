@@ -1,36 +1,45 @@
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { z } from "zod";
+import { type Block, blockToolName } from "./block";
+import { CORE_BLOCKS, CORE_BLOCK_NAMES } from "./core-blocks";
+
+export * from "./block";
+export * from "./core-blocks";
 
 export const LANGUAGES = ["es", "en"] as const;
 export type Language = (typeof LANGUAGES)[number];
 export type LocalizedText = Record<Language, string>;
 
-/** A piece of UI the agent can show (visible) or update (state-only) through an MCP tool. */
-export interface Block<S extends z.ZodObject = z.ZodObject> {
-  description: string;
-  visible: boolean;
-  schema: S;
-  example: z.infer<S>;
-}
-
-export function defineBlock<S extends z.ZodObject>(block: Block<S>): Block<S> {
-  const result = block.schema.safeParse(block.example);
-  if (!result.success) throw new Error(`The block example does not match its schema: ${result.error.message}`);
-  return block;
-}
-
-/** Name of the MCP tool the agent calls for a block. */
-export function blockToolName(name: string, block: Pick<Block, "visible">): string {
-  return `${block.visible ? "show" : "update"}_${name}`;
-}
-
 const localizedText = z.object({ es: z.string().min(1), en: z.string().min(1) });
 export const ACTION_COSTS = ["light", "medium", "heavy"] as const;
 export type ActionCost = (typeof ACTION_COSTS)[number];
-/** A workflow the harness can start (e.g. from a button), with how much of the plan it tends to use. */
-const actionSchema = z.object({ label: localizedText, cost: z.enum(ACTION_COSTS) });
+/**
+ * A task the harness can start (a topic card, a step of the guided path, a button): its brief is the first
+ * message of the task's engine session. `cost` is how much of the plan it tends to use.
+ */
+const actionSchema = z.object({
+  label: localizedText,
+  /** One line under the label on the topic card. */
+  description: localizedText.optional(),
+  /** The task brief: a file in the harness folder. It may use {{language}} and {{notesIndex}}. */
+  prompt: z.string().min(1),
+  cost: z.enum(ACTION_COSTS),
+});
+/** A folder the agent may read but never change. */
+const referenceSchema = z.object({
+  id: z.string().regex(/^[a-z][a-z0-9-]*$/),
+  label: localizedText,
+  /** "app-source" (the repository the app runs from, in development), an absolute path or a "~/" path. */
+  default: z
+    .string()
+    .min(1)
+    .refine((d) => d === "app-source" || d.startsWith("/") || d.startsWith("~/"), {
+      message: 'Use "app-source", an absolute path or a path starting with ~/',
+    }),
+});
 export type HarnessAction = z.output<typeof actionSchema>;
+const TOOL_NAME = /^[a-z][a-z0-9_]*$/;
 const blockSchema = z.custom<Block>(
   (b) => {
     if (typeof b !== "object" || b === null) return false;
@@ -38,6 +47,7 @@ const blockSchema = z.custom<Block>(
     return (
       typeof x.description === "string" &&
       typeof x.visible === "boolean" &&
+      (x.tool === undefined || (typeof x.tool === "string" && TOOL_NAME.test(x.tool))) &&
       x.schema instanceof z.ZodObject &&
       x.schema.safeParse(x.example).success
     );
@@ -51,11 +61,13 @@ const manifestSchema = z.object({
   core: z.string().min(1),
   languages: z.array(z.enum(LANGUAGES)).min(1),
   engines: z.array(z.string().min(1)).min(1),
-  folder: z.object({ suggested: z.string().min(1), seed: z.string().optional() }),
+  folder: z.object({ suggested: z.string().min(1), seed: z.string().optional(), references: z.array(referenceSchema).default([]) }),
   instructions: z.string().min(1),
   permissions: z.object({ edit: z.enum(["folder", "none"]), exec: z.boolean(), web: z.boolean() }),
   blocks: z.record(z.string().regex(/^[a-z][a-z0-9_]*$/), blockSchema),
   actions: z.record(z.string().regex(/^[a-z][a-z0-9_-]*$/), actionSchema).default({}),
+  /** Optional guided order of action ids (the "Recorrido"). */
+  path: z.array(z.string()).min(1).optional(),
   /** One line under the name on the home screen. */
   tagline: localizedText.optional(),
   /** Logo file in the harness folder (SVG, PNG or JPEG); defaults to the Human Harness H. */
@@ -66,11 +78,35 @@ const manifestSchema = z.object({
   author: z.string().min(1),
   repo: z.url().optional(),
   donate: z.url().optional(),
+}).superRefine((m, ctx) => {
+  for (const name of Object.keys(m.blocks)) {
+    if (CORE_BLOCK_NAMES.includes(name)) ctx.addIssue({ code: "custom", path: ["blocks", name], message: `"${name}" is a core block name` });
+  }
+  // Every block becomes an MCP tool: two blocks (core ones included) cannot share a tool name.
+  const tools = new Map<string, string>(Object.entries(CORE_BLOCKS).map(([name, b]) => [blockToolName(name, b), name]));
+  for (const [name, b] of Object.entries(m.blocks)) {
+    const tool = blockToolName(name, b);
+    const other = tools.get(tool);
+    if (other !== undefined) ctx.addIssue({ code: "custom", path: ["blocks", name], message: `Tool "${tool}" is already used by block "${other}"` });
+    else tools.set(tool, name);
+  }
+  const seen = new Set<string>();
+  for (const id of m.path ?? []) {
+    if (!Object.hasOwn(m.actions, id)) ctx.addIssue({ code: "custom", path: ["path"], message: `Unknown action in path: "${id}"` });
+    if (seen.has(id)) ctx.addIssue({ code: "custom", path: ["path"], message: `"${id}" is in the path twice` });
+    seen.add(id);
+  }
+  const refs = new Set<string>();
+  for (const r of m.folder.references) {
+    if (refs.has(r.id)) ctx.addIssue({ code: "custom", path: ["folder", "references"], message: `Reference "${r.id}" is declared twice` });
+    refs.add(r.id);
+  }
 });
 
 export type Harness = z.output<typeof manifestSchema>;
 export type HarnessInput = z.input<typeof manifestSchema>;
 export type Permissions = Harness["permissions"];
+export type HarnessReference = Harness["folder"]["references"][number];
 
 export function defineHarness(config: HarnessInput): Harness {
   return manifestSchema.parse(config);
@@ -88,7 +124,10 @@ export async function loadHarness(configPath: string, options: { root?: string }
   const mod = (await import(pathToFileURL(absolute).href)) as { default?: unknown };
   if (mod.default === undefined) throw new Error(`${absolute} has no default export`);
   const harness = manifestSchema.parse(mod.default);
-  return { ...harness, root: options.root ? path.resolve(options.root) : path.dirname(absolute), configPath: absolute };
+  const loaded: LoadedHarness = { ...harness, root: options.root ? path.resolve(options.root) : path.dirname(absolute), configPath: absolute };
+  // Every task brief must live inside the harness folder.
+  for (const action of Object.values(loaded.actions)) resolveInHarness(loaded, action.prompt);
+  return loaded;
 }
 
 export function resolveInHarness(harness: LoadedHarness, relative: string): string {

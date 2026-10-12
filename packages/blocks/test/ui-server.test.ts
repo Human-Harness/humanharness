@@ -5,7 +5,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { afterEach, describe, expect, it } from "vitest";
 import { type BlockMessage, type Bridge, devLauncher, openBridge, uiServerSpec } from "../src";
 
-const DEMO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../harnesses/demo/harness.config.ts");
+const FIXTURE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../fake-agent/fixtures/notes-harness/harness.config.ts");
 
 let bridge: Bridge | undefined;
 let client: Client | undefined;
@@ -17,7 +17,7 @@ afterEach(async () => {
 
 async function connect(received: BlockMessage[]) {
   bridge = await openBridge((m) => received.push(m));
-  const spec = uiServerSpec({ harnessConfig: DEMO, bridge: { path: bridge.path, token: bridge.token }, launcher: devLauncher() });
+  const spec = uiServerSpec({ harnessConfig: FIXTURE, bridge: { path: bridge.path, token: bridge.token }, launcher: devLauncher() });
   client = new Client({ name: "test", version: "0.0.0" });
   await client.connect(
     new StdioClientTransport({
@@ -30,11 +30,20 @@ async function connect(received: BlockMessage[]) {
 }
 
 describe("ui MCP server", () => {
-  it("exposes one tool per block", async () => {
+  it("exposes one tool per block, the core blocks included", async () => {
     const c = await connect([]);
     const { tools } = await c.listTools();
-    expect(tools.map((t) => t.name).sort()).toEqual(["show_note", "update_progress"]);
+    expect(tools.map((t) => t.name).sort()).toEqual(["save_note", "show_choices", "show_note", "update_progress"]);
     expect(tools.find((t) => t.name === "show_note")?.description).toContain("note");
+  });
+
+  it("forwards a save_note call under the block's name", async () => {
+    const received: BlockMessage[] = [];
+    const c = await connect(received);
+    const note = { title: "T", summary: ["a"], decisions: [], files: [], open: [] };
+    const result = await c.callTool({ name: "save_note", arguments: note });
+    expect(result.isError).toBeFalsy();
+    expect(received).toEqual([{ name: "save_note", data: note }]);
   });
 
   it("forwards valid calls through the bridge", async () => {

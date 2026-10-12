@@ -20,15 +20,25 @@ export function HistoryPanel({
   const [confirming, setConfirming] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
   const closeRef = useRef<HTMLButtonElement>(null);
+  /** What had focus when the panel opened: it gets focus back when the panel closes. */
+  const opener = useRef<HTMLElement | null>(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
+  // Reads only refs, so the Escape listener added on the first render can call it.
+  const close = () => {
+    const back = opener.current;
+    onCloseRef.current();
+    if (back?.isConnected) back.focus();
+  };
   useEffect(() => {
     void client.history().then(setItems);
   }, [client]);
   useEffect(() => {
+    opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     closeRef.current?.focus();
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onCloseRef.current();
+      // A dialog above it (the pre-flight question) handled this Escape itself.
+      if (e.key === "Escape" && !e.defaultPrevented) close();
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
@@ -39,7 +49,7 @@ export function HistoryPanel({
     client.restore(sha).then(
       () => {
         onRestored?.();
-        onClose();
+        close();
       },
       () => {
         setConfirming(null);
@@ -52,7 +62,7 @@ export function HistoryPanel({
     <aside className="hh-history" role="dialog" aria-modal="true" aria-label={t("history.title")}>
       <header>
         <h2>{t("history.title")}</h2>
-        <button ref={closeRef} onClick={onClose}>
+        <button ref={closeRef} onClick={close}>
           {t("history.close")}
         </button>
       </header>

@@ -49,7 +49,7 @@ Requires Node ≥ 22 and pnpm (via corepack).
 
 Run one harness turn against a real engine you are logged in to:
 
-    corepack pnpm hh-dev --harness harnesses/demo/harness.config.ts --folder /tmp/hh-demo --engine claude "How does a turn work?"
+    corepack pnpm hh-dev --harness harnesses/demo/harness.config.ts --folder /tmp/hh-demo --engine claude "In two sentences, what is a harness?"
 
 Open the demo harness as a desktop app (macOS):
 

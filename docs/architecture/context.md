@@ -6,7 +6,7 @@ Long-term memory belongs to the harness; short-term memory belongs to the engine
 
 - A task is one topic or unit of work: a manifest action, or a free question.
 - The app drives the flow (`packages/shell/src/main/task-manager.ts`): idle → running → waiting → closing → idle. A message while waiting follows up in the same session. Picking "next" or another topic closes the current task.
-- Closing sends one quiet last turn in the same session (`CLOSE_PROMPT` in `task-prompts.ts`) asking the agent to call `save_note`. The app validates the note and writes `.harness/notes/<action>.md` (`packages/workspace/src/notes.ts`). Then the session is ended: Claude starts the next one with a new `--session-id`, Codex gets `session/close`.
+- Closing sends one quiet last turn in the same session (`CLOSE_PROMPT` in `task-prompts.ts`) asking the agent to call `save_note`. The app validates the note and writes `.harness/notes/<action>.md`, or `.harness/notes/q-<title>.md` for a free question (`q-<title>-2.md`, `-3`… when that name is taken) (`packages/workspace/src/notes.ts`). Then the session is ended: Claude starts the next one with a new `--session-id`, Codex gets `session/close`.
 - Cancel, a failed first turn, an engine switch or quitting end the task without a note and mark it unfinished.
 - The state lives in `.harness/tasks.json` (`packages/shell/src/main/task-store.ts`).
 

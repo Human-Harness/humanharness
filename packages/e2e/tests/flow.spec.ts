@@ -1,11 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
 import { expect, test } from "@playwright/test";
-import { launch, makeSandbox, readJsonl, sessionOf } from "./helpers";
+import { closeAndClean, launch, makeSandbox, readJsonl, sessionOf } from "./helpers";
 import { claudeScript, codexScript } from "./scripts";
 
 type Run = { argv: string[]; prompt: string };
 const START = "¿Qué parte querés entender?";
+const readTasks = (folder: string) => JSON.parse(fs.readFileSync(path.join(folder, ".harness", "tasks.json"), "utf8"));
 
 test("a topic answered with blocks, then next: the note is saved and the next topic starts from it", async () => {
   const s = makeSandbox("flow");
@@ -15,7 +16,8 @@ test("a topic answered with blocks, then next: the note is saved and the next to
     await page.getByRole("region", { name: START }).getByRole("button", { name: /El manifiesto/ }).click();
     await expect(page.getByRole("main").getByText("El manifiesto declara todo el harness.")).toBeVisible();
     await expect(page.getByRole("figure", { name: "Del manifiesto a la app" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Abrir packages/harness-sdk/src/index.ts en el editor" })).toBeVisible();
+    // Source files are shown in Finder, never opened.
+    await expect(page.getByRole("button", { name: "Mostrar packages/harness-sdk/src/index.ts en Finder" })).toBeVisible();
 
     await page.getByRole("button", { name: "Seguir el recorrido →" }).click();
     await expect(page.getByRole("main").getByText("Los motores se detectan en cada inicio.")).toBeVisible();
@@ -37,12 +39,12 @@ test("a topic answered with blocks, then next: the note is saved and the next to
     expect(second.argv).toContain("--session-id");
     expect(sessionOf(second.argv)).not.toBe(sessionOf(first.argv));
 
-    const tasks = JSON.parse(fs.readFileSync(path.join(s.folder, ".harness", "tasks.json"), "utf8"));
-    expect(tasks.actions).toEqual({ manifest: "done" });
-    expect(readJsonl<{ phase?: string }>(path.join(s.folder, ".harness", "usage.jsonl")).map((r) => r.phase)).toEqual(["run", "close", "run"]);
+    // The text shows before the turn ends: wait for its usage line and the task's state.
+    await expect.poll(() => readTasks(s.folder)).toMatchObject({ current: { action: "engines", status: "waiting" }, actions: { manifest: "done" } });
+    await expect.poll(() => readJsonl<{ phase?: string }>(path.join(s.folder, ".harness", "usage.jsonl")).map((r) => r.phase)).toEqual(["run", "close", "run"]);
     await expect(page.getByRole("list", { name: "Lo que ya quedó claro" }).getByRole("button", { name: "El manifiesto" })).toBeVisible();
   } finally {
-    await app.close();
+    await closeAndClean(app, s);
   }
 });
 
@@ -65,8 +67,7 @@ test("changing the engine keeps the notes, and the first task on the new engine 
     await expect(page.getByRole("main").getByText(/Ahora usás Codex/)).toBeVisible();
     await expect(page.getByRole("list", { name: "Lo que ya quedó claro" }).getByRole("button", { name: "El manifiesto" })).toBeVisible();
     expect(fs.existsSync(path.join(s.folder, ".harness", "notes", "manifest.md"))).toBe(true);
-    const tasks = JSON.parse(fs.readFileSync(path.join(s.folder, ".harness", "tasks.json"), "utf8"));
-    expect(tasks).toMatchObject({ current: null, actions: { manifest: "done", engines: "unfinished" } });
+    await expect.poll(() => readTasks(s.folder)).toMatchObject({ current: null, actions: { manifest: "done", engines: "unfinished" } });
 
     await page.getByPlaceholder("O preguntá algo…").fill("¿Dónde se guarda la conversación?");
     await page.getByRole("button", { name: "Enviar" }).click();
@@ -77,6 +78,6 @@ test("changing the engine keeps the notes, and the first task on the new engine 
       "- El manifiesto (manifest): defineHarness valida el manifiesto; Las acciones traen su brief → .harness/notes/manifest.md",
     );
   } finally {
-    await app.close();
+    await closeAndClean(app, s);
   }
 });

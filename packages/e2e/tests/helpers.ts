@@ -51,13 +51,24 @@ export async function launch(s: Sandbox, scripts: { claude: ClaudeScript; codex?
     claude: { command: fakeClaudeCommand(), env: { HH_FAKE_SCRIPT: writeScript(s.root, scripts.claude), HH_FAKE_PROMPTS: s.claudePrompts } },
     codex: { command: fakeAcpCommand(), env: { HH_FAKE_SCRIPT: writeScript(s.root, scripts.codex ?? idleCodex), HH_FAKE_LOG: s.acpLog } },
   };
-  const env = Object.fromEntries(Object.entries(process.env).filter((e): e is [string, string] => e[1] !== undefined && e[0] !== "ELECTRON_RENDERER_URL"));
+  // Not inherited: a dev server address, or ELECTRON_RUN_AS_NODE (it would start Electron as plain Node).
+  const dropped = new Set(["ELECTRON_RENDERER_URL", "ELECTRON_RUN_AS_NODE"]);
+  const env = Object.fromEntries(Object.entries(process.env).filter((e): e is [string, string] => e[1] !== undefined && !dropped.has(e[0])));
   const app = await electron.launch({
     executablePath: electronBinary,
     args: [shellDir],
     env: { ...env, HH_TEST_USER_DATA: s.userData, HH_TEST_SHARED_DIR: s.sharedDir, HH_TEST_ENGINES: JSON.stringify(engines) },
   });
   return { app, page: await app.firstWindow() };
+}
+
+/** Closes the app and removes the sandbox: .tmp sits inside the repository the explainer reads. */
+export async function closeAndClean(app: ElectronApplication, s: Sandbox): Promise<void> {
+  try {
+    await app.close();
+  } finally {
+    fs.rmSync(s.root, { recursive: true, force: true });
+  }
 }
 
 export function readJsonl<T>(file: string): T[] {

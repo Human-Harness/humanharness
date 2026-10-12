@@ -4,7 +4,7 @@ Open-source framework for building **harnesses**: installable desktop apps that 
 
 Each user brings **their own AI subscription** through the provider's official CLI, which the app installs and configures. No developer API keys, no terminals, no Node or git in sight: harnesses are made for non-technical people.
 
-> **Status:** early development. The Node foundations (plan 1), the desktop app (plans 2a and 2b) and the flow and context management (plan 3) are in place: harnesses run their actions as tasks with one engine session each, keep notes in the user's folder and start every session from them. The demo harness is an architecture explainer for developers. Design: [`docs/superpowers/specs/`](docs/superpowers/specs/). Roadmap: [`docs/superpowers/plans/`](docs/superpowers/plans/).
+> **Status:** early development. The Node foundations (plan 1), the desktop app (plans 2a and 2b), the flow and context management (plans 3 and 3c) and the authoring CLI and guide (plan 4a) are in place: harnesses run their actions as tasks with one engine session each, keep notes in the user's folder and start every session from them. The demo harness is an architecture explainer for developers. Design: [`docs/superpowers/specs/`](docs/superpowers/specs/). Roadmap: [`docs/superpowers/plans/`](docs/superpowers/plans/).
 
 ## How it works
 
@@ -58,22 +58,20 @@ Open the demo harness as a desktop app (macOS):
 
 ## Create a harness
 
-A harness is a folder with a manifest, instructions for the AI, its own UI and its strings. Start from [`harnesses/demo`](harnesses/demo) (its README explains each file):
+A harness lives in its own repository. Create one from the template and let the guide shape it:
 
-1. Copy `harnesses/demo` to `harnesses/<your-id>` and change `name` in its `package.json`.
-2. Edit `harness.config.ts`:
-   - `id`, `name`, `tagline`, `languages`, `author`, and optionally `logo` (shown on Home), `donate` (a Support link in Settings → About) and `repo` (your source repository; kept in the manifest, the app doesn't show it yet).
-   - `engines`: the engines you tested with. Users only see the ones whose terms allow this use (see §5 of the core spec, [`docs/superpowers/specs/2026-10-10-humanharness-core-design.md`](docs/superpowers/specs/2026-10-10-humanharness-core-design.md)).
-   - `folder.suggested` and `folder.seed`: where the user's work lives and what is copied there the first time.
-   - `permissions`: `edit: "folder"` or `"none"`, `exec`, `web`.
-   - `blocks`: one `defineBlock({ description, visible, schema, example })` per piece of UI the AI can show (`visible: true`) or update silently (`visible: false`).
-   - `actions`: the tasks your harness offers, each with a `label`, an optional `description`, a `prompt` (a brief in your harness folder; `{{language}}` and `{{notesIndex}}` are filled in) and a `cost` of `light`, `medium` or `heavy`. Heavy ones may ask the user first when their plan is close to its limit. Each task runs in its own engine session and ends with a note in `.harness/notes/`.
-   - `path` (optional): the order of the guided path shown in the side panel.
-   - `folder.references` (optional): folders the AI may read but never change.
-3. Write `agent/AGENTS.md`: what the AI does and when it calls each block's tool (`show_<block>` / `update_<block>`). Every harness also has two core tools: `show_choices`, which ends each answer with ways to continue, and `save_note`, which the app asks for when a task closes.
-4. Write `ui/App.tsx`: mount `HarnessApp` with a component per visible block, your locales and, for the work screen's start view, `startView` (keys of your strings for its title, intro, frequent questions and the line under the composer). State-only blocks and a right-hand panel (`stateBlocks`, `renderSide`) are still available. Each block component gets `BlockProps`, which now also carries `choose`, `open`, `reveal` and `active` (all required): tests that build `BlockProps` by hand need to pass them too.
-5. Add `locales/es.json` and `locales/en.json` with every key in each language.
-6. Run it: `corepack pnpm install`, then `HH_HARNESS_DIR="$PWD/harnesses/<your-id>" corepack pnpm app:dev` (an absolute path: the app resolves it from `packages/shell`).
+    corepack pnpm humanharness init ~/code/my-harness
+    cd ~/code/my-harness
+
+Then open Claude Code or Codex in that folder and run `/new-harness`. The guide asks one question at a time about the task, the decisions the person makes, the flow, what each task keeps as a note, the models, the permissions and the identity; it records each decision in `HARNESS.md` and writes the code. Along the way:
+
+    corepack pnpm check                          # validate the harness (HARNESS.md included)
+    corepack pnpm run run <action> --engine claude   # run one task in the terminal, with a usage report
+    corepack pnpm dev                            # open the app with this harness
+
+`run` uses an engine only after its legal notice was accepted in the app on this computer: open the app once with `corepack pnpm dev` and set the engine up there first. In `run`, Ctrl-C stops the running turn, and at the prompt closes the task like `q`.
+
+How it works: [`docs/architecture/authoring.md`](docs/architecture/authoring.md). The demo, [`harnesses/demo`](harnesses/demo), is a complete example to read, not a starting point.
 
 You are responsible for what your harness does with the AI and for the engines you offer: each user brings their own account under their provider's terms.
 

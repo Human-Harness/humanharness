@@ -29,7 +29,8 @@ export function agentsFile(id: string, guide: string): string {
 }
 
 /** The guide between the markers of an AGENTS.md, or null when there is none. */
-export function guideSection(agents: string): string | null {
+export function guideSection(text: string): string | null {
+  const agents = text.replace(/\r\n/g, "\n");
   const start = agents.indexOf(`${GUIDE_START}\n`);
   const end = agents.indexOf(GUIDE_END);
   if (start < 0 || end < start) return null;

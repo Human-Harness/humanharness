@@ -62,6 +62,7 @@ export async function checkHarness(dir: string, opts: { mode?: Mode } = {}): Pro
   findings.push(...(await i18nFindings(harness)));
   findings.push(...brandFindings(harness));
   findings.push(...engineFindings(harness, opts.mode ?? "development"));
+  if (doc) findings.push(...malformedPermissionFindings(doc));
   if (doc?.flow) findings.push(...mismatchFindings(harness, doc));
   const instructions = await readInstructions(harness, findings);
   findings.push(...pillarFindings(harness, briefs, instructions, doc));
@@ -250,6 +251,7 @@ function mismatchFindings(h: LoadedHarness, doc: HarnessDoc): Finding[] {
   const manifest: Record<PermissionKey, string> = { edit: h.permissions.edit, exec: String(h.permissions.exec), web: String(h.permissions.web) };
   for (const key of PERMISSION_KEYS) {
     const p = doc.permissions.find((x) => x.key === key);
+    if (!p && doc.malformedPermissions.some((x) => x.key === key)) continue; // reported by malformedPermissionFindings
     if (!p) mismatch(`Permissions and engines has no "${key}:" line.`, permsLine);
     else if (p.value !== manifest[key]) mismatch(`${key}: HARNESS.md says ${p.value}, harness.config.ts says ${manifest[key]}.`, p.line);
   }
@@ -258,6 +260,16 @@ function mismatchFindings(h: LoadedHarness, doc: HarnessDoc): Finding[] {
     mismatch(`engines: HARNESS.md says ${doc.engines.ids.join(", ")}, harness.config.ts says ${h.engines.join(", ")}.`, doc.engines.line);
   }
   return out;
+}
+
+/** A permission line HARNESS.md can't read, with the format it expects. */
+function malformedPermissionFindings(doc: HarnessDoc): Finding[] {
+  return doc.malformedPermissions
+    .filter((m) => !doc.permissions.some((p) => p.key === m.key))
+    .map((m) => {
+      const example = `- ${m.key}: ${m.key === "edit" ? "none" : "false"} — reason`;
+      return error("harness-md-mismatch", `Permissions and engines: "${m.text}" is not in the expected format \`${example}\`.`, HARNESS_MD, m.line);
+    });
 }
 
 /** A brief that tells the AI not to save its note. */

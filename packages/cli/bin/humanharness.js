@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// The `humanharness` command. The core ships TypeScript source: tsx loads it, and the harness's manifest.
+// The `humanharness` command. The core ships TypeScript source: tsx loads it, and also loads the harness's TypeScript manifest.
 import { register } from "tsx/esm/api";
 
 register();

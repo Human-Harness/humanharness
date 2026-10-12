@@ -72,6 +72,29 @@ describe("parseHarnessMd", () => {
     expect(doc.engines).toBeNull();
   });
 
+  it("matches section headings without case, under their canonical names", () => {
+    const doc = parseHarnessMd("## flow\n\n| Action | Tier | Cost | Purpose |\n|---|---|---|---|\n| a | light | light | x |\n\n## PERMISSIONS AND ENGINES\n\n- edit: none\n");
+    expect([...doc.sections.keys()]).toEqual(["Flow", "Permissions and engines"]);
+    expect(doc.sections.get("Flow")?.title).toBe("flow");
+    expect(doc.flow).toHaveLength(1);
+    expect(doc.permissions.map((p) => p.key)).toEqual(["edit"]);
+  });
+
+  it("keeps a permission line it can't read as malformed", () => {
+    const doc = parseHarnessMd("## Permissions and engines\n\n- edit: none, no files\n- exec: false\n- `web`: yes please (maybe)\n- editor: vim\n");
+    expect(doc.permissions.map((p) => p.key)).toEqual(["exec"]);
+    expect(doc.malformedPermissions).toEqual([
+      { key: "edit", text: "- edit: none, no files", line: 3 },
+      { key: "web", text: "- `web`: yes please (maybe)", line: 5 },
+    ]);
+  });
+
+  it("ignores ## lines inside fenced code blocks", () => {
+    const doc = parseHarnessMd("## Task\n\n```md\n## Flow\n```\n\n~~~\n## Context\n~~~\n\n## Decisions\n");
+    expect([...doc.sections.keys()]).toEqual(["Task", "Decisions"]);
+    expect(sectionText(doc.sections.get("Task"))).toContain("## Flow");
+  });
+
   it("reads the template's skeleton: every section, its table and its permission lines", () => {
     const doc = parseHarnessMd(read(path.join(CORE, "packages", "cli", "template"), "HARNESS.md"));
     expect([...doc.sections.keys()]).toEqual([...HARNESS_SECTIONS]);

@@ -116,6 +116,6 @@ Fills: HARNESS.md → Open questions, Decision log
 
 1. Run `corepack pnpm check` and fix every error.
 2. Go through the warnings with the developer: fix each one, or record in the Decision log why it stays.
-3. Run at least one task for real: `corepack pnpm run run <action> --engine claude` (or `codex`); the engine's official CLI must be signed in. Read its report (tokens per phase, peak context against the cap, the cost hint) and adjust tiers or briefs.
+3. Ask the developer before running a task for real: it uses their engine plan. If they agree, run at least one: `corepack pnpm run run <action> --engine claude` (or `codex`); the engine's official CLI must be signed in. Read its report (tokens per phase, peak context against the cap, the cost hint) and adjust tiers or briefs.
 4. Open the app with `corepack pnpm dev`.
 5. Leave **Open questions** empty, or with only what the developer chose to keep open.

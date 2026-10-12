@@ -46,5 +46,11 @@ describe("the /new-harness guide", () => {
     expect(agents).toMatch(/^# my-harness\n/);
     expect(guideSection(agents)).toBe(guide);
     expect(guideSection("# x\nno guide here\n")).toBeNull();
+    expect(guideSection(agents.replace(/\n/g, "\r\n"))).toBe(guide);
+  });
+
+  it("asks the developer before running a real task, since it uses their plan", () => {
+    const verify = phases(guide).find((p) => p.name === "Verify")!;
+    expect(verify.body).toMatch(/ask the developer/i);
   });
 });

@@ -167,6 +167,13 @@ describe("check: errors", () => {
     expect(r.findings.filter((f) => f.rule === "harness-md-mismatch").every((f) => f.file === "HARNESS.md" && typeof f.line === "number")).toBe(true);
   });
 
+  it("harness-md-mismatch: a permission line in a shape HARNESS.md can't read quotes the expected format", async () => {
+    const r = await checkHarness(await fixture((d) => replaceIn(d, "HARNESS.md", "- edit: none — the template changes no files.", "- edit: none, the template changes no files.")));
+    expect(r.findings.filter((f) => f.rule === "harness-md-mismatch").map((f) => f.message)).toEqual([
+      'Permissions and engines: "- edit: none, the template changes no files." is not in the expected format `- edit: none — reason`.',
+    ]);
+  });
+
   it("harness-md-mismatch: an action missing from the table", async () => {
     const r = await checkHarness(await fixture((d) => replaceIn(d, "HARNESS.md", "| example | standard | light | Shows how an action works |\n", "")));
     expect(r.findings.filter((f) => f.rule === "harness-md-mismatch").map((f) => f.message)).toEqual(['Action "example" is missing from the Flow table.']);

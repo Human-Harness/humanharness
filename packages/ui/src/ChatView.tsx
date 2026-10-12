@@ -1,6 +1,6 @@
 import { type ComponentType, type FormEvent, type ReactNode, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ActivityList } from "./ActivityList";
+import { WorkingStatus } from "./ActivityList";
 import { ChoicesBlock } from "./ChoicesBlock";
 import { GearIcon, TopBar } from "./chrome";
 import { type AppState, type ChoiceOption, type EngineProblem, type HarnessClient, type NoteView, type SendOptions, type TaskView, nextInPath } from "./client";
@@ -182,7 +182,8 @@ export function ChatView({
   }, [chat.entries, chat.live]);
 
   useEffect(() => {
-    if (chat.live && !wasLive.current) setAnnouncement(t("chat.working"));
+    // "Working…" is announced by the status row itself; clearing lets the final answer be announced afresh.
+    if (chat.live && !wasLive.current) setAnnouncement("");
     if (!chat.live && wasLive.current) {
       setAnnouncement(markdownToPlain(chat.entries.findLast((e) => e.role === "assistant")?.text ?? ""));
       inputRef.current?.focus();
@@ -412,8 +413,8 @@ export function ChatView({
             )}
             {chat.live && (
               <article className="hh-message assistant live">
-                <ActivityList items={chat.live.activities} />
-                {chat.live.text ? <Markdown text={chat.live.text} /> : <p className="hh-working">{t("chat.working")}</p>}
+                <WorkingStatus items={chat.live.activities} />
+                {chat.live.text && <Markdown text={chat.live.text} />}
                 <Blocks blocks={chat.live.blocks} components={all} actions={blockActions(false)} />
               </article>
             )}

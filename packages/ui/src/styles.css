@@ -135,8 +135,22 @@ input[type="text"], input:not([type]) { font: inherit; height: 28px; padding: 0 
 .hh-md-url { color: var(--hh-muted); overflow-wrap: anywhere; }
 .hh-message.user { justify-self: end; background: var(--hh-surface); border: 1px solid var(--hh-line); border-radius: 10px; padding: 8px 12px; }
 .hh-who { color: var(--hh-muted); font-size: 12px; }
-.hh-activity { list-style: none; padding: 0; margin: 0 0 4px; color: var(--hh-muted); font-size: 12px; }
-.hh-activity .running::after { content: " …"; }
+/* A turn at work (mockups "Trabajando", collapsed and expanded): one status row, the steps behind a toggle. */
+.hh-work { display: flex; flex-direction: column; min-width: min(340px, 100%); width: fit-content; max-width: 100%; margin: 0 0 8px; background: var(--hh-sheet); border: 1px solid var(--hh-line); border-radius: 10px; }
+.hh-work-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px 8px 12px; }
+.hh-work-status { flex: 1; display: flex; align-items: center; gap: 10px; color: var(--hh-slate); }
+.hh-work-toggle { height: 26px; gap: 5px; padding: 0 9px; background: transparent; font-size: 12px; color: var(--hh-slate); }
+.hh-work.done { min-width: 0; background: none; border: 0; }
+.hh-work.done > .hh-work-toggle { align-self: flex-start; border-color: transparent; padding: 0 6px; margin-left: -6px; color: var(--hh-muted); }
+.hh-loader { display: block; flex: none; }
+.hh-loader-static { display: block; flex: none; box-sizing: border-box; border-radius: 50%; border: 2px solid var(--hh-line-strong); border-top-color: var(--hh-muted); }
+.hh-activity { list-style: none; margin: 0; padding: 10px 14px 12px 38px; display: flex; flex-direction: column; gap: 7px; border-top: 1px solid var(--hh-line); color: var(--hh-muted); font-size: 12px; }
+.hh-activity[hidden] { display: none; }
+.hh-work.done .hh-activity { padding: 6px 0 4px; border-top: 0; }
+.hh-activity li { display: flex; align-items: center; gap: 8px; }
+.hh-activity li.running { color: var(--hh-ink); }
+.hh-activity-mark { width: 13px; height: 13px; flex: none; display: flex; align-items: center; justify-content: center; }
+.hh-activity li.done .hh-activity-mark { color: var(--hh-ok); }
 .hh-block { margin: 8px 0; }
 .hh-error { background: var(--hh-error-bg); border-radius: 10px; padding: 8px 12px; display: grid; gap: 8px; justify-items: start; }
 .hh-confirm { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; background: var(--hh-surface); border: 1px solid var(--hh-line); border-radius: 10px; padding: 10px 12px; }

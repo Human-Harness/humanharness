@@ -2,6 +2,7 @@ import type { ComponentType } from "react";
 import { useTranslation } from "react-i18next";
 import { ActivityList } from "./ActivityList";
 import type { ChatEntry, ChoiceOption, SendOptions } from "./client";
+import { Markdown } from "./markdown";
 
 export interface BlockProps {
   data: any;
@@ -61,7 +62,8 @@ export function Message({
     <article className={`hh-message ${entry.role}`}>
       {entry.role === "user" && <span className="hh-who">{t("chat.you")}</span>}
       {entry.role === "assistant" && <ActivityList items={entry.activities.map((a) => ({ ...a, done: true }))} />}
-      {entry.text && entry.text.split("\n\n").map((p, i) => <p key={i}>{p}</p>)}
+      {entry.text &&
+        (entry.role === "assistant" ? <Markdown text={entry.text} /> : entry.text.split("\n\n").map((p, i) => <p key={i}>{p}</p>))}
       <Blocks blocks={entry.blocks} components={components} actions={actions} />
     </article>
   );

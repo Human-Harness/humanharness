@@ -9,6 +9,7 @@ import { FlowSide } from "./FlowSide";
 import { uiLanguage } from "./FolderStep";
 import { HistoryPanel } from "./HistoryPanel";
 import { type BlockActions, type BlockProps, Blocks, Message } from "./Message";
+import { Markdown, markdownToPlain } from "./markdown";
 import { NotesPanel } from "./NotesPanel";
 import { type StartViewCopy, StartView } from "./StartView";
 import { initialChat, reduceChat } from "./state";
@@ -183,7 +184,7 @@ export function ChatView({
   useEffect(() => {
     if (chat.live && !wasLive.current) setAnnouncement(t("chat.working"));
     if (!chat.live && wasLive.current) {
-      setAnnouncement(chat.entries.findLast((e) => e.role === "assistant")?.text ?? "");
+      setAnnouncement(markdownToPlain(chat.entries.findLast((e) => e.role === "assistant")?.text ?? ""));
       inputRef.current?.focus();
       client.getUsage().then((u) => setEstimates(u.estimates), () => {});
       if (!chat.entries.at(-1)?.error) onTurnOk?.();
@@ -412,7 +413,7 @@ export function ChatView({
             {chat.live && (
               <article className="hh-message assistant live">
                 <ActivityList items={chat.live.activities} />
-                {chat.live.text ? chat.live.text.split("\n\n").map((p, i) => <p key={i}>{p}</p>) : <p className="hh-working">{t("chat.working")}</p>}
+                {chat.live.text ? <Markdown text={chat.live.text} /> : <p className="hh-working">{t("chat.working")}</p>}
                 <Blocks blocks={chat.live.blocks} components={all} actions={blockActions(false)} />
               </article>
             )}

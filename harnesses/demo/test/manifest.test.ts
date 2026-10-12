@@ -31,6 +31,19 @@ describe("demo manifest", () => {
     }
   });
 
+  it("runs the deep topics deep and free questions light (resources spec §9)", async () => {
+    const h = await loadHarness(CONFIG);
+    expect(Object.fromEntries(Object.entries(h.actions).map(([id, a]) => [id, a.tier]))).toEqual({
+      manifest: "standard",
+      engines: "standard",
+      turn: "deep",
+      blocks: "standard",
+      context: "deep",
+      history: "standard",
+    });
+    expect(h.questions).toEqual({ tier: "light" });
+  });
+
   it("has the same strings in Spanish and English", () => {
     const keys = (o: Record<string, unknown>, prefix = ""): string[] =>
       Object.entries(o).flatMap(([k, v]) => (typeof v === "object" && v !== null ? keys(v as Record<string, unknown>, `${prefix}${k}.`) : [`${prefix}${k}`]));

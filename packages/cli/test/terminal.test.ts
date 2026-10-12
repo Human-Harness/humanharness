@@ -66,7 +66,7 @@ describe("UsageTally and formatReport", () => {
     expect(text).toContain("  model         sonnet (engine reported: claude-sonnet-4-6)");
     expect(text).toMatch(/ {2}run\s+2\s+1,210\s+81\s+900\s+0\n/);
     expect(text).toContain("  peak context  2,100 of 200,000 (1%)");
-    expect(text).toContain("  verdict       used about 1,751 tokens; cost hint says light");
+    expect(text).toContain("  verdict       used about 1,751 tokens (input+output, uncached), plus 2,700 cache read and 0 cache write; cost hint says light");
     expect(text).toContain("  usage log     /w/.harness/usage.jsonl");
     expect(text).toContain("  note          /w/.harness/notes/example.md");
   });

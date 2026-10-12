@@ -44,7 +44,10 @@ export async function devCommand(o: DevOptions): Promise<number> {
   });
   return new Promise((resolve) => {
     child.on("exit", (code) => resolve(code ?? 1));
-    child.on("error", () => resolve(1));
+    child.on("error", (err) => {
+      o.out.write(`Could not start electron-vite: ${err.message}\n`);
+      resolve(1);
+    });
   });
 }
 

@@ -83,6 +83,11 @@ export function usedTokens(r: RunReport): number {
   return Object.values(r.phases).reduce((sum, p) => sum + p.input + p.output, 0);
 }
 
+/** Cache reads and writes over every phase, shown next to the verdict so it isn't read as the whole bill. */
+export function cacheTokens(r: RunReport): { read: number; write: number } {
+  return Object.values(r.phases).reduce((sum, p) => ({ read: sum.read + p.cacheRead, write: sum.write + p.cacheWrite }), { read: 0, write: 0 });
+}
+
 export function formatReport(r: RunReport): string {
   const lines = [
     "",
@@ -103,7 +108,10 @@ export function formatReport(r: RunReport): string {
   if (r.peakContext !== undefined) {
     lines.push(`  peak context  ${n(r.peakContext)}${r.cap ? ` of ${n(r.cap)} (${Math.round((r.peakContext / r.cap) * 100)}%)` : ""}`);
   }
-  lines.push(`  verdict       used about ${n(usedTokens(r))} tokens; cost hint says ${r.cost}`);
+  const cache = cacheTokens(r);
+  lines.push(
+    `  verdict       used about ${n(usedTokens(r))} tokens (input+output, uncached), plus ${n(cache.read)} cache read and ${n(cache.write)} cache write; cost hint says ${r.cost}`,
+  );
   lines.push(`  usage log     ${path.join(r.folder, ".harness", "usage.jsonl")}`);
   if (r.notePath) lines.push(`  note          ${r.notePath}`);
   return `${lines.join("\n")}\n`;

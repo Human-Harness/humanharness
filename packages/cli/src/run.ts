@@ -18,6 +18,7 @@ import {
   createCommandDeps,
   detectEngine,
   engineCommand,
+  hasAcceptedNotice,
   memoise,
   nextFallback,
   resolveProfile,
@@ -44,20 +45,42 @@ export interface RunOptions {
   language?: Language;
   input: Readable;
   output: Writable;
-  /** Aborting cancels the running turn (Ctrl-C). */
-  signal?: AbortSignal;
+  /** Ctrl-C presses: the command line passes SIGINT, tests an emitter. */
+  interrupts?: Interrupts;
   /** Tests: run this command instead of the engine's CLI, with no readiness check. Never credentials. */
   engineCommand?: { command: string[]; env: Record<string, string> };
+  /** Tests: where the readiness check looks (default: the official CLIs and `~/.humanharness/engines.json`). */
+  readiness?: { deps: CommandDeps; shared: SharedConfigStore };
 }
 
+/** A source of Ctrl-C presses; `on` returns the function that removes the listener. */
+export interface Interrupts {
+  on(listener: () => void): () => void;
+}
+
+/** Ctrl-C as SIGINT, for as long as a listener is on. */
+export const sigint: Interrupts = {
+  on(listener) {
+    process.on("SIGINT", listener);
+    return () => process.off("SIGINT", listener);
+  },
+};
+
+/** Why `run` stops when the engine's legal notice was never accepted in the app on this computer. */
+export const noticeMessage = (engine: string) =>
+  `${engine}'s notice hasn't been accepted on this computer. Open the app once (corepack pnpm dev, or humanharness dev), accept the notice and set up ${engine} there, then run again.`;
+
 /**
- * The engine's command when its official CLI is installed, current and signed in (as the app checks before a
- * first turn); otherwise a stop with the app's own message. Reads nothing from the CLI's own files.
+ * The engine's command when its legal notice was accepted in the app (the shared engines.json every app on this
+ * computer reads) and its official CLI is installed, current and signed in, as the app checks before a first
+ * turn; otherwise a stop with the app's own message. The notice comes first: nothing runs the CLI before it.
+ * Reads nothing from the CLI's own files.
  */
 export async function readyEngine(engine: EngineDef, deps: CommandDeps, shared: SharedConfigStore): Promise<{ command: string[]; env: Record<string, string> }> {
   const stop = (code: ErrorCode): never => {
     throw new CliError(errorMessage(code, engine.name));
   };
+  if (!(await hasAcceptedNotice(shared, engine.id))) throw new CliError(noticeMessage(engine.name));
   const status = await detectEngine(engine, deps, shared);
   if (!status.installed) stop("engine-not-installed");
   if (status.outdated) stop("outdated-version");
@@ -83,11 +106,14 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
   const language: Language = o.language ?? (harness.languages.includes("en") ? "en" : harness.languages[0]);
   if (!harness.languages.includes(language)) throw new UsageError(`${harness.id} does not offer the language "${language}".`);
 
+  const command =
+    o.engineCommand ??
+    (await readyEngine(engine, o.readiness?.deps ?? createCommandDeps(process.execPath), o.readiness?.shared ?? new SharedConfigStore(sharedConfigDir())));
+  // Only once the engine is ready: a stop leaves no folder behind.
   const folder = o.folder ? path.resolve(o.folder) : await fs.mkdtemp(path.join(os.tmpdir(), `hh-run-${harness.id}-`));
   await fs.mkdir(folder, { recursive: true });
   const out = o.output;
   out.write(`Folder: ${folder}\n`);
-  const command = o.engineCommand ?? (await readyEngine(engine, createCommandDeps(process.execPath), new SharedConfigStore(sharedConfigDir())));
 
   const view = new TerminalView(out, engine.name, (out as { isTTY?: boolean }).isTTY === true);
   const tally = new UsageTally();
@@ -97,6 +123,8 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
   const gitdir = path.join(os.tmpdir(), "humanharness-run-history", `${harness.id}-${createHash("sha256").update(folder).digest("hex").slice(0, 12)}`);
   const stateBlocks = new Set(Object.entries(allBlocks(harness)).filter(([, b]) => !b.visible).map(([name]) => name));
   let lastNote: string | undefined;
+  // Counted, not compared by path: a checkpoint's note and the closing one go to the same file.
+  let notesWritten = 0;
 
   // Same wiring as the app's main process (packages/shell/src/main/index.ts), with the terminal as the window.
   const runtime = memoise(() =>
@@ -134,6 +162,7 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
     notes: () => readNotes(folder),
     writeNote: async (slug, note, meta) => {
       lastNote = path.join(folder, await writeNote(folder, slug, note, meta));
+      notesWritten++;
     },
     endSession: async () => {
       const rt = await runtime.peek()?.catch(() => null);
@@ -156,45 +185,79 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
       }),
     fallbackFor: async (profile, tried) => nextFallback(profile, {}, tried),
   });
-  o.signal?.addEventListener("abort", () => tasks.cancel(), { once: true });
 
-  const reader = createInterface({ input: o.input, terminal: false });
-  const typed = reader[Symbol.asyncIterator]();
+  // Ctrl-C during an operation cancels its turn; at the prompt it closes the task like q, and once a close was
+  // stopped, Ctrl-C at the prompt leaves without closing (the next run in this folder ends the task as unfinished).
+  let promptInterrupted: (() => void) | undefined;
+  const removeInterrupts = o.interrupts?.on(() => {
+    if (promptInterrupted) promptInterrupted();
+    else tasks.cancel();
+  });
   try {
-    // A task an earlier run left open in this folder can't continue: its session is gone.
-    await tasks.interrupt();
-    await tasks.start(o.action);
-    for (;;) {
-      const current = (await store.load()).current;
-      if (!current) break;
-      const options = view.choices;
-      out.write(promptFor(options.length));
-      const next = await typed.next();
-      const line = next.done ? "q" : next.value.trim();
-      if (line === "") continue;
-      view.choices = [];
-      if (line === "q") {
-        const before = lastNote;
-        if (!(await tasks.finish())) {
-          out.write("\nStopped before the closing turn; the task is still open.\n");
-          continue;
+    const reader = createInterface({ input: o.input, terminal: false });
+    const typed = reader[Symbol.asyncIterator]();
+    // A line read that lost the race with a Ctrl-C: the next prompt waits for it instead of reading again.
+    let pending: Promise<IteratorResult<string>> | undefined;
+    let closeStopped = false;
+    try {
+      // A task an earlier run left open in this folder can't continue: its session is gone.
+      await tasks.interrupt();
+      await tasks.start(o.action);
+      for (;;) {
+        const current = (await store.load()).current;
+        if (!current) break;
+        const options = view.choices;
+        const interrupted = new Promise<"interrupt">((resolve) => {
+          promptInterrupted = () => resolve("interrupt");
+        });
+        out.write(promptFor(options.length));
+        pending ??= typed.next();
+        const next = await Promise.race([pending, interrupted]);
+        promptInterrupted = undefined;
+        let line: string;
+        if (next === "interrupt") {
+          out.write("\n");
+          if (closeStopped) {
+            out.write("Left without closing the task.\n");
+            break;
+          }
+          line = "q";
+        } else {
+          pending = undefined;
+          line = next.done ? "q" : next.value.trim();
         }
-        out.write(lastNote && lastNote !== before ? `\nNote: ${lastNote}\n` : "\nNo note was saved.\n");
-        break;
+        if (line === "") continue;
+        view.choices = [];
+        if (line === "q") {
+          const before = notesWritten;
+          if (!(await tasks.finish())) {
+            closeStopped = true;
+            out.write("\nStopped before the closing turn; the task is still open.\n");
+            continue;
+          }
+          if (notesWritten > before) out.write(`\nNote: ${lastNote}\n`);
+          else if (lastNote) out.write(`\nThe closing turn saved no note; the checkpoint's stands: ${lastNote}\n`);
+          else out.write("\nNo note was saved.\n");
+          break;
+        }
+        closeStopped = false;
+        const pick = Number(line);
+        if (Number.isInteger(pick) && pick >= 1 && pick <= options.length) await tasks.choose(options[pick - 1], current.id);
+        else await tasks.ask(line);
       }
-      const pick = Number(line);
-      if (Number.isInteger(pick) && pick >= 1 && pick <= options.length) await tasks.choose(options[pick - 1], current.id);
-      else await tasks.ask(line);
+    } finally {
+      promptInterrupted = undefined;
+      reader.close();
+      await turns.flush();
+      const rt = await runtime.peek()?.catch(() => null);
+      await rt?.close();
     }
+    const report = tally.report({ folder, action: o.action, cost: action.cost, ...(lastNote ? { notePath: lastNote } : {}) });
+    out.write(formatReport(report));
+    return report;
   } finally {
-    reader.close();
-    await turns.flush();
-    const rt = await runtime.peek()?.catch(() => null);
-    await rt?.close();
+    removeInterrupts?.();
   }
-  const report = tally.report({ folder, action: o.action, cost: action.cost, ...(lastNote ? { notePath: lastNote } : {}) });
-  out.write(formatReport(report));
-  return report;
 }
 
 const RUN_USAGE = "Usage: humanharness run <action> [--engine claude|codex] [--tier light|standard|deep] [--folder <dir>] [--language es|en] [--harness <dir>]";
@@ -210,23 +273,16 @@ export async function runCommand(args: string[], io: Io): Promise<number> {
   if (positionals.length !== 1) throw new UsageError(RUN_USAGE);
   if (values.tier !== undefined && !(TIERS as readonly string[]).includes(values.tier)) throw new UsageError(`Unknown tier "${values.tier}": use light, standard or deep.`);
   if (values.language !== undefined && !(LANGUAGES as readonly string[]).includes(values.language)) throw new UsageError(`Unknown language "${values.language}": use es or en.`);
-  const controller = new AbortController();
-  const onInterrupt = () => controller.abort();
-  process.once("SIGINT", onInterrupt);
-  try {
-    await runTask({
-      harnessDir: path.resolve(io.cwd, values.harness ?? "."),
-      action: positionals[0],
-      ...(values.engine ? { engine: values.engine } : {}),
-      ...(values.tier ? { tier: values.tier as Tier } : {}),
-      ...(values.folder ? { folder: path.resolve(io.cwd, values.folder.replace(/^~(?=$|\/)/, os.homedir())) } : {}),
-      ...(values.language ? { language: values.language as Language } : {}),
-      input: io.stdin,
-      output: io.stdout,
-      signal: controller.signal,
-    });
-    return 0;
-  } finally {
-    process.off("SIGINT", onInterrupt);
-  }
+  await runTask({
+    harnessDir: path.resolve(io.cwd, values.harness ?? "."),
+    action: positionals[0],
+    ...(values.engine ? { engine: values.engine } : {}),
+    ...(values.tier ? { tier: values.tier as Tier } : {}),
+    ...(values.folder ? { folder: path.resolve(io.cwd, values.folder.replace(/^~(?=$|\/)/, os.homedir())) } : {}),
+    ...(values.language ? { language: values.language as Language } : {}),
+    input: io.stdin,
+    output: io.stdout,
+    interrupts: sigint,
+  });
+  return 0;
 }

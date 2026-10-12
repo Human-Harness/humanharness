@@ -64,6 +64,17 @@ describe("devCommand", () => {
   it("passes the electron-vite exit code through", async () => {
     expect(await devCommand({ harnessDir: await harness(), out: memoryStream().stream, spawn: fakeSpawn(3).spawn })).toBe(3);
   });
+
+  it("says why electron-vite could not start", async () => {
+    const spawn: DevSpawn = () => {
+      const child = new EventEmitter();
+      queueMicrotask(() => child.emit("error", Object.assign(new Error("spawn electron-vite ENOENT"), { code: "ENOENT" })));
+      return child;
+    };
+    const out = memoryStream();
+    expect(await devCommand({ harnessDir: await harness(), out: out.stream, spawn })).toBe(1);
+    expect(out.text()).toContain("Could not start electron-vite: spawn electron-vite ENOENT");
+  });
 });
 
 describe("humanharness dev", () => {

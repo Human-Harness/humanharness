@@ -8,7 +8,9 @@ export type ErrorCode =
   | "cancelled"
   | "outdated-version"
   /** The user hasn't accepted the engine's legal notice (at its current version) in this app. */
-  | "notice-required";
+  | "notice-required"
+  /** The plan doesn't include the model the task asked for (resources spec §5.3). */
+  | "model-unavailable";
 
 export interface EngineError {
   code: ErrorCode;
@@ -39,7 +41,13 @@ export type Event =
       cacheWriteTokens: number;
       /** API-equivalent cost when the engine reports it. Not what the user pays. */
       costEquivalentUsd?: number;
+      /** The model the engine says it ran (Claude: system/init; Codex: currentModelId without its effort). */
+      model?: string;
     }
+  /** Context in use after the turn, in tokens, and the window when the engine reports it (spec §6). */
+  | { type: "context"; used: number; size?: number }
+  /** The engine compacted the conversation during the turn. */
+  | { type: "compaction" }
   | { type: "done"; ok: true }
   | { type: "done"; ok: false; error: EngineError };
 

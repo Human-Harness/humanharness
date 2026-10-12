@@ -502,4 +502,33 @@ describe("AcpTransport profiles", () => {
     await run(transport, "hi", undefined, deep);
     expect(offers).toEqual([offeredModels(MODEL_OPTIONS)]);
   });
+
+  it("reports the context in use, and one compaction per turn that never shows as activity", async () => {
+    const { transport } = setup({
+      turns: [
+        [
+          { update: { sessionUpdate: "tool_call", toolCallId: "c1", title: "Compact conversation", kind: "other", status: "in_progress" } },
+          { update: { sessionUpdate: "compaction_update", compactionId: "k1", status: "completed" } },
+          { update: { sessionUpdate: "usage_update", used: 42_000, size: 258_000 } },
+          chunk("ok"),
+        ],
+      ],
+    });
+    const events = await run(transport);
+    expect(events).toEqual([{ type: "compaction" }, { type: "context", used: 42_000, size: 258_000 }, { type: "text", delta: "ok" }, { type: "done", ok: true }]);
+  });
+
+  it("fails with model-unavailable when the session runs another model than the profile asked for", async () => {
+    const { transport, log } = setup({ currentModelId: "gpt-5.5[high]", turns: [[chunk("never")]] });
+    const events = await run(transport, "hi", undefined, { ...deep, model: "gpt-9" });
+    expect(events.at(-1)).toMatchObject({ type: "done", ok: false, error: { code: "model-unavailable" } });
+    expect(log().filter((l) => l.method === "session/prompt")).toHaveLength(0);
+  });
+
+  it("accepts the requested model and reports it with the usage", async () => {
+    const { transport } = setup({ currentModelId: "gpt-5.5[high]", usage: { inputTokens: 1, outputTokens: 1 }, turns: [[chunk("ok")]] });
+    const events = await run(transport, "hi", undefined, deep);
+    expect(events).toContainEqual(expect.objectContaining({ type: "usage", model: "gpt-5.5" }));
+    expect(events.at(-1)).toEqual({ type: "done", ok: true });
+  });
 });

@@ -154,6 +154,8 @@ export class TurnController {
         else {
           recorder.add(e);
           this.tell(onEvent, e);
+          // The context and compactions reach the window through the task view, never as chat events.
+          if (e.type === "context" || e.type === "compaction") return;
           // Plan limits reach the usage meter even from a quiet turn.
           if (!quiet || e.type === "limits") this.emit(e);
         }

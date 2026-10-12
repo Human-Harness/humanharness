@@ -125,6 +125,40 @@ describe("ClaudeCliTransport", () => {
     expect(() => args()).toThrow();
   });
 
+  it("maps a model the plan doesn't include to model-unavailable", async () => {
+    const { transport } = setup({
+      steps: [
+        { line: { type: "assistant", parent_tool_use_id: null, error: "model_not_found", message: { content: [{ type: "text", text: "x" }] } } },
+        { line: { type: "result", subtype: "success", is_error: true, api_error_status: 404, terminal_reason: "api_error", result: "There's an issue with the selected model (opus)." } },
+      ],
+      exitCode: 1,
+    });
+    const events = await run(transport);
+    expect(events.at(-1)).toEqual({ type: "done", ok: false, error: { code: "model-unavailable", detail: "There's an issue with the selected model (opus)." } });
+  });
+
+  it("the fake CLI refuses the models its script lists, like the real one", async () => {
+    const { transport } = setup({ steps: [claudeResultLine(true)], failModels: ["opus"] });
+    const events: Event[] = [];
+    await transport.turn("x", (e) => events.push(e), new AbortController().signal, { engine: "claude", tier: "deep", model: "opus", effort: "high", cap: 400_000 });
+    expect(events.at(-1)).toMatchObject({ type: "done", ok: false, error: { code: "model-unavailable" } });
+  });
+
+  it("reports the context in use from the last API call, else from the result, and the model it ran", async () => {
+    const call = (input: number, read: number) => ({
+      line: { type: "assistant", parent_tool_use_id: null, message: { content: [], usage: { input_tokens: input, cache_read_input_tokens: read, cache_creation_input_tokens: 10, output_tokens: 5 } } },
+    });
+    const result = {
+      line: { type: "result", subtype: "success", is_error: false, result: "", usage: { input_tokens: 9000, output_tokens: 50, cache_read_input_tokens: 90_000, cache_creation_input_tokens: 100 } },
+    };
+    const { transport } = setup({ steps: [{ line: { type: "system", subtype: "init", session_id: "s", model: "claude-sonnet-4-5" } }, call(100, 40_000), call(200, 50_000), result] });
+    const events = await run(transport);
+    expect(events).toContainEqual({ type: "context", used: 50_210 });
+    expect(events).toContainEqual(expect.objectContaining({ type: "usage", model: "claude-sonnet-4-5" }));
+    const { transport: other } = setup({ steps: [result] });
+    expect(await run(other)).toContainEqual({ type: "context", used: 99_100 });
+  });
+
   it("streams text and reports success", async () => {
     const { transport, started, args, stdin } = setup({ steps: [...claudeTextLines("Hello there"), claudeResultLine(true, "Hello there")] });
     const events = await run(transport, "say hi");

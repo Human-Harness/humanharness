@@ -13,6 +13,10 @@ const UI_TOOL_PREFIX = "mcp__ui__";
 const NO_CONVERSATION = /no conversation found/i;
 const HIDDEN_TOOLS = new Set(["ToolSearch", "TodoWrite"]);
 
+/** Tokens of context a call used: its fresh input plus what it read from and wrote to the cache. */
+const contextOf = (u: Record<string, unknown>): number =>
+  (Number(u.input_tokens) || 0) + (Number(u.cache_read_input_tokens) || 0) + (Number(u.cache_creation_input_tokens) || 0);
+
 export function allowedTools(permissions: Permissions, mcp: McpServerSpec[]): string[] {
   const tools = ["Read", "Glob", "Grep", "TodoWrite"];
   if (permissions.edit === "folder") tools.push("Edit(./**)", "Write(./**)", "MultiEdit(./**)");
@@ -118,6 +122,12 @@ export class StreamJsonReader {
   private tools = new Map<string, { kind: ActivityKind; detail: string }>();
   resultError: string | null = null;
   sawResult = false;
+  /** The model the CLI reported at system/init. */
+  private model: string | undefined;
+  /** Context in use at the last top-level API call. */
+  private lastContext: number | null = null;
+  /** The plan doesn't include the requested model (`model_not_found`, or a 404 API error). */
+  modelUnavailable = false;
 
   constructor(
     private readonly emit: (e: Event) => void,
@@ -133,6 +143,11 @@ export class StreamJsonReader {
     }
     if (typeof o.session_id === "string") this.onSessionId(o.session_id);
     if ((o.parent_tool_use_id ?? null) !== null) return;
+
+    if (o.type === "system" && o.subtype === "init") {
+      if (typeof o.model === "string") this.model = o.model;
+      return;
+    }
 
     if (o.type === "rate_limit_event") {
       const info = o.rate_limit_info ?? {};
@@ -162,6 +177,8 @@ export class StreamJsonReader {
     }
 
     if (o.type === "assistant") {
+      if (o.error === "model_not_found") this.modelUnavailable = true;
+      if (o.message?.usage) this.lastContext = contextOf(o.message.usage);
       for (const b of o.message?.content ?? []) {
         if (b.type !== "tool_use" || String(b.name).startsWith(UI_TOOL_PREFIX) || HIDDEN_TOOLS.has(b.name)) continue;
         if (this.tools.has(b.id)) continue;
@@ -185,6 +202,7 @@ export class StreamJsonReader {
 
     if (o.type === "result") {
       this.sawResult = true;
+      if (o.error === "model_not_found" || (o.api_error_status === 404 && o.terminal_reason === "api_error")) this.modelUnavailable = true;
       if (o.usage) {
         this.emit({
           type: "usage",
@@ -193,8 +211,12 @@ export class StreamJsonReader {
           cacheReadTokens: o.usage.cache_read_input_tokens ?? 0,
           cacheWriteTokens: o.usage.cache_creation_input_tokens ?? 0,
           ...(typeof o.total_cost_usd === "number" ? { costEquivalentUsd: o.total_cost_usd } : {}),
+          ...(this.model ? { model: this.model } : {}),
         });
       }
+      // The last call's size is the context in use; the result's totals add up every call of the turn.
+      const used = this.lastContext ?? (o.usage ? contextOf(o.usage) : 0);
+      if (used > 0) this.emit({ type: "context", used });
       if (o.is_error || (o.subtype && o.subtype !== "success")) {
         this.resultError = (typeof o.result === "string" && o.result) || "Claude Code could not finish the request.";
       }
@@ -300,6 +322,7 @@ export class ClaudeCliTransport implements Transport {
         rest = "";
         if (tail) reader.feed(tail);
         if (signal.aborted) finish(fail("cancelled"));
+        else if (reader.modelUnavailable) finish(fail("model-unavailable", reader.resultError ?? "model_not_found"));
         else if (reader.resultError) finish(fail(classifyError(reader.resultError), reader.resultError));
         else if (sig) finish(fail(classifyError(stderr), stderr.trim() || `exit signal ${sig}`));
         else if (code !== 0) finish(fail(classifyError(stderr), stderr.trim() || `exit code ${code}`));

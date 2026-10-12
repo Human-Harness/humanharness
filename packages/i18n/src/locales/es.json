@@ -223,6 +223,7 @@
     "outdated-version": "Hace falta actualizar {{engine}}.",
     "notice": "{{engine}} todavía no está del todo configurado en esta app.",
     "notice-required": "Antes de usar {{engine}}, aceptá su aviso en Ajustes.",
+    "model-unavailable": "Tu plan de {{engine}} no incluye el modelo elegido. Cambialo en Ajustes › Modelos.",
     "resetsAt": "Tu límite se renueva: {{time}}.",
     "retry": "Reintentar",
     "fix": {

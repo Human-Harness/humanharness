@@ -223,6 +223,7 @@
     "outdated-version": "{{engine}} needs an update.",
     "notice": "{{engine}} isn't fully set up in this app yet.",
     "notice-required": "Before using {{engine}}, accept its notice in Settings.",
+    "model-unavailable": "Your {{engine}} plan doesn't include the chosen model. Change it in Settings › Models.",
     "resetsAt": "Your limit resets: {{time}}.",
     "retry": "Try again",
     "fix": {

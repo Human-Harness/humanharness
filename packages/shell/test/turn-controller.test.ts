@@ -441,4 +441,16 @@ describe("TurnController for tasks", () => {
     await controller.send("hi", { onEvent: (e) => seen.push(e) });
     expect(seen).toEqual([{ type: "done", ok: false, error: { code: "engine-not-installed" } }]);
   });
+
+  it("keeps context and compaction events from the window, but the caller sees them", async () => {
+    const fake = fakeRuntime();
+    const { controller, events } = setup({ ensureRuntime: async () => fake.runtime });
+    const seen: string[] = [];
+    const sent = controller.send("hi", { onEvent: (e) => seen.push(e.type) });
+    await vi.waitFor(() => expect(fake.send).toHaveBeenCalled());
+    fake.finish([{ type: "context", used: 5 }, { type: "compaction" }, { type: "done", ok: true }]);
+    await sent;
+    expect(seen).toEqual(["context", "compaction", "done"]);
+    expect(events.map((e) => e.type)).toEqual(["done"]);
+  });
 });

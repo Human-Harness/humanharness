@@ -38,6 +38,8 @@ export interface ClaudeScript {
   exitCode?: number;
   /** Fail with this error result (exit 1) instead of running `steps`, but only when argv contains `--resume`. */
   failOnResume?: string;
+  /** Models the "plan" doesn't include: a run with `--model <one of these>` answers like the real CLI does. */
+  failModels?: string[];
 }
 
 export type AcpStep =

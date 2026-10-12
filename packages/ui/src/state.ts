@@ -100,6 +100,10 @@ export function reduceChat(state: ChatState, action: ChatAction): ChatState {
         };
       }
       return live ? { ...state, live: { ...live, blocks: [...live.blocks, { name: action.name, data: action.data }] } } : state;
+    case "context":
+    case "compaction":
+      // The task view carries them (the side panel's meter); the conversation doesn't change.
+      return state;
     case "limits":
       return { ...state, limits: action.windows, live: live ? { ...live, limits: action.windows } : live };
     case "usage":

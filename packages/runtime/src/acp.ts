@@ -42,6 +42,11 @@ const STDERR_KEEP = 4096;
 
 class OutdatedAdapterError extends Error {}
 
+/** What Codex titles its own compaction step. */
+const COMPACT_TITLE = "Compact conversation";
+
+class ModelUnavailableError extends Error {}
+
 function versionLess(a: string, b: string): boolean {
   const parse = (v: string) => v.split(/[-+]/)[0].split(".").map((n) => Number.parseInt(n, 10) || 0);
   const [x, y] = [parse(a), parse(b)];
@@ -194,6 +199,7 @@ export function offeredModels(configOptions: unknown): { models: ModelChoice[]; 
 
 function errorFrom(e: unknown, stderr = ""): Event {
   const err = e as { code?: unknown; message?: string };
+  if (e instanceof ModelUnavailableError) return fail("model-unavailable", e.message);
   if (err?.code === "ENOENT") return fail("engine-not-installed", err.message);
   if (e instanceof OutdatedAdapterError) return fail("outdated-version", e.message);
   if (e instanceof acp.RequestError && e.code === -32000) return fail("session-expired", e.message);
@@ -223,6 +229,10 @@ export class AcpTransport implements Transport {
   private spawnedConfig: string | undefined;
   /** The profile of the turn being run. */
   private profile: ModelProfile | undefined;
+  /** The model the session runs, as the agent reported it at session/new (without its effort). */
+  private reportedModel: string | undefined;
+  /** A compaction was already reported in this turn. */
+  private sawCompaction = false;
 
   constructor(private readonly o: TransportOptions) {}
 
@@ -306,9 +316,14 @@ export class AcpTransport implements Transport {
       }
     }
     if (!this.sessionId) {
-      const created = (await agent.request("session/new", { cwd: this.o.folder, mcpServers })) as { sessionId: string; configOptions?: unknown };
+      const created = (await agent.request("session/new", { cwd: this.o.folder, mcpServers })) as {
+        sessionId: string;
+        configOptions?: unknown;
+        models?: { currentModelId?: unknown } | null;
+      };
       this.sessionId = created.sessionId;
       this.reportModels(created.configOptions);
+      this.checkModel(created.models?.currentModelId);
       this.o.session = { id: created.sessionId, started: true };
       this.o.onSessionStarted(this.o.session);
     }
@@ -327,8 +342,24 @@ export class AcpTransport implements Transport {
     }
   }
 
+  /** Codex says which model the session runs: another one than the profile asked for means the plan lacks it (spec §5.3). */
+  private checkModel(current: unknown): void {
+    this.reportedModel = typeof current === "string" ? current.replace(/\[[^\]]*\]$/, "") : undefined;
+    const wanted = this.profile?.model;
+    if (wanted !== undefined && this.reportedModel !== undefined && this.reportedModel !== wanted) {
+      throw new ModelUnavailableError(`Asked for ${wanted}; the agent runs ${String(current)}`);
+    }
+  }
+
+  private compacted(emit: (e: Event) => void): void {
+    if (this.sawCompaction) return;
+    this.sawCompaction = true;
+    emit({ type: "compaction" });
+  }
+
   private reset(): void {
     this.conn = undefined;
+    this.reportedModel = undefined;
     this.child = undefined;
     this.sessionId = undefined;
     this.calls.clear();
@@ -373,6 +404,11 @@ export class AcpTransport implements Transport {
         emit({ type: "text", delta: u.content.text });
         return;
       case "tool_call": {
+        if (u.title === COMPACT_TITLE) {
+          this.hidden.add(u.toolCallId);
+          this.compacted(emit);
+          return;
+        }
         // Only Codex's own MCP marker is trusted for the server; rawInput is model-written.
         const server = u._meta?.is_mcp_tool_call === true ? serverOf(u.rawInput) : undefined;
         this.calls.set(u.toolCallId, { server });
@@ -394,6 +430,14 @@ export class AcpTransport implements Transport {
         emit({ type: "activity", id: u.toolCallId, ...activity, state: "end", error: u.status === "failed" });
         return;
       }
+      case "usage_update":
+        if (typeof u.used === "number" && Number.isFinite(u.used)) {
+          emit({ type: "context", used: u.used, ...(typeof u.size === "number" ? { size: u.size } : {}) });
+        }
+        return;
+      case "compaction_update":
+        this.compacted(emit);
+        return;
     }
   }
 
@@ -431,6 +475,7 @@ export class AcpTransport implements Transport {
     const sessionId = this.sessionId!;
     this.emit = emit;
     this.afterTool = false;
+    this.sawCompaction = false;
     let grace: ReturnType<typeof setTimeout> | undefined;
     const onAbort = () => {
       void agent.notify("session/cancel", { sessionId });
@@ -454,6 +499,7 @@ export class AcpTransport implements Transport {
           outputTokens: res.usage.outputTokens ?? 0,
           cacheReadTokens: res.usage.cachedReadTokens ?? 0,
           cacheWriteTokens: res.usage.cachedWriteTokens ?? 0,
+          ...(this.reportedModel ? { model: this.reportedModel } : {}),
         });
       }
       if (res.stopReason === "cancelled" || signal.aborted) emit(fail("cancelled"));

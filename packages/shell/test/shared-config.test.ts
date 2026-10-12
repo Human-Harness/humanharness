@@ -114,6 +114,24 @@ describe("SharedConfigStore", () => {
     await store.update("codex", { binary: null, version: undefined });
     expect(await store.engine("codex")).toEqual({ version: "0.160.1" });
   });
+
+  it("keeps the models an engine offered, cleaned, and never a flag", async () => {
+    const store = new SharedConfigStore(newDir());
+    await store.update("codex", {
+      models: [{ id: "gpt-5.5", name: "GPT-5.5", description: "Frontier" }, { id: "--x" } as never],
+      efforts: ["low", "turbo" as never, "xhigh"],
+    });
+    expect(await store.engine("codex")).toEqual({ models: [{ id: "gpt-5.5", name: "GPT-5.5", description: "Frontier" }], efforts: ["low", "xhigh"] });
+  });
+
+  it("cleans the saved models and efforts when the file is read", async () => {
+    const dir = newDir();
+    fs.writeFileSync(
+      path.join(dir, "engines.json"),
+      JSON.stringify({ version: 1, engines: { codex: { models: [{ id: "-rm" }, { id: "gpt-5.5", name: 7 }, "x"], efforts: ["max", "--y", 3] } } }),
+    );
+    expect(await new SharedConfigStore(dir).engine("codex")).toEqual({ models: [{ id: "gpt-5.5" }], efforts: ["max"] });
+  });
 });
 
 describe("noticeAccepted", () => {

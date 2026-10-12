@@ -1,5 +1,6 @@
 import { TIERS, type Tier } from "@humanharness/harness-sdk";
 import {
+  EFFORTS,
   type Effort,
   type EngineDef,
   type ModelChoice,
@@ -132,8 +133,23 @@ export function firstOffered(p: ModelProfile, models: ModelsConfig, list: readon
 /** What Settings offers for an engine: its fixed list, or the one saved from the engine (engines.json). */
 export function engineOffer(engine: EngineDef, saved: { models?: ModelChoice[]; efforts?: Effort[] }): { models: ModelChoice[]; efforts: Effort[] } {
   const fixed = engine.models?.list;
+  // engines.json is cleaned when read; checked again here, as these can reach the engine.
+  const savedModels = (saved.models ?? []).filter((m) => isModelId(m?.id));
+  const savedEfforts = (saved.efforts ?? []).filter(isEffort);
   return {
-    models: fixed ? fixed.map((id) => ({ id })) : [...(saved.models ?? [])],
-    efforts: saved.efforts?.length && !fixed ? [...saved.efforts] : [...(engine.models?.efforts ?? ["low", "medium", "high"])],
+    models: fixed ? fixed.map((id) => ({ id })) : savedModels,
+    efforts: savedEfforts.length && !fixed ? savedEfforts : [...(engine.models?.efforts ?? ["low", "medium", "high"])],
   };
+}
+
+/**
+ * `p` with an effort the engine offers (`efforts`, from `engineOffer`): an unsupported one is lowered to the
+ * closest offered below it, else raised to the lowest offered. An empty list leaves `p` as it is.
+ */
+export function fitEffort(p: ModelProfile, efforts: readonly Effort[]): ModelProfile {
+  if (efforts.length === 0 || efforts.includes(p.effort)) return p;
+  const rank = (e: Effort) => EFFORTS.indexOf(e);
+  const sorted = [...efforts].sort((a, b) => rank(a) - rank(b));
+  const below = sorted.filter((e) => rank(e) < rank(p.effort)).at(-1);
+  return { ...p, effort: below ?? sorted[0] };
 }

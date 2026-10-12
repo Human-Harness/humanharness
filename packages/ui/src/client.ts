@@ -1,4 +1,4 @@
-import type { ModelsConfig } from "@humanharness/engines";
+import type { Effort, ModelChoice, ModelSpec, ModelsConfig } from "@humanharness/engines";
 import type { ActionCost, ChoiceOption, Language, LocalizedText, Tier } from "@humanharness/harness-sdk";
 import type { ActivityKind, EngineError, Event, LimitWindow } from "@humanharness/runtime";
 
@@ -39,6 +39,8 @@ export interface ActionOption {
   /** One line under the label on the topic card. */
   description?: LocalizedText;
   cost: ActionCost;
+  /** The tier the harness recommends for the action. */
+  tier?: Tier;
 }
 
 /** A read-only reference folder, as the work screen shows it ("~/…" for paths in the home folder). */
@@ -72,6 +74,18 @@ export interface AppState {
   path?: string[];
   /** Folders the agent can read but never change. */
   references?: ReferenceView[];
+  /** Settings › Modelos. */
+  models?: ModelsView;
+}
+
+/** What Settings › Modelos needs (resources spec §7). */
+export interface ModelsView {
+  /** The tier the harness recommends, by task key (action id, or "questions"). */
+  recommended: Record<string, Tier>;
+  /** The core's tables, by engine id. */
+  defaults: Record<string, Record<Tier, ModelSpec>>;
+  /** What each engine offers: model ids (empty: only the engine's default) and efforts. */
+  offered: Record<string, { models: ModelChoice[]; efforts: Effort[] }>;
 }
 
 export interface TurnUsage {

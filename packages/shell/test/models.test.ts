@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { getEngine } from "@humanharness/engines";
-import { cleanModels, cleanProfile, engineOffer, firstOffered, nextFallback, resolveProfile, taskKey } from "../src/main/models";
+import { cleanModels, cleanProfile, engineOffer, firstOffered, fitEffort, nextFallback, resolveProfile, taskKey } from "../src/main/models";
 
 describe("cleanModels", () => {
   it("keeps valid task choices and tier overrides, field by field", () => {
@@ -111,5 +111,28 @@ describe("engineOffer", () => {
       models: [{ id: "gpt-5.5", name: "GPT-5.5" }],
       efforts: ["low", "xhigh"],
     });
+  });
+
+  it("never offers a saved model or effort that isn't safe", () => {
+    const saved = { models: [{ id: "--x" }, { id: "gpt-5.5" }], efforts: ["turbo", "high"] } as never;
+    expect(engineOffer(getEngine("codex"), saved)).toEqual({ models: [{ id: "gpt-5.5" }], efforts: ["high"] });
+  });
+});
+
+describe("fitEffort", () => {
+  const p = { engine: "codex", tier: "deep" as const, effort: "max" as const, cap: 400_000 };
+
+  it("keeps an effort the engine offers", () => {
+    expect(fitEffort({ ...p, effort: "high" }, ["low", "medium", "high"])).toEqual({ ...p, effort: "high" });
+  });
+
+  it("lowers an effort the engine doesn't offer to the closest one below, else the lowest above", () => {
+    expect(fitEffort(p, ["low", "medium", "high"])).toEqual({ ...p, effort: "high" });
+    expect(fitEffort({ ...p, effort: "xhigh" }, ["low", "max"])).toEqual({ ...p, effort: "low" });
+    expect(fitEffort({ ...p, effort: "low" }, ["high", "xhigh"])).toEqual({ ...p, effort: "high" });
+  });
+
+  it("leaves the profile alone when the engine offers no effort", () => {
+    expect(fitEffort(p, [])).toEqual(p);
   });
 });

@@ -78,3 +78,30 @@ describe("startNewChatIfEngineChanged", () => {
     expect(fs.existsSync(path.join(folder, ".harness", "session.json"))).toBe(false);
   });
 });
+
+describe("engine switch with tasks", () => {
+  it("reads the engine from tasks.json, archives the chat, ends the open task and keeps the notes", async () => {
+    const folder = await folderWith(null, true);
+    fs.writeFileSync(
+      path.join(folder, ".harness", "tasks.json"),
+      JSON.stringify({
+        version: 1,
+        engine: "claude",
+        current: { id: "t1", action: "turn", status: "waiting", startedAt: "t", turns: 1 },
+        actions: { manifest: "done" },
+      }),
+    );
+    fs.mkdirSync(path.join(folder, ".harness", "notes"));
+    fs.writeFileSync(path.join(folder, ".harness", "notes", "manifest.md"), "---\ntitle: \"M\"\n---\n");
+    expect(await sessionEngine(folder)).toBe("claude");
+    expect(await startNewChatIfEngineChanged(folder, "codex")).toBe("claude");
+    expect(JSON.parse(fs.readFileSync(path.join(folder, ".harness", "tasks.json"), "utf8"))).toEqual({
+      version: 1,
+      current: null,
+      actions: { manifest: "done", turn: "unfinished" },
+    });
+    expect(fs.existsSync(path.join(folder, ".harness", "notes", "manifest.md"))).toBe(true);
+    expect(await sessionEngine(folder)).toBeNull();
+    expect(await startNewChatIfEngineChanged(folder, "codex")).toBeNull();
+  });
+});

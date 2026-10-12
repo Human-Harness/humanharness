@@ -1,5 +1,5 @@
 import type { McpServerSpec } from "@humanharness/blocks";
-import type { ModelProfile } from "@humanharness/engines";
+import type { Effort, ModelChoice, ModelProfile } from "@humanharness/engines";
 import type { Permissions } from "@humanharness/harness-sdk";
 import type { Event } from "./events";
 
@@ -27,6 +27,8 @@ export interface TransportOptions {
   /** Extra environment for the CLI (tests and dev only; never credentials). */
   env?: Record<string, string>;
   onSessionStarted: (session: Session) => void;
+  /** ACP only: the models and efforts the agent offered at session/new (saved for Settings › Modelos). */
+  onModels?: (offer: { models: ModelChoice[]; efforts: Effort[] }) => void;
 }
 
 export interface Transport {

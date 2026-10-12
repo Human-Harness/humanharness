@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { type Bridge, type Launcher, type McpServerSpec, devLauncher, openBridge, uiServerSpec } from "@humanharness/blocks";
-import type { EngineDef, ModelProfile } from "@humanharness/engines";
+import type { Effort, EngineDef, ModelChoice, ModelProfile } from "@humanharness/engines";
 import { type Language, type LoadedHarness, allBlocks, resolveInHarness } from "@humanharness/harness-sdk";
 import { History, NOTES_PREFIX, type ReferenceFolder, prepareFolder, writeInstructions } from "@humanharness/workspace";
 import { AcpTransport } from "./acp";
@@ -31,6 +31,8 @@ export interface RuntimeOptions {
   session?: Session;
   /** Called when the engine starts a session. */
   onSession?: (session: Session) => void;
+  /** ACP engines: the models and efforts the agent offered (saved for Settings › Modelos). */
+  onModels?: (offer: { models: ModelChoice[]; efforts: Effort[] }) => void;
 }
 
 export interface RunningTurn {
@@ -94,6 +96,7 @@ export async function createRuntime(opts: RuntimeOptions): Promise<HarnessRuntim
       minAdapterVersion: engine.transport.kind === "acp" ? engine.transport.minAdapterVersion : undefined,
       command: opts.command ?? (engine.transport.kind === "claude-cli" ? [engine.transport.binary] : engine.transport.command),
       env: opts.env,
+      onModels: opts.onModels,
       onSessionStarted: (s) => {
         try {
           opts.onSession?.(s);

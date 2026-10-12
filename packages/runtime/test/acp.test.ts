@@ -3,9 +3,10 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
 import { type AcpScript, fakeAcpCommand, writeScript } from "@humanharness/fake-agent";
-import { AcpTransport, type PermissionPolicy, activityDetail, decidePermission, isUiTool } from "../src/acp";
+import type { ModelProfile } from "@humanharness/engines";
+import { AcpTransport, type PermissionPolicy, activityDetail, codexConfig, decidePermission, isUiTool, offeredModels } from "../src/acp";
 import type { Event } from "../src/events";
-import type { Session } from "../src/transport";
+import type { Session, TransportOptions } from "../src/transport";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -21,7 +22,7 @@ afterEach(async () => {
 function setup(
   scriptOrFn: AcpScript | ((folder: string) => AcpScript),
   session: Session = { id: "local-id", started: false },
-  extra: { minAdapterVersion?: string; references?: string[] } = {},
+  extra: { minAdapterVersion?: string; references?: string[]; onModels?: TransportOptions["onModels"] } = {},
 ) {
   const folder = fs.mkdtempSync(path.join(root, "t-"));
   const script = typeof scriptOrFn === "function" ? scriptOrFn(folder) : scriptOrFn;
@@ -45,9 +46,9 @@ function setup(
   return { transport, folder, started, log };
 }
 
-async function run(t: AcpTransport, message = "hi", signal = new AbortController().signal) {
+async function run(t: AcpTransport, message = "hi", signal = new AbortController().signal, profile?: ModelProfile) {
   const events: Event[] = [];
-  await t.turn(message, (e) => events.push(e), signal);
+  await t.turn(message, (e) => events.push(e), signal, profile);
   return events;
 }
 
@@ -427,5 +428,78 @@ describe("AcpTransport", () => {
     );
     await run(transport);
     expect(log().find((l) => l.method === "permission-outcome")?.params).toEqual({ outcome: "selected", optionId: "allow" });
+  });
+});
+
+const deep: ModelProfile = { engine: "codex", tier: "deep", model: "gpt-5.5", effort: "high", cap: 400_000 };
+const light: ModelProfile = { engine: "codex", tier: "light", effort: "low", cap: 100_000 };
+const MODEL_OPTIONS = [
+  {
+    id: "model",
+    name: "Model",
+    type: "select",
+    currentValue: "gpt-5.5",
+    options: [
+      { value: "gpt-5.5", name: "GPT-5.5", description: "Frontier model" },
+      { value: "gpt-5.5-mini", name: "GPT-5.5 mini" },
+      { value: "--bad", name: "Bad" },
+    ],
+  },
+  { id: "reasoning_effort", name: "Effort", type: "select", currentValue: "medium", options: [{ value: "minimal", name: "Minimal" }, { value: "low", name: "Low" }, { value: "high", name: "High" }] },
+];
+
+describe("codexConfig", () => {
+  it("writes only model, effort and cap; leaves model out for the engine default", () => {
+    expect(JSON.parse(codexConfig(deep))).toEqual({ model: "gpt-5.5", model_reasoning_effort: "high", model_auto_compact_token_limit: 400_000 });
+    expect(JSON.parse(codexConfig(light))).toEqual({ model_reasoning_effort: "low", model_auto_compact_token_limit: 100_000 });
+    expect(() => codexConfig({ ...deep, model: "-x" })).toThrow(/flag/);
+  });
+});
+
+describe("offeredModels", () => {
+  it("reads the model and effort selects, flat or grouped, dropping unsafe ids and unknown efforts", () => {
+    expect(offeredModels(MODEL_OPTIONS)).toEqual({
+      models: [{ id: "gpt-5.5", name: "GPT-5.5", description: "Frontier model" }, { id: "gpt-5.5-mini", name: "GPT-5.5 mini" }],
+      efforts: ["low", "high"],
+    });
+    const grouped = [{ id: "model", name: "Model", type: "select", currentValue: "a", options: [{ group: "g", name: "G", options: [{ value: "a", name: "A" }] }] }];
+    expect(offeredModels(grouped)).toEqual({ models: [{ id: "a", name: "A" }], efforts: [] });
+    expect(offeredModels(undefined)).toBeNull();
+    expect(offeredModels([{ id: "mode", type: "select", options: [] }])).toBeNull();
+  });
+});
+
+describe("AcpTransport profiles", () => {
+  it("starts the agent with our CODEX_CONFIG, replacing an inherited one", async () => {
+    process.env.CODEX_CONFIG = '{"sandbox_mode":"danger-full-access"}';
+    try {
+      const { transport, log } = setup({ turns: [[chunk("ok")]] });
+      await run(transport, "hi", undefined, deep);
+      const env = log().find((l) => l.method === "env")!.params;
+      expect(JSON.parse(env.CODEX_CONFIG)).toEqual({ model: "gpt-5.5", model_reasoning_effort: "high", model_auto_compact_token_limit: 400_000 });
+    } finally {
+      delete process.env.CODEX_CONFIG;
+    }
+  });
+
+  it("keeps the process while the profile stays, and starts a new one for another profile", async () => {
+    const { transport, log } = setup({ closeSession: true, turns: [[chunk("a")], [chunk("b")], [chunk("c")]] });
+    await run(transport, "a", undefined, deep);
+    await run(transport, "b", undefined, deep);
+    expect(log().filter((l) => l.method === "initialize")).toHaveLength(1);
+    await transport.endSession();
+    await run(transport, "c", undefined, light);
+    const envs = log().filter((l) => l.method === "env").map((l) => JSON.parse(l.params.CODEX_CONFIG));
+    expect(envs).toEqual([
+      { model: "gpt-5.5", model_reasoning_effort: "high", model_auto_compact_token_limit: 400_000 },
+      { model_reasoning_effort: "low", model_auto_compact_token_limit: 100_000 },
+    ]);
+  });
+
+  it("reports the models the agent offers after session/new", async () => {
+    const offers: unknown[] = [];
+    const { transport } = setup({ configOptions: MODEL_OPTIONS, turns: [[chunk("ok")]] }, undefined, { onModels: (o) => offers.push(o) });
+    await run(transport, "hi", undefined, deep);
+    expect(offers).toEqual([offeredModels(MODEL_OPTIONS)]);
   });
 });

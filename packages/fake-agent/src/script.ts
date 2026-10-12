@@ -65,6 +65,10 @@ export interface AcpScript {
   closeSession?: boolean;
   /** Never answer `session/close` (an agent stuck on it). */
   hangClose?: boolean;
+  /** Returned as `configOptions` by session/new (the models and efforts the agent offers). */
+  configOptions?: unknown[];
+  /** Returned as `models.currentModelId` by session/new (Codex: "<model>[<effort>]"). */
+  currentModelId?: string;
   turns: AcpStep[][];
 }
 

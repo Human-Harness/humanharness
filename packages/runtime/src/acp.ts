@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { Readable, Writable } from "node:stream";
 import * as acp from "@agentclientprotocol/sdk";
+import { type Effort, type ModelChoice, type ModelProfile, isCap, isEffort, isModelId } from "@humanharness/engines";
 import type { Permissions } from "@humanharness/harness-sdk";
 import { classifyError } from "./classify";
 import { type ActivityKind, type Event, fail } from "./events";
@@ -142,6 +143,55 @@ export function activityDetail(call: { kind?: unknown; title?: unknown; location
   return rest && !/\s/.test(rest) ? baseName(rest) : rest || title;
 }
 
+/**
+ * The adapter's `CODEX_CONFIG` for a task's profile (resources spec §5.2): only these keys are ever
+ * written; `model` is left out for the engine's default model. Checked again here before it is used.
+ */
+export function codexConfig(profile: ModelProfile): string {
+  if (profile.model !== undefined && !isModelId(profile.model)) {
+    throw new Error(`Refusing a model id that reads as a flag: ${JSON.stringify(profile.model)}`);
+  }
+  if (!isEffort(profile.effort)) throw new Error(`Unknown effort: ${JSON.stringify(profile.effort)}`);
+  if (!isCap(profile.cap)) throw new Error(`Context cap out of range: ${JSON.stringify(profile.cap)}`);
+  return JSON.stringify({
+    ...(profile.model !== undefined ? { model: profile.model } : {}),
+    model_reasoning_effort: profile.effort,
+    model_auto_compact_token_limit: profile.cap,
+  });
+}
+
+type SelectOption = { value?: unknown; name?: unknown; description?: unknown };
+
+/** The options of an ACP select config option, flat or grouped. */
+function selectOptions(configOptions: unknown[], id: string): SelectOption[] | null {
+  const option = configOptions.find((o): o is Record<string, unknown> => typeof o === "object" && o !== null && (o as { id?: unknown }).id === id);
+  if (!option || option.type !== "select" || !Array.isArray(option.options)) return null;
+  return (option.options as unknown[]).flatMap((o) => {
+    if (typeof o !== "object" || o === null) return [];
+    const group = o as { options?: unknown };
+    return Array.isArray(group.options) ? (group.options as SelectOption[]) : [o as SelectOption];
+  });
+}
+
+/**
+ * The models and efforts an ACP agent offers, from session/new `configOptions` (Codex: the selects
+ * "model" and "reasoning_effort"). Unsafe ids and unknown efforts are dropped. Null without models.
+ */
+export function offeredModels(configOptions: unknown): { models: ModelChoice[]; efforts: Effort[] } | null {
+  if (!Array.isArray(configOptions)) return null;
+  const models = (selectOptions(configOptions, "model") ?? [])
+    .filter((o): o is SelectOption & { value: string } => isModelId(o.value))
+    .slice(0, 50)
+    .map((o) => ({
+      id: o.value,
+      ...(typeof o.name === "string" && o.name ? { name: o.name.slice(0, 80) } : {}),
+      ...(typeof o.description === "string" && o.description ? { description: o.description.slice(0, 200) } : {}),
+    }));
+  if (models.length === 0) return null;
+  const efforts = (selectOptions(configOptions, "reasoning_effort") ?? []).map((o) => o.value).filter(isEffort);
+  return { models, efforts };
+}
+
 function errorFrom(e: unknown, stderr = ""): Event {
   const err = e as { code?: unknown; message?: string };
   if (err?.code === "ENOENT") return fail("engine-not-installed", err.message);
@@ -169,19 +219,27 @@ export class AcpTransport implements Transport {
   /** What the agent advertised at initialize. */
   private loadable = false;
   private closable = false;
+  /** CODEX_CONFIG the running process was started with (undefined: none set by the app). */
+  private spawnedConfig: string | undefined;
+  /** The profile of the turn being run. */
+  private profile: ModelProfile | undefined;
 
   constructor(private readonly o: TransportOptions) {}
 
   /** Starts the agent process and initializes the connection. */
-  private async connect(): Promise<void> {
+  private async connect(config: string | undefined): Promise<void> {
     const [binary, ...args] = this.o.command;
+    // CODEX_CONFIG is ours: built from the profile, replacing any inherited value (never merged).
+    const env: NodeJS.ProcessEnv = { ...process.env, ...this.o.env };
+    if (config !== undefined) env.CODEX_CONFIG = config;
     const child = spawn(binary, args, {
       cwd: this.o.folder,
-      env: { ...process.env, ...this.o.env },
+      env,
       stdio: ["pipe", "pipe", "pipe"],
       detached: process.platform !== "win32",
     });
     this.child = child;
+    this.spawnedConfig = config;
     this.stderrTail = "";
     child.on("exit", () => {
       if (this.child === child) this.reset();
@@ -248,13 +306,24 @@ export class AcpTransport implements Transport {
       }
     }
     if (!this.sessionId) {
-      const created = (await agent.request("session/new", { cwd: this.o.folder, mcpServers })) as { sessionId: string };
+      const created = (await agent.request("session/new", { cwd: this.o.folder, mcpServers })) as { sessionId: string; configOptions?: unknown };
       this.sessionId = created.sessionId;
+      this.reportModels(created.configOptions);
       this.o.session = { id: created.sessionId, started: true };
       this.o.onSessionStarted(this.o.session);
     }
     if (this.o.sessionMode) {
       await agent.request("session/set_mode", { sessionId: this.sessionId, modeId: this.o.sessionMode });
+    }
+  }
+
+  private reportModels(configOptions: unknown): void {
+    const offer = offeredModels(configOptions);
+    if (!offer) return;
+    try {
+      this.o.onModels?.(offer);
+    } catch (err) {
+      console.error("Could not record the engine's models", err);
     }
   }
 
@@ -328,13 +397,23 @@ export class AcpTransport implements Transport {
     }
   }
 
-  async turn(message: string, emit: (e: Event) => void, signal: AbortSignal): Promise<void> {
+  async turn(message: string, emit: (e: Event) => void, signal: AbortSignal, profile?: ModelProfile): Promise<void> {
+    let config: string | undefined;
+    try {
+      config = profile ? codexConfig(profile) : undefined;
+    } catch (err) {
+      emit(fail("agent-crashed", err instanceof Error ? err.message : String(err)));
+      return;
+    }
+    // CODEX_CONFIG is read when the agent starts: a task on another profile needs a new process.
+    if (this.conn && config !== this.spawnedConfig) await this.close();
+    this.profile = profile;
     this.calls.clear();
     this.hidden.clear();
     this.activities.clear();
     if (!this.conn || !this.sessionId) {
       try {
-        if (!this.conn) await this.connect();
+        if (!this.conn) await this.connect(config);
         await this.openSession();
       } catch (e) {
         const event = errorFrom(e, this.stderrTail);

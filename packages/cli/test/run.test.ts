@@ -8,8 +8,9 @@ import type { CommandDeps } from "@humanharness/shell/tasks";
 import { SharedConfigStore } from "@humanharness/shell/tasks";
 import { UsageError } from "../src/cli";
 import { initHarness } from "../src/init";
+import { main } from "../src/main";
 import { readyEngine, runTask } from "../src/run";
-import { CORE, memoryStream, tempRoot } from "./helpers";
+import { CORE, memoryIo, memoryStream, tempRoot } from "./helpers";
 
 const { root, cleanup } = tempRoot("hh-run-");
 afterAll(cleanup);
@@ -156,5 +157,16 @@ describe("readyEngine", () => {
       },
     };
     await expect(readyEngine(getEngine("claude"), deps, new SharedConfigStore(path.join(root, "shared")))).rejects.toThrow("I can't find Claude on this computer.");
+  });
+});
+
+describe("humanharness run", () => {
+  it("checks its command line before touching any engine", async () => {
+    for (const args of [["run"], ["run", "a", "b"], ["run", "example", "--tier", "huge"], ["run", "example", "--language", "fr"], ["run", "nope"], ["run", "example", "--engine", "gemini"]]) {
+      const m = memoryIo(harnessDir);
+      expect(await main(args, m.io), args.join(" ")).toBe(2);
+      expect(m.err()).not.toBe("");
+      expect(m.err()).not.toContain("Unknown command");
+    }
   });
 });

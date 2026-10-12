@@ -1,6 +1,7 @@
 import { CliError, type Io, UsageError } from "./cli";
 import { checkCommand } from "./check";
 import { initCommand } from "./init";
+import { runCommand } from "./run";
 
 type Command = (args: string[], io: Io) => Promise<number>;
 
@@ -22,6 +23,7 @@ export const USAGE = [
 const COMMANDS: Record<string, Command> = {
   init: initCommand,
   check: checkCommand,
+  run: runCommand,
 };
 
 export async function main(argv: string[], io: Io): Promise<number> {

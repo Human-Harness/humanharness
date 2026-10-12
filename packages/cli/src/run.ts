@@ -5,7 +5,7 @@ import path from "node:path";
 import { createInterface } from "node:readline";
 import type { Readable, Writable } from "node:stream";
 import { type EngineDef, availableEngines } from "@humanharness/engines";
-import { type Language, type Tier, allBlocks, loadHarness, resolveInHarness } from "@humanharness/harness-sdk";
+import { LANGUAGES, type Language, TIERS, type Tier, allBlocks, loadHarness, resolveInHarness } from "@humanharness/harness-sdk";
 import { type ErrorCode, createRuntime } from "@humanharness/runtime";
 import {
   ChatLog,
@@ -26,7 +26,7 @@ import {
   usageRecord,
 } from "@humanharness/shell/tasks";
 import { readNotes, writeNote } from "@humanharness/workspace";
-import { CliError, UsageError } from "./cli";
+import { CliError, type Io, UsageError, parseCommand } from "./cli";
 import { MANIFEST } from "./paths";
 import { type RunReport, UsageTally, formatReport } from "./report";
 import { TerminalView, errorMessage } from "./terminal";
@@ -195,4 +195,38 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
   const report = tally.report({ folder, action: o.action, cost: action.cost, ...(lastNote ? { notePath: lastNote } : {}) });
   out.write(formatReport(report));
   return report;
+}
+
+const RUN_USAGE = "Usage: humanharness run <action> [--engine claude|codex] [--tier light|standard|deep] [--folder <dir>] [--language es|en] [--harness <dir>]";
+
+export async function runCommand(args: string[], io: Io): Promise<number> {
+  const { values, positionals } = parseCommand(args, {
+    engine: { type: "string" },
+    tier: { type: "string" },
+    folder: { type: "string" },
+    language: { type: "string" },
+    harness: { type: "string" },
+  });
+  if (positionals.length !== 1) throw new UsageError(RUN_USAGE);
+  if (values.tier !== undefined && !(TIERS as readonly string[]).includes(values.tier)) throw new UsageError(`Unknown tier "${values.tier}": use light, standard or deep.`);
+  if (values.language !== undefined && !(LANGUAGES as readonly string[]).includes(values.language)) throw new UsageError(`Unknown language "${values.language}": use es or en.`);
+  const controller = new AbortController();
+  const onInterrupt = () => controller.abort();
+  process.once("SIGINT", onInterrupt);
+  try {
+    await runTask({
+      harnessDir: path.resolve(io.cwd, values.harness ?? "."),
+      action: positionals[0],
+      ...(values.engine ? { engine: values.engine } : {}),
+      ...(values.tier ? { tier: values.tier as Tier } : {}),
+      ...(values.folder ? { folder: path.resolve(io.cwd, values.folder.replace(/^~(?=$|\/)/, os.homedir())) } : {}),
+      ...(values.language ? { language: values.language as Language } : {}),
+      input: io.stdin,
+      output: io.stdout,
+      signal: controller.signal,
+    });
+    return 0;
+  } finally {
+    process.off("SIGINT", onInterrupt);
+  }
 }

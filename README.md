@@ -26,11 +26,12 @@ packages/
   engines/       engine registry with legal status
   workspace/     user folder, managed AGENTS.md, local history
   blocks/        `ui` MCP server for blocks + bridge to the runtime
-  runtime/       claude-cli and ACP transports, turn orchestration, `hh-dev`
+  runtime/       claude-cli and ACP transports, turn orchestration
   fake-agent/    scripted fake agents for tests
   i18n/          core strings (es, en) and the harness namespace
   ui/            React kit: Home, Settings, onboarding, chat, blocks, usage
   shell/         the Electron app (main, preload, renderer)
+  cli/           `humanharness`: init, check, run, dev; the harness template and the /new-harness guide
 harnesses/
   demo/          architecture explainer (development only)
 docs/            specs, plans and spikes
@@ -47,9 +48,9 @@ Requires Node ≥ 22 and pnpm (via corepack).
     corepack pnpm test
     corepack pnpm typecheck
 
-Run one harness turn against a real engine you are logged in to:
+Run one task of a harness against a real engine you are signed in to (the report shows tokens per phase, the peak context and the cost hint):
 
-    corepack pnpm hh-dev --harness harnesses/demo/harness.config.ts --folder /tmp/hh-demo --engine claude "In two sentences, what is a harness?"
+    corepack pnpm humanharness run manifest --harness harnesses/demo --engine claude
 
 Open the demo harness as a desktop app (macOS):
 

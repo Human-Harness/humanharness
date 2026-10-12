@@ -2,6 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { type BlockProps, type HarnessAppProps, HarnessApp } from "../src";
+import type { TaskStatus } from "../src/client";
 import { FakeClient } from "./fake-client";
 
 afterEach(cleanup);
@@ -42,7 +43,7 @@ const answer = (client: FakeClient, text: string, blocks: { name: string; data: 
 const tasks = (client: FakeClient, view: Partial<FakeClient["tasks"]>) => act(() => client.emitTasks({ ...client.tasks, ...view }));
 const choices = (...options: object[]) => ({ name: "choices", data: { options } });
 const GROUP = "How do we continue?";
-const t1 = (status: "running" | "waiting" | "closing") => ({ id: "t1", action: "manifest", status });
+const t1 = (status: TaskStatus) => ({ id: "t1", action: "manifest", status });
 const in2h = () => new Date(Date.now() + 2 * 3600_000).toISOString();
 const NOTES = [
   { slug: "manifest", title: "The manifest", action: "manifest", date: "2026-10-12T11:20:00.000Z", summary: ["It declares everything", "It is validated"], decisions: [], path: ".harness/notes/manifest.md" },
@@ -276,6 +277,23 @@ describe("flow mode", () => {
     await startWork(client);
     await screen.findByText("Engines are detected.");
     expect(screen.queryByRole("region", { name: TITLE })).toBeNull();
+  });
+
+  it("labels the working row while a checkpoint saves what matters, and says when the task fell back a level", async () => {
+    const client = flowClient();
+    await startWork(client);
+    fireEvent.click(within(await startRegion()).getByRole("button", { name: /The manifest/ }));
+    const fallback = { model: "opus", tier: "standard" as const };
+    tasks(client, { current: { ...t1("running"), fallback } });
+    expect(await screen.findByText("Your plan doesn't include opus; we used the Standard level.")).toBeTruthy();
+    answer(client, "It declares everything.");
+    tasks(client, { current: { ...t1("waiting"), fallback } });
+    fireEvent.change(screen.getByPlaceholderText("Ask about this topic…"), { target: { value: "And the blocks?" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    tasks(client, { current: { ...t1("checkpoint"), fallback } });
+    expect(await screen.findByText("Saving what matters…")).toBeTruthy();
+    tasks(client, { current: { ...t1("running"), fallback } });
+    expect(await screen.findByText("Working…")).toBeTruthy();
   });
 });
 

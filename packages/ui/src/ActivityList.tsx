@@ -75,10 +75,10 @@ function Toggle({ controls, open, onToggle, children }: { controls: string; open
 }
 
 /**
- * A turn in progress: one row ("Working…" and a ring) and, behind a toggle, what it is doing step by step.
+ * A turn in progress: one row ("Working…", or `label`, and a ring) and, behind a toggle, what it is doing step by step.
  * Only the row is a live region, so screen readers hear "Working…" once, not every step.
  */
-export function WorkingStatus({ items }: { items: Step[] }) {
+export function WorkingStatus({ items, label }: { items: Step[]; label?: string }) {
   const { t } = useTranslation();
   const id = useId();
   const [open, setOpen] = useState(liveDetailOpen);
@@ -94,7 +94,7 @@ export function WorkingStatus({ items }: { items: Step[] }) {
       <div className="hh-work-row">
         <span className="hh-work-status" role="status">
           <Loader size={18} />
-          <span>{mounted ? t("chat.working") : ""}</span>
+          <span>{mounted ? (label ?? t("chat.working")) : ""}</span>
         </span>
         <Toggle controls={id} open={open} onToggle={toggle}>
           {open ? t("chat.hideDetail") : t("chat.showDetail")}

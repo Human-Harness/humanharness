@@ -126,6 +126,12 @@ select:focus-visible { outline: 2px solid var(--hh-ink); outline-offset: 2px; }
 .hh-model-editor { display: grid; gap: 8px; justify-items: start; }
 .hh-model-fields { display: grid; grid-template-columns: max-content 1fr; gap: 6px 12px; align-items: center; }
 .hh-model-fields label { color: var(--hh-slate); }
+.hh-context-meter { display: block; height: 3px; margin: 2px 8px 4px 35px; border-radius: 2px; background: var(--hh-line); overflow: hidden; }
+.hh-context-meter > span { display: block; height: 100%; background: var(--hh-slate); }
+.hh-context-meter.warn > span { background: var(--hh-warn); }
+.hh-flow-question { display: grid; gap: 4px; margin: 0 0 8px; padding: 6px 8px; color: var(--hh-ink); font-weight: 600; }
+.hh-flow-question .hh-context-meter { margin-left: 0; }
+.hh-fallback { margin: 4px 0; }
 .hh-model-engine { display: flex; align-items: center; gap: 12px; margin: 8px 0; }
 .hh-model-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 10px 0; }
 .hh-model-card { display: grid; gap: 8px; padding: 12px; align-content: start; min-width: 0; }

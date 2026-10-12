@@ -111,6 +111,8 @@ export function ChatView({
   const flow = Object.keys(state.actions).length > 0;
   const path = state.path ?? [];
   const closing = tasks.current?.status === "closing";
+  const checkpoint = tasks.current?.status === "checkpoint";
+  const fallback = tasks.current?.fallback;
   const all = useMemo(() => ({ ...components, choices: ChoicesBlock as ComponentType<BlockProps> }), [components]);
   const stale = useMemo(() => ({ ...all, choices: StaleChoices }), [all]);
   const labelOf = (id: string) => state.actions[id]?.label[lang] ?? id;
@@ -193,8 +195,8 @@ export function ChatView({
     wasLive.current = Boolean(chat.live);
   }, [chat.live, chat.entries, t, client, onTurnOk]);
 
-  /** A turn runs, is about to, or the task is saving its note. */
-  const blocked = (): boolean => Boolean(chat.live) || busy.current || closing;
+  /** A turn runs, is about to, or the task is saving its note (closing, or a checkpoint). */
+  const blocked = (): boolean => Boolean(chat.live) || busy.current || closing || checkpoint;
   /** A new task goes on screen: its entries start after everything there now. */
   const showNewTask = () => {
     placed.current = true;
@@ -411,9 +413,16 @@ export function ChatView({
                 {t("choices.failed")}
               </p>
             )}
+            {fallback && (
+              <p className="hh-caption hh-fallback" role="status">
+                {fallback.tier
+                  ? t("models.fallbackNotice", { model: fallback.model, tier: t(`models.tier.${fallback.tier}`) })
+                  : t("models.fallbackDefault", { model: fallback.model })}
+              </p>
+            )}
             {chat.live && (
               <article className="hh-message assistant live">
-                <WorkingStatus items={chat.live.activities} />
+                <WorkingStatus items={chat.live.activities} label={checkpoint ? t("flow.checkpoint") : undefined} />
                 {chat.live.text && <Markdown text={chat.live.text} />}
                 <Blocks blocks={chat.live.blocks} components={all} actions={blockActions(false)} />
               </article>
@@ -421,6 +430,11 @@ export function ChatView({
             {closing && !chat.live && (
               <p className="hh-working" role="status">
                 {t("flow.closing")}
+              </p>
+            )}
+            {checkpoint && !chat.live && (
+              <p className="hh-working" role="status">
+                {t("flow.checkpoint")}
               </p>
             )}
             {pending && (
@@ -471,8 +485,8 @@ export function ChatView({
                 if (send(draft)) setDraft("");
               }}
             />
-            {/* A closing turn is quiet (nothing live on screen) but still stoppable. */}
-            {chat.live || closing ? (
+            {/* A closing or checkpoint turn is quiet (nothing live on screen) but still stoppable. */}
+            {chat.live || closing || checkpoint ? (
               <button type="button" onClick={() => void client.cancel()}>
                 {t("chat.stop")}
               </button>

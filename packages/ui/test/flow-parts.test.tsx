@@ -54,6 +54,26 @@ describe("FlowSide", () => {
     fireEvent.click(within(screen.getByRole("list", { name: "Lo que ya quedó claro" })).getByRole("button", { name: "El manifiesto" }));
     expect(onOpenNote).toHaveBeenCalledWith("manifest");
   });
+
+  it("shows the running task's context in use against its cap, with the exact tokens on hover", async () => {
+    const tasks: TaskView = { current: { id: "t1", action: "engines", status: "waiting", context: { used: 170_000, cap: 200_000 } }, actions: {}, notes: [] };
+    await renderIn("en", <FlowSide state={state()} lang="en" tasks={tasks} disabled={false} onStart={() => {}} onOpenNote={() => {}} />);
+    const meter = screen.getByRole("meter", { name: "Context in use" });
+    expect(meter.getAttribute("aria-valuenow")).toBe("85");
+    expect(meter.getAttribute("title")).toBe("170,000 of 200,000 tokens");
+    expect(meter.className).toContain("warn");
+    expect(screen.getAllByRole("meter")).toHaveLength(1);
+  });
+
+  it("shows a free question's meter on its own row, and none before the engine reports any", async () => {
+    const question: TaskView = { current: { id: "t2", status: "waiting", context: { used: 20_000, cap: 100_000 } }, actions: {}, notes: [] };
+    const { unmount } = await renderIn("en", <FlowSide state={state()} lang="en" tasks={question} disabled={false} onStart={() => {}} onOpenNote={() => {}} />);
+    expect(screen.getByText("Free question")).toBeTruthy();
+    expect(screen.getByRole("meter", { name: "Context in use" }).getAttribute("aria-valuenow")).toBe("20");
+    unmount();
+    await renderIn("en", <FlowSide state={state()} lang="en" tasks={{ ...question, current: { id: "t2", status: "waiting" } }} disabled={false} onStart={() => {}} onOpenNote={() => {}} />);
+    expect(screen.queryByRole("meter")).toBeNull();
+  });
 });
 
 describe("StartView", () => {

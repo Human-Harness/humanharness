@@ -4,6 +4,27 @@ import type { Language } from "@humanharness/harness-sdk";
 import { CheckIcon, LockIcon, NoteIcon } from "./chrome";
 import { type AppState, type TaskView, nextInPath } from "./client";
 
+/** A thin bar: the context the task's session uses against its cap, the exact tokens on hover (spec §6). */
+export function ContextMeter({ used, cap }: { used: number; cap: number }) {
+  const { t, i18n } = useTranslation();
+  const pct = Math.min(100, Math.round((used / cap) * 100));
+  const fmt = (n: number) => n.toLocaleString(i18n.language);
+  return (
+    <span
+      className={pct >= 80 ? "hh-context-meter warn" : "hh-context-meter"}
+      role="meter"
+      aria-label={t("models.context")}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={pct}
+      aria-valuetext={`${pct}%`}
+      title={t("models.contextTitle", { used: fmt(used), cap: fmt(cap) })}
+    >
+      <span style={{ width: `${pct}%` }} />
+    </span>
+  );
+}
+
 /** Flow mode's left panel: the guided path, the notes so far and the read-only reference folders. */
 export function FlowSide({
   state,
@@ -28,6 +49,12 @@ export function FlowSide({
   const current = tasks.current ? tasks.current.action : (nextInPath(path, undefined, tasks.actions) ?? undefined);
   return (
     <nav className="hh-flow-side" aria-label={t("flow.path")}>
+      {tasks.current && !tasks.current.action && tasks.current.context && (
+        <p className="hh-flow-question">
+          {t("models.questions")}
+          <ContextMeter {...tasks.current.context} />
+        </p>
+      )}
       {path.length > 0 && (
         <section>
           <h2 id={pathId} className="hh-flow-heading">
@@ -51,6 +78,7 @@ export function FlowSide({
                     {state.actions[id].label[lang]}
                     {done && <span className="hh-sr-only"> {t("flow.seen")}</span>}
                   </button>
+                  {here && tasks.current?.action === id && tasks.current.context && <ContextMeter {...tasks.current.context} />}
                 </li>
               );
             })}

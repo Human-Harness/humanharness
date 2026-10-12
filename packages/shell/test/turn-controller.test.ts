@@ -478,6 +478,69 @@ describe("TurnController for tasks", () => {
     expect(seen).toEqual([{ type: "done", ok: false, error: { code: "model-unavailable" } }]);
   });
 
+  it("a held attempt that fails shows nothing in the window, but its usage is recorded", async () => {
+    const fake = fakeRuntime();
+    const events: Event[] = [];
+    const recorded: UsageMeta[] = [];
+    const controller = new TurnController({
+      ensureRuntime: async () => fake.runtime,
+      chatLog: async () => ({ append: async () => {} }),
+      stateBlocks: () => new Set(),
+      emit: (e) => events.push(e),
+      recordUsage: async (_entry, meta) => void recorded.push(meta),
+    });
+    const sent = controller.send("hi", { task: "t1", holdModelError: true });
+    await vi.waitFor(() => expect(fake.send).toHaveBeenCalled());
+    fake.finish([
+      { type: "limits", status: "allowed", windows: [] },
+      { type: "usage", inputTokens: 1, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+      { type: "done", ok: false, error: { code: "model-unavailable" } },
+    ]);
+    await sent;
+    expect(events).toEqual([]);
+    expect(recorded).toEqual([{ task: "t1" }]);
+  });
+
+  it("a held attempt whose model answers reaches the window in order, from its first content on", async () => {
+    const fake = fakeRuntime();
+    const { controller, events } = setup({ ensureRuntime: async () => fake.runtime });
+    const sent = controller.send("hi", { holdModelError: true });
+    await vi.waitFor(() => expect(fake.send).toHaveBeenCalled());
+    fake.finish([
+      { type: "limits", status: "allowed", windows: [] },
+      { type: "text", delta: "Hello" },
+      { type: "done", ok: true },
+    ]);
+    await sent;
+    expect(events.map((e) => e.type)).toEqual(["limits", "text", "done"]);
+  });
+
+  it("a quiet turn holding its failure: nothing logged or shown, usage recorded, the caller told", async () => {
+    const fake = fakeRuntime();
+    const entries: ChatEntry[] = [];
+    const events: Event[] = [];
+    const recorded: UsageMeta[] = [];
+    const seen: Event[] = [];
+    const controller = new TurnController({
+      ensureRuntime: async () => fake.runtime,
+      chatLog: async () => ({ append: async (e) => void entries.push(e) }),
+      stateBlocks: () => new Set(),
+      emit: (e) => events.push(e),
+      recordUsage: async (_entry, meta) => void recorded.push(meta),
+    });
+    const sent = controller.send("save", { task: "t1", phase: "checkpoint", quiet: true, holdFailure: true, onEvent: (e) => seen.push(e) });
+    await vi.waitFor(() => expect(fake.send).toHaveBeenCalled());
+    fake.finish([
+      { type: "usage", inputTokens: 1, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+      { type: "done", ok: false, error: { code: "agent-crashed" } },
+    ]);
+    await sent;
+    expect(entries).toEqual([]);
+    expect(events).toEqual([]);
+    expect(recorded).toEqual([{ task: "t1", phase: "checkpoint" }]);
+    expect(seen.at(-1)).toEqual({ type: "done", ok: false, error: { code: "agent-crashed" } });
+  });
+
   it("shows any other failure of a held turn as usual", async () => {
     const fake = fakeRuntime();
     const { controller, events } = setup({ ensureRuntime: async () => fake.runtime });

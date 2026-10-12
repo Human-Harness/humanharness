@@ -6,7 +6,7 @@ import { type ActionStatus, type CurrentTaskView, type NoteView, type TaskStatus
 import { type Note, type NoteMeta, buildNotesIndex, noteSlug } from "@humanharness/workspace";
 import { CHECKPOINT_PROMPT, CLOSE_PROMPT, QUESTION_PROMPT, fillPrompt } from "./task-prompts";
 import { type CurrentTask, type TasksFile, interrupted } from "./task-store";
-import type { TurnOptions } from "./turn-controller";
+import { type TurnOptions, isHeld } from "./turn-controller";
 
 type Done = Extract<Event, { type: "done" }>;
 
@@ -346,10 +346,9 @@ export class TaskManager {
       this.turnTask = null;
     }
     // Mirrors TurnController: a quiet turn reaches the window only with a failure other than a cancel,
-    // and a held model failure never does.
+    // and a held failure never does.
     const d = seen.done;
-    const held = options.holdModelError === true && d !== undefined && !d.ok && d.error.code === "model-unavailable";
-    if (d && !held && (!options.quiet || (!d.ok && d.error.code !== "cancelled"))) this.windowDone = true;
+    if (d && !isHeld(d, options) &&(!options.quiet || (!d.ok && d.error.code !== "cancelled"))) this.windowDone = true;
     if (seen.note) await this.saveNote(task, seen.note, options.phase !== "checkpoint");
     if (seen.used !== undefined || seen.compacted) await this.track(task.id, seen);
     return seen.done ?? { type: "done", ok: false, error: { code: "agent-crashed" } };
@@ -390,8 +389,8 @@ export class TaskManager {
     }
     const cancelled = !done.ok && done.error.code === "cancelled";
     const after = (await this.d.store.load()).current;
-    // A checkpoint's note stands when the closing turn brings none.
-    const saved = after?.noteSaved === true || (!cancelled && after?.checkpointNote === true);
+    // A checkpoint's note stands when the closing turn brings none (as `interrupted` keeps it).
+    const saved = after?.noteSaved === true || after?.checkpointNote === true;
     await this.endTask(c.id, saved ? "done" : cancelled ? "unfinished" : "unsaved");
     return !cancelled && !this.cancelRequested;
   }
@@ -411,7 +410,8 @@ export class TaskManager {
     }
     let done: Done;
     try {
-      done = await this.runTurn(c, CHECKPOINT_PROMPT, { ...(c.action ? { action: c.action } : {}), phase: "checkpoint", quiet: true });
+      // Its failure is held: the follow-up runs next and its own end is the one the window shows.
+      done = await this.runTurn(c, CHECKPOINT_PROMPT, { ...(c.action ? { action: c.action } : {}), phase: "checkpoint", quiet: true, holdFailure: true });
     } catch (err) {
       if (err instanceof TurnNotStarted) await waitAgain();
       throw unwrap(err);

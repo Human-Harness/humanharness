@@ -143,4 +143,10 @@ describe("interrupted", () => {
     expect(interrupted(question)).toEqual({ ...waiting, current: null });
     expect(interrupted(emptyTasks())).toEqual(emptyTasks());
   });
+
+  it("a task whose checkpoint wrote its note ends done, as a closing turn without a note would", () => {
+    const checkpointed = { ...waiting, current: { ...waiting.current!, checkpointNote: true } };
+    expect(interrupted(checkpointed).actions).toEqual({ manifest: "done", turn: "done" });
+    expect(interrupted(checkpointed, "unsaved").actions).toEqual({ manifest: "done", turn: "done" });
+  });
 });

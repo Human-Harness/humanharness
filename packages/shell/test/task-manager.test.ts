@@ -1,13 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ModelProfile } from "@humanharness/engines";
 import type { ChoiceOption, SavedNote } from "@humanharness/harness-sdk";
-import type { Event } from "@humanharness/runtime";
+import type { Event, HarnessRuntime } from "@humanharness/runtime";
 import type { TaskView } from "@humanharness/ui/client";
 import type { Note, NoteMeta } from "@humanharness/workspace";
-import { TaskManager } from "../src/main/task-manager";
+import { type TaskDeps, TaskManager } from "../src/main/task-manager";
 import { CHECKPOINT_PROMPT, CLOSE_PROMPT } from "../src/main/task-prompts";
 import { type CurrentTask, type TasksFile, emptyTasks } from "../src/main/task-store";
-import type { TurnOptions } from "../src/main/turn-controller";
+import { TurnController, type TurnOptions } from "../src/main/turn-controller";
 
 const label = (en: string, es = en) => ({ es, en });
 const note: SavedNote = {
@@ -46,6 +46,9 @@ function setup(
     fallback?: (p: ModelProfile, tried: string[]) => ModelProfile | null;
     /** recordCompaction. */
     recordCompaction?: (task: CurrentTask) => void;
+    /** Real turns (a TurnController) instead of the scripted ones; `window` then gets the manager's events too. */
+    turns?: TaskDeps["turns"];
+    window?: Event[];
   } = {},
 ) {
   let state = opts.state ?? emptyTasks();
@@ -65,7 +68,7 @@ function setup(
         opts.onSave?.(s);
       },
     },
-    turns: {
+    turns: opts.turns ?? {
       isBusy: () => busy,
       cancel: () => void log.push("cancel"),
       send: async (message, options) => {
@@ -98,7 +101,7 @@ function setup(
     },
     saveHistory: async (message) => void log.push(`history:${message}`),
     changed: (v) => views.push(v),
-    emit: (e) => void emitted.push(e),
+    emit: (e) => void (opts.window ?? emitted).push(e),
     ...(opts.profile ? { profileFor: async () => opts.profile! } : {}),
     ...(opts.fallback ? { fallbackFor: async (p: ModelProfile, tried: string[]) => opts.fallback!(p, tried) } : {}),
     ...(opts.recordCompaction ? { recordCompaction: async (task: CurrentTask) => opts.recordCompaction!(task) } : {}),
@@ -662,5 +665,111 @@ describe("TaskManager context and checkpoints", () => {
     await t.manager.start("manifest");
     await t.manager.ask("More?");
     expect(t.turns.map((x) => x.options.phase)).toEqual(["run", "run"]);
+  });
+});
+
+/**
+ * Real turns: a TurnController over a runtime that plays the next script entry per turn (`done: ok` when
+ * none is left). `during(i)` runs inside turn i before its events; a cancel ends the turn as cancelled.
+ */
+function realTurns(script: Event[][], during?: (index: number) => void) {
+  const window: Event[] = [];
+  const messages: string[] = [];
+  const runtime = {
+    send: (message: string, emit: (e: Event) => void) => {
+      const index = messages.push(message) - 1;
+      let ended = false;
+      const play = (events: Event[]) => {
+        for (const e of events) {
+          if (ended) return;
+          if (e.type === "done") ended = true;
+          emit(e);
+        }
+      };
+      const done = (async () => {
+        await Promise.resolve();
+        during?.(index);
+        play(script[index] ?? [ok]);
+      })();
+      return { cancel: () => play([cancelled]), done };
+    },
+  } as unknown as HarnessRuntime;
+  const controller = new TurnController({
+    ensureRuntime: async () => runtime,
+    chatLog: async () => ({ append: async () => {} }),
+    stateBlocks: () => new Set(),
+    emit: (e) => void window.push(e),
+  });
+  return { controller, window, messages };
+}
+
+describe("TaskManager over real turns: what the window sees", () => {
+  const standard: ModelProfile = { engine: "claude", tier: "standard", model: "sonnet", effort: "medium", cap: 200_000 };
+  const deep: ModelProfile = { engine: "claude", tier: "deep", model: "opus", effort: "high", cap: 400_000 };
+  const ctx = (used: number): Event => ({ type: "context", used });
+  const unavailable: Event = { type: "done", ok: false, error: { code: "model-unavailable" } };
+  const answer: Event = { type: "text", delta: "Answer" };
+
+  it("checkpoint fails (not cancelled): the window gets only the follow-up's text and its one done", async () => {
+    const r = realTurns([[ctx(170_000), ok], [crashed], [answer, ok]]);
+    const t = setup({ profile: standard, turns: r.controller, window: r.window });
+    await t.manager.start("manifest");
+    r.window.length = 0;
+    await t.manager.ask("More?");
+    expect(r.messages).toHaveLength(3);
+    expect(r.window).toEqual([answer, ok]);
+    expect(t.state().current).toMatchObject({ status: "waiting", turns: 2 });
+  });
+
+  it("quit during a checkpoint: no follow-up, no next task, the window told the turn stopped", async () => {
+    let t!: ReturnType<typeof setup>;
+    const r = realTurns([[ctx(170_000), ok]], (i) => {
+      if (i !== 1) return;
+      t.manager.close();
+      r.controller.close();
+    });
+    t = setup({ profile: standard, turns: r.controller, window: r.window });
+    await t.manager.start("manifest");
+    r.window.length = 0;
+    await t.manager.ask("More?");
+    expect(r.messages).toHaveLength(2);
+    expect(r.window).toEqual([cancelled]);
+    expect(t.state().current).toMatchObject({ status: "waiting", checkpointed: false });
+    await expect(t.manager.ask("Again?")).rejects.toThrow("The app is closing");
+  });
+
+  it("quit during a fallback retry: no further turn, no task left, one cancelled done in the window", async () => {
+    let t!: ReturnType<typeof setup>;
+    const r = realTurns([[unavailable]], (i) => {
+      if (i !== 1) return;
+      t.manager.close();
+      r.controller.close();
+    });
+    t = setup({ profile: deep, fallback: (p) => (p.model === "opus" ? standard : null), turns: r.controller, window: r.window });
+    await t.manager.start("manifest");
+    expect(r.messages).toHaveLength(2);
+    expect(r.window).toEqual([cancelled]);
+    expect(t.state()).toMatchObject({ current: null, actions: { manifest: "unfinished" } });
+  });
+
+  it("quit while the failed attempt's session ends: no retry, one cancelled done in the window", async () => {
+    let t!: ReturnType<typeof setup>;
+    let ends = 0;
+    const r = realTurns([[unavailable]]);
+    t = setup({
+      profile: deep,
+      fallback: (p) => (p.model === "opus" ? standard : null),
+      turns: r.controller,
+      window: r.window,
+      onEndSession: () => {
+        if (++ends !== 2) return;
+        t.manager.close();
+        r.controller.close();
+      },
+    });
+    await t.manager.start("manifest");
+    expect(r.messages).toHaveLength(1);
+    expect(r.window).toEqual([cancelled]);
+    expect(t.state()).toMatchObject({ current: null, actions: { manifest: "unfinished" } });
   });
 });

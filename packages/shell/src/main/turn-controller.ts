@@ -39,9 +39,15 @@ export interface TurnOptions extends SendOptions {
   profile?: ModelProfile;
   /**
    * A first turn the task manager will retry on another model: a `model-unavailable` end is neither logged
-   * nor shown (only `onEvent` sees it). Any other end is handled as usual.
+   * nor shown (only `onEvent` sees it; its usage is recorded). Its events reach the window only from its
+   * first content on (text, activity, block), so a held attempt shows nothing. Any other end is handled as usual.
    */
   holdModelError?: boolean;
+  /**
+   * A quiet turn another turn follows right away (the checkpoint): any failure is neither logged nor shown,
+   * so the window keeps waiting for the next turn's own end. Usage is recorded; only `onEvent` sees it.
+   */
+  holdFailure?: boolean;
   /** The retry of a held turn: the person's message is already in the chat. */
   skipUserEntry?: boolean;
 }
@@ -63,6 +69,12 @@ export interface TurnDeps {
   sessionExpired?: (engineId: string) => Promise<void>;
   /** The configured engine, read when the turn starts: the one `sessionExpired` is told about. */
   engineId?: () => Promise<string | undefined>;
+}
+
+/** The turn's end stays out of the chat and the window (`holdModelError`, `holdFailure`). */
+export function isHeld(done: Done, options: Pick<TurnOptions, "holdModelError" | "holdFailure">): boolean {
+  if (done.ok) return false;
+  return (options.holdModelError === true && done.error.code === "model-unavailable") || options.holdFailure === true;
 }
 
 /** One message's lifecycle: log, start the runtime, run the turn, log the reply and its usage, then tell the window. */
@@ -110,7 +122,7 @@ export class TurnController {
   }
 
   private async run(message: string, options: TurnOptions): Promise<void> {
-    const { action, task, phase, display, followUp, quiet, onEvent, profile, holdModelError, skipUserEntry } = options;
+    const { action, task, phase, display, followUp, quiet, onEvent, profile, holdModelError, holdFailure, skipUserEntry } = options;
     const turn: { cancelled: boolean; running: RunningTurn | null } = { cancelled: false, running: null };
     this.turn = turn;
     try {
@@ -131,12 +143,23 @@ export class TurnController {
       }
       const recorder = new TurnRecorder(this.deps.stateBlocks());
       const meta: UsageMeta = { ...(action ? { action } : {}), ...(task ? { task } : {}), ...(phase ? { phase } : {}) };
+      // A held attempt keeps its events until its model answers: one that fails shows nothing.
+      let pending: Event[] | null = holdModelError ? [] : null;
+      const release = () => {
+        const events = pending ?? [];
+        pending = null;
+        for (const e of events) this.emit(e);
+      };
       const finish = async (done: Done) => {
-        if (holdModelError && !done.ok && done.error.code === "model-unavailable") {
+        const entry: ChatEntry = { ...recorder.finish(done), ...(task ? { task } : {}) };
+        if (isHeld(done, options)) {
+          pending = null;
+          await this.recordUsage(entry, meta, recorder.firstLimits);
+          if (!done.ok && done.error.code === "session-expired" && engineId) await this.forgetSession(engineId);
           this.tell(onEvent, done);
           return;
         }
-        const entry: ChatEntry = { ...recorder.finish(done), ...(task ? { task } : {}) };
+        release();
         // A quiet turn that fails (e.g. the session expired) still shows its error, never its text.
         const surface = !quiet || (!done.ok && done.error.code !== "cancelled");
         if (surface) {
@@ -171,7 +194,12 @@ export class TurnController {
           // The context and compactions reach the window through the task view, never as chat events.
           if (e.type === "context" || e.type === "compaction") return;
           // Plan limits reach the usage meter even from a quiet turn.
-          if (!quiet || e.type === "limits") this.emit(e);
+          if (quiet && e.type !== "limits") return;
+          if (pending && (e.type === "limits" || e.type === "usage")) pending.push(e);
+          else {
+            release();
+            this.emit(e);
+          }
         }
       }, profile ? { profile } : undefined);
       await turn.running.done;

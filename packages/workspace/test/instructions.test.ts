@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { z } from "zod";
-import { defineBlock } from "@humanharness/harness-sdk";
+import { CORE_BLOCKS, defineBlock } from "@humanharness/harness-sdk";
 import { getEngine } from "@humanharness/engines";
 import { MANAGED_END, MANAGED_START, managedSection, writeInstructions } from "../src";
 
@@ -53,6 +53,23 @@ describe("managedSection", () => {
       "Call these tools to show things to the person or update their state.",
     );
   });
+
+  it("documents the core blocks with their own tool names", () => {
+    const s = managedSection({ language: "en", blocks: { ...CORE_BLOCKS, ...blocks } });
+    expect(s).toContain("`show_choices`");
+    expect(s).toContain("`save_note`");
+    expect(s).not.toContain("update_save_note");
+  });
+
+  it("lists the reference folders as read only, and only when there are some", () => {
+    const s = managedSection({ language: "es", blocks, references: [{ label: "Código de Human Harness", path: "/Users/me/code/hh" }] });
+    expect(s).toContain("### Carpetas de referencia (solo lectura)");
+    expect(s).toContain("Podés leer estas carpetas con tus herramientas de lectura. Nunca cambies nada en ellas.");
+    expect(s).toContain("- Código de Human Harness: `/Users/me/code/hh`");
+    expect(s.indexOf("Carpetas de referencia")).toBeLessThan(s.indexOf(MANAGED_END));
+    expect(managedSection({ language: "en", blocks })).not.toContain("Reference folders");
+    expect(managedSection({ language: "en", blocks, references: [{ label: "Source", path: "/r" }] })).toContain("### Reference folders (read only)");
+  });
 });
 
 describe("writeInstructions", () => {
@@ -92,5 +109,11 @@ describe("writeInstructions", () => {
     const first = fs.readFileSync(path.join(folder, "AGENTS.md"), "utf8");
     await writeInstructions(opts);
     expect(fs.readFileSync(path.join(folder, "AGENTS.md"), "utf8")).toBe(first);
+  });
+
+  it("writes the reference folders into AGENTS.md", async () => {
+    const folder = tmp();
+    await writeInstructions({ folder, base: "x", language: "en", blocks, references: [{ label: "Source", path: "/r" }], engine: getEngine("codex") });
+    expect(fs.readFileSync(path.join(folder, "AGENTS.md"), "utf8")).toContain("- Source: `/r`");
   });
 });

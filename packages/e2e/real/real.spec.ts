@@ -14,6 +14,11 @@ const OUT = process.env.HH_REAL_OUT ?? "";
 const ENGINE = process.env.HH_REAL_ENGINE ?? "claude";
 if (!OUT) throw new Error("HH_REAL_OUT is required: the folder for screenshots, answers and notes (e.g. HH_REAL_OUT=$HOME/hh-real-out).");
 if (ENGINE !== "claude" && ENGINE !== "codex") throw new Error(`HH_REAL_ENGINE must be claude or codex (got ${ENGINE}).`);
+const TIER = process.env.HH_REAL_TIER ?? "";
+if (TIER && !["light", "standard", "deep"].includes(TIER)) throw new Error(`HH_REAL_TIER must be light, standard or deep (got ${TIER}).`);
+/** What each level should run (resources spec §5.1): Claude's family by alias, the effort on both engines. */
+const CLAUDE_FAMILY: Record<string, RegExp> = { light: /haiku/i, standard: /sonnet/i, deep: /opus/i };
+const EFFORT: Record<string, string> = { light: "low", standard: "medium", deep: "high" };
 fs.mkdirSync(OUT, { recursive: true });
 const shot = (page: import("@playwright/test").Page, name: string) => page.screenshot({ path: path.join(OUT, `${ENGINE}-${name}.png`) });
 
@@ -23,7 +28,10 @@ test(`real ${ENGINE}: topic → blocks → next → note → next topic`, async 
   const userData = path.join(OUT, `${ENGINE}-userData`);
   const sharedDir = path.join(OUT, `${ENGINE}-shared`);
   for (const d of [folder, userData, sharedDir]) fs.mkdirSync(d, { recursive: true });
-  fs.writeFileSync(path.join(userData, "config.json"), JSON.stringify({ language: "es", folder, engineId: ENGINE }));
+  fs.writeFileSync(
+    path.join(userData, "config.json"),
+    JSON.stringify({ language: "es", folder, engineId: ENGINE, ...(TIER ? { models: { tasks: { manifest: TIER } } } : {}) }),
+  );
   const now = new Date().toISOString();
   const ready = { notice: { version: NOTICE_VERSION, acceptedAt: now }, verifiedAt: now };
   fs.writeFileSync(path.join(sharedDir, "engines.json"), JSON.stringify({ version: 1, engines: { [ENGINE]: ready } }));
@@ -46,6 +54,16 @@ test(`real ${ENGINE}: topic → blocks → next → note → next topic`, async 
     fs.writeFileSync(path.join(OUT, `${ENGINE}-answer.txt`), await page.getByRole("main").innerText());
     const labels = await choices.getByRole("button").allInnerTexts();
     fs.writeFileSync(path.join(OUT, `${ENGINE}-choices.json`), JSON.stringify(labels, null, 2));
+    if (TIER) {
+      // The first usage line says which level ran and what the engine reported it ran on.
+      const usage = path.join(folder, ".harness", "usage.jsonl");
+      await expect.poll(() => fs.existsSync(usage)).toBe(true);
+      const first = JSON.parse(fs.readFileSync(usage, "utf8").trim().split("\n")[0]) as Record<string, unknown>;
+      fs.writeFileSync(path.join(OUT, `${ENGINE}-${TIER}-usage.json`), JSON.stringify(first, null, 2));
+      expect(first).toMatchObject({ action: "manifest", tier: TIER, effort: EFFORT[TIER] });
+      if (ENGINE === "claude") expect(String(first.reportedModel)).toMatch(CLAUDE_FAMILY[TIER]);
+      else expect(first.reportedModel).toBeTruthy();
+    }
     // Prefer an option that moves on along the path.
     const next = choices.getByRole("button", { name: /recorrido|siguiente|motores|seguir/i }).first();
     await ((await next.count()) ? next : choices.getByRole("button").last()).click();

@@ -2,6 +2,7 @@ import type {
   AppConfig,
   AppState,
   ChatEntry,
+  ChoiceOption,
   EngineError,
   EngineStatus,
   Event,
@@ -13,6 +14,7 @@ import type {
   SetupOutput,
   SetupResult,
   SetupStep,
+  TaskView,
   TestResult,
   UsageSummary,
 } from "../src/client";
@@ -82,6 +84,14 @@ export class FakeClient implements HarnessClient {
   testResult: TestResult & { error?: EngineError } = { ok: true };
   usage: UsageSummary = { limits: null, estimates: {} };
   revealed = 0;
+  tasks: TaskView = { current: null, actions: {}, notes: [] };
+  chosen: ChoiceOption[] = [];
+  /** When set, choose rejects with it. */
+  chooseError: Error | null = null;
+  opened: string[] = [];
+  /** What openPath answers. */
+  openResult = true;
+  private taskListeners = new Set<(v: TaskView) => void>();
   private listeners = new Set<(e: Event) => void>();
   private setupListeners = new Set<(o: SetupOutput) => void>();
 
@@ -233,5 +243,26 @@ export class FakeClient implements HarnessClient {
   }
   async revealFolder() {
     this.revealed++;
+  }
+  emitTasks(view: TaskView) {
+    this.tasks = view;
+    for (const l of this.taskListeners) l(view);
+  }
+  async getTasks() {
+    return this.tasks;
+  }
+  onTasks(listener: (v: TaskView) => void) {
+    this.taskListeners.add(listener);
+    return () => {
+      this.taskListeners.delete(listener);
+    };
+  }
+  async choose(option: ChoiceOption) {
+    this.chosen.push(option);
+    if (this.chooseError) throw this.chooseError;
+  }
+  async openPath(file: string) {
+    this.opened.push(file);
+    return this.openResult;
   }
 }

@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { Event, HarnessClient, SetupOutput } from "@humanharness/ui/client";
+import type { Event, HarnessClient, SetupOutput, TaskView } from "@humanharness/ui/client";
 
 function subscribe<T>(channel: string, listener: (value: T) => void): () => void {
   const handler = (_e: unknown, value: T) => listener(value);
@@ -31,6 +31,10 @@ const client: HarnessClient = {
   resetSharedConfig: () => ipcRenderer.invoke("hh:resetSharedConfig"),
   getUsage: () => ipcRenderer.invoke("hh:getUsage"),
   revealFolder: () => ipcRenderer.invoke("hh:revealFolder"),
+  getTasks: () => ipcRenderer.invoke("hh:getTasks"),
+  onTasks: (listener) => subscribe<TaskView>("hh:tasks", listener),
+  choose: (option) => ipcRenderer.invoke("hh:choose", option),
+  openPath: (file) => ipcRenderer.invoke("hh:openPath", file),
 };
 
 contextBridge.exposeInMainWorld("hh", client);

@@ -1,4 +1,4 @@
-import type { ActionCost, Language, LocalizedText } from "@humanharness/harness-sdk";
+import type { ActionCost, ChoiceOption, Language, LocalizedText } from "@humanharness/harness-sdk";
 import type { ActivityKind, EngineError, Event, LimitWindow } from "@humanharness/runtime";
 
 export type Appearance = "system" | "light" | "dark";
@@ -33,7 +33,16 @@ export interface EngineOption {
 
 export interface ActionOption {
   label: LocalizedText;
+  /** One line under the label on the topic card. */
+  description?: LocalizedText;
   cost: ActionCost;
+}
+
+/** A read-only reference folder, as the work screen shows it ("~/…" for paths in the home folder). */
+export interface ReferenceView {
+  id: string;
+  label: LocalizedText;
+  path: string;
 }
 
 export interface AppState {
@@ -56,6 +65,10 @@ export interface AppState {
   engines: EngineOption[];
   /** The harness's declared actions, by id. */
   actions: Record<string, ActionOption>;
+  /** The guided path: action ids in order. */
+  path?: string[];
+  /** Folders the agent can read but never change. */
+  references?: ReferenceView[];
 }
 
 export interface TurnUsage {
@@ -173,8 +186,49 @@ export interface UsageSummary {
 }
 
 export interface SendOptions {
-  /** The manifest action this message starts (tags the turn; heavy ones may ask first). */
+  /**
+   * The manifest action this message starts: a new task, whose first message is the action's brief (the
+   * message is what the chat shows). Heavy actions may ask first.
+   */
   action?: string;
+}
+
+/** Where the current task is: running a turn, waiting for the person, or closing (asking for its note). */
+export type TaskStatus = "running" | "waiting" | "closing";
+/** How an action's last task ended: its note was saved, the closing turn brought none, or it was interrupted. */
+export type ActionStatus = "done" | "unsaved" | "unfinished";
+
+export interface CurrentTaskView {
+  id: string;
+  /** Absent for a free question. */
+  action?: string;
+  status: TaskStatus;
+}
+
+/** A note in `.harness/notes/`, for the side panel and "Lo que quedó claro". */
+export interface NoteView {
+  slug: string;
+  title: string;
+  action?: string;
+  date: string;
+  summary: string[];
+  decisions: string[];
+  /** Relative to the folder: `.harness/notes/<slug>.md`. */
+  path: string;
+}
+
+export interface TaskView {
+  current: CurrentTaskView | null;
+  actions: Record<string, ActionStatus>;
+  /** Newest first. */
+  notes: NoteView[];
+}
+
+/** The action to start after `current` on the guided path: the next one, or else the first one not done yet. */
+export function nextInPath(path: string[], current: string | undefined, statuses: Record<string, ActionStatus>): string | null {
+  const i = current ? path.indexOf(current) : -1;
+  if (i >= 0 && i + 1 < path.length) return path[i + 1];
+  return path.find((id) => id !== current && statuses[id] !== "done") ?? null;
 }
 
 /** Everything the renderer can ask the main process. Implemented by the preload as `window.hh`. */
@@ -212,6 +266,13 @@ export interface HarnessClient {
   getUsage(): Promise<UsageSummary>;
   /** Shows the configured folder in Finder. */
   revealFolder(): Promise<void>;
+  /** The current task, how each action ended, and the notes. */
+  getTasks(): Promise<TaskView>;
+  onTasks(listener: (view: TaskView) => void): () => void;
+  /** The person picked an option of a `choices` block: a follow-up, another topic, or the next one on the path. */
+  choose(option: ChoiceOption): Promise<void>;
+  /** Opens a file inside the reference folders or the user's folder in its default app. False when refused or missing. */
+  openPath(path: string): Promise<boolean>;
 }
 
 /** A config with everything a turn needs (appearance stays optional). */
@@ -221,4 +282,4 @@ export function isConfigured(config: AppConfig): config is ConfiguredApp {
   return Boolean(config.language && config.folder && config.engineId);
 }
 
-export type { Event, EngineError, LimitWindow };
+export type { ChoiceOption, Event, EngineError, LimitWindow };

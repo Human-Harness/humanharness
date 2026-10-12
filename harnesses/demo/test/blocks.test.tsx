@@ -1,5 +1,7 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import type { ReactElement } from "react";
 import { I18nextProvider } from "react-i18next";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -35,6 +37,26 @@ describe("DiagramBlock", () => {
     expect([...figure.querySelectorAll(".demo-node strong")].map((n) => n.textContent)).toEqual(["Screen", "Main process", "Runtime"]);
     expect(screen.getByText("ui")).toBeTruthy();
     expect(screen.getByText("Runtime → Screen: events come back")).toBeTruthy();
+  });
+
+  it("puts each arrow after its box, so wrapped rows never start with an arrow", async () => {
+    const nodes = ["a", "b", "c", "d", "e", "f"].map((id) => ({ id, label: `${id}-veryLongIdentifierWithoutSpaces`, detail: "detail" }));
+    await renderIn("en", <DiagramBlock data={{ title: "Six", nodes, edges: [] }} {...actions()} />);
+    const items = [...screen.getByRole("figure", { name: "Six" }).querySelectorAll("ol.demo-nodes > li.demo-node-item")];
+    expect(items).toHaveLength(6);
+    for (const [i, li] of items.entries()) {
+      expect([...li.children].map((c) => c.getAttribute("class"))).toEqual(["demo-node", i === 5 ? "demo-arrow demo-arrow-end" : "demo-arrow"]);
+    }
+  });
+
+  it("lays the boxes on a wrapping grid whose boxes shrink and wrap their text", () => {
+    const css = readFileSync(resolve(__dirname, "../ui/demo.css"), "utf8");
+    const rule = (selector: string) => css.match(new RegExp(`(?:^|\\n)${selector.replace(/[.]/g, "\\.")} \\{([^}]*)\\}`))?.[1] ?? "";
+    expect(rule(".demo-nodes")).toMatch(/display: grid;.*grid-template-columns: repeat\(auto-fit, minmax\(min\(\d+px, 100%\), 1fr\)\)/);
+    expect(rule(".demo-node-item")).toMatch(/min-width: 0/);
+    expect(rule(".demo-node")).toMatch(/min-width: 0/);
+    expect(rule(".demo-node")).toMatch(/overflow-wrap: anywhere/);
+    expect(rule(".demo-node-item svg")).toMatch(/flex: none/);
   });
 
   it("shows nothing for malformed data", async () => {

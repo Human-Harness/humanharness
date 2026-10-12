@@ -103,6 +103,45 @@ const KINDS: Record<string, ActivityKind> = {
   read: "read", search: "search", edit: "edit", delete: "edit", move: "edit", fetch: "web", execute: "exec",
 };
 
+/** An absolute (or home-relative) path starting a word: `/Users/x/a.md`, `~/a.md`, `C:\\x\\a.md`. */
+const ABSOLUTE_PATH = /(?<![^\s'"`(])(?:~|[A-Za-z]:)?[\\/][^\s'"`)]*/g;
+const FILE_KINDS = new Set(["read", "edit", "delete", "move"]);
+const LEADING_VERB = /^(?:read|reading|view|open|edit|write|create|delete|remove|move|rename|update)(?:\s+files?)?\s*:?\s+/i;
+
+function baseName(p: string): string {
+  return path.posix.basename(p.replace(/\\/g, "/").replace(/\/+$/, "")) || p;
+}
+
+function pathOf(locations: unknown, rawInput: unknown): string | undefined {
+  const first = Array.isArray(locations) ? (locations[0] as { path?: unknown } | undefined)?.path : undefined;
+  if (typeof first === "string" && first) return first;
+  const input = (rawInput ?? {}) as Record<string, unknown>;
+  for (const key of ["path", "file_path", "abs_path", "filePath"]) {
+    if (typeof input[key] === "string" && input[key]) return input[key] as string;
+  }
+  const parsed = Array.isArray(input.parsed_cmd) ? (input.parsed_cmd[0] as Record<string, unknown> | undefined) : undefined;
+  if (typeof parsed?.path === "string" && parsed.path) return parsed.path;
+  if (typeof parsed?.name === "string" && parsed.name) return parsed.name;
+  return undefined;
+}
+
+/**
+ * What an activity line shows for an ACP tool call, in the style of Claude's ("manifest.md"):
+ * the file's name for file tools, otherwise the title without absolute paths (they leak the home folder).
+ */
+export function activityDetail(call: { kind?: unknown; title?: unknown; locations?: unknown; rawInput?: unknown }): string {
+  const kind = typeof call.kind === "string" ? call.kind : "";
+  const fileKind = FILE_KINDS.has(kind);
+  const where = pathOf(call.locations, call.rawInput);
+  if (fileKind && where) return baseName(where);
+  const title = String(call.title ?? "")
+    .replace(ABSOLUTE_PATH, (p) => baseName(p))
+    .trim();
+  if (!fileKind) return title;
+  const rest = title.replace(LEADING_VERB, "").replace(/^['"`](.*)['"`]$/, "$1");
+  return rest && !/\s/.test(rest) ? baseName(rest) : rest || title;
+}
+
 function errorFrom(e: unknown, stderr = ""): Event {
   const err = e as { code?: unknown; message?: string };
   if (err?.code === "ENOENT") return fail("engine-not-installed", err.message);
@@ -272,7 +311,7 @@ export class AcpTransport implements Transport {
           this.hidden.add(u.toolCallId);
           return;
         }
-        const activity = { kind: KINDS[u.kind] ?? ("other" as const), detail: String(u.title ?? "") };
+        const activity = { kind: KINDS[u.kind] ?? ("other" as const), detail: activityDetail(u) };
         this.activities.set(u.toolCallId, activity);
         this.afterTool = true;
         emit({ type: "activity", id: u.toolCallId, ...activity, state: "start" });

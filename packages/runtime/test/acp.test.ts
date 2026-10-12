@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
 import { type AcpScript, fakeAcpCommand, writeScript } from "@humanharness/fake-agent";
-import { AcpTransport, type PermissionPolicy, decidePermission, isUiTool } from "../src/acp";
+import { AcpTransport, type PermissionPolicy, activityDetail, decidePermission, isUiTool } from "../src/acp";
 import type { Event } from "../src/events";
 import type { Session } from "../src/transport";
 
@@ -71,6 +71,35 @@ describe("isUiTool", () => {
     expect(isUiTool("anything", { server: "ui", tool: "show_note" })).toBe(true);
     expect(isUiTool("mcp.notes.search", { server: "notes" })).toBe(false);
     expect(isUiTool("Run command", { command: "ls" })).toBe(false);
+  });
+});
+
+describe("activityDetail", () => {
+  const abs = "/Users/someone/work/repo/docs/architecture/manifest.md";
+  it("shows the file name of a file tool from its locations or rawInput, like Claude's lines", () => {
+    expect(activityDetail({ kind: "read", title: `Read file '${abs}'`, locations: [{ path: abs }] })).toBe("manifest.md");
+    expect(activityDetail({ kind: "edit", title: "Edit", rawInput: { path: abs } })).toBe("manifest.md");
+    expect(activityDetail({ kind: "read", title: "Read", rawInput: { parsed_cmd: [{ type: "read", path: abs }] } })).toBe("manifest.md");
+  });
+
+  it("falls back to the title without absolute paths or a repeated verb", () => {
+    expect(activityDetail({ kind: "read", title: `Read file '${abs}'` })).toBe("manifest.md");
+    expect(activityDetail({ kind: "read", title: "Read notes/a.md" })).toBe("a.md");
+    expect(activityDetail({ kind: "search", title: `Search "defineHarness" in ${path.dirname(abs)}` })).toBe('Search "defineHarness" in architecture');
+    expect(activityDetail({ kind: "search", title: "Search ~/work/repo/src for x" })).toBe("Search src for x");
+    expect(activityDetail({ kind: "other", title: "List C:\\Users\\someone\\repo" })).toBe("List repo");
+    expect(activityDetail({ kind: "fetch", title: "Fetch https://example.com/a/b" })).toBe("Fetch https://example.com/a/b");
+    expect(activityDetail({ kind: "read", title: "Read the manifest" })).toBe("the manifest");
+    expect(activityDetail({ kind: "read" })).toBe("");
+  });
+
+  it("never shows the home folder", () => {
+    const cases = [
+      { kind: "read", title: `Read file '${abs}'` },
+      { kind: "search", title: `grep -rn x ${abs}` },
+      { kind: "execute", title: `cat ${abs}`, locations: [{ path: abs }] },
+    ];
+    for (const c of cases) expect(activityDetail(c)).not.toContain("/Users/");
   });
 });
 
@@ -235,8 +264,8 @@ describe("AcpTransport", () => {
     const events = await run(transport);
     expect(events).toEqual([
       { type: "text", delta: "Looking" },
-      { type: "activity", id: "r1", kind: "read", detail: "Read notes/a.md", state: "start" },
-      { type: "activity", id: "r1", kind: "read", detail: "Read notes/a.md", state: "end", error: false },
+      { type: "activity", id: "r1", kind: "read", detail: "a.md", state: "start" },
+      { type: "activity", id: "r1", kind: "read", detail: "a.md", state: "end", error: false },
       { type: "paragraph" },
       { type: "text", delta: "Done" },
       { type: "done", ok: true },

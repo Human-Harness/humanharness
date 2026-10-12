@@ -140,3 +140,39 @@ input[type="text"], input:not([type]) { font: inherit; height: 28px; padding: 0 
 .hh-history li { display: grid; gap: 4px; margin-bottom: 12px; }
 .hh-history time { color: var(--hh-muted); font-size: 12px; }
 @media (max-width: 640px) { .hh-body { grid-template-columns: 1fr; } .hh-side { display: none; } }
+/* Flow mode (spec 2026-10-12, mockups "Plan 3 · Explicador"): side panel, start view, choices. */
+.hh-flow-side { width: 248px; flex: none; box-sizing: border-box; padding: 18px 14px; display: flex; flex-direction: column; gap: 18px; border-right: 1px solid var(--hh-line); overflow-y: auto; }
+.hh-flow-heading { margin: 0 0 6px; padding-left: 6px; font-size: 12px; font-weight: 600; color: var(--hh-muted); }
+.hh-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.hh-steps button { width: 100%; height: auto; justify-content: flex-start; gap: 9px; padding: 6px 8px; border-color: transparent; background: transparent; color: var(--hh-slate); text-align: left; }
+.hh-steps button[aria-current="step"] { background: var(--hh-surface); border-color: var(--hh-line); color: var(--hh-ink); font-weight: 600; }
+.hh-step-mark { width: 18px; height: 18px; flex: none; box-sizing: border-box; display: grid; place-items: center; border-radius: 50%; border: 1px solid var(--hh-line-strong); font-size: 11px; color: var(--hh-muted); }
+.hh-step-mark.done { border-color: transparent; color: var(--hh-ok); }
+[aria-current="step"] .hh-step-mark { border-color: transparent; background: var(--hh-ink); color: var(--hh-on-ink); }
+.hh-note-list { list-style: none; margin: 0; padding: 0; }
+.hh-note-list li + li { border-top: 1px solid var(--hh-line); }
+.hh-note-list button { width: 100%; height: auto; justify-content: flex-start; gap: 7px; padding: 8px 10px; border: none; border-radius: 0; background: transparent; text-align: left; }
+.hh-flow-refs { margin-top: auto; display: grid; gap: 8px; }
+.hh-flow-ref { padding-left: 6px; display: grid; gap: 3px; font-size: 12px; color: var(--hh-muted); }
+.hh-flow-ref span { display: flex; align-items: center; gap: 5px; }
+.hh-start-view { display: grid; gap: 18px; padding: 14px 24px; }
+.hh-start-head { display: grid; gap: 6px; }
+.hh-start-head h2 { font-family: var(--hh-display); font-size: 22px; font-weight: 600; }
+.hh-start-head p { color: var(--hh-slate); line-height: 1.5; }
+.hh-start-notice { color: var(--hh-slate); background: var(--hh-surface); border: 1px solid var(--hh-line); border-radius: 10px; padding: 8px 12px; }
+.hh-topics { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+.hh-topic { height: auto; min-height: 104px; flex-direction: column; align-items: flex-start; justify-content: flex-start; gap: 6px; padding: 14px 16px; border-radius: 12px; border-color: var(--hh-line); text-align: left; }
+.hh-topic.next { border: 2px solid var(--hh-ink); padding: 13px 15px; }
+.hh-topic.done .hh-topic-title { color: var(--hh-slate); }
+.hh-topic-head { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.hh-topic-title { font-size: 14px; font-weight: 600; }
+.hh-topic-text { color: var(--hh-slate); line-height: 1.45; }
+.hh-badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 7px; border-radius: 5px; background: var(--hh-segment); color: var(--hh-ink); font-size: 11px; font-weight: 600; white-space: nowrap; }
+.hh-badge.ok { padding: 0; background: transparent; color: var(--hh-ok); }
+.hh-faq { display: grid; gap: 8px; }
+.hh-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.hh-chip { height: 30px; border-radius: 15px; border-color: var(--hh-line-strong); background: var(--hh-sheet); }
+.hh-choices { display: grid; gap: 9px; padding: 12px 14px; border: 1px solid var(--hh-line); border-radius: 12px; background: var(--hh-sheet); }
+.hh-choice-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.hh-choice { flex: 1 1 180px; height: auto; min-height: 36px; justify-content: flex-start; padding: 6px 10px; border-radius: 8px; text-align: left; }
+.hh-choice.next, .hh-choice[aria-checked="true"] { background: var(--hh-ink); color: var(--hh-on-ink); border-color: var(--hh-ink); }

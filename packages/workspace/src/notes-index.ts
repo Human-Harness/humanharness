@@ -8,16 +8,27 @@ export function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
 }
 
-/** The newest `full` notes keep their summary (and give their decisions); the rest of the first `shown` keep title and path. */
-function renderIndex(sorted: Note[], full: number, shown: number): string {
-  const covered = sorted.slice(0, shown).map((n, i) =>
-    i < full && n.summary.length > 0
-      ? `- ${n.title}${n.action ? ` (${n.action})` : ""}: ${n.summary.join("; ")} → ${n.path}`
-      : `- ${n.title} → ${n.path}`,
-  );
-  if (shown < sorted.length) covered.push(`- … ${sorted.length - shown} older notes in .harness/notes/`);
+interface Shape {
+  /** The newest notes that keep their summary. */
+  summaries: number;
+  /** The newest notes whose decisions are listed. */
+  decisions: number;
+  /** The newest notes listed at all. */
+  shown: number;
+  /** Cut the newest note's title to this many characters. */
+  titleMax?: number;
+}
+
+function renderIndex(sorted: Note[], shape: Shape): string {
+  const covered = sorted.slice(0, shape.shown).map((n, i) => {
+    const title =
+      i === 0 && shape.titleMax !== undefined && n.title.length > shape.titleMax ? `${n.title.slice(0, shape.titleMax)}…` : n.title;
+    const head = `- ${title}${n.action ? ` (${n.action})` : ""}`;
+    return i < shape.summaries && n.summary.length > 0 ? `${head}: ${n.summary.join("; ")} → ${n.path}` : `${head} → ${n.path}`;
+  });
+  if (shape.shown < sorted.length) covered.push(`- … ${sorted.length - shape.shown} older notes in .harness/notes/`);
   const decisions = sorted
-    .slice(0, full)
+    .slice(0, Math.min(shape.decisions, shape.shown))
     .flatMap((n) => n.decisions)
     .map((d) => `- ${d}`);
   return [
@@ -31,20 +42,30 @@ function renderIndex(sorted: Note[], full: number, shown: number): string {
 
 /**
  * The notes index for a new session's first message: what was covered and the decisions so far,
- * newest first, within about `budgetTokens`. Past the budget the oldest notes keep only their title
- * and path; if that is still too long the oldest are left out. Empty when there are no notes.
+ * newest first, within about `budgetTokens`. Past the budget the oldest notes lose their summary first,
+ * then their decisions; if that is still too long the oldest are left out, and as a last resort the
+ * newest note's title is cut. Empty when there are no notes.
  */
 export function buildNotesIndex(notes: Note[], opts: { budgetTokens?: number } = {}): string {
   if (notes.length === 0) return "";
   const budget = opts.budgetTokens ?? INDEX_BUDGET_TOKENS;
   const sorted = [...notes].sort((a, b) => b.date.localeCompare(a.date));
-  for (let full = sorted.length; full >= 0; full--) {
-    const text = renderIndex(sorted, full, sorted.length);
-    if (estimateTokens(text) <= budget) return text;
+  const n = sorted.length;
+  const fits = (text: string) => estimateTokens(text) <= budget;
+  for (let summaries = n; summaries >= 0; summaries--) {
+    const text = renderIndex(sorted, { summaries, decisions: n, shown: n });
+    if (fits(text)) return text;
   }
-  for (let shown = sorted.length - 1; shown > 1; shown--) {
-    const text = renderIndex(sorted, 0, shown);
-    if (estimateTokens(text) <= budget) return text;
+  for (let decisions = n - 1; decisions >= 0; decisions--) {
+    const text = renderIndex(sorted, { summaries: 0, decisions, shown: n });
+    if (fits(text)) return text;
   }
-  return renderIndex(sorted, 0, 1);
+  for (let shown = n - 1; shown >= 1; shown--) {
+    const text = renderIndex(sorted, { summaries: 0, decisions: 0, shown });
+    if (fits(text)) return text;
+  }
+  // Last resort: one note, its title cut so the whole index still fits (the "…" takes one character).
+  const full = renderIndex(sorted, { summaries: 0, decisions: 0, shown: 1 });
+  const titleMax = Math.max(0, sorted[0].title.length - (full.length - budget * 4) - 1);
+  return renderIndex(sorted, { summaries: 0, decisions: 0, shown: 1, titleMax });
 }

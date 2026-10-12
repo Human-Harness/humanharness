@@ -73,9 +73,27 @@ export async function writeNote(folder: string, slug: string, note: SavedNote, m
   return `${NOTES_PREFIX}${slug}.md`;
 }
 
+const unquote = (s: string): string => {
+  const t = s.trim();
+  return t.length >= 2 && (t[0] === '"' || t[0] === "'") && t.at(-1) === t[0] ? t.slice(1, -1) : t;
+};
+
+/** A front matter value: JSON as the app writes it, or what a person typed by hand (`[a, 'b']`, `'x'`, `x`). */
+function frontValue(raw: string): unknown {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    if (raw.startsWith("[") && raw.endsWith("]")) {
+      const inner = raw.slice(1, -1).trim();
+      return inner ? inner.split(",").map(unquote).filter(Boolean) : [];
+    }
+    return unquote(raw);
+  }
+}
+
 /** Reads a note file; null when it has no front matter or no title (e.g. the person broke it by hand). */
 export function parseNote(slug: string, text: string): Note | null {
-  const m = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/.exec(text.replace(/\r\n/g, "\n"));
+  const m = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/.exec(text.replace(/^\uFEFF/, "").replace(/\r\n/g, "\n"));
   if (!m) return null;
   const front: Record<string, unknown> = {};
   for (const line of m[1].split("\n")) {
@@ -83,11 +101,7 @@ export function parseNote(slug: string, text: string): Note | null {
     if (i < 0) continue;
     const key = line.slice(0, i).trim();
     const raw = line.slice(i + 1).trim();
-    try {
-      front[key] = JSON.parse(raw);
-    } catch {
-      front[key] = raw;
-    }
+    front[key] = frontValue(raw);
   }
   const sections: Record<string, string[]> = {};
   let current: string | null = null;

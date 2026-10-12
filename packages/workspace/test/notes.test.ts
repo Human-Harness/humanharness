@@ -49,6 +49,30 @@ describe("writeNote", () => {
     expect(parsed?.action).toBeUndefined();
   });
 
+  it("reads a hand-edited note: BOM, plain YAML lists and quoted values", () => {
+    const text = [
+      "\uFEFF---",
+      "title: 'Edited by hand'",
+      "action: turn",
+      "date: 2026-10-12T11:20:00.000Z",
+      "engine: 'claude'",
+      "files: [packages/runtime/src/runtime.ts, 'docs/a b.md', \"x.md\"]",
+      "---",
+      "## Summary",
+      "- still here",
+      "",
+    ].join("\r\n");
+    const parsed = parseNote("edited", text);
+    expect(parsed).not.toBeNull();
+    expect(parsed?.title).toBe("Edited by hand");
+    expect(parsed?.action).toBe("turn");
+    expect(parsed?.engine).toBe("claude");
+    expect(parsed?.date).toBe("2026-10-12T11:20:00.000Z");
+    expect(parsed?.files).toEqual(["packages/runtime/src/runtime.ts", "docs/a b.md", "x.md"]);
+    expect(parsed?.summary).toEqual(["still here"]);
+    expect(parseNote("empty", "---\ntitle: x\nfiles: []\n---\n")?.files).toEqual([]);
+  });
+
   it("replaces a note without leaving temp files", async () => {
     const folder = tmp();
     await writeNote(folder, "q-chats", note, { date: "d", engine: "codex" });

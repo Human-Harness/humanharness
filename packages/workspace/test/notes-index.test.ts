@@ -40,9 +40,9 @@ describe("buildNotesIndex", () => {
     const long = (i: number) => note(i, { summary: ["x".repeat(400)] });
     const index = buildNotesIndex([long(1), long(2), long(3)], { budgetTokens: 250 });
     expect(estimateTokens(index)).toBeLessThanOrEqual(250);
-    expect(index).toContain("- Topic 1 → .harness/notes/n1.md");
+    expect(index).toContain("- Topic 1 (t1) → .harness/notes/n1.md");
     expect(index).toContain(`- Topic 3 (t3): ${"x".repeat(400)} → .harness/notes/n3.md`);
-    expect(index).not.toContain("decision 1");
+    expect(index).toContain("decision 1");
   });
 
   it("drops the oldest notes when even their titles don't fit", () => {
@@ -52,6 +52,26 @@ describe("buildNotesIndex", () => {
     expect(index).toContain("A rather long topic title number 39");
     expect(index).not.toContain("A rather long topic title number 0 ");
     expect(index).toMatch(/- … \d+ older notes in \.harness\/notes\//);
+  });
+
+  it("shows the action even when a note has no summary", () => {
+    expect(buildNotesIndex([note(1, { summary: [] })])).toContain("- Topic 1 (t1) → .harness/notes/n1.md");
+  });
+
+  it("drops summaries before decisions when collapsing", () => {
+    const long = (i: number) => note(i, { summary: ["x".repeat(900)], decisions: [`decision ${i} ${"d".repeat(40)}`] });
+    const index = buildNotesIndex([long(1), long(2), long(3)], { budgetTokens: 200 });
+    expect(estimateTokens(index)).toBeLessThanOrEqual(200);
+    expect(index).not.toContain("xxxx");
+    for (const i of [1, 2, 3]) expect(index).toContain(`decision ${i}`);
+    expect(index).toContain("- Topic 1 (t1) → .harness/notes/n1.md");
+  });
+
+  it("truncates the title of the last note left to respect the budget", () => {
+    const index = buildNotesIndex([note(1, { title: "T".repeat(2000) }), note(0)], { budgetTokens: 80 });
+    expect(estimateTokens(index)).toBeLessThanOrEqual(80);
+    expect(index).toContain("TTT");
+    expect(index).toContain("→ .harness/notes/n1.md");
   });
 
   it("stays within about 1,500 tokens by default", () => {

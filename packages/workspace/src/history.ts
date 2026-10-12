@@ -1,8 +1,13 @@
 import fs from "node:fs";
 import path from "node:path";
 import git from "isomorphic-git";
+import { NOTES_PREFIX } from "./notes";
 
 const AUTHOR = { name: "Human Harness", email: "history@humanharness.local" };
+
+/** The temp file `writeNote` renames into place (`.harness/notes/<slug>.md.<uuid>.tmp`); the person's own `.tmp` files stay tracked. */
+const isNoteTempFile = (file: string): boolean =>
+  file.startsWith(NOTES_PREFIX) && /\.md\.[0-9a-f-]+\.tmp$/.test(file.slice(NOTES_PREFIX.length));
 
 export interface HistoryEntry {
   sha: string;
@@ -49,7 +54,7 @@ export class History {
 
   private tracked = (file: string): boolean =>
     !file.endsWith(".DS_Store") &&
-    !file.endsWith(".tmp") &&
+    !isNoteTempFile(file) &&
     (this.keep.some((k) => file.startsWith(k)) || !this.ignore.some((i) => (i.endsWith("/") ? file.startsWith(i) : file === i)));
 
   async init(): Promise<void> {

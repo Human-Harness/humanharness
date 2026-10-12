@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { type Bridge, type Launcher, type McpServerSpec, devLauncher, openBridge, uiServerSpec } from "@humanharness/blocks";
-import type { EngineDef } from "@humanharness/engines";
+import type { EngineDef, ModelProfile } from "@humanharness/engines";
 import { type Language, type LoadedHarness, allBlocks, resolveInHarness } from "@humanharness/harness-sdk";
 import { History, NOTES_PREFIX, type ReferenceFolder, prepareFolder, writeInstructions } from "@humanharness/workspace";
 import { AcpTransport } from "./acp";
@@ -39,7 +39,8 @@ export interface RunningTurn {
 }
 
 export interface HarnessRuntime {
-  send(message: string, emit: (e: Event) => void): RunningTurn;
+  /** Runs one turn; `options.profile` is the task's model profile (every turn of a task gets the same one). */
+  send(message: string, emit: (e: Event) => void, options?: { profile?: ModelProfile }): RunningTurn;
   /** Ends the engine session (Codex: `session/close`); the next turn starts a new one. Not while a turn runs. */
   endSession(): Promise<void>;
   history: History;
@@ -109,7 +110,7 @@ export async function createRuntime(opts: RuntimeOptions): Promise<HarnessRuntim
 
     return {
       history,
-      send(message, emit) {
+      send(message, emit, options = {}) {
         if (busy) throw new Error("A turn is already running");
         busy = true;
         const controller = new AbortController();
@@ -134,6 +135,7 @@ export async function createRuntime(opts: RuntimeOptions): Promise<HarnessRuntim
                 else emitOnce(e);
               },
               controller.signal,
+              options.profile,
             );
             emitCurrent = null;
             const f: Event = final ?? { type: "done", ok: false, error: { code: "agent-crashed" } };

@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import type { McpServerSpec } from "@humanharness/blocks";
+import { type ModelProfile, isCap, isEffort, isModelId } from "@humanharness/engines";
 import type { Permissions } from "@humanharness/harness-sdk";
 import { classifyError } from "./classify";
 import { type ActivityKind, type Event, fail } from "./events";
@@ -51,8 +52,24 @@ export function referenceRulePath(dir: string, platform: NodeJS.Platform = proce
   return path.posix.resolve(dir).replace(/\/+$/, "");
 }
 
+/**
+ * `--model`, `--effort` and `--autocompact` for the task's profile (resources spec §5.2), on the first turn
+ * and every `--resume`. Checked again here: nothing that reads as a flag reaches the CLI.
+ */
+export function profileArgs(profile: ModelProfile | undefined): string[] {
+  if (!profile) return [];
+  if (profile.model !== undefined && !isModelId(profile.model)) {
+    throw new Error(`Refusing a model id that reads as a flag: ${JSON.stringify(profile.model)}`);
+  }
+  if (!isEffort(profile.effort)) throw new Error(`Unknown effort: ${JSON.stringify(profile.effort)}`);
+  if (!isCap(profile.cap)) throw new Error(`Context cap out of range: ${JSON.stringify(profile.cap)}`);
+  return [...(profile.model !== undefined ? ["--model", profile.model] : []), "--effort", profile.effort, "--autocompact", String(profile.cap)];
+}
+
 /** Arguments for the unmodified official `claude` binary; the prompt goes in via stdin. Never touches credentials or auth settings. */
-export function claudeArgs(o: Pick<TransportOptions, "session" | "mcp" | "permissions" | "persistSession" | "references">): string[] {
+export function claudeArgs(
+  o: Pick<TransportOptions, "session" | "mcp" | "permissions" | "persistSession" | "references"> & { profile?: ModelProfile },
+): string[] {
   if (o.session.id.startsWith("-")) throw new Error(`Refusing a session id that reads as a flag: ${JSON.stringify(o.session.id)}`);
   const mcpServers = Object.fromEntries(
     o.mcp.map((s) => [s.name, { type: "stdio", command: s.command, args: s.args, env: s.env }]),
@@ -71,6 +88,7 @@ export function claudeArgs(o: Pick<TransportOptions, "session" | "mcp" | "permis
     ...(o.references ?? []).flatMap((dir) => ["--add-dir", dir]),
     ...(o.session.started ? ["--resume", o.session.id] : ["--session-id", o.session.id]),
     ...(o.persistSession === false ? ["--no-session-persistence"] : []),
+    ...profileArgs(o.profile),
   ];
 }
 
@@ -194,20 +212,26 @@ export class ClaudeCliTransport implements Transport {
     this.o.onSessionStarted(this.o.session);
   };
 
-  async turn(message: string, emit: (e: Event) => void, signal: AbortSignal): Promise<void> {
+  async turn(message: string, emit: (e: Event) => void, signal: AbortSignal, profile?: ModelProfile): Promise<void> {
+    try {
+      profileArgs(profile);
+    } catch (err) {
+      emit(fail("agent-crashed", err instanceof Error ? err.message : String(err)));
+      return;
+    }
     const wasResume = this.o.session.started;
-    let last = await this.attempt(message, emit, signal);
+    let last = await this.attempt(message, emit, signal, profile);
     if (wasResume && last.type === "done" && !last.ok && last.error?.detail && NO_CONVERSATION.test(last.error.detail) && !signal.aborted) {
       // The stored session is gone on the CLI side: continue the chat in a fresh one.
       this.o.session = { id: randomUUID(), started: false };
-      last = await this.attempt(message, emit, signal);
+      last = await this.attempt(message, emit, signal, profile);
       if (last.type === "done" && last.ok) this.markStarted();
     }
     emit(last);
   }
 
   /** Runs one process; resolves with the terminal event instead of emitting it. */
-  private attempt(message: string, rawEmit: (e: Event) => void, signal: AbortSignal): Promise<Event> {
+  private attempt(message: string, rawEmit: (e: Event) => void, signal: AbortSignal, profile: ModelProfile | undefined): Promise<Event> {
     return new Promise((resolve) => {
       let finished = false;
       let killTimer: NodeJS.Timeout | undefined;
@@ -224,7 +248,7 @@ export class ClaudeCliTransport implements Transport {
       };
       const useGroup = process.platform !== "win32";
       const [binary, ...leading] = this.o.command;
-      const child = spawn(binary, [...leading, ...claudeArgs(this.o)], {
+      const child = spawn(binary, [...leading, ...claudeArgs({ ...this.o, profile })], {
         cwd: this.o.folder,
         env: { ...process.env, ...this.o.env },
         stdio: ["pipe", "pipe", "pipe"],

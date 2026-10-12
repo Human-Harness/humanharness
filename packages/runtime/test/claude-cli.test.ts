@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { type ClaudeScript, claudeResultLine, claudeTextLines, fakeClaudeCommand, writeScript } from "@humanharness/fake-agent";
-import { ClaudeCliTransport, allowedTools, claudeArgs, disallowedTools, referenceRulePath } from "../src/claude-cli";
+import { ClaudeCliTransport, allowedTools, claudeArgs, disallowedTools, profileArgs, referenceRulePath } from "../src/claude-cli";
 import type { Event } from "../src/events";
 import type { Session, TransportOptions } from "../src/transport";
 
@@ -85,7 +85,46 @@ describe("claudeArgs", () => {
   });
 });
 
+describe("profileArgs", () => {
+  const profile = { engine: "claude", tier: "deep" as const, model: "opus", effort: "high" as const, cap: 400_000 };
+
+  it("passes model, effort and context cap", () => {
+    expect(profileArgs(profile)).toEqual(["--model", "opus", "--effort", "high", "--autocompact", "400000"]);
+    const { model: _m, ...engineDefault } = profile;
+    expect(profileArgs(engineDefault)).toEqual(["--effort", "high", "--autocompact", "400000"]);
+    expect(profileArgs(undefined)).toEqual([]);
+  });
+
+  it("refuses a model that reads as a flag, an unknown effort or a cap out of range", () => {
+    expect(() => profileArgs({ ...profile, model: "--dangerously-skip-permissions" })).toThrow(/flag/);
+    expect(() => profileArgs({ ...profile, effort: "turbo" as never })).toThrow();
+    expect(() => profileArgs({ ...profile, cap: 50 })).toThrow();
+  });
+
+  it("goes after the session flags in claudeArgs", () => {
+    const args = claudeArgs({ session: { id: "abc", started: true }, mcp: [uiServer], permissions, profile });
+    expect(args.slice(-8)).toEqual(["--resume", "abc", "--model", "opus", "--effort", "high", "--autocompact", "400000"]);
+  });
+});
+
 describe("ClaudeCliTransport", () => {
+  it("runs every turn on the profile it is given, first turn and resume alike", async () => {
+    const { transport, args } = setup({ steps: [...claudeTextLines("ok"), claudeResultLine(true)] });
+    const profile = { engine: "claude", tier: "light" as const, model: "haiku", effort: "low" as const, cap: 100_000 };
+    await transport.turn("one", () => {}, new AbortController().signal, profile);
+    expect(args()).toEqual(expect.arrayContaining(["--session-id", "--model", "haiku", "--effort", "low", "--autocompact", "100000"]));
+    await transport.turn("two", () => {}, new AbortController().signal, profile);
+    expect(args()).toEqual(expect.arrayContaining(["--resume", "--model", "haiku"]));
+  });
+
+  it("fails the turn without starting the CLI when the profile is invalid", async () => {
+    const { transport, args } = setup({ steps: [claudeResultLine(true)] });
+    const events: Event[] = [];
+    await transport.turn("x", (e) => events.push(e), new AbortController().signal, { engine: "claude", tier: "custom", model: "-x", effort: "low", cap: 100_000 });
+    expect(events).toEqual([{ type: "done", ok: false, error: { code: "agent-crashed", detail: 'Refusing a model id that reads as a flag: "-x"' } }]);
+    expect(() => args()).toThrow();
+  });
+
   it("streams text and reports success", async () => {
     const { transport, started, args, stdin } = setup({ steps: [...claudeTextLines("Hello there"), claudeResultLine(true, "Hello there")] });
     const events = await run(transport, "say hi");

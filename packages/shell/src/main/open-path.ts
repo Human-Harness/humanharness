@@ -3,12 +3,13 @@ import path from "node:path";
 
 /**
  * Files "Open" may hand to the system: text, data and images. Never apps, scripts or installers
- * (`.app`, `.command`, `.sh`, `.pkg`…), which the system would run instead of showing.
+ * (`.app`, `.command`, `.sh`, `.pkg`…), which the system would run instead of showing, nor pages,
+ * SVGs and JavaScript, which may open in a browser or a script runner.
  */
 const OPENABLE = new Set([
   ".md", ".txt", ".json", ".jsonl", ".yaml", ".yml", ".toml", ".csv",
-  ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".css", ".html",
-  ".svg", ".png", ".jpg", ".jpeg", ".gif", ".pdf",
+  ".ts", ".tsx", ".jsx", ".css",
+  ".png", ".jpg", ".jpeg", ".gif", ".pdf",
 ]);
 
 /**
@@ -32,4 +33,14 @@ export async function openableFile(rel: unknown, roots: string[]): Promise<strin
     if (stat?.isFile()) return real;
   }
   return null;
+}
+
+/**
+ * Hands `target` (from openableFile) to `open` (shell.openPath) only if it is still a regular file and
+ * not a link: it may have been swapped since it was checked. `open` answers "" on success.
+ */
+export async function openIfStillSafe(target: string, open: (p: string) => Promise<string>): Promise<boolean> {
+  const stat = await fs.lstat(target).catch(() => null);
+  if (!stat || stat.isSymbolicLink() || !stat.isFile()) return false;
+  return (await open(target)) === "";
 }

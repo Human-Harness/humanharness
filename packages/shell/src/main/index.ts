@@ -39,7 +39,8 @@ import { SharedConfigStore, sharedConfigDir } from "./shared-config";
 import { EngineUnavailable, TurnController, memoise } from "./turn-controller";
 import { UsageLog, summarizeUsage, usageRecord } from "./usage-log";
 import { type ValidationContext, checkFolder, configProblem, isAppUrl } from "./validate";
-import { openableFile } from "./open-path";
+import { openIfStillSafe, openableFile } from "./open-path";
+import { saveWithFolderChange } from "./folder-change";
 import { type ResolvedReference, displayPath, resolveReferences, usableReferences } from "./references";
 import { TaskManager } from "./task-manager";
 import { TaskStore, emptyTasks } from "./task-store";
@@ -342,6 +343,32 @@ const tasks = new TaskManager({
   changed: (view) => sendToWindow("hh:tasks", view),
 });
 
+/** Saves a config patch; an engine change ends the task, drops the runtime and archives the chat (see EngineGuards). */
+async function saveConfigPatch(patch: AppConfig, before: AppConfig): Promise<void> {
+  if (patch.engineId && before.engineId && patch.engineId !== before.engineId) {
+    const engineId = patch.engineId;
+    await guards.switchEngine(
+      {
+        isBusy: () => tasks.isBusy(),
+        idle: async () => {
+          await tasks.idle();
+          await turns.flush();
+        },
+        save: () => config.save(patch).then(() => undefined),
+        dropRuntime,
+        archiveChat: async () => {
+          const c = await validConfig();
+          return c && c.engineId === engineId ? startNewChatIfEngineChanged(c.folder, engineId) : null;
+        },
+      },
+      // The new engine is saved: the window gets the new state; the next chat load archives the old chat.
+      (err) => console.error("Could not finish changing the engine", err),
+    );
+  } else {
+    await config.save(patch);
+  }
+}
+
 /** Registers an IPC handler that only answers the app's own page. */
 function handle(channel: string, fn: (...args: never[]) => unknown) {
   ipcMain.handle(channel, (event: IpcMainInvokeEvent, ...args: unknown[]) => {
@@ -364,28 +391,10 @@ function registerIpc() {
     const before = await config.load();
     // Spec §9: an engine is only used once its notice is accepted.
     await requireNoticeForChoice(patch.engineId, before.engineId, hasNotice);
-    if (patch.engineId && before.engineId && patch.engineId !== before.engineId) {
-      const engineId = patch.engineId;
-      await guards.switchEngine(
-        {
-          isBusy: () => tasks.isBusy(),
-          idle: async () => {
-            await tasks.idle();
-            await turns.flush();
-          },
-          save: () => config.save(patch).then(() => undefined),
-          dropRuntime,
-          archiveChat: async () => {
-            const c = await validConfig();
-            return c && c.engineId === engineId ? startNewChatIfEngineChanged(c.folder, engineId) : null;
-          },
-        },
-        // The new engine is saved: the window gets the new state; the next chat load archives the old chat.
-        (err) => console.error("Could not finish changing the engine", err),
-      );
-    } else {
-      await config.save(patch);
-    }
+    // A new folder: refused while a turn runs; the old folder's task ends and its runtime goes.
+    await saveWithFolderChange(patch.folder, before.folder, { isBusy: () => tasks.isBusy(), interrupt: () => tasks.interrupt(), dropRuntime }, () =>
+      saveConfigPatch(patch, before),
+    );
     if (patch.appearance) applyAppearance(patch.appearance);
     return appState();
   });
@@ -398,6 +407,7 @@ function registerIpc() {
     return { entries: await new ChatLog(c.folder).load(), ...(switchedFrom ? { switchedFrom } : {}) };
   });
   handle("hh:send", (message: string, options?: SendOptions) => {
+    if (quitting) throw new Error("The app is closing");
     const blocked = guards.turnBlocked();
     if (blocked) throw new Error(blocked);
     if (typeof message !== "string" || !message.trim() || message.length > 20_000) throw new Error("Invalid message");
@@ -407,6 +417,7 @@ function registerIpc() {
   });
   handle("hh:getTasks", () => tasks.view());
   handle("hh:choose", (option: unknown) => {
+    if (quitting) throw new Error("The app is closing");
     const blocked = guards.turnBlocked();
     if (blocked) throw new Error(blocked);
     const parsed = choiceOptionSchema.safeParse(option);
@@ -418,10 +429,11 @@ function registerIpc() {
     if (!c) return false;
     const target = await openableFile(file, [...(await referencesFor(c.folder)).map((r) => r.path), c.folder]);
     if (!target) return false;
-    // shell.openPath answers "" on success and an error message otherwise.
-    return (await shell.openPath(target)) === "";
+    // Checked again right before opening: the file may have been swapped for a link meanwhile.
+    return openIfStillSafe(target, (p) => shell.openPath(p));
   });
-  handle("hh:cancel", () => turns.cancel());
+  // Cancels the turn and stops the task operation (a closing turn never goes on to the next task).
+  handle("hh:cancel", () => tasks.cancel());
   handle("hh:history", async () => {
     const history = await currentHistory();
     return history ? (await history.list()).map((h) => ({ ...h, date: h.date.toISOString() })) : [];
@@ -598,6 +610,7 @@ if (loaded) {
     if (quitting) return;
     quitting = true;
     event.preventDefault();
+    tasks.close();
     turns.close();
     // The test prompt cleans up (its CLI, its temporary folder) before the app goes; bounded wait.
     const testStopped = Promise.race([guards.close(), new Promise<void>((r) => setTimeout(r, QUIT_TEST_WAIT_MS))]);

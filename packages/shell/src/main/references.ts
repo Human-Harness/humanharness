@@ -10,6 +10,9 @@ export interface ResolvedReference {
   path: string;
 }
 
+// macOS file systems are usually case-insensitive: compare without case to stay on the safe side.
+const norm = (p: string) => path.resolve(p).toLowerCase();
+
 const exists = (p: string) => fs.access(p).then(() => true, () => false);
 
 /** The repository the app runs from: the nearest folder above the harness with a pnpm-workspace.yaml. */
@@ -24,11 +27,22 @@ export async function appSourceDir(harnessDir: string): Promise<string | null> {
 }
 
 /**
- * Whether the agent may read `dir`: never credentials (~/.claude, ~/.codex), ~/Library, system folders,
- * the whole home or a standard home folder as a whole. A comma would break Claude's tool lists.
+ * Whether the agent may read `dir` (a real path; `home` real too): never a dot-folder directly in the home
+ * folder or anything inside one (~/.claude, ~/.codex, ~/.gemini, ~/.ssh, ~/.aws, ~/.config...), ~/Library,
+ * system folders, the whole home or a standard home folder as a whole. A comma would break Claude's tool lists.
  */
 export function referenceAllowed(dir: string, home: string): boolean {
-  return !dir.includes(",") && folderProblem(dir, home) === null;
+  return !dir.includes(",") && folderProblem(dir, home) === null && !homeOrDotFolder(dir, home);
+}
+
+/** Whether `dir` is the home folder, a dot-folder directly in it, or inside one. Without case. */
+export function homeOrDotFolder(dir: string, home: string): boolean {
+  const rel = path.relative(norm(home), norm(dir));
+  if (rel === "") return true;
+  const first = rel.split(path.sep)[0];
+  // Outside the home folder: not this rule's concern.
+  if (first === ".." || path.isAbsolute(rel)) return false;
+  return first.startsWith(".");
 }
 
 /** "~/…" for a path inside the home folder. */
@@ -39,9 +53,11 @@ export function displayPath(p: string, home: string): string {
 /** The manifest's reference folders that exist and may be read; "app-source" only in development. */
 export async function resolveReferences(
   refs: HarnessReference[],
-  opts: { harnessDir: string; home: string; packaged: boolean; allowed?: (dir: string) => boolean },
+  opts: { harnessDir: string; home: string; packaged: boolean; allowed?: (dir: string, home: string) => boolean },
 ): Promise<ResolvedReference[]> {
-  const allowed = opts.allowed ?? ((dir: string) => referenceAllowed(dir, opts.home));
+  // Compared as real paths: a home reached through a link still guards its dot-folders.
+  const home = await fs.realpath(opts.home).catch(() => opts.home);
+  const allowed = opts.allowed ?? referenceAllowed;
   const out: ResolvedReference[] = [];
   for (const r of refs) {
     let dir: string | null;
@@ -50,16 +66,13 @@ export async function resolveReferences(
     if (!dir || !path.isAbsolute(dir)) continue;
     try {
       const real = await fs.realpath(dir);
-      if ((await fs.stat(real)).isDirectory() && allowed(real)) out.push({ id: r.id, label: r.label, path: real });
+      if ((await fs.stat(real)).isDirectory() && allowed(real, home)) out.push({ id: r.id, label: r.label, path: real });
     } catch {
       // missing: left out
     }
   }
   return out;
 }
-
-// macOS file systems are usually case-insensitive: compare without case to stay on the safe side.
-const norm = (p: string) => path.resolve(p).toLowerCase();
 
 /**
  * The references that may be used with the working folder `folder`. A reference that is the working

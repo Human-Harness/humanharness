@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { appSourceDir, displayPath, referenceAllowed, resolveReferences, usableReferences } from "../src/main/references";
+import { appSourceDir, displayPath, homeOrDotFolder, referenceAllowed, resolveReferences, usableReferences } from "../src/main/references";
 
 const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "hh-")));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -45,6 +45,19 @@ describe("resolveReferences", () => {
   });
 });
 
+describe("resolveReferences: real paths", () => {
+  it("refuses a link that leads into a dot-folder of the home, comparing real paths", async () => {
+    fs.mkdirSync(path.join(home, ".ssh"), { recursive: true });
+    fs.symlinkSync(path.join(home, ".ssh"), path.join(home, "code", "keys"));
+    const homeLink = path.join(root, "home-link");
+    fs.symlinkSync(home, homeLink);
+    const refs = [{ id: "keys", label, default: "~/code/keys" }, { id: "ssh", label, default: "~/.ssh" }, { id: "docs", label, default: "~/code/docs" }];
+    // The temporary folder is under /private, a system folder: only the home rule is checked here.
+    const out = await resolveReferences(refs, { harnessDir: repo, home: homeLink, packaged: false, allowed: (dir, h) => !homeOrDotFolder(dir, h) });
+    expect(out.map((r) => r.id)).toEqual(["docs"]);
+  });
+});
+
 describe("referenceAllowed", () => {
   it("allows a project folder and refuses credentials, system folders and the whole home", () => {
     expect(referenceAllowed("/Users/me/code/humanharness", "/Users/me")).toBe(true);
@@ -53,6 +66,16 @@ describe("referenceAllowed", () => {
     expect(referenceAllowed("/Users/me", "/Users/me")).toBe(false);
     expect(referenceAllowed("/etc", "/Users/me")).toBe(false);
     expect(referenceAllowed("/Users/me/code/a,b", "/Users/me")).toBe(false);
+  });
+
+  it("refuses every dot-folder directly in the home folder and anything inside one, whatever the case", () => {
+    for (const dir of [".gemini", ".ssh", ".aws/creds", ".config/gh", ".gnupg", ".GEMINI", ".Ssh/keys", ".kube"]) {
+      expect(referenceAllowed(`/Users/me/${dir}`, "/Users/me")).toBe(false);
+    }
+    expect(referenceAllowed("/USERS/ME", "/Users/me")).toBe(false);
+    expect(referenceAllowed("/Users/me/code/.hidden", "/Users/me")).toBe(true);
+    expect(referenceAllowed("/Users/me/..foo", "/Users/me")).toBe(false);
+    expect(referenceAllowed("/Users/other/.ssh", "/Users/me")).toBe(true);
   });
 });
 

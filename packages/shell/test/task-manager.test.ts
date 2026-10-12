@@ -22,7 +22,19 @@ const cancelled: Event = { type: "done", ok: false, error: { code: "cancelled" }
 const crashed: Event = { type: "done", ok: false, error: { code: "agent-crashed" } };
 
 /** A task manager over memory: each turn plays the next script entry (just `done: ok` when none is left). */
-function setup(opts: { script?: Event[][]; state?: TasksFile; path?: string[]; notes?: Note[]; gate?: Promise<void> } = {}) {
+function setup(
+  opts: {
+    script?: Event[][];
+    state?: TasksFile;
+    path?: string[];
+    notes?: Note[];
+    gate?: Promise<void>;
+    /** Sends reject ("The app is closing") while this answers true. */
+    closed?: () => boolean;
+    /** Runs inside each turn (0-based index), before its events. */
+    during?: (index: number) => void;
+  } = {},
+) {
   let state = opts.state ?? emptyTasks();
   const notes: Note[] = [...(opts.notes ?? [])];
   const script = [...(opts.script ?? [])];
@@ -40,11 +52,14 @@ function setup(opts: { script?: Event[][]; state?: TasksFile; path?: string[]; n
     },
     turns: {
       isBusy: () => busy,
+      cancel: () => void log.push("cancel"),
       send: async (message, options) => {
+        if (opts.closed?.()) throw new Error("The app is closing");
         busy = true;
         turns.push({ message, options });
         log.push(`turn:${options.phase ?? "run"}`);
         await opts.gate;
+        opts.during?.(turns.length - 1);
         for (const e of script.shift() ?? [ok]) options.onEvent?.(e);
         busy = false;
       },
@@ -236,6 +251,68 @@ describe("TaskManager", () => {
     await first;
     expect(t.state().current?.session).toEqual({ id: "s-1", started: true });
     expect(t.manager.isBusy()).toBe(false);
+  });
+
+  it("does not start the next task when the closing turn is cancelled", async () => {
+    const t = setup({ script: [[ok], [cancelled]] });
+    await t.manager.start("manifest");
+    await t.manager.choose({ label: "Next", next: true });
+    expect(t.turns).toHaveLength(2);
+    expect(t.state()).toMatchObject({ current: null, actions: { manifest: "unfinished" } });
+  });
+
+  it("does not start the next task when cancel comes after the closing turn has ended", async () => {
+    let manager!: TaskManager;
+    const during = (i: number) => {
+      if (i === 1) manager.cancel();
+    };
+    const u = setup({ script: [[ok], [saveNote(), ok]], during: (i) => during(i) });
+    manager = u.manager;
+    await u.manager.start("manifest");
+    await u.manager.choose({ label: "Next", next: true });
+    expect(u.turns).toHaveLength(2);
+    expect(u.log).toContain("cancel");
+    expect(u.state()).toMatchObject({ current: null, actions: { manifest: "done" } });
+  });
+
+  it("when the app starts closing during the closing turn, the next task never starts and no topic is marked", async () => {
+    let closed = false;
+    const t = setup({ script: [[ok], [saveNote(), ok]], closed: () => closed, during: (i) => void (i === 1 && (closed = true)) });
+    await t.manager.start("manifest");
+    await expect(t.manager.choose({ label: "Next", next: true })).rejects.toThrow("The app is closing");
+    expect(t.turns).toHaveLength(2);
+    expect(t.state()).toMatchObject({ current: null, actions: { manifest: "done" } });
+    expect(t.state().actions).not.toHaveProperty("engines");
+  });
+
+  it("a first turn that never starts leaves no task and no topic status, and the call rejects", async () => {
+    const t = setup({ closed: () => true });
+    await expect(t.manager.start("manifest")).rejects.toThrow("The app is closing");
+    expect(t.state()).toMatchObject({ current: null, actions: {} });
+  });
+
+  it("a follow-up that never starts keeps the task waiting, and the call rejects", async () => {
+    let closed = false;
+    const t = setup({ closed: () => closed });
+    await t.manager.start("manifest");
+    closed = true;
+    await expect(t.manager.ask("more?")).rejects.toThrow("The app is closing");
+    expect(t.state().current).toMatchObject({ id: "t1", status: "waiting", turns: 1 });
+  });
+
+  it("refuses every operation once closed", async () => {
+    const t = setup();
+    t.manager.close();
+    await expect(t.manager.start("manifest")).rejects.toThrow("The app is closing");
+    await expect(t.manager.ask("hi")).rejects.toThrow("The app is closing");
+    expect(t.turns).toHaveLength(0);
+  });
+
+  it("ignores a session reported when no turn of the task runs", async () => {
+    const t = setup();
+    await t.manager.start("manifest");
+    await t.manager.sessionStarted({ id: "s-late", started: true });
+    expect(t.state().current?.session).toBeUndefined();
   });
 
   it("refuses an unknown action", async () => {

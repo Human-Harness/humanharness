@@ -9,10 +9,17 @@ import type { TurnOptions } from "./turn-controller";
 
 type Done = Extract<Event, { type: "done" }>;
 
+/** The turn never started (the app is closing, another turn runs, the app isn't set up): nothing ran. */
+class TurnNotStarted extends Error {
+  constructor(readonly reason: unknown) {
+    super(reason instanceof Error ? reason.message : String(reason));
+  }
+}
+
 export interface TaskDeps {
   /** tasks.json of the configured folder. */
   store: { load(): Promise<TasksFile>; save(state: TasksFile): Promise<void> };
-  turns: { send(message: string, options: TurnOptions): Promise<void>; isBusy(): boolean };
+  turns: { send(message: string, options: TurnOptions): Promise<void>; isBusy(): boolean; cancel(): void };
   /** The harness's actions (their labels, by language). */
   actions: Record<string, { label: LocalizedText }>;
   /** The guided path: action ids in order. */
@@ -35,6 +42,9 @@ export interface TaskDeps {
   now?: () => Date;
   newId?: () => string;
 }
+
+/** The error the caller sees: the turn's own reason when it never started. */
+const unwrap = (err: unknown) => (err instanceof TurnNotStarted ? err.reason : err);
 
 const noteView = (n: Note): NoteView => ({
   slug: n.slug,
@@ -59,6 +69,12 @@ export class TaskManager {
   /** Changes to tasks.json, one after another. */
   private writes: Promise<unknown> = Promise.resolve();
   private running = false;
+  /** The person cancelled during the running operation: no further turn of it starts. */
+  private cancelRequested = false;
+  /** The app is closing: no new operation, no further turn. */
+  private closed = false;
+  /** The task whose turn runs now: a session reported outside it is ignored. */
+  private turnTask: string | null = null;
   /** The slug each free-question task wrote its note under, so a second save replaces its own note. */
   private readonly questionSlugs = new Map<string, string>();
   private readonly now: () => Date;
@@ -104,6 +120,18 @@ export class TaskManager {
     return this.op(() => this.chooseNow(option));
   }
 
+  /** Cancels the running turn; an operation that runs several turns (closing, then the next task) stops. */
+  cancel(): void {
+    if (this.running) this.cancelRequested = true;
+    this.d.turns.cancel();
+  }
+
+  /** For quitting: every later operation is refused and the running one starts no further turn. */
+  close(): void {
+    this.closed = true;
+    this.cancelRequested = true;
+  }
+
   /** Ends the open task without a note (engine change, quit, dropped runtime, a task left by an earlier run). */
   interrupt(): Promise<void> {
     return this.queue(async () => {
@@ -112,14 +140,18 @@ export class TaskManager {
     });
   }
 
-  /** The engine started the current task's session. */
+  /** The engine started the session of the task whose turn runs now; reported at any other time, it is ignored. */
   sessionStarted(session: Session): Promise<void> {
-    return this.update((s) => (s.current ? { ...s, current: { ...s.current, session: { id: session.id, started: session.started } } } : s));
+    const id = this.turnTask;
+    if (!id) return Promise.resolve();
+    return this.update((s) => (s.current?.id === id ? { ...s, current: { ...s.current, session: { id: session.id, started: session.started } } } : s));
   }
 
   private op(fn: () => Promise<void>): Promise<void> {
+    if (this.closed) return Promise.reject(new Error("The app is closing"));
     if (this.isBusy()) return Promise.reject(new Error("A turn is already running"));
     this.running = true;
+    this.cancelRequested = false;
     return this.queue(fn).finally(() => {
       this.running = false;
     });
@@ -137,7 +169,7 @@ export class TaskManager {
 
   private async startNow(action: string, display?: string): Promise<void> {
     if (!this.known(action)) throw new Error("Unknown action");
-    await this.closeCurrent();
+    if (!(await this.closeCurrent())) return;
     const template = await this.d.readPrompt(action);
     const language = await this.d.language();
     await this.begin({ action }, (notesIndex) => fillPrompt(template, { language, notesIndex }), display ?? this.d.actions[action].label[language]);
@@ -147,7 +179,13 @@ export class TaskManager {
     const c = (await this.d.store.load()).current;
     if (c?.status === "waiting") {
       await this.setStatus(c.id, "running");
-      const done = await this.runTurn(c, text, { ...(display ? { display } : {}), ...(c.action ? { action: c.action } : {}), followUp: true });
+      let done: Done;
+      try {
+        done = await this.runTurn(c, text, { ...(display ? { display } : {}), ...(c.action ? { action: c.action } : {}), followUp: true });
+      } catch (err) {
+        if (err instanceof TurnNotStarted) await this.setStatus(c.id, "waiting");
+        throw unwrap(err);
+      }
       return this.afterRun(c.id, done, false);
     }
     if (c) await this.endTask(c.id, "unfinished");
@@ -168,24 +206,37 @@ export class TaskManager {
     const action = this.known(option.action) ? option.action : undefined;
     if (!option.next && !action) return this.askNow(option.followUp ?? option.label, option.label);
     const target = action ?? nextInPath(this.d.path, state.current?.action, state.actions);
-    await this.closeCurrent();
+    if (!(await this.closeCurrent())) return;
     if (target) await this.startNow(target);
   }
 
   /** A new task in a fresh session; its first message is built from the notes index. */
   private async begin(task: { action?: string; question?: string }, message: (notesIndex: string) => string, display: string): Promise<void> {
+    // Cancelled or quitting since the operation began (e.g. right after the closing turn): start nothing.
+    if (this.cancelRequested) return;
     await this.endSession();
     const notes = await this.d.notes().catch(() => [] as Note[]);
     const engine = await this.d.engine();
     const current: CurrentTask = { id: this.newId(), ...task, status: "running", startedAt: this.now().toISOString(), turns: 0 };
     await this.update((s) => ({ ...s, engine, current }));
-    const done = await this.runTurn(current, message(buildNotesIndex(notes)), { display, ...(task.action ? { action: task.action } : {}) });
+    let done: Done;
+    try {
+      done = await this.runTurn(current, message(buildNotesIndex(notes)), { display, ...(task.action ? { action: task.action } : {}) });
+    } catch (err) {
+      // Nothing ran: the task goes away without marking its topic.
+      if (err instanceof TurnNotStarted) await this.update((s) => (s.current?.id === current.id ? { ...s, current: null } : s));
+      throw unwrap(err);
+    }
     await this.afterRun(current.id, done, true);
   }
 
-  /** Runs one turn of `task`; a valid `save_note` in it becomes the task's note. */
+  /**
+   * Runs one turn of `task`; a valid `save_note` in it becomes the task's note. Throws TurnNotStarted when
+   * the turn was refused before it began (no `done` came).
+   */
   private async runTurn(task: CurrentTask, message: string, options: Omit<TurnOptions, "task" | "onEvent">): Promise<Done> {
     const seen: { done?: Done; note?: SavedNote } = {};
+    this.turnTask = task.id;
     try {
       await this.d.turns.send(message, {
         phase: "run",
@@ -201,7 +252,9 @@ export class TaskManager {
       });
     } catch (err) {
       // The turn never started (another one runs, or the app is closing).
-      seen.done ??= { type: "done", ok: false, error: { code: "agent-crashed", detail: err instanceof Error ? err.message : String(err) } };
+      if (!seen.done) throw new TurnNotStarted(err);
+    } finally {
+      this.turnTask = null;
     }
     if (seen.note) await this.saveNote(task, seen.note);
     return seen.done ?? { type: "done", ok: false, error: { code: "agent-crashed" } };
@@ -212,16 +265,33 @@ export class TaskManager {
     await this.update((s) => (s.current?.id === id ? { ...s, current: { ...s.current, status: "waiting", turns: s.current.turns + 1 } } : s));
   }
 
-  /** Closes the open task: one quiet turn asking for `save_note`, unless its note is already written. */
-  private async closeCurrent(): Promise<void> {
+  /**
+   * Closes the open task: one quiet turn asking for `save_note`, unless its note is already written.
+   * False when the closing turn was cancelled (or a cancel or quit came meanwhile): nothing new may start.
+   */
+  private async closeCurrent(): Promise<boolean> {
     const c = (await this.d.store.load()).current;
-    if (!c) return;
-    if (c.noteSaved) return this.endTask(c.id, "done");
-    if (c.status !== "waiting") return this.endTask(c.id, "unfinished");
+    if (!c) return !this.cancelRequested;
+    if (c.noteSaved) {
+      await this.endTask(c.id, "done");
+      return !this.cancelRequested;
+    }
+    if (c.status !== "waiting") {
+      await this.endTask(c.id, "unfinished");
+      return !this.cancelRequested;
+    }
     await this.setStatus(c.id, "closing");
-    const done = await this.runTurn(c, CLOSE_PROMPT, { ...(c.action ? { action: c.action } : {}), phase: "close", quiet: true });
+    let done: Done;
+    try {
+      done = await this.runTurn(c, CLOSE_PROMPT, { ...(c.action ? { action: c.action } : {}), phase: "close", quiet: true });
+    } catch (err) {
+      if (err instanceof TurnNotStarted) await this.setStatus(c.id, "waiting");
+      throw unwrap(err);
+    }
+    const cancelled = !done.ok && done.error.code === "cancelled";
     const saved = (await this.d.store.load()).current?.noteSaved === true;
-    await this.endTask(c.id, saved ? "done" : !done.ok && done.error.code === "cancelled" ? "unfinished" : "unsaved");
+    await this.endTask(c.id, saved ? "done" : cancelled ? "unfinished" : "unsaved");
+    return !cancelled && !this.cancelRequested;
   }
 
   private async endTask(id: string, outcome: ActionStatus): Promise<void> {

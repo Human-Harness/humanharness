@@ -11,5 +11,5 @@
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "types": ["node"]
   },
-  "include": ["packages/*/src", "packages/*/test", "packages/fake-agent/fixtures", "harnesses/*/*.ts", "harnesses/*/ui"]
+  "include": ["packages/*/src", "packages/*/test", "packages/fake-agent/fixtures", "harnesses/*/*.ts", "harnesses/*/ui", "harnesses/*/test"]
 }

@@ -1,0 +1,18 @@
+/* The demo's own blocks. Colours only through the core's --hh-* tokens. */
+.demo-kicker { font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--hh-muted); }
+.demo-diagram { margin: 0; display: grid; gap: 10px; padding: 12px 14px; background: var(--hh-surface); border: 1px solid var(--hh-line); border-radius: 12px; }
+.demo-nodes { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.demo-node-item { flex: 1 1 0; min-width: 96px; display: flex; align-items: center; gap: 6px; }
+.demo-node-item svg { flex: none; color: var(--hh-muted); }
+.demo-node { flex: 1; display: grid; gap: 2px; padding: 8px 10px; border: 1px solid var(--hh-line-strong); border-radius: 8px; background: var(--hh-surface); }
+.demo-node strong { font-size: 12px; }
+.demo-node span { font-size: 11px; color: var(--hh-muted); }
+.demo-edges { list-style: none; margin: 0; padding: 0 0 0 4px; display: grid; gap: 4px; font-size: 12px; color: var(--hh-slate); }
+.demo-edges li { display: flex; align-items: center; gap: 8px; }
+.demo-files { display: grid; background: var(--hh-surface); border: 1px solid var(--hh-line); border-radius: 12px; }
+.demo-files .demo-kicker { padding: 10px 12px 6px; }
+.demo-files ul { list-style: none; margin: 0; padding: 0; }
+.demo-files li { display: flex; align-items: center; gap: 10px; padding: 7px 12px; border-top: 1px solid var(--hh-line); }
+.demo-files li span { flex: 1; font-size: 12px; color: var(--hh-muted); }
+.demo-files button { height: 24px; padding: 0 9px; font-size: 12px; }
+.demo-files [role="alert"] { padding: 0 12px 10px; }

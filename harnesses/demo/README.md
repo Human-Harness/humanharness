@@ -1,6 +1,6 @@
-# Demo harness
+# Demo harness: the architecture explainer
 
-The smallest harness: the core's tests use it, and it shows every piece a harness provides. Run it as a desktop app from the repository root:
+The demo explains Human Harness to developers who clone this repository, and exercises the core's flow and context management. It reads the repository read-only and keeps what each topic made clear in the user's folder. It runs in development only (it is never signed or distributed):
 
     corepack pnpm app:dev
 
@@ -8,19 +8,21 @@ The smallest harness: the core's tests use it, and it shows every piece a harnes
 
 | File | What it is |
 |---|---|
-| `harness.config.ts` | The manifest (`defineHarness`): id, name, tagline, languages, engines it was tested with, suggested folder and seed, instructions, permissions, blocks, actions, author. Loaded from plain Node, so it holds no React. |
-| `agent/AGENTS.md` | Instructions for the AI. On every start the core adds a managed section (response language, environment rules, how to use each block) and the file each engine expects (`CLAUDE.md` for Claude). |
+| `harness.config.ts` | The manifest: read-only permissions (`edit: "none"`, no commands, no web), the repository as a reference folder (`"app-source"`), the `diagram` and `files` blocks, six topics as actions with their briefs, and the guided path. |
+| `agent/AGENTS.md` | How the explainer answers: start from the curated doc, read at most about 8 files, end with `show_choices`. The core adds the managed section (language, the tools, the reference folder). |
+| `agent/tasks/*.md` | One brief per topic: the first message of the topic's session. `{{language}}` and `{{notesIndex}}` are filled by the app. |
 | `agent/seed/` | Copied into the user's folder the first time. |
-| `ui/App.tsx` | The harness UI: mounts the kit's `HarnessApp` with its block components, the names of its state-only blocks, the side panel and its translations. The side panel's button starts the `tidy` action, which is declared `heavy`, so the app may ask before running it. |
-| `ui/NoteCard.tsx` | The React component for the `note` block (`show_note`). Each visible block in the manifest has a component registered under the same name. |
-| `locales/es.json`, `locales/en.json` | The harness's own strings, read with `useTranslation("harness")`. Every language in the manifest needs every key. |
-| `package.json` | Its dependencies (the SDK, the UI kit, React, zod). |
+| `ui/App.tsx` | Mounts `HarnessApp` with the two block components and the start view's strings. |
+| `ui/DiagramBlock.tsx`, `ui/FilesBlock.tsx`, `ui/demo.css` | The demo's blocks. |
+| `locales/es.json`, `locales/en.json` | The demo's strings (start view, blocks). |
+| `test/` | The manifest and the block components. |
+
+## Topics
+
+`manifest`, `engines`, `turn`, `blocks`, `context`, `history`, in that order. Each brief points first at `docs/architecture/<topic>.md`, a short curated doc in the repository, then at the code. Each topic runs in its own engine session; choosing "next" closes it, the agent saves a note through the core `save_note` block, and the next topic starts from the notes index.
 
 ## Blocks
 
-- `note` (visible): the agent calls `show_note` with `{ title, body }`; the chat renders `NoteCard`.
-- `progress` (state only): the agent calls `update_progress` with `{ percent }`; the side panel shows it and the chat log keeps it, so it is back after a restart.
-
-## Actions
-
-- `tidy` (`heavy`): started from the side panel. Each turn it starts is tagged in `.harness/usage.jsonl`, which is how the app learns what it usually costs.
+- `diagram` (visible, `show_diagram`): nodes in order and extra edges.
+- `files` (visible, `show_files`): paths relative to the repository with a one-line role; "Abrir" opens the file in the default editor through the app, which only opens files inside the reference folder or the user's folder.
+- Core: `choices` (how to continue) and `save_note` (the closing note).

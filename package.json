@@ -9,7 +9,8 @@
     "typecheck": "tsc -p tsconfig.json",
     "hh-dev": "tsx packages/runtime/src/dev.ts",
     "app:dev": "corepack pnpm --filter @humanharness/shell dev",
-    "app:build": "corepack pnpm --filter @humanharness/shell build"
+    "app:build": "corepack pnpm --filter @humanharness/shell build",
+    "e2e": "corepack pnpm --filter @humanharness/e2e test"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",

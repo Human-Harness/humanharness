@@ -4,3 +4,6 @@ tmp-spike/
 .DS_Store
 *.log
 out/
+packages/e2e/.tmp/
+test-results/
+playwright-report/

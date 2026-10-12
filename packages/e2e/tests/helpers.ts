@@ -1,0 +1,72 @@
+import fs from "node:fs";
+import { createRequire } from "node:module";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { type ElectronApplication, type Page, _electron as electron } from "@playwright/test";
+import { NOTICE_VERSION } from "@humanharness/engines";
+import { type AcpScript, type ClaudeScript, fakeAcpCommand, fakeClaudeCommand, writeScript } from "@humanharness/fake-agent";
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+export const shellDir = path.resolve(here, "../../shell");
+/** The `electron` package exports the path of its binary. */
+const electronBinary = createRequire(path.join(shellDir, "package.json"))("electron") as string;
+
+export interface Sandbox {
+  root: string;
+  /** The user's folder. */
+  folder: string;
+  userData: string;
+  sharedDir: string;
+  /** fake-claude appends {argv, prompt} for every run here. */
+  claudePrompts: string;
+  /** fake-acp appends every request it gets here. */
+  acpLog: string;
+}
+
+/** A configured app (Spanish, Claude) with both engines' notices accepted, in packages/e2e/.tmp/. */
+export function makeSandbox(name: string): Sandbox {
+  const root = path.resolve(here, "..", ".tmp", `${name}-${Date.now()}`);
+  const s: Sandbox = {
+    root,
+    folder: path.join(root, "Work"),
+    userData: path.join(root, "userData"),
+    sharedDir: path.join(root, "shared"),
+    claudePrompts: path.join(root, "claude-prompts.jsonl"),
+    acpLog: path.join(root, "acp-log.jsonl"),
+  };
+  for (const dir of [s.folder, s.userData, s.sharedDir]) fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(s.userData, "config.json"), JSON.stringify({ language: "es", folder: s.folder, engineId: "claude" }));
+  const now = new Date().toISOString();
+  const ready = { notice: { version: NOTICE_VERSION, acceptedAt: now }, verifiedAt: now };
+  fs.writeFileSync(path.join(s.sharedDir, "engines.json"), JSON.stringify({ version: 1, engines: { claude: ready, codex: ready } }));
+  return s;
+}
+
+/** A Codex that is never asked anything: keeps every engine fake, so no status check reaches a real CLI. */
+const idleCodex: AcpScript = { turns: [] };
+
+/** Launches the built shell with the fake agents in place of both of the demo's engines. */
+export async function launch(s: Sandbox, scripts: { claude: ClaudeScript; codex?: AcpScript }): Promise<{ app: ElectronApplication; page: Page }> {
+  const engines = {
+    claude: { command: fakeClaudeCommand(), env: { HH_FAKE_SCRIPT: writeScript(s.root, scripts.claude), HH_FAKE_PROMPTS: s.claudePrompts } },
+    codex: { command: fakeAcpCommand(), env: { HH_FAKE_SCRIPT: writeScript(s.root, scripts.codex ?? idleCodex), HH_FAKE_LOG: s.acpLog } },
+  };
+  const env = Object.fromEntries(Object.entries(process.env).filter((e): e is [string, string] => e[1] !== undefined && e[0] !== "ELECTRON_RENDERER_URL"));
+  const app = await electron.launch({
+    executablePath: electronBinary,
+    args: [shellDir],
+    env: { ...env, HH_TEST_USER_DATA: s.userData, HH_TEST_SHARED_DIR: s.sharedDir, HH_TEST_ENGINES: JSON.stringify(engines) },
+  });
+  return { app, page: await app.firstWindow() };
+}
+
+export function readJsonl<T>(file: string): T[] {
+  if (!fs.existsSync(file)) return [];
+  return fs.readFileSync(file, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l) as T);
+}
+
+/** The session a fake-claude run used (`--session-id` for a new one, `--resume` to continue). */
+export function sessionOf(argv: string[]): string {
+  const flag = argv.includes("--resume") ? "--resume" : "--session-id";
+  return argv[argv.indexOf(flag) + 1];
+}

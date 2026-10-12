@@ -11,5 +11,5 @@
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "types": ["node"]
   },
-  "include": ["packages/*/src", "packages/*/test", "packages/fake-agent/fixtures", "harnesses/*/*.ts", "harnesses/*/ui", "harnesses/*/test"]
+  "include": ["packages/*/src", "packages/*/test", "packages/fake-agent/fixtures", "packages/e2e/tests", "packages/e2e/playwright.config.ts", "harnesses/*/*.ts", "harnesses/*/ui", "harnesses/*/test"]
 }

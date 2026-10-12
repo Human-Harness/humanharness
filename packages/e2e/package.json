@@ -1,0 +1,14 @@
+{
+  "name": "@humanharness/e2e",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "corepack pnpm --filter @humanharness/shell build && playwright test"
+  },
+  "devDependencies": {
+    "@humanharness/engines": "workspace:*",
+    "@humanharness/fake-agent": "workspace:*",
+    "@playwright/test": "1.63.0"
+  }
+}

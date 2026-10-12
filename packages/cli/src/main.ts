@@ -1,5 +1,6 @@
 import { CliError, type Io, UsageError } from "./cli";
 import { checkCommand } from "./check";
+import { devCommandLine } from "./dev";
 import { initCommand } from "./init";
 import { runCommand } from "./run";
 
@@ -13,7 +14,7 @@ export const USAGE = [
   "  check [--json]                           Validate the harness in the current folder",
   "  run <action> [--engine claude|codex] [--tier light|standard|deep] [--folder <dir>] [--language es|en]",
   "                                           Run one task against a real engine in the terminal",
-  "  dev [--engine <id>]                      Check the harness, then open the app with it",
+  "  dev [--engine <id>] [--build <dir>]      Check the harness, then open the app with it (or build it into <dir>)",
   "",
   "check, run and dev take --harness <dir> to work on another folder than the current one.",
   "",
@@ -24,6 +25,7 @@ const COMMANDS: Record<string, Command> = {
   init: initCommand,
   check: checkCommand,
   run: runCommand,
+  dev: devCommandLine,
 };
 
 export async function main(argv: string[], io: Io): Promise<number> {

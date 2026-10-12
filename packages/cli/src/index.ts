@@ -5,3 +5,4 @@ export { type CheckResult, type Finding, type RuleId, type Severity, checkHarnes
 export { type HarnessDoc, parseHarnessMd } from "./harness-md";
 export { type RunOptions, runTask } from "./run";
 export { type RunReport, formatReport } from "./report";
+export { type DevOptions, devCommand } from "./dev";

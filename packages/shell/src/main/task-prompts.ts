@@ -41,3 +41,7 @@ export function fillPrompt(template: string, vars: { language: Language; notesIn
   const filled = tidy.replace(/\{\{\s*(\w+)\s*\}\}/g, (all, key: string) => (Object.hasOwn(values, key) ? values[key] : all));
   return hasIndex || !vars.notesIndex ? filled : `${filled}\n\n${vars.notesIndex}`;
 }
+
+/** The quiet turn that saves what matters before the context reaches the task's cap (resources spec §6). */
+export const CHECKPOINT_PROMPT =
+  "Checkpoint: this conversation is getting long. Call the `save_note` tool once with what is clear so far: a short title, at most 5 summary points, the decisions taken, the files that back them and the questions still open. Do not write any file yourself and do not call `show_choices`. Then reply with one short sentence; the conversation goes on after this.";

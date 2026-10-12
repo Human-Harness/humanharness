@@ -4,7 +4,7 @@ import { type ChoiceOption, type Language, type LocalizedText, type SavedNote, s
 import { type Event, type Session, fail } from "@humanharness/runtime";
 import { type ActionStatus, type CurrentTaskView, type NoteView, type TaskStatus, type TaskView, nextInPath } from "@humanharness/ui/client";
 import { type Note, type NoteMeta, buildNotesIndex, noteSlug } from "@humanharness/workspace";
-import { CLOSE_PROMPT, QUESTION_PROMPT, fillPrompt } from "./task-prompts";
+import { CHECKPOINT_PROMPT, CLOSE_PROMPT, QUESTION_PROMPT, fillPrompt } from "./task-prompts";
 import { type CurrentTask, type TasksFile, interrupted } from "./task-store";
 import type { TurnOptions } from "./turn-controller";
 
@@ -49,6 +49,8 @@ export interface TaskDeps {
   profileFor?(action: string | undefined): Promise<ModelProfile>;
   /** The profile to retry a first turn with after `model-unavailable`, or null when none is left (spec §5.3). */
   fallbackFor?(profile: ModelProfile, tried: string[]): Promise<ModelProfile | null>;
+  /** A compaction was detected in `task`'s session (usage.jsonl `kind: "compaction"`). Failures are logged. */
+  recordCompaction?(task: CurrentTask): Promise<void>;
   now?: () => Date;
   newId?: () => string;
 }
@@ -66,11 +68,22 @@ const noteView = (n: Note): NoteView => ({
   path: n.path,
 });
 
+/** Share of the task's cap at which the checkpoint runs (spec D4). */
+export const CHECKPOINT_AT = 0.8;
+/** Claude doesn't report compactions: the context falling by more than this share means one happened. */
+const COMPACTED_DROP = 0.5;
+
+/** The context reached 80% of the task's cap and no checkpoint ran since the last compaction (spec §6). */
+export function needsCheckpoint(c: CurrentTask): boolean {
+  return c.profile !== undefined && c.context !== undefined && c.checkpointed !== true && c.context.used >= CHECKPOINT_AT * c.profile.cap;
+}
+
 /** The open task as the window sees it: no session, no prompt, just what the screen shows. */
 const currentView = (c: CurrentTask): CurrentTaskView => ({
   id: c.id,
   ...(c.action ? { action: c.action } : {}),
   status: c.status,
+  ...(c.profile && c.context ? { context: { used: c.context.used, cap: c.profile.cap } } : {}),
   ...(c.profile?.fallbackFrom
     ? { fallback: { model: c.profile.fallbackFrom, ...(c.profile.model !== undefined && c.profile.tier !== "custom" ? { tier: c.profile.tier } : {}) } }
     : {}),
@@ -201,6 +214,7 @@ export class TaskManager {
   private async askNow(text: string, display?: string): Promise<void> {
     const c = (await this.d.store.load()).current;
     if (c?.status === "waiting") {
+      if (needsCheckpoint(c) && !(await this.checkpoint(c))) return this.stopped();
       await this.setStatus(c.id, "running");
       // Checked with no await before the send: a Stop while the status was saved.
       if (this.cancelRequested) {
@@ -306,7 +320,7 @@ export class TaskManager {
    * the turn was refused before it began (no `done` came).
    */
   private async runTurn(task: CurrentTask, message: string, options: Omit<TurnOptions, "task" | "onEvent" | "profile">): Promise<Done> {
-    const seen: { done?: Done; note?: SavedNote } = {};
+    const seen: { done?: Done; note?: SavedNote; used?: number; size?: number; compacted?: boolean } = {};
     this.turnTask = task.id;
     try {
       await this.d.turns.send(message, {
@@ -319,7 +333,10 @@ export class TaskManager {
           else if (e.type === "block" && e.name === "save_note") {
             const parsed = saveNoteSchema.safeParse(e.data);
             if (parsed.success) seen.note = parsed.data;
-          }
+          } else if (e.type === "context") {
+            seen.used = e.used;
+            if (e.size !== undefined) seen.size = e.size;
+          } else if (e.type === "compaction") seen.compacted = true;
         },
       });
     } catch (err) {
@@ -333,7 +350,8 @@ export class TaskManager {
     const d = seen.done;
     const held = options.holdModelError === true && d !== undefined && !d.ok && d.error.code === "model-unavailable";
     if (d && !held && (!options.quiet || (!d.ok && d.error.code !== "cancelled"))) this.windowDone = true;
-    if (seen.note) await this.saveNote(task, seen.note);
+    if (seen.note) await this.saveNote(task, seen.note, options.phase !== "checkpoint");
+    if (seen.used !== undefined || seen.compacted) await this.track(task.id, seen);
     return seen.done ?? { type: "done", ok: false, error: { code: "agent-crashed" } };
   }
 
@@ -371,9 +389,60 @@ export class TaskManager {
       throw unwrap(err);
     }
     const cancelled = !done.ok && done.error.code === "cancelled";
-    const saved = (await this.d.store.load()).current?.noteSaved === true;
+    const after = (await this.d.store.load()).current;
+    // A checkpoint's note stands when the closing turn brings none.
+    const saved = after?.noteSaved === true || (!cancelled && after?.checkpointNote === true);
     await this.endTask(c.id, saved ? "done" : cancelled ? "unfinished" : "unsaved");
     return !cancelled && !this.cancelRequested;
+  }
+
+  /**
+   * A quiet turn asking for `save_note` before the context reaches the task's cap (spec §6): same session,
+   * same profile, the note goes to the task's own file. False when it was cancelled (nothing more runs);
+   * a cancelled checkpoint is offered again before the next follow-up.
+   */
+  private async checkpoint(c: CurrentTask): Promise<boolean> {
+    await this.update((s) => (s.current?.id === c.id ? { ...s, current: { ...s.current, status: "checkpoint", checkpointed: true } } : s));
+    const waitAgain = () => this.update((s) => (s.current?.id === c.id ? { ...s, current: { ...s.current, status: "waiting", checkpointed: false } } : s));
+    // Checked with no await before the turn: a Stop while the status was saved.
+    if (this.cancelRequested) {
+      await waitAgain();
+      return false;
+    }
+    let done: Done;
+    try {
+      done = await this.runTurn(c, CHECKPOINT_PROMPT, { ...(c.action ? { action: c.action } : {}), phase: "checkpoint", quiet: true });
+    } catch (err) {
+      if (err instanceof TurnNotStarted) await waitAgain();
+      throw unwrap(err);
+    }
+    if ((!done.ok && done.error.code === "cancelled") || this.cancelRequested) {
+      await waitAgain();
+      return false;
+    }
+    // Any other failure doesn't stop the person's turn: the engine still compacts on its own.
+    return true;
+  }
+
+  /**
+   * Keeps the context in use after a turn. A compaction (reported, or `used` falling by more than half)
+   * allows a new checkpoint and is logged (spec §6).
+   */
+  private async track(id: string, seen: { used?: number; size?: number; compacted?: boolean }): Promise<void> {
+    const before = (await this.d.store.load()).current;
+    if (before?.id !== id) return;
+    const prev = before.context?.used;
+    const compacted = seen.compacted === true || (prev !== undefined && seen.used !== undefined && seen.used < prev * COMPACTED_DROP);
+    const context = seen.used !== undefined ? { used: seen.used, ...(seen.size !== undefined ? { size: seen.size } : {}) } : undefined;
+    await this.update((s) =>
+      s.current?.id === id ? { ...s, current: { ...s.current, ...(context ? { context } : {}), ...(compacted ? { checkpointed: false } : {}) } } : s,
+    );
+    if (!compacted) return;
+    try {
+      await this.d.recordCompaction?.(before);
+    } catch (err) {
+      console.error("Could not record the compaction", err);
+    }
   }
 
   /**
@@ -401,11 +470,12 @@ export class TaskManager {
     await this.endSession();
   }
 
-  private async saveNote(task: CurrentTask, note: SavedNote): Promise<void> {
+  private async saveNote(task: CurrentTask, note: SavedNote, final = true): Promise<void> {
     try {
       const slug = task.action ?? (await this.questionSlug(task.id, note.title));
       await this.d.writeNote(slug, note, { ...(task.action ? { action: task.action } : {}), date: this.now().toISOString(), engine: await this.d.engine() });
-      await this.update((s) => (s.current?.id === task.id ? { ...s, current: { ...s.current, noteSaved: true } } : s));
+      // A checkpoint's note is provisional: the closing turn still runs and updates the same file.
+      await this.update((s) => (s.current?.id === task.id ? { ...s, current: { ...s.current, ...(final ? { noteSaved: true } : { checkpointNote: true }) } } : s));
       await this.d.saveHistory?.(`Note: ${note.title.slice(0, 60)}`);
     } catch (err) {
       console.error("Could not save the note", err);

@@ -5,7 +5,7 @@ import type { Event } from "@humanharness/runtime";
 import type { TaskView } from "@humanharness/ui/client";
 import type { Note, NoteMeta } from "@humanharness/workspace";
 import { TaskManager } from "../src/main/task-manager";
-import { CLOSE_PROMPT } from "../src/main/task-prompts";
+import { CHECKPOINT_PROMPT, CLOSE_PROMPT } from "../src/main/task-prompts";
 import { type CurrentTask, type TasksFile, emptyTasks } from "../src/main/task-store";
 import type { TurnOptions } from "../src/main/turn-controller";
 
@@ -562,5 +562,105 @@ describe("TaskManager model profiles", () => {
     expect(t.turns).toHaveLength(1);
     expect(t.emitted).toEqual([{ type: "done", ok: false, error: { code: "cancelled" } }]);
     expect(t.state()).toMatchObject({ current: null, actions: { manifest: "unfinished" } });
+  });
+});
+
+describe("TaskManager context and checkpoints", () => {
+  const standard: ModelProfile = { engine: "claude", tier: "standard", model: "sonnet", effort: "medium", cap: 200_000 };
+  const ctx = (used: number): Event => ({ type: "context", used });
+
+  it("tracks the context in use and shows it against the cap", async () => {
+    const t = setup({ profile: standard, script: [[ctx(50_000), ok]] });
+    await t.manager.start("manifest");
+    expect(t.state().current?.context).toEqual({ used: 50_000 });
+    expect(t.views.at(-1)?.current?.context).toEqual({ used: 50_000, cap: 200_000 });
+  });
+
+  it("at 80% of the cap, runs one quiet checkpoint turn before the next follow-up, then not again", async () => {
+    const t = setup({ profile: standard, script: [[ctx(170_000), ok], [saveNote(), ok], [ctx(175_000), ok], [ctx(180_000), ok]] });
+    await t.manager.start("manifest");
+    await t.manager.ask("And the blocks?");
+    expect(t.turns.map((x) => x.options.phase)).toEqual(["run", "checkpoint", "run"]);
+    expect(t.turns[1]).toMatchObject({ message: CHECKPOINT_PROMPT, options: { quiet: true, action: "manifest", task: "t1", profile: standard } });
+    expect(t.turns[2]).toMatchObject({ message: "And the blocks?", options: { followUp: true } });
+    expect(t.log).toContain("note:manifest");
+    expect(t.state().current).toMatchObject({ status: "waiting", checkpointed: true, checkpointNote: true });
+    expect(t.state().current?.noteSaved).toBeUndefined();
+    await t.manager.ask("And history?");
+    expect(t.turns.map((x) => x.options.phase)).toEqual(["run", "checkpoint", "run", "run"]);
+  });
+
+  it("shows the checkpoint status while it runs", async () => {
+    const statuses: (string | undefined)[] = [];
+    const t = setup({ profile: standard, script: [[ctx(170_000), ok]], onSave: (s) => statuses.push(s.current?.status) });
+    await t.manager.start("manifest");
+    await t.manager.ask("More?");
+    expect(statuses).toContain("checkpoint");
+    expect(statuses.at(-1)).toBe("waiting");
+  });
+
+  it("a reported compaction, or the context falling by more than half, allows the next checkpoint and is logged", async () => {
+    const compacted: string[] = [];
+    const t = setup({
+      profile: standard,
+      script: [[ctx(170_000), ok], [ok], [{ type: "compaction" }, ctx(30_000), ok], [ctx(165_000), ok], [ok], [ctx(60_000), ok]],
+      recordCompaction: (task) => void compacted.push(task.id),
+    });
+    await t.manager.start("manifest");
+    await t.manager.ask("one");
+    await t.manager.ask("two");
+    await t.manager.ask("three");
+    expect(t.turns.map((x) => x.options.phase)).toEqual(["run", "checkpoint", "run", "run", "checkpoint", "run"]);
+    expect(compacted).toEqual(["t1", "t1"]);
+    expect(t.state().current?.context).toEqual({ used: 60_000 });
+  });
+
+  it("a checkpoint note doesn't skip the closing turn, and the topic ends done even if closing brings none", async () => {
+    const t = setup({ profile: standard, script: [[ctx(170_000), ok], [saveNote(), ok], [ok], [ok]] });
+    await t.manager.start("manifest");
+    await t.manager.ask("More?");
+    await pick(t, { label: "Next", next: true });
+    expect(t.turns.map((x) => x.options.phase)).toEqual(["run", "checkpoint", "run", "close", "run"]);
+    expect(t.state().actions.manifest).toBe("done");
+  });
+
+  it("cancel during the checkpoint: no follow-up turn, the task waits again, the window told", async () => {
+    let t!: ReturnType<typeof setup>;
+    t = setup({
+      profile: standard,
+      script: [[ctx(170_000), ok], [cancelled]],
+      during: (i) => {
+        if (i === 1) t.manager.cancel();
+      },
+    });
+    await t.manager.start("manifest");
+    await t.manager.ask("More?");
+    expect(t.turns.map((x) => x.options.phase)).toEqual(["run", "checkpoint"]);
+    expect(t.state().current?.status).toBe("waiting");
+    expect(t.emitted).toEqual([{ type: "done", ok: false, error: { code: "cancelled" } }]);
+  });
+
+  it("a cancelled checkpoint runs again before the next follow-up", async () => {
+    let t!: ReturnType<typeof setup>;
+    t = setup({
+      profile: standard,
+      script: [[ctx(170_000), ok], [cancelled], [saveNote(), ok], [ok]],
+      during: (i) => {
+        if (i === 1) t.manager.cancel();
+      },
+    });
+    await t.manager.start("manifest");
+    await t.manager.ask("More?");
+    expect(t.state().current?.checkpointed).toBe(false);
+    await t.manager.ask("More?");
+    expect(t.turns.map((x) => x.options.phase)).toEqual(["run", "checkpoint", "checkpoint", "run"]);
+    expect(t.state().current).toMatchObject({ status: "waiting", checkpointed: true, checkpointNote: true });
+  });
+
+  it("never checkpoints a task without a profile", async () => {
+    const t = setup({ script: [[ctx(900_000), ok]] });
+    await t.manager.start("manifest");
+    await t.manager.ask("More?");
+    expect(t.turns.map((x) => x.options.phase)).toEqual(["run", "run"]);
   });
 });

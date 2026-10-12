@@ -211,6 +211,23 @@ describe("TaskManager", () => {
     expect(t.state().actions.manifest).toBe("done");
   });
 
+  it("finish closes the open task with its quiet turn and starts nothing after it", async () => {
+    const t = setup({ script: [[ok], [saveNote(), ok]] });
+    await t.manager.start("manifest");
+    await t.manager.finish();
+    expect(t.turns.map((x) => x.options.phase)).toEqual(["run", "close"]);
+    expect(t.turns[1]).toMatchObject({ message: CLOSE_PROMPT, options: { task: "t1", quiet: true } });
+    expect(t.state()).toMatchObject({ current: null, actions: { manifest: "done" } });
+    expect(t.log.slice(-3)).toEqual(["note:manifest", "history:Note: The manifest", "endSession"]);
+  });
+
+  it("finish with no open task runs nothing", async () => {
+    const t = setup();
+    await t.manager.finish();
+    expect(t.turns).toHaveLength(0);
+    expect(t.state().current).toBeNull();
+  });
+
   it("ends the task as unfinished when a turn is cancelled or its first turn fails; a later failure keeps it", async () => {
     const t = setup({ script: [[cancelled]] });
     await t.manager.start("manifest");

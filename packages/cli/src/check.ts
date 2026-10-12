@@ -2,7 +2,8 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { ENGINES, type Mode, brandNames } from "@humanharness/engines";
 import { type LoadedHarness, loadHarness, resolveInHarness } from "@humanharness/harness-sdk";
-import { type HarnessDoc, PERMISSION_KEYS, type PermissionKey, QUESTIONS_ROW, parseHarnessMd } from "./harness-md";
+import { type Io, UsageError, parseCommand } from "./cli";
+import { type HarnessDoc, PERMISSION_KEYS, type PermissionKey, QUESTIONS_ROW, parseHarnessMd, sectionText } from "./harness-md";
 import { HARNESS_MD, MANIFEST } from "./paths";
 
 export type Severity = "error" | "warning";
@@ -40,6 +41,7 @@ const finding =
   (severity: Severity) =>
   (rule: RuleId, message: string, file: string, line?: number): Finding => ({ rule, severity, message, file, ...(line ? { line } : {}) });
 const error = finding("error");
+const warning = finding("warning");
 
 const read = (file: string) => fs.readFile(file, "utf8").catch(() => null);
 const exists = (p: string) => fs.access(p).then(() => true, () => false);
@@ -61,6 +63,11 @@ export async function checkHarness(dir: string, opts: { mode?: Mode } = {}): Pro
   findings.push(...brandFindings(harness));
   findings.push(...engineFindings(harness, opts.mode ?? "development"));
   if (doc?.flow) findings.push(...mismatchFindings(harness, doc));
+  const instructions = (await read(resolveInHarness(harness, harness.instructions))) ?? "";
+  findings.push(...pillarFindings(harness, briefs, instructions, doc));
+  findings.push(...tierCostFindings(harness));
+  findings.push(...permissionFindings(harness, doc));
+  findings.push(...openQuestionFindings(doc));
   return { findings, harness };
 }
 
@@ -221,4 +228,70 @@ function mismatchFindings(h: LoadedHarness, doc: HarnessDoc): Finding[] {
     mismatch(`engines: HARNESS.md says ${doc.engines.ids.join(", ")}, harness.config.ts says ${h.engines.join(", ")}.`, doc.engines.line);
   }
   return out;
+}
+
+/** A brief that tells the AI not to save its note. */
+const SKIP_NOTE = /\b(?:never|don't|do not)\s+(?:call\s+)?`?save_note\b/i;
+
+function pillarFindings(h: LoadedHarness, briefs: Map<string, string | null>, instructions: string, doc: HarnessDoc | null): Finding[] {
+  const out: Finding[] = [];
+  const texts = [...briefs.values()].filter((t): t is string => typeof t === "string");
+  const choices = [instructions, ...texts].some((t) => t.includes("show_choices"));
+  if (!choices && Object.keys(h.blocks).length === 0) {
+    out.push(warning("pillar-decisions", "No brief or instruction asks for show_choices and the harness has no custom block: the person has nothing to decide with.", MANIFEST));
+  }
+  if (Object.keys(h.actions).length <= 1 && !h.path && !choices) {
+    out.push(warning("pillar-flow", "One action, no path and no choices: this is effectively a chat. Add actions, a path, or choices that lead somewhere.", MANIFEST));
+  }
+  if (texts.length > 0 && texts.every((t) => SKIP_NOTE.test(t))) {
+    out.push(warning("pillar-context", "Every brief tells the AI not to save a note: closed tasks keep nothing.", MANIFEST));
+  }
+  const context = doc?.sections.get("Context");
+  if (doc && !sectionText(context)) out.push(warning("pillar-context", "HARNESS.md → Context is empty: say what each closed task must keep.", HARNESS_MD, context?.line));
+  return out;
+}
+
+function tierCostFindings(h: LoadedHarness): Finding[] {
+  return Object.entries(h.actions).flatMap(([id, action]) => {
+    const tier = action.tier ?? "standard";
+    if (action.cost === "heavy" && tier === "light") return [warning("tier-cost", `"${id}" has cost "heavy" but runs at tier light: raise the tier or lower the cost hint.`, MANIFEST)];
+    if (action.cost === "light" && tier === "deep") return [warning("tier-cost", `"${id}" has cost "light" but runs at tier deep: lower the tier or raise the cost hint.`, MANIFEST)];
+    return [];
+  });
+}
+
+function permissionFindings(h: LoadedHarness, doc: HarnessDoc | null): Finding[] {
+  const wide: [PermissionKey, string][] = [];
+  if (h.permissions.edit === "folder") wide.push(["edit", "folder"]);
+  if (h.permissions.exec) wide.push(["exec", "true"]);
+  if (h.permissions.web) wide.push(["web", "true"]);
+  return wide.flatMap(([key, value]) => {
+    const line = doc?.permissions.find((p) => p.key === key);
+    return line?.reason ? [] : [warning("permissions-wide", `${key}: ${value} has no reason in HARNESS.md → Permissions and engines.`, HARNESS_MD, line?.line)];
+  });
+}
+
+function openQuestionFindings(doc: HarnessDoc | null): Finding[] {
+  const section = doc?.sections.get("Open questions");
+  return section && sectionText(section)
+    ? [warning("open-questions", "HARNESS.md → Open questions is not empty: settle them, or keep them open on purpose.", HARNESS_MD, section.line)]
+    : [];
+}
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+/** One line per finding, then the counts. */
+export function formatFindings(findings: Finding[]): string {
+  if (findings.length === 0) return "No problems found.\n";
+  const lines = findings.map((f) => `${f.severity.padEnd(8)}${f.rule.padEnd(21)}${(f.line ? `${f.file}:${f.line}` : f.file).padEnd(22)}${f.message}`);
+  const errors = findings.filter((f) => f.severity === "error").length;
+  return `${lines.join("\n")}\n\n${plural(errors, "error")}, ${plural(findings.length - errors, "warning")}\n`;
+}
+
+export async function checkCommand(args: string[], io: Io): Promise<number> {
+  const { values, positionals } = parseCommand(args, { json: { type: "boolean" }, harness: { type: "string" } });
+  if (positionals.length > 0) throw new UsageError("Usage: humanharness check [--json] [--harness <dir>]");
+  const { findings } = await checkHarness(path.resolve(io.cwd, values.harness ?? "."));
+  io.stdout.write(values.json ? `${JSON.stringify(findings, null, 2)}\n` : formatFindings(findings));
+  return findings.some((f) => f.severity === "error") ? 1 : 0;
 }

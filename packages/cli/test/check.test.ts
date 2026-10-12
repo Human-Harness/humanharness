@@ -1,9 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { type CheckResult, checkHarness, findBrand } from "../src/check";
+import { type CheckResult, checkHarness, findBrand, formatFindings } from "../src/check";
 import { initHarness } from "../src/init";
-import { CORE, replaceIn, tempRoot } from "./helpers";
+import { main } from "../src/main";
+import { CORE, memoryIo, replaceIn, tempRoot } from "./helpers";
 
 const { root, cleanup } = tempRoot("hh-check-");
 afterAll(cleanup);
@@ -133,5 +134,78 @@ describe("check: errors", () => {
   it("harness-md-mismatch: an action missing from the table", async () => {
     const r = await checkHarness(await fixture((d) => replaceIn(d, "HARNESS.md", "| example | standard | light | Shows how an action works |\n", "")));
     expect(r.findings.filter((f) => f.rule === "harness-md-mismatch").map((f) => f.message)).toEqual(['Action "example" is missing from the Flow table.']);
+  });
+});
+
+describe("check: warnings", () => {
+  it("finds nothing at all in the untouched template", async () => {
+    expect((await checkHarness(await fixture())).findings).toEqual([]);
+  });
+
+  it("pillar-decisions and pillar-flow: no choices, no custom block, one action, no path", async () => {
+    const dir = await fixture((d) => {
+      replaceIn(d, "harness.config.ts", "blocks: { example_card: exampleCard },", "blocks: {},");
+      replaceIn(d, "agent/tasks/example.md", "End with `show_choices`: one option with a `followUp` to go deeper on that idea.", "Stop there.");
+      replaceIn(d, "agent/AGENTS.md", "- End every answer with `show_choices`, offering how to continue.\n", "");
+    });
+    expect(rules(await checkHarness(dir))).toEqual(["warning:pillar-decisions", "warning:pillar-flow"]);
+  });
+
+  it("pillar-context: every brief skips the note, or HARNESS.md → Context is empty", async () => {
+    const skip = await fixture((d) => replaceIn(d, "agent/tasks/example.md", "{{notesIndex}}", "Never call `save_note`.\n\n{{notesIndex}}"));
+    expect(rules(await checkHarness(skip))).toEqual(["warning:pillar-context"]);
+    const empty = await fixture((d) => replaceIn(d, "HARNESS.md", "Each closed task saves a note with the core `save_note` fields: a title, up to five summary points, the decisions taken, the files that back them and the questions left open.", "<!-- later -->"));
+    const r = await checkHarness(empty);
+    expect(r.findings).toMatchObject([{ rule: "pillar-context", severity: "warning", file: "HARNESS.md" }]);
+  });
+
+  it("tier-cost: heavy at light, or light at deep", async () => {
+    const dir = await fixture((d) => {
+      replaceIn(d, "harness.config.ts", 'tier: "standard"', 'tier: "deep"');
+      replaceIn(d, "HARNESS.md", "| example | standard | light |", "| example | deep | light |");
+    });
+    expect((await checkHarness(dir)).findings.map((f) => f.message)).toEqual(['"example" has cost "light" but runs at tier deep: lower the tier or raise the cost hint.']);
+  });
+
+  it("permissions-wide: exec, web or edit: folder without a reason line", async () => {
+    const dir = await fixture((d) => {
+      replaceIn(d, "harness.config.ts", 'permissions: { edit: "none", exec: false, web: false }', 'permissions: { edit: "folder", exec: false, web: true }');
+      replaceIn(d, "HARNESS.md", "- edit: none — the template changes no files.", "- edit: folder");
+      replaceIn(d, "HARNESS.md", "- web: false — no web access is needed.", "- web: true — compares prices online.");
+    });
+    expect((await checkHarness(dir)).findings.map((f) => `${f.rule} ${f.message}`)).toEqual(["permissions-wide edit: folder has no reason in HARNESS.md → Permissions and engines."]);
+  });
+
+  it("open-questions: the section has content", async () => {
+    const dir = await fixture((d) => replaceIn(d, "HARNESS.md", "<!-- Anything still undecided. `check` warns while this section has content. -->", "- Should it plan two weeks at once?"));
+    expect(rules(await checkHarness(dir))).toEqual(["warning:open-questions"]);
+  });
+});
+
+describe("humanharness check", () => {
+  it("says so when there is nothing to report, with exit code 0", async () => {
+    const m = memoryIo(await fixture());
+    expect(await main(["check"], m.io)).toBe(0);
+    expect(m.out()).toBe("No problems found.\n");
+  });
+
+  it("lists the findings and exits with 1 on errors; --harness points at another folder", async () => {
+    const dir = await fixture((d) => replaceIn(d, "HARNESS.md", "- engines: claude, codex", "- engines: claude"));
+    const m = memoryIo(root);
+    expect(await main(["check", "--harness", dir], m.io)).toBe(1);
+    expect(m.out()).toMatch(/^error\s+harness-md-mismatch\s+HARNESS\.md:\d+\s+engines: HARNESS\.md says claude/m);
+    expect(m.out()).toContain("1 error, 0 warnings");
+  });
+
+  it("--json prints the findings as an array", async () => {
+    const dir = await fixture((d) => replaceIn(d, "HARNESS.md", "<!-- Anything still undecided. `check` warns while this section has content. -->", "- Two weeks?"));
+    const m = memoryIo(dir);
+    expect(await main(["check", "--json"], m.io)).toBe(0);
+    expect(JSON.parse(m.out())).toEqual([{ rule: "open-questions", severity: "warning", message: expect.any(String), file: "HARNESS.md", line: expect.any(Number) }]);
+  });
+
+  it("formats counts in the singular and plural", () => {
+    const f = { rule: "brand" as const, severity: "error" as const, message: "m", file: "harness.config.ts" };
+    expect(formatFindings([f, f, { ...f, severity: "warning", rule: "tier-cost" }])).toMatch(/\n2 errors, 1 warning\n$/);
   });
 });

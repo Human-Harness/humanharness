@@ -1,4 +1,5 @@
 import { CliError, type Io, UsageError } from "./cli";
+import { checkCommand } from "./check";
 import { initCommand } from "./init";
 
 type Command = (args: string[], io: Io) => Promise<number>;
@@ -20,6 +21,7 @@ export const USAGE = [
 /** The commands, by name. Each later task adds its own. */
 const COMMANDS: Record<string, Command> = {
   init: initCommand,
+  check: checkCommand,
 };
 
 export async function main(argv: string[], io: Io): Promise<number> {

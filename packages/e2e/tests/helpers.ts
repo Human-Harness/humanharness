@@ -45,8 +45,12 @@ export function makeSandbox(name: string, config: Record<string, unknown> = {}):
 /** A Codex that is never asked anything: keeps every engine fake, so no status check reaches a real CLI. */
 const idleCodex: AcpScript = { turns: [] };
 
-/** Launches the built shell with the fake agents in place of both of the demo's engines. */
-export async function launch(s: Sandbox, scripts: { claude: ClaudeScript; codex?: AcpScript }): Promise<{ app: ElectronApplication; page: Page }> {
+/** Launches the built shell (or the build at `app`, a main/index.js) with the fake agents in place of both engines. */
+export async function launch(
+  s: Sandbox,
+  scripts: { claude: ClaudeScript; codex?: AcpScript },
+  app: string = shellDir,
+): Promise<{ app: ElectronApplication; page: Page }> {
   const engines = {
     claude: { command: fakeClaudeCommand(), env: { HH_FAKE_SCRIPT: writeScript(s.root, scripts.claude), HH_FAKE_PROMPTS: s.claudePrompts } },
     codex: { command: fakeAcpCommand(), env: { HH_FAKE_SCRIPT: writeScript(s.root, scripts.codex ?? idleCodex), HH_FAKE_LOG: s.acpLog } },
@@ -54,12 +58,12 @@ export async function launch(s: Sandbox, scripts: { claude: ClaudeScript; codex?
   // Not inherited: a dev server address, or ELECTRON_RUN_AS_NODE (it would start Electron as plain Node).
   const dropped = new Set(["ELECTRON_RENDERER_URL", "ELECTRON_RUN_AS_NODE"]);
   const env = Object.fromEntries(Object.entries(process.env).filter((e): e is [string, string] => e[1] !== undefined && !dropped.has(e[0])));
-  const app = await electron.launch({
+  const electronApp = await electron.launch({
     executablePath: electronBinary,
-    args: [shellDir],
+    args: [app],
     env: { ...env, HH_TEST_USER_DATA: s.userData, HH_TEST_SHARED_DIR: s.sharedDir, HH_TEST_ENGINES: JSON.stringify(engines) },
   });
-  return { app, page: await app.firstWindow() };
+  return { app: electronApp, page: await electronApp.firstWindow() };
 }
 
 /** Closes the app and removes the sandbox: .tmp sits inside the repository the explainer reads. */

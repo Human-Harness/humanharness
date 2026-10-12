@@ -60,4 +60,27 @@ describe("createI18n", () => {
       "Claude es un servicio de Anthropic. Lo que escribas acá, y los archivos de tu carpeta que lea la IA, se envían a Anthropic, EE. UU. para ser procesados.",
     );
   });
+
+  it("has the flow, choices and notes strings, with plural key points", async () => {
+    const es = await createI18n("es");
+    expect(es.t("flow.path")).toBe("Recorrido");
+    expect(es.t("flow.covered")).toBe("Lo que ya quedó claro");
+    expect(es.t("flow.readOnly")).toBe("Solo lectura: la IA no cambia nada acá");
+    expect(es.t("choices.title")).toBe("¿Cómo seguimos?");
+    expect(es.t("notes.resume")).toBe("Retomar este tema");
+    expect(es.t("notes.open")).toBe("Abrir el archivo");
+    expect(es.t("notes.keyPoints", { count: 1 })).toBe("1 idea clave");
+    expect(es.t("notes.keyPoints", { count: 4 })).toBe("4 ideas clave");
+    expect(es.t("notes.resumeQuestion", { title: "Motores" })).toBe("Retomemos el tema «Motores».");
+    const en = await createI18n("en");
+    expect(en.t("notes.keyPoints", { count: 2 })).toBe("2 key points");
+    expect(en.t("notes.savings")).toBe("The next question starts from your summaries instead of re-reading the code.");
+    expect(en.t("notes.resumeQuestion", { title: "Engines" })).toBe('Let\'s pick up "Engines" again.');
+  });
+
+  it("never states token savings as numbers (spec §5.3)", () => {
+    for (const language of ["es", "en"] as const) {
+      expect(JSON.stringify(CORE_LOCALES[language].notes)).not.toMatch(/token|\d\s?k\b/i);
+    }
+  });
 });

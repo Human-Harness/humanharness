@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { HHLogo, Segmented, TopBar } from "../src/chrome";
+import { CheckIcon, HHLogo, LockIcon, NoteIcon, Segmented, TopBar } from "../src/chrome";
 
 afterEach(cleanup);
 
@@ -30,5 +30,18 @@ describe("chrome", () => {
     expect(container.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
     rerender(<HHLogo title="Human Harness" />);
     expect(screen.getByRole("img", { name: "Human Harness" })).toBeTruthy();
+  });
+
+  it("draws decorative icons hidden from screen readers", () => {
+    const { container } = render(
+      <>
+        <CheckIcon />
+        <LockIcon />
+        <NoteIcon />
+      </>,
+    );
+    const icons = container.querySelectorAll("svg");
+    expect(icons).toHaveLength(3);
+    for (const icon of icons) expect(icon.getAttribute("aria-hidden")).toBe("true");
   });
 });

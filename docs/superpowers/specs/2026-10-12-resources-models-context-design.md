@@ -88,7 +88,7 @@ The result is a `ModelProfile { engine, tier | "custom", model, effort, cap }`. 
   - Claude: `is_error` with `error:"model_not_found"`, or `api_error_status:404` with `terminal_reason:"api_error"`.
   - Codex: a model that is not in the saved list, or a `currentModelId` mismatch after `session/new`.
 - **Fallback:**
-  1. Retry the task once with the next tier down (deep → standard → light → engine default).
+  1. Retry the task down the chain (deep → standard → light → engine default), each candidate once, skipping models that already failed.
   2. Store the fallback profile in the task.
   3. Show a notice: "Tu plan no incluye <modelo>; usamos el nivel <X>."
 - A `custom` profile falls back to the engine default.

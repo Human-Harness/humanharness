@@ -17,8 +17,8 @@ Settings → Engine walks the steps in order; `engineProblem` (`packages/ui/src/
 
 ## Models
 
-- Claude's models are its aliases `haiku`, `sonnet` and `opus`, which always point at the latest version. Codex's list and efforts come from its adapter at `session/new` and are saved in `~/.humanharness/engines.json` for Settings › Modelos; until then only "Predeterminado del motor" is offered. An effort the engine doesn't offer is lowered to the closest one it does (`fitEffort`).
-- Every value that reaches the command line or `CODEX_CONFIG` is checked first: model ids are letters, digits, `.`, `_`, `-` and brackets and never start with `-`; efforts and caps come from fixed lists.
+- Claude's models are its aliases `haiku`, `sonnet` and `opus`, which always point at the latest version. Codex's list and efforts come from its adapter at `session/new` and are saved in `~/.humanharness/engines.json` for Settings › Modelos; until then only "Predeterminado del motor" is offered. An effort the engine doesn't offer is lowered to the closest one it does, or raised to its lowest when none is lower (`fitEffort`).
+- Every value that reaches the command line or `CODEX_CONFIG` is checked first: model ids are letters, digits, `.`, `_`, `-` and brackets and never start with `-`; efforts come from a fixed list and caps are integers from 100k to 1M.
 - `CODEX_CONFIG` is written by the app from the task's profile, replacing any value in the app's own environment; it holds only `model`, `model_reasoning_effort` and `model_auto_compact_token_limit`. It is not a credential.
 
 ## Compliance

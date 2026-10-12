@@ -14,6 +14,17 @@ describe("core locales", () => {
 });
 
 describe("createI18n", () => {
+  it("has the models, checkpoint and fallback strings", async () => {
+    const es = await createI18n("es");
+    expect(es.t("settings.tabs.models")).toBe("Modelos");
+    expect(es.t("models.tier.custom")).toBe("Personalizado");
+    expect(es.t("models.fallbackNotice", { model: "opus", tier: "Estándar" })).toBe("Tu plan no incluye opus; usamos el nivel Estándar.");
+    expect(es.t("flow.checkpoint")).toBe("Guardando lo importante…");
+    const en = await createI18n("en");
+    expect(en.t("models.changed", { tier: "Standard" })).toBe("Changed · recommended: Standard");
+    expect(en.t("models.contextTitle", { used: "170,000", cap: "200,000" })).toBe("170,000 of 200,000 tokens");
+  });
+
   it("translates core keys with interpolation", async () => {
     const i18n = await createI18n("es");
     expect(i18n.t("home.start", { name: "Demo" })).toBe("Iniciar Demo");

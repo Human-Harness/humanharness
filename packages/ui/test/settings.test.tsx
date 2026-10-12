@@ -33,6 +33,19 @@ describe("SettingsSheet", () => {
     expect(onClose).toHaveBeenCalledTimes(2);
   });
 
+  it("adds a Models tab when the app sends its view", async () => {
+    const client = new FakeClient(ready);
+    client.state.models = {
+      recommended: { questions: "standard" },
+      defaults: { claude: { light: { model: "haiku", effort: "low", cap: 100_000 }, standard: { model: "sonnet", effort: "medium", cap: 200_000 }, deep: { model: "opus", effort: "high", cap: 400_000 } } },
+      offered: { claude: { models: [{ id: "haiku" }, { id: "sonnet" }, { id: "opus" }], efforts: ["low", "medium", "high", "xhigh", "max"] } },
+    };
+    await renderIn("en", <Sheet client={client} />);
+    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["General", "Engine", "Models", "Usage"]);
+    fireEvent.click(screen.getByRole("tab", { name: "Models" }));
+    expect(screen.getByRole("region", { name: "Tasks" })).toBeTruthy();
+  });
+
   it("keeps Tab inside the sheet", async () => {
     await renderIn("en", <Sheet client={new FakeClient(ready)} />);
     const dialog = screen.getByRole("dialog", { name: "Settings" });

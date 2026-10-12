@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "corepack pnpm --filter @humanharness/shell build && playwright test"
+    "test": "corepack pnpm --filter @humanharness/shell build && playwright test",
+    "real": "corepack pnpm --filter @humanharness/shell build && playwright test -c real/real.config.ts"
   },
   "devDependencies": {
     "@humanharness/engines": "workspace:*",

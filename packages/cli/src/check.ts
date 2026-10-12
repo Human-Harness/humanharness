@@ -63,7 +63,7 @@ export async function checkHarness(dir: string, opts: { mode?: Mode } = {}): Pro
   findings.push(...brandFindings(harness));
   findings.push(...engineFindings(harness, opts.mode ?? "development"));
   if (doc?.flow) findings.push(...mismatchFindings(harness, doc));
-  const instructions = (await read(resolveInHarness(harness, harness.instructions))) ?? "";
+  const instructions = await readInstructions(harness, findings);
   findings.push(...pillarFindings(harness, briefs, instructions, doc));
   findings.push(...tierCostFindings(harness));
   findings.push(...permissionFindings(harness, doc));
@@ -86,6 +86,25 @@ async function loadManifest(root: string, findings: Finding[]): Promise<LoadedHa
     } else findings.push(error("schema", err instanceof Error ? err.message : String(err), MANIFEST));
     return null;
   }
+}
+
+/** A manifest path inside the harness folder; null (and a schema error) when it escapes it. */
+function resolveField(h: LoadedHarness, field: string, relative: string, findings: Finding[]): string | null {
+  try {
+    return resolveInHarness(h, relative);
+  } catch {
+    findings.push(error("schema", `${field}: "${relative}": path escapes the harness folder.`, MANIFEST));
+    return null;
+  }
+}
+
+/** The harness's instructions; "" when they are missing (an error) or out of the folder (a schema error). */
+async function readInstructions(h: LoadedHarness, findings: Finding[]): Promise<string> {
+  const file = resolveField(h, "instructions", h.instructions, findings);
+  if (file === null) return "";
+  const text = await read(file);
+  if (text === null) findings.push(error("brief-missing", `The instructions file ${h.instructions} does not exist.`, MANIFEST));
+  return text ?? "";
 }
 
 /** Each action's brief text; null when it can't be read. */
@@ -111,9 +130,13 @@ export function flatKeys(o: Record<string, unknown>, prefix = ""): string[] {
   );
 }
 
-const UI_KEY = /\bt\(\s*["'`]([A-Za-z0-9_.-]+)["'`]/g;
+/** `t("key")` with a literal key: the same quote on both sides, so `t(\`prefix.${x}\`)` is no key. */
+const UI_KEY = /\bt\(\s*(["'`])([A-Za-z0-9_.-]+)\1/g;
 
+/** The .ts/.tsx files under `dir`, or `dir` itself when it is one. */
 async function sourceFiles(dir: string): Promise<string[]> {
+  const stat = await fs.stat(dir).catch(() => null);
+  if (stat?.isFile()) return /\.tsx?$/.test(dir) ? [dir] : [];
   const entries = await fs.readdir(dir, { withFileTypes: true, recursive: true }).catch(() => []);
   return entries
     .filter((e) => e.isFile() && /\.tsx?$/.test(e.name))
@@ -124,21 +147,28 @@ async function sourceFiles(dir: string): Promise<string[]> {
 async function i18nFindings(h: LoadedHarness): Promise<Finding[]> {
   const out: Finding[] = [];
   const localesDir = h.locales ?? "locales";
-  const uiFiles = await sourceFiles(path.join(h.root, "ui"));
-  if (!(await exists(resolveInHarness(h, localesDir))) && uiFiles.length === 0) return out;
+  const localesPath = resolveField(h, "locales", localesDir, out);
+  const uiPath = resolveField(h, "ui", h.ui ?? "ui", out);
+  if (localesPath === null) return out;
+  const uiFiles = uiPath === null ? [] : await sourceFiles(uiPath);
+  if (!(await exists(localesPath)) && uiFiles.length === 0) return out;
   const keys = new Map<string, Set<string>>();
   for (const lang of h.languages) {
     const file = path.join(localesDir, `${lang}.json`);
-    const text = await read(resolveInHarness(h, file));
+    const text = await read(path.join(localesPath, `${lang}.json`));
     if (text === null) {
       out.push(error("i18n", `${file} is missing: every declared language needs its strings.`, file));
       continue;
     }
+    let parsed: unknown;
     try {
-      keys.set(lang, new Set(flatKeys(JSON.parse(text) as Record<string, unknown>)));
+      parsed = JSON.parse(text);
     } catch {
       out.push(error("i18n", `${file} is not valid JSON.`, file));
+      continue;
     }
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) out.push(error("i18n", `${file} must be a JSON object.`, file));
+    else keys.set(lang, new Set(flatKeys(parsed as Record<string, unknown>)));
   }
   const all = [...new Set([...keys.values()].flatMap((s) => [...s]))];
   for (const [lang, set] of keys) {
@@ -149,7 +179,7 @@ async function i18nFindings(h: LoadedHarness): Promise<Finding[]> {
     for (const m of text.matchAll(UI_KEY)) {
       const line = text.slice(0, m.index).split("\n").length;
       for (const [lang, set] of keys) {
-        if (!set.has(m[1])) out.push(error("i18n", `"${m[1]}" is used here but missing in ${lang}.`, path.relative(h.root, file), line));
+        if (!set.has(m[2])) out.push(error("i18n", `"${m[2]}" is used here but missing in ${lang}.`, path.relative(h.root, file), line));
       }
     }
   }
@@ -231,7 +261,7 @@ function mismatchFindings(h: LoadedHarness, doc: HarnessDoc): Finding[] {
 }
 
 /** A brief that tells the AI not to save its note. */
-const SKIP_NOTE = /\b(?:never|don't|do not)\s+(?:call\s+)?`?save_note\b/i;
+const SKIP_NOTE = /\b(?:never|don['’]t|do not)\s+(?:call\s+)?`?save_note\b/i;
 
 function pillarFindings(h: LoadedHarness, briefs: Map<string, string | null>, instructions: string, doc: HarnessDoc | null): Finding[] {
   const out: Finding[] = [];

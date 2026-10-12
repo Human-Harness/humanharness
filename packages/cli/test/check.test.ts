@@ -67,6 +67,42 @@ describe("check: errors", () => {
     expect(empty.findings.filter((f) => f.rule === "brief-missing").map((f) => f.message)).toEqual(['Action "example": its brief ./agent/tasks/example.md is empty.']);
   });
 
+  it("schema: instructions or locales pointing outside the harness folder", async () => {
+    const dir = await fixture((d) => {
+      replaceIn(d, "harness.config.ts", 'instructions: "./agent/AGENTS.md",', 'instructions: "../x.md", locales: "../locales",');
+    });
+    const r = await checkHarness(dir);
+    expect(r.findings.filter((f) => f.rule === "schema").map((f) => `${f.file} ${f.message}`)).toEqual([
+      'harness.config.ts locales: "../locales": path escapes the harness folder.',
+      'harness.config.ts instructions: "../x.md": path escapes the harness folder.',
+    ]);
+  });
+
+  it("brief-missing: the instructions file does not exist", async () => {
+    const r = await checkHarness(await fixture((d) => fs.rmSync(path.join(d, "agent", "AGENTS.md"))));
+    expect(r.findings.filter((f) => f.rule === "brief-missing").map((f) => `${f.file} ${f.message}`)).toEqual([
+      "harness.config.ts The instructions file ./agent/AGENTS.md does not exist.",
+    ]);
+  });
+
+  it("i18n: a locale file that is JSON but not an object", async () => {
+    const r = await checkHarness(await fixture((d) => fs.writeFileSync(path.join(d, "locales", "es.json"), "null\n")));
+    expect(r.findings.filter((f) => f.rule === "i18n").map((f) => f.message)).toEqual(["locales/es.json must be a JSON object."]);
+  });
+
+  it("i18n: scans the manifest's ui folder; a template-literal key is not a key", async () => {
+    const dir = await fixture((d) => {
+      fs.renameSync(path.join(d, "ui"), path.join(d, "screens"));
+      replaceIn(d, "harness.config.ts", 'author: "Your name",', 'author: "Your name", ui: "./screens",');
+      replaceIn(d, "screens/ExampleCard.tsx", "<h3>{data.title}</h3>", "<h3 title={t(`prefix.${data.title}`)}>{t(\"cardTitle\")}</h3>");
+    });
+    const r = await checkHarness(dir);
+    expect(r.findings.filter((f) => f.rule === "i18n").map((f) => `${f.file} ${f.message}`)).toEqual([
+      'screens/ExampleCard.tsx "cardTitle" is used here but missing in es.',
+      'screens/ExampleCard.tsx "cardTitle" is used here but missing in en.',
+    ]);
+  });
+
   it("brand: a provider or model brand in the name, tagline or logo file name", async () => {
     const dir = await fixture((d) => {
       replaceIn(d, "harness.config.ts", `name: { es: "h${n}", en: "h${n}" },`, `name: { es: "Tutor Claude", en: "Tutor" }, tagline: { es: "Con GPT", en: "Plain" }, logo: "./gemini-logo.svg",`);
@@ -154,6 +190,8 @@ describe("check: warnings", () => {
   it("pillar-context: every brief skips the note, or HARNESS.md → Context is empty", async () => {
     const skip = await fixture((d) => replaceIn(d, "agent/tasks/example.md", "{{notesIndex}}", "Never call `save_note`.\n\n{{notesIndex}}"));
     expect(rules(await checkHarness(skip))).toEqual(["warning:pillar-context"]);
+    const curly = await fixture((d) => replaceIn(d, "agent/tasks/example.md", "{{notesIndex}}", "Don’t call `save_note`.\n\n{{notesIndex}}"));
+    expect(rules(await checkHarness(curly))).toEqual(["warning:pillar-context"]);
     const empty = await fixture((d) => replaceIn(d, "HARNESS.md", "Each closed task saves a note with the core `save_note` fields: a title, up to five summary points, the decisions taken, the files that back them and the questions left open.", "<!-- later -->"));
     const r = await checkHarness(empty);
     expect(r.findings).toMatchObject([{ rule: "pillar-context", severity: "warning", file: "HARNESS.md" }]);

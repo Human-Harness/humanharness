@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { loadHarness } from "@humanharness/harness-sdk";
+import { CliError } from "../src/cli";
 import { guideSection, skillFile } from "../src/guide";
 import { idFromFolder, initHarness } from "../src/init";
 import { main } from "../src/main";
@@ -65,6 +66,50 @@ describe("initHarness", () => {
     await expect(initHarness({ dir: path.join(root, "x"), core: root, install: false })).rejects.toThrow(/not a Human Harness checkout/);
   });
 
+  it("a failing install keeps the files and says which commands to run by hand", async () => {
+    const dir = path.join(root, "offline");
+    const ran: string[] = [];
+    const run = async (_cwd: string, command: string, args: string[]) => {
+      ran.push(`${command} ${args.join(" ")}`);
+      throw new Error("spawn corepack ENOENT");
+    };
+    const err = await initHarness({ dir, core: CORE, run }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(CliError);
+    expect((err as Error).message).toContain(`The files were created at ${dir}`);
+    expect((err as Error).message).toContain("spawn corepack ENOENT");
+    expect((err as Error).message).toContain("corepack pnpm install");
+    expect((err as Error).message).toContain("git init");
+    expect(ran).toEqual(["corepack pnpm install"]);
+    expect(fs.existsSync(path.join(dir, "harness.config.ts"))).toBe(true);
+
+    const gitFails = async (_cwd: string, command: string) => {
+      if (command === "git") throw new Error("git init exited with 128");
+    };
+    const failing = await initHarness({ dir: path.join(root, "offline-git"), core: CORE, run: gitFails }).catch((e: unknown) => e);
+    expect(failing).toBeInstanceOf(CliError);
+    expect((failing as Error).message).not.toContain("pnpm install");
+    expect((failing as Error).message).toMatch(/\n\s+git init/);
+  });
+
+  it("copies binary files byte for byte and keeps symlinks", async () => {
+    // A minimal core: what init reads from a checkout.
+    const core = path.join(root, "core-copy");
+    const cli = path.join(core, "packages", "cli");
+    fs.mkdirSync(cli, { recursive: true });
+    fs.copyFileSync(path.join(CORE, "package.json"), path.join(core, "package.json"));
+    fs.copyFileSync(path.join(CORE, "packages", "cli", "package.json"), path.join(cli, "package.json"));
+    fs.cpSync(path.join(CORE, "packages", "cli", "guide"), path.join(cli, "guide"), { recursive: true });
+    fs.cpSync(path.join(CORE, "packages", "cli", "template"), path.join(cli, "template"), { recursive: true });
+    const template = path.join(cli, "template");
+    const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0xff, 0xfe, 0x00, 0x80]);
+    fs.writeFileSync(path.join(template, "logo.png"), bytes);
+    fs.symlinkSync("README.md", path.join(template, "LINK.md"));
+    const dir = path.join(root, "bytes");
+    await initHarness({ dir, core, install: false });
+    expect(fs.readFileSync(path.join(dir, "logo.png")).equals(bytes)).toBe(true);
+    expect(fs.readlinkSync(path.join(dir, "LINK.md"))).toBe("README.md");
+  });
+
   it("derives the id from the folder name", () => {
     expect(idFromFolder("/a/My Meal  Planner!")).toBe("my-meal-planner");
   });
@@ -81,6 +126,6 @@ describe("humanharness init", () => {
   it("needs a folder", async () => {
     const m = memoryIo(root);
     expect(await main(["init"], m.io)).toBe(2);
-    expect(m.err()).toContain("Usage: humanharness init <dir>");
+    expect(m.err()).toContain("Usage: humanharness init <dir> [--core <path>] [--id <id>] [--skip-install]");
   });
 });

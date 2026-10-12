@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { HARNESS_ID } from "@humanharness/harness-sdk";
-import { type Io, UsageError, parseCommand } from "./cli";
+import { CliError, type Io, UsageError, parseCommand } from "./cli";
 import { agentsFile, readGuide, skillFile } from "./guide";
 import { CORE_DIR, cliDirOf, guideFileOf, templateDirOf } from "./paths";
 import { TEMPLATE_ID } from "./template";
@@ -16,7 +16,11 @@ export interface InitOptions {
   install?: boolean;
   today?: Date;
   log?: (line: string) => void;
+  /** Runs a setup command (`pnpm install`, `git init`) in the new repo. Default: spawns it. */
+  run?: Runner;
 }
+
+export type Runner = (cwd: string, command: string, args: string[]) => Promise<void>;
 
 const exists = (p: string) => fs.access(p).then(() => true, () => false);
 
@@ -44,8 +48,9 @@ export async function initHarness(o: InitOptions): Promise<{ dir: string; id: st
   });
   if (entries.length > 0) throw new UsageError(`${dir} is not empty.`);
 
+  const log = o.log ?? (() => {});
   await fs.mkdir(dir, { recursive: true });
-  await copyTemplate(templateDirOf(core), dir, id);
+  await copyTemplate(templateDirOf(core), dir, id, log);
   const date = (o.today ?? new Date()).toISOString().slice(0, 10);
   await fs.appendFile(
     path.join(dir, "HARNESS.md"),
@@ -59,28 +64,63 @@ export async function initHarness(o: InitOptions): Promise<{ dir: string; id: st
   await fs.writeFile(path.join(dir, "AGENTS.md"), agentsFile(id, guide));
 
   if (o.install === false) await linkCli(dir, cliDir);
-  else {
-    await runIn(dir, "corepack", ["pnpm", "install"]);
-    await runIn(dir, "git", ["init"]);
-  }
-  const log = o.log ?? (() => {});
+  else await setUp(dir, o.run ?? runIn);
   log(`Created ${id} in ${dir}.`);
   log("Next: open Claude Code or Codex in that folder and run /new-harness.");
   log("Check it at any time with: corepack pnpm check");
   return { dir, id, core };
 }
 
-/** Copies the template, replacing the template's id with `id` in every file (all of them are text). */
-async function copyTemplate(from: string, to: string, id: string): Promise<void> {
+const SETUP: [command: string, args: string[]][] = [
+  ["corepack", ["pnpm", "install"]],
+  ["git", ["init"]],
+];
+
+/** Installs and starts git; on a failure, says the files are there and what is left to run by hand. */
+async function setUp(dir: string, run: Runner): Promise<void> {
+  for (const [i, [command, args]] of SETUP.entries()) {
+    try {
+      await run(dir, command, args);
+    } catch (err) {
+      const left = SETUP.slice(i).map(([c, a]) => `  ${c} ${a.join(" ")}`);
+      throw new CliError(
+        [
+          `The files were created at ${dir}, but \`${command} ${args.join(" ")}\` failed: ${err instanceof Error ? err.message : String(err)}`,
+          "Finish by hand in that folder:",
+          `  cd ${JSON.stringify(dir)}`,
+          ...left,
+        ].join("\n"),
+      );
+    }
+  }
+}
+
+const utf8 = new TextDecoder("utf-8", { fatal: true });
+
+/** Copies the template byte for byte, replacing the template's id with `id` in the text files that contain it. Symlinks are copied as symlinks. */
+async function copyTemplate(from: string, to: string, id: string, log: (line: string) => void): Promise<void> {
+  const placeholder = Buffer.from(TEMPLATE_ID);
   for (const entry of await fs.readdir(from, { withFileTypes: true })) {
     const source = path.join(from, entry.name);
     const target = path.join(to, entry.name);
     if (entry.isDirectory()) {
       await fs.mkdir(target, { recursive: true });
-      await copyTemplate(source, target, id);
+      await copyTemplate(source, target, id, log);
+    } else if (entry.isSymbolicLink()) {
+      await fs.symlink(await fs.readlink(source), target);
     } else if (entry.isFile()) {
-      await fs.writeFile(target, (await fs.readFile(source, "utf8")).replaceAll(TEMPLATE_ID, id));
-    }
+      const bytes = await fs.readFile(source);
+      await fs.writeFile(target, bytes.includes(placeholder) ? replaceInText(bytes, id) : bytes);
+    } else log(`Skipped ${path.relative(to, target) || entry.name}: not a file, folder or symlink.`);
+  }
+}
+
+/** The file with the template's id replaced; unchanged when it isn't UTF-8 text. */
+function replaceInText(bytes: Buffer, id: string): Buffer | string {
+  try {
+    return utf8.decode(bytes).replaceAll(TEMPLATE_ID, id);
+  } catch {
+    return bytes;
   }
 }
 
@@ -106,17 +146,17 @@ async function linkCli(dir: string, cliDir: string): Promise<void> {
   await fs.symlink(cliDir, path.join(scope, "cli"), "dir");
 }
 
-function runIn(cwd: string, command: string, args: string[]): Promise<void> {
+const runIn: Runner = (cwd, command, args) => {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { cwd, stdio: "inherit" });
     child.on("error", reject);
     child.on("exit", (code) => (code === 0 ? resolve() : reject(new Error(`${command} ${args.join(" ")} exited with ${code}`))));
   });
-}
+};
 
 export async function initCommand(args: string[], io: Io): Promise<number> {
   const { values, positionals } = parseCommand(args, { core: { type: "string" }, id: { type: "string" }, "skip-install": { type: "boolean" } });
-  if (positionals.length !== 1) throw new UsageError("Usage: humanharness init <dir> [--core <path>] [--id <id>]");
+  if (positionals.length !== 1) throw new UsageError("Usage: humanharness init <dir> [--core <path>] [--id <id>] [--skip-install]");
   await initHarness({
     dir: path.resolve(io.cwd, positionals[0]),
     ...(values.core ? { core: path.resolve(io.cwd, values.core) } : {}),

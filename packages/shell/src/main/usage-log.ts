@@ -3,11 +3,21 @@ import path from "node:path";
 import type { LimitWindow } from "@humanharness/runtime";
 import type { ChatEntry, TurnUsage, UsageSummary } from "@humanharness/ui/client";
 
+/** Which task (and which of its phases) a turn belongs to. */
+export interface UsageMeta {
+  action?: string;
+  task?: string;
+  /** `run`: the task's own turns; `close`: the turn that asks for its note. */
+  phase?: "run" | "close";
+}
+
 /** One turn in `<folder>/.harness/usage.jsonl`. Only what the engine reported; never leaves the machine. */
 export interface UsageRecord {
   at: string;
   engine: string;
   action?: string;
+  task?: string;
+  phase?: "run" | "close";
   ok: boolean;
   usage?: TurnUsage;
   /** Latest windows the turn reported. */
@@ -49,12 +59,14 @@ export class UsageLog {
 }
 
 /** The usage record for a finished turn, or null when the engine reported nothing. */
-export function usageRecord(entry: ChatEntry, engine: string, action?: string, firstLimits?: LimitWindow[]): UsageRecord | null {
+export function usageRecord(entry: ChatEntry, engine: string, meta: UsageMeta = {}, firstLimits?: LimitWindow[]): UsageRecord | null {
   if (!entry.usage && !entry.limits) return null;
   return {
     at: entry.at,
     engine,
-    ...(action ? { action } : {}),
+    ...(meta.action ? { action: meta.action } : {}),
+    ...(meta.task ? { task: meta.task } : {}),
+    ...(meta.phase ? { phase: meta.phase } : {}),
     ok: !entry.error,
     ...(entry.usage ? { usage: entry.usage } : {}),
     ...(entry.limits ? { limits: entry.limits } : {}),

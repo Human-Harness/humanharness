@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { type Event, type HarnessRuntime, type LimitWindow, type RunningTurn, fail } from "@humanharness/runtime";
 import type { ChatEntry, SendOptions } from "@humanharness/ui/client";
 import { TurnRecorder } from "./chat-log";
+import type { UsageMeta } from "./usage-log";
 
 type Done = Extract<Event, { type: "done" }>;
 
@@ -16,6 +17,22 @@ export class EngineUnavailable extends Error {
   }
 }
 
+/** How the task manager runs a turn (the window's own sends only use `action`). */
+export interface TurnOptions extends SendOptions {
+  /** The task this turn belongs to: saved on its chat entries and in usage.jsonl. */
+  task?: string;
+  /** `close` for the turn that asks for the task's note. */
+  phase?: "run" | "close";
+  /** What the chat shows as the person's message when the engine gets something else (a task brief). */
+  display?: string;
+  /** A later turn of the same task: its chat entry isn't tagged with the action. */
+  followUp?: boolean;
+  /** Nothing goes to the chat or the window (the closing turn); usage is still recorded. */
+  quiet?: boolean;
+  /** Sees every event of the turn, its `done` included. */
+  onEvent?: (e: Event) => void;
+}
+
 export interface TurnDeps {
   /** Starts (or returns) the runtime. Null when the engine CLI isn't installed. May throw EngineUnavailable. */
   ensureRuntime: () => Promise<HarnessRuntime | null>;
@@ -25,7 +42,7 @@ export interface TurnDeps {
   /** Sends an event to the window. May throw (window gone): that never loses the log entry. */
   emit: (e: Event) => void;
   /** Saves the finished turn's usage (usage.jsonl), with the turn's first limits snapshot. Failures are logged, never thrown. */
-  recordUsage?: (entry: ChatEntry, action: string | undefined, firstLimits: LimitWindow[] | undefined) => Promise<void>;
+  recordUsage?: (entry: ChatEntry, meta: UsageMeta, firstLimits: LimitWindow[] | undefined) => Promise<void>;
   /**
    * A turn ended with `session-expired`: forget the engine's passed test prompt, so Settings → Engine
    * asks to sign in (or test) again instead of saying it is ready. Failures are logged, never thrown.
@@ -72,36 +89,42 @@ export class TurnController {
   }
 
   /** Rejects when the app is closing, a turn is already running, or the app isn't set up. */
-  send(message: string, options: SendOptions = {}): Promise<void> {
+  send(message: string, options: TurnOptions = {}): Promise<void> {
     if (this.closed) return Promise.reject(new Error("The app is closing"));
     if (this.turn) return Promise.reject(new Error("A turn is already running"));
-    this.active = this.run(message, options.action);
+    this.active = this.run(message, options);
     return this.active;
   }
 
-  private async run(message: string, action: string | undefined): Promise<void> {
+  private async run(message: string, options: TurnOptions): Promise<void> {
+    const { action, task, phase, display, followUp, quiet, onEvent } = options;
     const turn: { cancelled: boolean; running: RunningTurn | null } = { cancelled: false, running: null };
     this.turn = turn;
     try {
       const log = await this.deps.chatLog();
       const engineId = await this.deps.engineId?.().catch(() => undefined);
       if (!log) throw new Error("The app is not set up yet");
-      void this.write(log, {
-        id: randomUUID(),
-        role: "user",
-        text: message,
-        blocks: [],
-        activities: [],
-        at: new Date().toISOString(),
-        ...(action ? { action } : {}),
-      });
+      if (!quiet) {
+        void this.write(log, {
+          id: randomUUID(),
+          role: "user",
+          text: display ?? message,
+          blocks: [],
+          activities: [],
+          at: new Date().toISOString(),
+          ...(action && !followUp ? { action } : {}),
+          ...(task ? { task } : {}),
+        });
+      }
       const recorder = new TurnRecorder(this.deps.stateBlocks());
+      const meta: UsageMeta = { ...(action ? { action } : {}), ...(task ? { task } : {}), ...(phase ? { phase } : {}) };
       const finish = async (done: Done) => {
-        const entry = recorder.finish(done);
-        await this.write(log, entry);
-        await this.recordUsage(entry, action, recorder.firstLimits);
+        const entry: ChatEntry = { ...recorder.finish(done), ...(task ? { task } : {}) };
+        if (!quiet) await this.write(log, entry);
+        await this.recordUsage(entry, meta, recorder.firstLimits);
         if (!done.ok && done.error?.code === "session-expired" && engineId) await this.forgetSession(engineId);
-        this.emit(done);
+        this.tell(onEvent, done);
+        if (!quiet) this.emit(done);
       };
 
       if (turn.cancelled) return await finish(fail("cancelled") as Done);
@@ -120,13 +143,23 @@ export class TurnController {
         if (e.type === "done") finished = finish(e);
         else {
           recorder.add(e);
-          this.emit(e);
+          this.tell(onEvent, e);
+          if (!quiet) this.emit(e);
         }
       });
       await turn.running.done;
       await finished;
     } finally {
       this.turn = null;
+    }
+  }
+
+  /** Hands an event to the caller's listener; a throwing listener never breaks the turn. */
+  private tell(onEvent: ((e: Event) => void) | undefined, e: Event): void {
+    try {
+      onEvent?.(e);
+    } catch (err) {
+      console.error("A turn listener failed", err);
     }
   }
 
@@ -138,9 +171,9 @@ export class TurnController {
     }
   }
 
-  private async recordUsage(entry: ChatEntry, action: string | undefined, firstLimits: LimitWindow[] | undefined): Promise<void> {
+  private async recordUsage(entry: ChatEntry, meta: UsageMeta, firstLimits: LimitWindow[] | undefined): Promise<void> {
     try {
-      await this.deps.recordUsage?.(entry, action, firstLimits);
+      await this.deps.recordUsage?.(entry, meta, firstLimits);
     } catch (err) {
       console.error("Could not save usage", err);
     }

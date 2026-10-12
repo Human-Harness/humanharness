@@ -254,9 +254,9 @@ const turns = new TurnController({
   },
   stateBlocks,
   emit,
-  recordUsage: async (entry, action, firstLimits) => {
+  recordUsage: async (entry, meta, firstLimits) => {
     const c = await validConfig();
-    const record = c ? usageRecord(entry, c.engineId, action, firstLimits) : null;
+    const record = c ? usageRecord(entry, c.engineId, meta, firstLimits) : null;
     if (c && record) await new UsageLog(c.folder).append(record);
   },
   engineId: async () => (await config.load()).engineId,

@@ -42,11 +42,24 @@ describe("usageRecord", () => {
 
   it("keeps the engine, action, outcome, tokens and limits", () => {
     const usage = { inputTokens: 1, outputTokens: 2, cacheReadTokens: 3, cacheWriteTokens: 4 };
-    expect(usageRecord({ ...entry, usage, error: { code: "cancelled" } }, "codex", "tidy")).toEqual({
+    expect(usageRecord({ ...entry, usage, error: { code: "cancelled" } }, "codex", { action: "tidy" })).toEqual({
       at: "2026-10-11T14:00:00.000Z",
       engine: "codex",
       action: "tidy",
       ok: false,
+      usage,
+    });
+  });
+
+  it("tags the record with its task and phase", () => {
+    const usage = { inputTokens: 1, outputTokens: 2, cacheReadTokens: 3, cacheWriteTokens: 4 };
+    expect(usageRecord({ ...entry, usage }, "claude", { action: "turn", task: "t1", phase: "close" })).toEqual({
+      at: "2026-10-11T14:00:00.000Z",
+      engine: "claude",
+      action: "turn",
+      task: "t1",
+      phase: "close",
+      ok: true,
       usage,
     });
   });
@@ -57,7 +70,7 @@ describe("usageRecord first snapshot", () => {
     const entry: ChatEntry = { id: "a", role: "assistant", text: "", blocks: [], activities: [], at: "t" };
     const first = [{ kind: "five_hour", utilization: 0.1, resetsAt: R1 }];
     const last = [{ kind: "five_hour", utilization: 0.2, resetsAt: R1 }];
-    expect(usageRecord({ ...entry, limits: last }, "claude", "tidy", first)).toMatchObject({ limits: last, firstLimits: first });
+    expect(usageRecord({ ...entry, limits: last }, "claude", { action: "tidy" }, first)).toMatchObject({ limits: last, firstLimits: first });
     expect("firstLimits" in usageRecord({ ...entry, limits: last }, "claude")!).toBe(false);
   });
 });

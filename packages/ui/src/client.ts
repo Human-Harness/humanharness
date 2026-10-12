@@ -83,6 +83,8 @@ export interface ChatEntry {
   state?: Record<string, unknown>;
   /** The engine the app was set to when the entry was saved. */
   engine?: string;
+  /** The task the entry belongs to (flow mode shows one task at a time). */
+  task?: string;
 }
 
 export interface ChatLoad {

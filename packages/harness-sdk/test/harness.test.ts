@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
 import { z } from "zod";
-import { CORE_BLOCKS, TIERS, allBlocks, blockToolName, choicesSchema, defineBlock, defineHarness, loadHarness, resolveInHarness, saveNoteSchema } from "../src";
+import { CORE_BLOCKS, HARNESS_ID, TIERS, allBlocks, blockToolName, choicesSchema, defineBlock, defineHarness, loadHarness, resolveInHarness, saveNoteSchema, z as sdkZ } from "../src";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -241,5 +241,17 @@ describe("tiers", () => {
     const id64 = `a${"b".repeat(63)}`;
     expect(Object.keys(defineHarness({ ...base, languages: [...base.languages], actions: { [id64]: research } }).actions)).toEqual([id64]);
     expect(() => defineHarness({ ...base, languages: [...base.languages], actions: { [`${id64}c`]: research } })).toThrow();
+  });
+});
+
+describe("what a harness repo imports", () => {
+  it("re-exports the same zod the SDK checks blocks with", () => {
+    expect(sdkZ).toBe(z);
+    expect(() => defineHarness({ ...base, languages: [...base.languages], blocks: { card: defineBlock({ description: "A card.", visible: true, schema: sdkZ.object({ title: sdkZ.string() }), example: { title: "x" } }) } })).not.toThrow();
+  });
+
+  it("names the harness id rule", () => {
+    for (const ok of ["demo", "my-harness", "a1"]) expect(HARNESS_ID.test(ok)).toBe(true);
+    for (const bad of ["My", "9lives", "-x", "a_b", ""]) expect(HARNESS_ID.test(bad)).toBe(false);
   });
 });

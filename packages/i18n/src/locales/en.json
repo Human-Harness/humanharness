@@ -188,13 +188,14 @@
     "restore": "Restore",
     "customSummary": "{{model}} · {{effort}} effort · {{cap}} cap",
     "customHint": "Only for this task. When it reaches the cap, the conversation is summarized and the task goes on.",
-    "edit": "Adjust",
-    "backToRecommended": "Back to recommended",
+    "edit": "Edit",
+    "backToRecommended": "Back to recommended ({{tier}})",
     "model": "Model",
     "effort": "Effort",
     "cap": "Context cap",
     "engineDefault": "Engine default",
     "effortLevel": { "low": "low", "medium": "medium", "high": "high", "xhigh": "very high", "max": "max" },
+    "effortName": { "low": "Low", "medium": "Medium", "high": "High", "xhigh": "Very high", "max": "Max" },
     "levels": "Levels",
     "levelsIntro": "What each level means with {{engine}}. Each engine has its own models, so each one is set up separately.",
     "engine": "Engine",
@@ -205,7 +206,8 @@
     "fallbackNotice": "Your plan doesn't include {{model}}; we used the {{tier}} level.",
     "fallbackDefault": "Your plan doesn't include {{model}}; we used the engine's default model.",
     "context": "Context in use",
-    "contextTitle": "{{used}} of {{cap}} tokens"
+    "contextTitle": "{{used}} of {{cap}} tokens",
+    "saveFailed": "Couldn't save. Try again."
   },
   "choices": {
     "title": "How do we continue?",

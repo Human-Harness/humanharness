@@ -7,7 +7,8 @@ import { type AppState, type TaskView, nextInPath } from "./client";
 /** A thin bar: the context the task's session uses against its cap, the exact tokens on hover (spec §6). */
 export function ContextMeter({ used, cap }: { used: number; cap: number }) {
   const { t, i18n } = useTranslation();
-  const pct = Math.min(100, Math.round((used / cap) * 100));
+  if (!(cap > 0)) return null;
+  const pct = Math.max(0, Math.min(100, Math.round((used / cap) * 100)));
   const fmt = (n: number) => n.toLocaleString(i18n.language);
   return (
     <span

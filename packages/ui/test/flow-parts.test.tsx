@@ -4,7 +4,7 @@ import { I18nextProvider } from "react-i18next";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createI18n } from "@humanharness/i18n";
 import type { AppState, TaskView } from "../src/client";
-import { FlowSide } from "../src/FlowSide";
+import { ContextMeter, FlowSide } from "../src/FlowSide";
 import { StartView } from "../src/StartView";
 import { FakeClient } from "./fake-client";
 import { renderIn } from "./render";
@@ -73,6 +73,19 @@ describe("FlowSide", () => {
     unmount();
     await renderIn("en", <FlowSide state={state()} lang="en" tasks={{ ...question, current: { id: "t2", status: "waiting" } }} disabled={false} onStart={() => {}} onOpenNote={() => {}} />);
     expect(screen.queryByRole("meter")).toBeNull();
+  });
+});
+
+describe("ContextMeter", () => {
+  it("renders nothing without a cap and keeps its percent within 0..100", async () => {
+    const { unmount } = await renderIn("en", <ContextMeter used={10} cap={0} />);
+    expect(screen.queryByRole("meter")).toBeNull();
+    unmount();
+    const { unmount: again } = await renderIn("en", <ContextMeter used={500_000} cap={200_000} />);
+    expect(screen.getByRole("meter").getAttribute("aria-valuenow")).toBe("100");
+    again();
+    await renderIn("en", <ContextMeter used={-5} cap={200_000} />);
+    expect(screen.getByRole("meter").getAttribute("aria-valuenow")).toBe("0");
   });
 });
 

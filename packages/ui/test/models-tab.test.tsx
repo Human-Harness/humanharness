@@ -79,7 +79,7 @@ describe("ModelsTab › Tasks", () => {
     await renderIn("en", <Tab client={c} />);
     fireEvent.click(within(row("A turn")).getByRole("button", { name: "Custom" }));
     await waitFor(() => expect(saved(c)).toEqual({ tasks: { turn: { custom: { engine: "claude", model: "opus", effort: "high", cap: 400_000 } } } }));
-    expect(await screen.findByText(/opus · high effort · 400 k cap/)).toBeTruthy();
+    expect(await screen.findByText(/opus · high effort · 400k cap/)).toBeTruthy();
     const tasks = within(tasksRegion());
     fireEvent.change(tasks.getByRole("combobox", { name: "Effort" }), { target: { value: "max" } });
     await waitFor(() => expect(saved(c)).toMatchObject({ tasks: { turn: { custom: { effort: "max" } } } }));
@@ -87,19 +87,44 @@ describe("ModelsTab › Tasks", () => {
     await waitFor(() => expect(saved(c)).toEqual({ tasks: { turn: { custom: { engine: "claude", model: "opus", effort: "max", cap: 1_000_000 } } } }));
     fireEvent.change(tasks.getByRole("combobox", { name: "Model" }), { target: { value: "" } });
     await waitFor(() => expect(saved(c)).toEqual({ tasks: { turn: { custom: { engine: "claude", effort: "max", cap: 1_000_000 } } } }));
-    fireEvent.click(tasks.getByRole("button", { name: "Back to recommended" }));
+    fireEvent.click(tasks.getByRole("button", { name: "Back to recommended (Deep)" }));
     await waitFor(() => expect(saved(c)).toEqual({}));
     expect(within(row("A turn")).getByRole("button", { name: "Deep" }).getAttribute("aria-pressed")).toBe("true");
   });
 
   it("shows a saved custom task folded, with a toggle for its fields", async () => {
     await renderIn("en", <Tab client={modelsClient({ tasks: { manifest: { custom: { engine: "claude", model: "haiku", effort: "low", cap: 100_000 } } } })} />);
-    expect(screen.getByText(/haiku · low effort · 100 k cap/)).toBeTruthy();
+    expect(screen.getByText(/haiku · low effort · 100k cap/)).toBeTruthy();
     expect(within(tasksRegion()).queryByRole("combobox", { name: "Model" })).toBeNull();
-    const adjust = screen.getByRole("button", { name: "Adjust" });
+    const adjust = screen.getByRole("button", { name: "Edit" });
     expect(adjust.getAttribute("aria-expanded")).toBe("false");
     fireEvent.click(adjust);
     expect((within(tasksRegion()).getByRole("combobox", { name: "Model" }) as HTMLSelectElement).value).toBe("haiku");
+  });
+
+  it("names the efforts and caps in its selects as the mockups do", async () => {
+    await renderIn("en", <Tab client={modelsClient({ tasks: { turn: { custom: { engine: "claude", model: "opus", effort: "high", cap: 400_000 } } } })} />);
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    const tasks = within(tasksRegion());
+    expect(within(tasks.getByRole("combobox", { name: "Effort" })).getAllByRole("option").map((o) => o.textContent)).toEqual(["Low", "Medium", "High", "Very high", "Max"]);
+    expect(within(tasks.getByRole("combobox", { name: "Context cap" })).getAllByRole("option").map((o) => o.textContent)).toEqual(["100k", "200k", "400k", "1M"]);
+  });
+
+  it("says so when a change couldn't be saved, and shows what config.json holds", async () => {
+    const c = modelsClient();
+    c.saveConfig = () => Promise.reject(new Error("disk full"));
+    await renderIn("en", <Tab client={c} />);
+    fireEvent.click(within(row("The manifest")).getByRole("button", { name: "Deep" }));
+    expect((await screen.findByRole("alert")).textContent).toBe("Couldn't save. Try again.");
+    expect(within(row("The manifest")).getByRole("button", { name: "Standard" }).getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("an edited custom task runs on the current engine, even when it was saved for another", async () => {
+    const c = modelsClient({ tasks: { turn: { custom: { engine: "codex", effort: "high", cap: 400_000 } } } });
+    await renderIn("en", <Tab client={c} />);
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(within(tasksRegion()).getByRole("combobox", { name: "Model" }), { target: { value: "sonnet" } });
+    await waitFor(() => expect(saved(c)).toEqual({ tasks: { turn: { custom: { engine: "claude", model: "sonnet", effort: "high", cap: 400_000 } } } }));
   });
 
   it("always sends the whole models object, even for changes made before the last save came back", async () => {

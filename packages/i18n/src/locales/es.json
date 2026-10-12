@@ -188,13 +188,14 @@
     "restore": "Restaurar",
     "customSummary": "{{model}} · esfuerzo {{effort}} · tope {{cap}}",
     "customHint": "Solo para esta tarea. Al llegar al tope, la conversación se resume y la tarea sigue.",
-    "edit": "Ajustar",
-    "backToRecommended": "Volver a lo recomendado",
+    "edit": "Editar",
+    "backToRecommended": "Volver a lo recomendado ({{tier}})",
     "model": "Modelo",
     "effort": "Esfuerzo",
     "cap": "Tope de contexto",
     "engineDefault": "Predeterminado del motor",
     "effortLevel": { "low": "bajo", "medium": "medio", "high": "alto", "xhigh": "muy alto", "max": "máximo" },
+    "effortName": { "low": "Bajo", "medium": "Medio", "high": "Alto", "xhigh": "Muy alto", "max": "Máximo" },
     "levels": "Niveles",
     "levelsIntro": "Qué significa cada nivel con {{engine}}. Cada motor tiene sus propios modelos, así que se configura por separado.",
     "engine": "Motor",
@@ -205,7 +206,8 @@
     "fallbackNotice": "Tu plan no incluye {{model}}; usamos el nivel {{tier}}.",
     "fallbackDefault": "Tu plan no incluye {{model}}; usamos el modelo predeterminado del motor.",
     "context": "Contexto en uso",
-    "contextTitle": "{{used}} de {{cap}} tokens"
+    "contextTitle": "{{used}} de {{cap}} tokens",
+    "saveFailed": "No se pudo guardar. Probá de nuevo."
   },
   "choices": {
     "title": "¿Cómo seguimos?",

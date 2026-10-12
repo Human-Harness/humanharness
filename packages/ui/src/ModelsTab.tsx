@@ -22,9 +22,9 @@ interface TaskRowInfo {
   description?: string;
 }
 
-/** 100000 → "100 k", 1000000 → "1 M". */
+/** 100000 → "100k", 1000000 → "1M". */
 export function formatCap(n: number): string {
-  return n >= 1_000_000 ? `${n / 1_000_000} M` : `${Math.round(n / 1000)} k`;
+  return n >= 1_000_000 ? `${n / 1_000_000}M` : `${Math.round(n / 1000)}k`;
 }
 
 /** `models` with one task's setting replaced (null: back to the recommendation); empty sections go away. */
@@ -64,26 +64,29 @@ function taskRows(state: AppState, lang: Language, questions: TaskRowInfo): Task
 function useModels(client: HarnessClient, state: AppState, onChange: (s: AppState) => void) {
   const [, rerender] = useReducer((n: number) => n + 1, 0);
   const pending = useRef(0);
+  const [failed, setFailed] = useState(false);
   const latest = useRef<{ from: ModelsConfig | undefined | null; models: ModelsConfig }>({ from: state.config.models, models: state.config.models ?? {} });
   if (pending.current === 0 && latest.current.from !== state.config.models) latest.current = { from: state.config.models, models: state.config.models ?? {} };
   const update = (change: (models: ModelsConfig) => ModelsConfig) => {
     const models = change(latest.current.models);
     latest.current = { ...latest.current, models };
     pending.current++;
+    setFailed(false);
     client.saveConfig({ models }).then(
       (s) => {
         pending.current--;
         onChange(s);
       },
       () => {
-        // Not saved: show what config.json holds again.
+        // Not saved: show what config.json holds again, and say so.
         pending.current--;
         latest.current = { ...latest.current, from: null };
+        setFailed(true);
         rerender();
       },
     );
   };
-  return [latest.current.models, update] as const;
+  return [latest.current.models, update, failed] as const;
 }
 
 /**
@@ -93,7 +96,7 @@ function useModels(client: HarnessClient, state: AppState, onChange: (s: AppStat
 export function ModelsTab({ client, state, onChange }: { client: HarnessClient; state: AppState; onChange: (s: AppState) => void }) {
   const { t, i18n } = useTranslation();
   const tasksId = useId();
-  const [models, update] = useModels(client, state, onChange);
+  const [models, update, saveFailed] = useModels(client, state, onChange);
   const [part, setPart] = useState<"tasks" | "levels">("tasks");
   const view = state.models;
   if (!view) return null;
@@ -118,10 +121,18 @@ export function ModelsTab({ client, state, onChange }: { client: HarnessClient; 
         />
         {part === "tasks" && engineName && <span className="hh-caption">{t("models.engineNow", { engine: engineName })}</span>}
       </div>
+      {saveFailed && (
+        <p className="hh-caption" role="alert">
+          {t("models.saveFailed")}
+        </p>
+      )}
       {part === "levels" && <LevelsSection state={state} view={view} models={models} rows={rows} update={update} />}
       {part === "tasks" && (
         <section aria-labelledby={tasksId}>
-          <h3 id={tasksId}>{t("models.tasks")}</h3>
+          {/* The switch above already says it: the heading only names the region. */}
+          <h3 id={tasksId} className="hh-sr-only">
+            {t("models.tasks")}
+          </h3>
           <p className="hh-caption">{t("models.tasksIntro")}</p>
           <TaskList rows={rows} view={view} models={models} engine={engine} tierSpec={tierSpec} offer={offer} update={update} />
         </section>
@@ -163,8 +174,9 @@ function TaskList({
             choice={choice}
             spec={spec}
             offer={offer}
-            onPick={(v) => update((m) => withTask(m, key, v === "custom" ? { custom: { engine, ...spec } } : v === recommended ? null : v))}
-            onCustom={(next) => update((m) => withTask(m, key, { custom: { engine, ...next } }))}
+            onPick={(v) => update((m) => withTask(m, key, v === "custom" ? { custom: { ...spec, engine } } : v === recommended ? null : v))}
+            // The editor offers the current engine's models: an edited custom task runs on that engine.
+            onCustom={(next) => update((m) => withTask(m, key, { custom: { ...next, engine } }))}
             onRestore={() => update((m) => withTask(m, key, null))}
           />
         );
@@ -197,7 +209,9 @@ function LevelsSection({
   const users = (tier: Tier) => rows.filter(({ key }) => (models.tasks?.[key] ?? view.recommended[key] ?? "standard") === tier).map((r) => r.label);
   return (
     <section aria-labelledby={headingId}>
-      <h3 id={headingId}>{t("models.levels")}</h3>
+      <h3 id={headingId} className="hh-sr-only">
+        {t("models.levels")}
+      </h3>
       {state.engines.length > 1 && (
         <div className="hh-model-engine">
           <span className="hh-row-label">{t("models.engine")}</span>
@@ -305,7 +319,7 @@ function TaskRow({
               onRestore();
             }}
           >
-            {t("models.backToRecommended")}
+            {t("models.backToRecommended", { tier: t(`models.tier.${recommended}`) })}
           </button>
         </div>
       )}
@@ -335,7 +349,7 @@ export function SpecFields({ spec, offer, onChange }: { spec: ModelSpec; offer: 
       <select id={`${id}-effort`} value={spec.effort} onChange={(e) => onChange({ ...spec, effort: e.target.value as Effort })}>
         {efforts.map((e) => (
           <option key={e} value={e}>
-            {t(`models.effortLevel.${e}`)}
+            {t(`models.effortName.${e}`)}
           </option>
         ))}
       </select>

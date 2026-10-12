@@ -33,6 +33,10 @@ function setup(
     closed?: () => boolean;
     /** Runs inside each turn (0-based index), before its events. */
     during?: (index: number) => void;
+    /** Runs inside each `endSession` call. */
+    onEndSession?: () => void;
+    /** Runs inside each `notes` call. */
+    onNotes?: () => void;
   } = {},
 ) {
   let state = opts.state ?? emptyTasks();
@@ -41,6 +45,7 @@ function setup(
   const turns: { message: string; options: TurnOptions }[] = [];
   const views: TaskView[] = [];
   const log: string[] = [];
+  const emitted: Event[] = [];
   let busy = false;
   let n = 0;
   const manager = new TaskManager({
@@ -69,18 +74,25 @@ function setup(
     readPrompt: async (action) => `# Topic: ${action}\nAnswer in {{language}}.\n\n{{notesIndex}}`,
     language: async () => "en",
     engine: async () => "claude",
-    notes: async () => [...notes],
+    notes: async () => {
+      opts.onNotes?.();
+      return [...notes];
+    },
     writeNote: async (slug: string, saved: SavedNote, meta: NoteMeta) => {
       log.push(`note:${slug}`);
       notes.unshift({ slug, path: `.harness/notes/${slug}.md`, ...saved, ...meta });
     },
-    endSession: async () => void log.push("endSession"),
+    endSession: async () => {
+      log.push("endSession");
+      opts.onEndSession?.();
+    },
     saveHistory: async (message) => void log.push(`history:${message}`),
     changed: (v) => views.push(v),
+    emit: (e) => void emitted.push(e),
     now: () => new Date("2026-10-12T11:20:00.000Z"),
     newId: () => `t${++n}`,
   });
-  return { manager, turns, views, log, state: () => state };
+  return { manager, turns, views, log, emitted, state: () => state };
 }
 
 describe("TaskManager", () => {
@@ -253,12 +265,67 @@ describe("TaskManager", () => {
     expect(t.manager.isBusy()).toBe(false);
   });
 
-  it("does not start the next task when the closing turn is cancelled", async () => {
+  it("does not start the next task when the closing turn is cancelled, and tells the window the turn stopped", async () => {
     const t = setup({ script: [[ok], [cancelled]] });
     await t.manager.start("manifest");
     await t.manager.choose({ label: "Next", next: true });
     expect(t.turns).toHaveLength(2);
     expect(t.state()).toMatchObject({ current: null, actions: { manifest: "unfinished" } });
+    // The window already shows the next topic as a running turn: this done clears it.
+    expect(t.emitted).toEqual([cancelled]);
+  });
+
+  it("starting a topic whose closing turn is cancelled tells the window the turn stopped", async () => {
+    const t = setup({ script: [[ok], [cancelled]] });
+    await t.manager.start("manifest");
+    await t.manager.start("engines");
+    expect(t.turns).toHaveLength(2);
+    expect(t.emitted).toEqual([cancelled]);
+  });
+
+  it("at the end of the path, a cancelled closing turn sends nothing (the window shows no running turn)", async () => {
+    const t = setup({ script: [[ok], [cancelled]], path: ["manifest"] });
+    await t.manager.start("manifest");
+    await t.manager.choose({ label: "Done", next: true });
+    expect(t.emitted).toEqual([]);
+  });
+
+  it("a closing turn whose failure the window already showed is not followed by another done", async () => {
+    let manager!: TaskManager;
+    const t = setup({ script: [[ok], [crashed]], during: (i) => void (i === 1 && manager.cancel()) });
+    manager = t.manager;
+    await t.manager.start("manifest");
+    // A quiet turn that fails (not cancelled) reaches the window by itself (TurnController).
+    await t.manager.choose({ label: "Next", next: true });
+    expect(t.turns).toHaveLength(2);
+    expect(t.emitted).toEqual([]);
+  });
+
+  it("cancel during endSession before the first turn: no turn, no task, no topic marked, the window told", async () => {
+    let manager!: TaskManager;
+    const t = setup({ onEndSession: () => manager.cancel() });
+    manager = t.manager;
+    await t.manager.start("manifest");
+    expect(t.turns).toHaveLength(0);
+    expect(t.state()).toMatchObject({ current: null, actions: {} });
+    expect(t.emitted).toEqual([cancelled]);
+  });
+
+  it("cancel while the notes are read before the first turn: no turn, no task, the window told", async () => {
+    let manager!: TaskManager;
+    const t = setup({ onNotes: () => manager.cancel() });
+    manager = t.manager;
+    await t.manager.ask("Where are chats saved?");
+    expect(t.turns).toHaveLength(0);
+    expect(t.state()).toMatchObject({ current: null, actions: {} });
+    expect(t.emitted).toEqual([cancelled]);
+  });
+
+  it("a normal turn sends no extra done", async () => {
+    const t = setup({ script: [[ok], [cancelled]] });
+    await t.manager.start("manifest");
+    await t.manager.ask("more?");
+    expect(t.emitted).toEqual([]);
   });
 
   it("does not start the next task when cancel comes after the closing turn has ended", async () => {
@@ -273,6 +340,7 @@ describe("TaskManager", () => {
     expect(u.turns).toHaveLength(2);
     expect(u.log).toContain("cancel");
     expect(u.state()).toMatchObject({ current: null, actions: { manifest: "done" } });
+    expect(u.emitted).toEqual([cancelled]);
   });
 
   it("when the app starts closing during the closing turn, the next task never starts and no topic is marked", async () => {
@@ -283,6 +351,16 @@ describe("TaskManager", () => {
     expect(t.turns).toHaveLength(2);
     expect(t.state()).toMatchObject({ current: null, actions: { manifest: "done" } });
     expect(t.state().actions).not.toHaveProperty("engines");
+  });
+
+  it("quitting during the closing turn: the next task never starts and the window is told the turn stopped", async () => {
+    let manager!: TaskManager;
+    const t = setup({ script: [[ok], [saveNote(), ok]], during: (i) => void (i === 1 && manager.close()) });
+    manager = t.manager;
+    await t.manager.start("manifest");
+    await t.manager.choose({ label: "Next", next: true });
+    expect(t.turns).toHaveLength(2);
+    expect(t.emitted).toEqual([cancelled]);
   });
 
   it("a first turn that never starts leaves no task and no topic status, and the call rejects", async () => {

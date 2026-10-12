@@ -19,6 +19,8 @@ export interface SwitchDeps {
  */
 export class EngineGuards {
   private switching = false;
+  /** The working folder is being changed (the old task ends, the config is saved, the runtime goes). */
+  private changingFolder = false;
   private switchedFrom: string | null = null;
   /** The install, update, login or logout running now, if any (one at a time), and for which engine. */
   setup: { engineId: string; step: SetupStep } | null = null;
@@ -33,8 +35,24 @@ export class EngineGuards {
   /** Why a turn can't start now, or null when it can. */
   turnBlocked(): string | null {
     if (this.switching) return "The engine is being changed";
+    if (this.changingFolder) return "The folder is being changed";
     if (this.setupBlocksTurns) return "The engine is being updated or signed out";
     return null;
+  }
+
+  /**
+   * Holds turns off while the folder changes (see saveWithFolderChange): checked and set synchronously,
+   * so no turn can start between the busy check and the end of the change. Release with endFolderChange.
+   */
+  beginFolderChange(isBusy: () => boolean): void {
+    if (this.changingFolder) throw new Error("The folder is already being changed");
+    if (this.switching) throw new Error("The engine is being changed");
+    if (isBusy()) throw new Error("A turn is running");
+    this.changingFolder = true;
+  }
+
+  endFolderChange(): void {
+    this.changingFolder = false;
   }
 
   /**

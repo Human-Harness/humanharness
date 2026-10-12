@@ -1,6 +1,8 @@
 export interface FolderChangeDeps {
   /** A task operation or a turn is under way. */
   isBusy(): boolean;
+  /** Refuses turns while the folder changes (EngineGuards). */
+  guards: { beginFolderChange(isBusy: () => boolean): void; endFolderChange(): void };
   /** Ends the open task of the configured (old) folder. */
   interrupt(): Promise<void>;
   /** Closes the runtime, which works on the old folder; the next turn starts one on the new folder. */
@@ -10,7 +12,8 @@ export interface FolderChangeDeps {
 /**
  * Saves a config patch that may change the working folder. Everything else reads the folder from the
  * saved config on each call, so a change while a turn runs would split one task across two folders:
- * it is refused. Otherwise the old folder's task ends first, then the save, then the runtime goes.
+ * it is refused, and turns are refused until the change is over. Otherwise the old folder's task ends
+ * first, then the save, then the runtime goes.
  */
 export async function saveWithFolderChange(
   next: string | undefined,
@@ -19,8 +22,12 @@ export async function saveWithFolderChange(
   save: () => Promise<void>,
 ): Promise<void> {
   if (next === undefined || next === before) return save();
-  if (d.isBusy()) throw new Error("A turn is running");
-  await d.interrupt();
-  await save();
-  await d.dropRuntime();
+  d.guards.beginFolderChange(() => d.isBusy());
+  try {
+    await d.interrupt();
+    await save();
+    await d.dropRuntime();
+  } finally {
+    d.guards.endFolderChange();
+  }
 }

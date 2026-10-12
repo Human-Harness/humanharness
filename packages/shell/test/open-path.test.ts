@@ -10,18 +10,20 @@ afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
 const ref = path.join(root, "ref");
 const folder = path.join(root, "work");
 const outside = path.join(root, "outside");
-for (const d of [path.join(ref, "packages"), path.join(folder, ".harness", "notes"), outside]) fs.mkdirSync(d, { recursive: true });
-fs.writeFileSync(path.join(ref, "packages", "a.ts"), "x");
+for (const d of [path.join(ref, "packages"), path.join(folder, ".harness", "notes"), path.join(outside, "docs"), outside]) fs.mkdirSync(d, { recursive: true });
+fs.writeFileSync(path.join(ref, "packages", "a.md"), "x");
 fs.writeFileSync(path.join(folder, ".harness", "notes", "turn.md"), "x");
 fs.writeFileSync(path.join(outside, "secret.md"), "x");
+fs.writeFileSync(path.join(outside, "docs", "a.md"), "x");
 fs.writeFileSync(path.join(ref, "run.command"), "x");
 fs.symlinkSync(path.join(outside, "secret.md"), path.join(ref, "link.md"));
-for (const f of ["page.html", "page.htm", "pic.svg", "a.js", "a.mjs", "a.cjs"]) fs.writeFileSync(path.join(ref, f), "x");
+const refused = ["page.html", "page.htm", "pic.svg", "a.js", "a.mjs", "a.cjs", "a.jsx", "a.ts", "a.tsx"];
+for (const f of refused) fs.writeFileSync(path.join(ref, f), "x");
 
 describe("openableFile", () => {
   const roots = [ref, folder];
   it("finds a file in the first root that has it", async () => {
-    expect(await openableFile("packages/a.ts", roots)).toBe(path.join(ref, "packages", "a.ts"));
+    expect(await openableFile("packages/a.md", roots)).toBe(path.join(ref, "packages", "a.md"));
     expect(await openableFile(".harness/notes/turn.md", roots)).toBe(path.join(folder, ".harness", "notes", "turn.md"));
   });
 
@@ -36,27 +38,53 @@ describe("openableFile", () => {
     expect(await openableFile("a\0b.md", roots)).toBeNull();
   });
 
-  it("refuses pages, images and scripts the system would run in a browser or an interpreter", async () => {
-    for (const f of ["page.html", "page.htm", "pic.svg", "a.js", "a.mjs", "a.cjs"]) expect(await openableFile(f, roots)).toBeNull();
+  it("refuses pages, images, scripts and source the system would run in a browser or an interpreter", async () => {
+    for (const f of refused) expect(await openableFile(f, roots)).toBeNull();
   });
 });
 
 describe("openIfStillSafe", () => {
-  it("opens a regular file, and refuses one replaced by a link or gone since it was checked", async () => {
+  const roots = [ref, folder];
+  const recorder = () => {
     const opened: string[] = [];
     const open = async (p: string) => {
       opened.push(p);
       return "";
     };
+    return { opened, open };
+  };
+
+  it("opens a regular file, and refuses one replaced by a link or gone since it was checked", async () => {
+    const { opened, open } = recorder();
     const file = path.join(folder, "late.md");
     fs.writeFileSync(file, "x");
-    expect(await openIfStillSafe(file, open)).toBe(true);
+    expect(await openIfStillSafe(file, roots, open)).toBe(true);
     fs.rmSync(file);
     fs.symlinkSync(path.join(outside, "secret.md"), file);
-    expect(await openIfStillSafe(file, open)).toBe(false);
-    expect(await openIfStillSafe(path.join(folder, "gone.md"), open)).toBe(false);
-    expect(await openIfStillSafe(path.join(folder, ".harness"), open)).toBe(false);
+    expect(await openIfStillSafe(file, roots, open)).toBe(false);
+    expect(await openIfStillSafe(path.join(folder, "gone.md"), roots, open)).toBe(false);
+    expect(await openIfStillSafe(path.join(folder, ".harness"), roots, open)).toBe(false);
     expect(opened).toEqual([file]);
-    expect(await openIfStillSafe(path.join(ref, "packages", "a.ts"), async () => "no app")).toBe(false);
+    expect(await openIfStillSafe(path.join(ref, "packages", "a.md"), roots, async () => "no app")).toBe(false);
+  });
+
+  it("refuses a file whose folder was swapped for a link since it was checked", async () => {
+    const { opened, open } = recorder();
+    const dir = path.join(folder, "docs");
+    fs.mkdirSync(dir);
+    fs.writeFileSync(path.join(dir, "a.md"), "x");
+    const target = await openableFile("docs/a.md", roots);
+    expect(target).toBe(path.join(dir, "a.md"));
+    fs.rmSync(dir, { recursive: true });
+    // The last component is still a regular file; a folder above it now leads outside.
+    fs.symlinkSync(path.join(outside, "docs"), dir);
+    expect(await openIfStillSafe(target!, roots, open)).toBe(false);
+    expect(opened).toEqual([]);
+  });
+
+  it("refuses a path outside every root", async () => {
+    const { opened, open } = recorder();
+    expect(await openIfStillSafe(path.join(outside, "secret.md"), roots, open)).toBe(false);
+    expect(opened).toEqual([]);
   });
 });

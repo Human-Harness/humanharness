@@ -341,6 +341,7 @@ const tasks = new TaskManager({
     await (await currentHistory())?.save(message);
   },
   changed: (view) => sendToWindow("hh:tasks", view),
+  emit,
 });
 
 /** Saves a config patch; an engine change ends the task, drops the runtime and archives the chat (see EngineGuards). */
@@ -391,8 +392,9 @@ function registerIpc() {
     const before = await config.load();
     // Spec §9: an engine is only used once its notice is accepted.
     await requireNoticeForChoice(patch.engineId, before.engineId, hasNotice);
-    // A new folder: refused while a turn runs; the old folder's task ends and its runtime goes.
-    await saveWithFolderChange(patch.folder, before.folder, { isBusy: () => tasks.isBusy(), interrupt: () => tasks.interrupt(), dropRuntime }, () =>
+    // A new folder: refused while a turn runs, and turns are refused until it is over; the old
+    // folder's task ends and its runtime goes.
+    await saveWithFolderChange(patch.folder, before.folder, { isBusy: () => tasks.isBusy(), guards, interrupt: () => tasks.interrupt(), dropRuntime }, () =>
       saveConfigPatch(patch, before),
     );
     if (patch.appearance) applyAppearance(patch.appearance);
@@ -427,10 +429,11 @@ function registerIpc() {
   handle("hh:openPath", async (file: unknown) => {
     const c = await validConfig();
     if (!c) return false;
-    const target = await openableFile(file, [...(await referencesFor(c.folder)).map((r) => r.path), c.folder]);
+    const roots = [...(await referencesFor(c.folder)).map((r) => r.path), c.folder];
+    const target = await openableFile(file, roots);
     if (!target) return false;
-    // Checked again right before opening: the file may have been swapped for a link meanwhile.
-    return openIfStillSafe(target, (p) => shell.openPath(p));
+    // Checked again right before opening: the file or a folder above it may have been swapped for a link meanwhile.
+    return openIfStillSafe(target, roots, (p) => shell.openPath(p));
   });
   // Cancels the turn and stops the task operation (a closing turn never goes on to the next task).
   handle("hh:cancel", () => tasks.cancel());

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { type ChoiceOption, type Language, type LocalizedText, type SavedNote, saveNoteSchema } from "@humanharness/harness-sdk";
-import type { Event, Session } from "@humanharness/runtime";
+import { type Event, type Session, fail } from "@humanharness/runtime";
 import { type ActionStatus, type NoteView, type TaskStatus, type TaskView, nextInPath } from "@humanharness/ui/client";
 import { type Note, type NoteMeta, buildNotesIndex, noteSlug } from "@humanharness/workspace";
 import { CLOSE_PROMPT, QUESTION_PROMPT, fillPrompt } from "./task-prompts";
@@ -39,6 +39,11 @@ export interface TaskDeps {
   saveHistory?(message: string): Promise<void>;
   /** The task view changed: tell the window. */
   changed(view: TaskView): void;
+  /**
+   * Sends an event to the window (the path turns use). The manager sends a cancelled `done` when an
+   * operation stops before its turn reached the window, so the window drops the turn it shows.
+   */
+  emit?(e: Event): void;
   now?: () => Date;
   newId?: () => string;
 }
@@ -73,6 +78,8 @@ export class TaskManager {
   private cancelRequested = false;
   /** The app is closing: no new operation, no further turn. */
   private closed = false;
+  /** A `done` of the running operation reached the window: the turn it showed has ended there. */
+  private windowDone = false;
   /** The task whose turn runs now: a session reported outside it is ignored. */
   private turnTask: string | null = null;
   /** The slug each free-question task wrote its note under, so a second save replaces its own note. */
@@ -152,6 +159,7 @@ export class TaskManager {
     if (this.isBusy()) return Promise.reject(new Error("A turn is already running"));
     this.running = true;
     this.cancelRequested = false;
+    this.windowDone = false;
     return this.queue(fn).finally(() => {
       this.running = false;
     });
@@ -169,7 +177,7 @@ export class TaskManager {
 
   private async startNow(action: string, display?: string): Promise<void> {
     if (!this.known(action)) throw new Error("Unknown action");
-    if (!(await this.closeCurrent())) return;
+    if (!(await this.closeCurrent())) return this.stopped();
     const template = await this.d.readPrompt(action);
     const language = await this.d.language();
     await this.begin({ action }, (notesIndex) => fillPrompt(template, { language, notesIndex }), display ?? this.d.actions[action].label[language]);
@@ -206,19 +214,25 @@ export class TaskManager {
     const action = this.known(option.action) ? option.action : undefined;
     if (!option.next && !action) return this.askNow(option.followUp ?? option.label, option.label);
     const target = action ?? nextInPath(this.d.path, state.current?.action, state.actions);
-    if (!(await this.closeCurrent())) return;
+    // Without a target the window shows no new turn (the end of the path just closes).
+    if (!(await this.closeCurrent())) return target ? this.stopped() : undefined;
     if (target) await this.startNow(target);
   }
 
   /** A new task in a fresh session; its first message is built from the notes index. */
   private async begin(task: { action?: string; question?: string }, message: (notesIndex: string) => string, display: string): Promise<void> {
     // Cancelled or quitting since the operation began (e.g. right after the closing turn): start nothing.
-    if (this.cancelRequested) return;
+    if (this.cancelRequested) return this.stopped();
     await this.endSession();
     const notes = await this.d.notes().catch(() => [] as Note[]);
     const engine = await this.d.engine();
     const current: CurrentTask = { id: this.newId(), ...task, status: "running", startedAt: this.now().toISOString(), turns: 0 };
     await this.update((s) => ({ ...s, engine, current }));
+    // Checked again with no await before the send: a Stop while the session ended or the notes were read.
+    if (this.cancelRequested) {
+      await this.update((s) => (s.current?.id === current.id ? { ...s, current: null } : s));
+      return this.stopped();
+    }
     let done: Done;
     try {
       done = await this.runTurn(current, message(buildNotesIndex(notes)), { display, ...(task.action ? { action: task.action } : {}) });
@@ -256,6 +270,9 @@ export class TaskManager {
     } finally {
       this.turnTask = null;
     }
+    // Mirrors TurnController: a quiet turn reaches the window only with a failure other than a cancel.
+    const d = seen.done;
+    if (d && (!options.quiet || (!d.ok && d.error.code !== "cancelled"))) this.windowDone = true;
     if (seen.note) await this.saveNote(task, seen.note);
     return seen.done ?? { type: "done", ok: false, error: { code: "agent-crashed" } };
   }
@@ -292,6 +309,20 @@ export class TaskManager {
     const saved = (await this.d.store.load()).current?.noteSaved === true;
     await this.endTask(c.id, saved ? "done" : cancelled ? "unfinished" : "unsaved");
     return !cancelled && !this.cancelRequested;
+  }
+
+  /**
+   * The operation stops (cancel or quit) before its turn reached the window, which already shows that
+   * turn running: a cancelled `done` ends it there, as a cancelled turn's own would.
+   */
+  private stopped(): void {
+    if (this.windowDone) return;
+    this.windowDone = true;
+    try {
+      this.d.emit?.(fail("cancelled"));
+    } catch (err) {
+      console.error("Could not send an event to the window", err);
+    }
   }
 
   private async endTask(id: string, outcome: ActionStatus): Promise<void> {

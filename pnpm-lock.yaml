@@ -358,6 +358,9 @@ importers:
 
   packages/ui:
     dependencies:
+      '@humanharness/engines':
+        specifier: workspace:*
+        version: link:../engines
       '@humanharness/harness-sdk':
         specifier: workspace:*
         version: link:../harness-sdk

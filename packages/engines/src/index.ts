@@ -1,4 +1,7 @@
 import type { LocalizedText } from "@humanharness/harness-sdk";
+import { CLAUDE_MODELS, EFFORTS, type EngineModels } from "./models";
+
+export * from "./models";
 
 export type LegalStatus = "allowed" | "pending" | "excluded";
 
@@ -54,6 +57,8 @@ export interface EngineDef {
   transport: TransportDef;
   /** Extra file some engines need to pick up AGENTS.md. */
   instructionsFile?: { path: string; content: string };
+  /** The models and efforts Settings › Modelos offers for this engine. */
+  models?: EngineModels;
 }
 
 export const ENGINES: readonly EngineDef[] = [
@@ -73,6 +78,7 @@ export const ENGINES: readonly EngineDef[] = [
     detect: { binary: "claude", versionArgs: ["--version"], minVersion: "2.1.296" },
     transport: { kind: "claude-cli", binary: "claude" },
     instructionsFile: { path: "CLAUDE.md", content: "@AGENTS.md\n" },
+    models: { list: CLAUDE_MODELS, efforts: EFFORTS },
     provider: "Anthropic",
     reportsLimits: true,
     setup: {
@@ -106,6 +112,8 @@ export const ENGINES: readonly EngineDef[] = [
       modes: { edit: "workspace-write", readOnly: "read-only" },
       minAdapterVersion: "2.2.2",
     },
+    // The model list comes from the adapter; these efforts are what Settings offers until it does.
+    models: { efforts: ["low", "medium", "high"] },
     provider: "OpenAI",
     reportsLimits: false,
     // The app runs the official Codex CLI bundled with the ACP adapter (status, login), so it never

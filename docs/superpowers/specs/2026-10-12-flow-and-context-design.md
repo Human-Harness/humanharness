@@ -181,6 +181,13 @@ The chat is still archived. The task state resets to idle, and the notes stay. T
 | S3 | Does `/compact` work under `claude -p --resume`? | Optional; only if a manual compaction step turns out to be needed |
 | S4 | Is the prompt-cache hit measurable? Does `cache_read_input_tokens` rise on the second session with the same `AGENTS.md`? | Proves the stable-prefix claim |
 
+Results (2026-10-12):
+
+- **S1: no.** `claude -p --setting-sources project --add-dir ../ref` read files in `../ref`, and the model did not see the `CLAUDE.md` in that folder.
+- **S2: yes.** Codex `exec --sandbox read-only` read `../ref/facts.txt`, outside its working folder. The ACP read-only mode uses the same sandbox, so no extra directories need to be passed. On Codex, a reference folder therefore does not confine reading; the read-only sandbox only blocks writes.
+- **S3:** skipped (not needed for this plan).
+- **S4: yes.** The first `claude -p` run already reported `cache_read_input_tokens` of about 31 k next to 11.5 k of cache creation, so the stable prefix is cached.
+
 ## 8. Testing
 
 - **Unit:**

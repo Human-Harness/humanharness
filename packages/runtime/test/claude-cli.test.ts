@@ -78,6 +78,11 @@ describe("claudeArgs", () => {
     expect(claudeArgs({ session: { id: "abc", started: false }, mcp: [], permissions })).not.toContain("--no-session-persistence");
     expect(claudeArgs({ session: { id: "abc", started: false }, mcp: [], permissions, persistSession: false })).toContain("--no-session-persistence");
   });
+
+  it("refuses a session id that would read as a flag", () => {
+    expect(() => claudeArgs({ session: { id: "--dangerously-skip-permissions", started: true }, mcp: [], permissions })).toThrow(/session id/);
+    expect(() => claudeArgs({ session: { id: "-x", started: false }, mcp: [], permissions })).toThrow(/session id/);
+  });
 });
 
 describe("ClaudeCliTransport", () => {

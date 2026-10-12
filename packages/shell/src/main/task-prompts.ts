@@ -18,18 +18,26 @@ export const CLOSE_PROMPT =
 
 /**
  * Fills `{{language}}`, `{{notesIndex}}` and `{{question}}` in one pass (inserted text is never filled
- * again). A brief without `{{notesIndex}}` gets the index appended, so every new session starts with it.
+ * again). Only the template is tidied, before filling: a line holding just a placeholder whose value is
+ * empty goes away and blank runs collapse; inserted text stays exactly as given. A brief without
+ * `{{notesIndex}}` gets the index appended, so every new session starts with it. An unknown language reads as English.
  */
 export function fillPrompt(template: string, vars: { language: Language; notesIndex: string; question?: string }): string {
   const values: Record<string, string> = {
-    language: LANGUAGE_NAMES[vars.language],
+    language: Object.hasOwn(LANGUAGE_NAMES, vars.language) ? LANGUAGE_NAMES[vars.language] : LANGUAGE_NAMES.en,
     notesIndex: vars.notesIndex,
     ...(vars.question !== undefined ? { question: vars.question } : {}),
   };
   const hasIndex = /\{\{\s*notesIndex\s*\}\}/.test(template);
-  const filled = template
-    .replace(/\{\{\s*(\w+)\s*\}\}/g, (all, key: string) => (Object.hasOwn(values, key) ? values[key] : all))
+  const tidy = template
+    .split("\n")
+    .filter((line) => {
+      const only = /^\s*\{\{\s*(\w+)\s*\}\}\s*$/.exec(line);
+      return !(only && Object.hasOwn(values, only[1]) && values[only[1]] === "");
+    })
+    .join("\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+  const filled = tidy.replace(/\{\{\s*(\w+)\s*\}\}/g, (all, key: string) => (Object.hasOwn(values, key) ? values[key] : all));
   return hasIndex || !vars.notesIndex ? filled : `${filled}\n\n${vars.notesIndex}`;
 }

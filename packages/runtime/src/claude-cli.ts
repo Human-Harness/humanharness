@@ -36,6 +36,7 @@ export function disallowedTools(permissions: Permissions, references: string[] =
 
 /** Arguments for the unmodified official `claude` binary; the prompt goes in via stdin. Never touches credentials or auth settings. */
 export function claudeArgs(o: Pick<TransportOptions, "session" | "mcp" | "permissions" | "persistSession" | "references">): string[] {
+  if (o.session.id.startsWith("-")) throw new Error(`Refusing a session id that reads as a flag: ${JSON.stringify(o.session.id)}`);
   const mcpServers = Object.fromEntries(
     o.mcp.map((s) => [s.name, { type: "stdio", command: s.command, args: s.args, env: s.env }]),
   );

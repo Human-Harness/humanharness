@@ -24,6 +24,18 @@ describe("fillPrompt", () => {
     );
   });
 
+  it("never rewrites the blank lines or edges of inserted text", () => {
+    const question = "First part.\n\n\n\nSecond part after blank lines.\n";
+    const notes = "## Notes\n\n\n- one\n";
+    const text = fillPrompt(QUESTION_PROMPT, { language: "en", notesIndex: notes, question });
+    expect(text).toContain(notes);
+    expect(text.endsWith(`## Question\n${question}`)).toBe(true);
+  });
+
+  it("falls back to English for a language it does not know", () => {
+    expect(fillPrompt("Answer in {{language}}.", { language: "fr" as never, notesIndex: "" })).toBe("Answer in English.");
+  });
+
   it("builds a free question's first message with the index", () => {
     const text = fillPrompt(QUESTION_PROMPT, { language: "es", notesIndex: index, question: "¿Dónde se guarda la conversación?" });
     expect(text).toContain("Answer it in Spanish");

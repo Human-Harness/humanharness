@@ -36,18 +36,43 @@ const ACTION_STATUSES: readonly string[] = ["done", "unsaved", "unfinished"];
 const TASK_STATUSES: readonly string[] = ["running", "waiting", "closing"];
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
+/**
+ * An engine session id: UUIDs (Claude, Codex, Gemini) and the fake agent's `fake-acp-session-2`.
+ * Never a leading `-` or whitespace, so it can't read as a CLI flag.
+ */
+const SESSION_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,199}$/;
+
+function cleanSession(s: unknown): Session | undefined {
+  if (!isObject(s) || typeof s.id !== "string" || !SESSION_ID.test(s.id) || typeof s.started !== "boolean") return undefined;
+  return { id: s.id, started: s.started };
+}
+
+/** Built field by field: nothing from the file reaches the engine unchecked. */
+function cleanCurrent(c: unknown): CurrentTask | null {
+  if (!isObject(c) || typeof c.id !== "string" || !TASK_STATUSES.includes(c.status as string)) return null;
+  const session = cleanSession(c.session);
+  return {
+    id: c.id,
+    ...(typeof c.action === "string" ? { action: c.action } : {}),
+    ...(typeof c.question === "string" ? { question: c.question } : {}),
+    status: c.status as TaskStatus,
+    ...(session ? { session } : {}),
+    startedAt: typeof c.startedAt === "string" ? c.startedAt : "",
+    turns: typeof c.turns === "number" && Number.isFinite(c.turns) ? c.turns : 0,
+    ...(typeof c.noteSaved === "boolean" ? { noteSaved: c.noteSaved } : {}),
+  };
+}
+
 /** Keeps what has the right shape; anything else reads as "nothing". */
 function clean(raw: unknown): TasksFile {
   if (!isObject(raw) || raw.version !== 1) return emptyTasks();
   const actions: Record<string, ActionStatus> = {};
   if (isObject(raw.actions)) {
-    for (const [id, status] of Object.entries(raw.actions)) if (ACTION_STATUSES.includes(status as string)) actions[id] = status as ActionStatus;
+    for (const [id, status] of Object.entries(raw.actions)) {
+      if (typeof status === "string" && ACTION_STATUSES.includes(status)) actions[id] = status as ActionStatus;
+    }
   }
-  const c = raw.current;
-  const current =
-    isObject(c) && typeof c.id === "string" && TASK_STATUSES.includes(c.status as string)
-      ? ({ ...c, turns: typeof c.turns === "number" ? c.turns : 0 } as unknown as CurrentTask)
-      : null;
+  const current = cleanCurrent(raw.current);
   return { version: 1, ...(typeof raw.engine === "string" ? { engine: raw.engine } : {}), current, actions };
 }
 
@@ -67,12 +92,23 @@ export class TaskStore {
     this.file = path.join(folder, ".harness", "tasks.json");
   }
 
+  /** A missing file reads as empty; one that isn't JSON is set aside as `tasks.json.corrupt-<time>`; other errors are thrown. */
   async load(): Promise<TasksFile> {
+    let text: string;
     try {
-      return clean(JSON.parse(await fs.readFile(this.file, "utf8")));
+      text = await fs.readFile(this.file, "utf8");
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") return emptyTasks();
+      throw err;
+    }
+    let raw: unknown;
+    try {
+      raw = JSON.parse(text);
     } catch {
+      await fs.rename(this.file, `${this.file}.corrupt-${Date.now()}`);
       return emptyTasks();
     }
+    return clean(raw);
   }
 
   /** Atomic: temp file + rename. */

@@ -4,7 +4,7 @@ import { type Event, type Session, fail } from "@humanharness/runtime";
 import { type ActionStatus, type NoteView, type TaskStatus, type TaskView, nextInPath } from "@humanharness/ui/client";
 import { type Note, type NoteMeta, buildNotesIndex, noteSlug } from "@humanharness/workspace";
 import { CLOSE_PROMPT, QUESTION_PROMPT, fillPrompt } from "./task-prompts";
-import type { CurrentTask, TasksFile } from "./task-store";
+import { type CurrentTask, type TasksFile, interrupted } from "./task-store";
 import type { TurnOptions } from "./turn-controller";
 
 type Done = Extract<Event, { type: "done" }>;
@@ -341,9 +341,9 @@ export class TaskManager {
     await this.update((s) => {
       const c = s.current;
       if (!c || c.id !== id) return s;
+      if (outcome !== "done") return interrupted(s, outcome);
       if (!c.action) return { ...s, current: null };
-      const status: ActionStatus = c.noteSaved || (outcome !== "done" && s.actions[c.action] === "done") ? "done" : outcome;
-      return { ...s, current: null, actions: { ...s.actions, [c.action]: status } };
+      return { ...s, current: null, actions: { ...s.actions, [c.action]: "done" } };
     });
     await this.endSession();
   }

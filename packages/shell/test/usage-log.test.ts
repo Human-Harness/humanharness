@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import type { ChatEntry } from "@humanharness/ui/client";
-import { type UsageRecord, UsageLog, summarizeUsage, usageRecord } from "../src/main/usage-log";
+import { type UsageMeta, type UsageRecord, UsageLog, summarizeUsage, usageRecord } from "../src/main/usage-log";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -114,6 +114,30 @@ describe("summarizeUsage", () => {
 
   it("does not credit an action with the next turn when the next one has no snapshot", () => {
     const records = [rec(0.1, R1, "tidy"), { at: "t", engine: "claude", ok: true }, rec(0.4, R1)];
+    expect(summarizeUsage(records, now).estimates).toEqual({});
+  });
+
+  const turn = (fiveHour: number, meta: UsageMeta): UsageRecord => ({ ...rec(fiveHour, R2, meta.action), ...(meta.task ? { task: meta.task } : {}), ...(meta.phase ? { phase: meta.phase } : {}) });
+
+  it("sums a task's turns, leaves out its closing turn, and averages per action across tasks", () => {
+    const records = [
+      turn(0.1, { action: "tidy", task: "a", phase: "run" }), // a: +0.1
+      turn(0.2, { action: "tidy", task: "a", phase: "run" }), // a: +0.1 (follow-up)
+      turn(0.3, { action: "tidy", task: "a", phase: "close" }), // closing: +0.05, not counted
+      turn(0.35, { action: "tidy", task: "b", phase: "run" }), // b: +0.05
+      turn(0.4, { action: "tidy", task: "b", phase: "close" }),
+      turn(0.42, {}),
+    ];
+    // a: 0.2, b: 0.05 -> 0.125 (per turn it would be 0.25 / 3)
+    expect(summarizeUsage(records, now).estimates.tidy).toBeCloseTo(0.125);
+  });
+
+  it("leaves out a task with a turn it can't measure", () => {
+    const records = [
+      turn(0.1, { action: "tidy", task: "a", phase: "run" }),
+      turn(0.2, { action: "tidy", task: "a", phase: "run" }), // the window resets after it
+      { ...rec(0.05, R1), task: "b" },
+    ];
     expect(summarizeUsage(records, now).estimates).toEqual({});
   });
 });

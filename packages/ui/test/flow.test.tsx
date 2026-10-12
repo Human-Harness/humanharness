@@ -109,9 +109,14 @@ describe("flow mode", () => {
     expect(screen.queryAllByText("Done →", { selector: ".hh-message.user p" })).toHaveLength(0);
     tasks(client, { current: { id: "t1", action: "manifest", status: "closing" } });
     expect(screen.getByText("Saving what's clear…")).toBeTruthy();
-    fireEvent.change(screen.getByPlaceholderText("Ask about this topic…"), { target: { value: "too soon" } });
-    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    const composer = screen.getByPlaceholderText("Ask about this topic…");
+    fireEvent.change(composer, { target: { value: "too soon" } });
+    fireEvent.keyDown(composer, { key: "Enter" });
     expect(client.sent).toEqual(["The manifest"]);
+    // The closing turn is quiet (no live answer), but it can still be stopped.
+    expect(screen.queryByRole("button", { name: "Send" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+    expect(client.cancelled).toBe(1);
     tasks(client, { current: null, actions: { manifest: "done" } });
     fireEvent.click(screen.getByRole("button", { name: "See the topics" }));
     expect(within(await startRegion()).getByRole("button", { name: /The manifest/ }).textContent).toContain("Done");

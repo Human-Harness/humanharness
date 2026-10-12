@@ -25,6 +25,11 @@ async function fileInside(rel: unknown, roots: string[], accept: (real: string) 
   return null;
 }
 
+/** Where Open and Show in Finder look for a file, in order: the user's folder first, then the reference folders. */
+export function openRoots(folder: string, references: string[]): string[] {
+  return [folder, ...references];
+}
+
 /** A file "Open" may hand to the system (an openable extension, see `canOpenFile`) inside one of `roots`. */
 export function openableFile(rel: unknown, roots: string[]): Promise<string | null> {
   return fileInside(rel, roots, canOpenFile);

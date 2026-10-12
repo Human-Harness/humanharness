@@ -76,12 +76,15 @@ function clean(raw: unknown): TasksFile {
   return { version: 1, ...(typeof raw.engine === "string" ? { engine: raw.engine } : {}), current, actions };
 }
 
-/** The open task ends without a note: its action is unfinished, unless an earlier task already got it done. */
-export function interrupted(state: TasksFile): TasksFile {
+/**
+ * The open task ends without a note: its action gets `outcome` (unfinished by default), unless the task
+ * saved its note anyway or an earlier task already got it done.
+ */
+export function interrupted(state: TasksFile, outcome: ActionStatus = "unfinished"): TasksFile {
   const c = state.current;
   if (!c) return state;
   if (!c.action) return { ...state, current: null };
-  const status: ActionStatus = c.noteSaved || state.actions[c.action] === "done" ? "done" : "unfinished";
+  const status: ActionStatus = c.noteSaved || state.actions[c.action] === "done" ? "done" : outcome;
   return { ...state, current: null, actions: { ...state.actions, [c.action]: status } };
 }
 

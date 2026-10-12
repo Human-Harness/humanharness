@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { openIfStillSafe, openableFile, revealIfStillSafe, revealableFile } from "../src/main/open-path";
+import { openIfStillSafe, openRoots, openableFile, revealIfStillSafe, revealableFile } from "../src/main/open-path";
 
 const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "hh-")));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -19,6 +19,12 @@ fs.writeFileSync(path.join(ref, "run.command"), "x");
 fs.symlinkSync(path.join(outside, "secret.md"), path.join(ref, "link.md"));
 const refused = ["page.html", "page.htm", "pic.svg", "a.js", "a.mjs", "a.cjs", "a.jsx", "a.ts", "a.tsx"];
 for (const f of refused) fs.writeFileSync(path.join(ref, f), "x");
+
+describe("openRoots", () => {
+  it("tries the user's folder before the reference folders", () => {
+    expect(openRoots("/work", ["/ref1", "/ref2"])).toEqual(["/work", "/ref1", "/ref2"]);
+  });
+});
 
 describe("openableFile", () => {
   const roots = [ref, folder];

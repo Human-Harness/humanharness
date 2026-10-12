@@ -70,7 +70,7 @@ A harness is a folder with a manifest, instructions for the AI, its own UI and i
    - `path` (optional): the order of the guided path shown in the side panel.
    - `folder.references` (optional): folders the AI may read but never change.
 3. Write `agent/AGENTS.md`: what the AI does and when it calls each block's tool (`show_<block>` / `update_<block>`). Every harness also has two core tools: `show_choices`, which ends each answer with ways to continue, and `save_note`, which the app asks for when a task closes.
-4. Write `ui/App.tsx`: mount `HarnessApp` with a component per visible block, your locales and, for the work screen's start view, `startView` (keys of your strings for its title, intro, frequent questions and the line under the composer). State-only blocks and a right-hand panel (`stateBlocks`, `renderSide`) are still available.
+4. Write `ui/App.tsx`: mount `HarnessApp` with a component per visible block, your locales and, for the work screen's start view, `startView` (keys of your strings for its title, intro, frequent questions and the line under the composer). State-only blocks and a right-hand panel (`stateBlocks`, `renderSide`) are still available. Each block component gets `BlockProps`, which now also carries `choose`, `open`, `reveal` and `active` (all required): tests that build `BlockProps` by hand need to pass them too.
 5. Add `locales/es.json` and `locales/en.json` with every key in each language.
 6. Run it: `corepack pnpm install`, then `HH_HARNESS_DIR="$PWD/harnesses/<your-id>" corepack pnpm app:dev` (an absolute path: the app resolves it from `packages/shell`).
 

@@ -39,7 +39,7 @@ import { SharedConfigStore, sharedConfigDir } from "./shared-config";
 import { EngineUnavailable, TurnController, memoise } from "./turn-controller";
 import { UsageLog, summarizeUsage, usageRecord } from "./usage-log";
 import { type ValidationContext, checkFolder, configProblem, isAppUrl } from "./validate";
-import { openIfStillSafe, openableFile, revealIfStillSafe, revealableFile } from "./open-path";
+import { openIfStillSafe, openRoots, openableFile, revealIfStillSafe, revealableFile } from "./open-path";
 import { saveWithFolderChange } from "./folder-change";
 import { type ResolvedReference, displayPath, resolveReferences, usableReferences } from "./references";
 import { TaskManager } from "./task-manager";
@@ -431,7 +431,7 @@ function registerIpc() {
   handle("hh:openPath", async (file: unknown) => {
     const c = await validConfig();
     if (!c) return false;
-    const roots = [...(await referencesFor(c.folder)).map((r) => r.path), c.folder];
+    const roots = openRoots(c.folder, (await referencesFor(c.folder)).map((r) => r.path));
     const target = await openableFile(file, roots);
     if (!target) return false;
     // Checked again right before opening: the file or a folder above it may have been swapped for a link meanwhile.
@@ -441,7 +441,7 @@ function registerIpc() {
   handle("hh:revealPath", async (file: unknown) => {
     const c = await validConfig();
     if (!c) return false;
-    const roots = [...(await referencesFor(c.folder)).map((r) => r.path), c.folder];
+    const roots = openRoots(c.folder, (await referencesFor(c.folder)).map((r) => r.path));
     const target = await revealableFile(file, roots);
     if (!target) return false;
     return revealIfStillSafe(target, roots, (p) => shell.showItemInFolder(p));

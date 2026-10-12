@@ -469,7 +469,8 @@ export function ChatView({
                 if (send(draft)) setDraft("");
               }}
             />
-            {chat.live ? (
+            {/* A closing turn is quiet (nothing live on screen) but still stoppable. */}
+            {chat.live || closing ? (
               <button type="button" onClick={() => void client.cancel()}>
                 {t("chat.stop")}
               </button>

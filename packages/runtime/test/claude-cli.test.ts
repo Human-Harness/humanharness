@@ -332,3 +332,21 @@ describe("ClaudeCliTransport hardening", () => {
     expect(events.filter((e) => e.type === "done")).toHaveLength(1);
   });
 });
+
+describe("reference folders", () => {
+  it("adds each reference folder with --add-dir and denies edits there", () => {
+    const args = claudeArgs({ session: { id: "a", started: false }, mcp: [], permissions, references: ["/Users/me/code/hh", "/opt/docs"] });
+    const at = args.indexOf("--add-dir");
+    expect(args.slice(at, at + 4)).toEqual(["--add-dir", "/Users/me/code/hh", "--add-dir", "/opt/docs"]);
+    const denied = args[args.indexOf("--disallowedTools") + 1].split(",");
+    expect(denied).toEqual(
+      expect.arrayContaining(["Edit(//Users/me/code/hh/**)", "Write(//Users/me/code/hh/**)", "MultiEdit(//Users/me/code/hh/**)", "Edit(//opt/docs/**)"]),
+    );
+    expect(claudeArgs({ session: { id: "a", started: false }, mcp: [], permissions })).not.toContain("--add-dir");
+  });
+
+  it("keeps the read tools allowed", () => {
+    expect(allowedTools({ edit: "none", exec: false, web: false }, [])).toEqual(["Read", "Glob", "Grep", "TodoWrite"]);
+    expect(disallowedTools({ edit: "none", exec: false, web: false }, ["/r"])).toContain("Write(//r/**)");
+  });
+});

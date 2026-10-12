@@ -13,6 +13,8 @@ export interface TransportOptions {
   session: Session;
   mcp: McpServerSpec[];
   permissions: Permissions;
+  /** Folders the agent may read but never change (absolute paths). */
+  references?: string[];
   /** ACP only: session mode to set after session/new|load (e.g. "workspace-write"). */
   sessionMode?: string;
   /** ACP only: fail with `outdated-version` if the adapter reports an older agentInfo.version. */

@@ -24,6 +24,8 @@ type PermissionResponse = { outcome: { outcome: "selected"; optionId: string } |
 
 export interface PermissionPolicy {
   folder: string;
+  /** Reference folders: reads and searches there are allowed, never edits. */
+  readRoots?: string[];
   permissions: Permissions;
   /** MCP servers the harness configured (always includes "ui"). */
   mcpServers: string[];
@@ -79,7 +81,7 @@ export function decidePermission(params: PermissionRequest, policy: PermissionPo
       case "read":
       case "search":
       case "think":
-        allow = allInside;
+        allow = (locations ?? []).every((l) => [policy.folder, ...(policy.readRoots ?? [])].some((root) => inside(root, l.path)));
         break;
       case "edit":
       case "delete":
@@ -157,6 +159,7 @@ export class AcpTransport implements Transport {
     const policy: PermissionPolicy = {
       folder: this.o.folder,
       permissions: this.o.permissions,
+      readRoots: this.o.references ?? [],
       mcpServers: this.o.mcp.map((s) => s.name),
       lookup: (id) => this.calls.get(id),
     };

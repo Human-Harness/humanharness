@@ -21,7 +21,7 @@ afterEach(async () => {
 function setup(
   scriptOrFn: AcpScript | ((folder: string) => AcpScript),
   session: Session = { id: "local-id", started: false },
-  extra: { minAdapterVersion?: string } = {},
+  extra: { minAdapterVersion?: string; references?: string[] } = {},
 ) {
   const folder = fs.mkdtempSync(path.join(root, "t-"));
   const script = typeof scriptOrFn === "function" ? scriptOrFn(folder) : scriptOrFn;
@@ -129,6 +129,18 @@ describe("decidePermission", () => {
 
   it("never picks an 'always' option", () => {
     expect(chosen(ask({ kind: "read", locations: [{ path: "/work/x" }] }))).toBe("allow");
+  });
+
+  it("allows reads in the reference folders but never edits there", () => {
+    const withRefs: PermissionPolicy = { ...policy(), readRoots: ["/ref"] };
+    const decide = (toolCall: Record<string, unknown>) =>
+      chosen(decidePermission({ sessionId: "s", toolCall: { toolCallId: "t", ...toolCall }, options } as never, withRefs));
+    expect(decide({ kind: "read", locations: [{ path: "/ref/docs/a.md" }] })).toBe("allow");
+    expect(decide({ kind: "search", locations: [{ path: "/ref" }] })).toBe("allow");
+    expect(decide({ kind: "read", locations: [{ path: "/work/a.md" }, { path: "/ref/b.md" }] })).toBe("allow");
+    expect(decide({ kind: "read", locations: [{ path: "/elsewhere/a.md" }] })).toBe("cancel");
+    expect(decide({ kind: "read", locations: [{ path: "/reference/a.md" }] })).toBe("cancel");
+    expect(decide({ kind: "edit", locations: [{ path: "/ref/a.md" }] })).toBe("cancel");
   });
 });
 
@@ -363,5 +375,15 @@ describe("AcpTransport", () => {
     const { transport, log } = setup({ closeSession: true, turns: [] });
     await transport.endSession();
     expect(log()).toEqual([]);
+  });
+
+  it("lets the agent read the reference folders", async () => {
+    const { transport, log } = setup(
+      { turns: [[{ permission: { toolCall: { toolCallId: "r1", kind: "read", locations: [{ path: "/ref/docs/a.md" }] } } }]] },
+      undefined,
+      { references: ["/ref"] },
+    );
+    await run(transport);
+    expect(log().find((l) => l.method === "permission-outcome")?.params).toEqual({ outcome: "selected", optionId: "allow" });
   });
 });

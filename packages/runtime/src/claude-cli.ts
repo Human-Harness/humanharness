@@ -22,17 +22,20 @@ export function allowedTools(permissions: Permissions, mcp: McpServerSpec[]): st
 }
 
 /** Deny rules beat allow rules, so project settings or hooks cannot re-enable what the manifest excludes. */
-export function disallowedTools(permissions: Permissions): string[] {
+export function disallowedTools(permissions: Permissions, references: string[] = []): string[] {
   const tools = ["AskUserQuestion"];
   if (permissions.edit === "none") tools.push("Edit", "Write", "MultiEdit", "NotebookEdit");
   if (!permissions.exec) tools.push("Bash");
   if (!permissions.web) tools.push("WebSearch", "WebFetch");
   tools.push("Edit(.claude/**)", "Write(.claude/**)", "MultiEdit(.claude/**)");
+  // `--add-dir` makes a reference folder a working directory, where acceptEdits would accept edits:
+  // deny them by absolute path (`//` starts an absolute path in permission rules).
+  for (const dir of references) tools.push(`Edit(/${dir}/**)`, `Write(/${dir}/**)`, `MultiEdit(/${dir}/**)`);
   return tools;
 }
 
 /** Arguments for the unmodified official `claude` binary; the prompt goes in via stdin. Never touches credentials or auth settings. */
-export function claudeArgs(o: Pick<TransportOptions, "session" | "mcp" | "permissions" | "persistSession">): string[] {
+export function claudeArgs(o: Pick<TransportOptions, "session" | "mcp" | "permissions" | "persistSession" | "references">): string[] {
   const mcpServers = Object.fromEntries(
     o.mcp.map((s) => [s.name, { type: "stdio", command: s.command, args: s.args, env: s.env }]),
   );
@@ -44,9 +47,10 @@ export function claudeArgs(o: Pick<TransportOptions, "session" | "mcp" | "permis
     "--setting-sources", "project",
     "--permission-mode", o.permissions.edit === "folder" ? "acceptEdits" : "default",
     "--allowedTools", allowedTools(o.permissions, o.mcp).join(","),
-    "--disallowedTools", disallowedTools(o.permissions).join(","),
+    "--disallowedTools", disallowedTools(o.permissions, o.references ?? []).join(","),
     "--strict-mcp-config",
     "--mcp-config", JSON.stringify({ mcpServers }),
+    ...(o.references ?? []).flatMap((dir) => ["--add-dir", dir]),
     ...(o.session.started ? ["--resume", o.session.id] : ["--session-id", o.session.id]),
     ...(o.persistSession === false ? ["--no-session-persistence"] : []),
   ];

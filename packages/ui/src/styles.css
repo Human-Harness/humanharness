@@ -126,6 +126,14 @@ select:focus-visible { outline: 2px solid var(--hh-ink); outline-offset: 2px; }
 .hh-model-editor { display: grid; gap: 8px; justify-items: start; }
 .hh-model-fields { display: grid; grid-template-columns: max-content 1fr; gap: 6px 12px; align-items: center; }
 .hh-model-fields label { color: var(--hh-slate); }
+.hh-model-engine { display: flex; align-items: center; gap: 12px; margin: 8px 0; }
+.hh-model-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 10px 0; }
+.hh-model-card { display: grid; gap: 8px; padding: 12px; align-content: start; min-width: 0; }
+.hh-model-card h4 { margin: 0; }
+.hh-model-card .hh-model-fields { grid-template-columns: 1fr; gap: 4px; }
+.hh-model-card select { width: 100%; }
+.hh-model-chips { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.hh-model-chips li { padding: 2px 8px; border: 1px solid var(--hh-line-strong); border-radius: 10px; font-size: 12px; color: var(--hh-slate); }
 
 /* Work screen: the 2a chat layout with the tokens (its own design comes later). */
 .hh-app { display: grid; grid-template-rows: 52px 1fr; height: 100vh; }

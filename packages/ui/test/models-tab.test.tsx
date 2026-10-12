@@ -115,3 +115,52 @@ describe("ModelsTab › Tasks", () => {
     expect(patches[patches.length - 1]).toEqual({ models: whole });
   });
 });
+
+describe("ModelsTab › Levels", () => {
+  const levels = () => screen.getByRole("region", { name: "Levels" });
+  const card = (tier: string) => within(levels()).getByRole("region", { name: tier });
+  const showLevels = () => fireEvent.click(within(screen.getByRole("group", { name: "Models" })).getByRole("button", { name: "Levels" }));
+
+  it("switches between Tasks and Levels", async () => {
+    await renderIn("en", <Tab client={modelsClient()} />);
+    expect(screen.queryByRole("region", { name: "Levels" })).toBeNull();
+    showLevels();
+    expect(screen.queryByRole("region", { name: "Tasks" })).toBeNull();
+    expect(within(screen.getByRole("group", { name: "Models" })).getByRole("button", { name: "Levels" }).getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("shows the current engine's three levels with the tasks that use each", async () => {
+    await renderIn("en", <Tab client={modelsClient({ tasks: { manifest: "light" } })} />);
+    showLevels();
+    expect(within(levels()).getByRole("button", { name: "Claude" }).getAttribute("aria-pressed")).toBe("true");
+    expect((within(card("Deep")).getByRole("combobox", { name: "Model" }) as HTMLSelectElement).value).toBe("opus");
+    expect(within(card("Deep")).getByRole("list", { name: "Used by" }).textContent).toBe("A turn");
+    expect(within(card("Light")).getAllByRole("listitem").map((li) => li.textContent)).toEqual(["The manifest", "Free question"]);
+    expect(within(card("Standard")).getByText("No task")).toBeTruthy();
+  });
+
+  it("saves a level's settings for the engine shown and restores the recommended tables", async () => {
+    const c = modelsClient();
+    await renderIn("en", <Tab client={c} />);
+    showLevels();
+    fireEvent.click(within(levels()).getByRole("button", { name: "Codex" }));
+    expect((within(card("Deep")).getByRole("combobox", { name: "Model" }) as HTMLSelectElement).value).toBe("");
+    expect(within(card("Deep")).getAllByRole("option").map((o) => o.textContent).slice(0, 1)).toEqual(["Engine default"]);
+    fireEvent.change(within(card("Deep")).getByRole("combobox", { name: "Context cap" }), { target: { value: "1000000" } });
+    await waitFor(() => expect(saved(c)).toEqual({ tiers: { codex: { deep: { effort: "high", cap: 1_000_000 } } } }));
+    expect(within(levels()).getByText("If your plan doesn't include a model, the task uses the level below and tells you.")).toBeTruthy();
+    fireEvent.click(within(levels()).getByRole("button", { name: "Restore recommended" }));
+    await waitFor(() => expect(saved(c)).toEqual({}));
+  });
+
+  it("keeps the tasks' settings and the other engines' levels when it saves a level", async () => {
+    const c = modelsClient({ tasks: { manifest: "deep" }, tiers: { codex: { light: { effort: "medium", cap: 100_000 } } } });
+    const patches = recordPatches(c);
+    await renderIn("en", <Tab client={c} />);
+    showLevels();
+    fireEvent.change(within(card("Light")).getByRole("combobox", { name: "Model" }), { target: { value: "sonnet" } });
+    const whole = { tasks: { manifest: "deep" }, tiers: { codex: { light: { effort: "medium", cap: 100_000 } }, claude: { light: { model: "sonnet", effort: "low", cap: 100_000 } } } };
+    await waitFor(() => expect(saved(c)).toEqual(whole));
+    expect(patches).toEqual([{ models: whole }]);
+  });
+});

@@ -36,6 +36,15 @@ function withTask(models: ModelsConfig, key: string, choice: TaskModelChoice | n
   return Object.keys(tasks).length > 0 ? { ...rest, tasks } : rest;
 }
 
+/** `models` with one level of one engine replaced; `tier` null clears the engine's whole table. */
+function withTier(models: ModelsConfig, engine: string, tier: Tier | null, spec?: ModelSpec): ModelsConfig {
+  const { tiers: old, ...rest } = models;
+  const tiers = { ...old };
+  if (tier === null || !spec) delete tiers[engine];
+  else tiers[engine] = { ...tiers[engine], [tier]: spec };
+  return Object.keys(tiers).length > 0 ? { ...rest, tiers } : rest;
+}
+
 const withModel = (spec: ModelSpec, model: string | undefined): ModelSpec => {
   const { model: _old, ...rest } = spec;
   return model ? { ...rest, model } : rest;
@@ -85,6 +94,7 @@ export function ModelsTab({ client, state, onChange }: { client: HarnessClient; 
   const { t, i18n } = useTranslation();
   const tasksId = useId();
   const [models, update] = useModels(client, state, onChange);
+  const [part, setPart] = useState<"tasks" | "levels">("tasks");
   const view = state.models;
   if (!view) return null;
   const lang = uiLanguage(state, i18n.language);
@@ -96,36 +106,133 @@ export function ModelsTab({ client, state, onChange }: { client: HarnessClient; 
 
   return (
     <div className="hh-tab">
-      <section aria-labelledby={tasksId}>
-        <div className="hh-model-head">
+      <div className="hh-model-head">
+        <Segmented
+          label={t("settings.tabs.models")}
+          value={part}
+          onChange={setPart}
+          options={[
+            { value: "tasks", label: t("models.tasks") },
+            { value: "levels", label: t("models.levels") },
+          ]}
+        />
+        {part === "tasks" && engineName && <span className="hh-caption">{t("models.engineNow", { engine: engineName })}</span>}
+      </div>
+      {part === "levels" && <LevelsSection state={state} view={view} models={models} rows={rows} update={update} />}
+      {part === "tasks" && (
+        <section aria-labelledby={tasksId}>
           <h3 id={tasksId}>{t("models.tasks")}</h3>
-          {engineName && <span className="hh-caption">{t("models.engineNow", { engine: engineName })}</span>}
-        </div>
-        <p className="hh-caption">{t("models.tasksIntro")}</p>
-        <div className="hh-rows">
-          {rows.map(({ key, label, description }) => {
-            const choice = models.tasks?.[key];
-            const recommended = view.recommended[key] ?? "standard";
-            const custom = typeof choice === "object" ? choice.custom : undefined;
-            const spec = custom ?? tierSpec(typeof choice === "string" ? choice : recommended);
-            return (
-              <TaskRow
-                key={key}
-                label={label}
-                description={description}
-                recommended={recommended}
-                choice={choice}
-                spec={spec}
-                offer={offer}
-                onPick={(v) => update((m) => withTask(m, key, v === "custom" ? { custom: { engine, ...spec } } : v === recommended ? null : v))}
-                onCustom={(next) => update((m) => withTask(m, key, { custom: { engine, ...next } }))}
-                onRestore={() => update((m) => withTask(m, key, null))}
-              />
-            );
-          })}
-        </div>
-      </section>
+          <p className="hh-caption">{t("models.tasksIntro")}</p>
+          <TaskList rows={rows} view={view} models={models} engine={engine} tierSpec={tierSpec} offer={offer} update={update} />
+        </section>
+      )}
     </div>
+  );
+}
+
+function TaskList({
+  rows,
+  view,
+  models,
+  engine,
+  tierSpec,
+  offer,
+  update,
+}: {
+  rows: TaskRowInfo[];
+  view: ModelsView;
+  models: ModelsConfig;
+  engine: string;
+  tierSpec: (tier: Tier) => ModelSpec;
+  offer: Offer;
+  update: (change: (models: ModelsConfig) => ModelsConfig) => void;
+}) {
+  return (
+    <div className="hh-rows">
+      {rows.map(({ key, label, description }) => {
+        const choice = models.tasks?.[key];
+        const recommended = view.recommended[key] ?? "standard";
+        const custom = typeof choice === "object" ? choice.custom : undefined;
+        const spec = custom ?? tierSpec(typeof choice === "string" ? choice : recommended);
+        return (
+          <TaskRow
+            key={key}
+            label={label}
+            description={description}
+            recommended={recommended}
+            choice={choice}
+            spec={spec}
+            offer={offer}
+            onPick={(v) => update((m) => withTask(m, key, v === "custom" ? { custom: { engine, ...spec } } : v === recommended ? null : v))}
+            onCustom={(next) => update((m) => withTask(m, key, { custom: { engine, ...next } }))}
+            onRestore={() => update((m) => withTask(m, key, null))}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+/** Niveles: what each level runs on, per engine, and which tasks use it. */
+function LevelsSection({
+  state,
+  view,
+  models,
+  rows,
+  update,
+}: {
+  state: AppState;
+  view: ModelsView;
+  models: ModelsConfig;
+  rows: TaskRowInfo[];
+  update: (change: (models: ModelsConfig) => ModelsConfig) => void;
+}) {
+  const { t } = useTranslation();
+  const headingId = useId();
+  const [engine, setEngine] = useState(state.config.engineId ?? state.engines[0]?.id ?? "");
+  const offer = view.offered[engine] ?? NO_OFFER;
+  const name = state.engines.find((e) => e.id === engine)?.name ?? engine;
+  const tierSpec = (tier: Tier): ModelSpec => models.tiers?.[engine]?.[tier] ?? view.defaults[engine]?.[tier] ?? FALLBACK_SPEC;
+  /** The tasks on `tier`: their own setting, else the recommendation (a custom task uses no level). */
+  const users = (tier: Tier) => rows.filter(({ key }) => (models.tasks?.[key] ?? view.recommended[key] ?? "standard") === tier).map((r) => r.label);
+  return (
+    <section aria-labelledby={headingId}>
+      <h3 id={headingId}>{t("models.levels")}</h3>
+      {state.engines.length > 1 && (
+        <div className="hh-model-engine">
+          <span className="hh-row-label">{t("models.engine")}</span>
+          <Segmented label={t("models.engine")} value={engine} onChange={setEngine} options={state.engines.map((e) => ({ value: e.id, label: e.name }))} />
+        </div>
+      )}
+      <p className="hh-caption">{t("models.levelsIntro", { engine: name })}</p>
+      <div className="hh-model-cards">
+        {TIERS.map((tier) => {
+          const label = t(`models.tier.${tier}`);
+          const used = users(tier);
+          return (
+            <section key={tier} className="hh-rows hh-model-card" aria-label={label}>
+              <h4>{label}</h4>
+              <p className="hh-caption">{t(`models.tierHint.${tier}`)}</p>
+              <SpecFields spec={tierSpec(tier)} offer={offer} onChange={(spec) => update((m) => withTier(m, engine, tier, spec))} />
+              <p className="hh-caption">{t("models.usedBy")}</p>
+              {used.length > 0 ? (
+                <ul className="hh-model-chips" aria-label={t("models.usedBy")}>
+                  {used.map((l) => (
+                    <li key={l}>{l}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="hh-caption">{t("models.nobody")}</p>
+              )}
+            </section>
+          );
+        })}
+      </div>
+      <p className="hh-caption">{t("models.fallbackHint")}</p>
+      <button type="button" onClick={() => update((m) => withTier(m, engine, null))}>
+        {t("models.restoreAll")}
+      </button>
+    </section>
   );
 }
 

@@ -1,22 +1,31 @@
 import type { ComponentType } from "react";
 import { useTranslation } from "react-i18next";
 import { ActivityList } from "./ActivityList";
-import type { ChatEntry, SendOptions } from "./client";
+import type { ChatEntry, ChoiceOption, SendOptions } from "./client";
 
 export interface BlockProps {
   data: any;
-  /** Sends a message as the user (e.g. the chosen option); `options.action` tags a harness action. */
+  /** Sends a message as the user (e.g. the chosen option); `options.action` starts a harness action. */
   respond: (text: string, options?: SendOptions) => boolean;
+  /** Picks an option of a `choices` block: the app follows up, starts another topic or moves along the path. */
+  choose: (option: ChoiceOption) => boolean;
+  /** Opens a file inside the reference folders or the user's folder in its default app; false when it can't. */
+  open: (path: string) => Promise<boolean>;
+  /** The block belongs to the latest answer and nothing is running: its buttons may act. */
+  active: boolean;
 }
+
+/** What a block component can do besides showing its data. */
+export type BlockActions = Omit<BlockProps, "data">;
 
 export function Blocks({
   blocks,
   components,
-  respond,
+  actions,
 }: {
   blocks: ChatEntry["blocks"];
   components: Record<string, ComponentType<BlockProps>>;
-  respond: (text: string, options?: SendOptions) => boolean;
+  actions: BlockActions;
 }) {
   return (
     <>
@@ -24,7 +33,7 @@ export function Blocks({
         const Component = components[b.name];
         return Component ? (
           <div key={i} className="hh-block">
-            <Component data={b.data} respond={respond} />
+            <Component data={b.data} {...actions} />
           </div>
         ) : null;
       })}
@@ -35,11 +44,11 @@ export function Blocks({
 export function Message({
   entry,
   components,
-  respond,
+  actions,
 }: {
   entry: Pick<ChatEntry, "role" | "text" | "blocks" | "activities">;
   components: Record<string, ComponentType<BlockProps>>;
-  respond: (text: string, options?: SendOptions) => boolean;
+  actions: BlockActions;
 }) {
   const { t } = useTranslation();
   if (entry.role === "assistant" && !entry.text && entry.blocks.length === 0 && entry.activities.length === 0) return null;
@@ -48,7 +57,7 @@ export function Message({
       {entry.role === "user" && <span className="hh-who">{t("chat.you")}</span>}
       {entry.role === "assistant" && <ActivityList items={entry.activities.map((a) => ({ ...a, done: true }))} />}
       {entry.text && entry.text.split("\n\n").map((p, i) => <p key={i}>{p}</p>)}
-      <Blocks blocks={entry.blocks} components={components} respond={respond} />
+      <Blocks blocks={entry.blocks} components={components} actions={actions} />
     </article>
   );
 }

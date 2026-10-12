@@ -8,6 +8,7 @@ import { type AppState, type EngineStatus, type HarnessClient, type LimitWindow,
 import { Home } from "./Home";
 import type { BlockProps } from "./Message";
 import { type SettingsTab, SettingsSheet } from "./SettingsSheet";
+import type { StartViewCopy } from "./StartView";
 
 export interface HarnessAppProps {
   client: HarnessClient;
@@ -16,9 +17,11 @@ export interface HarnessAppProps {
   /** The side panel: gets the latest state blocks and `send` for buttons that start harness actions. */
   renderSide?: (blockState: Record<string, unknown>, send: SendFn) => ReactNode;
   locales?: Locales;
+  /** Flow mode's start view: keys of `locales` for its title, intro, frequent questions and composer hint. */
+  startView?: StartViewCopy;
 }
 
-export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, locales }: HarnessAppProps) {
+export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, locales, startView }: HarnessAppProps) {
   const [state, setState] = useState<AppState | null>(null);
   const [i18n, setI18n] = useState<i18n | null>(null);
   const [failed, setFailed] = useState(false);
@@ -163,6 +166,7 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
             components={blocks}
             stateBlocks={stateBlocks}
             renderSide={renderSide}
+            startView={startView}
             engineProblem={status ? engineProblem(status) : null}
             onHome={() => setScreen("home")}
             onSettings={() => setSettings("general")}

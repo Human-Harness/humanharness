@@ -117,11 +117,14 @@ input[type="text"], input:not([type]) { font: inherit; height: 28px; padding: 0 
 .hh-check { position: absolute; top: 8px; right: 8px; width: 18px; height: 18px; border-radius: 50%; background: var(--hh-ink); color: var(--hh-on-ink); font-size: 11px; display: grid; place-items: center; }
 
 /* Work screen: the 2a chat layout with the tokens (its own design comes later). */
-.hh-app { display: grid; grid-template-rows: 52px 1fr auto; height: 100vh; }
+.hh-app { display: grid; grid-template-rows: 52px 1fr; height: 100vh; }
 .hh-usage { margin: 0; color: var(--hh-muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-.hh-body { display: grid; grid-template-columns: 1fr auto; overflow: hidden; }
-.hh-chat { overflow-y: auto; padding: 16px; display: grid; gap: 12px; align-content: start; }
-.hh-side { width: 240px; padding: 16px; border-left: 1px solid var(--hh-line); }
+.hh-body { display: flex; min-height: 0; overflow: hidden; }
+.hh-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.hh-chat { flex: 1; min-height: 0; overflow-y: auto; padding: 16px; display: grid; gap: 12px; align-content: start; }
+.hh-side { width: 240px; flex: none; padding: 16px; border-left: 1px solid var(--hh-line); }
+.hh-composer-hint { margin: -4px 16px 12px; text-align: center; color: var(--hh-muted); font-size: 11px; }
+.hh-back-topics { justify-self: start; }
 .hh-message { max-width: 720px; }
 .hh-message p { white-space: pre-wrap; margin: 0 0 8px; }
 .hh-message.user { justify-self: end; background: var(--hh-surface); border: 1px solid var(--hh-line); border-radius: 10px; padding: 8px 12px; }
@@ -139,7 +142,6 @@ input[type="text"], input:not([type]) { font: inherit; height: 28px; padding: 0 
 .hh-history { position: fixed; inset: 52px 0 0 auto; width: min(360px, 100%); box-sizing: border-box; background: var(--hh-sheet); border-left: 1px solid var(--hh-line-strong); padding: 16px; overflow-y: auto; }
 .hh-history li { display: grid; gap: 4px; margin-bottom: 12px; }
 .hh-history time { color: var(--hh-muted); font-size: 12px; }
-@media (max-width: 640px) { .hh-body { grid-template-columns: 1fr; } .hh-side { display: none; } }
 /* Flow mode (spec 2026-10-12, mockups "Plan 3 · Explicador"): side panel, start view, choices. */
 .hh-flow-side { width: 248px; flex: none; box-sizing: border-box; padding: 18px 14px; display: flex; flex-direction: column; gap: 18px; border-right: 1px solid var(--hh-line); overflow-y: auto; }
 .hh-flow-heading { margin: 0 0 6px; padding-left: 6px; font-size: 12px; font-weight: 600; color: var(--hh-muted); }
@@ -188,3 +190,4 @@ input[type="text"], input:not([type]) { font: inherit; height: 28px; padding: 0 
 .hh-note-toggle { width: 100%; height: auto; flex-direction: column; align-items: stretch; gap: 4px; padding: 0; border: none; background: transparent; text-align: left; }
 .hh-note-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .hh-notes-savings { padding: 10px 12px; border: 1px solid var(--hh-line); border-radius: 10px; background: var(--hh-surface); color: var(--hh-ok); line-height: 1.45; }
+@media (max-width: 640px) { .hh-flow-side, .hh-side { display: none; } }

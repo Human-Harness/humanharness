@@ -1,29 +1,15 @@
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { z } from "zod";
+import { type Block } from "./block";
+import { CORE_BLOCK_NAMES } from "./core-blocks";
+
+export * from "./block";
+export * from "./core-blocks";
 
 export const LANGUAGES = ["es", "en"] as const;
 export type Language = (typeof LANGUAGES)[number];
 export type LocalizedText = Record<Language, string>;
-
-/** A piece of UI the agent can show (visible) or update (state-only) through an MCP tool. */
-export interface Block<S extends z.ZodObject = z.ZodObject> {
-  description: string;
-  visible: boolean;
-  schema: S;
-  example: z.infer<S>;
-}
-
-export function defineBlock<S extends z.ZodObject>(block: Block<S>): Block<S> {
-  const result = block.schema.safeParse(block.example);
-  if (!result.success) throw new Error(`The block example does not match its schema: ${result.error.message}`);
-  return block;
-}
-
-/** Name of the MCP tool the agent calls for a block. */
-export function blockToolName(name: string, block: Pick<Block, "visible">): string {
-  return `${block.visible ? "show" : "update"}_${name}`;
-}
 
 const localizedText = z.object({ es: z.string().min(1), en: z.string().min(1) });
 export const ACTION_COSTS = ["light", "medium", "heavy"] as const;
@@ -66,6 +52,10 @@ const manifestSchema = z.object({
   author: z.string().min(1),
   repo: z.url().optional(),
   donate: z.url().optional(),
+}).superRefine((m, ctx) => {
+  for (const name of Object.keys(m.blocks)) {
+    if (CORE_BLOCK_NAMES.includes(name)) ctx.addIssue({ code: "custom", path: ["blocks", name], message: `"${name}" is a core block name` });
+  }
 });
 
 export type Harness = z.output<typeof manifestSchema>;

@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
 import { z } from "zod";
-import { blockToolName, defineBlock, defineHarness, loadHarness, resolveInHarness } from "../src";
+import { CORE_BLOCKS, allBlocks, blockToolName, choicesSchema, defineBlock, defineHarness, loadHarness, resolveInHarness, saveNoteSchema } from "../src";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -124,5 +124,33 @@ describe("resolveInHarness", () => {
   it("rejects paths that escape the harness folder", async () => {
     const h = await loadHarness(FIXTURE);
     expect(() => resolveInHarness(h, "../../etc/passwd")).toThrow("Path escapes the harness folder: ../../etc/passwd");
+  });
+});
+
+describe("core blocks", () => {
+  it("offers choices (visible, show_choices) and save_note (hidden, its own tool name)", () => {
+    expect(blockToolName("choices", CORE_BLOCKS.choices)).toBe("show_choices");
+    expect(blockToolName("save_note", CORE_BLOCKS.save_note)).toBe("save_note");
+    expect(CORE_BLOCKS.choices.visible).toBe(true);
+    expect(CORE_BLOCKS.save_note.visible).toBe(false);
+  });
+
+  it("validates choice options and notes", () => {
+    expect(choicesSchema.safeParse({ options: [{ label: "Next topic", next: true }] }).success).toBe(true);
+    expect(choicesSchema.safeParse({ options: [{ label: "Deeper", followUp: "Tell me more", action: "turn" }] }).success).toBe(true);
+    expect(choicesSchema.safeParse({ options: [] }).success).toBe(false);
+    expect(choicesSchema.safeParse({ options: [{ label: "x", next: false }] }).success).toBe(false);
+    const note = { title: "T", summary: ["a"], decisions: [], files: [], open: [] };
+    expect(saveNoteSchema.safeParse(note).success).toBe(true);
+    expect(saveNoteSchema.safeParse({ ...note, summary: ["a", "b", "c", "d", "e", "f"] }).success).toBe(false);
+    expect(saveNoteSchema.safeParse({ ...note, summary: [] }).success).toBe(false);
+    expect(saveNoteSchema.safeParse({ ...note, title: "" }).success).toBe(false);
+  });
+
+  it("adds the core blocks to the harness's and reserves their names", () => {
+    const h = defineHarness({ ...base, languages: [...base.languages] });
+    expect(Object.keys(allBlocks(h))).toEqual(["choices", "save_note", "note"]);
+    expect(() => defineHarness({ ...base, languages: [...base.languages], blocks: { choices: block } })).toThrow(/core block/);
+    expect(() => defineHarness({ ...base, languages: [...base.languages], blocks: { save_note: block } })).toThrow(/core block/);
   });
 });

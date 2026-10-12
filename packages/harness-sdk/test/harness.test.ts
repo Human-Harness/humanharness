@@ -68,20 +68,42 @@ describe("defineHarness", () => {
     expect(() => defineHarness({ ...base, languages: ["fr" as never] })).toThrow();
   });
 
-  it("declares actions with a cost hint, empty by default", () => {
+  it("declares actions with a prompt and a cost hint, empty by default", () => {
     expect(defineHarness({ ...base, languages: [...base.languages] }).actions).toEqual({});
-    const h = defineHarness({
-      ...base,
-      languages: [...base.languages],
-      actions: { research: { label: { es: "Investigar", en: "Research" }, cost: "heavy" } },
-    });
-    expect(h.actions.research).toEqual({ label: { es: "Investigar", en: "Research" }, cost: "heavy" });
+    const research = { label: { es: "Investigar", en: "Research" }, prompt: "./agent/tasks/research.md", cost: "heavy" as const };
+    const h = defineHarness({ ...base, languages: [...base.languages], actions: { research } });
+    expect(h.actions.research).toEqual(research);
     expect(() =>
-      defineHarness({ ...base, languages: [...base.languages], actions: { research: { label: { es: "x", en: "x" }, cost: "huge" as never } } }),
+      defineHarness({ ...base, languages: [...base.languages], actions: { research: { ...research, cost: "huge" as never } } }),
     ).toThrow();
+    expect(() => defineHarness({ ...base, languages: [...base.languages], actions: { "Bad Name": research } })).toThrow();
     expect(() =>
-      defineHarness({ ...base, languages: [...base.languages], actions: { "Bad Name": { label: { es: "x", en: "x" }, cost: "light" } } }),
+      defineHarness({ ...base, languages: [...base.languages], actions: { research: { label: research.label, cost: "light" } as never } }),
     ).toThrow();
+  });
+
+  it("orders actions in an optional guided path", () => {
+    const actions = {
+      turn: { label: { es: "Un turno", en: "A turn" }, description: { es: "De punta a punta", en: "End to end" }, prompt: "./agent/tasks/turn.md", cost: "medium" as const },
+      blocks: { label: { es: "Bloques", en: "Blocks" }, prompt: "./agent/tasks/blocks.md", cost: "light" as const },
+    };
+    const h = defineHarness({ ...base, languages: [...base.languages], actions, path: ["turn", "blocks"] });
+    expect(h.path).toEqual(["turn", "blocks"]);
+    expect(h.actions.turn.description).toEqual({ es: "De punta a punta", en: "End to end" });
+    expect(defineHarness({ ...base, languages: [...base.languages], actions }).path).toBeUndefined();
+    expect(() => defineHarness({ ...base, languages: [...base.languages], actions, path: ["turn", "nope"] })).toThrow(/nope/);
+    expect(() => defineHarness({ ...base, languages: [...base.languages], actions, path: ["turn", "turn"] })).toThrow(/twice/);
+  });
+
+  it("declares read-only reference folders", () => {
+    const ref = (d: string, id = "source") => ({ id, label: { es: "Código", en: "Source" }, default: d });
+    const withRefs = (references: ReturnType<typeof ref>[]) =>
+      defineHarness({ ...base, languages: [...base.languages], folder: { suggested: "Documents/Test", references } });
+    expect(withRefs([ref("app-source")]).folder.references).toEqual([ref("app-source")]);
+    expect(defineHarness({ ...base, languages: [...base.languages] }).folder.references).toEqual([]);
+    expect(() => withRefs([ref("~/code/x"), ref("/opt/x", "other")])).not.toThrow();
+    expect(() => withRefs([ref("relative/x")])).toThrow(/app-source/);
+    expect(() => withRefs([ref("app-source"), ref("/opt/x")])).toThrow(/twice/);
   });
 
   it("takes an optional tagline and logo for the home screen", () => {
@@ -117,6 +139,26 @@ describe("loadHarness", () => {
     const h = await loadHarness(FIXTURE, { root: "/somewhere/else" });
     expect(h.root).toBe("/somewhere/else");
     expect(h.configPath).toBe(FIXTURE);
+  });
+
+  it("rejects action prompts outside the harness folder", async () => {
+    const dir = fs.mkdtempSync(path.join(root, "t-"));
+    const file = path.join(dir, "harness.config.mjs");
+    const manifest = {
+      id: "x",
+      name: { es: "X", en: "X" },
+      core: "^0.1.0",
+      languages: ["es"],
+      engines: ["claude"],
+      folder: { suggested: "Documents/X" },
+      instructions: "./AGENTS.md",
+      permissions: { edit: "none", exec: false, web: false },
+      blocks: {},
+      actions: { a: { label: { es: "A", en: "A" }, prompt: "../../outside.md", cost: "light" } },
+      author: "x",
+    };
+    fs.writeFileSync(file, `export default ${JSON.stringify(manifest)};`);
+    await expect(loadHarness(file)).rejects.toThrow("Path escapes the harness folder: ../../outside.md");
   });
 });
 

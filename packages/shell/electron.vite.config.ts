@@ -44,7 +44,7 @@ export default defineConfig({
     resolve: {
       alias: { "@harness/ui": path.join(harnessDir, "ui/App.tsx") },
       // A harness repo depends only on @humanharness/cli: its UI uses the shell's React and i18n, one copy each.
-      dedupe: ["react", "react-dom", "react-i18next", "i18next"],
+      dedupe: ["react", "react-dom", "react-i18next", "i18next", "@humanharness/ui"],
     },
     // The dev server may serve the harness folder, which may live outside this repository.
     server: { fs: { allow: [searchForWorkspaceRoot(__dirname), harnessDir] } },

@@ -214,7 +214,7 @@ describe("TaskManager", () => {
   it("finish closes the open task with its quiet turn and starts nothing after it", async () => {
     const t = setup({ script: [[ok], [saveNote(), ok]] });
     await t.manager.start("manifest");
-    await t.manager.finish();
+    expect(await t.manager.finish()).toBe(true);
     expect(t.turns.map((x) => x.options.phase)).toEqual(["run", "close"]);
     expect(t.turns[1]).toMatchObject({ message: CLOSE_PROMPT, options: { task: "t1", quiet: true } });
     expect(t.state()).toMatchObject({ current: null, actions: { manifest: "done" } });
@@ -223,9 +223,27 @@ describe("TaskManager", () => {
 
   it("finish with no open task runs nothing", async () => {
     const t = setup();
-    await t.manager.finish();
+    expect(await t.manager.finish()).toBe(true);
     expect(t.turns).toHaveLength(0);
     expect(t.state().current).toBeNull();
+  });
+
+  it("finish answers false when it was stopped before the closing turn: the task stays open", async () => {
+    const t = setup({ script: [[ok]] });
+    await t.manager.start("manifest");
+    const finishing = t.manager.finish();
+    t.manager.cancel();
+    expect(await finishing).toBe(false);
+    expect(t.turns).toHaveLength(1);
+    expect(t.state().current).toMatchObject({ action: "manifest", status: "waiting" });
+  });
+
+  it("finish answers true when the closing turn itself is cancelled: the task ends unfinished, with no note", async () => {
+    const t = setup({ script: [[ok], [cancelled]] });
+    await t.manager.start("manifest");
+    expect(await t.manager.finish()).toBe(true);
+    expect(t.state()).toMatchObject({ current: null, actions: { manifest: "unfinished" } });
+    expect(t.log.filter((l) => l.startsWith("note:"))).toEqual([]);
   });
 
   it("ends the task as unfinished when a turn is cancelled or its first turn fails; a later failure keeps it", async () => {

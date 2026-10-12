@@ -35,6 +35,8 @@ export interface EngineDef {
   name: string;
   /** Company that runs the service; named in the legal notice. */
   provider: string;
+  /** Product or model marks of the provider besides `name` (plan 4a `check`: never in a harness's name, tagline or logo). */
+  brands?: string[];
   /** Whether the engine reports plan-limit windows (Claude) or only tokens (Codex). */
   reportsLimits: boolean;
   /** Install / login / status / update / logout. Absent for engines the app can't set up itself. */
@@ -115,6 +117,7 @@ export const ENGINES: readonly EngineDef[] = [
     // The model list comes from the adapter; these efforts are what Settings offers until it does.
     models: { efforts: ["low", "medium", "high"] },
     provider: "OpenAI",
+    brands: ["ChatGPT", "GPT"],
     reportsLimits: false,
     // The app runs the official Codex CLI bundled with the ACP adapter (status, login), so it never
     // installs Codex itself; the official install command is kept for builds without the bundle.
@@ -179,6 +182,11 @@ export function getEngine(id: string): EngineDef {
   const engine = ENGINES.find((e) => e.id === id);
   if (!engine) throw new Error(`Unknown engine: ${id}`);
   return engine;
+}
+
+/** Brands a harness may not use in its name, tagline or logo: each engine's name, its provider's first word and extra marks. */
+export function brandNames(): string[] {
+  return [...new Set(ENGINES.flatMap((e) => [e.name, e.provider.split(" ")[0], ...(e.brands ?? [])]))];
 }
 
 /** Engines a harness may offer: the ones it was tested with, filtered by legal status. */

@@ -6,7 +6,7 @@ A harness lives in its own repository and depends on `@humanharness/cli` only: u
 
 | Command | What it does |
 |---|---|
-| `init <dir> [--core <path>] [--id <id>]` | Copies `packages/cli/template/` (the id replaces `example-harness`), writes `package.json` with the `link:` dependency and the `check`, `run` and `dev` scripts, appends the first entry of `HARNESS.md`'s decision log, installs the guide, then runs `corepack pnpm install` and `git init` (`--skip-install` links the CLI directly instead; tests use it). |
+| `init <dir> [--core <path>] [--id <id>] [--skip-install]` | The core checkout must have run `corepack pnpm install` first. Copies `packages/cli/template/` (the id replaces `example-harness`), writes `package.json` with the `link:` dependency and the `check`, `run` and `dev` scripts, appends the first entry of `HARNESS.md`'s decision log, installs the guide, then runs `corepack pnpm install` and `git init` (`--skip-install` links the CLI directly instead; tests use it). |
 | `check [--json]` | Loads the manifest with the SDK and reads `HARNESS.md` (`packages/cli/src/check.ts`). Errors exit with 1. |
 | `run <action> …` | One task against a real engine, with the app's own `TaskManager` and `TurnController` (`packages/cli/src/run.ts`), the terminal as the window, and a usage report at the end. |
 | `dev [--engine <id>] [--build <dir>]` | `check`, then the shell's `electron-vite dev` with `HH_HARNESS_DIR` (and `HH_DEV_ENGINE`; `--build` builds into `<dir>` through `HH_OUT_DIR`). When electron-vite can't start, it prints why and exits with 1. |

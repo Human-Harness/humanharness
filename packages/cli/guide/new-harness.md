@@ -29,7 +29,7 @@ Resources are part of the third pillar. A harness never names a model: each task
 
 - Never edit files outside this repository.
 - Never read `~/.claude`, `~/.codex` or `~/.gemini`, and never touch credentials or their environment variables. People sign in through the engine's official CLI; a harness never handles accounts.
-- No provider or model brands (Claude, Anthropic, Codex, OpenAI, ChatGPT, GPT, Gemini, Google, Kimi, Moonshot, Qwen) in the harness's name, tagline or logo.
+- No provider or model brands (Claude, Anthropic, Codex, OpenAI, ChatGPT, GPT, Gemini, Google, Kimi, Moonshot, Qwen, Alibaba) in the harness's name, tagline or logo.
 - Minimal permissions: the AI gets only what the flow needs, and every wide permission has a written reason.
 
 ## Phase 1 — Task
@@ -116,6 +116,6 @@ Fills: HARNESS.md → Open questions, Decision log
 
 1. Run `corepack pnpm check` and fix every error.
 2. Go through the warnings with the developer: fix each one, or record in the Decision log why it stays.
-3. Ask the developer before running a task for real: it uses their engine plan. If they agree, run at least one: `corepack pnpm run run <action> --engine claude` (or `codex`); the engine's official CLI must be signed in. Read its report (tokens per phase, peak context against the cap, the cost hint) and adjust tiers or briefs.
-4. Open the app with `corepack pnpm dev`.
+3. Open the app with `corepack pnpm dev`. The first time, the developer accepts the engine's notice there; `run` needs it.
+4. Ask the developer before running a task for real: it uses their engine plan. If they agree, run at least one: `corepack pnpm run run <action> --engine claude` (or `codex`); the engine's official CLI must be signed in. Read its report (tokens per phase, peak context against the cap, the cost hint) and adjust tiers or briefs.
 5. Leave **Open questions** empty, or with only what the developer chose to keep open.

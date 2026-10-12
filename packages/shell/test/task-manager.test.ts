@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { SavedNote } from "@humanharness/harness-sdk";
+import type { ChoiceOption, SavedNote } from "@humanharness/harness-sdk";
 import type { Event } from "@humanharness/runtime";
 import type { TaskView } from "@humanharness/ui/client";
 import type { Note, NoteMeta } from "@humanharness/workspace";
@@ -37,6 +37,8 @@ function setup(
     onEndSession?: () => void;
     /** Runs inside each `notes` call. */
     onNotes?: () => void;
+    /** Runs inside each tasks.json save, with what is saved. */
+    onSave?: (s: TasksFile) => void;
   } = {},
 ) {
   let state = opts.state ?? emptyTasks();
@@ -53,6 +55,7 @@ function setup(
       load: async () => structuredClone(state),
       save: async (s) => {
         state = structuredClone(s);
+        opts.onSave?.(s);
       },
     },
     turns: {
@@ -94,6 +97,9 @@ function setup(
   });
   return { manager, turns, views, log, emitted, state: () => state };
 }
+
+/** Picks an option of the block shown for the task open now. */
+const pick = (t: ReturnType<typeof setup>, option: ChoiceOption) => t.manager.choose(option, t.state().current?.id ?? "none");
 
 describe("TaskManager", () => {
   it("starts an action in a fresh session: its brief with the notes index is the first message", async () => {
@@ -147,7 +153,7 @@ describe("TaskManager", () => {
   it("on next: closes with a quiet turn, writes the note, then starts the next topic from the index", async () => {
     const t = setup({ script: [[ok], [saveNote(), ok], [ok]] });
     await t.manager.start("manifest");
-    await t.manager.choose({ label: "Next topic →", next: true });
+    await pick(t, { label: "Next topic →", next: true });
     expect(t.turns[1]).toMatchObject({ message: CLOSE_PROMPT, options: { task: "t1", action: "manifest", phase: "close", quiet: true } });
     expect(t.log).toEqual(["endSession", "turn:run", "turn:close", "note:manifest", "history:Note: The manifest", "endSession", "endSession", "turn:run"]);
     expect(t.state().actions).toEqual({ manifest: "done" });
@@ -159,7 +165,7 @@ describe("TaskManager", () => {
   it("marks the topic unsaved when the closing turn brings no valid note", async () => {
     const t = setup({ script: [[ok], [saveNote({ title: "" }), ok]], path: ["manifest"] });
     await t.manager.start("manifest");
-    await t.manager.choose({ label: "Done", next: true });
+    await pick(t, { label: "Done", next: true });
     expect(t.state()).toMatchObject({ current: null, actions: { manifest: "unsaved" } });
     expect(t.turns).toHaveLength(2);
   });
@@ -167,24 +173,24 @@ describe("TaskManager", () => {
   it("keeps a follow-up option in the same task, showing its label", async () => {
     const t = setup();
     await t.manager.start("manifest");
-    await t.manager.choose({ label: "Go deeper", followUp: "Explain validation in detail." });
+    await pick(t, { label: "Go deeper", followUp: "Explain validation in detail." });
     expect(t.turns[1]).toMatchObject({ message: "Explain validation in detail.", options: { task: "t1", display: "Go deeper", followUp: true } });
   });
 
   it("closes this task and starts the one an option names; an unknown action is a follow-up", async () => {
     const t = setup({ script: [[ok], [saveNote(), ok], [ok]] });
     await t.manager.start("manifest");
-    await t.manager.choose({ label: "Compare with a turn", action: "turn" });
+    await pick(t, { label: "Compare with a turn", action: "turn" });
     expect(t.state().current).toMatchObject({ id: "t2", action: "turn" });
     expect(t.turns[2].message).toContain("# Topic: turn");
-    await t.manager.choose({ label: "Something else", action: "nope" });
+    await pick(t, { label: "Something else", action: "nope" });
     expect(t.turns[3]).toMatchObject({ message: "Something else", options: { task: "t2", followUp: true } });
   });
 
   it("skips the closing turn when the task already saved its note", async () => {
     const t = setup({ script: [[saveNote(), ok], [ok]] });
     await t.manager.start("manifest");
-    await t.manager.choose({ label: "Next", next: true });
+    await pick(t, { label: "Next", next: true });
     expect(t.turns.map((x) => x.options.phase)).toEqual(["run", "run"]);
     expect(t.state().actions.manifest).toBe("done");
   });
@@ -223,7 +229,7 @@ describe("TaskManager", () => {
   it("saves a free question's note under a q- slug", async () => {
     const t = setup({ script: [[ok], [saveNote({ ...note, title: "Where chats live" }), ok]], path: [] });
     await t.manager.ask("Where are chats saved?");
-    await t.manager.choose({ label: "Done", next: true });
+    await pick(t, { label: "Done", next: true });
     expect(t.log).toContain("note:q-where-chats-live");
     expect(t.state()).toMatchObject({ current: null, actions: {} });
   });
@@ -243,11 +249,11 @@ describe("TaskManager", () => {
   it("follows an option's action first, then next, then followUp; a bare label is a follow-up", async () => {
     const t = setup({ script: [[saveNote(), ok], [saveNote(), ok], [saveNote(), ok]] });
     await t.manager.start("manifest");
-    await t.manager.choose({ label: "Compare with a turn", action: "turn", next: true, followUp: "x" });
+    await pick(t, { label: "Compare with a turn", action: "turn", next: true, followUp: "x" });
     expect(t.state().current).toMatchObject({ id: "t2", action: "turn" });
-    await t.manager.choose({ label: "Next", next: true, followUp: "x" });
+    await pick(t, { label: "Next", next: true, followUp: "x" });
     expect(t.state().current).toMatchObject({ id: "t3", action: "engines" });
-    await t.manager.choose({ label: "Tell me more" });
+    await pick(t, { label: "Tell me more" });
     expect(t.turns.at(-1)).toMatchObject({ message: "Tell me more", options: { task: "t3", display: "Tell me more", followUp: true } });
   });
 
@@ -268,7 +274,7 @@ describe("TaskManager", () => {
   it("does not start the next task when the closing turn is cancelled, and tells the window the turn stopped", async () => {
     const t = setup({ script: [[ok], [cancelled]] });
     await t.manager.start("manifest");
-    await t.manager.choose({ label: "Next", next: true });
+    await pick(t, { label: "Next", next: true });
     expect(t.turns).toHaveLength(2);
     expect(t.state()).toMatchObject({ current: null, actions: { manifest: "unfinished" } });
     // The window already shows the next topic as a running turn: this done clears it.
@@ -286,7 +292,7 @@ describe("TaskManager", () => {
   it("at the end of the path, a cancelled closing turn sends nothing (the window shows no running turn)", async () => {
     const t = setup({ script: [[ok], [cancelled]], path: ["manifest"] });
     await t.manager.start("manifest");
-    await t.manager.choose({ label: "Done", next: true });
+    await pick(t, { label: "Done", next: true });
     expect(t.emitted).toEqual([]);
   });
 
@@ -296,7 +302,7 @@ describe("TaskManager", () => {
     manager = t.manager;
     await t.manager.start("manifest");
     // A quiet turn that fails (not cancelled) reaches the window by itself (TurnController).
-    await t.manager.choose({ label: "Next", next: true });
+    await pick(t, { label: "Next", next: true });
     expect(t.turns).toHaveLength(2);
     expect(t.emitted).toEqual([]);
   });
@@ -321,6 +327,41 @@ describe("TaskManager", () => {
     expect(t.emitted).toEqual([cancelled]);
   });
 
+  it("refuses a pick from a block of an earlier task: nothing runs and the open task stays as it was", async () => {
+    const t = setup({ script: [[ok], [saveNote(), ok], [ok]] });
+    await t.manager.start("manifest");
+    await pick(t, { label: "Next", next: true });
+    expect(t.state().current).toMatchObject({ id: "t2", status: "waiting" });
+    await expect(t.manager.choose({ label: "Go deeper" }, "t1")).rejects.toThrow("earlier task");
+    await expect(t.manager.choose({ label: "Next", next: true }, "t1")).rejects.toThrow("earlier task");
+    expect(t.turns).toHaveLength(3);
+    expect(t.state().current).toMatchObject({ id: "t2", action: "engines", status: "waiting", turns: 1 });
+  });
+
+  it("cancel while a follow-up marks the task running: no turn, the task waits again, the window told", async () => {
+    let manager!: TaskManager;
+    let armed = false;
+    const t = setup({ onSave: (s) => void (armed && s.current?.status === "running" && manager.cancel()) });
+    manager = t.manager;
+    await t.manager.start("manifest");
+    armed = true;
+    await t.manager.ask("And the blocks?");
+    expect(t.turns).toHaveLength(1);
+    expect(t.state().current).toMatchObject({ id: "t1", status: "waiting", turns: 1 });
+    expect(t.emitted).toEqual([cancelled]);
+  });
+
+  it("cancel while the task is marked closing: no closing turn, the task waits again, nothing new starts", async () => {
+    let manager!: TaskManager;
+    const t = setup({ onSave: (s) => void (s.current?.status === "closing" && manager.cancel()) });
+    manager = t.manager;
+    await t.manager.start("manifest");
+    await pick(t, { label: "Next", next: true });
+    expect(t.turns).toHaveLength(1);
+    expect(t.state()).toMatchObject({ current: { id: "t1", status: "waiting" }, actions: {} });
+    expect(t.emitted).toEqual([cancelled]);
+  });
+
   it("a normal turn sends no extra done", async () => {
     const t = setup({ script: [[ok], [cancelled]] });
     await t.manager.start("manifest");
@@ -336,7 +377,7 @@ describe("TaskManager", () => {
     const u = setup({ script: [[ok], [saveNote(), ok]], during: (i) => during(i) });
     manager = u.manager;
     await u.manager.start("manifest");
-    await u.manager.choose({ label: "Next", next: true });
+    await pick(u, { label: "Next", next: true });
     expect(u.turns).toHaveLength(2);
     expect(u.log).toContain("cancel");
     expect(u.state()).toMatchObject({ current: null, actions: { manifest: "done" } });
@@ -347,7 +388,7 @@ describe("TaskManager", () => {
     let closed = false;
     const t = setup({ script: [[ok], [saveNote(), ok]], closed: () => closed, during: (i) => void (i === 1 && (closed = true)) });
     await t.manager.start("manifest");
-    await expect(t.manager.choose({ label: "Next", next: true })).rejects.toThrow("The app is closing");
+    await expect(pick(t, { label: "Next", next: true })).rejects.toThrow("The app is closing");
     expect(t.turns).toHaveLength(2);
     expect(t.state()).toMatchObject({ current: null, actions: { manifest: "done" } });
     expect(t.state().actions).not.toHaveProperty("engines");
@@ -358,7 +399,7 @@ describe("TaskManager", () => {
     const t = setup({ script: [[ok], [saveNote(), ok]], during: (i) => void (i === 1 && manager.close()) });
     manager = t.manager;
     await t.manager.start("manifest");
-    await t.manager.choose({ label: "Next", next: true });
+    await pick(t, { label: "Next", next: true });
     expect(t.turns).toHaveLength(2);
     expect(t.emitted).toEqual([cancelled]);
   });
@@ -400,7 +441,7 @@ describe("TaskManager", () => {
   it("tells the window every change, with the notes", async () => {
     const t = setup({ script: [[ok], [saveNote(), ok]], path: ["manifest"] });
     await t.manager.start("manifest");
-    await t.manager.choose({ label: "Done", next: true });
+    await pick(t, { label: "Done", next: true });
     expect(t.views.map((v) => v.current?.status ?? "idle")).toContain("closing");
     expect(t.views.at(-1)).toEqual({
       current: null,

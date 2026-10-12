@@ -269,8 +269,11 @@ export interface HarnessClient {
   /** The current task, how each action ended, and the notes. */
   getTasks(): Promise<TaskView>;
   onTasks(listener: (view: TaskView) => void): () => void;
-  /** The person picked an option of a `choices` block: a follow-up, another topic, or the next one on the path. */
-  choose(option: ChoiceOption): Promise<void>;
+  /**
+   * The person picked an option of a `choices` block: a follow-up, another topic, or the next one on the path.
+   * `task` is the task the block was shown for; a block of an earlier task is refused.
+   */
+  choose(option: ChoiceOption, task: string): Promise<void>;
   /** Opens a file inside the reference folders or the user's folder in its default app. False when refused or missing. */
   openPath(path: string): Promise<boolean>;
 }

@@ -122,9 +122,9 @@ export class TaskManager {
     return this.op(() => this.askNow(text, display));
   }
 
-  /** An option of a `choices` block. */
-  choose(option: ChoiceOption): Promise<void> {
-    return this.op(() => this.chooseNow(option));
+  /** An option of a `choices` block shown for task `task`; a block of an earlier task is refused. */
+  choose(option: ChoiceOption, task: string): Promise<void> {
+    return this.op(() => this.chooseNow(option, task));
   }
 
   /** Cancels the running turn; an operation that runs several turns (closing, then the next task) stops. */
@@ -187,6 +187,11 @@ export class TaskManager {
     const c = (await this.d.store.load()).current;
     if (c?.status === "waiting") {
       await this.setStatus(c.id, "running");
+      // Checked with no await before the send: a Stop while the status was saved.
+      if (this.cancelRequested) {
+        await this.setStatus(c.id, "waiting");
+        return this.stopped();
+      }
       let done: Done;
       try {
         done = await this.runTurn(c, text, { ...(display ? { display } : {}), ...(c.action ? { action: c.action } : {}), followUp: true });
@@ -209,8 +214,10 @@ export class TaskManager {
    * Precedence: a known `action`, then `next`, then `followUp`. An option with none of them (or only an
    * unknown action) is a follow-up whose text is its label.
    */
-  private async chooseNow(option: ChoiceOption): Promise<void> {
+  private async chooseNow(option: ChoiceOption, task: string): Promise<void> {
     const state = await this.d.store.load();
+    // A click on an older answer's block (the window's view lagged behind): it must not act on the open task.
+    if (state.current?.id !== task) throw new Error("That choice belongs to an earlier task");
     const action = this.known(option.action) ? option.action : undefined;
     if (!option.next && !action) return this.askNow(option.followUp ?? option.label, option.label);
     const target = action ?? nextInPath(this.d.path, state.current?.action, state.actions);
@@ -298,6 +305,11 @@ export class TaskManager {
       return !this.cancelRequested;
     }
     await this.setStatus(c.id, "closing");
+    // Checked with no await before the closing turn: a Stop while the status was saved.
+    if (this.cancelRequested) {
+      await this.setStatus(c.id, "waiting");
+      return false;
+    }
     let done: Done;
     try {
       done = await this.runTurn(c, CLOSE_PROMPT, { ...(c.action ? { action: c.action } : {}), phase: "close", quiet: true });

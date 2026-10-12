@@ -418,13 +418,15 @@ function registerIpc() {
     return action ? tasks.start(action, message) : tasks.ask(message);
   });
   handle("hh:getTasks", () => tasks.view());
-  handle("hh:choose", (option: unknown) => {
+  handle("hh:choose", (option: unknown, task: unknown) => {
     if (quitting) throw new Error("The app is closing");
     const blocked = guards.turnBlocked();
     if (blocked) throw new Error(blocked);
     const parsed = choiceOptionSchema.safeParse(option);
     if (!parsed.success) throw new Error("Invalid choice");
-    return tasks.choose(parsed.data);
+    // The task the block was shown for: a block of an earlier task is refused (TaskManager.choose).
+    if (typeof task !== "string" || !task || task.length > 100) throw new Error("Invalid choice");
+    return tasks.choose(parsed.data, task);
   });
   handle("hh:openPath", async (file: unknown) => {
     const c = await validConfig();

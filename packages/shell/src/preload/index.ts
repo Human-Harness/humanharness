@@ -33,7 +33,7 @@ const client: HarnessClient = {
   revealFolder: () => ipcRenderer.invoke("hh:revealFolder"),
   getTasks: () => ipcRenderer.invoke("hh:getTasks"),
   onTasks: (listener) => subscribe<TaskView>("hh:tasks", listener),
-  choose: (option) => ipcRenderer.invoke("hh:choose", option),
+  choose: (option, task) => ipcRenderer.invoke("hh:choose", option, task),
   openPath: (file) => ipcRenderer.invoke("hh:openPath", file),
 };
 

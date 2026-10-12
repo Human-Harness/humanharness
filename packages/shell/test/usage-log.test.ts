@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import type { ChatEntry } from "@humanharness/ui/client";
-import { type UsageMeta, type UsageRecord, UsageLog, summarizeUsage, usageRecord } from "../src/main/usage-log";
+import { type UsageMeta, type UsageRecord, UsageLog, compactionRecord, profileMeta, summarizeUsage, usageRecord } from "../src/main/usage-log";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -139,5 +139,62 @@ describe("summarizeUsage", () => {
       { ...rec(0.05, R1), task: "b" },
     ];
     expect(summarizeUsage(records, now).estimates).toEqual({});
+  });
+});
+
+describe("usage records with the task's profile", () => {
+  const entry: ChatEntry = {
+    id: "e",
+    role: "assistant",
+    text: "",
+    blocks: [],
+    activities: [],
+    at: "2026-10-12T12:00:00.000Z",
+    usage: { inputTokens: 1, outputTokens: 2, cacheReadTokens: 3, cacheWriteTokens: 4 },
+  };
+  const profile = { engine: "claude", tier: "deep" as const, model: "opus", effort: "high" as const, cap: 400_000 };
+
+  it("records tier, model, effort, cap and the model the engine reported; a checkpoint is its own kind", () => {
+    expect(usageRecord(entry, "claude", { action: "turn", task: "t1", phase: "run", ...profileMeta(profile), reportedModel: "claude-opus-4-1" })).toEqual({
+      at: entry.at,
+      engine: "claude",
+      action: "turn",
+      task: "t1",
+      phase: "run",
+      tier: "deep",
+      model: "opus",
+      effort: "high",
+      cap: 400_000,
+      reportedModel: "claude-opus-4-1",
+      ok: true,
+      usage: entry.usage,
+    });
+    expect(usageRecord(entry, "claude", { phase: "checkpoint", ...profileMeta(profile) })).toMatchObject({ phase: "checkpoint", kind: "checkpoint" });
+  });
+
+  it("writes a compaction line without usage", () => {
+    const { model: _m, ...codex } = { ...profile, engine: "codex" };
+    expect(compactionRecord("codex", { action: "turn", task: "t1", ...profileMeta(codex) }, "2026-10-12T12:00:00.000Z")).toEqual({
+      at: "2026-10-12T12:00:00.000Z",
+      engine: "codex",
+      action: "turn",
+      task: "t1",
+      tier: "deep",
+      effort: "high",
+      cap: 400_000,
+      kind: "compaction",
+      ok: true,
+    });
+  });
+
+  it("leaves checkpoints and compactions out of the estimates", () => {
+    const records: UsageRecord[] = [
+      { ...rec(0.1, R1, "turn"), task: "a" },
+      { ...rec(0.3, R1, "turn"), task: "a", phase: "checkpoint", kind: "checkpoint" },
+      { at: "t", engine: "claude", ok: true, kind: "compaction", action: "turn", task: "a" },
+      { ...rec(0.4, R1, "turn"), task: "a" },
+      rec(0.5, R1),
+    ];
+    expect(summarizeUsage(records, new Date("2026-10-11T12:00:00.000Z")).estimates.turn).toBeCloseTo(0.3);
   });
 });

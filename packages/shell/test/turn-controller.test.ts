@@ -551,6 +551,24 @@ describe("TurnController for tasks", () => {
     expect(events).toEqual([{ type: "done", ok: false, error: { code: "out-of-quota" } }]);
   });
 
+  it("records the task's profile and the model the engine reported with the usage", async () => {
+    const fake = fakeRuntime();
+    const recorded: UsageMeta[] = [];
+    const controller = new TurnController({
+      ensureRuntime: async () => fake.runtime,
+      chatLog: async () => ({ append: async () => {} }),
+      stateBlocks: () => new Set(),
+      emit: () => {},
+      recordUsage: async (_entry, meta) => void recorded.push(meta),
+    });
+    const profile = { engine: "claude", tier: "light" as const, model: "haiku", effort: "low" as const, cap: 100_000 };
+    const sent = controller.send("hi", { task: "t1", phase: "checkpoint", quiet: true, profile });
+    await vi.waitFor(() => expect(fake.send).toHaveBeenCalled());
+    fake.finish([{ type: "usage", inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0, model: "claude-haiku-4-5" }, { type: "done", ok: true }]);
+    await sent;
+    expect(recorded).toEqual([{ task: "t1", phase: "checkpoint", tier: "light", model: "haiku", effort: "low", cap: 100_000, reportedModel: "claude-haiku-4-5" }]);
+  });
+
   it("logs no user entry for the retry of a held turn", async () => {
     const fake = fakeRuntime();
     const { controller, entries } = setup({ ensureRuntime: async () => fake.runtime });

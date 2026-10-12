@@ -3,7 +3,7 @@ import type { ModelProfile } from "@humanharness/engines";
 import { type Event, type HarnessRuntime, type LimitWindow, type RunningTurn, fail } from "@humanharness/runtime";
 import type { ChatEntry, SendOptions } from "@humanharness/ui/client";
 import { TurnRecorder } from "./chat-log";
-import type { UsageMeta } from "./usage-log";
+import { type UsageMeta, profileMeta } from "./usage-log";
 
 type Done = Extract<Event, { type: "done" }>;
 
@@ -142,7 +142,14 @@ export class TurnController {
         });
       }
       const recorder = new TurnRecorder(this.deps.stateBlocks());
-      const meta: UsageMeta = { ...(action ? { action } : {}), ...(task ? { task } : {}), ...(phase ? { phase } : {}) };
+      let reportedModel: string | undefined;
+      const meta = (): UsageMeta => ({
+        ...(action ? { action } : {}),
+        ...(task ? { task } : {}),
+        ...(phase ? { phase } : {}),
+        ...(profile ? profileMeta(profile) : {}),
+        ...(reportedModel ? { reportedModel } : {}),
+      });
       // A held attempt keeps its events until its model answers: one that fails shows nothing.
       let pending: Event[] | null = holdModelError ? [] : null;
       const release = () => {
@@ -154,7 +161,7 @@ export class TurnController {
         const entry: ChatEntry = { ...recorder.finish(done), ...(task ? { task } : {}) };
         if (isHeld(done, options)) {
           pending = null;
-          await this.recordUsage(entry, meta, recorder.firstLimits);
+          await this.recordUsage(entry, meta(), recorder.firstLimits);
           if (!done.ok && done.error.code === "session-expired" && engineId) await this.forgetSession(engineId);
           this.tell(onEvent, done);
           return;
@@ -168,7 +175,7 @@ export class TurnController {
             quiet ? { id: entry.id, role: "assistant", text: "", blocks: [], activities: [], at: entry.at, ...(done.ok ? {} : { error: done.error }), ...(task ? { task } : {}) } : entry,
           );
         }
-        await this.recordUsage(entry, meta, recorder.firstLimits);
+        await this.recordUsage(entry, meta(), recorder.firstLimits);
         if (!done.ok && done.error?.code === "session-expired" && engineId) await this.forgetSession(engineId);
         this.tell(onEvent, done);
         if (surface) this.emit(done);
@@ -189,6 +196,7 @@ export class TurnController {
       turn.running = rt.send(message, (e) => {
         if (e.type === "done") finished = finish(e);
         else {
+          if (e.type === "usage" && e.model) reportedModel = e.model;
           recorder.add(e);
           this.tell(onEvent, e);
           // The context and compactions reach the window through the task view, never as chat events.

@@ -7,6 +7,7 @@
   "scripts": {
     "test": "vitest run --passWithNoTests",
     "typecheck": "tsc -p tsconfig.json",
+    "humanharness": "node packages/cli/bin/humanharness.js",
     "hh-dev": "tsx packages/runtime/src/dev.ts",
     "app:dev": "corepack pnpm --filter @humanharness/shell dev",
     "app:build": "corepack pnpm --filter @humanharness/shell build",

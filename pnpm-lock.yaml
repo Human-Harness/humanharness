@@ -228,6 +228,46 @@ importers:
         specifier: ^4.23.15
         version: 4.23.15
 
+  packages/cli:
+    dependencies:
+      '@humanharness/engines':
+        specifier: workspace:*
+        version: link:../engines
+      '@humanharness/harness-sdk':
+        specifier: workspace:*
+        version: link:../harness-sdk
+      '@humanharness/i18n':
+        specifier: workspace:*
+        version: link:../i18n
+      '@humanharness/runtime':
+        specifier: workspace:*
+        version: link:../runtime
+      '@humanharness/shell':
+        specifier: workspace:*
+        version: link:../shell
+      '@humanharness/ui':
+        specifier: workspace:*
+        version: link:../ui
+      '@humanharness/workspace':
+        specifier: workspace:*
+        version: link:../workspace
+      react-i18next:
+        specifier: ^17.0.16
+        version: 17.0.16(i18next@26.4.3(typescript@7.0.2))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(typescript@7.0.2)
+      tsx:
+        specifier: ^4.23.15
+        version: 4.23.15
+    devDependencies:
+      '@humanharness/fake-agent':
+        specifier: workspace:*
+        version: link:../fake-agent
+      '@types/react':
+        specifier: ^19.3.0
+        version: 19.3.0
+      react:
+        specifier: ^19.3.0
+        version: 19.3.0
+
   packages/e2e:
     devDependencies:
       '@humanharness/engines':

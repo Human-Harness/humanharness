@@ -482,6 +482,47 @@ describe("AcpTransport profiles", () => {
     }
   });
 
+  it("never passes an inherited CODEX_CONFIG to a turn without a profile", async () => {
+    process.env.CODEX_CONFIG = '{"sandbox_mode":"danger-full-access"}';
+    try {
+      const { transport, log } = setup({ turns: [[chunk("ok")]] });
+      await run(transport);
+      expect(log().find((l) => l.method === "env")!.params.CODEX_CONFIG).toBeNull();
+    } finally {
+      delete process.env.CODEX_CONFIG;
+    }
+  });
+
+  it("starts a fresh session, not a loaded one, when the profile changes without endSession", async () => {
+    const { transport, log, started } = setup({ loadSession: true, sessionId: "s", turns: [[chunk("a")], [chunk("b")]] });
+    await run(transport, "a", undefined, deep);
+    const events = await run(transport, "b", undefined, light);
+    expect(events.at(-1)).toEqual({ type: "done", ok: true });
+    expect(log().filter((l) => l.method === "initialize")).toHaveLength(2);
+    expect(log().some((l) => l.method === "session/load")).toBe(false);
+    expect(log().filter((l) => l.method === "session/new")).toHaveLength(2);
+    expect(started).toHaveLength(2);
+  });
+
+  it("checks the model of a loaded session", async () => {
+    const { transport, log } = setup({ loadSession: true, currentModelId: "gpt-5.5[high]", turns: [[chunk("never")]] }, { id: "old-1", started: true });
+    const events = await run(transport, "hi", undefined, { ...deep, model: "gpt-9" });
+    expect(log().filter((l) => l.method === "session/load")).toHaveLength(1);
+    expect(events.at(-1)).toMatchObject({ type: "done", ok: false, error: { code: "model-unavailable" } });
+    expect(log().filter((l) => l.method === "session/prompt")).toHaveLength(0);
+  });
+
+  it("reports the model of a loaded session with the usage", async () => {
+    const { transport, log } = setup(
+      { loadSession: true, currentModelId: "gpt-5.5[high]", usage: { inputTokens: 1, outputTokens: 1 }, turns: [[chunk("ok")]] },
+      { id: "old-1", started: true },
+    );
+    const events = await run(transport, "hi", undefined, deep);
+    expect(log().filter((l) => l.method === "session/new")).toHaveLength(0);
+    expect(events).toContainEqual(expect.objectContaining({ type: "usage", model: "gpt-5.5" }));
+    expect(events.at(-1)).toEqual({ type: "done", ok: true });
+  });
+
   it("keeps the process while the profile stays, and starts a new one for another profile", async () => {
     const { transport, log } = setup({ closeSession: true, turns: [[chunk("a")], [chunk("b")], [chunk("c")]] });
     await run(transport, "a", undefined, deep);

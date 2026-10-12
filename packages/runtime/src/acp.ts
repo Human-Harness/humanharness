@@ -225,11 +225,13 @@ export class AcpTransport implements Transport {
   /** What the agent advertised at initialize. */
   private loadable = false;
   private closable = false;
-  /** CODEX_CONFIG the running process was started with (undefined: none set by the app). */
+  /** An agent process was started at least once by this transport. */
+  private spawned = false;
+  /** CODEX_CONFIG the last process was started with (undefined: none set by the app). */
   private spawnedConfig: string | undefined;
   /** The profile of the turn being run. */
   private profile: ModelProfile | undefined;
-  /** The model the session runs, as the agent reported it at session/new (without its effort). */
+  /** The model the session runs, as the agent reported it at session/new or session/load (without its effort). */
   private reportedModel: string | undefined;
   /** A compaction was already reported in this turn. */
   private sawCompaction = false;
@@ -240,8 +242,10 @@ export class AcpTransport implements Transport {
   private async connect(config: string | undefined): Promise<void> {
     const [binary, ...args] = this.o.command;
     // CODEX_CONFIG is ours: built from the profile, replacing any inherited value (never merged).
+    // Without a profile it is removed, even when `o.env` sets it: the profile is its only source.
     const env: NodeJS.ProcessEnv = { ...process.env, ...this.o.env };
     if (config !== undefined) env.CODEX_CONFIG = config;
+    else delete env.CODEX_CONFIG;
     const child = spawn(binary, args, {
       cwd: this.o.folder,
       env,
@@ -249,6 +253,7 @@ export class AcpTransport implements Transport {
       detached: process.platform !== "win32",
     });
     this.child = child;
+    this.spawned = true;
     this.spawnedConfig = config;
     this.stderrTail = "";
     child.on("exit", () => {
@@ -306,13 +311,18 @@ export class AcpTransport implements Transport {
     const agent = this.conn!.agent;
     const mcpServers = this.mcpServers();
     if (this.o.session.started && this.loadable) {
+      let loaded: { configOptions?: unknown; models?: { currentModelId?: unknown } | null } | undefined;
       try {
-        await agent.request("session/load", { sessionId: this.o.session.id, cwd: this.o.folder, mcpServers });
+        loaded = (await agent.request("session/load", { sessionId: this.o.session.id, cwd: this.o.folder, mcpServers })) as typeof loaded;
         this.sessionId = this.o.session.id;
       } catch (e) {
         // An expired login must surface; any other load failure (lost session) falls back to a fresh one.
         const event = errorFrom(e);
         if (event.type === "done" && !event.ok && event.error?.code === "session-expired") throw e;
+      }
+      if (this.sessionId) {
+        this.reportModels(loaded?.configOptions);
+        this.checkModel(loaded?.models?.currentModelId);
       }
     }
     if (!this.sessionId) {
@@ -346,6 +356,7 @@ export class AcpTransport implements Transport {
   private checkModel(current: unknown): void {
     this.reportedModel = typeof current === "string" ? current.replace(/\[[^\]]*\]$/, "") : undefined;
     const wanted = this.profile?.model;
+    // An agent that reports no model is accepted: the model it runs is then unknown, not wrong.
     if (wanted !== undefined && this.reportedModel !== undefined && this.reportedModel !== wanted) {
       throw new ModelUnavailableError(`Asked for ${wanted}; the agent runs ${String(current)}`);
     }
@@ -431,6 +442,7 @@ export class AcpTransport implements Transport {
         return;
       }
       case "usage_update":
+        // One context event per update: consumers keep the last one.
         if (typeof u.used === "number" && Number.isFinite(u.used)) {
           emit({ type: "context", used: u.used, ...(typeof u.size === "number" ? { size: u.size } : {}) });
         }
@@ -449,8 +461,12 @@ export class AcpTransport implements Transport {
       emit(fail("agent-crashed", err instanceof Error ? err.message : String(err)));
       return;
     }
-    // CODEX_CONFIG is read when the agent starts: a task on another profile needs a new process.
-    if (this.conn && config !== this.spawnedConfig) await this.close();
+    // CODEX_CONFIG is read when the agent starts: a task on another profile needs a new process,
+    // and a fresh session, so a saved one never resumes under another model (spec D2).
+    if (this.spawned && config !== this.spawnedConfig) {
+      await this.close();
+      this.o.session = { id: randomUUID(), started: false };
+    }
     this.profile = profile;
     this.calls.clear();
     this.hidden.clear();

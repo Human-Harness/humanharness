@@ -58,7 +58,7 @@ acp
     if (script.failLoad) throw new acp.RequestError(-32603, "Session not found");
     mcpServers = (ctx.params.mcpServers ?? []) as StdioMcp[];
     cwd = ctx.params.cwd;
-    return {};
+    return (script.currentModelId ? { models: { currentModelId: script.currentModelId, availableModels: [] } } : {}) as never;
   })
   .onRequest("session/set_mode", (ctx) => {
     log("session/set_mode", ctx.params);

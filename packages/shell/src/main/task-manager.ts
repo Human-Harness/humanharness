@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
+import type { ModelProfile } from "@humanharness/engines";
 import { type ChoiceOption, type Language, type LocalizedText, type SavedNote, saveNoteSchema } from "@humanharness/harness-sdk";
 import { type Event, type Session, fail } from "@humanharness/runtime";
-import { type ActionStatus, type NoteView, type TaskStatus, type TaskView, nextInPath } from "@humanharness/ui/client";
+import { type ActionStatus, type CurrentTaskView, type NoteView, type TaskStatus, type TaskView, nextInPath } from "@humanharness/ui/client";
 import { type Note, type NoteMeta, buildNotesIndex, noteSlug } from "@humanharness/workspace";
 import { CLOSE_PROMPT, QUESTION_PROMPT, fillPrompt } from "./task-prompts";
 import { type CurrentTask, type TasksFile, interrupted } from "./task-store";
@@ -44,6 +45,10 @@ export interface TaskDeps {
    * operation stops before its turn reached the window, so the window drops the turn it shows.
    */
   emit?(e: Event): void;
+  /** The model profile a new task runs on, resolved once when it starts (resources spec §5). Absent: the engine's defaults. */
+  profileFor?(action: string | undefined): Promise<ModelProfile>;
+  /** The profile to retry a first turn with after `model-unavailable`, or null when none is left (spec §5.3). */
+  fallbackFor?(profile: ModelProfile, tried: string[]): Promise<ModelProfile | null>;
   now?: () => Date;
   newId?: () => string;
 }
@@ -59,6 +64,16 @@ const noteView = (n: Note): NoteView => ({
   summary: n.summary,
   decisions: n.decisions,
   path: n.path,
+});
+
+/** The open task as the window sees it: no session, no prompt, just what the screen shows. */
+const currentView = (c: CurrentTask): CurrentTaskView => ({
+  id: c.id,
+  ...(c.action ? { action: c.action } : {}),
+  status: c.status,
+  ...(c.profile?.fallbackFrom
+    ? { fallback: { model: c.profile.fallbackFrom, ...(c.profile.model !== undefined && c.profile.tier !== "custom" ? { tier: c.profile.tier } : {}) } }
+    : {}),
 });
 
 /**
@@ -106,7 +121,7 @@ export class TaskManager {
     const [state, notes] = await Promise.all([this.d.store.load(), this.d.notes().catch(() => [] as Note[])]);
     const c = state.current;
     return {
-      current: c ? { id: c.id, ...(c.action ? { action: c.action } : {}), status: c.status } : null,
+      current: c ? currentView(c) : null,
       actions: state.actions,
       notes: notes.map(noteView),
     };
@@ -233,7 +248,9 @@ export class TaskManager {
     await this.endSession();
     const notes = await this.d.notes().catch(() => [] as Note[]);
     const engine = await this.d.engine();
-    const current: CurrentTask = { id: this.newId(), ...task, status: "running", startedAt: this.now().toISOString(), turns: 0 };
+    // Resolved once: the task keeps its model, effort and cap to the end (spec D2).
+    const profile = await this.d.profileFor?.(task.action);
+    const current: CurrentTask = { id: this.newId(), ...task, status: "running", startedAt: this.now().toISOString(), turns: 0, ...(profile ? { profile } : {}) };
     await this.update((s) => ({ ...s, engine, current }));
     // Checked again with no await before the send: a Stop while the session ended or the notes were read.
     if (this.cancelRequested) {
@@ -242,7 +259,7 @@ export class TaskManager {
     }
     let done: Done;
     try {
-      done = await this.runTurn(current, message(buildNotesIndex(notes)), { display, ...(task.action ? { action: task.action } : {}) });
+      done = await this.firstTurn(current, message(buildNotesIndex(notes)), { display, ...(task.action ? { action: task.action } : {}) });
     } catch (err) {
       // Nothing ran: the task goes away without marking its topic.
       if (err instanceof TurnNotStarted) await this.update((s) => (s.current?.id === current.id ? { ...s, current: null } : s));
@@ -252,16 +269,50 @@ export class TaskManager {
   }
 
   /**
+   * The task's first turn. When the plan doesn't include its model, it runs again in a fresh session on the
+   * next profile down, which the task keeps (spec §5.3). The failed attempt is held from the chat and the
+   * window only when there is a fallback; the retry doesn't log the person's message again.
+   */
+  private async firstTurn(task: CurrentTask, message: string, options: Omit<TurnOptions, "task" | "onEvent" | "profile">): Promise<Done> {
+    const tried: string[] = [];
+    let current = task;
+    for (let attempt = 0; ; attempt++) {
+      const fallback = current.profile && this.d.fallbackFor ? await this.d.fallbackFor(current.profile, tried) : null;
+      // Checked again with no await before the retry: a Stop while the session ended or the profile was saved.
+      if (attempt > 0 && this.cancelRequested) {
+        this.stopped();
+        return fail("cancelled") as Done;
+      }
+      const done = await this.runTurn(current, message, {
+        ...options,
+        ...(fallback ? { holdModelError: true } : {}),
+        ...(attempt > 0 ? { skipUserEntry: true } : {}),
+      });
+      if (done.ok || done.error.code !== "model-unavailable" || !fallback) return done;
+      if (this.cancelRequested) {
+        // The held failure never reached the window, which still shows the turn running.
+        this.stopped();
+        return fail("cancelled") as Done;
+      }
+      if (current.profile?.model) tried.push(current.profile.model);
+      await this.endSession();
+      current = { ...current, profile: fallback };
+      await this.update((s) => (s.current?.id === current.id ? { ...s, current: { ...s.current, profile: fallback } } : s));
+    }
+  }
+
+  /**
    * Runs one turn of `task`; a valid `save_note` in it becomes the task's note. Throws TurnNotStarted when
    * the turn was refused before it began (no `done` came).
    */
-  private async runTurn(task: CurrentTask, message: string, options: Omit<TurnOptions, "task" | "onEvent">): Promise<Done> {
+  private async runTurn(task: CurrentTask, message: string, options: Omit<TurnOptions, "task" | "onEvent" | "profile">): Promise<Done> {
     const seen: { done?: Done; note?: SavedNote } = {};
     this.turnTask = task.id;
     try {
       await this.d.turns.send(message, {
         phase: "run",
         ...options,
+        ...(task.profile ? { profile: task.profile } : {}),
         task: task.id,
         onEvent: (e) => {
           if (e.type === "done") seen.done = e;
@@ -277,9 +328,11 @@ export class TaskManager {
     } finally {
       this.turnTask = null;
     }
-    // Mirrors TurnController: a quiet turn reaches the window only with a failure other than a cancel.
+    // Mirrors TurnController: a quiet turn reaches the window only with a failure other than a cancel,
+    // and a held model failure never does.
     const d = seen.done;
-    if (d && (!options.quiet || (!d.ok && d.error.code !== "cancelled"))) this.windowDone = true;
+    const held = options.holdModelError === true && d !== undefined && !d.ok && d.error.code === "model-unavailable";
+    if (d && !held && (!options.quiet || (!d.ok && d.error.code !== "cancelled"))) this.windowDone = true;
     if (seen.note) await this.saveNote(task, seen.note);
     return seen.done ?? { type: "done", ok: false, error: { code: "agent-crashed" } };
   }

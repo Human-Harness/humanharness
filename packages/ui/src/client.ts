@@ -1,5 +1,5 @@
 import type { ModelsConfig } from "@humanharness/engines";
-import type { ActionCost, ChoiceOption, Language, LocalizedText } from "@humanharness/harness-sdk";
+import type { ActionCost, ChoiceOption, Language, LocalizedText, Tier } from "@humanharness/harness-sdk";
 import type { ActivityKind, EngineError, Event, LimitWindow } from "@humanharness/runtime";
 
 export type Appearance = "system" | "light" | "dark";
@@ -209,6 +209,10 @@ export interface CurrentTaskView {
   /** Absent for a free question. */
   action?: string;
   status: TaskStatus;
+  /** Context in use by the task's session, and the task's cap (the side panel's meter). */
+  context?: { used: number; cap: number };
+  /** The plan lacked `model`: the task runs one tier down (`tier`), or on the engine's default model (no `tier`). */
+  fallback?: { model: string; tier?: Tier };
 }
 
 /** A note in `.harness/notes/`, for the side panel and "Lo que quedó claro". */

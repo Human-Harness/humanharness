@@ -19,6 +19,8 @@ export class History {
     private readonly folder: string,
     private readonly gitdir: string,
     private readonly ignore: string[] = [".harness/"],
+    /** Prefixes tracked even inside an ignored one (the notes under `.harness/`). */
+    private readonly keep: string[] = [],
   ) {}
 
   private headTime = 0;
@@ -46,7 +48,9 @@ export class History {
   }
 
   private tracked = (file: string): boolean =>
-    !this.ignore.some((i) => (i.endsWith("/") ? file.startsWith(i) : file === i)) && !file.endsWith(".DS_Store");
+    !file.endsWith(".DS_Store") &&
+    !file.endsWith(".tmp") &&
+    (this.keep.some((k) => file.startsWith(k)) || !this.ignore.some((i) => (i.endsWith("/") ? file.startsWith(i) : file === i)));
 
   async init(): Promise<void> {
     await fs.promises.mkdir(this.gitdir, { recursive: true });

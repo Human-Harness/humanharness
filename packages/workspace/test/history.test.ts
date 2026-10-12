@@ -146,4 +146,17 @@ describe("History", () => {
     expect(fs.existsSync(path.join(folder, "c.md"))).toBe(false);
     expect(await history.save("noop")).toBeNull();
   });
+
+  it("tracks the notes under .harness/ and nothing else there", async () => {
+    const h = new History(folder, gitdir, [".harness/", "AGENTS.md"], [".harness/notes/"]);
+    write(".harness/notes/turn.md", "note");
+    write(".harness/chats/main.jsonl", "chat");
+    write("mine.md", "mine");
+    const sha = (await h.save("with a note"))!;
+    fs.rmSync(path.join(folder, ".harness/notes/turn.md"));
+    write(".harness/chats/main.jsonl", "changed");
+    await h.restore(sha, "back");
+    expect(read(".harness/notes/turn.md")).toBe("note");
+    expect(read(".harness/chats/main.jsonl")).toBe("changed");
+  });
 });

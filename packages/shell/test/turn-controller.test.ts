@@ -478,7 +478,7 @@ describe("TurnController for tasks", () => {
     expect(seen).toEqual([{ type: "done", ok: false, error: { code: "model-unavailable" } }]);
   });
 
-  it("a held attempt that fails shows nothing in the window, but its usage is recorded", async () => {
+  it("a held attempt that fails shows nothing in the window but its plan limits, and its usage is recorded", async () => {
     const fake = fakeRuntime();
     const events: Event[] = [];
     const recorded: UsageMeta[] = [];
@@ -497,7 +497,8 @@ describe("TurnController for tasks", () => {
       { type: "done", ok: false, error: { code: "model-unavailable" } },
     ]);
     await sent;
-    expect(events).toEqual([]);
+    // The usage meter still updates: limits are about the plan, not the attempt.
+    expect(events).toEqual([{ type: "limits", status: "allowed", windows: [] }]);
     expect(recorded).toEqual([{ task: "t1" }]);
   });
 

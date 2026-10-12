@@ -44,6 +44,8 @@ function setup(
     profile?: ModelProfile;
     /** fallbackFor: the profile to retry with. */
     fallback?: (p: ModelProfile, tried: string[]) => ModelProfile | null;
+    /** fitProfile: a stored profile fitted to what its engine offers now. */
+    fit?: (p: ModelProfile) => ModelProfile;
     /** recordCompaction. */
     recordCompaction?: (task: CurrentTask) => void;
     /** Real turns (a TurnController) instead of the scripted ones; `window` then gets the manager's events too. */
@@ -104,6 +106,7 @@ function setup(
     emit: (e) => void (opts.window ?? emitted).push(e),
     ...(opts.profile ? { profileFor: async () => opts.profile! } : {}),
     ...(opts.fallback ? { fallbackFor: async (p: ModelProfile, tried: string[]) => opts.fallback!(p, tried) } : {}),
+    ...(opts.fit ? { fitProfile: async (p: ModelProfile) => opts.fit!(p) } : {}),
     ...(opts.recordCompaction ? { recordCompaction: async (task: CurrentTask) => opts.recordCompaction!(task) } : {}),
     now: () => new Date("2026-10-12T11:20:00.000Z"),
     newId: () => `t${++n}`,
@@ -487,6 +490,15 @@ describe("TaskManager model profiles", () => {
     await t.manager.ask("More?");
     await pick(t, { label: "Next", next: true });
     expect(t.turns.slice(0, 3).map((x) => [x.options.phase, x.options.profile])).toEqual([["run", deep], ["run", deep], ["close", deep]]);
+    expect(t.state().current?.profile).toEqual(deep);
+  });
+
+  it("fits a resumed task's stored effort to what the engine offers now, so a stale one never reaches the engine", async () => {
+    const stale: ModelProfile = { ...deep, effort: "max" };
+    const state: TasksFile = { ...emptyTasks(), current: { id: "t9", action: "manifest", status: "waiting", startedAt: "t", turns: 1, profile: stale } };
+    const t = setup({ state, fit: (p) => (p.effort === "max" ? { ...p, effort: "high" } : p) });
+    await t.manager.ask("More?");
+    expect(t.turns[0].options.profile).toEqual(deep);
     expect(t.state().current?.profile).toEqual(deep);
   });
 

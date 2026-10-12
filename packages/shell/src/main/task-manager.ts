@@ -49,6 +49,11 @@ export interface TaskDeps {
   profileFor?(action: string | undefined): Promise<ModelProfile>;
   /** The profile to retry a first turn with after `model-unavailable`, or null when none is left (spec §5.3). */
   fallbackFor?(profile: ModelProfile, tried: string[]): Promise<ModelProfile | null>;
+  /**
+   * A stored profile (tasks.json) fitted again to what its engine offers now, before a resumed task runs
+   * on it: an effort the engine stopped offering never reaches argv or CODEX_CONFIG. Absent: used as stored.
+   */
+  fitProfile?(profile: ModelProfile): Promise<ModelProfile>;
   /** A compaction was detected in `task`'s session (usage.jsonl `kind: "compaction"`). Failures are logged. */
   recordCompaction?(task: CurrentTask): Promise<void>;
   now?: () => Date;
@@ -211,8 +216,18 @@ export class TaskManager {
     await this.begin({ action }, (notesIndex) => fillPrompt(template, { language, notesIndex }), display ?? this.d.actions[action].label[language]);
   }
 
-  private async askNow(text: string, display?: string): Promise<void> {
+  /** The open task from tasks.json, its profile fitted to the engine's current offer (and saved when it changed). */
+  private async storedCurrent(): Promise<CurrentTask | null> {
     const c = (await this.d.store.load()).current;
+    if (!c?.profile || !this.d.fitProfile) return c;
+    const profile = await this.d.fitProfile(c.profile);
+    if (profile.effort === c.profile.effort) return c;
+    await this.update((s) => (s.current?.id === c.id ? { ...s, current: { ...s.current, profile } } : s));
+    return { ...c, profile };
+  }
+
+  private async askNow(text: string, display?: string): Promise<void> {
+    const c = await this.storedCurrent();
     if (c?.status === "waiting") {
       if (needsCheckpoint(c) && !(await this.checkpoint(c))) return this.stopped();
       await this.setStatus(c.id, "running");
@@ -348,7 +363,7 @@ export class TaskManager {
     // Mirrors TurnController: a quiet turn reaches the window only with a failure other than a cancel,
     // and a held failure never does.
     const d = seen.done;
-    if (d && !isHeld(d, options) &&(!options.quiet || (!d.ok && d.error.code !== "cancelled"))) this.windowDone = true;
+    if (d && !isHeld(d, options) && (!options.quiet || (!d.ok && d.error.code !== "cancelled"))) this.windowDone = true;
     if (seen.note) await this.saveNote(task, seen.note, options.phase !== "checkpoint");
     if (seen.used !== undefined || seen.compacted) await this.track(task.id, seen);
     return seen.done ?? { type: "done", ok: false, error: { code: "agent-crashed" } };
@@ -364,7 +379,7 @@ export class TaskManager {
    * False when the closing turn was cancelled (or a cancel or quit came meanwhile): nothing new may start.
    */
   private async closeCurrent(): Promise<boolean> {
-    const c = (await this.d.store.load()).current;
+    const c = await this.storedCurrent();
     if (!c) return !this.cancelRequested;
     if (c.noteSaved) {
       await this.endTask(c.id, "done");

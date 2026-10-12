@@ -392,6 +392,7 @@ const tasks = new TaskManager({
     const next = nextFallback(profile, cleanModels((await config.load()).models), tried);
     return next ? supportedEffort(next) : null;
   },
+  fitProfile: (profile) => supportedEffort(profile),
   recordCompaction: async (task) => {
     const c = await validConfig();
     if (!c) return;

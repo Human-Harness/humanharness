@@ -160,7 +160,10 @@ export class TurnController {
       const finish = async (done: Done) => {
         const entry: ChatEntry = { ...recorder.finish(done), ...(task ? { task } : {}) };
         if (isHeld(done, options)) {
+          // The attempt is discarded, but plan limits are about the plan: the usage meter still updates.
+          const limits = (pending ?? []).filter((e) => e.type === "limits");
           pending = null;
+          for (const e of limits) this.emit(e);
           await this.recordUsage(entry, meta(), recorder.firstLimits);
           if (!done.ok && done.error.code === "session-expired" && engineId) await this.forgetSession(engineId);
           this.tell(onEvent, done);
@@ -203,6 +206,8 @@ export class TurnController {
           if (e.type === "context" || e.type === "compaction") return;
           // Plan limits reach the usage meter even from a quiet turn.
           if (quiet && e.type !== "limits") return;
+          // A held attempt buffers only usage and limits: it assumes engines report model-unavailable before
+          // any content (text, activity, block), so the first content releases the buffer for good.
           if (pending && (e.type === "limits" || e.type === "usage")) pending.push(e);
           else {
             release();

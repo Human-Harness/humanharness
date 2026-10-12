@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { openIfStillSafe, openableFile } from "../src/main/open-path";
+import { openIfStillSafe, openableFile, revealIfStillSafe, revealableFile } from "../src/main/open-path";
 
 const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "hh-")));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -86,5 +86,40 @@ describe("openIfStillSafe", () => {
     const { opened, open } = recorder();
     expect(await openIfStillSafe(path.join(outside, "secret.md"), roots, open)).toBe(false);
     expect(opened).toEqual([]);
+  });
+});
+
+describe("revealableFile", () => {
+  const roots = [ref, folder];
+  it("finds any regular file inside a root, sources included: it is only shown in Finder", async () => {
+    expect(await revealableFile("a.ts", roots)).toBe(path.join(ref, "a.ts"));
+    expect(await revealableFile("run.command", roots)).toBe(path.join(ref, "run.command"));
+    expect(await revealableFile(".harness/notes/turn.md", roots)).toBe(path.join(folder, ".harness", "notes", "turn.md"));
+  });
+
+  it("refuses escapes, links that point outside, folders and junk", async () => {
+    expect(await revealableFile("../outside/secret.md", roots)).toBeNull();
+    expect(await revealableFile(path.join(outside, "secret.md"), roots)).toBeNull();
+    expect(await revealableFile("link.md", roots)).toBeNull();
+    expect(await revealableFile("packages", roots)).toBeNull();
+    expect(await revealableFile("missing.ts", roots)).toBeNull();
+    expect(await revealableFile(42, roots)).toBeNull();
+    expect(await revealableFile("a\0b.ts", roots)).toBeNull();
+  });
+});
+
+describe("revealIfStillSafe", () => {
+  const roots = [ref, folder];
+  it("shows a regular file still inside a root, and refuses one replaced by a link since it was checked", async () => {
+    const shown: string[] = [];
+    const reveal = (p: string) => void shown.push(p);
+    const file = path.join(folder, "late.ts");
+    fs.writeFileSync(file, "x");
+    expect(await revealIfStillSafe(file, roots, reveal)).toBe(true);
+    fs.rmSync(file);
+    fs.symlinkSync(path.join(outside, "secret.md"), file);
+    expect(await revealIfStillSafe(file, roots, reveal)).toBe(false);
+    expect(await revealIfStillSafe(path.join(outside, "secret.md"), roots, reveal)).toBe(false);
+    expect(shown).toEqual([path.join(folder, "late.ts")]);
   });
 });

@@ -276,6 +276,7 @@ export function ChatView({
     else send(t("notes.resumeQuestion", { title: note.title }));
   };
   const openFile = (file: string) => client.openPath(file).catch(() => false);
+  const revealFile = (file: string) => client.revealPath(file).catch(() => false);
   /** "Not now" (or Escape): nothing is sent, and focus goes back to whatever asked. */
   const closePreflight = () => {
     setPending(null);
@@ -287,7 +288,7 @@ export function ChatView({
   /** What harness UI gets: it can't skip the pre-flight check. */
   const sendFromHarness: SendFn = (text, options) => send(text, options);
   const lastAssistant = chat.entries.findLast((e) => e.role === "assistant");
-  const blockActions = (active: boolean, task?: string): BlockActions => ({ respond: sendFromHarness, choose: (o) => choose(o, task), open: openFile, active });
+  const blockActions = (active: boolean, task?: string): BlockActions => ({ respond: sendFromHarness, choose: (o) => choose(o, task), open: openFile, reveal: revealFile, active });
   /** The entry's answer belongs to the task waiting now: its `choices` block may act. */
   const ofWaitingTask = (task: string | undefined) => task !== undefined && task === tasks.current?.id && tasks.current.status === "waiting";
   /** Try again: a failed pick of the still-open task is picked again; anything else resends the last message. */

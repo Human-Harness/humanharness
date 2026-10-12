@@ -1,15 +1,18 @@
 {
   "startTitle": "¿Qué parte querés entender?",
-  "startIntro": "Elegí un tema. La IA lee el código de esta carpeta y te lo explica con diagramas y los archivos donde está cada cosa.",
+  "startIntro": "Elegí un tema. La IA lee el código de Human Harness y te lo explica con diagramas y los archivos donde está cada cosa.",
   "faq": {
     "ownHarness": "¿Cómo armo mi propio harness?",
     "conversation": "¿Dónde se guarda la conversación?",
     "newEngine": "¿Cómo agrego un motor nuevo?"
   },
-  "hint": "La IA explica leyendo el código de esta carpeta. Puede equivocarse: cada respuesta trae los archivos para que lo verifiques.",
+  "hint": "La IA explica leyendo el código de Human Harness. Puede equivocarse: cada respuesta trae los archivos para que lo verifiques.",
   "diagram": "Diagrama",
   "files": "Dónde está en el código",
   "open": "Abrir",
   "openLabel": "Abrir {{path}} en el editor",
-  "openFailed": "No pude abrir {{path}}."
+  "openFailed": "No pude abrir {{path}}.",
+  "reveal": "Mostrar en Finder",
+  "revealLabel": "Mostrar {{path}} en Finder",
+  "revealFailed": "No pude mostrar {{path}} en Finder."
 }

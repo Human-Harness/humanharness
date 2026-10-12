@@ -24,5 +24,5 @@ The demo explains Human Harness to developers who clone this repository, and exe
 ## Blocks
 
 - `diagram` (visible, `show_diagram`): nodes in order and extra edges.
-- `files` (visible, `show_files`): paths relative to the repository with a one-line role; "Abrir" opens the file in the default editor through the app, which only opens files inside the reference folder or the user's folder.
+- `files` (visible, `show_files`): paths relative to the repository with a one-line role. Docs, data and images get "Abrir", which opens them in their default app; any other file (source code such as `.ts`, which the app never opens) gets "Mostrar en Finder". Both go through the app, which only acts on regular files inside the reference folder or the user's folder.
 - Core: `choices` (how to continue) and `save_note` (the closing note).

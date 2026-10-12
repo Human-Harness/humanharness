@@ -35,6 +35,7 @@ const client: HarnessClient = {
   onTasks: (listener) => subscribe<TaskView>("hh:tasks", listener),
   choose: (option, task) => ipcRenderer.invoke("hh:choose", option, task),
   openPath: (file) => ipcRenderer.invoke("hh:openPath", file),
+  revealPath: (file) => ipcRenderer.invoke("hh:revealPath", file),
 };
 
 contextBridge.exposeInMainWorld("hh", client);

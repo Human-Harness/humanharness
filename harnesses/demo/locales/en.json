@@ -1,15 +1,18 @@
 {
   "startTitle": "Which part do you want to understand?",
-  "startIntro": "Pick a topic. The AI reads the code in this folder and explains it with diagrams and the files where each thing lives.",
+  "startIntro": "Pick a topic. The AI reads Human Harness's source and explains it with diagrams and the files where each thing lives.",
   "faq": {
     "ownHarness": "How do I build my own harness?",
     "conversation": "Where is the conversation saved?",
     "newEngine": "How do I add a new engine?"
   },
-  "hint": "The AI explains by reading the code in this folder. It can be wrong: every answer lists the files so you can check.",
+  "hint": "The AI explains by reading Human Harness's source. It can be wrong: every answer lists the files so you can check.",
   "diagram": "Diagram",
   "files": "Where it is in the code",
   "open": "Open",
   "openLabel": "Open {{path}} in the editor",
-  "openFailed": "I couldn't open {{path}}."
+  "openFailed": "I couldn't open {{path}}.",
+  "reveal": "Show in Finder",
+  "revealLabel": "Show {{path}} in Finder",
+  "revealFailed": "I couldn't show {{path}} in Finder."
 }

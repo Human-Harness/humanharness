@@ -244,14 +244,21 @@ describe("flow mode", () => {
     expect(document.activeElement).toBe(history);
   });
 
-  it("gives harness blocks a way to open files", async () => {
+  it("gives harness blocks a way to open files and show them in Finder", async () => {
     const client = flowClient();
-    const Files = ({ data, open }: BlockProps) => <button onClick={() => void open(data.path)}>open it</button>;
+    const Files = ({ data, open, reveal }: BlockProps) => (
+      <>
+        <button onClick={() => void open(data.path)}>open it</button>
+        <button onClick={() => void reveal(data.path)}>show it</button>
+      </>
+    );
     await startWork(client, { blocks: { files: Files } });
     fireEvent.click(within(await startRegion()).getByRole("button", { name: /A turn/ }));
     answer(client, "Here.", [{ name: "files", data: { path: "packages/ui/src/ChatView.tsx" } }]);
     fireEvent.click(screen.getByRole("button", { name: "open it" }));
     await waitFor(() => expect(client.opened).toEqual(["packages/ui/src/ChatView.tsx"]));
+    fireEvent.click(screen.getByRole("button", { name: "show it" }));
+    await waitFor(() => expect(client.revealedFiles).toEqual(["packages/ui/src/ChatView.tsx"]));
   });
 
   it("comes back to a task that is still open", async () => {

@@ -264,6 +264,12 @@ export class FakeClient implements HarnessClient {
     this.chosenTasks.push(task);
     if (this.chooseError) throw this.chooseError;
   }
+  /** Files revealPath was asked to show. */
+  revealedFiles: string[] = [];
+  async revealPath(file: string) {
+    this.revealedFiles.push(file);
+    return this.openResult;
+  }
   async openPath(file: string) {
     this.opened.push(file);
     return this.openResult;

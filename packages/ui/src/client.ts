@@ -231,6 +231,25 @@ export function nextInPath(path: string[], current: string | undefined, statuses
   return path.find((id) => id !== current && statuses[id] !== "done") ?? null;
 }
 
+/**
+ * Files "Open" may hand to the system: text, data and images. Never apps, scripts or installers
+ * (`.app`, `.command`, `.sh`, `.pkg`…), which the system would run instead of showing, nor pages,
+ * SVGs and JavaScript or TypeScript sources, which may open in a browser or a script runner (macOS
+ * may even take `.ts` for a video). Anything else can only be shown in Finder.
+ */
+export const OPENABLE_EXTENSIONS: ReadonlySet<string> = new Set([
+  ".md", ".txt", ".json", ".jsonl", ".yaml", ".yml", ".toml", ".csv",
+  ".css",
+  ".png", ".jpg", ".jpeg", ".gif", ".pdf",
+]);
+
+/** Whether the app opens this file (by its extension); the rest can only be shown in Finder. */
+export function canOpenFile(file: string): boolean {
+  const name = file.slice(file.lastIndexOf("/") + 1);
+  const dot = name.lastIndexOf(".");
+  return dot > 0 && OPENABLE_EXTENSIONS.has(name.slice(dot).toLowerCase());
+}
+
 /** Everything the renderer can ask the main process. Implemented by the preload as `window.hh`. */
 export interface HarnessClient {
   getState(): Promise<AppState>;
@@ -276,6 +295,8 @@ export interface HarnessClient {
   choose(option: ChoiceOption, task: string): Promise<void>;
   /** Opens a file inside the reference folders or the user's folder in its default app. False when refused or missing. */
   openPath(path: string): Promise<boolean>;
+  /** Shows a file inside the reference folders or the user's folder in Finder (any kind of file). False when refused or missing. */
+  revealPath(path: string): Promise<boolean>;
 }
 
 /** A config with everything a turn needs (appearance stays optional). */

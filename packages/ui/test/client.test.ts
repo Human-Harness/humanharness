@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { type EngineStatus, engineProblem, nextInPath } from "../src/client";
+import { type EngineStatus, canOpenFile, engineProblem, nextInPath } from "../src/client";
 
 const ready: EngineStatus = {
   engineId: "claude",
@@ -51,5 +51,12 @@ describe("nextInPath", () => {
     expect(nextInPath(path, undefined, { manifest: "done" })).toBe("engines");
     expect(nextInPath(path, "turn", { manifest: "done", engines: "done" })).toBeNull();
     expect(nextInPath([], undefined, {})).toBeNull();
+  });
+});
+
+describe("canOpenFile", () => {
+  it("is true for text, data and images, and false for sources, pages and programs", () => {
+    for (const f of ["a.md", "notes/b.JSON", "c.csv", "d.png", "e.pdf", "f.css"]) expect(canOpenFile(f)).toBe(true);
+    for (const f of ["a.ts", "b.tsx", "c.js", "d.html", "e.svg", "run.command", "Makefile", "x.sh"]) expect(canOpenFile(f)).toBe(false);
   });
 });

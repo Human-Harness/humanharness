@@ -14,6 +14,8 @@ export interface BlockProps {
   choose: (option: ChoiceOption) => boolean;
   /** Opens a file inside the reference folders or the user's folder in its default app; false when it can't. */
   open: (path: string) => Promise<boolean>;
+  /** Shows a file inside the reference folders or the user's folder in Finder, for files `open` refuses (see `canOpenFile`). */
+  reveal: (path: string) => Promise<boolean>;
   /** The block belongs to the latest answer and nothing is running: its buttons may act. */
   active: boolean;
 }

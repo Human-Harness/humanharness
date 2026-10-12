@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { constants, promises as fs } from "node:fs";
+import { promises as fs } from "node:fs";
 import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
@@ -28,7 +28,8 @@ import { imageDataUrl } from "./assets";
 import { ChatLog } from "./chat-log";
 import { ConfigStore, historyDir } from "./config";
 import { testPrompt } from "./engine-check";
-import { type CommandDeps, cliCommand, engineCommand, loginShellPath } from "./engine-command";
+import { createCommandDeps } from "./command-deps";
+import { cliCommand, engineCommand, loginShellPath } from "./engine-command";
 import { EngineGuards } from "./engine-guards";
 import { installCommandOf, terminalCommand } from "./install-help";
 import { detectEngine, hasAcceptedNotice } from "./engine-status";
@@ -57,27 +58,7 @@ const SETUP_STEPS: SetupStep[] = ["install", "update", "login", "logout"];
 const SETUP_TIMEOUT_MS: Record<SetupStep, number> = { install: 20 * 60_000, update: 20 * 60_000, login: 10 * 60_000, logout: 60_000 };
 
 const requireFromHere = createRequire(import.meta.url);
-const commandDeps: CommandDeps = {
-  shell: process.env.SHELL || "/bin/zsh",
-  home: os.homedir(),
-  run: (cmd, args, env) =>
-    new Promise((resolve) => {
-      execFile(cmd, args, { timeout: 10_000, env: { ...process.env, ...env } }, (err, stdout) => {
-        const e = err as (Error & { code?: unknown; killed?: boolean }) | null;
-        const code = e ? (typeof e.code === "number" ? e.code : 1) : 0;
-        resolve({
-          stdout: String(stdout),
-          code,
-          // Killed by the timeout, or never started (e.g. ENOENT): no real answer.
-          ...(e?.killed ? { timedOut: true } : {}),
-          ...(e && typeof e.code === "string" ? { spawnError: true } : {}),
-        });
-      });
-    }),
-  isExecutable: (file) => fs.access(file, constants.X_OK).then(() => true, () => false),
-  electronPath: process.execPath,
-  resolveModule: (id, from) => (from ? createRequire(from) : requireFromHere).resolve(id),
-};
+const commandDeps = createCommandDeps(process.execPath);
 
 let harness: LoadedHarness;
 let config: ConfigStore;

@@ -458,6 +458,9 @@ export class AcpTransport implements Transport {
     try {
       config = profile ? codexConfig(profile) : undefined;
     } catch (err) {
+      // No ErrorCode fits a profile the core built wrong (it is not the plan's model, nor the user's
+      // quota): agent-crashed is the generic "this turn could not run" card. The shell cleans every profile
+      // first, so this is a last guard that should never show.
       emit(fail("agent-crashed", err instanceof Error ? err.message : String(err)));
       return;
     }

@@ -73,7 +73,8 @@ const manifestSchema = z.object({
   instructions: z.string().min(1),
   permissions: z.object({ edit: z.enum(["folder", "none"]), exec: z.boolean(), web: z.boolean() }),
   blocks: z.record(z.string().regex(/^[a-z][a-z0-9_]*$/), blockSchema),
-  actions: z.record(z.string().regex(/^[a-z][a-z0-9_-]*$/), actionSchema).default({}),
+  /** Ids are at most 64 characters: the models config keys a task's setting by its action id. */
+  actions: z.record(z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/), actionSchema).default({}),
   /** Optional guided order of action ids (the "Recorrido"). */
   path: z.array(z.string()).min(1).optional(),
   /** Free questions (q-<slug> tasks): the tier they run at; absent means "standard". */
@@ -99,6 +100,10 @@ const manifestSchema = z.object({
     const other = tools.get(tool);
     if (other !== undefined) ctx.addIssue({ code: "custom", path: ["blocks", name], message: `Tool "${tool}" is already used by block "${other}"` });
     else tools.set(tool, name);
+  }
+  // Free questions' model setting lives under the "questions" key, next to the action ids.
+  if (Object.hasOwn(m.actions, "questions")) {
+    ctx.addIssue({ code: "custom", path: ["actions", "questions"], message: '"questions" is reserved for free questions: use another action id' });
   }
   const seen = new Set<string>();
   for (const id of m.path ?? []) {

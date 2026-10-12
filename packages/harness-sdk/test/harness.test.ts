@@ -230,4 +230,16 @@ describe("tiers", () => {
     expect(() => defineHarness({ ...base, languages: [...base.languages], actions: { research: { ...research, tier: "custom" as never } } })).toThrow();
     expect(() => defineHarness({ ...base, languages: [...base.languages], questions: { tier: "huge" as never } })).toThrow();
   });
+
+  it("reserves \"questions\" as an action id: free questions' model setting lives under that key", () => {
+    const research = { label: { es: "Investigar", en: "Research" }, prompt: "./agent/tasks/research.md", cost: "heavy" as const };
+    expect(() => defineHarness({ ...base, languages: [...base.languages], actions: { questions: research } })).toThrow(/reserved/);
+  });
+
+  it("caps action ids at 64 characters, as the models config keys", () => {
+    const research = { label: { es: "Investigar", en: "Research" }, prompt: "./agent/tasks/research.md", cost: "heavy" as const };
+    const id64 = `a${"b".repeat(63)}`;
+    expect(Object.keys(defineHarness({ ...base, languages: [...base.languages], actions: { [id64]: research } }).actions)).toEqual([id64]);
+    expect(() => defineHarness({ ...base, languages: [...base.languages], actions: { [`${id64}c`]: research } })).toThrow();
+  });
 });

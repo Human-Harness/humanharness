@@ -137,6 +137,14 @@ describe("ClaudeCliTransport", () => {
     expect(events.at(-1)).toEqual({ type: "done", ok: false, error: { code: "model-unavailable", detail: "There's an issue with the selected model (opus)." } });
   });
 
+  it("maps a 404 API error to model-unavailable only when it is about the model", async () => {
+    const result404 = (result: string) => ({ line: { type: "result", subtype: "success", is_error: true, api_error_status: 404, terminal_reason: "api_error", result } });
+    const { transport: aboutModel } = setup({ steps: [result404("There's an issue with the selected model (opus).")], exitCode: 1 });
+    expect((await run(aboutModel)).at(-1)).toMatchObject({ type: "done", ok: false, error: { code: "model-unavailable" } });
+    const { transport: other } = setup({ steps: [result404("API Error: 404 Not Found")], exitCode: 1 });
+    expect((await run(other)).at(-1)).toEqual({ type: "done", ok: false, error: { code: "agent-crashed", detail: "API Error: 404 Not Found" } });
+  });
+
   it("the fake CLI refuses the models its script lists, like the real one", async () => {
     const { transport } = setup({ steps: [claudeResultLine(true)], failModels: ["opus"] });
     const events: Event[] = [];

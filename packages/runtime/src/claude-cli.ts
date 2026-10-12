@@ -126,7 +126,7 @@ export class StreamJsonReader {
   private model: string | undefined;
   /** Context in use at the last top-level API call. */
   private lastContext: number | null = null;
-  /** The plan doesn't include the requested model (`model_not_found`, or a 404 API error). */
+  /** The plan doesn't include the requested model (`model_not_found`, or a 404 API error that names the model). */
   modelUnavailable = false;
 
   constructor(
@@ -202,7 +202,9 @@ export class StreamJsonReader {
 
     if (o.type === "result") {
       this.sawResult = true;
-      if (o.error === "model_not_found" || (o.api_error_status === 404 && o.terminal_reason === "api_error")) this.modelUnavailable = true;
+      // A 404 is about the model only when the CLI says so; any other 404 keeps the usual classification.
+      const aboutModel = typeof o.result === "string" && /\bmodel\b/i.test(o.result);
+      if (o.error === "model_not_found" || (o.api_error_status === 404 && o.terminal_reason === "api_error" && aboutModel)) this.modelUnavailable = true;
       if (o.usage) {
         this.emit({
           type: "usage",
@@ -238,6 +240,9 @@ export class ClaudeCliTransport implements Transport {
     try {
       profileArgs(profile);
     } catch (err) {
+      // No ErrorCode fits a profile the core built wrong (it is not the plan's model, nor the user's
+      // quota): agent-crashed is the generic "this turn could not run" card. The shell cleans every profile
+      // first, so this is a last guard that should never show.
       emit(fail("agent-crashed", err instanceof Error ? err.message : String(err)));
       return;
     }

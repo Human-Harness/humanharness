@@ -60,7 +60,28 @@ export const claudeScript: ClaudeScript = {
   ],
 };
 
-/** Codex: one answer to a free question. */
+/** A result whose context (input + cache reads) is about 85% of the standard level's 200k cap. */
+const bigResult = { line: { ...result.line, usage: { input_tokens: 170_000, output_tokens: 80, cache_read_input_tokens: 900, cache_creation_input_tokens: 0 } } };
+
+/** Claude: the manifest topic fills 85% of its cap, so the next follow-up first runs a checkpoint. */
+export const checkpointScript: ClaudeScript = {
+  steps: [...claudeTextLines("Listo."), result],
+  turns: [
+    {
+      match: "^Checkpoint:",
+      steps: [
+        ui("save_note", { title: "El manifiesto", summary: ["defineHarness valida el manifiesto"], decisions: [], files: [], open: [] }),
+        ...claudeTextLines("Guardé lo importante."),
+        bigResult,
+      ],
+    },
+    { match: "Contame más de las acciones", steps: [...claudeTextLines("Las acciones traen su brief."), bigResult] },
+    { match: "# Topic: the manifest", steps: [...claudeTextLines("El manifiesto declara todo el harness."), choices, bigResult] },
+  ],
+};
+
+/** Codex: one answer to a free question; its adapter offers one model. */
 export const codexScript: AcpScript = {
+  configOptions: [{ id: "model", name: "Model", type: "select", currentValue: "gpt-5.5", options: [{ value: "gpt-5.5", name: "GPT-5.5" }] }],
   turns: [[{ update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Se guarda en .harness/chats." } } }, { stop: "end_turn" }]],
 };

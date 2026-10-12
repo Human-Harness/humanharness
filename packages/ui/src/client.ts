@@ -1,4 +1,5 @@
-import type { ActionCost, ChoiceOption, Language, LocalizedText } from "@humanharness/harness-sdk";
+import type { Effort, ModelChoice, ModelSpec, ModelsConfig } from "@humanharness/engines";
+import type { ActionCost, ChoiceOption, Language, LocalizedText, Tier } from "@humanharness/harness-sdk";
 import type { ActivityKind, EngineError, Event, LimitWindow } from "@humanharness/runtime";
 
 export type Appearance = "system" | "light" | "dark";
@@ -9,6 +10,8 @@ export interface AppConfig {
   engineId?: string;
   /** Settings → General → Appearance. Absent means follow the system. */
   appearance?: Appearance;
+  /** Settings › Modelos: each task's tier or custom model, and the tier tables per engine. Cleaned when read. */
+  models?: ModelsConfig;
 }
 
 export interface EngineOption {
@@ -36,6 +39,8 @@ export interface ActionOption {
   /** One line under the label on the topic card. */
   description?: LocalizedText;
   cost: ActionCost;
+  /** The tier the harness recommends for the action. */
+  tier?: Tier;
 }
 
 /** A read-only reference folder, as the work screen shows it ("~/…" for paths in the home folder). */
@@ -69,6 +74,18 @@ export interface AppState {
   path?: string[];
   /** Folders the agent can read but never change. */
   references?: ReferenceView[];
+  /** Settings › Modelos. */
+  models?: ModelsView;
+}
+
+/** What Settings › Modelos needs (resources spec §7). */
+export interface ModelsView {
+  /** The tier the harness recommends, by task key (action id, or "questions"). */
+  recommended: Record<string, Tier>;
+  /** The core's tables, by engine id. */
+  defaults: Record<string, Record<Tier, ModelSpec>>;
+  /** What each engine offers: model ids (empty: only the engine's default) and efforts. */
+  offered: Record<string, { models: ModelChoice[]; efforts: Effort[] }>;
 }
 
 export interface TurnUsage {
@@ -193,8 +210,11 @@ export interface SendOptions {
   action?: string;
 }
 
-/** Where the current task is: running a turn, waiting for the person, or closing (asking for its note). */
-export type TaskStatus = "running" | "waiting" | "closing";
+/**
+ * Where the current task is: running a turn, waiting for the person, closing (asking for its note), or
+ * saving a checkpoint note before the context reaches its cap.
+ */
+export type TaskStatus = "running" | "waiting" | "closing" | "checkpoint";
 /** How an action's last task ended: its note was saved, the closing turn brought none, or it was interrupted. */
 export type ActionStatus = "done" | "unsaved" | "unfinished";
 
@@ -203,6 +223,10 @@ export interface CurrentTaskView {
   /** Absent for a free question. */
   action?: string;
   status: TaskStatus;
+  /** Context in use by the task's session, and the task's cap (the side panel's meter). */
+  context?: { used: number; cap: number };
+  /** The plan lacked `model`: the task runs one tier down (`tier`), or on the engine's default model (no `tier`). */
+  fallback?: { model: string; tier?: Tier };
 }
 
 /** A note in `.harness/notes/`, for the side panel and "Lo que quedó claro". */

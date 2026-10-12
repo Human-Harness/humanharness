@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { expect, test } from "@playwright/test";
-import { closeAndClean, launch, makeSandbox, readJsonl, sessionOf } from "./helpers";
+import { closeAndClean, launch, makeSandbox, profileFlags, readJsonl, sessionOf, usageFile } from "./helpers";
 import { claudeScript, codexScript } from "./scripts";
 
 type Run = { argv: string[]; prompt: string };
@@ -38,10 +38,13 @@ test("a topic answered with blocks, then next: the note is saved and the next to
     );
     expect(second.argv).toContain("--session-id");
     expect(sessionOf(second.argv)).not.toBe(sessionOf(first.argv));
+    // Spec §5.2: the manifest topic is standard → sonnet, medium effort, a 200k cap, on every call of the task.
+    for (const run of [first, close, second]) expect(profileFlags(run.argv)).toEqual(["sonnet", "medium", "200000"]);
+    await expect.poll(() => readJsonl<Record<string, unknown>>(usageFile(s))[0]).toMatchObject({ action: "manifest", tier: "standard", model: "sonnet", effort: "medium", cap: 200_000 });
 
     // The text shows before the turn ends: wait for its usage line and the task's state.
     await expect.poll(() => readTasks(s.folder)).toMatchObject({ current: { action: "engines", status: "waiting" }, actions: { manifest: "done" } });
-    await expect.poll(() => readJsonl<{ phase?: string }>(path.join(s.folder, ".harness", "usage.jsonl")).map((r) => r.phase)).toEqual(["run", "close", "run"]);
+    await expect.poll(() => readJsonl<{ phase?: string }>(usageFile(s)).map((r) => r.phase)).toEqual(["run", "close", "run"]);
     await expect(page.getByRole("list", { name: "Lo que ya quedó claro" }).getByRole("button", { name: "El manifiesto" })).toBeVisible();
   } finally {
     await closeAndClean(app, s);
@@ -57,6 +60,8 @@ test("changing the engine keeps the notes, and the first task on the new engine 
     await expect(page.getByRole("main").getByText("El manifiesto declara todo el harness.")).toBeVisible();
     await page.getByRole("button", { name: "Seguir el recorrido →" }).click();
     await expect(page.getByRole("main").getByText("Los motores se detectan en cada inicio.")).toBeVisible();
+    // The text shows before the turn ends, and the engine can't change while a turn runs.
+    await expect.poll(() => readTasks(s.folder).current?.status).toBe("waiting");
 
     await page.getByRole("button", { name: "Ajustes" }).click();
     await page.getByRole("tab", { name: "Motor" }).click();
@@ -77,6 +82,13 @@ test("changing the engine keeps the notes, and the first task on the new engine 
     expect(prompt?.params.prompt[0].text).toContain(
       "- El manifiesto (manifest): defineHarness valida el manifiesto; Las acciones traen su brief → .harness/notes/manifest.md",
     );
+    // Free questions are light; Codex runs its default model, so CODEX_CONFIG has no model.
+    const env = readJsonl<{ method: string; params: { CODEX_CONFIG: string | null } }>(s.acpLog).find((l) => l.method === "env");
+    expect(JSON.parse(env!.params.CODEX_CONFIG!)).toEqual({ model_reasoning_effort: "low", model_auto_compact_token_limit: 100_000 });
+    // The models Codex offered are saved for Settings › Modelos.
+    await expect
+      .poll(() => JSON.parse(fs.readFileSync(path.join(s.sharedDir, "engines.json"), "utf8")).engines.codex.models)
+      .toEqual([{ id: "gpt-5.5", name: "GPT-5.5" }]);
   } finally {
     await closeAndClean(app, s);
   }

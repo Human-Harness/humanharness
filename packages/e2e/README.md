@@ -16,9 +16,11 @@ It uses the real CLIs as they are signed in on this computer, so every run spend
 
 - `HH_REAL_OUT` (required): the folder for what the run leaves behind: screenshots, the answers' text, the choices offered, the console log, and a copy of the user's folder's `.harness` (notes included). The test stops with a clear message when it is missing.
 - `HH_REAL_ENGINE`: `claude` (default) or `codex`.
+- `HH_REAL_TIER`: `light`, `standard` or `deep`. The first topic runs at that level (written to the app's `config.json` as `models.tasks.manifest`), and the test checks the first `usage.jsonl` line: its `tier`, its `effort` and the model the engine reported (`reportedModel`: Claude's family name, or any model on Codex). It is saved as `<engine>-<tier>-usage.json`. A plan without that level's model falls back a level and the check fails, saying which level ran.
 
 The test creates a temporary user's folder, `~/Documents/hh-real-test-<engine>-<time>` (it must sit outside the repository and outside `/private`), and removes it at the end, after copying its `.harness` out.
 
     HH_REAL_OUT=$HOME/hh-real-out HH_REAL_ENGINE=codex corepack pnpm --filter @humanharness/e2e real
+    HH_REAL_OUT=$HOME/hh-real-out HH_REAL_TIER=light corepack pnpm --filter @humanharness/e2e real
 
 The script builds the shell first, like `corepack pnpm e2e`.

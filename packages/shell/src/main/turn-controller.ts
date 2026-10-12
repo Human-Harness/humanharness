@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
+import type { ModelProfile } from "@humanharness/engines";
 import { type Event, type HarnessRuntime, type LimitWindow, type RunningTurn, fail } from "@humanharness/runtime";
 import type { ChatEntry, SendOptions } from "@humanharness/ui/client";
 import { TurnRecorder } from "./chat-log";
-import type { UsageMeta } from "./usage-log";
+import { type UsageMeta, profileMeta } from "./usage-log";
 
 type Done = Extract<Event, { type: "done" }>;
 
@@ -21,8 +22,8 @@ export class EngineUnavailable extends Error {
 export interface TurnOptions extends SendOptions {
   /** The task this turn belongs to: saved on its chat entries and in usage.jsonl. */
   task?: string;
-  /** `close` for the turn that asks for the task's note. */
-  phase?: "run" | "close";
+  /** `close` for the turn that asks for the task's note; `checkpoint` for the quiet mid-task note. */
+  phase?: "run" | "close" | "checkpoint";
   /** What the chat shows as the person's message when the engine gets something else (a task brief). */
   display?: string;
   /** A later turn of the same task: its chat entry isn't tagged with the action. */
@@ -34,6 +35,21 @@ export interface TurnOptions extends SendOptions {
   quiet?: boolean;
   /** Sees every event of the turn, its `done` included. */
   onEvent?: (e: Event) => void;
+  /** The task's model profile: every turn of the task runs on it (resources spec §5). */
+  profile?: ModelProfile;
+  /**
+   * A first turn the task manager will retry on another model: a `model-unavailable` end is neither logged
+   * nor shown (only `onEvent` sees it; its usage is recorded). Its events reach the window only from its
+   * first content on (text, activity, block), so a held attempt shows nothing. Any other end is handled as usual.
+   */
+  holdModelError?: boolean;
+  /**
+   * A quiet turn another turn follows right away (the checkpoint): any failure is neither logged nor shown,
+   * so the window keeps waiting for the next turn's own end. Usage is recorded; only `onEvent` sees it.
+   */
+  holdFailure?: boolean;
+  /** The retry of a held turn: the person's message is already in the chat. */
+  skipUserEntry?: boolean;
 }
 
 export interface TurnDeps {
@@ -53,6 +69,12 @@ export interface TurnDeps {
   sessionExpired?: (engineId: string) => Promise<void>;
   /** The configured engine, read when the turn starts: the one `sessionExpired` is told about. */
   engineId?: () => Promise<string | undefined>;
+}
+
+/** The turn's end stays out of the chat and the window (`holdModelError`, `holdFailure`). */
+export function isHeld(done: Done, options: Pick<TurnOptions, "holdModelError" | "holdFailure">): boolean {
+  if (done.ok) return false;
+  return (options.holdModelError === true && done.error.code === "model-unavailable") || options.holdFailure === true;
 }
 
 /** One message's lifecycle: log, start the runtime, run the turn, log the reply and its usage, then tell the window. */
@@ -100,14 +122,14 @@ export class TurnController {
   }
 
   private async run(message: string, options: TurnOptions): Promise<void> {
-    const { action, task, phase, display, followUp, quiet, onEvent } = options;
+    const { action, task, phase, display, followUp, quiet, onEvent, profile, holdModelError, holdFailure, skipUserEntry } = options;
     const turn: { cancelled: boolean; running: RunningTurn | null } = { cancelled: false, running: null };
     this.turn = turn;
     try {
       const log = await this.deps.chatLog();
       const engineId = await this.deps.engineId?.().catch(() => undefined);
       if (!log) throw new Error("The app is not set up yet");
-      if (!quiet) {
+      if (!quiet && !skipUserEntry) {
         void this.write(log, {
           id: randomUUID(),
           role: "user",
@@ -120,9 +142,34 @@ export class TurnController {
         });
       }
       const recorder = new TurnRecorder(this.deps.stateBlocks());
-      const meta: UsageMeta = { ...(action ? { action } : {}), ...(task ? { task } : {}), ...(phase ? { phase } : {}) };
+      let reportedModel: string | undefined;
+      const meta = (): UsageMeta => ({
+        ...(action ? { action } : {}),
+        ...(task ? { task } : {}),
+        ...(phase ? { phase } : {}),
+        ...(profile ? profileMeta(profile) : {}),
+        ...(reportedModel ? { reportedModel } : {}),
+      });
+      // A held attempt keeps its events until its model answers: one that fails shows nothing.
+      let pending: Event[] | null = holdModelError ? [] : null;
+      const release = () => {
+        const events = pending ?? [];
+        pending = null;
+        for (const e of events) this.emit(e);
+      };
       const finish = async (done: Done) => {
         const entry: ChatEntry = { ...recorder.finish(done), ...(task ? { task } : {}) };
+        if (isHeld(done, options)) {
+          // The attempt is discarded, but plan limits are about the plan: the usage meter still updates.
+          const limits = (pending ?? []).filter((e) => e.type === "limits");
+          pending = null;
+          for (const e of limits) this.emit(e);
+          await this.recordUsage(entry, meta(), recorder.firstLimits);
+          if (!done.ok && done.error.code === "session-expired" && engineId) await this.forgetSession(engineId);
+          this.tell(onEvent, done);
+          return;
+        }
+        release();
         // A quiet turn that fails (e.g. the session expired) still shows its error, never its text.
         const surface = !quiet || (!done.ok && done.error.code !== "cancelled");
         if (surface) {
@@ -131,7 +178,7 @@ export class TurnController {
             quiet ? { id: entry.id, role: "assistant", text: "", blocks: [], activities: [], at: entry.at, ...(done.ok ? {} : { error: done.error }), ...(task ? { task } : {}) } : entry,
           );
         }
-        await this.recordUsage(entry, meta, recorder.firstLimits);
+        await this.recordUsage(entry, meta(), recorder.firstLimits);
         if (!done.ok && done.error?.code === "session-expired" && engineId) await this.forgetSession(engineId);
         this.tell(onEvent, done);
         if (surface) this.emit(done);
@@ -152,12 +199,22 @@ export class TurnController {
       turn.running = rt.send(message, (e) => {
         if (e.type === "done") finished = finish(e);
         else {
+          if (e.type === "usage" && e.model) reportedModel = e.model;
           recorder.add(e);
           this.tell(onEvent, e);
+          // The context and compactions reach the window through the task view, never as chat events.
+          if (e.type === "context" || e.type === "compaction") return;
           // Plan limits reach the usage meter even from a quiet turn.
-          if (!quiet || e.type === "limits") this.emit(e);
+          if (quiet && e.type !== "limits") return;
+          // A held attempt buffers only usage and limits: it assumes engines report model-unavailable before
+          // any content (text, activity, block), so the first content releases the buffer for good.
+          if (pending && (e.type === "limits" || e.type === "usage")) pending.push(e);
+          else {
+            release();
+            this.emit(e);
+          }
         }
-      });
+      }, profile ? { profile } : undefined);
       await turn.running.done;
       await finished;
     } finally {

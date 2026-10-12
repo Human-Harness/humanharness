@@ -4,7 +4,7 @@ import { I18nextProvider } from "react-i18next";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createI18n } from "@humanharness/i18n";
 import type { AppState, TaskView } from "../src/client";
-import { FlowSide } from "../src/FlowSide";
+import { ContextMeter, FlowSide } from "../src/FlowSide";
 import { StartView } from "../src/StartView";
 import { FakeClient } from "./fake-client";
 import { renderIn } from "./render";
@@ -53,6 +53,39 @@ describe("FlowSide", () => {
     expect((turn as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(within(screen.getByRole("list", { name: "Lo que ya quedó claro" })).getByRole("button", { name: "El manifiesto" }));
     expect(onOpenNote).toHaveBeenCalledWith("manifest");
+  });
+
+  it("shows the running task's context in use against its cap, with the exact tokens on hover", async () => {
+    const tasks: TaskView = { current: { id: "t1", action: "engines", status: "waiting", context: { used: 170_000, cap: 200_000 } }, actions: {}, notes: [] };
+    await renderIn("en", <FlowSide state={state()} lang="en" tasks={tasks} disabled={false} onStart={() => {}} onOpenNote={() => {}} />);
+    const meter = screen.getByRole("meter", { name: "Context in use" });
+    expect(meter.getAttribute("aria-valuenow")).toBe("85");
+    expect(meter.getAttribute("title")).toBe("170,000 of 200,000 tokens");
+    expect(meter.className).toContain("warn");
+    expect(screen.getAllByRole("meter")).toHaveLength(1);
+  });
+
+  it("shows a free question's meter on its own row, and none before the engine reports any", async () => {
+    const question: TaskView = { current: { id: "t2", status: "waiting", context: { used: 20_000, cap: 100_000 } }, actions: {}, notes: [] };
+    const { unmount } = await renderIn("en", <FlowSide state={state()} lang="en" tasks={question} disabled={false} onStart={() => {}} onOpenNote={() => {}} />);
+    expect(screen.getByText("Free question")).toBeTruthy();
+    expect(screen.getByRole("meter", { name: "Context in use" }).getAttribute("aria-valuenow")).toBe("20");
+    unmount();
+    await renderIn("en", <FlowSide state={state()} lang="en" tasks={{ ...question, current: { id: "t2", status: "waiting" } }} disabled={false} onStart={() => {}} onOpenNote={() => {}} />);
+    expect(screen.queryByRole("meter")).toBeNull();
+  });
+});
+
+describe("ContextMeter", () => {
+  it("renders nothing without a cap and keeps its percent within 0..100", async () => {
+    const { unmount } = await renderIn("en", <ContextMeter used={10} cap={0} />);
+    expect(screen.queryByRole("meter")).toBeNull();
+    unmount();
+    const { unmount: again } = await renderIn("en", <ContextMeter used={500_000} cap={200_000} />);
+    expect(screen.getByRole("meter").getAttribute("aria-valuenow")).toBe("100");
+    again();
+    await renderIn("en", <ContextMeter used={-5} cap={200_000} />);
+    expect(screen.getByRole("meter").getAttribute("aria-valuenow")).toBe("0");
   });
 });
 

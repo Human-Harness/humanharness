@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { type ClaudeScript, claudeResultLine, claudeTextLines, fakeClaudeCommand, writeScript } from "@humanharness/fake-agent";
-import { ClaudeCliTransport, allowedTools, claudeArgs, disallowedTools, referenceRulePath } from "../src/claude-cli";
+import { ClaudeCliTransport, allowedTools, claudeArgs, disallowedTools, profileArgs, referenceRulePath } from "../src/claude-cli";
 import type { Event } from "../src/events";
 import type { Session, TransportOptions } from "../src/transport";
 
@@ -85,7 +85,88 @@ describe("claudeArgs", () => {
   });
 });
 
+describe("profileArgs", () => {
+  const profile = { engine: "claude", tier: "deep" as const, model: "opus", effort: "high" as const, cap: 400_000 };
+
+  it("passes model, effort and context cap", () => {
+    expect(profileArgs(profile)).toEqual(["--model", "opus", "--effort", "high", "--autocompact", "400000"]);
+    const { model: _m, ...engineDefault } = profile;
+    expect(profileArgs(engineDefault)).toEqual(["--effort", "high", "--autocompact", "400000"]);
+    expect(profileArgs(undefined)).toEqual([]);
+  });
+
+  it("refuses a model that reads as a flag, an unknown effort or a cap out of range", () => {
+    expect(() => profileArgs({ ...profile, model: "--dangerously-skip-permissions" })).toThrow(/flag/);
+    expect(() => profileArgs({ ...profile, effort: "turbo" as never })).toThrow();
+    expect(() => profileArgs({ ...profile, cap: 50 })).toThrow();
+  });
+
+  it("goes after the session flags in claudeArgs", () => {
+    const args = claudeArgs({ session: { id: "abc", started: true }, mcp: [uiServer], permissions, profile });
+    expect(args.slice(-8)).toEqual(["--resume", "abc", "--model", "opus", "--effort", "high", "--autocompact", "400000"]);
+  });
+});
+
 describe("ClaudeCliTransport", () => {
+  it("runs every turn on the profile it is given, first turn and resume alike", async () => {
+    const { transport, args } = setup({ steps: [...claudeTextLines("ok"), claudeResultLine(true)] });
+    const profile = { engine: "claude", tier: "light" as const, model: "haiku", effort: "low" as const, cap: 100_000 };
+    await transport.turn("one", () => {}, new AbortController().signal, profile);
+    expect(args()).toEqual(expect.arrayContaining(["--session-id", "--model", "haiku", "--effort", "low", "--autocompact", "100000"]));
+    await transport.turn("two", () => {}, new AbortController().signal, profile);
+    expect(args()).toEqual(expect.arrayContaining(["--resume", "--model", "haiku"]));
+  });
+
+  it("fails the turn without starting the CLI when the profile is invalid", async () => {
+    const { transport, args } = setup({ steps: [claudeResultLine(true)] });
+    const events: Event[] = [];
+    await transport.turn("x", (e) => events.push(e), new AbortController().signal, { engine: "claude", tier: "custom", model: "-x", effort: "low", cap: 100_000 });
+    expect(events).toEqual([{ type: "done", ok: false, error: { code: "agent-crashed", detail: 'Refusing a model id that reads as a flag: "-x"' } }]);
+    expect(() => args()).toThrow();
+  });
+
+  it("maps a model the plan doesn't include to model-unavailable", async () => {
+    const { transport } = setup({
+      steps: [
+        { line: { type: "assistant", parent_tool_use_id: null, error: "model_not_found", message: { content: [{ type: "text", text: "x" }] } } },
+        { line: { type: "result", subtype: "success", is_error: true, api_error_status: 404, terminal_reason: "api_error", result: "There's an issue with the selected model (opus)." } },
+      ],
+      exitCode: 1,
+    });
+    const events = await run(transport);
+    expect(events.at(-1)).toEqual({ type: "done", ok: false, error: { code: "model-unavailable", detail: "There's an issue with the selected model (opus)." } });
+  });
+
+  it("maps a 404 API error to model-unavailable only when it is about the model", async () => {
+    const result404 = (result: string) => ({ line: { type: "result", subtype: "success", is_error: true, api_error_status: 404, terminal_reason: "api_error", result } });
+    const { transport: aboutModel } = setup({ steps: [result404("There's an issue with the selected model (opus).")], exitCode: 1 });
+    expect((await run(aboutModel)).at(-1)).toMatchObject({ type: "done", ok: false, error: { code: "model-unavailable" } });
+    const { transport: other } = setup({ steps: [result404("API Error: 404 Not Found")], exitCode: 1 });
+    expect((await run(other)).at(-1)).toEqual({ type: "done", ok: false, error: { code: "agent-crashed", detail: "API Error: 404 Not Found" } });
+  });
+
+  it("the fake CLI refuses the models its script lists, like the real one", async () => {
+    const { transport } = setup({ steps: [claudeResultLine(true)], failModels: ["opus"] });
+    const events: Event[] = [];
+    await transport.turn("x", (e) => events.push(e), new AbortController().signal, { engine: "claude", tier: "deep", model: "opus", effort: "high", cap: 400_000 });
+    expect(events.at(-1)).toMatchObject({ type: "done", ok: false, error: { code: "model-unavailable" } });
+  });
+
+  it("reports the context in use from the last API call, else from the result, and the model it ran", async () => {
+    const call = (input: number, read: number) => ({
+      line: { type: "assistant", parent_tool_use_id: null, message: { content: [], usage: { input_tokens: input, cache_read_input_tokens: read, cache_creation_input_tokens: 10, output_tokens: 5 } } },
+    });
+    const result = {
+      line: { type: "result", subtype: "success", is_error: false, result: "", usage: { input_tokens: 9000, output_tokens: 50, cache_read_input_tokens: 90_000, cache_creation_input_tokens: 100 } },
+    };
+    const { transport } = setup({ steps: [{ line: { type: "system", subtype: "init", session_id: "s", model: "claude-sonnet-4-5" } }, call(100, 40_000), call(200, 50_000), result] });
+    const events = await run(transport);
+    expect(events).toContainEqual({ type: "context", used: 50_210 });
+    expect(events).toContainEqual(expect.objectContaining({ type: "usage", model: "claude-sonnet-4-5" }));
+    const { transport: other } = setup({ steps: [result] });
+    expect(await run(other)).toContainEqual({ type: "context", used: 99_100 });
+  });
+
   it("streams text and reports success", async () => {
     const { transport, started, args, stdin } = setup({ steps: [...claudeTextLines("Hello there"), claudeResultLine(true, "Hello there")] });
     const events = await run(transport, "say hi");

@@ -1,12 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
+import type { ModelProfile } from "@humanharness/engines";
 import type { ChoiceOption, SavedNote } from "@humanharness/harness-sdk";
-import type { Event } from "@humanharness/runtime";
+import type { Event, HarnessRuntime } from "@humanharness/runtime";
 import type { TaskView } from "@humanharness/ui/client";
 import type { Note, NoteMeta } from "@humanharness/workspace";
-import { TaskManager } from "../src/main/task-manager";
-import { CLOSE_PROMPT } from "../src/main/task-prompts";
-import { type TasksFile, emptyTasks } from "../src/main/task-store";
-import type { TurnOptions } from "../src/main/turn-controller";
+import { type TaskDeps, TaskManager } from "../src/main/task-manager";
+import { CHECKPOINT_PROMPT, CLOSE_PROMPT } from "../src/main/task-prompts";
+import { type CurrentTask, type TasksFile, emptyTasks } from "../src/main/task-store";
+import { TurnController, type TurnOptions } from "../src/main/turn-controller";
 
 const label = (en: string, es = en) => ({ es, en });
 const note: SavedNote = {
@@ -39,6 +40,17 @@ function setup(
     onNotes?: () => void;
     /** Runs inside each tasks.json save, with what is saved. */
     onSave?: (s: TasksFile) => void;
+    /** What profileFor answers for every new task. */
+    profile?: ModelProfile;
+    /** fallbackFor: the profile to retry with. */
+    fallback?: (p: ModelProfile, tried: string[]) => ModelProfile | null;
+    /** fitProfile: a stored profile fitted to what its engine offers now. */
+    fit?: (p: ModelProfile) => ModelProfile;
+    /** recordCompaction. */
+    recordCompaction?: (task: CurrentTask) => void;
+    /** Real turns (a TurnController) instead of the scripted ones; `window` then gets the manager's events too. */
+    turns?: TaskDeps["turns"];
+    window?: Event[];
   } = {},
 ) {
   let state = opts.state ?? emptyTasks();
@@ -58,7 +70,7 @@ function setup(
         opts.onSave?.(s);
       },
     },
-    turns: {
+    turns: opts.turns ?? {
       isBusy: () => busy,
       cancel: () => void log.push("cancel"),
       send: async (message, options) => {
@@ -91,7 +103,11 @@ function setup(
     },
     saveHistory: async (message) => void log.push(`history:${message}`),
     changed: (v) => views.push(v),
-    emit: (e) => void emitted.push(e),
+    emit: (e) => void (opts.window ?? emitted).push(e),
+    ...(opts.profile ? { profileFor: async () => opts.profile! } : {}),
+    ...(opts.fallback ? { fallbackFor: async (p: ModelProfile, tried: string[]) => opts.fallback!(p, tried) } : {}),
+    ...(opts.fit ? { fitProfile: async (p: ModelProfile) => opts.fit!(p) } : {}),
+    ...(opts.recordCompaction ? { recordCompaction: async (task: CurrentTask) => opts.recordCompaction!(task) } : {}),
     now: () => new Date("2026-10-12T11:20:00.000Z"),
     newId: () => `t${++n}`,
   });
@@ -459,5 +475,313 @@ describe("TaskManager", () => {
       ],
     });
     expect(await t.manager.view()).toEqual(t.views.at(-1));
+  });
+});
+
+describe("TaskManager model profiles", () => {
+  const deep: ModelProfile = { engine: "claude", tier: "deep", model: "opus", effort: "high", cap: 400_000 };
+  const standard: ModelProfile = { engine: "claude", tier: "standard", model: "sonnet", effort: "medium", cap: 200_000, fallbackFrom: "opus" };
+  const light: ModelProfile = { engine: "claude", tier: "light", model: "haiku", effort: "low", cap: 100_000, fallbackFrom: "opus" };
+  const unavailable: Event = { type: "done", ok: false, error: { code: "model-unavailable" } };
+
+  it("resolves the profile when the task starts and runs every turn of the task on it", async () => {
+    const t = setup({ profile: deep });
+    await t.manager.start("manifest");
+    await t.manager.ask("More?");
+    await pick(t, { label: "Next", next: true });
+    expect(t.turns.slice(0, 3).map((x) => [x.options.phase, x.options.profile])).toEqual([["run", deep], ["run", deep], ["close", deep]]);
+    expect(t.state().current?.profile).toEqual(deep);
+  });
+
+  it("fits a resumed task's stored effort to what the engine offers now, so a stale one never reaches the engine", async () => {
+    const stale: ModelProfile = { ...deep, effort: "max" };
+    const state: TasksFile = { ...emptyTasks(), current: { id: "t9", action: "manifest", status: "waiting", startedAt: "t", turns: 1, profile: stale } };
+    const t = setup({ state, fit: (p) => (p.effort === "max" ? { ...p, effort: "high" } : p) });
+    await t.manager.ask("More?");
+    expect(t.turns[0].options.profile).toEqual(deep);
+    expect(t.state().current?.profile).toEqual(deep);
+  });
+
+  it("runs without a profile when none is resolved", async () => {
+    const t = setup();
+    await t.manager.start("manifest");
+    expect(t.turns[0].options.profile).toBeUndefined();
+    expect(t.state().current?.profile).toBeUndefined();
+  });
+
+  it("retries a first turn the plan can't run on the next profile down, in a fresh session, and keeps it", async () => {
+    const t = setup({ profile: deep, fallback: (p) => (p.model === "opus" ? standard : null), script: [[unavailable]] });
+    await t.manager.start("manifest", "The manifest");
+    expect(t.log).toEqual(["endSession", "turn:run", "endSession", "turn:run"]);
+    expect(t.turns[0].options).toMatchObject({ profile: deep, holdModelError: true });
+    expect(t.turns[0].options.skipUserEntry).toBeUndefined();
+    expect(t.turns[1].options).toMatchObject({ profile: standard, skipUserEntry: true, display: "The manifest" });
+    expect(t.turns[1].message).toBe(t.turns[0].message);
+    expect(t.state().current).toMatchObject({ status: "waiting", profile: standard });
+    expect(t.views.at(-1)?.current?.fallback).toEqual({ model: "opus", tier: "standard" });
+    expect(t.emitted).toEqual([]);
+  });
+
+  it("shows the failure when nothing is left to fall back to", async () => {
+    const t = setup({ profile: deep, fallback: () => null, script: [[unavailable]] });
+    await t.manager.start("manifest");
+    expect(t.turns).toHaveLength(1);
+    expect(t.turns[0].options.holdModelError).toBeUndefined();
+    expect(t.state()).toMatchObject({ current: null, actions: { manifest: "unfinished" } });
+  });
+
+  it("walks the chain, telling the fallback which models failed", async () => {
+    const asked: string[][] = [];
+    const t = setup({
+      profile: deep,
+      fallback: (p, tried) => {
+        asked.push([...tried]);
+        return p.model === "opus" ? standard : p.model === "sonnet" ? light : null;
+      },
+      script: [[unavailable], [unavailable]],
+    });
+    await t.manager.start("manifest");
+    expect(t.turns.map((x) => x.options.profile?.model)).toEqual(["opus", "sonnet", "haiku"]);
+    expect(asked).toEqual([[], ["opus"], ["opus", "sonnet"]]);
+    expect(t.views.at(-1)?.current?.fallback).toEqual({ model: "opus", tier: "light" });
+  });
+
+  it("says the engine's default model ran when the chain ended there", async () => {
+    const engineDefault: ModelProfile = { engine: "claude", tier: "light", effort: "low", cap: 100_000, fallbackFrom: "opus" };
+    const t = setup({ profile: deep, fallback: (p) => (p.model ? engineDefault : null), script: [[unavailable]] });
+    await t.manager.start("manifest");
+    expect(t.views.at(-1)?.current?.fallback).toEqual({ model: "opus" });
+  });
+
+  it("cancel after a held failure: no retry, and the window is told the turn stopped", async () => {
+    let t!: ReturnType<typeof setup>;
+    t = setup({ profile: deep, fallback: () => standard, script: [[unavailable]], during: () => t.manager.cancel() });
+    await t.manager.start("manifest");
+    expect(t.turns).toHaveLength(1);
+    expect(t.emitted).toEqual([{ type: "done", ok: false, error: { code: "cancelled" } }]);
+    expect(t.state()).toMatchObject({ current: null, actions: { manifest: "unfinished" } });
+  });
+
+  it("cancel while the failed session ends: no retry, and the window is told the turn stopped", async () => {
+    let ends = 0;
+    let t!: ReturnType<typeof setup>;
+    t = setup({
+      profile: deep,
+      fallback: () => standard,
+      script: [[unavailable]],
+      onEndSession: () => {
+        if (++ends === 2) t.manager.cancel();
+      },
+    });
+    await t.manager.start("manifest");
+    expect(t.turns).toHaveLength(1);
+    expect(t.emitted).toEqual([{ type: "done", ok: false, error: { code: "cancelled" } }]);
+    expect(t.state()).toMatchObject({ current: null, actions: { manifest: "unfinished" } });
+  });
+});
+
+describe("TaskManager context and checkpoints", () => {
+  const standard: ModelProfile = { engine: "claude", tier: "standard", model: "sonnet", effort: "medium", cap: 200_000 };
+  const ctx = (used: number): Event => ({ type: "context", used });
+
+  it("tracks the context in use and shows it against the cap", async () => {
+    const t = setup({ profile: standard, script: [[ctx(50_000), ok]] });
+    await t.manager.start("manifest");
+    expect(t.state().current?.context).toEqual({ used: 50_000 });
+    expect(t.views.at(-1)?.current?.context).toEqual({ used: 50_000, cap: 200_000 });
+  });
+
+  it("at 80% of the cap, runs one quiet checkpoint turn before the next follow-up, then not again", async () => {
+    const t = setup({ profile: standard, script: [[ctx(170_000), ok], [saveNote(), ok], [ctx(175_000), ok], [ctx(180_000), ok]] });
+    await t.manager.start("manifest");
+    await t.manager.ask("And the blocks?");
+    expect(t.turns.map((x) => x.options.phase)).toEqual(["run", "checkpoint", "run"]);
+    expect(t.turns[1]).toMatchObject({ message: CHECKPOINT_PROMPT, options: { quiet: true, action: "manifest", task: "t1", profile: standard } });
+    expect(t.turns[2]).toMatchObject({ message: "And the blocks?", options: { followUp: true } });
+    expect(t.log).toContain("note:manifest");
+    expect(t.state().current).toMatchObject({ status: "waiting", checkpointed: true, checkpointNote: true });
+    expect(t.state().current?.noteSaved).toBeUndefined();
+    await t.manager.ask("And history?");
+    expect(t.turns.map((x) => x.options.phase)).toEqual(["run", "checkpoint", "run", "run"]);
+  });
+
+  it("shows the checkpoint status while it runs", async () => {
+    const statuses: (string | undefined)[] = [];
+    const t = setup({ profile: standard, script: [[ctx(170_000), ok]], onSave: (s) => statuses.push(s.current?.status) });
+    await t.manager.start("manifest");
+    await t.manager.ask("More?");
+    expect(statuses).toContain("checkpoint");
+    expect(statuses.at(-1)).toBe("waiting");
+  });
+
+  it("a reported compaction, or the context falling by more than half, allows the next checkpoint and is logged", async () => {
+    const compacted: string[] = [];
+    const t = setup({
+      profile: standard,
+      script: [[ctx(170_000), ok], [ok], [{ type: "compaction" }, ctx(30_000), ok], [ctx(165_000), ok], [ok], [ctx(60_000), ok]],
+      recordCompaction: (task) => void compacted.push(task.id),
+    });
+    await t.manager.start("manifest");
+    await t.manager.ask("one");
+    await t.manager.ask("two");
+    await t.manager.ask("three");
+    expect(t.turns.map((x) => x.options.phase)).toEqual(["run", "checkpoint", "run", "run", "checkpoint", "run"]);
+    expect(compacted).toEqual(["t1", "t1"]);
+    expect(t.state().current?.context).toEqual({ used: 60_000 });
+  });
+
+  it("a checkpoint note doesn't skip the closing turn, and the topic ends done even if closing brings none", async () => {
+    const t = setup({ profile: standard, script: [[ctx(170_000), ok], [saveNote(), ok], [ok], [ok]] });
+    await t.manager.start("manifest");
+    await t.manager.ask("More?");
+    await pick(t, { label: "Next", next: true });
+    expect(t.turns.map((x) => x.options.phase)).toEqual(["run", "checkpoint", "run", "close", "run"]);
+    expect(t.state().actions.manifest).toBe("done");
+  });
+
+  it("cancel during the checkpoint: no follow-up turn, the task waits again, the window told", async () => {
+    let t!: ReturnType<typeof setup>;
+    t = setup({
+      profile: standard,
+      script: [[ctx(170_000), ok], [cancelled]],
+      during: (i) => {
+        if (i === 1) t.manager.cancel();
+      },
+    });
+    await t.manager.start("manifest");
+    await t.manager.ask("More?");
+    expect(t.turns.map((x) => x.options.phase)).toEqual(["run", "checkpoint"]);
+    expect(t.state().current?.status).toBe("waiting");
+    expect(t.emitted).toEqual([{ type: "done", ok: false, error: { code: "cancelled" } }]);
+  });
+
+  it("a cancelled checkpoint runs again before the next follow-up", async () => {
+    let t!: ReturnType<typeof setup>;
+    t = setup({
+      profile: standard,
+      script: [[ctx(170_000), ok], [cancelled], [saveNote(), ok], [ok]],
+      during: (i) => {
+        if (i === 1) t.manager.cancel();
+      },
+    });
+    await t.manager.start("manifest");
+    await t.manager.ask("More?");
+    expect(t.state().current?.checkpointed).toBe(false);
+    await t.manager.ask("More?");
+    expect(t.turns.map((x) => x.options.phase)).toEqual(["run", "checkpoint", "checkpoint", "run"]);
+    expect(t.state().current).toMatchObject({ status: "waiting", checkpointed: true, checkpointNote: true });
+  });
+
+  it("never checkpoints a task without a profile", async () => {
+    const t = setup({ script: [[ctx(900_000), ok]] });
+    await t.manager.start("manifest");
+    await t.manager.ask("More?");
+    expect(t.turns.map((x) => x.options.phase)).toEqual(["run", "run"]);
+  });
+});
+
+/**
+ * Real turns: a TurnController over a runtime that plays the next script entry per turn (`done: ok` when
+ * none is left). `during(i)` runs inside turn i before its events; a cancel ends the turn as cancelled.
+ */
+function realTurns(script: Event[][], during?: (index: number) => void) {
+  const window: Event[] = [];
+  const messages: string[] = [];
+  const runtime = {
+    send: (message: string, emit: (e: Event) => void) => {
+      const index = messages.push(message) - 1;
+      let ended = false;
+      const play = (events: Event[]) => {
+        for (const e of events) {
+          if (ended) return;
+          if (e.type === "done") ended = true;
+          emit(e);
+        }
+      };
+      const done = (async () => {
+        await Promise.resolve();
+        during?.(index);
+        play(script[index] ?? [ok]);
+      })();
+      return { cancel: () => play([cancelled]), done };
+    },
+  } as unknown as HarnessRuntime;
+  const controller = new TurnController({
+    ensureRuntime: async () => runtime,
+    chatLog: async () => ({ append: async () => {} }),
+    stateBlocks: () => new Set(),
+    emit: (e) => void window.push(e),
+  });
+  return { controller, window, messages };
+}
+
+describe("TaskManager over real turns: what the window sees", () => {
+  const standard: ModelProfile = { engine: "claude", tier: "standard", model: "sonnet", effort: "medium", cap: 200_000 };
+  const deep: ModelProfile = { engine: "claude", tier: "deep", model: "opus", effort: "high", cap: 400_000 };
+  const ctx = (used: number): Event => ({ type: "context", used });
+  const unavailable: Event = { type: "done", ok: false, error: { code: "model-unavailable" } };
+  const answer: Event = { type: "text", delta: "Answer" };
+
+  it("checkpoint fails (not cancelled): the window gets only the follow-up's text and its one done", async () => {
+    const r = realTurns([[ctx(170_000), ok], [crashed], [answer, ok]]);
+    const t = setup({ profile: standard, turns: r.controller, window: r.window });
+    await t.manager.start("manifest");
+    r.window.length = 0;
+    await t.manager.ask("More?");
+    expect(r.messages).toHaveLength(3);
+    expect(r.window).toEqual([answer, ok]);
+    expect(t.state().current).toMatchObject({ status: "waiting", turns: 2 });
+  });
+
+  it("quit during a checkpoint: no follow-up, no next task, the window told the turn stopped", async () => {
+    let t!: ReturnType<typeof setup>;
+    const r = realTurns([[ctx(170_000), ok]], (i) => {
+      if (i !== 1) return;
+      t.manager.close();
+      r.controller.close();
+    });
+    t = setup({ profile: standard, turns: r.controller, window: r.window });
+    await t.manager.start("manifest");
+    r.window.length = 0;
+    await t.manager.ask("More?");
+    expect(r.messages).toHaveLength(2);
+    expect(r.window).toEqual([cancelled]);
+    expect(t.state().current).toMatchObject({ status: "waiting", checkpointed: false });
+    await expect(t.manager.ask("Again?")).rejects.toThrow("The app is closing");
+  });
+
+  it("quit during a fallback retry: no further turn, no task left, one cancelled done in the window", async () => {
+    let t!: ReturnType<typeof setup>;
+    const r = realTurns([[unavailable]], (i) => {
+      if (i !== 1) return;
+      t.manager.close();
+      r.controller.close();
+    });
+    t = setup({ profile: deep, fallback: (p) => (p.model === "opus" ? standard : null), turns: r.controller, window: r.window });
+    await t.manager.start("manifest");
+    expect(r.messages).toHaveLength(2);
+    expect(r.window).toEqual([cancelled]);
+    expect(t.state()).toMatchObject({ current: null, actions: { manifest: "unfinished" } });
+  });
+
+  it("quit while the failed attempt's session ends: no retry, one cancelled done in the window", async () => {
+    let t!: ReturnType<typeof setup>;
+    let ends = 0;
+    const r = realTurns([[unavailable]]);
+    t = setup({
+      profile: deep,
+      fallback: (p) => (p.model === "opus" ? standard : null),
+      turns: r.controller,
+      window: r.window,
+      onEndSession: () => {
+        if (++ends !== 2) return;
+        t.manager.close();
+        r.controller.close();
+      },
+    });
+    await t.manager.start("manifest");
+    expect(r.messages).toHaveLength(1);
+    expect(r.window).toEqual([cancelled]);
+    expect(t.state()).toMatchObject({ current: null, actions: { manifest: "unfinished" } });
   });
 });

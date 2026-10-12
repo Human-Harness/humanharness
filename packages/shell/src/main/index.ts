@@ -5,8 +5,8 @@ import os from "node:os";
 import path from "node:path";
 import { BrowserWindow, type IpcMainInvokeEvent, app, clipboard, dialog, ipcMain, nativeTheme, shell } from "electron";
 import { electronLauncher } from "@humanharness/blocks";
-import { type EngineDef, NOTICE_VERSION, availableEngines, getEngine } from "@humanharness/engines";
-import { type LoadedHarness, allBlocks, choiceOptionSchema, loadHarness, resolveInHarness } from "@humanharness/harness-sdk";
+import { type EngineDef, type ModelProfile, type ModelSpec, NOTICE_VERSION, availableEngines, defaultTier, getEngine } from "@humanharness/engines";
+import { type LoadedHarness, TIERS, type Tier, allBlocks, choiceOptionSchema, loadHarness, resolveInHarness } from "@humanharness/harness-sdk";
 import { type Event, type HarnessRuntime, createRuntime } from "@humanharness/runtime";
 import {
   type AppConfig,
@@ -14,6 +14,7 @@ import {
   type ChatLoad,
   type ConfiguredApp,
   type FolderPick,
+  type ModelsView,
   type RunningSetup as SetupInfo,
   type SendOptions,
   type SetupOutput,
@@ -31,13 +32,14 @@ import { type CommandDeps, cliCommand, engineCommand, loginShellPath } from "./e
 import { EngineGuards } from "./engine-guards";
 import { installCommandOf, terminalCommand } from "./install-help";
 import { detectEngine, hasAcceptedNotice } from "./engine-status";
+import { QUESTIONS, cleanModels, engineOffer, firstOffered, fitEffort, nextFallback, resolveProfile } from "./models";
 import { requireNoticeForChoice, requireNoticeForTurn } from "./notice-policy";
 import { archiveStaleChat, startNewChatIfEngineChanged } from "./engine-switch";
 import { type RunningSetup, runSetupProcess, setupCommand, stopSetupProcess } from "./setup-runner";
 import { runSetupStep } from "./setup-step";
-import { SharedConfigStore, sharedConfigDir } from "./shared-config";
+import { type SharedEngineRecord, SharedConfigStore, sharedConfigDir } from "./shared-config";
 import { EngineUnavailable, TurnController, memoise } from "./turn-controller";
-import { UsageLog, summarizeUsage, usageRecord } from "./usage-log";
+import { UsageLog, compactionRecord, profileMeta, summarizeUsage, usageRecord } from "./usage-log";
 import { type ValidationContext, checkFolder, configProblem, isAppUrl } from "./validate";
 import { openIfStillSafe, openRoots, openableFile, revealIfStillSafe, revealableFile } from "./open-path";
 import { saveWithFolderChange } from "./folder-change";
@@ -151,6 +153,34 @@ const harnessLogo = () => (harness.logo ? logo("harness", () => resolveInHarness
 // Engine logos ship in the engines package (exported as "./assets/*").
 const engineLogo = (e: EngineDef) => (e.logo ? logo(e.id, () => requireFromHere.resolve(`@humanharness/engines/${e.logo}`)) : Promise.resolve(null));
 
+/** What the engine was saved offering (engines.json); empty when the file can't be read. */
+const savedOffer = (engineId: string) => shared.engine(engineId).catch((): SharedEngineRecord => ({}));
+
+/** Settings › Modelos: the harness's recommendations, the core's tables and what each engine offers. */
+async function modelsView(): Promise<ModelsView> {
+  const engines = availableEngines(harness.engines, mode());
+  const saved = await shared.load().catch(() => ({ version: 1 as const, engines: {} as Record<string, SharedEngineRecord> }));
+  return {
+    recommended: {
+      ...Object.fromEntries(Object.entries(harness.actions).map(([id, a]) => [id, a.tier ?? "standard"])),
+      [QUESTIONS]: harness.questions?.tier ?? "standard",
+    },
+    defaults: Object.fromEntries(
+      engines.map((e) => [e.id, Object.fromEntries(TIERS.map((t) => [t, defaultTier(e.id, t)])) as Record<Tier, ModelSpec>]),
+    ),
+    offered: Object.fromEntries(engines.map((e) => [e.id, engineOffer(e, saved.engines[e.id] ?? {})])),
+  };
+}
+
+/**
+ * `p` with an effort its engine offers, so an unsupported one never reaches argv or CODEX_CONFIG. An engine
+ * this build doesn't offer leaves `p` as it is (its turn fails on the engine check anyway).
+ */
+async function supportedEffort(p: ModelProfile, saved?: SharedEngineRecord): Promise<ModelProfile> {
+  const engine = availableEngines(harness.engines, mode()).find((e) => e.id === p.engine);
+  return engine ? fitEffort(p, engineOffer(engine, saved ?? (await savedOffer(p.engine))).efforts) : p;
+}
+
 async function appState(): Promise<AppState> {
   const harnessImage = await harnessLogo();
   const saved = await config.load();
@@ -165,7 +195,7 @@ async function appState(): Promise<AppState> {
       ...(harness.donate ? { donate: harness.donate } : {}),
       version: app.getVersion(),
     },
-    config: saved,
+    config: saved.models !== undefined ? { ...saved, models: cleanModels(saved.models) } : saved,
     suggestedFolder: path.join(os.homedir(), harness.folder.suggested),
     engines: await Promise.all(
       availableEngines(harness.engines, mode()).map(async (e) => {
@@ -188,10 +218,14 @@ async function appState(): Promise<AppState> {
     ),
     // What the screen needs of each action (never the prompt file).
     actions: Object.fromEntries(
-      Object.entries(harness.actions).map(([id, a]) => [id, { label: a.label, cost: a.cost, ...(a.description ? { description: a.description } : {}) }]),
+      Object.entries(harness.actions).map(([id, a]) => [
+        id,
+        { label: a.label, cost: a.cost, ...(a.description ? { description: a.description } : {}), ...(a.tier ? { tier: a.tier } : {}) },
+      ]),
     ),
     path: harness.path ?? [],
     references: (await referencesFor(saved.folder)).map((r) => ({ id: r.id, label: r.label, path: displayPath(r.path, os.homedir()) })),
+    models: await modelsView(),
   };
 }
 
@@ -237,6 +271,8 @@ const runtime = memoise<HarnessRuntime>(async () => {
     env: cmd.env,
     references: (await referencesFor(c.folder, true)).map((r) => ({ label: r.label[c.language], path: r.path })),
     onSession: (s) => void tasks.sessionStarted(s).catch((err: unknown) => console.error("Could not record the session", err)),
+    onModels: (offer) =>
+      void shared.update(engine.id, { models: offer.models, efforts: offer.efforts }).catch((err: unknown) => console.error("Could not save the engine's models", err)),
   });
 });
 
@@ -342,6 +378,28 @@ const tasks = new TaskManager({
   },
   changed: (view) => sendToWindow("hh:tasks", view),
   emit,
+  profileFor: async (action) => {
+    const c = await config.load();
+    const engine = c.engineId ?? "";
+    const models = cleanModels(c.models);
+    const manifestTier = action !== undefined ? harness.actions[action]?.tier : harness.questions?.tier;
+    const profile = resolveProfile({ engine, action, manifestTier, models });
+    // Codex: a model its saved list lacks falls back before the turn (spec §5.3).
+    const saved = await savedOffer(engine);
+    return supportedEffort(firstOffered(profile, models, saved.models), saved);
+  },
+  fallbackFor: async (profile, tried) => {
+    const next = nextFallback(profile, cleanModels((await config.load()).models), tried);
+    return next ? supportedEffort(next) : null;
+  },
+  fitProfile: (profile) => supportedEffort(profile),
+  recordCompaction: async (task) => {
+    const c = await validConfig();
+    if (!c) return;
+    await new UsageLog(c.folder).append(
+      compactionRecord(c.engineId, { ...(task.action ? { action: task.action } : {}), task: task.id, ...(task.profile ? profileMeta(task.profile) : {}) }),
+    );
+  },
 });
 
 /** Saves a config patch; an engine change ends the task, drops the runtime and archives the chat (see EngineGuards). */
@@ -386,9 +444,11 @@ function registerIpc() {
     if (!folder) return null;
     return { folder, problem: await checkFolder(folder, os.homedir()) } satisfies FolderPick;
   });
-  handle("hh:saveConfig", async (patch: AppConfig) => {
-    const problem = await configProblem(patch, validation());
+  handle("hh:saveConfig", async (input: AppConfig) => {
+    const problem = await configProblem(input, validation());
     if (problem) throw new Error(problem);
+    // Spec §7: a bad entry under models is dropped, never stored.
+    const patch: AppConfig = input.models !== undefined ? { ...input, models: cleanModels(input.models) } : input;
     const before = await config.load();
     // Spec §9: an engine is only used once its notice is accepted.
     await requireNoticeForChoice(patch.engineId, before.engineId, hasNotice);

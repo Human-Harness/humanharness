@@ -111,6 +111,7 @@ export async function configProblem(c: AppConfig, ctx: ValidationContext): Promi
     return "language-unavailable";
   }
   if (c.appearance !== undefined && !["system", "light", "dark"].includes(c.appearance as string)) return "invalid";
+  if (c.models !== undefined && (typeof c.models !== "object" || c.models === null || Array.isArray(c.models))) return "invalid";
   if (c.folder !== undefined) return checkFolder(c.folder, ctx.home, ctx.realpath);
   return null;
 }

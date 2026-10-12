@@ -15,6 +15,12 @@ const localizedText = z.object({ es: z.string().min(1), en: z.string().min(1) })
 export const ACTION_COSTS = ["light", "medium", "heavy"] as const;
 export type ActionCost = (typeof ACTION_COSTS)[number];
 /**
+ * How much model a task needs (resources spec §3 D1). The core maps each tier to a model, an effort and
+ * a context cap per engine; a harness never names a model. `custom` is a user setting, never a manifest value.
+ */
+export const TIERS = ["light", "standard", "deep"] as const;
+export type Tier = (typeof TIERS)[number];
+/**
  * A task the harness can start (a topic card, a step of the guided path, a button): its brief is the first
  * message of the task's engine session. `cost` is how much of the plan it tends to use.
  */
@@ -25,6 +31,8 @@ const actionSchema = z.object({
   /** The task brief: a file in the harness folder. It may use {{language}} and {{notesIndex}}. */
   prompt: z.string().min(1),
   cost: z.enum(ACTION_COSTS),
+  /** The tier the task runs at; absent means "standard". */
+  tier: z.enum(TIERS).optional(),
 });
 /** A folder the agent may read but never change. */
 const referenceSchema = z.object({
@@ -65,9 +73,12 @@ const manifestSchema = z.object({
   instructions: z.string().min(1),
   permissions: z.object({ edit: z.enum(["folder", "none"]), exec: z.boolean(), web: z.boolean() }),
   blocks: z.record(z.string().regex(/^[a-z][a-z0-9_]*$/), blockSchema),
-  actions: z.record(z.string().regex(/^[a-z][a-z0-9_-]*$/), actionSchema).default({}),
+  /** Ids are at most 64 characters: the models config keys a task's setting by its action id. */
+  actions: z.record(z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/), actionSchema).default({}),
   /** Optional guided order of action ids (the "Recorrido"). */
   path: z.array(z.string()).min(1).optional(),
+  /** Free questions (q-<slug> tasks): the tier they run at; absent means "standard". */
+  questions: z.object({ tier: z.enum(TIERS).optional() }).optional(),
   /** One line under the name on the home screen. */
   tagline: localizedText.optional(),
   /** Logo file in the harness folder (SVG, PNG or JPEG); defaults to the Human Harness H. */
@@ -89,6 +100,10 @@ const manifestSchema = z.object({
     const other = tools.get(tool);
     if (other !== undefined) ctx.addIssue({ code: "custom", path: ["blocks", name], message: `Tool "${tool}" is already used by block "${other}"` });
     else tools.set(tool, name);
+  }
+  // Free questions' model setting lives under the "questions" key, next to the action ids.
+  if (Object.hasOwn(m.actions, "questions")) {
+    ctx.addIssue({ code: "custom", path: ["actions", "questions"], message: '"questions" is reserved for free questions: use another action id' });
   }
   const seen = new Set<string>();
   for (const id of m.path ?? []) {

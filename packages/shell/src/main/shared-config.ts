@@ -2,9 +2,14 @@ import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { type Effort, type ModelChoice, isEffort, isModelId } from "@humanharness/engines";
 
 /** What every Human Harness app on this computer knows about one engine. Never credentials. */
 export interface SharedEngineRecord {
+  /** Models the engine offered at its last session (Codex), for Settings › Modelos. */
+  models?: ModelChoice[];
+  /** Efforts it offered with them. */
+  efforts?: Effort[];
   /** Absolute path of the CLI found last time (informational: it is detected again on every check). */
   binary?: string;
   version?: string;
@@ -22,7 +27,7 @@ export interface SharedConfig {
   engines: Record<string, SharedEngineRecord>;
 }
 
-const FIELDS: readonly string[] = ["binary", "version", "notice", "verifiedAt"];
+const FIELDS: readonly string[] = ["binary", "version", "notice", "verifiedAt", "models", "efforts"];
 const empty = (): SharedConfig => ({ version: 1, engines: {} });
 
 const isPlainObject = (v: unknown): v is Record<string, unknown> =>
@@ -37,6 +42,22 @@ function cleanRecord(raw: Record<string, unknown>): SharedEngineRecord {
   const notice = raw.notice;
   if (isPlainObject(notice) && typeof notice.version === "number" && typeof notice.acceptedAt === "string") {
     record.notice = { version: notice.version, acceptedAt: notice.acceptedAt };
+  }
+  // These reach Settings and, through a task's profile, the engine: only safe ids and known efforts.
+  if (Array.isArray(raw.models)) {
+    const models = raw.models
+      .filter((m): m is Record<string, unknown> => isPlainObject(m) && isModelId(m.id))
+      .slice(0, 50)
+      .map((m) => ({
+        id: m.id as string,
+        ...(typeof m.name === "string" && m.name ? { name: m.name.slice(0, 80) } : {}),
+        ...(typeof m.description === "string" && m.description ? { description: m.description.slice(0, 200) } : {}),
+      }));
+    if (models.length > 0) record.models = models;
+  }
+  if (Array.isArray(raw.efforts)) {
+    const efforts = raw.efforts.filter(isEffort);
+    if (efforts.length > 0) record.efforts = efforts;
   }
   return record;
 }

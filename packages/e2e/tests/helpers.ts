@@ -23,8 +23,8 @@ export interface Sandbox {
   acpLog: string;
 }
 
-/** A configured app (Spanish, Claude) with both engines' notices accepted, in packages/e2e/.tmp/. */
-export function makeSandbox(name: string): Sandbox {
+/** A configured app (Spanish, Claude, plus `config`) with both engines' notices accepted, in packages/e2e/.tmp/. */
+export function makeSandbox(name: string, config: Record<string, unknown> = {}): Sandbox {
   const root = path.resolve(here, "..", ".tmp", `${name}-${Date.now()}`);
   const s: Sandbox = {
     root,
@@ -35,7 +35,7 @@ export function makeSandbox(name: string): Sandbox {
     acpLog: path.join(root, "acp-log.jsonl"),
   };
   for (const dir of [s.folder, s.userData, s.sharedDir]) fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(s.userData, "config.json"), JSON.stringify({ language: "es", folder: s.folder, engineId: "claude" }));
+  fs.writeFileSync(path.join(s.userData, "config.json"), JSON.stringify({ language: "es", folder: s.folder, engineId: "claude", ...config }));
   const now = new Date().toISOString();
   const ready = { notice: { version: NOTICE_VERSION, acceptedAt: now }, verifiedAt: now };
   fs.writeFileSync(path.join(s.sharedDir, "engines.json"), JSON.stringify({ version: 1, engines: { claude: ready, codex: ready } }));
@@ -81,3 +81,10 @@ export function sessionOf(argv: string[]): string {
   const flag = argv.includes("--resume") ? "--resume" : "--session-id";
   return argv[argv.indexOf(flag) + 1];
 }
+
+/** The --model, --effort and --autocompact values of a fake-claude run (undefined when a flag is absent). */
+export function profileFlags(argv: string[]): (string | undefined)[] {
+  return ["--model", "--effort", "--autocompact"].map((flag) => (argv.includes(flag) ? argv[argv.indexOf(flag) + 1] : undefined));
+}
+
+export const usageFile = (s: Sandbox) => path.join(s.folder, ".harness", "usage.jsonl");

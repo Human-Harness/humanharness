@@ -137,6 +137,14 @@ describe("configProblem", () => {
     expect(await configProblem({ folder: 3 as never }, ctx)).not.toBeNull();
     expect(await configProblem(null as never, ctx)).not.toBeNull();
   });
+
+  it("accepts any object under models (it is cleaned when saved and read) and refuses anything else", async () => {
+    expect(await configProblem({ models: { tasks: { manifest: "deep" } } }, ctx)).toBeNull();
+    expect(await configProblem({ models: { tasks: { manifest: "nope" } } } as never, ctx)).toBeNull();
+    expect(await configProblem({ models: "deep" } as never, ctx)).toBe("invalid");
+    expect(await configProblem({ models: [] } as never, ctx)).toBe("invalid");
+    expect(await configProblem({ models: null } as never, ctx)).toBe("invalid");
+  });
 });
 
 describe("isAppUrl", () => {

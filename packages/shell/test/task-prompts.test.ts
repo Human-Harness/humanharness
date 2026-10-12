@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CLOSE_PROMPT, QUESTION_PROMPT, fillPrompt } from "../src/main/task-prompts";
+import { CHECKPOINT_PROMPT, CLOSE_PROMPT, QUESTION_PROMPT, fillPrompt } from "../src/main/task-prompts";
 
 const index = "## What we already covered\n- Engines → .harness/notes/engines.md";
 
@@ -46,5 +46,13 @@ describe("fillPrompt", () => {
   it("asks the closing turn for save_note only", () => {
     expect(CLOSE_PROMPT).toContain("`save_note`");
     expect(CLOSE_PROMPT).toContain("do not call `show_choices`");
+  });
+});
+
+describe("CHECKPOINT_PROMPT", () => {
+  it("asks for save_note mid-task, without ending the conversation or showing choices", () => {
+    expect(CHECKPOINT_PROMPT).toMatch(/^Checkpoint:/);
+    expect(CHECKPOINT_PROMPT).toContain("`save_note`");
+    expect(CHECKPOINT_PROMPT).toContain("do not call `show_choices`");
   });
 });

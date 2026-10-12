@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { Readable, Writable } from "node:stream";
 import * as acp from "@agentclientprotocol/sdk";
+import { type Effort, type ModelChoice, type ModelProfile, isCap, isEffort, isModelId } from "@humanharness/engines";
 import type { Permissions } from "@humanharness/harness-sdk";
 import { classifyError } from "./classify";
 import { type ActivityKind, type Event, fail } from "./events";
@@ -40,6 +41,11 @@ const KILL_MS = 3000;
 const STDERR_KEEP = 4096;
 
 class OutdatedAdapterError extends Error {}
+
+/** What Codex titles its own compaction step. */
+const COMPACT_TITLE = "Compact conversation";
+
+class ModelUnavailableError extends Error {}
 
 function versionLess(a: string, b: string): boolean {
   const parse = (v: string) => v.split(/[-+]/)[0].split(".").map((n) => Number.parseInt(n, 10) || 0);
@@ -142,8 +148,58 @@ export function activityDetail(call: { kind?: unknown; title?: unknown; location
   return rest && !/\s/.test(rest) ? baseName(rest) : rest || title;
 }
 
+/**
+ * The adapter's `CODEX_CONFIG` for a task's profile (resources spec §5.2): only these keys are ever
+ * written; `model` is left out for the engine's default model. Checked again here before it is used.
+ */
+export function codexConfig(profile: ModelProfile): string {
+  if (profile.model !== undefined && !isModelId(profile.model)) {
+    throw new Error(`Refusing a model id that reads as a flag: ${JSON.stringify(profile.model)}`);
+  }
+  if (!isEffort(profile.effort)) throw new Error(`Unknown effort: ${JSON.stringify(profile.effort)}`);
+  if (!isCap(profile.cap)) throw new Error(`Context cap out of range: ${JSON.stringify(profile.cap)}`);
+  return JSON.stringify({
+    ...(profile.model !== undefined ? { model: profile.model } : {}),
+    model_reasoning_effort: profile.effort,
+    model_auto_compact_token_limit: profile.cap,
+  });
+}
+
+type SelectOption = { value?: unknown; name?: unknown; description?: unknown };
+
+/** The options of an ACP select config option, flat or grouped. */
+function selectOptions(configOptions: unknown[], id: string): SelectOption[] | null {
+  const option = configOptions.find((o): o is Record<string, unknown> => typeof o === "object" && o !== null && (o as { id?: unknown }).id === id);
+  if (!option || option.type !== "select" || !Array.isArray(option.options)) return null;
+  return (option.options as unknown[]).flatMap((o) => {
+    if (typeof o !== "object" || o === null) return [];
+    const group = o as { options?: unknown };
+    return Array.isArray(group.options) ? (group.options as SelectOption[]) : [o as SelectOption];
+  });
+}
+
+/**
+ * The models and efforts an ACP agent offers, from session/new `configOptions` (Codex: the selects
+ * "model" and "reasoning_effort"). Unsafe ids and unknown efforts are dropped. Null without models.
+ */
+export function offeredModels(configOptions: unknown): { models: ModelChoice[]; efforts: Effort[] } | null {
+  if (!Array.isArray(configOptions)) return null;
+  const models = (selectOptions(configOptions, "model") ?? [])
+    .filter((o): o is SelectOption & { value: string } => isModelId(o.value))
+    .slice(0, 50)
+    .map((o) => ({
+      id: o.value,
+      ...(typeof o.name === "string" && o.name ? { name: o.name.slice(0, 80) } : {}),
+      ...(typeof o.description === "string" && o.description ? { description: o.description.slice(0, 200) } : {}),
+    }));
+  if (models.length === 0) return null;
+  const efforts = (selectOptions(configOptions, "reasoning_effort") ?? []).map((o) => o.value).filter(isEffort);
+  return { models, efforts };
+}
+
 function errorFrom(e: unknown, stderr = ""): Event {
   const err = e as { code?: unknown; message?: string };
+  if (e instanceof ModelUnavailableError) return fail("model-unavailable", e.message);
   if (err?.code === "ENOENT") return fail("engine-not-installed", err.message);
   if (e instanceof OutdatedAdapterError) return fail("outdated-version", e.message);
   if (e instanceof acp.RequestError && e.code === -32000) return fail("session-expired", e.message);
@@ -169,19 +225,36 @@ export class AcpTransport implements Transport {
   /** What the agent advertised at initialize. */
   private loadable = false;
   private closable = false;
+  /** An agent process was started at least once by this transport. */
+  private spawned = false;
+  /** CODEX_CONFIG the last process was started with (undefined: none set by the app). */
+  private spawnedConfig: string | undefined;
+  /** The profile of the turn being run. */
+  private profile: ModelProfile | undefined;
+  /** The model the session runs, as the agent reported it at session/new or session/load (without its effort). */
+  private reportedModel: string | undefined;
+  /** A compaction was already reported in this turn. */
+  private sawCompaction = false;
 
   constructor(private readonly o: TransportOptions) {}
 
   /** Starts the agent process and initializes the connection. */
-  private async connect(): Promise<void> {
+  private async connect(config: string | undefined): Promise<void> {
     const [binary, ...args] = this.o.command;
+    // CODEX_CONFIG is ours: built from the profile, replacing any inherited value (never merged).
+    // Without a profile it is removed, even when `o.env` sets it: the profile is its only source.
+    const env: NodeJS.ProcessEnv = { ...process.env, ...this.o.env };
+    if (config !== undefined) env.CODEX_CONFIG = config;
+    else delete env.CODEX_CONFIG;
     const child = spawn(binary, args, {
       cwd: this.o.folder,
-      env: { ...process.env, ...this.o.env },
+      env,
       stdio: ["pipe", "pipe", "pipe"],
       detached: process.platform !== "win32",
     });
     this.child = child;
+    this.spawned = true;
+    this.spawnedConfig = config;
     this.stderrTail = "";
     child.on("exit", () => {
       if (this.child === child) this.reset();
@@ -238,18 +311,29 @@ export class AcpTransport implements Transport {
     const agent = this.conn!.agent;
     const mcpServers = this.mcpServers();
     if (this.o.session.started && this.loadable) {
+      let loaded: { configOptions?: unknown; models?: { currentModelId?: unknown } | null } | undefined;
       try {
-        await agent.request("session/load", { sessionId: this.o.session.id, cwd: this.o.folder, mcpServers });
+        loaded = (await agent.request("session/load", { sessionId: this.o.session.id, cwd: this.o.folder, mcpServers })) as typeof loaded;
         this.sessionId = this.o.session.id;
       } catch (e) {
         // An expired login must surface; any other load failure (lost session) falls back to a fresh one.
         const event = errorFrom(e);
         if (event.type === "done" && !event.ok && event.error?.code === "session-expired") throw e;
       }
+      if (this.sessionId) {
+        this.reportModels(loaded?.configOptions);
+        this.checkModel(loaded?.models?.currentModelId);
+      }
     }
     if (!this.sessionId) {
-      const created = (await agent.request("session/new", { cwd: this.o.folder, mcpServers })) as { sessionId: string };
+      const created = (await agent.request("session/new", { cwd: this.o.folder, mcpServers })) as {
+        sessionId: string;
+        configOptions?: unknown;
+        models?: { currentModelId?: unknown } | null;
+      };
       this.sessionId = created.sessionId;
+      this.reportModels(created.configOptions);
+      this.checkModel(created.models?.currentModelId);
       this.o.session = { id: created.sessionId, started: true };
       this.o.onSessionStarted(this.o.session);
     }
@@ -258,8 +342,35 @@ export class AcpTransport implements Transport {
     }
   }
 
+  private reportModels(configOptions: unknown): void {
+    const offer = offeredModels(configOptions);
+    if (!offer) return;
+    try {
+      this.o.onModels?.(offer);
+    } catch (err) {
+      console.error("Could not record the engine's models", err);
+    }
+  }
+
+  /** Codex says which model the session runs: another one than the profile asked for means the plan lacks it (spec §5.3). */
+  private checkModel(current: unknown): void {
+    this.reportedModel = typeof current === "string" ? current.replace(/\[[^\]]*\]$/, "") : undefined;
+    const wanted = this.profile?.model;
+    // An agent that reports no model is accepted: the model it runs is then unknown, not wrong.
+    if (wanted !== undefined && this.reportedModel !== undefined && this.reportedModel !== wanted) {
+      throw new ModelUnavailableError(`Asked for ${wanted}; the agent runs ${String(current)}`);
+    }
+  }
+
+  private compacted(emit: (e: Event) => void): void {
+    if (this.sawCompaction) return;
+    this.sawCompaction = true;
+    emit({ type: "compaction" });
+  }
+
   private reset(): void {
     this.conn = undefined;
+    this.reportedModel = undefined;
     this.child = undefined;
     this.sessionId = undefined;
     this.calls.clear();
@@ -304,6 +415,11 @@ export class AcpTransport implements Transport {
         emit({ type: "text", delta: u.content.text });
         return;
       case "tool_call": {
+        if (u.title === COMPACT_TITLE) {
+          this.hidden.add(u.toolCallId);
+          this.compacted(emit);
+          return;
+        }
         // Only Codex's own MCP marker is trusted for the server; rawInput is model-written.
         const server = u._meta?.is_mcp_tool_call === true ? serverOf(u.rawInput) : undefined;
         this.calls.set(u.toolCallId, { server });
@@ -325,16 +441,42 @@ export class AcpTransport implements Transport {
         emit({ type: "activity", id: u.toolCallId, ...activity, state: "end", error: u.status === "failed" });
         return;
       }
+      case "usage_update":
+        // One context event per update: consumers keep the last one.
+        if (typeof u.used === "number" && Number.isFinite(u.used)) {
+          emit({ type: "context", used: u.used, ...(typeof u.size === "number" ? { size: u.size } : {}) });
+        }
+        return;
+      case "compaction_update":
+        this.compacted(emit);
+        return;
     }
   }
 
-  async turn(message: string, emit: (e: Event) => void, signal: AbortSignal): Promise<void> {
+  async turn(message: string, emit: (e: Event) => void, signal: AbortSignal, profile?: ModelProfile): Promise<void> {
+    let config: string | undefined;
+    try {
+      config = profile ? codexConfig(profile) : undefined;
+    } catch (err) {
+      // No ErrorCode fits a profile the core built wrong (it is not the plan's model, nor the user's
+      // quota): agent-crashed is the generic "this turn could not run" card. The shell cleans every profile
+      // first, so this is a last guard that should never show.
+      emit(fail("agent-crashed", err instanceof Error ? err.message : String(err)));
+      return;
+    }
+    // CODEX_CONFIG is read when the agent starts: a task on another profile needs a new process,
+    // and a fresh session, so a saved one never resumes under another model (spec D2).
+    if (this.spawned && config !== this.spawnedConfig) {
+      await this.close();
+      this.o.session = { id: randomUUID(), started: false };
+    }
+    this.profile = profile;
     this.calls.clear();
     this.hidden.clear();
     this.activities.clear();
     if (!this.conn || !this.sessionId) {
       try {
-        if (!this.conn) await this.connect();
+        if (!this.conn) await this.connect(config);
         await this.openSession();
       } catch (e) {
         const event = errorFrom(e, this.stderrTail);
@@ -352,6 +494,7 @@ export class AcpTransport implements Transport {
     const sessionId = this.sessionId!;
     this.emit = emit;
     this.afterTool = false;
+    this.sawCompaction = false;
     let grace: ReturnType<typeof setTimeout> | undefined;
     const onAbort = () => {
       void agent.notify("session/cancel", { sessionId });
@@ -375,6 +518,7 @@ export class AcpTransport implements Transport {
           outputTokens: res.usage.outputTokens ?? 0,
           cacheReadTokens: res.usage.cachedReadTokens ?? 0,
           cacheWriteTokens: res.usage.cachedWriteTokens ?? 0,
+          ...(this.reportedModel ? { model: this.reportedModel } : {}),
         });
       }
       if (res.stopReason === "cancelled" || signal.aborted) emit(fail("cancelled"));

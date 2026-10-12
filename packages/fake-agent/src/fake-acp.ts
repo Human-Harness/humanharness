@@ -30,6 +30,7 @@ const stream = acp.ndJsonStream(
 acp
   .agent({ name: "fake-acp" })
   .onRequest("initialize", (ctx) => {
+    log("env", { CODEX_CONFIG: process.env.CODEX_CONFIG ?? null });
     log("initialize", ctx.params);
     return {
       protocolVersion: acp.PROTOCOL_VERSION,
@@ -46,14 +47,18 @@ acp
     cwd = ctx.params.cwd;
     const base = script.sessionId ?? "fake-acp-session";
     sessions++;
-    return { sessionId: sessions === 1 ? base : `${base}-${sessions}` };
+    return {
+      sessionId: sessions === 1 ? base : `${base}-${sessions}`,
+      ...(script.configOptions ? { configOptions: script.configOptions } : {}),
+      ...(script.currentModelId ? { models: { currentModelId: script.currentModelId, availableModels: [] } } : {}),
+    } as never;
   })
   .onRequest("session/load", (ctx) => {
     log("session/load", ctx.params);
     if (script.failLoad) throw new acp.RequestError(-32603, "Session not found");
     mcpServers = (ctx.params.mcpServers ?? []) as StdioMcp[];
     cwd = ctx.params.cwd;
-    return {};
+    return (script.currentModelId ? { models: { currentModelId: script.currentModelId, availableModels: [] } } : {}) as never;
   })
   .onRequest("session/set_mode", (ctx) => {
     log("session/set_mode", ctx.params);

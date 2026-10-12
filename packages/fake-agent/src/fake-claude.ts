@@ -24,6 +24,20 @@ if (script.failOnResume && argv.includes("--resume")) {
   process.exit(1);
 }
 
+const modelFlag = argv.indexOf("--model");
+const model = modelFlag >= 0 ? argv[modelFlag + 1] : undefined;
+if (model && script.failModels?.includes(model)) {
+  // What claude 2.1.296 prints for a model the plan doesn't include (spike S5).
+  process.stdout.write(JSON.stringify({ type: "system", subtype: "init", session_id: "fake-session" }) + "\n");
+  process.stdout.write(
+    JSON.stringify({ type: "assistant", parent_tool_use_id: null, error: "model_not_found", message: { content: [{ type: "text", text: `There's an issue with the selected model (${model}).` }] } }) + "\n",
+  );
+  process.stdout.write(
+    JSON.stringify({ type: "result", subtype: "success", is_error: true, api_error_status: 404, terminal_reason: "api_error", result: `There's an issue with the selected model (${model}).` }) + "\n",
+  );
+  process.exit(1);
+}
+
 const steps = script.turns?.find((t) => new RegExp(t.match).test(input))?.steps ?? script.steps;
 for (const step of steps) {
   if ("line" in step) process.stdout.write(JSON.stringify(step.line) + "\n");

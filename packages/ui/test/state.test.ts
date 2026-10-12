@@ -4,6 +4,12 @@ import { type ChatState, initialChat, reduceChat } from "../src/state";
 const run = (events: Parameters<typeof reduceChat>[1][], from: ChatState = initialChat([])) => events.reduce(reduceChat, from);
 
 describe("reduceChat", () => {
+  it("ignores context and compaction events: they reach the screen through the task view", () => {
+    const s = initialChat([]);
+    expect(reduceChat(s, { type: "context", used: 5 })).toBe(s);
+    expect(reduceChat(s, { type: "compaction" })).toBe(s);
+  });
+
   it("tags a finished turn (and a failure without one) with the task it ended in", () => {
     const s = run([{ type: "user", text: "hi", at: "t" }, { type: "done", ok: true, task: "t1" }, { type: "done", ok: false, error: { code: "agent-crashed" }, task: "t2" }]);
     expect(s.entries.map((e) => [e.role, e.task])).toEqual([

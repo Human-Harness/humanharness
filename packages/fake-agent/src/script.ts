@@ -38,6 +38,8 @@ export interface ClaudeScript {
   exitCode?: number;
   /** Fail with this error result (exit 1) instead of running `steps`, but only when argv contains `--resume`. */
   failOnResume?: string;
+  /** Models the "plan" doesn't include: a run with `--model <one of these>` answers like the real CLI does. */
+  failModels?: string[];
 }
 
 export type AcpStep =
@@ -65,6 +67,10 @@ export interface AcpScript {
   closeSession?: boolean;
   /** Never answer `session/close` (an agent stuck on it). */
   hangClose?: boolean;
+  /** Returned as `configOptions` by session/new (the models and efforts the agent offers). */
+  configOptions?: unknown[];
+  /** Returned as `models.currentModelId` by session/new and session/load (Codex: "<model>[<effort>]"). */
+  currentModelId?: string;
   turns: AcpStep[][];
 }
 

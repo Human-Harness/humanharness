@@ -5,11 +5,12 @@ import { Segmented } from "./chrome";
 import type { AppConfig, AppState, Appearance, HarnessClient, RunningSetup, UsageSummary } from "./client";
 import { EngineTab } from "./EngineTab";
 import { FolderStep, uiLanguage } from "./FolderStep";
+import { ModelsTab } from "./ModelsTab";
 import { WARN_AT, formatReset, percent } from "./usage";
 import { useCurrentWindows } from "./UsageMeter";
 
-export type SettingsTab = "general" | "engine" | "usage";
-const TABS: SettingsTab[] = ["general", "engine", "usage"];
+export type SettingsTab = "general" | "engine" | "models" | "usage";
+const TABS: SettingsTab[] = ["general", "engine", "models", "usage"];
 const LANGUAGE_NAMES: Record<Language, string> = { es: "Español", en: "English" };
 
 /** The Settings sheet (spec 2026-10-11 "Settings sheet"): attached under the top bar, dimmed backdrop. */
@@ -33,6 +34,8 @@ export function SettingsSheet({
   const baseId = useId();
   const tabId = (id: SettingsTab) => `${baseId}-tab-${id}`;
   const panelId = `${baseId}-panel`;
+  // Models only shows when the main process sent its view (every packaged app does).
+  const tabs = TABS.filter((id) => id !== "models" || state.models !== undefined);
   const doneRef = useRef<HTMLButtonElement>(null);
   const sheetRef = useRef<HTMLDivElement>(null);
   const onCloseRef = useRef(onClose);
@@ -75,9 +78,9 @@ export function SettingsSheet({
 
   /** Arrow keys (and Home/End) move between tabs, as in any tab list. */
   const onTabKey = (e: ReactKeyboardEvent<HTMLButtonElement>, id: SettingsTab) => {
-    const i = TABS.indexOf(id);
+    const i = tabs.indexOf(id);
     const next =
-      e.key === "ArrowRight" ? TABS[(i + 1) % TABS.length] : e.key === "ArrowLeft" ? TABS[(i - 1 + TABS.length) % TABS.length] : e.key === "Home" ? TABS[0] : e.key === "End" ? TABS[TABS.length - 1] : null;
+      e.key === "ArrowRight" ? tabs[(i + 1) % tabs.length] : e.key === "ArrowLeft" ? tabs[(i - 1 + tabs.length) % tabs.length] : e.key === "Home" ? tabs[0] : e.key === "End" ? tabs[tabs.length - 1] : null;
     if (!next) return;
     e.preventDefault();
     onTab(next);
@@ -111,7 +114,7 @@ export function SettingsSheet({
       <div ref={sheetRef} className="hh-sheet" role="dialog" aria-modal="true" aria-label={t("settings.title")}>
         <div className="hh-sheet-head">
           <div className="hh-segmented" role="tablist" aria-label={t("settings.title")}>
-            {TABS.map((id) => (
+            {tabs.map((id) => (
               <button
                 key={id}
                 id={tabId(id)}
@@ -149,6 +152,7 @@ export function SettingsSheet({
         <div id={panelId} role="tabpanel" aria-labelledby={tabId(tab)}>
           {tab === "general" && <GeneralTab client={client} state={state} onChange={onChange} />}
           {tab === "engine" && <EngineTab client={client} state={state} onChange={onChange} setupEngine={running?.engineId} />}
+          {tab === "models" && <ModelsTab client={client} state={state} onChange={onChange} />}
           {tab === "usage" && <UsageTab client={client} state={state} />}
         </div>
       </div>

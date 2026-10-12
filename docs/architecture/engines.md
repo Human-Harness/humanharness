@@ -15,6 +15,12 @@ An engine is an official AI command-line tool the person already pays for. Human
 
 Settings → Engine walks the steps in order; `engineProblem` (`packages/ui/src/client.ts`) picks the first one left from the status check (`detectEngine` in `packages/shell/src/main/engine-status.ts`): the legal notice, install (the official installer), update when below `minVersion`, sign in (the tool's own login, in the browser), and a tiny test prompt (`engine-check.ts`). The app finds the tool through the login shell's `PATH` (`engine-command.ts`); Codex runs from the copy bundled with the adapter. `~/.humanharness/engines.json` (`shared-config.ts`) keeps the accepted notice, the version and the last successful test, never credentials.
 
+## Models
+
+- Claude's models are its aliases `haiku`, `sonnet` and `opus`, which always point at the latest version. Codex's list and efforts come from its adapter at `session/new` and are saved in `~/.humanharness/engines.json` for Settings › Modelos; until then only "Predeterminado del motor" is offered. An effort the engine doesn't offer is lowered to the closest one it does, or raised to its lowest when none is lower (`fitEffort`).
+- Every value that reaches the command line or `CODEX_CONFIG` is checked first: model ids are letters, digits, `.`, `_`, `-` and brackets and never start with `-`; efforts come from a fixed list and caps are integers from 100k to 1M.
+- `CODEX_CONFIG` is written by the app from the task's profile, replacing any value in the app's own environment; it holds only `model`, `model_reasoning_effort` and `model_auto_compact_token_limit`. It is not a credential.
+
 ## Compliance
 
 - Only the official tools, unmodified.

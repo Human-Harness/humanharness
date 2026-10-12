@@ -42,6 +42,12 @@ describe("WorkingStatus (a live turn)", () => {
     expect(screen.queryByText("Leyendo manifest.md")).toBeNull();
   });
 
+  it("shows another label when given one (the checkpoint)", async () => {
+    await renderIn("en", <WorkingStatus items={steps} label="Saving what matters…" />);
+    expect(await screen.findByText("Saving what matters…")).toBeTruthy();
+    expect(screen.queryByText("Working…")).toBeNull();
+  });
+
   it("the toggle expands and collapses the activity list, with aria-expanded and aria-controls", async () => {
     await renderIn("en", <WorkingStatus items={steps} />);
     const toggle = screen.getByRole("button", { name: "Show details" });

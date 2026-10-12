@@ -24,7 +24,7 @@ function fakeRuntime() {
     emit({ type: "done", ok: false, error: { code: "cancelled" } });
     end.resolve();
   });
-  const send = vi.fn((_m: string, e: Emit) => {
+  const send = vi.fn((_m: string, e: Emit, _options?: unknown) => {
     emit = e;
     return { cancel, done: end.promise };
   });
@@ -440,5 +440,143 @@ describe("TurnController for tasks", () => {
     const { controller } = setup({ ensureRuntime: async () => null });
     await controller.send("hi", { onEvent: (e) => seen.push(e) });
     expect(seen).toEqual([{ type: "done", ok: false, error: { code: "engine-not-installed" } }]);
+  });
+
+  it("keeps context and compaction events from the window, but the caller sees them", async () => {
+    const fake = fakeRuntime();
+    const { controller, events } = setup({ ensureRuntime: async () => fake.runtime });
+    const seen: string[] = [];
+    const sent = controller.send("hi", { onEvent: (e) => seen.push(e.type) });
+    await vi.waitFor(() => expect(fake.send).toHaveBeenCalled());
+    fake.finish([{ type: "context", used: 5 }, { type: "compaction" }, { type: "done", ok: true }]);
+    await sent;
+    expect(seen).toEqual(["context", "compaction", "done"]);
+    expect(events.map((e) => e.type)).toEqual(["done"]);
+  });
+
+  it("runs the turn on the task's profile", async () => {
+    const fake = fakeRuntime();
+    const { controller } = setup({ ensureRuntime: async () => fake.runtime });
+    const profile = { engine: "claude", tier: "deep" as const, model: "opus", effort: "high" as const, cap: 400_000 };
+    const sent = controller.send("hi", { profile });
+    await vi.waitFor(() => expect(fake.send).toHaveBeenCalled());
+    fake.finish([{ type: "done", ok: true }]);
+    await sent;
+    expect(fake.send.mock.calls[0][2]).toEqual({ profile });
+  });
+
+  it("holds a model-unavailable end for a retry: nothing logged or shown, the caller told", async () => {
+    const fake = fakeRuntime();
+    const { controller, entries, events } = setup({ ensureRuntime: async () => fake.runtime });
+    const seen: Event[] = [];
+    const sent = controller.send("hi", { holdModelError: true, onEvent: (e) => seen.push(e) });
+    await vi.waitFor(() => expect(fake.send).toHaveBeenCalled());
+    fake.finish([{ type: "done", ok: false, error: { code: "model-unavailable" } }]);
+    await sent;
+    expect(entries.map((e) => e.role)).toEqual(["user"]);
+    expect(events).toEqual([]);
+    expect(seen).toEqual([{ type: "done", ok: false, error: { code: "model-unavailable" } }]);
+  });
+
+  it("a held attempt that fails shows nothing in the window but its plan limits, and its usage is recorded", async () => {
+    const fake = fakeRuntime();
+    const events: Event[] = [];
+    const recorded: UsageMeta[] = [];
+    const controller = new TurnController({
+      ensureRuntime: async () => fake.runtime,
+      chatLog: async () => ({ append: async () => {} }),
+      stateBlocks: () => new Set(),
+      emit: (e) => events.push(e),
+      recordUsage: async (_entry, meta) => void recorded.push(meta),
+    });
+    const sent = controller.send("hi", { task: "t1", holdModelError: true });
+    await vi.waitFor(() => expect(fake.send).toHaveBeenCalled());
+    fake.finish([
+      { type: "limits", status: "allowed", windows: [] },
+      { type: "usage", inputTokens: 1, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+      { type: "done", ok: false, error: { code: "model-unavailable" } },
+    ]);
+    await sent;
+    // The usage meter still updates: limits are about the plan, not the attempt.
+    expect(events).toEqual([{ type: "limits", status: "allowed", windows: [] }]);
+    expect(recorded).toEqual([{ task: "t1" }]);
+  });
+
+  it("a held attempt whose model answers reaches the window in order, from its first content on", async () => {
+    const fake = fakeRuntime();
+    const { controller, events } = setup({ ensureRuntime: async () => fake.runtime });
+    const sent = controller.send("hi", { holdModelError: true });
+    await vi.waitFor(() => expect(fake.send).toHaveBeenCalled());
+    fake.finish([
+      { type: "limits", status: "allowed", windows: [] },
+      { type: "text", delta: "Hello" },
+      { type: "done", ok: true },
+    ]);
+    await sent;
+    expect(events.map((e) => e.type)).toEqual(["limits", "text", "done"]);
+  });
+
+  it("a quiet turn holding its failure: nothing logged or shown, usage recorded, the caller told", async () => {
+    const fake = fakeRuntime();
+    const entries: ChatEntry[] = [];
+    const events: Event[] = [];
+    const recorded: UsageMeta[] = [];
+    const seen: Event[] = [];
+    const controller = new TurnController({
+      ensureRuntime: async () => fake.runtime,
+      chatLog: async () => ({ append: async (e) => void entries.push(e) }),
+      stateBlocks: () => new Set(),
+      emit: (e) => events.push(e),
+      recordUsage: async (_entry, meta) => void recorded.push(meta),
+    });
+    const sent = controller.send("save", { task: "t1", phase: "checkpoint", quiet: true, holdFailure: true, onEvent: (e) => seen.push(e) });
+    await vi.waitFor(() => expect(fake.send).toHaveBeenCalled());
+    fake.finish([
+      { type: "usage", inputTokens: 1, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+      { type: "done", ok: false, error: { code: "agent-crashed" } },
+    ]);
+    await sent;
+    expect(entries).toEqual([]);
+    expect(events).toEqual([]);
+    expect(recorded).toEqual([{ task: "t1", phase: "checkpoint" }]);
+    expect(seen.at(-1)).toEqual({ type: "done", ok: false, error: { code: "agent-crashed" } });
+  });
+
+  it("shows any other failure of a held turn as usual", async () => {
+    const fake = fakeRuntime();
+    const { controller, events } = setup({ ensureRuntime: async () => fake.runtime });
+    const sent = controller.send("hi", { holdModelError: true });
+    await vi.waitFor(() => expect(fake.send).toHaveBeenCalled());
+    fake.finish([{ type: "done", ok: false, error: { code: "out-of-quota" } }]);
+    await sent;
+    expect(events).toEqual([{ type: "done", ok: false, error: { code: "out-of-quota" } }]);
+  });
+
+  it("records the task's profile and the model the engine reported with the usage", async () => {
+    const fake = fakeRuntime();
+    const recorded: UsageMeta[] = [];
+    const controller = new TurnController({
+      ensureRuntime: async () => fake.runtime,
+      chatLog: async () => ({ append: async () => {} }),
+      stateBlocks: () => new Set(),
+      emit: () => {},
+      recordUsage: async (_entry, meta) => void recorded.push(meta),
+    });
+    const profile = { engine: "claude", tier: "light" as const, model: "haiku", effort: "low" as const, cap: 100_000 };
+    const sent = controller.send("hi", { task: "t1", phase: "checkpoint", quiet: true, profile });
+    await vi.waitFor(() => expect(fake.send).toHaveBeenCalled());
+    fake.finish([{ type: "usage", inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0, model: "claude-haiku-4-5" }, { type: "done", ok: true }]);
+    await sent;
+    expect(recorded).toEqual([{ task: "t1", phase: "checkpoint", tier: "light", model: "haiku", effort: "low", cap: 100_000, reportedModel: "claude-haiku-4-5" }]);
+  });
+
+  it("logs no user entry for the retry of a held turn", async () => {
+    const fake = fakeRuntime();
+    const { controller, entries } = setup({ ensureRuntime: async () => fake.runtime });
+    const sent = controller.send("hi", { skipUserEntry: true });
+    await vi.waitFor(() => expect(fake.send).toHaveBeenCalled());
+    fake.finish([{ type: "text", delta: "ok" }, { type: "done", ok: true }]);
+    await sent;
+    expect(entries.map((e) => e.role)).toEqual(["assistant"]);
   });
 });

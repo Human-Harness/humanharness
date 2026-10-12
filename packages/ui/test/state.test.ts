@@ -47,6 +47,13 @@ describe("reduceChat", () => {
     expect(s.entries.at(-1)).toMatchObject({ role: "assistant", text: "partial", error: { code: "out-of-quota" } });
   });
 
+  it("shows a failure that arrives without a turn on screen (a quiet closing turn) as an error entry", () => {
+    const s = run([{ type: "done", ok: false, error: { code: "session-expired" } }, { type: "done", ok: true }]);
+    expect(s.entries).toEqual([
+      { id: expect.any(String), role: "assistant", text: "", blocks: [], activities: [], at: expect.any(String), error: { code: "session-expired" } },
+    ]);
+  });
+
   it("remembers the latest plan limits", () => {
     const windows = [{ kind: "five_hour", utilization: 0.2, resetsAt: "2026-10-10T18:00:00.000Z" }];
     const s = run([{ type: "limits", status: "allowed", windows }]);

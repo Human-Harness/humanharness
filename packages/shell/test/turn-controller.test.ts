@@ -396,6 +396,45 @@ describe("TurnController for tasks", () => {
     expect(recorded).toEqual([["t1", { action: "turn", task: "t1", phase: "close" }]]);
   });
 
+  it("still tells the window a quiet turn's plan limits and a failure, logging only the error", async () => {
+    const fake = fakeRuntime();
+    const entries: ChatEntry[] = [];
+    const events: Event[] = [];
+    const controller = new TurnController({
+      ensureRuntime: async () => fake.runtime,
+      chatLog: async () => ({ append: async (e) => void entries.push(e) }),
+      stateBlocks: () => new Set(),
+      emit: (e) => events.push(e),
+    });
+    const windows: LimitWindow[] = [{ kind: "five_hour", utilization: 0.4, resetsAt: "2026-10-12T18:00:00.000Z" }];
+    const sent = controller.send("close please", { task: "t1", phase: "close", quiet: true });
+    await vi.waitFor(() => expect(fake.send).toHaveBeenCalled());
+    fake.finish([
+      { type: "limits", status: "allowed", windows },
+      { type: "text", delta: "Saving" },
+      { type: "done", ok: false, error: { code: "session-expired" } },
+    ]);
+    await sent;
+    expect(events).toEqual([
+      { type: "limits", status: "allowed", windows },
+      { type: "done", ok: false, error: { code: "session-expired" } },
+    ]);
+    expect(entries).toEqual([
+      { id: expect.any(String), role: "assistant", text: "", blocks: [], activities: [], at: expect.any(String), error: { code: "session-expired" }, task: "t1" },
+    ]);
+  });
+
+  it("keeps a cancelled quiet turn out of the window", async () => {
+    const fake = fakeRuntime();
+    const { controller, events, entries } = setup({ ensureRuntime: async () => fake.runtime });
+    const sent = controller.send("close please", { quiet: true });
+    await vi.waitFor(() => expect(fake.send).toHaveBeenCalled());
+    controller.cancel();
+    await sent;
+    expect(events).toEqual([]);
+    expect(entries).toEqual([]);
+  });
+
   it("tells onEvent how the turn ended even when the engine can't start", async () => {
     const seen: Event[] = [];
     const { controller } = setup({ ensureRuntime: async () => null });

@@ -114,7 +114,12 @@ export function reduceChat(state: ChatState, action: ChatAction): ChatState {
           }
         : state;
     case "done": {
-      if (!live) return state;
+      if (!live) {
+        // A failure without a turn on screen (a quiet closing turn): show the error alone.
+        if (action.ok) return state;
+        const error: ChatEntry = { id: newId(), role: "assistant", text: "", blocks: [], activities: [], at: new Date().toISOString(), error: action.error };
+        return { ...state, entries: [...state.entries, error] };
+      }
       const entry: ChatEntry = {
         id: newId(),
         role: "assistant",

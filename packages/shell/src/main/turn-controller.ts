@@ -27,7 +27,10 @@ export interface TurnOptions extends SendOptions {
   display?: string;
   /** A later turn of the same task: its chat entry isn't tagged with the action. */
   followUp?: boolean;
-  /** Nothing goes to the chat or the window (the closing turn); usage is still recorded. */
+  /**
+   * Nothing goes to the chat or the window (the closing turn); usage is still recorded. Plan limits still
+   * reach the window, and a failure other than a cancel is logged and shown as an error-only entry.
+   */
   quiet?: boolean;
   /** Sees every event of the turn, its `done` included. */
   onEvent?: (e: Event) => void;
@@ -120,11 +123,18 @@ export class TurnController {
       const meta: UsageMeta = { ...(action ? { action } : {}), ...(task ? { task } : {}), ...(phase ? { phase } : {}) };
       const finish = async (done: Done) => {
         const entry: ChatEntry = { ...recorder.finish(done), ...(task ? { task } : {}) };
-        if (!quiet) await this.write(log, entry);
+        // A quiet turn that fails (e.g. the session expired) still shows its error, never its text.
+        const surface = !quiet || (!done.ok && done.error.code !== "cancelled");
+        if (surface) {
+          await this.write(
+            log,
+            quiet ? { id: entry.id, role: "assistant", text: "", blocks: [], activities: [], at: entry.at, ...(done.ok ? {} : { error: done.error }), ...(task ? { task } : {}) } : entry,
+          );
+        }
         await this.recordUsage(entry, meta, recorder.firstLimits);
         if (!done.ok && done.error?.code === "session-expired" && engineId) await this.forgetSession(engineId);
         this.tell(onEvent, done);
-        if (!quiet) this.emit(done);
+        if (surface) this.emit(done);
       };
 
       if (turn.cancelled) return await finish(fail("cancelled") as Done);
@@ -144,7 +154,8 @@ export class TurnController {
         else {
           recorder.add(e);
           this.tell(onEvent, e);
-          if (!quiet) this.emit(e);
+          // Plan limits reach the usage meter even from a quiet turn.
+          if (!quiet || e.type === "limits") this.emit(e);
         }
       });
       await turn.running.done;

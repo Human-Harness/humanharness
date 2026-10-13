@@ -212,3 +212,81 @@ describe("History trailers", () => {
     expect(parseCommitMessage("Turn: a\n\nTask: two words")).toEqual({ subject: "Turn: a", task: null, action: null });
   });
 });
+
+describe("History.tasks", () => {
+  const withNotes = () => new History(folder, gitdir, [".harness/", "AGENTS.md"], [".harness/notes/"]);
+
+  it("groups commits by task, newest task first, with the files each task changed; Earlier last", async () => {
+    const h = withNotes();
+    await h.init();
+    write("a.md", "1");
+    write("b.md", "b");
+    const base = (await h.save("Start"))!;
+    write("a.md", "2");
+    write("c.md", "new");
+    await h.save("Turn: first", { task: "t1", action: "plan" });
+    write(".harness/notes/plan.md", "note");
+    write(".harness/chats/main.jsonl", "chat");
+    await h.save("Note: The plan", { task: "t1", action: "plan" });
+    fs.rmSync(path.join(folder, "b.md"));
+    const t2end = (await h.save("Turn: second", { task: "t2" }))!;
+
+    const groups = await h.tasks();
+    expect(groups.map((g) => g.taskId)).toEqual(["t2", "t1", null]);
+    const [t2, t1, earlier] = groups;
+    expect(t2).toMatchObject({ actionId: null, end: t2end, changes: [{ path: "b.md", kind: "deleted" }] });
+    expect(t2.date).toBeInstanceOf(Date);
+    expect(t1.start).toBe(base);
+    expect(t1.actionId).toBe("plan");
+    expect(t1.changes).toEqual([
+      { path: ".harness/notes/plan.md", kind: "added" },
+      { path: "a.md", kind: "modified" },
+      { path: "c.md", kind: "added" },
+    ]);
+    expect(t1.entries.map((e) => e.message)).toEqual(["Note: The plan", "Turn: first"]);
+    expect(earlier).toMatchObject({ taskId: null, actionId: null, start: null, end: base });
+    expect(earlier.changes).toEqual([
+      { path: "a.md", kind: "added" },
+      { path: "b.md", kind: "added" },
+    ]);
+  });
+
+  it("puts a restore in the group of the task it went back to, which then changed nothing", async () => {
+    write("a.md", "1");
+    const base = (await history.save("Start"))!;
+    write("a.md", "2");
+    await history.save("Turn: edit", { task: "t1" });
+    write("b.md", "b");
+    await history.save("Turn: other", { task: "t2" });
+    const t1 = (await history.tasks()).find((g) => g.taskId === "t1")!;
+    expect(t1.start).toBe(base);
+    await history.restore(t1.start!, "Went back to before the task", { task: "t1" });
+
+    const groups = await history.tasks();
+    expect(groups.map((g) => g.taskId)).toEqual(["t1", "t2", null]);
+    expect(groups[0].entries[0].message).toBe("Went back to before the task");
+    expect(groups[0].changes).toEqual([]);
+    expect(read("a.md")).toBe("1");
+    expect(fs.existsSync(path.join(folder, "b.md"))).toBe(false);
+  });
+
+  it("reads a commit's trailer", async () => {
+    write("a.md", "1");
+    const tagged = (await history.save("Turn: x", { task: "t1", action: "plan" }))!;
+    write("a.md", "2");
+    const plain = (await history.save("Start"))!;
+    expect(await history.trailerOf(tagged)).toEqual({ task: "t1", action: "plan" });
+    expect(await history.trailerOf(plain)).toBeNull();
+  });
+
+  it("lists the files it tracks now", async () => {
+    const h = withNotes();
+    await h.init();
+    write("a.md", "1");
+    write("dir/b.md", "b");
+    write(".harness/notes/n.md", "n");
+    write(".harness/chats/main.jsonl", "c");
+    write("AGENTS.md", "generated");
+    expect((await h.trackedFiles()).sort()).toEqual([".harness/notes/n.md", "a.md", "dir/b.md"]);
+  });
+});

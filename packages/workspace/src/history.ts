@@ -26,6 +26,31 @@ export interface HistoryTrailer {
   action?: string;
 }
 
+/** A file a task added, changed or deleted (tracked files only). */
+export interface FileChange {
+  path: string;
+  kind: "added" | "modified" | "deleted";
+}
+
+/** The history commits of one task, as the History panel shows them. */
+export interface HistoryTask {
+  /** Null: the "Earlier" group (commits outside any task). */
+  taskId: string | null;
+  actionId: string | null;
+  /** The commit before the group's first commit; null when the group starts at the very first commit. */
+  start: string | null;
+  /** The group's newest commit. */
+  end: string;
+  /** The date of `end`. */
+  date: Date;
+  /** Tasks: the tree diff from `start` to `end`. Earlier: the union of its commits' own changes. */
+  changes: FileChange[];
+  /** Newest first. */
+  entries: HistoryEntry[];
+}
+
+const byPath = (a: FileChange, b: FileChange) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
+
 /** Ids a trailer may carry (task UUIDs, manifest action ids): no spaces or line breaks. */
 const TRAILER_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/;
 
@@ -187,5 +212,84 @@ export class History {
       const { subject, task, action } = parseCommitMessage(e.commit.message);
       return { sha: e.oid, message: subject, date: new Date(e.commit.author.timestamp * 1000), task, action };
     });
+  }
+
+  /** The commits of the last `depth`, grouped by task, newest task first; the "Earlier" group always last. */
+  async tasks(depth = 200): Promise<HistoryTask[]> {
+    const groups = new Map<string | null, HistoryEntry[]>();
+    for (const e of await this.list(depth)) {
+      const list = groups.get(e.task);
+      if (list) list.push(e);
+      else groups.set(e.task, [e]);
+    }
+    // A Map keeps the order of first insertion: each group's newest commit, newest first.
+    const out: HistoryTask[] = [];
+    for (const [taskId, entries] of groups) {
+      const start = await this.parentOf(entries[entries.length - 1].sha);
+      const end = entries[0];
+      out.push({
+        taskId,
+        actionId: entries.find((e) => e.action !== null)?.action ?? null,
+        start,
+        end: end.sha,
+        date: end.date,
+        changes: taskId === null ? await this.unionOfChanges(entries) : await this.diff(start, end.sha),
+        entries,
+      });
+    }
+    return [...out.filter((g) => g.taskId !== null), ...out.filter((g) => g.taskId === null)];
+  }
+
+  /** The task a commit belongs to, from its trailers; null outside any task. */
+  async trailerOf(sha: string): Promise<HistoryTrailer | null> {
+    const { commit } = await git.readCommit({ fs, gitdir: this.gitdir, oid: sha });
+    const { task, action } = parseCommitMessage(commit.message);
+    return task ? { task, ...(action ? { action } : {}) } : null;
+  }
+
+  /** The files the history tracks in the folder now (relative, forward slashes). */
+  trackedFiles(): Promise<string[]> {
+    return this.serialize(async () => {
+      const matrix = await git.statusMatrix({ ...this.repo(), filter: this.tracked });
+      return matrix.filter(([, , workdir]) => workdir !== 0).map(([file]) => file);
+    });
+  }
+
+  private async parentOf(sha: string): Promise<string | null> {
+    const { commit } = await git.readCommit({ fs, gitdir: this.gitdir, oid: sha });
+    return commit.parent[0] ?? null;
+  }
+
+  /** Tracked files that differ between two commits; with no `from`, every file of `to` is added. */
+  private async diff(from: string | null, to: string): Promise<FileChange[]> {
+    const changes: FileChange[] = [];
+    const trees = from === null ? [git.TREE({ ref: to })] : [git.TREE({ ref: from }), git.TREE({ ref: to })];
+    await git.walk({
+      fs,
+      gitdir: this.gitdir,
+      trees,
+      map: async (filepath, entries) => {
+        if (filepath === ".") return undefined;
+        const [a, b] = from === null ? [null, entries[0]] : entries;
+        const types = await Promise.all([a?.type(), b?.type()]);
+        // A folder: returning undefined walks into it.
+        if (types.includes("tree")) return undefined;
+        if (!this.tracked(filepath)) return undefined;
+        const [oa, ob] = await Promise.all([a?.oid(), b?.oid()]);
+        if (oa === ob) return undefined;
+        changes.push({ path: filepath, kind: !a ? "added" : !b ? "deleted" : "modified" });
+        return undefined;
+      },
+    });
+    return changes.sort(byPath);
+  }
+
+  /** Each commit's own changes, merged: the newest kind of each file wins. */
+  private async unionOfChanges(entries: HistoryEntry[]): Promise<FileChange[]> {
+    const seen = new Map<string, FileChange>();
+    for (const e of entries) {
+      for (const c of await this.diff(await this.parentOf(e.sha), e.sha)) if (!seen.has(c.path)) seen.set(c.path, c);
+    }
+    return [...seen.values()].sort(byPath);
   }
 }

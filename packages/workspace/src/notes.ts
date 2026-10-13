@@ -60,7 +60,9 @@ export function renderNote(note: SavedNote, meta: NoteMeta): string {
 export function folderRelative(folder: string, file: string): string {
   if (!path.isAbsolute(file)) return file;
   const rel = path.relative(folder, file);
-  return rel && !rel.startsWith("..") && !path.isAbsolute(rel) ? rel.split(path.sep).join("/") : file;
+  // Only `..` as a whole segment leaves the folder: `..notes.md` is a file inside it.
+  const outside = rel === ".." || rel.startsWith(`..${path.sep}`);
+  return rel && !outside && !path.isAbsolute(rel) ? rel.split(path.sep).join("/") : file;
 }
 
 /** Writes `.harness/notes/<slug>.md` atomically (temp file + rename). Returns its path relative to the folder. */
@@ -83,7 +85,9 @@ export async function writeNote(folder: string, slug: string, note: SavedNote, m
 
 /**
  * After the folder moved from `oldFolder`: `files:` entries in the notes' front matter that name the old
- * place become relative. Nothing else in a note changes. Returns how many notes were rewritten.
+ * place become relative. Nothing else in a note changes (BOM and line ends included). A note that can't be
+ * read or rewritten is skipped and logged: it only keeps naming the old place, which must not undo a move.
+ * Returns how many notes were rewritten.
  */
 export async function relativizeNoteFiles(folder: string, oldFolder: string): Promise<number> {
   const dir = path.join(folder, NOTES_PREFIX);
@@ -91,8 +95,15 @@ export async function relativizeNoteFiles(folder: string, oldFolder: string): Pr
   let rewritten = 0;
   for (const name of names) {
     const file = path.join(dir, name);
-    const text = await fs.readFile(file, "utf8");
-    const front = /^\uFEFF?---\r?\n[\s\S]*?\r?\n---/.exec(text);
+    let text: string;
+    try {
+      text = await fs.readFile(file, "utf8");
+    } catch (err) {
+      console.error(`Could not read the note ${name}`, err);
+      continue;
+    }
+    // The closing fence is a line of its own: `----x` inside the front matter is not it.
+    const front = /^\uFEFF?---\r?\n[\s\S]*?\r?\n---(?=\r?\n|$)/.exec(text);
     if (!front) continue;
     let changed = false;
     const head = front[0].replace(/^files: (.*)$/m, (line, raw: string) => {
@@ -115,8 +126,9 @@ export async function relativizeNoteFiles(folder: string, oldFolder: string): Pr
       await fs.writeFile(tmp, head + text.slice(front[0].length));
       await fs.rename(tmp, file);
     } catch (err) {
-      await fs.rm(tmp, { force: true });
-      throw err;
+      await fs.rm(tmp, { force: true }).catch(() => undefined);
+      console.error(`Could not rewrite the note ${name}`, err);
+      continue;
     }
     rewritten++;
   }

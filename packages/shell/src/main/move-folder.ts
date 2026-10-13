@@ -206,9 +206,14 @@ export async function moveFolder(from: string, to: string, d: MoveDeps): Promise
 
 export interface GuardedMoveDeps {
   /** Holds turns (and so restores, which check them) off while the folder changes (EngineGuards). */
-  guards: { beginFolderChange(isBusy: () => boolean): void; endFolderChange(): void };
+  guards: { beginFolderChange(isBusy: () => boolean): void; endFolderChange(): void; turnBlocked(): string | null };
   /** A turn, a task operation or a restore is under way. */
   isBusy(): boolean;
+  /**
+   * Before turns are held: the open task saves a checkpoint note, since the move ends its session
+   * (TaskManager.checkpointBeforeMove). A failure is logged and the move goes on.
+   */
+  checkpoint?(): Promise<void>;
   /** Waits for the chat log and history writes of the last turn. */
   flush(): Promise<void>;
   /** Closes the runtime, which works on the old folder, without ending the open task. */
@@ -223,10 +228,19 @@ export interface GuardedMoveDeps {
 
 /**
  * A move against turns and restores (spec 3d §2): refused while either runs, and both held off from its
- * first moment until it ends. The busy check and the hold happen synchronously, so a send or a restore
- * can't slip in between. The answer is data: a failure is a reason, never a thrown error.
+ * first moment until it ends. The open task's checkpoint runs first, as a turn of its own; then the busy
+ * check and the hold happen synchronously, so a send or a restore can't slip in between (one that started
+ * meanwhile refuses the move). The answer is data: a failure is a reason, never a thrown error.
  */
 export async function guardedMove(d: GuardedMoveDeps): Promise<{ ok: true; done: MoveDone } | { ok: false; error: MoveError }> {
+  if (d.isBusy() || d.guards.turnBlocked()) return { ok: false, error: "busy" };
+  if (d.checkpoint) {
+    try {
+      await d.checkpoint();
+    } catch (err) {
+      console.error("Could not save a checkpoint before the move; the open task resumes from the notes there are", err);
+    }
+  }
   try {
     d.guards.beginFolderChange(() => d.isBusy());
   } catch {

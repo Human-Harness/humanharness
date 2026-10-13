@@ -123,6 +123,9 @@ describe("note files", () => {
     expect(folderRelative("/a/Work", "/a/Workshop/y.md")).toBe("/a/Workshop/y.md");
     expect(folderRelative("/a/Work", "/a/Work")).toBe("/a/Work");
     expect(folderRelative("/a/Work", "y.md")).toBe("y.md");
+    expect(folderRelative("/a/Work", "/a/Work/..notes.md")).toBe("..notes.md");
+    expect(folderRelative("/a/Work", "/a/Work/..x/y.md")).toBe("..x/y.md");
+    expect(folderRelative("/a/Work", "/a/other.md")).toBe("/a/other.md");
   });
 
   it("rewrites only the files line of notes that name the old folder", async () => {
@@ -139,6 +142,30 @@ describe("note files", () => {
     );
     expect(fs.readFileSync(path.join(dir, "b.md"), "utf8")).toBe(`---\ntitle: "B"\nfiles: ["plan.md"]\n---\n`);
     expect(fs.readdirSync(dir).sort()).toEqual(["a.md", "b.md", "c.md"]);
+  });
+
+  it("keeps a BOM and CRLF line ends, and finds the closing fence only on its own line", async () => {
+    const folder = tmp();
+    const dir = path.join(folder, ".harness/notes");
+    fs.mkdirSync(dir, { recursive: true });
+    const old = "/Users/me/Work";
+    const text = ["\uFEFF---", 'title: "A"', `files: ["${old}/plan.md"]`, "---", "## Summary", "- x", ""].join("\r\n");
+    fs.writeFileSync(path.join(dir, "a.md"), text);
+    // A line that starts with "---" inside the front matter is not its end.
+    const dashes = ["---", 'title: "B"', "----not the end", `files: ["${old}/b.md"]`, "---", ""].join("\n");
+    fs.writeFileSync(path.join(dir, "b.md"), dashes);
+    expect(await relativizeNoteFiles(folder, old)).toBe(2);
+    expect(fs.readFileSync(path.join(dir, "a.md"), "utf8")).toBe(["\uFEFF---", 'title: "A"', 'files: ["plan.md"]', "---", "## Summary", "- x", ""].join("\r\n"));
+    expect(fs.readFileSync(path.join(dir, "b.md"), "utf8")).toBe(["---", 'title: "B"', "----not the end", 'files: ["b.md"]', "---", ""].join("\n"));
+  });
+
+  it("skips a note it can't read and goes on with the others", async () => {
+    const folder = tmp();
+    const dir = path.join(folder, ".harness/notes");
+    fs.mkdirSync(path.join(dir, "broken.md"), { recursive: true });
+    fs.writeFileSync(path.join(dir, "ok.md"), `---\ntitle: "A"\nfiles: ["/old/a.md"]\n---\n`);
+    expect(await relativizeNoteFiles(folder, "/old")).toBe(1);
+    expect(fs.readFileSync(path.join(dir, "ok.md"), "utf8")).toBe(`---\ntitle: "A"\nfiles: ["a.md"]\n---\n`);
   });
 
   it("does nothing when there are no notes", async () => {

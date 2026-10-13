@@ -647,6 +647,7 @@ function registerIpc() {
     const result = await guardedMove({
       guards,
       isBusy: () => tasks.isBusy() || restores.turnBlocked() !== null,
+      checkpoint: () => tasks.checkpointBeforeMove(),
       flush: () => turns.flush(),
       closeRuntime,
       restoresSettled: () => restores.settled(),

@@ -4,7 +4,7 @@ import { type ChoiceOption, type Language, type LocalizedText, type SavedNote, s
 import { type Event, type Session, fail } from "@humanharness/runtime";
 import { type ActionStatus, type CurrentTaskView, type NoteView, type TaskStatus, type TaskView, nextInPath } from "@humanharness/ui/client";
 import { type HistoryTrailer, type Note, type NoteMeta, buildNotesIndex, noteSlug } from "@humanharness/workspace";
-import { CHECKPOINT_PROMPT, CLOSE_PROMPT, QUESTION_PROMPT, RESUME_PROMPT, fillPrompt } from "./task-prompts";
+import { CHECKPOINT_PROMPT, CLOSE_PROMPT, QUESTION_PROMPT, fillPrompt, resumeMessage } from "./task-prompts";
 import { type CurrentTask, type TasksFile, interrupted } from "./task-store";
 import { type TurnOptions, isHeld } from "./turn-controller";
 
@@ -207,6 +207,26 @@ export class TaskManager {
     );
   }
 
+  /**
+   * Before a move (spec 3d §2): the open task, waiting and with no note of its own yet, saves a checkpoint
+   * note in its current session, since the move ends that session. A failed or cancelled checkpoint is
+   * logged and the move goes on: the task then resumes from the notes there are. Rejects when busy.
+   */
+  checkpointBeforeMove(): Promise<void> {
+    return this.op(async () => {
+      const c = await this.storedCurrent();
+      if (!c || c.status !== "waiting" || c.resume || c.noteSaved || c.checkpointNote) return;
+      if (!(await this.checkpoint(c))) {
+        console.error("The checkpoint before the move was cancelled; the task resumes from the notes there are");
+        return;
+      }
+      // No follow-up runs after this checkpoint: the task waits again (a cancelled one already does).
+      await this.setStatus(c.id, "waiting");
+      if ((await this.d.store.load()).current?.checkpointNote !== true)
+        console.error("The checkpoint before the move saved no note; the task resumes from the notes there are");
+    });
+  }
+
   /** The engine started the session of the task whose turn runs now; reported at any other time, it is ignored. */
   sessionStarted(session: Session): Promise<void> {
     const id = this.turnTask;
@@ -257,13 +277,9 @@ export class TaskManager {
     const c = await this.storedCurrent();
     if (c?.status === "waiting") {
       if (needsCheckpoint(c) && !(await this.checkpoint(c))) return this.stopped();
-      // After a move the session is new: it starts from the notes, and the chat still shows what was typed.
-      let message = text;
-      if (c.resume) {
-        await this.endSession();
-        const notes = await this.d.notes().catch(() => [] as Note[]);
-        message = fillPrompt(RESUME_PROMPT, { language: await this.d.language(), notesIndex: buildNotesIndex(notes), question: text });
-      }
+      // After the session was lost a new one starts, told what the task is and what the notes hold; the
+      // chat still shows what was typed.
+      const message = c.resume ? await this.resumeMessageFor(c, text) : text;
       await this.setStatus(c.id, "running");
       // Checked with no await before the send: a Stop while the status was saved.
       if (this.cancelRequested) {
@@ -272,11 +288,13 @@ export class TaskManager {
       }
       let done: Done;
       try {
-        done = await this.runTurn(c, message, {
+        const options = {
           ...(display || c.resume ? { display: display ?? text } : {}),
           ...(c.action ? { action: c.action } : {}),
           followUp: true,
-        });
+        };
+        // A resumed turn opens a new session, like a first turn: a model the plan lacks falls back the same way.
+        done = c.resume ? await this.firstTurn(c, message, options) : await this.runTurn(c, message, options);
       } catch (err) {
         if (err instanceof TurnNotStarted) await this.setStatus(c.id, "waiting");
         throw unwrap(err);
@@ -297,6 +315,21 @@ export class TaskManager {
       (notesIndex) => fillPrompt(QUESTION_PROMPT, { language, notesIndex, question: text }),
       display ?? text,
     );
+  }
+
+  /** The first message of a resumed task's new session (its old session ends first). */
+  private async resumeMessageFor(c: CurrentTask, text: string): Promise<string> {
+    await this.endSession();
+    const notes = await this.d.notes().catch(() => [] as Note[]);
+    const language = await this.d.language();
+    const brief = this.known(c.action) ? await this.d.readPrompt(c.action) : undefined;
+    return resumeMessage({
+      language,
+      notesIndex: buildNotesIndex(notes),
+      ...(brief !== undefined ? { brief } : {}),
+      ...(c.question ? { question: c.question } : {}),
+      message: text,
+    });
   }
 
   /**

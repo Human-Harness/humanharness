@@ -129,7 +129,9 @@ describe("TaskManager", () => {
     expect(t.state().current).toMatchObject({ id: "t1", status: "waiting", resume: true });
     expect(t.state().current?.session).toBeUndefined();
     await t.manager.ask("And the blocks?");
-    expect(t.turns[1].message).toContain("This topic continues in a new conversation");
+    // The new session is told what the task is: the action's brief, filled as at its start, with the notes index.
+    expect(t.turns[1].message.startsWith("# Topic: manifest\nAnswer in English.")).toBe(true);
+    expect(t.turns[1].message).toContain("The earlier conversation of this topic is not available");
     expect(t.turns[1].message).toContain("## The person's message\nAnd the blocks?");
     expect(t.turns[1].options).toMatchObject({ task: "t1", action: "manifest", display: "And the blocks?", followUp: true });
     expect(t.log.filter((l) => l === "endSession")).toHaveLength(2);
@@ -138,12 +140,118 @@ describe("TaskManager", () => {
     expect(t.turns[2].message).toBe("More?");
   });
 
-  it("keeps resuming from the notes when that first turn failed", async () => {
-    const t = setup({ script: [[ok], [crashed]] });
+  it("keeps resuming from the notes when that first turn failed: the next message carries the brief again", async () => {
+    const t = setup({ script: [[ok], [crashed], [ok]] });
     await t.manager.start("manifest");
     await t.manager.resumeFromNotes();
     await t.manager.ask("And the blocks?");
-    expect(t.state().current?.resume).toBe(true);
+    expect(t.state().current).toMatchObject({ status: "waiting", resume: true });
+    await t.manager.ask("Again?");
+    expect(t.turns[2].message.startsWith("# Topic: manifest")).toBe(true);
+    expect(t.turns[2].message).toContain("## The person's message\nAgain?");
+    expect(t.state().current?.resume).toBeUndefined();
+  });
+
+  it("the resumed message carries the notes index", async () => {
+    const notes: Note[] = [{ slug: "engines", path: ".harness/notes/engines.md", ...note, title: "Engines", action: "engines", date: "d", engine: "claude" }];
+    const t = setup({ notes });
+    await t.manager.start("manifest");
+    await t.manager.resumeFromNotes();
+    await t.manager.ask("And the blocks?");
+    expect(t.turns[1].message).toContain(".harness/notes/engines.md");
+  });
+
+  it("a resumed free question carries the question that opened it", async () => {
+    const t = setup();
+    await t.manager.ask("Where is the chat kept?");
+    await t.manager.resumeFromNotes();
+    await t.manager.ask("And the notes?");
+    expect(t.turns[1].message).toContain("## The question that opened this topic\nWhere is the chat kept?");
+    expect(t.turns[1].message).toContain("## The person's message\nAnd the notes?");
+  });
+
+  it("a cancelled resumed follow-up ends the task unfinished", async () => {
+    const t = setup({ script: [[ok], [cancelled]] });
+    await t.manager.start("manifest");
+    await t.manager.resumeFromNotes();
+    await t.manager.ask("And the blocks?");
+    expect(t.state()).toMatchObject({ current: null, actions: { manifest: "unfinished" } });
+  });
+
+  it("a follow-up option while resumed sends the resume message", async () => {
+    const t = setup();
+    await t.manager.start("manifest");
+    await t.manager.resumeFromNotes();
+    await pick(t, { label: "Tell me more" });
+    expect(t.turns[1].message.startsWith("# Topic: manifest")).toBe(true);
+    expect(t.turns[1].message).toContain("## The person's message\nTell me more");
+    expect(t.turns[1].options).toMatchObject({ display: "Tell me more", followUp: true });
+  });
+
+  it("after a resumed turn went well, closing runs the closing turn again", async () => {
+    const t = setup({ path: ["manifest", "engines"] });
+    await t.manager.start("manifest");
+    await t.manager.resumeFromNotes();
+    await t.manager.ask("And the blocks?");
+    await pick(t, { label: "Next", next: true });
+    expect(t.turns.map((x) => x.options.phase)).toEqual(["run", "run", "close", "run"]);
+  });
+
+  it("a resumed turn whose model isn't in the plan retries on the next profile down", async () => {
+    const deep: ModelProfile = { engine: "claude", tier: "deep", model: "opus", effort: "high", cap: 200_000 };
+    const standard: ModelProfile = { engine: "claude", tier: "standard", model: "sonnet", effort: "medium", cap: 200_000 };
+    const t = setup({
+      profile: deep,
+      fallback: (p) => (p.model === "opus" ? { ...standard, fallbackFrom: "opus" } : null),
+      script: [[ok], [{ type: "done", ok: false, error: { code: "model-unavailable" } }], [ok]],
+    });
+    await t.manager.start("manifest");
+    await t.manager.resumeFromNotes();
+    await t.manager.ask("And the blocks?");
+    expect(t.turns.map((x) => x.options.profile?.model)).toEqual(["opus", "opus", "sonnet"]);
+    expect(t.turns[2].message).toBe(t.turns[1].message);
+    expect(t.turns[2].options).toMatchObject({ followUp: true, skipUserEntry: true });
+    expect(t.state().current).toMatchObject({ status: "waiting", profile: { model: "sonnet" } });
+    expect(t.state().current?.resume).toBeUndefined();
+  });
+
+  it("before a move, a waiting task without a checkpoint note saves one first", async () => {
+    const t = setup({ script: [[ok], [saveNote(), ok]] });
+    await t.manager.start("manifest");
+    await t.manager.checkpointBeforeMove();
+    expect(t.turns[1]).toMatchObject({ message: CHECKPOINT_PROMPT, options: { phase: "checkpoint", quiet: true } });
+    expect(t.log).toContain("note:manifest");
+    expect(t.state().current).toMatchObject({ status: "waiting", checkpointNote: true });
+    // Not again while that note stands.
+    await t.manager.checkpointBeforeMove();
+    expect(t.turns).toHaveLength(2);
+  });
+
+  it("before a move, no checkpoint when no task waits or the task already resumes from the notes", async () => {
+    const none = setup();
+    await none.manager.checkpointBeforeMove();
+    expect(none.turns).toHaveLength(0);
+    const resumed = setup();
+    await resumed.manager.start("manifest");
+    await resumed.manager.resumeFromNotes();
+    await resumed.manager.checkpointBeforeMove();
+    expect(resumed.turns).toHaveLength(1);
+  });
+
+  it("a failed or cancelled checkpoint before a move is logged and the task keeps waiting", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    let t!: ReturnType<typeof setup>;
+    t = setup({
+      script: [[ok], [cancelled]],
+      during: (i) => {
+        if (i === 1) t.manager.cancel();
+      },
+    });
+    await t.manager.start("manifest");
+    await t.manager.checkpointBeforeMove();
+    expect(t.state().current?.status).toBe("waiting");
+    expect(error).toHaveBeenCalled();
+    error.mockRestore();
   });
 
   it("closes a moved task without a closing turn: its new session holds no conversation", async () => {

@@ -208,7 +208,7 @@ describe("sameContents", () => {
 
 describe("guardedMove", () => {
   /** The real guards of the main process, with a turn flag the test flips and every step logged. */
-  function wiring(move: () => Promise<{ oldRemoved: boolean }> = async () => ({ oldRemoved: true })) {
+  function wiring(move: () => Promise<{ oldRemoved: boolean }> = async () => ({ oldRemoved: true }), checkpoint: () => Promise<void> = async () => {}) {
     const flags = { turn: false };
     const steps: string[] = [];
     const guards = new EngineGuards();
@@ -220,6 +220,10 @@ describe("guardedMove", () => {
       closeRuntime: async () => void steps.push("close"),
       restoresSettled: async () => void steps.push("settled"),
       resumeFromNotes: async () => void steps.push("resume"),
+      checkpoint: async () => {
+        steps.push("checkpoint");
+        await checkpoint();
+      },
       move: async () => {
         steps.push("move");
         return move();
@@ -231,7 +235,7 @@ describe("guardedMove", () => {
   it("closes the runtime, moves, and keeps the open task to continue from its notes", async () => {
     const w = wiring();
     expect(await guardedMove(w.deps)).toEqual({ ok: true, done: { oldRemoved: true } });
-    expect(w.steps).toEqual(["flush", "close", "settled", "move", "resume"]);
+    expect(w.steps).toEqual(["checkpoint", "flush", "close", "settled", "move", "resume"]);
     expect(w.guards.turnBlocked()).toBeNull();
   });
 
@@ -257,9 +261,9 @@ describe("guardedMove", () => {
     let finish!: () => void;
     const w = wiring(() => new Promise((r) => (finish = () => r({ oldRemoved: false }))));
     const moving = guardedMove(w.deps);
+    await vi.waitFor(() => expect(w.steps).toContain("move"));
     expect(w.guards.turnBlocked()).not.toBeNull();
     await expect(w.restores.run(async () => "h", async () => undefined)).rejects.toThrow("A turn is running");
-    await vi.waitFor(() => expect(w.steps).toContain("move"));
     finish();
     expect(await moving).toEqual({ ok: true, done: { oldRemoved: false } });
     expect(w.guards.turnBlocked()).toBeNull();
@@ -268,10 +272,33 @@ describe("guardedMove", () => {
   it("answers why a move failed, and still keeps the open task (its session is gone)", async () => {
     const w = wiring(async () => Promise.reject(new MoveFailed("no-space")));
     expect(await guardedMove(w.deps)).toEqual({ ok: false, error: "no-space" });
-    expect(w.steps).toEqual(["flush", "close", "settled", "move", "resume"]);
+    expect(w.steps).toEqual(["checkpoint", "flush", "close", "settled", "move", "resume"]);
     const other = wiring(async () => Promise.reject(new Error("boom")));
     vi.spyOn(console, "error").mockImplementation(() => {});
     expect(await guardedMove(other.deps)).toEqual({ ok: false, error: "failed" });
     expect(other.guards.turnBlocked()).toBeNull();
+  });
+
+  it("saves the open task's checkpoint before holding turns, and moves even when it fails", async () => {
+    let heldDuringCheckpoint: string | null = "unset";
+    const w = wiring(undefined, async () => {
+      heldDuringCheckpoint = w.guards.turnBlocked();
+      throw new Error("A turn is already running");
+    });
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    expect(await guardedMove(w.deps)).toEqual({ ok: true, done: { oldRemoved: true } });
+    expect(heldDuringCheckpoint).toBeNull();
+    expect(w.steps).toEqual(["checkpoint", "flush", "close", "settled", "move", "resume"]);
+    expect(error).toHaveBeenCalled();
+    error.mockRestore();
+  });
+
+  it("is refused when a turn started while the checkpoint ran", async () => {
+    const w = wiring(undefined, async () => {
+      w.flags.turn = true;
+    });
+    expect(await guardedMove(w.deps)).toEqual({ ok: false, error: "busy" });
+    expect(w.steps).toEqual(["checkpoint"]);
+    expect(w.guards.turnBlocked()).toBeNull();
   });
 });

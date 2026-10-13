@@ -135,7 +135,16 @@ export interface HistoryFileChange {
   kind: "added" | "modified" | "deleted";
 }
 
-/** One row of the History panel: a task's commits, or the "Earlier" group (`taskId: null`). */
+/** The commit subjects of the two restores (raw git data, English; the History panel shows them through i18n keys). */
+export const RESTORE_POINT = "Went back to an earlier point";
+export const RESTORE_TASK = "Went back to before the task";
+/** The subject of the commit that saves a task's note; group 1 is the note's title. */
+export const NOTE = /^Note: (.+)$/;
+
+/**
+ * One row of the History panel: a task's commits, or the group of commits outside any task (`taskId: null`:
+ * "Other changes", which holds the restores too).
+ */
 export interface HistoryTaskView {
   taskId: string | null;
   actionId: string | null;
@@ -307,9 +316,9 @@ export interface HarnessClient {
   cancel(): Promise<void>;
   onEvent(listener: (event: Event) => void): () => void;
   restore(sha: string): Promise<void>;
-  /** The history grouped by task, newest first; the "Earlier" group last. */
+  /** The history grouped by task, newest first; the group of commits outside any task last. */
   historyTasks(): Promise<HistoryTaskView[]>;
-  /** Makes the folder look as it did before the task started; recorded as a new entry of that task. */
+  /** Makes the folder look as it did before the task started (later tasks are undone too); recorded outside any task. */
   restoreTask(taskId: string): Promise<void>;
   engineStatus(engineId: string): Promise<EngineStatus>;
   acceptNotice(engineId: string): Promise<void>;

@@ -1,11 +1,5 @@
-import type { HistoryTaskView } from "@humanharness/ui/client";
+import { type HistoryTaskView, NOTE } from "@humanharness/ui/client";
 import type { HistoryTask } from "@humanharness/workspace";
-
-/** The commit messages of the two restores (raw git data; the panel shows them through i18n keys). */
-export const RESTORE_POINT = "Went back to an earlier point";
-export const RESTORE_TASK = "Went back to before the task";
-
-const NOTE = /^Note: (.+)$/;
 
 /** A commit id from the window: 40 lowercase hex characters. */
 export const isSha = (v: unknown): v is string => typeof v === "string" && /^[0-9a-f]{40}$/.test(v);

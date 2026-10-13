@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Language } from "@humanharness/harness-sdk";
-import type { ActionOption, HarnessClient, HistoryItem, HistoryTaskView } from "./client";
+import { type ActionOption, type HarnessClient, type HistoryItem, type HistoryTaskView, NOTE, RESTORE_POINT, RESTORE_TASK } from "./client";
 
 /** The i18n key (and its values) that tells a history entry in plain language; null keeps the commit subject. */
 export function entryLabel(message: string): { key: string; values?: Record<string, string> } | null {
@@ -10,16 +10,25 @@ export function entryLabel(message: string): { key: string; values?: Record<stri
   if (message.startsWith("Turn: ")) return { key: "history.entry.turn" };
   if (message.startsWith("Stopped: ")) return { key: "history.entry.stopped" };
   if (message.startsWith("Undo: ")) return { key: "history.entry.undo" };
-  if (message === "Went back to before the task") return { key: "history.entry.restoredTask" };
-  if (message === "Went back to an earlier point") return { key: "history.entry.restored" };
-  const note = /^Note: (.+)$/.exec(message);
+  if (message === RESTORE_TASK) return { key: "history.entry.restoredTask" };
+  if (message === RESTORE_POINT) return { key: "history.entry.restored" };
+  const note = NOTE.exec(message);
   if (note) return { key: "history.entry.note", values: { title: note[1] } };
   return null;
 }
 
-const keyOf = (g: HistoryTaskView) => g.taskId ?? "earlier";
+/** How many tasks other than `own` changed something after `after` (an ISO date): going back undoes them too. */
+export function laterTasks(groups: HistoryTaskView[], own: string | null, after: string): number {
+  const t = Date.parse(after);
+  return groups.filter((g) => g.taskId !== null && g.taskId !== own && Date.parse(g.date) > t).length;
+}
+
+const keyOf = (g: HistoryTaskView) => g.taskId ?? "other";
 
 type Restore = { kind: "task" | "point"; id: string };
+
+/** The id of a "go back" button, so focus can return to it when its confirmation is cancelled. */
+const triggerId = (r: Restore) => `hh-history-back-${r.kind}-${r.id}`;
 
 /** History (spec 3d §1): one row per task, with the files it changed, its entries and both ways back. */
 export function HistoryPanel({
@@ -36,7 +45,7 @@ export function HistoryPanel({
   lang: Language;
   onClose: () => void;
   /** Called after a restore succeeded, before the panel closes. */
-  onRestored?: () => void;
+  onRestored?: (kind: Restore["kind"]) => void;
   /** Going back is not allowed while a turn is live. */
   disabled?: boolean;
 }) {
@@ -45,7 +54,13 @@ export function HistoryPanel({
   const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
   const [confirming, setConfirming] = useState<Restore | null>(null);
   const [failed, setFailed] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
+  /** A restore was sent and hasn't answered: no other way back can be taken meanwhile. */
+  const [restoring, setRestoring] = useState(false);
   const closeRef = useRef<HTMLButtonElement>(null);
+  const yesRef = useRef<HTMLButtonElement>(null);
+  /** The button whose confirmation was cancelled: it gets focus back once it is shown again. */
+  const refocus = useRef<string | null>(null);
   /** What had focus when the panel opened: it gets focus back when the panel closes. */
   const opener = useRef<HTMLElement | null>(null);
   const onCloseRef = useRef(onClose);
@@ -63,7 +78,7 @@ export function HistoryPanel({
         // The newest task starts open: it is what the person most likely wants to undo.
         if (g[0]) setOpen(new Set([keyOf(g[0])]));
       },
-      () => setGroups([]),
+      () => setLoadFailed(true),
     );
   }, [client]);
   useEffect(() => {
@@ -76,6 +91,13 @@ export function HistoryPanel({
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, []);
+  useEffect(() => {
+    if (confirming) yesRef.current?.focus();
+    else if (refocus.current) {
+      document.getElementById(refocus.current)?.focus();
+      refocus.current = null;
+    }
+  }, [confirming]);
 
   const toggle = (key: string) =>
     setOpen((current) => {
@@ -86,35 +108,55 @@ export function HistoryPanel({
     });
 
   const restore = (r: Restore) => {
+    if (restoring) return;
     setFailed(false);
+    setRestoring(true);
     (r.kind === "task" ? client.restoreTask(r.id) : client.restore(r.id)).then(
       () => {
-        onRestored?.();
+        setRestoring(false);
+        onRestored?.(r.kind);
         close();
       },
       () => {
+        setRestoring(false);
         setConfirming(null);
         setFailed(true);
       },
     );
   };
 
-  /** The button, or its confirmation while it waits for a yes. */
-  const goBack = (r: Restore, label: string) =>
+  const cancel = (r: Restore) => {
+    refocus.current = triggerId(r);
+    setConfirming(null);
+  };
+
+  /** The button, or its confirmation while it waits for a yes; `later` tasks are undone too. */
+  const goBack = (r: Restore, label: string, later: number) =>
     confirming?.kind === r.kind && confirming.id === r.id && !disabled ? (
       <div className="hh-confirm">
-        <p>{t(r.kind === "task" ? "history.confirmTask" : "history.confirm")}</p>
-        <button onClick={() => restore(r)}>{t("history.confirmYes")}</button>
-        <button onClick={() => setConfirming(null)}>{t("history.cancel")}</button>
+        <p>
+          {t(r.kind === "task" ? "history.confirmTask" : "history.confirm")}
+          {later > 0 && ` ${t("history.laterTasks", { count: later })}`}
+        </p>
+        <button ref={yesRef} disabled={restoring} onClick={() => restore(r)}>
+          {t("history.confirmYes")}
+        </button>
+        <button disabled={restoring} onClick={() => cancel(r)}>
+          {t("history.cancel")}
+        </button>
       </div>
     ) : (
-      <button disabled={disabled} onClick={() => setConfirming(r)}>
+      <button id={triggerId(r)} disabled={disabled || restoring} onClick={() => setConfirming(r)}>
         {label}
       </button>
     );
 
-  const rowLabel = (g: HistoryTaskView) =>
-    g.taskId === null ? t("history.earlier") : g.actionId && actions[g.actionId] ? actions[g.actionId].label[lang] : t("history.question");
+  const rowLabel = (g: HistoryTaskView) => {
+    if (g.taskId === null) return t("history.other");
+    if (g.actionId === null) return t("history.question");
+    // An action the harness no longer has (or a trailer such as "toString") is just "a task".
+    return Object.hasOwn(actions, g.actionId) ? actions[g.actionId].label[lang] : t("history.task");
+  };
   const entryText = (e: HistoryItem) => {
     const label = entryLabel(e.message);
     return label ? t(label.key, label.values ?? {}) : e.message;
@@ -130,6 +172,7 @@ export function HistoryPanel({
         </button>
       </header>
       {failed && <p role="alert">{t("history.restoreFailed")}</p>}
+      {loadFailed && <p role="alert">{t("history.loadFailed")}</p>}
       {groups?.length === 0 && <p>{t("history.empty")}</p>}
       <ol className="hh-history-tasks">
         {groups?.map((g) => {
@@ -138,7 +181,8 @@ export function HistoryPanel({
           const bodyId = `hh-history-${key}`;
           return (
             <li key={key}>
-              <button className="hh-history-row" aria-expanded={expanded} aria-controls={bodyId} onClick={() => toggle(key)}>
+              {/* aria-controls only names a body that is there. */}
+              <button className="hh-history-row" aria-expanded={expanded} aria-controls={expanded ? bodyId : undefined} onClick={() => toggle(key)}>
                 <span className="hh-history-label">{rowLabel(g)}</span>
                 {g.noteTitle && <span>{g.noteTitle}</span>}
                 <time dateTime={g.date}>{when(g.date)}</time>
@@ -156,13 +200,15 @@ export function HistoryPanel({
                       ))}
                     </ul>
                   )}
-                  {g.taskId !== null && g.start !== null && goBack({ kind: "task", id: g.taskId }, t("history.restoreTask"))}
+                  {g.taskId !== null &&
+                    g.start !== null &&
+                    goBack({ kind: "task", id: g.taskId }, t("history.restoreTask"), laterTasks(groups, g.taskId, g.date))}
                   <ol className="hh-history-entries">
                     {g.entries.map((e) => (
                       <li key={e.sha}>
                         <span>{entryText(e)}</span>
                         <time dateTime={e.date}>{when(e.date)}</time>
-                        {goBack({ kind: "point", id: e.sha }, t("history.restore"))}
+                        {goBack({ kind: "point", id: e.sha }, t("history.restore"), laterTasks(groups, g.taskId, e.date))}
                       </li>
                     ))}
                   </ol>

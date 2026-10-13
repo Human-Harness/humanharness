@@ -508,8 +508,8 @@ export function ChatView({
           lang={lang}
           disabled={Boolean(chat.live) || closing || checkpoint}
           onClose={() => setShowHistory(false)}
-          onRestored={() => {
-            const text = t("history.restored");
+          onRestored={(kind) => {
+            const text = t(kind === "task" ? "history.restoredTask" : "history.restored");
             dispatch({ type: "notice", text, at: new Date().toISOString() });
             setNotice(text);
           }}

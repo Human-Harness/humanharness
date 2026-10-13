@@ -124,6 +124,17 @@ describe("HarnessApp", () => {
     await waitFor(() => expect(client.restored).toEqual(["abc"]));
   });
 
+  it("says what happened after going back to before a task", async () => {
+    const client = new FakeClient(ready);
+    await startWork(<HarnessApp client={client} />);
+    await screen.findByPlaceholderText("Write a message…");
+    fireEvent.click(screen.getByRole("button", { name: "History" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Go back to before this task" }));
+    fireEvent.click(screen.getByRole("button", { name: "Yes, go back" }));
+    await waitFor(() => expect(client.restoredTasks).toEqual(["t1"]));
+    await screen.findByText("I went back to before that task. Everything it changed in your files was undone.");
+  });
+
   it("tells the user when going back failed", async () => {
     const client = new FakeClient(ready);
     client.restoreError = new Error("busy");

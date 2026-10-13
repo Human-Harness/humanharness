@@ -45,6 +45,10 @@ export class FakeClient implements HarnessClient {
   sendError: Error | null = null;
   saveError: Error | null = null;
   restoreError: Error | null = null;
+  /** What historyTasks throws, if anything. */
+  historyError: Error | null = null;
+  /** While set, restore and restoreTask wait for it. */
+  restoreGate: Promise<void> | null = null;
   pickResult: FolderPick | null = { folder: "/Users/me/Elsewhere", problem: null };
   stateError: Error | null = null;
   getStateCalls = 0;
@@ -183,13 +187,16 @@ export class FakeClient implements HarnessClient {
     return () => this.listeners.delete(listener);
   }
   async restore(sha: string) {
+    await this.restoreGate;
     if (this.restoreError) throw this.restoreError;
     this.restored.push(sha);
   }
   async historyTasks() {
+    if (this.historyError) throw this.historyError;
     return this.historyGroups;
   }
   async restoreTask(taskId: string) {
+    await this.restoreGate;
     if (this.restoreError) throw this.restoreError;
     this.restoredTasks.push(taskId);
   }

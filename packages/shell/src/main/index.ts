@@ -21,6 +21,8 @@ import {
   type SetupStep,
   type TestResult,
   type UsageSummary,
+  RESTORE_POINT,
+  RESTORE_TASK,
   isConfigured,
 } from "@humanharness/ui/client";
 import { History, NOTES_PREFIX, readNotes, writeNote } from "@humanharness/workspace";
@@ -46,7 +48,8 @@ import { openIfStillSafe, openRoots, openableFile, revealIfStillSafe, revealable
 import { saveWithFolderChange } from "./folder-change";
 import { type ResolvedReference, displayPath, resolveReferences, usableReferences } from "./references";
 import { TaskManager } from "./task-manager";
-import { RESTORE_POINT, RESTORE_TASK, historyView, isSha } from "./history-view";
+import { historyView, isSha } from "./history-view";
+import { RestoreGuard, lastOpened } from "./restore-guard";
 import { TaskStore, emptyTasks } from "./task-store";
 import { devEngine, readTestHooks, testEngineStatus } from "./test-hooks";
 
@@ -65,10 +68,6 @@ let harness: LoadedHarness;
 let config: ConfigStore;
 let shared: SharedConfigStore;
 let window: BrowserWindow | null = null;
-/** Settles when the last restore done without a runtime has finished. */
-let restoring: Promise<unknown> = Promise.resolve();
-/** A restore was asked for and hasn't finished (including finding the history). */
-let restorePending = false;
 /** Set on the first before-quit: from then on, no new turns or restores. */
 let quitting = false;
 /** The install, update, login or logout process running now, if any. */
@@ -227,7 +226,7 @@ const runtime = memoise<HarnessRuntime>(async () => {
   if (!isConfigured(c)) throw new Error("The app is not set up yet");
   const problem = await configProblem(c, validation());
   if (problem) throw new Error(problem);
-  await restoring;
+  await restores.settled();
   const engine = getEngine(c.engineId);
   let cmd: { command: string[]; env: Record<string, string> } | null;
   const fake = hooks.engines?.[engine.id];
@@ -266,7 +265,15 @@ async function dropRuntime() {
   await rt?.close();
 }
 
-/** The running runtime's history, or one opened on the configured folder when there is no runtime. */
+/** The history of the folder when no runtime runs: one per folder and ignore list (its queue orders every write). */
+const standaloneHistory = lastOpened(async (key) => {
+  const { folder, ignore } = JSON.parse(key) as { folder: string; ignore: string[] };
+  const history = new History(folder, historyDir(app.getPath("userData"), folder), ignore, [NOTES_PREFIX]);
+  await history.init();
+  return history;
+});
+
+/** The running runtime's history, or the one opened on the configured folder when there is no runtime. */
 async function currentHistory(): Promise<History | null> {
   const rt = await runtime.peek()?.catch(() => null);
   if (rt) return rt.history;
@@ -274,9 +281,7 @@ async function currentHistory(): Promise<History | null> {
   if (!c) return null;
   const extra = getEngine(c.engineId).instructionsFile?.path;
   // Same ignore list as the runtime's: its files under .harness/ and the generated instructions.
-  const history = new History(c.folder, historyDir(app.getPath("userData"), c.folder), [".harness/", "AGENTS.md", ...(extra ? [extra] : [])], [NOTES_PREFIX]);
-  await history.init();
-  return history;
+  return standaloneHistory(JSON.stringify({ folder: c.folder, ignore: [".harness/", "AGENTS.md", ...(extra ? [extra] : [])] }));
 }
 
 function sendToWindow(channel: string, value: unknown) {
@@ -419,25 +424,14 @@ function handle(channel: string, fn: (...args: never[]) => unknown) {
 }
 
 /**
- * Runs a restore: refused while quitting, while a task operation runs or turns are held (engine change,
- * folder move); one at a time; a runtime starting meanwhile waits for it (`restoring`).
+ * Restores: refused while quitting, while a task operation runs or turns are held (engine change, folder
+ * move); one at a time; new turns are refused and a runtime starting waits until it ends.
  */
-async function restoreWith(run: (history: History) => Promise<unknown>): Promise<void> {
-  if (quitting) throw new Error("The app is closing");
-  if (restorePending) throw new Error("Already going back");
-  if (tasks.isBusy() || guards.turnBlocked()) throw new Error("A turn is running");
-  restorePending = true;
-  try {
-    const history = await currentHistory();
-    if (!history) throw new Error("The app is not set up yet");
-    if (quitting || tasks.isBusy()) throw new Error("A turn is running");
-    const done = run(history);
-    restoring = done.catch(() => undefined);
-    await done;
-  } finally {
-    restorePending = false;
-  }
-}
+const restores = new RestoreGuard({ quitting: () => quitting, busy: () => tasks.isBusy(), turnBlocked: () => guards.turnBlocked() });
+const restoreWith = (run: (history: History) => Promise<unknown>) => restores.run(currentHistory, run);
+
+/** Why a new turn can't start now (engine change, folder move, engine update, a restore), or null. */
+const turnBlocked = () => guards.turnBlocked() ?? restores.turnBlocked();
 
 function registerIpc() {
   handle("hh:getState", () => appState());
@@ -455,9 +449,9 @@ function registerIpc() {
     const before = await config.load();
     // Spec §9: an engine is only used once its notice is accepted.
     await requireNoticeForChoice(patch.engineId, before.engineId, hasNotice);
-    // A new folder: refused while a turn runs, and turns are refused until it is over; the old
+    // A new folder: refused while a turn or a restore runs, and turns are refused until it is over; the old
     // folder's task ends and its runtime goes.
-    await saveWithFolderChange(patch.folder, before.folder, { isBusy: () => tasks.isBusy(), guards, interrupt: () => tasks.interrupt(), dropRuntime }, () =>
+    await saveWithFolderChange(patch.folder, before.folder, { isBusy: () => tasks.isBusy() || restores.turnBlocked() !== null, guards, interrupt: () => tasks.interrupt(), dropRuntime }, () =>
       saveConfigPatch(patch, before),
     );
     if (patch.appearance) applyAppearance(patch.appearance);
@@ -473,7 +467,7 @@ function registerIpc() {
   });
   handle("hh:send", (message: string, options?: SendOptions) => {
     if (quitting) throw new Error("The app is closing");
-    const blocked = guards.turnBlocked();
+    const blocked = turnBlocked();
     if (blocked) throw new Error(blocked);
     if (typeof message !== "string" || !message.trim() || message.length > 20_000) throw new Error("Invalid message");
     const action = typeof options?.action === "string" && Object.hasOwn(harness.actions, options.action) ? options.action : undefined;
@@ -483,7 +477,7 @@ function registerIpc() {
   handle("hh:getTasks", () => tasks.view());
   handle("hh:choose", (option: unknown, task: unknown) => {
     if (quitting) throw new Error("The app is closing");
-    const blocked = guards.turnBlocked();
+    const blocked = turnBlocked();
     if (blocked) throw new Error(blocked);
     const parsed = choiceOptionSchema.safeParse(option);
     if (!parsed.success) throw new Error("Invalid choice");
@@ -511,13 +505,11 @@ function registerIpc() {
   });
   // Cancels the turn and stops the task operation (a closing turn never goes on to the next task).
   handle("hh:cancel", () => tasks.cancel());
-  handle("hh:restore", (sha: unknown) =>
-    restoreWith(async (history) => {
-      if (!isSha(sha)) throw new Error("Invalid point");
-      // The entry it goes back to names the task the restore belongs to.
-      await history.restore(sha, RESTORE_POINT, (await history.trailerOf(sha)) ?? undefined);
-    }),
-  );
+  // Restore commits carry no task: going back may undo several tasks, so it belongs to none of them.
+  handle("hh:restore", (sha: unknown) => {
+    if (!isSha(sha)) throw new Error("Invalid point");
+    return restoreWith((history) => history.restore(sha, RESTORE_POINT));
+  });
   handle("hh:historyTasks", async () => {
     const history = await currentHistory();
     return history ? historyView(await history.tasks()) : [];
@@ -527,7 +519,7 @@ function registerIpc() {
       if (typeof taskId !== "string" || !taskId || taskId.length > 200) throw new Error("Invalid task");
       const group = (await history.tasks()).find((g) => g.taskId === taskId);
       if (!group?.start) throw new Error("Nothing to go back to");
-      await history.restore(group.start, RESTORE_TASK, { task: taskId, ...(group.actionId ? { action: group.actionId } : {}) });
+      await history.restore(group.start, RESTORE_TASK);
     }),
   );
   handle("hh:engineStatus", async (engineId: string) => {

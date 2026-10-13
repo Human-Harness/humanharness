@@ -32,6 +32,7 @@ const client: HarnessClient = {
   resetSharedConfig: () => ipcRenderer.invoke("hh:resetSharedConfig"),
   getUsage: () => ipcRenderer.invoke("hh:getUsage"),
   revealFolder: () => ipcRenderer.invoke("hh:revealFolder"),
+  moveFolder: (to) => ipcRenderer.invoke("hh:moveFolder", to),
   getTasks: () => ipcRenderer.invoke("hh:getTasks"),
   onTasks: (listener) => subscribe<TaskView>("hh:tasks", listener),
   choose: (option, task) => ipcRenderer.invoke("hh:choose", option, task),

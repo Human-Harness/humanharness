@@ -1,12 +1,15 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { ConfigStore, historyDir } from "../src/main/config";
-import { type MoveDeps, type MoveOps, MoveFailed, failureOf, moveFolder, sameContents } from "../src/main/move-folder";
+import { EngineGuards } from "../src/main/engine-guards";
+import { type MoveDeps, type MoveOps, MoveFailed, failureOf, guardedMove, moveFolder, sameContents } from "../src/main/move-folder";
+import { RestoreGuard } from "../src/main/restore-guard";
 
 const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "hh-")));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
+afterEach(() => vi.restoreAllMocks());
 
 const errno = (code: string) => Object.assign(new Error(code), { code });
 const OLD_TIME = new Date("2026-01-02T03:04:05Z");
@@ -200,5 +203,75 @@ describe("sameContents", () => {
     expect(failureOf(errno("EROFS"))).toBe("no-permission");
     expect(failureOf(errno("ERR_FS_CP_EEXIST"))).toBe("exists");
     expect(failureOf(new Error("?"))).toBe("failed");
+  });
+});
+
+describe("guardedMove", () => {
+  /** The real guards of the main process, with a turn flag the test flips and every step logged. */
+  function wiring(move: () => Promise<{ oldRemoved: boolean }> = async () => ({ oldRemoved: true })) {
+    const flags = { turn: false };
+    const steps: string[] = [];
+    const guards = new EngineGuards();
+    const restores = new RestoreGuard({ quitting: () => false, busy: () => flags.turn, turnBlocked: () => guards.turnBlocked() });
+    const deps = {
+      guards,
+      isBusy: () => flags.turn || restores.turnBlocked() !== null,
+      flush: async () => void steps.push("flush"),
+      closeRuntime: async () => void steps.push("close"),
+      restoresSettled: async () => void steps.push("settled"),
+      resumeFromNotes: async () => void steps.push("resume"),
+      move: async () => {
+        steps.push("move");
+        return move();
+      },
+    };
+    return { flags, steps, guards, restores, deps };
+  }
+
+  it("closes the runtime, moves, and keeps the open task to continue from its notes", async () => {
+    const w = wiring();
+    expect(await guardedMove(w.deps)).toEqual({ ok: true, done: { oldRemoved: true } });
+    expect(w.steps).toEqual(["flush", "close", "settled", "move", "resume"]);
+    expect(w.guards.turnBlocked()).toBeNull();
+  });
+
+  it("is refused while a turn runs, touching nothing", async () => {
+    const w = wiring();
+    w.flags.turn = true;
+    expect(await guardedMove(w.deps)).toEqual({ ok: false, error: "busy" });
+    expect(w.steps).toEqual([]);
+    expect(w.guards.turnBlocked()).toBeNull();
+  });
+
+  it("is refused while a restore runs", async () => {
+    const w = wiring();
+    let open!: (h: string) => void;
+    const restore = w.restores.run(() => new Promise<string>((r) => (open = r)), async () => undefined);
+    expect(await guardedMove(w.deps)).toEqual({ ok: false, error: "busy" });
+    open("h");
+    await restore;
+    expect(w.steps).toEqual([]);
+  });
+
+  it("refuses a restore and holds turns while it runs", async () => {
+    let finish!: () => void;
+    const w = wiring(() => new Promise((r) => (finish = () => r({ oldRemoved: false }))));
+    const moving = guardedMove(w.deps);
+    expect(w.guards.turnBlocked()).not.toBeNull();
+    await expect(w.restores.run(async () => "h", async () => undefined)).rejects.toThrow("A turn is running");
+    await vi.waitFor(() => expect(w.steps).toContain("move"));
+    finish();
+    expect(await moving).toEqual({ ok: true, done: { oldRemoved: false } });
+    expect(w.guards.turnBlocked()).toBeNull();
+  });
+
+  it("answers why a move failed, and still keeps the open task (its session is gone)", async () => {
+    const w = wiring(async () => Promise.reject(new MoveFailed("no-space")));
+    expect(await guardedMove(w.deps)).toEqual({ ok: false, error: "no-space" });
+    expect(w.steps).toEqual(["flush", "close", "settled", "move", "resume"]);
+    const other = wiring(async () => Promise.reject(new Error("boom")));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    expect(await guardedMove(other.deps)).toEqual({ ok: false, error: "failed" });
+    expect(other.guards.turnBlocked()).toBeNull();
   });
 });

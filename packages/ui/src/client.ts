@@ -69,6 +69,9 @@ export interface SyncLocationView {
 /** Why moving the folder failed; each has its own card (spec 3d §2 "Errors"). */
 export type MoveError = "busy" | "exists" | "inside" | "unsuitable" | "no-space" | "no-permission" | "mismatch" | "failed";
 
+/** How a move ended: the new app state (and the old folder when it could not be removed), or why it failed. */
+export type MoveResult = { ok: true; state: AppState; leftBehind?: string } | { ok: false; error: MoveError };
+
 export interface AppState {
   harness: {
     id: string;
@@ -364,6 +367,8 @@ export interface HarnessClient {
   getUsage(): Promise<UsageSummary>;
   /** Shows the configured folder in Finder. */
   revealFolder(): Promise<void>;
+  /** Moves the folder and its history to `to` (an absolute path that doesn't exist yet). Refused while a turn or a restore runs. */
+  moveFolder(to: string): Promise<MoveResult>;
   /** The current task, how each action ended, and the notes. */
   getTasks(): Promise<TaskView>;
   onTasks(listener: (view: TaskView) => void): () => void;

@@ -15,6 +15,7 @@ import {
   type ConfiguredApp,
   type FolderPick,
   type ModelsView,
+  type MoveResult,
   type RunningSetup as SetupInfo,
   type SendOptions,
   type SetupOutput,
@@ -46,6 +47,7 @@ import { UsageLog, compactionRecord, profileMeta, summarizeUsage, usageRecord } 
 import { type ValidationContext, checkFolder, configProblem, isAppUrl } from "./validate";
 import { openIfStillSafe, openRoots, openableFile, revealIfStillSafe, revealableFile } from "./open-path";
 import { saveWithFolderChange } from "./folder-change";
+import { guardedMove, moveFolder } from "./move-folder";
 import { type ResolvedReference, displayPath, resolveReferences, usableReferences } from "./references";
 import { TaskManager } from "./task-manager";
 import { historyView, isSha } from "./history-view";
@@ -271,12 +273,17 @@ const runtime = memoise<HarnessRuntime>(async () => {
   });
 });
 
-/** Ends the open task, then closes the running runtime (e.g. the engine changed); the next turn starts a new one. */
-async function dropRuntime() {
-  await tasks.interrupt().catch((err: unknown) => console.error("Could not end the task", err));
+/** Closes the running runtime and keeps the open task; the next turn starts a new runtime (and engine session). */
+async function closeRuntime() {
   const rt = await runtime.peek()?.catch(() => null);
   runtime.clear();
   await rt?.close();
+}
+
+/** Ends the open task, then closes the running runtime (e.g. the engine changed); the next turn starts a new one. */
+async function dropRuntime() {
+  await tasks.interrupt().catch((err: unknown) => console.error("Could not end the task", err));
+  await closeRuntime();
 }
 
 /** The history of the folder when no runtime runs: one per folder and ignore list (its queue orders every write). */
@@ -630,6 +637,32 @@ function registerIpc() {
   handle("hh:revealFolder", async () => {
     const c = await validConfig();
     if (c) await shell.openPath(c.folder);
+  });
+  // Spec 3d §2: refused while a turn or a restore runs; turns and restores are held off until it is over.
+  handle("hh:moveFolder", async (to: unknown): Promise<MoveResult> => {
+    if (quitting) throw new Error("The app is closing");
+    if (typeof to !== "string" || !path.isAbsolute(to) || to.length > 1000 || to.includes("\0")) return { ok: false, error: "unsuitable" };
+    const c = await validConfig();
+    if (!c) throw new Error("The app is not set up yet");
+    const result = await guardedMove({
+      guards,
+      isBusy: () => tasks.isBusy() || restores.turnBlocked() !== null,
+      flush: () => turns.flush(),
+      closeRuntime,
+      restoresSettled: () => restores.settled(),
+      resumeFromNotes: () => tasks.resumeFromNotes(),
+      move: async () => {
+        const history = await currentHistory();
+        return moveFolder(c.folder, to, {
+          check: (folder) => checkFolder(folder, os.homedir()),
+          tracked: async () => (await history?.trackedFiles()) ?? [],
+          saveFolder: async (folder) => void (await config.replaceFolder(folder)),
+          historyDir: (folder) => historyDir(app.getPath("userData"), folder),
+        });
+      },
+    });
+    if (!result.ok) return result;
+    return { ok: true, state: await appState(), ...(result.done.oldRemoved ? {} : { leftBehind: c.folder }) };
   });
 }
 

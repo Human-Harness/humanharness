@@ -203,3 +203,50 @@ export async function moveFolder(from: string, to: string, d: MoveDeps): Promise
     return { oldRemoved: false };
   }
 }
+
+export interface GuardedMoveDeps {
+  /** Holds turns (and so restores, which check them) off while the folder changes (EngineGuards). */
+  guards: { beginFolderChange(isBusy: () => boolean): void; endFolderChange(): void };
+  /** A turn, a task operation or a restore is under way. */
+  isBusy(): boolean;
+  /** Waits for the chat log and history writes of the last turn. */
+  flush(): Promise<void>;
+  /** Closes the runtime, which works on the old folder, without ending the open task. */
+  closeRuntime(): Promise<void>;
+  /** Settles once the last restore has finished. */
+  restoresSettled(): Promise<unknown>;
+  /** The runtime was closed: the open task's next follow-up starts a new session from its notes. */
+  resumeFromNotes(): Promise<void>;
+  /** The move itself (moveFolder). */
+  move(): Promise<MoveDone>;
+}
+
+/**
+ * A move against turns and restores (spec 3d §2): refused while either runs, and both held off from its
+ * first moment until it ends. The busy check and the hold happen synchronously, so a send or a restore
+ * can't slip in between. The answer is data: a failure is a reason, never a thrown error.
+ */
+export async function guardedMove(d: GuardedMoveDeps): Promise<{ ok: true; done: MoveDone } | { ok: false; error: MoveError }> {
+  try {
+    d.guards.beginFolderChange(() => d.isBusy());
+  } catch {
+    return { ok: false, error: "busy" };
+  }
+  let closing = false;
+  try {
+    await d.flush();
+    // The runtime works on the old folder. The open task stays open and continues from its notes.
+    closing = true;
+    await d.closeRuntime();
+    await d.restoresSettled();
+    return { ok: true, done: await d.move() };
+  } catch (err) {
+    if (err instanceof MoveFailed) return { ok: false, error: err.code };
+    console.error("Could not move the folder", err);
+    return { ok: false, error: "failed" };
+  } finally {
+    // Once the runtime is closed the engine session is gone, whether or not the move went through.
+    if (closing) await d.resumeFromNotes().catch((err: unknown) => console.error("Could not keep the open task", err));
+    d.guards.endFolderChange();
+  }
+}

@@ -10,6 +10,7 @@ import type {
   HarnessClient,
   HistoryItem,
   HistoryTaskView,
+  MoveResult,
   RunningSetup,
   SendOptions,
   SetupOutput,
@@ -102,6 +103,10 @@ export class FakeClient implements HarnessClient {
   testResult: TestResult & { error?: EngineError } = { ok: true };
   usage: UsageSummary = { limits: null, estimates: {} };
   revealed = 0;
+  /** Places moveFolder was asked to move to. */
+  moved: string[] = [];
+  /** What moveFolder answers; default: success with the current state. */
+  moveResult: MoveResult | null = null;
   tasks: TaskView = { current: null, actions: {}, notes: [] };
   chosen: ChoiceOption[] = [];
   /** The task each pick was sent for. */
@@ -270,6 +275,10 @@ export class FakeClient implements HarnessClient {
   }
   async revealFolder() {
     this.revealed++;
+  }
+  async moveFolder(to: string) {
+    this.moved.push(to);
+    return this.moveResult ?? { ok: true as const, state: this.state };
   }
   emitTasks(view: TaskView) {
     this.tasks = view;

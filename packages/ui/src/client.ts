@@ -66,6 +66,9 @@ export interface SyncLocationView {
   suggested: string;
 }
 
+/** Why moving the folder failed; each has its own card (spec 3d §2 "Errors"). */
+export type MoveError = "busy" | "exists" | "inside" | "unsuitable" | "no-space" | "no-permission" | "mismatch" | "failed";
+
 export interface AppState {
   harness: {
     id: string;

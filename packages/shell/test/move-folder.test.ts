@@ -715,7 +715,7 @@ describe("guardedMove", () => {
   it("closes the runtime, moves, and keeps the open task to continue from its notes", async () => {
     const w = wiring();
     expect(await guardedMove(w.deps)).toEqual({ ok: true, done: DONE });
-    expect(w.steps).toEqual(["precheck", "checkpoint", "flush", "close", "settled", "move", "resume"]);
+    expect(w.steps).toEqual(["precheck", "checkpoint", "flush", "close", "resume", "settled", "move"]);
     expect(w.guards.turnBlocked()).toBeNull();
   });
 
@@ -752,11 +752,29 @@ describe("guardedMove", () => {
   it("answers why a move failed, and still keeps the open task (its session is gone)", async () => {
     const w = wiring(async () => Promise.reject(new MoveFailed("no-space")));
     expect(await guardedMove(w.deps)).toEqual({ ok: false, error: "no-space" });
-    expect(w.steps).toEqual(["precheck", "checkpoint", "flush", "close", "settled", "move", "resume"]);
+    expect(w.steps).toEqual(["precheck", "checkpoint", "flush", "close", "resume", "settled", "move"]);
     const other = wiring(async () => Promise.reject(new Error("boom")));
     vi.spyOn(console, "error").mockImplementation(() => {});
     expect(await guardedMove(other.deps)).toEqual({ ok: false, error: "failed" });
     expect(other.guards.turnBlocked()).toBeNull();
+  });
+
+  it("keeps the open task to continue from its notes before moving, so a crash during the move can't leave its old session", async () => {
+    let resumedBeforeMove = false;
+    const w = wiring(async () => {
+      resumedBeforeMove = w.steps.includes("resume");
+      return DONE;
+    });
+    await guardedMove(w.deps);
+    expect(resumedBeforeMove).toBe(true);
+    const failing = wiring();
+    failing.deps.closeRuntime = async () => {
+      failing.steps.push("close");
+      throw new Error("close failed");
+    };
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    expect(await guardedMove(failing.deps)).toEqual({ ok: false, error: "failed" });
+    expect(failing.steps).toEqual(["precheck", "checkpoint", "flush", "close", "resume"]);
   });
 
   it("saves the open task's checkpoint before holding turns, and moves even when it fails", async () => {
@@ -768,7 +786,7 @@ describe("guardedMove", () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     expect(await guardedMove(w.deps)).toEqual({ ok: true, done: DONE });
     expect(heldDuringCheckpoint).toBeNull();
-    expect(w.steps).toEqual(["precheck", "checkpoint", "flush", "close", "settled", "move", "resume"]);
+    expect(w.steps).toEqual(["precheck", "checkpoint", "flush", "close", "resume", "settled", "move"]);
     expect(error).toHaveBeenCalled();
     error.mockRestore();
   });

@@ -561,11 +561,19 @@ export async function guardedMove(d: GuardedMoveDeps): Promise<{ ok: true; done:
     return { ok: false, error: "busy" };
   }
   let closing = false;
+  let resumed = false;
+  // Once the runtime is closed the engine session is gone, whether or not the move goes through.
+  const resume = async () => {
+    resumed = true;
+    await d.resumeFromNotes().catch((err: unknown) => console.error("Could not keep the open task", err));
+  };
   try {
     await d.flush();
-    // The runtime works on the old folder. The open task stays open and continues from its notes.
+    // The runtime works on the old folder. The open task stays open and continues from its notes:
+    // recorded before the move, so a crash during it can't leave the old session id behind.
     closing = true;
     await d.closeRuntime();
+    await resume();
     await d.restoresSettled();
     return { ok: true, done: await d.move() };
   } catch (err) {
@@ -573,8 +581,8 @@ export async function guardedMove(d: GuardedMoveDeps): Promise<{ ok: true; done:
     console.error("Could not move the folder", err);
     return { ok: false, error: "failed" };
   } finally {
-    // Once the runtime is closed the engine session is gone, whether or not the move went through.
-    if (closing) await d.resumeFromNotes().catch((err: unknown) => console.error("Could not keep the open task", err));
+    // Closing the runtime failed partway: its session may be gone all the same.
+    if (closing && !resumed) await resume();
     d.guards.endFolderChange();
   }
 }

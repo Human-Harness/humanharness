@@ -430,7 +430,8 @@ export interface RecoverDeps {
  * At startup, settles a move a quit or crash cut short, from its journal. The config decides: when it names
  * the new place the history is moved after it; when it names the old place the copy this move made (and its
  * temporary copy) is removed and the history is put back. The old folder is never removed here: the answer
- * names it (`leftBehind`) when the move went through. Null when there was no journal (or it couldn't be read).
+ * names it (`leftBehind`) when the move went through. Null when there was no journal (or it couldn't be read), or
+ * when the config names no folder or can't be read: then nothing is touched and the journal stays for a later start.
  */
 export async function recoverMove(d: RecoverDeps): Promise<{ folder: string; leftBehind?: string } | null> {
   const ops: MoveOps = { ...realOps, ...d.ops };
@@ -457,12 +458,20 @@ export async function recoverMove(d: RecoverDeps): Promise<{ folder: string; lef
     return null;
   }
 
+  // The config decides: while it names no folder (or can't be read) nothing is touched and the journal stays.
+  const folder = await d.currentFolder().catch((err: unknown) => {
+    console.error("Could not read the config", err);
+    return undefined;
+  });
+  if (folder === undefined) {
+    console.error("The config names no folder; the interrupted move is settled at a later start");
+    return null;
+  }
   // The temporary copy the journal names is ours; any other `*.hh-moving-*` is left alone.
   const copyLeft = await exists(copyIn(j.temp, j.to));
   if (await exists(j.temp)) await ops.rm(j.temp, { recursive: true, force: true }).catch((err: unknown) => console.error("Could not remove the temporary copy", err));
   // `to` is ours once the copy was renamed there (it is gone from the temporary place by then).
   const toIsOurs = j.stage !== "copying" && !copyLeft;
-  const folder = await d.currentFolder();
   const oldHistory = d.historyDir(j.from);
   const newHistory = d.historyDir(j.to);
   try {
@@ -486,11 +495,11 @@ export async function recoverMove(d: RecoverDeps): Promise<{ folder: string; lef
   } catch (err) {
     // The journal stays: the next start tries again.
     console.error("Could not settle the interrupted move", err);
-    return folder ? { folder } : null;
+    return { folder };
   }
   console.error("The config names neither place of the interrupted move; nothing was touched");
   await clearJournal(d.journal);
-  return folder ? { folder } : null;
+  return { folder };
 }
 
 export interface GuardedMoveDeps {

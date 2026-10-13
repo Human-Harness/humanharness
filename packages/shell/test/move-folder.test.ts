@@ -586,6 +586,27 @@ describe("recoverMove", () => {
     await untouched(t);
   });
 
+  it("keeps the journal, touching nothing, while the config names no folder or can't be read", async () => {
+    const t = await setup();
+    const save = t.deps.saveFolder;
+    t.deps.saveFolder = async (folder) => {
+      await save(folder);
+      return hang();
+    };
+    void moveFolder(t.from, t.to, t.deps);
+    await vi.waitFor(async () => expect((await t.config.load()).folder).toBe(t.to));
+    const journal = fs.readFileSync(t.journal, "utf8");
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    expect(await recoverMove({ ...t.recoverDeps, currentFolder: async () => undefined })).toBeNull();
+    expect(await recoverMove({ ...t.recoverDeps, currentFolder: async () => Promise.reject(new Error("unreadable")) })).toBeNull();
+    expect(fs.readFileSync(t.journal, "utf8")).toBe(journal);
+    expect(fs.existsSync(path.join(t.oldHistory, "HEAD"))).toBe(true);
+    expect(fs.readFileSync(path.join(t.to, "a.md"), "utf8")).toBe("1");
+    // Once the config can be read, the move is settled.
+    expect(await recoverMove(t.recoverDeps)).toEqual({ folder: t.to, leftBehind: t.from });
+    await moved(t);
+  });
+
   it("drops a journal it can't read, touching nothing", async () => {
     const t = await setup();
     fs.writeFileSync(t.journal, "{not json");

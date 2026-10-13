@@ -46,13 +46,13 @@ export function fillPrompt(template: string, vars: { language: Language; notesIn
 export const CHECKPOINT_PROMPT =
   "Checkpoint: this conversation is getting long. Call the `save_note` tool once with what is clear so far: a short title, at most 5 summary points, the decisions taken, the files that back them and the questions still open. Do not write any file yourself and do not call `show_choices`. Then reply with one short sentence; the conversation goes on after this.";
 
+/** Said after a free question that tasks.json kept cut (it was longer than QUESTION_MAX). */
+export const QUESTION_CUT = "(The question was longer; it was cut here.)";
+
 /**
  * The line a resumed task's first message carries. Neutral on purpose: the session is also lost after a move
  * that failed (the runtime closes before moving), so it never says the folder moved.
  */
-/** Said after a free question that tasks.json kept cut (it was longer than QUESTION_MAX). */
-export const QUESTION_CUT = "(The question was longer; it was cut here.)";
-
 export const RESUME_PROMPT =
   "The earlier conversation of this topic is not available; continue from the notes and the files in the folder. Answer in {{language}}, then end with `show_choices`.";
 

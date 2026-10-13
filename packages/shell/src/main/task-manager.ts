@@ -357,7 +357,7 @@ export class TaskManager {
   }
 
   /** A new task in a fresh session; its first message is built from the notes index. */
-  private async begin(task: { action?: string; question?: string; questionCut?: true },message: (notesIndex: string) => string, display: string): Promise<void> {
+  private async begin(task: { action?: string; question?: string; questionCut?: true }, message: (notesIndex: string) => string, display: string): Promise<void> {
     // Cancelled or quitting since the operation began (e.g. right after the closing turn): start nothing.
     if (this.cancelRequested) return this.stopped();
     await this.endSession();

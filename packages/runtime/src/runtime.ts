@@ -3,7 +3,7 @@ import { promises as fs } from "node:fs";
 import { type Bridge, type Launcher, type McpServerSpec, devLauncher, openBridge, uiServerSpec } from "@humanharness/blocks";
 import type { Effort, EngineDef, ModelChoice, ModelProfile } from "@humanharness/engines";
 import { type Language, type LoadedHarness, allBlocks, resolveInHarness } from "@humanharness/harness-sdk";
-import { History, NOTES_PREFIX, type ReferenceFolder, prepareFolder, writeInstructions } from "@humanharness/workspace";
+import { History, type HistoryTrailer, NOTES_PREFIX, type ReferenceFolder, prepareFolder, writeInstructions } from "@humanharness/workspace";
 import { AcpTransport } from "./acp";
 import { ClaudeCliTransport } from "./claude-cli";
 import type { Event } from "./events";
@@ -41,8 +41,11 @@ export interface RunningTurn {
 }
 
 export interface HarnessRuntime {
-  /** Runs one turn; `options.profile` is the task's model profile (every turn of a task gets the same one). */
-  send(message: string, emit: (e: Event) => void, options?: { profile?: ModelProfile }): RunningTurn;
+  /**
+   * Runs one turn; `options.profile` is the task's model profile (every turn of a task gets the same one) and
+   * `options.trailer` the task its history commits belong to.
+   */
+  send(message: string, emit: (e: Event) => void, options?: { profile?: ModelProfile; trailer?: HistoryTrailer }): RunningTurn;
   /** Ends the engine session (Codex: `session/close`); the next turn starts a new one. Not while a turn runs. */
   endSession(): Promise<void>;
   history: History;
@@ -127,7 +130,7 @@ export async function createRuntime(opts: RuntimeOptions): Promise<HarnessRuntim
         };
         const done = (async () => {
           try {
-            const before = (await history.save("Before message")) ?? (await history.last())!;
+            const before = (await history.save("Before message", options.trailer)) ?? (await history.last())!;
             let final: Event | undefined;
             emitCurrent = emitOnce;
             await transport.turn(
@@ -142,9 +145,9 @@ export async function createRuntime(opts: RuntimeOptions): Promise<HarnessRuntim
             );
             emitCurrent = null;
             const f: Event = final ?? { type: "done", ok: false, error: { code: "agent-crashed" } };
-            if (f.type === "done" && f.ok) await history.save(`Turn: ${message.slice(0, 60)}`);
-            else if (f.type === "done" && f.error.code === "agent-crashed") await history.restore(before, "Undo: the turn did not finish");
-            else await history.save(`Stopped: ${message.slice(0, 60)}`);
+            if (f.type === "done" && f.ok) await history.save(`Turn: ${message.slice(0, 60)}`, options.trailer);
+            else if (f.type === "done" && f.error.code === "agent-crashed") await history.restore(before, "Undo: the turn did not finish", options.trailer);
+            else await history.save(`Stopped: ${message.slice(0, 60)}`, options.trailer);
             emitOnce(f);
           } catch (err) {
             emitOnce({ type: "done", ok: false, error: { code: "agent-crashed", detail: err instanceof Error ? err.message : String(err) } });

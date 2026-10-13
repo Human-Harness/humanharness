@@ -791,6 +791,25 @@ describe("guardedMove", () => {
     error.mockRestore();
   });
 
+  it("holds the history only once the folder change has begun, so the checkpoint's note is committed", async () => {
+    const held: boolean[] = [];
+    let heldAtCheckpoint: boolean | undefined;
+    let heldAtMove: boolean | undefined;
+    const w = wiring(
+      async () => {
+        heldAtMove = held.at(-1);
+        return DONE;
+      },
+      async () => {
+        heldAtCheckpoint = held.at(-1) ?? false;
+      },
+    );
+    await guardedMove({ ...w.deps, holdHistory: (on: boolean) => void held.push(on) });
+    expect(heldAtCheckpoint).toBe(false);
+    expect(heldAtMove).toBe(true);
+    expect(held).toEqual([true, false]);
+  });
+
   it("is refused when a turn started while the checkpoint ran", async () => {
     const w = wiring(undefined, async () => {
       w.flags.turn = true;

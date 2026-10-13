@@ -87,8 +87,10 @@ const guards = new EngineGuards();
 const logos = new Map<string, Promise<string | null>>();
 /** End-to-end test settings (development builds only; see test-hooks.ts). */
 const hooks = readTestHooks(process.env, app.isPackaged);
-/** The folder move running now (hh:moveFolder): quitting waits for it, and no history is opened meanwhile. */
+/** The folder move running now (hh:moveFolder): quitting waits for it. */
 let moving: Promise<unknown> | null = null;
+/** The move's folder change has begun (after its checkpoint turn): no history is opened until it ends. */
+let historyHeld = false;
 /** The manifest's reference folders on this machine, resolved once the app is ready. */
 let references: Promise<ResolvedReference[]> = Promise.resolve([]);
 
@@ -299,9 +301,12 @@ const standaloneHistory = lastOpened(async (key) => {
   return history;
 });
 
-/** The running runtime's history, or the one opened on the configured folder; none while the folder moves. */
+/**
+ * The running runtime's history, or the one opened on the configured folder; none while the folder moves
+ * (from the end of its checkpoint turn, whose commit still goes in).
+ */
 async function currentHistory(): Promise<History | null> {
-  return moving ? null : openHistory();
+  return historyHeld ? null : openHistory();
 }
 
 async function openHistory(): Promise<History | null> {
@@ -541,7 +546,6 @@ function registerIpc() {
     return restoreWith((history) => history.restore(sha, RESTORE_POINT));
   });
   handle("hh:historyTasks", async () => {
-    if (moving) return [];
     const history = await currentHistory();
     return history ? historyView(await history.tasks()) : [];
   });
@@ -675,6 +679,7 @@ function registerIpc() {
       precheck: () => precheckMove(c.folder, to, deps),
       quitting: () => quitting,
       checkpoint: () => tasks.checkpointBeforeMove(),
+      holdHistory: (held) => (historyHeld = held),
       flush: () => turns.flush(),
       closeRuntime,
       restoresSettled: () => restores.settled(),

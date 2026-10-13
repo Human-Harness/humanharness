@@ -516,6 +516,11 @@ export interface GuardedMoveDeps {
    * (TaskManager.checkpointBeforeMove). A failure is logged and the move goes on.
    */
   checkpoint?(): Promise<void>;
+  /**
+   * True from the moment turns are held until the move ends: history writes and reads stop meanwhile (the
+   * checkpoint's own commit, before, still goes in).
+   */
+  holdHistory?(held: boolean): void;
   /** Waits for the chat log and history writes of the last turn. */
   flush(): Promise<void>;
   /** Closes the runtime, which works on the old folder, without ending the open task. */
@@ -560,6 +565,7 @@ export async function guardedMove(d: GuardedMoveDeps): Promise<{ ok: true; done:
   } catch {
     return { ok: false, error: "busy" };
   }
+  d.holdHistory?.(true);
   let closing = false;
   let resumed = false;
   // Once the runtime is closed the engine session is gone, whether or not the move goes through.
@@ -583,6 +589,7 @@ export async function guardedMove(d: GuardedMoveDeps): Promise<{ ok: true; done:
   } finally {
     // Closing the runtime failed partway: its session may be gone all the same.
     if (closing && !resumed) await resume();
+    d.holdHistory?.(false);
     d.guards.endFolderChange();
   }
 }

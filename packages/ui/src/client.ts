@@ -129,6 +129,28 @@ export interface HistoryItem {
   date: string;
 }
 
+/** A file a task added, changed or deleted. */
+export interface HistoryFileChange {
+  path: string;
+  kind: "added" | "modified" | "deleted";
+}
+
+/** One row of the History panel: a task's commits, or the "Earlier" group (`taskId: null`). */
+export interface HistoryTaskView {
+  taskId: string | null;
+  actionId: string | null;
+  /** What "Go back to before this task" restores; null when there is nothing before it. */
+  start: string | null;
+  end: string;
+  /** ISO date of the task's last commit. */
+  date: string;
+  /** The title of the note the task saved, if any. */
+  noteTitle?: string;
+  changes: HistoryFileChange[];
+  /** Newest first. */
+  entries: HistoryItem[];
+}
+
 /** Why a folder can't be the harness folder. */
 export type FolderProblem = "not-absolute" | "root" | "home" | "too-broad" | "protected";
 
@@ -286,6 +308,10 @@ export interface HarnessClient {
   onEvent(listener: (event: Event) => void): () => void;
   history(): Promise<HistoryItem[]>;
   restore(sha: string): Promise<void>;
+  /** The history grouped by task, newest first; the "Earlier" group last. */
+  historyTasks(): Promise<HistoryTaskView[]>;
+  /** Makes the folder look as it did before the task started; recorded as a new entry of that task. */
+  restoreTask(taskId: string): Promise<void>;
   engineStatus(engineId: string): Promise<EngineStatus>;
   acceptNotice(engineId: string): Promise<void>;
   /** Runs the official install, update, login or logout; resolves when it exits. */

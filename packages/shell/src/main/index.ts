@@ -46,6 +46,7 @@ import { openIfStillSafe, openRoots, openableFile, revealIfStillSafe, revealable
 import { saveWithFolderChange } from "./folder-change";
 import { type ResolvedReference, displayPath, resolveReferences, usableReferences } from "./references";
 import { TaskManager } from "./task-manager";
+import { RESTORE_POINT, RESTORE_TASK, historyView, isSha } from "./history-view";
 import { TaskStore, emptyTasks } from "./task-store";
 import { devEngine, readTestHooks, testEngineStatus } from "./test-hooks";
 
@@ -417,6 +418,27 @@ function handle(channel: string, fn: (...args: never[]) => unknown) {
   });
 }
 
+/**
+ * Runs a restore: refused while quitting, while a task operation runs or turns are held (engine change,
+ * folder move); one at a time; a runtime starting meanwhile waits for it (`restoring`).
+ */
+async function restoreWith(run: (history: History) => Promise<unknown>): Promise<void> {
+  if (quitting) throw new Error("The app is closing");
+  if (restorePending) throw new Error("Already going back");
+  if (tasks.isBusy() || guards.turnBlocked()) throw new Error("A turn is running");
+  restorePending = true;
+  try {
+    const history = await currentHistory();
+    if (!history) throw new Error("The app is not set up yet");
+    if (quitting || tasks.isBusy()) throw new Error("A turn is running");
+    const done = run(history);
+    restoring = done.catch(() => undefined);
+    await done;
+  } finally {
+    restorePending = false;
+  }
+}
+
 function registerIpc() {
   handle("hh:getState", () => appState());
   handle("hh:pickFolder", async (defaultPath: string) => {
@@ -493,22 +515,25 @@ function registerIpc() {
     const history = await currentHistory();
     return history ? (await history.list()).map((h) => ({ ...h, date: h.date.toISOString() })) : [];
   });
-  handle("hh:restore", async (sha: string) => {
-    if (quitting) throw new Error("The app is closing");
-    if (restorePending) throw new Error("Already going back");
-    if (tasks.isBusy()) throw new Error("A turn is running");
-    restorePending = true;
-    try {
-      const history = await currentHistory();
-      if (!history) throw new Error("The app is not set up yet");
-      if (quitting || tasks.isBusy()) throw new Error("A turn is running");
-      const done = history.restore(sha, "Went back to an earlier point");
-      restoring = done.catch(() => undefined);
-      await done;
-    } finally {
-      restorePending = false;
-    }
+  handle("hh:restore", (sha: unknown) =>
+    restoreWith(async (history) => {
+      if (!isSha(sha)) throw new Error("Invalid point");
+      // The entry it goes back to names the task the restore belongs to.
+      await history.restore(sha, RESTORE_POINT, (await history.trailerOf(sha)) ?? undefined);
+    }),
+  );
+  handle("hh:historyTasks", async () => {
+    const history = await currentHistory();
+    return history ? historyView(await history.tasks()) : [];
   });
+  handle("hh:restoreTask", (taskId: unknown) =>
+    restoreWith(async (history) => {
+      if (typeof taskId !== "string" || !taskId || taskId.length > 200) throw new Error("Invalid task");
+      const group = (await history.tasks()).find((g) => g.taskId === taskId);
+      if (!group?.start) throw new Error("Nothing to go back to");
+      await history.restore(group.start, RESTORE_TASK, { task: taskId, ...(group.actionId ? { action: group.actionId } : {}) });
+    }),
+  );
   handle("hh:engineStatus", async (engineId: string) => {
     const engine = engineFor(engineId);
     if (hooks.engines?.[engine.id]) return testEngineStatus(engine, await hasNotice(engine.id));

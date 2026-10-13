@@ -9,6 +9,7 @@ import type {
   FolderPick,
   HarnessClient,
   HistoryItem,
+  HistoryTaskView,
   RunningSetup,
   SendOptions,
   SetupOutput,
@@ -24,6 +25,20 @@ export class FakeClient implements HarnessClient {
   sent: string[] = [];
   sentOptions: SendOptions[] = [];
   restored: string[] = [];
+  /** What historyTasks answers: one task, newest first. */
+  historyGroups: HistoryTaskView[] = [
+    {
+      taskId: "t1",
+      actionId: null,
+      start: "s0",
+      end: "abc",
+      date: "2026-10-10T12:00:00.000Z",
+      changes: [{ path: "notes.md", kind: "modified" }],
+      entries: [{ sha: "abc", message: "Turn: hi", date: "2026-10-10T12:00:00.000Z" }],
+    },
+  ];
+  /** Tasks restoreTask was asked to go back before. */
+  restoredTasks: string[] = [];
   cancelled = 0;
   chat: ChatEntry[] = [];
   switchedFrom: string | undefined;
@@ -174,6 +189,13 @@ export class FakeClient implements HarnessClient {
   async restore(sha: string) {
     if (this.restoreError) throw this.restoreError;
     this.restored.push(sha);
+  }
+  async historyTasks() {
+    return this.historyGroups;
+  }
+  async restoreTask(taskId: string) {
+    if (this.restoreError) throw this.restoreError;
+    this.restoredTasks.push(taskId);
   }
   async engineStatus(engineId: string) {
     await this.statusGates[engineId];

@@ -64,6 +64,9 @@ const SETUP_STEPS: SetupStep[] = ["install", "update", "login", "logout"];
 const SETUP_TIMEOUT_MS: Record<SetupStep, number> = { install: 20 * 60_000, update: 20 * 60_000, login: 10 * 60_000, logout: 60_000 };
 
 const requireFromHere = createRequire(import.meta.url);
+// The build's folder. Not `__dirname`: electron-vite's ESM shim for it is put after the bundle's last
+// `import … from` it finds, and a bundled JSDoc example (isomorphic-git's walkers) once fooled it into a comment.
+const here = import.meta.dirname;
 const commandDeps = createCommandDeps(process.execPath);
 
 let harness: LoadedHarness;
@@ -99,7 +102,7 @@ async function referencesFor(folder: string | undefined, log = false): Promise<R
 
 const mode = () => (app.isPackaged ? "distribution" : "development");
 const stateBlocks = () => new Set(Object.entries(allBlocks(harness)).filter(([, b]) => !b.visible).map(([n]) => n));
-const rendererFile = path.join(__dirname, "../renderer/index.html");
+const rendererFile = path.join(here, "../renderer/index.html");
 // The dev server is only trusted in development: a packaged app always loads its own file.
 const devUrl = app.isPackaged ? undefined : process.env.ELECTRON_RENDERER_URL;
 const appUrl = (url: string) => isAppUrl(url, { devUrl, rendererFile });
@@ -263,7 +266,7 @@ const runtime = memoise<HarnessRuntime>(async () => {
     gitdir: historyDir(app.getPath("userData"), c.folder),
     language: c.language,
     launcher: electronLauncher(process.execPath),
-    uiServerEntry: path.join(__dirname, "ui-server.js"),
+    uiServerEntry: path.join(here, "ui-server.js"),
     command: cmd.command,
     env: cmd.env,
     references: (await referencesFor(c.folder, true)).map((r) => ({ label: r.label[c.language], path: r.path })),
@@ -677,7 +680,7 @@ async function createWindow() {
     // Native look (spec 2026-10-11-app-look-design.md): on macOS the page draws the 52 px top bar.
     ...(process.platform === "darwin" ? { titleBarStyle: "hiddenInset" as const, trafficLightPosition: { x: 20, y: 18 } } : {}),
     backgroundColor: nativeTheme.shouldUseDarkColors ? PAPER.dark : PAPER.light,
-    webPreferences: { preload: path.join(__dirname, "../preload/index.mjs"), contextIsolation: true, sandbox: false },
+    webPreferences: { preload: path.join(here, "../preload/index.mjs"), contextIsolation: true, sandbox: false },
   });
   window = win;
   win.on("closed", () => {
@@ -696,7 +699,7 @@ async function createWindow() {
 
 // Each harness is its own app: keep its config, history and caches apart from other harnesses.
 // Set before "ready" (ESM top-level await delays it) so Chromium uses the same folder.
-const loaded = await loadHarness(path.join(__dirname, "harness.js"), { root: __HARNESS_DIR__ }).catch((err: unknown) => {
+const loaded = await loadHarness(path.join(here, "harness.js"), { root: __HARNESS_DIR__ }).catch((err: unknown) => {
   // showErrorBox is safe before "ready".
   dialog.showErrorBox("This app could not start", err instanceof Error ? err.message : String(err));
   app.exit(1);

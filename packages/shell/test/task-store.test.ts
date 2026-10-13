@@ -51,6 +51,15 @@ describe("TaskStore", () => {
     fs.mkdirSync(path.join(folder, ".harness", "tasks.json"), { recursive: true });
     await expect(new TaskStore(folder).load()).rejects.toThrow();
   });
+
+  it("keeps the resume flag only as true", async () => {
+    const folder = tmp();
+    const store = new TaskStore(folder);
+    await store.save({ ...waiting, current: { ...waiting.current!, resume: true } });
+    expect((await store.load()).current?.resume).toBe(true);
+    fs.writeFileSync(store.file, JSON.stringify({ ...waiting, current: { ...waiting.current, resume: "yes" } }));
+    expect((await store.load()).current?.resume).toBeUndefined();
+  });
 });
 
 describe("TaskStore: the current task, field by field", () => {

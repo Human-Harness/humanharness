@@ -45,3 +45,13 @@ export function fillPrompt(template: string, vars: { language: Language; notesIn
 /** The quiet turn that saves what matters before the context reaches the task's cap (resources spec §6). */
 export const CHECKPOINT_PROMPT =
   "Checkpoint: this conversation is getting long. Call the `save_note` tool once with what is clear so far: a short title, at most 5 summary points, the decisions taken, the files that back them and the questions still open. Do not write any file yourself and do not call `show_choices`. Then reply with one short sentence; the conversation goes on after this.";
+
+/** A follow-up of a task whose engine session was lost (the folder moved): the new session starts from the notes. */
+export const RESUME_PROMPT = [
+  "This topic continues in a new conversation: the person's folder moved to a new place, so the earlier conversation is not available. Start from the notes below and the files in the folder, answer in {{language}}, then end with `show_choices`.",
+  "",
+  "{{notesIndex}}",
+  "",
+  "## The person's message",
+  "{{question}}",
+].join("\n");

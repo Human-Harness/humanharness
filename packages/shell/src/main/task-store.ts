@@ -29,6 +29,8 @@ export interface CurrentTask {
   checkpointed?: boolean;
   /** A checkpoint wrote this task's note; the closing turn still updates it. */
   checkpointNote?: boolean;
+  /** The engine session was lost (the folder moved): the next turn starts a new one from the notes. */
+  resume?: boolean;
 }
 
 /** `<folder>/.harness/tasks.json`: the current task and how each action ended. Replaces the runtime's session.json. */
@@ -77,6 +79,7 @@ function cleanCurrent(c: unknown): CurrentTask | null {
     ...(ctx ? { context: ctx } : {}),
     ...(typeof c.checkpointed === "boolean" ? { checkpointed: c.checkpointed } : {}),
     ...(typeof c.checkpointNote === "boolean" ? { checkpointNote: c.checkpointNote } : {}),
+    ...(c.resume === true ? { resume: true } : {}),
   };
 }
 

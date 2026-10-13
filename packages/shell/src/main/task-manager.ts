@@ -4,7 +4,7 @@ import { type ChoiceOption, type Language, type LocalizedText, type SavedNote, s
 import { type Event, type Session, fail } from "@humanharness/runtime";
 import { type ActionStatus, type CurrentTaskView, type NoteView, type TaskStatus, type TaskView, nextInPath } from "@humanharness/ui/client";
 import { type HistoryTrailer, type Note, type NoteMeta, buildNotesIndex, noteSlug } from "@humanharness/workspace";
-import { CHECKPOINT_PROMPT, CLOSE_PROMPT, QUESTION_PROMPT, fillPrompt } from "./task-prompts";
+import { CHECKPOINT_PROMPT, CLOSE_PROMPT, QUESTION_PROMPT, RESUME_PROMPT, fillPrompt } from "./task-prompts";
 import { type CurrentTask, type TasksFile, interrupted } from "./task-store";
 import { type TurnOptions, isHeld } from "./turn-controller";
 
@@ -193,6 +193,20 @@ export class TaskManager {
     });
   }
 
+  /**
+   * The open task's engine session is gone (the folder moved, spec 3d §2): the task stays open, its stored
+   * session and context are dropped, and its next follow-up starts a new session from the notes.
+   */
+  resumeFromNotes(): Promise<void> {
+    return this.queue(() =>
+      this.update((s) => {
+        if (!s.current) return s;
+        const { session: _session, context: _context, checkpointed: _checkpointed, ...rest } = s.current;
+        return { ...s, current: { ...rest, resume: true } };
+      }),
+    );
+  }
+
   /** The engine started the session of the task whose turn runs now; reported at any other time, it is ignored. */
   sessionStarted(session: Session): Promise<void> {
     const id = this.turnTask;
@@ -243,6 +257,13 @@ export class TaskManager {
     const c = await this.storedCurrent();
     if (c?.status === "waiting") {
       if (needsCheckpoint(c) && !(await this.checkpoint(c))) return this.stopped();
+      // After a move the session is new: it starts from the notes, and the chat still shows what was typed.
+      let message = text;
+      if (c.resume) {
+        await this.endSession();
+        const notes = await this.d.notes().catch(() => [] as Note[]);
+        message = fillPrompt(RESUME_PROMPT, { language: await this.d.language(), notesIndex: buildNotesIndex(notes), question: text });
+      }
       await this.setStatus(c.id, "running");
       // Checked with no await before the send: a Stop while the status was saved.
       if (this.cancelRequested) {
@@ -251,10 +272,21 @@ export class TaskManager {
       }
       let done: Done;
       try {
-        done = await this.runTurn(c, text, { ...(display ? { display } : {}), ...(c.action ? { action: c.action } : {}), followUp: true });
+        done = await this.runTurn(c, message, {
+          ...(display || c.resume ? { display: display ?? text } : {}),
+          ...(c.action ? { action: c.action } : {}),
+          followUp: true,
+        });
       } catch (err) {
         if (err instanceof TurnNotStarted) await this.setStatus(c.id, "waiting");
         throw unwrap(err);
+      }
+      if (c.resume && done.ok) {
+        await this.update((s) => {
+          if (s.current?.id !== c.id) return s;
+          const { resume: _resume, ...rest } = s.current;
+          return { ...s, current: rest };
+        });
       }
       return this.afterRun(c.id, done, false);
     }
@@ -396,6 +428,11 @@ export class TaskManager {
     if (!c) return !this.cancelRequested;
     if (c.noteSaved) {
       await this.endTask(c.id, "done");
+      return !this.cancelRequested;
+    }
+    // A moved task's new session holds no conversation to sum up (a checkpoint's note still counts).
+    if (c.resume) {
+      await this.endTask(c.id, "unfinished");
       return !this.cancelRequested;
     }
     if (c.status !== "waiting") {

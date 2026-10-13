@@ -122,6 +122,45 @@ function setup(
 const pick = (t: ReturnType<typeof setup>, option: ChoiceOption) => t.manager.choose(option, t.state().current?.id ?? "none");
 
 describe("TaskManager", () => {
+  it("after the folder moved, the open task's next message starts a fresh session from the notes", async () => {
+    const t = setup();
+    await t.manager.start("manifest");
+    await t.manager.resumeFromNotes();
+    expect(t.state().current).toMatchObject({ id: "t1", status: "waiting", resume: true });
+    expect(t.state().current?.session).toBeUndefined();
+    await t.manager.ask("And the blocks?");
+    expect(t.turns[1].message).toContain("This topic continues in a new conversation");
+    expect(t.turns[1].message).toContain("## The person's message\nAnd the blocks?");
+    expect(t.turns[1].options).toMatchObject({ task: "t1", action: "manifest", display: "And the blocks?", followUp: true });
+    expect(t.log.filter((l) => l === "endSession")).toHaveLength(2);
+    expect(t.state().current?.resume).toBeUndefined();
+    await t.manager.ask("More?");
+    expect(t.turns[2].message).toBe("More?");
+  });
+
+  it("keeps resuming from the notes when that first turn failed", async () => {
+    const t = setup({ script: [[ok], [crashed]] });
+    await t.manager.start("manifest");
+    await t.manager.resumeFromNotes();
+    await t.manager.ask("And the blocks?");
+    expect(t.state().current?.resume).toBe(true);
+  });
+
+  it("closes a moved task without a closing turn: its new session holds no conversation", async () => {
+    const t = setup({ path: ["manifest", "engines"] });
+    await t.manager.start("manifest");
+    await t.manager.resumeFromNotes();
+    await pick(t, { label: "Next", next: true });
+    expect(t.turns.map((x) => x.options.phase)).toEqual(["run", "run"]);
+    expect(t.state()).toMatchObject({ actions: { manifest: "unfinished" }, current: { action: "engines", status: "waiting" } });
+  });
+
+  it("does nothing on resumeFromNotes when no task is open", async () => {
+    const t = setup();
+    await t.manager.resumeFromNotes();
+    expect(t.state().current).toBeNull();
+  });
+
   it("tags the note's history commit with its task and action", async () => {
     const t = setup({ script: [[ok], [saveNote(), ok]], path: ["manifest"] });
     await t.manager.start("manifest");

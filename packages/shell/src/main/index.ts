@@ -25,7 +25,7 @@ import {
   RESTORE_TASK,
   isConfigured,
 } from "@humanharness/ui/client";
-import { History, NOTES_PREFIX, readNotes, writeNote } from "@humanharness/workspace";
+import { History, NOTES_PREFIX, readNotes, syncLocations, syncStatus, writeNote } from "@humanharness/workspace";
 import { imageDataUrl } from "./assets";
 import { ChatLog } from "./chat-log";
 import { ConfigStore, historyDir } from "./config";
@@ -162,6 +162,19 @@ async function supportedEffort(p: ModelProfile, saved?: SharedEngineRecord): Pro
   return engine ? fitEffort(p, engineOffer(engine, saved ?? (await savedOffer(p.engine))).efforts) : p;
 }
 
+/** The folder's backup status and the synced places, each with the harness's folder name inside. Paths only (backup.ts). */
+async function backupView(folder: string | undefined): Promise<NonNullable<AppState["backup"]>> {
+  const home = os.homedir();
+  const name = path.basename(harness.folder.suggested);
+  try {
+    const [status, locations] = await Promise.all([folder ? syncStatus(folder, home) : Promise.resolve(null), syncLocations(home)]);
+    return { status, locations: locations.map((l) => ({ ...l, suggested: path.join(l.path, name) })) };
+  } catch (err) {
+    console.error("Could not read the backup status", err);
+    return { status: null, locations: [] };
+  }
+}
+
 async function appState(): Promise<AppState> {
   const harnessImage = await harnessLogo();
   const saved = await config.load();
@@ -207,6 +220,7 @@ async function appState(): Promise<AppState> {
     path: harness.path ?? [],
     references: (await referencesFor(saved.folder)).map((r) => ({ id: r.id, label: r.label, path: displayPath(r.path, os.homedir()) })),
     models: await modelsView(),
+    backup: await backupView(saved.folder),
   };
 }
 

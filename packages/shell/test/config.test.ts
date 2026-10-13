@@ -38,6 +38,17 @@ describe("ConfigStore", () => {
     expect(await new ConfigStore(dir).load()).toEqual({ language: "es", engineId: "claude" });
     expect(fs.readdirSync(dir)).toEqual(["config.json"]);
   });
+
+  it("replaces the folder only through replaceFolder, keeping everything else", async () => {
+    const dir = fs.mkdtempSync(path.join(root, "c-"));
+    const store = new ConfigStore(dir);
+    await store.save({ folder: "/first", language: "es", backupDismissed: true });
+    expect(await store.replaceFolder("/second")).toEqual({ folder: "/second", language: "es", backupDismissed: true });
+    expect(await new ConfigStore(dir).load()).toEqual({ folder: "/second", language: "es", backupDismissed: true });
+    await store.save({ folder: "/third" });
+    expect((await store.load()).folder).toBe("/second");
+    expect(fs.readdirSync(dir)).toEqual(["config.json"]);
+  });
 });
 
 describe("historyDir", () => {

@@ -145,6 +145,12 @@ describe("configProblem", () => {
     expect(await configProblem({ models: [] } as never, ctx)).toBe("invalid");
     expect(await configProblem({ models: null } as never, ctx)).toBe("invalid");
   });
+
+  it("accepts backupDismissed only as a boolean", async () => {
+    expect(await configProblem({ backupDismissed: true }, ctx)).toBeNull();
+    expect(await configProblem({ backupDismissed: false }, ctx)).toBeNull();
+    expect(await configProblem({ backupDismissed: "yes" as never }, ctx)).toBe("invalid");
+  });
 });
 
 describe("isAppUrl", () => {

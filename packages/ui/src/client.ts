@@ -12,6 +12,8 @@ export interface AppConfig {
   appearance?: Appearance;
   /** Settings › Modelos: each task's tier or custom model, and the tier tables per engine. Cleaned when read. */
   models?: ModelsConfig;
+  /** The person said they keep their own copy of the folder: the backup notice stays hidden (Settings › General undoes it). */
+  backupDismissed?: boolean;
 }
 
 export interface EngineOption {
@@ -50,6 +52,18 @@ export interface ReferenceView {
   path: string;
 }
 
+/** A synced drive (spec 3d §2). */
+export type SyncProvider = "google-drive" | "onedrive" | "dropbox" | "icloud";
+/** How the folder is kept if the computer is lost. */
+export type SyncStatus = { kind: "synced"; provider: SyncProvider } | { kind: "git-remote" } | { kind: "local" };
+/** A synced place on this computer, and the harness's folder inside it. */
+export interface SyncLocationView {
+  provider: SyncProvider;
+  path: string;
+  /** `<path>/<the harness's suggested folder name>`: what the first-launch step offers. */
+  suggested: string;
+}
+
 export interface AppState {
   harness: {
     id: string;
@@ -76,6 +90,8 @@ export interface AppState {
   references?: ReferenceView[];
   /** Settings › Modelos. */
   models?: ModelsView;
+  /** The configured folder's backup status (null before a folder is chosen) and the synced places. */
+  backup?: { status: SyncStatus | null; locations: SyncLocationView[] };
 }
 
 /** What Settings › Modelos needs (resources spec §7). */

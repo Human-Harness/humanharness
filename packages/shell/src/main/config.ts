@@ -34,7 +34,18 @@ export class ConfigStore {
 
   private async saveNow(patch: AppConfig): Promise<AppConfig> {
     const current = await this.load();
-    const next: AppConfig = { ...current, ...patch, ...(current.folder ? { folder: current.folder } : {}) };
+    return this.write({ ...current, ...patch, ...(current.folder ? { folder: current.folder } : {}) });
+  }
+
+  /** Moving the folder (moveFolder) is the one way the fixed folder changes; queued with the other saves. */
+  replaceFolder(folder: string): Promise<AppConfig> {
+    const run = this.queue.then(async () => this.write({ ...(await this.load()), folder }));
+    this.queue = run.catch(() => undefined);
+    return run;
+  }
+
+  /** Atomic: temp file + rename. */
+  private async write(next: AppConfig): Promise<AppConfig> {
     await fs.mkdir(path.dirname(this.file), { recursive: true });
     const tmp = `${this.file}.${randomUUID()}.tmp`;
     try {

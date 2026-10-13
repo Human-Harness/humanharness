@@ -1,0 +1,5 @@
+/* This harness's own blocks. Colours only through the core's --hh-* tokens. */
+.example-card { display: grid; gap: 6px; padding: 12px 14px; background: var(--hh-surface); border: 1px solid var(--hh-line); border-radius: 12px; }
+.example-kicker { font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--hh-muted); }
+.example-card h3 { margin: 0; font-size: 14px; }
+.example-card p { margin: 0; font-size: 13px; }

@@ -8,6 +8,8 @@ The script builds the shell first. The app reads three development-only variable
 
 Each test works in `packages/e2e/.tmp/` (git-ignored), inside the repository: the app refuses folders under `/var` and `/private`, where macOS keeps the system's temporary files. On Linux CI, run it under `xvfb-run`.
 
+`template.spec.ts` covers plan 4a's authoring path: it creates a harness with `humanharness init --skip-install` inside its sandbox, builds the app with `humanharness dev --build packages/shell/out/template` (git-ignored, removed at the end), launches that build and runs the template's example task with the fake Claude.
+
 ## Manual run against the real engines
 
 `real/` holds one test that drives the built app against a real engine: the demo's first topic, its blocks, the next step and the saved note. It is a manual check, never part of CI, and `corepack pnpm e2e` doesn't pick it up (`playwright.config.ts` only reads `tests/`).

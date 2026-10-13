@@ -1,0 +1,77 @@
+import type { Writable } from "node:stream";
+import { type ChoiceOption, choicesSchema } from "@humanharness/harness-sdk";
+import { CORE_LOCALES } from "@humanharness/i18n";
+import type { Event } from "@humanharness/runtime";
+
+const DIM = "\x1b[2m";
+const RESET = "\x1b[0m";
+
+/** The app's own English message for an error code (`errors.*`), with the engine's name filled in. */
+export function errorMessage(code: string, engine: string): string {
+  const errors = CORE_LOCALES.en.errors as Record<string, unknown>;
+  const text = errors[code];
+  return (typeof text === "string" ? text : code).replaceAll("{{engine}}", engine);
+}
+
+/** `run`'s window: the events the app would show, as plain text. */
+export class TerminalView {
+  /** The options of the last `choices` block shown; `run` clears it before each operation. */
+  choices: ChoiceOption[] = [];
+  private lineStart = true;
+
+  constructor(
+    private readonly out: Writable,
+    private readonly engineName: string,
+    private readonly color = false,
+  ) {}
+
+  event(e: Event): void {
+    if (e.type === "text") this.write(e.delta);
+    else if (e.type === "paragraph") this.write("\n\n");
+    else if (e.type === "activity" && e.state === "start") this.line(this.dim(`  · ${e.kind}: ${e.detail}`));
+    else if (e.type === "block") this.block(e.name, e.data);
+    else if (e.type === "done") {
+      if (e.ok) this.newline();
+      else this.line(`✗ ${errorMessage(e.error.code, this.engineName)}${e.error.detail ? ` (${e.error.detail})` : ""}`);
+    }
+  }
+
+  private block(name: string, data: unknown): void {
+    if (name === "save_note") return;
+    if (name === "choices") {
+      const parsed = choicesSchema.safeParse(data);
+      if (!parsed.success) return;
+      this.choices = parsed.data.options;
+      this.newline();
+      this.write("\n");
+      parsed.data.options.forEach((o, i) => this.line(`  ${i + 1}. ${o.label}`));
+      return;
+    }
+    this.line(`  [${name}]`);
+    this.line(
+      (JSON.stringify(data, null, 2) ?? "null")
+        .split("\n")
+        .map((l) => `    ${l}`)
+        .join("\n"),
+    );
+  }
+
+  private dim(s: string): string {
+    return this.color ? `${DIM}${s}${RESET}` : s;
+  }
+
+  private newline(): void {
+    if (!this.lineStart) this.write("\n");
+  }
+
+  private line(s: string): void {
+    this.newline();
+    this.write(`${s}\n`);
+  }
+
+  private write(s: string): void {
+    if (!s) return;
+    this.out.write(s);
+    this.lineStart = s.endsWith("\n");
+  }
+}

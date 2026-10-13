@@ -64,3 +64,13 @@ export function testEngineStatus(engine: EngineDef, noticeAccepted: boolean): En
     verified: true,
   };
 }
+
+/**
+ * `humanharness dev --engine <id>` (HH_DEV_ENGINE): the engine a fresh app starts with. Development builds
+ * only, and only an engine this harness offers; anything else is ignored.
+ */
+export function devEngine(env: Record<string, string | undefined>, packaged: boolean, offered: string[]): string | undefined {
+  if (packaged) return undefined;
+  const id = env.HH_DEV_ENGINE;
+  return id && offered.includes(id) ? id : undefined;
+}

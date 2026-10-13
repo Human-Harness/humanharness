@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
-import { ENGINES, NOTICE_VERSION, availableEngines, getEngine, meetsMinVersion, parseVersion } from "../src";
+import { ENGINES, NOTICE_VERSION, availableEngines, brandNames, getEngine, meetsMinVersion, parseVersion } from "../src";
 
 describe("ENGINES", () => {
   it("pins the Codex ACP adapter and its session modes", () => {
@@ -101,5 +101,11 @@ describe("versions", () => {
     expect(meetsMinVersion("3.0.0", "2.9.9")).toBe(true);
     expect(meetsMinVersion("2.1.29", "2.1.296")).toBe(false);
     expect(meetsMinVersion("0.159.9", "0.160.1")).toBe(false);
+  });
+});
+
+describe("brandNames", () => {
+  it("lists every engine's name, its provider and extra marks, once each", () => {
+    expect(brandNames()).toEqual(["Claude", "Anthropic", "Codex", "OpenAI", "ChatGPT", "GPT", "Kimi", "Moonshot", "Gemini", "Google", "Qwen", "Alibaba"]);
   });
 });

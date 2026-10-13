@@ -85,3 +85,19 @@ export const codexScript: AcpScript = {
   configOptions: [{ id: "model", name: "Model", type: "select", currentValue: "gpt-5.5", options: [{ value: "gpt-5.5", name: "GPT-5.5" }] }],
   turns: [[{ update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Se guarda en .harness/chats." } } }, { stop: "end_turn" }]],
 };
+
+/** Claude: the template's example task, answered with its card and one choice. */
+export const templateScript: ClaudeScript = {
+  steps: [...claudeTextLines("Listo."), result],
+  turns: [
+    {
+      match: "# Task: example",
+      steps: [
+        ...claudeTextLines("Hola, este harness todavía se está armando."),
+        ui("show_example_card", { title: "Una idea", body: "Algo que vale la pena guardar." }),
+        ui("show_choices", { options: [{ label: "Profundizar", followUp: "Contame más de esa idea." }] }),
+        result,
+      ],
+    },
+  ],
+};

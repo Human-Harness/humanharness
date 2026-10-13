@@ -160,6 +160,19 @@ export class TaskManager {
     return this.op(() => this.chooseNow(option, task));
   }
 
+  /**
+   * Closes the open task now (the closing turn asks for `save_note`) and starts nothing after it: the terminal
+   * runner's `q` (plan 4a `humanharness run`). Like the end of the path, a cancelled closing turn sends nothing.
+   * True when no task is open afterwards (closed, with or without a note); false when it was stopped before the
+   * closing turn ran and the task is still open.
+   */
+  finish(): Promise<boolean> {
+    return this.op(async () => {
+      await this.closeCurrent();
+      return (await this.d.store.load()).current === null;
+    });
+  }
+
   /** Cancels the running turn; an operation that runs several turns (closing, then the next task) stops. */
   cancel(): void {
     if (this.running) this.cancelRequested = true;
@@ -187,7 +200,7 @@ export class TaskManager {
     return this.update((s) => (s.current?.id === id ? { ...s, current: { ...s.current, session: { id: session.id, started: session.started } } } : s));
   }
 
-  private op(fn: () => Promise<void>): Promise<void> {
+  private op<T>(fn: () => Promise<T>): Promise<T> {
     if (this.closed) return Promise.reject(new Error("The app is closing"));
     if (this.isBusy()) return Promise.reject(new Error("A turn is already running"));
     this.running = true;

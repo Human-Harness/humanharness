@@ -9,7 +9,11 @@
     "isolatedModules": true,
     "jsx": "react-jsx",
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
-    "types": ["node"]
+    "types": ["node"],
+    "paths": {
+      "@humanharness/cli/sdk": ["./packages/cli/src/sdk.ts"],
+      "@humanharness/cli/ui": ["./packages/cli/src/ui.ts"]
+    }
   },
-  "include": ["packages/*/src", "packages/*/test", "packages/fake-agent/fixtures", "packages/e2e/tests", "packages/e2e/real", "packages/e2e/playwright.config.ts", "harnesses/*/*.ts", "harnesses/*/ui", "harnesses/*/test"]
+  "include": ["packages/*/src", "packages/*/test", "packages/fake-agent/fixtures", "packages/e2e/tests", "packages/e2e/real", "packages/e2e/playwright.config.ts", "harnesses/*/*.ts", "harnesses/*/ui", "harnesses/*/test", "packages/cli/template/*.ts", "packages/cli/template/ui"]
 }

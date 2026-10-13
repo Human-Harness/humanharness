@@ -6,6 +6,11 @@ import { CORE_BLOCKS, CORE_BLOCK_NAMES } from "./core-blocks";
 
 export * from "./block";
 export * from "./core-blocks";
+/** The zod a manifest builds its block schemas with: the same instance the SDK validates them against. */
+export { z } from "zod";
+
+/** A harness id: lowercase letters, digits and dashes, starting with a letter. It names the app's data folder. */
+export const HARNESS_ID = /^[a-z][a-z0-9-]*$/;
 
 export const LANGUAGES = ["es", "en"] as const;
 export type Language = (typeof LANGUAGES)[number];
@@ -64,7 +69,7 @@ const blockSchema = z.custom<Block>(
 );
 
 const manifestSchema = z.object({
-  id: z.string().regex(/^[a-z][a-z0-9-]*$/),
+  id: z.string().regex(HARNESS_ID),
   name: localizedText,
   core: z.string().min(1),
   languages: z.array(z.enum(LANGUAGES)).min(1),

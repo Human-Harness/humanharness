@@ -1,0 +1,24 @@
+{
+  "name": "@humanharness/cli",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "Apache-2.0",
+  "bin": { "humanharness": "./bin/humanharness.js" },
+  "exports": { ".": "./src/index.ts", "./sdk": "./src/sdk.ts", "./ui": "./src/ui.ts" },
+  "dependencies": {
+    "@humanharness/engines": "workspace:*",
+    "@humanharness/harness-sdk": "workspace:*",
+    "@humanharness/i18n": "workspace:*",
+    "@humanharness/runtime": "workspace:*",
+    "@humanharness/shell": "workspace:*",
+    "@humanharness/ui": "workspace:*",
+    "@humanharness/workspace": "workspace:*",
+    "react-i18next": "^17.0.16",
+    "tsx": "^4.23.15"
+  },
+  "devDependencies": {
+    "@humanharness/fake-agent": "workspace:*",
+    "@types/react": "^19.3.0",
+    "react": "^19.3.0"
+  }
+}

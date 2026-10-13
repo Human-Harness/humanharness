@@ -504,7 +504,9 @@ export function ChatView({
       {showHistory && (
         <HistoryPanel
           client={client}
-          disabled={Boolean(chat.live)}
+          actions={state.actions}
+          lang={lang}
+          disabled={Boolean(chat.live) || closing || checkpoint}
           onClose={() => setShowHistory(false)}
           onRestored={() => {
             const text = t("history.restored");

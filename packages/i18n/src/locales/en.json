@@ -243,7 +243,25 @@
     "confirmYes": "Yes, go back",
     "cancel": "Cancel",
     "restored": "I went back to that point. Files changed after it were undone.",
-    "restoreFailed": "I couldn't go back to that point. Try again in a moment."
+    "restoreFailed": "I couldn't go back to that point. Try again in a moment.",
+    "restoreTask": "Go back to before this task",
+    "confirmTask": "Go back to before this task? Everything it changed in your files will be undone.",
+    "earlier": "Earlier",
+    "question": "A question",
+    "filesChanged_one": "{{count}} file changed",
+    "filesChanged_other": "{{count}} files changed",
+    "changedFiles": "Changed files",
+    "change": { "added": "Added", "modified": "Changed", "deleted": "Deleted" },
+    "entry": {
+      "start": "Started",
+      "before": "Before your message",
+      "turn": "The AI finished",
+      "stopped": "Stopped",
+      "undo": "The AI didn't finish, so its changes were undone",
+      "restored": "You went back to an earlier point",
+      "restoredTask": "You went back to before this task",
+      "note": "Note saved: {{title}}"
+    }
   },
   "app": {
     "loadError": "The app couldn't start. Close it and open it again."

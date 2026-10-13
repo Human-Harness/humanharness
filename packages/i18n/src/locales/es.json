@@ -243,7 +243,25 @@
     "confirmYes": "Sí, volver",
     "cancel": "Cancelar",
     "restored": "Volví a ese punto. Se deshicieron los cambios posteriores en tus archivos.",
-    "restoreFailed": "No pude volver a ese punto. Probá de nuevo en un momento."
+    "restoreFailed": "No pude volver a ese punto. Probá de nuevo en un momento.",
+    "restoreTask": "Volver a antes de esta tarea",
+    "confirmTask": "¿Volver a antes de esta tarea? Se deshace todo lo que cambió en tus archivos.",
+    "earlier": "Antes",
+    "question": "Una pregunta",
+    "filesChanged_one": "{{count}} archivo cambiado",
+    "filesChanged_other": "{{count}} archivos cambiados",
+    "changedFiles": "Archivos cambiados",
+    "change": { "added": "Nuevo", "modified": "Cambiado", "deleted": "Borrado" },
+    "entry": {
+      "start": "Inicio",
+      "before": "Antes de tu mensaje",
+      "turn": "La IA terminó",
+      "stopped": "Se detuvo",
+      "undo": "La IA no terminó, así que se deshicieron sus cambios",
+      "restored": "Volviste a un punto anterior",
+      "restoredTask": "Volviste a antes de esta tarea",
+      "note": "Resumen guardado: {{title}}"
+    }
   },
   "app": {
     "loadError": "La app no pudo arrancar. Cerrala y volvé a abrirla."

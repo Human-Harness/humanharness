@@ -511,10 +511,6 @@ function registerIpc() {
   });
   // Cancels the turn and stops the task operation (a closing turn never goes on to the next task).
   handle("hh:cancel", () => tasks.cancel());
-  handle("hh:history", async () => {
-    const history = await currentHistory();
-    return history ? (await history.list()).map((h) => ({ ...h, date: h.date.toISOString() })) : [];
-  });
   handle("hh:restore", (sha: unknown) =>
     restoreWith(async (history) => {
       if (!isSha(sha)) throw new Error("Invalid point");

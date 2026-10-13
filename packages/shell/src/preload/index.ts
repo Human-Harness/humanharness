@@ -15,7 +15,6 @@ const client: HarnessClient = {
   send: (message, options) => ipcRenderer.invoke("hh:send", message, options ?? {}),
   cancel: () => ipcRenderer.invoke("hh:cancel"),
   onEvent: (listener) => subscribe<Event>("hh:event", listener),
-  history: () => ipcRenderer.invoke("hh:history"),
   restore: (sha) => ipcRenderer.invoke("hh:restore", sha),
   historyTasks: () => ipcRenderer.invoke("hh:historyTasks"),
   restoreTask: (taskId) => ipcRenderer.invoke("hh:restoreTask", taskId),

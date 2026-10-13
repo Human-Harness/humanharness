@@ -42,7 +42,6 @@ export class FakeClient implements HarnessClient {
   cancelled = 0;
   chat: ChatEntry[] = [];
   switchedFrom: string | undefined;
-  items: HistoryItem[] = [{ sha: "abc", message: "Turn: hi", date: "2026-10-10T12:00:00.000Z" }];
   sendError: Error | null = null;
   saveError: Error | null = null;
   restoreError: Error | null = null;
@@ -182,9 +181,6 @@ export class FakeClient implements HarnessClient {
   onEvent(listener: (e: Event) => void) {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
-  }
-  async history() {
-    return this.items;
   }
   async restore(sha: string) {
     if (this.restoreError) throw this.restoreError;

@@ -118,7 +118,7 @@ describe("HarnessApp", () => {
     await startWork(<HarnessApp client={client} />);
     await screen.findByPlaceholderText("Write a message…");
     fireEvent.click(screen.getByRole("button", { name: "History" }));
-    await screen.findByText("Turn: hi");
+    await screen.findByText("The AI finished");
     fireEvent.click(screen.getByRole("button", { name: "Go back to this point" }));
     fireEvent.click(screen.getByRole("button", { name: "Yes, go back" }));
     await waitFor(() => expect(client.restored).toEqual(["abc"]));
@@ -130,7 +130,7 @@ describe("HarnessApp", () => {
     await startWork(<HarnessApp client={client} />);
     await screen.findByPlaceholderText("Write a message…");
     fireEvent.click(screen.getByRole("button", { name: "History" }));
-    await screen.findByText("Turn: hi");
+    await screen.findByText("The AI finished");
     fireEvent.click(screen.getByRole("button", { name: "Go back to this point" }));
     fireEvent.click(screen.getByRole("button", { name: "Yes, go back" }));
     expect((await screen.findByRole("alert")).textContent).toMatch(/couldn't go back/i);
@@ -216,7 +216,7 @@ describe("HarnessApp", () => {
     await startWork(<HarnessApp client={client} />);
     await typeAndSend(client, "go");
     fireEvent.click(screen.getByRole("button", { name: "History" }));
-    await screen.findByText("Turn: hi");
+    await screen.findByText("The AI finished");
     expect((screen.getByRole("button", { name: "Go back to this point" }) as HTMLButtonElement).disabled).toBe(true);
     act(() => client.emit({ type: "done", ok: true }));
     fireEvent.click(screen.getByRole("button", { name: "Go back to this point" }));

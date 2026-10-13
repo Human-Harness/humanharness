@@ -306,7 +306,6 @@ export interface HarnessClient {
   send(message: string, options?: SendOptions): Promise<void>;
   cancel(): Promise<void>;
   onEvent(listener: (event: Event) => void): () => void;
-  history(): Promise<HistoryItem[]>;
   restore(sha: string): Promise<void>;
   /** The history grouped by task, newest first; the "Earlier" group last. */
   historyTasks(): Promise<HistoryTaskView[]>;

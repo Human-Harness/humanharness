@@ -360,17 +360,18 @@ export async function moveFolder(from: string, to: string, d: MoveDeps): Promise
   const oldHistory = d.historyDir(source);
   const newHistory = d.historyDir(target);
   let setAside: string | null = null;
+  let historyRenamed = false;
   try {
     const stale = await exists(newHistory);
     if (stale) setAside = `${newHistory}.replaced-${now()}`;
     await step("config-saved", setAside ? { setAside } : {});
     if (setAside) await ops.rename(newHistory, setAside);
-    if (await exists(oldHistory)) await ops.rename(oldHistory, newHistory);
+    if (await exists(oldHistory)) {
+      await ops.rename(oldHistory, newHistory);
+      historyRenamed = true;
+    }
     await step("history-moved");
   } catch (err) {
-    if (setAside && (await exists(setAside)) && !(await exists(newHistory))) {
-      await ops.rename(setAside, newHistory).catch((e: unknown) => console.error("Could not put the old history back", e));
-    }
     const restored = await d.saveFolder(source).then(
       () => true,
       (e: unknown) => {
@@ -379,11 +380,22 @@ export async function moveFolder(from: string, to: string, d: MoveDeps): Promise
       },
     );
     if (restored) {
+      // The history moved but the journal couldn't say so: it goes back first, so it isn't left under the copy.
+      if (historyRenamed && !(await exists(oldHistory))) {
+        await ops.rename(newHistory, oldHistory).catch((e: unknown) => console.error("Could not put the history back", e));
+      }
+      if (setAside && (await exists(setAside)) && !(await exists(newHistory))) {
+        await ops.rename(setAside, newHistory).catch((e: unknown) => console.error("Could not put the old history back", e));
+      }
       await removeCopy();
       throw new MoveFailed("failed", err);
     }
     // The config still names the copy: it stays the folder and the old one is kept. The journal stays,
-    // so the next start moves the history after it.
+    // so the next start moves the history after it (when it didn't get there already).
+    if (historyRenamed) {
+      console.error("The move couldn't be recorded; the folder and its history are at the new place", err);
+      return { oldRemoved: false, historyMoved: true };
+    }
     console.error("The folder moved without its history; the next start moves it", err);
     return { oldRemoved: false, historyMoved: false };
   }

@@ -366,6 +366,41 @@ describe("moveFolder", () => {
     expect(fs.existsSync(path.join(t.newHistory, "HEAD"))).toBe(true);
   });
 
+  it("puts the history back when the journal can't record that it moved", async () => {
+    const t = await setup();
+    fs.mkdirSync(t.newHistory, { recursive: true });
+    fs.writeFileSync(path.join(t.newHistory, "stale"), "x");
+    const write = fs.promises.writeFile;
+    vi.spyOn(fs.promises, "writeFile").mockImplementation(async (file, data, ...rest) => {
+      if (String(data).includes('"history-moved"')) throw errno("ENOSPC");
+      return write(file, data, ...rest);
+    });
+    expect(await code(moveFolder(t.from, t.to, t.deps))).toBe("failed");
+    expect(fs.readFileSync(path.join(t.newHistory, "stale"), "utf8")).toBe("x");
+    expect(fs.existsSync(`${t.newHistory}.replaced-1234`)).toBe(false);
+    await untouched(t);
+  });
+
+  it("keeps the history with the copy when the journal can't record it and the config can't be put back", async () => {
+    const t = await setup();
+    const write = fs.promises.writeFile;
+    vi.spyOn(fs.promises, "writeFile").mockImplementation(async (file, data, ...rest) => {
+      if (String(data).includes('"history-moved"')) throw errno("ENOSPC");
+      return write(file, data, ...rest);
+    });
+    let saves = 0;
+    const save = t.deps.saveFolder;
+    t.deps.saveFolder = async (folder) => {
+      if (++saves > 1) throw errno("EACCES");
+      return save(folder);
+    };
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    expect(await moveFolder(t.from, t.to, t.deps)).toEqual({ oldRemoved: false, historyMoved: true });
+    await moved(t);
+    expect(await recoverMove(t.recoverDeps)).toEqual({ folder: t.to, leftBehind: t.from });
+    await moved(t);
+  });
+
   it("sets a stale history of the new place aside even when the folder has no history yet", async () => {
     const t = await setup();
     fs.rmSync(t.oldHistory, { recursive: true });

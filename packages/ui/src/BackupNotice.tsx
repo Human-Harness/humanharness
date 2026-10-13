@@ -21,6 +21,7 @@ export function BackupNotice({ client, state, onChange }: { client: HarnessClien
   const [moving, setMoving] = useState(false);
   const [error, setError] = useState<MoveError | null>(null);
   const [leftBehind, setLeftBehind] = useState<string | null>(null);
+  const [historyLeftBehind, setHistoryLeftBehind] = useState(false);
   const folder = state.config.folder;
 
   if (!folder) return null;
@@ -28,6 +29,7 @@ export function BackupNotice({ client, state, onChange }: { client: HarnessClien
     return leftBehind ? (
       <p className="hh-backup-notice" role="status">
         {t("backup.leftBehind", { path: leftBehind })}
+        {historyLeftBehind ? ` ${t("backup.historyLeftBehind")}` : null}
       </p>
     ) : null;
   }
@@ -39,8 +41,13 @@ export function BackupNotice({ client, state, onChange }: { client: HarnessClien
       const result = await client.moveFolder(to);
       if (result.ok) {
         if (result.leftBehind) setLeftBehind(result.leftBehind);
+        setHistoryLeftBehind(result.historyLeftBehind === true);
         onChange(result.state);
-      } else setError(result.error);
+      } else {
+        setError(result.error);
+        // The state as it is now: the folder stayed, but what the window shows may be stale.
+        if (result.state) onChange(result.state);
+      }
     } catch {
       setError("failed");
     } finally {

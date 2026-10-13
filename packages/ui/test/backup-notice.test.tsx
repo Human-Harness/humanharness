@@ -128,13 +128,42 @@ describe("BackupNotice", () => {
     expect((await screen.findByRole("alert")).textContent).toBe("I couldn't move your folder. It's still where it was.");
   });
 
-  it("says where the old folder stayed when it couldn't be removed", async () => {
+  it("says where the old folder stayed when it was kept", async () => {
     const client = localClient();
     client.moveResult = { ok: true, leftBehind: folder, state: { ...client.state, backup: { status: { kind: "synced", provider: "google-drive" }, locations: [] } } };
     await renderIn("es", <Notice client={client} />);
     fireEvent.click(screen.getByRole("button", { name: "Mover a Google Drive" }));
     // "Moviendo tu carpeta…" is a status too while the move runs.
-    await waitFor(() => expect(screen.getByRole("status").textContent).toBe(`Tu carpeta se movió, pero no pude borrar la vieja en ${folder}. Podés borrarla vos.`));
+    await waitFor(() =>
+      expect(screen.getByRole("status").textContent).toBe(`Tu carpeta se movió. La vieja sigue en ${folder}: revisala y borrala vos cuando ya no la necesites.`),
+    );
+  });
+
+  it("says the history follows at the next start when it stayed behind", async () => {
+    const client = localClient();
+    client.moveResult = {
+      ok: true,
+      leftBehind: folder,
+      historyLeftBehind: true,
+      state: { ...client.state, backup: { status: { kind: "synced", provider: "google-drive" }, locations: [] } },
+    };
+    await renderIn("en", <Notice client={client} />);
+    fireEvent.click(screen.getByRole("button", { name: "Move to Google Drive" }));
+    await waitFor(() =>
+      expect(screen.getByRole("status").textContent).toBe(
+        `Your folder moved. The old one is still at ${folder}: check it and delete it yourself when you no longer need it. ` +
+          "Your history of changes stayed with the old place for now; it follows your folder the next time you open the app.",
+      ),
+    );
+  });
+
+  it("takes the state a failed move sends back, and still shows why it failed", async () => {
+    const client = localClient();
+    client.moveResult = { ok: false, error: "failed", state: { ...client.state, backup: { status: { kind: "local" }, locations: [] } } };
+    await renderIn("en", <Notice client={client} />);
+    fireEvent.click(screen.getByRole("button", { name: "Move to Google Drive" }));
+    expect((await screen.findByRole("alert")).textContent).toBe("I couldn't move your folder. It's still where it was.");
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Move to Google Drive" })).toBeNull());
   });
 
   it("hides when the person already has a copy", async () => {

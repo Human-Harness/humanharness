@@ -281,7 +281,8 @@
     "chooseAnother": "Elegir otro lugar…",
     "dismiss": "Ya tengo una copia",
     "moving": "Moviendo tu carpeta… No cierres la app.",
-    "leftBehind": "Tu carpeta se movió, pero no pude borrar la vieja en {{path}}. Podés borrarla vos.",
+    "leftBehind": "Tu carpeta se movió. La vieja sigue en {{path}}: revisala y borrala vos cuando ya no la necesites.",
+    "historyLeftBehind": "Tu historial de cambios quedó en el lugar viejo por ahora; sigue a tu carpeta la próxima vez que abras la app.",
     "showAgain": "Volver a avisarme",
     "status": {
       "synced": "Guardada en {{provider}}",

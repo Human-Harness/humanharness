@@ -281,7 +281,8 @@
     "chooseAnother": "Choose another place…",
     "dismiss": "I already have a copy",
     "moving": "Moving your folder… Don't close the app.",
-    "leftBehind": "Your folder moved, but I couldn't remove the old one at {{path}}. You can delete it yourself.",
+    "leftBehind": "Your folder moved. The old one is still at {{path}}: check it and delete it yourself when you no longer need it.",
+    "historyLeftBehind": "Your history of changes stayed with the old place for now; it follows your folder the next time you open the app.",
     "showAgain": "Remind me again",
     "status": {
       "synced": "Kept in {{provider}}",

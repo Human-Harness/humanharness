@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next";
-import { BackupNotice } from "./BackupNotice";
+import { BackupNotice, type FolderMove } from "./BackupNotice";
 import { GearIcon, HHLogo, TopBar } from "./chrome";
 import { type AppState, type EngineStatus, type HarnessClient, type LimitWindow, engineProblem } from "./client";
 import { uiLanguage } from "./FolderStep";
@@ -17,6 +17,7 @@ export function Home({
   onStart,
   onSettings,
   onEngine,
+  move,
 }: {
   state: AppState;
   client: HarnessClient;
@@ -30,6 +31,8 @@ export function Home({
   onStart: () => void;
   onSettings: () => void;
   onEngine: () => void;
+  /** The app's folder move (HarnessApp): a move started in Settings still shows here. */
+  move?: FolderMove;
 }) {
   const { t, i18n } = useTranslation();
   const lang = uiLanguage(state, i18n.language);
@@ -68,7 +71,7 @@ export function Home({
         ) : (
           <p className="hh-caption">{t("home.noEngine")}</p>
         )}
-        <BackupNotice client={client} state={state} onChange={onChange} />
+        <BackupNotice client={client} state={state} onChange={onChange} move={move} />
       </main>
       <footer className="hh-footer">
         <span className="hh-wordmark">Human Harness</span>

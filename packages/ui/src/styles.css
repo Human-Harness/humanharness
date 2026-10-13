@@ -115,6 +115,9 @@ input[type="text"], input:not([type]) { font: inherit; height: 28px; padding: 0 
 .hh-backup-notice { display: grid; gap: 8px; max-width: 460px; padding: 12px 14px; border: 1px solid var(--hh-line); border-radius: 10px; background: var(--hh-surface); color: var(--hh-slate); font-size: 13px; overflow-wrap: anywhere; }
 .hh-backup-notice p { margin: 0; }
 .hh-backup-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+/* Always there for screen readers; while empty it takes no room (out of the flow, still in the tree). */
+.hh-backup-status { margin: 0; max-width: 460px; color: var(--hh-slate); font-size: 13px; overflow-wrap: anywhere; }
+.hh-backup-status:empty { position: absolute; }
 .hh-place:has(input:checked) { border-color: var(--hh-ink); font-weight: 600; }
 .hh-place:has(input:checked) .hh-caption { font-weight: 400; }
 .hh-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }

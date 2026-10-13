@@ -1,7 +1,7 @@
 import { type KeyboardEvent as ReactKeyboardEvent, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Language } from "@humanharness/harness-sdk";
-import { BackupNotice } from "./BackupNotice";
+import { BackupNotice, type FolderMove, MovePlaces, needsBackupNotice, useFolderMove } from "./BackupNotice";
 import { Segmented } from "./chrome";
 import type { AppConfig, AppState, Appearance, HarnessClient, RunningSetup, UsageSummary } from "./client";
 import { EngineTab } from "./EngineTab";
@@ -22,6 +22,7 @@ export function SettingsSheet({
   onTab,
   onChange,
   onClose,
+  move: shared,
 }: {
   client: HarnessClient;
   state: AppState;
@@ -29,8 +30,12 @@ export function SettingsSheet({
   onTab: (tab: SettingsTab) => void;
   onChange: (state: AppState) => void;
   onClose: () => void;
+  /** The app's folder move (HarnessApp), so a move outlives the sheet; without it the sheet keeps its own. */
+  move?: FolderMove;
 }) {
   const { t } = useTranslation();
+  const own = useFolderMove(client, onChange);
+  const move = shared ?? own;
   const runningId = useId();
   const baseId = useId();
   const tabId = (id: SettingsTab) => `${baseId}-tab-${id}`;
@@ -151,7 +156,7 @@ export function SettingsSheet({
           </div>
         )}
         <div id={panelId} role="tabpanel" aria-labelledby={tabId(tab)}>
-          {tab === "general" && <GeneralTab client={client} state={state} onChange={onChange} />}
+          {tab === "general" && <GeneralTab client={client} state={state} onChange={onChange} move={move} />}
           {tab === "engine" && <EngineTab client={client} state={state} onChange={onChange} setupEngine={running?.engineId} />}
           {tab === "models" && <ModelsTab client={client} state={state} onChange={onChange} />}
           {tab === "usage" && <UsageTab client={client} state={state} />}
@@ -182,8 +187,21 @@ function trapTab(sheet: HTMLElement, e: KeyboardEvent) {
   }
 }
 
-function GeneralTab({ client, state, onChange }: { client: HarnessClient; state: AppState; onChange: (s: AppState) => void }) {
+function GeneralTab({ client, state, onChange, move }: { client: HarnessClient; state: AppState; onChange: (s: AppState) => void; move: FolderMove }) {
   const { t, i18n } = useTranslation();
+  const placesId = useId();
+  /** The places to move the folder to are open (the backup notice, when it shows, offers them itself). */
+  const [moveOpen, setMoveOpen] = useState(false);
+  const offerMove = !needsBackupNotice(state);
+  const toggleRef = useRef<HTMLButtonElement>(null);
+  // A move that worked closes the list (the folder row shows where it is now); focus stays on its toggle.
+  useEffect(() => {
+    if (!move.moved) return;
+    setMoveOpen(false);
+    const active = document.activeElement;
+    const lost = active === null || active === document.body || document.getElementById(placesId)?.contains(active) === true;
+    if (lost && toggleRef.current?.isConnected) toggleRef.current.focus();
+  }, [move.moved]);
   const lang = uiLanguage(state, i18n.language);
   const save = (patch: AppConfig) => client.saveConfig(patch).then(onChange, () => {});
   const changeLanguage = (language: Language) => {
@@ -226,6 +244,16 @@ function GeneralTab({ client, state, onChange }: { client: HarnessClient; state:
             <span className="hh-row-label">{t("settings.folder")}</span>
             <code>{state.config.folder}</code>
             <button onClick={() => void client.revealFolder()}>{t("settings.reveal")}</button>
+            {offerMove && (
+              <button ref={toggleRef} aria-expanded={moveOpen} aria-controls={placesId} onClick={() => setMoveOpen((o) => !o)}>
+                {t("backup.moveFolder")}
+              </button>
+            )}
+          </div>
+        )}
+        {state.config.folder && offerMove && moveOpen && (
+          <div id={placesId} className="hh-row">
+            <MovePlaces state={state} move={move} />
           </div>
         )}
         {state.config.folder && backupText && (
@@ -241,7 +269,7 @@ function GeneralTab({ client, state, onChange }: { client: HarnessClient; state:
       ) : (
         <FolderStep client={client} state={state} onSaved={onChange} />
       )}
-      <BackupNotice client={client} state={state} onChange={onChange} />
+      <BackupNotice client={client} state={state} onChange={onChange} move={move} />
 
       <h3>{t("settings.about")}</h3>
       <div className="hh-rows">

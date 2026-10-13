@@ -34,7 +34,7 @@ export interface FileChange {
 
 /** The history commits of one task, as the History panel shows them. */
 export interface HistoryTask {
-  /** Null: the "Earlier" group (commits outside any task). */
+  /** Null: the "Other changes" group (commits outside any task). */
   taskId: string | null;
   actionId: string | null;
   /**
@@ -47,7 +47,7 @@ export interface HistoryTask {
   end: string;
   /** The date of `end`. */
   date: Date;
-  /** Tasks: the tree diff from `start` to `end`. Earlier: the union of its commits' own changes. */
+  /** Tasks: the tree diff from `start` to `end`. Other changes: the union of its commits' own changes. */
   changes: FileChange[];
   /** Newest first. */
   entries: HistoryEntry[];
@@ -233,7 +233,7 @@ export class History {
   }
 
   /**
-   * The commits of the last `depth`, grouped by task id, newest task first; the "Earlier" group always last.
+   * The commits of the last `depth`, grouped by task id, newest task first; the "Other changes" group always last.
    * A task's commits need not be contiguous: its changes run from its `start` to its last commit, so they
    * include whatever happened in between (untagged commits too). A task cut by `depth` is followed back
    * past it to find its true first commit.
@@ -263,13 +263,6 @@ export class History {
       });
     }
     return [...out.filter((g) => g.taskId !== null), ...out.filter((g) => g.taskId === null)];
-  }
-
-  /** The task a commit belongs to, from its trailers; null outside any task. */
-  async trailerOf(sha: string): Promise<HistoryTrailer | null> {
-    const { commit } = await git.readCommit({ fs, gitdir: this.gitdir, oid: sha });
-    const { task, action } = parseCommitMessage(commit.message);
-    return task ? { task, ...(action ? { action } : {}) } : null;
   }
 
   /** The files the history tracks in the folder now (relative, forward slashes). */

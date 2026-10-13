@@ -222,7 +222,7 @@ describe("History trailers", () => {
 describe("History.tasks", () => {
   const withNotes = () => new History(folder, gitdir, [".harness/", "AGENTS.md"], [".harness/notes/"]);
 
-  it("groups commits by task, newest task first, with the files each task changed; Earlier last", async () => {
+  it("groups commits by task, newest task first, with the files each task changed; Other changes last", async () => {
     const h = withNotes();
     await h.init();
     write("a.md", "1");
@@ -360,15 +360,6 @@ describe("History.tasks", () => {
       { path: "y", kind: "added" },
       { path: "y/inner.md", kind: "deleted" },
     ]);
-  });
-
-  it("reads a commit's trailer", async () => {
-    write("a.md", "1");
-    const tagged = (await history.save("Turn: x", { task: "t1", action: "plan" }))!;
-    write("a.md", "2");
-    const plain = (await history.save("Start"))!;
-    expect(await history.trailerOf(tagged)).toEqual({ task: "t1", action: "plan" });
-    expect(await history.trailerOf(plain)).toBeNull();
   });
 
   it("lists the files it tracks now", async () => {

@@ -131,6 +131,14 @@ describe("createRuntime", () => {
     expect((await runtime.history.list())[0]).toMatchObject({ message: "Stopped: hi", task: "t1", action: null });
   }, 10_000);
 
+  it("tags a crashed turn's undo commit", async () => {
+    const { runtime } = await setup({ steps: [{ write: { path: "README.md", content: "half-written" } }], stderr: "boom", exitCode: 1 });
+    // The crashed turn's writes were never committed, so the undo usually records no commit: check what it is asked to record.
+    const restore = vi.spyOn(runtime.history, "restore");
+    await runtime.send("hi", () => {}, { trailer: { task: "t1", action: "plan" } }).done;
+    expect(restore).toHaveBeenCalledWith(expect.any(String), "Undo: the turn did not finish", { task: "t1", action: "plan" });
+  });
+
   it("commits user edits between turns and keeps them when the next turn crashes", async () => {
     const { runtime, folder } = await setup({
       steps: [{ write: { path: "README.md", content: "half-written" } }],

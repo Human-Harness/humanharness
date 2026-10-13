@@ -37,7 +37,11 @@ export interface HistoryTask {
   /** Null: the "Earlier" group (commits outside any task). */
   taskId: string | null;
   actionId: string | null;
-  /** The commit before the group's first commit; null when the group starts at the very first commit. */
+  /**
+   * Where "Go back to before this task" lands: the task's first "Before message" snapshot when its first
+   * commit is one (so the person's own edits made before the task stay), else the commit before the task's
+   * first commit; null when the group starts at the very first commit.
+   */
   start: string | null;
   /** The group's newest commit. */
   end: string;
@@ -51,6 +55,12 @@ export interface HistoryTask {
 
 const byPath = (a: FileChange, b: FileChange) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
 
+/** The subject of the snapshot the runtime saves before each turn: the person's edits, not the AI's. */
+const BEFORE_MESSAGE = "Before message";
+
+/** How far back `tasks` follows a task past the depth to find its first commit. */
+const MAX_WALK_BACK = 1000;
+
 /** Ids a trailer may carry (task UUIDs, manifest action ids): no spaces or line breaks. */
 const TRAILER_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/;
 
@@ -63,11 +73,15 @@ export function withTrailer(message: string, trailer?: HistoryTrailer): string {
   return `${subject}\n\n${lines.join("\n")}`;
 }
 
-/** A commit message's subject and its trailers (null when absent or not a valid id). */
+/** A trailer line as `withTrailer` writes it. */
+const TRAILER_LINE = /^(Task|Action): \S+$/;
+
+/** A commit message's subject and its trailers (null when absent or not a valid id). Only a last paragraph made entirely of trailer lines counts. */
 export function parseCommitMessage(raw: string): { subject: string; task: string | null; action: string | null } {
   const text = raw.replace(/\r\n/g, "\n").trim();
   const paragraphs = text.split(/\n{2,}/);
-  const trailers = paragraphs.length > 1 ? paragraphs[paragraphs.length - 1] : "";
+  const last = paragraphs.length > 1 ? paragraphs[paragraphs.length - 1] : "";
+  const trailers = last.split("\n").every((line) => TRAILER_LINE.test(line)) ? last : "";
   const value = (key: string): string | null => {
     const m = new RegExp(`^${key}: (.+)$`, "m").exec(trailers);
     return m && TRAILER_ID.test(m[1]) ? m[1] : null;
@@ -205,19 +219,29 @@ export class History {
     }
   }
 
-  async list(depth = 50): Promise<HistoryEntry[]> {
+  list(depth = 50): Promise<HistoryEntry[]> {
+    return this.listWith(depth, {});
+  }
+
+  private async listWith(depth: number, cache: object): Promise<HistoryEntry[]> {
     if ((await this.last()) === null) return [];
-    const log = await git.log({ ...this.repo(), depth });
+    const log = await git.log({ ...this.repo(), depth, cache });
     return log.map((e) => {
       const { subject, task, action } = parseCommitMessage(e.commit.message);
       return { sha: e.oid, message: subject, date: new Date(e.commit.author.timestamp * 1000), task, action };
     });
   }
 
-  /** The commits of the last `depth`, grouped by task, newest task first; the "Earlier" group always last. */
+  /**
+   * The commits of the last `depth`, grouped by task id, newest task first; the "Earlier" group always last.
+   * A task's commits need not be contiguous: its changes run from its `start` to its last commit, so they
+   * include whatever happened in between (untagged commits too). A task cut by `depth` is followed back
+   * past it to find its true first commit.
+   */
   async tasks(depth = 200): Promise<HistoryTask[]> {
+    const cache = {};
     const groups = new Map<string | null, HistoryEntry[]>();
-    for (const e of await this.list(depth)) {
+    for (const e of await this.listWith(depth, cache)) {
       const list = groups.get(e.task);
       if (list) list.push(e);
       else groups.set(e.task, [e]);
@@ -225,7 +249,8 @@ export class History {
     // A Map keeps the order of first insertion: each group's newest commit, newest first.
     const out: HistoryTask[] = [];
     for (const [taskId, entries] of groups) {
-      const start = await this.parentOf(entries[entries.length - 1].sha);
+      const oldest = entries[entries.length - 1].sha;
+      const start = taskId === null ? await this.parentOf(oldest, cache) : await this.taskStart(taskId, oldest, cache);
       const end = entries[0];
       out.push({
         taskId,
@@ -233,7 +258,7 @@ export class History {
         start,
         end: end.sha,
         date: end.date,
-        changes: taskId === null ? await this.unionOfChanges(entries) : await this.diff(start, end.sha),
+        changes: taskId === null ? await this.unionOfChanges(entries, cache) : await this.diff(start, end.sha, cache),
         entries,
       });
     }
@@ -255,28 +280,60 @@ export class History {
     });
   }
 
-  private async parentOf(sha: string): Promise<string | null> {
-    const { commit } = await git.readCommit({ fs, gitdir: this.gitdir, oid: sha });
+  private async parentOf(sha: string, cache: object = {}): Promise<string | null> {
+    const { commit } = await git.readCommit({ fs, gitdir: this.gitdir, oid: sha, cache });
     return commit.parent[0] ?? null;
   }
 
+  /**
+   * Follows `taskId` back from `oldest` (its oldest listed commit) while the parent carries the same task,
+   * then returns that first commit when it is a "Before message" snapshot, else its parent.
+   */
+  private async taskStart(taskId: string, oldest: string, cache: object): Promise<string | null> {
+    let first = oldest;
+    let { commit } = await git.readCommit({ fs, gitdir: this.gitdir, oid: first, cache });
+    for (let step = 0; step < MAX_WALK_BACK && commit.parent[0]; step++) {
+      const parent = await git.readCommit({ fs, gitdir: this.gitdir, oid: commit.parent[0], cache });
+      if (parseCommitMessage(parent.commit.message).task !== taskId) break;
+      first = parent.oid;
+      commit = parent.commit;
+    }
+    if (parseCommitMessage(commit.message).subject === BEFORE_MESSAGE) return first;
+    return commit.parent[0] ?? null;
+  }
+
+  /** A folder the history never tracks anything in: ignored, and no `keep` prefix lies inside it. */
+  private skipsFolder(dir: string): boolean {
+    const prefix = `${dir}/`;
+    return (
+      this.ignore.some((i) => i.endsWith("/") && prefix.startsWith(i)) &&
+      !this.keep.some((k) => k.startsWith(prefix) || prefix.startsWith(k))
+    );
+  }
+
   /** Tracked files that differ between two commits; with no `from`, every file of `to` is added. */
-  private async diff(from: string | null, to: string): Promise<FileChange[]> {
+  private async diff(from: string | null, to: string, cache: object = {}): Promise<FileChange[]> {
     const changes: FileChange[] = [];
     const trees = from === null ? [git.TREE({ ref: to })] : [git.TREE({ ref: from }), git.TREE({ ref: to })];
     await git.walk({
       fs,
       gitdir: this.gitdir,
       trees,
+      cache,
+      // Returning undefined walks into a folder; null skips it.
       map: async (filepath, entries) => {
         if (filepath === ".") return undefined;
         const [a, b] = from === null ? [null, entries[0]] : entries;
-        const types = await Promise.all([a?.type(), b?.type()]);
-        // A folder: returning undefined walks into it.
-        if (types.includes("tree")) return undefined;
-        if (!this.tracked(filepath)) return undefined;
+        const [ta, tb] = await Promise.all([a?.type(), b?.type()]);
         const [oa, ob] = await Promise.all([a?.oid(), b?.oid()]);
-        if (oa === ob) return undefined;
+        if (ta === "tree" || tb === "tree") {
+          if (oa === ob || this.skipsFolder(filepath)) return null;
+          // A file replaced by a folder (or the reverse): the file side is deleted or added.
+          if (ta === "blob" && this.tracked(filepath)) changes.push({ path: filepath, kind: "deleted" });
+          if (tb === "blob" && this.tracked(filepath)) changes.push({ path: filepath, kind: "added" });
+          return undefined;
+        }
+        if (!this.tracked(filepath) || oa === ob) return undefined;
         changes.push({ path: filepath, kind: !a ? "added" : !b ? "deleted" : "modified" });
         return undefined;
       },
@@ -285,10 +342,10 @@ export class History {
   }
 
   /** Each commit's own changes, merged: the newest kind of each file wins. */
-  private async unionOfChanges(entries: HistoryEntry[]): Promise<FileChange[]> {
+  private async unionOfChanges(entries: HistoryEntry[], cache: object): Promise<FileChange[]> {
     const seen = new Map<string, FileChange>();
     for (const e of entries) {
-      for (const c of await this.diff(await this.parentOf(e.sha), e.sha)) if (!seen.has(c.path)) seen.set(c.path, c);
+      for (const c of await this.diff(await this.parentOf(e.sha, cache), e.sha, cache)) if (!seen.has(c.path)) seen.set(c.path, c);
     }
     return [...seen.values()].sort(byPath);
   }

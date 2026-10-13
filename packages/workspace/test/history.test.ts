@@ -211,6 +211,12 @@ describe("History trailers", () => {
     expect(parseCommitMessage("Start")).toEqual({ subject: "Start", task: null, action: null });
     expect(parseCommitMessage("Turn: a\n\nTask: two words")).toEqual({ subject: "Turn: a", task: null, action: null });
   });
+
+  it("reads trailers only from a last paragraph made of trailer lines", () => {
+    expect(parseCommitMessage("Turn: a\n\nSome body text\nTask: t1")).toEqual({ subject: "Turn: a", task: null, action: null });
+    expect(parseCommitMessage("Turn: a\n\nTask: t1\nSigned-off-by: x")).toEqual({ subject: "Turn: a", task: null, action: null });
+    expect(parseCommitMessage("Turn: a\n\nAction: plan\nTask: t1")).toEqual({ subject: "Turn: a", task: "t1", action: "plan" });
+  });
 });
 
 describe("History.tasks", () => {
@@ -268,6 +274,92 @@ describe("History.tasks", () => {
     expect(groups[0].changes).toEqual([]);
     expect(read("a.md")).toBe("1");
     expect(fs.existsSync(path.join(folder, "b.md"))).toBe(false);
+  });
+
+  it("starts a task at its first turn's snapshot, so going back keeps the person's own earlier edits", async () => {
+    write("a.md", "1");
+    await history.save("Start");
+    write("mine.md", "user edit");
+    const before = (await history.save("Before message", { task: "t1" }))!;
+    write("ai.md", "ai");
+    await history.save("Turn: write", { task: "t1" });
+
+    const [t1] = await history.tasks();
+    expect(t1.start).toBe(before);
+    expect(t1.changes).toEqual([{ path: "ai.md", kind: "added" }]);
+    expect(t1.entries.map((e) => e.message)).toEqual(["Turn: write", "Before message"]);
+    await history.restore(t1.start!, "Went back to before the task", { task: "t1" });
+    expect(read("mine.md")).toBe("user edit");
+    expect(fs.existsSync(path.join(folder, "ai.md"))).toBe(false);
+  });
+
+  it("finds the start of a task whose first commits are past the depth", async () => {
+    write("x.md", "x");
+    const base = (await history.save("Start"))!;
+    write("a.md", "a");
+    await history.save("Turn: a", { task: "t1" });
+    write("b.md", "b");
+    await history.save("Turn: b", { task: "t1" });
+    write("c.md", "c");
+    await history.save("Turn: c", { task: "t1" });
+
+    const [t1] = await history.tasks(2);
+    expect(t1.entries.map((e) => e.message)).toEqual(["Turn: c", "Turn: b"]);
+    expect(t1.start).toBe(base);
+    expect(t1.changes.map((c) => c.path)).toEqual(["a.md", "b.md", "c.md"]);
+  });
+
+  it("applies the snapshot rule to a task's true first commit past the depth", async () => {
+    write("x.md", "x");
+    await history.save("Start");
+    write("mine.md", "user edit");
+    const before = (await history.save("Before message", { task: "t1" }))!;
+    write("a.md", "a");
+    await history.save("Turn: a", { task: "t1" });
+    write("b.md", "b");
+    await history.save("Turn: b", { task: "t1" });
+
+    const [t1] = await history.tasks(1);
+    expect(t1.start).toBe(before);
+    expect(t1.changes.map((c) => c.path)).toEqual(["a.md", "b.md"]);
+  });
+
+  it("groups interleaved commits by task id, from before the task's first commit to its last", async () => {
+    write("x.md", "x");
+    const base = (await history.save("Start"))!;
+    write("a.md", "a");
+    const first = (await history.save("Turn: a", { task: "t1" }))!;
+    write("u.md", "u");
+    const between = (await history.save("Start"))!;
+    write("b.md", "b");
+    const last = (await history.save("Turn: b", { task: "t1" }))!;
+
+    const groups = await history.tasks();
+    expect(groups.map((g) => g.taskId)).toEqual(["t1", null]);
+    const [t1, earlier] = groups;
+    expect(t1.entries.map((e) => e.sha)).toEqual([last, first]);
+    expect(t1).toMatchObject({ start: base, end: last });
+    expect(t1.changes.map((c) => c.path)).toEqual(["a.md", "b.md", "u.md"]);
+    expect(earlier.entries.map((e) => e.sha)).toEqual([between, base]);
+  });
+
+  it("reports a file replaced by a folder, and a folder replaced by a file", async () => {
+    write("x", "file");
+    write("y/inner.md", "inner");
+    await history.save("Start");
+    fs.rmSync(path.join(folder, "x"));
+    write("x/new.md", "new");
+    fs.rmSync(path.join(folder, "y"), { recursive: true });
+    write("y", "file");
+    await history.save("Turn: swap", { task: "t1" });
+
+    const [t1] = await history.tasks();
+    expect(t1.changes).toEqual([
+      { path: "x", kind: "deleted" },
+      { path: "x/new.md", kind: "added" },
+      { path: "y", kind: "added" },
+      { path: "y/inner.md", kind: "deleted" },
+    ]);
   });
 
   it("reads a commit's trailer", async () => {

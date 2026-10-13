@@ -162,7 +162,7 @@ describe("SettingsSheet", () => {
     fireEvent.click(screen.getByRole("button", { name: "Dark" }));
     await waitFor(() => expect(client.state.config.appearance).toBe("dark"));
     expect(screen.getByText("/Users/me/Documents/Demo")).toBeTruthy();
-    expect(screen.getByText("Chosen at setup; it can't be changed.")).toBeTruthy();
+    expect(screen.getByText("Don't move or rename it by hand: the app moves it for you, with its history.")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Show in Finder" }));
     await waitFor(() => expect(client.revealed).toBe(1));
     expect(screen.getByText("Version 0.1.0")).toBeTruthy();

@@ -176,6 +176,8 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
         ) : (
           <Home
             state={state}
+            client={client}
+            onChange={setState}
             status={status}
             checkFailed={checkFailed}
             limits={limits}

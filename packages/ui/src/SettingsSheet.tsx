@@ -1,6 +1,7 @@
 import { type KeyboardEvent as ReactKeyboardEvent, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Language } from "@humanharness/harness-sdk";
+import { BackupNotice } from "./BackupNotice";
 import { Segmented } from "./chrome";
 import type { AppConfig, AppState, Appearance, HarnessClient, RunningSetup, UsageSummary } from "./client";
 import { EngineTab } from "./EngineTab";
@@ -194,6 +195,15 @@ function GeneralTab({ client, state, onChange }: { client: HarnessClient; state:
     { value: "light", label: t("settings.appearanceLight") },
     { value: "dark", label: t("settings.appearanceDark") },
   ];
+  const backup = state.backup?.status;
+  const dismissed = backup?.kind === "local" && state.config.backupDismissed === true;
+  const backupText = !backup
+    ? null
+    : backup.kind === "synced"
+      ? t("backup.status.synced", { provider: t(`backup.provider.${backup.provider}`) })
+      : dismissed
+        ? t("backup.status.dismissed")
+        : t(`backup.status.${backup.kind}`);
 
   return (
     <div className="hh-tab">
@@ -218,12 +228,20 @@ function GeneralTab({ client, state, onChange }: { client: HarnessClient; state:
             <button onClick={() => void client.revealFolder()}>{t("settings.reveal")}</button>
           </div>
         )}
+        {state.config.folder && backupText && (
+          <div className="hh-row">
+            <span className="hh-row-label">{t("backup.title")}</span>
+            <span>{backupText}</span>
+            {dismissed && <button onClick={() => void save({ backupDismissed: false })}>{t("backup.showAgain")}</button>}
+          </div>
+        )}
       </div>
       {state.config.folder ? (
         <p className="hh-caption">{t("settings.folderFixed")}</p>
       ) : (
         <FolderStep client={client} state={state} onSaved={onChange} />
       )}
+      <BackupNotice client={client} state={state} onChange={onChange} />
 
       <h3>{t("settings.about")}</h3>
       <div className="hh-rows">

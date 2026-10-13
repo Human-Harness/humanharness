@@ -18,7 +18,7 @@
     "appearanceLight": "Clara",
     "appearanceDark": "Oscura",
     "folder": "Carpeta",
-    "folderFixed": "Se eligió al configurar; no se puede cambiar.",
+    "folderFixed": "No la muevas ni la renombres a mano: la app la mueve por vos, con su historial.",
     "reveal": "Mostrar en Finder",
     "about": "Acerca de",
     "version": "Versión {{version}}",
@@ -273,7 +273,32 @@
     "saveIn": "Guardarlo en {{provider}} para no perderlo",
     "thisComputer": "Solo en esta compu",
     "placesHint": "Una carpeta sincronizada guarda una copia en la nube: si le pasa algo a esta compu, tu trabajo sigue ahí.",
-    "provider": { "google-drive": "Google Drive", "onedrive": "OneDrive", "dropbox": "Dropbox", "icloud": "iCloud Drive" }
+    "provider": { "google-drive": "Google Drive", "onedrive": "OneDrive", "dropbox": "Dropbox", "icloud": "iCloud Drive" },
+    "title": "Copia de seguridad",
+    "notice": "Tu carpeta está solo en esta compu. Si le pasa algo, perdés tu trabajo. Guardala en una carpeta sincronizada.",
+    "moveTo": "Mover a {{provider}}",
+    "moveToAccount": "Mover a {{provider}} ({{account}})",
+    "chooseAnother": "Elegir otro lugar…",
+    "dismiss": "Ya tengo una copia",
+    "moving": "Moviendo tu carpeta… No cierres la app.",
+    "leftBehind": "Tu carpeta se movió, pero no pude borrar la vieja en {{path}}. Podés borrarla vos.",
+    "showAgain": "Volver a avisarme",
+    "status": {
+      "synced": "Guardada en {{provider}}",
+      "git-remote": "Guardada en un repositorio git con remoto",
+      "local": "Solo en esta compu",
+      "dismissed": "Tenés tu propia copia"
+    },
+    "moveError": {
+      "busy": "Esperá a que la IA termine y probá de nuevo.",
+      "exists": "Ya hay una carpeta con ese nombre ahí. Elegí otro lugar.",
+      "inside": "Tu carpeta no puede ir adentro de sí misma. Elegí otro lugar.",
+      "unsuitable": "Tu carpeta no puede ir ahí. Elegí otro lugar, por ejemplo una carpeta sincronizada.",
+      "no-space": "No hay suficiente espacio ahí. Liberá espacio o elegí otro lugar.",
+      "no-permission": "La app no tiene permiso para escribir ahí. Elegí otro lugar.",
+      "mismatch": "La copia no salió igual, así que dejé tu carpeta donde estaba.",
+      "failed": "No pude mover tu carpeta. Sigue donde estaba."
+    }
   },
   "app": {
     "loadError": "La app no pudo arrancar. Cerrala y volvé a abrirla."

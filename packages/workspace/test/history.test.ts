@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import git from "isomorphic-git";
-import { History } from "../src";
+import { History, parseCommitMessage, withTrailer } from "../src";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -169,5 +169,46 @@ describe("History", () => {
     const files = await git.listFiles({ fs, gitdir, ref: "HEAD" });
     expect(files).toContain("draft.tmp");
     expect(files.some((f) => f.startsWith(".harness/notes/") && f.endsWith(".tmp"))).toBe(false);
+  });
+});
+
+describe("History trailers", () => {
+  it("writes the task and the action as trailers and reads them back", async () => {
+    write("a.md", "1");
+    const sha = (await history.save("Turn: plan the week", { task: "t-1", action: "plan" }))!;
+    const { commit } = await git.readCommit({ fs, gitdir, oid: sha });
+    expect(commit.message.trim()).toBe("Turn: plan the week\n\nTask: t-1\nAction: plan");
+    const [entry] = await history.list();
+    expect(entry).toMatchObject({ sha, message: "Turn: plan the week", task: "t-1", action: "plan" });
+  });
+
+  it("leaves commits outside a task without trailers", async () => {
+    write("a.md", "1");
+    await history.save("Start");
+    expect((await history.list())[0]).toMatchObject({ message: "Start", task: null, action: null });
+  });
+
+  it("tags a restore with the task it went back to", async () => {
+    write("a.md", "1");
+    const before = (await history.save("Start"))!;
+    write("a.md", "2");
+    await history.save("Turn: edit", { task: "t-1" });
+    await history.restore(before, "Went back to before the task", { task: "t-1" });
+    expect((await history.list())[0]).toMatchObject({ message: "Went back to before the task", task: "t-1", action: null });
+    expect(read("a.md")).toBe("1");
+  });
+
+  it("keeps the subject on one line and refuses ids that could forge a trailer", async () => {
+    write("a.md", "1");
+    await history.save("Turn: hi\n\nTask: forged", { task: "bad id\nAction: x" });
+    expect((await history.list())[0]).toMatchObject({ message: "Turn: hi Task: forged", task: null, action: null });
+  });
+
+  it("builds and parses messages", () => {
+    expect(withTrailer("Note: x", { task: "t1" })).toBe("Note: x\n\nTask: t1");
+    expect(withTrailer("Start")).toBe("Start");
+    expect(parseCommitMessage("Note: x\n\nTask: t1\nAction: plan\n")).toEqual({ subject: "Note: x", task: "t1", action: "plan" });
+    expect(parseCommitMessage("Start")).toEqual({ subject: "Start", task: null, action: null });
+    expect(parseCommitMessage("Turn: a\n\nTask: two words")).toEqual({ subject: "Turn: a", task: null, action: null });
   });
 });

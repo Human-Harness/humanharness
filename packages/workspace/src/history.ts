@@ -11,8 +11,43 @@ const isNoteTempFile = (file: string): boolean =>
 
 export interface HistoryEntry {
   sha: string;
+  /** The commit's subject (its first line). */
   message: string;
   date: Date;
+  /** The task the commit belongs to (its `Task:` trailer); null outside any task. */
+  task: string | null;
+  /** The task's manifest action (its `Action:` trailer); null for a free question or outside any task. */
+  action: string | null;
+}
+
+/** The task a history commit belongs to, written as git trailers under its subject. */
+export interface HistoryTrailer {
+  task: string;
+  action?: string;
+}
+
+/** Ids a trailer may carry (task UUIDs, manifest action ids): no spaces or line breaks. */
+const TRAILER_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/;
+
+/** `message` folded to one line, plus `Task:` and `Action:` trailers when `trailer` holds valid ids. */
+export function withTrailer(message: string, trailer?: HistoryTrailer): string {
+  const subject = message.replace(/\s*\n\s*/g, " ").trim();
+  if (!trailer || !TRAILER_ID.test(trailer.task)) return subject;
+  const lines = [`Task: ${trailer.task}`];
+  if (trailer.action !== undefined && TRAILER_ID.test(trailer.action)) lines.push(`Action: ${trailer.action}`);
+  return `${subject}\n\n${lines.join("\n")}`;
+}
+
+/** A commit message's subject and its trailers (null when absent or not a valid id). */
+export function parseCommitMessage(raw: string): { subject: string; task: string | null; action: string | null } {
+  const text = raw.replace(/\r\n/g, "\n").trim();
+  const paragraphs = text.split(/\n{2,}/);
+  const trailers = paragraphs.length > 1 ? paragraphs[paragraphs.length - 1] : "";
+  const value = (key: string): string | null => {
+    const m = new RegExp(`^${key}: (.+)$`, "m").exec(trailers);
+    return m && TRAILER_ID.test(m[1]) ? m[1] : null;
+  };
+  return { subject: text.split("\n")[0], task: value("Task"), action: value("Action") };
 }
 
 /**
@@ -88,9 +123,9 @@ export class History {
     return !Buffer.from(blob).equals(current);
   }
 
-  /** Commits the current state. Returns the new sha, or null when nothing changed. */
-  save(message: string): Promise<string | null> {
-    return this.serialize(() => this.saveNow(message));
+  /** Commits the current state; `trailer` names the task it belongs to. Returns the new sha, or null when nothing changed. */
+  save(message: string, trailer?: HistoryTrailer): Promise<string | null> {
+    return this.serialize(() => this.saveNow(withTrailer(message, trailer)));
   }
 
   private async saveNow(message: string): Promise<string | null> {
@@ -108,9 +143,9 @@ export class History {
     return sha;
   }
 
-  /** Makes the folder look exactly like `sha` (tracked files only) and records that as a new commit. */
-  restore(sha: string, message: string): Promise<string | null> {
-    return this.serialize(() => this.restoreNow(sha, message));
+  /** Makes the folder look exactly like `sha` (tracked files only) and records that as a new commit, tagged with `trailer`. */
+  restore(sha: string, message: string, trailer?: HistoryTrailer): Promise<string | null> {
+    return this.serialize(() => this.restoreNow(sha, withTrailer(message, trailer)));
   }
 
   private async restoreNow(sha: string, message: string): Promise<string | null> {
@@ -148,10 +183,9 @@ export class History {
   async list(depth = 50): Promise<HistoryEntry[]> {
     if ((await this.last()) === null) return [];
     const log = await git.log({ ...this.repo(), depth });
-    return log.map((e) => ({
-      sha: e.oid,
-      message: e.commit.message.trim(),
-      date: new Date(e.commit.author.timestamp * 1000),
-    }));
+    return log.map((e) => {
+      const { subject, task, action } = parseCommitMessage(e.commit.message);
+      return { sha: e.oid, message: subject, date: new Date(e.commit.author.timestamp * 1000), task, action };
+    });
   }
 }

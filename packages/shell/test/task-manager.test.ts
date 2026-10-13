@@ -6,7 +6,7 @@ import type { TaskView } from "@humanharness/ui/client";
 import type { Note, NoteMeta } from "@humanharness/workspace";
 import { type TaskDeps, TaskManager } from "../src/main/task-manager";
 import { CHECKPOINT_PROMPT, CLOSE_PROMPT } from "../src/main/task-prompts";
-import { type CurrentTask, type TasksFile, emptyTasks } from "../src/main/task-store";
+import { type CurrentTask, QUESTION_MAX, type TasksFile, emptyTasks } from "../src/main/task-store";
 import { TurnController, type TurnOptions } from "../src/main/turn-controller";
 
 const label = (en: string, es = en) => ({ es, en });
@@ -48,6 +48,8 @@ function setup(
     fit?: (p: ModelProfile) => ModelProfile;
     /** recordCompaction. */
     recordCompaction?: (task: CurrentTask) => void;
+    /** readPrompt instead of the default brief. */
+    readPrompt?: (action: string) => Promise<string>;
     /** Real turns (a TurnController) instead of the scripted ones; `window` then gets the manager's events too. */
     turns?: TaskDeps["turns"];
     window?: Event[];
@@ -87,7 +89,7 @@ function setup(
     },
     actions: { manifest: { label: label("The manifest", "El manifiesto") }, engines: { label: label("Engines", "Motores") }, turn: { label: label("A turn") } },
     path: opts.path ?? ["manifest", "engines", "turn"],
-    readPrompt: async (action) => `# Topic: ${action}\nAnswer in {{language}}.\n\n{{notesIndex}}`,
+    readPrompt: opts.readPrompt ?? (async (action) => `# Topic: ${action}\nAnswer in {{language}}.\n\n{{notesIndex}}`),
     language: async () => "en",
     engine: async () => "claude",
     notes: async () => {
@@ -225,6 +227,75 @@ describe("TaskManager", () => {
     // Not again while that note stands.
     await t.manager.checkpointBeforeMove();
     expect(t.turns).toHaveLength(2);
+  });
+
+  it("before a move, a checkpoint runs again when a turn ran after the last one", async () => {
+    const standard: ModelProfile = { engine: "claude", tier: "standard", model: "sonnet", effort: "medium", cap: 200_000 };
+    const ctx = (used: number): Event => ({ type: "context", used });
+    // The follow-up after the 80% checkpoint isn't in that note: the move needs a newer one.
+    const t = setup({ profile: standard, script: [[ctx(170_000), ok], [saveNote(), ok], [ctx(175_000), ok], [saveNote(), ok]] });
+    await t.manager.start("manifest");
+    await t.manager.ask("And the blocks?");
+    expect(t.turns.map((x) => x.options.phase)).toEqual(["run", "checkpoint", "run"]);
+    await t.manager.checkpointBeforeMove();
+    expect(t.turns.map((x) => x.options.phase)).toEqual(["run", "checkpoint", "run", "checkpoint"]);
+    expect(t.state().current).toMatchObject({ status: "waiting", checkpointNote: true, checkpointTurns: 2 });
+    // Nothing ran since: not again.
+    await t.manager.checkpointBeforeMove();
+    expect(t.turns).toHaveLength(4);
+  });
+
+  it("before a move, a checkpoint note from an older file (no turn count) is taken as stale", async () => {
+    const state: TasksFile = {
+      version: 1,
+      current: { id: "t9", action: "manifest", status: "waiting", startedAt: "", turns: 3, checkpointNote: true, session: { id: "s1", started: true } },
+      actions: {},
+    };
+    const t = setup({ state, script: [[saveNote(), ok]] });
+    await t.manager.checkpointBeforeMove();
+    expect(t.turns.map((x) => x.options.phase)).toEqual(["checkpoint"]);
+    expect(t.state().current).toMatchObject({ checkpointTurns: 3 });
+  });
+
+  it("a resumed task whose brief can't be read resumes without it, and says why in the log", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    let fail = false;
+    const t = setup({
+      readPrompt: async (action) => {
+        if (fail) throw new Error("ENOENT");
+        return `# Topic: ${action}\n{{notesIndex}}`;
+      },
+    });
+    await t.manager.start("manifest");
+    await t.manager.resumeFromNotes();
+    fail = true;
+    await t.manager.ask("And the blocks?");
+    expect(t.turns[1].message).not.toContain("# Topic:");
+    expect(t.turns[1].message).toContain("The earlier conversation of this topic is not available");
+    expect(t.turns[1].message).toContain("## The person's message\nAnd the blocks?");
+    expect(t.state().current).toMatchObject({ status: "waiting" });
+    expect(t.state().current?.resume).toBeUndefined();
+    expect(error).toHaveBeenCalled();
+    error.mockRestore();
+  });
+
+  it("a resumed free question carries the whole question, and says so when a very long one was cut", async () => {
+    const long = `${"a".repeat(1000)}END`;
+    const t = setup();
+    await t.manager.ask(long);
+    expect(t.state().current?.question).toBe(long);
+    await t.manager.resumeFromNotes();
+    await t.manager.ask("And?");
+    expect(t.turns[1].message).toContain(`## The question that opened this topic\n${long}`);
+    expect(t.turns[1].message).not.toContain("was cut");
+
+    const huge = "b".repeat(QUESTION_MAX + 50);
+    const u = setup();
+    await u.manager.ask(huge);
+    expect(u.state().current).toMatchObject({ question: huge.slice(0, QUESTION_MAX), questionCut: true });
+    await u.manager.resumeFromNotes();
+    await u.manager.ask("And?");
+    expect(u.turns[1].message).toContain("(The question was longer; it was cut here.)");
   });
 
   it("before a move, no checkpoint when no task waits or the task already resumes from the notes", async () => {

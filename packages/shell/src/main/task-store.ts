@@ -11,8 +11,10 @@ export interface CurrentTask {
   id: string;
   /** The manifest action; absent for a free question. */
   action?: string;
-  /** The question that started a free-question task. */
+  /** The question that started a free-question task, whole up to QUESTION_MAX characters. */
   question?: string;
+  /** The question was longer than QUESTION_MAX and was cut: a resumed session is told so. */
+  questionCut?: boolean;
   status: TaskStatus;
   /** The engine session, once the engine started it. */
   session?: Session;
@@ -29,6 +31,8 @@ export interface CurrentTask {
   checkpointed?: boolean;
   /** A checkpoint wrote this task's note; the closing turn still updates it. */
   checkpointNote?: boolean;
+  /** `turns` when the last checkpoint note was written: a turn after it isn't in that note. */
+  checkpointTurns?: number;
   /** The engine session was lost (the folder moved): the next turn starts a new one from the notes. */
   resume?: boolean;
 }
@@ -43,6 +47,14 @@ export interface TasksFile {
 }
 
 export const emptyTasks = (): TasksFile => ({ version: 1, current: null, actions: {} });
+
+/** How much of a free question tasks.json keeps (a resumed session gets it back): generous, but bounded. */
+export const QUESTION_MAX = 20_000;
+
+/** The question as tasks.json keeps it: whole up to QUESTION_MAX, otherwise cut and marked. */
+export function keptQuestion(text: string): { question: string; questionCut?: true } {
+  return text.length > QUESTION_MAX ? { question: text.slice(0, QUESTION_MAX), questionCut: true } : { question: text };
+}
 
 const ACTION_STATUSES: readonly string[] = ["done", "unsaved", "unfinished"];
 const TASK_STATUSES: readonly string[] = ["running", "waiting", "closing", "checkpoint"];
@@ -69,7 +81,8 @@ function cleanCurrent(c: unknown): CurrentTask | null {
   return {
     id: c.id,
     ...(typeof c.action === "string" ? { action: c.action } : {}),
-    ...(typeof c.question === "string" ? { question: c.question } : {}),
+    ...(typeof c.question === "string" ? keptQuestion(c.question) : {}),
+    ...(c.questionCut === true && typeof c.question === "string" ? { questionCut: true } : {}),
     status: c.status as TaskStatus,
     ...(session ? { session } : {}),
     startedAt: typeof c.startedAt === "string" ? c.startedAt : "",
@@ -79,6 +92,7 @@ function cleanCurrent(c: unknown): CurrentTask | null {
     ...(ctx ? { context: ctx } : {}),
     ...(typeof c.checkpointed === "boolean" ? { checkpointed: c.checkpointed } : {}),
     ...(typeof c.checkpointNote === "boolean" ? { checkpointNote: c.checkpointNote } : {}),
+    ...(typeof c.checkpointTurns === "number" && Number.isFinite(c.checkpointTurns) ? { checkpointTurns: c.checkpointTurns } : {}),
     ...(c.resume === true ? { resume: true } : {}),
   };
 }

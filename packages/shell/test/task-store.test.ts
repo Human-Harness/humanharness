@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { type TasksFile, TaskStore, emptyTasks, interrupted } from "../src/main/task-store";
+import { QUESTION_MAX, type TasksFile, TaskStore, emptyTasks, interrupted } from "../src/main/task-store";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -96,6 +96,15 @@ describe("TaskStore: the current task, field by field", () => {
   it("keeps action and question only as strings", async () => {
     expect((await read({ ...base, action: 3, question: ["x"] })).current).toEqual(base);
     expect((await read({ ...base, action: "turn", question: "why?" })).current).toEqual({ ...base, action: "turn", question: "why?" });
+  });
+
+  it("keeps a question up to its bound, marks one cut, and keeps the checkpoint's turn count only as a number", async () => {
+    const long = "q".repeat(QUESTION_MAX + 10);
+    expect((await read({ ...base, question: long })).current).toEqual({ ...base, question: long.slice(0, QUESTION_MAX), questionCut: true });
+    expect((await read({ ...base, question: "why?", questionCut: true })).current).toEqual({ ...base, question: "why?", questionCut: true });
+    expect((await read({ ...base, questionCut: "yes" })).current).toEqual(base);
+    expect((await read({ ...base, checkpointTurns: 2 })).current).toEqual({ ...base, checkpointTurns: 2 });
+    expect((await read({ ...base, checkpointTurns: "2" })).current).toEqual(base);
   });
 
   it("keeps noteSaved only as a boolean", async () => {

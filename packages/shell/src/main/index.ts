@@ -47,7 +47,7 @@ import { UsageLog, compactionRecord, profileMeta, summarizeUsage, usageRecord } 
 import { type ValidationContext, checkFolder, configProblem, isAppUrl } from "./validate";
 import { openIfStillSafe, openRoots, openableFile, revealIfStillSafe, revealableFile } from "./open-path";
 import { saveWithFolderChange } from "./folder-change";
-import { guardedMove, moveFolder } from "./move-folder";
+import { type MoveDeps, guardedMove, moveFolder, moveJournal, precheckMove, recoverMove } from "./move-folder";
 import { type ResolvedReference, displayPath, resolveReferences, usableReferences } from "./references";
 import { TaskManager } from "./task-manager";
 import { historyView, isSha } from "./history-view";
@@ -87,6 +87,8 @@ const guards = new EngineGuards();
 const logos = new Map<string, Promise<string | null>>();
 /** End-to-end test settings (development builds only; see test-hooks.ts). */
 const hooks = readTestHooks(process.env, app.isPackaged);
+/** The folder move running now (hh:moveFolder): quitting waits for it, and no history is opened meanwhile. */
+let moving: Promise<unknown> | null = null;
 /** The manifest's reference folders on this machine, resolved once the app is ready. */
 let references: Promise<ResolvedReference[]> = Promise.resolve([]);
 
@@ -297,8 +299,12 @@ const standaloneHistory = lastOpened(async (key) => {
   return history;
 });
 
-/** The running runtime's history, or the one opened on the configured folder when there is no runtime. */
+/** The running runtime's history, or the one opened on the configured folder; none while the folder moves. */
 async function currentHistory(): Promise<History | null> {
+  return moving ? null : openHistory();
+}
+
+async function openHistory(): Promise<History | null> {
   const rt = await runtime.peek()?.catch(() => null);
   if (rt) return rt.history;
   const c = await validConfig();
@@ -535,6 +541,7 @@ function registerIpc() {
     return restoreWith((history) => history.restore(sha, RESTORE_POINT));
   });
   handle("hh:historyTasks", async () => {
+    if (moving) return [];
     const history = await currentHistory();
     return history ? historyView(await history.tasks()) : [];
   });
@@ -647,26 +654,49 @@ function registerIpc() {
     if (typeof to !== "string" || !path.isAbsolute(to) || to.length > 1000 || to.includes("\0")) return { ok: false, error: "unsuitable" };
     const c = await validConfig();
     if (!c) throw new Error("The app is not set up yet");
-    const result = await guardedMove({
+    const userData = app.getPath("userData");
+    const deps: MoveDeps = {
+      check: (folder) => checkFolder(folder, os.homedir()),
+      // Read without creating a history: a folder that has none yet has no tracked files.
+      tracked: async () => {
+        const has = await fs.access(historyDir(userData, c.folder)).then(() => true, () => false);
+        return has ? ((await (await openHistory())?.trackedFiles()) ?? []) : [];
+      },
+      saveFolder: async (folder) => void (await config.replaceFolder(folder)),
+      historyDir: (folder) => historyDir(userData, folder),
+      journal: moveJournal(userData),
+      ops: { trash: (p) => shell.trashItem(p) },
+    };
+    // Checked and set with no await in between, so two requests can't both start a move.
+    if (moving) return { ok: false, error: "busy" };
+    const run = guardedMove({
       guards,
       isBusy: () => tasks.isBusy() || restores.turnBlocked() !== null,
+      precheck: () => precheckMove(c.folder, to, deps),
+      quitting: () => quitting,
       checkpoint: () => tasks.checkpointBeforeMove(),
       flush: () => turns.flush(),
       closeRuntime,
       restoresSettled: () => restores.settled(),
       resumeFromNotes: () => tasks.resumeFromNotes(),
-      move: async () => {
-        const history = await currentHistory();
-        return moveFolder(c.folder, to, {
-          check: (folder) => checkFolder(folder, os.homedir()),
-          tracked: async () => (await history?.trackedFiles()) ?? [],
-          saveFolder: async (folder) => void (await config.replaceFolder(folder)),
-          historyDir: (folder) => historyDir(app.getPath("userData"), folder),
-        });
-      },
+      move: () => moveFolder(c.folder, to, deps),
     });
-    if (!result.ok) return result;
-    return { ok: true, state: await appState(), ...(result.done.oldRemoved ? {} : { leftBehind: c.folder }) };
+    moving = run;
+    let result: Awaited<typeof run>;
+    try {
+      result = await run;
+    } finally {
+      moving = null;
+    }
+    // The window always gets the state as it is now, whatever happened.
+    const state = await appState().catch((err: unknown) => {
+      console.error("Could not read the app state after the move", err);
+      return null;
+    });
+    if (!result.ok) return { ...result, ...(state ? { state } : {}) };
+    if (!state) throw new Error("Could not read the app state after the move");
+    const { oldRemoved, historyMoved } = result.done;
+    return { ok: true, state, ...(oldRemoved ? {} : { leftBehind: c.folder }), ...(historyMoved ? {} : { historyLeftBehind: true }) };
   });
 }
 
@@ -713,6 +743,17 @@ if (loaded) {
 
   app.whenReady().then(async () => {
     config = new ConfigStore(app.getPath("userData"));
+    // A folder move cut short by a quit or crash: finish or undo it before anything opens the folder or its history.
+    const userData = app.getPath("userData");
+    const recovered = await recoverMove({
+      journal: moveJournal(userData),
+      currentFolder: async () => (await config.load()).folder,
+      historyDir: (folder) => historyDir(userData, folder),
+    }).catch((err: unknown) => {
+      console.error("Could not settle an interrupted folder move", err);
+      return null;
+    });
+    if (recovered?.leftBehind) console.error(`An interrupted folder move kept the old folder at ${recovered.leftBehind}`);
     shared = new SharedConfigStore(hooks.sharedDir ?? sharedConfigDir());
     // `humanharness dev --engine <id>`: a fresh app starts with that engine chosen (development builds only).
     const preselect = devEngine(process.env, app.isPackaged, availableEngines(harness.engines, mode()).map((e) => e.id));
@@ -738,6 +779,8 @@ if (loaded) {
     const testStopped = Promise.race([guards.close(), new Promise<void>((r) => setTimeout(r, QUIT_TEST_WAIT_MS))]);
     const setupStopped = setupRun ? stopSetupProcess(setupRun) : Promise.resolve();
     void (async () => {
+      // A folder move under way finishes (or undoes itself) first: it is never cut short on purpose.
+      await moving?.catch(() => undefined);
       await Promise.all([setupStopped, testStopped]);
       try {
         await dropRuntime();

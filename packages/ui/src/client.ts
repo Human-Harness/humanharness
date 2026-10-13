@@ -69,8 +69,14 @@ export interface SyncLocationView {
 /** Why moving the folder failed; each has its own card (spec 3d §2 "Errors"). */
 export type MoveError = "busy" | "exists" | "inside" | "unsuitable" | "no-space" | "no-permission" | "mismatch" | "failed";
 
-/** How a move ended: the new app state (and the old folder when it could not be removed), or why it failed. */
-export type MoveResult = { ok: true; state: AppState; leftBehind?: string } | { ok: false; error: MoveError };
+/**
+ * How a move ended: the new app state, the old folder when it was kept (it changed after the copy, or couldn't
+ * go to the Trash) and whether the history stayed behind (it follows at the next start); or why it failed,
+ * with the state as it is now.
+ */
+export type MoveResult =
+  | { ok: true; state: AppState; leftBehind?: string; historyLeftBehind?: boolean }
+  | { ok: false; error: MoveError; state?: AppState };
 
 export interface AppState {
   harness: {

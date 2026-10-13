@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { noteSlug, parseNote, readNotes, renderNote, writeNote } from "../src";
+import { folderRelative, noteSlug, parseNote, readNotes, relativizeNoteFiles, renderNote, writeNote } from "../src";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -107,5 +107,41 @@ describe("noteSlug", () => {
     expect(noteSlug("¿Dónde se guarda la conversación?")).toBe("donde-se-guarda-la-conversacion");
     expect(noteSlug("!!!")).toBe("note");
     expect(noteSlug("a".repeat(100))).toHaveLength(60);
+  });
+});
+
+describe("note files", () => {
+  it("stores paths inside the folder relative to it", async () => {
+    const folder = tmp();
+    await writeNote(folder, "turn", { ...note, files: [path.join(folder, "plan", "week.md"), "/elsewhere/x.md", "rel.md"] }, meta);
+    const [saved] = await readNotes(folder);
+    expect(saved.files).toEqual(["plan/week.md", "/elsewhere/x.md", "rel.md"]);
+  });
+
+  it("makes paths into a folder relative and leaves everything else", () => {
+    expect(folderRelative("/a/Work", "/a/Work/x/y.md")).toBe("x/y.md");
+    expect(folderRelative("/a/Work", "/a/Workshop/y.md")).toBe("/a/Workshop/y.md");
+    expect(folderRelative("/a/Work", "/a/Work")).toBe("/a/Work");
+    expect(folderRelative("/a/Work", "y.md")).toBe("y.md");
+  });
+
+  it("rewrites only the files line of notes that name the old folder", async () => {
+    const folder = tmp();
+    const dir = path.join(folder, ".harness/notes");
+    fs.mkdirSync(dir, { recursive: true });
+    const old = "/Users/me/Documents/Work";
+    fs.writeFileSync(path.join(dir, "a.md"), `---\ntitle: "A"\nfiles: ["${old}/plan.md", "/other/x.md"]\n---\n## Summary\n- ${old}/plan.md stays in the text\n`);
+    fs.writeFileSync(path.join(dir, "b.md"), `---\ntitle: "B"\nfiles: ["plan.md"]\n---\n`);
+    fs.writeFileSync(path.join(dir, "c.md"), "no front matter\n");
+    expect(await relativizeNoteFiles(folder, old)).toBe(1);
+    expect(fs.readFileSync(path.join(dir, "a.md"), "utf8")).toBe(
+      `---\ntitle: "A"\nfiles: ["plan.md","/other/x.md"]\n---\n## Summary\n- ${old}/plan.md stays in the text\n`,
+    );
+    expect(fs.readFileSync(path.join(dir, "b.md"), "utf8")).toBe(`---\ntitle: "B"\nfiles: ["plan.md"]\n---\n`);
+    expect(fs.readdirSync(dir).sort()).toEqual(["a.md", "b.md", "c.md"]);
+  });
+
+  it("does nothing when there are no notes", async () => {
+    expect(await relativizeNoteFiles(tmp(), "/old")).toBe(0);
   });
 });

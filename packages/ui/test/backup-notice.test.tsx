@@ -355,6 +355,24 @@ describe("Settings › General backup row", () => {
     expect(screen.getByRole("button", { name: "Choose another place…" })).toBeTruthy();
   });
 
+  it("doesn't offer a place the folder is anywhere inside", async () => {
+    const client = new FakeClient({ ...ready, folder: `${drive}/Projects/Demo` });
+    client.state.backup = {
+      status: { kind: "synced", provider: "google-drive" },
+      locations: [
+        { provider: "google-drive", path: `${drive}/`, suggested: `${drive}/Demo` },
+        { provider: "dropbox", path: "/Users/me/Dropbox", suggested: "/Users/me/Dropbox/Demo" },
+        // Only a name that starts the same: not the place the folder is in.
+        { provider: "onedrive", path: drive.slice(0, -1), suggested: `${drive.slice(0, -1)}/Demo` },
+      ],
+    };
+    await renderIn("en", <Sheet client={client} />);
+    fireEvent.click(screen.getByRole("button", { name: "Move folder…" }));
+    expect(screen.queryByRole("button", { name: "Move to Google Drive" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Move to Dropbox" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Move to OneDrive" })).toBeTruthy();
+  });
+
   it("shows a failed move from Settings even when the notice is hidden", async () => {
     const client = new FakeClient(ready);
     client.state.backup = { status: { kind: "git-remote" }, locations: [] };

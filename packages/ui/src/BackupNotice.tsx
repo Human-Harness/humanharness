@@ -6,6 +6,11 @@ import type { AppState, HarnessClient, MoveError, SyncLocationView } from "./cli
 const folderName = (folder: string) => folder.replace(/\/+$/, "").split("/").pop() || folder;
 const parentOf = (folder: string) => folder.replace(/\/+$/, "").replace(/\/[^/]*$/, "") || "/";
 const inside = (place: string, name: string) => `${place.replace(/\/+$/, "")}/${name}`;
+/** The folder is the place or anywhere under it. */
+const within = (folder: string, place: string) => {
+  const p = place.replace(/\/+$/, "");
+  return folder === p || folder.startsWith(`${p}/`);
+};
 
 /** The notice shows when the folder is only on this computer and the person hasn't said they keep a copy. */
 export function needsBackupNotice(state: AppState): boolean {
@@ -101,7 +106,7 @@ export function useFolderMove(client: HarnessClient, onChange: (s: AppState) => 
   };
 }
 
-/** The places the folder can move to: each synced place (but the one it is in) and "Choose another place…". */
+/** The places the folder can move to: each synced place (but one it is anywhere inside) and "Choose another place…". */
 export function MovePlaces({ state, move, children }: { state: AppState; move: FolderMove; children?: ReactNode }) {
   const { t } = useTranslation();
   const folder = state.config.folder;
@@ -111,7 +116,7 @@ export function MovePlaces({ state, move, children }: { state: AppState; move: F
     const provider = t(`backup.provider.${l.provider}`);
     return l.account ? t("backup.moveToAccount", { provider, account: l.account }) : t("backup.moveTo", { provider });
   };
-  const places = (state.backup?.locations ?? []).filter((l) => inside(l.path, folderName(folder)) !== folder);
+  const places = (state.backup?.locations ?? []).filter((l) => !within(folder, l.path));
   return (
     <div className="hh-backup-actions" aria-busy={move.moving}>
       {places.map((l) => (

@@ -268,6 +268,13 @@
       "note": "Note saved: {{title}}"
     }
   },
+  "backup": {
+    "placesLabel": "Where to keep your work",
+    "saveIn": "Save it in {{provider}} so you don't lose it",
+    "thisComputer": "Only on this computer",
+    "placesHint": "A synced folder keeps a copy in the cloud: if something happens to this computer, your work is still there.",
+    "provider": { "google-drive": "Google Drive", "onedrive": "OneDrive", "dropbox": "Dropbox", "icloud": "iCloud Drive" }
+  },
   "app": {
     "loadError": "The app couldn't start. Close it and open it again."
   },

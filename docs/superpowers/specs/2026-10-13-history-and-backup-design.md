@@ -111,3 +111,14 @@ Each move failure has its own error card, in plain language: not enough space, t
 ## Docs
 
 Update `docs/architecture/history.md` (trailers, task groups, backup status, the move). In the roadmap, add row 3d and leave 3b with the Usage tab only.
+
+## Changes during implementation
+
+`docs/architecture/history.md` describes what was built. Where it differs from this spec:
+
+- **Start and restores are untagged.** "Start" records changes made outside the app, so it belongs to no task. A restore carries no trailer either: going back may undo several tasks, so it belongs to none of them and never changes a task's own row.
+- **"Other changes", not "Earlier".** The untagged group is named for what it holds (the start commits and the restores), always the last row. Its changes are the union of its commits' own changes. A task group's `start` is its first "Before message" snapshot when there is one, so the person's own edits before the task survive "Go back to before this task".
+- **A checkpoint before the move.** The move ends the open task's engine session, so a waiting task with no fresh note first runs the plan 3c checkpoint turn. Its "Note: …" commit goes in before the history is held. Afterwards the task resumes from its notes in a new session.
+- **The Trash, never a delete.** The old folder goes to the system Trash, and only when nothing in it changed after the copy. Otherwise, or without a Trash, it is kept, and the window says where.
+- **A journal.** The move copies into a temporary place next to the new one and writes `move-journal.json` before each step. A start after a quit or crash finishes or undoes the move from it, with the config deciding which. While the config names no folder, the journal waits.
+- **One app per data folder.** The app takes Electron's single-instance lock (tied to its data folder), so a second start can't run the journal's recovery under a move in progress. A second start quits and focuses the running window.

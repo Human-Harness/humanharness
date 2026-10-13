@@ -8,14 +8,16 @@ import { renderIn } from "./render";
 afterEach(cleanup);
 
 const drive = "/Users/me/Library/CloudStorage/GoogleDrive-me@example.com/My Drive";
+const work = "/Users/me/Library/CloudStorage/GoogleDrive-work@example.com/My Drive";
 const icloud = "/Users/me/Library/Mobile Documents/com~apple~CloudDocs";
+const radio = (name: string) => screen.getByRole("radio", { name }) as HTMLInputElement;
 
 function withPlaces() {
   const client = new FakeClient();
   client.state.backup = {
     status: null,
     locations: [
-      { provider: "google-drive", path: drive, suggested: `${drive}/Demo` },
+      { provider: "google-drive", path: drive, account: "me@example.com", suggested: `${drive}/Demo` },
       { provider: "icloud", path: icloud, suggested: `${icloud}/Demo` },
     ],
   };
@@ -27,9 +29,10 @@ describe("FolderStep", () => {
     const client = withPlaces();
     const onSaved = vi.fn();
     await renderIn("en", <FolderStep client={client} state={client.state} onSaved={onSaved} />);
-    const places = screen.getByRole("group", { name: "Where to keep your work" });
+    const places = screen.getByRole("radiogroup", { name: "Where to keep your work" });
     expect(places.textContent).toContain("Save it in Google Drive so you don't lose it");
-    expect(screen.getByRole("button", { name: "Save it in Google Drive so you don't lose it" }).getAttribute("aria-pressed")).toBe("true");
+    expect(radio("Save it in Google Drive so you don't lose it").checked).toBe(true);
+    expect(radio("Only on this computer").checked).toBe(false);
     expect(screen.getByText(`${drive}/Demo`)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Use this folder" }));
     await waitFor(() => expect(client.state.config.folder).toBe(`${drive}/Demo`));
@@ -38,18 +41,37 @@ describe("FolderStep", () => {
   it("lets the person pick iCloud, this computer only, or any other folder", async () => {
     const client = withPlaces();
     await renderIn("en", <FolderStep client={client} state={client.state} onSaved={() => {}} />);
-    fireEvent.click(screen.getByRole("button", { name: "Save it in iCloud Drive so you don't lose it" }));
+    fireEvent.click(radio("Save it in iCloud Drive so you don't lose it"));
     expect(screen.getByText(`${icloud}/Demo`)).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Only on this computer" }));
+    expect(radio("Save it in iCloud Drive so you don't lose it").checked).toBe(true);
+    fireEvent.click(radio("Only on this computer"));
     expect(screen.getByText("/Users/me/Documents/Demo")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Choose another folder" }));
     expect(await screen.findByText("/Users/me/Elsewhere")).toBeTruthy();
   });
 
+  it("tells two accounts of one provider apart", async () => {
+    const client = new FakeClient();
+    client.state.backup = {
+      status: null,
+      locations: [
+        { provider: "google-drive", path: drive, account: "me@example.com", suggested: `${drive}/Demo` },
+        { provider: "google-drive", path: work, account: "work@example.com", suggested: `${work}/Demo` },
+      ],
+    };
+    await renderIn("en", <FolderStep client={client} state={client.state} onSaved={() => {}} />);
+    const [mine, theirs] = screen.getAllByRole("radio", { name: "Save it in Google Drive so you don't lose it" });
+    const described = (el: HTMLElement) => document.getElementById(el.getAttribute("aria-describedby")!)?.textContent;
+    expect(described(mine)).toBe("me@example.com");
+    expect(described(theirs)).toBe("work@example.com");
+    fireEvent.click(theirs);
+    expect(screen.getByText(`${work}/Demo`)).toBeTruthy();
+  });
+
   it("shows no places when nothing syncs on this computer", async () => {
     const client = new FakeClient();
     await renderIn("es", <FolderStep client={client} state={client.state} onSaved={() => {}} />);
-    expect(screen.queryByRole("group")).toBeNull();
+    expect(screen.queryByRole("radiogroup")).toBeNull();
     expect(screen.getByText("/Users/me/Documents/Demo")).toBeTruthy();
   });
 });

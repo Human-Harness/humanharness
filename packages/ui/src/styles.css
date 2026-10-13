@@ -110,8 +110,10 @@ input[type="text"], input:not([type]) { font: inherit; height: 28px; padding: 0 
 .hh-onboarding { display: grid; gap: 10px; justify-items: start; }
 .hh-onboarding pre { max-height: 160px; overflow: auto; font-size: 11px; color: var(--hh-muted); white-space: pre-wrap; }
 .hh-places { display: grid; gap: 6px; width: 100%; }
-.hh-places button { justify-content: flex-start; text-align: left; }
-.hh-places button[aria-pressed="true"] { border-color: var(--hh-ink); font-weight: 600; }
+.hh-place { display: grid; grid-template-columns: auto 1fr; align-items: center; column-gap: 8px; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--hh-line-strong); background: var(--hh-surface); }
+.hh-place .hh-caption { grid-column: 2; overflow-wrap: anywhere; }
+.hh-place:has(input:checked) { border-color: var(--hh-ink); font-weight: 600; }
+.hh-place:has(input:checked) .hh-caption { font-weight: 400; }
 .hh-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
 .hh-tile { position: relative; height: auto; min-height: 104px; flex-direction: column; padding: 14px; gap: 4px; border-radius: 12px; border-color: var(--hh-line); }
 .hh-tile[aria-pressed="true"] { border: 2px solid var(--hh-ink); padding: 13px; }

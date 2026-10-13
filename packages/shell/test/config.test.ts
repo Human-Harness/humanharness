@@ -49,6 +49,14 @@ describe("ConfigStore", () => {
     expect((await store.load()).folder).toBe("/second");
     expect(fs.readdirSync(dir)).toEqual(["config.json"]);
   });
+
+  it("drops a hand-edited backupDismissed that isn't a boolean, keeping the rest", async () => {
+    const dir = fs.mkdtempSync(path.join(root, "c-"));
+    fs.writeFileSync(path.join(dir, "config.json"), JSON.stringify({ folder: "/x", language: "es", backupDismissed: "yes" }));
+    expect(await new ConfigStore(dir).load()).toEqual({ folder: "/x", language: "es" });
+    fs.writeFileSync(path.join(dir, "config.json"), JSON.stringify({ folder: "/x", backupDismissed: false }));
+    expect(await new ConfigStore(dir).load()).toEqual({ folder: "/x", backupDismissed: false });
+  });
 });
 
 describe("historyDir", () => {

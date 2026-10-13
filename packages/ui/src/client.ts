@@ -60,6 +60,8 @@ export type SyncStatus = { kind: "synced"; provider: SyncProvider } | { kind: "g
 export interface SyncLocationView {
   provider: SyncProvider;
   path: string;
+  /** Which account of the provider (`ana@example.com`, `Personal`), when its folder name says. */
+  account?: string;
   /** `<path>/<the harness's suggested folder name>`: what the first-launch step offers. */
   suggested: string;
 }

@@ -416,6 +416,9 @@ importers:
       '@humanharness/runtime':
         specifier: workspace:*
         version: link:../runtime
+      '@humanharness/workspace':
+        specifier: workspace:*
+        version: link:../workspace
       i18next:
         specifier: ^26.4.3
         version: 26.4.3(typescript@7.0.2)

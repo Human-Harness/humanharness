@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import git from "isomorphic-git";
 import { NOTES_PREFIX } from "./notes";
+import { BEFORE_MESSAGE } from "./subjects";
 
 const AUTHOR = { name: "Human Harness", email: "history@humanharness.local" };
 
@@ -55,8 +56,6 @@ export interface HistoryTask {
 
 const byPath = (a: FileChange, b: FileChange) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
 
-/** The subject of the snapshot the runtime saves before each turn: the person's edits, not the AI's. */
-const BEFORE_MESSAGE = "Before message";
 
 /** How far back `tasks` follows a task past the depth to find its first commit. */
 const MAX_WALK_BACK = 1000;

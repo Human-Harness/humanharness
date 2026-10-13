@@ -3,7 +3,19 @@ import { promises as fs } from "node:fs";
 import { type Bridge, type Launcher, type McpServerSpec, devLauncher, openBridge, uiServerSpec } from "@humanharness/blocks";
 import type { Effort, EngineDef, ModelChoice, ModelProfile } from "@humanharness/engines";
 import { type Language, type LoadedHarness, allBlocks, resolveInHarness } from "@humanharness/harness-sdk";
-import { History, type HistoryTrailer, NOTES_PREFIX, type ReferenceFolder, prepareFolder, writeInstructions } from "@humanharness/workspace";
+import {
+  BEFORE_MESSAGE,
+  History,
+  type HistoryTrailer,
+  NOTES_PREFIX,
+  type ReferenceFolder,
+  START,
+  STOPPED_PREFIX,
+  TURN_PREFIX,
+  UNDO_PREFIX,
+  prepareFolder,
+  writeInstructions,
+} from "@humanharness/workspace";
 import { AcpTransport } from "./acp";
 import { ClaudeCliTransport } from "./claude-cli";
 import type { Event } from "./events";
@@ -73,7 +85,7 @@ export async function createRuntime(opts: RuntimeOptions): Promise<HarnessRuntim
   // The history skips the app's files under .harness/ (except the notes) and the generated instructions.
   const history = new History(folder, opts.gitdir, [".harness/", ...generated], [NOTES_PREFIX]);
   await history.init();
-  await history.save("Start");
+  await history.save(START);
 
   let emitCurrent: ((e: Event) => void) | null = null;
   const session: Session = opts.session ?? { id: randomUUID(), started: false };
@@ -130,7 +142,7 @@ export async function createRuntime(opts: RuntimeOptions): Promise<HarnessRuntim
         };
         const done = (async () => {
           try {
-            const before = (await history.save("Before message", options.trailer)) ?? (await history.last())!;
+            const before = (await history.save(BEFORE_MESSAGE, options.trailer)) ?? (await history.last())!;
             let final: Event | undefined;
             emitCurrent = emitOnce;
             await transport.turn(
@@ -145,9 +157,9 @@ export async function createRuntime(opts: RuntimeOptions): Promise<HarnessRuntim
             );
             emitCurrent = null;
             const f: Event = final ?? { type: "done", ok: false, error: { code: "agent-crashed" } };
-            if (f.type === "done" && f.ok) await history.save(`Turn: ${message.slice(0, 60)}`, options.trailer);
-            else if (f.type === "done" && f.error.code === "agent-crashed") await history.restore(before, "Undo: the turn did not finish", options.trailer);
-            else await history.save(`Stopped: ${message.slice(0, 60)}`, options.trailer);
+            if (f.type === "done" && f.ok) await history.save(`${TURN_PREFIX}${message.slice(0, 60)}`, options.trailer);
+            else if (f.type === "done" && f.error.code === "agent-crashed") await history.restore(before, `${UNDO_PREFIX}the turn did not finish`, options.trailer);
+            else await history.save(`${STOPPED_PREFIX}${message.slice(0, 60)}`, options.trailer);
             emitOnce(f);
           } catch (err) {
             emitOnce({ type: "done", ok: false, error: { code: "agent-crashed", detail: err instanceof Error ? err.message : String(err) } });

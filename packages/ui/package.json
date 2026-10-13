@@ -9,6 +9,7 @@
     "@humanharness/harness-sdk": "workspace:*",
     "@humanharness/i18n": "workspace:*",
     "@humanharness/runtime": "workspace:*",
+    "@humanharness/workspace": "workspace:*",
     "i18next": "^26.4.3",
     "react-i18next": "^17.0.16"
   },

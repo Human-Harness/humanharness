@@ -1,15 +1,28 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Language } from "@humanharness/harness-sdk";
-import { type ActionOption, type HarnessClient, type HistoryItem, type HistoryTaskView, NOTE, RESTORE_POINT, RESTORE_TASK } from "./client";
+import {
+  type ActionOption,
+  BEFORE_MESSAGE,
+  type HarnessClient,
+  type HistoryItem,
+  type HistoryTaskView,
+  NOTE,
+  RESTORE_POINT,
+  RESTORE_TASK,
+  START,
+  STOPPED_PREFIX,
+  TURN_PREFIX,
+  UNDO_PREFIX,
+} from "./client";
 
 /** The i18n key (and its values) that tells a history entry in plain language; null keeps the commit subject. */
 export function entryLabel(message: string): { key: string; values?: Record<string, string> } | null {
-  if (message === "Start") return { key: "history.entry.start" };
-  if (message === "Before message") return { key: "history.entry.before" };
-  if (message.startsWith("Turn: ")) return { key: "history.entry.turn" };
-  if (message.startsWith("Stopped: ")) return { key: "history.entry.stopped" };
-  if (message.startsWith("Undo: ")) return { key: "history.entry.undo" };
+  if (message === START) return { key: "history.entry.start" };
+  if (message === BEFORE_MESSAGE) return { key: "history.entry.before" };
+  if (message.startsWith(TURN_PREFIX)) return { key: "history.entry.turn" };
+  if (message.startsWith(STOPPED_PREFIX)) return { key: "history.entry.stopped" };
+  if (message.startsWith(UNDO_PREFIX)) return { key: "history.entry.undo" };
   if (message === RESTORE_TASK) return { key: "history.entry.restoredTask" };
   if (message === RESTORE_POINT) return { key: "history.entry.restored" };
   const note = NOTE.exec(message);

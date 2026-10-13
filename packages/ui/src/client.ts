@@ -1,6 +1,7 @@
 import type { Effort, ModelChoice, ModelSpec, ModelsConfig } from "@humanharness/engines";
 import type { ActionCost, ChoiceOption, Language, LocalizedText, Tier } from "@humanharness/harness-sdk";
 import type { ActivityKind, EngineError, Event, LimitWindow } from "@humanharness/runtime";
+import type { FileChange, SyncProvider, SyncStatus } from "@humanharness/workspace";
 
 export type Appearance = "system" | "light" | "dark";
 
@@ -52,10 +53,8 @@ export interface ReferenceView {
   path: string;
 }
 
-/** A synced drive (spec 3d §2). */
-export type SyncProvider = "google-drive" | "onedrive" | "dropbox" | "icloud";
-/** How the folder is kept if the computer is lost. */
-export type SyncStatus = { kind: "synced"; provider: SyncProvider } | { kind: "git-remote" } | { kind: "local" };
+/** A synced drive (spec 3d §2), and how the folder is kept if the computer is lost (types only: nothing of the workspace runs here). */
+export type { SyncProvider, SyncStatus };
 /** A synced place on this computer, and the harness's folder inside it. */
 export interface SyncLocationView {
   provider: SyncProvider;
@@ -160,16 +159,10 @@ export interface HistoryItem {
 }
 
 /** A file a task added, changed or deleted. */
-export interface HistoryFileChange {
-  path: string;
-  kind: "added" | "modified" | "deleted";
-}
+export type HistoryFileChange = FileChange;
 
-/** The commit subjects of the two restores (raw git data, English; the History panel shows them through i18n keys). */
-export const RESTORE_POINT = "Went back to an earlier point";
-export const RESTORE_TASK = "Went back to before the task";
-/** The subject of the commit that saves a task's note; group 1 is the note's title. */
-export const NOTE = /^Note: (.+)$/;
+// The history's commit subjects (raw git data, English; the History panel shows them through i18n keys).
+export { BEFORE_MESSAGE, NOTE, RESTORE_POINT, RESTORE_TASK, START, STOPPED_PREFIX, TURN_PREFIX, UNDO_PREFIX } from "@humanharness/workspace/subjects";
 
 /**
  * One row of the History panel: a task's commits, or the group of commits outside any task (`taskId: null`:

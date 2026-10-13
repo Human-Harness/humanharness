@@ -3,7 +3,7 @@ import type { ModelProfile } from "@humanharness/engines";
 import { type ChoiceOption, type Language, type LocalizedText, type SavedNote, saveNoteSchema } from "@humanharness/harness-sdk";
 import { type Event, type Session, fail } from "@humanharness/runtime";
 import { type ActionStatus, type CurrentTaskView, type NoteView, type TaskStatus, type TaskView, nextInPath } from "@humanharness/ui/client";
-import { type HistoryTrailer, type Note, type NoteMeta, buildNotesIndex, noteSlug } from "@humanharness/workspace";
+import { type HistoryTrailer, NOTE_PREFIX, type Note, type NoteMeta, buildNotesIndex, noteSlug } from "@humanharness/workspace";
 import { CHECKPOINT_PROMPT, CLOSE_PROMPT, QUESTION_PROMPT, fillPrompt, resumeMessage } from "./task-prompts";
 import { type CurrentTask, type TasksFile, interrupted, keptQuestion } from "./task-store";
 import { type TurnOptions, isHeld } from "./turn-controller";
@@ -586,7 +586,7 @@ export class TaskManager {
           ? { ...s, current: { ...s.current, ...(final ? { noteSaved: true } : { checkpointNote: true, checkpointTurns: s.current.turns }) } }
           : s,
       );
-      await this.d.saveHistory?.(`Note: ${note.title.slice(0, 60)}`, { task: task.id, ...(task.action ? { action: task.action } : {}) });
+      await this.d.saveHistory?.(`${NOTE_PREFIX}${note.title.slice(0, 60)}`, { task: task.id, ...(task.action ? { action: task.action } : {}) });
     } catch (err) {
       console.error("Could not save the note", err);
     }

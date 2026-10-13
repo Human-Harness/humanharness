@@ -60,6 +60,7 @@ function setup(
   const views: TaskView[] = [];
   const log: string[] = [];
   const emitted: Event[] = [];
+  const trailers: unknown[] = [];
   let busy = false;
   let n = 0;
   const manager = new TaskManager({
@@ -101,7 +102,10 @@ function setup(
       log.push("endSession");
       opts.onEndSession?.();
     },
-    saveHistory: async (message) => void log.push(`history:${message}`),
+    saveHistory: async (message, trailer) => {
+      log.push(`history:${message}`);
+      trailers.push(trailer);
+    },
     changed: (v) => views.push(v),
     emit: (e) => void (opts.window ?? emitted).push(e),
     ...(opts.profile ? { profileFor: async () => opts.profile! } : {}),
@@ -111,13 +115,28 @@ function setup(
     now: () => new Date("2026-10-12T11:20:00.000Z"),
     newId: () => `t${++n}`,
   });
-  return { manager, turns, views, log, emitted, state: () => state };
+  return { manager, turns, views, log, emitted, trailers, state: () => state };
 }
 
 /** Picks an option of the block shown for the task open now. */
 const pick = (t: ReturnType<typeof setup>, option: ChoiceOption) => t.manager.choose(option, t.state().current?.id ?? "none");
 
 describe("TaskManager", () => {
+  it("tags the note's history commit with its task and action", async () => {
+    const t = setup({ script: [[ok], [saveNote(), ok]], path: ["manifest"] });
+    await t.manager.start("manifest");
+    await pick(t, { label: "Done", next: true });
+    expect(t.log).toContain("history:Note: The manifest");
+    expect(t.trailers).toEqual([{ task: "t1", action: "manifest" }]);
+  });
+
+  it("tags a free question's note with its task only", async () => {
+    const t = setup({ script: [[ok], [saveNote(), ok]] });
+    await t.manager.ask("Where are chats saved?");
+    await t.manager.finish();
+    expect(t.trailers).toEqual([{ task: "t1" }]);
+  });
+
   it("starts an action in a fresh session: its brief with the notes index is the first message", async () => {
     const engines: Note = {
       slug: "engines",

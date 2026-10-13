@@ -3,7 +3,7 @@ import type { ModelProfile } from "@humanharness/engines";
 import { type ChoiceOption, type Language, type LocalizedText, type SavedNote, saveNoteSchema } from "@humanharness/harness-sdk";
 import { type Event, type Session, fail } from "@humanharness/runtime";
 import { type ActionStatus, type CurrentTaskView, type NoteView, type TaskStatus, type TaskView, nextInPath } from "@humanharness/ui/client";
-import { type Note, type NoteMeta, buildNotesIndex, noteSlug } from "@humanharness/workspace";
+import { type HistoryTrailer, type Note, type NoteMeta, buildNotesIndex, noteSlug } from "@humanharness/workspace";
 import { CHECKPOINT_PROMPT, CLOSE_PROMPT, QUESTION_PROMPT, fillPrompt } from "./task-prompts";
 import { type CurrentTask, type TasksFile, interrupted } from "./task-store";
 import { type TurnOptions, isHeld } from "./turn-controller";
@@ -36,8 +36,8 @@ export interface TaskDeps {
   noteExists?(slug: string): Promise<boolean>;
   /** Ends the engine session (Codex: `session/close`); the next turn starts a new one. */
   endSession(): Promise<void>;
-  /** Records the folder in the local history (a note was written). */
-  saveHistory?(message: string): Promise<void>;
+  /** Records the folder in the local history (a note was written), tagged with the task it belongs to. */
+  saveHistory?(message: string, trailer?: HistoryTrailer): Promise<void>;
   /** The task view changed: tell the window. */
   changed(view: TaskView): void;
   /**
@@ -504,7 +504,7 @@ export class TaskManager {
       await this.d.writeNote(slug, note, { ...(task.action ? { action: task.action } : {}), date: this.now().toISOString(), engine: await this.d.engine() });
       // A checkpoint's note is provisional: the closing turn still runs and updates the same file.
       await this.update((s) => (s.current?.id === task.id ? { ...s, current: { ...s.current, ...(final ? { noteSaved: true } : { checkpointNote: true }) } } : s));
-      await this.d.saveHistory?.(`Note: ${note.title.slice(0, 60)}`);
+      await this.d.saveHistory?.(`Note: ${note.title.slice(0, 60)}`, { task: task.id, ...(task.action ? { action: task.action } : {}) });
     } catch (err) {
       console.error("Could not save the note", err);
     }

@@ -354,8 +354,8 @@ const tasks = new TaskManager({
     const rt = await runtime.peek()?.catch(() => null);
     await rt?.endSession();
   },
-  saveHistory: async (message) => {
-    await (await currentHistory())?.save(message);
+  saveHistory: async (message, trailer) => {
+    await (await currentHistory())?.save(message, trailer);
   },
   changed: (view) => sendToWindow("hh:tasks", view),
   emit,

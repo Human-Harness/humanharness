@@ -168,9 +168,9 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
       const rt = await runtime.peek()?.catch(() => null);
       await rt?.endSession();
     },
-    saveHistory: async (message) => {
+    saveHistory: async (message, trailer) => {
       const rt = await runtime.peek()?.catch(() => null);
-      await rt?.history.save(message);
+      await rt?.history.save(message, trailer);
     },
     changed: (v) => {
       if (v.current?.context) tally.context(v.current.context.used);

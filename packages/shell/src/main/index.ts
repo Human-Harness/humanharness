@@ -745,6 +745,19 @@ if (loaded) {
   harness = loaded;
   app.setName(harness.name.en);
   app.setPath("userData", hooks.userData ?? path.join(app.getPath("appData"), "Human Harness", harness.id));
+}
+
+// One app per data folder (the lock is tied to userData, so it is taken after it is set): a second one would
+// share the config, and its start-up recovery could undo a folder move the first one is making.
+const primary = loaded !== null && app.requestSingleInstanceLock();
+if (loaded && !primary) app.quit();
+
+if (primary) {
+  app.on("second-instance", () => {
+    if (!window || window.isDestroyed()) return;
+    if (window.isMinimized()) window.restore();
+    window.focus();
+  });
 
   app.whenReady().then(async () => {
     config = new ConfigStore(app.getPath("userData"));

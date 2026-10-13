@@ -1,7 +1,8 @@
+import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { expect, test } from "@playwright/test";
-import { closeAndClean, launch, makeSandbox, profileFlags, readJsonl, sessionOf, usageFile } from "./helpers";
+import { closeAndClean, electronBinary, launch, makeSandbox, profileFlags, readJsonl, sessionOf, shellDir, usageFile } from "./helpers";
 import { claudeScript, codexScript } from "./scripts";
 
 type Run = { argv: string[]; prompt: string };
@@ -89,6 +90,29 @@ test("changing the engine keeps the notes, and the first task on the new engine 
     await expect
       .poll(() => JSON.parse(fs.readFileSync(path.join(s.sharedDir, "engines.json"), "utf8")).engines.codex.models)
       .toEqual([{ id: "gpt-5.5", name: "GPT-5.5" }]);
+  } finally {
+    await closeAndClean(app, s);
+  }
+});
+
+test("a second start with the same app data quits and leaves the running app alone", async () => {
+  const s = makeSandbox("single");
+  const { app, page } = await launch(s, { claude: claudeScript });
+  try {
+    await expect(page.getByRole("button", { name: "Iniciar Demo" })).toBeVisible();
+    const dropped = new Set(["ELECTRON_RENDERER_URL", "ELECTRON_RUN_AS_NODE"]);
+    const env = Object.fromEntries(Object.entries(process.env).filter((e): e is [string, string] => e[1] !== undefined && !dropped.has(e[0])));
+    const second = spawn(electronBinary, [shellDir], { env: { ...env, HH_TEST_USER_DATA: s.userData, HH_TEST_SHARED_DIR: s.sharedDir }, stdio: "ignore" });
+    const exited = await new Promise<boolean>((resolve) => {
+      const timer = setTimeout(() => resolve(false), 20_000);
+      second.on("exit", () => {
+        clearTimeout(timer);
+        resolve(true);
+      });
+    });
+    if (!exited) second.kill();
+    expect(exited).toBe(true);
+    await expect(page.getByRole("button", { name: "Iniciar Demo" })).toBeVisible();
   } finally {
     await closeAndClean(app, s);
   }

@@ -1,3 +1,4 @@
+import { promptKind } from "@humanharness/fake-agent";
 import { describe, expect, it } from "vitest";
 import { CHECKPOINT_PROMPT, CLOSE_PROMPT, QUESTION_PROMPT, RESUME_PROMPT, fillPrompt, resumeMessage } from "../src/main/task-prompts";
 
@@ -80,5 +81,12 @@ describe("resumeMessage", () => {
         "## The person's message\nAnd the notes?",
       ].join("\n\n"),
     );
+  });
+});
+
+describe("mock mode markers", () => {
+  it("fake-claude tells the closing turn and the checkpoint by their first words", () => {
+    expect(promptKind(CLOSE_PROMPT)).toBe("close");
+    expect(promptKind(CHECKPOINT_PROMPT)).toBe("checkpoint");
   });
 });

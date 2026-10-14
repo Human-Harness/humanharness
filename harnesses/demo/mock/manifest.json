@@ -1,0 +1,62 @@
+{
+  "version": 1,
+  "action": "manifest",
+  "match": "# Topic: the manifest",
+  "recordedWith": "claude",
+  "fallback": { "text": "Esta respuesta no está grabada en esta prueba. Elegí una de las opciones." },
+  "turns": [
+    {
+      "id": "t1",
+      "text": "El manifiesto declara todo el harness: su nombre, sus acciones, sus bloques y qué motores puede usar.",
+      "blocks": [
+        {
+          "tool": "show_diagram",
+          "input": {
+            "title": "Del manifiesto a la app",
+            "nodes": [
+              { "id": "config", "label": "harness.config.ts" },
+              { "id": "sdk", "label": "defineHarness", "detail": "harness-sdk" },
+              { "id": "app", "label": "La app", "detail": "shell" }
+            ],
+            "edges": [{ "from": "config", "to": "sdk" }, { "from": "sdk", "to": "app" }]
+          }
+        },
+        { "tool": "show_files", "input": { "files": [{ "path": "packages/harness-sdk/src/index.ts", "role": "valida el manifiesto" }] } },
+        {
+          "tool": "show_choices",
+          "input": {
+            "options": [
+              { "label": "Profundizar en las acciones", "followUp": "Contame más de las acciones." },
+              { "label": "Seguir el recorrido →", "next": true }
+            ]
+          }
+        }
+      ],
+      "usage": { "input": 18400, "output": 320, "cacheRead": 12000, "cacheWrite": 0 },
+      "delayMs": 900,
+      "next": { "Profundizar en las acciones": "t2" }
+    },
+    {
+      "id": "t2",
+      "text": "Cada acción trae su brief: un archivo con lo que la IA tiene que hacer en ese tema, su nivel de modelo y una pista de costo.",
+      "blocks": [
+        {
+          "tool": "show_choices",
+          "input": { "options": [{ "label": "Seguir el recorrido →", "next": true }] }
+        }
+      ],
+      "usage": { "input": 21000, "output": 260, "cacheRead": 18000, "cacheWrite": 0 },
+      "delayMs": 700
+    },
+    {
+      "id": "close",
+      "note": {
+        "title": "El manifiesto",
+        "summary": ["defineHarness valida el manifiesto", "Las acciones traen su brief"],
+        "decisions": ["Una sesión por tema"],
+        "files": ["packages/harness-sdk/src/index.ts"],
+        "open": []
+      }
+    }
+  ]
+}

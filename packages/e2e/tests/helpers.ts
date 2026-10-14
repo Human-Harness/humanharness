@@ -45,6 +45,14 @@ export function makeSandbox(name: string, config: Record<string, unknown> = {}):
 /** A Codex that is never asked anything: keeps every engine fake, so no status check reaches a real CLI. */
 const idleCodex: AcpScript = { turns: [] };
 
+/** The environment of a launched shell: ours without the Electron dev variables, pointed at the sandbox. */
+function baseEnv(s: Sandbox): Record<string, string> {
+  // Not inherited: a dev server address, or ELECTRON_RUN_AS_NODE (it would start Electron as plain Node).
+  const dropped = new Set(["ELECTRON_RENDERER_URL", "ELECTRON_RUN_AS_NODE"]);
+  const env = Object.fromEntries(Object.entries(process.env).filter((e): e is [string, string] => e[1] !== undefined && !dropped.has(e[0])));
+  return { ...env, HH_TEST_USER_DATA: s.userData, HH_TEST_SHARED_DIR: s.sharedDir };
+}
+
 /** Launches the built shell (or the build at `app`, a main/index.js) with the fake agents in place of both engines. */
 export async function launch(
   s: Sandbox,
@@ -55,13 +63,24 @@ export async function launch(
     claude: { command: fakeClaudeCommand(), env: { HH_FAKE_SCRIPT: writeScript(s.root, scripts.claude), HH_FAKE_PROMPTS: s.claudePrompts } },
     codex: { command: fakeAcpCommand(), env: { HH_FAKE_SCRIPT: writeScript(s.root, scripts.codex ?? idleCodex), HH_FAKE_LOG: s.acpLog } },
   };
-  // Not inherited: a dev server address, or ELECTRON_RUN_AS_NODE (it would start Electron as plain Node).
-  const dropped = new Set(["ELECTRON_RENDERER_URL", "ELECTRON_RUN_AS_NODE"]);
-  const env = Object.fromEntries(Object.entries(process.env).filter((e): e is [string, string] => e[1] !== undefined && !dropped.has(e[0])));
   const electronApp = await electron.launch({
     executablePath: electronBinary,
     args: [app],
-    env: { ...env, HH_TEST_USER_DATA: s.userData, HH_TEST_SHARED_DIR: s.sharedDir, HH_TEST_ENGINES: JSON.stringify(engines) },
+    env: { ...baseEnv(s), HH_TEST_ENGINES: JSON.stringify(engines) },
+  });
+  return { app: electronApp, page: await electronApp.firstWindow() };
+}
+
+/** The demo's recordings (harnesses/demo/mock). */
+export const demoMockDir = path.resolve(here, "../../../harnesses/demo/mock");
+
+/** Launches the built shell in mock mode (spec 3e): fake-claude replays `mockDir`; Codex isn't offered. */
+export async function launchMock(s: Sandbox, mockDir: string = demoMockDir): Promise<{ app: ElectronApplication; page: Page }> {
+  const engines = { claude: { command: fakeClaudeCommand(), env: { HH_FAKE_MOCK_DIR: mockDir, HH_FAKE_MOCK_STATE: path.join(s.root, "mock-state.json") } } };
+  const electronApp = await electron.launch({
+    executablePath: electronBinary,
+    args: [shellDir],
+    env: { ...baseEnv(s), HH_TEST_ENGINES: JSON.stringify(engines), HH_TEST_MOCK: "1" },
   });
   return { app: electronApp, page: await electronApp.firstWindow() };
 }

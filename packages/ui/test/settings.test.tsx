@@ -215,7 +215,7 @@ describe("SettingsSheet", () => {
   it("Usage: shows each plan window with its reset, and each action's cost and estimate", async () => {
     const client = new FakeClient(ready);
     const reset = new Date(Date.now() + 2 * 3600_000).toISOString();
-    client.usage = { limits: [{ kind: "five_hour", utilization: 0.84, resetsAt: reset }], estimates: { tidy: 0.08 } };
+    client.usage = { limits: [{ kind: "five_hour", utilization: 0.84, resetsAt: reset }], estimates: { tidy: 0.08 }, tokens: {} };
     client.state.actions = {
       tidy: { label: { es: "Ordenar", en: "Tidy up" }, cost: "heavy" },
       note: { label: { es: "Nota", en: "Quick note" }, cost: "light" },
@@ -236,7 +236,7 @@ describe("SettingsSheet", () => {
         { kind: "five_hour", utilization: 0.97, resetsAt: past },
         { kind: "seven_day", utilization: 0.3, resetsAt: later },
       ],
-      estimates: {},
+      estimates: {}, tokens: {},
     };
     await renderIn("en", <Sheet client={client} initialTab="usage" />);
     await screen.findByText("week: 30% used");

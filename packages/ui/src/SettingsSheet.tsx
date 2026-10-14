@@ -312,7 +312,7 @@ function UsageTab({ client, state }: { client: HarnessClient; state: AppState })
   const lang = uiLanguage(state, i18n.language);
   const [usage, setUsage] = useState<UsageSummary | null>(null);
   useEffect(() => {
-    client.getUsage().then(setUsage, () => setUsage({ limits: null, estimates: {} }));
+    client.getUsage().then(setUsage, () => setUsage({ limits: null, estimates: {}, tokens: {} }));
   }, [client]);
   const limits = useCurrentWindows(usage?.limits ?? null);
   const engine = state.engines.find((e) => e.id === state.config.engineId);

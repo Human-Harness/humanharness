@@ -355,7 +355,7 @@ describe("HarnessApp", () => {
 
   it("opens on Home with the logo, name, tagline, Start and the engine pill", async () => {
     const client = new FakeClient(ready);
-    client.usage = { limits: [{ kind: "five_hour", utilization: 0.42, resetsAt: new Date(Date.now() + 3600_000).toISOString() }], estimates: {} };
+    client.usage = { limits: [{ kind: "five_hour", utilization: 0.42, resetsAt: new Date(Date.now() + 3600_000).toISOString() }], estimates: {}, tokens: {} };
     const { container } = render(<HarnessApp client={client} />);
     expect(await screen.findByRole("heading", { name: "Demo" })).toBeTruthy();
     expect(screen.getByText("Test notes")).toBeTruthy();
@@ -368,7 +368,7 @@ describe("HarnessApp", () => {
 
   it("leaves a five-hour window that has already reset out of Home's engine pill", async () => {
     const client = new FakeClient(ready);
-    client.usage = { limits: [{ kind: "five_hour", utilization: 0.42, resetsAt: new Date(Date.now() - 60_000).toISOString() }], estimates: {} };
+    client.usage = { limits: [{ kind: "five_hour", utilization: 0.42, resetsAt: new Date(Date.now() - 60_000).toISOString() }], estimates: {}, tokens: {} };
     render(<HarnessApp client={client} />);
     await screen.findByRole("button", { name: /Claude.*Connected/ });
     await act(async () => {});
@@ -542,7 +542,7 @@ describe("HarnessApp", () => {
         { kind: "five_hour", utilization: 0.16, resetsAt: fiveHourReset },
         { kind: "seven_day", utilization: 0.09, resetsAt: in4d() },
       ],
-      estimates: {},
+      estimates: {}, tokens: {},
     };
     await startWork(<HarnessApp client={client} />);
     await screen.findByText(`5 h: 16% used · resets at ${formatReset(fiveHourReset, "en")} — week: 9% used`);
@@ -579,7 +579,7 @@ describe("HarnessApp", () => {
   it("asks before a heavy action when the 5-hour window is high, and sends only on Continue", async () => {
     const client = new FakeClient(ready);
     client.state.actions = { tidy: { label: { es: "Ordenar", en: "Tidy up" }, cost: "heavy" } };
-    client.usage = { limits: [{ kind: "five_hour", utilization: 0.75, resetsAt: in2h() }], estimates: { tidy: 0.08 } };
+    client.usage = { limits: [{ kind: "five_hour", utilization: 0.75, resetsAt: in2h() }], estimates: { tidy: 0.08 }, tokens: {} };
     await startWork(<HarnessApp client={client} renderSide={(_s, send) => <button onClick={() => send("Tidy all notes", { action: "tidy" })}>tidy</button>} />);
     await screen.findByText(/5 h: 75% used/);
     fireEvent.click(screen.getByRole("button", { name: "tidy" }));
@@ -597,7 +597,7 @@ describe("HarnessApp", () => {
   it("focuses Not now on the pre-flight question, scrolls to it, and Escape means not now", async () => {
     const client = new FakeClient(ready);
     client.state.actions = { tidy: { label: { es: "Ordenar", en: "Tidy up" }, cost: "heavy" } };
-    client.usage = { limits: [{ kind: "five_hour", utilization: 0.75, resetsAt: in2h() }], estimates: { tidy: 0.08 } };
+    client.usage = { limits: [{ kind: "five_hour", utilization: 0.75, resetsAt: in2h() }], estimates: { tidy: 0.08 }, tokens: {} };
     const scrolled: Element[] = [];
     const original = Element.prototype.scrollIntoView;
     Element.prototype.scrollIntoView = function (this: Element) {
@@ -646,7 +646,7 @@ describe("HarnessApp", () => {
   it("goes straight ahead with a heavy action when there is room", async () => {
     const client = new FakeClient(ready);
     client.state.actions = { tidy: { label: { es: "Ordenar", en: "Tidy up" }, cost: "heavy" } };
-    client.usage = { limits: [{ kind: "five_hour", utilization: 0.2, resetsAt: in2h() }], estimates: {} };
+    client.usage = { limits: [{ kind: "five_hour", utilization: 0.2, resetsAt: in2h() }], estimates: {}, tokens: {} };
     await startWork(<HarnessApp client={client} renderSide={(_s, send) => <button onClick={() => send("Tidy all notes", { action: "tidy" })}>tidy</button>} />);
     await screen.findByText(/5 h: 20% used/);
     fireEvent.click(screen.getByRole("button", { name: "tidy" }));
@@ -657,7 +657,7 @@ describe("HarnessApp", () => {
   it("tells when the limit resets on an out-of-quota card", async () => {
     const client = new FakeClient(ready);
     const reset = in2h();
-    client.usage = { limits: [{ kind: "five_hour", utilization: 1, resetsAt: reset }], estimates: {} };
+    client.usage = { limits: [{ kind: "five_hour", utilization: 1, resetsAt: reset }], estimates: {}, tokens: {} };
     await startWork(<HarnessApp client={client} />);
     await screen.findByText(/5 h: 100% used/);
     await typeAndSend(client, "go");

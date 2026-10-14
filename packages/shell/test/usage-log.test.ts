@@ -79,27 +79,29 @@ describe("summarizeUsage", () => {
   const now = new Date("2026-10-11T16:00:00.000Z");
 
   it("has no limits until the engine reports some", () => {
-    expect(summarizeUsage([], now)).toEqual({ limits: null, estimates: {} });
+    expect(summarizeUsage([], "five_hour", now)).toEqual({ limits: null, estimates: {}, tokens: {}, primary: "five_hour" });
+    expect(summarizeUsage([], undefined, now)).toEqual({ limits: null, estimates: {}, tokens: {} });
   });
 
   it("returns the latest windows that haven't reset yet", () => {
-    expect(summarizeUsage([rec(0.1, R1), rec(0.3, R2)], now).limits).toEqual(rec(0.3, R2).limits);
-    expect(summarizeUsage([rec(0.3, R1)], now).limits).toEqual([{ kind: "seven_day", utilization: 0.05, resetsAt: WEEK }]);
+    expect(summarizeUsage([rec(0.1, R1), rec(0.3, R2)], "five_hour", now).limits).toEqual(rec(0.3, R2).limits);
+    expect(summarizeUsage([rec(0.3, R1)], "five_hour", now).limits).toEqual([{ kind: "seven_day", utilization: 0.05, resetsAt: WEEK }]);
   });
 
   it("credits each action with the rise up to the next snapshot (the limits arrive mid-turn)", () => {
     // Each turn's snapshot is taken while it runs, so its cost shows in the next turn's snapshot.
     const records = [
       rec(0.1, R1, "tidy"),
-      rec(0.18, R1), // tidy: +0.08
+      rec(0.18, R1), // tidy: +0.08; this free question: +0.02
       rec(0.2, R1, "tidy"),
       rec(0.3, R1, "tidy"), // tidy: +0.10
-      rec(0.05, R2), // the window reset: not measured
+      rec(0.05, R2), // the window reset: not measured; this free question: +0.45
       rec(0.5, R2, "tidy"), // the latest turn: nothing after it yet
     ];
-    const { estimates } = summarizeUsage(records, now);
-    expect(Object.keys(estimates)).toEqual(["tidy"]);
+    const { estimates } = summarizeUsage(records, "five_hour", now);
+    expect(Object.keys(estimates)).toEqual(["tidy", "questions"]);
     expect(estimates.tidy).toBeCloseTo(0.09);
+    expect(estimates.questions).toBeCloseTo((0.02 + 0.45) / 2);
   });
 
   it("measures from each turn's first snapshot when the turn reported more than one", () => {
@@ -107,14 +109,14 @@ describe("summarizeUsage", () => {
       { ...rec(0.2, R2, "tidy"), firstLimits: [{ kind: "five_hour", utilization: 0.1, resetsAt: R2 }] },
       { ...rec(0.3, R2), firstLimits: [{ kind: "five_hour", utilization: 0.25, resetsAt: R2 }] },
     ];
-    const summary = summarizeUsage(records, now);
+    const summary = summarizeUsage(records, "five_hour", now);
     expect(summary.estimates.tidy).toBeCloseTo(0.15);
     expect(summary.limits).toEqual(rec(0.3, R2).limits);
   });
 
   it("does not credit an action with the next turn when the next one has no snapshot", () => {
     const records = [rec(0.1, R1, "tidy"), { at: "t", engine: "claude", ok: true }, rec(0.4, R1)];
-    expect(summarizeUsage(records, now).estimates).toEqual({});
+    expect(summarizeUsage(records, "five_hour", now).estimates).toEqual({});
   });
 
   const turn = (fiveHour: number, meta: UsageMeta): UsageRecord => ({ ...rec(fiveHour, R2, meta.action), ...(meta.task ? { task: meta.task } : {}), ...(meta.phase ? { phase: meta.phase } : {}) });
@@ -129,7 +131,7 @@ describe("summarizeUsage", () => {
       turn(0.42, {}),
     ];
     // a: 0.2, b: 0.05 -> 0.125 (per turn it would be 0.25 / 3)
-    expect(summarizeUsage(records, now).estimates.tidy).toBeCloseTo(0.125);
+    expect(summarizeUsage(records, "five_hour", now).estimates.tidy).toBeCloseTo(0.125);
   });
 
   it("leaves out a task with a turn it can't measure", () => {
@@ -138,7 +140,65 @@ describe("summarizeUsage", () => {
       turn(0.2, { action: "tidy", task: "a", phase: "run" }), // the window resets after it
       { ...rec(0.05, R1), task: "b" },
     ];
-    expect(summarizeUsage(records, now).estimates).toEqual({});
+    expect(summarizeUsage(records, "five_hour", now).estimates).toEqual({});
+  });
+});
+
+describe("summarizeUsage over recent tasks", () => {
+  const now = new Date("2026-10-11T16:00:00.000Z");
+  const usage = (total: number) => ({ inputTokens: total - 30, outputTokens: 10, cacheReadTokens: 10, cacheWriteTokens: 10 });
+  /** One task per cost: each turn rises the window by `cost`, and the last line closes the measurement. */
+  const tasks = (costs: number[], action?: string, kind = "five_hour"): UsageRecord[] => {
+    let at = 0;
+    const records: UsageRecord[] = costs.map((cost, i) => {
+      const r: UsageRecord = { at: "t", engine: "claude", ok: true, task: `t${i}`, ...(action ? { action } : {}), limits: [{ kind, utilization: at, resetsAt: R2 }] };
+      at += cost;
+      return r;
+    });
+    return [...records, { at: "t", engine: "claude", ok: true, limits: [{ kind, utilization: at, resetsAt: R2 }] }];
+  };
+
+  it("averages each action over its last 10 measured tasks only", () => {
+    // Two old expensive tasks, then ten cheap ones: the old ones no longer count.
+    const records = tasks([0.5, 0.5, ...Array<number>(10).fill(0.01)], "tidy");
+    expect(summarizeUsage(records, "five_hour", now).estimates.tidy).toBeCloseTo(0.01);
+  });
+
+  it("measures the engine's primary window, and none without one", () => {
+    const records = tasks([0.04], "tidy", "weekly");
+    expect(summarizeUsage(records, "five_hour", now).estimates).toEqual({});
+    expect(summarizeUsage(records, "weekly", now)).toMatchObject({ estimates: { tidy: 0.04 }, primary: "weekly" });
+    expect(summarizeUsage(records, undefined, now).estimates).toEqual({});
+  });
+
+  it("measures free questions under \"questions\"", () => {
+    expect(summarizeUsage(tasks([0.03]), "five_hour", now).estimates).toEqual({ questions: 0.03 });
+  });
+
+  it("averages total tokens per task over the last 10 tasks whose turns all reported usage", () => {
+    const turn = (task: string, total?: number, phase?: "close"): UsageRecord => ({
+      at: "t",
+      engine: "codex",
+      ok: true,
+      action: "tidy",
+      task,
+      ...(phase ? { phase } : {}),
+      ...(total !== undefined ? { usage: usage(total) } : {}),
+    });
+    const records = [
+      turn("old", 9_000_000), // pushed out by the ten after it
+      ...Array.from({ length: 9 }, (_, i) => turn(`n${i}`, 1000)),
+      turn("two", 1500),
+      turn("two", 500), // a follow-up: the task is 2000
+      turn("two", 99_999, "close"), // closing turn: left out
+      turn("gap", 1000),
+      { at: "t", engine: "codex", ok: true, action: "tidy", task: "gap", limits: [] }, // a turn without usage: left out
+      { at: "t", engine: "codex", ok: true, task: "q", usage: usage(300) },
+    ];
+    const summary = summarizeUsage(records, undefined, now);
+    expect(summary.tokens.tidy).toBeCloseTo((9 * 1000 + 2000) / 10);
+    expect(summary.tokens.questions).toBe(300);
+    expect(summary.estimates).toEqual({});
   });
 });
 
@@ -195,6 +255,6 @@ describe("usage records with the task's profile", () => {
       { ...rec(0.4, R1, "turn"), task: "a" },
       rec(0.5, R1),
     ];
-    expect(summarizeUsage(records, new Date("2026-10-11T12:00:00.000Z")).estimates.turn).toBeCloseTo(0.3);
+    expect(summarizeUsage(records, "five_hour", new Date("2026-10-11T12:00:00.000Z")).estimates.turn).toBeCloseTo(0.3);
   });
 });

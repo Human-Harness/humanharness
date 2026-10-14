@@ -312,7 +312,23 @@
   "setupFlow": {
     "notConfiguredTitle": "You haven't chosen an engine yet",
     "notConfiguredText": "First choose where your work is kept, then connect the AI. It takes two steps.",
-    "configure": "Set up {{name}}"
+    "configure": "Set up {{name}}",
+    "title": "Set up {{name}}",
+    "stepsLabel": "Steps",
+    "stepFolder": "Your folder",
+    "stepEngine": "AI engine",
+    "folderHeading": "Where should we keep your work?",
+    "folderIntro": "{{name}} keeps everything you do in a folder on your computer. The app doesn't see or keep anything outside it.",
+    "engineHeading": "Which AI does {{name}} use?",
+    "engineIntro": "{{name}} works with an AI plan you already have, using your own account.",
+    "cancel": "Cancel",
+    "back": "Back",
+    "next": "Next",
+    "saveError": "I couldn't save the engine. Try again.",
+    "readyTitle": "All set",
+    "readyFolder": "Folder",
+    "readyEngine": "Engine",
+    "readyHint": "You can change all of this whenever you like in Settings."
   },
   "mock": {
     "model": "Model",

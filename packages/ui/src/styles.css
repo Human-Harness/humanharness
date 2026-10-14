@@ -94,6 +94,24 @@ input[type="text"], input:not([type]) { font: inherit; height: 28px; padding: 0 
 .hh-footer-path { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; direction: rtl; text-align: left; }
 .hh-wordmark { font-family: var(--hh-display); font-weight: 500; color: var(--hh-slate); }
 
+/* Setup flow (spec 2026-10-14 §2): stepper, one centred step, footer on the sheet background. */
+.hh-setup { height: 100vh; display: flex; flex-direction: column; }
+.hh-setup-steps { list-style: none; margin: 0; padding: 18px 16px 6px; display: flex; justify-content: center; align-items: center; gap: 10px; color: var(--hh-muted); }
+.hh-setup-steps li { display: flex; align-items: center; gap: 8px; }
+.hh-setup-steps li + li::before { content: ""; width: 32px; height: 1px; margin-right: 2px; background: var(--hh-line-strong); }
+.hh-setup-steps li[aria-current="step"] { color: var(--hh-ink); font-weight: 600; }
+.hh-setup-body { flex: 1; min-height: 0; overflow-y: auto; padding: 16px 16px 24px; }
+.hh-setup-body.done { display: grid; align-content: center; }
+.hh-setup-step { max-width: 520px; margin: 0 auto; display: grid; gap: 12px; }
+.hh-setup-step h2 { font-family: var(--hh-display); font-size: 20px; font-weight: 600; }
+.hh-setup-step h2:focus { outline: none; }
+.hh-setup-intro { color: var(--hh-slate); line-height: 1.5; }
+.hh-setup-footer { display: flex; justify-content: space-between; gap: 12px; padding: 12px 20px; border-top: 1px solid var(--hh-line); background: var(--hh-sheet); }
+.hh-setup-done { width: 100%; justify-items: center; text-align: center; gap: 14px; }
+.hh-setup-done .hh-rows { width: 100%; text-align: left; }
+.hh-setup-done-mark { width: 48px; height: 48px; display: grid; place-items: center; border-radius: 50%; background: var(--hh-ink); color: var(--hh-on-ink); }
+.hh-setup-done-mark svg { width: 24px; height: 24px; }
+
 /* Settings sheet, attached under the top bar */
 /* Wraps Home or the work screen without changing its layout (it is made inert under the sheet). */
 .hh-screen { display: contents; }

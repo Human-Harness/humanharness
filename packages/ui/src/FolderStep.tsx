@@ -10,12 +10,27 @@ export function uiLanguage(state: AppState, i18nLanguage: string): Language {
 }
 
 /** First launch only: the welcome line and the folder (spec §7: chosen once, then fixed). Saves the language with it. */
-export function FolderStep({ client, state, onSaved }: { client: HarnessClient; state: AppState; onSaved: (s: AppState) => void }) {
+export function FolderStep({
+  client,
+  state,
+  onSaved,
+  submitLabel,
+  welcome = true,
+}: {
+  client: HarnessClient;
+  state: AppState;
+  onSaved: (s: AppState) => void;
+  /** The save button's label; "Use this folder" by default. */
+  submitLabel?: string;
+  /** The welcome line; the setup flow leaves it out (it has its own heading and intro). */
+  welcome?: boolean;
+}) {
   const { t, i18n } = useTranslation();
   const lang = uiLanguage(state, i18n.language);
   const locations = state.backup?.locations ?? [];
   // A synced place comes first (spec 3d §2): the folder survives losing the computer.
-  const [folder, setFolder] = useState(locations[0]?.suggested ?? state.suggestedFolder);
+  // Back in the setup flow, the folder just saved is still the choice.
+  const [folder, setFolder] = useState(state.config.folder ?? locations[0]?.suggested ?? state.suggestedFolder);
   const [problem, setProblem] = useState<FolderProblem | null>(null);
   const [saveError, setSaveError] = useState(false);
   const placesId = useId();
@@ -41,7 +56,7 @@ export function FolderStep({ client, state, onSaved }: { client: HarnessClient; 
 
   return (
     <section className="hh-onboarding">
-      <p>{t("setup.welcome", { name: state.harness.name[lang] })}</p>
+      {welcome && <p>{t("setup.welcome", { name: state.harness.name[lang] })}</p>}
       <h3>{t("setup.folder")}</h3>
       <p className="hh-caption">{t("setup.folderHint")}</p>
       {locations.length > 0 && (
@@ -87,7 +102,7 @@ export function FolderStep({ client, state, onSaved }: { client: HarnessClient; 
       )}
       <p className="hh-caption">{t("setup.folderWarning")}</p>
       <button className="hh-primary" onClick={() => void save()}>
-        {t("setup.useFolder")}
+        {submitLabel ?? t("setup.useFolder")}
       </button>
       {saveError && (
         <p className="hh-save-error" role="alert">

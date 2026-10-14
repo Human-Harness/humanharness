@@ -320,6 +320,7 @@ function UsageTab({ client, state }: { client: HarnessClient; state: AppState })
 
   let plan;
   if (!engine) plan = <p className="hh-caption">{t("home.noEngine")}</p>;
+  else if (engine.mock) plan = <p className="hh-caption">{t("usage.mock")}</p>;
   else if (!engine.reportsLimits) plan = <p className="hh-caption">{t("usage.noLimits", { engine: engine.name })}</p>;
   else if (!limits?.length) plan = <p className="hh-caption">{t("usage.unknown")}</p>;
   else

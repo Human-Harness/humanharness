@@ -141,6 +141,7 @@
     "resetsFull": "Se renueva: {{time}}",
     "unknown": "El uso de tu plan aparece después del primer mensaje.",
     "noLimits": "{{engine}} no informa los límites de tu plan.",
+    "mock": "Modo prueba: no gasta tu plan.",
     "lastTurn": "Último mensaje: {{tokens}} tokens.",
     "near": "Cerca de tu límite",
     "almostOut": "Casi en tu límite",

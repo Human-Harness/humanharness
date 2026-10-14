@@ -565,6 +565,17 @@ describe("HarnessApp", () => {
     await screen.findByText(/Codex doesn't report your plan's limits\. Last message: 1\.2K tokens\./);
   });
 
+  it("for the test engine, says test mode uses none of the plan and keeps the last reply's tokens", async () => {
+    const client = new FakeClient({ ...ready, language: "es" });
+    client.state.engines = [{ ...client.state.engines[0], name: "Motor de prueba", logo: undefined, reportsLimits: false, mock: true }];
+    client.chat = [
+      { id: "1", role: "assistant", text: "hi", blocks: [], activities: [], at: "t", usage: { inputTokens: 1000, outputTokens: 200, cacheReadTokens: 0, cacheWriteTokens: 0 } },
+    ];
+    await startWork(<HarnessApp client={client} />);
+    await screen.findByText(/^Modo prueba: no gasta tu plan\. Último mensaje: 1,2 mil tokens\.$/);
+    expect(screen.queryByText(/no informa los límites/)).toBeNull();
+  });
+
   it("asks before a heavy action when the 5-hour window is high, and sends only on Continue", async () => {
     const client = new FakeClient(ready);
     client.state.actions = { tidy: { label: { es: "Ordenar", en: "Tidy up" }, cost: "heavy" } };

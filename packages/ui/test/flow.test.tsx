@@ -26,7 +26,13 @@ function flowClient() {
 
 async function startWork(client: FakeClient, props: Partial<HarnessAppProps> = {}) {
   render(<HarnessApp client={client} locales={locales} startView={{ title: "title", faq: ["faq.own"], hint: "hint" }} {...props} />);
-  fireEvent.click(await screen.findByRole("button", { name: "Start Demo" }));
+  await clickStart();
+}
+/** Home's Start, once the engine check has passed. */
+async function clickStart() {
+  const start = (await screen.findByRole("button", { name: "Start Demo" })) as HTMLButtonElement;
+  await waitFor(() => expect(start.disabled).toBe(false));
+  fireEvent.click(start);
 }
 /** The start view, once the conversation has loaded (its topics are enabled). */
 async function startRegion() {
@@ -308,7 +314,7 @@ describe("choices of an earlier task", () => {
     client.chat = entries("t1");
     client.tasks = { current: { id: "t2", status: "waiting" }, actions: {}, notes: [] };
     render(<HarnessApp client={client} />);
-    fireEvent.click(await screen.findByRole("button", { name: "Start Demo" }));
+    await clickStart();
     await screen.findByText("Pick one.");
     await waitFor(() => expect(client.tasks.current?.id).toBe("t2"));
     expect((screen.getByRole("button", { name: "Tell me more" }) as HTMLButtonElement).disabled).toBe(true);
@@ -321,7 +327,7 @@ describe("choices of an earlier task", () => {
     client.chat = entries("t1");
     client.tasks = { current: { id: "t1", status: "waiting" }, actions: {}, notes: [] };
     render(<HarnessApp client={client} />);
-    fireEvent.click(await screen.findByRole("button", { name: "Start Demo" }));
+    await clickStart();
     await screen.findByText("Pick one.");
     const more = screen.getByRole("button", { name: "Tell me more" }) as HTMLButtonElement;
     await waitFor(() => expect(more.disabled).toBe(false));

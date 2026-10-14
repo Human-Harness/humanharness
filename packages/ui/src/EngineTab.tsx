@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { EngineIcon } from "./chrome";
 import { type AppState, type EngineStatus, type HarnessClient, engineProblem } from "./client";
 import { EngineOnboarding } from "./EngineOnboarding";
-import { FolderStep, uiLanguage } from "./FolderStep";
+import { uiLanguage } from "./FolderStep";
 
 /** The reason behind a failed call, without Electron's English "Error invoking remote method …: Error:" wrapper. */
 export function errorDetail(err: unknown): string {
@@ -10,18 +11,24 @@ export function errorDetail(err: unknown): string {
   return text.replace(/^Error invoking remote method '[^']*': (?:\w*Error: )?/, "");
 }
 
-/** Settings → Engine: the folder on first launch, then engine tiles, onboarding and the engine in use. */
+/** Settings → Engine (and the setup flow's engine step): engine tiles, onboarding and the engine in use. */
 export function EngineTab({
   client,
   state,
   onChange,
   setupEngine,
+  setup = false,
+  onSelection,
 }: {
   client: HarnessClient;
   state: AppState;
   onChange: (s: AppState) => void;
   /** The engine whose install, update, sign-in or sign-out is running: its tile stays selected until it ends. */
   setupEngine?: string;
+  /** Shown as a step of the setup flow, which saves the engine itself: no "Use <engine>" button. */
+  setup?: boolean;
+  /** Told whenever the selected engine or its readiness changes. */
+  onSelection?: (engineId: string, ready: boolean) => void;
 }) {
   const { t, i18n } = useTranslation();
   const lang = uiLanguage(state, i18n.language);
@@ -33,7 +40,8 @@ export function EngineTab({
   /** Why checking an engine failed, by engine id. */
   const [checkErrors, setCheckErrors] = useState<Record<string, string>>({});
   const ids = state.engines.map((e) => e.id).join(",");
-  const hasFolder = Boolean(state.config.folder);
+  const onSelectionRef = useRef(onSelection);
+  onSelectionRef.current = onSelection;
 
   const refresh = useCallback(
     async (id: string) => {
@@ -54,16 +62,17 @@ export function EngineTab({
   }, [setupEngine]);
 
   useEffect(() => {
-    if (!hasFolder) return;
     for (const id of ids.split(",").filter(Boolean)) void refresh(id);
-  }, [hasFolder, ids, refresh]);
-
-  if (!hasFolder) return <FolderStep client={client} state={state} onSaved={onChange} />;
+  }, [ids, refresh]);
 
   const engine = state.engines.find((e) => e.id === selected);
   const checkError = selected ? checkErrors[selected] : undefined;
   const status = selected && checkError === undefined ? statuses[selected] : undefined;
   const ready = status ? engineProblem(status) === null : false;
+
+  useEffect(() => {
+    if (selected) onSelectionRef.current?.(selected, ready);
+  }, [selected, ready]);
 
   const use = async () => {
     if (!selected) return;
@@ -107,7 +116,7 @@ export function EngineTab({
                   ✓
                 </span>
               )}
-              {e.logo && <img src={e.logo} alt="" />}
+              {e.logo ? <img src={e.logo} alt="" /> : <EngineIcon size={40} />}
               <strong>{e.name}</strong>
               <span className="hh-caption">{label}</span>
               {e.id === current && <span className="hh-caption">{t("engine.current")}</span>}
@@ -140,36 +149,60 @@ export function EngineTab({
       )}
       {engine && status && ready && (
         <>
-          {selected !== current && (
+          {!setup && selected !== current && (
             <button className="hh-primary" disabled={busy !== null} onClick={() => void use()}>
               {t("engine.use", { engine: engine.name })}
             </button>
           )}
-          <div className="hh-rows">
-            <div className="hh-row">
-              <span>{t("engine.ready", { engine: engine.name })}</span>
-              {busy === "logout" ? (
-                <span role="status">{t("engine.signingOut")}</span>
-              ) : (
-                <button disabled={busy !== null} onClick={() => void signOut()}>
-                  {t("engine.signOut")}
-                </button>
-              )}
+          {engine.mock ? (
+            // The test engine: nothing to sign out of, no plan, no provider to disclose.
+            <div className="hh-rows">
+              <div className="hh-row">
+                <span className="hh-row-label">{t("mock.model")}</span>
+                <span>{t("mock.modelName")}</span>
+              </div>
+              <div className="hh-row">
+                <span className="hh-row-label">{t("mock.answers")}</span>
+                <span>{t("mock.answersValue")}</span>
+              </div>
+              <div className="hh-row">
+                <span className="hh-row-label">{t("mock.data")}</span>
+                <span>{t("mock.dataValue")}</span>
+              </div>
+              <div className="hh-row">
+                <span className="hh-row-label">{t("mock.plan")}</span>
+                <span>{t("mock.planValue")}</span>
+              </div>
             </div>
-            <div className="hh-row">
-              <span className="hh-row-label">{t("engine.plan")}</span>
-              <span>{engine.requires[lang]}</span>
-            </div>
-            <div className="hh-row">
-              <span className="hh-row-label">{t("engine.data")}</span>
-              <span>{engine.dataLocation[lang]}</span>
-            </div>
-            <div className="hh-row">
-              <span className="hh-row-label">{t("engine.version")}</span>
-              <span>{status.version}</span>
-            </div>
-          </div>
-          <p className="hh-caption">{t("engine.noticeContent", { provider: engine.provider })}</p>
+          ) : (
+            <>
+              <div className="hh-rows">
+                <div className="hh-row">
+                  <span>{t("engine.ready", { engine: engine.name })}</span>
+                  {busy === "logout" ? (
+                    <span role="status">{t("engine.signingOut")}</span>
+                  ) : (
+                    <button disabled={busy !== null} onClick={() => void signOut()}>
+                      {t("engine.signOut")}
+                    </button>
+                  )}
+                </div>
+                <div className="hh-row">
+                  <span className="hh-row-label">{t("engine.plan")}</span>
+                  <span>{engine.requires[lang]}</span>
+                </div>
+                <div className="hh-row">
+                  <span className="hh-row-label">{t("engine.data")}</span>
+                  <span>{engine.dataLocation[lang]}</span>
+                </div>
+                <div className="hh-row">
+                  <span className="hh-row-label">{t("engine.version")}</span>
+                  <span>{status.version}</span>
+                </div>
+              </div>
+              <p className="hh-caption">{t("engine.noticeContent", { provider: engine.provider })}</p>
+            </>
+          )}
         </>
       )}
       {failed && (

@@ -1,6 +1,8 @@
 import { fileURLToPath } from "node:url";
 
 export * from "./script";
+export * from "./mock";
+export * from "./mock-replay";
 
 const tsx = () => import.meta.resolve("tsx");
 const entry = (file: string) => fileURLToPath(new URL(file, import.meta.url));

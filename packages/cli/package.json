@@ -7,6 +7,7 @@
   "exports": { ".": "./src/index.ts", "./sdk": "./src/sdk.ts", "./ui": "./src/ui.ts" },
   "dependencies": {
     "@humanharness/engines": "workspace:*",
+    "@humanharness/fake-agent": "workspace:*",
     "@humanharness/harness-sdk": "workspace:*",
     "@humanharness/i18n": "workspace:*",
     "@humanharness/runtime": "workspace:*",
@@ -17,7 +18,6 @@
     "tsx": "^4.23.15"
   },
   "devDependencies": {
-    "@humanharness/fake-agent": "workspace:*",
     "@types/react": "^19.3.0",
     "react": "^19.3.0"
   }

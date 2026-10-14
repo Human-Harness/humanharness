@@ -23,8 +23,11 @@ export interface Sandbox {
   acpLog: string;
 }
 
-/** A configured app (Spanish, Claude, plus `config`) with both engines' notices accepted, in packages/e2e/.tmp/. */
-export function makeSandbox(name: string, config: Record<string, unknown> = {}): Sandbox {
+/**
+ * A fresh app in packages/e2e/.tmp/: no saved config and no engine records. The suggested folder is the
+ * sandbox's `folder` (HH_TEST_SUGGESTED_FOLDER), not created here.
+ */
+export function makeFreshSandbox(name: string): Sandbox {
   const root = path.resolve(here, "..", ".tmp", `${name}-${Date.now()}`);
   const s: Sandbox = {
     root,
@@ -34,7 +37,14 @@ export function makeSandbox(name: string, config: Record<string, unknown> = {}):
     claudePrompts: path.join(root, "claude-prompts.jsonl"),
     acpLog: path.join(root, "acp-log.jsonl"),
   };
-  for (const dir of [s.folder, s.userData, s.sharedDir]) fs.mkdirSync(dir, { recursive: true });
+  for (const dir of [s.userData, s.sharedDir]) fs.mkdirSync(dir, { recursive: true });
+  return s;
+}
+
+/** A configured app (Spanish, Claude, plus `config`) with both engines' notices accepted, in packages/e2e/.tmp/. */
+export function makeSandbox(name: string, config: Record<string, unknown> = {}): Sandbox {
+  const s = makeFreshSandbox(name);
+  fs.mkdirSync(s.folder, { recursive: true });
   fs.writeFileSync(path.join(s.userData, "config.json"), JSON.stringify({ language: "es", folder: s.folder, engineId: "claude", ...config }));
   const now = new Date().toISOString();
   const ready = { notice: { version: NOTICE_VERSION, acceptedAt: now }, verifiedAt: now };
@@ -44,6 +54,15 @@ export function makeSandbox(name: string, config: Record<string, unknown> = {}):
 
 /** A Codex that is never asked anything: keeps every engine fake, so no status check reaches a real CLI. */
 const idleCodex: AcpScript = { turns: [] };
+
+/** The environment of a launched shell: ours without the Electron dev variables, pointed at the sandbox. */
+function baseEnv(s: Sandbox): Record<string, string> {
+  // Not inherited: a dev server address, or ELECTRON_RUN_AS_NODE (it would start Electron as plain Node).
+  const dropped = new Set(["ELECTRON_RENDERER_URL", "ELECTRON_RUN_AS_NODE"]);
+  const env = Object.fromEntries(Object.entries(process.env).filter((e): e is [string, string] => e[1] !== undefined && !dropped.has(e[0])));
+  // The suggested folder stays in the sandbox, so a fresh app's setup never writes into the real home.
+  return { ...env, HH_TEST_USER_DATA: s.userData, HH_TEST_SHARED_DIR: s.sharedDir, HH_TEST_SUGGESTED_FOLDER: s.folder };
+}
 
 /** Launches the built shell (or the build at `app`, a main/index.js) with the fake agents in place of both engines. */
 export async function launch(
@@ -55,13 +74,25 @@ export async function launch(
     claude: { command: fakeClaudeCommand(), env: { HH_FAKE_SCRIPT: writeScript(s.root, scripts.claude), HH_FAKE_PROMPTS: s.claudePrompts } },
     codex: { command: fakeAcpCommand(), env: { HH_FAKE_SCRIPT: writeScript(s.root, scripts.codex ?? idleCodex), HH_FAKE_LOG: s.acpLog } },
   };
-  // Not inherited: a dev server address, or ELECTRON_RUN_AS_NODE (it would start Electron as plain Node).
-  const dropped = new Set(["ELECTRON_RENDERER_URL", "ELECTRON_RUN_AS_NODE"]);
-  const env = Object.fromEntries(Object.entries(process.env).filter((e): e is [string, string] => e[1] !== undefined && !dropped.has(e[0])));
   const electronApp = await electron.launch({
     executablePath: electronBinary,
     args: [app],
-    env: { ...env, HH_TEST_USER_DATA: s.userData, HH_TEST_SHARED_DIR: s.sharedDir, HH_TEST_ENGINES: JSON.stringify(engines) },
+    env: { ...baseEnv(s), HH_TEST_ENGINES: JSON.stringify(engines) },
+  });
+  return { app: electronApp, page: await electronApp.firstWindow() };
+}
+
+/** The demo's recordings (harnesses/demo/mock). */
+export const demoMockDir = path.resolve(here, "../../../harnesses/demo/mock");
+
+/** Launches the built shell in mock mode (spec 3e): fake-claude replays `mockDir`; Codex isn't offered. */
+export async function launchMock(s: Sandbox, mockDir: string = demoMockDir): Promise<{ app: ElectronApplication; page: Page }> {
+  const engines = { claude: { command: fakeClaudeCommand(), env: { HH_FAKE_MOCK_DIR: mockDir, HH_FAKE_MOCK_STATE: path.join(s.root, "mock-state.json") } } };
+  const electronApp = await electron.launch({
+    executablePath: electronBinary,
+    // Spanish as the system language too, so a fresh app (no saved language) reads as the configured ones do.
+    args: [shellDir, "--lang=es"],
+    env: { ...baseEnv(s), HH_TEST_ENGINES: JSON.stringify(engines), HH_TEST_MOCK: "1" },
   });
   return { app: electronApp, page: await electronApp.firstWindow() };
 }

@@ -1,9 +1,11 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { type Recording, choiceLabels, recordingSchema } from "@humanharness/fake-agent";
 import { ENGINES, type Mode, brandNames } from "@humanharness/engines";
 import { type LoadedHarness, loadHarness, resolveInHarness } from "@humanharness/harness-sdk";
 import { type Io, UsageError, parseCommand } from "./cli";
 import { type HarnessDoc, PERMISSION_KEYS, type PermissionKey, QUESTIONS_ROW, parseHarnessMd, sectionText } from "./harness-md";
+import { clashMessage, matchClashes } from "./mock-match";
 import { HARNESS_MD, MANIFEST } from "./paths";
 
 export type Severity = "error" | "warning";
@@ -20,7 +22,12 @@ export type RuleId =
   | "pillar-context"
   | "tier-cost"
   | "permissions-wide"
-  | "open-questions";
+  | "open-questions"
+  | "mock-schema"
+  | "mock-action"
+  | "mock-match"
+  | "mock-next"
+  | "mock-choice";
 
 export interface Finding {
   rule: RuleId;
@@ -59,6 +66,7 @@ export async function checkHarness(dir: string, opts: { mode?: Mode } = {}): Pro
 
   const briefs = await readBriefs(harness);
   findings.push(...briefFindings(harness, briefs));
+  findings.push(...(await mockFindings(harness, briefs)));
   findings.push(...(await i18nFindings(harness)));
   findings.push(...brandFindings(harness));
   findings.push(...engineFindings(harness, opts.mode ?? "development"));
@@ -113,6 +121,63 @@ async function readBriefs(h: LoadedHarness): Promise<Map<string, string | null>>
   const briefs = new Map<string, string | null>();
   for (const [id, action] of Object.entries(h.actions)) briefs.set(id, await read(resolveInHarness(h, action.prompt)));
   return briefs;
+}
+
+const MOCK_DIR = "mock";
+
+/** `mock/*.json` (spec 3e §3): each file a valid recording of an action, whose branches lead somewhere real. */
+async function mockFindings(h: LoadedHarness, briefs: Map<string, string | null>): Promise<Finding[]> {
+  const dir = path.join(h.root, MOCK_DIR);
+  const entries = (await fs.readdir(dir, { withFileTypes: true }).catch(() => [])).filter((e) => e.name.endsWith(".json")).sort((a, b) => a.name.localeCompare(b.name));
+  const findings: Finding[] = [];
+  const valid: { rec: Recording; file: string }[] = [];
+  for (const entry of entries) {
+    const name = entry.name;
+    const file = `${MOCK_DIR}/${name}`;
+    if (!entry.isFile()) {
+      findings.push(error("mock-schema", `${name} is not a file.`, file));
+      continue;
+    }
+    let rec: Recording;
+    try {
+      const parsed = recordingSchema.safeParse(JSON.parse((await read(path.join(dir, name))) ?? ""));
+      if (!parsed.success) {
+        for (const i of parsed.error.issues) findings.push(error("mock-schema", `${i.path.join(".") || "(root)"}: ${i.message}`, file));
+        continue;
+      }
+      rec = parsed.data;
+    } catch (err) {
+      findings.push(error("mock-schema", `Not valid JSON: ${(err as Error).message}`, file));
+      continue;
+    }
+    if (!Object.hasOwn(h.actions, rec.action)) {
+      findings.push(error("mock-action", `Action "${rec.action}" is not in the manifest.`, file));
+      continue;
+    }
+    if (name !== `${rec.action}.json`) findings.push(error("mock-action", `The recording of "${rec.action}" must be named ${rec.action}.json.`, file));
+    // Placeholders like {{language}} are filled at runtime, so `match` is checked against the brief's raw text.
+    const brief = briefs.get(rec.action);
+    if (brief && !brief.includes(rec.match)) findings.push(error("mock-match", `"${rec.match}" is not in the brief of "${rec.action}", so the recording would never play.`, file));
+    else valid.push({ rec, file });
+    const ids = rec.turns.map((t) => t.id);
+    const dupes = ids.filter((id, i) => ids.indexOf(id) !== i);
+    if (dupes.length > 0) findings.push(error("mock-next", `Turn ids appear more than once: ${[...new Set(dupes)].join(", ")}.`, file));
+    for (const turn of rec.turns) {
+      const labels = new Set(choiceLabels(turn.blocks));
+      for (const [key, target] of Object.entries(turn.next ?? {})) {
+        if (!ids.includes(target)) findings.push(error("mock-next", `Turn "${turn.id}": "${key}" leads to "${target}", which is not a turn.`, file));
+        if (key !== "*" && !labels.has(key)) findings.push(error("mock-choice", `Turn "${turn.id}": "${key}" is not a choice it offers.`, file));
+      }
+    }
+  }
+  // Replay picks the recording with the longest `match` found in a task's first message, so one action's match
+  // inside another's brief is only safe when the other action has a longer match of its own in its brief.
+  for (const { rec, file } of valid) {
+    for (const other of matchClashes(rec.action, rec.match, briefs, (id) => valid.find((v) => v.rec.action === id)?.rec.match)) {
+      findings.push(error("mock-match", clashMessage(rec.match, other), file));
+    }
+  }
+  return findings;
 }
 
 function briefFindings(h: LoadedHarness, briefs: Map<string, string | null>): Finding[] {

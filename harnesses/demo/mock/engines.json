@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "action": "engines",
+  "match": "# Topic: engines",
+  "recordedWith": "claude",
+  "turns": [
+    {
+      "id": "t1",
+      "text": "Los motores se detectan en cada inicio: la app busca el CLI oficial, revisa su versión y si tenés la sesión iniciada.",
+      "blocks": [
+        { "tool": "show_choices", "input": { "options": [{ "label": "Seguir el recorrido →", "next": true }] } }
+      ],
+      "usage": { "input": 16000, "output": 240, "cacheRead": 9000, "cacheWrite": 0 },
+      "delayMs": 800
+    }
+  ]
+}

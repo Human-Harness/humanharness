@@ -6,7 +6,21 @@
     "notConnected": "Sin conectar",
     "checking": "Revisando…",
     "usage": "{{label}} · {{percent}} %",
-    "noEngine": "Todavía sin motor de IA"
+    "noEngine": "Todavía sin motor de IA",
+    "missing": {
+      "title": "Antes de empezar, dos pasos",
+      "folder": "Elegir dónde se guarda tu trabajo",
+      "engine": "Conectar el motor de IA",
+      "one": "Falta un paso: {{step}}",
+      "step": {
+        "notice": "aceptar el aviso de {{engine}}",
+        "not-installed": "instalar {{engine}}",
+        "outdated": "actualizar {{engine}}",
+        "logged-out": "volver a iniciar sesión en {{engine}}",
+        "untested": "probar {{engine}}",
+        "check-failed": "revisar {{engine}}"
+      }
+    }
   },
   "settings": {
     "title": "Ajustes",
@@ -34,13 +48,11 @@
     "runningCancel": "Cancelar"
   },
   "setup": {
-    "welcome": "{{name}} funciona con un plan de IA que ya tenés, con tu propia cuenta. La app no ve ni guarda nada fuera de tu compu: tu trabajo queda en una carpeta que elegís vos.",
     "language": "Idioma",
     "folder": "Tu carpeta",
     "folderHint": "Acá se guarda tu trabajo.",
     "folderChange": "Elegir otra carpeta",
     "folderWarning": "No muevas, renombres ni edites esta carpeta a mano: la app depende de ella.",
-    "useFolder": "Usar esta carpeta",
     "engineRequires": "Necesitás: {{plan}}",
     "engineData": "Tus datos van a: {{where}}",
     "enginePending": "Todavía no habilitado para distribución (solo desarrollo)",
@@ -127,6 +139,7 @@
     "resetsFull": "Se renueva: {{time}}",
     "unknown": "El uso de tu plan aparece después del primer mensaje.",
     "noLimits": "{{engine}} no informa los límites de tu plan.",
+    "mock": "Modo prueba: no gasta tu plan.",
     "lastTurn": "Último mensaje: {{tokens}} tokens.",
     "near": "Cerca de tu límite",
     "almostOut": "Casi en tu límite",
@@ -308,6 +321,39 @@
   },
   "app": {
     "loadError": "La app no pudo arrancar. Cerrala y volvé a abrirla."
+  },
+  "setupFlow": {
+    "notConfiguredTitle": "Todavía no elegiste un motor",
+    "notConfiguredText": "Primero elegí dónde se guarda tu trabajo y después conectá la IA. Son dos pasos.",
+    "configure": "Configurar {{name}}",
+    "title": "Configurar {{name}}",
+    "stepsLabel": "Pasos",
+    "stepFolder": "Tu carpeta",
+    "stepEngine": "Motor de IA",
+    "folderHeading": "¿Dónde guardamos tu trabajo?",
+    "folderIntro": "{{name}} guarda todo lo que hacés en una carpeta de tu compu. La app no ve ni guarda nada fuera de ella.",
+    "engineHeading": "¿Qué IA usa {{name}}?",
+    "engineIntro": "{{name}} funciona con un plan de IA que ya tenés, con tu propia cuenta.",
+    "cancel": "Cancelar",
+    "back": "Atrás",
+    "next": "Siguiente",
+    "saveError": "No pude guardar el motor. Probá de nuevo.",
+    "readyTitle": "Todo listo",
+    "readyFolder": "Carpeta",
+    "readyEngine": "Motor",
+    "readyHint": "Podés cambiar todo esto cuando quieras desde Ajustes."
+  },
+  "mock": {
+    "model": "Modelo",
+    "modelName": "Modelo de prueba",
+    "answers": "Respuestas",
+    "answersValue": "Grabadas en la carpeta mock/ del harness",
+    "data": "Tus datos",
+    "dataValue": "No salen de esta compu",
+    "plan": "Tu plan",
+    "planValue": "No gasta nada",
+    "only": "En modo prueba hay un solo motor: responde con conversaciones grabadas, sin IA y sin gastar tu plan.",
+    "badge": "Modo prueba (sin IA)"
   },
   "errors": {
     "engine-not-installed": "No encuentro {{engine}} en esta compu.",

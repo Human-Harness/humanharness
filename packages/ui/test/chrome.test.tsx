@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { CheckIcon, HHLogo, LockIcon, NoteIcon, Segmented, TopBar } from "../src/chrome";
+import { CheckIcon, EngineIcon, GearIcon, HHLogo, LockIcon, NoteIcon, Segmented, TopBar } from "../src/chrome";
 
 afterEach(cleanup);
 
@@ -38,10 +38,29 @@ describe("chrome", () => {
         <CheckIcon />
         <LockIcon />
         <NoteIcon />
+        <GearIcon />
+        <EngineIcon />
       </>,
     );
     const icons = container.querySelectorAll("svg");
-    expect(icons).toHaveLength(3);
+    expect(icons).toHaveLength(5);
     for (const icon of icons) expect(icon.getAttribute("aria-hidden")).toBe("true");
+  });
+
+  it("draws the gear and the engine icon as 24-unit line icons", () => {
+    const { container } = render(
+      <>
+        <GearIcon />
+        <EngineIcon size={40} />
+      </>,
+    );
+    const [gear, engine] = container.querySelectorAll("svg");
+    for (const icon of [gear, engine]) {
+      expect(icon.getAttribute("viewBox")).toBe("0 0 24 24");
+      expect(icon.getAttribute("fill")).toBe("none");
+      expect(icon.getAttribute("stroke")).toBe("currentColor");
+    }
+    expect(gear.getAttribute("width")).toBe("18");
+    expect(engine.getAttribute("width")).toBe("40");
   });
 });

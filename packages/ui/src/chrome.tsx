@@ -1,10 +1,22 @@
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
+
+function MockBadge() {
+  const { t } = useTranslation();
+  return (
+    <span className="hh-mock-badge" role="note">
+      {t("mock.badge")}
+    </span>
+  );
+}
 
 /** The window's top bar: the drag region of the hiddenInset title bar, with room for the traffic lights. */
-export function TopBar({ title, children }: { title?: ReactNode; children?: ReactNode }) {
+export function TopBar({ title, mock, children }: { title?: ReactNode; mock?: boolean; children?: ReactNode }) {
   return (
     <header className="hh-topbar">
       {title !== undefined && <h1 className="hh-title">{title}</h1>}
+      {/* humanharness dev --mock: a fake engine answers, so the tester never takes it for the real thing. */}
+      {mock && <MockBadge />}
       <span className="hh-spacer" />
       {children}
     </header>
@@ -39,14 +51,22 @@ export function Segmented<T extends string>({
   );
 }
 
+/** Settings: a line gear (path from Lucide's "settings" icon, ISC license). */
 export function GearIcon() {
   return (
-    <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
-      <path
-        fill="currentColor"
-        fillRule="evenodd"
-        d="M6.6 1h2.8l.4 1.9 1.3.6 1.7-1 2 2-1 1.7.6 1.3 1.9.4v2.8l-1.9.4-.6 1.3 1 1.7-2 2-1.7-1-1.3.6-.4 1.9H6.6l-.4-1.9-1.3-.6-1.7 1-2-2 1-1.7-.6-1.3L0 9.4V6.6l1.9-.4.6-1.3-1-1.7 2-2 1.7 1 1.3-.6zM8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5z"
-      />
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+}
+
+/** An engine without a logo (the test engine): a generic screen. */
+export function EngineIcon({ size = 24 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="3" y="4" width="18" height="12" rx="2" />
+      <path d="M8 20h8M12 16v4" />
     </svg>
   );
 }

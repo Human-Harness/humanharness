@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AppState } from "../src/client";
 import { EngineTab } from "../src/EngineTab";
 import { FakeClient } from "./fake-client";
@@ -21,28 +21,39 @@ const addCodex = (client: FakeClient) => {
 };
 
 describe("EngineTab", () => {
-  it("asks for the folder first, explains a folder that can't be used, then saves it with the language", async () => {
-    const client = new FakeClient({});
-    client.pickResult = { folder: "/Users/me/Documents", problem: "too-broad" };
-    await renderIn("en", <Tab client={client} />);
-    expect(screen.getByText(/works with an AI plan you already have/)).toBeTruthy();
-    expect(screen.getByText("/Users/me/Documents/Demo")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Choose another folder" }));
-    expect((await screen.findByRole("alert")).textContent).toBe("That folder is too general. Pick or create a folder inside it.");
-    client.pickResult = { folder: "/Users/me/Documents/Mine", problem: null };
-    fireEvent.click(screen.getByRole("button", { name: "Choose another folder" }));
-    await screen.findByText("/Users/me/Documents/Mine");
-    fireEvent.click(screen.getByRole("button", { name: "Use this folder" }));
-    await screen.findByRole("group", { name: "AI engines" });
-    expect(client.state.config).toEqual({ language: "en", folder: "/Users/me/Documents/Mine" });
+  it("shows a test engine with its own details: no sign out, plan, version or legal line", async () => {
+    const client = new FakeClient({ language: "es", folder: "/Users/me/Documents/Demo", engineId: "claude" });
+    client.state.engines = [{ ...client.state.engines[0], name: "IA simulada (mock)", provider: "Human Harness", logo: undefined, reportsLimits: false, mock: true }];
+    const { container } = await renderIn("es", <Tab client={client} />);
+    await screen.findByText("Grabadas en la carpeta mock/ del harness");
+    const rows = [...container.querySelectorAll(".hh-row")].map((r) => [...r.children].map((c) => c.textContent));
+    expect(rows).toEqual([
+      ["Modelo", "Modelo de prueba"],
+      ["Respuestas", "Grabadas en la carpeta mock/ del harness"],
+      ["Tus datos", "No salen de esta compu"],
+      ["Tu plan", "No gasta nada"],
+    ]);
+    expect(screen.queryByRole("button", { name: "Cerrar sesión" })).toBeNull();
+    expect(screen.queryByRole("link")).toBeNull();
+    expect(container.querySelector(".hh-tab > .hh-caption")).toBeNull();
+    // No logo: the tile draws the generic screen icon instead.
+    const tile = screen.getByRole("button", { name: /IA simulada \(mock\)/ });
+    expect(tile.querySelector("img")).toBeNull();
+    expect(tile.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
   });
 
-  it("says when the folder can't be saved", async () => {
-    const client = new FakeClient({});
-    client.saveError = new Error("protected");
-    await renderIn("en", <Tab client={client} />);
-    fireEvent.click(screen.getByRole("button", { name: "Use this folder" }));
-    expect((await screen.findByRole("alert")).textContent).toMatch(/couldn't save/i);
+  it("in the setup flow, has no Use button and reports the selected engine and its readiness", async () => {
+    const client = withFolder();
+    addCodex(client);
+    client.statusFor.codex = { ...client.status, engineId: "codex", loggedIn: false };
+    const onSelection = vi.fn();
+    await renderIn("en", <EngineTab client={client} state={client.state} onChange={() => {}} setup onSelection={onSelection} />);
+    await screen.findByText("Claude is ready ✓");
+    expect(screen.queryByRole("button", { name: "Use Claude" })).toBeNull();
+    expect(onSelection).toHaveBeenLastCalledWith("claude", true);
+    fireEvent.click(screen.getByRole("button", { name: /Codex/ }));
+    await screen.findByRole("heading", { name: "Sign in to Codex" });
+    expect(onSelection).toHaveBeenLastCalledWith("codex", false);
   });
 
   it("walks a new engine through the notice, install, sign-in and the test prompt", async () => {

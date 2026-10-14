@@ -9,13 +9,17 @@ export function uiLanguage(state: AppState, i18nLanguage: string): Language {
   return state.config.language ?? (languages.includes(i18nLanguage as Language) ? (i18nLanguage as Language) : languages[0]);
 }
 
-/** First launch only: the welcome line and the folder (spec §7: chosen once, then fixed). Saves the language with it. */
-export function FolderStep({ client, state, onSaved }: { client: HarnessClient; state: AppState; onSaved: (s: AppState) => void }) {
+/**
+ * The setup flow's folder step (spec §7: chosen once, then fixed). Saves the language with it. It shows no save
+ * button of its own: a button in the flow's footer with `form={formId}` submits it.
+ */
+export function FolderStep({ client, state, onSaved, formId }: { client: HarnessClient; state: AppState; onSaved: (s: AppState) => void; formId: string }) {
   const { t, i18n } = useTranslation();
   const lang = uiLanguage(state, i18n.language);
   const locations = state.backup?.locations ?? [];
   // A synced place comes first (spec 3d §2): the folder survives losing the computer.
-  const [folder, setFolder] = useState(locations[0]?.suggested ?? state.suggestedFolder);
+  // Back in the setup flow, the folder just saved is still the choice.
+  const [folder, setFolder] = useState(state.config.folder ?? locations[0]?.suggested ?? state.suggestedFolder);
   const [problem, setProblem] = useState<FolderProblem | null>(null);
   const [saveError, setSaveError] = useState(false);
   const placesId = useId();
@@ -40,8 +44,14 @@ export function FolderStep({ client, state, onSaved }: { client: HarnessClient; 
   };
 
   return (
-    <section className="hh-onboarding">
-      <p>{t("setup.welcome", { name: state.harness.name[lang] })}</p>
+    <form
+      className="hh-onboarding"
+      id={formId}
+      onSubmit={(e) => {
+        e.preventDefault();
+        void save();
+      }}
+    >
       <h3>{t("setup.folder")}</h3>
       <p className="hh-caption">{t("setup.folderHint")}</p>
       {locations.length > 0 && (
@@ -77,7 +87,9 @@ export function FolderStep({ client, state, onSaved }: { client: HarnessClient; 
       <div className="hh-rows">
         <div className="hh-row">
           <code>{folder}</code>
-          <button onClick={() => void pick()}>{t("setup.folderChange")}</button>
+          <button type="button" onClick={() => void pick()}>
+            {t("setup.folderChange")}
+          </button>
         </div>
       </div>
       {problem && (
@@ -86,14 +98,11 @@ export function FolderStep({ client, state, onSaved }: { client: HarnessClient; 
         </p>
       )}
       <p className="hh-caption">{t("setup.folderWarning")}</p>
-      <button className="hh-primary" onClick={() => void save()}>
-        {t("setup.useFolder")}
-      </button>
       {saveError && (
         <p className="hh-save-error" role="alert">
           {t("setup.saveError")}
         </p>
       )}
-    </section>
+    </form>
   );
 }

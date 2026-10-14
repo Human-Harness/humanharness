@@ -273,7 +273,7 @@ describe("BackupNotice", () => {
     const client = localClient();
     await renderIn(
       "en",
-      <Home state={client.state} client={client} onChange={() => {}} status={null} limits={null} onStart={() => {}} onSettings={() => {}} onEngine={() => {}} />,
+      <Home state={client.state} client={client} onChange={() => {}} status={null} limits={null} onStart={() => {}} onSetup={() => {}} onSettings={() => {}} onEngine={() => {}} />,
     );
     expect(screen.getByRole("button", { name: "Move to Google Drive" })).toBeTruthy();
   });
@@ -311,7 +311,7 @@ describe("Settings › General backup row", () => {
   function Sheet({ client }: { client: FakeClient }) {
     const [state, setState] = useState<AppState>(client.state);
     const [tab, setTab] = useState<SettingsTab>("general");
-    return <SettingsSheet client={client} state={state} tab={tab} onTab={setTab} onChange={setState} onClose={vi.fn()} />;
+    return <SettingsSheet client={client} state={state} tab={tab} onTab={setTab} onChange={setState} onClose={vi.fn()} onSetup={vi.fn()} />;
   }
 
   it("shows the status and the notice, and brings a dismissed notice back", async () => {

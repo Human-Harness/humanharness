@@ -2,10 +2,10 @@ import { type KeyboardEvent as ReactKeyboardEvent, useEffect, useId, useRef, use
 import { useTranslation } from "react-i18next";
 import type { Language } from "@humanharness/harness-sdk";
 import { BackupNotice, type FolderMove, MovePlaces, needsBackupNotice, useFolderMove } from "./BackupNotice";
-import { Segmented } from "./chrome";
-import type { AppConfig, AppState, Appearance, HarnessClient, RunningSetup, UsageSummary } from "./client";
+import { EngineIcon, Segmented } from "./chrome";
+import { type AppConfig, type AppState, type Appearance, type HarnessClient, type RunningSetup, type UsageSummary, isConfigured } from "./client";
 import { EngineTab } from "./EngineTab";
-import { FolderStep, uiLanguage } from "./FolderStep";
+import { uiLanguage } from "./FolderStep";
 import { ModelsTab } from "./ModelsTab";
 import { WARN_AT, formatReset, percent } from "./usage";
 import { useCurrentWindows } from "./UsageMeter";
@@ -22,6 +22,7 @@ export function SettingsSheet({
   onTab,
   onChange,
   onClose,
+  onSetup,
   move: shared,
 }: {
   client: HarnessClient;
@@ -30,6 +31,8 @@ export function SettingsSheet({
   onTab: (tab: SettingsTab) => void;
   onChange: (state: AppState) => void;
   onClose: () => void;
+  /** Opens the setup flow (the empty state of Motor, Modelos and Uso before the app is configured). */
+  onSetup: () => void;
   /** The app's folder move (HarnessApp), so a move outlives the sheet; without it the sheet keeps its own. */
   move?: FolderMove;
 }) {
@@ -42,6 +45,7 @@ export function SettingsSheet({
   const panelId = `${baseId}-panel`;
   // Models only shows when the main process sent its view (every packaged app does).
   const tabs = TABS.filter((id) => id !== "models" || state.models !== undefined);
+  const configured = isConfigured(state.config);
   const doneRef = useRef<HTMLButtonElement>(null);
   const sheetRef = useRef<HTMLDivElement>(null);
   const onCloseRef = useRef(onClose);
@@ -157,9 +161,10 @@ export function SettingsSheet({
         )}
         <div id={panelId} role="tabpanel" aria-labelledby={tabId(tab)}>
           {tab === "general" && <GeneralTab client={client} state={state} onChange={onChange} move={move} />}
-          {tab === "engine" && <EngineTab client={client} state={state} onChange={onChange} setupEngine={running?.engineId} />}
-          {tab === "models" && <ModelsTab client={client} state={state} onChange={onChange} />}
-          {tab === "usage" && <UsageTab client={client} state={state} />}
+          {tab !== "general" && !configured && <NotConfigured state={state} onSetup={onSetup} />}
+          {tab === "engine" && configured && <EngineTab client={client} state={state} onChange={onChange} setupEngine={running?.engineId} />}
+          {tab === "models" && configured && <ModelsTab client={client} state={state} onChange={onChange} />}
+          {tab === "usage" && configured && <UsageTab client={client} state={state} />}
         </div>
       </div>
     </div>
@@ -264,11 +269,7 @@ function GeneralTab({ client, state, onChange, move }: { client: HarnessClient; 
           </div>
         )}
       </div>
-      {state.config.folder ? (
-        <p className="hh-caption">{t("settings.folderFixed")}</p>
-      ) : (
-        <FolderStep client={client} state={state} onSaved={onChange} />
-      )}
+      {state.config.folder && <p className="hh-caption">{t("settings.folderFixed")}</p>}
       <BackupNotice client={client} state={state} onChange={onChange} move={move} />
 
       <h3>{t("settings.about")}</h3>
@@ -290,6 +291,22 @@ function GeneralTab({ client, state, onChange, move }: { client: HarnessClient; 
   );
 }
 
+/** Motor, Modelos and Uso before the app is configured: they all lead to the setup flow. */
+function NotConfigured({ state, onSetup }: { state: AppState; onSetup: () => void }) {
+  const { t, i18n } = useTranslation();
+  const name = state.harness.name[uiLanguage(state, i18n.language)];
+  return (
+    <div className="hh-tab hh-not-configured">
+      <EngineIcon size={40} />
+      <h3>{t("setupFlow.notConfiguredTitle")}</h3>
+      <p>{t("setupFlow.notConfiguredText")}</p>
+      <button className="hh-primary" onClick={onSetup}>
+        {t("setupFlow.configure", { name })}
+      </button>
+    </div>
+  );
+}
+
 function UsageTab({ client, state }: { client: HarnessClient; state: AppState }) {
   const { t, i18n } = useTranslation();
   const lang = uiLanguage(state, i18n.language);
@@ -303,6 +320,7 @@ function UsageTab({ client, state }: { client: HarnessClient; state: AppState })
 
   let plan;
   if (!engine) plan = <p className="hh-caption">{t("home.noEngine")}</p>;
+  else if (engine.mock) plan = <p className="hh-caption">{t("usage.mock")}</p>;
   else if (!engine.reportsLimits) plan = <p className="hh-caption">{t("usage.noLimits", { engine: engine.name })}</p>;
   else if (!limits?.length) plan = <p className="hh-caption">{t("usage.unknown")}</p>;
   else

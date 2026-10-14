@@ -6,7 +6,21 @@
     "notConnected": "Not connected",
     "checking": "Checking…",
     "usage": "{{label}} · {{percent}}%",
-    "noEngine": "No AI engine yet"
+    "noEngine": "No AI engine yet",
+    "missing": {
+      "title": "Two steps before you start",
+      "folder": "Choose where your work is kept",
+      "engine": "Connect the AI engine",
+      "one": "One step left: {{step}}",
+      "step": {
+        "notice": "accept {{engine}}'s notice",
+        "not-installed": "install {{engine}}",
+        "outdated": "update {{engine}}",
+        "logged-out": "sign in to {{engine}} again",
+        "untested": "test {{engine}}",
+        "check-failed": "check {{engine}}"
+      }
+    }
   },
   "settings": {
     "title": "Settings",
@@ -34,13 +48,11 @@
     "runningCancel": "Cancel"
   },
   "setup": {
-    "welcome": "{{name}} works with an AI plan you already have, using your own account. The app doesn't see or keep anything outside your computer: your work stays in a folder you choose.",
     "language": "Language",
     "folder": "Your folder",
     "folderHint": "Your work will be saved here.",
     "folderChange": "Choose another folder",
     "folderWarning": "Don't move, rename or edit this folder by hand: the app depends on it.",
-    "useFolder": "Use this folder",
     "engineRequires": "Requires: {{plan}}",
     "engineData": "Your data goes to: {{where}}",
     "enginePending": "Not yet cleared for distribution (development only)",
@@ -127,6 +139,7 @@
     "resetsFull": "Resets {{time}}",
     "unknown": "Your plan's usage shows up after the first message.",
     "noLimits": "{{engine}} doesn't report your plan's limits.",
+    "mock": "Test mode: uses none of your plan.",
     "lastTurn": "Last message: {{tokens}} tokens.",
     "near": "Close to your limit",
     "almostOut": "Almost at your limit",
@@ -308,6 +321,39 @@
   },
   "app": {
     "loadError": "The app couldn't start. Close it and open it again."
+  },
+  "setupFlow": {
+    "notConfiguredTitle": "You haven't chosen an engine yet",
+    "notConfiguredText": "First choose where your work is kept, then connect the AI. It takes two steps.",
+    "configure": "Set up {{name}}",
+    "title": "Set up {{name}}",
+    "stepsLabel": "Steps",
+    "stepFolder": "Your folder",
+    "stepEngine": "AI engine",
+    "folderHeading": "Where should we keep your work?",
+    "folderIntro": "{{name}} keeps everything you do in a folder on your computer. The app doesn't see or keep anything outside it.",
+    "engineHeading": "Which AI does {{name}} use?",
+    "engineIntro": "{{name}} works with an AI plan you already have, using your own account.",
+    "cancel": "Cancel",
+    "back": "Back",
+    "next": "Next",
+    "saveError": "I couldn't save the engine. Try again.",
+    "readyTitle": "All set",
+    "readyFolder": "Folder",
+    "readyEngine": "Engine",
+    "readyHint": "You can change all of this whenever you like in Settings."
+  },
+  "mock": {
+    "model": "Model",
+    "modelName": "Test model",
+    "answers": "Answers",
+    "answersValue": "Recorded in the harness's mock/ folder",
+    "data": "Your data",
+    "dataValue": "Never leaves this computer",
+    "plan": "Your plan",
+    "planValue": "Uses nothing",
+    "only": "In test mode there is only one engine: it answers with recorded conversations, with no AI and without using your plan.",
+    "badge": "Test mode (no AI)"
   },
   "errors": {
     "engine-not-installed": "I can't find {{engine}} on this computer.",

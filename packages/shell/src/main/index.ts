@@ -6,7 +6,7 @@ import path from "node:path";
 import { BrowserWindow, type IpcMainInvokeEvent, app, clipboard, dialog, ipcMain, nativeTheme, shell } from "electron";
 import { electronLauncher } from "@humanharness/blocks";
 import { type EngineDef, type ModelProfile, type ModelSpec, NOTICE_VERSION, availableEngines, defaultTier, getEngine } from "@humanharness/engines";
-import { type LoadedHarness, TIERS, type Tier, allBlocks, choiceOptionSchema, loadHarness, resolveInHarness } from "@humanharness/harness-sdk";
+import { type Language, type LoadedHarness, TIERS, type Tier, allBlocks, choiceOptionSchema, loadHarness, resolveInHarness } from "@humanharness/harness-sdk";
 import { type Event, type HarnessRuntime, createRuntime } from "@humanharness/runtime";
 import {
   type AppConfig,
@@ -53,7 +53,18 @@ import { TaskManager } from "./task-manager";
 import { historyView, isSha } from "./history-view";
 import { RestoreGuard, lastOpened } from "./restore-guard";
 import { TaskStore, emptyTasks } from "./task-store";
-import { devEngine, readTestHooks, testEngineStatus } from "./test-hooks";
+import {
+  MOCK_MODEL,
+  devEngine,
+  fakeSetupResult,
+  isMockEngine,
+  mockEngineText,
+  mockLanguage,
+  mockModels,
+  offeredEngines,
+  readTestHooks,
+  testEngineStatus,
+} from "./test-hooks";
 
 declare const __HARNESS_DIR__: string;
 
@@ -105,20 +116,24 @@ async function referencesFor(folder: string | undefined, log = false): Promise<R
 }
 
 const mode = () => (app.isPackaged ? "distribution" : "development");
+/** The engines this app offers (spec 3e: mock mode offers only the faked ones). */
+const offered = () => offeredEngines(availableEngines(harness.engines, mode()), hooks);
+/** Mock mode: the language the test engine and its model are named in. */
+const mockLang = (saved: Language | undefined) => mockLanguage(saved, app.getLocale(), harness.languages);
 const stateBlocks = () => new Set(Object.entries(allBlocks(harness)).filter(([, b]) => !b.visible).map(([n]) => n));
 const rendererFile = path.join(here, "../renderer/index.html");
 // The dev server is only trusted in development: a packaged app always loads its own file.
 const devUrl = app.isPackaged ? undefined : process.env.ELECTRON_RENDERER_URL;
 const appUrl = (url: string) => isAppUrl(url, { devUrl, rendererFile });
 const validation = (): ValidationContext => ({
-  engineIds: availableEngines(harness.engines, mode()).map((e) => e.id),
+  engineIds: offered().map((e) => e.id),
   languages: harness.languages,
   home: os.homedir(),
 });
 
 /** An engine this harness offers in this build. The id comes from the window, so anything else throws. */
 function engineFor(id: unknown): EngineDef {
-  const engine = availableEngines(harness.engines, mode()).find((e) => e.id === id);
+  const engine = offered().find((e) => e.id === id);
   if (!engine) throw new Error("This engine is not available");
   return engine;
 }
@@ -147,18 +162,25 @@ const engineLogo = (e: EngineDef) => (e.logo ? logo(e.id, () => requireFromHere.
 const savedOffer = (engineId: string) => shared.engine(engineId).catch((): SharedEngineRecord => ({}));
 
 /** Settings › Modelos: the harness's recommendations, the core's tables and what each engine offers. */
-async function modelsView(): Promise<ModelsView> {
-  const engines = availableEngines(harness.engines, mode());
+async function modelsView(language: Language | undefined): Promise<ModelsView> {
+  const engines = offered();
   const saved = await shared.load().catch(() => ({ version: 1 as const, engines: {} as Record<string, SharedEngineRecord> }));
+  // Mock mode: a faked engine offers only the test model, and every tier uses it (effort and cap kept).
+  const tierSpec = (engineId: string, tier: Tier): ModelSpec =>
+    isMockEngine(hooks, engineId) ? { ...defaultTier(engineId, tier), model: MOCK_MODEL } : defaultTier(engineId, tier);
+  const offer = (e: EngineDef) => {
+    const real = engineOffer(e, saved.engines[e.id] ?? {});
+    return isMockEngine(hooks, e.id) ? { ...real, models: mockModels(mockLang(language)) } : real;
+  };
   return {
     recommended: {
       ...Object.fromEntries(Object.entries(harness.actions).map(([id, a]) => [id, a.tier ?? "standard"])),
       [QUESTIONS]: harness.questions?.tier ?? "standard",
     },
     defaults: Object.fromEntries(
-      engines.map((e) => [e.id, Object.fromEntries(TIERS.map((t) => [t, defaultTier(e.id, t)])) as Record<Tier, ModelSpec>]),
+      engines.map((e) => [e.id, Object.fromEntries(TIERS.map((t) => [t, tierSpec(e.id, t)])) as Record<Tier, ModelSpec>]),
     ),
-    offered: Object.fromEntries(engines.map((e) => [e.id, engineOffer(e, saved.engines[e.id] ?? {})])),
+    offered: Object.fromEntries(engines.map((e) => [e.id, offer(e)])),
   };
 }
 
@@ -167,7 +189,7 @@ async function modelsView(): Promise<ModelsView> {
  * this build doesn't offer leaves `p` as it is (its turn fails on the engine check anyway).
  */
 async function supportedEffort(p: ModelProfile, saved?: SharedEngineRecord): Promise<ModelProfile> {
-  const engine = availableEngines(harness.engines, mode()).find((e) => e.id === p.engine);
+  const engine = offered().find((e) => e.id === p.engine);
   return engine ? fitEffort(p, engineOffer(engine, saved ?? (await savedOffer(p.engine))).efforts) : p;
 }
 
@@ -199,9 +221,22 @@ async function appState(): Promise<AppState> {
       version: app.getVersion(),
     },
     config: saved.models !== undefined ? { ...saved, models: cleanModels(saved.models) } : saved,
-    suggestedFolder: path.join(os.homedir(), harness.folder.suggested),
+    suggestedFolder: hooks.suggestedFolder ?? path.join(os.homedir(), harness.folder.suggested),
+    ...(hooks.mock ? { mock: true } : {}),
     engines: await Promise.all(
-      availableEngines(harness.engines, mode()).map(async (e) => {
+      offered().map(async (e) => {
+        // Mock mode: a faked engine is shown as the test engine, with no logo, install command or plan limits.
+        if (isMockEngine(hooks, e.id)) {
+          return {
+            id: e.id,
+            ...mockEngineText(mockLang(saved.language)),
+            status: e.status as "allowed" | "pending",
+            termsUrl: e.termsUrl,
+            privacyUrl: e.privacyUrl,
+            reportsLimits: false,
+            mock: true,
+          };
+        }
         const image = await engineLogo(e);
         return {
           id: e.id,
@@ -228,7 +263,7 @@ async function appState(): Promise<AppState> {
     ),
     path: harness.path ?? [],
     references: (await referencesFor(saved.folder)).map((r) => ({ id: r.id, label: r.label, path: displayPath(r.path, os.homedir()) })),
-    models: await modelsView(),
+    models: await modelsView(saved.language),
     backup: await backupView(saved.folder),
   };
 }
@@ -327,7 +362,8 @@ function sendToWindow(channel: string, value: unknown) {
   }
 }
 const emit = (event: Event) => sendToWindow("hh:event", event);
-const hasNotice = (engineId: string) => hasAcceptedNotice(shared, engineId);
+// Mock mode: the test engine has no provider to disclose and nothing leaves the computer, so its notice counts as accepted.
+const hasNotice = async (engineId: string) => isMockEngine(hooks, engineId) || hasAcceptedNotice(shared, engineId);
 
 const turns = new TurnController({
   ensureRuntime: async () => {
@@ -569,6 +605,9 @@ function registerIpc() {
   handle("hh:runSetup", async (engineId: string, step: SetupStep) => {
     const engine = engineFor(engineId);
     if (!SETUP_STEPS.includes(step)) throw new Error("Unknown setup step");
+    // A fake engine has nothing to install or sign in to, and no real CLI may run.
+    const fake = fakeSetupResult(hooks, engineId);
+    if (fake) return fake;
     // Start and end are only reported by the call that holds the setup slot, so only it resets these.
     const output = (o: SetupOutput) => {
       if (o.kind === "start") setupUrl = undefined;
@@ -616,11 +655,12 @@ function registerIpc() {
     // A second request for the same engine (the screen was reopened) gets the running test's result.
     return guards.runTest(engineId, async (signal): Promise<TestResult> => {
       if (!(await hasNotice(engineId))) return { ok: false, error: { code: "notice-required" } };
-      const cmd = await engineCommand(engine, commandDeps);
+      // A fake engine is never tested against a real CLI.
+      const cmd = fakeSetupResult(hooks, engineId) ? { command: [], env: {} } : await engineCommand(engine, commandDeps);
       if (!cmd) return { ok: false, error: { code: "engine-not-installed" } };
       // The app may have started quitting while the CLI was being found.
       if (quitting || signal.aborted) return { ok: false, error: { code: "cancelled" } };
-      const result = await testPrompt(engine, cmd, { signal });
+      const result = fakeSetupResult(hooks, engineId) ? { ok: true } : await testPrompt(engine, cmd, { signal });
       if (!result.ok) return result;
       try {
         await shared.update(engineId, { verifiedAt: new Date().toISOString() });
@@ -774,7 +814,7 @@ if (primary) {
     if (recovered?.leftBehind) console.error(`An interrupted folder move kept the old folder at ${recovered.leftBehind}`);
     shared = new SharedConfigStore(hooks.sharedDir ?? sharedConfigDir());
     // `humanharness dev --engine <id>`: a fresh app starts with that engine chosen (development builds only).
-    const preselect = devEngine(process.env, app.isPackaged, availableEngines(harness.engines, mode()).map((e) => e.id));
+    const preselect = devEngine(process.env, app.isPackaged, offered().map((e) => e.id));
     if (preselect && !(await config.load()).engineId) await config.save({ engineId: preselect });
     references = resolveReferences(harness.folder.references, { harnessDir: __HARNESS_DIR__, home: os.homedir(), packaged: app.isPackaged });
     nativeTheme.themeSource = (await config.load()).appearance ?? "system";

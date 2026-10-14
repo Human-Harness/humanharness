@@ -77,6 +77,11 @@ export function managedSection(opts: { language: Language; blocks: Record<string
   return lines.join("\n");
 }
 
+/** The files the app generates in the folder for an engine: AGENTS.md and the engine's own instructions file. */
+export function generatedFiles(engine: EngineDef): string[] {
+  return ["AGENTS.md", ...(engine.instructionsFile ? [engine.instructionsFile.path] : [])];
+}
+
 /** Writes AGENTS.md (harness base + managed section) and the engine's own file. Returns the relative paths written. */
 export async function writeInstructions(opts: {
   folder: string;
@@ -93,11 +98,7 @@ export async function writeInstructions(opts: {
   await fs.mkdir(opts.folder, { recursive: true });
   const agents = `${opts.base.trimEnd()}\n\n${managedSection({ language: opts.language, blocks: opts.blocks, references: opts.references })}`;
   await fs.writeFile(path.join(opts.folder, "AGENTS.md"), agents);
-  const written = ["AGENTS.md"];
   const extra = opts.engine.instructionsFile;
-  if (extra) {
-    await fs.writeFile(path.join(opts.folder, extra.path), extra.content);
-    written.push(extra.path);
-  }
-  return written;
+  if (extra) await fs.writeFile(path.join(opts.folder, extra.path), extra.content);
+  return generatedFiles(opts.engine);
 }

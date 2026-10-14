@@ -29,7 +29,9 @@ export function UsageMeter({ engine, limits: reported, lastTokens }: { engine?: 
   if (!engine) return null;
   if (!engine.reportsLimits) {
     const tokens = lastTokens !== null ? ` ${t("usage.lastTurn", { tokens: compactTokens(lastTokens, i18n.language) })}` : "";
-    return <p className="hh-usage">{t("usage.noLimits", { engine: engine.name }) + tokens}</p>;
+    // The test engine (mock mode) has no plan to report on: say it uses none.
+    const line = engine.mock ? t("usage.mock") : t("usage.noLimits", { engine: engine.name });
+    return <p className="hh-usage">{line + tokens}</p>;
   }
   if (!limits?.length) return <p className="hh-usage">{t("usage.unknown")}</p>;
   const text = limits

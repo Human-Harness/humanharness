@@ -91,7 +91,6 @@ async function writeNoFollow(file: string, data: Buffer, mode: number): Promise<
   }
 }
 
-
 /** How far back `tasks` follows a task past the depth to find its first commit. */
 const MAX_WALK_BACK = 1000;
 
@@ -321,7 +320,6 @@ export class History {
     });
     return out;
   }
-
 
   /** Removes `rel` and its ancestors while they are empty. Never removes the folder root. */
   private async pruneEmptyParents(rel: string): Promise<void> {

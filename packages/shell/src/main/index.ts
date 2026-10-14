@@ -362,7 +362,8 @@ function sendToWindow(channel: string, value: unknown) {
   }
 }
 const emit = (event: Event) => sendToWindow("hh:event", event);
-const hasNotice = (engineId: string) => hasAcceptedNotice(shared, engineId);
+// Mock mode: the test engine has no provider to disclose and nothing leaves the computer, so its notice counts as accepted.
+const hasNotice = async (engineId: string) => isMockEngine(hooks, engineId) || hasAcceptedNotice(shared, engineId);
 
 const turns = new TurnController({
   ensureRuntime: async () => {
@@ -594,8 +595,7 @@ function registerIpc() {
   );
   handle("hh:engineStatus", async (engineId: string) => {
     const engine = engineFor(engineId);
-    // Mock mode: the test engine has no provider to disclose, so its notice counts as accepted.
-    if (hooks.engines?.[engine.id]) return testEngineStatus(engine, isMockEngine(hooks, engine.id) || (await hasNotice(engine.id)));
+    if (hooks.engines?.[engine.id]) return testEngineStatus(engine, await hasNotice(engine.id));
     return detectEngine(engine, commandDeps, shared);
   });
   handle("hh:acceptNotice", async (engineId: string) => {

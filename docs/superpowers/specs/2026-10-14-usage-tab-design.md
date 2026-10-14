@@ -69,3 +69,14 @@ Captions under the table:
   - the UsageTab states (limits with and without history, near the limit, no limits, mock), with the exact phrases and number rules;
   - the plans link conditions.
 - **E2E:** extend an existing fake-engine test to open Settings › Uso and check one measured row.
+
+## Changes during implementation
+
+- **Free questions** have no cost hint: before they are measured, their row shows "—" (with limits, "— · te digo cuánto después de usarlo").
+- **Singular forms:** "una vez" when N is 1 ("unas 1 veces" read wrong) and "1 vez más" near the limit. Near the limit, more than 50 also reads "más de 50".
+- **Window names:** the plan rows use the existing `usage.<kind>` ("5 h", "semana"), which the work screen and Home share. The "Te alcanza para" caption takes the long name from `usage.long.<kind>` ("5 horas"), falling back to the row's name.
+- **Comparison phrases:** "<x> veces el promedio" always has one decimal in the UI language ("2,4"). A ratio between 1.33 and 1.34 reads "un poco más que el promedio". The average is over the topics in the table that have tokens, free questions included.
+- **Tokens** leave out the closing turn, like estimates. Mock engines and engines without `limits.primary` get no `primary` and no estimates.
+- **URLs:** `https://claude.com/pricing` was fetched and lists Pro and Max. `https://chatgpt.com/pricing` answers automated requests with a Cloudflare challenge (403). Several pricing write-ups point to it as OpenAI's plans page, so it stays, to be checked by hand with the engine review.
+- **E2E:** the fake Claude script reports the five-hour window on each turn (10 % → 14 % → 15 %), so the flow test checks the manifest row: "≈ 4 % de 5 h", "unas 25 veces".
+- The tab moved to `packages/ui/src/UsageTab.tsx`. It reuses Settings › Modelos' row order (`taskRows`).

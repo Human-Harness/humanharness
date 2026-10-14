@@ -177,7 +177,7 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
       view.event(e);
     },
     recordUsage: async (entry, meta, firstLimits) => {
-      await recorder?.turnEnded(meta);
+      await recorder?.turnEnded(meta, { failed: !!entry.error });
       tally.add(meta, entry.usage, !entry.error);
       const record = usageRecord(entry, engine.id, meta, firstLimits);
       if (record) await usageLog.append(record);

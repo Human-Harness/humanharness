@@ -106,4 +106,24 @@ describe("Recorder", () => {
     expect(recs[0].turns[2].note).toEqual({ title: "cp", summary: [] });
     expect(recs[1].turns.map((t) => t.text)).toEqual(["C"]);
   });
+
+  it("a failed turn is not recorded, and the retry is linked by the same reply", async () => {
+    const folder = path.join(root, "work3");
+    fs.mkdirSync(folder, { recursive: true });
+    const r = new Recorder({ folder, toolFor, matchFor, recordedWith: "claude" });
+    await r.begin();
+    r.event({ type: "text", delta: "First" });
+    await r.turnEnded({ action: "a", phase: "run" });
+    r.reply("Go");
+    r.event({ type: "text", delta: "half" });
+    r.event({ type: "usage", inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 });
+    fs.writeFileSync(path.join(folder, "x.md"), "x");
+    await r.turnEnded({ action: "a", phase: "run" }, { failed: true });
+    r.event({ type: "text", delta: "retry" });
+    await r.turnEnded({ action: "a", phase: "run" });
+    const [rec] = r.recordings();
+    expect(rec.turns.map((t) => t.id)).toEqual(["t1", "t2"]);
+    expect(rec.turns[0].next).toEqual({ Go: "t2" });
+    expect(rec.turns[1]).toEqual({ id: "t2", text: "retry", blocks: [], writes: [{ path: "x.md", content: "x" }] });
+  });
 });

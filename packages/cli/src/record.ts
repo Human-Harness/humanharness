@@ -105,9 +105,17 @@ export class Recorder {
   }
 
   /** One engine turn ended (`recordUsage`): it becomes a recorded turn unless it was a checkpoint. */
-  async turnEnded(meta: { action?: string; phase?: "run" | "close" | "checkpoint" }): Promise<void> {
+  async turnEnded(meta: { action?: string; phase?: "run" | "close" | "checkpoint" }, opts: { failed?: boolean } = {}): Promise<void> {
     const after = await snapshotFolder(this.o.folder);
     for (const p of after.skipped) this.skipped.add(p);
+    if (opts.failed) {
+      // A failed or held attempt is no turn: drop what it showed. The snapshot and the pending reply stay,
+      // so the retry's turn carries any files the attempt wrote and is linked by the same reply.
+      this.text = "";
+      this.blocks = [];
+      this.usage = undefined;
+      return;
+    }
     const writes = diff(this.snapshot, after);
     this.snapshot = after;
     const action = meta.action;

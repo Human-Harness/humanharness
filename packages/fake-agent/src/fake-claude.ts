@@ -1,6 +1,7 @@
 // Stand-in for `claude -p ... --output-format stream-json`. Reads its script from HH_FAKE_SCRIPT,
 // records its argv in HH_FAKE_ARGS, the prompt in HH_FAKE_STDIN, and appends {argv, prompt} for
 // every run to HH_FAKE_PROMPTS, so tests can assert on the flags and messages the runtime sent.
+// In mock mode (HH_FAKE_MOCK_DIR and HH_FAKE_MOCK_STATE) it replays the harness's recordings instead (mock-claude.ts).
 import { spawn } from "node:child_process";
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -9,6 +10,15 @@ import type { ClaudeScript } from "./script";
 
 const argv = process.argv.slice(2);
 if (process.env.HH_FAKE_ARGS) writeFileSync(process.env.HH_FAKE_ARGS, JSON.stringify(argv));
+if (process.env.HH_FAKE_MOCK_DIR && process.env.HH_FAKE_MOCK_STATE) {
+  let prompt = "";
+  for await (const chunk of process.stdin) prompt += chunk;
+  const i = argv.indexOf("--mcp-config");
+  const servers = i >= 0 ? (JSON.parse(argv[i + 1]) as { mcpServers: Record<string, any> }).mcpServers : {};
+  const { runMockTurn } = await import("./mock-claude");
+  await runMockTurn(argv, prompt, servers, { dir: process.env.HH_FAKE_MOCK_DIR, state: process.env.HH_FAKE_MOCK_STATE });
+  process.exit(0);
+}
 const script = JSON.parse(readFileSync(process.env.HH_FAKE_SCRIPT!, "utf8")) as ClaudeScript;
 let input = "";
 if (process.env.HH_FAKE_STDIN || process.env.HH_FAKE_PROMPTS || script.turns) {

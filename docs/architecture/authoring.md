@@ -25,7 +25,7 @@ The template (`packages/cli/template/`) runs as is: one action (`example`, stand
 
 `HARNESS.md` is the harness's living decision log: Task, Decisions, Flow, Context, Models, Permissions and engines, Identity, Open questions, Decision log. `check` reads two things from it (`packages/cli/src/harness-md.ts`): the Flow table (`| Action | Tier | Cost | Purpose |`, one row per action plus `(questions)`) and the permission lines (`- edit: none — reason`, `exec`, `web`, `engines: claude, codex`).
 
-- Errors: `schema` (each zod issue), `i18n` (locale files, key parity, `t("key")` in `ui/`), `brief-missing`, `brand` (`brandNames()` in `packages/engines`), `engine-not-allowed` (excluded, unknown, or pending outside development), `harness-md-missing`, `harness-md-mismatch`.
+- Errors: `schema` (each zod issue), `i18n` (locale files, key parity, `t("key")` in `ui/`), `brief-missing`, `brand` (`brandNames()` in `packages/engines`), `engine-not-allowed` (excluded, unknown, or pending outside development), `harness-md-missing`, `harness-md-mismatch`, and for `mock/*.json` recordings `mock-schema`, `mock-action`, `mock-match`, `mock-next`, `mock-choice`.
 - Warnings, one per pillar plus resources: `pillar-decisions`, `pillar-flow`, `pillar-context`, `tier-cost`, `permissions-wide`, `open-questions`.
 
 ## run

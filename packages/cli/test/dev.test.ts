@@ -88,10 +88,10 @@ describe("humanharness dev", () => {
 });
 
 describe("dev --mock", () => {
-  async function runDev(dir: string, opts: { mock?: boolean; keep?: boolean }) {
+  async function runDev(dir: string, opts: { mock?: boolean; keep?: boolean; engine?: string; tmpRoot?: string }) {
     const f = fakeSpawn();
     const out = memoryStream();
-    const code = await devCommand({ harnessDir: dir, out: out.stream, spawn: f.spawn, ...opts });
+    const code = await devCommand({ harnessDir: dir, out: out.stream, spawn: f.spawn, tmpRoot: root, ...opts });
     return { code, env: (f.calls[0]?.env ?? {}) as NodeJS.ProcessEnv, out: out.text() };
   }
   async function mockHarness() {
@@ -111,7 +111,8 @@ describe("dev --mock", () => {
     expect(engines.claude.env.HH_FAKE_MOCK_DIR).toBe(path.join(dir, "mock"));
     expect(Object.keys(engines.claude.env).every((k) => k.startsWith("HH_FAKE_"))).toBe(true);
     for (const k of ["HH_TEST_USER_DATA", "HH_TEST_SHARED_DIR", "HH_TEST_SUGGESTED_FOLDER"]) expect(path.isAbsolute(env[k]!)).toBe(true);
-    expect(env.HH_TEST_USER_DATA!.startsWith(os.tmpdir()) || env.HH_TEST_USER_DATA!.startsWith(fs.realpathSync(os.tmpdir()))).toBe(true);
+    expect(env.HH_TEST_USER_DATA!.startsWith(root)).toBe(true);
+    expect(fs.readdirSync(os.tmpdir()).filter((n) => n.startsWith("hh-mock-h"))).toEqual([]);
   });
 
   it("starts fresh unless --keep", async () => {
@@ -129,5 +130,36 @@ describe("dev --mock", () => {
     const { code, out } = await runDev(dir, { mock: true });
     expect(code).toBe(1);
     expect(out).toContain("humanharness run <action> --record");
+  });
+
+  it("--keep needs --mock; --mock needs claude", async () => {
+    const dir = await mockHarness();
+    await expect(runDev(dir, { keep: true })).rejects.toThrow("--keep only works with --mock");
+    await expect(runDev(dir, { mock: true, engine: "codex" })).rejects.toThrow("Mock mode replays as Claude");
+  });
+
+  it("drops inherited HH_TEST_* and HH_DEV_ENGINE", async () => {
+    const dir = await mockHarness();
+    process.env.HH_TEST_USER_DATA = "/stray";
+    process.env.HH_DEV_ENGINE = "codex";
+    try {
+      const plain = await runDev(dir, {});
+      expect(plain.env.HH_TEST_USER_DATA).toBeUndefined();
+      expect(plain.env.HH_DEV_ENGINE).toBeUndefined();
+      const mocked = await runDev(dir, { mock: true });
+      expect(mocked.env.HH_TEST_USER_DATA).not.toBe("/stray");
+    } finally {
+      delete process.env.HH_TEST_USER_DATA;
+      delete process.env.HH_DEV_ENGINE;
+    }
+  });
+
+  it("reports an unusable mock folder cleanly", async () => {
+    const dir = await mockHarness();
+    const blocked = path.join(root, "blocked");
+    fs.writeFileSync(blocked, "x");
+    const { code, out } = await runDev(dir, { mock: true, tmpRoot: blocked });
+    expect(code).toBe(1);
+    expect(out).toContain("Could not prepare");
   });
 });

@@ -20,12 +20,16 @@ export interface DevOptions {
   mock?: boolean;
   /** With mock: reuse the previous mock session's folders. */
   keep?: boolean;
+  /** Where the mock session folders go (default: the OS temp folder; tests). */
+  tmpRoot?: string;
   out: Writable;
   spawn?: DevSpawn;
 }
 
 /** `check`, then the shell's electron-vite with HH_HARNESS_DIR: the mechanism `corepack pnpm app:dev` uses for the demo. */
 export async function devCommand(o: DevOptions): Promise<number> {
+  if (o.keep && !o.mock) throw new UsageError("--keep only works with --mock");
+  if (o.mock && o.engine && o.engine !== "claude") throw new UsageError("Mock mode replays as Claude; drop --engine or use --engine claude.");
   const root = path.resolve(o.harnessDir);
   const { findings, harness } = await checkHarness(root);
   if (findings.length > 0) o.out.write(formatFindings(findings));
@@ -43,9 +47,11 @@ export async function devCommand(o: DevOptions): Promise<number> {
   const env: NodeJS.ProcessEnv = { ...process.env, HH_HARNESS_DIR: root };
   // Electron started as plain Node would not open a window.
   delete env.ELECTRON_RUN_AS_NODE;
+  // A developer's stray test or engine settings must not leak into the app.
+  for (const k of Object.keys(env)) if (k.startsWith("HH_TEST_") || k === "HH_DEV_ENGINE") delete env[k];
   if (o.mock) {
     try {
-      Object.assign(env, await mockEnv({ harnessId: harness.id, harnessDir: root, suggested: harness.folder.suggested, keep: o.keep === true, out: o.out }));
+      Object.assign(env, await mockEnv({ harnessId: harness.id, harnessDir: root, suggested: harness.folder.suggested, keep: o.keep === true, tmpRoot: o.tmpRoot, out: o.out }));
     } catch (err) {
       if (!(err instanceof CliError)) throw err;
       o.out.write(`${err.message}\n`);

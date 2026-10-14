@@ -1,4 +1,6 @@
 import { EventEmitter } from "node:events";
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { type DevSpawn, devCommand } from "../src/dev";
@@ -82,5 +84,50 @@ describe("humanharness dev", () => {
     const m = memoryIo(await harness());
     expect(await main(["dev", "--engine", "gemini"], m.io)).toBe(2);
     expect(m.err()).toContain('Engine "gemini" is not available');
+  });
+});
+
+describe("dev --mock", () => {
+  async function runDev(dir: string, opts: { mock?: boolean; keep?: boolean }) {
+    const f = fakeSpawn();
+    const out = memoryStream();
+    const code = await devCommand({ harnessDir: dir, out: out.stream, spawn: f.spawn, ...opts });
+    return { code, env: (f.calls[0]?.env ?? {}) as NodeJS.ProcessEnv, out: out.text() };
+  }
+  async function mockHarness() {
+    const dir = await harness();
+    fs.mkdirSync(path.join(dir, "mock"), { recursive: true });
+    fs.writeFileSync(path.join(dir, "mock", "example.json"), JSON.stringify({ version: 1, action: "example", match: "# Task: example", turns: [{ id: "t1", text: "hi" }] }));
+    return dir;
+  }
+
+  it("passes the mock env: fake claude over mock/, fresh temp folders, the badge flag", async () => {
+    const dir = await mockHarness();
+    const { env, code } = await runDev(dir, { mock: true });
+    expect(code).toBe(0);
+    expect(env.HH_TEST_MOCK).toBe("1");
+    const engines = JSON.parse(env.HH_TEST_ENGINES!);
+    expect(Object.keys(engines)).toEqual(["claude"]);
+    expect(engines.claude.env.HH_FAKE_MOCK_DIR).toBe(path.join(dir, "mock"));
+    expect(Object.keys(engines.claude.env).every((k) => k.startsWith("HH_FAKE_"))).toBe(true);
+    for (const k of ["HH_TEST_USER_DATA", "HH_TEST_SHARED_DIR", "HH_TEST_SUGGESTED_FOLDER"]) expect(path.isAbsolute(env[k]!)).toBe(true);
+    expect(env.HH_TEST_USER_DATA!.startsWith(os.tmpdir()) || env.HH_TEST_USER_DATA!.startsWith(fs.realpathSync(os.tmpdir()))).toBe(true);
+  });
+
+  it("starts fresh unless --keep", async () => {
+    const dir = await mockHarness();
+    const first = await runDev(dir, { mock: true });
+    fs.writeFileSync(path.join(first.env.HH_TEST_USER_DATA!, "config.json"), "{}");
+    const kept = await runDev(dir, { mock: true, keep: true });
+    expect(fs.existsSync(path.join(kept.env.HH_TEST_USER_DATA!, "config.json"))).toBe(true);
+    const fresh = await runDev(dir, { mock: true });
+    expect(fs.existsSync(path.join(fresh.env.HH_TEST_USER_DATA!, "config.json"))).toBe(false);
+  });
+
+  it("stops when mock/ has no recording", async () => {
+    const dir = await harness();
+    const { code, out } = await runDev(dir, { mock: true });
+    expect(code).toBe(1);
+    expect(out).toContain("humanharness run <action> --record");
   });
 });

@@ -29,6 +29,17 @@ async function startWork(ui: ReactElement) {
 }
 
 describe("HarnessApp", () => {
+  it("shows the test-mode badge only in mock mode", async () => {
+    const client = new FakeClient(ready);
+    client.state = { ...client.state, mock: true };
+    render(<HarnessApp client={client} />);
+    expect(await screen.findByText("Test mode (no AI)")).toBeTruthy();
+    cleanup();
+    render(<HarnessApp client={new FakeClient(ready)} />);
+    await screen.findByRole("button", { name: /^(Start|Iniciar) Demo$/ });
+    expect(screen.queryByText("Test mode (no AI)")).toBeNull();
+  });
+
   it("sends a message, streams the answer and renders blocks", async () => {
     const client = new FakeClient(ready);
     await startWork(<HarnessApp client={client} blocks={{ note: Note }} />);

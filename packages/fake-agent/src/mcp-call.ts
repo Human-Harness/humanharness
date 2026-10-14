@@ -7,7 +7,7 @@ export interface StdioServer {
   env: Record<string, string>;
 }
 
-export async function callMcpTool(server: StdioServer, tool: string, args: Record<string, unknown>): Promise<void> {
+export async function callMcpTool(server: StdioServer, tool: string, args: Record<string, unknown>): Promise<Awaited<ReturnType<Client["callTool"]>>> {
   const client = new Client({ name: "fake-agent", version: "0.0.0" });
   await client.connect(
     new StdioClientTransport({
@@ -17,7 +17,7 @@ export async function callMcpTool(server: StdioServer, tool: string, args: Recor
     }),
   );
   try {
-    await client.callTool({ name: tool, arguments: args });
+    return await client.callTool({ name: tool, arguments: args });
   } finally {
     await client.close();
   }

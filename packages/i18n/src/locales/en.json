@@ -309,6 +309,9 @@
   "app": {
     "loadError": "The app couldn't start. Close it and open it again."
   },
+  "mock": {
+    "badge": "Test mode (no AI)"
+  },
   "errors": {
     "engine-not-installed": "I can't find {{engine}} on this computer.",
     "session-expired": "Your {{engine}} session ended. Sign in again to continue.",

@@ -1,4 +1,6 @@
 import { EventEmitter } from "node:events";
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { type DevSpawn, devCommand } from "../src/dev";
@@ -82,5 +84,99 @@ describe("humanharness dev", () => {
     const m = memoryIo(await harness());
     expect(await main(["dev", "--engine", "gemini"], m.io)).toBe(2);
     expect(m.err()).toContain('Engine "gemini" is not available');
+  });
+});
+
+describe("dev --mock", () => {
+  async function runDev(dir: string, opts: { mock?: boolean; keep?: boolean; engine?: string; tmpRoot?: string }) {
+    const f = fakeSpawn();
+    const out = memoryStream();
+    const code = await devCommand({ harnessDir: dir, out: out.stream, spawn: f.spawn, tmpRoot: root, ...opts });
+    return { code, env: (f.calls[0]?.env ?? {}) as NodeJS.ProcessEnv, out: out.text() };
+  }
+  async function mockHarness() {
+    const dir = await harness();
+    fs.mkdirSync(path.join(dir, "mock"), { recursive: true });
+    fs.writeFileSync(path.join(dir, "mock", "example.json"), JSON.stringify({ version: 1, action: "example", match: "# Task: example", turns: [{ id: "t1", text: "hi" }] }));
+    return dir;
+  }
+
+  it("passes the mock env: fake claude over mock/, fresh temp folders, the badge flag", async () => {
+    const dir = await mockHarness();
+    const { env, code } = await runDev(dir, { mock: true });
+    expect(code).toBe(0);
+    expect(env.HH_TEST_MOCK).toBe("1");
+    const engines = JSON.parse(env.HH_TEST_ENGINES!);
+    expect(Object.keys(engines)).toEqual(["claude"]);
+    expect(engines.claude.env.HH_FAKE_MOCK_DIR).toBe(path.join(dir, "mock"));
+    expect(Object.keys(engines.claude.env).every((k) => k.startsWith("HH_FAKE_"))).toBe(true);
+    for (const k of ["HH_TEST_USER_DATA", "HH_TEST_SHARED_DIR", "HH_TEST_SUGGESTED_FOLDER"]) expect(path.isAbsolute(env[k]!)).toBe(true);
+    expect(env.HH_TEST_USER_DATA!.startsWith(root)).toBe(true);
+    expect(fs.readdirSync(os.tmpdir()).filter((n) => n.startsWith("hh-mock-h"))).toEqual([]);
+  });
+
+  it("starts fresh unless --keep", async () => {
+    const dir = await mockHarness();
+    const first = await runDev(dir, { mock: true });
+    fs.writeFileSync(path.join(first.env.HH_TEST_USER_DATA!, "config.json"), "{}");
+    const kept = await runDev(dir, { mock: true, keep: true });
+    expect(fs.existsSync(path.join(kept.env.HH_TEST_USER_DATA!, "config.json"))).toBe(true);
+    const fresh = await runDev(dir, { mock: true });
+    expect(fs.existsSync(path.join(fresh.env.HH_TEST_USER_DATA!, "config.json"))).toBe(false);
+  });
+
+  it("stops when mock/ has no recording", async () => {
+    const dir = await harness();
+    const { code, out } = await runDev(dir, { mock: true });
+    expect(code).toBe(1);
+    expect(out).toContain("humanharness run <action> --record");
+  });
+
+  it("--keep needs --mock; --mock needs claude", async () => {
+    const dir = await mockHarness();
+    await expect(runDev(dir, { keep: true })).rejects.toThrow("--keep only works with --mock");
+    await expect(runDev(dir, { mock: true, engine: "codex" })).rejects.toThrow("Mock mode replays as Claude");
+  });
+
+  it("drops inherited HH_TEST_*, HH_FAKE_* and HH_DEV_ENGINE", async () => {
+    const dir = await mockHarness();
+    process.env.HH_TEST_USER_DATA = "/stray";
+    process.env.HH_DEV_ENGINE = "codex";
+    process.env.HH_FAKE_MOCK_DIR = "/stray";
+    try {
+      const plain = await runDev(dir, {});
+      expect(plain.env.HH_TEST_USER_DATA).toBeUndefined();
+      expect(plain.env.HH_DEV_ENGINE).toBeUndefined();
+      expect(plain.env.HH_FAKE_MOCK_DIR).toBeUndefined();
+      const mocked = await runDev(dir, { mock: true });
+      expect(mocked.env.HH_TEST_USER_DATA).not.toBe("/stray");
+    } finally {
+      delete process.env.HH_TEST_USER_DATA;
+      delete process.env.HH_DEV_ENGINE;
+      delete process.env.HH_FAKE_MOCK_DIR;
+    }
+  });
+
+  it("a broken recording is a warning without --mock, and an error with it", async () => {
+    const dir = await mockHarness();
+    fs.writeFileSync(path.join(dir, "mock", "broken.json"), "{");
+    const plain = fakeSpawn();
+    const out = memoryStream();
+    expect(await devCommand({ harnessDir: dir, out: out.stream, spawn: plain.spawn })).toBe(0);
+    expect(out.text()).toContain("mock-schema");
+    expect(plain.calls).toHaveLength(1);
+    const mocked = fakeSpawn();
+    expect(await devCommand({ harnessDir: dir, mock: true, tmpRoot: root, out: memoryStream().stream, spawn: mocked.spawn })).toBe(1);
+    expect(mocked.calls).toHaveLength(0);
+    fs.rmSync(path.join(dir, "mock", "broken.json"));
+  });
+
+  it("reports an unusable mock folder cleanly", async () => {
+    const dir = await mockHarness();
+    const blocked = path.join(root, "blocked");
+    fs.writeFileSync(blocked, "x");
+    const { code, out } = await runDev(dir, { mock: true, tmpRoot: blocked });
+    expect(code).toBe(1);
+    expect(out).toContain("Could not prepare");
   });
 });

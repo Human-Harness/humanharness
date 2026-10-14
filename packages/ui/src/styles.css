@@ -70,7 +70,7 @@ input[type="text"], input:not([type]) { font: inherit; height: 28px; padding: 0 
 /* Top bar: the window's drag region (hiddenInset title bar), leaving room for the traffic lights. */
 .hh-topbar { height: 52px; box-sizing: border-box; display: flex; align-items: center; gap: 8px; padding: 0 12px 0 80px; -webkit-app-region: drag; user-select: none; border-bottom: 1px solid var(--hh-line); }
 .hh-topbar button, .hh-topbar a, .hh-topbar input { -webkit-app-region: no-drag; }
-.hh-title { font-family: var(--hh-display); font-weight: 600; font-size: 14px; white-space: nowrap; }
+.hh-title { font-family: var(--hh-display); font-weight: 600; font-size: 14px; white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .hh-spacer { flex: 1; }
 .hh-icon-button { width: 30px; padding: 0; }
 .hh-segmented { display: inline-flex; padding: 2px; gap: 2px; border-radius: 7px; background: var(--hh-segment); }
@@ -96,6 +96,8 @@ input[type="text"], input:not([type]) { font: inherit; height: 28px; padding: 0 
 /* Settings sheet, attached under the top bar */
 /* Wraps Home or the work screen without changing its layout (it is made inert under the sheet). */
 .hh-screen { display: contents; }
+/* Test-mode badge: in the top bar flow, after the title. */
+.hh-mock-badge { flex: none; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--hh-warn); background: var(--hh-surface); color: var(--hh-warn); font-size: 12px; font-weight: 600; white-space: nowrap; }
 .hh-sheet-backdrop { position: fixed; inset: 52px 0 0 0; background: var(--hh-backdrop); display: flex; justify-content: center; align-items: flex-start; }
 .hh-sheet { width: min(620px, calc(100% - 32px)); max-height: calc(100% - 24px); box-sizing: border-box; overflow-y: auto; background: var(--hh-sheet); border: 1px solid var(--hh-line-strong); border-top: none; border-radius: 0 0 12px 12px; padding: 16px 20px 20px; display: grid; gap: 16px; box-shadow: 0 12px 32px rgba(25, 30, 36, 0.18); }
 .hh-sheet-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }

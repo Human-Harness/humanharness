@@ -329,7 +329,7 @@ export function ChatView({
 
   return (
     <div className="hh-app">
-      <TopBar title={state.harness.name[lang]}>
+      <TopBar title={state.harness.name[lang]} mock={state.mock}>
         <UsageMeter engine={engineOption} limits={chat.limits} lastTokens={lastTurnTokens(chat.entries)} />
         {onHome && <button onClick={onHome}>{t("chat.home")}</button>}
         <button

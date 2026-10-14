@@ -8,8 +8,8 @@ A harness lives in its own repository and depends on `@humanharness/cli` only: u
 |---|---|
 | `init <dir> [--core <path>] [--id <id>] [--skip-install]` | The core checkout must have run `corepack pnpm install` first. Copies `packages/cli/template/` (the id replaces `example-harness`), writes `package.json` with the `link:` dependency and the `check`, `run` and `dev` scripts, appends the first entry of `HARNESS.md`'s decision log, installs the guide, then runs `corepack pnpm install` and `git init` (`--skip-install` links the CLI directly instead; tests use it). |
 | `check [--json]` | Loads the manifest with the SDK and reads `HARNESS.md` (`packages/cli/src/check.ts`). Errors exit with 1. |
-| `run <action> …` | One task against a real engine, with the app's own `TaskManager` and `TurnController` (`packages/cli/src/run.ts`), the terminal as the window, and a usage report at the end. |
-| `dev [--engine <id>] [--build <dir>]` | `check`, then the shell's `electron-vite dev` with `HH_HARNESS_DIR` (and `HH_DEV_ENGINE`; `--build` builds into `<dir>` through `HH_OUT_DIR`). When electron-vite can't start, it prints why and exits with 1. |
+| `run <action> … [--record [--force]]` | One task against a real engine, with the app's own `TaskManager` and `TurnController` (`packages/cli/src/run.ts`), the terminal as the window, and a usage report at the end. `--record` saves the run as `mock/<action>.json` (`--force` overwrites it). |
+| `dev [--engine <id>] [--mock [--keep]] [--build <dir>]` | `check`, then the shell's `electron-vite dev` with `HH_HARNESS_DIR` (and `HH_DEV_ENGINE`; `--build` builds into `<dir>` through `HH_OUT_DIR`). When electron-vite can't start, it prints why and exits with 1. `--mock` opens the app with a fake engine replaying `mock/` (see `mock-mode.md`); `--keep` reuses the previous mock session's folders. |
 
 `check`, `run` and `dev` work on the current folder, or on `--harness <dir>`. From the core repository: `corepack pnpm humanharness run manifest --harness harnesses/demo`.
 
@@ -25,7 +25,7 @@ The template (`packages/cli/template/`) runs as is: one action (`example`, stand
 
 `HARNESS.md` is the harness's living decision log: Task, Decisions, Flow, Context, Models, Permissions and engines, Identity, Open questions, Decision log. `check` reads two things from it (`packages/cli/src/harness-md.ts`): the Flow table (`| Action | Tier | Cost | Purpose |`, one row per action plus `(questions)`) and the permission lines (`- edit: none — reason`, `exec`, `web`, `engines: claude, codex`).
 
-- Errors: `schema` (each zod issue), `i18n` (locale files, key parity, `t("key")` in `ui/`), `brief-missing`, `brand` (`brandNames()` in `packages/engines`), `engine-not-allowed` (excluded, unknown, or pending outside development), `harness-md-missing`, `harness-md-mismatch`.
+- Errors: `schema` (each zod issue), `i18n` (locale files, key parity, `t("key")` in `ui/`), `brief-missing`, `brand` (`brandNames()` in `packages/engines`), `engine-not-allowed` (excluded, unknown, or pending outside development), `harness-md-missing`, `harness-md-mismatch`, and for `mock/*.json` recordings `mock-schema`, `mock-action`, `mock-match`, `mock-next`, `mock-choice`.
 - Warnings, one per pillar plus resources: `pillar-decisions`, `pillar-flow`, `pillar-context`, `tier-cost`, `permissions-wide`, `open-questions`.
 
 ## run

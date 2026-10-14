@@ -5,7 +5,8 @@ import path from "node:path";
 import { createInterface } from "node:readline";
 import type { Readable, Writable } from "node:stream";
 import { type EngineDef, availableEngines } from "@humanharness/engines";
-import { LANGUAGES, type Language, TIERS, type Tier, allBlocks, loadHarness, resolveInHarness } from "@humanharness/harness-sdk";
+import type { MockNote } from "@humanharness/fake-agent";
+import { LANGUAGES, type Language, TIERS, type Tier, allBlocks, blockToolName, loadHarness, resolveInHarness } from "@humanharness/harness-sdk";
 import { type ErrorCode, createRuntime } from "@humanharness/runtime";
 import {
   ChatLog,
@@ -26,9 +27,11 @@ import {
   sharedConfigDir,
   usageRecord,
 } from "@humanharness/shell/tasks";
-import { readNotes, writeNote } from "@humanharness/workspace";
+import { generatedFiles, readNotes, writeNote } from "@humanharness/workspace";
 import { CliError, type Io, UsageError, parseCommand } from "./cli";
 import { MANIFEST } from "./paths";
+import { clashMessage, matchClashes } from "./mock-match";
+import { Recorder, briefMatch } from "./record";
 import { type RunReport, UsageTally, formatReport } from "./report";
 import { TerminalView, errorMessage } from "./terminal";
 
@@ -47,6 +50,10 @@ export interface RunOptions {
   output: Writable;
   /** Ctrl-C presses: the command line passes SIGINT, tests an emitter. */
   interrupts?: Interrupts;
+  /** Save the run as mock/<action>.json for `dev --mock` (spec 3e §3). */
+  record?: boolean;
+  /** With record: overwrite an existing recording. */
+  force?: boolean;
   /** Tests: run this command instead of the engine's CLI, with no readiness check. Never credentials. */
   engineCommand?: { command: string[]; env: Record<string, string> };
   /** Tests: where the readiness check looks (default: the official CLIs and `~/.humanharness/engines.json`). */
@@ -106,6 +113,12 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
   const language: Language = o.language ?? (harness.languages.includes("en") ? "en" : harness.languages[0]);
   if (!harness.languages.includes(language)) throw new UsageError(`${harness.id} does not offer the language "${language}".`);
 
+  const mockFile = (id: string) => path.join(harness.root, "mock", `${id}.json`);
+  const exists = (p: string) => fs.access(p).then(() => true, () => false);
+  if (o.record && !o.force && (await exists(mockFile(o.action)))) {
+    throw new CliError(`${path.relative(process.cwd(), mockFile(o.action)) || mockFile(o.action)} already exists. Delete it, or pass --force to overwrite it.`);
+  }
+
   const command =
     o.engineCommand ??
     (await readyEngine(engine, o.readiness?.deps ?? createCommandDeps(process.execPath), o.readiness?.shared ?? new SharedConfigStore(sharedConfigDir())));
@@ -121,7 +134,32 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
   const usageLog = new UsageLog(folder);
   const references = await resolveReferences(harness.folder.references, { harnessDir: harness.root, home: os.homedir(), packaged: false });
   const gitdir = path.join(os.tmpdir(), "humanharness-run-history", `${harness.id}-${createHash("sha256").update(folder).digest("hex").slice(0, 12)}`);
-  const stateBlocks = new Set(Object.entries(allBlocks(harness)).filter(([, b]) => !b.visible).map(([name]) => name));
+  const blocks = allBlocks(harness);
+  const stateBlocks = new Set(Object.entries(blocks).filter(([, b]) => !b.visible).map(([name]) => name));
+  let recorder: Recorder | undefined;
+  if (o.record) {
+    const briefTexts = new Map<string, string>();
+    const matches = new Map<string, string>();
+    for (const id of Object.keys(harness.actions)) {
+      const text = await fs.readFile(resolveInHarness(harness, harness.actions[id].prompt), "utf8").catch(() => "");
+      briefTexts.set(id, text);
+      // The brief's first line past any front matter, cut before a placeholder: a task's first message always contains it.
+      matches.set(id, briefMatch(text, id));
+    }
+    // Replay picks a recording by its match inside the task's first message: warn when another brief holds it too.
+    for (const other of matchClashes(o.action, matches.get(o.action) ?? o.action, briefTexts, (id) => matches.get(id))) {
+      out.write(`Warning: ${clashMessage(matches.get(o.action) ?? o.action, other)} Make the first line of the briefs distinct.\n`);
+    }
+    recorder = new Recorder({
+      folder,
+      exclude: generatedFiles(engine),
+      toolFor: (name) => (Object.hasOwn(blocks, name) ? blockToolName(name, blocks[name]) : `show_${name}`),
+      matchFor: (id) => matches.get(id) ?? id,
+      recordedWith: engine.id,
+      warn: (m) => out.write(`Note: ${m}\n`),
+    });
+  }
+  await recorder?.begin();
   let lastNote: string | undefined;
   // Counted, not compared by path: a checkpoint's note and the closing one go to the same file.
   let notesWritten = 0;
@@ -144,11 +182,16 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
     ensureRuntime: () => runtime.get(),
     chatLog: async () => new ChatLog(folder, engine.id),
     stateBlocks: () => stateBlocks,
-    emit: (e) => view.event(e),
+    emit: (e) => {
+      recorder?.event(e);
+      view.event(e);
+    },
     recordUsage: async (entry, meta, firstLimits) => {
       tally.add(meta, entry.usage, !entry.error);
       const record = usageRecord(entry, engine.id, meta, firstLimits);
       if (record) await usageLog.append(record);
+      // After the usage is kept: a folder that can't be read must never lose it.
+      await recorder?.turnEnded(meta, { failed: !!entry.error }).catch((err) => out.write(`Warning: could not record a turn: ${err instanceof Error ? err.message : String(err)}\n`));
     },
   });
   const tasks: TaskManager = new TaskManager({
@@ -161,6 +204,7 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
     engine: async () => engine.id,
     notes: () => readNotes(folder),
     writeNote: async (slug, note, meta) => {
+      recorder?.note(note as MockNote);
       lastNote = path.join(folder, await writeNote(folder, slug, note, meta));
       notesWritten++;
     },
@@ -242,8 +286,13 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
         }
         closeStopped = false;
         const pick = Number(line);
-        if (Number.isInteger(pick) && pick >= 1 && pick <= options.length) await tasks.choose(options[pick - 1], current.id);
-        else await tasks.ask(line);
+        if (Number.isInteger(pick) && pick >= 1 && pick <= options.length) {
+          recorder?.reply(options[pick - 1].label);
+          await tasks.choose(options[pick - 1], current.id);
+        } else {
+          recorder?.reply("*");
+          await tasks.ask(line);
+        }
       }
     } finally {
       promptInterrupted = undefined;
@@ -251,6 +300,25 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
       await turns.flush();
       const rt = await runtime.peek()?.catch(() => null);
       await rt?.close();
+    }
+    if (recorder) {
+      let written = 0;
+      for (const rec of recorder.recordings()) {
+        const file = mockFile(rec.action);
+        if (rec.action !== o.action && (await exists(file))) {
+          out.write(`Not recorded: ${file} already exists.\n`);
+          continue;
+        }
+        await fs.mkdir(path.dirname(file), { recursive: true });
+        // Atomic: a recording is never half written.
+        const tmp = `${file}.${process.pid}.tmp`;
+        await fs.writeFile(tmp, JSON.stringify(rec, null, 2) + "\n");
+        await fs.rename(tmp, file);
+        out.write(`Recorded: ${file}\n`);
+        written++;
+      }
+      if (recorder.skipped.size > 0) out.write(`Left out of the recording (binary or over 64 KB, new or changed in this run): ${[...recorder.skipped].join(", ")}\n`);
+      if (written > 0) out.write("The recording holds what you typed and what the AI answered: review it before committing it.\n");
     }
     const report = tally.report({ folder, action: o.action, cost: action.cost, ...(lastNote ? { notePath: lastNote } : {}) });
     out.write(formatReport(report));
@@ -260,7 +328,7 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
   }
 }
 
-const RUN_USAGE = "Usage: humanharness run <action> [--engine claude|codex] [--tier light|standard|deep] [--folder <dir>] [--language es|en] [--harness <dir>]";
+const RUN_USAGE = "Usage: humanharness run <action> [--engine claude|codex] [--tier light|standard|deep] [--folder <dir>] [--language es|en] [--harness <dir>] [--record [--force]]";
 
 export async function runCommand(args: string[], io: Io): Promise<number> {
   const { values, positionals } = parseCommand(args, {
@@ -269,8 +337,11 @@ export async function runCommand(args: string[], io: Io): Promise<number> {
     folder: { type: "string" },
     language: { type: "string" },
     harness: { type: "string" },
+    record: { type: "boolean" },
+    force: { type: "boolean" },
   });
   if (positionals.length !== 1) throw new UsageError(RUN_USAGE);
+  if (values.force && !values.record) throw new UsageError("--force only works with --record");
   if (values.tier !== undefined && !(TIERS as readonly string[]).includes(values.tier)) throw new UsageError(`Unknown tier "${values.tier}": use light, standard or deep.`);
   if (values.language !== undefined && !(LANGUAGES as readonly string[]).includes(values.language)) throw new UsageError(`Unknown language "${values.language}": use es or en.`);
   await runTask({
@@ -280,6 +351,8 @@ export async function runCommand(args: string[], io: Io): Promise<number> {
     ...(values.tier ? { tier: values.tier as Tier } : {}),
     ...(values.folder ? { folder: path.resolve(io.cwd, values.folder.replace(/^~(?=$|\/)/, os.homedir())) } : {}),
     ...(values.language ? { language: values.language as Language } : {}),
+    ...(values.record ? { record: true } : {}),
+    ...(values.force ? { force: true } : {}),
     input: io.stdin,
     output: io.stdout,
     interrupts: sigint,

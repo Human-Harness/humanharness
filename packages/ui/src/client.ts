@@ -94,6 +94,8 @@ export interface AppState {
   config: AppConfig;
   /** Absolute suggested folder (e.g. ~/Documents/Demo). */
   suggestedFolder: string;
+  /** `humanharness dev --mock`: a fake engine replays recordings (development only). */
+  mock?: boolean;
   engines: EngineOption[];
   /** The harness's declared actions, by id. */
   actions: Record<string, ActionOption>;

@@ -62,7 +62,7 @@ function replyKey(turn: MockTurn, prompt: string): string | undefined {
   const reply = prompt.trim();
   for (const block of choicesOf(turn)) {
     const options = Array.isArray(block.input.options) ? (block.input.options as { label?: unknown; followUp?: unknown }[]) : [];
-    const hit = options.find((o) => typeof o.label === "string" && (typeof o.followUp === "string" ? o.followUp.trim() : o.label.trim()) === reply);
+    const hit = options.find((o) => typeof o.label === "string" && (typeof o.followUp === "string" && o.followUp.trim() ? o.followUp.trim() : o.label.trim()) === reply);
     if (hit) return hit.label as string;
   }
   return undefined;
@@ -74,17 +74,18 @@ function replyKey(turn: MockTurn, prompt: string): string | undefined {
  */
 export function replay(recordings: Recording[], position: SessionPosition | undefined, prompt: string, newSession: boolean): { play: Play; session: SessionPosition } {
   if (newSession || !position) {
+    // `!newSession && !position` (a lost state file) is treated as a first message too.
     // The longest match wins, so "# Topic: engines" never shadows "# Topic: engines and more".
     const rec = [...recordings].sort((a, b) => b.match.length - a.match.length).find((r) => prompt.includes(r.match));
     const turn = rec && firstTurn(rec);
-    if (!rec || !turn) return { play: quiet(DEFAULT_FALLBACK), session: { action: rec?.action ?? null, turn: null } };
+    if (!rec || !turn) return { play: quiet(rec?.fallback?.text ?? DEFAULT_FALLBACK), session: { action: rec?.action ?? null, turn: null } };
     return { play: playTurn(turn), session: { action: rec.action, turn: turn.id } };
   }
   const rec = recordings.find((r) => r.action === position.action);
   const kind = promptKind(prompt);
   if (kind === "close") {
     const close = rec?.turns.find((t) => t.id === "close");
-    if (close) return { play: playTurn({ ...close, blocks: [] }), session: position };
+    if (close && rec) return { play: playTurn({ ...close, blocks: [], note: close.note ?? defaultNote(rec.action) }), session: position };
     return { play: quiet("", [], defaultNote(position.action ?? "question")), session: position };
   }
   if (kind === "checkpoint") return { play: quiet("", [], rec ? closeNote(rec) : defaultNote(position.action ?? "question")), session: position };

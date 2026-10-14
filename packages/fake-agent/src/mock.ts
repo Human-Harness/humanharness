@@ -7,7 +7,16 @@ import { z } from "zod";
 const folderPath = z
   .string()
   .min(1)
-  .refine((p) => !path.isAbsolute(p) && !p.split(/[\\/]/).includes(".."), "must be a relative path inside the folder");
+  .refine(
+    (p) =>
+      !path.isAbsolute(p) &&
+      !path.win32.isAbsolute(p) &&
+      !/^[A-Za-z]:/.test(p) &&
+      !p.startsWith("\\\\") &&
+      !p.split(/[\\/]/).includes("..") &&
+      !["", "."].includes(path.posix.normalize(p.replaceAll("\\", "/")).replace(/\/+$/, "")),
+    "must be a relative path to a file inside the folder",
+  );
 
 const blockSchema = z.strictObject({ tool: z.string().min(1), input: z.record(z.string(), z.unknown()) });
 const writeSchema = z.strictObject({ path: folderPath, content: z.string().nullable() });
@@ -29,7 +38,12 @@ export const mockTurnSchema = z.strictObject({
   usage: usageSchema.optional(),
   delayMs: z.number().int().min(0).max(60_000).optional(),
   /** Reply → next turn id: a choice's label, or `*` for anything else. */
-  next: z.record(z.string(), z.string()).optional(),
+  /** Checked on the raw input: zod's record silently drops a `__proto__` key. */
+  next: z
+    .unknown()
+    .refine((n) => typeof n !== "object" || n === null || !Object.hasOwn(n, "__proto__"), "\"__proto__\" is not a valid reply label")
+    .pipe(z.record(z.string(), z.string()))
+    .optional(),
 });
 
 /** One action's recorded conversation (spec 3e §2). */
@@ -37,7 +51,7 @@ export const recordingSchema = z.strictObject({
   version: z.literal(1),
   action: z.string().min(1),
   /** Plain text that the task's first message (its brief) contains. */
-  match: z.string().min(1),
+  match: z.string().refine((m) => m.trim().length > 0, "must not be blank"),
   recordedWith: z.string().optional(),
   fallback: z.strictObject({ text: z.string().min(1) }).optional(),
   turns: z.array(mockTurnSchema).min(1),

@@ -83,4 +83,41 @@ describe("replay", () => {
     const r = replay(all, undefined, "# Topic: the manifest\n…\n\n## The person's message\nhola", true);
     expect(r.session.turn).toBe("t1");
   });
+
+  it("the longest match wins", () => {
+    const longer = recordingSchema.parse({ version: 1, action: "long", match: "# Topic: the manifest and more", turns: [{ id: "l1", text: "Larga." }] });
+    expect(replay([rec, longer], undefined, "# Topic: the manifest and more", true).session.action).toBe("long");
+  });
+
+  it("the close turn keeps no blocks and, without a note, saves a default one", () => {
+    const r = recordingSchema.parse({ version: 1, action: "a", match: "# a", turns: [{ id: "a1", text: "x" }, { id: "close", text: "Chau.", blocks: [choices] }] });
+    const p = replay([r], { action: "a", turn: "a1" }, "We are closing this topic.", false).play;
+    expect(p.blocks).toEqual([]);
+    expect(p.note).toMatchObject({ title: "a", summary: ["Recorded test run"] });
+  });
+
+  it("a reply with no current turn, or a turn without next, plays the fallback", () => {
+    expect(replay(all, { action: "manifest", turn: null }, "x", false).play.text).toBe(DEFAULT_FALLBACK);
+    expect(replay(all, { action: "manifest", turn: "t3" }, "x", false).play.text).toBe(DEFAULT_FALLBACK);
+  });
+
+  it("a reply that matches no label goes to *, and an empty followUp counts as the label", () => {
+    const r = recordingSchema.parse({
+      version: 1,
+      action: "b",
+      match: "# b",
+      turns: [
+        { id: "b1", blocks: [{ tool: "show_choices", input: { options: [{ label: "Uno", followUp: "" }] } }], next: { Uno: "b2", "*": "b3" } },
+        { id: "b2", text: "dos" },
+        { id: "b3", text: "tres" },
+      ],
+    });
+    expect(replay([r], { action: "b", turn: "b1" }, "Uno", false).play.text).toBe("dos");
+    expect(replay([r], { action: "b", turn: "b1" }, "otra", false).play.text).toBe("tres");
+  });
+
+  it("a recording with only a close turn uses its fallback for a new session", () => {
+    const r = recordingSchema.parse({ version: 1, action: "c", match: "# c", fallback: { text: "Nada." }, turns: [{ id: "close", note: { title: "c" } }] });
+    expect(replay([r], undefined, "# c", true).play.text).toBe("Nada.");
+  });
 });

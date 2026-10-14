@@ -86,6 +86,8 @@ The gear becomes a line icon (24-unit stroke gear, as macOS's "gearshape"). It h
 - **Mock caption.** "En modo prueba hay un solo motor…" is shown above the tiles, under the step's intro, not under the tiles.
 - **E2E.** Mock launches pass `--lang=es`, so a fresh app with no saved language is in Spanish like the configured ones. Every launch sets `HH_TEST_SUGGESTED_FOLDER` to the sandbox's folder, and the walk-through picks "Solo en esta compu" when synced places exist, so it never writes outside the sandbox.
 
+- **Usage line.** For a mock engine, the work screen's usage line and Settings › Uso say "Modo prueba: no gasta tu plan." / "Test mode: uses none of your plan." instead of the no-limits text; the last reply's tokens still show.
+
 ## Out
 
 - Setup for engines other than the harness's own; changing the folder in the flow after it is saved.

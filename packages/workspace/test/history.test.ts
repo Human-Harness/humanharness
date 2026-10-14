@@ -373,3 +373,85 @@ describe("History.tasks", () => {
     expect((await h.trackedFiles()).sort()).toEqual([".harness/notes/n.md", "a.md", "dir/b.md"]);
   });
 });
+
+describe.skipIf(process.platform === "win32")("History restore and symlinks", () => {
+  let outside: string;
+  beforeEach(() => {
+    outside = fs.mkdtempSync(path.join(root, "outside-"));
+  });
+  const link = (rel: string) => path.join(folder, rel);
+
+  it("restores a file link as a link and never writes to what it points to", async () => {
+    const target = path.join(outside, "target.txt");
+    fs.writeFileSync(target, "keep");
+    fs.symlinkSync(target, link("mine.md"));
+    const before = (await history.save("before"))!;
+    await history.save("turn");
+
+    await history.restore(before, "undo");
+    expect(fs.readFileSync(target, "utf8")).toBe("keep");
+    expect(fs.lstatSync(link("mine.md")).isSymbolicLink()).toBe(true);
+    expect(fs.readlinkSync(link("mine.md"))).toBe(target);
+  });
+
+  it("puts a re-pointed link back without touching the file it now points to", async () => {
+    const target = path.join(outside, "target.txt");
+    const victim = path.join(outside, "victim.txt");
+    fs.writeFileSync(target, "keep");
+    fs.writeFileSync(victim, "secret");
+    fs.symlinkSync(target, link("mine.md"));
+    const before = (await history.save("before"))!;
+    fs.rmSync(link("mine.md"));
+    fs.symlinkSync(victim, link("mine.md"));
+
+    await history.restore(before, "undo");
+    expect(fs.readFileSync(victim, "utf8")).toBe("secret");
+    expect(fs.readFileSync(target, "utf8")).toBe("keep");
+    expect(fs.readlinkSync(link("mine.md"))).toBe(target);
+  });
+
+  it("replaces a link with the regular file the restore point had, leaving its target alone", async () => {
+    const victim = path.join(outside, "victim.txt");
+    fs.writeFileSync(victim, "secret");
+    write("a.md", "1");
+    const before = (await history.save("before"))!;
+    fs.rmSync(link("a.md"));
+    fs.symlinkSync(victim, link("a.md"));
+
+    await history.restore(before, "undo");
+    expect(fs.readFileSync(victim, "utf8")).toBe("secret");
+    expect(fs.lstatSync(link("a.md")).isFile()).toBe(true);
+    expect(read("a.md")).toBe("1");
+  });
+
+  it("removes a link the restore point didn't have, not its target", async () => {
+    const victim = path.join(outside, "victim.txt");
+    fs.writeFileSync(victim, "secret");
+    const before = (await history.save("before"))!;
+    fs.symlinkSync(victim, link("new.md"));
+
+    await history.restore(before, "undo");
+    expect(fs.readFileSync(victim, "utf8")).toBe("secret");
+    expect(() => fs.lstatSync(link("new.md"))).toThrow();
+  });
+
+  it("writes nothing through a linked folder that leads outside", async () => {
+    const h = new History(folder, gitdir, [".harness/"], [".harness/notes/"]);
+    write(".harness/notes/n.md", "note");
+    const before = (await h.save("before"))!;
+    fs.rmSync(link(".harness/notes"), { recursive: true });
+    fs.symlinkSync(outside, link(".harness/notes"));
+
+    await h.restore(before, "undo");
+    expect(fs.readdirSync(outside)).toEqual([]);
+  });
+
+  it("sees a changed link target as a change", async () => {
+    fs.symlinkSync("a", link("l"));
+    await history.save("before");
+    fs.rmSync(link("l"));
+    fs.symlinkSync("b", link("l"));
+    expect(await history.save("after")).toMatch(/^[0-9a-f]{40}$/);
+    expect(await history.save("again")).toBeNull();
+  });
+});

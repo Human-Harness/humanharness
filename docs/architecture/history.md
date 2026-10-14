@@ -10,6 +10,7 @@
 - Every change is recorded in an invisible local git history kept outside the folder (`packages/workspace/src/history.ts`, built on isomorphic-git). Its data lives in the app's data folder, one per folder (`historyDir` in `packages/shell/src/main/config.ts`), so cloud sync never touches it.
 - The runtime (`packages/runtime/src/runtime.ts`) commits when it starts ("Start"), before each message ("Before message") and after the turn ("Turn: …", or "Stopped: …" when it didn't finish). If the agent crashes mid-turn, it restores the point before the message ("Undo: …"). A saved note is committed as "Note: …".
 - The history skips `.harness/` except `.harness/notes/`, and skips the generated `AGENTS.md` and the engine's own instructions file.
+- Symlinks are recorded as links (git mode 120000, the blob is the target path), never as what they point to. A restore never writes through a link: it removes a link in its way (the link, not its target), recreates a link entry as a link, writes regular files with `O_NOFOLLOW` where the OS has it, and skips (and logs) any entry whose parent folder resolves outside the folder through a linked folder.
 
 ### Commits belong to tasks
 

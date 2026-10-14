@@ -13,13 +13,17 @@ export interface TestHooks {
   userData?: string;
   sharedDir?: string;
   engines?: Record<string, TestEngine>;
+  /** `humanharness dev --mock`: only the faked engines are offered, and the window shows a badge. */
+  mock?: boolean;
+  /** Where the folder step suggests the folder (mock mode keeps it in its temp folder). */
+  suggestedFolder?: string;
 }
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
 /**
- * End-to-end test settings from the environment: HH_TEST_USER_DATA, HH_TEST_SHARED_DIR and
- * HH_TEST_ENGINES (JSON: engine id → { command, env }). Development builds only: a packaged app
+ * End-to-end test settings from the environment: HH_TEST_USER_DATA, HH_TEST_SHARED_DIR,
+ * HH_TEST_SUGGESTED_FOLDER, HH_TEST_MOCK ("1") and HH_TEST_ENGINES (JSON: engine id → { command, env }). Development builds only: a packaged app
  * ignores them. Engine environments keep only HH_FAKE_* variables, so no credential or auth variable
  * can be passed this way.
  */
@@ -31,6 +35,9 @@ export function readTestHooks(env: Record<string, string | undefined>, packaged:
   const sharedDir = dir(env.HH_TEST_SHARED_DIR);
   if (userData) hooks.userData = userData;
   if (sharedDir) hooks.sharedDir = sharedDir;
+  const suggestedFolder = dir(env.HH_TEST_SUGGESTED_FOLDER);
+  if (suggestedFolder) hooks.suggestedFolder = suggestedFolder;
+  if (env.HH_TEST_MOCK === "1") hooks.mock = true;
   let raw: unknown;
   try {
     raw = env.HH_TEST_ENGINES ? JSON.parse(env.HH_TEST_ENGINES) : undefined;
@@ -73,4 +80,9 @@ export function devEngine(env: Record<string, string | undefined>, packaged: boo
   if (packaged) return undefined;
   const id = env.HH_DEV_ENGINE;
   return id && offered.includes(id) ? id : undefined;
+}
+
+/** The engines the app offers: in mock mode only those with a fake, so no status check reaches a real CLI. */
+export function offeredEngines<E extends { id: string }>(engines: E[], hooks: Pick<TestHooks, "mock" | "engines">): E[] {
+  return hooks.mock ? engines.filter((e) => hooks.engines?.[e.id] !== undefined) : engines;
 }

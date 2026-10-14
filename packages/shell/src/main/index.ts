@@ -53,7 +53,7 @@ import { TaskManager } from "./task-manager";
 import { historyView, isSha } from "./history-view";
 import { RestoreGuard, lastOpened } from "./restore-guard";
 import { TaskStore, emptyTasks } from "./task-store";
-import { devEngine, readTestHooks, testEngineStatus } from "./test-hooks";
+import { devEngine, offeredEngines, readTestHooks, testEngineStatus } from "./test-hooks";
 
 declare const __HARNESS_DIR__: string;
 
@@ -105,20 +105,22 @@ async function referencesFor(folder: string | undefined, log = false): Promise<R
 }
 
 const mode = () => (app.isPackaged ? "distribution" : "development");
+/** The engines this app offers (spec 3e: mock mode offers only the faked ones). */
+const offered = () => offeredEngines(availableEngines(harness.engines, mode()), hooks);
 const stateBlocks = () => new Set(Object.entries(allBlocks(harness)).filter(([, b]) => !b.visible).map(([n]) => n));
 const rendererFile = path.join(here, "../renderer/index.html");
 // The dev server is only trusted in development: a packaged app always loads its own file.
 const devUrl = app.isPackaged ? undefined : process.env.ELECTRON_RENDERER_URL;
 const appUrl = (url: string) => isAppUrl(url, { devUrl, rendererFile });
 const validation = (): ValidationContext => ({
-  engineIds: availableEngines(harness.engines, mode()).map((e) => e.id),
+  engineIds: offered().map((e) => e.id),
   languages: harness.languages,
   home: os.homedir(),
 });
 
 /** An engine this harness offers in this build. The id comes from the window, so anything else throws. */
 function engineFor(id: unknown): EngineDef {
-  const engine = availableEngines(harness.engines, mode()).find((e) => e.id === id);
+  const engine = offered().find((e) => e.id === id);
   if (!engine) throw new Error("This engine is not available");
   return engine;
 }
@@ -148,7 +150,7 @@ const savedOffer = (engineId: string) => shared.engine(engineId).catch((): Share
 
 /** Settings › Modelos: the harness's recommendations, the core's tables and what each engine offers. */
 async function modelsView(): Promise<ModelsView> {
-  const engines = availableEngines(harness.engines, mode());
+  const engines = offered();
   const saved = await shared.load().catch(() => ({ version: 1 as const, engines: {} as Record<string, SharedEngineRecord> }));
   return {
     recommended: {
@@ -167,7 +169,7 @@ async function modelsView(): Promise<ModelsView> {
  * this build doesn't offer leaves `p` as it is (its turn fails on the engine check anyway).
  */
 async function supportedEffort(p: ModelProfile, saved?: SharedEngineRecord): Promise<ModelProfile> {
-  const engine = availableEngines(harness.engines, mode()).find((e) => e.id === p.engine);
+  const engine = offered().find((e) => e.id === p.engine);
   return engine ? fitEffort(p, engineOffer(engine, saved ?? (await savedOffer(p.engine))).efforts) : p;
 }
 
@@ -199,9 +201,10 @@ async function appState(): Promise<AppState> {
       version: app.getVersion(),
     },
     config: saved.models !== undefined ? { ...saved, models: cleanModels(saved.models) } : saved,
-    suggestedFolder: path.join(os.homedir(), harness.folder.suggested),
+    suggestedFolder: hooks.suggestedFolder ?? path.join(os.homedir(), harness.folder.suggested),
+    ...(hooks.mock ? { mock: true } : {}),
     engines: await Promise.all(
-      availableEngines(harness.engines, mode()).map(async (e) => {
+      offered().map(async (e) => {
         const image = await engineLogo(e);
         return {
           id: e.id,
@@ -774,7 +777,7 @@ if (primary) {
     if (recovered?.leftBehind) console.error(`An interrupted folder move kept the old folder at ${recovered.leftBehind}`);
     shared = new SharedConfigStore(hooks.sharedDir ?? sharedConfigDir());
     // `humanharness dev --engine <id>`: a fresh app starts with that engine chosen (development builds only).
-    const preselect = devEngine(process.env, app.isPackaged, availableEngines(harness.engines, mode()).map((e) => e.id));
+    const preselect = devEngine(process.env, app.isPackaged, offered().map((e) => e.id));
     if (preselect && !(await config.load()).engineId) await config.save({ engineId: preselect });
     references = resolveReferences(harness.folder.references, { harnessDir: __HARNESS_DIR__, home: os.homedir(), packaged: app.isPackaged });
     nativeTheme.themeSource = (await config.load()).appearance ?? "system";

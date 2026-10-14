@@ -101,7 +101,7 @@ export class FakeClient implements HarnessClient {
   setupCancelled = 0;
   tested: string[] = [];
   testResult: TestResult & { error?: EngineError } = { ok: true };
-  usage: UsageSummary = { limits: null, estimates: {} };
+  usage: UsageSummary = { limits: null, estimates: {}, tokens: {} };
   revealed = 0;
   /** Places moveFolder was asked to move to. */
   moved: string[] = [];

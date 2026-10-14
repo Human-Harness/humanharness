@@ -168,7 +168,7 @@ describe("flow mode", () => {
   it("asks before a heavy next topic; Not now leaves the options usable, and Continue sends the pick", async () => {
     const client = flowClient();
     client.state.actions.engines.cost = "heavy";
-    client.usage = { limits: [{ kind: "five_hour", utilization: 0.75, resetsAt: in2h() }], estimates: { engines: 0.08 } };
+    client.usage = { limits: [{ kind: "five_hour", utilization: 0.75, resetsAt: in2h() }], estimates: { engines: 0.08 }, tokens: {} };
     await startWork(client);
     fireEvent.click(within(await startRegion()).getByRole("button", { name: /The manifest/ }));
     tasks(client, { current: t1("running") });

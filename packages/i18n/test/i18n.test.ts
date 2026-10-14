@@ -56,7 +56,7 @@ describe("createI18n", () => {
       "\"Research\" can use a large part of your 5-hour window. You have 84% left.",
     );
     expect(en.t("home.usage", { label: "5 h", percent: 42 })).toBe("5 h · 42%");
-    expect(en.t("usage.estimate", { percent: 8 })).toBe("Usually about 8% of the 5-hour window");
+    expect(en.t("usage.times", { count: 13 })).toBe("about 13 times");
     expect(en.t("engine.loggingIn")).toBe("Finish signing in using your browser…");
     expect(en.t("engine.noticeProvider", { engine: "Claude", provider: "Anthropic", where: "Anthropic, USA" })).toBe(
       "Claude is a service of Anthropic. What you write here, and the files in your folder that the AI reads, are sent to Anthropic, USA.",
@@ -67,6 +67,9 @@ describe("createI18n", () => {
     expect(es.t("engine.accept")).toBe("Entiendo y acepto");
     expect(es.t("errors.fix.session-expired")).toBe("Volver a entrar");
     expect(es.t("usage.window", { label: "5 h", percent: 16 })).toBe("5 h: 16 % usado");
+    expect(es.t("usage.times", { count: 1 })).toBe("una vez");
+    expect(es.t("usage.timesLeft", { count: 1 })).toBe("1 vez más");
+    expect(es.t("usage.timesLeft", { count: 3 })).toBe("3 veces más");
     expect(es.t("engine.noticeProvider", { engine: "Claude", provider: "Anthropic", where: "Anthropic, EE. UU." })).toBe(
       "Claude es un servicio de Anthropic. Lo que escribas acá, y los archivos de tu carpeta que lea la IA, se envían a Anthropic, EE. UU. para ser procesados.",
     );

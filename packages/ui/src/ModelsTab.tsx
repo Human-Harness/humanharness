@@ -9,14 +9,14 @@ import { uiLanguage } from "./FolderStep";
 // Local copies: the UI only imports types from the core packages.
 const TIERS: readonly Tier[] = ["light", "standard", "deep"];
 const CAPS: readonly number[] = [100_000, 200_000, 400_000, 1_000_000];
-const QUESTIONS = "questions";
+export const QUESTIONS = "questions";
 const FALLBACK_SPEC: ModelSpec = { effort: "medium", cap: 200_000 };
 
 type Choice = Tier | "custom";
 type Offer = ModelsView["offered"][string];
 const NO_OFFER: Offer = { models: [], efforts: ["low", "medium", "high"] };
 
-interface TaskRowInfo {
+export interface TaskRowInfo {
   key: string;
   label: string;
   description?: string;
@@ -51,7 +51,7 @@ const withModel = (spec: ModelSpec, model: string | undefined): ModelSpec => {
 };
 
 /** The actions in path order, then the others, then free questions. */
-function taskRows(state: AppState, lang: Language, questions: TaskRowInfo): TaskRowInfo[] {
+export function taskRows(state: AppState, lang: Language, questions: TaskRowInfo): TaskRowInfo[] {
   const path = (state.path ?? []).filter((id) => state.actions[id]);
   const ids = [...path, ...Object.keys(state.actions).filter((id) => !path.includes(id))];
   return [...ids.map((id) => ({ key: id, label: state.actions[id].label[lang], description: state.actions[id].description?.[lang] })), questions];

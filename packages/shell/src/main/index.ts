@@ -249,6 +249,7 @@ async function appState(): Promise<AppState> {
           termsUrl: e.termsUrl,
           privacyUrl: e.privacyUrl,
           reportsLimits: e.reportsLimits,
+          ...(e.plansUrl ? { plansUrl: e.plansUrl } : {}),
           ...(e.setup?.install ? { installCommand: e.setup.install.command, installDocsUrl: e.setup.install.docsUrl } : {}),
           ...(image ? { logo: image } : {}),
         };
@@ -673,8 +674,10 @@ function registerIpc() {
   });
   handle("hh:getUsage", async (): Promise<UsageSummary> => {
     const c = await validConfig();
-    if (!c) return { limits: null, estimates: {} };
-    return summarizeUsage((await new UsageLog(c.folder).load()).filter((r) => r.engine === c.engineId));
+    if (!c) return { limits: null, estimates: {}, tokens: {} };
+    // A mock engine reports no limits, so it measures no window.
+    const primary = isMockEngine(hooks, c.engineId) ? undefined : getEngine(c.engineId).limits?.primary;
+    return summarizeUsage((await new UsageLog(c.folder).load()).filter((r) => r.engine === c.engineId), primary);
   });
   handle("hh:revealSharedConfig", () => shell.showItemInFolder(shared.path));
   // Installing by hand: copy the official command (chosen here by engine id) and open Terminal,

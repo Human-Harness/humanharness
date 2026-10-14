@@ -30,6 +30,8 @@ export interface EngineOption {
   privacyUrl: string;
   /** Whether the engine reports plan-limit windows (Claude) or only tokens (Codex). */
   reportsLimits: boolean;
+  /** The provider's page of plans (Settings › Uso); never for a mock engine. */
+  plansUrl?: string;
   /** The official install command, shown before the app runs it. */
   installCommand?: string;
   installDocsUrl?: string;
@@ -256,8 +258,12 @@ export interface TestResult {
 export interface UsageSummary {
   /** Latest plan-limit windows that haven't reset yet; null when the engine never reported any. */
   limits: LimitWindow[] | null;
-  /** Typical share (0..1) of the five-hour window each action used, from the local log. */
+  /** Typical share (0..1) of the `primary` window each task key (action id, or "questions") used lately, from the local log. */
   estimates: Record<string, number>;
+  /** Typical total tokens per task of each task key lately, for every engine. */
+  tokens: Record<string, number>;
+  /** The window kind estimates measure (the engine's `limits.primary`); absent when the engine reports no limits. */
+  primary?: string;
 }
 
 export interface SendOptions {

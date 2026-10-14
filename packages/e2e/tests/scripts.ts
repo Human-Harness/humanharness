@@ -11,6 +11,11 @@ const result = {
     usage: { input_tokens: 1200, output_tokens: 80, cache_read_input_tokens: 900, cache_creation_input_tokens: 0 },
   },
 };
+/** Claude's plan-limit snapshot (it comes after the turn's first API response); the window resets in 3 hours. */
+const RESETS_AT = Math.floor(Date.now() / 1000) + 3 * 3600;
+const limits = (fiveHour: number) => ({
+  line: { type: "rate_limit_event", rate_limit_info: { status: "allowed", unifiedWindows: { five_hour: { utilization: fiveHour, resetsAt: RESETS_AT } } } },
+});
 const ui = (tool: string, args: Record<string, unknown>) => ({ mcp: { server: "ui", tool, args } });
 const choices = ui("show_choices", {
   options: [
@@ -19,7 +24,10 @@ const choices = ui("show_choices", {
   ],
 });
 
-/** Claude: answers the manifest topic with blocks, saves a note when the app closes the topic, answers engines. */
+/**
+ * Claude: answers the manifest topic with blocks, saves a note when the app closes the topic, answers engines.
+ * Each turn reports the five-hour window: the manifest task uses 4 % of it (0.10 → 0.14 at the closing turn).
+ */
 export const claudeScript: ClaudeScript = {
   steps: [...claudeTextLines("Listo."), result],
   turns: [
@@ -27,6 +35,7 @@ export const claudeScript: ClaudeScript = {
       // The closing turn's core prompt names the save_note tool; no brief does.
       match: "save_note",
       steps: [
+        limits(0.14),
         ui("save_note", {
           title: "El manifiesto",
           summary: ["defineHarness valida el manifiesto", "Las acciones traen su brief"],
@@ -41,6 +50,7 @@ export const claudeScript: ClaudeScript = {
     {
       match: "# Topic: the manifest",
       steps: [
+        limits(0.1),
         ...claudeTextLines("El manifiesto declara todo el harness."),
         ui("show_diagram", {
           title: "Del manifiesto a la app",
@@ -56,7 +66,7 @@ export const claudeScript: ClaudeScript = {
         result,
       ],
     },
-    { match: "# Topic: engines", steps: [...claudeTextLines("Los motores se detectan en cada inicio."), choices, result] },
+    { match: "# Topic: engines", steps: [limits(0.15), ...claudeTextLines("Los motores se detectan en cada inicio."), choices, result] },
   ],
 };
 

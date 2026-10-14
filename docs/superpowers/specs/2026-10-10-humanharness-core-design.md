@@ -192,7 +192,7 @@ Harnesses can trigger token-heavy workflows, and the user pays with their plan's
 - A compact meter, always visible: "5 h: 16 % used · resets 15:00 — week: 9 %".
 - Before a `heavy` action: an estimate calibrated from the local log ("this usually uses about 8 % of your 5-hour window; you have 84 % left"), with Continue / Not now. Before there is history, the harness's cost hint is shown in words.
 - Warnings at 80 % and 95 % of a window; at `out-of-quota`, the reset time and the conversation kept.
-- Onboarding explains in one screen what each plan tier allows in practice for this harness (e.g. Pro vs Max), using the harness's own description.
+- How far the plan goes with this harness is measured, never taken from plan tables: see `2026-10-14-usage-tab-design.md` (Settings › Uso).
 
 ## 7. Folder, instructions and history (`packages/workspace`)
 

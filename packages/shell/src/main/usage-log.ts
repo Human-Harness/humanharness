@@ -112,43 +112,64 @@ export function compactionRecord(engine: string, meta: UsageMeta, at: string = n
   return { at, engine, ...metaFields(meta), kind: "compaction", ok: true };
 }
 
-const FIVE_HOUR = "five_hour";
+/** Free questions (no action) are measured under this key, like Settings › Modelos. */
+const QUESTIONS = "questions";
+/** Estimates and tokens average each action's latest tasks, so a change of model or plan settles in after a few uses. */
+export const RECENT_TASKS = 10;
+
+const turnTokens = (u: TurnUsage): number => u.inputTokens + u.outputTokens + u.cacheReadTokens + u.cacheWriteTokens;
+
+/** The average of the last RECENT_TASKS values of each key. */
+function recentAverages(values: Map<string, number[]>): Record<string, number> {
+  return Object.fromEntries(
+    [...values].map(([key, all]) => {
+      const recent = all.slice(-RECENT_TASKS);
+      return [key, recent.reduce((a, b) => a + b, 0) / recent.length];
+    }),
+  );
+}
 
 /**
- * Current limits and per-action estimates. Claude reports the windows mid-turn (after the first
- * API response), so a turn's snapshot shows usage from before most of that turn: a turn's cost is
- * the rise of the five-hour window from its first snapshot to the next turn's first, when the next
- * turn has one and the window hasn't reset in between. A task costs the sum of its turns (follow-ups
- * included, its closing turn left out); a task with a turn that can't be measured is left out, and an
- * action's estimate is the average over its tasks. Lines from before tasks were logged count as a task
- * each. Other use of the same account counts too, so it is a rough guide. Checkpoint turns and compaction
- * lines are left out.
+ * Current limits, per-action estimates and per-action tokens. Claude reports the windows mid-turn
+ * (after the first API response), so a turn's snapshot shows usage from before most of that turn: a
+ * turn's cost is the rise of the `primary` window (the engine's `limits.primary`) from its first
+ * snapshot to the next turn's first, when the next turn has one and the window hasn't reset in
+ * between. A task costs the sum of its turns (follow-ups included, its closing turn left out); a task
+ * with a turn that can't be measured is left out, and an action's estimate is the average over its
+ * last RECENT_TASKS measured tasks. Tokens work the same way for every engine: a task counts when all
+ * of its turns reported usage. Free questions count under "questions". Lines from before tasks were
+ * logged count as a task each. Other use of the same account counts too, so it is a rough guide.
+ * Checkpoint turns and compaction lines are left out.
  */
-export function summarizeUsage(records: UsageRecord[], now: Date = new Date()): UsageSummary {
+export function summarizeUsage(records: UsageRecord[], primary: string | undefined, now: Date = new Date()): UsageSummary {
   records = records.filter((r) => r.kind !== "compaction");
-  const fiveHour = (r: UsageRecord | undefined) => (r?.firstLimits ?? r?.limits)?.find((w) => w.kind === FIVE_HOUR);
+  const window = (r: UsageRecord | undefined) => (primary ? (r?.firstLimits ?? r?.limits)?.find((w) => w.kind === primary) : undefined);
   const last = records.filter((r) => r.limits && r.limits.length > 0).at(-1);
-  const tasks = new Map<string, { action: string; total: number; measured: boolean }>();
+  const tasks = new Map<string, { action: string; total: number; measured: boolean; tokens: number; counted: boolean }>();
   for (let i = 0; i < records.length; i++) {
     const r = records[i];
-    if (!r.action || r.phase === "close" || r.kind) continue;
+    if (r.phase === "close" || r.kind) continue;
+    const action = r.action ?? QUESTIONS;
     const key = r.task ? `task:${r.task}` : `line:${i}`;
-    const task = tasks.get(key) ?? { action: r.action, total: 0, measured: true };
+    const task = tasks.get(key) ?? { action, total: 0, measured: true, tokens: 0, counted: true };
     tasks.set(key, task);
-    const before = fiveHour(r);
-    const after = fiveHour(records[i + 1]);
+    const before = window(r);
+    const after = window(records[i + 1]);
     if (!before || !after || before.resetsAt !== after.resetsAt) task.measured = false;
     else task.total += Math.max(0, after.utilization - before.utilization);
+    if (r.usage) task.tokens += turnTokens(r.usage);
+    else task.counted = false;
   }
-  const sums: Record<string, { total: number; n: number }> = {};
+  const shares = new Map<string, number[]>();
+  const tokens = new Map<string, number[]>();
   for (const task of tasks.values()) {
-    if (!task.measured) continue;
-    const sum = (sums[task.action] ??= { total: 0, n: 0 });
-    sum.total += task.total;
-    sum.n++;
+    if (task.measured) shares.set(task.action, [...(shares.get(task.action) ?? []), task.total]);
+    if (task.counted) tokens.set(task.action, [...(tokens.get(task.action) ?? []), task.tokens]);
   }
   return {
     limits: last ? last.limits!.filter((w) => Date.parse(w.resetsAt) > now.getTime()) : null,
-    estimates: Object.fromEntries(Object.entries(sums).map(([action, s]) => [action, s.total / s.n])),
+    estimates: recentAverages(shares),
+    tokens: recentAverages(tokens),
+    ...(primary ? { primary } : {}),
   };
 }

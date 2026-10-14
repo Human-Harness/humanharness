@@ -47,6 +47,14 @@ test("a topic answered with blocks, then next: the note is saved and the next to
     await expect.poll(() => readTasks(s.folder)).toMatchObject({ current: { action: "engines", status: "waiting" }, actions: { manifest: "done" } });
     await expect.poll(() => readJsonl<{ phase?: string }>(usageFile(s)).map((r) => r.phase)).toEqual(["run", "close", "run"]);
     await expect(page.getByRole("list", { name: "Lo que ya quedó claro" }).getByRole("button", { name: "El manifiesto" })).toBeVisible();
+
+    // Settings › Uso: the manifest task took the five-hour window from 10 % to 14 % (spec 3b).
+    await page.getByRole("button", { name: "Ajustes" }).click();
+    await page.getByRole("tab", { name: "Uso" }).click();
+    const usage = page.getByRole("tabpanel", { name: "Uso" });
+    await expect(usage.getByText("15 % usado")).toBeVisible();
+    const manifest = usage.getByRole("row", { name: /El manifiesto/ });
+    await expect(manifest.getByRole("cell")).toHaveText(["≈ 4 % de 5 h", "unas 25 veces"]);
   } finally {
     await closeAndClean(app, s);
   }

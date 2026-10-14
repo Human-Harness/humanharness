@@ -20,9 +20,12 @@ test("mock mode walks a demo topic from its recording, off script included, with
     await page.getByRole("button", { name: "Enviar" }).click();
     await expect(page.getByRole("main").getByText(/no está grabada en esta prueba/)).toBeVisible();
 
+    // The choices come back under the fallback answer.
+    await expect(page.getByRole("button", { name: "Profundizar en las acciones" })).toHaveCount(2);
     await page.getByRole("button", { name: "Profundizar en las acciones" }).last().click();
     await expect(page.getByRole("main").getByText(/Cada acción trae su brief/)).toBeVisible();
 
+    await expect(page.getByRole("button", { name: "Seguir el recorrido →" })).toHaveCount(3);
     await page.getByRole("button", { name: "Seguir el recorrido →" }).last().click();
     await expect(page.getByRole("main").getByText(/Los motores se detectan en cada inicio/)).toBeVisible();
     const note = fs.readFileSync(path.join(s.folder, ".harness", "notes", "manifest.md"), "utf8");
@@ -31,6 +34,7 @@ test("mock mode walks a demo topic from its recording, off script included, with
     // Only the fake engine is offered.
     await page.getByRole("button", { name: "Ajustes" }).click();
     await page.getByRole("tab", { name: "Motor" }).click();
+    await expect(page.getByRole("button", { name: /Claude/ }).first()).toBeVisible();
     await expect(page.getByRole("button", { name: /Codex/ })).toHaveCount(0);
   } finally {
     await closeAndClean(app, s);

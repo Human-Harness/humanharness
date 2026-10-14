@@ -124,6 +124,7 @@ describe("Settings › Uso with an engine that reports limits", () => {
     const link = screen.getByRole("link", { name: "Ver planes de Anthropic" });
     expect(link.getAttribute("href")).toBe("https://claude.com/pricing");
     expect(link.getAttribute("target")).toBe("_blank");
+    expect(link.getAttribute("rel")).toBe("noopener noreferrer");
   });
 
   it("near the limit: a topic that won't fit whole says so", async () => {

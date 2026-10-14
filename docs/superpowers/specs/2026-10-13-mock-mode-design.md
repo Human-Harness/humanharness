@@ -13,6 +13,7 @@ Usability tests of a harness today cost tokens: every pass through the app runs 
 - **Fresh each launch.** Each start uses a new temporary data folder and work folder, so every test session begins at the first launch. `--keep` reuses the previous mock session's folders (kept under the OS temp dir, path printed at start).
 - **Visible.** The window shows a "Test mode (no AI)" badge (`mock.badge` in i18n, es/en), so a tester never mistakes it for the real thing.
 - **Dev only.** The shell reads the mock settings through `readTestHooks` (`packages/shell/src/main/test-hooks.ts`), which packaged builds ignore. `mock/` is never copied into a built app.
+- **Only the fake engine.** In mock mode the app offers only the engines that have a fake (Claude), so no status check reaches a real CLI. The suggested folder is inside the mock session's temp folder; synced places are still offered as they are on the computer.
 - **Engine status.** As with the existing test hooks, the fake engine reports installed and signed in; the legal notice stays real, so onboarding looks as it does for a person.
 
 `dev --mock` passes `HH_MOCK_DIR` (the harness's `mock/` folder) to the shell; the shell turns it into a test-engine entry for `claude` whose command is `fake-claude` and whose env holds only `HH_FAKE_*` variables, the same path the e2e tests use today.
@@ -24,43 +25,49 @@ One file per action, `mock/<action>.json`, readable and meant to be edited by ha
 ```json
 {
   "version": 1,
-  "action": "plan-week",
+  "action": "manifest",
+  "match": "# Topic: the manifest",
   "recordedWith": "claude",
-  "fallback": { "text": "This answer isn't recorded in this test." },
+  "fallback": { "text": "Esta respuesta no está grabada en esta prueba." },
   "turns": [
     {
       "id": "t1",
-      "text": "Here is a first draft…",
-      "blocks": [{ "name": "choices", "input": { "…": "…" } }],
+      "text": "El manifiesto declara todo el harness.",
+      "blocks": [
+        { "tool": "show_choices", "input": { "options": [{ "label": "Profundizar", "followUp": "Contame más." }, { "label": "Seguir →", "next": true }] } }
+      ],
       "writes": [{ "path": "plan.md", "content": "…" }],
       "usage": { "input": 1200, "output": 300, "cacheRead": 0, "cacheWrite": 0 },
       "delayMs": 800,
-      "next": { "opt-a": "t2", "opt-b": "t3", "*": "t2" }
+      "next": { "Profundizar": "t2", "*": "t2" }
     },
-    { "id": "close", "text": "Saved.", "note": { "title": "…", "body": "…" } }
+    { "id": "t2", "text": "…" },
+    { "id": "close", "note": { "title": "El manifiesto", "summary": ["…"], "decisions": [], "files": [], "open": [] } }
   ]
 }
 ```
 
-- **Turns.** The first turn answers the task's first prompt. `text` is streamed in chunks over `delayMs` (default 600 ms). `blocks` are emitted as `ui` MCP tool calls, `note` as `save_note`, `writes` as file writes in the work folder (a `"content": null` deletes the file). `usage` feeds the usage and context meters.
-- **Branches.** `next` maps the person's reply to the next turn: a choice id, or `*` for free text and anything else. A turn with no `next` ends the script.
-- **Off script.** When the reply matches nothing in `next` (or the script has ended), the fake plays `fallback` and offers again the last turn's `choices` block, so the tester can get back on the recorded path. Without `fallback`, a default text in the harness's language is used.
-- **Closing.** The closing turn (the app's close, which asks for the note) plays the turn with id `close`; when there is none, the fake saves a default note titled after the action.
-- **Position.** `fake-claude` runs once per engine turn (resumed by session id), so it keeps the current turn id per session in a small state file under the mock session's temp folder.
+- **Which recording.** A task's first message is its action's brief, so a new engine session picks the recording whose `match` (plain text) appears in that message. `--record` fills it with the first line of the brief. A session no recording matches (a free question, for example) gets the fallback.
+- **Turns.** The first turn whose id isn't `close` answers the first message. `text` is streamed in chunks over `delayMs` (default 600 ms). `blocks` are MCP tool calls on the app's `ui` server, named by their tool (`show_choices`, `show_<block>`); `note` is a `save_note` call; `writes` are file writes in the work folder (`"content": null` deletes the file; paths are relative and stay inside the folder). `usage` feeds the usage and context meters.
+- **Branches.** `next` maps the person's reply to the next turn: the label of a choice the turn offered (clicking it sends its `followUp`, or its label when it has none), or `*` for free text and anything else. A turn with no `next` ends the script.
+- **Off script.** When the reply matches nothing in `next`, the fake plays `fallback` and offers again the turn's `show_choices` block, so the tester can get back on the recorded path. Without `fallback`, a fixed two-language text is used ("Respuesta no grabada en esta prueba · Not recorded in this test").
+- **Closing and checkpoints.** The app's closing turn plays the turn with id `close`; when there is none, the fake saves a default note titled after the action. A checkpoint turn saves the same note and changes nothing else.
+- **Position.** `fake-claude` runs once per engine turn (resumed by session id), so it keeps each session's action and current turn in a small state file under the mock session's temp folder.
 - **Any engine.** A recording made with Codex replays through `fake-claude` too: the format holds only engine-agnostic content (text, blocks, notes, writes, usage). `recordedWith` is informational.
 
 The schema lives in `packages/fake-agent` (zod), shared by the fake, `run --record` and `check`.
 
 ## 3. Recording and checking
 
-**`humanharness run <action> --record`** runs the task with the real engine, as `run` does today, and at the end writes `mock/<action>.json` (asking before overwriting an existing file). Per turn it saves the text, the blocks, the note, the usage, and the files the AI changed, taken from the turn's history changes: up to 64 KB per file, binary files skipped (and listed in the output). The person's replies become the `next` keys along the path that was walked; the other branches are added by hand.
+**`humanharness run <action> --record`** runs the task with the real engine, as `run` does today, and at the end writes `mock/<action>.json`. It refuses to start when that file exists, unless `--force` is given. Per turn it saves the text, the blocks (with their tool names), the usage, and the files the AI changed, found by comparing the work folder before and after the turn (`.harness/` left out): up to 64 KB per text file, binary and larger files skipped and listed in the output. The closing turn saves the task's note. The person's replies become the `next` keys along the path that was walked (the picked choice's label, `*` for typed text); the other branches are added by hand. When a choice leads into another action, that action is recorded too, into its own file when none exists yet.
 
 **`humanharness check`** also validates every file in `mock/`:
 
-- `mock-schema`: the file matches the schema;
-- `mock-action`: the action exists in the manifest;
-- `mock-next`: every `next` target is a turn id in the file;
-- `mock-choice`: every `next` key except `*` is a choice id offered by that turn's `choices` block.
+- `mock-schema`: the file is JSON and matches the schema;
+- `mock-action`: the action exists in the manifest and the file is named after it;
+- `mock-match`: `match` appears in the action's brief;
+- `mock-next`: turn ids are unique and every `next` target is one of them;
+- `mock-choice`: every `next` key except `*` is the label of a choice that turn's `show_choices` block offers.
 
 These are errors; a harness without `mock/` gets no warning.
 

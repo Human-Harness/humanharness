@@ -14,14 +14,14 @@ export function FolderStep({
   client,
   state,
   onSaved,
-  submitLabel,
+  formId,
   welcome = true,
 }: {
   client: HarnessClient;
   state: AppState;
   onSaved: (s: AppState) => void;
-  /** The save button's label; "Use this folder" by default. */
-  submitLabel?: string;
+  /** Set by the setup flow: the step shows no save button of its own; a button in the footer with `form={formId}` submits it. */
+  formId?: string;
   /** The welcome line; the setup flow leaves it out (it has its own heading and intro). */
   welcome?: boolean;
 }) {
@@ -55,7 +55,14 @@ export function FolderStep({
   };
 
   return (
-    <section className="hh-onboarding">
+    <form
+      className="hh-onboarding"
+      id={formId}
+      onSubmit={(e) => {
+        e.preventDefault();
+        void save();
+      }}
+    >
       {welcome && <p>{t("setup.welcome", { name: state.harness.name[lang] })}</p>}
       <h3>{t("setup.folder")}</h3>
       <p className="hh-caption">{t("setup.folderHint")}</p>
@@ -92,7 +99,9 @@ export function FolderStep({
       <div className="hh-rows">
         <div className="hh-row">
           <code>{folder}</code>
-          <button onClick={() => void pick()}>{t("setup.folderChange")}</button>
+          <button type="button" onClick={() => void pick()}>
+            {t("setup.folderChange")}
+          </button>
         </div>
       </div>
       {problem && (
@@ -101,14 +110,16 @@ export function FolderStep({
         </p>
       )}
       <p className="hh-caption">{t("setup.folderWarning")}</p>
-      <button className="hh-primary" onClick={() => void save()}>
-        {submitLabel ?? t("setup.useFolder")}
-      </button>
+      {!formId && (
+        <button type="submit" className="hh-primary">
+          {t("setup.useFolder")}
+        </button>
+      )}
       {saveError && (
         <p className="hh-save-error" role="alert">
           {t("setup.saveError")}
         </p>
       )}
-    </section>
+    </form>
   );
 }

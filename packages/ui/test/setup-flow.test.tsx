@@ -28,6 +28,11 @@ describe("SetupFlow", () => {
     expect(document.activeElement).toBe(folderHeading);
     expect(steps()[0].getAttribute("aria-current")).toBe("step");
     expect(screen.queryByText(/works with an AI plan you already have, using your own account\. The app/)).toBeNull();
+    // Next sits in the footer next to Cancel, as on the engine step; the folder step has no button of its own.
+    const footer = screen.getByRole("contentinfo");
+    expect(within(footer).getByRole("button", { name: "Next" })).toBe(next());
+    expect(within(footer).getByRole("button", { name: "Cancel" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Use this folder" })).toBeNull();
 
     fireEvent.click(next());
     const engineHeading = await screen.findByRole("heading", { name: "Which AI does Demo use?" });

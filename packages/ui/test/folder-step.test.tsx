@@ -93,6 +93,28 @@ describe("FolderStep", () => {
     expect((await screen.findByRole("alert")).textContent).toMatch(/couldn't save/i);
   });
 
+  it("with a form id, shows no button of its own and saves when a button outside submits it", async () => {
+    const client = new FakeClient({});
+    const onSaved = vi.fn();
+    await renderIn(
+      "en",
+      <>
+        <FolderStep client={client} state={client.state} onSaved={onSaved} formId="folder-form" />
+        <button type="submit" form="folder-form">
+          Outside
+        </button>
+      </>,
+    );
+    expect(screen.queryByRole("button", { name: "Use this folder" })).toBeNull();
+    // Choosing another folder doesn't submit the form.
+    fireEvent.click(screen.getByRole("button", { name: "Choose another folder" }));
+    await screen.findByText("/Users/me/Elsewhere");
+    expect(onSaved).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Outside" }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalledOnce());
+    expect(client.state.config).toEqual({ language: "en", folder: "/Users/me/Elsewhere" });
+  });
+
   it("shows no places when nothing syncs on this computer", async () => {
     const client = new FakeClient();
     await renderIn("es", <FolderStep client={client} state={client.state} onSaved={() => {}} />);

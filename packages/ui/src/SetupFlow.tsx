@@ -32,6 +32,7 @@ export function SetupFlow({
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(false);
   const headingId = useId();
+  const folderFormId = useId();
   const heading = useRef<HTMLHeadingElement>(null);
 
   // A new step takes focus to its heading, so a screen reader starts reading there.
@@ -119,7 +120,7 @@ export function SetupFlow({
               client={client}
               state={state}
               welcome={false}
-              submitLabel={t("setupFlow.next")}
+              formId={folderFormId}
               onSaved={(s) => {
                 onChange(s);
                 if (s.config.folder) setStep("engine");
@@ -147,6 +148,12 @@ export function SetupFlow({
           <button onClick={() => setStep("folder")}>{t("setupFlow.back")}</button>
         ) : (
           <button onClick={onCancel}>{t("setupFlow.cancel")}</button>
+        )}
+        {/* The folder step's Next submits its form from here, so it sits where the engine step's does. */}
+        {step === "folder" && (
+          <button type="submit" form={folderFormId} className="hh-primary">
+            {t("setupFlow.next")}
+          </button>
         )}
         {step === "engine" && (
           <button className="hh-primary" disabled={!selection?.ready || saving} onClick={() => void next()}>

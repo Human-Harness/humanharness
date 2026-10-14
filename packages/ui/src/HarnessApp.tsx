@@ -5,6 +5,7 @@ import { type Locales, createI18n } from "@humanharness/i18n";
 import { ChatView, type SendFn } from "./ChatView";
 import { TopBar } from "./chrome";
 import { type AppState, type EngineStatus, type HarnessClient, type LimitWindow, engineProblem, isConfigured } from "./client";
+import { useFolderMove } from "./BackupNotice";
 import { Home } from "./Home";
 import type { BlockProps } from "./Message";
 import { type SettingsTab, SettingsSheet } from "./SettingsSheet";
@@ -31,6 +32,8 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
   const [status, setStatus] = useState<EngineStatus | null>(null);
   const [checkFailed, setCheckFailed] = useState(false);
   const [limits, setLimits] = useState<LimitWindow[] | null>(null);
+  /** Moving the folder: kept here so a move outlives Settings closing or a tab change. */
+  const move = useFolderMove(client, setState);
   /** Start was pressed before setup was complete: open the work screen as soon as it is. */
   const startWhenReady = useRef(false);
   // Read through a ref so inline `locales` objects don't re-run the load.
@@ -176,16 +179,19 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
         ) : (
           <Home
             state={state}
+            client={client}
+            onChange={setState}
             status={status}
             checkFailed={checkFailed}
             limits={limits}
             onStart={start}
             onSettings={() => setSettings("general")}
             onEngine={() => setSettings("engine")}
+            move={move}
           />
         )}
       </div>
-      {settings && <SettingsSheet client={client} state={state} tab={settings} onTab={setSettings} onChange={setState} onClose={closeSettings} />}
+      {settings && <SettingsSheet client={client} state={state} tab={settings} onTab={setSettings} onChange={setState} onClose={closeSettings} move={move} />}
     </I18nextProvider>
   );
 }

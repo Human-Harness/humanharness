@@ -38,6 +38,25 @@ describe("ConfigStore", () => {
     expect(await new ConfigStore(dir).load()).toEqual({ language: "es", engineId: "claude" });
     expect(fs.readdirSync(dir)).toEqual(["config.json"]);
   });
+
+  it("replaces the folder only through replaceFolder, keeping everything else", async () => {
+    const dir = fs.mkdtempSync(path.join(root, "c-"));
+    const store = new ConfigStore(dir);
+    await store.save({ folder: "/first", language: "es", backupDismissed: true });
+    expect(await store.replaceFolder("/second")).toEqual({ folder: "/second", language: "es", backupDismissed: true });
+    expect(await new ConfigStore(dir).load()).toEqual({ folder: "/second", language: "es", backupDismissed: true });
+    await store.save({ folder: "/third" });
+    expect((await store.load()).folder).toBe("/second");
+    expect(fs.readdirSync(dir)).toEqual(["config.json"]);
+  });
+
+  it("drops a hand-edited backupDismissed that isn't a boolean, keeping the rest", async () => {
+    const dir = fs.mkdtempSync(path.join(root, "c-"));
+    fs.writeFileSync(path.join(dir, "config.json"), JSON.stringify({ folder: "/x", language: "es", backupDismissed: "yes" }));
+    expect(await new ConfigStore(dir).load()).toEqual({ folder: "/x", language: "es" });
+    fs.writeFileSync(path.join(dir, "config.json"), JSON.stringify({ folder: "/x", backupDismissed: false }));
+    expect(await new ConfigStore(dir).load()).toEqual({ folder: "/x", backupDismissed: false });
+  });
 });
 
 describe("historyDir", () => {

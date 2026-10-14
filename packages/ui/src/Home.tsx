@@ -1,6 +1,7 @@
 import { useTranslation } from "react-i18next";
+import { BackupNotice, type FolderMove } from "./BackupNotice";
 import { GearIcon, HHLogo, TopBar } from "./chrome";
-import { type AppState, type EngineStatus, type LimitWindow, engineProblem } from "./client";
+import { type AppState, type EngineStatus, type HarnessClient, type LimitWindow, engineProblem } from "./client";
 import { uiLanguage } from "./FolderStep";
 import { WARN_AT, fiveHour, percent } from "./usage";
 import { useCurrentWindows } from "./UsageMeter";
@@ -8,14 +9,20 @@ import { useCurrentWindows } from "./UsageMeter";
 /** The first screen of every launch (spec 2026-10-11 "Home"). */
 export function Home({
   state,
+  client,
+  onChange,
   status,
   checkFailed = false,
   limits,
   onStart,
   onSettings,
   onEngine,
+  move,
 }: {
   state: AppState;
+  client: HarnessClient;
+  /** The app state changed (the folder moved, the backup notice was dismissed). */
+  onChange: (state: AppState) => void;
   /** Background check of the configured engine; null while it runs. */
   status: EngineStatus | null;
   /** The background check itself failed: shown as not connected. */
@@ -24,6 +31,8 @@ export function Home({
   onStart: () => void;
   onSettings: () => void;
   onEngine: () => void;
+  /** The app's folder move (HarnessApp): a move started in Settings still shows here. */
+  move?: FolderMove;
 }) {
   const { t, i18n } = useTranslation();
   const lang = uiLanguage(state, i18n.language);
@@ -62,6 +71,7 @@ export function Home({
         ) : (
           <p className="hh-caption">{t("home.noEngine")}</p>
         )}
+        <BackupNotice client={client} state={state} onChange={onChange} move={move} />
       </main>
       <footer className="hh-footer">
         <span className="hh-wordmark">Human Harness</span>

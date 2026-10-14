@@ -348,6 +348,26 @@ describe("TurnController usage and actions", () => {
 });
 
 describe("TurnController for tasks", () => {
+  it("hands the runtime the task and action its history commits belong to", async () => {
+    const fake = fakeRuntime();
+    const { controller } = setup({ ensureRuntime: async () => fake.runtime });
+    const sent = controller.send("And the blocks?", { action: "engines", task: "t1", followUp: true });
+    await vi.waitFor(() => expect(fake.send).toHaveBeenCalled());
+    fake.finish([{ type: "done", ok: true }]);
+    await sent;
+    expect(fake.send.mock.calls[0][2]).toEqual({ trailer: { task: "t1", action: "engines" } });
+  });
+
+  it("sends no trailer for a turn outside any task", async () => {
+    const fake = fakeRuntime();
+    const { controller } = setup({ ensureRuntime: async () => fake.runtime });
+    const sent = controller.send("hi");
+    await vi.waitFor(() => expect(fake.send).toHaveBeenCalled());
+    fake.finish([{ type: "done", ok: true }]);
+    await sent;
+    expect(fake.send.mock.calls[0][2]).toEqual({});
+  });
+
   it("shows the display text and tags both entries with the task; the action only on the task's first turn", async () => {
     const fake = fakeRuntime();
     const { controller, entries } = setup({ ensureRuntime: async () => fake.runtime });

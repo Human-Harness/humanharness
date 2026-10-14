@@ -19,7 +19,14 @@ export class ConfigStore {
 
   async load(): Promise<AppConfig> {
     try {
-      return JSON.parse(await fs.readFile(this.file, "utf8")) as AppConfig;
+      const saved = JSON.parse(await fs.readFile(this.file, "utf8")) as AppConfig;
+      // Like a bad entry under models: a hand-edited backupDismissed that isn't a boolean is dropped, never
+      // a reason to treat the whole config as invalid.
+      if (saved && typeof saved === "object" && "backupDismissed" in saved && typeof saved.backupDismissed !== "boolean") {
+        const { backupDismissed: _dropped, ...rest } = saved;
+        return rest;
+      }
+      return saved;
     } catch {
       return {};
     }
@@ -34,7 +41,21 @@ export class ConfigStore {
 
   private async saveNow(patch: AppConfig): Promise<AppConfig> {
     const current = await this.load();
-    const next: AppConfig = { ...current, ...patch, ...(current.folder ? { folder: current.folder } : {}) };
+    return this.write({ ...current, ...patch, ...(current.folder ? { folder: current.folder } : {}) });
+  }
+
+  /**
+   * Moving the folder (moveFolder) is the one way the fixed folder changes; queued with the other saves.
+   * It stores `folder` as given: callers must validate it first (checkFolder).
+   */
+  replaceFolder(folder: string): Promise<AppConfig> {
+    const run = this.queue.then(async () => this.write({ ...(await this.load()), folder }));
+    this.queue = run.catch(() => undefined);
+    return run;
+  }
+
+  /** Atomic: temp file + rename. */
+  private async write(next: AppConfig): Promise<AppConfig> {
     await fs.mkdir(path.dirname(this.file), { recursive: true });
     const tmp = `${this.file}.${randomUUID()}.tmp`;
     try {

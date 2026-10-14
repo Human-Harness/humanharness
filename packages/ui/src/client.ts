@@ -1,6 +1,7 @@
 import type { Effort, ModelChoice, ModelSpec, ModelsConfig } from "@humanharness/engines";
 import type { ActionCost, ChoiceOption, Language, LocalizedText, Tier } from "@humanharness/harness-sdk";
 import type { ActivityKind, EngineError, Event, LimitWindow } from "@humanharness/runtime";
+import type { FileChange, SyncProvider, SyncStatus } from "@humanharness/workspace";
 
 export type Appearance = "system" | "light" | "dark";
 
@@ -12,6 +13,8 @@ export interface AppConfig {
   appearance?: Appearance;
   /** Settings › Modelos: each task's tier or custom model, and the tier tables per engine. Cleaned when read. */
   models?: ModelsConfig;
+  /** The person said they keep their own copy of the folder: the backup notice stays hidden (Settings › General undoes it). */
+  backupDismissed?: boolean;
 }
 
 export interface EngineOption {
@@ -50,6 +53,30 @@ export interface ReferenceView {
   path: string;
 }
 
+/** A synced drive (spec 3d §2), and how the folder is kept if the computer is lost (types only: nothing of the workspace runs here). */
+export type { SyncProvider, SyncStatus };
+/** A synced place on this computer, and the harness's folder inside it. */
+export interface SyncLocationView {
+  provider: SyncProvider;
+  path: string;
+  /** Which account of the provider (`ana@example.com`, `Personal`), when its folder name says. */
+  account?: string;
+  /** `<path>/<the harness's suggested folder name>`: what the first-launch step offers. */
+  suggested: string;
+}
+
+/** Why moving the folder failed; each has its own card (spec 3d §2 "Errors"). */
+export type MoveError = "busy" | "exists" | "inside" | "unsuitable" | "no-space" | "no-permission" | "mismatch" | "failed";
+
+/**
+ * How a move ended: the new app state, the old folder when it was kept (it changed after the copy, or couldn't
+ * go to the Trash) and whether the history stayed behind (it follows at the next start); or why it failed,
+ * with the state as it is now.
+ */
+export type MoveResult =
+  | { ok: true; state: AppState; leftBehind?: string; historyLeftBehind?: boolean }
+  | { ok: false; error: MoveError; state?: AppState };
+
 export interface AppState {
   harness: {
     id: string;
@@ -76,6 +103,8 @@ export interface AppState {
   references?: ReferenceView[];
   /** Settings › Modelos. */
   models?: ModelsView;
+  /** The configured folder's backup status (null before a folder is chosen) and the synced places. */
+  backup?: { status: SyncStatus | null; locations: SyncLocationView[] };
 }
 
 /** What Settings › Modelos needs (resources spec §7). */
@@ -127,6 +156,31 @@ export interface HistoryItem {
   sha: string;
   message: string;
   date: string;
+}
+
+/** A file a task added, changed or deleted. */
+export type HistoryFileChange = FileChange;
+
+// The history's commit subjects (raw git data, English; the History panel shows them through i18n keys).
+export { BEFORE_MESSAGE, NOTE, RESTORE_POINT, RESTORE_TASK, START, STOPPED_PREFIX, TURN_PREFIX, UNDO_PREFIX } from "@humanharness/workspace/subjects";
+
+/**
+ * One row of the History panel: a task's commits, or the group of commits outside any task (`taskId: null`:
+ * "Other changes", which holds the restores too).
+ */
+export interface HistoryTaskView {
+  taskId: string | null;
+  actionId: string | null;
+  /** What "Go back to before this task" restores; null when there is nothing before it. */
+  start: string | null;
+  end: string;
+  /** ISO date of the task's last commit. */
+  date: string;
+  /** The title of the note the task saved, if any. */
+  noteTitle?: string;
+  changes: HistoryFileChange[];
+  /** Newest first. */
+  entries: HistoryItem[];
 }
 
 /** Why a folder can't be the harness folder. */
@@ -284,8 +338,11 @@ export interface HarnessClient {
   send(message: string, options?: SendOptions): Promise<void>;
   cancel(): Promise<void>;
   onEvent(listener: (event: Event) => void): () => void;
-  history(): Promise<HistoryItem[]>;
   restore(sha: string): Promise<void>;
+  /** The history grouped by task, newest first; the group of commits outside any task last. */
+  historyTasks(): Promise<HistoryTaskView[]>;
+  /** Makes the folder look as it did before the task started (later tasks are undone too); recorded outside any task. */
+  restoreTask(taskId: string): Promise<void>;
   engineStatus(engineId: string): Promise<EngineStatus>;
   acceptNotice(engineId: string): Promise<void>;
   /** Runs the official install, update, login or logout; resolves when it exits. */
@@ -309,6 +366,8 @@ export interface HarnessClient {
   getUsage(): Promise<UsageSummary>;
   /** Shows the configured folder in Finder. */
   revealFolder(): Promise<void>;
+  /** Moves the folder and its history to `to` (an absolute path that doesn't exist yet). Refused while a turn or a restore runs. */
+  moveFolder(to: string): Promise<MoveResult>;
   /** The current task, how each action ended, and the notes. */
   getTasks(): Promise<TaskView>;
   onTasks(listener: (view: TaskView) => void): () => void;

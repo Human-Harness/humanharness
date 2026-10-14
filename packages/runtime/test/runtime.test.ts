@@ -112,6 +112,33 @@ describe("createRuntime", () => {
     expect(fs.existsSync(path.join(folder, "kept.md"))).toBe(true);
   }, 10_000);
 
+  it("tags the turn's commits with the task it belongs to", async () => {
+    const { runtime, folder } = await setup({ steps: [{ write: { path: "plan.md", content: "x" } }, ...claudeTextLines("ok"), claudeResultLine(true)] });
+    fs.writeFileSync(path.join(folder, "mine.md"), "user edit");
+    await runtime.send("plan the week", () => {}, { trailer: { task: "t1", action: "plan" } }).done;
+    const [turn, before, start] = await runtime.history.list();
+    expect(turn).toMatchObject({ message: "Turn: plan the week", task: "t1", action: "plan" });
+    expect(before).toMatchObject({ message: "Before message", task: "t1", action: "plan" });
+    expect(start).toMatchObject({ message: "Start", task: null });
+  });
+
+  it("tags a stopped turn's commit", async () => {
+    const { runtime, folder } = await setup({ steps: [{ write: { path: "kept.md", content: "x" } }, { sleep: 10_000 }] });
+    const turn = runtime.send("hi", () => {}, { trailer: { task: "t1" } });
+    while (!fs.existsSync(path.join(folder, "kept.md"))) await new Promise((r) => setTimeout(r, 50));
+    turn.cancel();
+    await turn.done;
+    expect((await runtime.history.list())[0]).toMatchObject({ message: "Stopped: hi", task: "t1", action: null });
+  }, 10_000);
+
+  it("tags a crashed turn's undo commit", async () => {
+    const { runtime } = await setup({ steps: [{ write: { path: "README.md", content: "half-written" } }], stderr: "boom", exitCode: 1 });
+    // The crashed turn's writes were never committed, so the undo usually records no commit: check what it is asked to record.
+    const restore = vi.spyOn(runtime.history, "restore");
+    await runtime.send("hi", () => {}, { trailer: { task: "t1", action: "plan" } }).done;
+    expect(restore).toHaveBeenCalledWith(expect.any(String), "Undo: the turn did not finish", { task: "t1", action: "plan" });
+  });
+
   it("commits user edits between turns and keeps them when the next turn crashes", async () => {
     const { runtime, folder } = await setup({
       steps: [{ write: { path: "README.md", content: "half-written" } }],

@@ -2,6 +2,7 @@ import path from "node:path";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "electron-vite";
 import { searchForWorkspaceRoot } from "vite";
+import { noBareDirname } from "./src/build/bundle-guard";
 
 const harnessDir = path.resolve(process.env.HH_HARNESS_DIR ?? path.join(__dirname, "../../harnesses/demo"));
 // `humanharness dev --build <dir>`: the build goes to <dir>/{main,preload,renderer} instead of out/.
@@ -20,6 +21,8 @@ const workspacePackages = [
 export default defineConfig({
   main: {
     define: { __HARNESS_DIR__: JSON.stringify(harnessDir) },
+    // The build fails on a bare __dirname/__filename: its ESM shim once landed inside a bundled comment.
+    plugins: [noBareDirname()],
     build: {
       ...out("main"),
       externalizeDeps: { exclude: workspacePackages },

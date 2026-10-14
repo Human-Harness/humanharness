@@ -45,3 +45,36 @@ export function fillPrompt(template: string, vars: { language: Language; notesIn
 /** The quiet turn that saves what matters before the context reaches the task's cap (resources spec §6). */
 export const CHECKPOINT_PROMPT =
   "Checkpoint: this conversation is getting long. Call the `save_note` tool once with what is clear so far: a short title, at most 5 summary points, the decisions taken, the files that back them and the questions still open. Do not write any file yourself and do not call `show_choices`. Then reply with one short sentence; the conversation goes on after this.";
+
+/** Said after a free question that tasks.json kept cut (it was longer than QUESTION_MAX). */
+export const QUESTION_CUT = "(The question was longer; it was cut here.)";
+
+/**
+ * The line a resumed task's first message carries. Neutral on purpose: the session is also lost after a move
+ * that failed (the runtime closes before moving), so it never says the folder moved.
+ */
+export const RESUME_PROMPT =
+  "The earlier conversation of this topic is not available; continue from the notes and the files in the folder. Answer in {{language}}, then end with `show_choices`.";
+
+/**
+ * The first message of a task whose engine session was lost (spec 3d §2): what the task is (the action's
+ * brief, filled as at its start, or the question that opened it), the resume line, the notes index and the
+ * person's message. Inserted text (brief, question, message) is never filled again. A question kept cut
+ * (`questionCut`) says so after it.
+ */
+export function resumeMessage(vars: {
+  language: Language;
+  notesIndex: string;
+  brief?: string;
+  question?: string;
+  questionCut?: boolean;
+  message: string;
+}): string {
+  const line = fillPrompt(RESUME_PROMPT, { language: vars.language, notesIndex: "" });
+  const question = vars.question ? `## The question that opened this topic\n${vars.question}${vars.questionCut ? `\n${QUESTION_CUT}` : ""}` : null;
+  const head =
+    vars.brief !== undefined
+      ? [fillPrompt(vars.brief, { language: vars.language, notesIndex: vars.notesIndex }), line]
+      : [line, ...(vars.notesIndex ? [vars.notesIndex] : []), ...(question ? [question] : [])];
+  return [...head, `## The person's message\n${vars.message}`].join("\n\n");
+}

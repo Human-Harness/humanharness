@@ -3,9 +3,9 @@ import type { ModelProfile } from "@humanharness/engines";
 import { type ChoiceOption, type Language, type LocalizedText, type SavedNote, saveNoteSchema } from "@humanharness/harness-sdk";
 import { type Event, type Session, fail } from "@humanharness/runtime";
 import { type ActionStatus, type CurrentTaskView, type NoteView, type TaskStatus, type TaskView, nextInPath } from "@humanharness/ui/client";
-import { type Note, type NoteMeta, buildNotesIndex, noteSlug } from "@humanharness/workspace";
-import { CHECKPOINT_PROMPT, CLOSE_PROMPT, QUESTION_PROMPT, fillPrompt } from "./task-prompts";
-import { type CurrentTask, type TasksFile, interrupted } from "./task-store";
+import { type HistoryTrailer, NOTE_PREFIX, type Note, type NoteMeta, buildNotesIndex, noteSlug } from "@humanharness/workspace";
+import { CHECKPOINT_PROMPT, CLOSE_PROMPT, QUESTION_PROMPT, fillPrompt, resumeMessage } from "./task-prompts";
+import { type CurrentTask, type TasksFile, interrupted, keptQuestion } from "./task-store";
 import { type TurnOptions, isHeld } from "./turn-controller";
 
 type Done = Extract<Event, { type: "done" }>;
@@ -36,8 +36,8 @@ export interface TaskDeps {
   noteExists?(slug: string): Promise<boolean>;
   /** Ends the engine session (Codex: `session/close`); the next turn starts a new one. */
   endSession(): Promise<void>;
-  /** Records the folder in the local history (a note was written). */
-  saveHistory?(message: string): Promise<void>;
+  /** Records the folder in the local history (a note was written), tagged with the task it belongs to. */
+  saveHistory?(message: string, trailer?: HistoryTrailer): Promise<void>;
   /** The task view changed: tell the window. */
   changed(view: TaskView): void;
   /**
@@ -193,6 +193,42 @@ export class TaskManager {
     });
   }
 
+  /**
+   * The open task's engine session is gone (the folder moved, spec 3d §2): the task stays open, its stored
+   * session and context are dropped, and its next follow-up starts a new session from the notes.
+   */
+  resumeFromNotes(): Promise<void> {
+    return this.queue(() =>
+      this.update((s) => {
+        if (!s.current) return s;
+        const { session: _session, context: _context, checkpointed: _checkpointed, ...rest } = s.current;
+        return { ...s, current: { ...rest, resume: true } };
+      }),
+    );
+  }
+
+  /**
+   * Before a move (spec 3d §2): the open task, waiting and with no note of its own yet, saves a checkpoint
+   * note in its current session, since the move ends that session. A failed or cancelled checkpoint is
+   * logged and the move goes on: the task then resumes from the notes there are. Rejects when busy.
+   */
+  checkpointBeforeMove(): Promise<void> {
+    return this.op(async () => {
+      const c = await this.storedCurrent();
+      // A checkpoint note counts only when no turn ran after it (one from an older file, with no count, doesn't).
+      const fresh = c?.checkpointNote === true && c.checkpointTurns === c.turns;
+      if (!c || c.status !== "waiting" || c.resume || c.noteSaved || fresh) return;
+      if (!(await this.checkpoint(c))) {
+        console.error("The checkpoint before the move was cancelled; the task resumes from the notes there are");
+        return;
+      }
+      // No follow-up runs after this checkpoint: the task waits again (a cancelled one already does).
+      await this.setStatus(c.id, "waiting");
+      if ((await this.d.store.load()).current?.checkpointNote !== true)
+        console.error("The checkpoint before the move saved no note; the task resumes from the notes there are");
+    });
+  }
+
   /** The engine started the session of the task whose turn runs now; reported at any other time, it is ignored. */
   sessionStarted(session: Session): Promise<void> {
     const id = this.turnTask;
@@ -243,6 +279,9 @@ export class TaskManager {
     const c = await this.storedCurrent();
     if (c?.status === "waiting") {
       if (needsCheckpoint(c) && !(await this.checkpoint(c))) return this.stopped();
+      // After the session was lost a new one starts, told what the task is and what the notes hold; the
+      // chat still shows what was typed.
+      const message = c.resume ? await this.resumeMessageFor(c, text) : text;
       await this.setStatus(c.id, "running");
       // Checked with no await before the send: a Stop while the status was saved.
       if (this.cancelRequested) {
@@ -251,20 +290,54 @@ export class TaskManager {
       }
       let done: Done;
       try {
-        done = await this.runTurn(c, text, { ...(display ? { display } : {}), ...(c.action ? { action: c.action } : {}), followUp: true });
+        const options = {
+          ...(display || c.resume ? { display: display ?? text } : {}),
+          ...(c.action ? { action: c.action } : {}),
+          followUp: true,
+        };
+        // A resumed turn opens a new session, like a first turn: a model the plan lacks falls back the same way.
+        done = c.resume ? await this.firstTurn(c, message, options) : await this.runTurn(c, message, options);
       } catch (err) {
         if (err instanceof TurnNotStarted) await this.setStatus(c.id, "waiting");
         throw unwrap(err);
+      }
+      if (c.resume && done.ok) {
+        await this.update((s) => {
+          if (s.current?.id !== c.id) return s;
+          const { resume: _resume, ...rest } = s.current;
+          return { ...s, current: rest };
+        });
       }
       return this.afterRun(c.id, done, false);
     }
     if (c) await this.endTask(c.id, "unfinished");
     const language = await this.d.language();
     await this.begin(
-      { question: text.slice(0, 500) },
+      keptQuestion(text),
       (notesIndex) => fillPrompt(QUESTION_PROMPT, { language, notesIndex, question: text }),
       display ?? text,
     );
+  }
+
+  /** The first message of a resumed task's new session (its old session ends first). */
+  private async resumeMessageFor(c: CurrentTask, text: string): Promise<string> {
+    await this.endSession();
+    const notes = await this.d.notes().catch(() => [] as Note[]);
+    const language = await this.d.language();
+    let brief: string | undefined;
+    try {
+      brief = this.known(c.action) ? await this.d.readPrompt(c.action) : undefined;
+    } catch (err) {
+      // The task still resumes, from the notes alone: a missing brief must not leave it stuck.
+      console.error("Could not read the task's brief; it resumes without it", err);
+    }
+    return resumeMessage({
+      language,
+      notesIndex: buildNotesIndex(notes),
+      ...(brief !== undefined ? { brief } : {}),
+      ...(c.question ? { question: c.question, ...(c.questionCut ? { questionCut: true } : {}) } : {}),
+      message: text,
+    });
   }
 
   /**
@@ -284,7 +357,7 @@ export class TaskManager {
   }
 
   /** A new task in a fresh session; its first message is built from the notes index. */
-  private async begin(task: { action?: string; question?: string }, message: (notesIndex: string) => string, display: string): Promise<void> {
+  private async begin(task: { action?: string; question?: string; questionCut?: true }, message: (notesIndex: string) => string, display: string): Promise<void> {
     // Cancelled or quitting since the operation began (e.g. right after the closing turn): start nothing.
     if (this.cancelRequested) return this.stopped();
     await this.endSession();
@@ -398,6 +471,11 @@ export class TaskManager {
       await this.endTask(c.id, "done");
       return !this.cancelRequested;
     }
+    // A moved task's new session holds no conversation to sum up (a checkpoint's note still counts).
+    if (c.resume) {
+      await this.endTask(c.id, "unfinished");
+      return !this.cancelRequested;
+    }
     if (c.status !== "waiting") {
       await this.endTask(c.id, "unfinished");
       return !this.cancelRequested;
@@ -503,8 +581,12 @@ export class TaskManager {
       const slug = task.action ?? (await this.questionSlug(task.id, note.title));
       await this.d.writeNote(slug, note, { ...(task.action ? { action: task.action } : {}), date: this.now().toISOString(), engine: await this.d.engine() });
       // A checkpoint's note is provisional: the closing turn still runs and updates the same file.
-      await this.update((s) => (s.current?.id === task.id ? { ...s, current: { ...s.current, ...(final ? { noteSaved: true } : { checkpointNote: true }) } } : s));
-      await this.d.saveHistory?.(`Note: ${note.title.slice(0, 60)}`);
+      await this.update((s) =>
+        s.current?.id === task.id
+          ? { ...s, current: { ...s.current, ...(final ? { noteSaved: true } : { checkpointNote: true, checkpointTurns: s.current.turns }) } }
+          : s,
+      );
+      await this.d.saveHistory?.(`${NOTE_PREFIX}${note.title.slice(0, 60)}`, { task: task.id, ...(task.action ? { action: task.action } : {}) });
     } catch (err) {
       console.error("Could not save the note", err);
     }

@@ -15,15 +15,18 @@ import {
   type ConfiguredApp,
   type FolderPick,
   type ModelsView,
+  type MoveResult,
   type RunningSetup as SetupInfo,
   type SendOptions,
   type SetupOutput,
   type SetupStep,
   type TestResult,
   type UsageSummary,
+  RESTORE_POINT,
+  RESTORE_TASK,
   isConfigured,
 } from "@humanharness/ui/client";
-import { History, NOTES_PREFIX, readNotes, writeNote } from "@humanharness/workspace";
+import { History, NOTES_PREFIX, readNotes, syncLocations, syncStatus, writeNote } from "@humanharness/workspace";
 import { imageDataUrl } from "./assets";
 import { ChatLog } from "./chat-log";
 import { ConfigStore, historyDir } from "./config";
@@ -44,8 +47,11 @@ import { UsageLog, compactionRecord, profileMeta, summarizeUsage, usageRecord } 
 import { type ValidationContext, checkFolder, configProblem, isAppUrl } from "./validate";
 import { openIfStillSafe, openRoots, openableFile, revealIfStillSafe, revealableFile } from "./open-path";
 import { saveWithFolderChange } from "./folder-change";
+import { type MoveDeps, guardedMove, moveFolder, moveJournal, precheckMove, recoverMove } from "./move-folder";
 import { type ResolvedReference, displayPath, resolveReferences, usableReferences } from "./references";
 import { TaskManager } from "./task-manager";
+import { historyView, isSha } from "./history-view";
+import { RestoreGuard, lastOpened } from "./restore-guard";
 import { TaskStore, emptyTasks } from "./task-store";
 import { devEngine, readTestHooks, testEngineStatus } from "./test-hooks";
 
@@ -58,16 +64,15 @@ const SETUP_STEPS: SetupStep[] = ["install", "update", "login", "logout"];
 const SETUP_TIMEOUT_MS: Record<SetupStep, number> = { install: 20 * 60_000, update: 20 * 60_000, login: 10 * 60_000, logout: 60_000 };
 
 const requireFromHere = createRequire(import.meta.url);
+// The build's folder. Not `__dirname`: electron-vite's ESM shim for it is put after the bundle's last
+// `import … from` it finds, and a bundled JSDoc example (isomorphic-git's walkers) once fooled it into a comment.
+const here = import.meta.dirname;
 const commandDeps = createCommandDeps(process.execPath);
 
 let harness: LoadedHarness;
 let config: ConfigStore;
 let shared: SharedConfigStore;
 let window: BrowserWindow | null = null;
-/** Settles when the last restore done without a runtime has finished. */
-let restoring: Promise<unknown> = Promise.resolve();
-/** A restore was asked for and hasn't finished (including finding the history). */
-let restorePending = false;
 /** Set on the first before-quit: from then on, no new turns or restores. */
 let quitting = false;
 /** The install, update, login or logout process running now, if any. */
@@ -82,6 +87,10 @@ const guards = new EngineGuards();
 const logos = new Map<string, Promise<string | null>>();
 /** End-to-end test settings (development builds only; see test-hooks.ts). */
 const hooks = readTestHooks(process.env, app.isPackaged);
+/** The folder move running now (hh:moveFolder): quitting waits for it. */
+let moving: Promise<unknown> | null = null;
+/** The move's folder change has begun (after its checkpoint turn): no history is opened until it ends. */
+let historyHeld = false;
 /** The manifest's reference folders on this machine, resolved once the app is ready. */
 let references: Promise<ResolvedReference[]> = Promise.resolve([]);
 
@@ -97,7 +106,7 @@ async function referencesFor(folder: string | undefined, log = false): Promise<R
 
 const mode = () => (app.isPackaged ? "distribution" : "development");
 const stateBlocks = () => new Set(Object.entries(allBlocks(harness)).filter(([, b]) => !b.visible).map(([n]) => n));
-const rendererFile = path.join(__dirname, "../renderer/index.html");
+const rendererFile = path.join(here, "../renderer/index.html");
 // The dev server is only trusted in development: a packaged app always loads its own file.
 const devUrl = app.isPackaged ? undefined : process.env.ELECTRON_RENDERER_URL;
 const appUrl = (url: string) => isAppUrl(url, { devUrl, rendererFile });
@@ -162,6 +171,19 @@ async function supportedEffort(p: ModelProfile, saved?: SharedEngineRecord): Pro
   return engine ? fitEffort(p, engineOffer(engine, saved ?? (await savedOffer(p.engine))).efforts) : p;
 }
 
+/** The folder's backup status and the synced places, each with the harness's folder name inside. Paths only (backup.ts). */
+async function backupView(folder: string | undefined): Promise<NonNullable<AppState["backup"]>> {
+  const home = os.homedir();
+  const name = path.basename(harness.folder.suggested);
+  try {
+    const [status, locations] = await Promise.all([folder ? syncStatus(folder, home) : Promise.resolve(null), syncLocations(home)]);
+    return { status, locations: locations.map((l) => ({ ...l, suggested: path.join(l.path, name) })) };
+  } catch (err) {
+    console.error("Could not read the backup status", err);
+    return { status: null, locations: [] };
+  }
+}
+
 async function appState(): Promise<AppState> {
   const harnessImage = await harnessLogo();
   const saved = await config.load();
@@ -207,6 +229,7 @@ async function appState(): Promise<AppState> {
     path: harness.path ?? [],
     references: (await referencesFor(saved.folder)).map((r) => ({ id: r.id, label: r.label, path: displayPath(r.path, os.homedir()) })),
     models: await modelsView(),
+    backup: await backupView(saved.folder),
   };
 }
 
@@ -226,7 +249,7 @@ const runtime = memoise<HarnessRuntime>(async () => {
   if (!isConfigured(c)) throw new Error("The app is not set up yet");
   const problem = await configProblem(c, validation());
   if (problem) throw new Error(problem);
-  await restoring;
+  await restores.settled();
   const engine = getEngine(c.engineId);
   let cmd: { command: string[]; env: Record<string, string> } | null;
   const fake = hooks.engines?.[engine.id];
@@ -247,7 +270,7 @@ const runtime = memoise<HarnessRuntime>(async () => {
     gitdir: historyDir(app.getPath("userData"), c.folder),
     language: c.language,
     launcher: electronLauncher(process.execPath),
-    uiServerEntry: path.join(__dirname, "ui-server.js"),
+    uiServerEntry: path.join(here, "ui-server.js"),
     command: cmd.command,
     env: cmd.env,
     references: (await referencesFor(c.folder, true)).map((r) => ({ label: r.label[c.language], path: r.path })),
@@ -257,25 +280,43 @@ const runtime = memoise<HarnessRuntime>(async () => {
   });
 });
 
-/** Ends the open task, then closes the running runtime (e.g. the engine changed); the next turn starts a new one. */
-async function dropRuntime() {
-  await tasks.interrupt().catch((err: unknown) => console.error("Could not end the task", err));
+/** Closes the running runtime and keeps the open task; the next turn starts a new runtime (and engine session). */
+async function closeRuntime() {
   const rt = await runtime.peek()?.catch(() => null);
   runtime.clear();
   await rt?.close();
 }
 
-/** The running runtime's history, or one opened on the configured folder when there is no runtime. */
+/** Ends the open task, then closes the running runtime (e.g. the engine changed); the next turn starts a new one. */
+async function dropRuntime() {
+  await tasks.interrupt().catch((err: unknown) => console.error("Could not end the task", err));
+  await closeRuntime();
+}
+
+/** The history of the folder when no runtime runs: one per folder and ignore list (its queue orders every write). */
+const standaloneHistory = lastOpened(async (key) => {
+  const { folder, ignore } = JSON.parse(key) as { folder: string; ignore: string[] };
+  const history = new History(folder, historyDir(app.getPath("userData"), folder), ignore, [NOTES_PREFIX]);
+  await history.init();
+  return history;
+});
+
+/**
+ * The running runtime's history, or the one opened on the configured folder; none while the folder moves
+ * (from the end of its checkpoint turn, whose commit still goes in).
+ */
 async function currentHistory(): Promise<History | null> {
+  return historyHeld ? null : openHistory();
+}
+
+async function openHistory(): Promise<History | null> {
   const rt = await runtime.peek()?.catch(() => null);
   if (rt) return rt.history;
   const c = await validConfig();
   if (!c) return null;
   const extra = getEngine(c.engineId).instructionsFile?.path;
   // Same ignore list as the runtime's: its files under .harness/ and the generated instructions.
-  const history = new History(c.folder, historyDir(app.getPath("userData"), c.folder), [".harness/", "AGENTS.md", ...(extra ? [extra] : [])], [NOTES_PREFIX]);
-  await history.init();
-  return history;
+  return standaloneHistory(JSON.stringify({ folder: c.folder, ignore: [".harness/", "AGENTS.md", ...(extra ? [extra] : [])] }));
 }
 
 function sendToWindow(channel: string, value: unknown) {
@@ -354,8 +395,8 @@ const tasks = new TaskManager({
     const rt = await runtime.peek()?.catch(() => null);
     await rt?.endSession();
   },
-  saveHistory: async (message) => {
-    await (await currentHistory())?.save(message);
+  saveHistory: async (message, trailer) => {
+    await (await currentHistory())?.save(message, trailer);
   },
   changed: (view) => sendToWindow("hh:tasks", view),
   emit,
@@ -417,6 +458,16 @@ function handle(channel: string, fn: (...args: never[]) => unknown) {
   });
 }
 
+/**
+ * Restores: refused while quitting, while a task operation runs or turns are held (engine change, folder
+ * move); one at a time; new turns are refused and a runtime starting waits until it ends.
+ */
+const restores = new RestoreGuard({ quitting: () => quitting, busy: () => tasks.isBusy(), turnBlocked: () => guards.turnBlocked() });
+const restoreWith = (run: (history: History) => Promise<unknown>) => restores.run(currentHistory, run);
+
+/** Why a new turn can't start now (engine change, folder move, engine update, a restore), or null. */
+const turnBlocked = () => guards.turnBlocked() ?? restores.turnBlocked();
+
 function registerIpc() {
   handle("hh:getState", () => appState());
   handle("hh:pickFolder", async (defaultPath: string) => {
@@ -433,9 +484,9 @@ function registerIpc() {
     const before = await config.load();
     // Spec §9: an engine is only used once its notice is accepted.
     await requireNoticeForChoice(patch.engineId, before.engineId, hasNotice);
-    // A new folder: refused while a turn runs, and turns are refused until it is over; the old
+    // A new folder: refused while a turn or a restore runs, and turns are refused until it is over; the old
     // folder's task ends and its runtime goes.
-    await saveWithFolderChange(patch.folder, before.folder, { isBusy: () => tasks.isBusy(), guards, interrupt: () => tasks.interrupt(), dropRuntime }, () =>
+    await saveWithFolderChange(patch.folder, before.folder, { isBusy: () => tasks.isBusy() || restores.turnBlocked() !== null, guards, interrupt: () => tasks.interrupt(), dropRuntime }, () =>
       saveConfigPatch(patch, before),
     );
     if (patch.appearance) applyAppearance(patch.appearance);
@@ -451,7 +502,7 @@ function registerIpc() {
   });
   handle("hh:send", (message: string, options?: SendOptions) => {
     if (quitting) throw new Error("The app is closing");
-    const blocked = guards.turnBlocked();
+    const blocked = turnBlocked();
     if (blocked) throw new Error(blocked);
     if (typeof message !== "string" || !message.trim() || message.length > 20_000) throw new Error("Invalid message");
     const action = typeof options?.action === "string" && Object.hasOwn(harness.actions, options.action) ? options.action : undefined;
@@ -461,7 +512,7 @@ function registerIpc() {
   handle("hh:getTasks", () => tasks.view());
   handle("hh:choose", (option: unknown, task: unknown) => {
     if (quitting) throw new Error("The app is closing");
-    const blocked = guards.turnBlocked();
+    const blocked = turnBlocked();
     if (blocked) throw new Error(blocked);
     const parsed = choiceOptionSchema.safeParse(option);
     if (!parsed.success) throw new Error("Invalid choice");
@@ -489,26 +540,23 @@ function registerIpc() {
   });
   // Cancels the turn and stops the task operation (a closing turn never goes on to the next task).
   handle("hh:cancel", () => tasks.cancel());
-  handle("hh:history", async () => {
+  // Restore commits carry no task: going back may undo several tasks, so it belongs to none of them.
+  handle("hh:restore", (sha: unknown) => {
+    if (!isSha(sha)) throw new Error("Invalid point");
+    return restoreWith((history) => history.restore(sha, RESTORE_POINT));
+  });
+  handle("hh:historyTasks", async () => {
     const history = await currentHistory();
-    return history ? (await history.list()).map((h) => ({ ...h, date: h.date.toISOString() })) : [];
+    return history ? historyView(await history.tasks()) : [];
   });
-  handle("hh:restore", async (sha: string) => {
-    if (quitting) throw new Error("The app is closing");
-    if (restorePending) throw new Error("Already going back");
-    if (tasks.isBusy()) throw new Error("A turn is running");
-    restorePending = true;
-    try {
-      const history = await currentHistory();
-      if (!history) throw new Error("The app is not set up yet");
-      if (quitting || tasks.isBusy()) throw new Error("A turn is running");
-      const done = history.restore(sha, "Went back to an earlier point");
-      restoring = done.catch(() => undefined);
-      await done;
-    } finally {
-      restorePending = false;
-    }
-  });
+  handle("hh:restoreTask", (taskId: unknown) =>
+    restoreWith(async (history) => {
+      if (typeof taskId !== "string" || !taskId || taskId.length > 200) throw new Error("Invalid task");
+      const group = (await history.tasks()).find((g) => g.taskId === taskId);
+      if (!group?.start) throw new Error("Nothing to go back to");
+      await history.restore(group.start, RESTORE_TASK);
+    }),
+  );
   handle("hh:engineStatus", async (engineId: string) => {
     const engine = engineFor(engineId);
     if (hooks.engines?.[engine.id]) return testEngineStatus(engine, await hasNotice(engine.id));
@@ -604,6 +652,57 @@ function registerIpc() {
     const c = await validConfig();
     if (c) await shell.openPath(c.folder);
   });
+  // Spec 3d §2: refused while a turn or a restore runs; turns and restores are held off until it is over.
+  handle("hh:moveFolder", async (to: unknown): Promise<MoveResult> => {
+    if (quitting) throw new Error("The app is closing");
+    if (typeof to !== "string" || !path.isAbsolute(to) || to.length > 1000 || to.includes("\0")) return { ok: false, error: "unsuitable" };
+    const c = await validConfig();
+    if (!c) throw new Error("The app is not set up yet");
+    const userData = app.getPath("userData");
+    const deps: MoveDeps = {
+      check: (folder) => checkFolder(folder, os.homedir()),
+      // Read without creating a history: a folder that has none yet has no tracked files.
+      tracked: async () => {
+        const has = await fs.access(historyDir(userData, c.folder)).then(() => true, () => false);
+        return has ? ((await (await openHistory())?.trackedFiles()) ?? []) : [];
+      },
+      saveFolder: async (folder) => void (await config.replaceFolder(folder)),
+      historyDir: (folder) => historyDir(userData, folder),
+      journal: moveJournal(userData),
+      ops: { trash: (p) => shell.trashItem(p) },
+    };
+    // Checked and set with no await in between, so two requests can't both start a move.
+    if (moving) return { ok: false, error: "busy" };
+    const run = guardedMove({
+      guards,
+      isBusy: () => tasks.isBusy() || restores.turnBlocked() !== null,
+      precheck: () => precheckMove(c.folder, to, deps),
+      quitting: () => quitting,
+      checkpoint: () => tasks.checkpointBeforeMove(),
+      holdHistory: (held) => (historyHeld = held),
+      flush: () => turns.flush(),
+      closeRuntime,
+      restoresSettled: () => restores.settled(),
+      resumeFromNotes: () => tasks.resumeFromNotes(),
+      move: () => moveFolder(c.folder, to, deps),
+    });
+    moving = run;
+    let result: Awaited<typeof run>;
+    try {
+      result = await run;
+    } finally {
+      moving = null;
+    }
+    // The window always gets the state as it is now, whatever happened.
+    const state = await appState().catch((err: unknown) => {
+      console.error("Could not read the app state after the move", err);
+      return null;
+    });
+    if (!result.ok) return { ...result, ...(state ? { state } : {}) };
+    if (!state) throw new Error("Could not read the app state after the move");
+    const { oldRemoved, historyMoved } = result.done;
+    return { ok: true, state, ...(oldRemoved ? {} : { leftBehind: c.folder }), ...(historyMoved ? {} : { historyLeftBehind: true }) };
+  });
 }
 
 async function createWindow() {
@@ -616,7 +715,7 @@ async function createWindow() {
     // Native look (spec 2026-10-11-app-look-design.md): on macOS the page draws the 52 px top bar.
     ...(process.platform === "darwin" ? { titleBarStyle: "hiddenInset" as const, trafficLightPosition: { x: 20, y: 18 } } : {}),
     backgroundColor: nativeTheme.shouldUseDarkColors ? PAPER.dark : PAPER.light,
-    webPreferences: { preload: path.join(__dirname, "../preload/index.mjs"), contextIsolation: true, sandbox: false },
+    webPreferences: { preload: path.join(here, "../preload/index.mjs"), contextIsolation: true, sandbox: false },
   });
   window = win;
   win.on("closed", () => {
@@ -635,7 +734,7 @@ async function createWindow() {
 
 // Each harness is its own app: keep its config, history and caches apart from other harnesses.
 // Set before "ready" (ESM top-level await delays it) so Chromium uses the same folder.
-const loaded = await loadHarness(path.join(__dirname, "harness.js"), { root: __HARNESS_DIR__ }).catch((err: unknown) => {
+const loaded = await loadHarness(path.join(here, "harness.js"), { root: __HARNESS_DIR__ }).catch((err: unknown) => {
   // showErrorBox is safe before "ready".
   dialog.showErrorBox("This app could not start", err instanceof Error ? err.message : String(err));
   app.exit(1);
@@ -646,9 +745,33 @@ if (loaded) {
   harness = loaded;
   app.setName(harness.name.en);
   app.setPath("userData", hooks.userData ?? path.join(app.getPath("appData"), "Human Harness", harness.id));
+}
+
+// One app per data folder (the lock is tied to userData, so it is taken after it is set): a second one would
+// share the config, and its start-up recovery could undo a folder move the first one is making.
+const primary = loaded !== null && app.requestSingleInstanceLock();
+if (loaded && !primary) app.quit();
+
+if (primary) {
+  app.on("second-instance", () => {
+    if (!window || window.isDestroyed()) return;
+    if (window.isMinimized()) window.restore();
+    window.focus();
+  });
 
   app.whenReady().then(async () => {
     config = new ConfigStore(app.getPath("userData"));
+    // A folder move cut short by a quit or crash: finish or undo it before anything opens the folder or its history.
+    const userData = app.getPath("userData");
+    const recovered = await recoverMove({
+      journal: moveJournal(userData),
+      currentFolder: async () => (await config.load()).folder,
+      historyDir: (folder) => historyDir(userData, folder),
+    }).catch((err: unknown) => {
+      console.error("Could not settle an interrupted folder move", err);
+      return null;
+    });
+    if (recovered?.leftBehind) console.error(`An interrupted folder move kept the old folder at ${recovered.leftBehind}`);
     shared = new SharedConfigStore(hooks.sharedDir ?? sharedConfigDir());
     // `humanharness dev --engine <id>`: a fresh app starts with that engine chosen (development builds only).
     const preselect = devEngine(process.env, app.isPackaged, availableEngines(harness.engines, mode()).map((e) => e.id));
@@ -674,6 +797,8 @@ if (loaded) {
     const testStopped = Promise.race([guards.close(), new Promise<void>((r) => setTimeout(r, QUIT_TEST_WAIT_MS))]);
     const setupStopped = setupRun ? stopSetupProcess(setupRun) : Promise.resolve();
     void (async () => {
+      // A folder move under way finishes (or undoes itself) first: it is never cut short on purpose.
+      await moving?.catch(() => undefined);
       await Promise.all([setupStopped, testStopped]);
       try {
         await dropRuntime();

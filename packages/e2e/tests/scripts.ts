@@ -80,6 +80,17 @@ export const checkpointScript: ClaudeScript = {
   ],
 };
 
+/** Claude: the manifest topic rewrites plan.md in the person's folder (history by task). */
+export const historyScript: ClaudeScript = {
+  steps: [...claudeTextLines("Listo."), result],
+  turns: [
+    {
+      match: "# Topic: the manifest",
+      steps: [{ write: { path: "plan.md", content: "cambiado por la IA\n" } }, ...claudeTextLines("Cambié tu plan."), choices, result],
+    },
+  ],
+};
+
 /** Codex: one answer to a free question; its adapter offers one model. */
 export const codexScript: AcpScript = {
   configOptions: [{ id: "model", name: "Model", type: "select", currentValue: "gpt-5.5", options: [{ value: "gpt-5.5", name: "GPT-5.5" }] }],

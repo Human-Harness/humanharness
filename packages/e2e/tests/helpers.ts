@@ -9,7 +9,7 @@ import { type AcpScript, type ClaudeScript, fakeAcpCommand, fakeClaudeCommand, w
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const shellDir = path.resolve(here, "../../shell");
 /** The `electron` package exports the path of its binary. */
-const electronBinary = createRequire(path.join(shellDir, "package.json"))("electron") as string;
+export const electronBinary = createRequire(path.join(shellDir, "package.json"))("electron") as string;
 
 export interface Sandbox {
   root: string;

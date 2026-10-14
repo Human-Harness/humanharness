@@ -112,6 +112,27 @@ describe("EngineGuards", () => {
     await switching;
   });
 
+  it("refuses an engine change, and an update or sign-out of the engine in use, while the folder changes", async () => {
+    const guards = new EngineGuards();
+    guards.beginFolderChange(() => false);
+    const { deps, calls } = switchDeps(guards);
+    await expect(guards.switchEngine(deps)).rejects.toThrow(/folder is being changed/);
+    expect(calls).toEqual([]);
+    for (const step of ["logout", "update"] as const) {
+      expect(() => guards.beginSetup({ engineId: "claude", step, current: true }, () => false)).toThrow(/folder is being changed/);
+      expect(guards.setup).toBeNull();
+    }
+    // Steps that leave the runtime alone still run.
+    guards.beginSetup({ engineId: "claude", step: "login", current: true }, () => false);
+    guards.endSetup();
+    guards.beginSetup({ engineId: "codex", step: "update", current: false }, () => false);
+    guards.endSetup();
+    guards.endFolderChange();
+    const after = switchDeps(guards);
+    after.release();
+    await guards.switchEngine(after.deps);
+  });
+
   it("shares a running test prompt with a second request for the same engine", async () => {
     const guards = new EngineGuards();
     let finish!: (v: string) => void;

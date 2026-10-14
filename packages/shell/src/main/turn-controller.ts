@@ -214,7 +214,7 @@ export class TurnController {
             this.emit(e);
           }
         }
-      }, profile ? { profile } : undefined);
+      }, { ...(profile ? { profile } : {}), ...(task ? { trailer: { task, ...(action ? { action } : {}) } } : {}) });
       await turn.running.done;
       await finished;
     } finally {

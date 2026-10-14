@@ -56,12 +56,15 @@ export class EngineGuards {
   }
 
   /**
-   * Changes the engine: turns are refused from the first moment; the config is saved, then the old
+   * Changes the engine (refused while the folder changes): turns are refused from the first moment; the config is saved, then the old
    * runtime is closed and the old engine's chat archived. Returns the engine whose chat was archived.
    * Only a failed save rejects; later failures go to `onError`.
    */
   async switchEngine(d: SwitchDeps, onError: (err: unknown) => void = () => {}): Promise<string | null> {
     if (this.switching) throw new Error("The engine is already being changed");
+    // A folder move works on the open task's folder and its chat: an engine change would end the task
+    // and archive the chat in the old folder while it is being copied.
+    if (this.changingFolder) throw new Error("The folder is being changed");
     if (this.setup?.step === "logout" || this.setup?.step === "update") throw new Error("An engine is being updated or signed out");
     if (d.isBusy()) throw new Error("A turn is running");
     this.switching = true;
@@ -91,12 +94,14 @@ export class EngineGuards {
 
   /**
    * Reserves the setup slot. A logout or update of the engine in use (`current`) also needs no turn
-   * running, and blocks turns until it ends (it pulls the CLI from under them).
+   * running and no folder change, and blocks turns until it ends (it pulls the CLI from under them).
    */
   beginSetup(run: { engineId: string; step: SetupStep; current: boolean }, isBusy: () => boolean): void {
     if (this.setup) throw new Error("A setup step is already running");
     if (this.switching) throw new Error("The engine is being changed");
     const blocks = run.current && (run.step === "logout" || run.step === "update");
+    // Such a step closes the runtime, which the folder change holds.
+    if (blocks && this.changingFolder) throw new Error("The folder is being changed");
     if (blocks && isBusy()) throw new Error("A turn is running");
     this.setup = { engineId: run.engineId, step: run.step };
     this.setupBlocksTurns = blocks;

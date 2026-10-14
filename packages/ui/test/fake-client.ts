@@ -9,6 +9,8 @@ import type {
   FolderPick,
   HarnessClient,
   HistoryItem,
+  HistoryTaskView,
+  MoveResult,
   RunningSetup,
   SendOptions,
   SetupOutput,
@@ -24,13 +26,30 @@ export class FakeClient implements HarnessClient {
   sent: string[] = [];
   sentOptions: SendOptions[] = [];
   restored: string[] = [];
+  /** What historyTasks answers: one task, newest first. */
+  historyGroups: HistoryTaskView[] = [
+    {
+      taskId: "t1",
+      actionId: null,
+      start: "s0",
+      end: "abc",
+      date: "2026-10-10T12:00:00.000Z",
+      changes: [{ path: "notes.md", kind: "modified" }],
+      entries: [{ sha: "abc", message: "Turn: hi", date: "2026-10-10T12:00:00.000Z" }],
+    },
+  ];
+  /** Tasks restoreTask was asked to go back before. */
+  restoredTasks: string[] = [];
   cancelled = 0;
   chat: ChatEntry[] = [];
   switchedFrom: string | undefined;
-  items: HistoryItem[] = [{ sha: "abc", message: "Turn: hi", date: "2026-10-10T12:00:00.000Z" }];
   sendError: Error | null = null;
   saveError: Error | null = null;
   restoreError: Error | null = null;
+  /** What historyTasks throws, if anything. */
+  historyError: Error | null = null;
+  /** While set, restore and restoreTask wait for it. */
+  restoreGate: Promise<void> | null = null;
   pickResult: FolderPick | null = { folder: "/Users/me/Elsewhere", problem: null };
   stateError: Error | null = null;
   getStateCalls = 0;
@@ -84,6 +103,10 @@ export class FakeClient implements HarnessClient {
   testResult: TestResult & { error?: EngineError } = { ok: true };
   usage: UsageSummary = { limits: null, estimates: {} };
   revealed = 0;
+  /** Places moveFolder was asked to move to. */
+  moved: string[] = [];
+  /** What moveFolder answers; default: success with the current state. */
+  moveResult: MoveResult | null = null;
   tasks: TaskView = { current: null, actions: {}, notes: [] };
   chosen: ChoiceOption[] = [];
   /** The task each pick was sent for. */
@@ -168,12 +191,19 @@ export class FakeClient implements HarnessClient {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
   }
-  async history() {
-    return this.items;
-  }
   async restore(sha: string) {
+    await this.restoreGate;
     if (this.restoreError) throw this.restoreError;
     this.restored.push(sha);
+  }
+  async historyTasks() {
+    if (this.historyError) throw this.historyError;
+    return this.historyGroups;
+  }
+  async restoreTask(taskId: string) {
+    await this.restoreGate;
+    if (this.restoreError) throw this.restoreError;
+    this.restoredTasks.push(taskId);
   }
   async engineStatus(engineId: string) {
     await this.statusGates[engineId];
@@ -245,6 +275,10 @@ export class FakeClient implements HarnessClient {
   }
   async revealFolder() {
     this.revealed++;
+  }
+  async moveFolder(to: string) {
+    this.moved.push(to);
+    return this.moveResult ?? { ok: true as const, state: this.state };
   }
   emitTasks(view: TaskView) {
     this.tasks = view;

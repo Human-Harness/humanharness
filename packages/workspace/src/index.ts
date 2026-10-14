@@ -3,3 +3,5 @@ export * from "./folder";
 export * from "./history";
 export * from "./notes";
 export * from "./notes-index";
+export * from "./backup";
+export * from "./subjects";

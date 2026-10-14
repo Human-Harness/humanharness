@@ -120,4 +120,22 @@ describe("fake-claude in mock mode", () => {
     expect(fs.existsSync(path.join(outside, "x.md"))).toBe(false);
     expect(text).toContain("symlink");
   });
+
+  it("refuses to write or delete through a file symlink that points outside", async () => {
+    const outsideFile = path.join(root, "outside-file.txt");
+    fs.writeFileSync(outsideFile, "keep");
+    const link = (f: string) => { fs.symlinkSync(outsideFile, path.join(f, "mine.md")); };
+    const w = await playOne("filelink-write", [{ id: "t1", text: "hi", delayMs: 0, writes: [{ path: "mine.md", content: "overwritten" }] }], "q\n", link);
+    expect(w.text).toContain("symlink");
+    expect(fs.readFileSync(outsideFile, "utf8")).not.toBe("overwritten");
+    const d = await playOne("filelink-delete", [{ id: "t1", text: "hi", delayMs: 0, writes: [{ path: "mine.md", content: null }] }], "q\n", link);
+    expect(d.text).toContain("symlink");
+    expect(fs.existsSync(outsideFile)).toBe(true);
+    expect(fs.readFileSync(outsideFile, "utf8")).not.toBe("overwritten");
+  });
+
+  it("writes a name that merely starts with two dots", async () => {
+    const { folder } = await playOne("dots", [{ id: "t1", text: "hi", delayMs: 0, writes: [{ path: "..notes.md", content: "ok" }] }], "q\n");
+    expect(fs.readFileSync(path.join(folder, "..notes.md"), "utf8")).toBe("ok");
+  });
 });

@@ -1,6 +1,6 @@
 // packages/fake-agent/src/mock-claude.ts
 // fake-claude's mock mode (spec 3e): replays <harness>/mock/*.json instead of a test script.
-import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { callMcpTool } from "./mcp-call";
 import { loadRecordings } from "./mock";
@@ -34,14 +34,16 @@ function safeTarget(cwd: string, p: string): string {
   const target = path.resolve(cwd, p);
   const rel = path.relative(cwd, target);
   const first = rel.split(path.sep)[0];
-  if (rel === "" || rel.startsWith("..") || path.isAbsolute(rel) || first === ".claude" || first === ".harness") {
+  if (rel === "" || rel === ".." || rel.startsWith(".." + path.sep) || path.isAbsolute(rel) || first === ".claude" || first === ".harness") {
     throw new Error(`refused to write "${p}": outside the work folder or in an app-owned folder`);
   }
   // A symlinked folder must not lead out either: check the nearest existing ancestor.
   let ancestor = path.dirname(target);
   while (!existsSync(ancestor)) ancestor = path.dirname(ancestor);
   const real = path.relative(realpathSync(cwd), realpathSync(ancestor));
-  if (real.startsWith("..") || path.isAbsolute(real)) throw new Error(`refused to write "${p}": a symlink leads outside the work folder`);
+  if (real === ".." || real.startsWith(".." + path.sep) || path.isAbsolute(real)) throw new Error(`refused to write "${p}": a symlink leads outside the work folder`);
+  // A symlink as the target itself would be followed by the write or the delete.
+  if (lstatSync(target, { throwIfNoEntry: false })?.isSymbolicLink()) throw new Error(`refused to write "${p}": it is a symlink`);
   return target;
 }
 

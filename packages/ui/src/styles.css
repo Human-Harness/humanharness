@@ -70,7 +70,7 @@ input[type="text"], input:not([type]) { font: inherit; height: 28px; padding: 0 
 /* Top bar: the window's drag region (hiddenInset title bar), leaving room for the traffic lights. */
 .hh-topbar { height: 52px; box-sizing: border-box; display: flex; align-items: center; gap: 8px; padding: 0 12px 0 80px; -webkit-app-region: drag; user-select: none; border-bottom: 1px solid var(--hh-line); }
 .hh-topbar button, .hh-topbar a, .hh-topbar input { -webkit-app-region: no-drag; }
-.hh-title { font-family: var(--hh-display); font-weight: 600; font-size: 14px; white-space: nowrap; }
+.hh-title { font-family: var(--hh-display); font-weight: 600; font-size: 14px; white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .hh-spacer { flex: 1; }
 .hh-icon-button { width: 30px; padding: 0; }
 .hh-segmented { display: inline-flex; padding: 2px; gap: 2px; border-radius: 7px; background: var(--hh-segment); }

@@ -61,6 +61,10 @@ export interface EngineDef {
   instructionsFile?: { path: string; content: string };
   /** The models and efforts Settings › Modelos offers for this engine. */
   models?: EngineModels;
+  /** Limit windows: `primary` is the window kind usage estimates measure (Settings › Uso, spec 3b). */
+  limits?: { primary: string };
+  /** The provider's page of plans, the only plan fact the core keeps (reviewed with the engine). */
+  plansUrl?: string;
 }
 
 export const ENGINES: readonly EngineDef[] = [
@@ -83,6 +87,8 @@ export const ENGINES: readonly EngineDef[] = [
     models: { list: CLAUDE_MODELS, efforts: EFFORTS },
     provider: "Anthropic",
     reportsLimits: true,
+    limits: { primary: "five_hour" },
+    plansUrl: "https://claude.com/pricing",
     setup: {
       install: { command: "curl -fsSL https://claude.ai/install.sh | bash", docsUrl: "https://code.claude.com/docs/en/setup" },
       login: ["auth", "login"],
@@ -119,6 +125,7 @@ export const ENGINES: readonly EngineDef[] = [
     provider: "OpenAI",
     brands: ["ChatGPT", "GPT"],
     reportsLimits: false,
+    plansUrl: "https://chatgpt.com/pricing",
     // The app runs the official Codex CLI bundled with the ACP adapter (status, login), so it never
     // installs Codex itself; the official install command is kept for builds without the bundle.
     setup: {

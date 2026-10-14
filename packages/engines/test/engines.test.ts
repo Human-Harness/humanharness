@@ -83,6 +83,13 @@ describe("engine setup data", () => {
     for (const e of ENGINES) expect(e.provider.length).toBeGreaterThan(0);
   });
 
+  it("names the window Claude's estimates measure and each provider's page of plans", () => {
+    expect(getEngine("claude").limits).toEqual({ primary: "five_hour" });
+    expect(getEngine("claude").plansUrl).toBe("https://claude.com/pricing");
+    expect(getEngine("codex").limits).toBeUndefined();
+    expect(getEngine("codex").plansUrl).toBe("https://chatgpt.com/pricing");
+  });
+
   it("starts the legal notice at version 1", () => {
     expect(NOTICE_VERSION).toBe(1);
   });

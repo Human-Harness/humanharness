@@ -249,6 +249,7 @@ async function appState(): Promise<AppState> {
           termsUrl: e.termsUrl,
           privacyUrl: e.privacyUrl,
           reportsLimits: e.reportsLimits,
+          ...(e.plansUrl ? { plansUrl: e.plansUrl } : {}),
           ...(e.setup?.install ? { installCommand: e.setup.install.command, installDocsUrl: e.setup.install.docsUrl } : {}),
           ...(image ? { logo: image } : {}),
         };

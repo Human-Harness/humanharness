@@ -31,6 +31,8 @@ test("mock mode walks a demo topic from its recording, off script included, with
     await expect(page.getByRole("main").getByText(/Los motores se detectan en cada inicio/)).toBeVisible();
     const note = fs.readFileSync(path.join(s.folder, ".harness", "notes", "manifest.md"), "utf8");
     expect(note).toContain('title: "El manifiesto"');
+    // The usage line says the test engine spends nothing (not that it doesn't report limits).
+    await expect(page.getByText(/^Modo prueba: no gasta tu plan\./)).toBeVisible();
 
     // Only the fake engine is offered.
     await page.getByRole("button", { name: "Ajustes" }).click();

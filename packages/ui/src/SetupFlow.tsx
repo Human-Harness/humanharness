@@ -119,7 +119,6 @@ export function SetupFlow({
             <FolderStep
               client={client}
               state={state}
-              welcome={false}
               formId={folderFormId}
               onSaved={(s) => {
                 onChange(s);

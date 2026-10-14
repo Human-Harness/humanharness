@@ -48,13 +48,11 @@
     "runningCancel": "Cancelar"
   },
   "setup": {
-    "welcome": "{{name}} funciona con un plan de IA que ya tenés, con tu propia cuenta. La app no ve ni guarda nada fuera de tu compu: tu trabajo queda en una carpeta que elegís vos.",
     "language": "Idioma",
     "folder": "Tu carpeta",
     "folderHint": "Acá se guarda tu trabajo.",
     "folderChange": "Elegir otra carpeta",
     "folderWarning": "No muevas, renombres ni edites esta carpeta a mano: la app depende de ella.",
-    "useFolder": "Usar esta carpeta",
     "engineRequires": "Necesitás: {{plan}}",
     "engineData": "Tus datos van a: {{where}}",
     "enginePending": "Todavía no habilitado para distribución (solo desarrollo)",

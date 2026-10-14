@@ -9,22 +9,11 @@ export function uiLanguage(state: AppState, i18nLanguage: string): Language {
   return state.config.language ?? (languages.includes(i18nLanguage as Language) ? (i18nLanguage as Language) : languages[0]);
 }
 
-/** First launch only: the welcome line and the folder (spec §7: chosen once, then fixed). Saves the language with it. */
-export function FolderStep({
-  client,
-  state,
-  onSaved,
-  formId,
-  welcome = true,
-}: {
-  client: HarnessClient;
-  state: AppState;
-  onSaved: (s: AppState) => void;
-  /** Set by the setup flow: the step shows no save button of its own; a button in the footer with `form={formId}` submits it. */
-  formId?: string;
-  /** The welcome line; the setup flow leaves it out (it has its own heading and intro). */
-  welcome?: boolean;
-}) {
+/**
+ * The setup flow's folder step (spec §7: chosen once, then fixed). Saves the language with it. It shows no save
+ * button of its own: a button in the flow's footer with `form={formId}` submits it.
+ */
+export function FolderStep({ client, state, onSaved, formId }: { client: HarnessClient; state: AppState; onSaved: (s: AppState) => void; formId: string }) {
   const { t, i18n } = useTranslation();
   const lang = uiLanguage(state, i18n.language);
   const locations = state.backup?.locations ?? [];
@@ -63,7 +52,6 @@ export function FolderStep({
         void save();
       }}
     >
-      {welcome && <p>{t("setup.welcome", { name: state.harness.name[lang] })}</p>}
       <h3>{t("setup.folder")}</h3>
       <p className="hh-caption">{t("setup.folderHint")}</p>
       {locations.length > 0 && (
@@ -110,11 +98,6 @@ export function FolderStep({
         </p>
       )}
       <p className="hh-caption">{t("setup.folderWarning")}</p>
-      {!formId && (
-        <button type="submit" className="hh-primary">
-          {t("setup.useFolder")}
-        </button>
-      )}
       {saveError && (
         <p className="hh-save-error" role="alert">
           {t("setup.saveError")}

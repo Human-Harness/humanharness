@@ -189,7 +189,7 @@ describe("SettingsSheet", () => {
     expect(screen.getByRole("group", { name: "Idioma" })).toBeTruthy();
     expect(screen.getByRole("group", { name: "Apariencia" })).toBeTruthy();
     expect(screen.getByText("Versión 0.1.0")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Usar esta carpeta" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Elegir otra carpeta" })).toBeNull();
     expect(screen.queryByRole("radiogroup")).toBeNull();
     expect(screen.queryByText("Mostrar en Finder")).toBeNull();
     expect(screen.queryByText(/funciona con un plan de IA/)).toBeNull();

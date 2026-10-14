@@ -32,7 +32,6 @@ describe("SetupFlow", () => {
     const footer = screen.getByRole("contentinfo");
     expect(within(footer).getByRole("button", { name: "Next" })).toBe(next());
     expect(within(footer).getByRole("button", { name: "Cancel" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Use this folder" })).toBeNull();
 
     fireEvent.click(next());
     const engineHeading = await screen.findByRole("heading", { name: "Which AI does Demo use?" });

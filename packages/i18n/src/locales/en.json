@@ -48,13 +48,11 @@
     "runningCancel": "Cancel"
   },
   "setup": {
-    "welcome": "{{name}} works with an AI plan you already have, using your own account. The app doesn't see or keep anything outside your computer: your work stays in a folder you choose.",
     "language": "Language",
     "folder": "Your folder",
     "folderHint": "Your work will be saved here.",
     "folderChange": "Choose another folder",
     "folderWarning": "Don't move, rename or edit this folder by hand: the app depends on it.",
-    "useFolder": "Use this folder",
     "engineRequires": "Requires: {{plan}}",
     "engineData": "Your data goes to: {{where}}",
     "enginePending": "Not yet cleared for distribution (development only)",

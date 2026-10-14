@@ -323,6 +323,22 @@ describe("run --record", () => {
     expect(rec.turns[2].note.title).toBe("First idea");
     expect(out.text()).toContain(`Recorded: ${mockFile}`);
     expect(out.text()).toContain("review it before committing");
+
+    // The recording replays through the real task manager: t1, "Go deeper", t2, then the closing note.
+    const replay = memoryStream();
+    const folder = path.join(root, "replayed");
+    const report = await runTask({
+      harnessDir,
+      action: "example",
+      folder,
+      input: lines("1\nq\n"),
+      output: replay.stream,
+      engineCommand: { command: fakeClaudeCommand(), env: { HH_FAKE_MOCK_DIR: path.join(harnessDir, "mock"), HH_FAKE_MOCK_STATE: path.join(root, "replay-state.json") } },
+    });
+    expect(replay.text()).toContain("Hello, this harness is still being built.");
+    expect(replay.text()).toContain("1. Go deeper");
+    expect(replay.text()).toContain("Here is more.");
+    expect(fs.readFileSync(report.notePath!, "utf8")).toContain('title: "First idea"');
   });
 
   it("refuses to overwrite an existing recording without --force, before the engine runs", { timeout: 60_000 }, async () => {

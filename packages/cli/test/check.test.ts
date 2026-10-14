@@ -298,6 +298,44 @@ describe("mock recordings", () => {
   it("mock-choice", async () => {
     expect(await rulesFor({ "example.json": { ...good, turns: [{ ...good.turns[0], next: { "Not offered": "t2" } }, good.turns[1]] } }, briefWith)).toEqual(["mock-choice"]);
   });
+  it("the unmodified template brief and a recording of its first line pass", async () => {
+    const brief = fs.readFileSync(path.join(CORE, "packages", "cli", "template", "agent", "tasks", "example.md"), "utf8");
+    expect(brief.startsWith("# Task: example")).toBe(true);
+    expect(await rulesFor({ "example.json": good })).toEqual([]);
+  });
+  it("mock-schema: a directory named like a recording is not a file", async () => {
+    const dir = await fixture((d) => fs.mkdirSync(path.join(d, "mock", "x.json"), { recursive: true }));
+    const found = (await checkHarness(dir)).findings.filter((f) => f.rule.startsWith("mock-"));
+    expect(found.map((f) => f.rule)).toEqual(["mock-schema"]);
+    expect(found[0].message).toContain("not a file");
+  });
+  describe("a match inside another action's brief", () => {
+    const withSecond = async (otherBrief: string, files: Record<string, unknown>) => {
+      const dir = await fixture((d) => {
+        const cfg = path.join(d, "harness.config.ts");
+        fs.writeFileSync(
+          cfg,
+          fs.readFileSync(cfg, "utf8").replace(
+            "  actions: {\n",
+            `  actions: {\n    other: { label: { es: "Otro", en: "Other" }, description: { es: "Otro.", en: "Other." }, prompt: "./agent/tasks/other.md", cost: "light", tier: "standard" },\n`,
+          ),
+        );
+        fs.writeFileSync(path.join(d, "agent", "tasks", "other.md"), otherBrief);
+        fs.mkdirSync(path.join(d, "mock"));
+        for (const [name, content] of Object.entries(files)) fs.writeFileSync(path.join(d, "mock", name), JSON.stringify(content));
+      });
+      return (await checkHarness(dir)).findings.filter((f) => f.rule.startsWith("mock-"));
+    };
+    it("is an error", async () => {
+      const found = await withSecond("# Task: example\n\n# Task: other\n", { "example.json": good });
+      expect(found.map((f) => f.rule)).toEqual(["mock-match"]);
+      expect(found[0].message).toContain('also appears in the brief of "other"');
+    });
+    it("is fine when the other action has a longer match in its own brief", async () => {
+      const other = { ...good, action: "other", match: "# Task: example\n\n# Task: other" };
+      expect(await withSecond("# Task: example\n\n# Task: other\n", { "example.json": good, "other.json": other })).toEqual([]);
+    });
+  });
   it("shows up in --json and formatFindings", async () => {
     const r = await checkHarness(await fixture((d) => {
       fs.mkdirSync(path.join(d, "mock"));

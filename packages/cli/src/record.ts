@@ -13,29 +13,51 @@ export interface FolderSnapshot {
   files: Map<string, string>;
   /** Relative paths left out: binary or larger than MAX_RECORDED_FILE. */
   skipped: Set<string>;
+  /** Size and mtime of each skipped path, to tell which ones changed between snapshots. */
+  signatures: Map<string, string>;
+}
+
+/** The first line of a brief that a task's first message always contains: past any front matter, before any placeholder. */
+export function briefMatch(text: string, fallback: string): string {
+  const lines = text.split("\n");
+  let i = 0;
+  if (lines[0]?.trim() === "---") {
+    const end = lines.findIndex((l, n) => n > 0 && l.trim() === "---");
+    if (end > 0) i = end + 1;
+  }
+  for (; i < lines.length; i++) {
+    const line = lines[i].replace(/\{\{.*$/, "").trim();
+    if (line) return line;
+  }
+  return fallback;
 }
 
 /** The folder's small text files, `.harness/` left out. Symbolic links are skipped, never followed. */
 export async function snapshotFolder(folder: string): Promise<FolderSnapshot> {
-  const snap: FolderSnapshot = { files: new Map(), skipped: new Set() };
+  const snap: FolderSnapshot = { files: new Map(), skipped: new Set(), signatures: new Map() };
   const walk = async (dir: string): Promise<void> => {
     const entries = await fs.readdir(dir, { withFileTypes: true }).catch(() => []);
     for (const e of entries) {
       const abs = path.join(dir, e.name);
       const rel = path.relative(folder, abs).split(path.sep).join("/");
+      const skip = async (): Promise<void> => {
+        snap.skipped.add(rel);
+        const st = await fs.lstat(abs).catch(() => null);
+        snap.signatures.set(rel, st ? `${st.size}:${st.mtimeMs}` : "");
+      };
       if (e.isSymbolicLink()) {
         // Never read through a link: it may point outside the folder.
-        snap.skipped.add(rel);
+        await skip();
       } else if (e.isDirectory()) {
         if (!SKIPPED_DIRS.has(e.name)) await walk(abs);
       } else if (e.isFile()) {
         const stat = await fs.lstat(abs);
         if (stat.size > MAX_RECORDED_FILE) {
-          snap.skipped.add(rel);
+          await skip();
           continue;
         }
         const buf = await fs.readFile(abs);
-        if (buf.includes(0)) snap.skipped.add(rel);
+        if (buf.includes(0)) await skip();
         else snap.files.set(rel, buf.toString("utf8"));
       }
     }
@@ -58,6 +80,8 @@ export interface RecorderOptions {
   /** The text a task's first message contains for this action (its brief's first line). */
   matchFor: (action: string) => string;
   recordedWith: string;
+  /** Something the person should know (a visit that is not recorded). */
+  warn?: (message: string) => void;
 }
 
 /** Builds recordings from one `run`: what the engine answered, what the person replied, what changed. */
@@ -66,13 +90,15 @@ export class Recorder {
   private text = "";
   private blocks: MockTurn["blocks"] = [];
   private usage: MockUsage | undefined;
-  private lastNote: MockNote | undefined;
   private replyKey: string | undefined;
   private lastTurn: { action: string; turn: MockTurn } | undefined;
-  /** A closing turn that ended before its note was written. */
-  private pendingClose: MockTurn | undefined;
-  private snapshot: FolderSnapshot = { files: new Map(), skipped: new Set() };
-  /** Every path skipped at least once, for the run's output. */
+  /** The turn that ended last: where a note written right after it belongs. `null`: a turn that takes none. */
+  private ended: MockTurn | null | undefined;
+  /** The task whose visit to each action is being recorded: later visits are ignored. */
+  private readonly taskOf = new Map<string, string>();
+  private readonly ignored = new Set<string>();
+  private snapshot: FolderSnapshot = { files: new Map(), skipped: new Set(), signatures: new Map() };
+  /** Skipped paths that are new or changed during the run, for its output. */
   readonly skipped = new Set<string>();
 
   constructor(private readonly o: RecorderOptions) {}
@@ -96,18 +122,20 @@ export class Recorder {
     this.replyKey = key;
   }
 
-  /** A note TaskManager wrote. It may come before or after its closing turn's `turnEnded`. */
+  /**
+   * A note TaskManager wrote. It comes right after its turn ended (`recordUsage` runs first): the closing turn's
+   * note, or a run turn's own `save_note`. A checkpoint's note is provisional, and the closing turn replaces it.
+   */
   note(note: MockNote): void {
-    if (this.pendingClose) {
-      this.pendingClose.note = note;
-      this.pendingClose = undefined;
-    } else this.lastNote = note;
+    if (this.ended) this.ended.note = note;
+    this.ended = undefined;
   }
 
   /** One engine turn ended (`recordUsage`): it becomes a recorded turn unless it was a checkpoint. */
-  async turnEnded(meta: { action?: string; phase?: "run" | "close" | "checkpoint" }, opts: { failed?: boolean } = {}): Promise<void> {
+  async turnEnded(meta: { action?: string; task?: string; phase?: "run" | "close" | "checkpoint" }, opts: { failed?: boolean } = {}): Promise<void> {
     const after = await snapshotFolder(this.o.folder);
-    for (const p of after.skipped) this.skipped.add(p);
+    for (const p of after.skipped) if (this.snapshot.signatures.get(p) !== after.signatures.get(p)) this.skipped.add(p);
+    this.ended = null;
     if (opts.failed) {
       // A failed or held attempt is no turn: drop what it showed. The snapshot and the pending reply stay,
       // so the retry's turn carries any files the attempt wrote and is linked by the same reply.
@@ -124,30 +152,29 @@ export class Recorder {
     this.blocks = [];
     this.usage = undefined;
     if (!action || meta.phase === "checkpoint") return;
+    const task = meta.task ?? "";
+    const first = this.taskOf.get(action);
+    if (first === undefined) this.taskOf.set(action, task);
+    else if (first !== task) {
+      if (!this.ignored.has(action)) this.o.warn?.(`"${action}" was run again in this folder: only its first visit is recorded.`);
+      this.ignored.add(action);
+      this.replyKey = undefined;
+      return;
+    }
     let rec = this.byAction.get(action);
     if (!rec) {
       rec = { version: 1, action, match: this.o.matchFor(action), recordedWith: this.o.recordedWith, turns: [] };
       this.byAction.set(action, rec);
     }
     const id = meta.phase === "close" ? "close" : `t${rec.turns.filter((t) => t.id !== "close").length + 1}`;
-    const turn: MockTurn = {
-      id,
-      text: taken.text,
-      blocks: taken.blocks,
-      writes,
-      ...(taken.usage ? { usage: taken.usage } : {}),
-      ...(meta.phase === "close" && this.lastNote ? { note: this.lastNote } : {}),
-    };
+    const turn: MockTurn = { id, text: taken.text, blocks: taken.blocks, writes, ...(taken.usage ? { usage: taken.usage } : {}) };
     rec.turns.push(turn);
     if (meta.phase !== "close" && this.lastTurn?.action === action && this.replyKey !== undefined) {
       this.lastTurn.turn.next = { ...this.lastTurn.turn.next, [this.replyKey]: id };
     }
     this.replyKey = undefined;
-    if (meta.phase === "close") {
-      if (!turn.note) this.pendingClose = turn;
-      this.lastNote = undefined;
-      this.lastTurn = undefined;
-    } else this.lastTurn = { action, turn };
+    this.ended = turn;
+    this.lastTurn = meta.phase === "close" ? undefined : { action, turn };
   }
 
   recordings(): Recording[] {

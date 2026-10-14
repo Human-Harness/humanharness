@@ -35,6 +35,18 @@ export function promptKind(prompt: string): "close" | "checkpoint" | "reply" {
 const defaultNote = (action: string): MockNote => ({ title: action, summary: ["Recorded test run"], decisions: [], files: [], open: [] });
 const firstTurn = (r: Recording) => r.turns.find((t) => t.id !== "close");
 const closeNote = (r: Recording) => r.turns.find((t) => t.id === "close")?.note ?? defaultNote(r.action);
+/** The options of every `show_choices` block, in order: what the person can pick. */
+export function choiceOptions(blocks: MockBlock[]): { label: string; followUp?: string }[] {
+  return blocks
+    .filter((b) => b.tool === "show_choices")
+    .flatMap((b) => (Array.isArray(b.input.options) ? (b.input.options as { label?: unknown; followUp?: unknown }[]) : []))
+    .filter((o): o is { label: string; followUp?: string } => typeof o.label === "string")
+    .map((o) => ({ label: o.label, ...(typeof o.followUp === "string" ? { followUp: o.followUp } : {}) }));
+}
+
+/** The labels a turn's choices offer: the keys its `next` may use. */
+export const choiceLabels = (blocks: MockBlock[]): string[] => choiceOptions(blocks).map((o) => o.label);
+
 const choicesOf = (turn: MockTurn | undefined) => turn?.blocks.filter((b) => b.tool === "show_choices") ?? [];
 
 function playTurn(turn: MockTurn): Play {
@@ -60,12 +72,7 @@ const quiet = (text: string, blocks: MockBlock[] = [], note?: MockNote): Play =>
 /** The label a reply stands for: the option whose followUp (or, without one, label) is the reply. */
 function replyKey(turn: MockTurn, prompt: string): string | undefined {
   const reply = prompt.trim();
-  for (const block of choicesOf(turn)) {
-    const options = Array.isArray(block.input.options) ? (block.input.options as { label?: unknown; followUp?: unknown }[]) : [];
-    const hit = options.find((o) => typeof o.label === "string" && (typeof o.followUp === "string" && o.followUp.trim() ? o.followUp.trim() : o.label.trim()) === reply);
-    if (hit) return hit.label as string;
-  }
-  return undefined;
+  return choiceOptions(turn.blocks).find((o) => (o.followUp?.trim() ? o.followUp.trim() : o.label.trim()) === reply)?.label;
 }
 
 /**

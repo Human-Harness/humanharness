@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { recordingSchema } from "@humanharness/fake-agent";
-import { Recorder, snapshotFolder } from "../src/record";
+import { Recorder, briefMatch, snapshotFolder } from "../src/record";
 import { tempRoot } from "./helpers";
 
 const { root, cleanup } = tempRoot("hh-record-");
@@ -42,6 +42,14 @@ describe("snapshotFolder", () => {
   });
 });
 
+describe("briefMatch", () => {
+  it("skips front matter and placeholder-only lines, and cuts at a placeholder", () => {
+    expect(briefMatch("---\ntitle: x\n---\n\n{{language}}\n# Task: example {{x}}\nmore", "id")).toBe("# Task: example");
+    expect(briefMatch("# Task: plain\nbody", "id")).toBe("# Task: plain");
+    expect(briefMatch("{{only}}", "id")).toBe("id");
+  });
+});
+
 describe("Recorder", () => {
   it("records turns, links replies through next, writes and the closing note", async () => {
     const folder = path.join(root, "work");
@@ -57,8 +65,8 @@ describe("Recorder", () => {
     r.event({ type: "text", delta: "More here" });
     fs.rmSync(path.join(folder, "idea.md"));
     await r.turnEnded({ action: "example", phase: "run" });
-    r.note({ title: "Idea", summary: ["one"], decisions: [], files: [], open: [] });
     await r.turnEnded({ action: "example", phase: "close" });
+    r.note({ title: "Idea", summary: ["one"], decisions: [], files: [], open: [] });
 
     const [rec] = r.recordings();
     expect(recordingSchema.parse(rec)).toEqual(rec);
@@ -84,27 +92,64 @@ describe("Recorder", () => {
     await r.begin();
     r.event({ type: "text", delta: "A" });
     await r.turnEnded({ action: "one", phase: "run" });
-    r.note({ title: "cp", summary: [] });
+    // The real order: the turn ends (recordUsage), then its note is written.
     await r.turnEnded({ action: "one", phase: "checkpoint" });
+    r.note({ title: "cp", summary: [] });
     r.reply("*");
     r.event({ type: "text", delta: "B" });
     await r.turnEnded({ action: "one", phase: "run" });
     await r.turnEnded({ action: "one", phase: "close" });
+    r.note({ title: "final", summary: [] });
     r.event({ type: "text", delta: "C" });
     await r.turnEnded({ action: "two", phase: "run" });
     const recs = r.recordings();
     expect(recs.map((x) => x.action)).toEqual(["one", "two"]);
-    // The closing note may also come after the closing turn ended.
-    const late = new Recorder({ folder, toolFor, matchFor, recordedWith: "claude" });
-    await late.begin();
-    await late.turnEnded({ action: "one", phase: "run" });
-    await late.turnEnded({ action: "one", phase: "close" });
-    late.note({ title: "late", summary: [] });
-    expect(late.recordings()[0].turns[1].note).toEqual({ title: "late", summary: [] });
     expect(recs[0].turns.map((t) => t.id)).toEqual(["t1", "t2", "close"]);
     expect(recs[0].turns[0].next).toEqual({ "*": "t2" });
-    expect(recs[0].turns[2].note).toEqual({ title: "cp", summary: [] });
+    expect(recs[0].turns[1].note).toBeUndefined();
+    expect(recs[0].turns[2].note).toEqual({ title: "final", summary: [] });
     expect(recs[1].turns.map((t) => t.text)).toEqual(["C"]);
+  });
+
+  it("a note saved during a run turn belongs to that turn", async () => {
+    const folder = path.join(root, "work-runnote");
+    fs.mkdirSync(folder, { recursive: true });
+    const r = new Recorder({ folder, toolFor, matchFor, recordedWith: "claude" });
+    await r.begin();
+    await r.turnEnded({ action: "a", task: "k1", phase: "run" });
+    r.note({ title: "mid", summary: [] });
+    expect(r.recordings()[0].turns[0].note).toEqual({ title: "mid", summary: [] });
+  });
+
+  it("records only the first visit of an action, and says so once", async () => {
+    const folder = path.join(root, "work-twice");
+    fs.mkdirSync(folder, { recursive: true });
+    const warnings: string[] = [];
+    const r = new Recorder({ folder, toolFor, matchFor, recordedWith: "claude", warn: (m) => warnings.push(m) });
+    await r.begin();
+    r.event({ type: "text", delta: "first" });
+    await r.turnEnded({ action: "a", task: "k1", phase: "run" });
+    await r.turnEnded({ action: "a", task: "k1", phase: "close" });
+    r.note({ title: "one", summary: [] });
+    r.event({ type: "text", delta: "again" });
+    await r.turnEnded({ action: "a", task: "k2", phase: "run" });
+    await r.turnEnded({ action: "a", task: "k2", phase: "close" });
+    r.note({ title: "two", summary: [] });
+    const [rec] = r.recordings();
+    expect(rec.turns.map((t) => t.text)).toEqual(["first", ""]);
+    expect(rec.turns[1].note?.title).toBe("one");
+    expect(warnings).toHaveLength(1);
+  });
+
+  it("lists only skipped files that are new or changed during the run", async () => {
+    const folder = path.join(root, "work-skipped");
+    fs.mkdirSync(folder, { recursive: true });
+    fs.writeFileSync(path.join(folder, "old.png"), Buffer.from([0, 1]));
+    const r = new Recorder({ folder, toolFor, matchFor, recordedWith: "claude" });
+    await r.begin();
+    fs.writeFileSync(path.join(folder, "new.png"), Buffer.from([0, 2, 3]));
+    await r.turnEnded({ action: "a", task: "k", phase: "run" });
+    expect([...r.skipped]).toEqual(["new.png"]);
   });
 
   it("a failed turn is not recorded, and the retry is linked by the same reply", async () => {

@@ -30,7 +30,7 @@ import {
 import { readNotes, writeNote } from "@humanharness/workspace";
 import { CliError, type Io, UsageError, parseCommand } from "./cli";
 import { MANIFEST } from "./paths";
-import { Recorder } from "./record";
+import { Recorder, briefMatch } from "./record";
 import { type RunReport, UsageTally, formatReport } from "./report";
 import { TerminalView, errorMessage } from "./terminal";
 
@@ -136,10 +136,21 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
   const stateBlocks = new Set(Object.entries(allBlocks(harness)).filter(([, b]) => !b.visible).map(([name]) => name));
   const blocks = allBlocks(harness);
   const briefs = new Map<string, string>();
+  const briefTexts = new Map<string, string>();
   for (const id of Object.keys(harness.actions)) {
     const text = await fs.readFile(resolveInHarness(harness, harness.actions[id].prompt), "utf8").catch(() => "");
-    // The brief's first line, cut before any placeholder: a task's first message always contains it.
-    briefs.set(id, (text.split("\n").find((l) => l.trim()) ?? id).replace(/\{\{.*$/, "").trim() || id);
+    briefTexts.set(id, text);
+    // The brief's first line past any front matter, cut before a placeholder: a task's first message always contains it.
+    briefs.set(id, briefMatch(text, id));
+  }
+  if (o.record) {
+    // Replay picks a recording by its match inside the task's first message: warn when another brief holds it too.
+    const mine = briefs.get(o.action) ?? o.action;
+    for (const [other, text] of briefTexts) {
+      if (other !== o.action && text.includes(mine)) {
+        out.write(`Warning: "${mine}" also appears in the brief of "${other}", so replay could pick the wrong recording. Make the first line of the briefs distinct.\n`);
+      }
+    }
   }
   const recorder = o.record
     ? new Recorder({
@@ -147,6 +158,7 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
         toolFor: (name) => (Object.hasOwn(blocks, name) ? blockToolName(name, blocks[name]) : `show_${name}`),
         matchFor: (id) => briefs.get(id) ?? id,
         recordedWith: engine.id,
+        warn: (m) => out.write(`Note: ${m}\n`),
       })
     : undefined;
   await recorder?.begin();
@@ -177,10 +189,11 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
       view.event(e);
     },
     recordUsage: async (entry, meta, firstLimits) => {
-      await recorder?.turnEnded(meta, { failed: !!entry.error });
       tally.add(meta, entry.usage, !entry.error);
       const record = usageRecord(entry, engine.id, meta, firstLimits);
       if (record) await usageLog.append(record);
+      // After the usage is kept: a folder that can't be read must never lose it.
+      await recorder?.turnEnded(meta, { failed: !!entry.error }).catch((err) => out.write(`Warning: could not record a turn: ${err instanceof Error ? err.message : String(err)}\n`));
     },
   });
   const tasks: TaskManager = new TaskManager({
@@ -291,6 +304,7 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
       await rt?.close();
     }
     if (recorder) {
+      let written = 0;
       for (const rec of recorder.recordings()) {
         const file = mockFile(rec.action);
         if (rec.action !== o.action && (await exists(file))) {
@@ -298,11 +312,15 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
           continue;
         }
         await fs.mkdir(path.dirname(file), { recursive: true });
-        await fs.writeFile(file, JSON.stringify(rec, null, 2) + "\n");
+        // Atomic: a recording is never half written.
+        const tmp = `${file}.${process.pid}.tmp`;
+        await fs.writeFile(tmp, JSON.stringify(rec, null, 2) + "\n");
+        await fs.rename(tmp, file);
         out.write(`Recorded: ${file}\n`);
+        written++;
       }
-      if (recorder.skipped.size > 0) out.write(`Left out of the recording (binary or over 64 KB): ${[...recorder.skipped].join(", ")}\n`);
-      out.write("The recording holds what you typed and what the AI answered: review it before committing it.\n");
+      if (recorder.skipped.size > 0) out.write(`Left out of the recording (binary or over 64 KB, new or changed in this run): ${[...recorder.skipped].join(", ")}\n`);
+      if (written > 0) out.write("The recording holds what you typed and what the AI answered: review it before committing it.\n");
     }
     const report = tally.report({ folder, action: o.action, cost: action.cost, ...(lastNote ? { notePath: lastNote } : {}) });
     out.write(formatReport(report));

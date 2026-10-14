@@ -70,4 +70,54 @@ describe("fake-claude in mock mode", () => {
     expect(fs.readFileSync(report.notePath!, "utf8")).toContain('title: "Recorded idea"');
     expect(report.phases.run?.input).toBeGreaterThanOrEqual(1000);
   });
+
+  /** Runs one throwaway recording through runTask with the given typed input. */
+  async function playOne(name: string, turns: unknown[], typed: string, prep?: (folder: string) => void) {
+    const dir = path.join(root, `mock-${name}`);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, "example.json"), JSON.stringify({ version: 1, action: "example", match: "# Task: example", turns }));
+    const folder = path.join(root, `work-${name}`);
+    fs.mkdirSync(folder, { recursive: true });
+    prep?.(folder);
+    const out = memoryStream();
+    await runTask({
+      harnessDir,
+      action: "example",
+      folder,
+      input: lines(typed),
+      output: out.stream,
+      engineCommand: { command: fakeClaudeCommand(), env: { HH_FAKE_MOCK_DIR: dir, HH_FAKE_MOCK_STATE: path.join(root, `state-${name}.json`) } },
+    }).catch(() => undefined);
+    return { folder, text: out.text(), state: path.join(root, `state-${name}.json`) };
+  }
+
+  it("a write with content null deletes the file", async () => {
+    const { folder } = await playOne("delete", [{ id: "t1", text: "ok", delayMs: 0, writes: [{ path: "gone.md", content: null }] }], "q\n", (f) =>
+      fs.writeFileSync(path.join(f, "gone.md"), "x"),
+    );
+    expect(fs.existsSync(path.join(folder, "gone.md"))).toBe(false);
+  });
+
+  it("a long text with delayMs > 0 still arrives whole", async () => {
+    const long = Array.from({ length: 40 }, (_, i) => `word${i}`).join(" ");
+    const { text } = await playOne("long", [{ id: "t1", text: long, delayMs: 80 }], "q\n");
+    expect(text).toContain(long);
+  });
+
+  it("a block the ui server rejects shows an error instead of crashing", async () => {
+    const { text, state } = await playOne("badblock", [{ id: "t1", text: "hi", delayMs: 0, blocks: [{ tool: "no_such_tool", input: {} }] }], "q\n");
+    expect(text).toContain("mock: ");
+    expect(text).toContain("no_such_tool");
+    expect(fs.existsSync(state)).toBe(false);
+  });
+
+  it("refuses a write that leaves the folder through a symlink", async () => {
+    const outside = path.join(root, "outside");
+    fs.mkdirSync(outside, { recursive: true });
+    const { text } = await playOne("symlink", [{ id: "t1", text: "hi", delayMs: 0, writes: [{ path: "link/x.md", content: "nope" }] }], "q\n", (f) =>
+      fs.symlinkSync(outside, path.join(f, "link")),
+    );
+    expect(fs.existsSync(path.join(outside, "x.md"))).toBe(false);
+    expect(text).toContain("symlink");
+  });
 });

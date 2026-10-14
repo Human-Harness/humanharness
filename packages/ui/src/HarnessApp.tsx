@@ -9,6 +9,7 @@ import { useFolderMove } from "./BackupNotice";
 import { Home } from "./Home";
 import type { BlockProps } from "./Message";
 import { type SettingsTab, SettingsSheet } from "./SettingsSheet";
+import { SetupFlow } from "./SetupFlow";
 import type { StartViewCopy } from "./StartView";
 
 export interface HarnessAppProps {
@@ -26,7 +27,7 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
   const [state, setState] = useState<AppState | null>(null);
   const [i18n, setI18n] = useState<i18n | null>(null);
   const [failed, setFailed] = useState(false);
-  const [screen, setScreen] = useState<"home" | "work">("home");
+  const [screen, setScreen] = useState<"home" | "setup" | "work">("home");
   const [settings, setSettings] = useState<SettingsTab | null>(null);
   /** Background check of the configured engine (spec §9 "every start"). */
   const [status, setStatus] = useState<EngineStatus | null>(null);
@@ -34,8 +35,6 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
   const [limits, setLimits] = useState<LimitWindow[] | null>(null);
   /** Moving the folder: kept here so a move outlives Settings closing or a tab change. */
   const move = useFolderMove(client, setState);
-  /** Start was pressed before setup was complete: open the work screen as soon as it is. */
-  const startWhenReady = useRef(false);
   // Read through a ref so inline `locales` objects don't re-run the load.
   const localesRef = useRef(locales);
   localesRef.current = locales;
@@ -117,16 +116,6 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
     };
   }, [client, configured, engineId, screen]);
 
-  // First launch: once Settings has finished the setup, start.
-  useEffect(() => {
-    if (configured && startWhenReady.current) {
-      startWhenReady.current = false;
-      setSettings(null);
-      setScreen("work");
-      checkEngine();
-    }
-  }, [configured, checkEngine]);
-
   if (failed && i18n) {
     return (
       <>
@@ -146,14 +135,13 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
       </>
     );
 
-  const start = () => {
-    if (isConfigured(state.config)) return setScreen("work");
-    startWhenReady.current = true;
-    setSettings("engine");
-  };
   const closeSettings = () => {
-    startWhenReady.current = false;
     setSettings(null);
+    checkEngine();
+  };
+  // Leaving the setup flow either way: whatever it saved gets checked again.
+  const leaveSetup = (next: "home" | "work") => {
+    setScreen(next);
     checkEngine();
   };
 
@@ -176,6 +164,8 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
             onFixEngine={() => setSettings("engine")}
             onTurnOk={checkEngine}
           />
+        ) : screen === "setup" ? (
+          <SetupFlow client={client} state={state} onChange={setState} onCancel={() => leaveSetup("home")} onStart={() => leaveSetup("work")} />
         ) : (
           <Home
             state={state}
@@ -184,16 +174,28 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
             status={status}
             checkFailed={checkFailed}
             limits={limits}
-            onStart={start}
+            onStart={() => setScreen("work")}
+            onSetup={() => setScreen("setup")}
             onSettings={() => setSettings("general")}
             onEngine={() => setSettings("engine")}
             move={move}
           />
         )}
       </div>
-      {/* Until the setup flow lands, "Configurar" in Settings just closes the sheet. */}
       {settings && (
-        <SettingsSheet client={client} state={state} tab={settings} onTab={setSettings} onChange={setState} onClose={closeSettings} onSetup={closeSettings} move={move} />
+        <SettingsSheet
+          client={client}
+          state={state}
+          tab={settings}
+          onTab={setSettings}
+          onChange={setState}
+          onClose={closeSettings}
+          onSetup={() => {
+            setSettings(null);
+            setScreen("setup");
+          }}
+          move={move}
+        />
       )}
     </I18nextProvider>
   );

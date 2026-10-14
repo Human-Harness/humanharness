@@ -6,7 +6,21 @@
     "notConnected": "Not connected",
     "checking": "Checking…",
     "usage": "{{label}} · {{percent}}%",
-    "noEngine": "No AI engine yet"
+    "noEngine": "No AI engine yet",
+    "missing": {
+      "title": "Two steps before you start",
+      "folder": "Choose where your work is kept",
+      "engine": "Connect the AI engine",
+      "one": "One step left: {{step}}",
+      "step": {
+        "notice": "accept {{engine}}'s notice",
+        "not-installed": "install {{engine}}",
+        "outdated": "update {{engine}}",
+        "logged-out": "sign in to {{engine}} again",
+        "untested": "test {{engine}}",
+        "check-failed": "check {{engine}}"
+      }
+    }
   },
   "settings": {
     "title": "Settings",

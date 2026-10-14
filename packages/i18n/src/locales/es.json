@@ -6,7 +6,21 @@
     "notConnected": "Sin conectar",
     "checking": "Revisando…",
     "usage": "{{label}} · {{percent}} %",
-    "noEngine": "Todavía sin motor de IA"
+    "noEngine": "Todavía sin motor de IA",
+    "missing": {
+      "title": "Antes de empezar, dos pasos",
+      "folder": "Elegir dónde se guarda tu trabajo",
+      "engine": "Conectar el motor de IA",
+      "one": "Falta un paso: {{step}}",
+      "step": {
+        "notice": "aceptar el aviso de {{engine}}",
+        "not-installed": "instalar {{engine}}",
+        "outdated": "actualizar {{engine}}",
+        "logged-out": "volver a iniciar sesión en {{engine}}",
+        "untested": "probar {{engine}}",
+        "check-failed": "revisar {{engine}}"
+      }
+    }
   },
   "settings": {
     "title": "Ajustes",

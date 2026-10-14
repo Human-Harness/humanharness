@@ -273,7 +273,7 @@ describe("BackupNotice", () => {
     const client = localClient();
     await renderIn(
       "en",
-      <Home state={client.state} client={client} onChange={() => {}} status={null} limits={null} onStart={() => {}} onSettings={() => {}} onEngine={() => {}} />,
+      <Home state={client.state} client={client} onChange={() => {}} status={null} limits={null} onStart={() => {}} onSetup={() => {}} onSettings={() => {}} onEngine={() => {}} />,
     );
     expect(screen.getByRole("button", { name: "Move to Google Drive" })).toBeTruthy();
   });

@@ -85,6 +85,11 @@ input[type="text"], input:not([type]) { font: inherit; height: 28px; padding: 0 
 .hh-home-logo { width: 112px; height: 112px; object-fit: contain; }
 .hh-home-name { font-family: var(--hh-display); font-weight: 600; font-size: 34px; }
 .hh-home-tagline { color: var(--hh-slate); font-size: 15px; margin-bottom: 8px; }
+/* Not ready yet (spec 3f §1): what is missing, above "Set up <name>". */
+.hh-missing { display: grid; gap: 8px; min-width: min(320px, 100%); max-width: 460px; box-sizing: border-box; padding: 12px 14px; border: 1px solid var(--hh-line); border-radius: 10px; background: var(--hh-surface); color: var(--hh-slate); text-align: left; }
+.hh-missing h2 { font-size: 13px; font-weight: 600; color: var(--hh-ink); }
+.hh-missing ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.hh-missing li { display: flex; align-items: center; gap: 9px; }
 .hh-pill { height: 30px; border-radius: 15px; border-color: var(--hh-line); gap: 8px; }
 .hh-pill img { width: 18px; height: 18px; }
 .hh-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--hh-muted); }

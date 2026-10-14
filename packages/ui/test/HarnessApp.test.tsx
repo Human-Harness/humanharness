@@ -21,11 +21,21 @@ const Note = ({ data, respond }: BlockProps) => (
   </div>
 );
 
-/** Renders the app and goes from Home to the work screen, as a returning user does. */
+/** Renders the app and goes from Home to the work screen, as a returning user does (Start waits for the engine check). */
 async function startWork(ui: ReactElement) {
   const result = render(ui);
-  fireEvent.click(await screen.findByRole("button", { name: /^(Start|Iniciar) Demo$/ }));
+  const start = (await screen.findByRole("button", { name: /^(Start|Iniciar) Demo$/ })) as HTMLButtonElement;
+  await waitFor(() => expect(start.disabled).toBe(false));
+  fireEvent.click(start);
   return result;
+}
+
+/** On the work screen, the engine develops a problem that the next background check (Settings closing) finds. */
+async function breakEngine(client: FakeClient, status: Partial<FakeClient["status"]>) {
+  await screen.findByPlaceholderText(/Write a message…|Escribí un mensaje…/);
+  client.status = { ...client.status, ...status };
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  fireEvent.click(screen.getByRole("button", { name: "Done" }));
 }
 
 describe("HarnessApp", () => {
@@ -373,13 +383,52 @@ describe("HarnessApp", () => {
     expect(container.querySelector("img.hh-home-logo")?.getAttribute("src")).toBe("data:image/svg+xml;base64,PHN2Zy8+");
   });
 
-  it("on first launch, Start opens Settings → Engine, which leads to setup and closes", async () => {
-    const client = new FakeClient();
+  it("on first launch, Set up opens the setup flow, and after it Start opens the work screen", async () => {
+    const client = new FakeClient({ language: "en" });
     render(<HarnessApp client={client} />);
-    fireEvent.click(await screen.findByRole("button", { name: /^(Start|Iniciar) Demo$/ }));
-    expect(screen.getByRole("tab", { name: /Engine|Motor/ }).getAttribute("aria-selected")).toBe("true");
-    fireEvent.click(screen.getByRole("button", { name: /^(Set up|Configurar) Demo$/ }));
+    expect(await screen.findByText("Two steps before you start")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Start Demo" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Set up Demo" }));
+    await screen.findByRole("heading", { name: "Where should we keep your work?" });
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await screen.findByRole("heading", { name: "Which AI does Demo use?" });
+    const next = screen.getByRole("button", { name: "Next" }) as HTMLButtonElement;
+    await waitFor(() => expect(next.disabled).toBe(false));
+    fireEvent.click(next);
+    fireEvent.click(await screen.findByRole("button", { name: "Start Demo" }));
+    await screen.findByPlaceholderText("Write a message…");
+    expect(client.state.config).toEqual({ language: "en", folder: "/Users/me/Documents/Demo", engineId: "claude" });
+  });
+
+  it("Cancel in the setup flow goes back Home, which says what is still missing", async () => {
+    render(<HarnessApp client={new FakeClient({ language: "en" })} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Set up Demo" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Next" }));
+    await screen.findByRole("heading", { name: "Which AI does Demo use?" });
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(await screen.findByText("Two steps before you start")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Set up Demo" })).toBeTruthy();
+  });
+
+  it("a configured app whose engine is signed out offers Set up, not Start", async () => {
+    const client = new FakeClient(ready);
+    client.status = { ...client.status, loggedIn: false };
+    render(<HarnessApp client={client} />);
+    expect(await screen.findByText("One step left: sign in to Claude again")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Set up Demo" }));
+    // The folder is saved: the flow starts at the engine.
+    await screen.findByRole("heading", { name: "Which AI does Demo use?" });
+    await screen.findByRole("heading", { name: "Sign in to Claude" });
+  });
+
+  it("the Settings empty state's Set up closes the sheet and opens the setup flow", async () => {
+    render(<HarnessApp client={new FakeClient({ language: "en" })} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Engine" }));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Set up Demo" }));
     expect(screen.queryByRole("dialog")).toBeNull();
+    await screen.findByRole("heading", { name: "Where should we keep your work?" });
   });
 
   it("the gear is a labelled icon button on Home and on the work screen", async () => {
@@ -607,8 +656,8 @@ describe("HarnessApp", () => {
 
   it("shows a card for a signed-out engine whose button opens the sign-in step", async () => {
     const client = new FakeClient(ready);
-    client.status = { ...client.status, loggedIn: false };
     await startWork(<HarnessApp client={client} />);
+    await breakEngine(client, { loggedIn: false });
     await screen.findByText("Your Claude session ended. Sign in again to continue.");
     fireEvent.click(screen.getByRole("button", { name: "Sign in again" }));
     await screen.findByRole("heading", { name: "Sign in to Claude" });
@@ -616,8 +665,8 @@ describe("HarnessApp", () => {
 
   it("checks the engine again after a turn succeeds, so a fixed problem's card goes away", async () => {
     const client = new FakeClient(ready);
-    client.status = { ...client.status, loggedIn: false };
     await startWork(<HarnessApp client={client} />);
+    await breakEngine(client, { loggedIn: false });
     await screen.findByText("Your Claude session ended. Sign in again to continue.");
     client.status = { ...client.status, loggedIn: true };
     await typeAndSend(client, "hi");
@@ -656,24 +705,24 @@ describe("HarnessApp", () => {
 
   it("shows one fix card when the last turn failed with the problem the background check found", async () => {
     const client = new FakeClient(ready);
-    client.status = { ...client.status, loggedIn: false };
     client.chat = [
       { id: "1", role: "user", text: "hi", blocks: [], activities: [], at: "t" },
       { id: "2", role: "assistant", text: "", blocks: [], activities: [], at: "t", error: { code: "session-expired" } },
     ];
     await startWork(<HarnessApp client={client} />);
+    await breakEngine(client, { loggedIn: false });
     await screen.findByText("Your Claude session ended. Sign in again to continue.");
     expect(screen.getAllByRole("button", { name: "Sign in again" })).toHaveLength(1);
   });
 
   it("still shows the background check's card when the last turn failed with a different problem", async () => {
     const client = new FakeClient(ready);
-    client.status = { ...client.status, outdated: true };
     client.chat = [
       { id: "1", role: "user", text: "hi", blocks: [], activities: [], at: "t" },
       { id: "2", role: "assistant", text: "", blocks: [], activities: [], at: "t", error: { code: "session-expired" } },
     ];
     await startWork(<HarnessApp client={client} />);
+    await breakEngine(client, { outdated: true });
     await screen.findByText("Claude needs an update.");
     expect(screen.getByText("Your Claude session ended. Sign in again to continue.")).toBeTruthy();
   });

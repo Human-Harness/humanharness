@@ -143,10 +143,15 @@ export function SetupFlow({
         )}
       </main>
       <footer className="hh-setup-footer">
+        {/* Not while the engine is being saved: its answer would move the flow on from wherever it went. */}
         {step === "engine" && withFolder ? (
-          <button onClick={() => setStep("folder")}>{t("setupFlow.back")}</button>
+          <button disabled={saving} onClick={() => setStep("folder")}>
+            {t("setupFlow.back")}
+          </button>
         ) : (
-          <button onClick={onCancel}>{t("setupFlow.cancel")}</button>
+          <button disabled={saving} onClick={onCancel}>
+            {t("setupFlow.cancel")}
+          </button>
         )}
         {/* The folder step's Next submits its form from here, so it sits where the engine step's does. */}
         {step === "folder" && (

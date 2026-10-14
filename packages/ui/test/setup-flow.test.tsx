@@ -112,6 +112,27 @@ describe("SetupFlow", () => {
     expect(screen.getByRole("heading", { name: "Which AI does Demo use?" })).toBeTruthy();
   });
 
+  it("keeps Back off while the engine is being saved, so the flow can't jump from the folder step", async () => {
+    const client = new FakeClient();
+    await renderIn("en", <Flow client={client} />);
+    fireEvent.click(next());
+    await screen.findByRole("heading", { name: "Which AI does Demo use?" });
+    await waitFor(() => expect(next().disabled).toBe(false));
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const save = client.saveConfig.bind(client);
+    client.saveConfig = async (patch) => {
+      await gate;
+      return save(patch);
+    };
+    fireEvent.click(next());
+    const back = screen.getByRole("button", { name: "Back" }) as HTMLButtonElement;
+    expect(back.disabled).toBe(true);
+    expect(next().disabled).toBe(true);
+    await act(async () => release());
+    await screen.findByRole("heading", { name: "All set" });
+  });
+
   it("does not save the engine again when it is already the saved one", async () => {
     const client = new FakeClient({ language: "en", folder: "/Users/me/Documents/Demo", engineId: "claude" });
     client.saveError = new Error("should not save");

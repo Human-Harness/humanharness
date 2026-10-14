@@ -1,0 +1,173 @@
+import { useEffect, useState } from "react";
+import type { TFunction } from "i18next";
+import { useTranslation } from "react-i18next";
+import type { AppState, EngineOption, HarnessClient, LimitWindow, UsageSummary } from "./client";
+import { uiLanguage } from "./FolderStep";
+import { QUESTIONS, taskRows } from "./ModelsTab";
+import { WARN_AT, compactTokens, compareTokens, formatReset, percent, timesFit, timesLeft } from "./usage";
+import { useCurrentWindows } from "./UsageMeter";
+
+const EMPTY: UsageSummary = { limits: null, estimates: {}, tokens: {} };
+
+/**
+ * Settings › Uso (spec 2026-10-14-usage-tab-design.md): what the engine reported about the plan, and
+ * how much each topic uses, measured from the local log. The app knows nothing about plans.
+ */
+export function UsageTab({ client, state }: { client: HarnessClient; state: AppState }) {
+  const { t } = useTranslation();
+  const [usage, setUsage] = useState<UsageSummary | null>(null);
+  useEffect(() => {
+    client.getUsage().then(setUsage, () => setUsage(EMPTY));
+  }, [client]);
+  const limits = useCurrentWindows(usage?.limits ?? null);
+  const engine = state.engines.find((e) => e.id === state.config.engineId);
+  // The mock engine reports no limits, so its table compares tokens.
+  const reportsLimits = Boolean(engine?.reportsLimits && !engine.mock);
+  const primary = usage?.primary ? limits?.find((w) => w.kind === usage.primary) : undefined;
+  const near = primary !== undefined && primary.utilization >= WARN_AT;
+  const showPlans = Boolean(engine?.plansUrl && (near || !reportsLimits));
+
+  return (
+    <div className="hh-tab">
+      <h3>{t("usage.planTitle")}</h3>
+      <PlanSection engine={engine} limits={limits} />
+      <h3>{t("usage.actionsTitle")}</h3>
+      {usage && <TopicTable state={state} usage={usage} reportsLimits={reportsLimits} near={near ? primary : undefined} />}
+      {showPlans && engine && (
+        <div className="hh-rows">
+          <div className="hh-row">
+            <span>{t("usage.plans", { provider: engine.provider })}</span>
+            <a className="hh-button" href={engine.plansUrl} target="_blank" rel="noreferrer">
+              {t("usage.seePlans", { provider: engine.provider })}
+            </a>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const windowName = (t: TFunction, kind: string): string => t(`usage.${kind}`, { defaultValue: t("usage.limit") });
+
+function PlanSection({ engine, limits }: { engine?: EngineOption; limits: LimitWindow[] | null }) {
+  const { t, i18n } = useTranslation();
+  if (!engine) return <p className="hh-caption">{t("home.noEngine")}</p>;
+  if (engine.mock) return <p className="hh-caption">{t("usage.mock")}</p>;
+  if (!engine.reportsLimits) return <p className="hh-caption">{t("usage.noLimitsPlan", { engine: engine.name })}</p>;
+  if (!limits?.length) return <p className="hh-caption">{t("usage.notYet", { engine: engine.name })}</p>;
+  return (
+    <>
+      <div className="hh-rows">
+        {limits.map((w) => {
+          const warn = w.utilization >= WARN_AT;
+          return (
+            <div key={w.kind} className="hh-row hh-usage-window">
+              <span>{windowName(t, w.kind)}</span>
+              <span className={warn ? "hh-warn" : undefined}>{t("usage.used", { percent: percent(w.utilization) })}</span>
+              <Bar share={w.utilization} warn={warn} />
+              <span className="hh-caption">{t("usage.renews", { time: formatReset(w.resetsAt, i18n.language) })}</span>
+            </div>
+          );
+        })}
+      </div>
+      <p className="hh-caption">{t("usage.reportedBy", { engine: engine.name })}</p>
+    </>
+  );
+}
+
+function Bar({ share, warn }: { share: number; warn?: boolean }) {
+  return (
+    <span className={warn ? "hh-usage-bar warn" : "hh-usage-bar"} aria-hidden="true">
+      <span style={{ width: `${percent(share)}%` }} />
+    </span>
+  );
+}
+
+function TopicTable({ state, usage, reportsLimits, near }: { state: AppState; usage: UsageSummary; reportsLimits: boolean; near?: LimitWindow }) {
+  const { t, i18n } = useTranslation();
+  const lang = uiLanguage(state, i18n.language);
+  const rows = taskRows(state, lang, { key: QUESTIONS, label: t("models.questions") });
+  const kind = usage.primary;
+  const measured = rows.filter((r) => (reportsLimits ? usage.estimates[r.key] : usage.tokens[r.key]) !== undefined);
+  const tokens = measured.map((r) => usage.tokens[r.key]).filter((n) => n !== undefined);
+  const average = tokens.length ? tokens.reduce((a, b) => a + b, 0) / tokens.length : 0;
+  const largest = Math.max(0, ...tokens);
+
+  /** Not measured yet: the harness's cost hint (free questions have none). */
+  const hint = (key: string) => {
+    const cost = state.actions[key]?.cost;
+    const text = cost ? t(`usage.hint.${cost}`) : "—";
+    return reportsLimits ? `${text} · ${t("usage.afterUse")}` : text;
+  };
+  const fits = (estimate: number) => {
+    if (near) {
+      const n = timesLeft(1 - near.utilization, estimate);
+      return n === null ? t("usage.timesMany") : n === 0 ? t("usage.noneLeft") : t("usage.timesLeft", { count: n });
+    }
+    const n = timesFit(estimate);
+    return n === null ? t("usage.timesMany") : t("usage.times", { count: n });
+  };
+  const comparison = (n: number) => {
+    const c = compareTokens(n, average);
+    if (c.kind !== "times") return t(`usage.compare.${c.kind}`);
+    const times = new Intl.NumberFormat(i18n.language, { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(c.times);
+    return t("usage.compare.times", { times });
+  };
+
+  let caption: string;
+  if (measured.length === 0) caption = t("usage.captionNone");
+  else if (reportsLimits) caption = t("usage.captionLimits", { window: kind ? t(`usage.long.${kind}`, { defaultValue: windowName(t, kind) }) : "" });
+  else caption = t("usage.captionTokens");
+
+  return (
+    <>
+      <table className="hh-usage-table">
+        <thead>
+          <tr>
+            <th scope="col">{t("usage.col.topic")}</th>
+            <th scope="col">{t("usage.col.each")}</th>
+            {reportsLimits && <th scope="col">{near ? t("usage.col.until", { time: formatReset(near.resetsAt, i18n.language) }) : t("usage.col.fits")}</th>}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => {
+            const estimate = usage.estimates[row.key];
+            const n = usage.tokens[row.key];
+            const heavy = state.actions[row.key]?.cost === "heavy";
+            let cells;
+            if (reportsLimits && estimate !== undefined) {
+              const share = Math.max(1, percent(estimate));
+              const short = kind ? t(`usage.short.${kind}`, { defaultValue: "" }) : "";
+              cells = (
+                <>
+                  <td className={heavy ? "hh-warn" : undefined}>{short ? t("usage.share", { percent: share, window: short }) : t("usage.shareBare", { percent: share })}</td>
+                  <td>{fits(estimate)}</td>
+                </>
+              );
+            } else if (!reportsLimits && n !== undefined) {
+              cells = (
+                <td title={t("usage.tokensEach", { tokens: compactTokens(n, i18n.language) })}>
+                  <Bar share={largest > 0 ? n / largest : 0} />
+                  <span>{comparison(n)}</span>
+                </td>
+              );
+            } else {
+              cells = (
+                <td className="hh-caption" colSpan={reportsLimits ? 2 : 1}>
+                  {hint(row.key)}
+                </td>
+              );
+            }
+            return (
+              <tr key={row.key}>
+                <th scope="row">{row.label}</th>
+                {cells}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      <p className="hh-caption">{caption}</p>
+    </>
+  );
+}

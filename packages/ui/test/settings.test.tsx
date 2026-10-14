@@ -4,7 +4,6 @@ import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AppState } from "../src/client";
 import { type SettingsTab, SettingsSheet } from "../src/SettingsSheet";
-import { formatReset } from "../src/usage";
 import { FakeClient } from "./fake-client";
 import { renderIn } from "./render";
 
@@ -210,52 +209,5 @@ describe("SettingsSheet", () => {
     expect(screen.queryByRole("group", { name: "Motores de IA" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Configurar Demo" }));
     expect(onSetup).toHaveBeenCalledTimes(1);
-  });
-
-  it("Usage: shows each plan window with its reset, and each action's cost and estimate", async () => {
-    const client = new FakeClient(ready);
-    const reset = new Date(Date.now() + 2 * 3600_000).toISOString();
-    client.usage = { limits: [{ kind: "five_hour", utilization: 0.84, resetsAt: reset }], estimates: { tidy: 0.08 }, tokens: {} };
-    client.state.actions = {
-      tidy: { label: { es: "Ordenar", en: "Tidy up" }, cost: "heavy" },
-      note: { label: { es: "Nota", en: "Quick note" }, cost: "light" },
-    };
-    await renderIn("en", <Sheet client={client} initialTab="usage" />);
-    expect((await screen.findByText("5 h: 84% used")).className).toBe("hh-warn");
-    expect(screen.getByText(`Resets ${formatReset(reset, "en")}`)).toBeTruthy();
-    expect(screen.getByText("Heavy · Usually about 8% of the 5-hour window")).toBeTruthy();
-    expect(screen.getByText("Light")).toBeTruthy();
-  });
-
-  it("Usage: leaves out plan windows that have already reset", async () => {
-    const client = new FakeClient(ready);
-    const past = new Date(Date.now() - 60_000).toISOString();
-    const later = new Date(Date.now() + 4 * 86400_000).toISOString();
-    client.usage = {
-      limits: [
-        { kind: "five_hour", utilization: 0.97, resetsAt: past },
-        { kind: "seven_day", utilization: 0.3, resetsAt: later },
-      ],
-      estimates: {}, tokens: {},
-    };
-    await renderIn("en", <Sheet client={client} initialTab="usage" />);
-    await screen.findByText("week: 30% used");
-    expect(screen.queryByText(/5 h:/)).toBeNull();
-  });
-
-  it("Usage: the test engine uses none of the plan", async () => {
-    const client = new FakeClient(ready);
-    client.state.engines = [{ ...client.state.engines[0], name: "Simulated AI (mock)", logo: undefined, reportsLimits: false, mock: true }];
-    await renderIn("en", <Sheet client={client} initialTab="usage" />);
-    await screen.findByText("Test mode: uses none of your plan.");
-    expect(screen.queryByText(/doesn't report/)).toBeNull();
-  });
-
-  it("Usage: says when the engine doesn't report limits, and when the app has no actions", async () => {
-    const client = new FakeClient({ ...ready, engineId: "codex" });
-    client.state.engines = [{ ...client.state.engines[0], id: "codex", name: "Codex", provider: "OpenAI", reportsLimits: false }];
-    await renderIn("en", <Sheet client={client} initialTab="usage" />);
-    await screen.findByText("Codex doesn't report your plan's limits.");
-    expect(screen.getByText("This app doesn't declare any actions.")).toBeTruthy();
   });
 });

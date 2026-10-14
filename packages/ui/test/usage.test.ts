@@ -1,6 +1,19 @@
 import { describe, expect, it } from "vitest";
 import type { ChatEntry } from "../src/client";
-import { HEAVY_DEFAULT, compactTokens, currentWindows, fiveHour, formatReset, lastTurnTokens, percent, preflight, resetWindow } from "../src/usage";
+import {
+  HEAVY_DEFAULT,
+  compactTokens,
+  compareTokens,
+  currentWindows,
+  fiveHour,
+  formatReset,
+  lastTurnTokens,
+  percent,
+  preflight,
+  resetWindow,
+  timesFit,
+  timesLeft,
+} from "../src/usage";
 
 const w = (kind: string, utilization: number, resetsAt = "2026-10-11T15:00:00.000Z") => ({ kind, utilization, resetsAt });
 
@@ -83,5 +96,33 @@ describe("formatting", () => {
     const later = Date.parse("2026-10-12T00:00:00.000Z");
     expect(resetWindow([w("five_hour", 1), w("seven_day", 0.4, "2026-10-14T15:00:00.000Z")], later)?.kind).toBe("seven_day");
     expect(resetWindow([w("five_hour", 1)], later)).toBeUndefined();
+  });
+});
+
+describe("Settings › Uso number rules", () => {
+  it("rounds how many times a topic fits in a whole window, and says more than 50 past that", () => {
+    expect(timesFit(0.08)).toBe(13);
+    expect(timesFit(0.9)).toBe(1);
+    expect(timesFit(0.02)).toBe(50);
+    expect(timesFit(0.019)).toBeNull();
+    expect(timesFit(0)).toBeNull();
+  });
+
+  it("floors how many more times fit in what is left", () => {
+    expect(timesLeft(0.15, 0.05)).toBe(3);
+    expect(timesLeft(0.3, 0.1)).toBe(3);
+    expect(timesLeft(0.15, 0.08)).toBe(1);
+    expect(timesLeft(0.05, 0.08)).toBe(0);
+    expect(timesLeft(0.15, 0.002)).toBeNull();
+  });
+
+  it("compares a topic's tokens with the average", () => {
+    expect(compareTokens(600, 1000)).toEqual({ kind: "half" });
+    expect(compareTokens(100, 1000)).toEqual({ kind: "half" });
+    expect(compareTokens(700, 1000)).toEqual({ kind: "less" });
+    expect(compareTokens(750, 1000)).toEqual({ kind: "average" });
+    expect(compareTokens(1330, 1000)).toEqual({ kind: "average" });
+    expect(compareTokens(1335, 1000)).toEqual({ kind: "more" });
+    expect(compareTokens(1340, 1000)).toEqual({ kind: "times", times: 1.34 });
   });
 });

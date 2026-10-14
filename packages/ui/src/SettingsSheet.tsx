@@ -3,12 +3,11 @@ import { useTranslation } from "react-i18next";
 import type { Language } from "@humanharness/harness-sdk";
 import { BackupNotice, type FolderMove, MovePlaces, needsBackupNotice, useFolderMove } from "./BackupNotice";
 import { EngineIcon, Segmented } from "./chrome";
-import { type AppConfig, type AppState, type Appearance, type HarnessClient, type RunningSetup, type UsageSummary, isConfigured } from "./client";
+import { type AppConfig, type AppState, type Appearance, type HarnessClient, type RunningSetup, isConfigured } from "./client";
 import { EngineTab } from "./EngineTab";
 import { uiLanguage } from "./FolderStep";
 import { ModelsTab } from "./ModelsTab";
-import { WARN_AT, formatReset, percent } from "./usage";
-import { useCurrentWindows } from "./UsageMeter";
+import { UsageTab } from "./UsageTab";
 
 export type SettingsTab = "general" | "engine" | "models" | "usage";
 const TABS: SettingsTab[] = ["general", "engine", "models", "usage"];
@@ -303,63 +302,6 @@ function NotConfigured({ state, onSetup }: { state: AppState; onSetup: () => voi
       <button className="hh-primary" onClick={onSetup}>
         {t("setupFlow.configure", { name })}
       </button>
-    </div>
-  );
-}
-
-function UsageTab({ client, state }: { client: HarnessClient; state: AppState }) {
-  const { t, i18n } = useTranslation();
-  const lang = uiLanguage(state, i18n.language);
-  const [usage, setUsage] = useState<UsageSummary | null>(null);
-  useEffect(() => {
-    client.getUsage().then(setUsage, () => setUsage({ limits: null, estimates: {}, tokens: {} }));
-  }, [client]);
-  const limits = useCurrentWindows(usage?.limits ?? null);
-  const engine = state.engines.find((e) => e.id === state.config.engineId);
-  const actions = Object.entries(state.actions);
-
-  let plan;
-  if (!engine) plan = <p className="hh-caption">{t("home.noEngine")}</p>;
-  else if (engine.mock) plan = <p className="hh-caption">{t("usage.mock")}</p>;
-  else if (!engine.reportsLimits) plan = <p className="hh-caption">{t("usage.noLimits", { engine: engine.name })}</p>;
-  else if (!limits?.length) plan = <p className="hh-caption">{t("usage.unknown")}</p>;
-  else
-    plan = (
-      <div className="hh-rows">
-        {limits.map((w) => (
-          <div key={w.kind} className="hh-row">
-            <span className={w.utilization >= WARN_AT ? "hh-warn" : undefined}>
-              {t("usage.window", { label: t(`usage.${w.kind}`, { defaultValue: w.kind }), percent: percent(w.utilization) })}
-            </span>
-            <span className="hh-caption">{t("usage.resetsFull", { time: formatReset(w.resetsAt, i18n.language) })}</span>
-          </div>
-        ))}
-      </div>
-    );
-
-  return (
-    <div className="hh-tab">
-      <h3>{t("usage.planTitle")}</h3>
-      {plan}
-      <h3>{t("usage.actionsTitle")}</h3>
-      {actions.length === 0 ? (
-        <p className="hh-caption">{t("usage.noActions")}</p>
-      ) : (
-        <div className="hh-rows">
-          {actions.map(([id, action]) => {
-            const estimate = usage?.estimates[id];
-            return (
-              <div key={id} className="hh-row">
-                <span>{action.label[lang]}</span>
-                <span className={action.cost === "heavy" ? "hh-warn" : "hh-caption"}>
-                  {t(`usage.cost.${action.cost}`)}
-                  {estimate !== undefined ? ` · ${t("usage.estimate", { percent: Math.max(1, percent(estimate)) })}` : ""}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      )}
     </div>
   );
 }

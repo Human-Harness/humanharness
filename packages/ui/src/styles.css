@@ -133,6 +133,16 @@ input[type="text"], input:not([type]) { font: inherit; height: 28px; padding: 0 
 .hh-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border-top: 1px solid var(--hh-line); }
 .hh-row:first-child { border-top: none; }
 .hh-row-label { color: var(--hh-slate); }
+/* Settings › Uso: plan windows with a bar, and the topic table in the look of .hh-rows. */
+.hh-usage-window > :first-child { flex: 1; }
+.hh-usage-bar { display: inline-block; width: 64px; height: 4px; border-radius: 2px; background: var(--hh-line); overflow: hidden; flex-shrink: 0; }
+.hh-usage-bar > span { display: block; height: 100%; background: var(--hh-slate); }
+.hh-usage-bar.warn > span { background: var(--hh-warn); }
+.hh-usage-table { width: 100%; border-collapse: separate; border-spacing: 0; background: var(--hh-surface); border: 1px solid var(--hh-line); border-radius: 10px; }
+.hh-usage-table th, .hh-usage-table td { padding: 10px 12px; text-align: left; vertical-align: middle; border-top: 1px solid var(--hh-line); }
+.hh-usage-table thead th { border-top: none; color: var(--hh-muted); font-size: 12px; font-weight: 400; }
+.hh-usage-table tbody th { font-weight: 400; }
+.hh-usage-table td .hh-usage-bar { margin-right: 8px; vertical-align: middle; }
 .hh-onboarding { display: grid; gap: 10px; justify-items: start; }
 .hh-onboarding pre { max-height: 160px; overflow: auto; font-size: 11px; color: var(--hh-muted); white-space: pre-wrap; }
 .hh-places { display: grid; gap: 6px; width: 100%; }

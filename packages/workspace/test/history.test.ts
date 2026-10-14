@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import git from "isomorphic-git";
 import { History, parseCommitMessage, withTrailer } from "../src";
 
@@ -442,8 +442,122 @@ describe.skipIf(process.platform === "win32")("History restore and symlinks", ()
     fs.rmSync(link(".harness/notes"), { recursive: true });
     fs.symlinkSync(outside, link(".harness/notes"));
 
-    await h.restore(before, "undo");
+    expect((await h.restoreReport(before, "undo")).skipped).toEqual([".harness/notes/n.md"]);
     expect(fs.readdirSync(outside)).toEqual([]);
+  });
+
+  it("goes from a real folder to a link to it and back without writing outside", async () => {
+    write("d/x.md", "mine");
+    const real = (await history.save("real"))!;
+    fs.rmSync(link("d"), { recursive: true });
+    fs.symlinkSync(outside, link("d"));
+    const linked = (await history.save("linked"))!;
+
+    expect((await history.restoreReport(real, "back")).skipped).toEqual([]);
+    expect(fs.lstatSync(link("d")).isDirectory()).toBe(true);
+    expect(read("d/x.md")).toBe("mine");
+    expect(fs.readdirSync(outside)).toEqual([]);
+
+    expect((await history.restoreReport(linked, "forth")).skipped).toEqual([]);
+    expect(fs.readlinkSync(link("d"))).toBe(outside);
+    expect(fs.readdirSync(outside)).toEqual([]);
+  });
+
+  it("recreates a folder link over a real folder of the same name, leaving the outside file alone", async () => {
+    fs.writeFileSync(path.join(outside, "x.md"), "keep");
+    fs.symlinkSync(outside, link("d"));
+    const before = (await history.save("linked"))!;
+    fs.rmSync(link("d"));
+    write("d/x.md", "mine");
+    await history.save("real");
+
+    await history.restore(before, "undo");
+    expect(fs.readlinkSync(link("d"))).toBe(outside);
+    expect(fs.readFileSync(path.join(outside, "x.md"), "utf8")).toBe("keep");
+  });
+
+  it("keeps the exec bit when it recreates a file", async () => {
+    write("run.sh", "echo");
+    fs.chmodSync(link("run.sh"), 0o755);
+    const before = (await history.save("before"))!;
+    fs.rmSync(link("run.sh"));
+
+    await history.restore(before, "undo");
+    expect(fs.statSync(link("run.sh")).mode & 0o111).not.toBe(0);
+  });
+
+  it("restores when the folder itself is reached through a link", async () => {
+    const real = fs.mkdtempSync(path.join(root, "real-"));
+    const viaLink = path.join(outside, "folder-link");
+    fs.symlinkSync(real, viaLink);
+    const h = new History(viaLink, path.join(real, "..", `${path.basename(real)}.git`));
+    await h.init();
+    fs.writeFileSync(path.join(real, "a.md"), "1");
+    fs.mkdirSync(path.join(real, "dir"));
+    fs.writeFileSync(path.join(real, "dir", "b.md"), "b");
+    const before = (await h.save("before"))!;
+    fs.writeFileSync(path.join(real, "a.md"), "2");
+    fs.rmSync(path.join(real, "dir"), { recursive: true });
+
+    expect((await h.restoreReport(before, "undo")).skipped).toEqual([]);
+    expect(fs.readFileSync(path.join(real, "a.md"), "utf8")).toBe("1");
+    expect(fs.readFileSync(path.join(real, "dir", "b.md"), "utf8")).toBe("b");
+  });
+
+  it("skips a file or link whose place is now a folder, and restores the rest", async () => {
+    write("a.md", "1");
+    write("b.md", "1");
+    fs.symlinkSync("b.md", link("l"));
+    const before = (await history.save("before"))!;
+    fs.rmSync(link("a.md"));
+    fs.rmSync(link("l"));
+    write("a.md/.DS_Store", "x");
+    write("l/.DS_Store", "x");
+    write("b.md", "2");
+
+    const { sha, skipped } = await history.restoreReport(before, "undo");
+    expect(sha).toMatch(/^[0-9a-f]{40}$/);
+    expect(skipped).toEqual(["a.md", "l"]);
+    expect(read("b.md")).toBe("1");
+    expect(fs.lstatSync(link("a.md")).isDirectory()).toBe(true);
+  });
+
+  it("skips a link it can't create and restores the rest", async () => {
+    fs.symlinkSync("b.md", link("l"));
+    write("b.md", "1");
+    const before = (await history.save("before"))!;
+    fs.rmSync(link("l"));
+    write("b.md", "2");
+    const spy = vi.spyOn(fs.promises, "symlink").mockRejectedValue(Object.assign(new Error("EPERM"), { code: "EPERM" }));
+    try {
+      const { skipped } = await history.restoreReport(before, "undo");
+      expect(skipped).toEqual(["l"]);
+      expect(read("b.md")).toBe("1");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("skips a file whose folder is swapped for a link right after it is made", async () => {
+    write("d/x.md", "mine");
+    const before = (await history.save("before"))!;
+    fs.rmSync(link("d"), { recursive: true });
+    const mkdir = fs.promises.mkdir.bind(fs.promises);
+    const spy = vi.spyOn(fs.promises, "mkdir").mockImplementation(async (dir, options) => {
+      const made = await mkdir(dir, options);
+      if (dir === link("d")) {
+        fs.rmdirSync(link("d"));
+        fs.symlinkSync(outside, link("d"));
+      }
+      return made;
+    });
+    try {
+      const { skipped } = await history.restoreReport(before, "undo");
+      expect(skipped).toEqual(["d/x.md"]);
+      expect(fs.readdirSync(outside)).toEqual([]);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("sees a changed link target as a change", async () => {

@@ -10,7 +10,7 @@
 - Every change is recorded in an invisible local git history kept outside the folder (`packages/workspace/src/history.ts`, built on isomorphic-git). Its data lives in the app's data folder, one per folder (`historyDir` in `packages/shell/src/main/config.ts`), so cloud sync never touches it.
 - The runtime (`packages/runtime/src/runtime.ts`) commits when it starts ("Start"), before each message ("Before message") and after the turn ("Turn: …", or "Stopped: …" when it didn't finish). If the agent crashes mid-turn, it restores the point before the message ("Undo: …"). A saved note is committed as "Note: …".
 - The history skips `.harness/` except `.harness/notes/`, and skips the generated `AGENTS.md` and the engine's own instructions file.
-- Symlinks are recorded as links (git mode 120000, the blob is the target path), never as what they point to. A restore never writes through a link: it removes a link in its way (the link, not its target), recreates a link entry as a link, writes regular files with `O_NOFOLLOW` where the OS has it, and skips (and logs) any entry whose parent folder resolves outside the folder through a linked folder.
+- Symlinks are recorded as links (git mode 120000, the blob is the target path), never as what they point to. A restore never writes through a link: it removes a link in its way (the link, not its target), recreates a link entry as a link, writes regular files with `O_NOFOLLOW` where the OS has it, and skips (and logs) any entry whose parent folder resolves outside the folder through a linked folder. It checks the parent's real path before and again right after creating it, just before the write. An entry it can't write safely (outside the folder, a folder in its place, a link the OS won't create, such as on Windows without Developer Mode) is skipped and the rest of the restore goes on; `History.restoreReport` returns the skipped paths with the new commit.
 
 ### Commits belong to tasks
 
@@ -86,6 +86,8 @@ What under `.harness/` names a place: only notes' `files:` (agent-provided paths
 ## Known gaps
 
 - No size limit for the history yet: a folder with large media inflates it in the app's data folder.
+- A restore's skipped paths (`RestoreResult.skipped`) are only logged: the History panel doesn't tell the person yet.
+- A restore checks a file's parent folder right before writing, but another process could still swap that folder for a link between the check and the write. Where the OS has no `O_NOFOLLOW` (Windows), the last path part isn't protected that way either; only the `lstat` check before the write is.
 - A move whose history couldn't follow and whose config couldn't be put back leaves its journal, and the app runs on the copy until the next start. History writes meanwhile go to a new history at the new place, which `recoverMove` then sets aside (`<history>.replaced-<ms>`, kept 30 days) to move the old one in: those commits are only in the set-aside history.
 - iCloud "Desktop & Documents" keeps `~/Documents` at the same path. The plan 3d spike found no credential-free signal for it (only `com.apple.macl` on `~/Documents`, on a Mac with the feature off), so `~/Documents` counts as `local` and the person can dismiss the notice. Re-check on a Mac with the feature on.
 - Listing `~/Library/CloudStorage` and copying into a File Provider folder (Google Drive, OneDrive, Dropbox) may make macOS ask the person for permission the first time. Not verified yet: check on a real Mac with each provider before release.

@@ -96,6 +96,8 @@ input[type="text"], input:not([type]) { font: inherit; height: 28px; padding: 0 
 /* Settings sheet, attached under the top bar */
 /* Wraps Home or the work screen without changing its layout (it is made inert under the sheet). */
 .hh-screen { display: contents; }
+/* Test-mode badge: beside the Settings button, inert so the drag strip and clicks pass through. */
+.hh-mock-badge { position: fixed; top: 15px; right: 56px; z-index: 50; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--hh-warn); background: var(--hh-surface); color: var(--hh-warn); font-size: 12px; font-weight: 600; pointer-events: none; user-select: none; }
 .hh-sheet-backdrop { position: fixed; inset: 52px 0 0 0; background: var(--hh-backdrop); display: flex; justify-content: center; align-items: flex-start; }
 .hh-sheet { width: min(620px, calc(100% - 32px)); max-height: calc(100% - 24px); box-sizing: border-box; overflow-y: auto; background: var(--hh-sheet); border: 1px solid var(--hh-line-strong); border-top: none; border-radius: 0 0 12px 12px; padding: 16px 20px 20px; display: grid; gap: 16px; box-shadow: 0 12px 32px rgba(25, 30, 36, 0.18); }
 .hh-sheet-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }

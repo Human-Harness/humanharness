@@ -309,6 +309,9 @@
   "app": {
     "loadError": "La app no pudo arrancar. Cerrala y volvé a abrirla."
   },
+  "mock": {
+    "badge": "Modo prueba (sin IA)"
+  },
   "errors": {
     "engine-not-installed": "No encuentro {{engine}} en esta compu.",
     "session-expired": "Se cerró tu sesión de {{engine}}. Volvé a entrar para seguir.",

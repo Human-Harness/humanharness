@@ -159,6 +159,12 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
 
   return (
     <I18nextProvider i18n={i18n}>
+      {/* humanharness dev --mock: a fake engine answers, so the tester never takes it for the real thing. */}
+      {state.mock && (
+        <div className="hh-mock-badge" role="note">
+          {i18n.t("mock.badge")}
+        </div>
+      )}
       {/* Under the open Settings sheet, the whole screen (top bar included) can't be reached. */}
       <div className="hh-screen" inert={settings !== null}>
         {screen === "work" && configured ? (

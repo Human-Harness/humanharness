@@ -21,7 +21,9 @@ const engines = JSON.stringify({
 
 describe("readTestHooks", () => {
   it("is empty in a packaged app", () => {
-    expect(readTestHooks({ HH_TEST_USER_DATA: "/u", HH_TEST_ENGINES: engines }, true)).toEqual({});
+    expect(
+      readTestHooks({ HH_TEST_USER_DATA: "/u", HH_TEST_ENGINES: engines, HH_TEST_MOCK: "1", HH_TEST_SUGGESTED_FOLDER: "/f", HH_TEST_SHARED_DIR: "/s" }, true),
+    ).toEqual({});
   });
 
   it("reads absolute folders and fake engines in development, passing only HH_FAKE_* variables", () => {

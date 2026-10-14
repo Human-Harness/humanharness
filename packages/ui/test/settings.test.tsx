@@ -10,10 +10,20 @@ import { renderIn } from "./render";
 
 afterEach(cleanup);
 
-function Sheet({ client, initialTab = "general", onClose = () => {} }: { client: FakeClient; initialTab?: SettingsTab; onClose?: () => void }) {
+function Sheet({
+  client,
+  initialTab = "general",
+  onClose = () => {},
+  onSetup = () => {},
+}: {
+  client: FakeClient;
+  initialTab?: SettingsTab;
+  onClose?: () => void;
+  onSetup?: () => void;
+}) {
   const [state, setState] = useState<AppState>(client.state);
   const [tab, setTab] = useState<SettingsTab>(initialTab);
-  return <SettingsSheet client={client} state={state} tab={tab} onTab={setTab} onChange={setState} onClose={onClose} />;
+  return <SettingsSheet client={client} state={state} tab={tab} onTab={setTab} onChange={setState} onClose={onClose} onSetup={onSetup} />;
 }
 
 const ready = { language: "en" as const, folder: "/Users/me/Documents/Demo", engineId: "claude" };
@@ -171,6 +181,35 @@ describe("SettingsSheet", () => {
     fireEvent.click(screen.getByRole("button", { name: "Español" }));
     await screen.findByRole("tab", { name: "Motor" });
     expect(client.state.config.language).toBe("es");
+  });
+
+  it("General without a folder: only language, appearance and About, no folder picker or welcome", async () => {
+    const client = new FakeClient({});
+    await renderIn("es", <Sheet client={client} />);
+    expect(screen.getByRole("group", { name: "Idioma" })).toBeTruthy();
+    expect(screen.getByRole("group", { name: "Apariencia" })).toBeTruthy();
+    expect(screen.getByText("Versión 0.1.0")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Usar esta carpeta" })).toBeNull();
+    expect(screen.queryByRole("radiogroup")).toBeNull();
+    expect(screen.queryByText("Mostrar en Finder")).toBeNull();
+    expect(screen.queryByText(/funciona con un plan de IA/)).toBeNull();
+  });
+
+  it.each(["engine", "models", "usage"] as const)("%s before setup: one empty state whose button opens the setup flow", async (tab) => {
+    const client = new FakeClient({ language: "es", folder: "/Users/me/Documents/Demo" });
+    client.state.models = {
+      recommended: {},
+      defaults: { claude: { light: { model: "haiku", effort: "low", cap: 100_000 }, standard: { model: "sonnet", effort: "medium", cap: 200_000 }, deep: { model: "opus", effort: "high", cap: 400_000 } } },
+      offered: { claude: { models: [{ id: "haiku" }, { id: "sonnet" }, { id: "opus" }], efforts: ["low"] } },
+    };
+    const onSetup = vi.fn();
+    await renderIn("es", <Sheet client={client} initialTab={tab} onSetup={onSetup} />);
+    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["General", "Motor", "Modelos", "Uso"]);
+    expect(screen.getByRole("heading", { name: "Todavía no elegiste un motor" })).toBeTruthy();
+    expect(screen.getByText("Primero elegí dónde se guarda tu trabajo y después conectá la IA. Son dos pasos.")).toBeTruthy();
+    expect(screen.queryByRole("group", { name: "Motores de IA" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Configurar Demo" }));
+    expect(onSetup).toHaveBeenCalledTimes(1);
   });
 
   it("Usage: shows each plan window with its reset, and each action's cost and estimate", async () => {

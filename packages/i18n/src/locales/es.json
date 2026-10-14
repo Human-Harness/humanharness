@@ -309,7 +309,21 @@
   "app": {
     "loadError": "La app no pudo arrancar. Cerrala y volvé a abrirla."
   },
+  "setupFlow": {
+    "notConfiguredTitle": "Todavía no elegiste un motor",
+    "notConfiguredText": "Primero elegí dónde se guarda tu trabajo y después conectá la IA. Son dos pasos.",
+    "configure": "Configurar {{name}}"
+  },
   "mock": {
+    "model": "Modelo",
+    "modelName": "Modelo de prueba",
+    "answers": "Respuestas",
+    "answersValue": "Grabadas en la carpeta mock/ del harness",
+    "data": "Tus datos",
+    "dataValue": "No salen de esta compu",
+    "plan": "Tu plan",
+    "planValue": "No gasta nada",
+    "only": "En modo prueba hay un solo motor: responde con conversaciones grabadas, sin IA y sin gastar tu plan.",
     "badge": "Modo prueba (sin IA)"
   },
   "errors": {

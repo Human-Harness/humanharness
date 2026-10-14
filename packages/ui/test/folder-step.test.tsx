@@ -68,6 +68,31 @@ describe("FolderStep", () => {
     expect(screen.getByText(`${work}/Demo`)).toBeTruthy();
   });
 
+  it("welcomes, explains a folder that can't be used, then saves it with the language", async () => {
+    const client = new FakeClient({});
+    client.pickResult = { folder: "/Users/me/Documents", problem: "too-broad" };
+    const onSaved = vi.fn();
+    await renderIn("en", <FolderStep client={client} state={client.state} onSaved={onSaved} />);
+    expect(screen.getByText(/works with an AI plan you already have/)).toBeTruthy();
+    expect(screen.getByText("/Users/me/Documents/Demo")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Choose another folder" }));
+    expect((await screen.findByRole("alert")).textContent).toBe("That folder is too general. Pick or create a folder inside it.");
+    client.pickResult = { folder: "/Users/me/Documents/Mine", problem: null };
+    fireEvent.click(screen.getByRole("button", { name: "Choose another folder" }));
+    await screen.findByText("/Users/me/Documents/Mine");
+    fireEvent.click(screen.getByRole("button", { name: "Use this folder" }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    expect(client.state.config).toEqual({ language: "en", folder: "/Users/me/Documents/Mine" });
+  });
+
+  it("says when the folder can't be saved", async () => {
+    const client = new FakeClient({});
+    client.saveError = new Error("protected");
+    await renderIn("en", <FolderStep client={client} state={client.state} onSaved={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: "Use this folder" }));
+    expect((await screen.findByRole("alert")).textContent).toMatch(/couldn't save/i);
+  });
+
   it("shows no places when nothing syncs on this computer", async () => {
     const client = new FakeClient();
     await renderIn("es", <FolderStep client={client} state={client.state} onSaved={() => {}} />);

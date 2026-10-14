@@ -191,7 +191,10 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
           />
         )}
       </div>
-      {settings && <SettingsSheet client={client} state={state} tab={settings} onTab={setSettings} onChange={setState} onClose={closeSettings} move={move} />}
+      {/* Until the setup flow lands, "Configurar" in Settings just closes the sheet. */}
+      {settings && (
+        <SettingsSheet client={client} state={state} tab={settings} onTab={setSettings} onChange={setState} onClose={closeSettings} onSetup={closeSettings} move={move} />
+      )}
     </I18nextProvider>
   );
 }

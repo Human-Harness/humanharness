@@ -311,7 +311,7 @@ describe("Settings › General backup row", () => {
   function Sheet({ client }: { client: FakeClient }) {
     const [state, setState] = useState<AppState>(client.state);
     const [tab, setTab] = useState<SettingsTab>("general");
-    return <SettingsSheet client={client} state={state} tab={tab} onTab={setTab} onChange={setState} onClose={vi.fn()} />;
+    return <SettingsSheet client={client} state={state} tab={tab} onTab={setTab} onChange={setState} onClose={vi.fn()} onSetup={vi.fn()} />;
   }
 
   it("shows the status and the notice, and brings a dismissed notice back", async () => {

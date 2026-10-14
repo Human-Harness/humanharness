@@ -373,16 +373,22 @@ describe("HarnessApp", () => {
     expect(container.querySelector("img.hh-home-logo")?.getAttribute("src")).toBe("data:image/svg+xml;base64,PHN2Zy8+");
   });
 
-  it("on first launch, Start opens Settings → Engine and the work screen opens once it is set up", async () => {
+  it("on first launch, Start opens Settings → Engine, which leads to setup and closes", async () => {
     const client = new FakeClient();
     render(<HarnessApp client={client} />);
     fireEvent.click(await screen.findByRole("button", { name: /^(Start|Iniciar) Demo$/ }));
     expect(screen.getByRole("tab", { name: /Engine|Motor/ }).getAttribute("aria-selected")).toBe("true");
-    fireEvent.click(screen.getByRole("button", { name: /Use this folder|Usar esta carpeta/ }));
-    fireEvent.click(await screen.findByRole("button", { name: /Use Claude|Usar Claude/ }));
-    await screen.findByPlaceholderText(/Write a message|Escribí un mensaje/);
+    fireEvent.click(screen.getByRole("button", { name: /^(Set up|Configurar) Demo$/ }));
     expect(screen.queryByRole("dialog")).toBeNull();
-    expect(client.state.config).toMatchObject({ folder: "/Users/me/Documents/Demo", engineId: "claude" });
+  });
+
+  it("the gear is a labelled icon button on Home and on the work screen", async () => {
+    await startWork(<HarnessApp client={new FakeClient({ ...ready, language: "es" })} />);
+    const work = await screen.findByRole("button", { name: "Ajustes" });
+    expect(work.className).toBe("hh-icon-button");
+    expect(work.querySelector("svg")?.getAttribute("viewBox")).toBe("0 0 24 24");
+    fireEvent.click(screen.getByRole("button", { name: "Inicio" }));
+    expect((await screen.findByRole("button", { name: "Ajustes" })).className).toBe("hh-icon-button");
   });
 
   it("the gear opens Settings on General and Done goes back to Home", async () => {

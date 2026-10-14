@@ -309,7 +309,21 @@
   "app": {
     "loadError": "The app couldn't start. Close it and open it again."
   },
+  "setupFlow": {
+    "notConfiguredTitle": "You haven't chosen an engine yet",
+    "notConfiguredText": "First choose where your work is kept, then connect the AI. It takes two steps.",
+    "configure": "Set up {{name}}"
+  },
   "mock": {
+    "model": "Model",
+    "modelName": "Test model",
+    "answers": "Answers",
+    "answersValue": "Recorded in the harness's mock/ folder",
+    "data": "Your data",
+    "dataValue": "Never leaves this computer",
+    "plan": "Your plan",
+    "planValue": "Uses nothing",
+    "only": "In test mode there is only one engine: it answers with recorded conversations, with no AI and without using your plan.",
     "badge": "Test mode (no AI)"
   },
   "errors": {

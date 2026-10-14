@@ -72,7 +72,8 @@ input[type="text"], input:not([type]) { font: inherit; height: 28px; padding: 0 
 .hh-topbar button, .hh-topbar a, .hh-topbar input { -webkit-app-region: no-drag; }
 .hh-title { font-family: var(--hh-display); font-weight: 600; font-size: 14px; white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .hh-spacer { flex: 1; }
-.hh-icon-button { width: 30px; padding: 0; }
+.hh-icon-button { width: 32px; height: 32px; padding: 0; border: none; border-radius: 6px; background: transparent; color: var(--hh-slate); }
+.hh-icon-button:hover { background: var(--hh-segment); }
 .hh-segmented { display: inline-flex; padding: 2px; gap: 2px; border-radius: 7px; background: var(--hh-segment); }
 .hh-segmented button { height: 24px; border: none; background: transparent; border-radius: 5px; }
 .hh-segmented button[aria-pressed="true"], .hh-segmented button[aria-selected="true"] { background: var(--hh-surface); box-shadow: 0 1px 2px rgba(25, 30, 36, 0.15); }
@@ -126,6 +127,11 @@ input[type="text"], input:not([type]) { font: inherit; height: 28px; padding: 0 
 .hh-tile { position: relative; height: auto; min-height: 104px; flex-direction: column; padding: 14px; gap: 4px; border-radius: 12px; border-color: var(--hh-line); }
 .hh-tile[aria-pressed="true"] { border: 2px solid var(--hh-ink); padding: 13px; }
 .hh-tile img { width: 40px; height: 40px; }
+.hh-tile svg { color: var(--hh-slate); }
+/* Motor, Modelos and Uso before setup: one empty state that leads to the setup flow. */
+.hh-not-configured { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 32px 16px; text-align: center; color: var(--hh-slate); }
+.hh-not-configured h3 { margin: 0; color: var(--hh-ink); }
+.hh-not-configured p { margin: 0 0 8px; max-width: 36ch; }
 .hh-tile.more { display: flex; align-items: center; justify-content: center; border: 1px dashed var(--hh-line-strong); color: var(--hh-muted); background: transparent; }
 .hh-check { position: absolute; top: 8px; right: 8px; width: 18px; height: 18px; border-radius: 50%; background: var(--hh-ink); color: var(--hh-on-ink); font-size: 11px; display: grid; place-items: center; }
 select { font: inherit; height: 28px; padding: 0 6px; border-radius: 6px; border: 1px solid var(--hh-line-strong); background: var(--hh-surface); color: var(--hh-ink); }

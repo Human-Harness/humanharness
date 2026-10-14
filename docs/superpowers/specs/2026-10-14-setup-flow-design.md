@@ -79,6 +79,13 @@ The gear becomes a line icon (24-unit stroke gear, as macOS's "gearshape"). It h
 - **Shell unit:** the mock engine view and the mock models view.
 - **E2E:** the existing tests keep passing (they start configured). The mock walk-through starts from a fresh app: Configurar → folder → Motor de prueba → Todo listo → Iniciar.
 
+## Changes during implementation
+
+- **Atrás.** It returns to the folder step with the saved folder chosen, and Siguiente there saves again. So within the same flow the folder can still be changed until the engine step is passed; once the flow is left, a saved folder skips the step as specified.
+- **Folder step's Siguiente.** It sits in the footer like the engine step's: `FolderStep` renders a form, and with a `formId` it has no button of its own; the footer button submits it (`form={formId}`).
+- **Mock caption.** "En modo prueba hay un solo motor…" is shown above the tiles, under the step's intro, not under the tiles.
+- **E2E.** Mock launches pass `--lang=es`, so a fresh app with no saved language is in Spanish like the configured ones. Every launch sets `HH_TEST_SUGGESTED_FOLDER` to the sandbox's folder, and the walk-through picks "Solo en esta compu" when synced places exist, so it never writes outside the sandbox.
+
 ## Out
 
 - Setup for engines other than the harness's own; changing the folder in the flow after it is saved.

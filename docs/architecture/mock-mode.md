@@ -18,7 +18,17 @@ The shell reads them through `readTestHooks` (`packages/shell/src/main/test-hook
 - **Folders.** Everything lives under `<tmp>/hh-mock-<harness id>/`: `userData`, `shared`, the suggested work folder and `mock-state.json`. Each start deletes that root first, so the app opens at the first launch. `--keep` reuses it. The path is printed at start.
 - **Inherited env.** `dev` removes every `HH_TEST_*` and `HH_DEV_ENGINE` variable it inherited, so a stray setting never leaks into the app.
 - **Flags.** `--keep` needs `--mock`. `--engine` with `--mock` must be `claude`: mock mode replays as Claude, so it also needs a harness that offers Claude. Without recordings in `mock/`, `dev --mock` stops and says how to record one. Files that fail the schema are named in the output and skipped.
-- **Only faked engines.** `offeredEngines` keeps the engines that have a fake, so no status check reaches a real CLI. Setup steps (install, update, login, logout) and the engine test do nothing for a faked engine and report success (`fakeSetupResult`). The fake reports installed, signed in and verified; the legal notice stays real.
+- **Only faked engines.** `offeredEngines` keeps the engines that have a fake, so no status check reaches a real CLI. Setup steps (install, update, login, logout) and the engine test do nothing for a faked engine and report success (`fakeSetupResult`). The fake reports installed, signed in and verified, and its legal notice counts as accepted (`hasNotice` in `packages/shell/src/main/index.ts`): there is no provider to disclose and nothing leaves the computer. Plain e2e runs with fake engines, outside mock mode, keep the real notice.
+
+## What the tester sees
+
+Plan 3f (spec `2026-10-14-setup-flow-design.md` §4) shows the faked engine as what it is, so a tester never sees Claude where no AI runs:
+
+- **Home.** On the first launch, "Configurar <name>" and a card with the two missing steps. The setup flow walks the folder, then the engine, then "Todo listo".
+- **The test engine.** One tile, "Motor de prueba" / "Test engine" (in the saved language, else the system's), with a generic screen icon instead of a logo. Its id stays `claude`, so config, models and the runtime don't change. The main process sends it with provider Human Harness, no requirements, no install command, `reportsLimits: false` and `mock: true` (`appState` in `packages/shell/src/main/index.ts`). Above the tiles, the setup step says there is only one engine in test mode.
+- **Its details.** Motor (and the setup step) show Modelo de prueba, answers recorded in the harness's `mock/`, data that stays on this computer and a plan that is not spent. There is no sign out, plan, version or legal line.
+- **No notice.** The engine is ready at once: there is no notice to accept, nothing to install and no sign-in.
+- **The test model.** `ModelsView` offers one model, `{ id: "mock", name: "Modelo de prueba" | "Test model" }`, and every tier defaults to it (effort and cap as they are). Settings › Modelos shows "Modelo de prueba" for each level. `fake-claude` ignores `--model`.
 
 ## The format
 
@@ -106,7 +116,7 @@ One file per action, `mock/<action>.json`, meant to be edited by hand. The schem
 
 - `packages/fake-agent/test/mock.test.ts` and `mock-replay.test.ts`: the schema and the walk (branch, `*`, fallback, close, missing close, state).
 - `packages/cli/test/record.test.ts`, `run.test.ts`, `dev.test.ts` and `check.test.ts`: the recorder, `run --record`, `dev --mock` and each `check` rule.
-- `packages/e2e/tests/mock.spec.ts`: `launchMock` opens the demo with its recordings and walks a topic end to end, including one off-script reply, the note and the engine list.
+- `packages/e2e/tests/mock.spec.ts`: `launchMock` opens the demo with its recordings and walks a topic end to end, including one off-script reply, the note and the engine list (only the test engine). A second test starts from a fresh app (`makeFreshSandbox`) and walks the setup flow to the demo, then checks Settings › Modelos shows the test model.
 - `packages/e2e/tests/scripts.ts` keeps the hand-written scripts for what a recording can't express: crashes, resume failures, model fallback.
 
 ## Known gaps

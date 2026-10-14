@@ -23,6 +23,15 @@ Status: approved direction (2026-10-11). Mockups: https://claude.ai/artifact/2cw
    - **Uso:** the usage meter details (plan windows, reset times, cost of each action).
 3. **Work screen** (after Start): not designed yet; keep the current chat/blocks layout restyled with the same tokens until it is.
 
+### Changed by plan 3f (2026-10-14)
+
+Spec `2026-10-14-setup-flow-design.md` changes the screens above:
+
+- **Setup is its own flow.** A screen of its own, not the Settings sheet: top bar "Configurar <name>", a stepper (Tu carpeta, Motor de IA), the step, and a footer with Cancelar/Atrás on the left and Siguiente on the right; then "Todo listo" with "Iniciar <name>".
+- **Home: Iniciar or Configurar.** "Iniciar <name>" only when the app is configured and the engine check passed (disabled while it runs). Otherwise "Configurar <name>" opens the setup flow at the first missing step, under a card that says what is missing. The first-launch rule above (the button opens Settings) no longer applies.
+- **Settings no longer holds setup.** General has no welcome text or folder picker before a folder is chosen. Motor, Modelos and Uso show one empty state that leads to the setup flow until the app is configured. Settings also has a Modelos tab (plan 3c).
+- **Line gear.** The settings button is a line gear icon (stroke, as macOS's "gearshape") with no box and a hover background, on Home and the work screen.
+
 ## Tokens
 
 | Token | Value | Use |

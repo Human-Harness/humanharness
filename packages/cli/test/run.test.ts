@@ -5,7 +5,7 @@ import path from "node:path";
 import { PassThrough, Writable } from "node:stream";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { NOTICE_VERSION, getEngine } from "@humanharness/engines";
-import { type ClaudeScript, claudeTextLines, fakeClaudeCommand, writeScript } from "@humanharness/fake-agent";
+import { type ClaudeScript, claudeTextLines, fakeClaudeCommand, recordingSchema, writeScript } from "@humanharness/fake-agent";
 import type { CommandDeps } from "@humanharness/shell/tasks";
 import { SharedConfigStore } from "@humanharness/shell/tasks";
 import { UsageError } from "../src/cli";
@@ -303,5 +303,33 @@ describe("humanharness run", () => {
       expect(m.err()).not.toBe("");
       expect(m.err()).not.toContain("Unknown command");
     }
+  });
+});
+
+describe("run --record", () => {
+  const engineCommand = () => ({ command: fakeClaudeCommand(), env: { HH_FAKE_SCRIPT: writeScript(root, script) } });
+  const mockFile = path.join(harnessDir, "mock", "example.json");
+
+  it("writes mock/<action>.json from the run, and it replays", { timeout: 60_000 }, async () => {
+    fs.rmSync(path.join(harnessDir, "mock"), { recursive: true, force: true });
+    const out = memoryStream();
+    await runTask({ harnessDir, action: "example", record: true, input: lines("1\nq\n"), output: out.stream, engineCommand: engineCommand() });
+    const rec = JSON.parse(fs.readFileSync(mockFile, "utf8"));
+    expect(recordingSchema.parse(rec)).toEqual(rec);
+    expect(rec).toMatchObject({ version: 1, action: "example", match: "# Task: example", recordedWith: "claude" });
+    expect(rec.turns.map((t: { id: string }) => t.id)).toEqual(["t1", "t2", "close"]);
+    expect(rec.turns[0].blocks.map((b: { tool: string }) => b.tool)).toEqual(["show_example_card", "show_choices"]);
+    expect(rec.turns[0].next).toEqual({ "Go deeper": "t2" });
+    expect(rec.turns[2].note.title).toBe("First idea");
+    expect(out.text()).toContain(`Recorded: ${mockFile}`);
+    expect(out.text()).toContain("review it before committing");
+  });
+
+  it("refuses to overwrite an existing recording without --force, before the engine runs", { timeout: 60_000 }, async () => {
+    await expect(
+      runTask({ harnessDir, action: "example", record: true, input: lines("q\n"), output: memoryStream().stream, engineCommand: { command: ["/nonexistent-engine"], env: {} } }),
+    ).rejects.toThrow(/already exists/);
+    await runTask({ harnessDir, action: "example", record: true, force: true, input: lines("q\n"), output: memoryStream().stream, engineCommand: engineCommand() });
+    expect(JSON.parse(fs.readFileSync(mockFile, "utf8")).turns.map((t: { id: string }) => t.id)).toEqual(["t1", "close"]);
   });
 });

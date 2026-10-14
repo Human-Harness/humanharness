@@ -23,7 +23,7 @@ const addCodex = (client: FakeClient) => {
 describe("EngineTab", () => {
   it("shows a test engine with its own details: no sign out, plan, version or legal line", async () => {
     const client = new FakeClient({ language: "es", folder: "/Users/me/Documents/Demo", engineId: "claude" });
-    client.state.engines = [{ ...client.state.engines[0], name: "Motor de prueba", provider: "Human Harness", logo: undefined, reportsLimits: false, mock: true }];
+    client.state.engines = [{ ...client.state.engines[0], name: "IA simulada (mock)", provider: "Human Harness", logo: undefined, reportsLimits: false, mock: true }];
     const { container } = await renderIn("es", <Tab client={client} />);
     await screen.findByText("Grabadas en la carpeta mock/ del harness");
     const rows = [...container.querySelectorAll(".hh-row")].map((r) => [...r.children].map((c) => c.textContent));
@@ -37,7 +37,7 @@ describe("EngineTab", () => {
     expect(screen.queryByRole("link")).toBeNull();
     expect(container.querySelector(".hh-tab > .hh-caption")).toBeNull();
     // No logo: the tile draws the generic screen icon instead.
-    const tile = screen.getByRole("button", { name: /Motor de prueba/ });
+    const tile = screen.getByRole("button", { name: /IA simulada \(mock\)/ });
     expect(tile.querySelector("img")).toBeNull();
     expect(tile.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
   });

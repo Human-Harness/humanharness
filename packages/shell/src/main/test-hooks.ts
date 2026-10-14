@@ -119,7 +119,7 @@ export function mockEngineText(language: Language): {
   trainsOnData: LocalizedText;
 } {
   return {
-    name: language === "es" ? "Motor de prueba" : "Test engine",
+    name: language === "es" ? "IA simulada (mock)" : "Simulated AI (mock)",
     provider: "Human Harness",
     requires: { es: "Nada", en: "Nothing" },
     dataLocation: { es: "Tus datos no salen de esta compu", en: "Your data stays on this computer" },

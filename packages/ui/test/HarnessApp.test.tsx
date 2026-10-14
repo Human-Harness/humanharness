@@ -567,7 +567,7 @@ describe("HarnessApp", () => {
 
   it("for the test engine, says test mode uses none of the plan and keeps the last reply's tokens", async () => {
     const client = new FakeClient({ ...ready, language: "es" });
-    client.state.engines = [{ ...client.state.engines[0], name: "Motor de prueba", logo: undefined, reportsLimits: false, mock: true }];
+    client.state.engines = [{ ...client.state.engines[0], name: "IA simulada (mock)", logo: undefined, reportsLimits: false, mock: true }];
     client.chat = [
       { id: "1", role: "assistant", text: "hi", blocks: [], activities: [], at: "t", usage: { inputTokens: 1000, outputTokens: 200, cacheReadTokens: 0, cacheWriteTokens: 0 } },
     ];

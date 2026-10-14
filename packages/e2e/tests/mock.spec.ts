@@ -38,7 +38,7 @@ test("mock mode walks a demo topic from its recording, off script included, with
     await page.getByRole("button", { name: "Ajustes" }).click();
     await page.getByRole("tab", { name: "Motor" }).click();
     const tiles = page.getByRole("group", { name: TILES });
-    await expect(tiles.getByRole("button", { name: /Motor de prueba/ })).toBeVisible();
+    await expect(tiles.getByRole("button", { name: /IA simulada \(mock\)/ })).toBeVisible();
     await expect(tiles.getByRole("button", { name: /Claude/ })).toHaveCount(0);
     await expect(tiles.getByRole("button", { name: /Codex/ })).toHaveCount(0);
   } finally {
@@ -64,7 +64,7 @@ test("a fresh mock app walks the setup flow, then starts the demo on the test en
 
     // 2. The engine: only the test engine, ready with no notice to accept.
     const tiles = page.getByRole("group", { name: TILES });
-    await expect(tiles.getByRole("button", { name: /Motor de prueba.*Conectado/ })).toBeVisible();
+    await expect(tiles.getByRole("button", { name: /IA simulada \(mock\).*Conectado/ })).toBeVisible();
     await expect(tiles.getByRole("button", { name: /Claude|Codex/ })).toHaveCount(0);
     const next = page.getByRole("button", { name: "Siguiente" });
     await expect(next).toBeEnabled();
@@ -72,7 +72,7 @@ test("a fresh mock app walks the setup flow, then starts the demo on the test en
 
     // 3. All set, then the demo.
     await expect(page.getByRole("heading", { name: "Todo listo" })).toBeVisible();
-    await expect(page.getByText("Motor de prueba · Modelo de prueba")).toBeVisible();
+    await expect(page.getByText("IA simulada (mock) · Modelo de prueba")).toBeVisible();
     await page.getByRole("button", { name: "Iniciar Demo" }).click();
     await expect(page.getByRole("region", { name: START })).toBeVisible();
     const config = JSON.parse(fs.readFileSync(path.join(s.userData, "config.json"), "utf8"));

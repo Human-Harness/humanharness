@@ -97,9 +97,9 @@ describe("Home", () => {
 
   it("draws a generic screen on the pill for an engine without a logo", async () => {
     const client = new FakeClient(configured);
-    client.state.engines = [{ ...client.state.engines[0], name: "Test engine", logo: undefined, mock: true }];
+    client.state.engines = [{ ...client.state.engines[0], name: "Simulated AI (mock)", logo: undefined, mock: true }];
     await renderHome(client, { status: client.status });
-    const pill = screen.getByRole("button", { name: /Test engine/ });
+    const pill = screen.getByRole("button", { name: /Simulated AI \(mock\)/ });
     expect(pill.querySelector("img")).toBeNull();
     expect(pill.querySelector("svg")).toBeTruthy();
   });

@@ -44,7 +44,7 @@ Cancelar (first step) and Atrás go back: Cancelar returns to Home, Atrás to th
 In mock mode (`humanharness dev --mock`), the faked engine is shown as a test engine. Its id stays the same (`claude`), so config, models and the runtime don't change.
 
 - **Name and details.** The main process sends it with:
-  - name: "Motor de prueba" or "Test engine", in the app's language (saved, else the system's);
+  - name: "IA simulada (mock)" or "Simulated AI (mock)", in the app's language (saved, else the system's);
   - provider: Human Harness;
   - requirements: none;
   - data location: "Tus datos no salen de esta compu";
@@ -77,7 +77,7 @@ The gear becomes a line icon (24-unit stroke gear, as macOS's "gearshape"). It h
   - General without a folder;
   - a mock engine's details.
 - **Shell unit:** the mock engine view and the mock models view.
-- **E2E:** the existing tests keep passing (they start configured). The mock walk-through starts from a fresh app: Configurar → folder → Motor de prueba → Todo listo → Iniciar.
+- **E2E:** the existing tests keep passing (they start configured). The mock walk-through starts from a fresh app: Configurar → folder → IA simulada (mock) → Todo listo → Iniciar.
 
 ## Changes during implementation
 

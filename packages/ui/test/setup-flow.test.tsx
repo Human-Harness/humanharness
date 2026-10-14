@@ -147,7 +147,7 @@ describe("SetupFlow", () => {
     client.state = {
       ...client.state,
       mock: true,
-      engines: [{ ...client.state.engines[0], name: "Motor de prueba", provider: "Human Harness", logo: undefined, reportsLimits: false, mock: true }],
+      engines: [{ ...client.state.engines[0], name: "IA simulada (mock)", provider: "Human Harness", logo: undefined, reportsLimits: false, mock: true }],
     };
     await renderIn("es", <Flow client={client} />);
     expect(screen.getByRole("banner").textContent).toContain("Modo prueba (sin IA)");
@@ -156,7 +156,7 @@ describe("SetupFlow", () => {
     await waitFor(() => expect(siguiente.disabled).toBe(false));
     fireEvent.click(siguiente);
     await screen.findByRole("heading", { name: "Todo listo" });
-    expect(screen.getByText("Motor de prueba · Modelo de prueba")).toBeTruthy();
+    expect(screen.getByText("IA simulada (mock) · Modelo de prueba")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Iniciar Demo" })).toBeTruthy();
   });
 });

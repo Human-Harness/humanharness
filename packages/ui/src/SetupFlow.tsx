@@ -131,8 +131,8 @@ export function SetupFlow({
             <h2 id={headingId} ref={heading} tabIndex={-1}>
               {t("setupFlow.engineHeading", { name })}
             </h2>
-            <p className="hh-setup-intro">{t("setupFlow.engineIntro", { name })}</p>
-            {state.mock && <p className="hh-caption">{t("mock.only")}</p>}
+            {/* A mock app has no plan or account to bring: only the test-mode caption. */}
+            <p className="hh-setup-intro">{state.mock ? t("mock.only") : t("setupFlow.engineIntro", { name })}</p>
             <EngineTab client={client} state={state} onChange={onChange} setup onSelection={(engineId, ready) => setSelection({ engineId, ready })} />
             {saveError && (
               <p className="hh-save-error" role="alert">

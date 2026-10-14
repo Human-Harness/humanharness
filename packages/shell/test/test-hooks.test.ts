@@ -109,13 +109,13 @@ describe("mock engine presentation", () => {
 
   it("presents a test engine from Human Harness that keeps the data on the computer", () => {
     expect(mockEngineText("es")).toEqual({
-      name: "Motor de prueba",
+      name: "IA simulada (mock)",
       provider: "Human Harness",
       requires: { es: "Nada", en: "Nothing" },
       dataLocation: { es: "Tus datos no salen de esta compu", en: "Your data stays on this computer" },
       trainsOnData: { es: "No", en: "No" },
     });
-    expect(mockEngineText("en").name).toBe("Test engine");
+    expect(mockEngineText("en").name).toBe("Simulated AI (mock)");
   });
 
   it("offers one test model", () => {

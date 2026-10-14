@@ -245,7 +245,7 @@ describe("SettingsSheet", () => {
 
   it("Usage: the test engine uses none of the plan", async () => {
     const client = new FakeClient(ready);
-    client.state.engines = [{ ...client.state.engines[0], name: "Test engine", logo: undefined, reportsLimits: false, mock: true }];
+    client.state.engines = [{ ...client.state.engines[0], name: "Simulated AI (mock)", logo: undefined, reportsLimits: false, mock: true }];
     await renderIn("en", <Sheet client={client} initialTab="usage" />);
     await screen.findByText("Test mode: uses none of your plan.");
     expect(screen.queryByText(/doesn't report/)).toBeNull();

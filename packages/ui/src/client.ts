@@ -35,6 +35,8 @@ export interface EngineOption {
   installDocsUrl?: string;
   /** The engine's logo as a data: URL (the main process reads the file). */
   logo?: string;
+  /** A faked engine in `humanharness dev --mock`, shown as the test engine. */
+  mock?: boolean;
 }
 
 export interface ActionOption {

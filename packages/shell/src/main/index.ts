@@ -6,7 +6,7 @@ import path from "node:path";
 import { BrowserWindow, type IpcMainInvokeEvent, app, clipboard, dialog, ipcMain, nativeTheme, shell } from "electron";
 import { electronLauncher } from "@humanharness/blocks";
 import { type EngineDef, type ModelProfile, type ModelSpec, NOTICE_VERSION, availableEngines, defaultTier, getEngine } from "@humanharness/engines";
-import { type LoadedHarness, TIERS, type Tier, allBlocks, choiceOptionSchema, loadHarness, resolveInHarness } from "@humanharness/harness-sdk";
+import { type Language, type LoadedHarness, TIERS, type Tier, allBlocks, choiceOptionSchema, loadHarness, resolveInHarness } from "@humanharness/harness-sdk";
 import { type Event, type HarnessRuntime, createRuntime } from "@humanharness/runtime";
 import {
   type AppConfig,
@@ -53,7 +53,18 @@ import { TaskManager } from "./task-manager";
 import { historyView, isSha } from "./history-view";
 import { RestoreGuard, lastOpened } from "./restore-guard";
 import { TaskStore, emptyTasks } from "./task-store";
-import { devEngine, fakeSetupResult, offeredEngines, readTestHooks, testEngineStatus } from "./test-hooks";
+import {
+  MOCK_MODEL,
+  devEngine,
+  fakeSetupResult,
+  isMockEngine,
+  mockEngineText,
+  mockLanguage,
+  mockModels,
+  offeredEngines,
+  readTestHooks,
+  testEngineStatus,
+} from "./test-hooks";
 
 declare const __HARNESS_DIR__: string;
 
@@ -107,6 +118,8 @@ async function referencesFor(folder: string | undefined, log = false): Promise<R
 const mode = () => (app.isPackaged ? "distribution" : "development");
 /** The engines this app offers (spec 3e: mock mode offers only the faked ones). */
 const offered = () => offeredEngines(availableEngines(harness.engines, mode()), hooks);
+/** Mock mode: the language the test engine and its model are named in. */
+const mockLang = (saved: Language | undefined) => mockLanguage(saved, app.getLocale(), harness.languages);
 const stateBlocks = () => new Set(Object.entries(allBlocks(harness)).filter(([, b]) => !b.visible).map(([n]) => n));
 const rendererFile = path.join(here, "../renderer/index.html");
 // The dev server is only trusted in development: a packaged app always loads its own file.
@@ -149,18 +162,25 @@ const engineLogo = (e: EngineDef) => (e.logo ? logo(e.id, () => requireFromHere.
 const savedOffer = (engineId: string) => shared.engine(engineId).catch((): SharedEngineRecord => ({}));
 
 /** Settings › Modelos: the harness's recommendations, the core's tables and what each engine offers. */
-async function modelsView(): Promise<ModelsView> {
+async function modelsView(language: Language | undefined): Promise<ModelsView> {
   const engines = offered();
   const saved = await shared.load().catch(() => ({ version: 1 as const, engines: {} as Record<string, SharedEngineRecord> }));
+  // Mock mode: a faked engine offers only the test model, and every tier uses it (effort and cap kept).
+  const tierSpec = (engineId: string, tier: Tier): ModelSpec =>
+    isMockEngine(hooks, engineId) ? { ...defaultTier(engineId, tier), model: MOCK_MODEL } : defaultTier(engineId, tier);
+  const offer = (e: EngineDef) => {
+    const real = engineOffer(e, saved.engines[e.id] ?? {});
+    return isMockEngine(hooks, e.id) ? { ...real, models: mockModels(mockLang(language)) } : real;
+  };
   return {
     recommended: {
       ...Object.fromEntries(Object.entries(harness.actions).map(([id, a]) => [id, a.tier ?? "standard"])),
       [QUESTIONS]: harness.questions?.tier ?? "standard",
     },
     defaults: Object.fromEntries(
-      engines.map((e) => [e.id, Object.fromEntries(TIERS.map((t) => [t, defaultTier(e.id, t)])) as Record<Tier, ModelSpec>]),
+      engines.map((e) => [e.id, Object.fromEntries(TIERS.map((t) => [t, tierSpec(e.id, t)])) as Record<Tier, ModelSpec>]),
     ),
-    offered: Object.fromEntries(engines.map((e) => [e.id, engineOffer(e, saved.engines[e.id] ?? {})])),
+    offered: Object.fromEntries(engines.map((e) => [e.id, offer(e)])),
   };
 }
 
@@ -205,6 +225,18 @@ async function appState(): Promise<AppState> {
     ...(hooks.mock ? { mock: true } : {}),
     engines: await Promise.all(
       offered().map(async (e) => {
+        // Mock mode: a faked engine is shown as the test engine, with no logo, install command or plan limits.
+        if (isMockEngine(hooks, e.id)) {
+          return {
+            id: e.id,
+            ...mockEngineText(mockLang(saved.language)),
+            status: e.status as "allowed" | "pending",
+            termsUrl: e.termsUrl,
+            privacyUrl: e.privacyUrl,
+            reportsLimits: false,
+            mock: true,
+          };
+        }
         const image = await engineLogo(e);
         return {
           id: e.id,
@@ -231,7 +263,7 @@ async function appState(): Promise<AppState> {
     ),
     path: harness.path ?? [],
     references: (await referencesFor(saved.folder)).map((r) => ({ id: r.id, label: r.label, path: displayPath(r.path, os.homedir()) })),
-    models: await modelsView(),
+    models: await modelsView(saved.language),
     backup: await backupView(saved.folder),
   };
 }
@@ -562,7 +594,8 @@ function registerIpc() {
   );
   handle("hh:engineStatus", async (engineId: string) => {
     const engine = engineFor(engineId);
-    if (hooks.engines?.[engine.id]) return testEngineStatus(engine, await hasNotice(engine.id));
+    // Mock mode: the test engine has no provider to disclose, so its notice counts as accepted.
+    if (hooks.engines?.[engine.id]) return testEngineStatus(engine, isMockEngine(hooks, engine.id) || (await hasNotice(engine.id)));
     return detectEngine(engine, commandDeps, shared);
   });
   handle("hh:acceptNotice", async (engineId: string) => {

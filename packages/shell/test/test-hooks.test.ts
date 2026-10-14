@@ -1,6 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { getEngine } from "@humanharness/engines";
-import { devEngine, fakeSetupResult, offeredEngines, readTestHooks, testEngineStatus } from "../src/main/test-hooks";
+import {
+  MOCK_MODEL,
+  devEngine,
+  fakeSetupResult,
+  isMockEngine,
+  mockEngineText,
+  mockLanguage,
+  mockModels,
+  offeredEngines,
+  readTestHooks,
+  testEngineStatus,
+} from "../src/main/test-hooks";
 
 const engines = JSON.stringify({
   claude: { command: ["/usr/local/bin/node", "fake-claude.ts"], env: { HH_FAKE_SCRIPT: "/s.json", ANTHROPIC_API_KEY: "x", HOME: "/x" } },
@@ -73,5 +84,41 @@ describe("fakeSetupResult", () => {
     expect(fakeSetupResult(hooks, "claude")).toEqual({ ok: true });
     expect(fakeSetupResult(hooks, "codex")).toBeUndefined();
     expect(fakeSetupResult({}, "claude")).toBeUndefined();
+  });
+});
+
+describe("mock engine presentation", () => {
+  const fake = { command: ["node"], env: {} };
+
+  it("treats an engine as the test engine only in mock mode and with a fake", () => {
+    expect(isMockEngine({ mock: true, engines: { claude: fake } }, "claude")).toBe(true);
+    expect(isMockEngine({ mock: true, engines: { claude: fake } }, "codex")).toBe(false);
+    expect(isMockEngine({ engines: { claude: fake } }, "claude")).toBe(false);
+    expect(isMockEngine({ mock: true }, "claude")).toBe(false);
+  });
+
+  it("names it in the saved language, else the system's when offered, else the harness's first", () => {
+    expect(mockLanguage("en", "es-AR", ["es", "en"])).toBe("en");
+    expect(mockLanguage(undefined, "es-AR", ["en", "es"])).toBe("es");
+    expect(mockLanguage(undefined, "en-US", ["es", "en"])).toBe("en");
+    expect(mockLanguage(undefined, "es", ["en"])).toBe("en");
+    expect(mockLanguage(undefined, "fr-FR", ["es", "en"])).toBe("es");
+  });
+
+  it("presents a test engine from Human Harness that keeps the data on the computer", () => {
+    expect(mockEngineText("es")).toEqual({
+      name: "Motor de prueba",
+      provider: "Human Harness",
+      requires: { es: "Nada", en: "Nothing" },
+      dataLocation: { es: "Tus datos no salen de esta compu", en: "Your data stays on this computer" },
+      trainsOnData: { es: "No", en: "No" },
+    });
+    expect(mockEngineText("en").name).toBe("Test engine");
+  });
+
+  it("offers one test model", () => {
+    expect(MOCK_MODEL).toBe("mock");
+    expect(mockModels("es")).toEqual([{ id: "mock", name: "Modelo de prueba" }]);
+    expect(mockModels("en")).toEqual([{ id: "mock", name: "Test model" }]);
   });
 });

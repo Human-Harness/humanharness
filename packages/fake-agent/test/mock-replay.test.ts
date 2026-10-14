@@ -1,4 +1,3 @@
-// packages/fake-agent/test/mock-replay.test.ts
 import { describe, expect, it } from "vitest";
 import { recordingSchema } from "../src/mock";
 import { DEFAULT_FALLBACK, promptKind, replay } from "../src/mock-replay";

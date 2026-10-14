@@ -1,9 +1,8 @@
-// packages/fake-agent/src/mock-claude.ts
 // fake-claude's mock mode (spec 3e): replays <harness>/mock/*.json instead of a test script.
 import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { callMcpTool } from "./mcp-call";
-import { loadRecordings } from "./mock";
+import { APP_FOLDERS, loadRecordings } from "./mock";
 import { type SessionPosition, replay } from "./mock-replay";
 
 type McpServers = Record<string, { command: string; args?: string[]; env?: Record<string, string> }>;
@@ -34,7 +33,7 @@ function safeTarget(cwd: string, p: string): string {
   const target = path.resolve(cwd, p);
   const rel = path.relative(cwd, target);
   const first = rel.split(path.sep)[0];
-  if (rel === "" || rel === ".." || rel.startsWith(".." + path.sep) || path.isAbsolute(rel) || first === ".claude" || first === ".harness") {
+  if (rel === "" || rel === ".." || rel.startsWith(".." + path.sep) || path.isAbsolute(rel) || (APP_FOLDERS as readonly string[]).includes(first)) {
     throw new Error(`refused to write "${p}": outside the work folder or in an app-owned folder`);
   }
   // A symlinked folder must not lead out either: check the nearest existing ancestor.

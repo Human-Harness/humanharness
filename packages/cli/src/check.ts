@@ -5,6 +5,7 @@ import { ENGINES, type Mode, brandNames } from "@humanharness/engines";
 import { type LoadedHarness, loadHarness, resolveInHarness } from "@humanharness/harness-sdk";
 import { type Io, UsageError, parseCommand } from "./cli";
 import { type HarnessDoc, PERMISSION_KEYS, type PermissionKey, QUESTIONS_ROW, parseHarnessMd, sectionText } from "./harness-md";
+import { clashMessage, matchClashes } from "./mock-match";
 import { HARNESS_MD, MANIFEST } from "./paths";
 
 export type Severity = "error" | "warning";
@@ -172,11 +173,8 @@ async function mockFindings(h: LoadedHarness, briefs: Map<string, string | null>
   // Replay picks the recording with the longest `match` found in a task's first message, so one action's match
   // inside another's brief is only safe when the other action has a longer match of its own in its brief.
   for (const { rec, file } of valid) {
-    for (const [other, text] of briefs) {
-      if (other === rec.action || !text?.includes(rec.match)) continue;
-      const own = valid.find((v) => v.rec.action === other)?.rec;
-      if (own && own.match.length > rec.match.length && text.includes(own.match)) continue;
-      findings.push(error("mock-match", `"${rec.match}" also appears in the brief of "${other}", so replay could pick the wrong recording.`, file));
+    for (const other of matchClashes(rec.action, rec.match, briefs, (id) => valid.find((v) => v.rec.action === id)?.rec.match)) {
+      findings.push(error("mock-match", clashMessage(rec.match, other), file));
     }
   }
   return findings;

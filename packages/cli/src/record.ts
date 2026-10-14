@@ -1,12 +1,11 @@
-// packages/cli/src/record.ts
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import type { MockNote, MockTurn, MockUsage, MockWrite, Recording } from "@humanharness/fake-agent";
+import { APP_FOLDERS, type MockNote, type MockTurn, type MockUsage, type MockWrite, type Recording } from "@humanharness/fake-agent";
 import type { Event } from "@humanharness/runtime";
 
 /** Larger files, and files that aren't text, are left out of a recording (spec 3e §3). */
 export const MAX_RECORDED_FILE = 64 * 1024;
-const SKIPPED_DIRS = new Set([".harness", ".git", "node_modules"]);
+const SKIPPED_DIRS = new Set<string>([...APP_FOLDERS, ".git", "node_modules"]);
 
 export interface FolderSnapshot {
   /** Relative path (with /) → content. */
@@ -32,14 +31,15 @@ export function briefMatch(text: string, fallback: string): string {
   return fallback;
 }
 
-/** The folder's small text files, `.harness/` left out. Symbolic links are skipped, never followed. */
-export async function snapshotFolder(folder: string): Promise<FolderSnapshot> {
+/** The folder's small text files, app-owned folders and the `exclude`d paths (relative, with /) left out. Symbolic links are skipped, never followed. */
+export async function snapshotFolder(folder: string, exclude: readonly string[] = []): Promise<FolderSnapshot> {
   const snap: FolderSnapshot = { files: new Map(), skipped: new Set(), signatures: new Map() };
   const walk = async (dir: string): Promise<void> => {
     const entries = await fs.readdir(dir, { withFileTypes: true }).catch(() => []);
     for (const e of entries) {
       const abs = path.join(dir, e.name);
       const rel = path.relative(folder, abs).split(path.sep).join("/");
+      if (exclude.includes(rel)) continue;
       const skip = async (): Promise<void> => {
         snap.skipped.add(rel);
         const st = await fs.lstat(abs).catch(() => null);
@@ -75,6 +75,8 @@ function diff(before: FolderSnapshot, after: FolderSnapshot): MockWrite[] {
 
 export interface RecorderOptions {
   folder: string;
+  /** Files the app generates in the folder (AGENTS.md, the engine's instructions file): never recorded. */
+  exclude?: readonly string[];
   /** The MCP tool a block is shown with (`blockToolName` over the harness's blocks). */
   toolFor: (block: string) => string;
   /** The text a task's first message contains for this action (its brief's first line). */
@@ -105,7 +107,7 @@ export class Recorder {
 
   /** The folder as it is before the first turn. */
   async begin(): Promise<void> {
-    this.snapshot = await snapshotFolder(this.o.folder);
+    this.snapshot = await snapshotFolder(this.o.folder, this.o.exclude);
   }
 
   event(e: Event): void {
@@ -133,7 +135,7 @@ export class Recorder {
 
   /** One engine turn ended (`recordUsage`): it becomes a recorded turn unless it was a checkpoint. */
   async turnEnded(meta: { action?: string; task?: string; phase?: "run" | "close" | "checkpoint" }, opts: { failed?: boolean } = {}): Promise<void> {
-    const after = await snapshotFolder(this.o.folder);
+    const after = await snapshotFolder(this.o.folder, this.o.exclude);
     for (const p of after.skipped) if (this.snapshot.signatures.get(p) !== after.signatures.get(p)) this.skipped.add(p);
     this.ended = null;
     if (opts.failed) {

@@ -138,20 +138,37 @@ describe("dev --mock", () => {
     await expect(runDev(dir, { mock: true, engine: "codex" })).rejects.toThrow("Mock mode replays as Claude");
   });
 
-  it("drops inherited HH_TEST_* and HH_DEV_ENGINE", async () => {
+  it("drops inherited HH_TEST_*, HH_FAKE_* and HH_DEV_ENGINE", async () => {
     const dir = await mockHarness();
     process.env.HH_TEST_USER_DATA = "/stray";
     process.env.HH_DEV_ENGINE = "codex";
+    process.env.HH_FAKE_MOCK_DIR = "/stray";
     try {
       const plain = await runDev(dir, {});
       expect(plain.env.HH_TEST_USER_DATA).toBeUndefined();
       expect(plain.env.HH_DEV_ENGINE).toBeUndefined();
+      expect(plain.env.HH_FAKE_MOCK_DIR).toBeUndefined();
       const mocked = await runDev(dir, { mock: true });
       expect(mocked.env.HH_TEST_USER_DATA).not.toBe("/stray");
     } finally {
       delete process.env.HH_TEST_USER_DATA;
       delete process.env.HH_DEV_ENGINE;
+      delete process.env.HH_FAKE_MOCK_DIR;
     }
+  });
+
+  it("a broken recording is a warning without --mock, and an error with it", async () => {
+    const dir = await mockHarness();
+    fs.writeFileSync(path.join(dir, "mock", "broken.json"), "{");
+    const plain = fakeSpawn();
+    const out = memoryStream();
+    expect(await devCommand({ harnessDir: dir, out: out.stream, spawn: plain.spawn })).toBe(0);
+    expect(out.text()).toContain("mock-schema");
+    expect(plain.calls).toHaveLength(1);
+    const mocked = fakeSpawn();
+    expect(await devCommand({ harnessDir: dir, mock: true, tmpRoot: root, out: memoryStream().stream, spawn: mocked.spawn })).toBe(1);
+    expect(mocked.calls).toHaveLength(0);
+    fs.rmSync(path.join(dir, "mock", "broken.json"));
   });
 
   it("reports an unusable mock folder cleanly", async () => {

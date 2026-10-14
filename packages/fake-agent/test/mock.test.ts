@@ -1,4 +1,3 @@
-// packages/fake-agent/test/mock.test.ts
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -25,6 +24,10 @@ describe("recordingSchema", () => {
 
   it("rejects other escapes: Windows, UNC and paths that are the folder itself", () => {
     for (const p of ["C:\\x", "C:x", "\\\\host\\share", "\\x", ".", "./", "a/.."]) {
+      const bad = { ...minimal, turns: [{ id: "t1", writes: [{ path: p, content: "x" }] }] };
+      expect(recordingSchema.safeParse(bad).success, p).toBe(false);
+    }
+    for (const p of [".claude/x", ".harness/tasks.json", "./.harness/x", ".claude"]) {
       const bad = { ...minimal, turns: [{ id: "t1", writes: [{ path: p, content: "x" }] }] };
       expect(recordingSchema.safeParse(bad).success, p).toBe(false);
     }

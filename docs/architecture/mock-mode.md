@@ -80,7 +80,7 @@ One file per action, `mock/<action>.json`, meant to be edited by hand. The schem
 `humanharness run <action> --record [--force]` runs the task with the real engine, as `run` does, and writes `mock/<action>.json` at the end (`packages/cli/src/record.ts`, `run.ts`).
 
 - **Refuses to start** when the file exists, unless `--force`. Actions reached by a choice are recorded into their own files only when none exists yet ("Not recorded: … already exists").
-- **Per turn** it saves the text, the blocks (with their tool names), the usage and the files the AI changed, found by comparing the work folder before and after the turn (`.harness`, `.git` and `node_modules` left out).
+- **Per turn** it saves the text, the blocks (with their tool names), the usage and the files the AI changed, found by comparing the work folder before and after the turn (`.harness`, `.claude`, `.git`, `node_modules` and the files the app generates, `AGENTS.md` and the engine's instructions file, left out). A recording's `writes` may not point into `.claude/` or `.harness/` either (`mock-schema`).
 - **Files.** Text files up to 64 KB. Binary files, larger files and symlinks are skipped (a symlink is never read). The skipped paths are listed once at the end, and only those that are new or changed during the run.
 - **`match`** is the first line of the brief, past any front matter and cut before a `{{` placeholder.
 - **Replies.** The person's reply becomes the `next` key along the path walked: the picked choice's label, or `*` for typed text. Other branches are added by hand.
@@ -92,7 +92,7 @@ One file per action, `mock/<action>.json`, meant to be edited by hand. The schem
 
 ## check rules
 
-`humanharness check` validates every `*.json` in `mock/` (`mockFindings` in `packages/cli/src/check.ts`). All are errors. A harness without `mock/` gets nothing.
+`humanharness check` validates every `*.json` in `mock/` (`mockFindings` in `packages/cli/src/check.ts`). All are errors in `check`. `dev` without `--mock` reports them as warnings and still opens the app (a broken recording only matters to the app that replays it); `dev --mock` keeps them as errors. A harness without `mock/` gets nothing.
 
 - `mock-schema`: the file is JSON and matches the schema.
 - `mock-action`: the action is in the manifest, and the file is named after it.

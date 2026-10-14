@@ -1,4 +1,3 @@
-// packages/fake-agent/src/mock-replay.ts
 import type { MockBlock, MockNote, MockTurn, MockUsage, MockWrite, Recording } from "./mock";
 
 /** Played when a reply isn't recorded and the recording has no `fallback` (spec 3e §2). */

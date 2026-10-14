@@ -1,4 +1,3 @@
-// packages/cli/test/record.test.ts
 import fs from "node:fs";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
@@ -25,6 +24,17 @@ describe("snapshotFolder", () => {
     const snap = await snapshotFolder(f);
     expect(Object.fromEntries(snap.files)).toEqual({ "a.md": "A", "sub/b.md": "B" });
     expect([...snap.skipped].sort()).toEqual(["big.txt", "img.png"]);
+  });
+
+  it("leaves out .claude and the files the app generates", async () => {
+    const f = path.join(root, "snap-app");
+    fs.mkdirSync(path.join(f, ".claude"), { recursive: true });
+    fs.writeFileSync(path.join(f, ".claude", "settings.json"), "{}");
+    fs.writeFileSync(path.join(f, "AGENTS.md"), "/Users/x/refs");
+    fs.writeFileSync(path.join(f, "CLAUDE.md"), "c");
+    fs.writeFileSync(path.join(f, "a.md"), "A");
+    const snap = await snapshotFolder(f, ["AGENTS.md", "CLAUDE.md"]);
+    expect(Object.fromEntries(snap.files)).toEqual({ "a.md": "A" });
   });
 
   it("never follows symlinks: they are skipped, not read", async () => {

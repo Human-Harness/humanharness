@@ -1,9 +1,11 @@
-// packages/fake-agent/src/mock.ts
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 
-/** A path inside the work folder: relative, with no `..` part. */
+/** Folders the app owns in a work folder: a recording never writes there. */
+export const APP_FOLDERS = [".claude", ".harness"] as const;
+
+/** A path inside the work folder: relative, with no `..` part, and not in an app-owned folder. */
 const folderPath = z
   .string()
   .min(1)
@@ -14,8 +16,9 @@ const folderPath = z
       !/^[A-Za-z]:/.test(p) &&
       !p.startsWith("\\\\") &&
       !p.split(/[\\/]/).includes("..") &&
+      !(APP_FOLDERS as readonly string[]).includes(p.split(/[\\/]/).filter((x) => x && x !== ".")[0] ?? "") &&
       !["", "."].includes(path.posix.normalize(p.replaceAll("\\", "/")).replace(/\/+$/, "")),
-    "must be a relative path to a file inside the folder",
+    "must be a relative path to a file inside the folder, outside .claude/ and .harness/",
   );
 
 const blockSchema = z.strictObject({ tool: z.string().min(1), input: z.record(z.string(), z.unknown()) });
@@ -37,8 +40,10 @@ export const mockTurnSchema = z.strictObject({
   writes: z.array(writeSchema).default([]),
   usage: usageSchema.optional(),
   delayMs: z.number().int().min(0).max(60_000).optional(),
-  /** Reply → next turn id: a choice's label, or `*` for anything else. */
-  /** Checked on the raw input: zod's record silently drops a `__proto__` key. */
+  /**
+   * Reply → next turn id: a choice's label, or `*` for anything else.
+   * Checked on the raw input: zod's record silently drops a `__proto__` key.
+   */
   next: z
     .unknown()
     .refine((n) => typeof n !== "object" || n === null || !Object.hasOwn(n, "__proto__"), "\"__proto__\" is not a valid reply label")

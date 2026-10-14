@@ -31,7 +31,10 @@ export async function devCommand(o: DevOptions): Promise<number> {
   if (o.keep && !o.mock) throw new UsageError("--keep only works with --mock");
   if (o.mock && o.engine && o.engine !== "claude") throw new UsageError("Mock mode replays as Claude; drop --engine or use --engine claude.");
   const root = path.resolve(o.harnessDir);
-  const { findings, harness } = await checkHarness(root);
+  const checked = await checkHarness(root);
+  const harness = checked.harness;
+  // A broken recording only stops the app that replays it: without --mock it is a warning.
+  const findings = o.mock ? checked.findings : checked.findings.map((f) => (f.rule.startsWith("mock-") ? { ...f, severity: "warning" as const } : f));
   if (findings.length > 0) o.out.write(formatFindings(findings));
   if (!harness || findings.some((f) => f.severity === "error")) {
     o.out.write("Fix the errors above before opening the app.\n");
@@ -47,8 +50,8 @@ export async function devCommand(o: DevOptions): Promise<number> {
   const env: NodeJS.ProcessEnv = { ...process.env, HH_HARNESS_DIR: root };
   // Electron started as plain Node would not open a window.
   delete env.ELECTRON_RUN_AS_NODE;
-  // A developer's stray test or engine settings must not leak into the app.
-  for (const k of Object.keys(env)) if (k.startsWith("HH_TEST_") || k === "HH_DEV_ENGINE") delete env[k];
+  // A developer's stray test, fake-engine or engine settings must not leak into the app.
+  for (const k of Object.keys(env)) if (k.startsWith("HH_TEST_") || k.startsWith("HH_FAKE_") || k === "HH_DEV_ENGINE") delete env[k];
   if (o.mock) {
     try {
       Object.assign(env, await mockEnv({ harnessId: harness.id, harnessDir: root, suggested: harness.folder.suggested, keep: o.keep === true, tmpRoot: o.tmpRoot, out: o.out }));

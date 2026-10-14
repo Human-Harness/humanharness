@@ -27,9 +27,10 @@ import {
   sharedConfigDir,
   usageRecord,
 } from "@humanharness/shell/tasks";
-import { readNotes, writeNote } from "@humanharness/workspace";
+import { generatedFiles, readNotes, writeNote } from "@humanharness/workspace";
 import { CliError, type Io, UsageError, parseCommand } from "./cli";
 import { MANIFEST } from "./paths";
+import { clashMessage, matchClashes } from "./mock-match";
 import { Recorder, briefMatch } from "./record";
 import { type RunReport, UsageTally, formatReport } from "./report";
 import { TerminalView, errorMessage } from "./terminal";
@@ -133,34 +134,31 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
   const usageLog = new UsageLog(folder);
   const references = await resolveReferences(harness.folder.references, { harnessDir: harness.root, home: os.homedir(), packaged: false });
   const gitdir = path.join(os.tmpdir(), "humanharness-run-history", `${harness.id}-${createHash("sha256").update(folder).digest("hex").slice(0, 12)}`);
-  const stateBlocks = new Set(Object.entries(allBlocks(harness)).filter(([, b]) => !b.visible).map(([name]) => name));
   const blocks = allBlocks(harness);
-  const briefs = new Map<string, string>();
-  const briefTexts = new Map<string, string>();
-  for (const id of Object.keys(harness.actions)) {
-    const text = await fs.readFile(resolveInHarness(harness, harness.actions[id].prompt), "utf8").catch(() => "");
-    briefTexts.set(id, text);
-    // The brief's first line past any front matter, cut before a placeholder: a task's first message always contains it.
-    briefs.set(id, briefMatch(text, id));
-  }
+  const stateBlocks = new Set(Object.entries(blocks).filter(([, b]) => !b.visible).map(([name]) => name));
+  let recorder: Recorder | undefined;
   if (o.record) {
-    // Replay picks a recording by its match inside the task's first message: warn when another brief holds it too.
-    const mine = briefs.get(o.action) ?? o.action;
-    for (const [other, text] of briefTexts) {
-      if (other !== o.action && text.includes(mine)) {
-        out.write(`Warning: "${mine}" also appears in the brief of "${other}", so replay could pick the wrong recording. Make the first line of the briefs distinct.\n`);
-      }
+    const briefTexts = new Map<string, string>();
+    const matches = new Map<string, string>();
+    for (const id of Object.keys(harness.actions)) {
+      const text = await fs.readFile(resolveInHarness(harness, harness.actions[id].prompt), "utf8").catch(() => "");
+      briefTexts.set(id, text);
+      // The brief's first line past any front matter, cut before a placeholder: a task's first message always contains it.
+      matches.set(id, briefMatch(text, id));
     }
+    // Replay picks a recording by its match inside the task's first message: warn when another brief holds it too.
+    for (const other of matchClashes(o.action, matches.get(o.action) ?? o.action, briefTexts, (id) => matches.get(id))) {
+      out.write(`Warning: ${clashMessage(matches.get(o.action) ?? o.action, other)} Make the first line of the briefs distinct.\n`);
+    }
+    recorder = new Recorder({
+      folder,
+      exclude: generatedFiles(engine),
+      toolFor: (name) => (Object.hasOwn(blocks, name) ? blockToolName(name, blocks[name]) : `show_${name}`),
+      matchFor: (id) => matches.get(id) ?? id,
+      recordedWith: engine.id,
+      warn: (m) => out.write(`Note: ${m}\n`),
+    });
   }
-  const recorder = o.record
-    ? new Recorder({
-        folder,
-        toolFor: (name) => (Object.hasOwn(blocks, name) ? blockToolName(name, blocks[name]) : `show_${name}`),
-        matchFor: (id) => briefs.get(id) ?? id,
-        recordedWith: engine.id,
-        warn: (m) => out.write(`Note: ${m}\n`),
-      })
-    : undefined;
   await recorder?.begin();
   let lastNote: string | undefined;
   // Counted, not compared by path: a checkpoint's note and the closing one go to the same file.
@@ -343,6 +341,7 @@ export async function runCommand(args: string[], io: Io): Promise<number> {
     force: { type: "boolean" },
   });
   if (positionals.length !== 1) throw new UsageError(RUN_USAGE);
+  if (values.force && !values.record) throw new UsageError("--force only works with --record");
   if (values.tier !== undefined && !(TIERS as readonly string[]).includes(values.tier)) throw new UsageError(`Unknown tier "${values.tier}": use light, standard or deep.`);
   if (values.language !== undefined && !(LANGUAGES as readonly string[]).includes(values.language)) throw new UsageError(`Unknown language "${values.language}": use es or en.`);
   await runTask({

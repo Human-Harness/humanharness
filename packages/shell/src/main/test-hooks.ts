@@ -86,3 +86,11 @@ export function devEngine(env: Record<string, string | undefined>, packaged: boo
 export function offeredEngines<E extends { id: string }>(engines: E[], hooks: Pick<TestHooks, "mock" | "engines">): E[] {
   return hooks.mock ? engines.filter((e) => hooks.engines?.[e.id] !== undefined) : engines;
 }
+
+/**
+ * Setup steps (install, update, login, logout) for an engine with a fake: nothing runs, so no real CLI
+ * is spawned. Undefined for a real engine. The same goes for the engine test: a fake counts as working.
+ */
+export function fakeSetupResult(hooks: Pick<TestHooks, "engines">, engineId: string): { ok: true } | undefined {
+  return hooks.engines?.[engineId] ? { ok: true } : undefined;
+}

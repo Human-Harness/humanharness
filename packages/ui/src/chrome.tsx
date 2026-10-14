@@ -1,10 +1,22 @@
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
+
+function MockBadge() {
+  const { t } = useTranslation();
+  return (
+    <span className="hh-mock-badge" role="note">
+      {t("mock.badge")}
+    </span>
+  );
+}
 
 /** The window's top bar: the drag region of the hiddenInset title bar, with room for the traffic lights. */
-export function TopBar({ title, children }: { title?: ReactNode; children?: ReactNode }) {
+export function TopBar({ title, mock, children }: { title?: ReactNode; mock?: boolean; children?: ReactNode }) {
   return (
     <header className="hh-topbar">
       {title !== undefined && <h1 className="hh-title">{title}</h1>}
+      {/* humanharness dev --mock: a fake engine answers, so the tester never takes it for the real thing. */}
+      {mock && <MockBadge />}
       <span className="hh-spacer" />
       {children}
     </header>

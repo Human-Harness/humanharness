@@ -44,7 +44,7 @@ export function Home({
 
   return (
     <div className="hh-home">
-      <TopBar>
+      <TopBar mock={state.mock}>
         <button className="hh-icon-button" aria-label={t("home.settings")} onClick={onSettings}>
           <GearIcon />
         </button>

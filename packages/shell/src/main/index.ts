@@ -53,7 +53,7 @@ import { TaskManager } from "./task-manager";
 import { historyView, isSha } from "./history-view";
 import { RestoreGuard, lastOpened } from "./restore-guard";
 import { TaskStore, emptyTasks } from "./task-store";
-import { devEngine, offeredEngines, readTestHooks, testEngineStatus } from "./test-hooks";
+import { devEngine, fakeSetupResult, offeredEngines, readTestHooks, testEngineStatus } from "./test-hooks";
 
 declare const __HARNESS_DIR__: string;
 
@@ -572,6 +572,9 @@ function registerIpc() {
   handle("hh:runSetup", async (engineId: string, step: SetupStep) => {
     const engine = engineFor(engineId);
     if (!SETUP_STEPS.includes(step)) throw new Error("Unknown setup step");
+    // A fake engine has nothing to install or sign in to, and no real CLI may run.
+    const fake = fakeSetupResult(hooks, engineId);
+    if (fake) return fake;
     // Start and end are only reported by the call that holds the setup slot, so only it resets these.
     const output = (o: SetupOutput) => {
       if (o.kind === "start") setupUrl = undefined;
@@ -619,11 +622,12 @@ function registerIpc() {
     // A second request for the same engine (the screen was reopened) gets the running test's result.
     return guards.runTest(engineId, async (signal): Promise<TestResult> => {
       if (!(await hasNotice(engineId))) return { ok: false, error: { code: "notice-required" } };
-      const cmd = await engineCommand(engine, commandDeps);
+      // A fake engine is never tested against a real CLI.
+      const cmd = fakeSetupResult(hooks, engineId) ? { command: [], env: {} } : await engineCommand(engine, commandDeps);
       if (!cmd) return { ok: false, error: { code: "engine-not-installed" } };
       // The app may have started quitting while the CLI was being found.
       if (quitting || signal.aborted) return { ok: false, error: { code: "cancelled" } };
-      const result = await testPrompt(engine, cmd, { signal });
+      const result = fakeSetupResult(hooks, engineId) ? { ok: true } : await testPrompt(engine, cmd, { signal });
       if (!result.ok) return result;
       try {
         await shared.update(engineId, { verifiedAt: new Date().toISOString() });

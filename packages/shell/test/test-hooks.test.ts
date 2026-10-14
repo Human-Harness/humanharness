@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { getEngine } from "@humanharness/engines";
-import { devEngine, offeredEngines, readTestHooks, testEngineStatus } from "../src/main/test-hooks";
+import { devEngine, fakeSetupResult, offeredEngines, readTestHooks, testEngineStatus } from "../src/main/test-hooks";
 
 const engines = JSON.stringify({
   claude: { command: ["/usr/local/bin/node", "fake-claude.ts"], env: { HH_FAKE_SCRIPT: "/s.json", ANTHROPIC_API_KEY: "x", HOME: "/x" } },
@@ -60,9 +60,18 @@ describe("mock mode hooks", () => {
   });
 
   it("in mock mode only engines with a fake are offered", () => {
-    const engines = [getEngine("claude"), getEngine("codex")];
+    const defs = [getEngine("claude"), getEngine("codex")];
     const fake = { command: ["node"], env: {} };
-    expect(offeredEngines(engines, { mock: true, engines: { claude: fake } }).map((e) => e.id)).toEqual(["claude"]);
-    expect(offeredEngines(engines, { engines: { claude: fake } }).map((e) => e.id)).toEqual(["claude", "codex"]);
+    expect(offeredEngines(defs, { mock: true, engines: { claude: fake } }).map((e) => e.id)).toEqual(["claude"]);
+    expect(offeredEngines(defs, { engines: { claude: fake } }).map((e) => e.id)).toEqual(["claude", "codex"]);
+  });
+});
+
+describe("fakeSetupResult", () => {
+  it("answers for a faked engine without a real CLI, and not for a real one", () => {
+    const hooks = { engines: { claude: { command: ["node"], env: {} } } };
+    expect(fakeSetupResult(hooks, "claude")).toEqual({ ok: true });
+    expect(fakeSetupResult(hooks, "codex")).toBeUndefined();
+    expect(fakeSetupResult({}, "claude")).toBeUndefined();
   });
 });

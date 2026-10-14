@@ -16,7 +16,7 @@ Usability tests of a harness today cost tokens: every pass through the app runs 
 - **Only the fake engine.** In mock mode the app offers only the engines that have a fake (Claude), so no status check reaches a real CLI. The suggested folder is inside the mock session's temp folder; synced places are still offered as they are on the computer.
 - **Engine status.** As with the existing test hooks, the fake engine reports installed and signed in; the legal notice stays real, so onboarding looks as it does for a person.
 
-`dev --mock` passes `HH_MOCK_DIR` (the harness's `mock/` folder) to the shell; the shell turns it into a test-engine entry for `claude` whose command is `fake-claude` and whose env holds only `HH_FAKE_*` variables, the same path the e2e tests use today.
+`dev --mock` sets the `HH_TEST_*` hooks the e2e tests already use (`HH_TEST_MOCK`, `HH_TEST_USER_DATA`, `HH_TEST_SHARED_DIR`, `HH_TEST_SUGGESTED_FOLDER`, `HH_TEST_ENGINES`). `HH_TEST_ENGINES` holds a `claude` entry whose command is `fake-claude` and whose env has only `HH_FAKE_MOCK_DIR` (the harness's `mock/` folder) and `HH_FAKE_MOCK_STATE`.
 
 ## 2. The recording format
 
@@ -90,3 +90,17 @@ Mock mode runs no engine CLI and reads no engine files. The fake's env carries o
 ## Docs
 
 Add `docs/architecture/mock-mode.md` (format, `dev --mock`, `--record`, `check` rules) and a line in `docs/architecture/authoring.md`. In the roadmap, add row 3e.
+
+## Changes during implementation
+
+- `HH_MOCK_DIR` does not exist: `dev --mock` uses the `HH_TEST_*` hooks (§1).
+- The fake's position is a file named by `HH_FAKE_MOCK_STATE` (`mock-state.json` in the session root), written atomically and only after a turn succeeded.
+- A failure in a turn (refused write, rejected `ui` call) becomes an error result `mock: <reason>`.
+- Recorded writes are contained: outside the folder, `.claude`, `.harness` and symlinks are refused.
+- In mock mode only faked engines are offered, and install, update, login, logout and the engine test do nothing for them (no real CLI runs, not even for setup).
+- The badge sits in the top bar and truncates long harness titles.
+- Session folders are `<tmp>/hh-mock-<harness id>/`. `dev` strips inherited `HH_TEST_*` and `HH_DEV_ENGINE`. `--keep` needs `--mock`, and `--engine` must be `claude`.
+- The recorder skips failed turns, records only the first visit to an action, lists skipped files only when new or changed, writes atomically, and does not overwrite another action's file. A checkpoint's note is replaced by the closing one.
+- `mock-match` also fails when a match appears in another brief, unless that action has a longer match of its own.
+- Plan 3d's history restore was hardened against symlinks along the way (`History.restoreReport`).
+- The demo got a `HARNESS.md` so `check` and `dev --mock` accept it.

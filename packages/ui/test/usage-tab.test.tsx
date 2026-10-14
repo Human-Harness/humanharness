@@ -39,12 +39,18 @@ function codex(engine: Partial<EngineOption> = {}): FakeClient {
   return client;
 }
 
+/** The visible text of a cell (screen-reader-only text left out). */
+const visible = (cell: Element) => {
+  const copy = cell.cloneNode(true) as Element;
+  copy.querySelectorAll(".hh-sr-only").forEach((e) => e.remove());
+  return copy.textContent;
+};
 /** Each body row as [topic, ...cells]. */
 const rows = () =>
   within(screen.getByRole("table"))
     .getAllByRole("row")
     .slice(1)
-    .map((r) => [...r.querySelectorAll("th, td")].map((c) => c.textContent));
+    .map((r) => [...r.querySelectorAll("th, td")].map(visible));
 const headers = () => within(screen.getByRole("table")).getAllByRole("columnheader").map((c) => c.textContent);
 
 describe("Settings › Uso with an engine that reports limits", () => {
@@ -65,6 +71,8 @@ describe("Settings › Uso with an engine that reports limits", () => {
     expect(screen.getByText(`se renueva ${formatReset(reset, "es")}`)).toBeTruthy();
     expect(screen.getByText("lo informa Claude en cada respuesta")).toBeTruthy();
     expect(headers()).toEqual(["Tema", "Cada vez", "Te alcanza para"]);
+    // The table is named by its heading.
+    expect(screen.getByRole("table", { name: "Cuánto usa cada tema" })).toBeTruthy();
     // Path order (tidy, research), then the other actions, then free questions.
     expect(rows()).toEqual([
       ["Ordenar", "≈ 1 % de 5 h", "más de 50"],
@@ -151,6 +159,27 @@ describe("Settings › Uso with an engine that reports limits", () => {
     expect(screen.getByText("Límite")).toBeTruthy();
     expect(screen.queryByText("97 % usado")).toBeNull();
   });
+
+  it("after every window has reset: says the window renewed, not that the first reply is still to come", async () => {
+    const client = claude();
+    client.usage = { limits: [], estimates: { research: 0.08 }, tokens: { research: 5000 }, primary: "five_hour" };
+    await renderIn("es", <Sheet client={client} />);
+    expect(await screen.findByText("Tu ventana se renovó: Claude te dice cuánto usaste con tu próxima respuesta.")).toBeTruthy();
+    expect(screen.queryByText(/primera respuesta/)).toBeNull();
+  });
+
+  it("a topic that was used but never measured says it couldn't be measured yet", async () => {
+    const client = claude();
+    // tidy has tokens (it was used) but no estimate (no task of it could be measured against the window).
+    client.usage = { limits: [{ kind: "five_hour", utilization: 0.2, resetsAt: in2h() }], estimates: {}, tokens: { tidy: 3000 }, primary: "five_hour" };
+    await renderIn("es", <Sheet client={client} />);
+    await screen.findByRole("table");
+    expect(rows().slice(0, 3)).toEqual([
+      ["Ordenar", "Uso medio · no pude medirlo todavía"],
+      ["Investigar", "Uso alto · te digo cuánto después de usarlo"],
+      ["Nota", "Uso bajo · te digo cuánto después de usarlo"],
+    ]);
+  });
 });
 
 describe("Settings › Uso with an engine that reports no limits", () => {
@@ -178,7 +207,10 @@ describe("Settings › Uso with an engine that reports no limits", () => {
       ["B", "1,3 veces el promedio"],
       ["Pregunta libre", "la mitad del promedio"],
     ]);
-    expect(screen.getByText("2,4 veces el promedio").closest("td")!.getAttribute("title")).toBe(`≈ ${compactTokens(2400, "es")} tokens cada vez`);
+    const cell = screen.getByText("2,4 veces el promedio").closest("td")!;
+    expect(cell.getAttribute("title")).toBe(`≈ ${compactTokens(2400, "es")} tokens cada vez`);
+    // The same detail reaches the keyboard and screen readers as hidden text.
+    expect(cell.querySelector(".hh-sr-only")!.textContent).toBe(` (≈ ${compactTokens(2400, "es")} tokens cada vez)`);
     // The bar is relative to the largest topic.
     const bar = (text: string) => (screen.getByText(text).closest("td")!.querySelector(".hh-usage-bar > span") as HTMLElement).style.width;
     expect(bar("2,4 veces el promedio")).toBe("100%");
@@ -240,6 +272,7 @@ describe("Settings › Uso in mock mode", () => {
     client.usage = { limits: [{ kind: "five_hour", utilization: 0.2, resetsAt: in2h() }], estimates: { research: 0.1 }, tokens: {}, primary: "five_hour" };
     await renderIn("en", <Sheet client={client} />);
     expect(await screen.findByText("20% used")).toBeTruthy();
+    expect(screen.getByRole("table", { name: "How much each topic uses" })).toBeTruthy();
     expect(rows()[1]).toEqual(["Research", "≈ 10% of 5 h", "about 10 times"]);
     expect(screen.getByText("'Enough for' assumes a whole 5-hour window and your plan today. It recalculates on its own if the model or your plan changes.")).toBeTruthy();
   });

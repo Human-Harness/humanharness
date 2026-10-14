@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import type { AppState, EngineOption, HarnessClient, LimitWindow, UsageSummary } from "./client";
@@ -26,13 +26,14 @@ export function UsageTab({ client, state }: { client: HarnessClient; state: AppS
   const primary = usage?.primary ? limits?.find((w) => w.kind === usage.primary) : undefined;
   const near = primary !== undefined && primary.utilization >= WARN_AT;
   const showPlans = Boolean(engine?.plansUrl && (near || !reportsLimits));
+  const tableTitle = useId();
 
   return (
     <div className="hh-tab">
       <h3>{t("usage.planTitle")}</h3>
-      <PlanSection engine={engine} limits={limits} />
-      <h3>{t("usage.actionsTitle")}</h3>
-      {usage && <TopicTable state={state} usage={usage} reportsLimits={reportsLimits} near={near ? primary : undefined} />}
+      <PlanSection engine={engine} limits={limits} reported={Boolean(usage?.limits)} />
+      <h3 id={tableTitle}>{t("usage.actionsTitle")}</h3>
+      {usage && <TopicTable state={state} usage={usage} reportsLimits={reportsLimits} near={near ? primary : undefined} labelledBy={tableTitle} />}
       {showPlans && engine && (
         <div className="hh-rows">
           <div className="hh-row">
@@ -49,12 +50,13 @@ export function UsageTab({ client, state }: { client: HarnessClient; state: AppS
 
 const windowName = (t: TFunction, kind: string): string => t(`usage.${kind}`, { defaultValue: t("usage.limit") });
 
-function PlanSection({ engine, limits }: { engine?: EngineOption; limits: LimitWindow[] | null }) {
+/** `reported`: the engine has sent windows before, even if they have all reset since. */
+function PlanSection({ engine, limits, reported }: { engine?: EngineOption; limits: LimitWindow[] | null; reported: boolean }) {
   const { t, i18n } = useTranslation();
   if (!engine) return <p className="hh-caption">{t("home.noEngine")}</p>;
   if (engine.mock) return <p className="hh-caption">{t("usage.mock")}</p>;
   if (!engine.reportsLimits) return <p className="hh-caption">{t("usage.noLimitsPlan", { engine: engine.name })}</p>;
-  if (!limits?.length) return <p className="hh-caption">{t("usage.notYet", { engine: engine.name })}</p>;
+  if (!limits?.length) return <p className="hh-caption">{t(reported ? "usage.renewed" : "usage.notYet", { engine: engine.name })}</p>;
   return (
     <>
       <div className="hh-rows">
@@ -83,7 +85,19 @@ function Bar({ share, warn }: { share: number; warn?: boolean }) {
   );
 }
 
-function TopicTable({ state, usage, reportsLimits, near }: { state: AppState; usage: UsageSummary; reportsLimits: boolean; near?: LimitWindow }) {
+function TopicTable({
+  state,
+  usage,
+  reportsLimits,
+  near,
+  labelledBy,
+}: {
+  state: AppState;
+  usage: UsageSummary;
+  reportsLimits: boolean;
+  near?: LimitWindow;
+  labelledBy: string;
+}) {
   const { t, i18n } = useTranslation();
   const lang = uiLanguage(state, i18n.language);
   const rows = taskRows(state, lang, { key: QUESTIONS, label: t("models.questions") });
@@ -93,11 +107,15 @@ function TopicTable({ state, usage, reportsLimits, near }: { state: AppState; us
   const average = tokens.length ? tokens.reduce((a, b) => a + b, 0) / tokens.length : 0;
   const largest = Math.max(0, ...tokens);
 
-  /** Not measured yet: the harness's cost hint (free questions have none). */
+  /**
+   * Not measured yet: the harness's cost hint (free questions have none). With limits, a topic that has
+   * tokens was used, but no task of it could be measured against the window (e.g. it crossed a reset).
+   */
   const hint = (key: string) => {
     const cost = state.actions[key]?.cost;
     const text = cost ? t(`usage.hint.${cost}`) : "—";
-    return reportsLimits ? `${text} · ${t("usage.afterUse")}` : text;
+    if (!reportsLimits) return text;
+    return `${text} · ${t(usage.tokens[key] !== undefined ? "usage.notMeasured" : "usage.afterUse")}`;
   };
   const fits = (estimate: number) => {
     if (near) {
@@ -121,7 +139,7 @@ function TopicTable({ state, usage, reportsLimits, near }: { state: AppState; us
 
   return (
     <>
-      <table className="hh-usage-table">
+      <table className="hh-usage-table" aria-labelledby={labelledBy}>
         <thead>
           <tr>
             <th scope="col">{t("usage.col.topic")}</th>
@@ -145,10 +163,13 @@ function TopicTable({ state, usage, reportsLimits, near }: { state: AppState; us
                 </>
               );
             } else if (!reportsLimits && n !== undefined) {
+              // The tooltip is for the mouse; the hidden text gives the same detail to screen readers.
+              const detail = t("usage.tokensEach", { tokens: compactTokens(n, i18n.language) });
               cells = (
-                <td title={t("usage.tokensEach", { tokens: compactTokens(n, i18n.language) })}>
+                <td title={detail}>
                   <Bar share={largest > 0 ? n / largest : 0} />
                   <span>{comparison(n)}</span>
+                  <span className="hh-sr-only"> ({detail})</span>
                 </td>
               );
             } else {

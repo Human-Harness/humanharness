@@ -314,21 +314,35 @@ describe("HarnessApp", () => {
     expect(screen.getByRole("alert")).toBeTruthy();
   });
 
-  it("keeps long answers pinned to the bottom only when the user was near it", async () => {
+  it("pins a sent question to the top of the chat and leaves it there while the answer arrives", async () => {
     const client = new FakeClient(ready);
     const { container } = await startWork(<HarnessApp client={client} />);
-    await typeAndSend(client, "go");
     const chat = container.querySelector(".hh-chat") as HTMLElement;
-    Object.defineProperty(chat, "scrollHeight", { configurable: true, value: 1000 });
+    const spacer = container.querySelector(".hh-chat-spacer") as HTMLElement;
+    let height = 500;
+    Object.defineProperty(chat, "scrollHeight", { configurable: true, get: () => height + (spacer.style.display === "none" ? 0 : parseFloat(spacer.style.height)) });
     Object.defineProperty(chat, "clientHeight", { configurable: true, value: 400 });
-    chat.scrollTop = 560;
-    fireEvent.scroll(chat);
-    act(() => client.emit({ type: "text", delta: "more" }));
-    expect(chat.scrollTop).toBe(1000);
-    chat.scrollTop = 100;
-    fireEvent.scroll(chat);
-    act(() => client.emit({ type: "text", delta: " and more" }));
-    expect(chat.scrollTop).toBe(100);
+    // The question sits 240 px down the conversation.
+    const offsetTop = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetTop")!;
+    Object.defineProperty(HTMLElement.prototype, "offsetTop", { configurable: true, get() { return (this as HTMLElement).dataset.role === "user" ? 240 : 0; } });
+    try {
+      await typeAndSend(client, "go");
+      // Room is made below it (240 + 400 − 500) so it can sit at the top.
+      expect(chat.scrollTop).toBe(240);
+      expect(spacer.style.display).toBe("");
+      expect(spacer.style.height).toBe("140px");
+      // The answer grows into that room: nothing scrolls, and the room shrinks.
+      height = 600;
+      act(() => client.emit({ type: "text", delta: "more" }));
+      expect(chat.scrollTop).toBe(240);
+      expect(spacer.style.height).toBe("40px");
+      height = 900;
+      act(() => client.emit({ type: "text", delta: " and more" }));
+      expect(chat.scrollTop).toBe(240);
+      expect(spacer.style.display).toBe("none");
+    } finally {
+      Object.defineProperty(HTMLElement.prototype, "offsetTop", offsetTop);
+    }
   });
 
   it("is accessible: labelled composer, live region, focus management", async () => {

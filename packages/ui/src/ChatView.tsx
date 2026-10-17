@@ -1,16 +1,27 @@
 import { type ComponentType, type FormEvent, type ReactNode, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { WorkingStatus } from "./ActivityList";
 import { ChoicesBlock } from "./ChoicesBlock";
 import { GearIcon, TopBar } from "./chrome";
-import { type AppState, type ChoiceOption, type EngineProblem, type HarnessClient, type NoteView, type SendOptions, type TaskView, nextInPath } from "./client";
+import {
+  type AppState,
+  type ChatEntry,
+  type ChoiceOption,
+  type EngineProblem,
+  type HarnessClient,
+  type NoteView,
+  type SendOptions,
+  type TaskView,
+  nextInPath,
+  partsOf,
+} from "./client";
 import { ErrorCard, isFixable, problemError } from "./ErrorCard";
 import { FlowSide } from "./FlowSide";
 import { uiLanguage } from "./FolderStep";
 import { HistoryPanel } from "./HistoryPanel";
-import { type BlockActions, type BlockProps, Blocks, Message } from "./Message";
-import { Markdown, markdownToPlain } from "./markdown";
+import { type BlockActions, type BlockProps, Message } from "./Message";
+import { markdownToPlain } from "./markdown";
 import { NotesPanel } from "./NotesPanel";
+import { usePacedAnswer } from "./pace";
 import { type StartViewCopy, StartView } from "./StartView";
 import { initialChat, reduceChat } from "./state";
 import { UsageMeter } from "./UsageMeter";
@@ -100,7 +111,15 @@ export function ChatView({
   const preflightOpener = useRef<HTMLElement | null>(null);
   const chatRef = useRef<HTMLElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  /** Away from a turn just sent (loading, a notice): new content keeps the chat at the bottom while the user is there. */
   const stick = useRef(true);
+  /** Set on send: the question that goes on screen next is pinned to the top of the chat. */
+  const pinNext = useRef(false);
+  /** The question pinned at the top while its answer grows below it; the spacer gives it room to get there. */
+  const pinned = useRef<string | null>(null);
+  const spacerRef = useRef<HTMLDivElement>(null);
+  /** The turn whose answer is pacing in, until all of it is on screen (it goes on after the turn ends). */
+  const pacedTurn = useRef<string | null>(null);
   // Set synchronously on send so two quick clicks can't both pass before the live turn renders.
   const busy = useRef(false);
   const wasLive = useRef(false);
@@ -178,10 +197,41 @@ export function ChatView({
     notNowRef.current?.focus();
   }, [asking]);
 
+  // The answer appears at a steady pace, word by word and block by block: the turn running now, then its entry
+  // once it ends, until all of it is on screen.
+  if (chat.live) pacedTurn.current = chat.live.id;
+  const pacedEntry = chat.live ? null : chat.entries.findLast((e) => e.role === "assistant" && e.id === pacedTurn.current);
+  const pacedParts = chat.live ? chat.live.parts : pacedEntry ? partsOf(pacedEntry) : null;
+  const reveal = usePacedAnswer(pacedTurn.current ?? "", pacedParts, !chat.live);
+
   useLayoutEffect(() => {
     const el = chatRef.current;
-    if (el && stick.current) el.scrollTop = el.scrollHeight;
-  }, [chat.entries, chat.live]);
+    if (!el) return;
+    const spacer = spacerRef.current;
+    const wrappers = [...el.querySelectorAll<HTMLElement>("[data-entry]")];
+    // A question just sent goes to the top of the chat, and stays there: its answer grows into the room below.
+    const justSent = pinNext.current && chat.live !== null;
+    if (justSent) {
+      pinNext.current = false;
+      pinned.current = wrappers.findLast((w) => w.dataset.role === "user")?.dataset.entry ?? null;
+    }
+    const question = pinned.current ? wrappers.find((w) => w.dataset.entry === pinned.current) : undefined;
+    if (!question || !spacer) {
+      pinned.current = null;
+      if (spacer) spacer.style.display = "none";
+      if (stick.current) el.scrollTop = el.scrollHeight;
+      return;
+    }
+    const style = getComputedStyle(el);
+    const gap = parseFloat(style.rowGap) || 0;
+    const top = question.offsetTop - (parseFloat(style.paddingTop) || 0);
+    // Enough room below the question to scroll it to the top; it shrinks as the answer fills it.
+    const current = spacer.style.display === "none" ? 0 : (parseFloat(spacer.style.height) || 0) + gap;
+    const room = Math.max(0, top + el.clientHeight - (el.scrollHeight - current));
+    spacer.style.display = room > gap ? "" : "none";
+    spacer.style.height = `${Math.max(0, room - gap)}px`;
+    if (justSent) el.scrollTop = top;
+  }, [chat.entries, chat.live, reveal]);
 
   useEffect(() => {
     // "Working…" is announced by the status row itself; clearing lets the final answer be announced afresh.
@@ -223,6 +273,7 @@ export function ChatView({
     }
     busy.current = true;
     stick.current = true;
+    pinNext.current = true;
     lastPick.current = null;
     setPickFailed(false);
     if (flow && (options.action || !tasks.current)) showNewTask();
@@ -254,6 +305,7 @@ export function ChatView({
     lastPick.current = { option, task };
     setPickFailed(false);
     const at = new Date().toISOString();
+    pinNext.current = !moves || target !== null;
     if (!moves) {
       busy.current = true;
       dispatch({ type: "user", text: option.label, at });
@@ -314,6 +366,9 @@ export function ChatView({
   const lastUser = chat.entries.findLast((e) => e.role === "user");
   const backgroundError = engineProblem ? problemError(engineProblem) : null;
   const shown = !flow ? chat.entries : since === null ? [] : chat.entries.slice(since);
+  const liveEntry: ChatEntry | null = chat.live
+    ? { id: chat.live.id, role: "assistant", text: chat.live.text, blocks: chat.live.blocks, parts: chat.live.parts, activities: [], at: "" }
+    : null;
   const showStart = flow && since === null && !chat.live;
   const placeholder = !flow ? t("chat.placeholder") : tasks.current ? t("flow.placeholderTask") : t("flow.placeholderStart");
 
@@ -389,13 +444,16 @@ export function ChatView({
                 {t("flow.backToTopics")}
               </button>
             )}
-            {shown.map((entry) => (
-              <div key={entry.id}>
+            {/* The running turn is the list's last item, under the id its entry gets: it stays the same element when it ends. */}
+            {(liveEntry ? [...shown, liveEntry] : shown).map((entry) => (
+              <div key={entry.id} data-entry={entry.id} data-role={entry.role}>
                 <Message
                   key={pickResets}
                   entry={entry}
-                  components={ofWaitingTask(entry.task) ? all : stale}
+                  components={entry === liveEntry || ofWaitingTask(entry.task) ? all : stale}
                   actions={blockActions(entry === lastAssistant && !chat.live && !closing, entry.task)}
+                  live={entry === liveEntry ? { activities: chat.live!.activities, label: checkpoint ? t("flow.checkpoint") : undefined } : undefined}
+                  reveal={entry.id === pacedTurn.current ? (reveal ?? undefined) : undefined}
                 />
                 {entry.error && entry === last && (
                   <ErrorCard
@@ -419,13 +477,6 @@ export function ChatView({
                   ? t("models.fallbackNotice", { model: fallback.model, tier: t(`models.tier.${fallback.tier}`) })
                   : t("models.fallbackDefault", { model: fallback.model })}
               </p>
-            )}
-            {chat.live && (
-              <article className="hh-message assistant live">
-                <WorkingStatus items={chat.live.activities} label={checkpoint ? t("flow.checkpoint") : undefined} />
-                {chat.live.text && <Markdown text={chat.live.text} />}
-                <Blocks blocks={chat.live.blocks} components={all} actions={blockActions(false)} />
-              </article>
             )}
             {closing && !chat.live && (
               <p className="hh-working" role="status">
@@ -470,6 +521,7 @@ export function ChatView({
                 </button>
               </div>
             )}
+            <div ref={spacerRef} className="hh-chat-spacer" style={{ display: "none" }} aria-hidden="true" />
           </section>
           <form className="hh-composer" onSubmit={onSubmit}>
             <textarea

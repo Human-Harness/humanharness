@@ -45,6 +45,11 @@ describe("managedSection", () => {
     expect(s).not.toContain("$schema");
   });
 
+  it("tells the agent its tools show up in call order, so it introduces each thing first", () => {
+    expect(managedSection({ language: "es", blocks })).toContain("escribí primero la frase que presenta cada cosa y llamá la herramienta después");
+    expect(managedSection({ language: "en", blocks })).toContain("write the sentence that introduces each thing first, then call the tool");
+  });
+
   it("leads the tools section with a one-line intro", () => {
     expect(managedSection({ language: "es", blocks })).toContain(
       "Llamá estas herramientas para mostrarle cosas a la persona o actualizar su estado.",

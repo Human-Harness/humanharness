@@ -26,6 +26,16 @@ describe("TurnRecorder", () => {
     expect(entry.error).toBeUndefined();
   });
 
+  it("saves the text runs and the visible blocks in the order they arrived", () => {
+    const r = new TurnRecorder(new Set(["progress"]));
+    r.add({ type: "block", name: "diagram", data: 1 });
+    r.add({ type: "text", delta: "Here is why. " });
+    r.add({ type: "block", name: "progress", data: { percent: 5 } });
+    r.add({ type: "block", name: "files", data: 2 });
+    r.add({ type: "text", delta: "Done" });
+    expect(r.finish({ type: "done", ok: true }).parts).toEqual([{ block: 0 }, { text: "Here is why." }, { block: 1 }, { text: "Done" }]);
+  });
+
   it("records the error of a failed turn", () => {
     const r = new TurnRecorder(new Set());
     expect(r.finish({ type: "done", ok: false, error: { code: "agent-crashed" } }).error).toEqual({ code: "agent-crashed" });

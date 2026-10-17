@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import type { AppConfig } from "@humanharness/ui/client";
+import { type AppConfig, isTextSize } from "@humanharness/ui/client";
 
 /** Where the hidden history of `folder` lives: one gitdir per folder. */
 export function historyDir(userData: string, folder: string): string {
@@ -20,13 +20,15 @@ export class ConfigStore {
   async load(): Promise<AppConfig> {
     try {
       const saved = JSON.parse(await fs.readFile(this.file, "utf8")) as AppConfig;
-      // Like a bad entry under models: a hand-edited backupDismissed that isn't a boolean is dropped, never
-      // a reason to treat the whole config as invalid.
-      if (saved && typeof saved === "object" && "backupDismissed" in saved && typeof saved.backupDismissed !== "boolean") {
-        const { backupDismissed: _dropped, ...rest } = saved;
-        return rest;
-      }
-      return saved;
+      if (!saved || typeof saved !== "object") return saved;
+      // Like a bad entry under models: a hand-edited backupDismissed or textSize of the wrong kind is dropped,
+      // never a reason to treat the whole config as invalid.
+      const { backupDismissed, textSize, ...rest } = saved;
+      return {
+        ...rest,
+        ...(typeof backupDismissed === "boolean" ? { backupDismissed } : {}),
+        ...(isTextSize(textSize) ? { textSize } : {}),
+      };
     } catch {
       return {};
     }

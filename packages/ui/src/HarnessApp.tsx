@@ -75,6 +75,9 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
     };
   }, [i18n]);
 
+  // ⌘+, ⌘− and ⌘0 change the text size in the main process: Settings shows the new one.
+  useEffect(() => client.onTextSize((textSize) => setState((s) => s && { ...s, config: { ...s.config, textSize } })), [client]);
+
   const engineId = state?.config.engineId;
   const configured = state ? isConfigured(state.config) : false;
 

@@ -18,6 +18,7 @@ import type {
   SetupStep,
   TaskView,
   TestResult,
+  TextSize,
   UsageSummary,
 } from "../src/client";
 
@@ -307,5 +308,17 @@ export class FakeClient implements HarnessClient {
   async openPath(file: string) {
     this.opened.push(file);
     return this.openResult;
+  }
+  private textSizeListeners = new Set<(size: TextSize) => void>();
+  /** What the main process does on ⌘+, ⌘− or ⌘0: saves the size, then tells the window. */
+  emitTextSize(textSize: TextSize) {
+    this.state = { ...this.state, config: { ...this.state.config, textSize } };
+    for (const l of this.textSizeListeners) l(textSize);
+  }
+  onTextSize(listener: (size: TextSize) => void) {
+    this.textSizeListeners.add(listener);
+    return () => {
+      this.textSizeListeners.delete(listener);
+    };
   }
 }

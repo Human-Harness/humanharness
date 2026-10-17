@@ -128,6 +128,12 @@ describe("configProblem", () => {
     expect(await configProblem({ appearance: "neon" as never }, ctx)).toBe("invalid");
   });
 
+  it("accepts only the known text sizes", async () => {
+    expect(await configProblem({ textSize: "largest" }, ctx)).toBeNull();
+    expect(await configProblem({ textSize: "huge" as never }, ctx)).toBe("invalid");
+    expect(await configProblem({ textSize: 1.5 as never }, ctx)).toBe("invalid");
+  });
+
   it("rejects a bad folder, with the folder's code", async () => {
     expect(await configProblem({ folder: "/Users/ana" }, ctx)).toBe("home");
     expect(await configProblem({ folder: "/Users/ana/Work/link" }, ctx)).toBe("protected");

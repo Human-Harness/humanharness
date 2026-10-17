@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { type EngineStatus, canOpenFile, engineProblem, nextInPath } from "../src/client";
+import { type EngineStatus, canOpenFile, engineProblem, isTextSize, nextInPath, stepTextSize } from "../src/client";
 
 const ready: EngineStatus = {
   engineId: "claude",
@@ -58,5 +58,28 @@ describe("canOpenFile", () => {
   it("is true for text, data and images, and false for sources, pages and programs", () => {
     for (const f of ["a.md", "notes/b.JSON", "c.csv", "d.png", "e.pdf", "f.css"]) expect(canOpenFile(f)).toBe(true);
     for (const f of ["a.ts", "b.tsx", "c.js", "d.html", "e.svg", "run.command", "Makefile", "x.sh"]) expect(canOpenFile(f)).toBe(false);
+  });
+});
+
+describe("text size", () => {
+  it("steps one size at a time and stays put at either end", () => {
+    expect(stepTextSize(undefined, "in")).toBe("large");
+    expect(stepTextSize("large", "in")).toBe("larger");
+    expect(stepTextSize("larger", "in")).toBe("largest");
+    expect(stepTextSize("largest", "in")).toBe("largest");
+    expect(stepTextSize("larger", "out")).toBe("large");
+    expect(stepTextSize(undefined, "out")).toBe("normal");
+  });
+
+  it("goes back to normal from any size", () => {
+    expect(stepTextSize("largest", "reset")).toBe("normal");
+    expect(stepTextSize(undefined, "reset")).toBe("normal");
+  });
+
+  it("knows only its four sizes", () => {
+    expect(["normal", "large", "larger", "largest"].every(isTextSize)).toBe(true);
+    expect(isTextSize("huge")).toBe(false);
+    expect(isTextSize(1.5)).toBe(false);
+    expect(isTextSize("toString")).toBe(false);
   });
 });

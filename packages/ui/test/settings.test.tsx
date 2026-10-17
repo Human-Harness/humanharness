@@ -182,11 +182,25 @@ describe("SettingsSheet", () => {
     expect(client.state.config.language).toBe("es");
   });
 
-  it("General without a folder: only language, appearance and About, no folder picker or welcome", async () => {
+  it("General: picks a text size, says which one is on and how to change it from the keyboard", async () => {
+    const client = new FakeClient(ready);
+    await renderIn("es", <Sheet client={client} />);
+    const sizes = screen.getByRole("group", { name: "Tamaño del texto" });
+    expect(within(sizes).getAllByRole("button").map((b) => b.textContent)).toEqual(["AaNormal", "AaGrande", "AaMás grande", "AaMáximo"]);
+    expect(within(sizes).getByRole("button", { name: "Normal" }).getAttribute("aria-pressed")).toBe("true");
+    expect(sizes.getAttribute("aria-describedby")).toBe(screen.getByText(/0 vuelve a Normal\.$/).id);
+    fireEvent.click(within(sizes).getByRole("button", { name: "Más grande" }));
+    await waitFor(() => expect(client.state.config.textSize).toBe("larger"));
+    expect(within(sizes).getByRole("button", { name: "Más grande" }).getAttribute("aria-pressed")).toBe("true");
+    expect(within(sizes).getByRole("button", { name: "Normal" }).getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("General without a folder: only language, appearance, text size and About, no folder picker or welcome", async () => {
     const client = new FakeClient({});
     await renderIn("es", <Sheet client={client} />);
     expect(screen.getByRole("group", { name: "Idioma" })).toBeTruthy();
     expect(screen.getByRole("group", { name: "Apariencia" })).toBeTruthy();
+    expect(screen.getByRole("group", { name: "Tamaño del texto" })).toBeTruthy();
     expect(screen.getByText("Versión 0.1.0")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Elegir otra carpeta" })).toBeNull();
     expect(screen.queryByRole("radiogroup")).toBeNull();

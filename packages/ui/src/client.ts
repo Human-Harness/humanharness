@@ -5,12 +5,30 @@ import type { FileChange, SyncProvider, SyncStatus } from "@humanharness/workspa
 
 export type Appearance = "system" | "light" | "dark";
 
+/** Settings › General › Text size: the whole window is zoomed by this factor (chrome, chat and the harness's blocks alike). */
+export const TEXT_SIZES = { normal: 1, large: 1.15, larger: 1.3, largest: 1.5 } as const;
+export type TextSize = keyof typeof TEXT_SIZES;
+const TEXT_SIZE_ORDER = Object.keys(TEXT_SIZES) as TextSize[];
+
+export function isTextSize(value: unknown): value is TextSize {
+  return typeof value === "string" && (TEXT_SIZE_ORDER as string[]).includes(value);
+}
+
+/** One size bigger or smaller (staying put at either end), or back to normal: what ⌘+, ⌘− and ⌘0 do. */
+export function stepTextSize(current: TextSize | undefined, step: "in" | "out" | "reset"): TextSize {
+  if (step === "reset") return "normal";
+  const i = TEXT_SIZE_ORDER.indexOf(current ?? "normal");
+  return TEXT_SIZE_ORDER[Math.min(Math.max(i + (step === "in" ? 1 : -1), 0), TEXT_SIZE_ORDER.length - 1)];
+}
+
 export interface AppConfig {
   language?: Language;
   folder?: string;
   engineId?: string;
   /** Settings → General → Appearance. Absent means follow the system. */
   appearance?: Appearance;
+  /** Settings → General → Text size. Absent means normal. */
+  textSize?: TextSize;
   /** Settings › Modelos: each task's tier or custom model, and the tier tables per engine. Cleaned when read. */
   models?: ModelsConfig;
   /** The person said they keep their own copy of the folder: the backup notice stays hidden (Settings › General undoes it). */
@@ -390,9 +408,11 @@ export interface HarnessClient {
   openPath(path: string): Promise<boolean>;
   /** Shows a file inside the reference folders or the user's folder in Finder (any kind of file). False when refused or missing. */
   revealPath(path: string): Promise<boolean>;
+  /** The text size changed from the keyboard (⌘+, ⌘−, ⌘0), already saved. */
+  onTextSize(listener: (size: TextSize) => void): () => void;
 }
 
-/** A config with everything a turn needs (appearance stays optional). */
+/** A config with everything a turn needs (appearance and text size stay optional). */
 export type ConfiguredApp = AppConfig & Required<Pick<AppConfig, "language" | "folder" | "engineId">>;
 
 export function isConfigured(config: AppConfig): config is ConfiguredApp {

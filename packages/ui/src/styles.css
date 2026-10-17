@@ -198,19 +198,23 @@ select:focus-visible { outline: 2px solid var(--hh-ink); outline-offset: 2px; }
 .hh-usage { margin: 0; color: var(--hh-muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .hh-body { display: flex; min-height: 0; overflow: hidden; }
 .hh-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.hh-chat { flex: 1; min-height: 0; overflow-y: auto; padding: 16px; display: grid; gap: 12px; align-content: start; }
+.hh-chat { flex: 1; min-height: 0; overflow-y: auto; padding: 28px 40px; display: grid; gap: 20px; align-content: start; }
 .hh-side { width: 240px; flex: none; padding: 16px; border-left: 1px solid var(--hh-line); }
 .hh-composer-hint { margin: -4px 16px 12px; text-align: center; color: var(--hh-muted); font-size: 11px; }
 .hh-back-topics { justify-self: start; }
-.hh-message { max-width: 720px; }
+.hh-message { max-width: 680px; }
 .hh-message p { white-space: pre-wrap; margin: 0 0 8px; }
-.hh-message :not(pre) > code { padding: 1px 4px; border-radius: 4px; background: var(--hh-segment); }
-.hh-md-list { margin: 0 0 8px; padding-left: 22px; display: grid; gap: 2px; }
-.hh-md-heading { margin-top: 12px; }
-.hh-md-code { margin: 0 0 8px; padding: 10px 12px; overflow-x: auto; border: 1px solid var(--hh-line); border-radius: 8px; background: var(--hh-surface); }
-.hh-md-code code { white-space: pre; overflow-wrap: normal; }
+.hh-message :not(pre) > code { padding: 2px 5px; border-radius: 4px; background: var(--hh-segment); }
+/* The agent's answer reads as prose: bigger and airier than the chrome; its activity toggle and blocks keep their sizes. */
+.hh-message.assistant > :is(p, ul, ol, pre) { font-size: 15px; line-height: 1.6; }
+.hh-message.assistant > p { margin-bottom: 14px; }
+.hh-message.assistant > :is(p, ul, ol) code { font-size: 0.9em; }
+.hh-md-list { margin: 0 0 14px; padding-left: 22px; display: grid; gap: 6px; }
+.hh-message.assistant > .hh-md-heading { margin: 24px 0 8px; }
+.hh-md-code { margin: 0 0 14px; padding: 10px 12px; overflow-x: auto; border: 1px solid var(--hh-line); border-radius: 8px; background: var(--hh-surface); }
+.hh-md-code code { font-size: 13px; line-height: 1.5; white-space: pre; overflow-wrap: normal; }
 .hh-md-url { color: var(--hh-muted); overflow-wrap: anywhere; }
-.hh-message.user { justify-self: end; background: var(--hh-surface); border: 1px solid var(--hh-line); border-radius: 10px; padding: 8px 12px; }
+.hh-message.user { justify-self: end; background: var(--hh-surface); border: 1px solid var(--hh-line); border-radius: 10px; padding: 10px 14px; font-size: 14px; }
 .hh-who { color: var(--hh-muted); font-size: 12px; }
 /* A turn at work (mockups "Trabajando", collapsed and expanded): one status row, the steps behind a toggle. */
 .hh-work { display: flex; flex-direction: column; min-width: min(340px, 100%); width: fit-content; max-width: 100%; margin: 0 0 8px; background: var(--hh-sheet); border: 1px solid var(--hh-line); border-radius: 10px; }
@@ -295,4 +299,4 @@ select:focus-visible { outline: 2px solid var(--hh-ink); outline-offset: 2px; }
 .hh-note-toggle { width: 100%; height: auto; flex-direction: column; align-items: stretch; gap: 4px; padding: 0; border: none; background: transparent; text-align: left; }
 .hh-note-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .hh-notes-savings { padding: 10px 12px; border: 1px solid var(--hh-line); border-radius: 10px; background: var(--hh-surface); color: var(--hh-ok); line-height: 1.45; }
-@media (max-width: 640px) { .hh-flow-side, .hh-side { display: none; } }
+@media (max-width: 640px) { .hh-flow-side, .hh-side { display: none; } .hh-chat { padding: 20px 16px; } }

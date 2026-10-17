@@ -20,7 +20,8 @@ const TEXT: Record<
       "Trabajá solo dentro de esta carpeta. Mensajes cortos y claros.",
     ],
     tools: "### Herramientas de interfaz",
-    toolsIntro: "Llamá estas herramientas para mostrarle cosas a la persona o actualizar su estado.",
+    toolsIntro:
+      "Llamá estas herramientas para mostrarle cosas a la persona o actualizar su estado. Lo que muestran aparece en la conversación en el orden en que las llamás, entre tu texto: escribí primero la frase que presenta cada cosa y llamá la herramienta después.",
     example: "Ejemplo",
     schema: "Schema",
     references: "### Carpetas de referencia (solo lectura)",
@@ -35,7 +36,8 @@ const TEXT: Record<
       "Work only inside this folder. Keep messages short and clear.",
     ],
     tools: "### Interface tools",
-    toolsIntro: "Call these tools to show things to the person or update their state.",
+    toolsIntro:
+      "Call these tools to show things to the person or update their state. What they show appears in the conversation in the order you call them, among your text: write the sentence that introduces each thing first, then call the tool.",
     example: "Example",
     schema: "Schema",
     references: "### Reference folders (read only)",

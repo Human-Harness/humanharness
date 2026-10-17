@@ -168,6 +168,38 @@ export interface ChatEntry {
   engine?: string;
   /** The task the entry belongs to (flow mode shows one task at a time). */
   task?: string;
+  /** Assistant entries: text runs and blocks in the order they arrived. Older entries lack it: text, then blocks. */
+  parts?: AnswerPart[];
+}
+
+/** A piece of an answer: a run of text, or one of the entry's `blocks` (by index). */
+export type AnswerPart = { text: string } | { block: number };
+
+/**
+ * `parts` with a text delta added: it extends the text run at the end, or starts one. A run never starts
+ * with whitespace alone, so trimming the runs at the end never removes one.
+ */
+export function addText(parts: AnswerPart[], delta: string): AnswerPart[] {
+  const last = parts.at(-1);
+  if (last && "text" in last) return [...parts.slice(0, -1), { text: last.text + delta }];
+  return delta.trim() ? [...parts, { text: delta.trimStart() }] : parts;
+}
+
+/** `parts` with a paragraph break: only inside a text run (a block already separates what comes after it). */
+export function addParagraph(parts: AnswerPart[]): AnswerPart[] {
+  const last = parts.at(-1);
+  return last && "text" in last ? [...parts.slice(0, -1), { text: `${last.text}\n\n` }] : parts;
+}
+
+/** The text runs trimmed, as the entry saves them. */
+export function finishParts(parts: AnswerPart[]): AnswerPart[] {
+  return parts.map((p) => ("text" in p ? { text: p.text.trim() } : p));
+}
+
+/** The entry's answer in order; an entry saved before `parts` existed shows its text, then its blocks. */
+export function partsOf(entry: Pick<ChatEntry, "text" | "blocks" | "parts">): AnswerPart[] {
+  if (entry.parts) return entry.parts;
+  return [...(entry.text ? [{ text: entry.text }] : []), ...entry.blocks.map((_, block) => ({ block }))];
 }
 
 export interface ChatLoad {

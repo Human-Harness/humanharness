@@ -1,4 +1,4 @@
-import type { ChatEntry, Event, LimitWindow, TurnUsage } from "./client";
+import { type AnswerPart, type ChatEntry, type Event, type LimitWindow, type TurnUsage, addParagraph, addText, finishParts } from "./client";
 
 export interface LiveActivity {
   id: string;
@@ -9,8 +9,12 @@ export interface LiveActivity {
 }
 
 export interface LiveTurn {
+  /** The id its entry gets when the turn ends: the answer stays the same element on screen. */
+  id: string;
   text: string;
   blocks: { name: string; data: unknown }[];
+  /** Text runs and blocks in the order they arrived. */
+  parts: AnswerPart[];
   activities: LiveActivity[];
   usage?: TurnUsage;
   limits?: LimitWindow[];
@@ -76,12 +80,12 @@ export function reduceChat(state: ChatState, action: ChatAction): ChatState {
             ...(action.action ? { action: action.action } : {}),
           },
         ],
-        live: { text: "", blocks: [], activities: [] },
+        live: { id: newId(), text: "", blocks: [], parts: [], activities: [] },
       };
     case "text":
-      return live ? { ...state, live: { ...live, text: live.text + action.delta } } : state;
+      return live ? { ...state, live: { ...live, text: live.text + action.delta, parts: addText(live.parts, action.delta) } } : state;
     case "paragraph":
-      return live && live.text ? { ...state, live: { ...live, text: `${live.text}\n\n` } } : state;
+      return live && live.text ? { ...state, live: { ...live, text: `${live.text}\n\n`, parts: addParagraph(live.parts) } } : state;
     case "activity": {
       if (!live) return state;
       if (action.state === "start") {
@@ -99,7 +103,12 @@ export function reduceChat(state: ChatState, action: ChatAction): ChatState {
           live: live ? { ...live, state: { ...live.state, [action.name]: action.data } } : live,
         };
       }
-      return live ? { ...state, live: { ...live, blocks: [...live.blocks, { name: action.name, data: action.data }] } } : state;
+      return live
+        ? {
+            ...state,
+            live: { ...live, blocks: [...live.blocks, { name: action.name, data: action.data }], parts: [...live.parts, { block: live.blocks.length }] },
+          }
+        : state;
     case "context":
     case "compaction":
       // The task view carries them (the side panel's meter); the conversation doesn't change.
@@ -138,10 +147,11 @@ export function reduceChat(state: ChatState, action: ChatAction): ChatState {
         return { ...state, entries: [...state.entries, error] };
       }
       const entry: ChatEntry = {
-        id: newId(),
+        id: live.id,
         role: "assistant",
         text: live.text.trim(),
         blocks: live.blocks,
+        parts: finishParts(live.parts),
         activities: live.activities.map(({ kind, detail }) => ({ kind, detail })),
         at: new Date().toISOString(),
         ...(live.usage ? { usage: live.usage } : {}),

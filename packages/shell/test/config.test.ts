@@ -57,6 +57,14 @@ describe("ConfigStore", () => {
     fs.writeFileSync(path.join(dir, "config.json"), JSON.stringify({ folder: "/x", backupDismissed: false }));
     expect(await new ConfigStore(dir).load()).toEqual({ folder: "/x", backupDismissed: false });
   });
+
+  it("drops a hand-edited text size it doesn't know, keeping the rest", async () => {
+    const dir = fs.mkdtempSync(path.join(root, "c-"));
+    fs.writeFileSync(path.join(dir, "config.json"), JSON.stringify({ folder: "/x", textSize: "huge" }));
+    expect(await new ConfigStore(dir).load()).toEqual({ folder: "/x" });
+    fs.writeFileSync(path.join(dir, "config.json"), JSON.stringify({ folder: "/x", textSize: "larger" }));
+    expect(await new ConfigStore(dir).load()).toEqual({ folder: "/x", textSize: "larger" });
+  });
 });
 
 describe("historyDir", () => {

@@ -24,7 +24,10 @@ import {
   type UsageSummary,
   RESTORE_POINT,
   RESTORE_TASK,
+  TEXT_SIZES,
+  type TextSize,
   isConfigured,
+  stepTextSize,
 } from "@humanharness/ui/client";
 import { History, NOTES_PREFIX, readNotes, syncLocations, syncStatus, writeNote } from "@humanharness/workspace";
 import { imageDataUrl } from "./assets";
@@ -53,6 +56,7 @@ import { TaskManager } from "./task-manager";
 import { historyView, isSha } from "./history-view";
 import { RestoreGuard, lastOpened } from "./restore-guard";
 import { TaskStore, emptyTasks } from "./task-store";
+import { textSizeShortcut, trafficLightY } from "./text-size";
 import {
   MOCK_MODEL,
   devEngine,
@@ -278,6 +282,16 @@ async function validConfig(): Promise<ConfiguredApp | null> {
 function applyAppearance(appearance: AppConfig["appearance"]) {
   nativeTheme.themeSource = appearance ?? "system";
   window?.setBackgroundColor(nativeTheme.shouldUseDarkColors ? PAPER.dark : PAPER.light);
+}
+
+let textSizeSteps: Promise<void> = Promise.resolve();
+
+/** Settings › General › Text size zooms the whole page; the traffic lights follow the taller top bar. */
+function applyTextSize(size: TextSize | undefined) {
+  if (!window || window.isDestroyed()) return;
+  const factor = TEXT_SIZES[size ?? "normal"];
+  window.webContents.setZoomFactor(factor);
+  if (process.platform === "darwin") window.setWindowButtonPosition({ x: 20, y: trafficLightY(factor) });
 }
 
 const runtime = memoise<HarnessRuntime>(async () => {
@@ -527,6 +541,7 @@ function registerIpc() {
       saveConfigPatch(patch, before),
     );
     if (patch.appearance) applyAppearance(patch.appearance);
+    if (patch.textSize) applyTextSize(patch.textSize);
     return appState();
   });
   handle("hh:loadChat", async (): Promise<ChatLoad> => {
@@ -770,6 +785,27 @@ async function createWindow() {
   });
   win.webContents.on("will-navigate", (event) => {
     if (!appUrl(event.url)) event.preventDefault();
+  });
+  // A reload starts at the browser's zoom: put the saved size back.
+  win.webContents.on("did-finish-load", () => {
+    void config.load().then((c) => applyTextSize(c.textSize), () => applyTextSize(undefined));
+  });
+  // ⌘+, ⌘− and ⌘0 change the saved size (not the browser's own zoom, which would be forgotten).
+  win.webContents.on("before-input-event", (event, input) => {
+    const step = textSizeShortcut(input, process.platform);
+    if (!step) return;
+    event.preventDefault();
+    // One after another: a held key or quick presses each step from the size the last one saved.
+    textSizeSteps = textSizeSteps
+      .then(async () => {
+        const c = await config.load();
+        const textSize = stepTextSize(c.textSize, step);
+        if (textSize === (c.textSize ?? "normal")) return;
+        await config.save({ textSize });
+        applyTextSize(textSize);
+        sendToWindow("hh:textSize", textSize);
+      })
+      .catch((err: unknown) => console.error("Could not change the text size", err));
   });
   if (devUrl) await win.loadURL(devUrl);
   else await win.loadFile(rendererFile);

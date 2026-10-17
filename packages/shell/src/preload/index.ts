@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { Event, HarnessClient, SetupOutput, TaskView } from "@humanharness/ui/client";
+import type { Event, HarnessClient, SetupOutput, TaskView, TextSize } from "@humanharness/ui/client";
 
 function subscribe<T>(channel: string, listener: (value: T) => void): () => void {
   const handler = (_e: unknown, value: T) => listener(value);
@@ -38,6 +38,7 @@ const client: HarnessClient = {
   choose: (option, task) => ipcRenderer.invoke("hh:choose", option, task),
   openPath: (file) => ipcRenderer.invoke("hh:openPath", file),
   revealPath: (file) => ipcRenderer.invoke("hh:revealPath", file),
+  onTextSize: (listener) => subscribe<TextSize>("hh:textSize", listener),
 };
 
 contextBridge.exposeInMainWorld("hh", client);

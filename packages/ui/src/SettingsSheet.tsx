@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import type { Language } from "@humanharness/harness-sdk";
 import { BackupNotice, type FolderMove, MovePlaces, needsBackupNotice, useFolderMove } from "./BackupNotice";
 import { EngineIcon, Segmented } from "./chrome";
-import { type AppConfig, type AppState, type Appearance, type HarnessClient, type RunningSetup, isConfigured } from "./client";
+import { type AppConfig, type AppState, type Appearance, type HarnessClient, type RunningSetup, TEXT_SIZES, type TextSize, isConfigured } from "./client";
 import { EngineTab } from "./EngineTab";
 import { uiLanguage } from "./FolderStep";
 import { ModelsTab } from "./ModelsTab";
@@ -12,6 +12,9 @@ import { UsageTab } from "./UsageTab";
 export type SettingsTab = "general" | "engine" | "models" | "usage";
 const TABS: SettingsTab[] = ["general", "engine", "models", "usage"];
 const LANGUAGE_NAMES: Record<Language, string> = { es: "Español", en: "English" };
+const TEXT_SIZE_KEYS = Object.keys(TEXT_SIZES) as TextSize[];
+/** The key that zooms with + and −: ⌘ on macOS, Ctrl elsewhere. */
+const ZOOM_KEY = /Mac/.test(navigator.userAgent) ? "⌘" : "Ctrl";
 
 /** The Settings sheet (spec 2026-10-11 "Settings sheet"): attached under the top bar, dimmed backdrop. */
 export function SettingsSheet({
@@ -194,6 +197,7 @@ function trapTab(sheet: HTMLElement, e: KeyboardEvent) {
 function GeneralTab({ client, state, onChange, move }: { client: HarnessClient; state: AppState; onChange: (s: AppState) => void; move: FolderMove }) {
   const { t, i18n } = useTranslation();
   const placesId = useId();
+  const sizeId = useId();
   /** The places to move the folder to are open (the backup notice, when it shows, offers them itself). */
   const [moveOpen, setMoveOpen] = useState(false);
   const offerMove = !needsBackupNotice(state);
@@ -242,6 +246,24 @@ function GeneralTab({ client, state, onChange, move }: { client: HarnessClient; 
         <div className="hh-row">
           <span className="hh-row-label">{t("settings.appearance")}</span>
           <Segmented label={t("settings.appearance")} value={state.config.appearance ?? "system"} onChange={(appearance) => void save({ appearance })} options={appearances} />
+        </div>
+        <div className="hh-row hh-row-wrap">
+          <span className="hh-row-label" id={sizeId}>
+            {t("settings.textSize")}
+          </span>
+          <div className="hh-text-sizes" role="group" aria-labelledby={sizeId} aria-describedby={`${sizeId}-hint`}>
+            {TEXT_SIZE_KEYS.map((textSize) => (
+              <button key={textSize} type="button" aria-pressed={(state.config.textSize ?? "normal") === textSize} onClick={() => void save({ textSize })}>
+                <span className="hh-text-size-sample" style={{ fontSize: `${Math.round(15 * TEXT_SIZES[textSize])}px` }} aria-hidden="true">
+                  Aa
+                </span>
+                <span>{t(`settings.textSizes.${textSize}`)}</span>
+              </button>
+            ))}
+          </div>
+          <p className="hh-caption hh-row-note" id={`${sizeId}-hint`}>
+            {t("settings.textSizeHint", { mod: ZOOM_KEY })}
+          </p>
         </div>
         {state.config.folder && (
           <div className="hh-row">

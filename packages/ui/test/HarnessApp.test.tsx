@@ -39,6 +39,17 @@ async function breakEngine(client: FakeClient, status: Partial<FakeClient["statu
 }
 
 describe("HarnessApp", () => {
+  it("shows a text size changed from the keyboard in Settings", async () => {
+    const client = new FakeClient(ready);
+    render(<HarnessApp client={client} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
+    const sizes = await screen.findByRole("group", { name: "Text size" });
+    expect(within(sizes).getByRole("button", { name: "Normal" }).getAttribute("aria-pressed")).toBe("true");
+    act(() => client.emitTextSize("larger"));
+    expect(within(sizes).getByRole("button", { name: "Larger" }).getAttribute("aria-pressed")).toBe("true");
+    expect(within(sizes).getByRole("button", { name: "Normal" }).getAttribute("aria-pressed")).toBe("false");
+  });
+
   it("shows the test-mode badge only in mock mode", async () => {
     const client = new FakeClient(ready);
     client.state = { ...client.state, mock: true };

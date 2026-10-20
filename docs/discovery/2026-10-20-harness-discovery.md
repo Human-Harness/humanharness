@@ -23,12 +23,12 @@ Manifest (`defineHarness`) with actions + tiers + `path`; blocks (`defineBlock`,
 | Harness | Interview | Mockup | Features extracted |
 |---|---|---|---|
 | dev | parked (rounds 1–3 done) | v2 canvas + clickable prototype | draft |
-| student | round 1 asked | – | – |
+| student | round 1 done, round 2 asked | – | – |
 | teacher | – | – | – |
 | thinker | – | – | – |
 | writer | – | – | – |
 
-**Next step:** student harness, round 1 of questions (asked 2026-10-20).
+**Next step:** student harness round 2 (methods, profile, main object, ingestion, adult role, map/mastery, session shape, summaries vs "no documents"). Then mockups only — Marco said no implementation.
 
 **Dev is parked (Marco, 2026-10-20: "por ahora dejamos este harness así").** Still open there, to revisit later: Marco's test of the prototype (https://claude.ai/artifact/M3j64DEJFiekVj98fbdVn3, source `docs/discovery/prototypes/dev/index.html`), the Claude proposals listed under dev, and Q7 (which cockpit parts carry over).
 
@@ -116,7 +116,17 @@ Facts implied for the core (to confirm, not yet decided):
 
 Questions asked, round 1 (2026-10-20): who the student is; what tasks; input material and where it comes from; the AI's role (explain / ask / test) and limits (doing homework for them?); how study is organized (subjects, topics, exam dates); what stays after a session; relation to the teacher harness and to Marco's socrates-app; first run and home.
 
-Answers: _pending_
+Answers, round 1 (2026-10-20):
+
+- **Who.** All ages. Depending on the topic, the user states their age so the level adapts. A minor should use it with an adult (suggested, not enforced).
+- **Purpose.** Studying only: learn a topic, prepare an exam. It does **not** produce documents or do the student's work.
+- **Material.** Either an initial ingestion of the student's material to work on, or straight from the AI's own knowledge.
+- **AI role.** Depends on the method. Socratic or other methods; several methods, switchable.
+- **Organization.** No dates or calendars; it is about learning things.
+- **What stays.** A map, exercises, flashcards, summaries.
+- **Relations.** Connects to nothing (not to the teacher harness). It is the evolution of Marco's socrates-app.
+- **First run.** Ask the user about themselves to understand what kind of student they are.
+- **Process.** Finish the questions, then mockups. No implementation (Marco: "nada de implementar").
 
 ### teacher
 

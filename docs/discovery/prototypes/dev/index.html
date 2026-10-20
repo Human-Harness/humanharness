@@ -267,6 +267,8 @@ const INCOMING = {
 
 /* ---------- state ---------- */
 let S;
+// Same choose button for every engine tile; the chosen one reads "Elegido".
+function engineBtn(v){const on=S.engine===v;return `<button class="btn ${on?'p':''}" style="align-self:flex-start" data-a="engine" data-v="${v}" aria-pressed="${on}">${on?'✓ Elegido':'Elegir'}</button>`;}
 function fresh(){return {setup:0,engine:'claude',projects:[],tickets:[],jiraAt:Date.now(),jiraLabel:'al abrir la app',usage:42,prSeq:230,create:null,imp:null,ui:{}};}
 function load(){try{const r=localStorage.getItem(LS);if(r){S=JSON.parse(r);S.ui=S.ui||{};S.ui.modal=null;S.ui.syncing=false;return;}}catch(e){}S=fresh();}
 function save(){try{localStorage.setItem(LS,JSON.stringify(S));}catch(e){}}
@@ -397,11 +399,12 @@ function vSetup(n){
   if(n===2)return `<div class="center">${steps(['Motor de IA','GitHub y Jira','Listo'],0)}
     <h1 style="font-size:28px">¿Con qué IA vas a trabajar?</h1><p class="fg2" style="margin:0;font-size:15px">Usa tu propia suscripción. La app no pide claves de API.</p>
     <div style="display:flex;gap:20px;flex-wrap:wrap;justify-content:center">
-      <div class="tile ${S.engine==='claude'?'on':''}" data-a="engine" data-v="claude"><div style="font-size:18px;font-weight:600">Claude Code</div><div class="s13 ok">✓ Instalado · sesión iniciada</div><div class="s13 muted">Plan detectado por el uso que informa el motor</div>${S.engine==='claude'?'<span class="s12" style="font-weight:600;color:var(--acc-ink)">Elegido</span>':''}</div>
+      <div class="tile ${S.engine==='claude'?'on':''}"><div style="font-size:18px;font-weight:600">Claude Code</div><div class="s13 ok">✓ Instalado · sesión iniciada</div><div class="s13 muted">Plan detectado por el uso que informa el motor</div>
+        ${engineBtn('claude')}</div>
       <div class="tile ${S.engine==='codex'?'on':''}"><div style="font-size:18px;font-weight:600">Codex</div>
         ${S.ui.codex==='ing'?'<div class="s13 row"><span class="spin"></span>Instalando…</div>':S.ui.codex==='ok'?'<div class="s13 ok">✓ Instalado · sesión iniciada</div>':'<div class="s13 muted">No instalado</div>'}
-        <div class="s13 muted">Se puede sumar después en Ajustes › Motor</div>
-        ${S.ui.codex==='ok'?`<button class="btn" style="align-self:flex-start" data-a="engine" data-v="codex">${S.engine==='codex'?'Elegido':'Elegir'}</button>`:S.ui.codex?'':'<button class="btn" style="align-self:flex-start" data-a="installCodex">Instalar</button>'}</div>
+        <div class="s13 muted">${S.ui.codex==='ok'?'Uso informado en tokens':'Se puede sumar después en Ajustes › Motor'}</div>
+        ${S.ui.codex==='ok'?engineBtn('codex'):S.ui.codex?'':'<button class="btn" style="align-self:flex-start" data-a="installCodex">Instalar</button>'}</div>
     </div>
     <div class="s13 muted" style="max-width:640px;line-height:1.5">A diferencia de otras apps Human Harness, acá no se elige una carpeta en este paso: cada proyecto trae sus propios repos.</div>
     <div style="display:flex;gap:10px"><a class="btn lg" href="#/setup/1">Atrás</a><a class="btn p lg" href="#/setup/3">Seguir</a></div></div>`;

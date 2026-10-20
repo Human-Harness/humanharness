@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Sesión socrática</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;color:#1d1d1f}
+a{color:#0a5bc4}a:hover{color:#083f88}
+.btn{font:inherit;font-size:13px;padding:8px 14px;border-radius:8px;border:1px solid #d2d2d7;background:#fff;color:#1d1d1f;text-decoration:none;display:inline-block;cursor:pointer}
+.btn.p{background:#0a5bc4;border-color:#0a5bc4;color:#fff}
+.k{font-size:12px;color:#5f5f66;font-weight:600}
+.step{font-size:12px;padding:6px 12px;border-radius:999px;color:#5f5f66;background:#ececf0}
+.ai{align-self:flex-start;max-width:640px;background:#fff;border:1px solid #e3e3e8;border-radius:14px;padding:14px 16px;font-size:15px;line-height:1.55}
+.me{align-self:flex-end;max-width:520px;background:#0a5bc4;color:#fff;border-radius:14px;padding:12px 16px;font-size:15px;line-height:1.5}
+.o{font:inherit;text-align:left;font-size:14px;padding:12px 14px;border-radius:10px;border:1px solid #d2d2d7;background:#fff;cursor:pointer}
+.o.sel{border:2px solid #0a5bc4;background:#f3f8ff}
+.sub{font-size:11px;padding:4px 9px;border-radius:999px;background:#ececf0;color:#5f5f66}
+</style>
+</helmet>
+<div style="width:1440px;height:900px;display:flex;flex-direction:column;background:#f5f5f7">
+  <header style="display:flex;align-items:center;gap:12px;padding:14px 28px;background:#fff;border-bottom:1px solid #e3e3e8">
+    <a href="Tema.dc.html" style="font-size:13px">‹ Fracciones</a>
+    <ol aria-label="Partes de la sesión" style="display:flex;gap:6px;margin:0 0 0 12px;padding:0;list-style:none">
+      <li class="step" style="background:#d9f0dc;color:#1f5a28">✓ Calentamiento</li>
+      <li class="step" style="background:#0a5bc4;color:#fff;font-weight:600">Bloque principal</li>
+      <li class="step">Cierre</li>
+    </ol>
+    <div style="flex:1"></div>
+    <label for="met" class="k">MÉTODO</label>
+    <select id="met" style="font:inherit;font-size:13px;padding:6px 8px;border:1px solid #d2d2d7;border-radius:7px"><option selected>Socrático</option><option>Ejemplos resueltos</option><option>Feynman</option></select>
+    <span style="font-size:13px;color:#3a3a40">8 de 20 min</span>
+    <a class="btn" href="Cierre.dc.html">Ir al cierre</a>
+  </header>
+  <div style="flex:1;display:flex;min-height:0">
+    <main style="flex:1;display:flex;flex-direction:column;padding:22px 32px;gap:14px;min-width:0">
+      <div style="display:flex;gap:6px;align-items:center"><span class="k">SÓCRATES:</span><span class="sub" style="background:#0a5bc4;color:#fff">Ejercicio previo</span><span class="sub">Preguntas</span><span class="sub">Concepto</span><span class="sub">Verificación</span></div>
+      <div class="ai">Antes de explicarte nada, probá con esto.</div>
+      <div class="ai" style="border:2px solid #0a5bc4;display:flex;flex-direction:column;gap:12px">
+        <span class="k">EJERCICIO PREVIO</span>
+        <span>Vos tenés una pizza cortada en 2 partes iguales y comés 1. Tu amiga tiene una pizza igual, cortada en 4, y come 2. ¿Quién comió más?</span>
+        <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px">
+          <button class="o">Yo</button><button class="o sel">Las dos igual</button><button class="o">Mi amiga</button>
+        </div>
+        <label for="why" class="k">¿POR QUÉ? (CON TUS PALABRAS)</label>
+        <textarea id="why" rows="2" style="font:inherit;font-size:14px;padding:10px;border:1px solid #d2d2d7;border-radius:8px;resize:none">Porque 2 pedazos chiquitos son como uno grande</textarea>
+        <div style="display:flex;gap:8px"><button class="btn p">Me comprometo</button><button class="btn">Necesito una pista</button></div>
+        <span style="font-size:12px;color:#5f5f66">La respuesta llega recién cuando te comprometés. Pista después de 2 intentos.</span>
+      </div>
+      <div style="flex:1"></div>
+      <div style="display:flex;gap:8px">
+        <label for="msg" style="position:absolute;left:-9999px">Escribile a la IA</label>
+        <input id="msg" placeholder="Escribí una duda…" style="flex:1;font:inherit;font-size:14px;padding:11px 12px;border:1px solid #d2d2d7;border-radius:10px">
+        <button class="btn">Enviar</button>
+      </div>
+    </main>
+    <aside aria-label="Hoy" style="width:300px;background:#fff;border-left:1px solid #e3e3e8;padding:22px;display:flex;flex-direction:column;gap:10px">
+      <div class="k">OBJETIVO DE HOY</div>
+      <div style="font-size:14px">Repasar "Leer y escribir" · Entender "Fracciones equivalentes"</div>
+      <div class="k" style="margin-top:10px">EN ESTA SESIÓN</div>
+      <div style="font-size:13px;line-height:1.6"><span style="color:#1f5a28">✓</span> Leer y escribir: 3 de 3 de memoria<br><span style="color:#5f5f66">…</span> Equivalentes: en curso</div>
+      <div class="k" style="margin-top:10px">TÉRMINOS NUEVOS</div>
+      <div style="font-size:13px">numerador · denominador</div>
+      <div style="flex:1"></div>
+      <div style="font-size:12px;color:#5f5f66;line-height:1.5">Estudiás con un adulto al lado: la IA habla simple y usa ejemplos de la vida diaria.</div>
+    </aside>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

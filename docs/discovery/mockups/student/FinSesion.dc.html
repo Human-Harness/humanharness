@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Fin de sesión</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;color:#1d1d1f}
+a{color:#0a5bc4}a:hover{color:#083f88}
+.btn{font:inherit;font-size:14px;padding:9px 18px;border-radius:8px;border:1px solid #d2d2d7;background:#fff;color:#1d1d1f;text-decoration:none;display:inline-block;cursor:pointer}
+.btn.p{background:#0a5bc4;border-color:#0a5bc4;color:#fff}
+.k{font-size:12px;color:#5f5f66;font-weight:600}
+.row{display:flex;gap:14px;align-items:center;padding:14px 0;border-bottom:1px solid #f0f0f2;font-size:15px}
+.st{font-size:11px;font-weight:700;padding:4px 9px;border-radius:999px}
+</style>
+</helmet>
+<div style="width:1440px;height:900px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:24px;background:#f5f5f7">
+  <h1 style="margin:0;font-size:30px">Buena sesión, Sofi</h1>
+  <div style="font-size:15px;color:#3a3a40">19 minutos · ejemplos resueltos · 1 resumen y 3 flashcards tuyos</div>
+  <section aria-labelledby="cm" style="background:#fff;border:1px solid #e3e3e8;border-radius:16px;padding:10px 28px;width:720px">
+    <h2 id="cm" class="k" style="margin:14px 0 4px">QUÉ CAMBIÓ EN TU MAPA</h2>
+    <div class="row"><span style="flex:1">Leer y escribir fracciones</span><span class="st" style="background:#e3f3e6;color:#1f5a28;border:1px dashed #2f7a43">PARA REPASAR</span><span aria-hidden="true">→</span><span class="st" style="background:#2f7a43;color:#fff">DOMINADO</span></div>
+    <div style="font-size:13px;color:#5f5f66;margin:-6px 0 8px">Evidencia: 3 de 3 de memoria, 9 días después de la última vez.</div>
+    <div class="row"><span style="flex:1">Fracciones equivalentes</span><span class="st" style="background:#fdebd0;color:#5c3800">PRACTICANDO</span><span aria-hidden="true">→</span><span class="st" style="background:#fdebd0;color:#5c3800">PRACTICANDO</span></div>
+    <div style="font-size:13px;color:#5f5f66;margin:-6px 0 8px">Ejemplo 3 resuelto sin pistas. Falta una evidencia más en otro día para dominarlo.</div>
+    <div class="row" style="border:0"><span style="flex:1">Pregunta que quedó abierta</span><span style="font-size:14px;color:#3a3a40">"¿Cuándo se puede dividir?" → para Simplificar</span></div>
+  </section>
+  <div style="font-size:14px;color:#3a3a40">Próxima vez: repasar equivalentes (en 2 días) y empezar "Comparar fracciones".</div>
+  <div style="display:flex;gap:10px"><a class="btn" href="Tema.dc.html">Ver el mapa</a><a class="btn p" href="Inicio.dc.html">Volver al inicio</a></div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

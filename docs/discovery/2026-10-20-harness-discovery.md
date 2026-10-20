@@ -23,12 +23,12 @@ Manifest (`defineHarness`) with actions + tiers + `path`; blocks (`defineBlock`,
 | Harness | Interview | Mockup | Features extracted |
 |---|---|---|---|
 | dev | parked (rounds 1–3 done) | v2 canvas + clickable prototype | draft |
-| student | round 1 done, round 2 asked | – | – |
+| student | rounds 1–3 done | v1 canvas published, review pending | draft |
 | teacher | – | – | – |
 | thinker | – | – | – |
 | writer | – | – | – |
 
-**Next step:** student harness round 2 (methods, profile, main object, ingestion, adult role, map/mastery, session shape, summaries vs "no documents"). Then mockups only — Marco said no implementation.
+**Next step:** Marco reviews student mockup v1 (https://claude.ai/artifact/WASSbMqoJYVBsAo41fx6nK, 15 screens). After he verifies it: a testable clickable mockup (the `prototyper` agent, into `docs/discovery/prototypes/student/`).
 
 **Dev is parked (Marco, 2026-10-20: "por ahora dejamos este harness así").** Still open there, to revisit later: Marco's test of the prototype (https://claude.ai/artifact/M3j64DEJFiekVj98fbdVn3, source `docs/discovery/prototypes/dev/index.html`), the Claude proposals listed under dev, and Q7 (which cockpit parts carry over).
 
@@ -174,6 +174,21 @@ Claude's proposal (2026-10-20, waiting for Marco's OK):
     3. close: the student writes a short summary (the AI corrects it) and flashcards for what was new;
     4. the map updates and open questions are saved.
   - The student ends the session, or the AI suggests ending when the goal is met.
+- Marco: "probemos así" — build mockup v1 with this; after he verifies it, build a testable (clickable) mockup.
+
+Mockup v1 (2026-10-20, waiting for Marco's review): https://claude.ai/artifact/WASSbMqoJYVBsAo41fx6nK. Source backup: `docs/discovery/mockups/student/`. 15 screens, example profile "Sofi, under 12" with the topic "Fracciones":
+
+1. **First run.** Welcome (engine step = core) → Who will study (profiles: name, age band, colour; under-18 shows "study with an adult") → Get to know you (6 questions one at a time, with a live "what the app understands about you" panel).
+2. **Home and new topic.** Home ("for today" suggestion, topic cards with a mastery bar and legend, flashcards due) → New topic (what, why, level for this topic, what you already know, material upload, strict/mixed) → Proposed map (concepts in prerequisite columns, each tagged from your material / added by the AI; a 5-question diagnosis or start from zero).
+3. **Topic.** Topic (map with 5 states, concept detail: evidence, what's missing to master it, your summary, flashcards; tabs: summaries, flashcards, material, sessions, open questions) → Start session (with goal / exam prep / free; time box; recommended method with reasons; the other 6 methods).
+4. **Session.**
+   - Socratic: Sócrates sub-steps, pre-exercise, "Me comprometo", hint.
+   - Feynman: the student's explanation highlighted ok/gap, with the AI's notes.
+   - Worked examples: 3 example cards with fading.
+   - Shared session frame: session parts (warm-up / main / close), method switcher, timer, today's goal and evidence panel.
+   - Close: the student's summary and flashcards with AI corrections.
+   - End: what changed in the map, with the evidence, an open question, and what's next.
+5. **Review and profile.** Flashcard review (answer from memory, the AI checks, 4 spaced-repetition ratings, interleaved across topics) → Profile (how I learn, how the AI talks: tone, explanation length, hint/explanation thresholds, questions per message; a methods tab).
 
 Reference: socrates-app inventory (read from `workspace/socrates-app`, 2026-10-20):
 
@@ -253,6 +268,14 @@ _not started_
 | Autonomy level per task (where the flow pauses) | dev | proposed (v2) | Flow/manifest-level setting |
 | Background/system agent jobs (sync external data into a local cache with a light model; on start + manual refresh) | dev | proposed | Core today: only user-started tasks |
 | Freshness check of external sources at task/stage start | dev | proposed | Generic "verify inputs" step in the flow |
+| Profiles: several users per install, each with own settings, data and AI style | student | proposed | Core today: one user; dev may not need it |
+| Onboarding interview (questions one at a time → a profile the AI reads every session) | student | proposed | Generic "get to know the user" setup step |
+| Methods as pluggable strategies (selectable, recommendable, switchable mid-task, with their own settings) | student | proposed | Like manifest actions but chosen per session; dev "modes" are similar |
+| Material ingestion (PDF, photos, links) + strict / mixed grounding | student | proposed | Folder + instructions today; needs ingestion and a grounding flag |
+| Knowledge/progress map with evidence-based states | student (dev's AC coverage is similar) | proposed | Generic "items with state + evidence" model and view |
+| Spaced-repetition scheduler (flashcards, review-due states) | student | proposed | Could be a core utility |
+| User-authored content with AI correction (summaries, cards) | student | proposed | A block: user text + inline AI notes |
+| Session frame: parts (warm-up/main/close), time box, goal, live evidence panel | student | proposed | Overlaps dev's stage stepper |
 | Requirement coverage view (criteria ↔ evidence) | dev | proposed | Possibly generic: teacher/student goals? check later |
 
 ## Open questions across harnesses

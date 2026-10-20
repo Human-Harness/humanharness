@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Perfil y ajustes</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;color:#1d1d1f}
+a{color:#0a5bc4}a:hover{color:#083f88}
+.btn{font:inherit;font-size:13px;padding:7px 12px;border-radius:7px;border:1px solid #d2d2d7;background:#fff;color:#1d1d1f;cursor:pointer;text-decoration:none}
+.k{font-size:12px;color:#5f5f66;font-weight:600}
+.tab{font:inherit;font-size:13px;padding:7px 14px;border:0;border-radius:7px;background:transparent;cursor:pointer;color:#3a3a40}
+.box{background:#fff;border:1px solid #e3e3e8;border-radius:14px;padding:18px 20px;display:flex;flex-direction:column;gap:2px}
+.row{display:flex;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid #f0f0f2;font-size:14px}
+.seg{display:flex;border:1px solid #d2d2d7;border-radius:7px;overflow:hidden}
+.seg span{font-size:12px;padding:6px 10px}
+.seg .on{background:#0a5bc4;color:#fff}
+select{font:inherit;font-size:13px;padding:5px 8px;border:1px solid #d2d2d7;border-radius:7px;background:#fff}
+</style>
+</helmet>
+<div style="width:1440px;height:900px;display:flex;flex-direction:column;background:#f5f5f7;padding:28px 40px;box-sizing:border-box;gap:16px">
+  <div style="display:flex;align-items:center;gap:14px">
+    <a href="Inicio.dc.html" style="font-size:13px">‹ Inicio</a>
+    <span style="width:36px;height:36px;border-radius:50%;background:#c2561c;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700">S</span>
+    <h1 style="margin:0;font-size:24px">Perfil de Sofi</h1>
+    <div style="flex:1"></div>
+    <a class="btn" href="Perfiles.dc.html">Cambiar de perfil</a>
+  </div>
+  <div role="tablist" style="display:flex;gap:4px">
+    <button class="tab" role="tab" aria-selected="true" style="background:#dcdce2;font-weight:600">Cómo aprendo</button>
+    <button class="tab" role="tab">Métodos</button>
+    <button class="tab" role="tab">App (motor y uso)</button>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;align-content:start">
+    <section class="box" aria-labelledby="a">
+      <h2 id="a" class="k" style="margin:0 0 6px">LO QUE LA APP SABE DE VOS (DE "CONOCERTE")</h2>
+      <div class="row"><span style="flex:1">Edad</span><span style="color:#3a3a40">Menos de 12 · con un adulto</span><button class="btn">Cambiar</button></div>
+      <div class="row"><span style="flex:1">Para qué estudio</span><span style="color:#3a3a40">Escuela y curiosidad</span><button class="btn">Cambiar</button></div>
+      <div class="row"><span style="flex:1">Cómo me gusta aprender</span><span style="color:#3a3a40">Ejercicios, dibujos</span><button class="btn">Cambiar</button></div>
+      <div class="row"><span style="flex:1">Si algo no me sale</span><span style="color:#3a3a40">Ver un ejemplo</span><button class="btn">Cambiar</button></div>
+      <div class="row" style="border:0"><span style="flex:1">Tiempo seguido</span><span style="color:#3a3a40">20 minutos</span><button class="btn">Cambiar</button></div>
+    </section>
+    <section class="box" aria-labelledby="b">
+      <h2 id="b" class="k" style="margin:0 0 6px">CÓMO TE HABLA LA IA</h2>
+      <div class="row"><span style="flex:1">Tono</span><div class="seg"><span class="on">Paciente</span><span>Neutro</span><span>Exigente</span></div></div>
+      <div class="row"><span style="flex:1">Explicaciones</span><div class="seg"><span class="on">Cortas</span><span>Medias</span><span>Largas</span></div></div>
+      <div class="row"><span style="flex:1">Pista después de</span><select aria-label="Intentos antes de una pista"><option>1 intento</option><option selected>2 intentos</option><option>3 intentos</option></select></div>
+      <div class="row"><span style="flex:1">Explicación después de</span><select aria-label="Intentos antes de explicar"><option>2 intentos</option><option selected>3 intentos</option><option>Nunca, seguir preguntando</option></select></div>
+      <div class="row" style="border:0"><span style="flex:1">Preguntas por mensaje</span><select aria-label="Preguntas por mensaje"><option selected>1</option><option>2</option></select></div>
+    </section>
+    <section class="box" aria-labelledby="c" style="grid-column:span 2">
+      <h2 id="c" class="k" style="margin:0 0 6px">PESTAÑA MÉTODOS (RESUMEN)</h2>
+      <div style="font-size:14px;line-height:1.6;color:#3a3a40">Los 7 métodos con una explicación corta de cada uno. Podés marcar favoritos (la IA los recomienda más) u ocultar los que no te gustan. Cada método tiene sus propios ajustes; por ejemplo, el socrático tiene qué pasos usar y qué tipos de ejercicio previo.</div>
+    </section>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

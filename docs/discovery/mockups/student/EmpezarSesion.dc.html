@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Empezar sesión</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;color:#1d1d1f}
+a{color:#0a5bc4}a:hover{color:#083f88}
+.btn{font:inherit;font-size:14px;padding:9px 18px;border-radius:8px;border:1px solid #d2d2d7;background:#fff;color:#1d1d1f;text-decoration:none;display:inline-block;cursor:pointer}
+.btn.p{background:#0a5bc4;border-color:#0a5bc4;color:#fff}
+.k{font-size:12px;color:#5f5f66;font-weight:600}
+.box{background:#fff;border:1px solid #e3e3e8;border-radius:14px;padding:20px;display:flex;flex-direction:column;gap:10px}
+.opt{display:flex;gap:10px;align-items:flex-start;padding:12px;border:1px solid #e3e3e8;border-radius:10px;font-size:13px;line-height:1.45}
+.opt.sel{border:2px solid #0a5bc4;background:#f3f8ff}
+.chip{font:inherit;font-size:13px;padding:7px 12px;border-radius:999px;border:1px solid #d2d2d7;background:#fff;cursor:pointer}
+.chip.sel{border-color:#0a5bc4;background:#dbe8fb}
+.m{display:flex;gap:10px;align-items:flex-start;padding:9px 0;border-bottom:1px solid #f0f0f2;font-size:13px;line-height:1.4}
+</style>
+</helmet>
+<div style="width:1440px;height:900px;display:flex;flex-direction:column;background:#f5f5f7;padding:28px 40px;box-sizing:border-box;gap:18px">
+  <div style="display:flex;align-items:center;gap:14px">
+    <a href="Tema.dc.html" style="font-size:13px">‹ Fracciones</a>
+    <h1 style="margin:0;font-size:24px">Nueva sesión</h1>
+  </div>
+  <div style="flex:1;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;min-height:0">
+    <section class="box" aria-labelledby="a">
+      <h2 id="a" style="margin:0;font-size:16px">1 · ¿Qué hacemos hoy?</h2>
+      <label class="opt sel"><input type="radio" name="o" checked><span><strong>Con objetivo</strong><br>La app sugiere: repasar "Leer y escribir" y seguir con "Fracciones equivalentes".</span></label>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;padding-left:28px"><button class="chip sel">Leer y escribir</button><button class="chip sel">Equivalentes</button><button class="chip">+ otro</button></div>
+      <label class="opt"><input type="radio" name="o"><span><strong>Preparar una prueba</strong><br>Elegís los conceptos que entran y practicamos todos mezclados.</span></label>
+      <label class="opt"><input type="radio" name="o"><span><strong>Libre</strong><br>Preguntá lo que quieras o explorá sin plan.</span></label>
+      <div class="k" style="margin-top:8px">¿CUÁNTO TIEMPO?</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap"><button class="chip">Sin límite</button><button class="chip">15 min</button><button class="chip sel">20 min</button><button class="chip">30 min</button></div>
+    </section>
+    <section class="box" aria-labelledby="b" style="border:2px solid #0a5bc4">
+      <h2 id="b" style="margin:0;font-size:16px">2 · Método recomendado</h2>
+      <div style="font-size:20px;font-weight:600">Ejemplos resueltos</div>
+      <div style="font-size:14px;line-height:1.5">La IA resuelve un ejemplo paso a paso; en el siguiente te deja un paso a vos, después dos, hasta que lo hacés solo.</div>
+      <div class="k" style="margin-top:6px">POR QUÉ ESTE</div>
+      <ul style="margin:0;padding-left:18px;font-size:13px;line-height:1.6">
+        <li>En tu perfil dijiste que te ayuda ver un ejemplo parecido.</li>
+        <li>Equivalentes se entiende viendo cómo se transforma una fracción.</li>
+        <li>La sesión pasada tuviste que pedir 2 pistas acá.</li>
+      </ul>
+      <div style="flex:1"></div>
+      <div class="k">LA SESIÓN VA A TENER</div>
+      <div style="font-size:13px;line-height:1.6">Calentamiento: 3 preguntas de memoria · Bloque principal con este método · Cierre: escribís tu resumen y tus flashcards.</div>
+    </section>
+    <section class="box" aria-labelledby="c">
+      <h2 id="c" style="margin:0;font-size:16px">O elegí otro</h2>
+      <label class="m"><input type="radio" name="me"><span><strong>Socrático</strong> · te pregunto hasta que lo descubrís vos</span></label>
+      <label class="m"><input type="radio" name="me"><span><strong>Feynman</strong> · me lo explicás y marco los huecos</span></label>
+      <label class="m"><input type="radio" name="me"><span><strong>Práctica de memoria</strong> · preguntas y flashcards sin mirar</span></label>
+      <label class="m"><input type="radio" name="me" checked><span><strong>Ejemplos resueltos</strong> · recomendado</span></label>
+      <label class="m"><input type="radio" name="me"><span><strong>Elaboración</strong> · ¿por qué? ¿con qué se relaciona?</span></label>
+      <label class="m"><input type="radio" name="me"><span><strong>Práctica mezclada</strong> · ejercicios de varios conceptos juntos</span></label>
+      <label class="m" style="border:0"><input type="radio" name="me"><span><strong>Por problemas</strong> · arrancamos de un problema real</span></label>
+      <div style="font-size:12px;color:#5f5f66">Podés cambiar de método en medio de la sesión.</div>
+    </section>
+  </div>
+  <div style="display:flex;justify-content:flex-end;gap:10px">
+    <a class="btn p" href="SesionEjemplos.dc.html" style="font-size:15px;padding:11px 24px">Empezar</a>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Perfiles</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;color:#1d1d1f}
+a{color:#0a5bc4}a:hover{color:#083f88}
+.btn{font:inherit;font-size:14px;padding:9px 18px;border-radius:8px;border:1px solid #d2d2d7;background:#fff;color:#1d1d1f;text-decoration:none;display:inline-block;cursor:pointer}
+.btn.p{background:#0a5bc4;border-color:#0a5bc4;color:#fff}
+.k{font-size:12px;color:#5f5f66;font-weight:600}
+.pf{background:#fff;border:1px solid #e3e3e8;border-radius:16px;padding:22px;width:200px;display:flex;flex-direction:column;align-items:center;gap:10px;text-decoration:none;color:#1d1d1f}
+.av{width:72px;height:72px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:700;color:#fff}
+label{font-size:13px;font-weight:600}
+input,select{font:inherit;font-size:14px;padding:9px 11px;border:1px solid #d2d2d7;border-radius:8px;background:#fff}
+</style>
+</helmet>
+<div style="width:1440px;height:900px;display:flex;flex-direction:column;align-items:center;padding-top:80px;box-sizing:border-box;gap:28px;background:#f5f5f7">
+  <h1 style="margin:0;font-size:28px">¿Quién va a estudiar?</h1>
+  <p style="margin:0;color:#3a3a40;font-size:15px">Cada persona tiene su perfil: su forma de aprender, sus temas y su progreso.</p>
+  <div style="display:flex;gap:20px;align-items:flex-start">
+    <a class="pf" href="Inicio.dc.html">
+      <div class="av" style="background:#3b5bab">M</div>
+      <strong style="font-size:16px">Marco</strong>
+      <span style="font-size:13px;color:#5f5f66">Adulto · 2 temas</span>
+    </a>
+    <section aria-labelledby="np" style="background:#fff;border:2px solid #0a5bc4;border-radius:16px;padding:22px;width:380px;display:flex;flex-direction:column;gap:10px">
+      <h2 id="np" style="margin:0;font-size:16px">Nuevo perfil</h2>
+      <label for="n">Nombre</label><input id="n" value="Sofi">
+      <label for="e">Edad</label>
+      <select id="e"><option selected>Menos de 12</option><option>12 a 17</option><option>18 o más</option><option>Prefiero no decir</option></select>
+      <div style="background:#fffaf1;border:1px solid #e8a33d;border-radius:10px;padding:10px 12px;font-size:13px;line-height:1.5">Es menor: sugerimos que estudie con un adulto al lado. La app adapta el lenguaje y los ejemplos a su edad.</div>
+      <div class="k" style="margin-top:4px">COLOR</div>
+      <div style="display:flex;gap:8px">
+        <button aria-label="Azul" style="width:32px;height:32px;border-radius:50%;border:0;background:#3b5bab"></button>
+        <button aria-label="Naranja" style="width:32px;height:32px;border-radius:50%;border:3px solid #1d1d1f;background:#c2561c"></button>
+        <button aria-label="Verde" style="width:32px;height:32px;border-radius:50%;border:0;background:#2f7a43"></button>
+        <button aria-label="Violeta" style="width:32px;height:32px;border-radius:50%;border:0;background:#6b3fa0"></button>
+      </div>
+      <a class="btn p" href="Conocerte.dc.html" style="text-align:center;margin-top:6px">Seguir</a>
+    </section>
+  </div>
+  <div style="font-size:13px;color:#5f5f66">Los perfiles no tienen contraseña: son para ordenar, no para proteger.</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Mapa propuesto</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;color:#1d1d1f}
+a{color:#0a5bc4}a:hover{color:#083f88}
+.btn{font:inherit;font-size:14px;padding:9px 18px;border-radius:8px;border:1px solid #d2d2d7;background:#fff;color:#1d1d1f;text-decoration:none;display:inline-block;cursor:pointer}
+.btn.p{background:#0a5bc4;border-color:#0a5bc4;color:#fff}
+.k{font-size:12px;color:#5f5f66;font-weight:600}
+.col{display:flex;flex-direction:column;gap:14px;flex:1}
+.node{background:#fff;border:1px solid #d2d2d7;border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:6px;font-size:14px}
+.src{font-size:11px;font-weight:600;color:#5f5f66}
+.arr{display:flex;align-items:center;color:#8e8e93;font-size:22px}
+</style>
+</helmet>
+<div style="width:1440px;height:900px;display:flex;flex-direction:column;background:#f5f5f7;padding:32px 40px;box-sizing:border-box;gap:18px">
+  <div style="display:flex;align-items:center;gap:14px">
+    <a href="NuevoTema.dc.html" style="font-size:13px">‹ Nuevo tema</a>
+    <h1 style="margin:0;font-size:24px">El mapa de Fracciones</h1>
+  </div>
+  <p style="margin:0;font-size:14px;color:#3a3a40">Leímos tus 2 fotos y armamos los conceptos en orden: cada columna necesita la anterior. Podés sacar, sumar o renombrar.</p>
+  <div style="flex:1;display:flex;gap:20px;min-height:0">
+    <section aria-label="Mapa" style="flex:1;background:#fbfbfd;border:1px solid #e3e3e8;border-radius:14px;padding:24px;display:flex;gap:10px">
+      <div class="col"><div class="k">PRIMERO</div>
+        <div class="node"><strong>Parte y entero</strong><span class="src">De tu cuaderno</span></div>
+        <div class="node"><strong>La fracción como parte</strong><span class="src">De tu cuaderno</span></div></div>
+      <div class="arr" aria-hidden="true">›</div>
+      <div class="col"><div class="k">DESPUÉS</div>
+        <div class="node"><strong>Leer y escribir fracciones</strong><span class="src">De tu cuaderno</span></div>
+        <div class="node"><strong>Fracciones equivalentes</strong><span class="src">Agregado por la IA</span></div></div>
+      <div class="arr" aria-hidden="true">›</div>
+      <div class="col"><div class="k">LUEGO</div>
+        <div class="node"><strong>Comparar fracciones</strong><span class="src">De tu cuaderno</span></div>
+        <div class="node"><strong>Simplificar</strong><span class="src">Agregado por la IA</span></div></div>
+      <div class="arr" aria-hidden="true">›</div>
+      <div class="col"><div class="k">AL FINAL</div>
+        <div class="node"><strong>Sumar con igual denominador</strong><span class="src">De tu cuaderno</span></div>
+        <div class="node" style="border:2px solid #e8a33d"><strong>Sumar con distinto denominador</strong><span class="src">De tu cuaderno · dijiste que te cuesta</span></div></div>
+    </section>
+    <aside style="width:340px;background:#fff;border:1px solid #e3e3e8;border-radius:14px;padding:22px;display:flex;flex-direction:column;gap:12px">
+      <div class="k">¿POR DÓNDE EMPEZAMOS?</div>
+      <div style="font-size:14px;line-height:1.5">Dijiste que ya sabés qué es un medio y un cuarto. Para no repetir lo que sabés, conviene un diagnóstico corto.</div>
+      <label style="display:flex;gap:8px;font-size:14px;padding:12px;border:2px solid #0a5bc4;border-radius:10px;background:#f3f8ff"><input type="radio" name="d" checked><span><strong>Diagnóstico de 5 preguntas</strong><br><span style="font-size:13px;color:#3a3a40">Marca como "visto" lo que ya sabés</span></span></label>
+      <label style="display:flex;gap:8px;font-size:14px;padding:12px;border:1px solid #e3e3e8;border-radius:10px"><input type="radio" name="d"><span><strong>Empezar desde el principio</strong></span></label>
+      <div style="flex:1"></div>
+      <div class="k">ESTE MAPA</div>
+      <div style="font-size:13px;color:#3a3a40;line-height:1.5">6 conceptos salen de tu material y 2 los sumó la IA (modo mixto). En modo "solo mi material" no aparecerían.</div>
+      <a class="btn p" href="Tema.dc.html" style="text-align:center">Listo, crear el tema</a>
+    </aside>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

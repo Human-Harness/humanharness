@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Conocerte</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;color:#1d1d1f}
+a{color:#0a5bc4}a:hover{color:#083f88}
+.btn{font:inherit;font-size:14px;padding:9px 18px;border-radius:8px;border:1px solid #d2d2d7;background:#fff;color:#1d1d1f;text-decoration:none;display:inline-block;cursor:pointer}
+.btn.p{background:#0a5bc4;border-color:#0a5bc4;color:#fff}
+.k{font-size:12px;color:#5f5f66;font-weight:600}
+.o{font:inherit;text-align:left;font-size:15px;padding:16px 18px;border-radius:12px;border:1px solid #d2d2d7;background:#fff;cursor:pointer;line-height:1.4}
+.o.sel{border:2px solid #0a5bc4;background:#f3f8ff}
+.done{display:flex;flex-direction:column;gap:2px;font-size:13px;padding:10px 0;border-bottom:1px solid #eee}
+</style>
+</helmet>
+<div style="width:1440px;height:900px;display:flex;background:#f5f5f7">
+  <main style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;padding:40px">
+    <div style="display:flex;gap:6px" aria-label="Pregunta 3 de 6">
+      <span style="width:40px;height:6px;border-radius:3px;background:#0a5bc4"></span><span style="width:40px;height:6px;border-radius:3px;background:#0a5bc4"></span><span style="width:40px;height:6px;border-radius:3px;background:#0a5bc4"></span><span style="width:40px;height:6px;border-radius:3px;background:#d2d2d7"></span><span style="width:40px;height:6px;border-radius:3px;background:#d2d2d7"></span><span style="width:40px;height:6px;border-radius:3px;background:#d2d2d7"></span>
+    </div>
+    <div class="k">CONOCERTE · 3 DE 6</div>
+    <h1 style="margin:0;font-size:28px;text-align:center;max-width:640px">Cuando algo no te sale, ¿qué te ayuda más?</h1>
+    <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;width:640px">
+      <button class="o">Que me den una pista chiquita</button>
+      <button class="o sel">Ver un ejemplo parecido resuelto</button>
+      <button class="o">Que me lo expliquen de otra forma</button>
+      <button class="o">Seguir intentando solo un rato más</button>
+    </div>
+    <div style="display:flex;gap:10px"><button class="btn">Saltear</button><a class="btn p" href="Inicio.dc.html">Siguiente</a></div>
+    <div style="font-size:13px;color:#5f5f66">Podés cambiar todo esto después en tu perfil.</div>
+  </main>
+  <aside aria-label="Lo que la app entiende de vos" style="width:400px;background:#fff;border-left:1px solid #e3e3e8;padding:28px;display:flex;flex-direction:column;gap:8px">
+    <div style="display:flex;align-items:center;gap:10px"><span style="width:36px;height:36px;border-radius:50%;background:#c2561c;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700">S</span><strong>Sofi · menos de 12</strong></div>
+    <div class="k" style="margin-top:12px">LO QUE YA RESPONDISTE</div>
+    <div class="done"><span class="k">¿Para qué estudiás?</span><span>Para la escuela y porque me gusta saber cosas</span></div>
+    <div class="done"><span class="k">¿Cómo te gusta aprender?</span><span>Haciendo ejercicios, con dibujos</span></div>
+    <div class="k" style="margin-top:12px">FALTA</div>
+    <div style="font-size:13px;color:#3a3a40;line-height:1.6">¿Cuánto tiempo te gusta estudiar seguido? · ¿Qué te aburre? · ¿Cómo querés que te hable la IA?</div>
+    <div style="flex:1"></div>
+    <div class="k">CON ESTO, LA APP VA A</div>
+    <div style="font-size:13px;line-height:1.5;color:#3a3a40">Recomendarte métodos con práctica y ejemplos, usar dibujos cuando ayuden y hablarte simple.</div>
+  </aside>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

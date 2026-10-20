@@ -28,7 +28,7 @@ Manifest (`defineHarness`) with actions + tiers + `path`; blocks (`defineBlock`,
 | thinker | – | – | – |
 | writer | – | – | – |
 
-**Next step:** Marco reviews dev mockup v2 (18 screens) and the Claude proposals listed under dev. Q7 (which cockpit parts carry over) is still pending.
+**Next step:** a clickable HTML prototype of the dev harness, with mocked state and simulated agents, is being built by the `prototyper` agent (2026-10-20) into `docs/discovery/prototypes/dev/index.html` and published as an Artifact. Then Marco tests it, reviews mockup v2 and the Claude proposals listed under dev, and answers Q7 (which cockpit parts carry over).
 
 ## Harnesses
 

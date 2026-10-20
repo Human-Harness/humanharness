@@ -22,13 +22,17 @@ Manifest (`defineHarness`) with actions + tiers + `path`; blocks (`defineBlock`,
 
 | Harness | Interview | Mockup | Features extracted |
 |---|---|---|---|
-| dev | rounds 1–3 done | v2 (whole app) published, review pending | draft |
-| student | – | – | – |
+| dev | parked (rounds 1–3 done) | v2 canvas + clickable prototype | draft |
+| student | round 1 asked | – | – |
 | teacher | – | – | – |
 | thinker | – | – | – |
 | writer | – | – | – |
 
-**Next step:** Marco tests the dev prototype (https://claude.ai/artifact/M3j64DEJFiekVj98fbdVn3, source `docs/discovery/prototypes/dev/index.html`), reviews the Claude proposals listed under dev, and answers Q7 (which cockpit parts carry over).
+**Next step:** student harness, round 1 of questions (asked 2026-10-20).
+
+**Dev is parked (Marco, 2026-10-20: "por ahora dejamos este harness así").** Still open there, to revisit later: Marco's test of the prototype (https://claude.ai/artifact/M3j64DEJFiekVj98fbdVn3, source `docs/discovery/prototypes/dev/index.html`), the Claude proposals listed under dev, and Q7 (which cockpit parts carry over).
+
+**Lesson for every harness (from dev round 3):** mockups must cover the whole app — first run, home, creating/importing the main object, daily work, settings — not only the core use case. Ask about those early. A clickable prototype (`prototyper` agent, this branch is `modo: discovery`) is the expected last step.
 
 Dev prototype (2026-10-20, built by the `prototyper` agent; this branch declares `modo: discovery` in `CLAUDE.md`):
 - **Works:** every flow (first run, import, create, Hoy/Project live updates, Jira sync spinner + new ticket, take ticket, the full ticket cycle up to merge, mode toggle, code drawer with a typable console + fake diff, settings, "Reiniciar demo").
@@ -110,7 +114,9 @@ Facts implied for the core (to confirm, not yet decided):
 
 ### student
 
-_not started_
+Questions asked, round 1 (2026-10-20): who the student is; what tasks; input material and where it comes from; the AI's role (explain / ask / test) and limits (doing homework for them?); how study is organized (subjects, topics, exam dates); what stays after a session; relation to the teacher harness and to Marco's socrates-app; first run and home.
+
+Answers: _pending_
 
 ### teacher
 

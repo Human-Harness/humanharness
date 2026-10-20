@@ -28,7 +28,30 @@ Manifest (`defineHarness`) with actions + tiers + `path`; blocks (`defineBlock`,
 | thinker | – | – | – |
 | writer | – | – | – |
 
-**Next step:** Marco reviews student mockup v1 (https://claude.ai/artifact/WASSbMqoJYVBsAo41fx6nK, 15 screens). 2026-10-20: Marco asked for the testable version. The `prototyper` agent is building it into `docs/discovery/prototypes/student/index.html` (in progress).
+**Next step:** Marco reviews student mockup v1 (https://claude.ai/artifact/WASSbMqoJYVBsAo41fx6nK, 15 screens). Student prototype (2026-10-20): https://claude.ai/artifact/5wNPm3RGiNXrdzEP4st9Qp, source `docs/discovery/prototypes/student/index.html`. Next: Marco tests it and gives feedback.
+
+- **Works:**
+  - all 10 flows;
+  - profiles with separate data and copy that adapts to age;
+  - an editable map with strict/mixed;
+  - the diagnosis;
+  - computed method recommendation;
+  - a real method switch mid-session;
+  - warm-up from the student's own cards;
+  - close with scripted correction;
+  - mastery only with evidence on 2 different days;
+  - flashcards with 4 ratings;
+  - "Avanzar un día" for spaced repetition;
+  - profile tone changes a sample line.
+- **Faked:**
+  - All AI is scripted. Only "Fracciones equivalentes" has rich scripts.
+  - Four methods are placeholders.
+  - Uploads are fake.
+  - The App tab is static.
+- **Deviations:**
+  - Marco and Sofi exist at first run, so first run creates a third profile.
+  - Navigation lives in memory instead of hash routing.
+  - Cierre has a "Rellenar con un ejemplo (demo)" link.
 
 **Dev is parked (Marco, 2026-10-20: "por ahora dejamos este harness así").** Still open there, to revisit later: Marco's test of the prototype (https://claude.ai/artifact/M3j64DEJFiekVj98fbdVn3, source `docs/discovery/prototypes/dev/index.html`), the Claude proposals listed under dev, and Q7 (which cockpit parts carry over).
 

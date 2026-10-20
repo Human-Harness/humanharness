@@ -22,13 +22,13 @@ Manifest (`defineHarness`) with actions + tiers + `path`; blocks (`defineBlock`,
 
 | Harness | Interview | Mockup | Features extracted |
 |---|---|---|---|
-| dev | rounds 1–2 done | v1 in progress | – |
+| dev | rounds 1–2 done | v1 published, review pending | draft |
 | student | – | – | – |
 | teacher | – | – | – |
 | thinker | – | – | – |
 | writer | – | – | – |
 
-**Next step:** dev harness mockup v1. Compare a console-first layout (cockpit-like) with a decision-first layout (flow + decision log in the center, console/diff as a drawer). Q7 (which cockpit parts carry over) is still pending.
+**Next step:** Marco reviews dev mockup v1 (A vs B, review by decisions, after the PR) and answers Q7 (which cockpit parts carry over).
 
 ## Harnesses
 
@@ -56,6 +56,14 @@ Answers, round 2 (2026-10-20):
 - **Integrations.** For now: Jira, GitHub, MCPs, and `gh` CLI.
 - **Ticket lifecycle.** Yes: the app moves Jira states, and after the PR it reads review comments + CI and helps resolve them.
 - Still open: which cockpit parts carry over (Hoy inbox, Camino view, advisors, version pilot, Taller, re-injecting context after compaction).
+
+Mockup v1 (2026-10-20, waiting for Marco's review): https://claude.ai/artifact/JkYwnWjmArqrHzSz92A5CV
+
+1. **Hoy.** Tickets in parallel, grouped as "waiting for you" / in progress (phase, worktree, model tier) / next from Jira; plan usage visible.
+2A. **Ticket, console first** (cockpit-like): ticket on the left, interactive terminal in the center, changes/PR on the right.
+2B. **Ticket, decision first**: phase stepper (Understand → Plan → Implement → Review → PR → Feedback & CI), product + numbered AC on the left, the current decision in the center (plan options with trade-offs, AC coverage, files touched), the ticket's decision log (dev vs AI, assumptions to confirm), the agent's state + "what the AI takes into account" on the right, and "go down to the code" (console, diff, editor) as a closed bottom drawer.
+3. **Review by decisions**: the AI's implementation decisions, each tied to an AC and to its slice of the diff; approve / change / ask the PO in Jira; AC coverage with tests; work outside the ticket's scope; PR description generated from the decisions; PR gated until every decision is reviewed.
+4. **After the PR**: CI failures and review comments triaged into decisions with proposed actions; reply on GitHub; move Jira states; clean up the worktree on merge.
 
 Reference: cockpit inventory (read from `workspace/cockpit`, 2026-10-20):
 
@@ -93,7 +101,15 @@ _not started_
 
 | Feature | Needed by | Core status | Notes |
 |---|---|---|---|
-| _none yet_ | | | |
+| Decision log per task, with author (user / AI) and an "assumption" kind the user confirms | dev | proposed (mockup v1) | Extends `save_note` decisions; also the input for review |
+| Phase stepper driven by the manifest flow, with a "waiting for you" state | dev | proposed | Core has actions + `path`; needs visible phases per task |
+| Several tasks running in parallel + a cross-task inbox ("Hoy") | dev | proposed | Core today: one task at a time |
+| Multi-folder / multi-repo workspace | dev | proposed | Core today: one folder |
+| User's own git as primary (branches, worktree per task, remote) | dev | proposed | Core uses hidden git; needs a mode for user-owned repos |
+| External integrations as harness capabilities (Jira, GitHub through `gh`/MCP) | dev | proposed | Auth: reuse the user's CLI/MCP; no app-held OAuth tokens (3d rule) |
+| "What the AI takes into account" panel + add/pin context | dev | proposed | Visible version of the session-start context |
+| Embedded terminal (PTY) as an optional "go down" drawer | dev | proposed | Core runs headless turns; an interactive CLI is a new engine mode |
+| Requirement coverage view (criteria ↔ evidence) | dev | proposed | Possibly generic: teacher/student goals? check later |
 
 ## Open questions across harnesses
 

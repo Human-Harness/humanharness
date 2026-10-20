@@ -73,6 +73,8 @@ Mockup v2, the whole app (2026-10-20, waiting for Marco's review). Same URL as v
 4. **Ticket.** Decision mode and console mode with a mode toggle; review by decisions; after the PR.
 5. **Settings.** Core tabs + **Accounts** (GitHub, Jira, extra MCPs for the agents) + **Agents** (parallel limit, model per stage, default mode); project settings (repos, stage ↔ Jira status mapping, test/run commands, PR template/reviewers/branch naming, project notes & decisions).
 
+**Decision (Marco, 2026-10-20): only agents touch Jira** (through the engine's Atlassian MCP). The app holds no Jira token. The user can still edit Jira by hand, and the app must pick up those changes. Mockup updated (Accounts, Settings › Accounts). Open: how the app shows the board/tickets without its own Jira access (a light-model agent syncing a local cache? the app reading only?).
+
 Proposals added by Claude in v2, not yet confirmed by Marco: readiness check when taking a ticket; "when does the agent stop me" autonomy levels; ADRs for stack decisions; the AI proposing first tickets; project notes learned at import; extra MCPs in settings; a "New ticket" button.
 
 Mockup v1 (2026-10-20, superseded by v2): https://claude.ai/artifact/JkYwnWjmArqrHzSz92A5CV

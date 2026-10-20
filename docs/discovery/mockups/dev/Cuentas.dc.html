@@ -40,15 +40,11 @@ label{font-size:12px;color:#3a3a40}
     </section>
     <section class="card" aria-labelledby="jira">
       <h2 id="jira" style="margin:0;font-size:18px">Jira</h2>
-      <div class="k">¿CÓMO SE CONECTA?</div>
-      <label class="opt" style="border-color:#0a5bc4"><input type="radio" name="j" checked><span><strong>Token personal de Atlassian</strong><br>La app lee y mueve tickets por su cuenta.</span></label>
-      <label class="opt"><input type="radio" name="j"><span><strong>El MCP de Atlassian de tu motor</strong><br>Solo los agentes tocan Jira; la app ve menos.</span></label>
-      <div style="display:flex;flex-direction:column;gap:6px">
-        <label for="site">Sitio</label><input id="site" type="text" placeholder="tuempresa.atlassian.net">
-        <label for="mail">Email</label><input id="mail" type="email" placeholder="vos@empresa.com">
-        <label for="tok">Token</label><input id="tok" type="password" placeholder="Pegá el token">
-      </div>
-      <a href="#" style="font-size:13px">Cómo crear un token</a>
+      <div style="font-size:13px;color:#1f5a28">✓ MCP de Atlassian disponible en Claude Code</div>
+      <div style="font-size:13px;color:#1f5a28">✓ Acceso a tuempresa.atlassian.net</div>
+      <div style="font-size:13px;color:#3a3a40;line-height:1.5">Solo los agentes tocan Jira, a través de ese MCP. La app no guarda tokens. Vos podés seguir editando en Jira a mano cuando quieras; la app toma esos cambios.</div>
+      <div class="k">SI NO ESTUVIERA</div>
+      <div style="font-size:13px;color:#5f5f66">Botón "Conectar Atlassian" que agrega el MCP al motor y abre el login de Atlassian.</div>
     </section>
   </div>
   <div style="display:flex;gap:10px"><a class="btn" href="Motor.dc.html">Atrás</a><a class="btn p" href="Listo.dc.html">Probar y seguir</a></div>

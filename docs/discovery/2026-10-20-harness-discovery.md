@@ -28,7 +28,7 @@ Manifest (`defineHarness`) with actions + tiers + `path`; blocks (`defineBlock`,
 | thinker | – | – | – |
 | writer | – | – | – |
 
-**Next step:** answer round 1 of the dev harness questions.
+**Next step:** dev harness round 2 (ORCA reference, Jira/GitHub auth, terminal vs flow, worktrees, ticket context).
 
 ## Harnesses
 
@@ -36,7 +36,21 @@ Manifest (`defineHarness`) with actions + tiers + `path`; blocks (`defineBlock`,
 
 Questions asked, round 1 (2026-10-20): who uses it, what tasks, relation to existing tools (cockpit, ticket2), repo/folder model, what decisions the user takes, outputs.
 
-Answers: _pending_
+Answers, round 1 (2026-10-20):
+
+- **What it is.** A general-purpose version of Marco's cockpit app (workspace `cockpit/`, which is Flutter-specific) for any developer doing standard software development. "Our version of ORCA, but ticket-oriented, so the dev is closer to the product."
+- **Core loop.** Work on Jira tickets, open PRs on GitHub. An embedded console runs Claude Code or Codex "inside the ticket", with the ticket and all its context visible next to it.
+- **Users.** All developers, not only Marco. Does not replace cockpit (cockpit stays Flutter-specific).
+- **Tasks.** All of a dev's daily tasks: start a project, implement a feature, debug, review code, understand a foreign repo.
+- **Folder.** The user picks one project folder or several, each with its own repo. The remote repo matters much more than in other harnesses.
+- **Decisions.** Daily dev work: drive the implementation, review the diff with AI help, etc.
+- **Output.** Depends on the work; most of it ends in a PR.
+
+Facts implied for the core (to confirm, not yet decided):
+- Multi-folder / multi-repo workspace (core today: one folder).
+- The user's own git + remote is primary (core today: hidden internal git).
+- External integrations: Jira, GitHub.
+- Embedded terminal running the engine's interactive CLI (core today: headless `claude -p` turns).
 
 ### student
 

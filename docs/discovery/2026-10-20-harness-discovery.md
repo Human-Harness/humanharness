@@ -73,7 +73,9 @@ Mockup v2, the whole app (2026-10-20, waiting for Marco's review). Same URL as v
 4. **Ticket.** Decision mode and console mode with a mode toggle; review by decisions; after the PR.
 5. **Settings.** Core tabs + **Accounts** (GitHub, Jira, extra MCPs for the agents) + **Agents** (parallel limit, model per stage, default mode); project settings (repos, stage ↔ Jira status mapping, test/run commands, PR template/reviewers/branch naming, project notes & decisions).
 
-**Decision (Marco, 2026-10-20): only agents touch Jira** (through the engine's Atlassian MCP). The app holds no Jira token. The user can still edit Jira by hand, and the app must pick up those changes. Mockup updated (Accounts, Settings › Accounts). Open: how the app shows the board/tickets without its own Jira access (a light-model agent syncing a local cache? the app reading only?).
+**Decision (Marco, 2026-10-20): only agents touch Jira** (through the engine's Atlassian MCP). The app holds no Jira token. The user can still edit Jira by hand, and the app must pick up those changes. Mockup updated (Accounts, Settings › Accounts).
+
+**Decision (Marco, 2026-10-20): Jira sync by an agent into a local copy.** On app start, an agent fetches the missing/changed tickets. The user can press "Update from Jira" to fetch new ones. When an agent works on a ticket, it first checks that the local ticket matches Jira. Mockup updated (Hoy, Project, ticket agent panel).
 
 Proposals added by Claude in v2, not yet confirmed by Marco: readiness check when taking a ticket; "when does the agent stop me" autonomy levels; ADRs for stack decisions; the AI proposing first tickets; project notes learned at import; extra MCPs in settings; a "New ticket" button.
 
@@ -136,6 +138,8 @@ _not started_
 | Wizard of sequential decisions (options with trade-offs, one at a time, saved as decisions) | dev | proposed (v2) | Likely generic: thinker/writer/teacher? |
 | Single confirmation for outward actions (create repo, create tickets) with a progress checklist | dev | proposed (v2) | Pairs with the core's "warn before heavy actions" |
 | Autonomy level per task (where the flow pauses) | dev | proposed (v2) | Flow/manifest-level setting |
+| Background/system agent jobs (sync external data into a local cache with a light model; on start + manual refresh) | dev | proposed | Core today: only user-started tasks |
+| Freshness check of external sources at task/stage start | dev | proposed | Generic "verify inputs" step in the flow |
 | Requirement coverage view (criteria ↔ evidence) | dev | proposed | Possibly generic: teacher/student goals? check later |
 
 ## Open questions across harnesses

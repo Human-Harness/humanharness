@@ -28,7 +28,7 @@ Manifest (`defineHarness`) with actions + tiers + `path`; blocks (`defineBlock`,
 | thinker | – | – | – |
 | writer | – | – | – |
 
-**Next step:** Marco reviews dev mockup v1 (A vs B, review by decisions, after the PR) and answers Q7 (which cockpit parts carry over).
+**Next step:** build dev mockup v2 (whole app: onboarding, home, create/import project, project, take ticket, ticket A/B, review, after the PR, settings), then Marco reviews it. Q7 (which cockpit parts carry over) is still pending.
 
 ## Harnesses
 
@@ -57,7 +57,15 @@ Answers, round 2 (2026-10-20):
 - **Ticket lifecycle.** Yes: the app moves Jira states, and after the PR it reads review comments + CI and helps resolve them.
 - Still open: which cockpit parts carry over (Hoy inbox, Camino view, advisors, version pilot, Taller, re-injecting context after compaction).
 
-Mockup v1 (2026-10-20, waiting for Marco's review): https://claude.ai/artifact/JkYwnWjmArqrHzSz92A5CV
+Answers, round 3 (2026-10-20), after mockup v1:
+
+- **Feedback.** v1 covered too few use cases. He wants mockups of the whole app: first run, home, create/import project, etc.
+- **First run.** The core onboarding (engine, no app account) plus a step to connect GitHub (`gh`) and Jira.
+- **Create project from zero.** AI scaffold of the chosen stack + create the GitHub repo(s) + create the Jira project/board.
+- **Project model.** One Jira project ↔ N repos.
+- **Ticket screen.** Both modes (console first / decision first), switchable by the dev.
+
+Mockup v1 (2026-10-20, superseded by v2: the whole app): https://claude.ai/artifact/JkYwnWjmArqrHzSz92A5CV
 
 1. **Hoy.** Tickets in parallel, grouped as "waiting for you" / in progress (phase, worktree, model tier) / next from Jira; plan usage visible.
 2A. **Ticket, console first** (cockpit-like): ticket on the left, interactive terminal in the center, changes/PR on the right.

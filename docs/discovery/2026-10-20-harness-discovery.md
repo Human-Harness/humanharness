@@ -128,6 +128,51 @@ Answers, round 1 (2026-10-20):
 - **First run.** Ask the user about themselves to understand what kind of student they are.
 - **Process.** Finish the questions, then mockups. No implementation (Marco: "nada de implementar").
 
+Reference: socrates-app inventory (read from `workspace/socrates-app`, 2026-10-20):
+
+- Local Next.js app (rioplatense Spanish). One `claude -p` per message (stream-json, `--resume`), streamed to the page over SSE. Tools limited to Read/Glob/Grep/Edit/Write/Web*/TodoWrite.
+- Screens:
+  - **Temas**: topics grouped by subject (materia).
+  - **+ Nuevo**: subject + question + starting belief + optional goal. This is the only onboarding; there is no profile.
+  - **Sesión**:
+    - chat;
+    - a 6-step tracker: Repaso → Ejercicio previo → Preguntas → Concepto → Verificación → Cierre;
+    - discovered terms;
+    - an exercise block with "Me comprometo" and "Necesito una pista";
+    - a stop button.
+  - **Glosario**: 4 abstraction levels, with search.
+  - **Método**: a settings page.
+- Blocks:
+  - `socrates-ejercicio`;
+  - `socrates-opciones`;
+  - `socrates-estado`, which is hidden and carries the step + terms.
+- Method:
+  - One method: pre-exercise, then Socratic questions. One question per message, no answer before the learner commits, a hint after 2 failed tries and an explanation after 3. Enforced only by prompts.
+  - The Método page tunes it but cannot switch methods. It sets:
+    - which steps are on;
+    - questions per message;
+    - when hints and explanations kick in;
+    - tone (patient / neutral / demanding);
+    - explanation length;
+    - exercise types;
+    - free-form custom rules.
+  - The settings are written into METODO.md between markers.
+- Learner model: none. The learner is hardcoded as "Marco", with no age and no mastery tracking. "Level" means the topic's abstraction level 1–4, not the learner's. Progress is a prose table the tutor updates.
+- Persistence (all markdown) under `<materia>/`:
+  - `temas/NN-*.md`, which keeps the learner's real answers;
+  - `glosario.md`;
+  - `preguntas-abiertas.md`;
+  - `sesiones/*.jsonl`.
+- Missing compared with the student harness:
+  - material ingestion;
+  - profile and age;
+  - several switchable methods;
+  - concept map / mastery;
+  - flashcards;
+  - separate summaries;
+  - spaced repetition;
+  - multiple users.
+
 ### teacher
 
 _not started_

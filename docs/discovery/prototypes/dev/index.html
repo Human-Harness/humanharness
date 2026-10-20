@@ -1,0 +1,983 @@
+<title>Dev Harness prototipo</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+:root{
+  --bg:#f5f5f7;--side:#ececf0;--card:#fff;--card2:#fbfbfd;--line:#e3e3e8;--line2:#d2d2d7;--fg:#1d1d1f;--fg2:#3a3a40;--muted:#5f5f66;
+  --sel:#dcdce2;--accent:#0a5bc4;--link:#0a5bc4;--acc-soft:#dbe8fb;--acc-ink:#0a3f8a;
+  --wait:#e8a33d;--wait-soft:#fdebd0;--wait-ink:#7a4a00;--wait-bg:#fffaf1;
+  --ok-soft:#d9f0dc;--ok-ink:#1f5a28;--err:#c0392b;--err-soft:#f7d9d6;--err-ink:#8a1c12;
+  --neutral:#ececf0;--overlay:rgba(29,29,31,.35);--con-bg:#1c1c20;--con-line:#2e2e34;--con-fg:#e6e6ea;--con-ok:#8fd18f;
+  --add-bg:#e6f4e8;--del-bg:#fbe9e7;--toast:#1d1d1f;--toast-fg:#fff;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#161618;--side:#1f1f22;--card:#232326;--card2:#26262a;--line:#38383d;--line2:#4a4a50;--fg:#f2f2f5;--fg2:#c9c9d0;--muted:#9a9aa3;
+  --sel:#34343a;--accent:#0a5bc4;--link:#6aa8ff;--acc-soft:#1c3256;--acc-ink:#a9c8f5;
+  --wait:#b9822f;--wait-soft:#4a3410;--wait-ink:#f5c77a;--wait-bg:#2a2214;
+  --ok-soft:#1d3a22;--ok-ink:#8fd49a;--err:#d0574b;--err-soft:#4a1f1b;--err-ink:#f2a59c;
+  --neutral:#34343a;--overlay:rgba(0,0,0,.55);--con-bg:#111114;--con-line:#2e2e34;--con-fg:#e6e6ea;--con-ok:#8fd18f;
+  --add-bg:#1d3a22;--del-bg:#4a1f1b;--toast:#f2f2f5;--toast-fg:#1d1d1f;color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#161618;--side:#1f1f22;--card:#232326;--card2:#26262a;--line:#38383d;--line2:#4a4a50;--fg:#f2f2f5;--fg2:#c9c9d0;--muted:#9a9aa3;
+  --sel:#34343a;--accent:#0a5bc4;--link:#6aa8ff;--acc-soft:#1c3256;--acc-ink:#a9c8f5;
+  --wait:#b9822f;--wait-soft:#4a3410;--wait-ink:#f5c77a;--wait-bg:#2a2214;
+  --ok-soft:#1d3a22;--ok-ink:#8fd49a;--err:#d0574b;--err-soft:#4a1f1b;--err-ink:#f2a59c;
+  --neutral:#34343a;--overlay:rgba(0,0,0,.55);--con-bg:#111114;--con-line:#2e2e34;--con-fg:#e6e6ea;--con-ok:#8fd18f;
+  --add-bg:#1d3a22;--del-bg:#4a1f1b;--toast:#f2f2f5;--toast-fg:#1d1d1f;color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Arial,sans-serif;font-size:14px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:0}
+a{color:var(--link);cursor:pointer}
+button{font:inherit;color:inherit}
+h1,h2,h3{margin:0}
+.k{font-size:12px;color:var(--muted);font-weight:600;letter-spacing:.01em}
+.muted{color:var(--muted)}.fg2{color:var(--fg2)}.s12{font-size:12px}.s13{font-size:13px}
+.ok{color:var(--ok-ink)}.err{color:var(--err-ink)}
+.pill{font-size:11px;font-weight:600;padding:3px 8px;border-radius:999px;white-space:nowrap;display:inline-block;background:var(--neutral);color:var(--fg2)}
+.pill.wait{background:var(--wait-soft);color:var(--wait-ink)}.pill.run{background:var(--acc-soft);color:var(--acc-ink)}
+.pill.ok{background:var(--ok-soft);color:var(--ok-ink)}.pill.err{background:var(--err-soft);color:var(--err-ink)}
+.btn{font-size:13px;padding:7px 12px;border-radius:7px;border:1px solid var(--line2);background:var(--card);color:var(--fg);cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;line-height:1.2}
+.btn:hover{border-color:var(--muted)}
+.btn.p{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.lg{font-size:14px;padding:10px 20px;border-radius:8px}
+.btn.sm{padding:3px 8px;font-size:12px}
+.btn[disabled]{opacity:.5;cursor:default}
+.btn.on{background:var(--acc-soft);border-color:var(--accent)}
+.row{display:flex;gap:10px;font-size:13px;line-height:1.45;align-items:flex-start}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.card.wait{border-color:var(--wait)}
+.grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.spin{width:12px;height:12px;border:2px solid var(--acc-soft);border-top-color:var(--accent);border-radius:50%;display:inline-block;animation:sp 0.8s linear infinite;flex:none}
+@keyframes sp{to{transform:rotate(360deg)}}
+.bar{height:6px;background:var(--neutral);border-radius:9px;overflow:hidden}.bar>i{display:block;height:100%;background:var(--accent);transition:width .4s}
+/* app shell */
+.app{display:flex;min-height:100vh}
+.side{width:220px;flex:none;padding:20px 12px;display:flex;flex-direction:column;gap:2px;border-right:1px solid var(--line);background:var(--side);position:sticky;top:0;height:100vh;overflow:auto}
+.side .brand{font-weight:700;font-size:15px;padding:0 10px 14px}
+.side a.nv{padding:7px 10px;border-radius:7px;color:var(--fg);text-decoration:none;font-size:14px;display:flex;gap:6px;align-items:center}
+.side a.nv:hover{background:var(--sel)}.side a.nv.on{background:var(--sel);font-weight:600}
+.side a.add{color:var(--link)}
+.side .badge{margin-left:auto;font-size:11px;background:var(--wait-soft);color:var(--wait-ink);border-radius:999px;padding:1px 7px;font-weight:700}
+.side .reset{font-size:11px;color:var(--muted);padding:6px 10px;cursor:pointer;background:none;border:0;text-align:left}
+.main{flex:1;min-width:0;padding:28px 32px;display:flex;flex-direction:column;gap:22px}
+.head{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap}
+.head .grow{flex:1;min-width:200px}
+/* centered setup screens */
+.center{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;padding:40px 0;position:relative;text-align:center}
+.steps{display:flex;gap:8px;list-style:none;margin:0;padding:0;flex-wrap:wrap;justify-content:center}
+.st{font-size:13px;padding:6px 12px;border-radius:999px;background:var(--neutral);color:var(--muted)}
+.st.cur{background:var(--accent);color:#fff;font-weight:600}.st.done{background:var(--ok-soft);color:var(--ok-ink)}
+.tile{width:300px;max-width:100%;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px;display:flex;flex-direction:column;gap:10px;text-align:left;cursor:pointer}
+.tile.on{border:2px solid var(--accent)}
+.choice{width:340px;max-width:100%;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:28px;display:flex;flex-direction:column;gap:12px;text-decoration:none;color:var(--fg);text-align:left;cursor:pointer}
+.choice:hover{border-color:var(--accent)}
+.gear{position:absolute;top:20px;right:8px;width:44px;height:44px;border:0;background:transparent;cursor:pointer;color:var(--muted)}
+/* forms */
+input[type=text],textarea,select{font:inherit;font-size:14px;padding:9px 11px;border:1px solid var(--line2);border-radius:8px;background:var(--card);color:var(--fg);max-width:100%}
+textarea{resize:vertical;line-height:1.5}
+.chip{font-size:13px;padding:6px 12px;border-radius:999px;border:1px solid var(--line2);background:var(--card);cursor:pointer}
+.chip.on{border-color:var(--accent);background:var(--acc-soft)}
+.it{display:flex;gap:10px;align-items:flex-start;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;font-size:13px;cursor:pointer;line-height:1.45}
+.it.on{border-color:var(--accent)}
+.col{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.col.soft{background:var(--card2)}
+/* board */
+.board{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;align-items:start}
+.bcol{background:var(--side);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:8px;min-width:0}
+.t{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:6px;font-size:13px;text-decoration:none;color:var(--fg);cursor:pointer;text-align:left}
+.t:hover{border-color:var(--accent)}
+.t.new{animation:flash 2s}
+@keyframes flash{0%{box-shadow:0 0 0 3px var(--accent)}100%{box-shadow:0 0 0 0 transparent}}
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);padding-bottom:8px;flex-wrap:wrap}
+.tab{font-size:13px;padding:6px 12px;border-radius:7px;border:0;background:transparent;cursor:pointer}
+.tab.on{background:var(--sel);font-weight:600}
+/* ticket */
+.tk{display:flex;flex-direction:column;min-height:100vh}
+.tkh{display:flex;flex-direction:column;gap:12px;padding:14px 24px;border-bottom:1px solid var(--line);background:var(--card);margin:0 -16px;padding-left:max(24px,env(safe-area-inset-left,0px));padding-right:max(24px,env(safe-area-inset-right,0px))}
+.tkh .r1{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.stepper{display:flex;gap:6px;margin:0;padding:0;list-style:none;flex-wrap:wrap}
+.step{font-size:12px;padding:6px 12px;border-radius:999px;color:var(--muted);background:var(--neutral)}
+.step.done{background:var(--ok-soft);color:var(--ok-ink)}.step.cur{background:var(--accent);color:#fff;font-weight:600}
+.seg{display:flex;border:1px solid var(--line2);border-radius:7px;overflow:hidden}
+.seg button{font-size:12px;padding:6px 10px;border:0;background:var(--card);cursor:pointer}
+.seg button.on{background:var(--accent);color:#fff}
+.tkb{flex:1;display:flex;min-height:0;margin:0 -16px}
+.pane{padding:20px;display:flex;flex-direction:column;gap:12px;background:var(--card);min-width:0}
+.pane.l{width:300px;flex:none;border-right:1px solid var(--line)}
+.pane.r{width:300px;flex:none;border-left:1px solid var(--line)}
+.center-pane{flex:1;padding:22px 26px;display:flex;flex-direction:column;gap:18px;min-width:0}
+.opt{border:1px solid var(--line);border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:10px;background:var(--card);min-width:0}
+.opt.rec{border-color:var(--accent)}
+.who{font-size:11px;font-weight:700;width:34px;flex:none;padding-top:2px}
+.dec{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px;display:flex;flex-direction:column;gap:8px}
+.dec.wait{border-color:var(--wait)}.dec.errb{border-color:var(--err)}
+.drawerbar{display:flex;align-items:center;gap:10px;padding:10px 24px;border-top:1px solid var(--line);background:var(--side);position:sticky;bottom:0;margin:0 -16px;flex-wrap:wrap;
+  padding-bottom:max(10px,env(safe-area-inset-bottom,0px))}
+.drawer{background:var(--con-bg);color:var(--con-fg);height:320px;display:flex;flex-direction:column;margin:0 -16px;border-top:1px solid var(--line)}
+.mono{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:13px;line-height:1.6}
+.con{flex:1;display:flex;flex-direction:column;background:var(--con-bg);min-width:0;min-height:0}
+.con .ctabs{display:flex;gap:4px;padding:8px 12px;border-bottom:1px solid var(--con-line);flex-wrap:wrap}
+.con .ctabs button{font-size:12px;padding:5px 10px;border-radius:6px;border:0;background:transparent;color:#aaa;cursor:pointer}
+.con .ctabs button.on{background:var(--con-line);color:#fff}
+.con .out{flex:1;padding:14px 20px;color:var(--con-fg);overflow:auto;min-height:200px;white-space:pre-wrap;word-break:break-word}
+.con .u{color:var(--con-ok)}.con .s{color:#8a8a95}
+.con .in{display:flex;gap:8px;padding:8px 12px;border-top:1px solid var(--con-line)}
+.con .in input{flex:1;background:#2a2a30;border:1px solid #3a3a42;color:#fff;font-family:ui-monospace,Menlo,monospace;font-size:13px;min-width:0}
+.diff{flex:1;overflow:auto;padding:10px 0;background:var(--card);color:var(--fg)}
+.diff .f{padding:6px 16px;font-weight:600;background:var(--side);font-size:12px}
+.diff .l{padding:0 16px;white-space:pre}.diff .a{background:var(--add-bg)}.diff .d{background:var(--del-bg)}
+/* modal + toast */
+.mbg{position:fixed;inset:0;background:var(--overlay);display:flex;align-items:center;justify-content:center;z-index:50;padding:20px}
+.modal{width:980px;max-width:100%;max-height:calc(100vh - 40px);overflow:auto;background:var(--card);border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,.25);display:flex;flex-direction:column}
+.modal.set{width:820px;background:var(--bg)}
+.modal .mh{padding:18px 24px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px}
+.modal .mf{padding:14px 24px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap}
+.sbox{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:6px 18px}
+.sbox .row{padding:12px 0;border-bottom:1px solid var(--line);align-items:center;flex-wrap:wrap}.sbox .row:last-child{border:0}
+.toasts{position:fixed;right:calc(16px + env(safe-area-inset-right,0px));bottom:calc(16px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:8px;z-index:80;max-width:calc(100vw - 32px);pointer-events:none}
+.toast{background:var(--toast);color:var(--toast-fg);padding:10px 14px;border-radius:10px;font-size:13px;box-shadow:0 6px 20px rgba(0,0,0,.2);max-width:380px;animation:tin .2s}
+@keyframes tin{from{transform:translateY(8px);opacity:0}}
+.list{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:4px 16px}
+.list .li{display:flex;gap:12px;padding:10px 0;border-bottom:1px solid var(--line);font-size:14px;align-items:center;cursor:pointer;flex-wrap:wrap}
+.list .li:last-child{border:0}
+.box{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px;display:flex;flex-direction:column;gap:2px;min-width:0}
+.box .row{padding:8px 0;border-bottom:1px solid var(--line);align-items:center;flex-wrap:wrap}.box .row:last-child{border:0}
+.hide-sm{}
+@media (max-width:900px){
+  .app{flex-direction:column}
+  .side{width:auto;height:auto;position:static;flex-direction:row;flex-wrap:wrap;border-right:0;border-bottom:1px solid var(--line);margin:0 -16px;padding:10px 16px;gap:4px;align-items:center}
+  .side .brand{padding:0 8px 0 0}.side .k,.side .sp{display:none}
+  .main{padding:20px 0}
+  .grid2,.grid3,.board{grid-template-columns:minmax(0,1fr)}
+  .tkb{flex-direction:column}.pane.l,.pane.r{width:auto;border:0;border-top:1px solid var(--line)}
+  .center-pane{padding:18px 16px}
+  .tkh,.drawerbar{padding-left:16px;padding-right:16px}
+  .hide-sm{display:none}
+  .wrapcols{flex-direction:column}
+  .wrapcols>*{width:auto!important}
+}
+</style>
+
+<div id="root"></div>
+<div class="toasts" id="toasts" aria-live="polite"></div>
+
+<script>
+/* Dev Harness clickable prototype. Throwaway: everything is mocked in memory. */
+const LS = 'devharness-proto-v1';
+const STAGES = ['Entender','Planificar','Implementar','Revisar','PR','Feedback y CI'];
+const STEPS = {0:3, 2:5, 4:1};      // simulated steps per running stage
+const DUR = {0:3, 2:2, 4:3};        // seconds per step
+
+/* ---------- catalog of Jira projects the fake account can see ---------- */
+const CATALOG = {
+  SHOP:{key:'SHOP',name:'Tienda web',meta:'Scrum · 214 tickets · sprint 14 activo',sprint:'Sprint 14',
+    repos:[{name:'empresa/shop-api',short:'api',note:'Ya está en tu Mac: ~/code/shop-api',local:true,def:true},
+           {name:'empresa/shop-web',short:'web',note:'Se clona en ~/code/shop-web',def:true},
+           {name:'empresa/shop-mobile',short:'mobile',note:'Sin cambios hace 8 meses',def:false}],
+    notes:[{k:'STACK',v:'shop-api: Node + Postgres · shop-web: Next.js'},{k:'CÓMO SE PRUEBA',v:'pnpm test en ambos · e2e con Playwright en shop-web'},{k:'CONVENCIONES',v:'Branches feat/KEY-desc · commits convencionales · PR con template'}]},
+  INT:{key:'INT',name:'App interna',meta:'Kanban · 58 tickets',sprint:'Sprint 14',
+    repos:[{name:'empresa/intranet-app',short:'app',note:'Se clona en ~/code/intranet-app',def:true}],
+    notes:[{k:'STACK',v:'intranet-app: Django + HTMX + Postgres'},{k:'CÓMO SE PRUEBA',v:'pytest · sin e2e'},{k:'CONVENCIONES',v:'Branches KEY-desc · squash merge'}]},
+  OPS:{key:'OPS',name:'Infraestructura',meta:'Kanban · 31 tickets',sprint:'Kanban',
+    repos:[{name:'empresa/infra',short:'infra',note:'Se clona en ~/code/infra',def:true}],
+    notes:[{k:'STACK',v:'Terraform + GitHub Actions'},{k:'CÓMO SE PRUEBA',v:'terraform validate · plan en cada PR'},{k:'CONVENCIONES',v:'Un módulo por servicio'}]}
+};
+
+/* ---------- ticket factory ---------- */
+function T(o){
+  return Object.assign({key:'',proj:'',title:'',prio:'Media',desc:'',ac:[],comments:[],linked:'',status:'todo',stage:-1,run:false,prog:0,cd:0,
+    wait:null,mode:'dec',aut:'plan',repos:[],model:'estándar',branch:'',plans:[],chosen:null,planSummary:'',log:[],review:[],reviewMeta:'',
+    coverage:[],outside:'',fb:[],pr:null,approvals:'0 de 2',con:[],ctx:[],tokens:0,jiraCheck:'',proposedAC:null,isNew:false},o);
+}
+const pa = (k,t)=>({who:'IA',text:t,st:k});
+const openFb = l=>l.map(f=>Object.assign({st:'open'},f));
+
+function seedTickets(key){
+  if(key==='SHOP') return [
+    T({key:'SHOP-142',proj:'SHOP',title:'Recuperar contraseña por email',prio:'Alta',status:'prog',stage:1,wait:'plan',repos:['api','web'],model:'profundo',branch:'shop-142-reset',
+      desc:'Como cliente que olvidó su contraseña quiero recibir un link por email para elegir una nueva.',
+      ac:['El link vence a los 30 minutos.','Un link usado no sirve dos veces.','El email no revela si la cuenta existe.'],
+      comments:['PO: usar la plantilla de email existente.','ana-dev: ojo con el rate limit del endpoint.'],linked:'SHOP-120 Plantillas de email',
+      planSummary:'La IA propone 2 planes. Difieren en dónde vive el token: tabla nueva o cache con vencimiento.',
+      plans:[{id:'A',name:'Tabla password_resets',rec:true,desc:'Guarda el hash del token, cuándo vence y si se usó. Una migración nueva.',pro:'Queda registro para auditoría · sin infraestructura nueva',con:'Hay que limpiar tokens viejos',touch:'Toca api (4 archivos), web (2) · AC1 AC2 AC3'},
+             {id:'B',name:'Token en Redis con vencimiento',desc:'El vencimiento lo resuelve Redis. Sin migración.',pro:'Menos código · se borra solo',con:'El proyecto no usa Redis hoy: suma un servicio',touch:'Toca api (3 archivos), infra (1) · AC1 AC2 AC3'}],
+      log:[{who:'VOS',text:'Usar la plantilla de email existente (de un comentario del PO).',st:'Entender'},pa('Entender','AC3: la pantalla responde lo mismo exista o no la cuenta.'),
+           {who:'IA',text:'30 minutos se cuentan desde que se envía el email, no desde que se abre.',st:'Entender',assume:true}],
+      ctx:['Ticket, criterios y 2 comentarios','SHOP-120 (linkeado)','web/emails/base.tsx (fijado)','Notas del proyecto: auth, emails'],tokens:18,
+      jiraCheck:'✓ Ticket comparado con Jira al empezar la etapa: sin cambios',
+      con:[{k:'u',t:'> Leé el ticket y proponé un plan'},{k:'a',t:'Leí SHOP-142, sus 3 criterios y los 2 comentarios.'},{k:'a',t:'Encontré la plantilla de email en web/emails/base.tsx.'},{k:'a',t:''},{k:'a',t:'Plan A: tabla password_resets (token hash, vence, usado)'},{k:'a',t:'Plan B: token en Redis con TTL de 30 min'},{k:'a',t:''},{k:'a',t:'¿Cuál preferís?'}]}),
+    T({key:'SHOP-151',proj:'SHOP',title:'Exportar pedidos a CSV',prio:'Media',status:'prog',stage:2,run:true,prog:3,cd:DUR[2],repos:['api','web'],branch:'shop-151-csv',
+      desc:'Como administrador quiero descargar los pedidos de un rango de fechas en CSV.',ac:['Filtra por rango de fechas.','Incluye total y estado de cada pedido.'],
+      chosen:'A',plans:[{id:'A',name:'Endpoint con stream',rec:true,desc:'Genera el CSV en streaming.',pro:'Aguanta muchos pedidos',con:'',touch:'api (3), web (1)'}],
+      log:[{who:'VOS',text:'Plan A: Endpoint con stream',st:'Planificar'}],ctx:['Ticket y 2 criterios','Notas del proyecto: api'],tokens:41,
+      jiraCheck:'✓ Ticket comparado con Jira al empezar la etapa: sin cambios',
+      con:[{k:'s',t:'[jira] SHOP-151 comparado con Jira: sin cambios'},{k:'a',t:'Preparé el worktree y la branch.'},{k:'a',t:'Agregué GET /orders/export con stream.'},{k:'a',t:'Agregué el botón Exportar en la lista de pedidos.'}]}),
+    T({key:'SHOP-138',proj:'SHOP',title:'Filtro de productos por talle',prio:'Alta',status:'prog',stage:3,wait:'review',repos:['api','web'],branch:'shop-138-talle',
+      desc:'Como cliente quiero filtrar productos por talle para ver solo lo que me queda.',ac:['El filtro se puede compartir por link.','Se ve qué talles no tienen stock.','Los talles aparecen en un orden lógico.'],
+      reviewMeta:'9 archivos · +214 −31 · tests: 41 ok',chosen:'A',
+      review:[{id:1,st:'ok',ac:'AC1',title:'El filtro se guarda en la URL (?talle=M)',why:'Así se puede compartir el link y el botón Atrás funciona.',diff:'1 archivo'},
+              {id:2,st:'ok',ac:'AC2',title:'Talles sin stock aparecen deshabilitados, no ocultos',why:'El cliente ve que existe el talle aunque hoy no haya.',diff:'2 archivos'},
+              {id:3,st:'pending',assume:true,ac:'AC3',title:'Los talles se ordenan XS→XXL; los numéricos van después',why:'El ticket no dice el orden. Lo tomé de la tabla de talles del catálogo.',diff:'2 archivos'},
+              {id:4,st:'pending',title:'Índice nuevo en products(size) para que el filtro no sea lento',why:'Con 40k productos la consulta pasaba de 600 ms.',diff:'1 migración'},
+              {id:5,st:'pending',ac:'AC2',title:'El stock por talle se calcula en la API, no en la web',why:'La web ya no necesita traer todas las variantes.',diff:'3 archivos'},
+              {id:6,st:'pending',title:'El texto "Sin stock" sale de las traducciones existentes',why:'Reusa la clave stock.none; no agrega textos nuevos.',diff:'1 archivo'}],
+      coverage:[['ok','AC1','Cubierto · 3 tests'],['ok','AC2','Cubierto · 2 tests'],['wait','AC3','Cubierto sin test automático']],
+      outside:'La IA tocó api/products/search.ts, que no estaba en el plan. Motivo: el índice nuevo.',
+      log:[{who:'VOS',text:'Plan A: filtro en la URL',st:'Planificar'}],ctx:['Ticket y 3 criterios','Tabla de talles del catálogo'],tokens:96}),
+    T({key:'SHOP-129',proj:'SHOP',title:'Cupones por categoría',prio:'Media',status:'review',stage:5,wait:'feedback',repos:['api','web'],branch:'shop-129-cupones',pr:212,approvals:'1 de 2',
+      desc:'Como marketing quiero crear cupones que apliquen solo a una categoría.',ac:['El cupón solo descuenta productos de la categoría.','Se puede combinar con envío gratis.'],
+      fb:openFb([{id:1,kind:'ci',tag:'CI',title:'Falla el e2e "aplicar cupón en checkout"',body:'Causa probable: el test espera el precio con descuento antes de que cargue el carrito. No es un error del cupón.',
+           acts:[{l:'Arreglar el test',p:1,t:'work',r:'El agente esperó a que cargue el carrito en el test. CI en verde.'},{l:'Ver el log',t:'log'},{l:'Volver a correr',t:'work',r:'Se volvió a correr: falló igual. Conviene arreglar el test.',keep:1}]},
+          {id:2,kind:'rev',tag:'Review · ana-dev',title:'"¿Qué pasa si la categoría se borra con cupones activos?"',body:'Nadie lo decidió todavía. Opciones: desactivar los cupones, o impedir borrar la categoría.',
+           acts:[{l:'Desactivar cupones',t:'work',r:'Decidiste desactivar los cupones. El agente lo implementó y respondió en GitHub.'},{l:'Impedir borrar',t:'work',r:'Decidiste impedir el borrado. El agente lo implementó y respondió en GitHub.'},{l:'Preguntar al PO en Jira',t:'po'}]},
+          {id:3,kind:'rev',tag:'Review · ana-dev',title:'"Renombrar applyCoupon2 a algo claro"',body:'Cambio chico. Propuesta: applyCategoryCoupon.',
+           acts:[{l:'Hacerlo y responder en GitHub',p:1,t:'work',r:'Renombrado a applyCategoryCoupon. Respondido en GitHub.'},{l:'Contestar sin cambiar',t:'reply',r:'Respondiste sin cambios.'}]}]),
+      log:[{who:'VOS',text:'Plan A: regla de descuento por categoría',st:'Planificar'}],ctx:['Ticket y 2 criterios','PR #212 y sus comentarios'],tokens:120}),
+    T({key:'SHOP-155',proj:'SHOP',title:'Mostrar stock en la ficha',prio:'Alta',desc:'Como cliente quiero ver si hay stock antes de agregar al carrito.',repos:['api','web'],
+      proposedAC:['La ficha muestra "En stock", "Últimas N unidades" o "Sin stock".','Con stock 0 el botón Agregar queda deshabilitado.','El stock se actualiza al cambiar de talle.']}),
+    T({key:'SHOP-158',proj:'SHOP',title:'Envío gratis desde un monto',prio:'Media',desc:'Como cliente quiero envío gratis si supero un monto.',ac:['El monto se configura en el admin.','El checkout muestra cuánto falta.'],repos:['api','web']}),
+    T({key:'SHOP-160',proj:'SHOP',title:'Accesibilidad del checkout',prio:'Media',desc:'El checkout tiene que poder usarse con teclado y lector de pantalla.',ac:['Todo el flujo se usa con teclado.','Los errores se anuncian al lector de pantalla.'],repos:['web']}),
+    T({key:'SHOP-133',proj:'SHOP',title:'Carrito persistente',status:'done',stage:6,pr:208}),
+    T({key:'SHOP-131',proj:'SHOP',title:'Búsqueda con autocompletar',status:'done',stage:6,pr:205}),
+  ];
+  if(key==='INT') return [
+    T({key:'INT-77',proj:'INT',title:'Login con SSO de Google',prio:'Alta',status:'prog',stage:0,run:true,prog:1,cd:DUR[0],model:'profundo',repos:['app'],branch:'int-77-sso',
+      desc:'Como empleado quiero entrar con mi cuenta de Google de la empresa.',ac:['Solo cuentas @empresa.com.','Si la cuenta no existe, se crea con rol básico.'],
+      ctx:['Ticket y 2 criterios','Notas del proyecto: auth'],tokens:6,jiraCheck:'✓ Ticket comparado con Jira al empezar la etapa: sin cambios',
+      con:[{k:'s',t:'[jira] INT-77 comparado con Jira: sin cambios'},{k:'a',t:'Leí el ticket, sus criterios y comentarios.'}]}),
+    T({key:'INT-80',proj:'INT',title:'Auditoría de accesos',prio:'Media',desc:'Registrar quién entra y cuándo.',ac:['Se guarda usuario, fecha e IP.','Se puede exportar.'],repos:['app']}),
+    T({key:'INT-74',proj:'INT',title:'Exportar usuarios',status:'done',stage:6,pr:44}),
+  ];
+  if(key==='OPS') return [
+    T({key:'OPS-31',proj:'OPS',title:'Rotar certificados automáticamente',prio:'Alta',desc:'Los certificados vencen sin aviso.',ac:['Se renuevan 15 días antes.','Avisa en Slack si falla.'],repos:['infra']}),
+    T({key:'OPS-29',proj:'OPS',title:'Backups diarios de Postgres',status:'done',stage:6,pr:17}),
+  ];
+  return [];
+}
+// tickets that "appear" in Jira when the user presses Actualizar desde Jira
+const INCOMING = {
+  SHOP:[{key:'SHOP-162',title:'Elegir moneda en el checkout',prio:'Alta',desc:'Como cliente del exterior quiero pagar en dólares.',ac:['Se puede elegir ARS o USD.','El total se convierte con la cotización del día.'],repos:['api','web']},
+        {key:'SHOP-163',title:'Reseñas de productos',prio:'Media',desc:'Como cliente quiero dejar una reseña de un producto que compré.',ac:[],repos:['api','web'],
+         proposedAC:['Solo puede reseñar quien compró el producto.','La reseña tiene de 1 a 5 estrellas y texto opcional.','La ficha muestra el promedio.']},
+        {key:'SHOP-164',title:'Mejorar mensajes de error del login',prio:'Baja',desc:'Los errores del login son genéricos.',ac:['Cada error dice qué hacer.'],repos:['web']}],
+  INT:[{key:'INT-82',title:'Roles por equipo',prio:'Media',desc:'Los permisos se asignan por equipo.',ac:['Un usuario hereda los permisos de su equipo.'],repos:['app']}],
+  OPS:[{key:'OPS-33',title:'Alertas de disco lleno',prio:'Media',desc:'Avisar antes de quedarse sin disco.',ac:['Alerta al 85%.'],repos:['infra']}],
+  TURN:[{key:'TURN-6',title:'Cancelar un turno',prio:'Media',desc:'Como paciente quiero cancelar mi turno desde el email.',ac:['El link de cancelación libera el horario.'],repos:['turnero']}]
+};
+
+/* ---------- state ---------- */
+let S;
+function fresh(){return {setup:0,engine:'claude',projects:[],tickets:[],jiraAt:Date.now(),jiraLabel:'al abrir la app',usage:42,prSeq:230,create:null,imp:null,ui:{}};}
+function load(){try{const r=localStorage.getItem(LS);if(r){S=JSON.parse(r);S.ui=S.ui||{};S.ui.modal=null;S.ui.syncing=false;return;}}catch(e){}S=fresh();}
+function save(){try{localStorage.setItem(LS,JSON.stringify(S));}catch(e){}}
+load();
+
+const $=s=>document.querySelector(s);
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const tk=k=>S.tickets.find(t=>t.key===k);
+const pj=k=>S.projects.find(p=>p.key===k);
+function rel(ts){const s=(Date.now()-ts)/1000;if(s<60)return 'hace instantes';const m=Math.round(s/60);return 'hace '+m+' min';}
+function toast(msg){const el=document.createElement('div');el.className='toast';el.textContent=msg;$('#toasts').appendChild(el);setTimeout(()=>el.remove(),4200);}
+function go(h){location.hash=h;}
+function route(){return location.hash.replace(/^#\/?/,'').split('/').filter(Boolean);}
+
+/* ---------- simulated agents ---------- */
+function conLine(t,k,txt){t.con.push({k,t:txt});if(t.con.length>200)t.con.shift();}
+function startStage(t,st){
+  t.stage=st;t.run=true;t.prog=0;t.wait=null;t.cd=DUR[st];
+  t.jiraCheck='Comparando el ticket con Jira…';
+  conLine(t,'s',`[jira] Comparando ${t.key} con Jira antes de ${STAGES[st]}…`);
+  setTimeout(()=>{t.jiraCheck='✓ Ticket comparado con Jira al empezar la etapa: sin cambios';conLine(t,'s',`[jira] ${t.key}: sin cambios`);dirty();},1200);
+}
+function stepLines(t){
+  if(t.stage===0)return ['Leí el ticket, sus criterios y comentarios.','Revisé los tickets linkeados y las notas del proyecto.',`Encontré el código relacionado en ${t.repos.join(', ')||'el repo'}.`];
+  if(t.stage===2)return implSteps(t).map(s=>s+' ✓');
+  return ['Abrí el PR con la descripción armada desde las decisiones.'];
+}
+function implSteps(t){return ['Preparar worktree y branch','Cambios en el backend','Cambios en la interfaz','Tests de los criterios','Correr tests y lint'];}
+function genPlans(t){
+  const r=t.repos.join(', ')||'el repo';const acs=t.ac.map((_,i)=>'AC'+(i+1)).join(' ');
+  t.planSummary='La IA propone 2 planes. Difieren en cuánto código nuevo agregan.';
+  t.plans=[{id:'A',name:'Cambio acotado sobre lo que existe',rec:true,desc:`Resolver "${t.title}" extendiendo el código actual de ${r}, sin piezas nuevas.`,pro:'Menos archivos · sigue las convenciones del proyecto',con:'Si el alcance crece, va a pedir un refactor',touch:`Toca ${r} (4 archivos) · ${acs}`},
+           {id:'B',name:'Módulo nuevo reutilizable',desc:'Separar la lógica en un módulo propio, con su API y sus tests.',pro:'Más fácil de testear y de reusar',con:'Más código y una abstracción que hoy usa un solo lugar',touch:`Toca ${r} (7 archivos) · ${acs}`}];
+}
+function genReview(t){
+  const a0=t.ac[0]||'el pedido del ticket';
+  t.reviewMeta='6 archivos · +128 −14 · tests: 23 ok';
+  t.review=[{id:1,st:'pending',ac:t.ac[0]?'AC1':'',title:'Reusé el componente existente en lugar de crear uno nuevo',why:'Mantiene el estilo actual y achica el diff.',diff:'2 archivos'},
+            {id:2,st:'pending',ac:t.ac[1]?'AC2':'',title:'La lógica vive en la API; la web solo muestra el resultado',why:'Así los criterios se prueban sin navegador.',diff:'3 archivos'},
+            {id:3,st:'pending',assume:true,ac:'AC1',title:`Interpreté "${a0.replace(/\.$/,'')}" también para usuarios sin sesión`,why:'El ticket no lo aclara.',diff:'1 archivo'},
+            {id:4,st:'pending',title:'Agregué una migración chica con un campo nuevo',why:'Hacía falta guardar el dato para cumplir el criterio.',diff:'1 migración'}];
+  t.coverage=t.ac.map((_,i)=>[i===t.ac.length-1?'wait':'ok','AC'+(i+1),i===t.ac.length-1?'Cubierto sin test automático':'Cubierto · '+(2+i)+' tests']);
+  t.outside='Nada fuera del plan.';
+}
+function genFeedback(t){
+  t.approvals='0 de 2';
+  t.fb=openFb([{id:1,kind:'ci',tag:'CI',title:'Falla el e2e del flujo principal',body:'Causa probable: un selector cambió con el componente reusado. No es un error de la lógica.',
+         acts:[{l:'Arreglar el test',p:1,t:'work',r:'El agente actualizó el selector. CI en verde.'},{l:'Ver el log',t:'log'},{l:'Volver a correr',t:'work',r:'Se volvió a correr: falló igual.',keep:1}]},
+        {id:2,kind:'rev',tag:'Review · ana-dev',title:'"¿No debería ir detrás de un feature flag?"',body:'El proyecto usa flags para cambios visibles al cliente. Opciones: agregarlo o explicar por qué no.',
+         acts:[{l:'Agregar feature flag',p:1,t:'work',r:'Flag agregado y respondido en GitHub.'},{l:'Contestar sin cambiar',t:'reply',r:'Respondiste sin cambios.'},{l:'Preguntar al PO en Jira',t:'po'}]}]);
+}
+function finishStage(t){
+  t.run=false;
+  if(t.stage===0){t.stage=1;t.wait='plan';if(!t.plans.length)genPlans(t);t.model='profundo';
+    conLine(t,'a','');t.plans.forEach(p=>conLine(t,'a',`Plan ${p.id}: ${p.name}`));conLine(t,'a','¿Cuál preferís?');
+    toast(`${t.key} te espera: elegir plan`);
+    if(t.aut==='pr')setTimeout(()=>{if(t.stage===1&&t.wait==='plan'){choosePlan(t,'A',true);}},1500);
+  } else if(t.stage===2){t.stage=3;t.wait='review';if(!t.review.length)genReview(t);
+    conLine(t,'a','Implementación lista. Dejé las decisiones para que las revises.');toast(`${t.key} te espera: revisar decisiones`);
+  } else if(t.stage===4){t.stage=5;t.wait='feedback';t.pr=t.pr||(++S.prSeq);t.status='review';if(!t.fb.length)genFeedback(t);
+    conLine(t,'a',`PR #${t.pr} abierto. Jira: En review.`);toast(`PR #${t.pr} abierto · ${t.key} pasó a En review en Jira`);
+    setTimeout(()=>{toast(`${t.key}: volvieron comentarios y el CI`);},2500);
+  }
+}
+function tick(){
+  let ch=false;
+  S.tickets.forEach(t=>{
+    if(t.run){ch=true;t.cd--;S.usage=Math.min(99,S.usage+0.03);t.tokens+=1;
+      if(t.cd<=0){const lines=stepLines(t);conLine(t,'a',lines[t.prog]||'…');t.prog++;t.cd=DUR[t.stage];if(t.prog>=STEPS[t.stage])finishStage(t);}}
+    t.review.forEach(r=>{if(r.cd>0){ch=true;r.cd--;if(r.cd<=0){r.st='ok';if(r.doneNote)r.note=r.doneNote;toast(r.doneMsg||`${t.key}: decisión actualizada`);}}});
+    t.fb.forEach(f=>{if(f.cd>0){ch=true;f.cd--;if(f.cd<=0){if(f.keepOpen){f.st='open';f.note=f.pendingNote;}else{f.st='done';f.note=f.pendingNote;}toast(`${t.key}: ${f.pendingNote}`);
+      if(t.fb.every(x=>x.st==='done')){t.wait='merge';t.approvals='2 de 2';toast(`${t.key}: CI en verde y 2 aprobaciones. Listo para mergear.`);}}}});
+  });
+  if(ch)dirty();
+}
+setInterval(tick,1000);
+
+/* ---------- render scheduling: don't clobber a field the user is typing in ---------- */
+let pending=false;
+function dirty(){save();const a=document.activeElement;if(a&&/INPUT|TEXTAREA|SELECT/.test(a.tagName)&&a.closest('#root,.mbg')){pending=true;return;}render();}
+document.addEventListener('focusout',()=>setTimeout(()=>{if(pending){pending=false;render();}},0));
+
+/* ---------- small view helpers ---------- */
+const LOGO=`<svg width="96" height="96" viewBox="0 0 96 96" role="img" aria-label="Logo Dev Harness"><rect x="4" y="4" width="88" height="88" rx="22" fill="#1d1d1f"/><path d="M30 36l-10 12 10 12M66 36l10 12-10 12M54 30l-12 36" stroke="#fff" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+const GEAR=`<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg>`;
+function steps(labels,cur){return `<ol class="steps" aria-label="Pasos">${labels.map((l,i)=>`<li class="st ${i<cur?'done':i===cur?'cur':''}">${i<cur?'✓ '+l:(i+1)+' · '+l}</li>`).join('')}</ol>`;}
+function stageInfo(t){
+  if(t.status==='done')return {cls:'ok',label:`PR #${t.pr} mergeado`};
+  if(t.status==='todo')return {cls:'',label:'sin agente'};
+  if(t.run)return {cls:'run',label:t.stage===0?'Entendiendo':t.stage===2?`Implementando ${t.prog}/${STEPS[2]}`:'Abriendo PR'};
+  if(t.wait==='plan')return {cls:'wait',label:'Elegir plan',board:'Te espera: elegir plan'};
+  if(t.wait==='review')return {cls:'wait',label:'Revisar',board:'Te espera: revisar'};
+  if(t.wait==='merge')return {cls:'wait',label:'Mergear',board:'Te espera: mergear'};
+  if(t.wait==='feedback'){const w=t.fb.some(f=>f.st==='working');const ci=t.fb.some(f=>f.kind==='ci'&&f.st!=='done');
+    return w?{cls:'run',label:'Agente resolviendo',board:`PR #${t.pr} · agente resolviendo`}:ci?{cls:'err',label:'CI en rojo',board:`PR #${t.pr} · CI en rojo`}:{cls:'wait',label:'Comentarios',board:`PR #${t.pr} · comentarios`};}
+  return {cls:'',label:''};
+}
+const waiting=t=>['plan','review','merge'].includes(t.wait)&&!t.run;
+function syncLabel(){return S.ui.syncing?'Trayendo cambios de Jira…':`Jira: traído ${S.jiraLabel}, ${rel(S.jiraAt)}`;}
+function syncBtn(){return S.ui.syncing?`<button class="btn" disabled><span class="spin"></span>Actualizando…</button>`:`<button class="btn" data-a="sync">Actualizar desde Jira</button>`;}
+
+/* ---------- sidebar ---------- */
+function side(active){
+  const w=S.tickets.filter(waiting).length;
+  return `<nav class="side" aria-label="Navegación">
+    <div class="brand">Dev Harness</div>
+    <a class="nv ${active==='hoy'?'on':''}" href="#/hoy">Hoy${w?`<span class="badge">${w}</span>`:''}</a>
+    ${S.projects.length?`<a class="nv ${active==='tickets'?'on':''}" href="#/tickets">Tickets</a><a class="nv ${active==='prs'?'on':''}" href="#/prs">Pull requests</a>`:''}
+    <div class="k" style="padding:18px 10px 6px">PROYECTOS</div>
+    ${S.projects.length?S.projects.map(p=>`<a class="nv ${active==='p'+p.key?'on':''}" href="#/p/${p.key}">${esc(p.name)} <span class="muted s12">· ${p.repos.length} repo${p.repos.length>1?'s':''}</span></a>`).join('')
+      +`<a class="nv add" href="#/nuevo">+ Agregar proyecto</a>`:`<div class="s13 muted" style="padding:4px 10px">Ninguno todavía</div>`}
+    <div class="sp" style="flex:1"></div>
+    <a class="nv" data-a="settings">Ajustes</a>
+    <button class="reset sp" data-a="settings" data-v="General">Reiniciar demo</button>
+  </nav>`;
+}
+function shell(active,body){return `<div class="app">${side(active)}<main class="main">${body}</main></div>`;}
+
+/* ---------- first run ---------- */
+function vSetup(n){
+  if(n===1)return `<div class="center">
+    <button class="gear" aria-label="Ajustes" data-a="settings">${GEAR}</button>
+    ${LOGO}<h1 style="font-size:34px">Dev Harness</h1>
+    <p class="fg2" style="margin:0;font-size:16px;max-width:520px;line-height:1.5">Del ticket al PR con agentes de IA. Vos decidís; el código queda a mano cuando lo necesitás.</p>
+    <div class="card" style="width:440px;max-width:100%;text-align:left"><div style="font-weight:600">Falta configurar</div>
+      <div class="row"><span class="err">●</span><span>Motor de IA (Claude o Codex)</span></div><div class="row"><span class="err">●</span><span>GitHub y Jira</span></div></div>
+    <a class="btn p lg" href="#/setup/2">Configurar</a></div>`;
+  if(n===2)return `<div class="center">${steps(['Motor de IA','GitHub y Jira','Listo'],0)}
+    <h1 style="font-size:28px">¿Con qué IA vas a trabajar?</h1><p class="fg2" style="margin:0;font-size:15px">Usa tu propia suscripción. La app no pide claves de API.</p>
+    <div style="display:flex;gap:20px;flex-wrap:wrap;justify-content:center">
+      <div class="tile ${S.engine==='claude'?'on':''}" data-a="engine" data-v="claude"><div style="font-size:18px;font-weight:600">Claude Code</div><div class="s13 ok">✓ Instalado · sesión iniciada</div><div class="s13 muted">Plan detectado por el uso que informa el motor</div>${S.engine==='claude'?'<span class="s12" style="font-weight:600;color:var(--acc-ink)">Elegido</span>':''}</div>
+      <div class="tile ${S.engine==='codex'?'on':''}"><div style="font-size:18px;font-weight:600">Codex</div>
+        ${S.ui.codex==='ing'?'<div class="s13 row"><span class="spin"></span>Instalando…</div>':S.ui.codex==='ok'?'<div class="s13 ok">✓ Instalado · sesión iniciada</div>':'<div class="s13 muted">No instalado</div>'}
+        <div class="s13 muted">Se puede sumar después en Ajustes › Motor</div>
+        ${S.ui.codex==='ok'?`<button class="btn" style="align-self:flex-start" data-a="engine" data-v="codex">${S.engine==='codex'?'Elegido':'Elegir'}</button>`:S.ui.codex?'':'<button class="btn" style="align-self:flex-start" data-a="installCodex">Instalar</button>'}</div>
+    </div>
+    <div class="s13 muted" style="max-width:640px;line-height:1.5">A diferencia de otras apps Human Harness, acá no se elige una carpeta en este paso: cada proyecto trae sus propios repos.</div>
+    <div style="display:flex;gap:10px"><a class="btn lg" href="#/setup/1">Atrás</a><a class="btn p lg" href="#/setup/3">Seguir</a></div></div>`;
+  if(n===3){const tst=S.ui.testing;return `<div class="center">${steps(['Motor de IA','GitHub y Jira','Listo'],1)}
+    <h1 style="font-size:28px">Conectá dónde vive tu trabajo</h1><p class="fg2" style="margin:0;font-size:15px">Los tickets salen de Jira; el código y los PR, de GitHub.</p>
+    <div style="display:flex;gap:20px;align-items:stretch;flex-wrap:wrap;justify-content:center;text-align:left">
+      <section class="card" style="width:400px;max-width:100%"><h2 style="font-size:18px">GitHub</h2>
+        <div class="s13 ok">✓ GitHub CLI (gh) instalado</div><div class="s13 ok">✓ Sesión iniciada como [tu-usuario]</div>
+        <div class="s13 fg2">La app usa tu sesión de gh para clonar, crear repos y abrir PR. No guarda tokens.</div>
+        <div class="k">SI NO ESTUVIERA</div><div class="s13 muted">Botón "Iniciar sesión" que abre gh auth login en una ventana de la app.</div></section>
+      <section class="card" style="width:400px;max-width:100%"><h2 style="font-size:18px">Jira</h2>
+        <div class="s13 ok">✓ MCP de Atlassian disponible en ${S.engine==='codex'?'Codex':'Claude Code'}</div><div class="s13 ok">✓ Acceso a tuempresa.atlassian.net</div>
+        <div class="s13 fg2" style="line-height:1.5">Solo los agentes tocan Jira, a través de ese MCP. La app no guarda tokens. Vos podés seguir editando en Jira a mano cuando quieras; la app toma esos cambios.</div>
+        <div class="k">SI NO ESTUVIERA</div><div class="s13 muted">Botón "Conectar Atlassian" que agrega el MCP al motor y abre el login de Atlassian.</div></section>
+    </div>
+    ${tst?`<div class="row s13"><span class="spin"></span>${tst}</div>`:''}
+    <div style="display:flex;gap:10px"><a class="btn lg" href="#/setup/2">Atrás</a><button class="btn p lg" data-a="testAccounts" ${tst?'disabled':''}>Probar y seguir</button></div></div>`;}
+  return `<div class="center">${steps(['Motor de IA','GitHub y Jira','Listo'],2)}<h1 style="font-size:28px">Todo listo</h1>
+    <div class="sbox" style="width:520px;max-width:100%;text-align:left">
+      <div class="row"><span class="ok">✓</span><span style="flex:1">${S.engine==='codex'?'Codex':'Claude Code'}</span><span class="muted">sesión iniciada</span></div>
+      <div class="row"><span class="ok">✓</span><span style="flex:1">GitHub</span><span class="muted">[tu-usuario] · 2 organizaciones</span></div>
+      <div class="row"><span class="ok">✓</span><span style="flex:1">Jira</span><span class="muted">tuempresa.atlassian.net · 4 proyectos</span></div></div>
+    <p class="fg2" style="margin:0;font-size:15px">Ahora traé tu primer proyecto.</p><button class="btn p lg" data-a="finishSetup">Empezar</button></div>`;
+}
+
+/* ---------- home ---------- */
+function vEmpty(isAdd){
+  const icoI=`<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.6"><path d="M12 3v12M7 10l5 5 5-5M4 19h16"/></svg>`;
+  const icoC=`<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.6"><path d="M12 5v14M5 12h14"/><circle cx="12" cy="12" r="10"/></svg>`;
+  return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:28px;min-height:70vh;text-align:center">
+    <h1 style="font-size:28px">${isAdd?'Agregar un proyecto':'Traé tu primer proyecto'}</h1>
+    <p class="fg2" style="margin:0;font-size:15px">Un proyecto es un proyecto de Jira con uno o varios repos.</p>
+    <div style="display:flex;gap:22px;flex-wrap:wrap;justify-content:center">
+      <a class="choice" href="#/importar">${icoI}<strong style="font-size:18px">Importar un proyecto</strong><span class="fg2" style="line-height:1.5">Ya tenés el proyecto en Jira y el código en GitHub. Elegís cuáles y la app los conecta.</span></a>
+      <a class="choice" href="#/crear/idea">${icoC}<strong style="font-size:18px">Crear un proyecto nuevo</strong><span class="fg2" style="line-height:1.5">Desde una idea. La IA te ayuda a decidir el stack y arma los repos en GitHub y el proyecto en Jira.</span></a>
+    </div></div>`;
+}
+function vHoy(){
+  if(!S.projects.length)return shell('hoy',vEmpty(false));
+  const ts=S.tickets;const w=ts.filter(waiting);const run=ts.filter(t=>t.run||(t.wait==='feedback'));
+  const prc=ts.filter(t=>t.wait==='feedback'&&t.fb.some(f=>f.kind==='rev'&&f.st!=='done')).length;
+  const next=ts.filter(t=>t.status==='todo').sort((a,b)=>(a.prio==='Alta'?0:1)-(b.prio==='Alta'?0:1));
+  const wcard=t=>{const i=stageInfo(t);const desc=t.wait==='plan'?t.planSummary:t.wait==='review'?`Implementación lista. ${t.review.filter(r=>r.st!=='ok').length} decisiones de la IA para revisar antes de abrir el PR; ${t.review.filter(r=>r.assume&&r.st!=='ok').length} supuesto marcado.`:`Comentarios resueltos y CI en verde. PR #${t.pr} con ${t.approvals} aprobaciones.`;
+    return `<div class="card wait"><div class="row" style="align-items:center"><span class="pill wait">${i.label}</span><span class="k">${t.key}</span></div>
+      <div style="font-size:16px;font-weight:600">${esc(t.title)}</div><div class="s13 fg2">${esc(desc)}</div>
+      <div><a class="btn p" href="#/t/${t.key}">${t.wait==='plan'?'Ver planes':t.wait==='review'?'Revisar decisiones':'Ver PR'}</a></div></div>`;};
+  const rcard=t=>{const i=stageInfo(t);const sub=t.wait==='feedback'?`PR #${t.pr} · ${t.fb.filter(f=>f.kind==='rev'&&f.st!=='done').length} comentarios de review · ${t.fb.some(f=>f.kind==='ci'&&f.st!=='done')?'test e2e falla':'CI en verde'}`:`worktree ${t.key.toLowerCase()} · ${t.repos.join(', ')} · modelo ${t.model}`;
+    return `<a class="card t" href="#/t/${t.key}" style="padding:16px"><div class="row" style="align-items:center"><span class="pill ${i.cls}">${i.label}</span><span class="k">${t.key}</span>${t.run?'<span class="spin" style="margin-left:auto"></span>':''}</div>
+      <div style="font-size:15px;font-weight:600">${esc(t.title)}</div><div class="s12 muted">${sub}</div>
+      ${t.run&&t.stage===2?`<div class="bar"><i style="width:${t.prog/STEPS[2]*100}%"></i></div>`:''}${t.wait==='feedback'?'<span class="s13" style="color:var(--link)">Ver qué pasó</span>':''}</a>`;};
+  return shell('hoy',`<div class="head"><div class="grow"><h1 style="font-size:26px">Hoy</h1>
+      <div class="muted" style="margin-top:4px">${(n=>n+(n===1?' agente trabajando':' agentes trabajando'))(ts.filter(t=>t.run).length)} · ${w.length} te ${w.length===1?'espera':'esperan'} · ${prc} PR con comentarios</div></div>
+      <span class="s12 muted">${syncLabel()}</span>${syncBtn()}
+      <button class="btn" data-a="settings" data-v="Uso">Uso del plan: ${Math.round(S.usage)}% de 5 h</button>
+      <button class="btn p" data-a="take">Tomar ticket de Jira</button></div>
+    <section style="display:flex;flex-direction:column;gap:10px"><h2 class="k">TE ESPERAN</h2>
+      ${w.length?`<div class="grid2">${w.map(wcard).join('')}</div>`:'<div class="card s13 muted">Nada te espera. Los agentes siguen trabajando.</div>'}</section>
+    <section style="display:flex;flex-direction:column;gap:10px"><h2 class="k">EN CURSO</h2>
+      ${run.length?`<div class="grid3">${run.map(rcard).join('')}</div>`:'<div class="card s13 muted">Ningún agente trabajando. Tomá un ticket para empezar.</div>'}</section>
+    <section style="display:flex;flex-direction:column;gap:10px"><h2 class="k">SIGUIENTES EN JIRA (asignados a vos)</h2>
+      ${next.length?`<div class="list">${next.slice(0,5).map(t=>`<div class="li" data-a="take" data-v="${t.key}"><span class="k" style="width:80px">${t.key}</span><span style="flex:1">${esc(t.title)}${t.isNew?' <span class="pill run">nuevo</span>':''}</span><span class="muted">${esc(pj(t.proj)?.sprint||'')} · ${t.prio}</span></div>`).join('')}</div>`:'<div class="card s13 muted">No hay tickets asignados sin empezar.</div>'}</section>`);
+}
+
+/* ---------- import ---------- */
+function vImport(){
+  const im=S.imp;const c=CATALOG[im.proj];const nRepos=c.repos.filter(r=>im.repos[r.name]).length;
+  return `<div style="padding:32px 0;display:flex;flex-direction:column;gap:20px;min-height:100vh">
+    <div class="row" style="align-items:center;gap:14px"><a class="s13" href="#/${S.projects.length?'nuevo':'hoy'}">‹ Volver</a><h1 style="font-size:24px">Importar un proyecto</h1></div>
+    <div class="grid3" style="flex:1;align-items:start">
+      <section class="col"><h2 style="font-size:16px">1 · Proyecto de Jira</h2>
+        ${Object.values(CATALOG).map(p=>{const done=pj(p.key);return `<label class="it ${im.proj===p.key?'on':''}" ${done?'style="opacity:.55"':`data-a="impProj" data-v="${p.key}"`}><input type="radio" name="jp" ${im.proj===p.key?'checked':''} ${done?'disabled':''}><span><strong>${p.key} · ${p.name}</strong><br><span class="muted">${done?'Ya importado':p.meta}</span></span></label>`;}).join('')}
+        <div class="k" style="margin-top:8px">ESTADOS DEL BOARD</div><div class="s13 fg2" style="line-height:1.5">To Do → En progreso → En review → Hecho. La app los usa para mover el ticket en cada etapa.</div></section>
+      <section class="col"><h2 style="font-size:16px">2 · Repos de GitHub</h2>
+        ${c.repos.map(r=>`<label class="it"><input type="checkbox" data-a="impRepo" data-v="${r.name}" ${im.repos[r.name]?'checked':''}><span><strong>${r.name}</strong><br><span class="${r.local?'ok':'muted'}">${r.note}</span></span></label>`).join('')}
+        <a class="s13" data-a="toast" data-v="Elegirías una carpeta local con el selector del sistema (no está en el prototipo).">Agregar una carpeta local que no está en GitHub</a>
+        <div class="k" style="margin-top:8px">DÓNDE CLONAR</div><div class="s13">~/code <a style="margin-left:6px" data-a="toast" data-v="Abriría el selector de carpetas del sistema.">Cambiar</a></div></section>
+      <section class="col soft"><h2 style="font-size:16px">3 · Lo que la IA entiende del proyecto</h2>
+        <div class="s13 fg2" style="line-height:1.5">Al importar, la IA lee los repos y propone las notas del proyecto. Las confirmás o corregís; después las usa en cada ticket.</div>
+        ${im.reading?`<div class="row s13"><span class="spin"></span>Leyendo ${c.repos.filter(r=>im.repos[r.name]).map(r=>r.name.split('/')[1]).join(' y ')}…</div>`:
+          im.notes.map((n,i)=>`<div class="it" style="flex-direction:column;gap:6px;cursor:default ${n.ok?';border-color:var(--ok-ink)':''}"><span class="k">${n.k}</span>
+            ${n.edit?`<input type="text" data-bind="imp.notes.${i}.v" value="${esc(n.v)}"><div><button class="btn sm p" data-a="impNote" data-v="${i}" data-w="save">Guardar</button></div>`:
+            `<span>${esc(n.v)}</span><div class="row">${n.ok?'<span class="ok s12">✓ Confirmado</span>':`<button class="btn sm" data-a="impNote" data-v="${i}" data-w="ok">Confirmar</button><button class="btn sm" data-a="impNote" data-v="${i}" data-w="edit">Corregir</button>`}</div>`}</div>`).join('')}
+        <div class="s12 muted">Usa el modelo liviano. Aprox. 1 a 2 minutos.</div></section>
+    </div>
+    ${im.importing?`<div class="card" style="align-self:flex-end;width:380px;max-width:100%">${im.importing.map((s,i)=>`<div class="row"><span>${i<im.step?'<span class="ok">✓</span>':i===im.step?'<span class="spin"></span>':'○'}</span>${s}</div>`).join('')}</div>`:''}
+    <div style="display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap"><a class="btn" href="#/${S.projects.length?'nuevo':'hoy'}">Cancelar</a>
+      <button class="btn p" data-a="doImport" ${!nRepos||im.importing||im.reading?'disabled':''}>Importar ${im.proj} con ${nRepos} repo${nRepos===1?'':'s'}</button></div></div>`;
+}
+
+/* ---------- create project ---------- */
+const QS=[{id:'auth',q:'¿Los pacientes necesitan cuenta o alcanza con el email?',o:['Cuenta con login','Solo email']},
+          {id:'where',q:'¿Dónde va a correr?',o:['No sé, que proponga','Vercel','AWS','Servidor propio']},
+          {id:'count',q:'¿Cuántos consultorios al principio?',o:['Uno','Varios']}];
+function stackDefs(c){
+  const auth=c.ans.auth==='Cuenta con login';
+  return [{id:'repos',name:'Repos',o:[{id:'mono',l:'Monorepo (web + api)',s:'Un solo PR por ticket. Recomendado para un equipo chico.'},{id:'two',l:'Dos repos',s:'Deploys separados; un ticket puede pedir 2 PR.'}]},
+    {id:'front',name:'Frontend',o:[{id:'next',l:'Next.js',s:'Server rendering para la página pública de turnos.'},{id:'vite',l:'React + Vite',s:'Más simple; sin server rendering.'}]},
+    {id:'db',name:'Base de datos',o:[{id:'pg',l:'Postgres',s:'Turnos sin solaparse: se resuelve con una restricción.'},{id:'sqlite',l:'SQLite',s:c.ans.count==='Varios'?'Queda chico con varios consultorios.':'Cero infraestructura; queda chico con varios consultorios.'}]},
+    {id:'login',name:'Login de pacientes',o:auth?[{id:'pass',l:'Email y contraseña',s:'Respondiste "cuenta con login".'},{id:'magic',l:'Link mágico por email',s:'Sin contraseñas que recordar.'}]:[{id:'magic',l:'Link mágico por email',s:'Respondiste "solo email".'}]},
+    {id:'hosting',name:'Hosting',o:[{id:'vercel',l:'Vercel + Neon',s:'Lo más rápido para arrancar. Costo según uso.'},{id:'fly',l:'Fly.io',s:'Un contenedor; más control y precio fijo.'},{id:'later',l:'Decidir después',s:'Se crea un ticket para decidirlo más adelante.'}]},
+    {id:'ci',name:'Tests y CI',o:[{id:'full',l:'Vitest + Playwright en GitHub Actions',s:'Unit y e2e en cada PR. Más lento, más seguro.'},{id:'unit',l:'Solo Vitest en GitHub Actions',s:'Rápido; el e2e se suma después.'}]}];
+}
+function vCrearIdea(){
+  const c=S.create;
+  return `<div style="padding:32px 0;display:flex;flex-direction:column;gap:20px;min-height:100vh">
+    <div class="row" style="align-items:center;gap:14px;flex-wrap:wrap"><a class="s13" href="#/${S.projects.length?'nuevo':'hoy'}">‹ Volver</a><h1 style="font-size:24px">Crear un proyecto nuevo</h1><div style="flex:1"></div>${steps(['La idea','Stack','Confirmar'],0)}</div>
+    <div class="wrapcols" style="flex:1;display:flex;gap:20px;align-items:flex-start">
+      <section class="col" style="flex:1"><label for="nm">Nombre</label><input type="text" id="nm" data-bind="create.name" value="${esc(c.name)}">
+        <label for="idea">¿Qué querés construir?</label><textarea id="idea" rows="5" data-bind="create.idea">${esc(c.idea)}</textarea>
+        <div class="k">QUÉ TIPO DE SOFTWARE (ELEGÍ UNO O MÁS)</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">${['App web','API','App móvil','Herramienta de línea de comandos','Librería'].map(k=>`<button class="chip ${c.kinds.includes(k)?'on':''}" data-a="kind" data-v="${k}">${k}</button>`).join('')}</div>
+        <div class="k" style="margin-top:6px">¿SEGUÍS ALGÚN ESTÁNDAR DE TU EQUIPO?</div>
+        <div class="s13 fg2">${c.std?'✓ Repo de referencia: empresa/shop-web':'Podés pegar un repo de referencia o un documento de convenciones. <a data-a="std">Agregar</a>'}</div></section>
+      <aside class="col soft" style="width:420px"><div class="k">ANTES DE PROPONER UN STACK, LA IA PREGUNTA</div>
+        ${QS.map(q=>`<div style="font-weight:600;margin-top:6px">${q.q}</div><div style="display:flex;gap:8px;flex-wrap:wrap">${q.o.map(o=>`<button class="chip ${c.ans[q.id]===o?'on':''}" data-a="ans" data-v="${q.id}" data-w="${o}">${o}</button>`).join('')}</div>`).join('')}
+        <div class="s12 muted" style="margin-top:10px">Modelo profundo: las decisiones de stack cuestan cambiarlas después.</div></aside></div>
+    <div style="display:flex;justify-content:flex-end;gap:10px;align-items:center">${c.thinking?'<span class="row s13"><span class="spin"></span>La IA arma propuestas de stack…</span>':''}
+      <button class="btn p" data-a="toStack" ${c.thinking?'disabled':''}>Ver propuestas de stack</button></div></div>`;
+}
+function vCrearStack(){
+  const c=S.create;const defs=stackDefs(c);let firstOpen=defs.findIndex(d=>!c.stack[d.id]);const decided=defs.filter(d=>c.stack[d.id]).length;
+  return `<div style="padding:32px 0;display:flex;flex-direction:column;gap:18px;min-height:100vh">
+    <div class="row" style="align-items:center;gap:14px;flex-wrap:wrap"><a class="s13" href="#/crear/idea">‹ La idea</a><h1 style="font-size:24px">Decisiones de stack · ${esc(c.name)}</h1><div style="flex:1"></div>
+      <ol class="steps"><li class="st done">✓ La idea</li><li class="st cur">2 · Stack · ${decided} de ${defs.length}</li><li class="st">3 · Confirmar</li></ol></div>
+    <div class="wrapcols" style="flex:1;display:flex;gap:20px;align-items:flex-start">
+      <section class="col" style="flex:1;padding:6px 24px;gap:0">
+        ${defs.map((d,i)=>{const v=c.stack[d.id];const isW=i===firstOpen;const locked=firstOpen>=0&&i>firstOpen;
+          return `<div style="display:flex;gap:18px;padding:14px 0;border-bottom:1px solid var(--line);flex-wrap:wrap;${isW?'background:var(--wait-bg);margin:0 -24px;padding:14px 24px':''}">
+            <div style="width:160px"><strong>${d.name}</strong><div class="k" ${isW?'style="color:var(--wait-ink)"':''}>${v?'✓ decidido':isW?'te espera':'pendiente'}</div></div>
+            ${locked?`<div class="s13 muted">Después de ${defs[firstOpen].name.toLowerCase()}</div>`:`<div style="flex:1;display:flex;gap:10px;flex-wrap:wrap;min-width:0">${d.o.map(o=>`<button class="it ${v===o.id?'on':''}" style="flex:1 1 180px;min-width:0;flex-direction:column;gap:4px;${v===o.id?'background:var(--acc-soft)':''}" data-a="stack" data-v="${d.id}" data-w="${o.id}"><strong>${o.l}</strong><small class="muted">${o.s}</small></button>`).join('')}</div>`}</div>`;}).join('')}
+      </section>
+      <aside class="col soft" style="width:360px"><div class="k">TODAS LAS DECISIONES QUEDAN GUARDADAS</div>
+        <div class="s13 fg2" style="line-height:1.5">Se escriben como decisiones del proyecto (un ADR por decisión) en el repo. La IA las respeta en cada ticket.</div>
+        <div class="k" style="margin-top:8px">¿NINGUNA TE CONVENCE?</div>
+        <textarea rows="3" data-bind="ui.stackQ" placeholder="Preguntá o pedí otra opción…" aria-label="Pregunta para la IA">${esc(S.ui.stackQ||'')}</textarea>
+        <button class="btn" style="align-self:flex-start" data-a="stackAsk">Enviar</button>
+        ${(c.qa||[]).map(x=>`<div class="s13" style="line-height:1.5"><strong>Vos:</strong> ${esc(x.q)}<br><span class="fg2"><strong>IA:</strong> ${esc(x.a)}</span></div>`).join('')}</aside></div>
+    <div style="display:flex;justify-content:flex-end"><button class="btn p" data-a="toConfirm" ${firstOpen>=0?'disabled':''}>${firstOpen>=0?`Faltan ${defs.length-decided} decisiones`:'Seguir a confirmar'}</button></div></div>`;
+}
+function firstTickets(c){const l=['Paciente ve horarios libres',c.stack.login==='pass'?'Paciente crea su cuenta y reserva':'Paciente reserva con link mágico','Médico bloquea horarios','Recordatorio por email 24 h antes'];if(c.stack.hosting==='later')l.push('Decidir hosting (lo dejaste para después)');return l;}
+function vCrearConfirm(){
+  const c=S.create;const ft=firstTickets(c);const n=ft.filter((_,i)=>isFirstOn(c,i)).length;
+  const steps_=[`Repo ${c.owner}/${slug(c.name)} creado`,`Proyecto ${pkey(c)} creado en Jira`,'Scaffold del monorepo','CI y primer push',`Crear ${n} tickets en ${pkey(c)}`];
+  const b=c.build;
+  return `<div style="padding:32px 0;display:flex;flex-direction:column;gap:18px;min-height:100vh">
+    <div class="row" style="align-items:center;gap:14px;flex-wrap:wrap"><a class="s13" href="#/crear/stack">‹ Stack</a><h1 style="font-size:24px">Confirmar y armar · ${esc(c.name)}</h1><div style="flex:1"></div>${steps(['La idea','Stack','Confirmar'],2)}</div>
+    <div class="wrapcols" style="flex:1;display:flex;gap:20px;align-items:flex-start">
+      <section class="grid2" style="flex:1;align-content:start">
+        <div class="box"><div class="k">GITHUB</div>
+          <div class="row"><span style="flex:1">Repo <strong>${slug(c.name)}</strong></span><select data-bind="create.owner" aria-label="Dueño">${['empresa','[tu-usuario]'].map(o=>`<option ${c.owner===o?'selected':''}>${o}</option>`).join('')}</select></div>
+          <div class="row"><span style="flex:1">Visibilidad</span><select aria-label="Visibilidad"><option>Privado</option><option>Público</option></select></div>
+          <div class="row muted">Se clona en ~/code/${slug(c.name)}</div></div>
+        <div class="box"><div class="k">JIRA</div><div class="row"><span style="flex:1">Proyecto <strong>${pkey(c)}</strong> · Kanban</span></div><div class="row muted">Estados: To Do → En progreso → En review → Hecho</div></div>
+        <div class="box"><div class="k">LO QUE ARMA LA IA</div>
+          <div class="row">${stackSummary(c)}, con un test que pasa</div><div class="row">CI en GitHub Actions: tests en cada PR</div>
+          <div class="row">README, convenciones y 6 ADR con tus decisiones</div><div class="row">Notas del proyecto para la app (stack, cómo probar)</div></div>
+        <div class="box"><div class="k">PRIMEROS TICKETS (LA IA PROPONE, VOS ELEGÍS)</div>
+          ${ft.map((l,i)=>`<label class="row"><input type="checkbox" data-a="firstT" data-v="${i}" ${isFirstOn(c,i)?'checked':''}>${l}</label>`).join('')}</div>
+      </section>
+      <aside class="col" style="width:380px"><div class="k">${b<0?'ARMANDO (ASÍ SE VE AL CONFIRMAR)':b>=steps_.length?'LISTO':'ARMANDO'}</div>
+        ${steps_.map((s,i)=>`<div class="row ${b<0||i>b?'muted':''}"><span>${b>i?'<span class="ok">✓</span>':b===i?'<span class="spin"></span>':'○'}</span><span>${s}${i===2&&b===2?` · ${c.sub} de 6<br><span class="muted">modelo estándar</span>`:''}</span></div>`).join('')}
+        <div class="s12 muted" style="line-height:1.5;margin-top:10px">Crear repos y tickets afecta cuentas reales: la app lo pide confirmar una sola vez, acá.</div>
+        ${b>=steps_.length?`<a class="btn p" style="justify-content:center" href="#/p/${pkey(c)}">Ir al proyecto</a>`:`<button class="btn p" style="justify-content:center" data-a="build" ${b>=0?'disabled':''}>${b>=0?'Armando…':'Crear proyecto'}</button>`}</aside></div></div>`;
+}
+const slug=n=>String(n||'proyecto').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')||'proyecto';
+const pkey=c=>(slug(c.name).replace(/-/g,'').slice(0,4)||'PROJ').toUpperCase();
+const isFirstOn=(c,i)=>c.firsts[i]===undefined?i!==3:c.firsts[i];
+function stackSummary(c){const d=stackDefs(c);const g=(id)=>{const x=d.find(x=>x.id===id);return (x.o.find(o=>o.id===c.stack[id])||{}).l||'';};
+  return `${g('front')} + API + ${g('db')} en ${c.stack.repos==='mono'?'monorepo':'dos repos'}`;}
+
+/* ---------- project ---------- */
+function vProject(key){
+  const p=pj(key);if(!p)return shell('',`<div class="card">Proyecto no encontrado. <a href="#/hoy">Volver a Hoy</a></div>`);
+  const ts=S.tickets.filter(t=>t.proj===key);const tab=S.ui.ptab||'Tickets';const prs=ts.filter(t=>t.pr);
+  const cols=[['todo','TO DO'],['prog','EN PROGRESO'],['review','EN REVIEW'],['done','HECHO']];
+  const card=t=>{const i=stageInfo(t);const sub=t.status==='todo'?`<span class="muted s12">${t.prio} · sin agente</span>`:t.status==='done'?`<span class="muted s12">PR #${t.pr} mergeado</span>`:`<span class="pill ${i.cls}" style="align-self:flex-start">${i.board||('Agente '+i.label.toLowerCase())}</span>`;
+    return `<button class="t ${t.isNew?'new':''}" data-a="${t.status==='todo'?'take':'open'}" data-v="${t.key}"><span class="k">${t.key}</span><span>${esc(t.title)}</span>${sub}</button>`;};
+  let body='';
+  if(tab==='Tickets')body=`<div class="row" style="align-items:center;flex-wrap:wrap"><span class="k">MOSTRAR</span>${['Sprint 14','Asignados a mí','Todo el backlog'].map(f=>`<button class="btn ${(S.ui.pfilter||'Sprint 14')===f?'on':''}" data-a="pfilter" data-v="${f}">${f}</button>`).join('')}</div>
+    <div class="board">${cols.map(([s,l])=>{const c=ts.filter(t=>t.status===s);return `<section class="bcol" aria-label="${l}"><div class="k">${l} · ${c.length}</div>${c.map(card).join('')||'<div class="s12 muted">Vacío</div>'}</section>`;}).join('')}</div>`;
+  else if(tab==='Pull requests')body=prs.length?`<div class="list">${prs.map(t=>{const i=stageInfo(t);return `<div class="li" data-a="open" data-v="${t.key}"><span class="k" style="width:60px">#${t.pr}</span><span style="flex:1">${esc(t.title)} <span class="muted s12">${t.key}</span></span><span class="pill ${i.cls}">${t.status==='done'?'Mergeado':i.label}</span></div>`;}).join('')}</div>`:'<div class="card s13 muted">Todavía no hay PR.</div>';
+  else if(tab==='Repos')body=`<div class="list">${p.repos.map(r=>`<div class="li"><strong style="flex:1">${r.name}</strong><span class="mono muted">~/code/${r.name.split('/')[1]}</span><span class="muted">main</span><span class="s12 muted">${ts.filter(t=>t.status!=='done'&&t.status!=='todo'&&t.repos.includes(r.short)).length} worktrees</span></div>`).join('')}</div>`;
+  else body=`<div class="list">${p.notes.map(n=>`<div class="li"><span class="k" style="width:150px">${n.k}</span><span style="flex:1">${esc(n.v)}</span></div>`).join('')}${(p.adr||[]).map(a=>`<div class="li"><span class="k" style="width:150px">ADR</span><span style="flex:1">${esc(a)}</span></div>`).join('')}</div>`;
+  return shell('p'+key,`<div class="head" style="align-items:center"><h1 style="font-size:24px">${esc(p.name)}</h1><span class="k">${p.key} · ${p.repos.map(r=>r.name.split('/')[1]).join(', ')}</span><div style="flex:1"></div>
+      <span class="s12 muted">${S.ui.syncing?'Trayendo cambios de Jira…':'Copia de Jira de '+rel(S.jiraAt).replace('hace ','hace ')}</span>${syncBtn()}
+      <a class="btn" href="#/p/${key}/ajustes">Ajustes del proyecto</a><button class="btn" data-a="newT" data-v="${key}">Nuevo ticket</button></div>
+    <div class="tabs" role="tablist">${['Tickets',`Pull requests`,'Repos','Notas y decisiones'].map(x=>`<button class="tab ${tab===x?'on':''}" role="tab" data-a="ptab" data-v="${x}">${x}${x==='Pull requests'?` (${prs.filter(t=>t.status!=='done').length})`:''}</button>`).join('')}</div>${body}`);
+}
+function vProjSettings(key){
+  const p=pj(key);if(!p)return vHoy();
+  return `<div style="padding:28px 0;display:flex;flex-direction:column;gap:18px">
+    <div class="row" style="align-items:center;gap:14px"><a class="s13" href="#/p/${key}">‹ ${esc(p.name)}</a><h1 style="font-size:24px">Ajustes del proyecto</h1></div>
+    <div class="grid2" style="align-content:start">
+      <section class="box"><h2 class="k" style="margin-bottom:6px">REPOS</h2>${p.repos.map(r=>`<div class="row"><strong style="flex:1">${r.name}</strong><span class="mono">~/code/${r.name.split('/')[1]}</span><span class="muted">main</span></div>`).join('')}
+        <div class="row"><a data-a="toast" data-v="Abriría la lista de repos de GitHub para sumar uno.">Agregar repo</a></div></section>
+      <section class="box"><h2 class="k" style="margin-bottom:6px">ETAPAS ↔ ESTADOS DE JIRA (${p.key})</h2>
+        ${[['Al empezar','En progreso'],['Al abrir el PR','En review'],['Al mergear','Hecho']].map(([a,b])=>`<div class="row"><span style="flex:1">${a}</span><select aria-label="${a}">${['To Do','En progreso','En review','Hecho'].map(o=>`<option ${o===b?'selected':''}>${o}</option>`).join('')}</select></div>`).join('')}</section>
+      <section class="box"><h2 class="k" style="margin-bottom:6px">CÓMO SE PRUEBA (DETECTADO, EDITABLE)</h2>
+        ${p.repos.map(r=>`<div class="row"><span style="flex:1">${r.name.split('/')[1]} · tests</span><span class="mono">pnpm test</span></div>`).join('')}<div class="row"><span style="flex:1">Correr la app</span><span class="mono">pnpm dev</span></div></section>
+      <section class="box"><h2 class="k" style="margin-bottom:6px">PULL REQUESTS</h2><div class="row"><span style="flex:1">Template</span><span class="muted">.github/pull_request_template.md</span></div>
+        <div class="row"><span style="flex:1">Reviewers por defecto</span><span class="muted">ana-dev</span></div><div class="row"><span style="flex:1">Nombre de branch</span><span class="mono">feat/KEY-descripcion</span></div></section>
+      <section class="box" style="grid-column:1/-1"><h2 class="k" style="margin-bottom:6px">NOTAS Y DECISIONES DEL PROYECTO (LO QUE LA IA SIEMPRE TIENE EN CUENTA)</h2>
+        ${p.notes.map((n,i)=>S.ui.editNote===key+i?`<div class="row"><input type="text" style="flex:1" data-bind="ui.noteDraft" value="${esc(S.ui.noteDraft)}"><button class="btn p" data-a="saveNote" data-v="${i}">Guardar</button></div>`:
+          `<div class="row"><span style="flex:1"><span class="k">${n.k}</span> ${esc(n.v)}</span><span class="muted">${n.src||'confirmada al importar'}</span><button class="btn" data-a="editNote" data-v="${i}">Editar</button></div>`).join('')}</section>
+    </div></div>`;
+}
+function vAll(kind){
+  const ts=kind==='prs'?S.tickets.filter(t=>t.pr):S.tickets;
+  return shell(kind,`<div class="head"><h1 style="font-size:26px" class="grow">${kind==='prs'?'Pull requests':'Tickets'}</h1>${syncBtn()}</div>
+    <div class="list">${ts.map(t=>{const i=stageInfo(t);return `<div class="li" data-a="${t.status==='todo'?'take':'open'}" data-v="${t.key}"><span class="k" style="width:80px">${kind==='prs'?'#'+t.pr:t.key}</span><span style="flex:1">${esc(t.title)}</span><span class="muted s12">${esc(pj(t.proj)?.name||'')}</span><span class="pill ${i.cls}">${t.status==='done'?'Hecho':i.label}</span></div>`;}).join('')||'<div class="li muted">Nada todavía.</div>'}</div>`);
+}
+
+/* ---------- ticket ---------- */
+function stepper(t){
+  const cur=t.stage;return `<ol class="stepper" aria-label="Etapas">${STAGES.map((s,i)=>{
+    let lbl=s;if(i===cur){if(waiting(t)||t.wait==='feedback')lbl+=t.wait==='review'?` · ${t.review.filter(r=>r.st==='ok').length} de ${t.review.length}`:t.wait==='feedback'?` · ${t.fb.filter(f=>f.st!=='done').length} cosas`:' · te espera';else if(t.run)lbl+=' · agente';}
+    return `<li class="step ${i<cur||t.status==='done'?'done':i===cur?'cur':''}">${i<cur||t.status==='done'?'✓ ':''}${lbl}</li>`;}).join('')}</ol>`;
+}
+const jiraState=t=>({todo:'To Do',prog:'En progreso',review:'En review',done:'Hecho'}[t.status]);
+function vTicket(key){
+  const t=tk(key);if(!t)return shell('',`<div class="card">Ticket no encontrado. <a href="#/hoy">Volver a Hoy</a></div>`);
+  const meta=t.stage===3?t.reviewMeta:t.stage===5?`<a data-a="toast" data-v="Abriría PR #${t.pr} en GitHub.">PR #${t.pr} en GitHub</a>`:`branch ${t.branch} · worktree propio · repos: ${t.repos.join(', ')}`;
+  const head=`<header class="tkh"><div class="r1"><a class="s13" href="#/hoy">‹ Hoy</a><span class="k">${t.key}</span><span style="font-weight:600;font-size:15px">${esc(t.title)}</span>
+      <span class="pill run">Jira: ${jiraState(t)}</span><div style="flex:1"></div><span class="s12 muted">${meta}</span>
+      ${t.status!=='done'?`<div class="seg" role="group" aria-label="Modo"><button class="${t.mode==='dec'?'on':''}" data-a="mode" data-v="dec">Decisiones</button><button class="${t.mode==='con'?'on':''}" data-a="mode" data-v="con">Consola</button></div>`:''}
+      ${t.mode==='con'&&t.status!=='done'?`<button class="btn" data-a="editor">Abrir en editor</button><button class="btn p" data-a="openPR" ${t.stage!==3?'disabled':''}>Abrir PR</button>`:''}</div>
+    ${t.mode==='dec'||t.status==='done'?stepper(t):''}</header>`;
+  if(t.mode==='con'&&t.status!=='done')return `<div class="tk">${head}<div class="tkb">${productPane(t,true)}
+      <section class="con" aria-label="Consola">${consoleBody(t,S.ui.ctab||'claude')}</section>
+      <aside class="pane r"><div class="k">CAMBIOS</div><div class="s13">${diffCount(t)?`${diffCount(t)} archivos cambiados · <a data-a="drawer" data-v="diff">ver diff</a>`:'Sin cambios todavía'}</div>
+        <div class="k">ARCHIVOS FIJADOS</div><div class="s13">${t.ctx.filter(c=>/\//.test(c)).map(esc).join('<br>')||'Ninguno'}</div>
+        <div class="k">ETAPA</div><div class="s13">${STAGES[Math.min(t.stage,5)]} ${t.run?'· agente trabajando':waiting(t)?'· te espera':''}</div>
+        <div class="k">PR · CI</div><div class="s13 muted">${t.pr?`PR #${t.pr} · ${t.fb.some(f=>f.kind==='ci'&&f.st!=='done')?'CI en rojo':'CI en verde'}`:'Sin PR'}</div></aside></div>${drawer(t,false)}</div>`;
+  let body;
+  if(t.status==='done')body=`<div class="tkb"><main class="center-pane"><div class="card" style="max-width:640px"><h2 style="font-size:18px">Mergeado</h2>
+      <div class="s13 fg2" style="line-height:1.6">PR #${t.pr} mergeado. El agente movió ${t.key} a Hecho en Jira y borró el worktree. Las decisiones nuevas quedaron anotadas en el ticket.</div>
+      <div><a class="btn" href="#/p/${t.proj}">Ver el proyecto</a></div></div>${logSection(t)}</main></div>`;
+  else if(t.stage===3)body=reviewBody(t);
+  else if(t.stage===5)body=feedbackBody(t);
+  else body=`<div class="tkb">${productPane(t)}<main class="center-pane">${centerFor(t)}${logSection(t)}</main>${agentPane(t)}</div>`;
+  return `<div class="tk">${head}${body}${drawer(t,true)}</div>`;
+}
+function productPane(t,con){
+  return `<aside class="pane l" aria-label="Producto"><div class="k">${con?'DESCRIPCIÓN':'QUÉ PIDE EL PRODUCTO'}</div><div class="s13" style="line-height:1.5">${esc(t.desc)}</div>
+    <div class="k">${con?'CRITERIOS DE ACEPTACIÓN':'CRITERIOS'}</div>${t.ac.length?t.ac.map((a,i)=>`<div class="row"><span class="pill">AC${i+1}</span><span>${esc(a)}</span></div>`).join(''):'<div class="s13 muted">Sin criterios</div>'}
+    ${t.comments.length||t.linked?`<div class="k" style="margin-top:6px">DE JIRA</div>${t.comments.map(c=>`<div class="s13 fg2">${esc(c)}</div>`).join('')}${t.linked?`<div class="s13">Linkeado: ${esc(t.linked)}</div>`:''}`:''}</aside>`;
+}
+function agentPane(t){
+  const st=t.run?(t.stage===0?'Entendiendo el ticket':t.stage===2?`Implementando · paso ${Math.min(t.prog+1,5)} de 5`:'Abriendo el PR'):'Esperando tu decisión';
+  return `<aside class="pane r" aria-label="Agente y contexto"><div class="k">AGENTE</div><div class="row s13">${t.run?'<span class="spin"></span>':''}${st}</div>
+    <div class="s12 muted">Modelo ${t.model} para ${STAGES[t.stage].toLowerCase()} · ${t.tokens}k tokens en esta etapa</div>
+    <div class="s12 ${t.jiraCheck.startsWith('✓')?'ok':'muted'}">${esc(t.jiraCheck||'')}</div>
+    <div class="k" style="margin-top:6px">LO QUE LA IA TIENE EN CUENTA</div><ul style="margin:0;padding-left:18px;font-size:13px;line-height:1.7">${t.ctx.map(c=>`<li>${esc(c)}</li>`).join('')}</ul>
+    <a class="s13" data-a="addCtx">Agregar contexto</a><div class="k" style="margin-top:6px">PR · CI</div><div class="s13 muted">Todavía no hay PR</div></aside>`;
+}
+function centerFor(t){
+  if(t.stage===1){const n=t.ac.length;
+    return `<section style="display:flex;flex-direction:column;gap:12px"><h2 style="font-size:18px">Elegí el plan</h2>
+      <div class="s13 fg2">${n?`Los dos cumplen los ${n} criterios. `:''}${esc(t.planSummary.replace(/^La IA propone \d planes\. /,''))}</div>
+      <div class="grid2">${t.plans.map(p=>`<div class="opt ${p.rec?'rec':''}"><div class="row" style="align-items:center"><strong style="font-size:15px">${p.id} · ${esc(p.name)}</strong>${p.rec?'<span class="pill run">Recomendado</span>':''}${p.mine?'<span class="pill">Pedido por vos</span>':''}</div>
+        <div class="s13" style="line-height:1.5">${esc(p.desc)}</div>${p.pro?`<div class="s12 ok">+ ${esc(p.pro)}</div>`:''}${p.con?`<div class="s12 err">− ${esc(p.con)}</div>`:''}<div class="s12 muted">${esc(p.touch)}</div>
+        <button class="btn ${p.rec?'p':''}" style="align-self:flex-start" data-a="plan" data-v="${p.id}">Elegir ${p.id}</button></div>`).join('')}</div>
+      <div class="row">${S.ui.planAsk===t.key?'<span class="row s13"><span class="spin"></span>La IA arma otra opción…</span>':`<input type="text" style="flex:1" data-bind="ui.planQ" value="${esc(S.ui.planQ||'')}" placeholder="Ajustar el plan o pedir otra opción…" aria-label="Comentario para la IA" data-enter="planAsk"><button class="btn" data-a="planAsk">Enviar</button>`}</div></section>`;}
+  if(t.stage===0)return `<section class="card" style="gap:12px"><h2 style="font-size:18px">La IA está entendiendo el ticket</h2>
+      ${['Leer el ticket, sus criterios y comentarios','Leer linkeados y notas del proyecto','Buscar el código relacionado'].map((s,i)=>`<div class="row"><span>${i<t.prog?'<span class="ok">✓</span>':i===t.prog?'<span class="spin"></span>':'○'}</span>${s}</div>`).join('')}
+      <div class="s12 muted">Cuando termine te propone planes. Mientras, podés trabajar en otro ticket.</div></section>`;
+  if(t.stage===2){const p=t.plans.find(x=>x.id===t.chosen)||{name:''};
+    return `<section class="card" style="gap:12px"><h2 style="font-size:18px">Implementando el plan ${t.chosen} · ${esc(p.name)}</h2><div class="bar"><i style="width:${t.prog/5*100}%"></i></div>
+      ${implSteps(t).map((s,i)=>`<div class="row"><span>${i<t.prog?'<span class="ok">✓</span>':i===t.prog?'<span class="spin"></span>':'○'}</span>${s}</div>`).join('')}
+      <div class="s12 muted">Te frena ${t.aut==='plan'?'en el review':t.aut==='stage'?'al final de esta etapa':'solo para abrir el PR'}. Si querés mirar mientras, abrí la consola o el diff abajo.</div></section>`;}
+  if(t.stage===4)return `<section class="card"><div class="row" style="align-items:center"><span class="spin"></span><h2 style="font-size:18px">Abriendo el PR</h2></div><div class="s13 fg2">El PR lleva el resumen, las ${t.review.length} decisiones con su porqué, la cobertura de criterios y el link a ${t.key}.</div></section>`;
+  return '';
+}
+function logSection(t){
+  if(!t.log.length)return '';
+  return `<section style="display:flex;flex-direction:column;gap:8px"><h2 class="k">DECISIONES DEL TICKET</h2><div class="card" style="padding:12px 16px">
+    ${t.log.map((l,i)=>`<div class="row"><span class="who" style="color:${l.who==='VOS'?'var(--link)':'var(--wait-ink)'}">${l.who}</span><span style="flex:1">${l.assume?`<span class="pill ${l.ok?'ok':'wait'}">${l.ok?'Supuesto confirmado':'Supuesto'}</span> `:''}${esc(l.text)}</span>${l.assume&&!l.ok?`<button class="btn sm" data-a="confirmAssume" data-v="${i}">Confirmar</button>`:`<span class="k">${l.st}</span>`}</div>`).join('')}</div></section>`;
+}
+function reviewBody(t){
+  const pend=t.review.filter(r=>r.st!=='ok').length;const lab={ok:['ok','Aprobada'],pending:['','Sin revisar'],changing:['run','La IA lo cambia…'],asked:['wait','Esperando al PO']};
+  return `<div class="tkb"><main class="center-pane" style="gap:12px"><h2 style="font-size:18px">Qué decidió la IA mientras implementaba</h2>
+      <div class="s13 fg2">Revisás decisiones, no líneas. Cada una lleva a su parte del diff si querés verla.</div>
+      ${t.review.map(r=>{const [c,l]=r.st==='pending'&&r.assume?['wait','Supuesto']:lab[r.st];const open=r.st==='pending';
+        return `<div class="dec ${open&&r.assume?'wait':''}"><div class="row" style="align-items:center;flex-wrap:wrap"><span class="pill ${c}">${l}</span>${r.ac?`<span class="pill">${r.ac}</span>`:''}<strong style="font-size:14px">${esc(r.title)}</strong>${r.cd>0?'<span class="spin"></span>':''}</div>
+        ${r.why?`<div class="s13 fg2">${esc(r.why)}</div>`:''}${r.note?`<div class="s13 ok">${esc(r.note)}</div>`:''}
+        ${S.ui.changing===t.key+r.id?`<div class="row"><input type="text" style="flex:1" data-bind="ui.changeQ" value="${esc(S.ui.changeQ||'')}" placeholder="¿Qué querés que cambie?" data-enter="changeSend" data-v="${r.id}"><button class="btn p" data-a="changeSend" data-v="${r.id}">Pedir el cambio</button><button class="btn" data-a="changeCancel">Cancelar</button></div>`:
+        open?`<div class="row" style="align-items:center;flex-wrap:wrap"><button class="btn p" data-a="rv" data-v="${r.id}" data-w="ok">Está bien</button><button class="btn" data-a="rv" data-v="${r.id}" data-w="change">Cambiar</button>${r.assume?`<button class="btn" data-a="rv" data-v="${r.id}" data-w="ask">Preguntar al PO en Jira</button>`:''}<div style="flex:1"></div><a class="s13" data-a="drawer" data-v="diff">Ver diff (${r.diff})</a></div>`:''}</div>`;}).join('')}
+    </main>
+    <aside class="pane r" style="width:340px"><div class="k">¿CUMPLE LO QUE PIDE EL PRODUCTO?</div>
+      ${t.coverage.map(([c,a,s])=>`<div class="row"><span class="pill ${c}">${a}</span><span>${s}</span></div>`).join('')}
+      <div class="k" style="margin-top:8px">FUERA DEL TICKET</div><div class="s13" style="line-height:1.5">${esc(t.outside)}</div><div style="flex:1"></div>
+      <div class="k">EL PR VA A DECIR</div><div class="s12 fg2" style="line-height:1.5;background:var(--bg);border-radius:8px;padding:10px">Resumen, las ${t.review.length} decisiones con su porqué, la cobertura de los criterios y el link a ${t.key}.</div>
+      <button class="btn p" style="justify-content:center" data-a="openPR" ${pend?'disabled':''}>${pend?`Abrir PR (faltan ${pend} decisiones)`:'Abrir PR'}</button></aside></div>`;
+}
+function feedbackBody(t){
+  const allDone=t.fb.every(f=>f.st==='done');const ciRed=t.fb.some(f=>f.kind==='ci'&&f.st!=='done');const open=t.fb.filter(f=>f.kind==='rev'&&f.st!=='done').length;
+  return `<div class="tkb"><main class="center-pane" style="gap:12px"><h2 style="font-size:18px">Qué volvió del PR</h2>
+      <div class="s13 fg2">La IA leyó los comentarios y el CI y propone qué hacer con cada uno. Vos decidís.</div>
+      ${t.fb.map(f=>`<div class="dec ${f.kind==='ci'&&f.st!=='done'?'errb':''}" ${f.st==='done'?'style="opacity:.75"':''}><div class="row" style="align-items:center;flex-wrap:wrap"><span class="pill ${f.st==='done'?'ok':f.kind==='ci'?'err':''}">${f.st==='done'?'✓ ':''}${f.tag}</span><strong style="font-size:14px">${esc(f.title)}</strong>${f.st==='working'?'<span class="spin"></span>':''}</div>
+        <div class="s13 fg2" style="line-height:1.5">${esc(f.body)}</div>${f.note?`<div class="s13 ${f.st==='done'?'ok':'err'}">${esc(f.note)}</div>`:''}
+        ${f.st==='open'?`<div class="row" style="flex-wrap:wrap">${f.acts.map((a,i)=>`<button class="btn ${a.p?'p':''}" data-a="fb" data-v="${f.id}" data-w="${i}">${a.l}</button>`).join('')}</div>`:f.st==='working'?'<div class="s13 muted">El agente está en eso…</div>':''}</div>`).join('')}
+    </main>
+    <aside class="pane r" style="width:320px"><div class="k">ESTADO DEL PR</div>
+      <div class="s13" style="line-height:1.7">${t.approvals} aprobaciones · ${open} comentarios abiertos · CI: ${ciRed?'1 de 7 checks en rojo':'7 de 7 en verde'}</div>
+      <div class="k" style="margin-top:6px">AL TERMINAR</div><div class="s13" style="line-height:1.5">La app sube los cambios, contesta los comentarios en GitHub y anota las decisiones nuevas en el ticket.</div><div style="flex:1"></div>
+      <div class="k">CUANDO SE MERGEA</div><div class="s13" style="line-height:1.5">Mover ${t.key} a Hecho y borrar el worktree.</div>
+      <button class="btn p" style="justify-content:center" data-a="merge" ${allDone?'':'disabled'}>${allDone?`Mergear PR #${t.pr}`:'Mergear (falta resolver lo de arriba)'}</button></aside></div>`;
+}
+const diffCount=t=>t.stage<2?0:t.stage===2?t.prog+1:t.stage===3?(t.reviewMeta.match(/^(\d+)/)||[0,6])[1]:7;
+function consoleBody(t,tab){
+  let out;
+  if(tab==='shell')out=`<div class="s">$ git status</div><div>On branch ${t.branch}</div><div>${diffCount(t)?diffCount(t)+' files changed':'nothing to commit, working tree clean'}</div><div class="u">$ </div>`;
+  else if(tab==='tests')out=t.stage>=3?`<div class="s">$ pnpm test</div><div>✓ 41 passed (3.2 s)</div>`:`<div class="s">$ pnpm test</div><div>Todavía no se corrieron los tests de este ticket.</div>`;
+  else out=t.con.map(l=>`<div class="${l.k==='u'?'u':l.k==='s'?'s':''}">${esc(l.t)||'&#160;'}</div>`).join('')+(t.run?'<div class="s">…</div>':'');
+  return `<div class="ctabs">${['claude','shell','tests'].map(x=>`<button class="${tab===x?'on':''}" data-a="ctab" data-v="${x}">${x==='claude'?(S.engine==='codex'?'codex':'claude')+' · '+t.key:x}</button>`).join('')}</div>
+    <div class="out mono" id="conout">${out}</div>
+    <div class="in"><input type="text" class="mono" data-bind="ui.conQ" value="${esc(S.ui.conQ||'')}" placeholder="${t.stage===1?'Escribí al agente… (ej.: "andá con el A")':'Escribí al agente…'}" aria-label="Mensaje al agente" data-enter="conSend"><button class="btn sm" data-a="conSend">Enviar</button></div>`;
+}
+function fakeDiff(t){
+  const k=t.key.toLowerCase();const r0=t.repos[0]||'app';
+  const files=[[`${r0}/src/${k.split('-')[0]}/${slug(t.title).slice(0,24)}.ts`,[[' ','import { db } from "../db";'],['-','export function legacy() {'],['+',`// ${t.key}: ${t.title}`],['+','export async function handle(input: Input) {'],['+','  const result = await db.query(input);'],['+','  return toResponse(result);'],[' ','}']]],
+               [`${t.repos[1]||r0}/components/${slug(t.title).slice(0,18)}.tsx`,[[' ','export function View() {'],['-','  return <Old />;'],['+','  const data = useData();'],['+','  return <New data={data} />;'],[' ','}']]],
+               [`${r0}/test/${k}.test.ts`,[['+',`describe("${t.key}", () => {`],['+',`  it("${(t.ac[0]||'cumple el criterio').replace(/"/g,"'")}", async () => {`],['+','    expect(await handle(sample)).toMatchSnapshot();'],['+','  });'],['+','});']]]];
+  if(!diffCount(t))return '<div class="l muted" style="padding:16px">Sin cambios todavía. El agente no empezó a implementar.</div>';
+  return files.map(([f,ls])=>`<div class="f mono">${f}</div>${ls.map(([s,l])=>`<div class="l mono ${s==='+'?'a':s==='-'?'d':''}">${s} ${esc(l)}</div>`).join('')}`).join('');
+}
+function drawer(t,withConsole){
+  const d=S.ui.drawer;let panel='';
+  if(d==='console'&&withConsole)panel=`<div class="drawer"><div class="con">${consoleBody(t,S.ui.ctab||'claude')}</div></div>`;
+  if(d==='diff')panel=`<div class="drawer" style="background:var(--card)"><div class="diff">${fakeDiff(t)}</div></div>`;
+  return `${panel}<div class="drawerbar"><span class="k">BAJAR AL CÓDIGO</span>
+    ${withConsole?`<button class="btn ${d==='console'?'on':''}" data-a="drawer" data-v="console">Consola</button>`:''}
+    <button class="btn ${d==='diff'?'on':''}" data-a="drawer" data-v="diff">Diff (${diffCount(t)})</button><button class="btn" data-a="editor">Abrir en editor</button>
+    <div style="flex:1"></div><span class="s12 muted hide-sm">${d?'<a data-a="drawer" data-v="">Cerrar</a>':'Cerrado. Si todo sale bien no hace falta abrirlo.'}</span></div>`;
+}
+
+/* ---------- modals ---------- */
+function mTake(m){
+  if(!m.key){const list=S.tickets.filter(t=>t.status==='todo');
+    return `<div class="modal" role="dialog" aria-label="Tomar ticket"><div class="mh"><h1 style="font-size:20px;flex:1">Tomar un ticket de Jira</h1><button class="btn" data-a="close">Cerrar</button></div>
+      <div style="padding:16px 24px"><div class="list">${list.map(t=>`<div class="li" data-a="take" data-v="${t.key}"><span class="k" style="width:80px">${t.key}</span><span style="flex:1">${esc(t.title)}</span><span class="muted">${esc(pj(t.proj).name)} · ${t.prio}</span></div>`).join('')||'<div class="li muted">No hay tickets sin empezar. Probá "Actualizar desde Jira".</div>'}</div></div></div>`;}
+  const t=tk(m.key);const noAC=!t.ac.length;
+  let ready;
+  if(!noAC)ready=`<div class="card" style="background:var(--ok-soft);border-color:var(--ok-soft);padding:12px 14px"><div class="s13" style="font-weight:600;color:var(--ok-ink)">¿Se puede trabajar? Sí.</div><div class="s13">${t.ac.length} criterios de aceptación claros.</div></div>
+      <div class="k">CRITERIOS</div>${t.ac.map((a,i)=>`<div class="row"><span class="pill">AC${i+1}</span>${esc(a)}</div>`).join('')}`;
+  else if(m.ready==='show')ready=`<div class="card" style="background:var(--wait-bg);border-color:var(--wait);padding:12px 14px"><div class="s13" style="font-weight:600">Criterios propuestos por la IA</div>
+      ${t.proposedAC.map((a,i)=>`<div class="row"><span class="pill">AC${i+1}</span>${esc(a)}</div>`).join('')}
+      <div class="row"><button class="btn p" data-a="useAC">Usar estos</button><button class="btn" data-a="askPO">Preguntar al PO en Jira</button></div></div>`;
+  else if(m.ready==='skip')ready=`<div class="card" style="padding:12px 14px"><div class="s13">Seguís sin criterios. La IA los infiere en la etapa Entender y te los muestra como supuestos.</div></div>`;
+  else ready=`<div class="card" style="background:var(--wait-bg);border-color:var(--wait);padding:12px 14px;gap:8px"><div class="s13" style="font-weight:600">¿Se puede trabajar? Casi.</div>
+      <div class="s13" style="line-height:1.5">No tiene criterios de aceptación. La IA propone ${t.proposedAC?t.proposedAC.length:3} a partir de la descripción y de tickets parecidos.</div>
+      <div class="row" style="flex-wrap:wrap"><button class="btn p" data-a="showAC">Ver criterios propuestos</button><button class="btn" data-a="askPO">Preguntar al PO en Jira</button><button class="btn" data-a="skipAC">Seguir igual</button></div></div>`;
+  const allRepos=pj(t.proj).repos;
+  return `<div class="modal" role="dialog" aria-labelledby="tt"><div class="mh"><span class="k">${t.key}</span><h1 id="tt" style="font-size:20px;flex:1">${esc(t.title)}</h1><button class="btn" data-a="close">Cerrar</button></div>
+    <div class="wrapcols" style="display:flex;gap:24px;padding:22px 24px">
+      <div style="flex:1;display:flex;flex-direction:column;gap:10px;min-width:0"><div class="k">EL TICKET</div><div class="s13" style="line-height:1.5">${esc(t.desc)}</div>${ready}
+        <div class="k" style="margin-top:6px">REPOS QUE TOCA (ESTIMADO POR LA IA)</div>
+        ${allRepos.map(r=>`<label class="row"><input type="checkbox" data-a="takeRepo" data-v="${r.short}" ${m.repos.includes(r.short)?'checked':''}>${r.name.split('/')[1]}${t.repos.includes(r.short)?' · estimado por la IA':''}</label>`).join('')}</div>
+      <div style="width:400px;display:flex;flex-direction:column;gap:10px"><div class="k">CÓMO QUERÉS TRABAJARLO</div>
+        <div class="row">${[['dec','Decisiones','La app te muestra cada decisión'],['con','Consola','Hablás directo con el agente']].map(([v,a,b])=>`<label class="it ${m.mode===v?'on':''}" style="flex:1" data-a="takeMode" data-v="${v}"><input type="radio" name="m" ${m.mode===v?'checked':''}><span><strong>${a}</strong><br>${b}</span></label>`).join('')}</div>
+        <div class="k" style="margin-top:6px">¿CUÁNDO TE FRENA EL AGENTE?</div>
+        ${[['plan','En el plan y en el review'],['stage','Al final de cada etapa'],['pr','Solo para abrir el PR']].map(([v,l])=>`<label class="row"><input type="radio" name="a" data-a="takeAut" data-v="${v}" ${m.aut===v?'checked':''}>${l}</label>`).join('')}
+        <div class="k" style="margin-top:6px">AL EMPEZAR, LA APP</div>
+        <div class="s13 fg2" style="line-height:1.6">Crea la branch ${t.key.toLowerCase()}-${slug(t.title).split('-')[0]} y un worktree por repo · el agente mueve el ticket a En progreso en Jira y te lo asigna · arranca la etapa Entender con el modelo estándar.</div>
+        <div class="s12 muted">Uso estimado: medio · tenés ${100-Math.round(S.usage)}% libre en esta ventana de 5 h</div></div></div>
+    <div class="mf"><button class="btn" data-a="close">Cancelar</button><button class="btn p" data-a="startT" ${m.repos.length?'':'disabled'}>Empezar</button></div></div>`;
+}
+function mSettings(m){
+  const tab=m.tab||'Cuentas';let body='';
+  if(tab==='General')body=`<section class="sbox"><div class="row"><strong style="flex:1">Idioma</strong><select aria-label="Idioma"><option>Español</option><option>English</option></select></div>
+      <div class="row"><strong style="flex:1">Apariencia</strong><span class="muted s13">Sigue al sistema</span></div></section>
+    <section class="sbox"><div class="row"><span style="flex:1"><strong>Reiniciar demo</strong><br><span class="s13 muted">Vuelve al primer arranque y borra proyectos y tickets del prototipo.</span></span>
+      ${S.ui.resetAsk?`<button class="btn" data-a="resetNo">Cancelar</button><button class="btn p" style="background:var(--err);border-color:var(--err)" data-a="resetYes">Sí, reiniciar</button>`:`<button class="btn" data-a="resetAsk">Reiniciar demo</button>`}</div></section>`;
+  else if(tab==='Motor')body=`<section class="sbox"><div class="row"><strong style="flex:1">Claude Code</strong><span class="ok s13">✓ sesión iniciada</span>${S.engine==='claude'?'<span class="pill run">En uso</span>':'<button class="btn" data-a="engine" data-v="claude">Usar</button>'}</div>
+      <div class="row"><strong style="flex:1">Codex</strong>${S.ui.codex==='ok'?`<span class="ok s13">✓ instalado</span>${S.engine==='codex'?'<span class="pill run">En uso</span>':'<button class="btn" data-a="engine" data-v="codex">Usar</button>'}`:S.ui.codex==='ing'?'<span class="row s13"><span class="spin"></span>Instalando…</span>':'<span class="muted s13">No instalado</span><button class="btn" data-a="installCodex">Instalar</button>'}</div></section>`;
+  else if(tab==='Uso')body=`<section class="sbox" style="padding:16px 18px;display:flex;flex-direction:column;gap:10px"><div class="row"><strong style="flex:1">Ventana de 5 h</strong><span>${Math.round(S.usage)}%</span></div><div class="bar"><i style="width:${S.usage}%"></i></div>
+      <div class="s13 muted">${S.tickets.filter(t=>t.run).length} agentes corriendo ahora. El uso lo informa el motor; la app no lo estima por su cuenta.</div>
+      <div class="row"><span style="flex:1">Semana</span><span>31%</span></div><div class="bar"><i style="width:31%"></i></div></section>`;
+  else if(tab==='Cuentas')body=`<section class="sbox"><div class="row"><strong style="flex:1">GitHub</strong><span class="ok s13">✓ [tu-usuario] por gh</span><button class="btn" data-a="toast" data-v="gh auth status: sesión válida.">Revisar</button></div>
+      <div class="row"><strong style="flex:1">Jira</strong><span class="ok s13">✓ tuempresa.atlassian.net · por el MCP del motor</span><button class="btn" data-a="toast" data-v="El agente probó el MCP de Atlassian: acceso OK.">Revisar</button></div></section>
+    <section style="display:flex;flex-direction:column;gap:8px"><div class="k">OTRAS HERRAMIENTAS PARA LOS AGENTES (MCP)</div>
+      <div class="sbox">${[['atl','Atlassian (Jira, Confluence)'],['figma','Figma']].map(([k,l])=>{const on=(S.ui.mcp||{atl:true})[k];return `<div class="row"><span style="flex:1">${l}</span><button class="btn sm ${on?'on':''}" data-a="mcp" data-v="${k}">${on?'encendido':'apagado'}</button></div>`;}).join('')}</div>
+      <a class="s13" data-a="toast" data-v="Abriría el catálogo de MCP del motor.">Agregar un MCP</a></section>`;
+  else body=`<section class="sbox"><div class="row"><strong style="flex:1">Agentes a la vez</strong><select aria-label="Agentes a la vez">${[2,3,4,6].map(n=>`<option ${n===4?'selected':''}>${n}</option>`).join('')}</select></div>
+      ${[['Entender','estándar'],['Planificar','profundo'],['Implementar','estándar'],['Revisar','estándar'],['Feedback y CI','liviano']].map(([s,v])=>`<div class="row"><span style="flex:1">Modelo para ${s}</span><select aria-label="Modelo para ${s}">${['liviano','estándar','profundo'].map(o=>`<option ${o===v?'selected':''}>${o}</option>`).join('')}</select></div>`).join('')}
+      <div class="row"><span style="flex:1">Modo por defecto de los tickets</span><select aria-label="Modo por defecto"><option>Decisiones</option><option>Consola</option></select></div></section>`;
+  return `<div class="modal set" role="dialog" aria-labelledby="aj"><div class="mh"><h1 id="aj" style="font-size:17px;flex:1">Ajustes</h1><button class="btn" data-a="close">Listo</button></div>
+    <div class="tabs" role="tablist" style="justify-content:center;border:0;padding:12px">${['General','Motor','Uso','Cuentas','Agentes'].map(x=>`<button class="tab ${tab===x?'on':''}" role="tab" data-a="stab" data-v="${x}">${x}</button>`).join('')}</div>
+    <div style="padding:4px 28px 26px;display:flex;flex-direction:column;gap:18px">${body}</div></div>`;
+}
+function mNewT(m){
+  return `<div class="modal" style="width:560px" role="dialog" aria-label="Nuevo ticket"><div class="mh"><h1 style="font-size:18px;flex:1">Nuevo ticket en ${m.proj}</h1><button class="btn" data-a="close">Cerrar</button></div>
+    <div style="padding:20px 24px;display:flex;flex-direction:column;gap:10px"><label for="nt">Título</label><input type="text" id="nt" data-bind="ui.ntTitle" value="${esc(S.ui.ntTitle||'')}" placeholder="Ej.: Ordenar productos por precio" data-enter="createT">
+      <div class="s12 muted">Lo crea un agente en Jira por el MCP de Atlassian. La app no escribe en Jira directamente.</div></div>
+    <div class="mf"><button class="btn" data-a="close">Cancelar</button><button class="btn p" data-a="createT">${m.busy?'<span class="spin"></span> Creando en Jira…':'Crear en Jira'}</button></div></div>`;
+}
+
+/* ---------- main render ---------- */
+function render(){
+  pending=false;
+  let r=route();
+  if(!S.setup&&r[0]!=='setup'){r=['setup','1'];history.replaceState(null,'','#/setup/1');}
+  let html;
+  switch(r[0]){
+    case 'setup':html=vSetup(+r[1]||1);break;
+    case 'nuevo':html=shell('',vEmpty(S.projects.length>0));break;
+    case 'importar':if(!S.imp)initImport();html=vImport();break;
+    case 'crear':if(!S.create||(S.create.build>=5&&r[1]!=='confirmar'))initCreate();html=r[1]==='stack'?vCrearStack():r[1]==='confirmar'?vCrearConfirm():vCrearIdea();break;
+    case 'p':html=r[2]==='ajustes'?vProjSettings(r[1]):vProject(r[1]);break;
+    case 't':html=vTicket(r[1]);break;
+    case 'tickets':case 'prs':html=vAll(r[0]);break;
+    default:html=vHoy();
+  }
+  const m=S.ui.modal;
+  if(m)html+=`<div class="mbg" data-a="bgclose">${m.type==='take'?mTake(m):m.type==='newT'?mNewT(m):mSettings(m)}</div>`;
+  const root=$('#root');const st=window.scrollY;const out=document.getElementById('conout');const atBottom=!out||out.scrollTop+out.clientHeight>=out.scrollHeight-20;
+  root.innerHTML=html;window.scrollTo(0,st);
+  const no=document.getElementById('conout');if(no&&atBottom)no.scrollTop=no.scrollHeight;
+}
+window.addEventListener('hashchange',()=>{S.ui.drawer=null;S.ui.changing=null;render();});
+
+/* ---------- init helpers ---------- */
+function initImport(){
+  const first=Object.keys(CATALOG).find(k=>!pj(k))||'SHOP';
+  S.imp={proj:first,repos:{},reading:true,notes:[]};setImpProj(first);
+}
+function setImpProj(k){
+  const im=S.imp;im.proj=k;im.repos={};CATALOG[k].repos.forEach(r=>im.repos[r.name]=r.def);im.reading=true;im.notes=CATALOG[k].notes.map(n=>({...n}));
+  setTimeout(()=>{if(S.imp&&S.imp.proj===k){S.imp.reading=false;dirty();}},1800);
+}
+function initCreate(){
+  S.create={name:'Turnero',idea:'Una app para que los pacientes de un consultorio saquen turno online. El médico ve su agenda y puede bloquear horarios.',kinds:['App web','API'],ans:{},std:false,
+    stack:{},owner:'empresa',firsts:{},build:-1,sub:0,qa:[]};
+}
+function addTicket(t){S.tickets.push(t);}
+function choosePlan(t,id,auto){
+  const p=t.plans.find(x=>x.id===id);t.chosen=id;t.log.push({who:auto?'IA':'VOS',text:`Plan ${id}: ${p.name}${auto?' (elegido solo: modo "solo para abrir el PR")':''}`,st:'Planificar'});
+  conLine(t,'u',`> Plan ${id}`);t.model='estándar';t.tokens=0;startStage(t,2);toast(`${t.key}: plan ${id} elegido. El agente empieza a implementar.`);dirty();
+}
+
+/* ---------- actions ---------- */
+const A={
+  toast:(v)=>toast(v),
+  engine:(v)=>{S.engine=v;toast(v==='codex'?'Codex elegido como motor.':'Claude Code elegido como motor.');},
+  installCodex:()=>{S.ui.codex='ing';setTimeout(()=>{S.ui.codex='ok';toast('Codex instalado. Iniciá sesión con tu cuenta de ChatGPT.');dirty();},2200);},
+  testAccounts:()=>{S.ui.testing='Probando gh…';setTimeout(()=>{S.ui.testing='El agente prueba el MCP de Atlassian…';dirty();},900);
+    setTimeout(()=>{S.ui.testing=null;dirty();go('#/setup/4');},2000);},
+  finishSetup:()=>{S.setup=1;S.jiraAt=Date.now();go('#/hoy');},
+  settings:(v)=>{S.ui.modal={type:'settings',tab:v||'Cuentas'};S.ui.resetAsk=false;},
+  stab:(v)=>{S.ui.modal.tab=v;S.ui.resetAsk=false;},
+  close:()=>{S.ui.modal=null;},
+  bgclose:(v,w,e)=>{if(e.target.classList.contains('mbg'))S.ui.modal=null;else return false;},
+  resetAsk:()=>{S.ui.resetAsk=true;},resetNo:()=>{S.ui.resetAsk=false;},
+  resetYes:()=>{S=fresh();save();history.replaceState(null,'','#/setup/1');toast('Demo reiniciada.');},
+  mcp:(v)=>{S.ui.mcp=S.ui.mcp||{atl:true};S.ui.mcp[v]=!S.ui.mcp[v];toast(`${v==='atl'?'Atlassian':'Figma'} ${S.ui.mcp[v]?'encendido':'apagado'} para los agentes.`);},
+  sync:()=>{S.ui.syncing=true;setTimeout(()=>{S.ui.syncing=false;S.jiraAt=Date.now();S.jiraLabel='a mano';
+      const p=S.projects.find(p=>(INCOMING[p.key]||[]).some(x=>!tk(x.key)));
+      S.tickets.forEach(t=>t.isNew=false);
+      if(p){const x=INCOMING[p.key].find(x=>!tk(x.key));addTicket(T(Object.assign({proj:p.key,isNew:true},x)));toast(`El agente trajo 1 ticket nuevo de Jira: ${x.key} · ${x.title}`);}
+      else toast('Jira sin cambios desde la última vez.');dirty();},1600);},
+  // import
+  impProj:(v)=>{if(S.imp.proj!==v)setImpProj(v);},
+  impRepo:(v)=>{S.imp.repos[v]=!S.imp.repos[v];},
+  impNote:(v,w)=>{const n=S.imp.notes[+v];if(w==='ok'){n.ok=true;toast('Nota confirmada.');}else if(w==='edit')n.edit=true;else{n.edit=false;n.ok=true;toast('Nota corregida. La IA la usa así.');}},
+  doImport:()=>{const im=S.imp;const c=CATALOG[im.proj];const repos=c.repos.filter(r=>im.repos[r.name]);
+    im.importing=[...repos.filter(r=>!r.local).map(r=>`Clonando ${r.name.split('/')[1]}`),'Guardando las notas del proyecto','El agente trae los tickets de Jira'];im.step=0;
+    const iv=setInterval(()=>{im.step++;if(im.step>=im.importing.length){clearInterval(iv);
+        S.projects.push({key:c.key,name:c.name,sprint:c.sprint,repos:repos.map(r=>({...r})),notes:im.notes.map(n=>({k:n.k,v:n.v}))});
+        seedTickets(c.key).filter(t=>t.status==='todo'||t.status==='done'||repos.some(r=>t.repos.includes(r.short))).forEach(addTicket);
+        S.imp=null;S.jiraAt=Date.now();S.jiraLabel='al importar';toast(`${c.key} importado con ${repos.length} repo${repos.length>1?'s':''}. Los agentes de los tickets en curso siguen donde estaban.`);go('#/p/'+c.key);}
+      dirty();},900);},
+  // create
+  kind:(v)=>{const k=S.create.kinds;const i=k.indexOf(v);i>=0?k.splice(i,1):k.push(v);},
+  ans:(v,w)=>{S.create.ans[v]=w;delete S.create.stack.login;},
+  std:()=>{S.create.std=true;toast('Repo de referencia agregado. La IA va a seguir sus convenciones.');},
+  toStack:()=>{const c=S.create;QS.forEach(q=>{if(!c.ans[q.id])c.ans[q.id]=q.o[0];});c.thinking=true;
+    setTimeout(()=>{c.thinking=false;const auth=c.ans.auth==='Cuenta con login';c.stack=Object.assign({repos:'mono',front:'next',db:'pg',login:auth?'pass':'magic'},{hosting:c.stack.hosting,ci:c.stack.ci});
+      if(!c.stack.hosting)delete c.stack.hosting;if(!c.stack.ci)delete c.stack.ci;go('#/crear/stack');dirty();},1500);},
+  stack:(v,w)=>{S.create.stack[v]=w;},
+  stackAsk:()=>{const q=(S.ui.stackQ||'').trim();if(!q)return toast('Escribí una pregunta para la IA.');S.ui.stackQ='';
+    S.create.qa.push({q,a:'Pensando…'});const i=S.create.qa.length-1;
+    setTimeout(()=>{S.create.qa[i].a='Buena pregunta. Con lo que respondiste, las opciones de arriba siguen siendo las más simples; si querés otra, decime cuál y la sumo con sus pros y contras.';dirty();},1500);},
+  toConfirm:()=>go('#/crear/confirmar'),
+  firstT:(v)=>{const c=S.create;c.firsts[v]=!isFirstOn(c,+v);},
+  build:()=>{const c=S.create;c.build=0;c.sub=0;
+    const iv=setInterval(()=>{if(c.build===2&&c.sub<6){c.sub++;}else{c.build++;}
+      if(c.build>=5){clearInterval(iv);finishCreate();}dirty();},700);},
+  // project
+  ptab:(v)=>{S.ui.ptab=v;},
+  pfilter:(v)=>{S.ui.pfilter=v;if(v!=='Sprint 14')toast(v==='Todo el backlog'?'En el prototipo el backlog muestra lo mismo que el sprint.':'Todos los tickets ya están asignados a vos.');},
+  newT:(v)=>{S.ui.modal={type:'newT',proj:v};S.ui.ntTitle='';},
+  createT:()=>{const m=S.ui.modal;const ti=(S.ui.ntTitle||'').trim();if(!ti)return toast('Poné un título.');m.busy=true;
+    setTimeout(()=>{const n=S.tickets.filter(t=>t.proj===m.proj).reduce((a,t)=>Math.max(a,+t.key.split('-')[1]),0)+1;const key=`${m.proj}-${n}`;
+      addTicket(T({key,proj:m.proj,title:ti,desc:ti+'.',isNew:true,repos:pj(m.proj).repos.slice(0,1).map(r=>r.short),proposedAC:['El cambio se ve en la pantalla correspondiente.','Hay un test que lo cubre.']}));
+      S.ui.modal=null;toast(`El agente creó ${key} en Jira.`);dirty();},1300);},
+  editNote:(v)=>{const r=route();S.ui.editNote=r[1]+v;S.ui.noteDraft=pj(r[1]).notes[+v].v;},
+  saveNote:(v)=>{const r=route();const n=pj(r[1]).notes[+v];n.v=S.ui.noteDraft;n.src='editada por vos';S.ui.editNote=null;toast('Nota guardada. Los próximos agentes la usan.');},
+  // take ticket
+  take:(v)=>{if(!v){S.ui.modal={type:'take'};return;}const t=tk(v);S.ui.modal={type:'take',key:v,mode:'dec',aut:'plan',repos:t.repos.slice(),ready:null};},
+  showAC:()=>{S.ui.modal.ready='show';},skipAC:()=>{S.ui.modal.ready='skip';},
+  useAC:()=>{const t=tk(S.ui.modal.key);t.ac=t.proposedAC.slice();t.log.push({who:'VOS',text:'Criterios propuestos por la IA aceptados. El agente los escribe en Jira.',st:'Entender'});toast(`Criterios agregados a ${t.key}. El agente los sube a Jira.`);},
+  askPO:()=>{const k=S.ui.modal?S.ui.modal.key:'';toast(`El agente comentó en ${k} en Jira preguntándole al PO. Te avisa cuando responda.`);},
+  takeRepo:(v)=>{const r=S.ui.modal.repos;const i=r.indexOf(v);i>=0?r.splice(i,1):r.push(v);},
+  takeMode:(v)=>{S.ui.modal.mode=v;},takeAut:(v)=>{S.ui.modal.aut=v;},
+  startT:()=>{const m=S.ui.modal;const t=tk(m.key);t.status='prog';t.mode=m.mode;t.aut=m.aut;t.repos=m.repos.slice();t.isNew=false;t.branch=`${t.key.toLowerCase()}-${slug(t.title).split('-')[0]}`;
+    t.ctx=[`Ticket${t.ac.length?`, ${t.ac.length} criterios`:''}`,'Notas del proyecto'];t.tokens=0;t.model='estándar';
+    conLine(t,'s',`[app] branch ${t.branch} · worktree en ${t.repos.join(', ')}`);conLine(t,'s',`[jira] ${t.key} → En progreso, asignado a vos`);conLine(t,'u','> Leé el ticket y proponé un plan');
+    startStage(t,0);S.ui.modal=null;toast(`${t.key} en progreso. El agente arrancó la etapa Entender.`);go('#/t/'+t.key);},
+  // ticket
+  open:(v)=>go('#/t/'+v),
+  mode:(v)=>{const t=tk(route()[1]);t.mode=v;S.ui.drawer=null;},
+  drawer:(v)=>{S.ui.drawer=S.ui.drawer===v||!v?null:v;},
+  ctab:(v)=>{S.ui.ctab=v;},
+  editor:()=>{const t=tk(route()[1]);toast(`Abriendo el worktree ${t.key.toLowerCase()} en tu editor (simulado).`);},
+  addCtx:()=>{const t=tk(route()[1]);t.ctx.push('docs/arquitectura.md (fijado por vos)');toast('Archivo fijado. La IA lo tiene en cuenta desde ahora.');},
+  plan:(v)=>{choosePlan(tk(route()[1]),v);},
+  planAsk:()=>{const t=tk(route()[1]);const q=(S.ui.planQ||'').trim();if(!q)return toast('Escribí qué querés ajustar.');S.ui.planQ='';S.ui.planAsk=t.key;
+    t.log.push({who:'VOS',text:`Pedido para el plan: ${q}`,st:'Planificar'});
+    setTimeout(()=>{S.ui.planAsk=null;const id=String.fromCharCode(65+t.plans.length);t.plans.push({id,name:'Según tu pedido',mine:true,desc:q,pro:'Responde a lo que pediste',con:'La IA no lo pudo comparar a fondo todavía',touch:`Toca ${t.repos.join(', ')} · revisar criterios`});
+      toast(`La IA sumó el plan ${id}.`);dirty();},2200);},
+  confirmAssume:(v)=>{const t=tk(route()[1]);t.log[+v].ok=true;toast('Supuesto confirmado. Queda anotado en el ticket y en el PR.');},
+  rv:(v,w)=>{const t=tk(route()[1]);const r=t.review.find(x=>x.id==v);
+    if(w==='ok'){r.st='ok';const left=t.review.filter(x=>x.st!=='ok').length;toast(left?`Aprobada. Faltan ${left}.`:'Todas revisadas. Ya podés abrir el PR.');}
+    else if(w==='change'){S.ui.changing=t.key+r.id;S.ui.changeQ='';}
+    else {r.st='asked';r.cd=7;r.note='';r.doneMsg=`${t.key}: el PO respondió en Jira. Decisión aprobada.`;r.doneNote='PO en Jira: "Está bien así."';toast('El agente preguntó al PO en Jira. Te avisa cuando responda.');}},
+  changeSend:(v)=>{const t=tk(route()[1]);const r=t.review.find(x=>x.id==v);const q=(S.ui.changeQ||'').trim();if(!q)return toast('Contale a la IA qué cambiar.');
+    r.st='changing';r.cd=4;r.note=`Cambiado según tu pedido: ${q}`;r.doneMsg=`${t.key}: la IA aplicó tu cambio.`;S.ui.changing=null;S.ui.changeQ='';
+    t.log.push({who:'VOS',text:`Cambio pedido en review: ${q}`,st:'Revisar'});toast('La IA está aplicando el cambio.');},
+  changeCancel:()=>{S.ui.changing=null;},
+  openPR:()=>{const t=tk(route()[1]);const p=t.review.filter(r=>r.st!=='ok').length;
+    if(t.stage!==3)return;if(p){toast(`Faltan ${p} decisiones por revisar. Pasá a modo Decisiones.`);return;}
+    t.mode='dec';t.status='review';startStage(t,4);toast(`${t.key}: abriendo el PR.`);},
+  fb:(v,w)=>{const t=tk(route()[1]);const f=t.fb.find(x=>x.id==v);const a=f.acts[+w];
+    if(a.t==='log'){f.note='Log: expected "$90" but got "$100" (checkout.spec.ts:42). El carrito no había cargado.';toast('Log del CI: la línea clave quedó en la tarjeta.');return;}
+    if(a.t==='reply'){f.st='done';f.note=a.r;toast(a.r);}
+    else if(a.t==='po'){f.st='working';f.cd=6;f.pendingNote='El PO respondió en Jira: "desactivar los cupones". El agente lo implementó.';toast('El agente preguntó al PO en Jira.');}
+    else{f.st='working';f.cd=4;f.pendingNote=a.r;f.keepOpen=!!a.keep;}
+    if(t.fb.every(x=>x.st==='done')){t.wait='merge';t.approvals='2 de 2';toast(`${t.key}: listo para mergear.`);}},
+  merge:()=>{const t=tk(route()[1]);t.status='done';t.stage=6;t.wait=null;t.run=false;toast(`PR #${t.pr} mergeado. ${t.key} pasó a Hecho en Jira y se borró el worktree.`);},
+  conSend:()=>{const t=tk(route()[1]);const q=(S.ui.conQ||'').trim();if(!q)return;S.ui.conQ='';conLine(t,'u','> '+q);
+    setTimeout(()=>{if(t.stage===1&&t.wait==='plan'){const m=q.match(/\b([ab])\b/i);if(m){conLine(t,'a',`Voy con el plan ${m[1].toUpperCase()}.`);choosePlan(t,m[1].toUpperCase());return;}}
+      conLine(t,'a',t.run?'Anotado. Lo tengo en cuenta en lo que sigue de esta etapa.':'Anotado. ¿Algo más antes de seguir?');dirty();},900);},
+};
+function finishCreate(){
+  const c=S.create;const key=pkey(c);const ft=firstTickets(c);const repo=slug(c.name);
+  const defs=stackDefs(c);
+  S.projects.push({key,name:c.name,sprint:'Kanban',repos:[{name:`${c.owner}/${repo}`,short:repo}],
+    notes:[{k:'STACK',v:stackSummary(c)},{k:'CÓMO SE PRUEBA',v:c.stack.ci==='unit'?'pnpm test (Vitest)':'pnpm test (Vitest) · pnpm e2e (Playwright)'},{k:'CONVENCIONES',v:'Branches KEY-desc · commits convencionales'}],
+    adr:defs.map(d=>`${d.name}: ${(d.o.find(o=>o.id===c.stack[d.id])||{}).l}`)});
+  let n=0;ft.forEach((l,i)=>{if(isFirstOn(c,i)){n++;addTicket(T({key:`${key}-${n}`,proj:key,title:l,desc:l+'.',repos:[repo],prio:i<2?'Alta':'Media',
+    ac:i===4?[]:['Funciona en la web y en el celular.','Hay un test que lo cubre.'],proposedAC:['La decisión queda escrita como ADR.','Se actualiza el README.']}));}});
+  if(INCOMING.TURN&&key!=='TURN'){INCOMING[key]=INCOMING.TURN.map(x=>Object.assign({},x,{key:x.key.replace('TURN',key),repos:[repo]}));}
+  toast(`${c.name} creado: repo en GitHub, proyecto ${key} en Jira y ${n} tickets.`);
+}
+
+/* ---------- event delegation ---------- */
+document.addEventListener('click',e=>{
+  const el=e.target.closest('[data-a]');if(!el)return;
+  const a=A[el.dataset.a];if(!a)return;
+  if(el.tagName==='A'||el.tagName==='BUTTON')e.preventDefault();
+  if(el.tagName==='LABEL'&&e.target.tagName!=='INPUT')e.preventDefault();
+  const res=a(el.dataset.v,el.dataset.w,e);if(res===false)return;
+  e.stopPropagation();save();render();
+});
+document.addEventListener('input',e=>{
+  const b=e.target.dataset&&e.target.dataset.bind;if(!b)return;
+  const parts=b.split('.');let o=S;for(let i=0;i<parts.length-1;i++)o=o[parts[i]];o[parts[parts.length-1]]=e.target.value;save();
+});
+document.addEventListener('change',e=>{const b=e.target.dataset&&e.target.dataset.bind;if(b&&e.target.tagName==='SELECT'){render();}});
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'&&S.ui.modal){S.ui.modal=null;render();return;}
+  const k=e.target.dataset&&e.target.dataset.enter;if(k&&e.key==='Enter'){e.preventDefault();e.target.blur();A[k](e.target.dataset.v);save();render();}
+});
+
+/* ---------- app start: an agent syncs the local Jira copy ---------- */
+if(S.setup&&S.projects.length){S.ui.syncing=true;setTimeout(()=>{S.ui.syncing=false;S.jiraAt=Date.now();S.jiraLabel='al abrir la app';toast('Copia local de Jira al día.');dirty();},1500);}
+setInterval(()=>{const r=route()[0];if(!S.ui.syncing&&(r==='hoy'||r==='p'||!r))dirty();},30000); // refresh "hace N min"
+render();
+</script>

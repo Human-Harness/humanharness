@@ -28,7 +28,12 @@ Manifest (`defineHarness`) with actions + tiers + `path`; blocks (`defineBlock`,
 | thinker | – | – | – |
 | writer | – | – | – |
 
-**Next step:** a clickable HTML prototype of the dev harness, with mocked state and simulated agents, is being built by the `prototyper` agent (2026-10-20) into `docs/discovery/prototypes/dev/index.html` and published as an Artifact. Then Marco tests it, reviews mockup v2 and the Claude proposals listed under dev, and answers Q7 (which cockpit parts carry over).
+**Next step:** Marco tests the dev prototype (https://claude.ai/artifact/M3j64DEJFiekVj98fbdVn3, source `docs/discovery/prototypes/dev/index.html`), reviews the Claude proposals listed under dev, and answers Q7 (which cockpit parts carry over).
+
+Dev prototype (2026-10-20, built by the `prototyper` agent; this branch declares `modo: discovery` in `CLAUDE.md`):
+- **Works:** every flow (first run, import, create, Hoy/Project live updates, Jira sync spinner + new ticket, take ticket, the full ticket cycle up to merge, mode toggle, code drawer with a typable console + fake diff, settings, "Reiniciar demo").
+- **Faked:** all data, 2–3 s timers, the selects in Agents/project settings, filters, editor and GitHub links (toasts only).
+- **Additions over the mockups:** plan C from a comment, an inline "Cambiar" field, a "Mergear PR" button, Tickets and Pull requests screens, a "Nuevo ticket" modal.
 
 ## Harnesses
 

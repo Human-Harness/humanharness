@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Ticket, decisiones primero</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;color:#1d1d1f}
+a{color:#0a5bc4}a:hover{color:#083f88}
+.k{font-size:12px;color:#5f5f66;font-weight:600}
+.pill{font-size:11px;font-weight:600;padding:3px 8px;border-radius:999px;white-space:nowrap}
+.btn{font:inherit;font-size:13px;padding:7px 12px;border-radius:7px;border:1px solid #d2d2d7;background:#fff;color:#1d1d1f;cursor:pointer}
+.btn.p{background:#0a5bc4;border-color:#0a5bc4;color:#fff}
+.step{font-size:12px;padding:6px 12px;border-radius:999px;color:#5f5f66;background:#ececf0}
+.opt{border:1px solid #e3e3e8;border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:10px;background:#fff}
+.row{display:flex;gap:10px;font-size:13px;line-height:1.45}
+.who{font-size:11px;font-weight:700;width:34px;flex:none;padding-top:2px}
+</style>
+</helmet>
+<div style="width:1440px;height:900px;display:flex;flex-direction:column;background:#f5f5f7">
+  <header style="display:flex;flex-direction:column;gap:12px;padding:14px 24px;border-bottom:1px solid #e3e3e8;background:#fff">
+    <div style="display:flex;align-items:center;gap:12px">
+      <a href="Main.dc.html" style="font-size:13px">‹ Hoy</a>
+      <span class="k">SHOP-142</span>
+      <span style="font-weight:600;font-size:15px">Recuperar contraseña por email</span>
+      <span class="pill" style="background:#dbe8fb;color:#0a3f8a">Jira: En progreso</span>
+      <div style="flex:1"></div>
+      <span style="font-size:12px;color:#5f5f66">branch shop-142-reset · worktree propio · repos: api, web</span>
+      <div role="group" aria-label="Modo" style="display:flex;border:1px solid #d2d2d7;border-radius:7px;overflow:hidden"><span style="font-size:12px;padding:6px 10px;background:#0a5bc4;color:#fff">Decisiones</span><a href="TicketConsola.dc.html" style="font-size:12px;padding:6px 10px;text-decoration:none">Consola</a></div>
+    </div>
+    <ol aria-label="Etapas" style="display:flex;gap:6px;margin:0;padding:0;list-style:none">
+      <li class="step" style="background:#d9f0dc;color:#1f5a28">✓ Entender</li>
+      <li class="step" style="background:#0a5bc4;color:#fff;font-weight:600">Planificar · te espera</li>
+      <li class="step">Implementar</li>
+      <li class="step">Revisar</li>
+      <li class="step">PR</li>
+      <li class="step">Feedback y CI</li>
+    </ol>
+  </header>
+
+  <div style="flex:1;display:flex;min-height:0">
+    <aside aria-label="Producto" style="width:300px;padding:20px;display:flex;flex-direction:column;gap:12px;border-right:1px solid #e3e3e8;background:#fff">
+      <div class="k">QUÉ PIDE EL PRODUCTO</div>
+      <div style="font-size:13px;line-height:1.5">Como cliente que olvidó su contraseña quiero recibir un link por email para elegir una nueva.</div>
+      <div class="k">CRITERIOS</div>
+      <div class="row"><span class="pill" style="background:#ececf0;color:#3a3a40">AC1</span><span>El link vence a los 30 minutos.</span></div>
+      <div class="row"><span class="pill" style="background:#ececf0;color:#3a3a40">AC2</span><span>Un link usado no sirve dos veces.</span></div>
+      <div class="row"><span class="pill" style="background:#ececf0;color:#3a3a40">AC3</span><span>El email no revela si la cuenta existe.</span></div>
+      <div class="k" style="margin-top:6px">DE JIRA</div>
+      <div style="font-size:13px;color:#3a3a40">PO: usar la plantilla de email existente.</div>
+      <div style="font-size:13px">Linkeado: SHOP-120 Plantillas de email</div>
+    </aside>
+
+    <main style="flex:1;padding:22px 26px;display:flex;flex-direction:column;gap:18px;min-width:0;overflow:hidden">
+      <section aria-labelledby="h-dec" style="display:flex;flex-direction:column;gap:12px">
+        <h2 id="h-dec" style="margin:0;font-size:18px">Elegí el plan</h2>
+        <div style="font-size:13px;color:#3a3a40">Los dos cumplen los 3 criterios. Difieren en dónde vive el token.</div>
+        <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px">
+          <div class="opt" style="border-color:#0a5bc4">
+            <div style="display:flex;gap:8px;align-items:center"><strong style="font-size:15px">A · Tabla password_resets</strong><span class="pill" style="background:#dbe8fb;color:#0a3f8a">Recomendado</span></div>
+            <div style="font-size:13px;line-height:1.5">Guarda el hash del token, cuándo vence y si se usó. Una migración nueva.</div>
+            <div style="font-size:12px;color:#1f5a28">+ Queda registro para auditoría · sin infraestructura nueva</div>
+            <div style="font-size:12px;color:#8a1c12">− Hay que limpiar tokens viejos</div>
+            <div style="font-size:12px;color:#5f5f66">Toca api (4 archivos), web (2) · AC1 AC2 AC3</div>
+            <button class="btn p" style="align-self:flex-start">Elegir A</button>
+          </div>
+          <div class="opt">
+            <strong style="font-size:15px">B · Token en Redis con vencimiento</strong>
+            <div style="font-size:13px;line-height:1.5">El vencimiento lo resuelve Redis. Sin migración.</div>
+            <div style="font-size:12px;color:#1f5a28">+ Menos código · se borra solo</div>
+            <div style="font-size:12px;color:#8a1c12">− El proyecto no usa Redis hoy: suma un servicio</div>
+            <div style="font-size:12px;color:#5f5f66">Toca api (3 archivos), infra (1) · AC1 AC2 AC3</div>
+            <button class="btn" style="align-self:flex-start">Elegir B</button>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <label for="c1" style="position:absolute;left:-9999px">Comentario para la IA</label>
+          <input id="c1" placeholder="Ajustar el plan o pedir otra opción…" style="flex:1;font:inherit;font-size:13px;padding:8px 10px;border:1px solid #d2d2d7;border-radius:7px">
+          <button class="btn">Enviar</button>
+        </div>
+      </section>
+
+      <section aria-labelledby="h-log" style="display:flex;flex-direction:column;gap:8px">
+        <h2 id="h-log" class="k" style="margin:0">DECISIONES DEL TICKET</h2>
+        <div style="background:#fff;border:1px solid #e3e3e8;border-radius:10px;padding:12px 16px;display:flex;flex-direction:column;gap:10px">
+          <div class="row"><span class="who" style="color:#0a5bc4">VOS</span><span style="flex:1">Usar la plantilla de email existente (de un comentario del PO).</span><span class="k">Entender</span></div>
+          <div class="row"><span class="who" style="color:#7a4a00">IA</span><span style="flex:1">AC3: la pantalla responde lo mismo exista o no la cuenta.</span><span class="k">Entender</span></div>
+          <div class="row"><span class="who" style="color:#7a4a00">IA</span><span style="flex:1"><span class="pill" style="background:#fdebd0;color:#7a4a00">Supuesto</span> 30 minutos se cuentan desde que se envía el email, no desde que se abre.</span><button class="btn" style="padding:3px 8px;font-size:12px">Confirmar</button></div>
+        </div>
+      </section>
+    </main>
+
+    <aside aria-label="Agente y contexto" style="width:290px;padding:20px;display:flex;flex-direction:column;gap:12px;border-left:1px solid #e3e3e8;background:#fff">
+      <div class="k">AGENTE</div>
+      <div style="font-size:13px">Esperando tu decisión</div>
+      <div style="font-size:12px;color:#5f5f66">Modelo profundo para planificar · 18k tokens en esta etapa</div>
+      <div class="k" style="margin-top:6px">LO QUE LA IA TIENE EN CUENTA</div>
+      <ul style="margin:0;padding-left:18px;font-size:13px;line-height:1.7">
+        <li>Ticket, criterios y 2 comentarios</li>
+        <li>SHOP-120 (linkeado)</li>
+        <li>web/emails/base.tsx (fijado)</li>
+        <li>Notas del proyecto: auth, emails</li>
+      </ul>
+      <a href="#" style="font-size:13px">Agregar contexto</a>
+      <div class="k" style="margin-top:6px">PR · CI</div>
+      <div style="font-size:13px;color:#5f5f66">Todavía no hay PR</div>
+    </aside>
+  </div>
+
+  <div style="display:flex;align-items:center;gap:10px;padding:10px 24px;border-top:1px solid #e3e3e8;background:#ececf0">
+    <span class="k">BAJAR AL CÓDIGO</span>
+    <button class="btn">Consola</button>
+    <button class="btn">Diff (0)</button>
+    <button class="btn">Abrir en editor</button>
+    <div style="flex:1"></div>
+    <span style="font-size:12px;color:#5f5f66">Cerrado. Si todo sale bien no hace falta abrirlo.</span>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

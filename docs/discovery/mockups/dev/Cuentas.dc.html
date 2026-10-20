@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Conectar GitHub y Jira</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;color:#1d1d1f}
+a{color:#0a5bc4}a:hover{color:#083f88}
+.btn{font:inherit;font-size:14px;padding:9px 18px;border-radius:8px;border:1px solid #d2d2d7;background:#fff;color:#1d1d1f;text-decoration:none;display:inline-block;cursor:pointer}
+.btn.p{background:#0a5bc4;border-color:#0a5bc4;color:#fff}
+.st{font-size:13px;padding:6px 12px;border-radius:999px;background:#ececf0;color:#5f5f66}
+.card{background:#fff;border:1px solid #e3e3e8;border-radius:14px;padding:22px;display:flex;flex-direction:column;gap:12px;width:440px;box-sizing:border-box}
+.k{font-size:12px;color:#5f5f66;font-weight:600}
+.opt{display:flex;gap:10px;align-items:flex-start;padding:12px;border:1px solid #e3e3e8;border-radius:10px;font-size:13px;line-height:1.45}
+input[type=text],input[type=email],input[type=password]{font:inherit;font-size:13px;padding:8px 10px;border:1px solid #d2d2d7;border-radius:7px;width:100%;box-sizing:border-box}
+label{font-size:12px;color:#3a3a40}
+</style>
+</helmet>
+<div style="width:1440px;height:900px;display:flex;flex-direction:column;align-items:center;padding-top:70px;box-sizing:border-box;gap:24px;background:#f5f5f7">
+  <ol aria-label="Pasos" style="display:flex;gap:8px;list-style:none;margin:0;padding:0">
+    <li class="st" style="background:#d9f0dc;color:#1f5a28">✓ Motor de IA</li>
+    <li class="st" style="background:#0a5bc4;color:#fff;font-weight:600">2 · GitHub y Jira</li>
+    <li class="st">3 · Listo</li>
+  </ol>
+  <h1 style="margin:0;font-size:28px">Conectá dónde vive tu trabajo</h1>
+  <p style="margin:0;color:#3a3a40;font-size:15px">Los tickets salen de Jira; el código y los PR, de GitHub.</p>
+  <div style="display:flex;gap:20px;align-items:flex-start">
+    <section class="card" aria-labelledby="gh">
+      <h2 id="gh" style="margin:0;font-size:18px">GitHub</h2>
+      <div style="font-size:13px;color:#1f5a28">✓ GitHub CLI (gh) instalado</div>
+      <div style="font-size:13px;color:#1f5a28">✓ Sesión iniciada como [tu-usuario]</div>
+      <div style="font-size:13px;color:#3a3a40">La app usa tu sesión de gh para clonar, crear repos y abrir PR. No guarda tokens.</div>
+      <div class="k">SI NO ESTUVIERA</div>
+      <div style="font-size:13px;color:#5f5f66">Botón "Iniciar sesión" que abre gh auth login en una ventana de la app.</div>
+    </section>
+    <section class="card" aria-labelledby="jira">
+      <h2 id="jira" style="margin:0;font-size:18px">Jira</h2>
+      <div class="k">¿CÓMO SE CONECTA?</div>
+      <label class="opt" style="border-color:#0a5bc4"><input type="radio" name="j" checked><span><strong>Token personal de Atlassian</strong><br>La app lee y mueve tickets por su cuenta.</span></label>
+      <label class="opt"><input type="radio" name="j"><span><strong>El MCP de Atlassian de tu motor</strong><br>Solo los agentes tocan Jira; la app ve menos.</span></label>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <label for="site">Sitio</label><input id="site" type="text" placeholder="tuempresa.atlassian.net">
+        <label for="mail">Email</label><input id="mail" type="email" placeholder="vos@empresa.com">
+        <label for="tok">Token</label><input id="tok" type="password" placeholder="Pegá el token">
+      </div>
+      <a href="#" style="font-size:13px">Cómo crear un token</a>
+    </section>
+  </div>
+  <div style="display:flex;gap:10px"><a class="btn" href="Motor.dc.html">Atrás</a><a class="btn p" href="Listo.dc.html">Probar y seguir</a></div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Hoy</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;color:#1d1d1f}
+a{color:#0a5bc4}a:hover{color:#083f88}
+.side a{display:block;padding:7px 10px;border-radius:6px;color:#1d1d1f;text-decoration:none;font-size:13px}
+.pill{font-size:11px;font-weight:600;padding:3px 8px;border-radius:999px;white-space:nowrap}
+.card{background:#fff;border:1px solid #e3e3e8;border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:10px}
+.k{font-size:12px;color:#5f5f66;font-weight:600}
+.btn{font:inherit;font-size:13px;padding:7px 12px;border-radius:7px;border:1px solid #d2d2d7;background:#fff;color:#1d1d1f;cursor:pointer}
+.btn.p{background:#0a5bc4;border-color:#0a5bc4;color:#fff}
+</style>
+</helmet>
+<div style="width:1440px;height:900px;display:flex;background:#f5f5f7;box-sizing:border-box">
+  <nav class="side" aria-label="Navegación" style="width:220px;padding:20px 12px;display:flex;flex-direction:column;gap:2px;border-right:1px solid #e3e3e8;background:#ececf0">
+    <div style="font-weight:700;font-size:15px;padding:0 10px 14px">Dev Harness</div>
+    <a href="#" style="background:#dcdce2;font-weight:600">Hoy</a>
+    <a href="#">Tickets</a>
+    <a href="#">Pull requests</a>
+    <div class="k" style="padding:18px 10px 6px">PROYECTOS</div>
+    <a href="Proyecto.dc.html">Tienda web · 2 repos</a>
+    <a href="#">App interna · 1 repo</a>
+    <a href="InicioVacio.dc.html" style="color:#0a5bc4">+ Agregar proyecto</a>
+    <div style="flex:1"></div>
+    <a href="AjustesCuentas.dc.html">Ajustes</a>
+  </nav>
+  <main style="flex:1;padding:28px 32px;display:flex;flex-direction:column;gap:22px;min-width:0">
+    <div style="display:flex;align-items:flex-end;gap:16px">
+      <div style="flex:1">
+        <h1 style="margin:0;font-size:26px">Hoy</h1>
+        <div style="color:#5f5f66;font-size:14px;margin-top:4px">3 agentes trabajando · 2 te esperan · 1 PR con comentarios</div>
+      </div>
+      <button class="btn">Uso del plan: 42% de 5 h</button>
+      <a class="btn p" href="TomarTicket.dc.html" style="text-decoration:none">Tomar ticket de Jira</a>
+    </div>
+
+    <section aria-labelledby="h-wait" style="display:flex;flex-direction:column;gap:10px">
+      <h2 id="h-wait" class="k" style="margin:0">TE ESPERAN</h2>
+      <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px">
+        <div class="card" style="border-color:#e8a33d">
+          <div style="display:flex;gap:8px;align-items:center"><span class="pill" style="background:#fdebd0;color:#7a4a00">Elegir plan</span><span class="k">SHOP-142</span></div>
+          <div style="font-size:16px;font-weight:600">Recuperar contraseña por email</div>
+          <div style="font-size:13px;color:#3a3a40">La IA propone 2 planes. Difieren en dónde vive el token: tabla nueva o cache con vencimiento.</div>
+          <div style="display:flex;gap:8px"><a class="btn p" href="TicketDecisiones.dc.html" style="text-decoration:none">Ver planes</a></div>
+        </div>
+        <div class="card" style="border-color:#e8a33d">
+          <div style="display:flex;gap:8px;align-items:center"><span class="pill" style="background:#fdebd0;color:#7a4a00">Revisar</span><span class="k">SHOP-138</span></div>
+          <div style="font-size:16px;font-weight:600">Filtro de productos por talle</div>
+          <div style="font-size:13px;color:#3a3a40">Implementación lista. 6 decisiones de la IA para revisar antes de abrir el PR; 1 supuesto marcado.</div>
+          <div style="display:flex;gap:8px"><a class="btn p" href="Review.dc.html" style="text-decoration:none">Revisar decisiones</a></div>
+        </div>
+      </div>
+    </section>
+
+    <section aria-labelledby="h-run" style="display:flex;flex-direction:column;gap:10px">
+      <h2 id="h-run" class="k" style="margin:0">EN CURSO</h2>
+      <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px">
+        <div class="card">
+          <div style="display:flex;gap:8px;align-items:center"><span class="pill" style="background:#dbe8fb;color:#0a3f8a">Implementando 3/5</span><span class="k">SHOP-151</span></div>
+          <div style="font-size:15px;font-weight:600">Exportar pedidos a CSV</div>
+          <div style="font-size:12px;color:#5f5f66">worktree shop-151 · api, web · modelo estándar</div>
+        </div>
+        <div class="card">
+          <div style="display:flex;gap:8px;align-items:center"><span class="pill" style="background:#dbe8fb;color:#0a3f8a">Entendiendo</span><span class="k">INT-77</span></div>
+          <div style="font-size:15px;font-weight:600">Login con SSO de Google</div>
+          <div style="font-size:12px;color:#5f5f66">worktree int-77 · app · modelo profundo</div>
+        </div>
+        <div class="card">
+          <div style="display:flex;gap:8px;align-items:center"><span class="pill" style="background:#f7d9d6;color:#8a1c12">CI en rojo</span><span class="k">SHOP-129</span></div>
+          <div style="font-size:15px;font-weight:600">Cupones por categoría</div>
+          <div style="font-size:12px;color:#5f5f66">PR #212 · 2 comentarios de review · test e2e falla</div>
+          <a href="PostPR.dc.html" style="font-size:13px">Ver qué pasó</a>
+        </div>
+      </div>
+    </section>
+
+    <section aria-labelledby="h-next" style="display:flex;flex-direction:column;gap:10px">
+      <h2 id="h-next" class="k" style="margin:0">SIGUIENTES EN JIRA (asignados a vos)</h2>
+      <div class="card" style="padding:6px 16px;gap:0">
+        <div style="display:flex;gap:12px;padding:10px 0;border-bottom:1px solid #eee;font-size:14px"><span class="k" style="width:80px">SHOP-155</span><span style="flex:1">Mostrar stock en la ficha</span><span style="color:#5f5f66">Sprint 14 · Alta</span></div>
+        <div style="display:flex;gap:12px;padding:10px 0;font-size:14px"><span class="k" style="width:80px">INT-80</span><span style="flex:1">Auditoría de accesos</span><span style="color:#5f5f66">Sprint 14 · Media</span></div>
+      </div>
+    </section>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

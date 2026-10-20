@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Elegir motor</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;color:#1d1d1f}
+a{color:#0a5bc4}a:hover{color:#083f88}
+.btn{font:inherit;font-size:14px;padding:9px 18px;border-radius:8px;border:1px solid #d2d2d7;background:#fff;color:#1d1d1f;text-decoration:none;display:inline-block;cursor:pointer}
+.btn.p{background:#0a5bc4;border-color:#0a5bc4;color:#fff}
+.st{font-size:13px;padding:6px 12px;border-radius:999px;background:#ececf0;color:#5f5f66}
+.tile{background:#fff;border:1px solid #e3e3e8;border-radius:14px;padding:22px;display:flex;flex-direction:column;gap:10px;width:300px}
+</style>
+</helmet>
+<div style="width:1440px;height:900px;display:flex;flex-direction:column;align-items:center;padding-top:90px;box-sizing:border-box;gap:28px;background:#f5f5f7">
+  <ol aria-label="Pasos" style="display:flex;gap:8px;list-style:none;margin:0;padding:0">
+    <li class="st" style="background:#0a5bc4;color:#fff;font-weight:600">1 · Motor de IA</li>
+    <li class="st">2 · GitHub y Jira</li>
+    <li class="st">3 · Listo</li>
+  </ol>
+  <h1 style="margin:0;font-size:28px">¿Con qué IA vas a trabajar?</h1>
+  <p style="margin:0;color:#3a3a40;font-size:15px">Usa tu propia suscripción. La app no pide claves de API.</p>
+  <div style="display:flex;gap:20px">
+    <div class="tile" style="border:2px solid #0a5bc4">
+      <div style="font-size:18px;font-weight:600">Claude Code</div>
+      <div style="font-size:13px;color:#1f5a28">✓ Instalado · sesión iniciada</div>
+      <div style="font-size:13px;color:#5f5f66">Plan detectado por el uso que informa el motor</div>
+      <span style="font-size:12px;font-weight:600;color:#0a3f8a">Elegido</span>
+    </div>
+    <div class="tile">
+      <div style="font-size:18px;font-weight:600">Codex</div>
+      <div style="font-size:13px;color:#5f5f66">No instalado</div>
+      <div style="font-size:13px;color:#5f5f66">Se puede sumar después en Ajustes › Motor</div>
+      <button class="btn" style="align-self:flex-start;font-size:13px">Instalar</button>
+    </div>
+  </div>
+  <div style="font-size:13px;color:#5f5f66;max-width:640px;text-align:center;line-height:1.5">A diferencia de otras apps Human Harness, acá no se elige una carpeta en este paso: cada proyecto trae sus propios repos.</div>
+  <div style="display:flex;gap:10px"><a class="btn" href="Bienvenida.dc.html">Atrás</a><a class="btn p" href="Cuentas.dc.html">Seguir</a></div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

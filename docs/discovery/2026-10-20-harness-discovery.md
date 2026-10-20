@@ -22,13 +22,13 @@ Manifest (`defineHarness`) with actions + tiers + `path`; blocks (`defineBlock`,
 
 | Harness | Interview | Mockup | Features extracted |
 |---|---|---|---|
-| dev | rounds 1–2 done | v1 published, review pending | draft |
+| dev | rounds 1–3 done | v2 (whole app) published, review pending | draft |
 | student | – | – | – |
 | teacher | – | – | – |
 | thinker | – | – | – |
 | writer | – | – | – |
 
-**Next step:** build dev mockup v2 (whole app: onboarding, home, create/import project, project, take ticket, ticket A/B, review, after the PR, settings), then Marco reviews it. Q7 (which cockpit parts carry over) is still pending.
+**Next step:** Marco reviews dev mockup v2 (18 screens) and the Claude proposals listed under dev. Q7 (which cockpit parts carry over) is still pending.
 
 ## Harnesses
 
@@ -65,7 +65,17 @@ Answers, round 3 (2026-10-20), after mockup v1:
 - **Project model.** One Jira project ↔ N repos.
 - **Ticket screen.** Both modes (console first / decision first), switchable by the dev.
 
-Mockup v1 (2026-10-20, superseded by v2: the whole app): https://claude.ai/artifact/JkYwnWjmArqrHzSz92A5CV
+Mockup v2, the whole app (2026-10-20, waiting for Marco's review). Same URL as v1. Source backup: `docs/discovery/mockups/dev/`. 18 clickable screens:
+
+1. **First run.** Welcome (what's missing) → Engine (core tiles; no folder step, since repos come with each project) → Accounts (GitHub through `gh`, no stored token; Jira: personal token **or** the engine's Atlassian MCP — open choice) → All set.
+2. **Home and projects.** Empty Home (Import / Create) → Import (Jira project + GitHub repos, already local or cloned; the AI reads the repos and proposes project notes — stack, how to test, conventions — for the user to confirm) → Create: the idea (name, description, kind of software, team standards; the AI asks clarifying questions) → Create: stack decisions one by one (repos, frontend, DB, auth, hosting, CI; option cards with trade-offs; each saved as an ADR) → Create: confirm (GitHub repo, Jira project, scaffold, CI, ADRs, first tickets proposed by the AI, a progress checklist; one confirmation for actions on real accounts).
+3. **Daily work.** Hoy → Project (board by Jira status with agent badges; tabs Tickets / PRs / Repos / Notes & decisions) → Take ticket (readiness check, e.g. missing AC → the AI proposes them or asks the PO; repos estimated by the AI; decision or console mode; when the agent stops; what the app does on start; estimated usage).
+4. **Ticket.** Decision mode and console mode with a mode toggle; review by decisions; after the PR.
+5. **Settings.** Core tabs + **Accounts** (GitHub, Jira, extra MCPs for the agents) + **Agents** (parallel limit, model per stage, default mode); project settings (repos, stage ↔ Jira status mapping, test/run commands, PR template/reviewers/branch naming, project notes & decisions).
+
+Proposals added by Claude in v2, not yet confirmed by Marco: readiness check when taking a ticket; "when does the agent stop me" autonomy levels; ADRs for stack decisions; the AI proposing first tickets; project notes learned at import; extra MCPs in settings; a "New ticket" button.
+
+Mockup v1 (2026-10-20, superseded by v2): https://claude.ai/artifact/JkYwnWjmArqrHzSz92A5CV
 
 1. **Hoy.** Tickets in parallel, grouped as "waiting for you" / in progress (phase, worktree, model tier) / next from Jira; plan usage visible.
 2A. **Ticket, console first** (cockpit-like): ticket on the left, interactive terminal in the center, changes/PR on the right.
@@ -117,6 +127,13 @@ _not started_
 | External integrations as harness capabilities (Jira, GitHub through `gh`/MCP) | dev | proposed | Auth: reuse the user's CLI/MCP; no app-held OAuth tokens (3d rule) |
 | "What the AI takes into account" panel + add/pin context | dev | proposed | Visible version of the session-start context |
 | Embedded terminal (PTY) as an optional "go down" drawer | dev | proposed | Core runs headless turns; an interactive CLI is a new engine mode |
+| Multi-step setup with extra steps declared by the harness (accounts) | dev | proposed (v2) | Core setup has fixed steps (folder, engine) |
+| Accounts / connections registry (CLI-backed or token, tested) + an extra-MCP list | dev | proposed (v2) | Settings tab provided by core |
+| Project = named group of folders + external source (Jira project) | dev | proposed (v2) | Generalizes "the folder" |
+| Learn on import: the AI proposes project notes the user confirms | dev | proposed (v2) | Uses notes; needs a confirm-notes block |
+| Wizard of sequential decisions (options with trade-offs, one at a time, saved as decisions) | dev | proposed (v2) | Likely generic: thinker/writer/teacher? |
+| Single confirmation for outward actions (create repo, create tickets) with a progress checklist | dev | proposed (v2) | Pairs with the core's "warn before heavy actions" |
+| Autonomy level per task (where the flow pauses) | dev | proposed (v2) | Flow/manifest-level setting |
 | Requirement coverage view (criteria ↔ evidence) | dev | proposed | Possibly generic: teacher/student goals? check later |
 
 ## Open questions across harnesses

@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Proyecto</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;color:#1d1d1f}
+a{color:#0a5bc4}a:hover{color:#083f88}
+.side a{display:block;padding:7px 10px;border-radius:6px;color:#1d1d1f;text-decoration:none;font-size:13px}
+.k{font-size:12px;color:#5f5f66;font-weight:600}
+.pill{font-size:11px;font-weight:600;padding:3px 8px;border-radius:999px;white-space:nowrap}
+.btn{font:inherit;font-size:13px;padding:7px 12px;border-radius:7px;border:1px solid #d2d2d7;background:#fff;color:#1d1d1f;cursor:pointer;text-decoration:none}
+.btn.p{background:#0a5bc4;border-color:#0a5bc4;color:#fff}
+.tab{font:inherit;font-size:13px;padding:7px 12px;border:0;border-radius:7px;background:transparent;cursor:pointer;color:#3a3a40}
+.col{background:#ececf0;border-radius:10px;padding:10px;display:flex;flex-direction:column;gap:8px}
+.t{background:#fff;border:1px solid #e3e3e8;border-radius:8px;padding:10px;display:flex;flex-direction:column;gap:6px;font-size:13px;text-decoration:none;color:#1d1d1f}
+</style>
+</helmet>
+<div style="width:1440px;height:900px;display:flex;background:#f5f5f7">
+  <nav class="side" aria-label="Navegación" style="width:220px;padding:20px 12px;display:flex;flex-direction:column;gap:2px;border-right:1px solid #e3e3e8;background:#ececf0">
+    <div style="font-weight:700;font-size:15px;padding:0 10px 14px">Dev Harness</div>
+    <a href="Main.dc.html">Hoy</a>
+    <div class="k" style="padding:18px 10px 6px">PROYECTOS</div>
+    <a href="#" style="background:#dcdce2;font-weight:600">Tienda web</a>
+    <a href="#">App interna</a>
+    <a href="InicioVacio.dc.html" style="color:#0a5bc4">+ Agregar proyecto</a>
+    <div style="flex:1"></div>
+    <a href="AjustesCuentas.dc.html">Ajustes</a>
+  </nav>
+  <main style="flex:1;padding:24px 28px;display:flex;flex-direction:column;gap:16px;min-width:0">
+    <div style="display:flex;align-items:center;gap:12px">
+      <h1 style="margin:0;font-size:24px">Tienda web</h1>
+      <span class="k">SHOP · shop-api, shop-web</span>
+      <div style="flex:1"></div>
+      <a class="btn" href="AjustesProyecto.dc.html">Ajustes del proyecto</a>
+      <button class="btn">Nuevo ticket</button>
+    </div>
+    <div role="tablist" style="display:flex;gap:4px;border-bottom:1px solid #e3e3e8;padding-bottom:8px">
+      <button class="tab" role="tab" aria-selected="true" style="background:#dcdce2;font-weight:600">Tickets</button>
+      <button class="tab" role="tab">Pull requests (3)</button>
+      <button class="tab" role="tab">Repos</button>
+      <button class="tab" role="tab">Notas y decisiones</button>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;font-size:13px">
+      <span class="k">MOSTRAR</span>
+      <button class="btn" style="background:#dbe8fb;border-color:#0a5bc4">Sprint 14</button>
+      <button class="btn">Asignados a mí</button>
+      <button class="btn">Todo el backlog</button>
+    </div>
+    <div style="flex:1;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;min-height:0">
+      <section class="col" aria-label="To Do">
+        <div class="k">TO DO · 3</div>
+        <a class="t" href="TomarTicket.dc.html"><span class="k">SHOP-155</span><span>Mostrar stock en la ficha</span><span style="color:#5f5f66;font-size:12px">Alta · sin agente</span></a>
+        <div class="t"><span class="k">SHOP-158</span><span>Envío gratis desde un monto</span><span style="color:#5f5f66;font-size:12px">Media · sin agente</span></div>
+        <div class="t"><span class="k">SHOP-160</span><span>Accesibilidad del checkout</span><span style="color:#5f5f66;font-size:12px">Media · sin agente</span></div>
+      </section>
+      <section class="col" aria-label="En progreso">
+        <div class="k">EN PROGRESO · 3</div>
+        <a class="t" href="TicketDecisiones.dc.html"><span class="k">SHOP-142</span><span>Recuperar contraseña por email</span><span class="pill" style="background:#fdebd0;color:#7a4a00;align-self:flex-start">Te espera: elegir plan</span></a>
+        <div class="t"><span class="k">SHOP-151</span><span>Exportar pedidos a CSV</span><span class="pill" style="background:#dbe8fb;color:#0a3f8a;align-self:flex-start">Agente implementando</span></div>
+        <a class="t" href="Review.dc.html"><span class="k">SHOP-138</span><span>Filtro de productos por talle</span><span class="pill" style="background:#fdebd0;color:#7a4a00;align-self:flex-start">Te espera: revisar</span></a>
+      </section>
+      <section class="col" aria-label="En review">
+        <div class="k">EN REVIEW · 1</div>
+        <a class="t" href="PostPR.dc.html"><span class="k">SHOP-129</span><span>Cupones por categoría</span><span class="pill" style="background:#f7d9d6;color:#8a1c12;align-self:flex-start">PR #212 · CI en rojo</span></a>
+      </section>
+      <section class="col" aria-label="Hecho">
+        <div class="k">HECHO · 9</div>
+        <div class="t"><span class="k">SHOP-133</span><span>Carrito persistente</span><span style="color:#5f5f66;font-size:12px">PR #208 mergeado</span></div>
+      </section>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

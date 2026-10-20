@@ -22,13 +22,13 @@ Manifest (`defineHarness`) with actions + tiers + `path`; blocks (`defineBlock`,
 
 | Harness | Interview | Mockup | Features extracted |
 |---|---|---|---|
-| dev | in progress | – | – |
+| dev | rounds 1–2 done | v1 in progress | – |
 | student | – | – | – |
 | teacher | – | – | – |
 | thinker | – | – | – |
 | writer | – | – | – |
 
-**Next step:** dev harness round 2 (ORCA reference, Jira/GitHub auth, terminal vs flow, worktrees, ticket context).
+**Next step:** dev harness mockup v1. Compare a console-first layout (cockpit-like) with a decision-first layout (flow + decision log in the center, console/diff as a drawer). Q7 (which cockpit parts carry over) is still pending.
 
 ## Harnesses
 
@@ -45,6 +45,17 @@ Answers, round 1 (2026-10-20):
 - **Folder.** The user picks one project folder or several, each with its own repo. The remote repo matters much more than in other harnesses.
 - **Decisions.** Daily dev work: drive the implementation, review the diff with AI help, etc.
 - **Output.** Depends on the work; most of it ends in a PR.
+
+Answers, round 2 (2026-10-20):
+
+- **Vision (key).** ORCA is very code-centric. The dev harness sits further from the code: between the ticket's product information and the code that represents it. "An app for devs that takes them away from the code but gives them control over the agentic flow." They can go down to the code when needed; when everything goes well they can skip the code entirely.
+- **From ORCA.** Several agents in parallel, one worktree per task, a diff viewer — or rather a viewer of **the dev's and the AI's decisions**, used for review.
+- **Console vs guided flow.** Open. His first idea is cockpit-style console access, but he is open to an approach more useful for this task. To explore it in the mockup.
+- **Parallelism.** Yes, several tickets at once.
+- **Ticket context.** All of it: description + AC, Jira comments, linked tickets, plan, notes, branch + diff, PR status, CI, review comments. All of it is key for the dev to understand what is being done.
+- **Integrations.** For now: Jira, GitHub, MCPs, and `gh` CLI.
+- **Ticket lifecycle.** Yes: the app moves Jira states, and after the PR it reads review comments + CI and helps resolve them.
+- Still open: which cockpit parts carry over (Hoy inbox, Camino view, advisors, version pilot, Taller, re-injecting context after compaction).
 
 Reference: cockpit inventory (read from `workspace/cockpit`, 2026-10-20):
 

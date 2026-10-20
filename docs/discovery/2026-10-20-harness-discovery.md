@@ -142,6 +142,39 @@ Answers, round 2 (partial, 2026-10-20):
 - **Who picks the method.** The AI recommends one from topic + profile and explains why; the student decides and can switch at any time.
 - **Summaries and flashcards.** The student writes them and the AI corrects them (writing is part of studying).
 
+Answers, round 3 (2026-10-20):
+
+- **Profiles.** Several profiles per install. Each profile has its own style and settings.
+- **Main object.** The topic. Several topics can be open at once.
+- **Ingestion.** The user decides whether the AI sticks strictly to the material or mixes it with its own knowledge.
+- **Adult.** Only accompanies; there is no adult feature.
+- **Map and session.** Marco asked Claude to propose an approach. On session goals: "sometimes a goal is good, sometimes not".
+
+Claude's proposal (2026-10-20, waiting for Marco's OK):
+
+- **Map.**
+  - The AI builds a concept map when the topic is created, from the material or from its own knowledge. Concepts are linked by prerequisites.
+  - Each concept has one of 5 states: not seen / seen / practising / mastered / review due.
+  - A state moves up **only with evidence**:
+    - recall answers correct in different sessions;
+    - an explanation (Feynman) without gaps;
+    - an exercise solved without hints.
+  - The student cannot mark a concept as mastered alone, but can flag "this is hard for me".
+  - Mastered concepts drop to "review due" over time (spaced repetition).
+  - Clicking a concept shows its evidence, its flashcards and the student's summary.
+- **Session.**
+  - Start in one of two ways:
+    - **with a goal**: concepts from the map, or "prepare an exam" over a set;
+    - **free**: explore or ask.
+  - The app suggests a "for today": due reviews + the next concept whose prerequisites are done.
+  - Optional time box (15/30/45 min); the app wraps up when it ends.
+  - Shape:
+    1. warm-up recall over due items (2–3 quick questions);
+    2. main block with the chosen method;
+    3. close: the student writes a short summary (the AI corrects it) and flashcards for what was new;
+    4. the map updates and open questions are saved.
+  - The student ends the session, or the AI suggests ending when the goal is met.
+
 Reference: socrates-app inventory (read from `workspace/socrates-app`, 2026-10-20):
 
 - Local Next.js app (rioplatense Spanish). One `claude -p` per message (stream-json, `--resume`), streamed to the page over SSE. Tools limited to Read/Glob/Grep/Edit/Write/Web*/TodoWrite.

@@ -28,7 +28,7 @@ Manifest (`defineHarness`) with actions + tiers + `path`; blocks (`defineBlock`,
 | thinker | – | – | – |
 | writer | – | – | – |
 
-**Next step:** Marco reviews student mockup v1 (https://claude.ai/artifact/WASSbMqoJYVBsAo41fx6nK, 15 screens). After he verifies it: a testable clickable mockup (the `prototyper` agent, into `docs/discovery/prototypes/student/`).
+**Next step:** Marco reviews student mockup v1 (https://claude.ai/artifact/WASSbMqoJYVBsAo41fx6nK, 15 screens). 2026-10-20: Marco asked for the testable version. The `prototyper` agent is building it into `docs/discovery/prototypes/student/index.html` (in progress).
 
 **Dev is parked (Marco, 2026-10-20: "por ahora dejamos este harness así").** Still open there, to revisit later: Marco's test of the prototype (https://claude.ai/artifact/M3j64DEJFiekVj98fbdVn3, source `docs/discovery/prototypes/dev/index.html`), the Claude proposals listed under dev, and Q7 (which cockpit parts carry over).
 

@@ -128,6 +128,20 @@ Answers, round 1 (2026-10-20):
 - **First run.** Ask the user about themselves to understand what kind of student they are.
 - **Process.** Finish the questions, then mockups. No implementation (Marco: "nada de implementar").
 
+Answers, round 2 (partial, 2026-10-20):
+
+- **From Socrates.** Its method carries over, but as **one** of several methods. The app must offer several **proven, well-known** methods.
+- **Methods (all 7 chosen).**
+  - Socratic, from Socrates: pre-exercise, then questions.
+  - Feynman technique: the student explains; the AI flags gaps.
+  - Retrieval practice: active recall + flashcards with spaced repetition.
+  - Worked examples with fading.
+  - Elaboration: why / how does it connect.
+  - Interleaved practice.
+  - Problem-based learning.
+- **Who picks the method.** The AI recommends one from topic + profile and explains why; the student decides and can switch at any time.
+- **Summaries and flashcards.** The student writes them and the AI corrects them (writing is part of studying).
+
 Reference: socrates-app inventory (read from `workspace/socrates-app`, 2026-10-20):
 
 - Local Next.js app (rioplatense Spanish). One `claude -p` per message (stream-json, `--resume`), streamed to the page over SSE. Tools limited to Read/Glob/Grep/Edit/Write/Web*/TodoWrite.

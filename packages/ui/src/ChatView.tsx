@@ -16,7 +16,6 @@ import {
 } from "./client";
 import { ErrorCard, isFixable, problemError } from "./ErrorCard";
 import { FlowSide } from "./FlowSide";
-import { uiLanguage } from "./FolderStep";
 import { HistoryPanel } from "./HistoryPanel";
 import { type BlockActions, type BlockProps, Message } from "./Message";
 import { markdownToPlain } from "./markdown";
@@ -123,7 +122,6 @@ export function ChatView({
   // Set synchronously on send so two quick clicks can't both pass before the live turn renders.
   const busy = useRef(false);
   const wasLive = useRef(false);
-  const lang = uiLanguage(state, i18n.language);
   const engineOption = state.engines.find((e) => e.id === state.config.engineId);
   const engine = engineOption?.name ?? state.config.engineId ?? "";
   /** Any harness with actions runs as tasks: topics, a guided path, one task on screen at a time. */
@@ -134,7 +132,7 @@ export function ChatView({
   const fallback = tasks.current?.fallback;
   const all = useMemo(() => ({ ...components, choices: ChoicesBlock as ComponentType<BlockProps> }), [components]);
   const stale = useMemo(() => ({ ...all, choices: StaleChoices }), [all]);
-  const labelOf = (id: string) => state.actions[id]?.label[lang] ?? id;
+  const labelOf = (id: string) => state.actions[id]?.label ?? id;
 
   useEffect(() => {
     client.loadChat().then(
@@ -384,7 +382,7 @@ export function ChatView({
 
   return (
     <div className="hh-app">
-      <TopBar title={state.harness.name[lang]} mock={state.mock}>
+      <TopBar title={state.harness.name} mock={state.mock}>
         <UsageMeter engine={engineOption} limits={chat.limits} lastTokens={lastTurnTokens(chat.entries)} />
         {onHome && <button onClick={onHome}>{t("chat.home")}</button>}
         <button
@@ -406,7 +404,6 @@ export function ChatView({
         {flow && (
           <FlowSide
             state={state}
-            lang={lang}
             tasks={tasks}
             disabled={blocked() || !loaded}
             onStart={startTopic}
@@ -430,7 +427,6 @@ export function ChatView({
             {showStart && (
               <StartView
                 state={state}
-                lang={lang}
                 tasks={tasks}
                 copy={startView}
                 notice={notice}
@@ -557,7 +553,6 @@ export function ChatView({
         <HistoryPanel
           client={client}
           actions={state.actions}
-          lang={lang}
           disabled={Boolean(chat.live) || closing || checkpoint}
           onClose={() => setShowHistory(false)}
           onRestored={(kind) => {
@@ -571,7 +566,6 @@ export function ChatView({
         <NotesPanel
           notes={tasks.notes}
           expanded={notesPanel.expanded}
-          lang={lang}
           disabled={blocked()}
           onResume={resume}
           onOpen={openFile}

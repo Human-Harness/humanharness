@@ -9,14 +9,13 @@ import { renderIn } from "./render";
 
 afterEach(cleanup);
 
-const L = (en: string, es = en) => ({ es, en });
 const ready = { language: "en" as const, folder: "/Users/me/Documents/Demo", engineId: "claude" };
 
 function modelsClient(models?: AppConfig["models"]) {
   const c = new FakeClient({ ...ready, ...(models ? { models } : {}) });
   c.state.actions = {
-    manifest: { label: L("The manifest"), cost: "medium", tier: "standard" },
-    turn: { label: L("A turn"), cost: "medium", tier: "deep" },
+    manifest: { label: "The manifest", cost: "medium", tier: "standard" },
+    turn: { label: "A turn", cost: "medium", tier: "deep" },
   };
   c.state.path = ["manifest", "turn"];
   c.state.engines.push({ ...c.state.engines[0], id: "codex", name: "Codex", reportsLimits: false });

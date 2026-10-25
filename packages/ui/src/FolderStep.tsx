@@ -1,21 +1,15 @@
 import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { Language } from "@humanharness/harness-sdk";
 import type { AppState, FolderProblem, HarnessClient } from "./client";
-
-/** The current UI language as a harness language. */
-export function uiLanguage(state: AppState, i18nLanguage: string): Language {
-  const languages = state.harness.languages;
-  return state.config.language ?? (languages.includes(i18nLanguage as Language) ? (i18nLanguage as Language) : languages[0]);
-}
+import { systemLanguage } from "./language";
 
 /**
  * The setup flow's folder step (spec §7: chosen once, then fixed). Saves the language with it. It shows no save
  * button of its own: a button in the flow's footer with `form={formId}` submits it.
  */
 export function FolderStep({ client, state, onSaved, formId }: { client: HarnessClient; state: AppState; onSaved: (s: AppState) => void; formId: string }) {
-  const { t, i18n } = useTranslation();
-  const lang = uiLanguage(state, i18n.language);
+  const { t } = useTranslation();
+  const lang = state.config.language ?? systemLanguage();
   const locations = state.backup?.locations ?? [];
   // A synced place comes first (spec 3d §2): the folder survives losing the computer.
   // Back in the setup flow, the folder just saved is still the choice.

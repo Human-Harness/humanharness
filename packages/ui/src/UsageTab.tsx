@@ -2,7 +2,6 @@ import { useEffect, useId, useState } from "react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import type { AppState, EngineOption, HarnessClient, LimitWindow, UsageSummary } from "./client";
-import { uiLanguage } from "./FolderStep";
 import { QUESTIONS, taskRows } from "./ModelsTab";
 import { WARN_AT, compactTokens, compareTokens, formatReset, percent, timesFit, timesLeft } from "./usage";
 import { useCurrentWindows } from "./UsageMeter";
@@ -99,8 +98,7 @@ function TopicTable({
   labelledBy: string;
 }) {
   const { t, i18n } = useTranslation();
-  const lang = uiLanguage(state, i18n.language);
-  const rows = taskRows(state, lang, { key: QUESTIONS, label: t("models.questions") });
+  const rows = taskRows(state, { key: QUESTIONS, label: t("models.questions") });
   const kind = usage.primary;
   const measured = rows.filter((r) => (reportsLimits ? usage.estimates[r.key] : usage.tokens[r.key]) !== undefined);
   const tokens = measured.map((r) => usage.tokens[r.key]).filter((n) => n !== undefined);

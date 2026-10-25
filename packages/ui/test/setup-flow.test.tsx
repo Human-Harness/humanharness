@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-libra
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AppState } from "../src/client";
+import { systemLanguage } from "../src/language";
 import { SetupFlow } from "../src/SetupFlow";
 import { FakeClient } from "./fake-client";
 import { renderIn } from "./render";
@@ -35,7 +36,7 @@ describe("SetupFlow", () => {
 
     fireEvent.click(next());
     const engineHeading = await screen.findByRole("heading", { name: "Which AI does Demo use?" });
-    expect(client.state.config).toEqual({ language: "en", folder: "/Users/me/Documents/Demo" });
+    expect(client.state.config).toEqual({ language: systemLanguage(), folder: "/Users/me/Documents/Demo" });
     expect(document.activeElement).toBe(engineHeading);
     expect(steps()[0].querySelector("svg")).toBeTruthy();
     expect(steps()[1].getAttribute("aria-current")).toBe("step");
@@ -147,16 +148,15 @@ describe("SetupFlow", () => {
     client.state = {
       ...client.state,
       mock: true,
-      engines: [{ ...client.state.engines[0], name: "IA simulada (mock)", provider: "Human Harness", logo: undefined, reportsLimits: false, mock: true }],
+      engines: [{ ...client.state.engines[0], name: "Mock AI", provider: "Human Harness", logo: undefined, reportsLimits: false, mock: true }],
     };
-    await renderIn("es", <Flow client={client} />);
-    expect(screen.getByRole("banner").textContent).toContain("Modo prueba (sin IA)");
-    expect(screen.getByText(/En modo prueba hay un solo motor/)).toBeTruthy();
-    const siguiente = screen.getByRole("button", { name: "Siguiente" }) as HTMLButtonElement;
-    await waitFor(() => expect(siguiente.disabled).toBe(false));
-    fireEvent.click(siguiente);
-    await screen.findByRole("heading", { name: "Todo listo" });
-    expect(screen.getByText("IA simulada (mock) · Modelo de prueba")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Iniciar Demo" })).toBeTruthy();
+    await renderIn("en", <Flow client={client} />);
+    expect(screen.getByRole("banner").textContent).toContain("Test mode (no AI)");
+    expect(screen.getByText(/In test mode there is only one engine/)).toBeTruthy();
+    await waitFor(() => expect(next().disabled).toBe(false));
+    fireEvent.click(next());
+    await screen.findByRole("heading", { name: "All set" });
+    expect(screen.getByText("Mock AI · Test model")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Start Demo" })).toBeTruthy();
   });
 });

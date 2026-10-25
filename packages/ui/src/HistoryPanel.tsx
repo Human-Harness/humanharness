@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { Language } from "@humanharness/harness-sdk";
 import {
   type ActionOption,
   BEFORE_MESSAGE,
@@ -47,7 +46,6 @@ const triggerId = (r: Restore) => `hh-history-back-${r.kind}-${r.id}`;
 export function HistoryPanel({
   client,
   actions,
-  lang,
   onClose,
   onRestored,
   disabled = false,
@@ -55,7 +53,6 @@ export function HistoryPanel({
   client: HarnessClient;
   /** The harness's actions: a task's row shows its action's label. */
   actions: Record<string, ActionOption>;
-  lang: Language;
   onClose: () => void;
   /** Called after a restore succeeded, before the panel closes. */
   onRestored?: (kind: Restore["kind"]) => void;
@@ -168,7 +165,7 @@ export function HistoryPanel({
     if (g.taskId === null) return t("history.other");
     if (g.actionId === null) return t("history.question");
     // An action the harness no longer has (or a trailer such as "toString") is just "a task".
-    return Object.hasOwn(actions, g.actionId) ? actions[g.actionId].label[lang] : t("history.task");
+    return Object.hasOwn(actions, g.actionId) ? actions[g.actionId].label : t("history.task");
   };
   const entryText = (e: HistoryItem) => {
     const label = entryLabel(e.message);

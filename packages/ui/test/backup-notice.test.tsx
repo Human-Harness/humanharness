@@ -133,9 +133,9 @@ describe("BackupNotice", () => {
   it("says so when the place picker can't open", async () => {
     const client = localClient();
     client.pickFolder = async () => Promise.reject(new Error("ipc"));
-    await renderIn("es", <Notice client={client} />);
-    fireEvent.click(screen.getByRole("button", { name: "Elegir otro lugar…" }));
-    expect((await screen.findByRole("alert")).textContent).toBe("No pude abrir la ventana para elegir un lugar. Probá de nuevo.");
+    await renderIn("en", <Notice client={client} />);
+    fireEvent.click(screen.getByRole("button", { name: "Choose another place…" }));
+    expect((await screen.findByRole("alert")).textContent).toBe("I couldn't open the window to choose a place. Try again.");
     expect(client.moved).toEqual([]);
   });
 
@@ -175,14 +175,14 @@ describe("BackupNotice", () => {
     );
   });
 
-  it("has its own card for every failure, in Spanish too", async () => {
+  it("has its own card for every failure", async () => {
     const errors: MoveError[] = ["busy", "exists", "inside", "unsuitable", "no-space", "no-permission", "mismatch", "failed"];
     const seen = new Set<string>();
     for (const error of errors) {
       const client = localClient();
       client.moveResult = { ok: false, error };
-      await renderIn("es", <Notice client={client} />);
-      fireEvent.click(screen.getByRole("button", { name: "Mover a Google Drive" }));
+      await renderIn("en", <Notice client={client} />);
+      fireEvent.click(screen.getByRole("button", { name: "Move to Google Drive" }));
       const text = (await screen.findByRole("alert")).textContent ?? "";
       expect(text).not.toContain("backup.");
       seen.add(text);
@@ -202,12 +202,12 @@ describe("BackupNotice", () => {
   it("says where the old folder stayed when it was kept", async () => {
     const client = localClient();
     client.moveResult = { ok: true, leftBehind: folder, state: { ...client.state, backup: { status: { kind: "synced", provider: "google-drive" }, locations: [] } } };
-    await renderIn("es", <Notice client={client} />);
-    fireEvent.click(screen.getByRole("button", { name: "Mover a Google Drive" }));
-    // "Moviendo tu carpeta…" is a status too while the move runs.
+    await renderIn("en", <Notice client={client} />);
+    fireEvent.click(screen.getByRole("button", { name: "Move to Google Drive" }));
+    // "Moving your folder…" is a status too while the move runs.
     await waitFor(() =>
       expect(screen.getByRole("status").textContent).toBe(
-        `Tu carpeta ahora está en ${folder}. La vieja sigue en ${folder}: revisala y borrala vos cuando ya no la necesites.`,
+        `Your folder is now in ${folder}. The old one is still at ${folder}: check it and delete it yourself when you no longer need it.`,
       ),
     );
   });
@@ -384,9 +384,9 @@ describe("Settings › General backup row", () => {
     expect((await screen.findByRole("alert")).textContent).toBe("There's already a folder with that name there. Choose another place.");
   });
 
-  it("shows a local folder's status in Spanish", async () => {
-    await renderIn("es", <Sheet client={localClient()} />);
-    expect(screen.getByText("Solo en esta compu")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Mover a Google Drive" })).toBeTruthy();
+  it("shows a local folder's status and offers the move", async () => {
+    await renderIn("en", <Sheet client={localClient()} />);
+    expect(screen.getByText("Only on this computer")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Move to Google Drive" })).toBeTruthy();
   });
 });

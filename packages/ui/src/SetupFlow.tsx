@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { CheckIcon, TopBar } from "./chrome";
 import type { AppState, HarnessClient } from "./client";
 import { EngineTab } from "./EngineTab";
-import { FolderStep, uiLanguage } from "./FolderStep";
+import { FolderStep } from "./FolderStep";
 
 type Step = "folder" | "engine" | "done";
 
@@ -23,8 +23,8 @@ export function SetupFlow({
   /** "Start <name>" on the last step: the work screen. */
   onStart: () => void;
 }) {
-  const { t, i18n } = useTranslation();
-  const name = state.harness.name[uiLanguage(state, i18n.language)];
+  const { t } = useTranslation();
+  const name = state.harness.name;
   // A saved folder can't be changed here (it moves from Settings › General): the flow starts at the engine.
   const [withFolder] = useState(!state.config.folder);
   const [step, setStep] = useState<Step>(withFolder ? "folder" : "engine");

@@ -80,7 +80,7 @@ export interface TaskDeps {
   /** The harness's blocks the person answers, by name (input-blocks spec). Absent or empty: none (spec D0). */
   inputBlocks?: Record<string, InputBlock>;
   /** Puts an answer on its block in the chat of `chat` (input-blocks spec §8). False (logged): no unanswered block had that id. */
-  markAnswered?(chat: string, answer: BlockAnswer): Promise<boolean | void>;
+  markAnswered?(chat: string, answer: BlockAnswer): Promise<boolean>;
   /** Writes an answer's records to a data collection, as the person, in `scope` (spec §6 `saveTo`). Throws a refusal. */
   saveAnswer?(collection: string, records: Record<string, unknown>[], scope: string): Promise<void>;
   now?: () => Date;

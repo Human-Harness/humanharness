@@ -5,8 +5,12 @@ import type {
   ChoiceOption,
   DataKey,
   DataRecord,
+  InputField,
+  InputIssue,
+  InputSpec,
   Language,
   LocalizedText,
+  RespondResult,
   ScopeMode,
   Tier,
 } from "@humanharness/harness-sdk";
@@ -148,6 +152,8 @@ export interface AppState {
   path?: string[];
   /** The harness's unit of work (manifest `scopes`): what to call it. Absent: no scopes (spec D2). */
   scopes?: { label: LocalizedText; plural: LocalizedText };
+  /** The blocks the person answers, by name: how the core form draws each (input-blocks spec §5). Absent: none (D0). */
+  inputs?: Record<string, InputSpec>;
   /** Folders the agent can read but never change. */
   references?: ReferenceView[];
   /** Settings › Modelos. */
@@ -470,6 +476,11 @@ export interface HarnessClient {
    * `task` is the task the block was shown for; a block of an earlier task is refused.
    */
   choose(option: ChoiceOption, task: string): Promise<void>;
+  /**
+   * The person's answer to input block `blockId` (input-blocks spec §4). Resolves with the refusal and its field
+   * errors, or with the chat's line once the answer is taken; the agent's turn then arrives as events.
+   */
+  respond(blockId: string, value: Record<string, unknown>): Promise<RespondResult>;
   /** Opens a file inside the reference folders or the user's folder in its default app. False when refused or missing. */
   openPath(path: string): Promise<boolean>;
   /** Shows a file inside the reference folders or the user's folder in Finder (any kind of file). False when refused or missing. */
@@ -510,4 +521,4 @@ export function isConfigured(config: AppConfig): config is ConfiguredApp {
   return Boolean(config.language && config.folder && config.engineId);
 }
 
-export type { ChoiceOption, Event, EngineError, LimitWindow };
+export type { BlockAnswer, ChoiceOption, Event, EngineError, InputField, InputIssue, InputSpec, LimitWindow, RespondResult };

@@ -77,7 +77,10 @@ function setup(
     changed: (v) => views.push(v),
     emit: (e) => void emitted.push(e),
     ...(opts.inputs === false ? {} : { inputBlocks: opts.inputs ?? { commit_answer: commit } }),
-    markAnswered: opts.markAnswered ?? (async (chat, answer) => void marked.push({ chat, answer })),
+    markAnswered: opts.markAnswered ?? (async (chat, answer) => {
+      marked.push({ chat, answer });
+      return true;
+    }),
     ...(opts.scoped ? { scoped: true, scopeExists: async (id: string) => id === "fracciones" } : {}),
     ...(opts.saveAnswer ? { saveAnswer: opts.saveAnswer } : {}),
     now: () => new Date(NOW),

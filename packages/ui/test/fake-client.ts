@@ -16,6 +16,7 @@ import type {
   HistoryItem,
   HistoryTaskView,
   MoveResult,
+  RespondResult,
   RunningSetup,
   ScopeView,
   ScopesView,
@@ -306,6 +307,17 @@ export class FakeClient implements HarnessClient {
     this.chosen.push(option);
     this.chosenTasks.push(task);
     if (this.chooseError) throw this.chooseError;
+  }
+  /** What respond was asked, in order. */
+  responded: { blockId: string; value: Record<string, unknown> }[] = [];
+  /** What respond answers; default: taken, with the line "answered". */
+  respondResult: RespondResult | null = null;
+  /** When set, respond rejects with it. */
+  respondError: Error | null = null;
+  async respond(blockId: string, value: Record<string, unknown>): Promise<RespondResult> {
+    this.responded.push({ blockId, value });
+    if (this.respondError) throw this.respondError;
+    return this.respondResult ?? { ok: true, display: "answered", value, answeredAt: "2026-10-25T10:00:00.000Z" };
   }
   /** Files revealPath was asked to show. */
   revealedFiles: string[] = [];

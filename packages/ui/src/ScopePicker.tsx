@@ -1,6 +1,7 @@
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, type KeyboardEvent, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { HarnessClient, ScopeView } from "./client";
+import type { AppState, HarnessClient, ScopeView } from "./client";
+import { uiLanguage } from "./FolderStep";
 
 /**
  * The top bar's scope picker (spec §3.4): the active scopes, "none", and a new one. The minimum a harness with
@@ -8,13 +9,13 @@ import type { HarnessClient, ScopeView } from "./client";
  */
 export function ScopePicker({
   client,
-  label,
+  state,
   open,
   disabled = false,
 }: {
   client: HarnessClient;
-  /** What the harness calls a scope (manifest `scopes.label`). */
-  label: { es: string; en: string };
+  /** The harness state: its `scopes.label` is what the harness calls a scope. */
+  state: AppState;
   open: string | null;
   disabled?: boolean;
 }) {
@@ -23,26 +24,51 @@ export function ScopePicker({
   const [adding, setAdding] = useState(false);
   const [title, setTitle] = useState("");
   const [failed, setFailed] = useState(false);
+  const addButton = useRef<HTMLButtonElement>(null);
+  /** Focus goes back to the Add button once the form is gone. */
+  const refocus = useRef(false);
+  useEffect(() => {
+    if (!adding && refocus.current) {
+      refocus.current = false;
+      addButton.current?.focus();
+    }
+  }, [adding]);
   useEffect(() => {
     let live = true;
+    // A change that has arrived is newer than the first reply, which may have been in flight before it.
+    let seen = false;
     client.scopes.list().then(
       (l) => {
-        if (live) setList(l);
+        if (live && !seen) setList(l);
       },
       () => undefined,
     );
-    const off = client.scopes.onChange((v) => setList(v.list));
+    const off = client.scopes.onChange((v) => {
+      seen = true;
+      setList(v.list);
+    });
     return () => {
       live = false;
       off();
     };
   }, [client]);
-  const name = i18n.language.startsWith("es") ? label.es : label.en;
+  const name = state.scopes?.label[uiLanguage(state, i18n.language)] ?? "";
   // An archived scope still shows while it is the open one, so the select never lies.
   const shown = list.filter((s) => !s.archived || s.id === open);
   const pick = (id: string | null) => {
     setFailed(false);
     client.scopes.open(id).catch(() => setFailed(true));
+  };
+  const close = () => {
+    refocus.current = true;
+    setAdding(false);
+    setTitle("");
+  };
+  const onKey = (e: KeyboardEvent) => {
+    if (e.key === "Escape") {
+      e.stopPropagation();
+      close();
+    }
   };
   const create = async (e: FormEvent) => {
     e.preventDefault();
@@ -51,6 +77,7 @@ export function ScopePicker({
     setFailed(false);
     try {
       const made = await client.scopes.create(clean);
+      refocus.current = true;
       setTitle("");
       setAdding(false);
       await client.scopes.open(made.id);
@@ -69,23 +96,17 @@ export function ScopePicker({
         ))}
       </select>
       {adding ? (
-        <form onSubmit={(e) => void create(e)}>
+        <form onSubmit={(e) => void create(e)} onKeyDown={onKey}>
           <input aria-label={t("scopes.titleLabel")} value={title} maxLength={120} autoFocus onChange={(e) => setTitle(e.target.value)} />
           <button type="submit" disabled={disabled || !title.trim()}>
             {t("scopes.create")}
           </button>
-          <button
-            type="button"
-            onClick={() => {
-              setAdding(false);
-              setTitle("");
-            }}
-          >
+          <button type="button" onClick={close}>
             {t("scopes.cancel")}
           </button>
         </form>
       ) : (
-        <button disabled={disabled} onClick={() => setAdding(true)}>
+        <button ref={addButton} disabled={disabled} onClick={() => setAdding(true)}>
           {t("scopes.add", { label: name })}
         </button>
       )}

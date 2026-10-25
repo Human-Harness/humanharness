@@ -61,8 +61,8 @@ export function ChatView({
   startView?: StartViewCopy;
   /** What the background check found wrong with the engine, if anything. */
   engineProblem?: EngineProblem | null;
-  /** Harnesses with scopes: the picker shown first in the top bar. */
-  scopeBar?: ReactNode;
+  /** Harnesses with scopes: the picker shown first in the top bar (disabled while a turn runs or a task closes). */
+  scopeBar?: (disabled: boolean) => ReactNode;
   /** Harnesses with scopes: the open scope (its chat is the one on screen). */
   openScope?: string | null;
   onHome?: () => void;
@@ -343,7 +343,7 @@ export function ChatView({
   return (
     <div className="hh-app">
       <TopBar title={state.harness.name[lang]} mock={state.mock}>
-        {scopeBar}
+        {scopeBar?.(blocked())}
         <UsageMeter engine={engineOption} limits={chat.limits} lastTokens={lastTurnTokens(chat.entries)} />
         {onHome && <button onClick={onHome}>{t("chat.home")}</button>}
         <button

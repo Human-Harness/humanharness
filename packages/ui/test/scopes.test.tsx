@@ -31,17 +31,17 @@ describe("scopes in the window", () => {
   it("picks an active scope from the top bar", async () => {
     const client = scopedClient();
     await startWork(<HarnessApp client={client} />);
-    const select = (await screen.findByRole("combobox", { name: "Choose a topic" })) as HTMLSelectElement;
+    const select = (await screen.findByRole("combobox", { name: "Choose topic" })) as HTMLSelectElement;
     await waitFor(() => expect([...select.options].map((o) => o.textContent)).toEqual(["No topic", "Fractions"]));
     fireEvent.change(select, { target: { value: "fracciones" } });
     await waitFor(() => expect(client.openScope).toBe("fracciones"));
-    await waitFor(() => expect((screen.getByRole("combobox", { name: "Choose a topic" }) as HTMLSelectElement).value).toBe("fracciones"));
+    await waitFor(() => expect((screen.getByRole("combobox", { name: "Choose topic" }) as HTMLSelectElement).value).toBe("fracciones"));
   });
 
   it("adds a scope and opens it", async () => {
     const client = scopedClient();
     await startWork(<HarnessApp client={client} />);
-    fireEvent.click(await screen.findByRole("button", { name: "Add a topic" }));
+    fireEvent.click(await screen.findByRole("button", { name: "New topic" }));
     fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "Algebra" } });
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
     await waitFor(() => expect(client.openScope).toBe("algebra"));
@@ -60,7 +60,7 @@ describe("scopes in the window", () => {
     const client = scopedClient();
     const load = vi.spyOn(client, "loadChat");
     await startWork(<HarnessApp client={client} />);
-    await screen.findByRole("combobox", { name: "Choose a topic" });
+    await screen.findByRole("combobox", { name: "Choose topic" });
     await waitFor(() => expect(load).toHaveBeenCalled());
     const before = load.mock.calls.length;
     client.openScope = "fracciones";
@@ -68,10 +68,43 @@ describe("scopes in the window", () => {
     await waitFor(() => expect(load.mock.calls.length).toBeGreaterThan(before));
   });
 
+  it("ignores a late first reply once a change has arrived", async () => {
+    const client = scopedClient();
+    let late: (id: string | null) => void = () => undefined;
+    client.scopes.current = () => new Promise((r) => (late = r));
+    await startWork(<HarnessApp client={client} />);
+    await screen.findByRole("combobox", { name: "Choose topic" });
+    client.openScope = "fracciones";
+    act(() => client.emitScopes());
+    await waitFor(() => expect((screen.getByRole("combobox", { name: "Choose topic" }) as HTMLSelectElement).value).toBe("fracciones"));
+    await act(async () => late(null));
+    expect((screen.getByRole("combobox", { name: "Choose topic" }) as HTMLSelectElement).value).toBe("fracciones");
+  });
+
+  it("disables the picker while a turn is live", async () => {
+    const client = scopedClient();
+    client.openScope = "fracciones";
+    await startWork(<HarnessApp client={client} renderSide={(_s, send) => <button onClick={() => send("Study", { action: "study" })}>go</button>} />);
+    const select = (await screen.findByRole("combobox", { name: "Choose topic" })) as HTMLSelectElement;
+    expect(select.disabled).toBe(false);
+    fireEvent.click(await screen.findByRole("button", { name: "go" }));
+    await waitFor(() => expect((screen.getByRole("combobox", { name: "Choose topic" }) as HTMLSelectElement).disabled).toBe(true));
+    expect((screen.getByRole("button", { name: "New topic" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("closes the add form with Escape and returns focus to the button", async () => {
+    const client = scopedClient();
+    await startWork(<HarnessApp client={client} />);
+    fireEvent.click(await screen.findByRole("button", { name: "New topic" }));
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Name" }), { key: "Escape" });
+    expect(screen.queryByRole("textbox", { name: "Name" })).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "New topic" }));
+  });
+
   it("shows no picker for a harness without scopes (spec D2)", async () => {
     const client = new FakeClient(ready);
     await startWork(<HarnessApp client={client} />);
     await screen.findByRole("button", { name: "Settings" });
-    expect(screen.queryByRole("combobox", { name: /^Choose a/ })).toBeNull();
+    expect(screen.queryByRole("combobox", { name: /^Choose / })).toBeNull();
   });
 });

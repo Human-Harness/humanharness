@@ -353,9 +353,9 @@
     }
   },
   "scopes": {
-    "pick": "Choose a {{label}}",
+    "pick": "Choose {{label}}",
     "none": "No {{label}}",
-    "add": "Add a {{label}}",
+    "add": "New {{label}}",
     "titleLabel": "Name",
     "create": "Create",
     "cancel": "Cancel",

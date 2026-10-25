@@ -34,25 +34,30 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
   const [status, setStatus] = useState<EngineStatus | null>(null);
   const [checkFailed, setCheckFailed] = useState(false);
   const [limits, setLimits] = useState<LimitWindow[] | null>(null);
-  /** Moving the folder: kept here so a move outlives Settings closing or a tab change. */
   /** Harnesses with scopes: the open scope; the work screen's chat is that scope's. */
   const [openScope, setOpenScope] = useState<string | null>(null);
   const hasScopes = Boolean(state?.scopes);
   useEffect(() => {
     if (!hasScopes) return;
     let live = true;
+    // A change that has arrived is newer than the first reply, which may have been in flight before it.
+    let seen = false;
     client.scopes.current().then(
       (id) => {
-        if (live) setOpenScope(id);
+        if (live && !seen) setOpenScope(id);
       },
       () => undefined,
     );
-    const off = client.scopes.onChange((v) => setOpenScope(v.open));
+    const off = client.scopes.onChange((v) => {
+      seen = true;
+      setOpenScope(v.open);
+    });
     return () => {
       live = false;
       off();
     };
   }, [client, hasScopes]);
+  /** Moving the folder: kept here so a move outlives Settings closing or a tab change. */
   const move = useFolderMove(client, setState);
   // Read through a ref so inline `locales` objects don't re-run the load.
   const localesRef = useRef(locales);
@@ -181,7 +186,7 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
             renderSide={renderSide}
             startView={startView}
             openScope={openScope}
-            scopeBar={state.scopes ? <ScopePicker client={client} label={state.scopes.label} open={openScope} /> : undefined}
+            scopeBar={state.scopes ? (disabled) => <ScopePicker client={client} state={state} open={openScope} disabled={disabled} /> : undefined}
             engineProblem={status ? engineProblem(status) : null}
             onHome={() => setScreen("home")}
             onSettings={() => setSettings("general")}

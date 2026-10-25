@@ -664,7 +664,10 @@ function registerIpc() {
   });
   handle("hh:getTasks", () => tasks.view());
   handle("hh:scopes", async () => (await scopesView()).list);
-  handle("hh:scopeCurrent", () => tasks.currentScope());
+  handle("hh:scopeCurrent", async () => {
+    await scopesSettled();
+    return tasks.currentScope();
+  });
   handle("hh:scopeCreate", async (title: unknown) => {
     const created = await (await scopeStore()).create(title);
     await scopesChanged();

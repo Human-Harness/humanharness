@@ -22,6 +22,10 @@ export class EngineUnavailable extends Error {
 export interface TurnOptions extends SendOptions {
   /** The task this turn belongs to: saved on its chat entries and in usage.jsonl. */
   task?: string;
+  /** The task's scope (`_app` included), for usage.jsonl and the history trailer. Harnesses with scopes only. */
+  scope?: string;
+  /** Which scope's chat the turn writes (the open scope's). Absent: `main`, the only chat without scopes. */
+  chat?: string;
   /** `close` for the turn that asks for the task's note; `checkpoint` for the quiet mid-task note. */
   phase?: "run" | "close" | "checkpoint";
   /** What the chat shows as the person's message when the engine gets something else (a task brief). */
@@ -55,8 +59,8 @@ export interface TurnOptions extends SendOptions {
 export interface TurnDeps {
   /** Starts (or returns) the runtime. Null when the engine CLI isn't installed. May throw EngineUnavailable. */
   ensureRuntime: () => Promise<HarnessRuntime | null>;
-  /** The chat log of the configured folder, or null when the app isn't configured yet. */
-  chatLog: () => Promise<ChatLogLike | null>;
+  /** The chat log of the configured folder (`chat`: the scope whose chat it is; absent: `main`), or null when the app isn't configured yet. */
+  chatLog: (chat?: string) => Promise<ChatLogLike | null>;
   stateBlocks: () => Set<string>;
   /** Sends an event to the window. May throw (window gone): that never loses the log entry. */
   emit: (e: Event) => void;
@@ -122,11 +126,11 @@ export class TurnController {
   }
 
   private async run(message: string, options: TurnOptions): Promise<void> {
-    const { action, task, phase, display, followUp, quiet, onEvent, profile, holdModelError, holdFailure, skipUserEntry } = options;
+    const { action, task, scope, chat, phase, display, followUp, quiet, onEvent, profile, holdModelError, holdFailure, skipUserEntry } = options;
     const turn: { cancelled: boolean; running: RunningTurn | null } = { cancelled: false, running: null };
     this.turn = turn;
     try {
-      const log = await this.deps.chatLog();
+      const log = await this.deps.chatLog(chat);
       const engineId = await this.deps.engineId?.().catch(() => undefined);
       if (!log) throw new Error("The app is not set up yet");
       if (!quiet && !skipUserEntry) {
@@ -146,6 +150,7 @@ export class TurnController {
       const meta = (): UsageMeta => ({
         ...(action ? { action } : {}),
         ...(task ? { task } : {}),
+        ...(scope ? { scope } : {}),
         ...(phase ? { phase } : {}),
         ...(profile ? profileMeta(profile) : {}),
         ...(reportedModel ? { reportedModel } : {}),
@@ -214,7 +219,7 @@ export class TurnController {
             this.emit(e);
           }
         }
-      }, { ...(profile ? { profile } : {}), ...(task ? { trailer: { task, ...(action ? { action } : {}) } } : {}) });
+      }, { ...(profile ? { profile } : {}), ...(task ? { trailer: { task, ...(action ? { action } : {}), ...(scope ? { scope } : {}) } } : {}) });
       await turn.running.done;
       await finished;
     } finally {

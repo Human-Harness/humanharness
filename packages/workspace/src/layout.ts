@@ -51,7 +51,7 @@ function collectionName(name: string): string {
 export const dataPath = (scope: string, collection: string): string => `${DATA_PREFIX}${scopeDir(scope)}/${collectionName(collection)}.json`;
 export const dataFile = (base: string, scope: string, collection: string): string => path.join(base, ...dataPath(scope, collection).split("/"));
 export const dataMetaFile = (base: string, scope: string, collection: string): string =>
-  path.join(base, ".harness", "data-meta", scopeDir(scope), `${collectionName(collection)}.json`);
+  path.join(base, ...`${DATA_META_PREFIX}${scopeDir(scope)}/${collectionName(collection)}.json`.split("/"));
 
 /** The scope and collection of a `.harness/data/<scope>/<collection>.json` path; null for anything else. */
 export function parseDataPath(rel: string): { scope: string; collection: string } | null {

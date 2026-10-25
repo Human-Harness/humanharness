@@ -68,6 +68,26 @@ describe("DataStore", () => {
     await expect(store.put("concepts", { id: "a", name: "A", state: "seen" }, { who: "person", scope: "_app" })).rejects.toMatchObject({ code: "no-scope" });
   });
 
+  it("refuses a bad scope, a NaN limit and a missing key with DataError", async () => {
+    const store = new DataStore(tmp(), data);
+    await expect(store.put("concepts", { id: "a", name: "A", state: "seen" }, { who: "person", scope: "../x" })).rejects.toMatchObject({ code: "invalid" });
+    await expect(store.get("profile", undefined, { who: "person", scope: "../x" })).rejects.toBeInstanceOf(DataError);
+    await store.put("concepts", { id: "a", name: "A", state: "seen" }, person);
+    expect((await store.query("concepts", { limit: Number.NaN }, person)).records).toHaveLength(1);
+    await expect(store.get("concepts", undefined, person)).rejects.toMatchObject({ code: "invalid", message: "A key is needed" });
+    await expect(store.patch("concepts", undefined, { state: "seen" }, person)).rejects.toMatchObject({ code: "invalid" });
+    await expect(store.delete("concepts", undefined, person)).rejects.toMatchObject({ code: "invalid" });
+  });
+
+  it("keeps the first of duplicate keys in a hand-edited file and refuses writes until it is fixed", async () => {
+    const base = tmp();
+    const store = new DataStore(base, data);
+    await store.put("concepts", { id: "a", name: "A", state: "seen" }, person);
+    fs.writeFileSync(file(base, ".harness/data/fracciones/concepts.json"), JSON.stringify([{ id: "a", name: "A1", state: "seen" }, { id: "a", name: "A2", state: "seen" }]));
+    expect(await store.query("concepts", {}, person)).toMatchObject({ records: [{ name: "A1" }], total: 1, invalid: 1 });
+    await expect(store.put("concepts", { id: "b", name: "B", state: "seen" }, person)).rejects.toThrow(/\.harness\/data\/fracciones\/concepts\.json/);
+  });
+
   it("lets the agent write only `write` collections and read none of the `none` ones", async () => {
     const store = new DataStore(tmp(), data);
     await expect(store.put("cards", { n: 1, front: "x" }, agent)).rejects.toMatchObject({ code: "refused" });

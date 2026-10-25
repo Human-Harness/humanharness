@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { type Collection, type DataKey, type DataRecord, type DataWho, z } from "@humanharness/harness-sdk";
-import { APP_SCOPE, dataFile, dataMetaFile, dataPath } from "./layout";
+import { APP_SCOPE, dataFile, dataMetaFile, dataPath, isScopeDir } from "./layout";
 
 export type DataErrorCode = "unknown-collection" | "refused" | "invalid" | "not-found" | "broken-file" | "no-scope";
 
@@ -116,6 +116,7 @@ export class DataStore {
   /** The scope folder a request made in `scope` acts on: `_app` for app-wide collections. */
   scopeFor(name: string, scope: string): string {
     const c = this.collection(name);
+    if (!isScopeDir(scope)) throw new DataError("invalid", `Invalid scope: "${scope}"`);
     if (!c.scoped) return APP_SCOPE;
     if (scope === APP_SCOPE) throw new DataError("no-scope", `"${name}" belongs to a scope: open one first`);
     return scope;
@@ -131,6 +132,7 @@ export class DataStore {
     const c = this.readable(name, ctx);
     const { records } = await this.load(name, c, this.scopeFor(name, ctx.scope));
     if (c.single) return records[0] ?? null;
+    this.needKey(key);
     return records.find((r) => r[c.key!] === key) ?? null;
   }
 
@@ -141,7 +143,7 @@ export class DataStore {
     const matches = records.filter((r) =>
       where.every(([field, cond]) => (isObject(cond) && Array.isArray(cond.in) ? cond.in.includes(r[field]) : r[field] === cond)),
     );
-    const limit = Math.min(Math.max(1, Math.trunc(q.limit ?? QUERY_LIMIT)), QUERY_MAX);
+    const limit = Math.min(Math.max(1, Math.trunc(q.limit !== undefined && Number.isFinite(q.limit) ? q.limit : QUERY_LIMIT)), QUERY_MAX);
     const fields = q.fields?.length ? [...new Set([...(c.key ? [c.key] : []), ...q.fields])] : null;
     const pick = (r: DataRecord): DataRecord => (fields ? Object.fromEntries(fields.filter((f) => Object.hasOwn(r, f)).map((f) => [f, r[f]])) : r);
     return { records: matches.slice(0, limit).map(pick), total: matches.length, invalid };
@@ -169,6 +171,7 @@ export class DataStore {
       const c = this.writable(name, ctx);
       const scope = this.scopeFor(name, ctx.scope);
       if (!isObject(patch)) throw new DataError("invalid", "A patch is an object of fields");
+      if (!c.single) this.needKey(key);
       const file = await this.loadForWrite(name, c, scope);
       const prev = c.single ? file.records[0] : file.records.find((r) => r[c.key!] === key);
       if (!prev) throw new DataError("not-found", c.single ? `"${name}" has no record yet` : `"${name}" has no record "${String(key)}"`);
@@ -187,6 +190,7 @@ export class DataStore {
     return this.serialize(async () => {
       const c = this.writable(name, ctx);
       const scope = this.scopeFor(name, ctx.scope);
+      if (!c.single) this.needKey(key);
       const file = await this.loadForWrite(name, c, scope);
       const prev = c.single ? file.records[0] : file.records.find((r) => r[c.key!] === key);
       if (!prev) return false;
@@ -228,6 +232,11 @@ export class DataStore {
     return parsed.data as DataRecord;
   }
 
+  /** A keyed collection's get, patch and delete name their record. */
+  private needKey(key: DataKey | undefined): asserts key is DataKey {
+    if (key === undefined) throw new DataError("invalid", "A key is needed");
+  }
+
   private keyOf(c: Collection, record: DataRecord): DataKey {
     const key = record[c.key!];
     if (!isKey(key)) throw new DataError("invalid", `The key "${c.key}" is missing`);
@@ -251,11 +260,25 @@ export class DataStore {
     const list = c.single ? [raw] : Array.isArray(raw) ? raw : null;
     if (!list) return { records: [], invalid: 0, broken: true };
     const records: DataRecord[] = [];
+    const seen = new Set<DataKey>();
     let invalid = 0;
     for (const item of list) {
       const parsed = c.schema.safeParse(item);
-      if (parsed.success && (c.single || isKey((parsed.data as DataRecord)[c.key!]))) records.push(parsed.data as DataRecord);
-      else invalid++;
+      if (!parsed.success) {
+        invalid++;
+        continue;
+      }
+      const record = parsed.data as DataRecord;
+      if (!c.single) {
+        // A duplicate key (a hand edit) counts as invalid: the first record wins, and writes are refused until fixed.
+        const key = record[c.key!];
+        if (!isKey(key) || seen.has(key)) {
+          invalid++;
+          continue;
+        }
+        seen.add(key);
+      }
+      records.push(record);
     }
     return { records, invalid, broken: false };
   }

@@ -3,12 +3,12 @@ import { useTranslation } from "react-i18next";
 import { WorkingStatus } from "./ActivityList";
 import { ChoicesBlock } from "./ChoicesBlock";
 import { GearIcon, TopBar } from "./chrome";
-import { type AppState, type ChoiceOption, type EngineProblem, type HarnessClient, type NoteView, type SendOptions, type TaskView, nextInPath } from "./client";
+import { type AppState, type ChoiceOption, type EngineProblem, type HarnessClient, type NoteView, type RespondResult, type SendOptions, type TaskView, nextInPath } from "./client";
 import { ErrorCard, isFixable, problemError } from "./ErrorCard";
 import { FlowSide } from "./FlowSide";
 import { uiLanguage } from "./FolderStep";
 import { HistoryPanel } from "./HistoryPanel";
-import { type BlockActions, type BlockProps, Blocks, Message } from "./Message";
+import { type BlockActions, type BlockProps, Blocks, type InputContext, Message } from "./Message";
 import { Markdown, markdownToPlain } from "./markdown";
 import { NotesPanel } from "./NotesPanel";
 import { type StartViewCopy, StartView } from "./StartView";
@@ -286,6 +286,34 @@ export function ChatView({
     return true;
   };
 
+  /**
+   * An answer to an input block (input-blocks spec §4). A refusal comes back with its errors for the form; a taken
+   * answer marks its block, shows the person's line and the turn it starts.
+   */
+  const respondTo = async (blockId: string, value: Record<string, unknown>): Promise<RespondResult> => {
+    if (blocked() || pending) return { ok: false, reason: "busy", errors: [{ path: "", message: t("input.wait") }] };
+    busy.current = true;
+    let r: RespondResult;
+    try {
+      r = await client.respond(blockId, value);
+    } catch {
+      busy.current = false;
+      return { ok: false, reason: "failed", errors: [{ path: "", message: t("input.failed") }] };
+    }
+    if (!r.ok) {
+      busy.current = false;
+      if (r.reason === "stale") return { ...r, errors: [{ path: "", message: t("input.closed") }] };
+      if (r.reason === "stopped") return { ...r, errors: [{ path: "", message: t("input.stopped") }] };
+      return r;
+    }
+    stick.current = true;
+    lastPick.current = null;
+    setPickFailed(false);
+    dispatch({ type: "answered", answer: { blockId, value: r.value, answeredAt: r.answeredAt } });
+    dispatch({ type: "user", text: r.display, at: r.answeredAt });
+    return r;
+  };
+
   const startTopic = (id: string) => void send(labelOf(id), { action: id });
   const resume = (note: NoteView) => {
     setNotesPanel(null);
@@ -305,7 +333,23 @@ export function ChatView({
   /** What harness UI gets: it can't skip the pre-flight check. */
   const sendFromHarness: SendFn = (text, options) => send(text, options);
   const lastAssistant = chat.entries.findLast((e) => e.role === "assistant");
-  const blockActions = (active: boolean, task?: string): BlockActions => ({ respond: sendFromHarness, choose: (o) => choose(o, task), open: openFile, reveal: revealFile, active });
+  const inputs: InputContext | undefined = state.inputs
+    ? {
+        specs: state.inputs,
+        ...(tasks.current?.pendingInput ? { pending: tasks.current.pendingInput } : {}),
+        waiting: tasks.current?.status === "waiting",
+        ready: tasks.current?.status === "waiting" && !blocked() && !pending,
+        respond: respondTo,
+      }
+    : undefined;
+  const blockActions = (active: boolean, task?: string): BlockActions => ({
+    respond: sendFromHarness,
+    choose: (o) => choose(o, task),
+    open: openFile,
+    reveal: revealFile,
+    active,
+    ...(inputs ? { inputs } : {}),
+  });
   /** The entry's answer belongs to the task waiting now: its `choices` block may act. */
   const ofWaitingTask = (task: string | undefined) => task !== undefined && task === tasks.current?.id && tasks.current.status === "waiting";
   /** Try again: a failed pick of the still-open task is picked again; anything else resends the last message. */

@@ -569,3 +569,22 @@ describe.skipIf(process.platform === "win32")("History restore and symlinks", ()
     expect(await history.save("again")).toBeNull();
   });
 });
+
+describe("Scope trailer", () => {
+  it("writes the scope after the task and reads it back", async () => {
+    write("a.md", "scoped-1");
+    const sha = (await history.save("Turn: fracciones", { task: "t-9", action: "study", scope: "fracciones" }))!;
+    const { commit } = await git.readCommit({ fs, gitdir, oid: sha });
+    expect(commit.message.trim()).toBe("Turn: fracciones\n\nTask: t-9\nAction: study\nScope: fracciones");
+    expect((await history.list())[0]).toMatchObject({ task: "t-9", action: "study", scope: "fracciones" });
+    expect((await history.tasks()).find((g) => g.taskId === "t-9")?.scopeId).toBe("fracciones");
+  });
+
+  it("takes _app, drops an invalid scope, and adds no field without one", () => {
+    expect(withTrailer("Note: x", { task: "t1", scope: "_app" })).toBe("Note: x\n\nTask: t1\nScope: _app");
+    expect(withTrailer("Note: x", { task: "t1", scope: "Bad Scope" })).toBe("Note: x\n\nTask: t1");
+    expect(parseCommitMessage("Note: x\n\nTask: t1\nScope: _app")).toEqual({ subject: "Note: x", task: "t1", action: null, scope: "_app" });
+    expect(parseCommitMessage("Note: x\n\nTask: t1\nScope: ../x")).toEqual({ subject: "Note: x", task: "t1", action: null });
+    expect(parseCommitMessage("Note: x\n\nTask: t1")).toEqual({ subject: "Note: x", task: "t1", action: null });
+  });
+});

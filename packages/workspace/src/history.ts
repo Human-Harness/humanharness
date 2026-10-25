@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import git from "isomorphic-git";
-import { NOTES_PREFIX } from "./layout";
+import { NOTES_PREFIX, isScopeDir } from "./layout";
 import { BEFORE_MESSAGE } from "./subjects";
 
 const AUTHOR = { name: "Human Harness", email: "history@humanharness.local" };
@@ -19,12 +19,16 @@ export interface HistoryEntry {
   task: string | null;
   /** The task's manifest action (its `Action:` trailer); null for a free question or outside any task. */
   action: string | null;
+  /** The task's scope (its `Scope:` trailer), only for a harness with scopes. */
+  scope?: string;
 }
 
 /** The task a history commit belongs to, written as git trailers under its subject. */
 export interface HistoryTrailer {
   task: string;
   action?: string;
+  /** The task's scope, `_app` included; only for a harness with scopes (spec §3.3). */
+  scope?: string;
 }
 
 /** A file a task added, changed or deleted (tracked files only). */
@@ -38,6 +42,8 @@ export interface HistoryTask {
   /** Null: the "Other changes" group (commits outside any task). */
   taskId: string | null;
   actionId: string | null;
+  /** The scope the task ran in, when the harness has scopes. */
+  scopeId?: string;
   /**
    * Where "Go back to before this task" lands: the task's first "Before message" snapshot when its first
    * commit is one (so the person's own edits made before the task stay), else the commit before the task's
@@ -103,14 +109,19 @@ export function withTrailer(message: string, trailer?: HistoryTrailer): string {
   if (!trailer || !TRAILER_ID.test(trailer.task)) return subject;
   const lines = [`Task: ${trailer.task}`];
   if (trailer.action !== undefined && TRAILER_ID.test(trailer.action)) lines.push(`Action: ${trailer.action}`);
+  // Checked on its own: `_app` is a scope folder, but not a valid TRAILER_ID.
+  if (trailer.scope !== undefined && isScopeDir(trailer.scope)) lines.push(`Scope: ${trailer.scope}`);
   return `${subject}\n\n${lines.join("\n")}`;
 }
 
 /** A trailer line as `withTrailer` writes it. */
-const TRAILER_LINE = /^(Task|Action): \S+$/;
+const TRAILER_LINE = /^(Task|Action|Scope): \S+$/;
 
-/** A commit message's subject and its trailers (null when absent or not a valid id). Only a last paragraph made entirely of trailer lines counts. */
-export function parseCommitMessage(raw: string): { subject: string; task: string | null; action: string | null } {
+/**
+ * A commit message's subject and its trailers (null when absent or not a valid id; `scope` only when present).
+ * Only a last paragraph made entirely of trailer lines counts.
+ */
+export function parseCommitMessage(raw: string): { subject: string; task: string | null; action: string | null; scope?: string } {
   const text = raw.replace(/\r\n/g, "\n").trim();
   const paragraphs = text.split(/\n{2,}/);
   const last = paragraphs.length > 1 ? paragraphs[paragraphs.length - 1] : "";
@@ -119,7 +130,8 @@ export function parseCommitMessage(raw: string): { subject: string; task: string
     const m = new RegExp(`^${key}: (.+)$`, "m").exec(trailers);
     return m && TRAILER_ID.test(m[1]) ? m[1] : null;
   };
-  return { subject: text.split("\n")[0], task: value("Task"), action: value("Action") };
+  const scope = /^Scope: (.+)$/m.exec(trailers)?.[1];
+  return { subject: text.split("\n")[0], task: value("Task"), action: value("Action"), ...(isScopeDir(scope) ? { scope } : {}) };
 }
 
 /**
@@ -342,8 +354,8 @@ export class History {
     if ((await this.last()) === null) return [];
     const log = await git.log({ ...this.repo(), depth, cache });
     return log.map((e) => {
-      const { subject, task, action } = parseCommitMessage(e.commit.message);
-      return { sha: e.oid, message: subject, date: new Date(e.commit.author.timestamp * 1000), task, action };
+      const { subject, task, action, scope } = parseCommitMessage(e.commit.message);
+      return { sha: e.oid, message: subject, date: new Date(e.commit.author.timestamp * 1000), task, action, ...(scope ? { scope } : {}) };
     });
   }
 
@@ -367,9 +379,11 @@ export class History {
       const oldest = entries[entries.length - 1].sha;
       const start = taskId === null ? await this.parentOf(oldest, cache) : await this.taskStart(taskId, oldest, cache);
       const end = entries[0];
+      const scopeId = entries.find((e) => e.scope !== undefined)?.scope;
       out.push({
         taskId,
         actionId: entries.find((e) => e.action !== null)?.action ?? null,
+        ...(scopeId ? { scopeId } : {}),
         start,
         end: end.sha,
         date: end.date,

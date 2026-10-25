@@ -2,6 +2,7 @@ import { EventEmitter } from "node:events";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { PassThrough, Writable } from "node:stream";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { NOTICE_VERSION, getEngine } from "@humanharness/engines";
@@ -102,6 +103,37 @@ function noCli() {
 const readJsonl = (file: string) => fs.readFileSync(file, "utf8").trim().split("\n").map((l) => JSON.parse(l) as Record<string, unknown>);
 
 describe("runTask", () => {
+  it("runs a scoped harness's action in a `run` scope: its note, chat, usage and statuses are the scope's", { timeout: 60_000 }, async () => {
+    const study = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../fake-agent/fixtures/data-harness");
+    const folder = path.join(root, "study-work");
+    const scoped: ClaudeScript = {
+      steps: [...claudeTextLines("Done."), result],
+      turns: [
+        {
+          match: "save_note",
+          steps: [ui("save_note", { title: "Halves", summary: ["A half is one of two parts"], decisions: [], files: [], open: [] }), ...claudeTextLines("Saved."), result],
+        },
+        { match: "# Task: study", steps: [...claudeTextLines("Let's study."), result] },
+      ],
+    };
+    const out = memoryStream();
+    await runTask({
+      harnessDir: study,
+      action: "study",
+      engine: "claude",
+      folder,
+      input: lines("q\n"),
+      output: out.stream,
+      engineCommand: { command: fakeClaudeCommand(), env: { HH_FAKE_SCRIPT: writeScript(root, scoped) } },
+    });
+    expect(out.text()).toContain("Let's study.");
+    expect(fs.readFileSync(path.join(folder, ".harness", "notes", "run", "study.md"), "utf8")).toContain('title: "Halves"');
+    expect(JSON.parse(fs.readFileSync(path.join(folder, ".harness", "scopes.json"), "utf8"))).toEqual([expect.objectContaining({ id: "run", title: "Run" })]);
+    expect(fs.existsSync(path.join(folder, ".harness", "chats", "run.jsonl"))).toBe(true);
+    expect(readJsonl(path.join(folder, ".harness", "usage.jsonl")).every((r) => r.scope === "run")).toBe(true);
+    expect(JSON.parse(fs.readFileSync(path.join(folder, ".harness", "tasks.json"), "utf8"))).toMatchObject({ open: "run", actions: {}, scopes: { run: { study: "done" } } });
+  });
+
   it("runs the task, follows a picked choice, closes on q with its note, and reports", { timeout: 60_000 }, async () => {
     const out = memoryStream();
     const folder = path.join(root, "work");

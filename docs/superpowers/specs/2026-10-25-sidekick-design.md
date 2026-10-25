@@ -31,7 +31,7 @@ Marco confirmed these on 2026-10-25.
 - **D1. Sidekick is a core feature.** Every harness gets it. A harness tunes it in the manifest (§3) and cannot replace it.
 - **D2. The pre-send review is the core moment.** The review after the reply and the heads-ups come second, and each can be turned off on its own.
 - **D3. It has its own presence:** a panel in the right column with a name, a mark and a state (§7). It is not only inline hints.
-- **D4. It learns the person** across sessions, on two levels: one about the person across every harness, and one about this harness (§6). The person can see, edit and erase what it learned.
+- **D4. It learns the person** across sessions, on two levels: one about the person in general, and one about how they work in this harness (§6). Both levels stay inside this app's folder; nothing is shared between apps. The person can see, edit and erase what it learned.
 - **D5. A pre-send review never traps the person.**
   - The free local check runs first; the model is asked only when the check flags something, or when the person asks for a review.
   - The model gets about 6 s (adjustable). After that the prompt goes out as typed.
@@ -193,7 +193,7 @@ Their buttons call existing app paths:
 
 ### 6.4 The profile
 
-- **Storage.** A reserved app-wide collection, `sidekick` (`scopes-and-data` spec §4), holds the Sidekick settings and the harness-level learned items:
+- **Storage.** A reserved app-wide collection, `sidekick` (`scopes-and-data` spec §4), holds the Sidekick settings and the learned items of both levels:
 
   ```ts
   { id, text: string, level: "you" | "harness", kind?: string, source: "learned" | "person", updatedAt }
@@ -204,20 +204,17 @@ Their buttons call existing app paths:
   - At task close, if there are at least 5 new events since the last update, one Sidekick turn gets the current items and the new events. It returns `{ add, update, remove }`.
   - Items with `source: "person"` are never changed or removed by learning.
   - The app applies the result through the data store, with `who: "app"`.
-- **Two levels (D4).**
-  - **`harness`:** items about how the person works in this harness. They are stored in the profile's `sidekick` collection.
-  - **`you`:** items about the person in general ("takes scope fixes", "writes short prompts"). They are stored in the shared Sidekick file (§6.5), read by every Human Harness app on the computer that opts in.
+- **Two levels (D4)**, both in the profile's `sidekick` collection:
+  - **`you`:** items about the person in general ("takes scope fixes", "writes short prompts");
+  - **`harness`:** items about how the person works in this harness ("sections stay under 400 words").
+- **No sharing between apps** (Marco, 2026-10-25). Each app keeps its own copy, even of the `you` items. Another Human Harness app learns the same person from zero.
+  - This keeps every learned item inside the app's folder, covered by its history and backup.
+  - It also needs no path outside the folder, and no identity across apps.
+  - With profiles, each profile has its own items, like every other piece of data.
 - **In Settings** (mockup, board 6), "What Sidekick learned" shows both columns:
   - each item has "Forget this";
   - "Edit" opens the items as an editable list;
   - "Forget everything" asks once, then clears both levels.
-
-### 6.5 The shared file
-
-- **Location.** `<OS app data>/Human Harness/shared/sidekick.json`, outside every app's folder.
-- **Contents.** Only the `you` items, with the same shape. It is never synced, and never part of an app's history.
-- **Opt-in per app.** The first time Sidekick learns a `you` item, the app asks once: "Share what Sidekick learns about you with your other Human Harness apps?" Until then, `you` items stay in the app's own collection.
-- **With profiles** (`profiles` spec): only the profile marked "This is me" reads and writes the shared file. The others keep `you` items local.
 
 ## 7. UI
 
@@ -254,14 +251,14 @@ Their buttons call existing app paths:
 - **Usage.**
   - Sidekick turns are logged in `usage.jsonl` with `process: "sidekick"`, and `phase` set to `pre`, `after` or `learn`. This is a new field on `UsageMeta` in `packages/shell/src/main/usage-log.ts`.
   - Settings › Usage can split Sidekick's spend from the task's.
-- **No promised savings.** The tab shows only measured numbers. Whether Sidekick pays for itself is measured during dogfooding (§10, Q3), never claimed.
+- **No promised savings.** The tab shows only measured numbers. Whether Sidekick pays for itself is measured during dogfooding (§12, Q1), never claimed.
 
 ## 9. Depends on
 
 | Spec | For |
 |---|---|
 | Scopes + data | the `sidekick` collection, notes index per scope, `who: "app"` writes |
-| Profiles | per-person settings and items, "This is me" for the shared file |
+| Profiles | per-person settings and learned items |
 | Harness settings | the deferred `AGENTS.md` rewrite pattern, the Settings tab pattern |
 | Task phases | the phase goal, off-phase checks |
 | Input blocks | free-text fields of input blocks are reviewed like the composer (pre-send only) |
@@ -282,16 +279,21 @@ Their buttons call existing app paths:
    - `events.jsonl`, the thresholds per kind and muting.
    - The profile update at task close.
    - "What Sidekick learned" in Settings.
-4. **Shared profile.** The shared file, the opt-in, and "This is me" with profiles.
 
-## 11. Open questions
+## 11. Language
 
-1. **The shared file's place.** A folder outside every app means a path the core owns, but no app's history or backup covers it. Proposed: accept that. It is small, and losing it only resets the `you` items. Or keep `you` items per app and drop the shared file?
-2. **Which language Sidekick reads the person's prompts in.** It thinks in English (`language-on-demand` spec), but rewrites must come back in the person's language. Proposed: the rewrite keeps the language of the prompt, and the issues use the app's UI language.
-3. **Is it worth it?** Track with mock mode and dogfooding:
+Sidekick thinks in English (`language-on-demand` spec), like every agent in the core. What it writes for the person follows two rules (Marco, 2026-10-25):
+- **The rewrite and the queued prompts keep the language of the person's prompt.** A prompt in Spanish gets a rewrite in Spanish.
+- **The issues, the gap and the heads-up texts use the app's UI language.**
+
+The core's Sidekick rules in its `AGENTS.md` say both. The JSON contract carries no language field.
+
+## 12. Open questions
+
+1. **Is it worth it?** Track with mock mode and dogfooding:
    - Sidekick's share of a task's tokens;
    - the share of prompts that reached the model;
    - the share of cards used.
 
    Set the default cap and the `auto` thresholds from those numbers before making Sidekick default `on` in any harness.
-4. **The local-check word lists in other languages.** They ship in English. A harness in another language needs lists in that language; that is part of the language spec's agentic translation.
+2. **The local-check word lists in other languages.** They ship in English. A harness in another language needs lists in that language; that is part of the language spec's agentic translation.

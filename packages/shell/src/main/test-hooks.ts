@@ -1,6 +1,5 @@
 import path from "node:path";
 import type { EngineDef, ModelChoice } from "@humanharness/engines";
-import type { Language, LocalizedText } from "@humanharness/harness-sdk";
 import type { EngineStatus } from "@humanharness/ui/client";
 
 /** A fake engine for the end-to-end tests: the command to run instead of the real CLI. */
@@ -101,35 +100,14 @@ export function isMockEngine(hooks: Pick<TestHooks, "mock" | "engines">, engineI
   return hooks.mock === true && hooks.engines?.[engineId] !== undefined;
 }
 
-/**
- * The language the test engine is shown in: the saved one, else the system's when the harness offers it
- * ("es-AR" → es), else the harness's first language.
- */
-export function mockLanguage(saved: Language | undefined, locale: string, languages: readonly Language[]): Language {
-  if (saved) return saved;
-  return languages.find((l) => locale.toLowerCase().startsWith(l)) ?? languages[0]!;
-}
-
 /** How a faked engine presents itself in mock mode (spec 3f §4): no provider to disclose, nothing leaves the computer. */
-export function mockEngineText(language: Language): {
-  name: string;
-  provider: string;
-  requires: LocalizedText;
-  dataLocation: LocalizedText;
-  trainsOnData: LocalizedText;
-} {
-  return {
-    name: language === "es" ? "IA simulada (mock)" : "Simulated AI (mock)",
-    provider: "Human Harness",
-    requires: { es: "Nada", en: "Nothing" },
-    dataLocation: { es: "Tus datos no salen de esta compu", en: "Your data stays on this computer" },
-    trainsOnData: { es: "No", en: "No" },
-  };
+export function mockEngineText(): { name: string; provider: string; requires: string; dataLocation: string; trainsOnData: string } {
+  return { name: "Simulated AI (mock)", provider: "Human Harness", requires: "Nothing", dataLocation: "Your data stays on this computer", trainsOnData: "No" };
 }
 
 /** The one model a faked engine offers in mock mode; every tier uses it (the fake ignores --model). */
 export const MOCK_MODEL = "mock";
 
-export function mockModels(language: Language): ModelChoice[] {
-  return [{ id: MOCK_MODEL, name: language === "es" ? "Modelo de prueba" : "Test model" }];
+export function mockModels(): ModelChoice[] {
+  return [{ id: MOCK_MODEL, name: "Test model" }];
 }

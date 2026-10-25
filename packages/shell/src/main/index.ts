@@ -314,6 +314,12 @@ const baseOf = (c: { folder: string }): string => c.folder;
 const scoped = (): boolean => harness.scopes !== undefined;
 
 /** One registry per base, so its write queue orders every change. */
+/** Whether `id` is in the configured folder's registry and not archived. */
+async function activeScope(id: string): Promise<boolean> {
+  const c = await validConfig();
+  return c ? (await scopeStoreFor(baseOf(c)).list()).some((s) => s.id === id && !s.archived) : false;
+}
+
 const scopeStores = new Map<string, ScopeStore>();
 function scopeStoreFor(base: string): ScopeStore {
   let store = scopeStores.get(base);
@@ -540,10 +546,7 @@ const tasks = new TaskManager({
     return scoped();
   },
   // An archived scope can't be opened (spec §3.4): it counts as missing here.
-  scopeExists: async (id) => {
-    const c = await validConfig();
-    return c ? (await scopeStoreFor(baseOf(c)).list()).some((s) => s.id === id && !s.archived) : false;
-  },
+  scopeExists: (id) => activeScope(id),
   // Spec §4.4: only a harness with a collection that goes into the context gets the hook (D2).
   // A getter, because the harness is loaded after this object is built.
   get dataContext() {
@@ -659,6 +662,8 @@ const personData = personDataRequests({
   trailer: () => tasks.trailerNow(),
   history: () => currentHistory(),
   blocked: () => (quitting ? "The app is closing" : turnBlocked()),
+  // Without scopes the only scope is the implicit `main` (D2); with them, the registry's open (not archived) scopes.
+  scopeExists: async (id) => (scoped() ? activeScope(id) : id === MAIN_SCOPE),
 });
 
 function registerIpc() {

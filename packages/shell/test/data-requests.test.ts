@@ -17,7 +17,7 @@ const data = dataSchema.parse({
   profile: { scoped: false, single: true, schema: z.object({ name: z.string() }), agent: "read" },
 });
 
-function setup(opts: { blocked?: string; trailer?: HistoryTrailer; open?: string; saveDelay?: number } = {}) {
+function setup(opts: { blocked?: string; trailer?: HistoryTrailer; open?: string; saveDelay?: number; registered?: string[] } = {}) {
   const base = fs.mkdtempSync(path.join(root, "t-"));
   const store = new DataStore(base, data);
   const files = {
@@ -40,8 +40,9 @@ function setup(opts: { blocked?: string; trailer?: HistoryTrailer; open?: string
       },
     }),
     blocked: () => opts.blocked ?? null,
+    scopeExists: async (id) => (opts.registered ?? ["fracciones", "decimales"]).includes(id),
   };
-  return { store, run: personDataRequests(deps), commits };
+  return { base, store, run: personDataRequests(deps), commits };
 }
 
 describe("personDataRequests", () => {
@@ -67,6 +68,18 @@ describe("personDataRequests", () => {
     await expect(t.run({ op: "put", collection: "concepts", record: { id: "a", name: "A" } }, undefined)).rejects.toThrow(/restore/);
     expect(await t.run({ op: "query", collection: "concepts" }, undefined)).toMatchObject({ total: 0 });
     await expect(setup().run({ op: "get", collection: "concepts", key: "a" }, { scope: "../x" })).rejects.toThrow(/scope/);
+  });
+
+  it("refuses a scope the registry doesn't hold (reads too), with no file and no commit; _app always passes", async () => {
+    const t = setup();
+    await expect(t.run({ op: "put", collection: "concepts", record: { id: "a", name: "A" } }, { scope: "ghost" })).rejects.toThrow("Unknown scope");
+    await expect(t.run({ op: "query", collection: "concepts" }, { scope: "ghost" })).rejects.toThrow("Unknown scope");
+    expect(fs.existsSync(dataFile(t.base, "ghost", "concepts"))).toBe(false);
+    expect(t.commits).toEqual([]);
+    await t.run({ op: "put", collection: "profile", record: { name: "Ana" } }, { scope: "_app" });
+    expect(t.commits.map((c) => c.message)).toEqual(["Data: profile"]);
+    // The open scope is checked too: one archived (or never registered) is refused.
+    await expect(setup({ registered: [] }).run({ op: "get", collection: "concepts", key: "a" }, undefined)).rejects.toThrow("Unknown scope");
   });
 
   it("records no history commit for a refused write, and keeps taking writes after it", async () => {

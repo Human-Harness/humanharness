@@ -1,4 +1,4 @@
-import { DATA_CHANGE_PREFIX, DataError, type DataStore, type HistoryTrailer, isDataWrite, isScopeDir, runDataRequest } from "@humanharness/workspace";
+import { APP_SCOPE, DATA_CHANGE_PREFIX, DataError, type DataStore, type HistoryTrailer, isDataWrite, isScopeDir, runDataRequest } from "@humanharness/workspace";
 
 /** Where a person's write is recorded: the folder's history. */
 export interface DataHistory {
@@ -16,11 +16,14 @@ export interface PersonDataDeps {
   history(): Promise<DataHistory | null>;
   /** Why writes can't run now (a restore, a folder move, an engine change), or null. */
   blocked(): string | null;
+  /** Whether `id` is a scope the person can reach: registered and not archived (`main` without scopes). `_app` is never asked. */
+  scopeExists(id: string): Promise<boolean>;
 }
 
 /**
  * The handler of requests from the harness UI (spec §4.5): each runs as the person, in `options.scope` or the open
- * scope, through the same checks as the agent's. Each write is recorded in the history as `Data: <collection>`,
+ * scope, through the same checks as the agent's. The scope must be registered (or `_app`), so no request reaches or
+ * creates the data of a scope that doesn't exist. Each write is recorded in the history as `Data: <collection>`,
  * with the open task's trailer, so it is undone with that task. Writes are refused while turns are blocked.
  *
  * Writes run one at a time, each with its own commit: the trailer and the history are taken before the write, and
@@ -37,17 +40,22 @@ export function personDataRequests(d: PersonDataDeps): (request: unknown, option
   return async (request, options) => {
     const asked = typeof options === "object" && options !== null ? (options as { scope?: unknown }).scope : undefined;
     if (asked !== undefined && !isScopeDir(asked)) throw new Error("Unknown scope");
+    const scopeOf = async (): Promise<string> => {
+      const scope = asked ?? (await d.chatScope());
+      if (scope !== APP_SCOPE && !(await d.scopeExists(scope))) throw new Error("Unknown scope");
+      return scope;
+    };
     if (!isDataWrite(request)) {
       const store = await d.store();
       if (!store) throw new Error("The app is not set up yet");
-      return runDataRequest(store, request, { who: "person", scope: asked ?? (await d.chatScope()) });
+      return runDataRequest(store, request, { who: "person", scope: await scopeOf() });
     }
     return serial(async () => {
       const blocked = d.blocked();
       if (blocked) throw new Error(blocked);
       const store = await d.store();
       if (!store) throw new Error("The app is not set up yet");
-      const scope = asked ?? (await d.chatScope());
+      const scope = await scopeOf();
       const trailer = await d.trailer();
       const history = await d.history();
       const result = await runDataRequest(store, request, { who: "person", scope });

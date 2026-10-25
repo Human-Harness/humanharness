@@ -59,6 +59,7 @@ const client: HarnessClient = {
         if (change.collection === collection && (scope === null || change.scope === scope)) listener(change);
       }),
   },
+  dataDiff: (taskId) => ipcRenderer.invoke("hh:dataDiff", taskId),
   onTextSize: (listener) => subscribe<TextSize>("hh:textSize", listener),
 };
 

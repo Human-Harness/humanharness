@@ -409,6 +409,15 @@ export interface DataChangeView {
   key?: DataKey;
 }
 /** Default: the open scope. App-wide collections ignore it. */
+/** What a task changed in one collection of one scope. */
+export interface DataDiffView {
+  collection: string;
+  scope: string;
+  added: DataRecord[];
+  changed: { before: DataRecord; after: DataRecord }[];
+  removed: DataRecord[];
+}
+
 export interface DataOptions {
   scope?: string;
 }
@@ -488,6 +497,8 @@ export interface HarnessClient {
     /** Every write to `collection` (in `scope`; null: any scope), from any writer. */
     subscribe(collection: string, scope: string | null, listener: (change: DataChangeView) => void): () => void;
   };
+  /** What a task changed in the harness's data ("what changed in this session", spec §4.5). */
+  dataDiff(taskId: string): Promise<DataDiffView[]>;
   /** The text size changed from the keyboard (⌘+, ⌘−, ⌘0), already saved. */
   onTextSize(listener: (size: TextSize) => void): () => void;
 }

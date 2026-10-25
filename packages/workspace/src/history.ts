@@ -406,6 +406,18 @@ export class History {
     });
   }
 
+  /** A file's content at commit `sha` (relative path, forward slashes); null when the commit or the file isn't there. */
+  async readFileAt(sha: string | null, file: string): Promise<string | null> {
+    if (sha === null) return null;
+    try {
+      const { blob } = await git.readBlob({ fs, gitdir: this.gitdir, oid: sha, filepath: file });
+      return Buffer.from(blob).toString("utf8");
+    } catch (err) {
+      if ((err as { code?: string }).code === "NotFoundError") return null;
+      throw err;
+    }
+  }
+
   private async parentOf(sha: string, cache: object = {}): Promise<string | null> {
     const { commit } = await git.readCommit({ fs, gitdir: this.gitdir, oid: sha, cache });
     return commit.parent[0] ?? null;

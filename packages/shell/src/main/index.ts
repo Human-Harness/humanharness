@@ -38,6 +38,7 @@ import {
   NOTES_PREFIX,
   ScopeStore,
   buildDataContext,
+  dataDiffOf,
   isScopeId,
   migrateToScopes,
   notesPrefix,
@@ -760,6 +761,11 @@ function registerIpc() {
     // After the migration: it opens `main`, the scope a request made on mount acts in.
     await scopesSettled();
     return personData(request, options);
+  });
+  handle("hh:dataDiff", async (taskId: unknown) => {
+    if (typeof taskId !== "string" || taskId.length === 0 || taskId.length > 200) return [];
+    const history = await currentHistory();
+    return history ? dataDiffOf(history, taskId, harness.data) : [];
   });
   handle("hh:choose", (option: unknown, task: unknown) => {
     if (quitting) throw new Error("The app is closing");

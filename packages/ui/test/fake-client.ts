@@ -4,6 +4,7 @@ import type {
   ChatEntry,
   ChoiceOption,
   DataChangeView,
+  DataDiffView,
   DataKey,
   DataQuery,
   DataRecord,
@@ -385,6 +386,8 @@ export class FakeClient implements HarnessClient {
   private dataChanged(change: DataChangeView) {
     for (const l of this.dataListeners) l(change);
   }
+  dataDiffs: Record<string, DataDiffView[]> = {};
+  dataDiff = async (taskId: string) => this.dataDiffs[taskId] ?? [];
   data = {
     get: async (collection: string, key?: DataKey) => (this.records[collection] ?? []).find((r) => key === undefined || r[this.dataKey] === key) ?? null,
     query: async (collection: string, query: DataQuery = {}) => {

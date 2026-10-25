@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { dataSchema, z } from "@humanharness/harness-sdk";
-import { DataStore, buildDataContext } from "../src";
+import { DataStore, buildDataContext, estimateTokens } from "../src";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -68,5 +68,38 @@ describe("buildDataContext", () => {
     await store.put("concepts", { id: "a", name: "A", state: "seen", notes: "" }, person);
     expect(await buildDataContext(store, data, "fracciones", "study")).toContain("| a | A (study) |\n| b | B (study) |");
     expect(await buildDataContext(store, data, "_app", undefined)).toBe("");
+  });
+
+  it("keeps a table and its footer within the tokens, even when one row alone is too long", async () => {
+    const { store, data } = setup({ context: { fields: "all", tokens: 50 } });
+    for (const id of ["a", "b", "c"]) await store.put("concepts", { id, name: "N".repeat(300), state: "S".repeat(300), notes: "T".repeat(300) }, person);
+    const text = (await buildDataContext(store, data, "fracciones", "study")).split("\n\n## Data: profile")[0]!;
+    expect(estimateTokens(text)).toBeLessThanOrEqual(50);
+    expect(text).toContain("more in concepts");
+    expect(text.split("\n").filter((l) => l.startsWith("| c") || l.startsWith("| a") || l.startsWith("| b")).length).toBe(1);
+  });
+
+  it("keeps the other tables when the order throws or returns no list", async () => {
+    for (const order of [() => { throw new Error("boom"); }, () => "nope"]) {
+      const { store, data } = setup({ context: { fields: ["name"], tokens: 400, order } });
+      await store.put("profile", { name: "Ana", level: "6th grade" }, person);
+      await store.put("concepts", { id: "a", name: "A", state: "seen", notes: "" }, person);
+      await store.put("concepts", { id: "b", name: "B", state: "seen", notes: "" }, person);
+      const text = await buildDataContext(store, data, "fracciones", "study");
+      expect(text).toContain("| b | B |\n| a | A |");
+      expect(text).toContain("## Data: profile");
+    }
+  });
+
+  it("counts the records the order left out as left out", async () => {
+    const { store, data } = setup({ context: { fields: ["name"], tokens: 400, order: (r: { id: string }[]) => r.filter((x) => x.id === "a") } });
+    for (const id of ["a", "b", "c"]) await store.put("concepts", { id, name: id, state: "seen", notes: "" }, person);
+    expect(await buildDataContext(store, data, "fracciones", "study")).toContain("… 2 more in concepts");
+  });
+
+  it("flattens lone carriage returns and escapes backslashes before pipes", async () => {
+    const { store, data } = setup({ context: { fields: ["name"], tokens: 400 } });
+    await store.put("concepts", { id: "a", name: "x\r\ny\rz a\\b\\|c", state: "", notes: "" }, person);
+    expect(await buildDataContext(store, data, "fracciones", "study")).toContain("| a | x y z a\\\\b\\\\\\|c |");
   });
 });

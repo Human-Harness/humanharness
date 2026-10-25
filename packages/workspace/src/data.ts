@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { type Collection, type DataKey, type DataRecord, type DataWho, z } from "@humanharness/harness-sdk";
+import { performance } from "node:perf_hooks";
+import { type Collection, type DataKey, type DataRecord, type DataWho, type RulesContext, z } from "@humanharness/harness-sdk";
 import { APP_SCOPE, dataFile, dataMetaFile, dataPath, isScopeDir } from "./layout";
 
 export type DataErrorCode = "unknown-collection" | "refused" | "invalid" | "not-found" | "broken-file" | "no-scope";
@@ -51,6 +52,9 @@ export interface DataChange {
 export const QUERY_LIMIT = 50;
 export const QUERY_MAX = 200;
 
+/** Rules slower than this are logged (spec §7.4: a synchronous function can't be stopped, only reported). */
+export const RULES_SLOW_MS = 100;
+
 interface Loaded {
   records: DataRecord[];
   invalid: number;
@@ -97,7 +101,7 @@ export class DataStore {
   constructor(
     private readonly base: string,
     private readonly collections: Record<string, Collection>,
-    private readonly opts: { now?: () => Date; log?: (message: string) => void } = {},
+    private readonly opts: { now?: () => Date; log?: (message: string) => void; rulesSlowMs?: number } = {},
   ) {}
 
   /** Called after every write, from any writer (spec §4.5 `subscribe`). */
@@ -157,6 +161,8 @@ export class DataStore {
       const next = this.parse(name, c, record);
       const key = c.single ? undefined : this.keyOf(c, next);
       const file = await this.loadForWrite(name, c, scope);
+      const prev = (c.single ? file.records[0] : file.records.find((r) => r[c.key!] === key)) ?? null;
+      await this.checkRules(name, c, scope, next, prev, ctx);
       const records = c.single ? [next] : [...file.records.filter((r) => r[c.key!] !== key), next];
       await this.save(name, c, scope, records);
       await this.touch(name, scope, key, true);
@@ -177,6 +183,7 @@ export class DataStore {
       if (!prev) throw new DataError("not-found", c.single ? `"${name}" has no record yet` : `"${name}" has no record "${String(key)}"`);
       if (!c.single && Object.hasOwn(patch, c.key!) && patch[c.key!] !== key) throw new DataError("invalid", `The key "${c.key}" can't change`);
       const next = this.parse(name, c, { ...prev, ...patch });
+      await this.checkRules(name, c, scope, next, prev, ctx);
       const records = c.single ? [next] : file.records.map((r) => (r[c.key!] === key ? next : r));
       await this.save(name, c, scope, records);
       await this.touch(name, scope, key, true);
@@ -194,6 +201,7 @@ export class DataStore {
       const file = await this.loadForWrite(name, c, scope);
       const prev = c.single ? file.records[0] : file.records.find((r) => r[c.key!] === key);
       if (!prev) return false;
+      await this.checkRules(name, c, scope, null, prev, ctx);
       if (c.single) await fs.rm(dataFile(this.base, scope, name), { force: true });
       else await this.save(name, c, scope, file.records.filter((r) => r[c.key!] !== key));
       await this.touch(name, scope, c.single ? undefined : key, false);
@@ -241,6 +249,37 @@ export class DataStore {
     const key = record[c.key!];
     if (!isKey(key)) throw new DataError("invalid", `The key "${c.key}" is missing`);
     return key;
+  }
+
+  /**
+   * Check 3 (spec §4.3): the harness's `rules`, a pure synchronous function. It gets copies: of the records, and
+   * of the other collections in the same scope (app-wide ones too), read before it runs.
+   */
+  private async checkRules(name: string, c: Collection, scope: string, next: DataRecord | null, prev: DataRecord | null, ctx: DataContext): Promise<void> {
+    if (!c.rules) return;
+    const snapshot = new Map<string, DataRecord[]>();
+    for (const [other, oc] of Object.entries(this.collections)) {
+      const folder = oc.scoped ? scope : APP_SCOPE;
+      snapshot.set(other, oc.scoped && scope === APP_SCOPE ? [] : (await this.load(other, oc, folder)).records);
+    }
+    const rulesCtx: RulesContext = {
+      ...(ctx.action !== undefined ? { action: ctx.action } : {}),
+      scope,
+      who: ctx.who,
+      records: (other) => structuredClone(snapshot.get(other) ?? []),
+    };
+    const started = performance.now();
+    let verdict: unknown;
+    try {
+      verdict = c.rules(structuredClone(next), structuredClone(prev), rulesCtx);
+    } catch (err) {
+      throw new DataError("refused", `The rules of "${name}" failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      const ms = performance.now() - started;
+      if (ms > (this.opts.rulesSlowMs ?? RULES_SLOW_MS)) this.log(`The rules of "${name}" took ${Math.round(ms)} ms: keep them small and pure`);
+    }
+    if (verdict === true) return;
+    throw new DataError("refused", typeof verdict === "string" && verdict.trim() ? verdict : `The rules of "${name}" refused the change`);
   }
 
   private async load(name: string, c: Collection, scope: string): Promise<Loaded> {

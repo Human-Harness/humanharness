@@ -60,6 +60,10 @@ export const collectionSchema = z
     const shape = c.schema instanceof z.ZodObject ? c.schema.shape : {};
     if (!c.single && c.key === undefined) ctx.addIssue({ code: "custom", path: ["key"], message: "A collection needs a key (or single: true)" });
     if (c.key !== undefined && !Object.hasOwn(shape, c.key)) ctx.addIssue({ code: "custom", path: ["key"], message: `"${c.key}" is not a field of the schema` });
+    // Keys name records (string | number); an optional, nullable or defaulted wrapper would let a record lack one.
+    else if (c.key !== undefined && !(shape[c.key] instanceof z.ZodString || shape[c.key] instanceof z.ZodNumber)) {
+      ctx.addIssue({ code: "custom", path: ["key"], message: `The key "${c.key}" must be a required string or number field (z.string() or z.number())` });
+    }
     if (c.context !== false && c.agent === "none") {
       ctx.addIssue({ code: "custom", path: ["context"], message: 'A collection hidden from the agent (agent: "none") can\'t go into its context' });
     }

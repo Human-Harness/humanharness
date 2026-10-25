@@ -51,6 +51,17 @@ describe("data collections", () => {
     expect(COLLECTION_NAME.test("flash_cards")).toBe(true);
   });
 
+  it("takes a required string or number key, and refuses any other key type", () => {
+    const withKey = (id: z.ZodType) => () => dataSchema.parse({ items: { scoped: true, key: "id", schema: z.object({ id }), agent: "write" } });
+    expect(withKey(z.string())).not.toThrow();
+    expect(withKey(z.number().int())).not.toThrow();
+    expect(withKey(z.array(z.string()))).toThrow(/must be a required string or number/);
+    expect(withKey(z.boolean())).toThrow(/must be a required string or number/);
+    expect(withKey(z.string().optional())).toThrow(/must be a required string or number/);
+    expect(withKey(z.string().nullable())).toThrow(/must be a required string or number/);
+    expect(withKey(z.number().default(1))).toThrow(/must be a required string or number/);
+  });
+
   it("loads the study fixture's collections", async () => {
     const fixture = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../fake-agent/fixtures/data-harness/harness.config.ts");
     const h = await loadHarness(fixture);

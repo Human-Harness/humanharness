@@ -12,6 +12,8 @@ import type {
   HistoryTaskView,
   MoveResult,
   RunningSetup,
+  ScopeView,
+  ScopesView,
   SendOptions,
   SetupOutput,
   SetupResult,
@@ -321,4 +323,55 @@ export class FakeClient implements HarnessClient {
       this.textSizeListeners.delete(listener);
     };
   }
+  /** The scope registry the fake answers with. */
+  scopeList: ScopeView[] = [];
+  /** The open scope. */
+  openScope: string | null = null;
+  private scopeListeners = new Set<(v: ScopesView) => void>();
+  emitScopes() {
+    const view = { open: this.openScope, list: this.scopeList };
+    for (const l of this.scopeListeners) l(view);
+  }
+  private changeScope(id: string, change: Partial<ScopeView>): ScopeView {
+    const i = this.scopeList.findIndex((s) => s.id === id);
+    if (i < 0) throw new Error(`Unknown scope: "${id}"`);
+    const next = { ...this.scopeList[i], ...change };
+    this.scopeList = this.scopeList.map((s, j) => (j === i ? next : s));
+    return next;
+  }
+  scopes = {
+    list: async () => this.scopeList,
+    create: async (title: string) => {
+      const s: ScopeView = { id: title.toLowerCase().replace(/[^a-z0-9]+/g, "-"), title, createdAt: "2026-10-25T10:00:00.000Z", archived: false };
+      this.scopeList = [...this.scopeList, s];
+      this.emitScopes();
+      return s;
+    },
+    rename: async (id: string, title: string) => {
+      const s = this.changeScope(id, { title });
+      this.emitScopes();
+      return s;
+    },
+    archive: async (id: string) => {
+      if (this.openScope === id) this.openScope = null;
+      this.changeScope(id, { archived: true });
+      this.emitScopes();
+    },
+    unarchive: async (id: string) => {
+      this.changeScope(id, { archived: false });
+      this.emitScopes();
+    },
+    open: async (id: string | null) => {
+      this.openScope = id;
+      this.emitScopes();
+      return true;
+    },
+    current: async () => this.openScope,
+    onChange: (listener: (v: ScopesView) => void) => {
+      this.scopeListeners.add(listener);
+      return () => {
+        this.scopeListeners.delete(listener);
+      };
+    },
+  };
 }

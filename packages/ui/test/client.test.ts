@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { type EngineStatus, canOpenFile, engineProblem, isTextSize, nextInPath, stepTextSize } from "../src/client";
+import { FakeClient } from "./fake-client";
 
 const ready: EngineStatus = {
   engineId: "claude",
@@ -81,5 +82,21 @@ describe("text size", () => {
     expect(isTextSize("huge")).toBe(false);
     expect(isTextSize(1.5)).toBe(false);
     expect(isTextSize("toString")).toBe(false);
+  });
+});
+
+describe("the scopes contract", () => {
+  it("lists, creates, opens and archives scopes, and tells listeners", async () => {
+    const client = new FakeClient();
+    const seen: (string | null)[] = [];
+    const off = client.scopes.onChange((v) => seen.push(v.open));
+    const s = await client.scopes.create("Fractions");
+    expect(await client.scopes.open(s.id)).toBe(true);
+    expect(await client.scopes.current()).toBe(s.id);
+    await client.scopes.archive(s.id);
+    expect(await client.scopes.current()).toBeNull();
+    expect((await client.scopes.list())[0]).toMatchObject({ id: s.id, archived: true });
+    off();
+    expect(seen).toEqual([null, s.id, null]);
   });
 });

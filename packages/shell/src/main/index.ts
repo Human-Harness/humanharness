@@ -17,6 +17,7 @@ import {
   type ModelsView,
   type MoveResult,
   type RunningSetup as SetupInfo,
+  type ScopesView,
   type SendOptions,
   type SetupOutput,
   type SetupStep,
@@ -29,7 +30,19 @@ import {
   isConfigured,
   stepTextSize,
 } from "@humanharness/ui/client";
-import { History, NOTES_PREFIX, readNotes, syncLocations, syncStatus, writeNote } from "@humanharness/workspace";
+import {
+  History,
+  MAIN_SCOPE,
+  NOTES_PREFIX,
+  ScopeStore,
+  isScopeId,
+  migrateToScopes,
+  notesPrefix,
+  readNotes,
+  syncLocations,
+  syncStatus,
+  writeNote,
+} from "@humanharness/workspace";
 import { imageDataUrl } from "./assets";
 import { ChatLog } from "./chat-log";
 import { ConfigStore, historyDir } from "./config";
@@ -263,10 +276,17 @@ async function appState(): Promise<AppState> {
     actions: Object.fromEntries(
       Object.entries(harness.actions).map(([id, a]) => [
         id,
-        { label: a.label, cost: a.cost, ...(a.description ? { description: a.description } : {}), ...(a.tier ? { tier: a.tier } : {}) },
+        {
+          label: a.label,
+          cost: a.cost,
+          ...(a.description ? { description: a.description } : {}),
+          ...(a.tier ? { tier: a.tier } : {}),
+          ...(a.scope ? { scope: a.scope } : {}),
+        },
       ]),
     ),
     path: harness.path ?? [],
+    ...(harness.scopes ? { scopes: harness.scopes } : {}),
     references: (await referencesFor(saved.folder)).map((r) => ({ id: r.id, label: r.label, path: displayPath(r.path, os.homedir()) })),
     models: await modelsView(saved.language),
     backup: await backupView(saved.folder),
@@ -277,6 +297,54 @@ async function appState(): Promise<AppState> {
 async function validConfig(): Promise<ConfiguredApp | null> {
   const c = await config.load();
   return isConfigured(c) && (await configProblem(c, validation())) === null ? c : null;
+}
+
+/**
+ * The folder every path under `.harness/` starts from (packages/workspace/src/layout.ts): the configured folder.
+ * The profiles plan makes it the active profile's folder by changing only this function (scopes spec §7.1).
+ */
+const baseOf = (c: { folder: string }): string => c.folder;
+
+/** The harness declares scopes (spec D1); without them everything stays as before (D2). */
+const scoped = (): boolean => harness.scopes !== undefined;
+
+/** One registry per base, so its write queue orders every change. */
+const scopeStores = new Map<string, ScopeStore>();
+function scopeStoreFor(base: string): ScopeStore {
+  let store = scopeStores.get(base);
+  if (!store) {
+    store = new ScopeStore(base);
+    scopeStores.set(base, store);
+  }
+  return store;
+}
+
+async function scopesView(): Promise<ScopesView> {
+  const c = await validConfig();
+  if (!c || !scoped()) return { open: null, list: [] };
+  return { open: await tasks.currentScope(), list: await scopeStoreFor(baseOf(c)).list() };
+}
+
+async function scopesChanged(): Promise<void> {
+  try {
+    sendToWindow("hh:scopes", await scopesView());
+  } catch (err) {
+    console.error("Could not send the scopes to the window", err);
+  }
+}
+
+async function scopeStore(): Promise<ScopeStore> {
+  const c = await validConfig();
+  if (!c) throw new Error("The app is not set up yet");
+  if (!scoped()) throw new Error("This harness has no scopes");
+  return scopeStoreFor(baseOf(c));
+}
+
+/** A harness with scopes in a folder used without them (spec §3.2): earlier work moves into `main`, which opens. */
+async function settleScopes(): Promise<void> {
+  const c = await validConfig();
+  if (!c || !scoped()) return;
+  if (await migrateToScopes(baseOf(c))) await tasks.switchScope(MAIN_SCOPE);
 }
 
 function applyAppearance(appearance: AppConfig["appearance"]) {
@@ -388,19 +456,19 @@ const turns = new TurnController({
     await requireNoticeForTurn((await config.load()).engineId, hasNotice);
     return runtime.get();
   },
-  chatLog: async () => {
+  chatLog: async (chat) => {
     const c = await config.load();
     if (!isConfigured(c)) return null;
     // An invalid saved config still runs the turn, so the runtime start fails with the reason;
     // nothing is written into a folder that didn't pass validation.
-    return (await configProblem(c, validation())) === null ? new ChatLog(c.folder, c.engineId) : { append: async () => {} };
+    return (await configProblem(c, validation())) === null ? new ChatLog(baseOf(c), c.engineId, chat) : { append: async () => {} };
   },
   stateBlocks,
   emit,
   recordUsage: async (entry, meta, firstLimits) => {
     const c = await validConfig();
     const record = c ? usageRecord(entry, c.engineId, meta, firstLimits) : null;
-    if (c && record) await new UsageLog(c.folder).append(record);
+    if (c && record) await new UsageLog(baseOf(c)).append(record);
   },
   engineId: async () => (await config.load()).engineId,
   sessionExpired: async (engineId) => {
@@ -412,16 +480,24 @@ const tasks = new TaskManager({
   store: {
     load: async () => {
       const c = await validConfig();
-      return c ? new TaskStore(c.folder).load() : emptyTasks();
+      return c ? new TaskStore(baseOf(c)).load() : emptyTasks();
     },
     save: async (state) => {
       const c = await validConfig();
-      if (c) await new TaskStore(c.folder).save(state);
+      if (c) await new TaskStore(baseOf(c)).save(state);
     },
   },
   turns,
   get actions() {
     return harness.actions;
+  },
+  get scoped() {
+    return scoped();
+  },
+  // An archived scope can't be opened (spec §3.4): it counts as missing here.
+  scopeExists: async (id) => {
+    const c = await validConfig();
+    return c ? (await scopeStoreFor(baseOf(c)).list()).some((s) => s.id === id && !s.archived) : false;
   },
   get path() {
     return harness.path ?? [];
@@ -429,18 +505,18 @@ const tasks = new TaskManager({
   readPrompt: (action) => fs.readFile(resolveInHarness(harness, harness.actions[action].prompt), "utf8"),
   language: async () => (await config.load()).language ?? harness.languages[0],
   engine: async () => (await config.load()).engineId ?? "",
-  notes: async () => {
+  notes: async (scope) => {
     const c = await validConfig();
-    return c ? readNotes(c.folder) : [];
+    return c ? readNotes(baseOf(c), notesPrefix(scoped(), scope)) : [];
   },
-  writeNote: async (slug, note, meta) => {
+  writeNote: async (slug, note, meta, scope) => {
     const c = await validConfig();
     if (!c) throw new Error("The app is not set up yet");
-    await writeNote(c.folder, slug, note, meta);
+    await writeNote(baseOf(c), slug, note, meta, notesPrefix(scoped(), scope));
   },
-  noteExists: async (slug) => {
+  noteExists: async (slug, scope) => {
     const c = await validConfig();
-    return c ? fs.access(path.join(c.folder, NOTES_PREFIX, `${slug}.md`)).then(() => true, () => false) : false;
+    return c ? fs.access(path.join(baseOf(c), notesPrefix(scoped(), scope), `${slug}.md`)).then(() => true, () => false) : false;
   },
   endSession: async () => {
     const rt = await runtime.peek()?.catch(() => null);
@@ -469,7 +545,7 @@ const tasks = new TaskManager({
   recordCompaction: async (task) => {
     const c = await validConfig();
     if (!c) return;
-    await new UsageLog(c.folder).append(
+    await new UsageLog(baseOf(c)).append(
       compactionRecord(c.engineId, { ...(task.action ? { action: task.action } : {}), task: task.id, ...(task.profile ? profileMeta(task.profile) : {}) }),
     );
   },
@@ -490,7 +566,7 @@ async function saveConfigPatch(patch: AppConfig, before: AppConfig): Promise<voi
         dropRuntime,
         archiveChat: async () => {
           const c = await validConfig();
-          return c && c.engineId === engineId ? startNewChatIfEngineChanged(c.folder, engineId) : null;
+          return c && c.engineId === engineId ? startNewChatIfEngineChanged(baseOf(c), engineId) : null;
         },
       },
       // The new engine is saved: the window gets the new state; the next chat load archives the old chat.
@@ -540,6 +616,11 @@ function registerIpc() {
     await saveWithFolderChange(patch.folder, before.folder, { isBusy: () => tasks.isBusy() || restores.turnBlocked() !== null, guards, interrupt: () => tasks.interrupt(), dropRuntime }, () =>
       saveConfigPatch(patch, before),
     );
+    if (patch.folder !== undefined && patch.folder !== before.folder) {
+      await settleScopes()
+        .then(scopesChanged)
+        .catch((err: unknown) => console.error("Could not prepare the scopes", err));
+    }
     if (patch.appearance) applyAppearance(patch.appearance);
     if (patch.textSize) applyTextSize(patch.textSize);
     return appState();
@@ -549,8 +630,8 @@ function registerIpc() {
     if (!c) return { entries: [] };
     // The engine change archives the chat; the check here only catches a change made while the app was closed.
     const switchedFrom =
-      guards.takeSwitchedFrom() ?? (tasks.isBusy() || guards.turnBlocked() ? null : await archiveStaleChat(c.folder, c.engineId, dropRuntime));
-    return { entries: await new ChatLog(c.folder).load(), ...(switchedFrom ? { switchedFrom } : {}) };
+      guards.takeSwitchedFrom() ?? (tasks.isBusy() || guards.turnBlocked() ? null : await archiveStaleChat(baseOf(c), c.engineId, dropRuntime));
+    return { entries: await new ChatLog(baseOf(c), undefined, await tasks.chatScope()).load(), ...(switchedFrom ? { switchedFrom } : {}) };
   });
   handle("hh:send", (message: string, options?: SendOptions) => {
     if (quitting) throw new Error("The app is closing");
@@ -558,10 +639,46 @@ function registerIpc() {
     if (blocked) throw new Error(blocked);
     if (typeof message !== "string" || !message.trim() || message.length > 20_000) throw new Error("Invalid message");
     const action = typeof options?.action === "string" && Object.hasOwn(harness.actions, options.action) ? options.action : undefined;
+    const scope = typeof options?.scope === "string" && isScopeId(options.scope) ? options.scope : undefined;
     // A message with an action starts that task (the message is what the chat shows); any other follows up or asks.
-    return action ? tasks.start(action, message) : tasks.ask(message);
+    const sent = action ? tasks.start(action, message, scope) : tasks.ask(message, undefined, scope);
+    return scope === undefined ? sent : sent.finally(() => void scopesChanged());
   });
   handle("hh:getTasks", () => tasks.view());
+  handle("hh:scopes", async () => (await scopesView()).list);
+  handle("hh:scopeCurrent", () => tasks.currentScope());
+  handle("hh:scopeCreate", async (title: unknown) => {
+    const created = await (await scopeStore()).create(title);
+    await scopesChanged();
+    return created;
+  });
+  handle("hh:scopeRename", async (id: unknown, title: unknown) => {
+    if (!isScopeId(id)) throw new Error("Unknown scope");
+    const renamed = await (await scopeStore()).rename(id, title);
+    await scopesChanged();
+    return renamed;
+  });
+  // A scope is never deleted (spec §3.4). Archiving the open one closes its task and the scope first.
+  handle("hh:scopeArchive", async (id: unknown, archived: unknown) => {
+    if (!isScopeId(id) || typeof archived !== "boolean") throw new Error("Invalid scope change");
+    const store = await scopeStore();
+    if (archived && (await tasks.currentScope()) === id) {
+      const blocked = turnBlocked();
+      if (blocked) throw new Error(blocked);
+      if (!(await tasks.switchScope(null))) throw new Error("The open task is still closing");
+    }
+    await store.setArchived(id, archived);
+    await scopesChanged();
+  });
+  handle("hh:scopeOpen", async (id: unknown) => {
+    if (quitting) throw new Error("The app is closing");
+    const blocked = turnBlocked();
+    if (blocked) throw new Error(blocked);
+    if (id !== null && !isScopeId(id)) throw new Error("Unknown scope");
+    const opened = await tasks.switchScope(id);
+    await scopesChanged();
+    return opened;
+  });
   handle("hh:choose", (option: unknown, task: unknown) => {
     if (quitting) throw new Error("The app is closing");
     const blocked = turnBlocked();
@@ -692,7 +809,7 @@ function registerIpc() {
     if (!c) return { limits: null, estimates: {}, tokens: {} };
     // A mock engine reports no limits, so it measures no window.
     const primary = isMockEngine(hooks, c.engineId) ? undefined : getEngine(c.engineId).limits?.primary;
-    return summarizeUsage((await new UsageLog(c.folder).load()).filter((r) => r.engine === c.engineId), primary);
+    return summarizeUsage((await new UsageLog(baseOf(c)).load()).filter((r) => r.engine === c.engineId), primary);
   });
   handle("hh:revealSharedConfig", () => shell.showItemInFolder(shared.path));
   // Installing by hand: copy the official command (chosen here by engine id) and open Terminal,
@@ -861,6 +978,10 @@ if (primary) {
     registerIpc();
     // A task left open by an earlier run can't continue: its session is gone.
     void tasks.interrupt().catch((err: unknown) => console.error("Could not settle the last task", err));
+    // After the interrupt (queued behind it): a scoped harness's earlier work moves into `main`.
+    void settleScopes()
+      .then(scopesChanged)
+      .catch((err: unknown) => console.error("Could not prepare the scopes", err));
     await createWindow();
   });
 

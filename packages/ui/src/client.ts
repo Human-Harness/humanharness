@@ -66,6 +66,8 @@ export interface ActionOption {
   cost: ActionCost;
   /** The tier the harness recommends for the action. */
   tier?: Tier;
+  /** Harnesses with scopes: "none" runs app-wide; anything else needs an open scope. */
+  scope?: "required" | "none";
 }
 
 /** A read-only reference folder, as the work screen shows it ("~/…" for paths in the home folder). */
@@ -123,6 +125,8 @@ export interface AppState {
   actions: Record<string, ActionOption>;
   /** The guided path: action ids in order. */
   path?: string[];
+  /** The harness's unit of work (manifest `scopes`): what to call it. Absent: no scopes (spec D2). */
+  scopes?: { label: LocalizedText; plural: LocalizedText };
   /** Folders the agent can read but never change. */
   references?: ReferenceView[];
   /** Settings › Modelos. */
@@ -292,6 +296,8 @@ export interface SendOptions {
    * message is what the chat shows). Heavy actions may ask first.
    */
   action?: string;
+  /** Harnesses with scopes: run in this scope (it opens first). Default: the open one. */
+  scope?: string;
 }
 
 /**
@@ -362,6 +368,20 @@ export function canOpenFile(file: string): boolean {
   return dot > 0 && OPENABLE_EXTENSIONS.has(name.slice(dot).toLowerCase());
 }
 
+/** A scope as the window sees it (spec §3.4). */
+export interface ScopeView {
+  id: string;
+  title: string;
+  createdAt: string;
+  archived: boolean;
+}
+
+/** The open scope and the registry, sent whenever either changes. */
+export interface ScopesView {
+  open: string | null;
+  list: ScopeView[];
+}
+
 /** Everything the renderer can ask the main process. Implemented by the preload as `window.hh`. */
 export interface HarnessClient {
   getState(): Promise<AppState>;
@@ -414,6 +434,19 @@ export interface HarnessClient {
   openPath(path: string): Promise<boolean>;
   /** Shows a file inside the reference folders or the user's folder in Finder (any kind of file). False when refused or missing. */
   revealPath(path: string): Promise<boolean>;
+  /** Harnesses with scopes (spec §3.4). There is no delete: archive instead. */
+  scopes: {
+    list(): Promise<ScopeView[]>;
+    create(title: string): Promise<ScopeView>;
+    rename(id: string, title: string): Promise<ScopeView>;
+    /** Archiving the open scope closes it first. */
+    archive(id: string): Promise<void>;
+    unarchive(id: string): Promise<void>;
+    /** Opens a scope (null: none), closing the open task first; false when that close was stopped. */
+    open(id: string | null): Promise<boolean>;
+    current(): Promise<string | null>;
+    onChange(listener: (view: ScopesView) => void): () => void;
+  };
   /** The text size changed from the keyboard (⌘+, ⌘−, ⌘0), already saved. */
   onTextSize(listener: (size: TextSize) => void): () => void;
 }

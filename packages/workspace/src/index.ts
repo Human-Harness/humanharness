@@ -7,3 +7,4 @@ export * from "./layout";
 export * from "./backup";
 export * from "./subjects";
 export * from "./scopes";
+export * from "./migrate";

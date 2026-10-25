@@ -82,6 +82,10 @@ export function HistoryPanel({
       () => undefined,
     );
   }, [client, hasScopes]);
+  // A reload can drop the selected scope: back to all.
+  useEffect(() => {
+    if (filter && !scopeIds.includes(filter)) setFilter("");
+  });
   const shown = filter ? (groups ?? []).filter((g) => g.scopeId === filter) : groups;
   const closeRef = useRef<HTMLButtonElement>(null);
   const yesRef = useRef<HTMLButtonElement>(null);
@@ -200,6 +204,7 @@ export function HistoryPanel({
       {failed && <p role="alert">{t("history.restoreFailed")}</p>}
       {loadFailed && <p role="alert">{t("history.loadFailed")}</p>}
       {groups?.length === 0 && <p>{t("history.empty")}</p>}
+      {shown?.length === 0 && (groups?.length ?? 0) > 0 && <p>{t("history.emptyFilter")}</p>}
       {hasScopes && (
         <label className="hh-history-filter">
           {t("history.scopeFilter")}{" "}

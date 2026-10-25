@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
-import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { I18nextProvider } from "react-i18next";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ActionOption, HistoryTaskView } from "../src/client";
 import { HistoryPanel, entryLabel } from "../src/HistoryPanel";
@@ -83,6 +84,52 @@ describe("HistoryPanel", () => {
     expect(screen.getAllByRole("button", { name: /A question/ })).toHaveLength(3);
     fireEvent.change(filter, { target: { value: "fracciones" } });
     expect(screen.getAllByRole("button", { name: /A question/ })).toHaveLength(1);
+  });
+
+  const scoped = (...rows: [string, string, string][]) => {
+    const client = new FakeClient();
+    client.scopeList = [{ id: "fracciones", title: "Fractions", createdAt: "c", archived: false }];
+    client.historyGroups = rows.map(([taskId, scopeId, date]) => ({
+      taskId,
+      actionId: null,
+      scopeId,
+      start: "s0",
+      end: `e-${taskId}`,
+      date,
+      changes: [],
+      entries: [{ sha: `e-${taskId}`, message: `Turn: ${taskId}`, date }],
+    }));
+    return client;
+  };
+
+  it("counts the later tasks the scope filter hides when going back", async () => {
+    const client = scoped(["t2", "_app", "2026-10-11T12:00:00.000Z"], ["t1", "fracciones", "2026-10-10T12:00:00.000Z"]);
+    await renderIn("en", <HistoryPanel client={client} actions={{}} lang="en" onClose={() => {}} />);
+    const filter = await screen.findByRole("combobox", { name: "Show" });
+    await waitFor(() => expect(within(filter).getByRole("option", { name: "Fractions" })).toBeTruthy());
+    fireEvent.change(filter, { target: { value: "fracciones" } });
+    fireEvent.click(screen.getByRole("button", { name: /A question/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Go back to before this task" }));
+    expect(screen.getByText(/This also undoes 1 later task\./)).toBeTruthy();
+  });
+
+  it("goes back to all when the selected scope is gone after a reload", async () => {
+    const date = "2026-10-10T12:00:00.000Z";
+    const first = scoped(["t1", "fracciones", date], ["t2", "other", date]);
+    const i18n = await (await import("@humanharness/i18n")).createI18n("en");
+    const ui = (c: FakeClient) => (
+      <I18nextProvider i18n={i18n}>
+        <HistoryPanel client={c} actions={{}} lang="en" onClose={() => {}} />
+      </I18nextProvider>
+    );
+    const view = render(ui(first));
+    const filter = (await screen.findByRole("combobox", { name: "Show" })) as HTMLSelectElement;
+    await waitFor(() => expect(filter.options.length).toBe(3));
+    fireEvent.change(filter, { target: { value: "fracciones" } });
+    expect(screen.getAllByRole("button", { name: /A question/ })).toHaveLength(1);
+    view.rerender(ui(scoped(["t2", "other", date], ["t3", "more", date])));
+    await waitFor(() => expect(screen.getAllByRole("button", { name: /A question/ })).toHaveLength(2));
+    expect((screen.getByRole("combobox", { name: "Show" }) as HTMLSelectElement).value).toBe("");
   });
 
   it("shows no filter for a history without scopes", async () => {

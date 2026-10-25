@@ -284,6 +284,7 @@
     "other": "Trabajando en {{detail}}"
   },
   "history": {
+    "emptyFilter": "Todavía no hay nada acá.",
     "scopeFilter": "Mostrar",
     "allScopes": "Todo",
     "appScope": "De toda la app",

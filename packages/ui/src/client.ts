@@ -1,6 +1,7 @@
 import type { Effort, ModelChoice, ModelSpec, ModelsConfig } from "@humanharness/engines";
 import type {
   ActionCost,
+  BlockAnswer,
   ChoiceOption,
   DataKey,
   DataRecord,
@@ -172,11 +173,19 @@ export interface TurnUsage {
   cacheWriteTokens: number;
 }
 
+/** A block in the chat. Input blocks carry the id the app gave them and, once answered, the answer (input-blocks spec §8). */
+export interface ChatBlock {
+  name: string;
+  data: unknown;
+  id?: string;
+  input?: BlockAnswer;
+}
+
 export interface ChatEntry {
   id: string;
   role: "user" | "assistant";
   text: string;
-  blocks: { name: string; data: unknown }[];
+  blocks: ChatBlock[];
   activities: { kind: ActivityKind; detail: string }[];
   at: string;
   error?: EngineError;

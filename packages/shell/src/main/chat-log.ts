@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { MAIN_SCOPE, chatFile, chatsDir, isScopeDir } from "@humanharness/workspace";
+import type { BlockAnswer } from "@humanharness/harness-sdk";
 import type { Event, LimitWindow } from "@humanharness/runtime";
 import type { ChatEntry, TurnUsage } from "@humanharness/ui/client";
 
@@ -54,6 +55,43 @@ export class ChatLog {
     return entries.slice(-limit);
   }
 
+  /**
+   * Puts the person's answer on the block it answers (input-blocks spec §8). The file is rewritten atomically
+   * (temp + rename), keeping every other line as it was. False when no unanswered block has that id.
+   */
+  async markAnswered(answer: BlockAnswer): Promise<boolean> {
+    let raw: string;
+    try {
+      raw = await fs.readFile(this.file, "utf8");
+    } catch {
+      return false;
+    }
+    let found = false;
+    const lines = raw.split("\n").map((line) => {
+      if (found || !line.trim()) return line;
+      let entry: ChatEntry;
+      try {
+        entry = JSON.parse(line) as ChatEntry;
+      } catch {
+        return line;
+      }
+      const i = Array.isArray(entry.blocks) ? entry.blocks.findIndex((b) => b.id === answer.blockId && b.input === undefined) : -1;
+      if (i < 0) return line;
+      found = true;
+      return JSON.stringify({ ...entry, blocks: entry.blocks.map((b, j) => (j === i ? { ...b, input: answer } : b)) });
+    });
+    if (!found) return false;
+    const tmp = `${this.file}.${randomUUID()}.tmp`;
+    try {
+      await fs.writeFile(tmp, lines.join("\n"));
+      await fs.rename(tmp, this.file);
+    } catch (err) {
+      await fs.rm(tmp, { force: true });
+      throw err;
+    }
+    return true;
+  }
+
   /** Moves the conversation to `chats/archive/<time>-<label>.jsonl`. Null when there was none. */
   async archive(label: string): Promise<string | null> {
     try {
@@ -90,7 +128,7 @@ export class TurnRecorder {
     else if (e.type === "activity" && e.state === "start") this.activities.push({ kind: e.kind, detail: e.detail });
     else if (e.type === "block") {
       if (this.stateBlocks.has(e.name)) this.state[e.name] = e.data;
-      else this.blocks.push({ name: e.name, data: e.data });
+      else this.blocks.push({ name: e.name, data: e.data, ...(e.id ? { id: e.id } : {}) });
     } else if (e.type === "limits") {
       this.firstLimits ??= e.windows;
       this.limits = e.windows;

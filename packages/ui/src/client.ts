@@ -409,6 +409,8 @@ export interface DataOptions {
   scope?: string;
 }
 
+export { hearsDataChange } from "./data-change";
+
 /** Everything the renderer can ask the main process. Implemented by the preload as `window.hh`. */
 export interface HarnessClient {
   getState(): Promise<AppState>;
@@ -481,7 +483,7 @@ export interface HarnessClient {
     put(collection: string, record: DataRecord, options?: DataOptions): Promise<DataRecord>;
     patch(collection: string, key: DataKey | undefined, patch: DataRecord, options?: DataOptions): Promise<DataRecord>;
     delete(collection: string, key?: DataKey, options?: DataOptions): Promise<boolean>;
-    /** Every write to `collection` (in `scope`; null: any scope), from any writer. */
+    /** Every write to `collection` (in `scope`; null: any scope), from any writer. App-wide collections ignore the scope. */
     subscribe(collection: string, scope: string | null, listener: (change: DataChangeView) => void): () => void;
   };
   /** What a task changed in the harness's data ("what changed in this session", spec §4.5). */

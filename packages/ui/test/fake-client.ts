@@ -28,6 +28,7 @@ import type {
   TextSize,
   UsageSummary,
 } from "../src/client";
+import { hearsDataChange } from "../src/client";
 
 export class FakeClient implements HarnessClient {
   state: AppState;
@@ -416,7 +417,7 @@ export class FakeClient implements HarnessClient {
     },
     subscribe: (collection: string, scope: string | null, listener: (c: DataChangeView) => void) => {
       const l = (c: DataChangeView) => {
-        if (c.collection === collection && (scope === null || c.scope === scope)) listener(c);
+        if (hearsDataChange(c, collection, scope)) listener(c);
       };
       this.dataListeners.add(l);
       return () => {

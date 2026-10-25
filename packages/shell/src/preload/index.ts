@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { DataChangeView, Event, HarnessClient, ScopesView, SetupOutput, TaskView, TextSize } from "@humanharness/ui/client";
+import { hearsDataChange } from "@humanharness/ui/data-change";
 
 function subscribe<T>(channel: string, listener: (value: T) => void): () => void {
   const handler = (_e: unknown, value: T) => listener(value);
@@ -56,7 +57,7 @@ const client: HarnessClient = {
     delete: (collection, key, options) => ipcRenderer.invoke("hh:data", { op: "delete", collection, ...(key !== undefined ? { key } : {}) }, options),
     subscribe: (collection, scope, listener) =>
       subscribe<DataChangeView>("hh:dataChange", (change) => {
-        if (change.collection === collection && (scope === null || change.scope === scope)) listener(change);
+        if (hearsDataChange(change, collection, scope)) listener(change);
       }),
   },
   dataDiff: (taskId) => ipcRenderer.invoke("hh:dataDiff", taskId),

@@ -38,3 +38,4 @@ Spec: `docs/superpowers/specs/2026-10-25-scopes-and-data-design.md`.
 - One file per collection is meant for hundreds of records (spec §7.2); measure before using it for thousands.
 - A hand edit is noticed on the next read, not as it happens: there is no file watcher.
 - Rules can't be stopped when slow; they are only reported.
+- The data tools act only on the running task's scope (they take no scope argument), so the agent can't reach another scope's data.

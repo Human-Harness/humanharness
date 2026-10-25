@@ -1,4 +1,4 @@
-import { promises as fs } from "node:fs";
+import { constants, promises as fs } from "node:fs";
 import path from "node:path";
 import { MAIN_SCOPE, NOTES_PREFIX, chatFile } from "./layout";
 import { ScopeStore } from "./scopes";
@@ -32,10 +32,19 @@ export async function migrateToScopes(base: string, now: () => Date = () => new 
   return true;
 }
 
-/** Moves `from` to `to` unless `to` exists (the note already in `main` wins) or `from` is gone (another window moved it). */
+/**
+ * Moves `from` to `to` unless `to` exists (the note already in `main` wins) or `from` is gone (another window moved it).
+ * A hard link never overwrites; where the filesystem has none (exFAT, some network or FUSE drives) an exclusive copy does the same.
+ */
 async function moveIfFree(from: string, to: string): Promise<void> {
   try {
-    await fs.link(from, to);
+    try {
+      await fs.link(from, to);
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException).code;
+      if (code !== "ENOTSUP" && code !== "EPERM" && code !== "ENOSYS" && code !== "EMLINK") throw e;
+      await fs.copyFile(from, to, constants.COPYFILE_EXCL);
+    }
   } catch (e) {
     const code = (e as NodeJS.ErrnoException).code;
     if (code === "EEXIST" || code === "ENOENT") return;

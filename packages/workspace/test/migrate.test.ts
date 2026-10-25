@@ -1,10 +1,11 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { ScopeStore, migrateToScopes, readNotes, writeNote } from "../src";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
+afterEach(() => vi.restoreAllMocks());
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
 const tmp = () => fs.mkdtempSync(path.join(root, "t-"));
 const at = () => new Date("2026-10-25T10:00:00.000Z");
@@ -61,5 +62,29 @@ describe("migrateToScopes", () => {
     expect(await migrateToScopes(base, at)).toBe(true);
     expect((await readNotes(base, ".harness/notes/main/")).map((n) => n.title)).toEqual(["in main"]);
     expect((await readNotes(base)).map((n) => n.title)).toEqual(["flat"]);
+  });
+
+  describe("on a filesystem without hard links", () => {
+    const noLinks = (code: string) =>
+      vi.spyOn(fs.promises, "link").mockRejectedValue(Object.assign(new Error(code), { code }));
+
+    it.each(["ENOTSUP", "EPERM", "ENOSYS", "EMLINK"])("copies then removes the flat note (%s)", async (code) => {
+      const base = tmp();
+      await writeNote(base, "a", note, meta);
+      noLinks(code);
+      expect(await migrateToScopes(base, at)).toBe(true);
+      expect(await readNotes(base)).toEqual([]);
+      expect((await readNotes(base, ".harness/notes/main/")).map((n) => n.slug)).toEqual(["a"]);
+    });
+
+    it("still never overwrites a note already in main", async () => {
+      const base = tmp();
+      await writeNote(base, "a", { ...note, title: "flat" }, meta);
+      await writeNote(base, "a", { ...note, title: "in main" }, meta, ".harness/notes/main/");
+      noLinks("ENOTSUP");
+      expect(await migrateToScopes(base, at)).toBe(true);
+      expect((await readNotes(base, ".harness/notes/main/")).map((n) => n.title)).toEqual(["in main"]);
+      expect((await readNotes(base)).map((n) => n.title)).toEqual(["flat"]);
+    });
   });
 });

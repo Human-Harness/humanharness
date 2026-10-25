@@ -8,8 +8,8 @@
 ## History
 
 - Every change is recorded in an invisible local git history kept outside the folder (`packages/workspace/src/history.ts`, built on isomorphic-git). Its data lives in the app's data folder, one per folder (`historyDir` in `packages/shell/src/main/config.ts`), so cloud sync never touches it.
-- The runtime (`packages/runtime/src/runtime.ts`) commits when it starts ("Start"), before each message ("Before message") and after the turn ("Turn: …", or "Stopped: …" when it didn't finish). If the agent crashes mid-turn, it restores the point before the message ("Undo: …"). A saved note is committed as "Note: …".
-- The history skips `.harness/` except `.harness/notes/`, and skips the generated `AGENTS.md` and the engine's own instructions file.
+- The runtime (`packages/runtime/src/runtime.ts`) commits when it starts ("Start"), before each message ("Before message") and after the turn ("Turn: …", or "Stopped: …" when it didn't finish). If the agent crashes mid-turn, it restores the point before the message ("Undo: …"). A saved note is committed as "Note: …". A person's data write is committed as "Data: <collection>" (see `data.md`).
+- The history skips `.harness/` except `.harness/notes/` and `.harness/data/`, and skips the generated `AGENTS.md` and the engine's own instructions file.
 - Symlinks are recorded as links (git mode 120000, the blob is the target path), never as what they point to. A restore never writes through a link: it removes a link in its way (the link, not its target), recreates a link entry as a link, writes regular files with `O_NOFOLLOW` where the OS has it, and skips (and logs) any entry whose parent folder resolves outside the folder through a linked folder. It checks the parent's real path before and again right after creating it, just before the write. An entry it can't write safely (outside the folder, a folder in its place, a link the OS won't create, such as on Windows without Developer Mode) is skipped and the rest of the restore goes on; `History.restoreReport` returns the skipped paths with the new commit.
 
 ### Commits belong to tasks
@@ -22,6 +22,8 @@
   Task: <task id>
   Action: <action id>
   ```
+
+  In a harness with scopes the trailers also carry `Scope: <scope id>`.
 
   The task manager passes the task id and action with each turn (`TurnOptions.task`/`action` → `HarnessRuntime.send(…, { trailer })`) and with each note (`TaskDeps.saveHistory(message, trailer)`).
 - Untagged: "Start" (it records changes made outside the app) and every restore ("Go back to …" commits). A restore is not part of the task it undid, so it never changes that task's own row.

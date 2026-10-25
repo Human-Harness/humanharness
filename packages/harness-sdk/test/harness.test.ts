@@ -47,6 +47,14 @@ describe("blockToolName", () => {
 });
 
 describe("defineHarness", () => {
+  it("refuses an id that would name its MCP server like a built-in one", () => {
+    for (const id of ["ui", "data"]) {
+      expect(() => defineHarness({ ...base, id, languages: [...base.languages], mcp: ["./mcp.ts"] })).toThrow(new RegExp(`${id}\\\\?" is a built-in MCP server name`));
+      // Without servers of its own, nothing is named after the id.
+      expect(defineHarness({ ...base, id, languages: [...base.languages] }).id).toBe(id);
+    }
+  });
+
   it("fills defaults", () => {
     const h = defineHarness({ ...base, languages: [...base.languages] });
     expect(h.mcp).toEqual([]);

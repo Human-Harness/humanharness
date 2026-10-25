@@ -204,8 +204,11 @@ export async function createRuntime(opts: RuntimeOptions): Promise<HarnessRuntim
         try {
           await transport.close();
         } finally {
-          await bridge.close();
-          await rpc?.close();
+          try {
+            await bridge.close();
+          } finally {
+            await rpc?.close();
+          }
         }
       },
     };

@@ -11,6 +11,23 @@ import type { Event } from "../src/events";
 import { type HarnessRuntime, type RuntimeOptions, createRuntime } from "../src/runtime";
 import type { Session } from "../src/transport";
 
+/** Sockets the runtime opened: a test can make the bridge's close fail and see the rpc's close. */
+const sockets = vi.hoisted(() => ({ failBridgeClose: false, rpcClosed: 0 }));
+vi.mock("@humanharness/blocks", async (importOriginal) => {
+  const blocks = await importOriginal<typeof import("@humanharness/blocks")>();
+  return {
+    ...blocks,
+    openBridge: async (...args: Parameters<typeof blocks.openBridge>) => {
+      const bridge = await blocks.openBridge(...args);
+      return { ...bridge, close: () => (sockets.failBridgeClose ? bridge.close().then(() => Promise.reject(new Error("bridge"))) : bridge.close()) };
+    },
+    openRpc: async (...args: Parameters<typeof blocks.openRpc>) => {
+      const rpc = await blocks.openRpc(...args);
+      return { ...rpc, close: () => rpc.close().then(() => void sockets.rpcClosed++) };
+    },
+  };
+});
+
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
 
@@ -284,5 +301,18 @@ describe("createRuntime", () => {
     await send(runtime);
     expect(mcpServers(args())).toEqual(["ui", "data"]);
     expect(seen).toEqual([{ op: "put", collection: "concepts", record: { id: "halves", name: "Halves", state: "seen", evidence: [] } }]);
+  });
+
+  it("closes the data socket even when closing the ui bridge fails", async () => {
+    const { runtime: r } = await setup({ steps: [claudeResultLine(true)] }, undefined, { harness: await loadHarness(STUDY), data: async () => null });
+    runtime = undefined;
+    const closed = sockets.rpcClosed;
+    sockets.failBridgeClose = true;
+    try {
+      await expect(r.close()).rejects.toThrow("bridge");
+    } finally {
+      sockets.failBridgeClose = false;
+    }
+    expect(sockets.rpcClosed).toBe(closed + 1);
   });
 });

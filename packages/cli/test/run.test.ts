@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { EventEmitter } from "node:events";
 import fs from "node:fs";
 import os from "node:os";
@@ -9,6 +10,7 @@ import { NOTICE_VERSION, getEngine } from "@humanharness/engines";
 import { type ClaudeScript, claudeTextLines, fakeClaudeCommand, recordingSchema, writeScript } from "@humanharness/fake-agent";
 import type { CommandDeps } from "@humanharness/shell/tasks";
 import { SharedConfigStore } from "@humanharness/shell/tasks";
+import { DATA_PREFIX, History, NOTES_PREFIX, TURN_PREFIX } from "@humanharness/workspace";
 import { UsageError } from "../src/cli";
 import { initHarness } from "../src/init";
 import { main } from "../src/main";
@@ -123,7 +125,24 @@ describe("runTask", () => {
       output: memoryStream().stream,
       engineCommand: { command: fakeClaudeCommand(), env: { HH_FAKE_SCRIPT: writeScript(root, script) } },
     });
-    expect(JSON.parse(fs.readFileSync(path.join(folder, ".harness", "data", "run", "concepts.json"), "utf8"))).toEqual([record]);
+    const file = path.join(".harness", "data", "run", "concepts.json");
+    expect(JSON.parse(fs.readFileSync(path.join(folder, file), "utf8"))).toEqual([record]);
+
+    // The turn's own commit holds the file: going back to it brings the file, going back to before it doesn't.
+    const gitdir = path.join(os.tmpdir(), "humanharness-run-history", `study-${createHash("sha256").update(folder).digest("hex").slice(0, 12)}`);
+    const copy = path.join(root, "study-data-history");
+    fs.cpSync(gitdir, copy, { recursive: true });
+    fs.rmSync(gitdir, { recursive: true, force: true });
+    const check = path.join(root, "study-data-check");
+    fs.mkdirSync(check);
+    const history = new History(check, copy, [".harness/"], [NOTES_PREFIX, DATA_PREFIX]);
+    const entries = await history.list();
+    const turn = entries.findLastIndex((e) => e.message.startsWith(TURN_PREFIX));
+    expect(entries[turn]).toMatchObject({ task: expect.any(String), action: "study", scope: "run" });
+    await history.restore(entries[turn].sha, "check");
+    expect(fs.existsSync(path.join(check, file))).toBe(true);
+    await history.restore(entries[turn + 1].sha, "check");
+    expect(fs.existsSync(path.join(check, file))).toBe(false);
   });
 
   it("runs a scoped harness's action in a `run` scope: its note, chat, usage and statuses are the scope's", { timeout: 60_000 }, async () => {

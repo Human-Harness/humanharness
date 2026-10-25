@@ -75,6 +75,9 @@ const blockSchema = z.custom<Block>(
   { message: "Expected a block created with defineBlock()" },
 );
 
+/** The core's MCP servers (packages/blocks): a harness's own servers can't take these names. */
+const RESERVED_MCP_NAMES = ["ui", "data"];
+
 const manifestSchema = z.object({
   id: z.string().regex(HARNESS_ID),
   name: localizedText,
@@ -116,6 +119,10 @@ const manifestSchema = z.object({
     const other = tools.get(tool);
     if (other !== undefined) ctx.addIssue({ code: "custom", path: ["blocks", name], message: `Tool "${tool}" is already used by block "${other}"` });
     else tools.set(tool, name);
+  }
+  // The harness's own MCP servers are named after its id, next to the core's `ui` and `data` servers.
+  if (m.mcp.length > 0 && RESERVED_MCP_NAMES.includes(m.id)) {
+    ctx.addIssue({ code: "custom", path: ["id"], message: `"${m.id}" is a built-in MCP server name and the harness's MCP servers are named after its id: use another id` });
   }
   // Free questions' model setting lives under the "questions" key, next to the action ids.
   if (Object.hasOwn(m.actions, "questions")) {

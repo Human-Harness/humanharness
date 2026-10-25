@@ -28,7 +28,7 @@ import {
   sharedConfigDir,
   usageRecord,
 } from "@humanharness/shell/tasks";
-import { DataStore, MAIN_SCOPE, ScopeStore,generatedFiles, migrateToScopes, notesPrefix, readNotes, writeNote } from "@humanharness/workspace";
+import { DataStore, MAIN_SCOPE, ScopeStore, generatedFiles, migrateToScopes, notesPrefix, readNotes, writeNote } from "@humanharness/workspace";
 import { CliError, type Io, UsageError, parseCommand } from "./cli";
 import { MANIFEST } from "./paths";
 import { clashMessage, matchClashes } from "./mock-match";

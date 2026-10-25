@@ -62,6 +62,9 @@ export function personDataRequests(d: PersonDataDeps): (request: unknown, option
   };
 }
 
+/** The agent's request can't run now; its message is safe to show the agent. */
+class Unavailable extends Error {}
+
 export interface AgentDataDeps {
   store(): Promise<DataStore | null>;
   /** The open task and the scope it runs in. */
@@ -76,14 +79,14 @@ export interface AgentDataDeps {
  * agent gets a plain message, so no file path or internal detail reaches it.
  */
 export async function agentDataRequest(d: AgentDataDeps, request: unknown): Promise<unknown> {
-  const task = await d.runningTask();
-  if (!task) throw new Error("No task is running");
-  const store = await d.store();
-  if (!store) throw new Error("The app is not set up yet");
   try {
+    const task = await d.runningTask();
+    if (!task) throw new Unavailable("No task is running");
+    const store = await d.store();
+    if (!store) throw new Unavailable("The app is not set up yet");
     return await runDataRequest(store, request, { who: "agent", scope: task.scope, ...(task.action ? { action: task.action } : {}) });
   } catch (err) {
-    if (err instanceof DataError) throw err;
+    if (err instanceof DataError || err instanceof Unavailable) throw err;
     console.error("The agent's data request failed", err);
     throw new Error("Something went wrong with the data");
   }

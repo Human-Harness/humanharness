@@ -1,11 +1,15 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it, vi } from "vitest";
-import { dataSchema, z } from "@humanharness/harness-sdk";
+import { dataServerSpec, devLauncher, openRpc } from "@humanharness/blocks";
+import { callMcpTool } from "@humanharness/fake-agent";
+import { dataSchema, loadHarness, z } from "@humanharness/harness-sdk";
 import { DataError, DataStore, type HistoryTrailer, dataFile } from "@humanharness/workspace";
 import { type PersonDataDeps, agentDataRequest, personDataRequests } from "../src/main/data-requests";
 
+const STUDY = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../fake-agent/fixtures/data-harness/harness.config.ts");
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
 const data = dataSchema.parse({
@@ -112,5 +116,41 @@ describe("agentDataRequest", () => {
       error.mockRestore();
     }
     await expect(agentDataRequest({ ...deps, store: async () => t.store }, { op: "nope" })).rejects.toBeInstanceOf(DataError);
+  });
+
+  it("hides the failures of looking up the task or the store too", async () => {
+    const t = setup();
+    const leak = async (): Promise<never> => {
+      throw new Error("ENOENT: /Users/someone/secret/.harness/tasks.json");
+    };
+    const deps = { store: async () => t.store, runningTask: async () => ({ id: "t1", scope: "fracciones" }) };
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      for (const broken of [{ ...deps, runningTask: leak }, { ...deps, store: leak }]) {
+        const failure = agentDataRequest(broken, { op: "query", collection: "concepts" });
+        await expect(failure).rejects.toThrow("Something went wrong with the data");
+        await expect(failure).rejects.not.toThrow(/secret/);
+      }
+      expect(error).toHaveBeenCalledTimes(2);
+    } finally {
+      error.mockRestore();
+    }
+    await expect(agentDataRequest({ ...deps, store: async () => null }, { op: "query", collection: "concepts" })).rejects.toThrow("The app is not set up yet");
+  });
+
+  it("gives a store refusal back to the agent as the data tool's error", { timeout: 30_000 }, async () => {
+    const study = await loadHarness(STUDY);
+    const store = new DataStore(fs.mkdtempSync(path.join(root, "t-")), study.data);
+    const rpc = await openRpc((request) => agentDataRequest({ store: async () => store, runningTask: async () => ({ id: "t1", scope: "fracciones" }) }, request));
+    try {
+      const server = dataServerSpec({ harnessConfig: study.configPath, rpc, launcher: devLauncher() });
+      const record = { id: "halves", name: "Halves", state: "seen", evidence: [] };
+      expect((await callMcpTool(server, "data_put", { collection: "concepts", record })).isError).toBeFalsy();
+      const refused = await callMcpTool(server, "data_patch", { collection: "concepts", key: "halves", patch: { state: "mastered" } });
+      expect(refused.isError).toBe(true);
+      expect((refused.content as { text: string }[])[0].text).toBe("Refused: The state can rise only with a new evidence entry");
+    } finally {
+      await rpc.close();
+    }
   });
 });

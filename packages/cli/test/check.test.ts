@@ -44,9 +44,14 @@ describe("check: errors", () => {
     expect(rules(await checkHarness(dir))).toEqual(["error:schema"]);
   });
 
-  it("i18n: a missing en.json, and a UI key with no string", async () => {
+  it("i18n: a missing en.json", async () => {
     const gone = await checkHarness(await fixture((d) => fs.rmSync(path.join(d, "locales", "en.json"))));
     expect(gone.findings.filter((f) => f.rule === "i18n").map((f) => f.message)).toEqual(["locales/en.json is missing: the harness's strings are English."]);
+  });
+
+  it("i18n: an en.json that is not valid JSON", async () => {
+    const r = await checkHarness(await fixture((d) => fs.writeFileSync(path.join(d, "locales", "en.json"), "{")));
+    expect(r.findings.filter((f) => f.rule === "i18n").map((f) => f.message)).toEqual(["locales/en.json is not valid JSON."]);
   });
 
   it("i18n: another language's file is ignored with a warning", async () => {

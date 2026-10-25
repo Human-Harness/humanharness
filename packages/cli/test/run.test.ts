@@ -310,7 +310,9 @@ describe("humanharness run", () => {
     expect(await main(["run", "example", "--language", "not a tag"], bad.io)).toBe(2);
     expect(bad.err()).toContain('Unknown language "not a tag": use a language tag such as en, es or pt-BR.');
     const good = memoryIo(harnessDir);
-    expect(await main(["run", "example", "--language", "pt-BR", "--tier", "huge"], good.io)).toBe(2);
+    // pt-BR passes the language check and stops at a later one: the action doesn't exist.
+    expect(await main(["run", "nope", "--language", "pt-BR"], good.io)).toBe(2);
+    expect(good.err()).toContain('Unknown action "nope"');
     expect(good.err()).not.toContain("Unknown language");
   });
 });

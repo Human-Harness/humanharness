@@ -213,7 +213,7 @@ async function appState(): Promise<AppState> {
     harness: {
       id: harness.id,
       name: harness.name,
-          ...(harness.tagline ? { tagline: harness.tagline } : {}),
+      ...(harness.tagline ? { tagline: harness.tagline } : {}),
       ...(harnessImage ? { logo: harnessImage } : {}),
       author: harness.author,
       ...(harness.donate ? { donate: harness.donate } : {}),

@@ -218,22 +218,19 @@ async function i18nFindings(h: LoadedHarness): Promise<Finding[]> {
   if (localesPath === null) return out;
   const uiFiles = uiPath === null ? [] : await sourceFiles(uiPath);
   if (!(await exists(localesPath)) && uiFiles.length === 0) return out;
-  const keys = new Map<string, Set<string>>();
+  let enKeys: Set<string> | null = null;
   const file = path.join(localesDir, "en.json");
   const text = await read(path.join(localesPath, "en.json"));
   if (text === null) {
     out.push(error("i18n", `${file} is missing: the harness's strings are English.`, file));
   } else {
-    let parsed: unknown = null;
-    let valid = true;
     try {
-      parsed = JSON.parse(text);
+      const parsed: unknown = JSON.parse(text);
+      if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) out.push(error("i18n", `${file} must be a JSON object.`, file));
+      else enKeys = new Set(flatKeys(parsed as Record<string, unknown>));
     } catch {
-      valid = false;
       out.push(error("i18n", `${file} is not valid JSON.`, file));
     }
-    if (valid && (typeof parsed !== "object" || parsed === null || Array.isArray(parsed))) out.push(error("i18n", `${file} must be a JSON object.`, file));
-    else if (valid) keys.set("en", new Set(flatKeys(parsed as Record<string, unknown>)));
   }
   // Only en.json is read: the app generates every other language (spec 5 D1).
   const others = (await fs.readdir(localesPath).catch(() => [])).filter((f) => f.endsWith(".json") && f !== "en.json").sort();
@@ -245,9 +242,7 @@ async function i18nFindings(h: LoadedHarness): Promise<Finding[]> {
     const text = await fs.readFile(uiFile, "utf8");
     for (const m of text.matchAll(UI_KEY)) {
       const line = text.slice(0, m.index).split("\n").length;
-      for (const [lang, set] of keys) {
-        if (!set.has(m[2])) out.push(error("i18n", `"${m[2]}" is used here but missing in ${lang}.`, path.relative(h.root, uiFile), line));
-      }
+      if (enKeys && !enKeys.has(m[2])) out.push(error("i18n", `"${m[2]}" is used here but missing in en.`, path.relative(h.root, uiFile), line));
     }
   }
   return out;

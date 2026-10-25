@@ -21,7 +21,7 @@ export interface TaskDeps {
   /** tasks.json of the configured folder. */
   store: { load(): Promise<TasksFile>; save(state: TasksFile): Promise<void> };
   turns: { send(message: string, options: TurnOptions): Promise<void>; isBusy(): boolean; cancel(): void };
-  /** The harness's actions (their labels, by language). */
+  /** The harness's actions (their labels are English strings). */
   actions: Record<string, { label: string }>;
   /** The guided path: action ids in order. */
   path: string[];

@@ -102,7 +102,13 @@ export function isMockEngine(hooks: Pick<TestHooks, "mock" | "engines">, engineI
 
 /** How a faked engine presents itself in mock mode (spec 3f §4): no provider to disclose, nothing leaves the computer. */
 export function mockEngineText(): { name: string; provider: string; requires: string; dataLocation: string; trainsOnData: string } {
-  return { name: "Simulated AI (mock)", provider: "Human Harness", requires: "Nothing", dataLocation: "Your data stays on this computer", trainsOnData: "No" };
+  return {
+    name: "Simulated AI (mock)",
+    provider: "Human Harness",
+    requires: "Nothing",
+    dataLocation: "Your data stays on this computer",
+    trainsOnData: "No",
+  };
 }
 
 /** The one model a faked engine offers in mock mode; every tier uses it (the fake ignores --model). */

@@ -9,6 +9,7 @@ export * from "./block";
 export * from "./core-blocks";
 export * from "./data";
 export * from "./input";
+export * from "./answer";
 /** The zod a manifest builds its block schemas with: the same instance the SDK validates them against. */
 export { z } from "zod";
 

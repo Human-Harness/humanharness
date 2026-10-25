@@ -12,13 +12,14 @@ import { UsageError } from "../src/cli";
 import { initHarness } from "../src/init";
 import { main } from "../src/main";
 import { type Interrupts, noticeMessage, readyEngine, runTask } from "../src/run";
-import { CORE, memoryIo, memoryStream, tempRoot } from "./helpers";
+import { CORE, englishOnly, memoryIo, memoryStream, tempRoot } from "./helpers";
 
 const { root, cleanup } = tempRoot("hh-run-");
 afterAll(cleanup);
 const harnessDir = path.join(root, "my-harness");
 beforeAll(async () => {
   await initHarness({ dir: harnessDir, core: CORE, install: false });
+  englishOnly(harnessDir);
 });
 
 const result = {
@@ -297,12 +298,21 @@ describe("readyEngine", () => {
 
 describe("humanharness run", () => {
   it("checks its command line before touching any engine", async () => {
-    for (const args of [["run"], ["run", "a", "b"], ["run", "example", "--tier", "huge"], ["run", "example", "--language", "fr"], ["run", "nope"], ["run", "example", "--engine", "gemini"], ["run", "example", "--force"]]) {
+    for (const args of [["run"], ["run", "a", "b"], ["run", "example", "--tier", "huge"], ["run", "example", "--language", "not a tag"], ["run", "nope"], ["run", "example", "--engine", "gemini"], ["run", "example", "--force"]]) {
       const m = memoryIo(harnessDir);
       expect(await main(args, m.io), args.join(" ")).toBe(2);
       expect(m.err()).not.toBe("");
       expect(m.err()).not.toContain("Unknown command");
     }
+  });
+
+  it("takes any language tag: a bad one is refused, pt-BR is not", async () => {
+    const bad = memoryIo(harnessDir);
+    expect(await main(["run", "example", "--language", "not a tag"], bad.io)).toBe(2);
+    expect(bad.err()).toContain('Unknown language "not a tag": use a language tag such as en, es or pt-BR.');
+    const good = memoryIo(harnessDir);
+    expect(await main(["run", "example", "--language", "pt-BR", "--tier", "huge"], good.io)).toBe(2);
+    expect(good.err()).not.toContain("Unknown language");
   });
 });
 

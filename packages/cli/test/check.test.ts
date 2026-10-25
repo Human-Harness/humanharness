@@ -4,7 +4,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { type CheckResult, checkHarness, findBrand, formatFindings } from "../src/check";
 import { initHarness } from "../src/init";
 import { main } from "../src/main";
-import { CORE, memoryIo, replaceIn, tempRoot } from "./helpers";
+import { CORE, englishOnly, memoryIo, replaceIn, tempRoot } from "./helpers";
 
 const { root, cleanup } = tempRoot("hh-check-");
 afterAll(cleanup);
@@ -14,6 +14,7 @@ let n = 0;
 async function fixture(edit: (dir: string) => void = () => {}): Promise<string> {
   const dir = path.join(root, `h${++n}`);
   await initHarness({ dir, core: CORE, install: false });
+  englishOnly(dir);
   edit(dir);
   return dir;
 }
@@ -44,20 +45,15 @@ describe("check: errors", () => {
     expect(rules(await checkHarness(dir))).toEqual(["error:schema"]);
   });
 
-  it("i18n: a key missing in one language, a missing locale file, a UI key with no string", async () => {
-    const dir = await fixture((d) => {
-      replaceIn(d, "locales/en.json", '"hint": "The AI can be wrong: check what matters.",', "");
-      replaceIn(d, "ui/ExampleCard.tsx", '<h3>{data.title}</h3>', '<h3 title={t("cardTitle")}>{data.title}</h3>');
-    });
-    const r = await checkHarness(dir);
-    const i18n = r.findings.filter((f) => f.rule === "i18n").map((f) => `${f.file}${f.line ? `:${f.line}` : ""} ${f.message}`);
-    expect(i18n).toEqual([
-      'locales/en.json "hint" is missing in en.',
-      'ui/ExampleCard.tsx:10 "cardTitle" is used here but missing in es.',
-      'ui/ExampleCard.tsx:10 "cardTitle" is used here but missing in en.',
-    ]);
-    const gone = await checkHarness(await fixture((d) => fs.rmSync(path.join(d, "locales", "es.json"))));
-    expect(gone.findings.filter((f) => f.rule === "i18n").map((f) => f.message)).toEqual(["locales/es.json is missing: every declared language needs its strings."]);
+  it("i18n: a missing en.json, and a UI key with no string", async () => {
+    const gone = await checkHarness(await fixture((d) => fs.rmSync(path.join(d, "locales", "en.json"))));
+    expect(gone.findings.filter((f) => f.rule === "i18n").map((f) => f.message)).toEqual(["locales/en.json is missing: the harness's strings are English."]);
+  });
+
+  it("i18n: another language's file is ignored with a warning", async () => {
+    const r = await checkHarness(await fixture((d) => fs.writeFileSync(path.join(d, "locales", "es.json"), "{}\n")));
+    const f = r.findings.filter((x) => x.rule === "i18n");
+    expect(f.map((x) => [x.severity, x.message])).toEqual([["warning", "locales/es.json is not read: the app translates from en.json."]]);
   });
 
   it("brief-missing: a missing or empty brief", async () => {
@@ -85,9 +81,9 @@ describe("check: errors", () => {
     ]);
   });
 
-  it("i18n: a locale file that is JSON but not an object", async () => {
-    const r = await checkHarness(await fixture((d) => fs.writeFileSync(path.join(d, "locales", "es.json"), "null\n")));
-    expect(r.findings.filter((f) => f.rule === "i18n").map((f) => f.message)).toEqual(["locales/es.json must be a JSON object."]);
+  it("i18n: en.json that is JSON but not an object", async () => {
+    const r = await checkHarness(await fixture((d) => fs.writeFileSync(path.join(d, "locales", "en.json"), "null\n")));
+    expect(r.findings.filter((f) => f.rule === "i18n").map((f) => f.message)).toEqual(["locales/en.json must be a JSON object."]);
   });
 
   it("i18n: scans the manifest's ui folder; a template-literal key is not a key", async () => {
@@ -98,26 +94,25 @@ describe("check: errors", () => {
     });
     const r = await checkHarness(dir);
     expect(r.findings.filter((f) => f.rule === "i18n").map((f) => `${f.file} ${f.message}`)).toEqual([
-      'screens/ExampleCard.tsx "cardTitle" is used here but missing in es.',
       'screens/ExampleCard.tsx "cardTitle" is used here but missing in en.',
     ]);
   });
 
   it("brand: a provider or model brand in the name, tagline or logo file name", async () => {
     const dir = await fixture((d) => {
-      replaceIn(d, "harness.config.ts", `name: { es: "h${n}", en: "h${n}" },`, `name: { es: "Tutor Claude", en: "Tutor" }, tagline: { es: "Con GPT", en: "Plain" }, logo: "./gemini-logo.svg",`);
+      replaceIn(d, "harness.config.ts", `name: "h${n}",`, `name: "Tutor Claude", tagline: "Con GPT", logo: "./gemini-logo.svg",`);
     });
     const r = await checkHarness(dir);
     expect(r.findings.filter((f) => f.rule === "brand").map((f) => f.message)).toEqual([
-      'The name (es) "Tutor Claude" uses the word "Claude", a provider or model brand in the app name: the app would look made or endorsed by that provider. Use no provider or model brands in names, taglines or logos.',
-      'The tagline (es) "Con GPT" uses the word "GPT", a provider or model brand in the app tagline: the app would look made or endorsed by that provider. Use no provider or model brands in names, taglines or logos.',
+      'The name "Tutor Claude" uses the word "Claude", a provider or model brand in the app name: the app would look made or endorsed by that provider. Use no provider or model brands in names, taglines or logos.',
+      'The tagline "Con GPT" uses the word "GPT", a provider or model brand in the app tagline: the app would look made or endorsed by that provider. Use no provider or model brands in names, taglines or logos.',
       'The logo file name "gemini-logo.svg" uses the word "Gemini", a provider or model brand in the logo file name: the app would look made or endorsed by that provider. Use no provider or model brands in names, taglines or logos.',
     ]);
   });
 
   it("brand: a word that only contains a brand is not one", async () => {
     const dir = await fixture((d) => {
-      replaceIn(d, "harness.config.ts", `name: { es: "h${n}", en: "h${n}" },`, `name: { es: "Claudette", en: "Googleplex notes" }, tagline: { es: "Codexes antiguos", en: "Old codexes" }, logo: "./geminid-logo.svg",`);
+      replaceIn(d, "harness.config.ts", `name: "h${n}",`, `name: "Claudette", tagline: "Codexes antiguos", logo: "./geminid-logo.svg",`);
     });
     expect((await checkHarness(dir)).findings.filter((f) => f.rule === "brand")).toEqual([]);
   });
@@ -317,7 +312,7 @@ describe("mock recordings", () => {
           cfg,
           fs.readFileSync(cfg, "utf8").replace(
             "  actions: {\n",
-            `  actions: {\n    other: { label: { es: "Otro", en: "Other" }, description: { es: "Otro.", en: "Other." }, prompt: "./agent/tasks/other.md", cost: "light", tier: "standard" },\n`,
+            `  actions: {\n    other: { label: "Other", description: "Other.", prompt: "./agent/tasks/other.md", cost: "light", tier: "standard" },\n`,
           ),
         );
         fs.writeFileSync(path.join(d, "agent", "tasks", "other.md"), otherBrief);

@@ -306,6 +306,8 @@ export interface CurrentTaskView {
   id: string;
   /** Absent for a free question. */
   action?: string;
+  /** The scope the task runs in (harnesses with scopes). */
+  scope?: string;
   status: TaskStatus;
   /** Context in use by the task's session, and the task's cap (the side panel's meter). */
   context?: { used: number; cap: number };
@@ -330,6 +332,8 @@ export interface TaskView {
   actions: Record<string, ActionStatus>;
   /** Newest first. */
   notes: NoteView[];
+  /** Harnesses with scopes: the open scope (null when none is open). Absent without scopes. */
+  scope?: string | null;
 }
 
 /** The action to start after `current` on the guided path: the next one, or else the first one not done yet. */

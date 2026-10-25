@@ -27,7 +27,21 @@ export async function migrateToScopes(base: string, now: () => Date = () => new 
   if (flat.length === 0 && !hasChat && !hasMain) return false;
   const target = path.join(dir, MAIN_SCOPE);
   await fs.mkdir(target, { recursive: true });
-  for (const name of flat) await fs.rename(path.join(dir, name), path.join(target, name));
+  for (const name of flat) await moveIfFree(path.join(dir, name), path.join(target, name));
   await store.add({ id: MAIN_SCOPE, title: MIGRATED_TITLE, createdAt: now().toISOString(), archived: false });
   return true;
+}
+
+/** Moves `from` to `to` unless `to` exists (the note already in `main` wins) or `from` is gone (another window moved it). */
+async function moveIfFree(from: string, to: string): Promise<void> {
+  try {
+    await fs.link(from, to);
+  } catch (e) {
+    const code = (e as NodeJS.ErrnoException).code;
+    if (code === "EEXIST" || code === "ENOENT") return;
+    throw e;
+  }
+  await fs.unlink(from).catch((e: NodeJS.ErrnoException) => {
+    if (e.code !== "ENOENT") throw e;
+  });
 }

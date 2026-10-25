@@ -53,4 +53,13 @@ describe("migrateToScopes", () => {
     expect(await migrateToScopes(base, at)).toBe(true);
     expect((await readNotes(base, ".harness/notes/main/")).map((n) => n.slug).sort()).toEqual(["a", "b"]);
   });
+
+  it("never overwrites a note already in main; the flat one stays", async () => {
+    const base = tmp();
+    await writeNote(base, "a", { ...note, title: "flat" }, meta);
+    await writeNote(base, "a", { ...note, title: "in main" }, meta, ".harness/notes/main/");
+    expect(await migrateToScopes(base, at)).toBe(true);
+    expect((await readNotes(base, ".harness/notes/main/")).map((n) => n.title)).toEqual(["in main"]);
+    expect((await readNotes(base)).map((n) => n.title)).toEqual(["flat"]);
+  });
 });

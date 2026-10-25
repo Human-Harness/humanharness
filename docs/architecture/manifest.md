@@ -12,7 +12,7 @@ Every text in the manifest is one English string.
 |---|---|
 | `id`, `name`, `tagline`, `logo` | The app's name and data folder, the Home screen |
 | `author`, `donate` | Settings → About |
-| `tone` | One English line on how the translated screens should sound; the app ships in English and translates on the person's engine |
+| `tone` | One English line on how the translated screens should sound; the app ships in English and will translate (plan 5b) on the person's engine |
 | `engines` | Engines the harness was tested with; `availableEngines` in `packages/engines` keeps the ones whose legal status allows it |
 | `folder.suggested`, `folder.seed` | Where the person's work lives; the seed is copied there when the folder is empty (`prepareFolder`) |
 | `folder.references` | Folders the agent may read but never change; `"app-source"` is the repository the app runs from, in development only |

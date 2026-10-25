@@ -64,6 +64,18 @@ describe("migrateToScopes", () => {
     expect((await readNotes(base)).map((n) => n.title)).toEqual(["flat"]);
   });
 
+  it("registers main through the store it is given, so its write queues with the store's other changes", async () => {
+    const base = tmp();
+    chat(base);
+    const store = new ScopeStore(base, at);
+    const exists = vi.spyOn(store, "exists");
+    const add = vi.spyOn(store, "add");
+    expect(await migrateToScopes(base, at, store)).toBe(true);
+    expect(exists).toHaveBeenCalledOnce();
+    expect(add).toHaveBeenCalledWith({ id: "main", title: "General", createdAt: "2026-10-25T10:00:00.000Z", archived: false });
+    expect((await store.list()).map((s) => s.id)).toEqual(["main"]);
+  });
+
   describe("on a filesystem without hard links", () => {
     const noLinks = (code: string) =>
       vi.spyOn(fs.promises, "link").mockRejectedValue(Object.assign(new Error(code), { code }));

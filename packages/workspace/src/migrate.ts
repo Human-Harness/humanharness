@@ -11,10 +11,14 @@ export const MIGRATED_TITLE = "General";
  * move into `notes/main/` and `main` is registered, so nothing is lost. The chat needs no move (`main.jsonl` is
  * `main`'s chat) and neither do the statuses (`tasks.json` `actions` are `main`'s). The registry is written last:
  * it marks the migration done, and a crash before it leaves the migration to run again. False when there was
- * nothing to do (registry already there, or no earlier notes or chat).
+ * nothing to do (registry already there, or no earlier notes or chat). `store` is the base's registry: pass the one
+ * the app writes through, so `main` is added in the same queue as the person's own changes.
  */
-export async function migrateToScopes(base: string, now: () => Date = () => new Date()): Promise<boolean> {
-  const store = new ScopeStore(base, now);
+export async function migrateToScopes(
+  base: string,
+  now: () => Date = () => new Date(),
+  store: ScopeStore = new ScopeStore(base, now),
+): Promise<boolean> {
   if (await store.exists()) return false;
   const dir = path.join(base, NOTES_PREFIX);
   const entries = await fs.readdir(dir, { withFileTypes: true }).catch(() => []);

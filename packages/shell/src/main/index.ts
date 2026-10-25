@@ -319,7 +319,12 @@ function scopeStoreFor(base: string): ScopeStore {
   return store;
 }
 
+/** The last migration run (settleScopes). Scope requests wait for it, whether it worked or not. */
+let scopesReady: Promise<unknown> = Promise.resolve();
+const scopesSettled = (): Promise<void> => scopesReady.then(() => undefined, () => undefined);
+
 async function scopesView(): Promise<ScopesView> {
+  await scopesSettled();
   const c = await validConfig();
   if (!c || !scoped()) return { open: null, list: [] };
   return { open: await tasks.currentScope(), list: await scopeStoreFor(baseOf(c)).list() };
@@ -334,17 +339,27 @@ async function scopesChanged(): Promise<void> {
 }
 
 async function scopeStore(): Promise<ScopeStore> {
+  // A scope created before the migration ran would write scopes.json first and leave the earlier notes behind.
+  await scopesSettled();
   const c = await validConfig();
   if (!c) throw new Error("The app is not set up yet");
   if (!scoped()) throw new Error("This harness has no scopes");
   return scopeStoreFor(baseOf(c));
 }
 
-/** A harness with scopes in a folder used without them (spec §3.2): earlier work moves into `main`, which opens. */
-async function settleScopes(): Promise<void> {
-  const c = await validConfig();
-  if (!c || !scoped()) return;
-  if (await migrateToScopes(baseOf(c))) await tasks.switchScope(MAIN_SCOPE);
+/**
+ * A harness with scopes in a folder used without them (spec §3.2): earlier work moves into `main`, which opens.
+ * `main` is registered through the app's own store, so it queues with the person's changes.
+ */
+function settleScopes(): Promise<void> {
+  const run = scopesSettled().then(async () => {
+    const c = await validConfig();
+    if (!c || !scoped()) return;
+    const base = baseOf(c);
+    if (await migrateToScopes(base, undefined, scopeStoreFor(base))) await tasks.switchScope(MAIN_SCOPE);
+  });
+  scopesReady = run;
+  return run;
 }
 
 function applyAppearance(appearance: AppConfig["appearance"]) {
@@ -626,6 +641,8 @@ function registerIpc() {
     return appState();
   });
   handle("hh:loadChat", async (): Promise<ChatLoad> => {
+    // After the migration: it opens `main`, whose chat is the one to show.
+    await scopesSettled();
     const c = await validConfig();
     if (!c) return { entries: [] };
     // The engine change archives the chat; the check here only catches a change made while the app was closed.
@@ -639,7 +656,8 @@ function registerIpc() {
     if (blocked) throw new Error(blocked);
     if (typeof message !== "string" || !message.trim() || message.length > 20_000) throw new Error("Invalid message");
     const action = typeof options?.action === "string" && Object.hasOwn(harness.actions, options.action) ? options.action : undefined;
-    const scope = typeof options?.scope === "string" && isScopeId(options.scope) ? options.scope : undefined;
+    const scope = options?.scope;
+    if (scope !== undefined && !isScopeId(scope)) throw new Error("Unknown scope");
     // A message with an action starts that task (the message is what the chat shows); any other follows up or asks.
     const sent = action ? tasks.start(action, message, scope) : tasks.ask(message, undefined, scope);
     return scope === undefined ? sent : sent.finally(() => void scopesChanged());
@@ -660,14 +678,19 @@ function registerIpc() {
   });
   // A scope is never deleted (spec §3.4). Archiving the open one closes its task and the scope first.
   handle("hh:scopeArchive", async (id: unknown, archived: unknown) => {
+    if (quitting) throw new Error("The app is closing");
     if (!isScopeId(id) || typeof archived !== "boolean") throw new Error("Invalid scope change");
     const store = await scopeStore();
-    if (archived && (await tasks.currentScope()) === id) {
+    const closeIfOpen = async () => {
+      if ((await tasks.currentScope()) !== id) return;
       const blocked = turnBlocked();
       if (blocked) throw new Error(blocked);
       if (!(await tasks.switchScope(null))) throw new Error("The open task is still closing");
-    }
+    };
+    if (archived) await closeIfOpen();
     await store.setArchived(id, archived);
+    // It may have been opened while the close ran (the scope was not archived yet): close it again.
+    if (archived) await closeIfOpen();
     await scopesChanged();
   });
   handle("hh:scopeOpen", async (id: unknown) => {

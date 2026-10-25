@@ -1,7 +1,27 @@
 import type { Effort, ModelChoice, ModelSpec, ModelsConfig } from "@humanharness/engines";
-import type { ActionCost, ChoiceOption, Language, LocalizedText, Tier } from "@humanharness/harness-sdk";
+import type {
+  ActionCost,
+  ChoiceOption,
+  DataKey,
+  DataRecord,
+  Language,
+  LocalizedText,
+  ScopeMode,
+  Tier,
+} from "@humanharness/harness-sdk";
 import type { ActivityKind, EngineError, Event, LimitWindow } from "@humanharness/runtime";
-import type { FileChange, SyncProvider, SyncStatus } from "@humanharness/workspace";
+import type {
+  CollectionDiff,
+  DataChange,
+  DataQuery,
+  DataQueryResult,
+  FileChange,
+  ScopeEntry,
+  SyncProvider,
+  SyncStatus,
+} from "@humanharness/workspace";
+
+export type { DataKey, DataQuery, DataQueryResult, DataRecord };
 
 export type Appearance = "system" | "light" | "dark";
 
@@ -67,7 +87,7 @@ export interface ActionOption {
   /** The tier the harness recommends for the action. */
   tier?: Tier;
   /** Harnesses with scopes: "none" runs app-wide; anything else needs an open scope. */
-  scope?: "required" | "none";
+  scope?: ScopeMode;
 }
 
 /** A read-only reference folder, as the work screen shows it ("~/…" for paths in the home folder). */
@@ -371,12 +391,7 @@ export function canOpenFile(file: string): boolean {
 }
 
 /** A scope as the window sees it (spec §3.4). */
-export interface ScopeView {
-  id: string;
-  title: string;
-  createdAt: string;
-  archived: boolean;
-}
+export type ScopeView = ScopeEntry;
 
 /** The open scope and the registry, sent whenever either changes. */
 export interface ScopesView {
@@ -384,38 +399,10 @@ export interface ScopesView {
   list: ScopeView[];
 }
 
-export type DataKey = string | number;
-export type DataRecord = Record<string, unknown>;
-export interface DataQuery {
-  /** Equality (`{ state: "seen" }`) or membership (`{ id: { in: ["a", "b"] } }`). */
-  where?: Record<string, unknown>;
-  /** The fields to return; the key always comes. */
-  fields?: string[];
-  /** Default 50, at most 200. */
-  limit?: number;
-}
-export interface DataQueryResult {
-  records: DataRecord[];
-  total: number;
-  /** Records a hand edit broke: skipped. */
-  invalid: number;
-}
 /** A write to the harness's data, from anyone (spec §4.5). */
-export interface DataChangeView {
-  collection: string;
-  scope: string;
-  who: "agent" | "person" | "app";
-  op: "put" | "patch" | "delete";
-  key?: DataKey;
-}
+export type DataChangeView = DataChange;
 /** What a task changed in one collection of one scope. */
-export interface DataDiffView {
-  collection: string;
-  scope: string;
-  added: DataRecord[];
-  changed: { before: DataRecord; after: DataRecord }[];
-  removed: DataRecord[];
-}
+export type DataDiffView = CollectionDiff;
 
 /** Default: the open scope. App-wide collections ignore it. */
 export interface DataOptions {

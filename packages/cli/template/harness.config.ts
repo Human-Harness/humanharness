@@ -14,17 +14,17 @@ const exampleCard = defineBlock({
 export default defineHarness({
   // Stable id: lowercase letters, digits and dashes. It names the app's data folder.
   id: "example-harness",
-  // The app's name in each language. Never a provider or model brand.
-  name: { es: "example-harness", en: "example-harness" },
+  // The app's name, in English. Never a provider or model brand.
+  name: "example-harness",
+  // How the app's screens should sound when it translates them for the person, in English. Optional.
+  tone: "warm and plain, short sentences",
   // The core version this harness is written for.
   core: "^0.1.0",
-  // Languages of the screens and of the AI's answers.
-  languages: ["es", "en"],
   // Engines this harness is tested with. People only see the ones whose terms allow this use.
   engines: ["claude", "codex"],
   // Where the person's work lives, relative to their home folder.
   folder: { suggested: "Documents/example-harness" },
-  // This harness's instructions to the AI. The core appends its own section (language, tools, folders).
+  // This harness's instructions to the AI, in English. The core appends its own section (language rule, tools, folders).
   instructions: "./agent/AGENTS.md",
   // What the AI may do: change files in the folder ("folder") or nothing ("none"), run commands, use the web.
   permissions: { edit: "none", exec: false, web: false },
@@ -33,9 +33,9 @@ export default defineHarness({
   // Tasks the person can start. Each one runs in its own engine session and ends with a note.
   actions: {
     example: {
-      label: { es: "Ejemplo", en: "Example" },
-      description: { es: "Muestra cómo funciona una tarea.", en: "Shows how a task works." },
-      // The brief: the first message of the task's session.
+      label: "Example",
+      description: "Shows how a task works.",
+      // The brief: the first message of the task's session. Write it in English; the AI answers in the person's language.
       prompt: "./agent/tasks/example.md",
       // How much of the person's plan it tends to use: light, medium or heavy.
       cost: "light",

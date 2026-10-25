@@ -12,14 +12,13 @@ import { UsageError } from "../src/cli";
 import { initHarness } from "../src/init";
 import { main } from "../src/main";
 import { type Interrupts, noticeMessage, readyEngine, runTask } from "../src/run";
-import { CORE, englishOnly, memoryIo, memoryStream, tempRoot } from "./helpers";
+import { CORE, memoryIo, memoryStream, tempRoot } from "./helpers";
 
 const { root, cleanup } = tempRoot("hh-run-");
 afterAll(cleanup);
 const harnessDir = path.join(root, "my-harness");
 beforeAll(async () => {
   await initHarness({ dir: harnessDir, core: CORE, install: false });
-  englishOnly(harnessDir);
 });
 
 const result = {

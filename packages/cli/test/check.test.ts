@@ -4,7 +4,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { type CheckResult, checkHarness, findBrand, formatFindings } from "../src/check";
 import { initHarness } from "../src/init";
 import { main } from "../src/main";
-import { CORE, englishOnly, memoryIo, replaceIn, tempRoot } from "./helpers";
+import { CORE, memoryIo, replaceIn, tempRoot } from "./helpers";
 
 const { root, cleanup } = tempRoot("hh-check-");
 afterAll(cleanup);
@@ -14,7 +14,6 @@ let n = 0;
 async function fixture(edit: (dir: string) => void = () => {}): Promise<string> {
   const dir = path.join(root, `h${++n}`);
   await initHarness({ dir, core: CORE, install: false });
-  englishOnly(dir);
   edit(dir);
   return dir;
 }

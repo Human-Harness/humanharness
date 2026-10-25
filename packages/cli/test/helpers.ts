@@ -44,15 +44,3 @@ export function replaceIn(dir: string, file: string, from: string, to: string): 
   if (!text.includes(from)) throw new Error(`${file} has no ${JSON.stringify(from)}`);
   fs.writeFileSync(path.join(dir, file), text.replace(from, to));
 }
-
-/** Makes the copied template English only: plain strings, no `languages`, no es.json (until the template itself is). */
-export function englishOnly(dir: string): void {
-  const file = path.join(dir, "harness.config.ts");
-  const text = fs
-    .readFileSync(file, "utf8")
-    .replace(/\{ es: "[^"]*", en: ("[^"]*") \}/g, "$1")
-    .replace(/^ *\/\/ Languages of the screens.*\n/m, "")
-    .replace(/^ *languages: \[.*\],\n/m, "");
-  fs.writeFileSync(file, text);
-  fs.rmSync(path.join(dir, "locales", "es.json"), { force: true });
-}

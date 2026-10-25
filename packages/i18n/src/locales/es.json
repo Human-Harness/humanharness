@@ -135,6 +135,9 @@
     "timedOut": "Tardó demasiado, así que lo detuve. Probá otra vez."
   },
   "usage": {
+    "byScope": "Uso por {{plural}}",
+    "scopeTokens": "{{tokens}} tokens",
+    "appScope": "De toda la app",
     "five_hour": "5 h",
     "seven_day": "semana",
     "window": "{{label}}: {{percent}} % usado",
@@ -281,6 +284,9 @@
     "other": "Trabajando en {{detail}}"
   },
   "history": {
+    "scopeFilter": "Mostrar",
+    "allScopes": "Todo",
+    "appScope": "De toda la app",
     "title": "Historial",
     "restore": "Volver a este punto",
     "empty": "Todavía no hay nada.",

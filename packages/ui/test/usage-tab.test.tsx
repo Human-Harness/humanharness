@@ -1,9 +1,10 @@
 // @vitest-environment happy-dom
-import { cleanup, screen, within } from "@testing-library/react";
+import { cleanup, screen, waitFor, within } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import type { AppState, EngineOption } from "../src/client";
 import { SettingsSheet } from "../src/SettingsSheet";
+import { UsageTab } from "../src/UsageTab";
 import { compactTokens, formatReset } from "../src/usage";
 import { FakeClient } from "./fake-client";
 import { renderIn } from "./render";
@@ -275,5 +276,17 @@ describe("Settings › Uso in mock mode", () => {
     expect(screen.getByRole("table", { name: "How much each topic uses" })).toBeTruthy();
     expect(rows()[1]).toEqual(["Research", "≈ 10% of 5 h", "about 10 times"]);
     expect(screen.getByText("'Enough for' assumes a whole 5-hour window and your plan today. It recalculates on its own if the model or your plan changes.")).toBeTruthy();
+  });
+});
+
+describe("usage per scope", () => {
+  it("lists the scopes by tokens used, most first", async () => {
+    const client = new FakeClient({ language: "en", folder: "/f", engineId: "claude" });
+    client.state.scopes = { label: { es: "tema", en: "topic" }, plural: { es: "temas", en: "topics" } };
+    client.scopeList = [{ id: "fracciones", title: "Fractions", createdAt: "c", archived: false }];
+    client.usage = { limits: null, estimates: {}, tokens: {}, scopes: { _app: 300, fracciones: 12_000 } };
+    await renderIn("en", <UsageTab client={client} state={client.state} />);
+    const list = await screen.findByRole("list", { name: "Usage by topics" });
+    await waitFor(() => expect([...list.querySelectorAll("li")].map((li) => li.firstChild?.textContent)).toEqual(["Fractions", "App-wide"]));
   });
 });

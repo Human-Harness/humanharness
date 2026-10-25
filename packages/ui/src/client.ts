@@ -199,6 +199,8 @@ export { BEFORE_MESSAGE, NOTE, RESTORE_POINT, RESTORE_TASK, START, STOPPED_PREFI
 export interface HistoryTaskView {
   taskId: string | null;
   actionId: string | null;
+  /** The scope the task ran in (harnesses with scopes). */
+  scopeId?: string;
   /** What "Go back to before this task" restores; null when there is nothing before it. */
   start: string | null;
   end: string;

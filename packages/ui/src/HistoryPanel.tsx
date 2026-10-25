@@ -70,6 +70,19 @@ export function HistoryPanel({
   const [loadFailed, setLoadFailed] = useState(false);
   /** A restore was sent and hasn't answered: no other way back can be taken meanwhile. */
   const [restoring, setRestoring] = useState(false);
+  /** Harnesses with scopes: the scope whose tasks show ("" for all), and the scopes' titles. */
+  const [filter, setFilter] = useState("");
+  const [titles, setTitles] = useState<Record<string, string>>({});
+  const scopeIds = [...new Set((groups ?? []).flatMap((g) => (g.scopeId ? [g.scopeId] : [])))];
+  const hasScopes = scopeIds.length > 0;
+  useEffect(() => {
+    if (!hasScopes) return;
+    client.scopes.list().then(
+      (list) => setTitles(Object.fromEntries(list.map((s) => [s.id, s.title]))),
+      () => undefined,
+    );
+  }, [client, hasScopes]);
+  const shown = filter ? (groups ?? []).filter((g) => g.scopeId === filter) : groups;
   const closeRef = useRef<HTMLButtonElement>(null);
   const yesRef = useRef<HTMLButtonElement>(null);
   /** The button whose confirmation was cancelled: it gets focus back once it is shown again. */
@@ -187,8 +200,21 @@ export function HistoryPanel({
       {failed && <p role="alert">{t("history.restoreFailed")}</p>}
       {loadFailed && <p role="alert">{t("history.loadFailed")}</p>}
       {groups?.length === 0 && <p>{t("history.empty")}</p>}
+      {hasScopes && (
+        <label className="hh-history-filter">
+          {t("history.scopeFilter")}{" "}
+          <select value={filter} onChange={(e) => setFilter(e.target.value)}>
+            <option value="">{t("history.allScopes")}</option>
+            {scopeIds.map((id) => (
+              <option key={id} value={id}>
+                {id === "_app" ? t("history.appScope") : (titles[id] ?? id)}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
       <ol className="hh-history-tasks">
-        {groups?.map((g) => {
+        {shown?.map((g) => {
           const key = keyOf(g);
           const expanded = open.has(key);
           const bodyId = `hh-history-${key}`;
@@ -215,13 +241,13 @@ export function HistoryPanel({
                   )}
                   {g.taskId !== null &&
                     g.start !== null &&
-                    goBack({ kind: "task", id: g.taskId }, t("history.restoreTask"), laterTasks(groups, g.taskId, g.date))}
+                    goBack({ kind: "task", id: g.taskId }, t("history.restoreTask"), laterTasks(groups ?? [], g.taskId, g.date))}
                   <ol className="hh-history-entries">
                     {g.entries.map((e) => (
                       <li key={e.sha}>
                         <span>{entryText(e)}</span>
                         <time dateTime={e.date}>{when(e.date)}</time>
-                        {goBack({ kind: "point", id: e.sha }, t("history.restore"), laterTasks(groups, g.taskId, e.date))}
+                        {goBack({ kind: "point", id: e.sha }, t("history.restore"), laterTasks(groups ?? [], g.taskId, e.date))}
                       </li>
                     ))}
                   </ol>

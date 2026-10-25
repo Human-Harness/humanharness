@@ -135,6 +135,9 @@
     "timedOut": "This took too long, so I stopped it. Try again."
   },
   "usage": {
+    "byScope": "Usage by {{plural}}",
+    "scopeTokens": "{{tokens}} tokens",
+    "appScope": "App-wide",
     "five_hour": "5 h",
     "seven_day": "week",
     "window": "{{label}}: {{percent}}% used",
@@ -281,6 +284,9 @@
     "other": "Working on {{detail}}"
   },
   "history": {
+    "scopeFilter": "Show",
+    "allScopes": "All",
+    "appScope": "App-wide",
     "title": "History",
     "restore": "Go back to this point",
     "empty": "Nothing yet.",

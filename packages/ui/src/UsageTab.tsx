@@ -34,6 +34,7 @@ export function UsageTab({ client, state }: { client: HarnessClient; state: AppS
       <PlanSection engine={engine} limits={limits} reported={Boolean(usage?.limits)} />
       <h3 id={tableTitle}>{t("usage.actionsTitle")}</h3>
       {usage && <TopicTable state={state} usage={usage} reportsLimits={reportsLimits} near={near ? primary : undefined} labelledBy={tableTitle} />}
+      {usage?.scopes && state.scopes && <ScopeUsage client={client} state={state} tokens={usage.scopes} plural={state.scopes.plural} />}
       {showPlans && engine && (
         <div className="hh-rows">
           <div className="hh-row">
@@ -189,6 +190,34 @@ function TopicTable({
         </tbody>
       </table>
       <p className="hh-caption">{caption}</p>
+    </>
+  );
+}
+
+/** Settings › Uso per scope (spec §3.3): tokens per scope over the whole log, most first. */
+function ScopeUsage({ client, state, tokens, plural }: { client: HarnessClient; state: AppState; tokens: Record<string, number>; plural: { es: string; en: string } }) {
+  const { t, i18n } = useTranslation();
+  const lang = uiLanguage(state, i18n.language);
+  const [titles, setTitles] = useState<Record<string, string>>({});
+  useEffect(() => {
+    client.scopes.list().then(
+      (list) => setTitles(Object.fromEntries(list.map((s) => [s.id, s.title]))),
+      () => undefined,
+    );
+  }, [client]);
+  const heading = t("usage.byScope", { plural: plural[lang] });
+  const rows = Object.entries(tokens).sort((a, b) => b[1] - a[1]);
+  return (
+    <>
+      <h3>{heading}</h3>
+      <ul className="hh-rows" aria-label={heading}>
+        {rows.map(([id, n]) => (
+          <li key={id} className="hh-row">
+            <span>{id === "_app" ? t("usage.appScope") : (titles[id] ?? id)}</span>
+            <span className="hh-caption">{t("usage.scopeTokens", { tokens: compactTokens(n, i18n.language) })}</span>
+          </li>
+        ))}
+      </ul>
     </>
   );
 }

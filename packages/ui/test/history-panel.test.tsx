@@ -63,6 +63,34 @@ async function open(opts: { disabled?: boolean; language?: "en" | "es"; client?:
 }
 
 describe("HistoryPanel", () => {
+  it("filters the tasks by scope when the history has scopes", async () => {
+    const client = new FakeClient();
+    client.scopeList = [{ id: "fracciones", title: "Fractions", createdAt: "c", archived: false }];
+    const group = (taskId: string, scopeId?: string) => ({
+      taskId,
+      actionId: null,
+      ...(scopeId ? { scopeId } : {}),
+      start: "s0",
+      end: `e-${taskId}`,
+      date: "2026-10-10T12:00:00.000Z",
+      changes: [],
+      entries: [{ sha: `e-${taskId}`, message: `Turn: ${taskId}`, date: "2026-10-10T12:00:00.000Z" }],
+    });
+    client.historyGroups = [group("t1", "fracciones"), group("t2", "_app"), group("t3")];
+    await renderIn("en", <HistoryPanel client={client} actions={{}} lang="en" onClose={() => {}} />);
+    const filter = (await screen.findByRole("combobox", { name: "Show" })) as HTMLSelectElement;
+    await waitFor(() => expect([...filter.options].map((o) => o.textContent)).toEqual(["All", "Fractions", "App-wide"]));
+    expect(screen.getAllByRole("button", { name: /A question/ })).toHaveLength(3);
+    fireEvent.change(filter, { target: { value: "fracciones" } });
+    expect(screen.getAllByRole("button", { name: /A question/ })).toHaveLength(1);
+  });
+
+  it("shows no filter for a history without scopes", async () => {
+    await renderIn("en", <HistoryPanel client={new FakeClient()} actions={{}} lang="en" onClose={() => {}} />);
+    await screen.findByRole("heading", { name: "History" });
+    expect(screen.queryByRole("combobox", { name: "Show" })).toBeNull();
+  });
+
   it("shows one row per task with its action, note, date and files changed; the newest starts open", async () => {
     await open();
     const newest = await screen.findByRole("button", { name: /Plan the week.*The week.*2 files changed/ });

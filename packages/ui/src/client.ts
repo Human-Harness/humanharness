@@ -350,6 +350,8 @@ export interface CurrentTaskView {
   context?: { used: number; cap: number };
   /** The plan lacked `model`: the task runs one tier down (`tier`), or on the engine's default model (no `tier`). */
   fallback?: { model: string; tier?: Tier };
+  /** The id of the input block the task waits an answer for (input-blocks spec §4). */
+  pendingInput?: string;
 }
 
 /** A note in `.harness/notes/`, for the side panel and "Lo que quedó claro". */

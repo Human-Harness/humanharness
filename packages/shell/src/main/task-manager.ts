@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { ModelProfile } from "@humanharness/engines";
-import { type ChoiceOption, type Language, type LocalizedText, type SavedNote, type ScopeMode, saveNoteSchema } from "@humanharness/harness-sdk";
+import { type BlockAnswer, type ChoiceOption, type InputBlock, type Language, type LocalizedText, type SavedNote, type ScopeMode, saveNoteSchema } from "@humanharness/harness-sdk";
 import { type Event, type Session, fail } from "@humanharness/runtime";
 import { type ActionStatus, type CurrentTaskView, type NoteView, type TaskStatus, type TaskView, nextInPath } from "@humanharness/ui/client";
 import { APP_SCOPE, type HistoryTrailer, MAIN_SCOPE, NOTE_PREFIX, type Note, type NoteMeta, buildNotesIndex, isScopeId, noteSlug } from "@humanharness/workspace";
@@ -63,6 +63,12 @@ export interface TaskDeps {
   fitProfile?(profile: ModelProfile): Promise<ModelProfile>;
   /** A compaction was detected in `task`'s session (usage.jsonl `kind: "compaction"`). Failures are logged. */
   recordCompaction?(task: CurrentTask): Promise<void>;
+  /** The harness's blocks the person answers, by name (input-blocks spec). Absent or empty: none (spec D0). */
+  inputBlocks?: Record<string, InputBlock>;
+  /** Puts an answer on its block in the chat of `chat` (input-blocks spec §8). */
+  markAnswered?(chat: string, answer: BlockAnswer): Promise<void>;
+  /** Writes an answer's records to a data collection, as the person, in `scope` (spec §6 `saveTo`). Throws a refusal. */
+  saveAnswer?(collection: string, records: Record<string, unknown>[], scope: string): Promise<void>;
   now?: () => Date;
   newId?: () => string;
 }
@@ -111,6 +117,7 @@ const currentView = (c: CurrentTask): CurrentTaskView => ({
   ...(c.profile?.fallbackFrom
     ? { fallback: { model: c.profile.fallbackFrom, ...(c.profile.model !== undefined && c.profile.tier !== "custom" ? { tier: c.profile.tier } : {}) } }
     : {}),
+  ...(c.pendingInput ? { pendingInput: c.pendingInput.blockId } : {}),
 });
 
 /**
@@ -320,6 +327,11 @@ export class TaskManager {
 
   private known(action: string | undefined): action is string {
     return action !== undefined && Object.hasOwn(this.d.actions, action);
+  }
+
+  /** The harness has blocks the person answers: turns number their ids (spec D0 keeps every other harness as is). */
+  private hasInputs(): boolean {
+    return Object.keys(this.d.inputBlocks ?? {}).length > 0;
   }
 
   /** Where a new task runs (spec §3.3). Throws ScopeRequired for a required action with no open scope. */
@@ -573,6 +585,7 @@ export class TaskManager {
    */
   private async runTurn(task: CurrentTask, message: string, options: Omit<TurnOptions, "task" | "onEvent" | "profile">): Promise<Done> {
     const seen: { done?: Done; note?: SavedNote; used?: number; size?: number; compacted?: boolean } = {};
+    const shownInputs: Promise<void>[] = [];
     this.turnTask = task.id;
     try {
       const scoped = await this.scopeOptions(task);
@@ -581,12 +594,16 @@ export class TaskManager {
         ...options,
         ...scoped,
         ...(task.profile ? { profile: task.profile } : {}),
+        // Input blocks get ids only in run turns, and only in a harness that has them.
+        ...(this.hasInputs() && (options.phase ?? "run") === "run" ? { turn: task.turns } : {}),
         task: task.id,
         onEvent: (e) => {
           if (e.type === "done") seen.done = e;
           else if (e.type === "block" && e.name === "save_note") {
             const parsed = saveNoteSchema.safeParse(e.data);
             if (parsed.success) seen.note = parsed.data;
+          } else if (e.type === "block" && e.id !== undefined && this.d.inputBlocks && Object.hasOwn(this.d.inputBlocks, e.name)) {
+            shownInputs.push(this.showInput(task.id, e.name, e.id));
           } else if (e.type === "context") {
             seen.used = e.used;
             if (e.size !== undefined) seen.size = e.size;
@@ -599,6 +616,7 @@ export class TaskManager {
     } finally {
       this.turnTask = null;
     }
+    await Promise.all(shownInputs);
     // Mirrors TurnController: a quiet turn reaches the window only with a failure other than a cancel,
     // and a held failure never does.
     const d = seen.done;
@@ -747,6 +765,17 @@ export class TaskManager {
     } catch (err) {
       console.error("Could not save the note", err);
     }
+  }
+
+  /**
+   * An input block shown in task `id`'s turn becomes its pending input, replacing any earlier one (spec D5). Saved
+   * as the event arrives, so the window knows the question before the turn ends. A failure is logged.
+   */
+  private showInput(id: string, block: string, blockId: string): Promise<void> {
+    const shownAt = this.now().toISOString();
+    return this.update((s) => (s.current?.id === id ? { ...s, current: { ...s.current, pendingInput: { blockId, block, shownAt } } } : s)).catch((err: unknown) =>
+      console.error("Could not record the question shown", err),
+    );
   }
 
   /** `q-<title slug>`, numbered (`-2`, `-3`…) when another note of the scope already has that name. */

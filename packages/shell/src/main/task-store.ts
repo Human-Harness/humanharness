@@ -2,10 +2,18 @@ import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import type { ModelProfile } from "@humanharness/engines";
+import { BLOCK_ID } from "@humanharness/harness-sdk";
 import type { Session } from "@humanharness/runtime";
 import type { ActionStatus, TaskStatus } from "@humanharness/ui/client";
 import { MAIN_SCOPE, isScopeDir, isScopeId, tasksFile } from "@humanharness/workspace";
 import { cleanProfile } from "./models";
+
+/** The input block the task waits an answer for (input-blocks spec §4): its id, its block's name, when it was shown. */
+export interface PendingInput {
+  blockId: string;
+  block: string;
+  shownAt: string;
+}
 
 /** The task in progress: one engine session from its first turn to its note. */
 export interface CurrentTask {
@@ -38,6 +46,8 @@ export interface CurrentTask {
   resume?: boolean;
   /** The scope the task runs in (`_app` for app-wide work). Absent in a harness without scopes (spec D2). */
   scope?: string;
+  /** The question the task waits on: the last input block shown (spec D5). Absent in a harness with none (D0). */
+  pendingInput?: PendingInput;
 }
 
 /** `<folder>/.harness/tasks.json`: the current task and how each action ended. Replaces the runtime's session.json. */
@@ -79,11 +89,20 @@ function cleanSession(s: unknown): Session | undefined {
   return { id: s.id, started: s.started };
 }
 
+const BLOCK_NAME = /^[a-z][a-z0-9_]*$/;
+
+function cleanPending(p: unknown): PendingInput | undefined {
+  if (!isObject(p) || typeof p.blockId !== "string" || !BLOCK_ID.test(p.blockId)) return undefined;
+  if (typeof p.block !== "string" || !BLOCK_NAME.test(p.block) || typeof p.shownAt !== "string") return undefined;
+  return { blockId: p.blockId, block: p.block, shownAt: p.shownAt };
+}
+
 /** Built field by field: nothing from the file reaches the engine unchecked. */
 function cleanCurrent(c: unknown): CurrentTask | null {
   if (!isObject(c) || typeof c.id !== "string" || !TASK_STATUSES.includes(c.status as string)) return null;
   const session = cleanSession(c.session);
   const profile = cleanProfile(c.profile);
+  const pending = cleanPending(c.pendingInput);
   const tokens = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v) && v >= 0;
   const ctx = isObject(c.context) && tokens(c.context.used) ? { used: c.context.used, ...(tokens(c.context.size) ? { size: c.context.size } : {}) } : undefined;
   return {
@@ -103,6 +122,7 @@ function cleanCurrent(c: unknown): CurrentTask | null {
     ...(typeof c.checkpointTurns === "number" && Number.isFinite(c.checkpointTurns) ? { checkpointTurns: c.checkpointTurns } : {}),
     ...(c.resume === true ? { resume: true } : {}),
     ...(isScopeDir(c.scope) ? { scope: c.scope } : {}),
+    ...(pending ? { pendingInput: pending } : {}),
   };
 }
 

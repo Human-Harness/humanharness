@@ -15,6 +15,8 @@ const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
 
 const FIXTURE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../fake-agent/fixtures/notes-harness/harness.config.ts");
+const STUDY = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../fake-agent/fixtures/data-harness/harness.config.ts");
+const mcpServers = (argv: string[]) => Object.keys((JSON.parse(argv[argv.indexOf("--mcp-config") + 1]) as { mcpServers: object }).mcpServers);
 let runtime: HarnessRuntime | undefined;
 
 afterEach(async () => {
@@ -254,5 +256,33 @@ describe("createRuntime", () => {
     expect(() => runtime.send("two", () => {})).toThrow(/already running/);
     turn.cancel();
     await turn.done;
+  });
+
+  it("starts no data server without data, or without a handler (D2)", async () => {
+    const plain = await setup({ steps: [claudeResultLine(true)] }, undefined, { data: async (request) => request });
+    await send(plain.runtime);
+    expect(mcpServers(plain.args())).toEqual(["ui"]);
+    await plain.runtime.close();
+    const noHandler = await setup({ steps: [claudeResultLine(true)] }, undefined, { harness: await loadHarness(STUDY) });
+    await send(noHandler.runtime);
+    expect(mcpServers(noHandler.args())).toEqual(["ui"]);
+  });
+
+  it("starts the data server next to ui and sends the agent's data calls to the handler", async () => {
+    const seen: unknown[] = [];
+    const { runtime, args } = await setup(
+      { steps: [{ mcp: { server: "data", tool: "data_put", args: { collection: "concepts", record: { id: "halves", name: "Halves", state: "seen", evidence: [] } } } }, claudeResultLine(true)] },
+      undefined,
+      {
+        harness: await loadHarness(STUDY),
+        data: async (request) => {
+          seen.push(request);
+          return request;
+        },
+      },
+    );
+    await send(runtime);
+    expect(mcpServers(args())).toEqual(["ui", "data"]);
+    expect(seen).toEqual([{ op: "put", collection: "concepts", record: { id: "halves", name: "Halves", state: "seen", evidence: [] } }]);
   });
 });

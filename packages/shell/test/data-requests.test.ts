@@ -1,10 +1,10 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import { dataSchema, z } from "@humanharness/harness-sdk";
-import { DataStore, type HistoryTrailer, dataFile } from "@humanharness/workspace";
-import { type PersonDataDeps, personDataRequests } from "../src/main/data-requests";
+import { DataError, DataStore, type HistoryTrailer, dataFile } from "@humanharness/workspace";
+import { type PersonDataDeps, agentDataRequest, personDataRequests } from "../src/main/data-requests";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -83,5 +83,34 @@ describe("personDataRequests", () => {
       { message: "Data: concepts", files: ["concepts"] },
       { message: "Data: profile", files: ["concepts", "profile"] },
     ]);
+  });
+});
+
+describe("agentDataRequest", () => {
+  it("runs as the agent in the running task's scope, with the task's action", async () => {
+    const t = setup();
+    const deps = { store: async () => t.store, runningTask: async () => ({ id: "t1", action: "study", scope: "fracciones" }) };
+    await agentDataRequest(deps, { op: "put", collection: "concepts", record: { id: "a", name: "A" } });
+    expect(await t.store.get("concepts", "a", { who: "person", scope: "fracciones" })).toEqual({ id: "a", name: "A" });
+    await expect(agentDataRequest(deps, { op: "put", collection: "profile", record: { name: "Ana" } })).rejects.toMatchObject({ code: "refused" });
+    // A free question with no scope open runs in `_app`: a scoped collection is refused.
+    await expect(agentDataRequest({ ...deps, runningTask: async () => ({ id: "t2", scope: "_app" }) }, { op: "query", collection: "concepts" })).rejects.toMatchObject({ code: "no-scope" });
+    await expect(agentDataRequest({ ...deps, runningTask: async () => null }, { op: "query", collection: "concepts" })).rejects.toThrow(/No task/);
+  });
+
+  it("tells the agent a refusal's reason but nothing about any other failure", async () => {
+    const t = setup();
+    const broken = { get: () => Promise.reject(new Error("EACCES: /Users/someone/secret/.harness/data")) } as unknown as DataStore;
+    const deps = { store: async () => broken, runningTask: async () => ({ id: "t1", scope: "fracciones" }) };
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const failure = agentDataRequest(deps, { op: "get", collection: "concepts", key: "a" });
+      await expect(failure).rejects.toThrow("Something went wrong with the data");
+      await expect(failure).rejects.not.toThrow(/secret/);
+      expect(error).toHaveBeenCalled();
+    } finally {
+      error.mockRestore();
+    }
+    await expect(agentDataRequest({ ...deps, store: async () => t.store }, { op: "nope" })).rejects.toBeInstanceOf(DataError);
   });
 });

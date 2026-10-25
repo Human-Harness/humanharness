@@ -103,6 +103,29 @@ function noCli() {
 const readJsonl = (file: string) => fs.readFileSync(file, "utf8").trim().split("\n").map((l) => JSON.parse(l) as Record<string, unknown>);
 
 describe("runTask", () => {
+  it("lets the agent write the scope's data through the data tools", { timeout: 60_000 }, async () => {
+    const study = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../fake-agent/fixtures/data-harness");
+    const folder = path.join(root, "study-data");
+    const record = { id: "halves", name: "Halves", state: "seen", evidence: [] };
+    const script: ClaudeScript = {
+      steps: [...claudeTextLines("Done."), result],
+      turns: [
+        { match: "save_note", steps: [ui("save_note", { title: "Halves", summary: ["x"], decisions: [], files: [], open: [] }), result] },
+        { match: "# Task: study", steps: [{ mcp: { server: "data", tool: "data_put", args: { collection: "concepts", record } } }, ...claudeTextLines("Saved it."), result] },
+      ],
+    };
+    await runTask({
+      harnessDir: study,
+      action: "study",
+      engine: "claude",
+      folder,
+      input: lines("q\n"),
+      output: memoryStream().stream,
+      engineCommand: { command: fakeClaudeCommand(), env: { HH_FAKE_SCRIPT: writeScript(root, script) } },
+    });
+    expect(JSON.parse(fs.readFileSync(path.join(folder, ".harness", "data", "run", "concepts.json"), "utf8"))).toEqual([record]);
+  });
+
   it("runs a scoped harness's action in a `run` scope: its note, chat, usage and statuses are the scope's", { timeout: 60_000 }, async () => {
     const study = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../fake-agent/fixtures/data-harness");
     const folder = path.join(root, "study-work");

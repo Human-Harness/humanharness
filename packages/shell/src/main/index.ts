@@ -48,7 +48,7 @@ import {
 import { imageDataUrl } from "./assets";
 import { ChatLog } from "./chat-log";
 import { ConfigStore, historyDir } from "./config";
-import { personDataRequests } from "./data-requests";
+import { agentDataRequest, personDataRequests } from "./data-requests";
 import { testPrompt } from "./engine-check";
 import { createCommandDeps } from "./command-deps";
 import { cliCommand, engineCommand, loginShellPath } from "./engine-command";
@@ -429,6 +429,9 @@ const runtime = memoise<HarnessRuntime>(async () => {
     language: c.language,
     launcher: electronLauncher(process.execPath),
     uiServerEntry: path.join(here, "ui-server.js"),
+    dataServerEntry: path.join(here, "data-server.js"),
+    // The person's store (one write queue per base), for the folder this runtime runs in.
+    data: (request) => agentDataRequest({ store: async () => dataStoreFor(baseOf(c)), runningTask: () => tasks.runningTask() }, request),
     command: cmd.command,
     env: cmd.env,
     references: (await referencesFor(c.folder, true)).map((r) => ({ label: r.label[c.language], path: r.path })),

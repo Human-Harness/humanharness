@@ -1,4 +1,4 @@
-import { DATA_CHANGE_PREFIX, type DataStore, type HistoryTrailer, isDataWrite, isScopeDir, runDataRequest } from "@humanharness/workspace";
+import { DATA_CHANGE_PREFIX, DataError, type DataStore, type HistoryTrailer, isDataWrite, isScopeDir, runDataRequest } from "@humanharness/workspace";
 
 /** Where a person's write is recorded: the folder's history. */
 export interface DataHistory {
@@ -60,4 +60,31 @@ export function personDataRequests(d: PersonDataDeps): (request: unknown, option
       return result;
     });
   };
+}
+
+export interface AgentDataDeps {
+  store(): Promise<DataStore | null>;
+  /** The open task and the scope it runs in. */
+  runningTask(): Promise<{ id: string; action?: string; scope: string } | null>;
+}
+
+/**
+ * A request from the agent's `data` tools (spec §4.4): it runs as the agent, in the running task's scope. The
+ * agent's writes need no commit of their own: the turn's commit records them, under the task's trailer.
+ *
+ * Its error message goes back to the agent: a refusal (DataError) says why; any other failure is logged and the
+ * agent gets a plain message, so no file path or internal detail reaches it.
+ */
+export async function agentDataRequest(d: AgentDataDeps, request: unknown): Promise<unknown> {
+  const task = await d.runningTask();
+  if (!task) throw new Error("No task is running");
+  const store = await d.store();
+  if (!store) throw new Error("The app is not set up yet");
+  try {
+    return await runDataRequest(store, request, { who: "agent", scope: task.scope, ...(task.action ? { action: task.action } : {}) });
+  } catch (err) {
+    if (err instanceof DataError) throw err;
+    console.error("The agent's data request failed", err);
+    throw new Error("Something went wrong with the data");
+  }
 }

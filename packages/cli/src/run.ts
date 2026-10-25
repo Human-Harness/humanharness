@@ -11,6 +11,7 @@ import { type ErrorCode, createRuntime } from "@humanharness/runtime";
 import {
   ChatLog,
   type CommandDeps,
+  agentDataRequest,
   SharedConfigStore,
   TaskManager,
   TaskStore,
@@ -27,7 +28,7 @@ import {
   sharedConfigDir,
   usageRecord,
 } from "@humanharness/shell/tasks";
-import { MAIN_SCOPE, ScopeStore, generatedFiles, migrateToScopes, notesPrefix, readNotes, writeNote } from "@humanharness/workspace";
+import { DataStore, MAIN_SCOPE, ScopeStore,generatedFiles, migrateToScopes, notesPrefix, readNotes, writeNote } from "@humanharness/workspace";
 import { CliError, type Io, UsageError, parseCommand } from "./cli";
 import { MANIFEST } from "./paths";
 import { clashMessage, matchClashes } from "./mock-match";
@@ -181,6 +182,9 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
   // Counted, not compared by path: a checkpoint's note and the closing one go to the same file.
   let notesWritten = 0;
 
+  // One store for the run: its queue orders the agent's writes.
+  const dataStore = new DataStore(folder, harness.data);
+
   // Same wiring as the app's main process (packages/shell/src/main/index.ts), with the terminal as the window.
   const runtime = memoise(() =>
     createRuntime({
@@ -193,6 +197,7 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
       env: command.env,
       references: references.map((r) => ({ label: r.label[language], path: r.path })),
       onSession: (s) => void tasks.sessionStarted(s).catch(() => undefined),
+      data: (request) => agentDataRequest({ store: async () => dataStore, runningTask: () => tasks.runningTask() }, request),
     }),
   );
   const turns = new TurnController({

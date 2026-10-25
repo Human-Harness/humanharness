@@ -352,6 +352,16 @@
       "failed": "No pude mover tu carpeta. Sigue donde estaba."
     }
   },
+  "scopes": {
+    "pick": "Elegir {{label}}",
+    "none": "Sin {{label}}",
+    "add": "Agregar {{label}}",
+    "titleLabel": "Nombre",
+    "create": "Crear",
+    "cancel": "Cancelar",
+    "pickFirst": "Primero elegí en qué {{label}} trabajar.",
+    "failed": "No se pudo. Probá de nuevo."
+  },
   "app": {
     "loadError": "La app no pudo arrancar. Cerrala y volvé a abrirla."
   },

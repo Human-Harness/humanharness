@@ -352,6 +352,16 @@
       "failed": "I couldn't move your folder. It's still where it was."
     }
   },
+  "scopes": {
+    "pick": "Choose a {{label}}",
+    "none": "No {{label}}",
+    "add": "Add a {{label}}",
+    "titleLabel": "Name",
+    "create": "Create",
+    "cancel": "Cancel",
+    "pickFirst": "First choose which {{label}} to work on.",
+    "failed": "That didn't work. Try again."
+  },
   "app": {
     "loadError": "The app couldn't start. Close it and open it again."
   },

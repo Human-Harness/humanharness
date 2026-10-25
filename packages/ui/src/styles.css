@@ -309,3 +309,13 @@ select:focus-visible { outline: 2px solid var(--hh-ink); outline-offset: 2px; }
 .hh-note-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .hh-notes-savings { padding: 10px 12px; border: 1px solid var(--hh-line); border-radius: 10px; background: var(--hh-surface); color: var(--hh-ok); line-height: 1.45; }
 @media (max-width: 640px) { .hh-flow-side, .hh-side { display: none; } .hh-chat { padding: 20px 16px; } }
+
+.hh-scope-picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.hh-scope-picker form {
+  display: flex;
+  gap: 6px;
+}

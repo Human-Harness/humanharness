@@ -39,3 +39,20 @@ export function uiServerSpec(opts: {
     env: { ...opts.launcher.env, HH_HARNESS: opts.harnessConfig, HH_BRIDGE: opts.bridge.path, HH_BRIDGE_TOKEN: opts.bridge.token },
   };
 }
+
+/** The `data` MCP server (spec §4.4): its tools ask the app over `rpc`. */
+export function dataServerSpec(opts: {
+  harnessConfig: string;
+  rpc: { path: string; token: string };
+  launcher: Launcher;
+  /** Built entry for the data server (app); defaults to the TS source (dev). */
+  entry?: string;
+}): McpServerSpec {
+  const entry = opts.entry ?? fileURLToPath(new URL("./data-server-bin.ts", import.meta.url));
+  return {
+    name: "data",
+    command: opts.launcher.command,
+    args: [...opts.launcher.args, entry],
+    env: { ...opts.launcher.env, HH_HARNESS: opts.harnessConfig, HH_RPC: opts.rpc.path, HH_RPC_TOKEN: opts.rpc.token },
+  };
+}

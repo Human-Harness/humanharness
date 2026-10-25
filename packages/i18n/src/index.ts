@@ -9,7 +9,7 @@ export const CORE_LOCALES: Record<"en", Record<string, unknown>> = { en };
 
 /**
  * Core strings in the default namespace; the harness's own strings under `harness:`. A language with no
- * strings shows English (`resolvedLanguage` is "en") while `language` keeps the tag for dates and numbers.
+ * strings shows English: `resolvedLanguage` is "en", the language dates and numbers follow too.
  */
 export async function createI18n(language: Language, harnessLocales: Locales = {}): Promise<i18n> {
   const instance = i18next.createInstance();

@@ -21,7 +21,7 @@ describe("createI18n", () => {
     expect(en.t("settings.languageHint")).toBe("The app's texts are in English for now. The AI answers in this language.");
   });
 
-  it("shows English for a language with no strings, and keeps the tag for formatting", async () => {
+  it("shows English for a language with no strings", async () => {
     const i18n = await createI18n("pt-BR");
     expect(i18n.language).toBe("pt-BR");
     expect(i18n.resolvedLanguage).toBe("en");

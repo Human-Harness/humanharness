@@ -6,11 +6,13 @@ A harness in its own repository imports the same functions from `@humanharness/c
 
 ## What each field does
 
+Every text in the manifest is one English string.
+
 | Field | What the core does with it |
 |---|---|
 | `id`, `name`, `tagline`, `logo` | The app's name and data folder, the Home screen |
 | `author`, `donate` | Settings → About |
-| `languages` | Languages the interface and the agent may use (`es`, `en`) |
+| `tone` | One English line on how the translated screens should sound; the app ships in English and translates on the person's engine |
 | `engines` | Engines the harness was tested with; `availableEngines` in `packages/engines` keeps the ones whose legal status allows it |
 | `folder.suggested`, `folder.seed` | Where the person's work lives; the seed is copied there when the folder is empty (`prepareFolder`) |
 | `folder.references` | Folders the agent may read but never change; `"app-source"` is the repository the app runs from, in development only |

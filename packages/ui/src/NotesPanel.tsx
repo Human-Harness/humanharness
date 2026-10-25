@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { NoteView } from "./client";
+import { shownLanguage } from "./language";
 
 /** "What's clear so far": the notes of `.harness/notes/`, one opened at a time. */
 export function NotesPanel({
@@ -51,7 +52,7 @@ export function NotesPanel({
 
   const when = (iso: string) => {
     const d = new Date(iso);
-    return Number.isNaN(d.getTime()) ? "" : d.toLocaleString(i18n.language, { dateStyle: "short", timeStyle: "short" });
+    return Number.isNaN(d.getTime()) ? "" : d.toLocaleString(shownLanguage(i18n), { dateStyle: "short", timeStyle: "short" });
   };
   const openFile = (path: string) => {
     setFailed(false);

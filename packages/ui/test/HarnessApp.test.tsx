@@ -597,6 +597,16 @@ describe("HarnessApp", () => {
     expect(screen.queryByText(/doesn't report your plan's limits/)).toBeNull();
   });
 
+  it("shows English numbers for a saved Spanish: they follow the language of the text", async () => {
+    const client = new FakeClient({ ...ready, language: "es" });
+    client.state.engines = [{ ...client.state.engines[0], name: "Mock AI", logo: undefined, reportsLimits: false, mock: true }];
+    client.chat = [
+      { id: "1", role: "assistant", text: "hi", blocks: [], activities: [], at: "t", usage: { inputTokens: 1000, outputTokens: 200, cacheReadTokens: 0, cacheWriteTokens: 0 } },
+    ];
+    await startWork(<HarnessApp client={client} />);
+    await screen.findByText(/^Test mode: uses none of your plan\. Last message: 1\.2K tokens\.$/);
+  });
+
   it("asks before a heavy action when the 5-hour window is high, and sends only on Continue", async () => {
     const client = new FakeClient(ready);
     client.state.actions = { tidy: { label: "Tidy up", cost: "heavy" } };

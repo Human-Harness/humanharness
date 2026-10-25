@@ -14,6 +14,7 @@ import {
   TURN_PREFIX,
   UNDO_PREFIX,
 } from "./client";
+import { shownLanguage } from "./language";
 
 /** The i18n key (and its values) that tells a history entry in plain language; null keeps the commit subject. */
 export function entryLabel(message: string): { key: string; values?: Record<string, string> } | null {
@@ -171,7 +172,7 @@ export function HistoryPanel({
     const label = entryLabel(e.message);
     return label ? t(label.key, label.values ?? {}) : e.message;
   };
-  const when = (iso: string) => new Date(iso).toLocaleString(i18n.language);
+  const when = (iso: string) => new Date(iso).toLocaleString(shownLanguage(i18n));
 
   return (
     <aside className="hh-history" role="dialog" aria-modal="true" aria-label={t("history.title")}>

@@ -7,7 +7,7 @@ import { TopBar } from "./chrome";
 import { type AppState, type EngineStatus, type HarnessClient, type LimitWindow, engineProblem, isConfigured } from "./client";
 import { useFolderMove } from "./BackupNotice";
 import { Home } from "./Home";
-import { systemLanguage } from "./language";
+import { shownLanguage, systemLanguage } from "./language";
 import type { BlockProps } from "./Message";
 import { type SettingsTab, SettingsSheet } from "./SettingsSheet";
 import { SetupFlow } from "./SetupFlow";
@@ -65,7 +65,7 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
     if (!i18n) return;
     // The language the text is shown in: English until plan 5b translates the app.
     const apply = () => {
-      document.documentElement.lang = i18n.resolvedLanguage ?? "en";
+      document.documentElement.lang = shownLanguage(i18n);
     };
     apply();
     i18n.on("languageChanged", apply);

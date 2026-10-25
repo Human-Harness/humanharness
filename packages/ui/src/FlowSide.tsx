@@ -2,13 +2,14 @@ import { useId } from "react";
 import { useTranslation } from "react-i18next";
 import { CheckIcon, LockIcon, NoteIcon } from "./chrome";
 import { type AppState, type TaskView, nextInPath } from "./client";
+import { shownLanguage } from "./language";
 
 /** A thin bar: the context the task's session uses against its cap, the exact tokens on hover (spec §6). */
 export function ContextMeter({ used, cap }: { used: number; cap: number }) {
   const { t, i18n } = useTranslation();
   if (!(cap > 0)) return null;
   const pct = Math.max(0, Math.min(100, Math.round((used / cap) * 100)));
-  const fmt = (n: number) => n.toLocaleString(i18n.language);
+  const fmt = (n: number) => n.toLocaleString(shownLanguage(i18n));
   return (
     <span
       className={pct >= 80 ? "hh-context-meter warn" : "hh-context-meter"}

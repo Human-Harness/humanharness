@@ -4,6 +4,7 @@ import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AppState } from "../src/client";
 import { type SettingsTab, SettingsSheet } from "../src/SettingsSheet";
+import { ownName, systemLanguage } from "../src/language";
 import { FakeClient } from "./fake-client";
 import { renderIn } from "./render";
 
@@ -205,6 +206,7 @@ describe("SettingsSheet", () => {
     const client = new FakeClient({});
     await renderIn("en", <Sheet client={client} />);
     expect(screen.getByText("Language")).toBeTruthy();
+    expect(screen.getByText(ownName(systemLanguage()))).toBeTruthy();
     expect(screen.getByRole("group", { name: "Appearance" })).toBeTruthy();
     expect(screen.getByRole("group", { name: "Text size" })).toBeTruthy();
     expect(screen.getByText("Version 0.1.0")).toBeTruthy();

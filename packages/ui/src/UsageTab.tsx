@@ -5,6 +5,7 @@ import type { AppState, EngineOption, HarnessClient, LimitWindow, UsageSummary }
 import { QUESTIONS, taskRows } from "./ModelsTab";
 import { WARN_AT, compactTokens, compareTokens, formatReset, percent, timesFit, timesLeft } from "./usage";
 import { useCurrentWindows } from "./UsageMeter";
+import { shownLanguage } from "./language";
 
 const EMPTY: UsageSummary = { limits: null, estimates: {}, tokens: {} };
 
@@ -66,7 +67,7 @@ function PlanSection({ engine, limits, reported }: { engine?: EngineOption; limi
               <span>{windowName(t, w.kind)}</span>
               <span className={warn ? "hh-warn" : undefined}>{t("usage.used", { percent: percent(w.utilization) })}</span>
               <Bar share={w.utilization} warn={warn} />
-              <span className="hh-caption">{t("usage.renews", { time: formatReset(w.resetsAt, i18n.language) })}</span>
+              <span className="hh-caption">{t("usage.renews", { time: formatReset(w.resetsAt, shownLanguage(i18n)) })}</span>
             </div>
           );
         })}
@@ -126,7 +127,7 @@ function TopicTable({
   const comparison = (n: number) => {
     const c = compareTokens(n, average);
     if (c.kind !== "times") return t(`usage.compare.${c.kind}`);
-    const times = new Intl.NumberFormat(i18n.language, { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(c.times);
+    const times = new Intl.NumberFormat(shownLanguage(i18n), { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(c.times);
     return t("usage.compare.times", { times });
   };
 
@@ -142,7 +143,7 @@ function TopicTable({
           <tr>
             <th scope="col">{t("usage.col.topic")}</th>
             <th scope="col">{t("usage.col.each")}</th>
-            {reportsLimits && <th scope="col">{near ? t("usage.col.until", { time: formatReset(near.resetsAt, i18n.language) }) : t("usage.col.fits")}</th>}
+            {reportsLimits && <th scope="col">{near ? t("usage.col.until", { time: formatReset(near.resetsAt, shownLanguage(i18n)) }) : t("usage.col.fits")}</th>}
           </tr>
         </thead>
         <tbody>
@@ -162,7 +163,7 @@ function TopicTable({
               );
             } else if (!reportsLimits && n !== undefined) {
               // The tooltip is for the mouse; the hidden text gives the same detail to screen readers.
-              const detail = t("usage.tokensEach", { tokens: compactTokens(n, i18n.language) });
+              const detail = t("usage.tokensEach", { tokens: compactTokens(n, shownLanguage(i18n)) });
               cells = (
                 <td title={detail}>
                   <Bar share={largest > 0 ? n / largest : 0} />

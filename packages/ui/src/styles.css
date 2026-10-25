@@ -319,3 +319,19 @@ select:focus-visible { outline: 2px solid var(--hh-ink); outline-offset: 2px; }
   display: flex;
   gap: 6px;
 }
+
+/* Input blocks (input-blocks spec §5): the core form, and an answer once sent. */
+.hh-input-block { display: flex; flex-direction: column; gap: 8px; }
+.hh-input-form { display: flex; flex-direction: column; gap: 10px; }
+.hh-field { display: flex; flex-direction: column; gap: 4px; border: 0; margin: 0; padding: 0; min-width: 0; }
+.hh-field legend { padding: 0; margin-bottom: 4px; }
+.hh-option { display: flex; align-items: center; gap: 6px; }
+.hh-input-long { font: inherit; min-height: 4lh; max-height: 40vh; field-sizing: content; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--hh-line-strong); background: var(--hh-surface); color: var(--hh-ink); resize: vertical; }
+.hh-pair { display: flex; gap: 6px; }
+.hh-pair input { flex: 1; min-width: 0; }
+.hh-field-error, .hh-input-errors { color: var(--hh-warn); }
+.hh-input-form [aria-invalid="true"] { border-color: var(--hh-warn); }
+.hh-input-actions { display: flex; gap: 12px; align-items: center; }
+.hh-answer dl { margin: 4px 0 0; }
+.hh-answer dt { font-weight: 600; color: var(--hh-slate); }
+.hh-answer dd { margin: 0 0 6px; white-space: pre-wrap; }

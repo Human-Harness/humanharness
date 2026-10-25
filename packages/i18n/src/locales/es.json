@@ -262,6 +262,24 @@
     "title": "¿Cómo seguimos?",
     "failed": "No se pudo. Elegí una opción de nuevo."
   },
+  "input": {
+    "send": "Enviar",
+    "sending": "Enviando…",
+    "skip": "Saltear esta pregunta",
+    "optional": "(opcional)",
+    "errorsTitle": "Revisá los campos marcados.",
+    "closed": "Esta pregunta ya está cerrada.",
+    "answered": "Tu respuesta",
+    "skipped": "Salteaste esta pregunta.",
+    "addRow": "Agregar una fila",
+    "removeRow": "Quitar la fila {{n}}",
+    "unsupported": "La app no puede mostrar el campo \"{{field}}\" acá.",
+    "failed": "No se pudo enviar. Probá de nuevo.",
+    "wait": "Esperá a que la IA termine y enviá.",
+    "stopped": "Se frenó antes de enviar tu respuesta. Enviala de nuevo.",
+    "yes": "Sí",
+    "no": "No"
+  },
   "notes": {
     "title": "Lo que quedó claro",
     "close": "Cerrar",

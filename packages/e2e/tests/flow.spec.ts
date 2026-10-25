@@ -26,6 +26,11 @@ test("a topic answered with blocks, then next: the note is saved and the next to
     const note = fs.readFileSync(path.join(s.folder, ".harness", "notes", "manifest.md"), "utf8");
     expect(note).toContain('title: "El manifiesto"');
     expect(note).toContain("- defineHarness valida el manifiesto");
+    // Spec D2: a harness with neither scopes nor data keeps today's layout, chat, usage lines and MCP servers.
+    expect(fs.existsSync(path.join(s.folder, ".harness", "scopes.json"))).toBe(false);
+    expect(fs.existsSync(path.join(s.folder, ".harness", "data"))).toBe(false);
+    expect(fs.readdirSync(path.join(s.folder, ".harness", "notes")).every((f) => f.endsWith(".md"))).toBe(true);
+    expect(fs.readdirSync(path.join(s.folder, ".harness", "chats")).filter((f) => f.endsWith(".jsonl"))).toEqual(["main.jsonl"]);
 
     const [first, close, second] = readJsonl<Run>(s.claudePrompts);
     expect(first.prompt).toContain("# Topic: the manifest");
@@ -46,6 +51,10 @@ test("a topic answered with blocks, then next: the note is saved and the next to
     // The text shows before the turn ends: wait for its usage line and the task's state.
     await expect.poll(() => readTasks(s.folder)).toMatchObject({ current: { action: "engines", status: "waiting" }, actions: { manifest: "done" } });
     await expect.poll(() => readJsonl<{ phase?: string }>(usageFile(s)).map((r) => r.phase)).toEqual(["run", "close", "run"]);
+    expect(readJsonl<Record<string, unknown>>(usageFile(s)).some((r) => "scope" in r)).toBe(false);
+    expect(Object.keys(readTasks(s.folder))).not.toContain("open");
+    const servers = Object.keys((JSON.parse(first.argv[first.argv.indexOf("--mcp-config") + 1]) as { mcpServers: object }).mcpServers);
+    expect(servers).not.toContain("data");
     await expect(page.getByRole("list", { name: "Lo que ya quedó claro" }).getByRole("button", { name: "El manifiesto" })).toBeVisible();
 
     // Settings › Uso: the manifest task took the five-hour window from 10 % to 14 % (spec 3b).

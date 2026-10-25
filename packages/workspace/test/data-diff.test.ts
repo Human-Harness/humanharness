@@ -53,4 +53,29 @@ describe("dataDiffOf", () => {
     expect(await dataDiffOf(history, "nope", data)).toEqual([]);
     expect(await history.readFileAt(null, ".harness/data/fracciones/concepts.json")).toBeNull();
   });
+
+  it("skips a collection whose version at the end is broken, and covers created, deleted and app-wide data", async () => {
+    const dir = fs.mkdtempSync(path.join(root, "t-"));
+    const folder = path.join(dir, "Work");
+    const d = path.join(folder, ".harness", "data");
+    const f = (scope: string, name: string) => path.join(d, scope, `${name}.json`);
+    fs.mkdirSync(path.join(d, "main"), { recursive: true });
+    fs.mkdirSync(path.join(d, "_app"), { recursive: true });
+    fs.writeFileSync(f("main", "broke"), json([{ id: "a" }]));
+    fs.writeFileSync(f("main", "gone"), json([{ id: "a" }]));
+    const history = new History(folder, path.join(dir, "git"), [".harness/"], [NOTES_PREFIX, DATA_PREFIX]);
+    await history.init();
+    await history.save("Start");
+    fs.writeFileSync(f("main", "broke"), "{nope");
+    fs.rmSync(f("main", "gone"));
+    fs.writeFileSync(f("main", "fresh"), json([{ id: "x" }]));
+    fs.writeFileSync(f("_app", "prefs"), json([{ id: "p", v: 1 }]));
+    await history.save("Turn: go", { task: "t2", action: "go", scope: "main" });
+    const c = (extra = {}) => ({ scoped: true, key: "id", schema: z.object({ id: z.string() }).passthrough(), agent: "write", ...extra });
+    const data = dataSchema.parse({ broke: c(), gone: c(), fresh: c(), prefs: c({ scoped: false }) });
+    const out = await dataDiffOf(history, "t2", data);
+    expect(out.map((x) => `${x.collection}@${x.scope}`).sort()).toEqual(["fresh@main", "gone@main", "prefs@_app"]);
+    expect(out.find((x) => x.collection === "fresh")?.added).toEqual([{ id: "x" }]);
+    expect(out.find((x) => x.collection === "gone")?.removed).toEqual([{ id: "a" }]);
+  });
 });

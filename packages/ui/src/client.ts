@@ -408,7 +408,6 @@ export interface DataChangeView {
   op: "put" | "patch" | "delete";
   key?: DataKey;
 }
-/** Default: the open scope. App-wide collections ignore it. */
 /** What a task changed in one collection of one scope. */
 export interface DataDiffView {
   collection: string;
@@ -418,6 +417,7 @@ export interface DataDiffView {
   removed: DataRecord[];
 }
 
+/** Default: the open scope. App-wide collections ignore it. */
 export interface DataOptions {
   scope?: string;
 }

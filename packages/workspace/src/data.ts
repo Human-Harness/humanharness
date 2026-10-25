@@ -260,7 +260,13 @@ export class DataStore {
     const snapshot = new Map<string, DataRecord[]>();
     for (const [other, oc] of Object.entries(this.collections)) {
       const folder = oc.scoped ? scope : APP_SCOPE;
-      snapshot.set(other, oc.scoped && scope === APP_SCOPE ? [] : (await this.load(other, oc, folder)).records);
+      if (oc.scoped && scope === APP_SCOPE) {
+        snapshot.set(other, []);
+        continue;
+      }
+      const loaded = await this.load(other, oc, folder);
+      if (loaded.broken) this.log(`${dataPath(folder, other)} is not valid JSON: the rules of "${name}" see "${other}" as empty`);
+      snapshot.set(other, loaded.records);
     }
     const rulesCtx: RulesContext = {
       ...(ctx.action !== undefined ? { action: ctx.action } : {}),
@@ -268,10 +274,11 @@ export class DataStore {
       who: ctx.who,
       records: (other) => structuredClone(snapshot.get(other) ?? []),
     };
+    const rules = c.rules;
     const started = performance.now();
     let verdict: unknown;
     try {
-      verdict = c.rules(structuredClone(next), structuredClone(prev), rulesCtx);
+      verdict = rules(structuredClone(next), structuredClone(prev), rulesCtx);
     } catch (err) {
       throw new DataError("refused", `The rules of "${name}" failed: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
@@ -279,6 +286,10 @@ export class DataStore {
       if (ms > (this.opts.rulesSlowMs ?? RULES_SLOW_MS)) this.log(`The rules of "${name}" took ${Math.round(ms)} ms: keep them small and pure`);
     }
     if (verdict === true) return;
+    if (typeof (verdict as { then?: unknown } | null)?.then === "function") {
+      void Promise.resolve(verdict).catch(() => {});
+      throw new DataError("refused", `The rules of "${name}" must be synchronous: return true or a message`);
+    }
     throw new DataError("refused", typeof verdict === "string" && verdict.trim() ? verdict : `The rules of "${name}" refused the change`);
   }
 

@@ -82,4 +82,29 @@ describe("rules", () => {
     await slow.put("concepts", { id: "a", state: "seen", evidence: [] }, agent);
     expect(log.some((m) => /rules of "concepts" took \d+ ms/.test(m))).toBe(true);
   });
+  it("refuses an async rule without an unhandled rejection", async () => {
+    const unhandled: unknown[] = [];
+    const on = (e: unknown) => void unhandled.push(e);
+    process.on("unhandledRejection", on);
+    try {
+      const msg = /must be synchronous/;
+      await expect(store((async () => true) as unknown as DataRules).put("concepts", { id: "a", state: "seen", evidence: [] }, agent)).rejects.toMatchObject({ code: "refused", message: expect.stringMatching(msg) });
+      await expect(store((async () => { throw new Error("late"); }) as unknown as DataRules).put("concepts", { id: "a", state: "seen", evidence: [] }, agent)).rejects.toThrow(msg);
+      await new Promise((r) => setTimeout(r, 20));
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", on);
+    }
+  });
+
+  it("logs a collection whose file is broken, which the rules see as empty", async () => {
+    const log: string[] = [];
+    const seen: unknown[] = [];
+    const s = store((_n, _p, ctx) => (seen.push(ctx.records("profile")), true), log);
+    await s.put("profile", { name: "Ana" }, { who: "person", scope: "fracciones" });
+    fs.writeFileSync(path.join((s as unknown as { base: string }).base, ".harness", "data", "_app", "profile.json"), "{nope");
+    await s.put("concepts", { id: "a", state: "seen", evidence: [] }, agent);
+    expect(seen).toEqual([[]]);
+    expect(log.some((m) => /"profile"/.test(m))).toBe(true);
+  });
 });

@@ -20,7 +20,7 @@ export interface RulesContext {
   /** The scope the write is made in (`_app` for app-wide work). */
   scope: string;
   who: DataWho;
-  /** A copy of another collection's records (same scope, or app-wide), taken before the rule ran. */
+  /** A copy of another collection's records (same scope, or app-wide), taken before the rule ran. A collection whose file was broken by hand reads as empty (the app logs it). */
   records(collection: string): DataRecord[];
 }
 

@@ -8,58 +8,109 @@
 <body>
 <x-dc>
 <helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
 <style>
-body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;color:#1d1d1f}
-a{color:#0a5bc4}a:hover{color:#083f88}
-.btn{font:inherit;font-size:14px;padding:9px 18px;border-radius:8px;border:1px solid #d2d2d7;background:#fff;color:#1d1d1f;text-decoration:none;display:inline-block;cursor:pointer}
-.btn.p{background:#0a5bc4;border-color:#0a5bc4;color:#fff}
-.k{font-size:12px;color:#5f5f66;font-weight:600}
-.col{display:flex;flex-direction:column;gap:14px;flex:1}
-.node{background:#fff;border:1px solid #d2d2d7;border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:6px;font-size:14px}
-.src{font-size:11px;font-weight:600;color:#5f5f66}
-.arr{display:flex;align-items:center;color:#8e8e93;font-size:22px}
+body{margin:0}
+a{color:#5E4B0A}a:hover{color:#22211E}
+.th{font-family:"Geist",system-ui,sans-serif;--bd:radial-gradient(60% 50% at 0% 40%,#CFE8D2 0%,transparent 70%),radial-gradient(60% 40% at 70% 0%,#BFE0EA 0%,transparent 70%),radial-gradient(60% 50% at 100% 100%,#F8F0C8 0%,transparent 70%),#EEF3EC;--sh:#F7F6F1;--pn:#EFEEE8;--fd:#FBFAF7;--ln:#E4E2DA;--tx:#22211E;--mu:#6B6860;--ac:#F3D54E;--on:#2A2410;--so:#FBF0C0;--st:#5E4B0A;--m1:#6E9A62;--m2:#B9D3A8;--m3:#E8C04A;--m4:#9EC3D6;--m5:#E4E2DA;--shadow:0 1px 2px rgba(40,40,30,.04),0 24px 60px rgba(40,50,40,.08)}
+.th.dark{--bd:radial-gradient(60% 50% at 0% 40%,#1C3326 0%,transparent 70%),radial-gradient(60% 40% at 70% 0%,#173039 0%,transparent 70%),radial-gradient(60% 50% at 100% 100%,#3A3418 0%,transparent 70%),#121614;--sh:#1D1D1A;--pn:#252522;--fd:#2C2C28;--ln:#34332E;--tx:#ECEAE3;--mu:#A6A397;--ac:#E9C944;--on:#241E08;--so:#3A3318;--st:#F0D873;--m1:#8DBB7E;--m2:#4D6B44;--m3:#C9A43A;--m4:#5E8597;--m5:#34332E;--shadow:0 1px 2px rgba(0,0,0,.3),0 24px 60px rgba(0,0,0,.35)}
+.th a{color:var(--st)}
+.th h1,.th h2,.th h3{margin:0;letter-spacing:-.02em;font-weight:500}
+.th p,.th .me,.th .prose{font-family:"Newsreader",Georgia,serif}
+.th p{margin:0}
+.stage{width:1440px;height:900px;background:var(--bd);padding:20px;box-sizing:border-box;display:flex}
+.sheet{flex:1;min-width:0;background:var(--sh);color:var(--tx);border-radius:28px;box-shadow:var(--shadow);display:flex;gap:28px;padding:26px 32px 26px 22px;overflow:hidden}
+.rail{display:flex;flex-direction:column;gap:10px;align-items:center}
+.ib{width:44px;height:44px;border-radius:12px;border:0;background:var(--pn);color:var(--tx) !important;display:flex;align-items:center;justify-content:center;cursor:pointer;text-decoration:none}
+.ib.on{background:var(--ac);color:var(--on) !important}
+.main{flex:1;min-width:0;display:flex;flex-direction:column;gap:22px}
+.crumb{font-size:15px;color:var(--mu) !important;text-decoration:none}
+.k{font-size:13px;color:var(--mu);margin:0;font-weight:500}
+.btn{font:inherit;font-size:15px;font-weight:500;padding:11px 20px;border-radius:12px;border:0;background:var(--pn);color:var(--tx) !important;cursor:pointer;text-decoration:none;display:inline-block}
+.btn.p{background:var(--ac);color:var(--on) !important}
+.btn.s{background:var(--so);color:var(--st) !important}
+.btn.f{background:var(--fd)}
+.btn.g{background:transparent;color:var(--mu) !important;text-decoration:underline;text-underline-offset:4px}
+.pill{font-size:13px;padding:5px 12px;border-radius:999px;background:var(--pn);color:var(--mu)}
+.pill.done{background:var(--so);color:var(--st)}
+.pill.cur{background:var(--ac);color:var(--on);font-weight:500}
+.panel{background:var(--pn);border-radius:20px;padding:20px 22px;display:flex;flex-direction:column;gap:12px;color:var(--tx);text-decoration:none}
+.o{font:inherit;text-align:left;font-size:15px;padding:11px 14px;border-radius:12px;border:1.5px solid transparent;background:var(--pn);color:var(--tx);cursor:pointer}
+.o.sel{border-color:var(--ac);background:var(--so);color:var(--st)}
+.in{font:inherit;font-size:15px;padding:11px 14px;border-radius:12px;border:0;background:var(--pn);color:var(--tx);min-width:0}
+.panel .in,.panel .o{background:var(--fd)}
+.in::placeholder{color:var(--mu)}
+.in:focus{outline:2px solid var(--ac);outline-offset:1px}
+.me{align-self:flex-end;max-width:420px;background:var(--pn);border-radius:16px 16px 4px 16px;padding:11px 16px;font-size:17px;line-height:1.45}
+.prose{font-size:18px;line-height:1.55}
+.bar{display:flex;height:8px;border-radius:4px;overflow:hidden;gap:2px}
+.lg{display:flex;gap:14px;font-size:13px;color:var(--mu);flex-wrap:wrap}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:1px}
+.sr{position:absolute;left:-9999px}
+.col{display:flex;flex-direction:column;gap:12px;flex:1;min-width:0}
+.node{background:var(--fd);border-radius:14px;padding:14px 16px;display:flex;flex-direction:column;gap:6px;font-size:15px;border:1.5px solid transparent}
+.node strong{font-weight:500}
+.src{font-size:12px;color:var(--mu)}
+.arr{display:flex;align-items:center;color:var(--mu)}
+.opt{display:flex;gap:10px;align-items:flex-start;padding:14px;border:1.5px solid transparent;border-radius:14px;font-size:15px;background:var(--fd);cursor:pointer}
+.opt.sel{border-color:var(--ac);background:var(--so)}
+.opt input{accent-color:var(--st);margin-top:3px}
 </style>
 </helmet>
-<div style="width:1440px;height:900px;display:flex;flex-direction:column;background:#f5f5f7;padding:32px 40px;box-sizing:border-box;gap:18px">
-  <div style="display:flex;align-items:center;gap:14px">
-    <a href="NuevoTema.dc.html" style="font-size:13px">‹ Nuevo tema</a>
-    <h1 style="margin:0;font-size:24px">El mapa de Fracciones</h1>
-  </div>
-  <p style="margin:0;font-size:14px;color:#3a3a40">Leímos tus 2 fotos y armamos los conceptos en orden: cada columna necesita la anterior. Podés sacar, sumar o renombrar.</p>
-  <div style="flex:1;display:flex;gap:20px;min-height:0">
-    <section aria-label="Mapa" style="flex:1;background:#fbfbfd;border:1px solid #e3e3e8;border-radius:14px;padding:24px;display:flex;gap:10px">
-      <div class="col"><div class="k">PRIMERO</div>
-        <div class="node"><strong>Parte y entero</strong><span class="src">De tu cuaderno</span></div>
-        <div class="node"><strong>La fracción como parte</strong><span class="src">De tu cuaderno</span></div></div>
-      <div class="arr" aria-hidden="true">›</div>
-      <div class="col"><div class="k">DESPUÉS</div>
-        <div class="node"><strong>Leer y escribir fracciones</strong><span class="src">De tu cuaderno</span></div>
-        <div class="node"><strong>Fracciones equivalentes</strong><span class="src">Agregado por la IA</span></div></div>
-      <div class="arr" aria-hidden="true">›</div>
-      <div class="col"><div class="k">LUEGO</div>
-        <div class="node"><strong>Comparar fracciones</strong><span class="src">De tu cuaderno</span></div>
-        <div class="node"><strong>Simplificar</strong><span class="src">Agregado por la IA</span></div></div>
-      <div class="arr" aria-hidden="true">›</div>
-      <div class="col"><div class="k">AL FINAL</div>
-        <div class="node"><strong>Sumar con igual denominador</strong><span class="src">De tu cuaderno</span></div>
-        <div class="node" style="border:2px solid #e8a33d"><strong>Sumar con distinto denominador</strong><span class="src">De tu cuaderno · dijiste que te cuesta</span></div></div>
-    </section>
-    <aside style="width:340px;background:#fff;border:1px solid #e3e3e8;border-radius:14px;padding:22px;display:flex;flex-direction:column;gap:12px">
-      <div class="k">¿POR DÓNDE EMPEZAMOS?</div>
-      <div style="font-size:14px;line-height:1.5">Dijiste que ya sabés qué es un medio y un cuarto. Para no repetir lo que sabés, conviene un diagnóstico corto.</div>
-      <label style="display:flex;gap:8px;font-size:14px;padding:12px;border:2px solid #0a5bc4;border-radius:10px;background:#f3f8ff"><input type="radio" name="d" checked><span><strong>Diagnóstico de 5 preguntas</strong><br><span style="font-size:13px;color:#3a3a40">Marca como "visto" lo que ya sabés</span></span></label>
-      <label style="display:flex;gap:8px;font-size:14px;padding:12px;border:1px solid #e3e3e8;border-radius:10px"><input type="radio" name="d"><span><strong>Empezar desde el principio</strong></span></label>
-      <div style="flex:1"></div>
-      <div class="k">ESTE MAPA</div>
-      <div style="font-size:13px;color:#3a3a40;line-height:1.5">6 conceptos salen de tu material y 2 los sumó la IA (modo mixto). En modo "solo mi material" no aparecerían.</div>
-      <a class="btn p" href="Tema.dc.html" style="text-align:center">Listo, crear el tema</a>
-    </aside>
-  </div>
+<div class="th {{mode}}">
+<div class="stage">
+<div class="sheet">
+  <nav class="rail" aria-label="Navegación">
+    <svg width="40" height="40" viewBox="0 0 40 40" aria-hidden="true" style="margin-bottom:22px;color:var(--tx)"><circle cx="20" cy="20" r="16" fill="currentColor"></circle><circle cx="20" cy="20" r="6" fill="var(--sh)"></circle></svg>
+    <a class="ib" href="Inicio.dc.html" aria-label="Inicio"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"></path></svg></a>
+    <a class="ib on" href="Tema.dc.html" aria-label="Temas"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><path d="M4 19V5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2 2 2 0 0 0 2 2h13"></path></svg></a>
+    <a class="ib" href="Flashcards.dc.html" aria-label="Flashcards"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="7" width="13" height="14" rx="2"></rect><path d="M8 3h11a2 2 0 0 1 2 2v12"></path></svg></a>
+    <a class="ib" href="Perfil.dc.html" aria-label="Mi perfil y ajustes"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="8" r="4"></circle><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"></path></svg></a>
+    <div style="flex:1"></div>
+    <a href="Perfiles.dc.html" aria-label="Sofi · cambiar perfil" style="width:40px;height:40px;border-radius:50%;background:var(--m2);color:var(--tx);display:flex;align-items:center;justify-content:center;font-weight:600;text-decoration:none">S</a>
+  </nav>
+  <main class="main" style="padding:8px 8px 0 8px;gap:16px">
+    <a class="crumb" href="NuevoTema.dc.html">› Nuevo tema</a>
+    <h1 style="font-size:40px;line-height:1.1">El mapa de Fracciones</h1>
+    <p style="font-size:18px;color:var(--mu);max-width:820px">Leímos tus 2 fotos y armamos los conceptos en orden: cada columna necesita la anterior. Podés sacar, sumar o renombrar.</p>
+    <div style="flex:1;display:flex;gap:20px;min-height:0">
+      <section aria-label="Mapa" class="panel" style="flex:1;flex-direction:row;gap:10px;padding:24px">
+        <div class="col"><div class="k">Primero</div>
+          <div class="node"><strong>Parte y entero</strong><span class="src">De tu cuaderno</span></div>
+          <div class="node"><strong>La fracción como parte</strong><span class="src">De tu cuaderno</span></div></div>
+        <div class="arr" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"></path></svg></div>
+        <div class="col"><div class="k">Después</div>
+          <div class="node"><strong>Leer y escribir fracciones</strong><span class="src">De tu cuaderno</span></div>
+          <div class="node"><strong>Fracciones equivalentes</strong><span class="src">Agregado por la IA</span></div></div>
+        <div class="arr" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"></path></svg></div>
+        <div class="col"><div class="k">Luego</div>
+          <div class="node"><strong>Comparar fracciones</strong><span class="src">De tu cuaderno</span></div>
+          <div class="node"><strong>Simplificar</strong><span class="src">Agregado por la IA</span></div></div>
+        <div class="arr" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"></path></svg></div>
+        <div class="col"><div class="k">Al final</div>
+          <div class="node"><strong>Sumar con igual denominador</strong><span class="src">De tu cuaderno</span></div>
+          <div class="node" style="border-color:var(--m3);background:var(--so)"><strong>Sumar con distinto denominador</strong><span class="src" style="color:var(--st)">De tu cuaderno · dijiste que te cuesta</span></div></div>
+      </section>
+      <aside class="panel" style="width:340px;padding:24px">
+        <h2 class="k" style="letter-spacing:0">¿Por dónde empezamos?</h2>
+        <p style="font-size:17px;line-height:1.5">Dijiste que ya sabés qué es un medio y un cuarto. Para no repetir lo que sabés, conviene un diagnóstico corto.</p>
+        <label class="opt sel"><input type="radio" name="d" checked><span><strong style="font-weight:500">Diagnóstico de 5 preguntas</strong><br><span style="font-size:14px;color:var(--mu)">Marca como "visto" lo que ya sabés</span></span></label>
+        <label class="opt"><input type="radio" name="d"><span><strong style="font-weight:500">Empezar desde el principio</strong></span></label>
+        <div style="flex:1"></div>
+        <h2 class="k" style="letter-spacing:0">Este mapa</h2>
+        <p style="font-size:16px;color:var(--mu);line-height:1.5">6 conceptos salen de tu material y 2 los sumó la IA (modo mixto). En modo "solo mi material" no aparecerían.</p>
+        <a class="btn p" href="Tema.dc.html" style="text-align:center">Listo, crear el tema</a>
+      </aside>
+    </div>
+  </main>
+</div>
+</div>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":false},"$preview":{"width":1440,"height":900}}'>
 class Component extends DCLogic {
-renderVals() { return {}; }
+renderVals() { return { mode: this.props.dark ? 'dark' : 'light' }; }
 }
 </script>
 </body>

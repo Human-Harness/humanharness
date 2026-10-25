@@ -8,49 +8,88 @@
 <body>
 <x-dc>
 <helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
 <style>
-body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;color:#1d1d1f}
-a{color:#0a5bc4}a:hover{color:#083f88}
-.btn{font:inherit;font-size:14px;padding:9px 18px;border-radius:8px;border:1px solid #d2d2d7;background:#fff;color:#1d1d1f;text-decoration:none;display:inline-block;cursor:pointer}
-.btn.p{background:#0a5bc4;border-color:#0a5bc4;color:#fff}
-.k{font-size:12px;color:#5f5f66;font-weight:600}
-.pf{background:#fff;border:1px solid #e3e3e8;border-radius:16px;padding:22px;width:200px;display:flex;flex-direction:column;align-items:center;gap:10px;text-decoration:none;color:#1d1d1f}
-.av{width:72px;height:72px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:700;color:#fff}
-label{font-size:13px;font-weight:600}
-input,select{font:inherit;font-size:14px;padding:9px 11px;border:1px solid #d2d2d7;border-radius:8px;background:#fff}
+body{margin:0}
+a{color:#5E4B0A}a:hover{color:#22211E}
+.th{font-family:"Geist",system-ui,sans-serif;--bd:radial-gradient(60% 50% at 0% 40%,#CFE8D2 0%,transparent 70%),radial-gradient(60% 40% at 70% 0%,#BFE0EA 0%,transparent 70%),radial-gradient(60% 50% at 100% 100%,#F8F0C8 0%,transparent 70%),#EEF3EC;--sh:#F7F6F1;--pn:#EFEEE8;--fd:#FBFAF7;--ln:#E4E2DA;--tx:#22211E;--mu:#6B6860;--ac:#F3D54E;--on:#2A2410;--so:#FBF0C0;--st:#5E4B0A;--m1:#6E9A62;--m2:#B9D3A8;--m3:#E8C04A;--m4:#9EC3D6;--m5:#E4E2DA;--shadow:0 1px 2px rgba(40,40,30,.04),0 24px 60px rgba(40,50,40,.08)}
+.th.dark{--bd:radial-gradient(60% 50% at 0% 40%,#1C3326 0%,transparent 70%),radial-gradient(60% 40% at 70% 0%,#173039 0%,transparent 70%),radial-gradient(60% 50% at 100% 100%,#3A3418 0%,transparent 70%),#121614;--sh:#1D1D1A;--pn:#252522;--fd:#2C2C28;--ln:#34332E;--tx:#ECEAE3;--mu:#A6A397;--ac:#E9C944;--on:#241E08;--so:#3A3318;--st:#F0D873;--m1:#8DBB7E;--m2:#4D6B44;--m3:#C9A43A;--m4:#5E8597;--m5:#34332E;--shadow:0 1px 2px rgba(0,0,0,.3),0 24px 60px rgba(0,0,0,.35)}
+.th a{color:var(--st)}
+.th h1,.th h2,.th h3{margin:0;letter-spacing:-.02em;font-weight:500}
+.th p,.th .me,.th .prose{font-family:"Newsreader",Georgia,serif}
+.th p{margin:0}
+.stage{width:1440px;height:900px;background:var(--bd);padding:20px;box-sizing:border-box;display:flex}
+.sheet{flex:1;min-width:0;background:var(--sh);color:var(--tx);border-radius:28px;box-shadow:var(--shadow);display:flex;gap:28px;padding:26px 32px 26px 22px;overflow:hidden}
+.rail{display:flex;flex-direction:column;gap:10px;align-items:center}
+.ib{width:44px;height:44px;border-radius:12px;border:0;background:var(--pn);color:var(--tx) !important;display:flex;align-items:center;justify-content:center;cursor:pointer;text-decoration:none}
+.ib.on{background:var(--ac);color:var(--on) !important}
+.main{flex:1;min-width:0;display:flex;flex-direction:column;gap:22px}
+.crumb{font-size:15px;color:var(--mu) !important;text-decoration:none}
+.k{font-size:13px;color:var(--mu);margin:0;font-weight:500}
+.btn{font:inherit;font-size:15px;font-weight:500;padding:11px 20px;border-radius:12px;border:0;background:var(--pn);color:var(--tx) !important;cursor:pointer;text-decoration:none;display:inline-block}
+.btn.p{background:var(--ac);color:var(--on) !important}
+.btn.s{background:var(--so);color:var(--st) !important}
+.btn.f{background:var(--fd)}
+.btn.g{background:transparent;color:var(--mu) !important;text-decoration:underline;text-underline-offset:4px}
+.pill{font-size:13px;padding:5px 12px;border-radius:999px;background:var(--pn);color:var(--mu)}
+.pill.done{background:var(--so);color:var(--st)}
+.pill.cur{background:var(--ac);color:var(--on);font-weight:500}
+.panel{background:var(--pn);border-radius:20px;padding:20px 22px;display:flex;flex-direction:column;gap:12px;color:var(--tx);text-decoration:none}
+.o{font:inherit;text-align:left;font-size:15px;padding:11px 14px;border-radius:12px;border:1.5px solid transparent;background:var(--pn);color:var(--tx);cursor:pointer}
+.o.sel{border-color:var(--ac);background:var(--so);color:var(--st)}
+.in{font:inherit;font-size:15px;padding:11px 14px;border-radius:12px;border:0;background:var(--pn);color:var(--tx);min-width:0}
+.panel .in,.panel .o{background:var(--fd)}
+.in::placeholder{color:var(--mu)}
+.in:focus{outline:2px solid var(--ac);outline-offset:1px}
+.me{align-self:flex-end;max-width:420px;background:var(--pn);border-radius:16px 16px 4px 16px;padding:11px 16px;font-size:17px;line-height:1.45}
+.prose{font-size:18px;line-height:1.55}
+.bar{display:flex;height:8px;border-radius:4px;overflow:hidden;gap:2px}
+.lg{display:flex;gap:14px;font-size:13px;color:var(--mu);flex-wrap:wrap}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:1px}
+.sr{position:absolute;left:-9999px}
+.av{width:72px;height:72px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:600;color:#22211E}
+.sw{width:34px;height:34px;border-radius:50%;border:0;cursor:pointer}
+.sw.sel{box-shadow:0 0 0 3px var(--sh),0 0 0 5px var(--tx)}
 </style>
 </helmet>
-<div style="width:1440px;height:900px;display:flex;flex-direction:column;align-items:center;padding-top:80px;box-sizing:border-box;gap:28px;background:#f5f5f7">
-  <h1 style="margin:0;font-size:28px">¿Quién va a estudiar?</h1>
-  <p style="margin:0;color:#3a3a40;font-size:15px">Cada persona tiene su perfil: su forma de aprender, sus temas y su progreso.</p>
+<div class="th {{mode}}">
+<div class="stage">
+<div class="sheet" style="flex-direction:column;align-items:center;padding:80px 40px 40px;gap:28px">
+  <div style="display:flex;flex-direction:column;align-items:center;gap:10px">
+    <h1 style="font-size:44px;line-height:1.1">¿Quién va a estudiar?</h1>
+    <p style="font-size:19px;color:var(--mu)">Cada persona tiene su perfil: su forma de aprender, sus temas y su progreso.</p>
+  </div>
   <div style="display:flex;gap:20px;align-items:flex-start">
-    <a class="pf" href="Inicio.dc.html">
-      <div class="av" style="background:#3b5bab">M</div>
-      <strong style="font-size:16px">Marco</strong>
-      <span style="font-size:13px;color:#5f5f66">Adulto · 2 temas</span>
+    <a class="panel" href="Inicio.dc.html" style="width:200px;align-items:center;padding:26px 22px">
+      <div class="av" style="background:#9EC3D6">M</div>
+      <strong style="font-size:17px;font-weight:500">Marco</strong>
+      <span style="font-size:14px;color:var(--mu)">Adulto · 2 temas</span>
     </a>
-    <section aria-labelledby="np" style="background:#fff;border:2px solid #0a5bc4;border-radius:16px;padding:22px;width:380px;display:flex;flex-direction:column;gap:10px">
-      <h2 id="np" style="margin:0;font-size:16px">Nuevo perfil</h2>
-      <label for="n">Nombre</label><input id="n" value="Sofi">
-      <label for="e">Edad</label>
-      <select id="e"><option selected>Menos de 12</option><option>12 a 17</option><option>18 o más</option><option>Prefiero no decir</option></select>
-      <div style="background:#fffaf1;border:1px solid #e8a33d;border-radius:10px;padding:10px 12px;font-size:13px;line-height:1.5">Es menor: sugerimos que estudie con un adulto al lado. La app adapta el lenguaje y los ejemplos a su edad.</div>
-      <div class="k" style="margin-top:4px">COLOR</div>
-      <div style="display:flex;gap:8px">
-        <button aria-label="Azul" style="width:32px;height:32px;border-radius:50%;border:0;background:#3b5bab"></button>
-        <button aria-label="Naranja" style="width:32px;height:32px;border-radius:50%;border:3px solid #1d1d1f;background:#c2561c"></button>
-        <button aria-label="Verde" style="width:32px;height:32px;border-radius:50%;border:0;background:#2f7a43"></button>
-        <button aria-label="Violeta" style="width:32px;height:32px;border-radius:50%;border:0;background:#6b3fa0"></button>
+    <section aria-labelledby="np" class="panel" style="width:400px;padding:24px;box-shadow:inset 0 0 0 1.5px var(--ac)">
+      <h2 id="np" style="font-size:18px">Nuevo perfil</h2>
+      <label class="k" for="n">Nombre</label><input class="in" id="n" value="Sofi">
+      <label class="k" for="e">Edad</label>
+      <select class="in" id="e"><option selected>Menos de 12</option><option>12 a 17</option><option>18 o más</option><option>Prefiero no decir</option></select>
+      <p style="background:var(--so);color:var(--tx);border-radius:12px;padding:12px 14px;font-size:16px;line-height:1.45">Es menor: sugerimos que estudie con un adulto al lado. La app adapta el lenguaje y los ejemplos a su edad.</p>
+      <div class="k" style="margin-top:4px">Color</div>
+      <div style="display:flex;gap:12px">
+        <button class="sw" aria-label="Azul" style="background:#9EC3D6"></button>
+        <button class="sw sel" aria-label="Naranja" aria-pressed="true" style="background:#E8B08A"></button>
+        <button class="sw" aria-label="Verde" style="background:#B9D3A8"></button>
+        <button class="sw" aria-label="Violeta" style="background:#C9B8E8"></button>
       </div>
       <a class="btn p" href="Conocerte.dc.html" style="text-align:center;margin-top:6px">Seguir</a>
     </section>
   </div>
-  <div style="font-size:13px;color:#5f5f66">Los perfiles no tienen contraseña: son para ordenar, no para proteger.</div>
+  <p style="font-size:16px;color:var(--mu)">Los perfiles no tienen contraseña: son para ordenar, no para proteger.</p>
+</div>
+</div>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":false},"$preview":{"width":1440,"height":900}}'>
 class Component extends DCLogic {
-renderVals() { return {}; }
+renderVals() { return { mode: this.props.dark ? 'dark' : 'light' }; }
 }
 </script>
 </body>

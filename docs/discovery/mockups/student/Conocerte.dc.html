@@ -8,49 +8,87 @@
 <body>
 <x-dc>
 <helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
 <style>
-body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;color:#1d1d1f}
-a{color:#0a5bc4}a:hover{color:#083f88}
-.btn{font:inherit;font-size:14px;padding:9px 18px;border-radius:8px;border:1px solid #d2d2d7;background:#fff;color:#1d1d1f;text-decoration:none;display:inline-block;cursor:pointer}
-.btn.p{background:#0a5bc4;border-color:#0a5bc4;color:#fff}
-.k{font-size:12px;color:#5f5f66;font-weight:600}
-.o{font:inherit;text-align:left;font-size:15px;padding:16px 18px;border-radius:12px;border:1px solid #d2d2d7;background:#fff;cursor:pointer;line-height:1.4}
-.o.sel{border:2px solid #0a5bc4;background:#f3f8ff}
-.done{display:flex;flex-direction:column;gap:2px;font-size:13px;padding:10px 0;border-bottom:1px solid #eee}
+body{margin:0}
+a{color:#5E4B0A}a:hover{color:#22211E}
+.th{font-family:"Geist",system-ui,sans-serif;--bd:radial-gradient(60% 50% at 0% 40%,#CFE8D2 0%,transparent 70%),radial-gradient(60% 40% at 70% 0%,#BFE0EA 0%,transparent 70%),radial-gradient(60% 50% at 100% 100%,#F8F0C8 0%,transparent 70%),#EEF3EC;--sh:#F7F6F1;--pn:#EFEEE8;--fd:#FBFAF7;--ln:#E4E2DA;--tx:#22211E;--mu:#6B6860;--ac:#F3D54E;--on:#2A2410;--so:#FBF0C0;--st:#5E4B0A;--m1:#6E9A62;--m2:#B9D3A8;--m3:#E8C04A;--m4:#9EC3D6;--m5:#E4E2DA;--shadow:0 1px 2px rgba(40,40,30,.04),0 24px 60px rgba(40,50,40,.08)}
+.th.dark{--bd:radial-gradient(60% 50% at 0% 40%,#1C3326 0%,transparent 70%),radial-gradient(60% 40% at 70% 0%,#173039 0%,transparent 70%),radial-gradient(60% 50% at 100% 100%,#3A3418 0%,transparent 70%),#121614;--sh:#1D1D1A;--pn:#252522;--fd:#2C2C28;--ln:#34332E;--tx:#ECEAE3;--mu:#A6A397;--ac:#E9C944;--on:#241E08;--so:#3A3318;--st:#F0D873;--m1:#8DBB7E;--m2:#4D6B44;--m3:#C9A43A;--m4:#5E8597;--m5:#34332E;--shadow:0 1px 2px rgba(0,0,0,.3),0 24px 60px rgba(0,0,0,.35)}
+.th a{color:var(--st)}
+.th h1,.th h2,.th h3{margin:0;letter-spacing:-.02em;font-weight:500}
+.th p,.th .me,.th .prose{font-family:"Newsreader",Georgia,serif}
+.th p{margin:0}
+.stage{width:1440px;height:900px;background:var(--bd);padding:20px;box-sizing:border-box;display:flex}
+.sheet{flex:1;min-width:0;background:var(--sh);color:var(--tx);border-radius:28px;box-shadow:var(--shadow);display:flex;gap:28px;padding:26px 32px 26px 22px;overflow:hidden}
+.rail{display:flex;flex-direction:column;gap:10px;align-items:center}
+.ib{width:44px;height:44px;border-radius:12px;border:0;background:var(--pn);color:var(--tx) !important;display:flex;align-items:center;justify-content:center;cursor:pointer;text-decoration:none}
+.ib.on{background:var(--ac);color:var(--on) !important}
+.main{flex:1;min-width:0;display:flex;flex-direction:column;gap:22px}
+.crumb{font-size:15px;color:var(--mu) !important;text-decoration:none}
+.k{font-size:13px;color:var(--mu);margin:0;font-weight:500}
+.btn{font:inherit;font-size:15px;font-weight:500;padding:11px 20px;border-radius:12px;border:0;background:var(--pn);color:var(--tx) !important;cursor:pointer;text-decoration:none;display:inline-block}
+.btn.p{background:var(--ac);color:var(--on) !important}
+.btn.s{background:var(--so);color:var(--st) !important}
+.btn.f{background:var(--fd)}
+.btn.g{background:transparent;color:var(--mu) !important;text-decoration:underline;text-underline-offset:4px}
+.pill{font-size:13px;padding:5px 12px;border-radius:999px;background:var(--pn);color:var(--mu)}
+.pill.done{background:var(--so);color:var(--st)}
+.pill.cur{background:var(--ac);color:var(--on);font-weight:500}
+.panel{background:var(--pn);border-radius:20px;padding:20px 22px;display:flex;flex-direction:column;gap:12px;color:var(--tx);text-decoration:none}
+.o{font:inherit;text-align:left;font-size:15px;padding:11px 14px;border-radius:12px;border:1.5px solid transparent;background:var(--pn);color:var(--tx);cursor:pointer}
+.o.sel{border-color:var(--ac);background:var(--so);color:var(--st)}
+.in{font:inherit;font-size:15px;padding:11px 14px;border-radius:12px;border:0;background:var(--pn);color:var(--tx);min-width:0}
+.panel .in,.panel .o{background:var(--fd)}
+.in::placeholder{color:var(--mu)}
+.in:focus{outline:2px solid var(--ac);outline-offset:1px}
+.me{align-self:flex-end;max-width:420px;background:var(--pn);border-radius:16px 16px 4px 16px;padding:11px 16px;font-size:17px;line-height:1.45}
+.prose{font-size:18px;line-height:1.55}
+.bar{display:flex;height:8px;border-radius:4px;overflow:hidden;gap:2px}
+.lg{display:flex;gap:14px;font-size:13px;color:var(--mu);flex-wrap:wrap}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:1px}
+.sr{position:absolute;left:-9999px}
+.step{width:40px;height:6px;border-radius:3px;background:var(--pn)}
+.step.on{background:var(--ac)}
+.ans{display:flex;flex-direction:column;gap:4px;padding:12px 0;border-bottom:1px solid var(--ln)}
 </style>
 </helmet>
-<div style="width:1440px;height:900px;display:flex;background:#f5f5f7">
-  <main style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;padding:40px">
-    <div style="display:flex;gap:6px" aria-label="Pregunta 3 de 6">
-      <span style="width:40px;height:6px;border-radius:3px;background:#0a5bc4"></span><span style="width:40px;height:6px;border-radius:3px;background:#0a5bc4"></span><span style="width:40px;height:6px;border-radius:3px;background:#0a5bc4"></span><span style="width:40px;height:6px;border-radius:3px;background:#d2d2d7"></span><span style="width:40px;height:6px;border-radius:3px;background:#d2d2d7"></span><span style="width:40px;height:6px;border-radius:3px;background:#d2d2d7"></span>
+<div class="th {{mode}}">
+<div class="stage">
+<div class="sheet" style="padding:26px">
+  <main class="main" style="align-items:center;justify-content:center;gap:24px;padding:40px">
+    <div style="display:flex;gap:6px" role="img" aria-label="Pregunta 3 de 6">
+      <span class="step on"></span><span class="step on"></span><span class="step on"></span><span class="step"></span><span class="step"></span><span class="step"></span>
     </div>
-    <div class="k">CONOCERTE · 3 DE 6</div>
-    <h1 style="margin:0;font-size:28px;text-align:center;max-width:640px">Cuando algo no te sale, ¿qué te ayuda más?</h1>
-    <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;width:640px">
-      <button class="o">Que me den una pista chiquita</button>
-      <button class="o sel">Ver un ejemplo parecido resuelto</button>
-      <button class="o">Que me lo expliquen de otra forma</button>
-      <button class="o">Seguir intentando solo un rato más</button>
+    <div class="k">Conocerte · 3 de 6</div>
+    <h1 style="font-size:38px;line-height:1.15;text-align:center;max-width:640px">Cuando algo no te sale, ¿qué te ayuda más?</h1>
+    <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;width:660px">
+      <button class="o" style="padding:18px 20px;font-size:16px">Que me den una pista chiquita</button>
+      <button class="o sel" style="padding:18px 20px;font-size:16px">Ver un ejemplo parecido resuelto</button>
+      <button class="o" style="padding:18px 20px;font-size:16px">Que me lo expliquen de otra forma</button>
+      <button class="o" style="padding:18px 20px;font-size:16px">Seguir intentando solo un rato más</button>
     </div>
     <div style="display:flex;gap:10px"><button class="btn">Saltear</button><a class="btn p" href="Inicio.dc.html">Siguiente</a></div>
-    <div style="font-size:13px;color:#5f5f66">Podés cambiar todo esto después en tu perfil.</div>
+    <p style="font-size:16px;color:var(--mu)">Podés cambiar todo esto después en tu perfil.</p>
   </main>
-  <aside aria-label="Lo que la app entiende de vos" style="width:400px;background:#fff;border-left:1px solid #e3e3e8;padding:28px;display:flex;flex-direction:column;gap:8px">
-    <div style="display:flex;align-items:center;gap:10px"><span style="width:36px;height:36px;border-radius:50%;background:#c2561c;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700">S</span><strong>Sofi · menos de 12</strong></div>
-    <div class="k" style="margin-top:12px">LO QUE YA RESPONDISTE</div>
-    <div class="done"><span class="k">¿Para qué estudiás?</span><span>Para la escuela y porque me gusta saber cosas</span></div>
-    <div class="done"><span class="k">¿Cómo te gusta aprender?</span><span>Haciendo ejercicios, con dibujos</span></div>
-    <div class="k" style="margin-top:12px">FALTA</div>
-    <div style="font-size:13px;color:#3a3a40;line-height:1.6">¿Cuánto tiempo te gusta estudiar seguido? · ¿Qué te aburre? · ¿Cómo querés que te hable la IA?</div>
+  <aside aria-label="Lo que la app entiende de vos" class="panel" style="width:380px;padding:26px;gap:8px">
+    <div style="display:flex;align-items:center;gap:10px"><span style="width:38px;height:38px;border-radius:50%;background:#E8B08A;color:#22211E;display:flex;align-items:center;justify-content:center;font-weight:600">S</span><strong style="font-weight:500">Sofi · menos de 12</strong></div>
+    <h2 class="k" style="margin-top:14px;letter-spacing:0">Lo que ya respondiste</h2>
+    <div class="ans"><span class="k">¿Para qué estudiás?</span><p style="font-size:17px">Para la escuela y porque me gusta saber cosas</p></div>
+    <div class="ans"><span class="k">¿Cómo te gusta aprender?</span><p style="font-size:17px">Haciendo ejercicios, con dibujos</p></div>
+    <h2 class="k" style="margin-top:14px;letter-spacing:0">Falta</h2>
+    <p style="font-size:16px;color:var(--mu);line-height:1.55">¿Cuánto tiempo te gusta estudiar seguido? · ¿Qué te aburre? · ¿Cómo querés que te hable la IA?</p>
     <div style="flex:1"></div>
-    <div class="k">CON ESTO, LA APP VA A</div>
-    <div style="font-size:13px;line-height:1.5;color:#3a3a40">Recomendarte métodos con práctica y ejemplos, usar dibujos cuando ayuden y hablarte simple.</div>
+    <h2 class="k" style="letter-spacing:0">Con esto, la app va a</h2>
+    <p style="font-size:16px;line-height:1.5">Recomendarte métodos con práctica y ejemplos, usar dibujos cuando ayuden y hablarte simple.</p>
   </aside>
 </div>
+</div>
+</div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":false},"$preview":{"width":1440,"height":900}}'>
 class Component extends DCLogic {
-renderVals() { return {}; }
+renderVals() { return { mode: this.props.dark ? 'dark' : 'light' }; }
 }
 </script>
 </body>

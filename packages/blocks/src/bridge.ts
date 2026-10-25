@@ -160,7 +160,7 @@ export async function openRpc(handler: (request: unknown) => Promise<unknown>): 
     } catch {
       return JSON.stringify({ ok: false, error: "Not JSON" });
     }
-    if (!parsed || typeof parsed !== "object" || parsed.token !== token) return JSON.stringify({ ok: false, error: "Bad token" });
+    if (!parsed || typeof parsed !== "object" || parsed.token !== token) return JSON.stringify({ ok: false, code: "token", error: "Bad token" });
     try {
       return JSON.stringify({ ok: true, result: (await handler(parsed.request)) ?? null });
     } catch (e) {
@@ -228,9 +228,9 @@ export function callRpc(rpc: { path: string; token: string }, request: unknown, 
       if (i < 0) return;
       settle(() => {
         try {
-          const a = JSON.parse(answer.slice(0, i)) as { ok?: unknown; result?: unknown; error?: unknown };
+          const a = JSON.parse(answer.slice(0, i)) as { ok?: unknown; result?: unknown; error?: unknown; code?: unknown };
           if (a.ok === true) resolve(a.result);
-          else if (a.error === "Bad token") reject(new Error("The app refused the token"));
+          else if (a.code === "token") reject(new Error("The app refused the token"));
           else reject(new RpcRefused(typeof a.error === "string" ? a.error : "Refused"));
         } catch {
           reject(new Error("The app sent an answer that is not JSON"));

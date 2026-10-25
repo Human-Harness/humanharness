@@ -30,6 +30,17 @@ describe("rpc", () => {
     expect((err as Error).message).toBe("not allowed");
   });
 
+  it("tells a handler's \"Bad token\" refusal from a bad token", async () => {
+    rpc = await openRpc(async () => {
+      throw new Error("Bad token");
+    });
+    const err = await callRpc(rpc, {}).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(RpcRefused);
+    expect((err as Error).message).toBe("Bad token");
+    const bad = await callRpc({ path: rpc.path, token: "wrong" }, {}).catch((e: unknown) => e);
+    expect(bad).not.toBeInstanceOf(RpcRefused);
+  });
+
   it("refuses a caller without the token, and cleans up on close", async () => {
     let calls = 0;
     rpc = await openRpc(async () => ++calls);

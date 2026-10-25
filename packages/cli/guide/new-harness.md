@@ -76,7 +76,9 @@ Every task ends with a note the app writes from the core `save_note` block (titl
 
 - what each closed task must keep, and what goes in each `save_note` field for this harness;
 - which folders, if any, the AI should read but never change (`folder.references`);
-- what must never be lost.
+- what must never be lost;
+- whether the work splits into scopes the person opens one at a time (a topic, a project). If it does, declare `scopes` with its label and plural; each scope then gets its own tasks, notes, chat and data. Every action runs inside the open scope, except the ones marked `scope: "none"`, which run app-wide (a welcome, a profile);
+- which structured records the harness keeps besides the notes, in `data`. For each collection: its zod schema and key (or `single: true`), whether it belongs to a scope (`scoped`), what the agent may do with it (`agent`: `write`, `read` or `none`), which fields go into a task's first message and in how many tokens (`context`), and the `rules` every write must pass (a pure function that returns `true` or the reason it refuses).
 
 Say it in the briefs where it matters, for example: "the decisions are the options the person chose, each with its reason".
 

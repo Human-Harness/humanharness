@@ -38,6 +38,23 @@ describe("migrateToScopes", () => {
     expect((await new ScopeStore(base).list()).map((s) => s.id)).toEqual(["main"]);
   });
 
+  it("migrates a folder that has only data in main (a harness with scoped data that then added scopes)", async () => {
+    const base = tmp();
+    fs.mkdirSync(path.join(base, ".harness", "data", "main"), { recursive: true });
+    fs.writeFileSync(path.join(base, ".harness", "data", "main", "cards.json"), "[]\n");
+    expect(await migrateToScopes(base, at)).toBe(true);
+    expect((await new ScopeStore(base).list()).map((s) => s.id)).toEqual(["main"]);
+  });
+
+  it("leaves a folder alone whose data is only app-wide, or whose data/main is empty", async () => {
+    const base = tmp();
+    fs.mkdirSync(path.join(base, ".harness", "data", "_app"), { recursive: true });
+    fs.writeFileSync(path.join(base, ".harness", "data", "_app", "profile.json"), "{}\n");
+    fs.mkdirSync(path.join(base, ".harness", "data", "main"), { recursive: true });
+    expect(await migrateToScopes(base, at)).toBe(false);
+    expect(await new ScopeStore(base).exists()).toBe(false);
+  });
+
   it("does nothing in a fresh folder, or one with only tasks.json", async () => {
     const base = tmp();
     expect(await migrateToScopes(base, at)).toBe(false);

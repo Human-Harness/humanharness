@@ -47,6 +47,9 @@ function collectionName(name: string): string {
   return name;
 }
 
+/** The folder of one scope's collections. */
+export const dataDir = (base: string, scope: string): string => path.join(base, ...`${DATA_PREFIX}${scopeDir(scope)}`.split("/"));
+
 /** A collection file's path relative to the base (forward slashes, as the history shows it). */
 export const dataPath = (scope: string, collection: string): string => `${DATA_PREFIX}${scopeDir(scope)}/${collectionName(collection)}.json`;
 export const dataFile = (base: string, scope: string, collection: string): string => path.join(base, ...dataPath(scope, collection).split("/"));

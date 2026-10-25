@@ -1,6 +1,6 @@
 import { constants, promises as fs } from "node:fs";
 import path from "node:path";
-import { MAIN_SCOPE, NOTES_PREFIX, chatFile } from "./layout";
+import { MAIN_SCOPE, NOTES_PREFIX, chatFile, dataDir } from "./layout";
 import { ScopeStore } from "./scopes";
 
 /** The title of the scope that receives a folder's earlier work. */
@@ -9,10 +9,11 @@ export const MIGRATED_TITLE = "General";
 /**
  * The first start of a harness that declares scopes, in a folder used without them (spec §3.2): the flat notes
  * move into `notes/main/` and `main` is registered, so nothing is lost. The chat needs no move (`main.jsonl` is
- * `main`'s chat) and neither do the statuses (`tasks.json` `actions` are `main`'s). The registry is written last:
- * it marks the migration done, and a crash before it leaves the migration to run again. False when there was
- * nothing to do (registry already there, or no earlier notes or chat). `store` is the base's registry: pass the one
- * the app writes through, so `main` is added in the same queue as the person's own changes.
+ * `main`'s chat), nor do the statuses (`tasks.json` `actions` are `main`'s) or the data (a harness without scopes
+ * already keeps its scoped collections in `data/main/`). The registry is written last: it marks the migration done,
+ * and a crash before it leaves the migration to run again. False when there was nothing to do (registry already
+ * there, or no earlier notes, chat or data in `main`). `store` is the base's registry: pass the one the app writes
+ * through, so `main` is added in the same queue as the person's own changes.
  */
 export async function migrateToScopes(
   base: string,
@@ -28,7 +29,8 @@ export async function migrateToScopes(
     () => true,
     () => false,
   );
-  if (flat.length === 0 && !hasChat && !hasMain) return false;
+  const hasData = (await fs.readdir(dataDir(base, MAIN_SCOPE)).catch(() => [])).length > 0;
+  if (flat.length === 0 && !hasChat && !hasMain && !hasData) return false;
   const target = path.join(dir, MAIN_SCOPE);
   await fs.mkdir(target, { recursive: true });
   for (const name of flat) await moveIfFree(path.join(dir, name), path.join(target, name));

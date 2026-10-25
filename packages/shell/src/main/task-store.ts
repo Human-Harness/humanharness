@@ -4,6 +4,7 @@ import path from "node:path";
 import type { ModelProfile } from "@humanharness/engines";
 import type { Session } from "@humanharness/runtime";
 import type { ActionStatus, TaskStatus } from "@humanharness/ui/client";
+import { MAIN_SCOPE, isScopeDir, isScopeId, tasksFile } from "@humanharness/workspace";
 import { cleanProfile } from "./models";
 
 /** The task in progress: one engine session from its first turn to its note. */
@@ -35,6 +36,8 @@ export interface CurrentTask {
   checkpointTurns?: number;
   /** The engine session was lost (the folder moved): the next turn starts a new one from the notes. */
   resume?: boolean;
+  /** The scope the task runs in (`_app` for app-wide work). Absent in a harness without scopes (spec D2). */
+  scope?: string;
 }
 
 /** `<folder>/.harness/tasks.json`: the current task and how each action ended. Replaces the runtime's session.json. */
@@ -43,7 +46,12 @@ export interface TasksFile {
   /** The engine that ran the last task. */
   engine?: string;
   current: CurrentTask | null;
+  /** How each action ended in `main`: every action of a harness without scopes (spec D2). */
   actions: Record<string, ActionStatus>;
+  /** Harnesses with scopes: the open scope; absent when none is open. */
+  open?: string;
+  /** Harnesses with scopes: how each action ended in every scope other than `main` (`_app` included). */
+  scopes?: Record<string, Record<string, ActionStatus>>;
 }
 
 export const emptyTasks = (): TasksFile => ({ version: 1, current: null, actions: {} });
@@ -94,20 +102,50 @@ function cleanCurrent(c: unknown): CurrentTask | null {
     ...(typeof c.checkpointNote === "boolean" ? { checkpointNote: c.checkpointNote } : {}),
     ...(typeof c.checkpointTurns === "number" && Number.isFinite(c.checkpointTurns) ? { checkpointTurns: c.checkpointTurns } : {}),
     ...(c.resume === true ? { resume: true } : {}),
+    ...(isScopeDir(c.scope) ? { scope: c.scope } : {}),
   };
+}
+
+function statuses(raw: unknown): Record<string, ActionStatus> {
+  const out: Record<string, ActionStatus> = {};
+  if (isObject(raw)) {
+    for (const [id, status] of Object.entries(raw)) {
+      if (typeof status === "string" && ACTION_STATUSES.includes(status)) out[id] = status as ActionStatus;
+    }
+  }
+  return out;
 }
 
 /** Keeps what has the right shape; anything else reads as "nothing". */
 function clean(raw: unknown): TasksFile {
   if (!isObject(raw) || raw.version !== 1) return emptyTasks();
-  const actions: Record<string, ActionStatus> = {};
-  if (isObject(raw.actions)) {
-    for (const [id, status] of Object.entries(raw.actions)) {
-      if (typeof status === "string" && ACTION_STATUSES.includes(status)) actions[id] = status as ActionStatus;
-    }
+  let scopes: Record<string, Record<string, ActionStatus>> | undefined;
+  if (isObject(raw.scopes)) {
+    scopes = {};
+    for (const [id, v] of Object.entries(raw.scopes)) if (isScopeDir(id) && id !== MAIN_SCOPE) scopes[id] = statuses(v);
   }
-  const current = cleanCurrent(raw.current);
-  return { version: 1, ...(typeof raw.engine === "string" ? { engine: raw.engine } : {}), current, actions };
+  return {
+    version: 1,
+    ...(typeof raw.engine === "string" ? { engine: raw.engine } : {}),
+    current: cleanCurrent(raw.current),
+    actions: statuses(raw.actions),
+    ...(isScopeId(raw.open) ? { open: raw.open } : {}),
+    ...(scopes ? { scopes } : {}),
+  };
+}
+
+/** The scope a task runs in: `main` when it has none (a harness without scopes). */
+export const scopeOfTask = (c: Pick<CurrentTask, "scope">): string => c.scope ?? MAIN_SCOPE;
+
+/** How each action ended in `scope`; `main`'s are the `actions` field. */
+export function statusesIn(s: TasksFile, scope: string): Record<string, ActionStatus> {
+  return scope === MAIN_SCOPE ? s.actions : (s.scopes?.[scope] ?? {});
+}
+
+/** `s` with `action` marked `status` in `scope`. */
+export function withStatus(s: TasksFile, scope: string, action: string, status: ActionStatus): TasksFile {
+  if (scope === MAIN_SCOPE) return { ...s, actions: { ...s.actions, [action]: status } };
+  return { ...s, scopes: { ...s.scopes, [scope]: { ...statusesIn(s, scope), [action]: status } } };
 }
 
 /**
@@ -118,15 +156,16 @@ export function interrupted(state: TasksFile, outcome: ActionStatus = "unfinishe
   const c = state.current;
   if (!c) return state;
   if (!c.action) return { ...state, current: null };
-  const status: ActionStatus = c.noteSaved || c.checkpointNote || state.actions[c.action] === "done" ? "done" : outcome;
-  return { ...state, current: null, actions: { ...state.actions, [c.action]: status } };
+  const scope = scopeOfTask(c);
+  const status: ActionStatus = c.noteSaved || c.checkpointNote || statusesIn(state, scope)[c.action] === "done" ? "done" : outcome;
+  return { ...withStatus(state, scope, c.action, status), current: null };
 }
 
 export class TaskStore {
   readonly file: string;
 
   constructor(folder: string) {
-    this.file = path.join(folder, ".harness", "tasks.json");
+    this.file = tasksFile(folder);
   }
 
   /** A missing file reads as empty; one that isn't JSON is set aside as `tasks.json.corrupt-<time>`; other errors are thrown. */

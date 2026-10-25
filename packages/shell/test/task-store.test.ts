@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { QUESTION_MAX, type TasksFile, TaskStore, emptyTasks, interrupted } from "../src/main/task-store";
+import { QUESTION_MAX, type TasksFile, TaskStore, emptyTasks, interrupted, scopeOfTask, statusesIn, withStatus } from "../src/main/task-store";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -166,5 +166,52 @@ describe("interrupted", () => {
     const checkpointed = { ...waiting, current: { ...waiting.current!, checkpointNote: true } };
     expect(interrupted(checkpointed).actions).toEqual({ manifest: "done", turn: "done" });
     expect(interrupted(checkpointed, "unsaved").actions).toEqual({ manifest: "done", turn: "done" });
+  });
+});
+
+describe("scopes in tasks.json", () => {
+  it("keeps the open scope, each scope's statuses and the task's scope; drops what is malformed", async () => {
+    const dir = tmp();
+    fs.mkdirSync(path.join(dir, ".harness"), { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, ".harness", "tasks.json"),
+      JSON.stringify({
+        version: 1,
+        open: "fracciones",
+        current: { id: "t1", action: "study", status: "waiting", startedAt: "s", turns: 1, scope: "fracciones" },
+        actions: { study: "done" },
+        scopes: { fracciones: { study: "unsaved", bad: "nope" }, _app: { onboarding: "done" }, main: { x: "done" }, "../x": { y: "done" } },
+      }),
+    );
+    const s = await new TaskStore(dir).load();
+    expect(s.open).toBe("fracciones");
+    expect(s.current?.scope).toBe("fracciones");
+    expect(s.actions).toEqual({ study: "done" });
+    expect(s.scopes).toEqual({ fracciones: { study: "unsaved" }, _app: { onboarding: "done" } });
+    fs.writeFileSync(path.join(dir, ".harness", "tasks.json"), JSON.stringify({ version: 1, open: "_app", current: { id: "t1", status: "waiting", scope: "../x" }, actions: {} }));
+    const bad = await new TaskStore(dir).load();
+    expect(bad.open).toBeUndefined();
+    expect(bad.current?.scope).toBeUndefined();
+    expect(bad).not.toHaveProperty("scopes");
+  });
+
+  it("reads and writes a scope's statuses; main's are the old `actions`", () => {
+    const s: TasksFile = { ...emptyTasks(), actions: { study: "done" } };
+    expect(statusesIn(s, "main")).toEqual({ study: "done" });
+    expect(statusesIn(s, "fracciones")).toEqual({});
+    const t = withStatus(s, "fracciones", "study", "unsaved");
+    expect(t.scopes).toEqual({ fracciones: { study: "unsaved" } });
+    expect(t.actions).toEqual({ study: "done" });
+    expect(withStatus(s, "main", "review", "done").actions).toEqual({ study: "done", review: "done" });
+    expect(scopeOfTask({})).toBe("main");
+    expect(scopeOfTask({ scope: "_app" })).toBe("_app");
+  });
+
+  it("marks an interrupted task's action in its own scope", () => {
+    const s: TasksFile = { ...emptyTasks(), current: { id: "t1", action: "study", status: "waiting", startedAt: "s", turns: 1, scope: "fracciones" } };
+    const after = interrupted(s);
+    expect(after.current).toBeNull();
+    expect(after.scopes).toEqual({ fracciones: { study: "unfinished" } });
+    expect(after.actions).toEqual({});
   });
 });

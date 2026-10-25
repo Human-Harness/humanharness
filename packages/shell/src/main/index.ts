@@ -48,7 +48,7 @@ import {
 import { imageDataUrl } from "./assets";
 import { ChatLog } from "./chat-log";
 import { ConfigStore, historyDir } from "./config";
-import { personDataRequest } from "./data-requests";
+import { personDataRequests } from "./data-requests";
 import { testPrompt } from "./engine-check";
 import { createCommandDeps } from "./command-deps";
 import { cliCommand, engineCommand, loginShellPath } from "./engine-command";
@@ -326,16 +326,22 @@ function scopeStoreFor(base: string): ScopeStore {
  * One data store per base, so its write queue orders every write: the person's (hh:data) and the agent's
  * (its data tools). Every caller gets the store from here, never with `new DataStore`.
  */
-const dataStores = new Map<string, DataStore>();
+const dataStores = new Map<string, { store: DataStore; off: () => void }>();
 function dataStoreFor(base: string): DataStore {
-  let store = dataStores.get(base);
-  if (!store) {
-    store = new DataStore(base, harness.data);
+  let entry = dataStores.get(base);
+  if (!entry) {
+    const store = new DataStore(base, harness.data);
     // Spec §4.5 `subscribe`: every write, from any writer, reaches the window.
-    store.onChange((change) => sendToWindow("hh:dataChange", change));
-    dataStores.set(base, store);
+    entry = { store, off: store.onChange((change) => sendToWindow("hh:dataChange", change)) };
+    dataStores.set(base, entry);
   }
-  return store;
+  return entry.store;
+}
+
+/** The folder changed or moved: the old base's store goes, with its listener. */
+function dropDataStore(base: string): void {
+  dataStores.get(base)?.off();
+  dataStores.delete(base);
 }
 
 /** The last migration run (settleScopes). Scope requests wait for it, whether it worked or not. */
@@ -629,6 +635,18 @@ const restoreWith = (run: (history: History) => Promise<unknown>) => restores.ru
 /** Why a new turn can't start now (engine change, folder move, engine update, a restore), or null. */
 const turnBlocked = () => guards.turnBlocked() ?? restores.turnBlocked();
 
+/** The harness UI's data requests (hh:data): one handler, so the person's writes and their commits run one at a time. */
+const personData = personDataRequests({
+  store: async () => {
+    const c = await validConfig();
+    return c ? dataStoreFor(baseOf(c)) : null;
+  },
+  chatScope: () => tasks.chatScope(),
+  trailer: () => tasks.trailerNow(),
+  history: () => currentHistory(),
+  blocked: () => (quitting ? "The app is closing" : turnBlocked()),
+});
+
 function registerIpc() {
   handle("hh:getState", () => appState());
   handle("hh:pickFolder", async (defaultPath: string) => {
@@ -651,6 +669,7 @@ function registerIpc() {
       saveConfigPatch(patch, before),
     );
     if (patch.folder !== undefined && patch.folder !== before.folder) {
+      if (before.folder) dropDataStore(baseOf({ folder: before.folder }));
       await settleScopes()
         .then(scopesChanged)
         .catch((err: unknown) => console.error("Could not prepare the scopes", err));
@@ -724,24 +743,11 @@ function registerIpc() {
     await scopesChanged();
     return opened;
   });
-  handle("hh:data", (request: unknown, options: unknown) =>
-    personDataRequest(
-      {
-        store: async () => {
-          const c = await validConfig();
-          return c ? dataStoreFor(baseOf(c)) : null;
-        },
-        chatScope: () => tasks.chatScope(),
-        trailer: () => tasks.trailerNow(),
-        saveHistory: async (message, trailer) => {
-          await (await currentHistory())?.save(message, trailer);
-        },
-        blocked: () => (quitting ? "The app is closing" : turnBlocked()),
-      },
-      request,
-      options,
-    ),
-  );
+  handle("hh:data", async (request: unknown, options: unknown) => {
+    // After the migration: it opens `main`, the scope a request made on mount acts in.
+    await scopesSettled();
+    return personData(request, options);
+  });
   handle("hh:choose", (option: unknown, task: unknown) => {
     if (quitting) throw new Error("The app is closing");
     const blocked = turnBlocked();
@@ -937,6 +943,7 @@ function registerIpc() {
       return null;
     });
     if (!result.ok) return { ...result, ...(state ? { state } : {}) };
+    dropDataStore(baseOf(c));
     if (!state) throw new Error("Could not read the app state after the move");
     const { oldRemoved, historyMoved } = result.done;
     return { ok: true, state, ...(oldRemoved ? {} : { leftBehind: c.folder }), ...(historyMoved ? {} : { historyLeftBehind: true }) };

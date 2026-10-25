@@ -33,8 +33,13 @@ describe("fillPrompt", () => {
     expect(text.endsWith(`## Question\n${question}`)).toBe(true);
   });
 
-  it("falls back to English for a language it does not know", () => {
-    expect(fillPrompt("Answer in {{language}}.", { language: "fr" as never, notesIndex: "" })).toBe("Answer in English.");
+  it("names any language tag in English", () => {
+    expect(fillPrompt("Answer in {{language}}.", { language: "pt-BR", notesIndex: "" })).toBe("Answer in Brazilian Portuguese.");
+    expect(fillPrompt("Answer in {{language}}.", { language: "fr", notesIndex: "" })).toBe("Answer in French.");
+  });
+
+  it("asks for the closing note in English", () => {
+    expect(CLOSE_PROMPT).toContain("Write the note in English.");
   });
 
   it("builds a free question's first message with the index", () => {
@@ -51,6 +56,10 @@ describe("fillPrompt", () => {
 });
 
 describe("CHECKPOINT_PROMPT", () => {
+  it("asks for the note in English", () => {
+    expect(CHECKPOINT_PROMPT).toContain("Write the note in English.");
+  });
+
   it("asks for save_note mid-task, without ending the conversation or showing choices", () => {
     expect(CHECKPOINT_PROMPT).toMatch(/^Checkpoint:/);
     expect(CHECKPOINT_PROMPT).toContain("`save_note`");

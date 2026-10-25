@@ -10,11 +10,11 @@ afterEach(cleanup);
 
 const configured = { language: "en" as const, folder: "/Users/me/Documents/Demo", engineId: "claude" };
 
-async function renderHome(client: FakeClient, { status = null as EngineStatus | null, checkFailed = false, language = "en" as "en" | "es" } = {}) {
+async function renderHome(client: FakeClient, { status = null as EngineStatus | null, checkFailed = false } = {}) {
   const onStart = vi.fn();
   const onSetup = vi.fn();
   await renderIn(
-    language,
+    "en",
     <Home
       state={client.state}
       client={client}
@@ -62,28 +62,28 @@ describe("Home", () => {
   });
 
   it("first launch with the folder saved: the folder step shows a check", async () => {
-    const client = new FakeClient({ language: "es", folder: "/Users/me/Documents/Demo" });
-    await renderHome(client, { language: "es" });
-    const items = screen.getByRole("region", { name: "Antes de empezar, dos pasos" }).querySelectorAll("li");
-    expect(items[0].textContent).toBe("Elegir dónde se guarda tu trabajo");
+    const client = new FakeClient({ folder: "/Users/me/Documents/Demo" });
+    await renderHome(client);
+    const items = screen.getByRole("region", { name: "Two steps before you start" }).querySelectorAll("li");
+    expect(items[0].textContent).toBe("Choose where your work is kept");
     expect(items[0].querySelector("svg")).toBeTruthy();
-    expect(items[1].textContent).toBe("2Conectar el motor de IA");
-    expect(screen.getByRole("button", { name: "Configurar Demo" })).toBeTruthy();
+    expect(items[1].textContent).toBe("2Connect the AI engine");
+    expect(screen.getByRole("button", { name: "Set up Demo" })).toBeTruthy();
   });
 
   const problems: [Partial<EngineStatus>, EngineProblem, string][] = [
-    [{ noticeAccepted: false }, "notice", "aceptar el aviso de Claude"],
-    [{ installed: false }, "not-installed", "instalar Claude"],
-    [{ outdated: true }, "outdated", "actualizar Claude"],
-    [{ loggedIn: false }, "logged-out", "volver a iniciar sesión en Claude"],
-    [{ verified: false }, "untested", "probar Claude"],
+    [{ noticeAccepted: false }, "notice", "accept Claude's notice"],
+    [{ installed: false }, "not-installed", "install Claude"],
+    [{ outdated: true }, "outdated", "update Claude"],
+    [{ loggedIn: false }, "logged-out", "sign in to Claude again"],
+    [{ verified: false }, "untested", "test Claude"],
   ];
   for (const [change, problem, step] of problems) {
     it(`configured with the engine ${problem}: one step left, and Set up`, async () => {
-      const client = new FakeClient({ ...configured, language: "es" });
-      const { onSetup } = await renderHome(client, { status: { ...client.status, ...change }, language: "es" });
-      expect(screen.getByText(`Falta un paso: ${step}`)).toBeTruthy();
-      fireEvent.click(screen.getByRole("button", { name: "Configurar Demo" }));
+      const client = new FakeClient({ ...configured });
+      const { onSetup } = await renderHome(client, { status: { ...client.status, ...change } });
+      expect(screen.getByText(`One step left: ${step}`)).toBeTruthy();
+      fireEvent.click(screen.getByRole("button", { name: "Set up Demo" }));
       expect(onSetup).toHaveBeenCalledOnce();
     });
   }

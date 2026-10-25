@@ -3,7 +3,6 @@ import { useTranslation } from "react-i18next";
 import { EngineIcon } from "./chrome";
 import { type AppState, type EngineStatus, type HarnessClient, engineProblem } from "./client";
 import { EngineOnboarding } from "./EngineOnboarding";
-import { uiLanguage } from "./FolderStep";
 
 /** The reason behind a failed call, without Electron's English "Error invoking remote method …: Error:" wrapper. */
 export function errorDetail(err: unknown): string {
@@ -30,8 +29,7 @@ export function EngineTab({
   /** Told whenever the selected engine or its readiness changes. */
   onSelection?: (engineId: string, ready: boolean) => void;
 }) {
-  const { t, i18n } = useTranslation();
-  const lang = uiLanguage(state, i18n.language);
+  const { t } = useTranslation();
   const current = state.config.engineId;
   const [selected, setSelected] = useState(current ?? state.engines[0]?.id);
   const [statuses, setStatuses] = useState<Record<string, EngineStatus>>({});
@@ -189,11 +187,11 @@ export function EngineTab({
                 </div>
                 <div className="hh-row">
                   <span className="hh-row-label">{t("engine.plan")}</span>
-                  <span>{engine.requires[lang]}</span>
+                  <span>{engine.requires}</span>
                 </div>
                 <div className="hh-row">
                   <span className="hh-row-label">{t("engine.data")}</span>
-                  <span>{engine.dataLocation[lang]}</span>
+                  <span>{engine.dataLocation}</span>
                 </div>
                 <div className="hh-row">
                   <span className="hh-row-label">{t("engine.version")}</span>

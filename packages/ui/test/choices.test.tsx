@@ -17,8 +17,8 @@ const data = {
 describe("ChoicesBlock", () => {
   it("offers each option as a button in a group and hands the pick over", async () => {
     const choose = vi.fn(() => true);
-    await renderIn("es", <ChoicesBlock data={data} choose={choose} active />);
-    const group = screen.getByRole("group", { name: "¿Cómo seguimos?" });
+    await renderIn("en", <ChoicesBlock data={data} choose={choose} active />);
+    const group = screen.getByRole("group", { name: "How do we continue?" });
     const buttons = within(group).getAllByRole("button");
     expect(screen.queryByRole("radio")).toBeNull();
     expect(buttons.map((r) => r.textContent)).toEqual(["Go deeper", "Compare", "Next topic →"]);

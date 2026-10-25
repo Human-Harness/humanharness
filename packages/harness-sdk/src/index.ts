@@ -12,11 +12,30 @@ export { z } from "zod";
 /** A harness id: lowercase letters, digits and dashes, starting with a letter. It names the app's data folder. */
 export const HARNESS_ID = /^[a-z][a-z0-9-]*$/;
 
-export const LANGUAGES = ["es", "en"] as const;
-export type Language = (typeof LANGUAGES)[number];
-export type LocalizedText = Record<Language, string>;
+/** A BCP 47 language tag ("en", "pt-BR"). The app ships in English; other languages are generated on demand (spec 5 §1). */
+export type Language = string;
+export const DEFAULT_LANGUAGE: Language = "en";
 
-const localizedText = z.object({ es: z.string().min(1), en: z.string().min(1) });
+/** The canonical form of `tag` ("pt-br" → "pt-BR"), or null when it isn't a language tag. */
+export function canonicalLanguage(tag: string): Language | null {
+  try {
+    return Intl.getCanonicalLocales(tag)[0] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** `tag`'s name in the language `display` ("pt-BR" → "Brazilian Portuguese"); the tag itself when there is no name. */
+export function languageName(tag: Language, display: Language = DEFAULT_LANGUAGE): string {
+  try {
+    return new Intl.DisplayNames([display], { type: "language" }).of(tag) ?? tag;
+  } catch {
+    return tag;
+  }
+}
+
+/** Every text in a manifest is one English string; the app translates the screens (spec 5 D1). */
+const text = z.string().min(1);
 export const ACTION_COSTS = ["light", "medium", "heavy"] as const;
 export type ActionCost = (typeof ACTION_COSTS)[number];
 /**
@@ -30,9 +49,9 @@ export type Tier = (typeof TIERS)[number];
  * message of the task's engine session. `cost` is how much of the plan it tends to use.
  */
 const actionSchema = z.object({
-  label: localizedText,
+  label: text,
   /** One line under the label on the topic card. */
-  description: localizedText.optional(),
+  description: text.optional(),
   /** The task brief: a file in the harness folder. It may use {{language}} and {{notesIndex}}. */
   prompt: z.string().min(1),
   cost: z.enum(ACTION_COSTS),
@@ -42,7 +61,7 @@ const actionSchema = z.object({
 /** A folder the agent may read but never change. */
 const referenceSchema = z.object({
   id: z.string().regex(/^[a-z][a-z0-9-]*$/),
-  label: localizedText,
+  label: text,
   /** "app-source" (the repository the app runs from, in development), an absolute path or a "~/" path. */
   default: z
     .string()
@@ -70,9 +89,8 @@ const blockSchema = z.custom<Block>(
 
 const manifestSchema = z.object({
   id: z.string().regex(HARNESS_ID),
-  name: localizedText,
+  name: text,
   core: z.string().min(1),
-  languages: z.array(z.enum(LANGUAGES)).min(1),
   engines: z.array(z.string().min(1)).min(1),
   folder: z.object({ suggested: z.string().min(1), seed: z.string().optional(), references: z.array(referenceSchema).default([]) }),
   instructions: z.string().min(1),
@@ -85,7 +103,9 @@ const manifestSchema = z.object({
   /** Free questions (q-<slug> tasks): the tier they run at; absent means "standard". */
   questions: z.object({ tier: z.enum(TIERS).optional() }).optional(),
   /** One line under the name on the home screen. */
-  tagline: localizedText.optional(),
+  tagline: text.optional(),
+  /** How translations of this harness's screens should sound, in English ("warm and informal, short sentences"). */
+  tone: z.string().min(1).max(300).optional(),
   /** Logo file in the harness folder (SVG, PNG or JPEG); defaults to the Human Harness H. */
   logo: z.string().optional(),
   mcp: z.array(z.string()).default([]),

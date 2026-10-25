@@ -9,7 +9,7 @@ import { CHECKPOINT_PROMPT, CLOSE_PROMPT } from "../src/main/task-prompts";
 import { type CurrentTask, QUESTION_MAX, type TasksFile, emptyTasks } from "../src/main/task-store";
 import { TurnController, type TurnOptions } from "../src/main/turn-controller";
 
-const label = (en: string, es = en) => ({ es, en });
+const label = (en: string) => en;
 const note: SavedNote = {
   title: "The manifest",
   summary: ["It declares the harness"],
@@ -87,7 +87,7 @@ function setup(
         busy = false;
       },
     },
-    actions: { manifest: { label: label("The manifest", "El manifiesto") }, engines: { label: label("Engines", "Motores") }, turn: { label: label("A turn") } },
+    actions: { manifest: { label: label("The manifest") }, engines: { label: label("Engines") }, turn: { label: label("A turn") } },
     path: opts.path ?? ["manifest", "engines", "turn"],
     readPrompt: opts.readPrompt ?? (async (action) => `# Topic: ${action}\nAnswer in {{language}}.\n\n{{notesIndex}}`),
     language: async () => "en",

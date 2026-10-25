@@ -24,16 +24,16 @@ describe("EngineTab", () => {
   it("shows a test engine with its own details: no sign out, plan, version or legal line", async () => {
     const client = new FakeClient({ language: "es", folder: "/Users/me/Documents/Demo", engineId: "claude" });
     client.state.engines = [{ ...client.state.engines[0], name: "IA simulada (mock)", provider: "Human Harness", logo: undefined, reportsLimits: false, mock: true }];
-    const { container } = await renderIn("es", <Tab client={client} />);
-    await screen.findByText("Grabadas en la carpeta mock/ del harness");
+    const { container } = await renderIn("en", <Tab client={client} />);
+    await screen.findByText("Recorded in the harness's mock/ folder");
     const rows = [...container.querySelectorAll(".hh-row")].map((r) => [...r.children].map((c) => c.textContent));
     expect(rows).toEqual([
-      ["Modelo", "Modelo de prueba"],
-      ["Respuestas", "Grabadas en la carpeta mock/ del harness"],
-      ["Tus datos", "No salen de esta compu"],
-      ["Tu plan", "No gasta nada"],
+      ["Model", "Test model"],
+      ["Answers", "Recorded in the harness's mock/ folder"],
+      ["Your data", "Never leaves this computer"],
+      ["Your plan", "Uses nothing"],
     ]);
-    expect(screen.queryByRole("button", { name: "Cerrar sesión" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Sign out" })).toBeNull();
     expect(screen.queryByRole("link")).toBeNull();
     expect(container.querySelector(".hh-tab > .hh-caption")).toBeNull();
     // No logo: the tile draws the generic screen icon instead.
@@ -158,11 +158,11 @@ describe("EngineTab", () => {
     const client = withFolder();
     client.status = { ...client.status, verified: false };
     client.testUnrecorded = true;
-    await renderIn("es", <Tab client={client} />);
-    expect((await screen.findByRole("alert")).textContent).toMatch(/No pude guardar los ajustes de los motores de IA de esta computadora/);
+    await renderIn("en", <Tab client={client} />);
+    expect((await screen.findByRole("alert")).textContent).toMatch(/I couldn't save this computer's AI engine settings/);
     client.testUnrecorded = false;
-    fireEvent.click(screen.getByRole("button", { name: "Reintentar" }));
-    await screen.findByRole("button", { name: "Usar Claude" });
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await screen.findByRole("button", { name: "Use Claude" });
   });
 
   it("shows a step that timed out as failed, with a retry", async () => {
@@ -264,13 +264,13 @@ describe("EngineTab", () => {
     const client = withFolder();
     client.status = { ...client.status, installed: false };
     client.setupResult = { ok: false };
-    await renderIn("es", <Tab client={client} />);
-    fireEvent.click(await screen.findByRole("button", { name: "Instalar" }));
-    expect((await screen.findByRole("alert")).textContent).toBe("La instalación automática no funcionó. Podés instalarlo vos en un minuto:");
-    expect(screen.getByRole("button", { name: "Copiar comando" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Abrir Terminal" })).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Instrucciones oficiales" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Reintentar" })).toBeTruthy();
+    await renderIn("en", <Tab client={client} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Install" }));
+    expect((await screen.findByRole("alert")).textContent).toBe("The automatic install didn't work. You can install it yourself in a minute:");
+    expect(screen.getByRole("button", { name: "Copy command" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Open Terminal" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Official instructions" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
   });
 
   it("says so when the command can't be copied", async () => {
@@ -334,17 +334,17 @@ describe("EngineTab", () => {
     client.status = { ...client.status, verified: false };
     client.testUnrecorded = true;
     client.resetError = new Error("EACCES");
-    await renderIn("es", <Tab client={client} />);
+    await renderIn("en", <Tab client={client} />);
     await screen.findByRole("alert");
-    fireEvent.click(screen.getByRole("button", { name: "Restablecer" }));
-    fireEvent.click(screen.getByRole("button", { name: "Sí, restablecer" }));
-    await screen.findByText("No pude restablecer el archivo. Probá otra vez o miralo en Finder.");
-    expect((screen.getByRole("button", { name: "Restablecer" }) as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "Start over" }));
+    fireEvent.click(screen.getByRole("button", { name: "Yes, start over" }));
+    await screen.findByText("I couldn't start the file over. Try again, or look at it in Finder.");
+    expect((screen.getByRole("button", { name: "Start over" }) as HTMLButtonElement).disabled).toBe(false);
     // A later failure to save is a new problem: the old reset error goes away.
-    fireEvent.click(screen.getByRole("button", { name: "Reintentar" }));
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
     await waitFor(() => expect(client.tested).toEqual(["claude", "claude"]));
-    await screen.findByText(/No pude guardar los ajustes de los motores de IA/);
-    expect(screen.queryByText("No pude restablecer el archivo. Probá otra vez o miralo en Finder.")).toBeNull();
+    await screen.findByText(/I couldn't save this computer's AI engine settings/);
+    expect(screen.queryByText("I couldn't start the file over. Try again, or look at it in Finder.")).toBeNull();
   });
 
   it("offers to sign in again when the test prompt says the session expired, even if the CLI says it is signed in", async () => {

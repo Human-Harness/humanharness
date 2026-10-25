@@ -3,7 +3,6 @@ import { useTranslation } from "react-i18next";
 import { BackupNotice, type FolderMove } from "./BackupNotice";
 import { CheckIcon, EngineIcon, GearIcon, HHLogo, TopBar } from "./chrome";
 import { type AppState, type EngineStatus, type HarnessClient, type LimitWindow, engineProblem, isConfigured } from "./client";
-import { uiLanguage } from "./FolderStep";
 import { WARN_AT, fiveHour, percent } from "./usage";
 import { useCurrentWindows } from "./UsageMeter";
 
@@ -39,10 +38,9 @@ export function Home({
   /** The app's folder move (HarnessApp): a move started in Settings still shows here. */
   move?: FolderMove;
 }) {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const missingId = useId();
-  const lang = uiLanguage(state, i18n.language);
-  const name = state.harness.name[lang];
+  const name = state.harness.name;
   const engine = state.engines.find((e) => e.id === state.config.engineId);
   const connected = checkFailed ? false : status ? engineProblem(status) === null : null;
   const current = useCurrentWindows(limits);
@@ -64,7 +62,7 @@ export function Home({
       <main className="hh-home-main">
         {state.harness.logo ? <img className="hh-home-logo" src={state.harness.logo} alt="" /> : <HHLogo className="hh-home-logo" />}
         <h1 className="hh-home-name">{name}</h1>
-        {state.harness.tagline && <p className="hh-home-tagline">{state.harness.tagline[lang]}</p>}
+        {state.harness.tagline && <p className="hh-home-tagline">{state.harness.tagline}</p>}
         {!configured && (
           <section className="hh-missing" aria-labelledby={missingId}>
             <h2 id={missingId}>{t("home.missing.title")}</h2>

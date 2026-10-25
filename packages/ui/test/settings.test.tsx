@@ -4,6 +4,7 @@ import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AppState } from "../src/client";
 import { type SettingsTab, SettingsSheet } from "../src/SettingsSheet";
+import { ownName, systemLanguage } from "../src/language";
 import { FakeClient } from "./fake-client";
 import { renderIn } from "./render";
 
@@ -165,7 +166,7 @@ describe("SettingsSheet", () => {
     await waitFor(() => expect(client.setupCancelled).toBe(1));
   });
 
-  it("General: changes language and appearance, shows the fixed folder and the About card", async () => {
+  it("General: changes appearance, shows the fixed folder and the About card", async () => {
     const client = new FakeClient(ready);
     await renderIn("en", <Sheet client={client} />);
     fireEvent.click(screen.getByRole("button", { name: "Dark" }));
@@ -177,35 +178,42 @@ describe("SettingsSheet", () => {
     expect(screen.getByText("Version 0.1.0")).toBeTruthy();
     expect(screen.getByText("Made by Marco Zanger with Human Harness")).toBeTruthy();
     expect(screen.getByRole("link", { name: "Support" }).getAttribute("href")).toBe("https://example.com/donate");
-    fireEvent.click(screen.getByRole("button", { name: "Español" }));
-    await screen.findByRole("tab", { name: "Motor" });
-    expect(client.state.config.language).toBe("es");
+  });
+
+  it("shows the saved language by its own name, with the English-for-now hint", async () => {
+    const client = new FakeClient({ ...ready, language: "es" });
+    await renderIn("en", <Sheet client={client} />);
+    expect(screen.getByText("Español")).toBeTruthy();
+    expect(screen.getByText("The app's texts are in English for now. The AI answers in this language.")).toBeTruthy();
+    expect(screen.queryByRole("group", { name: "Language" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "English" })).toBeNull();
   });
 
   it("General: picks a text size, says which one is on and how to change it from the keyboard", async () => {
     const client = new FakeClient(ready);
-    await renderIn("es", <Sheet client={client} />);
-    const sizes = screen.getByRole("group", { name: "Tamaño del texto" });
-    expect(within(sizes).getAllByRole("button").map((b) => b.textContent)).toEqual(["AaNormal", "AaGrande", "AaMás grande", "AaMáximo"]);
+    await renderIn("en", <Sheet client={client} />);
+    const sizes = screen.getByRole("group", { name: "Text size" });
+    expect(within(sizes).getAllByRole("button").map((b) => b.textContent)).toEqual(["AaNormal", "AaLarge", "AaLarger", "AaLargest"]);
     expect(within(sizes).getByRole("button", { name: "Normal" }).getAttribute("aria-pressed")).toBe("true");
-    expect(sizes.getAttribute("aria-describedby")).toBe(screen.getByText(/0 vuelve a Normal\.$/).id);
-    fireEvent.click(within(sizes).getByRole("button", { name: "Más grande" }));
+    expect(sizes.getAttribute("aria-describedby")).toBe(screen.getByText(/0 goes back to Normal\.$/).id);
+    fireEvent.click(within(sizes).getByRole("button", { name: "Larger" }));
     await waitFor(() => expect(client.state.config.textSize).toBe("larger"));
-    expect(within(sizes).getByRole("button", { name: "Más grande" }).getAttribute("aria-pressed")).toBe("true");
+    expect(within(sizes).getByRole("button", { name: "Larger" }).getAttribute("aria-pressed")).toBe("true");
     expect(within(sizes).getByRole("button", { name: "Normal" }).getAttribute("aria-pressed")).toBe("false");
   });
 
   it("General without a folder: only language, appearance, text size and About, no folder picker or welcome", async () => {
     const client = new FakeClient({});
-    await renderIn("es", <Sheet client={client} />);
-    expect(screen.getByRole("group", { name: "Idioma" })).toBeTruthy();
-    expect(screen.getByRole("group", { name: "Apariencia" })).toBeTruthy();
-    expect(screen.getByRole("group", { name: "Tamaño del texto" })).toBeTruthy();
-    expect(screen.getByText("Versión 0.1.0")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Elegir otra carpeta" })).toBeNull();
+    await renderIn("en", <Sheet client={client} />);
+    expect(screen.getByText("Language")).toBeTruthy();
+    expect(screen.getByText(ownName(systemLanguage()))).toBeTruthy();
+    expect(screen.getByRole("group", { name: "Appearance" })).toBeTruthy();
+    expect(screen.getByRole("group", { name: "Text size" })).toBeTruthy();
+    expect(screen.getByText("Version 0.1.0")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Choose another folder" })).toBeNull();
     expect(screen.queryByRole("radiogroup")).toBeNull();
-    expect(screen.queryByText("Mostrar en Finder")).toBeNull();
-    expect(screen.queryByText(/funciona con un plan de IA/)).toBeNull();
+    expect(screen.queryByText("Show in Finder")).toBeNull();
+    expect(screen.queryByText(/works with an AI plan/)).toBeNull();
   });
 
   it.each(["engine", "models", "usage"] as const)("%s before setup: one empty state whose button opens the setup flow", async (tab) => {
@@ -216,12 +224,12 @@ describe("SettingsSheet", () => {
       offered: { claude: { models: [{ id: "haiku" }, { id: "sonnet" }, { id: "opus" }], efforts: ["low"] } },
     };
     const onSetup = vi.fn();
-    await renderIn("es", <Sheet client={client} initialTab={tab} onSetup={onSetup} />);
-    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["General", "Motor", "Modelos", "Uso"]);
-    expect(screen.getByRole("heading", { name: "Todavía no elegiste un motor" })).toBeTruthy();
-    expect(screen.getByText("Primero elegí dónde se guarda tu trabajo y después conectá la IA. Son dos pasos.")).toBeTruthy();
-    expect(screen.queryByRole("group", { name: "Motores de IA" })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Configurar Demo" }));
+    await renderIn("en", <Sheet client={client} initialTab={tab} onSetup={onSetup} />);
+    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["General", "Engine", "Models", "Usage"]);
+    expect(screen.getByRole("heading", { name: "You haven't chosen an engine yet" })).toBeTruthy();
+    expect(screen.getByText("First choose where your work is kept, then connect the AI. It takes two steps.")).toBeTruthy();
+    expect(screen.queryByRole("group", { name: "AI engines" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Set up Demo" }));
     expect(onSetup).toHaveBeenCalledTimes(1);
   });
 });

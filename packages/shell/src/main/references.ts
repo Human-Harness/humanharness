@@ -1,11 +1,11 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import type { HarnessReference, LocalizedText } from "@humanharness/harness-sdk";
+import type { HarnessReference } from "@humanharness/harness-sdk";
 import { folderProblem, realFolder } from "./validate";
 
 export interface ResolvedReference {
   id: string;
-  label: LocalizedText;
+  label: string;
   /** Absolute real path. */
   path: string;
 }

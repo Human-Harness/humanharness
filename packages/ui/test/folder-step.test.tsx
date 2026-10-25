@@ -3,6 +3,7 @@ import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AppState } from "../src/client";
 import { FolderStep } from "../src/FolderStep";
+import { systemLanguage } from "../src/language";
 import { FakeClient } from "./fake-client";
 import { renderIn } from "./render";
 
@@ -14,7 +15,7 @@ const icloud = "/Users/me/Library/Mobile Documents/com~apple~CloudDocs";
 const radio = (name: string) => screen.getByRole("radio", { name }) as HTMLInputElement;
 
 /** The step with a footer button that submits it, as the setup flow renders it. */
-function renderStep(language: "en" | "es", client: FakeClient, onSaved: (s: AppState) => void = () => {}) {
+function renderStep(language: string, client: FakeClient, onSaved: (s: AppState) => void = () => {}) {
   return renderIn(
     language,
     <>
@@ -96,7 +97,7 @@ describe("FolderStep", () => {
     await screen.findByText("/Users/me/Documents/Mine");
     submit();
     await waitFor(() => expect(onSaved).toHaveBeenCalled());
-    expect(client.state.config).toEqual({ language: "en", folder: "/Users/me/Documents/Mine" });
+    expect(client.state.config).toEqual({ language: systemLanguage(), folder: "/Users/me/Documents/Mine" });
   });
 
   it("says when the folder can't be saved", async () => {
@@ -117,12 +118,12 @@ describe("FolderStep", () => {
     expect(onSaved).not.toHaveBeenCalled();
     submit();
     await waitFor(() => expect(onSaved).toHaveBeenCalledOnce());
-    expect(client.state.config).toEqual({ language: "en", folder: "/Users/me/Elsewhere" });
+    expect(client.state.config).toEqual({ language: systemLanguage(), folder: "/Users/me/Elsewhere" });
   });
 
   it("shows no places when nothing syncs on this computer", async () => {
     const client = new FakeClient();
-    await renderStep("es", client);
+    await renderStep("en", client);
     expect(screen.queryByRole("radiogroup")).toBeNull();
     expect(screen.getByText("/Users/me/Documents/Demo")).toBeTruthy();
   });

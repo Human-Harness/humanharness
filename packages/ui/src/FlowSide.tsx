@@ -1,15 +1,15 @@
 import { useId } from "react";
 import { useTranslation } from "react-i18next";
-import type { Language } from "@humanharness/harness-sdk";
 import { CheckIcon, LockIcon, NoteIcon } from "./chrome";
 import { type AppState, type TaskView, nextInPath } from "./client";
+import { shownLanguage } from "./language";
 
 /** A thin bar: the context the task's session uses against its cap, the exact tokens on hover (spec §6). */
 export function ContextMeter({ used, cap }: { used: number; cap: number }) {
   const { t, i18n } = useTranslation();
   if (!(cap > 0)) return null;
   const pct = Math.max(0, Math.min(100, Math.round((used / cap) * 100)));
-  const fmt = (n: number) => n.toLocaleString(i18n.language);
+  const fmt = (n: number) => n.toLocaleString(shownLanguage(i18n));
   return (
     <span
       className={pct >= 80 ? "hh-context-meter warn" : "hh-context-meter"}
@@ -29,14 +29,12 @@ export function ContextMeter({ used, cap }: { used: number; cap: number }) {
 /** Flow mode's left panel: the guided path, the notes so far and the read-only reference folders. */
 export function FlowSide({
   state,
-  lang,
   tasks,
   disabled,
   onStart,
   onOpenNote,
 }: {
   state: AppState;
-  lang: Language;
   tasks: TaskView;
   disabled: boolean;
   onStart: (action: string) => void;
@@ -76,7 +74,7 @@ export function FlowSide({
                     <span className={done ? "hh-step-mark done" : "hh-step-mark"} aria-hidden="true">
                       {done ? <CheckIcon /> : i + 1}
                     </span>
-                    {state.actions[id].label[lang]}
+                    {state.actions[id].label}
                     {done && <span className="hh-sr-only"> {t("flow.seen")}</span>}
                   </button>
                   {here && tasks.current?.action === id && tasks.current.context && <ContextMeter {...tasks.current.context} />}
@@ -107,7 +105,7 @@ export function FlowSide({
         <div className="hh-flow-refs">
           {(state.references ?? []).map((r) => (
             <p key={r.id} className="hh-flow-ref">
-              <code title={r.label[lang]}>{r.path}</code>
+              <code title={r.label}>{r.path}</code>
               <span>
                 <LockIcon />
                 {t("flow.readOnly")}

@@ -31,15 +31,15 @@ afterEach(() => {
 
 describe("WorkingStatus (a live turn)", () => {
   it("is collapsed by default: one status row, no activity lines", async () => {
-    const { container } = await renderIn("es", <WorkingStatus items={steps} />);
+    const { container } = await renderIn("en", <WorkingStatus items={steps} />);
     const status = screen.getByRole("status");
-    expect(status.textContent).toContain("Trabajando…");
+    expect(status.textContent).toContain("Working…");
     const loader = container.querySelector("img.hh-loader") as HTMLImageElement;
     expect(loader.getAttribute("alt")).toBe("");
     expect(loader.getAttribute("width")).toBe("18");
-    const toggle = screen.getByRole("button", { name: "Ver detalle" });
+    const toggle = screen.getByRole("button", { name: "Show details" });
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
-    expect(screen.queryByText("Leyendo manifest.md")).toBeNull();
+    expect(screen.queryByText("Reading manifest.md")).toBeNull();
   });
 
   it("shows another label when given one (the checkpoint)", async () => {
@@ -105,10 +105,10 @@ describe("FinishedActivity (a turn that ended)", () => {
   const done = steps.map((s) => ({ ...s, done: true }));
 
   it("puts what it did behind a collapsed toggle that counts the steps", async () => {
-    await renderIn("es", <FinishedActivity items={done} />);
-    const toggle = screen.getByRole("button", { name: "Ver qué hizo (3 pasos)" });
+    await renderIn("en", <FinishedActivity items={done} />);
+    const toggle = screen.getByRole("button", { name: "See what it did (3 steps)" });
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
-    expect(screen.queryByText("Leyendo manifest.md")).toBeNull();
+    expect(screen.queryByText("Reading manifest.md")).toBeNull();
     fireEvent.click(toggle);
     expect(toggle.getAttribute("aria-expanded")).toBe("true");
     const list = document.getElementById(toggle.getAttribute("aria-controls")!) as HTMLElement;

@@ -1,13 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { Language } from "@humanharness/harness-sdk";
 import type { NoteView } from "./client";
+import { shownLanguage } from "./language";
 
-/** "Lo que quedó claro": the notes of `.harness/notes/`, one opened at a time. */
+/** "What's clear so far": the notes of `.harness/notes/`, one opened at a time. */
 export function NotesPanel({
   notes,
   expanded,
-  lang,
   disabled,
   onResume,
   onOpen,
@@ -16,14 +15,13 @@ export function NotesPanel({
   notes: NoteView[];
   /** The note to open first; default the newest. */
   expanded?: string;
-  lang: Language;
   /** A turn runs: a topic can't be picked up now. */
   disabled: boolean;
   onResume: (note: NoteView) => void;
   onOpen: (path: string) => Promise<boolean>;
   onClose: () => void;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [open, setOpen] = useState<string | undefined>(expanded ?? notes[0]?.slug);
   const [failed, setFailed] = useState(false);
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -54,7 +52,7 @@ export function NotesPanel({
 
   const when = (iso: string) => {
     const d = new Date(iso);
-    return Number.isNaN(d.getTime()) ? "" : d.toLocaleString(lang, { dateStyle: "short", timeStyle: "short" });
+    return Number.isNaN(d.getTime()) ? "" : d.toLocaleString(shownLanguage(i18n), { dateStyle: "short", timeStyle: "short" });
   };
   const openFile = (path: string) => {
     setFailed(false);

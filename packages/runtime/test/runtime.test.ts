@@ -72,7 +72,7 @@ describe("createRuntime", () => {
     const agents = fs.readFileSync(path.join(folder, "AGENTS.md"), "utf8");
     expect(agents).toContain("You are a test assistant");
     expect(agents).toContain("`show_note`");
-    expect(agents).toContain("Always answer in English.");
+    expect(agents).toContain("Think and reason in English.");
     expect(fs.readFileSync(path.join(folder, "CLAUDE.md"), "utf8")).toBe("@AGENTS.md\n");
   });
 

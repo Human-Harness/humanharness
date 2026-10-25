@@ -258,3 +258,26 @@ describe("usage records with the task's profile", () => {
     expect(summarizeUsage(records, "five_hour", new Date("2026-10-11T12:00:00.000Z")).estimates.turn).toBeCloseTo(0.3);
   });
 });
+
+describe("usage per scope", () => {
+  const usage = (tokens: number) => ({ inputTokens: tokens, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 });
+  it("tags a scoped turn's line with its scope, and only then", () => {
+    const entry = { id: "1", role: "assistant" as const, text: "", blocks: [], activities: [], at: "t", usage: usage(10) };
+    expect(usageRecord(entry, "claude", { task: "t1", scope: "fracciones" })).toMatchObject({ task: "t1", scope: "fracciones" });
+    expect(usageRecord(entry, "claude", { task: "t1" })).not.toHaveProperty("scope");
+  });
+
+  it("sums the tokens per scope, and adds nothing when no line has one", () => {
+    const line = (scope: string | undefined, tokens: number, phase: "run" | "close" = "run"): UsageRecord => ({
+      at: "2026-10-25T10:00:00.000Z",
+      engine: "claude",
+      ok: true,
+      task: `t-${scope}-${tokens}`,
+      phase,
+      ...(scope ? { scope } : {}),
+      usage: usage(tokens),
+    });
+    expect(summarizeUsage([line("a", 100), line("a", 50, "close"), line("b", 10), line(undefined, 7)], undefined).scopes).toEqual({ a: 150, b: 10 });
+    expect(summarizeUsage([line(undefined, 7)], undefined)).not.toHaveProperty("scopes");
+  });
+});

@@ -280,6 +280,8 @@ export interface UsageSummary {
   estimates: Record<string, number>;
   /** Typical total tokens per task of each task key lately, for every engine. */
   tokens: Record<string, number>;
+  /** Harnesses with scopes: tokens used per scope id, over the whole log. */
+  scopes?: Record<string, number>;
   /** The window kind estimates measure (the engine's `limits.primary`); absent when the engine reports no limits. */
   primary?: string;
 }

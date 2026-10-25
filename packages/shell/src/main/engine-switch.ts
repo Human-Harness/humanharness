@@ -27,10 +27,19 @@ export async function startNewChatIfEngineChanged(folder: string, engineId: stri
   // chat itself tells: any entry from another engine (an earlier change that couldn't archive it,
   // or an engine that never started a session) means it belongs to that conversation.
   const session = await sessionEngine(folder);
-  const previous =
-    (session && session !== engineId ? session : null) ?? (await new ChatLog(folder).load()).find((e) => e.engine && e.engine !== engineId)?.engine ?? null;
+  const chats = await ChatLog.scopesIn(folder);
+  const engineInChats = async (): Promise<string | null> => {
+    for (const scope of chats) {
+      const other = (await new ChatLog(folder, undefined, scope).load()).find((e) => e.engine && e.engine !== engineId)?.engine;
+      if (other) return other;
+    }
+    return null;
+  };
+  const previous = (session && session !== engineId ? session : null) ?? (await engineInChats());
   if (!previous || previous === engineId) return null;
-  const archived = await new ChatLog(folder).archive(previous);
+  // Every scope's chat belongs to the old engine's conversations (spec §3.2: one chat per scope).
+  let archived = false;
+  for (const scope of chats) if (await new ChatLog(folder, undefined, scope).archive(previous)) archived = true;
   await fs.rm(sessionFile(folder), { force: true });
   // The open task can't continue on another engine; the notes stay.
   await new TaskStore(folder).forgetEngine();

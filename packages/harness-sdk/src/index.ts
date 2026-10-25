@@ -25,6 +25,9 @@ export type ActionCost = (typeof ACTION_COSTS)[number];
  */
 export const TIERS = ["light", "standard", "deep"] as const;
 export type Tier = (typeof TIERS)[number];
+/** Where an action runs in a harness with scopes: inside the open scope, or app-wide (spec §3.3). */
+export const SCOPE_MODES = ["required", "none"] as const;
+export type ScopeMode = (typeof SCOPE_MODES)[number];
 /**
  * A task the harness can start (a topic card, a step of the guided path, a button): its brief is the first
  * message of the task's engine session. `cost` is how much of the plan it tends to use.
@@ -38,6 +41,8 @@ const actionSchema = z.object({
   cost: z.enum(ACTION_COSTS),
   /** The tier the task runs at; absent means "standard". */
   tier: z.enum(TIERS).optional(),
+  /** Harnesses with `scopes` only: "required" (default) runs in the open scope, "none" app-wide (`_app`). */
+  scope: z.enum(SCOPE_MODES).optional(),
 });
 /** A folder the agent may read but never change. */
 const referenceSchema = z.object({
@@ -84,6 +89,8 @@ const manifestSchema = z.object({
   path: z.array(z.string()).min(1).optional(),
   /** Free questions (q-<slug> tasks): the tier they run at; absent means "standard". */
   questions: z.object({ tier: z.enum(TIERS).optional() }).optional(),
+  /** The harness's unit of work (a topic, a project): what the app calls it. Absent: one implicit scope (spec D2). */
+  scopes: z.object({ label: localizedText, plural: localizedText }).optional(),
   /** One line under the name on the home screen. */
   tagline: localizedText.optional(),
   /** Logo file in the harness folder (SVG, PNG or JPEG); defaults to the Human Harness H. */
@@ -110,9 +117,15 @@ const manifestSchema = z.object({
   if (Object.hasOwn(m.actions, "questions")) {
     ctx.addIssue({ code: "custom", path: ["actions", "questions"], message: '"questions" is reserved for free questions: use another action id' });
   }
+  for (const [id, a] of Object.entries(m.actions)) {
+    if (a.scope !== undefined && !m.scopes) {
+      ctx.addIssue({ code: "custom", path: ["actions", id, "scope"], message: "Only a harness that declares scopes can set where an action runs" });
+    }
+  }
   const seen = new Set<string>();
   for (const id of m.path ?? []) {
     if (!Object.hasOwn(m.actions, id)) ctx.addIssue({ code: "custom", path: ["path"], message: `Unknown action in path: "${id}"` });
+    if (m.actions[id]?.scope === "none") ctx.addIssue({ code: "custom", path: ["path"], message: `"${id}" runs outside any scope: it can't be in the path` });
     if (seen.has(id)) ctx.addIssue({ code: "custom", path: ["path"], message: `"${id}" is in the path twice` });
     seen.add(id);
   }
@@ -130,6 +143,12 @@ export type HarnessReference = Harness["folder"]["references"][number];
 
 export function defineHarness(config: HarnessInput): Harness {
   return manifestSchema.parse(config);
+}
+
+/** Where `action` runs: null when the harness has no scopes, else its `scope` ("required" when not set). */
+export function actionScope(harness: Pick<Harness, "scopes" | "actions">, action: string): ScopeMode | null {
+  if (!harness.scopes) return null;
+  return harness.actions[action]?.scope ?? "required";
 }
 
 export interface LoadedHarness extends Harness {

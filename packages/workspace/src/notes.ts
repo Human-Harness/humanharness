@@ -2,9 +2,7 @@ import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import type { SavedNote } from "@humanharness/harness-sdk";
-
-/** Where notes live, relative to the folder (forward slashes, as the history and the index show it). */
-export const NOTES_PREFIX = ".harness/notes/";
+import { NOTES_PREFIX } from "./layout";
 
 /** What the app adds to a note the agent saved. */
 export interface NoteMeta {

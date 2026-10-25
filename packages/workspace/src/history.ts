@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import git from "isomorphic-git";
-import { NOTES_PREFIX } from "./notes";
+import { NOTES_PREFIX } from "./layout";
 import { BEFORE_MESSAGE } from "./subjects";
 
 const AUTHOR = { name: "Human Harness", email: "history@humanharness.local" };

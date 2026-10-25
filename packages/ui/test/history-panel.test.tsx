@@ -272,6 +272,7 @@ describe("HistoryPanel", () => {
 
   it("keeps an unknown subject as it is", () => {
     expect(entryLabel("Something else")).toBeNull();
+    expect(entryLabel("Data: concepts")).toEqual({ key: "history.entry.data", values: { collection: "concepts" } });
     expect(entryLabel("Note: A title")).toEqual({ key: "history.entry.note", values: { title: "A title" } });
     expect(entryLabel("Stopped: hi")).toEqual({ key: "history.entry.stopped" });
   });

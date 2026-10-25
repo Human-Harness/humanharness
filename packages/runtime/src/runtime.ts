@@ -5,6 +5,7 @@ import type { Effort, EngineDef, ModelChoice, ModelProfile } from "@humanharness
 import { type Language, type LoadedHarness, allBlocks, resolveInHarness } from "@humanharness/harness-sdk";
 import {
   BEFORE_MESSAGE,
+  DATA_PREFIX,
   History,
   type HistoryTrailer,
   NOTES_PREFIX,
@@ -83,7 +84,7 @@ export async function createRuntime(opts: RuntimeOptions): Promise<HarnessRuntim
   const generated = await writeInstructions({ folder, base, language: opts.language, blocks: allBlocks(harness), references, engine });
 
   // The history skips the app's files under .harness/ (except the notes) and the generated instructions.
-  const history = new History(folder, opts.gitdir, [".harness/", ...generated], [NOTES_PREFIX]);
+  const history = new History(folder, opts.gitdir, [".harness/", ...generated], [NOTES_PREFIX, DATA_PREFIX]);
   await history.init();
   await history.save(START);
 

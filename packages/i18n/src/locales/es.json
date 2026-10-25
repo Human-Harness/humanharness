@@ -318,7 +318,8 @@
       "undo": "La IA no terminó, así que se deshicieron sus cambios",
       "restored": "Volviste a un punto anterior",
       "restoredTask": "Volviste a antes de esta tarea",
-      "note": "Resumen guardado: {{title}}"
+      "note": "Resumen guardado: {{title}}",
+      "data": "Cambió {{collection}}"
     }
   },
   "backup": {

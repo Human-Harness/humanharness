@@ -7,6 +7,7 @@ import {
   type HarnessClient,
   type HistoryItem,
   type HistoryTaskView,
+  DATA_CHANGE_PREFIX,
   NOTE,
   RESTORE_POINT,
   RESTORE_TASK,
@@ -25,6 +26,7 @@ export function entryLabel(message: string): { key: string; values?: Record<stri
   if (message.startsWith(UNDO_PREFIX)) return { key: "history.entry.undo" };
   if (message === RESTORE_TASK) return { key: "history.entry.restoredTask" };
   if (message === RESTORE_POINT) return { key: "history.entry.restored" };
+  if (message.startsWith(DATA_CHANGE_PREFIX)) return { key: "history.entry.data", values: { collection: message.slice(DATA_CHANGE_PREFIX.length) } };
   const note = NOTE.exec(message);
   if (note) return { key: "history.entry.note", values: { title: note[1] } };
   return null;

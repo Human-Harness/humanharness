@@ -1,14 +1,18 @@
 import fs from "node:fs";
 import path from "node:path";
 import git from "isomorphic-git";
-import { NOTES_PREFIX, isScopeDir } from "./layout";
+import { DATA_PREFIX, NOTES_PREFIX, isScopeDir } from "./layout";
 import { BEFORE_MESSAGE } from "./subjects";
 
 const AUTHOR = { name: "Human Harness", email: "history@humanharness.local" };
 
-/** The temp file `writeNote` renames into place (`.harness/notes/<slug>.md.<uuid>.tmp`); the person's own `.tmp` files stay tracked. */
-const isNoteTempFile = (file: string): boolean =>
-  file.startsWith(NOTES_PREFIX) && /\.md\.[0-9a-f-]+\.tmp$/.test(file.slice(NOTES_PREFIX.length));
+/**
+ * The temp files `writeNote` and the data store rename into place (`<file>.md.<uuid>.tmp`, `<file>.json.<uuid>.tmp`);
+ * the person's own `.tmp` files stay tracked.
+ */
+const isAppTempFile = (file: string): boolean =>
+  (file.startsWith(NOTES_PREFIX) && /\.md\.[0-9a-f-]+\.tmp$/.test(file.slice(NOTES_PREFIX.length))) ||
+  (file.startsWith(DATA_PREFIX) && /\.json\.[0-9a-f-]+\.tmp$/.test(file.slice(DATA_PREFIX.length)));
 
 export interface HistoryEntry {
   sha: string;
@@ -173,7 +177,7 @@ export class History {
 
   private tracked = (file: string): boolean =>
     !file.endsWith(".DS_Store") &&
-    !isNoteTempFile(file) &&
+    !isAppTempFile(file) &&
     (this.keep.some((k) => file.startsWith(k)) || !this.ignore.some((i) => (i.endsWith("/") ? file.startsWith(i) : file === i)));
 
   async init(): Promise<void> {

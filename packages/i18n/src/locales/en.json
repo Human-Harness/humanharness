@@ -318,7 +318,8 @@
       "undo": "The AI didn't finish, so its changes were undone",
       "restored": "You went back to an earlier point",
       "restoredTask": "You went back to before this task",
-      "note": "Note saved: {{title}}"
+      "note": "Note saved: {{title}}",
+      "data": "Changed {{collection}}"
     }
   },
   "backup": {

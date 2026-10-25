@@ -33,6 +33,7 @@ import {
 import {
   History,
   MAIN_SCOPE,
+  DATA_PREFIX,
   NOTES_PREFIX,
   ScopeStore,
   isScopeId,
@@ -429,7 +430,7 @@ async function dropRuntime() {
 /** The history of the folder when no runtime runs: one per folder and ignore list (its queue orders every write). */
 const standaloneHistory = lastOpened(async (key) => {
   const { folder, ignore } = JSON.parse(key) as { folder: string; ignore: string[] };
-  const history = new History(folder, historyDir(app.getPath("userData"), folder), ignore, [NOTES_PREFIX]);
+  const history = new History(folder, historyDir(app.getPath("userData"), folder), ignore, [NOTES_PREFIX, DATA_PREFIX]);
   await history.init();
   return history;
 });

@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import git from "isomorphic-git";
-import { History, parseCommitMessage, withTrailer } from "../src";
+import { DATA_PREFIX, History, NOTES_PREFIX, parseCommitMessage, withTrailer } from "../src";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -586,5 +586,22 @@ describe("Scope trailer", () => {
     expect(parseCommitMessage("Note: x\n\nTask: t1\nScope: _app")).toEqual({ subject: "Note: x", task: "t1", action: null, scope: "_app" });
     expect(parseCommitMessage("Note: x\n\nTask: t1\nScope: ../x")).toEqual({ subject: "Note: x", task: "t1", action: null });
     expect(parseCommitMessage("Note: x\n\nTask: t1")).toEqual({ subject: "Note: x", task: "t1", action: null });
+  });
+});
+
+describe("data in the history", () => {
+  it("tracks .harness/data/ like the notes, never its temp files or the data-meta stamps", async () => {
+    const dir = fs.mkdtempSync(path.join(root, "data-"));
+    const work = path.join(dir, "Work");
+    fs.mkdirSync(path.join(work, ".harness", "data", "main"), { recursive: true });
+    fs.mkdirSync(path.join(work, ".harness", "data-meta", "main"), { recursive: true });
+    fs.writeFileSync(path.join(work, ".harness", "data", "main", "concepts.json"), "[]\n");
+    fs.writeFileSync(path.join(work, ".harness", "data", "main", "concepts.json.0a1b2c3d-1111-2222-3333-444455556666.tmp"), "[");
+    fs.writeFileSync(path.join(work, ".harness", "data-meta", "main", "concepts.json"), "{}\n");
+    fs.writeFileSync(path.join(work, ".harness", "tasks.json"), "{}");
+    const h = new History(work, path.join(dir, "store"), [".harness/"], [NOTES_PREFIX, DATA_PREFIX]);
+    await h.init();
+    await h.save("Data: concepts");
+    expect(await h.trackedFiles()).toEqual([".harness/data/main/concepts.json"]);
   });
 });

@@ -190,7 +190,7 @@ export interface HistoryItem {
 export type HistoryFileChange = FileChange;
 
 // The history's commit subjects (raw git data, English; the History panel shows them through i18n keys).
-export { BEFORE_MESSAGE, NOTE, RESTORE_POINT, RESTORE_TASK, START, STOPPED_PREFIX, TURN_PREFIX, UNDO_PREFIX } from "@humanharness/workspace/subjects";
+export { BEFORE_MESSAGE, DATA_CHANGE_PREFIX, NOTE, RESTORE_POINT, RESTORE_TASK, START, STOPPED_PREFIX, TURN_PREFIX, UNDO_PREFIX } from "@humanharness/workspace/subjects";
 
 /**
  * One row of the History panel: a task's commits, or the group of commits outside any task (`taskId: null`:

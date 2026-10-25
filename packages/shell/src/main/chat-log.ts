@@ -58,6 +58,8 @@ export class ChatLog {
   /**
    * Puts the person's answer on the block it answers (input-blocks spec §8). The file is rewritten atomically
    * (temp + rename), keeping every other line as it was. False when no unanswered block has that id.
+   * It must not run while the chat file can be appended to: an append landing between the read and the rename
+   * is lost. `TaskManager.respond` calls it inside its operation, with no turn running.
    */
   async markAnswered(answer: BlockAnswer): Promise<boolean> {
     let raw: string;

@@ -1,6 +1,20 @@
 import { randomUUID } from "node:crypto";
 import type { ModelProfile } from "@humanharness/engines";
-import { type BlockAnswer, type ChoiceOption, type InputBlock, type Language, type LocalizedText, type SavedNote, type ScopeMode, saveNoteSchema } from "@humanharness/harness-sdk";
+import {
+  type BlockAnswer,
+  type ChoiceOption,
+  type InputBlock,
+  type InputIssue,
+  type Language,
+  type LocalizedText,
+  type RespondResult,
+  type SavedNote,
+  type ScopeMode,
+  answerDisplay,
+  answerMessage,
+  parseAnswer,
+  saveNoteSchema,
+} from "@humanharness/harness-sdk";
 import { type Event, type Session, fail } from "@humanharness/runtime";
 import { type ActionStatus, type CurrentTaskView, type NoteView, type TaskStatus, type TaskView, nextInPath } from "@humanharness/ui/client";
 import { APP_SCOPE, type HistoryTrailer, MAIN_SCOPE, NOTE_PREFIX, type Note, type NoteMeta, buildNotesIndex, isScopeId, noteSlug } from "@humanharness/workspace";
@@ -200,6 +214,34 @@ export class TaskManager {
   /** An option of a `choices` block shown for task `task`; a block of an earlier task is refused. */
   choose(option: ChoiceOption, task: string): Promise<void> {
     return this.op(() => this.chooseNow(option, task));
+  }
+
+  /**
+   * The person's answer to input block `blockId` (input-blocks spec §6). `accepted` resolves once the answer is
+   * refused (nothing ran, nothing changed) or taken (the chat's line comes with it); `done` once the turn that
+   * carries it to the agent has ended. Both reject when the operation can't run (closing, a turn running).
+   */
+  respond(blockId: string, value: unknown): { accepted: Promise<RespondResult>; done: Promise<void> } {
+    let settled = false;
+    let take!: (r: RespondResult) => void;
+    let refuse!: (err: unknown) => void;
+    const accepted = new Promise<RespondResult>((resolve, reject) => {
+      take = (r) => {
+        settled = true;
+        resolve(r);
+      };
+      refuse = reject;
+    });
+    const done = this.op(() => this.respondNow(blockId, value, take)).then(
+      () => {
+        if (!settled) refuse(new Error("The answer was not taken"));
+      },
+      (err: unknown) => {
+        if (!settled) refuse(err);
+        throw err;
+      },
+    );
+    return { accepted, done };
   }
 
   /**
@@ -465,6 +507,63 @@ export class TaskManager {
       (notesIndex) => fillPrompt(QUESTION_PROMPT, { language, notesIndex, question: text }),
       display ?? text,
     );
+  }
+
+  /**
+   * Checks, in order: the question is the waiting task's open one; the answer is valid; the checkpoint runs if due
+   * (before anything is taken, spec §6). Then the question closes, the chat marks the answer, the window gets the
+   * line, and the answer goes to the agent as a follow-up. `askNow` then sees `checkpointed` and runs no second one.
+   */
+  private async respondNow(blockId: string, raw: unknown, take: (r: RespondResult) => void): Promise<void> {
+    const refuse = (reason: Exclude<RespondResult, { ok: true }>["reason"], errors: InputIssue[] = []) => take({ ok: false, reason, errors });
+    const c = await this.storedCurrent();
+    const pending = c?.pendingInput;
+    const inputs = this.d.inputBlocks;
+    const block = pending && inputs && Object.hasOwn(inputs, pending.block) ? inputs[pending.block] : undefined;
+    if (!c || c.status !== "waiting" || !pending || pending.blockId !== blockId || !block) {
+      return refuse("stale", [{ path: "", message: "This question is closed" }]);
+    }
+    const parsed = parseAnswer(block, raw);
+    if (!parsed.ok) return refuse("invalid", parsed.errors);
+    if (needsCheckpoint(c)) {
+      if (!(await this.checkpoint(c))) return refuse("stopped");
+      await this.setStatus(c.id, "waiting");
+    }
+    const language = await this.d.language();
+    const display = answerDisplay(pending.block, block, parsed.value, language);
+    const answer: BlockAnswer = { blockId, value: parsed.value, answeredAt: this.now().toISOString() };
+    await this.update((s) => {
+      if (s.current?.id !== c.id) return s;
+      const { pendingInput: _answered, ...rest } = s.current;
+      return { ...s, current: rest };
+    });
+    // Inside this op, after the checkpoint and before the next turn: nothing can append to the chat file while
+    // markAnswered rewrites it.
+    await this.markAnswered(answer);
+    take({ ok: true, display, value: answer.value, answeredAt: answer.answeredAt });
+    try {
+      await this.askNow(answerMessage({ name: pending.block, blockId, value: parsed.value, display, language }), display);
+    } catch (err) {
+      // The window already shows the person's line and a running turn: end it there.
+      if (!this.windowDone) {
+        this.windowDone = true;
+        try {
+          this.d.emit?.(fail("agent-crashed", err instanceof Error ? err.message : String(err)));
+        } catch (emitErr) {
+          console.error("Could not send an event to the window", emitErr);
+        }
+      }
+      throw err;
+    }
+  }
+
+  /** The answer goes on its block in the chat on screen (the task's: switching scope closes the task). Logged on failure. */
+  private async markAnswered(answer: BlockAnswer): Promise<void> {
+    try {
+      await this.d.markAnswered?.(this.chatOf(await this.d.store.load()), answer);
+    } catch (err) {
+      console.error("Could not mark the answer in the chat", err);
+    }
   }
 
   /** The first message of a resumed task's new session (its old session ends first). */

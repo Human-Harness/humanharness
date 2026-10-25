@@ -131,3 +131,109 @@ describe("TaskManager: the pending input", () => {
     }
   });
 });
+
+describe("TaskManager.respond", () => {
+  const profile: ModelProfile = { engine: "claude", tier: "standard", model: "sonnet", effort: "medium", cap: 1000 };
+  const waiting = (extra: Record<string, unknown> = {}): TasksFile => ({
+    ...emptyTasks(),
+    current: {
+      id: "t1",
+      action: "practice",
+      status: "waiting",
+      startedAt: "",
+      turns: 1,
+      pendingInput: { blockId: "t1:0:0", block: "commit_answer", shownAt: NOW },
+      ...extra,
+    } as TasksFile["current"],
+  });
+
+  it("takes a valid answer: marks the chat, clears the question and sends the readable line with the JSON", async () => {
+    const t = setup({ state: waiting() });
+    const { accepted, done } = t.manager.respond("t1:0:0", { why: "porque sí", extra: 1 });
+    expect(await accepted).toEqual({ ok: true, display: "Why: porque sí", value: { why: "porque sí" }, answeredAt: NOW });
+    await done;
+    expect(t.marked).toEqual([{ chat: "main", answer: { blockId: "t1:0:0", value: { why: "porque sí" }, answeredAt: NOW } }]);
+    expect(t.turns).toHaveLength(1);
+    expect(t.turns[0].message).toBe(answerMessage({ name: "commit_answer", blockId: "t1:0:0", value: { why: "porque sí" }, display: "Why: porque sí", language: "en" }));
+    expect(t.turns[0].options).toMatchObject({ display: "Why: porque sí", followUp: true, task: "t1", turn: 1, phase: "run" });
+    expect(t.state().current).not.toHaveProperty("pendingInput");
+    expect(t.state().current).toMatchObject({ status: "waiting", turns: 2 });
+  });
+
+  it("takes a skip from a skippable block", async () => {
+    const t = setup({ state: waiting() });
+    const { accepted, done } = t.manager.respond("t1:0:0", { skipped: true });
+    expect(await accepted).toMatchObject({ ok: true, display: "(skipped)", value: { skipped: true } });
+    await done;
+    expect(t.turns[0].message).toContain('"value":{"skipped":true}');
+  });
+
+  it("refuses a stale block, a closed question, a task that isn't waiting or no task, and runs nothing", async () => {
+    const cases: [TasksFile, string][] = [
+      [waiting(), "t1:0:9"],
+      [waiting({ pendingInput: undefined }), "t1:0:0"],
+      [waiting({ status: "closing" }), "t1:0:0"],
+      [emptyTasks(), "t1:0:0"],
+    ];
+    for (const [state, id] of cases) {
+      const t = setup({ state });
+      const { accepted, done } = t.manager.respond(id, { why: "x" });
+      expect(await accepted).toMatchObject({ ok: false, reason: "stale" });
+      await done;
+      expect(t.turns).toEqual([]);
+      expect(t.marked).toEqual([]);
+    }
+  });
+
+  it("refuses an invalid answer with its field errors; the question stays open", async () => {
+    const t = setup({ state: waiting() });
+    const { accepted, done } = t.manager.respond("t1:0:0", { why: "" });
+    const r = await accepted;
+    expect(r).toMatchObject({ ok: false, reason: "invalid" });
+    if (!r.ok) expect(r.errors.map((e) => e.path)).toEqual(["why"]);
+    await done;
+    expect(t.turns).toEqual([]);
+    expect(t.state().current?.pendingInput?.blockId).toBe("t1:0:0");
+  });
+
+  it("runs a due checkpoint before the answer is taken, and only once (spec §6)", async () => {
+    const t = setup({ state: waiting({ profile, context: { used: 900 } }) });
+    const { accepted, done } = t.manager.respond("t1:0:0", { why: "x" });
+    expect((await accepted).ok).toBe(true);
+    await done;
+    expect(t.turns.map((x) => x.options.phase)).toEqual(["checkpoint", "run"]);
+    expect(t.turns[0].message).toBe(CHECKPOINT_PROMPT);
+    expect(t.marked).toHaveLength(1);
+  });
+
+  it("a stopped checkpoint takes nothing: the question stays open and the window gets no event", async () => {
+    const t = setup({ state: waiting({ profile, context: { used: 900 } }), script: [[cancelled]] });
+    const { accepted, done } = t.manager.respond("t1:0:0", { why: "x" });
+    expect(await accepted).toMatchObject({ ok: false, reason: "stopped" });
+    await done;
+    expect(t.turns).toHaveLength(1);
+    expect(t.marked).toEqual([]);
+    expect(t.emitted).toEqual([]);
+    expect(t.state().current).toMatchObject({ status: "waiting", pendingInput: { blockId: "t1:0:0" } });
+  });
+
+  it("refuses while a turn runs: both promises reject", async () => {
+    let open!: () => void;
+    const t = setup({ state: waiting(), gate: new Promise<void>((r) => (open = r)) });
+    const first = t.manager.respond("t1:0:0", { why: "x" });
+    await first.accepted;
+    const second = t.manager.respond("t1:0:0", { why: "y" });
+    await expect(second.accepted).rejects.toThrow("A turn is already running");
+    await expect(second.done).rejects.toThrow("A turn is already running");
+    open();
+    await first.done;
+  });
+
+  it("a turn that can't start after the answer was taken ends the window's turn with an error", async () => {
+    const t = setup({ state: waiting(), sendError: new Error("The app is closing") });
+    const { accepted, done } = t.manager.respond("t1:0:0", { why: "x" });
+    expect((await accepted).ok).toBe(true);
+    await expect(done).rejects.toThrow("The app is closing");
+    expect(t.emitted).toEqual([{ type: "done", ok: false, error: { code: "agent-crashed", detail: "The app is closing" } }]);
+  });
+});

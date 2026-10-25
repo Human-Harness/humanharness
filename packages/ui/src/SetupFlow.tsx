@@ -4,6 +4,7 @@ import { CheckIcon, TopBar } from "./chrome";
 import type { AppState, HarnessClient } from "./client";
 import { EngineTab } from "./EngineTab";
 import { FolderStep } from "./FolderStep";
+import { systemLanguage } from "./language";
 
 type Step = "folder" | "engine" | "done";
 
@@ -43,10 +44,15 @@ export function SetupFlow({
   const next = async () => {
     if (!selection?.ready) return;
     setSaveError(false);
-    if (selection.engineId !== state.config.engineId) {
+    // A saved folder and engine with no usable language would never count as set up: write the system's here.
+    const patch = {
+      ...(selection.engineId !== state.config.engineId ? { engineId: selection.engineId } : {}),
+      ...(state.config.language ? {} : { language: systemLanguage() }),
+    };
+    if (Object.keys(patch).length > 0) {
       setSaving(true);
       try {
-        onChange(await client.saveConfig({ engineId: selection.engineId }));
+        onChange(await client.saveConfig(patch));
       } catch {
         setSaveError(true);
         return;

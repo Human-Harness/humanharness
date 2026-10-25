@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { AppState } from "../src/client";
+import { type AppState, isConfigured } from "../src/client";
 import { systemLanguage } from "../src/language";
 import { SetupFlow } from "../src/SetupFlow";
 import { FakeClient } from "./fake-client";
@@ -141,6 +141,16 @@ describe("SetupFlow", () => {
     await waitFor(() => expect(next().disabled).toBe(false));
     fireEvent.click(next());
     await screen.findByRole("heading", { name: "All set" });
+  });
+
+  it("saves the system language when a folder and engine are saved but the language is missing", async () => {
+    const client = new FakeClient({ folder: "/Users/me/Documents/Demo", engineId: "claude" });
+    await renderIn("en", <Flow client={client} />);
+    await waitFor(() => expect(next().disabled).toBe(false));
+    fireEvent.click(next());
+    await screen.findByRole("heading", { name: "All set" });
+    expect(client.state.config.language).toBe(systemLanguage());
+    expect(isConfigured(client.state.config)).toBe(true);
   });
 
   it("in mock mode, explains the single test engine and names its model at the end", async () => {

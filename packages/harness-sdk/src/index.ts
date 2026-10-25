@@ -8,6 +8,7 @@ import { dataSchema } from "./data";
 export * from "./block";
 export * from "./core-blocks";
 export * from "./data";
+export * from "./input";
 /** The zod a manifest builds its block schemas with: the same instance the SDK validates them against. */
 export { z } from "zod";
 

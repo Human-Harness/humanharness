@@ -213,6 +213,43 @@ Mockup v1 (2026-10-20, waiting for Marco's review): https://claude.ai/artifact/W
    - End: what changed in the map, with the evidence, an open question, and what's next.
 5. **Review and profile.** Flashcard review (answer from memory, the AI checks, 4 spaced-repetition ratings, interleaved across topics) → Profile (how I learn, how the AI talks: tone, explanation length, hint/explanation thresholds, questions per message; a methods tab).
 
+Visual style (2026-10-25). Marco rejected three minimal themes (Salvia, Bruma, Lino), then chose from three "paper sheet" themes based on a reference he shared. **Chosen: A · Mañana.**
+- A paper sheet (#F7F6F1) floats over a soft green / light-blue / yellow blurred backdrop.
+- Soft yellow accent (#F3D54E). Borderless fields and buttons, separated by tone.
+- Geist sans for titles, buttons, labels and controls. Newsreader serif only for paragraphs: the AI's text, the learner's messages, summaries and flashcard text.
+- Light and dark modes.
+
+All 15 mockup screens were redrawn in this style on the same canvas (page "Mockup v2"; the themes are on page "Themes"). Each screen has a `dark` toggle. The source backup in `docs/discovery/mockups/student/` is updated.
+
+Claude's proposal, material processing (2026-10-25). Marco asked what the app does with uploaded material so that it is used correctly and efficiently. **Decision (Marco, 2026-10-25): this is a core feature that every harness uses, not a student feature.** Split:
+- **Core:** steps 1–3, 5, 6 and 8 below.
+- **Harness:** declares what the material sheet extracts (student: terms, notation, examples, exercises) and what "items" fragments link to (student: map concepts; dev: tickets or acceptance criteria). It also decides how its flows reuse the material (step 7).
+- **Marco (2026-10-25):** at core level no screens are needed; define the process so the material is stored and used optimally. Process definition: `docs/discovery/2026-10-25-core-material-processing.md`. The list below is superseded by it. Marco then decided:
+- No photos or scans: only material with text.
+- A program does the work; the AI validates and decides.
+- Any file type with text is accepted, not only PDF: Word, spreadsheets, presentations, md, txt and others. Spec draft: `docs/superpowers/specs/2026-10-25-material-processing-design.md`. Gap analysis of the student harness against the core: `docs/discovery/2026-10-25-student-vs-core.md`. On 2026-10-25 every gap got a spec draft in `docs/superpowers/specs/2026-10-25-*-design.md`, waiting for Marco's review:
+- scopes and data;
+- material processing;
+- harness settings;
+- task modes;
+- input blocks;
+- task phases and time box;
+- profiles;
+- harness setup steps.
+
+1. **Read.** Turn each file into text and keep its location (file, page, section):
+   - PDF: text extraction; a scanned PDF falls back to vision.
+   - Photo: vision/OCR.
+   - Link: fetch and clean.
+   Done once with a light model. A file hash avoids redoing unchanged files.
+2. **Confirm.** For photos and handwriting, the learner checks the read text ("¿leí bien tu cuaderno?") and fixes errors before anything is built on it. Problems are flagged: illegible, cut off, no text.
+3. **Material sheet.** One short structured note per topic: what the material covers, its terms and notation, and the examples and exercises it contains. Harness-owned; loaded every session instead of the whole material.
+4. **Concept ↔ fragment links.** Each concept in the map points to its fragments. This drives the "from your material / added by the AI" tags. It also shows coverage: concepts the level needs that the material lacks.
+5. **Per-session loading.** A session loads the sheet plus only the fragments of today's concepts, never the whole material each turn.
+6. **Grounding.** Strict mode: the AI cites the fragment ("tu cuaderno, p. 2") and says when something is not in the material. Mixed mode: what comes from the material and what comes from the AI are marked apart. When the material and the AI disagree (notation, a teacher's method), the AI follows the material and flags the difference; it never corrects silently.
+7. **Reuse.** The material's own examples and exercises feed the methods (worked examples, pre-exercises, flashcard ideas).
+8. **Add more later.** New material is processed the same way. Map changes are proposed for the learner to confirm.
+
 Reference: socrates-app inventory (read from `workspace/socrates-app`, 2026-10-20):
 
 - Local Next.js app (rioplatense Spanish). One `claude -p` per message (stream-json, `--resume`), streamed to the page over SSE. Tools limited to Read/Glob/Grep/Edit/Write/Web*/TodoWrite.
@@ -294,7 +331,13 @@ _not started_
 | Profiles: several users per install, each with own settings, data and AI style | student | proposed | Core today: one user; dev may not need it |
 | Onboarding interview (questions one at a time → a profile the AI reads every session) | student | proposed | Generic "get to know the user" setup step |
 | Methods as pluggable strategies (selectable, recommendable, switchable mid-task, with their own settings) | student | proposed | Like manifest actions but chosen per session; dev "modes" are similar |
-| Material ingestion (PDF, photos, links) + strict / mixed grounding | student | proposed | Folder + instructions today; needs ingestion and a grounding flag |
+| Material processing: ingestion (PDF, photos, links) → user-confirmed text → material sheet → item ↔ fragment links → per-session loading → strict / mixed grounding with citations | student (all harnesses) | **core (Marco, 2026-10-25)** | Core does read/confirm/sheet/fragments/loading/grounding. The harness only declares what the sheet extracts and what its "items" are (student: map concepts). Spec draft: `docs/superpowers/specs/2026-10-25-material-processing-design.md` |
+| Scopes: a core unit of work (topic, project) grouping tasks, notes, a per-scope notes index, material and data | student, dev | proposed (gap analysis 2026-10-25) | Core today: everything is app-wide. Material processing depends on it |
+| Harness data store: typed collections in `.harness/data/<scope>/`, a schema in the manifest, MCP read/update tools, history-tracked | student, dev | proposed (gap analysis 2026-10-25) | State-only blocks keep nothing today. Map, flashcards, tickets cache |
+| Harness settings: a schema in the manifest, a Settings tab, and values added to the managed `AGENTS.md` | student, dev | proposed (gap analysis 2026-10-25) | Profile tone and thresholds, per-method settings |
+| Person-context file added to every session's first message | student | proposed (gap analysis 2026-10-25) | The output of the onboarding interview |
+| Input blocks: a block that sends structured input back (generalizes `choices`) | student, dev | proposed (gap analysis 2026-10-25) | The learner's summary and flashcards; dev wizard |
+| Task time box with a quiet wrap-up turn | student | proposed (gap analysis 2026-10-25) | Like the 80% checkpoint |
 | Knowledge/progress map with evidence-based states | student (dev's AC coverage is similar) | proposed | Generic "items with state + evidence" model and view |
 | Spaced-repetition scheduler (flashcards, review-due states) | student | proposed | Could be a core utility |
 | User-authored content with AI correction (summaries, cards) | student | proposed | A block: user text + inline AI notes |

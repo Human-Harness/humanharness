@@ -83,7 +83,7 @@ export async function createRuntime(opts: RuntimeOptions): Promise<HarnessRuntim
   const base = await fs.readFile(resolveInHarness(harness, harness.instructions), "utf8");
   const generated = await writeInstructions({ folder, base, language: opts.language, blocks: allBlocks(harness), references, engine });
 
-  // The history skips the app's files under .harness/ (except the notes) and the generated instructions.
+  // The history skips the app's files under .harness/ (except the notes and the data) and the generated instructions.
   const history = new History(folder, opts.gitdir, [".harness/", ...generated], [NOTES_PREFIX, DATA_PREFIX]);
   await history.init();
   await history.save(START);

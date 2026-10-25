@@ -31,9 +31,10 @@ import {
   stepTextSize,
 } from "@humanharness/ui/client";
 import {
+  DATA_PREFIX,
+  DataStore,
   History,
   MAIN_SCOPE,
-  DATA_PREFIX,
   NOTES_PREFIX,
   ScopeStore,
   isScopeId,
@@ -47,6 +48,7 @@ import {
 import { imageDataUrl } from "./assets";
 import { ChatLog } from "./chat-log";
 import { ConfigStore, historyDir } from "./config";
+import { personDataRequest } from "./data-requests";
 import { testPrompt } from "./engine-check";
 import { createCommandDeps } from "./command-deps";
 import { cliCommand, engineCommand, loginShellPath } from "./engine-command";
@@ -316,6 +318,22 @@ function scopeStoreFor(base: string): ScopeStore {
   if (!store) {
     store = new ScopeStore(base);
     scopeStores.set(base, store);
+  }
+  return store;
+}
+
+/**
+ * One data store per base, so its write queue orders every write: the person's (hh:data) and the agent's
+ * (its data tools). Every caller gets the store from here, never with `new DataStore`.
+ */
+const dataStores = new Map<string, DataStore>();
+function dataStoreFor(base: string): DataStore {
+  let store = dataStores.get(base);
+  if (!store) {
+    store = new DataStore(base, harness.data);
+    // Spec §4.5 `subscribe`: every write, from any writer, reaches the window.
+    store.onChange((change) => sendToWindow("hh:dataChange", change));
+    dataStores.set(base, store);
   }
   return store;
 }
@@ -706,6 +724,24 @@ function registerIpc() {
     await scopesChanged();
     return opened;
   });
+  handle("hh:data", (request: unknown, options: unknown) =>
+    personDataRequest(
+      {
+        store: async () => {
+          const c = await validConfig();
+          return c ? dataStoreFor(baseOf(c)) : null;
+        },
+        chatScope: () => tasks.chatScope(),
+        trailer: () => tasks.trailerNow(),
+        saveHistory: async (message, trailer) => {
+          await (await currentHistory())?.save(message, trailer);
+        },
+        blocked: () => (quitting ? "The app is closing" : turnBlocked()),
+      },
+      request,
+      options,
+    ),
+  );
   handle("hh:choose", (option: unknown, task: unknown) => {
     if (quitting) throw new Error("The app is closing");
     const blocked = turnBlocked();

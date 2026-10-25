@@ -3,6 +3,10 @@ import type {
   AppState,
   ChatEntry,
   ChoiceOption,
+  DataChangeView,
+  DataKey,
+  DataQuery,
+  DataRecord,
   EngineError,
   EngineStatus,
   Event,
@@ -374,4 +378,51 @@ export class FakeClient implements HarnessClient {
       };
     },
   };
+  /** The fake's data: records by collection, in the order they were put; `dataKey` names the key field. */
+  records: Record<string, DataRecord[]> = {};
+  dataKey = "id";
+  private dataListeners = new Set<(c: DataChangeView) => void>();
+  private dataChanged(change: DataChangeView) {
+    for (const l of this.dataListeners) l(change);
+  }
+  data = {
+    get: async (collection: string, key?: DataKey) => (this.records[collection] ?? []).find((r) => key === undefined || r[this.dataKey] === key) ?? null,
+    query: async (collection: string, query: DataQuery = {}) => {
+      const all = (this.records[collection] ?? []).filter((r) => Object.entries(query.where ?? {}).every(([f, v]) => r[f] === v));
+      return { records: all.slice(0, query.limit ?? 50), total: all.length, invalid: 0 };
+    },
+    put: async (collection: string, record: DataRecord) => {
+      const key = record[this.dataKey] as DataKey | undefined;
+      this.records[collection] = [...(this.records[collection] ?? []).filter((r) => key === undefined || r[this.dataKey] !== key), record];
+      this.dataChanged({ collection, scope: this.openScope ?? "main", who: "person", op: "put", ...(key !== undefined ? { key } : {}) });
+      return record;
+    },
+    patch: async (collection: string, key: DataKey | undefined, patch: DataRecord) => {
+      const prev = (this.records[collection] ?? []).find((r) => key === undefined || r[this.dataKey] === key);
+      if (!prev) throw new Error("not found");
+      const next = { ...prev, ...patch };
+      this.records[collection] = (this.records[collection] ?? []).map((r) => (r === prev ? next : r));
+      this.dataChanged({ collection, scope: this.openScope ?? "main", who: "person", op: "patch", ...(key !== undefined ? { key } : {}) });
+      return next;
+    },
+    delete: async (collection: string, key?: DataKey) => {
+      const before = this.records[collection] ?? [];
+      this.records[collection] = before.filter((r) => key !== undefined && r[this.dataKey] !== key);
+      this.dataChanged({ collection, scope: this.openScope ?? "main", who: "person", op: "delete", ...(key !== undefined ? { key } : {}) });
+      return before.length !== this.records[collection].length;
+    },
+    subscribe: (collection: string, scope: string | null, listener: (c: DataChangeView) => void) => {
+      const l = (c: DataChangeView) => {
+        if (c.collection === collection && (scope === null || c.scope === scope)) listener(c);
+      };
+      this.dataListeners.add(l);
+      return () => {
+        this.dataListeners.delete(l);
+      };
+    },
+  };
+  /** A write the agent made (for tests of harness UIs that subscribe). */
+  emitDataChange(change: DataChangeView) {
+    this.dataChanged(change);
+  }
 }

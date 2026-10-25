@@ -384,6 +384,35 @@ export interface ScopesView {
   list: ScopeView[];
 }
 
+export type DataKey = string | number;
+export type DataRecord = Record<string, unknown>;
+export interface DataQuery {
+  /** Equality (`{ state: "seen" }`) or membership (`{ id: { in: ["a", "b"] } }`). */
+  where?: Record<string, unknown>;
+  /** The fields to return; the key always comes. */
+  fields?: string[];
+  /** Default 50, at most 200. */
+  limit?: number;
+}
+export interface DataQueryResult {
+  records: DataRecord[];
+  total: number;
+  /** Records a hand edit broke: skipped. */
+  invalid: number;
+}
+/** A write to the harness's data, from anyone (spec §4.5). */
+export interface DataChangeView {
+  collection: string;
+  scope: string;
+  who: "agent" | "person" | "app";
+  op: "put" | "patch" | "delete";
+  key?: DataKey;
+}
+/** Default: the open scope. App-wide collections ignore it. */
+export interface DataOptions {
+  scope?: string;
+}
+
 /** Everything the renderer can ask the main process. Implemented by the preload as `window.hh`. */
 export interface HarnessClient {
   getState(): Promise<AppState>;
@@ -448,6 +477,16 @@ export interface HarnessClient {
     open(id: string | null): Promise<boolean>;
     current(): Promise<string | null>;
     onChange(listener: (view: ScopesView) => void): () => void;
+  };
+  /** The harness's data (spec §4.5), as the person: the same checks as the agent's tools. */
+  data: {
+    get(collection: string, key?: DataKey, options?: DataOptions): Promise<DataRecord | null>;
+    query(collection: string, query?: DataQuery, options?: DataOptions): Promise<DataQueryResult>;
+    put(collection: string, record: DataRecord, options?: DataOptions): Promise<DataRecord>;
+    patch(collection: string, key: DataKey | undefined, patch: DataRecord, options?: DataOptions): Promise<DataRecord>;
+    delete(collection: string, key?: DataKey, options?: DataOptions): Promise<boolean>;
+    /** Every write to `collection` (in `scope`; null: any scope), from any writer. */
+    subscribe(collection: string, scope: string | null, listener: (change: DataChangeView) => void): () => void;
   };
   /** The text size changed from the keyboard (⌘+, ⌘−, ⌘0), already saved. */
   onTextSize(listener: (size: TextSize) => void): () => void;

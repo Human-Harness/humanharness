@@ -1,4 +1,5 @@
 import path from "node:path";
+import { COLLECTION_NAME } from "@humanharness/harness-sdk";
 
 // Every path under `<base>/.harness/` comes from here. `base` is the configured folder today; the profiles
 // plan makes it the active profile's folder (scopes-and-data spec §7.1) by changing only what callers pass.
@@ -35,3 +36,25 @@ export const scopesFile = (base: string): string => path.join(base, ".harness", 
 export const chatsDir = (base: string): string => path.join(base, ".harness", "chats");
 /** One chat per scope; `main.jsonl` for `main`, which is also the chat of a harness without scopes. */
 export const chatFile = (base: string, scope: string = MAIN_SCOPE): string => path.join(chatsDir(base), `${scopeDir(scope)}.jsonl`);
+
+/** Where harness data lives, relative to the base: `<scope>/<collection>.json`. Tracked by the history (spec D4). */
+export const DATA_PREFIX = ".harness/data/";
+/** When each record last changed (for "most recently changed", spec §4.4). Never tracked. */
+export const DATA_META_PREFIX = ".harness/data-meta/";
+
+function collectionName(name: string): string {
+  if (!COLLECTION_NAME.test(name)) throw new Error(`Invalid collection: "${name}"`);
+  return name;
+}
+
+/** A collection file's path relative to the base (forward slashes, as the history shows it). */
+export const dataPath = (scope: string, collection: string): string => `${DATA_PREFIX}${scopeDir(scope)}/${collectionName(collection)}.json`;
+export const dataFile = (base: string, scope: string, collection: string): string => path.join(base, ...dataPath(scope, collection).split("/"));
+export const dataMetaFile = (base: string, scope: string, collection: string): string =>
+  path.join(base, ".harness", "data-meta", scopeDir(scope), `${collectionName(collection)}.json`);
+
+/** The scope and collection of a `.harness/data/<scope>/<collection>.json` path; null for anything else. */
+export function parseDataPath(rel: string): { scope: string; collection: string } | null {
+  const m = /^\.harness\/data\/([^/]+)\/([^/]+)\.json$/.exec(rel);
+  return m && isScopeDir(m[1]) && COLLECTION_NAME.test(m[2]) ? { scope: m[1], collection: m[2] } : null;
+}

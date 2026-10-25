@@ -8,3 +8,4 @@ export * from "./backup";
 export * from "./subjects";
 export * from "./scopes";
 export * from "./migrate";
+export * from "./data";

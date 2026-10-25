@@ -31,7 +31,8 @@ export type Event =
   | { type: "text"; delta: string }
   | { type: "paragraph" }
   | { type: "activity"; id: string; kind: ActivityKind; detail: string; state: "start" | "end"; error?: boolean }
-  | { type: "block"; name: string; data: unknown }
+  /** `id`: set by the app on a block the person answers (input-blocks spec §4), never by an engine. */
+  | { type: "block"; name: string; data: unknown; id?: string }
   | { type: "limits"; status: string; windows: LimitWindow[] }
   | {
       type: "usage";

@@ -487,6 +487,8 @@ export class TaskManager {
     if (!option.next && !action) return this.askNow(option.followUp ?? option.label, option.label);
     // The path is walked with the open scope's statuses: each scope walks its own (spec §3.3).
     const target = action ?? nextInPath(this.d.path, state.current?.action, statusesIn(state, this.chatOf(state)));
+    // Checked before the open task closes: a required action with no open scope must not cost the person that task.
+    if (target) this.scopeFor(state, target);
     // Without a target the window shows no new turn (the end of the path just closes).
     if (!(await this.closeCurrent())) return target ? this.stopped() : undefined;
     if (target) await this.startNow(target);
@@ -755,9 +757,9 @@ export class TaskManager {
     const exists = this.d.noteExists
       ? (slug: string) => this.d.noteExists!(slug, where)
       : await this.d.notes(where).then(
-        (notes) => (slug: string) => Promise.resolve(notes.some((n) => n.slug === slug)),
-        () => () => Promise.resolve(false),
-      );
+          (notes) => (slug: string) => Promise.resolve(notes.some((n) => n.slug === slug)),
+          () => () => Promise.resolve(false),
+        );
     const base = `q-${noteSlug(title)}`;
     let slug = base;
     for (let i = 2; await exists(slug); i++) slug = `${base}-${i}`;

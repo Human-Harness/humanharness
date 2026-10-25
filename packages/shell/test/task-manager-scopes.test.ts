@@ -3,6 +3,7 @@ import type { SavedNote } from "@humanharness/harness-sdk";
 import type { Event } from "@humanharness/runtime";
 import { type Note, type NoteMeta, buildNotesIndex } from "@humanharness/workspace";
 import { ScopeRequired, TaskManager } from "../src/main/task-manager";
+import { resumeMessage } from "../src/main/task-prompts";
 import { type TasksFile, emptyTasks } from "../src/main/task-store";
 import type { TurnOptions } from "../src/main/turn-controller";
 
@@ -153,6 +154,22 @@ describe("TaskManager with scopes", () => {
     expect(t.turns.at(-1)?.message.startsWith("# Task: review")).toBe(true);
   });
 
+  it("refuses a next step into a required action before closing the open task", async () => {
+    const t = setup();
+    await t.manager.start("onboarding");
+    await expect(t.manager.choose({ label: "Next", next: true }, "t1")).rejects.toBeInstanceOf(ScopeRequired);
+    expect(t.turns).toHaveLength(1);
+    expect(t.state().current).toMatchObject({ id: "t1", action: "onboarding", status: "waiting" });
+  });
+
+  it("refuses a choice of a required action before closing the open task", async () => {
+    const t = setup();
+    await t.manager.ask("What is a fraction?");
+    await expect(t.manager.choose({ label: "Study", action: "study" }, "t1")).rejects.toBeInstanceOf(ScopeRequired);
+    expect(t.turns).toHaveLength(1);
+    expect(t.state().current).toMatchObject({ id: "t1", status: "waiting" });
+  });
+
   it("starts with a scope argument after switching to it", async () => {
     const t = setup();
     await t.manager.start("study", undefined, "fracciones");
@@ -177,6 +194,20 @@ describe("TaskManager without scopes (spec D2)", () => {
     expect(await t.manager.view()).not.toHaveProperty("scope");
     expect(await t.manager.chatScope()).toBe("main");
   });
+
+  for (const data of [undefined, () => ""]) {
+    it(`resumes a moved task with the plain notes index${data ? " (with a data context that is empty)" : ""}`, async () => {
+      const flat = [note("manifest", "")];
+      const t = setup({ scoped: false, notes: { flat }, ...(data ? { data } : {}) });
+      await t.manager.start("study");
+      await t.manager.resumeFromNotes();
+      await t.manager.ask("go on");
+      expect(t.turns[1].message).toBe(
+        resumeMessage({ language: "en", notesIndex: buildNotesIndex(flat), brief: "# Task: study\n\n{{notesIndex}}", message: "go on" }),
+      );
+      expect(t.turns[1].options).not.toHaveProperty("scope");
+    });
+  }
 
   it("ignores the scope of actions and refuses to switch scope", async () => {
     const t = setup({ scoped: false });

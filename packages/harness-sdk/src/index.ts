@@ -3,9 +3,11 @@ import { pathToFileURL } from "node:url";
 import { z } from "zod";
 import { type Block, blockToolName } from "./block";
 import { CORE_BLOCKS, CORE_BLOCK_NAMES } from "./core-blocks";
+import { dataSchema } from "./data";
 
 export * from "./block";
 export * from "./core-blocks";
+export * from "./data";
 /** The zod a manifest builds its block schemas with: the same instance the SDK validates them against. */
 export { z } from "zod";
 
@@ -91,6 +93,8 @@ const manifestSchema = z.object({
   questions: z.object({ tier: z.enum(TIERS).optional() }).optional(),
   /** The harness's unit of work (a topic, a project): what the app calls it. Absent: one implicit scope (spec D2). */
   scopes: z.object({ label: localizedText, plural: localizedText }).optional(),
+  /** Structured records the harness keeps (spec §4): collections by name. */
+  data: dataSchema,
   /** One line under the name on the home screen. */
   tagline: localizedText.optional(),
   /** Logo file in the harness folder (SVG, PNG or JPEG); defaults to the Human Harness H. */

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import type { SavedNote } from "@humanharness/harness-sdk";
-import { NOTES_PREFIX } from "./layout";
+import { NOTES_PREFIX, isScopeDir } from "./layout";
 
 /** What the app adds to a note the agent saved. */
 export interface NoteMeta {
@@ -20,6 +20,14 @@ export interface Note extends SavedNote, NoteMeta {
 }
 
 const SLUG = /^[a-z0-9][a-z0-9_-]*$/;
+
+/** `.harness/notes/` or `.harness/notes/<scope>/`: anything else could write outside the notes. */
+function checkPrefix(prefix: string): string {
+  if (prefix === NOTES_PREFIX) return prefix;
+  const scope = prefix.startsWith(NOTES_PREFIX) && prefix.endsWith("/") ? prefix.slice(NOTES_PREFIX.length, -1) : "";
+  if (!isScopeDir(scope)) throw new Error(`Invalid notes folder: "${prefix}"`);
+  return prefix;
+}
 
 /** A file-safe slug: lowercase ascii letters, digits and dashes, at most 60 characters; "note" when nothing is left. */
 export function noteSlug(text: string): string {
@@ -63,10 +71,10 @@ export function folderRelative(folder: string, file: string): string {
   return rel && !outside && !path.isAbsolute(rel) ? rel.split(path.sep).join("/") : file;
 }
 
-/** Writes `.harness/notes/<slug>.md` atomically (temp file + rename). Returns its path relative to the folder. */
-export async function writeNote(folder: string, slug: string, note: SavedNote, meta: NoteMeta): Promise<string> {
+/** Writes `<prefix><slug>.md` atomically (temp file + rename). Returns its path relative to the folder. */
+export async function writeNote(folder: string, slug: string, note: SavedNote, meta: NoteMeta, prefix: string = NOTES_PREFIX): Promise<string> {
   if (!SLUG.test(slug)) throw new Error(`Invalid note slug: "${slug}"`);
-  const dir = path.join(folder, NOTES_PREFIX);
+  const dir = path.join(folder, checkPrefix(prefix));
   await fs.mkdir(dir, { recursive: true });
   const file = path.join(dir, `${slug}.md`);
   const tmp = `${file}.${randomUUID()}.tmp`;
@@ -78,17 +86,25 @@ export async function writeNote(folder: string, slug: string, note: SavedNote, m
     await fs.rm(tmp, { force: true });
     throw err;
   }
-  return `${NOTES_PREFIX}${slug}.md`;
+  return `${prefix}${slug}.md`;
 }
 
 /**
  * After the folder moved from `oldFolder`: `files:` entries in the notes' front matter that name the old
- * place become relative. Nothing else in a note changes (BOM and line ends included). A note that can't be
- * read or rewritten is skipped and logged: it only keeps naming the old place, which must not undo a move.
- * Returns how many notes were rewritten.
+ * place become relative, in `.harness/notes/` and in each scope's folder under it. Nothing else in a note
+ * changes (BOM and line ends included). A note that can't be read or rewritten is skipped and logged: it only
+ * keeps naming the old place, which must not undo a move. Returns how many notes were rewritten.
  */
 export async function relativizeNoteFiles(folder: string, oldFolder: string): Promise<number> {
-  const dir = path.join(folder, NOTES_PREFIX);
+  const root = path.join(folder, NOTES_PREFIX);
+  const entries = await fs.readdir(root, { withFileTypes: true }).catch(() => []);
+  const dirs = [root, ...entries.filter((e) => e.isDirectory() && isScopeDir(e.name)).map((e) => path.join(root, e.name))];
+  let rewritten = 0;
+  for (const dir of dirs) rewritten += await relativizeIn(dir, oldFolder);
+  return rewritten;
+}
+
+async function relativizeIn(dir: string, oldFolder: string): Promise<number> {
   const names = (await fs.readdir(dir).catch(() => [] as string[])).filter((n) => n.endsWith(".md"));
   let rewritten = 0;
   for (const name of names) {
@@ -152,7 +168,7 @@ function frontValue(raw: string): unknown {
 }
 
 /** Reads a note file; null when it has no front matter or no title (e.g. the person broke it by hand). */
-export function parseNote(slug: string, text: string): Note | null {
+export function parseNote(slug: string, text: string, prefix: string = NOTES_PREFIX): Note | null {
   const m = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/.exec(text.replace(/^\uFEFF/, "").replace(/\r\n/g, "\n"));
   if (!m) return null;
   const front: Record<string, unknown> = {};
@@ -181,7 +197,7 @@ export function parseNote(slug: string, text: string): Note | null {
   const action = str(front.action);
   return {
     slug,
-    path: `${NOTES_PREFIX}${slug}.md`,
+    path: `${prefix}${slug}.md`,
     title,
     ...(action ? { action } : {}),
     date: str(front.date) ?? "",
@@ -193,9 +209,9 @@ export function parseNote(slug: string, text: string): Note | null {
   };
 }
 
-/** Every readable note in the folder, newest first. */
-export async function readNotes(folder: string): Promise<Note[]> {
-  const dir = path.join(folder, NOTES_PREFIX);
+/** Every readable note in `prefix` (the flat notes folder by default), newest first. Sub-folders are not read. */
+export async function readNotes(folder: string, prefix: string = NOTES_PREFIX): Promise<Note[]> {
+  const dir = path.join(folder, checkPrefix(prefix));
   let files: string[];
   try {
     files = await fs.readdir(dir);
@@ -207,7 +223,7 @@ export async function readNotes(folder: string): Promise<Note[]> {
     if (!file.endsWith(".md")) continue;
     const slug = file.slice(0, -3);
     if (!SLUG.test(slug)) continue;
-    const note = parseNote(slug, await fs.readFile(path.join(dir, file), "utf8").catch(() => ""));
+    const note = parseNote(slug, await fs.readFile(path.join(dir, file), "utf8").catch(() => ""), prefix);
     if (note) notes.push(note);
   }
   return notes.sort((a, b) => b.date.localeCompare(a.date));

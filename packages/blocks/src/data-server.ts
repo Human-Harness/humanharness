@@ -9,25 +9,49 @@ export const agentCollections = (harness: Pick<LoadedHarness, "data">): [string,
 /** The `data` MCP server starts only when there is something for the agent to see (D2). */
 export const hasAgentData = (harness: Pick<LoadedHarness, "data">): boolean => agentCollections(harness).length > 0;
 
+type JsonSchema = {
+  type?: string;
+  enum?: unknown[];
+  const?: unknown;
+  items?: JsonSchema;
+  properties?: Record<string, JsonSchema>;
+  required?: string[];
+  anyOf?: JsonSchema[];
+};
+
+/** A JSON Schema node as a short type: `string`, `a|b`, `[string]`, `{k: string, n?: number}`; what it cannot show is `any`. */
+function shortType(node: JsonSchema): string {
+  if (node.enum) return node.enum.map((v) => String(v)).join("|");
+  if (node.const !== undefined) return JSON.stringify(node.const);
+  if (node.anyOf) return node.anyOf.map(shortType).join("|");
+  if (node.type === "integer") return "number";
+  if (node.type === "array") return `[${node.items ? shortType(node.items) : "any"}]`;
+  if (node.type === "object" && node.properties) return `{${objectFields(node)}}`;
+  if (node.type === "string" || node.type === "number" || node.type === "boolean" || node.type === "null") return node.type;
+  return "any";
+}
+
+function objectFields(node: JsonSchema): string {
+  const required = new Set(node.required ?? []);
+  return Object.entries(node.properties ?? {})
+    .map(([k, v]) => `${k}${required.has(k) ? "" : "?"}: ${shortType(v)}`)
+    .join(", ");
+}
+
 function fieldsOf(c: Collection): string {
   try {
-    return JSON.stringify(z.toJSONSchema(c.schema));
+    return objectFields(z.toJSONSchema(c.schema, { unrepresentable: "any", io: "input" }) as JsonSchema);
   } catch {
     return Object.keys(c.schema.shape).join(", ");
   }
 }
 
-/** One line per collection: how it is keyed, where it lives, what the agent may do, and its fields. */
+/** One line per collection: name, key, where it lives, what the agent may do, and its fields. */
 function catalogue(collections: [string, Collection][]): string {
   return collections
-    .map(([name, c]) =>
-      [
-        `- ${name}:`,
-        c.single ? "one record (no key)," : `key "${c.key}",`,
-        c.scoped ? "in the task's scope," : "app-wide,",
-        c.agent === "write" ? "read and write." : "read only.",
-        `Fields: ${fieldsOf(c)}`,
-      ].join(" "),
+    .map(
+      ([name, c]) =>
+        `- ${name} (${c.single ? "one record" : `key ${c.key}`}, ${c.scoped ? "scoped" : "app-wide"}, ${c.agent === "write" ? "read+write" : "read"}): ${fieldsOf(c)}`,
     )
     .join("\n");
 }
@@ -58,22 +82,22 @@ export async function createDataServer(harnessConfig: string, rpc: { path: strin
     }
   };
 
-  const readDoc = `The harness's records. Collections:\n${catalogue(visible)}`;
+  const see = "Collections and fields: see data_query.";
   server.registerTool(
     "data_get",
-    { description: `Reads one record by its key (no key for a one-record collection). ${readDoc}`, inputSchema: { collection: z.enum(names(visible)), key: key.optional() } },
+    { description: `Reads one record by its key (no key for a one-record collection). ${see}`, inputSchema: { collection: z.enum(names(visible)), key: key.optional() } },
     call("get"),
   );
   server.registerTool(
     "data_query",
     {
-      description: `Lists records. \`where\` takes equality ({"state":"seen"}) or membership ({"id":{"in":["a","b"]}}) only; \`fields\` picks fields (the key always comes); \`limit\` defaults to 50, at most 200. The answer says the total. ${readDoc}`,
-      inputSchema: { collection: z.enum(names(visible)), where: fields.optional(), fields: z.array(z.string()).optional(), limit: z.number().int().optional() },
+      description: `Lists records. \`where\` takes equality ({"state":"seen"}) or membership ({"id":{"in":["a","b"]}}) only; \`fields\` picks fields (the key always comes); \`limit\` defaults to 50, at most 200. The answer says the total. Collections:\n${catalogue(visible)}`,
+      inputSchema: { collection: z.enum(names(visible)), where: fields.optional(), fields: z.array(z.string()).optional(), limit: z.number().int().min(1).max(200).optional() },
     },
     call("query"),
   );
   if (writable.length > 0) {
-    const writeDoc = `Every write is checked against the collection's schema and rules; a refusal says why. Collections you may change:\n${catalogue(writable)}`;
+    const writeDoc = `Checked against the schema and rules; a refusal says why. Writable: ${writable.map(([n]) => n).join(", ")}. ${see}`;
     server.registerTool(
       "data_put",
       { description: `Creates a record, or replaces the one with the same key. ${writeDoc}`, inputSchema: { collection: z.enum(names(writable)), record: fields } },

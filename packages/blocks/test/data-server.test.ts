@@ -4,10 +4,11 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { afterEach, describe, expect, it } from "vitest";
 import { loadHarness } from "@humanharness/harness-sdk";
-import { type Rpc, agentCollections, dataServerSpec, devLauncher, hasAgentData, openRpc } from "../src";
+import { type Rpc, agentCollections, createDataServer, dataServerSpec, devLauncher, hasAgentData, openRpc } from "../src";
 
 const fixtures = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../fake-agent/fixtures");
 const STUDY = path.join(fixtures, "data-harness", "harness.config.ts");
+const READONLY = path.join(fixtures, "data-readonly-harness", "harness.config.ts");
 
 let rpc: Rpc | undefined;
 let client: Client | undefined;
@@ -19,8 +20,12 @@ afterEach(async () => {
 });
 
 async function connect(handler: (request: unknown) => Promise<unknown>) {
+  return connectTo(STUDY, handler);
+}
+
+async function connectTo(config: string, handler: (request: unknown) => Promise<unknown>) {
   rpc = await openRpc(handler);
-  const spec = dataServerSpec({ harnessConfig: STUDY, rpc: { path: rpc.path, token: rpc.token }, launcher: devLauncher() });
+  const spec = dataServerSpec({ harnessConfig: config, rpc: { path: rpc.path, token: rpc.token }, launcher: devLauncher() });
   expect(spec.name).toBe("data");
   client = new Client({ name: "test", version: "0.0.0" });
   await client.connect(new StdioClientTransport({ command: spec.command, args: spec.args, env: { ...(process.env as Record<string, string>), ...spec.env } }));
@@ -71,5 +76,56 @@ describe("data MCP server", () => {
     const r = await c.callTool({ name: "data_patch", arguments: { collection: "concepts", key: "halves", patch: { state: "mastered" } } });
     expect(r.isError).toBe(true);
     expect((r.content as { text: string }[])[0].text).toBe("Refused: The state can rise only with a new evidence entry");
+  });
+});
+
+describe("data tool descriptions", () => {
+  it("describe each collection once, compactly", async () => {
+    const c = await connect(async () => null);
+    const { tools } = await c.listTools();
+    const descriptions = tools.map((t) => t.description ?? "");
+    expect(descriptions.join("").length).toBeLessThan(2500);
+    for (const name of ["concepts", "flashcards", "profile"]) {
+      expect(descriptions.filter((d) => d.includes(`- ${name} (`))).toHaveLength(1);
+    }
+    expect(descriptions.find((d) => d.includes("- concepts ("))).toContain(
+      "- concepts (key id, scoped, read+write): id: string, name: string, state: unseen|seen|practising|mastered, evidence: [{kind: string, date: string, detail: string}]",
+    );
+  });
+
+  it("keeps the other fields' types when one field has no JSON Schema", async () => {
+    const c = await connectTo(READONLY, async () => null);
+    const { tools } = await c.listTools();
+    expect(tools.find((t) => t.name === "data_query")!.description).toContain(
+      "- events (key id, app-wide, read): id: string, when: any, count?: number, done: boolean, tags: [string]",
+    );
+  });
+});
+
+describe("data server edge cases", () => {
+  it("tells the agent when the app cannot be reached", async () => {
+    const c = await connect(async () => null);
+    await rpc?.close();
+    const r = await c.callTool({ name: "data_get", arguments: { collection: "concepts", key: "a" } });
+    expect(r.isError).toBe(true);
+    expect((r.content as { text: string }[])[0].text).toMatch(/^Could not reach the app/);
+  });
+
+  it("registers no write tools when no collection is writable", async () => {
+    const c = await connectTo(READONLY, async () => null);
+    const { tools } = await c.listTools();
+    expect(tools.map((t) => t.name).sort()).toEqual(["data_get", "data_query"]);
+  });
+
+  it("refuses to start when nothing is visible to the agent", async () => {
+    await expect(
+      createDataServer(path.join(fixtures, "notes-harness", "harness.config.ts"), { path: "/nowhere", token: "x" }),
+    ).rejects.toThrow(/No collection/);
+  });
+
+  it("caps limit at 200", async () => {
+    const c = await connect(async () => null);
+    const r = await c.callTool({ name: "data_query", arguments: { collection: "concepts", limit: 201 } });
+    expect(r.isError).toBe(true);
   });
 });

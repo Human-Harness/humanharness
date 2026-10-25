@@ -19,7 +19,7 @@ import { type Event, type Session, fail } from "@humanharness/runtime";
 import { type ActionStatus, type CurrentTaskView, type NoteView, type TaskStatus, type TaskView, nextInPath } from "@humanharness/ui/client";
 import { APP_SCOPE, type HistoryTrailer, MAIN_SCOPE, NOTE_PREFIX, type Note, type NoteMeta, buildNotesIndex, isScopeId, noteSlug } from "@humanharness/workspace";
 import { CHECKPOINT_PROMPT, CLOSE_PROMPT, QUESTION_PROMPT, fillPrompt, resumeMessage } from "./task-prompts";
-import { type CurrentTask, type TasksFile, interrupted, keptQuestion, scopeOfTask, statusesIn, withStatus } from "./task-store";
+import { type CurrentTask, type PendingInput, type TasksFile, interrupted, keptQuestion, scopeOfTask, statusesIn, withStatus } from "./task-store";
 import { type TurnOptions, isHeld } from "./turn-controller";
 
 type Done = Extract<Event, { type: "done" }>;
@@ -79,8 +79,8 @@ export interface TaskDeps {
   recordCompaction?(task: CurrentTask): Promise<void>;
   /** The harness's blocks the person answers, by name (input-blocks spec). Absent or empty: none (spec D0). */
   inputBlocks?: Record<string, InputBlock>;
-  /** Puts an answer on its block in the chat of `chat` (input-blocks spec §8). */
-  markAnswered?(chat: string, answer: BlockAnswer): Promise<void>;
+  /** Puts an answer on its block in the chat of `chat` (input-blocks spec §8). False (logged): no unanswered block had that id. */
+  markAnswered?(chat: string, answer: BlockAnswer): Promise<boolean | void>;
   /** Writes an answer's records to a data collection, as the person, in `scope` (spec §6 `saveTo`). Throws a refusal. */
   saveAnswer?(collection: string, records: Record<string, unknown>[], scope: string): Promise<void>;
   now?: () => Date;
@@ -155,6 +155,8 @@ export class TaskManager {
   private windowDone = false;
   /** The task whose turn runs now: a session reported outside it is ignored. */
   private turnTask: string | null = null;
+  /** Counts the turns that started (a `done` came or the send returned): `respond` knows whether its turn ran. */
+  private turnsStarted = 0;
   /** The slug each free-question task wrote its note under, so a second save replaces its own note. */
   private readonly questionSlugs = new Map<string, string>();
   private readonly now: () => Date;
@@ -529,6 +531,8 @@ export class TaskManager {
       if (!(await this.checkpoint(c))) return refuse("stopped");
       await this.setStatus(c.id, "waiting");
     }
+    // A Stop so far takes nothing: the question stays open.
+    if (this.cancelRequested) return refuse("stopped");
     const language = await this.d.language();
     const display = answerDisplay(pending.block, block, parsed.value, language);
     const answer: BlockAnswer = { blockId, value: parsed.value, answeredAt: this.now().toISOString() };
@@ -541,9 +545,13 @@ export class TaskManager {
     // markAnswered rewrites it.
     await this.markAnswered(answer);
     take({ ok: true, display, value: answer.value, answeredAt: answer.answeredAt });
+    const started = this.turnsStarted;
     try {
       await this.askNow(answerMessage({ name: pending.block, blockId, value: parsed.value, display, language }), display);
+      if (this.turnsStarted === started) await this.reopen(c.id, pending);
     } catch (err) {
+      // An answer the agent never got must not be lost: its question opens again.
+      if (this.turnsStarted === started) await this.reopen(c.id, pending);
       // The window already shows the person's line and a running turn: end it there.
       if (!this.windowDone) {
         this.windowDone = true;
@@ -560,9 +568,23 @@ export class TaskManager {
   /** The answer goes on its block in the chat on screen (the task's: switching scope closes the task). Logged on failure. */
   private async markAnswered(answer: BlockAnswer): Promise<void> {
     try {
-      await this.d.markAnswered?.(this.chatOf(await this.d.store.load()), answer);
+      const marked = await this.d.markAnswered?.(this.chatOf(await this.d.store.load()), answer);
+      if (marked === false) console.error(`The chat has no unanswered block ${answer.blockId} to mark`);
     } catch (err) {
       console.error("Could not mark the answer in the chat", err);
+    }
+  }
+
+  /**
+   * The answer's turn never started (a Stop, or the send was refused): its question is pending again, so the form
+   * opens again. The chat keeps its answered mark (the chat log can't unmark): the window shows the pending
+   * question's form, not that mark. Logged on failure.
+   */
+  private async reopen(id: string, pending: PendingInput): Promise<void> {
+    try {
+      await this.update((s) => (s.current?.id === id && !s.current.pendingInput ? { ...s, current: { ...s.current, pendingInput: pending } } : s));
+    } catch (err) {
+      console.error("Could not open the question again", err);
     }
   }
 
@@ -715,6 +737,7 @@ export class TaskManager {
     } finally {
       this.turnTask = null;
     }
+    this.turnsStarted++;
     await Promise.all(shownInputs);
     // Mirrors TurnController: a quiet turn reaches the window only with a failure other than a cancel,
     // and a held failure never does.

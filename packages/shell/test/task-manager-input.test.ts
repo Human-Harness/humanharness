@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { ModelProfile } from "@humanharness/engines";
 import { type InputBlock, answerMessage, defineBlock, z } from "@humanharness/harness-sdk";
 import type { Event } from "@humanharness/runtime";
@@ -35,6 +35,8 @@ function setup(
     gate?: Promise<void>;
     sendError?: Error;
     saveAnswer?: TaskDeps["saveAnswer"];
+    markAnswered?: TaskDeps["markAnswered"];
+    scoped?: boolean;
   } = {},
 ) {
   let state = opts.state ?? emptyTasks();
@@ -75,7 +77,8 @@ function setup(
     changed: (v) => views.push(v),
     emit: (e) => void emitted.push(e),
     ...(opts.inputs === false ? {} : { inputBlocks: opts.inputs ?? { commit_answer: commit } }),
-    markAnswered: async (chat, answer) => void marked.push({ chat, answer }),
+    markAnswered: opts.markAnswered ?? (async (chat, answer) => void marked.push({ chat, answer })),
+    ...(opts.scoped ? { scoped: true, scopeExists: async (id: string) => id === "fracciones" } : {}),
     ...(opts.saveAnswer ? { saveAnswer: opts.saveAnswer } : {}),
     now: () => new Date(NOW),
     newId: () => `t${++n}`,
@@ -173,6 +176,7 @@ describe("TaskManager.respond", () => {
       [waiting(), "t1:0:9"],
       [waiting({ pendingInput: undefined }), "t1:0:0"],
       [waiting({ status: "closing" }), "t1:0:0"],
+      [waiting({ status: "running" }), "t1:0:0"],
       [emptyTasks(), "t1:0:0"],
     ];
     for (const [state, id] of cases) {
@@ -235,5 +239,62 @@ describe("TaskManager.respond", () => {
     expect((await accepted).ok).toBe(true);
     await expect(done).rejects.toThrow("The app is closing");
     expect(t.emitted).toEqual([{ type: "done", ok: false, error: { code: "agent-crashed", detail: "The app is closing" } }]);
+    // The agent never got the answer: the question is open again.
+    expect(t.state().current).toMatchObject({ status: "waiting", turns: 1, pendingInput: { blockId: "t1:0:0", block: "commit_answer" } });
+  });
+
+  it("a Stop before the answer is taken refuses it: nothing changes and no turn runs", async () => {
+    const t = setup({ state: waiting() });
+    const { accepted, done } = t.manager.respond("t1:0:0", { why: "x" });
+    t.manager.cancel();
+    expect(await accepted).toMatchObject({ ok: false, reason: "stopped" });
+    await done;
+    expect(t.turns).toEqual([]);
+    expect(t.marked).toEqual([]);
+    expect(t.emitted).toEqual([]);
+    expect(t.state().current?.pendingInput?.blockId).toBe("t1:0:0");
+  });
+
+  it("a Stop after the answer was taken, before its turn starts, opens the question again", async () => {
+    const t = setup({ state: waiting() });
+    const { accepted, done } = t.manager.respond("t1:0:0", { why: "x" });
+    expect((await accepted).ok).toBe(true);
+    t.manager.cancel();
+    await done;
+    expect(t.turns).toEqual([]);
+    expect(t.emitted).toEqual([{ type: "done", ok: false, error: { code: "cancelled" } }]);
+    expect(t.state().current).toMatchObject({ status: "waiting", turns: 1, pendingInput: { blockId: "t1:0:0" } });
+  });
+
+  it("a mark that fails or finds no block is logged, and the answer still goes to the agent", async () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      for (const markAnswered of [
+        async () => {
+          throw new Error("disk full");
+        },
+        async () => false,
+      ]) {
+        errors.mockClear();
+        const t = setup({ state: waiting(), markAnswered });
+        const { accepted, done } = t.manager.respond("t1:0:0", { why: "x" });
+        expect((await accepted).ok).toBe(true);
+        await done;
+        expect(t.turns).toHaveLength(1);
+        expect(t.state().current).not.toHaveProperty("pendingInput");
+        expect(errors).toHaveBeenCalledTimes(1);
+      }
+    } finally {
+      errors.mockRestore();
+    }
+  });
+
+  it("with scopes, the mark goes to the open scope's chat", async () => {
+    const t = setup({ scoped: true, state: { ...waiting({ scope: "fracciones" }), open: "fracciones" } });
+    const { accepted, done } = t.manager.respond("t1:0:0", { why: "x" });
+    expect((await accepted).ok).toBe(true);
+    await done;
+    expect(t.marked).toEqual([{ chat: "fracciones", answer: { blockId: "t1:0:0", value: { why: "x" }, answeredAt: NOW } }]);
+    expect(t.turns[0].options).toMatchObject({ chat: "fracciones", scope: "fracciones" });
   });
 });

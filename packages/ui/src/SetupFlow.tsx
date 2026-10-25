@@ -3,7 +3,8 @@ import { useTranslation } from "react-i18next";
 import { CheckIcon, TopBar } from "./chrome";
 import type { AppState, HarnessClient } from "./client";
 import { EngineTab } from "./EngineTab";
-import { FolderStep, uiLanguage } from "./FolderStep";
+import { FolderStep } from "./FolderStep";
+import { systemLanguage } from "./language";
 
 type Step = "folder" | "engine" | "done";
 
@@ -23,8 +24,8 @@ export function SetupFlow({
   /** "Start <name>" on the last step: the work screen. */
   onStart: () => void;
 }) {
-  const { t, i18n } = useTranslation();
-  const name = state.harness.name[uiLanguage(state, i18n.language)];
+  const { t } = useTranslation();
+  const name = state.harness.name;
   // A saved folder can't be changed here (it moves from Settings › General): the flow starts at the engine.
   const [withFolder] = useState(!state.config.folder);
   const [step, setStep] = useState<Step>(withFolder ? "folder" : "engine");
@@ -43,10 +44,15 @@ export function SetupFlow({
   const next = async () => {
     if (!selection?.ready) return;
     setSaveError(false);
-    if (selection.engineId !== state.config.engineId) {
+    // A saved folder and engine with no usable language would never count as set up: write the system's here.
+    const patch = {
+      ...(selection.engineId !== state.config.engineId ? { engineId: selection.engineId } : {}),
+      ...(state.config.language ? {} : { language: systemLanguage() }),
+    };
+    if (Object.keys(patch).length > 0) {
       setSaving(true);
       try {
-        onChange(await client.saveConfig({ engineId: selection.engineId }));
+        onChange(await client.saveConfig(patch));
       } catch {
         setSaveError(true);
         return;

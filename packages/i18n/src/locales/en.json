@@ -27,6 +27,7 @@
     "done": "Done",
     "tabs": { "general": "General", "engine": "Engine", "models": "Models", "usage": "Usage" },
     "language": "Language",
+    "languageHint": "The app's texts are in English for now. The AI answers in this language.",
     "appearance": "Appearance",
     "appearanceSystem": "Automatic",
     "appearanceLight": "Light",

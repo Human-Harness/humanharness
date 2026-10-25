@@ -18,7 +18,7 @@ Each user brings **their own AI subscription** through the provider's official C
 
 ## Stack
 
-Electron · TypeScript · React · pnpm workspaces · MCP servers for harness tools and UI blocks · isomorphic-git for local history. macOS first, then Windows and Linux. Spanish and English from v1.
+Electron · TypeScript · React · pnpm workspaces · MCP servers for harness tools and UI blocks · isomorphic-git for local history. macOS first, then Windows and Linux. The app ships in English; the AI thinks in English and answers in the person's language, and (plan 5b) the screens are translated into that language on their own engine.
 
 ## Repository layout
 

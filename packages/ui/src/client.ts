@@ -1,5 +1,5 @@
 import type { Effort, ModelChoice, ModelSpec, ModelsConfig } from "@humanharness/engines";
-import type { ActionCost, ChoiceOption, Language, LocalizedText, Tier } from "@humanharness/harness-sdk";
+import type { ActionCost, ChoiceOption, Language, Tier } from "@humanharness/harness-sdk";
 import type { ActivityKind, EngineError, Event, LimitWindow } from "@humanharness/runtime";
 import type { FileChange, SyncProvider, SyncStatus } from "@humanharness/workspace";
 
@@ -41,9 +41,9 @@ export interface EngineOption {
   status: "allowed" | "pending";
   /** Company that runs the service (legal notice). */
   provider: string;
-  requires: LocalizedText;
-  dataLocation: LocalizedText;
-  trainsOnData: LocalizedText;
+  requires: string;
+  dataLocation: string;
+  trainsOnData: string;
   termsUrl: string;
   privacyUrl: string;
   /** Whether the engine reports plan-limit windows (Claude) or only tokens (Codex). */
@@ -60,9 +60,9 @@ export interface EngineOption {
 }
 
 export interface ActionOption {
-  label: LocalizedText;
+  label: string;
   /** One line under the label on the topic card. */
-  description?: LocalizedText;
+  description?: string;
   cost: ActionCost;
   /** The tier the harness recommends for the action. */
   tier?: Tier;
@@ -71,7 +71,7 @@ export interface ActionOption {
 /** A read-only reference folder, as the work screen shows it ("~/…" for paths in the home folder). */
 export interface ReferenceView {
   id: string;
-  label: LocalizedText;
+  label: string;
   path: string;
 }
 
@@ -102,9 +102,8 @@ export type MoveResult =
 export interface AppState {
   harness: {
     id: string;
-    name: LocalizedText;
-    languages: Language[];
-    tagline?: LocalizedText;
+    name: string;
+    tagline?: string;
     /** The harness logo as a data: URL; absent means the Human Harness H. */
     logo?: string;
     /** Who made the harness (manifest `author`), for "made by … with Human Harness". */
@@ -343,7 +342,7 @@ export interface CurrentTaskView {
   fallback?: { model: string; tier?: Tier };
 }
 
-/** A note in `.harness/notes/`, for the side panel and "Lo que quedó claro". */
+/** A note in `.harness/notes/`, for the side panel and "What's clear so far". */
 export interface NoteView {
   slug: string;
   title: string;

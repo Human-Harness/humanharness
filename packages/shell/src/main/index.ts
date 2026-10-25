@@ -6,7 +6,7 @@ import path from "node:path";
 import { BrowserWindow, type IpcMainInvokeEvent, app, clipboard, dialog, ipcMain, nativeTheme, shell } from "electron";
 import { electronLauncher } from "@humanharness/blocks";
 import { type EngineDef, type ModelProfile, type ModelSpec, NOTICE_VERSION, availableEngines, defaultTier, getEngine } from "@humanharness/engines";
-import { type Language, type LoadedHarness, TIERS, type Tier, allBlocks, choiceOptionSchema, loadHarness, resolveInHarness } from "@humanharness/harness-sdk";
+import { DEFAULT_LANGUAGE, type LoadedHarness, TIERS, type Tier, allBlocks, choiceOptionSchema, loadHarness, resolveInHarness } from "@humanharness/harness-sdk";
 import { type Event, type HarnessRuntime, createRuntime } from "@humanharness/runtime";
 import {
   type AppConfig,
@@ -63,7 +63,6 @@ import {
   fakeSetupResult,
   isMockEngine,
   mockEngineText,
-  mockLanguage,
   mockModels,
   offeredEngines,
   readTestHooks,
@@ -122,8 +121,6 @@ async function referencesFor(folder: string | undefined, log = false): Promise<R
 const mode = () => (app.isPackaged ? "distribution" : "development");
 /** The engines this app offers (spec 3e: mock mode offers only the faked ones). */
 const offered = () => offeredEngines(availableEngines(harness.engines, mode()), hooks);
-/** Mock mode: the language the test engine and its model are named in. */
-const mockLang = (saved: Language | undefined) => mockLanguage(saved, app.getLocale(), harness.languages);
 const stateBlocks = () => new Set(Object.entries(allBlocks(harness)).filter(([, b]) => !b.visible).map(([n]) => n));
 const rendererFile = path.join(here, "../renderer/index.html");
 // The dev server is only trusted in development: a packaged app always loads its own file.
@@ -131,7 +128,6 @@ const devUrl = app.isPackaged ? undefined : process.env.ELECTRON_RENDERER_URL;
 const appUrl = (url: string) => isAppUrl(url, { devUrl, rendererFile });
 const validation = (): ValidationContext => ({
   engineIds: offered().map((e) => e.id),
-  languages: harness.languages,
   home: os.homedir(),
 });
 
@@ -166,7 +162,7 @@ const engineLogo = (e: EngineDef) => (e.logo ? logo(e.id, () => requireFromHere.
 const savedOffer = (engineId: string) => shared.engine(engineId).catch((): SharedEngineRecord => ({}));
 
 /** Settings › Modelos: the harness's recommendations, the core's tables and what each engine offers. */
-async function modelsView(language: Language | undefined): Promise<ModelsView> {
+async function modelsView(): Promise<ModelsView> {
   const engines = offered();
   const saved = await shared.load().catch(() => ({ version: 1 as const, engines: {} as Record<string, SharedEngineRecord> }));
   // Mock mode: a faked engine offers only the test model, and every tier uses it (effort and cap kept).
@@ -174,7 +170,7 @@ async function modelsView(language: Language | undefined): Promise<ModelsView> {
     isMockEngine(hooks, engineId) ? { ...defaultTier(engineId, tier), model: MOCK_MODEL } : defaultTier(engineId, tier);
   const offer = (e: EngineDef) => {
     const real = engineOffer(e, saved.engines[e.id] ?? {});
-    return isMockEngine(hooks, e.id) ? { ...real, models: mockModels(mockLang(language)) } : real;
+    return isMockEngine(hooks, e.id) ? { ...real, models: mockModels() } : real;
   };
   return {
     recommended: {
@@ -217,7 +213,6 @@ async function appState(): Promise<AppState> {
     harness: {
       id: harness.id,
       name: harness.name,
-      languages: harness.languages,
       ...(harness.tagline ? { tagline: harness.tagline } : {}),
       ...(harnessImage ? { logo: harnessImage } : {}),
       author: harness.author,
@@ -233,7 +228,7 @@ async function appState(): Promise<AppState> {
         if (isMockEngine(hooks, e.id)) {
           return {
             id: e.id,
-            ...mockEngineText(mockLang(saved.language)),
+            ...mockEngineText(),
             status: e.status as "allowed" | "pending",
             termsUrl: e.termsUrl,
             privacyUrl: e.privacyUrl,
@@ -268,7 +263,7 @@ async function appState(): Promise<AppState> {
     ),
     path: harness.path ?? [],
     references: (await referencesFor(saved.folder)).map((r) => ({ id: r.id, label: r.label, path: displayPath(r.path, os.homedir()) })),
-    models: await modelsView(saved.language),
+    models: await modelsView(),
     backup: await backupView(saved.folder),
   };
 }
@@ -323,7 +318,7 @@ const runtime = memoise<HarnessRuntime>(async () => {
     uiServerEntry: path.join(here, "ui-server.js"),
     command: cmd.command,
     env: cmd.env,
-    references: (await referencesFor(c.folder, true)).map((r) => ({ label: r.label[c.language], path: r.path })),
+    references: (await referencesFor(c.folder, true)).map((r) => ({ label: r.label, path: r.path })),
     onSession: (s) => void tasks.sessionStarted(s).catch((err: unknown) => console.error("Could not record the session", err)),
     onModels: (offer) =>
       void shared.update(engine.id, { models: offer.models, efforts: offer.efforts }).catch((err: unknown) => console.error("Could not save the engine's models", err)),
@@ -427,7 +422,7 @@ const tasks = new TaskManager({
     return harness.path ?? [];
   },
   readPrompt: (action) => fs.readFile(resolveInHarness(harness, harness.actions[action].prompt), "utf8"),
-  language: async () => (await config.load()).language ?? harness.languages[0],
+  language: async () => (await config.load()).language ?? DEFAULT_LANGUAGE,
   engine: async () => (await config.load()).engineId ?? "",
   notes: async () => {
     const c = await validConfig();
@@ -769,7 +764,7 @@ async function createWindow() {
     height: 720,
     minWidth: 900,
     minHeight: 600,
-    title: harness.name.en,
+    title: harness.name,
     // Native look (spec 2026-10-11-app-look-design.md): on macOS the page draws the 52 px top bar.
     ...(process.platform === "darwin" ? { titleBarStyle: "hiddenInset" as const, trafficLightPosition: { x: 20, y: 18 } } : {}),
     backgroundColor: nativeTheme.shouldUseDarkColors ? PAPER.dark : PAPER.light,
@@ -822,7 +817,7 @@ const loaded = await loadHarness(path.join(here, "harness.js"), { root: __HARNES
 
 if (loaded) {
   harness = loaded;
-  app.setName(harness.name.en);
+  app.setName(harness.name);
   app.setPath("userData", hooks.userData ?? path.join(app.getPath("appData"), "Human Harness", harness.id));
 }
 

@@ -21,8 +21,8 @@ test("a harness made with init builds with dev, opens, and runs its example task
 
   const { app, page } = await launch(s, { claude: templateScript }, path.join(outDir, "main", "index.js"));
   try {
-    await page.getByRole("button", { name: "Iniciar my-harness" }).click();
-    await page.getByRole("region", { name: "¿Por dónde empezamos?" }).getByRole("button", { name: /Ejemplo/ }).click();
+    await page.getByRole("button", { name: "Start my-harness" }).click();
+    await page.getByRole("region", { name: "Where do we start?" }).getByRole("button", { name: /Example/ }).click();
     await expect(page.getByRole("main").getByText("Hola, este harness todavía se está armando.")).toBeVisible();
     await expect(page.getByRole("article", { name: "Idea" }).getByText("Una idea")).toBeVisible();
     await expect(page.getByRole("button", { name: "Profundizar" })).toBeVisible();

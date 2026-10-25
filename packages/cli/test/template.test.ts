@@ -12,14 +12,11 @@ const FILES = [
   "ui/App.tsx",
   "ui/ExampleCard.tsx",
   "ui/harness.css",
-  "locales/es.json",
   "locales/en.json",
   "README.md",
   "HARNESS.md",
   "tsconfig.json",
 ];
-const keys = (o: Record<string, unknown>, prefix = ""): string[] =>
-  Object.entries(o).flatMap(([k, v]) => (typeof v === "object" && v !== null ? keys(v as Record<string, unknown>, `${prefix}${k}.`) : [`${prefix}${k}`]));
 
 describe("template", () => {
   it("has exactly the minimal harness's files, and no package.json (init writes it)", () => {
@@ -30,12 +27,6 @@ describe("template", () => {
   it("is written with the id init replaces", () => {
     expect(read(TEMPLATE, "harness.config.ts")).toContain(`id: "${TEMPLATE_ID}"`);
     expect(read(TEMPLATE, "HARNESS.md")).toMatch(new RegExp(`^# ${TEMPLATE_ID}\\n`));
-  });
-
-  it("has the same strings in Spanish and English", () => {
-    const es = JSON.parse(read(TEMPLATE, "locales/es.json")) as Record<string, unknown>;
-    const en = JSON.parse(read(TEMPLATE, "locales/en.json")) as Record<string, unknown>;
-    expect(keys(es).sort()).toEqual(keys(en).sort());
   });
 
   it("has a brief that ends the answer with show_choices and takes the notes index", () => {

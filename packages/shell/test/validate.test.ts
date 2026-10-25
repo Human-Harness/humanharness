@@ -13,7 +13,7 @@ function fakeRealpath(existing: string[], links: Record<string, string> = {}) {
   };
 }
 const realpath = fakeRealpath(["/", "/Users", home, "/Users/ana/Work", "/Volumes"], { "/Users/ana/Work/link": "/Users/ana/.claude" });
-const ctx = { engineIds: ["claude", "codex"], languages: ["es", "en"], home, realpath };
+const ctx = { engineIds: ["claude", "codex"], home, realpath };
 
 describe("folderProblem", () => {
   it("accepts a normal folder", () => {
@@ -119,8 +119,11 @@ describe("configProblem", () => {
     expect(await configProblem({ engineId: "gemini" }, ctx)).toBe("engine-unavailable");
   });
 
-  it("rejects a language the harness does not have", async () => {
-    expect(await configProblem({ language: "fr" as never }, ctx)).toBe("language-unavailable");
+  it("accepts any canonical language tag and refuses anything else", async () => {
+    expect(await configProblem({ language: "pt-BR" }, ctx)).toBeNull();
+    expect(await configProblem({ language: "es" }, ctx)).toBeNull();
+    expect(await configProblem({ language: "pt-br" }, ctx)).toBe("language-unavailable");
+    expect(await configProblem({ language: "not a tag" }, ctx)).toBe("language-unavailable");
   });
 
   it("accepts only the known appearances", async () => {

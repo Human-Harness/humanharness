@@ -38,7 +38,7 @@ export const CORE_BLOCKS = {
   }),
   save_note: defineBlock({
     description:
-      "Saves what this topic made clear, only when the app asks you to close the topic. The app writes the note into the folder: never write it yourself. `summary`: at most 5 short key points; `decisions`: what was settled; `files`: paths that back the summary; `open`: questions left open.",
+      "Saves what this topic made clear, only when the app asks you to close the topic. Write the note in English. The app writes it into the folder: never write it yourself. `summary`: at most 5 short key points; `decisions`: what was settled; `files`: paths that back the summary; `open`: questions left open.",
     visible: false,
     tool: "save_note",
     schema: saveNoteSchema,

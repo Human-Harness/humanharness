@@ -69,7 +69,8 @@ const blockSchema = z.custom<Block>(
       typeof x.visible === "boolean" &&
       (x.tool === undefined || (typeof x.tool === "string" && TOOL_NAME.test(x.tool))) &&
       x.schema instanceof z.ZodObject &&
-      x.schema.safeParse(x.example).success
+      x.schema.safeParse(x.example).success &&
+      (x.input === undefined || x.input instanceof z.ZodObject)
     );
   },
   { message: "Expected a block created with defineBlock()" },

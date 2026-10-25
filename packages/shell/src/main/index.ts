@@ -37,6 +37,7 @@ import {
   MAIN_SCOPE,
   NOTES_PREFIX,
   ScopeStore,
+  buildDataContext,
   isScopeId,
   migrateToScopes,
   notesPrefix,
@@ -541,6 +542,15 @@ const tasks = new TaskManager({
   scopeExists: async (id) => {
     const c = await validConfig();
     return c ? (await scopeStoreFor(baseOf(c)).list()).some((s) => s.id === id && !s.archived) : false;
+  },
+  // Spec §4.4: only a harness with a collection that goes into the context gets the hook (D2).
+  // A getter, because the harness is loaded after this object is built.
+  get dataContext() {
+    if (!Object.values(harness.data).some((c) => c.context !== false)) return undefined;
+    return async (scope: string, action: string | undefined) => {
+      const c = await validConfig();
+      return c ? buildDataContext(dataStoreFor(baseOf(c)), harness.data, scope, action) : "";
+    };
   },
   get path() {
     return harness.path ?? [];

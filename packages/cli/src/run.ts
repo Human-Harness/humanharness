@@ -28,7 +28,7 @@ import {
   sharedConfigDir,
   usageRecord,
 } from "@humanharness/shell/tasks";
-import { DataStore, MAIN_SCOPE, ScopeStore, generatedFiles, migrateToScopes, notesPrefix, readNotes, writeNote } from "@humanharness/workspace";
+import { DataStore, MAIN_SCOPE, buildDataContext, ScopeStore, generatedFiles, migrateToScopes, notesPrefix, readNotes, writeNote } from "@humanharness/workspace";
 import { CliError, type Io, UsageError, parseCommand } from "./cli";
 import { MANIFEST } from "./paths";
 import { clashMessage, matchClashes } from "./mock-match";
@@ -224,6 +224,9 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
     readPrompt: (id) => fs.readFile(resolveInHarness(harness, harness.actions[id].prompt), "utf8"),
     language: async () => language,
     engine: async () => engine.id,
+    ...(Object.values(harness.data).some((c) => c.context !== false)
+      ? { dataContext: (scope: string, action: string | undefined) => buildDataContext(dataStore, harness.data, scope, action) }
+      : {}),
     scoped,
     scopeExists: async (id) => (await scopes.list()).some((s) => s.id === id && !s.archived),
     notes: (scope) => readNotes(folder, notesPrefix(scoped, scope)),

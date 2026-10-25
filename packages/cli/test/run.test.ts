@@ -116,6 +116,9 @@ describe("runTask", () => {
         { match: "# Task: study", steps: [{ mcp: { server: "data", tool: "data_put", args: { collection: "concepts", record } } }, ...claudeTextLines("Saved it."), result] },
       ],
     };
+    fs.mkdirSync(path.join(folder, ".harness", "data", "_app"), { recursive: true });
+    fs.writeFileSync(path.join(folder, ".harness", "data", "_app", "profile.json"), JSON.stringify({ name: "Ana", level: "6th grade" }));
+    const prompts = path.join(root, "study-data-prompts.jsonl");
     await runTask({
       harnessDir: study,
       action: "study",
@@ -123,8 +126,10 @@ describe("runTask", () => {
       folder,
       input: lines("q\n"),
       output: memoryStream().stream,
-      engineCommand: { command: fakeClaudeCommand(), env: { HH_FAKE_SCRIPT: writeScript(root, script) } },
+      engineCommand: { command: fakeClaudeCommand(), env: { HH_FAKE_SCRIPT: writeScript(root, script), HH_FAKE_PROMPTS: prompts } },
     });
+    const first = readJsonl(prompts)[0] as { prompt: string };
+    expect(first.prompt).toContain("## Data: profile\n\n| name | level |\n|---|---|\n| Ana | 6th grade |");
     const file = path.join(".harness", "data", "run", "concepts.json");
     expect(JSON.parse(fs.readFileSync(path.join(folder, file), "utf8"))).toEqual([record]);
 

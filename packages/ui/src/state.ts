@@ -1,4 +1,4 @@
-import type { ChatEntry, Event, LimitWindow, TurnUsage } from "./client";
+import type { BlockAnswer, ChatBlock, ChatEntry, Event, LimitWindow, TurnUsage } from "./client";
 
 export interface LiveActivity {
   id: string;
@@ -10,7 +10,7 @@ export interface LiveActivity {
 
 export interface LiveTurn {
   text: string;
-  blocks: { name: string; data: unknown }[];
+  blocks: ChatBlock[];
   activities: LiveActivity[];
   usage?: TurnUsage;
   limits?: LimitWindow[];
@@ -36,6 +36,8 @@ export type ChatAction =
   | DoneAction
   | { type: "user"; text: string; at: string; action?: string }
   | { type: "loaded"; entries: ChatEntry[] }
+  /** The person's answer to an input block was taken: it goes on its block (input-blocks spec §8). */
+  | { type: "answered"; answer: BlockAnswer }
   /** A local assistant message that the UI shows but never saves. */
   | { type: "notice"; text: string; at: string };
 
@@ -99,7 +101,9 @@ export function reduceChat(state: ChatState, action: ChatAction): ChatState {
           live: live ? { ...live, state: { ...live.state, [action.name]: action.data } } : live,
         };
       }
-      return live ? { ...state, live: { ...live, blocks: [...live.blocks, { name: action.name, data: action.data }] } } : state;
+      return live
+        ? { ...state, live: { ...live, blocks: [...live.blocks, { name: action.name, data: action.data, ...(action.id ? { id: action.id } : {}) }] } }
+        : state;
     case "context":
     case "compaction":
       // The task view carries them (the side panel's meter); the conversation doesn't change.
@@ -121,6 +125,15 @@ export function reduceChat(state: ChatState, action: ChatAction): ChatState {
             },
           }
         : state;
+    case "answered": {
+      const id = action.answer.blockId;
+      const mark = (blocks: ChatBlock[]) => blocks.map((b) => (b.id === id && !b.input ? { ...b, input: action.answer } : b));
+      return {
+        ...state,
+        entries: state.entries.map((e) => (e.blocks.some((b) => b.id === id) ? { ...e, blocks: mark(e.blocks) } : e)),
+        live: live && live.blocks.some((b) => b.id === id) ? { ...live, blocks: mark(live.blocks) } : live,
+      };
+    }
     case "done": {
       if (!live) {
         // A failure without a turn on screen (a quiet closing turn): show the error alone.

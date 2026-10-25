@@ -117,3 +117,26 @@ describe("reduceChat", () => {
     expect(s.blockState).toEqual({ progress: { percent: 60 }, phase: { n: 2 } });
   });
 });
+
+describe("input blocks", () => {
+  it("a live block keeps its id into the saved entry, and an answer marks it once", () => {
+    let s = run([
+      { type: "user", text: "go", at: "t" },
+      { type: "block", name: "commit_answer", data: { question: "q" }, id: "t1:0:0" },
+      { type: "block", name: "card", data: {} },
+      { type: "done", ok: true },
+    ]);
+    expect(s.entries[1].blocks).toEqual([{ name: "commit_answer", data: { question: "q" }, id: "t1:0:0" }, { name: "card", data: {} }]);
+    const answer = { blockId: "t1:0:0", value: { why: "x" }, answeredAt: "a" };
+    s = reduceChat(s, { type: "answered", answer });
+    expect(s.entries[1].blocks[0].input).toEqual(answer);
+    expect(s.entries[1].blocks[1]).toEqual({ name: "card", data: {} });
+    s = reduceChat(s, { type: "answered", answer: { ...answer, value: { why: "y" } } });
+    expect(s.entries[1].blocks[0].input).toEqual(answer);
+  });
+
+  it("D0: a block without an id stays exactly as before", () => {
+    const s = run([{ type: "user", text: "go", at: "t" }, { type: "block", name: "card", data: { t: 1 } }, { type: "done", ok: true }]);
+    expect(s.entries[1].blocks).toEqual([{ name: "card", data: { t: 1 } }]);
+  });
+});

@@ -1,7 +1,7 @@
-import { type ComponentType, useEffect, useState } from "react";
+import { type ComponentType, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { ChatBlock, InputIssue } from "./client";
-import { AnswerView, InputForm, forgetDraft } from "./InputForm";
+import { AnswerView, InputForm } from "./InputForm";
 import type { BlockActions, BlockProps, InputContext, InputProps } from "./Message";
 
 /** The shown data's first text: the core view's heading (usually the question). */
@@ -36,9 +36,6 @@ export function InputHost({
   // The app clears the pending question before the answer is taken: until then the form stays, never "closed".
   const pending = open || (sending && block.input === undefined);
   const answered = open ? undefined : block.input;
-  useEffect(() => {
-    if (answered && block.id) forgetDraft(block.id);
-  }, [answered, block.id]);
   const submit = (value: Record<string, unknown>) => {
     if (!block.id || !open || !inputs.ready || sending) return;
     setSending(true);

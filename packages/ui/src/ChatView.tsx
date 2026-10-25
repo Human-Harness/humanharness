@@ -8,6 +8,7 @@ import { ErrorCard, isFixable, problemError } from "./ErrorCard";
 import { FlowSide } from "./FlowSide";
 import { uiLanguage } from "./FolderStep";
 import { HistoryPanel } from "./HistoryPanel";
+import { pruneDrafts } from "./InputForm";
 import { type BlockActions, type BlockProps, Blocks, type InputContext, Message } from "./Message";
 import { Markdown, markdownToPlain } from "./markdown";
 import { NotesPanel } from "./NotesPanel";
@@ -175,6 +176,14 @@ export function ChatView({
   useEffect(() => {
     if (!chat.live) busy.current = false;
   }, [chat.live]);
+
+  // Drafts of questions that can't come back go. Only once the tasks are known: before that `tasks` is empty, and
+  // the chat drawn again (Home, Settings) would lose every draft.
+  const taskId = tasks.current?.id;
+  const pendingInput = tasks.current?.pendingInput;
+  useEffect(() => {
+    if (tasksLoaded && state.inputs) pruneDrafts(taskId, pendingInput);
+  }, [tasksLoaded, state.inputs, taskId, pendingInput]);
 
   // The pre-flight question gets focus on its safe answer ("Not now") and comes into view.
   const asking = pending !== null;

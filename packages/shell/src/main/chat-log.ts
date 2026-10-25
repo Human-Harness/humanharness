@@ -57,7 +57,9 @@ export class ChatLog {
 
   /**
    * Puts the person's answer on the block it answers (input-blocks spec §8). The file is rewritten atomically
-   * (temp + rename), keeping every other line as it was. False when no unanswered block has that id.
+   * (temp + rename), keeping every other line as it was. The last block with that id gets it, replacing an
+   * earlier answer (a send stopped before its turn reopens the question, and the second answer wins). False when
+   * no block has that id.
    * It must not run while the chat file can be appended to: an append landing between the read and the rename
    * is lost. `TaskManager.respond` calls it inside its operation, with no turn running.
    */
@@ -68,20 +70,21 @@ export class ChatLog {
     } catch {
       return false;
     }
+    const lines = raw.split("\n");
     let found = false;
-    const lines = raw.split("\n").map((line) => {
-      if (found || !line.trim()) return line;
+    for (let n = lines.length - 1; n >= 0 && !found; n--) {
+      if (!lines[n].trim()) continue;
       let entry: ChatEntry;
       try {
-        entry = JSON.parse(line) as ChatEntry;
+        entry = JSON.parse(lines[n]) as ChatEntry;
       } catch {
-        return line;
+        continue;
       }
-      const i = Array.isArray(entry.blocks) ? entry.blocks.findIndex((b) => b.id === answer.blockId && b.input === undefined) : -1;
-      if (i < 0) return line;
+      const i = Array.isArray(entry.blocks) ? entry.blocks.findLastIndex((b) => b.id === answer.blockId) : -1;
+      if (i < 0) continue;
       found = true;
-      return JSON.stringify({ ...entry, blocks: entry.blocks.map((b, j) => (j === i ? { ...b, input: answer } : b)) });
-    });
+      lines[n] = JSON.stringify({ ...entry, blocks: entry.blocks.map((b, j) => (j === i ? { ...b, input: answer } : b)) });
+    }
     if (!found) return false;
     const tmp = `${this.file}.${randomUUID()}.tmp`;
     try {

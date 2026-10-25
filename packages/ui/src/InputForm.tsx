@@ -5,7 +5,17 @@ import { type Draft, type Lang, answerRows, draftValue, emptyDraft, isSkipped, l
 
 /** Drafts by block id: they survive the chat being drawn again (Home, Settings), not a restart (spec §11.2). */
 const drafts = new Map<string, Draft>();
-export const forgetDraft = (blockId: string): void => void drafts.delete(blockId);
+
+/**
+ * Drops the drafts whose block can't come back: every one outside the open task `task` (all of them when no task
+ * is open) and, while the task waits on `pending`, every one but that question's. A sent answer's draft stays while
+ * its task is open, so a send stopped before its turn reopens the form as it was.
+ */
+export function pruneDrafts(task: string | undefined, pending: string | undefined): void {
+  for (const id of [...drafts.keys()]) {
+    if (!task || !id.startsWith(`${task}:`) || (pending !== undefined && id !== pending)) drafts.delete(id);
+  }
+}
 
 export interface InputFormProps {
   spec: InputSpec;

@@ -52,14 +52,15 @@ describe("ChatLog", () => {
     expect((await new ChatLog(folder).load(1)).map((e) => e.text)).toEqual(["b"]);
   });
 
-  it("puts an answer on its block, once, rewriting the file and keeping broken lines", async () => {
+  it("puts an answer on its block, rewriting the file and keeping broken lines; a second answer replaces it", async () => {
     const folder = fs.mkdtempSync(path.join(root, "f-"));
     const log = new ChatLog(folder, "claude");
     await log.append({ id: "1", role: "assistant", text: "", blocks: [{ name: "commit_answer", data: { question: "q" }, id: "t1:0:0" }], activities: [], at: "t1" });
     fs.appendFileSync(path.join(folder, ".harness", "chats", "main.jsonl"), "{broken\n");
     const answer = { blockId: "t1:0:0", value: { why: "porque" }, answeredAt: "2026-10-25T10:00:00.000Z" };
+    expect(await log.markAnswered({ ...answer, value: { why: "primero" } })).toBe(true);
+    // A send stopped before its turn reopens the question: the second answer wins.
     expect(await log.markAnswered(answer)).toBe(true);
-    expect(await log.markAnswered(answer)).toBe(false);
     expect(await log.markAnswered({ ...answer, blockId: "t9:0:0" })).toBe(false);
     const [entry] = await log.load();
     expect(entry.blocks[0]).toEqual({ name: "commit_answer", data: { question: "q" }, id: "t1:0:0", input: answer });

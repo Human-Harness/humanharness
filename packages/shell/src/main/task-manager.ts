@@ -569,7 +569,7 @@ export class TaskManager {
   private async markAnswered(answer: BlockAnswer): Promise<void> {
     try {
       const marked = await this.d.markAnswered?.(this.chatOf(await this.d.store.load()), answer);
-      if (marked === false) console.error(`The chat has no unanswered block ${answer.blockId} to mark`);
+      if (marked === false) console.error(`The chat has no block ${answer.blockId} to mark`);
     } catch (err) {
       console.error("Could not mark the answer in the chat", err);
     }
@@ -578,7 +578,7 @@ export class TaskManager {
   /**
    * The answer's turn never started (a Stop, or the send was refused): its question is pending again, so the form
    * opens again. The chat keeps its answered mark (the chat log can't unmark): the window shows the pending
-   * question's form, not that mark. Logged on failure.
+   * question's form, not that mark, and the next answer replaces it. Logged on failure.
    */
   private async reopen(id: string, pending: PendingInput): Promise<void> {
     try {

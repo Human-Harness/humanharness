@@ -127,7 +127,8 @@ export function reduceChat(state: ChatState, action: ChatAction): ChatState {
         : state;
     case "answered": {
       const id = action.answer.blockId;
-      const mark = (blocks: ChatBlock[]) => blocks.map((b) => (b.id === id && !b.input ? { ...b, input: action.answer } : b));
+      // A second answer (the question was reopened after a stopped send) replaces the first.
+      const mark = (blocks: ChatBlock[]) => blocks.map((b) => (b.id === id ? { ...b, input: action.answer } : b));
       return {
         ...state,
         entries: state.entries.map((e) => (e.blocks.some((b) => b.id === id) ? { ...e, blocks: mark(e.blocks) } : e)),

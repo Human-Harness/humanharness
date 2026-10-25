@@ -4,9 +4,14 @@ import type { ComponentType } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import { type BlockProps, HarnessApp } from "../src";
 import type { InputSpec, TaskStatus } from "../src/client";
+import { pruneDrafts } from "../src/InputForm";
 import { FakeClient } from "./fake-client";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  // Drafts live in a module map: no test sees another's.
+  pruneDrafts(undefined, undefined);
+});
 
 const L = (en: string) => ({ es: en, en });
 const SPEC: InputSpec = {
@@ -118,6 +123,49 @@ describe("input blocks in the chat", () => {
     await open(client);
     expect(screen.queryByText("Your answer")).toBeNull();
     expect((screen.getByRole("button", { name: "I commit" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  describe("drafts", () => {
+    const view = (current: object | null) => ({ current: current as never, actions: {}, notes: [] });
+    const why = () => (screen.getByLabelText("Why?") as HTMLTextAreaElement).value;
+
+    it("a send stopped before its turn reopens the form with the text the person wrote", async () => {
+      const client = quizClient();
+      await open(client);
+      fireEvent.change(screen.getByLabelText("Why?"), { target: { value: "kept" } });
+      fireEvent.click(screen.getByRole("button", { name: "I commit" }));
+      expect(await screen.findByText("Your answer")).toBeTruthy();
+      act(() => client.emitTasks(view({ id: "t1", action: "practice", status: "waiting", pendingInput: "t1:0:0" })));
+      expect(await screen.findByLabelText("Why?")).toBeTruthy();
+      expect(why()).toBe("kept");
+    });
+
+    it("a newer question drops the older one's draft", async () => {
+      const client = quizClient({ blocks: [block("t1:0:0"), block("t1:0:1")] });
+      await open(client);
+      fireEvent.change(screen.getByLabelText("Why?"), { target: { value: "dropped" } });
+      act(() => client.emitTasks(view({ id: "t1", action: "practice", status: "waiting", pendingInput: "t1:0:1" })));
+      act(() => client.emitTasks(view({ id: "t1", action: "practice", status: "waiting", pendingInput: "t1:0:0" })));
+      expect(why()).toBe("");
+    });
+
+    it("the task closing drops its drafts", async () => {
+      const client = quizClient();
+      await open(client);
+      fireEvent.change(screen.getByLabelText("Why?"), { target: { value: "dropped" } });
+      act(() => client.emitTasks(view(null)));
+      expect(screen.getByText("This question is closed.")).toBeTruthy();
+      act(() => client.emitTasks(view({ id: "t1", action: "practice", status: "waiting", pendingInput: "t1:0:0" })));
+      expect(why()).toBe("");
+    });
+
+    it("the chat drawn again keeps the draft", async () => {
+      await open(quizClient());
+      fireEvent.change(screen.getByLabelText("Why?"), { target: { value: "kept" } });
+      cleanup();
+      await open(quizClient());
+      expect(why()).toBe("kept");
+    });
   });
 
   it("a harness component gets `input`; D0: without input specs it gets none", async () => {

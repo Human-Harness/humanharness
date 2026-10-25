@@ -131,8 +131,10 @@ describe("input blocks", () => {
     s = reduceChat(s, { type: "answered", answer });
     expect(s.entries[1].blocks[0].input).toEqual(answer);
     expect(s.entries[1].blocks[1]).toEqual({ name: "card", data: {} });
-    s = reduceChat(s, { type: "answered", answer: { ...answer, value: { why: "y" } } });
-    expect(s.entries[1].blocks[0].input).toEqual(answer);
+    // A reopened question's second answer replaces the first.
+    const second = { ...answer, value: { why: "y" } };
+    s = reduceChat(s, { type: "answered", answer: second });
+    expect(s.entries[1].blocks[0].input).toEqual(second);
   });
 
   it("D0: a block without an id stays exactly as before", () => {

@@ -6,7 +6,21 @@ import path from "node:path";
 import { BrowserWindow, type IpcMainInvokeEvent, app, clipboard, dialog, ipcMain, nativeImage, nativeTheme, shell } from "electron";
 import { electronLauncher } from "@humanharness/blocks";
 import { type EngineDef, type ModelProfile, type ModelSpec, NOTICE_VERSION, availableEngines, defaultTier, getEngine } from "@humanharness/engines";
-import { DEFAULT_LANGUAGE, type LoadedHarness, TIERS, type Tier, allBlocks, choiceOptionSchema, inputBlocks, inputSpecs, loadHarness, resolveInHarness } from "@humanharness/harness-sdk";
+import {
+  DEFAULT_LANGUAGE,
+  type LoadedHarness,
+  SETTINGS_COLLECTION,
+  TIERS,
+  type Tier,
+  allBlocks,
+  choiceOptionSchema,
+  dataCollections,
+  inputBlocks,
+  inputSpecs,
+  loadHarness,
+  resolveInHarness,
+  settingsView,
+} from "@humanharness/harness-sdk";
 import { type Event, type HarnessRuntime, createRuntime } from "@humanharness/runtime";
 import {
   type AppConfig,
@@ -31,6 +45,7 @@ import {
   stepTextSize,
 } from "@humanharness/ui/client";
 import {
+  APP_SCOPE,
   DATA_PREFIX,
   DataStore,
   History,
@@ -51,7 +66,7 @@ import { imageDataUrl } from "./assets";
 import { devDockIcon } from "./dock-icon";
 import { ChatLog } from "./chat-log";
 import { ConfigStore, historyDir } from "./config";
-import { agentDataRequest, personDataRequests, saveAnswerRecords } from "./data-requests";
+import { agentDataRequest, harnessUiDataRequests, personDataRequests, saveAnswerRecords } from "./data-requests";
 import { testPrompt } from "./engine-check";
 import { createCommandDeps } from "./command-deps";
 import { cliCommand, engineCommand, loginShellPath } from "./engine-command";
@@ -72,6 +87,7 @@ import { saveWithFolderChange } from "./folder-change";
 import { type MoveDeps, guardedMove, moveFolder, moveJournal, precheckMove, recoverMove } from "./move-folder";
 import { type ResolvedReference, displayPath, resolveReferences, usableReferences } from "./references";
 import { respondHandler } from "./respond-ipc";
+import { SettingsController } from "./settings";
 import { TaskManager } from "./task-manager";
 import { historyView, isSha } from "./history-view";
 import { RestoreGuard, lastOpened } from "./restore-guard";
@@ -127,6 +143,8 @@ let moving: Promise<unknown> | null = null;
 let historyHeld = false;
 /** The manifest's reference folders on this machine, resolved once the app is ready. */
 let references: Promise<ResolvedReference[]> = Promise.resolve([]);
+/** The harness's settings (harness-settings spec); null when it declares none (D0). Set once the harness is loaded. */
+let settingsCtl: SettingsController | null = null;
 
 /**
  * The reference folders usable with the working folder: one that is or contains it is left out (its
@@ -292,6 +310,8 @@ async function appState(): Promise<AppState> {
     ...(harness.scopes ? { scopes: harness.scopes } : {}),
     // Only a harness with input blocks sends their specs (spec D0).
     ...(Object.keys(inputs).length > 0 ? { inputs } : {}),
+    // Only a harness with settings gets its tab (harness-settings D0).
+    ...(harness.settings ? { settings: settingsView(harness.settings) } : {}),
     references: (await referencesFor(saved.folder)).map((r) => ({ id: r.id, label: r.label, path: displayPath(r.path, os.homedir()) })),
     models: await modelsView(),
     backup: await backupView(saved.folder),
@@ -338,9 +358,17 @@ const dataStores = new Map<string, { store: DataStore; off: () => void }>();
 function dataStoreFor(base: string): DataStore {
   let entry = dataStores.get(base);
   if (!entry) {
-    const store = new DataStore(base, harness.data);
-    // Spec §4.5 `subscribe`: every write, from any writer, reaches the window.
-    entry = { store, off: store.onChange((change) => sendToWindow("hh:dataChange", change)) };
+    // The harness's collections, plus the reserved `settings` one when it declares settings (D0: harness.data itself).
+    const store = new DataStore(base, dataCollections(harness));
+    // Spec §4.5 `subscribe`: every write, from any writer, reaches the window. A settings write also reaches AGENTS.md
+    // once no task is open (harness-settings D4): the controller only marks it stale and queues the rewrite.
+    entry = {
+      store,
+      off: store.onChange((change) => {
+        sendToWindow("hh:dataChange", change);
+        if (change.collection === SETTINGS_COLLECTION) void settingsCtl?.changed();
+      }),
+    };
     dataStores.set(base, entry);
   }
   return entry.store;
@@ -429,6 +457,7 @@ const runtime = memoise<HarnessRuntime>(async () => {
     cmd = await engineCommand(engine, commandDeps);
   }
   if (!cmd) return null;
+  const settings = settingsCtl;
   return createRuntime({
     harness,
     engine,
@@ -443,6 +472,8 @@ const runtime = memoise<HarnessRuntime>(async () => {
     command: cmd.command,
     env: cmd.env,
     references: (await referencesFor(c.folder, true)).map((r) => ({ label: r.label, path: r.path })),
+    // The settings' sentences, read now and on every refresh (harness-settings spec §5). Absent without settings (D0).
+    ...(settings ? { instructionSettings: () => settings.sentences() } : {}),
     onSession: (s) => void tasks.sessionStarted(s).catch((err: unknown) => console.error("Could not record the session", err)),
     onModels: (offer) =>
       void shared.update(engine.id, { models: offer.models, efforts: offer.efforts }).catch((err: unknown) => console.error("Could not save the engine's models", err)),
@@ -454,6 +485,9 @@ async function closeRuntime() {
   const rt = await runtime.peek()?.catch(() => null);
   runtime.clear();
   await rt?.close();
+  // The next runtime writes AGENTS.md afresh: nothing is pending against this one's. Only once close() resolved (a
+  // running refresh would set what was applied again), and not when a new runtime has already written its own.
+  if (!runtime.peek()) settingsCtl?.forget();
 }
 
 /** Ends the open task, then closes the running runtime (e.g. the engine changed); the next turn starts a new one. */
@@ -582,6 +616,11 @@ const tasks = new TaskManager({
   get path() {
     return harness.path ?? [];
   },
+  // A getter, because the harness is loaded after this object is built. Undefined without settings (D0).
+  get betweenTasks() {
+    const ctl = settingsCtl;
+    return ctl ? () => ctl.betweenTasks() : undefined;
+  },
   readPrompt: (action) => fs.readFile(resolveInHarness(harness, harness.actions[action].prompt), "utf8"),
   language: async () => (await config.load()).language ?? DEFAULT_LANGUAGE,
   engine: async () => (await config.load()).engineId ?? "",
@@ -688,6 +727,8 @@ const personData = personDataRequests({
   // Without scopes the only scope is the implicit `main` (D2); with them, the registry's open (not archived) scopes.
   scopeExists: async (id) => (scoped() ? activeScope(id) : id === MAIN_SCOPE),
 });
+/** The same handler for the harness UI, which only reads `settings` (it changes them through `client.settings`). */
+const harnessUiData = harnessUiDataRequests(personData, () => harness.settings !== undefined);
 
 function registerIpc() {
   handle("hh:getState", () => appState());
@@ -788,13 +829,19 @@ function registerIpc() {
   handle("hh:data", async (request: unknown, options: unknown) => {
     // After the migration: it opens `main`, the scope a request made on mount acts in.
     await scopesSettled();
-    return personData(request, options);
+    return harnessUiData(request, options);
   });
   handle("hh:dataDiff", async (taskId: unknown) => {
     if (typeof taskId !== "string" || taskId.length === 0 || taskId.length > 200) return [];
     const history = await currentHistory();
-    return history ? dataDiffOf(history, taskId, harness.data) : [];
+    return history ? dataDiffOf(history, taskId, dataCollections(harness)) : [];
   });
+  // The harness's Settings tab (harness-settings spec §4). Refusals come back as data: Electron flattens thrown errors.
+  handle("hh:settingsGet", () => (settingsCtl ? settingsCtl.state() : { values: {}, pending: [] }));
+  handle("hh:settingsSet", (field: unknown, value: unknown) =>
+    settingsCtl ? settingsCtl.set(field, value) : { ok: false, message: "This harness has no settings" },
+  );
+  handle("hh:settingsReset", () => (settingsCtl ? settingsCtl.reset() : { ok: false, message: "This harness has no settings" }));
   handle("hh:choose", (option: unknown, task: unknown) => {
     if (quitting) throw new Error("The app is closing");
     const blocked = turnBlocked();
@@ -829,7 +876,8 @@ function registerIpc() {
   // Restore commits carry no task: going back may undo several tasks, so it belongs to none of them.
   handle("hh:restore", (sha: unknown) => {
     if (!isSha(sha)) throw new Error("Invalid point");
-    return restoreWith((history) => history.restore(sha, RESTORE_POINT));
+    // A restore changes tracked files with no data event: the settings may have changed.
+    return restoreWith((history) => history.restore(sha, RESTORE_POINT)).then(() => void settingsCtl?.changed());
   });
   handle("hh:historyTasks", async () => {
     const history = await currentHistory();
@@ -841,7 +889,7 @@ function registerIpc() {
       const group = (await history.tasks()).find((g) => g.taskId === taskId);
       if (!group?.start) throw new Error("Nothing to go back to");
       await history.restore(group.start, RESTORE_TASK);
-    }),
+    }).then(() => void settingsCtl?.changed()),
   );
   handle("hh:engineStatus", async (engineId: string) => {
     const engine = engineFor(engineId);
@@ -1059,6 +1107,25 @@ if (loaded) {
   harness = loaded;
   app.setName(harness.name);
   app.setPath("userData", hooks.userData ?? path.join(app.getPath("appData"), "Human Harness", harness.id));
+  if (harness.settings) {
+    settingsCtl = new SettingsController({
+      settings: harness.settings,
+      store: async () => {
+        const c = await validConfig();
+        return c ? dataStoreFor(baseOf(c)) : null;
+      },
+      // As the person, app-wide: the store's checks, turns-blocked refusals and a `Data: settings` commit (open task's trailer).
+      write: (request) => personData(request, { scope: APP_SCOPE }),
+      taskOpen: async () => (await tasks.runningTask()) !== null,
+      whenNoTask: (fn) => tasks.whenNoTask(fn),
+      // Only from betweenTasks or a whenNoTask callback (the task queue, which also creates runtimes); peek, never get.
+      refresh: async () => {
+        const rt = await runtime.peek()?.catch(() => null);
+        return rt ? rt.refreshInstructions() : false;
+      },
+      changed: (state) => sendToWindow("hh:settings", state),
+    });
+  }
 }
 
 // One app per data folder (the lock is tied to userData, so it is taken after it is set): a second one would

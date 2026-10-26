@@ -5,9 +5,9 @@ import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { dataServerSpec, devLauncher, openRpc } from "@humanharness/blocks";
 import { callMcpTool } from "@humanharness/fake-agent";
-import { dataSchema, loadHarness, z } from "@humanharness/harness-sdk";
+import { dataCollections, dataSchema, loadHarness, settingsSchema, z } from "@humanharness/harness-sdk";
 import { DataError, DataStore, type HistoryTrailer, dataFile } from "@humanharness/workspace";
-import { type PersonDataDeps, agentDataRequest, personDataRequests, saveAnswerRecords } from "../src/main/data-requests";
+import { DataUnavailable, type PersonDataDeps, agentDataRequest, harnessUiDataRequests, personDataRequests, saveAnswerRecords } from "../src/main/data-requests";
 
 const STUDY = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../fake-agent/fixtures/data-harness/harness.config.ts");
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
@@ -65,6 +65,8 @@ describe("personDataRequests", () => {
 
   it("refuses writes while turns are blocked, and a bad scope", async () => {
     const t = setup({ blocked: "A restore is running" });
+    // A DataUnavailable: its reason is safe to show (the settings tab shows it).
+    await expect(t.run({ op: "put", collection: "concepts", record: { id: "a", name: "A" } }, undefined)).rejects.toBeInstanceOf(DataUnavailable);
     await expect(t.run({ op: "put", collection: "concepts", record: { id: "a", name: "A" } }, undefined)).rejects.toThrow(/restore/);
     expect(await t.run({ op: "query", collection: "concepts" }, undefined)).toMatchObject({ total: 0 });
     await expect(setup().run({ op: "get", collection: "concepts", key: "a" }, { scope: "../x" })).rejects.toThrow(/scope/);
@@ -100,6 +102,58 @@ describe("personDataRequests", () => {
       { message: "Data: concepts", files: ["concepts"] },
       { message: "Data: profile", files: ["concepts", "profile"] },
     ]);
+  });
+});
+
+describe("harnessUiDataRequests", () => {
+  const settings = settingsSchema.parse({
+    tab: "Mine",
+    fields: { tone: { schema: z.enum(["patient", "demanding"]), default: "patient", control: "segmented", label: "Tone" } },
+  });
+
+  function ui(hasSettings: boolean) {
+    const base = fs.mkdtempSync(path.join(root, "t-"));
+    const store = new DataStore(base, dataCollections(hasSettings ? { data, settings } : { data }));
+    const commits: string[] = [];
+    const person = personDataRequests({
+      store: async () => store,
+      chatScope: async () => "fracciones",
+      trailer: async () => undefined,
+      history: async () => ({ save: async (message) => void commits.push(message) }),
+      blocked: () => null,
+      scopeExists: async (id) => id === "fracciones",
+    });
+    return { store, person, run: harnessUiDataRequests(person, () => hasSettings), commits };
+  }
+  const app = { who: "person" as const, scope: "_app" };
+
+  it("refuses the UI's writes to settings, keeps its reads, and lets the settings controller's path write", async () => {
+    const t = ui(true);
+    for (const request of [
+      { op: "put", collection: "settings", record: { tone: "demanding" } },
+      { op: "patch", collection: "settings", patch: { tone: "demanding" } },
+      { op: "delete", collection: "settings" },
+    ]) {
+      const err = await t.run(request, { scope: "_app" }).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(DataError);
+      expect((err as Error).message).toBe("Settings change through client.settings");
+    }
+    expect(await t.store.get("settings", undefined, app)).toBeNull();
+    expect(t.commits).toEqual([]);
+    // The controller writes through the person's handler itself (index.ts: `personData(request, { scope: APP_SCOPE })`).
+    await t.person({ op: "put", collection: "settings", record: { tone: "demanding" } }, { scope: "_app" });
+    expect(await t.run({ op: "get", collection: "settings" }, { scope: "_app" })).toEqual({ tone: "demanding" });
+    expect(await t.run({ op: "query", collection: "settings" }, { scope: "_app" })).toMatchObject({ total: 1 });
+    // Other collections are untouched.
+    await t.run({ op: "put", collection: "profile", record: { name: "Ana" } }, undefined);
+    expect(t.commits).toEqual(["Data: settings", "Data: profile"]);
+  });
+
+  it("without harness settings, a write to settings fails as an unknown collection, as before (D0)", async () => {
+    const t = ui(false);
+    const err = await t.run({ op: "put", collection: "settings", record: { tone: "demanding" } }, { scope: "_app" }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(DataError);
+    expect((err as DataError).code).toBe("unknown-collection");
   });
 });
 

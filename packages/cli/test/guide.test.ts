@@ -34,6 +34,11 @@ describe("the /new-harness guide", () => {
     for (const word of ["`scopes`", '`scope: "none"`', "`data`", "`agent`", "`context`", "`rules`"]) expect(context.body).toContain(word);
   });
 
+  it("asks about settings in the Context phase", () => {
+    const context = phases(guide).find((p) => p.name === "Context")!;
+    for (const word of ["`settings`", "`default`", "`control`", "{{value}}", "{{value:label}}", "`onlyWhenChanged: true`", "--set name=value"]) expect(context.body).toContain(word);
+  });
+
   it("states the compliance rules and the check loop", () => {
     for (const dir of ["~/.claude", "~/.codex", "~/.gemini"]) expect(guide).toContain(dir);
     expect(guide).toContain("Never edit files outside this repository");

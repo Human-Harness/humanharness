@@ -11,10 +11,10 @@ import { type ClaudeScript, claudeTextLines, fakeClaudeCommand, recordingSchema,
 import type { CommandDeps } from "@humanharness/shell/tasks";
 import { SharedConfigStore } from "@humanharness/shell/tasks";
 import { DATA_PREFIX, History, NOTES_PREFIX, TURN_PREFIX } from "@humanharness/workspace";
-import { UsageError } from "../src/cli";
+import { CliError, UsageError } from "../src/cli";
 import { initHarness } from "../src/init";
 import { main } from "../src/main";
-import { type Interrupts, noticeMessage, readyEngine, runTask } from "../src/run";
+import { type Interrupts, noticeMessage, parseSettings, readyEngine, runTask } from "../src/run";
 import { CORE, memoryIo, memoryStream, tempRoot } from "./helpers";
 
 const { root, cleanup } = tempRoot("hh-run-");
@@ -532,5 +532,102 @@ describe("run: input blocks", () => {
     const shown = chat.flatMap((e) => (e.blocks ?? []) as { name: string; input?: unknown }[]).find((b) => b.name === "commit_answer");
     expect(shown?.input).toBeUndefined();
     expect(ctrlC.listeners()).toBe(0);
+  });
+});
+
+describe("run --set (harness settings)", () => {
+  const tutor = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../fake-agent/fixtures/settings-harness");
+  const tutorScript: ClaudeScript = {
+    steps: [...claudeTextLines("Done."), result],
+    turns: [
+      { match: "save_note", steps: [ui("save_note", { title: "Halves", summary: ["x"], decisions: [], files: [], open: [] }), result] },
+      { match: "# Task: practice", steps: [...claudeTextLines("One question."), result] },
+    ],
+  };
+
+  it("stores the values before the task, and AGENTS.md carries their sentences", { timeout: 60_000 }, async () => {
+    const folder = path.join(root, "tutor-set");
+    const out = memoryStream();
+    await runTask({
+      harnessDir: tutor,
+      action: "practice",
+      engine: "claude",
+      folder,
+      settings: { tone: "demanding", hintAfter: "4", examples: "true" },
+      input: lines("q\n"),
+      output: out.stream,
+      engineCommand: { command: fakeClaudeCommand(), env: { HH_FAKE_SCRIPT: writeScript(root, tutorScript) } },
+    });
+    // `examples: true` is the default: not stored.
+    expect(JSON.parse(fs.readFileSync(path.join(folder, ".harness", "data", "_app", "settings.json"), "utf8"))).toEqual({ tone: "demanding", hintAfter: 4 });
+    const agents = fs.readFileSync(path.join(folder, "AGENTS.md"), "utf8");
+    expect(agents).toContain("### How to work with this person\n\n- Use a Demanding tone.\n- Give a hint after 4 failed tries, not before.\n");
+    expect(out.text()).toContain("Settings: tone=demanding, hintAfter=4, examples=true");
+  });
+
+  it("D0: without --set nothing is stored, and AGENTS.md has the defaults' sentences", { timeout: 60_000 }, async () => {
+    const folder = path.join(root, "tutor-plain");
+    const out = memoryStream();
+    await runTask({
+      harnessDir: tutor,
+      action: "practice",
+      engine: "claude",
+      folder,
+      input: lines("q\n"),
+      output: out.stream,
+      engineCommand: { command: fakeClaudeCommand(), env: { HH_FAKE_SCRIPT: writeScript(root, tutorScript) } },
+    });
+    expect(fs.existsSync(path.join(folder, ".harness", "data"))).toBe(false);
+    expect(fs.readFileSync(path.join(folder, "AGENTS.md"), "utf8")).toContain("- Use a Patient tone.");
+    expect(out.text()).not.toContain("Settings:");
+  });
+
+  it("parseSettings: the text as typed when the field takes it, else JSON; refuses unknown, invalid and settings-less", async () => {
+    const { loadHarness } = await import("@humanharness/harness-sdk");
+    const h = await loadHarness(path.join(tutor, "harness.config.ts"));
+    expect(parseSettings(h.settings, { hintAfter: "3", tone: "neutral", nickname: "42" })).toEqual({ hintAfter: 3, tone: "neutral", nickname: "42" });
+    // The typed text comes first: a text field keeps quotes that would read as a JSON string.
+    expect(parseSettings(h.settings, { nickname: '"Bob"', examples: "false" })).toEqual({ nickname: '"Bob"', examples: false });
+    expect(() => parseSettings(h.settings, { nope: "1" })).toThrow(UsageError);
+    expect(() => parseSettings(h.settings, { nope: "1" })).toThrow('Unknown setting "nope". Settings: nickname, tone, examples, hintAfter.');
+    expect(() => parseSettings(h.settings, { hintAfter: "9" })).toThrow('"9" is not a valid value for the setting "hintAfter".');
+    expect(() => parseSettings(h.settings, { toString: "x" })).toThrow(/Unknown setting "toString"/);
+    expect(() => parseSettings(undefined, { tone: "x" })).toThrow("This harness declares no settings: drop --set.");
+    expect(parseSettings(undefined, {})).toEqual({});
+  });
+
+  it("the command line takes --set name=value, and refuses a pair with no name", async () => {
+    for (const pair of ["tone", "=x"]) {
+      const m = memoryIo(root);
+      expect(await main(["run", "practice", "--harness", tutor, "--set", pair], m.io)).toBe(2);
+      expect(m.err()).toContain("--set takes name=value");
+    }
+    // A known pair passes the command line and stops at the setting's own check, before any engine.
+    const bad = memoryIo(root);
+    expect(await main(["run", "practice", "--harness", tutor, "--set", "tone=x", "--set", "hintAfter=3"], bad.io)).toBe(2);
+    expect(bad.err()).toContain('"x" is not a valid value for the setting "tone".');
+    // `__proto__` is a name like any other: refused as unknown, never dropped.
+    const proto = memoryIo(root);
+    expect(await main(["run", "practice", "--harness", tutor, "--set", "__proto__=x"], proto.io)).toBe(2);
+    expect(proto.err()).toContain('Unknown setting "__proto__"');
+  });
+
+  it("a settings file broken by hand stops the run with the store's message, not a stack", { timeout: 60_000 }, async () => {
+    const folder = path.join(root, "tutor-broken");
+    fs.mkdirSync(path.join(folder, ".harness", "data", "_app"), { recursive: true });
+    fs.writeFileSync(path.join(folder, ".harness", "data", "_app", "settings.json"), "[1, 2]\n");
+    const out = memoryStream();
+    const run = runTask({
+      harnessDir: tutor,
+      action: "practice",
+      engine: "claude",
+      folder,
+      settings: { tone: "demanding" },
+      input: lines("q\n"),
+      output: out.stream,
+      engineCommand: { command: fakeClaudeCommand(), env: { HH_FAKE_SCRIPT: writeScript(root, tutorScript) } },
+    });
+    await expect(run).rejects.toBeInstanceOf(CliError);
+    await expect(run).rejects.toThrow(/was changed by hand/);
   });
 });

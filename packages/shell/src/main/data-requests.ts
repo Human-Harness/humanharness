@@ -1,4 +1,8 @@
+import { SETTINGS_COLLECTION } from "@humanharness/harness-sdk";
 import { APP_SCOPE, DATA_CHANGE_PREFIX, DataError, type DataStore, type HistoryTrailer, isDataWrite, isScopeDir, runDataRequest } from "@humanharness/workspace";
+
+/** The request can't run now (the app isn't set up, turns are blocked); its message is safe to show. */
+export class DataUnavailable extends Error {}
 
 /** Where a person's write is recorded: the folder's history. */
 export interface DataHistory {
@@ -52,9 +56,9 @@ export function personDataRequests(d: PersonDataDeps): (request: unknown, option
     }
     return serial(async () => {
       const blocked = d.blocked();
-      if (blocked) throw new Error(blocked);
+      if (blocked) throw new DataUnavailable(blocked);
       const store = await d.store();
-      if (!store) throw new Error("The app is not set up yet");
+      if (!store) throw new DataUnavailable("The app is not set up yet");
       const scope = await scopeOf();
       const trailer = await d.trailer();
       const history = await d.history();
@@ -71,6 +75,21 @@ export function personDataRequests(d: PersonDataDeps): (request: unknown, option
 }
 
 /**
+ * The harness UI's requests (`hh:data`): `run` (the person's handler), except that the UI only reads the reserved
+ * `settings` collection. It changes settings through `client.settings`, whose controller keeps their rules (only the
+ * changed values stored, an empty record deleted) and writes through `run` itself. Without harness settings nothing
+ * changes (D0): `settings` is then an unknown collection, refused by the store as before.
+ */
+export function harnessUiDataRequests(run: (request: unknown, options: unknown) => Promise<unknown>, hasSettings: () => boolean): (request: unknown, options: unknown) => Promise<unknown> {
+  return async (request, options) => {
+    if (hasSettings() && isDataWrite(request) && (request as { collection: unknown }).collection === SETTINGS_COLLECTION) {
+      throw new DataError("refused", "Settings change through client.settings");
+    }
+    return run(request, options);
+  };
+}
+
+/**
  * An answer's records (input-blocks spec §6 `saveTo`): written as the person, in the task's `scope`, all or none.
  * The write needs no commit of its own: the follow-up's "Before message" commit records it under the task's trailer.
  *
@@ -80,17 +99,14 @@ export function personDataRequests(d: PersonDataDeps): (request: unknown, option
 export async function saveAnswerRecords(store: () => Promise<DataStore | null>, collection: string, records: Record<string, unknown>[], scope: string): Promise<void> {
   try {
     const s = await store();
-    if (!s) throw new Unavailable("The app is not set up yet");
+    if (!s) throw new DataUnavailable("The app is not set up yet");
     await s.putMany(collection, records, { who: "person", scope });
   } catch (err) {
-    if (err instanceof DataError || err instanceof Unavailable) throw err;
+    if (err instanceof DataError || err instanceof DataUnavailable) throw err;
     console.error("The answer's records could not be saved", err);
     throw new Error("Something went wrong with the data");
   }
 }
-
-/** The request can't run now; its message is safe to show. */
-class Unavailable extends Error {}
 
 export interface AgentDataDeps {
   store(): Promise<DataStore | null>;
@@ -108,12 +124,12 @@ export interface AgentDataDeps {
 export async function agentDataRequest(d: AgentDataDeps, request: unknown): Promise<unknown> {
   try {
     const task = await d.runningTask();
-    if (!task) throw new Unavailable("No task is running");
+    if (!task) throw new DataUnavailable("No task is running");
     const store = await d.store();
-    if (!store) throw new Unavailable("The app is not set up yet");
+    if (!store) throw new DataUnavailable("The app is not set up yet");
     return await runDataRequest(store, request, { who: "agent", scope: task.scope, ...(task.action ? { action: task.action } : {}) });
   } catch (err) {
-    if (err instanceof DataError || err instanceof Unavailable) throw err;
+    if (err instanceof DataError || err instanceof DataUnavailable) throw err;
     console.error("The agent's data request failed", err);
     throw new Error("Something went wrong with the data");
   }

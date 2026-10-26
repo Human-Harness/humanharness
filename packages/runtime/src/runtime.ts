@@ -15,6 +15,7 @@ import {
   TURN_PREFIX,
   UNDO_PREFIX,
   prepareFolder,
+  refreshInstructions,
   writeInstructions,
 } from "@humanharness/workspace";
 import { AcpTransport } from "./acp";
@@ -47,6 +48,11 @@ export interface RuntimeOptions {
   env?: Record<string, string>;
   /** Folders the agent may read but never change (absolute paths), with the label `AGENTS.md` shows. */
   references?: ReferenceFolder[];
+  /**
+   * The harness's settings as sentences for AGENTS.md (harness-settings spec §5), asked when the runtime starts and
+   * on every `refreshInstructions`. Absent: no settings section (D0).
+   */
+  instructionSettings?: () => Promise<string[]>;
   /** The engine session to continue (the dev CLI). Default: a new one. */
   session?: Session;
   /** Called when the engine starts a session. */
@@ -68,6 +74,12 @@ export interface HarnessRuntime {
   send(message: string, emit: (e: Event) => void, options?: { profile?: ModelProfile; trailer?: HistoryTrailer }): RunningTurn;
   /** Ends the engine session (Codex: `session/close`); the next turn starts a new one. Not while a turn runs. */
   endSession(): Promise<void>;
+  /**
+   * Rewrites AGENTS.md with the settings as they are now, when its text changed (spec §5). Only between tasks: the
+   * next session reads it, a running one keeps what it started with (D4). True when it wrote; false once closing.
+   * The caller must not run it while another runtime is being created on the same folder.
+   */
+  refreshInstructions(): Promise<boolean>;
   history: History;
   close(): Promise<void>;
 }
@@ -88,7 +100,9 @@ export async function createRuntime(opts: RuntimeOptions): Promise<HarnessRuntim
 
   await prepareFolder(folder, harness.folder.seed ? resolveInHarness(harness, harness.folder.seed) : undefined);
   const base = await fs.readFile(resolveInHarness(harness, harness.instructions), "utf8");
-  const generated = await writeInstructions({ folder, base, language: opts.language, blocks: allBlocks(harness), references, engine });
+  const blocks = allBlocks(harness);
+  const settings = await opts.instructionSettings?.();
+  const generated = await writeInstructions({ folder, base, language: opts.language, blocks, references, engine, ...(settings ? { settings } : {}) });
 
   // The history skips the app's files under .harness/ (except the notes and the data) and the generated instructions.
   const history = new History(folder, opts.gitdir, [".harness/", ...generated], [NOTES_PREFIX, DATA_PREFIX]);
@@ -140,6 +154,9 @@ export async function createRuntime(opts: RuntimeOptions): Promise<HarnessRuntim
 
     let busy = false;
     let current: { controller: AbortController; done: Promise<void> } | null = null;
+    // Refreshes run one at a time, and close waits for the last one: once closed, this runtime never writes AGENTS.md.
+    let closing = false;
+    let refreshing: Promise<boolean> = Promise.resolve(false);
 
     return {
       history,
@@ -196,7 +213,18 @@ export async function createRuntime(opts: RuntimeOptions): Promise<HarnessRuntim
           busy = false;
         }
       },
+      refreshInstructions() {
+        if (closing) return Promise.resolve(false);
+        const run = async () => {
+          const now = await opts.instructionSettings?.();
+          return refreshInstructions({ folder, base, language: opts.language, blocks, references, ...(now ? { settings: now } : {}) });
+        };
+        refreshing = refreshing.catch(() => false).then(run);
+        return refreshing;
+      },
       async close() {
+        closing = true;
+        await refreshing.catch(() => {});
         if (current) {
           current.controller.abort();
           await current.done;

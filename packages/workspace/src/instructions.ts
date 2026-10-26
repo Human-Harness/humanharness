@@ -1,8 +1,10 @@
+import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 import type { EngineDef } from "@humanharness/engines";
 import { type Block, type Language, answerHeader, blockToolName, languageName } from "@humanharness/harness-sdk";
+import { harnessDir } from "./layout";
 
 export const MANAGED_START = "<!-- humanharness:start -->";
 export const MANAGED_END = "<!-- humanharness:end -->";
@@ -18,6 +20,7 @@ const TEXT = {
     "Don't use your CLI's own interactive questions: ask in plain text or with the interface tools below.",
     "Work only inside this folder. Keep messages short and clear.",
   ],
+  settings: "### How to work with this person",
   tools: "### Interface tools",
   toolsIntro:
     "Call these tools to show things to the person or update their state. What they show appears in the conversation in the order you call them, among your text: write the sentence that introduces each thing first, then call the tool.",
@@ -47,9 +50,14 @@ function toolSchema(schema: Block["schema"]): string {
   return JSON.stringify(rest);
 }
 
-export function managedSection(opts: { language: Language; blocks: Record<string, Block>; references?: ReferenceFolder[] }): string {
+/** The settings' lines of the managed section (harness-settings spec §5): none without sentences (D0). */
+export function settingsLines(sentences: readonly string[] | undefined): string[] {
+  return sentences && sentences.length > 0 ? ["", TEXT.settings, "", ...sentences.map((s) => `- ${s}`)] : [];
+}
+
+export function managedSection(opts: { language: Language; blocks: Record<string, Block>; references?: ReferenceFolder[]; settings?: readonly string[] }): string {
   const t = TEXT;
-  const lines = [MANAGED_START, t.title, "", ...t.rules(opts.language).map((r) => `- ${r}`)];
+  const lines = [MANAGED_START, t.title, "", ...t.rules(opts.language).map((r) => `- ${r}`), ...settingsLines(opts.settings)];
   const entries = Object.entries(opts.blocks);
   if (entries.length > 0) {
     lines.push("", t.tools, "", t.toolsIntro, "");
@@ -82,23 +90,52 @@ export function generatedFiles(engine: EngineDef): string[] {
   return ["AGENTS.md", ...(engine.instructionsFile ? [engine.instructionsFile.path] : [])];
 }
 
-/** Writes AGENTS.md (harness base + managed section) and the engine's own file. Returns the relative paths written. */
-export async function writeInstructions(opts: {
-  folder: string;
+/** What AGENTS.md holds: the harness's base, then the managed section. */
+export interface InstructionsText {
   base: string;
   language: Language;
   blocks: Record<string, Block>;
   references?: ReferenceFolder[];
-  engine: EngineDef;
-}): Promise<string[]> {
+  /** The harness's settings as sentences (harness-settings spec §5). Absent or empty: no section (D0). */
+  settings?: readonly string[];
+}
+
+function agentsText(opts: InstructionsText): string {
+  return `${opts.base.trimEnd()}\n\n${managedSection({ language: opts.language, blocks: opts.blocks, references: opts.references, settings: opts.settings })}`;
+}
+
+/** Writes AGENTS.md (harness base + managed section) and the engine's own file. Returns the relative paths written. */
+export async function writeInstructions(opts: InstructionsText & { folder: string; engine: EngineDef }): Promise<string[]> {
   const extraPath = opts.engine.instructionsFile?.path;
   if (extraPath !== undefined && path.basename(extraPath) !== extraPath) {
     throw new Error(`Engine instructions file must be a plain file name, got "${extraPath}"`);
   }
   await fs.mkdir(opts.folder, { recursive: true });
-  const agents = `${opts.base.trimEnd()}\n\n${managedSection({ language: opts.language, blocks: opts.blocks, references: opts.references })}`;
-  await fs.writeFile(path.join(opts.folder, "AGENTS.md"), agents);
+  await fs.writeFile(path.join(opts.folder, "AGENTS.md"), agentsText(opts));
   const extra = opts.engine.instructionsFile;
   if (extra) await fs.writeFile(path.join(opts.folder, extra.path), extra.content);
   return generatedFiles(opts.engine);
+}
+
+/**
+ * Rewrites AGENTS.md between tasks when its text changed (harness-settings spec §5). Identical text is left alone,
+ * so the engine's cached prefix survives. The new text goes to a temp file under `.harness/` (which the history
+ * ignores) and is renamed over AGENTS.md: a session or a commit made meanwhile never sees half a file. True when it wrote.
+ */
+export async function refreshInstructions(opts: InstructionsText & { folder: string }): Promise<boolean> {
+  const file = path.join(opts.folder, "AGENTS.md");
+  const text = agentsText(opts);
+  const current = await fs.readFile(file, "utf8").catch(() => null);
+  if (current === text) return false;
+  const dir = harnessDir(opts.folder);
+  await fs.mkdir(dir, { recursive: true });
+  const tmp = path.join(dir, `AGENTS.md.${randomUUID()}.tmp`);
+  try {
+    await fs.writeFile(tmp, text);
+    await fs.rename(tmp, file);
+  } catch (err) {
+    await fs.rm(tmp, { force: true });
+    throw err;
+  }
+  return true;
 }

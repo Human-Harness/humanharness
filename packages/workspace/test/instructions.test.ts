@@ -5,7 +5,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { CORE_BLOCKS, INPUT_CORE_BLOCKS, defineBlock } from "@humanharness/harness-sdk";
 import { getEngine } from "@humanharness/engines";
-import { MANAGED_END, MANAGED_START, managedSection, writeInstructions } from "../src";
+import { MANAGED_END, MANAGED_START, managedSection, refreshInstructions, settingsLines, writeInstructions } from "../src";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -197,5 +197,56 @@ describe("managedSection: input blocks", () => {
     const line = '- To mark parts of an answer, call `show_annotate` with `ref` (the answer\'s `blockId`, or "last") and quote the person\'s exact words in each mark.';
     expect(managedSection({ language: "en", blocks: { ask } })).not.toContain("show_annotate");
     expect(managedSection({ language: "en", blocks: { ...INPUT_CORE_BLOCKS, ask } })).toContain(line);
+  });
+});
+
+describe("managedSection: settings", () => {
+  it("writes the sentences after the core rules and before the interface tools", () => {
+    const s = managedSection({ language: "en", blocks, settings: ["Use a patient tone.", "Give a hint after 2 failed tries, not before."] });
+    const rules = s.indexOf("Work only inside this folder.");
+    const heading = s.indexOf("### How to work with this person\n\n- Use a patient tone.\n- Give a hint after 2 failed tries, not before.\n");
+    const tools = s.indexOf("### Interface tools");
+    expect(rules).toBeGreaterThan(0);
+    expect(heading).toBeGreaterThan(rules);
+    expect(tools).toBeGreaterThan(heading);
+  });
+
+  it("D0: no settings, or none to say, is exactly today's section", () => {
+    const today = managedSection({ language: "en", blocks });
+    expect(managedSection({ language: "en", blocks, settings: [] })).toBe(today);
+    expect(managedSection({ language: "en", blocks, settings: undefined })).toBe(today);
+    expect(today).not.toContain("How to work with this person");
+    expect(settingsLines(undefined)).toEqual([]);
+  });
+});
+
+describe("refreshInstructions", () => {
+  const opts = (folder: string, settings?: string[]) => ({ folder, base: "x", language: "en" as const, blocks, ...(settings ? { settings } : {}) });
+
+  it("writes nothing when the text is the same, and rewrites AGENTS.md when it changed", async () => {
+    const folder = tmp();
+    await writeInstructions({ ...opts(folder, ["Use a patient tone."]), engine: getEngine("codex") });
+    const file = path.join(folder, "AGENTS.md");
+    const before = fs.statSync(file).mtimeMs;
+    expect(await refreshInstructions(opts(folder, ["Use a patient tone."]))).toBe(false);
+    expect(fs.statSync(file).mtimeMs).toBe(before);
+    expect(await refreshInstructions(opts(folder, ["Use a demanding tone."]))).toBe(true);
+    expect(fs.readFileSync(file, "utf8")).toContain("- Use a demanding tone.");
+    expect(fs.readFileSync(file, "utf8")).not.toContain("patient");
+  });
+
+  it("leaves no temp file in the folder or under .harness/", async () => {
+    const folder = tmp();
+    await refreshInstructions(opts(folder, ["Use a patient tone."]));
+    expect(fs.readdirSync(folder).sort()).toEqual([".harness", "AGENTS.md"]);
+    expect(fs.readdirSync(path.join(folder, ".harness"))).toEqual([]);
+  });
+
+  it("writes the same text as writeInstructions", async () => {
+    const a = tmp();
+    const b = tmp();
+    await writeInstructions({ ...opts(a, ["Use a patient tone."]), engine: getEngine("codex") });
+    await refreshInstructions(opts(b, ["Use a patient tone."]));
+    expect(fs.readFileSync(path.join(b, "AGENTS.md"), "utf8")).toBe(fs.readFileSync(path.join(a, "AGENTS.md"), "utf8"));
   });
 });

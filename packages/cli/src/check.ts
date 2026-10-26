@@ -5,6 +5,7 @@ import { ENGINES, type Mode, brandNames } from "@humanharness/engines";
 import {
   type InputFieldUi,
   type LoadedHarness,
+  SETTINGS_TOKENS_WARN,
   blockToolName,
   inputBlocks,
   inputFields,
@@ -12,8 +13,11 @@ import {
   loadHarness,
   parseAnswer,
   resolveInHarness,
+  settingsSentences,
+  settingsValues,
   type z,
 } from "@humanharness/harness-sdk";
+import { estimateTokens, settingsLines } from "@humanharness/workspace";
 import { type Io, UsageError, parseCommand } from "./cli";
 import { type HarnessDoc, PERMISSION_KEYS, type PermissionKey, QUESTIONS_ROW, parseHarnessMd, sectionText } from "./harness-md";
 import { clashMessage, matchClashes } from "./mock-match";
@@ -42,7 +46,8 @@ export type RuleId =
   | "input-hidden"
   | "input-form"
   | "input-choice"
-  | "mock-input";
+  | "mock-input"
+  | "settings-tokens";
 
 export interface Finding {
   rule: RuleId;
@@ -84,6 +89,7 @@ export async function checkHarness(dir: string, opts: { mode?: Mode } = {}): Pro
   findings.push(...(await mockFindings(harness, briefs)));
   findings.push(...(await i18nFindings(harness)));
   findings.push(...(await inputFindings(harness)));
+  findings.push(...settingsFindings(harness));
   findings.push(...brandFindings(harness));
   findings.push(...engineFindings(harness, opts.mode ?? "development"));
   if (doc) findings.push(...malformedPermissionFindings(doc));
@@ -329,6 +335,20 @@ async function inputFindings(h: LoadedHarness): Promise<Finding[]> {
     }
   }
   return out;
+}
+
+/**
+ * Harness settings (harness-settings spec §5 "Measuring"): their section of AGENTS.md is in every session's stable
+ * prefix. Measured with every sentence filled with its default, `onlyWhenChanged` ones included. The structural
+ * rules (defaults, options, sections, placeholders) are manifest schema errors, reported as `schema`.
+ */
+function settingsFindings(h: LoadedHarness): Finding[] {
+  if (!h.settings) return [];
+  const sentences = settingsSentences(h.settings, settingsValues(h.settings, null), { all: true });
+  const tokens = estimateTokens(settingsLines(sentences).join("\n"));
+  if (tokens <= SETTINGS_TOKENS_WARN) return [];
+  const message = `The settings' sentences take about ${tokens} tokens of AGENTS.md (more than ${SETTINGS_TOKENS_WARN}): keep each one short, or mark the ones that only matter when changed with onlyWhenChanged.`;
+  return [warning("settings-tokens", message, MANIFEST)];
 }
 
 /** The first provider or model brand in `text` (whole words, any case), or null. */

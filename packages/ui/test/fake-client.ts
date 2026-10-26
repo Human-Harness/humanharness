@@ -21,6 +21,8 @@ import type {
   ScopeView,
   ScopesView,
   SendOptions,
+  SettingsResult,
+  SettingsState,
   SetupOutput,
   SetupResult,
   SetupStep,
@@ -126,6 +128,14 @@ export class FakeClient implements HarnessClient {
   opened: string[] = [];
   /** What openPath answers. */
   openResult = true;
+  /** What settings.get answers. */
+  settingsState: SettingsState = { values: {}, pending: [] };
+  /** What settings.set was asked, in order. */
+  settingsSets: { field: string; value: unknown }[] = [];
+  settingsResets = 0;
+  /** When set, settings.set and reset answer it instead of saving. */
+  settingsFailure: SettingsResult | null = null;
+  private settingsListeners = new Set<(s: SettingsState) => void>();
   private taskListeners = new Set<(v: TaskView) => void>();
   private listeners = new Set<(e: Event) => void>();
   private setupListeners = new Set<(o: SetupOutput) => void>();
@@ -450,4 +460,31 @@ export class FakeClient implements HarnessClient {
   emitDataChange(change: DataChangeView) {
     this.dataChanged(change);
   }
+  /** The main process sent new settings (a pending field applied, another window's change). */
+  emitSettings(state: SettingsState) {
+    this.settingsState = state;
+    for (const l of this.settingsListeners) l(state);
+  }
+  settings = {
+    get: async () => this.settingsState,
+    set: async (field: string, value: unknown): Promise<SettingsResult> => {
+      this.settingsSets.push({ field, value });
+      if (this.settingsFailure) return this.settingsFailure;
+      this.emitSettings({ ...this.settingsState, values: { ...this.settingsState.values, [field]: value } });
+      return { ok: true, state: this.settingsState };
+    },
+    reset: async (): Promise<SettingsResult> => {
+      this.settingsResets++;
+      if (this.settingsFailure) return this.settingsFailure;
+      const defaults = Object.fromEntries((this.state.settings?.fields ?? []).map((f) => [f.name, f.default]));
+      this.emitSettings({ values: defaults, pending: [] });
+      return { ok: true, state: this.settingsState };
+    },
+    onChange: (listener: (s: SettingsState) => void) => {
+      this.settingsListeners.add(listener);
+      return () => {
+        this.settingsListeners.delete(listener);
+      };
+    },
+  };
 }

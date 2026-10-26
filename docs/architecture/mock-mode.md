@@ -131,3 +131,4 @@ One file per action, `mock/<action>.json`, meant to be edited by hand. The schem
 - Errors from a recording (rate limits, crashes) cannot be simulated. Use the e2e scripts.
 - Recording is `run --record` only, not from the desktop app.
 - A recording keeps only the first visit of an action in a run.
+- Harness settings work in mock mode (the tab saves, `AGENTS.md` follows), but a recording plays the same whatever the settings.

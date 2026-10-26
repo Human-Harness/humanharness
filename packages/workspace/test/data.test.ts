@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { dataSchema, z } from "@humanharness/harness-sdk";
+import { dataCollections, dataSchema, settingsSchema, z } from "@humanharness/harness-sdk";
 import { type DataChange, DataError, DataStore, dataPath, parseDataPath, runDataRequest } from "../src";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
@@ -208,5 +208,51 @@ describe("DataStore.putMany", () => {
       message: 'Two records in "concepts" have the key "a"',
     });
     expect((await store.query("concepts", {}, person)).total).toBe(0);
+  });
+});
+
+describe("DataStore: the reserved settings collection", () => {
+  const settings = settingsSchema.parse({
+    tab: "Mine",
+    fields: {
+      tone: { schema: z.enum(["patient", "demanding"]), default: "patient", control: "segmented", label: "Tone" },
+      nickname: { schema: z.string().max(40), default: "", control: "text", label: "Nickname" },
+    },
+  });
+  const app = { who: "person" as const, scope: "_app" };
+
+  it("reads a record field by field: a value its field no longer takes (a harness update) is dropped, not the record", async () => {
+    const base = tmp();
+    const store = new DataStore(base, dataCollections({ data, settings }));
+    const f = file(base, ".harness/data/_app/settings.json");
+    fs.mkdirSync(path.dirname(f), { recursive: true });
+    fs.writeFileSync(f, JSON.stringify({ tone: "removed-value", nickname: "Ana" }));
+    expect(await store.get("settings", undefined, app)).toEqual({ nickname: "Ana" });
+    // Writes are not refused as a hand-broken file, and are still checked.
+    await expect(store.put("settings", { tone: "nope" }, app)).rejects.toMatchObject({ code: "invalid" });
+    await store.put("settings", { nickname: "Ana", tone: "demanding" }, app);
+    expect(JSON.parse(fs.readFileSync(f, "utf8"))).toEqual({ nickname: "Ana", tone: "demanding" });
+    expect(await store.delete("settings", undefined, app)).toBe(true);
+    expect(fs.existsSync(f)).toBe(false);
+  });
+
+  it("still refuses to overwrite a settings file that is not a record", async () => {
+    const base = tmp();
+    const store = new DataStore(base, dataCollections({ data, settings }));
+    const f = file(base, ".harness/data/_app/settings.json");
+    fs.mkdirSync(path.dirname(f), { recursive: true });
+    fs.writeFileSync(f, JSON.stringify(["tone"]));
+    expect(await store.get("settings", undefined, app)).toBeNull();
+    await expect(store.put("settings", { tone: "demanding" }, app)).rejects.toMatchObject({ code: "broken-file" });
+  });
+
+  it("keeps whole-record reading for every other single collection", async () => {
+    const base = tmp();
+    const store = new DataStore(base, data);
+    const f = file(base, ".harness/data/_app/profile.json");
+    fs.mkdirSync(path.dirname(f), { recursive: true });
+    fs.writeFileSync(f, JSON.stringify({ name: 3 }));
+    expect(await store.get("profile", undefined, person)).toBeNull();
+    await expect(store.put("profile", { name: "x" }, person)).rejects.toMatchObject({ code: "broken-file" });
   });
 });

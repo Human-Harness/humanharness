@@ -9,17 +9,23 @@ import type { MockNote } from "@humanharness/fake-agent";
 import {
   type BlockAnswer,
   DEFAULT_LANGUAGE,
+  type HarnessSettings,
   type Language,
+  SETTINGS_COLLECTION,
   TIERS,
   type Tier,
   canonicalLanguage,
   actionScope,
   allBlocks,
   blockToolName,
+  dataCollections,
   inputBlocks,
   inputSpecs,
   loadHarness,
   resolveInHarness,
+  sameSetting,
+  settingsSentences,
+  settingsValues,
 } from "@humanharness/harness-sdk";
 import { type ErrorCode, createRuntime } from "@humanharness/runtime";
 import {
@@ -43,7 +49,7 @@ import {
   sharedConfigDir,
   usageRecord,
 } from "@humanharness/shell/tasks";
-import { DataStore, MAIN_SCOPE, buildDataContext, ScopeStore, generatedFiles, migrateToScopes, notesPrefix, readNotes, writeNote } from "@humanharness/workspace";
+import { APP_SCOPE, DataError, DataStore, MAIN_SCOPE, buildDataContext, ScopeStore, generatedFiles, migrateToScopes, notesPrefix, readNotes, writeNote } from "@humanharness/workspace";
 import { CliError, type Io, UsageError, parseCommand } from "./cli";
 import { promptAnswer } from "./input-prompt";
 import { MANIFEST } from "./paths";
@@ -63,6 +69,8 @@ export interface RunOptions {
   folder?: string;
   /** Any language tag; default English. */
   language?: Language;
+  /** Harness settings as typed (`--set name=value`): stored as the person's before the task (harness-settings spec). */
+  settings?: Record<string, string>;
   input: Readable;
   output: Writable;
   /** Ctrl-C presses: the command line passes SIGINT, tests an emitter. */
@@ -93,6 +101,34 @@ export const sigint: Interrupts = {
 /** Why `run` stops when the engine's legal notice was never accepted in the app on this computer. */
 export const noticeMessage = (engine: string) =>
   `${engine}'s notice hasn't been accepted on this computer. Open the app once (corepack pnpm dev, or humanharness dev), accept the notice and set up ${engine} there, then run again.`;
+
+/**
+ * `--set` values checked against the harness's settings. Each text is tried as typed first (patient, "Bob" with its
+ * quotes), then as JSON when the field's schema refuses the text (4, true). A name the harness doesn't declare is
+ * refused.
+ */
+export function parseSettings(settings: HarnessSettings | undefined, typed: Record<string, string>): Record<string, unknown> {
+  const entries = Object.entries(typed);
+  if (entries.length === 0) return {};
+  if (!settings) throw new UsageError("This harness declares no settings: drop --set.");
+  return Object.fromEntries(
+    entries.map(([name, text]) => {
+      if (!Object.hasOwn(settings.fields, name)) throw new UsageError(`Unknown setting "${name}". Settings: ${Object.keys(settings.fields).join(", ")}.`);
+      const schema = settings.fields[name].schema;
+      const raw = schema.safeParse(text);
+      if (raw.success) return [name, raw.data];
+      let json: unknown;
+      try {
+        json = JSON.parse(text);
+      } catch {
+        json = undefined;
+      }
+      const parsed = json === undefined ? undefined : schema.safeParse(json);
+      if (parsed?.success) return [name, parsed.data];
+      throw new UsageError(`"${text}" is not a valid value for the setting "${name}".`);
+    }),
+  );
+}
 
 /**
  * The engine's command when its legal notice was accepted in the app (the shared engines.json every app on this
@@ -145,6 +181,8 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
     throw new UsageError(`Engine "${o.engine ?? "(none)"}" is not available for ${harness.id}. Available: ${offered.map((e) => e.id).join(", ") || "none"}.`);
   }
   const language: Language = o.language ?? DEFAULT_LANGUAGE;
+  // Checked before the engine or the folder: a typo stops the run with nothing made.
+  const chosen = parseSettings(harness.settings, o.settings ?? {});
   // The harness's input blocks (input-blocks spec §8). Without any, the run is exactly as before (D0).
   const inputs = inputBlocks(harness.blocks);
   const hasInputs = Object.keys(inputs).length > 0;
@@ -204,7 +242,30 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
   let notesWritten = 0;
 
   // One store for the run: its queue orders the agent's writes.
-  const dataStore = new DataStore(folder, harness.data);
+  const dataStore = new DataStore(folder, dataCollections(harness));
+  // The person, app-wide: where the window stores settings (harness-settings spec D2).
+  const person = { who: "person" as const, scope: APP_SCOPE };
+  if (harness.settings && Object.keys(chosen).length > 0) {
+    const settings = harness.settings;
+    const stored = (await dataStore.get(SETTINGS_COLLECTION, undefined, person).catch(() => null)) ?? {};
+    const record: Record<string, unknown> = { ...stored };
+    // As the window stores them: a value back at its default is dropped.
+    for (const [name, value] of Object.entries(chosen)) {
+      if (sameSetting(value, settings.fields[name].default)) delete record[name];
+      else record[name] = value;
+    }
+    try {
+      if (Object.keys(record).length > 0) await dataStore.put(SETTINGS_COLLECTION, record, person);
+      else if (Object.keys(stored).length > 0) await dataStore.delete(SETTINGS_COLLECTION, undefined, person);
+    } catch (err) {
+      // A settings file broken by hand: the store's message, not a stack.
+      throw err instanceof DataError ? new CliError(err.message) : err;
+    }
+    out.write(`Settings: ${Object.entries(o.settings ?? {}).map(([n, v]) => `${n}=${v}`).join(", ")}\n`);
+  }
+
+  const instructionSettings = async (settings: HarnessSettings) =>
+    settingsSentences(settings, settingsValues(settings, await dataStore.get(SETTINGS_COLLECTION, undefined, person).catch(() => null)));
 
   // Same wiring as the app's main process (packages/shell/src/main/index.ts), with the terminal as the window.
   const runtime = memoise(() =>
@@ -219,6 +280,8 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
       references: references.map((r) => ({ label: r.label, path: r.path })),
       onSession: (s) => void tasks.sessionStarted(s).catch(() => undefined),
       data: (request) => agentDataRequest({ store: async () => dataStore, runningTask: () => tasks.runningTask() }, request),
+      // The harness's settings, as the app writes them (harness-settings spec §5). Absent without settings (D0).
+      ...(harness.settings ? { instructionSettings: () => instructionSettings(harness.settings!) } : {}),
     }),
   );
   const turns = new TurnController({
@@ -429,7 +492,8 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
   }
 }
 
-const RUN_USAGE = "Usage: humanharness run <action> [--engine claude|codex] [--tier light|standard|deep] [--folder <dir>] [--language <tag>] [--harness <dir>] [--record [--force]]";
+const RUN_USAGE =
+  "Usage: humanharness run <action> [--engine claude|codex] [--tier light|standard|deep] [--folder <dir>] [--language <tag>] [--set <name>=<value>]... [--harness <dir>] [--record [--force]]";
 
 export async function runCommand(args: string[], io: Io): Promise<number> {
   const { values, positionals } = parseCommand(args, {
@@ -437,6 +501,7 @@ export async function runCommand(args: string[], io: Io): Promise<number> {
     tier: { type: "string" },
     folder: { type: "string" },
     language: { type: "string" },
+    set: { type: "string", multiple: true },
     harness: { type: "string" },
     record: { type: "boolean" },
     force: { type: "boolean" },
@@ -446,6 +511,13 @@ export async function runCommand(args: string[], io: Io): Promise<number> {
   if (values.tier !== undefined && !(TIERS as readonly string[]).includes(values.tier)) throw new UsageError(`Unknown tier "${values.tier}": use light, standard or deep.`);
   const language = values.language === undefined ? undefined : canonicalLanguage(values.language);
   if (language === null) throw new UsageError(`Unknown language "${values.language}": use a language tag such as en, es or pt-BR.`);
+  // No prototype: `--set __proto__=x` stays a name, and parseSettings refuses it as unknown.
+  const settings: Record<string, string> = Object.create(null);
+  for (const pair of values.set ?? []) {
+    const at = pair.indexOf("=");
+    if (at <= 0) throw new UsageError(`--set takes name=value, got "${pair}".`);
+    settings[pair.slice(0, at)] = pair.slice(at + 1);
+  }
   await runTask({
     harnessDir: path.resolve(io.cwd, values.harness ?? "."),
     action: positionals[0],
@@ -453,6 +525,7 @@ export async function runCommand(args: string[], io: Io): Promise<number> {
     ...(values.tier ? { tier: values.tier as Tier } : {}),
     ...(values.folder ? { folder: path.resolve(io.cwd, values.folder.replace(/^~(?=$|\/)/, os.homedir())) } : {}),
     ...(language ? { language } : {}),
+    ...(Object.keys(settings).length > 0 ? { settings } : {}),
     ...(values.record ? { record: true } : {}),
     ...(values.force ? { force: true } : {}),
     input: io.stdin,

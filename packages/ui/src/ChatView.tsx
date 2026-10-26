@@ -1,6 +1,8 @@
 import { type ComponentType, type FormEvent, type ReactNode, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { WorkingStatus } from "./ActivityList";
+import { AnnotateBlock } from "./AnnotateBlock";
+import { findAnswer } from "./annotate";
 import { ChoicesBlock } from "./ChoicesBlock";
 import { GearIcon, TopBar } from "./chrome";
 import { type AppState, type ChoiceOption, type EngineProblem, type HarnessClient, type NoteView, type RespondResult, type SendOptions, type TaskView, nextInPath } from "./client";
@@ -120,7 +122,11 @@ export function ChatView({
   const closing = tasks.current?.status === "closing";
   const checkpoint = tasks.current?.status === "checkpoint";
   const fallback = tasks.current?.fallback;
-  const all = useMemo(() => ({ ...components, choices: ChoicesBlock as ComponentType<BlockProps> }), [components]);
+  // `annotate` is drawn only for a harness with input blocks, the only ones that offer it (spec D0).
+  const all = useMemo(
+    () => ({ ...components, choices: ChoicesBlock as ComponentType<BlockProps>, ...(state.inputs ? { annotate: AnnotateBlock } : {}) }),
+    [components, state.inputs],
+  );
   const stale = useMemo(() => ({ ...all, choices: StaleChoices }), [all]);
   const labelOf = (id: string) => state.actions[id]?.label[lang] ?? id;
 
@@ -351,13 +357,13 @@ export function ChatView({
         respond: respondTo,
       }
     : undefined;
-  const blockActions = (active: boolean, task?: string): BlockActions => ({
+  const blockActions = (active: boolean, task?: string, entryId: string | null = null): BlockActions => ({
     respond: sendFromHarness,
     choose: (o) => choose(o, task),
     open: openFile,
     reveal: revealFile,
     active,
-    ...(inputs ? { inputs } : {}),
+    ...(inputs ? { inputs, answerOf: (ref: string) => findAnswer(chat.entries, entryId, ref) } : {}),
   });
   /** The entry's answer belongs to the task waiting now: its `choices` block may act. */
   const ofWaitingTask = (task: string | undefined) => task !== undefined && task === tasks.current?.id && tasks.current.status === "waiting";
@@ -462,7 +468,7 @@ export function ChatView({
                   key={pickResets}
                   entry={entry}
                   components={ofWaitingTask(entry.task) ? all : stale}
-                  actions={blockActions(entry === lastAssistant && !chat.live && !closing, entry.task)}
+                  actions={blockActions(entry === lastAssistant && !chat.live && !closing, entry.task, entry.id)}
                 />
                 {entry.error && entry === last && (
                   <ErrorCard

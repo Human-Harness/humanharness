@@ -54,3 +54,9 @@ describe("styles", () => {
     expect(css).toMatch(/\.hh-start:focus-visible\s*\{[^}]*outline-offset:\s*-\d/);
   });
 });
+
+describe("annotate marks", () => {
+  it("the highlight under a gap keeps ink readable in light and dark", () => {
+    for (const block of [light, dark]) expect(ratio(token(block, "ink"), token(block, "highlight"))).toBeGreaterThanOrEqual(7);
+  });
+});

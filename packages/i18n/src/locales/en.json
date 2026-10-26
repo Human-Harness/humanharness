@@ -262,6 +262,11 @@
     "title": "How do we continue?",
     "failed": "That didn't go through. Pick an option again."
   },
+  "annotate": {
+    "title": "Notes on your answer",
+    "noAnswer": "The answer these notes are about isn't in this chat.",
+    "kind": { "ok": "Good", "gap": "Missing", "wrong": "Not right", "note": "Note" }
+  },
   "input": {
     "send": "Send",
     "sending": "Sending…",

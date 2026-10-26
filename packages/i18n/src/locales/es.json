@@ -262,6 +262,11 @@
     "title": "¿Cómo seguimos?",
     "failed": "No se pudo. Elegí una opción de nuevo."
   },
+  "annotate": {
+    "title": "Notas sobre tu respuesta",
+    "noAnswer": "La respuesta de estas notas no está en este chat.",
+    "kind": { "ok": "Bien", "gap": "Falta", "wrong": "No es así", "note": "Nota" }
+  },
   "input": {
     "send": "Enviar",
     "sending": "Enviando…",

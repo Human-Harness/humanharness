@@ -51,6 +51,8 @@ export interface BlockProps {
   active: boolean;
   /** Blocks the person answers only (their component draws the form, or uses the exported InputForm). */
   input?: InputProps;
+  /** The answer an `annotate` block is about: an answered block's id, or "last" (the latest one before this block). */
+  answerOf?: (ref: string) => BlockAnswer | null;
 }
 
 /** What a block component can do besides showing its data. */

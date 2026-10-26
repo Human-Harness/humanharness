@@ -13,6 +13,7 @@
   --hh-ok: #2e6b4f;
   --hh-ok-dot: #2e8a5c;
   --hh-warn: #9a4a12;
+  --hh-highlight: #fbefc4;
   --hh-error-bg: #fbeaea;
   --hh-backdrop: rgba(25, 30, 36, 0.18);
   --hh-font: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
@@ -36,6 +37,7 @@
     --hh-ok: #6cc497;
     --hh-ok-dot: #4fb07f;
     --hh-warn: #e39a5e;
+    --hh-highlight: #4a3f1c;
     --hh-error-bg: #3a2222;
     --hh-backdrop: rgba(0, 0, 0, 0.45);
     color-scheme: dark;
@@ -335,3 +337,15 @@ select:focus-visible { outline: 2px solid var(--hh-ink); outline-offset: 2px; }
 .hh-answer dl { margin: 4px 0 0; }
 .hh-answer dt { font-weight: 600; color: var(--hh-slate); }
 .hh-answer dd { margin: 0 0 6px; white-space: pre-wrap; }
+
+/* The core annotate block: marks over the person's own words, and the notes they point to. */
+.hh-annotated { margin: 6px 0; padding: 8px 10px; border-left: 3px solid var(--hh-line-strong); white-space: pre-wrap; }
+.hh-mark { position: relative; background: none; color: inherit; border-radius: 2px; text-decoration-thickness: 2px; text-underline-offset: 3px; }
+.hh-mark.ok { text-decoration-line: underline; text-decoration-style: solid; text-decoration-color: var(--hh-ok); }
+.hh-mark.wrong { text-decoration-line: underline; text-decoration-style: wavy; text-decoration-color: var(--hh-warn); }
+.hh-mark.gap { background: var(--hh-highlight); }
+.hh-mark.note { text-decoration-line: underline; text-decoration-style: dotted; text-decoration-color: var(--hh-muted); }
+.hh-mark:focus-visible { outline: 2px solid var(--hh-ink); outline-offset: 1px; }
+.hh-mark[data-comment]:hover::after, .hh-mark[data-comment]:focus-visible::after { content: attr(data-comment); position: absolute; left: 0; top: calc(100% + 4px); z-index: 2; width: max-content; max-width: 280px; padding: 6px 8px; border-radius: 6px; background: var(--hh-ink); color: var(--hh-on-ink); font-size: 12px; white-space: normal; }
+.hh-annotate-notes { margin: 6px 0 0; padding-left: 18px; }
+.hh-mark-note strong { margin-right: 4px; }

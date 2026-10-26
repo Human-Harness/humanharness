@@ -553,6 +553,7 @@ export function ChatView({
         <HistoryPanel
           client={client}
           actions={state.actions}
+          currentTask={tasks.current?.id}
           disabled={Boolean(chat.live) || closing || checkpoint}
           onClose={() => setShowHistory(false)}
           onRestored={(kind) => {

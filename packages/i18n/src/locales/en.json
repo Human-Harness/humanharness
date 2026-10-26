@@ -291,6 +291,8 @@
     "today": "Today",
     "yesterday": "Yesterday",
     "noteSaved": "Note saved",
+    "inProgress": "In progress",
+    "undone": "What will be undone",
     "points": "Points in this task",
     "close": "Close",
     "confirm": "Go back to this point? Files changed after it will be undone.",

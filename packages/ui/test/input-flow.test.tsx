@@ -117,6 +117,22 @@ describe("input blocks in the chat", () => {
     expect(screen.queryByText("This question is closed.")).toBeNull();
   });
 
+  it("an answer whose turn fails offers no 'Try again' (the form opens again), and resends nothing as text", async () => {
+    const client = quizClient();
+    await open(client);
+    fireEvent.change(screen.getByLabelText("Why?"), { target: { value: "kept" } });
+    fireEvent.click(screen.getByRole("button", { name: "I commit" }));
+    expect(await screen.findByText("Your answer")).toBeTruthy();
+    act(() => {
+      client.emit({ type: "done", ok: false, error: { code: "agent-crashed" } });
+      client.emitTasks({ current: { id: "t1", action: "practice", status: "waiting", pendingInput: "t1:0:0" }, actions: {}, notes: [] });
+    });
+    expect(await screen.findByLabelText("Why?")).toBeTruthy();
+    expect((screen.getByLabelText("Why?") as HTMLTextAreaElement).value).toBe("kept");
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+    expect(client.sent).toEqual([]);
+  });
+
   it("a question the app reopened (stopped send) shows its form again, though its block was marked answered", async () => {
     const answered = { blockId: "t1:0:0", value: { why: "first try" }, answeredAt: "a" };
     const client = quizClient({ blocks: [block("t1:0:0", answered)], pending: "t1:0:0", status: "waiting" });

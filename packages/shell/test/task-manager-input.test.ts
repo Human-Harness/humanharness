@@ -246,6 +246,33 @@ describe("TaskManager.respond", () => {
     expect(t.state().current).toMatchObject({ status: "waiting", turns: 1, pendingInput: { blockId: "t1:0:0", block: "commit_answer" } });
   });
 
+  it("an answer turn that starts and then fails opens the question again; a cancelled one ends the task", async () => {
+    const failed: Event = { type: "done", ok: false, error: { code: "out-of-quota" } };
+    const t = setup({ state: waiting(), script: [[failed]] });
+    const { accepted, done } = t.manager.respond("t1:0:0", { why: "x" });
+    expect((await accepted).ok).toBe(true);
+    await done;
+    expect(t.turns).toHaveLength(1);
+    // The agent may not have got the answer: the same question opens again, to be sent through `respond`.
+    expect(t.state().current).toMatchObject({ status: "waiting", pendingInput: { blockId: "t1:0:0", block: "commit_answer" } });
+    expect(t.views.at(-1)?.current?.pendingInput).toBe("t1:0:0");
+
+    const c = setup({ state: waiting(), script: [[cancelled]] });
+    const second = c.manager.respond("t1:0:0", { why: "x" });
+    expect((await second.accepted).ok).toBe(true);
+    await second.done;
+    expect(c.state().current).toBeNull();
+  });
+
+  it("a failed answer turn that showed a newer input block keeps the newer one", async () => {
+    const failed: Event = { type: "done", ok: false, error: { code: "agent-crashed" } };
+    const t = setup({ state: waiting(), script: [[shown("t1:1:0"), failed]] });
+    const { accepted, done } = t.manager.respond("t1:0:0", { why: "x" });
+    expect((await accepted).ok).toBe(true);
+    await done;
+    expect(t.state().current?.pendingInput?.blockId).toBe("t1:1:0");
+  });
+
   it("a Stop before the answer is taken refuses it: nothing changes and no turn runs", async () => {
     const t = setup({ state: waiting() });
     const { accepted, done } = t.manager.respond("t1:0:0", { why: "x" });

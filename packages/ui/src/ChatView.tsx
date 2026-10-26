@@ -98,6 +98,8 @@ export function ChatView({
   const [pickResets, setPickResets] = useState(0);
   /** The last message sent came from a pick (Try again picks it again). */
   const lastPick = useRef<Pick | null>(null);
+  /** The last message sent was an answer to an input block: its failed turn reopens the form, never a plain resend. */
+  const lastAnswer = useRef(false);
   /** The task open now, read when a turn ends to tag its entry. */
   const openTask = useRef<string | undefined>(undefined);
   openTask.current = tasks.current?.id;
@@ -252,6 +254,7 @@ export function ChatView({
     busy.current = true;
     stick.current = true;
     lastPick.current = null;
+    lastAnswer.current = false;
     setPickFailed(false);
     if (flow && (options.action || !tasks.current)) showNewTask();
     dispatch({ type: "user", text: message, at: new Date().toISOString(), ...(options.action ? { action: options.action } : {}) });
@@ -280,6 +283,7 @@ export function ChatView({
     }
     stick.current = true;
     lastPick.current = { option, task };
+    lastAnswer.current = false;
     setPickFailed(false);
     const at = new Date().toISOString();
     if (!moves) {
@@ -323,6 +327,7 @@ export function ChatView({
     }
     stick.current = true;
     lastPick.current = null;
+    lastAnswer.current = true;
     setPickFailed(false);
     dispatch({ type: "answered", answer: { blockId, value: r.value, answeredAt: r.answeredAt } });
     dispatch({ type: "user", text: r.display, at: r.answeredAt });
@@ -367,8 +372,12 @@ export function ChatView({
   });
   /** The entry's answer belongs to the task waiting now: its `choices` block may act. */
   const ofWaitingTask = (task: string | undefined) => task !== undefined && task === tasks.current?.id && tasks.current.status === "waiting";
-  /** Try again: a failed pick of the still-open task is picked again; anything else resends the last message. */
+  /**
+   * Try again: a failed pick of the still-open task is picked again; a failed answer has none (its question opens
+   * again, to be sent through `respond` with its JSON); anything else resends the last message.
+   */
   const retry = (): (() => void) | undefined => {
+    if (lastAnswer.current) return undefined;
     const pick = lastPick.current;
     if (pick && pick.task === tasks.current?.id) return () => void choose(pick.option, pick.task);
     if (lastUser) return () => void send(lastUser.text, lastUser.action ? { action: lastUser.action } : {});

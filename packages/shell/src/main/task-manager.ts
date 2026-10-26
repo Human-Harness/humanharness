@@ -158,6 +158,8 @@ export class TaskManager {
   private turnTask: string | null = null;
   /** Counts the turns that started (a `done` came or the send returned): `respond` knows whether its turn ran. */
   private turnsStarted = 0;
+  /** How the last turn that started ended: `respond` reopens its question when the answer's turn failed. */
+  private lastDone: Done | null = null;
   /** The slug each free-question task wrote its note under, so a second save replaces its own note. */
   private readonly questionSlugs = new Map<string, string>();
   private readonly now: () => Date;
@@ -564,7 +566,10 @@ export class TaskManager {
     const started = this.turnsStarted;
     try {
       await this.askNow(answerMessage({ name: pending.block, blockId, value: parsed.value, display, language }), display);
-      if (this.turnsStarted === started) await this.reopen(c.id, pending);
+      // Never started, or started and failed (a cancel ends the task): the answer goes back through the form, never
+      // as a plain retried line that loses its JSON.
+      const d = this.lastDone;
+      if (this.turnsStarted === started || (d && !d.ok && d.error.code !== "cancelled")) await this.reopen(c.id, pending);
     } catch (err) {
       // An answer the agent never got must not be lost: its question opens again.
       if (this.turnsStarted === started) await this.reopen(c.id, pending);
@@ -592,8 +597,8 @@ export class TaskManager {
   }
 
   /**
-   * The answer's turn never started (a Stop, or the send was refused): its question is pending again, so the form
-   * opens again. The chat keeps its answered mark (the chat log can't unmark): the window shows the pending
+   * The answer's turn never started (a Stop, or the send was refused) or failed: its question is pending again
+   * (unless the turn showed a newer one), so the form opens again with its draft. The chat keeps its answered mark (the chat log can't unmark): the window shows the pending
    * question's form, not that mark, and the next answer replaces it. Logged on failure.
    */
   private async reopen(id: string, pending: PendingInput): Promise<void> {
@@ -754,6 +759,8 @@ export class TaskManager {
       this.turnTask = null;
     }
     this.turnsStarted++;
+    const result: Done = seen.done ?? { type: "done", ok: false, error: { code: "agent-crashed" } };
+    this.lastDone = result;
     await Promise.all(shownInputs);
     // Mirrors TurnController: a quiet turn reaches the window only with a failure other than a cancel,
     // and a held failure never does.
@@ -761,7 +768,7 @@ export class TaskManager {
     if (d && !isHeld(d, options) && (!options.quiet || (!d.ok && d.error.code !== "cancelled"))) this.windowDone = true;
     if (seen.note) await this.saveNote(task, seen.note, options.phase !== "checkpoint");
     if (seen.used !== undefined || seen.compacted) await this.track(task.id, seen);
-    return seen.done ?? { type: "done", ok: false, error: { code: "agent-crashed" } };
+    return result;
   }
 
   private async afterRun(id: string, done: Done, first: boolean): Promise<void> {

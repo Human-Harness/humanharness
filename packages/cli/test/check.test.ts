@@ -500,7 +500,7 @@ describe("check: settings", () => {
     const r = await checkHarness(
       await fixture(
         withSettings(
-          `${tone()}, hint: { schema: z.number().min(1), default: 0, section: "nope", control: "number", label: "Hint", agent: "After {{tries}} tries." }`,
+          `${tone()}, pace: { schema: z.enum(["slow", "fast"]), default: "slow", control: "select", label: "Pace", options: { slow: "Slow", nope: "Nope" } }, hint: { schema: z.number().min(1), default: 0, section: "nope", control: "number", label: "Hint", agent: "After {{tries}} tries." }`,
           ' sections: [{ id: "help", label: "Help" }],',
         ),
       ),
@@ -510,6 +510,7 @@ describe("check: settings", () => {
       "error:schema:settings.fields.hint.agent",
       "error:schema:settings.fields.hint.default",
       "error:schema:settings.fields.hint.section",
+      "error:schema:settings.fields.pace.options.nope",
     ]);
   });
 

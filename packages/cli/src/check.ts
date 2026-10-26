@@ -339,7 +339,7 @@ async function inputFindings(h: LoadedHarness): Promise<Finding[]> {
 
 /**
  * Harness settings (harness-settings spec §5 "Measuring"): their section of AGENTS.md is in every session's stable
- * prefix. Measured at its longest, every sentence at the defaults (`onlyWhenChanged` ones included). The structural
+ * prefix. Measured with every sentence filled with its default, `onlyWhenChanged` ones included. The structural
  * rules (defaults, options, sections, placeholders) are manifest schema errors, reported as `schema`.
  */
 function settingsFindings(h: LoadedHarness): Finding[] {

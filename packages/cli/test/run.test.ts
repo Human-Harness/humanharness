@@ -11,7 +11,7 @@ import { type ClaudeScript, claudeTextLines, fakeClaudeCommand, recordingSchema,
 import type { CommandDeps } from "@humanharness/shell/tasks";
 import { SharedConfigStore } from "@humanharness/shell/tasks";
 import { DATA_PREFIX, History, NOTES_PREFIX, TURN_PREFIX } from "@humanharness/workspace";
-import { UsageError } from "../src/cli";
+import { CliError, UsageError } from "../src/cli";
 import { initHarness } from "../src/init";
 import { main } from "../src/main";
 import { type Interrupts, noticeMessage, parseSettings, readyEngine, runTask } from "../src/run";
@@ -582,10 +582,12 @@ describe("run --set (harness settings)", () => {
     expect(out.text()).not.toContain("Settings:");
   });
 
-  it("parseSettings: JSON when the field takes it, else the text; refuses unknown, invalid and settings-less", async () => {
+  it("parseSettings: the text as typed when the field takes it, else JSON; refuses unknown, invalid and settings-less", async () => {
     const { loadHarness } = await import("@humanharness/harness-sdk");
     const h = await loadHarness(path.join(tutor, "harness.config.ts"));
     expect(parseSettings(h.settings, { hintAfter: "3", tone: "neutral", nickname: "42" })).toEqual({ hintAfter: 3, tone: "neutral", nickname: "42" });
+    // The typed text comes first: a text field keeps quotes that would read as a JSON string.
+    expect(parseSettings(h.settings, { nickname: '"Bob"', examples: "false" })).toEqual({ nickname: '"Bob"', examples: false });
     expect(() => parseSettings(h.settings, { nope: "1" })).toThrow(UsageError);
     expect(() => parseSettings(h.settings, { nope: "1" })).toThrow('Unknown setting "nope". Settings: nickname, tone, examples, hintAfter.');
     expect(() => parseSettings(h.settings, { hintAfter: "9" })).toThrow('"9" is not a valid value for the setting "hintAfter".');
@@ -604,5 +606,28 @@ describe("run --set (harness settings)", () => {
     const bad = memoryIo(root);
     expect(await main(["run", "practice", "--harness", tutor, "--set", "tone=x", "--set", "hintAfter=3"], bad.io)).toBe(2);
     expect(bad.err()).toContain('"x" is not a valid value for the setting "tone".');
+    // `__proto__` is a name like any other: refused as unknown, never dropped.
+    const proto = memoryIo(root);
+    expect(await main(["run", "practice", "--harness", tutor, "--set", "__proto__=x"], proto.io)).toBe(2);
+    expect(proto.err()).toContain('Unknown setting "__proto__"');
+  });
+
+  it("a settings file broken by hand stops the run with the store's message, not a stack", { timeout: 60_000 }, async () => {
+    const folder = path.join(root, "tutor-broken");
+    fs.mkdirSync(path.join(folder, ".harness", "data", "_app"), { recursive: true });
+    fs.writeFileSync(path.join(folder, ".harness", "data", "_app", "settings.json"), "[1, 2]\n");
+    const out = memoryStream();
+    const run = runTask({
+      harnessDir: tutor,
+      action: "practice",
+      engine: "claude",
+      folder,
+      settings: { tone: "demanding" },
+      input: lines("q\n"),
+      output: out.stream,
+      engineCommand: { command: fakeClaudeCommand(), env: { HH_FAKE_SCRIPT: writeScript(root, tutorScript) } },
+    });
+    await expect(run).rejects.toBeInstanceOf(CliError);
+    await expect(run).rejects.toThrow(/was changed by hand/);
   });
 });

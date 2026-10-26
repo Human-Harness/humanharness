@@ -49,7 +49,7 @@ import {
   sharedConfigDir,
   usageRecord,
 } from "@humanharness/shell/tasks";
-import { APP_SCOPE, DataStore, MAIN_SCOPE, buildDataContext, ScopeStore, generatedFiles, migrateToScopes, notesPrefix, readNotes, writeNote } from "@humanharness/workspace";
+import { APP_SCOPE, DataError, DataStore, MAIN_SCOPE, buildDataContext, ScopeStore, generatedFiles, migrateToScopes, notesPrefix, readNotes, writeNote } from "@humanharness/workspace";
 import { CliError, type Io, UsageError, parseCommand } from "./cli";
 import { promptAnswer } from "./input-prompt";
 import { MANIFEST } from "./paths";
@@ -103,8 +103,9 @@ export const noticeMessage = (engine: string) =>
   `${engine}'s notice hasn't been accepted on this computer. Open the app once (corepack pnpm dev, or humanharness dev), accept the notice and set up ${engine} there, then run again.`;
 
 /**
- * `--set` values checked against the harness's settings. Each text is read as JSON when the field's schema takes it
- * (4, true), else as the text itself (patient). A name the harness doesn't declare is refused.
+ * `--set` values checked against the harness's settings. Each text is tried as typed first (patient, "Bob" with its
+ * quotes), then as JSON when the field's schema refuses the text (4, true). A name the harness doesn't declare is
+ * refused.
  */
 export function parseSettings(settings: HarnessSettings | undefined, typed: Record<string, string>): Record<string, unknown> {
   const entries = Object.entries(typed);
@@ -114,16 +115,16 @@ export function parseSettings(settings: HarnessSettings | undefined, typed: Reco
     entries.map(([name, text]) => {
       if (!Object.hasOwn(settings.fields, name)) throw new UsageError(`Unknown setting "${name}". Settings: ${Object.keys(settings.fields).join(", ")}.`);
       const schema = settings.fields[name].schema;
+      const raw = schema.safeParse(text);
+      if (raw.success) return [name, raw.data];
       let json: unknown;
       try {
         json = JSON.parse(text);
       } catch {
         json = undefined;
       }
-      for (const candidate of json === undefined ? [text] : [json, text]) {
-        const parsed = schema.safeParse(candidate);
-        if (parsed.success) return [name, parsed.data];
-      }
+      const parsed = json === undefined ? undefined : schema.safeParse(json);
+      if (parsed?.success) return [name, parsed.data];
       throw new UsageError(`"${text}" is not a valid value for the setting "${name}".`);
     }),
   );
@@ -253,8 +254,13 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
       if (sameSetting(value, settings.fields[name].default)) delete record[name];
       else record[name] = value;
     }
-    if (Object.keys(record).length > 0) await dataStore.put(SETTINGS_COLLECTION, record, person);
-    else if (Object.keys(stored).length > 0) await dataStore.delete(SETTINGS_COLLECTION, undefined, person);
+    try {
+      if (Object.keys(record).length > 0) await dataStore.put(SETTINGS_COLLECTION, record, person);
+      else if (Object.keys(stored).length > 0) await dataStore.delete(SETTINGS_COLLECTION, undefined, person);
+    } catch (err) {
+      // A settings file broken by hand: the store's message, not a stack.
+      throw err instanceof DataError ? new CliError(err.message) : err;
+    }
     out.write(`Settings: ${Object.entries(o.settings ?? {}).map(([n, v]) => `${n}=${v}`).join(", ")}\n`);
   }
 
@@ -505,7 +511,8 @@ export async function runCommand(args: string[], io: Io): Promise<number> {
   if (values.tier !== undefined && !(TIERS as readonly string[]).includes(values.tier)) throw new UsageError(`Unknown tier "${values.tier}": use light, standard or deep.`);
   const language = values.language === undefined ? undefined : canonicalLanguage(values.language);
   if (language === null) throw new UsageError(`Unknown language "${values.language}": use a language tag such as en, es or pt-BR.`);
-  const settings: Record<string, string> = {};
+  // No prototype: `--set __proto__=x` stays a name, and parseSettings refuses it as unknown.
+  const settings: Record<string, string> = Object.create(null);
   for (const pair of values.set ?? []) {
     const at = pair.indexOf("=");
     if (at <= 0) throw new UsageError(`--set takes name=value, got "${pair}".`);

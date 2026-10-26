@@ -48,7 +48,8 @@ test("settings save at once; AGENTS.md takes them at the next task, never during
     const tab = page.getByRole("tabpanel", { name: "How I learn" });
     await tab.getByRole("group", { name: "Tone" }).getByRole("button", { name: "Demanding" }).click();
     await expect.poll(() => (fs.existsSync(settingsFile) ? JSON.parse(fs.readFileSync(settingsFile, "utf8")) : null)).toEqual({ tone: "demanding" });
-    await expect(tab.getByRole("status")).toHaveCount(0);
+    // The status line stays mounted (a live region), empty while no task is open.
+    await expect(tab.getByRole("status")).toHaveText("");
     await page.getByRole("button", { name: "Done", exact: true }).click();
 
     // The first task's runtime writes AGENTS.md with the current settings.
@@ -70,6 +71,8 @@ test("settings save at once; AGENTS.md takes them at the next task, never during
     await expect.poll(() => JSON.parse(fs.readFileSync(settingsFile, "utf8"))).toEqual({ tone: "demanding", hintAfter: 4 });
     expect(agents()).toContain("after 2 failed tries");
     await page.getByRole("button", { name: "Done", exact: true }).click();
+    // Still the old text just before the task ends.
+    expect(agents()).toContain("after 2 failed tries");
 
     // Next: the task closes, AGENTS.md is rewritten, then the next task starts.
     await page.getByRole("button", { name: "Next →" }).click();
@@ -78,9 +81,10 @@ test("settings save at once; AGENTS.md takes them at the next task, never during
     const prompts = readJsonl<{ prompt: string }>(s.claudePrompts).map((p) => p.prompt);
     expect(prompts.some((p) => p.includes("# Task: review"))).toBe(true);
 
-    // After the task: nothing pending.
+    // In the next task: the tab is drawn (the review task is open) and nothing is pending.
     await page.getByRole("button", { name: "Settings" }).click();
     await page.getByRole("tab", { name: "How I learn" }).click();
+    await expect(tab.getByRole("status")).toHaveText("Changes apply from the next task.");
     await expect(tab.getByText("Pending")).toHaveCount(0);
   } finally {
     await closeAndClean(app, s);

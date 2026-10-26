@@ -19,9 +19,18 @@ import {
   tierBelow,
 } from "@humanharness/harness-sdk";
 import { type Event, type Session, fail } from "@humanharness/runtime";
-import { type ActionStatus, type CurrentTaskView, type NoteView, type TaskStatus, type TaskView, nextInPath } from "@humanharness/ui/client";
+import {
+  type ActionStatus,
+  type CurrentTaskView,
+  type ModeChoice,
+  type ModeResult,
+  type NoteView,
+  type TaskStatus,
+  type TaskView,
+  nextInPath,
+} from "@humanharness/ui/client";
 import { APP_SCOPE, type HistoryTrailer, MAIN_SCOPE, NOTE_PREFIX, type Note, type NoteMeta, buildNotesIndex, isScopeId, noteSlug } from "@humanharness/workspace";
-import { CHECKPOINT_PROMPT, type ModeText, QUESTION_PROMPT, closePrompt, fillPrompt, modeSection, recommendSection, resumeMessage } from "./task-prompts";
+import { CHECKPOINT_PROMPT, type ModeText, QUESTION_PROMPT, closePrompt, fillPrompt, modePrompt, modeSection, recommendSection, resumeMessage } from "./task-prompts";
 import { type CurrentTask, type PendingInput, type TasksFile, interrupted, keptQuestion, scopeOfTask, statusesIn, withStatus } from "./task-store";
 import { type TurnOptions, isHeld } from "./turn-controller";
 
@@ -157,6 +166,10 @@ const currentView = (c: CurrentTask, tier?: Tier): CurrentTaskView => ({
   ...(c.belowMinTier ? { belowMinTier: true as const } : {}),
 });
 
+/** How much of the last checkpoint's summary a mode switch carries (spec §10.1): `save_note`'s own limits. */
+const SO_FAR_POINTS = 5;
+const SO_FAR_CHARS = 400;
+
 /** A manifest text on one line: a newline in a label or hint must not break the prompt's heading or list. */
 const oneLine = (s: string) => s.replace(/\s*\n\s*/g, " ").trim();
 
@@ -272,6 +285,36 @@ export class TaskManager {
         throw err;
       },
     );
+    return { accepted, done };
+  }
+
+  /**
+   * The person picks `mode` for the open task (task-modes spec §5). It waits for a running turn to end and never cancels
+   * it (§5.2). `accepted` resolves with a refusal or with how the switch goes on, before any turn's events; `done` once
+   * its turn has ended. Both reject when the operation can't run (closing, another operation just started).
+   */
+  chooseMode(mode: string, choice: ModeChoice = {}): { accepted: Promise<ModeResult>; done: Promise<void> } {
+    let settled = false;
+    let take!: (r: ModeResult) => void;
+    let refuse!: (err: unknown) => void;
+    const accepted = new Promise<ModeResult>((resolve, reject) => {
+      take = (r) => {
+        settled = true;
+        resolve(r);
+      };
+      refuse = reject;
+    });
+    const done = this.whenIdle()
+      .then(() => this.op(() => this.modeNow(mode, choice, take)))
+      .then(
+        () => {
+          if (!settled) refuse(new Error("The mode was not switched"));
+        },
+        (err: unknown) => {
+          if (!settled) refuse(err);
+          throw err;
+        },
+      );
     return { accepted, done };
   }
 
@@ -393,6 +436,15 @@ export class TaskManager {
       await fn();
       return true;
     });
+  }
+
+  /** Resolves once no operation or turn runs, or the app is closing (a mode switch waits for the turn, spec §5.2). */
+  private async whenIdle(): Promise<void> {
+    while (this.isBusy() && !this.closed) {
+      await this.idle();
+      // A turn the window started outside an operation: look again shortly.
+      if (this.isBusy()) await new Promise((resolve) => setTimeout(resolve, 25));
+    }
   }
 
   private op<T>(fn: () => Promise<T>): Promise<T> {
@@ -565,6 +617,85 @@ export class TaskManager {
     const min = this.d.modes && Object.hasOwn(this.d.modes, mode) ? this.d.modes[mode].minTier : undefined;
     const tier = min !== undefined ? await this.tierFor({ profile }) : undefined;
     return min !== undefined && tier !== undefined && tierBelow(tier, min);
+  }
+
+  /**
+   * Checks, in order: a task waits; the action lists the mode; it isn't the current one; the task's tier reaches the
+   * mode's `minTier`, or the person chose how to go on (spec §5.3). Then: a new task at the mode's tier, a quiet switch
+   * for a lost session, or one turn in the same session. The state changes only once that turn ended well.
+   */
+  private async modeNow(mode: string, choice: ModeChoice, take: (r: ModeResult) => void): Promise<void> {
+    const c = await this.storedCurrent();
+    if (!c || c.status !== "waiting") return take({ ok: false, reason: "no-task" });
+    if (!this.modesOf(c.action).includes(mode)) return take({ ok: false, reason: "unknown" });
+    if (c.mode === mode) return take({ ok: true, switched: "same" });
+    const required = this.d.modes![mode].minTier;
+    const current = await this.tierFor(c);
+    const below = required !== undefined && current !== undefined && tierBelow(current, required);
+    if (below && choice.belowTier === undefined) return take({ ok: false, reason: "tier", required, current });
+    if (below && choice.belowTier === "new-task") {
+      take({ ok: true, switched: "new-task" });
+      // The closing turn saves the note the new task starts from: one turn, where the spec has a checkpoint and a close.
+      if (!(await this.closeCurrent())) return this.stopped();
+      return this.startNow(c.action!, undefined, undefined, mode, required);
+    }
+    // Read before anything is taken: a brief that can't be read refuses the switch.
+    const text = await this.modeText(mode);
+    if (c.resume) {
+      // The session is gone (a folder move): nothing to tell now; the resumed session's first message carries the mode.
+      await this.setMode(c.id, mode, below);
+      return take({ ok: true, switched: "quiet" });
+    }
+    take({ ok: true, switched: "turn" });
+    if (needsCheckpoint(c) && !(await this.checkpoint(c))) return this.stopped();
+    const language = await this.d.language();
+    const soFar = c.checkpointNote ? await this.checkpointSummary(c) : undefined;
+    const message = modePrompt(text, { language, ...(soFar ? { soFar } : {}) });
+    await this.setStatus(c.id, "running");
+    // Checked with no await before the send: a Stop while the status was saved.
+    if (this.cancelRequested) {
+      await this.setStatus(c.id, "waiting");
+      return this.stopped();
+    }
+    let done: Done;
+    try {
+      // `display` always goes with `modeSwitch`: the chat shows the system line, never the mode's prompt.
+      done = await this.runTurn(c, message, {
+        display: `Switched to ${text.label}`,
+        ...(c.action ? { action: c.action } : {}),
+        followUp: true,
+        mode,
+        modeSwitch: true,
+      });
+    } catch (err) {
+      if (err instanceof TurnNotStarted) await this.setStatus(c.id, "waiting");
+      throw unwrap(err);
+    }
+    // The mode is the task's once the agent got it: a failed switch can be picked again.
+    if (done.ok) await this.setMode(c.id, mode, below);
+    return this.afterRun(c.id, done, false);
+  }
+
+  /** The task works in `mode` now: it joins the modes used (once), and `belowMinTier` says whether it runs below it. */
+  private setMode(id: string, mode: string, below: boolean): Promise<void> {
+    return this.update((s) => {
+      if (s.current?.id !== id) return s;
+      const { belowMinTier: _below, ...rest } = s.current;
+      const modes = rest.modes?.includes(mode) ? rest.modes : [...(rest.modes ?? []), mode];
+      return { ...s, current: { ...rest, mode, modes, ...(below ? { belowMinTier: true as const } : {}) } };
+    });
+  }
+
+  /**
+   * The summary of the task's checkpoint note (spec §10.1), or undefined when it can't be found. Capped like
+   * `save_note`'s (5 points of 400 characters): a note edited by hand must not flood the switch's message.
+   */
+  private async checkpointSummary(c: CurrentTask): Promise<string[] | undefined> {
+    const notes = await this.d.notes(this.d.scoped ? scopeOfTask(c) : undefined).catch(() => [] as Note[]);
+    return notes
+      .find((n) => n.slug === c.action)
+      ?.summary.slice(0, SO_FAR_POINTS)
+      .map((s) => s.slice(0, SO_FAR_CHARS));
   }
 
   /** The labels of the modes the task used, for the closing turn. */

@@ -424,6 +424,21 @@ export interface TaskView {
   scope?: string | null;
 }
 
+/**
+ * How the person's pick of a mode for the open task went (task-modes spec §5). `switched`: a turn in the new mode runs
+ * now ("turn"), the mode was set with no turn because the session is gone ("quiet"), the task closes and a new one
+ * starts in that mode ("new-task"), or it already was the mode ("same"). Refusals: no task waits ("no-task"), the action
+ * doesn't list the mode ("unknown"), or the mode asks for more than the task's tier ("tier", with both tiers).
+ */
+export type ModeResult =
+  | { ok: true; switched: "turn" | "quiet" | "new-task" | "same" }
+  | { ok: false; reason: "no-task" | "unknown" | "tier"; required?: Tier; current?: Tier };
+
+/** The answer to the tier question (spec §5.3): continue at the task's tier, or start a new task at the mode's. */
+export interface ModeChoice {
+  belowTier?: "continue" | "new-task";
+}
+
 /** The action to start after `current` on the guided path: the next one, or else the first one not done yet. */
 export function nextInPath(path: string[], current: string | undefined, statuses: Record<string, ActionStatus>): string | null {
   const i = current ? path.indexOf(current) : -1;

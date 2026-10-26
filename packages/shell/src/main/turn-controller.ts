@@ -155,6 +155,7 @@ export class TurnController {
           at: new Date().toISOString(),
           ...(action && !followUp ? { action } : {}),
           ...(task ? { task } : {}),
+          // `modeSwitch` needs both `mode` and `display` ("Switched to …"): without `display` the mode's prompt lands here.
           ...(modeSwitch && mode ? { mode } : {}),
         });
       }

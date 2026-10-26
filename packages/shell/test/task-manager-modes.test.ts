@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { ModelProfile } from "@humanharness/engines";
 import type { SavedNote, Tier } from "@humanharness/harness-sdk";
 import type { Event } from "@humanharness/runtime";
-import type { TaskView } from "@humanharness/ui/client";
+import type { ModeChoice, TaskView } from "@humanharness/ui/client";
 import type { Note, NoteMeta } from "@humanharness/workspace";
 import { TaskManager } from "../src/main/task-manager";
 import { CLOSE_PROMPT, closePrompt, modePrompt, modeSection, recommendSection, resumeMessage } from "../src/main/task-prompts";
@@ -166,5 +166,112 @@ describe("TaskManager: how a task starts (task-modes spec §3 defaultMode, §4)"
     const section = modeSection({ label: "Feynman", brief: brief("feynman"), settings: [] }, "en");
     expect(t.turns[0].message).toBe(resumeMessage({ language: "en", notesIndex: "", brief: "# Task: study\n\n{{notesIndex}}", mode: section, message: "Hi" }));
     expect(t.turns[0].options.mode).toBe("feynman");
+  });
+});
+
+const pick = async (t: ReturnType<typeof setup>, mode: string, choice?: ModeChoice) => {
+  const { accepted, done } = t.manager.chooseMode(mode, choice);
+  const r = await accepted;
+  await done;
+  return r;
+};
+
+describe("TaskManager.chooseMode (task-modes spec §5)", () => {
+  it("switches in one turn of the same session: the mode's brief and settings, a system line, then the state", async () => {
+    const t = setup();
+    await t.manager.start("study");
+    expect(await pick(t, "socratic")).toEqual({ ok: true, switched: "turn" });
+    expect(t.turns[1].message).toBe(modePrompt(socratic, { language: "en" }));
+    expect(t.turns[1].options).toMatchObject({ display: "Switched to Socratic", modeSwitch: true, mode: "socratic", action: "study", followUp: true });
+    expect(t.turns[1].options).not.toHaveProperty("quiet");
+    expect(t.state().current).toMatchObject({ mode: "socratic", modes: ["socratic"], status: "waiting", turns: 2 });
+    await pick(t, "feynman");
+    await pick(t, "socratic");
+    expect(t.state().current).toMatchObject({ mode: "socratic", modes: ["socratic", "feynman"] });
+  });
+
+  it("refuses with no waiting task, a mode the action doesn't list, and does nothing for the current mode", async () => {
+    const t = setup();
+    expect(await pick(t, "socratic")).toEqual({ ok: false, reason: "no-task" });
+    await t.manager.start("quiz");
+    expect(await pick(t, "socratic")).toEqual({ ok: false, reason: "unknown" });
+    await t.manager.start("study");
+    expect(await pick(t, "nope")).toEqual({ ok: false, reason: "unknown" });
+    await pick(t, "socratic");
+    const before = t.turns.length;
+    expect(await pick(t, "socratic")).toEqual({ ok: true, switched: "same" });
+    expect(t.turns).toHaveLength(before);
+  });
+
+  it("a failed switch turn leaves the mode as it was, so it can be picked again", async () => {
+    const t = setup({ script: [[ok], [{ type: "done", ok: false, error: { code: "agent-crashed" } }]] });
+    await t.manager.start("study");
+    expect(await pick(t, "feynman")).toEqual({ ok: true, switched: "turn" });
+    expect(t.state().current).not.toHaveProperty("mode");
+    expect(t.state().current?.status).toBe("waiting");
+  });
+
+  it("below the mode's minTier: refused with the tiers; 'continue' switches and marks it; a fitting mode clears the mark", async () => {
+    const t = setup();
+    await t.manager.start("study");
+    expect(await pick(t, "worked")).toEqual({ ok: false, reason: "tier", required: "deep", current: "standard" });
+    expect(t.turns).toHaveLength(1);
+    expect(await pick(t, "worked", { belowTier: "continue" })).toEqual({ ok: true, switched: "turn" });
+    expect(t.state().current).toMatchObject({ mode: "worked", belowMinTier: true });
+    await pick(t, "feynman");
+    expect(t.state().current).not.toHaveProperty("belowMinTier");
+  });
+
+  it("'new-task' closes the task (its note) and starts the same action in that mode at the mode's tier", async () => {
+    const t = setup({ defaultMode: "socratic", script: [[ok], [saveNote, ok], [ok]] });
+    await t.manager.start("study");
+    expect(await pick(t, "worked", { belowTier: "new-task" })).toEqual({ ok: true, switched: "new-task" });
+    expect(t.turns[1].message).toBe(closePrompt(["Socratic"]));
+    expect(t.turns[2].message).toContain("## Mode: Worked examples");
+    expect(t.floors.at(-1)).toBe("deep");
+    expect(t.state().actions.study).toBe("done");
+    expect(t.state().current).toMatchObject({ id: "t2", action: "study", mode: "worked", modes: ["worked"], profile: { tier: "deep" } });
+    expect(t.state().current).not.toHaveProperty("belowMinTier");
+  });
+
+  it("waits for a running turn to end, never cancelling it (spec §5.2)", async () => {
+    let release!: () => void;
+    const t = setup({ gate: new Promise<void>((r) => (release = r)) });
+    const started = t.manager.start("study");
+    await vi.waitFor(() => expect(t.turns).toHaveLength(1));
+    const { accepted, done } = t.manager.chooseMode("feynman");
+    await new Promise((r) => setTimeout(r, 30));
+    expect(t.turns).toHaveLength(1);
+    release();
+    await started;
+    expect(await accepted).toEqual({ ok: true, switched: "turn" });
+    await done;
+    expect(t.turns[1].options.mode).toBe("feynman");
+  });
+
+  it("a task whose session was lost switches quietly; its resumed session carries the mode", async () => {
+    const current = { id: "t1", action: "study", status: "waiting" as const, startedAt: "", turns: 1, resume: true as const };
+    const t = setup({ state: { version: 1, actions: {}, current } });
+    expect(await pick(t, "feynman")).toEqual({ ok: true, switched: "quiet" });
+    expect(t.turns).toHaveLength(0);
+    expect(t.state().current).toMatchObject({ mode: "feynman", modes: ["feynman"], resume: true });
+  });
+
+  it("carries the last checkpoint's summary when the task has one (spec §10.1)", async () => {
+    const note: Note = { slug: "study", action: "study", date: NOW, engine: "claude", ...NOTE, path: ".harness/notes/study.md" };
+    const current = { id: "t1", action: "study", status: "waiting" as const, startedAt: "", turns: 3, checkpointNote: true, checkpointTurns: 3, profile: profileOf("standard") };
+    const t = setup({ notes: [note], state: { version: 1, actions: {}, current } });
+    await pick(t, "feynman");
+    expect(t.turns[0].message).toContain("What is clear so far (the last checkpoint): Two halves make a whole.");
+  });
+
+  it("caps the checkpoint's summary it carries: 5 points of 400 characters at most", async () => {
+    const long = Array.from({ length: 7 }, (_, i) => `${i}${"x".repeat(500)}`);
+    const note: Note = { slug: "study", action: "study", date: NOW, engine: "claude", ...NOTE, summary: long, path: ".harness/notes/study.md" };
+    const current = { id: "t1", action: "study", status: "waiting" as const, startedAt: "", turns: 3, checkpointNote: true, checkpointTurns: 3, profile: profileOf("standard") };
+    const t = setup({ notes: [note], state: { version: 1, actions: {}, current } });
+    await pick(t, "feynman");
+    const feynman = { label: "Feynman", brief: brief("feynman"), settings: [] };
+    expect(t.turns[0].message).toBe(modePrompt(feynman, { language: "en", soFar: long.slice(0, 5).map((s) => s.slice(0, 400)) }));
   });
 });

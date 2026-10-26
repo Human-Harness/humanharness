@@ -28,6 +28,8 @@ Manifest (`defineHarness`) with actions + tiers + `path`; blocks (`defineBlock`,
 | thinker | – | – | – |
 | writer | – | – | – |
 
+**Dev vs core (2026-10-26):** `docs/discovery/2026-10-26-dev-vs-core.md`. Filter (Marco): only dev features useful to other harnesses go into the core; the rest gets a minimal hatch. Marco answered §5 the same day: C1–C7 into the core except C8 (⌘K); hatches H1–H3 yes, H4 dropped. Next: specs A–F listed there.
+
 **Next step:** Marco reviews student mockup v1 (https://claude.ai/artifact/WASSbMqoJYVBsAo41fx6nK, 15 screens). Student prototype (2026-10-20): https://claude.ai/artifact/5wNPm3RGiNXrdzEP4st9Qp, source `docs/discovery/prototypes/student/index.html`. Next: Marco tests it and gives feedback.
 
 - **Works:**

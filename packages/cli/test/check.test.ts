@@ -480,3 +480,46 @@ describe("check: recorded answers", () => {
     ]);
   });
 });
+
+describe("check: settings", () => {
+  const AFTER = '  questions: { tier: "light" },';
+  const tone = (extra = "") =>
+    `tone: { schema: z.enum(["patient", "demanding"]), default: "patient", control: "segmented", label: "Tone", options: { patient: "Patient", demanding: "Demanding" }, agent: "Use a {{value:label}} tone."${extra} }`;
+  const withSettings = (fields: string, sections = "") => (d: string) =>
+    replaceIn(d, "harness.config.ts", AFTER, `${AFTER}\n  settings: { tab: "How I learn",${sections} fields: { ${fields} } },`);
+  const settingsRules = (r: CheckResult) =>
+    r.findings.filter((f) => f.rule === "settings-tokens" || f.message.startsWith("settings.")).map((f) => `${f.severity}:${f.rule}:${f.message.split(":")[0]}`);
+
+  it("a valid declaration gives no finding", async () => {
+    const r = await checkHarness(await fixture(withSettings(tone())));
+    expect(errors(r)).toEqual([]);
+    expect(settingsRules(r)).toEqual([]);
+  });
+
+  it("schema: a default, an option, a section and a placeholder that don't fit", async () => {
+    const r = await checkHarness(
+      await fixture(
+        withSettings(
+          `${tone()}, hint: { schema: z.number().min(1), default: 0, section: "nope", control: "number", label: "Hint", agent: "After {{tries}} tries." }`,
+          ' sections: [{ id: "help", label: "Help" }],',
+        ),
+      ),
+    );
+    expect(r.harness).toBeNull();
+    expect(settingsRules(r).sort()).toEqual([
+      "error:schema:settings.fields.hint.agent",
+      "error:schema:settings.fields.hint.default",
+      "error:schema:settings.fields.hint.section",
+    ]);
+  });
+
+  it("settings-tokens: warns when the sentences make a long section", async () => {
+    const long = "Explain every step slowly and check that the person follows before going on, using {{value}} as the level of detail. ".repeat(2).trim();
+    const fields = Array.from({ length: 8 }, (_, i) => `f${i}: { schema: z.number(), default: ${i}, control: "number", label: "F${i}", agent: ${JSON.stringify(long)} }`).join(", ");
+    const r = await checkHarness(await fixture(withSettings(fields)));
+    expect(errors(r)).toEqual([]);
+    const found = r.findings.filter((f) => f.rule === "settings-tokens");
+    expect(found.map((f) => f.severity)).toEqual(["warning"]);
+    expect(found[0].message).toMatch(/^The settings' sentences take about \d+ tokens of AGENTS\.md \(more than 400\)/);
+  });
+});

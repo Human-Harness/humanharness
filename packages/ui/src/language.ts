@@ -1,4 +1,4 @@
-import { DEFAULT_LANGUAGE, type Language, canonicalLanguage, languageName } from "@humanharness/harness-sdk";
+import { DEFAULT_LANGUAGE, type Language, canonicalLanguage, languageName } from "@humanharness/harness-sdk/language";
 
 /** The system's language as a canonical tag; English when it gives none. Saved as the person's language at setup. */
 export function systemLanguage(): Language {

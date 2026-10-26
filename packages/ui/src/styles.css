@@ -185,11 +185,16 @@ select:focus-visible { outline: 2px solid var(--hh-ink); outline-offset: 2px; }
 .hh-model-editor { display: grid; gap: 8px; justify-items: start; }
 .hh-model-fields { display: grid; grid-template-columns: max-content 1fr; gap: 6px 12px; align-items: center; }
 .hh-model-fields label { color: var(--hh-slate); }
-.hh-context-meter { display: block; height: 3px; margin: 2px 8px 4px 35px; border-radius: 2px; background: var(--hh-line); overflow: hidden; }
-.hh-context-meter > span { display: block; height: 100%; background: var(--hh-slate); }
-.hh-context-meter.warn > span { background: var(--hh-warn); }
-.hh-flow-question { display: grid; gap: 4px; margin: 0 0 8px; padding: 6px 8px; color: var(--hh-ink); font-weight: 600; }
-.hh-flow-question .hh-context-meter { margin-left: 0; }
+.hh-context-meter { display: block; width: 16px; height: 16px; flex: none; }
+.hh-context-meter svg { display: block; width: 100%; height: 100%; transform: rotate(-90deg); }
+.hh-context-meter circle { fill: none; stroke-width: 2.5; stroke: var(--hh-line-strong); }
+.hh-context-meter circle + circle { stroke: var(--hh-slate); stroke-linecap: round; }
+.hh-context-meter.warn circle + circle { stroke: var(--hh-warn); }
+/* The running step's ring sits at the right end of its row, outside the (disabled) button so its title still shows on hover. */
+.hh-steps li { position: relative; }
+.hh-steps li > .hh-context-meter { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); }
+.hh-steps li:has(> .hh-context-meter) button { padding-right: 34px; }
+.hh-flow-question { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 0 8px; padding: 6px 8px; color: var(--hh-ink); font-weight: 600; }
 .hh-fallback { margin: 4px 0; }
 .hh-model-engine { display: flex; align-items: center; gap: 12px; margin: 8px 0; }
 .hh-model-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 10px 0; }

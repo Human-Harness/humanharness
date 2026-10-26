@@ -4,7 +4,7 @@ import { CheckIcon, LockIcon, NoteIcon } from "./chrome";
 import { type AppState, type TaskView, nextInPath } from "./client";
 import { shownLanguage } from "./language";
 
-/** A thin bar: the context the task's session uses against its cap, the exact tokens on hover (spec §6). */
+/** A small ring: the context the task's session uses against its cap, the exact tokens on hover (spec §6). */
 export function ContextMeter({ used, cap }: { used: number; cap: number }) {
   const { t, i18n } = useTranslation();
   if (!(cap > 0)) return null;
@@ -21,7 +21,10 @@ export function ContextMeter({ used, cap }: { used: number; cap: number }) {
       aria-valuetext={`${pct}%`}
       title={t("models.contextTitle", { used: fmt(used), cap: fmt(cap) })}
     >
-      <span style={{ width: `${pct}%` }} />
+      <svg viewBox="0 0 18 18" aria-hidden="true">
+        <circle cx="9" cy="9" r="7" pathLength={100} />
+        <circle cx="9" cy="9" r="7" pathLength={100} strokeDasharray={`${pct} 100`} />
+      </svg>
     </span>
   );
 }

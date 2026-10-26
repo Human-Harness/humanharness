@@ -399,3 +399,10 @@ select:focus-visible { outline: 2px solid var(--hh-ink); outline-offset: 2px; }
 .hh-mark[data-comment]:hover::after, .hh-mark[data-comment]:focus-visible::after { content: attr(data-comment); position: absolute; left: 0; top: calc(100% + 4px); z-index: 2; width: max-content; max-width: 280px; padding: 6px 8px; border-radius: 6px; background: var(--hh-ink); color: var(--hh-on-ink); font-size: 12px; white-space: normal; }
 .hh-annotate-notes { margin: 6px 0 0; padding-left: 18px; }
 .hh-mark-note strong { margin-right: 4px; }
+
+/* Settings › the harness's tab (harness-settings spec §4). */
+.hh-settings-group { display: grid; gap: 6px; }
+.hh-settings-group h3 { margin: 4px 0 0; }
+.hh-setting-pending { padding: 0 6px; border: 1px solid var(--hh-line-strong); border-radius: 999px; color: var(--hh-warn); font-size: 12px; }
+.hh-setting-control { display: inline-flex; align-items: center; gap: 6px; }
+.hh-setting-control input[type="number"] { width: 5em; }

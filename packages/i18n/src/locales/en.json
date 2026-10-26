@@ -49,7 +49,14 @@
       "logout": "Signing out of {{engine}}…"
     },
     "runningWait": "Settings stays open until it finishes.",
-    "runningCancel": "Cancel"
+    "runningCancel": "Cancel",
+    "harness": {
+      "nextTask": "Changes apply from the next task.",
+      "pending": "Pending",
+      "more": "More options",
+      "reset": "Back to the app's defaults",
+      "failed": "That didn't save. Try again."
+    }
   },
   "setup": {
     "language": "Language",

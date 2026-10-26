@@ -34,14 +34,17 @@ export function Segmented<T extends string>({
   options,
   value,
   onChange,
+  describedBy,
 }: {
   label: string;
   options: SegmentOption<T>[];
   value: T;
   onChange: (value: T) => void;
+  /** Ids of the texts that describe the group (help, an error). */
+  describedBy?: string;
 }) {
   return (
-    <div className="hh-segmented" role="group" aria-label={label}>
+    <div className="hh-segmented" role="group" aria-label={label} aria-describedby={describedBy}>
       {options.map((o) => (
         <button key={o.value} type="button" aria-pressed={value === o.value} onClick={() => onChange(o.value)}>
           {o.label}

@@ -48,6 +48,14 @@ describe("TerminalView: input blocks", () => {
     expect(view.shown.get("t1:0:0")).toEqual({ question: "¿Quién?" });
   });
 
+  it("a block named like an Object method is no input block: printed as before (D0)", () => {
+    const out = memoryStream();
+    const view = new TerminalView(out.stream, "Claude");
+    view.event({ type: "block", name: "constructor", data: { a: 1 }, id: "t1:0:0" });
+    expect(out.text()).toBe('  [constructor]\n    {\n      "a": 1\n    }\n');
+    expect(view.shown.size).toBe(0);
+  });
+
   it("shows annotate marks, one per line", () => {
     const out = memoryStream();
     const view = new TerminalView(out.stream, "Claude");

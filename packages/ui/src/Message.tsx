@@ -74,9 +74,11 @@ export function Blocks({
   return (
     <>
       {blocks.map((b, i) => {
-        const Component = components[b.name];
+        // Own keys only: a block named like an Object method (`constructor`) finds nothing.
+        const Component = Object.hasOwn(components, b.name) ? components[b.name] : undefined;
+        const spec = inputs && Object.hasOwn(inputs.specs, b.name) ? inputs.specs[b.name] : undefined;
         // Keyed by block id: its errors, sending state and draft never move to another block.
-        if (inputs?.specs[b.name]) return <InputHost key={b.id ?? i} block={b} Component={Component} actions={rest} inputs={inputs} />;
+        if (inputs && spec) return <InputHost key={b.id ?? i} block={b} spec={spec} Component={Component} actions={rest} inputs={inputs} />;
         return Component ? (
           <div key={i} className="hh-block">
             <Component data={b.data} {...rest} />

@@ -1,6 +1,6 @@
 import { type ComponentType, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { ChatBlock, InputIssue } from "./client";
+import type { ChatBlock, InputIssue, InputSpec } from "./client";
 import { AnswerView, InputForm } from "./InputForm";
 import type { BlockActions, BlockProps, InputContext, InputProps } from "./Message";
 
@@ -18,18 +18,20 @@ export function headingOf(data: unknown): string {
  */
 export function InputHost({
   block,
+  spec,
   Component,
   actions,
   inputs,
 }: {
   block: ChatBlock;
+  /** The block's own spec, found by the caller. */
+  spec: InputSpec;
   Component?: ComponentType<BlockProps>;
   actions: Omit<BlockActions, "inputs">;
   inputs: InputContext;
 }) {
   const [errors, setErrors] = useState<InputIssue[]>([]);
   const [sending, setSending] = useState(false);
-  const spec = inputs.specs[block.name];
   // The question the task waits on. A send stopped after it was taken reopens it while its block stays marked
   // answered: the waiting task wins, so the person can answer again.
   const open = block.id !== undefined && block.id === inputs.pending && (block.input === undefined || inputs.waiting);

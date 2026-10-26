@@ -67,8 +67,9 @@ export class TerminalView {
         .map((l) => `    ${l}`)
         .join("\n"),
     );
+    // Own keys only: a block named `constructor` is no input block (D0).
+    if (!Object.hasOwn(this.inputs, name)) return;
     const spec = this.inputs[name];
-    if (!spec) return;
     if (id) this.shown.set(id, data);
     const fields = spec.fields.map((f) => `${f.label[this.language]} (${f.kind ?? "not here"})`).join(", ");
     this.line(`    Answer with a: ${fields}${spec.skippable ? " · can be skipped" : ""}`);

@@ -55,18 +55,29 @@ async function askField(f: InputField, data: unknown, ask: Ask, out: Writable, l
       const options = choiceOptions(f, data);
       if (options.length === 0 && f.kind === "choice") return text(label, f, ask);
       options.forEach((o, i) => out.write(`  ${i + 1}. ${o}\n`));
-      const a = await ask(f.kind === "choice" ? `${label} (number): ` : `${label} (numbers, separated by commas): `);
-      if (a === null) return null;
-      const picks = a
-        .split(",")
-        .map((s) => Number(s.trim()))
-        .filter((n) => Number.isInteger(n) && n >= 1 && n <= options.length)
-        .map((n) => options[n - 1]);
-      if (f.kind === "choice") return picks.length > 0 ? { value: picks[0] } : a.trim() ? { value: a.trim() } : {};
-      return picks.length > 0 || !f.optional ? { value: picks } : {};
+      const question = f.kind === "choice" ? `${label} (number): ` : `${label} (numbers, separated by commas): `;
+      // Only the listed numbers count: anything else asks again, so no typed digits are ever sent as the answer.
+      for (;;) {
+        const a = await ask(question);
+        if (a === null) return null;
+        if (!a.trim()) return f.kind === "multiChoice" && !f.optional ? { value: [] } : {};
+        const numbers = a.split(",").map((s) => Number(s.trim()));
+        const valid = numbers.every((n) => Number.isInteger(n) && n >= 1 && n <= options.length);
+        if (valid && (f.kind === "multiChoice" || numbers.length === 1)) {
+          // Each option once, in the options' order.
+          const picked = new Set(numbers);
+          const picks = options.filter((_, i) => picked.has(i + 1));
+          return { value: f.kind === "choice" ? picks[0] : picks };
+        }
+        out.write(f.kind === "choice" ? `  Pick one number from 1 to ${options.length}.\n` : `  Pick numbers from 1 to ${options.length}.\n`);
+      }
     }
     case "pairs": {
       const cols = f.columns ?? [];
+      if (cols.length === 0) {
+        out.write(`${label}: can't be answered here.\n`);
+        return {};
+      }
       const rows: Record<string, string>[] = [];
       out.write(`${label}: one row at a time; an empty line ends.\n`);
       for (let n = 1; ; n++) {

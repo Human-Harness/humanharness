@@ -42,4 +42,28 @@ describe("promptAnswer", () => {
     const { ask } = asker(["2+2", "4", "", "y", "", "1, 3"]);
     expect(await promptAnswer(spec, {}, ask, memoryStream().stream, "en")).toEqual({ cards: [{ front: "2+2", back: "4" }], sure: true, tags: ["a", "c"] });
   });
+
+  it("a choice outside the list asks again, and never sends the typed text", async () => {
+    const out = memoryStream();
+    const { ask, asked } = asker(["", "3", "Me", "1, 2", "1", "why"]);
+    expect(await promptAnswer(commit, { options: ["Me", "Both the same"] }, ask, out.stream, "en")).toEqual({ choice: "Me", why: "why" });
+    expect(asked.filter((q) => q.startsWith("I pick"))).toHaveLength(4);
+    expect(out.text()).toContain("  Pick one number from 1 to 2.\n");
+  });
+
+  it("a multi-choice keeps each option once, in the options' order; a bad number asks again", async () => {
+    const spec: InputSpec = { fields: [{ name: "tags", kind: "multiChoice", label: L("Tags"), optional: false, options: ["a", "b", "c"] }] };
+    const { ask, asked } = asker(["4", "3, 1, 3"]);
+    expect(await promptAnswer(spec, {}, ask, memoryStream().stream, "en")).toEqual({ tags: ["a", "c"] });
+    expect(asked).toHaveLength(2);
+  });
+
+  it("pairs with no columns end at once", async () => {
+    const spec: InputSpec = { fields: [{ name: "cards", kind: "pairs", label: L("Cards"), optional: false, columns: [] }] };
+    const out = memoryStream();
+    const { ask, asked } = asker(["x"]);
+    expect(await promptAnswer(spec, {}, ask, out.stream, "en")).toEqual({});
+    expect(asked).toEqual([]);
+    expect(out.text()).toContain("Cards: can't be answered here.");
+  });
 });

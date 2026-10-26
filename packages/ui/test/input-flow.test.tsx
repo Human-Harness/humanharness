@@ -177,4 +177,14 @@ describe("input blocks in the chat", () => {
     await open(quizClient({ inputs: false }), { commit_answer: Probe });
     expect(screen.getByText("no input")).toBeTruthy();
   });
+
+  it("a block named like an Object method (`constructor`) is no component and no input block, with or without inputs", async () => {
+    const constructorBlock = { name: "constructor", data: { a: 1 }, id: "t1:0:0" };
+    await open(quizClient({ inputs: false, blocks: [constructorBlock] }));
+    expect(screen.queryByText("This question is closed.")).toBeNull();
+    cleanup();
+    await open(quizClient({ blocks: [constructorBlock] }));
+    expect(screen.queryByText("This question is closed.")).toBeNull();
+    expect(screen.queryByRole("textbox", { name: "Why?" })).toBeNull();
+  });
 });

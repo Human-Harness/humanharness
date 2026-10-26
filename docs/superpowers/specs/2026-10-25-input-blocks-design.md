@@ -104,6 +104,7 @@ The agent's tool is unchanged (`show_<name>` with `schema` as its arguments). Th
 - **Cancel.** A "Saltar" link is offered only if the block declares `skippable: true`. It sends `{ skipped: true }` with the readable line "(saltado)", and skips validation.
 - **Choices next to an input.** An answer may end with both an input block and `choices`. Picking a choice that starts another action or the next path step closes the task as today, and the pending input is dropped. A follow-up choice keeps it open.
 - **Task closes or the app restarts.** `pendingInput` lives in `tasks.json`, so a restart while waiting shows the form again, active. Closing the task clears it.
+  - *Deviation (implemented):* startup's `tasks.interrupt()` ends the open task, as it does every task, so a restart drops the pending input and the form does not come back. Recorded as a known gap in `docs/architecture/blocks.md`.
 - **Checkpoint.** A checkpoint never runs while a value is being submitted: `respond` is one `op()` and checks `needsCheckpoint` first, like `askNow`.
 
 ## 7. Annotating the person's text

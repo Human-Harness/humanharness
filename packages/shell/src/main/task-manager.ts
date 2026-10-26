@@ -1,11 +1,11 @@
 import { randomUUID } from "node:crypto";
 import type { ModelProfile } from "@humanharness/engines";
-import { type ChoiceOption, type Language, type SavedNote, saveNoteSchema } from "@humanharness/harness-sdk";
+import { type ChoiceOption, type Language, type SavedNote, type ScopeMode, saveNoteSchema } from "@humanharness/harness-sdk";
 import { type Event, type Session, fail } from "@humanharness/runtime";
 import { type ActionStatus, type CurrentTaskView, type NoteView, type TaskStatus, type TaskView, nextInPath } from "@humanharness/ui/client";
-import { type HistoryTrailer, NOTE_PREFIX, type Note, type NoteMeta, buildNotesIndex, noteSlug } from "@humanharness/workspace";
+import { APP_SCOPE, type HistoryTrailer, MAIN_SCOPE, NOTE_PREFIX, type Note, type NoteMeta, buildNotesIndex, isScopeId, noteSlug } from "@humanharness/workspace";
 import { CHECKPOINT_PROMPT, CLOSE_PROMPT, QUESTION_PROMPT, fillPrompt, resumeMessage } from "./task-prompts";
-import { type CurrentTask, type TasksFile, interrupted, keptQuestion } from "./task-store";
+import { type CurrentTask, type TasksFile, interrupted, keptQuestion, scopeOfTask, statusesIn, withStatus } from "./task-store";
 import { type TurnOptions, isHeld } from "./turn-controller";
 
 type Done = Extract<Event, { type: "done" }>;
@@ -21,19 +21,26 @@ export interface TaskDeps {
   /** tasks.json of the configured folder. */
   store: { load(): Promise<TasksFile>; save(state: TasksFile): Promise<void> };
   turns: { send(message: string, options: TurnOptions): Promise<void>; isBusy(): boolean; cancel(): void };
-  /** The harness's actions (their labels are English strings). */
-  actions: Record<string, { label: string }>;
+  /** The harness's actions: their labels (English strings), and where each runs when the harness has scopes. */
+  actions: Record<string, { label: string; scope?: ScopeMode }>;
+  /** The harness declares scopes (spec D1). Absent or false: one implicit `main` scope and today's layout (D2). */
+  scoped?: boolean;
+  /** Whether `id` is a registered scope. Absent: any valid id is taken. */
+  scopeExists?(id: string): Promise<boolean>;
   /** The guided path: action ids in order. */
   path: string[];
   /** The text of the action's brief (its prompt file). */
   readPrompt(action: string): Promise<string>;
   language(): Promise<Language>;
   engine(): Promise<string>;
-  /** The folder's notes, newest first. */
-  notes(): Promise<Note[]>;
-  writeNote(slug: string, note: SavedNote, meta: NoteMeta): Promise<void>;
-  /** Whether `.harness/notes/<slug>.md` exists (readable or not). Defaults to the slugs of `notes()`. */
-  noteExists?(slug: string): Promise<boolean>;
+  /** The notes of `scope` (the flat notes folder in a harness without scopes), newest first. */
+  notes(scope?: string): Promise<Note[]>;
+  /** Writes a note; `scope` is passed only in a harness with scopes. */
+  writeNote(slug: string, note: SavedNote, meta: NoteMeta, scope?: string): Promise<void>;
+  /** Whether the note `<slug>.md` exists in `scope`'s notes (readable or not). Defaults to the slugs of `notes(scope)`. */
+  noteExists?(slug: string, scope?: string): Promise<boolean>;
+  /** The data tables a new session's first message carries after the notes (spec §4.4); "" for none. */
+  dataContext?(scope: string, action: string | undefined): Promise<string>;
   /** Ends the engine session (Codex: `session/close`); the next turn starts a new one. */
   endSession(): Promise<void>;
   /** Records the folder in the local history (a note was written), tagged with the task it belongs to. */
@@ -59,6 +66,17 @@ export interface TaskDeps {
   now?: () => Date;
   newId?: () => string;
 }
+
+/** A `required` action was started with no scope open (spec §3.3): nothing was closed or started. */
+export class ScopeRequired extends Error {
+  constructor() {
+    super("Open a scope first");
+    this.name = "ScopeRequired";
+  }
+}
+
+/** How much the app-wide notes index may take in a scope's session (spec §3.3 "trimmed"). */
+export const APP_INDEX_TOKENS = 500;
 
 /** The error the caller sees: the turn's own reason when it never started. */
 const unwrap = (err: unknown) => (err instanceof TurnNotStarted ? err.reason : err);
@@ -87,6 +105,7 @@ export function needsCheckpoint(c: CurrentTask): boolean {
 const currentView = (c: CurrentTask): CurrentTaskView => ({
   id: c.id,
   ...(c.action ? { action: c.action } : {}),
+  ...(c.scope ? { scope: c.scope } : {}),
   status: c.status,
   ...(c.profile && c.context ? { context: { used: c.context.used, cap: c.profile.cap } } : {}),
   ...(c.profile?.fallbackFrom
@@ -136,28 +155,74 @@ export class TaskManager {
   }
 
   async view(): Promise<TaskView> {
-    const [state, notes] = await Promise.all([this.d.store.load(), this.d.notes().catch(() => [] as Note[])]);
+    if (!this.d.scoped) {
+      const [state, notes] = await Promise.all([this.d.store.load(), this.d.notes().catch(() => [] as Note[])]);
+      const c = state.current;
+      return { current: c ? currentView(c) : null, actions: state.actions, notes: notes.map(noteView) };
+    }
+    const state = await this.d.store.load();
     const c = state.current;
+    const scope = this.chatOf(state);
+    const own = await this.d.notes(scope).catch(() => [] as Note[]);
+    const app = scope === APP_SCOPE ? [] : await this.d.notes(APP_SCOPE).catch(() => [] as Note[]);
     return {
       current: c ? currentView(c) : null,
-      actions: state.actions,
-      notes: notes.map(noteView),
+      // The open scope's statuses, over the app-wide actions' own.
+      actions: { ...statusesIn(state, APP_SCOPE), ...statusesIn(state, scope) },
+      notes: [...own, ...app].map(noteView),
+      scope: state.open ?? null,
     };
   }
 
-  /** Starts a manifest action as a new task, closing the current one first. `display` is what the chat shows. */
-  start(action: string, display?: string): Promise<void> {
-    return this.op(() => this.startNow(action, display));
+  /**
+   * Starts a manifest action as a new task, closing the current one first. `display` is what the chat shows.
+   * `scope`, in a harness with scopes, is opened first (closing the open task, spec §3.3).
+   */
+  start(action: string, display?: string, scope?: string): Promise<void> {
+    return this.op(() => this.startNow(action, display, scope));
   }
 
-  /** A message from the person: a follow-up of the waiting task, or a new free-question task. */
-  ask(text: string, display?: string): Promise<void> {
-    return this.op(() => this.askNow(text, display));
+  /** A message from the person: a follow-up of the waiting task, or a new free-question task. `scope` as in `start`. */
+  ask(text: string, display?: string, scope?: string): Promise<void> {
+    return this.op(async () => {
+      if (scope !== undefined && !(await this.switchNow(scope))) return this.stopped();
+      return this.askNow(text, display);
+    });
   }
 
   /** An option of a `choices` block shown for task `task`; a block of an earlier task is refused. */
   choose(option: ChoiceOption, task: string): Promise<void> {
     return this.op(() => this.chooseNow(option, task));
+  }
+
+  /**
+   * Opens scope `id` (null: none). The open task is closed first, like picking another action (spec §3.3).
+   * False when that closing turn was stopped (the scope didn't change). Throws in a harness without scopes.
+   */
+  switchScope(id: string | null): Promise<boolean> {
+    return this.op(() => this.switchNow(id));
+  }
+
+  /** The open scope, or null (always null without scopes). */
+  async currentScope(): Promise<string | null> {
+    return this.d.scoped ? ((await this.d.store.load()).open ?? null) : null;
+  }
+
+  /** The scope whose chat the window shows: the open one, `_app` when none is open; `main` without scopes. */
+  async chatScope(): Promise<string> {
+    return this.chatOf(await this.d.store.load());
+  }
+
+  /** The open task and the scope it runs in (`main` without scopes), for requests made on its behalf. */
+  async runningTask(): Promise<{ id: string; action?: string; scope: string } | null> {
+    const c = (await this.d.store.load()).current;
+    return c ? { id: c.id, ...(c.action ? { action: c.action } : {}), scope: scopeOfTask(c) } : null;
+  }
+
+  /** The open task's history trailer, for commits made on its behalf (the person's data writes); none without a task. */
+  async trailerNow(): Promise<HistoryTrailer | undefined> {
+    const c = (await this.d.store.load()).current;
+    return c ? this.trailerOf(c) : undefined;
   }
 
   /**
@@ -257,12 +322,82 @@ export class TaskManager {
     return action !== undefined && Object.hasOwn(this.d.actions, action);
   }
 
-  private async startNow(action: string, display?: string): Promise<void> {
+  /** Where a new task runs (spec §3.3). Throws ScopeRequired for a required action with no open scope. */
+  private scopeFor(state: TasksFile, action: string | undefined): string {
+    if (!this.d.scoped) return MAIN_SCOPE;
+    if (action !== undefined && this.d.actions[action]?.scope === "none") return APP_SCOPE;
+    if (state.open) return state.open;
+    if (action !== undefined) throw new ScopeRequired();
+    return APP_SCOPE;
+  }
+
+  /** The chat the window shows: the open scope's, `_app`'s when none is open; `main` without scopes. */
+  private chatOf(state: TasksFile): string {
+    return this.d.scoped ? (state.open ?? APP_SCOPE) : MAIN_SCOPE;
+  }
+
+  /** The history trailer of a task's commits; `scope` only in a harness with scopes (D2). */
+  private trailerOf(c: CurrentTask): HistoryTrailer {
+    return { task: c.id, ...(c.action ? { action: c.action } : {}), ...(c.scope ? { scope: c.scope } : {}) };
+  }
+
+  /** What a scoped task's turns carry: its scope (usage, trailer) and the chat on screen. Nothing without scopes (D2). */
+  private async scopeOptions(task: CurrentTask): Promise<{ scope?: string; chat?: string }> {
+    if (!this.d.scoped) return {};
+    return { scope: scopeOfTask(task), chat: this.chatOf(await this.d.store.load()) };
+  }
+
+  /**
+   * A new session's context (spec §3.3, §4.4): the scope's notes index; in a scope, the app-wide one, trimmed;
+   * then the data tables. Without scopes or data, exactly the notes index as before (D2).
+   */
+  private async contextFor(scope: string, action: string | undefined): Promise<string> {
+    const own = buildNotesIndex(await this.d.notes(this.d.scoped ? scope : undefined).catch(() => [] as Note[]));
+    const parts = [own];
+    if (this.d.scoped && scope !== APP_SCOPE) {
+      const app = await this.d.notes(APP_SCOPE).catch(() => [] as Note[]);
+      // The own index ends with the "open a note" line; the app-wide one says it only when it stands alone.
+      parts.push(
+        buildNotesIndex(app, {
+          budgetTokens: APP_INDEX_TOKENS,
+          heading: "## App-wide notes",
+          decisionsHeading: "## App-wide decisions",
+          ...(own ? { footer: null } : {}),
+        }),
+      );
+    }
+    if (this.d.dataContext) {
+      parts.push(
+        await this.d.dataContext(scope, action).catch((err: unknown) => {
+          console.error("Could not load the data for the task", err);
+          return "";
+        }),
+      );
+    }
+    return parts.filter(Boolean).join("\n\n");
+  }
+
+  private async switchNow(id: string | null): Promise<boolean> {
+    if (!this.d.scoped) throw new Error("This harness has no scopes");
+    if (id !== null && (!isScopeId(id) || !((await this.d.scopeExists?.(id)) ?? true))) throw new Error("Unknown scope");
+    if (((await this.d.store.load()).open ?? null) === id) return true;
+    if (!(await this.closeCurrent())) return false;
+    await this.update((s) => {
+      const { open: _open, ...rest } = s;
+      return id === null ? rest : { ...rest, open: id };
+    });
+    return true;
+  }
+
+  private async startNow(action: string, display?: string, scope?: string): Promise<void> {
     if (!this.known(action)) throw new Error("Unknown action");
+    if (scope !== undefined && !(await this.switchNow(scope))) return this.stopped();
+    // Checked before anything closes: a required action with no open scope starts nothing.
+    const where = this.scopeFor(await this.d.store.load(), action);
     if (!(await this.closeCurrent())) return this.stopped();
     const template = await this.d.readPrompt(action);
     const language = await this.d.language();
-    await this.begin({ action }, (notesIndex) => fillPrompt(template, { language, notesIndex }), display ?? this.d.actions[action].label);
+    await this.begin({ action }, where, (notesIndex) => fillPrompt(template, { language, notesIndex }), display ?? this.d.actions[action].label);
   }
 
   /** The open task from tasks.json, its profile fitted to the engine's current offer (and saved when it changed). */
@@ -314,6 +449,7 @@ export class TaskManager {
     const language = await this.d.language();
     await this.begin(
       keptQuestion(text),
+      this.scopeFor(await this.d.store.load(), undefined),
       (notesIndex) => fillPrompt(QUESTION_PROMPT, { language, notesIndex, question: text }),
       display ?? text,
     );
@@ -322,7 +458,6 @@ export class TaskManager {
   /** The first message of a resumed task's new session (its old session ends first). */
   private async resumeMessageFor(c: CurrentTask, text: string): Promise<string> {
     await this.endSession();
-    const notes = await this.d.notes().catch(() => [] as Note[]);
     const language = await this.d.language();
     let brief: string | undefined;
     try {
@@ -333,7 +468,7 @@ export class TaskManager {
     }
     return resumeMessage({
       language,
-      notesIndex: buildNotesIndex(notes),
+      notesIndex: await this.contextFor(scopeOfTask(c), c.action),
       ...(brief !== undefined ? { brief } : {}),
       ...(c.question ? { question: c.question, ...(c.questionCut ? { questionCut: true } : {}) } : {}),
       message: text,
@@ -350,22 +485,38 @@ export class TaskManager {
     if (state.current?.id !== task) throw new Error("That choice belongs to an earlier task");
     const action = this.known(option.action) ? option.action : undefined;
     if (!option.next && !action) return this.askNow(option.followUp ?? option.label, option.label);
-    const target = action ?? nextInPath(this.d.path, state.current?.action, state.actions);
+    // The path is walked with the open scope's statuses: each scope walks its own (spec §3.3).
+    const target = action ?? nextInPath(this.d.path, state.current?.action, statusesIn(state, this.chatOf(state)));
+    // Checked before the open task closes: a required action with no open scope must not cost the person that task.
+    if (target) this.scopeFor(state, target);
     // Without a target the window shows no new turn (the end of the path just closes).
     if (!(await this.closeCurrent())) return target ? this.stopped() : undefined;
     if (target) await this.startNow(target);
   }
 
-  /** A new task in a fresh session; its first message is built from the notes index. */
-  private async begin(task: { action?: string; question?: string; questionCut?: true }, message: (notesIndex: string) => string, display: string): Promise<void> {
+  /** A new task in a fresh session, in `scope`; its first message is built from the session context. */
+  private async begin(
+    task: { action?: string; question?: string; questionCut?: true },
+    scope: string,
+    message: (notesIndex: string) => string,
+    display: string,
+  ): Promise<void> {
     // Cancelled or quitting since the operation began (e.g. right after the closing turn): start nothing.
     if (this.cancelRequested) return this.stopped();
     await this.endSession();
-    const notes = await this.d.notes().catch(() => [] as Note[]);
+    const context = await this.contextFor(scope, task.action);
     const engine = await this.d.engine();
     // Resolved once: the task keeps its model, effort and cap to the end (spec D2).
     const profile = await this.d.profileFor?.(task.action);
-    const current: CurrentTask = { id: this.newId(), ...task, status: "running", startedAt: this.now().toISOString(), turns: 0, ...(profile ? { profile } : {}) };
+    const current: CurrentTask = {
+      id: this.newId(),
+      ...task,
+      status: "running",
+      startedAt: this.now().toISOString(),
+      turns: 0,
+      ...(profile ? { profile } : {}),
+      ...(this.d.scoped ? { scope } : {}),
+    };
     await this.update((s) => ({ ...s, engine, current }));
     // Checked again with no await before the send: a Stop while the session ended or the notes were read.
     if (this.cancelRequested) {
@@ -374,7 +525,7 @@ export class TaskManager {
     }
     let done: Done;
     try {
-      done = await this.firstTurn(current, message(buildNotesIndex(notes)), { display, ...(task.action ? { action: task.action } : {}) });
+      done = await this.firstTurn(current, message(context), { display, ...(task.action ? { action: task.action } : {}) });
     } catch (err) {
       // Nothing ran: the task goes away without marking its topic.
       if (err instanceof TurnNotStarted) await this.update((s) => (s.current?.id === current.id ? { ...s, current: null } : s));
@@ -424,9 +575,11 @@ export class TaskManager {
     const seen: { done?: Done; note?: SavedNote; used?: number; size?: number; compacted?: boolean } = {};
     this.turnTask = task.id;
     try {
+      const scoped = await this.scopeOptions(task);
       await this.d.turns.send(message, {
         phase: "run",
         ...options,
+        ...scoped,
         ...(task.profile ? { profile: task.profile } : {}),
         task: task.id,
         onEvent: (e) => {
@@ -571,37 +724,42 @@ export class TaskManager {
       if (!c || c.id !== id) return s;
       if (outcome !== "done") return interrupted(s, outcome);
       if (!c.action) return { ...s, current: null };
-      return { ...s, current: null, actions: { ...s.actions, [c.action]: "done" } };
+      return { ...withStatus(s, scopeOfTask(c), c.action, "done"), current: null };
     });
     await this.endSession();
   }
 
   private async saveNote(task: CurrentTask, note: SavedNote, final = true): Promise<void> {
     try {
-      const slug = task.action ?? (await this.questionSlug(task.id, note.title));
-      await this.d.writeNote(slug, note, { ...(task.action ? { action: task.action } : {}), date: this.now().toISOString(), engine: await this.d.engine() });
+      const scope = scopeOfTask(task);
+      const slug = task.action ?? (await this.questionSlug(task.id, note.title, scope));
+      const meta: NoteMeta = { ...(task.action ? { action: task.action } : {}), date: this.now().toISOString(), engine: await this.d.engine() };
+      // Without scopes the call is exactly today's (D2).
+      if (this.d.scoped) await this.d.writeNote(slug, note, meta, scope);
+      else await this.d.writeNote(slug, note, meta);
       // A checkpoint's note is provisional: the closing turn still runs and updates the same file.
       await this.update((s) =>
         s.current?.id === task.id
           ? { ...s, current: { ...s.current, ...(final ? { noteSaved: true } : { checkpointNote: true, checkpointTurns: s.current.turns }) } }
           : s,
       );
-      await this.d.saveHistory?.(`${NOTE_PREFIX}${note.title.slice(0, 60)}`, { task: task.id, ...(task.action ? { action: task.action } : {}) });
+      await this.d.saveHistory?.(`${NOTE_PREFIX}${note.title.slice(0, 60)}`, this.trailerOf(task));
     } catch (err) {
       console.error("Could not save the note", err);
     }
   }
 
-  /** `q-<title slug>`, numbered (`-2`, `-3`…) when another note already has that name. */
-  private async questionSlug(taskId: string, title: string): Promise<string> {
+  /** `q-<title slug>`, numbered (`-2`, `-3`…) when another note of the scope already has that name. */
+  private async questionSlug(taskId: string, title: string, scope: string): Promise<string> {
     const own = this.questionSlugs.get(taskId);
     if (own) return own;
-    const exists =
-      this.d.noteExists?.bind(this.d) ??
-      (await this.d.notes().then(
-        (notes) => (slug: string) => Promise.resolve(notes.some((n) => n.slug === slug)),
-        () => () => Promise.resolve(false),
-      ));
+    const where = this.d.scoped ? scope : undefined;
+    const exists = this.d.noteExists
+      ? (slug: string) => this.d.noteExists!(slug, where)
+      : await this.d.notes(where).then(
+          (notes) => (slug: string) => Promise.resolve(notes.some((n) => n.slug === slug)),
+          () => () => Promise.resolve(false),
+        );
     const base = `q-${noteSlug(title)}`;
     let slug = base;
     for (let i = 2; await exists(slug); i++) slug = `${base}-${i}`;

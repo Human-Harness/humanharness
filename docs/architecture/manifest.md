@@ -21,7 +21,9 @@ Every text in the manifest is one English string.
 | `blocks` | `defineBlock({ description, visible, schema, example })`: one MCP tool per block, served by the `ui` server |
 | `actions` | Tasks: `label`, optional `description`, `prompt` (the brief that opens the task's session) and `cost` (`light`, `medium`, `heavy`) |
 | `path` | The optional guided order of action ids (the "Recorrido") |
-| `mcp` | Extra MCP servers (files in the harness folder) the agent gets next to `ui` |
+| `mcp` | Extra MCP servers (files in the harness folder) the agent gets next to `ui` and `data` |
+| `scopes` | Optional. The label and plural of the harness's unit of work (a topic, a project); actions may set `scope: "none"` to run app-wide (`docs/architecture/data.md`) |
+| `data` | Optional. Collections of records with a schema, key, agent permission, context budget and rules (`docs/architecture/data.md`) |
 
 The harness's screen is `ui/App.tsx`: the shell build (`packages/shell/electron.vite.config.ts`) bundles it from the harness folder.
 
@@ -30,6 +32,9 @@ The harness's screen is `ui/App.tsx`: the shell build (`packages/shell/electron.
 - Block and action names follow fixed patterns. `choices` and `save_note` are reserved: every harness gets them as core blocks (`allBlocks`).
 - Every id in `path` must be an action, once; reference ids are unique.
 - A block's `example` must match its `schema`.
+- An action may set `scope` only when the harness declares `scopes`, and a `scope: "none"` action can't be in `path`.
+- A collection needs a key (or `single: true`); the key must be a field of the schema declared exactly as `z.string()` or `z.number()` (no enum, literal, optional, nullable or default). Its `context` fields must be fields of the schema, and a collection hidden from the agent (`agent: "none"`) can't have a `context`. `settings` is a reserved collection name.
+- A harness whose id is `ui` or `data` can't have `mcp` entries (those are the built-in server names).
 - `resolveInHarness` refuses any path that leaves the harness folder: every action's prompt (checked by `loadHarness`), and the instructions, seed, logo and MCP servers when they are used.
 
 ## Where to look

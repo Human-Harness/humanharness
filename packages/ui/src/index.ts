@@ -1,6 +1,7 @@
 export * from "./client";
 export * from "./state";
 export * from "./usage";
+export { ScopePicker } from "./ScopePicker";
 export { HarnessApp, type HarnessAppProps } from "./HarnessApp";
 export type { BlockActions, BlockProps } from "./Message";
 export type { StartViewCopy } from "./StartView";

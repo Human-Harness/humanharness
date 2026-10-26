@@ -179,6 +179,33 @@ describe("check: errors", () => {
   });
 });
 
+describe("check: scopes and data", () => {
+  it("schema: a data collection with no key, and an action scope without scopes", async () => {
+    const data = await checkHarness(
+      await fixture((d) =>
+        replaceIn(d, "harness.config.ts", '  questions: { tier: "light" },', '  questions: { tier: "light" },\n  data: { cards: { scoped: false, schema: z.object({ front: z.string() }), agent: "write" } },'),
+      ),
+    );
+    expect(data.findings.filter((f) => f.rule === "schema").map((f) => f.message.split(":")[0])).toEqual(["data.cards.key"]);
+    const scope = await checkHarness(await fixture((d) => replaceIn(d, "harness.config.ts", 'cost: "light"', 'cost: "light", scope: "none"')));
+    expect(scope.findings.filter((f) => f.rule === "schema").map((f) => f.message.split(":")[0])).toEqual(["actions.example.scope"]);
+  });
+
+  it("finds no error in a template with scopes and data (D2: both optional)", async () => {
+    const r = await checkHarness(
+      await fixture((d) =>
+        replaceIn(
+          d,
+          "harness.config.ts",
+          '  questions: { tier: "light" },',
+          '  questions: { tier: "light" },\n  scopes: { label: "topic", plural: "topics" },\n  data: { cards: { scoped: true, key: "id", schema: z.object({ id: z.string() }), agent: "read" } },',
+        ),
+      ),
+    );
+    expect(errors(r)).toEqual([]);
+  });
+});
+
 describe("check: warnings", () => {
   it("finds nothing at all in the untouched template", async () => {
     expect((await checkHarness(await fixture())).findings).toEqual([]);

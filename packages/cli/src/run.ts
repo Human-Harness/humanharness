@@ -6,11 +6,12 @@ import { createInterface } from "node:readline";
 import type { Readable, Writable } from "node:stream";
 import { type EngineDef, availableEngines } from "@humanharness/engines";
 import type { MockNote } from "@humanharness/fake-agent";
-import { DEFAULT_LANGUAGE, type Language, canonicalLanguage, TIERS, type Tier, allBlocks, blockToolName, loadHarness, resolveInHarness } from "@humanharness/harness-sdk";
+import { DEFAULT_LANGUAGE, type Language, canonicalLanguage, TIERS, type Tier, actionScope, allBlocks, blockToolName, loadHarness, resolveInHarness } from "@humanharness/harness-sdk";
 import { type ErrorCode, createRuntime } from "@humanharness/runtime";
 import {
   ChatLog,
   type CommandDeps,
+  agentDataRequest,
   SharedConfigStore,
   TaskManager,
   TaskStore,
@@ -27,7 +28,7 @@ import {
   sharedConfigDir,
   usageRecord,
 } from "@humanharness/shell/tasks";
-import { generatedFiles, readNotes, writeNote } from "@humanharness/workspace";
+import { DataStore, MAIN_SCOPE, buildDataContext, ScopeStore, generatedFiles, migrateToScopes, notesPrefix, readNotes, writeNote } from "@humanharness/workspace";
 import { CliError, type Io, UsageError, parseCommand } from "./cli";
 import { MANIFEST } from "./paths";
 import { clashMessage, matchClashes } from "./mock-match";
@@ -98,6 +99,21 @@ export async function readyEngine(engine: EngineDef, deps: CommandDeps, shared: 
 const promptFor = (options: number) =>
   options > 0 ? `\nPick 1–${options}, type a follow-up, or q to close the task: ` : "\nType a follow-up, or q to close the task: ";
 
+/** The scope `humanharness run` opens for a `required` action when none is open. */
+export const RUN_SCOPE = "run";
+
+/**
+ * A harness with scopes (spec §3.2–3.3): earlier work in the folder moves into `main`, which opens, like the
+ * app does. A `required` action with no open scope runs in `run` (registered when missing). Undefined: keep the
+ * open scope.
+ */
+async function runScope(folder: string, required: boolean, open: string | undefined): Promise<string | undefined> {
+  if (await migrateToScopes(folder)) return MAIN_SCOPE;
+  if (!required || open) return undefined;
+  const entry = await new ScopeStore(folder).add({ id: RUN_SCOPE, title: "Run", createdAt: new Date().toISOString(), archived: false });
+  return entry.id;
+}
+
 /** Drives one task with the app's TaskManager (spec §8): brief, notes index, profile, checkpoint and closing turn. */
 export async function runTask(o: RunOptions): Promise<RunReport> {
   const harness = await loadHarness(path.join(path.resolve(o.harnessDir), MANIFEST));
@@ -130,6 +146,8 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
   const view = new TerminalView(out, engine.name, (out as { isTTY?: boolean }).isTTY === true);
   const tally = new UsageTally();
   const store = new TaskStore(folder);
+  const scoped = harness.scopes !== undefined;
+  const scopes = new ScopeStore(folder);
   const usageLog = new UsageLog(folder);
   const references = await resolveReferences(harness.folder.references, { harnessDir: harness.root, home: os.homedir(), packaged: false });
   const gitdir = path.join(os.tmpdir(), "humanharness-run-history", `${harness.id}-${createHash("sha256").update(folder).digest("hex").slice(0, 12)}`);
@@ -163,6 +181,9 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
   // Counted, not compared by path: a checkpoint's note and the closing one go to the same file.
   let notesWritten = 0;
 
+  // One store for the run: its queue orders the agent's writes.
+  const dataStore = new DataStore(folder, harness.data);
+
   // Same wiring as the app's main process (packages/shell/src/main/index.ts), with the terminal as the window.
   const runtime = memoise(() =>
     createRuntime({
@@ -175,11 +196,12 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
       env: command.env,
       references: references.map((r) => ({ label: r.label, path: r.path })),
       onSession: (s) => void tasks.sessionStarted(s).catch(() => undefined),
+      data: (request) => agentDataRequest({ store: async () => dataStore, runningTask: () => tasks.runningTask() }, request),
     }),
   );
   const turns = new TurnController({
     ensureRuntime: () => runtime.get(),
-    chatLog: async () => new ChatLog(folder, engine.id),
+    chatLog: async (chat) => new ChatLog(folder, engine.id, chat),
     stateBlocks: () => stateBlocks,
     emit: (e) => {
       recorder?.event(e);
@@ -201,10 +223,15 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
     readPrompt: (id) => fs.readFile(resolveInHarness(harness, harness.actions[id].prompt), "utf8"),
     language: async () => language,
     engine: async () => engine.id,
-    notes: () => readNotes(folder),
-    writeNote: async (slug, note, meta) => {
+    ...(Object.values(harness.data).some((c) => c.context !== false)
+      ? { dataContext: (scope: string, action: string | undefined) => buildDataContext(dataStore, harness.data, scope, action) }
+      : {}),
+    scoped,
+    scopeExists: async (id) => (await scopes.list()).some((s) => s.id === id && !s.archived),
+    notes: (scope) => readNotes(folder, notesPrefix(scoped, scope)),
+    writeNote: async (slug, note, meta, scope) => {
       recorder?.note(note as MockNote);
-      lastNote = path.join(folder, await writeNote(folder, slug, note, meta));
+      lastNote = path.join(folder, await writeNote(folder, slug, note, meta, notesPrefix(scoped, scope)));
       notesWritten++;
     },
     endSession: async () => {
@@ -245,7 +272,8 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
     try {
       // A task an earlier run left open in this folder can't continue: its session is gone.
       await tasks.interrupt();
-      await tasks.start(o.action);
+      const scope = scoped ? await runScope(folder, actionScope(harness, o.action) === "required", (await store.load()).open) : undefined;
+      await tasks.start(o.action, undefined, scope);
       for (;;) {
         const current = (await store.load()).current;
         if (!current) break;

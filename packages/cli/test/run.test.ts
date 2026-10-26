@@ -1,13 +1,16 @@
+import { createHash } from "node:crypto";
 import { EventEmitter } from "node:events";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { PassThrough, Writable } from "node:stream";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { NOTICE_VERSION, getEngine } from "@humanharness/engines";
 import { type ClaudeScript, claudeTextLines, fakeClaudeCommand, recordingSchema, writeScript } from "@humanharness/fake-agent";
 import type { CommandDeps } from "@humanharness/shell/tasks";
 import { SharedConfigStore } from "@humanharness/shell/tasks";
+import { DATA_PREFIX, History, NOTES_PREFIX, TURN_PREFIX } from "@humanharness/workspace";
 import { UsageError } from "../src/cli";
 import { initHarness } from "../src/init";
 import { main } from "../src/main";
@@ -102,6 +105,82 @@ function noCli() {
 const readJsonl = (file: string) => fs.readFileSync(file, "utf8").trim().split("\n").map((l) => JSON.parse(l) as Record<string, unknown>);
 
 describe("runTask", () => {
+  it("lets the agent write the scope's data through the data tools", { timeout: 60_000 }, async () => {
+    const study = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../fake-agent/fixtures/data-harness");
+    const folder = path.join(root, "study-data");
+    const record = { id: "halves", name: "Halves", state: "seen", evidence: [] };
+    const script: ClaudeScript = {
+      steps: [...claudeTextLines("Done."), result],
+      turns: [
+        { match: "save_note", steps: [ui("save_note", { title: "Halves", summary: ["x"], decisions: [], files: [], open: [] }), result] },
+        { match: "# Task: study", steps: [{ mcp: { server: "data", tool: "data_put", args: { collection: "concepts", record } } }, ...claudeTextLines("Saved it."), result] },
+      ],
+    };
+    fs.mkdirSync(path.join(folder, ".harness", "data", "_app"), { recursive: true });
+    fs.writeFileSync(path.join(folder, ".harness", "data", "_app", "profile.json"), JSON.stringify({ name: "Ana", level: "6th grade" }));
+    const prompts = path.join(root, "study-data-prompts.jsonl");
+    await runTask({
+      harnessDir: study,
+      action: "study",
+      engine: "claude",
+      folder,
+      input: lines("q\n"),
+      output: memoryStream().stream,
+      engineCommand: { command: fakeClaudeCommand(), env: { HH_FAKE_SCRIPT: writeScript(root, script), HH_FAKE_PROMPTS: prompts } },
+    });
+    const first = readJsonl(prompts)[0] as { prompt: string };
+    expect(first.prompt).toContain("## Data: profile\n\n| name | level |\n|---|---|\n| Ana | 6th grade |");
+    const file = path.join(".harness", "data", "run", "concepts.json");
+    expect(JSON.parse(fs.readFileSync(path.join(folder, file), "utf8"))).toEqual([record]);
+
+    // The turn's own commit holds the file: going back to it brings the file, going back to before it doesn't.
+    const gitdir = path.join(os.tmpdir(), "humanharness-run-history", `study-${createHash("sha256").update(folder).digest("hex").slice(0, 12)}`);
+    const copy = path.join(root, "study-data-history");
+    fs.cpSync(gitdir, copy, { recursive: true });
+    fs.rmSync(gitdir, { recursive: true, force: true });
+    const check = path.join(root, "study-data-check");
+    fs.mkdirSync(check);
+    const history = new History(check, copy, [".harness/"], [NOTES_PREFIX, DATA_PREFIX]);
+    const entries = await history.list();
+    const turn = entries.findLastIndex((e) => e.message.startsWith(TURN_PREFIX));
+    expect(entries[turn]).toMatchObject({ task: expect.any(String), action: "study", scope: "run" });
+    await history.restore(entries[turn].sha, "check");
+    expect(fs.existsSync(path.join(check, file))).toBe(true);
+    await history.restore(entries[turn + 1].sha, "check");
+    expect(fs.existsSync(path.join(check, file))).toBe(false);
+  });
+
+  it("runs a scoped harness's action in a `run` scope: its note, chat, usage and statuses are the scope's", { timeout: 60_000 }, async () => {
+    const study = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../fake-agent/fixtures/data-harness");
+    const folder = path.join(root, "study-work");
+    const scoped: ClaudeScript = {
+      steps: [...claudeTextLines("Done."), result],
+      turns: [
+        {
+          match: "save_note",
+          steps: [ui("save_note", { title: "Halves", summary: ["A half is one of two parts"], decisions: [], files: [], open: [] }), ...claudeTextLines("Saved."), result],
+        },
+        { match: "# Task: study", steps: [...claudeTextLines("Let's study."), result] },
+      ],
+    };
+    const out = memoryStream();
+    await runTask({
+      harnessDir: study,
+      action: "study",
+      engine: "claude",
+      folder,
+      input: lines("q\n"),
+      output: out.stream,
+      engineCommand: { command: fakeClaudeCommand(), env: { HH_FAKE_SCRIPT: writeScript(root, scoped) } },
+    });
+    expect(out.text()).toContain("Let's study.");
+    expect(fs.readFileSync(path.join(folder, ".harness", "notes", "run", "study.md"), "utf8")).toContain('title: "Halves"');
+    expect(JSON.parse(fs.readFileSync(path.join(folder, ".harness", "scopes.json"), "utf8"))).toEqual([expect.objectContaining({ id: "run", title: "Run" })]);
+    expect(fs.existsSync(path.join(folder, ".harness", "chats", "run.jsonl"))).toBe(true);
+    expect(readJsonl(path.join(folder, ".harness", "usage.jsonl")).every((r) => r.scope === "run")).toBe(true);
+    expect(JSON.parse(fs.readFileSync(path.join(folder, ".harness", "tasks.json"), "utf8"))).toMatchObject({ open: "run", actions: {}, scopes: { run: { study: "done" } } });
+  });
+
   it("runs the task, follows a picked choice, closes on q with its note, and reports", { timeout: 60_000 }, async () => {
     const out = memoryStream();
     const folder = path.join(root, "work");

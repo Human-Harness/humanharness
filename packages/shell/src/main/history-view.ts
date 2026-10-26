@@ -11,6 +11,7 @@ export function historyView(groups: HistoryTask[]): HistoryTaskView[] {
     return {
       taskId: g.taskId,
       actionId: g.actionId,
+      ...(g.scopeId ? { scopeId: g.scopeId } : {}),
       start: g.start,
       end: g.end,
       date: g.date.toISOString(),

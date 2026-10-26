@@ -27,6 +27,20 @@ describe("startNewChatIfEngineChanged", () => {
     expect(await startNewChatIfEngineChanged(folder, "codex")).toBeNull();
   });
 
+  it("archives every scope's chat", async () => {
+    const folder = await folderWith("claude", true);
+    await new ChatLog(folder, undefined, "fracciones").append({ id: "2", role: "user", text: "x", blocks: [], activities: [], at: "t" });
+    expect(await startNewChatIfEngineChanged(folder, "codex")).toBe("claude");
+    expect(await ChatLog.scopesIn(folder)).toEqual([]);
+    expect(fs.readdirSync(path.join(folder, ".harness", "chats", "archive"))).toHaveLength(2);
+  });
+
+  it("finds the previous engine in any scope's chat", async () => {
+    const folder = await folderWith(null, false);
+    await new ChatLog(folder, "claude", "fracciones").append({ id: "2", role: "user", text: "x", blocks: [], activities: [], at: "t" });
+    expect(await startNewChatIfEngineChanged(folder, "codex")).toBe("claude");
+  });
+
   it("keeps everything when the engine is the same or there was no session", async () => {
     const same = await folderWith("claude", true);
     expect(await startNewChatIfEngineChanged(same, "claude")).toBeNull();

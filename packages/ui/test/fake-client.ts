@@ -3,6 +3,11 @@ import type {
   AppState,
   ChatEntry,
   ChoiceOption,
+  DataChangeView,
+  DataDiffView,
+  DataKey,
+  DataQuery,
+  DataRecord,
   EngineError,
   EngineStatus,
   Event,
@@ -12,6 +17,8 @@ import type {
   HistoryTaskView,
   MoveResult,
   RunningSetup,
+  ScopeView,
+  ScopesView,
   SendOptions,
   SetupOutput,
   SetupResult,
@@ -21,6 +28,7 @@ import type {
   TextSize,
   UsageSummary,
 } from "../src/client";
+import { hearsDataChange } from "../src/client";
 
 export class FakeClient implements HarnessClient {
   state: AppState;
@@ -319,5 +327,105 @@ export class FakeClient implements HarnessClient {
     return () => {
       this.textSizeListeners.delete(listener);
     };
+  }
+  /** The scope registry the fake answers with. */
+  scopeList: ScopeView[] = [];
+  /** The open scope. */
+  openScope: string | null = null;
+  private scopeListeners = new Set<(v: ScopesView) => void>();
+  emitScopes() {
+    const view = { open: this.openScope, list: this.scopeList };
+    for (const l of this.scopeListeners) l(view);
+  }
+  private changeScope(id: string, change: Partial<ScopeView>): ScopeView {
+    const i = this.scopeList.findIndex((s) => s.id === id);
+    if (i < 0) throw new Error(`Unknown scope: "${id}"`);
+    const next = { ...this.scopeList[i], ...change };
+    this.scopeList = this.scopeList.map((s, j) => (j === i ? next : s));
+    return next;
+  }
+  scopes = {
+    list: async () => this.scopeList,
+    create: async (title: string) => {
+      const s: ScopeView = { id: title.toLowerCase().replace(/[^a-z0-9]+/g, "-"), title, createdAt: "2026-10-25T10:00:00.000Z", archived: false };
+      this.scopeList = [...this.scopeList, s];
+      this.emitScopes();
+      return s;
+    },
+    rename: async (id: string, title: string) => {
+      const s = this.changeScope(id, { title });
+      this.emitScopes();
+      return s;
+    },
+    archive: async (id: string) => {
+      if (this.openScope === id) this.openScope = null;
+      this.changeScope(id, { archived: true });
+      this.emitScopes();
+    },
+    unarchive: async (id: string) => {
+      this.changeScope(id, { archived: false });
+      this.emitScopes();
+    },
+    open: async (id: string | null) => {
+      this.openScope = id;
+      this.emitScopes();
+      return true;
+    },
+    current: async () => this.openScope,
+    onChange: (listener: (v: ScopesView) => void) => {
+      this.scopeListeners.add(listener);
+      return () => {
+        this.scopeListeners.delete(listener);
+      };
+    },
+  };
+  /** The fake's data: records by collection, in the order they were put; `dataKey` names the key field. */
+  records: Record<string, DataRecord[]> = {};
+  dataKey = "id";
+  private dataListeners = new Set<(c: DataChangeView) => void>();
+  private dataChanged(change: DataChangeView) {
+    for (const l of this.dataListeners) l(change);
+  }
+  dataDiffs: Record<string, DataDiffView[]> = {};
+  dataDiff = async (taskId: string) => this.dataDiffs[taskId] ?? [];
+  data = {
+    get: async (collection: string, key?: DataKey) => (this.records[collection] ?? []).find((r) => key === undefined || r[this.dataKey] === key) ?? null,
+    query: async (collection: string, query: DataQuery = {}) => {
+      const all = (this.records[collection] ?? []).filter((r) => Object.entries(query.where ?? {}).every(([f, v]) => r[f] === v));
+      return { records: all.slice(0, query.limit ?? 50), total: all.length, invalid: 0 };
+    },
+    put: async (collection: string, record: DataRecord) => {
+      const key = record[this.dataKey] as DataKey | undefined;
+      this.records[collection] = [...(this.records[collection] ?? []).filter((r) => key === undefined || r[this.dataKey] !== key), record];
+      this.dataChanged({ collection, scope: this.openScope ?? "main", who: "person", op: "put", ...(key !== undefined ? { key } : {}) });
+      return record;
+    },
+    patch: async (collection: string, key: DataKey | undefined, patch: DataRecord) => {
+      const prev = (this.records[collection] ?? []).find((r) => key === undefined || r[this.dataKey] === key);
+      if (!prev) throw new Error("not found");
+      const next = { ...prev, ...patch };
+      this.records[collection] = (this.records[collection] ?? []).map((r) => (r === prev ? next : r));
+      this.dataChanged({ collection, scope: this.openScope ?? "main", who: "person", op: "patch", ...(key !== undefined ? { key } : {}) });
+      return next;
+    },
+    delete: async (collection: string, key?: DataKey) => {
+      const before = this.records[collection] ?? [];
+      this.records[collection] = before.filter((r) => key !== undefined && r[this.dataKey] !== key);
+      this.dataChanged({ collection, scope: this.openScope ?? "main", who: "person", op: "delete", ...(key !== undefined ? { key } : {}) });
+      return before.length !== this.records[collection].length;
+    },
+    subscribe: (collection: string, scope: string | null, listener: (c: DataChangeView) => void) => {
+      const l = (c: DataChangeView) => {
+        if (hearsDataChange(c, collection, scope)) listener(c);
+      };
+      this.dataListeners.add(l);
+      return () => {
+        this.dataListeners.delete(l);
+      };
+    },
+  };
+  /** A write the agent made (for tests of harness UIs that subscribe). */
+  emitDataChange(change: DataChangeView) {
+    this.dataChanged(change);
   }
 }

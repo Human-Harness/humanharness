@@ -32,6 +32,7 @@ export default defineConfig({
         entry: {
           index: path.join(__dirname, "src/main/index.ts"),
           "ui-server": path.join(__dirname, "../blocks/src/ui-server-bin.ts"),
+          "data-server": path.join(__dirname, "../blocks/src/data-server-bin.ts"),
           harness: path.join(harnessDir, "harness.config.ts"),
         },
       },

@@ -1,7 +1,18 @@
 import type { Effort, ModelChoice, ModelSpec, ModelsConfig } from "@humanharness/engines";
-import type { ActionCost, ChoiceOption, Language, Tier } from "@humanharness/harness-sdk";
+import type { ActionCost, ChoiceOption, DataKey, DataRecord, Language, ScopeMode, Tier } from "@humanharness/harness-sdk";
 import type { ActivityKind, EngineError, Event, LimitWindow } from "@humanharness/runtime";
-import type { FileChange, SyncProvider, SyncStatus } from "@humanharness/workspace";
+import type {
+  CollectionDiff,
+  DataChange,
+  DataQuery,
+  DataQueryResult,
+  FileChange,
+  ScopeEntry,
+  SyncProvider,
+  SyncStatus,
+} from "@humanharness/workspace";
+
+export type { DataKey, DataQuery, DataQueryResult, DataRecord };
 
 export type Appearance = "system" | "light" | "dark";
 
@@ -66,6 +77,8 @@ export interface ActionOption {
   cost: ActionCost;
   /** The tier the harness recommends for the action. */
   tier?: Tier;
+  /** Harnesses with scopes: "none" runs app-wide; anything else needs an open scope. */
+  scope?: ScopeMode;
 }
 
 /** A read-only reference folder, as the work screen shows it ("~/…" for paths in the home folder). */
@@ -122,6 +135,8 @@ export interface AppState {
   actions: Record<string, ActionOption>;
   /** The guided path: action ids in order. */
   path?: string[];
+  /** The harness's unit of work (manifest `scopes`): what to call it. Absent: no scopes (spec D2). */
+  scopes?: { label: string; plural: string };
   /** Folders the agent can read but never change. */
   references?: ReferenceView[];
   /** Settings › Modelos. */
@@ -217,7 +232,7 @@ export interface HistoryItem {
 export type HistoryFileChange = FileChange;
 
 // The history's commit subjects (raw git data, English; the History panel shows them through i18n keys).
-export { BEFORE_MESSAGE, NOTE, RESTORE_POINT, RESTORE_TASK, START, STOPPED_PREFIX, TURN_PREFIX, UNDO_PREFIX } from "@humanharness/workspace/subjects";
+export { BEFORE_MESSAGE, DATA_CHANGE_PREFIX, NOTE, RESTORE_POINT, RESTORE_TASK, START, STOPPED_PREFIX, TURN_PREFIX, UNDO_PREFIX } from "@humanharness/workspace/subjects";
 
 /**
  * One row of the History panel: a task's commits, or the group of commits outside any task (`taskId: null`:
@@ -226,6 +241,8 @@ export { BEFORE_MESSAGE, NOTE, RESTORE_POINT, RESTORE_TASK, START, STOPPED_PREFI
 export interface HistoryTaskView {
   taskId: string | null;
   actionId: string | null;
+  /** The scope the task ran in (harnesses with scopes). */
+  scopeId?: string;
   /** What "Undo this task" restores; null when there is nothing before it. */
   start: string | null;
   end: string;
@@ -311,6 +328,8 @@ export interface UsageSummary {
   estimates: Record<string, number>;
   /** Typical total tokens per task of each task key lately, for every engine. */
   tokens: Record<string, number>;
+  /** Harnesses with scopes: tokens used per scope id, over the whole log. */
+  scopes?: Record<string, number>;
   /** The window kind estimates measure (the engine's `limits.primary`); absent when the engine reports no limits. */
   primary?: string;
 }
@@ -321,6 +340,8 @@ export interface SendOptions {
    * message is what the chat shows). Heavy actions may ask first.
    */
   action?: string;
+  /** Harnesses with scopes: run in this scope (it opens first). Default: the open one. */
+  scope?: string;
 }
 
 /**
@@ -335,6 +356,8 @@ export interface CurrentTaskView {
   id: string;
   /** Absent for a free question. */
   action?: string;
+  /** The scope the task runs in (harnesses with scopes). */
+  scope?: string;
   status: TaskStatus;
   /** Context in use by the task's session, and the task's cap (the side panel's meter). */
   context?: { used: number; cap: number };
@@ -359,6 +382,8 @@ export interface TaskView {
   actions: Record<string, ActionStatus>;
   /** Newest first. */
   notes: NoteView[];
+  /** Harnesses with scopes: the open scope (null when none is open). Absent without scopes. */
+  scope?: string | null;
 }
 
 /** The action to start after `current` on the guided path: the next one, or else the first one not done yet. */
@@ -386,6 +411,27 @@ export function canOpenFile(file: string): boolean {
   const dot = name.lastIndexOf(".");
   return dot > 0 && OPENABLE_EXTENSIONS.has(name.slice(dot).toLowerCase());
 }
+
+/** A scope as the window sees it (spec §3.4). */
+export type ScopeView = ScopeEntry;
+
+/** The open scope and the registry, sent whenever either changes. */
+export interface ScopesView {
+  open: string | null;
+  list: ScopeView[];
+}
+
+/** A write to the harness's data, from anyone (spec §4.5). */
+export type DataChangeView = DataChange;
+/** What a task changed in one collection of one scope. */
+export type DataDiffView = CollectionDiff;
+
+/** Default: the open scope. App-wide collections ignore it. */
+export interface DataOptions {
+  scope?: string;
+}
+
+export { hearsDataChange } from "./data-change";
 
 /** Everything the renderer can ask the main process. Implemented by the preload as `window.hh`. */
 export interface HarnessClient {
@@ -439,6 +485,31 @@ export interface HarnessClient {
   openPath(path: string): Promise<boolean>;
   /** Shows a file inside the reference folders or the user's folder in Finder (any kind of file). False when refused or missing. */
   revealPath(path: string): Promise<boolean>;
+  /** Harnesses with scopes (spec §3.4). There is no delete: archive instead. */
+  scopes: {
+    list(): Promise<ScopeView[]>;
+    create(title: string): Promise<ScopeView>;
+    rename(id: string, title: string): Promise<ScopeView>;
+    /** Archiving the open scope closes it first. */
+    archive(id: string): Promise<void>;
+    unarchive(id: string): Promise<void>;
+    /** Opens a scope (null: none), closing the open task first; false when that close was stopped. */
+    open(id: string | null): Promise<boolean>;
+    current(): Promise<string | null>;
+    onChange(listener: (view: ScopesView) => void): () => void;
+  };
+  /** The harness's data (spec §4.5), as the person: the same checks as the agent's tools. */
+  data: {
+    get(collection: string, key?: DataKey, options?: DataOptions): Promise<DataRecord | null>;
+    query(collection: string, query?: DataQuery, options?: DataOptions): Promise<DataQueryResult>;
+    put(collection: string, record: DataRecord, options?: DataOptions): Promise<DataRecord>;
+    patch(collection: string, key: DataKey | undefined, patch: DataRecord, options?: DataOptions): Promise<DataRecord>;
+    delete(collection: string, key?: DataKey, options?: DataOptions): Promise<boolean>;
+    /** Every write to `collection` (in `scope`; null: any scope), from any writer. App-wide collections ignore the scope. */
+    subscribe(collection: string, scope: string | null, listener: (change: DataChangeView) => void): () => void;
+  };
+  /** What a task changed in the harness's data ("what changed in this session", spec §4.5). */
+  dataDiff(taskId: string): Promise<DataDiffView[]>;
   /** The text size changed from the keyboard (⌘+, ⌘−, ⌘0), already saved. */
   onTextSize(listener: (size: TextSize) => void): () => void;
 }

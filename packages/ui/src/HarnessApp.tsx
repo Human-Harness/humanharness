@@ -2,6 +2,7 @@ import { type ComponentType, type ReactNode, useCallback, useEffect, useRef, use
 import { I18nextProvider } from "react-i18next";
 import type { i18n } from "i18next";
 import { type Locales, createI18n } from "@humanharness/i18n";
+import { ScopePicker } from "./ScopePicker";
 import { ChatView, type SendFn } from "./ChatView";
 import { TopBar } from "./chrome";
 import { type AppState, type EngineStatus, type HarnessClient, type LimitWindow, engineProblem, isConfigured } from "./client";
@@ -34,6 +35,29 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
   const [status, setStatus] = useState<EngineStatus | null>(null);
   const [checkFailed, setCheckFailed] = useState(false);
   const [limits, setLimits] = useState<LimitWindow[] | null>(null);
+  /** Harnesses with scopes: the open scope; the work screen's chat is that scope's. */
+  const [openScope, setOpenScope] = useState<string | null>(null);
+  const hasScopes = Boolean(state?.scopes);
+  useEffect(() => {
+    if (!hasScopes) return;
+    let live = true;
+    // A change that has arrived is newer than the first reply, which may have been in flight before it.
+    let seen = false;
+    client.scopes.current().then(
+      (id) => {
+        if (live && !seen) setOpenScope(id);
+      },
+      () => undefined,
+    );
+    const off = client.scopes.onChange((v) => {
+      seen = true;
+      setOpenScope(v.open);
+    });
+    return () => {
+      live = false;
+      off();
+    };
+  }, [client, hasScopes]);
   /** Moving the folder: kept here so a move outlives Settings closing or a tab change. */
   const move = useFolderMove(client, setState);
   // Read through a ref so inline `locales` objects don't re-run the load.
@@ -153,13 +177,15 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
       <div className="hh-screen" inert={settings !== null}>
         {screen === "work" && configured ? (
           <ChatView
-            key={engineId}
+            key={`${engineId}:${openScope ?? ""}`}
             client={client}
             state={state}
             components={blocks}
             stateBlocks={stateBlocks}
             renderSide={renderSide}
             startView={startView}
+            openScope={openScope}
+            scopeBar={state.scopes ? (disabled) => <ScopePicker client={client} state={state} open={openScope} disabled={disabled} /> : undefined}
             engineProblem={status ? engineProblem(status) : null}
             onHome={() => setScreen("home")}
             onSettings={() => setSettings("general")}

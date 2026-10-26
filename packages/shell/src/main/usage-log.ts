@@ -1,5 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { usageFile } from "@humanharness/workspace";
 import type { Effort, ModelProfile } from "@humanharness/engines";
 import type { Tier } from "@humanharness/harness-sdk";
 import type { LimitWindow } from "@humanharness/runtime";
@@ -18,6 +19,8 @@ interface ProfileFields {
 export interface UsageMeta extends ProfileFields {
   action?: string;
   task?: string;
+  /** The task's scope (`_app` included); only for a harness with scopes. */
+  scope?: string;
   /**
    * `run`: the task's own turns; `close`: the turn that asks for its note; `checkpoint`: the quiet turn that
    * saves a note before the context reaches its cap.
@@ -31,6 +34,8 @@ export interface UsageRecord extends ProfileFields {
   engine: string;
   action?: string;
   task?: string;
+  /** The task's scope (`_app` included); only for a harness with scopes. */
+  scope?: string;
   phase?: "run" | "close" | "checkpoint";
   /** `checkpoint`: the quiet turn that saves a note before the cap; `compaction`: the engine compacted (no usage). */
   kind?: "checkpoint" | "compaction";
@@ -46,7 +51,7 @@ export class UsageLog {
   private readonly file: string;
 
   constructor(folder: string) {
-    this.file = path.join(folder, ".harness", "usage.jsonl");
+    this.file = usageFile(folder);
   }
 
   async append(record: UsageRecord): Promise<void> {
@@ -83,6 +88,7 @@ function metaFields(meta: UsageMeta): Partial<UsageRecord> {
   return {
     ...(meta.action ? { action: meta.action } : {}),
     ...(meta.task ? { task: meta.task } : {}),
+    ...(meta.scope ? { scope: meta.scope } : {}),
     ...(meta.phase ? { phase: meta.phase } : {}),
     ...(meta.phase === "checkpoint" ? { kind: "checkpoint" as const } : {}),
     ...(meta.tier ? { tier: meta.tier } : {}),
@@ -166,10 +172,14 @@ export function summarizeUsage(records: UsageRecord[], primary: string | undefin
     if (task.measured) shares.set(task.action, [...(shares.get(task.action) ?? []), task.total]);
     if (task.counted) tokens.set(task.action, [...(tokens.get(task.action) ?? []), task.tokens]);
   }
+  // Settings › Uso per scope (spec §3.3): every turn's tokens, close and checkpoint turns included.
+  const perScope = new Map<string, number>();
+  for (const r of records) if (r.scope) perScope.set(r.scope, (perScope.get(r.scope) ?? 0) + (r.usage ? turnTokens(r.usage) : 0));
   return {
     limits: last ? last.limits!.filter((w) => Date.parse(w.resetsAt) > now.getTime()) : null,
     estimates: recentAverages(shares),
     tokens: recentAverages(tokens),
+    ...(perScope.size ? { scopes: Object.fromEntries(perScope) } : {}),
     ...(primary ? { primary } : {}),
   };
 }

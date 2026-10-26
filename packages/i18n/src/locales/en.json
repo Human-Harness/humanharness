@@ -136,6 +136,9 @@
     "timedOut": "This took too long, so I stopped it. Try again."
   },
   "usage": {
+    "byScope": "Usage by {{plural}}",
+    "scopeTokens": "{{tokens}} tokens",
+    "appScope": "App-wide",
     "five_hour": "5 h",
     "seven_day": "week",
     "window": "{{label}}: {{percent}}% used",
@@ -282,6 +285,10 @@
     "other": "Working on {{detail}}"
   },
   "history": {
+    "emptyFilter": "Nothing here yet.",
+    "scopeFilter": "Show",
+    "allScopes": "All",
+    "appScope": "App-wide",
     "title": "History",
     "intro": "Go back to any point: your files return to how they were then.",
     "restore": "Go back here",
@@ -324,7 +331,8 @@
       "undo": "The AI didn't finish, so its changes were undone",
       "restored": "You went back to an earlier point",
       "restoredTask": "You went back to before this task",
-      "note": "Note saved: {{title}}"
+      "note": "Note saved: {{title}}",
+      "data": "Changed {{collection}}"
     }
   },
   "backup": {
@@ -364,6 +372,16 @@
       "mismatch": "The copy didn't come out the same, so I left your folder where it was.",
       "failed": "I couldn't move your folder. It's still where it was."
     }
+  },
+  "scopes": {
+    "pick": "Choose {{label}}",
+    "none": "No {{label}}",
+    "add": "New {{label}}",
+    "titleLabel": "Name",
+    "create": "Create",
+    "cancel": "Cancel",
+    "pickFirst": "First choose which {{label}} to work on.",
+    "failed": "That didn't work. Try again."
   },
   "app": {
     "loadError": "The app couldn't start. Close it and open it again."

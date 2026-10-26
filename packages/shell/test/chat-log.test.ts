@@ -114,3 +114,21 @@ describe("ChatLog.archive", () => {
     expect(fs.existsSync(path.join(folder, ".harness", "chats", "archive"))).toBe(false);
   });
 });
+
+describe("a chat per scope", () => {
+  it("writes each scope's chat to its own file and lists them", async () => {
+    const folder = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
+    const entry = (id: string) => ({ id, role: "user" as const, text: id, blocks: [], activities: [], at: "t" });
+    await new ChatLog(folder).append(entry("m"));
+    await new ChatLog(folder, "claude", "fracciones").append(entry("f"));
+    await new ChatLog(folder, undefined, "_app").append(entry("a"));
+    expect((await new ChatLog(folder, undefined, "fracciones").load()).map((e) => e.id)).toEqual(["f"]);
+    expect((await new ChatLog(folder).load()).map((e) => e.id)).toEqual(["m"]);
+    expect(fs.existsSync(path.join(folder, ".harness", "chats", "fracciones.jsonl"))).toBe(true);
+    expect(await ChatLog.scopesIn(folder)).toEqual(["_app", "fracciones", "main"]);
+    expect(await new ChatLog(folder, undefined, "fracciones").archive("claude")).toMatch(/-fracciones-claude\.jsonl$/);
+    expect(await ChatLog.scopesIn(folder)).toEqual(["_app", "main"]);
+    expect(() => new ChatLog(folder, undefined, "../x")).toThrow(/scope/);
+    fs.rmSync(folder, { recursive: true, force: true });
+  });
+});

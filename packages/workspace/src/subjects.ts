@@ -19,3 +19,5 @@ export const RESTORE_TASK = "Went back to before the task";
 export const NOTE_PREFIX = "Note: ";
 /** The subject of the commit that saves a task's note; group 1 is the note's title. */
 export const NOTE = new RegExp(`^${NOTE_PREFIX}(.+)$`);
+/** A change the person made to the harness's data; the collection's name follows. */
+export const DATA_CHANGE_PREFIX = "Data: ";

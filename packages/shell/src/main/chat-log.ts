@@ -1,18 +1,33 @@
 import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { MAIN_SCOPE, chatFile, chatsDir, isScopeDir } from "@humanharness/workspace";
 import type { Event, LimitWindow } from "@humanharness/runtime";
 import { type AnswerPart, type ChatEntry, type TurnUsage, addParagraph, addText, finishParts } from "@humanharness/ui/client";
 
 export class ChatLog {
   private readonly file: string;
 
-  /** `engine`, when given, is stamped on every appended entry (used to notice an engine switch). */
+  /**
+   * `engine`, when given, is stamped on every appended entry (used to notice an engine switch). `scope` picks the
+   * scope's chat (`chats/<scope>.jsonl`); `main`, the default, is also the chat of a harness without scopes.
+   */
   constructor(
     folder: string,
     private readonly engine?: string,
+    private readonly scope: string = MAIN_SCOPE,
   ) {
-    this.file = path.join(folder, ".harness", "chats", "main.jsonl");
+    this.file = chatFile(folder, scope);
+  }
+
+  /** The scopes that have a chat file in `folder` (`_app` included), sorted. */
+  static async scopesIn(folder: string): Promise<string[]> {
+    const names = await fs.readdir(chatsDir(folder)).catch(() => [] as string[]);
+    return names
+      .filter((n) => n.endsWith(".jsonl"))
+      .map((n) => n.slice(0, -".jsonl".length))
+      .filter((s) => isScopeDir(s))
+      .sort();
   }
 
   async append(entry: ChatEntry): Promise<void> {
@@ -48,7 +63,8 @@ export class ChatLog {
     }
     const dir = path.join(path.dirname(this.file), "archive");
     const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-    const target = path.join(dir, `${stamp}-${label.replace(/[^a-z0-9-]/gi, "")}.jsonl`);
+    const scope = this.scope === MAIN_SCOPE ? "" : `${this.scope}-`;
+    const target = path.join(dir, `${stamp}-${scope}${label.replace(/[^a-z0-9-]/gi, "")}.jsonl`);
     await fs.mkdir(dir, { recursive: true });
     await fs.rename(this.file, target);
     return target;

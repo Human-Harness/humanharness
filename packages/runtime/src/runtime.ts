@@ -1,10 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
-import { type Bridge, type Launcher, type McpServerSpec, devLauncher, openBridge, uiServerSpec } from "@humanharness/blocks";
+import { type Bridge, type Launcher, type McpServerSpec, type Rpc, dataServerSpec, devLauncher, hasAgentData, openBridge, openRpc, uiServerSpec } from "@humanharness/blocks";
 import type { Effort, EngineDef, ModelChoice, ModelProfile } from "@humanharness/engines";
 import { type Language, type LoadedHarness, allBlocks, resolveInHarness } from "@humanharness/harness-sdk";
 import {
   BEFORE_MESSAGE,
+  DATA_PREFIX,
   History,
   type HistoryTrailer,
   NOTES_PREFIX,
@@ -24,6 +25,13 @@ import type { Session, Transport, TransportOptions } from "./transport";
 export interface RuntimeOptions {
   /** Built `ui` MCP server entry (app). Defaults to the TS source (dev). */
   uiServerEntry?: string;
+  /** Built `data` MCP server entry (app). Defaults to the TS source (dev). */
+  dataServerEntry?: string;
+  /**
+   * Answers the agent's data tools (spec §4.4): the caller runs each request as the agent, in the running task's
+   * scope. Without it, or without collections the agent may see, there is no `data` server (D2).
+   */
+  data?: (request: unknown) => Promise<unknown>;
   harness: LoadedHarness;
   engine: EngineDef;
   /** The user's visible folder. */
@@ -82,26 +90,33 @@ export async function createRuntime(opts: RuntimeOptions): Promise<HarnessRuntim
   const base = await fs.readFile(resolveInHarness(harness, harness.instructions), "utf8");
   const generated = await writeInstructions({ folder, base, language: opts.language, blocks: allBlocks(harness), references, engine });
 
-  // The history skips the app's files under .harness/ (except the notes) and the generated instructions.
-  const history = new History(folder, opts.gitdir, [".harness/", ...generated], [NOTES_PREFIX]);
+  // The history skips the app's files under .harness/ (except the notes and the data) and the generated instructions.
+  const history = new History(folder, opts.gitdir, [".harness/", ...generated], [NOTES_PREFIX, DATA_PREFIX]);
   await history.init();
   await history.save(START);
 
   let emitCurrent: ((e: Event) => void) | null = null;
   const session: Session = opts.session ?? { id: randomUUID(), started: false };
   const bridge: Bridge = await openBridge((m) => emitCurrent?.({ type: "block", name: m.name, data: m.data }));
+  let rpc: Rpc | null = null;
   try {
-    return await buildRuntime(bridge);
+    if (opts.data && hasAgentData(harness)) rpc = await openRpc(opts.data);
+    return await buildRuntime(bridge, rpc);
   } catch (err) {
+    await rpc?.close().catch(() => {});
     await bridge.close().catch(() => {});
     throw err;
   }
 
-  async function buildRuntime(bridge: Bridge): Promise<HarnessRuntime> {
+  async function buildRuntime(bridge: Bridge, rpc: Rpc | null): Promise<HarnessRuntime> {
     const transportOptions: TransportOptions = {
       folder,
       session,
-      mcp: [uiServerSpec({ harnessConfig: harness.configPath, bridge, launcher, entry: opts.uiServerEntry }), ...harnessMcpServers(harness, launcher)],
+      mcp: [
+        uiServerSpec({ harnessConfig: harness.configPath, bridge, launcher, entry: opts.uiServerEntry }),
+        ...(rpc ? [dataServerSpec({ harnessConfig: harness.configPath, rpc, launcher, entry: opts.dataServerEntry })] : []),
+        ...harnessMcpServers(harness, launcher),
+      ],
       permissions: harness.permissions,
       references: references.map((r) => r.path),
       sessionMode:
@@ -189,7 +204,11 @@ export async function createRuntime(opts: RuntimeOptions): Promise<HarnessRuntim
         try {
           await transport.close();
         } finally {
-          await bridge.close();
+          try {
+            await bridge.close();
+          } finally {
+            await rpc?.close();
+          }
         }
       },
     };

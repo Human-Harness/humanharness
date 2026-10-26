@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
 import { z } from "zod";
-import { CORE_BLOCKS, DEFAULT_LANGUAGE, canonicalLanguage, languageName, HARNESS_ID, TIERS, allBlocks, blockToolName, choicesSchema, defineBlock, defineHarness, loadHarness, resolveInHarness, saveNoteSchema, z as sdkZ } from "../src";
+import { CORE_BLOCKS, DEFAULT_LANGUAGE, canonicalLanguage, languageName, HARNESS_ID, TIERS, actionScope, allBlocks, blockToolName, choicesSchema, defineBlock, defineHarness, loadHarness, resolveInHarness, saveNoteSchema, z as sdkZ } from "../src";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -58,6 +58,14 @@ describe("blockToolName", () => {
 });
 
 describe("defineHarness", () => {
+  it("refuses an id that would name its MCP server like a built-in one", () => {
+    for (const id of ["ui", "data"]) {
+      expect(() => defineHarness({ ...base, id, mcp: ["./mcp.ts"] })).toThrow(new RegExp(`${id}\\\\?" is a built-in MCP server name`));
+      // Without servers of its own, nothing is named after the id.
+      expect(defineHarness({ ...base, id }).id).toBe(id);
+    }
+  });
+
   it("fills defaults", () => {
     const h = defineHarness({ ...base });
     expect(h.mcp).toEqual([]);
@@ -258,6 +266,43 @@ describe("what a harness repo imports", () => {
   it("names the harness id rule", () => {
     for (const ok of ["demo", "my-harness", "a1"]) expect(HARNESS_ID.test(ok)).toBe(true);
     for (const bad of ["My", "9lives", "-x", "a_b", ""]) expect(HARNESS_ID.test(bad)).toBe(false);
+  });
+});
+
+describe("scopes", () => {
+  const topics = { label: "topic", plural: "topics" };
+  const action = (extra: Record<string, unknown> = {}) => ({ label: "A", prompt: "./a.md", cost: "light" as const, ...extra });
+
+  it("takes a label and a plural, and an action says where it runs", () => {
+    const h = defineHarness({
+      ...base,
+      scopes: topics,
+      actions: { study: action(), onboarding: action({ scope: "none" }) },
+      path: ["study"],
+    });
+    expect(h.scopes).toEqual(topics);
+    expect(actionScope(h, "study")).toBe("required");
+    expect(actionScope(h, "onboarding")).toBe("none");
+  });
+
+  it("has no scopes by default (spec D2)", () => {
+    const h = defineHarness({ ...base, actions: { study: action() } });
+    expect(h.scopes).toBeUndefined();
+    expect(actionScope(h, "study")).toBeNull();
+  });
+
+  it("refuses an action scope in a harness without scopes", () => {
+    expect(() => defineHarness({ ...base, actions: { study: action({ scope: "none" }) } })).toThrow(/declares scopes/);
+  });
+
+  it("refuses an app-wide action in the guided path", () => {
+    expect(() =>
+      defineHarness({ ...base, scopes: topics, actions: { onboarding: action({ scope: "none" }) }, path: ["onboarding"] }),
+    ).toThrow(/can't be in the path/);
+  });
+
+  it("refuses an unknown action scope", () => {
+    expect(() => defineHarness({ ...base, scopes: topics, actions: { study: action({ scope: "sometimes" }) } })).toThrow();
   });
 });
 

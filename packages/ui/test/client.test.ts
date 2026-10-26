@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { type EngineStatus, canOpenFile, engineProblem, isTextSize, nextInPath, stepTextSize } from "../src/client";
+import { type DataChangeView, type EngineStatus, canOpenFile, engineProblem, hearsDataChange, isTextSize, nextInPath, stepTextSize } from "../src/client";
+import { FakeClient } from "./fake-client";
 
 const ready: EngineStatus = {
   engineId: "claude",
@@ -81,5 +82,47 @@ describe("text size", () => {
     expect(isTextSize("huge")).toBe(false);
     expect(isTextSize(1.5)).toBe(false);
     expect(isTextSize("toString")).toBe(false);
+  });
+});
+
+describe("the scopes contract", () => {
+  it("lists, creates, opens and archives scopes, and tells listeners", async () => {
+    const client = new FakeClient();
+    const seen: (string | null)[] = [];
+    const off = client.scopes.onChange((v) => seen.push(v.open));
+    const s = await client.scopes.create("Fractions");
+    expect(await client.scopes.open(s.id)).toBe(true);
+    expect(await client.scopes.current()).toBe(s.id);
+    await client.scopes.archive(s.id);
+    expect(await client.scopes.current()).toBeNull();
+    expect((await client.scopes.list())[0]).toMatchObject({ id: s.id, archived: true });
+    off();
+    expect(seen).toEqual([null, s.id, null]);
+  });
+});
+
+describe("hearsDataChange (data.subscribe's filter)", () => {
+  const change = (collection: string, scope: string): DataChangeView => ({ collection, scope, who: "agent", op: "put", key: 1 });
+
+  it("hears its collection in its scope, or in any scope when the scope is null", () => {
+    expect(hearsDataChange(change("cards", "algebra"), "cards", "algebra")).toBe(true);
+    expect(hearsDataChange(change("cards", "algebra"), "cards", null)).toBe(true);
+    expect(hearsDataChange(change("cards", "geometry"), "cards", "algebra")).toBe(false);
+    expect(hearsDataChange(change("decks", "algebra"), "cards", "algebra")).toBe(false);
+  });
+
+  it("hears an app-wide collection whatever scope it was given", () => {
+    expect(hearsDataChange(change("profile", "_app"), "profile", "algebra")).toBe(true);
+    expect(hearsDataChange(change("profile", "_app"), "other", "algebra")).toBe(false);
+  });
+
+  it("the fake client's subscribe filters the same way", () => {
+    const client = new FakeClient();
+    const seen: string[] = [];
+    const off = client.data.subscribe("profile", "algebra", (c) => seen.push(c.scope));
+    client.emitDataChange(change("profile", "_app"));
+    client.emitDataChange(change("profile", "geometry"));
+    off();
+    expect(seen).toEqual(["_app"]);
   });
 });

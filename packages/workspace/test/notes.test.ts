@@ -172,3 +172,36 @@ describe("note files", () => {
     expect(await relativizeNoteFiles(tmp(), "/old")).toBe(0);
   });
 });
+
+describe("notes per scope", () => {
+  it("writes and reads a scope's notes in its own folder", async () => {
+    const folder = tmp();
+    expect(await writeNote(folder, "turn", note, meta, ".harness/notes/fracciones/")).toBe(".harness/notes/fracciones/turn.md");
+    await writeNote(folder, "other", { ...note, title: "App-wide" }, meta, ".harness/notes/_app/");
+    expect(await readNotes(folder, ".harness/notes/fracciones/")).toEqual([{ slug: "turn", path: ".harness/notes/fracciones/turn.md", ...note, ...meta }]);
+    expect((await readNotes(folder, ".harness/notes/_app/")).map((n) => n.title)).toEqual(["App-wide"]);
+    // The flat folder doesn't list a scope's folder.
+    expect(await readNotes(folder)).toEqual([]);
+    expect(parseNote("x", renderNote(note, meta), ".harness/notes/_app/")?.path).toBe(".harness/notes/_app/x.md");
+  });
+
+  it("refuses a notes folder outside .harness/notes/", async () => {
+    await expect(writeNote(tmp(), "a", note, meta, ".harness/notes/../../x/")).rejects.toThrow(/notes folder/);
+    await expect(writeNote(tmp(), "a", note, meta, "elsewhere/")).rejects.toThrow(/notes folder/);
+    await expect(readNotes(tmp(), ".harness/notes/Bad/")).rejects.toThrow(/notes folder/);
+  });
+
+  it("rewrites the files line of the notes in every scope's folder after a move", async () => {
+    const folder = tmp();
+    const old = "/Users/me/Work";
+    for (const dir of ["", "main/", "_app/"]) {
+      fs.mkdirSync(path.join(folder, ".harness/notes", dir), { recursive: true });
+      fs.writeFileSync(path.join(folder, ".harness/notes", dir, "a.md"), `---\ntitle: "A"\nfiles: ["${old}/plan.md"]\n---\n`);
+    }
+    fs.mkdirSync(path.join(folder, ".harness/notes/Not-a-scope"), { recursive: true });
+    fs.writeFileSync(path.join(folder, ".harness/notes/Not-a-scope/a.md"), `---\ntitle: "A"\nfiles: ["${old}/plan.md"]\n---\n`);
+    expect(await relativizeNoteFiles(folder, old)).toBe(3);
+    expect(fs.readFileSync(path.join(folder, ".harness/notes/_app/a.md"), "utf8")).toContain('files: ["plan.md"]');
+    expect(fs.readFileSync(path.join(folder, ".harness/notes/Not-a-scope/a.md"), "utf8")).toContain(`${old}/plan.md`);
+  });
+});

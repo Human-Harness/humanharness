@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { Event, HarnessClient, SetupOutput, TaskView, TextSize } from "@humanharness/ui/client";
+import type { DataChangeView, Event, HarnessClient, ScopesView, SetupOutput, TaskView, TextSize } from "@humanharness/ui/client";
+import { hearsDataChange } from "@humanharness/ui/data-change";
 
 function subscribe<T>(channel: string, listener: (value: T) => void): () => void {
   const handler = (_e: unknown, value: T) => listener(value);
@@ -38,6 +39,28 @@ const client: HarnessClient = {
   choose: (option, task) => ipcRenderer.invoke("hh:choose", option, task),
   openPath: (file) => ipcRenderer.invoke("hh:openPath", file),
   revealPath: (file) => ipcRenderer.invoke("hh:revealPath", file),
+  scopes: {
+    list: () => ipcRenderer.invoke("hh:scopes"),
+    create: (title) => ipcRenderer.invoke("hh:scopeCreate", title),
+    rename: (id, title) => ipcRenderer.invoke("hh:scopeRename", id, title),
+    archive: (id) => ipcRenderer.invoke("hh:scopeArchive", id, true),
+    unarchive: (id) => ipcRenderer.invoke("hh:scopeArchive", id, false),
+    open: (id) => ipcRenderer.invoke("hh:scopeOpen", id),
+    current: () => ipcRenderer.invoke("hh:scopeCurrent"),
+    onChange: (listener) => subscribe<ScopesView>("hh:scopes", listener),
+  },
+  data: {
+    get: (collection, key, options) => ipcRenderer.invoke("hh:data", { op: "get", collection, ...(key !== undefined ? { key } : {}) }, options),
+    query: (collection, query = {}, options) => ipcRenderer.invoke("hh:data", { op: "query", collection, ...query }, options),
+    put: (collection, record, options) => ipcRenderer.invoke("hh:data", { op: "put", collection, record }, options),
+    patch: (collection, key, patch, options) => ipcRenderer.invoke("hh:data", { op: "patch", collection, ...(key !== undefined ? { key } : {}), patch }, options),
+    delete: (collection, key, options) => ipcRenderer.invoke("hh:data", { op: "delete", collection, ...(key !== undefined ? { key } : {}) }, options),
+    subscribe: (collection, scope, listener) =>
+      subscribe<DataChangeView>("hh:dataChange", (change) => {
+        if (hearsDataChange(change, collection, scope)) listener(change);
+      }),
+  },
+  dataDiff: (taskId) => ipcRenderer.invoke("hh:dataDiff", taskId),
   onTextSize: (listener) => subscribe<TextSize>("hh:textSize", listener),
 };
 

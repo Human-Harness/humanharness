@@ -11,10 +11,29 @@ import type { Event } from "../src/events";
 import { type HarnessRuntime, type RuntimeOptions, createRuntime } from "../src/runtime";
 import type { Session } from "../src/transport";
 
+/** Sockets the runtime opened: a test can make the bridge's close fail and see the rpc's close. */
+const sockets = vi.hoisted(() => ({ failBridgeClose: false, rpcClosed: 0 }));
+vi.mock("@humanharness/blocks", async (importOriginal) => {
+  const blocks = await importOriginal<typeof import("@humanharness/blocks")>();
+  return {
+    ...blocks,
+    openBridge: async (...args: Parameters<typeof blocks.openBridge>) => {
+      const bridge = await blocks.openBridge(...args);
+      return { ...bridge, close: () => (sockets.failBridgeClose ? bridge.close().then(() => Promise.reject(new Error("bridge"))) : bridge.close()) };
+    },
+    openRpc: async (...args: Parameters<typeof blocks.openRpc>) => {
+      const rpc = await blocks.openRpc(...args);
+      return { ...rpc, close: () => rpc.close().then(() => void sockets.rpcClosed++) };
+    },
+  };
+});
+
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
 
 const FIXTURE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../fake-agent/fixtures/notes-harness/harness.config.ts");
+const STUDY = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../fake-agent/fixtures/data-harness/harness.config.ts");
+const mcpServers = (argv: string[]) => Object.keys((JSON.parse(argv[argv.indexOf("--mcp-config") + 1]) as { mcpServers: object }).mcpServers);
 let runtime: HarnessRuntime | undefined;
 
 afterEach(async () => {
@@ -254,5 +273,46 @@ describe("createRuntime", () => {
     expect(() => runtime.send("two", () => {})).toThrow(/already running/);
     turn.cancel();
     await turn.done;
+  });
+
+  it("starts no data server without data, or without a handler (D2)", async () => {
+    const plain = await setup({ steps: [claudeResultLine(true)] }, undefined, { data: async (request) => request });
+    await send(plain.runtime);
+    expect(mcpServers(plain.args())).toEqual(["ui"]);
+    await plain.runtime.close();
+    const noHandler = await setup({ steps: [claudeResultLine(true)] }, undefined, { harness: await loadHarness(STUDY) });
+    await send(noHandler.runtime);
+    expect(mcpServers(noHandler.args())).toEqual(["ui"]);
+  });
+
+  it("starts the data server next to ui and sends the agent's data calls to the handler", async () => {
+    const seen: unknown[] = [];
+    const { runtime, args } = await setup(
+      { steps: [{ mcp: { server: "data", tool: "data_put", args: { collection: "concepts", record: { id: "halves", name: "Halves", state: "seen", evidence: [] } } } }, claudeResultLine(true)] },
+      undefined,
+      {
+        harness: await loadHarness(STUDY),
+        data: async (request) => {
+          seen.push(request);
+          return request;
+        },
+      },
+    );
+    await send(runtime);
+    expect(mcpServers(args())).toEqual(["ui", "data"]);
+    expect(seen).toEqual([{ op: "put", collection: "concepts", record: { id: "halves", name: "Halves", state: "seen", evidence: [] } }]);
+  });
+
+  it("closes the data socket even when closing the ui bridge fails", async () => {
+    const { runtime: r } = await setup({ steps: [claudeResultLine(true)] }, undefined, { harness: await loadHarness(STUDY), data: async () => null });
+    runtime = undefined;
+    const closed = sockets.rpcClosed;
+    sockets.failBridgeClose = true;
+    try {
+      await expect(r.close()).rejects.toThrow("bridge");
+    } finally {
+      sockets.failBridgeClose = false;
+    }
+    expect(sockets.rpcClosed).toBe(closed + 1);
   });
 });

@@ -6,6 +6,7 @@ import {
   type HarnessClient,
   type HistoryItem,
   type HistoryTaskView,
+  DATA_CHANGE_PREFIX,
   NOTE,
   RESTORE_POINT,
   RESTORE_TASK,
@@ -26,6 +27,7 @@ export function entryLabel(message: string): { key: string; values?: Record<stri
   if (message.startsWith(UNDO_PREFIX)) return { key: "history.entry.undo" };
   if (message === RESTORE_TASK) return { key: "history.entry.restoredTask" };
   if (message === RESTORE_POINT) return { key: "history.entry.restored" };
+  if (message.startsWith(DATA_CHANGE_PREFIX)) return { key: "history.entry.data", values: { collection: message.slice(DATA_CHANGE_PREFIX.length) } };
   const note = NOTE.exec(message);
   if (note) return { key: "history.entry.note", values: { title: note[1] } };
   return null;
@@ -86,6 +88,23 @@ export function HistoryPanel({
   const [loadFailed, setLoadFailed] = useState(false);
   /** A restore was sent and hasn't answered: no other way back can be taken meanwhile. */
   const [restoring, setRestoring] = useState(false);
+  /** Harnesses with scopes: the scope whose tasks show ("" for all), and the scopes' titles. */
+  const [filter, setFilter] = useState("");
+  const [titles, setTitles] = useState<Record<string, string>>({});
+  const scopeIds = [...new Set((groups ?? []).flatMap((g) => (g.scopeId ? [g.scopeId] : [])))];
+  const hasScopes = scopeIds.length > 0;
+  useEffect(() => {
+    if (!hasScopes) return;
+    client.scopes.list().then(
+      (list) => setTitles(Object.fromEntries(list.map((s) => [s.id, s.title]))),
+      () => undefined,
+    );
+  }, [client, hasScopes]);
+  // A reload can drop the selected scope: back to all.
+  useEffect(() => {
+    if (filter && !scopeIds.includes(filter)) setFilter("");
+  });
+  const shown = filter ? (groups ?? []).filter((g) => g.scopeId === filter) : groups;
   const closeRef = useRef<HTMLButtonElement>(null);
   const yesRef = useRef<HTMLButtonElement>(null);
   /** The button whose confirmation was cancelled: it gets focus back once it is shown again. */
@@ -231,8 +250,9 @@ export function HistoryPanel({
     );
   };
   // Tasks under their day; the group outside any task always comes last, in a section of its own.
-  const days: { day: Date | null; items: HistoryTaskView[] }[] = groups ? byDay(groups.filter((g) => g.taskId !== null)) : [];
-  const outside = groups?.find((g) => g.taskId === null);
+  // With a scope filter on, only that scope's tasks (going back still counts every later task).
+  const days: { day: Date | null; items: HistoryTaskView[] }[] = shown ? byDay(shown.filter((g) => g.taskId !== null)) : [];
+  const outside = shown?.find((g) => g.taskId === null);
   if (outside) days.push({ day: null, items: [outside] });
   const dayLabel = (day: Date) => {
     const today = new Date();
@@ -265,6 +285,20 @@ export function HistoryPanel({
           <strong>{t("history.emptyTitle")}</strong>
           <p className="hh-caption">{t("history.empty")}</p>
         </div>
+      )}
+      {shown?.length === 0 && (groups?.length ?? 0) > 0 && <p>{t("history.emptyFilter")}</p>}
+      {hasScopes && (
+        <label className="hh-history-filter">
+          {t("history.scopeFilter")}{" "}
+          <select value={filter} onChange={(e) => setFilter(e.target.value)}>
+            <option value="">{t("history.allScopes")}</option>
+            {scopeIds.map((id) => (
+              <option key={id} value={id}>
+                {id === "_app" ? t("history.appScope") : (titles[id] ?? id)}
+              </option>
+            ))}
+          </select>
+        </label>
       )}
       {days.map(({ day, items }) => (
         <section key={day?.toDateString() ?? "outside"} className="hh-history-day">

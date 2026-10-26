@@ -55,6 +55,8 @@ export function ChatView({
   renderSide,
   startView,
   engineProblem,
+  scopeBar,
+  openScope = null,
   onHome,
   onSettings,
   onFixEngine,
@@ -69,6 +71,10 @@ export function ChatView({
   startView?: StartViewCopy;
   /** What the background check found wrong with the engine, if anything. */
   engineProblem?: EngineProblem | null;
+  /** Harnesses with scopes: the picker shown first in the top bar (disabled while a turn runs or a task closes). */
+  scopeBar?: (disabled: boolean) => ReactNode;
+  /** Harnesses with scopes: the open scope (its chat is the one on screen). */
+  openScope?: string | null;
   onHome?: () => void;
   onSettings?: () => void;
   onFixEngine?: () => void;
@@ -262,6 +268,13 @@ export function ChatView({
   const send = (text: string, options: SendOptions = {}, confirmed = false): boolean => {
     const message = text.trim();
     if (!message || blocked() || (pending && !confirmed)) return false;
+    // A `required` action needs an open scope (spec §3.3); the main process would refuse it.
+    if (options.action && state.scopes && state.actions[options.action]?.scope !== "none" && !openScope) {
+      const text = t("scopes.pickFirst", { label: state.scopes.label });
+      dispatch({ type: "notice", text, at: new Date().toISOString() });
+      setNotice(text);
+      return false;
+    }
     if (!confirmed && options.action) {
       const check = preflight(state.actions[options.action]?.cost, chat.limits, estimates[options.action]);
       if (check) {
@@ -383,6 +396,7 @@ export function ChatView({
   return (
     <div className="hh-app">
       <TopBar title={state.harness.name} mock={state.mock}>
+        {scopeBar?.(blocked())}
         <UsageMeter engine={engineOption} limits={chat.limits} lastTokens={lastTurnTokens(chat.entries)} />
         {onHome && <button onClick={onHome}>{t("chat.home")}</button>}
         <button

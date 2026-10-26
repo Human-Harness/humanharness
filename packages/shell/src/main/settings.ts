@@ -1,4 +1,15 @@
-import { type HarnessSettings, SETTINGS_COLLECTION, agentSettings, sameSetting, settingsSentences, settingsValues } from "@humanharness/harness-sdk";
+import {
+  type HarnessSettings,
+  type ModesWithSettings,
+  SETTINGS_COLLECTION,
+  agentSettings,
+  modeSentences,
+  sameSetting,
+  settingRef,
+  settingsSentences,
+  settingsValues,
+  withSetting,
+} from "@humanharness/harness-sdk";
 import type { SettingsResult, SettingsState } from "@humanharness/ui/client";
 import { APP_SCOPE, type DataContext, DataError, type DataRequest, type DataStore } from "@humanharness/workspace";
 import { DataUnavailable } from "./data-requests";
@@ -8,6 +19,8 @@ const PERSON: DataContext = { who: "person", scope: APP_SCOPE };
 
 export interface SettingsDeps {
   settings: HarnessSettings;
+  /** The manifest's modes: their settings are keyed `<mode>.<field>` (harness-settings spec §6). Absent: none (D0). */
+  modes?: ModesWithSettings;
   /** The configured folder's data store; null before the app is set up. */
   store(): Promise<DataStore | null>;
   /**
@@ -55,7 +68,7 @@ export class SettingsController {
   async values(): Promise<Record<string, unknown>> {
     const store = await this.d.store().catch(() => null);
     const stored = store ? await store.get(SETTINGS_COLLECTION, undefined, PERSON).catch(() => null) : null;
-    return settingsValues(this.d.settings, stored);
+    return settingsValues(this.d.settings, stored, this.d.modes);
   }
 
   /** The runtime's `instructionSettings`: the sentences for AGENTS.md as they are now, remembered as what the agent was told. */
@@ -63,6 +76,11 @@ export class SettingsController {
     const values = await this.values();
     this.applied = values;
     return settingsSentences(this.d.settings, values);
+  }
+
+  /** A mode's sentences with the person's values now, for its brief (spec §6): they never go into AGENTS.md. */
+  async modeSentences(mode: string): Promise<string[]> {
+    return modeSentences(this.d.modes, mode, await this.values());
   }
 
   async state(): Promise<SettingsState> {
@@ -73,19 +91,17 @@ export class SettingsController {
     return { values, pending };
   }
 
-  /** The person changed one field (the tab saves each change at once). Back to its default, it is removed. */
+  /** The person changed one setting (a field name, or `<mode>.<field>`); the tab saves each change at once. Back to its default, it is removed. */
   set(field: unknown, value: unknown): Promise<SettingsResult> {
     return this.serial(async () => {
-      if (typeof field !== "string" || !Object.hasOwn(this.d.settings.fields, field)) return { ok: false, message: "Unknown setting" };
-      const f = this.d.settings.fields[field];
-      const parsed = f.schema.safeParse(value);
+      const ref = typeof field === "string" ? settingRef(this.d.settings, this.d.modes, field) : null;
+      if (!ref) return { ok: false, message: "Unknown setting" };
+      const parsed = ref.field.schema.safeParse(value);
       if (!parsed.success) return { ok: false, message: parsed.error.issues.map((i) => i.message).join("; ") };
       const store = await this.d.store().catch(() => null);
       if (!store) return { ok: false, message: "The app is not set up yet" };
       const stored = (await store.get(SETTINGS_COLLECTION, undefined, PERSON).catch(() => null)) ?? {};
-      const next: Record<string, unknown> = { ...stored };
-      if (sameSetting(parsed.data, f.default)) delete next[field];
-      else next[field] = parsed.data;
+      const next = withSetting(stored, ref, parsed.data);
       if (sameSetting(next, stored)) return { ok: true, state: await this.state() };
       return this.save(Object.keys(next).length > 0 ? { op: "put", collection: SETTINGS_COLLECTION, record: next } : { op: "delete", collection: SETTINGS_COLLECTION });
     });

@@ -1,17 +1,15 @@
 import { type KeyboardEvent as ReactKeyboardEvent, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { Language } from "@humanharness/harness-sdk";
 import { BackupNotice, type FolderMove, MovePlaces, needsBackupNotice, useFolderMove } from "./BackupNotice";
 import { EngineIcon, Segmented } from "./chrome";
 import { type AppConfig, type AppState, type Appearance, type HarnessClient, type RunningSetup, TEXT_SIZES, type TextSize, isConfigured } from "./client";
 import { EngineTab } from "./EngineTab";
-import { uiLanguage } from "./FolderStep";
+import { ownName, systemLanguage } from "./language";
 import { ModelsTab } from "./ModelsTab";
 import { UsageTab } from "./UsageTab";
 
 export type SettingsTab = "general" | "engine" | "models" | "usage";
 const TABS: SettingsTab[] = ["general", "engine", "models", "usage"];
-const LANGUAGE_NAMES: Record<Language, string> = { es: "Español", en: "English" };
 const TEXT_SIZE_KEYS = Object.keys(TEXT_SIZES) as TextSize[];
 /** The key that zooms with + and −: ⌘ on macOS, Ctrl elsewhere. */
 const ZOOM_KEY = /Mac/.test(navigator.userAgent) ? "⌘" : "Ctrl";
@@ -195,7 +193,7 @@ function trapTab(sheet: HTMLElement, e: KeyboardEvent) {
 }
 
 function GeneralTab({ client, state, onChange, move }: { client: HarnessClient; state: AppState; onChange: (s: AppState) => void; move: FolderMove }) {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const placesId = useId();
   const sizeId = useId();
   /** The places to move the folder to are open (the backup notice, when it shows, offers them itself). */
@@ -210,12 +208,8 @@ function GeneralTab({ client, state, onChange, move }: { client: HarnessClient; 
     const lost = active === null || active === document.body || document.getElementById(placesId)?.contains(active) === true;
     if (lost && toggleRef.current?.isConnected) toggleRef.current.focus();
   }, [move.moved]);
-  const lang = uiLanguage(state, i18n.language);
+  const lang = state.config.language ?? systemLanguage();
   const save = (patch: AppConfig) => client.saveConfig(patch).then(onChange, () => {});
-  const changeLanguage = (language: Language) => {
-    void i18n.changeLanguage(language);
-    void save({ language });
-  };
   const appearances: { value: Appearance; label: string }[] = [
     { value: "system", label: t("settings.appearanceSystem") },
     { value: "light", label: t("settings.appearanceLight") },
@@ -234,14 +228,10 @@ function GeneralTab({ client, state, onChange, move }: { client: HarnessClient; 
   return (
     <div className="hh-tab">
       <div className="hh-rows">
-        <div className="hh-row">
+        <div className="hh-row hh-row-wrap">
           <span className="hh-row-label">{t("settings.language")}</span>
-          <Segmented
-            label={t("settings.language")}
-            value={lang}
-            onChange={changeLanguage}
-            options={state.harness.languages.map((l) => ({ value: l, label: LANGUAGE_NAMES[l] }))}
-          />
+          <span>{ownName(lang)}</span>
+          <p className="hh-caption hh-row-note">{t("settings.languageHint")}</p>
         </div>
         <div className="hh-row">
           <span className="hh-row-label">{t("settings.appearance")}</span>
@@ -296,7 +286,7 @@ function GeneralTab({ client, state, onChange, move }: { client: HarnessClient; 
       <h3>{t("settings.about")}</h3>
       <div className="hh-rows">
         <div className="hh-row">
-          <span className="hh-display">{state.harness.name[lang]}</span>
+          <span className="hh-display">{state.harness.name}</span>
           <span className="hh-caption">{t("settings.version", { version: state.harness.version })}</span>
         </div>
         <div className="hh-row">
@@ -314,8 +304,8 @@ function GeneralTab({ client, state, onChange, move }: { client: HarnessClient; 
 
 /** Motor, Modelos and Uso before the app is configured: they all lead to the setup flow. */
 function NotConfigured({ state, onSetup }: { state: AppState; onSetup: () => void }) {
-  const { t, i18n } = useTranslation();
-  const name = state.harness.name[uiLanguage(state, i18n.language)];
+  const { t } = useTranslation();
+  const name = state.harness.name;
   return (
     <div className="hh-tab hh-not-configured">
       <EngineIcon size={40} />

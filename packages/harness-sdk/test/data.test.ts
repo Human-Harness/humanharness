@@ -5,9 +5,8 @@ import { COLLECTION_NAME, dataSchema, defineHarness, loadHarness, z } from "../s
 
 const base = {
   id: "test",
-  name: { es: "Prueba", en: "Test" },
+  name: "Test",
   core: "^0.1.0",
-  languages: ["es", "en"] as ("es" | "en")[],
   engines: ["claude"],
   folder: { suggested: "Documents/Test" },
   instructions: "./AGENTS.md",

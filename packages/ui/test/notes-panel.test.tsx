@@ -17,22 +17,22 @@ describe("NotesPanel", () => {
   it("opens the newest note with its points, path and actions; the others show how many points", async () => {
     const onResume = vi.fn();
     const onOpen = vi.fn(async () => true);
-    await renderIn("es", <NotesPanel notes={notes} lang="es" disabled={false} onResume={onResume} onOpen={onOpen} onClose={() => {}} />);
-    const panel = screen.getByRole("dialog", { name: "Lo que quedó claro" });
+    await renderIn("en", <NotesPanel notes={notes} disabled={false} onResume={onResume} onOpen={onOpen} onClose={() => {}} />);
+    const panel = screen.getByRole("dialog", { name: "What's clear so far" });
     expect(within(panel).getByText("Five pieces")).toBeTruthy();
     expect(within(panel).getByText(".harness/notes/turn.md")).toBeTruthy();
-    expect(within(panel).getByText(/1 idea clave/)).toBeTruthy();
-    fireEvent.click(within(panel).getByRole("button", { name: "Retomar este tema" }));
+    expect(within(panel).getByText(/1 key point/)).toBeTruthy();
+    fireEvent.click(within(panel).getByRole("button", { name: "Pick this topic up again" }));
     expect(onResume).toHaveBeenCalledWith(notes[0]);
-    fireEvent.click(within(panel).getByRole("button", { name: "Abrir el archivo" }));
+    fireEvent.click(within(panel).getByRole("button", { name: "Open the file" }));
     expect(onOpen).toHaveBeenCalledWith(".harness/notes/turn.md");
-    expect(within(panel).getByText("La próxima pregunta arranca desde tus resúmenes, sin volver a leer el código.")).toBeTruthy();
+    expect(within(panel).getByText("The next question starts from your summaries instead of re-reading the code.")).toBeTruthy();
     expect(panel.textContent).not.toMatch(/token/i);
   });
 
   it("opens another note, says when a file can't be opened, and closes with Escape", async () => {
     const onClose = vi.fn();
-    await renderIn("en", <NotesPanel notes={notes} expanded="q-chats" lang="en" disabled={false} onResume={() => {}} onOpen={async () => false} onClose={onClose} />);
+    await renderIn("en", <NotesPanel notes={notes} expanded="q-chats" disabled={false} onResume={() => {}} onOpen={async () => false} onClose={onClose} />);
     const panel = screen.getByRole("dialog", { name: "What's clear so far" });
     expect(within(panel).getByText("In .harness/chats")).toBeTruthy();
     expect(within(panel).queryByText("Five pieces")).toBeNull();
@@ -45,7 +45,7 @@ describe("NotesPanel", () => {
   });
 
   it("keeps the note's header button in place when it opens or closes, so focus stays on it", async () => {
-    await renderIn("en", <NotesPanel notes={notes} lang="en" disabled={false} onResume={() => {}} onOpen={async () => true} onClose={() => {}} />);
+    await renderIn("en", <NotesPanel notes={notes} disabled={false} onResume={() => {}} onOpen={async () => true} onClose={() => {}} />);
     const panel = screen.getByRole("dialog", { name: "What's clear so far" });
     const turn = within(panel).getByRole("button", { name: /A turn/ });
     const chats = within(panel).getByRole("button", { name: /Where chats live/ });
@@ -65,7 +65,7 @@ describe("NotesPanel", () => {
   });
 
   it("follows the note asked for while it is open", async () => {
-    const props = { notes, lang: "en" as const, disabled: false, onResume: () => {}, onOpen: async () => true, onClose: () => {} };
+    const props = { notes, disabled: false, onResume: () => {}, onOpen: async () => true, onClose: () => {} };
     const { rerender, i18n } = await renderIn("en", <NotesPanel {...props} expanded="turn" />);
     expect(screen.getByText("Five pieces")).toBeTruthy();
     rerender(
@@ -83,7 +83,7 @@ describe("NotesPanel", () => {
     opener.focus();
     try {
       const onClose = vi.fn();
-      await renderIn("en", <NotesPanel notes={notes} lang="en" disabled={false} onResume={() => {}} onOpen={async () => true} onClose={onClose} />);
+      await renderIn("en", <NotesPanel notes={notes} disabled={false} onResume={() => {}} onOpen={async () => true} onClose={onClose} />);
       expect(document.activeElement).toBe(screen.getByRole("button", { name: "Close" }));
       fireEvent.click(screen.getByRole("button", { name: "Close" }));
       expect(onClose).toHaveBeenCalled();
@@ -94,10 +94,10 @@ describe("NotesPanel", () => {
   });
 
   it("says there are no notes yet, and can't resume while a turn runs", async () => {
-    await renderIn("en", <NotesPanel notes={[]} lang="en" disabled onResume={() => {}} onOpen={async () => true} onClose={() => {}} />);
+    await renderIn("en", <NotesPanel notes={[]} disabled onResume={() => {}} onOpen={async () => true} onClose={() => {}} />);
     expect(screen.getByText("No summaries yet. Each topic you close leaves one here.")).toBeTruthy();
     cleanup();
-    await renderIn("en", <NotesPanel notes={notes} lang="en" disabled onResume={() => {}} onOpen={async () => true} onClose={() => {}} />);
+    await renderIn("en", <NotesPanel notes={notes} disabled onResume={() => {}} onOpen={async () => true} onClose={() => {}} />);
     expect((screen.getByRole("button", { name: "Pick this topic up again" }) as HTMLButtonElement).disabled).toBe(true);
   });
 });

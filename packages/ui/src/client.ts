@@ -1,14 +1,5 @@
 import type { Effort, ModelChoice, ModelSpec, ModelsConfig } from "@humanharness/engines";
-import type {
-  ActionCost,
-  ChoiceOption,
-  DataKey,
-  DataRecord,
-  Language,
-  LocalizedText,
-  ScopeMode,
-  Tier,
-} from "@humanharness/harness-sdk";
+import type { ActionCost, ChoiceOption, DataKey, DataRecord, Language, ScopeMode, Tier } from "@humanharness/harness-sdk";
 import type { ActivityKind, EngineError, Event, LimitWindow } from "@humanharness/runtime";
 import type {
   CollectionDiff,
@@ -61,9 +52,9 @@ export interface EngineOption {
   status: "allowed" | "pending";
   /** Company that runs the service (legal notice). */
   provider: string;
-  requires: LocalizedText;
-  dataLocation: LocalizedText;
-  trainsOnData: LocalizedText;
+  requires: string;
+  dataLocation: string;
+  trainsOnData: string;
   termsUrl: string;
   privacyUrl: string;
   /** Whether the engine reports plan-limit windows (Claude) or only tokens (Codex). */
@@ -80,9 +71,9 @@ export interface EngineOption {
 }
 
 export interface ActionOption {
-  label: LocalizedText;
+  label: string;
   /** One line under the label on the topic card. */
-  description?: LocalizedText;
+  description?: string;
   cost: ActionCost;
   /** The tier the harness recommends for the action. */
   tier?: Tier;
@@ -93,7 +84,7 @@ export interface ActionOption {
 /** A read-only reference folder, as the work screen shows it ("~/…" for paths in the home folder). */
 export interface ReferenceView {
   id: string;
-  label: LocalizedText;
+  label: string;
   path: string;
 }
 
@@ -124,9 +115,8 @@ export type MoveResult =
 export interface AppState {
   harness: {
     id: string;
-    name: LocalizedText;
-    languages: Language[];
-    tagline?: LocalizedText;
+    name: string;
+    tagline?: string;
     /** The harness logo as a data: URL; absent means the Human Harness H. */
     logo?: string;
     /** Who made the harness (manifest `author`), for "made by … with Human Harness". */
@@ -146,7 +136,7 @@ export interface AppState {
   /** The guided path: action ids in order. */
   path?: string[];
   /** The harness's unit of work (manifest `scopes`): what to call it. Absent: no scopes (spec D2). */
-  scopes?: { label: LocalizedText; plural: LocalizedText };
+  scopes?: { label: string; plural: string };
   /** Folders the agent can read but never change. */
   references?: ReferenceView[];
   /** Settings › Modelos. */
@@ -192,6 +182,38 @@ export interface ChatEntry {
   engine?: string;
   /** The task the entry belongs to (flow mode shows one task at a time). */
   task?: string;
+  /** Assistant entries: text runs and blocks in the order they arrived. Older entries lack it: text, then blocks. */
+  parts?: AnswerPart[];
+}
+
+/** A piece of an answer: a run of text, or one of the entry's `blocks` (by index). */
+export type AnswerPart = { text: string } | { block: number };
+
+/**
+ * `parts` with a text delta added: it extends the text run at the end, or starts one. A run never starts
+ * with whitespace alone, so trimming the runs at the end never removes one.
+ */
+export function addText(parts: AnswerPart[], delta: string): AnswerPart[] {
+  const last = parts.at(-1);
+  if (last && "text" in last) return [...parts.slice(0, -1), { text: last.text + delta }];
+  return delta.trim() ? [...parts, { text: delta.trimStart() }] : parts;
+}
+
+/** `parts` with a paragraph break: only inside a text run (a block already separates what comes after it). */
+export function addParagraph(parts: AnswerPart[]): AnswerPart[] {
+  const last = parts.at(-1);
+  return last && "text" in last ? [...parts.slice(0, -1), { text: `${last.text}\n\n` }] : parts;
+}
+
+/** The text runs trimmed, as the entry saves them. */
+export function finishParts(parts: AnswerPart[]): AnswerPart[] {
+  return parts.map((p) => ("text" in p ? { text: p.text.trim() } : p));
+}
+
+/** The entry's answer in order; an entry saved before `parts` existed shows its text, then its blocks. */
+export function partsOf(entry: Pick<ChatEntry, "text" | "blocks" | "parts">): AnswerPart[] {
+  if (entry.parts) return entry.parts;
+  return [...(entry.text ? [{ text: entry.text }] : []), ...entry.blocks.map((_, block) => ({ block }))];
 }
 
 export interface ChatLoad {
@@ -343,7 +365,7 @@ export interface CurrentTaskView {
   fallback?: { model: string; tier?: Tier };
 }
 
-/** A note in `.harness/notes/`, for the side panel and "Lo que quedó claro". */
+/** A note in `.harness/notes/`, for the side panel and "What's clear so far". */
 export interface NoteView {
   slug: string;
   title: string;

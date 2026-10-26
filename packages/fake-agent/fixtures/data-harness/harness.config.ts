@@ -19,18 +19,17 @@ const concept = z.object({
 
 export default defineHarness({
   id: "study",
-  name: { es: "Estudio", en: "Study" },
+  name: "Study",
   core: "^0.1.0",
-  languages: ["es", "en"],
   engines: ["claude", "codex"],
   folder: { suggested: "Documents/Human Harness Study" },
   instructions: "./agent/AGENTS.md",
   permissions: { edit: "folder", exec: false, web: false },
   blocks: { card },
-  scopes: { label: { es: "tema", en: "topic" }, plural: { es: "temas", en: "topics" } },
+  scopes: { label: "topic", plural: "topics" },
   actions: {
-    study: { label: { es: "Estudiar", en: "Study" }, prompt: "./agent/tasks/study.md", cost: "light" },
-    onboarding: { label: { es: "Bienvenida", en: "Welcome" }, prompt: "./agent/tasks/onboarding.md", cost: "light", scope: "none" },
+    study: { label: "Study", prompt: "./agent/tasks/study.md", cost: "light" },
+    onboarding: { label: "Welcome", prompt: "./agent/tasks/onboarding.md", cost: "light", scope: "none" },
   },
   path: ["study"],
   data: {

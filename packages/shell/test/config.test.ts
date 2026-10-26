@@ -65,6 +65,16 @@ describe("ConfigStore", () => {
     fs.writeFileSync(path.join(dir, "config.json"), JSON.stringify({ folder: "/x", textSize: "larger" }));
     expect(await new ConfigStore(dir).load()).toEqual({ folder: "/x", textSize: "larger" });
   });
+
+  it("drops a hand-edited language that isn't a canonical tag, keeping the rest", async () => {
+    const dir = fs.mkdtempSync(path.join(root, "c-"));
+    for (const bad of ["pt-br", 5]) {
+      fs.writeFileSync(path.join(dir, "config.json"), JSON.stringify({ folder: "/x", language: bad }));
+      expect(await new ConfigStore(dir).load()).toEqual({ folder: "/x" });
+    }
+    fs.writeFileSync(path.join(dir, "config.json"), JSON.stringify({ folder: "/x", language: "pt-BR" }));
+    expect(await new ConfigStore(dir).load()).toEqual({ folder: "/x", language: "pt-BR" });
+  });
 });
 
 describe("historyDir", () => {

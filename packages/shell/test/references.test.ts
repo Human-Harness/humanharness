@@ -7,7 +7,7 @@ import { appSourceDir, displayPath, homeOrDotFolder, referenceAllowed, resolveRe
 const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "hh-")));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
 
-const label = { es: "Código", en: "Source" };
+const label = "Source";
 const repo = path.join(root, "repo");
 fs.mkdirSync(path.join(repo, "harnesses", "demo"), { recursive: true });
 fs.writeFileSync(path.join(repo, "pnpm-workspace.yaml"), "packages: []\n");

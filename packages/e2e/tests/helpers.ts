@@ -41,7 +41,7 @@ export function makeFreshSandbox(name: string): Sandbox {
   return s;
 }
 
-/** A configured app (Spanish, Claude, plus `config`) with both engines' notices accepted, in packages/e2e/.tmp/. */
+/** A configured app (saved language "es", Claude, plus `config`) with both engines' notices accepted, in packages/e2e/.tmp/. */
 export function makeSandbox(name: string, config: Record<string, unknown> = {}): Sandbox {
   const s = makeFreshSandbox(name);
   fs.mkdirSync(s.folder, { recursive: true });
@@ -90,8 +90,8 @@ export async function launchMock(s: Sandbox, mockDir: string = demoMockDir): Pro
   const engines = { claude: { command: fakeClaudeCommand(), env: { HH_FAKE_MOCK_DIR: mockDir, HH_FAKE_MOCK_STATE: path.join(s.root, "mock-state.json") } } };
   const electronApp = await electron.launch({
     executablePath: electronBinary,
-    // Spanish as the system language too, so a fresh app (no saved language) reads as the configured ones do.
-    args: [shellDir, "--lang=es"],
+    // English as the system language: the screens are English (plan 5a); a fresh app saves the system's tag.
+    args: [shellDir, "--lang=en"],
     env: { ...baseEnv(s), HH_TEST_ENGINES: JSON.stringify(engines), HH_TEST_MOCK: "1" },
   });
   return { app: electronApp, page: await electronApp.firstWindow() };

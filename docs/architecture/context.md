@@ -2,6 +2,32 @@
 
 Long-term memory belongs to the harness; short-term memory belongs to the engine.
 
+## At a glance
+
+The engine forgets; the harness remembers. Each topic runs in a fresh session. When it ends, what matters is saved as a short note, and the conversation is dropped. The next session starts from a short index of the notes, never from old conversations.
+
+```mermaid
+flowchart LR
+  A["1. New session<br/>starts small: instructions<br/>+ index of the notes"] --> B["2. Conversation<br/>the person and the AI<br/>work on one topic"]
+  B --> C["3. Save a note<br/>what was decided,<br/>what is still open"]
+  C --> D["4. Index of the notes<br/>a short summary of all,<br/>with a size limit"]
+  D --> A
+```
+
+If a conversation gets too long before the topic ends, the app saves a note halfway too, so nothing decided is lost when the engine compresses its memory.
+
+What the AI reads in a session, from what never changes to what grows:
+
+```mermaid
+flowchart TB
+  L1["Fixed instructions<br/>the same in every session, so the engine keeps them cached"]
+  L2["Start of the topic<br/>what the topic is + the index of the notes"]
+  L3["The conversation<br/>grows with the topic; the AI opens a note or a file only when it needs it"]
+  L1 --> L2 --> L3
+```
+
+Each topic also runs on the model it needs: a small one for simple work, a big one for hard work, chosen when the topic starts and kept until it ends.
+
 ## One session per task
 
 - A task is one topic or unit of work: a manifest action, or a free question.
@@ -12,6 +38,7 @@ Long-term memory belongs to the harness; short-term memory belongs to the engine
 
 ## What a new session gets
 
+- Everything the agent reads is English. The managed section of `AGENTS.md` tells it to think in English, to write what the person sees in their language (the saved tag by its English name, `languageName` in `harness-sdk`), and to write notes in English.
 - The stable instructions: `AGENTS.md` with its managed section. It doesn't change between sessions, so the engine can reuse its cached prefix.
 - The first message: the task's brief plus the notes index (`buildNotesIndex` in `packages/workspace/src/notes-index.ts`): what was covered and the decisions so far, newest first, about 1,500 tokens at most. Older notes keep only their title and path; the agent opens a note with its read tool when it needs the details.
 - In a harness with scopes, the notes index is the open scope's, followed by a short app-wide one (`APP_INDEX_TOKENS`, 500). Collections with `context` add their tables after it, each within its own `tokens` (`docs/architecture/data.md`).

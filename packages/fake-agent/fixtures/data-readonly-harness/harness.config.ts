@@ -4,16 +4,15 @@ import { defineHarness } from "@humanharness/harness-sdk";
 
 export default defineHarness({
   id: "readonly",
-  name: { es: "Solo lectura", en: "Read only" },
+  name: "Read only",
   core: "^0.1.0",
-  languages: ["es", "en"],
   engines: ["claude", "codex"],
   folder: { suggested: "Documents/Human Harness Read Only" },
   instructions: "./agent/AGENTS.md",
   permissions: { edit: "folder", exec: false, web: false },
   blocks: {},
   actions: {
-    study: { label: { es: "Estudiar", en: "Study" }, prompt: "./agent/tasks/study.md", cost: "light" },
+    study: { label: "Study", prompt: "./agent/tasks/study.md", cost: "light" },
   },
   path: ["study"],
   data: {

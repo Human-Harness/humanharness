@@ -3,7 +3,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { MAIN_SCOPE, chatFile, chatsDir, isScopeDir } from "@humanharness/workspace";
 import type { Event, LimitWindow } from "@humanharness/runtime";
-import type { ChatEntry, TurnUsage } from "@humanharness/ui/client";
+import { type AnswerPart, type ChatEntry, type TurnUsage, addParagraph, addText, finishParts } from "@humanharness/ui/client";
 
 export class ChatLog {
   private readonly file: string;
@@ -75,6 +75,8 @@ export class ChatLog {
 export class TurnRecorder {
   private text = "";
   private blocks: ChatEntry["blocks"] = [];
+  /** Text runs and blocks in the order they arrived (the window shows them so). */
+  private parts: AnswerPart[] = [];
   private activities: ChatEntry["activities"] = [];
   private usage: TurnUsage | undefined;
   private limits: LimitWindow[] | undefined;
@@ -85,12 +87,19 @@ export class TurnRecorder {
   constructor(private readonly stateBlocks: Set<string>) {}
 
   add(e: Event): void {
-    if (e.type === "text") this.text += e.delta;
-    else if (e.type === "paragraph" && this.text) this.text += "\n\n";
-    else if (e.type === "activity" && e.state === "start") this.activities.push({ kind: e.kind, detail: e.detail });
+    if (e.type === "text") {
+      this.text += e.delta;
+      this.parts = addText(this.parts, e.delta);
+    } else if (e.type === "paragraph" && this.text) {
+      this.text += "\n\n";
+      this.parts = addParagraph(this.parts);
+    } else if (e.type === "activity" && e.state === "start") this.activities.push({ kind: e.kind, detail: e.detail });
     else if (e.type === "block") {
       if (this.stateBlocks.has(e.name)) this.state[e.name] = e.data;
-      else this.blocks.push({ name: e.name, data: e.data });
+      else {
+        this.parts.push({ block: this.blocks.length });
+        this.blocks.push({ name: e.name, data: e.data });
+      }
     } else if (e.type === "limits") {
       this.firstLimits ??= e.windows;
       this.limits = e.windows;
@@ -111,6 +120,7 @@ export class TurnRecorder {
       role: "assistant",
       text: this.text.trim(),
       blocks: this.blocks,
+      parts: finishParts(this.parts),
       activities: this.activities,
       at: new Date().toISOString(),
       ...(this.usage ? { usage: this.usage } : {}),

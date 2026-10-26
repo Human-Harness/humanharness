@@ -6,19 +6,19 @@ import { closeAndClean, electronBinary, launch, makeSandbox, profileFlags, readJ
 import { claudeScript, codexScript } from "./scripts";
 
 type Run = { argv: string[]; prompt: string };
-const START = "¿Qué parte querés entender?";
+const START = "Which part do you want to understand?";
 const readTasks = (folder: string) => JSON.parse(fs.readFileSync(path.join(folder, ".harness", "tasks.json"), "utf8"));
 
 test("a topic answered with blocks, then next: the note is saved and the next topic starts from it", async () => {
   const s = makeSandbox("flow");
   const { app, page } = await launch(s, { claude: claudeScript });
   try {
-    await page.getByRole("button", { name: "Iniciar Demo" }).click();
-    await page.getByRole("region", { name: START }).getByRole("button", { name: /El manifiesto/ }).click();
+    await page.getByRole("button", { name: "Start Demo" }).click();
+    await page.getByRole("region", { name: START }).getByRole("button", { name: /The manifest/ }).click();
     await expect(page.getByRole("main").getByText("El manifiesto declara todo el harness.")).toBeVisible();
     await expect(page.getByRole("figure", { name: "Del manifiesto a la app" })).toBeVisible();
     // Source files are shown in Finder, never opened.
-    await expect(page.getByRole("button", { name: "Mostrar packages/harness-sdk/src/index.ts en Finder" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Show packages/harness-sdk/src/index.ts in Finder" })).toBeVisible();
 
     await page.getByRole("button", { name: "Seguir el recorrido →" }).click();
     await expect(page.getByRole("main").getByText("Los motores se detectan en cada inicio.")).toBeVisible();
@@ -55,15 +55,15 @@ test("a topic answered with blocks, then next: the note is saved and the next to
     expect(Object.keys(readTasks(s.folder))).not.toContain("open");
     const servers = Object.keys((JSON.parse(first.argv[first.argv.indexOf("--mcp-config") + 1]) as { mcpServers: object }).mcpServers);
     expect(servers).not.toContain("data");
-    await expect(page.getByRole("list", { name: "Lo que ya quedó claro" }).getByRole("button", { name: "El manifiesto" })).toBeVisible();
+    await expect(page.getByRole("list", { name: "What's clear so far" }).getByRole("button", { name: "El manifiesto" })).toBeVisible();
 
     // Settings › Uso: the manifest task took the five-hour window from 10 % to 14 % (spec 3b).
-    await page.getByRole("button", { name: "Ajustes" }).click();
-    await page.getByRole("tab", { name: "Uso" }).click();
-    const usage = page.getByRole("tabpanel", { name: "Uso" });
-    await expect(usage.getByText("15 % usado")).toBeVisible();
-    const manifest = usage.getByRole("row", { name: /El manifiesto/ });
-    await expect(manifest.getByRole("cell")).toHaveText(["≈ 4 % de 5 h", "unas 25 veces"]);
+    await page.getByRole("button", { name: "Settings" }).click();
+    await page.getByRole("tab", { name: "Usage" }).click();
+    const usage = page.getByRole("tabpanel", { name: "Usage" });
+    await expect(usage.getByText("15% used")).toBeVisible();
+    const manifest = usage.getByRole("row", { name: /The manifest/ });
+    await expect(manifest.getByRole("cell")).toHaveText(["≈ 4% of 5 h", "about 25 times"]);
   } finally {
     await closeAndClean(app, s);
   }
@@ -73,27 +73,27 @@ test("changing the engine keeps the notes, and the first task on the new engine 
   const s = makeSandbox("switch");
   const { app, page } = await launch(s, { claude: claudeScript, codex: codexScript });
   try {
-    await page.getByRole("button", { name: "Iniciar Demo" }).click();
-    await page.getByRole("region", { name: START }).getByRole("button", { name: /El manifiesto/ }).click();
+    await page.getByRole("button", { name: "Start Demo" }).click();
+    await page.getByRole("region", { name: START }).getByRole("button", { name: /The manifest/ }).click();
     await expect(page.getByRole("main").getByText("El manifiesto declara todo el harness.")).toBeVisible();
     await page.getByRole("button", { name: "Seguir el recorrido →" }).click();
     await expect(page.getByRole("main").getByText("Los motores se detectan en cada inicio.")).toBeVisible();
     // The text shows before the turn ends, and the engine can't change while a turn runs.
     await expect.poll(() => readTasks(s.folder).current?.status).toBe("waiting");
 
-    await page.getByRole("button", { name: "Ajustes" }).click();
-    await page.getByRole("tab", { name: "Motor" }).click();
+    await page.getByRole("button", { name: "Settings" }).click();
+    await page.getByRole("tab", { name: "Engine" }).click();
     await page.getByRole("button", { name: /Codex/ }).first().click();
-    await page.getByRole("button", { name: "Usar Codex" }).click();
-    await page.getByRole("button", { name: "Listo" }).click();
+    await page.getByRole("button", { name: "Use Codex" }).click();
+    await page.getByRole("button", { name: "Done", exact: true }).click();
 
-    await expect(page.getByRole("main").getByText(/Ahora usás Codex/)).toBeVisible();
-    await expect(page.getByRole("list", { name: "Lo que ya quedó claro" }).getByRole("button", { name: "El manifiesto" })).toBeVisible();
+    await expect(page.getByRole("main").getByText(/You're now using Codex/)).toBeVisible();
+    await expect(page.getByRole("list", { name: "What's clear so far" }).getByRole("button", { name: "El manifiesto" })).toBeVisible();
     expect(fs.existsSync(path.join(s.folder, ".harness", "notes", "manifest.md"))).toBe(true);
     await expect.poll(() => readTasks(s.folder)).toMatchObject({ current: null, actions: { manifest: "done", engines: "unfinished" } });
 
-    await page.getByPlaceholder("O preguntá algo…").fill("¿Dónde se guarda la conversación?");
-    await page.getByRole("button", { name: "Enviar" }).click();
+    await page.getByPlaceholder("Or ask something…").fill("¿Dónde se guarda la conversación?");
+    await page.getByRole("button", { name: "Send" }).click();
     await expect(page.getByRole("main").getByText("Se guarda en .harness/chats.")).toBeVisible();
     const prompt = readJsonl<{ method: string; params: { prompt: { text: string }[] } }>(s.acpLog).find((l) => l.method === "session/prompt");
     expect(prompt?.params.prompt[0].text).toContain("## Question\n¿Dónde se guarda la conversación?");
@@ -116,7 +116,7 @@ test("a second start with the same app data quits and leaves the running app alo
   const s = makeSandbox("single");
   const { app, page } = await launch(s, { claude: claudeScript });
   try {
-    await expect(page.getByRole("button", { name: "Iniciar Demo" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Start Demo" })).toBeVisible();
     const dropped = new Set(["ELECTRON_RENDERER_URL", "ELECTRON_RUN_AS_NODE"]);
     const env = Object.fromEntries(Object.entries(process.env).filter((e): e is [string, string] => e[1] !== undefined && !dropped.has(e[0])));
     const second = spawn(electronBinary, [shellDir], { env: { ...env, HH_TEST_USER_DATA: s.userData, HH_TEST_SHARED_DIR: s.sharedDir }, stdio: "ignore" });
@@ -129,7 +129,7 @@ test("a second start with the same app data quits and leaves the running app alo
     });
     if (!exited) second.kill();
     expect(exited).toBe(true);
-    await expect(page.getByRole("button", { name: "Iniciar Demo" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Start Demo" })).toBeVisible();
   } finally {
     await closeAndClean(app, s);
   }

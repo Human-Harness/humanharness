@@ -6,7 +6,6 @@ import {
   fakeSetupResult,
   isMockEngine,
   mockEngineText,
-  mockLanguage,
   mockModels,
   offeredEngines,
   readTestHooks,
@@ -99,28 +98,18 @@ describe("mock engine presentation", () => {
     expect(isMockEngine({ mock: true }, "claude")).toBe(false);
   });
 
-  it("names it in the saved language, else the system's when offered, else the harness's first", () => {
-    expect(mockLanguage("en", "es-AR", ["es", "en"])).toBe("en");
-    expect(mockLanguage(undefined, "es-AR", ["en", "es"])).toBe("es");
-    expect(mockLanguage(undefined, "en-US", ["es", "en"])).toBe("en");
-    expect(mockLanguage(undefined, "es", ["en"])).toBe("en");
-    expect(mockLanguage(undefined, "fr-FR", ["es", "en"])).toBe("es");
-  });
-
   it("presents a test engine from Human Harness that keeps the data on the computer", () => {
-    expect(mockEngineText("es")).toEqual({
-      name: "IA simulada (mock)",
+    expect(mockEngineText()).toEqual({
+      name: "Simulated AI (mock)",
       provider: "Human Harness",
-      requires: { es: "Nada", en: "Nothing" },
-      dataLocation: { es: "Tus datos no salen de esta compu", en: "Your data stays on this computer" },
-      trainsOnData: { es: "No", en: "No" },
+      requires: "Nothing",
+      dataLocation: "Your data stays on this computer",
+      trainsOnData: "No",
     });
-    expect(mockEngineText("en").name).toBe("Simulated AI (mock)");
   });
 
   it("offers one test model", () => {
     expect(MOCK_MODEL).toBe("mock");
-    expect(mockModels("es")).toEqual([{ id: "mock", name: "Modelo de prueba" }]);
-    expect(mockModels("en")).toEqual([{ id: "mock", name: "Test model" }]);
+    expect(mockModels()).toEqual([{ id: "mock", name: "Test model" }]);
   });
 });

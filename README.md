@@ -1,5 +1,7 @@
 # Human Harness
 
+[![M8ven Score](https://m8ven.ai/badge/mcp/human-harness-humanharness-1d6spo?v=1d3758b41668165f3f7e0509b9d40355)](https://m8ven.ai/mcp/human-harness-humanharness-1d6spo?s=readme)
+
 Open-source framework for building **harnesses**: installable desktop apps that put a purpose-built interface and workflow on top of an AI agent.
 
 Each user brings **their own AI subscription** through the provider's official CLI, which the app installs and configures. No developer API keys, no terminals, no Node or git in sight: harnesses are made for non-technical people.
@@ -16,7 +18,7 @@ Each user brings **their own AI subscription** through the provider's official C
 
 ## Stack
 
-Electron · TypeScript · React · pnpm workspaces · MCP servers for harness tools and UI blocks · isomorphic-git for local history. macOS first, then Windows and Linux. Spanish and English from v1.
+Electron · TypeScript · React · pnpm workspaces · MCP servers for harness tools and UI blocks · isomorphic-git for local history. macOS first, then Windows and Linux. The app ships in English; the AI thinks in English and answers in the person's language, and (plan 5b) the screens are translated into that language on their own engine.
 
 ## Repository layout
 

@@ -7,7 +7,6 @@ import { resumeMessage } from "../src/main/task-prompts";
 import { type TasksFile, emptyTasks } from "../src/main/task-store";
 import type { TurnOptions } from "../src/main/turn-controller";
 
-const label = (en: string) => ({ es: en, en });
 const saved: SavedNote = { title: "Fractions", summary: ["halves"], decisions: ["use pizzas"], files: [], open: [] };
 const ok: Event = { type: "done", ok: true };
 const saveNote: Event = { type: "block", name: "save_note", data: saved };
@@ -45,7 +44,7 @@ function setup(opts: { scoped?: boolean; state?: TasksFile; notes?: Record<strin
         busy = false;
       },
     },
-    actions: { study: { label: label("Study") }, review: { label: label("Review") }, onboarding: { label: label("Welcome"), scope: "none" } },
+    actions: { study: { label: "Study" }, review: { label: "Review" }, onboarding: { label: "Welcome", scope: "none" } },
     path: ["study", "review"],
     scoped: opts.scoped ?? true,
     scopeExists: async (id) => ["fracciones", "decimales"].includes(id),

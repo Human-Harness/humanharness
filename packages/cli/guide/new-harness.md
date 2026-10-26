@@ -11,7 +11,7 @@ Resources are part of the third pillar. A harness never names a model: each task
 ## How to work
 
 - Ask **one question at a time**, in the developer's language, and wait for the answer. Offer a suggested answer when it helps.
-- Write every file in English; the harness's UI strings stay in Spanish and English in `locales/`.
+- Write every file in English, including the harness's UI strings in `locales/en.json`.
 - Read `HARNESS.md` first: it is this harness's living decision log. Never ask again what it already answers; offer to revisit it instead.
 - Each phase ends with two things done together: its `HARNESS.md` section updated, and the code changed to match. Add a dated entry to **Decision log** for each decision: the decision, the reason, the alternatives rejected.
 - After each phase, suggest running `corepack pnpm check` (it runs `humanharness check`), and fix every error it reports.
@@ -22,7 +22,7 @@ Resources are part of the third pillar. A harness never names a model: each task
 - The core checkout is the folder `package.json` links to: `"@humanharness/cli": "link:<core>/packages/cli"`. Below, `<core>` is that folder.
 - `<core>/harnesses/demo` is a complete example (custom blocks, a guided path, briefs, references). Read it for ideas; never copy it as a starting point.
 - `<core>/docs/architecture/` explains how the core works: `manifest.md`, `blocks.md`, `context.md`, `turn.md`, `engines.md`, `authoring.md`.
-- In this repository: `harness.config.ts` (the manifest), `agent/AGENTS.md` (the instructions to the AI), `agent/tasks/*.md` (one brief per action), `ui/` (the screen and the block components), `locales/es.json` and `locales/en.json` (the UI strings).
+- In this repository: `harness.config.ts` (the manifest), `agent/AGENTS.md` (the instructions to the AI), `agent/tasks/*.md` (one brief per action), `ui/` (the screen and the block components), `locales/en.json` (the UI strings).
 - Import the SDK from `@humanharness/cli/sdk` (`defineHarness`, `defineBlock`, `z`) and the UI kit from `@humanharness/cli/ui` (`HarnessApp`, `BlockProps`, `useTranslation`).
 
 ## Rules
@@ -55,7 +55,7 @@ Replace the template's `example_card` block once the harness has its own.
 
 Fills: HARNESS.md → Flow
 
-Ask which tasks (actions) exist. For each one: an id, a label and a one-line description in Spanish and English, a brief in `agent/tasks/<id>.md`, and a cost hint (`light`, `medium` or `heavy`).
+Ask which tasks (actions) exist. For each one: an id, a label and a one-line description in English, a brief in `agent/tasks/<id>.md`, and a cost hint (`light`, `medium` or `heavy`).
 
 - A brief is the first message of the task's own engine session: what to do, what to read, which blocks to show, and to end with `show_choices`. It may use `{{language}}` and `{{notesIndex}}`.
 - Ask whether the actions have a natural order. If so, set `path` (the guided path).
@@ -110,7 +110,14 @@ Write one line each in `HARNESS.md` (`- edit: none — reason`) and one `- engin
 
 Fills: HARNESS.md → Identity
 
-Ask for the name in Spanish and English, a one-line tagline, the author and, optionally, a logo file (SVG, PNG or JPEG) in this repository. Write them in `harness.config.ts` (`name`, `tagline`, `author`, `logo`). No provider or model brands.
+Ask for the name, a one-line tagline, the author and, optionally, a logo file (SVG, PNG or JPEG) in this repository. Write them in `harness.config.ts` (`name`, `tagline`, `author`, `logo`), in English. No provider or model brands.
+
+### Language
+
+- Write everything in English: the manifest's texts, `locales/en.json`, the instructions and every brief. The app ships in English and translates the screens into the person's language on their own engine; the AI reads English and answers in the person's language. English is what the models reason best in.
+- Don't add other `locales/*.json` files: the app doesn't read them.
+- Give the manifest a `tone`: one English line on how the translated screens should sound ("warm and informal, short sentences"). Record it in `HARNESS.md`.
+- In a brief, `{{language}}` is the person's language by its English name ("Brazilian Portuguese").
 
 ## Phase 8 — Verify
 

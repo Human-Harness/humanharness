@@ -40,7 +40,7 @@ describe("initHarness", () => {
 
     const h = await loadHarness(path.join(dir, "harness.config.ts"));
     expect(h.id).toBe("my-harness");
-    expect(h.name).toEqual({ es: "my-harness", en: "my-harness" });
+    expect(h.name).toBe("my-harness");
     expect(h.folder.suggested).toBe("Documents/my-harness");
   });
 

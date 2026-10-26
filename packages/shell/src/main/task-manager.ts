@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { ModelProfile } from "@humanharness/engines";
-import { type ChoiceOption, type Language, type LocalizedText, type SavedNote, type ScopeMode, saveNoteSchema } from "@humanharness/harness-sdk";
+import { type ChoiceOption, type Language, type SavedNote, type ScopeMode, saveNoteSchema } from "@humanharness/harness-sdk";
 import { type Event, type Session, fail } from "@humanharness/runtime";
 import { type ActionStatus, type CurrentTaskView, type NoteView, type TaskStatus, type TaskView, nextInPath } from "@humanharness/ui/client";
 import { APP_SCOPE, type HistoryTrailer, MAIN_SCOPE, NOTE_PREFIX, type Note, type NoteMeta, buildNotesIndex, isScopeId, noteSlug } from "@humanharness/workspace";
@@ -21,8 +21,8 @@ export interface TaskDeps {
   /** tasks.json of the configured folder. */
   store: { load(): Promise<TasksFile>; save(state: TasksFile): Promise<void> };
   turns: { send(message: string, options: TurnOptions): Promise<void>; isBusy(): boolean; cancel(): void };
-  /** The harness's actions: their labels, by language, and where each runs when the harness has scopes. */
-  actions: Record<string, { label: LocalizedText; scope?: ScopeMode }>;
+  /** The harness's actions: their labels (English strings), and where each runs when the harness has scopes. */
+  actions: Record<string, { label: string; scope?: ScopeMode }>;
   /** The harness declares scopes (spec D1). Absent or false: one implicit `main` scope and today's layout (D2). */
   scoped?: boolean;
   /** Whether `id` is a registered scope. Absent: any valid id is taken. */
@@ -397,7 +397,7 @@ export class TaskManager {
     if (!(await this.closeCurrent())) return this.stopped();
     const template = await this.d.readPrompt(action);
     const language = await this.d.language();
-    await this.begin({ action }, where, (notesIndex) => fillPrompt(template, { language, notesIndex }), display ?? this.d.actions[action].label[language]);
+    await this.begin({ action }, where, (notesIndex) => fillPrompt(template, { language, notesIndex }), display ?? this.d.actions[action].label);
   }
 
   /** The open task from tasks.json, its profile fitted to the engine's current offer (and saved when it changed). */

@@ -44,8 +44,8 @@ test(`real ${ENGINE}: topic → blocks → next → note → next topic`, async 
   page.on("console", (m) => fs.appendFileSync(path.join(OUT, `${ENGINE}-console.log`), `${m.type()}: ${m.text()}\n`));
   try {
     await shot(page, "0-home");
-    await page.getByRole("button", { name: "Iniciar Demo" }).click();
-    await page.getByRole("region", { name: "¿Qué parte querés entender?" }).getByRole("button", { name: /El manifiesto/ }).click();
+    await page.getByRole("button", { name: "Start Demo" }).click();
+    await page.getByRole("region", { name: "Which part do you want to understand?" }).getByRole("button", { name: /The manifest/ }).click();
     // The answer ends with a choices block (a group of buttons).
     const choices = page.getByRole("main").getByRole("group").last();
     await expect(choices).toBeVisible();

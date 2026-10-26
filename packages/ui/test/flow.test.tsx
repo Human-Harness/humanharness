@@ -8,19 +8,18 @@ import { FakeClient } from "./fake-client";
 afterEach(cleanup);
 
 const ready = { language: "en" as const, folder: "/Users/me/Documents/Demo", engineId: "claude" };
-const L = (en: string) => ({ es: en, en });
 const TITLE = "What do you want to understand?";
 const locales = { en: { title: TITLE, faq: { own: "How do I build my own harness?" }, hint: "Answers can be wrong." } };
 
 function flowClient() {
   const client = new FakeClient(ready);
   client.state.actions = {
-    manifest: { label: L("The manifest"), description: L("What a harness declares."), cost: "medium" },
-    engines: { label: L("Engines"), cost: "medium" },
-    turn: { label: L("A turn"), cost: "medium" },
+    manifest: { label: "The manifest", description: "What a harness declares.", cost: "medium" },
+    engines: { label: "Engines", cost: "medium" },
+    turn: { label: "A turn", cost: "medium" },
   };
   client.state.path = ["manifest", "engines", "turn"];
-  client.state.references = [{ id: "source", label: L("Source"), path: "~/code/humanharness" }];
+  client.state.references = [{ id: "source", label: "Source", path: "~/code/humanharness" }];
   return client;
 }
 

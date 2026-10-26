@@ -631,3 +631,95 @@ describe("run --set (harness settings)", () => {
     await expect(run).rejects.toThrow(/was changed by hand/);
   });
 });
+
+describe("run: task modes", () => {
+  const coach = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../fake-agent/fixtures/modes-harness");
+  const coachScript: ClaudeScript = {
+    steps: [...claudeTextLines("Done."), result],
+    turns: [
+      { match: "save_note", steps: [ui("save_note", { title: "Halves", summary: ["x"], decisions: [], files: [], open: [] }), result] },
+      { match: 'From now on work in the mode "Worked examples"', steps: [...claudeTextLines("Step one."), result] },
+      { match: 'From now on work in the mode "Feynman"', steps: [...claudeTextLines("Explain it to me."), result] },
+      {
+        match: "# Task: study",
+        steps: [
+          ...claudeTextLines("Let's pick a way."),
+          ui("show_recommend_mode", {
+            recommended: "socratic",
+            reasons: ["One key idea."],
+            alternatives: [
+              { mode: "feynman", why: "To say it back." },
+              { mode: "nope", why: "Not listed." },
+            ],
+          }),
+          result,
+        ],
+      },
+    ],
+  };
+  const run = (name: string, input: string, extra: { mode?: string } = {}) => {
+    const out = memoryStream();
+    const prompts = path.join(root, `${name}-prompts.jsonl`);
+    const folder = path.join(root, name);
+    const done = runTask({
+      harnessDir: coach,
+      action: "study",
+      engine: "claude",
+      folder,
+      ...extra,
+      input: lines(input),
+      output: out.stream,
+      engineCommand: { command: fakeClaudeCommand(), env: { HH_FAKE_SCRIPT: writeScript(root, coachScript), HH_FAKE_PROMPTS: prompts } },
+    });
+    return { done, out, folder, prompts: () => readJsonl(prompts).map((p) => (p as { prompt: string }).prompt) };
+  };
+
+  it("recommends first, then `m <id>` switches in the same session; a tier refusal says so and goes on", { timeout: 60_000 }, async () => {
+    const r = run("coach-switch", "m feynman\nm feynman\nm nope\nm worked\nq\n");
+    await r.done;
+    const text = r.out.text();
+    expect(text).toContain("Recommended mode: socratic");
+    // An alternative the action doesn't list is dropped.
+    expect(text).toContain("Or:\n    feynman: To say it back.\n  Type m <mode> to pick one.");
+    expect(text).not.toContain("Not listed.");
+    expect(text).toContain("m <mode> to switch mode");
+    expect(text).toContain("Already in Feynman.");
+    expect(text).toContain("Not switched (unknown). Modes: socratic, feynman, worked.");
+    expect(text).toContain("Worked examples asks for the deep tier; this run is at standard. Switching anyway; rerun with --tier deep --mode worked for it.");
+    const [first, feynman, worked, close] = r.prompts();
+    expect(first).toContain("## How to work");
+    expect(feynman).toContain('From now on work in the mode "Feynman"');
+    expect(worked).toContain('From now on work in the mode "Worked examples"');
+    expect(close).toContain("save_note");
+    const usage = readJsonl(path.join(r.folder, ".harness", "usage.jsonl"));
+    expect(usage.map((u) => u.mode)).toEqual([undefined, "feynman", "worked", "worked"]);
+    const note = fs.readFileSync(path.join(r.folder, ".harness", "notes", "study.md"), "utf8");
+    expect(note).toContain('modes: ["feynman","worked"]');
+    // The chat keeps each switch as its short line, never the mode's prompt.
+    const chat = readJsonl(path.join(r.folder, ".harness", "chats", "main.jsonl"));
+    expect(chat.filter((e) => e.role === "user" && e.mode !== undefined).map((e) => e.text)).toEqual(["Switched to Feynman", "Switched to Worked examples"]);
+  });
+
+  it("--mode starts in that mode, its brief and default settings after the action's", { timeout: 60_000 }, async () => {
+    const r = run("coach-mode", "q\n", { mode: "socratic" });
+    await r.done;
+    expect(r.prompts()[0]).toContain(
+      "## Mode: Socratic\n\nWork in this mode.\n\nLead with questions; let the person find the idea before you name it. Answer in English.\n\n- Ask few questions before explaining.",
+    );
+    expect(JSON.parse(fs.readFileSync(path.join(r.folder, ".harness", "tasks.json"), "utf8")).actions).toEqual({ study: "done" });
+  });
+
+  it("refuses a mode the action doesn't list, before anything runs", async () => {
+    await expect(run("coach-bad", "q\n", { mode: "nope" }).done).rejects.toThrow('Unknown mode "nope" for study. Modes: socratic, feynman, worked.');
+    expect(fs.existsSync(path.join(root, "coach-bad"))).toBe(false);
+  });
+
+  it("humanharness run parses --mode; a mode the action doesn't list exits 2", async () => {
+    const m = memoryIo(root);
+    expect(await main(["run", "study", "--mode", "Bad Mode", "--harness", coach], m.io)).toBe(2);
+    expect(m.err()).toContain('Invalid mode "Bad Mode": use a mode id from the manifest.');
+    const n = memoryIo(root);
+    expect(await main(["run", "quiz", "--mode", "socratic", "--harness", coach], n.io)).toBe(2);
+    expect(n.err()).toContain('Unknown mode "socratic" for quiz. Modes: (none).');
+  });
+});

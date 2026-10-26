@@ -30,6 +30,37 @@ describe("TerminalView", () => {
     expect(out.text()).toBe("\x1b[2m  · web: search\x1b[0m\n");
   });
 
+  it("draws recommend_mode as text with how to pick; malformed data draws nothing", () => {
+    const out = memoryStream();
+    const view = new TerminalView(out.stream, "Claude", false, {});
+    view.event({ type: "block", name: "recommend_mode", data: { recommended: "socratic", reasons: ["One key idea."], alternatives: [{ mode: "feynman", why: "To say it back." }] } });
+    view.event({ type: "block", name: "recommend_mode", data: { recommended: "Bad Id", reasons: [] } });
+    expect(out.text()).toBe("\n  Recommended mode: socratic\n    - One key idea.\n  Or:\n    feynman: To say it back.\n  Type m <mode> to pick one.\n");
+  });
+
+  it("draws only the modes the task's action lists, and no terminal control characters", () => {
+    const out = memoryStream();
+    let listed: readonly string[] = ["socratic", "feynman"];
+    const view = new TerminalView(out.stream, "Claude", false, {}, () => listed);
+    view.event({
+      type: "block",
+      name: "recommend_mode",
+      data: {
+        recommended: "socratic",
+        reasons: ["One\x1b[31m key\nidea.\x07"],
+        alternatives: [
+          { mode: "worked", why: "Not listed." },
+          { mode: "feynman", why: "To say\r it back." },
+        ],
+      },
+    });
+    expect(out.text()).toBe("\n  Recommended mode: socratic\n    - One[31m key idea.\n  Or:\n    feynman: To say it back.\n  Type m <mode> to pick one.\n");
+    // A recommended mode the action doesn't list: nothing at all.
+    listed = ["feynman"];
+    view.event({ type: "block", name: "recommend_mode", data: { recommended: "socratic", reasons: ["One key idea."] } });
+    expect(out.text()).not.toContain("Recommended mode: socratic\n    - One key idea.");
+  });
+
   it("reads error messages from the core's English strings", () => {
     expect(errorMessage("engine-not-installed", "Codex")).toBe("I can't find Codex on this computer.");
     expect(errorMessage("something-new", "Codex")).toBe("something-new");

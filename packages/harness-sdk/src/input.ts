@@ -47,7 +47,8 @@ function unwrap(type: z.ZodType): { inner: z.ZodType; optional: boolean } {
   return { inner, optional };
 }
 
-const isStringArray = (type: z.ZodType | undefined): boolean => {
+/** Whether a shown-data field is a list of strings, the only kind `optionsFrom` can name. */
+export const isStringArray = (type: z.ZodType | undefined): boolean => {
   if (!type) return false;
   const { inner } = unwrap(type);
   return inner instanceof z.ZodArray && unwrap(inner.element as z.ZodType).inner instanceof z.ZodString;

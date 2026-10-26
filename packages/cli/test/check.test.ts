@@ -372,3 +372,58 @@ describe("mock recordings", () => {
     expect(formatFindings(r.findings)).toContain("mock-schema");
   });
 });
+
+describe("check: input blocks", () => {
+  const EXAMPLE = 'example: { title: "One idea", body: "A short explanation of why it matters." },';
+  const withInput = (input: string) => (d: string) => replaceIn(d, "harness.config.ts", EXAMPLE, `input: ${input},\n  ${EXAMPLE}`);
+  const inputRules = (r: CheckResult) => r.findings.filter((f) => f.rule.startsWith("input-")).map((f) => `${f.severity}:${f.rule}`);
+
+  it("an input the core form draws gives no warning", async () => {
+    expect(inputRules(await checkHarness(await fixture(withInput("z.object({ why: z.string().min(1) })"))))).toEqual([]);
+  });
+
+  it("input-hidden: a block that asks for an answer can't be hidden", async () => {
+    const dir = await fixture((d) => {
+      withInput("z.object({ why: z.string() })")(d);
+      replaceIn(d, "harness.config.ts", "visible: true,", "visible: false,");
+    });
+    expect(inputRules(await checkHarness(dir))).toEqual(["warning:input-hidden"]);
+  });
+
+  it("input-form: a field the core form can't draw needs the block's own component", async () => {
+    const deep = withInput("z.object({ deep: z.object({ x: z.string() }) })");
+    // The template's ui/App.tsx registers `example_card`: no warning.
+    expect(inputRules(await checkHarness(await fixture(deep)))).toEqual([]);
+    const bare = await fixture((d) => {
+      deep(d);
+      replaceIn(d, "ui/App.tsx", "const blocks = { example_card: ExampleCard };", "const blocks = {};");
+    });
+    const r = await checkHarness(bare);
+    expect(inputRules(r)).toEqual(["warning:input-form"]);
+    expect(r.findings.find((f) => f.rule === "input-form")?.message).toBe(
+      'Block "example_card": the core form can\'t draw "deep". Register a component for it in ui/ (blocks: { example_card: … }).',
+    );
+  });
+
+  it("input-choice: a choice with no options source, or an optionsFrom that names no string list", async () => {
+    const messages = async (input: string) =>
+      (await checkHarness(await fixture(withInput(input)))).findings.filter((f) => f.rule === "input-choice").map((f) => `${f.severity} ${f.message}`);
+    expect(await messages('z.object({ pick: z.string() }),\n  inputUi: { pick: { kind: "choice" } }')).toEqual([
+      'warning Block "example_card": "pick" is a choice with no options: set inputUi.pick.optionsFrom to a string-list field of the shown data. The form draws it as text.',
+    ]);
+    expect(await messages('z.object({ pick: z.string() }),\n  inputUi: { pick: { optionsFrom: "title" } }')).toEqual([
+      'warning Block "example_card": inputUi.pick.optionsFrom is "title", which is not a string-list field of the shown data. The form draws "pick" as text.',
+    ]);
+    expect(await messages('z.object({ pick: z.string() }),\n  inputUi: { pick: { kind: "choice", optionsFrom: "nope" } }')).toEqual([
+      'warning Block "example_card": inputUi.pick.optionsFrom is "nope", which is not a string-list field of the shown data. The form draws "pick" as text.',
+    ]);
+  });
+
+  it("input-choice: optionsFrom naming a string list of the shown data is fine", async () => {
+    const dir = await fixture((d) => {
+      withInput('z.object({ pick: z.string() }),\n  inputUi: { pick: { optionsFrom: "options" } }')(d);
+      replaceIn(d, "harness.config.ts", "body: z.string().min(1).max(400) })", "body: z.string().min(1).max(400), options: z.array(z.string()).optional() })");
+    });
+    expect(inputRules(await checkHarness(dir))).toEqual([]);
+  });
+});

@@ -127,6 +127,15 @@ describe("inputFields", () => {
     expect(cards.columns?.map((c) => c.label.en)).toEqual(["Question", "Answer"]);
   });
 
+  it("reads inputUi and column labels as own keys only", () => {
+    const b = block(z.object({ constructor: z.string().max(80), cards: z.array(z.object({ toString: z.string(), constructor: z.string() })) }), z.object({}), {
+      cards: { columns: {} },
+    });
+    const [ctor, cards] = inputFields(b);
+    expect(ctor).toMatchObject({ kind: "text", label: { es: "Constructor", en: "Constructor" } });
+    expect(cards.columns?.map((c) => c.label.en)).toEqual(["ToString", "Constructor"]);
+  });
+
   it("a field named choice with no shown options is plain text", () => {
     expect(inputFields(block(z.object({ choice: z.string().max(40) })))[0]).toMatchObject({ kind: "text" });
   });

@@ -51,7 +51,14 @@ export function parseAnswer(
   const parsed = block.input.safeParse(raw);
   if (!parsed.success) return { ok: false, errors: inputIssues(parsed.error) };
   const value = parsed.data as Record<string, unknown>;
-  if (JSON.stringify(value).length > ANSWER_MAX_CHARS) return { ok: false, errors: [{ path: "", message: `The answer is too long: keep it under ${ANSWER_MAX_CHARS} characters` }] };
+  let json: string;
+  try {
+    json = JSON.stringify(value);
+  } catch {
+    // A cyclic or otherwise unserializable value (possible through z.unknown or z.record).
+    return { ok: false, errors: [{ path: "", message: "The answer can't be sent as JSON" }] };
+  }
+  if (json.length > ANSWER_MAX_CHARS) return { ok: false, errors: [{ path: "", message: `The answer is too long: keep it under ${ANSWER_MAX_CHARS} characters` }] };
   return { ok: true, value };
 }
 

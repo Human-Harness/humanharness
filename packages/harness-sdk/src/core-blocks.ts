@@ -77,7 +77,7 @@ export type Annotation = z.infer<typeof annotateSchema>;
 export const INPUT_CORE_BLOCKS = {
   annotate: defineBlock({
     description:
-      "Marks parts of the person's answer to an input block. `ref`: that block's `blockId`, or \"last\" for the latest answer. `field`: the answer's field (default: its longest text). Each mark quotes the person's exact words and says if they are `ok`, a `gap` (something missing), `wrong`, or a `note`, with a short `comment`.",
+      "Marks parts of the person's answer to an input block. `ref`: that block's `blockId`, or \"last\" for the latest answer. `field`: the answer's field (default: its longest text). Each mark quotes the person's exact words and says if they are `ok`, a `gap` (something missing), `wrong`, or a `note`, optionally with a short `comment`.",
     visible: true,
     schema: annotateSchema,
     example: { ref: "last", marks: [{ quote: "two halves", kind: "ok", comment: "Right: two halves make a whole." }] },

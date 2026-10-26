@@ -76,7 +76,7 @@ function fieldOf(name: string, type: z.ZodType, ui: InputFieldUi | undefined, sh
     if (element instanceof z.ZodObject) {
       const columns = Object.entries(element.shape as Record<string, z.ZodType>);
       if (columns.length === 2 && columns.every(([, t]) => t instanceof z.ZodString)) {
-        return { ...base, kind: "pairs", columns: columns.map(([c]) => ({ name: c, label: ui?.columns?.[c] ?? plainLabel(c) })) };
+        return { ...base, kind: "pairs", columns: columns.map(([c]) => ({ name: c, label: (ui?.columns && Object.hasOwn(ui.columns, c) ? ui.columns[c] : undefined) ?? plainLabel(c) })) };
       }
     }
   }
@@ -88,7 +88,7 @@ export function inputFields(block: Pick<Block, "input" | "inputUi" | "schema">):
   if (!block.input) return [];
   const shown = block.schema.shape as Record<string, z.ZodType>;
   const ui = (block.inputUi ?? {}) as Record<string, InputFieldUi | undefined>;
-  return Object.entries(block.input.shape as Record<string, z.ZodType>).map(([name, type]) => fieldOf(name, type, ui[name], shown));
+  return Object.entries(block.input.shape as Record<string, z.ZodType>).map(([name, type]) => fieldOf(name, type, Object.hasOwn(ui, name) ? ui[name] : undefined, shown));
 }
 
 export function inputSpec(block: Block): InputSpec {

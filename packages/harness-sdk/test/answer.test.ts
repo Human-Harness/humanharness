@@ -65,6 +65,14 @@ describe("parseAnswer", () => {
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.errors[0]).toMatchObject({ path: "" });
   });
+
+  it("refuses a value JSON can't hold instead of throwing", () => {
+    const loose = defineBlock({ description: "l", visible: true, schema: z.object({}), input: z.object({ meta: z.unknown() }), example: {} });
+    const cyclic: Record<string, unknown> = {};
+    cyclic.self = cyclic;
+    const r = parseAnswer(loose, { meta: cyclic });
+    expect(r).toEqual({ ok: false, errors: [{ path: "", message: "The answer can't be sent as JSON" }] });
+  });
 });
 
 describe("readableAnswer", () => {

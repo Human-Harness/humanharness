@@ -29,8 +29,8 @@ const TEXT: Record<
     answers: "### Respuestas de bloques de entrada",
     answerRules: [
       "Una herramienta con schema `Respuesta` le pide algo a la persona. Después de llamarla, terminá tu turno y esperá: la respuesta llega como el próximo mensaje.",
-      "Ese mensaje empieza con `[respuesta a <bloque>]`, sigue con lo que ve la persona y termina con un bloque ```json con `block`, `blockId` y `value`. Confiá en el JSON: `value` ya cumple el schema `Respuesta` del bloque.",
-      'Si `value` es `{"skipped": true}`, la persona salteó la pregunta: seguí sin insistir.',
+      "Ese mensaje empieza con `[respuesta a <bloque>]` (el nombre de la herramienta sin `show_`: `[respuesta a ask]` para `show_ask`), sigue con lo que ve la persona y termina con un bloque ```json con `block`, `blockId` y `value`. Confiá en el JSON: `value` ya cumple el schema `Respuesta` del bloque.",
+      'Si `value` es `{"skipped":true}`, la persona salteó la pregunta: seguí sin insistir.',
     ],
     annotateRule: 'Para marcar partes de una respuesta, llamá `show_annotate` con `ref` (el `blockId` de la respuesta, o "last") y citá las palabras exactas de la persona en cada marca.',
   },
@@ -52,8 +52,8 @@ const TEXT: Record<
     answers: "### Answers from input blocks",
     answerRules: [
       "A tool with an `Answer` schema asks the person for something. After calling it, end your turn and wait: the answer comes as the next message.",
-      "That message starts with `[answer to <block>]`, then what the person sees, then a ```json block with `block`, `blockId` and `value`. Trust the JSON: `value` already matches the block's `Answer` schema.",
-      'When `value` is `{"skipped": true}`, the person skipped the question: go on without insisting.',
+      "That message starts with `[answer to <block>]` (the tool's name without `show_`: `[answer to ask]` for `show_ask`), then what the person sees, then a ```json block with `block`, `blockId` and `value`. Trust the JSON: `value` already matches the block's `Answer` schema.",
+      'When `value` is `{"skipped":true}`, the person skipped the question: go on without insisting.',
     ],
     annotateRule: 'To mark parts of an answer, call `show_annotate` with `ref` (the answer\'s `blockId`, or "last") and quote the person\'s exact words in each mark.',
   },

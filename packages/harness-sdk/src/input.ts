@@ -47,11 +47,13 @@ function unwrap(type: z.ZodType): { inner: z.ZodType; optional: boolean } {
   return { inner, optional };
 }
 
-/** Whether a shown-data field is a list of strings, the only kind `optionsFrom` can name. */
+/** Whether a shown-data field is a list of strings (plain or an enum of strings), the only kind `optionsFrom` can name. */
 export const isStringArray = (type: z.ZodType | undefined): boolean => {
   if (!type) return false;
   const { inner } = unwrap(type);
-  return inner instanceof z.ZodArray && unwrap(inner.element as z.ZodType).inner instanceof z.ZodString;
+  if (!(inner instanceof z.ZodArray)) return false;
+  const element = unwrap(inner.element as z.ZodType).inner;
+  return element instanceof z.ZodString || (element instanceof z.ZodEnum && element.options.every((o) => typeof o === "string"));
 };
 
 const bound = (key: "min" | "max", v: number | null | undefined): Partial<Record<"min" | "max", number>> =>

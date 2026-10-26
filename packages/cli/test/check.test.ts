@@ -426,6 +426,27 @@ describe("check: input blocks", () => {
     });
     expect(inputRules(await checkHarness(dir))).toEqual([]);
   });
+
+  it("input-choice: optionsFrom naming a list of string enums, and the choice + options convention, are fine", async () => {
+    const shownWith = (options: string, input: string) =>
+      fixture((d) => {
+        withInput(input)(d);
+        replaceIn(d, "harness.config.ts", "body: z.string().min(1).max(400) })", `body: z.string().min(1).max(400), options: ${options} })`);
+      });
+    const enums = await shownWith('z.array(z.enum(["a", "b"])).optional()', 'z.object({ pick: z.string() }),\n  inputUi: { pick: { optionsFrom: "options" } }');
+    expect(inputRules(await checkHarness(enums))).toEqual([]);
+    const convention = await shownWith("z.array(z.string()).optional()", "z.object({ choice: z.string() })");
+    expect(inputRules(await checkHarness(convention))).toEqual([]);
+  });
+
+  it("input-choice: inputUi.kind on a field that isn't a string says it is ignored", async () => {
+    const found = (await checkHarness(await fixture(withInput('z.object({ count: z.number() }),\n  inputUi: { count: { kind: "choice" } }'))))
+      .findings.filter((f) => f.rule === "input-choice")
+      .map((f) => f.message);
+    expect(found).toEqual([
+      'Block "example_card": inputUi.count.kind "choice" is ignored: only a z.string() field can be text, longText or a choice, and "count" is drawn from its type.',
+    ]);
+  });
 });
 
 describe("check: recorded answers", () => {

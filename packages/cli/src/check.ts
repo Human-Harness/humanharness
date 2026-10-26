@@ -315,11 +315,18 @@ async function inputFindings(h: LoadedHarness): Promise<Finding[]> {
     const ui = (block.inputUi ?? {}) as Record<string, InputFieldUi | undefined>;
     const shown = block.schema.shape as Record<string, z.ZodType>;
     for (const field of fields) {
-      const from = ui[field.name]?.optionsFrom;
-      if (from !== undefined && field.optionsFrom === from && !isStringArray(shown[from])) {
+      const fieldUi = Object.hasOwn(ui, field.name) ? ui[field.name] : undefined;
+      const from = fieldUi?.optionsFrom;
+      const kind = fieldUi?.kind;
+      const isString = field.kind === "text" || field.kind === "longText" || field.optionsFrom !== undefined;
+      if (from !== undefined && field.optionsFrom === from && !(Object.hasOwn(shown, from) && isStringArray(shown[from]))) {
         const message = `Block "${name}": inputUi.${field.name}.optionsFrom is "${from}", which is not a string-list field of the shown data. The form draws "${field.name}" as text.`;
         out.push(warning("input-choice", message, MANIFEST));
-      } else if (ui[field.name]?.kind === "choice" && field.kind !== "choice") {
+      } else if (kind !== undefined && !isString && !(kind === "choice" && field.kind === "choice")) {
+        // inputUi.kind only switches a string field; any other field's kind comes from its zod type.
+        const message = `Block "${name}": inputUi.${field.name}.kind "${kind}" is ignored: only a z.string() field can be text, longText or a choice, and "${field.name}" is drawn from its type.`;
+        out.push(warning("input-choice", message, MANIFEST));
+      } else if (kind === "choice" && field.kind !== "choice") {
         const message = `Block "${name}": "${field.name}" is a choice with no options: set inputUi.${field.name}.optionsFrom to a string-list field of the shown data. The form draws it as text.`;
         out.push(warning("input-choice", message, MANIFEST));
       }

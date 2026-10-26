@@ -62,9 +62,9 @@ describe("AnnotateBlock", () => {
   });
 
   it("says when the answer isn't in this chat, and still lists the notes", async () => {
-    await renderIn("es", <AnnotateBlock data={{ ref: "t9:0:0", marks: [{ quote: "x", kind: "wrong", comment: "No." }] }} answerOf={() => null} {...noActions} />);
-    expect(screen.getByText("La respuesta de estas notas no está en este chat.")).toBeTruthy();
-    expect(screen.getByText("No es así")).toBeTruthy();
+    await renderIn("en", <AnnotateBlock data={{ ref: "t9:0:0", marks: [{ quote: "x", kind: "wrong", comment: "No." }] }} answerOf={() => null} {...noActions} />);
+    expect(screen.getByText("The answer these notes are about isn't in this chat.")).toBeTruthy();
+    expect(screen.getByText("Not right")).toBeTruthy();
   });
 
   it("a skipped answer and one with no text each say so", async () => {

@@ -1,5 +1,5 @@
 import type { Writable } from "node:stream";
-import { type InputField, type InputSpec, type Language, choiceOptions } from "@humanharness/harness-sdk";
+import { type InputField, type InputSpec, choiceOptions } from "@humanharness/harness-sdk";
 
 /** Asks one question at the prompt and reads one line; null when the input ended. */
 export type Ask = (question: string) => Promise<string | null>;
@@ -11,7 +11,7 @@ const YES = /^y(es)?$/i;
  * picked by its number among the shown options; `pairs` repeat until an empty first cell. Null: the input ended.
  * The main process checks the answer as it does the window's.
  */
-export async function promptAnswer(spec: InputSpec, data: unknown, ask: Ask, out: Writable, language: Language): Promise<Record<string, unknown> | null> {
+export async function promptAnswer(spec: InputSpec, data: unknown, ask: Ask, out: Writable): Promise<Record<string, unknown> | null> {
   if (spec.skippable) {
     const skip = await ask("Skip this question? (y/N) ");
     if (skip === null) return null;
@@ -19,7 +19,7 @@ export async function promptAnswer(spec: InputSpec, data: unknown, ask: Ask, out
   }
   const value: Record<string, unknown> = {};
   for (const f of spec.fields) {
-    const got = await askField(f, data, ask, out, language);
+    const got = await askField(f, data, ask, out);
     if (got === null) return null;
     if ("value" in got) value[f.name] = got.value;
   }
@@ -35,8 +35,8 @@ async function text(label: string, f: InputField, ask: Ask): Promise<Got> {
   return a.trim() || !f.optional ? { value: a } : {};
 }
 
-async function askField(f: InputField, data: unknown, ask: Ask, out: Writable, language: Language): Promise<Got> {
-  const label = `${f.label[language]}${f.optional ? " (optional)" : ""}`;
+async function askField(f: InputField, data: unknown, ask: Ask, out: Writable): Promise<Got> {
+  const label = `${f.label}${f.optional ? " (optional)" : ""}`;
   switch (f.kind) {
     case null:
       out.write(`${label}: can't be answered here.\n`);
@@ -83,7 +83,7 @@ async function askField(f: InputField, data: unknown, ask: Ask, out: Writable, l
       for (let n = 1; ; n++) {
         const row: Record<string, string> = {};
         for (const [i, c] of cols.entries()) {
-          const a = await ask(`  ${c.label[language]} ${n}: `);
+          const a = await ask(`  ${c.label} ${n}: `);
           if (a === null) return null;
           if (i === 0 && !a.trim()) return rows.length > 0 || !f.optional ? { value: rows } : {};
           row[c.name] = a;

@@ -1,5 +1,5 @@
 import type { Writable } from "node:stream";
-import { type ChoiceOption, type InputSpec, type Language, annotateSchema, choicesSchema } from "@humanharness/harness-sdk";
+import { type ChoiceOption, type InputSpec, annotateSchema, choicesSchema } from "@humanharness/harness-sdk";
 import { CORE_LOCALES } from "@humanharness/i18n";
 import type { Event } from "@humanharness/runtime";
 
@@ -28,7 +28,6 @@ export class TerminalView {
     private readonly color = false,
     /** The harness's input blocks, by name (input-blocks spec §8). */
     private readonly inputs: Record<string, InputSpec> = {},
-    private readonly language: Language = "en",
   ) {}
 
   event(e: Event): void {
@@ -71,7 +70,7 @@ export class TerminalView {
     if (!Object.hasOwn(this.inputs, name)) return;
     const spec = this.inputs[name];
     if (id) this.shown.set(id, data);
-    const fields = spec.fields.map((f) => `${f.label[this.language]} (${f.kind ?? "not here"})`).join(", ");
+    const fields = spec.fields.map((f) => `${f.label} (${f.kind ?? "not here"})`).join(", ");
     this.line(`    Answer with a: ${fields}${spec.skippable ? " · can be skipped" : ""}`);
   }
 

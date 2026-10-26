@@ -1,7 +1,7 @@
 import { type ChangeEvent, type FormEvent, type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { BlockAnswer, InputField, InputIssue, InputSpec } from "./client";
-import { type Draft, type Lang, answerRows, draftValue, emptyDraft, isSkipped, langOf, optionsOf } from "./input";
+import { type Draft, answerRows, draftValue, emptyDraft, isSkipped, optionsOf } from "./input";
 
 /** Drafts by block id: they survive the chat being drawn again (Home, Settings), not a restart (spec §11.2). */
 const drafts = new Map<string, Draft>();
@@ -35,8 +35,7 @@ const ofField = (e: InputIssue, name: string) => e.path === name || e.path.start
 
 /** The core form of an input block (input-blocks spec §5): a labelled control per field, errors next to each. */
 export function InputForm({ spec, data, blockId, disabled, sending, errors, submit, skip }: InputFormProps) {
-  const { t, i18n } = useTranslation();
-  const lang = langOf(i18n.language);
+  const { t } = useTranslation();
   const base = useId();
   const [draft, setDraft] = useState<Draft>(() => (blockId ? drafts.get(blockId) : undefined) ?? emptyDraft(spec));
   const change = (name: string, v: unknown) =>
@@ -71,13 +70,12 @@ export function InputForm({ spec, data, blockId, disabled, sending, errors, subm
           data={data}
           error={errors.filter((e) => ofField(e, f.name)).map((e) => e.message).join(" ")}
           disabled={disabled || sending}
-          lang={lang}
           onChange={(v) => change(f.name, v)}
         />
       ))}
       <div className="hh-input-actions">
         <button type="submit" className="hh-primary" disabled={disabled || sending || unsupported}>
-          {sending ? t("input.sending") : (spec.submitLabel?.[lang] ?? t("input.send"))}
+          {sending ? t("input.sending") : (spec.submitLabel ?? t("input.send"))}
         </button>
         {skip && (
           <button type="button" className="hh-link" disabled={disabled || sending} onClick={skip}>
@@ -96,7 +94,6 @@ function Field({
   data,
   error,
   disabled,
-  lang,
   onChange,
 }: {
   field: InputField;
@@ -105,11 +102,10 @@ function Field({
   data: unknown;
   error: string;
   disabled: boolean;
-  lang: Lang;
   onChange: (v: unknown) => void;
 }) {
   const { t } = useTranslation();
-  const label = field.label[lang];
+  const label = field.label;
   const errId = `${id}-error`;
   const invalid = error ? { "aria-invalid": true as const, "aria-describedby": errId } : {};
   const errorLine = error ? (
@@ -175,7 +171,7 @@ function Field({
   }
   if (field.kind === "pairs") {
     return (
-      <PairsField field={field} value={value} label={label} optional={optional} errorLine={errorLine} invalid={invalid} disabled={disabled} lang={lang} onChange={onChange} />
+      <PairsField field={field} value={value} label={label} optional={optional} errorLine={errorLine} invalid={invalid} disabled={disabled} onChange={onChange} />
     );
   }
   // Text, long text, a number, and a choice whose shown data brought no options.
@@ -213,7 +209,6 @@ function PairsField({
   errorLine,
   invalid,
   disabled,
-  lang,
   onChange,
 }: {
   field: InputField;
@@ -223,7 +218,6 @@ function PairsField({
   errorLine: ReactNode;
   invalid: { "aria-invalid"?: true; "aria-describedby"?: string };
   disabled: boolean;
-  lang: Lang;
   onChange: (v: unknown) => void;
 }) {
   const { t } = useTranslation();
@@ -258,7 +252,7 @@ function PairsField({
             <input
               key={c.name}
               type="text"
-              aria-label={`${c.label[lang]} ${r + 1}`}
+              aria-label={`${c.label} ${r + 1}`}
               value={row[c.name] ?? ""}
               disabled={disabled}
               onChange={(e) => onChange(rows.map((x, j) => (j === r ? { ...x, [c.name]: e.target.value } : x)))}
@@ -282,9 +276,9 @@ function PairsField({
 
 /** A sent answer, read-only. */
 export function AnswerView({ spec, answer }: { spec: InputSpec; answer: BlockAnswer }) {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   if (isSkipped(answer.value)) return <p className="hh-answer hh-caption">{t("input.skipped")}</p>;
-  const rows = answerRows(spec, answer.value, langOf(i18n.language), [t("input.yes"), t("input.no")]);
+  const rows = answerRows(spec, answer.value, [t("input.yes"), t("input.no")]);
   return (
     <div className="hh-answer">
       <p className="hh-caption">{t("input.answered")}</p>

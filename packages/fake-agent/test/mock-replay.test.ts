@@ -140,7 +140,7 @@ describe("replay: answers to input blocks", () => {
     ],
   });
   const at = { action: "practice", turn: "t1" };
-  const answering = (value: Record<string, unknown>) => answerMessage({ name: "commit_answer", blockId: "t1:0:0", value, display: "x", language: "en" });
+  const answering = (value: Record<string, unknown>) => answerMessage({ name: "commit_answer", blockId: "t1:0:0", value, display: "x" });
 
   it("an answer equal to a recorded one, key order aside, plays its turn", () => {
     const r = replay([quiz], at, answering({ why: "two halves", choice: "Me" }), false);

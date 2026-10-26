@@ -209,7 +209,14 @@ select:focus-visible { outline: 2px solid var(--hh-ink); outline-offset: 2px; }
 .hh-usage { margin: 0; color: var(--hh-muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex-shrink: 100; }
 .hh-body { display: flex; min-height: 0; overflow: hidden; }
 .hh-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.hh-chat { flex: 1; min-height: 0; overflow-y: auto; padding: 28px 40px; display: grid; gap: 20px; align-content: start; }
+/* Positioned: a sent question's offsetTop is measured from here to pin it at the top while its answer grows. */
+.hh-chat { position: relative; flex: 1; min-height: 0; overflow-y: auto; padding: 28px 40px; display: grid; gap: 20px; align-content: start; }
+/* An answer arriving: each word fades in, each block fades in and rises a little. */
+.hh-word { animation: hh-fade-in 0.28s ease-out both; }
+.hh-appear { animation: hh-rise-in 0.28s ease-out both; }
+@keyframes hh-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes hh-rise-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .hh-word, .hh-appear { animation: none; } }
 .hh-side { width: 240px; flex: none; padding: 16px; border-left: 1px solid var(--hh-line); }
 .hh-composer-hint { margin: -4px 16px 12px; text-align: center; color: var(--hh-muted); font-size: 11px; }
 .hh-back-topics { justify-self: start; }

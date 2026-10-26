@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { Language, LocalizedText } from "./index";
+import type { Language } from "./index";
 
 /** How the core form draws a field (input-blocks spec §5). */
 export const INPUT_KINDS = ["text", "longText", "number", "choice", "multiChoice", "pairs", "boolean"] as const;
@@ -9,11 +9,12 @@ export type InputKind = (typeof INPUT_KINDS)[number];
 export interface InputFieldUi {
   /** String fields only: one line, a growing textarea, or a choice among `optionsFrom`. */
   kind?: "text" | "longText" | "choice";
-  label?: LocalizedText;
+  /** The field's label, in English like every harness text. */
+  label?: string;
   /** A string field drawn as a choice: the field of the shown data (`schema`) that holds the options, a string array. */
   optionsFrom?: string;
   /** `pairs` fields: each column's label, by the inner field's name. */
-  columns?: Record<string, LocalizedText>;
+  columns?: Record<string, string>;
 }
 
 /** What a `skippable` block gets when the person skips it (spec §6 "Cancel"). */
@@ -38,8 +39,8 @@ export interface Block<S extends z.ZodObject = z.ZodObject, I extends z.ZodObjec
   input?: I;
   /** How the core form draws each field of `input`. */
   inputUi?: Partial<Record<keyof z.infer<I> & string, InputFieldUi>>;
-  /** The send button's text. Default: "Enviar" / "Send". */
-  submitLabel?: LocalizedText;
+  /** The send button's text, in English. Default: "Send". */
+  submitLabel?: string;
   /** The person may skip the question: the answer is then `{ skipped: true }`. */
   skippable?: boolean;
   /**

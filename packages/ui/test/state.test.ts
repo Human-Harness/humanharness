@@ -22,7 +22,7 @@ describe("reduceChat", () => {
   it("adds the user's message and starts a live turn", () => {
     const s = run([{ type: "user", text: "hi", at: "2026-10-10T00:00:00Z" }]);
     expect(s.entries.map((e) => [e.role, e.text])).toEqual([["user", "hi"]]);
-    expect(s.live).toEqual({ text: "", blocks: [], activities: [] });
+    expect(s.live).toEqual({ id: expect.any(String), text: "", blocks: [], parts: [], activities: [] });
   });
 
   it("streams text, paragraphs, activities and visible blocks into the live turn", () => {
@@ -37,10 +37,30 @@ describe("reduceChat", () => {
       { type: "block", name: "note", data: { title: "T" } },
     ]);
     expect(s.live).toEqual({
+      id: expect.any(String),
       text: "Hello\n\nDone",
       blocks: [{ name: "note", data: { title: "T" } }],
+      parts: [{ text: "Hello\n\nDone" }, { block: 0 }],
       activities: [{ id: "a", kind: "read", detail: "x.md", done: true, error: false }],
     });
+  });
+
+  it("keeps text and blocks in the order they arrived, and the entry keeps the live turn's id", () => {
+    const s = run([
+      { type: "user", text: "hi", at: "t" },
+      { type: "text", delta: "  " },
+      { type: "block", name: "diagram", data: 1 },
+      { type: "paragraph" },
+      { type: "text", delta: "First." },
+      { type: "block", name: "files", data: 2 },
+      { type: "text", delta: " Then" },
+      { type: "paragraph" },
+      { type: "text", delta: "more. " },
+    ]);
+    expect(s.live?.parts).toEqual([{ block: 0 }, { text: "First." }, { block: 1 }, { text: "Then\n\nmore. " }]);
+    const id = s.live!.id;
+    const done = reduceChat(s, { type: "done", ok: true });
+    expect(done.entries.at(-1)).toMatchObject({ id, text: "First. Then\n\nmore.", parts: [{ block: 0 }, { text: "First." }, { block: 1 }, { text: "Then\n\nmore." }] });
   });
 
   it("keeps state blocks out of the conversation", () => {

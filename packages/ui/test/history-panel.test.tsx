@@ -9,7 +9,7 @@ import { renderIn } from "./render";
 
 afterEach(cleanup);
 
-const actions = { plan: { label: { es: "Planear la semana", en: "Plan the week" }, cost: "medium" as const } };
+const actions = { plan: { label: "Plan the week", cost: "medium" as const } };
 const date = "2026-10-13T11:00:00.000Z";
 const groups: HistoryTaskView[] = [
   {
@@ -53,13 +53,12 @@ const groups: HistoryTaskView[] = [
   },
 ];
 
-async function open(opts: { disabled?: boolean; language?: "en" | "es"; client?: FakeClient; actions?: Record<string, ActionOption> } = {}) {
+async function open(opts: { disabled?: boolean; client?: FakeClient; actions?: Record<string, ActionOption> } = {}) {
   const client = opts.client ?? new FakeClient();
   if (!opts.client) client.historyGroups = groups;
   const onRestored = vi.fn();
   const onClose = vi.fn();
-  const lang = opts.language ?? "en";
-  await renderIn(lang, <HistoryPanel client={client} actions={opts.actions ?? actions} lang={lang} disabled={opts.disabled} onClose={onClose} onRestored={onRestored} />);
+  await renderIn("en", <HistoryPanel client={client} actions={opts.actions ?? actions} disabled={opts.disabled} onClose={onClose} onRestored={onRestored} />);
   return { client, onRestored, onClose };
 }
 
@@ -78,7 +77,7 @@ describe("HistoryPanel", () => {
       entries: [{ sha: `e-${taskId}`, message: `Turn: ${taskId}`, date: "2026-10-10T12:00:00.000Z" }],
     });
     client.historyGroups = [group("t1", "fracciones"), group("t2", "_app"), group("t3")];
-    await renderIn("en", <HistoryPanel client={client} actions={{}} lang="en" onClose={() => {}} />);
+    await renderIn("en", <HistoryPanel client={client} actions={{}} onClose={() => {}} />);
     const filter = (await screen.findByRole("combobox", { name: "Show" })) as HTMLSelectElement;
     await waitFor(() => expect([...filter.options].map((o) => o.textContent)).toEqual(["All", "Fractions", "App-wide"]));
     expect(screen.getAllByRole("button", { name: /A question/ })).toHaveLength(3);
@@ -104,7 +103,7 @@ describe("HistoryPanel", () => {
 
   it("counts the later tasks the scope filter hides when going back", async () => {
     const client = scoped(["t2", "_app", "2026-10-11T12:00:00.000Z"], ["t1", "fracciones", "2026-10-10T12:00:00.000Z"]);
-    await renderIn("en", <HistoryPanel client={client} actions={{}} lang="en" onClose={() => {}} />);
+    await renderIn("en", <HistoryPanel client={client} actions={{}} onClose={() => {}} />);
     const filter = await screen.findByRole("combobox", { name: "Show" });
     await waitFor(() => expect(within(filter).getByRole("option", { name: "Fractions" })).toBeTruthy());
     fireEvent.change(filter, { target: { value: "fracciones" } });
@@ -119,7 +118,7 @@ describe("HistoryPanel", () => {
     const i18n = await (await import("@humanharness/i18n")).createI18n("en");
     const ui = (c: FakeClient) => (
       <I18nextProvider i18n={i18n}>
-        <HistoryPanel client={c} actions={{}} lang="en" onClose={() => {}} />
+        <HistoryPanel client={c} actions={{}} onClose={() => {}} />
       </I18nextProvider>
     );
     const view = render(ui(first));
@@ -133,7 +132,7 @@ describe("HistoryPanel", () => {
   });
 
   it("shows no filter for a history without scopes", async () => {
-    await renderIn("en", <HistoryPanel client={new FakeClient()} actions={{}} lang="en" onClose={() => {}} />);
+    await renderIn("en", <HistoryPanel client={new FakeClient()} actions={{}} onClose={() => {}} />);
     await screen.findByRole("heading", { name: "History" });
     expect(screen.queryByRole("combobox", { name: "Show" })).toBeNull();
   });
@@ -183,14 +182,6 @@ describe("HistoryPanel", () => {
     // The oldest point, under both tasks.
     fireEvent.click(points[points.length - 1]);
     expect(screen.getByText(/This also undoes 2 later tasks\./)).toBeTruthy();
-  });
-
-  it("says it in Spanish too", async () => {
-    await open({ language: "es" });
-    fireEvent.click(await screen.findByRole("button", { name: /Otros cambios/ }));
-    const points = screen.getAllByRole("button", { name: "Volver a este punto" });
-    fireEvent.click(points[points.length - 1]);
-    expect(screen.getByText(/Esto también deshace 2 tareas posteriores\./)).toBeTruthy();
   });
 
   it("focuses the yes when a confirmation opens, and gives focus back on Cancel", async () => {
@@ -261,13 +252,6 @@ describe("HistoryPanel", () => {
     fireEvent.click(await screen.findByRole("button", { name: /Other changes/ }));
     expect(screen.getByText("Started")).toBeTruthy();
     expect(screen.getAllByRole("button", { name: "Go back to before this task" })).toHaveLength(1);
-  });
-
-  it("speaks Spanish", async () => {
-    await open({ language: "es" });
-    expect(await screen.findByRole("button", { name: /Planear la semana.*2 archivos cambiados/ })).toBeTruthy();
-    expect(screen.getByText("Resumen guardado: The week")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Volver a antes de esta tarea" })).toBeTruthy();
   });
 
   it("keeps an unknown subject as it is", () => {

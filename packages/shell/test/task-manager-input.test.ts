@@ -16,7 +16,7 @@ const commit = defineBlock({
   visible: true,
   schema: z.object({ question: z.string() }),
   input: z.object({ why: z.string().min(1) }),
-  inputUi: { why: { label: { es: "Por qué", en: "Why" } } },
+  inputUi: { why: { label: "Why" } },
   skippable: true,
   example: { question: "q" },
 }) as InputBlock;
@@ -66,7 +66,7 @@ function setup(
         busy = false;
       },
     },
-    actions: { practice: { label: { es: "Practicar", en: "Practice" } } },
+    actions: { practice: { label: "Practice" } },
     path: ["practice"],
     readPrompt: async () => "# Task: practice\n\n{{notesIndex}}",
     language: async () => "en",
@@ -160,7 +160,7 @@ describe("TaskManager.respond", () => {
     await done;
     expect(t.marked).toEqual([{ chat: "main", answer: { blockId: "t1:0:0", value: { why: "porque sí" }, answeredAt: NOW } }]);
     expect(t.turns).toHaveLength(1);
-    expect(t.turns[0].message).toBe(answerMessage({ name: "commit_answer", blockId: "t1:0:0", value: { why: "porque sí" }, display: "Why: porque sí", language: "en" }));
+    expect(t.turns[0].message).toBe(answerMessage({ name: "commit_answer", blockId: "t1:0:0", value: { why: "porque sí" }, display: "Why: porque sí" }));
     expect(t.turns[0].options).toMatchObject({ display: "Why: porque sí", followUp: true, task: "t1", turn: 1, phase: "run" });
     expect(t.state().current).not.toHaveProperty("pendingInput");
     expect(t.state().current).toMatchObject({ status: "waiting", turns: 2 });

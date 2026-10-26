@@ -1,6 +1,5 @@
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { Language } from "@humanharness/harness-sdk";
 import { type EngineError, type EngineOption, type EngineStatus, type HarnessClient, type SetupResult, type SetupStep, type TestResult, engineProblem } from "./client";
 
 type Busy = null | "notice" | "test" | SetupStep;
@@ -24,8 +23,7 @@ export function EngineOnboarding({
   status: EngineStatus;
   refresh: () => Promise<void>;
 }) {
-  const { t, i18n } = useTranslation();
-  const lang: Language = i18n.language === "es" ? "es" : "en";
+  const { t } = useTranslation();
   const [busy, setBusy] = useState<Busy>(null);
   /**
    * "step": the last step failed; "timeout": it ran too long and was stopped; "shared":
@@ -257,9 +255,9 @@ export function EngineOnboarding({
     body = (
       <>
         <h3>{t("engine.noticeTitle", v)}</h3>
-        <p>{t("engine.noticeProvider", { ...v, where: engine.dataLocation[lang] })}</p>
-        <p>{t("engine.noticeTraining", { trains: engine.trainsOnData[lang] })}</p>
-        <p>{t("engine.noticeAccount", { ...v, plan: engine.requires[lang] })}</p>
+        <p>{t("engine.noticeProvider", { ...v, where: engine.dataLocation })}</p>
+        <p>{t("engine.noticeTraining", { trains: engine.trainsOnData })}</p>
+        <p>{t("engine.noticeAccount", { ...v, plan: engine.requires })}</p>
         <p>{t("engine.noticeContent", v)}</p>
         <p>
           {link(engine.termsUrl, t("engine.terms", v))} · {link(engine.privacyUrl, t("engine.privacy", v))}

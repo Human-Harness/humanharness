@@ -22,6 +22,7 @@ export function InputHost({
   Component,
   actions,
   inputs,
+  fade = false,
 }: {
   block: ChatBlock;
   /** The block's own spec, found by the caller. */
@@ -29,6 +30,8 @@ export function InputHost({
   Component?: ComponentType<BlockProps>;
   actions: Omit<BlockActions, "inputs">;
   inputs: InputContext;
+  /** The answer is arriving: the block fades in. */
+  fade?: boolean;
 }) {
   const [errors, setErrors] = useState<InputIssue[]>([]);
   const [sending, setSending] = useState(false);
@@ -59,7 +62,7 @@ export function InputHost({
     ...(spec.skippable ? { skip: () => submit({ skipped: true }) } : {}),
   };
   return (
-    <div className="hh-block">
+    <div className={fade ? "hh-block hh-appear" : "hh-block"}>
       {Component ? <Component data={block.data} {...actions} input={input} /> : <CoreInputBlock data={block.data} input={input} />}
     </div>
   );

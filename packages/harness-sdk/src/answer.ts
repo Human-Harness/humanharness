@@ -62,14 +62,12 @@ export function parseAnswer(
   return { ok: true, value };
 }
 
-const WORDS: Record<Language, { yes: string; no: string; skipped: string; empty: string; answer: string }> = {
-  es: { yes: "sí", no: "no", skipped: "(saltado)", empty: "(respuesta vacía)", answer: "respuesta a" },
-  en: { yes: "yes", no: "no", skipped: "(skipped)", empty: "(empty answer)", answer: "answer to" },
-};
+/** The core's words in an answer's line and header: English, like everything the AI reads from the app (spec 5 D4). */
+const WORDS = { yes: "yes", no: "no", skipped: "(skipped)", empty: "(empty answer)", answer: "answer to" };
 
-function textOf(field: InputField, v: unknown, language: Language): string {
+function textOf(field: InputField, v: unknown): string {
   if (v === undefined || v === null) return "";
-  if (field.kind === "boolean") return v === true ? WORDS[language].yes : WORDS[language].no;
+  if (field.kind === "boolean") return v === true ? WORDS.yes : WORDS.no;
   if (field.kind === "multiChoice" && Array.isArray(v)) return v.map(String).join(", ");
   if (field.kind === "pairs" && Array.isArray(v) && field.columns) {
     return v.map((row) => field.columns!.map((c) => String((row as Record<string, unknown> | null)?.[c.name] ?? "")).join(" → ")).join("; ");
@@ -77,14 +75,14 @@ function textOf(field: InputField, v: unknown, language: Language): string {
   return typeof v === "string" || typeof v === "number" ? String(v) : JSON.stringify(v);
 }
 
-/** The core's readable line (spec §4): one `<label>: <value>` paragraph per answered field. */
-export function readableAnswer(block: Pick<Block, "input" | "inputUi" | "schema">, value: Record<string, unknown>, language: Language): string {
-  if (isSkipped(value)) return WORDS[language].skipped;
+/** The core's readable line (spec §4): one `<label>: <value>` paragraph per answered field, in English. */
+export function readableAnswer(block: Pick<Block, "input" | "inputUi" | "schema">, value: Record<string, unknown>): string {
+  if (isSkipped(value)) return WORDS.skipped;
   const parts = inputFields(block).flatMap((f) => {
-    const text = textOf(f, value[f.name], language).trim();
-    return text ? [`${f.label[language]}: ${text}`] : [];
+    const text = textOf(f, value[f.name]).trim();
+    return text ? [`${f.label}: ${text}`] : [];
   });
-  return parts.join("\n\n") || WORDS[language].empty;
+  return parts.join("\n\n") || WORDS.empty;
 }
 
 /**
@@ -101,7 +99,10 @@ export function timed<T>(what: string, run: () => T, log: (message: string) => v
   }
 }
 
-/** The chat's line for an answer: the block's `display` when it gives a non-empty string, else the core's line. */
+/**
+ * The chat's line for an answer: the block's `display` when it gives a non-empty string, else the core's line.
+ * `language` is the person's saved language, handed to the harness's `display` only.
+ */
 export function answerDisplay(
   name: string,
   block: Block,
@@ -110,7 +111,7 @@ export function answerDisplay(
   log: (message: string) => void = console.error,
   now?: () => number,
 ): string {
-  const core = readableAnswer(block, value, language);
+  const core = readableAnswer(block, value);
   const display = block.display;
   if (!display) return core;
   try {
@@ -124,12 +125,12 @@ export function answerDisplay(
 }
 
 /** The first line of an answer's message, named by the block (never its tool): `[answer to <block>]`. */
-export const answerHeader = (name: string, language: Language): string => `[${WORDS[language].answer} ${name}]`;
+export const answerHeader = (name: string): string => `[${WORDS.answer} ${name}]`;
 
 /** The next turn's message (spec §4): a header, the readable line, then the exact JSON the agent relies on. */
-export function answerMessage(o: { name: string; blockId: string; value: Record<string, unknown>; display: string; language: Language }): string {
+export function answerMessage(o: { name: string; blockId: string; value: Record<string, unknown>; display: string }): string {
   const json = JSON.stringify({ block: o.name, blockId: o.blockId, value: o.value });
-  return `${answerHeader(o.name, o.language)}\n${o.display}\n\n\`\`\`json\n${json}\n\`\`\``;
+  return `${answerHeader(o.name)}\n${o.display}\n\n\`\`\`json\n${json}\n\`\`\``;
 }
 
 const ANSWER_FENCE = /```json\n([^\n]+)\n```\s*$/;

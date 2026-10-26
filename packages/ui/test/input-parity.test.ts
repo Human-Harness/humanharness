@@ -17,7 +17,7 @@ const quiz = defineBlock({
     score: z.number().optional(),
     cards: z.array(z.object({ front: z.string(), back: z.string() })).optional(),
   }),
-  inputUi: { why: { label: { es: "Por qué", en: "Why" } } },
+  inputUi: { why: { label: "Why" } },
   example: { question: "q", options: ["x"] },
 }) as Block;
 const level = defineBlock({
@@ -52,12 +52,9 @@ describe("ui input helpers agree with the SDK", () => {
       { why: "x", sure: true, cards: [{ front: "1/2", back: "0.5" }, { front: "1/4", back: "0.25" }] },
       { why: "y", sure: false, choice: "" },
     ];
-    for (const lang of ["es", "en"] as const) {
-      const yesNo: [string, string] = lang === "es" ? ["sí", "no"] : ["yes", "no"];
-      for (const v of values) {
-        const rows = answerRows(inputSpec(quiz), v, lang, yesNo);
-        expect(rows.map((r) => `${r.label}: ${r.text.trim()}`).join("\n\n")).toBe(readableAnswer(quiz, v, lang));
-      }
+    for (const v of values) {
+      const rows = answerRows(inputSpec(quiz), v, ["yes", "no"]);
+      expect(rows.map((r) => `${r.label}: ${r.text.trim()}`).join("\n\n")).toBe(readableAnswer(quiz, v));
     }
   });
 });

@@ -1,7 +1,6 @@
 import { type FormEvent, type KeyboardEvent, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { AppState, HarnessClient, ScopeView } from "./client";
-import { uiLanguage } from "./FolderStep";
 
 /**
  * The top bar's scope picker (spec §3.4): the active scopes, "none", and a new one. The minimum a harness with
@@ -19,7 +18,7 @@ export function ScopePicker({
   open: string | null;
   disabled?: boolean;
 }) {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const [list, setList] = useState<ScopeView[]>([]);
   const [adding, setAdding] = useState(false);
   const [title, setTitle] = useState("");
@@ -52,7 +51,7 @@ export function ScopePicker({
       off();
     };
   }, [client]);
-  const name = state.scopes?.label[uiLanguage(state, i18n.language)] ?? "";
+  const name = state.scopes?.label ?? "";
   // An archived scope still shows while it is the open one, so the select never lies.
   const shown = list.filter((s) => !s.archived || s.id === open);
   const pick = (id: string | null) => {

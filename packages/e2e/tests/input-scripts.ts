@@ -19,10 +19,10 @@ export const quizScript: ClaudeScript = {
   turns: [
     {
       match: "save_note",
-      steps: [ui("save_note", { title: "Mitades", summary: ["Dos mitades son un entero"], decisions: [], files: [], open: [] }), ...claudeTextLines("Guardé el resumen."), result],
+      steps: [ui("save_note", { title: "Halves", summary: ["Two halves make a whole"], decisions: [], files: [], open: [] }), ...claudeTextLines("Guardé el resumen."), result],
     },
     {
-      match: "\\[respuesta a commit_answer\\]",
+      match: "\\[answer to commit_answer\\]",
       steps: [
         ...claudeTextLines("Bien pensado."),
         ui("show_annotate", { ref: "last", marks: [{ quote: "dos mitades", kind: "ok", comment: "Exacto." }] }),

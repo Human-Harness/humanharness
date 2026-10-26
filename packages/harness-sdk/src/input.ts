@@ -1,6 +1,5 @@
 import { z } from "zod";
 import type { Block, InputFieldUi, InputKind } from "./block";
-import type { LocalizedText } from "./index";
 
 /** Strings up to this many characters get one line; longer or unbounded ones a growing textarea (spec §5). */
 export const SHORT_TEXT_MAX = 200;
@@ -10,7 +9,7 @@ export interface InputField {
   name: string;
   /** null: the core form can't draw this field (a harness component must). */
   kind: InputKind | null;
-  label: LocalizedText;
+  label: string;
   optional: boolean;
   /** Text: length bounds. Number: value bounds. */
   min?: number;
@@ -20,13 +19,13 @@ export interface InputField {
   /** A `choice` on a string field: the shown data's field that holds the options. */
   optionsFrom?: string;
   /** `pairs`: the two inner fields, in order, with their labels. */
-  columns?: { name: string; label: LocalizedText }[];
+  columns?: { name: string; label: string }[];
 }
 
 /** What the window needs to draw an input block's core form; sent with the app state. */
 export interface InputSpec {
   fields: InputField[];
-  submitLabel?: LocalizedText;
+  submitLabel?: string;
   skippable?: boolean;
 }
 
@@ -34,7 +33,7 @@ function humanize(name: string): string {
   const words = name.replace(/[_-]+/g, " ").trim();
   return words ? words[0].toUpperCase() + words.slice(1) : name;
 }
-const plainLabel = (name: string): LocalizedText => ({ es: humanize(name), en: humanize(name) });
+const plainLabel = humanize;
 
 /** The type under `.optional()` and `.default()`, and whether the field may be left out. */
 function unwrap(type: z.ZodType): { inner: z.ZodType; optional: boolean } {

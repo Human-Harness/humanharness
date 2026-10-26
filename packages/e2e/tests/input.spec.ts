@@ -22,30 +22,30 @@ test("the person answers an input block; the agent gets the line and the JSON, a
 
   const { app, page } = await launch(s, { claude: quizScript }, path.join(outDir, "main", "index.js"));
   try {
-    await page.getByRole("button", { name: "Iniciar Quiz" }).click();
-    await page.getByRole("button", { name: /Practicar/ }).first().click();
+    await page.getByRole("button", { name: "Start Quiz" }).click();
+    await page.getByRole("button", { name: /Practice/ }).first().click();
     const question = page.getByRole("region", { name: "¿Quién comió más?" });
     await expect(question).toBeVisible();
     // tasks.json knows the open question before anything is sent.
     await expect.poll(() => readTasks(s.folder).current?.pendingInput?.block).toBe("commit_answer");
 
     // Nothing written: the app refuses it, and the error sits next to the field.
-    await question.getByRole("button", { name: "Me comprometo" }).click();
-    await expect(question.getByRole("alert")).toContainText("Revisá los campos marcados.");
-    await expect(question.getByLabel("¿Por qué? Con tus palabras")).toHaveAttribute("aria-invalid", "true");
+    await question.getByRole("button", { name: "I commit" }).click();
+    await expect(question.getByRole("alert")).toContainText("Check the marked fields.");
+    await expect(question.getByLabel("Why? In your own words")).toHaveAttribute("aria-invalid", "true");
 
     await question.getByRole("radio", { name: "Las dos igual" }).check();
-    await question.getByLabel("¿Por qué? Con tus palabras").fill("Porque dos mitades son un entero");
-    await question.getByRole("button", { name: "Me comprometo" }).click();
+    await question.getByLabel("Why? In your own words").fill("Porque dos mitades son un entero");
+    await question.getByRole("button", { name: "I commit" }).click();
 
-    const line = "Elegí: Las dos igual\n\n¿Por qué? Con tus palabras: Porque dos mitades son un entero";
+    const line = "I pick: Las dos igual\n\nWhy? In your own words: Porque dos mitades son un entero";
     await expect(page.getByRole("main").getByText("Bien pensado.")).toBeVisible();
-    await expect(question.getByText("Tu respuesta")).toBeVisible();
+    await expect(question.getByText("Your answer")).toBeVisible();
     await expect(page.locator("mark.hh-mark.ok")).toHaveText("dos mitades");
 
     // The agent got the readable line and the exact JSON.
     const prompts = readJsonl<{ prompt: string }>(s.claudePrompts).map((p) => p.prompt);
-    const answer = prompts.find((p) => p.startsWith("[respuesta a commit_answer]"));
+    const answer = prompts.find((p) => p.startsWith("[answer to commit_answer]"));
     expect(answer).toContain(line);
     const json = JSON.parse(/```json\n(.+)\n```$/.exec(answer!)![1]);
     expect(json).toMatchObject({ block: "commit_answer", value: { choice: "Las dos igual", why: "Porque dos mitades son un entero" } });
@@ -62,7 +62,7 @@ test("the person answers an input block; the agent gets the line and the JSON, a
     expect(chat.some((e) => e.role === "user" && e.text === line)).toBe(true);
 
     // AGENTS.md explains answers.
-    expect(fs.readFileSync(path.join(s.folder, "AGENTS.md"), "utf8")).toContain("### Respuestas de bloques de entrada");
+    expect(fs.readFileSync(path.join(s.folder, "AGENTS.md"), "utf8")).toContain("### Answers from input blocks");
   } finally {
     await closeAndClean(app, s);
     fs.rmSync(outDir, { recursive: true, force: true });

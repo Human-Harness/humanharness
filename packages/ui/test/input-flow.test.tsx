@@ -13,19 +13,18 @@ afterEach(() => {
   pruneDrafts(undefined, undefined);
 });
 
-const L = (en: string) => ({ es: en, en });
 const SPEC: InputSpec = {
   fields: [
-    { name: "choice", kind: "choice", label: L("I pick"), optional: true, optionsFrom: "options" },
-    { name: "why", kind: "longText", label: L("Why?"), optional: false, min: 1 },
+    { name: "choice", kind: "choice", label: "I pick", optional: true, optionsFrom: "options" },
+    { name: "why", kind: "longText", label: "Why?", optional: false, min: 1 },
   ],
-  submitLabel: L("I commit"),
+  submitLabel: "I commit",
 };
 const block = (id: string, input?: object) => ({ name: "commit_answer", data: { question: "Who ate more?", options: ["Me", "Both the same"] }, id, ...(input ? { input } : {}) });
 
 function quizClient(opts: { inputs?: boolean; pending?: string; status?: TaskStatus; blocks?: object[] } = {}) {
   const client = new FakeClient({ language: "en", folder: "/Users/me/Documents/Quiz", engineId: "claude" });
-  client.state.actions = { practice: { label: L("Practice"), cost: "light" } };
+  client.state.actions = { practice: { label: "Practice", cost: "light" } };
   client.state.path = ["practice"];
   if (opts.inputs !== false) client.state.inputs = { commit_answer: SPEC };
   client.chat = [

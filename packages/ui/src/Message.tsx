@@ -1,9 +1,22 @@
-import type { ComponentType } from "react";
+import { type ComponentType, Fragment } from "react";
 import { useTranslation } from "react-i18next";
-import { FinishedActivity } from "./ActivityList";
-import type { BlockAnswer, ChatBlock, ChatEntry, ChoiceOption, InputIssue, InputSpec, RespondResult, SendOptions } from "./client";
+import { FinishedActivity, WorkingStatus } from "./ActivityList";
+import {
+  type AnswerPart,
+  type BlockAnswer,
+  type ChatBlock,
+  type ChatEntry,
+  type ChoiceOption,
+  type InputIssue,
+  type InputSpec,
+  type RespondResult,
+  type SendOptions,
+  partsOf,
+} from "./client";
 import { InputHost } from "./InputBlock";
 import { Markdown } from "./markdown";
+import { type Reveal, wordsOf } from "./pace";
+import type { LiveActivity } from "./state";
 
 /** What a block the person answers gets (input-blocks spec §5): draw the form, or the answer once sent. */
 export interface InputProps {
@@ -61,27 +74,47 @@ export type BlockActions = Omit<BlockProps, "data" | "input"> & {
   inputs?: InputContext;
 };
 
-export function Blocks({
+/**
+ * An answer's text runs and blocks in the order they arrived. With `reveal`, only that much shows and each new
+ * word and block fades in (the answer is arriving); without it, all of it shows at once.
+ */
+function Answer({
+  parts,
   blocks,
+  reveal,
   components,
   actions,
 }: {
+  parts: AnswerPart[];
   blocks: ChatBlock[];
+  reveal?: Reveal;
   components: Record<string, ComponentType<BlockProps>>;
   actions: BlockActions;
 }) {
+  const fade = reveal !== undefined;
   const { inputs, ...rest } = actions;
   return (
     <>
-      {blocks.map((b, i) => {
+      {parts.map((p, i) => {
+        if (reveal && (i > reveal.part || (i === reveal.part && ("block" in p || reveal.words === 0)))) return null;
+        if ("text" in p) {
+          const text = reveal && i === reveal.part ? wordsOf(p.text).slice(0, reveal.words).join("") : p.text;
+          return (
+            <Fragment key={i}>
+              <Markdown text={text} fade={fade} />
+            </Fragment>
+          );
+        }
+        const block = blocks[p.block];
+        if (!block) return null;
         // Own keys only: a block named like an Object method (`constructor`) finds nothing.
-        const Component = Object.hasOwn(components, b.name) ? components[b.name] : undefined;
-        const spec = inputs && Object.hasOwn(inputs.specs, b.name) ? inputs.specs[b.name] : undefined;
+        const Component = Object.hasOwn(components, block.name) ? components[block.name] : undefined;
+        const spec = inputs && Object.hasOwn(inputs.specs, block.name) ? inputs.specs[block.name] : undefined;
         // Keyed by block id: its errors, sending state and draft never move to another block.
-        if (inputs && spec) return <InputHost key={b.id ?? i} block={b} spec={spec} Component={Component} actions={rest} inputs={inputs} />;
+        if (inputs && spec) return <InputHost key={block.id ?? i} block={block} spec={spec} Component={Component} actions={rest} inputs={inputs} fade={fade} />;
         return Component ? (
-          <div key={i} className="hh-block">
-            <Component data={b.data} {...rest} />
+          <div key={i} className={fade ? "hh-block hh-appear" : "hh-block"}>
+            <Component data={block.data} {...rest} />
           </div>
         ) : null;
       })}
@@ -93,20 +126,29 @@ export function Message({
   entry,
   components,
   actions,
+  live,
+  reveal,
 }: {
-  entry: Pick<ChatEntry, "role" | "text" | "blocks" | "activities">;
+  entry: Pick<ChatEntry, "role" | "text" | "blocks" | "activities" | "parts">;
   components: Record<string, ComponentType<BlockProps>>;
   actions: BlockActions;
+  /** The turn is running: its status row instead of what it did, shown even before anything arrives. */
+  live?: { activities: LiveActivity[]; label?: string };
+  /** The answer is arriving: how much of it shows (see usePacedAnswer). */
+  reveal?: Reveal;
 }) {
   const { t } = useTranslation();
-  if (entry.role === "assistant" && !entry.text && entry.blocks.length === 0 && entry.activities.length === 0) return null;
+  if (!live && entry.role === "assistant" && !entry.text && entry.blocks.length === 0 && entry.activities.length === 0) return null;
   return (
-    <article className={`hh-message ${entry.role}`}>
+    <article className={`hh-message ${entry.role}${live ? " live" : ""}`}>
       {entry.role === "user" && <span className="hh-who">{t("chat.you")}</span>}
-      {entry.role === "assistant" && <FinishedActivity items={entry.activities.map((a) => ({ ...a, done: true }))} />}
-      {entry.text &&
-        (entry.role === "assistant" ? <Markdown text={entry.text} /> : entry.text.split("\n\n").map((p, i) => <p key={i}>{p}</p>))}
-      <Blocks blocks={entry.blocks} components={components} actions={actions} />
+      {entry.role === "assistant" &&
+        (live ? <WorkingStatus items={live.activities} label={live.label} /> : <FinishedActivity items={entry.activities.map((a) => ({ ...a, done: true }))} />)}
+      {entry.role === "assistant" ? (
+        <Answer parts={partsOf(entry)} blocks={entry.blocks} reveal={reveal} components={components} actions={actions} />
+      ) : (
+        entry.text.split("\n\n").map((p, i) => <p key={i}>{p}</p>)
+      )}
     </article>
   );
 }

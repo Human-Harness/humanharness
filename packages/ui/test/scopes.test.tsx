@@ -18,8 +18,8 @@ async function startWork(ui: ReactElement) {
 
 function scopedClient() {
   const client = new FakeClient(ready);
-  client.state.scopes = { label: { es: "tema", en: "topic" }, plural: { es: "temas", en: "topics" } };
-  client.state.actions = { study: { label: { es: "Estudiar", en: "Study" }, cost: "light" } };
+  client.state.scopes = { label: "topic", plural: "topics" };
+  client.state.actions = { study: { label: "Study", cost: "light" } };
   client.scopeList = [
     { id: "fracciones", title: "Fractions", createdAt: "c", archived: false },
     { id: "old", title: "Old", createdAt: "c", archived: true },

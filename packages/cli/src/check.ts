@@ -251,35 +251,31 @@ async function i18nFindings(h: LoadedHarness): Promise<Finding[]> {
   if (localesPath === null) return out;
   const uiFiles = uiPath === null ? [] : await sourceFiles(uiPath);
   if (!(await exists(localesPath)) && uiFiles.length === 0) return out;
-  const keys = new Map<string, Set<string>>();
-  for (const lang of h.languages) {
-    const file = path.join(localesDir, `${lang}.json`);
-    const text = await read(path.join(localesPath, `${lang}.json`));
-    if (text === null) {
-      out.push(error("i18n", `${file} is missing: every declared language needs its strings.`, file));
-      continue;
-    }
-    let parsed: unknown;
+  let enKeys: Set<string> | null = null;
+  const file = path.join(localesDir, "en.json");
+  const text = await read(path.join(localesPath, "en.json"));
+  if (text === null) {
+    out.push(error("i18n", `${file} is missing: the harness's strings are English.`, file));
+  } else {
     try {
-      parsed = JSON.parse(text);
+      const parsed: unknown = JSON.parse(text);
+      if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) out.push(error("i18n", `${file} must be a JSON object.`, file));
+      else enKeys = new Set(flatKeys(parsed as Record<string, unknown>));
     } catch {
       out.push(error("i18n", `${file} is not valid JSON.`, file));
-      continue;
     }
-    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) out.push(error("i18n", `${file} must be a JSON object.`, file));
-    else keys.set(lang, new Set(flatKeys(parsed as Record<string, unknown>)));
   }
-  const all = [...new Set([...keys.values()].flatMap((s) => [...s]))];
-  for (const [lang, set] of keys) {
-    for (const key of all) if (!set.has(key)) out.push(error("i18n", `"${key}" is missing in ${lang}.`, path.join(localesDir, `${lang}.json`)));
+  // Only en.json is read: the app generates every other language (spec 5 D1).
+  const others = (await fs.readdir(localesPath).catch(() => [])).filter((f) => f.endsWith(".json") && f !== "en.json").sort();
+  for (const other of others) {
+    const rel = path.join(localesDir, other);
+    out.push(warning("i18n", `${rel} is not read: the app translates from en.json.`, rel));
   }
-  for (const file of uiFiles) {
-    const text = await fs.readFile(file, "utf8");
+  for (const uiFile of uiFiles) {
+    const text = await fs.readFile(uiFile, "utf8");
     for (const m of text.matchAll(UI_KEY)) {
       const line = text.slice(0, m.index).split("\n").length;
-      for (const [lang, set] of keys) {
-        if (!set.has(m[2])) out.push(error("i18n", `"${m[2]}" is used here but missing in ${lang}.`, path.relative(h.root, file), line));
-      }
+      if (enKeys && !enKeys.has(m[2])) out.push(error("i18n", `"${m[2]}" is used here but missing in en.`, path.relative(h.root, uiFile), line));
     }
   }
   return out;
@@ -347,10 +343,8 @@ function brandFindings(h: LoadedHarness): Finding[] {
   // Only the app's identity is checked: briefs and instructions may name engines freely, and a word
   // that merely contains a brand ("Claudette", "codexes") is not one.
   const places: [where: string, field: string, text: string | undefined][] = [
-    ["name (es)", "app name", h.name.es],
-    ["name (en)", "app name", h.name.en],
-    ["tagline (es)", "app tagline", h.tagline?.es],
-    ["tagline (en)", "app tagline", h.tagline?.en],
+    ["name", "app name", h.name],
+    ["tagline", "app tagline", h.tagline],
     ["logo file name", "logo file name", h.logo ? path.basename(h.logo) : undefined],
   ];
   return places.flatMap(([where, field, text]) => {

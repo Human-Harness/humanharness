@@ -1,8 +1,6 @@
 import type { InputField, InputSpec } from "./client";
 
 /** The window's languages. The UI never imports the SDK at runtime, so these helpers mirror its small rules. */
-export type Lang = "es" | "en";
-export const langOf = (language: string): Lang => (language.startsWith("es") ? "es" : "en");
 
 /** A choice's options: the enum's own, or the strings of the shown data's `optionsFrom` field (the SDK's `choiceOptions`). */
 export function optionsOf(field: InputField, data: unknown): string[] {
@@ -56,7 +54,7 @@ export function draftValue(spec: InputSpec, draft: Draft): Record<string, unknow
 }
 
 /** One row per answered field, for the read-only view (the SDK's `readableAnswer`, per field). */
-export function answerRows(spec: InputSpec, value: Record<string, unknown>, lang: Lang, yesNo: [string, string]): { label: string; text: string }[] {
+export function answerRows(spec: InputSpec, value: Record<string, unknown>, yesNo: [string, string]): { label: string; text: string }[] {
   return spec.fields.flatMap((f) => {
     const v = value[f.name];
     if (v === undefined || v === null) return [];
@@ -66,6 +64,6 @@ export function answerRows(spec: InputSpec, value: Record<string, unknown>, lang
     else if (f.kind === "pairs" && Array.isArray(v)) {
       text = v.map((row) => (f.columns ?? []).map((c) => String((row as Record<string, unknown> | null)?.[c.name] ?? "")).join(" → ")).join("; ");
     } else text = typeof v === "string" || typeof v === "number" ? String(v) : JSON.stringify(v);
-    return text.trim() ? [{ label: f.label[lang], text }] : [];
+    return text.trim() ? [{ label: f.label, text }] : [];
   });
 }

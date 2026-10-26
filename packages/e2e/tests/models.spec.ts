@@ -5,7 +5,7 @@ import { closeAndClean, launch, makeSandbox, profileFlags, readJsonl, sessionOf,
 import { checkpointScript, claudeScript } from "./scripts";
 
 type Run = { argv: string[]; prompt: string };
-const START = "¿Qué parte querés entender?";
+const START = "Which part do you want to understand?";
 const readTasks = (folder: string) => JSON.parse(fs.readFileSync(path.join(folder, ".harness", "tasks.json"), "utf8"));
 const MANIFEST_ANSWER = "El manifiesto declara todo el harness.";
 
@@ -13,10 +13,10 @@ test("a long task saves what matters before the engine compacts, then answers th
   const s = makeSandbox("checkpoint");
   const { app, page } = await launch(s, { claude: checkpointScript });
   try {
-    await page.getByRole("button", { name: "Iniciar Demo" }).click();
-    await page.getByRole("region", { name: START }).getByRole("button", { name: /El manifiesto/ }).click();
+    await page.getByRole("button", { name: "Start Demo" }).click();
+    await page.getByRole("region", { name: START }).getByRole("button", { name: /The manifest/ }).click();
     await expect(page.getByRole("main").getByText(MANIFEST_ANSWER)).toBeVisible();
-    await expect(page.getByRole("meter", { name: "Contexto en uso" })).toHaveAttribute("aria-valuenow", "85");
+    await expect(page.getByRole("meter", { name: "Context in use" })).toHaveAttribute("aria-valuenow", "85");
 
     await page.getByRole("button", { name: "Profundizar en las acciones" }).click();
     await expect(page.getByRole("main").getByText("Las acciones traen su brief.")).toBeVisible();
@@ -42,11 +42,11 @@ test("a model the plan doesn't include falls back a level, and the task says so"
   const s = makeSandbox("fallback", { models: { tasks: { manifest: "deep" } } });
   const { app, page } = await launch(s, { claude: { ...claudeScript, failModels: ["opus"] } });
   try {
-    await page.getByRole("button", { name: "Iniciar Demo" }).click();
-    await page.getByRole("region", { name: START }).getByRole("button", { name: /El manifiesto/ }).click();
+    await page.getByRole("button", { name: "Start Demo" }).click();
+    await page.getByRole("region", { name: START }).getByRole("button", { name: /The manifest/ }).click();
     await expect(page.getByRole("main").getByText(MANIFEST_ANSWER)).toBeVisible();
-    await expect(page.getByText("Tu plan no incluye opus; usamos el nivel Estándar.")).toBeVisible();
-    await expect(page.getByText(/no incluye el modelo elegido/)).toHaveCount(0);
+    await expect(page.getByText("Your plan doesn't include opus; we used the Standard level.")).toBeVisible();
+    await expect(page.getByText(/doesn't include the chosen model/)).toHaveCount(0);
 
     const runs = readJsonl<Run>(s.claudePrompts);
     expect(runs.map((r) => profileFlags(r.argv))).toEqual([
@@ -67,15 +67,15 @@ test("Settings › Modelos: a level picked for a topic applies to its next task"
   const s = makeSandbox("settings-models");
   const { app, page } = await launch(s, { claude: claudeScript });
   try {
-    await page.getByRole("button", { name: "Iniciar Demo" }).click();
-    await page.getByRole("button", { name: "Ajustes" }).click();
-    await page.getByRole("tab", { name: "Modelos" }).click();
-    await page.getByRole("region", { name: "Tareas" }).getByRole("group", { name: "El manifiesto" }).getByRole("button", { name: "Liviano" }).click();
-    await expect(page.getByText("Cambiado · recomendado: Estándar")).toBeVisible();
+    await page.getByRole("button", { name: "Start Demo" }).click();
+    await page.getByRole("button", { name: "Settings" }).click();
+    await page.getByRole("tab", { name: "Models" }).click();
+    await page.getByRole("region", { name: "Tasks" }).getByRole("group", { name: "The manifest" }).getByRole("button", { name: "Light" }).click();
+    await expect(page.getByText("Changed · recommended: Standard")).toBeVisible();
     await expect.poll(() => JSON.parse(fs.readFileSync(path.join(s.userData, "config.json"), "utf8")).models).toEqual({ tasks: { manifest: "light" } });
-    await page.getByRole("button", { name: "Listo" }).click();
+    await page.getByRole("button", { name: "Done" }).click();
 
-    await page.getByRole("region", { name: START }).getByRole("button", { name: /El manifiesto/ }).click();
+    await page.getByRole("region", { name: START }).getByRole("button", { name: /The manifest/ }).click();
     await expect(page.getByRole("main").getByText(MANIFEST_ANSWER)).toBeVisible();
     expect(profileFlags(readJsonl<Run>(s.claudePrompts)[0].argv)).toEqual(["haiku", "low", "100000"]);
   } finally {

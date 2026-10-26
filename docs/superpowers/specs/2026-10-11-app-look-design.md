@@ -22,6 +22,7 @@ Status: approved direction (2026-10-11). Mockups: https://claude.ai/artifact/2cw
    - **Motor:** engines as large tiles with each provider's official logo, name and state (connected / not connected), plus a dashed "More engines · coming soon" tile. Below: account plan, where data goes, installed version, sign out. Disclaimer line. Onboarding (install, login, test, legal acceptance) runs from here.
    - **Uso:** the usage meter details (plan windows, reset times, cost of each action).
 3. **Work screen** (after Start): not designed yet; keep the current chat/blocks layout restyled with the same tokens until it is.
+   - **An answer arriving:** a sent question moves to the top of the chat and stays there; the answer grows into the room below it and nothing scrolls by itself. Text runs and blocks show in the order they arrived (saved so in the entry's `parts`, so the finished answer looks the same). The window paces the answer at about one word every 110 ms (faster when far behind the engine), each word and block fading in; reduced motion turns the fades off. The agent's instructions ask it to write the sentence that introduces a block before calling it.
 
 ### Changed by plan 3f (2026-10-14)
 

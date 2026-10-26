@@ -110,22 +110,34 @@ export function parseInline(text: string): Inline[] {
   return out;
 }
 
-function renderInline(nodes: Inline[]): ReactNode[] {
+/**
+ * Text that fades in word by word as it arrives: each word is its own span, and a span already on screen keeps
+ * its place (and so doesn't fade again) when more words come after it.
+ */
+function fadingWords(text: string): ReactNode[] {
+  return text.split(/(\s+)/).map((w, i) => (!w || /^\s+$/.test(w) ? w : <span key={i} className="hh-word">{w}</span>));
+}
+
+function renderInline(nodes: Inline[], fade: boolean): ReactNode[] {
   return nodes.map((n, i) => {
     switch (n.t) {
       case "text":
-        return <Fragment key={i}>{n.v}</Fragment>;
+        return <Fragment key={i}>{fade ? fadingWords(n.v) : n.v}</Fragment>;
       case "code":
-        return <code key={i}>{n.v}</code>;
+        return (
+          <code key={i} className={fade ? "hh-word" : undefined}>
+            {n.v}
+          </code>
+        );
       case "strong":
-        return <strong key={i}>{renderInline(n.c)}</strong>;
+        return <strong key={i}>{renderInline(n.c, fade)}</strong>;
       case "em":
-        return <em key={i}>{renderInline(n.c)}</em>;
+        return <em key={i}>{renderInline(n.c, fade)}</em>;
       case "link": {
         const label = plainInline(n.text);
         return (
           <Fragment key={i}>
-            {renderInline(n.text)}
+            {renderInline(n.text, fade)}
             {label !== n.url && <span className="hh-md-url">{` (${n.url})`}</span>}
           </Fragment>
         );
@@ -134,29 +146,29 @@ function renderInline(nodes: Inline[]): ReactNode[] {
   });
 }
 
-function renderLines(lines: string[]): ReactNode[] {
-  return lines.flatMap((line, i) => [...(i > 0 ? [<br key={`br${i}`} />] : []), <Fragment key={i}>{renderInline(parseInline(line))}</Fragment>]);
+function renderLines(lines: string[], fade: boolean): ReactNode[] {
+  return lines.flatMap((line, i) => [...(i > 0 ? [<br key={`br${i}`} />] : []), <Fragment key={i}>{renderInline(parseInline(line), fade)}</Fragment>]);
 }
 
-/** The agent's Markdown as React elements. */
-export function Markdown({ text }: { text: string }) {
+/** The agent's Markdown as React elements; `fade` makes each word fade in as it appears (an answer arriving). */
+export function Markdown({ text, fade = false }: { text: string; fade?: boolean }) {
   return (
     <>
       {parseBlocks(text).map((b, i) => {
         switch (b.t) {
           case "p":
-            return <p key={i}>{renderLines(b.lines)}</p>;
+            return <p key={i}>{renderLines(b.lines, fade)}</p>;
           case "h":
             return (
               <p key={i} className="hh-md-heading">
-                <strong>{renderInline(parseInline(b.text))}</strong>
+                <strong>{renderInline(parseInline(b.text), fade)}</strong>
               </p>
             );
           case "ul":
             return (
               <ul key={i} className="hh-md-list">
                 {b.items.map((item, j) => (
-                  <li key={j}>{renderLines(item)}</li>
+                  <li key={j}>{renderLines(item, fade)}</li>
                 ))}
               </ul>
             );
@@ -164,7 +176,7 @@ export function Markdown({ text }: { text: string }) {
             return (
               <ol key={i} className="hh-md-list" start={b.start === 1 ? undefined : b.start}>
                 {b.items.map((item, j) => (
-                  <li key={j}>{renderLines(item)}</li>
+                  <li key={j}>{renderLines(item, fade)}</li>
                 ))}
               </ol>
             );

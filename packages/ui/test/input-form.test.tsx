@@ -7,13 +7,12 @@ import { renderIn } from "./render";
 
 afterEach(cleanup);
 
-const L = (en: string, es = en) => ({ es, en });
 const commit: InputSpec = {
   fields: [
-    { name: "choice", kind: "choice", label: L("I pick", "Elegí"), optional: true, optionsFrom: "options" },
-    { name: "why", kind: "longText", label: L("Why? In your own words", "¿Por qué? Con tus palabras"), optional: false, min: 1, max: 1000 },
+    { name: "choice", kind: "choice", label: "I pick", optional: true, optionsFrom: "options" },
+    { name: "why", kind: "longText", label: "Why? In your own words", optional: false, min: 1, max: 1000 },
   ],
-  submitLabel: L("I commit", "Me comprometo"),
+  submitLabel: "I commit",
   skippable: true,
 };
 const data = { question: "Who ate more?", options: ["Me", "Both the same"] };
@@ -72,13 +71,13 @@ describe("InputForm", () => {
 
   it("skips; a disabled form sends nothing", async () => {
     const { skip, submit, el } = form({ disabled: true });
-    await renderIn("es", el);
-    expect((screen.getByRole("button", { name: "Me comprometo" }) as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByRole("button", { name: "Saltear esta pregunta" }) as HTMLButtonElement).disabled).toBe(true);
+    await renderIn("en", el);
+    expect((screen.getByRole("button", { name: "I commit" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Skip this question" }) as HTMLButtonElement).disabled).toBe(true);
     cleanup();
     const open = form();
-    await renderIn("es", open.el);
-    fireEvent.click(screen.getByRole("button", { name: "Saltear esta pregunta" }));
+    await renderIn("en", open.el);
+    fireEvent.click(screen.getByRole("button", { name: "Skip this question" }));
     expect(open.skip).toHaveBeenCalled();
     expect(submit).not.toHaveBeenCalled();
   });
@@ -86,8 +85,8 @@ describe("InputForm", () => {
   it("pairs: rows are added, and empty ones dropped; a field it can't draw blocks sending", async () => {
     const cards: InputSpec = {
       fields: [
-        { name: "cards", kind: "pairs", label: L("Cards"), optional: false, columns: [{ name: "front", label: L("Front") }, { name: "back", label: L("Back") }] },
-        { name: "sure", kind: "boolean", label: L("Sure"), optional: false },
+        { name: "cards", kind: "pairs", label: "Cards", optional: false, columns: [{ name: "front", label: "Front" }, { name: "back", label: "Back" }] },
+        { name: "sure", kind: "boolean", label: "Sure", optional: false },
       ],
     };
     const { submit, el } = form({ spec: cards, blockId: "t1:0:6" });
@@ -99,7 +98,7 @@ describe("InputForm", () => {
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
     expect(submit).toHaveBeenCalledWith({ cards: [{ front: "2+2", back: "4" }], sure: true });
     cleanup();
-    const deep: InputSpec = { fields: [{ name: "deep", kind: null, label: L("Deep"), optional: false }] };
+    const deep: InputSpec = { fields: [{ name: "deep", kind: null, label: "Deep", optional: false }] };
     await renderIn("en", form({ spec: deep, blockId: "t1:0:7" }).el);
     expect(screen.getByText('The app can\'t show the field "Deep" here.')).toBeTruthy();
     expect((screen.getByRole("button", { name: "Send" }) as HTMLButtonElement).disabled).toBe(true);
@@ -108,8 +107,8 @@ describe("InputForm", () => {
   it("grouped fields mark their inner inputs invalid; multiChoice keeps the options' order", async () => {
     const grouped: InputSpec = {
       fields: [
-        { name: "tags", kind: "multiChoice", label: L("Tags"), optional: false, options: ["a", "b", "c"] },
-        { name: "cards", kind: "pairs", label: L("Cards"), optional: false, columns: [{ name: "front", label: L("Front") }, { name: "back", label: L("Back") }] },
+        { name: "tags", kind: "multiChoice", label: "Tags", optional: false, options: ["a", "b", "c"] },
+        { name: "cards", kind: "pairs", label: "Cards", optional: false, columns: [{ name: "front", label: "Front" }, { name: "back", label: "Back" }] },
       ],
     };
     const { submit, el } = form({ spec: grouped, blockId: "t1:0:8", errors: [{ path: "tags", message: "Pick one" }, { path: "cards.0.front", message: "Empty" }] });
@@ -128,7 +127,7 @@ describe("InputForm", () => {
 
   it("pairs: removing a row keeps the others' inputs and moves focus to the row in its place", async () => {
     const cards: InputSpec = {
-      fields: [{ name: "cards", kind: "pairs", label: L("Cards"), optional: false, columns: [{ name: "front", label: L("Front") }, { name: "back", label: L("Back") }] }],
+      fields: [{ name: "cards", kind: "pairs", label: "Cards", optional: false, columns: [{ name: "front", label: "Front" }, { name: "back", label: "Back" }] }],
     };
     await renderIn("en", form({ spec: cards, blockId: "t1:0:9" }).el);
     fireEvent.change(screen.getByLabelText("Front 1"), { target: { value: "one" } });
@@ -146,10 +145,10 @@ describe("InputForm", () => {
 });
 
 describe("AnswerView", () => {
-  it("reads the answer back in the window's language; a skip has its own words", async () => {
-    await renderIn("es", <AnswerView spec={commit} answer={{ blockId: "t1:0:0", value: { choice: "Yo", why: "porque" }, answeredAt: "a" }} />);
-    expect(screen.getByText("Tu respuesta")).toBeTruthy();
-    expect(screen.getByText("Elegí")).toBeTruthy();
+  it("reads the answer back with the harness's labels; a skip has its own words", async () => {
+    await renderIn("en", <AnswerView spec={commit} answer={{ blockId: "t1:0:0", value: { choice: "Yo", why: "porque" }, answeredAt: "a" }} />);
+    expect(screen.getByText("Your answer")).toBeTruthy();
+    expect(screen.getByText("I pick")).toBeTruthy();
     expect(screen.getByText("Yo")).toBeTruthy();
     cleanup();
     await renderIn("en", <AnswerView spec={commit} answer={{ blockId: "t1:0:0", value: { skipped: true }, answeredAt: "a" }} />);

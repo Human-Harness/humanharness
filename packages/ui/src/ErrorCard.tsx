@@ -1,6 +1,7 @@
 import { useTranslation } from "react-i18next";
 import type { EngineError, EngineProblem, LimitWindow } from "./client";
 import { formatReset, resetWindow } from "./usage";
+import { shownLanguage } from "./language";
 
 /** A turn error, or "notice" for an engine whose setup isn't finished. */
 export type CardError = EngineError | { code: "notice"; detail?: string };
@@ -40,7 +41,7 @@ export function ErrorCard({
   return (
     <div className="hh-error" role="alert">
       <p>{t(`errors.${error.code}`, { engine, defaultValue: t("errors.agent-crashed", { engine }) })}</p>
-      {reset && <p>{t("errors.resetsAt", { time: formatReset(reset.resetsAt, i18n.language) })}</p>}
+      {reset && <p>{t("errors.resetsAt", { time: formatReset(reset.resetsAt, shownLanguage(i18n)) })}</p>}
       {onFix && FIXABLE.has(error.code) && (
         <button className="hh-primary" onClick={onFix}>
           {t(`errors.fix.${error.code}`, { engine })}

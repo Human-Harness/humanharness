@@ -8,10 +8,11 @@ import { type EngineDef, availableEngines } from "@humanharness/engines";
 import type { MockNote } from "@humanharness/fake-agent";
 import {
   type BlockAnswer,
-  LANGUAGES,
+  DEFAULT_LANGUAGE,
   type Language,
   TIERS,
   type Tier,
+  canonicalLanguage,
   actionScope,
   allBlocks,
   blockToolName,
@@ -60,7 +61,7 @@ export interface RunOptions {
   tier?: Tier;
   /** Default: a new folder under the OS temp dir, printed and kept. */
   folder?: string;
-  /** Default: English when the harness offers it, else its first language. */
+  /** Any language tag; default English. */
   language?: Language;
   input: Readable;
   output: Writable;
@@ -143,8 +144,7 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
   if (!engine) {
     throw new UsageError(`Engine "${o.engine ?? "(none)"}" is not available for ${harness.id}. Available: ${offered.map((e) => e.id).join(", ") || "none"}.`);
   }
-  const language: Language = o.language ?? (harness.languages.includes("en") ? "en" : harness.languages[0]);
-  if (!harness.languages.includes(language)) throw new UsageError(`${harness.id} does not offer the language "${language}".`);
+  const language: Language = o.language ?? DEFAULT_LANGUAGE;
   // The harness's input blocks (input-blocks spec §8). Without any, the run is exactly as before (D0).
   const inputs = inputBlocks(harness.blocks);
   const hasInputs = Object.keys(inputs).length > 0;
@@ -165,7 +165,7 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
   const out = o.output;
   out.write(`Folder: ${folder}\n`);
 
-  const view = new TerminalView(out, engine.name, (out as { isTTY?: boolean }).isTTY === true, specs, language);
+  const view = new TerminalView(out, engine.name, (out as { isTTY?: boolean }).isTTY === true, specs);
   const tally = new UsageTally();
   const store = new TaskStore(folder);
   const scoped = harness.scopes !== undefined;
@@ -216,7 +216,7 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
       language,
       command: command.command,
       env: command.env,
-      references: references.map((r) => ({ label: r.label[language], path: r.path })),
+      references: references.map((r) => ({ label: r.label, path: r.path })),
       onSession: (s) => void tasks.sessionStarted(s).catch(() => undefined),
       data: (request) => agentDataRequest({ store: async () => dataStore, runningTask: () => tasks.runningTask() }, request),
     }),
@@ -365,7 +365,7 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
         const asked = current.pendingInput;
         if (line === "a" && asked && Object.hasOwn(specs, asked.block)) {
           answerDropped = false;
-          const value = await promptAnswer(specs[asked.block], view.shown.get(asked.blockId), ask, out, language);
+          const value = await promptAnswer(specs[asked.block], view.shown.get(asked.blockId), ask, out);
           if (!value) {
             // The question stays open: `a` asks it again.
             if (answerDropped) out.write("\nAnswer dropped.\n");
@@ -429,7 +429,7 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
   }
 }
 
-const RUN_USAGE = "Usage: humanharness run <action> [--engine claude|codex] [--tier light|standard|deep] [--folder <dir>] [--language es|en] [--harness <dir>] [--record [--force]]";
+const RUN_USAGE = "Usage: humanharness run <action> [--engine claude|codex] [--tier light|standard|deep] [--folder <dir>] [--language <tag>] [--harness <dir>] [--record [--force]]";
 
 export async function runCommand(args: string[], io: Io): Promise<number> {
   const { values, positionals } = parseCommand(args, {
@@ -444,14 +444,15 @@ export async function runCommand(args: string[], io: Io): Promise<number> {
   if (positionals.length !== 1) throw new UsageError(RUN_USAGE);
   if (values.force && !values.record) throw new UsageError("--force only works with --record");
   if (values.tier !== undefined && !(TIERS as readonly string[]).includes(values.tier)) throw new UsageError(`Unknown tier "${values.tier}": use light, standard or deep.`);
-  if (values.language !== undefined && !(LANGUAGES as readonly string[]).includes(values.language)) throw new UsageError(`Unknown language "${values.language}": use es or en.`);
+  const language = values.language === undefined ? undefined : canonicalLanguage(values.language);
+  if (language === null) throw new UsageError(`Unknown language "${values.language}": use a language tag such as en, es or pt-BR.`);
   await runTask({
     harnessDir: path.resolve(io.cwd, values.harness ?? "."),
     action: positionals[0],
     ...(values.engine ? { engine: values.engine } : {}),
     ...(values.tier ? { tier: values.tier as Tier } : {}),
     ...(values.folder ? { folder: path.resolve(io.cwd, values.folder.replace(/^~(?=$|\/)/, os.homedir())) } : {}),
-    ...(values.language ? { language: values.language as Language } : {}),
+    ...(language ? { language } : {}),
     ...(values.record ? { record: true } : {}),
     ...(values.force ? { force: true } : {}),
     input: io.stdin,

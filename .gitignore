@@ -7,3 +7,4 @@ out/
 packages/e2e/.tmp/
 test-results/
 playwright-report/
+.claude/

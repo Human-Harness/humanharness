@@ -18,9 +18,8 @@ const progress = defineBlock({
 
 export default defineHarness({
   id: "notes",
-  name: { es: "Notas", en: "Notes" },
+  name: "Notes",
   core: "^0.1.0",
-  languages: ["es", "en"],
   engines: ["claude", "codex"],
   folder: { suggested: "Documents/Human Harness Notes", seed: "./agent/seed" },
   instructions: "./agent/AGENTS.md",

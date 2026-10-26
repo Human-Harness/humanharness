@@ -18,7 +18,7 @@ const commit = defineBlock({
   visible: true,
   schema: z.object({ question: z.string(), options: z.array(z.string()).optional() }),
   input: z.object({ choice: z.string().optional(), why: z.string().min(1).max(1000) }),
-  inputUi: { choice: { label: { es: "Elegí", en: "I pick" } }, why: { label: { es: "Por qué", en: "Why" } } },
+  inputUi: { choice: { label: "I pick" }, why: { label: "Why" } },
   skippable: true,
   example: { question: "q" },
 });
@@ -76,22 +76,21 @@ describe("parseAnswer", () => {
 });
 
 describe("readableAnswer", () => {
-  it("is one `label: value` paragraph per answered field, in the task's language", () => {
-    expect(readableAnswer(commit, { choice: "Las dos igual", why: "Porque 2 pedazos chiquitos son como uno grande" }, "es")).toBe(
-      "Elegí: Las dos igual\n\nPor qué: Porque 2 pedazos chiquitos son como uno grande",
+  it("is one `label: value` paragraph per answered field, in English whatever the answer's language", () => {
+    expect(readableAnswer(commit, { choice: "Las dos igual", why: "Porque 2 pedazos chiquitos son como uno grande" })).toBe(
+      "I pick: Las dos igual\n\nWhy: Porque 2 pedazos chiquitos son como uno grande",
     );
-    expect(readableAnswer(commit, { why: "because" }, "en")).toBe("Why: because");
+    expect(readableAnswer(commit, { why: "because" })).toBe("Why: because");
   });
 
   it("reads booleans, multi-choices and pairs; a skipped or empty answer has its own words", () => {
-    expect(readableAnswer(all, { sure: true, tags: ["a", "b"], cards: [{ front: "2+2", back: "4" }, { front: "3·3", back: "9" }] }, "es")).toBe(
-      "Sure: sí\n\nTags: a, b\n\nCards: 2+2 → 4; 3·3 → 9",
+    expect(readableAnswer(all, { sure: true, tags: ["a", "b"], cards: [{ front: "2+2", back: "4" }, { front: "3·3", back: "9" }] })).toBe(
+      "Sure: yes\n\nTags: a, b\n\nCards: 2+2 → 4; 3·3 → 9",
     );
-    expect(readableAnswer(commit, { skipped: true }, "es")).toBe("(saltado)");
-    expect(readableAnswer(commit, { skipped: true }, "en")).toBe("(skipped)");
-    expect(readableAnswer(all, { sure: false, tags: [], cards: [] }, "en")).toBe("Sure: no");
+    expect(readableAnswer(commit, { skipped: true })).toBe("(skipped)");
+    expect(readableAnswer(all, { sure: false, tags: [], cards: [] })).toBe("Sure: no");
     const empty = defineBlock({ description: "e", visible: true, schema: z.object({}), input: z.object({ note: z.string().optional() }), example: {} });
-    expect(readableAnswer(empty, {}, "en")).toBe("(empty answer)");
+    expect(readableAnswer(empty, {})).toBe("(empty answer)");
   });
 });
 
@@ -111,10 +110,10 @@ describe("answerDisplay", () => {
     expect(value.why).toBe("x");
     const log = vi.fn();
     const throws = defineBlock({ ...commit, display: () => { throw new Error("boom"); } });
-    expect(answerDisplay("commit_answer", throws, value, "es", log)).toBe("Elegí: Yo\n\nPor qué: x");
+    expect(answerDisplay("commit_answer", throws, value, "es", log)).toBe("I pick: Yo\n\nWhy: x");
     expect(log).toHaveBeenCalledWith(expect.stringContaining("boom"));
     const blank = defineBlock({ ...commit, display: () => " " });
-    expect(answerDisplay("commit_answer", blank, value, "es", log)).toBe("Elegí: Yo\n\nPor qué: x");
+    expect(answerDisplay("commit_answer", blank, value, "es", log)).toBe("I pick: Yo\n\nWhy: x");
   });
 
   it("logs a slow display", () => {
@@ -129,11 +128,11 @@ describe("answerDisplay", () => {
 describe("the turn message", () => {
   it("holds the readable line and the exact JSON, and reads back", () => {
     const value = { choice: "Las dos igual", why: "Porque sí" };
-    const message = answerMessage({ name: "commit_answer", blockId: "t1:0:0", value, display: "Elegí: Las dos igual", language: "es" });
+    const message = answerMessage({ name: "commit_answer", blockId: "t1:0:0", value, display: "I pick: Las dos igual" });
     expect(message).toBe(
-      '[respuesta a commit_answer]\nElegí: Las dos igual\n\n```json\n{"block":"commit_answer","blockId":"t1:0:0","value":{"choice":"Las dos igual","why":"Porque sí"}}\n```',
+      '[answer to commit_answer]\nI pick: Las dos igual\n\n```json\n{"block":"commit_answer","blockId":"t1:0:0","value":{"choice":"Las dos igual","why":"Porque sí"}}\n```',
     );
-    expect(answerMessage({ name: "x", blockId: "t1:0:0", value: {}, display: "d", language: "en" }).startsWith("[answer to x]\nd")).toBe(true);
+    expect(answerMessage({ name: "x", blockId: "t1:0:0", value: {}, display: "d" }).startsWith("[answer to x]\nd")).toBe(true);
     expect(readAnswer(message)).toEqual({ block: "commit_answer", blockId: "t1:0:0", value });
   });
 

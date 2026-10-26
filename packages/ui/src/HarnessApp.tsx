@@ -8,6 +8,7 @@ import { TopBar } from "./chrome";
 import { type AppState, type EngineStatus, type HarnessClient, type LimitWindow, engineProblem, isConfigured } from "./client";
 import { useFolderMove } from "./BackupNotice";
 import { Home } from "./Home";
+import { shownLanguage, systemLanguage } from "./language";
 import type { BlockProps } from "./Message";
 import { type SettingsTab, SettingsSheet } from "./SettingsSheet";
 import { SetupFlow } from "./SetupFlow";
@@ -65,18 +66,15 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
 
   useEffect(() => {
     let cancelled = false;
-    const systemLanguage = navigator.language.startsWith("es") ? "es" : "en";
     void (async () => {
       try {
         const s = await client.getState();
-        const preferred = s.config.language ?? systemLanguage;
-        const language = s.harness.languages.includes(preferred) ? preferred : s.harness.languages[0];
-        const instance = await createI18n(language, localesRef.current);
+        const instance = await createI18n(s.config.language ?? systemLanguage(), localesRef.current);
         if (cancelled) return;
         setI18n(instance);
         setState(s);
       } catch {
-        const instance = await createI18n(systemLanguage, localesRef.current);
+        const instance = await createI18n(systemLanguage(), localesRef.current);
         if (cancelled) return;
         setI18n(instance);
         setFailed(true);
@@ -89,10 +87,11 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
 
   useEffect(() => {
     if (!i18n) return;
-    const apply = (language: string) => {
-      document.documentElement.lang = language;
+    // The language the text is shown in: English until plan 5b translates the app.
+    const apply = () => {
+      document.documentElement.lang = shownLanguage(i18n);
     };
-    apply(i18n.language);
+    apply();
     i18n.on("languageChanged", apply);
     return () => {
       i18n.off("languageChanged", apply);

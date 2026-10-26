@@ -24,11 +24,11 @@ The shell reads them through `readTestHooks` (`packages/shell/src/main/test-hook
 
 Plan 3f (spec `2026-10-14-setup-flow-design.md` §4) shows the faked engine as what it is, so a tester never sees Claude where no AI runs:
 
-- **Home.** On the first launch, "Configurar <name>" and a card with the two missing steps. The setup flow walks the folder, then the engine, then "Todo listo".
-- **The test engine.** One tile, "IA simulada (mock)" / "Simulated AI (mock)" (in the saved language, else the system's), with a generic screen icon instead of a logo. Its id stays `claude`, so config, models and the runtime don't change. The main process sends it with provider Human Harness, no requirements, no install command, `reportsLimits: false` and `mock: true` (`appState` in `packages/shell/src/main/index.ts`). Above the tiles, the setup step says there is only one engine in test mode.
-- **Its details.** Motor (and the setup step) show Modelo de prueba, answers recorded in the harness's `mock/`, data that stays on this computer and a plan that is not spent. There is no sign out, plan, version or legal line. The usage line on the work screen and Settings › Uso say "Modo prueba: no gasta tu plan." instead of "doesn't report the limits" (the last reply's tokens still show).
+- **Home.** On the first launch, "Set up <name>" and a card with the two missing steps. The setup flow walks the folder, then the engine, then "All set".
+- **The test engine.** One tile, "Simulated AI (mock)", with a generic screen icon instead of a logo. Its id stays `claude`, so config, models and the runtime don't change. The main process sends it with provider Human Harness, no requirements, no install command, `reportsLimits: false` and `mock: true` (`appState` in `packages/shell/src/main/index.ts`). Above the tiles, the setup step says there is only one engine in test mode.
+- **Its details.** Engine (and the setup step) show "Test model", answers recorded in the harness's `mock/`, data that stays on this computer and a plan that is not spent. There is no sign out, plan, version or legal line. The usage line on the work screen and Settings › Usage say "Test mode: uses none of your plan." instead of "doesn't report the limits" (the last reply's tokens still show).
 - **No notice.** The engine is ready at once: there is no notice to accept, nothing to install and no sign-in.
-- **The test model.** `ModelsView` offers one model, `{ id: "mock", name: "Modelo de prueba" | "Test model" }`, and every tier defaults to it (effort and cap as they are). Settings › Modelos shows "Modelo de prueba" for each level. `fake-claude` ignores `--model`.
+- **The test model.** `ModelsView` offers one model, `{ id: "mock", name: "Test model" }`, and every tier defaults to it (effort and cap as they are). Settings › Models shows "Test model" for each level. `fake-claude` ignores `--model`.
 
 ## The format
 
@@ -63,7 +63,7 @@ One file per action, `mock/<action>.json`, meant to be edited by hand. The schem
 - `action`: the manifest action. The file is named `<action>.json`.
 - `match`: plain text that the task's first message (its brief) contains. It must not be blank.
 - `recordedWith`: informational. A recording made with Codex replays through `fake-claude` too.
-- `fallback.text`: played when a reply is not recorded. Without it, a fixed two-language text is used.
+- `fallback.text`: played when a reply is not recorded. Without it, a fixed English text is used.
 - `turns`: at least one. Ids are unique.
 - `id`: the turn's name. `close` is the closing turn.
 - `text`: streamed in about eight chunks over `delayMs` (default 600 ms, up to 60 s).
@@ -120,7 +120,7 @@ One file per action, `mock/<action>.json`, meant to be edited by hand. The schem
 
 - `packages/fake-agent/test/mock.test.ts` and `mock-replay.test.ts`: the schema and the walk (branch, `*`, fallback, close, missing close, state).
 - `packages/cli/test/record.test.ts`, `run.test.ts`, `dev.test.ts` and `check.test.ts`: the recorder, `run --record`, `dev --mock` and each `check` rule.
-- `packages/e2e/tests/mock.spec.ts`: `launchMock` opens the demo with its recordings and walks a topic end to end, including one off-script reply, the note and the engine list (only the test engine). A second test starts from a fresh app (`makeFreshSandbox`) and walks the setup flow to the demo, then checks Settings › Modelos shows the test model.
+- `packages/e2e/tests/mock.spec.ts`: `launchMock` opens the demo with its recordings and walks a topic end to end, including one off-script reply, the note and the engine list (only the test engine). A second test starts from a fresh app (`makeFreshSandbox`) and walks the setup flow to the demo, then checks Settings › Models shows the test model.
 - `packages/e2e/tests/scripts.ts` keeps the hand-written scripts for what a recording can't express: crashes, resume failures, model fallback.
 
 ## Known gaps

@@ -15,7 +15,7 @@ A harness lives in its own repository and depends on `@humanharness/cli` only: u
 
 ## The template and what a harness imports
 
-The template (`packages/cli/template/`) runs as is: one action (`example`, standard tier, light cost), one custom block (`example_card`), `ui/App.tsx`, strings in Spanish and English, and a `HARNESS.md` that already describes it, so `check` reports nothing. A harness imports `@humanharness/cli/sdk` (the SDK, `z` included: one zod for the manifest and the SDK) and `@humanharness/cli/ui` (the UI kit and `useTranslation`). The shell's renderer build dedupes React and i18n and may serve a harness folder outside the repository (`packages/shell/electron.vite.config.ts`).
+The template (`packages/cli/template/`) runs as is: one action (`example`, standard tier, light cost), one custom block (`example_card`), `ui/App.tsx`, strings in `locales/en.json`, and a `HARNESS.md` that already describes it, so `check` reports nothing. A harness imports `@humanharness/cli/sdk` (the SDK, `z` included: one zod for the manifest and the SDK) and `@humanharness/cli/ui` (the UI kit and `useTranslation`). The shell's renderer build dedupes React and i18n and may serve a harness folder outside the repository (`packages/shell/electron.vite.config.ts`).
 
 ## The guide
 
@@ -25,7 +25,7 @@ The template (`packages/cli/template/`) runs as is: one action (`example`, stand
 
 `HARNESS.md` is the harness's living decision log: Task, Decisions, Flow, Context, Models, Permissions and engines, Identity, Open questions, Decision log. `check` reads two things from it (`packages/cli/src/harness-md.ts`): the Flow table (`| Action | Tier | Cost | Purpose |`, one row per action plus `(questions)`) and the permission lines (`- edit: none — reason`, `exec`, `web`, `engines: claude, codex`).
 
-- Errors: `schema` (each zod issue), `i18n` (locale files, key parity, `t("key")` in `ui/`), `brief-missing`, `brand` (`brandNames()` in `packages/engines`), `engine-not-allowed` (excluded, unknown, or pending outside development), `harness-md-missing`, `harness-md-mismatch`, and for `mock/*.json` recordings `mock-schema`, `mock-action`, `mock-match`, `mock-next`, `mock-choice`, `mock-input`.
+- Errors: `schema` (each zod issue), `i18n` (`locales/en.json`: missing, invalid JSON or not an object; other locale files are a warning; every `t("key")` in `ui/` must exist in it), `brief-missing`, `brand` (`brandNames()` in `packages/engines`), `engine-not-allowed` (excluded, unknown, or pending outside development), `harness-md-missing`, `harness-md-mismatch`, and for `mock/*.json` recordings `mock-schema`, `mock-action`, `mock-match`, `mock-next`, `mock-choice`, `mock-input`.
 - Warnings, one per pillar plus resources: `pillar-decisions`, `pillar-flow`, `pillar-context`, `tier-cost`, `permissions-wide`, `open-questions`, and for input blocks `input-hidden` (an input block that isn't visible), `input-form` (a field the core form can't draw, with no component in `ui/`) and `input-choice` (a choice whose options can't come from the shown data: `inputUi.<field>.optionsFrom` names no list of strings or string enums, or `kind: "choice"` has no options, and the form draws it as text; or `inputUi.<field>.kind` on a field that isn't a string, where it is ignored).
 
 ## run

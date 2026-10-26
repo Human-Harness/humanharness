@@ -2,7 +2,7 @@ import { readAnswer } from "@humanharness/harness-sdk";
 import type { MockBlock, MockNote, MockTurn, MockUsage, MockWrite, Recording } from "./mock";
 
 /** Played when a reply isn't recorded and the recording has no `fallback` (spec 3e §2). */
-export const DEFAULT_FALLBACK = "Respuesta no grabada en esta prueba · Not recorded in this test.";
+export const DEFAULT_FALLBACK = "Not recorded in this test.";
 const FALLBACK_USAGE: MockUsage = { input: 400, output: 20, cacheRead: 0, cacheWrite: 0 };
 const DEFAULT_DELAY = 600;
 

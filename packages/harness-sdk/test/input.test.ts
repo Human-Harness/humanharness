@@ -7,8 +7,8 @@ const commit = () =>
     visible: true,
     schema: z.object({ question: z.string(), options: z.array(z.string()).max(4).optional() }),
     input: z.object({ choice: z.string().optional(), why: z.string().min(1).max(1000) }),
-    inputUi: { why: { kind: "longText", label: { es: "¿Por qué? Con tus palabras", en: "Why? In your own words" } } },
-    submitLabel: { es: "Me comprometo", en: "I commit" },
+    inputUi: { why: { kind: "longText", label: "Why? In your own words" } },
+    submitLabel: "I commit",
     skippable: true,
     display: (value, language) => (language === "es" ? `Elegí: ${"choice" in value ? String(value.choice) : ""}` : "Picked"),
     example: { question: "¿Quién comió más?", options: ["Yo", "Las dos igual"] },
@@ -19,7 +19,7 @@ describe("defineBlock with input", () => {
     const b = commit();
     expect(b.input).toBeInstanceOf(z.ZodObject);
     expect(b.inputUi?.why?.kind).toBe("longText");
-    expect(b.submitLabel).toEqual({ es: "Me comprometo", en: "I commit" });
+    expect(b.submitLabel).toEqual("I commit");
     expect(b.skippable).toBe(true);
     expect(b.display?.({ why: "x", choice: "Yo" }, "es")).toBe("Elegí: Yo");
   });
@@ -37,7 +37,7 @@ describe("defineBlock with input", () => {
         visible: true,
         schema: z.object({}),
         input: z.object({ why: z.string() }),
-        inputUi: { nope: { label: { es: "a", en: "a" } } } as never,
+        inputUi: { nope: { label: "a" } } as never,
         example: {},
       }),
     ).toThrow(/inputUi.nope/);
@@ -51,9 +51,8 @@ describe("defineBlock with input", () => {
     const card = defineBlock({ description: "c", visible: true, schema: z.object({ t: z.string() }), example: { t: "a" } });
     const h = defineHarness({
       id: "quiz",
-      name: { es: "Q", en: "Q" },
+      name: "Q",
       core: "^0.1.0",
-      languages: ["es", "en"],
       engines: ["claude"],
       folder: { suggested: "Documents/Q" },
       instructions: "./AGENTS.md",
@@ -72,8 +71,8 @@ describe("inputFields", () => {
 
   it("reads the spec's example: a choice from the shown options, and a long text with its label", () => {
     expect(inputFields(commit())).toEqual([
-      { name: "choice", kind: "choice", label: { es: "Choice", en: "Choice" }, optional: true, optionsFrom: "options" },
-      { name: "why", kind: "longText", label: { es: "¿Por qué? Con tus palabras", en: "Why? In your own words" }, optional: false, min: 1, max: 1000 },
+      { name: "choice", kind: "choice", label: "Choice", optional: true, optionsFrom: "options" },
+      { name: "why", kind: "longText", label: "Why? In your own words", optional: false, min: 1, max: 1000 },
     ]);
   });
 
@@ -106,8 +105,8 @@ describe("inputFields", () => {
     expect(level.options).toEqual(["low", "high"]);
     expect(tags.options).toEqual(["a", "b"]);
     expect(cards.columns).toEqual([
-      { name: "front", label: { es: "Front", en: "Front" } },
-      { name: "back", label: { es: "Back", en: "Back" } },
+      { name: "front", label: "Front" },
+      { name: "back", label: "Back" },
     ]);
   });
 
@@ -117,14 +116,14 @@ describe("inputFields", () => {
       z.object({ answers: z.array(z.string()).optional() }),
       {
         short: { kind: "text" },
-        pick: { optionsFrom: "answers", label: { es: "Elegí", en: "Pick" } },
-        cards: { columns: { q: { es: "Pregunta", en: "Question" }, a: { es: "Respuesta", en: "Answer" } } },
+        pick: { optionsFrom: "answers", label: "Pick" },
+        cards: { columns: { q: "Question", a: "Answer" } },
       },
     );
     const [short, pick, cards] = inputFields(b);
     expect(short.kind).toBe("text");
-    expect(pick).toMatchObject({ kind: "choice", optionsFrom: "answers", label: { es: "Elegí", en: "Pick" } });
-    expect(cards.columns?.map((c) => c.label.en)).toEqual(["Question", "Answer"]);
+    expect(pick).toMatchObject({ kind: "choice", optionsFrom: "answers", label: "Pick" });
+    expect(cards.columns?.map((c) => c.label)).toEqual(["Question", "Answer"]);
   });
 
   it("reads inputUi and column labels as own keys only", () => {
@@ -132,8 +131,8 @@ describe("inputFields", () => {
       cards: { columns: {} },
     });
     const [ctor, cards] = inputFields(b);
-    expect(ctor).toMatchObject({ kind: "text", label: { es: "Constructor", en: "Constructor" } });
-    expect(cards.columns?.map((c) => c.label.en)).toEqual(["ToString", "Constructor"]);
+    expect(ctor).toMatchObject({ kind: "text", label: "Constructor" });
+    expect(cards.columns?.map((c) => c.label)).toEqual(["ToString", "Constructor"]);
   });
 
   it("a field named choice with no shown options is plain text", () => {
@@ -142,7 +141,7 @@ describe("inputFields", () => {
 
   it("inputSpec is plain data for the window; inputSpecs covers only input blocks", () => {
     const spec = inputSpec(commit());
-    expect(spec.submitLabel).toEqual({ es: "Me comprometo", en: "I commit" });
+    expect(spec.submitLabel).toEqual("I commit");
     expect(spec.skippable).toBe(true);
     expect(JSON.parse(JSON.stringify(spec))).toEqual(spec);
     const card = defineBlock({ description: "c", visible: true, schema: z.object({}), example: {} });
@@ -153,7 +152,7 @@ describe("inputFields", () => {
     const [choice] = inputFields(commit());
     expect(choiceOptions(choice, { question: "q", options: ["Yo", 3, "Mi amiga"] })).toEqual(["Yo", "Mi amiga"]);
     expect(choiceOptions(choice, { question: "q" })).toEqual([]);
-    expect(choiceOptions({ name: "l", kind: "choice", label: { es: "l", en: "l" }, optional: false, options: ["a"] }, null)).toEqual(["a"]);
+    expect(choiceOptions({ name: "l", kind: "choice", label: "l", optional: false, options: ["a"] }, null)).toEqual(["a"]);
   });
 });
 
@@ -171,9 +170,8 @@ describe("saveTo", () => {
   const harnessWith = (data: Record<string, unknown>) =>
     defineHarness({
       id: "quiz",
-      name: { es: "Q", en: "Q" },
+      name: "Q",
       core: "^0.1.0",
-      languages: ["es", "en"],
       engines: ["claude"],
       folder: { suggested: "Documents/Q" },
       instructions: "./AGENTS.md",
@@ -211,9 +209,8 @@ describe("annotate", () => {
   const harness = (blocks: Record<string, ReturnType<typeof defineBlock>>) =>
     defineHarness({
       id: "quiz",
-      name: { es: "Q", en: "Q" },
+      name: "Q",
       core: "^0.1.0",
-      languages: ["es", "en"],
       engines: ["claude"],
       folder: { suggested: "Documents/Q" },
       instructions: "./AGENTS.md",

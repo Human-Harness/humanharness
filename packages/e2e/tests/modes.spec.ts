@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { expect, test } from "@playwright/test";
+import { type ElectronApplication, expect, test } from "@playwright/test";
 import { type ClaudeScript, claudeTextLines } from "@humanharness/fake-agent";
 import { closeAndClean, launch, makeSandbox, readJsonl, shellDir, usageFile } from "./helpers";
 
@@ -45,13 +45,17 @@ test("the agent recommends, the person picks, the switch carries the mode's sett
   // electron-vite directly: `humanharness dev --build` would first run `check`, which a test fixture has no HARNESS.md for.
   const env: NodeJS.ProcessEnv = { ...process.env, HH_HARNESS_DIR: fixture, HH_OUT_DIR: outDir };
   delete env.ELECTRON_RUN_AS_NODE;
-  execFileSync(path.join(shellDir, "node_modules", ".bin", "electron-vite"), ["build"], { cwd: shellDir, env, stdio: "inherit" });
 
   const settingsFile = path.join(s.folder, ".harness", "data", "_app", "settings.json");
   const storedSettings = () => (fs.existsSync(settingsFile) ? JSON.parse(fs.readFileSync(settingsFile, "utf8")) : null);
   const agents = () => fs.readFileSync(path.join(s.folder, "AGENTS.md"), "utf8");
-  const { app, page } = await launch(s, { claude: coachScript }, path.join(outDir, "main", "index.js"));
+  // Inside the try: a failed build or launch still removes the sandbox and the build.
+  let app: ElectronApplication | undefined;
   try {
+    execFileSync(path.join(shellDir, "node_modules", ".bin", "electron-vite"), ["build"], { cwd: shellDir, env, stdio: "inherit" });
+    const launched = await launch(s, { claude: coachScript }, path.join(outDir, "main", "index.js"));
+    app = launched.app;
+    const page = launched.page;
     // Mode settings: a section of the harness's tab, stored under modes.<mode>.
     await page.getByRole("button", { name: "Settings" }).click();
     await page.getByRole("tab", { name: "How I learn" }).click();
@@ -91,6 +95,7 @@ test("the agent recommends, the person picks, the switch carries the mode's sett
     await page.getByRole("button", { name: "Settings" }).click();
     await page.getByRole("tab", { name: "How I learn" }).click();
     await tab.getByRole("group", { name: "Questions" }).getByRole("button", { name: "Few" }).click();
+    await expect(tab.getByRole("group", { name: "Questions" }).getByRole("button", { name: "Few" })).toHaveAttribute("aria-pressed", "true");
     // Back to the default: nothing of it stays stored.
     await expect.poll(() => storedSettings()?.modes).toBeUndefined();
     await expect(tab.getByText("Pending")).toHaveCount(0);
@@ -104,10 +109,17 @@ test("the agent recommends, the person picks, the switch carries the mode's sett
     await dialog.getByRole("button", { name: "Continue with the current model" }).click();
     await expect(page.getByRole("main").getByText("Paso uno: partimos la pizza.")).toBeVisible();
     await expect(page.locator(".hh-message.system > .hh-mode-line")).toHaveText(["Switched to Socratic", "Switched to Worked examples"]);
+    const worked = prompts()[2];
+    expect(worked.prompt).toContain('From now on work in the mode "Worked examples"');
+    expect(worked.argv).toContain("--resume");
     await expect.poll(() => readTasks(s.folder).current).toMatchObject({ mode: "worked", modes: ["socratic", "worked"], belowMinTier: true });
     await expect(bar).toContainText("Running below the level this mode asks for");
   } finally {
-    await closeAndClean(app, s);
-    fs.rmSync(outDir, { recursive: true, force: true });
+    try {
+      if (app) await closeAndClean(app, s);
+      else fs.rmSync(s.root, { recursive: true, force: true });
+    } finally {
+      fs.rmSync(outDir, { recursive: true, force: true });
+    }
   }
 });

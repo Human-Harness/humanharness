@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { expect, test } from "@playwright/test";
+import { type ElectronApplication, expect, test } from "@playwright/test";
 import { type ClaudeScript, claudeTextLines } from "@humanharness/fake-agent";
 import { closeAndClean, launch, makeSandbox, readJsonl, shellDir } from "./helpers";
 
@@ -35,12 +35,16 @@ test("settings save at once; AGENTS.md takes them at the next task, never during
   // electron-vite directly: `humanharness dev --build` would first run `check`, which a test fixture has no HARNESS.md for.
   const env: NodeJS.ProcessEnv = { ...process.env, HH_HARNESS_DIR: fixture, HH_OUT_DIR: outDir };
   delete env.ELECTRON_RUN_AS_NODE;
-  execFileSync(path.join(shellDir, "node_modules", ".bin", "electron-vite"), ["build"], { cwd: shellDir, env, stdio: "inherit" });
 
   const settingsFile = path.join(s.folder, ".harness", "data", "_app", "settings.json");
   const agents = () => fs.readFileSync(path.join(s.folder, "AGENTS.md"), "utf8");
-  const { app, page } = await launch(s, { claude: tutorScript }, path.join(outDir, "main", "index.js"));
+  // Inside the try: a failed build or launch still removes the sandbox and the build.
+  let app: ElectronApplication | undefined;
   try {
+    execFileSync(path.join(shellDir, "node_modules", ".bin", "electron-vite"), ["build"], { cwd: shellDir, env, stdio: "inherit" });
+    const launched = await launch(s, { claude: tutorScript }, path.join(outDir, "main", "index.js"));
+    app = launched.app;
+    const page = launched.page;
     // Before any task: the tab saves at once; nothing runs, so nothing is pending.
     await page.getByRole("button", { name: "Settings" }).click();
     await expect(page.getByRole("tab")).toHaveText(["General", "How I learn", "Engine", "Models", "Usage"]);
@@ -87,7 +91,11 @@ test("settings save at once; AGENTS.md takes them at the next task, never during
     await expect(tab.getByRole("status")).toHaveText("Changes apply from the next task.");
     await expect(tab.getByText("Pending")).toHaveCount(0);
   } finally {
-    await closeAndClean(app, s);
-    fs.rmSync(outDir, { recursive: true, force: true });
+    try {
+      if (app) await closeAndClean(app, s);
+      else fs.rmSync(s.root, { recursive: true, force: true });
+    } finally {
+      fs.rmSync(outDir, { recursive: true, force: true });
+    }
   }
 });

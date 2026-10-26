@@ -4,7 +4,8 @@ import { z } from "zod";
 import { type Block, blockToolName } from "./block";
 import { CORE_BLOCKS, INPUT_CORE_BLOCKS, RESERVED_BLOCK_NAMES } from "./core-blocks";
 import { dataSchema } from "./data";
-import { settingsSchema } from "./settings";
+import { DEFAULT_MODE_WORDS, MODE_ID } from "./modes";
+import { SETTING_NAME, checkSettingFields, settingFieldSchema, settingsSchema } from "./settings";
 
 export * from "./block";
 export * from "./core-blocks";
@@ -12,6 +13,7 @@ export * from "./data";
 export * from "./input";
 export * from "./answer";
 export * from "./settings";
+export * from "./modes";
 /** The zod a manifest builds its block schemas with: the same instance the SDK validates them against. */
 export { z } from "zod";
 
@@ -30,6 +32,8 @@ export type ActionCost = (typeof ACTION_COSTS)[number];
  */
 export const TIERS = ["light", "standard", "deep"] as const;
 export type Tier = (typeof TIERS)[number];
+/** `a` is a lower tier than `b` (task-modes spec §5.3: a mode's `minTier` against the task's). */
+export const tierBelow = (a: Tier, b: Tier): boolean => TIERS.indexOf(a) < TIERS.indexOf(b);
 /** Where an action runs in a harness with scopes: inside the open scope, or app-wide (spec §3.3). */
 export const SCOPE_MODES = ["required", "none"] as const;
 export type ScopeMode = (typeof SCOPE_MODES)[number];
@@ -48,6 +52,10 @@ const actionSchema = z.object({
   tier: z.enum(TIERS).optional(),
   /** Harnesses with `scopes` only: "required" (default) runs in the open scope, "none" app-wide (`_app`). */
   scope: z.enum(SCOPE_MODES).optional(),
+  /** The modes a task of this action may work in (task-modes spec §3); absent: none (D0). */
+  modes: z.array(z.string().regex(MODE_ID)).min(1).optional(),
+  /** How its task starts: one of `modes`, "recommend" (the default) or "ask". Only with `modes`. */
+  defaultMode: z.string().min(1).optional(),
 });
 /** A folder the agent may read but never change. */
 const referenceSchema = z.object({
@@ -62,6 +70,21 @@ const referenceSchema = z.object({
     }),
 });
 export type HarnessAction = z.output<typeof actionSchema>;
+/** A way the AI works inside a task (task-modes spec §3). The person picks it; the agent may recommend it. */
+const modeSchema = z.object({
+  label: text.max(80),
+  /** One line in the list of modes ("See all modes"). */
+  description: text.max(300).optional(),
+  /** The mode's brief: a file in the harness folder, filled like an action's prompt ({{language}}). */
+  brief: z.string().min(1),
+  /** The least tier the mode works well at; absent: any. */
+  minTier: z.enum(TIERS).optional(),
+  /** What the agent reads to recommend this mode; never shown to the person. */
+  recommend: text.max(400).optional(),
+  /** The person's knobs for this mode (harness-settings spec §6), drawn in the harness's Settings tab. */
+  settings: z.record(z.string().regex(SETTING_NAME), settingFieldSchema).optional(),
+});
+export type HarnessMode = z.output<typeof modeSchema>;
 const TOOL_NAME = /^[a-z][a-z0-9_]*$/;
 const blockSchema = z.custom<Block>(
   (b) => {
@@ -108,6 +131,8 @@ const manifestSchema = z.object({
   data: dataSchema,
   /** Knobs the person sets in a Settings tab of the harness's own (harness-settings spec). Absent: no tab (D0). */
   settings: settingsSchema.optional(),
+  /** Ways the AI works inside a task, by id (task-modes spec). Absent: none, and nothing changes (D0). */
+  modes: z.record(z.string().regex(MODE_ID), modeSchema).default({}),
   /** One line under the name on the home screen. */
   tagline: text.optional(),
   /** How translations of this harness's screens should sound, in English ("warm and informal, short sentences"). */
@@ -163,6 +188,39 @@ const manifestSchema = z.object({
       ctx.addIssue({ code: "custom", path: ["blocks", name, "saveTo"], message: `Collection "${b.saveTo.collection}" is not declared in data` });
     }
   }
+  // Modes (task-modes spec §3).
+  for (const [id, mode] of Object.entries(m.modes)) {
+    if (DEFAULT_MODE_WORDS.includes(id)) ctx.addIssue({ code: "custom", path: ["modes", id], message: `"${id}" is a defaultMode word: use another mode id` });
+    if (mode.settings === undefined) continue;
+    if (!m.settings) {
+      ctx.addIssue({ code: "custom", path: ["modes", id, "settings"], message: "Mode settings are drawn in the harness's Settings tab: declare settings with its tab" });
+    }
+    checkSettingFields(mode.settings, null, (path, message) => ctx.addIssue({ code: "custom", path: ["modes", id, "settings", ...path], message }));
+  }
+  for (const [id, a] of Object.entries(m.actions)) {
+    if (a.defaultMode !== undefined && !a.modes) {
+      ctx.addIssue({ code: "custom", path: ["actions", id, "defaultMode"], message: "Only an action with modes has a defaultMode" });
+    }
+    if (!a.modes) continue;
+    const listed = new Set<string>();
+    for (const mode of a.modes) {
+      if (!Object.hasOwn(m.modes, mode)) ctx.addIssue({ code: "custom", path: ["actions", id, "modes"], message: `Unknown mode "${mode}"` });
+      if (listed.has(mode)) ctx.addIssue({ code: "custom", path: ["actions", id, "modes"], message: `"${mode}" is listed twice` });
+      listed.add(mode);
+    }
+    if (a.defaultMode !== undefined && !DEFAULT_MODE_WORDS.includes(a.defaultMode) && !listed.has(a.defaultMode)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["actions", id, "defaultMode"],
+        message: `"${a.defaultMode}" is not one of this action's modes: use one of them, "recommend" or "ask"`,
+      });
+    }
+  }
+  // A Settings tab needs something to draw: its own fields or a mode's (harness-settings spec §3, §6).
+  const modeSettings = Object.values(m.modes).some((mode) => Object.keys(mode.settings ?? {}).length > 0);
+  if (m.settings && Object.keys(m.settings.fields).length === 0 && !modeSettings) {
+    ctx.addIssue({ code: "custom", path: ["settings", "fields"], message: "Declare at least one setting" });
+  }
 });
 
 export type Harness = z.output<typeof manifestSchema>;
@@ -195,6 +253,8 @@ export async function loadHarness(configPath: string, options: { root?: string }
   const loaded: LoadedHarness = { ...harness, root: options.root ? path.resolve(options.root) : path.dirname(absolute), configPath: absolute };
   // Every task brief must live inside the harness folder.
   for (const action of Object.values(loaded.actions)) resolveInHarness(loaded, action.prompt);
+  // So must every mode's brief (task-modes spec §3).
+  for (const mode of Object.values(loaded.modes)) resolveInHarness(loaded, mode.brief);
   return loaded;
 }
 

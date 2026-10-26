@@ -82,6 +82,13 @@ describe("manifest settings", () => {
     expect(issues(withField("tone", { ...tone, default: "loud" }))).toEqual(["settings.fields.tone.default: The default does not match the schema"]);
   });
 
+  it("refuses an undefined default, even when an optional or defaulted schema would take it", () => {
+    const { default: _omit, ...noDefault } = nickname;
+    expect(issues(withField("nickname", noDefault))).toHaveLength(1);
+    expect(issues(withField("nickname", { ...noDefault, schema: z.string().optional(), default: undefined }))).toEqual(["settings.fields.nickname.default: Give a default value"]);
+    expect(issues(withField("nickname", { ...noDefault, schema: z.string().default("x"), default: undefined }))).toEqual(["settings.fields.nickname.default: Give a default value"]);
+  });
+
   it("refuses a section that isn't declared, and a section declared twice", () => {
     expect(issues(withField("tone", { ...tone, section: "nope" }))).toEqual(['settings.fields.tone.section: Section "nope" is not declared in sections']);
     expect(issues({ ...declared, sections: [...declared.sections, { id: "help", label: "Again" }] })).toEqual(['settings.sections.2.id: Section "help" is declared twice']);

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { type Collection, collectionSchema } from "./data";
 import { inputFields } from "./input";
 
 /** The core's controls for a setting (harness-settings spec §3). */
@@ -89,7 +90,9 @@ export const settingsSchema = z
         issue(at("control"), `The ${f.control} control needs ${CONTROL_TYPES[f.control]} schema`);
         continue;
       }
-      if (!f.schema.safeParse(f.default).success) issue(at("default"), "The default does not match the schema");
+      // An optional or defaulted schema takes undefined; a setting still needs a value of its own.
+      if (f.default === undefined) issue(at("default"), "Give a default value");
+      else if (!f.schema.safeParse(f.default).success) issue(at("default"), "The default does not match the schema");
       if (f.options !== undefined) {
         if (!LABELLED.includes(f.control)) issue(at("options"), "Only a segmented, select or toggle control has options");
         else {
@@ -117,4 +120,128 @@ export type SettingField = HarnessSettings["fields"][string];
 export function agentText(agent: SettingField["agent"]): string | null {
   if (agent === undefined || agent === false) return null;
   return typeof agent === "string" ? agent : agent.text;
+}
+
+/** The reserved data collection that holds the person's settings (spec D2). */
+export const SETTINGS_COLLECTION = "settings";
+/** `check` warns when the settings' section of AGENTS.md is longer than this (spec §5 "Measuring"). */
+export const SETTINGS_TOKENS_WARN = 400;
+
+/**
+ * The `settings` collection: app-wide, one record, hidden from the agent (it gets sentences: D3). Its fields are
+ * optional: the record holds only what the person changed, and `settingsValues` fills the defaults on read.
+ */
+export function settingsCollection(settings: HarnessSettings): Collection {
+  const shape = Object.fromEntries(Object.entries(settings.fields).map(([name, f]) => [name, f.schema.optional()]));
+  return collectionSchema.parse({ scoped: false, single: true, schema: z.object(shape), agent: "none" });
+}
+
+/** Every collection the data store keeps: the harness's, plus `settings` when it declares settings (D0: `data` itself). */
+export function dataCollections(h: { data: Record<string, Collection>; settings?: HarnessSettings }): Record<string, Collection> {
+  return h.settings ? { ...h.data, [SETTINGS_COLLECTION]: settingsCollection(h.settings) } : h.data;
+}
+
+const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+
+/** Two setting values are the same: they are plain JSON values. */
+export const sameSetting = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b);
+
+/** Every field's value: the stored one when it is valid, else the default (a hand edit falls back field by field). */
+export function settingsValues(settings: HarnessSettings, stored: unknown): Record<string, unknown> {
+  const record = isRecord(stored) ? stored : {};
+  return Object.fromEntries(
+    Object.entries(settings.fields).map(([name, f]) => {
+      if (Object.hasOwn(record, name)) {
+        const parsed = f.schema.safeParse(record[name]);
+        if (parsed.success && parsed.data !== undefined) return [name, parsed.data];
+      }
+      return [name, structuredClone(f.default)];
+    }),
+  );
+}
+
+const shown = (v: unknown): string => (typeof v === "boolean" ? (v ? "on" : "off") : typeof v === "string" || typeof v === "number" ? String(v) : JSON.stringify(v));
+
+function labelOf(f: SettingField, value: unknown): string {
+  const key = String(value);
+  return f.options && Object.hasOwn(f.options, key) ? f.options[key] : shown(value);
+}
+
+/**
+ * The agent's sentence for one field (spec §5), or null: a UI-only field, or an `onlyWhenChanged` one at its default
+ * (unless `all`). Whitespace folds to single spaces: one sentence is one line of AGENTS.md.
+ */
+export function settingSentence(f: SettingField, value: unknown, opts: { all?: boolean } = {}): string | null {
+  const template = agentText(f.agent);
+  if (template === null) return null;
+  const onlyWhenChanged = typeof f.agent === "object" && f.agent.onlyWhenChanged === true;
+  if (onlyWhenChanged && !opts.all && sameSetting(value, f.default)) return null;
+  const filled = template.replace(SETTING_PLACEHOLDER, (_m, p: string) => (p === "value:label" ? labelOf(f, value) : shown(value)));
+  return filled.replace(/\s+/g, " ").trim() || null;
+}
+
+/** The sentences for AGENTS.md, in manifest order. */
+export function settingsSentences(settings: HarnessSettings, values: Record<string, unknown>, opts: { all?: boolean } = {}): string[] {
+  return Object.entries(settings.fields).flatMap(([name, f]) => {
+    const sentence = settingSentence(f, Object.hasOwn(values, name) ? values[name] : f.default, opts);
+    return sentence ? [sentence] : [];
+  });
+}
+
+/** The fields the agent reads (they have a sentence): their changes wait for the next task (D4). */
+export function agentSettings(settings: HarnessSettings): string[] {
+  return Object.entries(settings.fields)
+    .filter(([, f]) => agentText(f.agent) !== null)
+    .map(([name]) => name);
+}
+
+/** One field as the window draws it: plain data, sent with the app state. */
+export interface SettingFieldView {
+  name: string;
+  control: SettingControl;
+  label: string;
+  help?: string;
+  unit?: string;
+  section?: string;
+  advanced?: true;
+  default: unknown;
+  /** segmented and select: the values in order, with their labels. */
+  options?: { value: string; label: string }[];
+  /** number: value bounds. text: length bounds. */
+  min?: number;
+  max?: number;
+  /** The agent reads it: a change waits for the next task. */
+  agent?: true;
+}
+
+/** What the harness's Settings tab draws (spec §4). */
+export interface SettingsView {
+  tab: string;
+  sections: { id: string; label: string }[];
+  fields: SettingFieldView[];
+}
+
+export function settingsView(settings: HarnessSettings): SettingsView {
+  return {
+    tab: settings.tab,
+    sections: settings.sections.map((s) => ({ id: s.id, label: s.label })),
+    fields: Object.entries(settings.fields).map(([name, f]): SettingFieldView => {
+      const inferred = inferSetting(f.schema);
+      const choice = f.control === "segmented" || f.control === "select";
+      return {
+        name,
+        control: f.control,
+        label: f.label,
+        ...(f.help ? { help: f.help } : {}),
+        ...(f.unit ? { unit: f.unit } : {}),
+        ...(f.section ? { section: f.section } : {}),
+        ...(f.advanced ? { advanced: true as const } : {}),
+        default: structuredClone(f.default),
+        ...(choice ? { options: (inferred.options ?? []).map((value) => ({ value, label: labelOf(f, value) })) } : {}),
+        ...(inferred.min !== undefined ? { min: inferred.min } : {}),
+        ...(inferred.max !== undefined ? { max: inferred.max } : {}),
+        ...(agentText(f.agent) !== null ? { agent: true as const } : {}),
+      };
+    }),
+  };
 }

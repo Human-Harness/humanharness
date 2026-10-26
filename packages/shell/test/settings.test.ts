@@ -5,6 +5,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { SETTINGS_COLLECTION, dataCollections, settingsSchema, z } from "@humanharness/harness-sdk";
 import type { SettingsState } from "@humanharness/ui/client";
 import { APP_SCOPE, DataStore, runDataRequest } from "@humanharness/workspace";
+import { DataUnavailable } from "../src/main/data-requests";
 import { SettingsController } from "../src/main/settings";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-settings-"));
@@ -97,6 +98,35 @@ describe("SettingsController", () => {
     expect((await t.ctl.state()).values.tone).toBe("patient");
     const r = await t.ctl.set("tone", "demanding");
     expect(r).toMatchObject({ ok: false, message: expect.stringContaining("changed by hand") });
+  });
+
+  it("a harness update that narrows a field never locks the person out: that field falls back, the rest stay", async () => {
+    const t = setup();
+    fs.mkdirSync(path.dirname(t.file), { recursive: true });
+    fs.writeFileSync(t.file, JSON.stringify({ tone: "removed-value", nickname: "x" }));
+    expect((await t.ctl.state()).values).toEqual({ tone: "patient", hintAfter: 2, nickname: "x" });
+    expect(await t.ctl.set("hintAfter", 4)).toMatchObject({ ok: true, state: { values: { tone: "patient", hintAfter: 4, nickname: "x" } } });
+    expect(t.stored()).toEqual({ nickname: "x", hintAfter: 4 });
+    fs.writeFileSync(t.file, JSON.stringify({ tone: "removed-value" }));
+    expect(await t.ctl.reset()).toMatchObject({ ok: true });
+    expect(fs.existsSync(t.file)).toBe(false);
+  });
+
+  it("a write refused because turns are blocked says why", async () => {
+    const base = fs.mkdtempSync(path.join(root, "s-"));
+    const store = new DataStore(base, dataCollections({ data: {}, settings }));
+    const ctl = new SettingsController({
+      settings,
+      store: async () => store,
+      write: () => Promise.reject(new DataUnavailable("Going back to an earlier point")),
+      taskOpen: async () => false,
+      whenNoTask: async () => true,
+      refresh: async () => true,
+      changed: () => undefined,
+      log: () => undefined,
+    });
+    expect(await ctl.set("tone", "demanding")).toEqual({ ok: false, message: "Going back to an earlier point" });
+    expect(await ctl.reset()).toEqual({ ok: false, message: "Going back to an earlier point" });
   });
 
   it("reset deletes the stored record", async () => {

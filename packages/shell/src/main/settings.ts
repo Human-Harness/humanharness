@@ -1,6 +1,7 @@
 import { type HarnessSettings, SETTINGS_COLLECTION, agentSettings, sameSetting, settingsSentences, settingsValues } from "@humanharness/harness-sdk";
 import type { SettingsResult, SettingsState } from "@humanharness/ui/client";
 import { APP_SCOPE, type DataContext, DataError, type DataRequest, type DataStore } from "@humanharness/workspace";
+import { DataUnavailable } from "./data-requests";
 
 /** The person, app-wide: settings belong to no scope (spec D2). */
 const PERSON: DataContext = { who: "person", scope: APP_SCOPE };
@@ -9,7 +10,10 @@ export interface SettingsDeps {
   settings: HarnessSettings;
   /** The configured folder's data store; null before the app is set up. */
   store(): Promise<DataStore | null>;
-  /** Writes as the person: `hh:data`'s handler, with its checks and its `Data: settings` history commit (open task's trailer). */
+  /**
+   * Writes as the person: `hh:data`'s handler, with its checks and its `Data: settings` history commit (open task's
+   * trailer). A `DataError` or `DataUnavailable` it throws is shown; anything else is logged.
+   */
   write(request: DataRequest): Promise<unknown>;
   /** A task is open: its session keeps the AGENTS.md it started with. */
   taskOpen(): Promise<boolean>;
@@ -141,7 +145,8 @@ export class SettingsController {
     try {
       await this.d.write(request);
     } catch (err) {
-      if (err instanceof DataError) return { ok: false, message: err.message };
+      // The store's refusal, or why writes can't run now (a restore, a folder move, an engine change): both say why.
+      if (err instanceof DataError || err instanceof DataUnavailable) return { ok: false, message: err.message };
       this.log("Could not save the settings", err);
       return { ok: false };
     }

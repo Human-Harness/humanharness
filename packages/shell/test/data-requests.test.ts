@@ -7,7 +7,7 @@ import { dataServerSpec, devLauncher, openRpc } from "@humanharness/blocks";
 import { callMcpTool } from "@humanharness/fake-agent";
 import { dataSchema, loadHarness, z } from "@humanharness/harness-sdk";
 import { DataError, DataStore, type HistoryTrailer, dataFile } from "@humanharness/workspace";
-import { type PersonDataDeps, agentDataRequest, personDataRequests, saveAnswerRecords } from "../src/main/data-requests";
+import { DataUnavailable, type PersonDataDeps, agentDataRequest, personDataRequests, saveAnswerRecords } from "../src/main/data-requests";
 
 const STUDY = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../fake-agent/fixtures/data-harness/harness.config.ts");
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
@@ -65,6 +65,8 @@ describe("personDataRequests", () => {
 
   it("refuses writes while turns are blocked, and a bad scope", async () => {
     const t = setup({ blocked: "A restore is running" });
+    // A DataUnavailable: its reason is safe to show (the settings tab shows it).
+    await expect(t.run({ op: "put", collection: "concepts", record: { id: "a", name: "A" } }, undefined)).rejects.toBeInstanceOf(DataUnavailable);
     await expect(t.run({ op: "put", collection: "concepts", record: { id: "a", name: "A" } }, undefined)).rejects.toThrow(/restore/);
     expect(await t.run({ op: "query", collection: "concepts" }, undefined)).toMatchObject({ total: 0 });
     await expect(setup().run({ op: "get", collection: "concepts", key: "a" }, { scope: "../x" })).rejects.toThrow(/scope/);

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
-import { type Collection, type DataKey, type DataRecord, type DataWho, type RulesContext, z } from "@humanharness/harness-sdk";
+import { type Collection, type DataKey, type DataRecord, type DataWho, type RulesContext, SETTINGS_COLLECTION, z } from "@humanharness/harness-sdk";
 import { APP_SCOPE, dataFile, dataMetaFile, dataPath, isScopeDir } from "./layout";
 
 export type DataErrorCode = "unknown-collection" | "refused" | "invalid" | "not-found" | "broken-file" | "no-scope";
@@ -75,6 +75,17 @@ function byKey(key: string) {
     const t = String(y);
     return s < t ? -1 : s > t ? 1 : 0;
   };
+}
+
+/**
+ * The reserved `settings` record, read field by field (harness-settings spec D2): its fields are all optional, so a
+ * stored value its field no longer takes (a harness update narrowed it, or a hand edit) is dropped and the default
+ * applies, instead of the whole record failing and every later change being refused. Writes are still checked whole.
+ */
+function validFields(c: Collection, item: unknown): unknown {
+  if (!isObject(item)) return item;
+  const shape = c.schema.shape;
+  return Object.fromEntries(Object.entries(item).filter(([k, v]) => Object.hasOwn(shape, k) && shape[k].safeParse(v).success));
 }
 
 async function writeAtomic(file: string, text: string): Promise<void> {
@@ -365,7 +376,7 @@ export class DataStore {
     const seen = new Set<DataKey>();
     let invalid = 0;
     for (const item of list) {
-      const parsed = c.schema.safeParse(item);
+      const parsed = c.schema.safeParse(name === SETTINGS_COLLECTION && c.single ? validFields(c, item) : item);
       if (!parsed.success) {
         invalid++;
         continue;

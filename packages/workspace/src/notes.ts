@@ -10,6 +10,8 @@ export interface NoteMeta {
   action?: string;
   date: string;
   engine: string;
+  /** The modes the task used, in first-use order (task-modes spec §6). Absent without modes (D0). */
+  modes?: string[];
 }
 
 export interface Note extends SavedNote, NoteMeta {
@@ -53,6 +55,7 @@ export function renderNote(note: SavedNote, meta: NoteMeta): string {
     ...(meta.action ? [`action: ${JSON.stringify(meta.action)}`] : []),
     `date: ${JSON.stringify(meta.date)}`,
     `engine: ${JSON.stringify(meta.engine)}`,
+    ...(meta.modes && meta.modes.length > 0 ? [`modes: ${JSON.stringify(meta.modes)}`] : []),
     `files: ${JSON.stringify(note.files)}`,
     "---",
     ...section("Summary", note.summary),

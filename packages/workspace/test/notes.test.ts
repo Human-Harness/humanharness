@@ -49,6 +49,13 @@ describe("writeNote", () => {
     expect(parsed?.action).toBeUndefined();
   });
 
+  it("writes the modes a task used into the front matter; none, no line (task-modes D0)", () => {
+    const text = renderNote(note, { action: "study", date: "d", engine: "claude", modes: ["socratic", "feynman"] });
+    expect(text).toContain('engine: "claude"\nmodes: ["socratic","feynman"]\nfiles: ');
+    expect(renderNote(note, { date: "d", engine: "claude" })).not.toContain("modes:");
+    expect(parseNote("x", text)?.summary).toEqual(note.summary);
+  });
+
   it("reads a hand-edited note: BOM, plain YAML lists and quoted values", () => {
     const text = [
       "\uFEFF---",

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import type { ModelProfile } from "@humanharness/engines";
-import { BLOCK_ID } from "@humanharness/harness-sdk";
+import { BLOCK_ID, MODE_ID } from "@humanharness/harness-sdk";
 import type { Session } from "@humanharness/runtime";
 import type { ActionStatus, TaskStatus } from "@humanharness/ui/client";
 import { MAIN_SCOPE, isScopeDir, isScopeId, tasksFile } from "@humanharness/workspace";
@@ -48,6 +48,12 @@ export interface CurrentTask {
   scope?: string;
   /** The question the task waits on: the last input block shown (spec D5). Absent in a harness with none (D0). */
   pendingInput?: PendingInput;
+  /** The mode the task works in now (task-modes spec §5.5). Absent: none picked yet, or a harness without modes (D0). */
+  mode?: string;
+  /** Every mode the task used, in first-use order: the closing note lists them. */
+  modes?: string[];
+  /** The task runs below its mode's `minTier`: the person chose to continue (spec §5.3). */
+  belowMinTier?: true;
 }
 
 /** `<folder>/.harness/tasks.json`: the current task and how each action ended. Replaces the runtime's session.json. */
@@ -74,6 +80,9 @@ export function keptQuestion(text: string): { question: string; questionCut?: tr
   return text.length > QUESTION_MAX ? { question: text.slice(0, QUESTION_MAX), questionCut: true } : { question: text };
 }
 
+/** How many modes tasks.json keeps for a task: a bound on a hand-edited file. */
+export const MODES_MAX = 50;
+
 const ACTION_STATUSES: readonly string[] = ["done", "unsaved", "unfinished"];
 const TASK_STATUSES: readonly string[] = ["running", "waiting", "closing", "checkpoint"];
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
@@ -99,13 +108,17 @@ function cleanPending(p: unknown, taskId: string): PendingInput | undefined {
 }
 
 /** Built field by field: nothing from the file reaches the engine unchecked. */
-function cleanCurrent(c: unknown): CurrentTask | null {
+function cleanCurrent(c: unknown, known?: ReadonlySet<string>): CurrentTask | null {
   if (!isObject(c) || typeof c.id !== "string" || !TASK_STATUSES.includes(c.status as string)) return null;
   const session = cleanSession(c.session);
   const profile = cleanProfile(c.profile);
   const pending = cleanPending(c.pendingInput, c.id);
   const tokens = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v) && v >= 0;
   const ctx = isObject(c.context) && tokens(c.context.used) ? { used: c.context.used, ...(tokens(c.context.size) ? { size: c.context.size } : {}) } : undefined;
+  // A mode the manifest no longer declares is dropped (task-modes spec §6); `known` absent: the shape alone.
+  const isMode = (v: unknown): v is string => typeof v === "string" && MODE_ID.test(v) && (!known || known.has(v));
+  const mode = isMode(c.mode) ? c.mode : undefined;
+  const modes = Array.isArray(c.modes) ? [...new Set(c.modes.filter(isMode))].slice(0, MODES_MAX) : [];
   return {
     id: c.id,
     ...(typeof c.action === "string" ? { action: c.action } : {}),
@@ -124,6 +137,9 @@ function cleanCurrent(c: unknown): CurrentTask | null {
     ...(c.resume === true ? { resume: true } : {}),
     ...(isScopeDir(c.scope) ? { scope: c.scope } : {}),
     ...(pending ? { pendingInput: pending } : {}),
+    ...(mode ? { mode } : {}),
+    ...(modes.length > 0 ? { modes } : {}),
+    ...(mode && c.belowMinTier === true ? { belowMinTier: true as const } : {}),
   };
 }
 
@@ -138,7 +154,7 @@ function statuses(raw: unknown): Record<string, ActionStatus> {
 }
 
 /** Keeps what has the right shape; anything else reads as "nothing". */
-function clean(raw: unknown): TasksFile {
+function clean(raw: unknown, known?: ReadonlySet<string>): TasksFile {
   if (!isObject(raw) || raw.version !== 1) return emptyTasks();
   let scopes: Record<string, Record<string, ActionStatus>> | undefined;
   if (isObject(raw.scopes)) {
@@ -148,7 +164,7 @@ function clean(raw: unknown): TasksFile {
   return {
     version: 1,
     ...(typeof raw.engine === "string" ? { engine: raw.engine } : {}),
-    current: cleanCurrent(raw.current),
+    current: cleanCurrent(raw.current, known),
     actions: statuses(raw.actions),
     ...(isScopeId(raw.open) ? { open: raw.open } : {}),
     ...(scopes ? { scopes } : {}),
@@ -184,9 +200,12 @@ export function interrupted(state: TasksFile, outcome: ActionStatus = "unfinishe
 
 export class TaskStore {
   readonly file: string;
+  /** The manifest's mode ids, when given: a mode tasks.json names that isn't one of them is dropped. */
+  private readonly known?: ReadonlySet<string>;
 
-  constructor(folder: string) {
+  constructor(folder: string, opts: { modes?: readonly string[] } = {}) {
     this.file = tasksFile(folder);
+    if (opts.modes) this.known = new Set(opts.modes);
   }
 
   /** A missing file reads as empty; one that isn't JSON is set aside as `tasks.json.corrupt-<time>`; other errors are thrown. */
@@ -205,7 +224,7 @@ export class TaskStore {
       await fs.rename(this.file, `${this.file}.corrupt-${Date.now()}`);
       return emptyTasks();
     }
-    return clean(raw);
+    return clean(raw, this.known);
   }
 
   /** Atomic: temp file + rename. */

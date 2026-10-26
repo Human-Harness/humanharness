@@ -1,3 +1,4 @@
+import type { InputSpec } from "@humanharness/harness-sdk";
 import { describe, expect, it } from "vitest";
 import { UsageTally, formatReport } from "../src/report";
 import { TerminalView, errorMessage } from "../src/terminal";
@@ -32,6 +33,26 @@ describe("TerminalView", () => {
   it("reads error messages from the core's English strings", () => {
     expect(errorMessage("engine-not-installed", "Codex")).toBe("I can't find Codex on this computer.");
     expect(errorMessage("something-new", "Codex")).toBe("something-new");
+  });
+});
+
+describe("TerminalView: input blocks", () => {
+  const spec: InputSpec = { fields: [{ name: "why", kind: "longText", label: { es: "Por qué", en: "Why" }, optional: false }], skippable: true };
+
+  it("shows an input block's data, then what to answer, and keeps its data by id", () => {
+    const out = memoryStream();
+    const view = new TerminalView(out.stream, "Claude", false, { commit_answer: spec }, "es");
+    view.event({ type: "block", name: "commit_answer", data: { question: "¿Quién?" }, id: "t1:0:0" });
+    expect(out.text()).toContain("  [commit_answer]");
+    expect(out.text()).toContain("    Answer with a: Por qué (longText) · can be skipped");
+    expect(view.shown.get("t1:0:0")).toEqual({ question: "¿Quién?" });
+  });
+
+  it("shows annotate marks, one per line", () => {
+    const out = memoryStream();
+    const view = new TerminalView(out.stream, "Claude");
+    view.event({ type: "block", name: "annotate", data: { ref: "last", marks: [{ quote: "two halves", kind: "ok", comment: "Right." }, { quote: "pizza", kind: "gap" }] } });
+    expect(out.text()).toBe('  [annotate]\n    ✓ "two halves" — Right.\n    … "pizza"\n');
   });
 });
 

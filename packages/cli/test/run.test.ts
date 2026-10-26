@@ -700,6 +700,34 @@ describe("run: task modes", () => {
     expect(chat.filter((e) => e.role === "user" && e.mode !== undefined).map((e) => e.text)).toEqual(["Switched to Feynman", "Switched to Worked examples"]);
   });
 
+  it("`m` is a pick only before a single mode id; a refused or same pick keeps the choices", { timeout: 60_000 }, async () => {
+    const out = memoryStream();
+    const prompts = path.join(root, "coach-m-prompts.jsonl");
+    const script: ClaudeScript = {
+      steps: [...claudeTextLines("Done."), result],
+      turns: [
+        { match: "save_note", steps: [ui("save_note", { title: "Halves", summary: ["x"], decisions: [], files: [], open: [] }), result] },
+        { match: "# Task: study", steps: [...claudeTextLines("Here we go."), ui("show_choices", { options: [{ label: "Keep going" }] }), result] },
+      ],
+    };
+    await runTask({
+      harnessDir: coach,
+      action: "study",
+      engine: "claude",
+      folder: path.join(root, "coach-m"),
+      mode: "socratic",
+      input: lines("m socratic\nm nope\n1\nm tell me more\nq\n"),
+      output: out.stream,
+      engineCommand: { command: fakeClaudeCommand(), env: { HH_FAKE_SCRIPT: writeScript(root, script), HH_FAKE_PROMPTS: prompts } },
+    });
+    const text = out.text();
+    expect(text).toContain("Already in Socratic.");
+    expect(text).toContain("Not switched (unknown). Modes: socratic, feynman, worked.");
+    const sent = readJsonl(prompts).map((p) => (p as { prompt: string }).prompt);
+    expect(sent.slice(1, 3)).toEqual(["Keep going", "m tell me more"]);
+    expect(sent).toHaveLength(4);
+  });
+
   it("--mode starts in that mode, its brief and default settings after the action's", { timeout: 60_000 }, async () => {
     const r = run("coach-mode", "q\n", { mode: "socratic" });
     await r.done;

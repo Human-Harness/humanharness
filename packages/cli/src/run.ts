@@ -486,8 +486,9 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
         }
         // `m <id>`: the person picks a mode (task-modes spec §5). A run can't change its tier mid-task, so a mode that
         // asks for more says so and switches anyway. The chat keeps the switch's short line; replay sees typed text.
-        if (modeIds.length > 0 && line.startsWith("m ")) {
-          const mode = line.slice(2).trim();
+        // Only `m` and one mode id: any other line starting with "m " is a follow-up like any other.
+        const mode = line.slice(2).trim();
+        if (modeIds.length > 0 && line.startsWith("m ") && MODE_ID.test(mode)) {
           const label = Object.hasOwn(harness.modes, mode) ? harness.modes[mode].label : mode;
           recorder?.reply("*");
           let { accepted, done } = tasks.chooseMode(mode);
@@ -503,6 +504,8 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
           }
           if (!r.ok) out.write(`\nNot switched (${r.reason}). Modes: ${modeIds.join(", ")}.\n`);
           else if (r.switched === "same") out.write(`\nAlready in ${label}.\n`);
+          // No turn ran: the choices on screen still stand.
+          if (!r.ok || r.switched === "same") view.choices = options;
           await done;
           continue;
         }

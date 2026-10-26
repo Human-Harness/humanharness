@@ -70,7 +70,7 @@ export class TerminalView {
       this.newline();
       this.write("\n");
       this.line(`  Recommended mode: ${parsed.data.recommended}`);
-      for (const reason of parsed.data.reasons) this.line(`    - ${plain(reason)}`);
+      for (const reason of parsed.data.reasons.map(plain).filter(Boolean)) this.line(`    - ${reason}`);
       const alternatives = (parsed.data.alternatives ?? []).filter((a) => known(a.mode));
       if (alternatives.length > 0) {
         this.line("  Or:");

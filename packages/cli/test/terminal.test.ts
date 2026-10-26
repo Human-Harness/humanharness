@@ -61,6 +61,13 @@ describe("TerminalView", () => {
     expect(out.text()).not.toContain("Recommended mode: socratic\n    - One key idea.");
   });
 
+  it("drops a reason left empty once its control characters go", () => {
+    const out = memoryStream();
+    const view = new TerminalView(out.stream, "Claude", false, {});
+    view.event({ type: "block", name: "recommend_mode", data: { recommended: "socratic", reasons: ["\x07\n ", "One key idea."] } });
+    expect(out.text()).toBe("\n  Recommended mode: socratic\n    - One key idea.\n  Type m <mode> to pick one.\n");
+  });
+
   it("reads error messages from the core's English strings", () => {
     expect(errorMessage("engine-not-installed", "Codex")).toBe("I can't find Codex on this computer.");
     expect(errorMessage("something-new", "Codex")).toBe("something-new");

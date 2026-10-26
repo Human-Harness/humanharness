@@ -33,7 +33,7 @@ export function SettingsSheet({
   onTab: (tab: SettingsTab) => void;
   onChange: (state: AppState) => void;
   onClose: () => void;
-  /** Opens the setup flow (the empty state of Motor, Modelos and Uso before the app is configured). */
+  /** Opens the setup flow (the empty state of the harness's tab, Engine, Models and Usage before the app is configured). */
   onSetup: () => void;
   /** The app's folder move (HarnessApp), so a move outlives the sheet; without it the sheet keeps its own. */
   move?: FolderMove;
@@ -306,7 +306,7 @@ function GeneralTab({ client, state, onChange, move }: { client: HarnessClient; 
   );
 }
 
-/** Motor, Modelos and Uso before the app is configured: they all lead to the setup flow. */
+/** The harness's tab, Engine, Models and Usage before the app is configured: they all lead to the setup flow. */
 function NotConfigured({ state, onSetup }: { state: AppState; onSetup: () => void }) {
   const { t } = useTranslation();
   const name = state.harness.name;

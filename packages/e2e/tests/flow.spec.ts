@@ -61,6 +61,7 @@ test("a topic answered with blocks, then next: the note is saved and the next to
     expect(agents).not.toContain("show_annotate");
     // Harness settings D0: the demo declares none, so AGENTS.md has no settings section and nothing is stored.
     expect(agents).not.toContain("### How to work with this person");
+    expect(fs.existsSync(path.join(s.folder, ".harness", "data", "_app", "settings.json"))).toBe(false);
     expect(readTasks(s.folder).current).not.toHaveProperty("pendingInput");
     const chatLines = readJsonl<{ blocks?: Record<string, unknown>[] }>(path.join(s.folder, ".harness", "chats", "main.jsonl"));
     const shownBlocks = chatLines.flatMap((e) => e.blocks ?? []);

@@ -48,7 +48,7 @@ When the task closes, `run` prints the note's path if the closing turn wrote it.
 
 ### Settings
 
-`--set name=value` (repeatable) stores harness settings in the run folder before the task, as the window would, and `run` prints them (`Settings: name=value, …`). Each value is checked as the typed text first, then as JSON (`4`, `true`). An unknown name, a value its schema refuses, or `--set` on a harness without settings stops the run with exit 2 before the engine or the folder. Without `--set`, `run` is unchanged. See `docs/architecture/settings.md`.
+`--set name=value` (repeatable) stores harness settings in the run folder before the task, as the window would, and `run` prints them (`Settings: name=value, …`). Each value is checked as the typed text first, then as JSON (`4`, `true`). An unknown name, a value its schema refuses, or `--set` on a harness without settings stops the run with exit 2 before the engine or the folder. The run folder is throwaway, so these values are stored without a history commit of their own. Without `--set`, `run` is unchanged. See `docs/architecture/settings.md`.
 
 ## run's report
 

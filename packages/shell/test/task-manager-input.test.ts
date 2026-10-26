@@ -301,3 +301,96 @@ describe("TaskManager.respond", () => {
     expect(t.turns[0].options).toMatchObject({ chat: "fracciones", scope: "fracciones" });
   });
 });
+
+describe("TaskManager.respond: saveTo", () => {
+  const cards = defineBlock({
+    description: "Cards.",
+    visible: true,
+    schema: z.object({ prompt: z.string() }),
+    input: z.object({ cards: z.array(z.object({ front: z.string(), back: z.string() })) }),
+    skippable: true,
+    saveTo: { collection: "flashcards", records: (v) => v.cards.map((c) => ({ id: c.front, ...c })) },
+    example: { prompt: "p" },
+  }) as InputBlock;
+  const onSummary = (scope?: string): TasksFile => ({
+    ...emptyTasks(),
+    ...(scope ? { open: scope } : {}),
+    current: {
+      id: "t1",
+      action: "practice",
+      status: "waiting",
+      startedAt: "",
+      turns: 1,
+      ...(scope ? { scope } : {}),
+      pendingInput: { blockId: "t1:0:0", block: "summary", shownAt: NOW },
+    },
+  });
+
+  it("writes the answer's records as the person, in the task's scope, then takes it", async () => {
+    for (const scope of [undefined, "fracciones"]) {
+      const saved: unknown[] = [];
+      const t = setup({
+        state: onSummary(scope),
+        scoped: scope !== undefined,
+        inputs: { summary: cards },
+        saveAnswer: async (collection, records, scope) => void saved.push({ collection, records, scope }),
+      });
+      const { accepted, done } = t.manager.respond("t1:0:0", { cards: [{ front: "2+2", back: "4" }] });
+      expect((await accepted).ok).toBe(true);
+      await done;
+      expect(saved).toEqual([{ collection: "flashcards", records: [{ id: "2+2", front: "2+2", back: "4" }], scope: scope ?? "main" }]);
+      expect(t.turns).toHaveLength(1);
+    }
+  });
+
+  it("a refused write takes nothing: no turn, no mark, the question stays open", async () => {
+    const t = setup({
+      state: onSummary(),
+      inputs: { summary: cards },
+      saveAnswer: async () => {
+        throw new Error('Not a valid "flashcards" record: back: Too small');
+      },
+    });
+    const { accepted, done } = t.manager.respond("t1:0:0", { cards: [{ front: "2+2", back: "" }] });
+    expect(await accepted).toEqual({ ok: false, reason: "refused", errors: [{ path: "", message: 'Not a valid "flashcards" record: back: Too small' }] });
+    await done;
+    expect(t.turns).toEqual([]);
+    expect(t.marked).toEqual([]);
+    expect(t.emitted).toEqual([]);
+    expect(t.state().current?.pendingInput?.blockId).toBe("t1:0:0");
+  });
+
+  it("a records() that throws or gives no list is refused, with nothing written and the question open", async () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      for (const records of [
+        () => {
+          throw new Error("no cards");
+        },
+        () => "nope" as never,
+      ]) {
+        const broken = { ...cards, saveTo: { collection: "flashcards", records } } as InputBlock;
+        const saved: unknown[] = [];
+        const t = setup({ state: onSummary(), inputs: { summary: broken }, saveAnswer: async (...args) => void saved.push(args) });
+        const { accepted, done } = t.manager.respond("t1:0:0", { cards: [] });
+        expect(await accepted).toMatchObject({ ok: false, reason: "refused", errors: [{ path: "" }] });
+        await done;
+        expect(saved).toEqual([]);
+        expect(t.turns).toEqual([]);
+        expect(t.marked).toEqual([]);
+        expect(t.state().current?.pendingInput?.blockId).toBe("t1:0:0");
+      }
+    } finally {
+      errors.mockRestore();
+    }
+  });
+
+  it("a skip saves nothing", async () => {
+    const saved: unknown[] = [];
+    const t = setup({ state: onSummary(), inputs: { summary: cards }, saveAnswer: async (...args) => void saved.push(args) });
+    const { accepted, done } = t.manager.respond("t1:0:0", { skipped: true });
+    expect((await accepted).ok).toBe(true);
+    await done;
+    expect(saved).toEqual([]);
+  });
+});

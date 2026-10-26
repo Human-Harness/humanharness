@@ -7,7 +7,7 @@ import { dataServerSpec, devLauncher, openRpc } from "@humanharness/blocks";
 import { callMcpTool } from "@humanharness/fake-agent";
 import { dataSchema, loadHarness, z } from "@humanharness/harness-sdk";
 import { DataError, DataStore, type HistoryTrailer, dataFile } from "@humanharness/workspace";
-import { type PersonDataDeps, agentDataRequest, personDataRequests } from "../src/main/data-requests";
+import { type PersonDataDeps, agentDataRequest, personDataRequests, saveAnswerRecords } from "../src/main/data-requests";
 
 const STUDY = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../fake-agent/fixtures/data-harness/harness.config.ts");
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
@@ -100,6 +100,32 @@ describe("personDataRequests", () => {
       { message: "Data: concepts", files: ["concepts"] },
       { message: "Data: profile", files: ["concepts", "profile"] },
     ]);
+  });
+});
+
+describe("saveAnswerRecords", () => {
+  it("writes all the records as the person in the given scope, or none with the store's refusal", async () => {
+    const t = setup();
+    const store = async () => t.store;
+    await saveAnswerRecords(store, "concepts", [{ id: "a", name: "A" }, { id: "b", name: "B" }], "fracciones");
+    expect(await t.store.query("concepts", {}, { who: "person", scope: "fracciones" })).toMatchObject({ total: 2 });
+    const refused = saveAnswerRecords(store, "concepts", [{ id: "c", name: "C" }, { id: "d" }], "fracciones");
+    await expect(refused).rejects.toBeInstanceOf(DataError);
+    expect(await t.store.get("concepts", "c", { who: "person", scope: "fracciones" })).toBeNull();
+    await expect(saveAnswerRecords(async () => null, "concepts", [], "fracciones")).rejects.toThrow("The app is not set up yet");
+  });
+
+  it("tells the person nothing about any other failure", async () => {
+    const broken = { putMany: () => Promise.reject(new Error("EACCES: /Users/someone/secret/.harness/data")) } as unknown as DataStore;
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const failure = saveAnswerRecords(async () => broken, "concepts", [{ id: "a", name: "A" }], "fracciones");
+      await expect(failure).rejects.toThrow("Something went wrong with the data");
+      await expect(failure).rejects.not.toThrow(/secret/);
+      expect(error).toHaveBeenCalled();
+    } finally {
+      error.mockRestore();
+    }
   });
 });
 

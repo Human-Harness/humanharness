@@ -70,7 +70,26 @@ export function personDataRequests(d: PersonDataDeps): (request: unknown, option
   };
 }
 
-/** The agent's request can't run now; its message is safe to show the agent. */
+/**
+ * An answer's records (input-blocks spec §6 `saveTo`): written as the person, in the task's `scope`, all or none.
+ * The write needs no commit of its own: the follow-up's "Before message" commit records it under the task's trailer.
+ *
+ * Its error message is shown to the person: a refusal (DataError) says why; any other failure is logged and the
+ * person gets a plain message, so no file path reaches the window.
+ */
+export async function saveAnswerRecords(store: () => Promise<DataStore | null>, collection: string, records: Record<string, unknown>[], scope: string): Promise<void> {
+  try {
+    const s = await store();
+    if (!s) throw new Unavailable("The app is not set up yet");
+    await s.putMany(collection, records, { who: "person", scope });
+  } catch (err) {
+    if (err instanceof DataError || err instanceof Unavailable) throw err;
+    console.error("The answer's records could not be saved", err);
+    throw new Error("Something went wrong with the data");
+  }
+}
+
+/** The request can't run now; its message is safe to show. */
 class Unavailable extends Error {}
 
 export interface AgentDataDeps {

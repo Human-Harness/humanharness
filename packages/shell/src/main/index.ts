@@ -50,7 +50,7 @@ import {
 import { imageDataUrl } from "./assets";
 import { ChatLog } from "./chat-log";
 import { ConfigStore, historyDir } from "./config";
-import { agentDataRequest, personDataRequests } from "./data-requests";
+import { agentDataRequest, personDataRequests, saveAnswerRecords } from "./data-requests";
 import { testPrompt } from "./engine-check";
 import { createCommandDeps } from "./command-deps";
 import { cliCommand, engineCommand, loginShellPath } from "./engine-command";
@@ -560,6 +560,17 @@ const tasks = new TaskManager({
     const c = await validConfig();
     return c ? new ChatLog(baseOf(c), c.engineId, chat).markAnswered(answer) : false;
   },
+  // As the person, through the data store's checks (spec §6); the write goes out with the follow-up's commit.
+  saveAnswer: (collection, records, scope) =>
+    saveAnswerRecords(
+      async () => {
+        const c = await validConfig();
+        return c ? dataStoreFor(baseOf(c)) : null;
+      },
+      collection,
+      records,
+      scope,
+    ),
   // Spec §4.4: only a harness with a collection that goes into the context gets the hook (D2).
   // A getter, because the harness is loaded after this object is built.
   get dataContext() {

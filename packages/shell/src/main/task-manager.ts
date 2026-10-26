@@ -12,6 +12,7 @@ import {
   type ScopeMode,
   answerDisplay,
   answerMessage,
+  answerRecords,
   parseAnswer,
   saveNoteSchema,
 } from "@humanharness/harness-sdk";
@@ -513,8 +514,9 @@ export class TaskManager {
 
   /**
    * Checks, in order: the question is the waiting task's open one; the answer is valid; the checkpoint runs if due
-   * (before anything is taken, spec §6). Then the question closes, the chat marks the answer, the window gets the
-   * line, and the answer goes to the agent as a follow-up. `askNow` then sees `checkpointed` and runs no second one.
+   * (before anything is taken, spec §6); a `saveTo` block's records are written (a refusal takes nothing). Then the
+   * question closes, the chat marks the answer, the window gets the line, and the answer goes to the agent as a
+   * follow-up. `askNow` then sees `checkpointed` and runs no second one.
    */
   private async respondNow(blockId: string, raw: unknown, take: (r: RespondResult) => void): Promise<void> {
     const refuse = (reason: Exclude<RespondResult, { ok: true }>["reason"], errors: InputIssue[] = []) => take({ ok: false, reason, errors });
@@ -533,6 +535,20 @@ export class TaskManager {
     }
     // A Stop so far takes nothing: the question stays open.
     if (this.cancelRequested) return refuse("stopped");
+    // Kept before it is taken (spec §6): a refusal leaves the question open, with nothing written. The write needs
+    // no commit of its own: the follow-up's "Before message" commit records it under the task's trailer.
+    if (block.saveTo) {
+      try {
+        const records = answerRecords(pending.block, block, parsed.value);
+        if (records.length > 0) {
+          if (!this.d.saveAnswer) throw new Error("Answers can't be saved here");
+          await this.d.saveAnswer(block.saveTo.collection, records, scopeOfTask(c));
+        }
+      } catch (err) {
+        console.error(`The answer to "${pending.block}" was not saved`, err);
+        return refuse("refused", [{ path: "", message: err instanceof Error ? err.message : String(err) }]);
+      }
+    }
     const language = await this.d.language();
     const display = answerDisplay(pending.block, block, parsed.value, language);
     const answer: BlockAnswer = { blockId, value: parsed.value, answeredAt: this.now().toISOString() };

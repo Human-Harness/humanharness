@@ -25,14 +25,14 @@
 
   The task manager passes the task id and action with each turn (`TurnOptions.task`/`action` → `HarnessRuntime.send(…, { trailer })`) and with each note (`TaskDeps.saveHistory(message, trailer)`).
 - Untagged: "Start" (it records changes made outside the app) and every restore ("Go back to …" commits). A restore is not part of the task it undid, so it never changes that task's own row.
-- `History.tasks(depth)` groups commits by `Task:` (not by adjacency), newest first. Each group has `start` (its first "Before message" snapshot when its first commit is one, so the person's own edits before the task stay; else the parent of its first commit), `end`, the tree diff between them (`FileChange[]`, tracked files only, from `git.walk` over two trees) and its entries. Untagged commits form the "Other changes" group, always last, whose changes are the union of its commits' own changes.
+- `History.tasks(depth)` groups commits by `Task:` (not by adjacency), newest first. Each group has `start` (its first "Before message" snapshot when its first commit is one, so the person's own edits before the task stay; else the parent of its first commit), `end`, the tree diff between them (`FileChange[]`, tracked files only, from `git.walk` over two trees) and its entries. Untagged commits form the "Outside a task" group, always last, whose changes are the union of its commits' own changes.
 
 ### The History panel
 
-- One row per task: the action's label (or "A question"), the title of the note it saved, the date and "N files changed". The newest row starts open. The untagged group is the last row, "Other changes": that is where "Start" and the restores show.
-- An open row lists the changed files (added, changed, deleted) and the task's entries in plain language (i18n keys `history.entry.*`; the commit subjects stay in English).
-- "Go back to before this task" restores the group's `start`; "Go back to this point" restores one entry. Both ask first, record a new commit (so they can be undone too) and are disabled while a turn is live; the main process refuses them while a task operation runs or turns are held.
-- Going back resets every tracked file, so it also undoes tasks that changed something later. The confirmation says how many ("This also undoes 2 later tasks"; `laterTasks` in `HistoryPanel.tsx`).
+- Tasks are grouped under their day ("Today", "Yesterday", "Oct 17"; `byDay` in `HistoryPanel.tsx`). One row per task: the action's label (or "A question"), the time and "N files changed", and a "Note saved" tag when it saved one (the note's title on hover). The newest row starts open. The untagged group is the last row, in a section of its own, "Outside a task": that is where "Start" and the restores show.
+- An open row lists the changed files (added, changed, deleted) and the task's entries in plain language as a timeline (i18n keys `history.entry.*`; the commit subjects stay in English).
+- "Go back here" restores one entry; it shows when the entry is hovered or focused. "Undo this task", under the entries, restores the group's `start`. Both ask first, record a new commit (so they can be undone too) and are disabled while a turn is live, with a line saying why; the main process refuses them while a task operation runs or turns are held.
+- Going back resets every tracked file, `.harness/notes` included, so it also undoes tasks that changed something later. The confirmation says how many ("This also undoes 2 later tasks"; `laterTasks` in `HistoryPanel.tsx`), and undoing a task names the count on its button ("Undo 3 tasks").
 
 ## Backup
 

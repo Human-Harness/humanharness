@@ -1,6 +1,17 @@
 import { promptKind } from "@humanharness/fake-agent";
 import { describe, expect, it } from "vitest";
-import { CHECKPOINT_PROMPT, CLOSE_PROMPT, QUESTION_PROMPT, RESUME_PROMPT, fillPrompt, resumeMessage } from "../src/main/task-prompts";
+import {
+  CHECKPOINT_PROMPT,
+  CLOSE_PROMPT,
+  QUESTION_PROMPT,
+  RESUME_PROMPT,
+  closePrompt,
+  fillPrompt,
+  modePrompt,
+  modeSection,
+  recommendSection,
+  resumeMessage,
+} from "../src/main/task-prompts";
 
 const index = "## What we already covered\n- Engines → .harness/notes/engines.md";
 
@@ -97,5 +108,60 @@ describe("mock mode markers", () => {
   it("fake-claude tells the closing turn and the checkpoint by their first words", () => {
     expect(promptKind(CLOSE_PROMPT)).toBe("close");
     expect(promptKind(CHECKPOINT_PROMPT)).toBe("checkpoint");
+  });
+});
+
+describe("mode prompts (task-modes spec §4, §5.4, §6)", () => {
+  const feynman = { label: "Feynman", brief: "Explain it back in {{language}}.\n\n{{notesIndex}}", settings: ["Use 3 steps."] };
+
+  it("the switch: the mode's name, its filled brief, its settings, then go on", () => {
+    expect(modePrompt(feynman, { language: "es" })).toBe(
+      [
+        'From now on work in the mode "Feynman". Keep everything decided so far in this conversation.',
+        "Explain it back in Spanish.",
+        "- Use 3 steps.",
+        "Then continue with the person in this mode.",
+      ].join("\n\n"),
+    );
+  });
+
+  it("the switch carries the last checkpoint's summary when there is one (spec §10.1); a label is never filled again", () => {
+    const text = modePrompt({ label: "A $& {{language}}", brief: "Go.", settings: [] }, { language: "en", soFar: ["Halves make a whole.", "Thirds too."] });
+    expect(text).toBe(
+      [
+        'From now on work in the mode "A $& {{language}}". Keep everything decided so far in this conversation.',
+        "What is clear so far (the last checkpoint): Halves make a whole. Thirds too.",
+        "Go.",
+        "Then continue with the person in this mode.",
+      ].join("\n\n"),
+    );
+  });
+
+  it("a task that starts or resumes in a mode gets its section", () => {
+    expect(modeSection(feynman, "en")).toBe(["## Mode: Feynman", "Work in this mode.", "Explain it back in English.", "- Use 3 steps."].join("\n\n"));
+    expect(modeSection({ ...feynman, settings: [] }, "en")).toBe(["## Mode: Feynman", "Work in this mode.", "Explain it back in English."].join("\n\n"));
+  });
+
+  it("the first message asks for a recommendation with the modes' hints", () => {
+    expect(recommendSection([{ id: "socratic", label: "Socratic", recommend: "One key idea to discover." }, { id: "worked", label: "Worked examples" }])).toBe(
+      [
+        "## How to work",
+        "Before you start the work, recommend how to work in this task: call `show_recommend_mode` with the mode that fits best, up to 3 short reasons and up to 2 alternatives, then end your answer and wait for the person's pick. Do not call `show_choices` in this answer.",
+        "- `socratic` (Socratic): One key idea to discover.\n- `worked` (Worked examples)",
+      ].join("\n\n"),
+    );
+  });
+
+  it("the closing turn lists the modes used; without any, it is CLOSE_PROMPT exactly (D0)", () => {
+    expect(closePrompt([])).toBe(CLOSE_PROMPT);
+    expect(closePrompt(["Socratic", "Feynman"])).toBe(`${CLOSE_PROMPT} Also list the modes used (Socratic, Feynman) and what each was good for, as summary points.`);
+  });
+
+  it("a resumed session gets the mode's section after the action's brief; without one, as before (D0)", () => {
+    const vars = { language: "en" as const, notesIndex: "", brief: "# Task: study", message: "Hi" };
+    const section = modeSection(feynman, "en");
+    const line = fillPrompt(RESUME_PROMPT, { language: "en", notesIndex: "" });
+    expect(resumeMessage({ ...vars, mode: section })).toBe(["# Task: study", section, line, "## The person's message\nHi"].join("\n\n"));
+    expect(resumeMessage(vars)).toBe(["# Task: study", line, "## The person's message\nHi"].join("\n\n"));
   });
 });

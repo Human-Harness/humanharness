@@ -29,7 +29,7 @@
 - Untagged: "Start" (it records changes made outside the app) and every restore ("Go back to …" commits). A restore is not part of the task it undid, so it never changes that task's own row.
 - `History.tasks(depth)` groups commits by `Task:` (not by adjacency), newest first. Each group has `start` (its first "Before message" snapshot when its first commit is one, so the person's own edits before the task stay; else the parent of its first commit), `end`, the tree diff between them (`FileChange[]`, tracked files only, from `git.walk` over two trees) and its entries. Untagged commits form the "Other changes" group, always last, whose changes are the union of its commits' own changes.
 
-An answer's `saveTo` write has no commit of its own: it lands in the follow-up turn's "Before message" commit, which carries the task's trailer, so undoing the task undoes it too. A write whose follow-up turn then stops or fails stays (see `blocks.md`).
+An answer's `saveTo` write has no commit of its own: it lands in the follow-up turn's "Before message" commit, which carries the task's trailer, so undoing the task undoes it too. A write whose follow-up turn then never starts (a Stop, or the send fails before it begins) stays, and the question reopens (see `blocks.md`).
 
 ### The History panel
 

@@ -4,6 +4,7 @@ import path from "node:path";
 import { z } from "zod";
 import type { EngineDef } from "@humanharness/engines";
 import { type Block, type Language, answerHeader, blockToolName, languageName } from "@humanharness/harness-sdk";
+import { harnessDir } from "./layout";
 
 export const MANAGED_START = "<!-- humanharness:start -->";
 export const MANAGED_END = "<!-- humanharness:end -->";
@@ -126,7 +127,7 @@ export async function refreshInstructions(opts: InstructionsText & { folder: str
   const text = agentsText(opts);
   const current = await fs.readFile(file, "utf8").catch(() => null);
   if (current === text) return false;
-  const dir = path.join(opts.folder, ".harness");
+  const dir = harnessDir(opts.folder);
   await fs.mkdir(dir, { recursive: true });
   const tmp = path.join(dir, `AGENTS.md.${randomUUID()}.tmp`);
   try {

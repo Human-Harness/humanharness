@@ -37,11 +37,11 @@ function setup(opts: { taskOpen?: boolean } = {}) {
       await fn();
       return true;
     },
-    // A runtime's refresh asks the controller for the sentences, as createRuntime and refreshInstructions do.
+    // A runtime's refresh asks the controller for the sentences, as createRuntime and refreshInstructions do, then writes.
     refresh: async () => {
       log.push("refresh");
-      if (failRefresh) throw new Error("disk full");
       await ctl.sentences();
+      if (failRefresh) throw new Error("disk full");
       return true;
     },
     changed: (s) => void pushed.push(s),
@@ -172,6 +172,17 @@ describe("SettingsController", () => {
     t.failRefresh(false);
     await t.ctl.betweenTasks();
     expect(t.log.filter((l) => l === "refresh")).toHaveLength(2);
+  });
+
+  it("a failed rewrite keeps what the last AGENTS.md held: the change stays pending", async () => {
+    const t = setup({ taskOpen: true });
+    await t.ctl.sentences();
+    await t.ctl.set("hintAfter", 4);
+    t.task(false);
+    t.failRefresh(true);
+    await t.ctl.betweenTasks();
+    t.task(true);
+    expect((await t.ctl.state()).pending).toEqual(["hintAfter"]);
   });
 
   it("the sentences follow the stored values; forget drops what the last AGENTS.md held", async () => {

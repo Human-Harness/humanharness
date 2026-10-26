@@ -96,6 +96,9 @@ describe("createRuntime", () => {
         return sentences;
       },
     });
+    // This test closes the runtime itself.
+    runtime = undefined;
+    // A refresh rewrites only AGENTS.md: the engine's own instructions file is static.
     const agents = () => fs.readFileSync(path.join(folder, "AGENTS.md"), "utf8");
     sentences = ["Use a demanding tone."];
     gate = new Promise((r) => (release = r));
@@ -111,7 +114,6 @@ describe("createRuntime", () => {
     sentences = ["Use a gentle tone."];
     expect(await rt.refreshInstructions()).toBe(false);
     expect(agents()).not.toContain("gentle");
-    runtime = undefined;
   });
 
   it("enforces the engine's minAdapterVersion on ACP engines", async () => {

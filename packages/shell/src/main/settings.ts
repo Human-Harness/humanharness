@@ -131,9 +131,12 @@ export class SettingsController {
   private async apply(): Promise<void> {
     if (!this.stale) return;
     this.stale = false;
+    // The refresh reads the sentences (setting `applied`) before it writes: a failed write leaves the old file.
+    const applied = this.applied;
     try {
       await this.d.refresh();
     } catch (err) {
+      this.applied = applied;
       this.stale = true;
       this.log("Could not rewrite AGENTS.md with the settings", err);
       return;

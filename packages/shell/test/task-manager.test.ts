@@ -1119,6 +1119,14 @@ describe("TaskManager: between tasks (harness-settings D4)", () => {
     expect(order).toEqual(["started", "fn"]);
   });
 
+  it("whenNoTask runs nothing once the app is closing", async () => {
+    const t = setup();
+    t.manager.close();
+    const fn = vi.fn(async () => {});
+    expect(await t.manager.whenNoTask(fn)).toBe(false);
+    expect(fn).not.toHaveBeenCalled();
+  });
+
   it("D0: without betweenTasks nothing new runs", async () => {
     const t = setup();
     await t.manager.start("manifest");

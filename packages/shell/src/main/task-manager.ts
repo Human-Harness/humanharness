@@ -366,7 +366,8 @@ export class TaskManager {
    */
   whenNoTask(fn: () => Promise<void>): Promise<boolean> {
     return this.queue(async () => {
-      if ((await this.d.store.load()).current) return false;
+      // Quitting: nothing new runs, as for operations.
+      if (this.closed || (await this.d.store.load()).current) return false;
       await fn();
       return true;
     });

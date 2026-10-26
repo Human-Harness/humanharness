@@ -168,6 +168,7 @@ describe("managedSection: input blocks", () => {
         "- A tool with an `Answer` schema asks the person for something. After calling it, end your turn and wait: the answer comes as the next message.",
         "- That message starts with `[answer to <block>]` (the tool's name without `show_`: `[answer to ask]` for `show_ask`), then what the person sees, then a ```json block with `block`, `blockId` and `value`. Trust the JSON: `value` already matches the block's `Answer` schema.",
         '- When `value` is `{"skipped":true}`, the person skipped the question: go on without insisting.',
+        "- The person may write in the chat instead of answering. The question stays open and may still be answered later: answer what they wrote, or remind them of the question.",
       ].join("\n"),
     );
     expect(en.match(/Answer: /g)).toHaveLength(1);
@@ -175,6 +176,9 @@ describe("managedSection: input blocks", () => {
     expect(es).toContain(`  Respuesta: \`${schemaOf(ask.input!)}\``);
     expect(es).toContain("### Respuestas de bloques de entrada");
     expect(es).toContain("- Si `value` es `{\"skipped\":true}`, la persona salteó la pregunta: seguí sin insistir.");
+    expect(es).toContain(
+      "- La persona puede escribir en el chat en lugar de responder. La pregunta sigue abierta y todavía puede responderla: contestá lo que escribió, o recordale la pregunta.",
+    );
   });
 
   it("explains annotate only when the harness has it", () => {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { getEngine } from "@humanharness/engines";
-import { cleanModels, cleanProfile, engineOffer, firstOffered, fitEffort, nextFallback, resolveProfile, taskKey } from "../src/main/models";
+import { type Effort, getEngine } from "@humanharness/engines";
+import { cleanModels, cleanProfile, engineOffer, firstOffered, fitEffort, nearestTier, nextFallback, resolveProfile, taskKey } from "../src/main/models";
 
 describe("cleanModels", () => {
   it("keeps valid task choices and tier overrides, field by field", () => {
@@ -134,5 +134,30 @@ describe("fitEffort", () => {
 
   it("leaves the profile alone when the engine offers no effort", () => {
     expect(fitEffort(p, [])).toEqual(p);
+  });
+});
+
+describe("tiers for modes (task-modes spec §5.3)", () => {
+  const custom = (model: string | undefined, effort: Effort) => ({ engine: "claude", tier: "custom" as const, ...(model ? { model } : {}), effort, cap: 200_000 });
+
+  it("a tier profile counts as its tier; a custom one as the tier whose model it runs, else by its effort", () => {
+    expect(nearestTier({ engine: "claude", tier: "light", model: "haiku", effort: "low", cap: 100_000 }, {})).toBe("light");
+    expect(nearestTier(custom("opus", "low"), {})).toBe("deep");
+    expect(nearestTier(custom("sonnet", "high"), {})).toBe("standard");
+    // The person's own table counts: their deep tier runs sonnet here.
+    expect(nearestTier(custom("sonnet", "high"), { tiers: { claude: { deep: { model: "sonnet", effort: "high", cap: 400_000 } } } })).toBe("deep");
+    expect(nearestTier(custom("some-model", "low"), {})).toBe("light");
+    expect(nearestTier(custom(undefined, "medium"), {})).toBe("standard");
+    expect(nearestTier(custom("some-model", "max"), {})).toBe("deep");
+  });
+
+  it("a floor raises a lower tier, never lowers a higher one, and leaves a custom choice alone", () => {
+    expect(resolveProfile({ engine: "claude", action: "study", models: {}, floor: "deep" })).toMatchObject({ tier: "deep", model: "opus" });
+    expect(resolveProfile({ engine: "claude", action: "study", manifestTier: "deep", models: {}, floor: "standard" })).toMatchObject({ tier: "deep" });
+    expect(resolveProfile({ engine: "claude", action: "study", models: { tasks: { study: "light" } }, floor: "standard" })).toMatchObject({ tier: "standard" });
+    const own = { tasks: { study: { custom: { engine: "claude", model: "haiku", effort: "low" as const, cap: 100_000 } } } };
+    expect(resolveProfile({ engine: "claude", action: "study", models: own, floor: "deep" })).toMatchObject({ tier: "custom", model: "haiku" });
+    // No floor: exactly as before.
+    expect(resolveProfile({ engine: "claude", action: "study", models: {} })).toMatchObject({ tier: "standard", model: "sonnet" });
   });
 });

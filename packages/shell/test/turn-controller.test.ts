@@ -639,3 +639,57 @@ describe("TurnController: input block ids", () => {
     }
   });
 });
+
+describe("TurnController: modes (task-modes spec §5.4, §5.5)", () => {
+  function modeSetup() {
+    const rt = fakeRuntime();
+    const entries: ChatEntry[] = [];
+    const metas: UsageMeta[] = [];
+    const controller = new TurnController({
+      ensureRuntime: async () => rt.runtime,
+      chatLog: async () => ({ append: async (e: ChatEntry) => void entries.push(e) }),
+      stateBlocks: () => new Set(),
+      emit: () => {},
+      recordUsage: async (_entry, meta) => void metas.push(meta),
+    });
+    return { rt, controller, entries, metas };
+  }
+
+  it("a switch's user entry is a system line naming the mode; usage carries the turn's mode", async () => {
+    const t = modeSetup();
+    const sent = t.controller.send("From now on work in the mode…", {
+      task: "t1",
+      action: "study",
+      followUp: true,
+      display: "Switched to Feynman",
+      mode: "feynman",
+      modeSwitch: true,
+    });
+    await vi.waitFor(() => expect(t.rt.send).toHaveBeenCalled());
+    t.rt.finish([{ type: "done", ok: true }]);
+    await sent;
+    await t.controller.flush();
+    expect(t.entries[0]).toMatchObject({ role: "user", text: "Switched to Feynman", mode: "feynman", task: "t1" });
+    expect(t.metas[0]).toMatchObject({ task: "t1", mode: "feynman" });
+  });
+
+  it("a turn in a mode that isn't a switch: the mode in usage only; D0 without one", async () => {
+    const t = modeSetup();
+    const sent = t.controller.send("Go on", { task: "t1", followUp: true, mode: "feynman" });
+    await vi.waitFor(() => expect(t.rt.send).toHaveBeenCalled());
+    t.rt.finish([{ type: "done", ok: true }]);
+    await sent;
+    await t.controller.flush();
+    expect(t.entries[0]).not.toHaveProperty("mode");
+    expect(t.metas[0]).toMatchObject({ mode: "feynman" });
+
+    const plain = modeSetup();
+    const again = plain.controller.send("Go on", { task: "t1", followUp: true });
+    await vi.waitFor(() => expect(plain.rt.send).toHaveBeenCalled());
+    plain.rt.finish([{ type: "done", ok: true }]);
+    await again;
+    await plain.controller.flush();
+    expect(plain.entries[0]).not.toHaveProperty("mode");
+    expect(plain.metas[0]).not.toHaveProperty("mode");
+  });
+});

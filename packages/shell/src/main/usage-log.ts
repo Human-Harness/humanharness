@@ -21,6 +21,8 @@ export interface UsageMeta extends ProfileFields {
   task?: string;
   /** The task's scope (`_app` included); only for a harness with scopes. */
   scope?: string;
+  /** The task's mode while the turn ran (task-modes spec §5.5). Absent without one. */
+  mode?: string;
   /**
    * `run`: the task's own turns; `close`: the turn that asks for its note; `checkpoint`: the quiet turn that
    * saves a note before the context reaches its cap.
@@ -36,6 +38,8 @@ export interface UsageRecord extends ProfileFields {
   task?: string;
   /** The task's scope (`_app` included); only for a harness with scopes. */
   scope?: string;
+  /** The task's mode while the turn ran (task-modes spec §5.5). Absent without one. */
+  mode?: string;
   phase?: "run" | "close" | "checkpoint";
   /** `checkpoint`: the quiet turn that saves a note before the cap; `compaction`: the engine compacted (no usage). */
   kind?: "checkpoint" | "compaction";
@@ -89,6 +93,7 @@ function metaFields(meta: UsageMeta): Partial<UsageRecord> {
     ...(meta.action ? { action: meta.action } : {}),
     ...(meta.task ? { task: meta.task } : {}),
     ...(meta.scope ? { scope: meta.scope } : {}),
+    ...(meta.mode ? { mode: meta.mode } : {}),
     ...(meta.phase ? { phase: meta.phase } : {}),
     ...(meta.phase === "checkpoint" ? { kind: "checkpoint" as const } : {}),
     ...(meta.tier ? { tier: meta.tier } : {}),

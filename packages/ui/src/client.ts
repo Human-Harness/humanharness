@@ -209,6 +209,8 @@ export interface ChatEntry {
   engine?: string;
   /** The task the entry belongs to (flow mode shows one task at a time). */
   task?: string;
+  /** A mode switch the person picked (task-modes spec §5.4): this user entry is a system line, and this is the mode's id. */
+  mode?: string;
   /** Assistant entries: text runs and blocks in the order they arrived. Older entries lack it: text, then blocks. */
   parts?: AnswerPart[];
 }

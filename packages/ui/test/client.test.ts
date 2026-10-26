@@ -126,3 +126,23 @@ describe("hearsDataChange (data.subscribe's filter)", () => {
     expect(seen).toEqual(["_app"]);
   });
 });
+
+describe("FakeClient settings", () => {
+  it("answers values, saves, resets to the view's defaults and tells listeners", async () => {
+    const client = new FakeClient();
+    client.state.settings = {
+      tab: "Mine",
+      sections: [],
+      fields: [{ name: "tone", control: "segmented", label: "Tone", default: "patient", options: [{ value: "patient", label: "Patient" }, { value: "demanding", label: "Demanding" }], agent: true }],
+    };
+    client.settingsState = { values: { tone: "patient" }, pending: [] };
+    const heard: unknown[] = [];
+    const off = client.settings.onChange((s) => heard.push(s.values.tone));
+    expect(await client.settings.set("tone", "demanding")).toEqual({ ok: true, state: { values: { tone: "demanding" }, pending: [] } });
+    expect(await client.settings.reset()).toEqual({ ok: true, state: { values: { tone: "patient" }, pending: [] } });
+    off();
+    expect(heard).toEqual(["demanding", "patient"]);
+    expect(client.settingsSets).toEqual([{ field: "tone", value: "demanding" }]);
+    expect(client.settingsResets).toBe(1);
+  });
+});

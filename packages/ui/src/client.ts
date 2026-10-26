@@ -11,6 +11,8 @@ import type {
   Language,
   RespondResult,
   ScopeMode,
+  SettingFieldView,
+  SettingsView,
   Tier,
 } from "@humanharness/harness-sdk";
 import type { ActivityKind, EngineError, Event, LimitWindow } from "@humanharness/runtime";
@@ -152,6 +154,8 @@ export interface AppState {
   scopes?: { label: string; plural: string };
   /** The blocks the person answers, by name: how the core form draws each (input-blocks spec §5). Absent: none (D0). */
   inputs?: Record<string, InputSpec>;
+  /** The harness's settings (manifest `settings`): its own Settings tab. Absent: no tab (harness-settings D0). */
+  settings?: SettingsView;
   /** Folders the agent can read but never change. */
   references?: ReferenceView[];
   /** Settings › Modelos. */
@@ -551,6 +555,16 @@ export interface HarnessClient {
   };
   /** What a task changed in the harness's data ("what changed in this session", spec §4.5). */
   dataDiff(taskId: string): Promise<DataDiffView[]>;
+  /** The harness's settings (harness-settings spec §4). A harness with none answers no values and refuses changes. */
+  settings: {
+    /** Every field's value (the default when unchanged) and the fields waiting for the next task. */
+    get(): Promise<SettingsState>;
+    /** Saves one field now, as the person. Refusals come back as data. */
+    set(field: string, value: unknown): Promise<SettingsResult>;
+    /** Every field back to its default. */
+    reset(): Promise<SettingsResult>;
+    onChange(listener: (state: SettingsState) => void): () => void;
+  };
   /** The text size changed from the keyboard (⌘+, ⌘−, ⌘0), already saved. */
   onTextSize(listener: (size: TextSize) => void): () => void;
 }
@@ -562,4 +576,4 @@ export function isConfigured(config: AppConfig): config is ConfiguredApp {
   return Boolean(config.language && config.folder && config.engineId);
 }
 
-export type { BlockAnswer, ChoiceOption, Event, EngineError, InputField, InputIssue, InputSpec, LimitWindow, RespondResult };
+export type { BlockAnswer, ChoiceOption, Event, EngineError, InputField, InputIssue, InputSpec, LimitWindow, RespondResult, SettingFieldView, SettingsView };

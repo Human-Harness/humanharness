@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { DataChangeView, Event, HarnessClient, ScopesView, SetupOutput, TaskView, TextSize } from "@humanharness/ui/client";
+import type { DataChangeView, Event, HarnessClient, ScopesView, SettingsState, SetupOutput, TaskView, TextSize } from "@humanharness/ui/client";
 import { hearsDataChange } from "@humanharness/ui/data-change";
 
 function subscribe<T>(channel: string, listener: (value: T) => void): () => void {
@@ -62,6 +62,12 @@ const client: HarnessClient = {
       }),
   },
   dataDiff: (taskId) => ipcRenderer.invoke("hh:dataDiff", taskId),
+  settings: {
+    get: () => ipcRenderer.invoke("hh:settingsGet"),
+    set: (field, value) => ipcRenderer.invoke("hh:settingsSet", field, value),
+    reset: () => ipcRenderer.invoke("hh:settingsReset"),
+    onChange: (listener) => subscribe<SettingsState>("hh:settings", listener),
+  },
   onTextSize: (listener) => subscribe<TextSize>("hh:textSize", listener),
 };
 

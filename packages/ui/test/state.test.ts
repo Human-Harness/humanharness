@@ -162,3 +162,11 @@ describe("input blocks", () => {
     expect(s.entries[1].blocks).toEqual([{ name: "card", data: { t: 1 } }]);
   });
 });
+
+describe("reduceChat: a mode switch's line (task-modes spec §5.4)", () => {
+  it("keeps the mode on the user entry; D0: no mode, no field", () => {
+    const s = reduceChat(initialChat([]), { type: "user", text: "Switched to Socratic", at: "t", mode: "socratic" });
+    expect(s.entries[0]).toMatchObject({ role: "user", text: "Switched to Socratic", mode: "socratic" });
+    expect(reduceChat(initialChat([]), { type: "user", text: "Hi", at: "t" }).entries[0]).not.toHaveProperty("mode");
+  });
+});

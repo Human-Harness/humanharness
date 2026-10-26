@@ -63,6 +63,16 @@ describe("RecommendModeBlock (task-modes spec §4)", () => {
     expect(p.chooseMode).toHaveBeenCalledWith("feynman");
   });
 
+  it("'See all modes' marks the mode just picked, else the task's mode", async () => {
+    await renderIn("en", <RecommendModeBlock {...props({ modes: { views, allowed, current: "feynman" } })} />);
+    fireEvent.click(screen.getByRole("button", { name: "See all modes" }));
+    const list = screen.getByRole("group", { name: "See all modes" });
+    expect(within(list).getByRole("button", { name: "Feynman" }).getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(within(list).getByRole("button", { name: /^Socratic/ }));
+    expect(within(list).getByRole("button", { name: /^Socratic/ }).getAttribute("aria-pressed")).toBe("true");
+    expect(within(list).getByRole("button", { name: "Feynman" }).getAttribute("aria-pressed")).toBe("false");
+  });
+
   it("stays unpicked when the switch isn't sent; is disabled once the conversation moved on; draws nothing when malformed", async () => {
     const refused = props({ chooseMode: vi.fn(() => false) });
     const { unmount } = await renderIn("en", <RecommendModeBlock {...refused} />);
@@ -97,6 +107,13 @@ describe("readRecommendation", () => {
     expect(readRecommendation({ recommended: "nope", reasons: ["a"] }, allowed)).toBeNull();
     expect(readRecommendation({ recommended: "socratic", reasons: [] }, allowed)).toBeNull();
     expect(readRecommendation(null, allowed)).toBeNull();
+  });
+
+  it("drops whitespace-only reasons and whys", () => {
+    expect(
+      readRecommendation({ recommended: "socratic", reasons: ["  ", "a"], alternatives: [{ mode: "feynman", why: " \n" }, { mode: "worked", why: "w" }] }, allowed),
+    ).toEqual({ recommended: "socratic", reasons: ["a"], alternatives: [{ mode: "worked", why: "w" }] });
+    expect(readRecommendation({ recommended: "socratic", reasons: [" "] }, allowed)).toBeNull();
   });
 });
 
@@ -140,6 +157,16 @@ describe("the mode helpers and the bar", () => {
     fireEvent.keyDown(screen.getByRole("button", { name: "Feynman" }), { key: "Escape" });
     expect(screen.queryByRole("group", { name: "Change mode" })).toBeNull();
     expect(change.getAttribute("aria-expanded")).toBe("false");
+    expect(document.activeElement).toBe(change);
+  });
+
+  it("a pick closes the list and gives focus back to 'Change mode'", async () => {
+    const modes = actionModes({ actions: { study: { label: "Study", cost: "medium" as const, modes: allowed } }, modes: views }, "study");
+    await renderIn("en", <ModeBar modes={modes} disabled={false} onPick={() => {}} />);
+    const change = screen.getByRole("button", { name: "Change mode" });
+    fireEvent.click(change);
+    fireEvent.click(screen.getByRole("button", { name: "Feynman" }));
+    expect(screen.queryByRole("group", { name: "Change mode" })).toBeNull();
     expect(document.activeElement).toBe(change);
   });
 });

@@ -62,7 +62,7 @@ export function RecommendModeBlock({ data, chooseMode, modes, active }: BlockPro
         <ModeList
           id={allListId}
           modes={allowed.map((m) => ({ id: m, ...views[m] }))}
-          current={modes.current}
+          current={picked ?? modes.current}
           disabled={!usable}
           labelledBy={allId}
           onPick={pick}

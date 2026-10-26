@@ -448,6 +448,12 @@ export type ModeResult =
   | { ok: true; switched: "turn" | "quiet" | "new-task" | "same" }
   | { ok: false; reason: "no-task" | "unknown" | "tier"; required?: Tier; current?: Tier };
 
+/** A switch `chooseMode` started (task-modes spec §5), whoever asked for it: a "same" answer is none. */
+export interface ModeSwitch {
+  mode: string;
+  switched: "turn" | "quiet" | "new-task";
+}
+
 /** The answer to the tier question (spec §5.3): continue at the task's tier, or start a new task at the mode's. */
 export interface ModeChoice {
   belowTier?: "continue" | "new-task";
@@ -570,6 +576,11 @@ export interface HarnessClient {
    * tier question.
    */
   chooseMode(mode: string, choice?: ModeChoice): Promise<ModeResult>;
+  /**
+   * Every switch `chooseMode` started, whoever called it (the window's mode bar and blocks, or the harness's own UI),
+   * told when its result arrives and before the switch's turn: the chat draws the "Switched to" line and that turn.
+   */
+  onModeSwitch(listener: (s: ModeSwitch) => void): () => void;
   /** Opens a file inside the reference folders or the user's folder in its default app. False when refused or missing. */
   openPath(path: string): Promise<boolean>;
   /** Shows a file inside the reference folders or the user's folder in Finder (any kind of file). False when refused or missing. */

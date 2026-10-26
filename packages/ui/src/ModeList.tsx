@@ -64,7 +64,8 @@ export function ModeBar({
   };
   return (
     <div className="hh-mode-bar" role="group" aria-label={t("modes.bar")} onKeyDown={onKey}>
-      <span>{label ? t("modes.current", { mode: label }) : t("modes.none")}</span>
+      {/* Polite: a switch (from any window control or the harness's own UI) is announced once it is the task's. */}
+      <span aria-live="polite">{label ? t("modes.current", { mode: label }) : t("modes.none")}</span>
       {below && label && <span className="hh-caption">{t("modes.belowTier")}</span>}
       <button
         ref={toggle}
@@ -85,7 +86,9 @@ export function ModeBar({
           disabled={disabled}
           labelledBy={changeId}
           onPick={(id) => {
+            // The list goes: focus back on "Change mode", as with Escape (a question the pick opens takes it next).
             setOpen(false);
+            toggle.current?.focus();
             onPick(id);
           }}
         />

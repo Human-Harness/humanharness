@@ -1,5 +1,16 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { DataChangeView, Event, HarnessClient, ScopesView, SettingsState, SetupOutput, TaskView, TextSize } from "@humanharness/ui/client";
+import type {
+  DataChangeView,
+  Event,
+  HarnessClient,
+  ModeResult,
+  ModeSwitch,
+  ScopesView,
+  SettingsState,
+  SetupOutput,
+  TaskView,
+  TextSize,
+} from "@humanharness/ui/client";
 import { hearsDataChange } from "@humanharness/ui/data-change";
 
 function subscribe<T>(channel: string, listener: (value: T) => void): () => void {
@@ -7,6 +18,9 @@ function subscribe<T>(channel: string, listener: (value: T) => void): () => void
   ipcRenderer.on(channel, handler);
   return () => ipcRenderer.removeListener(channel, handler);
 }
+
+/** Told of every mode switch, whoever called `chooseMode` (the window or the harness's own UI). */
+const modeSwitches = new Set<(s: ModeSwitch) => void>();
 
 const client: HarnessClient = {
   getState: () => ipcRenderer.invoke("hh:getState"),
@@ -38,7 +52,16 @@ const client: HarnessClient = {
   onTasks: (listener) => subscribe<TaskView>("hh:tasks", listener),
   choose: (option, task) => ipcRenderer.invoke("hh:choose", option, task),
   respond: (blockId, value) => ipcRenderer.invoke("hh:respond", blockId, value),
-  chooseMode: (mode, choice) => ipcRenderer.invoke("hh:chooseMode", mode, choice ?? {}),
+  chooseMode: async (mode, choice) => {
+    const result: ModeResult = await ipcRenderer.invoke("hh:chooseMode", mode, choice ?? {});
+    // Before the caller hears it: the chat draws the switch's line before its turn's events.
+    if (result.ok && result.switched !== "same") for (const l of modeSwitches) l({ mode, switched: result.switched });
+    return result;
+  },
+  onModeSwitch: (listener) => {
+    modeSwitches.add(listener);
+    return () => void modeSwitches.delete(listener);
+  },
   openPath: (file) => ipcRenderer.invoke("hh:openPath", file),
   revealPath: (file) => ipcRenderer.invoke("hh:revealPath", file),
   scopes: {

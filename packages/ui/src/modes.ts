@@ -37,14 +37,14 @@ export function readRecommendation(data: unknown, allowed: string[]): Recommenda
   if (!data || typeof data !== "object") return null;
   const d = data as { recommended?: unknown; reasons?: unknown; alternatives?: unknown };
   if (typeof d.recommended !== "string" || !allowed.includes(d.recommended)) return null;
-  const reasons = (Array.isArray(d.reasons) ? d.reasons : []).filter((r): r is string => typeof r === "string" && r.length > 0).slice(0, 3);
+  const reasons = (Array.isArray(d.reasons) ? d.reasons : []).filter((r): r is string => typeof r === "string" && r.trim().length > 0).slice(0, 3);
   if (reasons.length === 0) return null;
   const seen = new Set([d.recommended]);
   const alternatives: Recommendation["alternatives"] = [];
   for (const a of Array.isArray(d.alternatives) ? d.alternatives : []) {
     const x = (a ?? {}) as { mode?: unknown; why?: unknown };
     if (typeof x.mode !== "string" || !allowed.includes(x.mode) || seen.has(x.mode)) continue;
-    if (typeof x.why !== "string" || !x.why) continue;
+    if (typeof x.why !== "string" || !x.why.trim()) continue;
     seen.add(x.mode);
     alternatives.push({ mode: x.mode, why: x.why });
     if (alternatives.length === 2) break;

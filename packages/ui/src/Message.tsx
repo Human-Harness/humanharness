@@ -137,7 +137,7 @@ export function Message({
   live,
   reveal,
 }: {
-  entry: Pick<ChatEntry, "role" | "text" | "blocks" | "activities" | "parts">;
+  entry: Pick<ChatEntry, "role" | "text" | "blocks" | "activities" | "parts" | "mode">;
   components: Record<string, ComponentType<BlockProps>>;
   actions: BlockActions;
   /** The turn is running: its status row instead of what it did, shown even before anything arrives. */
@@ -147,6 +147,14 @@ export function Message({
 }) {
   const { t } = useTranslation();
   if (!live && entry.role === "assistant" && !entry.text && entry.blocks.length === 0 && entry.activities.length === 0) return null;
+  // A mode switch the person picked (task-modes spec §5.4): a system line, not their message.
+  if (entry.role === "user" && entry.mode) {
+    return (
+      <article className="hh-message system">
+        <p className="hh-mode-line">{entry.text}</p>
+      </article>
+    );
+  }
   return (
     <article className={`hh-message ${entry.role}${live ? " live" : ""}`}>
       {entry.role === "user" && <span className="hh-who">{t("chat.you")}</span>}

@@ -78,6 +78,17 @@ describe("manifest settings", () => {
     expect(issues(withField("tone", { ...tone, agent: "Use a {{ value }} tone." }))).toEqual([]);
   });
 
+  it("refuses a text the agent reads with no length cap: any length would reach AGENTS.md", () => {
+    const uncapped = { ...nickname, schema: z.string(), agent: "Call the person {{value}}." };
+    expect(issues(withField("nickname", uncapped))).toEqual(["settings.fields.nickname.schema: The agent reads this text: cap its length with .max(n)"]);
+    expect(issues(withField("nickname", { ...uncapped, agent: { text: "Call the person {{ value }}." } }))).toHaveLength(1);
+    expect(issues(withField("nickname", { ...uncapped, schema: z.string().max(40) }))).toEqual([]);
+    // No value in the sentence, or no sentence: the length never reaches the agent.
+    expect(issues(withField("nickname", { ...uncapped, agent: "The person has a nickname." }))).toEqual([]);
+    expect(issues(withField("nickname", { ...uncapped, agent: false }))).toEqual([]);
+    expect(issues(withField("nickname", { ...nickname, schema: z.string() }))).toEqual([]);
+  });
+
   it("refuses a bad field name, the reserved `modes`, and no fields at all", () => {
     expect(issues(withField("Bad-name", nickname))[0]).toMatch(/^settings\.fields\.Bad-name/);
     expect(issues(withField("modes", nickname))).toEqual(['settings.fields.modes: "modes" is reserved for mode settings']);

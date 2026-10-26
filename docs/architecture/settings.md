@@ -33,6 +33,7 @@ The structural rules are manifest schema errors: `defineHarness` and `loadHarnes
 - `options` on a control without labels (only `segmented`, `select` and `toggle` have them), and an `options` key that isn't a value;
 - a `section` that isn't declared, and section ids that aren't unique;
 - a placeholder other than the two, and `{{value:label}}` on a control without labels;
+- a `text` field whose sentence uses `{{value}}` or `{{value:label}}` with no `.max(n)` on its schema (any length would reach `AGENTS.md`);
 - the reserved name.
 
 ## Where values live

@@ -107,10 +107,14 @@ export const settingsSchema = z
       }
       const template = agentText(f.agent);
       if (template === null) continue;
+      let fillsValue = false;
       for (const m of template.matchAll(SETTING_PLACEHOLDER)) {
         if (m[1] !== "value" && m[1] !== "value:label") issue(at("agent"), `Unknown placeholder {{${m[1]}}}: use {{value}} or {{value:label}}`);
         else if (m[1] === "value:label" && !LABELLED.includes(f.control)) issue(at("agent"), "{{value:label}} needs a segmented, select or toggle control: use {{value}}");
+        else fillsValue = true;
       }
+      // An uncapped text would let a value of any length into AGENTS.md.
+      if (fillsValue && f.control === "text" && inferred.max === undefined) issue(at("schema"), "The agent reads this text: cap its length with .max(n)");
     }
   });
 

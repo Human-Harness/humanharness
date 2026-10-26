@@ -394,6 +394,13 @@ export interface CurrentTaskView {
   fallback?: { model: string; tier?: Tier };
   /** The id of the input block the task waits an answer for (input-blocks spec §4). */
   pendingInput?: string;
+  /** Task modes (task-modes spec §5.5), only for a task whose action has them: the mode now and those used. */
+  mode?: string;
+  modes?: string[];
+  /** The tier the task counts as (a custom profile: its nearest), so the window can ask before a switch (§5.3). */
+  tier?: Tier;
+  /** It runs below its mode's `minTier`: the person chose to continue. */
+  belowMinTier?: true;
 }
 
 /** A note in `.harness/notes/`, for the side panel and "What's clear so far". */

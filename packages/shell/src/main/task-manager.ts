@@ -9,16 +9,19 @@ import {
   type RespondResult,
   type SavedNote,
   type ScopeMode,
+  type Tier,
   answerDisplay,
   answerMessage,
   answerRecords,
+  defaultModeOf,
   parseAnswer,
   saveNoteSchema,
+  tierBelow,
 } from "@humanharness/harness-sdk";
 import { type Event, type Session, fail } from "@humanharness/runtime";
 import { type ActionStatus, type CurrentTaskView, type NoteView, type TaskStatus, type TaskView, nextInPath } from "@humanharness/ui/client";
 import { APP_SCOPE, type HistoryTrailer, MAIN_SCOPE, NOTE_PREFIX, type Note, type NoteMeta, buildNotesIndex, isScopeId, noteSlug } from "@humanharness/workspace";
-import { CHECKPOINT_PROMPT, CLOSE_PROMPT, QUESTION_PROMPT, fillPrompt, resumeMessage } from "./task-prompts";
+import { CHECKPOINT_PROMPT, type ModeText, QUESTION_PROMPT, closePrompt, fillPrompt, modeSection, recommendSection, resumeMessage } from "./task-prompts";
 import { type CurrentTask, type PendingInput, type TasksFile, interrupted, keptQuestion, scopeOfTask, statusesIn, withStatus } from "./task-store";
 import { type TurnOptions, isHeld } from "./turn-controller";
 
@@ -35,8 +38,8 @@ export interface TaskDeps {
   /** tasks.json of the configured folder. */
   store: { load(): Promise<TasksFile>; save(state: TasksFile): Promise<void> };
   turns: { send(message: string, options: TurnOptions): Promise<void>; isBusy(): boolean; cancel(): void };
-  /** The harness's actions: their labels (English strings), and where each runs when the harness has scopes. */
-  actions: Record<string, { label: string; scope?: ScopeMode }>;
+  /** The harness's actions: their labels (English strings), where each runs with scopes, and their modes (task-modes spec §3). */
+  actions: Record<string, { label: string; scope?: ScopeMode; modes?: string[]; defaultMode?: string }>;
   /** The harness declares scopes (spec D1). Absent or false: one implicit `main` scope and today's layout (D2). */
   scoped?: boolean;
   /** Whether `id` is a registered scope. Absent: any valid id is taken. */
@@ -66,8 +69,11 @@ export interface TaskDeps {
    * operation stops before its turn reached the window, so the window drops the turn it shows.
    */
   emit?(e: Event): void;
-  /** The model profile a new task runs on, resolved once when it starts (resources spec §5). Absent: the engine's defaults. */
-  profileFor?(action: string | undefined): Promise<ModelProfile>;
+  /**
+   * The model profile a new task runs on, resolved once when it starts (resources spec §5). `floor`: a mode's `minTier`
+   * the new task must reach (task-modes spec §5.3), passed only when there is one. Absent: the engine's defaults.
+   */
+  profileFor?(action: string | undefined, floor?: Tier): Promise<ModelProfile>;
   /** The profile to retry a first turn with after `model-unavailable`, or null when none is left (spec §5.3). */
   fallbackFor?(profile: ModelProfile, tried: string[]): Promise<ModelProfile | null>;
   /**
@@ -88,6 +94,14 @@ export interface TaskDeps {
    * harness's settings rewrite AGENTS.md here (harness-settings spec D4). Failures are logged. Absent: nothing (D0).
    */
   betweenTasks?(): Promise<void>;
+  /** The harness's modes (task-modes spec §3): label, least tier, the agent's hint. Absent or empty: none (D0). */
+  modes?: Record<string, { label: string; minTier?: Tier; recommend?: string }>;
+  /** The text of a mode's brief (its file). */
+  readModeBrief?(mode: string): Promise<string>;
+  /** A mode's settings as sentences with the person's values (harness-settings spec §6). Absent: none. */
+  modeSettings?(mode: string): Promise<string[]>;
+  /** The tier a profile counts as (a custom one: its nearest, spec §5.3). Absent: tiers are never compared. */
+  tierOf?(profile: ModelProfile): Promise<Tier>;
   now?: () => Date;
   newId?: () => string;
 }
@@ -126,8 +140,8 @@ export function needsCheckpoint(c: CurrentTask): boolean {
   return c.profile !== undefined && c.context !== undefined && c.checkpointed !== true && c.context.used >= CHECKPOINT_AT * c.profile.cap;
 }
 
-/** The open task as the window sees it: no session, no prompt, just what the screen shows. */
-const currentView = (c: CurrentTask): CurrentTaskView => ({
+/** The open task as the window sees it: no session, no prompt, just what the screen shows. `tier` only for a task with modes. */
+const currentView = (c: CurrentTask, tier?: Tier): CurrentTaskView => ({
   id: c.id,
   ...(c.action ? { action: c.action } : {}),
   ...(c.scope ? { scope: c.scope } : {}),
@@ -137,7 +151,14 @@ const currentView = (c: CurrentTask): CurrentTaskView => ({
     ? { fallback: { model: c.profile.fallbackFrom, ...(c.profile.model !== undefined && c.profile.tier !== "custom" ? { tier: c.profile.tier } : {}) } }
     : {}),
   ...(c.pendingInput ? { pendingInput: c.pendingInput.blockId } : {}),
+  ...(c.mode ? { mode: c.mode } : {}),
+  ...(c.modes ? { modes: c.modes } : {}),
+  ...(tier ? { tier } : {}),
+  ...(c.belowMinTier ? { belowMinTier: true as const } : {}),
 });
+
+/** A manifest text on one line: a newline in a label or hint must not break the prompt's heading or list. */
+const oneLine = (s: string) => s.replace(/\s*\n\s*/g, " ").trim();
 
 /**
  * The app-driven flow (spec §4.2): one engine session per task. idle → running → waiting; a message
@@ -188,7 +209,7 @@ export class TaskManager {
     if (!this.d.scoped) {
       const [state, notes] = await Promise.all([this.d.store.load(), this.d.notes().catch(() => [] as Note[])]);
       const c = state.current;
-      return { current: c ? currentView(c) : null, actions: state.actions, notes: notes.map(noteView) };
+      return { current: c ? await this.currentViewOf(c) : null, actions: state.actions, notes: notes.map(noteView) };
     }
     const state = await this.d.store.load();
     const c = state.current;
@@ -196,7 +217,7 @@ export class TaskManager {
     const own = await this.d.notes(scope).catch(() => [] as Note[]);
     const app = scope === APP_SCOPE ? [] : await this.d.notes(APP_SCOPE).catch(() => [] as Note[]);
     return {
-      current: c ? currentView(c) : null,
+      current: c ? await this.currentViewOf(c) : null,
       // The open scope's statuses, over the app-wide actions' own.
       actions: { ...statusesIn(state, APP_SCOPE), ...statusesIn(state, scope) },
       notes: [...own, ...app].map(noteView),
@@ -206,10 +227,11 @@ export class TaskManager {
 
   /**
    * Starts a manifest action as a new task, closing the current one first. `display` is what the chat shows.
-   * `scope`, in a harness with scopes, is opened first (closing the open task, spec §3.3).
+   * `scope`, in a harness with scopes, is opened first (closing the open task, spec §3.3). `mode`: the mode the
+   * person picked for it (task-modes "ask"); one the action doesn't list is refused before anything closes.
    */
-  start(action: string, display?: string, scope?: string): Promise<void> {
-    return this.op(() => this.startNow(action, display, scope));
+  start(action: string, display?: string, scope?: string, mode?: string): Promise<void> {
+    return this.op(() => this.startNow(action, display, scope, mode));
   }
 
   /** A message from the person: a follow-up of the waiting task, or a new free-question task. `scope` as in `start`. */
@@ -466,15 +488,89 @@ export class TaskManager {
     return true;
   }
 
-  private async startNow(action: string, display?: string, scope?: string): Promise<void> {
+  private async startNow(action: string, display?: string, scope?: string, mode?: string, floor?: Tier): Promise<void> {
     if (!this.known(action)) throw new Error("Unknown action");
+    const modes = this.modesOf(action);
+    // Checked before anything closes, like the scope below.
+    if (mode !== undefined && !modes.includes(mode)) throw new Error("Unknown mode");
     if (scope !== undefined && !(await this.switchNow(scope))) return this.stopped();
     // Checked before anything closes: a required action with no open scope starts nothing.
     const where = this.scopeFor(await this.d.store.load(), action);
     if (!(await this.closeCurrent())) return this.stopped();
     const template = await this.d.readPrompt(action);
     const language = await this.d.language();
-    await this.begin({ action }, where, (notesIndex) => fillPrompt(template, { language, notesIndex }), display ?? this.d.actions[action].label);
+    // How the task starts (spec §3 `defaultMode`): in a mode, asking for a recommendation, or as before (D0).
+    const start = mode ?? this.startMode(action, modes);
+    let section = "";
+    if (start === "recommend") section = recommendSection(modes.map((id) => this.hintOf(id)));
+    else if (start !== null) section = modeSection(await this.modeText(start), language);
+    const inMode = start !== null && start !== "recommend" ? { mode: start, modes: [start] } : {};
+    await this.begin(
+      { action, ...inMode },
+      where,
+      (notesIndex) => {
+        const brief = fillPrompt(template, { language, notesIndex });
+        return section ? `${brief}\n\n${section}` : brief;
+      },
+      display ?? this.d.actions[action].label,
+      floor,
+    );
+  }
+
+  /** The modes a task of `action` may work in: the action's list, those the harness declares (none: D0). */
+  private modesOf(action: string | undefined): string[] {
+    const modes = this.d.modes;
+    if (!this.known(action) || !modes) return [];
+    return (this.d.actions[action].modes ?? []).filter((m) => Object.hasOwn(modes, m));
+  }
+
+  /** How a task of `action` starts with no mode picked: its default mode, else "recommend" ("ask" can't ask from here). */
+  private startMode(action: string, modes: string[]): string | null {
+    if (modes.length === 0) return null;
+    const d = defaultModeOf(this.d.actions[action]);
+    return d !== null && modes.includes(d) ? d : "recommend";
+  }
+
+  /** A mode as the recommendation's list shows it to the agent. */
+  private hintOf(id: string): { id: string; label: string; recommend?: string } {
+    const m = this.d.modes![id];
+    return { id, label: oneLine(m.label), ...(m.recommend ? { recommend: oneLine(m.recommend) } : {}) };
+  }
+
+  /** A mode's label, brief and settings' sentences; settings that can't be read leave it with none. */
+  private async modeText(mode: string): Promise<ModeText> {
+    const brief = this.d.readModeBrief ? await this.d.readModeBrief(mode) : "";
+    let settings: string[] = [];
+    try {
+      settings = (await this.d.modeSettings?.(mode)) ?? [];
+    } catch (err) {
+      console.error("Could not read the mode's settings; it starts with none", err);
+    }
+    return { label: oneLine(this.d.modes![mode].label), brief, settings };
+  }
+
+  /** The open task as the window sees it; its tier only when its action has modes (D0). */
+  private async currentViewOf(c: CurrentTask): Promise<CurrentTaskView> {
+    return currentView(c, this.modesOf(c.action).length > 0 ? await this.tierFor(c) : undefined);
+  }
+
+  /** The tier the task counts as, or undefined when it can't be told. */
+  private async tierFor(c: Pick<CurrentTask, "profile">): Promise<Tier | undefined> {
+    if (!c.profile || !this.d.tierOf) return undefined;
+    return this.d.tierOf(c.profile).catch(() => undefined);
+  }
+
+  /** `profile` counts below `mode`'s `minTier` (spec §5.3). */
+  private async belowMinTier(mode: string, profile: ModelProfile | undefined): Promise<boolean> {
+    const min = this.d.modes && Object.hasOwn(this.d.modes, mode) ? this.d.modes[mode].minTier : undefined;
+    const tier = min !== undefined ? await this.tierFor({ profile }) : undefined;
+    return min !== undefined && tier !== undefined && tierBelow(tier, min);
+  }
+
+  /** The labels of the modes the task used, for the closing turn. */
+  private modeLabels(c: CurrentTask): string[] {
+    const modes = this.d.modes;
+    return (c.modes ?? []).map((id) => (modes && Object.hasOwn(modes, id) ? oneLine(modes[id].label) : id));
   }
 
   /** The open task from tasks.json, its profile fitted to the engine's current offer (and saved when it changed). */
@@ -638,10 +734,20 @@ export class TaskManager {
       // The task still resumes, from the notes alone: a missing brief must not leave it stuck.
       console.error("Could not read the task's brief; it resumes without it", err);
     }
+    // The current mode comes back with the task (task-modes spec §6), only with the action's brief.
+    let mode: string | undefined;
+    if (brief !== undefined && c.mode && this.modesOf(c.action).includes(c.mode)) {
+      try {
+        mode = modeSection(await this.modeText(c.mode), language);
+      } catch (err) {
+        console.error("Could not read the mode's brief; the task resumes without it", err);
+      }
+    }
     return resumeMessage({
       language,
       notesIndex: await this.contextFor(scopeOfTask(c), c.action),
       ...(brief !== undefined ? { brief } : {}),
+      ...(mode ? { mode } : {}),
       ...(c.question ? { question: c.question, ...(c.questionCut ? { questionCut: true } : {}) } : {}),
       message: text,
     });
@@ -668,10 +774,11 @@ export class TaskManager {
 
   /** A new task in a fresh session, in `scope`; its first message is built from the session context. */
   private async begin(
-    task: { action?: string; question?: string; questionCut?: true },
+    task: { action?: string; question?: string; questionCut?: true; mode?: string; modes?: string[] },
     scope: string,
     message: (notesIndex: string) => string,
     display: string,
+    floor?: Tier,
   ): Promise<void> {
     // Cancelled or quitting since the operation began (e.g. right after the closing turn): start nothing.
     if (this.cancelRequested) return this.stopped();
@@ -679,8 +786,10 @@ export class TaskManager {
     await this.between();
     const context = await this.contextFor(scope, task.action);
     const engine = await this.d.engine();
-    // Resolved once: the task keeps its model, effort and cap to the end (spec D2).
-    const profile = await this.d.profileFor?.(task.action);
+    // Resolved once: the task keeps its model, effort and cap to the end (spec D2). A floor only from a mode (task-modes §5.3).
+    const profile = floor !== undefined ? await this.d.profileFor?.(task.action, floor) : await this.d.profileFor?.(task.action);
+    // A task that starts below its mode's tier starts anyway, marked (spec §5.3: the question comes only with a switch).
+    const below = task.mode !== undefined && (await this.belowMinTier(task.mode, profile));
     const current: CurrentTask = {
       id: this.newId(),
       ...task,
@@ -689,6 +798,7 @@ export class TaskManager {
       turns: 0,
       ...(profile ? { profile } : {}),
       ...(this.d.scoped ? { scope } : {}),
+      ...(below ? { belowMinTier: true as const } : {}),
     };
     await this.update((s) => ({ ...s, engine, current }));
     // Checked again with no await before the send: a Stop while the session ended or the notes were read.
@@ -752,6 +862,8 @@ export class TaskManager {
       const scoped = await this.scopeOptions(task);
       await this.d.turns.send(message, {
         phase: "run",
+        // The task's mode (usage.jsonl); a switch's own `mode` in `options` wins. A task with none passes none (D0).
+        ...(task.mode ? { mode: task.mode } : {}),
         ...options,
         ...scoped,
         ...(task.profile ? { profile: task.profile } : {}),
@@ -823,7 +935,8 @@ export class TaskManager {
     }
     let done: Done;
     try {
-      done = await this.runTurn(c, CLOSE_PROMPT, { ...(c.action ? { action: c.action } : {}), phase: "close", quiet: true });
+      // The modes used are listed (task-modes spec §6); a task with none: CLOSE_PROMPT exactly (D0).
+      done = await this.runTurn(c, closePrompt(this.modeLabels(c)), { ...(c.action ? { action: c.action } : {}), phase: "close", quiet: true });
     } catch (err) {
       if (err instanceof TurnNotStarted) await this.setStatus(c.id, "waiting");
       throw unwrap(err);
@@ -916,7 +1029,13 @@ export class TaskManager {
     try {
       const scope = scopeOfTask(task);
       const slug = task.action ?? (await this.questionSlug(task.id, note.title, scope));
-      const meta: NoteMeta = { ...(task.action ? { action: task.action } : {}), date: this.now().toISOString(), engine: await this.d.engine() };
+      const meta: NoteMeta = {
+        ...(task.action ? { action: task.action } : {}),
+        date: this.now().toISOString(),
+        engine: await this.d.engine(),
+        // The modes the task used (task-modes spec §6); none: as before (D0).
+        ...(task.modes && task.modes.length > 0 ? { modes: task.modes } : {}),
+      };
       // Without scopes the call is exactly today's (D2).
       if (this.d.scoped) await this.d.writeNote(slug, note, meta, scope);
       else await this.d.writeNote(slug, note, meta);

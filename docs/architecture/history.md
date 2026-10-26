@@ -32,7 +32,8 @@
 - Tasks are grouped under their day ("Today", "Yesterday", "Oct 17"; `byDay` in `HistoryPanel.tsx`). One row per task: the action's label (or "A question"), the time and "N files changed", and a "Note saved" tag when it saved one (the note's title on hover). The newest row starts open. The untagged group is the last row, in a section of its own, "Outside a task": that is where "Start" and the restores show.
 - An open row lists the changed files (added, changed, deleted) and the task's entries in plain language as a timeline (i18n keys `history.entry.*`; the commit subjects stay in English).
 - "Go back here" restores one entry; it shows when the entry is hovered or focused. "Undo this task", under the entries, restores the group's `start`. Both ask first, record a new commit (so they can be undone too) and are disabled while a turn is live, with a line saying why; the main process refuses them while a task operation runs or turns are held.
-- Going back resets every tracked file, `.harness/notes` included, so it also undoes tasks that changed something later. The confirmation says how many ("This also undoes 2 later tasks"; `laterTasks` in `HistoryPanel.tsx`), and undoing a task names the count on its button ("Undo 3 tasks").
+- Going back resets every tracked file, `.harness/notes` included, so it also undoes tasks that changed something later. The confirmation says how many ("This also undoes 2 later tasks"; `laterTasks` in `HistoryPanel.tsx`) and lists them with their files (the task being undone first), and undoing a task names the count on its button ("Undo 3 tasks").
+- The open task's row says "In progress" (`currentTask`, the id of `TaskView.current`, which is the id in the commits' `Task:` trailer).
 
 ## Backup
 

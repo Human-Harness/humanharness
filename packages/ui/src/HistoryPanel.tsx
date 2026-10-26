@@ -31,10 +31,10 @@ export function entryLabel(message: string): { key: string; values?: Record<stri
   return null;
 }
 
-/** How many tasks other than `own` changed something after `after` (an ISO date): going back undoes them too. */
-export function laterTasks(groups: HistoryTaskView[], own: string | null, after: string): number {
+/** The tasks other than `own` that changed something after `after` (an ISO date), newest first: going back undoes them too. */
+export function laterTasks(groups: HistoryTaskView[], own: string | null, after: string): HistoryTaskView[] {
   const t = Date.parse(after);
-  return groups.filter((g) => g.taskId !== null && g.taskId !== own && Date.parse(g.date) > t).length;
+  return groups.filter((g) => g.taskId !== null && g.taskId !== own && Date.parse(g.date) > t);
 }
 
 const keyOf = (g: HistoryTaskView) => g.taskId ?? "other";
@@ -65,10 +65,13 @@ export function HistoryPanel({
   onClose,
   onRestored,
   disabled = false,
+  currentTask,
 }: {
   client: HarnessClient;
   /** The harness's actions: a task's row shows its action's label. */
   actions: Record<string, ActionOption>;
+  /** The open task's id: its row says it is in progress. */
+  currentTask?: string;
   onClose: () => void;
   /** Called after a restore succeeded, before the panel closes. */
   onRestored?: (kind: Restore["kind"]) => void;
@@ -156,28 +159,47 @@ export function HistoryPanel({
     setConfirming(null);
   };
 
-  /** The button, or its confirmation while it waits for a yes; `later` tasks are undone too. `name` is the task's row label. */
-  const goBack = (r: Restore, later: number, name?: string) =>
-    confirming?.kind === r.kind && confirming.id === r.id && !disabled ? (
+  /**
+   * The button, or its confirmation while it waits for a yes. `later` tasks are undone too; with any, the
+   * confirmation lists what goes, `task` (the group being undone, for "Undo this task") first.
+   */
+  const goBack = (r: Restore, later: HistoryTaskView[], task?: HistoryTaskView) => {
+    if (!(confirming?.kind === r.kind && confirming.id === r.id && !disabled)) return trigger(r);
+    const undone = later.length > 0 ? [...(task ? [task] : []), ...later] : [];
+    return (
       <div className="hh-confirm hh-history-confirm">
         <WarnIcon />
         <div>
-          {r.kind === "task" && <strong>{t("history.confirmTaskTitle", { name })}</strong>}
+          {task && <strong>{t("history.confirmTaskTitle", { name: rowLabel(task) })}</strong>}
           <p>
-            {t(r.kind === "task" ? "history.confirmTask" : "history.confirm")}
-            {later > 0 && ` ${t("history.laterTasks", { count: later })}`}
+            {t(task ? "history.confirmTask" : "history.confirm")}
+            {later.length > 0 && ` ${t("history.laterTasks", { count: later.length })}`}
           </p>
         </div>
+        {undone.length > 0 && (
+          <ul className="hh-history-undone" aria-label={t("history.undone")}>
+            {undone.map((g) => (
+              <li key={keyOf(g)}>
+                <span>{rowLabel(g)}</span>
+                <span className="hh-caption">{t("history.filesChanged", { count: g.changes.length })}</span>
+              </li>
+            ))}
+          </ul>
+        )}
         <div className="hh-history-confirm-buttons">
           <button disabled={restoring} onClick={() => cancel(r)}>
             {t("history.cancel")}
           </button>
           <button ref={yesRef} className="hh-primary" disabled={restoring} onClick={() => restore(r)}>
-            {r.kind === "task" ? t("history.undoTasks", { count: later + 1 }) : t("history.confirmYes")}
+            {task ? t("history.undoTasks", { count: later.length + 1 }) : t("history.confirmYes")}
           </button>
         </div>
       </div>
-    ) : r.kind === "task" ? (
+    );
+  };
+
+  const trigger = (r: Restore) =>
+    r.kind === "task" ? (
       <button id={triggerId(r)} className="hh-history-undo" disabled={disabled || restoring} onClick={() => setConfirming(r)}>
         <UndoIcon />
         {t("history.restoreTask")}
@@ -263,6 +285,7 @@ export function HistoryPanel({
                         {when(g.date)} · {t("history.filesChanged", { count: g.changes.length })}
                       </span>
                     </span>
+                    {currentTask !== undefined && g.taskId === currentTask && <span className="hh-history-chip open">{t("history.inProgress")}</span>}
                     {g.noteTitle && (
                       <span className="hh-history-chip" title={g.noteTitle}>
                         {t("history.noteSaved")}
@@ -294,7 +317,7 @@ export function HistoryPanel({
                       </ol>
                       {g.taskId !== null &&
                         g.start !== null &&
-                        goBack({ kind: "task", id: g.taskId }, laterTasks(groups ?? [], g.taskId, g.date), rowLabel(g))}
+                        goBack({ kind: "task", id: g.taskId }, laterTasks(groups ?? [], g.taskId, g.date), g)}
                     </div>
                   )}
                 </li>

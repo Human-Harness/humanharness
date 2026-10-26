@@ -52,12 +52,22 @@ const groups: HistoryTaskView[] = [
   },
 ];
 
-async function open(opts: { disabled?: boolean; client?: FakeClient; actions?: Record<string, ActionOption> } = {}) {
+async function open(opts: { disabled?: boolean; client?: FakeClient; actions?: Record<string, ActionOption>; currentTask?: string } = {}) {
   const client = opts.client ?? new FakeClient();
   if (!opts.client) client.historyGroups = groups;
   const onRestored = vi.fn();
   const onClose = vi.fn();
-  await renderIn("en", <HistoryPanel client={client} actions={opts.actions ?? actions} disabled={opts.disabled} onClose={onClose} onRestored={onRestored} />);
+  await renderIn(
+    "en",
+    <HistoryPanel
+      client={client}
+      actions={opts.actions ?? actions}
+      disabled={opts.disabled}
+      currentTask={opts.currentTask}
+      onClose={onClose}
+      onRestored={onRestored}
+    />,
+  );
   return { client, onRestored, onClose };
 }
 
@@ -104,6 +114,18 @@ describe("HistoryPanel", () => {
     ]);
   });
 
+  it("tags the open task's row as in progress, and only that one", async () => {
+    await open({ currentTask: "t1" });
+    expect(await screen.findByRole("button", { name: /A question.*In progress/ })).toBeTruthy();
+    expect(screen.getAllByText("In progress")).toHaveLength(1);
+  });
+
+  it("tags no row without an open task", async () => {
+    await open();
+    await screen.findByRole("button", { name: /Plan the week/ });
+    expect(screen.queryByText("In progress")).toBeNull();
+  });
+
   it("explains an empty history", async () => {
     const client = new FakeClient();
     client.historyGroups = [];
@@ -127,6 +149,8 @@ describe("HistoryPanel", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Undo this task" }));
     expect(screen.getByText("Undo “Plan the week”?")).toBeTruthy();
     expect(screen.queryByText(/later task/)).toBeNull();
+    // Nothing later: no list, the title says what goes.
+    expect(screen.queryByRole("list", { name: "What will be undone" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Undo task" }));
     await waitFor(() => expect(client.restoredTasks).toEqual(["t2"]));
     expect(onRestored).toHaveBeenCalledWith("task");
@@ -138,8 +162,10 @@ describe("HistoryPanel", () => {
     fireEvent.click(await screen.findByRole("button", { name: /A question/ }));
     fireEvent.click(screen.getAllByRole("button", { name: "Undo this task" })[1]);
     expect(screen.getByText(/This also undoes 1 later task\./)).toBeTruthy();
-    // The button counts the task itself and the later one.
+    // The button counts the task itself and the later one, and the list names both, the task first.
     expect(screen.getByRole("button", { name: "Undo 2 tasks" })).toBeTruthy();
+    const undone = screen.getByRole("list", { name: "What will be undone" });
+    expect(within(undone).getAllByRole("listitem").map((li) => li.textContent)).toEqual(["A question1 file changed", "Plan the week2 files changed"]);
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     fireEvent.click(screen.getByRole("button", { name: /Outside a task/ }));
     const points = screen.getAllByRole("button", { name: "Go back here" });

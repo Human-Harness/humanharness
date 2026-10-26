@@ -124,6 +124,8 @@ export class Recorder {
   /** What the person answered the last turn with: a choice's label, or `*` for typed text. */
   reply(key: string): void {
     this.replyKey = key;
+    // An answer whose turn never ended (stopped, not retried) must not take this reply's link.
+    this.answerKey = undefined;
   }
 
   /** The person answered the last turn's input block: replay follows this answer by its JSON (`respond`). */

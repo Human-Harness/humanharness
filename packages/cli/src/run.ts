@@ -300,10 +300,22 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
     // A line read that lost the race with a Ctrl-C: the next prompt waits for it instead of reading again.
     let pending: Promise<IteratorResult<string>> | undefined;
     let closeStopped = false;
-    /** One line for a field's prompt: Ctrl-C isn't raced here, and the end of the input reads as null. */
+    /** A Ctrl-C at a field's prompt: the answer being typed is dropped. */
+    let answerDropped = false;
+    /** One line for a field's prompt; null when the input ended or a Ctrl-C dropped the answer. */
     const ask = async (question: string): Promise<string | null> => {
+      if (answerDropped) return null;
+      const interrupted = new Promise<"interrupt">((resolve) => {
+        promptInterrupted = () => resolve("interrupt");
+      });
       out.write(question);
-      const next = await (pending ??= typed.next());
+      pending ??= typed.next();
+      const next = await Promise.race([pending, interrupted]);
+      promptInterrupted = undefined;
+      if (next === "interrupt") {
+        answerDropped = true;
+        return null;
+      }
       pending = undefined;
       return next.done ? null : next.value;
     };
@@ -352,8 +364,13 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
         closeStopped = false;
         const asked = current.pendingInput;
         if (line === "a" && asked && Object.hasOwn(specs, asked.block)) {
+          answerDropped = false;
           const value = await promptAnswer(specs[asked.block], view.shown.get(asked.blockId), ask, out, language);
-          if (!value) continue;
+          if (!value) {
+            // The question stays open: `a` asks it again.
+            if (answerDropped) out.write("\nAnswer dropped.\n");
+            continue;
+          }
           const { accepted, done } = tasks.respond(asked.blockId, value);
           // Awaited below; marked handled here so a refusal before `accepted` leaves no unhandled rejection.
           done.catch(() => undefined);

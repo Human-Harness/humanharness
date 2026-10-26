@@ -202,4 +202,24 @@ describe("Recorder: answers", () => {
       fs.rmSync(folder, { recursive: true, force: true });
     }
   });
+
+  it("a follow-up typed after an answer whose turn failed is linked as the follow-up, not the answer", async () => {
+    const folder = fs.mkdtempSync(path.join(os.tmpdir(), "hh-rec-"));
+    try {
+      const r = new Recorder({ folder, toolFor: (b) => `show_${b}`, matchFor: () => "# Task: practice", recordedWith: "claude" });
+      await r.begin();
+      r.event({ type: "block", name: "commit_answer", data: { question: "Who?" }, id: "t1:0:0" });
+      await r.turnEnded({ action: "practice", task: "t1", phase: "run" });
+      r.answer("commit_answer", { choice: "Me", why: "x" });
+      await r.turnEnded({ action: "practice", task: "t1", phase: "run" }, { failed: true });
+      r.reply("*");
+      r.event({ type: "text", delta: "Sure." });
+      await r.turnEnded({ action: "practice", task: "t1", phase: "run" });
+      const [rec] = r.recordings();
+      expect(rec.turns[0].next).toEqual({ "*": "t2" });
+      expect(rec.turns[0].respond).toBeUndefined();
+    } finally {
+      fs.rmSync(folder, { recursive: true, force: true });
+    }
+  });
 });

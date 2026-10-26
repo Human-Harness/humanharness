@@ -185,11 +185,16 @@ select:focus-visible { outline: 2px solid var(--hh-ink); outline-offset: 2px; }
 .hh-model-editor { display: grid; gap: 8px; justify-items: start; }
 .hh-model-fields { display: grid; grid-template-columns: max-content 1fr; gap: 6px 12px; align-items: center; }
 .hh-model-fields label { color: var(--hh-slate); }
-.hh-context-meter { display: block; height: 3px; margin: 2px 8px 4px 35px; border-radius: 2px; background: var(--hh-line); overflow: hidden; }
-.hh-context-meter > span { display: block; height: 100%; background: var(--hh-slate); }
-.hh-context-meter.warn > span { background: var(--hh-warn); }
-.hh-flow-question { display: grid; gap: 4px; margin: 0 0 8px; padding: 6px 8px; color: var(--hh-ink); font-weight: 600; }
-.hh-flow-question .hh-context-meter { margin-left: 0; }
+.hh-context-meter { display: block; width: 16px; height: 16px; flex: none; }
+.hh-context-meter svg { display: block; width: 100%; height: 100%; transform: rotate(-90deg); }
+.hh-context-meter circle { fill: none; stroke-width: 2.5; stroke: var(--hh-line-strong); }
+.hh-context-meter circle + circle { stroke: var(--hh-slate); stroke-linecap: round; }
+.hh-context-meter.warn circle + circle { stroke: var(--hh-warn); }
+/* The running step's ring sits at the right end of its row, outside the (disabled) button so its title still shows on hover. */
+.hh-steps li { position: relative; }
+.hh-steps li > .hh-context-meter { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); }
+.hh-steps li:has(> .hh-context-meter) button { padding-right: 34px; }
+.hh-flow-question { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 0 8px; padding: 6px 8px; color: var(--hh-ink); font-weight: 600; }
 .hh-fallback { margin: 4px 0; }
 .hh-model-engine { display: flex; align-items: center; gap: 12px; margin: 8px 0; }
 .hh-model-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 10px 0; }
@@ -256,14 +261,52 @@ select:focus-visible { outline: 2px solid var(--hh-ink); outline-offset: 2px; }
 .hh-composer textarea { flex: 1; min-height: 44px; resize: vertical; font: inherit; border-radius: 8px; border: 1px solid var(--hh-line-strong); background: var(--hh-surface); color: var(--hh-ink); padding: 8px; }
 .hh-composer button { height: auto; }
 .hh-composer button[type="submit"] { background: var(--hh-ink); color: var(--hh-on-ink); border-color: transparent; font-weight: 600; }
-.hh-history { position: fixed; inset: 52px 0 0 auto; width: min(360px, 100%); box-sizing: border-box; background: var(--hh-sheet); border-left: 1px solid var(--hh-line-strong); padding: 16px; overflow-y: auto; }
-.hh-history li { display: grid; gap: 4px; margin-bottom: 12px; }
-.hh-history time { color: var(--hh-muted); font-size: 12px; }
+/* History (spec 3d §1, mockup "History panel redesign"): a side sheet, tasks grouped by day, entries as a timeline. */
+.hh-history { position: fixed; inset: 52px 0 0 auto; width: min(380px, 100%); box-sizing: border-box; background: var(--hh-sheet); border-left: 1px solid var(--hh-line-strong); padding: 10px 12px 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
+.hh-history > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-left: 8px; }
+.hh-history > header h2 { margin: 0; font-family: var(--hh-display); font-size: 17px; font-weight: 600; }
+.hh-history-intro { padding: 0 8px 6px; line-height: 1.45; }
+.hh-history > [role="alert"] { margin: 0 8px; color: var(--hh-warn); }
+.hh-history-busy { display: flex; align-items: center; gap: 10px; margin: 0 0 6px; padding: 10px 12px; border-radius: 8px; background: var(--hh-segment); color: var(--hh-slate); line-height: 1.4; }
+.hh-history-busy svg { flex: none; }
+.hh-history-empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 24px 28px; text-align: center; color: var(--hh-muted); }
+.hh-history-empty strong { color: var(--hh-ink); }
+.hh-history-empty p { line-height: 1.45; }
+.hh-history-day { display: grid; gap: 6px; }
+.hh-history-day + .hh-history-day { margin-top: 8px; }
+.hh-history-day h3 { margin: 6px 8px 0; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--hh-muted); }
 .hh-history-tasks, .hh-history-entries, .hh-history-files { list-style: none; margin: 0; padding: 0; }
-.hh-history-row { width: 100%; height: auto; display: grid; justify-items: start; gap: 2px; padding: 8px 10px; text-align: left; }
+.hh-history-tasks { display: grid; gap: 6px; }
+.hh-history-tasks > li { background: var(--hh-surface); border: 1px solid var(--hh-line); border-radius: 10px; overflow: hidden; }
+.hh-history-row { width: 100%; height: auto; justify-content: flex-start; gap: 10px; padding: 10px 12px; border: none; border-radius: 0; background: transparent; text-align: left; }
+.hh-history-row > svg { flex: none; color: var(--hh-muted); }
+.hh-history-row-text { flex: 1; min-width: 0; display: grid; gap: 2px; }
 .hh-history-label { font-weight: 600; }
-.hh-history-body { display: grid; gap: 8px; padding: 6px 10px 0; }
-.hh-history .hh-history-files li { display: flex; align-items: baseline; gap: 8px; margin: 0; }
+.hh-history-chip { flex: none; padding: 2px 8px; border: 1px solid var(--hh-line-strong); border-radius: 999px; font-size: 11px; color: var(--hh-ok); }
+.hh-history-body { display: grid; gap: 10px; padding: 0 12px 12px 34px; }
+.hh-history-files { display: grid; gap: 4px; }
+.hh-history-files li { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.hh-history-files .hh-change { width: 56px; }
+.hh-history-files code { font-size: 12px; color: var(--hh-slate); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hh-history-entries { border-left: 1px solid var(--hh-line-strong); }
+.hh-history-entries > li { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 30px; padding: 4px 6px 4px 14px; border-radius: 6px; }
+.hh-history-entries > li::before { content: ""; position: absolute; left: -4px; top: 50%; width: 7px; height: 7px; margin-top: -3.5px; border-radius: 50%; background: var(--hh-muted); }
+.hh-history-entries > li:hover, .hh-history-entries > li:focus-within { background: var(--hh-segment); }
+.hh-history-entries > li:hover::before, .hh-history-entries > li:focus-within::before { background: var(--hh-ink); }
+.hh-history-entry-text { display: grid; gap: 1px; min-width: 0; }
+.hh-history time { color: var(--hh-muted); font-size: 12px; }
+/* "Go back here" shows on the entry under the pointer or focus; it stays in the tab order. */
+.hh-history-point-back { flex: none; height: 26px; padding: 0 10px; font-size: 12px; opacity: 0; }
+.hh-history-entries > li:hover .hh-history-point-back, .hh-history-point-back:focus-visible { opacity: 1; }
+.hh-history-entries > li .hh-history-confirm { flex: 1; }
+.hh-history-undo { justify-self: start; background: transparent; }
+.hh-history-confirm { display: grid; grid-template-columns: auto 1fr; gap: 8px 10px; align-items: start; border-color: var(--hh-warn); }
+.hh-history-confirm > svg { color: var(--hh-warn); margin-top: 1px; }
+.hh-history-confirm p { margin: 4px 0 0; color: var(--hh-slate); line-height: 1.45; flex-basis: auto; }
+.hh-history-chip.open { color: var(--hh-slate); }
+.hh-history-undone { grid-column: 1 / -1; list-style: none; margin: 0; padding: 8px 10px; display: grid; gap: 4px; border-radius: 6px; background: var(--hh-sheet); }
+.hh-history-undone li { display: flex; justify-content: space-between; gap: 8px; }
+.hh-history-confirm-buttons { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 8px; }
 .hh-change { flex: none; font-size: 12px; color: var(--hh-muted); }
 .hh-change.added { color: var(--hh-ok); }
 .hh-change.deleted { color: var(--hh-warn); }

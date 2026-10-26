@@ -236,14 +236,14 @@ export { BEFORE_MESSAGE, DATA_CHANGE_PREFIX, NOTE, RESTORE_POINT, RESTORE_TASK, 
 
 /**
  * One row of the History panel: a task's commits, or the group of commits outside any task (`taskId: null`:
- * "Other changes", which holds the restores too).
+ * "Outside a task", which holds the restores too).
  */
 export interface HistoryTaskView {
   taskId: string | null;
   actionId: string | null;
   /** The scope the task ran in (harnesses with scopes). */
   scopeId?: string;
-  /** What "Go back to before this task" restores; null when there is nothing before it. */
+  /** What "Undo this task" restores; null when there is nothing before it. */
   start: string | null;
   end: string;
   /** ISO date of the task's last commit. */

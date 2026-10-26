@@ -3,7 +3,7 @@ import { promises as fs } from "node:fs";
 import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
-import { BrowserWindow, type IpcMainInvokeEvent, app, clipboard, dialog, ipcMain, nativeTheme, shell } from "electron";
+import { BrowserWindow, type IpcMainInvokeEvent, app, clipboard, dialog, ipcMain, nativeImage, nativeTheme, shell } from "electron";
 import { electronLauncher } from "@humanharness/blocks";
 import { type EngineDef, type ModelProfile, type ModelSpec, NOTICE_VERSION, availableEngines, defaultTier, getEngine } from "@humanharness/engines";
 import { DEFAULT_LANGUAGE, type LoadedHarness, TIERS, type Tier, allBlocks, choiceOptionSchema, loadHarness, resolveInHarness } from "@humanharness/harness-sdk";
@@ -48,6 +48,7 @@ import {
   writeNote,
 } from "@humanharness/workspace";
 import { imageDataUrl } from "./assets";
+import { devDockIcon } from "./dock-icon";
 import { ChatLog } from "./chat-log";
 import { ConfigStore, historyDir } from "./config";
 import { agentDataRequest, personDataRequests } from "./data-requests";
@@ -1045,6 +1046,14 @@ if (primary) {
   });
 
   app.whenReady().then(async () => {
+    // Development builds: the harness's logo in the Dock, else Human Harness's (`resources/` beside `out/`).
+    if (process.platform === "darwin" && !app.isPackaged) {
+      const icon = devDockIcon(
+        [() => (harness.logo ? resolveInHarness(harness, harness.logo) : undefined), () => path.join(here, "../../resources/hh-logo.png")],
+        (file) => nativeImage.createFromPath(file),
+      );
+      if (icon) app.dock?.setIcon(icon);
+    }
     config = new ConfigStore(app.getPath("userData"));
     // A folder move cut short by a quit or crash: finish or undo it before anything opens the folder or its history.
     const userData = app.getPath("userData");

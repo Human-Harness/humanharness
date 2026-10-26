@@ -14,27 +14,7 @@ export { z } from "zod";
 /** A harness id: lowercase letters, digits and dashes, starting with a letter. It names the app's data folder. */
 export const HARNESS_ID = /^[a-z][a-z0-9-]*$/;
 
-/** A BCP 47 language tag ("en", "pt-BR"). The app ships in English; other languages are generated on demand (spec 5 §1). */
-export type Language = string;
-export const DEFAULT_LANGUAGE: Language = "en";
-
-/** The canonical form of `tag` ("pt-br" → "pt-BR"), or null when it isn't a language tag. */
-export function canonicalLanguage(tag: string): Language | null {
-  try {
-    return Intl.getCanonicalLocales(tag)[0] ?? null;
-  } catch {
-    return null;
-  }
-}
-
-/** `tag`'s name in the language `display` ("pt-BR" → "Brazilian Portuguese"); the tag itself when there is no name. */
-export function languageName(tag: Language, display: Language = DEFAULT_LANGUAGE): string {
-  try {
-    return new Intl.DisplayNames([display], { type: "language" }).of(tag) ?? tag;
-  } catch {
-    return tag;
-  }
-}
+export * from "./language";
 
 /** Every text in a manifest is one English string; the app translates the screens (spec 5 D1). */
 const text = z.string().min(1);

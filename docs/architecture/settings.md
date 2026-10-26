@@ -41,7 +41,7 @@ The structural rules are manifest schema errors: `defineHarness` and `loadHarnes
 - The reserved `settings` collection (`settingsCollection`; `dataCollections` adds it to the store, and it is never in `harness.data`). It is app-wide, one record, and `agent: "none"`: the agent reads sentences, never the JSON, and a harness with settings but no data gets no `data` MCP server.
 - The record holds only what the person changed. A change back to the default removes the key, and an empty record removes the file (`.harness/data/_app/settings.json`). `settingsValues` fills the defaults on read, so a harness update that changes a default reaches everyone who never touched it.
 - The record is read field by field (`validFields` in `packages/workspace/src/data.ts`): a stored value its field no longer takes (a hand edit, or a harness update that narrowed the field) is dropped and its default applies; the other fields keep their values, and later changes still save. Only a file that isn't a JSON object is `broken-file`, which reads as the defaults and refuses writes until it is fixed or restored.
-- The person's changes go through `hh:data`'s handler (`personDataRequests`): the store's checks, a refusal while turns are blocked (a restore, a folder move, an engine change), and a `Data: settings` history commit tagged with the open task. Undoing a task therefore also undoes settings changed during it, so `dataDiff` lists such a change in that task's diff, under collection `settings`, scope `_app`.
+- `SettingsController` writes the person's changes through the person's data handler (`personDataRequests`, the one behind `hh:data`): the store's checks, a refusal while turns are blocked (a restore, a folder move, an engine change), and a `Data: settings` history commit tagged with the open task. Undoing a task therefore also undoes settings changed during it, so `dataDiff` lists such a change in that task's diff, under collection `settings`, scope `_app`.
 
 ## The window
 
@@ -49,7 +49,7 @@ The structural rules are manifest schema errors: `defineHarness` and `loadHarnes
 - Segmented, select and switch save on change; number and text inputs save on blur or Enter. A value the store refuses shows its message under the field.
 - "More options" holds the `advanced` fields. "Back to the app's defaults" deletes the stored record, resetting every field of the tab; it shows only when some value differs from its default.
 - `SettingsController` (`packages/shell/src/main/settings.ts`) answers the window over IPC: `hh:settingsGet` (values and pending fields), `hh:settingsSet`, `hh:settingsReset`, and the push event `hh:settings` on every change. Results travel as data (`SettingsResult`), never as thrown errors.
-- A harness's own screens use `HarnessClient.settings` (`get`, `set`, `reset`, `onChange`). `get()` gives every field's value, defaults included; `client.data` on `settings` works too, but holds only the changed fields.
+- A harness's own screens use `HarnessClient.settings` (`get`, `set`, `reset`, `onChange`). `get()` gives every field's value, defaults included. `client.data` can read `settings` (it holds only the changed fields) but not write it: `hh:data` refuses a put, patch or delete on `settings` with "Settings change through client.settings" (`harnessUiDataRequests`), so every change keeps the controller's rules.
 
 ## How values reach the agent
 

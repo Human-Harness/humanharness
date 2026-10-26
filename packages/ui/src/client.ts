@@ -543,7 +543,7 @@ export interface HarnessClient {
     current(): Promise<string | null>;
     onChange(listener: (view: ScopesView) => void): () => void;
   };
-  /** The harness's data (spec §4.5), as the person: the same checks as the agent's tools. */
+  /** The harness's data (spec §4.5), as the person: the same checks as the agent's tools. `settings` is read-only here: use `settings`. */
   data: {
     get(collection: string, key?: DataKey, options?: DataOptions): Promise<DataRecord | null>;
     query(collection: string, query?: DataQuery, options?: DataOptions): Promise<DataQueryResult>;

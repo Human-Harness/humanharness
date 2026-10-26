@@ -66,7 +66,7 @@ import { imageDataUrl } from "./assets";
 import { devDockIcon } from "./dock-icon";
 import { ChatLog } from "./chat-log";
 import { ConfigStore, historyDir } from "./config";
-import { agentDataRequest, personDataRequests, saveAnswerRecords } from "./data-requests";
+import { agentDataRequest, harnessUiDataRequests, personDataRequests, saveAnswerRecords } from "./data-requests";
 import { testPrompt } from "./engine-check";
 import { createCommandDeps } from "./command-deps";
 import { cliCommand, engineCommand, loginShellPath } from "./engine-command";
@@ -727,6 +727,8 @@ const personData = personDataRequests({
   // Without scopes the only scope is the implicit `main` (D2); with them, the registry's open (not archived) scopes.
   scopeExists: async (id) => (scoped() ? activeScope(id) : id === MAIN_SCOPE),
 });
+/** The same handler for the harness UI, which only reads `settings` (it changes them through `client.settings`). */
+const harnessUiData = harnessUiDataRequests(personData, () => harness.settings !== undefined);
 
 function registerIpc() {
   handle("hh:getState", () => appState());
@@ -827,7 +829,7 @@ function registerIpc() {
   handle("hh:data", async (request: unknown, options: unknown) => {
     // After the migration: it opens `main`, the scope a request made on mount acts in.
     await scopesSettled();
-    return personData(request, options);
+    return harnessUiData(request, options);
   });
   handle("hh:dataDiff", async (taskId: unknown) => {
     if (typeof taskId !== "string" || taskId.length === 0 || taskId.length > 200) return [];

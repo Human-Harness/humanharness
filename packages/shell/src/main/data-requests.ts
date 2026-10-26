@@ -1,3 +1,4 @@
+import { SETTINGS_COLLECTION } from "@humanharness/harness-sdk";
 import { APP_SCOPE, DATA_CHANGE_PREFIX, DataError, type DataStore, type HistoryTrailer, isDataWrite, isScopeDir, runDataRequest } from "@humanharness/workspace";
 
 /** The request can't run now (the app isn't set up, turns are blocked); its message is safe to show. */
@@ -70,6 +71,21 @@ export function personDataRequests(d: PersonDataDeps): (request: unknown, option
       }
       return result;
     });
+  };
+}
+
+/**
+ * The harness UI's requests (`hh:data`): `run` (the person's handler), except that the UI only reads the reserved
+ * `settings` collection. It changes settings through `client.settings`, whose controller keeps their rules (only the
+ * changed values stored, an empty record deleted) and writes through `run` itself. Without harness settings nothing
+ * changes (D0): `settings` is then an unknown collection, refused by the store as before.
+ */
+export function harnessUiDataRequests(run: (request: unknown, options: unknown) => Promise<unknown>, hasSettings: () => boolean): (request: unknown, options: unknown) => Promise<unknown> {
+  return async (request, options) => {
+    if (hasSettings() && isDataWrite(request) && (request as { collection: unknown }).collection === SETTINGS_COLLECTION) {
+      throw new DataError("refused", "Settings change through client.settings");
+    }
+    return run(request, options);
   };
 }
 

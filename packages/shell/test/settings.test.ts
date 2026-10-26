@@ -274,6 +274,18 @@ describe("SettingsController: mode settings (harness-settings spec §6)", () => 
     expect(await t.ctl.set("socratic.nope", "x")).toEqual({ ok: false, message: "Unknown setting" });
     expect(await t.ctl.set("feynman.questions", "few")).toEqual({ ok: false, message: "Unknown setting" });
     expect((await t.ctl.set("socratic.questions", "lots")).ok).toBe(false);
+    for (const key of ["__proto__.x", "__proto__.questions", "socratic.__proto__", "constructor.questions", "toString.questions"])
+      expect(await t.ctl.set(key, "many")).toEqual({ ok: false, message: "Unknown setting" });
     expect(fs.existsSync(t.file)).toBe(false);
+    expect(({} as Record<string, unknown>).questions).toBeUndefined();
+  });
+
+  it("reset clears a stored mode setting back to its default", async () => {
+    const t = modeSetup();
+    await t.ctl.set("tone", "demanding");
+    await t.ctl.set("socratic.questions", "many");
+    expect(await t.ctl.reset()).toMatchObject({ ok: true, state: { values: { tone: "patient", "socratic.questions": "few" } } });
+    expect(fs.existsSync(t.file)).toBe(false);
+    expect(await t.ctl.modeSentences("socratic")).toEqual(["Ask few questions."]);
   });
 });

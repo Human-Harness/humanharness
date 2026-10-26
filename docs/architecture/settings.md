@@ -25,7 +25,15 @@ Spaces are allowed around the placeholder's content (`{{ value:label }}`), not a
 
 ### Checks
 
-The structural rules are manifest schema errors: `defineHarness` and `loadHarness` refuse them, and `check` lists them as `schema`. They cover a missing default or one that fails its schema, a schema that takes `undefined`, an `options` key that isn't a value, an unknown or duplicate section, a control whose type doesn't fit, a placeholder other than the two, and the reserved name.
+The structural rules are manifest schema errors: `defineHarness` and `loadHarness` refuse them, and `check` lists them as `schema`. They cover:
+
+- at least one field;
+- a missing default or one that fails its schema, and a schema that takes `undefined`;
+- a control whose type doesn't fit;
+- `options` on a control without labels (only `segmented`, `select` and `toggle` have them), and an `options` key that isn't a value;
+- a `section` that isn't declared, and section ids that aren't unique;
+- a placeholder other than the two, and `{{value:label}}` on a control without labels;
+- the reserved name.
 
 ## Where values live
 
@@ -45,7 +53,7 @@ The structural rules are manifest schema errors: `defineHarness` and `loadHarnes
 ## How values reach the agent
 
 - `managedSection` writes `### How to work with this person`, one `- <sentence>` per field in manifest order, after the core rules and before the interface tools. No sentences, no heading.
-- The runtime asks for the sentences when it starts (`RuntimeOptions.instructionSettings`). `HarnessRuntime.refreshInstructions()` rewrites `AGENTS.md` later, only when its text changed, through a temp file under `.harness/` and a rename, so nothing ever reads half a file.
+- The runtime asks for the sentences when it starts (`RuntimeOptions.instructionSettings`). `HarnessRuntime.refreshInstructions()` rewrites `AGENTS.md` later, only when its text changed, through a temp file under `.harness/` and a rename, so no session or commit reads half a file.
 - **Never mid-session (D4).** `SettingsController` marks the settings stale on any write to the collection, from any writer, and after a restore (`hh:restore`, `hh:restoreTask`). It then asks `TaskManager.whenNoTask` to rewrite: after the running operation, only when no task is open. `TaskManager` calls `betweenTasks` after a task ends and before a new task's first turn, which applies whatever is still stale. Both run on the task manager's queue, which also creates runtimes, so a rewrite never races a new runtime's first write.
 - While a task is open, the tab says "Changes apply from the next task." and marks as "Pending" every agent field whose value differs from what the current `AGENTS.md` holds. UI-only fields are never pending: the harness's screens read them at once.
 
@@ -61,6 +69,6 @@ The section is in every session's stable prefix. `check` warns (`settings-tokens
 
 - Mode settings (spec §6) wait for task modes.
 - There is no file watcher: a hand edit of `settings.json` reaches `AGENTS.md` at the next runtime start or the next settings change.
-- A task that resumes after a folder move starts a new session, which reads the settings as they are then.
+- A task that goes on in a new session reads the settings as they are then. That happens after "Move folder", which keeps the open task (`resumeFromNotes`): the new folder's runtime writes `AGENTS.md` with the current settings. A restart never carries a task over: at startup the app ends a task left open (`TaskManager.interrupt`), and so does choosing another folder.
 - `dataDiff` leaves settings out: they are not a task's output.
 - Recordings for mock mode don't vary by settings.

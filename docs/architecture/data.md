@@ -15,7 +15,7 @@ Spec: `docs/superpowers/specs/2026-10-25-scopes-and-data-design.md`.
 
 ## Data
 
-- The manifest's `data` declares collections (`packages/harness-sdk/src/data.ts`): a zod object schema, a `key` (or `single: true`), `scoped`, what the agent may do (`agent`: `write`, `read`, `none`), what goes into the first message (`context`), and optional `rules`. `settings` is reserved.
+- The manifest's `data` declares collections (`packages/harness-sdk/src/data.ts`): a zod object schema, a `key` (or `single: true`), `scoped`, what the agent may do (`agent`: `write`, `read`, `none`), what goes into the first message (`context`), and optional `rules`.
 - `settings` is a reserved collection name: a harness with `settings` gets it from the core (app-wide, one record, hidden from the agent, read field by field). See `docs/architecture/settings.md`.
 - The key must be a field declared exactly as `z.string()` or `z.number()`: an enum, literal, optional, nullable or defaulted field is refused. `single: true` with a `key` is accepted, but the key is unused.
 - Storage (`DataStore` in `packages/workspace/src/data.ts`): one JSON file per collection and scope, `.harness/data/<scope>/<collection>.json` (`_app` for app-wide ones), records sorted by key, two-space indented. Writes are atomic and one at a time; nothing is cached, so a hand edit is seen at once. A file a hand edit broke is never overwritten: reads skip its invalid records (a duplicate key counts as invalid), writes are refused until it is fixed or restored.

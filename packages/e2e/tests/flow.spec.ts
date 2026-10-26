@@ -59,6 +59,8 @@ test("a topic answered with blocks, then next: the note is saved and the next to
     const agents = fs.readFileSync(path.join(s.folder, "AGENTS.md"), "utf8");
     expect(agents).not.toContain("### Answers from input blocks");
     expect(agents).not.toContain("show_annotate");
+    // Harness settings D0: the demo declares none, so AGENTS.md has no settings section and nothing is stored.
+    expect(agents).not.toContain("### How to work with this person");
     expect(readTasks(s.folder).current).not.toHaveProperty("pendingInput");
     const chatLines = readJsonl<{ blocks?: Record<string, unknown>[] }>(path.join(s.folder, ".harness", "chats", "main.jsonl"));
     const shownBlocks = chatLines.flatMap((e) => e.blocks ?? []);
@@ -68,6 +70,7 @@ test("a topic answered with blocks, then next: the note is saved and the next to
 
     // Settings › Uso: the manifest task took the five-hour window from 10 % to 14 % (spec 3b).
     await page.getByRole("button", { name: "Settings" }).click();
+    await expect(page.getByRole("tab")).toHaveText(["General", "Engine", "Models", "Usage"]);
     await page.getByRole("tab", { name: "Usage" }).click();
     const usage = page.getByRole("tabpanel", { name: "Usage" });
     await expect(usage.getByText("15% used")).toBeVisible();

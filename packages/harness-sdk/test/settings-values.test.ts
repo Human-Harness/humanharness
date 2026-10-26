@@ -10,7 +10,7 @@ import {
   settingsView,
   z,
 } from "../src";
-import { declared } from "./settings.test";
+import { declared } from "./settings-fixtures";
 
 const settings = settingsSchema.parse(declared);
 

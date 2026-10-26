@@ -39,7 +39,8 @@ const fieldSchema = z.object({
   /** A zod type: z.enum (segmented, select), z.boolean (toggle), z.number (number) or z.string (text). */
   schema: z.custom<z.ZodType>((s) => s instanceof z.ZodType, { message: "Expected a zod schema" }),
   /** The value until the person changes it; it must match `schema`. */
-  default: z.unknown(),
+  // Optional here only so a missing default gets the refine's own message.
+  default: z.unknown().optional(),
   /** A section id from `sections`; absent: drawn first, outside any section. */
   section: z.string().optional(),
   control: z.enum(SETTING_CONTROLS),
@@ -90,8 +91,9 @@ export const settingsSchema = z
         issue(at("control"), `The ${f.control} control needs ${CONTROL_TYPES[f.control]} schema`);
         continue;
       }
-      // An optional or defaulted schema takes undefined; a setting still needs a value of its own.
-      if (f.default === undefined) issue(at("default"), "Give a default value");
+      // A schema that takes undefined (.default(), .optional()) would let the store fill its own default, not `default`.
+      if (f.schema.safeParse(undefined).success) issue(at("schema"), "Give the default in default, not on the schema (no .default() or .optional())");
+      else if (f.default === undefined) issue(at("default"), "Give a default value");
       else if (!f.schema.safeParse(f.default).success) issue(at("default"), "The default does not match the schema");
       if (f.options !== undefined) {
         if (!LABELLED.includes(f.control)) issue(at("options"), "Only a segmented, select or toggle control has options");

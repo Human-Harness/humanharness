@@ -2,7 +2,26 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { type HarnessAction, type HarnessInput, DEFAULT_MODE_WORDS, MODE_ID, TIERS, defaultModeOf, defineHarness, hasModes, loadHarness, tierBelow, z } from "../src";
+import {
+  type HarnessAction,
+  type HarnessInput,
+  CORE_BLOCKS,
+  DEFAULT_MODE_WORDS,
+  MODE_CORE_BLOCKS,
+  MODE_ID,
+  RESERVED_BLOCK_NAMES,
+  TIERS,
+  allBlocks,
+  blockToolName,
+  defaultModeOf,
+  defineBlock,
+  defineHarness,
+  hasModes,
+  loadHarness,
+  recommendModeSchema,
+  tierBelow,
+  z,
+} from "../src";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-modes-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -113,5 +132,39 @@ describe("loadHarness and mode briefs", () => {
     const manifest = { ...base, modes: { far: { label: "Far", brief: "../../outside.md" } } };
     fs.writeFileSync(file, `export default ${JSON.stringify(manifest)};`);
     await expect(loadHarness(file)).rejects.toThrow("Path escapes the harness folder: ../../outside.md");
+  });
+});
+
+describe("the recommend_mode block", () => {
+  const withModes = () => defineHarness({ ...base, modes, actions: { study } });
+
+  it("is offered only to a harness with modes (D0), as show_recommend_mode", () => {
+    expect(Object.keys(allBlocks(defineHarness(base)))).toEqual(Object.keys(CORE_BLOCKS));
+    expect(Object.keys(allBlocks(withModes()))).toEqual([...Object.keys(CORE_BLOCKS), "recommend_mode"]);
+    expect(blockToolName("recommend_mode", MODE_CORE_BLOCKS.recommend_mode)).toBe("show_recommend_mode");
+    expect(MODE_CORE_BLOCKS.recommend_mode.visible).toBe(true);
+  });
+
+  it("checks a recommendation: a mode id, 1 to 3 reasons, at most 2 alternatives", () => {
+    const ok = { recommended: "socratic", reasons: ["One key idea"], alternatives: [{ mode: "feynman", why: "You explain it back" }] };
+    expect(recommendModeSchema.safeParse(ok).success).toBe(true);
+    expect(recommendModeSchema.safeParse({ recommended: "socratic", reasons: ["a"] }).success).toBe(true);
+    expect(recommendModeSchema.safeParse({ ...ok, reasons: [] }).success).toBe(false);
+    expect(recommendModeSchema.safeParse({ ...ok, reasons: ["a", "b", "c", "d"] }).success).toBe(false);
+    expect(recommendModeSchema.safeParse({ ...ok, alternatives: [ok.alternatives[0], ok.alternatives[0], ok.alternatives[0]] }).success).toBe(false);
+    expect(recommendModeSchema.safeParse({ ...ok, recommended: "Bad Id" }).success).toBe(false);
+  });
+
+  it("its name is reserved for every harness, and so is its tool", () => {
+    expect(RESERVED_BLOCK_NAMES).toContain("recommend_mode");
+    const block = defineBlock({ description: "x", visible: true, schema: z.object({ a: z.string() }), example: { a: "x" } });
+    // A harness block named like a core block also takes its default tool name: both are reported (as for `annotate`).
+    expect(issues({ ...base, blocks: { recommend_mode: block } })).toEqual([
+      'blocks.recommend_mode: "recommend_mode" is a core block name',
+      'blocks.recommend_mode: Tool "show_recommend_mode" is already used by block "recommend_mode"',
+    ]);
+    expect(issues({ ...base, blocks: { pick: { ...block, tool: "show_recommend_mode" } } })).toEqual([
+      'blocks.pick: Tool "show_recommend_mode" is already used by block "recommend_mode"',
+    ]);
   });
 });

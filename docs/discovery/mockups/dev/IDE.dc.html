@@ -28,7 +28,6 @@ a{color:#6ea8fe}a:hover{color:#9cc4ff}
         <span class="mono" style="font-size:12px">{{focusName}}</span>
         <div style="flex:1;display:flex;justify-content:center"><div aria-hidden="true" style="width:220px;height:3px;border-radius:2px;background:{{t.chip}}"><div style="width:38%;height:3px;border-radius:2px;background:{{t.muted}}"></div></div></div>
         <sc-if value="{{focusHasComments}}" hint-placeholder-val="{{true}}"><button class="ib" onClick="{{toggleFocusComments}}" aria-pressed="{{focusComments}}" style="font-size:12px;padding:4px 10px;border-radius:5px;border:1px solid {{t.border}}">{{focusCommentsLabel}}</button></sc-if>
-        <button class="ib" onClick="{{focusTypeToggle}}" style="font-size:12px;padding:4px 10px;border-radius:5px;border:1px solid {{t.border}}">{{focusTypeLabel}}</button>
         <button class="ib" onClick="{{exitFocus}}" style="font-size:12px;padding:4px 10px;border-radius:5px;border:1px solid {{t.border}}">Salir · Esc</button>
       </div>
       <div style="flex:1;min-height:0;overflow:auto;display:flex;justify-content:center;gap:40px;padding:36px 40px 60px">
@@ -49,7 +48,8 @@ a{color:#6ea8fe}a:hover{color:#9cc4ff}
               <div style="display:flex;flex-direction:column;gap:6px;padding:10px 11px;border-radius:8px;border:1px solid {{c.border}};background:{{t.panel}}">
                 <div style="font-size:11px;font-weight:700"><span style="color:{{c.whoColor}}">{{c.who}}</span><span style="color:{{t.muted}}"> · {{c.kind}}</span></div>
                 <div style="line-height:1.45">{{c.text}}</div>
-                <sc-if value="{{c.open}}" hint-placeholder-val="{{true}}"><div style="display:flex;flex-wrap:wrap;gap:6px"><sc-for list="{{c.options}}" as="op" hint-placeholder-count="2"><button class="ib" onClick="{{op.pick}}" style="font-size:12px;padding:4px 9px;border-radius:5px;border:1px solid {{t.border}}">{{op.label}}</button></sc-for></div></sc-if>
+                <sc-if value="{{c.showOptions}}" hint-placeholder-val="{{true}}"><div style="display:flex;flex-wrap:wrap;gap:6px"><sc-for list="{{c.options}}" as="op" hint-placeholder-count="2"><button class="ib" onClick="{{op.pick}}" aria-pressed="{{op.on}}" style="font-size:12px;padding:4px 9px;border-radius:5px;{{op.style}}">{{op.label}}</button></sc-for></div></sc-if>
+                <sc-if value="{{c.changeHint}}" hint-placeholder-val="{{false}}"><div style="font-size:11.5px;color:{{t.muted}}">{{c.changeHint}}</div></sc-if>
                 <sc-if value="{{c.resolution}}" hint-placeholder-val="{{false}}"><div style="font-size:12px;color:{{t.ok}}">✓ {{c.resolution}}</div></sc-if>
               </div>
             </sc-for>
@@ -57,6 +57,38 @@ a{color:#6ea8fe}a:hover{color:#9cc4ff}
         </sc-if>
       </div>
       <div style="height:30px;flex:none;display:flex;align-items:center;justify-content:center;font-size:11.5px;color:{{t.muted}};opacity:.8">Terminal, sidekicks y avisos en pausa mientras leés · {{focusWaiting}}</div>
+    </div>
+  </sc-if>
+
+  <!-- COMMAND PALETTE: tickets, md files and actions -->
+  <sc-if value="{{cmdOpen}}" hint-placeholder-val="{{false}}">
+    <div style="position:absolute;inset:0;z-index:20;display:flex;justify-content:center;align-items:flex-start;padding-top:64px;background:{{t.scrim}}">
+      <button class="ib" aria-label="Cerrar la paleta" onClick="{{closePalette}}" style="position:absolute;inset:0;cursor:default"></button>
+      <div role="dialog" aria-label="Paleta de comandos" style="position:relative;width:620px;max-height:540px;display:flex;flex-direction:column;border-radius:10px;border:1px solid {{t.border}};background:{{t.panel}};box-shadow:0 18px 48px rgba(0,0,0,0.35);overflow:hidden">
+        <label style="display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid {{t.border}};color:{{t.muted}}">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg>
+          <span style="position:absolute;left:-9999px">Buscar ticket, archivo o acción</span>
+          <input type="text" data-cmd-input="1" placeholder="Ticket, archivo o acción · empezá con &gt; para ver solo acciones" onChange="{{cmdType}}" style="flex:1;font:inherit;font-size:14px;background:transparent;border:0;outline:none;color:{{t.text}}">
+          <span class="mono" style="font-size:11px">Esc</span>
+        </label>
+        <div style="overflow:auto;padding:4px 6px 8px;display:flex;flex-direction:column">
+          <sc-for list="{{cmdGroups}}" as="cg" hint-placeholder-count="3">
+            <div style="display:flex;flex-direction:column">
+              <div style="padding:10px 10px 4px;font-size:10.5px;font-weight:600;letter-spacing:.06em;color:{{t.muted}}">{{cg.label}}</div>
+              <sc-for list="{{cg.items}}" as="ci" hint-placeholder-count="3">
+                <button class="ib" onClick="{{ci.run}}" style="display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:6px;background:{{ci.bg}}">
+                  <span class="mono" style="width:14px;text-align:center;color:{{t.muted}}">{{ci.icon}}</span>
+                  <span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ci.label}}</span>
+                  <span style="font-size:12px;color:{{t.muted}}">{{ci.detail}}</span>
+                  <sc-if value="{{ci.key}}" hint-placeholder-val="{{false}}"><span class="mono" style="font-size:11px;padding:1px 6px;border-radius:4px;background:{{t.chip}};color:{{t.muted}}">{{ci.key}}</span></sc-if>
+                </button>
+              </sc-for>
+            </div>
+          </sc-for>
+          <sc-if value="{{cmdEmpty}}" hint-placeholder-val="{{false}}"><div style="padding:18px 10px;color:{{t.muted}}">Nada coincide con "{{cmdQ}}".</div></sc-if>
+        </div>
+        <div style="display:flex;gap:16px;padding:8px 14px;border-top:1px solid {{t.border}};font-size:11.5px;color:{{t.muted}}"><span>↑↓ moverse</span><span>⏎ abrir</span><span>&gt; solo acciones</span><span style="flex:1;text-align:right">⌘K abre y cierra</span></div>
+      </div>
     </div>
   </sc-if>
 
@@ -70,7 +102,7 @@ a{color:#6ea8fe}a:hover{color:#9cc4ff}
     <div style="font-weight:700">Dev Harness</div>
     <div class="mono" style="font-size:12px;color:{{t.muted}}">{{crumb}}</div>
     <div style="flex:1"></div>
-    <button class="ib" style="display:flex;align-items:center;gap:10px;width:300px;height:26px;box-sizing:border-box;padding:0 10px;border-radius:6px;border:1px solid {{t.border}};background:{{t.bg}};color:{{t.muted}}">
+    <button class="ib" onClick="{{openPalette}}" aria-label="Abrir la paleta de comandos" style="display:flex;align-items:center;gap:10px;width:300px;height:26px;box-sizing:border-box;padding:0 10px;border-radius:6px;border:1px solid {{t.border}};background:{{t.bg}};color:{{t.muted}}">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg>
       <span style="flex:1">Buscar ticket, archivo o comando</span>
       <span class="mono" style="font-size:11px">⌘K</span>
@@ -144,6 +176,29 @@ a{color:#6ea8fe}a:hover{color:#9cc4ff}
           </div>
         </sc-for>
       </div>
+      <sc-if value="{{tlShow}}" hint-placeholder-val="{{true}}">
+        <section aria-label="Línea de tiempo" style="flex:none;border-top:1px solid {{t.border}};display:flex;flex-direction:column;max-height:230px">
+          <button class="ib" onClick="{{toggleTl}}" aria-expanded="{{tlOpen}}" style="display:flex;align-items:center;gap:6px;padding:8px 12px 6px 14px">
+            <span style="display:inline-flex;width:10px;color:{{t.muted}};transform:{{tlChev}}"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg></span>
+            <span style="flex:1;font-size:11px;font-weight:600;letter-spacing:.06em;color:{{t.muted}}">LÍNEA DE TIEMPO</span>
+            <span class="mono" style="font-size:11px;color:{{t.muted}}">{{tlFile}}</span>
+          </button>
+          <sc-if value="{{tlOpen}}" hint-placeholder-val="{{true}}">
+            <div style="min-height:0;overflow:auto;padding:0 8px 8px;display:flex;flex-direction:column">
+              <sc-for list="{{timeline}}" as="te" hint-placeholder-count="4">
+                <button class="ib" onClick="{{te.open}}" style="display:flex;gap:9px;align-items:flex-start;padding:5px 6px;border-radius:5px">
+                  <span aria-hidden="true" style="flex:none;width:7px;height:7px;margin-top:5px;border-radius:50%;background:{{te.dot}}"></span>
+                  <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:1px">
+                    <span style="line-height:1.35">{{te.what}}</span>
+                    <span style="font-size:11px;color:{{t.muted}}">{{te.meta}}</span>
+                  </span>
+                  <sc-if value="{{te.canDiff}}" hint-placeholder-val="{{false}}"><span style="font-size:11px;color:{{t.accent}}">diff</span></sc-if>
+                </button>
+              </sc-for>
+            </div>
+          </sc-if>
+        </section>
+      </sc-if>
       <div style="border-top:1px solid {{t.border}};padding:8px;display:flex;flex-direction:column;gap:2px">
         <button class="ib" onClick="{{openAgents}}" style="display:flex;gap:8px;align-items:center;padding:6px;border-radius:6px">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="9" cy="8" r="3"></circle><circle cx="17" cy="10" r="2.5"></circle><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6M14 20c0-2.5 1.5-4.5 3-4.5s4 1.5 4 4.5"></path></svg>
@@ -276,7 +331,7 @@ a{color:#6ea8fe}a:hover{color:#9cc4ff}
                 <span class="mono" style="font-size:12px;color:{{t.muted}}">{{doc.meta}}</span>
                 <div style="flex:1"></div>
                 <button class="ib" onClick="{{enterFocus}}" aria-label="Leer en focus mode" style="display:flex;align-items:center;gap:6px;padding:5px 11px;border-radius:6px;border:1px solid {{t.border}}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"></path></svg>Focus</button>
-                <sc-for list="{{doc.secondary}}" as="b" hint-placeholder-count="2"><button class="ib" style="padding:5px 11px;border-radius:6px;border:1px solid {{t.border}}">{{b}}</button></sc-for>
+                <sc-for list="{{doc.secondary}}" as="b" hint-placeholder-count="2"><button class="ib" onClick="{{b.run}}" style="padding:5px 11px;border-radius:6px;border:1px solid {{t.border}}">{{b.label}}</button></sc-for>
                 <button class="ib" onClick="{{doc.approve}}" aria-disabled="{{doc.blocked}}" style="padding:6px 12px;border-radius:6px;font-weight:600;{{doc.approveStyle}}">{{doc.approveLabel}}</button>
               </div>
               <sc-if value="{{doc.banner}}" hint-placeholder-val="{{false}}"><div style="padding:10px 12px;border-radius:8px;background:{{t.okBg}};color:{{t.ok}};font-weight:600">{{doc.banner}}</div></sc-if>
@@ -295,11 +350,12 @@ a{color:#6ea8fe}a:hover{color:#9cc4ff}
                     <div style="display:flex;flex-direction:column;gap:7px;padding:11px 12px;border-radius:8px;border:1px solid {{c.border}};background:{{t.panel}}">
                       <div style="display:flex;gap:6px;align-items:center;font-size:11px;font-weight:700"><span style="color:{{c.whoColor}}">{{c.who}}</span><span style="color:{{t.muted}};font-weight:600">· {{c.kind}}</span></div>
                       <div style="line-height:1.45">{{c.text}}</div>
-                      <sc-if value="{{c.open}}" hint-placeholder-val="{{true}}">
+                      <sc-if value="{{c.showOptions}}" hint-placeholder-val="{{true}}">
                         <div style="display:flex;flex-wrap:wrap;gap:6px">
-                          <sc-for list="{{c.options}}" as="op" hint-placeholder-count="2"><button class="ib" onClick="{{op.pick}}" style="font-size:12px;padding:4px 9px;border-radius:5px;border:1px solid {{t.border}}">{{op.label}}</button></sc-for>
+                          <sc-for list="{{c.options}}" as="op" hint-placeholder-count="2"><button class="ib" onClick="{{op.pick}}" aria-pressed="{{op.on}}" style="font-size:12px;padding:4px 9px;border-radius:5px;{{op.style}}">{{op.label}}</button></sc-for>
                         </div>
                       </sc-if>
+                      <sc-if value="{{c.changeHint}}" hint-placeholder-val="{{false}}"><div style="font-size:11.5px;color:{{t.muted}}">{{c.changeHint}}</div></sc-if>
                       <sc-if value="{{c.resolution}}" hint-placeholder-val="{{false}}"><div style="font-size:12px;color:{{t.ok}}">✓ {{c.resolution}}</div></sc-if>
                     </div>
                   </sc-for>
@@ -311,6 +367,43 @@ a{color:#6ea8fe}a:hover{color:#9cc4ff}
                   <sc-for list="{{doc.coverage}}" as="cv" hint-placeholder-count="4"><span style="font-size:12px;padding:3px 9px;border-radius:999px;{{cv.style}}">{{cv.label}}</span></sc-for>
                 </div>
               </sc-if>
+            </div>
+          </sc-if>
+
+          <!-- MD DIFF: a frozen version against the current text -->
+          <sc-if value="{{vDiff}}" hint-placeholder-val="{{false}}">
+            <div style="display:flex;flex-direction:column;gap:12px">
+              <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                <span class="mono" style="font-size:12px;color:{{t.muted}}">{{diff.meta}}</span>
+                <span class="mono" style="font-size:12px;font-weight:600;color:{{t.ok}}">{{diff.adds}}</span>
+                <span class="mono" style="font-size:12px;font-weight:600;color:{{t.err}}">{{diff.dels}}</span>
+                <div style="flex:1"></div>
+                <div role="group" aria-label="Comparar desde" style="display:flex;gap:2px;padding:2px;border-radius:6px;background:{{t.chip}}">
+                  <sc-for list="{{diff.froms}}" as="df" hint-placeholder-count="2"><button class="ib" onClick="{{df.pick}}" style="padding:4px 10px;border-radius:5px;font-size:12px;{{df.style}}">{{df.label}}</button></sc-for>
+                </div>
+                <div role="group" aria-label="Vista del diff" style="display:flex;gap:2px;padding:2px;border-radius:6px;background:{{t.chip}}">
+                  <button class="ib" onClick="{{diffInline}}" style="padding:4px 10px;border-radius:5px;font-size:12px;{{diffInlineStyle}}">En línea</button>
+                  <button class="ib" onClick="{{diffSide}}" style="padding:4px 10px;border-radius:5px;font-size:12px;{{diffSideStyle}}">Lado a lado</button>
+                </div>
+                <button class="ib" onClick="{{diff.openDoc}}" style="padding:5px 11px;border-radius:6px;border:1px solid {{t.border}}">Abrir spec.md</button>
+              </div>
+              <sc-if value="{{diff.empty}}" hint-placeholder-val="{{false}}"><div style="padding:10px 12px;border-radius:8px;background:{{t.chip}};color:{{t.muted}}">Sin cambios desde esta versión.</div></sc-if>
+              <sc-if value="{{diffIsInline}}" hint-placeholder-val="{{true}}">
+                <article style="display:flex;flex-direction:column;gap:2px;padding:14px 16px;border-radius:8px;border:1px solid {{t.border}};background:{{t.panel}}">
+                  <sc-for list="{{diff.rows}}" as="dr" hint-placeholder-count="10">
+                    <div style="{{dr.box}}"><span class="mono" aria-hidden="true" style="width:12px;flex:none;font-weight:700;color:{{dr.pc}}">{{dr.p}}</span><span style="flex:1;min-width:0;{{dr.style}}">{{dr.text}}</span></div>
+                  </sc-for>
+                </article>
+              </sc-if>
+              <sc-if value="{{diffIsSide}}" hint-placeholder-val="{{false}}">
+                <div style="display:flex;flex-direction:column;gap:2px;padding:14px 16px;border-radius:8px;border:1px solid {{t.border}};background:{{t.panel}}">
+                  <div style="display:flex;gap:16px;padding-bottom:6px;font-size:10.5px;font-weight:600;letter-spacing:.06em;color:{{t.muted}}"><span style="flex:1">{{diff.leftLabel}}</span><span style="flex:1">{{diff.rightLabel}}</span></div>
+                  <sc-for list="{{diff.pairs}}" as="pr" hint-placeholder-count="10">
+                    <div style="display:flex;gap:16px"><div style="{{pr.l.box}}"><span style="{{pr.l.style}}">{{pr.l.text}}</span></div><div style="{{pr.r.box}}"><span style="{{pr.r.style}}">{{pr.r.text}}</span></div></div>
+                  </sc-for>
+                </div>
+              </sc-if>
+              <div style="font-size:12px;color:{{t.muted}};line-height:1.5">El diff compara el texto del md, no el código. Tus respuestas a los comentarios cambian el spec al instante, y se ven acá antes de aprobar.</div>
             </div>
           </sc-if>
 
@@ -761,15 +854,15 @@ a{color:#6ea8fe}a:hover{color:#9cc4ff}
 
       <!-- Bottom: terminal + diff/log/CI -->
       <section aria-label="Terminal" style="flex:none;display:flex;flex-direction:column;height:{{drawerH}};border-top:1px solid {{t.border}};background:{{t.side}}">
-        <div style="height:32px;flex:none;display:flex;align-items:center;gap:4px;padding:0 10px">
+        <div style="height:32px;flex:none;display:flex;align-items:center;gap:4px;padding:0 10px;overflow-x:auto;overflow-y:hidden">
           <span style="font-size:11px;font-weight:600;letter-spacing:.06em;color:{{t.muted}};padding-right:8px">TERMINAL</span>
           <sc-for list="{{sessions}}" as="se" hint-placeholder-count="3">
-            <button class="ib" onClick="{{se.select}}" style="display:flex;align-items:center;gap:6px;padding:4px 9px;border-radius:5px;font-size:12px;{{se.style}}">
+            <button class="ib" onClick="{{se.select}}" style="flex:none;white-space:nowrap;display:flex;align-items:center;gap:6px;padding:4px 9px;border-radius:5px;font-size:12px;{{se.style}}">
               <span class="{{se.dotClass}}" style="{{se.dotStyle}}" aria-hidden="true"></span><span class="mono">{{se.label}}</span>
             </button>
           </sc-for>
           <span style="width:1px;height:16px;background:{{t.border}};margin:0 6px"></span>
-          <sc-for list="{{panels}}" as="pn" hint-placeholder-count="3"><button class="ib" onClick="{{pn.select}}" style="padding:4px 9px;border-radius:5px;font-size:12px;{{pn.style}}">{{pn.label}}</button></sc-for>
+          <sc-for list="{{panels}}" as="pn" hint-placeholder-count="3"><button class="ib" onClick="{{pn.select}}" style="flex:none;white-space:nowrap;padding:4px 9px;border-radius:5px;font-size:12px;{{pn.style}}">{{pn.label}}</button></sc-for>
           <div style="flex:1"></div>
           <button class="ib" aria-label="Nueva terminal" style="display:flex;padding:4px;color:{{t.muted}}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg></button>
           <button class="ib" aria-label="Maximizar terminal" onClick="{{toggleMax}}" style="display:flex;padding:4px;color:{{t.muted}}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"></path></svg></button>
@@ -777,6 +870,19 @@ a{color:#6ea8fe}a:hover{color:#9cc4ff}
         </div>
         <sc-if value="{{drawerOpen}}" hint-placeholder-val="{{true}}">
           <div class="mono" style="flex:1;min-height:0;overflow:auto;padding:6px 16px 10px;font-size:12px;line-height:1.65;background:{{t.term}}">
+            <sc-if value="{{problemsShow}}" hint-placeholder-val="{{false}}">
+              <div style="font-family:Inter,sans-serif;font-size:12.5px;display:flex;flex-direction:column">
+                <div style="padding:0 0 4px;color:{{t.muted}}">{{probSummary}}</div>
+                <sc-for list="{{problems}}" as="pb" hint-placeholder-count="5">
+                  <button class="ib" onClick="{{pb.open}}" style="display:flex;gap:10px;align-items:baseline;padding:3px 6px;border-radius:5px">
+                    <span aria-hidden="true" style="width:14px;flex:none;color:{{pb.color}}">{{pb.icon}}</span>
+                    <span style="flex:1;min-width:0">{{pb.text}}</span>
+                    <span class="mono" style="font-size:11.5px;color:{{t.muted}}">{{pb.where}}</span>
+                    <span class="mono" style="font-size:11.5px;width:84px;text-align:right;color:{{t.muted}}">{{pb.key}}</span>
+                  </button>
+                </sc-for>
+              </div>
+            </sc-if>
             <sc-for list="{{termLines}}" as="l" hint-placeholder-count="6"><div style="white-space:pre-wrap;color:{{l.color}}">{{l.text}}</div></sc-for>
             <sc-if value="{{skDraftShow}}" hint-placeholder-val="{{false}}">
               <div style="display:flex;flex-direction:column;gap:4px;padding-top:4px">
@@ -908,6 +1014,7 @@ a{color:#6ea8fe}a:hover{color:#9cc4ff}
   <!-- Status bar -->
   <footer style="height:24px;flex:none;display:flex;align-items:center;gap:16px;padding:0 12px;font-size:11.5px;background:{{t.status}};color:{{t.statusText}}">
     <sc-if value="{{hasTicket}}" hint-placeholder-val="{{true}}"><span class="mono">{{tk.branch}}</span></sc-if>
+    <sc-if value="{{isWork}}" hint-placeholder-val="{{true}}"><button class="ib" onClick="{{showProblems}}" aria-label="Ver problemas" style="display:flex;gap:8px"><span>⊗ {{probErr}}</span><span>⚠ {{probWarn}}</span></button></sc-if>
     <div style="flex:1"></div>
     <span>Claude Code</span>
     <span>{{agentsInFlight}} agentes</span>
@@ -949,7 +1056,7 @@ class Component extends DCLogic {
     const base = { theme: p.theme ?? 'dark', expanded: {}, answers: {}, approved: false, sent: {}, qaMode: 'guided', qaManual: null, setupDone: 4, wiz: 0, auto: { spec: 'always', loop: '2', qa: 'guided', pr: 'ask' }, max: false, learnOk: false,
       procSrc: 'claude', procAck: false, procCopied: false, flowSel: 3, flowView: 'flow', proposal: false, proposalOk: false, extProposal: false, presetEngine: 'claude', presetIso: false, mcpRun: false, extra: [],
       skSel: 'rulo', skStarter: null, skPurp: {}, skProjOn: { rulo: true, guardian: true, profe: false }, skAck: false, skImported: false, skDraft: false, skCard: null,
-      focus: false, focusComments: false, focusSans: false };
+      focus: false, focusComments: false, diffFrom: 'v1', diffView: 'inline', tlOpen: true, cmd: false, cmdQ: '', cmdSel: 0 };
     return Object.assign(base, this.sceneDefaults(p.scene ?? 'spec'), this.state || {});
   }
 
@@ -958,13 +1065,13 @@ class Component extends DCLogic {
       bg: '#ffffff', side: '#f4f4f6', panel: '#fafafb', border: '#e2e2e7', text: '#1d1d1f', muted: '#5f5f66',
       accent: '#0a5bc4', onAccent: '#ffffff', accentBg: '#e3edfb', wait: '#9a5200', waitBg: '#fbecd6',
       err: '#b3261e', errBg: '#fbe3e1', ok: '#1e7a45', okBg: '#e1f3e8', sel: '#e3e5ec', chip: '#ececf0',
-      input: '#ffffff', term: '#f7f7f9', status: '#0a5bc4', statusText: '#ffffff', tabActive: '#ffffff', changed: '#fff4dd', focusBg: '#fbfaf7'
+      input: '#ffffff', term: '#f7f7f9', status: '#0a5bc4', statusText: '#ffffff', tabActive: '#ffffff', changed: '#fff4dd', focusBg: '#fbfaf7', scrim: 'rgba(20,20,30,0.28)'
     };
     return {
       bg: '#17181b', side: '#1d1e22', panel: '#202126', border: '#2d2f36', text: '#e7e7ea', muted: '#9a9da7',
       accent: '#6ea8fe', onAccent: '#0b1a33', accentBg: '#1e2f4d', wait: '#f0a64b', waitBg: '#3a2c17',
       err: '#f2786d', errBg: '#3d1f1c', ok: '#62cc8f', okBg: '#18331f', sel: '#2a2c34', chip: '#2a2c33',
-      input: '#17181b', term: '#131417', status: '#25272d', statusText: '#c9cbd2', tabActive: '#17181b', changed: '#33291a', focusBg: '#121316'
+      input: '#17181b', term: '#131417', status: '#25272d', statusText: '#c9cbd2', tabActive: '#17181b', changed: '#33291a', focusBg: '#121316', scrim: 'rgba(0,0,0,0.5)'
     };
   }
 
@@ -1036,7 +1143,7 @@ class Component extends DCLogic {
 
     // Tabs
     const specialTabs = { '@welcome': 'Bienvenida', '@new': 'Nuevo proyecto', '@import': 'Importar', '@agents': 'Agentes', '@process': 'Importar proceso', '@preset': 'Preset', '@mcp': 'MCP del IDE', '@sidekicks': 'Tus sidekicks', '@skproj': 'Sidekicks del proyecto', '@skimport': 'Importar sidekick' };
-    const tabLabel = (id) => specialTabs[id] || id;
+    const tabLabel = (id) => specialTabs[id] || (id.indexOf('@diff:') === 0 ? id.slice(6) + ' ↔ ' + (s.diffFrom || 'v1') : id);
     const tabMark = (id) => {
       const k = id.split('/')[0]; if (!T[k]) return '';
       const f = T[k].files.find((x) => k + '/' + x[0] === id); return f && f[1] === '●' ? '●' : '';
@@ -1073,7 +1180,8 @@ class Component extends DCLogic {
     const vSkLib = id === '@sidekicks';
     const vSkProj = id === '@skproj';
     const vSkImport = id === '@skimport';
-    const vDoc = !vSetup && !vStart && !vImport && !vCreate && !vAgents && !vReview && !vQa && !vProcess && !vFlow && !vPreset && !vMcp && !vSkLib && !vSkProj && !vSkImport && !!id;
+    const vDiff = id.indexOf('@diff:') === 0;
+    const vDoc = !vSetup && !vStart && !vImport && !vCreate && !vAgents && !vReview && !vQa && !vProcess && !vFlow && !vPreset && !vMcp && !vSkLib && !vSkProj && !vSkImport && !vDiff && !!id;
     const seg = (on) => on ? 'background:' + t.bg + ';color:' + t.text : 'color:' + t.muted;
 
     // Process import
@@ -1181,12 +1289,37 @@ class Component extends DCLogic {
         tags: (tags || []).map((g) => ({ label: g, style: 'margin-left:8px;font-size:11px;padding:1px 6px;border-radius:999px;' + (g === 'sin AC' ? 'background:' + t.waitBg + ';color:' + t.wait : (g === 'v2' ? 'background:' + t.chip + ';color:' + t.muted : 'background:' + t.accentBg + ';color:' + t.accent)) })) };
     };
     const ans = s.answers;
-    const comment = (cid, who, kind, text, opts, resolvedText) => {
+    // An answer can be changed until the doc is approved; after that it is locked.
+    const comment = (cid, who, kind, text, opts, resolvedText, locked) => {
       const r = ans[cid];
-      return { who: who, kind: r ? 'resuelto' : kind, text: text, whoColor: who === 'Vos' ? t.accent : t.ok, border: r || kind === 'resuelto' ? t.border : t.wait,
-        open: !r && kind !== 'resuelto', resolution: r ? r : (resolvedText || false),
-        options: opts.map((o) => ({ label: o, pick: () => { const a = Object.assign({}, this.st().answers); a[cid] = o; set({ answers: a }); } })) };
+      const open = !r && kind !== 'resuelto';
+      return { who: who, kind: r ? 'respondido' : kind, text: text, whoColor: who === 'Vos' ? t.accent : t.ok, border: r || kind === 'resuelto' ? t.border : t.wait,
+        open: open, showOptions: open || (!!r && !locked), changeHint: r && !locked ? 'Podés cambiar la respuesta hasta aprobar.' : false,
+        resolution: r ? (locked ? r : false) : (resolvedText || false),
+        options: opts.map((o) => ({ label: r === o ? '✓ ' + o : o, on: r === o,
+          style: r === o ? 'background:' + t.okBg + ';color:' + t.ok + ';font-weight:600;border:1px solid ' + t.ok : 'border:1px solid ' + t.border,
+          pick: () => { if (locked) return; const a = Object.assign({}, this.st().answers); a[cid] = o; set({ answers: a }); } })) };
     };
+    // spec.md of SHOP-142: current text depends on your answers; v1/v2 are frozen versions for the diff.
+    const specNow = (q1, q2) => [
+      ['h1', 'Recuperar contraseña por email'],
+      ['h2', 'Objetivo'],
+      ['p', 'Un cliente que olvidó su contraseña la recupera solo, sin escribirle a soporte.'],
+      ['h2', 'Comportamiento'],
+      ['li', '1. POST /auth/forgot responde 202 siempre, exista o no la cuenta.', ['AC3']],
+      ['li', '2. El email usa la plantilla base de SHOP-120, con un link de un solo uso.', ['AC2', 'v2'], true],
+      ['li', q1 === 'Desde la apertura' ? '3. El link vence 30 minutos después de abrir el email.' : '3. El link vence 30 minutos después de enviado el email.', ['AC1'], !!q1, q1 ? false : '1'],
+      q2 === 'Sacarlo' ? ['li', ''] : ['li', '4. Al elegir la nueva contraseña se cierran las demás sesiones.', [q2 ? 'AC4' : 'sin AC'], !!q2, q2 ? false : '2'],
+      ['h2', 'Fuera de alcance'],
+      ['li', '· Rate limiting del endpoint (queda en SHOP-160).'],
+      ['h2', 'Preguntas abiertas (' + (q1 ? 0 : 1) + ')'],
+      ['li', q1 ? '· Ninguna.' : '· ¿Los 30 minutos corren desde el envío o desde que se abre el email?']
+    ];
+    const specV1 = [['h1', 'Recuperar contraseña por email'], ['h2', 'Objetivo'], ['p', 'Un cliente que olvidó su contraseña la recupera solo, sin escribirle a soporte.'], ['h2', 'Comportamiento'],
+      ['li', '1. POST /auth/forgot responde 202 siempre, exista o no la cuenta.'], ['li', '2. El email incluye un link de un solo uso.'], ['li', '3. El link vence 30 minutos después de enviado el email.'],
+      ['h2', 'Fuera de alcance'], ['li', '· Rate limiting del endpoint (queda en SHOP-160).'], ['h2', 'Preguntas abiertas (1)'], ['li', '· ¿Los 30 minutos corren desde el envío o desde que se abre el email?']];
+    const specVersions = { v1: specV1, v2: specNow(undefined, undefined) };
+    const openDiff = (from) => { const c = this.st(); const did = '@diff:SHOP-142/spec.md'; set({ tabs: c.tabs.indexOf(did) >= 0 ? c.tabs : c.tabs.concat([did]), active: did, diffFrom: from, focus: false }); };
     let docv = { meta: '', blocks: [], comments: [], commentsLabel: 'COMENTARIOS', secondary: [], coverage: false, banner: false, approveLabel: '', approveStyle: '', blocked: false, approve: () => {} };
     if (vDoc && id === 'SHOP-142/spec.md') {
       const q1 = ans.q1; const q2 = ans.q2;
@@ -1194,25 +1327,12 @@ class Component extends DCLogic {
       const blocked = nOpen > 0;
       docv = {
         meta: 'spec.md · v2 · Spec writer · hace 6 min · fuente: Jira + 2 comentarios',
-        secondary: ['Cambios v1 → v2', 'Pedir otra vuelta'],
-        blocks: [
-          blk('h1', 'Recuperar contraseña por email'),
-          blk('h2', 'Objetivo'),
-          blk('p', 'Un cliente que olvidó su contraseña la recupera solo, sin escribirle a soporte.'),
-          blk('h2', 'Comportamiento'),
-          blk('li', '1. POST /auth/forgot responde 202 siempre, exista o no la cuenta.', ['AC3']),
-          blk('li', '2. El email usa la plantilla base de SHOP-120, con un link de un solo uso.', ['AC2', 'v2'], true),
-          blk('li', q1 === 'Desde la apertura' ? '3. El link vence 30 minutos después de abrir el email.' : '3. El link vence 30 minutos después de enviado el email.', ['AC1'], !!q1, q1 ? false : '1'),
-          q2 === 'Sacarlo' ? blk('li', '') : blk('li', '4. Al elegir la nueva contraseña se cierran las demás sesiones.', [q2 ? 'AC4' : 'sin AC'], !!q2, q2 ? false : '2'),
-          blk('h2', 'Fuera de alcance'),
-          blk('li', '· Rate limiting del endpoint (queda en SHOP-160).'),
-          blk('h2', 'Preguntas abiertas (' + (q1 ? 0 : 1) + ')'),
-          blk('li', q1 ? '· Ninguna.' : '· ¿Los 30 minutos corren desde el envío o desde que se abre el email?')
-        ],
+        secondary: [{ label: 'Cambios v1 → actual', run: () => openDiff('v1') }, { label: 'Pedir otra vuelta', run: () => {} }],
+        blocks: specNow(q1, q2).map((x) => blk.apply(null, x)),
         commentsLabel: 'COMENTARIOS · ' + nOpen + ' ABIERTOS',
         comments: [
-          comment('q1', 'IA', 'pregunta · bloquea', '¿Los 30 minutos corren desde el envío o desde que se abre el email?', ['Desde el envío', 'Desde la apertura', 'Preguntar al PO en Jira']),
-          comment('q2', 'IA', 'propuesta', 'Agregué §4 (cerrar las otras sesiones) por seguridad. No está en los AC.', ['Dejarlo y sumar AC4', 'Sacarlo']),
+          comment('q1', 'IA', 'pregunta · bloquea', '¿Los 30 minutos corren desde el envío o desde que se abre el email?', ['Desde el envío', 'Desde la apertura', 'Preguntar al PO en Jira'], null, !!s.approved),
+          comment('q2', 'IA', 'propuesta', 'Agregué §4 (cerrar las otras sesiones) por seguridad. No está en los AC.', ['Dejarlo y sumar AC4', 'Sacarlo'], null, !!s.approved),
           comment('c3', 'Vos', 'resuelto', 'Usar la plantilla de email existente.', [], 'La IA editó §2 en v2')
         ],
         coverage: [{ label: 'AC1 → §3 ✓', style: 'background:' + t.okBg + ';color:' + t.ok }, { label: 'AC2 → §2 ✓', style: 'background:' + t.okBg + ';color:' + t.ok }, { label: 'AC3 → §1 ✓', style: 'background:' + t.okBg + ';color:' + t.ok },
@@ -1231,8 +1351,8 @@ class Component extends DCLogic {
         blocks: [blk('h1', 'Tienda web'), blk('h2', 'Stack'), blk('p', 'api: Node 20 + Fastify + Postgres (Prisma). web: Next.js 14, Tailwind.', [], true), blk('h2', 'Cómo correr y testear'),
           blk('li', '· pnpm dev en cada repo. Tests: pnpm test (vitest).', [], true), blk('li', ans.l2 ? '· e2e: ' + ans.l2 : '· e2e: no encontrado.', [], true), blk('h2', 'Convenciones'), blk('p', 'Ver conventions.md: branches feature/KEY-n, commits convencionales, PR con template.')],
         commentsLabel: 'LO QUE APRENDIÓ · CONFIRMÁ',
-        comments: [comment('l1', 'IA', 'aprendido de package.json y CI', 'Stack y comandos de test.', ['Está bien', 'Corregir']),
-          comment('l2', 'IA', 'no encontrado', 'No encontré cómo se corren los e2e.', ['pnpm e2e (Playwright)', 'No hay e2e todavía'])],
+        comments: [comment('l1', 'IA', 'aprendido de package.json y CI', 'Stack y comandos de test.', ['Está bien', 'Corregir'], null, !!s.learnOk),
+          comment('l2', 'IA', 'no encontrado', 'No encontré cómo se corren los e2e.', ['pnpm e2e (Playwright)', 'No hay e2e todavía'], null, !!s.learnOk)],
         coverage: false, banner: s.learnOk ? 'Notas confirmadas. Los agentes las leen al empezar cada ticket.' : false, blocked: blocked,
         approveLabel: s.learnOk ? 'Confirmado' : 'Confirmar notas',
         approveStyle: s.learnOk ? 'background:' + t.okBg + ';color:' + t.ok : (blocked ? 'background:' + t.chip + ';color:' + t.muted : 'background:' + t.accent + ';color:' + t.onAccent),
@@ -1244,8 +1364,128 @@ class Component extends DCLogic {
         blocks: [blk('h1', name), blk('p', 'Vista del documento renderizado. Los md que no te esperan se leen como en un editor: con historial de versiones y quién escribió cada parte (vos o un agente).')] });
     }
 
+    // Diff of md: line diff (LCS) between a frozen version and the current text
+    const lineDiff = (a, b) => {
+      const n = a.length; const m = b.length;
+      const L = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
+      for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) L[i][j] = a[i][1] === b[j][1] ? L[i + 1][j + 1] + 1 : Math.max(L[i + 1][j], L[i][j + 1]);
+      const out = []; let i = 0; let j = 0;
+      while (i < n && j < m) {
+        if (a[i][1] === b[j][1]) { out.push({ op: 'same', k: b[j][0], text: b[j][1] }); i++; j++; }
+        else if (L[i + 1][j] >= L[i][j + 1]) { out.push({ op: 'del', k: a[i][0], text: a[i][1] }); i++; }
+        else { out.push({ op: 'add', k: b[j][0], text: b[j][1] }); j++; }
+      }
+      while (i < n) { out.push({ op: 'del', k: a[i][0], text: a[i][1] }); i++; }
+      while (j < m) { out.push({ op: 'add', k: b[j][0], text: b[j][1] }); j++; }
+      return out;
+    };
+    const dFrom = s.diffFrom || 'v1';
+    const dOps = vDiff ? lineDiff(specVersions[dFrom].filter((x) => x[1] !== ''), specNow(ans.q1, ans.q2).filter((x) => x[1] !== '')) : [];
+    const dText = (k) => k === 'h1' ? 'font-size:18px;font-weight:700' : (k === 'h2' ? 'font-size:14px;font-weight:700' : 'line-height:1.5');
+    const dBox = (op) => 'display:flex;gap:10px;padding:3px 10px;border-radius:4px;' + (op === 'add' ? 'background:' + t.okBg : (op === 'del' ? 'background:' + t.errBg : ''));
+    const dCell = (op, text, k) => ({ text: text || '', style: dText(k) + (op === 'del' ? ';text-decoration:line-through;text-decoration-color:' + t.err : ''), box: 'flex:1;min-width:0;' + dBox(text ? op : 'same') });
+    const diffRows = dOps.map((o) => ({ p: o.op === 'add' ? '+' : (o.op === 'del' ? '−' : ''), pc: o.op === 'add' ? t.ok : t.err, text: o.text, style: dText(o.k) + (o.op === 'del' ? ';text-decoration:line-through;text-decoration-color:' + t.err : ''), box: dBox(o.op) }));
+    const diffPairs = [];
+    for (let i = 0; i < dOps.length;) {
+      if (dOps[i].op === 'same') { diffPairs.push({ l: dCell('same', dOps[i].text, dOps[i].k), r: dCell('same', dOps[i].text, dOps[i].k) }); i++; continue; }
+      const dels = []; const adds = [];
+      while (i < dOps.length && dOps[i].op === 'del') dels.push(dOps[i++]);
+      while (i < dOps.length && dOps[i].op === 'add') adds.push(dOps[i++]);
+      for (let k = 0; k < Math.max(dels.length, adds.length); k++) {
+        const d = dels[k]; const a = adds[k];
+        diffPairs.push({ l: d ? dCell('del', d.text, d.k) : dCell('same', '', 'li'), r: a ? dCell('add', a.text, a.k) : dCell('same', '', 'li') });
+      }
+    }
+    const nAdd = dOps.filter((o) => o.op === 'add').length; const nDel = dOps.filter((o) => o.op === 'del').length;
+    const diffv = { meta: 'spec.md · ' + dFrom + ' → actual' + (s.approved ? ' (aprobado)' : ' (con tus respuestas sin aprobar)'), adds: '+' + nAdd, dels: '−' + nDel, empty: vDiff && nAdd + nDel === 0, rows: diffRows, pairs: diffPairs,
+      froms: [['v1', 'v1 · primer borrador'], ['v2', 'v2 · Spec writer']].map((f) => ({ label: f[1], style: seg(dFrom === f[0]), pick: () => set({ diffFrom: f[0] }) })),
+      leftLabel: dFrom === 'v1' ? 'v1 · Spec writer · hace 22 min' : 'v2 · Spec writer · hace 6 min', rightLabel: 'actual',
+      openDoc: () => open('SHOP-142/spec.md') };
+
+    // Timeline: versions and edits of the active md, who made them (you or an agent)
+    const tlKey = vDiff ? id.slice(6) : id;
+    const tlAgent = t.accent; const tlYou = t.ok;
+    const tlDefs = {
+      'SHOP-142/spec.md': [
+        s.approved ? ['Aprobaste el spec. Pasa a Plan.', 'Vos · ahora', tlYou, null] : null,
+        ans.q2 ? ['Respondiste §4: ' + ans.q2, 'Vos · ahora · sin aprobar', tlYou, 'v2'] : null,
+        ans.q1 ? ['Respondiste §3: ' + ans.q1, 'Vos · ahora · sin aprobar', tlYou, 'v2'] : null,
+        ['v2: usó la plantilla de SHOP-120 en §2 y agregó §4', 'Spec writer · hace 6 min', tlAgent, 'v2'],
+        ['Comentaste §2: usar la plantilla de email existente', 'Vos · hace 14 min', tlYou, null],
+        ['v1: primer borrador desde Jira y 2 comentarios', 'Spec writer · hace 22 min', tlAgent, 'v1']
+      ],
+      'proyecto/flow.md': [
+        s.proposalOk ? ['v4: aprobaste la etapa A11y', 'Vos · ahora', tlYou, null] : null,
+        s.proposal && !s.proposalOk ? ['Propuesta: etapa A11y después de QA', 'Configurador · hace 1 min · sin aprobar', t.wait, null] : null,
+        ['v3: gate de security solo si toca auth/', 'Vos · ayer', tlYou, null],
+        ['v2: QA guiado en vez de autónomo', 'Vos · hace 3 días', tlYou, null],
+        ['v1: copiado de ~/.claude/skills/ticket2', 'Configurador · hace 5 días', tlAgent, null]
+      ],
+      'SHOP-138/review.md': [['Vuelta 1: 1 bloqueante (XSS)', 'Security reviewer · tuyo · hace 50 min', tlAgent, null], ['Vuelta 1: 3 hallazgos contra spec.md', 'Reviewer · hace 52 min', tlAgent, null]],
+      'SHOP-136/qa.md': [s.qaManual ? ['Check manual de AC3: ' + (s.qaManual === 'pass' ? 'pasó' : 'falló'), 'Vos · ahora', tlYou, null] : null, ['AC1 y AC2 verificados solos; AC3 queda para vos', 'QA · hace 40 min', tlAgent, null]],
+      'proyecto/project.md': [['Aprendido de package.json y CI', 'Agente de importación · ayer', tlAgent, null]]
+    };
+    const timeline = (tlDefs[tlKey] || []).filter(Boolean).map((e) => ({ what: e[0], meta: e[1], dot: e[2], canDiff: !!e[3], open: e[3] ? () => openDiff(e[3]) : () => {} }));
+    const tlOpen = s.tlOpen !== false;
+
+    // Problems: what is broken or blocking, anchored to a file
+    const sentNow = s.sent || {};
+    const probDefs = isWork ? [
+      sentNow.f1 !== 'dev' ? ['err', 'XSS: el talle de la URL va al HTML sin escapar', 'review.md · hallazgo 1', 'SHOP-138', 'SHOP-138/review.md'] : null,
+      ['err', 'CI en rojo: checkout-coupon.spec.ts', 'PR #212 · e2e', 'SHOP-129', '@ci'],
+      !ans.q1 ? ['wait', 'Pregunta abierta que bloquea la aprobación', 'spec.md §3', 'SHOP-142', 'SHOP-142/spec.md'] : null,
+      !ans.q2 ? ['wait', '§4 no tiene AC', 'spec.md §4', 'SHOP-142', 'SHOP-142/spec.md'] : null,
+      s.qaMode !== 'auto' && s.qaManual !== 'pass' ? ['wait', 'AC3 espera tu check manual', 'qa.md · AC3', 'SHOP-136', 'SHOP-136/qa.md'] : null,
+      ['wait', 'El origen cambió: reviewer.md en ~/.claude', 'flow.md · origen', 'Tienda web', 'proyecto/flow.md'],
+      ['info', 'Faltan AC para poder tomarlo', 'Jira', 'SHOP-155', null]
+    ].filter(Boolean) : [];
+    const probIcon = { err: ['⊗', t.err], wait: ['⚠', t.wait], info: ['ⓘ', t.muted] };
+    const problems = probDefs.map((p) => ({ icon: probIcon[p[0]][0], color: probIcon[p[0]][1], text: p[1], where: p[2], key: p[3],
+      open: () => { if (p[4] === '@ci') set({ term: 'ci', drawer: true }); else if (p[4]) { const e = Object.assign({}, this.st().expanded); if (T[p[3]]) e[p[3]] = true; set({ expanded: e }); open(p[4]); } } }));
+    const probErr = probDefs.filter((p) => p[0] === 'err').length; const probWarn = probDefs.filter((p) => p[0] === 'wait').length;
+
+    // Command palette: tickets, md files and actions, filtered by what you type
+    const cq = (s.cmdQ || '').trim().toLowerCase();
+    const onlyAct = cq.indexOf('>') === 0;
+    const words = (onlyAct ? cq.slice(1) : cq).split(/\s+/).filter(Boolean);
+    const hit = (x) => { const hay = (x.label + ' ' + x.detail).toLowerCase(); return words.every((w) => hay.indexOf(w) >= 0); };
+    const cmdClose = { cmd: false, cmdQ: '', cmdSel: 0 };
+    const run = (fn) => () => { this.setState(Object.assign({}, this.st(), cmdClose)); fn(); };
+    const cmdDefs = [];
+    if (isWork) {
+      Object.keys(T).forEach((k) => { const d = T[k]; cmdDefs.push({ g: 'TICKETS', icon: '#', label: k + ' · ' + d.title, detail: d.label, key: '',
+        fn: () => { const e = Object.assign({}, this.st().expanded); e[k] = true; set({ expanded: e }); if (d.live) open(k + '/' + d.live); } }); });
+      [['proyecto/flow.md', 'flow.md'], ['proyecto/project.md', 'project.md'], ['proyecto/conventions.md', 'conventions.md']].forEach((f) => cmdDefs.push({ g: 'ARCHIVOS', icon: '¶', label: f[1], detail: 'Tienda web / proyecto', key: '', fn: () => open(f[0]) }));
+      Object.keys(T).forEach((k) => T[k].files.forEach((f) => cmdDefs.push({ g: 'ARCHIVOS', icon: '¶', label: k + '/' + f[0], detail: projName[T[k].project], key: '', fn: () => { const e = Object.assign({}, this.st().expanded); e[k] = true; set({ expanded: e }); open(k + '/' + f[0]); } })));
+      [
+        ['Revisar el spec de SHOP-142', 'te espera', '', () => open('SHOP-142/spec.md')],
+        ['Comparar spec.md: v1 → actual', 'diff de md', '', () => openDiff('v1')],
+        ['Ver problemas', probErr + ' errores · ' + probWarn + ' avisos', '⇧⌘M', () => set({ term: 'problems', drawer: true })],
+        ['Leer en focus mode', 'archivo abierto', '⌘.', () => { if (vDoc || vFlow) set({ focus: true }); }],
+        ['Pedirle un cambio al Configurador', 'proceso, agentes, preset', '', () => { const c = this.st(); set({ extra: (c.extra || []).indexOf('config') >= 0 ? c.extra : ['config'].concat(c.extra || []), term: 'config', drawer: true }); }],
+        ['Abrir flow.md', 'flujo del proyecto', '', () => open('proyecto/flow.md')],
+        ['Agentes y autonomía', '9 agentes', '', () => open('@agents')],
+        ['Preset del proyecto', 'skills, plugins, MCP', '', () => open('@preset')],
+        ['MCP del IDE', 'agentes externos', '', () => open('@mcp')],
+        ['Tus sidekicks', 'personalidad y propósito', '', () => open('@sidekicks')],
+        ['Mostrar Pendiente', 'panel derecho', '', () => set({ right: 'pending' })],
+        ['Abrir o cerrar la terminal', 'panel de abajo', '⌃`', () => set({ drawer: !this.st().drawer })]
+      ].forEach((a) => cmdDefs.push({ g: 'ACCIONES', icon: '›', label: a[0], detail: a[1], key: a[2], fn: a[3] }));
+    } else {
+      [['Importar Jira + repos', 'primer proyecto', () => set({ tabs: ['@welcome', '@import'], active: '@import', phase: 'start' })], ['Crear proyecto desde cero', 'decisiones → ADRs', () => set({ phase: 'create', tabs: ['@new'], active: '@new', wiz: 0 })]]
+        .forEach((a) => cmdDefs.push({ g: 'ACCIONES', icon: '›', label: a[0], detail: a[1], key: '', fn: a[2] }));
+    }
+    cmdDefs.push({ g: 'ACCIONES', icon: '›', label: 'Cambiar a tema ' + (s.theme === 'dark' ? 'claro' : 'oscuro'), detail: 'apariencia', key: '', fn: () => set({ theme: this.st().theme === 'dark' ? 'light' : 'dark' }) });
+    const cmdHits = cmdDefs.filter((x) => (!onlyAct || x.g === 'ACCIONES') && hit(x));
+    const cmdOrder = words.length || onlyAct ? ['ACCIONES', 'TICKETS', 'ARCHIVOS'] : ['TICKETS', 'ACCIONES', 'ARCHIVOS'];
+    const cmdFlat = [];
+    cmdOrder.forEach((g) => cmdHits.filter((x) => x.g === g).slice(0, 6).forEach((x) => cmdFlat.push(x)));
+    const cmdSel = Math.max(0, Math.min(s.cmdSel || 0, cmdFlat.length - 1));
+    const cmdGroups = cmdOrder.map((g) => ({ label: g, items: cmdFlat.map((x, i) => ({ x: x, i: i })).filter((o) => o.x.g === g)
+      .map((o) => ({ icon: o.x.icon, label: o.x.label, detail: o.x.detail, key: o.x.key, bg: o.i === cmdSel ? t.sel : 'transparent', run: run(o.x.fn) })) })).filter((g) => g.items.length);
+
     // Sidekicks
-    const purposeCat = [['prompts', 'Coach de prompts', 'revisa lo que mandás: vago, sin contexto, dos pedidos', '~200 tokens por revisión'], ['foco', 'Foco', 'tangentes e ideas nuevas → a la cola del proyecto', 'local, 0 tokens'],
+    const purposeCat =[['prompts', 'Coach de prompts', 'revisa lo que mandás: vago, sin contexto, dos pedidos', '~200 tokens por revisión'], ['foco', 'Foco', 'tangentes e ideas nuevas → a la cola del proyecto', 'local, 0 tokens'],
       ['proceso', 'Guardián del proceso', 'avisa si salteás un gate o una etapa de flow.md', 'local, 0 tokens'], ['mentor', 'Mentor técnico', 'explica en simple lo que decidió un agente', '~600 tokens por respuesta'], ['resumen', 'Resumen del día', 'al abrir: qué te espera y qué quedó en vuelo', '~1k por día']];
     const SK = {
       rulo: { name: 'Rulo', initial: 'R', color: '#f0a64b', file: 'sidekicks/rulo.md', origin: 'copiado de ~/.claude/coach', purposes: ['prompts', 'foco'], moments: 'antes de mandar · avisos', tier: 'liviano', usedIn: 'Tienda web · App interna',
@@ -1288,7 +1528,6 @@ class Component extends DCLogic {
     const skDone = { used: 'usada · lo del preset quedó en la cola', edited: 'editada', anyway: 'mandada igual' };
 
     // Focus mode
-    const fSerif = '"Source Serif 4",Georgia,serif';
     const fStyle = (b, i) => {
       const base = { h1: 'font-size:34px;font-weight:700;line-height:1.2;padding-bottom:18px', meta: 'font-family:Inter,sans-serif;font-size:12.5px;color:' + t.muted, h2: 'font-size:22px;font-weight:700;padding:28px 0 6px',
         p: 'font-size:18px;line-height:1.75', li: 'font-size:18px;line-height:1.75;padding-left:18px', code: 'font-family:"JetBrains Mono",monospace;font-size:14.5px;line-height:1.7;color:' + t.muted };
@@ -1378,7 +1617,7 @@ class Component extends DCLogic {
         .concat([['spec', 'spec · INT-77', 'running'], ['dev', 'dev · SHOP-151', 'running'], ['qa', 'qa · SHOP-136', 'wait'], ['shell', 'shell', 'plan']]);
     const sessions = sessionDefs.map((x) => { const dt = this.dot(x[2], t); const on = s.term === x[0];
       return { label: x[1], dotClass: dt.cls, dotStyle: dt.style, style: on ? 'background:' + t.chip + ';color:' + t.text : 'color:' + t.muted, select: () => set({ term: x[0], drawer: true }) }; });
-    const panels = (isWork ? [['diff', 'Diff'], ['log', 'Log'], ['ci', 'CI']] : []).map((x) => ({ label: x[1], style: s.term === x[0] ? 'background:' + t.chip + ';color:' + t.text : 'color:' + t.muted, select: () => set({ term: x[0], drawer: true }) }));
+    const panels = (isWork ? [['problems', 'Problemas · ' + problems.length], ['diff', 'Diff'], ['log', 'Log'], ['ci', 'CI']] : []).map((x) => ({ label: x[1], style: s.term === x[0] ? 'background:' + t.chip + ';color:' + t.text : 'color:' + t.muted, select: () => set({ term: x[0], drawer: true }) }));
     const L = (text, c) => ({ text: text, color: c || t.text });
     const termMap = {
       setup: [L('$ claude --version', t.muted), L('2.4.1 (Claude Code)', t.ok), L('$ gh auth status', t.muted), L('✓ Logged in to github.com as marco', t.ok), L('$ claude mcp list', t.muted),
@@ -1386,6 +1625,7 @@ class Component extends DCLogic {
       learn: [L('import · modelo liviano', t.muted), L('● Leí tienda-api/package.json, .github/workflows/ci.yml', t.muted), L('● Leí tienda-web/package.json, README.md', t.muted), L('● Write(proyecto/project.md)', t.accent), L('● Write(proyecto/conventions.md)', t.accent),
         L('● Jira: trayendo 47 tickets abiertos de SHOP…', t.muted), s.learnOk ? L('✓ Notas confirmadas por vos.', t.ok) : L('  Esperando que confirmes project.md.', t.wait)],
       shell: [L('~ % ▍', t.text)],
+      problems: [],
       spec: [L('spec-writer · INT-77 · modelo profundo', t.muted), L('● Comparé el ticket con Jira: el PO editó AC2 hace 20 min.', t.muted), L('● Edit(INT-77/spec.md) §Comportamiento', t.accent), L('  + 3. Si el dominio no es de la empresa, se rechaza con un mensaje claro.', t.ok), L('● Agregué una pregunta: ¿qué pasa con cuentas ya creadas con contraseña?', t.wait)],
       dev: [L('dev · SHOP-151 · modelo estándar', t.muted), L('● Edit(web/pages/orders.tsx)', t.accent), L('  + <DownloadButton href={exportUrl(filters)} label="Exportar CSV" />', t.ok), L('● Bash(pnpm --filter web test orders)', t.accent), L('  ✓ 14 tests', t.ok)],
       qa: [L('qa · SHOP-136 · modelo estándar · modo guiado', t.muted), L('● Bash(pnpm test api/account)', t.accent), L('  ✓ 23 tests', t.ok), L('● Bash(pnpm e2e change-email)', t.accent), L('  ✓ 1 test · video guardado', t.ok), L('● AC3 no se puede verificar solo: armé el check manual con 2 capturas.', t.wait)],
@@ -1406,7 +1646,7 @@ class Component extends DCLogic {
     const termInput = !skDraftShow && ['setup', 'shell', 'spec', 'dev', 'qa', 'learn', 'config', 'ext'].indexOf(s.term) >= 0;
     const placeholders = { setup: 'Escribí un comando', shell: 'Shell en ~/code', learn: 'Decile algo al agente de importación', spec: 'Escribile al spec-writer de INT-77', dev: 'Escribile al dev de SHOP-151', qa: 'Escribile al QA de SHOP-136', config: 'Pedile un cambio al proceso, a los agentes o al preset', ext: 'Tu Claude Code de siempre, conectado por MCP' };
 
-    const crumb = id === '@welcome' ? 'Bienvenida' : id === '@new' ? 'Turnos / nuevo proyecto' : id === '@import' ? 'Importar' : (specialTabs[id] ? 'Tienda web / ' + specialTabs[id].toLowerCase() : (hasTicket ? projName[tk.project] + ' / ' + id : (id.indexOf('proyecto/') === 0 ? 'Tienda web / ' + id : id)));
+    const crumb = vDiff ? 'Tienda web / ' + id.slice(6) + ' / cambios' : id === '@welcome' ? 'Bienvenida' : id === '@new' ? 'Turnos / nuevo proyecto' : id === '@import' ? 'Importar' : (specialTabs[id] ? 'Tienda web / ' + specialTabs[id].toLowerCase() : (hasTicket ? projName[tk.project] + ' / ' + id : (id.indexOf('proyecto/') === 0 ? 'Tienda web / ' + id : id)));
     const pendingCount = isWork ? pending.reduce((n, sec) => n + sec.count, 0) : false;
 
     return {
@@ -1455,8 +1695,18 @@ class Component extends DCLogic {
       doSkImport: () => { const c = this.st(); if (c.skAck && !c.skImported) set({ skImported: true }); },
       skImportBtnLabel: s.skImported ? 'Creado' : 'Crear sidekick desde el coach',
       skImportBtnStyle: s.skImported ? 'background:' + t.okBg + ';color:' + t.ok : (s.skAck ? 'background:' + t.accent + ';color:' + t.onAccent : 'background:' + t.chip + ';color:' + t.muted + ';cursor:not-allowed'),
-      focusOn: focusOn, focusBlocks: focusBlocks, focusName: id, focusFont: s.focusSans ? 'Inter,sans-serif' : fSerif,
-      focusTypeLabel: s.focusSans ? 'Letra: sans' : 'Letra: serif', focusTypeToggle: () => set({ focusSans: !this.st().focusSans }),
+      focusOn: focusOn, focusBlocks: focusBlocks, focusName: id, focusFont: 'Inter,-apple-system,BlinkMacSystemFont,sans-serif',
+      vDiff: vDiff, diff: diffv, diffIsInline: s.diffView !== 'side', diffIsSide: s.diffView === 'side', diffInlineStyle: seg(s.diffView !== 'side'), diffSideStyle: seg(s.diffView === 'side'),
+      diffInline: () => set({ diffView: 'inline' }), diffSide: () => set({ diffView: 'side' }),
+      tlShow: timeline.length > 0, tlOpen: tlOpen, tlChev: tlOpen ? 'rotate(90deg)' : 'none', tlFile: tlKey.split('/').pop(), timeline: timeline, toggleTl: () => set({ tlOpen: !(this.st().tlOpen !== false) }),
+      problemsShow: s.term === 'problems' && s.drawer, problems: problems, probErr: probErr, probWarn: probWarn,
+      probSummary: problems.length ? probErr + ' errores · ' + probWarn + ' avisos · clic para ir al archivo' : 'Sin problemas.',
+      showProblems: () => set({ term: 'problems', drawer: true }),
+      cmdOpen: !!s.cmd, cmdGroups: cmdGroups, cmdEmpty: cmdFlat.length === 0, cmdQ: s.cmdQ || '',
+      openPalette: () => set({ cmd: true, cmdQ: '', cmdSel: 0, focus: false }), closePalette: () => set(cmdClose),
+      cmdType: (e) => set({ cmdQ: (e && e.target && e.target.value) || '', cmdSel: 0 }),
+      cmdMove: (d) => set({ cmdSel: Math.max(0, Math.min((this.st().cmdSel || 0) + d, cmdFlat.length - 1)) }),
+      cmdRun: () => { const x = cmdFlat[cmdSel]; if (x) run(x.fn)(); },
       focusHasComments: vDoc && (docv.comments || []).length > 0, focusComments: !!s.focusComments && vDoc,
       focusCommentsLabel: (s.focusComments ? 'Ocultar comentarios' : 'Comentarios') + (nOpenComments ? ' · ' + nOpenComments + ' abiertos' : ''),
       toggleFocusComments: () => set({ focusComments: !this.st().focusComments }),

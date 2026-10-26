@@ -140,7 +140,15 @@ Round 4 of v3 (Marco, 2026-10-26), canvas rows 9 and 10: Sidekicks and focus mod
 - **The project picks which sidekicks it needs (decision).** Sidekicks live in the user's profile; `proyecto/sidekicks.md` turns them on per project and adds project-specific purpose and places. Personality stays the user's.
 - **Import a sidekick (decision):** e.g. Marco's `~/.claude/coach` becomes a sidekick (rules → personality and purposes, profile → what it learned; the queue is not copied). Same copy notice and checkbox as the process import.
 - Kept from spec #9: suggest only, no tools, never drives the flow, visible and capped spend. A custom purpose cannot grant permissions. Claude's proposal, not confirmed: one card per moment when several sidekicks want to speak (the most relevant one), and a shared cap per ticket.
-- **Focus mode for every `.md` (decision):** full-screen reading with one centered column, serif or sans, comments hidden behind a toggle with markers in the text, terminal/sidekicks/heads-ups paused, and the approve action at the end of the doc.
+- **Focus mode for every `.md` (decision):** full-screen reading with one centered column, comments hidden behind a toggle with markers in the text, terminal/sidekicks/heads-ups paused, and the approve action at the end of the doc.
+
+Round 5 of v3 (Marco, 2026-10-26), after trying the clickable prototype https://claude.ai/artifact/KuZC5N2MUq1zeMYsJWmCiA (source `docs/discovery/prototypes/dev/ide-v3.html`, built from `IDE.dc.html` by `build-ide-v3.cjs`):
+- **Answers can change until approval (decision).** A comment's answer (spec questions, import notes) stays selectable: the chosen option is marked and the doc text follows it. Approving the doc locks the answers.
+- **Focus mode is always sans serif (decision).** The serif/sans toggle is gone.
+- **Command palette ⌘K (decision):** tickets, md files and actions in one fuzzy list; `>` shows only actions.
+- **Timeline per md (decision):** in the explorer, versions and edits of the open file, each with who made it (you or which agent); a version opens its diff.
+- **Diff of md (decision):** a frozen version against the current text, inline or side by side; your unapproved answers show as changes.
+- **Problems panel (decision):** a bottom-panel tab plus a status-bar count, with errors and warnings anchored to a file (blockers, red CI, open questions, missing AC, manual checks, a changed process origin); a click opens the file.
 
 Mockup v1 (2026-10-20, superseded by v2): https://claude.ai/artifact/JkYwnWjmArqrHzSz92A5CV
 

@@ -123,10 +123,13 @@ export function answerDisplay(
   return core;
 }
 
+/** The first line of an answer's message, named by the block (never its tool): `[answer to <block>]`. */
+export const answerHeader = (name: string, language: Language): string => `[${WORDS[language].answer} ${name}]`;
+
 /** The next turn's message (spec §4): a header, the readable line, then the exact JSON the agent relies on. */
 export function answerMessage(o: { name: string; blockId: string; value: Record<string, unknown>; display: string; language: Language }): string {
   const json = JSON.stringify({ block: o.name, blockId: o.blockId, value: o.value });
-  return `[${WORDS[o.language].answer} ${o.name}]\n${o.display}\n\n\`\`\`json\n${json}\n\`\`\``;
+  return `${answerHeader(o.name, o.language)}\n${o.display}\n\n\`\`\`json\n${json}\n\`\`\``;
 }
 
 const ANSWER_FENCE = /```json\n([^\n]+)\n```\s*$/;

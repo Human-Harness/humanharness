@@ -160,25 +160,35 @@ describe("managedSection: input blocks", () => {
 
   it("documents each input block's answer and how answers come back", () => {
     const en = managedSection({ language: "en", blocks: { ...blocks, ask } });
-    expect(en).toContain(`- \`show_ask\`: Asks why.\n  Example: \`{"question":"q"}\`\n  Schema: \`${schemaOf(ask.schema)}\`\n  Answer: \`${schemaOf(ask.input!)}\``);
+    expect(en).toContain(
+      `- \`show_ask\`: Asks why.\n  Example: \`{"question":"q"}\`\n  Schema: \`${schemaOf(ask.schema)}\`\n  Answer (\`[answer to ask]\`): \`${schemaOf(ask.input!)}\``,
+    );
     expect(en).toContain(
       [
         "### Answers from input blocks",
         "",
         "- A tool with an `Answer` schema asks the person for something. After calling it, end your turn and wait: the answer comes as the next message.",
-        "- That message starts with `[answer to <block>]` (the tool's name without `show_`: `[answer to ask]` for `show_ask`), then what the person sees, then a ```json block with `block`, `blockId` and `value`. Trust the JSON: `value` already matches the block's `Answer` schema.",
+        "- That message starts with the header on the tool's `Answer` line (`[answer to <block>]`), then what the person sees, then a ```json block with `block`, `blockId` and `value`. Trust the JSON: `value` already matches the block's `Answer` schema.",
         '- When `value` is `{"skipped":true}`, the person skipped the question: go on without insisting.',
         "- The person may write in the chat instead of answering. The question stays open and may still be answered later: answer what they wrote, or remind them of the question.",
       ].join("\n"),
     );
-    expect(en.match(/Answer: /g)).toHaveLength(1);
+    expect(en.match(/ {2}Answer \(/g)).toHaveLength(1);
     const es = managedSection({ language: "es", blocks: { ask } });
-    expect(es).toContain(`  Respuesta: \`${schemaOf(ask.input!)}\``);
+    expect(es).toContain(`  Respuesta (\`[respuesta a ask]\`): \`${schemaOf(ask.input!)}\``);
+    expect(es).toContain("- Ese mensaje empieza con el encabezado de la línea `Respuesta` de la herramienta (`[respuesta a <bloque>]`)");
     expect(es).toContain("### Respuestas de bloques de entrada");
     expect(es).toContain("- Si `value` es `{\"skipped\":true}`, la persona salteó la pregunta: seguí sin insistir.");
     expect(es).toContain(
       "- La persona puede escribir en el chat en lugar de responder. La pregunta sigue abierta y todavía puede responderla: contestá lo que escribió, o recordale la pregunta.",
     );
+  });
+
+  it("a block with its own tool name still names its answer's header by the block", () => {
+    const pick = defineBlock({ ...ask, tool: "choose_side" });
+    const en = managedSection({ language: "en", blocks: { pick } });
+    expect(en).toContain("- `choose_side`: Asks why.");
+    expect(en).toContain(`  Answer (\`[answer to pick]\`): \`${schemaOf(ask.input!)}\``);
   });
 
   it("explains annotate only when the harness has it", () => {

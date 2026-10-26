@@ -2,7 +2,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 import type { EngineDef } from "@humanharness/engines";
-import { type Block, type Language, blockToolName } from "@humanharness/harness-sdk";
+import { type Block, type Language, answerHeader, blockToolName } from "@humanharness/harness-sdk";
 
 export const MANAGED_START = "<!-- humanharness:start -->";
 export const MANAGED_END = "<!-- humanharness:end -->";
@@ -29,7 +29,7 @@ const TEXT: Record<
     answers: "### Respuestas de bloques de entrada",
     answerRules: [
       "Una herramienta con schema `Respuesta` le pide algo a la persona. Después de llamarla, terminá tu turno y esperá: la respuesta llega como el próximo mensaje.",
-      "Ese mensaje empieza con `[respuesta a <bloque>]` (el nombre de la herramienta sin `show_`: `[respuesta a ask]` para `show_ask`), sigue con lo que ve la persona y termina con un bloque ```json con `block`, `blockId` y `value`. Confiá en el JSON: `value` ya cumple el schema `Respuesta` del bloque.",
+      "Ese mensaje empieza con el encabezado de la línea `Respuesta` de la herramienta (`[respuesta a <bloque>]`), sigue con lo que ve la persona y termina con un bloque ```json con `block`, `blockId` y `value`. Confiá en el JSON: `value` ya cumple el schema `Respuesta` del bloque.",
       'Si `value` es `{"skipped":true}`, la persona salteó la pregunta: seguí sin insistir.',
       "La persona puede escribir en el chat en lugar de responder. La pregunta sigue abierta y todavía puede responderla: contestá lo que escribió, o recordale la pregunta.",
     ],
@@ -53,7 +53,7 @@ const TEXT: Record<
     answers: "### Answers from input blocks",
     answerRules: [
       "A tool with an `Answer` schema asks the person for something. After calling it, end your turn and wait: the answer comes as the next message.",
-      "That message starts with `[answer to <block>]` (the tool's name without `show_`: `[answer to ask]` for `show_ask`), then what the person sees, then a ```json block with `block`, `blockId` and `value`. Trust the JSON: `value` already matches the block's `Answer` schema.",
+      "That message starts with the header on the tool's `Answer` line (`[answer to <block>]`), then what the person sees, then a ```json block with `block`, `blockId` and `value`. Trust the JSON: `value` already matches the block's `Answer` schema.",
       'When `value` is `{"skipped":true}`, the person skipped the question: go on without insisting.',
       "The person may write in the chat instead of answering. The question stays open and may still be answered later: answer what they wrote, or remind them of the question.",
     ],
@@ -84,7 +84,8 @@ export function managedSection(opts: { language: Language; blocks: Record<string
         `  ${t.example}: \`${JSON.stringify(block.example)}\``,
         `  ${t.schema}: \`${toolSchema(block.schema)}\``,
       );
-      if (block.input) lines.push(`  ${t.answer}: \`${toolSchema(block.input)}\``);
+      // The header names the block, not its tool: a block with its own `tool` name shows the link here.
+      if (block.input) lines.push(`  ${t.answer} (\`${answerHeader(name, opts.language)}\`): \`${toolSchema(block.input)}\``);
     }
     // Only a harness with input blocks gets the answers section (spec D0).
     if (entries.some(([, b]) => b.input)) {

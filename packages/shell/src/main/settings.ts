@@ -117,13 +117,17 @@ export class SettingsController {
     return this.apply();
   }
 
-  /** The runtime went (engine change, folder change, quit): the next one writes AGENTS.md afresh. */
+  /**
+   * The runtime went (engine change, folder change, quit): the next one writes AGENTS.md afresh. The window hears it,
+   * so an open sheet drops Pending marks held against the old AGENTS.md.
+   */
   forget(): void {
     this.applied = null;
     this.stale = false;
+    this.work = Promise.all([this.work, this.push()]).then(() => undefined);
   }
 
-  /** Resolves once every `changed` started so far has finished (tests). */
+  /** Resolves once every `changed` and `forget` started so far has finished (tests). */
   idle(): Promise<void> {
     return this.work;
   }

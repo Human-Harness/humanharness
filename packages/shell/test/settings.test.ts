@@ -195,6 +195,17 @@ describe("SettingsController", () => {
     expect((await t.ctl.state()).pending).toEqual([]);
   });
 
+  it("forget tells the window: an open sheet drops its Pending marks after Move folder", async () => {
+    const t = setup({ taskOpen: true });
+    await t.ctl.sentences();
+    await t.ctl.set("hintAfter", 4);
+    await t.ctl.idle();
+    expect(t.pushed.at(-1)?.pending).toEqual(["hintAfter"]);
+    t.ctl.forget();
+    await t.ctl.idle();
+    expect(t.pushed.at(-1)).toEqual({ values: { tone: "patient", hintAfter: 4, nickname: "" }, pending: [] });
+  });
+
   it("a whenNoTask that fails is logged, never an unhandled rejection; betweenTasks still applies", async () => {
     const base = fs.mkdtempSync(path.join(root, "s-"));
     const store = new DataStore(base, dataCollections({ data: {}, settings }));

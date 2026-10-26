@@ -80,7 +80,10 @@ export function readableAnswer(block: Pick<Block, "input" | "inputUi" | "schema"
   return parts.join("\n\n") || WORDS[language].empty;
 }
 
-/** Runs harness code on a copy of an answer, logging it when slow. (`performance` is global in Node and browsers.) */
+/**
+ * Runs harness code, logging it when slow. It copies nothing: the caller hands the code a `structuredClone` of the
+ * answer. (`performance` is global in Node and browsers.)
+ */
 export function timed<T>(what: string, run: () => T, log: (message: string) => void, now: () => number = () => performance.now()): T {
   const started = now();
   try {
@@ -135,4 +138,25 @@ export function readAnswer(message: string): { block: string; blockId: string; v
     // not an answer
   }
   return null;
+}
+
+/**
+ * The records an answer's `saveTo` writes (spec §6): none for a skip; the value itself without `records`; else what
+ * the block's `records` returns from a copy of it. Throws when that isn't a list of objects (the answer is refused).
+ */
+export function answerRecords(
+  name: string,
+  block: Block,
+  value: Record<string, unknown>,
+  log: (message: string) => void = console.error,
+  now?: () => number,
+): Record<string, unknown>[] {
+  const save = block.saveTo;
+  if (!save || isSkipped(value)) return [];
+  if (!save.records) return [structuredClone(value)];
+  const records: unknown = timed(`saveTo.records of "${name}"`, () => save.records!.call(save, structuredClone(value) as never), log, now);
+  if (!Array.isArray(records) || !records.every((r) => typeof r === "object" && r !== null && !Array.isArray(r))) {
+    throw new Error(`saveTo.records of "${name}" must return a list of records`);
+  }
+  return records as Record<string, unknown>[];
 }

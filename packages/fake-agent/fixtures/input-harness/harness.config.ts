@@ -29,6 +29,8 @@ const summary = defineBlock({
   }),
   inputUi: { cards: { columns: { front: { es: "Frente", en: "Front" }, back: { es: "Dorso", en: "Back" } } } },
   skippable: true,
+  // Spec §9's flashcards: one record per card.
+  saveTo: { collection: "flashcards", records: (v) => v.cards.map((c) => ({ id: c.front, front: c.front, back: c.back })) },
   example: { prompt: "Resumí el tema con tus palabras." },
 });
 
@@ -44,5 +46,8 @@ export default defineHarness({
   blocks: { card, commit_answer, summary },
   actions: { practice: { label: { es: "Practicar", en: "Practice" }, prompt: "./agent/tasks/practice.md", cost: "light" } },
   path: ["practice"],
+  data: {
+    flashcards: { scoped: true, key: "id", schema: z.object({ id: z.string().min(1), front: z.string().min(1), back: z.string().min(1) }), agent: "read" },
+  },
   author: "Human Harness tests",
 });

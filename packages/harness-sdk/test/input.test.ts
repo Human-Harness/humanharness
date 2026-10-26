@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { choiceOptions, defineBlock, defineHarness, inputBlocks, inputFields, inputSpec, inputSpecs, z } from "../src";
+import { answerRecords, choiceOptions, defineBlock, defineHarness, inputBlocks, inputFields, inputSpec, inputSpecs, z } from "../src";
 
 const commit = () =>
   defineBlock({
@@ -145,5 +145,47 @@ describe("inputFields", () => {
     expect(choiceOptions(choice, { question: "q", options: ["Yo", 3, "Mi amiga"] })).toEqual(["Yo", "Mi amiga"]);
     expect(choiceOptions(choice, { question: "q" })).toEqual([]);
     expect(choiceOptions({ name: "l", kind: "choice", label: { es: "l", en: "l" }, optional: false, options: ["a"] }, null)).toEqual(["a"]);
+  });
+});
+
+describe("saveTo", () => {
+  const flashcards = defineBlock({
+    description: "Cards.",
+    visible: true,
+    schema: z.object({}),
+    input: z.object({ summary: z.string(), cards: z.array(z.object({ front: z.string(), back: z.string() })) }),
+    skippable: true,
+    saveTo: { collection: "flashcards", records: (v) => v.cards.map((c) => ({ id: c.front, ...c })) },
+    example: {},
+  });
+  const plain = defineBlock({ description: "Plain.", visible: true, schema: z.object({}), input: z.object({ id: z.string() }), saveTo: { collection: "cards" }, example: {} });
+  const harnessWith = (data: Record<string, unknown>) =>
+    defineHarness({
+      id: "quiz",
+      name: { es: "Q", en: "Q" },
+      core: "^0.1.0",
+      languages: ["es", "en"],
+      engines: ["claude"],
+      folder: { suggested: "Documents/Q" },
+      instructions: "./AGENTS.md",
+      permissions: { edit: "none", exec: false, web: false },
+      blocks: { plain },
+      data: data as never,
+      author: "t",
+    });
+
+  it("needs an input; the manifest checks its collection exists", () => {
+    expect(() => defineBlock({ description: "x", visible: true, schema: z.object({}), saveTo: { collection: "c" }, example: {} })).toThrow(/need an input/);
+    expect(() => harnessWith({})).toThrow(/Collection \\"cards\\" is not declared in data/);
+    expect(harnessWith({ cards: { scoped: false, key: "id", schema: z.object({ id: z.string() }), agent: "read" } }).blocks.plain.saveTo?.collection).toBe("cards");
+  });
+
+  it("answerRecords: the value itself, or the block's mapping on a copy; nothing for a skip", () => {
+    expect(answerRecords("plain", plain, { id: "a" })).toEqual([{ id: "a" }]);
+    const value = { summary: "s", cards: [{ front: "2+2", back: "4" }] };
+    expect(answerRecords("flashcards", flashcards, value)).toEqual([{ id: "2+2", front: "2+2", back: "4" }]);
+    expect(answerRecords("flashcards", flashcards, { skipped: true })).toEqual([]);
+    const bad = defineBlock({ ...plain, saveTo: { collection: "cards", records: () => "nope" as never } });
+    expect(() => answerRecords("bad", bad, { id: "a" })).toThrow(/must return a list of records/);
   });
 });

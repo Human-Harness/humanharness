@@ -148,6 +148,12 @@ const manifestSchema = z.object({
     if (refs.has(r.id)) ctx.addIssue({ code: "custom", path: ["folder", "references"], message: `Reference "${r.id}" is declared twice` });
     refs.add(r.id);
   }
+  // An answer kept in data goes to a collection the harness declares (input-blocks spec §6).
+  for (const [name, b] of Object.entries(m.blocks)) {
+    if (b.saveTo && !Object.hasOwn(m.data, b.saveTo.collection)) {
+      ctx.addIssue({ code: "custom", path: ["blocks", name, "saveTo"], message: `Collection "${b.saveTo.collection}" is not declared in data` });
+    }
+  }
 });
 
 export type Harness = z.output<typeof manifestSchema>;

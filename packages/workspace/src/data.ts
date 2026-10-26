@@ -171,6 +171,35 @@ export class DataStore {
     });
   }
 
+  /**
+   * Writes several records at once (an answer's `saveTo`, input-blocks spec §6). Each is checked like `put`
+   * (permission, schema, key, rules) before the file is saved once: any refusal writes none. The rules see the
+   * collections as they were before the batch.
+   */
+  putMany(name: string, records: unknown[], ctx: DataContext): Promise<DataRecord[]> {
+    return this.serialize(async () => {
+      const c = this.writable(name, ctx);
+      const scope = this.scopeFor(name, ctx.scope);
+      if (c.single && records.length > 1) throw new DataError("invalid", `"${name}" holds one record`);
+      const file = await this.loadForWrite(name, c, scope);
+      let current = file.records;
+      const written: { record: DataRecord; key: DataKey | undefined }[] = [];
+      for (const record of records) {
+        const next = this.parse(name, c, record);
+        const key = c.single ? undefined : this.keyOf(c, next);
+        const prev = (c.single ? current[0] : current.find((r) => r[c.key!] === key)) ?? null;
+        await this.checkRules(name, c, scope, next, prev, ctx);
+        current = c.single ? [next] : [...current.filter((r) => r[c.key!] !== key), next];
+        written.push({ record: next, key });
+      }
+      if (written.length === 0) return [];
+      await this.save(name, c, scope, current);
+      for (const { key } of written) await this.touch(name, scope, key, true);
+      for (const { key } of written) this.emit({ collection: name, scope, who: ctx.who, op: "put", ...(key !== undefined ? { key } : {}) });
+      return written.map((w) => w.record);
+    });
+  }
+
   /** Merges `patch` into the record with `key` (the one record of a `single` collection); the key can't change. */
   patch(name: string, key: DataKey | undefined, patch: unknown, ctx: DataContext): Promise<DataRecord> {
     return this.serialize(async () => {

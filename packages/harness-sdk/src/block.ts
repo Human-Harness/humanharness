@@ -19,6 +19,13 @@ export interface InputFieldUi {
 /** What a `skippable` block gets when the person skips it (spec §6 "Cancel"). */
 export type SkippedAnswer = { skipped: true };
 
+/** Where an answer is kept (input-blocks spec §6): a declared data collection, written as the person in the task's scope. */
+export interface SaveTo<I extends z.ZodObject = z.ZodObject> {
+  collection: string;
+  /** The records to write. Absent: the answer itself is the one record. Harness code, pure like `display`. */
+  records?(value: z.infer<I>): Record<string, unknown>[];
+}
+
 /** A piece of UI the agent can show (visible) or update (state-only) through an MCP tool. */
 export interface Block<S extends z.ZodObject = z.ZodObject, I extends z.ZodObject = z.ZodObject> {
   description: string;
@@ -40,6 +47,8 @@ export interface Block<S extends z.ZodObject = z.ZodObject, I extends z.ZodObjec
    * and fast. It gets a copy of the value; anything but a non-empty string falls back to the core's line.
    */
   display?(value: z.infer<I> | SkippedAnswer, language: Language): string;
+  /** Keep each answer in a data collection too (never a skipped one). */
+  saveTo?: SaveTo<I>;
 }
 
 /** A block the person answers. */
@@ -56,8 +65,8 @@ export function defineBlock<S extends z.ZodObject, I extends z.ZodObject = z.Zod
   const result = block.schema.safeParse(block.example);
   if (!result.success) throw new Error(`The block example does not match its schema: ${result.error.message}`);
   if (block.input === undefined) {
-    if (block.inputUi !== undefined || block.submitLabel !== undefined || block.skippable !== undefined || block.display !== undefined) {
-      throw new Error("inputUi, submitLabel, skippable and display need an input");
+    if (block.inputUi !== undefined || block.submitLabel !== undefined || block.skippable !== undefined || block.display !== undefined || block.saveTo !== undefined) {
+      throw new Error("inputUi, submitLabel, skippable, display and saveTo need an input");
     }
     return block;
   }

@@ -2,7 +2,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { z } from "zod";
 import { type Block, blockToolName } from "./block";
-import { CORE_BLOCKS, CORE_BLOCK_NAMES } from "./core-blocks";
+import { CORE_BLOCKS, INPUT_CORE_BLOCKS, RESERVED_BLOCK_NAMES } from "./core-blocks";
 import { dataSchema } from "./data";
 
 export * from "./block";
@@ -118,10 +118,10 @@ const manifestSchema = z.object({
   donate: z.url().optional(),
 }).superRefine((m, ctx) => {
   for (const name of Object.keys(m.blocks)) {
-    if (CORE_BLOCK_NAMES.includes(name)) ctx.addIssue({ code: "custom", path: ["blocks", name], message: `"${name}" is a core block name` });
+    if (RESERVED_BLOCK_NAMES.includes(name)) ctx.addIssue({ code: "custom", path: ["blocks", name], message: `"${name}" is a core block name` });
   }
   // Every block becomes an MCP tool: two blocks (core ones included) cannot share a tool name.
-  const tools = new Map<string, string>(Object.entries(CORE_BLOCKS).map(([name, b]) => [blockToolName(name, b), name]));
+  const tools = new Map<string, string>(Object.entries({ ...CORE_BLOCKS, ...INPUT_CORE_BLOCKS }).map(([name, b]) => [blockToolName(name, b), name]));
   for (const [name, b] of Object.entries(m.blocks)) {
     const tool = blockToolName(name, b);
     const other = tools.get(tool);

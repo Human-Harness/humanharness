@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { z } from "zod";
-import { CORE_BLOCKS, defineBlock } from "@humanharness/harness-sdk";
+import { CORE_BLOCKS, INPUT_CORE_BLOCKS, defineBlock } from "@humanharness/harness-sdk";
 import { getEngine } from "@humanharness/engines";
 import { MANAGED_END, MANAGED_START, managedSection, writeInstructions } from "../src";
 
@@ -175,5 +175,11 @@ describe("managedSection: input blocks", () => {
     expect(es).toContain(`  Respuesta: \`${schemaOf(ask.input!)}\``);
     expect(es).toContain("### Respuestas de bloques de entrada");
     expect(es).toContain("- Si `value` es `{\"skipped\": true}`, la persona salteó la pregunta: seguí sin insistir.");
+  });
+
+  it("explains annotate only when the harness has it", () => {
+    const line = '- To mark parts of an answer, call `show_annotate` with `ref` (the answer\'s `blockId`, or "last") and quote the person\'s exact words in each mark.';
+    expect(managedSection({ language: "en", blocks: { ask } })).not.toContain("show_annotate");
+    expect(managedSection({ language: "en", blocks: { ...INPUT_CORE_BLOCKS, ask } })).toContain(line);
   });
 });

@@ -80,6 +80,7 @@ describe("ui MCP server", () => {
     const c = await connect(received, INPUT_FIXTURE);
     const { tools } = await c.listTools();
     expect(tools.map((t) => t.name)).toContain("show_commit_answer");
+    expect(tools.map((t) => t.name)).toContain("show_annotate");
     const result = await c.callTool({ name: "show_commit_answer", arguments: { question: "¿Quién comió más?", options: ["Yo", "Las dos igual"] } });
     expect((result.content as { text: string }[])[0].text).toBe(INPUT_DONE);
     expect(INPUT_DONE).toBe("Done: the person can see it and will answer; wait for their answer.");

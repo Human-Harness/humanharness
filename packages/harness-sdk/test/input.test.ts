@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { answerRecords, choiceOptions, defineBlock, defineHarness, inputBlocks, inputFields, inputSpec, inputSpecs, z } from "../src";
+import { CORE_BLOCKS, allBlocks, annotateSchema, answerRecords, choiceOptions, defineBlock, defineHarness, inputBlocks, inputFields, inputSpec, inputSpecs, z } from "../src";
 
 const commit = () =>
   defineBlock({
@@ -194,5 +194,39 @@ describe("saveTo", () => {
     expect(answerRecords("flashcards", flashcards, { skipped: true })).toEqual([]);
     const bad = defineBlock({ ...plain, saveTo: { collection: "cards", records: () => "nope" as never } });
     expect(() => answerRecords("bad", bad, { id: "a" })).toThrow(/must return a list of records/);
+  });
+});
+
+describe("annotate", () => {
+  const card = defineBlock({ description: "c", visible: true, schema: z.object({}), example: {} });
+  const harness = (blocks: Record<string, ReturnType<typeof defineBlock>>) =>
+    defineHarness({
+      id: "quiz",
+      name: { es: "Q", en: "Q" },
+      core: "^0.1.0",
+      languages: ["es", "en"],
+      engines: ["claude"],
+      folder: { suggested: "Documents/Q" },
+      instructions: "./AGENTS.md",
+      permissions: { edit: "none", exec: false, web: false },
+      blocks,
+      author: "t",
+    });
+
+  it("is offered only to a harness with an input block (spec D0)", () => {
+    expect(Object.keys(allBlocks(harness({ card })))).toEqual([...Object.keys(CORE_BLOCKS), "card"]);
+    expect(Object.keys(allBlocks(harness({ card, commit_answer: commit() })))).toContain("annotate");
+  });
+
+  it("its name and tool are reserved for every harness", () => {
+    expect(() => harness({ annotate: card })).toThrow(/\\"annotate\\" is a core block name/);
+    const sneaky = defineBlock({ description: "c", visible: true, tool: "show_annotate", schema: z.object({}), example: {} });
+    expect(() => harness({ sneaky })).toThrow(/Tool \\"show_annotate\\" is already used by block \\"annotate\\"/);
+  });
+
+  it("marks quote the answer, each with a kind", () => {
+    expect(annotateSchema.safeParse({ ref: "last", marks: [{ quote: "two halves", kind: "ok", comment: "Right." }] }).success).toBe(true);
+    expect(annotateSchema.safeParse({ ref: "last", marks: [] }).success).toBe(false);
+    expect(annotateSchema.safeParse({ ref: "last", marks: [{ quote: "x", kind: "great" }] }).success).toBe(false);
   });
 });

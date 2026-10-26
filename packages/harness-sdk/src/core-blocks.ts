@@ -54,7 +54,42 @@ export const CORE_BLOCKS = {
 
 export const CORE_BLOCK_NAMES: readonly string[] = Object.keys(CORE_BLOCKS);
 
-/** The core blocks plus the harness's own: what the agent gets as tools. */
+/** Marks on the person's own words (input-blocks spec §7). */
+export const annotateSchema = z.object({
+  /** The answered block's id, or "last": the latest answer before this block. */
+  ref: z.string().min(1).max(200),
+  /** The answer's field the marks are on. Default: its longest text. */
+  field: z.string().min(1).max(64).optional(),
+  marks: z
+    .array(
+      z.object({
+        quote: z.string().min(1).max(500),
+        kind: z.enum(["ok", "gap", "wrong", "note"]),
+        comment: z.string().min(1).max(500).optional(),
+      }),
+    )
+    .min(1)
+    .max(30),
+});
+export type Annotation = z.infer<typeof annotateSchema>;
+
+/** Core blocks only a harness with input blocks gets (annotate works on answers, spec §11.4). Their names are reserved for all. */
+export const INPUT_CORE_BLOCKS = {
+  annotate: defineBlock({
+    description:
+      "Marks parts of the person's answer to an input block. `ref`: that block's `blockId`, or \"last\" for the latest answer. `field`: the answer's field (default: its longest text). Each mark quotes the person's exact words and says if they are `ok`, a `gap` (something missing), `wrong`, or a `note`, with a short `comment`.",
+    visible: true,
+    schema: annotateSchema,
+    example: { ref: "last", marks: [{ quote: "two halves", kind: "ok", comment: "Right: two halves make a whole." }] },
+  }),
+} satisfies Record<string, Block>;
+
+/** Every core block name, offered or not: no harness block may take one. */
+export const RESERVED_BLOCK_NAMES: readonly string[] = [...CORE_BLOCK_NAMES, ...Object.keys(INPUT_CORE_BLOCKS)];
+
+export const hasInputBlocks = (blocks: Record<string, Block>): boolean => Object.values(blocks).some((b) => b.input !== undefined);
+
+/** The core blocks plus the harness's own: what the agent gets as tools. `annotate` only with input blocks (spec D0). */
 export function allBlocks(harness: { blocks: Record<string, Block> }): Record<string, Block> {
-  return { ...CORE_BLOCKS, ...harness.blocks };
+  return { ...CORE_BLOCKS, ...(hasInputBlocks(harness.blocks) ? INPUT_CORE_BLOCKS : {}), ...harness.blocks };
 }

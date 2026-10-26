@@ -82,6 +82,8 @@ describe("ContextMeter", () => {
     unmount();
     const { unmount: again } = await renderIn("en", <ContextMeter used={500_000} cap={200_000} />);
     expect(screen.getByRole("meter").getAttribute("aria-valuenow")).toBe("100");
+    // The ring's arc draws the same percent.
+    expect(screen.getByRole("meter").querySelector("circle + circle")?.getAttribute("stroke-dasharray")).toBe("100 100");
     again();
     await renderIn("en", <ContextMeter used={-5} cap={200_000} />);
     expect(screen.getByRole("meter").getAttribute("aria-valuenow")).toBe("0");

@@ -24,16 +24,16 @@ test("a turn edits a file; going back to before the task brings it back, and the
     const panel = page.getByRole("dialog", { name: "History" });
     await expect(panel.getByRole("button", { name: /The manifest.*1 file changed/ })).toHaveAttribute("aria-expanded", "true");
     await expect(panel.getByRole("list", { name: "Changed files" }).getByText("plan.md")).toBeVisible();
-    await panel.getByRole("button", { name: "Go back to before this task" }).click();
-    await panel.getByRole("button", { name: "Yes, go back" }).click();
+    await panel.getByRole("button", { name: "Undo this task" }).click();
+    await panel.getByRole("button", { name: "Undo task" }).click();
     await expect(panel).toBeHidden();
     await expect.poll(() => plan(s.folder)).toBe("mi plan original\n");
 
-    // The restore carries no task: it shows under "Other changes", and the task's own row keeps what it changed.
+    // The restore carries no task: it shows under "Outside a task", and the task's own row keeps what it changed.
     await page.getByRole("button", { name: "History", exact: true }).click();
     const again = page.getByRole("dialog", { name: "History" });
     await expect(again.getByRole("button", { name: /The manifest.*1 file changed/ })).toHaveAttribute("aria-expanded", "true");
-    await again.getByRole("button", { name: /Other changes/ }).click();
+    await again.getByRole("button", { name: /Outside a task/ }).click();
     await expect(again.getByText("You went back to before this task")).toBeVisible();
   } finally {
     await closeAndClean(app, s);

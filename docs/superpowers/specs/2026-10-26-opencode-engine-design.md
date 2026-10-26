@@ -1,0 +1,103 @@
+# OpenCode as a third engine
+
+Date: 2026-10-26. Status: approved design.
+
+## Why
+
+Today each engine is one company's own CLI: Claude Code for Claude, Codex for ChatGPT. Every new provider means a new CLI, a new adapter and a new legal review, and several were excluded or left pending (Gemini, Qwen, Kimi, GLM). OpenCode is an open-source CLI (MIT) that talks ACP and connects to many providers: API keys (OpenRouter, Anthropic API, OpenAI API, DeepSeek…) and local models (Ollama). Adding it as one engine gives users any model they choose without the core adding a CLI per provider.
+
+It does not replace Claude or Codex. Those stay the route for people who pay a subscription: a Claude Pro/Max plan only works in the official `claude` binary (Anthropic blocked subscription logins in third-party tools in 2026, and OpenCode removed it), and Codex covers ChatGPT plans.
+
+## Decisions
+
+- **D1. The app installs OpenCode; the user configures it.** The app helps install it and opens OpenCode's own login. Which provider, key or local model the user picks is theirs, under that provider's terms. The app never asks for, stores or reads keys (compliance rules 1, 2 and 4 of the core spec hold unchanged). This is the core spec's "Plan B" (API-key mode through the CLI's official flow), reached through one CLI instead of many.
+- **D2. Legal status `allowed`.** The app drives an unmodified OpenCode under its MIT license, and OpenCode documents ACP clients officially. The provider's terms are between the user and the provider; the notice says so.
+- **D3. Generic legal notice.** The core spec (rule 6) requires provider, data location and training facts when an engine is chosen. With OpenCode these depend on the provider the user configures, so the notice says that and links OpenCode's docs on providers.
+- **D4. Models come from OpenCode.** No fixed list in the registry: the app uses the `model` and `effort` config options OpenCode sends over ACP.
+- **D5. Usage is cost, not plan windows.** OpenCode reports the session's cost in USD. The Usage tab shows it; there are no limit windows.
+
+## 1. Registry entry (`packages/engines`)
+
+```ts
+{
+  id: "opencode",
+  name: "OpenCode",
+  provider: "OpenCode",
+  status: "allowed",
+  statusSource: "https://opencode.ai/docs/acp (2026-10-26)",
+  requires: "An account or API key with a provider you set up in OpenCode, or a local model (Ollama)",
+  dataLocation: "Depends on the provider you set up in OpenCode",
+  trainsOnData: "Depends on the provider you set up in OpenCode",
+  termsUrl: "https://opencode.ai/docs/providers/",   // to confirm in the spike: OpenCode's own terms page, if any
+  privacyUrl: "https://opencode.ai/docs/providers/",
+  detect: { binary: "opencode", versionArgs: ["--version"], minVersion: "<tested version>" },
+  transport: { kind: "acp", command: ["opencode", "acp"], modes: { edit: "build", readOnly: "plan" } },
+  models: { efforts: [] },          // filled from ACP config options at session start
+  reportsLimits: false,
+  setup: {
+    install: { command: "curl -fsSL https://opencode.ai/install | bash", docsUrl: "https://opencode.ai/docs/" },
+    login: ["auth", "login"],
+    status: { args: ["auth", "list"], format: "opencode-auth-list" },
+    update: ["upgrade"],
+    logout: ["auth", "logout"],
+  },
+  logo: "assets/opencode.svg",
+}
+```
+
+`brands` stays empty: OpenCode's name already goes into `brandNames()`. A harness may not use "OpenCode" in its name or logo.
+
+## 2. Setup and login
+
+- **Install.** Same flow as the other engines: the app shows the official command, the user confirms, the app runs it.
+- **Login.** `opencode auth login` is interactive (pick a provider, paste a key or open a browser), so "Sign in" opens it in Terminal, as the manual-install help already does. The app waits for the user to come back and re-checks the status. It never reads `~/.local/share/opencode/auth.json` (compliance rule 1).
+- **Status.** New format `opencode-auth-list`: ready when `opencode auth list` lists at least one provider. A user on local models only (Ollama is set up in `opencode.json`, not through `auth`) shows no providers there. So the status is also ready when the first ACP session reports a current model. Until then Home shows "Configurar" with a card: "Elegí un proveedor en OpenCode" plus a link to its provider docs.
+- **ACP auth.** If a prompt fails with `auth_required`, the runtime emits `session-expired` (the existing "sign in again" error) and the UI offers "Iniciar sesión" (the same Terminal flow).
+- **Logout.** `opencode auth logout` only when the user asks (Settings › Motor).
+
+## 3. Models and efforts
+
+- On `session/new`, OpenCode sends `configOptions` with `model` (values `provider/model`) and, for models with variants, `effort` (category `thought_level`). The runtime already turns `configOptions` into the model offer (`offeredModels`); Settings › Modelos shows that list.
+- To apply a task's model profile, the ACP transport calls `session/set_config_option` (`configId: "model"` or `"effort"`) after `session/new` or `session/load`. Codex applies profiles through `CODEX_CONFIG` at spawn; OpenCode does not need a restart. The transport picks the method per engine: a new optional `TransportDef` field `profile: "codex-config" | "config-option"`.
+- **light / standard / deep.** There is no fixed mapping, because the models depend on the provider. Default: every tier uses the session's default model; the user may assign a model per tier in Settings › Modelos (existing override). A `config_option_update` that removes the chosen model falls back to the default and emits the existing `model-unavailable` error.
+
+## 4. Usage
+
+- `usage_update` already becomes a `context` event (`used`, `size`). The transport also reads `cost` (`amount`, `currency`).
+- `cost` is the session's running total, so the per-turn cost is the delta from the previous update in the same session. It is recorded in `usage.jsonl` as `costUsd` (real money, unlike Claude's `costEquivalentUsd`). A non-USD currency is not recorded.
+- `session/prompt` returns `usage` with `inputTokens`/`outputTokens`/`totalTokens`; these feed the existing token measurements, as with Codex.
+- **Settings › Uso.** The engine reports no limits, so the tab uses the existing "no limits" layout (comparison with the average). It adds one row, "Lo que gastaste en los últimos 30 días: US$ x,xx", and a caption: "Lo informa OpenCode. Con modelos locales es 0." No plansUrl (it depends on the provider).
+- Usage excludes child sessions (an OpenCode limitation); documented, not worked around.
+
+## 5. Permissions and modes
+
+- Permission answers already pick an option by `kind` (`allow_once` / `reject_once`), which OpenCode sends. No change.
+- `modes`: `edit` → `build` agent, `readOnly` → `plan` agent, set with `session/set_mode` as for Codex. The spike confirms the ids.
+- The harness MCP servers go in `session/new` as for Codex (stdio supported; SSE is not, and the core does not use it).
+- OpenCode allows one prompt at a time per session; the runtime already runs one turn at a time.
+
+## 6. Core spec changes
+
+- Engine status table: new row "OpenCode | `opencode acp`, user's own provider set up in OpenCode | **allowed** | MIT, unmodified; ACP documented by OpenCode. Provider terms are the user's; the notice says so. Claude Pro/Max does not work through it (Anthropic forbids it); an Anthropic API key does."
+- "v1 engines" becomes Claude, Codex and OpenCode. The manifest `engines` list may include `"opencode"`; the demo harness adds it.
+- Rule 1 also names `~/.local/share/opencode`.
+
+## 7. Testing
+
+- **Unit.** Registry entry; `opencode-auth-list` status parsing (providers / empty / error); cost delta per turn (first update, increasing totals, resumed session, missing cost, non-USD); profile applied via `set_config_option`; `auth_required` maps to `session-expired`.
+- **Fake agent.** The ACP fake agent gains a scripted `usage_update` with `cost` and a `config_option_update`.
+- **Real (manual).** OpenCode with Ollama on the Mac (no cost): install, status, a demo task end to end, Usage shows US$ 0. One run with an OpenRouter key to see a real cost.
+
+## 8. Spike first (one short task)
+
+1. Install command and `--version` output; set `minVersion`.
+2. `opencode auth list` output with providers, empty, and Ollama-only.
+3. Mode ids in OpenCode 2 (`build` / `plan`?) and what `plan` blocks (edits, shell).
+4. Whether `usage_update` arrives with Ollama models (cost 0 or absent).
+5. OpenCode's own terms and privacy URLs, if they exist.
+
+## Out of scope
+
+- Subscription logins inside OpenCode (ChatGPT, Copilot, SuperGrok): the app does not guide or block them. The user picks them in OpenCode's own login under those providers' terms. ChatGPT is still offered through the Codex engine.
+- A provider picker inside the app, key entry in the app, or reading OpenCode's config.
+- A cost budget or spending alerts (possible later, now that cost is measured).

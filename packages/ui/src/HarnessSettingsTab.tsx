@@ -1,4 +1,4 @@
-import { type KeyboardEvent, useEffect, useId, useState } from "react";
+import { type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Segmented } from "./chrome";
 import type { HarnessClient, SettingFieldView, SettingsResult, SettingsState, SettingsView } from "./client";
@@ -62,6 +62,17 @@ export function HarnessSettingsTab({ client, view }: { client: HarnessClient; vi
     };
   }, [client]);
 
+  // A field whose saved value changed (this window, another one, a restore): its old refusal no longer stands.
+  const seen = useRef<Record<string, unknown> | null>(null);
+  useEffect(() => {
+    if (!state) return;
+    const prev = seen.current;
+    seen.current = state.values;
+    if (!prev) return;
+    const moved = Object.keys(state.values).filter((name) => !same(prev[name], state.values[name]));
+    if (moved.length > 0) setErrors((e) => (moved.some((name) => Object.hasOwn(e, name)) ? Object.fromEntries(Object.entries(e).filter(([name]) => !moved.includes(name))) : e));
+  }, [state]);
+
   if (!state) return <div className="hh-tab" aria-busy="true" />;
 
   const failed = t("settings.harness.failed");
@@ -73,6 +84,7 @@ export function HarnessSettingsTab({ client, view }: { client: HarnessClient; vi
     } else setErrors((e) => ({ ...e, [key]: r.message ?? failed }));
   };
   const fail = (key: string) => setErrors((e) => ({ ...e, [key]: failed }));
+  const clear = (key: string) => setErrors((e) => (Object.hasOwn(e, key) ? Object.fromEntries(Object.entries(e).filter(([k]) => k !== key)) : e));
   const save = (name: string, value: unknown) => {
     if (same(state.values[name], value)) return;
     client.settings.set(name, value).then(
@@ -96,6 +108,7 @@ export function HarnessSettingsTab({ client, view }: { client: HarnessClient; vi
       error={Object.hasOwn(errors, f.name) ? errors[f.name] : undefined}
       pending={state.pending.includes(f.name)}
       onSave={(v) => save(f.name, v)}
+      onDrop={() => clear(f.name)}
     />
   );
   const drawGroups = (fields: SettingFieldView[]) =>
@@ -110,11 +123,10 @@ export function HarnessSettingsTab({ client, view }: { client: HarnessClient; vi
 
   return (
     <div className="hh-tab">
-      {taskOpen && (
-        <p className="hh-caption" role="status">
-          {t("settings.harness.nextTask")}
-        </p>
-      )}
+      {/* Always mounted, so a screen reader hears the line each time a task opens. */}
+      <p className="hh-caption hh-settings-next" role="status">
+        {taskOpen ? t("settings.harness.nextTask") : ""}
+      </p>
       {drawGroups(view.fields.filter((f) => !f.advanced))}
       {advanced.length > 0 && (
         <>
@@ -152,12 +164,15 @@ function SettingRow({
   error,
   pending,
   onSave,
+  onDrop,
 }: {
   field: SettingFieldView;
   value: unknown;
   error: string | undefined;
   pending: boolean;
   onSave: (value: unknown) => void;
+  /** Escape dropped the draft: its refusal goes with it. */
+  onDrop: () => void;
 }) {
   const { t } = useTranslation();
   const id = useId();
@@ -182,7 +197,7 @@ function SettingRow({
   } else if (field.control === "toggle") {
     control = <input id={id} type="checkbox" role="switch" checked={value === true} onChange={(e) => onSave(e.target.checked)} {...aria} />;
   } else {
-    control = <DraftInput id={id} field={field} value={value} aria={aria} onSave={onSave} />;
+    control = <DraftInput id={id} field={field} value={value} aria={aria} onSave={onSave} onDrop={onDrop} />;
   }
   return (
     <div className="hh-row hh-row-wrap">
@@ -226,23 +241,31 @@ function DraftInput({
   value,
   aria,
   onSave,
+  onDrop,
 }: {
   id: string;
   field: SettingFieldView;
   value: unknown;
   aria: Record<string, unknown>;
   onSave: (value: unknown) => void;
+  onDrop: () => void;
 }) {
   const saved = value === undefined || value === null ? "" : String(value);
   const [draft, setDraft] = useState(saved);
-  useEffect(() => setDraft(saved), [saved]);
+  // The draft last sent: Enter then blur sends it once, and a refused one isn't sent again on blur.
+  const sent = useRef<string | null>(null);
+  useEffect(() => {
+    setDraft(saved);
+    sent.current = null;
+  }, [saved]);
   const number = field.control === "number";
   const commit = () => {
-    if (draft === saved) return;
+    if (draft === saved || draft === sent.current) return;
     if (number && (draft.trim() === "" || !Number.isFinite(Number(draft)))) {
       setDraft(saved);
       return;
     }
+    sent.current = draft;
     onSave(number ? Number(draft) : draft);
   };
   const onKey = (e: KeyboardEvent<HTMLInputElement>) => {
@@ -250,6 +273,8 @@ function DraftInput({
     if (e.key === "Escape" && draft !== saved) {
       e.stopPropagation();
       setDraft(saved);
+      sent.current = null;
+      onDrop();
     }
   };
   const bounds = number

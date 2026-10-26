@@ -401,6 +401,8 @@ select:focus-visible { outline: 2px solid var(--hh-ink); outline-offset: 2px; }
 .hh-mark-note strong { margin-right: 4px; }
 
 /* Settings › the harness's tab (harness-settings spec §4). */
+/* The next-task line stays mounted (a live region); empty, it takes no row and no gap of the tab's grid. */
+.hh-settings-next:empty { display: contents; }
 .hh-settings-group { display: grid; gap: 6px; }
 .hh-settings-group h3 { margin: 4px 0 0; }
 .hh-setting-pending { padding: 0 6px; border: 1px solid var(--hh-line-strong); border-radius: 999px; color: var(--hh-warn); font-size: 12px; }

@@ -232,6 +232,7 @@ describe("SettingsSheet", () => {
     fireEvent.click(screen.getByRole("button", { name: "Set up Demo" }));
     expect(onSetup).toHaveBeenCalledTimes(1);
   });
+
   it("D0: no harness tab when the harness declares no settings", async () => {
     await renderIn("en", <Sheet client={new FakeClient(ready)} />);
     expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["General", "Engine", "Usage"]);
@@ -250,6 +251,18 @@ describe("SettingsSheet", () => {
     fireEvent.click(screen.getByRole("tab", { name: "How I learn" }));
     const panel = screen.getByRole("tabpanel", { name: "How I learn" });
     expect(await within(panel).findByRole("group", { name: "Tone" })).toBeTruthy();
+  });
+
+  it("ArrowRight from General goes to the harness's tab", async () => {
+    const client = new FakeClient(ready);
+    client.state.settings = { tab: "How I learn", sections: [], fields: [] };
+    await renderIn("en", <Sheet client={client} />);
+    const general = screen.getByRole("tab", { name: "General" });
+    general.focus();
+    fireEvent.keyDown(general, { key: "ArrowRight" });
+    const harness = screen.getByRole("tab", { name: "How I learn" });
+    expect(harness.getAttribute("aria-selected")).toBe("true");
+    expect(document.activeElement).toBe(harness);
   });
 
   it("before the app is set up, the harness's tab leads to the setup flow", async () => {

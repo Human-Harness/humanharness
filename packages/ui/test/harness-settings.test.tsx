@@ -126,6 +126,43 @@ describe("HarnessSettingsTab", () => {
     expect(descriptions(examples)).toEqual(["That didn't save. Try again."]);
   });
 
+  it("a refusal goes when its field's saved value changes, and when Escape drops the draft", async () => {
+    const client = new FakeClient();
+    client.settingsFailure = { ok: false, message: "No" };
+    await draw(client);
+    fireEvent.click(screen.getByRole("button", { name: "Demanding" }));
+    await screen.findByRole("alert");
+    // Another field's change leaves it; this field's change (another window, a restore) clears it.
+    act(() => client.emitSettings({ values: { ...defaults, level: "5" }, pending: [] }));
+    expect(screen.getByRole("alert").textContent).toBe("No");
+    act(() => client.emitSettings({ values: { ...defaults, level: "5", tone: "demanding" }, pending: [] }));
+    expect(screen.queryByRole("alert")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "More options" }));
+    const input = screen.getByLabelText("Hint after") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "4" } });
+    fireEvent.blur(input);
+    await screen.findByRole("alert");
+    fireEvent.keyDown(input, { key: "Escape" });
+    expect(input.value).toBe("2");
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("Enter then blur saves a draft once", async () => {
+    const client = new FakeClient();
+    client.settingsFailure = { ok: false, message: "No" };
+    await draw(client);
+    const name = screen.getByLabelText("What the app calls you") as HTMLInputElement;
+    fireEvent.change(name, { target: { value: "Ana" } });
+    fireEvent.keyDown(name, { key: "Enter" });
+    fireEvent.blur(name);
+    await screen.findByRole("alert");
+    expect(client.settingsSets).toEqual([{ field: "nickname", value: "Ana" }]);
+    // A new draft is sent again.
+    fireEvent.change(name, { target: { value: "Ann" } });
+    fireEvent.blur(name);
+    expect(client.settingsSets).toHaveLength(2);
+  });
+
   it("while a task is open: the next-task line, and Pending on waiting fields", async () => {
     const client = new FakeClient();
     client.tasks = { current: { id: "t1", status: "waiting" }, actions: {}, notes: [] };
@@ -136,8 +173,11 @@ describe("HarnessSettingsTab", () => {
     expect(descriptions(screen.getByRole("group", { name: "Tone" }))).toEqual(["Pending"]);
     act(() => client.emitTasks({ current: null, actions: {}, notes: [] }));
     act(() => client.emitSettings({ values: { ...defaults, tone: "demanding" }, pending: [] }));
-    expect(screen.queryByRole("status")).toBeNull();
+    // The live region stays mounted, so a screen reader hears the line when it comes back.
+    expect(screen.getByRole("status").textContent).toBe("");
     expect(screen.queryByText("Pending")).toBeNull();
+    act(() => client.emitTasks({ current: { id: "t2", status: "waiting" }, actions: {}, notes: [] }));
+    expect(screen.getByRole("status").textContent).toBe("Changes apply from the next task.");
   });
 
   it("offers the reset only when something differs from its default", async () => {

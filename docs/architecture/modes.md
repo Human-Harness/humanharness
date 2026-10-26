@@ -9,7 +9,7 @@ A harness that declares no `modes` works exactly as before (D0): the same `tasks
 - `modes` in the manifest, by id. Ids follow the action id pattern (`MODE_ID`, never a dot); `recommend` and `ask` are taken. Each mode has:
   - `label` (≤ 80 characters) and optional `description` (≤ 300, shown in the window's list of modes);
   - `brief`: a file in the harness folder (`agent/modes/<id>.md` by convention), resolved with `resolveInHarness` when the harness loads. It is filled with `{{language}}`; `{{notesIndex}}` is left empty, since the session already has the index;
-  - optional `minTier` (`light`, `standard`, `deep`): the least tier the mode works well at;
+  - optional `minTier` (`light`, `standard`, `deep`): the minimum tier the mode works well at;
   - optional `recommend` (≤ 400): a hint only the agent reads, to recommend the mode;
   - optional `settings`: fields as in `settings.md`, without `section` (see "Mode settings").
 - An action lists its `modes` (declared ids, once each) and may set `defaultMode`: one of them, `"recommend"` (the default when absent) or `"ask"`. `defaultMode` needs `modes`. An action without `modes` works as before.
@@ -27,7 +27,7 @@ A harness that declares no `modes` works exactly as before (D0): the same `tasks
 | `"recommend"` | The action's brief, then `## How to work`: call `show_recommend_mode` before the work, wait for the pick, no `show_choices` in that answer, and the action's modes as `` - `id` (Label): hint `` (`recommendSection`). That message only. The task has no mode until the person picks one. |
 | `"ask"` | The window shows "How do you want to work?" with the action's modes before anything is sent (no model call), then starts in the one picked (`SendOptions.mode`). "Not now" sends nothing. |
 
-- An explicit mode wins over `defaultMode`. One the action doesn't list is refused ("Unknown mode") before the open task closes.
+- An explicit mode wins over `defaultMode`. One the action doesn't list is refused ("Unknown mode") before the open task closes, and so is a start whose mode brief can't be read. A resumed session whose mode brief can't be read resumes without the mode's section (logged).
 - `"ask"` can only ask in a start the window makes itself through `client.send` with an action (a topic picked in the window, or "Try again" after one). A `choices` option with `action`, the path's `next: true` or `run` without `--mode` can't ask, so it starts as `"recommend"`.
 - A task that starts in a mode whose `minTier` is above the task's tier starts anyway, at its own tier, and records `belowMinTier`. The tier question only comes with a switch (spec §5.3), so `run --tier standard --mode worked` (worked at `deep`) runs at standard.
 
@@ -43,9 +43,9 @@ A harness that declares no `modes` works exactly as before (D0): the same `tasks
 
 The person picks a mode in the block, in the mode bar's "Change mode", or the harness's own UI calls `client.chooseMode(mode, choice?)`. `hh:chooseMode` → `TaskManager.chooseMode` (`mode-ipc.ts`). Like `respond`, it gives `accepted` (a `ModeResult`, as data) before any turn's events, and `done` once the turn ended.
 
-- It waits until no operation or turn runs, then switches; it never cancels a turn.
+- It waits until no operation or turn runs, then switches; it never cancels a turn. Two picks made during one turn run one after the other.
 - Refusals (`ok: false`): `no-task` (no task, or it isn't waiting), `unknown` (the action doesn't list the mode), `tier` (with `required` and `current`, see below). The current mode answers `{ ok: true, switched: "same" }` and nothing runs. Errors that aren't refusals (the app is closing, turns are blocked, an unreadable brief) reject `accepted` with their message.
-- `switched: "turn"`: one run turn of the same session (not quiet), after a due checkpoint as for any follow-up. Its message is `modePrompt`: `MODE_PROMPT` ('From now on work in the mode "<label>". Keep everything decided so far in this conversation.'), then, when the task has a checkpoint note, "What is clear so far (the last checkpoint): …" (its summary, at most 5 points of 400 characters), the mode's brief, its settings' sentences and "Then continue with the person in this mode." The agent's answer shows in the chat.
+- `switched: "turn"`: one run turn of the same session (not quiet), after a due checkpoint as for any follow-up. Its message is `modePrompt`: `MODE_PROMPT` ('From now on work in the mode "<label>". Keep everything decided so far in this conversation.'), then, when the task has a checkpoint note, "What is clear so far (the last checkpoint): …" (its summary, at most 5 points of 400 characters, each on one line, joined with "; "), the mode's brief, its settings' sentences and "Then continue with the person in this mode." The agent's answer shows in the chat.
 - The chat's user entry for that turn is a system line, "Switched to <label>" (`TurnOptions.modeSwitch` with `display`; the entry has `mode`), never the mode's prompt.
 - The task's `mode`, `modes` (appended once, in first-use order) and `belowMinTier` are written only when that turn ends well, so a failed switch can be picked again ("Try again" picks the same mode). A Stop ends it like any stopped operation; a cancelled switch turn ends the task, as a cancelled follow-up does.
 - `switched: "quiet"`: the task's session was lost (after "Move folder"). No turn runs; the mode is set and the resumed session's first message carries it.
@@ -85,7 +85,7 @@ Harness-settings spec §6. A mode's `settings` use the same field shape and chec
 ## Trying it
 
 - `humanharness run <action> --mode <id>` starts in that mode. An id that isn't a mode id, or one the action doesn't list, exits with 2 before the engine or the folder.
-- At the prompt, for an action with modes, `m <id>` switches (the prompt line mentions it only then). A run can't change its tier mid-task: a mode that asks for more prints "<label> asks for the <tier> tier; this run is at <tier>. Switching anyway; rerun with --tier <tier> --mode <id> for it." and switches with `continue`. A refusal prints "Not switched (<reason>)" with the action's modes; the current mode prints "Already in <label>".
+- At the prompt, for an action with modes, `m <id>` switches (the prompt line mentions it only then); `m` followed by anything but one mode id is a follow-up. A refused pick, or the current mode, keeps the choices on screen. A run can't change its tier mid-task: a mode that asks for more prints "<label> asks for the <tier> tier; this run is at <tier>. Switching anyway; rerun with --tier <tier> --mode <id> for it." and switches with `continue`. A refusal prints "Not switched (<reason>)" with the action's modes; the current mode prints "Already in <label>".
 - The terminal draws `recommend_mode` as "Recommended mode: <id>", its reasons, the alternatives ("Or:") and "Type m <mode> to pick one.", dropping ids the action doesn't list.
 - `packages/fake-agent/fixtures/modes-harness` (id `coach`) is the fixture for these tests.
 
@@ -97,7 +97,6 @@ Harness-settings spec §6. A mode's `settings` use the same field shape and chec
 - There is no multi-select settings control, so a mode setting can't be a list (the spec's `z.array(z.enum(...))` example).
 - `run --set` covers the harness's own settings only: mode settings use the run folder's stored values or their defaults.
 - Under `run --record`, `m <id>` is recorded like a typed follow-up (`*`), even when nothing switched; replay can't tell a switch from any other reply.
-- At the `run` prompt, any line that starts with `m ` in an action with modes is a mode pick, never a follow-up.
 - While a task is open, the Settings tab says "Changes apply from the next task." for mode settings too, which apply at the mode's next start or switch.
 - After "Start a new task" with a Stop during the closing turn, the window may already show the new task while the old one is still open; the next refresh of the task view corrects it.
 - The tier and "ask" dialogs are not modal and trap no focus, like the pre-flight one.

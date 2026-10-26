@@ -31,7 +31,7 @@ The harness's screen is `ui/App.tsx`: the shell build (`packages/shell/electron.
 
 ## Checks
 
-- Block and action names follow fixed patterns. `choices`, `save_note` and `recommend_mode` are reserved: every harness gets the first two as core blocks, and a harness with modes gets `recommend_mode` (`allBlocks`).
+- Block and action names follow fixed patterns. `choices`, `save_note`, `annotate` and `recommend_mode` are reserved: every harness gets the first two as core blocks, a harness with input blocks gets `annotate` and a harness with modes gets `recommend_mode` (`allBlocks`).
 - Every id in `path` must be an action, once; reference ids are unique.
 - A block's `example` must match its `schema`.
 - An action may set `scope` only when the harness declares `scopes`, and a `scope: "none"` action can't be in `path`.

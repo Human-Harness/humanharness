@@ -431,3 +431,40 @@ describe("run --record", () => {
     expect(JSON.parse(fs.readFileSync(mockFile, "utf8")).turns.map((t: { id: string }) => t.id)).toEqual(["t1", "close"]);
   });
 });
+
+describe("run: input blocks", () => {
+  const quizDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../fake-agent/fixtures/input-harness");
+  const quizScript: ClaudeScript = {
+    steps: [...claudeTextLines("Done."), result],
+    turns: [
+      { match: "save_note", steps: [ui("save_note", { title: "Halves", summary: ["Two halves make a whole"], decisions: [], files: [], open: [] }), result] },
+      { match: "\\[answer to commit_answer\\]", steps: [...claudeTextLines("Two halves make one whole: well seen."), result] },
+      { match: "# Task: practice", steps: [...claudeTextLines("First, commit."), ui("show_commit_answer", { question: "Who ate more?", options: ["Me", "Both the same"] }), result] },
+    ],
+  };
+
+  it("a answers the pending question field by field; the chat keeps the answer on its block", { timeout: 60_000 }, async () => {
+    const out = memoryStream();
+    const folder = path.join(root, "quiz-work");
+    await runTask({
+      harnessDir: quizDir,
+      action: "practice",
+      engine: "claude",
+      folder,
+      input: lines("a\n2\nTwo halves are one whole\nq\n"),
+      output: out.stream,
+      engineCommand: { command: fakeClaudeCommand(), env: { HH_FAKE_SCRIPT: writeScript(root, quizScript) } },
+    });
+    const text = out.text();
+    expect(text).toContain("    Answer with a: I pick (choice), Why? In your own words (longText)");
+    expect(text).toContain("a to answer, or type a follow-up, or q to close the task:");
+    expect(text).toContain("  1. Me\n  2. Both the same\n");
+    expect(text).toContain("> I pick: Both the same\n> \n> Why? In your own words: Two halves are one whole");
+    expect(text).toContain("Two halves make one whole: well seen.");
+    const chat = readJsonl(path.join(folder, ".harness", "chats", "main.jsonl"));
+    const shown = chat.flatMap((e) => (e.blocks ?? []) as { name: string; id?: string; input?: { value: unknown } }[]).find((b) => b.name === "commit_answer");
+    expect(shown?.id).toMatch(/:0:0$/);
+    expect(shown?.input?.value).toEqual({ choice: "Both the same", why: "Two halves are one whole" });
+    expect(chat.some((e) => e.role === "user" && e.text === "I pick: Both the same\n\nWhy? In your own words: Two halves are one whole")).toBe(true);
+  });
+});

@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { recordingSchema } from "@humanharness/fake-agent";
@@ -180,5 +181,25 @@ describe("Recorder", () => {
     expect(rec.turns.map((t) => t.id)).toEqual(["t1", "t2"]);
     expect(rec.turns[0].next).toEqual({ Go: "t2" });
     expect(rec.turns[1]).toEqual({ id: "t2", text: "retry", blocks: [], writes: [{ path: "x.md", content: "x" }] });
+  });
+});
+
+describe("Recorder: answers", () => {
+  it("links the answer given to a turn's input block to the next turn, under respond", async () => {
+    const folder = fs.mkdtempSync(path.join(os.tmpdir(), "hh-rec-"));
+    try {
+      const r = new Recorder({ folder, toolFor: (b) => `show_${b}`, matchFor: () => "# Task: practice", recordedWith: "claude" });
+      await r.begin();
+      r.event({ type: "block", name: "commit_answer", data: { question: "Who?" }, id: "t1:0:0" });
+      await r.turnEnded({ action: "practice", task: "t1", phase: "run" });
+      r.answer("commit_answer", { choice: "Me", why: "x" });
+      r.event({ type: "text", delta: "Right." });
+      await r.turnEnded({ action: "practice", task: "t1", phase: "run" });
+      const [rec] = r.recordings();
+      expect(rec.turns[0].respond).toEqual([{ block: "commit_answer", value: { choice: "Me", why: "x" }, next: "t2" }]);
+      expect(rec.turns[0].next).toBeUndefined();
+    } finally {
+      fs.rmSync(folder, { recursive: true, force: true });
+    }
   });
 });

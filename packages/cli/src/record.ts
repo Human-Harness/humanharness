@@ -93,6 +93,8 @@ export class Recorder {
   private blocks: MockTurn["blocks"] = [];
   private usage: MockUsage | undefined;
   private replyKey: string | undefined;
+  /** What the person answered the last turn's input block with (`run`'s `a`). */
+  private answerKey: { block: string; value: Record<string, unknown> } | undefined;
   private lastTurn: { action: string; turn: MockTurn } | undefined;
   /** The turn that ended last: where a note written right after it belongs. `null`: a turn that takes none. */
   private ended: MockTurn | null | undefined;
@@ -122,6 +124,12 @@ export class Recorder {
   /** What the person answered the last turn with: a choice's label, or `*` for typed text. */
   reply(key: string): void {
     this.replyKey = key;
+  }
+
+  /** The person answered the last turn's input block: replay follows this answer by its JSON (`respond`). */
+  answer(block: string, value: Record<string, unknown>): void {
+    this.answerKey = { block, value };
+    this.replyKey = undefined;
   }
 
   /**
@@ -161,6 +169,7 @@ export class Recorder {
       if (!this.ignored.has(action)) this.o.warn?.(`"${action}" was run again in this folder: only its first visit is recorded.`);
       this.ignored.add(action);
       this.replyKey = undefined;
+      this.answerKey = undefined;
       return;
     }
     let rec = this.byAction.get(action);
@@ -171,10 +180,12 @@ export class Recorder {
     const id = meta.phase === "close" ? "close" : `t${rec.turns.filter((t) => t.id !== "close").length + 1}`;
     const turn: MockTurn = { id, text: taken.text, blocks: taken.blocks, writes, ...(taken.usage ? { usage: taken.usage } : {}) };
     rec.turns.push(turn);
-    if (meta.phase !== "close" && this.lastTurn?.action === action && this.replyKey !== undefined) {
-      this.lastTurn.turn.next = { ...this.lastTurn.turn.next, [this.replyKey]: id };
+    if (meta.phase !== "close" && this.lastTurn?.action === action) {
+      if (this.answerKey) this.lastTurn.turn.respond = [...(this.lastTurn.turn.respond ?? []), { ...this.answerKey, next: id }];
+      else if (this.replyKey !== undefined) this.lastTurn.turn.next = { ...this.lastTurn.turn.next, [this.replyKey]: id };
     }
     this.replyKey = undefined;
+    this.answerKey = undefined;
     this.ended = turn;
     this.lastTurn = meta.phase === "close" ? undefined : { action, turn };
   }

@@ -232,4 +232,48 @@ describe("SettingsSheet", () => {
     fireEvent.click(screen.getByRole("button", { name: "Set up Demo" }));
     expect(onSetup).toHaveBeenCalledTimes(1);
   });
+  it("D0: no harness tab when the harness declares no settings", async () => {
+    await renderIn("en", <Sheet client={new FakeClient(ready)} />);
+    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["General", "Engine", "Usage"]);
+  });
+
+  it("adds the harness's tab right after General, with its own name", async () => {
+    const client = new FakeClient(ready);
+    client.state.settings = {
+      tab: "How I learn",
+      sections: [],
+      fields: [{ name: "tone", control: "segmented", label: "Tone", default: "patient", options: [{ value: "patient", label: "Patient" }], agent: true }],
+    };
+    client.settingsState = { values: { tone: "patient" }, pending: [] };
+    await renderIn("en", <Sheet client={client} />);
+    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["General", "How I learn", "Engine", "Usage"]);
+    fireEvent.click(screen.getByRole("tab", { name: "How I learn" }));
+    const panel = screen.getByRole("tabpanel", { name: "How I learn" });
+    expect(await within(panel).findByRole("group", { name: "Tone" })).toBeTruthy();
+  });
+
+  it("before the app is set up, the harness's tab leads to the setup flow", async () => {
+    const client = new FakeClient({});
+    client.state.settings = { tab: "How I learn", sections: [], fields: [] };
+    await renderIn("en", <Sheet client={client} initialTab="harness" />);
+    expect(screen.getByRole("heading", { name: "You haven't chosen an engine yet" })).toBeTruthy();
+    expect(screen.queryByRole("group", { name: "Tone" })).toBeNull();
+  });
+
+  it("Escape on a changed draft in the harness's tab drops the draft and keeps the sheet open", async () => {
+    const client = new FakeClient(ready);
+    client.state.settings = { tab: "How I learn", sections: [], fields: [{ name: "nickname", control: "text", label: "Nickname", default: "" }] };
+    client.settingsState = { values: { nickname: "Ada" }, pending: [] };
+    const onClose = vi.fn();
+    await renderIn("en", <Sheet client={client} initialTab="harness" onClose={onClose} />);
+    const input = await screen.findByLabelText<HTMLInputElement>("Nickname");
+    await waitFor(() => expect(input.value).toBe("Ada"));
+    fireEvent.change(input, { target: { value: "Grace" } });
+    fireEvent.keyDown(input, { key: "Escape" });
+    expect(onClose).not.toHaveBeenCalled();
+    expect(input.value).toBe("Ada");
+    fireEvent.keyDown(input, { key: "Escape" });
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(client.settingsSets).toEqual([]);
+  });
 });

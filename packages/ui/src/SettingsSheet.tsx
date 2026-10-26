@@ -4,12 +4,14 @@ import { BackupNotice, type FolderMove, MovePlaces, needsBackupNotice, useFolder
 import { EngineIcon, Segmented } from "./chrome";
 import { type AppConfig, type AppState, type Appearance, type HarnessClient, type RunningSetup, TEXT_SIZES, type TextSize, isConfigured } from "./client";
 import { EngineTab } from "./EngineTab";
+import { HarnessSettingsTab } from "./HarnessSettingsTab";
 import { ownName, systemLanguage } from "./language";
 import { ModelsTab } from "./ModelsTab";
 import { UsageTab } from "./UsageTab";
 
-export type SettingsTab = "general" | "engine" | "models" | "usage";
-const TABS: SettingsTab[] = ["general", "engine", "models", "usage"];
+export type SettingsTab = "general" | "harness" | "engine" | "models" | "usage";
+/** `harness` is the harness's own tab (manifest `settings`), right after General (harness-settings spec §4). */
+const TABS: SettingsTab[] = ["general", "harness", "engine", "models", "usage"];
 const TEXT_SIZE_KEYS = Object.keys(TEXT_SIZES) as TextSize[];
 /** The key that zooms with + and −: ⌘ on macOS, Ctrl elsewhere. */
 const ZOOM_KEY = /Mac/.test(navigator.userAgent) ? "⌘" : "Ctrl";
@@ -43,8 +45,9 @@ export function SettingsSheet({
   const baseId = useId();
   const tabId = (id: SettingsTab) => `${baseId}-tab-${id}`;
   const panelId = `${baseId}-panel`;
-  // Models only shows when the main process sent its view (every packaged app does).
-  const tabs = TABS.filter((id) => id !== "models" || state.models !== undefined);
+  // Models only shows when the main process sent its view (every packaged app does); the harness's tab only when it
+  // declares settings (harness-settings D0).
+  const tabs = TABS.filter((id) => (id !== "models" || state.models !== undefined) && (id !== "harness" || state.settings !== undefined));
   const configured = isConfigured(state.config);
   const doneRef = useRef<HTMLButtonElement>(null);
   const sheetRef = useRef<HTMLDivElement>(null);
@@ -136,7 +139,7 @@ export function SettingsSheet({
                 onClick={() => onTab(id)}
                 onKeyDown={(e) => onTabKey(e, id)}
               >
-                {t(`settings.tabs.${id}`)}
+                {id === "harness" ? state.settings?.tab : t(`settings.tabs.${id}`)}
               </button>
             ))}
           </div>
@@ -165,6 +168,7 @@ export function SettingsSheet({
           {tab === "engine" && configured && <EngineTab client={client} state={state} onChange={onChange} setupEngine={running?.engineId} />}
           {tab === "models" && configured && <ModelsTab client={client} state={state} onChange={onChange} />}
           {tab === "usage" && configured && <UsageTab client={client} state={state} />}
+          {tab === "harness" && configured && state.settings && <HarnessSettingsTab client={client} view={state.settings} />}
         </div>
       </div>
     </div>

@@ -30,6 +30,8 @@ describe("annotate helpers", () => {
     expect(findAnswer(entries, null, "last")).toEqual(later);
     expect(findAnswer(entries, null, "t1:0:0")).toEqual(answer);
     expect(findAnswer(entries, "e2", "t1:1:0")).toBeNull();
+    // An annotation whose entry isn't in the chat points to nothing rather than to the latest answer.
+    expect(findAnswer(entries, "gone", "last")).toBeNull();
   });
 
   it("the text is the named field, else the answer's longest text", () => {
@@ -63,5 +65,16 @@ describe("AnnotateBlock", () => {
     await renderIn("es", <AnnotateBlock data={{ ref: "t9:0:0", marks: [{ quote: "x", kind: "wrong", comment: "No." }] }} answerOf={() => null} {...noActions} />);
     expect(screen.getByText("La respuesta de estas notas no está en este chat.")).toBeTruthy();
     expect(screen.getByText("No es así")).toBeTruthy();
+  });
+
+  it("a skipped answer and one with no text each say so", async () => {
+    const marks = [{ quote: "x", kind: "note" }];
+    const skipped = { blockId: "t1:0:0", value: { skipped: true }, answeredAt: "a" };
+    await renderIn("en", <AnnotateBlock data={{ ref: "last", marks }} answerOf={() => skipped} {...noActions} />);
+    expect(screen.getByText("The question these notes are about was skipped.")).toBeTruthy();
+    cleanup();
+    const numbers = { blockId: "t1:0:0", value: { count: 3 }, answeredAt: "a" };
+    await renderIn("en", <AnnotateBlock data={{ ref: "last", marks }} answerOf={() => numbers} {...noActions} />);
+    expect(screen.getByText("The answer these notes are about has no text to mark.")).toBeTruthy();
   });
 });

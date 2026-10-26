@@ -104,6 +104,45 @@ describe("InputForm", () => {
     expect(screen.getByText('The app can\'t show the field "Deep" here.')).toBeTruthy();
     expect((screen.getByRole("button", { name: "Send" }) as HTMLButtonElement).disabled).toBe(true);
   });
+
+  it("grouped fields mark their inner inputs invalid; multiChoice keeps the options' order", async () => {
+    const grouped: InputSpec = {
+      fields: [
+        { name: "tags", kind: "multiChoice", label: L("Tags"), optional: false, options: ["a", "b", "c"] },
+        { name: "cards", kind: "pairs", label: L("Cards"), optional: false, columns: [{ name: "front", label: L("Front") }, { name: "back", label: L("Back") }] },
+      ],
+    };
+    const { submit, el } = form({ spec: grouped, blockId: "t1:0:8", errors: [{ path: "tags", message: "Pick one" }, { path: "cards.0.front", message: "Empty" }] });
+    await renderIn("en", el);
+    for (const box of [screen.getByRole("checkbox", { name: "a" }), screen.getByLabelText("Front 1")]) {
+      expect(box.getAttribute("aria-invalid")).toBe("true");
+      expect(document.getElementById(box.getAttribute("aria-describedby")!)?.textContent).toBeTruthy();
+    }
+    fireEvent.click(screen.getByRole("checkbox", { name: "c" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "a" }));
+    fireEvent.change(screen.getByLabelText("Front 1"), { target: { value: "x" } });
+    fireEvent.change(screen.getByLabelText("Back 1"), { target: { value: "y" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    expect(submit).toHaveBeenCalledWith({ tags: ["a", "c"], cards: [{ front: "x", back: "y" }] });
+  });
+
+  it("pairs: removing a row keeps the others' inputs and moves focus to the row in its place", async () => {
+    const cards: InputSpec = {
+      fields: [{ name: "cards", kind: "pairs", label: L("Cards"), optional: false, columns: [{ name: "front", label: L("Front") }, { name: "back", label: L("Back") }] }],
+    };
+    await renderIn("en", form({ spec: cards, blockId: "t1:0:9" }).el);
+    fireEvent.change(screen.getByLabelText("Front 1"), { target: { value: "one" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add a row" }));
+    fireEvent.change(screen.getByLabelText("Front 2"), { target: { value: "two" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add a row" }));
+    fireEvent.change(screen.getByLabelText("Front 3"), { target: { value: "three" } });
+    const third = screen.getByLabelText("Front 3");
+    fireEvent.click(screen.getByRole("button", { name: "Remove row 1" }));
+    expect((screen.getByLabelText("Front 1") as HTMLInputElement).value).toBe("two");
+    // The old third row's input is the same element, now second.
+    expect(screen.getByLabelText("Front 2")).toBe(third);
+    expect(document.activeElement).toBe(screen.getByLabelText("Front 1"));
+  });
 });
 
 describe("AnswerView", () => {

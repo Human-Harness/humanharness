@@ -1,4 +1,4 @@
-import { type ChangeEvent, type FormEvent, useId, useState } from "react";
+import { type ChangeEvent, type FormEvent, type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { BlockAnswer, InputField, InputIssue, InputSpec } from "./client";
 import { type Draft, type Lang, answerRows, draftValue, emptyDraft, isSkipped, langOf, optionsOf } from "./input";
@@ -140,7 +140,7 @@ function Field({
         </legend>
         {options.map((o) => (
           <label key={o} className="hh-option">
-            <input type="radio" name={id} value={o} checked={value === o} disabled={disabled} onChange={() => onChange(o)} />
+            <input type="radio" name={id} value={o} checked={value === o} disabled={disabled} onChange={() => onChange(o)} {...invalid} />
             {o}
           </label>
         ))}
@@ -162,7 +162,9 @@ function Field({
               type="checkbox"
               checked={picked.includes(o)}
               disabled={disabled}
-              onChange={(e) => onChange(e.target.checked ? [...picked, o] : picked.filter((p) => p !== o))}
+              // In the options' order, whatever the order of the clicks.
+              onChange={(e) => onChange(options.filter((x) => (x === o ? e.target.checked : picked.includes(x))))}
+              {...invalid}
             />
             {o}
           </label>
@@ -172,38 +174,8 @@ function Field({
     );
   }
   if (field.kind === "pairs") {
-    const rows = Array.isArray(value) && value.length > 0 ? (value as Record<string, string>[]) : [{}];
-    const cols = field.columns ?? [];
     return (
-      <fieldset className="hh-field hh-pairs" {...(error ? { "aria-describedby": errId } : {})}>
-        <legend>
-          {label}
-          {optional}
-        </legend>
-        {rows.map((row, r) => (
-          <div key={r} className="hh-pair">
-            {cols.map((c) => (
-              <input
-                key={c.name}
-                type="text"
-                aria-label={`${c.label[lang]} ${r + 1}`}
-                value={row[c.name] ?? ""}
-                disabled={disabled}
-                onChange={(e) => onChange(rows.map((x, j) => (j === r ? { ...x, [c.name]: e.target.value } : x)))}
-              />
-            ))}
-            {rows.length > 1 && (
-              <button type="button" aria-label={t("input.removeRow", { n: r + 1 })} disabled={disabled} onClick={() => onChange(rows.filter((_, j) => j !== r))}>
-                ×
-              </button>
-            )}
-          </div>
-        ))}
-        <button type="button" disabled={disabled} onClick={() => onChange([...rows, {}])}>
-          {t("input.addRow")}
-        </button>
-        {errorLine}
-      </fieldset>
+      <PairsField field={field} value={value} label={label} optional={optional} errorLine={errorLine} invalid={invalid} disabled={disabled} lang={lang} onChange={onChange} />
     );
   }
   // Text, long text, a number, and a choice whose shown data brought no options.
@@ -229,6 +201,82 @@ function Field({
       )}
       {errorLine}
     </div>
+  );
+}
+
+/** Rows of two cells. Each row keeps a key of its own, so removing one leaves the others' inputs (and focus) in place. */
+function PairsField({
+  field,
+  value,
+  label,
+  optional,
+  errorLine,
+  invalid,
+  disabled,
+  lang,
+  onChange,
+}: {
+  field: InputField;
+  value: unknown;
+  label: string;
+  optional: ReactNode;
+  errorLine: ReactNode;
+  invalid: { "aria-invalid"?: true; "aria-describedby"?: string };
+  disabled: boolean;
+  lang: Lang;
+  onChange: (v: unknown) => void;
+}) {
+  const { t } = useTranslation();
+  const rows = Array.isArray(value) && value.length > 0 ? (value as Record<string, string>[]) : [{}];
+  const cols = field.columns ?? [];
+  const keys = useRef<number[]>([]);
+  const nextKey = useRef(0);
+  while (keys.current.length < rows.length) keys.current.push(nextKey.current++);
+  keys.current.length = rows.length;
+  const box = useRef<HTMLFieldSetElement>(null);
+  const [focusRow, setFocusRow] = useState<number | null>(null);
+  useEffect(() => {
+    if (focusRow === null) return;
+    const pairs = box.current?.querySelectorAll<HTMLElement>(".hh-pair");
+    pairs?.[Math.min(focusRow, pairs.length - 1)]?.querySelector("input")?.focus();
+    setFocusRow(null);
+  }, [focusRow]);
+  const remove = (r: number) => {
+    keys.current.splice(r, 1);
+    onChange(rows.filter((_, j) => j !== r));
+    setFocusRow(r);
+  };
+  return (
+    <fieldset ref={box} className="hh-field hh-pairs" {...(invalid["aria-describedby"] ? { "aria-describedby": invalid["aria-describedby"] } : {})}>
+      <legend>
+        {label}
+        {optional}
+      </legend>
+      {rows.map((row, r) => (
+        <div key={keys.current[r]} className="hh-pair">
+          {cols.map((c) => (
+            <input
+              key={c.name}
+              type="text"
+              aria-label={`${c.label[lang]} ${r + 1}`}
+              value={row[c.name] ?? ""}
+              disabled={disabled}
+              onChange={(e) => onChange(rows.map((x, j) => (j === r ? { ...x, [c.name]: e.target.value } : x)))}
+              {...invalid}
+            />
+          ))}
+          {rows.length > 1 && (
+            <button type="button" aria-label={t("input.removeRow", { n: r + 1 })} disabled={disabled} onClick={() => remove(r)}>
+              ×
+            </button>
+          )}
+        </div>
+      ))}
+      <button type="button" disabled={disabled} onClick={() => onChange([...rows, {}])}>
+        {t("input.addRow")}
+      </button>
+      {errorLine}
+    </fieldset>
   );
 }
 

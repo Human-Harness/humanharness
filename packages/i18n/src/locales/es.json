@@ -265,6 +265,8 @@
   "annotate": {
     "title": "Notas sobre tu respuesta",
     "noAnswer": "La respuesta de estas notas no está en este chat.",
+    "skipped": "La pregunta de estas notas se salteó.",
+    "noText": "La respuesta de estas notas no tiene texto para marcar.",
     "kind": { "ok": "Bien", "gap": "Falta", "wrong": "No es así", "note": "Nota" }
   },
   "input": {

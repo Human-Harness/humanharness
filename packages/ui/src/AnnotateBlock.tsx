@@ -1,6 +1,7 @@
 import { type ReactNode, useId } from "react";
 import { useTranslation } from "react-i18next";
 import { anchorMarks, answerText, readAnnotation } from "./annotate";
+import { isSkipped } from "./input";
 import type { BlockProps } from "./Message";
 
 /**
@@ -35,7 +36,11 @@ export function AnnotateBlock({ data, answerOf }: BlockProps) {
   return (
     <section className="hh-annotate" aria-labelledby={`${id}-title`}>
       <h3 id={`${id}-title`}>{t("annotate.title")}</h3>
-      {text === null ? <p className="hh-caption">{t("annotate.noAnswer")}</p> : <blockquote className="hh-annotated">{parts}</blockquote>}
+      {text !== null ? (
+        <blockquote className="hh-annotated">{parts}</blockquote>
+      ) : (
+        <p className="hh-caption">{t(!answer ? "annotate.noAnswer" : isSkipped(answer.value) ? "annotate.skipped" : "annotate.noText")}</p>
+      )}
       <ol className="hh-annotate-notes">
         {note.marks.map((m, i) => (
           <li key={i} id={noteId(i)} className={`hh-mark-note ${m.kind}`}>

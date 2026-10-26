@@ -265,6 +265,8 @@
   "annotate": {
     "title": "Notes on your answer",
     "noAnswer": "The answer these notes are about isn't in this chat.",
+    "skipped": "The question these notes are about was skipped.",
+    "noText": "The answer these notes are about has no text to mark.",
     "kind": { "ok": "Good", "gap": "Missing", "wrong": "Not right", "note": "Note" }
   },
   "input": {

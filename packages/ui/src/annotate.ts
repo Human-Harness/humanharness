@@ -27,10 +27,14 @@ export function readAnnotation(data: unknown): AnnotationView | null {
   return marks.length > 0 ? { ref: d.ref, ...(typeof d.field === "string" ? { field: d.field } : {}), marks } : null;
 }
 
-/** The answer `ref` names among the entries before `before` (all when null): by block id, or "last". */
+/**
+ * The answer `ref` names among the entries before `before` (all when null, as for the live turn): by block id, or
+ * "last". An entry `before` that isn't in the chat finds nothing, so "last" never points past the annotation.
+ */
 export function findAnswer(entries: Pick<ChatEntry, "id" | "blocks">[], before: string | null, ref: string): BlockAnswer | null {
-  const end = before === null ? -1 : entries.findIndex((e) => e.id === before);
-  const answers = (end < 0 ? entries : entries.slice(0, end)).flatMap((e) => e.blocks.flatMap((b) => (b.input ? [b.input] : [])));
+  const end = before === null ? entries.length : entries.findIndex((e) => e.id === before);
+  if (end < 0) return null;
+  const answers = entries.slice(0, end).flatMap((e) => e.blocks.flatMap((b) => (b.input ? [b.input] : [])));
   return (ref === "last" ? answers.at(-1) : answers.find((a) => a.blockId === ref)) ?? null;
 }
 

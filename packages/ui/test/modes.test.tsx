@@ -116,6 +116,17 @@ describe("task modes in the chat", () => {
     expect(document.activeElement).toBe(screen.getByRole("button", { name: "Change mode" }));
   });
 
+  it("a switch taken while the tier question is open closes it: nothing switches again", async () => {
+    const client = coachClient();
+    await open(client);
+    pickInBar("Worked examples");
+    await screen.findByRole("alertdialog");
+    await act(() => client.chooseMode("feynman"));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    await screen.findByText("Switched to Feynman");
+    expect(client.modeChoices).toEqual([{ mode: "feynman", choice: {} }]);
+  });
+
   it("'Start a new task' puts the new task on screen", async () => {
     const client = coachClient();
     client.modeResult = { ok: true, switched: "new-task" };
@@ -164,6 +175,7 @@ describe("task modes in the chat", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Feynman" }));
     await waitFor(() => expect(client.sentOptions.at(-1)).toEqual({ action: "study", mode: "feynman" }));
     expect(screen.queryByRole("dialog", { name: "How do you want to work?" })).toBeNull();
+    expect(document.activeElement?.tagName).toBe("TEXTAREA");
   });
 
   it("'ask': Escape and Not now send nothing", async () => {

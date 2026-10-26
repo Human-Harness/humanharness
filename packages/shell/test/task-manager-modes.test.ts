@@ -22,13 +22,14 @@ const profileOf = (tier: Tier): ModelProfile => ({ engine: "claude", tier, model
 const brief = (mode: string) => `Brief of ${mode}, in {{language}}.`;
 
 /** A task manager over memory, for a harness whose `study` action has three modes and whose `quiz` has none. */
-export function setup(opts: { script?: Event[][]; state?: TasksFile; modes?: false; defaultMode?: string; notes?: Note[]; gate?: Promise<void> } = {}) {
+export function setup(opts: { script?: Event[][]; state?: TasksFile; modes?: false; defaultMode?: string; notes?: Note[]; gate?: Promise<void>; failSend?: number } = {}) {
   let state = opts.state ?? emptyTasks();
   const script = [...(opts.script ?? [])];
   const turns: { message: string; options: TurnOptions }[] = [];
   const views: TaskView[] = [];
   const written: { slug: string; note: SavedNote; meta: NoteMeta }[] = [];
   const floors: (Tier | undefined)[] = [];
+  const emitted: Event[] = [];
   let busy = false;
   let gate = opts.gate;
   let n = 0;
@@ -43,6 +44,11 @@ export function setup(opts: { script?: Event[][]; state?: TasksFile; modes?: fal
       isBusy: () => busy,
       cancel: () => {},
       send: async (message, options) => {
+        // `failSend`: that turn (0-based) can't start.
+        if (turns.length === opts.failSend) {
+          turns.push({ message, options });
+          throw new Error("The app is closing");
+        }
         busy = true;
         turns.push({ message, options });
         const g = gate;
@@ -64,6 +70,7 @@ export function setup(opts: { script?: Event[][]; state?: TasksFile; modes?: fal
     writeNote: async (slug, note, meta) => void written.push({ slug, note, meta }),
     endSession: async () => {},
     changed: (v) => views.push(v),
+    emit: (e) => void emitted.push(e),
     profileFor: async (_action, floor) => {
       floors.push(floor);
       return profileOf(floor ?? "standard");
@@ -79,7 +86,7 @@ export function setup(opts: { script?: Event[][]; state?: TasksFile; modes?: fal
     now: () => new Date(NOW),
     newId: () => `t${++n}`,
   });
-  return { manager, turns, views, written, floors, state: () => state };
+  return { manager, turns, views, written, floors, emitted, state: () => state };
 }
 
 const socratic = { label: "Socratic", brief: brief("socratic"), settings: ["Ask many questions before explaining."] };
@@ -209,6 +216,26 @@ describe("TaskManager.chooseMode (task-modes spec §5)", () => {
     expect(await pick(t, "feynman")).toEqual({ ok: true, switched: "turn" });
     expect(t.state().current).not.toHaveProperty("mode");
     expect(t.state().current?.status).toBe("waiting");
+  });
+
+  it("a switch turn that can't start after the switch was taken ends the window's turn with an error", async () => {
+    const t = setup({ failSend: 1 });
+    await t.manager.start("study");
+    const { accepted, done } = t.manager.chooseMode("feynman");
+    expect(await accepted).toEqual({ ok: true, switched: "turn" });
+    await expect(done).rejects.toThrow("The app is closing");
+    expect(t.emitted).toEqual([{ type: "done", ok: false, error: { code: "agent-crashed", detail: "The app is closing" } }]);
+    expect(t.state().current).not.toHaveProperty("mode");
+    expect(t.state().current?.status).toBe("waiting");
+  });
+
+  it("'new-task' whose new task can't start ends the window's turn with an error too", async () => {
+    const t = setup({ defaultMode: "socratic", script: [[ok], [saveNote, ok]], failSend: 2 });
+    await t.manager.start("study");
+    const { accepted, done } = t.manager.chooseMode("worked", { belowTier: "new-task" });
+    expect(await accepted).toEqual({ ok: true, switched: "new-task" });
+    await expect(done).rejects.toThrow("The app is closing");
+    expect(t.emitted.filter((e) => e.type === "done")).toEqual([{ type: "done", ok: false, error: { code: "agent-crashed", detail: "The app is closing" } }]);
   });
 
   it("below the mode's minTier: refused with the tiers; 'continue' switches and marks it; a fitting mode clears the mark", async () => {

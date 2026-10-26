@@ -635,9 +635,11 @@ export class TaskManager {
     if (below && choice.belowTier === undefined) return take({ ok: false, reason: "tier", required, current });
     if (below && choice.belowTier === "new-task") {
       take({ ok: true, switched: "new-task" });
-      // The closing turn saves the note the new task starts from: one turn, where the spec has a checkpoint and a close.
-      if (!(await this.closeCurrent())) return this.stopped();
-      return this.startNow(c.action!, undefined, undefined, mode, required);
+      return this.endsInWindow(async () => {
+        // The closing turn saves the note the new task starts from: one turn, where the spec has a checkpoint and a close.
+        if (!(await this.closeCurrent())) return this.stopped();
+        return this.startNow(c.action!, undefined, undefined, mode, required);
+      });
     }
     // Read before anything is taken: a brief that can't be read refuses the switch.
     const text = await this.modeText(mode);
@@ -647,33 +649,59 @@ export class TaskManager {
       return take({ ok: true, switched: "quiet" });
     }
     take({ ok: true, switched: "turn" });
-    if (needsCheckpoint(c) && !(await this.checkpoint(c))) return this.stopped();
-    const language = await this.d.language();
-    const soFar = c.checkpointNote ? await this.checkpointSummary(c) : undefined;
-    const message = modePrompt(text, { language, ...(soFar ? { soFar } : {}) });
-    await this.setStatus(c.id, "running");
-    // Checked with no await before the send: a Stop while the status was saved.
-    if (this.cancelRequested) {
-      await this.setStatus(c.id, "waiting");
-      return this.stopped();
-    }
-    let done: Done;
+    return this.endsInWindow(async () => {
+      if (needsCheckpoint(c) && !(await this.checkpoint(c))) return this.stopped();
+      const language = await this.d.language();
+      const soFar = c.checkpointNote ? await this.checkpointSummary(c) : undefined;
+      const message = modePrompt(text, { language, ...(soFar ? { soFar } : {}) });
+      await this.setStatus(c.id, "running");
+      // Checked with no await before the send: a Stop while the status was saved.
+      if (this.cancelRequested) {
+        await this.setStatus(c.id, "waiting");
+        return this.stopped();
+      }
+      let done: Done;
+      try {
+        // `display` always goes with `modeSwitch`: the chat shows the system line, never the mode's prompt.
+        done = await this.runTurn(c, message, {
+          display: `Switched to ${text.label}`,
+          ...(c.action ? { action: c.action } : {}),
+          followUp: true,
+          mode,
+          modeSwitch: true,
+        });
+      } catch (err) {
+        if (err instanceof TurnNotStarted) await this.setStatus(c.id, "waiting");
+        throw unwrap(err);
+      }
+      // The mode is the task's once the agent got it: a failed switch can be picked again.
+      if (done.ok) await this.setMode(c.id, mode, below);
+      return this.afterRun(c.id, done, false);
+    });
+  }
+
+  /**
+   * Runs what follows a taken switch. The window already shows it running (its line, or the new task): a failure
+   * before a turn's own `done` reached the window ends it there, as `respondNow` does.
+   */
+  private async endsInWindow(fn: () => Promise<void>): Promise<void> {
     try {
-      // `display` always goes with `modeSwitch`: the chat shows the system line, never the mode's prompt.
-      done = await this.runTurn(c, message, {
-        display: `Switched to ${text.label}`,
-        ...(c.action ? { action: c.action } : {}),
-        followUp: true,
-        mode,
-        modeSwitch: true,
-      });
+      await fn();
     } catch (err) {
-      if (err instanceof TurnNotStarted) await this.setStatus(c.id, "waiting");
-      throw unwrap(err);
+      this.windowFailed(err);
+      throw err;
     }
-    // The mode is the task's once the agent got it: a failed switch can be picked again.
-    if (done.ok) await this.setMode(c.id, mode, below);
-    return this.afterRun(c.id, done, false);
+  }
+
+  /** The window shows a turn running that will never end on its own: a failed `done` ends it (once). */
+  private windowFailed(err: unknown): void {
+    if (this.windowDone) return;
+    this.windowDone = true;
+    try {
+      this.d.emit?.(fail("agent-crashed", err instanceof Error ? err.message : String(err)));
+    } catch (emitErr) {
+      console.error("Could not send an event to the window", emitErr);
+    }
   }
 
   /** The task works in `mode` now: it joins the modes used (once), and `belowMinTier` says whether it runs below it. */
@@ -819,14 +847,7 @@ export class TaskManager {
       // An answer the agent never got must not be lost: its question opens again.
       if (this.turnsStarted === started) await this.reopen(c.id, pending);
       // The window already shows the person's line and a running turn: end it there.
-      if (!this.windowDone) {
-        this.windowDone = true;
-        try {
-          this.d.emit?.(fail("agent-crashed", err instanceof Error ? err.message : String(err)));
-        } catch (emitErr) {
-          console.error("Could not send an event to the window", emitErr);
-        }
-      }
+      this.windowFailed(err);
       throw err;
     }
   }

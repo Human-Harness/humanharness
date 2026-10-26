@@ -467,6 +467,13 @@ export function ChatView({
    */
   tookSwitch.current = (s: ModeSwitch) => {
     const current = tasks.current;
+    // A question still open is about the task as it was: answering it now would switch again.
+    if (tierAsk || askPick) {
+      setTierAsk(null);
+      setAskPick(null);
+      questionOpener.current = null;
+      inputRef.current?.focus();
+    }
     if (s.switched === "quiet") {
       busy.current = false;
       return;
@@ -844,6 +851,8 @@ export function ChatView({
                     const p = askPick;
                     setAskPick(null);
                     questionOpener.current = null;
+                    // The picker goes: focus on the composer, whether the send went out or waits for the pre-flight.
+                    inputRef.current?.focus();
                     send(p.text, { ...p.options, mode });
                   }}
                 />

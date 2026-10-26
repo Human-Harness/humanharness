@@ -236,6 +236,26 @@ describe("DataStore: the reserved settings collection", () => {
     expect(fs.existsSync(f)).toBe(false);
   });
 
+  it("reads mode settings field by field: one bad nested value drops only that field", async () => {
+    const field = (values: [string, ...string[]], d: string) => ({ schema: z.enum(values), default: d, control: "segmented" as const, label: "F" });
+    const modes = {
+      socratic: { label: "Socratic", settings: { questions: field(["few", "many"], "few"), steps: { schema: z.number().int().max(5), default: 3, control: "number" as const, label: "Steps" } } },
+      feynman: { label: "Feynman", settings: { depth: field(["short", "long"], "short") } },
+    };
+    const base = tmp();
+    const store = new DataStore(base, dataCollections({ data, settings, modes }));
+    const f = file(base, ".harness/data/_app/settings.json");
+    fs.mkdirSync(path.dirname(f), { recursive: true });
+    fs.writeFileSync(
+      f,
+      JSON.stringify({ tone: "demanding", modes: { socratic: { questions: "many", steps: 99 }, feynman: { depth: "long" }, gone: { x: 1 } } }),
+    );
+    expect(await store.get("settings", undefined, app)).toEqual({ tone: "demanding", modes: { socratic: { questions: "many" }, feynman: { depth: "long" } } });
+    // A mode left with nothing valid goes, and so does `modes` when no mode is left.
+    fs.writeFileSync(f, JSON.stringify({ tone: "demanding", modes: { socratic: { steps: 99 }, feynman: "x" } }));
+    expect(await store.get("settings", undefined, app)).toEqual({ tone: "demanding" });
+  });
+
   it("still refuses to overwrite a settings file that is not a record", async () => {
     const base = tmp();
     const store = new DataStore(base, dataCollections({ data, settings }));

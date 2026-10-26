@@ -232,6 +232,7 @@ async function backupView(folder: string | undefined): Promise<NonNullable<AppSt
 async function appState(): Promise<AppState> {
   const harnessImage = await harnessLogo();
   const saved = await config.load();
+  const inputs = inputSpecs(harness.blocks);
   return {
     harness: {
       id: harness.id,
@@ -294,7 +295,7 @@ async function appState(): Promise<AppState> {
     path: harness.path ?? [],
     ...(harness.scopes ? { scopes: harness.scopes } : {}),
     // Only a harness with input blocks sends their specs (spec D0).
-    ...(Object.keys(inputSpecs(harness.blocks)).length > 0 ? { inputs: inputSpecs(harness.blocks) } : {}),
+    ...(Object.keys(inputs).length > 0 ? { inputs } : {}),
     references: (await referencesFor(saved.folder)).map((r) => ({ id: r.id, label: r.label, path: displayPath(r.path, os.homedir()) })),
     models: await modelsView(saved.language),
     backup: await backupView(saved.folder),
@@ -558,7 +559,9 @@ const tasks = new TaskManager({
   },
   markAnswered: async (chat, answer) => {
     const c = await validConfig();
-    return c ? new ChatLog(baseOf(c), c.engineId, chat).markAnswered(answer) : false;
+    // `false` means "no such block in the chat"; a missing folder is a different failure.
+    if (!c) throw new Error("No valid configuration: the chat log can't be found");
+    return new ChatLog(baseOf(c), c.engineId, chat).markAnswered(answer);
   },
   // As the person, through the data store's checks (spec §6); the write goes out with the follow-up's commit.
   saveAnswer: (collection, records, scope) =>

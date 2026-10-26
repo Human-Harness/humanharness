@@ -91,8 +91,9 @@ function cleanSession(s: unknown): Session | undefined {
 
 const BLOCK_NAME = /^[a-z][a-z0-9_]*$/;
 
-function cleanPending(p: unknown): PendingInput | undefined {
-  if (!isObject(p) || typeof p.blockId !== "string" || !BLOCK_ID.test(p.blockId)) return undefined;
+/** The pending input of task `taskId`: a block id of another task (a hand-edited file) is dropped. */
+function cleanPending(p: unknown, taskId: string): PendingInput | undefined {
+  if (!isObject(p) || typeof p.blockId !== "string" || !BLOCK_ID.test(p.blockId) || !p.blockId.startsWith(`${taskId}:`)) return undefined;
   if (typeof p.block !== "string" || !BLOCK_NAME.test(p.block) || typeof p.shownAt !== "string") return undefined;
   return { blockId: p.blockId, block: p.block, shownAt: p.shownAt };
 }
@@ -102,7 +103,7 @@ function cleanCurrent(c: unknown): CurrentTask | null {
   if (!isObject(c) || typeof c.id !== "string" || !TASK_STATUSES.includes(c.status as string)) return null;
   const session = cleanSession(c.session);
   const profile = cleanProfile(c.profile);
-  const pending = cleanPending(c.pendingInput);
+  const pending = cleanPending(c.pendingInput, c.id);
   const tokens = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v) && v >= 0;
   const ctx = isObject(c.context) && tokens(c.context.used) ? { used: c.context.used, ...(tokens(c.context.size) ? { size: c.context.size } : {}) } : undefined;
   return {

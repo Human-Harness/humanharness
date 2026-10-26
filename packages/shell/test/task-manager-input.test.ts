@@ -128,7 +128,7 @@ describe("TaskManager: the pending input", () => {
       };
       write({ blockId: "t1:0:0", block: "commit_answer", shownAt: NOW });
       expect((await store.load()).current?.pendingInput).toEqual({ blockId: "t1:0:0", block: "commit_answer", shownAt: NOW });
-      for (const bad of [{ blockId: "../t1:0:0", block: "commit_answer", shownAt: NOW }, { blockId: "t1:0:0", block: "Bad Name", shownAt: NOW }, "t1:0:0"]) {
+      for (const bad of [{ blockId: "../t1:0:0", block: "commit_answer", shownAt: NOW }, { blockId: "t1:0:0", block: "Bad Name", shownAt: NOW }, { blockId: "t10:0:0", block: "commit_answer", shownAt: NOW }, "t1:0:0"]) {
         write(bad);
         expect((await store.load()).current).not.toHaveProperty("pendingInput");
       }

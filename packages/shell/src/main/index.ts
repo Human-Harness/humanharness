@@ -832,7 +832,7 @@ function registerIpc() {
   handle("hh:dataDiff", async (taskId: unknown) => {
     if (typeof taskId !== "string" || taskId.length === 0 || taskId.length > 200) return [];
     const history = await currentHistory();
-    return history ? dataDiffOf(history, taskId, harness.data) : [];
+    return history ? dataDiffOf(history, taskId, dataCollections(harness)) : [];
   });
   // The harness's Settings tab (harness-settings spec §4). Refusals come back as data: Electron flattens thrown errors.
   handle("hh:settingsGet", () => (settingsCtl ? settingsCtl.state() : { values: {}, pending: [] }));

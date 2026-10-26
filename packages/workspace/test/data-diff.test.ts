@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { dataSchema, z } from "@humanharness/harness-sdk";
+import { dataCollections, dataSchema, settingsSchema, z } from "@humanharness/harness-sdk";
 import { DATA_PREFIX, History, NOTES_PREFIX, dataDiffOf, diffCollection } from "../src";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
@@ -77,5 +77,33 @@ describe("dataDiffOf", () => {
     expect(out.map((x) => `${x.collection}@${x.scope}`).sort()).toEqual(["fresh@main", "gone@main", "prefs@_app"]);
     expect(out.find((x) => x.collection === "fresh")?.added).toEqual([{ id: "x" }]);
     expect(out.find((x) => x.collection === "gone")?.removed).toEqual([{ id: "a" }]);
+  });
+
+  it("lists the settings record (single, app-wide) changed during a task, and its removal on a reset to defaults", async () => {
+    const dir = fs.mkdtempSync(path.join(root, "t-"));
+    const folder = path.join(dir, "Work");
+    const file = path.join(folder, ".harness", "data", "_app", "settings.json");
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, json({ tone: "patient" }));
+    const history = new History(folder, path.join(dir, "git"), [".harness/"], [NOTES_PREFIX, DATA_PREFIX]);
+    await history.init();
+    await history.save("Start");
+    fs.writeFileSync(file, json({ tone: "demanding" }));
+    await history.save("Data: settings", { task: "t3", action: "study", scope: "main" });
+    fs.rmSync(file);
+    await history.save("Data: settings", { task: "t4", action: "study", scope: "main" });
+    const settings = settingsSchema.parse({
+      tab: "Mine",
+      fields: { tone: { schema: z.enum(["patient", "demanding"]), default: "patient", control: "segmented", label: "Tone" } },
+    });
+    const collections = dataCollections({ data: dataSchema.parse({}), settings });
+    expect(await dataDiffOf(history, "t3", collections)).toEqual([
+      { collection: "settings", scope: "_app", added: [], changed: [{ before: { tone: "patient" }, after: { tone: "demanding" } }], removed: [] },
+    ]);
+    expect(await dataDiffOf(history, "t4", collections)).toEqual([
+      { collection: "settings", scope: "_app", added: [], changed: [], removed: [{ tone: "demanding" }] },
+    ]);
+    // D0: without settings, the record is not a collection the harness has.
+    expect(await dataDiffOf(history, "t3", dataCollections({ data: dataSchema.parse({}) }))).toEqual([]);
   });
 });

@@ -111,6 +111,37 @@ Mockup v2, the whole app (2026-10-20, waiting for Marco's review). Same URL as v
 
 Proposals added by Claude in v2, not yet confirmed by Marco: readiness check when taking a ticket; "when does the agent stop me" autonomy levels; ADRs for stack decisions; the AI proposing first tickets; project notes learned at import; extra MCPs in settings; a "New ticket" button.
 
+Mockup v3, IDE layout (2026-10-26, waiting for Marco's review). Same canvas, row 6; source `docs/discovery/mockups/dev/IDE*.dc.html`. Marco wants the app to look like an IDE without showing code. Decisions (Marco, 2026-10-26):
+- **Left sidebar = projects explorer.** Several projects open; each expands into its tickets grouped by who has the ball: Waiting for you · In flight (unattended) · Planning · In PR. Status dot per ticket (waiting, agent running, red CI, not started).
+- **Right sidebar = two tabs:** "Pendiente" (cross-project summary: waiting for you, PR & CI, Jira changed, ready to take; agents in flight, plan usage, Jira sync) and "Este ticket" (agent state, the ticket's decision log, what the AI takes into account, branch/repos/PR). Replaces the Hoy screen.
+- **Theme:** dark and light, with a toggle.
+- Claude's layout choices, not yet confirmed: center tabs are open tickets (not engines); the bottom panel is "go down to the code" (console, diff, agent log, CI), closed by default; a status bar (branch, engine, agents, usage, Jira, gh, theme); ⌘K search; a welcome tab when nothing is open; the Decisions/Console toggle per ticket.
+
+Round 2 of v3 (Marco, 2026-10-26): "vamos enteramente con el IDE layout". Canvas rows 6 (start) and 7 (ticket), all from one interactive `IDE.dc.html` with a `scene` prop.
+- **Skeleton (confirmed):** the CLI lives only in the bottom panel (one terminal tab per agent session + shell, plus Diff/Log/CI; maximizable). The center never shows a terminal; the Decisions/Console toggle is gone.
+- **Spec-oriented.** Every ticket is a folder of generated `.md` files (spec, plan, decisions, review, qa) shown in the explorer with git-like marks (A new, M changed, ● waiting for you); each project has `proyecto/` (project.md, conventions.md, adr/, agents/). Stages: Spec › Plan › Implement › Code review › QA › PR.
+- **Start flow inside the IDE** (to review in the mockup): Welcome tab walkthrough whose checks run in the bottom terminal → Empezar (import / create / open a repo without Jira) → import writes project.md + conventions.md for review → create writes one ADR per decision, live in the explorer.
+- **Spec review, code review agent, QA agent** (to review in the mockup): spec with margin comments, blocking questions and AC → spec coverage; review findings against the spec (send to dev / "the spec is wrong" / discard); QA per AC with evidence.
+- **Agents (decision):** the IDE ships a standard team for the dev process (spec writer, planner, dev, reviewer, QA, PR writer), each an `.md` with its model and context; users add their own agents at any stage.
+- **QA (decision):** both modes: guided (manual checks for what it cannot test) and 100% autonomous (untestable = "no coverage" noted in the PR).
+- **Autonomy (decision):** where the flow stops is the user's choice (spec approval, review↔dev loop count, QA mode, opening the PR).
+- Right panel "Este ticket" shows the agent chain for the ticket (OK'd by Marco).
+
+Round 3 of v3 (Marco, 2026-10-26), canvas row 8: process, preset and the IDE's MCP.
+- **Use a process already on the machine** (e.g. `~/.claude/skills/ticket2` + `~/.claude/agents`, a repo's `AGENTS.md`, Codex prompts). A Configurador agent maps it to stages and agents; loose agents (em, devops) become new stages, out-of-flow agents, or are ignored.
+- **Import copies (decision).** The process is copied into the project, and the user is told so explicitly: changes to the original do not reach the project; the IDE shows "the source changed" with "bring changes". The user must tick "I understand it is a copy" before copying.
+- **One flow per project (decision):** `proyecto/flow.md`, shown as a pipeline or as markdown. Stages carry agents, gate, inputs/outputs and conditions.
+- **A preset per project (decision):** when the IDE launches Claude Code, Codex or another CLI for a session, it loads the project's skills, plugins, MCP servers, hooks and instructions from `.devharness/preset/`, never writing to `~/.claude` or `~/.codex`. Base can be "your global config + preset" or "only the preset (isolated)". Per-agent additions (QA adds Playwright).
+- **The IDE has an MCP (`devharness`), open to external agents (decision):** read flow/agents/tickets/preset, propose changes, import a process; `run_stage` blocked for external agents by default. Every change arrives as a proposal the user approves in the IDE.
+- An agent configures the process in conversation (the Configurador in the bottom terminal); its proposal is reviewed in `flow.md` like a spec.
+
+Round 4 of v3 (Marco, 2026-10-26), canvas rows 9 and 10: Sidekicks and focus mode.
+- **Several sidekicks, each with its own personality and purpose (decision, core).** The user writes each sidekick's personality as a prompt and picks its purposes (prompt coach, focus, process guard, technical mentor, daily summary, plus a purpose of their own). This extends core spec #9 (Sidekick), which today has one sidekick with a fixed role: the spec must be updated.
+- **The project picks which sidekicks it needs (decision).** Sidekicks live in the user's profile; `proyecto/sidekicks.md` turns them on per project and adds project-specific purpose and places. Personality stays the user's.
+- **Import a sidekick (decision):** e.g. Marco's `~/.claude/coach` becomes a sidekick (rules → personality and purposes, profile → what it learned; the queue is not copied). Same copy notice and checkbox as the process import.
+- Kept from spec #9: suggest only, no tools, never drives the flow, visible and capped spend. A custom purpose cannot grant permissions. Claude's proposal, not confirmed: one card per moment when several sidekicks want to speak (the most relevant one), and a shared cap per ticket.
+- **Focus mode for every `.md` (decision):** full-screen reading with one centered column, serif or sans, comments hidden behind a toggle with markers in the text, terminal/sidekicks/heads-ups paused, and the approve action at the end of the doc.
+
 Mockup v1 (2026-10-20, superseded by v2): https://claude.ai/artifact/JkYwnWjmArqrHzSz92A5CV
 
 1. **Hoy.** Tickets in parallel, grouped as "waiting for you" / in progress (phase, worktree, model tier) / next from Jira; plan usage visible.

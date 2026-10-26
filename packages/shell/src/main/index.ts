@@ -894,7 +894,15 @@ function registerIpc() {
   });
   handle("hh:respond", respondHandler({ quitting: () => quitting, blocked: turnBlocked, respond: (blockId, value) => tasks.respond(blockId, value) }));
   // The person's pick of a mode (task-modes spec §5): the acceptance comes back as data.
-  handle("hh:chooseMode", chooseModeHandler({ quitting: () => quitting, blocked: turnBlocked, choose: (mode, choice) => tasks.chooseMode(mode, choice) }));
+  handle(
+    "hh:chooseMode",
+    chooseModeHandler({
+      quitting: () => quitting,
+      blocked: turnBlocked,
+      openTask: async () => (await tasks.runningTask())?.id ?? null,
+      choose: (mode, choice, task) => tasks.chooseMode(mode, choice, task),
+    }),
+  );
   handle("hh:openPath", async (file: unknown) => {
     const c = await validConfig();
     if (!c) return false;

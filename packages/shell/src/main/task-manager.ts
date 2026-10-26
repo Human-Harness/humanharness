@@ -103,7 +103,7 @@ export interface TaskDeps {
    * harness's settings rewrite AGENTS.md here (harness-settings spec D4). Failures are logged. Absent: nothing (D0).
    */
   betweenTasks?(): Promise<void>;
-  /** The harness's modes (task-modes spec §3): label, least tier, the agent's hint. Absent or empty: none (D0). */
+  /** The harness's modes (task-modes spec §3): label, minimum tier, the agent's hint. Absent or empty: none (D0). */
   modes?: Record<string, { label: string; minTier?: Tier; recommend?: string }>;
   /** The text of a mode's brief (its file). */
   readModeBrief?(mode: string): Promise<string>;
@@ -288,9 +288,10 @@ export class TaskManager {
   /**
    * The person picks `mode` for the open task (task-modes spec §5). It waits for a running turn to end and never cancels
    * it (§5.2). `accepted` resolves with a refusal or with how the switch goes on, before any turn's events; `done` once
-   * its turn has ended. Both reject when the operation can't run (the app is closing).
+   * its turn has ended. Both reject when the operation can't run (the app is closing). `task`: the open task the caller
+   * saw; a pick that waited is refused (`no-task`) when another task is open by the time it runs.
    */
-  chooseMode(mode: string, choice: ModeChoice = {}): { accepted: Promise<ModeResult>; done: Promise<void> } {
+  chooseMode(mode: string, choice: ModeChoice = {}, task?: string): { accepted: Promise<ModeResult>; done: Promise<void> } {
     let settled = false;
     let take!: (r: ModeResult) => void;
     let refuse!: (err: unknown) => void;
@@ -301,7 +302,7 @@ export class TaskManager {
       };
       refuse = reject;
     });
-    const run = () => this.op(() => this.modeNow(mode, choice, take));
+    const run = () => this.op(() => this.modeNow(mode, choice, take, task));
     // Not busy: it runs now, as any operation does; busy: it waits its turn (§5.2), behind any earlier pick.
     const done = (this.isBusy() ? this.whenFree(run) : run()).then(
       () => {
@@ -630,9 +631,9 @@ export class TaskManager {
    * mode's `minTier`, or the person chose how to go on (spec §5.3). Then: a new task at the mode's tier, a quiet switch
    * for a lost session, or one turn in the same session. The state changes only once that turn ended well.
    */
-  private async modeNow(mode: string, choice: ModeChoice, take: (r: ModeResult) => void): Promise<void> {
+  private async modeNow(mode: string, choice: ModeChoice, take: (r: ModeResult) => void, task?: string): Promise<void> {
     const c = await this.storedCurrent();
-    if (!c || c.status !== "waiting") return take({ ok: false, reason: "no-task" });
+    if (!c || c.status !== "waiting" || (task !== undefined && c.id !== task)) return take({ ok: false, reason: "no-task" });
     if (!this.modesOf(c.action).includes(mode)) return take({ ok: false, reason: "unknown" });
     if (c.mode === mode) return take({ ok: true, switched: "same" });
     const required = this.d.modes![mode].minTier;
@@ -658,7 +659,9 @@ export class TaskManager {
     return this.endsInWindow(async () => {
       if (needsCheckpoint(c) && !(await this.checkpoint(c))) return this.stopped();
       const language = await this.d.language();
-      const soFar = c.checkpointNote ? await this.checkpointSummary(c) : undefined;
+      // Read again: a checkpoint just taken here saved the note this line carries.
+      const after = (await this.d.store.load()).current;
+      const soFar = (after?.id === c.id ? after : c).checkpointNote ? await this.checkpointSummary(c) : undefined;
       const message = modePrompt(text, { language, ...(soFar ? { soFar } : {}) });
       await this.setStatus(c.id, "running");
       // Checked with no await before the send: a Stop while the status was saved.

@@ -77,7 +77,7 @@ const modeSchema = z.object({
   description: text.max(300).optional(),
   /** The mode's brief: a file in the harness folder, filled like an action's prompt ({{language}}). */
   brief: z.string().min(1),
-  /** The least tier the mode works well at; absent: any. */
+  /** The minimum tier the mode works well at; absent: any. */
   minTier: z.enum(TIERS).optional(),
   /** What the agent reads to recommend this mode; never shown to the person. */
   recommend: text.max(400).optional(),

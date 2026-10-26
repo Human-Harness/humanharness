@@ -23,7 +23,7 @@ const brief = (mode: string) => `Brief of ${mode}, in {{language}}.`;
 
 /** A task manager over memory, for a harness whose `study` action has three modes and whose `quiz` has none. */
 export function setup(
-  opts: { script?: Event[][]; state?: TasksFile; modes?: false; defaultMode?: string; notes?: Note[]; gate?: Promise<void>; failSend?: number; labels?: Record<string, string>; badBrief?: string } = {},
+  opts: { script?: Event[][]; state?: TasksFile; modes?: false; defaultMode?: string; notes?: Note[]; gate?: Promise<void>; gateTurn?: number; failSend?: number; labels?: Record<string, string>; badBrief?: string } = {},
 ) {
   let state = opts.state ?? emptyTasks();
   const script = [...(opts.script ?? [])];
@@ -53,8 +53,9 @@ export function setup(
         }
         busy = true;
         turns.push({ message, options });
-        const g = gate;
-        gate = undefined;
+        // `gate` holds the first turn, or turn `gateTurn` (0-based).
+        const g = turns.length - 1 === (opts.gateTurn ?? 0) ? gate : undefined;
+        if (g) gate = undefined;
         await g;
         for (const e of script.shift() ?? [ok]) options.onEvent?.(e);
         busy = false;
@@ -308,6 +309,23 @@ describe("TaskManager.chooseMode (task-modes spec §5)", () => {
     expect(t.turns[1].options.mode).toBe("feynman");
   });
 
+  it("a pick queued behind a turn is refused when that task ended and another started meanwhile", async () => {
+    let release!: () => void;
+    const t = setup({ gate: new Promise<void>((r) => (release = r)), gateTurn: 1, script: [[ok], [saveNote, ok], [ok]] });
+    await t.manager.start("study");
+    // The closing turn of t1 runs (the person started the action again); the pick, made while t1 was shown, waits.
+    const next = t.manager.start("study");
+    await vi.waitFor(() => expect(t.turns).toHaveLength(2));
+    const { accepted, done } = t.manager.chooseMode("feynman", {}, "t1");
+    release();
+    await next;
+    expect(await accepted).toEqual({ ok: false, reason: "no-task" });
+    await done;
+    expect(t.turns).toHaveLength(3);
+    expect(t.state().current?.id).toBe("t2");
+    expect(t.state().current).not.toHaveProperty("mode");
+  });
+
   it("two picks during one turn both wait and run in order", async () => {
     let release!: () => void;
     const t = setup({ gate: new Promise<void>((r) => (release = r)) });
@@ -349,6 +367,15 @@ describe("TaskManager.chooseMode (task-modes spec §5)", () => {
     const t = setup({ notes: [note], state: { version: 1, actions: {}, current } });
     await pick(t, "feynman");
     expect(t.turns[0].message).toContain("What is clear so far (the last checkpoint): Two halves make a whole.");
+  });
+
+  it("a checkpoint taken in the switch carries the summary it just saved", async () => {
+    const note: Note = { slug: "study", action: "study", date: NOW, engine: "claude", ...NOTE, path: ".harness/notes/study.md" };
+    const current = { id: "t1", action: "study", status: "waiting" as const, startedAt: "", turns: 3, profile: profileOf("standard"), context: { used: 190_000 } };
+    const t = setup({ notes: [note], state: { version: 1, actions: {}, current }, script: [[saveNote, ok], [ok]] });
+    expect(await pick(t, "feynman")).toEqual({ ok: true, switched: "turn" });
+    expect(t.turns[0].options).toMatchObject({ phase: "checkpoint" });
+    expect(t.turns[1].message).toContain("What is clear so far (the last checkpoint): Two halves make a whole.");
   });
 
   it("caps the checkpoint's summary it carries: 5 points of 400 characters at most", async () => {

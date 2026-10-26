@@ -5,7 +5,10 @@ export interface ChooseModeDeps {
   quitting(): boolean;
   /** Why a new turn can't start now, or null. */
   blocked(): string | null;
-  choose(mode: string, choice: ModeChoice): { accepted: Promise<ModeResult>; done: Promise<void> };
+  /** The id of the open task, or null. */
+  openTask(): Promise<string | null>;
+  /** `task`: the open task when the pick arrived; a pick that waits for a turn is refused once another task is open. */
+  choose(mode: string, choice: ModeChoice, task: string): { accepted: Promise<ModeResult>; done: Promise<void> };
 }
 
 /**
@@ -21,7 +24,10 @@ export function chooseModeHandler(d: ChooseModeDeps): (mode: unknown, choice: un
     if (typeof mode !== "string" || !MODE_ID.test(mode)) throw new Error("Invalid mode");
     const below = typeof choice === "object" && choice !== null ? (choice as { belowTier?: unknown }).belowTier : undefined;
     if (below !== undefined && below !== "continue" && below !== "new-task") throw new Error("Invalid mode");
-    const { accepted, done } = d.choose(mode, below ? { belowTier: below } : {});
+    // The task the pick is for is the one open now, before the pick waits for a running turn (spec §5.2).
+    const task = await d.openTask();
+    if (task === null) return { ok: false, reason: "no-task" };
+    const { accepted, done } = d.choose(mode, below ? { belowTier: below } : {}, task);
     done.catch((err: unknown) => console.error("The mode switch's turn failed", err));
     return accepted;
   };

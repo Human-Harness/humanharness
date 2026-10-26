@@ -2,13 +2,14 @@ import { describe, expect, it, vi } from "vitest";
 import type { ModeChoice, ModeResult } from "@humanharness/ui/client";
 import { chooseModeHandler } from "../src/main/mode-ipc";
 
-function setup(opts: { quitting?: boolean; blocked?: string | null; result?: ModeResult; doneError?: Error } = {}) {
-  const calls: { mode: string; choice: ModeChoice }[] = [];
+function setup(opts: { quitting?: boolean; blocked?: string | null; result?: ModeResult; doneError?: Error; task?: string | null } = {}) {
+  const calls: { mode: string; choice: ModeChoice; task: string }[] = [];
   const handler = chooseModeHandler({
     quitting: () => opts.quitting ?? false,
     blocked: () => opts.blocked ?? null,
-    choose: (mode, choice) => {
-      calls.push({ mode, choice });
+    openTask: async () => (opts.task === undefined ? "t1" : opts.task),
+    choose: (mode, choice, task) => {
+      calls.push({ mode, choice, task });
       return { accepted: Promise.resolve(opts.result ?? { ok: true, switched: "turn" }), done: opts.doneError ? Promise.reject(opts.doneError) : Promise.resolve() };
     },
   });
@@ -21,9 +22,18 @@ describe("hh:chooseMode", () => {
     expect(await t.handler("worked", {})).toEqual({ ok: false, reason: "tier", required: "deep", current: "standard" });
     await t.handler("worked", { belowTier: "new-task" });
     expect(t.calls).toEqual([
-      { mode: "worked", choice: {} },
-      { mode: "worked", choice: { belowTier: "new-task" } },
+      { mode: "worked", choice: {}, task: "t1" },
+      { mode: "worked", choice: { belowTier: "new-task" }, task: "t1" },
     ]);
+  });
+
+  it("passes the task open when the pick arrives; with none open it refuses with no-task", async () => {
+    const t = setup({ task: "t7" });
+    await t.handler("feynman", {});
+    expect(t.calls).toEqual([{ mode: "feynman", choice: {}, task: "t7" }]);
+    const none = setup({ task: null });
+    expect(await none.handler("feynman", {})).toEqual({ ok: false, reason: "no-task" });
+    expect(none.calls).toHaveLength(0);
   });
 
   it("refuses while quitting or blocked, and anything malformed, before asking the task manager", async () => {

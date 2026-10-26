@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ActionOption, HistoryTaskView } from "../src/client";
-import { HistoryPanel, entryLabel } from "../src/HistoryPanel";
+import { HistoryPanel, byDay, entryLabel } from "../src/HistoryPanel";
 import { FakeClient } from "./fake-client";
 import { renderIn } from "./render";
 
@@ -64,20 +64,57 @@ async function open(opts: { disabled?: boolean; client?: FakeClient; actions?: R
 describe("HistoryPanel", () => {
   it("shows one row per task with its action, note, date and files changed; the newest starts open", async () => {
     await open();
-    const newest = await screen.findByRole("button", { name: /Plan the week.*The week.*2 files changed/ });
+    const newest = await screen.findByRole("button", { name: /Plan the week.*2 files changed.*Note saved/ });
     expect(newest.getAttribute("aria-expanded")).toBe("true");
     expect(screen.getByRole("button", { name: /A question.*1 file changed/ }).getAttribute("aria-expanded")).toBe("false");
-    expect(screen.getByRole("button", { name: /Other changes.*0 files changed/ }).getAttribute("aria-expanded")).toBe("false");
+    expect(screen.getByRole("button", { name: /Outside a task.*0 files changed/ }).getAttribute("aria-expanded")).toBe("false");
     const files = screen.getByRole("list", { name: "Changed files" });
     expect(within(files).getAllByRole("listitem").map((li) => li.textContent)).toEqual(["Deletedold.md", "Changedplan.md"]);
+    // The row tags a saved note; its title shows on hover.
+    expect(screen.getByText("Note saved").getAttribute("title")).toBe("The week");
     expect(screen.getByText("Note saved: The week")).toBeTruthy();
     expect(screen.getByText("The AI finished")).toBeTruthy();
     expect(screen.getByText("Before your message")).toBeTruthy();
   });
 
+  it("puts tasks under their day, and the changes outside any task last, under no day", async () => {
+    const today = new Date();
+    const at = (daysAgo: number, hour: number) => new Date(today.getFullYear(), today.getMonth(), today.getDate() - daysAgo, hour).toISOString();
+    const client = new FakeClient();
+    client.historyGroups = [
+      { ...groups[0], date: at(0, 9) },
+      { ...groups[1], date: at(1, 9) },
+      { ...groups[2], date: at(0, 10) },
+    ];
+    await open({ client });
+    await screen.findByRole("button", { name: /Plan the week/ });
+    expect(screen.getAllByRole("heading", { level: 3 }).map((h) => h.textContent)).toEqual(["Today", "Yesterday"]);
+    // Newer than both tasks, yet still last.
+    const sections = document.querySelectorAll(".hh-history-day");
+    expect(sections).toHaveLength(3);
+    expect(sections[sections.length - 1].textContent).toMatch(/^Outside a task/);
+  });
+
+  it("groups by local day, keeping the order", () => {
+    const g = (taskId: string, date: Date): HistoryTaskView => ({ ...groups[1], taskId, date: date.toISOString() });
+    const days = byDay([g("a", new Date(2026, 9, 17, 18)), g("b", new Date(2026, 9, 17, 8)), g("c", new Date(2026, 9, 14, 23))]);
+    expect(days.map((d) => [d.day.getDate(), d.items.map((i) => i.taskId)])).toEqual([
+      [17, ["a", "b"]],
+      [14, ["c"]],
+    ]);
+  });
+
+  it("explains an empty history", async () => {
+    const client = new FakeClient();
+    client.historyGroups = [];
+    await open({ client });
+    expect(await screen.findByText("Nothing to go back to yet")).toBeTruthy();
+    expect(screen.getByText("Each time the AI changes your files, a point shows here so you can undo it.")).toBeTruthy();
+  });
+
   it("opens a row on click and shows its entries in plain language", async () => {
     await open();
-    const row = await screen.findByRole("button", { name: /Other changes/ });
+    const row = await screen.findByRole("button", { name: /Outside a task/ });
     // Only an open row points at its body.
     expect(row.getAttribute("aria-controls")).toBeNull();
     fireEvent.click(row);
@@ -87,10 +124,10 @@ describe("HistoryPanel", () => {
 
   it("goes back to before a task after a confirmation", async () => {
     const { client, onRestored, onClose } = await open();
-    fireEvent.click(await screen.findByRole("button", { name: "Go back to before this task" }));
-    expect(screen.getByText("Go back to before this task? Everything it changed in your files will be undone.")).toBeTruthy();
+    fireEvent.click(await screen.findByRole("button", { name: "Undo this task" }));
+    expect(screen.getByText("Undo “Plan the week”?")).toBeTruthy();
     expect(screen.queryByText(/later task/)).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Yes, go back" }));
+    fireEvent.click(screen.getByRole("button", { name: "Undo task" }));
     await waitFor(() => expect(client.restoredTasks).toEqual(["t2"]));
     expect(onRestored).toHaveBeenCalledWith("task");
     expect(onClose).toHaveBeenCalled();
@@ -99,11 +136,13 @@ describe("HistoryPanel", () => {
   it("says when going back also undoes later tasks", async () => {
     await open();
     fireEvent.click(await screen.findByRole("button", { name: /A question/ }));
-    fireEvent.click(screen.getAllByRole("button", { name: "Go back to before this task" })[1]);
+    fireEvent.click(screen.getAllByRole("button", { name: "Undo this task" })[1]);
     expect(screen.getByText(/This also undoes 1 later task\./)).toBeTruthy();
+    // The button counts the task itself and the later one.
+    expect(screen.getByRole("button", { name: "Undo 2 tasks" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-    fireEvent.click(screen.getByRole("button", { name: /Other changes/ }));
-    const points = screen.getAllByRole("button", { name: "Go back to this point" });
+    fireEvent.click(screen.getByRole("button", { name: /Outside a task/ }));
+    const points = screen.getAllByRole("button", { name: "Go back here" });
     // The oldest point, under both tasks.
     fireEvent.click(points[points.length - 1]);
     expect(screen.getByText(/This also undoes 2 later tasks\./)).toBeTruthy();
@@ -111,11 +150,11 @@ describe("HistoryPanel", () => {
 
   it("focuses the yes when a confirmation opens, and gives focus back on Cancel", async () => {
     await open();
-    const trigger = await screen.findByRole("button", { name: "Go back to before this task" });
+    const trigger = await screen.findByRole("button", { name: "Undo this task" });
     fireEvent.click(trigger);
-    expect(document.activeElement?.textContent).toBe("Yes, go back");
+    expect(document.activeElement?.textContent).toBe("Undo task");
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Go back to before this task" }));
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Undo this task" }));
   });
 
   it("disables every way back while a restore is on its way", async () => {
@@ -124,11 +163,11 @@ describe("HistoryPanel", () => {
     let release!: () => void;
     client.restoreGate = new Promise((r) => (release = r));
     await open({ client });
-    fireEvent.click(await screen.findByRole("button", { name: "Go back to before this task" }));
-    const yes = screen.getByRole("button", { name: "Yes, go back" }) as HTMLButtonElement;
+    fireEvent.click(await screen.findByRole("button", { name: "Undo this task" }));
+    const yes = screen.getByRole("button", { name: "Undo task" }) as HTMLButtonElement;
     fireEvent.click(yes);
     expect(yes.disabled).toBe(true);
-    for (const b of screen.getAllByRole("button", { name: "Go back to this point" })) expect((b as HTMLButtonElement).disabled).toBe(true);
+    for (const b of screen.getAllByRole("button", { name: "Go back here" })) expect((b as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(yes);
     release();
     await waitFor(() => expect(client.restoredTasks).toEqual(["t2"]));
@@ -139,7 +178,7 @@ describe("HistoryPanel", () => {
     client.historyError = new Error("disk");
     await open({ client });
     expect((await screen.findByRole("alert")).textContent).toBe("I couldn't read the history. Close it and try again.");
-    expect(screen.queryByText("Nothing yet.")).toBeNull();
+    expect(screen.queryByText("Nothing to go back to yet")).toBeNull();
   });
 
   it("calls a task whose action the harness no longer has 'A task'", async () => {
@@ -154,29 +193,30 @@ describe("HistoryPanel", () => {
 
   it("goes back to one point", async () => {
     const { client } = await open();
-    fireEvent.click((await screen.findAllByRole("button", { name: "Go back to this point" }))[1]);
+    fireEvent.click((await screen.findAllByRole("button", { name: "Go back here" }))[1]);
     fireEvent.click(screen.getByRole("button", { name: "Yes, go back" }));
     await waitFor(() => expect(client.restored).toEqual(["m2"]));
   });
 
   it("tells the window a point was restored", async () => {
     const { onRestored } = await open();
-    fireEvent.click((await screen.findAllByRole("button", { name: "Go back to this point" }))[0]);
+    fireEvent.click((await screen.findAllByRole("button", { name: "Go back here" }))[0]);
     fireEvent.click(screen.getByRole("button", { name: "Yes, go back" }));
     await waitFor(() => expect(onRestored).toHaveBeenCalledWith("point"));
   });
 
   it("disables both kinds of going back while a turn is live", async () => {
     await open({ disabled: true });
-    expect(((await screen.findByRole("button", { name: "Go back to before this task" })) as HTMLButtonElement).disabled).toBe(true);
-    for (const b of screen.getAllByRole("button", { name: "Go back to this point" })) expect((b as HTMLButtonElement).disabled).toBe(true);
+    expect(((await screen.findByRole("button", { name: "Undo this task" })) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByRole("status").textContent).toBe("The AI is working. You can go back when it finishes.");
+    for (const b of screen.getAllByRole("button", { name: "Go back here" })) expect((b as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("offers no 'before this task' for the group outside any task", async () => {
     await open();
-    fireEvent.click(await screen.findByRole("button", { name: /Other changes/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /Outside a task/ }));
     expect(screen.getByText("Started")).toBeTruthy();
-    expect(screen.getAllByRole("button", { name: "Go back to before this task" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "Undo this task" })).toHaveLength(1);
   });
 
   it("keeps an unknown subject as it is", () => {

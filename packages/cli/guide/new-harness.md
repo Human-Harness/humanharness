@@ -48,6 +48,7 @@ Ask which choices the person makes along the way, and what they need to see in o
 
 - When picking among up to four ways to continue is enough, it is the core `choices` block (`show_choices`).
 - When they need to see structured information (a comparison, a plan, a diagram), design a custom block: `defineBlock({ description, visible: true, schema, example })` in `harness.config.ts`, a component in `ui/` registered in `ui/App.tsx`, and its strings in both locale files. Keep schemas small and bounded (maximum lengths, maximum items). A state-only block (`visible: false`) updates a side panel instead.
+- When the person must answer something the task depends on (commit to an answer, explain in their own words, sum up, make flashcards), give the block an `input`: a `z.object` of the answer, checked by the app. Name each field's label in `inputUi`, a `submitLabel` if "Send" doesn't fit, and `skippable: true` when skipping is fine. The core draws the form; register a component only for fields it can't draw (`check` says which), and if that component reuses `InputForm`, key it by `input.blockId`. Add `saveTo: { collection }` to keep each answer in `data`; when `saveTo.records` maps an answer to records, derive their keys from the answer, so answering again replaces them instead of adding copies. The core `annotate` block lets the agent mark the person's words. Ask what the agent does with the answer, and write it in the brief.
 
 Replace the template's `example_card` block once the harness has its own.
 

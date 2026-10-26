@@ -13,6 +13,7 @@
     "paths": {
       "@humanharness/cli/sdk": ["./packages/cli/src/sdk.ts"],
       "@humanharness/cli/ui": ["./packages/cli/src/ui.ts"],
+      // Only for the fake-agent quiz fixture's screen (packages/fake-agent/fixtures/input-harness/ui).
       "@humanharness/ui": ["./packages/ui/src/index.ts"]
     }
   },

@@ -26,6 +26,8 @@ test("the person answers an input block; the agent gets the line and the JSON, a
     await page.getByRole("button", { name: /Practicar/ }).first().click();
     const question = page.getByRole("region", { name: "¿Quién comió más?" });
     await expect(question).toBeVisible();
+    // tasks.json knows the open question before anything is sent.
+    await expect.poll(() => readTasks(s.folder).current?.pendingInput?.block).toBe("commit_answer");
 
     // Nothing written: the app refuses it, and the error sits next to the field.
     await question.getByRole("button", { name: "Me comprometo" }).click();

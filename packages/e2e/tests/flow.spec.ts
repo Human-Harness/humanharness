@@ -60,8 +60,10 @@ test("a topic answered with blocks, then next: the note is saved and the next to
     expect(agents).not.toContain("### Respuestas de bloques de entrada");
     expect(agents).not.toContain("show_annotate");
     expect(readTasks(s.folder).current).not.toHaveProperty("pendingInput");
-    const chatLines = readJsonl<{ blocks: Record<string, unknown>[] }>(path.join(s.folder, ".harness", "chats", "main.jsonl"));
-    expect(chatLines.flatMap((e) => e.blocks).every((b) => !("id" in b) && !("input" in b))).toBe(true);
+    const chatLines = readJsonl<{ blocks?: Record<string, unknown>[] }>(path.join(s.folder, ".harness", "chats", "main.jsonl"));
+    const shownBlocks = chatLines.flatMap((e) => e.blocks ?? []);
+    expect(shownBlocks.length).toBeGreaterThan(0);
+    expect(shownBlocks.every((b) => !("id" in b) && !("input" in b))).toBe(true);
     await expect(page.getByRole("list", { name: "Lo que ya quedó claro" }).getByRole("button", { name: "El manifiesto" })).toBeVisible();
 
     // Settings › Uso: the manifest task took the five-hour window from 10 % to 14 % (spec 3b).

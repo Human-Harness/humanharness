@@ -270,6 +270,24 @@
     "title": "How do we continue?",
     "failed": "That didn't go through. Pick an option again."
   },
+  "modes": {
+    "recommendTitle": "How do we work?",
+    "recommended": "Recommended",
+    "seeAll": "See all modes",
+    "switched": "Switched to {{mode}}",
+    "bar": "Task mode",
+    "current": "Mode: {{mode}}",
+    "none": "No mode chosen yet",
+    "change": "Change mode",
+    "belowTier": "Running below the level this mode asks for",
+    "askTitle": "How do you want to work?",
+    "tierTitle": "{{mode}} asks for more power",
+    "tierText": "It works best at the {{required}} level; this task runs at {{current}}.",
+    "keepTier": "Continue with the current model",
+    "newTask": "Start a new task with {{mode}}",
+    "notNow": "Not now",
+    "failed": "That didn't go through. Pick a mode again."
+  },
   "annotate": {
     "title": "Notes on your answer",
     "noAnswer": "The answer these notes are about isn't in this chat.",

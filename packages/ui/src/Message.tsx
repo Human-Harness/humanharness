@@ -9,6 +9,7 @@ import {
   type ChoiceOption,
   type InputIssue,
   type InputSpec,
+  type ModeView,
   type RespondResult,
   type SendOptions,
   partsOf,
@@ -66,6 +67,13 @@ export interface BlockProps {
   input?: InputProps;
   /** The answer an `annotate` block is about: an answered block's id, or "last" (the latest one before this block). */
   answerOf?: (ref: string) => BlockAnswer | null;
+  /**
+   * Task modes (task-modes spec §5): picks a mode for the open task. True only when the switch was sent (not while
+   * the tier question waits, nor when refused). Absent without modes (D0), and on a block of an earlier task.
+   */
+  chooseMode?: (mode: string) => boolean;
+  /** The harness's modes as the window shows them, the action's modes (`allowed`), and the task's mode now. */
+  modes?: { views: Record<string, ModeView>; allowed: string[]; current?: string };
 }
 
 /** What a block component can do besides showing its data. */

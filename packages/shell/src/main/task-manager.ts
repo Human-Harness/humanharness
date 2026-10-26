@@ -83,6 +83,11 @@ export interface TaskDeps {
   markAnswered?(chat: string, answer: BlockAnswer): Promise<boolean>;
   /** Writes an answer's records to a data collection, as the person, in `scope` (spec §6 `saveTo`). Throws a refusal. */
   saveAnswer?(collection: string, records: Record<string, unknown>[], scope: string): Promise<void>;
+  /**
+   * No task's session runs now: one just ended (closed, interrupted, failed), or a new one is about to start. The
+   * harness's settings rewrite AGENTS.md here (harness-settings spec D4). Failures are logged. Absent: nothing (D0).
+   */
+  betweenTasks?(): Promise<void>;
   now?: () => Date;
   newId?: () => string;
 }
@@ -352,6 +357,19 @@ export class TaskManager {
     const id = this.turnTask;
     if (!id) return Promise.resolve();
     return this.update((s) => (s.current?.id === id ? { ...s, current: { ...s.current, session: { id: session.id, started: session.started } } } : s));
+  }
+
+  /**
+   * Runs `fn` after the running task operation, if no task is open then (harness-settings spec D4): true when it ran.
+   * Queued like `interrupt`, so a new session never starts while `fn` runs; nor does a new runtime, since only a
+   * task's turn (inside an operation) creates one.
+   */
+  whenNoTask(fn: () => Promise<void>): Promise<boolean> {
+    return this.queue(async () => {
+      if ((await this.d.store.load()).current) return false;
+      await fn();
+      return true;
+    });
   }
 
   private op<T>(fn: () => Promise<T>): Promise<T> {
@@ -657,6 +675,7 @@ export class TaskManager {
     // Cancelled or quitting since the operation began (e.g. right after the closing turn): start nothing.
     if (this.cancelRequested) return this.stopped();
     await this.endSession();
+    await this.between();
     const context = await this.contextFor(scope, task.action);
     const engine = await this.d.engine();
     // Resolved once: the task keeps its model, effort and cap to the end (spec D2).
@@ -889,6 +908,7 @@ export class TaskManager {
       return { ...withStatus(s, scopeOfTask(c), c.action, "done"), current: null };
     });
     await this.endSession();
+    await this.between();
   }
 
   private async saveNote(task: CurrentTask, note: SavedNote, final = true): Promise<void> {
@@ -950,6 +970,14 @@ export class TaskManager {
       await this.d.endSession();
     } catch (err) {
       console.error("Could not end the engine session", err);
+    }
+  }
+
+  private async between(): Promise<void> {
+    try {
+      await this.d.betweenTasks?.();
+    } catch (err) {
+      console.error("Could not prepare the next session", err);
     }
   }
 

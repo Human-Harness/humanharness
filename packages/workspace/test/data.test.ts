@@ -200,4 +200,13 @@ describe("DataStore.putMany", () => {
     expect((await store.query("concepts", {}, person)).total).toBe(1);
     await expect(store.putMany("cards", [{ n: 1, front: "x" }], agent)).rejects.toThrow(/may not change/);
   });
+
+  it("refuses two records with the same key", async () => {
+    const store = new DataStore(tmp(), data);
+    await expect(store.putMany("concepts", [{ id: "a", name: "A", state: "seen" }, { id: "a", name: "A2", state: "seen" }], person)).rejects.toMatchObject({
+      code: "invalid",
+      message: 'Two records in "concepts" have the key "a"',
+    });
+    expect((await store.query("concepts", {}, person)).total).toBe(0);
+  });
 });

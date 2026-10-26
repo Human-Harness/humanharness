@@ -180,6 +180,13 @@ describe("saveTo", () => {
     expect(harnessWith({ cards: { scoped: false, key: "id", schema: z.object({ id: z.string() }), agent: "read" } }).blocks.plain.saveTo?.collection).toBe("cards");
   });
 
+  it("checks the shape of saveTo", () => {
+    const base = { description: "x", visible: true, schema: z.object({}), input: z.object({ id: z.string() }), example: {} };
+    expect(() => defineBlock({ ...base, saveTo: { collection: 3 as never } })).toThrow(/saveTo needs a collection name/);
+    expect(() => defineBlock({ ...base, saveTo: { collection: "" } })).toThrow(/saveTo needs a collection name/);
+    expect(() => defineBlock({ ...base, saveTo: { collection: "cards", records: "nope" as never } })).toThrow(/saveTo.records must be a function/);
+  });
+
   it("answerRecords: the value itself, or the block's mapping on a copy; nothing for a skip", () => {
     expect(answerRecords("plain", plain, { id: "a" })).toEqual([{ id: "a" }]);
     const value = { summary: "s", cards: [{ front: "2+2", back: "4" }] };

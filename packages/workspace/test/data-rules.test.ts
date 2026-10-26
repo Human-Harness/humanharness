@@ -97,6 +97,16 @@ describe("rules", () => {
     }
   });
 
+  it("putMany: the rules see the batch's earlier records, like puts in a row, and a refusal writes none", async () => {
+    const atMostTwo: DataRules = (_n, _p, ctx) => (ctx.records("concepts").length < 2 ? true : "At most two concepts");
+    const s = store(atMostTwo);
+    const rec = (id: string) => ({ id, state: "seen", evidence: [] });
+    await expect(s.putMany("concepts", [rec("a"), rec("b"), rec("c")], agent)).rejects.toMatchObject({ code: "refused", message: "At most two concepts" });
+    expect((await s.query("concepts", {}, agent)).total).toBe(0);
+    await s.putMany("concepts", [rec("a"), rec("b")], agent);
+    expect((await s.query("concepts", {}, agent)).records.map((r) => r.id)).toEqual(["a", "b"]);
+  });
+
   it("logs a collection whose file is broken, which the rules see as empty", async () => {
     const log: string[] = [];
     const seen: unknown[] = [];

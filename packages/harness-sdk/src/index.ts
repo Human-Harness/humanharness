@@ -72,7 +72,12 @@ const blockSchema = z.custom<Block>(
       (x.tool === undefined || (typeof x.tool === "string" && TOOL_NAME.test(x.tool))) &&
       x.schema instanceof z.ZodObject &&
       x.schema.safeParse(x.example).success &&
-      (x.input === undefined || x.input instanceof z.ZodObject)
+      (x.input === undefined || x.input instanceof z.ZodObject) &&
+      (x.saveTo === undefined ||
+        (typeof x.saveTo === "object" &&
+          x.saveTo !== null &&
+          typeof x.saveTo.collection === "string" &&
+          (x.saveTo.records === undefined || typeof x.saveTo.records === "function")))
     );
   },
   { message: "Expected a block created with defineBlock()" },

@@ -71,6 +71,10 @@ export function defineBlock<S extends z.ZodObject, I extends z.ZodObject = z.Zod
     return block;
   }
   if (!(block.input instanceof z.ZodObject)) throw new Error("A block's input must be a z.object(...) schema");
+  if (block.saveTo !== undefined) {
+    if (typeof block.saveTo?.collection !== "string" || !block.saveTo.collection) throw new Error("saveTo needs a collection name");
+    if (block.saveTo.records !== undefined && typeof block.saveTo.records !== "function") throw new Error("saveTo.records must be a function");
+  }
   for (const field of Object.keys(block.inputUi ?? {})) {
     if (!Object.hasOwn(block.input.shape, field)) throw new Error(`inputUi.${field}: "${field}" is not a field of the block's input`);
   }

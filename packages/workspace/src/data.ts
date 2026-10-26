@@ -173,28 +173,37 @@ export class DataStore {
 
   /**
    * Writes several records at once (an answer's `saveTo`, input-blocks spec §6). Each is checked like `put`
-   * (permission, schema, key, rules) before the file is saved once: any refusal writes none. The rules see the
-   * collections as they were before the batch.
+   * (permission, schema, key, rules) before the file is saved once: any refusal writes none. Two records with the
+   * same key are refused. The rules run as for `put` calls in a row: `records(name)` holds the batch's earlier records.
    */
   putMany(name: string, records: unknown[], ctx: DataContext): Promise<DataRecord[]> {
     return this.serialize(async () => {
       const c = this.writable(name, ctx);
       const scope = this.scopeFor(name, ctx.scope);
       if (c.single && records.length > 1) throw new DataError("invalid", `"${name}" holds one record`);
-      const file = await this.loadForWrite(name, c, scope);
-      let current = file.records;
-      const written: { record: DataRecord; key: DataKey | undefined }[] = [];
-      for (const record of records) {
+      const written = records.map((record) => {
         const next = this.parse(name, c, record);
-        const key = c.single ? undefined : this.keyOf(c, next);
-        const prev = (c.single ? current[0] : current.find((r) => r[c.key!] === key)) ?? null;
-        await this.checkRules(name, c, scope, next, prev, ctx);
-        current = c.single ? [next] : [...current.filter((r) => r[c.key!] !== key), next];
-        written.push({ record: next, key });
+        return { record: next, key: c.single ? undefined : this.keyOf(c, next) };
+      });
+      const keys = new Set<DataKey>();
+      for (const { key } of written) {
+        if (key === undefined) continue;
+        if (keys.has(key)) throw new DataError("invalid", `Two records in "${name}" have the key "${key}"`);
+        keys.add(key);
       }
       if (written.length === 0) return [];
+      const file = await this.loadForWrite(name, c, scope);
+      let current = file.records;
+      // One snapshot for the whole batch; this collection's entry follows the batch.
+      const snapshot = c.rules ? await this.rulesSnapshot(name, scope) : undefined;
+      for (const { record: next, key } of written) {
+        const prev = (c.single ? current[0] : current.find((r) => r[c.key!] === key)) ?? null;
+        snapshot?.set(name, current);
+        await this.checkRules(name, c, scope, next, prev, ctx, snapshot);
+        current = c.single ? [next] : [...current.filter((r) => r[c.key!] !== key), next];
+      }
       await this.save(name, c, scope, current);
-      for (const { key } of written) await this.touch(name, scope, key, true);
+      await this.touch(name, scope, written.map((w) => w.key), true);
       for (const { key } of written) this.emit({ collection: name, scope, who: ctx.who, op: "put", ...(key !== undefined ? { key } : {}) });
       return written.map((w) => w.record);
     });
@@ -280,12 +289,8 @@ export class DataStore {
     return key;
   }
 
-  /**
-   * Check 3 (spec §4.3): the harness's `rules`, a pure synchronous function. It gets copies: of the records, and
-   * of the other collections in the same scope (app-wide ones too), read before it runs.
-   */
-  private async checkRules(name: string, c: Collection, scope: string, next: DataRecord | null, prev: DataRecord | null, ctx: DataContext): Promise<void> {
-    if (!c.rules) return;
+  /** What the rules of `name` see of every collection in `scope` (app-wide ones too); a broken file reads as empty. */
+  private async rulesSnapshot(name: string, scope: string): Promise<Map<string, DataRecord[]>> {
     const snapshot = new Map<string, DataRecord[]>();
     for (const [other, oc] of Object.entries(this.collections)) {
       const folder = oc.scoped ? scope : APP_SCOPE;
@@ -297,6 +302,24 @@ export class DataStore {
       if (loaded.broken) this.log(`${dataPath(folder, other)} is not valid JSON: the rules of "${name}" see "${other}" as empty`);
       snapshot.set(other, loaded.records);
     }
+    return snapshot;
+  }
+
+  /**
+   * Check 3 (spec §4.3): the harness's `rules`, a pure synchronous function. It gets copies: of the records, and
+   * of the other collections in the same scope (app-wide ones too), read before it runs unless `snapshot` is given.
+   */
+  private async checkRules(
+    name: string,
+    c: Collection,
+    scope: string,
+    next: DataRecord | null,
+    prev: DataRecord | null,
+    ctx: DataContext,
+    given?: Map<string, DataRecord[]>,
+  ): Promise<void> {
+    if (!c.rules) return;
+    const snapshot = given ?? (await this.rulesSnapshot(name, scope));
     const rulesCtx: RulesContext = {
       ...(ctx.action !== undefined ? { action: ctx.action } : {}),
       scope,
@@ -377,12 +400,16 @@ export class DataStore {
     await writeAtomic(dataFile(this.base, scope, name), `${JSON.stringify(value, null, 2)}\n`);
   }
 
-  private async touch(name: string, scope: string, key: DataKey | undefined, changed: boolean): Promise<void> {
+  /** Stamps (or forgets) when the records with `key` changed: one key, or a batch's keys in one write. */
+  private async touch(name: string, scope: string, key: DataKey | undefined | (DataKey | undefined)[], changed: boolean): Promise<void> {
     try {
       const stamps = await this.changedAt(name, scope);
-      const id = key === undefined ? "" : String(key);
-      if (changed) stamps[id] = (this.opts.now?.() ?? new Date()).toISOString();
-      else delete stamps[id];
+      const at = (this.opts.now?.() ?? new Date()).toISOString();
+      for (const k of Array.isArray(key) ? key : [key]) {
+        const id = k === undefined ? "" : String(k);
+        if (changed) stamps[id] = at;
+        else delete stamps[id];
+      }
       await writeAtomic(dataMetaFile(this.base, scope, name), `${JSON.stringify(stamps)}\n`);
     } catch (err) {
       this.log(`Could not stamp the change in "${name}": ${err instanceof Error ? err.message : String(err)}`);

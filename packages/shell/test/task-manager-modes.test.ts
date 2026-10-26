@@ -22,7 +22,9 @@ const profileOf = (tier: Tier): ModelProfile => ({ engine: "claude", tier, model
 const brief = (mode: string) => `Brief of ${mode}, in {{language}}.`;
 
 /** A task manager over memory, for a harness whose `study` action has three modes and whose `quiz` has none. */
-export function setup(opts: { script?: Event[][]; state?: TasksFile; modes?: false; defaultMode?: string; notes?: Note[]; gate?: Promise<void>; failSend?: number } = {}) {
+export function setup(
+  opts: { script?: Event[][]; state?: TasksFile; modes?: false; defaultMode?: string; notes?: Note[]; gate?: Promise<void>; failSend?: number; labels?: Record<string, string>; badBrief?: string } = {},
+) {
   let state = opts.state ?? emptyTasks();
   const script = [...(opts.script ?? [])];
   const turns: { message: string; options: TurnOptions }[] = [];
@@ -78,8 +80,11 @@ export function setup(opts: { script?: Event[][]; state?: TasksFile; modes?: fal
     ...(opts.modes === false
       ? {}
       : {
-          modes: MODES,
-          readModeBrief: async (mode: string) => brief(mode),
+          modes: Object.fromEntries(Object.entries(MODES).map(([id, m]) => [id, opts.labels?.[id] ? { ...m, label: opts.labels[id] } : m])),
+          readModeBrief: async (mode: string) => {
+            if (mode === opts.badBrief) throw new Error(`ENOENT: modes/${mode}.md`);
+            return brief(mode);
+          },
           modeSettings: async (mode: string) => (mode === "socratic" ? ["Ask many questions before explaining."] : []),
           tierOf: async (p: ModelProfile) => (p.tier === "custom" ? "standard" : p.tier),
         }),
@@ -103,6 +108,23 @@ describe("TaskManager: how a task starts (task-modes spec §3 defaultMode, §4)"
     await plain.manager.start("study");
     expect(plain.turns[0].message).toBe("# Task: study");
     expect(plain.views.at(-1)?.current).toEqual({ id: "t1", action: "study", status: "waiting" });
+    expect(t.floors).toEqual([undefined]);
+    expect(plain.floors).toEqual([undefined]);
+  });
+
+  it("a label with a newline stays on one line: a single `## Mode:` heading", async () => {
+    const t = setup({ defaultMode: "socratic", labels: { socratic: "Socratic\n  questions" } });
+    await t.manager.start("study");
+    expect(t.turns[0].message).toContain("## Mode: Socratic questions\n\nWork in this mode.");
+    expect(t.turns[0].message.match(/^## Mode:/gm)).toHaveLength(1);
+  });
+
+  it("a mode brief that can't be read refuses the start before the open task closes", async () => {
+    const t = setup({ badBrief: "feynman" });
+    await t.manager.start("quiz");
+    await expect(t.manager.start("study", undefined, undefined, "feynman")).rejects.toThrow("ENOENT");
+    expect(t.turns).toHaveLength(1);
+    expect(t.state().current).toMatchObject({ id: "t1", action: "quiz", status: "waiting" });
   });
 
   it("recommend (the default): the first message lists the action's modes with their hints, that message only", async () => {
@@ -173,6 +195,16 @@ describe("TaskManager: how a task starts (task-modes spec §3 defaultMode, §4)"
     const section = modeSection({ label: "Feynman", brief: brief("feynman"), settings: [] }, "en");
     expect(t.turns[0].message).toBe(resumeMessage({ language: "en", notesIndex: "", brief: "# Task: study\n\n{{notesIndex}}", mode: section, message: "Hi" }));
     expect(t.turns[0].options.mode).toBe("feynman");
+  });
+
+  it("a resumed session whose mode brief can't be read resumes without the mode's section (logged)", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const current = { id: "t1", action: "study", status: "waiting" as const, startedAt: "", turns: 2, mode: "feynman", modes: ["feynman"], resume: true as const };
+    const t = setup({ state: { version: 1, actions: {}, current }, badBrief: "feynman" });
+    await t.manager.ask("Hi");
+    expect(t.turns[0].message).toBe(resumeMessage({ language: "en", notesIndex: "", brief: "# Task: study\n\n{{notesIndex}}", message: "Hi" }));
+    expect(error).toHaveBeenCalledWith("Could not read the mode's brief; the task resumes without it", expect.any(Error));
+    error.mockRestore();
   });
 });
 
@@ -274,6 +306,33 @@ describe("TaskManager.chooseMode (task-modes spec §5)", () => {
     expect(await accepted).toEqual({ ok: true, switched: "turn" });
     await done;
     expect(t.turns[1].options.mode).toBe("feynman");
+  });
+
+  it("two picks during one turn both wait and run in order", async () => {
+    let release!: () => void;
+    const t = setup({ gate: new Promise<void>((r) => (release = r)) });
+    const started = t.manager.start("study");
+    await vi.waitFor(() => expect(t.turns).toHaveLength(1));
+    const first = t.manager.chooseMode("feynman");
+    const second = t.manager.chooseMode("socratic");
+    release();
+    await started;
+    expect(await first.accepted).toEqual({ ok: true, switched: "turn" });
+    expect(await second.accepted).toEqual({ ok: true, switched: "turn" });
+    await Promise.all([first.done, second.done]);
+    expect(t.turns.map((x) => x.options.mode)).toEqual([undefined, "feynman", "socratic"]);
+    expect(t.state().current).toMatchObject({ mode: "socratic", modes: ["feynman", "socratic"] });
+  });
+
+  it("'new-task' with a mode brief that can't be read is refused before the task closes", async () => {
+    const t = setup({ badBrief: "worked" });
+    await t.manager.start("study");
+    const { accepted, done } = t.manager.chooseMode("worked", { belowTier: "new-task" });
+    await expect(accepted).rejects.toThrow("ENOENT");
+    await expect(done).rejects.toThrow("ENOENT");
+    expect(t.turns).toHaveLength(1);
+    expect(t.state().current).toMatchObject({ id: "t1", status: "waiting" });
+    expect(t.emitted).toEqual([]);
   });
 
   it("a task whose session was lost switches quietly; its resumed session carries the mode", async () => {

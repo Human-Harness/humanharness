@@ -10,7 +10,10 @@ export interface NoteMeta {
   action?: string;
   date: string;
   engine: string;
-  /** The modes the task used, in first-use order (task-modes spec §6). Absent without modes (D0). */
+  /**
+   * The modes the task used, in first-use order (task-modes spec §6). Absent without modes (D0). Written by
+   * `renderNote` (a `modes:` front-matter line), not read back by `parseNote`: a `Note` read from disk never has it.
+   */
   modes?: string[];
 }
 

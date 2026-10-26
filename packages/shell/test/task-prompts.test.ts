@@ -125,12 +125,12 @@ describe("mode prompts (task-modes spec §4, §5.4, §6)", () => {
     );
   });
 
-  it("the switch carries the last checkpoint's summary when there is one (spec §10.1); a label is never filled again", () => {
-    const text = modePrompt({ label: "A $& {{language}}", brief: "Go.", settings: [] }, { language: "en", soFar: ["Halves make a whole.", "Thirds too."] });
+  it("the switch carries the last checkpoint's summary when there is one (spec §10.1), each point on one line; a label is never filled again", () => {
+    const text = modePrompt({ label: "A $& {{language}}", brief: "Go.", settings: [] }, { language: "en", soFar: ["Halves make a whole.", "Thirds\n  too."] });
     expect(text).toBe(
       [
         'From now on work in the mode "A $& {{language}}". Keep everything decided so far in this conversation.',
-        "What is clear so far (the last checkpoint): Halves make a whole. Thirds too.",
+        "What is clear so far (the last checkpoint): Halves make a whole.; Thirds too.",
         "Go.",
         "Then continue with the person in this mode.",
       ].join("\n\n"),

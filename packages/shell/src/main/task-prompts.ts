@@ -102,18 +102,22 @@ export const MODE_END = "Then continue with the person in this mode.";
 export const RECOMMEND_PROMPT =
   "Before you start the work, recommend how to work in this task: call `show_recommend_mode` with the mode that fits best, up to 3 short reasons and up to 2 alternatives, then end your answer and wait for the person's pick. Do not call `show_choices` in this answer.";
 
+/** A manifest text on one line: a newline in a label or hint must not break the prompt's heading or list. */
+export const oneLine = (s: string): string => s.replace(/\s*\n\s*/g, " ").trim();
+
 /** A mode's brief filled like an action's (`{{language}}`); it never gets the notes index: the session has it. */
 const modeBrief = (brief: string, language: Language): string => fillPrompt(brief, { language, notesIndex: "" });
 const settingLines = (settings: readonly string[]): string[] => (settings.length > 0 ? [settings.map((s) => `- ${s}`).join("\n")] : []);
 
 /**
  * The switch's message (spec §5.4): one turn in the same session with the new mode's brief and settings. `soFar`: the
- * last checkpoint note's summary, when the task has one (spec §10.1). Inserted text is never filled again.
+ * last checkpoint note's summary, when the task has one (spec §10.1), each point on one line. Inserted text is never
+ * filled again. Labels and hints come one-lined from their only caller (the task manager's `modeText`, `hintOf`).
  */
 export function modePrompt(mode: ModeText, vars: { language: Language; soFar?: readonly string[] }): string {
   return [
     MODE_PROMPT.replace("{{label}}", () => mode.label),
-    ...(vars.soFar && vars.soFar.length > 0 ? [`What is clear so far (the last checkpoint): ${vars.soFar.join(" ")}`] : []),
+    ...(vars.soFar && vars.soFar.length > 0 ? [`What is clear so far (the last checkpoint): ${vars.soFar.map(oneLine).join("; ")}`] : []),
     modeBrief(mode.brief, vars.language),
     ...settingLines(mode.settings),
     MODE_END,

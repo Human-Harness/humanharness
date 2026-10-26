@@ -30,7 +30,7 @@ import {
   nextInPath,
 } from "@humanharness/ui/client";
 import { APP_SCOPE, type HistoryTrailer, MAIN_SCOPE, NOTE_PREFIX, type Note, type NoteMeta, buildNotesIndex, isScopeId, noteSlug } from "@humanharness/workspace";
-import { CHECKPOINT_PROMPT, type ModeText, QUESTION_PROMPT, closePrompt, fillPrompt, modePrompt, modeSection, recommendSection, resumeMessage } from "./task-prompts";
+import { CHECKPOINT_PROMPT, type ModeText, QUESTION_PROMPT, closePrompt, fillPrompt, modePrompt, modeSection, oneLine, recommendSection, resumeMessage } from "./task-prompts";
 import { type CurrentTask, type PendingInput, type TasksFile, interrupted, keptQuestion, scopeOfTask, statusesIn, withStatus } from "./task-store";
 import { type TurnOptions, isHeld } from "./turn-controller";
 
@@ -170,9 +170,6 @@ const currentView = (c: CurrentTask, tier?: Tier): CurrentTaskView => ({
 const SO_FAR_POINTS = 5;
 const SO_FAR_CHARS = 400;
 
-/** A manifest text on one line: a newline in a label or hint must not break the prompt's heading or list. */
-const oneLine = (s: string) => s.replace(/\s*\n\s*/g, " ").trim();
-
 /**
  * The app-driven flow (spec §4.2): one engine session per task. idle → running → waiting; a message
  * while waiting follows up in the same session; picking "next" or another topic closes the task with
@@ -291,7 +288,7 @@ export class TaskManager {
   /**
    * The person picks `mode` for the open task (task-modes spec §5). It waits for a running turn to end and never cancels
    * it (§5.2). `accepted` resolves with a refusal or with how the switch goes on, before any turn's events; `done` once
-   * its turn has ended. Both reject when the operation can't run (closing, another operation just started).
+   * its turn has ended. Both reject when the operation can't run (the app is closing).
    */
   chooseMode(mode: string, choice: ModeChoice = {}): { accepted: Promise<ModeResult>; done: Promise<void> } {
     let settled = false;
@@ -304,17 +301,17 @@ export class TaskManager {
       };
       refuse = reject;
     });
-    const done = this.whenIdle()
-      .then(() => this.op(() => this.modeNow(mode, choice, take)))
-      .then(
-        () => {
-          if (!settled) refuse(new Error("The mode was not switched"));
-        },
-        (err: unknown) => {
-          if (!settled) refuse(err);
-          throw err;
-        },
-      );
+    const run = () => this.op(() => this.modeNow(mode, choice, take));
+    // Not busy: it runs now, as any operation does; busy: it waits its turn (§5.2), behind any earlier pick.
+    const done = (this.isBusy() ? this.whenFree(run) : run()).then(
+      () => {
+        if (!settled) refuse(new Error("The mode was not switched"));
+      },
+      (err: unknown) => {
+        if (!settled) refuse(err);
+        throw err;
+      },
+    );
     return { accepted, done };
   }
 
@@ -447,6 +444,13 @@ export class TaskManager {
     }
   }
 
+  /** Runs `fn` once idle; another waiter that got there first makes it wait again, so a second pick queues. */
+  private async whenFree<T>(fn: () => Promise<T>): Promise<T> {
+    do await this.whenIdle();
+    while (this.isBusy() && !this.closed);
+    return fn();
+  }
+
   private op<T>(fn: () => Promise<T>): Promise<T> {
     if (this.closed) return Promise.reject(new Error("The app is closing"));
     if (this.isBusy()) return Promise.reject(new Error("A turn is already running"));
@@ -545,17 +549,19 @@ export class TaskManager {
     const modes = this.modesOf(action);
     // Checked before anything closes, like the scope below.
     if (mode !== undefined && !modes.includes(mode)) throw new Error("Unknown mode");
+    // How the task starts (spec §3 `defaultMode`): in a mode, asking for a recommendation, or as before (D0).
+    const start = mode ?? this.startMode(action, modes);
+    // Read before anything closes (a scope switch closes too): a mode brief that can't be read starts nothing.
+    const text = start !== null && start !== "recommend" ? await this.modeText(start) : null;
     if (scope !== undefined && !(await this.switchNow(scope))) return this.stopped();
     // Checked before anything closes: a required action with no open scope starts nothing.
     const where = this.scopeFor(await this.d.store.load(), action);
     if (!(await this.closeCurrent())) return this.stopped();
     const template = await this.d.readPrompt(action);
     const language = await this.d.language();
-    // How the task starts (spec §3 `defaultMode`): in a mode, asking for a recommendation, or as before (D0).
-    const start = mode ?? this.startMode(action, modes);
     let section = "";
     if (start === "recommend") section = recommendSection(modes.map((id) => this.hintOf(id)));
-    else if (start !== null) section = modeSection(await this.modeText(start), language);
+    else if (text) section = modeSection(text, language);
     const inMode = start !== null && start !== "recommend" ? { mode: start, modes: [start] } : {};
     await this.begin(
       { action, ...inMode },
@@ -633,6 +639,8 @@ export class TaskManager {
     const current = await this.tierFor(c);
     const below = required !== undefined && current !== undefined && tierBelow(current, required);
     if (below && choice.belowTier === undefined) return take({ ok: false, reason: "tier", required, current });
+    // Read before anything is taken: a brief that can't be read refuses the switch (and a new task, before the close).
+    const text = await this.modeText(mode);
     if (below && choice.belowTier === "new-task") {
       take({ ok: true, switched: "new-task" });
       return this.endsInWindow(async () => {
@@ -641,8 +649,6 @@ export class TaskManager {
         return this.startNow(c.action!, undefined, undefined, mode, required);
       });
     }
-    // Read before anything is taken: a brief that can't be read refuses the switch.
-    const text = await this.modeText(mode);
     if (c.resume) {
       // The session is gone (a folder move): nothing to tell now; the resumed session's first message carries the mode.
       await this.setMode(c.id, mode, below);

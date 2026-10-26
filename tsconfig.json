@@ -12,7 +12,8 @@
     "types": ["node"],
     "paths": {
       "@humanharness/cli/sdk": ["./packages/cli/src/sdk.ts"],
-      "@humanharness/cli/ui": ["./packages/cli/src/ui.ts"]
+      "@humanharness/cli/ui": ["./packages/cli/src/ui.ts"],
+      "@humanharness/ui": ["./packages/ui/src/index.ts"]
     }
   },
   "include": ["packages/*/src", "packages/*/test", "packages/fake-agent/fixtures", "packages/e2e/tests", "packages/e2e/real", "packages/e2e/playwright.config.ts", "harnesses/*/*.ts", "harnesses/*/ui", "harnesses/*/test", "packages/cli/template/*.ts", "packages/cli/template/ui"]

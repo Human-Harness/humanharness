@@ -4,12 +4,14 @@ import { z } from "zod";
 import { type Block, blockToolName } from "./block";
 import { CORE_BLOCKS, INPUT_CORE_BLOCKS, RESERVED_BLOCK_NAMES } from "./core-blocks";
 import { dataSchema } from "./data";
+import { settingsSchema } from "./settings";
 
 export * from "./block";
 export * from "./core-blocks";
 export * from "./data";
 export * from "./input";
 export * from "./answer";
+export * from "./settings";
 /** The zod a manifest builds its block schemas with: the same instance the SDK validates them against. */
 export { z } from "zod";
 
@@ -104,6 +106,8 @@ const manifestSchema = z.object({
   scopes: z.object({ label: text, plural: text }).optional(),
   /** Structured records the harness keeps (spec §4): collections by name. */
   data: dataSchema,
+  /** Knobs the person sets in a Settings tab of the harness's own (harness-settings spec). Absent: no tab (D0). */
+  settings: settingsSchema.optional(),
   /** One line under the name on the home screen. */
   tagline: text.optional(),
   /** How translations of this harness's screens should sound, in English ("warm and informal, short sentences"). */

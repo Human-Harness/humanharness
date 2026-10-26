@@ -67,6 +67,27 @@ describe("check: errors", () => {
     expect(empty.findings.filter((f) => f.rule === "brief-missing").map((f) => f.message)).toEqual(['Action "example": its brief ./agent/tasks/example.md is empty.']);
   });
 
+  it("brief-missing: a mode's brief that is missing or empty (task-modes spec §3); D0: the template has no modes", async () => {
+    const dir = await fixture((d) => {
+      replaceIn(d, "harness.config.ts", 'cost: "light",', 'cost: "light",\n      modes: ["plain", "empty", "gone"],');
+      replaceIn(
+        d,
+        "harness.config.ts",
+        'questions: { tier: "light" },',
+        'questions: { tier: "light" },\n  modes: {\n    plain: { label: "Plain", brief: "./agent/modes/plain.md" },\n    empty: { label: "Empty", brief: "./agent/modes/empty.md" },\n    gone: { label: "Gone", brief: "./agent/modes/gone.md" },\n  },',
+      );
+      fs.mkdirSync(path.join(d, "agent", "modes"));
+      fs.writeFileSync(path.join(d, "agent", "modes", "plain.md"), "Work plainly, in {{language}}.\n");
+      fs.writeFileSync(path.join(d, "agent", "modes", "empty.md"), " \n");
+    });
+    const r = await checkHarness(dir);
+    expect(r.findings.filter((f) => f.rule === "brief-missing").map((f) => `${f.file} ${f.message}`)).toEqual([
+      'agent/modes/empty.md Mode "empty": its brief ./agent/modes/empty.md is empty.',
+      'harness.config.ts Mode "gone": its brief ./agent/modes/gone.md does not exist.',
+    ]);
+    expect(errors(r).filter((f) => f.rule !== "brief-missing")).toEqual([]);
+  });
+
   it("schema: instructions or locales pointing outside the harness folder", async () => {
     const dir = await fixture((d) => {
       replaceIn(d, "harness.config.ts", 'instructions: "./agent/AGENTS.md",', 'instructions: "../x.md", locales: "../locales",');

@@ -456,6 +456,17 @@ export interface DataOptions {
   scope?: string;
 }
 
+/** The harness's settings as the window sees them (harness-settings spec §4). */
+export interface SettingsState {
+  /** Every field's value: the stored one, else its default. */
+  values: Record<string, unknown>;
+  /** Fields the agent reads whose new value waits for the next task (D4). */
+  pending: string[];
+}
+
+/** How a settings change ended: the new state, or why it was refused (`message` absent: something went wrong). */
+export type SettingsResult = { ok: true; state: SettingsState } | { ok: false; message?: string };
+
 export { hearsDataChange } from "./data-change";
 
 /** Everything the renderer can ask the main process. Implemented by the preload as `window.hh`. */

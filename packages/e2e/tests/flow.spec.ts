@@ -61,6 +61,18 @@ test("a topic answered with blocks, then next: the note is saved and the next to
     expect(agents).not.toContain("show_annotate");
     // Harness settings D0: the demo declares none, so AGENTS.md has no settings section and nothing is stored.
     expect(agents).not.toContain("### How to work with this person");
+    // Task modes D0: the demo declares none, so there is no recommend_mode tool, no mode bar and no mode anywhere.
+    expect(agents).not.toContain("show_recommend_mode");
+    await expect(page.getByRole("button", { name: "Change mode" })).toHaveCount(0);
+    expect(readTasks(s.folder).current).not.toHaveProperty("mode");
+    expect(readJsonl<Record<string, unknown>>(usageFile(s)).some((r) => "mode" in r)).toBe(false);
+    expect(close.prompt).not.toContain("modes used");
+    const state = await page.evaluate(() => (window as unknown as { hh: { getState: () => Promise<Record<string, unknown>> } }).hh.getState());
+    expect(state).not.toHaveProperty("modes");
+    for (const action of Object.values(state.actions as Record<string, object>)) {
+      expect(action).not.toHaveProperty("modes");
+      expect(action).not.toHaveProperty("defaultMode");
+    }
     expect(fs.existsSync(path.join(s.folder, ".harness", "data", "_app", "settings.json"))).toBe(false);
     expect(readTasks(s.folder).current).not.toHaveProperty("pendingInput");
     const chatLines = readJsonl<{ blocks?: Record<string, unknown>[] }>(path.join(s.folder, ".harness", "chats", "main.jsonl"));

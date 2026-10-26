@@ -67,3 +67,14 @@ describe("loadRecordings", () => {
     expect(loadRecordings(path.join(root, "nope"))).toEqual({ recordings: [], problems: [] });
   });
 });
+
+describe("respond", () => {
+  const base = { version: 1, action: "a", match: "# A", turns: [{ id: "t1" }, { id: "t2" }] };
+  it("a turn may record answers, each with the turn it leads to", () => {
+    const ok = { ...base, turns: [{ id: "t1", respond: [{ block: "commit_answer", value: { why: "x" }, next: "t2" }] }, { id: "t2" }] };
+    expect(recordingSchema.safeParse(ok).success).toBe(true);
+    for (const bad of [{ block: "commit_answer", value: { why: "x" } }, { block: "Bad", value: {}, next: "t2" }, { block: "b", value: "x", next: "t2" }, { block: "b", value: {}, next: "t2", extra: 1 }]) {
+      expect(recordingSchema.safeParse({ ...base, turns: [{ id: "t1", respond: [bad] }, { id: "t2" }] }).success).toBe(false);
+    }
+  });
+});

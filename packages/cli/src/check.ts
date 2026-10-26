@@ -5,10 +5,12 @@ import { ENGINES, type Mode, brandNames } from "@humanharness/engines";
 import {
   type InputFieldUi,
   type LoadedHarness,
+  blockToolName,
   inputBlocks,
   inputFields,
   isStringArray,
   loadHarness,
+  parseAnswer,
   resolveInHarness,
   type z,
 } from "@humanharness/harness-sdk";
@@ -181,6 +183,23 @@ async function mockFindings(h: LoadedHarness, briefs: Map<string, string | null>
       for (const [key, target] of Object.entries(turn.next ?? {})) {
         if (!ids.includes(target)) findings.push(error("mock-next", `Turn "${turn.id}": "${key}" leads to "${target}", which is not a turn.`, file));
         if (key !== "*" && !labels.has(key)) findings.push(error("mock-choice", `Turn "${turn.id}": "${key}" is not a choice it offers.`, file));
+      }
+      // Each recorded answer answers an input block this turn shows, and is one the app would take (spec §8).
+      for (const [i, r] of (turn.respond ?? []).entries()) {
+        const where = `Turn "${turn.id}": respond[${i}]`;
+        if (!ids.includes(r.next)) findings.push(error("mock-next", `${where} leads to "${r.next}", which is not a turn.`, file));
+        const block = Object.hasOwn(h.blocks, r.block) ? h.blocks[r.block] : undefined;
+        if (!block?.input) {
+          findings.push(error("mock-input", `${where} answers "${r.block}", which is not an input block.`, file));
+          continue;
+        }
+        if (!turn.blocks.some((b) => b.tool === blockToolName(r.block, block))) {
+          findings.push(error("mock-input", `${where} answers "${r.block}", which this turn doesn't show.`, file));
+        }
+        const parsed = parseAnswer(block, r.value);
+        if (!parsed.ok) {
+          findings.push(error("mock-input", `${where} is not a valid answer: ${parsed.errors.map((e) => `${e.path || "(answer)"} ${e.message}`).join("; ")}.`, file));
+        }
       }
     }
   }

@@ -427,3 +427,36 @@ describe("check: input blocks", () => {
     expect(inputRules(await checkHarness(dir))).toEqual([]);
   });
 });
+
+describe("check: recorded answers", () => {
+  const EXAMPLE = 'example: { title: "One idea", body: "A short explanation of why it matters." },';
+  const card = { tool: "show_example_card", input: { title: "T", body: "B" } };
+  const rec = (turn1: Record<string, unknown>) => ({ version: 1, action: "example", match: "# Task: example", turns: [{ id: "t1", text: "hi", ...turn1 }, { id: "t2", text: "ok" }] });
+  const mockRules = async (recording: object) => {
+    const dir = await fixture((d) => {
+      replaceIn(d, "harness.config.ts", EXAMPLE, `input: z.object({ why: z.string().min(1) }),\n  ${EXAMPLE}`);
+      fs.mkdirSync(path.join(d, "mock"));
+      fs.writeFileSync(path.join(d, "mock", "example.json"), JSON.stringify(recording));
+    });
+    return (await checkHarness(dir)).findings.filter((f) => f.rule.startsWith("mock-")).map((f) => `${f.rule}: ${f.message}`);
+  };
+
+  it("a recorded answer to an input block the turn shows passes", async () => {
+    expect(await mockRules(rec({ blocks: [card], respond: [{ block: "example_card", value: { why: "because" }, next: "t2" }] }))).toEqual([]);
+  });
+
+  it("mock-input: not an input block, not shown in that turn, or not a valid answer; mock-next: no such turn", async () => {
+    expect(await mockRules(rec({ blocks: [card], respond: [{ block: "choices", value: {}, next: "t2" }] }))).toEqual([
+      'mock-input: Turn "t1": respond[0] answers "choices", which is not an input block.',
+    ]);
+    expect(await mockRules(rec({ respond: [{ block: "example_card", value: { why: "x" }, next: "t2" }] }))).toEqual([
+      'mock-input: Turn "t1": respond[0] answers "example_card", which this turn doesn\'t show.',
+    ]);
+    const invalid = await mockRules(rec({ blocks: [card], respond: [{ block: "example_card", value: { why: "" }, next: "t2" }] }));
+    expect(invalid).toHaveLength(1);
+    expect(invalid[0]).toMatch(/^mock-input: Turn "t1": respond\[0\] is not a valid answer: why /);
+    expect(await mockRules(rec({ blocks: [card], respond: [{ block: "example_card", value: { why: "x" }, next: "t9" }] }))).toEqual([
+      'mock-next: Turn "t1": respond[0] leads to "t9", which is not a turn.',
+    ]);
+  });
+});

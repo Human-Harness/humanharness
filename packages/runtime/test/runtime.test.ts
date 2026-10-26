@@ -5,7 +5,8 @@ import { fileURLToPath } from "node:url";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { getEngine } from "@humanharness/engines";
 import { type ClaudeScript, claudeResultLine, claudeTextLines, fakeAcpCommand, fakeClaudeCommand, writeScript } from "@humanharness/fake-agent";
-import { loadHarness } from "@humanharness/harness-sdk";
+import { allBlocks, loadHarness, resolveInHarness } from "@humanharness/harness-sdk";
+import { managedSection } from "@humanharness/workspace";
 import { ClaudeCliTransport } from "../src/claude-cli";
 import type { Event } from "../src/events";
 import { type HarnessRuntime, type RuntimeOptions, createRuntime } from "../src/runtime";
@@ -65,6 +66,54 @@ async function send(r: HarnessRuntime, message = "hi") {
 }
 
 describe("createRuntime", () => {
+  it("puts the settings' sentences in AGENTS.md, and rewrites it only when they change (harness-settings §5)", async () => {
+    let sentences = ["Use a patient tone."];
+    const { runtime, folder } = await setup({ steps: [] }, undefined, { instructionSettings: async () => sentences });
+    const agents = () => fs.readFileSync(path.join(folder, "AGENTS.md"), "utf8");
+    expect(agents()).toContain("### How to work with this person\n\n- Use a patient tone.\n");
+    expect(await runtime.refreshInstructions()).toBe(false);
+    sentences = ["Use a demanding tone."];
+    expect(await runtime.refreshInstructions()).toBe(true);
+    expect(agents()).toContain("- Use a demanding tone.");
+    expect(agents()).not.toContain("patient");
+  });
+
+  it("D0: without settings, AGENTS.md is the base and today's managed section, and a refresh writes nothing", async () => {
+    const { runtime, folder } = await setup({ steps: [] });
+    const harness = await loadHarness(FIXTURE);
+    const base = fs.readFileSync(resolveInHarness(harness, harness.instructions), "utf8");
+    expect(fs.readFileSync(path.join(folder, "AGENTS.md"), "utf8")).toBe(`${base.trimEnd()}\n\n${managedSection({ language: "en", blocks: allBlocks(harness) })}`);
+    expect(await runtime.refreshInstructions()).toBe(false);
+  });
+
+  it("a closed runtime never rewrites AGENTS.md, and close waits for a running refresh", async () => {
+    let sentences = ["Use a patient tone."];
+    let release: () => void = () => {};
+    let gate: Promise<void> | null = null;
+    const { runtime: rt, folder } = await setup({ steps: [] }, undefined, {
+      instructionSettings: async () => {
+        await gate;
+        return sentences;
+      },
+    });
+    const agents = () => fs.readFileSync(path.join(folder, "AGENTS.md"), "utf8");
+    sentences = ["Use a demanding tone."];
+    gate = new Promise((r) => (release = r));
+    const refreshing = rt.refreshInstructions();
+    let closed = false;
+    const closing = rt.close().then(() => void (closed = true));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(closed).toBe(false);
+    release();
+    await closing;
+    expect(await refreshing).toBe(true);
+    expect(agents()).toContain("demanding");
+    sentences = ["Use a gentle tone."];
+    expect(await rt.refreshInstructions()).toBe(false);
+    expect(agents()).not.toContain("gentle");
+    runtime = undefined;
+  });
+
   it("enforces the engine's minAdapterVersion on ACP engines", async () => {
     const codex = getEngine("codex");
     if (codex.transport.kind !== "acp") throw new Error("codex must use ACP");

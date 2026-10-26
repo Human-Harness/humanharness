@@ -132,3 +132,4 @@ One file per action, `mock/<action>.json`, meant to be edited by hand. The schem
 - Recording is `run --record` only, not from the desktop app.
 - A recording keeps only the first visit of an action in a run.
 - Harness settings work in mock mode (the tab saves, `AGENTS.md` follows), but a recording plays the same whatever the settings.
+- Task modes: `m <id>` under `run --record` is recorded like a typed follow-up (the `*` link), even when nothing switched. Replay plays a switch as any other reply, so a recording can't branch by mode.

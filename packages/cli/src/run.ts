@@ -4,13 +4,14 @@ import os from "node:os";
 import path from "node:path";
 import { createInterface } from "node:readline";
 import type { Readable, Writable } from "node:stream";
-import { type EngineDef, availableEngines } from "@humanharness/engines";
+import { type EngineDef, type ModelProfile, availableEngines } from "@humanharness/engines";
 import type { MockNote } from "@humanharness/fake-agent";
 import {
   type BlockAnswer,
   DEFAULT_LANGUAGE,
   type HarnessSettings,
   type Language,
+  MODE_ID,
   SETTINGS_COLLECTION,
   TIERS,
   type Tier,
@@ -19,9 +20,11 @@ import {
   allBlocks,
   blockToolName,
   dataCollections,
+  hasModes,
   inputBlocks,
   inputSpecs,
   loadHarness,
+  modeSentences,
   resolveInHarness,
   sameSetting,
   settingsSentences,
@@ -42,6 +45,7 @@ import {
   engineCommand,
   hasAcceptedNotice,
   memoise,
+  nearestTier,
   nextFallback,
   resolveProfile,
   resolveReferences,
@@ -65,6 +69,8 @@ export interface RunOptions {
   engine?: string;
   /** Overrides the action's tier for this run. */
   tier?: Tier;
+  /** Start the task in this mode (task-modes spec §3); one the action doesn't list is refused. Default: its defaultMode. */
+  mode?: string;
   /** Default: a new folder under the OS temp dir, printed and kept. */
   folder?: string;
   /** Any language tag; default English. */
@@ -148,10 +154,13 @@ export async function readyEngine(engine: EngineDef, deps: CommandDeps, shared: 
   return (await engineCommand(engine, deps)) ?? stop("engine-not-installed");
 }
 
-const promptFor = (options: number, answerable = false) =>
-  options > 0
-    ? `\nPick 1–${options}, ${answerable ? "a to answer, " : ""}type a follow-up, or q to close the task: `
-    : `\n${answerable ? "a to answer, or t" : "T"}ype a follow-up, or q to close the task: `;
+const promptFor = (options: number, answerable = false, modes = false) => {
+  // `m <mode>` only for a task whose action has modes (task-modes D0: the line is as before otherwise).
+  const m = modes ? "m <mode> to switch mode, " : "";
+  return options > 0
+    ? `\nPick 1–${options}, ${answerable ? "a to answer, " : ""}${m}type a follow-up, or q to close the task: `
+    : `\n${answerable ? `a to answer, ${m}or t` : modes ? `${m}or t` : "T"}ype a follow-up, or q to close the task: `;
+};
 
 /** The scope `humanharness run` opens for a `required` action when none is open. */
 export const RUN_SCOPE = "run";
@@ -175,6 +184,14 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
   if (!Object.hasOwn(harness.actions, o.action) || !action) {
     throw new UsageError(`Unknown action "${o.action}". Actions: ${Object.keys(harness.actions).join(", ") || "(none)"}.`);
   }
+  if (o.mode !== undefined && !(action.modes ?? []).includes(o.mode)) {
+    throw new UsageError(`Unknown mode "${o.mode}" for ${o.action}. Modes: ${(action.modes ?? []).join(", ") || "(none)"}.`);
+  }
+  /** The modes the open task's action lists: none without modes (task-modes D0). */
+  const modesOf = (id: string | undefined): readonly string[] =>
+    id !== undefined && hasModes(harness) && Object.hasOwn(harness.actions, id) ? (harness.actions[id].modes ?? []) : [];
+  // Kept current by `changed`: the terminal draws only the open task's modes in a recommendation.
+  let taskAction: string | undefined = o.action;
   const offered = availableEngines(harness.engines, "development");
   const engine = o.engine ? offered.find((e) => e.id === o.engine) : offered[0];
   if (!engine) {
@@ -203,9 +220,10 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
   const out = o.output;
   out.write(`Folder: ${folder}\n`);
 
-  const view = new TerminalView(out, engine.name, (out as { isTTY?: boolean }).isTTY === true, specs);
+  const view = new TerminalView(out, engine.name, (out as { isTTY?: boolean }).isTTY === true, specs, () => modesOf(taskAction));
   const tally = new UsageTally();
-  const store = new TaskStore(folder);
+  // tasks.json is read knowing the manifest's modes (task-modes spec §6), as the app does.
+  const store = new TaskStore(folder, hasModes(harness) ? { modes: Object.keys(harness.modes) } : {});
   const scoped = harness.scopes !== undefined;
   const scopes = new ScopeStore(folder);
   const usageLog = new UsageLog(folder);
@@ -337,17 +355,33 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
       await rt?.history.save(message, trailer);
     },
     changed: (v) => {
+      if (v.current) taskAction = v.current.action;
       if (v.current?.context) tally.context(v.current.context.used);
     },
     emit: (e) => view.event(e),
-    profileFor: async (id) =>
+    profileFor: async (id, floor) =>
       resolveProfile({
         engine: engine.id,
         action: id,
         manifestTier: id === undefined ? harness.questions?.tier : id === o.action && o.tier ? o.tier : harness.actions[id]?.tier,
         models: {},
+        ...(floor ? { floor } : {}),
       }),
     fallbackFor: async (profile, tried) => nextFallback(profile, {}, tried),
+    // As the app wires them; undefined without modes (task-modes D0).
+    ...(hasModes(harness)
+      ? {
+          modes: harness.modes,
+          readModeBrief: (mode: string) =>
+            Object.hasOwn(harness.modes, mode) ? fs.readFile(resolveInHarness(harness, harness.modes[mode].brief), "utf8") : Promise.reject(new Error("Unknown mode")),
+          // Mode settings with the folder's stored values (run's --set covers the harness's own fields only).
+          modeSettings: async (mode: string) =>
+            harness.settings
+              ? modeSentences(harness.modes, mode, settingsValues(harness.settings, await dataStore.get(SETTINGS_COLLECTION, undefined, person).catch(() => null), harness.modes))
+              : [],
+          tierOf: async (p: ModelProfile) => nearestTier(p, {}),
+        }
+      : {}),
   });
 
   // Ctrl-C during an operation cancels its turn; at the prompt it closes the task like q, and once a close was
@@ -386,15 +420,16 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
       // A task an earlier run left open in this folder can't continue: its session is gone.
       await tasks.interrupt();
       const scope = scoped ? await runScope(folder, actionScope(harness, o.action) === "required", (await store.load()).open) : undefined;
-      await tasks.start(o.action, undefined, scope);
+      await tasks.start(o.action, undefined, scope, o.mode);
       for (;;) {
         const current = (await store.load()).current;
         if (!current) break;
         const options = view.choices;
+        const modeIds = modesOf(current.action);
         const interrupted = new Promise<"interrupt">((resolve) => {
           promptInterrupted = () => resolve("interrupt");
         });
-        out.write(promptFor(options.length, current.pendingInput !== undefined));
+        out.write(promptFor(options.length, current.pendingInput !== undefined, modeIds.length > 0));
         pending ??= typed.next();
         const next = await Promise.race([pending, interrupted]);
         promptInterrupted = undefined;
@@ -449,6 +484,31 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
           await done;
           continue;
         }
+        // `m <id>`: the person picks a mode (task-modes spec §5). A run can't change its tier mid-task, so a mode that
+        // asks for more says so and switches anyway. The chat keeps the switch's short line; replay sees typed text.
+        // Only `m` and one mode id: any other line starting with "m " is a follow-up like any other.
+        const mode = line.slice(2).trim();
+        if (modeIds.length > 0 && line.startsWith("m ") && MODE_ID.test(mode)) {
+          const label = Object.hasOwn(harness.modes, mode) ? harness.modes[mode].label : mode;
+          recorder?.reply("*");
+          let { accepted, done } = tasks.chooseMode(mode);
+          // Awaited below; marked handled here so a refusal before `accepted` leaves no unhandled rejection.
+          done.catch(() => undefined);
+          let r = await accepted;
+          if (!r.ok && r.reason === "tier") {
+            out.write(`\n${label} asks for the ${r.required} tier; this run is at ${r.current}. Switching anyway; rerun with --tier ${r.required} --mode ${mode} for it.\n`);
+            await done;
+            ({ accepted, done } = tasks.chooseMode(mode, { belowTier: "continue" }));
+            done.catch(() => undefined);
+            r = await accepted;
+          }
+          if (!r.ok) out.write(`\nNot switched (${r.reason}). Modes: ${modeIds.join(", ")}.\n`);
+          else if (r.switched === "same") out.write(`\nAlready in ${label}.\n`);
+          // No turn ran: the choices on screen still stand.
+          if (!r.ok || r.switched === "same") view.choices = options;
+          await done;
+          continue;
+        }
         const pick = Number(line);
         if (Number.isInteger(pick) && pick >= 1 && pick <= options.length) {
           recorder?.reply(options[pick - 1].label);
@@ -493,12 +553,13 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
 }
 
 const RUN_USAGE =
-  "Usage: humanharness run <action> [--engine claude|codex] [--tier light|standard|deep] [--folder <dir>] [--language <tag>] [--set <name>=<value>]... [--harness <dir>] [--record [--force]]";
+  "Usage: humanharness run <action> [--engine claude|codex] [--tier light|standard|deep] [--mode <id>] [--folder <dir>] [--language <tag>] [--set <name>=<value>]... [--harness <dir>] [--record [--force]]";
 
 export async function runCommand(args: string[], io: Io): Promise<number> {
   const { values, positionals } = parseCommand(args, {
     engine: { type: "string" },
     tier: { type: "string" },
+    mode: { type: "string" },
     folder: { type: "string" },
     language: { type: "string" },
     set: { type: "string", multiple: true },
@@ -509,6 +570,7 @@ export async function runCommand(args: string[], io: Io): Promise<number> {
   if (positionals.length !== 1) throw new UsageError(RUN_USAGE);
   if (values.force && !values.record) throw new UsageError("--force only works with --record");
   if (values.tier !== undefined && !(TIERS as readonly string[]).includes(values.tier)) throw new UsageError(`Unknown tier "${values.tier}": use light, standard or deep.`);
+  if (values.mode !== undefined && !MODE_ID.test(values.mode)) throw new UsageError(`Invalid mode "${values.mode}": use a mode id from the manifest.`);
   const language = values.language === undefined ? undefined : canonicalLanguage(values.language);
   if (language === null) throw new UsageError(`Unknown language "${values.language}": use a language tag such as en, es or pt-BR.`);
   // No prototype: `--set __proto__=x` stays a name, and parseSettings refuses it as unknown.
@@ -523,6 +585,7 @@ export async function runCommand(args: string[], io: Io): Promise<number> {
     action: positionals[0],
     ...(values.engine ? { engine: values.engine } : {}),
     ...(values.tier ? { tier: values.tier as Tier } : {}),
+    ...(values.mode ? { mode: values.mode } : {}),
     ...(values.folder ? { folder: path.resolve(io.cwd, values.folder.replace(/^~(?=$|\/)/, os.homedir())) } : {}),
     ...(language ? { language } : {}),
     ...(Object.keys(settings).length > 0 ? { settings } : {}),

@@ -15,6 +15,7 @@ import {
   allBlocks,
   choiceOptionSchema,
   dataCollections,
+  hasModes,
   inputBlocks,
   inputSpecs,
   loadHarness,
@@ -29,6 +30,7 @@ import {
   type ConfiguredApp,
   type FolderPick,
   type ModelsView,
+  type ModeView,
   type MoveResult,
   type RunningSetup as SetupInfo,
   type ScopesView,
@@ -73,7 +75,8 @@ import { cliCommand, engineCommand, loginShellPath } from "./engine-command";
 import { EngineGuards } from "./engine-guards";
 import { installCommandOf, terminalCommand } from "./install-help";
 import { detectEngine, hasAcceptedNotice } from "./engine-status";
-import { QUESTIONS, cleanModels, engineOffer, firstOffered, fitEffort, nextFallback, resolveProfile } from "./models";
+import { QUESTIONS, cleanModels, engineOffer, firstOffered, fitEffort, nearestTier, nextFallback, resolveProfile } from "./models";
+import { chooseModeHandler } from "./mode-ipc";
 import { requireNoticeForChoice, requireNoticeForTurn } from "./notice-policy";
 import { archiveStaleChat, startNewChatIfEngineChanged } from "./engine-switch";
 import { type RunningSetup, runSetupProcess, setupCommand, stopSetupProcess } from "./setup-runner";
@@ -303,6 +306,8 @@ async function appState(): Promise<AppState> {
           ...(a.description ? { description: a.description } : {}),
           ...(a.tier ? { tier: a.tier } : {}),
           ...(a.scope ? { scope: a.scope } : {}),
+          ...(a.modes ? { modes: a.modes } : {}),
+          ...(a.defaultMode ? { defaultMode: a.defaultMode } : {}),
         },
       ]),
     ),
@@ -311,7 +316,18 @@ async function appState(): Promise<AppState> {
     // Only a harness with input blocks sends their specs (spec D0).
     ...(Object.keys(inputs).length > 0 ? { inputs } : {}),
     // Only a harness with settings gets its tab (harness-settings D0).
-    ...(harness.settings ? { settings: settingsView(harness.settings) } : {}),
+    ...(harness.settings ? { settings: settingsView(harness.settings, harness.modes) } : {}),
+    // Only a harness with modes sends them (task-modes D0): what the window shows, never a brief or a hint.
+    ...(hasModes(harness)
+      ? {
+          modes: Object.fromEntries(
+            Object.entries(harness.modes).map(([id, m]): [string, ModeView] => [
+              id,
+              { label: m.label, ...(m.description ? { description: m.description } : {}), ...(m.minTier ? { minTier: m.minTier } : {}) },
+            ]),
+          ),
+        }
+      : {}),
     references: (await referencesFor(saved.folder)).map((r) => ({ id: r.id, label: r.label, path: displayPath(r.path, os.homedir()) })),
     models: await modelsView(),
     backup: await backupView(saved.folder),
@@ -332,6 +348,9 @@ const baseOf = (c: { folder: string }): string => c.folder;
 
 /** The harness declares scopes (spec D1); without them everything stays as before (D2). */
 const scoped = (): boolean => harness.scopes !== undefined;
+
+/** tasks.json is read knowing the manifest's modes, so a mode it no longer declares is dropped (task-modes spec §6). */
+const taskStoreOptions = (): { modes?: string[] } => (hasModes(harness) ? { modes: Object.keys(harness.modes) } : {});
 
 /** One registry per base, so its write queue orders every change. */
 /** Whether `id` is in the configured folder's registry and not archived. */
@@ -566,11 +585,11 @@ const tasks = new TaskManager({
   store: {
     load: async () => {
       const c = await validConfig();
-      return c ? new TaskStore(baseOf(c)).load() : emptyTasks();
+      return c ? new TaskStore(baseOf(c), taskStoreOptions()).load() : emptyTasks();
     },
     save: async (state) => {
       const c = await validConfig();
-      if (c) await new TaskStore(baseOf(c)).save(state);
+      if (c) await new TaskStore(baseOf(c), taskStoreOptions()).save(state);
     },
   },
   turns,
@@ -621,6 +640,18 @@ const tasks = new TaskManager({
     const ctl = settingsCtl;
     return ctl ? () => ctl.betweenTasks() : undefined;
   },
+  // Getters, because the harness is loaded after this object is built. Undefined without modes (task-modes D0).
+  get modes() {
+    return hasModes(harness) ? harness.modes : undefined;
+  },
+  readModeBrief: (mode) => {
+    if (!Object.hasOwn(harness.modes, mode)) return Promise.reject(new Error("Unknown mode"));
+    return fs.readFile(resolveInHarness(harness, harness.modes[mode].brief), "utf8");
+  },
+  // Mode settings live in the settings controller (harness-settings spec §6); without settings there are none.
+  modeSettings: async (mode) => (settingsCtl ? settingsCtl.modeSentences(mode) : []),
+  // Fast on purpose (it runs in the task queue): the saved model table only, never the engine's offer.
+  tierOf: async (profile) => nearestTier(profile, cleanModels((await config.load()).models)),
   readPrompt: (action) => fs.readFile(resolveInHarness(harness, harness.actions[action].prompt), "utf8"),
   language: async () => (await config.load()).language ?? DEFAULT_LANGUAGE,
   engine: async () => (await config.load()).engineId ?? "",
@@ -646,12 +677,13 @@ const tasks = new TaskManager({
   },
   changed: (view) => sendToWindow("hh:tasks", view),
   emit,
-  profileFor: async (action) => {
+  profileFor: async (action, floor) => {
     const c = await config.load();
     const engine = c.engineId ?? "";
     const models = cleanModels(c.models);
     const manifestTier = action !== undefined ? harness.actions[action]?.tier : harness.questions?.tier;
-    const profile = resolveProfile({ engine, action, manifestTier, models });
+    // `floor`: the mode's minTier when a task restarts in that mode (task-modes spec §5.3); passed only when there is one.
+    const profile = resolveProfile({ engine, action, manifestTier, models, ...(floor ? { floor } : {}) });
     // Codex: a model its saved list lacks falls back before the turn (spec §5.3).
     const saved = await savedOffer(engine);
     return supportedEffort(firstOffered(profile, models, saved.models), saved);
@@ -665,7 +697,12 @@ const tasks = new TaskManager({
     const c = await validConfig();
     if (!c) return;
     await new UsageLog(baseOf(c)).append(
-      compactionRecord(c.engineId, { ...(task.action ? { action: task.action } : {}), task: task.id, ...(task.profile ? profileMeta(task.profile) : {}) }),
+      compactionRecord(c.engineId, {
+        ...(task.action ? { action: task.action } : {}),
+        task: task.id,
+        ...(task.mode ? { mode: task.mode } : {}),
+        ...(task.profile ? profileMeta(task.profile) : {}),
+      }),
     );
   },
 });
@@ -777,10 +814,13 @@ function registerIpc() {
     if (blocked) throw new Error(blocked);
     if (typeof message !== "string" || !message.trim() || message.length > 20_000) throw new Error("Invalid message");
     const action = typeof options?.action === "string" && Object.hasOwn(harness.actions, options.action) ? options.action : undefined;
+    // The mode the person picked for a new task ("ask"); one the action doesn't list is refused before anything closes.
+    const mode = action && typeof options?.mode === "string" && (harness.actions[action].modes ?? []).includes(options.mode) ? options.mode : undefined;
+    if (options?.mode !== undefined && mode === undefined) throw new Error("Unknown mode");
     const scope = options?.scope;
     if (scope !== undefined && !isScopeId(scope)) throw new Error("Unknown scope");
     // A message with an action starts that task (the message is what the chat shows); any other follows up or asks.
-    const sent = action ? tasks.start(action, message, scope) : tasks.ask(message, undefined, scope);
+    const sent = action ? tasks.start(action, message, scope, mode) : tasks.ask(message, undefined, scope);
     return scope === undefined ? sent : sent.finally(() => void scopesChanged());
   });
   handle("hh:getTasks", () => tasks.view());
@@ -853,6 +893,16 @@ function registerIpc() {
     return tasks.choose(parsed.data, task);
   });
   handle("hh:respond", respondHandler({ quitting: () => quitting, blocked: turnBlocked, respond: (blockId, value) => tasks.respond(blockId, value) }));
+  // The person's pick of a mode (task-modes spec §5): the acceptance comes back as data.
+  handle(
+    "hh:chooseMode",
+    chooseModeHandler({
+      quitting: () => quitting,
+      blocked: turnBlocked,
+      openTask: async () => (await tasks.runningTask())?.id ?? null,
+      choose: (mode, choice, task) => tasks.chooseMode(mode, choice, task),
+    }),
+  );
   handle("hh:openPath", async (file: unknown) => {
     const c = await validConfig();
     if (!c) return false;
@@ -1110,6 +1160,7 @@ if (loaded) {
   if (harness.settings) {
     settingsCtl = new SettingsController({
       settings: harness.settings,
+      modes: harness.modes,
       store: async () => {
         const c = await validConfig();
         return c ? dataStoreFor(baseOf(c)) : null;

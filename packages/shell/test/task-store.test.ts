@@ -215,3 +215,37 @@ describe("scopes in tasks.json", () => {
     expect(after.actions).toEqual({});
   });
 });
+
+describe("TaskStore: task modes (task-modes spec §5.5, §6)", () => {
+  const write = (folder: string, current: Record<string, unknown>) => {
+    const file = path.join(folder, ".harness", "tasks.json");
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify({ version: 1, actions: {}, current: { id: "t1", status: "waiting", startedAt: "", turns: 1, ...current } }));
+  };
+
+  it("keeps a well-formed mode, the modes used (distinct, in order) and belowMinTier", async () => {
+    const folder = tmp();
+    write(folder, { mode: "socratic", modes: ["socratic", "feynman", "socratic", "Bad Id", 3], belowMinTier: true });
+    expect((await new TaskStore(folder).load()).current).toMatchObject({ mode: "socratic", modes: ["socratic", "feynman"], belowMinTier: true });
+    write(folder, { mode: "../x", modes: "socratic", belowMinTier: "yes" });
+    const bad = (await new TaskStore(folder).load()).current;
+    expect(bad).not.toHaveProperty("mode");
+    expect(bad).not.toHaveProperty("modes");
+    expect(bad).not.toHaveProperty("belowMinTier");
+  });
+
+  it("drops a mode the manifest no longer declares; belowMinTier goes with its mode", async () => {
+    const folder = tmp();
+    write(folder, { mode: "socratic", modes: ["socratic", "feynman"], belowMinTier: true });
+    const current = (await new TaskStore(folder, { modes: ["feynman"] }).load()).current;
+    expect(current).toMatchObject({ modes: ["feynman"] });
+    expect(current).not.toHaveProperty("mode");
+    expect(current).not.toHaveProperty("belowMinTier");
+  });
+
+  it("D0: a task without modes reads with no mode fields", async () => {
+    const folder = tmp();
+    write(folder, {});
+    expect((await new TaskStore(folder).load()).current).toEqual({ id: "t1", status: "waiting", startedAt: "", turns: 1 });
+  });
+});

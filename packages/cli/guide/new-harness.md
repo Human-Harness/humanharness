@@ -21,7 +21,7 @@ Resources are part of the third pillar. A harness never names a model: each task
 
 - The core checkout is the folder `package.json` links to: `"@humanharness/cli": "link:<core>/packages/cli"`. Below, `<core>` is that folder.
 - `<core>/harnesses/demo` is a complete example (custom blocks, a guided path, briefs, references). Read it for ideas; never copy it as a starting point.
-- `<core>/docs/architecture/` explains how the core works: `manifest.md`, `blocks.md`, `context.md`, `turn.md`, `engines.md`, `authoring.md`.
+- `<core>/docs/architecture/` explains how the core works: `manifest.md`, `blocks.md`, `context.md`, `modes.md`, `turn.md`, `engines.md`, `authoring.md`.
 - In this repository: `harness.config.ts` (the manifest), `agent/AGENTS.md` (the instructions to the AI), `agent/tasks/*.md` (one brief per action), `ui/` (the screen and the block components), `locales/en.json` (the UI strings).
 - Import the SDK from `@humanharness/cli/sdk` (`defineHarness`, `defineBlock`, `z`) and the UI kit from `@humanharness/cli/ui` (`HarnessApp`, `BlockProps`, `useTranslation`).
 
@@ -61,6 +61,7 @@ Ask which tasks (actions) exist. For each one: an id, a label and a one-line des
 - A brief is the first message of the task's own engine session: what to do, what to read, which blocks to show, and to end with `show_choices`. It may use `{{language}}` and `{{notesIndex}}`.
 - Ask whether the actions have a natural order. If so, set `path` (the guided path).
 - For each `choices` option, decide where it leads: `followUp` (stays on the task), `action` (starts another task by its id) or `next: true` (the next task of the path).
+- Ask whether a task has ways of working the person should pick between (task modes: Socratic or worked examples, plan or review). If so, declare `modes` (a `label`, a `description`, a brief in `agent/modes/<id>.md`, an optional `minTier` and a `recommend` hint only the AI reads) and list them on the action with a `defaultMode`: `recommend` (the default) lets the AI suggest one with the core `recommend_mode` block, `ask` asks the person first, a mode id starts in it. A mode's own settings go in its `settings` and need the harness's `settings` for their tab. Try one with `humanharness run <action> --mode <id>`, and `m <id>` at its prompt. See `<core>/docs/architecture/modes.md`.
 - Rewrite `agent/AGENTS.md`: what the AI does in this harness, and when it calls each block's tool.
 - Keep the Flow table in sync, one row per action plus `(questions)` for free questions; `check` compares it with `harness.config.ts`:
 

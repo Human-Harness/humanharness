@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { type Block, defineBlock } from "./block";
+import { MODE_ID, hasModes } from "./modes";
 
 /** One way to continue: `followUp` stays on the topic, `action` starts another task, `next: true` follows the guided path. */
 export const choiceOptionSchema = z.object({
@@ -84,12 +85,46 @@ export const INPUT_CORE_BLOCKS = {
   }),
 } satisfies Record<string, Block>;
 
+/** The agent's recommendation of a mode (task-modes spec §4). The person picks; the app switches. */
+export const recommendModeSchema = z.object({
+  recommended: z.string().regex(MODE_ID),
+  reasons: z.array(z.string().min(1).max(300)).min(1).max(3),
+  alternatives: z
+    .array(z.object({ mode: z.string().regex(MODE_ID), why: z.string().min(1).max(300) }))
+    .max(2)
+    .optional(),
+});
+export type ModeRecommendation = z.infer<typeof recommendModeSchema>;
+
+/** Core blocks only a harness with modes gets (spec §4). Their names are reserved for all. */
+export const MODE_CORE_BLOCKS = {
+  recommend_mode: defineBlock({
+    description:
+      "Recommends how to work in this task: `recommended` is one of this task's mode ids, with up to 3 short `reasons`, and up to 2 `alternatives` (`mode`, `why`). The person picks a mode; never switch on your own. Use it when the app asks you to recommend, or when another mode would clearly help now; then end your answer and wait.",
+    visible: true,
+    schema: recommendModeSchema,
+    example: {
+      recommended: "socratic",
+      reasons: ["The topic has one key idea you can discover"],
+      alternatives: [{ mode: "worked", why: "If you prefer to see it solved first" }],
+    },
+  }),
+} satisfies Record<string, Block>;
+
 /** Every core block name, offered or not: no harness block may take one. */
-export const RESERVED_BLOCK_NAMES: readonly string[] = [...CORE_BLOCK_NAMES, ...Object.keys(INPUT_CORE_BLOCKS)];
+export const RESERVED_BLOCK_NAMES: readonly string[] = [...CORE_BLOCK_NAMES, ...Object.keys(INPUT_CORE_BLOCKS), ...Object.keys(MODE_CORE_BLOCKS)];
 
 export const hasInputBlocks = (blocks: Record<string, Block>): boolean => Object.values(blocks).some((b) => b.input !== undefined);
 
-/** The core blocks plus the harness's own: what the agent gets as tools. `annotate` only with input blocks (spec D0). */
-export function allBlocks(harness: { blocks: Record<string, Block> }): Record<string, Block> {
-  return { ...CORE_BLOCKS, ...(hasInputBlocks(harness.blocks) ? INPUT_CORE_BLOCKS : {}), ...harness.blocks };
+/**
+ * The core blocks plus the harness's own: what the agent gets as tools. `annotate` only with input blocks (input-blocks
+ * D0), `recommend_mode` only with modes (task-modes D0).
+ */
+export function allBlocks(harness: { blocks: Record<string, Block>; modes?: Record<string, unknown> }): Record<string, Block> {
+  return {
+    ...CORE_BLOCKS,
+    ...(hasInputBlocks(harness.blocks) ? INPUT_CORE_BLOCKS : {}),
+    ...(hasModes(harness) ? MODE_CORE_BLOCKS : {}),
+    ...harness.blocks,
+  };
 }

@@ -7,7 +7,7 @@ export { createCommandDeps } from "./command-deps";
 export * from "./data-requests";
 export { type CommandDeps, engineCommand } from "./engine-command";
 export { detectEngine, hasAcceptedNotice } from "./engine-status";
-export { nextFallback, resolveProfile } from "./models";
+export { nearestTier, nextFallback, resolveProfile } from "./models";
 export { resolveReferences } from "./references";
 export { SharedConfigStore, sharedConfigDir } from "./shared-config";
 export { type TaskDeps, TaskManager } from "./task-manager";

@@ -9,6 +9,7 @@ import {
   type ChoiceOption,
   type InputIssue,
   type InputSpec,
+  type ModeView,
   type RespondResult,
   type SendOptions,
   partsOf,
@@ -66,6 +67,13 @@ export interface BlockProps {
   input?: InputProps;
   /** The answer an `annotate` block is about: an answered block's id, or "last" (the latest one before this block). */
   answerOf?: (ref: string) => BlockAnswer | null;
+  /**
+   * Task modes (task-modes spec §5): picks a mode for the open task. True only when the switch was sent (not while
+   * the tier question waits, nor when refused). Absent without modes (D0), and on a block of an earlier task.
+   */
+  chooseMode?: (mode: string) => boolean;
+  /** The harness's modes as the window shows them, the action's modes (`allowed`), and the task's mode now. */
+  modes?: { views: Record<string, ModeView>; allowed: string[]; current?: string };
 }
 
 /** What a block component can do besides showing its data. */
@@ -129,7 +137,7 @@ export function Message({
   live,
   reveal,
 }: {
-  entry: Pick<ChatEntry, "role" | "text" | "blocks" | "activities" | "parts">;
+  entry: Pick<ChatEntry, "role" | "text" | "blocks" | "activities" | "parts" | "mode">;
   components: Record<string, ComponentType<BlockProps>>;
   actions: BlockActions;
   /** The turn is running: its status row instead of what it did, shown even before anything arrives. */
@@ -139,6 +147,14 @@ export function Message({
 }) {
   const { t } = useTranslation();
   if (!live && entry.role === "assistant" && !entry.text && entry.blocks.length === 0 && entry.activities.length === 0) return null;
+  // A mode switch the person picked (task-modes spec §5.4): a system line, not their message.
+  if (entry.role === "user" && entry.mode) {
+    return (
+      <article className="hh-message system">
+        <p className="hh-mode-line">{entry.text}</p>
+      </article>
+    );
+  }
   return (
     <article className={`hh-message ${entry.role}${live ? " live" : ""}`}>
       {entry.role === "user" && <span className="hh-who">{t("chat.you")}</span>}

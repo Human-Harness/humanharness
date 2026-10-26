@@ -281,3 +281,20 @@ describe("usage per scope", () => {
     expect(summarizeUsage([line(undefined, 7)], undefined)).not.toHaveProperty("scopes");
   });
 });
+
+describe("usage.jsonl: the task's mode (task-modes spec §5.5)", () => {
+  const entry: ChatEntry = {
+    id: "e",
+    role: "assistant",
+    text: "",
+    blocks: [],
+    activities: [],
+    at: "t",
+    usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
+  };
+  it("every line of a task in a mode carries it; none without (D0)", () => {
+    expect(usageRecord(entry, "claude", { task: "t1", action: "study", mode: "socratic", phase: "close" })).toMatchObject({ mode: "socratic", phase: "close" });
+    expect(usageRecord(entry, "claude", { task: "t1" })).not.toHaveProperty("mode");
+    expect(compactionRecord("claude", { task: "t1", mode: "feynman" }, "t")).toMatchObject({ kind: "compaction", mode: "feynman" });
+  });
+});

@@ -12,7 +12,7 @@ A harness declares the knobs that change how the AI works for this person (a ton
 - `options`: labels of the enum's values (a toggle may label `"true"` and `"false"`). A value with no label shows as itself;
 - `agent`: the sentence for the agent. `{ text, onlyWhenChanged: true }` leaves it out while the value is the default. Absent or `false`: the field is UI-only, and the agent never sees it.
 
-Field names are camelCase (`hintAfter`). `modes` is reserved for mode settings, which come with task modes (spec §6).
+Field names are camelCase (`hintAfter`). `modes` is reserved: the record keeps mode settings under it (see "Mode settings").
 
 ### Agent sentences
 
@@ -27,7 +27,7 @@ Spaces are allowed around the placeholder's content (`{{ value:label }}`), not a
 
 The structural rules are manifest schema errors: `defineHarness` and `loadHarness` refuse them, and `check` lists them as `schema`. They cover:
 
-- at least one field;
+- at least one field, of the harness's own or of a mode's (the manifest checks it, since `settings.fields` may be empty when a mode has settings);
 - a missing default or one that fails its schema, and a schema that takes `undefined`;
 - a control whose type doesn't fit;
 - `options` on a control without labels (only `segmented`, `select` and `toggle` have them), and an `options` key that isn't a value;
@@ -40,7 +40,7 @@ The structural rules are manifest schema errors: `defineHarness` and `loadHarnes
 
 - The reserved `settings` collection (`settingsCollection`; `dataCollections` adds it to the store, and it is never in `harness.data`). It is app-wide, one record, and `agent: "none"`: the agent reads sentences, never the JSON, and a harness with settings but no data gets no `data` MCP server.
 - The record holds only what the person changed. A change back to the default removes the key, and an empty record removes the file (`.harness/data/_app/settings.json`). `settingsValues` fills the defaults on read, so a harness update that changes a default reaches everyone who never touched it.
-- The record is read field by field (`validFields` in `packages/workspace/src/data.ts`): a stored value its field no longer takes (a hand edit, or a harness update that narrowed the field) is dropped and its default applies; the other fields keep their values, and later changes still save. Only a file that isn't a JSON object is `broken-file`, which reads as the defaults and refuses writes until it is fixed or restored.
+- The record is read field by field (`validFields` in `packages/workspace/src/data.ts`): a stored value its field no longer takes (a hand edit, or a harness update that narrowed the field) is dropped and its default applies; the other fields keep their values, and later changes still save. Mode settings under `modes.<mode>` are read the same way, one level deeper. Only a file that isn't a JSON object is `broken-file`, which reads as the defaults and refuses writes until it is fixed or restored.
 - `SettingsController` writes the person's changes through the person's data handler (`personDataRequests`, the one behind `hh:data`): the store's checks, a refusal while turns are blocked (a restore, a folder move, an engine change), and a `Data: settings` history commit tagged with the open task. Undoing a task therefore also undoes settings changed during it, so `dataDiff` lists such a change in that task's diff, under collection `settings`, scope `_app`.
 
 ## The window
@@ -58,6 +58,16 @@ The structural rules are manifest schema errors: `defineHarness` and `loadHarnes
 - **Never mid-session (D4).** `SettingsController` marks the settings stale on any write to the collection, from any writer, and after a restore (`hh:restore`, `hh:restoreTask`). It then asks `TaskManager.whenNoTask` to rewrite: after the running operation, only when no task is open. `TaskManager` calls `betweenTasks` after a task ends and before a new task's first turn, which applies whatever is still stale. Both run on the task manager's queue, which also creates runtimes, so a rewrite never races a new runtime's first write.
 - While a task is open, the tab says "Changes apply from the next task." and marks as "Pending" every agent field whose value differs from what the current `AGENTS.md` holds. UI-only fields are never pending: the harness's screens read them at once.
 
+## Mode settings
+
+Task modes (`docs/architecture/modes.md`, spec §6) may declare their own `settings`: the same field shape and checks (`checkSettingFields`), except that `section` is refused, since they are grouped by their mode.
+
+- A mode with settings needs the manifest's `settings`: its tab draws them. `settingsView` appends one section per mode with settings, id `mode:<id>`, labelled with the mode's label; a field's own `advanced` puts it under "More options", still grouped by mode.
+- Their key is `<mode>.<field>` (`modeSettingKey`; field names and mode ids never contain a dot) in `SettingsState.values`, `client.settings.set` and the tab's field names (`SettingFieldView.name`, with `mode`). `settingRef` finds a field by either kind of key.
+- They are stored under `modes.<mode>` of the same record, only what the person changed (`withSetting` prunes an empty mode and an empty `modes`), and go through the same controller, history commit and undo.
+- They never reach `AGENTS.md`. `modeSentences` fills them (`onlyWhenChanged` included) into the mode's brief when a task starts in that mode, at a switch to it and in a resumed session, so a change is never "Pending": it applies the next time that mode starts or is switched to.
+- `settings-tokens` doesn't count them: they are not in the stable prefix.
+
 ## Measuring
 
 The section is in every session's stable prefix. `check` warns (`settings-tokens`) when the section, with every sentence at the defaults (`onlyWhenChanged` ones included), is over `SETTINGS_TOKENS_WARN` (400) tokens.
@@ -68,7 +78,9 @@ The section is in every session's stable prefix. `check` warns (`settings-tokens
 
 ## Known gaps
 
-- Mode settings (spec §6) wait for task modes.
+- `run --set` covers the harness's own fields only: mode settings use the run folder's stored values or their defaults.
+- While a task is open the tab says "Changes apply from the next task." for mode settings too, which apply at that mode's next start or switch.
+- There is no multi-select control, so no setting (of the harness or of a mode) can be a list.
 - There is no file watcher: a hand edit of `settings.json` reaches `AGENTS.md` at the next runtime start or the next settings change.
 - A task that goes on in a new session reads the settings as they are then. That happens after "Move folder", which keeps the open task (`resumeFromNotes`): the new folder's runtime writes `AGENTS.md` with the current settings. A restart never carries a task over: at startup the app ends a task left open (`TaskManager.interrupt`), and so does choosing another folder.
 - Recordings for mock mode don't vary by settings.

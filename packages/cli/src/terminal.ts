@@ -1,5 +1,5 @@
 import type { Writable } from "node:stream";
-import { type ChoiceOption, type InputSpec, annotateSchema, choicesSchema } from "@humanharness/harness-sdk";
+import { type ChoiceOption, type InputSpec, annotateSchema, choicesSchema, recommendModeSchema } from "@humanharness/harness-sdk";
 import { CORE_LOCALES } from "@humanharness/i18n";
 import type { Event } from "@humanharness/runtime";
 
@@ -13,6 +13,12 @@ export function errorMessage(code: string, engine: string): string {
   const text = errors[code];
   return (typeof text === "string" ? text : code).replaceAll("{{engine}}", engine);
 }
+
+/**
+ * The agent's text as one plain line: no terminal control characters (an escape sequence could redraw the terminal),
+ * line breaks and tabs as spaces.
+ */
+const plain = (s: string) => s.replace(/[\t\n\v\f\r]/g, " ").replace(/[\x00-\x1f\x7f-\x9f]/g, "").replace(/ {2,}/g, " ").trim();
 
 /** `run`'s window: the events the app would show, as plain text. */
 export class TerminalView {
@@ -28,6 +34,8 @@ export class TerminalView {
     private readonly color = false,
     /** The harness's input blocks, by name (input-blocks spec §8). */
     private readonly inputs: Record<string, InputSpec> = {},
+    /** The open task's action's modes (task-modes spec §4); undefined: not known, every valid id is drawn. */
+    private readonly listedModes: () => readonly string[] | undefined = () => undefined,
   ) {}
 
   event(e: Event): void {
@@ -50,6 +58,25 @@ export class TerminalView {
       this.newline();
       this.write("\n");
       parsed.data.options.forEach((o, i) => this.line(`  ${i + 1}. ${o.label}`));
+      return;
+    }
+    if (name === "recommend_mode") {
+      const parsed = recommendModeSchema.safeParse(data);
+      if (!parsed.success) return;
+      // Ids the action doesn't list are dropped; an unlisted recommendation draws nothing.
+      const listed = this.listedModes();
+      const known = (mode: string) => listed === undefined || listed.includes(mode);
+      if (!known(parsed.data.recommended)) return;
+      this.newline();
+      this.write("\n");
+      this.line(`  Recommended mode: ${parsed.data.recommended}`);
+      for (const reason of parsed.data.reasons.map(plain).filter(Boolean)) this.line(`    - ${reason}`);
+      const alternatives = (parsed.data.alternatives ?? []).filter((a) => known(a.mode));
+      if (alternatives.length > 0) {
+        this.line("  Or:");
+        for (const a of alternatives) this.line(`    ${a.mode}: ${plain(a.why)}`);
+      }
+      this.line("  Type m <mode> to pick one.");
       return;
     }
     if (name === "annotate") {

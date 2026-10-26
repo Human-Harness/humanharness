@@ -86,6 +86,7 @@ export async function checkHarness(dir: string, opts: { mode?: Mode } = {}): Pro
 
   const briefs = await readBriefs(harness);
   findings.push(...briefFindings(harness, briefs));
+  findings.push(...(await modeFindings(harness)));
   findings.push(...(await mockFindings(harness, briefs)));
   findings.push(...(await i18nFindings(harness)));
   findings.push(...(await inputFindings(harness)));
@@ -226,6 +227,18 @@ function briefFindings(h: LoadedHarness, briefs: Map<string, string | null>): Fi
     if (!text.trim()) return [error("brief-missing", `Action "${id}": its brief ${action.prompt} is empty.`, path.relative(h.root, resolveInHarness(h, action.prompt)))];
     return [];
   });
+}
+
+/** Every mode's brief exists and says something (task-modes spec §3 `check`). No modes: nothing (D0). */
+async function modeFindings(h: LoadedHarness): Promise<Finding[]> {
+  const out: Finding[] = [];
+  for (const [id, mode] of Object.entries(h.modes)) {
+    const file = resolveInHarness(h, mode.brief);
+    const text = await read(file);
+    if (text === null) out.push(error("brief-missing", `Mode "${id}": its brief ${mode.brief} does not exist.`, MANIFEST));
+    else if (!text.trim()) out.push(error("brief-missing", `Mode "${id}": its brief ${mode.brief} is empty.`, path.relative(h.root, file)));
+  }
+  return out;
 }
 
 /** Every key of a locale file, nested keys joined with dots. */

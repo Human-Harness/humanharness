@@ -229,3 +229,63 @@ describe("SettingsController", () => {
     expect(log).toEqual(["log:Could not apply the settings", "refresh"]);
   });
 });
+
+describe("SettingsController: mode settings (harness-settings spec §6)", () => {
+  const modes = {
+    socratic: {
+      label: "Socratic",
+      settings: {
+        questions: { schema: z.enum(["few", "many"]), default: "few", control: "segmented" as const, label: "Questions", agent: "Ask {{value}} questions." },
+      },
+    },
+    feynman: { label: "Feynman" },
+  };
+  function modeSetup() {
+    const base = fs.mkdtempSync(path.join(root, "m-"));
+    const store = new DataStore(base, dataCollections({ data: {}, settings, modes }));
+    const ctl = new SettingsController({
+      settings,
+      modes,
+      store: async () => store,
+      write: (request) => runDataRequest(store, request, { who: "person", scope: APP_SCOPE }),
+      taskOpen: async () => true,
+      whenNoTask: async () => false,
+      refresh: async () => true,
+      changed: () => {},
+    });
+    const file = path.join(base, ".harness", "data", "_app", "settings.json");
+    return { ctl, file, stored: () => JSON.parse(fs.readFileSync(file, "utf8")) as unknown };
+  }
+
+  it("saves one under modes.<mode>, reads it under its key, fills the mode's sentences, and is never pending", async () => {
+    const t = modeSetup();
+    // AGENTS.md was written (a task is open), so a changed top-level setting would be pending; a mode setting never is.
+    await t.ctl.sentences();
+    expect(await t.ctl.set("socratic.questions", "many")).toMatchObject({ ok: true, state: { values: { tone: "patient", "socratic.questions": "many" }, pending: [] } });
+    expect(t.stored()).toEqual({ modes: { socratic: { questions: "many" } } });
+    expect(await t.ctl.modeSentences("socratic")).toEqual(["Ask many questions."]);
+    expect(await t.ctl.modeSentences("feynman")).toEqual([]);
+    await t.ctl.set("socratic.questions", "few");
+    expect(fs.existsSync(t.file)).toBe(false);
+  });
+
+  it("refuses an unknown key and a value its schema refuses", async () => {
+    const t = modeSetup();
+    expect(await t.ctl.set("socratic.nope", "x")).toEqual({ ok: false, message: "Unknown setting" });
+    expect(await t.ctl.set("feynman.questions", "few")).toEqual({ ok: false, message: "Unknown setting" });
+    expect((await t.ctl.set("socratic.questions", "lots")).ok).toBe(false);
+    for (const key of ["__proto__.x", "__proto__.questions", "socratic.__proto__", "constructor.questions", "toString.questions"])
+      expect(await t.ctl.set(key, "many")).toEqual({ ok: false, message: "Unknown setting" });
+    expect(fs.existsSync(t.file)).toBe(false);
+    expect(({} as Record<string, unknown>).questions).toBeUndefined();
+  });
+
+  it("reset clears a stored mode setting back to its default", async () => {
+    const t = modeSetup();
+    await t.ctl.set("tone", "demanding");
+    await t.ctl.set("socratic.questions", "many");
+    expect(await t.ctl.reset()).toMatchObject({ ok: true, state: { values: { tone: "patient", "socratic.questions": "few" } } });
+    expect(fs.existsSync(t.file)).toBe(false);
+    expect(await t.ctl.modeSentences("socratic")).toEqual(["Ask few questions."]);
+  });
+});

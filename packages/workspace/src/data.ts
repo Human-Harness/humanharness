@@ -81,11 +81,34 @@ function byKey(key: string) {
  * The reserved `settings` record, read field by field (harness-settings spec D2): its fields are all optional, so a
  * stored value its field no longer takes (a harness update narrowed it, or a hand edit) is dropped and the default
  * applies, instead of the whole record failing and every later change being refused. Writes are still checked whole.
+ * Mode settings (`modes.<mode>.<field>`, task-modes spec §6) are read field by field too, one level deeper.
  */
 function validFields(c: Collection, item: unknown): unknown {
   if (!isObject(item)) return item;
   const shape = c.schema.shape;
+  const out = keepValid(shape, item);
+  const modes = Object.hasOwn(shape, "modes") ? objectShape(shape.modes) : null;
+  if (modes && isObject(item.modes)) {
+    const byMode = Object.entries(item.modes).flatMap(([id, v]): [string, Record<string, unknown>][] => {
+      const fields = Object.hasOwn(modes, id) ? objectShape(modes[id]) : null;
+      const kept = fields && isObject(v) ? keepValid(fields, v) : {};
+      return Object.keys(kept).length > 0 ? [[id, kept]] : [];
+    });
+    if (byMode.length > 0) out.modes = Object.fromEntries(byMode);
+    else delete out.modes;
+  }
+  return out;
+}
+
+/** The entries of `item` that `shape` declares and whose own schema takes them. */
+function keepValid(shape: Record<string, z.ZodType>, item: Record<string, unknown>): Record<string, unknown> {
   return Object.fromEntries(Object.entries(item).filter(([k, v]) => Object.hasOwn(shape, k) && shape[k].safeParse(v).success));
+}
+
+/** The shape of a (possibly optional) object schema, or null. */
+function objectShape(t: z.ZodType): Record<string, z.ZodType> | null {
+  const inner = t instanceof z.ZodOptional ? t.unwrap() : t;
+  return inner instanceof z.ZodObject ? (inner.shape as Record<string, z.ZodType>) : null;
 }
 
 async function writeAtomic(file: string, text: string): Promise<void> {

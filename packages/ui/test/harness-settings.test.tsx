@@ -190,3 +190,35 @@ describe("HarnessSettingsTab", () => {
     expect(screen.getByRole("button", { name: "Patient" }).getAttribute("aria-pressed")).toBe("true");
   });
 });
+
+describe("HarnessSettingsTab: mode settings (harness-settings spec §6)", () => {
+  it("draws each mode's settings as a section named after the mode, and saves them under their key", async () => {
+    const client = new FakeClient();
+    const withModes: SettingsView = {
+      ...view,
+      sections: [...view.sections, { id: "mode:socratic", label: "Socratic" }],
+      fields: [
+        ...view.fields,
+        {
+          name: "socratic.questions",
+          control: "segmented",
+          label: "Questions",
+          section: "mode:socratic",
+          mode: "socratic",
+          default: "few",
+          options: [
+            { value: "few", label: "Few" },
+            { value: "many", label: "Many" },
+          ],
+        },
+      ],
+    };
+    client.state.settings = withModes;
+    client.settingsState = { values: { ...defaults, "socratic.questions": "few" }, pending: [] };
+    await renderIn("en", <HarnessSettingsTab client={client} view={withModes} />);
+    await screen.findByRole("group", { name: "Questions" });
+    expect(screen.getAllByRole("heading").map((h) => h.textContent)).toEqual(["How the AI talks", "Help", "Socratic"]);
+    fireEvent.click(within(screen.getByRole("group", { name: "Questions" })).getByRole("button", { name: "Many" }));
+    expect(client.settingsSets).toEqual([{ field: "socratic.questions", value: "many" }]);
+  });
+});

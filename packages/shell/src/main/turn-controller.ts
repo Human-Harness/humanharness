@@ -60,6 +60,10 @@ export interface TurnOptions extends SendOptions {
   holdFailure?: boolean;
   /** The retry of a held turn: the person's message is already in the chat. */
   skipUserEntry?: boolean;
+  /** The task's mode while this turn runs: usage.jsonl records it (task-modes spec §5.5). */
+  mode?: string;
+  /** The person picked `mode`: the chat's user entry is a system line naming it, never their message (spec §5.4). */
+  modeSwitch?: boolean;
 }
 
 export interface TurnDeps {
@@ -134,7 +138,7 @@ export class TurnController {
   }
 
   private async run(message: string, options: TurnOptions): Promise<void> {
-    const { action, task, scope, chat, phase, turn, display, followUp, quiet, onEvent, profile, holdModelError, holdFailure, skipUserEntry } = options;
+    const { action, task, scope, chat, phase, turn, display, followUp, quiet, onEvent, profile, holdModelError, holdFailure, skipUserEntry, mode, modeSwitch } = options;
     const current: { cancelled: boolean; running: RunningTurn | null } = { cancelled: false, running: null };
     this.turn = current;
     try {
@@ -151,6 +155,8 @@ export class TurnController {
           at: new Date().toISOString(),
           ...(action && !followUp ? { action } : {}),
           ...(task ? { task } : {}),
+          // `modeSwitch` needs both `mode` and `display` ("Switched to …"): without `display` the mode's prompt lands here.
+          ...(modeSwitch && mode ? { mode } : {}),
         });
       }
       const recorder = new TurnRecorder(this.deps.stateBlocks());
@@ -167,6 +173,7 @@ export class TurnController {
         ...(action ? { action } : {}),
         ...(task ? { task } : {}),
         ...(scope ? { scope } : {}),
+        ...(mode ? { mode } : {}),
         ...(phase ? { phase } : {}),
         ...(profile ? profileMeta(profile) : {}),
         ...(reportedModel ? { reportedModel } : {}),

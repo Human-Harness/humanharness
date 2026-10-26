@@ -94,6 +94,9 @@ export interface ActionOption {
   tier?: Tier;
   /** Harnesses with scopes: "none" runs app-wide; anything else needs an open scope. */
   scope?: ScopeMode;
+  /** The modes its task may work in, and how it starts (task-modes spec §3). Absent without modes (D0). */
+  modes?: string[];
+  defaultMode?: string;
 }
 
 /** A read-only reference folder, as the work screen shows it ("~/…" for paths in the home folder). */
@@ -127,6 +130,13 @@ export type MoveResult =
   | { ok: true; state: AppState; leftBehind?: string; historyLeftBehind?: boolean }
   | { ok: false; error: MoveError; state?: AppState };
 
+/** A mode as the window shows it (task-modes spec §3): never its brief or the agent's hint. */
+export interface ModeView {
+  label: string;
+  description?: string;
+  minTier?: Tier;
+}
+
 export interface AppState {
   harness: {
     id: string;
@@ -156,6 +166,8 @@ export interface AppState {
   inputs?: Record<string, InputSpec>;
   /** The harness's settings (manifest `settings`): its own Settings tab. Absent: no tab (harness-settings D0). */
   settings?: SettingsView;
+  /** The harness's modes, by id (task-modes spec). Absent: none (D0). */
+  modes?: Record<string, ModeView>;
   /** Folders the agent can read but never change. */
   references?: ReferenceView[];
   /** Settings › Modelos. */
@@ -209,6 +221,8 @@ export interface ChatEntry {
   engine?: string;
   /** The task the entry belongs to (flow mode shows one task at a time). */
   task?: string;
+  /** A mode switch the person picked (task-modes spec §5.4): this user entry is a system line, and this is the mode's id. */
+  mode?: string;
   /** Assistant entries: text runs and blocks in the order they arrived. Older entries lack it: text, then blocks. */
   parts?: AnswerPart[];
 }
@@ -369,6 +383,8 @@ export interface SendOptions {
   action?: string;
   /** Harnesses with scopes: run in this scope (it opens first). Default: the open one. */
   scope?: string;
+  /** With `action`: the mode the person picked for the new task (`defaultMode: "ask"`, task-modes spec §3). */
+  mode?: string;
 }
 
 /**
@@ -392,6 +408,13 @@ export interface CurrentTaskView {
   fallback?: { model: string; tier?: Tier };
   /** The id of the input block the task waits an answer for (input-blocks spec §4). */
   pendingInput?: string;
+  /** Task modes (task-modes spec §5.5), only for a task whose action has them: the mode now and those used. */
+  mode?: string;
+  modes?: string[];
+  /** The tier the task counts as (a custom profile: its nearest), so the window can ask before a switch (§5.3). */
+  tier?: Tier;
+  /** It runs below its mode's `minTier`: the person chose to continue. */
+  belowMinTier?: true;
 }
 
 /** A note in `.harness/notes/`, for the side panel and "What's clear so far". */
@@ -413,6 +436,27 @@ export interface TaskView {
   notes: NoteView[];
   /** Harnesses with scopes: the open scope (null when none is open). Absent without scopes. */
   scope?: string | null;
+}
+
+/**
+ * How the person's pick of a mode for the open task went (task-modes spec §5). `switched`: a turn in the new mode runs
+ * now ("turn"), the mode was set with no turn because the session is gone ("quiet"), the task closes and a new one
+ * starts in that mode ("new-task"), or it already was the mode ("same"). Refusals: no task waits ("no-task"), the action
+ * doesn't list the mode ("unknown"), or the mode asks for more than the task's tier ("tier", with both tiers).
+ */
+export type ModeResult =
+  | { ok: true; switched: "turn" | "quiet" | "new-task" | "same" }
+  | { ok: false; reason: "no-task" | "unknown" | "tier"; required?: Tier; current?: Tier };
+
+/** A switch `chooseMode` started (task-modes spec §5), whoever asked for it: a "same" answer is none. */
+export interface ModeSwitch {
+  mode: string;
+  switched: "turn" | "quiet" | "new-task";
+}
+
+/** The answer to the tier question (spec §5.3): continue at the task's tier, or start a new task at the mode's. */
+export interface ModeChoice {
+  belowTier?: "continue" | "new-task";
 }
 
 /** The action to start after `current` on the guided path: the next one, or else the first one not done yet. */
@@ -526,6 +570,17 @@ export interface HarnessClient {
    * errors, or with the chat's line once the answer is taken; the agent's turn then arrives as events.
    */
   respond(blockId: string, value: Record<string, unknown>): Promise<RespondResult>;
+  /**
+   * The person picks a mode for the open task (task-modes spec §5): resolves with a refusal (with the tiers when the
+   * mode asks for more) or with how the switch goes on; the switch's turn then arrives as events. `choice` answers the
+   * tier question.
+   */
+  chooseMode(mode: string, choice?: ModeChoice): Promise<ModeResult>;
+  /**
+   * Every switch `chooseMode` started, whoever called it (the window's mode bar and blocks, or the harness's own UI),
+   * told when its result arrives and before the switch's turn: the chat draws the "Switched to" line and that turn.
+   */
+  onModeSwitch(listener: (s: ModeSwitch) => void): () => void;
   /** Opens a file inside the reference folders or the user's folder in its default app. False when refused or missing. */
   openPath(path: string): Promise<boolean>;
   /** Shows a file inside the reference folders or the user's folder in Finder (any kind of file). False when refused or missing. */

@@ -35,11 +35,11 @@ export interface FileChange {
 
 /** The history commits of one task, as the History panel shows them. */
 export interface HistoryTask {
-  /** Null: the "Other changes" group (commits outside any task). */
+  /** Null: the "Outside a task" group (commits outside any task). */
   taskId: string | null;
   actionId: string | null;
   /**
-   * Where "Go back to before this task" lands: the task's first "Before message" snapshot when its first
+   * Where "Undo this task" lands: the task's first "Before message" snapshot when its first
    * commit is one (so the person's own edits made before the task stay), else the commit before the task's
    * first commit; null when the group starts at the very first commit.
    */
@@ -48,7 +48,7 @@ export interface HistoryTask {
   end: string;
   /** The date of `end`. */
   date: Date;
-  /** Tasks: the tree diff from `start` to `end`. Other changes: the union of its commits' own changes. */
+  /** Tasks: the tree diff from `start` to `end`. Outside a task: the union of its commits' own changes. */
   changes: FileChange[];
   /** Newest first. */
   entries: HistoryEntry[];
@@ -348,7 +348,7 @@ export class History {
   }
 
   /**
-   * The commits of the last `depth`, grouped by task id, newest task first; the "Other changes" group always last.
+   * The commits of the last `depth`, grouped by task id, newest task first; the "Outside a task" group always last.
    * A task's commits need not be contiguous: its changes run from its `start` to its last commit, so they
    * include whatever happened in between (untagged commits too). A task cut by `depth` is followed back
    * past it to find its true first commit.

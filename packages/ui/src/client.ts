@@ -221,12 +221,12 @@ export { BEFORE_MESSAGE, NOTE, RESTORE_POINT, RESTORE_TASK, START, STOPPED_PREFI
 
 /**
  * One row of the History panel: a task's commits, or the group of commits outside any task (`taskId: null`:
- * "Other changes", which holds the restores too).
+ * "Outside a task", which holds the restores too).
  */
 export interface HistoryTaskView {
   taskId: string | null;
   actionId: string | null;
-  /** What "Go back to before this task" restores; null when there is nothing before it. */
+  /** What "Undo this task" restores; null when there is nothing before it. */
   start: string | null;
   end: string;
   /** ISO date of the task's last commit. */

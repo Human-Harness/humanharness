@@ -151,7 +151,7 @@ describe("HarnessApp", () => {
     await screen.findByPlaceholderText("Write a message…");
     fireEvent.click(screen.getByRole("button", { name: "History" }));
     await screen.findByText("The AI finished");
-    fireEvent.click(screen.getByRole("button", { name: "Go back to this point" }));
+    fireEvent.click(screen.getByRole("button", { name: "Go back here" }));
     fireEvent.click(screen.getByRole("button", { name: "Yes, go back" }));
     await waitFor(() => expect(client.restored).toEqual(["abc"]));
   });
@@ -161,8 +161,8 @@ describe("HarnessApp", () => {
     await startWork(<HarnessApp client={client} />);
     await screen.findByPlaceholderText("Write a message…");
     fireEvent.click(screen.getByRole("button", { name: "History" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Go back to before this task" }));
-    fireEvent.click(screen.getByRole("button", { name: "Yes, go back" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Undo this task" }));
+    fireEvent.click(screen.getByRole("button", { name: "Undo task" }));
     await waitFor(() => expect(client.restoredTasks).toEqual(["t1"]));
     await screen.findByText("I went back to before that task. Everything it changed in your files was undone.");
   });
@@ -174,7 +174,7 @@ describe("HarnessApp", () => {
     await screen.findByPlaceholderText("Write a message…");
     fireEvent.click(screen.getByRole("button", { name: "History" }));
     await screen.findByText("The AI finished");
-    fireEvent.click(screen.getByRole("button", { name: "Go back to this point" }));
+    fireEvent.click(screen.getByRole("button", { name: "Go back here" }));
     fireEvent.click(screen.getByRole("button", { name: "Yes, go back" }));
     expect((await screen.findByRole("alert")).textContent).toMatch(/couldn't go back/i);
   });
@@ -260,12 +260,12 @@ describe("HarnessApp", () => {
     await typeAndSend(client, "go");
     fireEvent.click(screen.getByRole("button", { name: "History" }));
     await screen.findByText("The AI finished");
-    expect((screen.getByRole("button", { name: "Go back to this point" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Go back here" }) as HTMLButtonElement).disabled).toBe(true);
     act(() => client.emit({ type: "done", ok: true }));
-    fireEvent.click(screen.getByRole("button", { name: "Go back to this point" }));
+    fireEvent.click(screen.getByRole("button", { name: "Go back here" }));
     expect(client.restored).toEqual([]);
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-    fireEvent.click(screen.getByRole("button", { name: "Go back to this point" }));
+    fireEvent.click(screen.getByRole("button", { name: "Go back here" }));
     fireEvent.click(screen.getByRole("button", { name: "Yes, go back" }));
     await waitFor(() => expect(client.restored).toEqual(["abc"]));
     await screen.findByText("I went back to that point. Files changed after it were undone.");

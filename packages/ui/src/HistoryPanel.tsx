@@ -14,6 +14,7 @@ import {
   TURN_PREFIX,
   UNDO_PREFIX,
 } from "./client";
+import { ChevronIcon, ClockIcon, CloseIcon, UndoIcon, WarnIcon } from "./chrome";
 import { shownLanguage } from "./language";
 
 /** The i18n key (and its values) that tells a history entry in plain language; null keeps the commit subject. */
@@ -37,6 +38,20 @@ export function laterTasks(groups: HistoryTaskView[], own: string | null, after:
 }
 
 const keyOf = (g: HistoryTaskView) => g.taskId ?? "other";
+
+const sameDay = (a: Date, b: Date) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+
+/** The groups split by local day, keeping their order (newest first). */
+export function byDay(groups: HistoryTaskView[]): { day: Date; items: HistoryTaskView[] }[] {
+  const days: { day: Date; items: HistoryTaskView[] }[] = [];
+  for (const g of groups) {
+    const d = new Date(g.date);
+    const last = days[days.length - 1];
+    if (last && sameDay(last.day, d)) last.items.push(g);
+    else days.push({ day: new Date(d.getFullYear(), d.getMonth(), d.getDate()), items: [g] });
+  }
+  return days;
+}
 
 type Restore = { kind: "task" | "point"; id: string };
 
@@ -141,24 +156,35 @@ export function HistoryPanel({
     setConfirming(null);
   };
 
-  /** The button, or its confirmation while it waits for a yes; `later` tasks are undone too. */
-  const goBack = (r: Restore, label: string, later: number) =>
+  /** The button, or its confirmation while it waits for a yes; `later` tasks are undone too. `name` is the task's row label. */
+  const goBack = (r: Restore, later: number, name?: string) =>
     confirming?.kind === r.kind && confirming.id === r.id && !disabled ? (
-      <div className="hh-confirm">
-        <p>
-          {t(r.kind === "task" ? "history.confirmTask" : "history.confirm")}
-          {later > 0 && ` ${t("history.laterTasks", { count: later })}`}
-        </p>
-        <button ref={yesRef} disabled={restoring} onClick={() => restore(r)}>
-          {t("history.confirmYes")}
-        </button>
-        <button disabled={restoring} onClick={() => cancel(r)}>
-          {t("history.cancel")}
-        </button>
+      <div className="hh-confirm hh-history-confirm">
+        <WarnIcon />
+        <div>
+          {r.kind === "task" && <strong>{t("history.confirmTaskTitle", { name })}</strong>}
+          <p>
+            {t(r.kind === "task" ? "history.confirmTask" : "history.confirm")}
+            {later > 0 && ` ${t("history.laterTasks", { count: later })}`}
+          </p>
+        </div>
+        <div className="hh-history-confirm-buttons">
+          <button disabled={restoring} onClick={() => cancel(r)}>
+            {t("history.cancel")}
+          </button>
+          <button ref={yesRef} className="hh-primary" disabled={restoring} onClick={() => restore(r)}>
+            {r.kind === "task" ? t("history.undoTasks", { count: later + 1 }) : t("history.confirmYes")}
+          </button>
+        </div>
       </div>
+    ) : r.kind === "task" ? (
+      <button id={triggerId(r)} className="hh-history-undo" disabled={disabled || restoring} onClick={() => setConfirming(r)}>
+        <UndoIcon />
+        {t("history.restoreTask")}
+      </button>
     ) : (
-      <button id={triggerId(r)} disabled={disabled || restoring} onClick={() => setConfirming(r)}>
-        {label}
+      <button id={triggerId(r)} className="hh-history-point-back" disabled={disabled || restoring} onClick={() => setConfirming(r)}>
+        {t("history.restore")}
       </button>
     );
 
@@ -172,63 +198,111 @@ export function HistoryPanel({
     const label = entryLabel(e.message);
     return label ? t(label.key, label.values ?? {}) : e.message;
   };
-  const when = (iso: string) => new Date(iso).toLocaleString(shownLanguage(i18n));
+  const language = shownLanguage(i18n);
+  /** The time alone; the day is its section's heading, and the full date shows on hover. */
+  const when = (iso: string) => {
+    const d = new Date(iso);
+    return (
+      <time dateTime={iso} title={d.toLocaleString(language)}>
+        {d.toLocaleTimeString(language, { hour: "numeric", minute: "2-digit" })}
+      </time>
+    );
+  };
+  // Tasks under their day; the group outside any task always comes last, in a section of its own.
+  const days: { day: Date | null; items: HistoryTaskView[] }[] = groups ? byDay(groups.filter((g) => g.taskId !== null)) : [];
+  const outside = groups?.find((g) => g.taskId === null);
+  if (outside) days.push({ day: null, items: [outside] });
+  const dayLabel = (day: Date) => {
+    const today = new Date();
+    if (sameDay(day, today)) return t("history.today");
+    if (sameDay(day, new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1))) return t("history.yesterday");
+    const year = day.getFullYear() === today.getFullYear() ? undefined : "numeric";
+    return day.toLocaleDateString(language, { month: "short", day: "numeric", year });
+  };
 
   return (
     <aside className="hh-history" role="dialog" aria-modal="true" aria-label={t("history.title")}>
       <header>
         <h2>{t("history.title")}</h2>
-        <button ref={closeRef} onClick={close}>
-          {t("history.close")}
+        <button ref={closeRef} className="hh-icon-button" aria-label={t("history.close")} onClick={close}>
+          <CloseIcon />
         </button>
       </header>
+      {groups !== null && groups.length > 0 && <p className="hh-caption hh-history-intro">{t("history.intro")}</p>}
+      {disabled && (
+        <p role="status" className="hh-history-busy">
+          <ClockIcon />
+          {t("history.busy")}
+        </p>
+      )}
       {failed && <p role="alert">{t("history.restoreFailed")}</p>}
       {loadFailed && <p role="alert">{t("history.loadFailed")}</p>}
-      {groups?.length === 0 && <p>{t("history.empty")}</p>}
-      <ol className="hh-history-tasks">
-        {groups?.map((g) => {
-          const key = keyOf(g);
-          const expanded = open.has(key);
-          const bodyId = `hh-history-${key}`;
-          return (
-            <li key={key}>
-              {/* aria-controls only names a body that is there. */}
-              <button className="hh-history-row" aria-expanded={expanded} aria-controls={expanded ? bodyId : undefined} onClick={() => toggle(key)}>
-                <span className="hh-history-label">{rowLabel(g)}</span>
-                {g.noteTitle && <span>{g.noteTitle}</span>}
-                <time dateTime={g.date}>{when(g.date)}</time>
-                <span className="hh-caption">{t("history.filesChanged", { count: g.changes.length })}</span>
-              </button>
-              {expanded && (
-                <div id={bodyId} className="hh-history-body">
-                  {g.changes.length > 0 && (
-                    <ul className="hh-history-files" aria-label={t("history.changedFiles")}>
-                      {g.changes.map((c) => (
-                        <li key={c.path}>
-                          <span className={`hh-change ${c.kind}`}>{t(`history.change.${c.kind}`)}</span>
-                          <code>{c.path}</code>
-                        </li>
-                      ))}
-                    </ul>
+      {groups?.length === 0 && (
+        <div className="hh-history-empty">
+          <ClockIcon size={28} />
+          <strong>{t("history.emptyTitle")}</strong>
+          <p className="hh-caption">{t("history.empty")}</p>
+        </div>
+      )}
+      {days.map(({ day, items }) => (
+        <section key={day?.toDateString() ?? "outside"} className="hh-history-day">
+          {day && <h3>{dayLabel(day)}</h3>}
+          <ol className="hh-history-tasks">
+            {items.map((g) => {
+              const key = keyOf(g);
+              const expanded = open.has(key);
+              const bodyId = `hh-history-${key}`;
+              return (
+                <li key={key}>
+                  {/* aria-controls only names a body that is there. */}
+                  <button className="hh-history-row" aria-expanded={expanded} aria-controls={expanded ? bodyId : undefined} onClick={() => toggle(key)}>
+                    <ChevronIcon open={expanded} />
+                    <span className="hh-history-row-text">
+                      <span className="hh-history-label">{rowLabel(g)}</span>
+                      <span className="hh-caption">
+                        {when(g.date)} · {t("history.filesChanged", { count: g.changes.length })}
+                      </span>
+                    </span>
+                    {g.noteTitle && (
+                      <span className="hh-history-chip" title={g.noteTitle}>
+                        {t("history.noteSaved")}
+                      </span>
+                    )}
+                  </button>
+                  {expanded && (
+                    <div id={bodyId} className="hh-history-body">
+                      {g.changes.length > 0 && (
+                        <ul className="hh-history-files" aria-label={t("history.changedFiles")}>
+                          {g.changes.map((c) => (
+                            <li key={c.path}>
+                              <span className={`hh-change ${c.kind}`}>{t(`history.change.${c.kind}`)}</span>
+                              <code title={c.path}>{c.path}</code>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      <ol className="hh-history-entries" aria-label={t("history.points")}>
+                        {g.entries.map((e) => (
+                          <li key={e.sha}>
+                            <span className="hh-history-entry-text">
+                              <span>{entryText(e)}</span>
+                              {when(e.date)}
+                            </span>
+                            {goBack({ kind: "point", id: e.sha }, laterTasks(groups ?? [], g.taskId, e.date))}
+                          </li>
+                        ))}
+                      </ol>
+                      {g.taskId !== null &&
+                        g.start !== null &&
+                        goBack({ kind: "task", id: g.taskId }, laterTasks(groups ?? [], g.taskId, g.date), rowLabel(g))}
+                    </div>
                   )}
-                  {g.taskId !== null &&
-                    g.start !== null &&
-                    goBack({ kind: "task", id: g.taskId }, t("history.restoreTask"), laterTasks(groups, g.taskId, g.date))}
-                  <ol className="hh-history-entries">
-                    {g.entries.map((e) => (
-                      <li key={e.sha}>
-                        <span>{entryText(e)}</span>
-                        <time dateTime={e.date}>{when(e.date)}</time>
-                        {goBack({ kind: "point", id: e.sha }, t("history.restore"), laterTasks(groups, g.taskId, e.date))}
-                      </li>
-                    ))}
-                  </ol>
-                </div>
-              )}
-            </li>
-          );
-        })}
-      </ol>
+                </li>
+              );
+            })}
+          </ol>
+        </section>
+      ))}
     </aside>
   );
 }

@@ -2,12 +2,14 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { z } from "zod";
 import { type Block, blockToolName } from "./block";
-import { CORE_BLOCKS, CORE_BLOCK_NAMES } from "./core-blocks";
+import { CORE_BLOCKS, INPUT_CORE_BLOCKS, RESERVED_BLOCK_NAMES } from "./core-blocks";
 import { dataSchema } from "./data";
 
 export * from "./block";
 export * from "./core-blocks";
 export * from "./data";
+export * from "./input";
+export * from "./answer";
 /** The zod a manifest builds its block schemas with: the same instance the SDK validates them against. */
 export { z } from "zod";
 
@@ -68,7 +70,13 @@ const blockSchema = z.custom<Block>(
       typeof x.visible === "boolean" &&
       (x.tool === undefined || (typeof x.tool === "string" && TOOL_NAME.test(x.tool))) &&
       x.schema instanceof z.ZodObject &&
-      x.schema.safeParse(x.example).success
+      x.schema.safeParse(x.example).success &&
+      (x.input === undefined || x.input instanceof z.ZodObject) &&
+      (x.saveTo === undefined ||
+        (typeof x.saveTo === "object" &&
+          x.saveTo !== null &&
+          typeof x.saveTo.collection === "string" &&
+          (x.saveTo.records === undefined || typeof x.saveTo.records === "function")))
     );
   },
   { message: "Expected a block created with defineBlock()" },
@@ -110,10 +118,10 @@ const manifestSchema = z.object({
   donate: z.url().optional(),
 }).superRefine((m, ctx) => {
   for (const name of Object.keys(m.blocks)) {
-    if (CORE_BLOCK_NAMES.includes(name)) ctx.addIssue({ code: "custom", path: ["blocks", name], message: `"${name}" is a core block name` });
+    if (RESERVED_BLOCK_NAMES.includes(name)) ctx.addIssue({ code: "custom", path: ["blocks", name], message: `"${name}" is a core block name` });
   }
   // Every block becomes an MCP tool: two blocks (core ones included) cannot share a tool name.
-  const tools = new Map<string, string>(Object.entries(CORE_BLOCKS).map(([name, b]) => [blockToolName(name, b), name]));
+  const tools = new Map<string, string>(Object.entries({ ...CORE_BLOCKS, ...INPUT_CORE_BLOCKS }).map(([name, b]) => [blockToolName(name, b), name]));
   for (const [name, b] of Object.entries(m.blocks)) {
     const tool = blockToolName(name, b);
     const other = tools.get(tool);
@@ -144,6 +152,12 @@ const manifestSchema = z.object({
   for (const r of m.folder.references) {
     if (refs.has(r.id)) ctx.addIssue({ code: "custom", path: ["folder", "references"], message: `Reference "${r.id}" is declared twice` });
     refs.add(r.id);
+  }
+  // An answer kept in data goes to a collection the harness declares (input-blocks spec §6).
+  for (const [name, b] of Object.entries(m.blocks)) {
+    if (b.saveTo && !Object.hasOwn(m.data, b.saveTo.collection)) {
+      ctx.addIssue({ code: "custom", path: ["blocks", name, "saveTo"], message: `Collection "${b.saveTo.collection}" is not declared in data` });
+    }
   }
 });
 

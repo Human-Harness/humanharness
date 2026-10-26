@@ -32,6 +32,13 @@ const usageSchema = z.strictObject({
 /** The `save_note` arguments; the app validates them as it does for a real engine. */
 const noteSchema = z.looseObject({ title: z.string().min(1) });
 
+/** A recorded answer to an input block this turn shows, and the turn it leads to (input-blocks spec §8). */
+const respondSchema = z.strictObject({
+  block: z.string().regex(/^[a-z][a-z0-9_]*$/),
+  value: z.record(z.string(), z.unknown()),
+  next: z.string().min(1),
+});
+
 export const mockTurnSchema = z.strictObject({
   id: z.string().min(1),
   text: z.string().default(""),
@@ -49,6 +56,8 @@ export const mockTurnSchema = z.strictObject({
     .refine((n) => typeof n !== "object" || n === null || !Object.hasOwn(n, "__proto__"), "\"__proto__\" is not a valid reply label")
     .pipe(z.record(z.string(), z.string()))
     .optional(),
+  /** Answers to this turn's input blocks: an answer equal to one of these plays its `next`; others follow `next["*"]`. */
+  respond: z.array(respondSchema).optional(),
 });
 
 /** One action's recorded conversation (spec 3e §2). */
@@ -68,6 +77,7 @@ export type MockBlock = z.infer<typeof blockSchema>;
 export type MockWrite = z.infer<typeof writeSchema>;
 export type MockUsage = z.infer<typeof usageSchema>;
 export type MockNote = z.infer<typeof noteSchema>;
+export type MockRespond = z.infer<typeof respondSchema>;
 
 /** Every `*.json` in `dir` that parses as a recording; the others are named in `problems`. */
 export function loadRecordings(dir: string): { recordings: Recording[]; problems: string[] } {

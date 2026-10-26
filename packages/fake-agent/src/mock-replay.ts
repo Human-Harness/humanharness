@@ -1,3 +1,4 @@
+import { readAnswer } from "@humanharness/harness-sdk";
 import type { MockBlock, MockNote, MockTurn, MockUsage, MockWrite, Recording } from "./mock";
 
 /** Played when a reply isn't recorded and the recording has no `fallback` (spec 3e §2). */
@@ -74,6 +75,22 @@ function replyKey(turn: MockTurn, prompt: string): string | undefined {
   return choiceOptions(turn.blocks).find((o) => (o.followUp?.trim() ? o.followUp.trim() : o.label.trim()) === reply)?.label;
 }
 
+/** The same JSON, key order aside. */
+function canonical(v: unknown): unknown {
+  if (Array.isArray(v)) return v.map(canonical);
+  if (typeof v === "object" && v !== null) {
+    return Object.fromEntries(Object.keys(v).sort().map((k) => [k, canonical((v as Record<string, unknown>)[k])]));
+  }
+  return v;
+}
+const sameJson = (a: unknown, b: unknown) => JSON.stringify(canonical(a)) === JSON.stringify(canonical(b));
+
+/** The turn a recorded answer leads to: the prompt carries an answer (its json fence) equal to one the turn recorded. */
+function answerTarget(turn: MockTurn, prompt: string): string | undefined {
+  const answer = readAnswer(prompt);
+  return answer ? turn.respond?.find((r) => r.block === answer.block && sameJson(r.value, answer.value))?.next : undefined;
+}
+
 /**
  * One engine turn of mock mode. `newSession`: the run opened a session (`--session-id`), so the prompt is a
  * task's first message and picks the recording; otherwise `position` says where the session is.
@@ -97,7 +114,8 @@ export function replay(recordings: Recording[], position: SessionPosition | unde
   if (kind === "checkpoint") return { play: quiet("", [], rec ? closeNote(rec) : defaultNote(position.action ?? "question")), session: position };
   const current = rec?.turns.find((t) => t.id === position.turn);
   const key = current ? replyKey(current, prompt) : undefined;
-  const target = current?.next && ((key !== undefined && Object.hasOwn(current.next, key) ? current.next[key] : undefined) ?? current.next["*"]);
+  const answered = current ? answerTarget(current, prompt) : undefined;
+  const target = answered ?? (current?.next && ((key !== undefined && Object.hasOwn(current.next, key) ? current.next[key] : undefined) ?? current.next["*"]));
   const turn = target ? rec?.turns.find((t) => t.id === target) : undefined;
   if (turn) return { play: playTurn(turn), session: { ...position, turn: turn.id } };
   return { play: quiet(rec?.fallback?.text ?? DEFAULT_FALLBACK, choicesOf(current)), session: position };

@@ -6,7 +6,7 @@ import path from "node:path";
 import { BrowserWindow, type IpcMainInvokeEvent, app, clipboard, dialog, ipcMain, nativeImage, nativeTheme, shell } from "electron";
 import { electronLauncher } from "@humanharness/blocks";
 import { type EngineDef, type ModelProfile, type ModelSpec, NOTICE_VERSION, availableEngines, defaultTier, getEngine } from "@humanharness/engines";
-import { DEFAULT_LANGUAGE, type LoadedHarness, TIERS, type Tier, allBlocks, choiceOptionSchema, loadHarness, resolveInHarness } from "@humanharness/harness-sdk";
+import { DEFAULT_LANGUAGE, type LoadedHarness, TIERS, type Tier, allBlocks, choiceOptionSchema, inputBlocks, inputSpecs, loadHarness, resolveInHarness } from "@humanharness/harness-sdk";
 import { type Event, type HarnessRuntime, createRuntime } from "@humanharness/runtime";
 import {
   type AppConfig,
@@ -51,7 +51,7 @@ import { imageDataUrl } from "./assets";
 import { devDockIcon } from "./dock-icon";
 import { ChatLog } from "./chat-log";
 import { ConfigStore, historyDir } from "./config";
-import { agentDataRequest, personDataRequests } from "./data-requests";
+import { agentDataRequest, personDataRequests, saveAnswerRecords } from "./data-requests";
 import { testPrompt } from "./engine-check";
 import { createCommandDeps } from "./command-deps";
 import { cliCommand, engineCommand, loginShellPath } from "./engine-command";
@@ -71,6 +71,7 @@ import { openIfStillSafe, openRoots, openableFile, revealIfStillSafe, revealable
 import { saveWithFolderChange } from "./folder-change";
 import { type MoveDeps, guardedMove, moveFolder, moveJournal, precheckMove, recoverMove } from "./move-folder";
 import { type ResolvedReference, displayPath, resolveReferences, usableReferences } from "./references";
+import { respondHandler } from "./respond-ipc";
 import { TaskManager } from "./task-manager";
 import { historyView, isSha } from "./history-view";
 import { RestoreGuard, lastOpened } from "./restore-guard";
@@ -228,6 +229,7 @@ async function backupView(folder: string | undefined): Promise<NonNullable<AppSt
 async function appState(): Promise<AppState> {
   const harnessImage = await harnessLogo();
   const saved = await config.load();
+  const inputs = inputSpecs(harness.blocks);
   return {
     harness: {
       id: harness.id,
@@ -288,6 +290,8 @@ async function appState(): Promise<AppState> {
     ),
     path: harness.path ?? [],
     ...(harness.scopes ? { scopes: harness.scopes } : {}),
+    // Only a harness with input blocks sends their specs (spec D0).
+    ...(Object.keys(inputs).length > 0 ? { inputs } : {}),
     references: (await referencesFor(saved.folder)).map((r) => ({ id: r.id, label: r.label, path: displayPath(r.path, os.homedir()) })),
     models: await modelsView(),
     backup: await backupView(saved.folder),
@@ -511,6 +515,7 @@ const turns = new TurnController({
     return (await configProblem(c, validation())) === null ? new ChatLog(baseOf(c), c.engineId, chat) : { append: async () => {} };
   },
   stateBlocks,
+  inputBlocks: () => new Set(Object.keys(inputBlocks(harness.blocks))),
   emit,
   recordUsage: async (entry, meta, firstLimits) => {
     const c = await validConfig();
@@ -543,6 +548,28 @@ const tasks = new TaskManager({
   },
   // An archived scope can't be opened (spec §3.4): it counts as missing here.
   scopeExists: (id) => activeScope(id),
+  // A getter, because the harness is loaded after this object is built. Undefined without input blocks (D0).
+  get inputBlocks() {
+    const blocks = inputBlocks(harness.blocks);
+    return Object.keys(blocks).length > 0 ? blocks : undefined;
+  },
+  markAnswered: async (chat, answer) => {
+    const c = await validConfig();
+    // `false` means "no such block in the chat"; a missing folder is a different failure.
+    if (!c) throw new Error("No valid configuration: the chat log can't be found");
+    return new ChatLog(baseOf(c), c.engineId, chat).markAnswered(answer);
+  },
+  // As the person, through the data store's checks (spec §6); the write goes out with the follow-up's commit.
+  saveAnswer: (collection, records, scope) =>
+    saveAnswerRecords(
+      async () => {
+        const c = await validConfig();
+        return c ? dataStoreFor(baseOf(c)) : null;
+      },
+      collection,
+      records,
+      scope,
+    ),
   // Spec §4.4: only a harness with a collection that goes into the context gets the hook (D2).
   // A getter, because the harness is loaded after this object is built.
   get dataContext() {
@@ -778,6 +805,7 @@ function registerIpc() {
     if (typeof task !== "string" || !task || task.length > 100) throw new Error("Invalid choice");
     return tasks.choose(parsed.data, task);
   });
+  handle("hh:respond", respondHandler({ quitting: () => quitting, blocked: turnBlocked, respond: (blockId, value) => tasks.respond(blockId, value) }));
   handle("hh:openPath", async (file: unknown) => {
     const c = await validConfig();
     if (!c) return false;

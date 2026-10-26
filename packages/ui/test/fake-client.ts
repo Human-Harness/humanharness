@@ -16,6 +16,7 @@ import type {
   HistoryItem,
   HistoryTaskView,
   MoveResult,
+  RespondResult,
   RunningSetup,
   ScopeView,
   ScopesView,
@@ -305,6 +306,27 @@ export class FakeClient implements HarnessClient {
     this.chosen.push(option);
     this.chosenTasks.push(task);
     if (this.chooseError) throw this.chooseError;
+  }
+  /** What respond was asked, in order. */
+  responded: { blockId: string; value: Record<string, unknown> }[] = [];
+  /** What respond answers; default: taken, with the line "answered" (a taken answer clears the task's pendingInput). */
+  respondResult: RespondResult | null = null;
+  /** When set, respond rejects with it. */
+  respondError: Error | null = null;
+  /** While set, respond waits for it before answering. */
+  respondGate: Promise<void> | null = null;
+  async respond(blockId: string, value: Record<string, unknown>): Promise<RespondResult> {
+    this.responded.push({ blockId, value });
+    if (this.respondGate) await this.respondGate;
+    if (this.respondError) throw this.respondError;
+    const result: RespondResult = this.respondResult ?? { ok: true, display: "answered", value, answeredAt: "2026-10-25T10:00:00.000Z" };
+    // Like the main process: a taken answer clears the task's pending question before `accepted` resolves.
+    const current = this.tasks.current;
+    if (result.ok && current?.pendingInput === blockId) {
+      const { pendingInput: _, ...rest } = current;
+      this.emitTasks({ ...this.tasks, current: rest });
+    }
+    return result;
   }
   /** Files revealPath was asked to show. */
   revealedFiles: string[] = [];

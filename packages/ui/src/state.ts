@@ -1,4 +1,4 @@
-import { type AnswerPart, type ChatEntry, type Event, type LimitWindow, type TurnUsage, addParagraph, addText, finishParts } from "./client";
+import { type AnswerPart, type BlockAnswer, type ChatBlock, type ChatEntry, type Event, type LimitWindow, type TurnUsage, addParagraph, addText, finishParts } from "./client";
 
 export interface LiveActivity {
   id: string;
@@ -12,7 +12,7 @@ export interface LiveTurn {
   /** The id its entry gets when the turn ends: the answer stays the same element on screen. */
   id: string;
   text: string;
-  blocks: { name: string; data: unknown }[];
+  blocks: ChatBlock[];
   /** Text runs and blocks in the order they arrived. */
   parts: AnswerPart[];
   activities: LiveActivity[];
@@ -40,6 +40,8 @@ export type ChatAction =
   | DoneAction
   | { type: "user"; text: string; at: string; action?: string }
   | { type: "loaded"; entries: ChatEntry[] }
+  /** The person's answer to an input block was taken: it goes on its block (input-blocks spec §8). */
+  | { type: "answered"; answer: BlockAnswer }
   /** A local assistant message that the UI shows but never saves. */
   | { type: "notice"; text: string; at: string };
 
@@ -106,7 +108,11 @@ export function reduceChat(state: ChatState, action: ChatAction): ChatState {
       return live
         ? {
             ...state,
-            live: { ...live, blocks: [...live.blocks, { name: action.name, data: action.data }], parts: [...live.parts, { block: live.blocks.length }] },
+            live: {
+              ...live,
+              blocks: [...live.blocks, { name: action.name, data: action.data, ...(action.id ? { id: action.id } : {}) }],
+              parts: [...live.parts, { block: live.blocks.length }],
+            },
           }
         : state;
     case "context":
@@ -130,6 +136,16 @@ export function reduceChat(state: ChatState, action: ChatAction): ChatState {
             },
           }
         : state;
+    case "answered": {
+      const id = action.answer.blockId;
+      // A second answer (the question was reopened after a stopped send) replaces the first.
+      const mark = (blocks: ChatBlock[]) => blocks.map((b) => (b.id === id ? { ...b, input: action.answer } : b));
+      return {
+        ...state,
+        entries: state.entries.map((e) => (e.blocks.some((b) => b.id === id) ? { ...e, blocks: mark(e.blocks) } : e)),
+        live: live && live.blocks.some((b) => b.id === id) ? { ...live, blocks: mark(live.blocks) } : live,
+      };
+    }
     case "done": {
       if (!live) {
         // A failure without a turn on screen (a quiet closing turn): show the error alone.

@@ -1,5 +1,7 @@
 import { type ComponentType, type FormEvent, type ReactNode, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { AnnotateBlock } from "./AnnotateBlock";
+import { findAnswer } from "./annotate";
 import { ChoicesBlock } from "./ChoicesBlock";
 import { GearIcon, TopBar } from "./chrome";
 import {
@@ -9,6 +11,7 @@ import {
   type EngineProblem,
   type HarnessClient,
   type NoteView,
+  type RespondResult,
   type SendOptions,
   type TaskView,
   nextInPath,
@@ -17,7 +20,8 @@ import {
 import { ErrorCard, isFixable, problemError } from "./ErrorCard";
 import { FlowSide } from "./FlowSide";
 import { HistoryPanel } from "./HistoryPanel";
-import { type BlockActions, type BlockProps, Message } from "./Message";
+import { pruneDrafts } from "./InputForm";
+import { type BlockActions, type BlockProps, type InputContext, Message } from "./Message";
 import { markdownToPlain } from "./markdown";
 import { NotesPanel } from "./NotesPanel";
 import { usePacedAnswer } from "./pace";
@@ -105,6 +109,8 @@ export function ChatView({
   const [pickResets, setPickResets] = useState(0);
   /** The last message sent came from a pick (Try again picks it again). */
   const lastPick = useRef<Pick | null>(null);
+  /** The last message sent was an answer to an input block: its failed turn reopens the form, never a plain resend. */
+  const lastAnswer = useRef(false);
   /** The task open now, read when a turn ends to tag its entry. */
   const openTask = useRef<string | undefined>(undefined);
   openTask.current = tasks.current?.id;
@@ -136,7 +142,11 @@ export function ChatView({
   const closing = tasks.current?.status === "closing";
   const checkpoint = tasks.current?.status === "checkpoint";
   const fallback = tasks.current?.fallback;
-  const all = useMemo(() => ({ ...components, choices: ChoicesBlock as ComponentType<BlockProps> }), [components]);
+  // `annotate` is drawn only for a harness with input blocks, the only ones that offer it (spec D0).
+  const all = useMemo(
+    () => ({ ...components, choices: ChoicesBlock as ComponentType<BlockProps>, ...(state.inputs ? { annotate: AnnotateBlock } : {}) }),
+    [components, state.inputs],
+  );
   const stale = useMemo(() => ({ ...all, choices: StaleChoices }), [all]);
   const labelOf = (id: string) => state.actions[id]?.label ?? id;
 
@@ -192,6 +202,14 @@ export function ChatView({
   useEffect(() => {
     if (!chat.live) busy.current = false;
   }, [chat.live]);
+
+  // Drafts of questions that can't come back go. Only once the tasks are known: before that `tasks` is empty, and
+  // the chat drawn again (Home, Settings) would lose every draft.
+  const taskId = tasks.current?.id;
+  const pendingInput = tasks.current?.pendingInput;
+  useEffect(() => {
+    if (tasksLoaded && state.inputs) pruneDrafts(taskId, pendingInput);
+  }, [tasksLoaded, state.inputs, taskId, pendingInput]);
 
   // The pre-flight question gets focus on its safe answer ("Not now") and comes into view.
   const asking = pending !== null;
@@ -286,6 +304,7 @@ export function ChatView({
     stick.current = true;
     pinNext.current = true;
     lastPick.current = null;
+    lastAnswer.current = false;
     setPickFailed(false);
     if (flow && (options.action || !tasks.current)) showNewTask();
     dispatch({ type: "user", text: message, at: new Date().toISOString(), ...(options.action ? { action: options.action } : {}) });
@@ -314,6 +333,7 @@ export function ChatView({
     }
     stick.current = true;
     lastPick.current = { option, task };
+    lastAnswer.current = false;
     setPickFailed(false);
     const at = new Date().toISOString();
     pinNext.current = !moves || target !== null;
@@ -336,6 +356,35 @@ export function ChatView({
     return true;
   };
 
+  /**
+   * An answer to an input block (input-blocks spec §4). A refusal comes back with its errors for the form; a taken
+   * answer marks its block, shows the person's line and the turn it starts.
+   */
+  const respondTo = async (blockId: string, value: Record<string, unknown>): Promise<RespondResult> => {
+    if (blocked() || pending) return { ok: false, reason: "busy", errors: [{ path: "", message: t("input.wait") }] };
+    busy.current = true;
+    let r: RespondResult;
+    try {
+      r = await client.respond(blockId, value);
+    } catch {
+      busy.current = false;
+      return { ok: false, reason: "failed", errors: [{ path: "", message: t("input.failed") }] };
+    }
+    if (!r.ok) {
+      busy.current = false;
+      if (r.reason === "stale") return { ...r, errors: [{ path: "", message: t("input.closed") }] };
+      if (r.reason === "stopped") return { ...r, errors: [{ path: "", message: t("input.stopped") }] };
+      return r;
+    }
+    stick.current = true;
+    lastPick.current = null;
+    lastAnswer.current = true;
+    setPickFailed(false);
+    dispatch({ type: "answered", answer: { blockId, value: r.value, answeredAt: r.answeredAt } });
+    dispatch({ type: "user", text: r.display, at: r.answeredAt });
+    return r;
+  };
+
   const startTopic = (id: string) => void send(labelOf(id), { action: id });
   const resume = (note: NoteView) => {
     setNotesPanel(null);
@@ -355,11 +404,31 @@ export function ChatView({
   /** What harness UI gets: it can't skip the pre-flight check. */
   const sendFromHarness: SendFn = (text, options) => send(text, options);
   const lastAssistant = chat.entries.findLast((e) => e.role === "assistant");
-  const blockActions = (active: boolean, task?: string): BlockActions => ({ respond: sendFromHarness, choose: (o) => choose(o, task), open: openFile, reveal: revealFile, active });
+  const inputs: InputContext | undefined = state.inputs
+    ? {
+        specs: state.inputs,
+        ...(tasks.current?.pendingInput ? { pending: tasks.current.pendingInput } : {}),
+        waiting: tasks.current?.status === "waiting",
+        ready: tasks.current?.status === "waiting" && !blocked() && !pending,
+        respond: respondTo,
+      }
+    : undefined;
+  const blockActions = (active: boolean, task?: string, entryId: string | null = null): BlockActions => ({
+    respond: sendFromHarness,
+    choose: (o) => choose(o, task),
+    open: openFile,
+    reveal: revealFile,
+    active,
+    ...(inputs ? { inputs, answerOf: (ref: string) => findAnswer(chat.entries, entryId, ref) } : {}),
+  });
   /** The entry's answer belongs to the task waiting now: its `choices` block may act. */
   const ofWaitingTask = (task: string | undefined) => task !== undefined && task === tasks.current?.id && tasks.current.status === "waiting";
-  /** Try again: a failed pick of the still-open task is picked again; anything else resends the last message. */
+  /**
+   * Try again: a failed pick of the still-open task is picked again; a failed answer has none (its question opens
+   * again, to be sent through `respond` with its JSON); anything else resends the last message.
+   */
   const retry = (): (() => void) | undefined => {
+    if (lastAnswer.current) return undefined;
     const pick = lastPick.current;
     if (pick && pick.task === tasks.current?.id) return () => void choose(pick.option, pick.task);
     if (lastUser) return () => void send(lastUser.text, lastUser.action ? { action: lastUser.action } : {});
@@ -461,7 +530,7 @@ export function ChatView({
                   key={pickResets}
                   entry={entry}
                   components={entry === liveEntry || ofWaitingTask(entry.task) ? all : stale}
-                  actions={blockActions(entry === lastAssistant && !chat.live && !closing, entry.task)}
+                  actions={blockActions(entry === lastAssistant && !chat.live && !closing, entry.task, entry === liveEntry ? null : entry.id)}
                   live={entry === liveEntry ? { activities: chat.live!.activities, label: checkpoint ? t("flow.checkpoint") : undefined } : undefined}
                   reveal={entry.id === pacedTurn.current ? (reveal ?? undefined) : undefined}
                 />

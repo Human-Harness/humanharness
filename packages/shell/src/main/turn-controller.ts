@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { ModelProfile } from "@humanharness/engines";
+import { blockIdOf } from "@humanharness/harness-sdk";
 import { type Event, type HarnessRuntime, type LimitWindow, type RunningTurn, fail } from "@humanharness/runtime";
 import type { ChatEntry, SendOptions } from "@humanharness/ui/client";
 import { TurnRecorder } from "./chat-log";
@@ -28,6 +29,11 @@ export interface TurnOptions extends SendOptions {
   chat?: string;
   /** `close` for the turn that asks for the task's note; `checkpoint` for the quiet mid-task note. */
   phase?: "run" | "close" | "checkpoint";
+  /**
+   * The task's finished-turn count when this turn starts. With `task`, in a run turn, each block the person answers
+   * gets the id `<task>:<turn>:<index>` (input-blocks spec §4). Absent: no ids (spec D0).
+   */
+  turn?: number;
   /** What the chat shows as the person's message when the engine gets something else (a task brief). */
   display?: string;
   /** A later turn of the same task: its chat entry isn't tagged with the action. */
@@ -62,6 +68,8 @@ export interface TurnDeps {
   /** The chat log of the configured folder (`chat`: the scope whose chat it is; absent: `main`), or null when the app isn't configured yet. */
   chatLog: (chat?: string) => Promise<ChatLogLike | null>;
   stateBlocks: () => Set<string>;
+  /** The names of the blocks the person answers. Absent: none (spec D0). */
+  inputBlocks?: () => Set<string>;
   /** Sends an event to the window. May throw (window gone): that never loses the log entry. */
   emit: (e: Event) => void;
   /** Saves the finished turn's usage (usage.jsonl), with the turn's first limits snapshot. Failures are logged, never thrown. */
@@ -126,9 +134,9 @@ export class TurnController {
   }
 
   private async run(message: string, options: TurnOptions): Promise<void> {
-    const { action, task, scope, chat, phase, display, followUp, quiet, onEvent, profile, holdModelError, holdFailure, skipUserEntry } = options;
-    const turn: { cancelled: boolean; running: RunningTurn | null } = { cancelled: false, running: null };
-    this.turn = turn;
+    const { action, task, scope, chat, phase, turn, display, followUp, quiet, onEvent, profile, holdModelError, holdFailure, skipUserEntry } = options;
+    const current: { cancelled: boolean; running: RunningTurn | null } = { cancelled: false, running: null };
+    this.turn = current;
     try {
       const log = await this.deps.chatLog(chat);
       const engineId = await this.deps.engineId?.().catch(() => undefined);
@@ -146,6 +154,14 @@ export class TurnController {
         });
       }
       const recorder = new TurnRecorder(this.deps.stateBlocks());
+      // Every block event counts toward the index; only input blocks of a task's run turn get an id.
+      const inputs = turn !== undefined && task && (phase ?? "run") === "run" ? this.deps.inputBlocks?.() : undefined;
+      let blockIndex = 0;
+      const stamp = (e: Event): Event => {
+        if (e.type !== "block") return e;
+        const index = blockIndex++;
+        return inputs?.has(e.name) && task && turn !== undefined ? { ...e, id: blockIdOf(task, turn, index) } : e;
+      };
       let reportedModel: string | undefined;
       const meta = (): UsageMeta => ({
         ...(action ? { action } : {}),
@@ -189,7 +205,7 @@ export class TurnController {
         if (surface) this.emit(done);
       };
 
-      if (turn.cancelled) return await finish(fail("cancelled") as Done);
+      if (current.cancelled) return await finish(fail("cancelled") as Done);
       let rt: HarnessRuntime | null;
       try {
         rt = await this.deps.ensureRuntime();
@@ -197,11 +213,12 @@ export class TurnController {
         if (e instanceof EngineUnavailable) return await finish(fail(e.code) as Done);
         return await finish(fail("agent-crashed", e instanceof Error ? e.message : String(e)) as Done);
       }
-      if (turn.cancelled) return await finish(fail("cancelled") as Done);
+      if (current.cancelled) return await finish(fail("cancelled") as Done);
       if (!rt) return await finish(fail("engine-not-installed") as Done);
 
       let finished: Promise<void> = Promise.resolve();
-      turn.running = rt.send(message, (e) => {
+      current.running = rt.send(message, (raw) => {
+        const e = stamp(raw);
         if (e.type === "done") finished = finish(e);
         else {
           if (e.type === "usage" && e.model) reportedModel = e.model;
@@ -220,7 +237,7 @@ export class TurnController {
           }
         }
       }, { ...(profile ? { profile } : {}), ...(task ? { trailer: { task, ...(action ? { action } : {}), ...(scope ? { scope } : {}) } } : {}) });
-      await turn.running.done;
+      await current.running.done;
       await finished;
     } finally {
       this.turn = null;

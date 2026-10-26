@@ -6,7 +6,21 @@ import { createInterface } from "node:readline";
 import type { Readable, Writable } from "node:stream";
 import { type EngineDef, availableEngines } from "@humanharness/engines";
 import type { MockNote } from "@humanharness/fake-agent";
-import { DEFAULT_LANGUAGE, type Language, canonicalLanguage, TIERS, type Tier, actionScope, allBlocks, blockToolName, loadHarness, resolveInHarness } from "@humanharness/harness-sdk";
+import {
+  type BlockAnswer,
+  DEFAULT_LANGUAGE,
+  type Language,
+  TIERS,
+  type Tier,
+  canonicalLanguage,
+  actionScope,
+  allBlocks,
+  blockToolName,
+  inputBlocks,
+  inputSpecs,
+  loadHarness,
+  resolveInHarness,
+} from "@humanharness/harness-sdk";
 import { type ErrorCode, createRuntime } from "@humanharness/runtime";
 import {
   ChatLog,
@@ -25,11 +39,13 @@ import {
   nextFallback,
   resolveProfile,
   resolveReferences,
+  saveAnswerRecords,
   sharedConfigDir,
   usageRecord,
 } from "@humanharness/shell/tasks";
 import { DataStore, MAIN_SCOPE, buildDataContext, ScopeStore, generatedFiles, migrateToScopes, notesPrefix, readNotes, writeNote } from "@humanharness/workspace";
 import { CliError, type Io, UsageError, parseCommand } from "./cli";
+import { promptAnswer } from "./input-prompt";
 import { MANIFEST } from "./paths";
 import { clashMessage, matchClashes } from "./mock-match";
 import { Recorder, briefMatch } from "./record";
@@ -96,8 +112,10 @@ export async function readyEngine(engine: EngineDef, deps: CommandDeps, shared: 
   return (await engineCommand(engine, deps)) ?? stop("engine-not-installed");
 }
 
-const promptFor = (options: number) =>
-  options > 0 ? `\nPick 1–${options}, type a follow-up, or q to close the task: ` : "\nType a follow-up, or q to close the task: ";
+const promptFor = (options: number, answerable = false) =>
+  options > 0
+    ? `\nPick 1–${options}, ${answerable ? "a to answer, " : ""}type a follow-up, or q to close the task: `
+    : `\n${answerable ? "a to answer, or t" : "T"}ype a follow-up, or q to close the task: `;
 
 /** The scope `humanharness run` opens for a `required` action when none is open. */
 export const RUN_SCOPE = "run";
@@ -127,6 +145,10 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
     throw new UsageError(`Engine "${o.engine ?? "(none)"}" is not available for ${harness.id}. Available: ${offered.map((e) => e.id).join(", ") || "none"}.`);
   }
   const language: Language = o.language ?? DEFAULT_LANGUAGE;
+  // The harness's input blocks (input-blocks spec §8). Without any, the run is exactly as before (D0).
+  const inputs = inputBlocks(harness.blocks);
+  const hasInputs = Object.keys(inputs).length > 0;
+  const specs = inputSpecs(harness.blocks);
 
   const mockFile = (id: string) => path.join(harness.root, "mock", `${id}.json`);
   const exists = (p: string) => fs.access(p).then(() => true, () => false);
@@ -143,7 +165,7 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
   const out = o.output;
   out.write(`Folder: ${folder}\n`);
 
-  const view = new TerminalView(out, engine.name, (out as { isTTY?: boolean }).isTTY === true);
+  const view = new TerminalView(out, engine.name, (out as { isTTY?: boolean }).isTTY === true, specs);
   const tally = new UsageTally();
   const store = new TaskStore(folder);
   const scoped = harness.scopes !== undefined;
@@ -203,6 +225,7 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
     ensureRuntime: () => runtime.get(),
     chatLog: async (chat) => new ChatLog(folder, engine.id, chat),
     stateBlocks: () => stateBlocks,
+    ...(hasInputs ? { inputBlocks: () => new Set(Object.keys(inputs)) } : {}),
     emit: (e) => {
       recorder?.event(e);
       view.event(e);
@@ -228,6 +251,14 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
       : {}),
     scoped,
     scopeExists: async (id) => (await scopes.list()).some((s) => s.id === id && !s.archived),
+    // As the app wires them (packages/shell/src/main/index.ts); undefined without input blocks (D0).
+    ...(hasInputs
+      ? {
+          inputBlocks: inputs,
+          markAnswered: (chat: string, answer: BlockAnswer) => new ChatLog(folder, engine.id, chat).markAnswered(answer),
+          saveAnswer: (collection: string, records: Record<string, unknown>[], scope: string) => saveAnswerRecords(async () => dataStore, collection, records, scope),
+        }
+      : {}),
     notes: (scope) => readNotes(folder, notesPrefix(scoped, scope)),
     writeNote: async (slug, note, meta, scope) => {
       recorder?.note(note as MockNote);
@@ -269,6 +300,25 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
     // A line read that lost the race with a Ctrl-C: the next prompt waits for it instead of reading again.
     let pending: Promise<IteratorResult<string>> | undefined;
     let closeStopped = false;
+    /** A Ctrl-C at a field's prompt: the answer being typed is dropped. */
+    let answerDropped = false;
+    /** One line for a field's prompt; null when the input ended or a Ctrl-C dropped the answer. */
+    const ask = async (question: string): Promise<string | null> => {
+      if (answerDropped) return null;
+      const interrupted = new Promise<"interrupt">((resolve) => {
+        promptInterrupted = () => resolve("interrupt");
+      });
+      out.write(question);
+      pending ??= typed.next();
+      const next = await Promise.race([pending, interrupted]);
+      promptInterrupted = undefined;
+      if (next === "interrupt") {
+        answerDropped = true;
+        return null;
+      }
+      pending = undefined;
+      return next.done ? null : next.value;
+    };
     try {
       // A task an earlier run left open in this folder can't continue: its session is gone.
       await tasks.interrupt();
@@ -281,7 +331,7 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
         const interrupted = new Promise<"interrupt">((resolve) => {
           promptInterrupted = () => resolve("interrupt");
         });
-        out.write(promptFor(options.length));
+        out.write(promptFor(options.length, current.pendingInput !== undefined));
         pending ??= typed.next();
         const next = await Promise.race([pending, interrupted]);
         promptInterrupted = undefined;
@@ -312,6 +362,30 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
           break;
         }
         closeStopped = false;
+        const asked = current.pendingInput;
+        if (line === "a" && asked && Object.hasOwn(specs, asked.block)) {
+          answerDropped = false;
+          const value = await promptAnswer(specs[asked.block], view.shown.get(asked.blockId), ask, out);
+          if (!value) {
+            // The question stays open: `a` asks it again.
+            if (answerDropped) out.write("\nAnswer dropped.\n");
+            continue;
+          }
+          const { accepted, done } = tasks.respond(asked.blockId, value);
+          // Awaited below; marked handled here so a refusal before `accepted` leaves no unhandled rejection.
+          done.catch(() => undefined);
+          const r = await accepted;
+          if (!r.ok) {
+            const why = r.errors.map((e) => (e.path ? `${e.path}: ${e.message}` : e.message)).join("; ");
+            out.write(`\nNot sent (${r.reason})${why ? `: ${why}` : ""}\n`);
+            await done;
+            continue;
+          }
+          recorder?.answer(asked.block, r.value);
+          out.write(`\n> ${r.display.replaceAll("\n", "\n> ")}\n\n`);
+          await done;
+          continue;
+        }
         const pick = Number(line);
         if (Number.isInteger(pick) && pick >= 1 && pick <= options.length) {
           recorder?.reply(options[pick - 1].label);

@@ -2,7 +2,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 import type { EngineDef } from "@humanharness/engines";
-import { type Block, type Language, blockToolName, languageName } from "@humanharness/harness-sdk";
+import { type Block, type Language, answerHeader, blockToolName, languageName } from "@humanharness/harness-sdk";
 
 export const MANAGED_START = "<!-- humanharness:start -->";
 export const MANAGED_END = "<!-- humanharness:end -->";
@@ -25,6 +25,15 @@ const TEXT = {
   schema: "Schema",
   references: "### Reference folders (read only)",
   referencesIntro: "You may read these folders with your read tools. Never change anything in them.",
+  answer: "Answer",
+  answers: "### Answers from input blocks",
+  answerRules: [
+    "A tool with an `Answer` schema asks the person for something. After calling it, end your turn and wait: the answer comes as the next message.",
+    "That message starts with the header on the tool's `Answer` line (`[answer to <block>]`), then what the person sees, then a ```json block with `block`, `blockId` and `value`. Trust the JSON: `value` already matches the block's `Answer` schema.",
+    'When `value` is `{"skipped":true}`, the person skipped the question: go on without insisting.',
+    "The person may write in the chat instead of answering. The question stays open and may still be answered later: answer what they wrote, or remind them of the question.",
+  ],
+  annotateRule: 'To mark parts of an answer, call `show_annotate` with `ref` (the answer\'s `blockId`, or "last") and quote the person\'s exact words in each mark.',
 };
 
 /** A folder the agent may read but never change, with the label the instructions show. */
@@ -50,6 +59,13 @@ export function managedSection(opts: { language: Language; blocks: Record<string
         `  ${t.example}: \`${JSON.stringify(block.example)}\``,
         `  ${t.schema}: \`${toolSchema(block.schema)}\``,
       );
+      // The header names the block, not its tool: a block with its own `tool` name shows the link here.
+      if (block.input) lines.push(`  ${t.answer} (\`${answerHeader(name)}\`): \`${toolSchema(block.input)}\``);
+    }
+    // Only a harness with input blocks gets the answers section (spec D0).
+    if (entries.some(([, b]) => b.input)) {
+      lines.push("", t.answers, "", ...t.answerRules.map((r) => `- ${r}`));
+      if (Object.hasOwn(opts.blocks, "annotate")) lines.push(`- ${t.annotateRule}`);
     }
   }
   const references = opts.references ?? [];

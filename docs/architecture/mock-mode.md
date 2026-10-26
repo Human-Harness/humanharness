@@ -72,6 +72,7 @@ One file per action, `mock/<action>.json`, meant to be edited by hand. The schem
 - `writes`: file writes in the work folder. `content: null` deletes the file. Paths are relative, with no `..`.
 - `usage`: feeds the usage and context meters (400 in, 20 out when missing).
 - `next`: reply to next turn id. A key is the label of a choice the turn offers, or `*` for anything else. A turn with no `next` ends the script.
+- `respond`: recorded answers to an input block the turn shows, each `{ "block", "value", "next" }`. An answer whose JSON equals `value` (key order aside) plays `next`; any other answer follows the turn's `next["*"]`, then the fallback.
 
 ## How replay walks it
 
@@ -79,6 +80,7 @@ One file per action, `mock/<action>.json`, meant to be edited by hand. The schem
 
 - **First message.** A new engine session picks the recording whose `match` appears in the prompt; the longest `match` wins. The first turn that is not `close` plays. No match: the default fallback, and the session has no action.
 - **A reply.** The prompt is turned into a choice label: the option whose `followUp` (or its `label`, when it has none) equals the reply. Then `next[label]`, else `next["*"]`. If neither leads to a turn, the fallback plays and the turn's `show_choices` blocks are offered again, so the tester can get back on the path.
+- **An answer.** A prompt that ends with an answer's ```json fence (`readAnswer` in `packages/harness-sdk/src/answer.ts`) is matched against the turn's `respond` first.
 - **Closing.** The app's closing prompt plays the `close` turn (its blocks dropped; a default note titled after the action when it has none). Without a `close` turn, a default note is saved.
 - **Checkpoint.** A checkpoint prompt saves the closing note and changes nothing else.
 - **Free questions.** They match no recording and always get the default fallback.
@@ -94,6 +96,7 @@ One file per action, `mock/<action>.json`, meant to be edited by hand. The schem
 - **Files.** Text files up to 64 KB. Binary files, larger files and symlinks are skipped (a symlink is never read). The skipped paths are listed once at the end, and only those that are new or changed during the run.
 - **`match`** is the first line of the brief, past any front matter and cut before a `{{` placeholder.
 - **Replies.** The person's reply becomes the `next` key along the path walked: the picked choice's label, or `*` for typed text. Other branches are added by hand.
+- **Answers.** `a` at `run`'s prompt answers the pending input block field by field; the accepted answer is recorded under the turn's `respond`, leading to the next turn. A typed reply after an answer that never got its turn (a Stop) links by `*` as usual, not by the stale answer.
 - **Notes.** A note written right after a turn belongs to that turn. The closing turn's note becomes the `close` turn's note. A checkpoint is not a turn, and its note is replaced by the closing one.
 - **Failed turns.** A failed or held attempt is dropped. The retry carries any files the attempt wrote and is linked by the same reply.
 - **First visit only.** If an action is run again in the same folder as another task, only its first visit is recorded, with a warning.
@@ -109,6 +112,7 @@ One file per action, `mock/<action>.json`, meant to be edited by hand. The schem
 - `mock-match`: `match` appears in the action's brief. It also fails when `match` appears in another action's brief, since replay could pick the wrong recording. That is allowed only when the other action has a longer `match` of its own that its brief contains (the longest match wins).
 - `mock-next`: turn ids are unique and every `next` target is a turn.
 - `mock-choice`: every `next` key except `*` is the label of a choice that turn's `show_choices` offers.
+- `mock-input`: each `respond` answers an input block the turn shows (by its tool) with a value the block's `input` accepts; a `respond[].next` that is no turn is `mock-next`.
 
 `run --record` warns up front when the match it will save is also in another brief.
 

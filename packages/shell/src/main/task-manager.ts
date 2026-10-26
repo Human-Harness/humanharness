@@ -1,11 +1,25 @@
 import { randomUUID } from "node:crypto";
 import type { ModelProfile } from "@humanharness/engines";
-import { type ChoiceOption, type Language, type SavedNote, type ScopeMode, saveNoteSchema } from "@humanharness/harness-sdk";
+import {
+  type BlockAnswer,
+  type ChoiceOption,
+  type InputBlock,
+  type InputIssue,
+  type Language,
+  type RespondResult,
+  type SavedNote,
+  type ScopeMode,
+  answerDisplay,
+  answerMessage,
+  answerRecords,
+  parseAnswer,
+  saveNoteSchema,
+} from "@humanharness/harness-sdk";
 import { type Event, type Session, fail } from "@humanharness/runtime";
 import { type ActionStatus, type CurrentTaskView, type NoteView, type TaskStatus, type TaskView, nextInPath } from "@humanharness/ui/client";
 import { APP_SCOPE, type HistoryTrailer, MAIN_SCOPE, NOTE_PREFIX, type Note, type NoteMeta, buildNotesIndex, isScopeId, noteSlug } from "@humanharness/workspace";
 import { CHECKPOINT_PROMPT, CLOSE_PROMPT, QUESTION_PROMPT, fillPrompt, resumeMessage } from "./task-prompts";
-import { type CurrentTask, type TasksFile, interrupted, keptQuestion, scopeOfTask, statusesIn, withStatus } from "./task-store";
+import { type CurrentTask, type PendingInput, type TasksFile, interrupted, keptQuestion, scopeOfTask, statusesIn, withStatus } from "./task-store";
 import { type TurnOptions, isHeld } from "./turn-controller";
 
 type Done = Extract<Event, { type: "done" }>;
@@ -63,6 +77,12 @@ export interface TaskDeps {
   fitProfile?(profile: ModelProfile): Promise<ModelProfile>;
   /** A compaction was detected in `task`'s session (usage.jsonl `kind: "compaction"`). Failures are logged. */
   recordCompaction?(task: CurrentTask): Promise<void>;
+  /** The harness's blocks the person answers, by name (input-blocks spec). Absent or empty: none (spec D0). */
+  inputBlocks?: Record<string, InputBlock>;
+  /** Puts an answer on its block in the chat of `chat` (input-blocks spec §8). False (logged): no unanswered block had that id. */
+  markAnswered?(chat: string, answer: BlockAnswer): Promise<boolean>;
+  /** Writes an answer's records to a data collection, as the person, in `scope` (spec §6 `saveTo`). Throws a refusal. */
+  saveAnswer?(collection: string, records: Record<string, unknown>[], scope: string): Promise<void>;
   now?: () => Date;
   newId?: () => string;
 }
@@ -111,6 +131,7 @@ const currentView = (c: CurrentTask): CurrentTaskView => ({
   ...(c.profile?.fallbackFrom
     ? { fallback: { model: c.profile.fallbackFrom, ...(c.profile.model !== undefined && c.profile.tier !== "custom" ? { tier: c.profile.tier } : {}) } }
     : {}),
+  ...(c.pendingInput ? { pendingInput: c.pendingInput.blockId } : {}),
 });
 
 /**
@@ -134,6 +155,10 @@ export class TaskManager {
   private windowDone = false;
   /** The task whose turn runs now: a session reported outside it is ignored. */
   private turnTask: string | null = null;
+  /** Counts the turns that started (a `done` came or the send returned): `respond` knows whether its turn ran. */
+  private turnsStarted = 0;
+  /** How the last turn that started ended: `respond` reopens its question when the answer's turn failed. */
+  private lastDone: Done | null = null;
   /** The slug each free-question task wrote its note under, so a second save replaces its own note. */
   private readonly questionSlugs = new Map<string, string>();
   private readonly now: () => Date;
@@ -193,6 +218,34 @@ export class TaskManager {
   /** An option of a `choices` block shown for task `task`; a block of an earlier task is refused. */
   choose(option: ChoiceOption, task: string): Promise<void> {
     return this.op(() => this.chooseNow(option, task));
+  }
+
+  /**
+   * The person's answer to input block `blockId` (input-blocks spec §6). `accepted` resolves once the answer is
+   * refused (nothing ran, nothing changed) or taken (the chat's line comes with it); `done` once the turn that
+   * carries it to the agent has ended. Both reject when the operation can't run (closing, a turn running).
+   */
+  respond(blockId: string, value: unknown): { accepted: Promise<RespondResult>; done: Promise<void> } {
+    let settled = false;
+    let take!: (r: RespondResult) => void;
+    let refuse!: (err: unknown) => void;
+    const accepted = new Promise<RespondResult>((resolve, reject) => {
+      take = (r) => {
+        settled = true;
+        resolve(r);
+      };
+      refuse = reject;
+    });
+    const done = this.op(() => this.respondNow(blockId, value, take)).then(
+      () => {
+        if (!settled) refuse(new Error("The answer was not taken"));
+      },
+      (err: unknown) => {
+        if (!settled) refuse(err);
+        throw err;
+      },
+    );
+    return { accepted, done };
   }
 
   /**
@@ -320,6 +373,11 @@ export class TaskManager {
 
   private known(action: string | undefined): action is string {
     return action !== undefined && Object.hasOwn(this.d.actions, action);
+  }
+
+  /** The harness has blocks the person answers: turns number their ids (spec D0 keeps every other harness as is). */
+  private hasInputs(): boolean {
+    return Object.keys(this.d.inputBlocks ?? {}).length > 0;
   }
 
   /** Where a new task runs (spec §3.3). Throws ScopeRequired for a required action with no open scope. */
@@ -455,6 +513,101 @@ export class TaskManager {
     );
   }
 
+  /**
+   * Checks, in order: the question is the waiting task's open one; the answer is valid; the checkpoint runs if due
+   * (before anything is taken, spec §6); a `saveTo` block's records are written (a refusal takes nothing). Then the
+   * question closes, the chat marks the answer, the window gets the line, and the answer goes to the agent as a
+   * follow-up. `askNow` then sees `checkpointed` and runs no second one.
+   */
+  private async respondNow(blockId: string, raw: unknown, take: (r: RespondResult) => void): Promise<void> {
+    const refuse = (reason: Exclude<RespondResult, { ok: true }>["reason"], errors: InputIssue[] = []) => take({ ok: false, reason, errors });
+    const c = await this.storedCurrent();
+    const pending = c?.pendingInput;
+    const inputs = this.d.inputBlocks;
+    const block = pending && inputs && Object.hasOwn(inputs, pending.block) ? inputs[pending.block] : undefined;
+    if (!c || c.status !== "waiting" || !pending || pending.blockId !== blockId || !block) {
+      return refuse("stale", [{ path: "", message: "This question is closed" }]);
+    }
+    const parsed = parseAnswer(block, raw);
+    if (!parsed.ok) return refuse("invalid", parsed.errors);
+    if (needsCheckpoint(c)) {
+      if (!(await this.checkpoint(c))) return refuse("stopped");
+      await this.setStatus(c.id, "waiting");
+    }
+    // A Stop so far takes nothing: the question stays open.
+    if (this.cancelRequested) return refuse("stopped");
+    // Kept before it is taken (spec §6): a refusal leaves the question open, with nothing written. The write needs
+    // no commit of its own: the follow-up's "Before message" commit records it under the task's trailer.
+    if (block.saveTo) {
+      try {
+        const records = answerRecords(pending.block, block, parsed.value);
+        if (records.length > 0) {
+          if (!this.d.saveAnswer) throw new Error("Answers can't be saved here");
+          await this.d.saveAnswer(block.saveTo.collection, records, scopeOfTask(c));
+        }
+      } catch (err) {
+        console.error(`The answer to "${pending.block}" was not saved`, err);
+        return refuse("refused", [{ path: "", message: err instanceof Error ? err.message : String(err) }]);
+      }
+    }
+    const language = await this.d.language();
+    const display = answerDisplay(pending.block, block, parsed.value, language);
+    const answer: BlockAnswer = { blockId, value: parsed.value, answeredAt: this.now().toISOString() };
+    await this.update((s) => {
+      if (s.current?.id !== c.id) return s;
+      const { pendingInput: _answered, ...rest } = s.current;
+      return { ...s, current: rest };
+    });
+    // Inside this op, after the checkpoint and before the next turn: nothing can append to the chat file while
+    // markAnswered rewrites it.
+    await this.markAnswered(answer);
+    take({ ok: true, display, value: answer.value, answeredAt: answer.answeredAt });
+    const started = this.turnsStarted;
+    try {
+      await this.askNow(answerMessage({ name: pending.block, blockId, value: parsed.value, display }), display);
+      // Never started, or started and failed (a cancel ends the task): the answer goes back through the form, never
+      // as a plain retried line that loses its JSON.
+      const d = this.lastDone;
+      if (this.turnsStarted === started || (d && !d.ok && d.error.code !== "cancelled")) await this.reopen(c.id, pending);
+    } catch (err) {
+      // An answer the agent never got must not be lost: its question opens again.
+      if (this.turnsStarted === started) await this.reopen(c.id, pending);
+      // The window already shows the person's line and a running turn: end it there.
+      if (!this.windowDone) {
+        this.windowDone = true;
+        try {
+          this.d.emit?.(fail("agent-crashed", err instanceof Error ? err.message : String(err)));
+        } catch (emitErr) {
+          console.error("Could not send an event to the window", emitErr);
+        }
+      }
+      throw err;
+    }
+  }
+
+  /** The answer goes on its block in the chat on screen (the task's: switching scope closes the task). Logged on failure. */
+  private async markAnswered(answer: BlockAnswer): Promise<void> {
+    try {
+      const marked = await this.d.markAnswered?.(this.chatOf(await this.d.store.load()), answer);
+      if (marked === false) console.error(`The chat has no block ${answer.blockId} to mark`);
+    } catch (err) {
+      console.error("Could not mark the answer in the chat", err);
+    }
+  }
+
+  /**
+   * The answer's turn never started (a Stop, or the send was refused) or failed: its question is pending again
+   * (unless the turn showed a newer one), so the form opens again with its draft. The chat keeps its answered mark (the chat log can't unmark): the window shows the pending
+   * question's form, not that mark, and the next answer replaces it. Logged on failure.
+   */
+  private async reopen(id: string, pending: PendingInput): Promise<void> {
+    try {
+      await this.update((s) => (s.current?.id === id && !s.current.pendingInput ? { ...s, current: { ...s.current, pendingInput: pending } } : s));
+    } catch (err) {
+      console.error("Could not open the question again", err);
+    }
+  }
+
   /** The first message of a resumed task's new session (its old session ends first). */
   private async resumeMessageFor(c: CurrentTask, text: string): Promise<string> {
     await this.endSession();
@@ -573,6 +726,7 @@ export class TaskManager {
    */
   private async runTurn(task: CurrentTask, message: string, options: Omit<TurnOptions, "task" | "onEvent" | "profile">): Promise<Done> {
     const seen: { done?: Done; note?: SavedNote; used?: number; size?: number; compacted?: boolean } = {};
+    const shownInputs: Promise<void>[] = [];
     this.turnTask = task.id;
     try {
       const scoped = await this.scopeOptions(task);
@@ -581,12 +735,16 @@ export class TaskManager {
         ...options,
         ...scoped,
         ...(task.profile ? { profile: task.profile } : {}),
+        // Input blocks get ids only in run turns, and only in a harness that has them.
+        ...(this.hasInputs() && (options.phase ?? "run") === "run" ? { turn: task.turns } : {}),
         task: task.id,
         onEvent: (e) => {
           if (e.type === "done") seen.done = e;
           else if (e.type === "block" && e.name === "save_note") {
             const parsed = saveNoteSchema.safeParse(e.data);
             if (parsed.success) seen.note = parsed.data;
+          } else if (e.type === "block" && e.id !== undefined && this.d.inputBlocks && Object.hasOwn(this.d.inputBlocks, e.name)) {
+            shownInputs.push(this.showInput(task.id, e.name, e.id));
           } else if (e.type === "context") {
             seen.used = e.used;
             if (e.size !== undefined) seen.size = e.size;
@@ -599,13 +757,17 @@ export class TaskManager {
     } finally {
       this.turnTask = null;
     }
+    this.turnsStarted++;
+    const result: Done = seen.done ?? { type: "done", ok: false, error: { code: "agent-crashed" } };
+    this.lastDone = result;
+    await Promise.all(shownInputs);
     // Mirrors TurnController: a quiet turn reaches the window only with a failure other than a cancel,
     // and a held failure never does.
     const d = seen.done;
     if (d && !isHeld(d, options) && (!options.quiet || (!d.ok && d.error.code !== "cancelled"))) this.windowDone = true;
     if (seen.note) await this.saveNote(task, seen.note, options.phase !== "checkpoint");
     if (seen.used !== undefined || seen.compacted) await this.track(task.id, seen);
-    return seen.done ?? { type: "done", ok: false, error: { code: "agent-crashed" } };
+    return result;
   }
 
   private async afterRun(id: string, done: Done, first: boolean): Promise<void> {
@@ -747,6 +909,17 @@ export class TaskManager {
     } catch (err) {
       console.error("Could not save the note", err);
     }
+  }
+
+  /**
+   * An input block shown in task `id`'s turn becomes its pending input, replacing any earlier one (spec D5). Saved
+   * as the event arrives, so the window knows the question before the turn ends. A failure is logged.
+   */
+  private showInput(id: string, block: string, blockId: string): Promise<void> {
+    const shownAt = this.now().toISOString();
+    return this.update((s) => (s.current?.id === id ? { ...s, current: { ...s.current, pendingInput: { blockId, block, shownAt } } } : s)).catch((err: unknown) =>
+      console.error("Could not record the question shown", err),
+    );
   }
 
   /** `q-<title slug>`, numbered (`-2`, `-3`…) when another note of the scope already has that name. */

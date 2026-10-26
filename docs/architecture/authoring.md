@@ -25,16 +25,17 @@ The template (`packages/cli/template/`) runs as is: one action (`example`, stand
 
 `HARNESS.md` is the harness's living decision log: Task, Decisions, Flow, Context, Models, Permissions and engines, Identity, Open questions, Decision log. `check` reads two things from it (`packages/cli/src/harness-md.ts`): the Flow table (`| Action | Tier | Cost | Purpose |`, one row per action plus `(questions)`) and the permission lines (`- edit: none — reason`, `exec`, `web`, `engines: claude, codex`).
 
-- Errors: `schema` (each zod issue), `i18n` (`locales/en.json`: missing, invalid JSON or not an object; other locale files are a warning; every `t("key")` in `ui/` must exist in it), `brief-missing`, `brand` (`brandNames()` in `packages/engines`), `engine-not-allowed` (excluded, unknown, or pending outside development), `harness-md-missing`, `harness-md-mismatch`, and for `mock/*.json` recordings `mock-schema`, `mock-action`, `mock-match`, `mock-next`, `mock-choice`.
-- Warnings, one per pillar plus resources: `pillar-decisions`, `pillar-flow`, `pillar-context`, `tier-cost`, `permissions-wide`, `open-questions`.
+- Errors: `schema` (each zod issue), `i18n` (`locales/en.json`: missing, invalid JSON or not an object; other locale files are a warning; every `t("key")` in `ui/` must exist in it), `brief-missing`, `brand` (`brandNames()` in `packages/engines`), `engine-not-allowed` (excluded, unknown, or pending outside development), `harness-md-missing`, `harness-md-mismatch`, and for `mock/*.json` recordings `mock-schema`, `mock-action`, `mock-match`, `mock-next`, `mock-choice`, `mock-input`.
+- Warnings, one per pillar plus resources: `pillar-decisions`, `pillar-flow`, `pillar-context`, `tier-cost`, `permissions-wide`, `open-questions`, and for input blocks `input-hidden` (an input block that isn't visible), `input-form` (a field the core form can't draw, with no component in `ui/`) and `input-choice` (a choice whose options can't come from the shown data: `inputUi.<field>.optionsFrom` names no list of strings or string enums, or `kind: "choice"` has no options, and the form draws it as text; or `inputUi.<field>.kind` on a field that isn't a string, where it is ignored).
 
 ## run
 
 Before anything else, `run` checks the engine as the app does before a first turn (`readyEngine`): its legal notice must already be accepted in `~/.humanharness/engines.json`, the file every Human Harness app on the computer shares. `run` never shows or accepts the notice itself; when it is missing, it stops (before running the engine's CLI) and asks the developer to accept it once in the app (`humanharness dev`). Then the engine's official CLI must be installed, current and signed in, or `run` stops with the app's own message. Only then does it make the work folder (a new `hh-run-<id>-*` folder under the OS temp dir unless `--folder` is given) and print it.
 
-At the prompt, a number picks a choice, any other line is a follow-up and `q` closes the task (the closing turn, which asks for the note). Ctrl-C:
+At the prompt, a number picks a choice, `a` answers the pending input block (one prompt per field: a choice by number, `pairs` until an empty line, "Skip?" first for a skippable block; a refused answer prints its errors and the prompt comes back), any other line is a follow-up and `q` closes the task (the closing turn, which asks for the note). Ctrl-C:
 
 - during a turn cancels it, as the app's Stop does (a cancelled first, follow-up or closing turn ends the task without a note);
+- while an answer's fields are asked drops that answer ("Answer dropped."); the question stays open and `a` asks it again;
 - at the prompt closes the task like `q`;
 - at the prompt after a close that was stopped before its turn began leaves without closing (the next `run` in that folder ends the task as unfinished).
 

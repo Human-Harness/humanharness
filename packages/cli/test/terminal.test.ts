@@ -1,3 +1,4 @@
+import type { InputSpec } from "@humanharness/harness-sdk";
 import { describe, expect, it } from "vitest";
 import { UsageTally, formatReport } from "../src/report";
 import { TerminalView, errorMessage } from "../src/terminal";
@@ -32,6 +33,34 @@ describe("TerminalView", () => {
   it("reads error messages from the core's English strings", () => {
     expect(errorMessage("engine-not-installed", "Codex")).toBe("I can't find Codex on this computer.");
     expect(errorMessage("something-new", "Codex")).toBe("something-new");
+  });
+});
+
+describe("TerminalView: input blocks", () => {
+  const spec: InputSpec = { fields: [{ name: "why", kind: "longText", label: "Why", optional: false }], skippable: true };
+
+  it("shows an input block's data, then what to answer, and keeps its data by id", () => {
+    const out = memoryStream();
+    const view = new TerminalView(out.stream, "Claude", false, { commit_answer: spec });
+    view.event({ type: "block", name: "commit_answer", data: { question: "¿Quién?" }, id: "t1:0:0" });
+    expect(out.text()).toContain("  [commit_answer]");
+    expect(out.text()).toContain("    Answer with a: Why (longText) · can be skipped");
+    expect(view.shown.get("t1:0:0")).toEqual({ question: "¿Quién?" });
+  });
+
+  it("a block named like an Object method is no input block: printed as before (D0)", () => {
+    const out = memoryStream();
+    const view = new TerminalView(out.stream, "Claude");
+    view.event({ type: "block", name: "constructor", data: { a: 1 }, id: "t1:0:0" });
+    expect(out.text()).toBe('  [constructor]\n    {\n      "a": 1\n    }\n');
+    expect(view.shown.size).toBe(0);
+  });
+
+  it("shows annotate marks, one per line", () => {
+    const out = memoryStream();
+    const view = new TerminalView(out.stream, "Claude");
+    view.event({ type: "block", name: "annotate", data: { ref: "last", marks: [{ quote: "two halves", kind: "ok", comment: "Right." }, { quote: "pizza", kind: "gap" }] } });
+    expect(out.text()).toBe('  [annotate]\n    ✓ "two halves" — Right.\n    … "pizza"\n');
   });
 });
 

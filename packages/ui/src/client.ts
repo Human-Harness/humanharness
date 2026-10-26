@@ -1,5 +1,18 @@
 import type { Effort, ModelChoice, ModelSpec, ModelsConfig } from "@humanharness/engines";
-import type { ActionCost, ChoiceOption, DataKey, DataRecord, Language, ScopeMode, Tier } from "@humanharness/harness-sdk";
+import type {
+  ActionCost,
+  BlockAnswer,
+  ChoiceOption,
+  DataKey,
+  DataRecord,
+  InputField,
+  InputIssue,
+  InputSpec,
+  Language,
+  RespondResult,
+  ScopeMode,
+  Tier,
+} from "@humanharness/harness-sdk";
 import type { ActivityKind, EngineError, Event, LimitWindow } from "@humanharness/runtime";
 import type {
   CollectionDiff,
@@ -137,6 +150,8 @@ export interface AppState {
   path?: string[];
   /** The harness's unit of work (manifest `scopes`): what to call it. Absent: no scopes (spec D2). */
   scopes?: { label: string; plural: string };
+  /** The blocks the person answers, by name: how the core form draws each (input-blocks spec §5). Absent: none (D0). */
+  inputs?: Record<string, InputSpec>;
   /** Folders the agent can read but never change. */
   references?: ReferenceView[];
   /** Settings › Modelos. */
@@ -162,11 +177,19 @@ export interface TurnUsage {
   cacheWriteTokens: number;
 }
 
+/** A block in the chat. Input blocks carry the id the app gave them and, once answered, the answer (input-blocks spec §8). */
+export interface ChatBlock {
+  name: string;
+  data: unknown;
+  id?: string;
+  input?: BlockAnswer;
+}
+
 export interface ChatEntry {
   id: string;
   role: "user" | "assistant";
   text: string;
-  blocks: { name: string; data: unknown }[];
+  blocks: ChatBlock[];
   activities: { kind: ActivityKind; detail: string }[];
   at: string;
   error?: EngineError;
@@ -363,6 +386,8 @@ export interface CurrentTaskView {
   context?: { used: number; cap: number };
   /** The plan lacked `model`: the task runs one tier down (`tier`), or on the engine's default model (no `tier`). */
   fallback?: { model: string; tier?: Tier };
+  /** The id of the input block the task waits an answer for (input-blocks spec §4). */
+  pendingInput?: string;
 }
 
 /** A note in `.harness/notes/`, for the side panel and "What's clear so far". */
@@ -481,6 +506,11 @@ export interface HarnessClient {
    * `task` is the task the block was shown for; a block of an earlier task is refused.
    */
   choose(option: ChoiceOption, task: string): Promise<void>;
+  /**
+   * The person's answer to input block `blockId` (input-blocks spec §4). Resolves with the refusal and its field
+   * errors, or with the chat's line once the answer is taken; the agent's turn then arrives as events.
+   */
+  respond(blockId: string, value: Record<string, unknown>): Promise<RespondResult>;
   /** Opens a file inside the reference folders or the user's folder in its default app. False when refused or missing. */
   openPath(path: string): Promise<boolean>;
   /** Shows a file inside the reference folders or the user's folder in Finder (any kind of file). False when refused or missing. */
@@ -521,4 +551,4 @@ export function isConfigured(config: AppConfig): config is ConfiguredApp {
   return Boolean(config.language && config.folder && config.engineId);
 }
 
-export type { ChoiceOption, Event, EngineError, LimitWindow };
+export type { BlockAnswer, ChoiceOption, Event, EngineError, InputField, InputIssue, InputSpec, LimitWindow, RespondResult };

@@ -1,3 +1,4 @@
+import { answerMessage } from "@humanharness/harness-sdk";
 import { describe, expect, it } from "vitest";
 import { recordingSchema } from "../src/mock";
 import { DEFAULT_FALLBACK, promptKind, replay } from "../src/mock-replay";
@@ -118,5 +119,38 @@ describe("replay", () => {
   it("a recording with only a close turn uses its fallback for a new session", () => {
     const r = recordingSchema.parse({ version: 1, action: "c", match: "# c", fallback: { text: "Nada." }, turns: [{ id: "close", note: { title: "c" } }] });
     expect(replay([r], undefined, "# c", true).play.text).toBe("Nada.");
+  });
+});
+
+describe("replay: answers to input blocks", () => {
+  const quiz = recordingSchema.parse({
+    version: 1,
+    action: "practice",
+    match: "# Task: practice",
+    turns: [
+      {
+        id: "t1",
+        text: "Commit first.",
+        blocks: [{ tool: "show_commit_answer", input: { question: "Who ate more?" } }],
+        respond: [{ block: "commit_answer", value: { choice: "Me", why: "two halves" }, next: "t2" }],
+        next: { "*": "t3" },
+      },
+      { id: "t2", text: "Right." },
+      { id: "t3", text: "Let's see." },
+    ],
+  });
+  const at = { action: "practice", turn: "t1" };
+  const answering = (value: Record<string, unknown>) => answerMessage({ name: "commit_answer", blockId: "t1:0:0", value, display: "x" });
+
+  it("an answer equal to a recorded one, key order aside, plays its turn", () => {
+    const r = replay([quiz], at, answering({ why: "two halves", choice: "Me" }), false);
+    expect(r.play.text).toBe("Right.");
+    expect(r.session).toEqual({ action: "practice", turn: "t2" });
+  });
+
+  it("any other answer follows *, and without * the fallback", () => {
+    expect(replay([quiz], at, answering({ why: "no idea" }), false).play.text).toBe("Let's see.");
+    const strict = recordingSchema.parse({ ...quiz, turns: [{ ...quiz.turns[0], next: undefined }, quiz.turns[1], quiz.turns[2]] });
+    expect(replay([strict], at, answering({ why: "no idea" }), false).play.text).toBe(DEFAULT_FALLBACK);
   });
 });

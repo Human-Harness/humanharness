@@ -442,3 +442,95 @@ describe("run --record", () => {
     expect(JSON.parse(fs.readFileSync(mockFile, "utf8")).turns.map((t: { id: string }) => t.id)).toEqual(["t1", "close"]);
   });
 });
+
+describe("run: input blocks", () => {
+  const quizDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../fake-agent/fixtures/input-harness");
+  const quizScript: ClaudeScript = {
+    steps: [...claudeTextLines("Done."), result],
+    turns: [
+      { match: "save_note", steps: [ui("save_note", { title: "Halves", summary: ["Two halves make a whole"], decisions: [], files: [], open: [] }), result] },
+      { match: "\\[answer to commit_answer\\]", steps: [...claudeTextLines("Two halves make one whole: well seen."), result] },
+      { match: "# Task: practice", steps: [...claudeTextLines("First, commit."), ui("show_commit_answer", { question: "Who ate more?", options: ["Me", "Both the same"] }), result] },
+    ],
+  };
+
+  it("a answers the pending question field by field; the chat keeps the answer on its block", { timeout: 60_000 }, async () => {
+    const out = memoryStream();
+    const folder = path.join(root, "quiz-work");
+    await runTask({
+      harnessDir: quizDir,
+      action: "practice",
+      engine: "claude",
+      folder,
+      input: lines("a\n2\nTwo halves are one whole\nq\n"),
+      output: out.stream,
+      engineCommand: { command: fakeClaudeCommand(), env: { HH_FAKE_SCRIPT: writeScript(root, quizScript) } },
+    });
+    const text = out.text();
+    expect(text).toContain("    Answer with a: I pick (choice), Why? In your own words (longText)");
+    expect(text).toContain("a to answer, or type a follow-up, or q to close the task:");
+    expect(text).toContain("  1. Me\n  2. Both the same\n");
+    expect(text).toContain("> I pick: Both the same\n> \n> Why? In your own words: Two halves are one whole");
+    expect(text).toContain("Two halves make one whole: well seen.");
+    const chat = readJsonl(path.join(folder, ".harness", "chats", "main.jsonl"));
+    const shown = chat.flatMap((e) => (e.blocks ?? []) as { name: string; id?: string; input?: { value: unknown } }[]).find((b) => b.name === "commit_answer");
+    expect(shown?.id).toMatch(/:0:0$/);
+    expect(shown?.input?.value).toEqual({ choice: "Both the same", why: "Two halves are one whole" });
+    expect(chat.some((e) => e.role === "user" && e.text === "I pick: Both the same\n\nWhy? In your own words: Two halves are one whole")).toBe(true);
+  });
+
+  it("--record keeps the answer under the asking turn's respond, linked to the turn it led to", { timeout: 60_000 }, async () => {
+    // A copy: recording writes mock/practice.json into the harness.
+    const copy = path.join(root, "quiz-record");
+    fs.cpSync(quizDir, copy, { recursive: true });
+    // Its config imports zod and the SDK: resolve them as the fixture does.
+    fs.symlinkSync(path.resolve(quizDir, "../../node_modules"), path.join(copy, "node_modules"), "dir");
+    await runTask({
+      harnessDir: copy,
+      action: "practice",
+      engine: "claude",
+      folder: path.join(root, "quiz-record-work"),
+      record: true,
+      input: lines("a\n2\nTwo halves are one whole\nq\n"),
+      output: memoryStream().stream,
+      engineCommand: { command: fakeClaudeCommand(), env: { HH_FAKE_SCRIPT: writeScript(root, quizScript) } },
+    });
+    const rec = recordingSchema.parse(JSON.parse(fs.readFileSync(path.join(copy, "mock", "practice.json"), "utf8")));
+    expect(rec.turns.map((t) => t.id)).toEqual(["t1", "t2", "close"]);
+    expect(rec.turns[0].respond).toEqual([{ block: "commit_answer", value: { choice: "Both the same", why: "Two halves are one whole" }, next: "t2" }]);
+    expect(rec.turns[0].next).toBeUndefined();
+  });
+
+  it("Ctrl-C while a field waits drops the answer and goes back to the prompt", { timeout: 60_000 }, async () => {
+    const ctrlC = fakeInterrupts();
+    const input = new PassThrough();
+    const out = memoryStream();
+    let prompts = 0;
+    const output = watch(out, (text) => {
+      if (text.includes("q to close the task")) {
+        // First prompt: answer; second (back after the drop): Ctrl-C closes the task like q.
+        if (++prompts === 1) input.write("a\n");
+        else ctrlC.press();
+      } else if (text.includes("I pick (optional) (number): ")) ctrlC.press();
+    });
+    const folder = path.join(root, "quiz-ctrl-c");
+    await runTask({
+      harnessDir: quizDir,
+      action: "practice",
+      engine: "claude",
+      folder,
+      input,
+      output,
+      interrupts: ctrlC,
+      engineCommand: { command: fakeClaudeCommand(), env: { HH_FAKE_SCRIPT: writeScript(root, quizScript) } },
+    });
+    const text = out.text();
+    expect(prompts).toBe(2);
+    expect(text).toContain("Answer dropped.");
+    expect(text).not.toContain("well seen");
+    const chat = readJsonl(path.join(folder, ".harness", "chats", "main.jsonl"));
+    const shown = chat.flatMap((e) => (e.blocks ?? []) as { name: string; input?: unknown }[]).find((b) => b.name === "commit_answer");
+    expect(shown?.input).toBeUndefined();
+    expect(ctrlC.listeners()).toBe(0);
+  });
+});

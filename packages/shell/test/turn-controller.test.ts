@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Event, HarnessRuntime, LimitWindow } from "@humanharness/runtime";
 import type { ChatEntry } from "@humanharness/ui";
-import { EngineUnavailable, TurnController, memoise } from "../src/main/turn-controller";
+import { EngineUnavailable, TurnController, type TurnOptions, memoise } from "../src/main/turn-controller";
 import type { UsageMeta } from "../src/main/usage-log";
 
 type Emit = (e: Event) => void;
@@ -45,6 +45,7 @@ function setup(
     ensureRuntime?: () => Promise<HarnessRuntime | null>;
     append?: (e: ChatEntry) => Promise<void>;
     emit?: (e: Event) => void;
+    inputBlocks?: string[];
   } = {},
 ) {
   const order: string[] = [];
@@ -60,6 +61,7 @@ function setup(
     ensureRuntime: opts.ensureRuntime ?? (async () => null),
     chatLog: async () => ({ append }),
     stateBlocks: () => new Set(),
+    ...(opts.inputBlocks ? { inputBlocks: () => new Set(opts.inputBlocks) } : {}),
     emit: (e) => {
       order.push(`emit:${e.type}`);
       events.push(e);
@@ -598,5 +600,42 @@ describe("TurnController for tasks", () => {
     fake.finish([{ type: "text", delta: "ok" }, { type: "done", ok: true }]);
     await sent;
     expect(entries.map((e) => e.role)).toEqual(["assistant"]);
+  });
+});
+
+describe("TurnController: input block ids", () => {
+  const card: Event = { type: "block", name: "card", data: { t: "a" } };
+  const ask: Event = { type: "block", name: "commit_answer", data: { question: "q" } };
+
+  it("stamps <task>:<turn>:<index> on the input blocks of a task's run turn, for the window and the log", async () => {
+    const fake = fakeRuntime();
+    const { controller, entries, events } = setup({ ensureRuntime: async () => fake.runtime, inputBlocks: ["commit_answer"] });
+    const sent = controller.send("hi", { task: "t1", turn: 2 });
+    await vi.waitFor(() => expect(fake.send).toHaveBeenCalled());
+    fake.finish([card, ask, { type: "done", ok: true }]);
+    await sent;
+    expect(events.filter((e) => e.type === "block")).toEqual([card, { ...ask, id: "t1:2:1" }]);
+    expect(entries.at(-1)?.blocks).toEqual([
+      { name: "card", data: { t: "a" } },
+      { name: "commit_answer", data: { question: "q" }, id: "t1:2:1" },
+    ]);
+  });
+
+  it("D0: no id without a turn number, outside a task, in a closing turn, or for a block with no input", async () => {
+    const cases: [TurnOptions, string[]][] = [
+      [{ task: "t1" }, ["commit_answer"]],
+      [{ turn: 0 }, ["commit_answer"]],
+      [{ task: "t1", turn: 0, phase: "close" }, ["commit_answer"]],
+      [{ task: "t1", turn: 0 }, []],
+    ];
+    for (const [options, inputBlocks] of cases) {
+      const fake = fakeRuntime();
+      const { controller, events } = setup({ ensureRuntime: async () => fake.runtime, inputBlocks });
+      const sent = controller.send("hi", options);
+      await vi.waitFor(() => expect(fake.send).toHaveBeenCalled());
+      fake.finish([ask, { type: "done", ok: true }]);
+      await sent;
+      expect(events.find((e) => e.type === "block")).toEqual(ask);
+    }
   });
 });

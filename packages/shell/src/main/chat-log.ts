@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { MAIN_SCOPE, chatFile, chatsDir, isScopeDir } from "@humanharness/workspace";
+import type { BlockAnswer } from "@humanharness/harness-sdk";
 import type { Event, LimitWindow } from "@humanharness/runtime";
 import { type AnswerPart, type ChatEntry, type TurnUsage, addParagraph, addText, finishParts } from "@humanharness/ui/client";
 
@@ -54,6 +55,48 @@ export class ChatLog {
     return entries.slice(-limit);
   }
 
+  /**
+   * Puts the person's answer on the block it answers (input-blocks spec §8). The file is rewritten atomically
+   * (temp + rename), keeping every other line as it was. The last block with that id gets it, replacing an
+   * earlier answer (a send stopped before its turn reopens the question, and the second answer wins). False when
+   * no block has that id.
+   * It must not run while the chat file can be appended to: an append landing between the read and the rename
+   * is lost. `TaskManager.respond` calls it inside its operation, with no turn running.
+   */
+  async markAnswered(answer: BlockAnswer): Promise<boolean> {
+    let raw: string;
+    try {
+      raw = await fs.readFile(this.file, "utf8");
+    } catch {
+      return false;
+    }
+    const lines = raw.split("\n");
+    let found = false;
+    for (let n = lines.length - 1; n >= 0 && !found; n--) {
+      if (!lines[n].trim()) continue;
+      let entry: ChatEntry;
+      try {
+        entry = JSON.parse(lines[n]) as ChatEntry;
+      } catch {
+        continue;
+      }
+      const i = Array.isArray(entry.blocks) ? entry.blocks.findLastIndex((b) => b.id === answer.blockId) : -1;
+      if (i < 0) continue;
+      found = true;
+      lines[n] = JSON.stringify({ ...entry, blocks: entry.blocks.map((b, j) => (j === i ? { ...b, input: answer } : b)) });
+    }
+    if (!found) return false;
+    const tmp = `${this.file}.${randomUUID()}.tmp`;
+    try {
+      await fs.writeFile(tmp, lines.join("\n"));
+      await fs.rename(tmp, this.file);
+    } catch (err) {
+      await fs.rm(tmp, { force: true });
+      throw err;
+    }
+    return true;
+  }
+
   /** Moves the conversation to `chats/archive/<time>-<label>.jsonl`. Null when there was none. */
   async archive(label: string): Promise<string | null> {
     try {
@@ -98,7 +141,7 @@ export class TurnRecorder {
       if (this.stateBlocks.has(e.name)) this.state[e.name] = e.data;
       else {
         this.parts.push({ block: this.blocks.length });
-        this.blocks.push({ name: e.name, data: e.data });
+        this.blocks.push({ name: e.name, data: e.data, ...(e.id ? { id: e.id } : {}) });
       }
     } else if (e.type === "limits") {
       this.firstLimits ??= e.windows;

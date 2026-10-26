@@ -182,3 +182,31 @@ describe("runDataRequest", () => {
     await expect(runDataRequest(store, { op: "drop", collection: "concepts" }, agent)).rejects.toBeInstanceOf(DataError);
   });
 });
+
+describe("DataStore.putMany", () => {
+  it("writes every record in one go, and tells listeners about each", async () => {
+    const store = new DataStore(tmp(), data);
+    const seen: DataChange[] = [];
+    store.onChange((c) => seen.push(c));
+    await store.putMany("concepts", [{ id: "a", name: "A", state: "seen" }, { id: "b", name: "B", state: "seen" }], person);
+    expect((await store.query("concepts", {}, person)).records.map((r) => r.id)).toEqual(["a", "b"]);
+    expect(seen.map((c) => [c.op, c.key])).toEqual([["put", "a"], ["put", "b"]]);
+  });
+
+  it("refuses all of them when one is wrong; the agent can't write a read collection", async () => {
+    const store = new DataStore(tmp(), data);
+    await store.put("concepts", { id: "a", name: "A", state: "seen" }, person);
+    await expect(store.putMany("concepts", [{ id: "b", name: "B", state: "seen" }, { id: "c", name: "C", state: "nope" }], person)).rejects.toThrow(/Not a valid "concepts" record/);
+    expect((await store.query("concepts", {}, person)).total).toBe(1);
+    await expect(store.putMany("cards", [{ n: 1, front: "x" }], agent)).rejects.toThrow(/may not change/);
+  });
+
+  it("refuses two records with the same key", async () => {
+    const store = new DataStore(tmp(), data);
+    await expect(store.putMany("concepts", [{ id: "a", name: "A", state: "seen" }, { id: "a", name: "A2", state: "seen" }], person)).rejects.toMatchObject({
+      code: "invalid",
+      message: 'Two records in "concepts" have the key "a"',
+    });
+    expect((await store.query("concepts", {}, person)).total).toBe(0);
+  });
+});

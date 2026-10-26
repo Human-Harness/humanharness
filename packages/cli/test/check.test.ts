@@ -371,3 +371,112 @@ describe("mock recordings", () => {
     expect(formatFindings(r.findings)).toContain("mock-schema");
   });
 });
+
+describe("check: input blocks", () => {
+  const EXAMPLE = 'example: { title: "One idea", body: "A short explanation of why it matters." },';
+  const withInput = (input: string) => (d: string) => replaceIn(d, "harness.config.ts", EXAMPLE, `input: ${input},\n  ${EXAMPLE}`);
+  const inputRules = (r: CheckResult) => r.findings.filter((f) => f.rule.startsWith("input-")).map((f) => `${f.severity}:${f.rule}`);
+
+  it("an input the core form draws gives no warning", async () => {
+    expect(inputRules(await checkHarness(await fixture(withInput("z.object({ why: z.string().min(1) })"))))).toEqual([]);
+  });
+
+  it("input-hidden: a block that asks for an answer can't be hidden", async () => {
+    const dir = await fixture((d) => {
+      withInput("z.object({ why: z.string() })")(d);
+      replaceIn(d, "harness.config.ts", "visible: true,", "visible: false,");
+    });
+    expect(inputRules(await checkHarness(dir))).toEqual(["warning:input-hidden"]);
+  });
+
+  it("input-form: a field the core form can't draw needs the block's own component", async () => {
+    const deep = withInput("z.object({ deep: z.object({ x: z.string() }) })");
+    // The template's ui/App.tsx registers `example_card`: no warning.
+    expect(inputRules(await checkHarness(await fixture(deep)))).toEqual([]);
+    const bare = await fixture((d) => {
+      deep(d);
+      replaceIn(d, "ui/App.tsx", "const blocks = { example_card: ExampleCard };", "const blocks = {};");
+    });
+    const r = await checkHarness(bare);
+    expect(inputRules(r)).toEqual(["warning:input-form"]);
+    expect(r.findings.find((f) => f.rule === "input-form")?.message).toBe(
+      'Block "example_card": the core form can\'t draw "deep". Register a component for it in ui/ (blocks: { example_card: … }).',
+    );
+  });
+
+  it("input-choice: a choice with no options source, or an optionsFrom that names no string list", async () => {
+    const messages = async (input: string) =>
+      (await checkHarness(await fixture(withInput(input)))).findings.filter((f) => f.rule === "input-choice").map((f) => `${f.severity} ${f.message}`);
+    expect(await messages('z.object({ pick: z.string() }),\n  inputUi: { pick: { kind: "choice" } }')).toEqual([
+      'warning Block "example_card": "pick" is a choice with no options: set inputUi.pick.optionsFrom to a string-list field of the shown data. The form draws it as text.',
+    ]);
+    expect(await messages('z.object({ pick: z.string() }),\n  inputUi: { pick: { optionsFrom: "title" } }')).toEqual([
+      'warning Block "example_card": inputUi.pick.optionsFrom is "title", which is not a string-list field of the shown data. The form draws "pick" as text.',
+    ]);
+    expect(await messages('z.object({ pick: z.string() }),\n  inputUi: { pick: { kind: "choice", optionsFrom: "nope" } }')).toEqual([
+      'warning Block "example_card": inputUi.pick.optionsFrom is "nope", which is not a string-list field of the shown data. The form draws "pick" as text.',
+    ]);
+  });
+
+  it("input-choice: optionsFrom naming a string list of the shown data is fine", async () => {
+    const dir = await fixture((d) => {
+      withInput('z.object({ pick: z.string() }),\n  inputUi: { pick: { optionsFrom: "options" } }')(d);
+      replaceIn(d, "harness.config.ts", "body: z.string().min(1).max(400) })", "body: z.string().min(1).max(400), options: z.array(z.string()).optional() })");
+    });
+    expect(inputRules(await checkHarness(dir))).toEqual([]);
+  });
+
+  it("input-choice: optionsFrom naming a list of string enums, and the choice + options convention, are fine", async () => {
+    const shownWith = (options: string, input: string) =>
+      fixture((d) => {
+        withInput(input)(d);
+        replaceIn(d, "harness.config.ts", "body: z.string().min(1).max(400) })", `body: z.string().min(1).max(400), options: ${options} })`);
+      });
+    const enums = await shownWith('z.array(z.enum(["a", "b"])).optional()', 'z.object({ pick: z.string() }),\n  inputUi: { pick: { optionsFrom: "options" } }');
+    expect(inputRules(await checkHarness(enums))).toEqual([]);
+    const convention = await shownWith("z.array(z.string()).optional()", "z.object({ choice: z.string() })");
+    expect(inputRules(await checkHarness(convention))).toEqual([]);
+  });
+
+  it("input-choice: inputUi.kind on a field that isn't a string says it is ignored", async () => {
+    const found = (await checkHarness(await fixture(withInput('z.object({ count: z.number() }),\n  inputUi: { count: { kind: "choice" } }'))))
+      .findings.filter((f) => f.rule === "input-choice")
+      .map((f) => f.message);
+    expect(found).toEqual([
+      'Block "example_card": inputUi.count.kind "choice" is ignored: only a z.string() field can be text, longText or a choice, and "count" is drawn from its type.',
+    ]);
+  });
+});
+
+describe("check: recorded answers", () => {
+  const EXAMPLE = 'example: { title: "One idea", body: "A short explanation of why it matters." },';
+  const card = { tool: "show_example_card", input: { title: "T", body: "B" } };
+  const rec = (turn1: Record<string, unknown>) => ({ version: 1, action: "example", match: "# Task: example", turns: [{ id: "t1", text: "hi", ...turn1 }, { id: "t2", text: "ok" }] });
+  const mockRules = async (recording: object) => {
+    const dir = await fixture((d) => {
+      replaceIn(d, "harness.config.ts", EXAMPLE, `input: z.object({ why: z.string().min(1) }),\n  ${EXAMPLE}`);
+      fs.mkdirSync(path.join(d, "mock"));
+      fs.writeFileSync(path.join(d, "mock", "example.json"), JSON.stringify(recording));
+    });
+    return (await checkHarness(dir)).findings.filter((f) => f.rule.startsWith("mock-")).map((f) => `${f.rule}: ${f.message}`);
+  };
+
+  it("a recorded answer to an input block the turn shows passes", async () => {
+    expect(await mockRules(rec({ blocks: [card], respond: [{ block: "example_card", value: { why: "because" }, next: "t2" }] }))).toEqual([]);
+  });
+
+  it("mock-input: not an input block, not shown in that turn, or not a valid answer; mock-next: no such turn", async () => {
+    expect(await mockRules(rec({ blocks: [card], respond: [{ block: "choices", value: {}, next: "t2" }] }))).toEqual([
+      'mock-input: Turn "t1": respond[0] answers "choices", which is not an input block.',
+    ]);
+    expect(await mockRules(rec({ respond: [{ block: "example_card", value: { why: "x" }, next: "t2" }] }))).toEqual([
+      'mock-input: Turn "t1": respond[0] answers "example_card", which this turn doesn\'t show.',
+    ]);
+    const invalid = await mockRules(rec({ blocks: [card], respond: [{ block: "example_card", value: { why: "" }, next: "t2" }] }));
+    expect(invalid).toHaveLength(1);
+    expect(invalid[0]).toMatch(/^mock-input: Turn "t1": respond\[0\] is not a valid answer: why /);
+    expect(await mockRules(rec({ blocks: [card], respond: [{ block: "example_card", value: { why: "x" }, next: "t9" }] }))).toEqual([
+      'mock-next: Turn "t1": respond[0] leads to "t9", which is not a turn.',
+    ]);
+  });
+});

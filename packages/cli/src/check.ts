@@ -2,7 +2,18 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { type Recording, choiceLabels, recordingSchema } from "@humanharness/fake-agent";
 import { ENGINES, type Mode, brandNames } from "@humanharness/engines";
-import { type LoadedHarness, loadHarness, resolveInHarness } from "@humanharness/harness-sdk";
+import {
+  type InputFieldUi,
+  type LoadedHarness,
+  blockToolName,
+  inputBlocks,
+  inputFields,
+  isStringArray,
+  loadHarness,
+  parseAnswer,
+  resolveInHarness,
+  type z,
+} from "@humanharness/harness-sdk";
 import { type Io, UsageError, parseCommand } from "./cli";
 import { type HarnessDoc, PERMISSION_KEYS, type PermissionKey, QUESTIONS_ROW, parseHarnessMd, sectionText } from "./harness-md";
 import { clashMessage, matchClashes } from "./mock-match";
@@ -27,7 +38,11 @@ export type RuleId =
   | "mock-action"
   | "mock-match"
   | "mock-next"
-  | "mock-choice";
+  | "mock-choice"
+  | "input-hidden"
+  | "input-form"
+  | "input-choice"
+  | "mock-input";
 
 export interface Finding {
   rule: RuleId;
@@ -68,6 +83,7 @@ export async function checkHarness(dir: string, opts: { mode?: Mode } = {}): Pro
   findings.push(...briefFindings(harness, briefs));
   findings.push(...(await mockFindings(harness, briefs)));
   findings.push(...(await i18nFindings(harness)));
+  findings.push(...(await inputFindings(harness)));
   findings.push(...brandFindings(harness));
   findings.push(...engineFindings(harness, opts.mode ?? "development"));
   if (doc) findings.push(...malformedPermissionFindings(doc));
@@ -168,6 +184,23 @@ async function mockFindings(h: LoadedHarness, briefs: Map<string, string | null>
         if (!ids.includes(target)) findings.push(error("mock-next", `Turn "${turn.id}": "${key}" leads to "${target}", which is not a turn.`, file));
         if (key !== "*" && !labels.has(key)) findings.push(error("mock-choice", `Turn "${turn.id}": "${key}" is not a choice it offers.`, file));
       }
+      // Each recorded answer answers an input block this turn shows, and is one the app would take (spec §8).
+      for (const [i, r] of (turn.respond ?? []).entries()) {
+        const where = `Turn "${turn.id}": respond[${i}]`;
+        if (!ids.includes(r.next)) findings.push(error("mock-next", `${where} leads to "${r.next}", which is not a turn.`, file));
+        const block = Object.hasOwn(h.blocks, r.block) ? h.blocks[r.block] : undefined;
+        if (!block?.input) {
+          findings.push(error("mock-input", `${where} answers "${r.block}", which is not an input block.`, file));
+          continue;
+        }
+        if (!turn.blocks.some((b) => b.tool === blockToolName(r.block, block))) {
+          findings.push(error("mock-input", `${where} answers "${r.block}", which this turn doesn't show.`, file));
+        }
+        const parsed = parseAnswer(block, r.value);
+        if (!parsed.ok) {
+          findings.push(error("mock-input", `${where} is not a valid answer: ${parsed.errors.map((e) => `${e.path || "(answer)"} ${e.message}`).join("; ")}.`, file));
+        }
+      }
     }
   }
   // Replay picks the recording with the longest `match` found in a task's first message, so one action's match
@@ -249,6 +282,54 @@ async function i18nFindings(h: LoadedHarness): Promise<Finding[]> {
 }
 
 const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * Input blocks (input-blocks spec §8): one the person can't see can't be answered; a field the core form can't draw
+ * needs the block's own component; a choice needs a list of options in the shown data. That a component is registered
+ * is guessed from the ui/ sources: the block's name used as an object key (`name:`, `name,` or `name }`).
+ */
+async function inputFindings(h: LoadedHarness): Promise<Finding[]> {
+  const inputs = Object.entries(inputBlocks(h.blocks));
+  if (inputs.length === 0) return [];
+  let uiDir: string | null = null;
+  try {
+    uiDir = resolveInHarness(h, h.ui ?? "ui");
+  } catch {
+    // reported by i18nFindings
+  }
+  const texts = uiDir ? await Promise.all((await sourceFiles(uiDir)).map((f) => fs.readFile(f, "utf8"))) : [];
+  const out: Finding[] = [];
+  for (const [name, block] of inputs) {
+    if (!block.visible) out.push(warning("input-hidden", `Block "${name}" asks for an answer but is not visible: the person can't see it to answer.`, MANIFEST));
+    const fields = inputFields(block);
+    const drawless = fields.filter((f) => f.kind === null).map((f) => `"${f.name}"`);
+    const key = new RegExp(`(?<![A-Za-z0-9_])${escapeRegExp(name)}\\s*[:,}]`);
+    if (drawless.length > 0 && !texts.some((t) => key.test(t))) {
+      out.push(warning("input-form", `Block "${name}": the core form can't draw ${drawless.join(", ")}. Register a component for it in ui/ (blocks: { ${name}: … }).`, MANIFEST));
+    }
+    // A choice whose options can't come from the shown data quietly falls back to a text field.
+    const ui = (block.inputUi ?? {}) as Record<string, InputFieldUi | undefined>;
+    const shown = block.schema.shape as Record<string, z.ZodType>;
+    for (const field of fields) {
+      const fieldUi = Object.hasOwn(ui, field.name) ? ui[field.name] : undefined;
+      const from = fieldUi?.optionsFrom;
+      const kind = fieldUi?.kind;
+      const isString = field.kind === "text" || field.kind === "longText" || field.optionsFrom !== undefined;
+      if (from !== undefined && field.optionsFrom === from && !(Object.hasOwn(shown, from) && isStringArray(shown[from]))) {
+        const message = `Block "${name}": inputUi.${field.name}.optionsFrom is "${from}", which is not a string-list field of the shown data. The form draws "${field.name}" as text.`;
+        out.push(warning("input-choice", message, MANIFEST));
+      } else if (kind !== undefined && !isString && !(kind === "choice" && field.kind === "choice")) {
+        // inputUi.kind only switches a string field; any other field's kind comes from its zod type.
+        const message = `Block "${name}": inputUi.${field.name}.kind "${kind}" is ignored: only a z.string() field can be text, longText or a choice, and "${field.name}" is drawn from its type.`;
+        out.push(warning("input-choice", message, MANIFEST));
+      } else if (kind === "choice" && field.kind !== "choice") {
+        const message = `Block "${name}": "${field.name}" is a choice with no options: set inputUi.${field.name}.optionsFrom to a string-list field of the shown data. The form draws it as text.`;
+        out.push(warning("input-choice", message, MANIFEST));
+      }
+    }
+  }
+  return out;
+}
 
 /** The first provider or model brand in `text` (whole words, any case), or null. */
 export function findBrand(text: string): string | null {

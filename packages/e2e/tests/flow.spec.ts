@@ -55,6 +55,15 @@ test("a topic answered with blocks, then next: the note is saved and the next to
     expect(Object.keys(readTasks(s.folder))).not.toContain("open");
     const servers = Object.keys((JSON.parse(first.argv[first.argv.indexOf("--mcp-config") + 1]) as { mcpServers: object }).mcpServers);
     expect(servers).not.toContain("data");
+    // Input blocks D0: the demo declares none, so nothing of them shows anywhere.
+    const agents = fs.readFileSync(path.join(s.folder, "AGENTS.md"), "utf8");
+    expect(agents).not.toContain("### Answers from input blocks");
+    expect(agents).not.toContain("show_annotate");
+    expect(readTasks(s.folder).current).not.toHaveProperty("pendingInput");
+    const chatLines = readJsonl<{ blocks?: Record<string, unknown>[] }>(path.join(s.folder, ".harness", "chats", "main.jsonl"));
+    const shownBlocks = chatLines.flatMap((e) => e.blocks ?? []);
+    expect(shownBlocks.length).toBeGreaterThan(0);
+    expect(shownBlocks.every((b) => !("id" in b) && !("input" in b))).toBe(true);
     await expect(page.getByRole("list", { name: "What's clear so far" }).getByRole("button", { name: "El manifiesto" })).toBeVisible();
 
     // Settings › Uso: the manifest task took the five-hour window from 10 % to 14 % (spec 3b).

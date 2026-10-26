@@ -26,7 +26,7 @@ The template (`packages/cli/template/`) runs as is: one action (`example`, stand
 `HARNESS.md` is the harness's living decision log: Task, Decisions, Flow, Context, Models, Permissions and engines, Identity, Open questions, Decision log. `check` reads two things from it (`packages/cli/src/harness-md.ts`): the Flow table (`| Action | Tier | Cost | Purpose |`, one row per action plus `(questions)`) and the permission lines (`- edit: none — reason`, `exec`, `web`, `engines: claude, codex`).
 
 - Errors: `schema` (each zod issue), `i18n` (`locales/en.json`: missing, invalid JSON or not an object; other locale files are a warning; every `t("key")` in `ui/` must exist in it), `brief-missing`, `brand` (`brandNames()` in `packages/engines`), `engine-not-allowed` (excluded, unknown, or pending outside development), `harness-md-missing`, `harness-md-mismatch`, and for `mock/*.json` recordings `mock-schema`, `mock-action`, `mock-match`, `mock-next`, `mock-choice`, `mock-input`.
-- Warnings, one per pillar plus resources: `pillar-decisions`, `pillar-flow`, `pillar-context`, `tier-cost`, `permissions-wide`, `open-questions`, and for input blocks `input-hidden` (an input block that isn't visible), `input-form` (a field the core form can't draw, with no component in `ui/`) and `input-choice` (a choice whose options can't come from the shown data: `inputUi.<field>.optionsFrom` names no list of strings or string enums, or `kind: "choice"` has no options, and the form draws it as text; or `inputUi.<field>.kind` on a field that isn't a string, where it is ignored).
+- Warnings, one per pillar plus resources: `pillar-decisions`, `pillar-flow`, `pillar-context`, `tier-cost`, `permissions-wide`, `open-questions`, and for input blocks `input-hidden` (an input block that isn't visible), `input-form` (a field the core form can't draw, with no component in `ui/`) and `input-choice` (a choice whose options can't come from the shown data: `inputUi.<field>.optionsFrom` names no list of strings or string enums, or `kind: "choice"` has no options, and the form draws it as text; or `inputUi.<field>.kind` on a field that isn't a string, where it is ignored), and `settings-tokens` (the settings' sentences, at their defaults, would take more than 400 tokens of `AGENTS.md`).
 
 ## run
 
@@ -42,6 +42,10 @@ At the prompt, a number picks a choice, `a` answers the pending input block (one
 Every way out closes the engine's runtime and prints the report; the Ctrl-C listener is removed at the end.
 
 When the task closes, `run` prints the note's path if the closing turn wrote it. A checkpoint writes the same file, so `run` counts writes rather than comparing paths: when only the checkpoint wrote a note, it says that the checkpoint's note stands; when neither did, "No note was saved."
+
+### Settings
+
+`--set name=value` (repeatable) stores harness settings in the run folder before the task, as the window would, and `run` prints them (`Settings: name=value, …`). Each value is checked as the typed text first, then as JSON (`4`, `true`). An unknown name, a value its schema refuses, or `--set` on a harness without settings stops the run with exit 2 before the engine or the folder. Without `--set`, `run` is unchanged. See `docs/architecture/settings.md`.
 
 ## run's report
 

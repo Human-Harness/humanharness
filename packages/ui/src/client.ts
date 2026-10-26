@@ -94,6 +94,9 @@ export interface ActionOption {
   tier?: Tier;
   /** Harnesses with scopes: "none" runs app-wide; anything else needs an open scope. */
   scope?: ScopeMode;
+  /** The modes its task may work in, and how it starts (task-modes spec §3). Absent without modes (D0). */
+  modes?: string[];
+  defaultMode?: string;
 }
 
 /** A read-only reference folder, as the work screen shows it ("~/…" for paths in the home folder). */
@@ -127,6 +130,13 @@ export type MoveResult =
   | { ok: true; state: AppState; leftBehind?: string; historyLeftBehind?: boolean }
   | { ok: false; error: MoveError; state?: AppState };
 
+/** A mode as the window shows it (task-modes spec §3): never its brief or the agent's hint. */
+export interface ModeView {
+  label: string;
+  description?: string;
+  minTier?: Tier;
+}
+
 export interface AppState {
   harness: {
     id: string;
@@ -156,6 +166,8 @@ export interface AppState {
   inputs?: Record<string, InputSpec>;
   /** The harness's settings (manifest `settings`): its own Settings tab. Absent: no tab (harness-settings D0). */
   settings?: SettingsView;
+  /** The harness's modes, by id (task-modes spec). Absent: none (D0). */
+  modes?: Record<string, ModeView>;
   /** Folders the agent can read but never change. */
   references?: ReferenceView[];
   /** Settings › Modelos. */
@@ -371,6 +383,8 @@ export interface SendOptions {
   action?: string;
   /** Harnesses with scopes: run in this scope (it opens first). Default: the open one. */
   scope?: string;
+  /** With `action`: the mode the person picked for the new task (`defaultMode: "ask"`, task-modes spec §3). */
+  mode?: string;
 }
 
 /**
@@ -550,6 +564,12 @@ export interface HarnessClient {
    * errors, or with the chat's line once the answer is taken; the agent's turn then arrives as events.
    */
   respond(blockId: string, value: Record<string, unknown>): Promise<RespondResult>;
+  /**
+   * The person picks a mode for the open task (task-modes spec §5): resolves with a refusal (with the tiers when the
+   * mode asks for more) or with how the switch goes on; the switch's turn then arrives as events. `choice` answers the
+   * tier question.
+   */
+  chooseMode(mode: string, choice?: ModeChoice): Promise<ModeResult>;
   /** Opens a file inside the reference folders or the user's folder in its default app. False when refused or missing. */
   openPath(path: string): Promise<boolean>;
   /** Shows a file inside the reference folders or the user's folder in Finder (any kind of file). False when refused or missing. */

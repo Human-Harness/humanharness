@@ -15,6 +15,8 @@ import type {
   HarnessClient,
   HistoryItem,
   HistoryTaskView,
+  ModeChoice,
+  ModeResult,
   MoveResult,
   RespondResult,
   RunningSetup,
@@ -337,6 +339,17 @@ export class FakeClient implements HarnessClient {
       this.emitTasks({ ...this.tasks, current: rest });
     }
     return result;
+  }
+  /** What chooseMode was asked, in order. */
+  modeChoices: { mode: string; choice: ModeChoice }[] = [];
+  /** What chooseMode answers; default: a switch turn runs. */
+  modeResult: ModeResult | null = null;
+  /** When set, chooseMode rejects with it. */
+  modeError: Error | null = null;
+  async chooseMode(mode: string, choice: ModeChoice = {}): Promise<ModeResult> {
+    this.modeChoices.push({ mode, choice });
+    if (this.modeError) throw this.modeError;
+    return this.modeResult ?? { ok: true, switched: "turn" };
   }
   /** Files revealPath was asked to show. */
   revealedFiles: string[] = [];

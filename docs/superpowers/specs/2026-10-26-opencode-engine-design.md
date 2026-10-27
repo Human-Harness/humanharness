@@ -18,6 +18,8 @@ It does not replace Claude or Codex. Those stay the route for people who pay a s
 
 ## 1. Registry entry (`packages/engines`)
 
+> **Superseded by the spike results (§8).** The block below is the entry as first planned. The registry in `packages/engines/src/index.ts` is the source of truth. It differs here: OpenCode's own terms and privacy pages (A10), `minVersion` `"0.0.0"` until a real run, `profile: "config-option"`, the efforts `low`/`medium`/`high` until OpenCode sends its own, `reportsCost: true`, `inTerminal: ["login", "logout"]`, `providersUrl`, and a fixed `transport.env` (§5).
+
 ```ts
 {
   id: "opencode",
@@ -59,7 +61,7 @@ It does not replace Claude or Codex. Those stay the route for people who pay a s
 
 - On `session/new`, OpenCode sends `configOptions` with `model` (values `provider/model`) and, for models with variants, `effort` (category `thought_level`). The runtime already turns `configOptions` into the model offer (`offeredModels`); Settings › Modelos shows that list.
 - To apply a task's model profile, the ACP transport calls `session/set_config_option` (`configId: "model"` or `"effort"`) after `session/new` or `session/load`. Codex applies profiles through `CODEX_CONFIG` at spawn; OpenCode does not need a restart. The transport picks the method per engine: a new optional `TransportDef` field `profile: "codex-config" | "config-option"`.
-- **light / standard / deep.** There is no fixed mapping, because the models depend on the provider. Default: every tier uses the session's default model; the user may assign a model per tier in Settings › Modelos (existing override). A `config_option_update` that removes the chosen model falls back to the default and emits the existing `model-unavailable` error.
+- **light / standard / deep.** There is no fixed mapping, because the models depend on the provider. Default: every tier uses the session's default model; the user may assign a model per tier in Settings › Modelos (existing override). A model that is not offered when a task starts falls back to the default model, as for the other engines; that fallback happens only on a task's first turn. A model that OpenCode stops offering in the middle of a task (a `config_option_update` without it) gives the existing `model-unavailable` error on the task's next turn. The check uses every model OpenCode offers; only Settings › Modelos keeps the first 50.
 - The context cap is not sent to OpenCode; it compacts on its own (plan Q4).
 
 ## 4. Usage
@@ -72,7 +74,14 @@ It does not replace Claude or Codex. Those stay the route for people who pay a s
 
 ## 5. Permissions and modes
 
-- Permission answers already pick an option by `kind` (`allow_once` / `reject_once`), which OpenCode sends. No change.
+- Permission answers already pick an option by `kind` (`allow_once` / `reject_once`), which OpenCode sends.
+- **OpenCode asks first.** By default OpenCode runs bash and webfetch without asking, and its `plan` agent blocks edits but not bash, so the harness's `exec` and `web` permissions would not apply. The registry gives OpenCode a fixed environment (`transport.env`, passed through `acpFields`; Claude and Codex get none):
+  - `OPENCODE_CONFIG_CONTENT={"permission":{"bash":"ask","edit":"ask","webfetch":"ask","websearch":"ask"}}`: an inline config layer, read by OpenCode 1 and 2, above the person's global and project config;
+  - `OPENCODE_PERMISSION` with the same map: OpenCode 1 merges it last over every config's `permission` (OpenCode 2 does not read it);
+  - `OPENCODE_DISABLE_CLAUDE_CODE=1`: OpenCode does not read `~/.claude/CLAUDE.md` or `.claude/skills`, so they never reach the person's provider.
+
+  Every such call then reaches `session/request_permission`, and the harness's permissions decide it. Sources: `anomalyco/opencode` v1.19.4 `packages/opencode/src/config/config.ts:482-489,559-561`, `packages/opencode/src/effect/runtime-flags.ts:24,28`; 2.x (`dev`) `packages/cli/src/server-process.ts:128-133`, `packages/core/src/config/normalize.ts:180`; docs `opencode.ai/docs/cli` (environment variables).
+  Known gaps: a `permission` rule for a tool inside one of the person's own OpenCode agents (`agent.<name>.permission`) is applied after these and can loosen them; OpenCode reports `websearch` as kind `other`, so the harness's `exec` permission (not `web`) decides it.
 - `modes`: `edit` → `build` agent, `readOnly` → `plan` agent, set with `session/set_mode` as for Codex. The spike confirms the ids.
 - The harness MCP servers go in `session/new` as for Codex (stdio supported; SSE is not, and the core does not use it).
 - OpenCode allows one prompt at a time per session; the runtime already runs one turn at a time.
@@ -101,7 +110,7 @@ It does not replace Claude or Codex. Those stay the route for people who pay a s
 
 The spike did not run the CLI: OpenCode is not installed on the planning machine, and nothing was installed. These results come from public material only: the docs (`opencode.ai/docs/cli/`, `opencode.ai/docs/acp/`), the install script, the legal pages and the MIT source on GitHub (`anomalyco/opencode`, tags `v1.19.4` and `v2.2.0`). No account, credential or config file was read. Each line says "confirmed (source)" when the source shows it, or "unverified" when only a real run can tell. The manual check in §7 ("Real") is a release gate: it confirms these lines against the real CLI before release.
 
-**Two major lines.** OpenCode 1 (latest `v1.19.4`, 2026-10-22) and OpenCode 2 (`v2.2.0`, 2026-10-27) are both released. The official installer (`opencode.ai/install`, which redirects to the `v1` branch script) installs only OpenCode 1 and refuses a 2.x version. `opencode upgrade --major` moves a person to OpenCode 2 and removes OpenCode 1. OpenCode 2 changes `auth list` (see A3). The plan targets OpenCode 1. Open decision for Marco: refuse 2.x (a `maxVersion` or a major check), or parse both `auth list` formats.
+**Two major lines.** OpenCode 1 (latest `v1.19.4`, 2026-10-22) and OpenCode 2 (`v2.2.0`, 2026-10-27) are both released. The official installer (`opencode.ai/install`, which redirects to the `v1` branch script) installs only OpenCode 1 and refuses a 2.x version. `opencode upgrade --major` moves a person to OpenCode 2 and removes OpenCode 1. OpenCode 2 changes `auth list` (see A3). The plan targets OpenCode 1. Decided and implemented: accept both; the status check parses both `auth list` formats (no `maxVersion`).
 
 §8 items:
 1. Install and version: `curl -fsSL https://opencode.ai/install | bash` puts the binary in `~/.opencode/bin` (no override) and adds that folder to the shell's rc file unless `--no-modify-path`. The version flag is `--version` / `-v`; the exact output is unverified. `minVersion` stays `"0.0.0"` until a real run; the source read here is 1.19.4.

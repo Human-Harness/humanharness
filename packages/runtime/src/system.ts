@@ -8,7 +8,7 @@ import { materialServerSpec } from "@humanharness/material/light";
 import { AcpTransport } from "./acp";
 import { ClaudeCliTransport } from "./claude-cli";
 import type { EngineError, Event, LimitWindow } from "./events";
-import type { Transport, TransportOptions } from "./transport";
+import { type Transport, type TransportOptions, acpFields } from "./transport";
 
 export interface SystemTaskOptions {
   engine: EngineDef;
@@ -60,8 +60,7 @@ export async function runSystemTask(o: SystemTaskOptions): Promise<SystemTaskRes
     session: { id: randomUUID(), started: false },
     mcp: [materialServerSpec({ rpc, launcher: o.launcher ?? devLauncher(), mode: "system", tools: o.tools, ...(o.entry ? { entry: o.entry } : {}) })],
     permissions: { edit: "none", exec: false, web: false },
-    sessionMode: o.engine.transport.kind === "acp" ? o.engine.transport.modes?.readOnly : undefined,
-    minAdapterVersion: o.engine.transport.kind === "acp" ? o.engine.transport.minAdapterVersion : undefined,
+    ...acpFields(o.engine, "none"),
     persistSession: false,
     command: o.command,
     ...(o.env ? { env: o.env } : {}),

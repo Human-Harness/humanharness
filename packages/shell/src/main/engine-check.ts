@@ -10,6 +10,7 @@ import {
   type Event,
   type Transport,
   type TransportOptions,
+  acpFields,
 } from "@humanharness/runtime";
 
 export const TEST_PROMPT = "Reply with the single word OK.";
@@ -34,8 +35,7 @@ export async function testPrompt(
     session: { id: randomUUID(), started: false },
     mcp: [],
     permissions: { edit: "none", exec: false, web: false },
-    sessionMode: engine.transport.kind === "acp" ? engine.transport.modes?.readOnly : undefined,
-    minAdapterVersion: engine.transport.kind === "acp" ? engine.transport.minAdapterVersion : undefined,
+    ...acpFields(engine, "none"),
     persistSession: false,
     command: cmd.command,
     env: cmd.env,

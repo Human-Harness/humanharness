@@ -1,5 +1,5 @@
 import type { McpServerSpec } from "@humanharness/blocks";
-import type { Effort, ModelChoice, ModelProfile } from "@humanharness/engines";
+import type { Effort, EngineDef, ModelChoice, ModelProfile } from "@humanharness/engines";
 import type { Permissions } from "@humanharness/harness-sdk";
 import type { Event } from "./events";
 
@@ -45,4 +45,14 @@ export interface Transport {
   /** Ends the current engine session; the next turn starts a new one. Never called during a turn. */
   endSession(): Promise<void>;
   close(): Promise<void>;
+}
+
+/** The ACP fields of an engine's transport options: the mode for the harness's edit permission, the adapter gate, the profile method. */
+export function acpFields(
+  engine: EngineDef,
+  edit: Permissions["edit"],
+): Pick<TransportOptions, "sessionMode" | "minAdapterVersion" | "profileMethod"> {
+  const t = engine.transport;
+  if (t.kind !== "acp") return { sessionMode: undefined, minAdapterVersion: undefined, profileMethod: undefined };
+  return { sessionMode: t.modes?.[edit === "folder" ? "edit" : "readOnly"], minAdapterVersion: t.minAdapterVersion, profileMethod: t.profile };
 }

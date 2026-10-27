@@ -21,7 +21,7 @@ import {
 import { AcpTransport } from "./acp";
 import { ClaudeCliTransport } from "./claude-cli";
 import type { Event } from "./events";
-import type { Session, Transport, TransportOptions } from "./transport";
+import { type Session, type Transport, type TransportOptions, acpFields } from "./transport";
 
 export interface RuntimeOptions {
   /** Built `ui` MCP server entry (app). Defaults to the TS source (dev). */
@@ -146,11 +146,7 @@ export async function createRuntime(opts: RuntimeOptions): Promise<HarnessRuntim
       ],
       permissions: harness.permissions,
       references: references.map((r) => r.path),
-      sessionMode:
-        engine.transport.kind === "acp"
-          ? engine.transport.modes?.[harness.permissions.edit === "folder" ? "edit" : "readOnly"]
-          : undefined,
-      minAdapterVersion: engine.transport.kind === "acp" ? engine.transport.minAdapterVersion : undefined,
+      ...acpFields(engine, harness.permissions.edit),
       command: opts.command ?? (engine.transport.kind === "claude-cli" ? [engine.transport.binary] : engine.transport.command),
       env: opts.env,
       onModels: opts.onModels,

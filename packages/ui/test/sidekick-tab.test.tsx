@@ -35,6 +35,16 @@ describe("Settings › Sidekick (spec §8)", () => {
     await waitFor(() => expect(c.sidekickCalls).toContainEqual(["set", { on: false }]));
   });
 
+  it("each moment on its own (spec §8)", async () => {
+    const c = new FakeClient({ language: "en" });
+    c.sidekickState = SK_ON;
+    await renderIn("en", <SidekickTab client={c} onModels={() => {}} />);
+    fireEvent.click(await screen.findByRole("checkbox", { name: "After the reply" }));
+    await waitFor(() => expect(c.sidekickCalls).toContainEqual(["set", { afterReply: false }]));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Heads-ups" }));
+    await waitFor(() => expect(c.sidekickCalls).toContainEqual(["set", { headsUps: false }]));
+  });
+
   it("shows why a save failed", async () => {
     const c = new FakeClient({ language: "en" });
     c.sidekickState = SK_ON;

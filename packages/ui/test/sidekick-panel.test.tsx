@@ -23,6 +23,7 @@ const CARD: SidekickCard = {
 };
 const handlers = () => ({
   onCollapse: vi.fn(), onTurnOn: vi.fn(), onNotNow: vi.fn(), onSendSuggested: vi.fn(), onEdit: vi.fn(), onSendAnyway: vi.fn(), onPutInComposer: vi.fn(), onView: vi.fn(), onMute: vi.fn(), onDismiss: vi.fn(), onDropQueued: vi.fn(),
+  onSaveDecision: vi.fn(async () => ({ ok: true })), onFinishTask: vi.fn(),
 });
 const panel = (state: SidekickState, h = handlers(), extra: Partial<Parameters<typeof SidekickPanel>[0]> = {}) =>
   renderIn("en", <SidekickPanel state={state} view="sidekick" sendKey="⌘" {...h} {...extra} />).then(() => h);
@@ -178,5 +179,50 @@ describe("after-reply card (spec §4.2)", () => {
     expect(screen.getAllByRole("button", { name: "Dismiss" })).toHaveLength(2);
     const titles = screen.getAllByRole("heading", { level: 4 }).map((h) => h.textContent);
     expect(titles).toEqual(["Tone", "Sources"]);
+  });
+});
+
+describe("heads-ups (spec §4.3, §7)", () => {
+  const hu = (headsUp: NonNullable<SidekickCard["headsUp"]>, kind: string): SidekickCard => ({ id: `h-${kind}`, moment: "heads-up", kind, speaker: SK_ON.info, prompt: "", flags: [], issues: [], confidence: 1, at: "2026-10-27T10:00:00Z", headsUp });
+
+  it("the head counts them; each has its button and Dismiss", async () => {
+    const h = await panel({ ...SK_ON, cards: [hu({ kind: "context", share: 0.8 }, "context"), hu({ kind: "repeated", topic: "APA style", decision: "Use APA 7." }, "repeated")] });
+    expect(screen.getByText("2 heads-ups")).toBeTruthy();
+    expect(screen.getByText("This task has used 80% of its context.")).toBeTruthy();
+    expect(screen.getByText("You've asked about “APA style” three times. Save it as a decision?")).toBeTruthy();
+    expect(screen.getByText("Use APA 7.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Finish task" }));
+    expect(h.onFinishTask).toHaveBeenCalledWith("h-context");
+    fireEvent.click(screen.getByRole("button", { name: "Save as decision" }));
+    expect(h.onSaveDecision).toHaveBeenCalledWith("h-repeated");
+    fireEvent.click(screen.getAllByRole("button", { name: "Dismiss" })[0]!);
+    expect(h.onDismiss).toHaveBeenCalledWith("h-repeated", "dismissed");
+  });
+
+  it("one heads-up reads singular; a live suggestion keeps the head's state", async () => {
+    await panel({ ...SK_ON, cards: [hu({ kind: "off-phase", phase: "Draft" }, "off-phase")] });
+    expect(screen.getByText("1 heads-up")).toBeTruthy();
+    expect(screen.getByText("The last prompts belong to “Draft”.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Finish task" })).toBeTruthy();
+    cleanup();
+    await panel({ ...SK_ON, status: "suggestion", card: CARD, cards: [hu({ kind: "off-phase" }, "off-phase")] });
+    expect(screen.getByText("Has a suggestion")).toBeTruthy();
+    expect(screen.getByText("The last prompts belong to another phase.")).toBeTruthy();
+  });
+
+  it("Save as decision refused: the message shows and the card stays", async () => {
+    const h = handlers();
+    h.onSaveDecision.mockResolvedValue({ ok: false, message: "No open task" } as never);
+    await panel({ ...SK_ON, cards: [hu({ kind: "repeated", topic: "APA style", decision: "Use APA 7." }, "repeated")] }, h);
+    fireEvent.click(screen.getByRole("button", { name: "Save as decision" }));
+    expect(await screen.findByText("Could not save the decision: No open task")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Save as decision" })).toBeTruthy();
+  });
+
+  it("an after-reply card with neither gap nor next never shows", async () => {
+    const empty: SidekickCard = { id: "a9", moment: "after", kind: "gap", speaker: SK_ON.info, prompt: "x", flags: [], issues: [], confidence: 1, at: "2026-10-27T10:00:00Z", after: {} };
+    await panel({ ...SK_ON, cards: [empty] });
+    expect(screen.queryByRole("heading", { name: "After the reply" })).toBeNull();
+    expect(screen.getByText("Watching")).toBeTruthy();
   });
 });

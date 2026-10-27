@@ -662,6 +662,17 @@
       "drop": "Drop",
       "announce": "Sidekick has a suggestion for your prompt."
     },
+    "headsUpCount_one": "{{count}} heads-up",
+    "headsUpCount_other": "{{count}} heads-ups",
+    "headsUp": {
+      "context": "This task has used {{percent}}% of its context.",
+      "repeated": "You've asked about “{{topic}}” three times. Save it as a decision?",
+      "offPhase": "The last prompts belong to another phase.",
+      "offPhaseNamed": "The last prompts belong to “{{phase}}”.",
+      "saveDecision": "Save as decision",
+      "finishTask": "Finish task",
+      "saveFailed": "Could not save the decision: {{message}}"
+    },
     "after": { "title": "After the reply", "next": "Next prompt", "dismiss": "Dismiss" },
     "notice": {
       "failed": "Sidekick couldn't review this one. Your prompt went as typed.",
@@ -695,6 +706,10 @@
       "onHint": "Reads your prompt before it goes out and suggests a clearer one.",
       "preSend": "Before you send",
       "preSendHint": "Review prompts before they go out.",
+      "afterReply": "After the reply",
+      "afterReplyHint": "Points out gaps and suggests a next prompt.",
+      "headsUps": "Heads-ups",
+      "headsUpsHint": "Context near full, repeated asks, drifting off the phase. They cost nothing.",
       "wait": "Longest wait",
       "wait6": "6 s",
       "wait10": "10 s",

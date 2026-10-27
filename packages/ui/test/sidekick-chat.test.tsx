@@ -496,4 +496,20 @@ describe("after the reply and queued prompts in the chat (spec §4.2)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
     await waitFor(() => expect(c.sidekickCalls).toContainEqual(["resolve", "a1", "dismissed"]));
   });
+
+  it("heads-ups: Finish task resolves used and finishes the task; Save as decision asks main", async () => {
+    const hu = (id: string, headsUp: NonNullable<SidekickCard["headsUp"]>): SidekickCard => ({ id, moment: "heads-up", kind: headsUp.kind, speaker: SK_ON.info, prompt: "", flags: [], issues: [], confidence: 1, at: "2026-10-27T10:00:00Z", headsUp });
+    const c = client();
+    c.tasks = { current: { id: "t1", action: "session", status: "waiting" }, actions: {}, notes: [] };
+    const box = await open(c);
+    box.focus();
+    act(() => c.emitSidekick({ ...SK_ON, cards: [hu("h1", { kind: "context", share: 0.8 }), hu("h2", { kind: "repeated", topic: "APA", decision: "Use APA 7." })] }));
+    fireEvent.click(await screen.findByRole("button", { name: "Save as decision" }));
+    await waitFor(() => expect(c.sidekickCalls).toContainEqual(["saveDecision", "h2"]));
+    // Heads-ups never take focus.
+    expect(document.activeElement).toBe(box);
+    fireEvent.click(screen.getByRole("button", { name: "Finish task" }));
+    await waitFor(() => expect(c.taskCalls).toEqual(["finish"]));
+    expect(c.sidekickCalls).toContainEqual(["resolve", "h1", "used"]);
+  });
 });

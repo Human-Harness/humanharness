@@ -1,7 +1,7 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Segmented } from "../chrome";
-import type { SidekickCard, SidekickState } from "../client";
+import type { SidekickCard, SidekickHeadsUp, SidekickState } from "../client";
 import { shownLanguage } from "../language";
 import { SidekickMark } from "./mark";
 import { wordDiff } from "./word-diff";
@@ -29,6 +29,10 @@ export interface SidekickPanelProps {
   /** Queued asks "For later", kept by the chat so they survive the card that found them; `key` tells equal texts apart. */
   queued?: { key: string; text: string }[];
   onDropQueued(key: string): void;
+  /** A repeated-ask heads-up's "Save as decision" (spec §4.3); a refusal's message shows on the card, which stays. */
+  onSaveDecision(cardId: string): Promise<{ ok: boolean; message?: string }>;
+  /** A context or off-phase heads-up's "Finish task" (spec §4.3). */
+  onFinishTask(cardId: string): void;
   /** Opens Settings › Sidekick from the foot's tier; without it the tier is plain text. */
   onTier?: () => void;
 }
@@ -39,13 +43,16 @@ export function SidekickPanel(p: SidekickPanelProps) {
   const n = (v: number) => v.toLocaleString(shownLanguage(i18n));
   const s = p.state;
   const showHarness = p.harnessSide !== undefined && p.view === "harness";
+  const headsUps = s.cards.filter((c) => c.headsUp).length;
+  // The count stands in for "Watching" only: a review or a suggestion says more.
+  const status = headsUps > 0 && s.status === "watching" && !s.card ? t("sidekick.headsUpCount", { count: headsUps }) : t(`sidekick.status.${s.status}`);
   const tierText = t("sidekick.tier", { tier: t(`sidekick.tiers.${s.tier}`, { defaultValue: s.tier }) });
   return (
     <aside className="hh-sk-panel" aria-label={s.info.name}>
       <header className="hh-sk-head">
         <SidekickMark off={!s.settings.on} />
         <h2 className="hh-sk-name">{s.info.name}</h2>
-        <span className="hh-sk-status">{t(`sidekick.status.${s.status}`)}</span>
+        <span className="hh-sk-status">{status}</span>
         <span className="hh-spacer" />
         <button type="button" className="hh-sk-collapse" aria-label={t("sidekick.collapse")} onClick={p.onCollapse}>
           ›
@@ -87,9 +94,13 @@ export function SidekickPanel(p: SidekickPanelProps) {
               {s.notice && <p className="hh-caption hh-sk-notice">{t(`sidekick.notice.${s.notice}`)}</p>}
               {s.card && <Card key={s.card.id} card={s.card} {...p} />}
               {/* Main keeps them oldest first: the newest reads first. */}
-              {[...s.cards].reverse().map((card) => (
-                <AfterCard key={card.id} card={card} onPutInComposer={p.onPutInComposer} onDismiss={p.onDismiss} />
-              ))}
+              {[...s.cards].reverse().map((card) =>
+                card.headsUp ? (
+                  <HeadsUpCard key={card.id} card={card} headsUp={card.headsUp} {...p} />
+                ) : card.after?.gap || card.after?.next ? (
+                  <AfterCard key={card.id} card={card} onPutInComposer={p.onPutInComposer} onDismiss={p.onDismiss} />
+                ) : null,
+              )}
               {p.queued && p.queued.length > 0 && (
                 <div className="hh-sk-queued">
                   <h4>{t("sidekick.card.queued")}</h4>
@@ -207,6 +218,52 @@ function AfterCard({ card, onPutInComposer, onDismiss }: { card: SidekickCard } 
         )}
         <button type="button" onClick={() => onDismiss(card.id, "dismissed")}>{t("sidekick.after.dismiss")}</button>
       </div>
+    </section>
+  );
+}
+
+/** A heads-up (spec §4.3): one line, its button and Dismiss. Never blocks and never takes focus. */
+function HeadsUpCard({ card, headsUp, onSaveDecision, onFinishTask, onDismiss }: { card: SidekickCard; headsUp: SidekickHeadsUp } & SidekickPanelProps) {
+  const { t } = useTranslation();
+  const [failed, setFailed] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const save = () => {
+    setFailed(null);
+    setSaving(true);
+    onSaveDecision(card.id).then(
+      (r) => {
+        setSaving(false);
+        if (!r.ok) setFailed(r.message ?? "");
+      },
+      (err: unknown) => {
+        setSaving(false);
+        setFailed(err instanceof Error ? err.message : String(err));
+      },
+    );
+  };
+  return (
+    <section className="hh-sk-card hh-sk-headsup">
+      {headsUp.kind === "context" && <p>{t("sidekick.headsUp.context", { percent: Math.round(headsUp.share * 100) })}</p>}
+      {headsUp.kind === "repeated" && (
+        <>
+          <p>{t("sidekick.headsUp.repeated", { topic: headsUp.topic })}</p>
+          <p className="hh-caption">{headsUp.decision}</p>
+        </>
+      )}
+      {headsUp.kind === "off-phase" && <p>{headsUp.phase ? t("sidekick.headsUp.offPhaseNamed", { phase: headsUp.phase }) : t("sidekick.headsUp.offPhase")}</p>}
+      <div className="hh-sk-actions">
+        {headsUp.kind === "repeated" ? (
+          <button type="button" className="hh-primary" disabled={saving} onClick={save}>
+            {t("sidekick.headsUp.saveDecision")}
+          </button>
+        ) : (
+          <button type="button" className="hh-primary" onClick={() => onFinishTask(card.id)}>
+            {t("sidekick.headsUp.finishTask")}
+          </button>
+        )}
+        <button type="button" onClick={() => onDismiss(card.id, "dismissed")}>{t("sidekick.after.dismiss")}</button>
+      </div>
+      {failed !== null && <p role="alert">{t("sidekick.headsUp.saveFailed", { message: failed })}</p>}
     </section>
   );
 }

@@ -676,11 +676,12 @@ export function ChatView({
     if (!task || blocked() || pending || task.status !== "waiting") return;
     taskCall(() => client.setPhase(task.id, id).then((r) => r.ok));
   };
-  /** Finish: the core closing turn. False back means it was stopped and the task stays open. */
-  const finishTask = () => {
-    if (!tasks.current || blocked() || pending) return;
+  /** Finish: the core closing turn. False back means it was stopped and the task stays open. Says whether it started. */
+  const finishTask = (): boolean => {
+    if (!tasks.current || blocked() || pending) return false;
     // A stopped closing turn is not a failure: the task simply stays open, as the tasks read again show.
     taskCall(() => client.finishTask().then(() => true));
+    return true;
   };
   const openTier = (ask: { mode: string; task: string; required: Tier; current: Tier }) => {
     questionOpener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -1359,6 +1360,11 @@ export function ChatView({
               onCollapse={() => toggleSk(false)}
               onMute={(id) => void client.sidekick.mute(id).catch(() => undefined)}
               onDismiss={(id, outcome) => void client.sidekick.resolve(id, outcome).catch(() => undefined)}
+              onSaveDecision={(id) => client.sidekick.saveDecision(id)}
+              // The heads-up leaves as used only when the closing turn really started.
+              onFinishTask={(id) => {
+                if (finishTask()) void client.sidekick.resolve(id, "used").catch(() => undefined);
+              }}
               queued={[...liveQueued, ...later]}
               onDropQueued={(key) => {
                 setLater((l) => l.filter((q) => q.key !== key));

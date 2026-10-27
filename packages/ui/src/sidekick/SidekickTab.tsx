@@ -15,6 +15,8 @@ export function SidekickTab({ client, onModels }: { client: HarnessClient; onMod
   const [failed, setFailed] = useState<string | null>(null);
   const onHint = useId();
   const preSendHint = useId();
+  const afterHint = useId();
+  const headsUpHint = useId();
   const mutedHead = useId();
   if (!state) return null;
   const s = state.settings;
@@ -70,6 +72,36 @@ export function SidekickTab({ client, onModels }: { client: HarnessClient; onMod
             />
             <p className="hh-caption hh-row-note" id={preSendHint}>
               {t("sidekick.settings.preSendHint")}
+            </p>
+          </div>
+          <div className="hh-row hh-row-wrap">
+            <label className="hh-row-label" htmlFor={`${afterHint}-on`}>
+              {t("sidekick.settings.afterReply")}
+            </label>
+            <input
+              id={`${afterHint}-on`}
+              type="checkbox"
+              checked={s.afterReply}
+              aria-describedby={afterHint}
+              onChange={(e) => save({ afterReply: e.target.checked })}
+            />
+            <p className="hh-caption hh-row-note" id={afterHint}>
+              {t("sidekick.settings.afterReplyHint")}
+            </p>
+          </div>
+          <div className="hh-row hh-row-wrap">
+            <label className="hh-row-label" htmlFor={`${headsUpHint}-on`}>
+              {t("sidekick.settings.headsUps")}
+            </label>
+            <input
+              id={`${headsUpHint}-on`}
+              type="checkbox"
+              checked={s.headsUps}
+              aria-describedby={headsUpHint}
+              onChange={(e) => save({ headsUps: e.target.checked })}
+            />
+            <p className="hh-caption hh-row-note" id={headsUpHint}>
+              {t("sidekick.settings.headsUpsHint")}
             </p>
           </div>
           <div className="hh-row">

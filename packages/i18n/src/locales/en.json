@@ -256,6 +256,7 @@
     "sending": "Sending your answer…",
     "window": "Your plan's {{window}} window is at {{percent}}% now.",
     "privacy": "Checking and labelling send parts of this material to {{provider}}.",
+    "uncovered": "No material yet for: {{list}}",
     "from": "From page",
     "to": "To page",
     "range": "Only these pages",

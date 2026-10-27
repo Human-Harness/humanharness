@@ -113,6 +113,23 @@ describe("MaterialService", () => {
     expect((await service.list("fractions")).sources).toEqual([]);
   });
 
+  it("coverage: the items no fragment links to, once a source is usable; no `uncovered` without items (§8)", async () => {
+    const withItems = deps({
+      material: { accepts: ["text"], grounding: { default: "mixed", personCanChange: true }, budget: { indexTokens: 600 }, items: { collection: "concepts", label: "name" }, ...stageFields },
+      items: async () => [{ key: "halves", label: "Halves" }],
+    });
+    const svc = new MaterialService(withItems);
+    expect(await svc.list("fractions")).not.toHaveProperty("uncovered");
+    picked = [write("a.md", `# A\n\n${"Text about a whole. ".repeat(30)}`)];
+    await svc.add("fractions");
+    expect((await svc.list("fractions")).uncovered).toEqual(["Halves"]);
+    // The stages get the items too.
+    expect((await svc.stageContext({ scope: "fractions", stage: "link" }, new MaterialStore(base, "fractions"))).items).toEqual([{ key: "halves", label: "Halves" }]);
+    // Without `items` in the manifest: no key, and the stages get none.
+    expect(await service.list("fractions")).not.toHaveProperty("uncovered");
+    expect(await service.stageContext({ scope: "fractions", stage: "sheet" }, new MaterialStore(base, "fractions"))).not.toHaveProperty("items");
+  });
+
   it("the grounding mode is per scope, and only when the person may change it", async () => {
     expect(await service.setGrounding("fractions", "strict")).toEqual({ ok: true });
     expect((await service.list("fractions")).grounding.mode).toBe("strict");
@@ -549,6 +566,45 @@ describe("the review stage in the queue (material spec §6.2)", () => {
     expect(await store.stale()).toBeNull();
     // Each batch's result reached the history.
     expect(changes).toEqual(["fractions: review a", "fractions: review a", "fractions: label a", "fractions: label a"]);
+  });
+
+  it("with items the sheet hands over to the links; links done clear the marker; nothing usable: no session", async () => {
+    const store = new MaterialStore(base, "fractions");
+    await store.update(() => [
+      { id: "a", scope: "fractions", path: "a.md", hash: "x", type: "md", family: "text", pages: 1, sizeBytes: 1, skippedPages: [], status: "ready", issues: [], fixes: [], estimate: 0, used: 0, fragments: [], addedAt: "2026-10-27T00:00:00.000Z" },
+    ]);
+    await store.writeFragments("a", [{ meta: { id: "a-001", source: "a.md", location: "lines 1", path: "A", kind: "explanation", summary: "Halves of a whole.", keywords: ["half"], tokens: 10, items: [], checks: "ok", validated: "sample" }, md: "Half." }]);
+    await store.setStale("sheet");
+    const sessions: string[] = [];
+    const svc = new MaterialService(
+      deps({
+        material: { accepts: ["text"], grounding: { default: "mixed", personCanChange: true }, budget: { indexTokens: 600 }, items: { collection: "concepts", label: "name" }, ...stageFields },
+        items: async () => [{ key: "halves", label: "Halves" }, { key: "thirds", label: "Thirds" }],
+        runStage: async (_j, prompt, tools, handle) => {
+          sessions.push(tools[0]);
+          if (tools.includes("material_sheet")) await handle({ op: "material_sheet", sections: [{ id: "terms", markdown: "- half" }] });
+          else {
+            expect(prompt).toContain("halves: Halves");
+            await handle({ op: "material_link", links: [{ fragment: "a-001", items: ["halves", "quarters"] }] });
+          }
+          return { ok: true };
+        },
+      }),
+    );
+    const jobs = new MaterialJobs<Job>({ idle: () => true, next: () => svc.nextJob(), run: (j, signal) => svc.runJob(j, signal), pollMs: 2 });
+    jobs.kick();
+    await jobs.settled();
+    expect(sessions).toEqual(["material_sheet", "material_link"]);
+    expect((await store.readFragment("a-001"))?.meta.items).toEqual(["halves"]);
+    expect(await store.stale()).toBeNull();
+    expect((await svc.list("fractions")).uncovered).toEqual(["Thirds"]);
+    // Every source gone: the links are due, but there is nothing to link, so no session and the marker clears.
+    await store.update((l) => l.map((s) => ({ ...s, status: "removed" as const })));
+    await store.setStale("link");
+    jobs.kick();
+    await jobs.settled();
+    expect(sessions).toHaveLength(2);
+    expect(await store.stale()).toBeNull();
   });
 
   it("a stage that leaves the source as it was records nothing in the history", async () => {

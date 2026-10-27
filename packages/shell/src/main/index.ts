@@ -29,7 +29,7 @@ import {
   settingsView,
   stageTier,
 } from "@humanharness/harness-sdk";
-import { type Job, MaterialStore, groundingMode, materialSection, workerRunner } from "@humanharness/material/light";
+import { type Job, LINK_MAX_ITEMS, MaterialStore, groundingMode, materialSection, workerRunner } from "@humanharness/material/light";
 import { type Event, type HarnessRuntime, createRuntime, runSystemTask } from "@humanharness/runtime";
 import {
   type AppConfig,
@@ -936,6 +936,26 @@ async function buildMaterial(): Promise<MaterialService | null> {
     runStage: (job, prompt, tools, handle, signal) => runMaterialStage(materialStageDeps, job, prompt, tools, handle, signal),
     kick: kickMaterial,
     trash: (file) => shell.trashItem(file),
+    // The links stage's items (§8): the first LINK_MAX_ITEMS records of the `items` collection in the scope (or the
+    // app-wide one), as `key: label`. The manifest rules guarantee the collection has a key and the label field.
+    ...(m.items
+      ? {
+          items: async (scope: string) => {
+            const c = await validConfig();
+            const items = m.items;
+            const key = items && Object.hasOwn(harness.data, items.collection) ? harness.data[items.collection].key : undefined;
+            if (!c || !items || !key) return [];
+            try {
+              const store = dataStoreFor(baseOf(c));
+              const { records } = await store.readAll(items.collection, store.scopeFor(items.collection, scope));
+              return records.slice(0, LINK_MAX_ITEMS).map((r) => ({ key: String(r[key]), label: String(r[items.label] ?? r[key]) }));
+            } catch (err) {
+              console.error("Could not read the material's items", err);
+              return [];
+            }
+          },
+        }
+      : {}),
   });
 }
 

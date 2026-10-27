@@ -14,6 +14,7 @@ import {
   type StageState,
   CHOICES,
   type Choice,
+  type LinkItem,
   addSource,
   asksOf,
   confirmSource,
@@ -22,12 +23,14 @@ import {
   groundingMode,
   isFragmentId,
   isSourceId,
+  isUsable,
   jobKey,
   limitRunner,
   nextJob,
   processSource,
   refusalText,
   retryStage,
+  uncovered,
   workerRunner,
 } from "@humanharness/material";
 import { APP_SCOPE, MATERIAL_DIR, isScopeId } from "@humanharness/workspace";
@@ -95,6 +98,8 @@ export interface MaterialDeps {
   kick?(): void;
   /** Moves a file to the system Trash (removing a source: never deleted for good). */
   trash(file: string): Promise<void>;
+  /** The `items` collection in a scope as `key: label` (at most LINK_MAX_ITEMS); only with `material.items`. */
+  items?(scope: string): Promise<LinkItem[]>;
 }
 
 /** A file not added because the app stopped converting (a profile switch, a folder or engine change, quitting). */
@@ -249,12 +254,15 @@ export class MaterialService {
     const store = await this.store(scope);
     const sources = typeof store === "string" ? [] : await store.sources();
     const chosen = typeof store === "string" ? null : await store.grounding();
+    // Coverage (§8): only with `items`, once the scope has something usable to cover them with.
+    const coverage = typeof store !== "string" && this.d.material.items && this.d.items && sources.some(isUsable) ? await uncovered(store, await this.d.items(scope)) : null;
     return {
       scope,
       sources: sources.filter((s) => s.status !== "removed").map(view),
       grounding: { mode: groundingMode(chosen, this.d.material.grounding), canChange: this.d.material.grounding.personCanChange },
       provider: await this.d.provider(),
       window: await this.d.window(),
+      ...(coverage ? { uncovered: coverage } : {}),
     };
   }
 
@@ -477,6 +485,8 @@ export class MaterialService {
       fragmentKinds: [...this.d.material.fragmentKinds],
       sheetSections: this.d.material.sheet.sections.map((s) => ({ id: s.id, label: s.label, prompt: s.prompt })),
       sheetMaxTokens: this.d.material.sheet.maxTokens,
+      // The links stage's items: only with `material.items` (the review only asks whether there are any).
+      ...(this.d.material.items && this.d.items ? { items: await this.d.items(job.scope) } : {}),
       ...(source
         ? {
             reconvert: async (settings) => {

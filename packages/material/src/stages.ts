@@ -1,9 +1,10 @@
 import { CORE_SHEET_SECTIONS, type MaterialStage } from "@humanharness/harness-sdk";
 import { estimateTokens } from "@humanharness/workspace";
 import { z } from "zod";
-import { BATCH, REPAIR_MAX_WORD_DIFF } from "./constants";
+import { BATCH, LINK_MAX_FRAGMENTS, REPAIR_MAX_WORD_DIFF } from "./constants";
 import type { MeasuredCosts } from "./estimate";
 import { alreadyChecked, applyLabels, labelAnswer, labelPrompt, unlabelled } from "./label";
+import { applyLinks, linkAnswer, linkPrompt } from "./link";
 import { applyReview, reviewAnswer, reviewPrompt, reviewSet } from "./review";
 import { composeSheet, sheetAnswer, sheetPrompt } from "./sheet";
 import type { MaterialStore } from "./store";
@@ -333,6 +334,38 @@ STAGES.sheet = {
     const md = composeSheet(ctx.sheetSections, parsed.data.sections, ctx.sheetMaxTokens);
     if (md) await store.writeSheet(md);
     else await store.clearSheet();
+    return true;
+  },
+};
+
+// Links (§8): once per scope after the sheet, only when the harness declares `items`. Each fragment gets the item keys
+// it covers; the queue clears the scope's marker once it's done.
+STAGE_TOOLS.material_link = {
+  description: "The links: for each fragment, the item keys it covers. Call it once.",
+  input: linkAnswer.shape,
+};
+
+STAGES.link = {
+  tools: ["material_link"],
+  async prompt(store, _job, ctx) {
+    if (!ctx.items?.length) return null;
+    const rows = await store.indexRows();
+    return rows.length === 0 ? null : linkPrompt(ctx.items, rows);
+  },
+  async accept(name, args, state) {
+    const a = linkAnswer.parse(args);
+    const rows = new Set((await state.store.indexRows()).slice(0, LINK_MAX_FRAGMENTS).map((r) => r.id));
+    const outside = a.links.find((l) => !rows.has(l.fragment));
+    if (outside) throw new Error(`${outside.fragment.slice(0, 80)} is not a fragment in the list`);
+    state.answers.push({ name, ...a });
+    return "Saved.";
+  },
+  async apply(store, _job, state, ctx) {
+    // No items, or nothing usable left (every source removed or refused): nothing to link, the stage is done.
+    if (!ctx.items?.length || (await store.indexRows()).length === 0) return true;
+    const parsed = linkAnswer.safeParse(state.answers.at(-1));
+    if (!parsed.success) return false;
+    await applyLinks(store, ctx.items, parsed.data.links);
     return true;
   },
 };

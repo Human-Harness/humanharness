@@ -379,6 +379,8 @@ export function MaterialPanel({ client, scope, info, disabled }: MaterialPanelPr
           </div>
         ),
       )}
+      {/* Coverage (§8): the harness's items no fragment covers yet. */}
+      {view?.uncovered && view.uncovered.length > 0 && <p className="hh-material-notice">{t("material.uncovered", { list: view.uncovered.join(", ") })}</p>}
     </section>
   );
 }

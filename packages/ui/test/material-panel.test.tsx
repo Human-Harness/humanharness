@@ -309,6 +309,15 @@ describe("questions and results (§6.2, §11)", () => {
     expect(await screen.findByText("ch2.pdf: ready, 18 fragments")).toBeTruthy();
     expect(screen.queryByText("What the check found")).toBeNull();
   });
+
+  it("the items no fragment covers yet; none listed, no line", async () => {
+    await panel({ ...view([src({})]), uncovered: ["Decimals", "Percent"] });
+    expect(await screen.findByText("No material yet for: Decimals, Percent")).toBeTruthy();
+    cleanup();
+    await panel({ ...view([src({})]), uncovered: [] });
+    await screen.findByText("ch2.pdf: ready, 18 fragments");
+    expect(screen.queryByText(/No material yet for/)).toBeNull();
+  });
 });
 
 describe("where the panel goes", () => {

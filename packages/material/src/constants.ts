@@ -64,3 +64,7 @@ export const CONVERT_HEAP_MB = 1536;
 export const CONVERT_TIMEOUT_MS = 120_000;
 /** How many files the app converts or measures at once (each worker may take CONVERT_HEAP_MB); the rest wait. */
 export const CONVERT_AT_ONCE = 2;
+/** The link stage (§8): at most this many items are offered (the first ones of the collection) … */
+export const LINK_MAX_ITEMS = 200;
+/** … and at most this many index rows go into its prompt (the first ones; the rest keep the links they have). */
+export const LINK_MAX_FRAGMENTS = 500;

@@ -13,6 +13,11 @@ export type TransportDef =
       modes?: { edit: string; readOnly: string };
       /** Lowest adapter version (agentInfo.version at initialize) the harness accepts. */
       minAdapterVersion?: string;
+      /**
+       * How a task's model profile reaches the agent: `codex-config` (default) through `CODEX_CONFIG` at spawn,
+       * `config-option` through `session/set_config_option` on the open session (OpenCode).
+       */
+      profile?: "codex-config" | "config-option";
     };
 
 /** How the app gets an engine ready, always through the provider's own CLI and installer. */
@@ -22,11 +27,18 @@ export interface EngineSetup {
   /** CLI args for the official login flow (it opens the browser). */
   login: string[];
   /** CLI args for the login status check, and how to read its result. */
-  status: { args: string[]; format: "json-logged-in" | "exit-code" };
+  status: { args: string[]; format: "json-logged-in" | "exit-code" | "opencode-auth-list" };
   /** CLI args for the official self-update, when there is one. */
   update?: string[];
   /** CLI args for the official sign-out (Settings → Engine → Sign out, only when the user asks). */
   logout: string[];
+  /**
+   * Steps that are interactive in the CLI (a provider picker): the app copies the command and opens Terminal,
+   * and the person runs it there. Never run by the app.
+   */
+  inTerminal?: ("login" | "logout")[];
+  /** The CLI's own guide to choosing a provider, for an engine whose provider the person sets up. */
+  providersUrl?: string;
 }
 
 export interface EngineDef {
@@ -38,6 +50,8 @@ export interface EngineDef {
   brands?: string[];
   /** Whether the engine reports plan-limit windows (Claude) or only tokens (Codex). */
   reportsLimits: boolean;
+  /** Whether the engine reports what each turn cost in USD (OpenCode). Absent: it does not. */
+  reportsCost?: boolean;
   /** Install / login / status / update / logout. Absent for engines the app can't set up itself. */
   setup?: EngineSetup;
   /**
@@ -129,6 +143,37 @@ export const ENGINES: readonly EngineDef[] = [
       logout: ["logout"],
     },
     logo: "assets/codex.svg",
+  },
+  {
+    id: "opencode",
+    name: "OpenCode",
+    provider: "OpenCode",
+    status: "allowed",
+    statusSource: "https://opencode.ai/docs/acp (2026-10-26)",
+    requires: "An account or API key with a provider you set up in OpenCode, or a local model (Ollama)",
+    dataLocation: "Depends on the provider you set up in OpenCode",
+    trainsOnData: "Depends on the provider you set up in OpenCode",
+    // OpenCode's own terms and privacy policy (spike); the chosen provider's terms apply on top.
+    termsUrl: "https://opencode.ai/legal/terms-of-service",
+    privacyUrl: "https://opencode.ai/legal/privacy-policy",
+    // OpenCode 1.x and 2.x are both accepted (the status check reads either `auth list` format).
+    // minVersion: set from the spike before release.
+    detect: { binary: "opencode", versionArgs: ["--version"], minVersion: "0.0.0" },
+    transport: { kind: "acp", command: ["opencode", "acp"], modes: { edit: "build", readOnly: "plan" }, profile: "config-option" },
+    // The models come from OpenCode at session start; these efforts are what Settings offers until it does.
+    models: { efforts: ["low", "medium", "high"] },
+    reportsLimits: false,
+    reportsCost: true,
+    setup: {
+      install: { command: "curl -fsSL https://opencode.ai/install | bash", docsUrl: "https://opencode.ai/docs/" },
+      login: ["auth", "login"],
+      status: { args: ["auth", "list"], format: "opencode-auth-list" },
+      update: ["upgrade"],
+      logout: ["auth", "logout"],
+      inTerminal: ["login", "logout"],
+      providersUrl: "https://opencode.ai/docs/providers/",
+    },
+    logo: "assets/opencode.svg",
   },
   {
     id: "kimi",

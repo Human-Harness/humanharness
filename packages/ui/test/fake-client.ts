@@ -697,7 +697,7 @@ export class FakeClient implements HarnessClient {
 
   /**
    * Calls to material, in order: "add:<scope>", "link:<scope>:<url>", "confirm:<id>", "grounding:<mode>", "retry:<id>",
-   * "decide:<id>:<fragment or ->:<choice>", "open:<id>".
+   * "decide:<id>:<fragment or ->:<choice>", "remove:<id>", "open:<id>".
    */
   materialCalls: string[] = [];
   materialViews: Record<string, MaterialView> = {};
@@ -747,6 +747,10 @@ export class FakeClient implements HarnessClient {
       this.materialCalls.push(`decide:${id}:${fragment ?? "-"}:${choice}`);
       if (this.materialDecideResult instanceof Error) throw this.materialDecideResult;
       return this.materialDecideResult;
+    },
+    remove: async (_scope: string, id: string) => {
+      this.materialCalls.push(`remove:${id}`);
+      return { ok: true as const };
     },
     open: async (_scope: string, id: string) => {
       this.materialCalls.push(`open:${id}`);

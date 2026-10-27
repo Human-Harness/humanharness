@@ -146,6 +146,7 @@
   "usage": {
     "byScope": "Usage by {{plural}}",
     "byProfile": "Usage by person",
+    "material": "Material processing: about {{tokens}} tokens",
     "scopeTokens": "{{tokens}} tokens",
     "appScope": "App-wide",
     "five_hour": "5 h",
@@ -242,6 +243,9 @@
     "link": "Link",
     "add": "Add",
     "cancel": "Cancel",
+    "remove": "Remove {{name}}",
+    "removeConfirm": "Remove {{name}}? Its file goes to the Trash.",
+    "removeYes": "Remove",
     "linkFailed": "The page couldn't be read. Check the link and try again.",
     "addFailed": "Couldn't add it. Try again.",
     "confirmFailed": "That didn't go through. Try again.",

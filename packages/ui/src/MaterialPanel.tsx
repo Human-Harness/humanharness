@@ -152,6 +152,10 @@ function WaitingCard({
             </button>
           )
         )}
+        {/* Nothing was processed yet: Cancel removes it at once (its file goes to the Trash). */}
+        <button type="button" disabled={off} onClick={() => send(() => client.material.remove(scope, source.id))}>
+          {t("material.cancel")}
+        </button>
       </div>
       {busy && (
         <p className="hh-material-notice" role="status">
@@ -250,6 +254,56 @@ function SourceDetails({ client, scope, source, disabled }: { client: HarnessCli
         </details>
       )}
     </>
+  );
+}
+
+/** Remove at the end of a source's line (§11): it asks first, then the original goes to the system Trash. */
+function RemoveButton({ client, scope, source, disabled }: { client: HarnessClient; scope: string; source: MaterialSourceView; disabled: boolean }) {
+  const { t } = useTranslation();
+  const [asking, setAsking] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const remove = () => {
+    setBusy(true);
+    setFailed(false);
+    client.material.remove(scope, source.id).then(
+      (r) => {
+        setBusy(false);
+        setAsking(false);
+        if (!r.ok) setFailed(true);
+      },
+      () => {
+        setBusy(false);
+        setFailed(true);
+      },
+    );
+  };
+  if (!asking)
+    return (
+      <>
+        {" "}
+        <button type="button" className="hh-material-remove" disabled={disabled} aria-label={t("material.remove", { name: source.name })} onClick={() => setAsking(true)}>
+          ×
+        </button>
+        {failed && (
+          <span className="hh-material-notice" role="status">
+            {" "}
+            {t("material.confirmFailed")}
+          </span>
+        )}
+      </>
+    );
+  return (
+    <span className="hh-material-confirm" role="group" aria-label={t("material.removeConfirm", { name: source.name })} aria-busy={busy || undefined}>
+      {" "}
+      {t("material.removeConfirm", { name: source.name })}{" "}
+      <button type="button" disabled={disabled || busy} onClick={remove}>
+        {t("material.removeYes")}
+      </button>{" "}
+      <button type="button" disabled={busy} onClick={() => setAsking(false)}>
+        {t("material.cancel")}
+      </button>
+    </span>
   );
 }
 
@@ -396,6 +450,7 @@ export function MaterialPanel({ client, scope, info, disabled }: MaterialPanelPr
                   </button>
                 </>
               )}
+              <RemoveButton client={client} scope={scope} source={s} disabled={disabled} />
             </p>
             <SourceDetails client={client} scope={scope} source={s} disabled={disabled} />
           </div>

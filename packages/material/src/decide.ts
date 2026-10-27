@@ -91,10 +91,12 @@ export async function removeSource(store: MaterialStore, sourceId: string, trash
   await store.transact(async (rewrite) => {
     const now = (await store.sources()).find((e) => e.id === sourceId);
     for (const id of Array.isArray(now?.fragments) ? now.fragments : []) await store.removeFragment(id);
+    // The program's versions the review kept (`.orig/`) go too: nothing names them any more.
+    await store.clearOriginalVersions(sourceId);
     await rewrite((list) =>
       list.map((e) => {
         if (e.id !== sourceId) return e;
-        const { stage: _s, reviewQueue: _q, repairs: _r, notice: _n, failed: _f, fullReview: _full, ...rest } = e;
+        const { stage: _s, reviewQueue: _q, repairs: _r, notice: _n, failed: _f, fullReview: _full, labelled: _l, ...rest } = e;
         return { ...rest, status: "removed", fragments: [], asks: [] };
       }),
     );

@@ -18,7 +18,7 @@ export interface MaterialStageDeps {
 
 /**
  * One AI stage's session (material spec §10): the engine in use, the stage's model, only the `material` server, and
- * one usage line. A stage needs what a turn needs: a set-up app, the engine's notice accepted and its CLI; otherwise it
+ * one usage line (with the fragments its prompt listed, for the measured estimates). A stage needs what a turn needs: a set-up app, the engine's notice accepted and its CLI; otherwise it
  * fails (and is not retried on its own). Never throws.
  */
 export async function runMaterialStage(
@@ -28,6 +28,7 @@ export async function runMaterialStage(
   tools: readonly string[],
   handle: (request: unknown) => Promise<unknown>,
   signal: AbortSignal,
+  fragments?: number,
 ): Promise<{ ok: boolean }> {
   try {
     const c = await d.setup();
@@ -46,6 +47,7 @@ export async function runMaterialStage(
         ...(job.source ? { source: job.source } : {}),
         profile,
         ok: r.ok,
+        ...(fragments !== undefined ? { fragments } : {}),
         ...(r.usage ? { usage: r.usage } : {}),
         ...(r.limits ? { limits: r.limits } : {}),
       });

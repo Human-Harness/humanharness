@@ -422,6 +422,11 @@ export interface UsageSummary {
   scopes?: Record<string, number>;
   /** Harnesses with profiles: tokens used per profile id, over each profile's whole log (profiles spec §4). */
   profiles?: Record<string, number>;
+  /**
+   * Harnesses with material: tokens the material's AI stages used, over the whole log (with profiles, the active
+   * profile's: each processes its own). Absent when none ran.
+   */
+  material?: number;
   /** The window kind estimates measure (the engine's `limits.primary`); absent when the engine reports no limits. */
   primary?: string;
 }
@@ -739,6 +744,8 @@ export interface MaterialClient {
    * review goes on without it.
    */
   decide(scope: string, id: string, fragment: string | null, choice: MaterialChoice): Promise<MaterialResult>;
+  /** Removes a source: its original goes to the system Trash, its fragments go (also Cancel on a waiting one). */
+  remove(scope: string, id: string): Promise<MaterialResult>;
   /** Opens the original of a source or a fragment's source. */
   open(scope: string, id: string): Promise<MaterialResult>;
   /** A citation's label, "<source>, <location>"; null: no such fragment in the scope (the text stays as it is). */

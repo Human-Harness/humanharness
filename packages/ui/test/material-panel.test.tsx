@@ -38,6 +38,27 @@ async function panel(v: MaterialView) {
 }
 
 describe("MaterialPanel (material spec §11)", () => {
+  it("remove asks first; Cancel on a waiting card removes it", async () => {
+    const client = await panel(view([src({}), src({ id: "w", name: "w.pdf", status: "pending", notice: "warn", fragments: 0 })]));
+    expect(screen.queryByRole("button", { name: "Remove w.pdf" })).toBeNull();
+    fireEvent.click(await screen.findByRole("button", { name: "Remove ch2.pdf" }));
+    expect(screen.getByText("Remove ch2.pdf? Its file goes to the Trash.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+    // The confirmation closes once the removal went through.
+    await waitFor(() => expect(screen.queryByText("Remove ch2.pdf? Its file goes to the Trash.")).toBeNull());
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(client.materialCalls).toEqual(["remove:ch2", "remove:w"]));
+  });
+
+  it("the confirmation's Cancel keeps the source", async () => {
+    const client = await panel(view([src({})]));
+    fireEvent.click(await screen.findByRole("button", { name: "Remove ch2.pdf" }));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByText("Remove ch2.pdf? Its file goes to the Trash.")).toBeNull();
+    expect(screen.getByRole("button", { name: "Remove ch2.pdf" })).toBeTruthy();
+    expect(client.materialCalls).toEqual([]);
+  });
+
   it("adds a file and a link", async () => {
     const client = await panel(view([]));
     fireEvent.click(await screen.findByRole("button", { name: "Add a file" }));

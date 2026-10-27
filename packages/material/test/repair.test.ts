@@ -171,7 +171,10 @@ describe("decide (§6.2 ask)", () => {
   it("remove: the original goes to the Trash, the fragments go, the source is marked removed", async () => {
     await store.patch("ch2", (s) => ({ ...s, status: "needs-person", asks: [{ question: "?", choices: ["use", "remove"] }] }));
     const trashed: string[] = [];
+    await store.keepOriginal("ch2-005");
+    expect(await store.originalVersionIds("ch2")).toEqual(["ch2-005"]);
     expect(await decide(store, "ch2", null, "remove", async (file) => void trashed.push(file))).toBe(true);
+    expect(await store.originalVersionIds("ch2")).toEqual([]);
     expect(trashed).toEqual([path.join(base, "material", "fractions", "ch2.pdf")]);
     expect(await store.source("ch2")).toMatchObject({ status: "removed", fragments: [], asks: [] });
     expect(await store.readFragment("ch2-005")).toBeNull();

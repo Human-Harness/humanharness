@@ -290,3 +290,18 @@ describe("usage per scope", () => {
     await waitFor(() => expect([...list.querySelectorAll("li")].map((li) => li.firstChild?.textContent)).toEqual(["Fractions", "App-wide"]));
   });
 });
+
+describe("Settings › Usage with material (material spec §11)", () => {
+  it("shows the material's total tokens; without any, no such line", async () => {
+    const client = new FakeClient({ language: "en", folder: "/f", engineId: "claude" });
+    client.usage = { limits: null, estimates: {}, tokens: {}, material: 12000 };
+    await renderIn("en", <UsageTab client={client} state={client.state} />);
+    expect(await screen.findByText("Material processing: about 12,000 tokens")).toBeTruthy();
+    cleanup();
+    const plain = new FakeClient({ language: "en", folder: "/f", engineId: "claude" });
+    plain.usage = { limits: null, estimates: {}, tokens: {} };
+    await renderIn("en", <UsageTab client={plain} state={plain.state} />);
+    await screen.findByText("How much each topic uses");
+    expect(screen.queryByText(/Material processing/)).toBeNull();
+  });
+});

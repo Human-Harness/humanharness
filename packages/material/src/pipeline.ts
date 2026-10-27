@@ -9,6 +9,7 @@ import type { Measured } from "./convert";
 import { ConvertStopped, type ConvertRunner, workerRunner } from "./convert/isolate";
 import { sheetSummary } from "./convert/sheet";
 import { type Piece, cutBlocks, cutRows } from "./cut";
+import { removeSource } from "./decide";
 import { REFUSAL_TEXT, detectType } from "./detect";
 import { type MeasuredCosts, estimateCost, sampleSize } from "./estimate";
 import { fragmentId } from "./fragment";
@@ -284,4 +285,59 @@ export async function confirmSource(
   }
   if (!before) return null;
   return processSource(store, id, { ...o, restore: before });
+}
+
+/** The sources whose original is looked at again (§11 update): processed ones. Waiting, converting, refused and removed ones are not. */
+const REFRESHED = new Set(["validating", "ready", "needs-person"]);
+
+/**
+ * Originals the person changed or removed by hand in `material/<scope>/` (§11 update). A changed one is converted again
+ * under the same id: what the AI stages left on it (verdict, queues, repairs, questions, labels so far, the review's
+ * conversion settings, its `.orig/` copies) goes, its fragments are renumbered, and its AI stages run again. A missing
+ * one is removed like the person's Remove (nothing to put in the Trash). Either way the scope's sheet and links run
+ * again. Returns the ids touched; never throws for one source (a failure is logged and the next one is looked at).
+ */
+export async function refreshSources(store: MaterialStore, o: PipelineOptions): Promise<string[]> {
+  const touched: string[] = [];
+  let sources: SourceEntry[];
+  try {
+    sources = await store.sources();
+  } catch (err) {
+    console.error("Could not read the material registry", err);
+    return [];
+  }
+  for (const s of sources) {
+    if (!REFRESHED.has(s.status)) continue;
+    try {
+      const file = store.originalPath(s.path);
+      const data = file ? await fs.readFile(file).catch(() => null) : null;
+      if (!data) {
+        if (await removeSource(store, s.id, async () => undefined)) touched.push(s.id);
+        continue;
+      }
+      const hash = createHash("sha256").update(data).digest("hex");
+      if (hash === s.hash) continue;
+      // One registry job: only the entry as it was read (not answered or removed meanwhile) starts over.
+      const started = await store.transact(async (rewrite) => {
+        let ok = false;
+        await rewrite((list) =>
+          list.map((e) => {
+            if (e.id !== s.id || e.hash !== s.hash || !REFRESHED.has(e.status)) return e;
+            ok = true;
+            const { stage: _s, notice: _n, verdict: _v, reviewQueue: _q, repairs: _r, failed: _f, labelled: _l, fullReview: _full, settings: _set, ...rest } = e;
+            return { ...rest, status: "converting", hash, sizeBytes: data.length, issues: [], fixes: [], asks: [], reconverted: 0 };
+          }),
+        );
+        if (ok) await store.clearOriginalVersions(s.id);
+        return ok;
+      });
+      if (!started) continue;
+      await store.setStale("sheet");
+      await processSource(store, s.id, o);
+      touched.push(s.id);
+    } catch (err) {
+      console.error("Could not look at a changed original", err);
+    }
+  }
+  return touched;
 }

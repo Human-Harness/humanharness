@@ -96,7 +96,7 @@ import { type RunningSetup, runSetupProcess, setupCommand, stopSetupProcess } fr
 import { runSetupStep } from "./setup-step";
 import { type SharedEngineRecord, SharedConfigStore, sharedConfigDir } from "./shared-config";
 import { EngineUnavailable, TurnController, memoise } from "./turn-controller";
-import { type UsageRecord, UsageLog, compactionRecord, profileMeta, profilesUsage, summarizeUsage, usageRecord } from "./usage-log";
+import { type UsageRecord, UsageLog, compactionRecord, measuredMaterialCosts, profileMeta, profilesUsage, summarizeUsage, usageRecord } from "./usage-log";
 import { type ValidationContext, checkFolder, configProblem, isAppUrl } from "./validate";
 import { openIfStillSafe, openRoots, openableFile, revealIfStillSafe, revealableFile } from "./open-path";
 import { saveWithFolderChange } from "./folder-change";
@@ -933,7 +933,12 @@ async function buildMaterial(): Promise<MaterialService | null> {
     },
     // The built converter worker (its own entry beside this file), at most CONVERT_AT_ONCE at a time.
     runner: workerRunner({ entry: path.join(here, "material-worker.js") }),
-    runStage: (job, prompt, tools, handle, signal) => runMaterialStage(materialStageDeps, job, prompt, tools, handle, signal),
+    runStage: (job, prompt, tools, handle, signal, fragments) => runMaterialStage(materialStageDeps, job, prompt, tools, handle, signal, fragments),
+    // The stages' costs measured in this base's log (§7): each profile's own.
+    measured: async () => {
+      const c = await validConfig();
+      return c ? measuredMaterialCosts(await new UsageLog(baseOf(c)).load()) : undefined;
+    },
     kick: kickMaterial,
     trash: (file) => shell.trashItem(file),
     // The links stage's items (§8), from the current base's data store; never throws.
@@ -1231,6 +1236,7 @@ function registerIpc() {
   handle("hh:materialConfirm", (scope: unknown, id: unknown, choice: unknown) => materialSvc?.confirm(scope, id, choice) ?? noMaterial);
   handle("hh:materialGrounding", (scope: unknown, mode: unknown) => materialSvc?.setGrounding(scope, mode) ?? noMaterial);
   handle("hh:materialRetry", (scope: unknown, id: unknown) => materialSvc?.retry(scope, id) ?? noMaterial);
+  handle("hh:materialRemove", (scope: unknown, id: unknown) => materialSvc?.remove(scope, id) ?? noMaterial);
   handle("hh:materialDecide", (scope: unknown, id: unknown, fragment: unknown, choice: unknown) => materialSvc?.decide(scope, id, fragment, choice) ?? noMaterial);
   handle("hh:materialCite", async (scope: unknown, id: unknown) => (materialSvc ? materialSvc.cite(scope, id) : null));
   handle("hh:materialOpen", (scope: unknown, id: unknown) => openMaterial(materialSvc, scope, id, (file) => shell.openPath(file)));

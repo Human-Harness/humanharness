@@ -130,6 +130,7 @@ const client: HarnessClient = {
     setGrounding: (scope, mode) => ipcRenderer.invoke("hh:materialGrounding", scope, mode),
     retry: (scope, id) => ipcRenderer.invoke("hh:materialRetry", scope, id),
     decide: (scope, id, fragment, choice) => ipcRenderer.invoke("hh:materialDecide", scope, id, fragment, choice),
+    remove: (scope, id) => ipcRenderer.invoke("hh:materialRemove", scope, id),
     open: (scope, id) => ipcRenderer.invoke("hh:materialOpen", scope, id),
     cite: (scope, id) => ipcRenderer.invoke("hh:materialCite", scope, id),
     onChange: (listener) => subscribe<MaterialView>("hh:materialStatus", listener),

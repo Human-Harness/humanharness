@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -5,7 +6,7 @@ import { hasMaterial } from "@humanharness/harness-sdk";
 import { type ConvertRunner, ConvertStopped, type Job, MAX_BYTES, MaterialStore, STAGES, workerRunner } from "@humanharness/material";
 import { DATA_PREFIX, MATERIAL_KEEP, NOTES_PREFIX } from "@humanharness/workspace";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { type MaterialDeps, MaterialService } from "../src/main/material";
+import { type MaterialDeps, MaterialService, promptFragments } from "../src/main/material";
 import { MaterialJobs } from "../src/main/material-jobs";
 
 // The real review and sheet stages; some tests below put a stand-in in their place.
@@ -35,6 +36,14 @@ const deps = (over: Partial<MaterialDeps> = {}): MaterialDeps => ({
   trash: async (file) => void trashed.push(file),
   ...over,
 });
+
+/** A seeded source's original, as kept: the queue looks at originals (§11 update), so one that is missing is removed. */
+const A_TEXT = "# A\n\nText.";
+const A_HASH = createHash("sha256").update(A_TEXT).digest("hex");
+const keepA = () => {
+  fs.mkdirSync(path.join(base, "material", "fractions"), { recursive: true });
+  fs.writeFileSync(path.join(base, "material", "fractions", "a.md"), A_TEXT);
+};
 
 const write = (name: string, text: string) => {
   const file = path.join(root, name);
@@ -367,12 +376,13 @@ describe("AI stages (material spec §10)", () => {
 
   const seed = async () => {
     const store = new MaterialStore(base, "fractions");
+    keepA();
     await store.update(() => [
       {
         id: "a",
         scope: "fractions",
         path: "a.md",
-        hash: "x",
+        hash: A_HASH,
         type: "md",
         family: "text",
         pages: 1,
@@ -559,8 +569,9 @@ describe("the review stage in the queue (material spec §6.2)", () => {
   it("a review in two batches and labels in two batches run in one kick; then the sheet", async () => {
     const store = new MaterialStore(base, "fractions");
     const ids = Array.from({ length: 25 }, (_, i) => `a-${String(i + 1).padStart(3, "0")}`);
+    keepA();
     await store.update(() => [
-      { id: "a", scope: "fractions", path: "a.md", hash: "x", type: "md", family: "text", pages: 1, sizeBytes: 1, skippedPages: [], status: "validating", stage: "review", fullReview: true, issues: [], fixes: [], estimate: 0, used: 0, fragments: [], addedAt: "2026-10-27T00:00:00.000Z" },
+      { id: "a", scope: "fractions", path: "a.md", hash: A_HASH, type: "md", family: "text", pages: 1, sizeBytes: 1, skippedPages: [], status: "validating", stage: "review", fullReview: true, issues: [], fixes: [], estimate: 0, used: 0, fragments: [], addedAt: "2026-10-27T00:00:00.000Z" },
     ]);
     await store.writeFragments(
       "a",
@@ -604,8 +615,9 @@ describe("the review stage in the queue (material spec §6.2)", () => {
 
   it("with items the sheet hands over to the links; links done clear the marker; nothing usable: no session", async () => {
     const store = new MaterialStore(base, "fractions");
+    keepA();
     await store.update(() => [
-      { id: "a", scope: "fractions", path: "a.md", hash: "x", type: "md", family: "text", pages: 1, sizeBytes: 1, skippedPages: [], status: "ready", issues: [], fixes: [], estimate: 0, used: 0, fragments: [], addedAt: "2026-10-27T00:00:00.000Z" },
+      { id: "a", scope: "fractions", path: "a.md", hash: A_HASH, type: "md", family: "text", pages: 1, sizeBytes: 1, skippedPages: [], status: "ready", issues: [], fixes: [], estimate: 0, used: 0, fragments: [], addedAt: "2026-10-27T00:00:00.000Z" },
     ]);
     await store.writeFragments("a", [{ meta: { id: "a-001", source: "a.md", location: "lines 1", path: "A", kind: "explanation", summary: "Halves of a whole.", keywords: ["half"], tokens: 10, items: [], checks: "ok", validated: "sample" }, md: "Half." }]);
     await store.setStale("sheet");
@@ -643,14 +655,88 @@ describe("the review stage in the queue (material spec §6.2)", () => {
 
   it("a stage that leaves the source as it was records nothing in the history", async () => {
     const store = new MaterialStore(base, "fractions");
+    keepA();
     await store.update(() => [
-      { id: "a", scope: "fractions", path: "a.md", hash: "x", type: "md", family: "text", pages: 1, sizeBytes: 1, skippedPages: [], status: "validating", stage: "review", issues: [], fixes: [], estimate: 0, used: 0, fragments: [], addedAt: "2026-10-27T00:00:00.000Z" },
+      { id: "a", scope: "fractions", path: "a.md", hash: A_HASH, type: "md", family: "text", pages: 1, sizeBytes: 1, skippedPages: [], status: "validating", stage: "review", issues: [], fixes: [], estimate: 0, used: 0, fragments: [], addedAt: "2026-10-27T00:00:00.000Z" },
     ]);
     STAGES.review = { tools: [], prompt: async () => "Review.", accept: async () => "", apply: async () => true };
     const svc = new MaterialService(deps({ runStage: async () => ({ ok: true }) }));
     await svc.runJob({ scope: "fractions", source: "a", stage: "review" }, new AbortController().signal);
     STAGES.review = realReview;
     expect(changes).toEqual([]);
+  });
+});
+
+describe("update, removal and measured estimates (material spec §7, §11)", () => {
+  const text = (words: string) => `# Fractions\n\n${`${words} `.repeat(40)}`;
+
+  it("remove: the original goes to the Trash, the view no longer lists it, the sheet is due again", async () => {
+    picked = [write("Fractions.md", text("A fraction names a part."))];
+    await service.add("fractions");
+    expect(await service.remove("fractions", "fractions")).toEqual({ ok: true });
+    expect(trashed).toEqual([path.join(base, "material", "fractions", "Fractions.md")]);
+    expect((await service.list("fractions")).sources).toEqual([]);
+    expect(changes.at(-1)).toBe("fractions: removed fractions");
+    expect(await service.storeAt(base, "fractions").stale()).toBe("sheet");
+    expect(await service.remove("fractions", "fractions")).toEqual({ ok: false, reason: "unknown-source" });
+    expect(await service.remove("fractions", "../x")).toEqual({ ok: false, reason: "unknown-source" });
+    expect(await service.remove("other", "fractions")).toEqual({ ok: false, reason: "unknown-scope" });
+  });
+
+  it("an original changed by hand is converted again once per kick; one deleted by hand is removed", async () => {
+    picked = [write("Fractions.md", text("First version."))];
+    await service.add("fractions");
+    const store = service.storeAt(base, "fractions");
+    const kept = path.join(base, "material", "fractions", "Fractions.md");
+    fs.writeFileSync(kept, text("Second version."));
+    changes.length = 0;
+    expect(await service.nextJob()).toEqual({ scope: "fractions", source: "fractions", stage: "review" });
+    expect((await store.fragments()).map((f) => f.md).join("")).toContain("Second version.");
+    expect(changes).toEqual(["fractions: updated fractions"]);
+    // Not looked at again until the next kick.
+    fs.rmSync(kept);
+    await service.nextJob();
+    expect((await store.source("fractions"))?.status).toBe("validating");
+    service.resetFailures();
+    expect(await service.nextJob()).toEqual({ scope: "fractions", stage: "sheet" });
+    expect((await store.source("fractions"))?.status).toBe("removed");
+    expect(trashed).toEqual([]);
+  });
+
+  it("a stage's session is told how many fragments its prompt lists", async () => {
+    expect(promptFragments("material-label\n[a-001] (x)\ntext\n[a-002] (y)\n[a-001] again\n[b-003] another source's", "a")).toBe(2);
+    expect(promptFragments("[a-001] x\n[b-002] y")).toBe(2);
+    expect(promptFragments("no fragments [a-001] mid-line")).toBe(0);
+    const store = new MaterialStore(base, "fractions");
+    keepA();
+    await store.update(() => [
+      { id: "a", scope: "fractions", path: "a.md", hash: A_HASH, type: "md", family: "text", pages: 1, sizeBytes: 1, skippedPages: [], status: "validating", stage: "review", issues: [], fixes: [], estimate: 0, used: 0, fragments: [], addedAt: "2026-10-27T00:00:00.000Z" },
+    ]);
+    STAGES.review = { tools: [], prompt: async () => "Review.\n[a-001] one\n[a-002] two", accept: async () => "", apply: async () => true };
+    let counted = -1;
+    const svc = new MaterialService(
+      deps({
+        runStage: async (_j, _p, _t, _h, _s, fragments) => {
+          counted = fragments;
+          return { ok: true };
+        },
+      }),
+    );
+    await svc.runJob({ scope: "fractions", source: "a", stage: "review" }, new AbortController().signal);
+    STAGES.review = realReview;
+    expect(counted).toBe(2);
+  });
+
+  it("estimates use the costs measured in the base's log once there are enough", async () => {
+    const svc = new MaterialService(deps({ measured: async () => ({ label: 1, review: 1, sheet: 1 }) }));
+    picked = [write("Fractions.md", text("A fraction names a part."))];
+    await svc.add("fractions");
+    const measured = (await svc.list("fractions")).sources[0].estimate;
+    picked = [write("Other.md", text("A fraction names a part."))];
+    await service.add("fractions");
+    const constant = (await service.list("fractions")).sources.find((s) => s.name === "Other.md")!.estimate;
+    expect(measured).toBeLessThan(constant);
+    expect(measured).toBeLessThan(100);
   });
 });
 

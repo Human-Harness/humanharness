@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import type { ChatEntry } from "@humanharness/ui/client";
-import { type UsageMeta, type UsageRecord, UsageLog, compactionRecord, materialRecord, mergeUsage, profileMeta, profilesUsage, summarizeUsage, usageRecord } from "../src/main/usage-log";
+import { type UsageMeta, type UsageRecord, UsageLog, compactionRecord, materialRecord, measuredMaterialCosts, mergeUsage, profileMeta, profilesUsage, summarizeUsage, usageRecord } from "../src/main/usage-log";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -386,5 +386,35 @@ describe("material lines", () => {
     expect(summarizeUsage(turns, "five_hour").estimates.tidy).toBeCloseTo(0.1);
     // The stage's window is still the latest one.
     expect(summarizeUsage([rec(0.1, R1, "tidy"), stage], "five_hour", new Date("2026-10-11T14:00:00.000Z")).limits?.[0].utilization).toBe(0.5);
+  });
+
+  const line = (stage: string, tokens: number, fragments: number, ok = true) =>
+    materialRecord({
+      engine: "claude",
+      stage,
+      scope: "s",
+      profile: { engine: "claude", tier: "light", effort: "low", cap: 1 },
+      ok,
+      fragments,
+      usage: { inputTokens: tokens, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+    });
+
+  it("measured material costs per fragment, once there are enough lines (material spec §7)", () => {
+    expect(line("label", 2000, 20).fragments).toBe(20);
+    expect(measuredMaterialCosts([line("label", 2000, 20)])).toBeUndefined();
+    const five = Array.from({ length: 5 }, () => line("label", 2000, 20));
+    expect(measuredMaterialCosts(five)).toEqual({ label: 100 });
+    // Failed lines and lines with no fragments don't count; the sheet is per run.
+    expect(measuredMaterialCosts([...Array.from({ length: 4 }, () => line("review", 900, 3)), line("review", 900, 3, false), line("review", 900, 0)])).toBeUndefined();
+    expect(measuredMaterialCosts(Array.from({ length: 5 }, () => line("sheet", 3000, 0)))).toEqual({ sheet: 3000 });
+    expect(summarizeUsage(five, undefined).material).toBe(10000);
+    expect(summarizeUsage([], undefined)).not.toHaveProperty("material");
+  });
+
+  it("with profiles, the material total is the active profile's, and each person's total includes their stages", () => {
+    const u = profilesUsage({ sofi: [line("label", 2000, 20)], tomas: [line("label", 500, 5)] }, "sofi", undefined);
+    expect(u.material).toBe(2000);
+    expect(u.profiles).toEqual({ sofi: 2000, tomas: 500 });
+    expect(profilesUsage({ sofi: [], tomas: [line("label", 500, 5)] }, "sofi", undefined)).not.toHaveProperty("material");
   });
 });

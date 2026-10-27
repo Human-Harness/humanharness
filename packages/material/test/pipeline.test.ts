@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { type ConvertRunner, ConvertStopped, MAX_BYTES, MAX_PAGES, MaterialStore, addSource, confirmSource, estimateCost, intakeDecision, processSource, sampleSize, workerRunner } from "../src";
+import { type ConvertRunner, ConvertStopped, MAX_BYTES, MAX_PAGES, MaterialStore, addSource, confirmSource, estimateCost, intakeDecision, processSource, refreshSources, sampleSize, workerRunner } from "../src";
 import { body, makePdf } from "./make-pdf";
 
 let base: string;
@@ -228,5 +228,63 @@ describe("sampleSize (§6.2)", () => {
     expect(sampleSize(1, 0)).toBe(1);
     expect(sampleSize(10, 3)).toBe(2);
     expect(sampleSize(5, 5)).toBe(0);
+  });
+});
+
+describe("refreshSources (§11 update)", () => {
+  const original = (name: string) => path.join(base, "material", "fractions", name);
+
+  it("a changed original is converted again under the same id; a missing one is removed", async () => {
+    const r = await addSource(store, { name: "a.md", data: Buffer.from(`# A\n\n${"First version. ".repeat(40)}`) }, { accepts: ["text"], items: false });
+    if (!r.ok) throw new Error("unreachable");
+    fs.writeFileSync(original("a.md"), `# A\n\n${"Second version. ".repeat(40)}`);
+    expect(await refreshSources(store, { items: false })).toEqual(["a"]);
+    expect((await store.fragments()).map((f) => f.md).join("")).toContain("Second version.");
+    expect(await store.source("a")).toMatchObject({ status: "validating", stage: "review" });
+    expect(await refreshSources(store, { items: false })).toEqual([]);
+    fs.rmSync(original("a.md"));
+    expect(await refreshSources(store, { items: false })).toEqual(["a"]);
+    expect((await store.source("a"))?.status).toBe("removed");
+    expect(await store.fragments()).toEqual([]);
+    expect(await store.stale()).toBe("sheet");
+  });
+
+  it("an update forgets what the AI stages left: verdict, questions, labels so far, settings, .orig copies", async () => {
+    const r = await addSource(store, { name: "a.md", data: Buffer.from(chapter) }, { accepts: ["text"], items: false });
+    if (!r.ok) throw new Error("unreachable");
+    const first = (await store.source("a"))!.fragments[0];
+    await store.keepOriginal(first);
+    await store.patch("a", (e) => ({
+      ...e,
+      status: "ready",
+      stage: undefined,
+      verdict: "usable-with-fixes",
+      fixes: ["Merged"],
+      asks: [{ fragment: first, question: "?", choices: ["keep", "drop"] }],
+      labelled: 3,
+      failed: "label",
+      reconverted: 1,
+      settings: { columns: false },
+    }));
+    await store.setStale(false);
+    fs.writeFileSync(original("a.md"), chapter.replace("# Fractions", "# Fractions, again"));
+    expect(await refreshSources(store, { items: false })).toEqual(["a"]);
+    const s = (await store.source("a"))!;
+    expect(s).toMatchObject({ status: "validating", stage: "review", fixes: [], asks: [], reconverted: 0 });
+    expect(s.verdict).toBeUndefined();
+    expect(s.labelled).toBeUndefined();
+    expect(s.failed).toBeUndefined();
+    expect(s.settings).toBeUndefined();
+    expect(await store.originalVersionIds("a")).toEqual([]);
+    expect(await store.stale()).toBe("sheet");
+  });
+
+  it("waiting, refused and removed sources are not looked at", async () => {
+    const r = await addSource(store, { name: "a.md", data: Buffer.from(chapter) }, { accepts: ["text"], items: false });
+    if (!r.ok) throw new Error("unreachable");
+    await store.patch("a", (e) => ({ ...e, status: "pending", notice: "warn" }));
+    fs.rmSync(original("a.md"));
+    expect(await refreshSources(store, { items: false })).toEqual([]);
+    expect((await store.source("a"))?.status).toBe("pending");
   });
 });

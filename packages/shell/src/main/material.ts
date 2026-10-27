@@ -28,7 +28,9 @@ import {
   limitRunner,
   nextJob,
   processSource,
+  refreshSources,
   refusalText,
+  removeSource,
   retryStage,
   uncovered,
   usableFragment,
@@ -94,13 +96,32 @@ export interface MaterialDeps {
    */
   runner?: ConvertRunner;
   /** Runs one stage session (runSystemTask with the stage's model); absent: stages can't run (tests). */
-  runStage?(job: Job, prompt: string, tools: readonly string[], handle: (r: unknown) => Promise<unknown>, signal: AbortSignal): Promise<{ ok: boolean }>;
+  /** `fragments`: how many the prompt lists, for the stage's usage line (measured estimates, §7). */
+  runStage?(
+    job: Job,
+    prompt: string,
+    tools: readonly string[],
+    handle: (r: unknown) => Promise<unknown>,
+    signal: AbortSignal,
+    fragments: number,
+  ): Promise<{ ok: boolean }>;
   /** Wakes the queue of AI stages. */
   kick?(): void;
   /** Moves a file to the system Trash (removing a source: never deleted for good). */
   trash(file: string): Promise<void>;
   /** The `items` collection in a scope as `key: label` (at most LINK_MAX_ITEMS); only with `material.items`. */
   items?(scope: string): Promise<LinkItem[]>;
+  /** The stages' per-fragment costs measured in the current base's usage.jsonl (§7); undefined until there are enough. */
+  measured?(): Promise<MeasuredCosts | undefined>;
+}
+
+/**
+ * How many fragments a stage's prompt lists: each one is on a line starting `[<id>]`. A source's stage counts only
+ * that source's ids (a fragment's own text could hold such a line); each id once.
+ */
+export function promptFragments(prompt: string, source?: string): number {
+  const ids = new Set((prompt.match(/^\[[a-z0-9][a-z0-9-]*-\d{3,4}\]/gm) ?? []).map((m) => m.slice(1, -1)));
+  return source ? [...ids].filter((id) => id.slice(0, id.lastIndexOf("-")) === source).length : ids.size;
 }
 
 /** A file not added because the app stopped converting (a profile switch, a folder or engine change, quitting). */
@@ -152,6 +173,8 @@ export class MaterialService {
    * queue never runs the same job in a loop.
    */
   private readonly skipped = new Set<string>();
+  /** Scopes (`base\0scope`) whose originals were looked at since the last kick (§11 update). */
+  private readonly refreshed = new Set<string>();
 
   constructor(private readonly d: MaterialDeps) {
     this.runner = limitRunner(d.runner ?? workerRunner());
@@ -223,7 +246,7 @@ export class MaterialService {
     for (const { store, ids } of stuck) {
       for (const id of ids) {
         if (epoch !== this.epoch) return;
-        await processSource(store, id, this.pipeline(epoch));
+        await processSource(store, id, await this.pipeline(epoch));
         if (epoch !== this.epoch) return;
         await this.d.afterChange(store.scope, `processed ${id}`).catch((err: unknown) => console.error("Could not record the material change", err));
       }
@@ -277,16 +300,20 @@ export class MaterialService {
     this.d.send("hh:materialStatus", await this.list(scope));
   }
 
-  private measured(): MeasuredCosts | undefined {
-    return undefined; // Task 25: the averages measured in usage.jsonl.
+  /** The measured costs (§7), or undefined (the constants); never throws. */
+  private async measured(): Promise<MeasuredCosts | undefined> {
+    return this.d.measured?.().catch((err: unknown) => {
+      console.error("Could not read the measured material costs", err);
+      return undefined;
+    });
   }
 
   /**
    * What every pipeline call takes: items, the shared runner, the measured costs. `epoch`: the work's; once a stop has
    * come since, the runner refuses to start anything (`ConvertStopped`), so nothing more is converted for it.
    */
-  private pipeline(epoch: number) {
-    const measured = this.measured();
+  private async pipeline(epoch: number) {
+    const measured = await this.measured();
     const live = <T>(job: () => Promise<T>): Promise<T> => (epoch === this.epoch ? job() : Promise.reject(new ConvertStopped()));
     const runner: ConvertRunner = {
       convert: (type, data, opts) => live(() => this.runner.convert(type, data, opts)),
@@ -326,7 +353,7 @@ export class MaterialService {
         refused.push({ name, message: "This file couldn't be read." });
         continue;
       }
-      const r = await addSource(store, { name, data }, { accepts: this.d.material.accepts, ...this.pipeline(epoch) });
+      const r = await addSource(store, { name, data }, { accepts: this.d.material.accepts, ...(await this.pipeline(epoch)) });
       if (r.ok) added.push(r.id);
       else refused.push({ name, message: epoch === this.epoch ? r.message : STOPPED });
     }
@@ -345,7 +372,8 @@ export class MaterialService {
     const page = await this.d.fetchLink(url);
     if (!page.ok) return { ok: false, reason: "fetch" };
     if (epoch !== this.epoch) return { ok: false, reason: "not-ready" };
-    const r = await this.track(addSource(store, page, { accepts: this.d.material.accepts, ...this.pipeline(epoch) }));
+    const options = await this.pipeline(epoch);
+    const r = await this.track(addSource(store, page, { accepts: this.d.material.accepts, ...options }));
     if (epoch !== this.epoch) return r.ok ? { ok: true, added: [r.id], refused: [] } : { ok: true, added: [], refused: [{ name: page.name, message: STOPPED }] };
     if (r.ok) await this.d.afterChange(store.scope, `added ${r.id}`);
     await this.changed(store.scope);
@@ -371,7 +399,8 @@ export class MaterialService {
         : undefined;
     const sheets = c.sheets === "summary" ? "summary" : Array.isArray(c.sheets) && c.sheets.every((s) => typeof s === "string") ? (c.sheets as string[]) : undefined;
     const epoch = this.epoch;
-    const next = await this.track(confirmSource(store, id, { ...(range ? { pageRange: range } : {}), ...(sheets ? { sheets } : {}) }, this.pipeline(epoch)));
+    const options = await this.pipeline(epoch);
+    const next = await this.track(confirmSource(store, id, { ...(range ? { pageRange: range } : {}), ...(sheets ? { sheets } : {}) }, options));
     // Stopped half-way: it resumes when its base is next used.
     if (epoch !== this.epoch) return { ok: false, reason: "not-ready" };
     if (!next) return { ok: false, reason: "invalid" };
@@ -407,6 +436,35 @@ export class MaterialService {
     return { ok: true };
   }
 
+  /**
+   * Removes a source (§11): Remove on its line, or Cancel on a waiting card. Its original goes to the system Trash, its
+   * fragments go, and the scope's sheet and links run again.
+   */
+  async remove(scope: unknown, id: unknown): Promise<MaterialResult> {
+    const store = await this.store(scope);
+    if (typeof store === "string") return { ok: false, reason: store };
+    if (!isSourceId(id) || !(await removeSource(store, id, (file) => this.d.trash(file)))) return { ok: false, reason: "unknown-source" };
+    this.d.kick?.();
+    await this.d.afterChange(store.scope, `removed ${id}`);
+    await this.changed(store.scope);
+    return { ok: true };
+  }
+
+  /**
+   * Originals the person changed or removed by hand (§11 update), once per kick per scope: a changed one is converted
+   * again, a missing one removed. Its conversions count among those `stop()` waits for.
+   */
+  private async refresh(store: MaterialStore): Promise<void> {
+    const key = `${store.base}\0${store.scope}`;
+    if (this.refreshed.has(key)) return;
+    this.refreshed.add(key);
+    const epoch = this.epoch;
+    const touched = await this.track(refreshSources(store, await this.pipeline(epoch)));
+    if (touched.length === 0 || epoch !== this.epoch) return;
+    await this.d.afterChange(store.scope, `updated ${touched.join(", ")}`).catch((err: unknown) => console.error("Could not record the material change", err));
+    await this.changed(store.scope).catch((err: unknown) => console.error("Could not show the material", err));
+  }
+
   /** The next AI stage in the current base, over every scope that has material (spec §10). */
   async nextJob(): Promise<Job | null> {
     const base = await this.d.base();
@@ -415,6 +473,7 @@ export class MaterialService {
     for (const scope of scopes.sort()) {
       const store = await this.store(scope);
       if (typeof store === "string") continue;
+      await this.refresh(store);
       const job = await nextJob(store, { items: this.d.material.items !== undefined, skip: (j) => this.skipped.has(jobKey(j)) });
       if (job) return job;
     }
@@ -454,7 +513,7 @@ export class MaterialService {
         }
         throw new Error("Unknown request");
       };
-      const result = await this.d.runStage(job, prompt, def.tools, handle, signal);
+      const result = await this.d.runStage(job, prompt, def.tools, handle, signal, promptFragments(prompt, job.source));
       // Stopped by closeRuntime: the stage runs again later, from the start.
       if (signal.aborted) return;
       ok = result.ok && (await def.apply(store, job, state, ctx));
@@ -482,7 +541,7 @@ export class MaterialService {
    */
   async stageContext(job: Job, store: MaterialStore, signal?: AbortSignal): Promise<StageContext> {
     const source = job.source;
-    const measured = this.measured();
+    const measured = await this.measured();
     // The job's epoch: a stop (closeRuntime) after the job started leaves the source `converting`, so it is converted
     // again (with its kept settings) when its base is next used, not on the old run's account.
     const epoch = this.epoch;
@@ -498,16 +557,17 @@ export class MaterialService {
         ? {
             reconvert: async (settings) => {
               if (signal?.aborted || epoch !== this.epoch) return;
-              await this.track(processSource(store, source, { ...this.pipeline(epoch), settings }));
+              await this.track(processSource(store, source, { ...(await this.pipeline(epoch)), settings }));
             },
           }
         : {}),
     };
   }
 
-  /** A kick: the jobs skipped since the last one may run again. */
+  /** A kick: the jobs skipped since the last one may run again, and the originals are looked at again. */
   resetFailures(): void {
     this.skipped.clear();
+    this.refreshed.clear();
   }
 
   /** Try again (§11): the failed stage runs once more. */

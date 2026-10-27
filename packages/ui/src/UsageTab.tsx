@@ -15,7 +15,7 @@ const EMPTY: UsageSummary = { limits: null, estimates: {}, tokens: {} };
  * how much each topic uses, measured from the local log. The app knows nothing about plans.
  */
 export function UsageTab({ client, state }: { client: HarnessClient; state: AppState }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [usage, setUsage] = useState<UsageSummary | null>(null);
   useEffect(() => {
     client.getUsage().then(setUsage, () => setUsage(EMPTY));
@@ -35,6 +35,8 @@ export function UsageTab({ client, state }: { client: HarnessClient; state: AppS
       <PlanSection engine={engine} limits={limits} reported={Boolean(usage?.limits)} />
       <h3 id={tableTitle}>{t("usage.actionsTitle")}</h3>
       {usage && <TopicTable state={state} usage={usage} reportsLimits={reportsLimits} near={near ? primary : undefined} labelledBy={tableTitle} />}
+      {/* Material spec §11: what processing the person's material used (only once a stage has run). */}
+      {usage?.material !== undefined && <p className="hh-caption">{t("usage.material", { tokens: usage.material.toLocaleString(shownLanguage(i18n)) })}</p>}
       {usage?.scopes && state.scopes && <ScopeUsage client={client} tokens={usage.scopes} plural={state.scopes.plural} />}
       {usage?.profiles && state.profiles && <ProfileUsage client={client} tokens={usage.profiles} />}
       {showPlans && engine && (

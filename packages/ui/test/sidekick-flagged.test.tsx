@@ -58,6 +58,21 @@ describe("FlaggedText", () => {
     expect(container.querySelector<HTMLDivElement>(".hh-sk-backdrop")!.scrollTop).toBe(30);
   });
 
+  it("a backdrop that appears under an already-scrolled field starts at the field's scroll", () => {
+    const { container, rerender } = render(
+      <FlaggedText text="make it better" spans={[]}>
+        <textarea />
+      </FlaggedText>,
+    );
+    container.querySelector("textarea")!.scrollTop = 30;
+    rerender(
+      <FlaggedText text="make it better" spans={[[8, 14]]}>
+        <textarea />
+      </FlaggedText>,
+    );
+    expect(container.querySelector<HTMLDivElement>(".hh-sk-backdrop")!.scrollTop).toBe(30);
+  });
+
   it("no spans: only the field, still in its wrapper so it keeps focus as spans come and go", () => {
     const { container } = render(
       <FlaggedText text="x" spans={[]}>

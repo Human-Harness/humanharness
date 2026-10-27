@@ -675,6 +675,7 @@
     "intro": {
       "title": "Meet Sidekick",
       "body": "Sidekick reads your prompt before it goes out and suggests a clearer one when something looks off. It uses a small model, up to {{cap}} tokens per task, and you can turn it off at any time.",
+      "bodyNoCap": "Sidekick reads your prompt before it goes out and suggests a clearer one when something looks off. It uses a small model, and you can turn it off at any time.",
       "turnOn": "Turn on",
       "notNow": "Not now"
     },

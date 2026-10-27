@@ -1,4 +1,4 @@
-import { type ReactNode, useRef } from "react";
+import { type ReactNode, useLayoutEffect, useRef } from "react";
 
 type Span = readonly [number, number];
 
@@ -39,14 +39,22 @@ export function flaggedParts(text: string, spans: readonly Span[]): { text: stri
 export function FlaggedText({ text, spans, children }: { text: string; spans: readonly Span[]; children: ReactNode }) {
   const parts = flaggedParts(text, spans);
   const backdrop = useRef<HTMLDivElement>(null);
+  const wrapper = useRef<HTMLDivElement>(null);
+  const drawn = parts.some((p) => p.flagged);
+  // A backdrop that appears under a field already scrolled starts where the field is (scroll events only come later).
+  useLayoutEffect(() => {
+    const field = wrapper.current?.querySelector("textarea");
+    if (drawn && backdrop.current && field) backdrop.current.scrollTop = field.scrollTop;
+  }, [drawn]);
   return (
     <div
+      ref={wrapper}
       className="hh-sk-flagged"
       onScrollCapture={(e) => {
         if (backdrop.current && e.target instanceof HTMLElement) backdrop.current.scrollTop = e.target.scrollTop;
       }}
     >
-      {parts.some((p) => p.flagged) && (
+      {drawn && (
         <div ref={backdrop} className="hh-sk-backdrop" aria-hidden="true">
           {parts.map((p, i) => (p.flagged ? <mark key={i}>{p.text}</mark> : <span key={i}>{p.text}</span>))}
         </div>

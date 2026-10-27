@@ -137,9 +137,10 @@ describe("Sidekick in the chat", () => {
     const box = await open(c);
     type(box, "make it better");
     enter(box);
+    // The model's span past the end is clamped to the prompt.
     act(() => c.emitSidekick({ ...SK_ON, status: "suggestion", card: { ...CARD, issues: [{ kind: "other", text: "x", span: [0, 99] }] } }));
     await waitFor(() => expect(document.querySelector(".hh-sk-backdrop mark")?.textContent).toBe("make it better"));
-    // The model's span past the end is clamped to the prompt.
+    // Once the draft differs from the prompt the card read, the underline goes.
     type(box, "make it better now");
     expect(document.querySelector(".hh-sk-backdrop")).toBeNull();
     expect(box.isConnected).toBe(true);
@@ -271,6 +272,16 @@ describe("Sidekick in the chat", () => {
     fireEvent.click(toggle);
     await waitFor(() => expect(c.sidekickCalls).toContainEqual(["set", { on: true, introSeen: true }]));
     expect(await screen.findByRole("complementary", { name: "Sidekick" })).toBeTruthy();
+  });
+
+  it("D0: Sidekick off draws nothing behind the field, even with a card left in the state", async () => {
+    const c = client();
+    c.sidekickState = { ...SK_ON, status: "off", settings: { ...SK_ON.settings, on: false }, card: CARD };
+    const box = await open(c);
+    type(box, "make it better");
+    await act(async () => undefined);
+    expect(document.querySelector(".hh-sk-flagged")).not.toBeNull();
+    expect(document.querySelector(".hh-sk-backdrop")).toBeNull();
   });
 
   it("the panel collapses to the rail and opens again", async () => {

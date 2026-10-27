@@ -1268,7 +1268,7 @@ export function ChatView({
                 // loads) so the field is never remounted under the person's cursor.
                 if (!skEnabled) return field;
                 const card = sidekick?.card;
-                const spans = card && card.prompt === draft ? cardSpans(card) : [];
+                const spans = card && sidekick?.settings.on && card.prompt === draft ? cardSpans(card) : [];
                 return (
                   <FlaggedText text={draft} spans={spans}>
                     {field}

@@ -40,7 +40,7 @@ export function SidekickPanel(p: SidekickPanelProps) {
         <h2 className="hh-sk-name">{s.info.name}</h2>
         <span className="hh-sk-status">{t(`sidekick.status.${s.status}`)}</span>
         <span className="hh-spacer" />
-        <button type="button" className="hh-sk-collapse" aria-label={t("sidekick.collapse")} onClick={p.onCollapse} tabIndex={0}>
+        <button type="button" className="hh-sk-collapse" aria-label={t("sidekick.collapse")} onClick={p.onCollapse}>
           ›
         </button>
       </header>
@@ -68,7 +68,7 @@ export function SidekickPanel(p: SidekickPanelProps) {
             ) : (
               <div className="hh-sk-intro">
                 <h3>{t("sidekick.intro.title")}</h3>
-                <p>{t("sidekick.intro.body", { cap: n(s.cap ?? 20_000) })}</p>
+                <p>{s.cap === null ? t("sidekick.intro.bodyNoCap") : t("sidekick.intro.body", { cap: n(s.cap) })}</p>
                 <div className="hh-sk-actions">
                   <button type="button" className="hh-primary" onClick={p.onTurnOn}>{t("sidekick.intro.turnOn")}</button>
                   <button type="button" onClick={p.onNotNow}>{t("sidekick.intro.notNow")}</button>
@@ -105,8 +105,9 @@ export function SidekickPanel(p: SidekickPanelProps) {
 
 function Card({ card, onSendSuggested, onEdit, onSendAnyway, onPutInComposer }: { card: SidekickCard } & SidekickPanelProps) {
   const { t } = useTranslation();
-  const [dropped, setDropped] = useState<string[]>([]);
-  const queued = (card.queued ?? []).filter((q) => !dropped.includes(q));
+  // By position: two queued asks can read the same, and Drop takes only the one pressed.
+  const [dropped, setDropped] = useState<number[]>([]);
+  const queued = (card.queued ?? []).map((text, at) => ({ text, at })).filter((q) => !dropped.includes(q.at));
   return (
     <section className="hh-sk-card" aria-label={t("sidekick.card.title")}>
       <h3>{t("sidekick.card.title")}</h3>
@@ -128,10 +129,10 @@ function Card({ card, onSendSuggested, onEdit, onSendAnyway, onPutInComposer }: 
           <h4>{t("sidekick.card.queued")}</h4>
           <ul>
             {queued.map((q) => (
-              <li key={q}>
-                <p>{q}</p>
-                <button type="button" onClick={() => onPutInComposer(q)}>{t("sidekick.card.putInComposer")}</button>
-                <button type="button" onClick={() => setDropped((d) => [...d, q])}>{t("sidekick.card.drop")}</button>
+              <li key={q.at}>
+                <p>{q.text}</p>
+                <button type="button" onClick={() => onPutInComposer(q.text)}>{t("sidekick.card.putInComposer")}</button>
+                <button type="button" onClick={() => setDropped((d) => [...d, q.at])}>{t("sidekick.card.drop")}</button>
               </li>
             ))}
           </ul>

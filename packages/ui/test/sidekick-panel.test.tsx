@@ -71,6 +71,13 @@ describe("SidekickPanel", () => {
     expect(screen.queryByText("Translate chapter 2 into Spanish")).toBeNull();
   });
 
+  it("queued prompts with the same text: Drop removes only the one pressed", async () => {
+    await panel({ ...SK_ON, status: "suggestion", card: { ...CARD, queued: ["Same ask", "Same ask"] } });
+    expect(screen.getAllByText("Same ask")).toHaveLength(2);
+    fireEvent.click(screen.getAllByRole("button", { name: "Drop" })[0]!);
+    expect(screen.getAllByText("Same ask")).toHaveLength(1);
+  });
+
   it("a card without a rewrite has no Send suggested or Edit", async () => {
     const { rewrite: _r, ...noRewrite } = CARD;
     await panel({ ...SK_ON, status: "suggestion", card: noRewrite });
@@ -90,6 +97,12 @@ describe("SidekickPanel", () => {
     expect(h.onTurnOn).toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Not now" }));
     expect(h.onNotNow).toHaveBeenCalled();
+  });
+
+  it("off, first time, with No cap: the intro names no token number", async () => {
+    await panel({ ...SK_ON, cap: null, status: "off", settings: { ...SK_ON.settings, on: false, introSeen: false } });
+    const body = screen.getByText(/reads your prompt before it goes out/);
+    expect(body.textContent).not.toMatch(/\d/);
   });
 
   it("with a harness panel: the Sidekick | Harness switch shows the harness's side", async () => {

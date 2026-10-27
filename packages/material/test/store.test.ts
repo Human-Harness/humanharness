@@ -57,6 +57,21 @@ describe("fragment files (material spec §4.1)", () => {
     expect(parseFragment(text)).toEqual(f);
   });
 
+  it("a kind that isn't a plain id round-trips as text", () => {
+    for (const kind of ["123", "true", "null", "two words", "a\nb: c"]) {
+      const f = frag("ch2-001", { kind });
+      expect(parseFragment(renderFragment(f))).toEqual(f);
+    }
+  });
+
+  it("a __proto__ line doesn't change the parsed object's prototype", () => {
+    const text = renderFragment(frag("ch2-001")).replace("tokens: 240", 'tokens: 240\n__proto__: {"tokens": 7, "kind": "example"}');
+    expect(parseFragment(text)?.meta).toMatchObject({ tokens: 240 });
+    expect(parseFragment(text)?.meta.kind).toBeUndefined();
+    // With no own id, a prototype must not supply one.
+    expect(parseFragment(text.replace("id: ch2-001\n", '__proto__: {"id": "ch2-999"}\n'))).toBeNull();
+  });
+
   it("a hand-broken file reads as null", () => {
     expect(parseFragment("no front matter")).toBeNull();
   });
@@ -123,6 +138,22 @@ describe("MaterialStore", () => {
     expect(store.originalPath("../x.pdf")).toBeNull();
     expect(store.originalPath("evil.pdf")).toBe(path.join(base, "material", "fractions", "evil.pdf"));
     await expect(store.appendConflict({ fragment: "x\n- forged", claim: "c", resolution: "r" })).rejects.toThrow();
+  });
+
+  it("writeFragments refuses a batch with any id that isn't a fragment id, and writes nothing", async () => {
+    await store.update(() => [entry("ch2")]);
+    await expect(store.writeFragments("ch2", [frag("ch2-001"), frag("../../x")])).rejects.toThrow();
+    expect(fs.existsSync(path.join(base, ".harness", "material", "fractions", "fragments"))).toBe(false);
+    expect(fs.existsSync(path.join(base, ".harness", "material", "x.md"))).toBe(false);
+    expect((await store.sources())[0].fragments).toEqual([]);
+  });
+
+  it("two writes for one source run one after the other", async () => {
+    await store.update(() => [entry("ch2")]);
+    await Promise.all([store.writeFragments("ch2", [frag("ch2-001")]), store.writeFragments("ch2", [frag("ch2-002")])]);
+    expect((await store.sources())[0].fragments).toEqual(["ch2-002"]);
+    expect(await store.readFragment("ch2-001")).toBeNull();
+    expect((await store.readFragment("ch2-002"))?.meta.id).toBe("ch2-002");
   });
 
   it("a hand-edited registry entry without a fragment list loads no fragments", async () => {

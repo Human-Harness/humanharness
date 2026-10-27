@@ -13,9 +13,13 @@ const VALIDATIONS: readonly Validation[] = ["sample", "flagged-reviewed", "repai
 const CHECKS: readonly CheckName[] = ["garbled", "reading-order", "size", "no-structure", "table", "noise", "leftover"];
 const ORDER: (keyof FragmentMeta)[] = ["id", "source", "location", "path", "kind", "summary", "keywords", "tokens", "items", "checks", "validated"];
 
-/** A value as one YAML line: plain for ids, numbers and the enums; JSON (valid YAML) for any other text and lists. */
+/** A kind as the manifest declares it; written plain only then (and never as a YAML/JSON literal), else as JSON. */
+const KIND = /^[a-z][a-z0-9-]{0,31}$/;
+const plainKind = (v: unknown): boolean => typeof v === "string" && KIND.test(v) && v !== "true" && v !== "false" && v !== "null";
+
+/** A value as one YAML line: plain for ids, numbers, the enums and plain kinds; JSON (valid YAML) for any other text and lists. */
 function yamlValue(key: keyof FragmentMeta, v: unknown): string {
-  if (key === "id" || key === "kind" || key === "validated" || typeof v === "number") return String(v);
+  if (key === "id" || key === "validated" || typeof v === "number" || (key === "kind" && plainKind(v))) return String(v);
   if (key === "checks" && v === "ok") return "ok";
   return JSON.stringify(v);
 }
@@ -33,7 +37,8 @@ const strs = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is st
 export function parseFragment(text: string): Fragment | null {
   const m = /^---\n([\s\S]*?)\n---\n\n?([\s\S]*)$/.exec(text.replace(/\r\n/g, "\n"));
   if (!m) return null;
-  const raw: Record<string, unknown> = {};
+  // No prototype: a `__proto__:` line is just an unknown key.
+  const raw: Record<string, unknown> = Object.create(null);
   for (const line of m[1].split("\n")) {
     const at = line.indexOf(": ");
     if (at < 0) continue;

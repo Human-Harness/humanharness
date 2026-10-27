@@ -106,13 +106,21 @@ export class MaterialStore {
 
   /** Changes the registry, one change at a time; `fn` gets a copy. Returns the new list. */
   update(fn: (list: SourceEntry[]) => SourceEntry[]): Promise<SourceEntry[]> {
-    const run = this.writes.then(async () => {
-      const next = fn(structuredClone(await this.sources()));
-      await writeAtomic(this.registry, `${JSON.stringify({ version: 1, sources: next }, null, 2)}\n`);
-      return next;
-    });
+    return this.queued(() => this.rewrite(fn));
+  }
+
+  /** Runs `job` after every earlier registry change, one at a time. */
+  private queued<T>(job: () => Promise<T>): Promise<T> {
+    const run = this.writes.then(job);
     this.writes = run.catch(() => undefined);
     return run;
+  }
+
+  /** The registry change itself; callers hold the queue. */
+  private async rewrite(fn: (list: SourceEntry[]) => SourceEntry[]): Promise<SourceEntry[]> {
+    const next = fn(structuredClone(await this.sources()));
+    await writeAtomic(this.registry, `${JSON.stringify({ version: 1, sources: next }, null, 2)}\n`);
+    return next;
   }
 
   /** Changes one entry (no-op when it is gone). */
@@ -122,11 +130,17 @@ export class MaterialStore {
 
   /** Writes a source's fragments and records their ids; files of fragments it no longer has go. */
   async writeFragments(sourceId: string, fragments: Fragment[]): Promise<void> {
-    const before = (await this.source(sourceId))?.fragments ?? [];
-    for (const f of fragments) await writeAtomic(this.fragmentFile(f.meta.id), renderFragment(f));
-    const now = new Set(fragments.map((f) => f.meta.id));
-    for (const id of before) if (!now.has(id) && isFragmentId(id)) await fs.rm(this.fragmentFile(id), { force: true });
-    await this.patch(sourceId, (s) => ({ ...s, fragments: fragments.map((f) => f.meta.id) }));
+    // Every id names a file: all are checked before anything is written.
+    if (!fragments.every((f) => isFragmentId(f.meta.id))) throw new Error("Invalid fragment id");
+    // Inside the registry queue, so two writes for one source can't delete each other's files.
+    await this.queued(async () => {
+      const prev = (await this.sources()).find((s) => s.id === sourceId)?.fragments;
+      const before = Array.isArray(prev) ? prev : [];
+      for (const f of fragments) await writeAtomic(this.fragmentFile(f.meta.id), renderFragment(f));
+      const now = new Set(fragments.map((f) => f.meta.id));
+      for (const id of before) if (!now.has(id) && isFragmentId(id)) await fs.rm(this.fragmentFile(id), { force: true });
+      await this.rewrite((list) => list.map((s) => (s.id === sourceId ? { ...s, fragments: fragments.map((f) => f.meta.id) } : s)));
+    });
   }
 
   /** One fragment; null for an id that isn't one, a missing file or a broken one. */

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { anchorAt, anchorOf, locate, plainInline, sections } from "../src/review";
+import { anchorAt, anchorForSelection, anchorOf, diagramOf, locate, markOccurrence, plainInline, project, sections } from "../src/review";
 
 const DOC = [
   "---",
@@ -100,6 +100,57 @@ describe("no backtracking on document text", () => {
     anchorAt(text, " ".repeat(40) + "y");
     locate(text, { quote: " ".repeat(30) + "z", heading: "a", occurrence: 3 });
     plainInline(`${"*_`[".repeat(10_000)}](${" ".repeat(50_000)}`);
+    project(text);
+    anchorForSelection(text, "y", "a");
     expect(performance.now() - t0).toBeLessThan(500);
+  });
+});
+
+describe("project", () => {
+  it("leaves out markup and block markers, one space per whitespace run, and maps back", () => {
+    const src = "---\ntitle: T\n---\n## The **size**\n\n- [ ] keep `it`\n> quoted [link](x.md)\n| a | b |\n";
+    const p = project(src);
+    expect(p.plain).toBe("The size keep it quoted link a b");
+    expect(src[p.map[p.plain.indexOf("size")]]).toBe("s");
+  });
+
+  it("keeps code fences' content literally and drops the fence lines", () => {
+    expect(project("```ts\nconst *a* = 1;\n```\n").plain).toBe("const *a* = 1;");
+  });
+
+  it("projects a fragment without looking for front-matter", () => {
+    expect(project("---\nx\n---", { frontMatter: false }).plain).toBe("--- x ---");
+  });
+});
+
+describe("anchorForSelection", () => {
+  const src = "## Scope\n\nThe **size** filter keeps.\n\n## Risks\n\nThe size filter keeps.\n";
+  it("maps a rendered selection to an exact source passage, preferring the heading's section", () => {
+    const a = anchorForSelection(src, " The size  filter\n", "risks");
+    expect(a).toEqual({ quote: "The size filter", heading: "risks", occurrence: 0 });
+    const b = anchorForSelection(src, "The size filter", "scope");
+    expect(b).toEqual({ quote: "The **size** filter", heading: "scope", occurrence: 0 });
+  });
+
+  it("takes the first match anywhere when the heading's section has none, and null when nothing matches", () => {
+    expect(anchorForSelection(src, "The size filter", null)?.heading).toBe("scope");
+    expect(anchorForSelection(src, "absent", null)).toBeNull();
+    expect(anchorForSelection(src, "   ", null)).toBeNull();
+  });
+});
+
+describe("markOccurrence", () => {
+  it("says which rendered match a passage is", () => {
+    const src = "## A\n\nword word\n\n## B\n\nword\n";
+    expect(markOccurrence(src, { quote: "word", heading: "b", occurrence: 0 })).toEqual({ want: "word", nth: 2 });
+    expect(markOccurrence(src, { quote: "gone", heading: "b", occurrence: 0 })).toBeNull();
+  });
+});
+
+describe("diagramOf", () => {
+  it("names the section of a quote inside a mermaid fence", () => {
+    const src = "## Flow\n\n```mermaid\nflowchart LR\n  A --> B\n```\n";
+    expect(diagramOf(src, src.indexOf("A --> B"))).toBe("Flow");
+    expect(diagramOf(src, src.indexOf("## Flow"))).toBeNull();
   });
 });

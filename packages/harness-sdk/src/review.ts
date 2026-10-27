@@ -224,3 +224,198 @@ export function anchorAt(text: string, quote: string, heading?: string): AnchorA
   if (at === undefined) return { ok: false, reason: "not-found" };
   return { ok: true, anchor: anchorOf(text, at, quote, secs), start: at };
 }
+
+/** `text` roughly as the reader shows it, and where each of its characters came from. */
+export interface Projection {
+  plain: string;
+  /** `map[i]`: the offset in the source of plain character `i`. */
+  map: number[];
+}
+
+const isBlank = (c: string): boolean => c === " " || c === "\t" || c === "\n" || c === "\r" || c === "|";
+
+/** The offset after a line's block markers: `#`s, `>`, list bullets and numbers, a task box. One pass, no regex. */
+function afterMarkers(text: string, i: number, end: number): number {
+  for (;;) {
+    while (i < end && (text[i] === " " || text[i] === "\t")) i++;
+    const c = text[i];
+    if (c === ">") {
+      i++;
+      continue;
+    }
+    if ((c === "-" || c === "*" || c === "+") && (text[i + 1] === " " || text[i + 1] === "\t")) {
+      i += 2;
+      if (text[i] === "[" && (text[i + 1] === " " || text[i + 1] === "x" || text[i + 1] === "X") && text[i + 2] === "]") i += 3;
+      continue;
+    }
+    if (c === "#") {
+      let j = i;
+      while (j < end && text[j] === "#" && j - i < 6) j++;
+      if (j === end || text[j] === " " || text[j] === "\t") {
+        i = j;
+        continue;
+      }
+      return i;
+    }
+    if (c !== undefined && c >= "0" && c <= "9") {
+      let j = i;
+      while (j < end && j - i < 9 && text[j] >= "0" && text[j] <= "9") j++;
+      if ((text[j] === "." || text[j] === ")") && (text[j + 1] === " " || text[j + 1] === "\t")) {
+        i = j + 2;
+        continue;
+      }
+    }
+    return i;
+  }
+}
+
+/**
+ * The text as the reader shows it, roughly (Decisions "Anchors"): front-matter, fence lines, block markers and inline
+ * markup left out; code inside fences kept as written; every run of whitespace (and table pipes) one space.
+ */
+export function project(text: string, opts: { frontMatter?: boolean } = {}): Projection {
+  const plain: string[] = [];
+  const map: number[] = [];
+  let pendingSpace = -1;
+  const emit = (c: string, at: number) => {
+    if (pendingSpace >= 0 && plain.length > 0) {
+      plain.push(" ");
+      map.push(pendingSpace);
+    }
+    pendingSpace = -1;
+    plain.push(c);
+    map.push(at);
+  };
+  const space = (at: number) => {
+    if (pendingSpace < 0) pendingSpace = at;
+  };
+  let fence: { char: string; length: number } | null = null;
+  for (const l of lines(text, opts.frontMatter === false ? 0 : bodyStart(text))) {
+    const f = fenceOf(text.slice(l.start, l.end));
+    if (fence) {
+      if (f && f.char === fence.char && f.length >= fence.length && f.info === "") fence = null;
+      else
+        for (let i = l.start; i < l.end; i++) {
+          const c = text[i];
+          if (c === " " || c === "\t" || c === "\r") space(i);
+          else emit(c, i);
+        }
+      space(l.end);
+      continue;
+    }
+    if (f) {
+      fence = f;
+      space(l.end);
+      continue;
+    }
+    for (let i = afterMarkers(text, l.start, l.end); i < l.end; i++) {
+      const c = text[i];
+      if (isBlank(c)) {
+        space(i);
+        continue;
+      }
+      if (c === "\\" && i + 1 < l.end) {
+        emit(text[i + 1], i + 1);
+        i++;
+        continue;
+      }
+      if (c === "*" || c === "`" || c === "~" || c === "[") continue;
+      if (c === "_" && !(isWordChar(text[i - 1]) && isWordChar(text[i + 1]))) continue;
+      if (c === "]") {
+        if (text[i + 1] === "(") {
+          const close = text.indexOf(")", i + 2);
+          if (close >= 0 && close < l.end) i = close;
+        }
+        continue;
+      }
+      emit(c, i);
+    }
+    space(l.end);
+  }
+  return { plain: plain.join(""), map };
+}
+
+/** Whitespace runs as one space, trimmed (a DOM selection's text). */
+function collapse(s: string): string {
+  let out = "";
+  let gap = false;
+  for (const c of s) {
+    if (c === " " || c === "\t" || c === "\n" || c === "\r" || c === " ") gap = out.length > 0;
+    else {
+      if (gap) out += " ";
+      gap = false;
+      out += c;
+    }
+  }
+  return out;
+}
+
+/** The first index `i` with `map[i] >= at` (map is increasing). */
+function plainIndexAt(map: number[], at: number): number {
+  let lo = 0;
+  let hi = map.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (map[mid] < at) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+/**
+ * The anchor of a passage the person selected in the reader (§5.2): the selection is found in the projected text,
+ * preferring the section of `heading` (the heading above the selection), and mapped back to an exact source passage.
+ */
+export function anchorForSelection(source: string, selected: string, heading: string | null): ReviewAnchor | null {
+  const want = collapse(selected);
+  if (!want) return null;
+  const p = project(source);
+  const secs = sections(source);
+  const region = heading === null ? null : (secs.find((s) => s.slug === heading) ?? null);
+  let first = -1;
+  let inside = -1;
+  for (let at = p.plain.indexOf(want); at >= 0; at = p.plain.indexOf(want, at + 1)) {
+    if (first < 0) first = at;
+    const start = p.map[at];
+    if (!region || (start >= region.start && start < region.end)) {
+      inside = at;
+      break;
+    }
+  }
+  const at = inside >= 0 ? inside : first;
+  if (at < 0) return null;
+  const start = p.map[at];
+  const end = p.map[at + want.length - 1] + 1;
+  return anchorOf(source, start, source.slice(start, end), secs);
+}
+
+/** Which rendered match of the passage's projected text the anchored passage is (the window's mark, §6.1). */
+export function markOccurrence(source: string, anchor: ReviewAnchor): { want: string; nth: number } | null {
+  const where = locate(source, anchor);
+  if (!where) return null;
+  const want = project(anchor.quote, { frontMatter: false }).plain;
+  if (!want) return null;
+  const p = project(source);
+  const k = plainIndexAt(p.map, where.start);
+  let nth = 0;
+  for (let at = p.plain.indexOf(want); at >= 0 && at < k; at = p.plain.indexOf(want, at + want.length)) nth++;
+  return { want, nth };
+}
+
+/** The heading title of the diagram that holds offset `at` (§11.1), or null when `at` is not inside a mermaid fence. */
+export function diagramOf(text: string, at: number): string | null {
+  let fence: { char: string; length: number; mermaid: boolean; start: number } | null = null;
+  for (const l of lines(text, bodyStart(text))) {
+    if (l.start > at && !fence) return null;
+    const f = fenceOf(text.slice(l.start, l.end));
+    if (fence) {
+      if (f && f.char === fence.char && f.length >= fence.length && f.info === "") {
+        if (fence.mermaid && at > fence.start && at < l.start) return sectionAt(sections(text), fence.start).title;
+        fence = null;
+      }
+      continue;
+    }
+    if (f) fence = { char: f.char, length: f.length, mermaid: f.info.split(" ")[0].toLowerCase() === "mermaid", start: l.next - 1 };
+  }
+  return null;
+}

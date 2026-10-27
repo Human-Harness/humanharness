@@ -1,7 +1,7 @@
 import { estimateTokens } from "@humanharness/workspace";
 import { z } from "zod";
 import { BATCH } from "./constants";
-import { sampleSize } from "./estimate";
+import { type MeasuredCosts, estimateCost, sampleSize } from "./estimate";
 import { fragmentId, isFragmentId } from "./fragment";
 import type { Job } from "./stages";
 import type { MaterialStore } from "./store";
@@ -88,13 +88,14 @@ export function reconvertSettings(s: SourceEntry): ConvertSettings | null {
  * reconversion (`o.reconvert`, which converts again and starts the review over), or the person. Fragment files and
  * the registry change in one queued job (`transact`), so a flag in use can't be lost; a fragment flagged while the
  * review ran keeps the source at the review stage. A source that is no longer validating (removed meanwhile) is left
- * alone. `o.items`: whether the harness links items (the full review's estimate is the app's, Task 19).
+ * alone. A full review waits for the person with its own estimate (§7): every fragment reviewed, then labelled, the
+ * sheet, and (`o.items`) the links; `o.measured`: the base's measured costs.
  */
 export async function applyReview(
   store: MaterialStore,
   job: Job,
   a: ReviewAnswer,
-  o: { items: boolean; reconvert?: (settings: ConvertSettings) => Promise<void> },
+  o: { items: boolean; reconvert?: (settings: ConvertSettings) => Promise<void>; measured?: MeasuredCosts },
 ): Promise<void> {
   const id = job.source;
   if (!id) return;
@@ -182,7 +183,9 @@ export async function applyReview(
     if (a.fullReview && !s.fullReview) {
       await patch((e) => {
         const { stage: _st, reviewQueue: _q, ...r } = e;
-        return { ...r, fragments: list, issues, fixes, repairs, asks, verdict: a.verdict, status: "pending", notice: "full-review" };
+        // A full review reads every fragment (reviewSet), so its review share is the whole source.
+        const estimate = estimateCost({ tokens: 0, items: o.items, fragments: list.length, reviewShare: 1, ...(o.measured ? { measured: o.measured } : {}) });
+        return { ...r, fragments: list, issues, fixes, repairs, asks, verdict: a.verdict, status: "pending", notice: "full-review", estimate };
       });
       return null;
     }

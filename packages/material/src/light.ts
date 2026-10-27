@@ -13,3 +13,5 @@ export * from "./launch";
 export * from "./estimate";
 export * from "./convert/isolate";
 export * from "./stages";
+export * from "./word-diff";
+export * from "./decide";

@@ -19,6 +19,7 @@ const src = (over: Partial<MaterialView["sources"][number]>): MaterialView["sour
   fixes: [],
   fragments: 18,
   failed: false,
+  asks: [],
   ...over,
 });
 const view = (sources: MaterialView["sources"]): MaterialView => ({
@@ -92,6 +93,41 @@ describe("MaterialPanel (material spec §11)", () => {
     rejecting.materialConfirmResult = new Error("ipc");
     fireEvent.click(await screen.findByRole("button", { name: "All of it" }));
     expect(await screen.findByText("That didn't go through. Try again.")).toBeTruthy();
+  });
+
+  it("a confirm in flight says so; one that failed offers Try again, which sends the same answer", async () => {
+    const client = await panel(view([src({ status: "pending", notice: "warn", pages: 180, estimate: 154000, fragments: 0 })]));
+    let finish = () => {};
+    client.material.confirm = (_scope, id, choice) => {
+      client.materialCalls.push(`confirm:${id}`);
+      client.materialChoices.push(choice);
+      return new Promise((resolve) => {
+        finish = () => resolve({ ok: false, reason: "invalid" });
+      });
+    };
+    fireEvent.click(await screen.findByRole("button", { name: "All of it" }));
+    expect(await screen.findByText("Sending your answer…")).toBeTruthy();
+    finish();
+    expect(await screen.findByText(/That didn't go through/)).toBeTruthy();
+    expect(screen.queryByText("Sending your answer…")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(client.materialChoices).toEqual([{}, {}]));
+  });
+
+  it("a full review waits with its own text: check all of it, or go on without it", async () => {
+    const client = await panel(view([src({ status: "pending", notice: "full-review", estimate: 30000, fragments: 24 })]));
+    expect(
+      await screen.findByText("The check of ch2.pdf found problems that may go beyond what it looked at. Checking all 24 fragments will use about 30,000 tokens."),
+    ).toBeTruthy();
+    expect(screen.getByText("Checking and labelling send parts of this material to Anthropic.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "All of it" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Only these pages" })).toBeNull();
+    const all = screen.getByRole("button", { name: "Check all of it" }) as HTMLButtonElement;
+    fireEvent.click(all);
+    await waitFor(() => expect(all.disabled).toBe(false));
+    fireEvent.click(screen.getByRole("button", { name: "Go on without it" }));
+    await waitFor(() => expect(client.materialCalls).toEqual(["confirm:ch2", "decide:ch2:-:use"]));
+    expect(client.materialChoices).toEqual([{}]);
   });
 
   it("a waiting card waits while a turn runs", async () => {

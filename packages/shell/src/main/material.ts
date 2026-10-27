@@ -12,8 +12,11 @@ import {
   type SourceEntry,
   type StageContext,
   type StageState,
+  CHOICES,
+  type Choice,
   addSource,
   confirmSource,
+  decide,
   failStage,
   isFragmentId,
   isSourceId,
@@ -46,6 +49,8 @@ export interface MaterialSourceView {
   fragments: number;
   verdict?: SourceEntry["verdict"];
   failed: boolean;
+  /** Questions for the person (§6.2 `ask`). */
+  asks: { fragment?: string; question: string; choices: Choice[] }[];
 }
 
 export interface MaterialView {
@@ -86,6 +91,8 @@ export interface MaterialDeps {
   runStage?(job: Job, prompt: string, tools: readonly string[], handle: (r: unknown) => Promise<unknown>, signal: AbortSignal): Promise<{ ok: boolean }>;
   /** Wakes the queue of AI stages. */
   kick?(): void;
+  /** Moves a file to the system Trash (removing a source: never deleted for good). */
+  trash(file: string): Promise<void>;
 }
 
 /** A file not added because the app stopped converting (a profile switch, a folder or engine change, quitting). */
@@ -108,6 +115,8 @@ const view = (s: SourceEntry): MaterialSourceView => ({
   fragments: s.fragments.length,
   ...(s.verdict ? { verdict: s.verdict } : {}),
   failed: s.failed !== undefined,
+  // A hand edit may have broken the list: then there is nothing to ask.
+  asks: (Array.isArray(s.asks) ? s.asks : []).map((a) => ({ ...(a.fragment ? { fragment: a.fragment } : {}), question: a.question, choices: a.choices })),
 });
 
 /**
@@ -332,6 +341,13 @@ export class MaterialService {
     const store = await this.store(scope);
     if (typeof store === "string") return { ok: false, reason: store };
     if (!isSourceId(id)) return { ok: false, reason: "unknown-source" };
+    // A full review (§7): its fragments are kept; every one of them is reviewed, in batches.
+    if (await this.startFullReview(store, id)) {
+      this.d.kick?.();
+      await this.d.afterChange(store.scope, `full review of ${id}`);
+      await this.changed(store.scope);
+      return { ok: true };
+    }
     const c = typeof choice === "object" && choice !== null ? (choice as Record<string, unknown>) : {};
     const range =
       Array.isArray(c.pageRange) && c.pageRange.length === 2 && c.pageRange.every((n) => Number.isInteger(n) && (n as number) >= 1)
@@ -344,6 +360,33 @@ export class MaterialService {
     if (epoch !== this.epoch) return { ok: false, reason: "not-ready" };
     if (!next) return { ok: false, reason: "invalid" };
     await this.d.afterChange(store.scope, `processed ${id}`);
+    await this.changed(store.scope);
+    return { ok: true };
+  }
+
+  /** A source waiting for a full review goes to it, without converting again. False when it isn't waiting for one. */
+  private async startFullReview(store: MaterialStore, id: string): Promise<boolean> {
+    let started = false;
+    await store.update((list) =>
+      list.map((s) => {
+        if (s.id !== id || s.status !== "pending" || s.notice !== "full-review") return s;
+        started = true;
+        const { notice: _n, reviewQueue: _q, ...rest } = s;
+        return { ...rest, fullReview: true, status: "validating", stage: "review" };
+      }),
+    );
+    return started;
+  }
+
+  /** The person's answer to a question (§6.2 `ask`), or to a full review they don't want (`use`). */
+  async decide(scope: unknown, id: unknown, fragment: unknown, choice: unknown): Promise<MaterialResult> {
+    const store = await this.store(scope);
+    if (typeof store === "string") return { ok: false, reason: store };
+    if (!isSourceId(id)) return { ok: false, reason: "unknown-source" };
+    if ((fragment !== null && !isFragmentId(fragment)) || !CHOICES.includes(choice as Choice)) return { ok: false, reason: "invalid" };
+    if (!(await decide(store, id, fragment, choice as Choice, (file) => this.d.trash(file)))) return { ok: false, reason: "invalid" };
+    this.d.kick?.();
+    await this.d.afterChange(store.scope, `decided ${id}`);
     await this.changed(store.scope);
     return { ok: true };
   }
@@ -416,7 +459,9 @@ export class MaterialService {
    */
   async stageContext(job: Job, store: MaterialStore): Promise<StageContext> {
     const source = job.source;
+    const measured = this.measured();
     return {
+      ...(measured ? { measured } : {}),
       fragmentKinds: [...this.d.material.fragmentKinds],
       sheetSections: this.d.material.sheet.sections.map((s) => ({ id: s.id, label: s.label, prompt: s.prompt })),
       sheetMaxTokens: this.d.material.sheet.maxTokens,

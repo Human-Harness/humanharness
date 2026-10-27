@@ -16,6 +16,7 @@ import type {
   HistoryItem,
   HistoryTaskView,
   MaterialAddResult,
+  MaterialChoice,
   MaterialResult,
   MaterialView,
   ModeChoice,
@@ -694,7 +695,10 @@ export class FakeClient implements HarnessClient {
     },
   };
 
-  /** Calls to material, in order: "add:<scope>", "link:<scope>:<url>", "confirm:<id>", "grounding:<mode>", "open:<id>". */
+  /**
+   * Calls to material, in order: "add:<scope>", "link:<scope>:<url>", "confirm:<id>", "grounding:<mode>", "retry:<id>",
+   * "decide:<id>:<fragment or ->:<choice>", "open:<id>".
+   */
   materialCalls: string[] = [];
   materialViews: Record<string, MaterialView> = {};
   /** The choices `confirm` got, in order. */
@@ -703,6 +707,8 @@ export class FakeClient implements HarnessClient {
   materialAddResult: MaterialAddResult | Error = { ok: true, added: [], refused: [] };
   /** What `confirm` answers; an Error rejects. */
   materialConfirmResult: MaterialResult | Error = { ok: true };
+  /** What `decide` answers; an Error rejects. */
+  materialDecideResult: MaterialResult | Error = { ok: true };
   private materialListeners = new Set<(v: MaterialView) => void>();
   /** Pushes a view as the main process would. */
   pushMaterial(view: MaterialView) {
@@ -734,6 +740,11 @@ export class FakeClient implements HarnessClient {
     retry: async (_scope: string, id: string) => {
       this.materialCalls.push(`retry:${id}`);
       return { ok: true as const };
+    },
+    decide: async (_scope: string, id: string, fragment: string | null, choice: MaterialChoice) => {
+      this.materialCalls.push(`decide:${id}:${fragment ?? "-"}:${choice}`);
+      if (this.materialDecideResult instanceof Error) throw this.materialDecideResult;
+      return this.materialDecideResult;
     },
     open: async (_scope: string, id: string) => {
       this.materialCalls.push(`open:${id}`);

@@ -1,6 +1,6 @@
 import { useEffect, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { HarnessClient, MaterialAddResult, MaterialInfo, MaterialSourceView, MaterialView } from "./client";
+import type { HarnessClient, MaterialAddResult, MaterialInfo, MaterialResult, MaterialSourceView, MaterialView } from "./client";
 import { shownLanguage } from "./language";
 
 export interface MaterialPanelProps {
@@ -69,8 +69,17 @@ function WaitingCard({
   const [from, setFrom] = useState(1);
   const [to, setTo] = useState(Math.max(1, Math.min(source.pages, 50, widest)));
   const [busy, setBusy] = useState(false);
-  const [failed, setFailed] = useState(false);
-  const vars = { name: source.name, pages: fmt(source.pages), rows: fmt(source.rows ?? 0), tokens: fmt(source.estimate), limit: fmt(widest) };
+  /** The answer that didn't go through, to send again with Try again. */
+  const [failed, setFailed] = useState<(() => Promise<MaterialResult>) | null>(null);
+  const vars = {
+    name: source.name,
+    pages: fmt(source.pages),
+    rows: fmt(source.rows ?? 0),
+    tokens: fmt(source.estimate),
+    limit: fmt(widest),
+    count: source.fragments,
+    fragments: fmt(source.fragments),
+  };
   const text =
     source.notice === "max"
       ? t("material.max", vars)
@@ -78,24 +87,27 @@ function WaitingCard({
         ? t("material.rows", vars)
         : source.notice === "no-text-pages"
           ? t("material.noTextPages", vars)
-          : t("material.warn", vars);
+          : source.notice === "full-review"
+            ? t("material.fullReview", vars)
+            : t("material.warn", vars);
   const ranged = source.notice === "warn" || source.notice === "max";
   const rangeOk = Number.isInteger(from) && Number.isInteger(to) && from >= 1 && from <= to && to <= source.pages && to - from + 1 <= widest;
   const off = disabled || busy;
-  const confirm = (choice: ConfirmChoice) => {
+  const send = (answer: () => Promise<MaterialResult>) => {
     setBusy(true);
-    setFailed(false);
-    client.material.confirm(scope, source.id, choice).then(
+    setFailed(null);
+    answer().then(
       (r) => {
         setBusy(false);
-        if (!r.ok) setFailed(true);
+        if (!r.ok) setFailed(() => answer);
       },
       () => {
         setBusy(false);
-        setFailed(true);
+        setFailed(() => answer);
       },
     );
   };
+  const confirm = (choice: ConfirmChoice) => send(() => client.material.confirm(scope, source.id, choice));
   return (
     <div className="hh-material-card" role="group" aria-label={source.name} aria-busy={busy || undefined}>
       <p>{text}</p>
@@ -123,15 +135,35 @@ function WaitingCard({
           </button>
         )}
         {/* At the hard limit only a page range goes on. */}
-        {source.notice !== "max" && (
-          <button type="button" disabled={off} onClick={() => confirm({})}>
-            {source.notice === "no-text-pages" ? t("material.goOn") : t("material.all")}
-          </button>
+        {source.notice === "full-review" ? (
+          <>
+            <button type="button" disabled={off} onClick={() => confirm({})}>
+              {t("material.checkAll")}
+            </button>
+            {/* Without it, the source goes on with what the sample found. */}
+            <button type="button" disabled={off} onClick={() => send(() => client.material.decide(scope, source.id, null, "use"))}>
+              {t("material.skipFullReview")}
+            </button>
+          </>
+        ) : (
+          source.notice !== "max" && (
+            <button type="button" disabled={off} onClick={() => confirm({})}>
+              {source.notice === "no-text-pages" ? t("material.goOn") : t("material.all")}
+            </button>
+          )
         )}
       </div>
+      {busy && (
+        <p className="hh-material-notice" role="status">
+          {t("material.sending")}
+        </p>
+      )}
       {failed && (
         <p className="hh-material-notice" role="status">
-          {t("material.confirmFailed")}
+          {t("material.confirmFailed")}{" "}
+          <button type="button" disabled={off} onClick={() => send(failed)}>
+            {t("material.retry")}
+          </button>
         </p>
       )}
     </div>

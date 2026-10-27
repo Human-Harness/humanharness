@@ -935,6 +935,7 @@ async function buildMaterial(): Promise<MaterialService | null> {
     runner: workerRunner({ entry: path.join(here, "material-worker.js") }),
     runStage: (job, prompt, tools, handle, signal) => runMaterialStage(materialStageDeps, job, prompt, tools, handle, signal),
     kick: kickMaterial,
+    trash: (file) => shell.trashItem(file),
   });
 }
 
@@ -1215,6 +1216,7 @@ function registerIpc() {
   handle("hh:materialConfirm", (scope: unknown, id: unknown, choice: unknown) => materialSvc?.confirm(scope, id, choice) ?? noMaterial);
   handle("hh:materialGrounding", (scope: unknown, mode: unknown) => materialSvc?.setGrounding(scope, mode) ?? noMaterial);
   handle("hh:materialRetry", (scope: unknown, id: unknown) => materialSvc?.retry(scope, id) ?? noMaterial);
+  handle("hh:materialDecide", (scope: unknown, id: unknown, fragment: unknown, choice: unknown) => materialSvc?.decide(scope, id, fragment, choice) ?? noMaterial);
   handle("hh:materialOpen", (scope: unknown, id: unknown) => openMaterial(materialSvc, scope, id, (file) => shell.openPath(file)));
   handle("hh:choose", (option: unknown, task: unknown) => {
     if (quitting) throw new Error("The app is closing");

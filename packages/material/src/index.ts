@@ -27,3 +27,5 @@ export * from "./server";
 export * from "./launch";
 export * from "./stages";
 export * from "./review";
+export * from "./word-diff";
+export * from "./decide";

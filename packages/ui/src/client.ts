@@ -690,7 +690,12 @@ export interface MaterialSourceView {
   fragments: number;
   verdict?: "good" | "usable-with-fixes" | "not-usable";
   failed: boolean;
+  /** Questions for the person (§6.2 `ask`): about one fragment, or the whole source. */
+  asks: { fragment?: string; question: string; choices: MaterialChoice[] }[];
 }
+
+/** An answer to a material question: a fragment's (`keep`, `drop`, `program`) or a whole source's (`use`, `remove`). */
+export type MaterialChoice = "keep" | "drop" | "program" | "use" | "remove";
 
 /** One scope's material now (`hh:materialStatus`). */
 export interface MaterialView {
@@ -729,6 +734,11 @@ export interface MaterialClient {
   setGrounding(scope: string, mode: "strict" | "mixed"): Promise<MaterialResult>;
   /** Try again: a source whose AI stage failed goes back to that stage. */
   retry(scope: string, id: string): Promise<MaterialResult>;
+  /**
+   * The person's answer to a question (`fragment` null: about the whole source). `use` on a source waiting for a full
+   * review goes on without it.
+   */
+  decide(scope: string, id: string, fragment: string | null, choice: MaterialChoice): Promise<MaterialResult>;
   /** Opens the original of a source or a fragment's source. */
   open(scope: string, id: string): Promise<MaterialResult>;
   onChange(listener: (view: MaterialView) => void): () => void;

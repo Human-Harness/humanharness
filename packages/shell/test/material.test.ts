@@ -16,6 +16,7 @@ let base: string;
 let picked: string[] | null;
 const sent: [string, unknown][] = [];
 const changes: string[] = [];
+const trashed: string[] = [];
 let service: MaterialService;
 
 const stageFields = { fragmentKinds: ["explanation"], sheet: { sections: [{ id: "terms", label: "Key terms", prompt: "List them." }], maxTokens: 800 }, tiers: {} };
@@ -30,6 +31,7 @@ const deps = (over: Partial<MaterialDeps> = {}): MaterialDeps => ({
   provider: async () => "Anthropic",
   window: async () => null,
   afterChange: async (scope, what) => void changes.push(`${scope}: ${what}`),
+  trash: async (file) => void trashed.push(file),
   ...over,
 });
 
@@ -46,6 +48,7 @@ beforeEach(() => {
   picked = null;
   sent.length = 0;
   changes.length = 0;
+  trashed.length = 0;
   service = new MaterialService(deps());
 });
 afterEach(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -120,6 +123,44 @@ describe("MaterialService", () => {
   it("confirm checks its source id; an answer that doesn't apply is invalid", async () => {
     expect(await service.confirm("fractions", "../x", {})).toEqual({ ok: false, reason: "unknown-source" });
     expect(await service.confirm("fractions", "nothing", {})).toEqual({ ok: false, reason: "invalid" });
+  });
+
+  it("a full review: confirming it reviews every fragment, without converting again", async () => {
+    picked = [write("Fractions.md", `# Fractions\n\n${"A fraction names a part. ".repeat(40)}`)];
+    await service.add("fractions");
+    const store = new MaterialStore(base, "fractions");
+    const before = (await store.source("fractions"))!.fragments;
+    await store.patch("fractions", (s) => {
+      const { stage: _s, ...rest } = s;
+      return { ...rest, status: "pending", notice: "full-review", reviewQueue: ["x"] };
+    });
+    expect((await service.list("fractions")).sources[0]).toMatchObject({ status: "pending", notice: "full-review", asks: [] });
+    // Converting would go through the runner: one that refuses everything shows it didn't.
+    const strict = new MaterialService(deps({ runner: { convert: () => Promise.reject(new Error("no")), measure: () => Promise.reject(new Error("no")) } }));
+    expect(await strict.confirm("fractions", "fractions", {})).toEqual({ ok: true });
+    const s = (await store.source("fractions"))!;
+    expect(s).toMatchObject({ status: "validating", stage: "review", fullReview: true, fragments: before });
+    expect(s.notice).toBeUndefined();
+    expect(s.reviewQueue).toBeUndefined();
+  });
+
+  it("decide: the person's answer to a question; anything else is refused", async () => {
+    picked = [write("Fractions.md", `# Fractions\n\n${"A fraction names a part. ".repeat(40)}`)];
+    await service.add("fractions");
+    const store = new MaterialStore(base, "fractions");
+    await store.patch("fractions", (s) => ({ ...s, status: "needs-person", asks: [{ question: "Use it?", choices: ["use", "remove"] }] }));
+    expect((await service.list("fractions")).sources[0].asks).toEqual([{ question: "Use it?", choices: ["use", "remove"] }]);
+    expect(await service.decide("fractions", "fractions", null, "nope")).toEqual({ ok: false, reason: "invalid" });
+    expect(await service.decide("fractions", "fractions", "../x", "use")).toEqual({ ok: false, reason: "invalid" });
+    expect(await service.decide("fractions", "../x", null, "use")).toEqual({ ok: false, reason: "unknown-source" });
+    expect(await service.decide("fractions", "fractions", null, "keep")).toEqual({ ok: false, reason: "invalid" });
+    expect(await service.decide("fractions", "fractions", null, "use")).toEqual({ ok: true });
+    expect((await store.source("fractions"))?.status).toBe("ready");
+    expect(changes.at(-1)).toBe("fractions: decided fractions");
+    await store.patch("fractions", (s) => ({ ...s, status: "needs-person", asks: [{ question: "Use it?", choices: ["use", "remove"] }] }));
+    expect(await service.decide("fractions", "fractions", null, "remove")).toEqual({ ok: true });
+    expect(trashed).toEqual([path.join(base, "material", "fractions", "Fractions.md")]);
+    expect((await service.list("fractions")).sources).toEqual([]);
   });
 
   it("the original of a source or a fragment, only inside the scope's folder", async () => {

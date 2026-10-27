@@ -107,6 +107,7 @@ describe("runMaterialStage (material spec §10)", () => {
       base: async () => base,
       scopeOk: async (s) => s === "fractions",
       pickFiles: async () => null,
+      trash: async () => undefined,
       fetchLink: async () => ({ ok: false }),
       send: () => undefined,
       provider: async () => "Anthropic",

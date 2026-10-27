@@ -33,9 +33,9 @@ In the chat a single newline is a line break and new words fade in. While an ans
 
 `packages/ui/src/doc-links.ts` decides (§3.4):
 
-- `http(s)` → a link with `target="_blank"`; the shell's `setWindowOpenHandler` sends it to the system browser. Its domain shows next to the text, except for an autolink, whose label is already the URL.
+- `http(s)` → a link with `target="_blank"`; the shell's `setWindowOpenHandler` sends it to the system browser. Its domain shows next to the text, except for an autolink, whose label is already the URL (but never when the URL has a user part, `https://good.com@evil.com`). Its `aria-description` says it opens in the browser, without adding text to a copied selection.
 - `#anchor` → scrolls inside the app, never a navigation.
-- A relative `.md` (`adr-007.md`, `../notes/x.md#context`) → resolved from the document's own folder (`joinPath`) and opened in the reader, at the anchor.
+- A relative `.md` (`adr-007.md`, `../notes/x.md#context`) → resolved from the document's own folder (`joinPath`) and opened in the reader, at the anchor. Its `href` is `#` plus the resolved path, never the raw URL.
 - Anything else (`file:`, `javascript:`, `//host`, a relative non-`.md` file) → plain text with the URL after it.
 
 Images: a remote one is never loaded; it shows as a link with its domain. A local one is read through `hh:readImage` as a data URL: PNG, JPEG, GIF or WebP up to 5 MB, no SVG. Until it arrives, or when it is refused, its alt text shows.
@@ -75,7 +75,7 @@ The window never trusts a saved entry: `cleanDocumentCards` (`packages/ui/src/ca
 `packages/ui/src/DocumentReader.tsx`, opened by `ChatView` (§5.2):
 
 - The header bar: the path as breadcrumbs, Source, the "Aa" reading preferences, "Full screen"/"Show chat" and Close.
-- The table of contents: `##` and `###`, following the scroll, with the template note at the bottom.
+- The table of contents: `##` and `###`, following the scroll, with the template note at the bottom. It shows from the default 1100 px window up, and always in full screen; below 1000 px the side reader hides it.
 - The document column: kind and status chips, when it last changed (mtime), the reading time (of the whole text), and the engine of the turn when opened from a card. The title from the front-matter is the `h1` that takes focus when a document opens.
 - Source shows the whole raw text, read-only.
 - Over 1 MB only the first 200 KB (cut on UTF-8 bytes, `cutToBytes`) is rendered, with a notice to open Source for all of it. Over 10 MB main refuses it ("too-large", with the size).
@@ -112,17 +112,17 @@ On a change the reader keeps its place at the heading nearest the top. Only the 
 - a `status` not in the kind's list → a warning next to the status chip;
 - no `kind`, or no kinds declared → no check.
 
-Extra sections and another order are fine. The window gets the kinds as `AppState.documents.kinds`, present only when the manifest declares `documents`.
+Extra sections and another order are fine. The manifest refuses a kind id that is not lowercase letters, digits and `-` or is over 64 characters, more than 20 kinds, a line break in `when`, a section or a status, and the same section or status twice. The window gets the kinds as `AppState.documents.kinds`, present only when the manifest declares `documents`.
 
 ## The SDK for harness views
 
 - `@humanharness/ui` exports `Markdown` (`<Markdown source={…} document path={…} />`), `MarkdownProps`, `DocumentContext` and `DocumentHost`.
-- `HarnessClient` has `openDocument(path)` and `onOpenDocument(listener)`: a harness view opens the reader with the first, the chat listens with the second from its first render. The path from a harness is untrusted: the reader checks it is a string and refuses a bad shape before any IPC.
+- `HarnessClient` has `openDocument(path, anchor?)` and `onOpenDocument(listener)`: a harness view opens the reader with the first, the chat listens with the second from its first render. The path from a harness is untrusted: the reader checks it is a string and refuses a bad shape before any IPC.
 - The chat's `DocumentContext` doesn't reach a harness's own view. A view that draws `Markdown` must provide its own `DocumentHost`, memoised (a new object each render reloads every local image), or its `.md` links are plain text and its local images show their alt text:
 
   ```tsx
   const host = useMemo<DocumentHost>(
-    () => ({ open: (p) => client.openDocument(p), image: (p) => client.readImage(p).catch(() => null) }),
+    () => ({ open: (p, a) => client.openDocument(p, a), image: (p) => client.readImage(p).catch(() => null) }),
     [client],
   );
   return (
@@ -132,11 +132,11 @@ Extra sections and another order are fine. The window gets the kinds as `AppStat
   );
   ```
 
-  `openDocument` takes no anchor, so a link's `#anchor` is dropped on this path.
+  `openDocument(path, anchor?)` passes the link's `#anchor` on; the chat keeps it only when it is a string.
 
 ## Agents
 
-`packages/workspace/src/instructions.ts`, `writingLines`. The runtime always passes `writing: { kinds }` to `managedSection` (D4), so every harness's `AGENTS.md` has a "### Writing for the reader" part: structure, summary first, which element fits which content, the six callouts and no others, limits, no raw HTML, relative links, front-matter with `title`, and a short example. With kinds it also asks for `kind`, and a "### Document kinds" part lists each kind: its id, `when` and a template (the front-matter, the `status` values, the `##` headings in order). Without the `writing` option the managed section is byte for byte the old one.
+`packages/workspace/src/instructions.ts`, `writingLines`. The runtime always passes `writing: { kinds }` to `managedSection` (D4), so every harness's `AGENTS.md` has a "### Writing for the reader" part: structure, summary first, which element fits which content, the six callouts and no others, limits, no raw HTML, relative links, front-matter with `title`, and a short example. With kinds it also asks for `kind`, and a "### Document kinds" part lists each kind: its id, `when` and a template (the front-matter, the `status` values, the `##` headings in order), indented six spaces so it is a code block inside the list item and its `##` lines never render as headings. Without the `writing` option the managed section is byte for byte the old one.
 
 `humanharness check` warns when the "Document kinds" part would add more than 400 tokens (`documents-tokens`).
 
@@ -150,13 +150,9 @@ All in `@humanharness/ui`: `unified`, `remark-parse`, `remark-gfm`, `lowlight`, 
 
 ## Known gaps
 
-- At the default window width (1100 px) the table of contents is hidden (`@media (max-width: 1100px)`), also in full screen. The breakpoint should go lower and full screen should always show it.
-- A `.md` link inside a harness view loses its `#anchor` (`openDocument` takes only a path).
-- A `.md` link's `href` is the raw URL (the click is handled, but hovering shows it); external links have no hidden "(opens in browser)" for screen readers; `isAutolink` doesn't check for a `user@` part (`https://good.com@evil.com`).
-- `documents.kinds`: `when`, sections and status values may hold line breaks, duplicate status values are accepted, and there is no cap on how many kinds or on a kind id's length. The kind templates in `AGENTS.md` are indented four spaces under list items, so the reader draws that part as plain text, not code.
 - A timed-out Mermaid draw may keep running while the next one starts.
 - Word counts include Markdown symbols, and past 1 MB the card's count is a floor.
 - A `---` thematic break as the first line, with another `---` later, is read as broken front-matter: the text between is hidden.
 - In a slim chat `openDocument` does nothing (no panel shows).
-- The terminal line for a card whose path is empty once made plain is still printed.
-- Under load, some unit tests (`material/test/zip.test.ts`, `ui/test/material-panel.test.tsx`, `ui/test/phases.test.tsx`) and the e2e `setup-steps.spec.ts:135` can fail; they pass alone.
+- The chat's `DocumentContext` doesn't reach a harness's own view: the view must provide its own memoised `DocumentHost` (see above).
+- `mermaid` 12 pulls in `elkjs` (EPL-2.0): third-party notices must list it when the app is packaged.

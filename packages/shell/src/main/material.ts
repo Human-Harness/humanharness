@@ -151,7 +151,7 @@ export class MaterialService {
     let scan = this.scans.get(base);
     if (!scan) {
       scan = this.findStuck(base).then(
-        (stuck) => void this.resumes.set(base, this.resume(stuck)),
+        (stuck) => void this.resumes.set(base, this.resume(stuck).catch((err: unknown) => console.error("Could not resume the material", err))),
         (err: unknown) => console.error("Could not look for unfinished material", err),
       );
       this.scans.set(base, scan);

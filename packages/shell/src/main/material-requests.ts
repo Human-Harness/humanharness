@@ -1,6 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { MaterialSearch, MaterialStore, flagFragment, isFragmentId, readForTask } from "@humanharness/material";
+import { MaterialSearch, MaterialStore, flagFragment, isFragmentId, readForTask } from "@humanharness/material/light";
 import { APP_SCOPE, isScopeId, materialReadsFile } from "@humanharness/workspace";
 
 /** A refusal whose message goes back to the agent. */

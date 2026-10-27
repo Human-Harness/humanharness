@@ -16,7 +16,6 @@ import {
   allBlocks,
   choiceOptionSchema,
   dataCollections,
-  hasMaterial,
   hasModes,
   hasPhases,
   hasProfiles,
@@ -28,7 +27,7 @@ import {
   resolveInHarness,
   settingsView,
 } from "@humanharness/harness-sdk";
-import { MaterialStore, materialSection, workerRunner } from "@humanharness/material";
+import { MaterialStore, materialSection, workerRunner } from "@humanharness/material/light";
 import { type Event, type HarnessRuntime, createRuntime } from "@humanharness/runtime";
 import {
   type AppConfig,
@@ -59,12 +58,9 @@ import {
 } from "@humanharness/ui/client";
 import {
   APP_SCOPE,
-  DATA_PREFIX,
   DataStore,
   History,
   MAIN_SCOPE,
-  MATERIAL_KEEP,
-  NOTES_PREFIX,
   ScopeStore,
   buildDataContext,
   dataDiffOf,
@@ -108,8 +104,8 @@ import { respondHandler } from "./respond-ipc";
 import { SettingsController } from "./settings";
 import { SetupSteps, recordSetup, setupStepViews } from "./setup-steps";
 import { TaskManager } from "./task-manager";
-import { MaterialService } from "./material";
-import { fetchLink } from "./material-fetch";
+import type { MaterialService } from "./material";
+import { historyKeep, materialAppState, openMaterial } from "./material-ipc";
 import { personMaterialRequest } from "./material-requests";
 import { baseFor, isInsideFolder } from "./profile-base";
 import { type ProfileOutcome, Profiles, profileResult } from "./profiles";
@@ -392,9 +388,7 @@ async function appState(): Promise<AppState> {
     // Only a harness with profiles sends them (profiles D4): what to call one, and its form.
     ...(harness.profiles ? { profiles: { label: harness.profiles.label, form: profileFormSpec(harness) } } : {}),
     // Only a harness with material sends what it takes (material D0).
-    ...(harness.material
-      ? { material: { accepts: harness.material.accepts, items: harness.material.items !== undefined, grounding: harness.material.grounding } }
-      : {}),
+    ...materialAppState(harness),
     references: (await referencesFor(saved.folder)).map((r) => ({ id: r.id, label: r.label, path: displayPath(r.path, os.homedir()) })),
     models: await modelsView(),
     backup: await backupView(saved.folder),
@@ -426,8 +420,6 @@ const baseOf = (c: { folder: string; profile?: string }): string => {
 /** The harness declares scopes (spec D1); without them everything stays as before (D2). */
 const scoped = (): boolean => harness.scopes !== undefined;
 
-/** What the history keeps under `.harness/`: notes and data; with material, its registry and decisions (material spec §4). */
-const historyKeep = () => [NOTES_PREFIX, DATA_PREFIX, ...(hasMaterial(harness) ? [MATERIAL_KEEP] : [])];
 
 /** tasks.json is read knowing the manifest's modes, so a mode it no longer declares is dropped (task-modes spec §6). */
 const taskStoreOptions = (): { modes?: string[]; phases?: Record<string, string[]> } => ({
@@ -631,7 +623,7 @@ async function dropRuntime() {
 /** The history of the folder when no runtime runs: one per folder and ignore list (its queue orders every write). */
 const standaloneHistory = lastOpened(async (key) => {
   const { folder, ignore } = JSON.parse(key) as { folder: string; ignore: string[] };
-  const history = new History(folder, historyDir(app.getPath("userData"), folder), ignore, historyKeep());
+  const history = new History(folder, historyDir(app.getPath("userData"), folder), ignore, historyKeep(harness));
   await history.init();
   return history;
 });
@@ -859,9 +851,11 @@ const materialStore = (base: string, scope: string): MaterialStore => materialSv
 const materialRequest = (base: string, request: unknown) =>
   personMaterialRequest({ base: async () => base, runningTask: () => tasks.runningTask(), store: materialStore }, request);
 
-function buildMaterial(): MaterialService | null {
+/** Loaded only for a harness with material: the service and the converters' runner stay out of every other app (D0). */
+async function buildMaterial(): Promise<MaterialService | null> {
   const m = harness.material;
   if (!m) return null;
+  const [{ MaterialService }, { fetchLink }] = await Promise.all([import("./material"), import("./material-fetch")]);
   return new MaterialService({
     material: m,
     base: async () => {
@@ -1161,12 +1155,7 @@ function registerIpc() {
   handle("hh:materialAddLink", (scope: unknown, url: unknown) => materialSvc?.addLink(scope, url) ?? noMaterial);
   handle("hh:materialConfirm", (scope: unknown, id: unknown, choice: unknown) => materialSvc?.confirm(scope, id, choice) ?? noMaterial);
   handle("hh:materialGrounding", (scope: unknown, mode: unknown) => materialSvc?.setGrounding(scope, mode) ?? noMaterial);
-  handle("hh:materialOpen", async (scope: unknown, id: unknown) => {
-    const file = await materialSvc?.originalOf(scope, id);
-    if (!file) return noMaterial;
-    const error = await shell.openPath(file);
-    return error ? { ok: false, reason: "invalid" } : { ok: true };
-  });
+  handle("hh:materialOpen", (scope: unknown, id: unknown) => openMaterial(materialSvc, scope, id, (file) => shell.openPath(file)));
   handle("hh:choose", (option: unknown, task: unknown) => {
     if (quitting) throw new Error("The app is closing");
     const blocked = turnBlocked();
@@ -1554,7 +1543,7 @@ if (loaded) {
       blocked: hold.profileChangeBlocked,
     });
   }
-  materialSvc = buildMaterial();
+  materialSvc = await buildMaterial();
 }
 
 // One app per data folder (the lock is tied to userData, so it is taken after it is set): a second one would

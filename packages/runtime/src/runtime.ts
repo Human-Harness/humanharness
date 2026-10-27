@@ -3,7 +3,7 @@ import { promises as fs } from "node:fs";
 import { type Bridge, type Launcher, type McpServerSpec, type Rpc, dataServerSpec, devLauncher, hasAgentData, openBridge, openRpc, uiServerSpec } from "@humanharness/blocks";
 import type { Effort, EngineDef, ModelChoice, ModelProfile } from "@humanharness/engines";
 import { type Language, type LoadedHarness, allBlocks, hasMaterial, resolveInHarness } from "@humanharness/harness-sdk";
-import { materialServerSpec } from "@humanharness/material";
+import { materialServerSpec } from "@humanharness/material/light";
 import {
   BEFORE_MESSAGE,
   DATA_PREFIX,

@@ -22,6 +22,8 @@ export interface SidekickPanelProps {
   onEdit(card: SidekickCard): void;
   onSendAnyway(card: SidekickCard): void;
   onPutInComposer(text: string): void;
+  /** "Don't flag …": mutes the card's kind for its sidekick (spec §6.3). */
+  onMute(cardId: string): void;
   /** Opens Settings › Sidekick from the foot's tier; without it the tier is plain text. */
   onTier?: () => void;
 }
@@ -79,6 +81,15 @@ export function SidekickPanel(p: SidekickPanelProps) {
             <>
               {s.notice && <p className="hh-caption hh-sk-notice">{t(`sidekick.notice.${s.notice}`)}</p>}
               {s.card && <Card key={s.card.id} card={s.card} {...p} />}
+              {s.past.length > 0 && (
+                <ul className="hh-sk-past">
+                  {s.past.map((past) => (
+                    <li key={past.id} className="hh-caption">
+                      {t("sidekick.earlier", { outcome: t(`sidekick.outcomes.${past.outcome}`) })}
+                    </li>
+                  ))}
+                </ul>
+              )}
             </>
           )}
         </div>
@@ -103,7 +114,7 @@ export function SidekickPanel(p: SidekickPanelProps) {
   );
 }
 
-function Card({ card, onSendSuggested, onEdit, onSendAnyway, onPutInComposer }: { card: SidekickCard } & SidekickPanelProps) {
+function Card({ card, onSendSuggested, onEdit, onSendAnyway, onPutInComposer, onMute }: { card: SidekickCard } & SidekickPanelProps) {
   const { t } = useTranslation();
   // By position: two queued asks can read the same, and Drop takes only the one pressed.
   const [dropped, setDropped] = useState<number[]>([]);
@@ -147,6 +158,10 @@ function Card({ card, onSendSuggested, onEdit, onSendAnyway, onPutInComposer }: 
         )}
         <button type="button" onClick={() => onSendAnyway(card)}>{t("sidekick.card.sendAnyway")}</button>
       </div>
+      {card.why && <p className="hh-caption">{t("sidekick.why", { used: card.why.used, of: card.why.of, kind: card.kind })}</p>}
+      <button type="button" className="hh-link" onClick={() => onMute(card.id)}>
+        {t("sidekick.mute", { kind: card.kind })}
+      </button>
     </section>
   );
 }

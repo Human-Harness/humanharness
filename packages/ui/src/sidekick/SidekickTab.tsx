@@ -8,15 +8,18 @@ import { useSidekick } from "./useSidekick";
 type Wait = "6" | "10" | "always";
 type Cap = "20000" | "50000" | "none";
 
-/** Settings › Sidekick (spec §8, mockup board 6), slice 1: no learned section yet. Each change saves at once. */
+/** Settings › Sidekick (spec §8, mockup board 6), the share used and the muted kinds; no learned section yet. Each change saves at once. */
 export function SidekickTab({ client, onModels }: { client: HarnessClient; onModels: () => void }) {
   const { t, i18n } = useTranslation();
   const state = useSidekick(client, true);
   const [failed, setFailed] = useState<string | null>(null);
   const onHint = useId();
   const preSendHint = useId();
+  const mutedHead = useId();
   if (!state) return null;
   const s = state.settings;
+  // One row per muted kind; with several sidekicks the same kind can show twice (part 1 has only one).
+  const muted = Object.entries(s.muted).flatMap(([sidekick, kinds]) => kinds.map((kind) => [sidekick, kind] as const));
   const save = (patch: SidekickSettingsPatch) => {
     setFailed(null);
     client.sidekick.set(patch).then(
@@ -87,6 +90,26 @@ export function SidekickTab({ client, onModels }: { client: HarnessClient; onMod
         </div>
       </fieldset>
       <p className="hh-caption">{t("sidekick.settings.week", { tokens: state.week.toLocaleString(shownLanguage(i18n)) })}</p>
+      {state.used.of > 0 && <p className="hh-caption">{t("sidekick.settings.usedShare", state.used)}</p>}
+      {muted.length > 0 && (
+        <section aria-labelledby={mutedHead}>
+          <h3 id={mutedHead}>{t("sidekick.settings.muted")}</h3>
+          <ul className="hh-rows hh-sk-muted">
+            {muted.map(([sidekick, kind]) => (
+              <li key={`${sidekick}/${kind}`} className="hh-row">
+                <span className="hh-row-label">{kind}</span>
+                <button
+                  type="button"
+                  className="hh-link"
+                  onClick={() => void client.sidekick.unmute(sidekick, kind).catch((err: unknown) => setFailed(err instanceof Error ? err.message : String(err)))}
+                >
+                  {t("sidekick.settings.unmute", { kind })}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       {failed !== null && <p role="alert">{t("sidekick.settings.failed", { message: failed })}</p>}
     </div>
   );

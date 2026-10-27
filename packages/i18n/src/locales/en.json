@@ -672,6 +672,10 @@
     "tiers": { "light": "Light", "standard": "Standard", "deep": "Deep", "custom": "Custom" },
     "sendNow": "{{key}}⏎ sends now",
     "off": "Sidekick is off.",
+    "why": "You took {{used}} of your last {{of}} “{{kind}}” suggestions",
+    "mute": "Don't flag “{{kind}}”",
+    "earlier": "Earlier · {{outcome}}",
+    "outcomes": { "used": "used", "edited": "edited", "sent-anyway": "sent anyway", "dismissed": "dismissed", "muted": "muted", "timeout": "timed out" },
     "intro": {
       "title": "Meet Sidekick",
       "body": "Sidekick reads your prompt before it goes out and suggests a clearer one when something looks off. It uses a small model, up to {{cap}} tokens per task, and you can turn it off at any time.",
@@ -701,6 +705,9 @@
       "cap50": "50k tokens",
       "capNone": "No cap",
       "week": "This week: {{tokens}} tokens",
+      "usedShare": "{{used}} of {{of}} suggestions used this week",
+      "muted": "Not flagged",
+      "unmute": "Flag “{{kind}}” again",
       "failed": "Could not save: {{message}}"
     },
     "models": { "label": "Sidekick", "hint": "Reviews your prompts before they go out" },

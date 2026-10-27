@@ -22,7 +22,7 @@ const CARD: SidekickCard = {
   kind: "vague",
 };
 const handlers = () => ({
-  onCollapse: vi.fn(), onTurnOn: vi.fn(), onNotNow: vi.fn(), onSendSuggested: vi.fn(), onEdit: vi.fn(), onSendAnyway: vi.fn(), onPutInComposer: vi.fn(), onView: vi.fn(),
+  onCollapse: vi.fn(), onTurnOn: vi.fn(), onNotNow: vi.fn(), onSendSuggested: vi.fn(), onEdit: vi.fn(), onSendAnyway: vi.fn(), onPutInComposer: vi.fn(), onView: vi.fn(), onMute: vi.fn(),
 });
 const panel = (state: SidekickState, h = handlers(), extra: Partial<Parameters<typeof SidekickPanel>[0]> = {}) =>
   renderIn("en", <SidekickPanel state={state} view="sidekick" sendKey="⌘" {...h} {...extra} />).then(() => h);
@@ -122,5 +122,25 @@ describe("SidekickPanel", () => {
     input.focus();
     await panel({ ...SK_ON, status: "suggestion", card: CARD });
     expect(document.activeElement).toBe(input);
+  });
+});
+
+describe("learning in the panel (spec §4.1, §7)", () => {
+  it("why and Don't flag", async () => {
+    const h = await panel({ ...SK_ON, status: "suggestion", card: { ...CARD, why: { used: 4, of: 5 } } });
+    expect(screen.getByText("You took 4 of your last 5 “vague” suggestions")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Don't flag “vague”" }));
+    expect(h.onMute).toHaveBeenCalledWith("c1");
+  });
+
+  it("no why line with fewer than 3 past cards", async () => {
+    await panel({ ...SK_ON, status: "suggestion", card: CARD });
+    expect(screen.queryByText(/You took/)).toBeNull();
+  });
+
+  it("earlier cards collapse to one line", async () => {
+    await panel({ ...SK_ON, past: [{ id: "c0", kind: "two-asks", outcome: "used", speaker: "sidekick" }, { id: "c00", kind: "vague", outcome: "sent-anyway", speaker: "sidekick" }] });
+    expect(screen.getByText("Earlier · used")).toBeTruthy();
+    expect(screen.getByText("Earlier · sent anyway")).toBeTruthy();
   });
 });

@@ -1337,6 +1337,7 @@ export function ChatView({
               {...(harnessSide !== undefined ? { harnessSide } : {})}
               sendKey={SEND_KEY}
               onCollapse={() => toggleSk(false)}
+              onMute={(id) => void client.sidekick.mute(id).catch(() => undefined)}
               {...(onSidekickSettings ? { onTier: onSidekickSettings } : {})}
               onTurnOn={() => void client.sidekick.set({ on: true, introSeen: true }).catch(() => undefined)}
               onNotNow={() => {

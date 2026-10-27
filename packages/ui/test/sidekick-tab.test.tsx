@@ -53,3 +53,24 @@ describe("Settings › Sidekick (spec §8)", () => {
     expect(onModels).toHaveBeenCalled();
   });
 });
+
+describe("Settings › Sidekick, learning (spec §6.3, §8)", () => {
+  it("N of M used, and muted kinds with Undo", async () => {
+    const c = new FakeClient({ language: "en" });
+    c.sidekickState = { ...SK_ON, used: { used: 3, of: 8 }, settings: { ...SK_ON.settings, muted: { sidekick: ["vague"] } } };
+    await renderIn("en", <SidekickTab client={c} onModels={() => {}} />);
+    expect(await screen.findByText("3 of 8 suggestions used this week")).toBeTruthy();
+    expect(screen.getByText("Not flagged")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Flag “vague” again" }));
+    await waitFor(() => expect(c.sidekickCalls).toContainEqual(["unmute", "sidekick", "vague"]));
+  });
+
+  it("no share without cards, no Not flagged list without mutes", async () => {
+    const c = new FakeClient({ language: "en" });
+    c.sidekickState = SK_ON;
+    await renderIn("en", <SidekickTab client={c} onModels={() => {}} />);
+    await screen.findByRole("checkbox", { name: "Sidekick" });
+    expect(screen.queryByText(/suggestions used this week/)).toBeNull();
+    expect(screen.queryByText("Not flagged")).toBeNull();
+  });
+});

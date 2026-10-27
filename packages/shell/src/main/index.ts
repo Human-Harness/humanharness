@@ -13,7 +13,6 @@ import {
   SETTINGS_COLLECTION,
   SIDEKICK_COLLECTION,
   SIDEKICK_PROCESS,
-  SIDEKICK_SETTINGS_ID,
   type SidekickRecord,
   TIERS,
   type Tier,
@@ -70,6 +69,7 @@ import {
   History,
   MAIN_SCOPE,
   ScopeStore,
+  appendSidekickEvent,
   buildDataContext,
   dataDiffOf,
   isScopeId,
@@ -77,6 +77,7 @@ import {
   notesPrefix,
   profileDir,
   readNotes,
+  readSidekickEvents,
   sidekickWorkDir,
   syncLocations,
   syncStatus,
@@ -397,7 +398,7 @@ async function appState(): Promise<AppState> {
     // Only a harness with settings gets its tab (harness-settings D0).
     ...(harness.settings ? { settings: settingsView(harness.settings, harness.modes) } : {}),
     // Sidekick is core (sidekick spec D1): every harness sends it; the window draws it only with this.
-    sidekick: { id: "sidekick", name: "Sidekick" },
+    sidekick: { id: "sidekick", name: "Sidekick", mark: "spark" },
     // Only a harness with modes sends them (task-modes D0): what the window shows, never a brief or a hint.
     ...(hasModes(harness)
       ? {
@@ -1659,11 +1660,11 @@ if (loaded) {
     harness: { name: harness.name, ...(harness.tagline ? { tagline: harness.tagline } : {}) },
     phases: (action) => (action && Object.hasOwn(harness.actions, action) ? (harness.actions[action].phases ?? []) : []),
     store: new SidekickStore({
-      read: async () => {
+      // Every record of the collection (settings, learned items, sidekicks, scope records), with no query limit.
+      readAll: async () => {
         const c = await validConfig();
-        if (!c) return null;
-        const store = sidekickStoreFor(baseOf(c));
-        return (await store.get(SIDEKICK_COLLECTION, SIDEKICK_SETTINGS_ID, { who: "person", scope: APP_SCOPE })) as SidekickRecord | null;
+        if (!c) return [];
+        return (await sidekickStoreFor(baseOf(c)).readAll(SIDEKICK_COLLECTION, APP_SCOPE)).records as SidekickRecord[];
       },
       // As the person, app-wide: the store's checks, turns-blocked refusals and a `Data: sidekick` commit (open task's trailer).
       write: (request) => personData(request, { scope: APP_SCOPE }),
@@ -1704,6 +1705,7 @@ if (loaded) {
     usage: (base) => new UsageLog(base).load(2000),
     log: (base, record) => new UsageLog(base).append(record),
     changed: (state) => sendToWindow("hh:sidekick", state),
+    events: { read: readSidekickEvents, append: appendSidekickEvent },
   });
   // Only a harness with setup steps gets the controller: its reads may write `.harness/setup.json` (setup-steps D0).
   if (harness.setup) {

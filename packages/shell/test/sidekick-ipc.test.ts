@@ -10,6 +10,8 @@ function wire(available = true) {
     review: async (r: unknown) => (calls.push(["review", r]), { kind: "card" }),
     cancel: () => void calls.push(["cancel"]),
     resolve: async (id: unknown, o: unknown) => void calls.push(["resolve", id, o]),
+    mute: async (id: unknown) => void calls.push(["mute", id]),
+    unmute: async (s: unknown, k: unknown) => void calls.push(["unmute", s, k]),
   };
   registerSidekickIpc(
     (ch, fn) => void handlers.set(ch, fn),
@@ -28,12 +30,16 @@ describe("sidekick IPC", () => {
     await w.call("hh:sidekickReview", { text: "see the file", attached: true, force: "yes" });
     await w.call("hh:sidekickCancel");
     await w.call("hh:sidekickResolve", "c1", "used");
+    await w.call("hh:sidekickMute", "c1");
+    await w.call("hh:sidekickUnmute", "sidekick", "vague");
     expect(w.calls).toEqual([
       ["set", { on: true }],
       ["review", { text: "make it better", force: true }],
       ["review", { text: "see the file", attached: true }],
       ["cancel"],
       ["resolve", "c1", "used"],
+      ["mute", "c1"],
+      ["unmute", "sidekick", "vague"],
     ]);
   });
 
@@ -47,6 +53,10 @@ describe("sidekick IPC", () => {
     expect(await w.call("hh:sidekickReview", { text: "x".repeat(20_001) })).toEqual({ kind: "send" });
     await w.call("hh:sidekickResolve", "c1", "nope");
     await w.call("hh:sidekickResolve", 7, "used");
+    await w.call("hh:sidekickMute", 7);
+    await w.call("hh:sidekickMute", "x".repeat(81));
+    await w.call("hh:sidekickUnmute", "sidekick");
+    await w.call("hh:sidekickUnmute", "", "vague");
     expect(w.calls).toEqual([]);
   });
 
@@ -57,5 +67,7 @@ describe("sidekick IPC", () => {
     expect(await w.call("hh:sidekickReview", { text: "make it better" })).toEqual({ kind: "send" });
     await w.call("hh:sidekickCancel");
     await w.call("hh:sidekickResolve", "c1", "used");
+    await w.call("hh:sidekickMute", "c1");
+    await w.call("hh:sidekickUnmute", "sidekick", "vague");
   });
 });

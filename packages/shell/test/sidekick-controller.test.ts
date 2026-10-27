@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { getEngine } from "@humanharness/engines";
 import type { SidekickAnswer } from "@humanharness/runtime";
 import type { SidekickRecord } from "@humanharness/harness-sdk";
+import type { SidekickEvent } from "@humanharness/workspace";
 import { SidekickController, type SidekickDeps } from "../src/main/sidekick";
 import { SidekickStore } from "../src/main/sidekick-store";
 import { type UsageRecord, sidekickRecord } from "../src/main/usage-log";
@@ -10,8 +11,11 @@ const profile = { engine: "claude", tier: "light" as const, model: "haiku", effo
 const json = (o: unknown) => JSON.stringify(o);
 const SUGGEST = json({ verdict: "suggest", issues: [{ kind: "vague", text: "Say what better means." }], rewrite: "Make the intro shorter.", confidence: 0.8 });
 
-export function harness(o: { record?: Partial<SidekickRecord> | null; answers?: (string | ((signal: AbortSignal) => Promise<SidekickAnswer>))[]; task?: { id: string; action?: string; scope: string; phase?: string } | null; usage?: UsageRecord[]; manifest?: SidekickDeps["manifest"]; waitMs?: number } = {}) {
-  let record: Partial<SidekickRecord> | null = o.record ?? null;
+export function harness(o: { record?: Partial<SidekickRecord> | null; answers?: (string | ((signal: AbortSignal) => Promise<SidekickAnswer>))[]; task?: { id: string; action?: string; scope: string; phase?: string } | null; usage?: UsageRecord[]; manifest?: SidekickDeps["manifest"]; waitMs?: number; events?: SidekickEvent[] } = {}) {
+  // The `sidekick` collection by id; `record()` is the settings record.
+  const records = new Map<string, Partial<SidekickRecord>>(o.record ? [[o.record.id ?? "settings", o.record]] : []);
+  const writes: { op: string; record?: Partial<SidekickRecord>; key?: string }[] = [];
+  const events: SidekickEvent[] = [...(o.events ?? [])];
   const asked: string[] = [];
   const opened: string[] = [];
   const closed: string[] = [];
@@ -21,10 +25,12 @@ export function harness(o: { record?: Partial<SidekickRecord> | null; answers?: 
   let task = o.task === undefined ? { id: "t1", scope: "main" } : o.task;
   const answers = [...(o.answers ?? [])];
   const store = new SidekickStore({
-    read: async () => record as SidekickRecord | null,
+    readAll: async () => [...records.values()] as SidekickRecord[],
     write: async (req) => {
-      const r = req as { op: string; record?: Partial<SidekickRecord> };
-      record = r.op === "delete" ? null : (r.record ?? null);
+      const r = req as { op: string; record?: Partial<SidekickRecord>; key?: string };
+      writes.push(r);
+      if (r.op === "delete") records.delete(r.key ?? "");
+      else if (r.record) records.set(r.record.id ?? "", r.record);
     },
     ...(o.manifest ? { manifest: o.manifest } : {}),
   });
@@ -60,9 +66,14 @@ export function harness(o: { record?: Partial<SidekickRecord> | null; answers?: 
     usage: async () => [...(o.usage ?? []), ...logged],
     log: async (_b, r) => void logged.push(r),
     changed: (s) => void states.push(s),
+    events: { read: async () => [...events], append: async (_b, e) => void events.push(e) },
     waitMs: () => o.waitMs ?? 5_000,
   };
-  return { ctl: new SidekickController(deps), deps, asked, opened, closed, logged, briefs, states, setTask: (t: typeof task) => (task = t), record: () => record, setRecord: (r: Partial<SidekickRecord> | null) => (record = r) };
+  return { ctl: new SidekickController(deps), deps, asked, opened, closed, logged, briefs, states, setTask: (t: typeof task) => (task = t), events,
+    writes,
+    record: () => records.get("settings") ?? null,
+    setRecord: (r: Partial<SidekickRecord> | null) => (r ? records.set("settings", r) : records.delete("settings")),
+  };
 }
 
 describe("SidekickController state and settings", () => {
@@ -446,5 +457,104 @@ describe("SidekickController state() cost", () => {
     const h = harness();
     (h.deps as { profile: SidekickDeps["profile"] }).profile = async () => ({ ...profile, tier: "standard" as const });
     expect(await h.ctl.state()).toMatchObject({ status: "off", tier: "standard" });
+  });
+});
+
+describe("outcomes and learning signals (spec §6.1–6.3)", () => {
+  it("resolve appends one event with the card's kind and confidence", async () => {
+    const h = harness({ record: on });
+    const r = await h.ctl.review({ text: "make it better" });
+    if (r.kind !== "card") throw new Error("card expected");
+    expect(r.card).toMatchObject({ moment: "pre", kind: "vague", speaker: { id: "sidekick", name: "Sidekick", mark: "spark" } });
+    expect(r.card.why).toBeUndefined();
+    await h.ctl.resolve(r.card.id, "used");
+    expect(h.events).toEqual([expect.objectContaining({ sidekick: "sidekick", moment: "pre", kind: "vague", outcome: "used", confidence: 0.8, task: "t1", scope: "main" })]);
+    expect((await h.ctl.state()).past).toEqual([{ id: r.card.id, kind: "vague", outcome: "used", speaker: "sidekick" }]);
+    expect((await h.ctl.state()).used).toEqual({ used: 1, of: 1 });
+  });
+
+  it("the past list belongs to the task: another task starts empty", async () => {
+    const h = harness({ record: on });
+    const r = await h.ctl.review({ text: "make it better" });
+    if (r.kind !== "card") throw new Error("card expected");
+    await h.ctl.resolve(r.card.id, "dismissed");
+    h.setTask({ id: "t2", scope: "main" });
+    await h.ctl.betweenTasks();
+    expect((await h.ctl.state()).past).toEqual([]);
+  });
+
+  it("a timeout is an event too", async () => {
+    const h = harness({ record: on, answers: [slow], waitMs: 30 });
+    await h.ctl.review({ text: "make it better" });
+    expect(h.events.map((e) => [e.outcome, e.kind, e.moment])).toEqual([["timeout", "vague", "pre"]]);
+  });
+
+  it("a kind ignored 9 times in 10 needs 0.8: a 0.7 suggestion is sent with nothing shown", async () => {
+    const ignored = Array.from({ length: 10 }, (_, i) => ({ at: "2026-10-27T09:00:00Z", sidekick: "sidekick", moment: "pre" as const, kind: "vague", outcome: i === 0 ? ("used" as const) : ("dismissed" as const) }));
+    const h = harness({ record: on, events: ignored, answers: [json({ verdict: "suggest", issues: [{ kind: "vague", text: "x" }], rewrite: "y", confidence: 0.7 })] });
+    expect(await h.ctl.review({ text: "make it better" })).toEqual({ kind: "send" });
+  });
+
+  it("why: with 3+ past cards of the kind", async () => {
+    const past = Array.from({ length: 3 }, () => ({ at: "2026-10-27T09:00:00Z", sidekick: "sidekick", moment: "pre" as const, kind: "vague", outcome: "used" as const }));
+    const r = await harness({ record: on, events: past }).ctl.review({ text: "make it better" });
+    expect(r.kind === "card" && r.card.why).toEqual({ used: 3, of: 3 });
+  });
+
+  it("used counts the last 7 days only", async () => {
+    const old = { at: "2020-01-01T00:00:00Z", sidekick: "sidekick", moment: "pre" as const, kind: "vague", outcome: "used" as const };
+    const fresh = { ...old, at: new Date().toISOString(), outcome: "dismissed" as const };
+    expect((await harness({ record: on, events: [old, fresh] }).ctl.state()).used).toEqual({ used: 0, of: 1 });
+  });
+
+  it("mute: the kind is muted for that sidekick, remembered as the person's, and no longer flagged", async () => {
+    const h = harness({ record: on });
+    const r = await h.ctl.review({ text: "make it better" });
+    if (r.kind !== "card") throw new Error("card expected");
+    await h.ctl.mute(r.card.id);
+    expect(h.record()).toMatchObject({ muted: { sidekick: ["vague"] } });
+    expect(h.writes).toContainEqual(expect.objectContaining({ op: "put", record: expect.objectContaining({ type: "learned", kind: "vague", source: "person", level: "you" }) }));
+    expect(h.events.at(-1)).toMatchObject({ outcome: "muted", kind: "vague" });
+    expect((await h.ctl.state()).card).toBeNull();
+    expect(await h.ctl.review({ text: "make it better" })).toEqual({ kind: "send" });
+    await h.ctl.unmute("sidekick", "vague");
+    expect(h.record()).not.toHaveProperty("muted.sidekick");
+  });
+
+  it("a muted kind the model raises on a forced review shows no card", async () => {
+    const h = harness({ record: { ...on, muted: { sidekick: ["vague"] } } });
+    expect(await h.ctl.review({ text: "make it better", force: true })).toEqual({ kind: "send" });
+  });
+
+  it("two quick outcomes both land, written one at a time", async () => {
+    const h = harness({ record: on, answers: [SUGGEST, slow] });
+    let busy = 0;
+    let overlap = false;
+    const landed: string[] = [];
+    h.deps.events.append = async (_b, e) => {
+      if (busy++ > 0) overlap = true;
+      await new Promise((r) => setTimeout(r, 30));
+      landed.push(e.outcome);
+      busy--;
+    };
+    const r = await h.ctl.review({ text: "make it better" });
+    if (r.kind !== "card") throw new Error("card expected");
+    h.deps.waitMs = () => 1;
+    // The card's outcome is still being written when the next review times out.
+    await Promise.all([h.ctl.resolve(r.card.id, "dismissed"), h.ctl.review({ text: "make it better" })]);
+    expect(landed).toEqual(["dismissed", "timeout"]);
+    expect(overlap).toBe(false);
+  });
+
+  it("D0: with Sidekick off nothing appends an event", async () => {
+    const h = harness({ record: on });
+    const r = await h.ctl.review({ text: "make it better" });
+    if (r.kind !== "card") throw new Error("card expected");
+    await h.ctl.set({ on: false });
+    await h.ctl.resolve(r.card.id, "used");
+    await h.ctl.mute(r.card.id);
+    await h.ctl.review({ text: "make it better", force: true });
+    expect(h.events).toEqual([]);
+    expect(h.writes.filter((w) => w.record?.type === "learned")).toEqual([]);
   });
 });

@@ -213,8 +213,12 @@ export interface SidekickSettings {
   cap: SidekickCap;
   introSeen: boolean;
   presetsOffered: boolean;
-  /** Muted kinds per sidekick id. */
+  /** Muted kinds per sidekick id (untrusted keys: look up with Object.hasOwn). */
   muted: Record<string, string[]>;
+  /** When learning last ran (spec §6.4); absent until it ran. Carried so a toggle never drops it. */
+  learnedAt?: string;
+  /** The local day the daily card last ran (YYYY-MM-DD); absent until it ran. */
+  lastDaily?: string;
 }
 
 export function sidekickSettings(stored: Partial<SidekickRecord> | null, m: Pick<SidekickManifest, "default"> | undefined): SidekickSettings {
@@ -228,6 +232,8 @@ export function sidekickSettings(stored: Partial<SidekickRecord> | null, m: Pick
     introSeen: stored?.introSeen ?? false,
     presetsOffered: stored?.presetsOffered ?? false,
     muted: stored?.muted ?? {},
+    ...(stored?.learnedAt !== undefined ? { learnedAt: stored.learnedAt } : {}),
+    ...(stored?.lastDaily !== undefined ? { lastDaily: stored.lastDaily } : {}),
   };
 }
 

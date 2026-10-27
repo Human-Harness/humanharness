@@ -1,18 +1,40 @@
 import { randomUUID } from "node:crypto";
 import type { EngineDef, ModelProfile } from "@humanharness/engines";
-import { SIDEKICK_ALWAYS_MAX_MS, type SidekickManifest, sidekickMinWords, sidekickMode, sidekickTips } from "@humanharness/harness-sdk";
+import { DEFAULT_SIDEKICK, SIDEKICK_ALWAYS_MAX_MS, type SidekickManifest, type SidekickMoment, sidekickMinWords, sidekickMode, sidekickTips } from "@humanharness/harness-sdk";
 import type { SidekickAnswer, SidekickSessionOptions } from "@humanharness/runtime";
-import type { SidekickCard, SidekickOutcome, SidekickReview, SidekickSetResult, SidekickSettings, SidekickSettingsPatch, SidekickState } from "@humanharness/ui/client";
-import { localCheck, sidekickBrief } from "@humanharness/workspace";
+import type { SidekickCard, SidekickInfo, SidekickOutcome, SidekickReview, SidekickSetResult, SidekickSettings, SidekickSettingsPatch, SidekickState } from "@humanharness/ui/client";
+import {
+  SIDEKICK_FLAG_KINDS,
+  type SidekickEvent,
+  type SidekickEventMoment,
+  type SidekickFlagKind,
+  localCheck,
+  sidekickBrief,
+  thresholdFor,
+  usedShare,
+  whyShown,
+} from "@humanharness/workspace";
 import type { SidekickStore } from "./sidekick-store";
 import { parseReview, preSendPrompt } from "./sidekick-turns";
 import { type UsageRecord, capTokens, sidekickRecord, sidekickSpent, sidekickWeek } from "./usage-log";
 
 /** Part 1's one sidekick (plan Decision 9). */
-export const SIDEKICK_ID = "sidekick";
-export const SIDEKICK_NAME = "Sidekick";
-/** A `suggest` shows a card at or above this confidence (spec §6.2's starting threshold; per kind in part 2). */
-export const SIDEKICK_THRESHOLD = 0.5;
+export const SIDEKICK_ID = DEFAULT_SIDEKICK.id;
+export const SIDEKICK_NAME = DEFAULT_SIDEKICK.name;
+const SPEAKER: SidekickInfo = { id: DEFAULT_SIDEKICK.id, name: DEFAULT_SIDEKICK.name, mark: DEFAULT_SIDEKICK.mark };
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** The events line's short name (spec §6.1) for an SDK moment. */
+export function eventMoment(m: SidekickMoment): SidekickEventMoment {
+  if (m === "pre-send") return "pre";
+  if (m === "after-reply") return "after";
+  if (m.startsWith("place:")) return "place";
+  return m as Exclude<SidekickEventMoment, "pre" | "after" | "place">;
+}
+
+/** A sidekick's muted kinds (`muted` is keyed by stored, untrusted ids). */
+const mutedOf = (s: SidekickSettings, sidekick: string): string[] => (Object.hasOwn(s.muted, sidekick) ? s.muted[sidekick] : []);
+const taskFields = (t: OpenTask | null) => (t ? { task: t.id, scope: t.scope, ...(t.action ? { action: t.action } : {}) } : {});
 
 /** What the controller needs of a session (SidekickSession, or a fake in tests). */
 export interface SidekickLike {
@@ -57,6 +79,8 @@ export interface SidekickDeps {
   changed(state: SidekickState): void;
   /** The wait for a setting, in ms (tests shorten it). */
   waitMs?(wait: SidekickSettings["wait"]): number;
+  /** The learning signals (`.harness/sidekick/events.jsonl`, spec §6.1). */
+  events: { read(base: string): Promise<SidekickEvent[]>; append(base: string, e: SidekickEvent): Promise<void> };
 }
 
 export const defaultWaitMs = (wait: SidekickSettings["wait"]): number => (wait === "always" ? SIDEKICK_ALWAYS_MAX_MS : wait * 1000);
@@ -84,6 +108,16 @@ export class SidekickController {
   /** The NO_TASK session may survive the next betweenTasks (set whenever a review uses it). */
   private looseArmed = false;
   private card: SidekickCard | null = null;
+  /** The task and base the card was made in: its outcome's event names them. */
+  private cardCtx: { task: OpenTask | null; base: string } | null = null;
+  /** The open task's earlier cards (spec §7 "Earlier · used"); reset when another task opens. */
+  private past: { key: string; items: SidekickState["past"] } = { key: NO_TASK, items: [] };
+  /**
+   * Event writes per base, one at a time: appendSidekickEvent's trim (read, temp file, rename) must not race another
+   * append. The events per base are read once and dropped after each write.
+   */
+  private readonly eventWrites = new Map<string, Promise<void>>();
+  private readonly eventLines = new Map<string, Promise<SidekickEvent[]>>();
   private notice: SidekickState["notice"];
   private closed = false;
   /** The base the last review or refresh saw: a refresh with another one is a profile switch. */
@@ -101,6 +135,8 @@ export class SidekickController {
     const setup = await this.d.setup().catch(() => null);
     const task = await this.d.task().catch(() => null);
     const records = setup ? await this.usage(setup.base) : [];
+    const events = setup ? await this.events(setup.base) : [];
+    const since = Date.now() - WEEK_MS;
     const spent = (task ? sidekickSpent(records, task.id) : 0) + (this.pending.get(task?.id ?? NO_TASK) ?? 0);
     const cap = settings.cap === "none" ? null : settings.cap;
     let tier = "light";
@@ -122,7 +158,7 @@ export class SidekickController {
             ? "capped"
             : "watching";
     return {
-      info: { id: SIDEKICK_ID, name: SIDEKICK_NAME },
+      info: SPEAKER,
       settings,
       status,
       spent,
@@ -130,6 +166,8 @@ export class SidekickController {
       tier,
       card: this.card,
       week: sidekickWeek(records),
+      past: this.past.key === (task?.id ?? NO_TASK) ? [...this.past.items] : [],
+      used: usedShare(events.filter((e) => Date.parse(e.at) >= since)),
       ...(this.notice ? { notice: this.notice } : {}),
     };
   }
@@ -148,11 +186,77 @@ export class SidekickController {
     return r;
   }
 
-  async resolve(cardId: string, _outcome: SidekickOutcome): Promise<void> {
-    // Part 2 appends the outcome to events.jsonl (spec §6.1).
-    if (this.card?.id !== cardId) return;
-    this.card = null;
+  /** What the person did with the card (spec §6.1): one event, and a line in the task's earlier cards. */
+  async resolve(cardId: string, outcome: SidekickOutcome): Promise<void> {
+    const card = this.take(cardId);
+    if (!card) return;
+    await this.outcome(card.card, card.ctx, outcome);
     await this.push();
+  }
+
+  /** "Don't flag …" (spec §6.3): the card's kind is muted for its sidekick at once and remembered as the person's. */
+  async mute(cardId: string): Promise<void> {
+    const card = this.take(cardId);
+    if (!card) return;
+    const { speaker, kind } = card.card;
+    await this.d.store.mute(speaker.id, speaker.name, kind, new Date().toISOString()).catch((err: unknown) => console.error("Could not mute the Sidekick suggestion", err));
+    await this.outcome(card.card, card.ctx, "muted");
+    await this.push();
+  }
+
+  /** Undoes a mute (Settings). */
+  async unmute(sidekick: string, kind: string): Promise<void> {
+    await this.d.store.unmute(sidekick, kind);
+    await this.push();
+  }
+
+  /** The card `cardId` if it is the one shown; it leaves the panel. */
+  private take(cardId: string): { card: SidekickCard; ctx: { task: OpenTask | null; base: string } } | null {
+    const card = this.card;
+    const ctx = this.cardCtx;
+    if (!card || card.id !== cardId || !ctx) return null;
+    this.card = null;
+    this.cardCtx = null;
+    return { card, ctx };
+  }
+
+  private async outcome(card: SidekickCard, ctx: { task: OpenTask | null; base: string }, outcome: SidekickOutcome | "muted"): Promise<void> {
+    const write = this.event(ctx.base, {
+      at: new Date().toISOString(),
+      ...taskFields(ctx.task),
+      sidekick: card.speaker.id,
+      moment: card.moment,
+      kind: card.kind,
+      outcome,
+      confidence: card.confidence,
+    });
+    const key = ctx.task?.id ?? NO_TASK;
+    if (this.past.key !== key) this.past = { key, items: [] };
+    this.past.items.push({ id: card.id, kind: card.kind, outcome, speaker: card.speaker.id });
+    await write;
+  }
+
+  /** Appends `e` after the base's earlier writes; a failure is logged, never thrown. */
+  private event(base: string, e: SidekickEvent): Promise<void> {
+    const run: Promise<void> = (this.eventWrites.get(base) ?? Promise.resolve())
+      .then(() => this.d.events.append(base, e))
+      .catch((err: unknown) => console.error("Could not record the Sidekick event", err))
+      .then(() => {
+        this.eventLines.delete(base);
+        if (this.eventWrites.get(base) === run) this.eventWrites.delete(base);
+      });
+    this.eventWrites.set(base, run);
+    return run;
+  }
+
+  /** The base's events (cached until the next write; a failed read is []). */
+  private events(base: string): Promise<SidekickEvent[]> {
+    let events = this.eventLines.get(base);
+    if (!events) {
+      events = this.d.events.read(base).catch(() => []);
+      this.eventLines.set(base, events);
+    }
+    return events;
   }
 
   /**
@@ -185,6 +289,7 @@ export class SidekickController {
   /** Between tasks (TaskDeps.betweenTasks): sessions of tasks no longer open close (spec §5 "closed when the task closes"). */
   async betweenTasks(): Promise<void> {
     const open = (await this.d.task().catch(() => null))?.id;
+    if (this.past.key !== (open ?? NO_TASK)) this.past = { key: open ?? NO_TASK, items: [] };
     const keepLoose = this.looseArmed;
     this.looseArmed = false;
     await this.closeSessions((key) => (key === NO_TASK ? !keepLoose : key !== open));
@@ -226,7 +331,9 @@ export class SidekickController {
     if (!setup || !(await this.d.hasNotice(setup.engineId).catch(() => false))) return early("send");
     this.base = setup.base;
 
-    // 1. The local check (0 tokens).
+    // 1. The local check (0 tokens), without the kinds the person muted for this sidekick (spec §6.3).
+    const mutedKinds = mutedOf(settings, SPEAKER.id);
+    const muted = SIDEKICK_FLAG_KINDS.filter((k) => mutedKinds.includes(k) || (req.attached && k === "missing-context"));
     const ctx = await this.d.context(setup.base, task?.scope).catch(() => ({ notes: [] as string[], data: [] as string[] }));
     const phases = this.d.phases(task?.action);
     const open = phases.find((p) => p.id === task?.phase);
@@ -234,7 +341,7 @@ export class SidekickController {
       minWords: sidekickMinWords(this.d.manifest),
       known: [...ctx.notes, ...ctx.data],
       ...(open ? { phases: { open, others: phases.filter((p) => p.id !== open.id) } } : {}),
-      ...(req.attached ? { muted: ["missing-context" as const] } : {}),
+      ...(muted.length ? { muted } : {}),
     });
     // 2. The decision.
     if (flags.length === 0 && mode === "auto" && !req.force) return early("send");
@@ -248,6 +355,11 @@ export class SidekickController {
     const controller = new AbortController();
     this.running = controller;
     let timedOut = false;
+    // A timeout is a learning signal too (spec §6.1); it doesn't count as a card.
+    const timeout = async (): Promise<SidekickReview> => {
+      await this.event(setup.base, { at: new Date().toISOString(), ...taskFields(task), sidekick: SPEAKER.id, moment: eventMoment("pre-send"), kind: flags[0]?.kind ?? "other", outcome: "timeout" });
+      return this.finish("timeout");
+    };
     const timer = setTimeout(
       () => {
         timedOut = true;
@@ -259,7 +371,7 @@ export class SidekickController {
       await this.push();
       const engine = this.d.engine(setup.engineId);
       const session = await this.sessionFor(setup.base, engine, key, task?.id, live);
-      if (timedOut) return this.finish("timeout");
+      if (timedOut) return await timeout();
       if (controller.signal.aborted || !live()) return this.finish("cancelled");
       if (!session) return this.finish("error");
       const prompt = preSendPrompt({
@@ -290,12 +402,20 @@ export class SidekickController {
         this.lines.delete(setup.base);
       }
       // A late answer is dropped: the prompt already went as typed (or the person sent at once).
-      if (timedOut) return this.finish("timeout");
+      if (timedOut) return await timeout();
       if (controller.signal.aborted) return this.finish("cancelled");
       const reply = answer.ok ? parseReview(answer.text, req.text) : null;
       if (!reply) return this.finish("error");
-      if (reply.verdict === "send" || reply.confidence < SIDEKICK_THRESHOLD) return this.finish("send");
+      // The kind's threshold (spec §6.2): raised for a kind the person keeps ignoring; a muted kind never shows.
+      const kind = reply.issues[0]?.kind ?? flags[0]?.kind ?? "other";
+      const events = await this.events(setup.base);
+      if (reply.verdict === "send" || mutedKinds.includes(kind) || reply.confidence < thresholdFor(events, SPEAKER.id, kind)) return this.finish("send");
+      // The events read may have outlasted the wait, or a newer review may have replaced this one meanwhile.
+      if (timedOut) return await timeout();
+      if (controller.signal.aborted || !live()) return this.finish("cancelled");
+      const why = whyShown(events, SPEAKER.id, kind);
       // 4. The card.
+      this.cardCtx = { task, base: setup.base };
       this.card = {
         id: randomUUID(),
         prompt: req.text,
@@ -305,11 +425,16 @@ export class SidekickController {
         ...(reply.queued?.length ? { queued: reply.queued } : {}),
         confidence: reply.confidence,
         at: new Date().toISOString(),
+        moment: eventMoment("pre-send"),
+        speaker: SPEAKER,
+        kind,
+        ...(why ? { why: { used: why.used, of: why.of } } : {}),
       };
       return { kind: "card", card: this.card };
     } catch (err) {
       console.error("Sidekick could not review the prompt", err);
-      return this.finish(timedOut ? "timeout" : controller.signal.aborted ? "cancelled" : "error");
+      if (timedOut) return await timeout();
+      return this.finish(controller.signal.aborted ? "cancelled" : "error");
     } finally {
       clearTimeout(timer);
       if (this.running === controller) this.running = null;

@@ -22,12 +22,15 @@ const CARD: SidekickCard = {
   rewrite: "make the intro shorter",
   confidence: 0.8,
   at: "2026-10-27T10:00:00Z",
+  moment: "pre",
+  speaker: SK_ON.info,
+  kind: "vague",
 };
 
 function client(withSidekick = true) {
   const c = new FakeClient(ready);
   if (withSidekick) {
-    c.state.sidekick = { id: "sidekick", name: "Sidekick" };
+    c.state.sidekick = { id: "sidekick", name: "Sidekick", mark: "spark" };
     c.sidekickState = SK_ON;
   }
   return c;

@@ -903,6 +903,10 @@ export interface HarnessClient {
     cancelReview(): Promise<void>;
     /** What the person did with a card; it leaves the panel. */
     resolve(cardId: string, outcome: SidekickOutcome): Promise<void>;
+    /** "Don't flag …": mutes the card's kind for its sidekick at once, and remembers it as the person's (spec §6.3). */
+    mute(cardId: string): Promise<void>;
+    /** Undoes a mute (Settings). */
+    unmute(sidekick: string, kind: string): Promise<void>;
     onChange(listener: (state: SidekickState) => void): () => void;
   };
   /** The harness's setup steps (setup-steps spec). A harness with none answers no steps and refuses every change. */
@@ -956,10 +960,12 @@ export type { BlockAnswer, ChoiceOption, Event, EngineError, InputField, InputIs
 
 // ── Sidekick (sidekick spec; plan 2026-10-27 part 1) ──
 
-/** The sidekick that speaks. Part 1 has one: `{ id: "sidekick", name: "Sidekick" }`. */
+/** The sidekick that speaks. Part 1's one: `{ id: "sidekick", name: "Sidekick", mark: "spark" }`. */
 export interface SidekickInfo {
   id: string;
   name: string;
+  /** Its mark: "spark" names the core's SVG mark; else a short text (an emoji). */
+  mark: string;
 }
 
 export interface SidekickSettings {
@@ -972,6 +978,14 @@ export interface SidekickSettings {
   cap: 20_000 | 50_000 | "none";
   /** The off-state intro was answered. */
   introSeen: boolean;
+  /** The after-reply moment (spec §4.2). */
+  afterReply: boolean;
+  /** The heads-ups (spec §4.3). */
+  headsUps: boolean;
+  /** The harness's presets were offered once (spec §2a.7). */
+  presetsOffered: boolean;
+  /** Muted kinds per sidekick id (spec §6.3). */
+  muted: Record<string, string[]>;
 }
 export type SidekickSettingsPatch = Partial<SidekickSettings>;
 export type SidekickSetResult = { ok: true; settings: SidekickSettings } | { ok: false; message: string };
@@ -999,7 +1013,16 @@ export interface SidekickCard {
   queued?: string[];
   confidence: number;
   at: string;
+  /** Which moment it belongs to; and who speaks (spec §7 "every card names who speaks"). */
+  moment: SidekickCardMoment;
+  speaker: SidekickInfo;
+  /** The kind its threshold and muting use: the first issue's (or flag's) kind; "gap", "next"… for other moments. */
+  kind: string;
+  /** "You took N of your last M <kind> suggestions" (spec §4.1 step 4); absent with fewer than 3. */
+  why?: { used: number; of: number };
 }
+
+export type SidekickCardMoment = "pre" | "after" | "heads-up" | "before-approve" | "phase-change" | "daily" | "place";
 
 /** Off · Watching · Reading your prompt… · Has a suggestion · Past its cap (spec §7). */
 export type SidekickStatus = "off" | "watching" | "reading" | "suggestion" | "capped";
@@ -1019,6 +1042,10 @@ export interface SidekickState {
   week: number;
   /** The last review could not finish: the prompt went as typed (spec §5 "Errors"). */
   notice?: "failed" | "timeout";
+  /** The current task's earlier cards, one line each ("Earlier · used"). */
+  past: { id: string; kind: string; outcome: SidekickOutcome | "muted" | "timeout"; speaker: string }[];
+  /** "N of M suggestions used" over the last 7 days (spec §8). */
+  used: { used: number; of: number };
 }
 
 /**

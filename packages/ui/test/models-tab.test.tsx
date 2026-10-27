@@ -261,7 +261,7 @@ describe("Sidekick row (sidekick spec §5)", () => {
     const first = await renderIn("en", <Tab client={c} />);
     expect(within(tasksRegion()).queryByRole("group", { name: "Sidekick" })).toBeNull();
     first.unmount();
-    c.state.sidekick = { id: "sidekick", name: "Sidekick" };
+    c.state.sidekick = { id: "sidekick", name: "Sidekick", mark: "spark" };
     await renderIn("en", <Tab client={c} />);
     expect(within(tasksRegion()).getAllByRole("group").map((g) => g.getAttribute("aria-label"))).toEqual(["The manifest", "A turn", "Free question", "Sidekick"]);
     expect(screen.getByText("Reviews your prompts before they go out")).toBeTruthy();

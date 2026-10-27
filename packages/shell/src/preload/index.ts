@@ -110,6 +110,8 @@ const client: HarnessClient = {
     review: (req) => ipcRenderer.invoke("hh:sidekickReview", req),
     cancelReview: () => ipcRenderer.invoke("hh:sidekickCancel"),
     resolve: (id, outcome) => ipcRenderer.invoke("hh:sidekickResolve", id, outcome),
+    mute: (id) => ipcRenderer.invoke("hh:sidekickMute", id),
+    unmute: (sidekick, kind) => ipcRenderer.invoke("hh:sidekickUnmute", sidekick, kind),
     onChange: (listener) => subscribe<SidekickState>("hh:sidekick", listener),
   },
   setupSteps: {

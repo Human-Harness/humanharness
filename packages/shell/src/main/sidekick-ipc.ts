@@ -5,7 +5,9 @@ const OUTCOMES: readonly SidekickOutcome[] = ["used", "edited", "sent-anyway", "
 const MAX_PROMPT = 20_000;
 
 type Handle = (channel: string, fn: (...args: never[]) => unknown) => void;
-type Ctl = Pick<SidekickController, "state" | "set" | "review" | "cancel" | "resolve">;
+type Ctl = Pick<SidekickController, "state" | "set" | "review" | "cancel" | "resolve" | "mute" | "unmute">;
+const MAX_ID = 80;
+const isId = (v: unknown): v is string => typeof v === "string" && v.length > 0 && v.length <= MAX_ID;
 
 /** Sidekick's channels (sidekick spec §7). A malformed request never reaches the controller; a bad review sends as typed. */
 export function registerSidekickIpc(handle: Handle, ctl: () => Ctl | null): void {
@@ -27,5 +29,13 @@ export function registerSidekickIpc(handle: Handle, ctl: () => Ctl | null): void
   handle("hh:sidekickResolve", async (id: unknown, outcome: unknown) => {
     if (typeof id !== "string" || !OUTCOMES.includes(outcome as SidekickOutcome)) return;
     await ctl()?.resolve(id, outcome as SidekickOutcome);
+  });
+  handle("hh:sidekickMute", async (id: unknown) => {
+    if (!isId(id)) return;
+    await ctl()?.mute(id);
+  });
+  handle("hh:sidekickUnmute", async (sidekick: unknown, kind: unknown) => {
+    if (!isId(sidekick) || !isId(kind)) return;
+    await ctl()?.unmute(sidekick, kind);
   });
 }

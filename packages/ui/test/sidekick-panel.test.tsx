@@ -17,6 +17,9 @@ const CARD: SidekickCard = {
   queued: ["Translate chapter 2 into Spanish"],
   confidence: 0.8,
   at: "2026-10-27T10:00:00Z",
+  moment: "pre",
+  speaker: SK_ON.info,
+  kind: "vague",
 };
 const handlers = () => ({
   onCollapse: vi.fn(), onTurnOn: vi.fn(), onNotNow: vi.fn(), onSendSuggested: vi.fn(), onEdit: vi.fn(), onSendAnyway: vi.fn(), onPutInComposer: vi.fn(), onView: vi.fn(),

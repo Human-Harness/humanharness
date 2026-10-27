@@ -1,6 +1,6 @@
 // No Node imports and no zod here: the screens import this file (`@humanharness/harness-sdk/review`).
 // No regex runs on document text: every scan is a loop or indexOf (a timing test holds this).
-import { createSlugger, splitFrontMatter } from "./documents";
+import { createSlugger, refusedShape, splitFrontMatter } from "./documents";
 
 /** The agent's review tools (spec §4): reserved names, like the core blocks. */
 export const REVIEW_TOOLS = ["ask_in_document", "reply_to_comment", "read_review"] as const;
@@ -570,4 +570,116 @@ export function batchMessage(path: string, review: Review, text: string | null):
 export function markSent(review: Review, ids: readonly string[]): Review {
   const sent = new Set(ids);
   return { ...review, comments: review.comments.map((c) => (sent.has(c.id) ? { ...c, state: "sent" as const } : c)) };
+}
+
+export type DiffLine = { kind: "same" | "added" | "removed"; text: string };
+
+/** Over this many lines on either side, "See what changed" says it is too long to compare here. */
+export const MAX_DIFF_LINES = 2000;
+/** Over this many characters on either side, the same: checked before the text is split. */
+export const MAX_DIFF_CHARS = 1_000_000;
+
+/**
+ * A line diff (longest common subsequence) between the approved text and the current one; null when too long.
+ * The work is bounded: at most MAX_DIFF_CHARS to split and number, then at most MAX_DIFF_LINES² cells of the
+ * table, each one an integer comparison (lines are numbered first, so a long line is never compared twice).
+ */
+export function lineDiff(before: string, after: string): DiffLine[] | null {
+  if (before.length > MAX_DIFF_CHARS || after.length > MAX_DIFF_CHARS) return null;
+  const a = before.split("\n");
+  const b = after.split("\n");
+  if (a.length > MAX_DIFF_LINES || b.length > MAX_DIFF_LINES) return null;
+  const ids = new Map<string, number>();
+  const idOf = (line: string): number => {
+    let id = ids.get(line);
+    if (id === undefined) ids.set(line, (id = ids.size));
+    return id;
+  };
+  const ai = a.map(idOf);
+  const bi = b.map(idOf);
+  let head = 0;
+  while (head < ai.length && head < bi.length && ai[head] === bi[head]) head++;
+  let tail = 0;
+  while (tail < ai.length - head && tail < bi.length - head && ai[ai.length - 1 - tail] === bi[bi.length - 1 - tail]) tail++;
+  const x = ai.slice(head, ai.length - tail);
+  const y = bi.slice(head, bi.length - tail);
+  const w = y.length + 1;
+  // lcs[i * w + j]: the longest common subsequence of x[i:] and y[j:] (at most MAX_DIFF_LINES, fits 16 bits).
+  const lcs = new Uint16Array((x.length + 1) * w);
+  for (let i = x.length - 1; i >= 0; i--)
+    for (let j = y.length - 1; j >= 0; j--)
+      lcs[i * w + j] = x[i] === y[j] ? lcs[(i + 1) * w + j + 1] + 1 : Math.max(lcs[(i + 1) * w + j], lcs[i * w + j + 1]);
+  const out: DiffLine[] = a.slice(0, head).map((text) => ({ kind: "same" as const, text }));
+  let i = 0;
+  let j = 0;
+  while (i < x.length || j < y.length) {
+    if (i < x.length && j < y.length && x[i] === y[j]) {
+      out.push({ kind: "same", text: a[head + i++] });
+      j++;
+    } else if (j < y.length && (i === x.length || lcs[i * w + j + 1] > lcs[(i + 1) * w + j])) {
+      out.push({ kind: "added", text: b[head + j++] });
+    } else out.push({ kind: "removed", text: a[head + i++] });
+  }
+  for (const text of a.slice(a.length - tail)) out.push({ kind: "same", text });
+  return out;
+}
+
+/**
+ * One path part against one pattern part: `*` any run, `?` one character.
+ * Greedy with a single backtrack point (the last `*`), so it is O(pattern × part), never exponential.
+ */
+function matchPart(p: string, s: string): boolean {
+  let i = 0;
+  let j = 0;
+  let star = -1;
+  let mark = 0;
+  while (j < s.length) {
+    if (i < p.length && p[i] !== "*" && (p[i] === "?" || p[i] === s[j])) {
+      i++;
+      j++;
+    } else if (i < p.length && p[i] === "*") {
+      star = i++;
+      mark = j;
+    } else if (star >= 0) {
+      i = star + 1;
+      j = ++mark;
+    } else return false;
+  }
+  while (i < p.length && p[i] === "*") i++;
+  return i === p.length;
+}
+
+/**
+ * Whether `path` matches the phase's `approve` glob (§5.5): `*` and `?` within a part, `**` across parts.
+ * A table over (pattern part, path part), filled from the end without recursion: O(parts × parts) part matches.
+ */
+export function matchGlob(pattern: string, path: string): boolean {
+  const ps = pattern.split("/");
+  const xs = path.split("/");
+  const n = xs.length;
+  // next[j]: whether ps[i + 1:] matches xs[j:].
+  let next = new Uint8Array(n + 1);
+  next[n] = 1;
+  for (let i = ps.length - 1; i >= 0; i--) {
+    const cur = new Uint8Array(n + 1);
+    if (ps[i] === "**") {
+      cur[n] = next[n];
+      for (let j = n - 1; j >= 0; j--) cur[j] = next[j] || cur[j + 1];
+    } else for (let j = n - 1; j >= 0; j--) cur[j] = next[j + 1] && matchPart(ps[i], xs[j]) ? 1 : 0;
+    next = cur;
+  }
+  return next[0] === 1;
+}
+
+/** The manifest's check of an `approve` glob (Decisions "Phases"). */
+export function validApproveGlob(p: unknown): boolean {
+  if (typeof p !== "string" || p.length === 0 || p.length > 200) return false;
+  for (const c of "[]{}") if (p.includes(c)) return false;
+  if (refusedShape(p.replaceAll("*", "x").replaceAll("?", "x"))) return false;
+  const parts = p.split("/");
+  // No empty, "." or ".." part: a path to match is always normalized, so such a glob would never match.
+  if (parts.some((part) => part === "" || part === "." || part === "..")) return false;
+  if (parts.some((part) => part.includes("**") && part !== "**")) return false;
+  if (parts[0] === ".harness") return false;
+  return p.toLowerCase().endsWith(".md");
 }

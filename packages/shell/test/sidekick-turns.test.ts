@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { SIDEKICK_PURPOSE_TEXT_MAX } from "@humanharness/harness-sdk";
 import { MOCK_SIDEKICK_MARKS, isMockSidekickTurn, mockSidekickReply } from "@humanharness/fake-agent";
-import { SIDEKICK_AFTER_MARK, SIDEKICK_LEARN_MARK, SIDEKICK_PRE_MARK, SIDEKICK_ROUTE_MARK, afterReplyPrompt, cutReply, learnPrompt, parseAfter, parseLearn, parseReview, parseRoute, preSendPrompt, routePrompt } from "../src/main/sidekick-turns";
+import { SIDEKICK_AFTER_MARK, SIDEKICK_LEARN_MARK, SIDEKICK_PRE_MARK, SIDEKICK_ROUTE_CHOICES, SIDEKICK_ROUTE_MARK, afterReplyPrompt, cutReply, learnPrompt, parseAfter, parseLearn, parseReview, parseRoute, preSendPrompt, routePrompt } from "../src/main/sidekick-turns";
 
 const input = {
   harness: { name: "Essay Coach", tagline: "Write better essays" },
@@ -195,6 +196,15 @@ describe("routing turn (spec §2a.3, D11)", () => {
     expect(p).not.toContain("x".repeat(2001));
     expect(p).toContain("- a: Watch tests.\n- b: Watch docs.");
     expect(p).toContain("Answer with the id only.");
+  });
+
+  it("cuts each choice's text and the number of choices", () => {
+    const many = Array.from({ length: SIDEKICK_ROUTE_CHOICES + 2 }, (_, i) => ({ id: `k${i}`, text: "y".repeat(SIDEKICK_PURPOSE_TEXT_MAX + 50) }));
+    const p = routePrompt("after-reply", "ctx", many);
+    expect(p).toContain("y".repeat(SIDEKICK_PURPOSE_TEXT_MAX));
+    expect(p).not.toContain("y".repeat(SIDEKICK_PURPOSE_TEXT_MAX + 1));
+    expect(p).toContain(`- k${SIDEKICK_ROUTE_CHOICES - 1}: `);
+    expect(p).not.toContain(`- k${SIDEKICK_ROUTE_CHOICES}: `);
   });
 
   it("parses a known id, loosely wrapped; anything else is null", () => {

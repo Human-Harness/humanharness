@@ -27,16 +27,20 @@ function customTexts(s: SidekickDef, moment: SidekickMoment): string[] {
 }
 
 /**
- * One speaker per moment (D11). Free routing first: when every candidate speaks at this moment only through custom
- * purposes, one light turn (`route`, given their texts) picks; otherwise (core purposes route by their rule, which on a
- * tie is the person's order), and on any failure or unknown answer, the first in the person's order. `list` comes
- * sorted, as `candidates` returns it, and is not empty.
+ * One speaker per moment (D11). A local-check flag goes to a `prompt-coach` candidate and a free heads-up to a `focus`
+ * one, whatever the order (`prefer`: the first such candidate in the person's order). Then free routing: when every
+ * candidate speaks at this moment only through custom purposes, one light turn (`route`, given their texts) picks;
+ * otherwise (core purposes route by their rule, which on a tie is the person's order), and on any failure or unknown
+ * answer, the first in the person's order. `list` comes sorted, as `candidates` returns it, and is not empty.
  */
 export async function pickSpeaker(
   list: readonly SidekickDef[],
   moment: SidekickMoment,
   route: (choices: { id: string; text: string }[]) => Promise<string>,
+  prefer?: "prompt-coach" | "focus",
 ): Promise<SidekickDef> {
+  const preferred = prefer && list.find((s) => s.purposes.some((p) => p.id === prefer));
+  if (preferred) return preferred;
   if (list.length <= 1) return list[0]!;
   const choices = list.map((s) => ({ id: s.id, text: customTexts(s, moment).join(" ") }));
   if (choices.every((c) => c.text)) {

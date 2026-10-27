@@ -1,4 +1,4 @@
-import { z } from "@humanharness/harness-sdk";
+import { SIDEKICK_PURPOSE_TEXT_MAX, z } from "@humanharness/harness-sdk";
 import { type SidekickFlag, estimateTokens } from "@humanharness/workspace";
 
 /** The first line of every pre-send turn (mock mode and the e2e scripts match on it). */
@@ -200,10 +200,13 @@ export const parseLearn = (text: string): SidekickLearn | null => parseJson(text
 export const SIDEKICK_ROUTE_MARK = "Sidekick: route";
 /** How much of the moment's context the routing turn sees. */
 export const SIDEKICK_ROUTE_CONTEXT = 2000;
+/** How many choices the routing turn sees (the first ones, in the person's order). */
+export const SIDEKICK_ROUTE_CHOICES = 10;
 
 /**
  * The routing turn (spec §2a.3, D11): which of several sidekicks, each speaking here only through custom purposes,
- * should speak at `moment`. One line per choice: a purpose text's line breaks become spaces.
+ * should speak at `moment`. One line per choice: a purpose text's line breaks become spaces, and each text is cut to
+ * SIDEKICK_PURPOSE_TEXT_MAX (a choice can join several purposes).
  */
 export function routePrompt(moment: string, context: string, choices: readonly { id: string; text: string }[]): string {
   return [
@@ -214,7 +217,7 @@ export function routePrompt(moment: string, context: string, choices: readonly {
     context.slice(0, SIDEKICK_ROUTE_CONTEXT),
     "",
     "Who should speak? Choices:",
-    ...choices.map((c) => `- ${c.id}: ${c.text.replace(/\s+/g, " ").trim()}`),
+    ...choices.slice(0, SIDEKICK_ROUTE_CHOICES).map((c) => `- ${c.id}: ${c.text.replace(/\s+/g, " ").trim().slice(0, SIDEKICK_PURPOSE_TEXT_MAX)}`),
     "",
     "Answer with the id only.",
   ].join("\n");

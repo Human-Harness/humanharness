@@ -85,4 +85,21 @@ describe("pickSpeaker (spec §2a.3, D11)", () => {
     expect((await pickSpeaker([DEFAULT_SIDEKICK, b], "after-reply", route)).id).toBe("sidekick");
     expect(route).not.toHaveBeenCalled();
   });
+
+  it("a flag goes to a prompt-coach candidate, a heads-up to a focus one, whatever the order (step 2)", async () => {
+    const coach: SidekickDef = { ...RULO, id: "coach", order: 1, purposes: [{ id: "prompt-coach" }] };
+    const focus: SidekickDef = { ...RULO, id: "focus", order: 2, purposes: [{ id: "focus" }] };
+    const first: SidekickDef = { ...RULO, id: "first", order: 0, purposes: [{ id: "custom", text: "Watch.", moments: ["pre-send", "heads-up"] }] };
+    const route = vi.fn(async () => "first");
+    expect((await pickSpeaker([first, coach], "pre-send", route, "prompt-coach")).id).toBe("coach");
+    expect((await pickSpeaker([first, focus], "heads-up", route, "focus")).id).toBe("focus");
+    expect(route).not.toHaveBeenCalled();
+  });
+
+  it("prefer with no matching candidate: the usual routing", async () => {
+    const a: SidekickDef = { ...RULO, id: "a", order: 0, purposes: [{ id: "custom", text: "Watch tests.", moments: ["heads-up"] }] };
+    const b: SidekickDef = { ...RULO, id: "b", order: 1, purposes: [{ id: "custom", text: "Watch docs.", moments: ["heads-up"] }] };
+    expect((await pickSpeaker([a, b], "heads-up", async () => "b", "focus")).id).toBe("b");
+    expect((await pickSpeaker([a, b], "heads-up", async () => "nobody", "focus")).id).toBe("a");
+  });
 });

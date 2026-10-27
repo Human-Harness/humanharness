@@ -58,6 +58,41 @@ describe("cutBlocks on structured data and code (blocks a converter keeps whole)
     expect(body).toBe(xml.trim());
   });
 
+  it("a fenced block in Markdown: the parts' ranges leave out the fence lines", () => {
+    const body = Array.from({ length: 300 }, (_, i) => `line number ${i + 2} of the code block`);
+    const md = `\`\`\`ts\n${body.join("\n")}\n\`\`\`\n`;
+    const pieces = cutBlocks(textBlocks("md", Buffer.from(md)));
+    expect(pieces.length).toBeGreaterThan(1);
+    const first = /^lines (\d+)–(\d+)$/.exec(pieces[0].location);
+    expect(first?.[1]).toBe("2");
+    // A part's first body line is the file's line its range starts at.
+    for (const x of pieces) {
+      const start = Number(/^lines (\d+)/.exec(x.location)?.[1]);
+      expect(x.md.split("\n")[1]).toBe(`line number ${start} of the code block`);
+    }
+    expect(pieces.at(-1)?.location).toMatch(/–301$/);
+  });
+
+  it("XML with blank lines around it: the ranges are the file's lines", () => {
+    const rows = Array.from({ length: 300 }, (_, i) => `  <item>line ${i + 4}</item>`);
+    const xml = `\n\n<root>\n${rows.join("\n")}\n</root>\n\n`;
+    const pieces = cutBlocks(textBlocks("xml", Buffer.from(xml)));
+    expect(pieces[0].location).toMatch(/^lines 3–\d+$/);
+    for (const x of pieces.slice(1)) {
+      const start = Number(/^lines (\d+)/.exec(x.location)?.[1]);
+      expect(x.md.split("\n")[1]).toBe(`  <item>line ${start}</item>`);
+    }
+    expect(pieces.at(-1)?.location).toMatch(/–304$/);
+  });
+
+  it("code inside an example kept whole stays one fenced block", () => {
+    const code = Array.from({ length: 300 }, (_, i) => `step ${i} of the worked example`).join("\n");
+    const pieces = cutBlocks(textBlocks("md", Buffer.from(`## Example 1\n\n\`\`\`\n${code}\n\`\`\`\n`)));
+    expect(pieces).toHaveLength(1);
+    expect(pieces[0].whole).toBe(true);
+    expect(pieces[0].md.match(/```/g)).toHaveLength(2);
+  });
+
   it("a JSON array of records is split too", () => {
     const json = JSON.stringify(Array.from({ length: 300 }, (_, i) => ({ id: i, name: `record ${i}` })));
     const pieces = cutBlocks(textBlocks("json", Buffer.from(json)));
@@ -88,5 +123,12 @@ describe("cutRows (§3: spreadsheets are cut by rows)", () => {
     }
     expect(pieces[0].location).toMatch(/^Data!A2:C\d+$/);
     expect(pieces[0].path).toBe("Data");
+  });
+
+  it("single-cell row locations make a plain range", () => {
+    const rows = Array.from({ length: 200 }, (_, i) => ({ md: `| value number ${i} with some padding text |`, loc: `S!A${i + 2}` }));
+    const pieces = cutRows({ name: "S", header: "| a |\n|---|", columns: ["a"], rows });
+    expect(pieces.length).toBeGreaterThan(1);
+    for (const x of pieces) expect(x.location).toMatch(/^S!A\d+:A\d+$/);
   });
 });

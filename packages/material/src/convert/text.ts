@@ -25,10 +25,14 @@ function cutAt(text: string, lang: string, isStart: (line: string) => boolean, t
   const out: MdBlock[] = [];
   let start = 0;
   const flush = (end: number, headed: boolean) => {
-    const body = all.slice(start, end).join("\n");
-    if (!body.trim()) return;
+    // The part's range is its body's: blank lines around it are neither kept nor counted.
+    let from = start;
+    let to = end - 1;
+    while (from <= to && !all[from].trim()) from++;
+    while (to >= from && !all[to].trim()) to--;
+    if (from > to) return;
     if (headed) out.push({ kind: "heading", level: 2, md: `## ${title(all[start]).slice(0, 80)}`, loc: lines(start + 1, start + 1), page: 1 });
-    out.push({ kind: "code", md: fenced(lang, body.trim()), loc: lines(start + 1, end), page: 1 });
+    out.push({ kind: "code", md: fenced(lang, all.slice(from, to + 1).join("\n")), loc: lines(from + 1, to + 1), page: 1 });
   };
   let headed = false;
   for (let i = 0; i < all.length; i++) {

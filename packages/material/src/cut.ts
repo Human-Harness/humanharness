@@ -75,9 +75,9 @@ const LINES = /^lines (\d+)–(\d+)$/;
 
 /**
  * A code block above MAX (a converter keeps a whole XML file, a JSON array or a long function as one block) split by
- * lines into blocks near TARGET, each fenced again. When the block's `lines a–b` range can hold its lines, each part
- * gets its own range, counted from `a`; otherwise (JSON printed again from a one-line file) every part keeps the
- * block's location.
+ * lines into blocks near TARGET, each fenced again. When the block's `lines a–b` range is its body's lines (a code
+ * file's part) or its body plus the two fence lines (a fenced block in Markdown), each part gets its own range;
+ * otherwise (JSON printed again from a one-line file) every part keeps the block's location.
  */
 function splitCode(b: MdBlock): MdBlock[] {
   const m = b.kind === "code" && estimateTokens(b.md) > MAX ? FENCED.exec(b.md) : null;
@@ -85,7 +85,8 @@ function splitCode(b: MdBlock): MdBlock[] {
   const [, fence, info] = m;
   const all = m[3].split("\n");
   const range = LINES.exec(b.loc);
-  const from = range && all.length <= Number(range[2]) - Number(range[1]) + 1 ? Number(range[1]) : null;
+  const span = range ? Number(range[2]) - Number(range[1]) + 1 : 0;
+  const from = !range ? null : span === all.length ? Number(range[1]) : span === all.length + 2 ? Number(range[1]) + 1 : null;
   const fenceOf = (ls: string[]) => `${fence}${info}\n${ls.join("\n")}\n${fence}`;
   const out: MdBlock[] = [];
   let run: string[] = [];
@@ -108,7 +109,7 @@ function splitCode(b: MdBlock): MdBlock[] {
 /** Blocks into fragments (§5): cut at #–###, split above MAX, merge below MIN, examples and exercises whole. */
 export function cutBlocks(blocks: MdBlock[]): Piece[] {
   const merged: Section[] = [];
-  for (const s of sections(blocks.flatMap(splitCode))) {
+  for (const s of sections(blocks)) {
     const prev = merged[merged.length - 1];
     // A heading with nothing under it but its children ("# Fractions" then "## Equivalent…") joins its first child,
     // which gives the path.
@@ -129,8 +130,10 @@ export function cutBlocks(blocks: MdBlock[]): Piece[] {
     const whole = isWhole(s);
     const kind = whole ? (/exerc|problem|aufgabe|esercizio/i.test(s.path.at(-1) ?? "") ? "exercise" : "example") : undefined;
     if (whole) return [piece(s.path, s.blocks, { whole: true, ...(kind ? { kind } : {}) })];
-    if (tokensOf(s.blocks) <= MAX) return [piece(s.path, s.blocks)];
-    return split(s).map((part) => piece(s.path, part.blocks));
+    // Code too long for one fragment is split by lines, except inside an example or exercise kept whole.
+    const blocks = s.blocks.flatMap(splitCode);
+    if (tokensOf(blocks) <= MAX) return [piece(s.path, blocks)];
+    return split({ ...s, blocks }).map((part) => piece(s.path, part.blocks));
   });
 }
 
@@ -147,8 +150,8 @@ export function cutRows(sheet: SheetRows): Piece[] {
     if (run.length === 0) return;
     const first = run[0].loc;
     const last = run[run.length - 1].loc;
-    // "Data!A2:C2" … "Data!A9:C9" → "Data!A2:C9".
-    const location = `${first.split(":")[0]}:${last.split(":")[1] ?? last}`;
+    // "Data!A2:C2" … "Data!A9:C9" → "Data!A2:C9"; "S!A2" … "S!A3" → "S!A2:A3".
+    const location = `${first.split(":")[0]}:${last.split("!").pop()?.split(":").pop() ?? last}`;
     out.push({ path: sheet.name, md: `${sheet.header}\n${run.map((r) => r.md).join("\n")}`, location, pages: [1] });
     run = [];
   };

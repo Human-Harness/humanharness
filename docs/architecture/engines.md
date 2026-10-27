@@ -14,7 +14,7 @@ An engine is an official AI command-line tool the person already uses. Human Har
 
 ## Getting an engine ready
 
-Settings → Engine walks the steps in order; `engineProblem` (`packages/ui/src/client.ts`) picks the first one left from the status check (`detectEngine` in `packages/shell/src/main/engine-status.ts`): the legal notice, install (the official installer), update when below `minVersion`, sign in (the tool's own login, in the browser), and a tiny test prompt (`engine-check.ts`). The app finds the tool through the login shell's `PATH` (`engine-command.ts`), then in the folders official installers use (`~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`, and `~/.opencode/bin` for OpenCode's installer); Codex runs from the copy bundled with the adapter. `~/.humanharness/engines.json` (`shared-config.ts`) keeps the accepted notice, the version and the last successful test, never credentials.
+Settings → Engine walks the steps in order; `engineProblem` (`packages/ui/src/client.ts`) picks the first one left from the status check (`detectEngine` in `packages/shell/src/main/engine-status.ts`): the legal notice, install (the official installer), update when below `minVersion`, sign in (the tool's own login, in the browser), and a tiny test prompt (`engine-check.ts`). The app finds the tool through the login shell's `PATH` (`engine-command.ts`), then in the folders official installers use (`~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`, and `~/.opencode/bin` for OpenCode's installer, searched only for `opencode`); Codex runs from the copy bundled with the adapter. `~/.humanharness/engines.json` (`shared-config.ts`) keeps the accepted notice, the version and the last successful test, never credentials.
 
 ### OpenCode's setup
 

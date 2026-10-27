@@ -31,8 +31,21 @@ describe("loginShellPath", () => {
 });
 
 describe("knownBinDirs", () => {
-  it("includes OpenCode's install folder after the others", () => {
-    expect(knownBinDirs("/Users/me")).toEqual(["/Users/me/.local/bin", "/opt/homebrew/bin", "/usr/local/bin", "/Users/me/.opencode/bin"]);
+  it("includes OpenCode's install folder after the others, for opencode only", () => {
+    expect(knownBinDirs("/Users/me", "opencode")).toEqual(["/Users/me/.local/bin", "/opt/homebrew/bin", "/usr/local/bin", "/Users/me/.opencode/bin"]);
+    expect(knownBinDirs("/Users/me", "claude")).toEqual(["/Users/me/.local/bin", "/opt/homebrew/bin", "/usr/local/bin"]);
+  });
+
+  it("never looks in OpenCode's install folder for Claude", async () => {
+    const looked: string[] = [];
+    const d = deps({
+      isExecutable: async (p) => {
+        looked.push(p);
+        return p === "/Users/me/.opencode/bin/claude";
+      },
+    });
+    expect(await resolveBinary("claude", "/usr/bin", d)).toBeNull();
+    expect(looked.some((p) => p.includes(".opencode"))).toBe(false);
   });
 
   it("finds OpenCode in its install folder when the login PATH misses it", async () => {

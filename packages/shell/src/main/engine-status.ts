@@ -25,15 +25,21 @@ function lastLoggedIn(stdout: string): boolean | undefined {
   return undefined;
 }
 
-const ANSI = /\u001b\[[0-9;?]*[ -/]*[@-~]/g;
+/** Terminal escapes a CLI may print even when piped: CSI (colours), OSC (titles, links) and charset selection. */
+const ANSI = /\u001b\[[0-9;?]*[ -/]*[@-~]|\u001b\][^\u0007]*(?:\u0007|\u001b\\)|\u001b[()][0-9A-Za-z]/g;
 /** A provider line of OpenCode 1.x's `auth list`: a bullet (`•` without Unicode), then a name. */
 const PROVIDER_LINE = /^[●○•]\s+\S/;
 
-/** The integrations with a connection in OpenCode 2.x's `auth list --format json`, or undefined when it is not that JSON. */
+/**
+ * The integrations with a connection in OpenCode 2.x's `auth list --format json`, or undefined when it is not that
+ * JSON. The JSON starts at the first line that starts with `[`, so a notice printed before it is ignored.
+ */
 function jsonProviders(text: string): number | undefined {
-  if (!text.startsWith("[")) return undefined;
+  const lines = text.split(/\r?\n/);
+  const first = lines.findIndex((line) => line.trimStart().startsWith("["));
+  if (first < 0) return undefined;
   try {
-    const value = JSON.parse(text) as unknown;
+    const value = JSON.parse(lines.slice(first).join("\n")) as unknown;
     if (!Array.isArray(value)) return undefined;
     return value.filter((item) => {
       const connections = (item as { connections?: unknown } | null)?.connections;

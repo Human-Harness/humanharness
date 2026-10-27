@@ -163,6 +163,16 @@ describe("countProviders (opencode-auth-list)", () => {
     expect(countProviders('[{"id":"x","connections":[]}]')).toBe(0);
     expect(countProviders("[not json")).toBe(0);
   });
+
+  it("ignores a notice printed before 2.x's JSON", () => {
+    expect(countProviders(`A new version of opencode is available\n${fixture("opencode-auth-list-v2.json")}`)).toBe(2);
+    expect(countProviders("Update available\n[]\n")).toBe(0);
+  });
+
+  it("strips OSC and charset escapes before parsing", () => {
+    expect(countProviders("\u001b]0;opencode\u0007\u001b(B\u001b[34m●\u001b[39m  OpenRouter\n")).toBe(1);
+    expect(countProviders(`\u001b]8;;https://opencode.ai\u001b\\\u001b(B\n${fixture("opencode-auth-list-v2.json")}`)).toBe(2);
+  });
 });
 
 describe("parseLoggedIn: opencode-auth-list", () => {
@@ -205,6 +215,29 @@ describe("detectEngine: OpenCode", () => {
     await s.update("opencode", { verifiedAt: "2026-10-27T10:00:00.000Z" });
     const { d } = v1(fixture("opencode-auth-list-empty.txt"));
     expect(await detectEngine(opencode, d, s)).toMatchObject({ installed: true, loggedIn: null, verified: true });
+  });
+
+  it("is signed in and set up with a provider listed and a past test prompt", async () => {
+    const s = store();
+    await s.update("opencode", { verifiedAt: "2026-10-27T10:00:00.000Z" });
+    const { d } = v1(fixture("opencode-auth-list-one.txt"));
+    expect(await detectEngine(opencode, d, s)).toMatchObject({ installed: true, loggedIn: true, verified: true });
+  });
+
+  it("runs plain auth list when --version fails", async () => {
+    const { d, calls } = deps(
+      { "--version": { code: 1 }, "auth list": { stdout: fixture("opencode-auth-list-one.txt"), code: 0 } },
+      { isExecutable: async (p) => p === "/Users/me/.opencode/bin/opencode" },
+    );
+    expect(await detectEngine(opencode, d, store())).toMatchObject({ installed: true, version: null, loggedIn: true });
+    expect(calls.map((c) => c.args.join(" "))).toEqual(["--version", "auth list"]);
+  });
+
+  it("never applies the past-test rule to Claude when its status check fails (D0)", async () => {
+    const s = store();
+    await s.update("claude", { verifiedAt: "2026-10-27T10:00:00.000Z" });
+    const { d } = deps({ "--version": { stdout: "2.1.296 (Claude Code)", code: 0 }, "auth status --json": { stdout: "", code: 1 } });
+    expect(await detectEngine(getEngine("claude"), d, s)).toMatchObject({ loggedIn: false, verified: false });
   });
 
   it("keeps Claude's and Codex's answers as they were (D0)", async () => {

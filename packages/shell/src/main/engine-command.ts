@@ -37,12 +37,12 @@ const BUNDLED_CLIS: Record<string, { adapter: string; cli: string }> = {
 /** Common bin folders: also the PATH when the login shell can't tell. */
 const commonBinDirs = (home: string): string[] => [path.join(home, ".local/bin"), "/opt/homebrew/bin", "/usr/local/bin"];
 
-/** Folders official installers use, searched after PATH: a fresh install may not be on the login PATH yet. */
-export const knownBinDirs = (home: string): string[] => [
-  ...commonBinDirs(home),
-  // OpenCode's installer (spike A1). Searched only: the fallback PATH stays as it was for the other engines.
-  path.join(home, ".opencode/bin"),
-];
+/**
+ * Folders official installers use, searched after PATH: a fresh install may not be on the login PATH yet.
+ * OpenCode's installer folder (spike A1) is searched only for `opencode`, so the other engines stay as they were.
+ */
+export const knownBinDirs = (home: string, name: string): string[] =>
+  name === "opencode" ? [...commonBinDirs(home), path.join(home, ".opencode/bin")] : commonBinDirs(home);
 
 export async function loginShellPath(d: CommandDeps): Promise<string> {
   try {
@@ -55,7 +55,7 @@ export async function loginShellPath(d: CommandDeps): Promise<string> {
 }
 
 export async function resolveBinary(name: string, searchPath: string, d: CommandDeps): Promise<string | null> {
-  const dirs = new Set([...searchPath.split(":").filter(Boolean), ...knownBinDirs(d.home)]);
+  const dirs = new Set([...searchPath.split(":").filter(Boolean), ...knownBinDirs(d.home, name)]);
   for (const dir of dirs) {
     const candidate = path.join(dir, name);
     if (await d.isExecutable(candidate)) return candidate;

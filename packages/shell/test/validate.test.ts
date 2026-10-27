@@ -51,9 +51,14 @@ describe("folderProblem", () => {
   });
 
   it("never uses OpenCode's own folders, or a folder above them", () => {
-    for (const f of ["/Users/ana/.local/share/opencode", "/Users/ana/.local/share/opencode/x", "/Users/ana/.config/opencode", "/Users/ana/.opencode", "/Users/ana/.opencode/bin", "/Users/ana/.local", "/Users/ana/.config"]) {
+    for (const f of ["/Users/ana/.local/share/opencode", "/Users/ana/.local/share/opencode/x", "/Users/ana/.config/opencode", "/Users/ana/.opencode", "/Users/ana/.opencode/bin", "/Users/ana/.local", "/Users/ana/.local/share", "/Users/ana/.config"]) {
       expect(folderProblem(f, home), f).toBe("protected");
     }
+  });
+
+  it("still accepts a folder next to OpenCode's, such as ~/.config/foo", () => {
+    expect(folderProblem("/Users/ana/.config/foo", home)).toBeNull();
+    expect(folderProblem("/Users/ana/.local/share/foo", home)).toBeNull();
   });
 
   it("does not confuse a sibling prefix with a protected folder", () => {

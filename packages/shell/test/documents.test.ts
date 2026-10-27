@@ -1,8 +1,15 @@
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
-import { DocumentWatchers, MAX_DOCUMENT_BYTES, MAX_IMAGE_BYTES, documentsExist, locate, readDocument, readImage, refusedShape } from "../src/main/documents";
+import {
+  DocumentWatchers,
+  MAX_DOCUMENT_BYTES,
+  MAX_EXIST_PATHS,
+  MAX_IMAGE_BYTES,
+  MAX_WATCHES,
+  documentsExist, locate, readDocument, readImage, refusedShape } from "../src/main/documents";
 
 const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "hh-docs-")));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -109,6 +116,63 @@ describe("readDocument (§5.3)", () => {
   });
 });
 
+describe("reading, checked again once open", () => {
+  it("refuses hard links (another name may be outside every root)", async () => {
+    fs.writeFileSync(path.join(folder, "docs", "orig.md"), "# Orig\n");
+    fs.linkSync(path.join(folder, "docs", "orig.md"), path.join(folder, "docs", "hard.md"));
+    fs.linkSync(path.join(folder, "docs", "pic.png"), path.join(folder, "docs", "hard.png"));
+    try {
+      expect(await readDocument("docs/hard.md", roots)).toEqual({ ok: false, reason: "outside" });
+      expect(await readDocument("docs/orig.md", roots)).toEqual({ ok: false, reason: "outside" });
+      expect(await readImage("docs/hard.png", roots)).toBeNull();
+    } finally {
+      fs.rmSync(path.join(folder, "docs", "hard.md"));
+      fs.rmSync(path.join(folder, "docs", "orig.md"));
+      fs.rmSync(path.join(folder, "docs", "hard.png"));
+    }
+    expect(await readImage("docs/pic.png", roots)).not.toBeNull();
+  });
+
+  it("opens without blocking or following a link", async () => {
+    const open = vi.spyOn(fs.promises, "open");
+    try {
+      await readDocument("docs/plan.md", roots);
+      const flags = open.mock.calls[0][1] as number;
+      for (const f of [fs.constants.O_NONBLOCK, fs.constants.O_NOFOLLOW]) expect(flags & f).toBe(f);
+    } finally {
+      open.mockRestore();
+    }
+  });
+
+  it("refuses a file swapped right after it was opened", async () => {
+    const file = path.join(folder, "docs", "swap.md");
+    fs.writeFileSync(file, "# Mine\n");
+    const real = fs.promises.open;
+    const open = vi.spyOn(fs.promises, "open").mockImplementation(async (...args: Parameters<typeof real>) => {
+      const handle = await real(...args);
+      fs.writeFileSync(`${file}.new`, "# Other\n");
+      fs.renameSync(`${file}.new`, file);
+      return handle;
+    });
+    try {
+      expect(await readDocument("docs/swap.md", roots)).toEqual({ ok: false, reason: "outside" });
+    } finally {
+      open.mockRestore();
+      fs.rmSync(file);
+    }
+  });
+
+  it("never hangs on a FIFO named like a document", async () => {
+    const fifo = path.join(folder, "docs", "pipe.md");
+    execFileSync("mkfifo", [fifo]);
+    try {
+      expect(await readDocument("docs/pipe.md", roots)).toEqual({ ok: false, reason: "missing" });
+    } finally {
+      fs.rmSync(fifo);
+    }
+  });
+});
+
 describe("readImage", () => {
   it("a local image as a data URL; never SVG, never outside", async () => {
     expect(await readImage("docs/pic.png", roots)).toBe(`data:image/png;base64,${Buffer.from([0x89, 0x50, 0x4e, 0x47]).toString("base64")}`);
@@ -133,6 +197,10 @@ describe("documentsExist", () => {
   it("refuses a list that isn't one", async () => {
     expect(await documentsExist("docs/plan.md" as unknown as unknown[], roots)).toEqual([]);
   });
+  it(`answers at most ${MAX_EXIST_PATHS} paths`, async () => {
+    expect(await documentsExist(Array(MAX_EXIST_PATHS).fill("docs/plan.md"), roots)).toHaveLength(MAX_EXIST_PATHS);
+    expect(await documentsExist(Array(MAX_EXIST_PATHS + 1).fill("docs/plan.md"), roots)).toEqual([]);
+  });
 });
 
 describe("DocumentWatchers (live reload)", () => {
@@ -156,6 +224,65 @@ describe("DocumentWatchers (live reload)", () => {
     await new Promise((r) => setTimeout(r, 200));
     expect(changed).toHaveBeenCalledTimes(1);
     w.closeAll();
+  });
+
+  it(`keeps at most ${MAX_WATCHES} watches, closing the oldest`, async () => {
+    const changed = vi.fn();
+    const closed = vi.fn();
+    const w = new DocumentWatchers(changed, 20);
+    w.onClosed = closed;
+    const ids: (number | null)[] = [];
+    for (let i = 0; i <= MAX_WATCHES; i++) ids.push(await w.watch("docs/plan.md", roots));
+    expect(w.size).toBe(MAX_WATCHES);
+    expect(closed.mock.calls).toEqual([[ids[0]]]);
+    fs.appendFileSync(path.join(folder, "docs", "plan.md"), "cap\n");
+    await vi.waitFor(() => expect(changed).toHaveBeenCalledWith(ids[MAX_WATCHES]), { timeout: 2000 });
+    expect(changed).not.toHaveBeenCalledWith(ids[0]);
+    w.unwatch(ids[1]);
+    w.closeAll();
+    expect(w.size).toBe(0);
+    expect(closed).toHaveBeenCalledTimes(1);
+  });
+
+  it("makes no watch when everything was closed while it was being set up", async () => {
+    const watchSpy = vi.spyOn(fs, "watch");
+    try {
+      const w = new DocumentWatchers(() => {}, 50);
+      const pending = w.watch("docs/plan.md", roots);
+      w.closeAll();
+      expect(await pending).toBeNull();
+      expect(w.size).toBe(0);
+      expect(watchSpy).not.toHaveBeenCalled();
+      expect(await w.watch("docs/plan.md", roots)).toEqual(expect.any(Number));
+      w.closeAll();
+    } finally {
+      watchSpy.mockRestore();
+    }
+  });
+
+  it("reports a failed watcher as a change, once, and closes it", async () => {
+    const made: fs.FSWatcher[] = [];
+    const real = fs.watch;
+    const watchSpy = vi.spyOn(fs, "watch").mockImplementation(((...args: Parameters<typeof fs.watch>) => {
+      const watcher = real(...args);
+      made.push(watcher);
+      return watcher;
+    }) as typeof fs.watch);
+    try {
+      const changed = vi.fn();
+      const closed = vi.fn();
+      const w = new DocumentWatchers(changed, 50);
+      w.onClosed = closed;
+      const id = await w.watch("docs/plan.md", roots);
+      made[0].emit("error", new Error("folder gone"));
+      made[0].emit("error", new Error("again"));
+      expect(changed).toHaveBeenCalledTimes(1);
+      expect(changed).toHaveBeenCalledWith(id);
+      expect(closed.mock.calls).toEqual([[id]]);
+      expect(w.size).toBe(0);
+    } finally {
+      watchSpy.mockRestore();
+    }
   });
 
   it("refuses to watch outside the folder", async () => {

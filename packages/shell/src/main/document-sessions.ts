@@ -3,6 +3,8 @@ export interface WatcherPool {
   watch(rel: unknown, roots: string[]): Promise<number | null>;
   unwatch(id: unknown): void;
   closeAll(): void;
+  /** Set by `DocumentSessions`: a watch the pool ended by itself (made room, or its watcher failed). */
+  onClosed?: ((id: number) => void) | null;
 }
 
 /**
@@ -16,7 +18,11 @@ export class DocumentSessions {
   /** Bumped by `closeAll`: a watch that was being set up meanwhile is closed as soon as it is made. */
   private generation = 0;
 
-  constructor(private readonly pool: WatcherPool) {}
+  constructor(private readonly pool: WatcherPool) {
+    pool.onClosed = (id) => {
+      this.owners.delete(id);
+    };
+  }
 
   /** Who asked for watch `id`; null when nobody (closed, or never made). */
   ownerOf(id: number): number | null {

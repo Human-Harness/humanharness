@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { DocumentSessions, type WatcherPool } from "../src/main/document-sessions";
-import { DocumentWatchers } from "../src/main/documents";
+import { DocumentWatchers, MAX_WATCHES } from "../src/main/documents";
 
 /** A pool that hands out ids and records what is still open. */
 function fakePool() {
@@ -108,10 +108,24 @@ describe("DocumentSessions with DocumentWatchers", () => {
     const id = await sessions.watch(7, "a.md", [root]);
     expect(id).not.toBeNull();
     fs.writeFileSync(path.join(root, "a.md"), "# A2\n");
-    await vi.waitFor(() => expect(heard).toEqual([[7, id]]), { timeout: 2000 });
+    // Under load macOS may also deliver the file's creation late: one or more reports, all to the owner.
+    await vi.waitFor(() => expect(heard).toContainEqual([7, id]), { timeout: 2000 });
+    expect(heard.every(([owner, w]) => owner === 7 && w === id)).toBe(true);
     sessions.closeOwner(7);
+    const before = heard.length;
     fs.writeFileSync(path.join(root, "a.md"), "# A3\n");
     await new Promise((r) => setTimeout(r, 150));
-    expect(heard).toEqual([[7, id]]);
+    expect(heard).toHaveLength(before);
+  });
+
+  it("drops the owner of a watch the pool closed to make room", async () => {
+    const watchers = new DocumentWatchers(() => {}, 20);
+    const sessions = new DocumentSessions(watchers);
+    const first = await sessions.watch(1, "a.md", [root]);
+    for (let i = 0; i < MAX_WATCHES; i++) await sessions.watch(2, "a.md", [root]);
+    expect(first).not.toBeNull();
+    expect(sessions.ownerOf(first as number)).toBeNull();
+    expect(watchers.size).toBe(MAX_WATCHES);
+    sessions.closeAll();
   });
 });

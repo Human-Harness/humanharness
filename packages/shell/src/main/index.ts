@@ -101,7 +101,7 @@ import { type UsageRecord, UsageLog, compactionRecord, measuredMaterialCosts, pr
 import { type ValidationContext, checkFolder, configProblem, isAppUrl } from "./validate";
 import { openIfStillSafe, openRoots, openableFile, revealIfStillSafe, revealableFile } from "./open-path";
 import { DocumentSessions } from "./document-sessions";
-import { DocumentWatchers, documentsExist, readDocument, readImage } from "./documents";
+import { DocumentWatchers, MAX_EXIST_PATHS, documentsExist, readDocument, readImage } from "./documents";
 import { saveWithFolderChange } from "./folder-change";
 import { type MoveDeps, guardedMove, moveFolder, moveJournal, precheckMove, recoverMove } from "./move-folder";
 import { type ResolvedReference, displayPath, resolveReferences, usableReferences } from "./references";
@@ -1365,7 +1365,7 @@ function registerIpc() {
     }
   });
   handle("hh:documentsExist", async (paths: unknown): Promise<boolean[]> => {
-    if (!Array.isArray(paths) || paths.length > 200) return [];
+    if (!Array.isArray(paths) || paths.length > MAX_EXIST_PATHS) return [];
     try {
       const roots = await documentRoots();
       return roots ? await documentsExist(paths, roots) : paths.map(() => false);

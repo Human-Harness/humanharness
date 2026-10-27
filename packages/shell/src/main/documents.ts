@@ -51,16 +51,20 @@ export async function locate(rel: unknown, roots: string[]): Promise<Located> {
 }
 
 /**
- * The bytes of `file` (from `locate`), re-checked right before it is opened, opened without following a link, and
- * read only up to `max` bytes; null when it is no longer safe or not a regular file, or the size when it is too big.
+ * The bytes of `file` (from `locate`), re-checked right before it is opened, opened without following a link and
+ * without blocking (a FIFO swapped in can't hang main), checked again once open (the handle is still the file at that
+ * path, which is still inside a root), and read only up to `max` bytes. Null when it is no longer safe, not a regular
+ * file, or a hard link (`nlink > 1`: its other names may be outside every root); the size when it is too big.
  */
 async function readCapped(file: string, roots: string[], max: number): Promise<{ bytes: Buffer; mtime: Date } | { size: number } | null> {
   if (!(await stillSafe(file, roots))) return null;
-  const handle = await fs.open(file, constants.O_RDONLY | constants.O_NOFOLLOW).catch(() => null);
+  const handle = await fs.open(file, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK).catch(() => null);
   if (!handle) return null;
   try {
     const stat = await handle.stat();
-    if (!stat.isFile()) return null;
+    if (!stat.isFile() || stat.nlink > 1) return null;
+    const there = await fs.stat(file).catch(() => null);
+    if (!there || there.dev !== stat.dev || there.ino !== stat.ino || !(await stillSafe(file, roots))) return null;
     if (stat.size > max) return { size: stat.size };
     const bytes = Buffer.alloc(stat.size);
     let read = 0;
@@ -100,19 +104,34 @@ export async function readImage(rel: unknown, roots: string[]): Promise<string |
   return `data:${type};base64,${got.bytes.toString("base64")}`;
 }
 
+/** Most paths one `documentsExist` call answers; a longer list gets no answer (`[]`). */
+export const MAX_EXIST_PATHS = 200;
+
 /** Whether each path is a file the reader could open (cards of moved or deleted files are struck through). */
 export async function documentsExist(paths: unknown, roots: string[]): Promise<boolean[]> {
-  if (!Array.isArray(paths)) return [];
+  if (!Array.isArray(paths) || paths.length > MAX_EXIST_PATHS) return [];
   return Promise.all(paths.map(async (p) => (await locate(p, roots)).ok));
 }
 
+/** Most documents watched at once; a new watch over this closes the oldest. */
+export const MAX_WATCHES = 16;
+
 /**
  * Live reload (§5.3): watches a document's folder (a file replaced by a rename keeps being seen) and calls `onChange`
- * with the watch id once things have been quiet for `quietMs`.
+ * with the watch id once things have been quiet for `quietMs`. A watcher that fails (its folder moved or was deleted)
+ * is closed and reported as one last change, so the reader reads again and shows what happened.
  */
 export class DocumentWatchers {
   private next = 1;
+  /** Oldest first (a Map keeps insertion order). */
   private readonly open = new Map<number, () => void>();
+  /** Bumped by `closeAll`: a watch still being set up meanwhile is not made. */
+  private generation = 0;
+  /**
+   * Told when a watch ends by itself: closed to make room (`MAX_WATCHES`) or after its watcher failed. Not called for
+   * `unwatch` or `closeAll`, which the caller asked for.
+   */
+  onClosed: ((id: number) => void) | null = null;
 
   constructor(
     private readonly onChange: (id: number) => void,
@@ -120,8 +139,9 @@ export class DocumentWatchers {
   ) {}
 
   async watch(rel: unknown, roots: string[]): Promise<number | null> {
+    const generation = this.generation;
     const at = await locate(rel, roots);
-    if (!at.ok) return null;
+    if (!at.ok || generation !== this.generation) return null;
     const name = path.basename(at.file);
     const id = this.next++;
     let timer: NodeJS.Timeout | null = null;
@@ -135,7 +155,17 @@ export class DocumentWatchers {
     } catch {
       return null;
     }
-    watcher.on("error", () => undefined);
+    watcher.on("error", () => {
+      if (!this.open.has(id)) return;
+      this.unwatch(id);
+      this.onChange(id);
+      this.onClosed?.(id);
+    });
+    while (this.open.size >= MAX_WATCHES) {
+      const oldest = this.open.keys().next().value as number;
+      this.unwatch(oldest);
+      this.onClosed?.(oldest);
+    }
     this.open.set(id, () => {
       if (timer) clearTimeout(timer);
       watcher.close();
@@ -149,7 +179,13 @@ export class DocumentWatchers {
     this.open.delete(id);
   }
 
+  /** How many watches are open. */
+  get size(): number {
+    return this.open.size;
+  }
+
   closeAll(): void {
+    this.generation++;
     for (const id of [...this.open.keys()]) this.unwatch(id);
   }
 }

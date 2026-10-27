@@ -3,9 +3,12 @@ import type { ModelProfile } from "@humanharness/engines";
 import {
   type BlockAnswer,
   type ChoiceOption,
+  type HarnessPhase,
+  type HarnessTimeBox,
   type InputBlock,
   type InputIssue,
   type Language,
+  type PhaseRequest,
   type RespondResult,
   type SavedNote,
   type ScopeMode,
@@ -16,6 +19,7 @@ import {
   defaultModeOf,
   parseAnswer,
   saveNoteSchema,
+  setPhaseSchema,
   tierBelow,
 } from "@humanharness/harness-sdk";
 import { type Event, type Session, fail } from "@humanharness/runtime";
@@ -25,14 +29,43 @@ import {
   type ModeChoice,
   type ModeResult,
   type NoteView,
+  type PhaseResult,
   type TaskStatus,
+  type TaskTurnNotice,
   type TaskView,
   nextInPath,
 } from "@humanharness/ui/client";
 import { APP_SCOPE, type HistoryTrailer, MAIN_SCOPE, NOTE_PREFIX, type Note, type NoteMeta, buildNotesIndex, isScopeId, noteSlug } from "@humanharness/workspace";
-import { CHECKPOINT_PROMPT, type ModeText, QUESTION_PROMPT, closePrompt, fillPrompt, modePrompt, modeSection, oneLine, recommendSection, resumeMessage } from "./task-prompts";
-import { type CurrentTask, type PendingInput, type TasksFile, interrupted, keptQuestion, scopeOfTask, statusesIn, withStatus } from "./task-store";
-import { type TurnOptions, isHeld } from "./turn-controller";
+import {
+  CHECKPOINT_PROMPT,
+  type ModeText,
+  type PhaseText,
+  QUESTION_PROMPT,
+  closePrompt,
+  fillPrompt,
+  modePrompt,
+  modeSection,
+  oneLine,
+  phasePrompt,
+  phaseSection,
+  phasesSection,
+  recommendSection,
+  resumeMessage,
+} from "./task-prompts";
+import {
+  type CurrentTask,
+  PHASE_LOG_MAX,
+  type PendingInput,
+  type PhaseBy,
+  type TasksFile,
+  interrupted,
+  keptQuestion,
+  scopeOfTask,
+  statusesIn,
+  withStatus,
+} from "./task-store";
+import { MINUTE_MS, formatTimeLeft, remainingMs } from "./time-box";
+import { type TurnOptions, isHeld, takesInputs } from "./turn-controller";
 
 type Done = Extract<Event, { type: "done" }>;
 
@@ -47,8 +80,11 @@ export interface TaskDeps {
   /** tasks.json of the configured folder. */
   store: { load(): Promise<TasksFile>; save(state: TasksFile): Promise<void> };
   turns: { send(message: string, options: TurnOptions): Promise<void>; isBusy(): boolean; cancel(): void };
-  /** The harness's actions: their labels (English strings), where each runs with scopes, and their modes (task-modes spec §3). */
-  actions: Record<string, { label: string; scope?: ScopeMode; modes?: string[]; defaultMode?: string }>;
+  /**
+   * The harness's actions: their labels (English strings), where each runs with scopes, their modes (task-modes spec
+   * §3), their phases and time box (task-phases spec §3).
+   */
+  actions: Record<string, { label: string; scope?: ScopeMode; modes?: string[]; defaultMode?: string; phases?: HarnessPhase[]; timeBox?: HarnessTimeBox }>;
   /** The harness declares scopes (spec D1). Absent or false: one implicit `main` scope and today's layout (D2). */
   scoped?: boolean;
   /** Whether `id` is a registered scope. Absent: any valid id is taken. */
@@ -111,6 +147,12 @@ export interface TaskDeps {
   modeSettings?(mode: string): Promise<string[]>;
   /** The tier a profile counts as (a custom one: its nearest, spec §5.3). Absent: tiers are never compared. */
   tierOf?(profile: ModelProfile): Promise<Tier>;
+  /** The text of a phase's brief (its file); only asked for a phase that has one. */
+  readPhaseBrief?(action: string, phase: string): Promise<string>;
+  /** A turn the app starts on its own is about to run (task-phases spec §4.4, §5): tell the window before its events. */
+  taskTurn?(notice: TaskTurnNotice): void;
+  /** How long a time-box minute lasts. Absent: a real minute. Tests and mock mode pass a short one. */
+  minuteMs?: number;
   now?: () => Date;
   newId?: () => string;
 }
@@ -164,11 +206,23 @@ const currentView = (c: CurrentTask, tier?: Tier): CurrentTaskView => ({
   ...(c.modes ? { modes: c.modes } : {}),
   ...(tier ? { tier } : {}),
   ...(c.belowMinTier ? { belowMinTier: true as const } : {}),
+  ...(c.phase ? { phase: c.phase.id } : {}),
+  ...(c.phases ? { phases: c.phases } : {}),
+  ...(c.phaseProposal ? { phaseProposal: c.phaseProposal } : {}),
 });
 
 /** How much of the last checkpoint's summary a mode switch carries (spec §10.1): `save_note`'s own limits. */
 const SO_FAR_POINTS = 5;
 const SO_FAR_CHARS = 400;
+
+/**
+ * What entering a phase does, worked out before anything changes (a brief that can't be read changes nothing): the change
+ * turn's message (null: no turn) and the task's mode fields afterwards (modes spec §7; absent: unchanged).
+ */
+interface PhasePlan {
+  message: string | null;
+  modes?: { mode?: string; modes?: string[]; suspendedMode?: string; belowMinTier?: true };
+}
 
 /**
  * The app-driven flow (spec §4.2): one engine session per task. idle → running → waiting; a message
@@ -195,6 +249,10 @@ export class TaskManager {
   private turnsStarted = 0;
   /** How the last turn that started ended: `respond` reopens its question when the answer's turn failed. */
   private lastDone: Done | null = null;
+  /** The agent's last `set_phase` in the turn that just ran (spec §4.1); `afterRun` reads it once. */
+  private lastPhaseAsk: PhaseRequest | null = null;
+  /** How long a time-box minute lasts. */
+  private readonly minute: number;
   /** The slug each free-question task wrote its note under, so a second save replaces its own note. */
   private readonly questionSlugs = new Map<string, string>();
   private readonly now: () => Date;
@@ -203,6 +261,7 @@ export class TaskManager {
   constructor(private readonly d: TaskDeps) {
     this.now = d.now ?? (() => new Date());
     this.newId = d.newId ?? randomUUID;
+    this.minute = d.minuteMs ?? MINUTE_MS;
   }
 
   /** A task operation or a turn is under way. */
@@ -307,6 +366,35 @@ export class TaskManager {
     const done = (this.isBusy() ? this.whenFree(run) : run()).then(
       () => {
         if (!settled) refuse(new Error("The mode was not switched"));
+      },
+      (err: unknown) => {
+        if (!settled) refuse(err);
+        throw err;
+      },
+    );
+    return { accepted, done };
+  }
+
+  /**
+   * The person moves the open task to phase `to` (task-phases spec §4.2), only while it waits: unlike a mode pick, it
+   * never waits for a turn. `accepted` resolves with a refusal or with how the change goes on, before any turn's events;
+   * `done` once its turn ended. Both reject when the operation can't run (a turn runs, the app is closing). `task`: the
+   * open task the caller saw.
+   */
+  setPhase(to: string, task?: string): { accepted: Promise<PhaseResult>; done: Promise<void> } {
+    let settled = false;
+    let take!: (r: PhaseResult) => void;
+    let refuse!: (err: unknown) => void;
+    const accepted = new Promise<PhaseResult>((resolve, reject) => {
+      take = (r) => {
+        settled = true;
+        resolve(r);
+      };
+      refuse = reject;
+    });
+    const done = this.op(() => this.phaseNow(to, take, task)).then(
+      () => {
+        if (!settled) refuse(new Error("The phase was not changed"));
       },
       (err: unknown) => {
         if (!settled) refuse(err);
@@ -492,9 +580,14 @@ export class TaskManager {
     return this.d.scoped ? (state.open ?? APP_SCOPE) : MAIN_SCOPE;
   }
 
-  /** The history trailer of a task's commits; `scope` only in a harness with scopes (D2). */
+  /** The history trailer of a task's commits; `scope` only in a harness with scopes (D2), `phase` only with phases. */
   private trailerOf(c: CurrentTask): HistoryTrailer {
-    return { task: c.id, ...(c.action ? { action: c.action } : {}), ...(c.scope ? { scope: c.scope } : {}) };
+    return {
+      task: c.id,
+      ...(c.action ? { action: c.action } : {}),
+      ...(c.scope ? { scope: c.scope } : {}),
+      ...(c.phase ? { phase: c.phase.id } : {}),
+    };
   }
 
   /** What a scoped task's turns carry: its scope (usage, trailer) and the chat on screen. Nothing without scopes (D2). */
@@ -554,6 +647,9 @@ export class TaskManager {
     const start = mode ?? this.startMode(action, modes);
     // Read before anything closes (a scope switch closes too): a mode brief that can't be read starts nothing.
     const text = start !== null && start !== "recommend" ? await this.modeText(start) : null;
+    // The task starts in its first phase (task-phases spec §4.4); read before anything closes, like the mode's brief.
+    const first = this.phasesOf(action)[0];
+    const firstText = first ? await this.phaseText(action, first) : null;
     if (scope !== undefined && !(await this.switchNow(scope))) return this.stopped();
     // Checked before anything closes: a required action with no open scope starts nothing.
     const where = this.scopeFor(await this.d.store.load(), action);
@@ -564,12 +660,14 @@ export class TaskManager {
     if (start === "recommend") section = recommendSection(modes.map((id) => this.hintOf(id)));
     else if (text) section = modeSection(text, language);
     const inMode = start !== null && start !== "recommend" ? { mode: start, modes: [start] } : {};
+    const at = this.now().toISOString();
+    const inPhase = first ? { phase: { id: first.id, startedAt: at }, phases: [{ id: first.id, at, by: "app" as const }] } : {};
     await this.begin(
-      { action, ...inMode },
+      { action, ...inMode, ...inPhase },
       where,
       (notesIndex) => {
-        const brief = fillPrompt(template, { language, notesIndex });
-        return section ? `${brief}\n\n${section}` : brief;
+        const parts = first && firstText ? [phasesSection(this.phaseList(action), first.id), phaseSection(firstText, { language })] : [];
+        return [fillPrompt(template, { language, notesIndex }), ...(section ? [section] : []), ...parts].join("\n\n");
       },
       display ?? this.d.actions[action].label,
       floor,
@@ -606,6 +704,32 @@ export class TaskManager {
       console.error("Could not read the mode's settings; it starts with none", err);
     }
     return { label: oneLine(this.d.modes![mode].label), brief, settings };
+  }
+
+  /** The phases of `action`; none for a free question or an action without them (D0). */
+  private phasesOf(action: string | undefined): HarnessPhase[] {
+    return this.known(action) ? (this.d.actions[action].phases ?? []) : [];
+  }
+
+  /** The phase the task is in now, as the manifest declares it. */
+  private phaseOf(c: Pick<CurrentTask, "action" | "phase">): HarnessPhase | undefined {
+    return this.phasesOf(c.action).find((p) => p.id === c.phase?.id);
+  }
+
+  /** The action's phases as the list of parts shows them to the agent. */
+  private phaseList(action: string | undefined): { id: string; label: string }[] {
+    return this.phasesOf(action).map((p) => ({ id: p.id, label: oneLine(p.label) }));
+  }
+
+  /** A phase's id, label and brief text ("" without a brief). */
+  private async phaseText(action: string, p: HarnessPhase): Promise<PhaseText> {
+    const brief = p.brief && this.d.readPhaseBrief ? await this.d.readPhaseBrief(action, p.id) : "";
+    return { id: p.id, label: oneLine(p.label), brief };
+  }
+
+  /** The time left, as a prompt says it; "" without a time box. */
+  private timeLeft(c: Pick<CurrentTask, "timeBox">): string {
+    return c.timeBox ? formatTimeLeft(remainingMs(c.timeBox, this.now(), this.minute), this.minute) : "";
   }
 
   /** The open task as the window sees it; its tier only when its action has modes (D0). */
@@ -904,11 +1028,23 @@ export class TaskManager {
         console.error("Could not read the mode's brief; the task resumes without it", err);
       }
     }
+    // The current part comes back with the task (task-phases spec §6), only with the action's brief.
+    let phase: string | undefined;
+    const current = this.phaseOf(c);
+    if (brief !== undefined && current) {
+      try {
+        const text = await this.phaseText(c.action!, current);
+        phase = [phasesSection(this.phaseList(c.action), current.id), phaseSection(text, { language, timeLeft: this.timeLeft(c) })].join("\n\n");
+      } catch (err) {
+        console.error("Could not read the phase's brief; the task resumes without it", err);
+      }
+    }
     return resumeMessage({
       language,
       notesIndex: await this.contextFor(scopeOfTask(c), c.action),
       ...(brief !== undefined ? { brief } : {}),
       ...(mode ? { mode } : {}),
+      ...(phase ? { phase } : {}),
       ...(c.question ? { question: c.question, ...(c.questionCut ? { questionCut: true } : {}) } : {}),
       message: text,
     });
@@ -935,7 +1071,17 @@ export class TaskManager {
 
   /** A new task in a fresh session, in `scope`; its first message is built from the session context. */
   private async begin(
-    task: { action?: string; question?: string; questionCut?: true; mode?: string; modes?: string[] },
+    task: {
+      action?: string;
+      question?: string;
+      questionCut?: true;
+      mode?: string;
+      modes?: string[];
+      suspendedMode?: string;
+      phase?: { id: string; startedAt: string };
+      phases?: { id: string; at: string; by: PhaseBy }[];
+      timeBox?: { minutes: number; usedMs: number; runningSince?: string };
+    },
     scope: string,
     message: (notesIndex: string) => string,
     display: string,
@@ -1016,8 +1162,12 @@ export class TaskManager {
    * the turn was refused before it began (no `done` came).
    */
   private async runTurn(task: CurrentTask, message: string, options: Omit<TurnOptions, "task" | "onEvent" | "profile">): Promise<Done> {
-    const seen: { done?: Done; note?: SavedNote; used?: number; size?: number; compacted?: boolean } = {};
+    const seen: { done?: Done; note?: SavedNote; used?: number; size?: number; compacted?: boolean; phaseAsk?: PhaseRequest } = {};
     const shownInputs: Promise<void>[] = [];
+    this.lastPhaseAsk = null;
+    const kind = options.phase ?? "run";
+    // A proposal the person didn't take goes as soon as they send anything else (spec §4.1 "ignores it").
+    if (kind === "run" && task.phaseProposal) await this.dropProposal(task.id);
     this.turnTask = task.id;
     try {
       const scoped = await this.scopeOptions(task);
@@ -1025,17 +1175,23 @@ export class TaskManager {
         phase: "run",
         // The task's mode (usage.jsonl); a switch's own `mode` in `options` wins. A task with none passes none (D0).
         ...(task.mode ? { mode: task.mode } : {}),
+        // The task's phase (usage.jsonl, history): a change turn's is the new one, already saved. None without phases (D0).
+        ...(task.phase ? { taskPhase: task.phase.id } : {}),
         ...options,
         ...scoped,
         ...(task.profile ? { profile: task.profile } : {}),
-        // Input blocks get ids only in run turns, and only in a harness that has them.
-        ...(this.hasInputs() && (options.phase ?? "run") === "run" ? { turn: task.turns } : {}),
+        // Input blocks get ids only in the task's own turns (run, phase change, wrap-up), and only in a harness that has them.
+        ...(this.hasInputs() && takesInputs(options.phase) ? { turn: task.turns } : {}),
         task: task.id,
         onEvent: (e) => {
           if (e.type === "done") seen.done = e;
           else if (e.type === "block" && e.name === "save_note") {
             const parsed = saveNoteSchema.safeParse(e.data);
             if (parsed.success) seen.note = parsed.data;
+          } else if (e.type === "block" && e.name === "set_phase") {
+            // Acted on only after the turn ends (spec §4.1); the last call of the turn wins.
+            const parsed = setPhaseSchema.safeParse(e.data);
+            if (parsed.success) seen.phaseAsk = parsed.data;
           } else if (e.type === "block" && e.id !== undefined && this.d.inputBlocks && Object.hasOwn(this.d.inputBlocks, e.name)) {
             shownInputs.push(this.showInput(task.id, e.name, e.id));
           } else if (e.type === "context") {
@@ -1053,6 +1209,8 @@ export class TaskManager {
     this.turnsStarted++;
     const result: Done = seen.done ?? { type: "done", ok: false, error: { code: "agent-crashed" } };
     this.lastDone = result;
+    // Only the task's own work asks to move: never the closing, checkpoint or wrap-up turn.
+    if (seen.phaseAsk && (kind === "run" || kind === "phase-change")) this.lastPhaseAsk = seen.phaseAsk;
     await Promise.all(shownInputs);
     // Mirrors TurnController: a quiet turn reaches the window only with a failure other than a cancel,
     // and a held failure never does.
@@ -1064,8 +1222,135 @@ export class TaskManager {
   }
 
   private async afterRun(id: string, done: Done, first: boolean): Promise<void> {
+    const ask = this.lastPhaseAsk;
+    this.lastPhaseAsk = null;
     if (!done.ok && (done.error.code === "cancelled" || first)) return this.endTask(id, "unfinished");
     await this.update((s) => (s.current?.id === id ? { ...s, current: { ...s.current, status: "waiting", turns: s.current.turns + 1 } } : s));
+    // The agent asked to move (spec §4.1): acted on now that its turn ended well.
+    if (ask && done.ok && !this.cancelRequested) await this.phaseAsked(id, ask);
+  }
+
+  /**
+   * The agent's `set_phase` (spec §4.1), after its turn ended well. The current phase has `auto` and `to` is the next one:
+   * the app moves now. Anything else: a proposal the person confirms or ignores. An id this action doesn't have is
+   * ignored (the `ui` server only knows the harness's ids). A failed move is logged: the agent's turn itself went well.
+   */
+  private async phaseAsked(id: string, ask: PhaseRequest): Promise<void> {
+    const c = await this.storedCurrent();
+    if (!c || c.id !== id || c.status !== "waiting") return;
+    const phases = this.phasesOf(c.action);
+    const here = phases.findIndex((p) => p.id === c.phase?.id);
+    const to = phases.findIndex((p) => p.id === ask.to);
+    if (here < 0 || to < 0) {
+      console.error(`The agent asked for a phase this task doesn't have: "${ask.to}"`);
+      return;
+    }
+    // The same part: the close part's "done" comes with the close part (Task 8); any other does nothing.
+    if (to === here) return;
+    if (phases[here].auto !== true || to !== here + 1) {
+      const proposal = { to: ask.to, reason: ask.reason };
+      return this.update((s) => (s.current?.id === id ? { ...s, current: { ...s.current, phaseProposal: proposal } } : s));
+    }
+    try {
+      await this.endsInWindow(() => this.movePhase(c, phases[to], "agent"));
+    } catch (err) {
+      console.error("The phase change the agent asked for failed", err);
+    }
+  }
+
+  /**
+   * Checks, in order: a task waits (the one the caller saw); the action has the phase; it isn't the current one. Then
+   * the change: its message read first (a brief that can't be read refuses it), then the state and the turn.
+   */
+  private async phaseNow(to: string, take: (r: PhaseResult) => void, task?: string): Promise<void> {
+    const c = await this.storedCurrent();
+    if (!c || c.status !== "waiting" || (task !== undefined && c.id !== task)) return take({ ok: false, reason: "no-task" });
+    const phases = this.phasesOf(c.action);
+    const target = phases.find((p) => p.id === to);
+    if (!target) return take({ ok: false, reason: "unknown" });
+    if (c.phase?.id === to) return take({ ok: true, changed: "same" });
+    const back = phases.indexOf(target) < phases.findIndex((p) => p.id === c.phase?.id);
+    const plan = await this.phasePlan(c, target, back);
+    take({ ok: true, changed: plan.message ? "turn" : "quiet" });
+    return this.endsInWindow(() => this.enterPhase(c, target, "person", plan, back));
+  }
+
+  /** Moves the task forward to `to` (the agent's `auto`, the time box): the plan, then the change. */
+  private async movePhase(c: CurrentTask, to: HarnessPhase, by: PhaseBy): Promise<void> {
+    const plan = await this.phasePlan(c, to, false);
+    await this.enterPhase(c, to, by, plan, false);
+  }
+
+  /** The change's message (spec §4.4): the new part, the way back, the time left, its brief. Modes come in Task 7. */
+  private async phasePlan(c: CurrentTask, to: HarnessPhase, back: boolean): Promise<PhasePlan> {
+    const language = await this.d.language();
+    const text = await this.phaseText(c.action!, to);
+    const previous = this.phaseOf(c);
+    const extra: string[] = [];
+    const vars = { language, back, ...(previous ? { previous: oneLine(previous.label) } : {}), ...(c.timeBox ? { timeLeft: this.timeLeft(c) } : {}) };
+    return { message: text.brief || extra.length > 0 ? phasePrompt(text, { ...vars, extra }) : null };
+  }
+
+  /**
+   * Enters phase `to` (spec §4.4), inside the running operation. The state first: the phase, the log, the mode fields, and
+   * the proposal goes. Then, when there is a message: the window is told, a due checkpoint runs, and one run turn of the
+   * same session carries it; its answer shows, and the chat's line is the separator.
+   */
+  private async enterPhase(c: CurrentTask, to: HarnessPhase, by: PhaseBy, plan: PhasePlan, back: boolean): Promise<void> {
+    const at = this.now().toISOString();
+    await this.update((s) => {
+      if (s.current?.id !== c.id) return s;
+      const { phaseProposal: _proposal, ...rest } = s.current;
+      let next: CurrentTask = { ...rest, phase: { id: to.id, startedAt: at }, phases: [...(rest.phases ?? []), { id: to.id, at, by }].slice(-PHASE_LOG_MAX) };
+      if (plan.modes) {
+        const { mode: _m, modes: _ms, suspendedMode: _s, belowMinTier: _b, ...base } = next;
+        next = { ...base, ...plan.modes };
+      }
+      return { ...s, current: next };
+    });
+    const now = (await this.d.store.load()).current;
+    if (!plan.message || now?.id !== c.id) return;
+    this.tellTurn({ task: c.id, kind: "phase", phase: to.id, by, ...(back ? { back: true as const } : {}) });
+    if (needsCheckpoint(now) && !(await this.checkpoint(now))) return this.stopped();
+    await this.setStatus(c.id, "running");
+    // Checked with no await before the send: a Stop while the status was saved.
+    if (this.cancelRequested) {
+      await this.setStatus(c.id, "waiting");
+      return this.stopped();
+    }
+    let done: Done;
+    try {
+      done = await this.runTurn(now, plan.message, {
+        display: `— ${oneLine(to.label)} —`,
+        ...(c.action ? { action: c.action } : {}),
+        followUp: true,
+        phase: "phase-change",
+        phaseChange: to.id,
+      });
+    } catch (err) {
+      if (err instanceof TurnNotStarted) await this.setStatus(c.id, "waiting");
+      throw unwrap(err);
+    }
+    return this.afterRun(c.id, done, false);
+  }
+
+  /** Tells the window a turn the app starts on its own is coming; that turn's `done` is the window's to see again. */
+  private tellTurn(notice: TaskTurnNotice): void {
+    this.windowDone = false;
+    try {
+      this.d.taskTurn?.(notice);
+    } catch (err) {
+      console.error("Could not tell the window about the turn", err);
+    }
+  }
+
+  /** The agent's proposal goes (the person moved, or sent something else). */
+  private dropProposal(id: string): Promise<void> {
+    return this.update((s) => {
+      if (s.current?.id !== id || !s.current.phaseProposal) return s;
+      const { phaseProposal: _proposal, ...rest } = s.current;
+      return { ...s, current: rest };
+    });
   }
 
   /**

@@ -137,6 +137,35 @@ export interface ModeView {
   minTier?: Tier;
 }
 
+/** A phase as the window shows it (task-phases spec §6): never its brief. */
+export interface PhaseView {
+  id: string;
+  label: string;
+  auto?: true;
+  close?: true;
+  /** The modes allowed in it (modes spec §7): absent or "any", all the action's; "none"; or a list. */
+  modes?: "any" | "none" | string[];
+}
+
+/**
+ * A turn the main process starts on its own is about to run (task-phases spec §4.4, §5): a phase change (`phase`, who
+ * moved, `back` when it went back) or the time box's wrap-up. The window draws its line, then the turn's events follow.
+ */
+export interface TaskTurnNotice {
+  task: string;
+  kind: "phase" | "wrap-up";
+  phase?: string;
+  by?: "agent" | "person" | "app";
+  back?: true;
+}
+
+/**
+ * How a phase pick went (spec §4.2): a change turn runs ("turn"), only the state changed ("quiet"), it already was the
+ * phase ("same"), or the close phase's Finish closes the task ("closing"). Refusals: no task waits ("no-task"), or the
+ * action has no such phase ("unknown").
+ */
+export type PhaseResult = { ok: true; changed: "turn" | "quiet" | "same" | "closing" } | { ok: false; reason: "no-task" | "unknown" };
+
 export interface AppState {
   harness: {
     id: string;
@@ -421,6 +450,10 @@ export interface CurrentTaskView {
   tier?: Tier;
   /** It runs below its mode's `minTier`: the person chose to continue. */
   belowMinTier?: true;
+  /** Task phases (task-phases spec §6), only for a task whose action has them: the phase now, its log, the agent's proposal. */
+  phase?: string;
+  phases?: { id: string; at: string; by: "agent" | "person" | "app" }[];
+  phaseProposal?: { to: string; reason: string };
 }
 
 /** A note in `.harness/notes/`, for the side panel and "What's clear so far". */

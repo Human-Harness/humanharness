@@ -216,6 +216,11 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
   };
   /** "Add <label>": the setup screen at its profile step. */
   const addProfile = () => openSetup({ newProfile: true });
+  /** A switch from the work screen goes Home (spec §5): the new profile's required setup steps are checked there. */
+  const switched = (next: AppState) => {
+    setState(next);
+    setScreen("home");
+  };
 
   return (
     <I18nextProvider i18n={i18n}>
@@ -232,7 +237,7 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
             startView={startView}
             openScope={openScope}
             profileBar={
-              state.profiles ? (disabled) => <ProfileSwitcher client={client} state={state} onSwitched={setState} onAdd={addProfile} disabled={disabled} /> : undefined
+              state.profiles ? (disabled) => <ProfileSwitcher client={client} state={state} onSwitched={switched} onAdd={addProfile} disabled={disabled} /> : undefined
             }
             scopeBar={state.scopes ? (disabled) => <ScopePicker client={client} state={state} open={openScope} disabled={disabled} /> : undefined}
             engineProblem={status ? engineProblem(status) : null}

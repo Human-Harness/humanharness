@@ -87,6 +87,29 @@ describe("the profile switcher (profiles spec §5 'Where the switcher lives')", 
     expect(await screen.findByRole("alert")).toHaveProperty("textContent", "Wait until the AI finishes, then try again.");
   });
 
+  it("Home's switcher is disabled while the folder moves", async () => {
+    const client = family();
+    const move = { moving: true, error: null, moved: null, failures: 0, trigger: { current: null }, move: async () => {}, chooseAnother: async () => {} };
+    await renderIn(
+      "en",
+      <Home
+        state={client.state}
+        client={client}
+        onChange={() => {}}
+        status={client.status}
+        limits={null}
+        onStart={() => {}}
+        onSetup={() => {}}
+        onSettings={() => {}}
+        onEngine={() => {}}
+        move={move}
+        onAddProfile={() => {}}
+      />,
+    );
+    expect(((await screen.findByRole("combobox", { name: "Choose student" })) as HTMLSelectElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Add student" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
   it("is disabled while a turn runs", async () => {
     const client = family();
     await renderIn("en", <ProfileSwitcher client={client} state={client.state} onSwitched={() => {}} onAdd={() => {}} disabled />);
@@ -96,16 +119,20 @@ describe("the profile switcher (profiles spec §5 'Where the switcher lives')", 
 });
 
 describe("the switcher on the work screen's top bar", () => {
-  it("switches from the work screen; D0: no switcher there without profiles", async () => {
+  it("switches from the work screen, then Home redraws for the new profile; D0: no switcher there without profiles", async () => {
     const client = family();
     const { unmount } = await renderIn("en", <HarnessApp client={client} />);
     const start = (await screen.findByRole("button", { name: "Start Demo" })) as HTMLButtonElement;
     await waitFor(() => expect(start.disabled).toBe(false));
     fireEvent.click(start);
+    await screen.findByRole("button", { name: "Home" });
     const select = (await screen.findByRole("combobox", { name: "Choose student" })) as HTMLSelectElement;
     fireEvent.change(select, { target: { value: "tomas" } });
     await waitFor(() => expect((screen.getByRole("combobox", { name: "Choose student" }) as HTMLSelectElement).value).toBe("tomas"));
     expect(client.profileCalls).toEqual(["open:tomas"]);
+    // Home again (spec §5): the new profile's required setup steps are checked before its work screen.
+    expect(await screen.findByRole("button", { name: "Start Demo" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Home" })).toBeNull();
     unmount();
 
     await renderIn("en", <HarnessApp client={new FakeClient(configured)} />);

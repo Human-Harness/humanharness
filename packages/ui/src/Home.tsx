@@ -69,7 +69,7 @@ export function Home({
   return (
     <div className="hh-home">
       <TopBar mock={state.mock}>
-        {configured && state.profiles && onAddProfile && <ProfileSwitcher client={client} state={state} onSwitched={onChange} onAdd={onAddProfile} />}
+        {configured && state.profiles && onAddProfile && <ProfileSwitcher client={client} state={state} onSwitched={onChange} onAdd={onAddProfile} disabled={move?.moving === true} />}
         <button className="hh-icon-button" aria-label={t("home.settings")} onClick={onSettings}>
           <GearIcon />
         </button>

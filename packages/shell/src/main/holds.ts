@@ -34,9 +34,10 @@ export function holds(s: HoldSources) {
     switchHeld: (): string | null => s.engine() ?? s.restore(),
     /**
      * An engine change, or an update or sign-out of the engine in use: a turn, or a profile switch (once its task has
-     * closed, no turn runs, yet its runtime is still to close and its profile to save).
+     * closed, no turn runs, yet its runtime is still to close and its profile to save), or an archive or a delete (the
+     * engine change archives every profile's chat, which would make a folder going to the Trash again).
      */
-    engineBusy: (): boolean => s.tasksBusy() || s.profileSwitch() !== null,
+    engineBusy: (): boolean => s.tasksBusy() || s.profileSwitch() !== null || s.profileChange(),
     /** A folder change or move: a turn, a restore, a profile switch, an archive or a delete. */
     folderBusy: (): boolean => s.tasksBusy() || s.restore() !== null || s.profileSwitch() !== null || s.profileChange(),
     /** Archiving or deleting a profile: anything else that runs. */

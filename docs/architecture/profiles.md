@@ -64,7 +64,9 @@ profiles: { label: "student", fields: ["name", "color", "ageBand"] },
   AGENTS.md (and the engine's own instructions file), the agent's working folder and its history, and the paths
   `hh:openPath`/`hh:revealPath` open (a path the agent names is relative to its working folder).
 - App-wide: the engine and its sign-in, `config.json` (models, language, appearance, text size, `backupDismissed`), the
-  folder's place, its backup status and "Move folder…", the reference folders.
+  folder's place, its backup status and "Move folder…", the reference folders. The agent and
+  `hh:openPath`/`hh:revealPath` never get a reference folder inside the app's folder (another profile's folder),
+  besides one that is or contains the working folder (`usableReferences` with the root, `references.ts`).
 - In code: `baseFor(config, profiles)` (`packages/shell/src/main/profile-base.ts`) is `<folder>/<profile>` in a
   profiles app, `<folder>` otherwise, and null in a profiles app with no active profile. `baseOf` in
   `packages/shell/src/main/index.ts` throws rather than answer the root of a profiles app, and `validConfig()` is null
@@ -85,8 +87,10 @@ profiles: { label: "student", fields: ["name", "color", "ageBand"] },
    old AGENTS.md and reads afresh; the scopes migrate and are sent; the setup steps' state and the tasks are sent. A
    failed arrival is logged; the switch stands.
 
-The window gets the new `AppState` in the result (`ProfileResult`) and redraws. Switching to the active profile does
-nothing. While a switch runs, new turns, restores, moves and engine changes are refused ("Switching profiles"). Which
+The window gets the new `AppState` in the result (`ProfileResult`) and goes to Home, from the work screen too, so the
+new profile's required setup steps are checked before its work screen. Switching to the active profile does
+nothing. While a switch runs, new turns, restores, moves and engine changes are refused ("Switching profiles"). An
+engine change also waits for an archive, an edit or a delete (it archives every profile's chat). Which
 guard waits for which lives in one place, `packages/shell/src/main/holds.ts`.
 
 ## Creating, editing, archiving, deleting (`profiles.ts`)
@@ -98,7 +102,9 @@ refusal comes back as data: `not-ready`, `busy`, `open`, `invalid` (with `errors
 
 - **Create.** The fields are checked against the `profile` schema first; nothing is made on a refusal. Then, inside the
   switch: the registry entry, the folder (`prepareFolder` with the harness's seed), the `profile` record (the person's
-  write, app-wide, in the new folder's own store), then the profile becomes active. Its settings take their defaults
+  write, app-wide, in the new folder's own store), then the profile becomes active. A history already under the new
+  id (a deleted profile's that the Trash refused, or a folder removed by hand) is someone else's: it is set aside as
+  `<history>.replaced-<ms>` first, so the new person never sees it, and pruned later like a move's. Its settings take their defaults
   and its setup steps start missing. A switch that fails after the entry was made answers `failed` with `made: <id>`:
   the profile exists, not active, and the window says to open it from the switcher.
 - **Edit.** Only the active profile (`client.profiles.edit`, `hh:profileEdit`). The form's fields come only from what it
@@ -108,8 +114,8 @@ refusal comes back as data: `not-ready`, `busy`, `open`, `invalid` (with `errors
 - **Archive** hides a profile from the switcher. Settings › General › People lists it with "Bring back".
 - **Delete** asks twice in the window. The profile's folder goes to the system Trash (`shell.trashItem`), then its
   history folder (when there is one), then the entry goes. A folder already gone is skipped. A Trash that refuses the
-  folder changes nothing (`failed`); one that refuses the history is logged and leaves it where it is. Nothing is
-  deleted for good.
+  folder changes nothing (`failed`); one that refuses the history is logged and leaves it where it is (a new profile
+  that gets the same id sets it aside, above). Nothing is deleted for good.
 - Archive and delete never work on the active profile (`active`): switch first. Once the first profile exists one is
   always active, so the last one can't be deleted. Edit, archive and delete wait (`busy`) while a switch, a turn, a
   restore, a move or an engine change runs, and a switch or a move waits for them.
@@ -125,7 +131,7 @@ refusal comes back as data: `not-ready`, `busy`, `open`, `invalid` (with `errors
   avatar (the title's first letter on its colour) and the name; with two or more profiles not archived (or one, while
   none is active), a select. Then "Add <label>". It is disabled while a turn runs. A refusal shows one line: "Wait until
   the AI finishes, then try again." (`busy`), "The open topic is still closing. Try again." (`open`), "That didn't work.
-  Try again." (anything else).
+  Try again." (anything else). On Home it is also disabled while the folder moves.
 - **Settings › General › People** (`ProfilesSection.tsx`): one row per profile with its avatar and name. The active one
   says "In use now" and has "Edit" (its form in place). Every other one has "Archive" (or "Bring back") and "Delete…",
   which asks "Delete <name>? This can't be undone from the app.", then "<name>'s folder and history go to the Trash. You

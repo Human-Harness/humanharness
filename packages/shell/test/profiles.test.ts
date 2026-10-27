@@ -164,6 +164,32 @@ describe("Profiles (profiles spec §5)", () => {
     expect(fs.existsSync(path.join(t.root, "tomas"))).toBe(true);
   });
 
+  it("a new profile never takes over a history left under its id (a Trash that refused it): that one is set aside", async () => {
+    const t = setup({
+      trash: async (p) => {
+        if (p.includes(`${path.sep}history${path.sep}`)) throw new Error("no Trash");
+        t.trashed.push(p);
+        await fs.promises.rm(p, { recursive: true, force: true });
+      },
+    });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    await t.profiles.create({ name: "Sofi" });
+    await t.profiles.create({ name: "Tomás" });
+    await t.profiles.open("sofi");
+    const history = path.join(t.userData, "history", "tomas");
+    fs.mkdirSync(history, { recursive: true });
+    fs.writeFileSync(path.join(history, "HEAD"), "old");
+    expect(await t.profiles.remove("tomas")).toEqual({ ok: true });
+    expect(fs.existsSync(history)).toBe(true);
+    expect(await t.profiles.create({ name: "Tomás" })).toEqual({ ok: true });
+    expect(t.active()).toBe("tomas");
+    // The old person's history is no longer where the new profile's history goes.
+    expect(fs.existsSync(history)).toBe(false);
+    const aside = fs.readdirSync(path.join(t.userData, "history")).filter((n) => /^tomas\.replaced-\d+$/.test(n));
+    expect(aside).toHaveLength(1);
+    expect(fs.readFileSync(path.join(t.userData, "history", aside[0], "HEAD"), "utf8")).toBe("old");
+  });
+
   it("a folder already gone is skipped, and the entry still goes", async () => {
     const t = setup();
     await t.profiles.create({ name: "Sofi" });

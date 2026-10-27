@@ -183,6 +183,16 @@ async function referencesFor(folder: string | undefined, log = false): Promise<R
   return usableReferences(refs, folder, log ? (message) => console.error(message) : undefined);
 }
 
+/**
+ * The reference folders the agent and `hh:openPath`/`hh:revealPath` use: those usable with the working folder `base`
+ * and, with profiles, none inside the app's folder (another profile's folder never reaches them). Without profiles,
+ * `referencesFor(base)` as before (D0).
+ */
+async function workReferences(c: AppConfig, base: string, log = false): Promise<ResolvedReference[]> {
+  if (!profilesOn() || !c.folder) return referencesFor(base, log);
+  return usableReferences(await references, base, log ? (message) => console.error(message) : undefined, c.folder);
+}
+
 const mode = () => (app.isPackaged ? "distribution" : "development");
 /** The engines this app offers (spec 3e: mock mode offers only the faked ones). */
 const offered = () => offeredEngines(availableEngines(harness.engines, mode()), hooks);
@@ -577,7 +587,7 @@ const runtime = memoise<HarnessRuntime>(async () => {
     data: (request) => agentDataRequest({ store: async () => dataStoreFor(base), runningTask: () => tasks.runningTask() }, request),
     command: cmd.command,
     env: cmd.env,
-    references: (await referencesFor(base, true)).map((r) => ({ label: r.label, path: r.path })),
+    references: (await workReferences(c, base, true)).map((r) => ({ label: r.label, path: r.path })),
     // The settings' sentences, read now and on every refresh (harness-settings spec §5). Absent without settings (D0).
     ...(settings ? { instructionSettings: () => settings.sentences() } : {}),
     onSession: (s) => void tasks.sessionStarted(s).catch((err: unknown) => console.error("Could not record the session", err)),
@@ -1112,7 +1122,7 @@ function registerIpc() {
   handle("hh:openPath", async (file: unknown) => {
     const c = await validConfig();
     if (!c) return false;
-    const roots = openRoots(baseOf(c), (await referencesFor(c.folder)).map((r) => r.path));
+    const roots = openRoots(baseOf(c), (await workReferences(c, baseOf(c))).map((r) => r.path));
     const target = await openableFile(file, roots);
     if (!target) return false;
     // Checked again right before opening: the file or a folder above it may have been swapped for a link meanwhile.
@@ -1122,7 +1132,7 @@ function registerIpc() {
   handle("hh:revealPath", async (file: unknown) => {
     const c = await validConfig();
     if (!c) return false;
-    const roots = openRoots(baseOf(c), (await referencesFor(c.folder)).map((r) => r.path));
+    const roots = openRoots(baseOf(c), (await workReferences(c, baseOf(c))).map((r) => r.path));
     const target = await revealableFile(file, roots);
     if (!target) return false;
     return revealIfStillSafe(target, roots, (p) => shell.showItemInFolder(p));

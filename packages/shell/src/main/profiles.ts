@@ -154,6 +154,10 @@ export class Profiles {
         const entry = await this.store(root).create(title, typeof record.color === "string" ? record.color : undefined);
         made = entry.id;
         const base = profileDir(root, entry.id);
+        // A history already under this id is someone else's (a deleted profile whose history the Trash refused, or a
+        // folder removed by hand): it is set aside, so the new person never sees it. Pruned later like a move's.
+        const history = this.d.historyDir(base);
+        if (await exists(history)) await fs.rename(history, `${history}.replaced-${Date.now()}`);
         await prepareFolder(base, this.d.seed);
         await this.d.writeRecord(base, { ...record, name: title });
         return entry.id;

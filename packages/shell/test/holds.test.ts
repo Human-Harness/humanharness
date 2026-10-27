@@ -55,8 +55,8 @@ describe("holds (profiles spec §5)", () => {
     expect(heldBy((h) => h.switchHeld())).toEqual(["engine", "restore"]);
   });
 
-  it("an engine change, update or sign-out waits for turns and a profile switch", () => {
-    expect(heldBy((h) => h.engineBusy())).toEqual(["tasksBusy", "profileSwitch"]);
+  it("an engine change, update or sign-out waits for turns, a profile switch, an archive or a delete", () => {
+    expect(heldBy((h) => h.engineBusy())).toEqual(["tasksBusy", "profileSwitch", "profileChange"]);
   });
 
   it("a folder change or move waits for turns, a restore, a profile switch, an archive or a delete", () => {

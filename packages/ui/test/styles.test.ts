@@ -40,6 +40,14 @@ describe("styles", () => {
     expect(css).toMatch(/\.hh-topbar button,[^{]*{[^}]*-webkit-app-region:\s*no-drag/);
   });
 
+  it("lets the top bar's selects open (the scope picker, the profile switcher) instead of dragging the window", () => {
+    expect(css).toMatch(/\.hh-topbar button,[^{]*\.hh-topbar select[^{]*{[^}]*-webkit-app-region:\s*no-drag/);
+  });
+
+  it("keeps the profile switcher's refusal on one line in the top bar", () => {
+    expect(css).toMatch(/\.hh-profile-switcher \[role="alert"\]\s*{[^}]*white-space:\s*nowrap[^}]*text-overflow:\s*ellipsis/);
+  });
+
   it("uses the system font for UI text and Lexend for display text, with no network fonts", () => {
     expect(css).toMatch(/--hh-font:\s*-apple-system/);
     expect(css).toMatch(/--hh-display:\s*"Lexend"/);

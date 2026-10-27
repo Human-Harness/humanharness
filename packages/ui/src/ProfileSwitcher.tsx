@@ -93,7 +93,11 @@ export function ProfileSwitcher({
       <button type="button" disabled={disabled} onClick={onAdd}>
         {t("profiles.add", { label })}
       </button>
-      {error && <p role="alert">{error}</p>}
+      {error && (
+        <p role="alert" title={error}>
+          {error}
+        </p>
+      )}
     </div>
   );
 }

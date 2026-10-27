@@ -140,6 +140,13 @@ describe("TaskManager: phases (task-phases spec §4)", () => {
     expect(await t.manager.trailerNow()).toEqual({ task: "t1", action: "quiz" });
   });
 
+  it("openPhase: the open task's phase id; undefined without a task", async () => {
+    const t = setup();
+    expect(await t.manager.openPhase()).toBeUndefined();
+    await t.manager.start("session");
+    expect(await t.manager.openPhase()).toBe("warmup");
+  });
+
   it("a task starts in its first phase: the parts listed, the first part's brief, the phase in state, turns and view", async () => {
     const t = setup();
     await t.manager.start("session");

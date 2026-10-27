@@ -211,6 +211,8 @@ export interface AppState {
   inputs?: Record<string, InputSpec>;
   /** The harness's settings (manifest `settings`): its own Settings tab. Absent: no tab (harness-settings D0). */
   settings?: SettingsView;
+  /** Sidekick, the core's prompt coach (sidekick spec). Absent: no Sidekick UI (tests, older mains). */
+  sidekick?: SidekickInfo;
   /** The harness's modes, by id (task-modes spec). Absent: none (D0). */
   modes?: Record<string, ModeView>;
   /** The harness's setup steps, in order (setup-steps spec). Absent: none (D0). */
@@ -887,6 +889,21 @@ export interface HarnessClient {
     /** Every field back to its default. */
     reset(): Promise<SettingsResult>;
     onChange(listener: (state: SettingsState) => void): () => void;
+  };
+  /** Sidekick (sidekick spec): its state, settings and the pre-send review. */
+  sidekick: {
+    get(): Promise<SidekickState | null>;
+    set(patch: SidekickSettingsPatch): Promise<SidekickSetResult>;
+    /**
+     * Reviews the prompt before it goes out; the composer sends as typed unless a card comes back or it was cancelled.
+     * `attached`: the send carries attachments or material (mutes the missing-context flag).
+     */
+    review(req: { text: string; force?: boolean; attached?: boolean }): Promise<SidekickReview>;
+    /** Stops a running review (⌘⏎ sends at once). */
+    cancelReview(): Promise<void>;
+    /** What the person did with a card; it leaves the panel. */
+    resolve(cardId: string, outcome: SidekickOutcome): Promise<void>;
+    onChange(listener: (state: SidekickState) => void): () => void;
   };
   /** The harness's setup steps (setup-steps spec). A harness with none answers no steps and refuses every change. */
   setupSteps: {

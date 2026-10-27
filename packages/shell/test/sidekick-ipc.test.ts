@@ -1,0 +1,61 @@
+import { describe, expect, it } from "vitest";
+import { registerSidekickIpc } from "../src/main/sidekick-ipc";
+
+function wire(available = true) {
+  const handlers = new Map<string, (...args: never[]) => unknown>();
+  const calls: unknown[][] = [];
+  const ctl = {
+    state: async () => ({ status: "off" }),
+    set: async (p: unknown) => (calls.push(["set", p]), { ok: true }),
+    review: async (r: unknown) => (calls.push(["review", r]), { kind: "card" }),
+    cancel: () => void calls.push(["cancel"]),
+    resolve: async (id: unknown, o: unknown) => void calls.push(["resolve", id, o]),
+  };
+  registerSidekickIpc(
+    (ch, fn) => void handlers.set(ch, fn),
+    () => (available ? (ctl as never) : null),
+  );
+  const call = (ch: string, ...args: unknown[]) => (handlers.get(ch) as (...a: unknown[]) => unknown)(...args);
+  return { call, calls };
+}
+
+describe("sidekick IPC", () => {
+  it("passes valid requests through", async () => {
+    const w = wire();
+    expect(await w.call("hh:sidekickGet")).toEqual({ status: "off" });
+    await w.call("hh:sidekickSet", { on: true });
+    expect(await w.call("hh:sidekickReview", { text: "make it better", force: true })).toEqual({ kind: "card" });
+    await w.call("hh:sidekickReview", { text: "see the file", attached: true, force: "yes" });
+    await w.call("hh:sidekickCancel");
+    await w.call("hh:sidekickResolve", "c1", "used");
+    expect(w.calls).toEqual([
+      ["set", { on: true }],
+      ["review", { text: "make it better", force: true }],
+      ["review", { text: "see the file", attached: true }],
+      ["cancel"],
+      ["resolve", "c1", "used"],
+    ]);
+  });
+
+  it("refuses malformed requests", async () => {
+    const w = wire();
+    expect(await w.call("hh:sidekickSet", "on")).toMatchObject({ ok: false });
+    expect(await w.call("hh:sidekickSet", [true])).toMatchObject({ ok: false });
+    expect(await w.call("hh:sidekickReview", { text: 3 })).toEqual({ kind: "send" });
+    expect(await w.call("hh:sidekickReview", { text: "   " })).toEqual({ kind: "send" });
+    expect(await w.call("hh:sidekickReview", null)).toEqual({ kind: "send" });
+    expect(await w.call("hh:sidekickReview", { text: "x".repeat(20_001) })).toEqual({ kind: "send" });
+    await w.call("hh:sidekickResolve", "c1", "nope");
+    await w.call("hh:sidekickResolve", 7, "used");
+    expect(w.calls).toEqual([]);
+  });
+
+  it("without a controller: no state, refusals, and a review sends as typed", async () => {
+    const w = wire(false);
+    expect(await w.call("hh:sidekickGet")).toBeNull();
+    expect(await w.call("hh:sidekickSet", { on: true })).toMatchObject({ ok: false });
+    expect(await w.call("hh:sidekickReview", { text: "make it better" })).toEqual({ kind: "send" });
+    await w.call("hh:sidekickCancel");
+    await w.call("hh:sidekickResolve", "c1", "used");
+  });
+});

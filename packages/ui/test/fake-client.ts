@@ -39,6 +39,11 @@ import type {
   SetupStep,
   SetupStepResult,
   SetupStepsState,
+  SidekickOutcome,
+  SidekickReview,
+  SidekickSetResult,
+  SidekickSettingsPatch,
+  SidekickState,
   TaskTurnNotice,
   TaskView,
   TestResult,
@@ -559,6 +564,38 @@ export class FakeClient implements HarnessClient {
       return () => {
         this.settingsListeners.delete(listener);
       };
+    },
+  };
+  /** What sidekick.get answers: null (off, as an older main) unless a test sets it. */
+  sidekickState: SidekickState | null = null;
+  /** What sidekick.review answers, in order; then `send`. */
+  sidekickReviews: SidekickReview[] = [];
+  /** What the sidekick namespace was asked, in order. */
+  readonly sidekickCalls: unknown[][] = [];
+  private sidekickListeners = new Set<(s: SidekickState) => void>();
+  /** The main process sent a new Sidekick state. */
+  emitSidekick(s: SidekickState) {
+    this.sidekickState = s;
+    for (const l of this.sidekickListeners) l(s);
+  }
+  sidekick = {
+    get: async () => this.sidekickState,
+    set: async (patch: SidekickSettingsPatch): Promise<SidekickSetResult> => {
+      this.sidekickCalls.push(["set", patch]);
+      if (!this.sidekickState) return { ok: false, message: "off" };
+      const settings = { ...this.sidekickState.settings, ...patch };
+      this.emitSidekick({ ...this.sidekickState, settings, status: settings.on ? "watching" : "off" });
+      return { ok: true, settings };
+    },
+    review: async (req: { text: string; force?: boolean; attached?: boolean }): Promise<SidekickReview> => {
+      this.sidekickCalls.push(["review", req]);
+      return this.sidekickReviews.shift() ?? { kind: "send" };
+    },
+    cancelReview: async () => void this.sidekickCalls.push(["cancel"]),
+    resolve: async (id: string, outcome: SidekickOutcome) => void this.sidekickCalls.push(["resolve", id, outcome]),
+    onChange: (l: (s: SidekickState) => void) => {
+      this.sidekickListeners.add(l);
+      return () => void this.sidekickListeners.delete(l);
     },
   };
   /** What setupSteps.get answers; submit, complete and skip change it. */

@@ -450,6 +450,11 @@ export class TaskManager {
     return c ? { id: c.id, ...(c.action ? { action: c.action } : {}), scope: scopeOfTask(c) } : null;
   }
 
+  /** The open task's phase id (task-phases spec), for Sidekick's off-phase check; undefined without one. */
+  async openPhase(): Promise<string | undefined> {
+    return (await this.d.store.load()).current?.phase?.id;
+  }
+
   /** The open task's history trailer, for commits made on its behalf (the person's data writes); none without a task. */
   async trailerNow(): Promise<HistoryTrailer | undefined> {
     const c = (await this.d.store.load()).current;

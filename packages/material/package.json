@@ -1,0 +1,14 @@
+{
+  "name": "@humanharness/material",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "Apache-2.0",
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": {
+    "@humanharness/blocks": "workspace:*",
+    "@humanharness/harness-sdk": "workspace:*",
+    "@humanharness/workspace": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "zod": "^4.6.5"
+  }
+}

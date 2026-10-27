@@ -326,6 +326,24 @@ importers:
         specifier: ^26.4.3
         version: 26.4.3(typescript@7.0.2)
 
+  packages/material:
+    dependencies:
+      '@humanharness/blocks':
+        specifier: workspace:*
+        version: link:../blocks
+      '@humanharness/harness-sdk':
+        specifier: workspace:*
+        version: link:../harness-sdk
+      '@humanharness/workspace':
+        specifier: workspace:*
+        version: link:../workspace
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.32.1
+        version: 1.32.1(zod@4.6.5)
+      zod:
+        specifier: ^4.6.5
+        version: 4.6.5
+
   packages/runtime:
     dependencies:
       '@agentclientprotocol/sdk':

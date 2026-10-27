@@ -59,6 +59,8 @@ export interface AppConfig {
   models?: ModelsConfig;
   /** The person said they keep their own copy of the folder: the backup notice stays hidden (Settings › General undoes it). */
   backupDismissed?: boolean;
+  /** Harnesses with profiles: the active profile's id (profiles spec §4). Only the main process changes it. */
+  profile?: string;
 }
 
 export interface EngineOption {

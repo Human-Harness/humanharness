@@ -75,6 +75,35 @@ describe("ConfigStore", () => {
     fs.writeFileSync(path.join(dir, "config.json"), JSON.stringify({ folder: "/x", language: "pt-BR" }));
     expect(await new ConfigStore(dir).load()).toEqual({ folder: "/x", language: "pt-BR" });
   });
+
+  it("D0: a config without a profile never gets one", async () => {
+    const dir = fs.mkdtempSync(path.join(root, "c-"));
+    const store = new ConfigStore(dir);
+    await store.save({ folder: "/x", language: "es", engineId: "claude" });
+    expect(Object.keys(JSON.parse(fs.readFileSync(path.join(dir, "config.json"), "utf8"))).sort()).toEqual(["engineId", "folder", "language"]);
+  });
+
+  it("only setProfile changes the active profile; a save never does (profiles spec §4)", async () => {
+    const dir = fs.mkdtempSync(path.join(root, "c-"));
+    const store = new ConfigStore(dir);
+    await store.save({ folder: "/x" });
+    await store.setProfile("sofi");
+    await store.save({ profile: "tomas", appearance: "dark" });
+    expect(await store.load()).toEqual({ folder: "/x", profile: "sofi", appearance: "dark" });
+    await store.setProfile(undefined);
+    expect(await store.load()).toEqual({ folder: "/x", appearance: "dark" });
+  });
+
+  it("a hand-edited profile that isn't an id is dropped when read", async () => {
+    const dir = fs.mkdtempSync(path.join(root, "c-"));
+    fs.writeFileSync(path.join(dir, "config.json"), JSON.stringify({ folder: "/x", profile: "../etc" }));
+    expect(await new ConfigStore(dir).load()).toEqual({ folder: "/x" });
+  });
+
+  it("setProfile refuses anything that isn't an id", async () => {
+    const store = new ConfigStore(fs.mkdtempSync(path.join(root, "c-")));
+    await expect(store.setProfile("../x")).rejects.toThrow(/profile/);
+  });
 });
 
 describe("historyDir", () => {

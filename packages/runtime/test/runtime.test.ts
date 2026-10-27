@@ -96,6 +96,16 @@ describe("createRuntime", () => {
     expect(await runtime.refreshInstructions()).toBe(false);
   });
 
+  it("a harness's declared document kinds reach AGENTS.md (document-reader §4.2)", async () => {
+    const harness = await loadHarness(FIXTURE);
+    const withKinds = { ...harness, documents: { kinds: { adr: { when: "A decision with real alternatives.", sections: ["Status", "Decision"] } } } };
+    const { folder } = await setup({ steps: [] }, undefined, { harness: withKinds });
+    const agents = fs.readFileSync(path.join(folder, "AGENTS.md"), "utf8");
+    expect(agents).toContain("### Document kinds");
+    expect(agents).toContain("- `adr`: A decision with real alternatives.");
+    expect(agents).toContain("      ## Decision");
+  });
+
   it("a closed runtime never rewrites AGENTS.md, and close waits for a running refresh", async () => {
     let sentences = ["Use a patient tone."];
     let release: () => void = () => {};

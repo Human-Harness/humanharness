@@ -299,4 +299,11 @@ describe("writing for the reader (document-reader spec §4)", () => {
     expect(kinds.indexOf("    ## Status")).toBeLessThan(kinds.indexOf("    ## Decision"));
     expect(s).toContain("`title` always, and `kind` when one of the kinds below fits.");
   });
+
+  it("a kind's template is a code block inside its list item, so its headings never render as live headings", () => {
+    const s = managedSection({ language: "en", blocks: {}, writing: { kinds: { adr: { when: "x", sections: ["Status"] } } } });
+    const kinds = s.slice(s.indexOf("### Document kinds"), s.indexOf(MANAGED_END));
+    // The item's content starts at column 2; a code block inside it needs 4 more spaces.
+    for (const line of ["---", "title: …", "kind: adr", "## Status"]) expect(kinds).toContain(`\n      ${line}\n`);
+  });
 });

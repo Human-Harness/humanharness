@@ -113,9 +113,11 @@ export function writingLines(writing: WritingGuide | undefined): string[] {
   if (kinds.length === 0) return lines;
   lines.push("", t.kinds, "", t.kindsIntro);
   for (const [id, k] of kinds) {
-    lines.push("", `- \`${id}\`: ${k.when}`, `  ${t.kindTemplate}`, "", "    ---", "    title: …", `    kind: ${id}`);
-    if (k.status) lines.push(`    status: ${k.status.join(" | ")}`);
-    lines.push("    ---", ...k.sections.map((s) => `    ## ${s}`));
+    // Six spaces: a code block inside the list item (content at column 2), so `## …` stays text.
+    const code = "      ";
+    lines.push("", `- \`${id}\`: ${k.when}`, `  ${t.kindTemplate}`, "", `${code}---`, `${code}title: …`, `${code}kind: ${id}`);
+    if (k.status) lines.push(`${code}status: ${k.status.join(" | ")}`);
+    lines.push(`${code}---`, ...k.sections.map((s) => `${code}## ${s}`));
   }
   return lines;
 }

@@ -40,23 +40,23 @@ When a document fits one of these kinds, put its id in the front-matter \`kind\`
 - \`adr\`: A decision with real alternatives.
   Template:
 
-    ---
-    title: …
-    kind: adr
-    status: proposed | accepted | superseded
-    ---
-    ## Status
-    ## Context
-    ## Decision
+      ---
+      title: …
+      kind: adr
+      status: proposed | accepted | superseded
+      ---
+      ## Status
+      ## Context
+      ## Decision
 
 - \`analysis\`: Exploring options before deciding.
   Template:
 
-    ---
-    title: …
-    kind: analysis
-    ---
-    ## Context
-    ## Options
+      ---
+      title: …
+      kind: analysis
+      ---
+      ## Context
+      ## Options
 "
 `;

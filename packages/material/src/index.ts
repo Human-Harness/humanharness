@@ -4,4 +4,5 @@ export * from "./detect";
 export * from "./blocks";
 export * from "./convert/text";
 export * from "./cut";
+export * from "./checks";
 export { estimateTokens } from "@humanharness/workspace";

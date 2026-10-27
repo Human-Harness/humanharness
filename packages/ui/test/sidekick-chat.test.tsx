@@ -96,6 +96,20 @@ describe("Sidekick in the chat", () => {
     expect(box.value).toBe("");
   });
 
+  it("a card underlines its spans in the composer while the draft is the prompt it read; the field is never remounted", async () => {
+    const c = client();
+    c.sidekickReviews = [{ kind: "card", card: CARD }];
+    const box = await open(c);
+    type(box, "make it better");
+    enter(box);
+    act(() => c.emitSidekick({ ...SK_ON, status: "suggestion", card: { ...CARD, issues: [{ kind: "other", text: "x", span: [0, 99] }] } }));
+    await waitFor(() => expect(document.querySelector(".hh-sk-backdrop mark")?.textContent).toBe("make it better"));
+    // The model's span past the end is clamped to the prompt.
+    type(box, "make it better now");
+    expect(document.querySelector(".hh-sk-backdrop")).toBeNull();
+    expect(box.isConnected).toBe(true);
+  });
+
   it("Edit puts the rewrite in the composer; Send anyway sends the original", async () => {
     const c = client();
     c.sidekickReviews = [{ kind: "card", card: CARD }];

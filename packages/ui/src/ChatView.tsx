@@ -38,6 +38,7 @@ import { usePacedAnswer } from "./pace";
 import { PhaseStepper } from "./PhaseStepper";
 import { actionPhases, phaseModesOf } from "./phases";
 import { RecommendModeBlock } from "./RecommendModeBlock";
+import { FlaggedText } from "./sidekick/FlaggedText";
 import { SidekickMark } from "./sidekick/mark";
 import { SidekickPanel } from "./sidekick/SidekickPanel";
 import { useSidekick } from "./sidekick/useSidekick";
@@ -176,7 +177,8 @@ export function ChatView({
   // Sidekick (sidekick spec §4.1, §7): only when main sends `state.sidekick`, never in slim mode (D0).
   /** Bumped after a restore: main does not push Sidekick's state then. */
   const [skRefresh, setSkRefresh] = useState(0);
-  const sidekick = useSidekick(client, state.sidekick !== undefined && !slim, skRefresh);
+  const skEnabled = state.sidekick !== undefined && !slim;
+  const sidekick = useSidekick(client, skEnabled, skRefresh);
   const reviewOn = sidekick !== null && sidekick.settings.on && sidekick.settings.preSend;
   /** A review in flight: until when the countdown runs (null: "always wait"). */
   const [reviewing, setReviewing] = useState<{ until: number | null } | null>(null);
@@ -1215,22 +1217,36 @@ export function ChatView({
           </section>
           {composer && (
             <form className="hh-composer" onSubmit={onSubmit}>
-              <textarea
-                ref={inputRef}
-                aria-label={placeholder}
-                placeholder={placeholder}
-                value={draft}
-                readOnly={reviewing !== null}
-                onChange={(e) => setDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key !== "Enter" || e.shiftKey) return;
-                  if (e.nativeEvent.isComposing || e.keyCode === 229) return;
-                  e.preventDefault();
-                  // ⌘⏎ / Ctrl⏎ sends at once; ⌥⏎ asks for a review even without flags (spec §4.1).
-                  if (sidekick && (e.metaKey || e.ctrlKey)) sendNow(draft);
-                  else void submit(draft, e.altKey);
-                }}
-              />
+              {(() => {
+                const field = (
+                  <textarea
+                    ref={inputRef}
+                    aria-label={placeholder}
+                    placeholder={placeholder}
+                    value={draft}
+                    readOnly={reviewing !== null}
+                    onChange={(e) => setDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key !== "Enter" || e.shiftKey) return;
+                      if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+                      e.preventDefault();
+                      // ⌘⏎ / Ctrl⏎ sends at once; ⌥⏎ asks for a review even without flags (spec §4.1).
+                      if (sidekick && (e.metaKey || e.ctrlKey)) sendNow(draft);
+                      else void submit(draft, e.altKey);
+                    }}
+                  />
+                );
+                // D0: without Sidekick, the bare textarea as before. Wrapped from the first render (not once the state
+                // loads) so the field is never remounted under the person's cursor.
+                if (!skEnabled) return field;
+                const card = sidekick?.card;
+                const spans = card && card.prompt === draft ? cardSpans(card) : [];
+                return (
+                  <FlaggedText text={draft} spans={spans}>
+                    {field}
+                  </FlaggedText>
+                );
+              })()}
               {/* A closing or checkpoint turn is quiet (nothing live on screen) but still stoppable. */}
               {chat.live || closing || checkpoint ? (
                 <button type="button" onClick={() => void client.cancel()}>
@@ -1337,6 +1353,11 @@ export function ChatView({
       )}
     </div>
   );
+}
+
+/** The card's spans to underline in the composer: the local flags' and the model's issues that point at the text. */
+function cardSpans(card: SidekickCard): [number, number][] {
+  return [...card.flags.map((f) => f.span), ...card.issues.flatMap((i) => (i.span ? [i.span] : []))];
 }
 
 /** "⌘" on macOS, "Ctrl" elsewhere: the key that sends at once. */

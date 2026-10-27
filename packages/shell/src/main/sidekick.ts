@@ -1,6 +1,6 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import type { EngineDef, ModelProfile } from "@humanharness/engines";
-import { DEFAULT_SIDEKICK, SIDEKICK_ALWAYS_MAX_MS, type SidekickManifest, type SidekickMoment, sidekickMinWords, sidekickMode, sidekickTips } from "@humanharness/harness-sdk";
+import { DEFAULT_SIDEKICK, SIDEKICK_ALWAYS_MAX_MS, SIDEKICK_COLLECTION, type SidekickManifest, type SidekickMoment, sidekickMinWords, sidekickMode, sidekickTips } from "@humanharness/harness-sdk";
 import type { SidekickAnswer, SidekickSessionOptions } from "@humanharness/runtime";
 import type { SidekickCard, SidekickHeadsUp, SidekickInfo, SidekickOutcome, SidekickReview, SidekickSetResult, SidekickSettings, SidekickSettingsPatch, SidekickState } from "@humanharness/ui/client";
 import {
@@ -15,7 +15,7 @@ import {
   whyShown,
 } from "@humanharness/workspace";
 import type { SidekickStore } from "./sidekick-store";
-import { afterReplyPrompt, parseAfter, parseReview, preSendPrompt } from "./sidekick-turns";
+import { SIDEKICK_LEARN_MIN, afterReplyPrompt, learnPrompt, parseAfter, parseLearn, parseReview, preSendPrompt } from "./sidekick-turns";
 import type { TurnEnd } from "./task-manager";
 import { type UsageRecord, capTokens, sidekickRecord, sidekickSpent, sidekickWeek } from "./usage-log";
 
@@ -74,8 +74,8 @@ export interface SidekickDeps {
   command(engine: EngineDef): Promise<{ command: string[]; env: Record<string, string> } | null>;
   /** Sidekick's model (the `sidekick` process in Settings › Models), resolved when a session opens. */
   profile(engine: EngineDef): Promise<ModelProfile>;
-  /** The session's working folder for `base` (sidekickWorkDir). */
-  workDir(base: string): string;
+  /** The session's working folder for `base` (sidekickWorkDir): the sidekick's, or a one-off turn's (`id`). */
+  workDir(base: string, id?: string): string;
   writeBrief(folder: string, text: string, engine: EngineDef): Promise<unknown>;
   open(o: SidekickSessionOptions): SidekickLike;
   task(): Promise<OpenTask | null>;
@@ -92,6 +92,8 @@ export interface SidekickDeps {
   events: { read(base: string): Promise<SidekickEvent[]>; append(base: string, e: SidekickEvent): Promise<void> };
   /** "Save as decision" (plan Decision 7): a note written as the person in the task's scope, with its history commit. */
   saveDecision(o: { task: string; scope: string; action?: string; title: string; decision: string }): Promise<void>;
+  /** A data request on the `sidekick` collection as the app (learning, spec §6.4), with its history commit. */
+  writeApp(request: unknown): Promise<unknown>;
 }
 
 export const defaultWaitMs = (wait: SidekickSettings["wait"]): number => (wait === "always" ? SIDEKICK_ALWAYS_MAX_MS : wait * 1000);
@@ -130,6 +132,8 @@ export class SidekickController {
   private sends = 0;
   /** The open task's waiting cards other than the live pre-send one (after the reply), with where each was made. */
   private cards: { card: SidekickCard; ctx: { task: OpenTask | null; base: string } }[] = [];
+  /** The running learning turn (spec §6.4); turning off, a profile switch or closing drops it. */
+  private learning: AbortController | null = null;
   /** The task's earlier prompts, oldest first, for its next after-reply turn. */
   private prompts: { key: string; items: string[] } = { key: NO_TASK, items: [] };
   /** The open task's earlier cards (spec §7 "Earlier · used"); reset when another task opens. */
@@ -204,6 +208,7 @@ export class SidekickController {
       this.reviews++;
       this.running?.abort();
       this.dropAfter();
+      this.learning?.abort();
       this.card = null;
       this.cards = [];
       this.notice = undefined;
@@ -329,6 +334,7 @@ export class SidekickController {
       this.reviews++;
       this.running?.abort();
       this.dropAfter();
+      this.learning?.abort();
       this.card = null;
       this.cards = [];
       this.notice = undefined;
@@ -343,7 +349,10 @@ export class SidekickController {
     this.running?.abort();
   }
 
-  /** Between tasks (TaskDeps.betweenTasks): sessions of tasks no longer open close (spec §5 "closed when the task closes"). */
+  /**
+   * Between tasks (TaskDeps.betweenTasks): sessions of tasks no longer open close (spec §5 "closed when the task
+   * closes"); with no task open, Sidekick learns from the new events (spec §6.4).
+   */
   async betweenTasks(): Promise<void> {
     const open = (await this.d.task().catch(() => null))?.id;
     if (this.past.key !== (open ?? NO_TASK)) this.past = { key: open ?? NO_TASK, items: [] };
@@ -361,6 +370,58 @@ export class SidekickController {
       this.card = null;
       await this.push();
     } else if (dropped) await this.push();
+    if (open === undefined) await this.learn().catch((err: unknown) => console.error("Sidekick could not learn", err));
+  }
+
+  /**
+   * Learning (spec §6.4, plan Decision 6): with SIDEKICK_LEARN_MIN or more events since the last update, one turn in
+   * a one-off session (its own `learn` folder, closed right after) updates the learned items, written as the app.
+   * Only Sidekick's own items change; the person's (`source: "person"`) never do. Off, or turned off while the turn
+   * runs: nothing is asked or written (D0).
+   */
+  private async learn(): Promise<void> {
+    if (this.closed || this.learning) return;
+    const settings = await this.d.store.settings();
+    if (!settings.on) return;
+    const setup = await this.d.setup().catch(() => null);
+    if (!setup || !(await this.d.hasNotice(setup.engineId).catch(() => false))) return;
+    // The events still being written count too.
+    await this.eventWrites.get(setup.base);
+    const since = settings.learnedAt ?? "";
+    const events = (await this.events(setup.base)).filter((e) => e.at > since);
+    if (events.length < SIDEKICK_LEARN_MIN || this.closed || this.learning) return;
+    const controller = new AbortController();
+    this.learning = controller;
+    const live = () => !controller.signal.aborted && !this.closed;
+    let session: SidekickLike | null = null;
+    try {
+      const items = (await this.d.store.all()).filter((r) => r.type === "learned" && r.text !== undefined);
+      const engine = this.d.engine(setup.engineId);
+      session = await this.oneOff(setup.base, engine, "learn", live);
+      if (!session || !live()) return;
+      const prompt = learnPrompt({ items: items.map((r) => ({ id: r.id, text: r.text ?? "", level: r.level ?? "you", source: typeof r.source === "string" ? r.source : "learned" })), events });
+      const answer = await session.ask(prompt, controller.signal);
+      await this.logTurn(setup.base, engine, session, null, "learn", answer);
+      const result = answer.ok ? parseLearn(answer.text) : null;
+      if (!result || !live()) return;
+      // Settings may have changed while the turn ran.
+      if (!(await this.d.store.settings()).on || !live()) return;
+      const now = new Date().toISOString();
+      const mine = new Map(items.filter((r) => r.source === "learned").map((r) => [r.id, r]));
+      const write = (request: unknown) => this.d.writeApp(request);
+      for (const a of result.add) await write({ op: "put", collection: SIDEKICK_COLLECTION, record: { id: `l-${randomBytes(4).toString("hex")}`, type: "learned", ...a, source: "learned", updatedAt: now } });
+      for (const u of result.update) {
+        const old = mine.get(u.id);
+        if (old) await write({ op: "put", collection: SIDEKICK_COLLECTION, record: { ...old, text: u.text, updatedAt: now } });
+      }
+      for (const id of result.remove) if (mine.has(id)) await write({ op: "delete", collection: SIDEKICK_COLLECTION, key: id });
+      // Up to the newest event it read: one written while the turn ran counts toward the next update.
+      const r = await this.d.store.set({ learnedAt: events.reduce((max, e) => (e.at > max ? e.at : max), since) });
+      if (!r.ok) console.error("Could not record when Sidekick learned", r.message);
+    } finally {
+      if (this.learning === controller) this.learning = null;
+      await session?.close().catch(() => undefined);
+    }
   }
 
   async close(): Promise<void> {
@@ -368,6 +429,7 @@ export class SidekickController {
     this.reviews++;
     this.running?.abort();
     this.dropAfter();
+    this.learning?.abort();
     await this.closeSessions(() => true);
   }
 
@@ -657,7 +719,8 @@ export class SidekickController {
   /** One tagged usage line for a model turn (spec §8); a turn before its task counts toward the loose session's spend. */
   private async logTurn(base: string, engine: EngineDef, session: SidekickLike, task: OpenTask | null, moment: "pre" | "after" | "learn", answer: SidekickAnswer): Promise<void> {
     if (!answer.usage) return;
-    if (!task) this.pending.set(NO_TASK, (this.pending.get(NO_TASK) ?? 0) + capTokens(answer.usage));
+    // Learning runs between tasks: no loose session's spend.
+    if (!task && moment !== "learn") this.pending.set(NO_TASK, (this.pending.get(NO_TASK) ?? 0) + capTokens(answer.usage));
     const record = sidekickRecord({
       engine: engine.id,
       ...(task ? { task: task.id, scope: task.scope } : {}),
@@ -714,7 +777,10 @@ export class SidekickController {
     if (!live()) return null;
     const folder = this.d.workDir(base);
     const tips = sidekickTips(this.d.manifest);
-    await this.d.writeBrief(folder, sidekickBrief({ name: SIDEKICK_NAME, harness: this.d.harness.name, ...(tips ? { tips } : {}) }), engine);
+    // What Sidekick learned (spec §6.4): read when the session opens, so the brief changes only between tasks.
+    const learned = (await this.d.store.all()).filter((r) => r.type === "learned" && r.text).map((r) => r.text as string);
+    if (!live()) return null;
+    await this.d.writeBrief(folder, sidekickBrief({ name: SIDEKICK_NAME, harness: this.d.harness.name, ...(tips ? { tips } : {}), ...(learned.length ? { learned } : {}) }), engine);
     // A review that replaced this one may have opened the key's session meanwhile: keep that one.
     const raced = this.sessions.get(key);
     if (raced && raced.base === base) return raced.session;
@@ -722,6 +788,19 @@ export class SidekickController {
     const session = this.d.open({ engine, command: cmd.command, env: cmd.env, folder, profile });
     this.sessions.set(key, { session, base });
     return session;
+  }
+
+  /** A one-off session in its own folder (`id`), never kept in `sessions`: the caller closes it. Null without a CLI or once `live` says no. */
+  private async oneOff(base: string, engine: EngineDef, id: string, live: () => boolean): Promise<SidekickLike | null> {
+    const cmd = await this.d.command(engine).catch(() => null);
+    if (!cmd) return null;
+    const profile = await this.d.profile(engine);
+    if (!live()) return null;
+    const folder = this.d.workDir(base, id);
+    const tips = sidekickTips(this.d.manifest);
+    await this.d.writeBrief(folder, sidekickBrief({ name: SIDEKICK_NAME, harness: this.d.harness.name, ...(tips ? { tips } : {}) }), engine);
+    if (!live()) return null;
+    return this.d.open({ engine, command: cmd.command, env: cmd.env, folder, profile });
   }
 
   /** Sidekick's usage lines in `base` (cached; a failed or empty read is not kept, since the log loader answers [] on errors). */

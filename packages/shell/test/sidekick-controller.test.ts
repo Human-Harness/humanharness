@@ -11,10 +11,13 @@ const profile = { engine: "claude", tier: "light" as const, model: "haiku", effo
 const json = (o: unknown) => JSON.stringify(o);
 const SUGGEST = json({ verdict: "suggest", issues: [{ kind: "vague", text: "Say what better means." }], rewrite: "Make the intro shorter.", confidence: 0.8 });
 
-export function harness(o: { record?: Partial<SidekickRecord> | null; answers?: (string | ((signal: AbortSignal) => Promise<SidekickAnswer>))[]; task?: { id: string; action?: string; scope: string; phase?: string } | null; usage?: UsageRecord[]; manifest?: SidekickDeps["manifest"]; waitMs?: number; events?: SidekickEvent[]; phases?: { id: string; label: string }[] } = {}) {
+export function harness(o: { record?: Partial<SidekickRecord> | null; answers?: (string | ((signal: AbortSignal) => Promise<SidekickAnswer>))[]; task?: { id: string; action?: string; scope: string; phase?: string } | null; usage?: UsageRecord[]; manifest?: SidekickDeps["manifest"]; waitMs?: number; events?: SidekickEvent[]; phases?: { id: string; label: string }[]; extra?: Partial<SidekickRecord>[] } = {}) {
   // The `sidekick` collection by id; `record()` is the settings record.
-  const records = new Map<string, Partial<SidekickRecord>>(o.record ? [[o.record.id ?? "settings", o.record]] : []);
+  const records = new Map<string, Partial<SidekickRecord>>([...(o.record ? [o.record] : []), ...(o.extra ?? [])].map((r) => [r.id ?? "settings", r]));
   const writes: { op: string; record?: Partial<SidekickRecord>; key?: string }[] = [];
+  // Writes as the app (learning, spec §6.4), applied to the same records.
+  const appWrites: { op: string; record?: Partial<SidekickRecord>; key?: string }[] = [];
+  const folders: string[] = [];
   const events: SidekickEvent[] = [...(o.events ?? [])];
   const asked: string[] = [];
   const opened: string[] = [];
@@ -45,7 +48,7 @@ export function harness(o: { record?: Partial<SidekickRecord> | null; answers?: 
     engine: getEngine,
     command: async () => ({ command: ["claude"], env: {} }),
     profile: async () => profile,
-    workDir: () => "/ud/sidekick/k/sidekick",
+    workDir: (_b, id = "sidekick") => (folders.push(id), `/ud/sidekick/k/${id}`),
     writeBrief: async (_f, text) => void briefs.push(text),
     open: (s) => {
       const id = `s${opened.length + 1}`;
@@ -70,10 +73,19 @@ export function harness(o: { record?: Partial<SidekickRecord> | null; answers?: 
     events: { read: async () => [...events], append: async (_b, e) => void events.push(e) },
     waitMs: () => o.waitMs ?? 5_000,
     saveDecision: async (d) => void decisions.push(d),
+    writeApp: async (req) => {
+      const r = req as { op: string; record?: Partial<SidekickRecord>; key?: string };
+      appWrites.push(r);
+      if (r.op === "delete") records.delete(r.key ?? "");
+      else if (r.record) records.set(r.record.id ?? "", r.record);
+    },
   };
   return { ctl: new SidekickController(deps), deps, asked, opened, closed, logged, briefs, states, setTask: (t: typeof task) => (task = t), events,
     writes,
+    appWrites,
+    folders,
     decisions,
+    records: () => [...records.values()],
     record: () => records.get("settings") ?? null,
     setRecord: (r: Partial<SidekickRecord> | null) => (r ? records.set("settings", r) : records.delete("settings")),
   };
@@ -891,5 +903,110 @@ describe("heads-ups (spec §4.3)", () => {
     expect(await f.ctl.saveDecision(rep.id)).toEqual({ ok: false, message: "disk full" });
     expect(await headsUps(f)).toHaveLength(1);
     expect(f.events).toEqual([]);
+  });
+});
+
+describe("learning at task close (spec §6.4)", () => {
+  const ev = (i: number, at = `2026-10-27T10:0${i}:00Z`): SidekickEvent => ({ at, sidekick: "sidekick", moment: "pre", kind: "vague", outcome: "used" });
+  const five = [ev(1), ev(2), ev(3), ev(4), ev(5)];
+  const learned = (id: string, text: string, source: "learned" | "person" = "learned") => ({ id, type: "learned" as const, text, level: "you" as const, source, updatedAt: "2026-10-26T00:00:00Z" });
+
+  it("fewer than 5 new events: no turn", async () => {
+    const h = harness({ record: on, events: [ev(1), ev(2), ev(3), ev(4)], task: null });
+    await h.ctl.betweenTasks();
+    expect(h.asked).toEqual([]);
+    expect(h.opened).toEqual([]);
+  });
+
+  it("only events after learnedAt count", async () => {
+    const h = harness({ record: { ...on, learnedAt: "2026-10-27T10:02:30Z" }, events: five, task: null });
+    await h.ctl.betweenTasks();
+    expect(h.asked).toEqual([]);
+  });
+
+  it("5 or more: one learn turn in its own session; the result goes in as the app; person items never change", async () => {
+    const h = harness({
+      record: on,
+      extra: [{ ...learned("l-p", "Doesn't want vague suggestions.", "person"), kind: "vague" }, learned("l-1", "Old."), learned("l-2", "Gone.")],
+      events: five,
+      task: null,
+      answers: [json({ add: [{ text: "Writes short prompts.", level: "you" }], update: [{ id: "l-1", text: "New." }, { id: "l-p", text: "Hacked." }, { id: "l-x", text: "Unknown." }], remove: ["l-p", "l-2"] })],
+    });
+    await h.ctl.betweenTasks();
+    expect(h.asked).toHaveLength(1);
+    expect(h.asked[0]).toContain("Sidekick: learn");
+    expect(h.asked[0]).toContain("- [l-p] (person) Doesn't want vague suggestions.");
+    expect(h.folders).toEqual(["learn"]);
+    expect(h.closed).toEqual(["s1"]);
+    expect(h.appWrites).toEqual([
+      expect.objectContaining({ op: "put", record: expect.objectContaining({ type: "learned", text: "Writes short prompts.", level: "you", source: "learned", id: expect.stringMatching(/^l-[0-9a-f]{8}$/) }) }),
+      expect.objectContaining({ op: "put", record: expect.objectContaining({ id: "l-1", text: "New.", source: "learned" }) }),
+      { op: "delete", collection: "sidekick", key: "l-2" },
+    ]);
+    expect(h.records()).toContainEqual(expect.objectContaining({ id: "l-p", text: "Doesn't want vague suggestions.", source: "person" }));
+    expect(h.record()).toMatchObject({ on: true, learnedAt: expect.any(String) });
+    expect(h.logged.at(-1)).toMatchObject({ moment: "learn", sidekick: "sidekick" });
+    // Not a loose session's spend: the next task's cap starts at 0.
+    expect((await h.ctl.state()).spent).toBe(0);
+    // Done until 5 more events come.
+    await h.ctl.betweenTasks();
+    expect(h.asked).toHaveLength(1);
+  });
+
+  it("a task still open: no learning yet", async () => {
+    const h = harness({ record: on, events: five });
+    await h.ctl.betweenTasks();
+    expect(h.asked).toEqual([]);
+  });
+
+  it("an answer that isn't the contract changes nothing, and learnedAt stays", async () => {
+    const h = harness({ record: on, events: five, task: null, answers: ["not json"] });
+    await h.ctl.betweenTasks();
+    expect(h.asked).toHaveLength(1);
+    expect(h.appWrites).toEqual([]);
+    expect(h.record()).not.toHaveProperty("learnedAt");
+    expect(h.closed).toEqual(["s1"]);
+  });
+
+  it("turned off while the turn runs: nothing is written", async () => {
+    let release: (a: SidekickAnswer) => void = () => undefined;
+    const h = harness({ record: on, events: five, task: null, answers: [() => new Promise<SidekickAnswer>((r) => (release = r))] });
+    const run = h.ctl.betweenTasks();
+    await vi.waitFor(() => expect(h.asked).toHaveLength(1));
+    await h.ctl.set({ on: false });
+    release({ ok: true, text: json({ add: [{ text: "Writes short prompts.", level: "you" }] }) });
+    await run;
+    expect(h.appWrites).toEqual([]);
+    expect(h.record()?.learnedAt).toBeUndefined();
+    expect(h.closed).toEqual(["s1"]);
+  });
+
+  it("D0: Sidekick off → no learning turn, no event, no record write", async () => {
+    const h = harness({ events: five, task: null, extra: [learned("l-1", "Old.")] });
+    await h.ctl.betweenTasks();
+    expect(h.asked).toEqual([]);
+    expect(h.opened).toEqual([]);
+    expect(h.briefs).toEqual([]);
+    expect(h.logged).toEqual([]);
+    expect(h.events).toEqual(five);
+    expect(h.writes).toEqual([]);
+    expect(h.appWrites).toEqual([]);
+  });
+
+  it("learnedAt survives a toggle", async () => {
+    const h = harness({ record: on, events: five, task: null, answers: [json({})] });
+    await h.ctl.betweenTasks();
+    const at = (h.record() as { learnedAt?: string }).learnedAt;
+    expect(at).toEqual(expect.any(String));
+    await h.ctl.set({ afterReply: false });
+    expect(h.record()).toMatchObject({ learnedAt: at, afterReply: false });
+  });
+
+  it("the next session's brief carries the learned items", async () => {
+    const h = harness({ record: on, extra: [learned("l-1", "Writes short prompts."), { ...learned("l-p", "Doesn't want vague suggestions.", "person"), kind: "vague" }] });
+    await h.ctl.review({ text: "make it better", force: true });
+    expect(h.briefs[0]).toContain("## About this person");
+    expect(h.briefs[0]).toContain("- Writes short prompts.");
+    expect(h.briefs[0]).toContain("- Doesn't want vague suggestions.");
   });
 });

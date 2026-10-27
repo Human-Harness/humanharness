@@ -153,3 +153,45 @@ export type SidekickAfter = z.output<typeof afterSchema>;
 
 /** The after-reply reply, parsed; null when it isn't the contract. */
 export const parseAfter = (text: string): SidekickAfter | null => parseJson(text, afterSchema);
+
+/** The first line of every learning turn (mock mode and the e2e scripts match on it). */
+export const SIDEKICK_LEARN_MARK = "Sidekick: learn";
+/** The new events a learning turn needs (spec §6.4). */
+export const SIDEKICK_LEARN_MIN = 5;
+
+export interface LearnInput {
+  /** The learned items, with their ids; `source: "person"` items are the person's own. */
+  items: readonly { id: string; text: string; level: string; source: string }[];
+  /** The events since the last update, oldest first. */
+  events: readonly { kind: string; outcome: string; moment: string; sidekick: string }[];
+}
+
+/** The learning turn (spec §6.4): what Sidekick knows and what the person did since, for at most 3 changes. */
+export function learnPrompt(i: LearnInput): string {
+  return [
+    SIDEKICK_LEARN_MARK,
+    "",
+    "What you know about the person (ids in brackets; items marked (person) are theirs: never change or remove them):",
+    ...(i.items.length ? i.items.map((it) => `- [${it.id}] (${it.source === "person" ? "person" : it.level}) ${it.text}`) : ["- (nothing yet)"]),
+    "What they did with your suggestions since then:",
+    ...i.events.map((e) => `- ${e.moment} ${e.kind} → ${e.outcome}`),
+    "",
+    'Answer with the JSON object only: {"add":[{"text":string,"level":"you"|"harness","kind":string?}],"update":[{"id":string,"text":string}],"remove":[string]}. "you": about the person in general; "harness": how they work in this app. One short sentence per item; at most 3 changes; {} when nothing changes.',
+  ].join("\n");
+}
+
+export const learnSchema = z.object({
+  add: z
+    .array(z.object({ text: z.string().min(1).max(300), level: z.enum(["you", "harness"]), kind: z.string().max(40).optional() }))
+    .max(3)
+    .default([]),
+  update: z
+    .array(z.object({ id: z.string().min(1).max(80), text: z.string().min(1).max(300) }))
+    .max(3)
+    .default([]),
+  remove: z.array(z.string().min(1).max(80)).max(3).default([]),
+});
+export type SidekickLearn = z.output<typeof learnSchema>;
+
+/** The learning reply, parsed; null when it isn't the contract. */
+export const parseLearn = (text: string): SidekickLearn | null => parseJson(text, learnSchema);

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { MOCK_SIDEKICK_MARKS, isMockSidekickTurn, mockSidekickReply } from "@humanharness/fake-agent";
-import { SIDEKICK_AFTER_MARK, SIDEKICK_PRE_MARK, afterReplyPrompt, cutReply, parseAfter, parseReview, preSendPrompt } from "../src/main/sidekick-turns";
+import { SIDEKICK_AFTER_MARK, SIDEKICK_LEARN_MARK, SIDEKICK_PRE_MARK, afterReplyPrompt, cutReply, learnPrompt, parseAfter, parseLearn, parseReview, preSendPrompt } from "../src/main/sidekick-turns";
 
 const input = {
   harness: { name: "Essay Coach", tagline: "Write better essays" },
@@ -131,7 +131,7 @@ describe("after the reply (spec §4.2)", () => {
   });
 
   it("fake-agent's mock knows the real marks and answers an after-reply turn with nothing to show", () => {
-    expect(MOCK_SIDEKICK_MARKS).toEqual({ pre: SIDEKICK_PRE_MARK, after: SIDEKICK_AFTER_MARK });
+    expect(MOCK_SIDEKICK_MARKS).toEqual({ pre: SIDEKICK_PRE_MARK, after: SIDEKICK_AFTER_MARK, learn: SIDEKICK_LEARN_MARK });
     const p = afterReplyPrompt({ harness: { name: "Essay Coach" }, prompt: "Outline chapter 2", reply: "Here it is.", lastPrompts: [], uiLanguage: "English" });
     expect(isMockSidekickTurn(p)).toBe(true);
     const after = parseAfter(mockSidekickReply(p));
@@ -144,5 +144,39 @@ describe("after the reply (spec §4.2)", () => {
     expect(parseAfter("```json\n{\"repeated\":{\"topic\":\"Tone\",\"decision\":\"Formal\"}}\n```")).toEqual({ repeated: { topic: "Tone", decision: "Formal" } });
     expect(parseAfter("{}")).toEqual({});
     expect(parseAfter("nope")).toBeNull();
+  });
+});
+
+describe("learning turn (spec §6.4)", () => {
+  it("lists the items with ids and the new events; the person's items are marked theirs", () => {
+    const p = learnPrompt({
+      items: [
+        { id: "l-1", text: "Takes scope fixes.", level: "you", source: "learned" },
+        { id: "l-p", text: "Doesn't want vague suggestions.", level: "you", source: "person" },
+      ],
+      events: [{ kind: "vague", outcome: "used", moment: "pre", sidekick: "sidekick" }],
+    });
+    expect(p.startsWith(SIDEKICK_LEARN_MARK)).toBe(true);
+    expect(p).toContain("- [l-1] (you) Takes scope fixes.");
+    expect(p).toContain("- [l-p] (person) Doesn't want vague suggestions.");
+    expect(p).toContain("- pre vague → used");
+    expect(p).toContain("Answer with the JSON object only");
+  });
+
+  it("parses add, update and remove; missing lists are empty; anything else is null", () => {
+    expect(parseLearn('{"add":[{"text":"Writes short prompts.","level":"you"}],"update":[{"id":"l-1","text":"Usually takes scope fixes."}],"remove":["l-2"]}')).toEqual({
+      add: [{ text: "Writes short prompts.", level: "you" }],
+      update: [{ id: "l-1", text: "Usually takes scope fixes." }],
+      remove: ["l-2"],
+    });
+    expect(parseLearn("{}")).toEqual({ add: [], update: [], remove: [] });
+    expect(parseLearn('{"add":[{"text":"x","level":"everyone"}]}')).toBeNull();
+    expect(parseLearn("nope")).toBeNull();
+  });
+
+  it("fake-agent's mock answers a learning turn with no changes", () => {
+    const p = learnPrompt({ items: [], events: [{ kind: "vague", outcome: "used", moment: "pre", sidekick: "sidekick" }] });
+    expect(isMockSidekickTurn(p)).toBe(true);
+    expect(parseLearn(mockSidekickReply(p))).toEqual({ add: [], update: [], remove: [] });
   });
 });

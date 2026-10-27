@@ -65,6 +65,7 @@ import {
 } from "@humanharness/ui/client";
 import {
   APP_SCOPE,
+  DATA_CHANGE_PREFIX,
   DataStore,
   History,
   MAIN_SCOPE,
@@ -79,6 +80,7 @@ import {
   profileDir,
   readNotes,
   readSidekickEvents,
+  runDataRequest,
   sidekickWorkDir,
   syncLocations,
   syncStatus,
@@ -1694,7 +1696,7 @@ if (loaded) {
       return supportedEffort(firstOffered(resolveProfile({ engine: engine.id, action: SIDEKICK_PROCESS, manifestTier: "light", models }), models, saved.models), saved);
     },
     // Outside the base (plan Decision 1), so the task's CLAUDE.md/AGENTS.md never load in the Sidekick session.
-    workDir: (base) => sidekickWorkDir(app.getPath("userData"), base, "sidekick"),
+    workDir: (base, id = "sidekick") => sidekickWorkDir(app.getPath("userData"), base, id),
     writeBrief: writeSidekickBrief,
     open: (o) => new SidekickSession(o),
     task: async () => {
@@ -1729,6 +1731,16 @@ if (loaded) {
       for (let i = 2; await exists(slug); i++) slug = `${first}-${i}`;
       await writeNote(base, slug, { title, summary: [decision], decisions: [decision], files: [], open: [] }, { ...(action ? { action } : {}), date: new Date().toISOString(), engine: c.engineId }, prefix);
       await (await currentHistory())?.save(`Note: ${title}`, await tasks.trailerNow());
+    },
+    // Learning (sidekick spec §6.4): Sidekick's own items, written as the app between tasks, with a `Data: sidekick` commit.
+    writeApp: async (request) => {
+      const blocked = quitting ? "The app is closing" : turnBlocked();
+      if (blocked) throw new Error(blocked);
+      const c = await validConfig();
+      if (!c) throw new Error("The app is not set up yet");
+      const result = await runDataRequest(sidekickStoreFor(baseOf(c)), request, { who: "app", scope: APP_SCOPE });
+      await (await currentHistory())?.save(`${DATA_CHANGE_PREFIX}${SIDEKICK_COLLECTION}`).catch((err: unknown) => console.error("Could not record Sidekick's learning", err));
+      return result;
     },
   });
   // Only a harness with setup steps gets the controller: its reads may write `.harness/setup.json` (setup-steps D0).

@@ -159,6 +159,8 @@ describe("mock Sidekick (sidekick plan Decision 12)", () => {
     expect(isMockSidekickTurn(after)).toBe(true);
     expect(isMockSidekickTurn("make it better")).toBe(false);
     expect(JSON.parse(mockSidekickReply(after))).toEqual({});
+    // Learning (sidekick spec §6.4) too: no changes.
+    expect(JSON.parse(mockSidekickReply([MOCK_SIDEKICK_MARKS.learn, "", "- pre vague → used"].join("\n")))).toEqual({});
     const dir = fs.mkdtempSync(path.join(root, "ska-"));
     const state = path.join(dir, "state", "mock.json");
     const out: string[] = [];

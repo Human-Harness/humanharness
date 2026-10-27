@@ -664,8 +664,11 @@ export interface ProfilesInfo {
   form: InputSpec;
 }
 
-/** How a profile change went: the app state as it is now (the active profile, the folder it works in), or why not. */
-export type ProfileResult = { ok: true; state: AppState } | { ok: false; reason: ProfileRefusal; errors?: InputIssue[] };
+/**
+ * How a profile change went: the app state as it is now (the active profile, the folder it works in), or why not.
+ * `made`: a create whose switch failed after the profile was made names it (it exists, not active).
+ */
+export type ProfileResult = { ok: true; state: AppState } | { ok: false; reason: ProfileRefusal; errors?: InputIssue[]; made?: string };
 
 export { hearsDataChange } from "./data-change";
 

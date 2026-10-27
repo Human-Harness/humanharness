@@ -20,7 +20,8 @@ const FORM: InputSpec = {
 };
 const GOAL: SetupStepView = { id: "goal", kind: "form", label: "Your goal", required: true, form: { fields: [{ name: "text", kind: "text", label: "Text", optional: false }] } };
 const PRIVACY = "Profiles keep each person's work apart, but they don't protect it: anyone who uses this computer can open any profile.";
-const SOFI = { id: "sofi", title: "Sofi", createdAt: "", archived: false };
+const STRANDED = "Tomás was added, but couldn't be opened. Choose Tomás from the switcher on Home.";
+const SOFI ={ id: "sofi", title: "Sofi", createdAt: "", archived: false };
 
 function family(profile?: string, form: InputSpec = FORM) {
   const client = new FakeClient({ ...configured, ...(profile ? { profile } : {}) });
@@ -147,20 +148,52 @@ describe("the profile step (profiles spec §5 'Creating a profile')", () => {
     expect((screen.getByRole("button", { name: "Next" }) as HTMLButtonElement).disabled).toBe(false);
   });
 
-  it("made but not opened: says so, points at the switcher, and Next can't make it twice", async () => {
+  it("made but not opened (main names it): says so, points at the switcher, and Next can't make it twice", async () => {
     const client = family("sofi");
     client.profileList = [SOFI];
-    client.profiles.create = async (values: Record<string, unknown>): Promise<ProfileResult> => {
-      client.profileCalls.push(`create:${String(values.name)}`);
-      client.profileList = [...client.profileList, { id: "tomas", title: "Tomás", createdAt: "", archived: false }];
-      return { ok: false, reason: "failed" };
-    };
+    client.profileSwitchFails = true;
     await flow(client, { newProfile: true });
     fireEvent.change(await screen.findByLabelText("Name"), { target: { value: "Tomás" } });
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
-    expect(await screen.findByText("Tomás was added, but couldn't be opened. Choose Tomás from the switcher on Home.")).toBeTruthy();
+    expect(await screen.findByText(STRANDED)).toBeTruthy();
     expect((screen.getByRole("button", { name: "Next" }) as HTMLButtonElement).disabled).toBe(true);
     expect(client.profileCalls).toEqual(["create:Tomás"]);
+  });
+
+  it("made but not opened, then Back and on again: the step still says so", async () => {
+    const client = family();
+    client.profileSwitchFails = true;
+    await flow(client);
+    const engineNext = (await screen.findByRole("button", { name: "Next" })) as HTMLButtonElement;
+    await waitFor(() => expect(engineNext.disabled).toBe(false));
+    fireEvent.click(engineNext);
+    expect(await screen.findByRole("heading", { name: "Who's using Demo?" })).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Tomás" } });
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    expect(await screen.findByText(STRANDED)).toBeTruthy();
+    // No privacy note: the one made here isn't another person's.
+    expect(screen.queryByText(PRIVACY)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(await screen.findByRole("heading", { name: "Which AI does Demo use?" })).toBeTruthy();
+    const again = screen.getByRole("button", { name: "Next" }) as HTMLButtonElement;
+    await waitFor(() => expect(again.disabled).toBe(false));
+    fireEvent.click(again);
+    expect(await screen.findByText(STRANDED)).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Next" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("while the create is on its way, Cancel and Next wait", async () => {
+    const client = family("sofi");
+    let answer: (r: ProfileResult) => void = () => {};
+    client.profiles.create = () => new Promise<ProfileResult>((resolve) => (answer = resolve));
+    await flow(client, { newProfile: true });
+    fireEvent.change(await screen.findByLabelText("Name"), { target: { value: "Tomás" } });
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await waitFor(() => expect((screen.getByRole("button", { name: "Cancel" }) as HTMLButtonElement).disabled).toBe(true));
+    expect((screen.getByRole("button", { name: "Next" }) as HTMLButtonElement).disabled).toBe(true);
+    answer({ ok: false, reason: "busy" });
+    expect(await screen.findByText("Wait until the AI finishes, then try again.")).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Cancel" }) as HTMLButtonElement).disabled).toBe(false);
   });
 
   it("names the person in the title once a profile is active", async () => {

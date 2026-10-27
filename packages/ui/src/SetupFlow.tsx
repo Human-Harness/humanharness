@@ -49,8 +49,10 @@ export function SetupFlow({ client, state, onChange, onCancel, onStart, startAt,
   const people = useProfiles(client, state.profiles !== undefined);
   const needsProfile = state.profiles !== undefined && !state.config.profile;
   const [madeProfile, setMadeProfile] = useState(false);
-  /** A profile was made but couldn't be opened: the step stays, and Next can't make another. */
-  const [stranded, setStranded] = useState(false);
+  /** A profile this run made but couldn't open (its id, and the name typed): the step says so, and Next can't make another. */
+  const [stranded, setStranded] = useState<{ id: string; name: string } | null>(null);
+  /** A profile's create is on its way. */
+  const [creating, setCreating] = useState(false);
   const activeProfile = people?.list.find((p) => p.id === state.config.profile) ?? null;
   // A saved folder can't be changed here (it moves from Settings › General): the flow starts at the engine.
   const [withFolder] = useState(!state.config.folder);
@@ -290,7 +292,9 @@ export function SetupFlow({ client, state, onChange, onCancel, onStart, startAt,
                 step={current}
                 components={components}
                 profile={state.profiles ? activeProfile : null}
-                done={() => complete(current.id)} skip={() => skip(current.id)} />
+                done={() => complete(current.id)}
+                skip={() => skip(current.id)}
+              />
             )}
             {current.kind === "interview" && <SetupInterviewStep client={client} state={state} step={current} blocks={blocks} stateBlocks={stateBlocks} />}
             {stepError && (
@@ -309,9 +313,11 @@ export function SetupFlow({ client, state, onChange, onCancel, onStart, startAt,
               client={client}
               state={state}
               formId={profileFormId}
-              others={(people?.list ?? []).filter((p) => !p.archived).length}
+              others={(people?.list ?? []).filter((p) => !p.archived && p.id !== stranded?.id).length}
+              stranded={stranded ? (people?.list.find((p) => p.id === stranded.id)?.title ?? stranded.name) : null}
               onCreated={(next) => void created(next)}
-              onStranded={() => setStranded(true)}
+              onStranded={(id, typed) => setStranded({ id, name: typed })}
+              onSending={setCreating}
             />
           </section>
         ) : step === "folder" ? (
@@ -386,12 +392,17 @@ export function SetupFlow({ client, state, onChange, onCancel, onStart, startAt,
             {/* The profile step: Cancel when it was opened by "Add", else Back to the engine. */}
             {step === "profile" && (
               <>
+                {/* Not while a create is on its way: its answer would move the flow on from wherever it went. */}
                 {newProfile ? (
-                  <button onClick={onCancel}>{t("setupFlow.cancel")}</button>
+                  <button disabled={creating} onClick={onCancel}>
+                    {t("setupFlow.cancel")}
+                  </button>
                 ) : (
-                  <button onClick={() => setStep("engine")}>{t("setupFlow.back")}</button>
+                  <button disabled={creating} onClick={() => setStep("engine")}>
+                    {t("setupFlow.back")}
+                  </button>
                 )}
-                <button type="submit" form={profileFormId} className="hh-primary" disabled={stranded}>
+                <button type="submit" form={profileFormId} className="hh-primary" disabled={creating || stranded !== null}>
                   {t("setupFlow.next")}
                 </button>
               </>

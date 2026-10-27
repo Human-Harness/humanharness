@@ -613,6 +613,8 @@ export class FakeClient implements HarnessClient {
   profileCalls: string[] = [];
   /** When set, create and open are refused with it. */
   profileRefusal: Exclude<ProfileResult, { ok: true }> | null = null;
+  /** When set, create makes the profile but its switch fails (`failed` with `made`). */
+  profileSwitchFails = false;
   private profileListeners = new Set<(s: ProfilesState) => void>();
   private profilesNow(): ProfilesState {
     return { active: this.state.config.profile ?? null, list: this.profileList };
@@ -642,6 +644,11 @@ export class FakeClient implements HarnessClient {
         .replace(/[^a-z0-9]+/g, "-");
       const color = typeof values.color === "string" ? { color: values.color } : {};
       this.profileList = [...this.profileList, { id, title, ...color, createdAt: "2026-10-27T10:00:00.000Z", archived: false }];
+      // The profile is made, but its switch fails: it is registered, not active, and the answer names it.
+      if (this.profileSwitchFails) {
+        this.profileChanged();
+        return { ok: false, reason: "failed", made: id };
+      }
       this.state = { ...this.state, config: { ...this.state.config, profile: id } };
       return this.profileChanged();
     },

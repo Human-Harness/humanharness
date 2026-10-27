@@ -106,7 +106,7 @@ import { SettingsController } from "./settings";
 import { SetupSteps, recordSetup, setupStepViews } from "./setup-steps";
 import { TaskManager } from "./task-manager";
 import { baseFor, isInsideFolder } from "./profile-base";
-import { type ProfileOutcome, Profiles } from "./profiles";
+import { type ProfileOutcome, Profiles, profileResult } from "./profiles";
 import { ProfileSwitch } from "./profile-switch";
 import { holds } from "./holds";
 import { historyView, isSha } from "./history-view";
@@ -271,12 +271,15 @@ async function backupView(folder: string | undefined): Promise<NonNullable<AppSt
   }
 }
 
+/** The last app state read: it stands in when the state can't be read after a profile change that went through. */
+let lastAppState: AppState | null = null;
+
 async function appState(): Promise<AppState> {
   const harnessImage = await harnessLogo();
   const saved = await config.load();
   const inputs = inputSpecs(harness.blocks);
   const interviews = interviewCollections(harness);
-  return {
+  const state: AppState = {
     harness: {
       id: harness.id,
       name: harness.name,
@@ -376,6 +379,8 @@ async function appState(): Promise<AppState> {
     models: await modelsView(),
     backup: await backupView(saved.folder),
   };
+  lastAppState = state;
+  return state;
 }
 
 /** The saved config, only when it is complete and valid (and, with profiles, names the active profile). */
@@ -1040,15 +1045,13 @@ function registerIpc() {
   handle("hh:setupStepsFinish", () => (setupCtl ? setupCtl.finish().catch(stepsAsTheyStand) : NO_SETUP_STEPS));
   handle("hh:setupStepsAcknowledge", () => (setupCtl ? setupCtl.acknowledge().catch(stepsAsTheyStand) : NO_SETUP_STEPS));
   // Profiles (profiles spec §5). Without them, nothing to read and every change refused (D4). Refusals come back as data.
-  const profileAnswer = async (outcome: Promise<ProfileOutcome>): Promise<ProfileResult> => {
-    try {
-      const r = await outcome;
-      return r.ok ? { ok: true, state: await appState() } : r;
-    } catch (err) {
-      console.error("A profile change failed", err);
-      return { ok: false, reason: "failed" };
-    }
-  };
+  const profileAnswer = (outcome: Promise<ProfileOutcome>): Promise<ProfileResult> =>
+    profileResult(
+      outcome,
+      appState,
+      () => lastAppState,
+      async () => (profilesCtl ? (await profilesCtl.state()).active : null),
+    );
   const noProfiles = (): ProfileResult => ({ ok: false, reason: "not-ready" });
   handle("hh:profilesGet", () => (profilesCtl ? profilesCtl.state().catch(() => NO_PROFILES) : NO_PROFILES));
   handle("hh:profileCreate", (values: unknown) => (profilesCtl ? profileAnswer(profilesCtl.create(values)) : noProfiles()));

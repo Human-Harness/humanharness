@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import { type Collection, type DataRecord, type InputIssue, inputIssues } from "@humanharness/harness-sdk";
 import { ProfileStore, cleanProfileTitle, isProfileId, prepareFolder, profileDir } from "@humanharness/workspace";
-import type { ProfileRefusal, ProfilesState } from "@humanharness/ui/client";
+import type { AppState, ProfileRefusal, ProfileResult, ProfilesState } from "@humanharness/ui/client";
 import { profileOfBase } from "./profile-base";
 import type { ProfileSwitchResult } from "./profile-switch";
 
@@ -30,8 +30,44 @@ export interface ProfilesDeps {
   blocked(): boolean;
 }
 
-/** How a change went, before the main process adds the new app state. */
-export type ProfileOutcome = { ok: true } | { ok: false; reason: ProfileRefusal; errors?: InputIssue[] };
+/**
+ * How a change went, before the main process adds the new app state. `made`: a create whose switch failed after the
+ * profile was registered names it (it exists, not active; the person opens it from the switcher).
+ */
+export type ProfileOutcome = { ok: true } | { ok: false; reason: ProfileRefusal; errors?: InputIssue[]; made?: string };
+
+/**
+ * An outcome as the window gets it (`ProfileResult`): with the app state when it went through. A state that can't be
+ * read after a change that went through never turns it into a refusal (a create would be made twice): it is read once
+ * more, then the last state read stands in, with the active profile as `active()` gives it.
+ */
+export async function profileResult(
+  outcome: Promise<ProfileOutcome>,
+  read: () => Promise<AppState>,
+  last: () => AppState | null,
+  active: () => Promise<string | null>,
+): Promise<ProfileResult> {
+  let r: ProfileOutcome;
+  try {
+    r = await outcome;
+  } catch (err) {
+    console.error("A profile change failed", err);
+    return { ok: false, reason: "failed" };
+  }
+  if (!r.ok) return r;
+  for (let i = 0; i < 2; i++) {
+    try {
+      return { ok: true, state: await read() };
+    } catch (err) {
+      console.error("Could not read the app state after a profile change", err);
+    }
+  }
+  const known = last();
+  if (!known) return { ok: false, reason: "failed" };
+  const now = await active().catch(() => null);
+  const { profile: _old, ...config } = known.config;
+  return { ok: true, state: { ...known, config: now ? { ...config, profile: now } : config } };
+}
 
 const exists = (p: string) => fs.access(p).then(() => true, () => false);
 
@@ -103,15 +139,19 @@ export class Profiles {
     } catch (err) {
       return { ok: false, reason: "invalid", errors: [{ path: "name", message: (err as Error).message }] };
     }
-    return this.answer(
+    /** The new entry, once the registry has it: a switch that fails after it names it (`made`). */
+    let made: string | undefined;
+    const r = await this.answer(
       await this.d.switchTo(async () => {
         const entry = await this.store(root).create(title, typeof record.color === "string" ? record.color : undefined);
+        made = entry.id;
         const base = profileDir(root, entry.id);
         await prepareFolder(base, this.d.seed);
         await this.d.writeRecord(base, { ...record, name: title });
         return entry.id;
       }),
     );
+    return !r.ok && r.reason === "failed" && made !== undefined ? { ...r, made } : r;
   }
 
   /** Makes `id` the active profile; the open task closes first. */

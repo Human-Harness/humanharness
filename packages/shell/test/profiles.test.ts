@@ -4,7 +4,8 @@ import path from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { type DataRecord, PROFILE_COLORS, z } from "@humanharness/harness-sdk";
 import { ProfileStore } from "@humanharness/workspace";
-import { Profiles, type ProfilesDeps } from "../src/main/profiles";
+import type { AppState } from "@humanharness/ui/client";
+import { Profiles, type ProfilesDeps, profileResult } from "../src/main/profiles";
 import { ProfileSwitch } from "../src/main/profile-switch";
 
 const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "hh-profiles-"));
@@ -169,8 +170,21 @@ describe("Profiles (profiles spec §5)", () => {
         return { ok: false, reason: "failed" };
       },
     });
-    expect(await t.profiles.create({ name: "Sofi" })).toEqual({ ok: false, reason: "failed" });
+    expect(await t.profiles.create({ name: "Sofi" })).toEqual({ ok: false, reason: "failed", made: "sofi" });
     expect(t.changed).toHaveBeenLastCalledWith({ active: null, list: [expect.objectContaining({ id: "sofi" })] });
+  });
+
+  it("a record that can't be written after the entry exists names it too; a refused switch made nothing", async () => {
+    const t = setup({
+      writeRecord: async () => {
+        throw new Error("disk full");
+      },
+    });
+    expect(await t.profiles.create({ name: "Sofi" })).toEqual({ ok: false, reason: "failed", made: "sofi" });
+    expect(t.active()).toBeUndefined();
+
+    const busy = setup({ switchTo: async () => ({ ok: false, reason: "busy" }) });
+    expect(await busy.profiles.create({ name: "Sofi" })).toEqual({ ok: false, reason: "busy" });
   });
 
   it("archiving and deleting are refused while a switch, a turn or a move runs, touching nothing", async () => {
@@ -272,5 +286,36 @@ describe("Profiles (profiles spec §5)", () => {
     await t.profiles.create({ name: "Sofi" });
     expect(await t.profiles.openable("sofi")).toBe(true);
     expect(await t.profiles.openable("tomas")).toBe(false);
+  });
+});
+
+describe("profileResult (what the window gets)", () => {
+  const known = { config: { language: "en", folder: "/w", engineId: "claude", profile: "sofi" } } as unknown as AppState;
+  const fresh = { config: { language: "en", folder: "/w", engineId: "claude", profile: "tomas" } } as unknown as AppState;
+  const quiet = () => vi.spyOn(console, "error").mockImplementation(() => {});
+
+  it("adds the state to a change that went through; a refusal passes as it is", async () => {
+    expect(await profileResult(Promise.resolve({ ok: true }), async () => fresh, () => known, async () => "tomas")).toEqual({ ok: true, state: fresh });
+    const refusal = { ok: false as const, reason: "failed" as const, made: "tomas" };
+    expect(await profileResult(Promise.resolve(refusal), async () => fresh, () => known, async () => null)).toEqual(refusal);
+    quiet();
+    expect(await profileResult(Promise.reject(new Error("x")), async () => fresh, () => known, async () => null)).toEqual({ ok: false, reason: "failed" });
+  });
+
+  it("a state that can't be read after a change that went through never makes it a refusal", async () => {
+    quiet();
+    let reads = 0;
+    const flaky = async () => {
+      reads++;
+      if (reads === 1) throw new Error("once");
+      return fresh;
+    };
+    expect(await profileResult(Promise.resolve({ ok: true }), flaky, () => known, async () => "tomas")).toEqual({ ok: true, state: fresh });
+    const broken = async (): Promise<AppState> => {
+      throw new Error("always");
+    };
+    const r = await profileResult(Promise.resolve({ ok: true }), broken, () => known, async () => "tomas");
+    expect(r).toEqual({ ok: true, state: { config: { ...known.config, profile: "tomas" } } });
+    expect(await profileResult(Promise.resolve({ ok: true }), broken, () => null, async () => "tomas")).toEqual({ ok: false, reason: "failed" });
   });
 });

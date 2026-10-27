@@ -14,47 +14,46 @@ export function ProfileStep({
   state,
   formId,
   others,
+  stranded,
   onCreated,
   onStranded,
+  onSending,
 }: {
   client: HarnessClient;
   state: AppState;
   formId: string;
   /** How many profiles are there already (not archived). */
   others: number;
+  /** The title of a profile this run made but couldn't open (the setup screen keeps it); null when there is none. */
+  stranded: string | null;
   onCreated: (state: AppState) => void;
-  /** The profile was made but couldn't be opened: another Next would make a second one. */
-  onStranded: () => void;
+  /** The profile `id` was made but its switch failed: another Next would make a second one. `name`: what was typed. */
+  onStranded: (id: string, name: string) => void;
+  /** A create is on its way, or it ended. */
+  onSending: (sending: boolean) => void;
 }) {
   const { t } = useTranslation();
   const [errors, setErrors] = useState<InputIssue[]>([]);
   const [sending, setSending] = useState(false);
-  /** The title of a profile made but not opened (its switch failed): it is opened from the switcher. */
-  const [stranded, setStranded] = useState<string | null>(null);
   if (!state.profiles) return null;
-  const listNow = () =>
-    client.profiles.get().then(
-      (s) => s.list,
-      () => null,
-    );
+  const sendingNow = (on: boolean) => {
+    setSending(on);
+    onSending(on);
+  };
   const submit = async (value: Record<string, unknown>) => {
-    setSending(true);
+    sendingNow(true);
     setErrors([]);
     try {
-      const before = await listNow();
       const r = await client.profiles.create(value);
       if (r.ok) return onCreated(r.state);
       if (r.errors && r.errors.length > 0) return setErrors(r.errors);
-      // `failed` also answers a switch that failed after the profile was made (it is registered, not active).
-      const made = r.reason === "failed" && before ? (await listNow())?.find((p) => !before.some((b) => b.id === p.id)) : undefined;
-      if (made) {
-        setStranded(made.title);
-        onStranded();
-      } else setErrors([{ path: "", message: t(refusalKey(r)) }]);
+      // A switch that failed after the profile was made: it exists, and it is opened from the switcher.
+      if (r.made !== undefined) onStranded(r.made, typeof value.name === "string" ? value.name.trim() : r.made);
+      else setErrors([{ path: "", message: t(refusalKey(r)) }]);
     } catch {
       setErrors([{ path: "", message: t("profiles.refused.failed") }]);
     } finally {
-      setSending(false);
+      sendingNow(false);
     }
   };
   return (

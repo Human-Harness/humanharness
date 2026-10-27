@@ -24,6 +24,21 @@ describe("TerminalView", () => {
     expect(view.choices.map((o) => o.label)).toEqual(["Go deeper", "Next"]);
   });
 
+  it("prints one Documents line per card at the end of the turn (document-reader §5.3)", () => {
+    const out = memoryStream();
+    const view = new TerminalView(out.stream, "Claude");
+    view.event({ type: "text", delta: "Wrote it." });
+    view.event({
+      type: "documents",
+      documents: [
+        { path: "tickets/MUS-412/analysis.md", title: "Analysis", change: "new", words: 300 },
+        { path: "README.md", title: "Read me", change: "updated", words: 3 },
+      ],
+    });
+    view.event({ type: "done", ok: true });
+    expect(out.text()).toBe(["Wrote it.", "Documents: tickets/MUS-412/analysis.md (new)", "Documents: README.md (updated)", ""].join("\n"));
+  });
+
   it("dims activities on a terminal", () => {
     const out = memoryStream();
     new TerminalView(out.stream, "Codex", true).event({ type: "activity", id: "a", kind: "web", detail: "search", state: "start" });

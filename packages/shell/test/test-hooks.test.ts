@@ -19,6 +19,12 @@ const engines = JSON.stringify({
 });
 
 describe("readTestHooks", () => {
+  it("reads a short time-box minute (HH_TEST_MINUTE_MS) between 10 ms and a real minute", () => {
+    expect(readTestHooks({ HH_TEST_MINUTE_MS: "1000" }, false)).toEqual({ minuteMs: 1000 });
+    for (const v of ["0", "9", "60001", "abc", "1.5"]) expect(readTestHooks({ HH_TEST_MINUTE_MS: v }, false)).toEqual({});
+    expect(readTestHooks({ HH_TEST_MINUTE_MS: "1000" }, true)).toEqual({});
+  });
+
   it("is empty in a packaged app", () => {
     expect(
       readTestHooks({ HH_TEST_USER_DATA: "/u", HH_TEST_ENGINES: engines, HH_TEST_MOCK: "1", HH_TEST_SUGGESTED_FOLDER: "/f", HH_TEST_SHARED_DIR: "/s" }, true),

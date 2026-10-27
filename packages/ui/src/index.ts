@@ -2,6 +2,7 @@ export * from "./client";
 export * from "./state";
 export * from "./usage";
 export { ScopePicker } from "./ScopePicker";
+export { PhaseStepper } from "./PhaseStepper";
 export { HarnessApp, type HarnessAppProps } from "./HarnessApp";
 export type { BlockActions, BlockProps, InputContext, InputProps } from "./Message";
 export { AnswerView, InputForm, type InputFormProps } from "./InputForm";

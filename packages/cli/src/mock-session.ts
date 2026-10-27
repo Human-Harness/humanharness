@@ -23,6 +23,8 @@ export async function mockEnv(o: { harnessId: string; harnessDir: string; sugges
   o.out.write(`Mock mode: ${recordings.map((r) => r.action).join(", ")} recorded. Data in ${root}${o.keep ? " (kept)" : ""}.\n`);
   return {
     HH_TEST_MOCK: "1",
+    // A time box in mock mode runs fast: a minute is a second (task-phases spec §6).
+    HH_TEST_MINUTE_MS: "1000",
     HH_TEST_USER_DATA: userData,
     HH_TEST_SHARED_DIR: sharedDir,
     HH_TEST_SUGGESTED_FOLDER: path.join(root, path.basename(o.suggested)),

@@ -298,3 +298,20 @@ describe("usage.jsonl: the task's mode (task-modes spec §5.5)", () => {
     expect(compactionRecord("claude", { task: "t1", mode: "feynman" }, "t")).toMatchObject({ kind: "compaction", mode: "feynman" });
   });
 });
+
+describe("usage lines carry the task's phase (task-phases spec §6)", () => {
+  it("records taskPhase and the new turn kinds; D0 without them", () => {
+    const entry = {
+      id: "a",
+      role: "assistant" as const,
+      text: "",
+      blocks: [],
+      activities: [],
+      at: "2026-10-26T10:00:00.000Z",
+      usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
+    };
+    expect(usageRecord(entry, "claude", { task: "t1", phase: "phase-change", taskPhase: "main" })).toMatchObject({ phase: "phase-change", taskPhase: "main" });
+    expect(usageRecord(entry, "claude", { task: "t1", phase: "run" })).not.toHaveProperty("taskPhase");
+    expect(compactionRecord("claude", { task: "t1", taskPhase: "close" }, "2026-10-26T10:00:00.000Z")).toMatchObject({ kind: "compaction", taskPhase: "close" });
+  });
+});

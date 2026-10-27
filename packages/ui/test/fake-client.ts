@@ -19,6 +19,7 @@ import type {
   ModeResult,
   ModeSwitch,
   MoveResult,
+  PhaseResult,
   RespondResult,
   RunningSetup,
   ScopeView,
@@ -29,6 +30,7 @@ import type {
   SetupOutput,
   SetupResult,
   SetupStep,
+  TaskTurnNotice,
   TaskView,
   TestResult,
   TextSize,
@@ -359,6 +361,41 @@ export class FakeClient implements HarnessClient {
   onModeSwitch(listener: (s: ModeSwitch) => void) {
     this.modeSwitchListeners.add(listener);
     return () => void this.modeSwitchListeners.delete(listener);
+  }
+  /** What setPhase was asked, in order. */
+  phaseCalls: { taskId: string; phaseId: string }[] = [];
+  /** What setPhase answers; default: a change turn runs. */
+  phaseResult: PhaseResult | null = null;
+  async setPhase(taskId: string, phaseId: string): Promise<PhaseResult> {
+    this.phaseCalls.push({ taskId, phaseId });
+    return this.phaseResult ?? { ok: true, changed: "turn" };
+  }
+  /** Calls to finishTask, pauseTask, resumeTask and extendTimeBox, in order. */
+  taskCalls: string[] = [];
+  async finishTask() {
+    this.taskCalls.push("finish");
+    return true;
+  }
+  async pauseTask() {
+    this.taskCalls.push("pause");
+    return true;
+  }
+  async resumeTask() {
+    this.taskCalls.push("resume");
+    return true;
+  }
+  async extendTimeBox() {
+    this.taskCalls.push("extend");
+    return true;
+  }
+  taskTurnListeners = new Set<(n: TaskTurnNotice) => void>();
+  onTaskTurn(listener: (n: TaskTurnNotice) => void) {
+    this.taskTurnListeners.add(listener);
+    return () => void this.taskTurnListeners.delete(listener);
+  }
+  /** Tells the window a phase change or wrap-up turn starts, as main does before its events. */
+  emitTaskTurn(n: TaskTurnNotice) {
+    for (const l of this.taskTurnListeners) l(n);
   }
   /** Files revealPath was asked to show. */
   revealedFiles: string[] = [];

@@ -152,6 +152,30 @@ describe("Recorder", () => {
     expect(warnings).toHaveLength(1);
   });
 
+  it("a phase change turn is recorded with setPhase, a wrap-up with timeUp; neither is linked by next", async () => {
+    const folder = path.join(root, "rec-phases");
+    fs.mkdirSync(folder, { recursive: true });
+    const r = new Recorder({ folder, toolFor, matchFor, recordedWith: "claude" });
+    await r.begin();
+    r.event({ type: "text", delta: "Recall?" });
+    await r.turnEnded({ action: "session", task: "t1", phase: "run", taskPhase: "warmup" });
+    r.event({ type: "text", delta: "Main now." });
+    await r.turnEnded({ action: "session", task: "t1", phase: "phase-change", taskPhase: "main" });
+    r.reply("*");
+    r.event({ type: "text", delta: "Sure." });
+    await r.turnEnded({ action: "session", task: "t1", phase: "run", taskPhase: "main" });
+    r.event({ type: "text", delta: "Wrap up." });
+    await r.turnEnded({ action: "session", task: "t1", phase: "wrap-up", taskPhase: "main" });
+    const [rec] = r.recordings();
+    expect(rec.turns.map((t) => ({ id: t.id, setPhase: t.setPhase, timeUp: t.timeUp, next: t.next }))).toEqual([
+      { id: "t1", setPhase: undefined, timeUp: undefined, next: undefined },
+      { id: "t2", setPhase: "main", timeUp: undefined, next: { "*": "t3" } },
+      { id: "t3", setPhase: undefined, timeUp: undefined, next: undefined },
+      { id: "t4", setPhase: undefined, timeUp: true, next: undefined },
+    ]);
+    expect(recordingSchema.safeParse(rec).success).toBe(true);
+  });
+
   it("lists only skipped files that are new or changed during the run", async () => {
     const folder = path.join(root, "work-skipped");
     fs.mkdirSync(folder, { recursive: true });

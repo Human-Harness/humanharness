@@ -12,6 +12,7 @@ import {
   type HarnessSettings,
   type Language,
   MODE_ID,
+  PHASE_ID,
   SETTINGS_COLLECTION,
   TIERS,
   type Tier,
@@ -71,6 +72,8 @@ export interface RunOptions {
   tier?: Tier;
   /** Start the task in this mode (task-modes spec §3); one the action doesn't list is refused. Default: its defaultMode. */
   mode?: string;
+  /** Start the task with a time box of this many minutes (task-phases spec §5): one of the action's lengths. */
+  time?: number;
   /** Default: a new folder under the OS temp dir, printed and kept. */
   folder?: string;
   /** Any language tag; default English. */
@@ -87,6 +90,8 @@ export interface RunOptions {
   force?: boolean;
   /** Tests: run this command instead of the engine's CLI, with no readiness check. Never credentials. */
   engineCommand?: { command: string[]; env: Record<string, string> };
+  /** Tests: how long a time-box minute lasts, in ms (default: a real minute). */
+  minuteMs?: number;
   /** Tests: where the readiness check looks (default: the official CLIs and `~/.humanharness/engines.json`). */
   readiness?: { deps: CommandDeps; shared: SharedConfigStore };
 }
@@ -154,12 +159,14 @@ export async function readyEngine(engine: EngineDef, deps: CommandDeps, shared: 
   return (await engineCommand(engine, deps)) ?? stop("engine-not-installed");
 }
 
-const promptFor = (options: number, answerable = false, modes = false) => {
-  // `m <mode>` only for a task whose action has modes (task-modes D0: the line is as before otherwise).
+const promptFor = (options: number, answerable = false, modes = false, phases = false) => {
+  // `m <mode>` only for a task whose action has modes, `>phase <id>` only for one with phases (task-modes D0,
+  // task-phases D0: the line is as before otherwise).
   const m = modes ? "m <mode> to switch mode, " : "";
+  const p = phases ? ">phase <id> to change part, " : "";
   return options > 0
-    ? `\nPick 1–${options}, ${answerable ? "a to answer, " : ""}${m}type a follow-up, or q to close the task: `
-    : `\n${answerable ? `a to answer, ${m}or t` : modes ? `${m}or t` : "T"}ype a follow-up, or q to close the task: `;
+    ? `\nPick 1–${options}, ${answerable ? "a to answer, " : ""}${m}${p}type a follow-up, or q to close the task: `
+    : `\n${answerable ? `a to answer, ${m}${p}or t` : modes || phases ? `${m}${p}or t` : "T"}ype a follow-up, or q to close the task: `;
 };
 
 /** The scope `humanharness run` opens for a `required` action when none is open. */
@@ -187,6 +194,11 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
   if (o.mode !== undefined && !(action.modes ?? []).includes(o.mode)) {
     throw new UsageError(`Unknown mode "${o.mode}" for ${o.action}. Modes: ${(action.modes ?? []).join(", ") || "(none)"}.`);
   }
+  if (o.time !== undefined && !(action.timeBox?.options ?? []).includes(o.time)) {
+    throw new UsageError(`Unknown time box "${o.time}" for ${o.action}. Lengths: ${(action.timeBox?.options ?? []).join(", ") || "(none)"}.`);
+  }
+  /** The phases the open task's action has: none without phases (task-phases D0). */
+  const phasesOf = (id: string | undefined) => (id !== undefined && Object.hasOwn(harness.actions, id) ? (harness.actions[id].phases ?? []) : []);
   /** The modes the open task's action lists: none without modes (task-modes D0). */
   const modesOf = (id: string | undefined): readonly string[] =>
     id !== undefined && hasModes(harness) && Object.hasOwn(harness.actions, id) ? (harness.actions[id].modes ?? []) : [];
@@ -222,8 +234,13 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
 
   const view = new TerminalView(out, engine.name, (out as { isTTY?: boolean }).isTTY === true, specs, () => modesOf(taskAction));
   const tally = new UsageTally();
-  // tasks.json is read knowing the manifest's modes (task-modes spec §6), as the app does.
-  const store = new TaskStore(folder, hasModes(harness) ? { modes: Object.keys(harness.modes) } : {});
+  // tasks.json is read knowing the manifest's modes and each action's phase ids (task-modes spec §6), as the app does.
+  const store = new TaskStore(folder, {
+    ...(hasModes(harness) ? { modes: Object.keys(harness.modes) } : {}),
+    ...(Object.values(harness.actions).some((a) => a.phases)
+      ? { phases: Object.fromEntries(Object.entries(harness.actions).flatMap(([id, a]) => (a.phases ? [[id, a.phases.map((p) => p.id)]] : []))) }
+      : {}),
+  });
   const scoped = harness.scopes !== undefined;
   const scopes = new ScopeStore(folder);
   const usageLog = new UsageLog(folder);
@@ -382,6 +399,13 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
           tierOf: async (p: ModelProfile) => nearestTier(p, {}),
         }
       : {}),
+    // As the app wires them (packages/shell/src/main/index.ts); the terminal prints the change's line first.
+    readPhaseBrief: (id, phase) => {
+      const p = phasesOf(id).find((x) => x.id === phase);
+      return p?.brief ? fs.readFile(resolveInHarness(harness, p.brief), "utf8") : Promise.reject(new Error("Unknown phase"));
+    },
+    taskTurn: (n) => view.taskTurn(n, phasesOf(taskAction).find((p) => p.id === n.phase)?.label),
+    ...(o.minuteMs ? { minuteMs: o.minuteMs } : {}),
   });
 
   // Ctrl-C during an operation cancels its turn; at the prompt it closes the task like q, and once a close was
@@ -420,16 +444,23 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
       // A task an earlier run left open in this folder can't continue: its session is gone.
       await tasks.interrupt();
       const scope = scoped ? await runScope(folder, actionScope(harness, o.action) === "required", (await store.load()).open) : undefined;
-      await tasks.start(o.action, undefined, scope, o.mode);
+      await tasks.start(o.action, undefined, scope, o.mode, o.time !== undefined ? { timeBox: o.time } : {});
+      let proposalKey: string | undefined;
       for (;;) {
         const current = (await store.load()).current;
         if (!current) break;
-        const options = view.choices;
+        // The agent's proposal to move (task-phases spec §4.3), printed once: the person moves with `>phase`.
+        const proposal = current.phaseProposal;
+        if (proposal && proposalKey !== `${proposal.to}\n${proposal.reason}`) {
+          proposalKey = `${proposal.to}\n${proposal.reason}`;
+          view.proposal(proposal, phasesOf(current.action).find((p) => p.id === proposal.to)?.label ?? proposal.to, proposal.to === current.phase?.id);
+        }
         const modeIds = modesOf(current.action);
+        const phaseIds = phasesOf(current.action).map((p) => p.id);
         const interrupted = new Promise<"interrupt">((resolve) => {
           promptInterrupted = () => resolve("interrupt");
         });
-        out.write(promptFor(options.length, current.pendingInput !== undefined, modeIds.length > 0));
+        out.write(promptFor(view.choices.length, current.pendingInput !== undefined, modeIds.length > 0, phaseIds.length > 0));
         pending ??= typed.next();
         const next = await Promise.race([pending, interrupted]);
         promptInterrupted = undefined;
@@ -446,21 +477,35 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
           line = next.done ? "q" : next.value.trim();
         }
         if (line === "") continue;
+        // The time box may have started a turn on its own while the person typed (the wrap-up, the move to the close
+        // part): the line waits for it, then goes to the task as it is now. That turn may have closed the task.
+        const now = await tasks.whenSettled(async () => (await store.load()).current);
+        if (!now) {
+          out.write(lastNote ? `\nThe task closed. Note: ${lastNote}\n` : "\nThe task closed.\n");
+          break;
+        }
+        // A turn that ran meanwhile drew its own choices: a pick is one of those.
+        const options = view.choices;
         view.choices = [];
-        if (line === "q") {
-          const before = notesWritten;
-          if (!(await tasks.finish())) {
+        /** After a closing turn: the note it saved, or why it stopped (the task stays open). True: the task closed. */
+        const closed = (finished: boolean, before: number): boolean => {
+          if (!finished) {
             closeStopped = true;
             out.write("\nStopped before the closing turn; the task is still open.\n");
-            continue;
+            return false;
           }
           if (notesWritten > before) out.write(`\nNote: ${lastNote}\n`);
           else if (lastNote) out.write(`\nThe closing turn saved no note; the checkpoint's stands: ${lastNote}\n`);
           else out.write("\nNo note was saved.\n");
-          break;
+          return true;
+        };
+        if (line === "q") {
+          const before = notesWritten;
+          if (closed(await tasks.finish(), before)) break;
+          continue;
         }
         closeStopped = false;
-        const asked = current.pendingInput;
+        const asked = now.pendingInput;
         if (line === "a" && asked && Object.hasOwn(specs, asked.block)) {
           answerDropped = false;
           const value = await promptAnswer(specs[asked.block], view.shown.get(asked.blockId), ask, out);
@@ -468,6 +513,11 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
             // The question stays open: `a` asks it again.
             if (answerDropped) out.write("\nAnswer dropped.\n");
             continue;
+          }
+          // The fields took a while: wait again for a turn the time box started meanwhile.
+          if (!(await tasks.whenSettled(async () => (await store.load()).current))) {
+            out.write(lastNote ? `\nThe task closed. Note: ${lastNote}\n` : "\nThe task closed.\n");
+            break;
           }
           const { accepted, done } = tasks.respond(asked.blockId, value);
           // Awaited below; marked handled here so a refusal before `accepted` leaves no unhandled rejection.
@@ -482,6 +532,25 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
           recorder?.answer(asked.block, r.value);
           out.write(`\n> ${r.display.replaceAll("\n", "\n> ")}\n\n`);
           await done;
+          continue;
+        }
+        // `>phase <id>`: the person moves the task (task-phases spec §4.2). Only for an action with phases, and only
+        // `>phase` and one id: any other line is a follow-up like any other. A phase change turn is the app's prompt:
+        // the recorder marks it itself (`setPhase`), so no reply is recorded.
+        const phaseId = line.slice(7).trim();
+        if (phaseIds.length > 0 && line.startsWith(">phase ") && PHASE_ID.test(phaseId)) {
+          const before = notesWritten;
+          const { accepted, done } = tasks.setPhase(phaseId, now.id);
+          // Awaited below; marked handled here so a refusal before `accepted` leaves no unhandled rejection.
+          done.catch(() => undefined);
+          const r = await accepted;
+          if (!r.ok) out.write(`\nNot moved (${r.reason}). Parts: ${phaseIds.join(", ")}.\n`);
+          else if (r.changed === "same") out.write("\nAlready in that part.\n");
+          // No turn ran: the choices on screen still stand.
+          if (!r.ok || r.changed === "same") view.choices = options;
+          await done;
+          // `>phase` to the close part the task is in is its Finish (task-phases spec §4.4.5): it closes like q.
+          if (r.ok && r.changed === "closing" && closed(!(await store.load()).current, before)) break;
           continue;
         }
         // `m <id>`: the person picks a mode (task-modes spec §5). A run can't change its tier mid-task, so a mode that
@@ -512,7 +581,7 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
         const pick = Number(line);
         if (Number.isInteger(pick) && pick >= 1 && pick <= options.length) {
           recorder?.reply(options[pick - 1].label);
-          await tasks.choose(options[pick - 1], current.id);
+          await tasks.choose(options[pick - 1], now.id);
         } else {
           recorder?.reply("*");
           await tasks.ask(line);
@@ -520,6 +589,9 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
       }
     } finally {
       promptInterrupted = undefined;
+      // First: a task left open (Ctrl-C after a stopped close, an error) keeps no time-box timer alive, so the process
+      // ends and no step runs a turn after the runtime closes. Its box is paused, as quitting the app does.
+      await tasks.close();
       reader.close();
       await turns.flush();
       const rt = await runtime.peek()?.catch(() => null);
@@ -553,13 +625,14 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
 }
 
 const RUN_USAGE =
-  "Usage: humanharness run <action> [--engine claude|codex] [--tier light|standard|deep] [--mode <id>] [--folder <dir>] [--language <tag>] [--set <name>=<value>]... [--harness <dir>] [--record [--force]]";
+  "Usage: humanharness run <action> [--engine claude|codex] [--tier light|standard|deep] [--mode <id>] [--time <minutes>] [--folder <dir>] [--language <tag>] [--set <name>=<value>]... [--harness <dir>] [--record [--force]]";
 
 export async function runCommand(args: string[], io: Io): Promise<number> {
   const { values, positionals } = parseCommand(args, {
     engine: { type: "string" },
     tier: { type: "string" },
     mode: { type: "string" },
+    time: { type: "string" },
     folder: { type: "string" },
     language: { type: "string" },
     set: { type: "string", multiple: true },
@@ -571,6 +644,7 @@ export async function runCommand(args: string[], io: Io): Promise<number> {
   if (values.force && !values.record) throw new UsageError("--force only works with --record");
   if (values.tier !== undefined && !(TIERS as readonly string[]).includes(values.tier)) throw new UsageError(`Unknown tier "${values.tier}": use light, standard or deep.`);
   if (values.mode !== undefined && !MODE_ID.test(values.mode)) throw new UsageError(`Invalid mode "${values.mode}": use a mode id from the manifest.`);
+  if (values.time !== undefined && !/^[1-9][0-9]*$/.test(values.time)) throw new UsageError("--time takes minutes, such as 30.");
   const language = values.language === undefined ? undefined : canonicalLanguage(values.language);
   if (language === null) throw new UsageError(`Unknown language "${values.language}": use a language tag such as en, es or pt-BR.`);
   // No prototype: `--set __proto__=x` stays a name, and parseSettings refuses it as unknown.
@@ -586,6 +660,7 @@ export async function runCommand(args: string[], io: Io): Promise<number> {
     ...(values.engine ? { engine: values.engine } : {}),
     ...(values.tier ? { tier: values.tier as Tier } : {}),
     ...(values.mode ? { mode: values.mode } : {}),
+    ...(values.time ? { time: Number(values.time) } : {}),
     ...(values.folder ? { folder: path.resolve(io.cwd, values.folder.replace(/^~(?=$|\/)/, os.homedir())) } : {}),
     ...(language ? { language } : {}),
     ...(Object.keys(settings).length > 0 ? { settings } : {}),

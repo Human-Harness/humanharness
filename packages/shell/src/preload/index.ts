@@ -8,6 +8,7 @@ import type {
   ScopesView,
   SettingsState,
   SetupOutput,
+  TaskTurnNotice,
   TaskView,
   TextSize,
 } from "@humanharness/ui/client";
@@ -62,6 +63,12 @@ const client: HarnessClient = {
     modeSwitches.add(listener);
     return () => void modeSwitches.delete(listener);
   },
+  setPhase: (taskId, phaseId) => ipcRenderer.invoke("hh:setPhase", taskId, phaseId),
+  finishTask: () => ipcRenderer.invoke("hh:finishTask"),
+  pauseTask: () => ipcRenderer.invoke("hh:pauseTask"),
+  resumeTask: () => ipcRenderer.invoke("hh:resumeTask"),
+  extendTimeBox: () => ipcRenderer.invoke("hh:extendTimeBox"),
+  onTaskTurn: (listener) => subscribe<TaskTurnNotice>("hh:taskTurn", listener),
   openPath: (file) => ipcRenderer.invoke("hh:openPath", file),
   revealPath: (file) => ipcRenderer.invoke("hh:revealPath", file),
   scopes: {

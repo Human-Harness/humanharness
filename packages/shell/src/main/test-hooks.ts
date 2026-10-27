@@ -17,14 +17,16 @@ export interface TestHooks {
   mock?: boolean;
   /** Where the folder step suggests the folder (mock mode keeps it in its temp folder). */
   suggestedFolder?: string;
+  /** How long a time-box minute lasts (HH_TEST_MINUTE_MS, 10..60000): tests and mock mode run a time box fast. */
+  minuteMs?: number;
 }
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
 /**
  * End-to-end test settings from the environment: HH_TEST_USER_DATA, HH_TEST_SHARED_DIR,
- * HH_TEST_SUGGESTED_FOLDER, HH_TEST_MOCK ("1") and HH_TEST_ENGINES (JSON: engine id → { command, env }). Development builds only: a packaged app
- * ignores them. Engine environments keep only HH_FAKE_* variables, so no credential or auth variable
+ * HH_TEST_SUGGESTED_FOLDER, HH_TEST_MOCK ("1"), HH_TEST_MINUTE_MS (a time-box minute in ms) and HH_TEST_ENGINES
+ * (JSON: engine id → { command, env }). Development builds only: a packaged app ignores them. Engine environments keep only HH_FAKE_* variables, so no credential or auth variable
  * can be passed this way.
  */
 export function readTestHooks(env: Record<string, string | undefined>, packaged: boolean): TestHooks {
@@ -38,6 +40,8 @@ export function readTestHooks(env: Record<string, string | undefined>, packaged:
   const suggestedFolder = dir(env.HH_TEST_SUGGESTED_FOLDER);
   if (suggestedFolder) hooks.suggestedFolder = suggestedFolder;
   if (env.HH_TEST_MOCK === "1") hooks.mock = true;
+  const minute = Number(env.HH_TEST_MINUTE_MS);
+  if (env.HH_TEST_MINUTE_MS && Number.isInteger(minute) && minute >= 10 && minute <= 60_000) hooks.minuteMs = minute;
   let raw: unknown;
   try {
     raw = env.HH_TEST_ENGINES ? JSON.parse(env.HH_TEST_ENGINES) : undefined;

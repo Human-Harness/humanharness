@@ -106,6 +106,8 @@ describe("dev --mock", () => {
     const { env, code } = await runDev(dir, { mock: true });
     expect(code).toBe(0);
     expect(env.HH_TEST_MOCK).toBe("1");
+    // Mock mode runs a time box fast: a minute is a second.
+    expect(env.HH_TEST_MINUTE_MS).toBe("1000");
     const engines = JSON.parse(env.HH_TEST_ENGINES!);
     expect(Object.keys(engines)).toEqual(["claude"]);
     expect(engines.claude.env.HH_FAKE_MOCK_DIR).toBe(path.join(dir, "mock"));

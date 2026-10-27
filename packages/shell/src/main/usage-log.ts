@@ -15,7 +15,14 @@ interface ProfileFields {
   reportedModel?: string;
 }
 
-/** Which task (and which of its phases) a turn belongs to. */
+/**
+ * What kind of turn it was: `run` (the task's own turns), `close` (the turn that asks for its note), `checkpoint` (the
+ * quiet note before the cap), `phase-change` (the brief of the phase the task enters) and `wrap-up` (the time box's
+ * last turn before the close phase). Not the task's phase: that is `taskPhase`.
+ */
+export type TurnKind = "run" | "close" | "checkpoint" | "phase-change" | "wrap-up";
+
+/** Which task (and which kind of turn) a turn belongs to. */
 export interface UsageMeta extends ProfileFields {
   action?: string;
   task?: string;
@@ -23,11 +30,10 @@ export interface UsageMeta extends ProfileFields {
   scope?: string;
   /** The task's mode while the turn ran (task-modes spec §5.5). Absent without one. */
   mode?: string;
-  /**
-   * `run`: the task's own turns; `close`: the turn that asks for its note; `checkpoint`: the quiet turn that
-   * saves a note before the context reaches its cap.
-   */
-  phase?: "run" | "close" | "checkpoint";
+  /** The task's phase while the turn ran (task-phases spec §6). Absent without phases. */
+  taskPhase?: string;
+  /** The turn's kind (TurnKind). */
+  phase?: TurnKind;
 }
 
 /** One turn in `<folder>/.harness/usage.jsonl`. Only what the engine reported; never leaves the machine. */
@@ -40,7 +46,9 @@ export interface UsageRecord extends ProfileFields {
   scope?: string;
   /** The task's mode while the turn ran (task-modes spec §5.5). Absent without one. */
   mode?: string;
-  phase?: "run" | "close" | "checkpoint";
+  /** The task's phase while the turn ran (task-phases spec §6). Absent without phases. */
+  taskPhase?: string;
+  phase?: TurnKind;
   /** `checkpoint`: the quiet turn that saves a note before the cap; `compaction`: the engine compacted (no usage). */
   kind?: "checkpoint" | "compaction";
   ok: boolean;
@@ -94,6 +102,7 @@ function metaFields(meta: UsageMeta): Partial<UsageRecord> {
     ...(meta.task ? { task: meta.task } : {}),
     ...(meta.scope ? { scope: meta.scope } : {}),
     ...(meta.mode ? { mode: meta.mode } : {}),
+    ...(meta.taskPhase ? { taskPhase: meta.taskPhase } : {}),
     ...(meta.phase ? { phase: meta.phase } : {}),
     ...(meta.phase === "checkpoint" ? { kind: "checkpoint" as const } : {}),
     ...(meta.tier ? { tier: meta.tier } : {}),

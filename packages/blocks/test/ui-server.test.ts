@@ -8,6 +8,7 @@ import { INPUT_DONE } from "../src/ui-server";
 
 const FIXTURE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../fake-agent/fixtures/notes-harness/harness.config.ts");
 const INPUT_FIXTURE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../fake-agent/fixtures/input-harness/harness.config.ts");
+const PHASES_FIXTURE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../fake-agent/fixtures/phases-harness/harness.config.ts");
 
 let bridge: Bridge | undefined;
 let client: Client | undefined;
@@ -93,6 +94,28 @@ describe("ui MCP server", () => {
     expect((shown.content as { text: string }[])[0].text).toBe("Done: the person can see it now.");
     const state = await c.callTool({ name: "update_progress", arguments: { percent: 5 } });
     expect((state.content as { text: string }[])[0].text).toBe("Done: state updated.");
+  });
+});
+
+describe("ui MCP server: set_phase (task-phases spec §4.1)", () => {
+  it("is a tool only in a harness with phases", async () => {
+    const plain = await connect([]);
+    expect((await plain.listTools()).tools.map((t) => t.name)).not.toContain("set_phase");
+    await client?.close();
+    await bridge?.close();
+    const phased = await connect([], PHASES_FIXTURE);
+    expect((await phased.listTools()).tools.map((t) => t.name)).toContain("set_phase");
+  });
+
+  it("forwards a known phase id; answers an unknown one with the valid ids and sends nothing", async () => {
+    const received: BlockMessage[] = [];
+    const c = await connect(received, PHASES_FIXTURE);
+    const ok = await c.callTool({ name: "set_phase", arguments: { to: "main", reason: "Warm-up done" } });
+    expect(ok.isError).toBeFalsy();
+    const bad = await c.callTool({ name: "set_phase", arguments: { to: "dessert", reason: "Hungry" } });
+    expect(bad.isError).toBe(true);
+    expect((bad.content as { text: string }[])[0].text).toBe("Unknown part. Use one of: warmup, main, close.");
+    expect(received).toEqual([{ name: "set_phase", data: { to: "main", reason: "Warm-up done" } }]);
   });
 });
 

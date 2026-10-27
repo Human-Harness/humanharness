@@ -23,16 +23,24 @@ export function closePrompt(modes: readonly string[]): string {
 }
 
 /**
- * Fills `{{language}}`, `{{notesIndex}}` and `{{question}}` in one pass (inserted text is never filled
- * again). Only the template is tidied, before filling: a line holding just a placeholder whose value is
- * empty goes away and blank runs collapse; inserted text stays exactly as given. A brief without
- * `{{notesIndex}}` gets the index appended, so every new session starts with it. The language is named in English ("pt-BR" → "Brazilian Portuguese").
+ * Fills `{{language}}`, `{{notesIndex}}`, `{{question}}` and a phase brief's `{{phase}}`, `{{previousPhase}}`,
+ * `{{timeLeft}}` in one pass (inserted text is never filled again). Only the template is tidied, before filling:
+ * a line holding just a placeholder whose value is empty goes away and blank runs collapse; inserted text stays
+ * exactly as given. A brief without `{{notesIndex}}` gets the index appended, so every new session starts with it.
+ * The language is named in English ("pt-BR" → "Brazilian Portuguese").
  */
-export function fillPrompt(template: string, vars: { language: Language; notesIndex: string; question?: string }): string {
+export function fillPrompt(
+  template: string,
+  vars: { language: Language; notesIndex: string; question?: string; phase?: string; previousPhase?: string; timeLeft?: string },
+): string {
   const values: Record<string, string> = {
     language: languageName(vars.language),
     notesIndex: vars.notesIndex,
     ...(vars.question !== undefined ? { question: vars.question } : {}),
+    // A phase's brief (task-phases spec §4.4): its label, the previous one's and the time left. Absent: left as written (D0).
+    ...(vars.phase !== undefined ? { phase: vars.phase } : {}),
+    ...(vars.previousPhase !== undefined ? { previousPhase: vars.previousPhase } : {}),
+    ...(vars.timeLeft !== undefined ? { timeLeft: vars.timeLeft } : {}),
   };
   const hasIndex = /\{\{\s*notesIndex\s*\}\}/.test(template);
   const tidy = template
@@ -76,15 +84,25 @@ export function resumeMessage(vars: {
   questionCut?: boolean;
   /** The current mode's section (modeSection), after the action's brief (task-modes spec §6). */
   mode?: string;
+  /** The list of parts and the current part's section (task-phases spec §6), after the mode's. */
+  phase?: string;
+  /** "about 12 minutes" with a time box (task-phases spec §5): the same line the first message has. Absent: none (D0). */
+  timeLeft?: string;
   message: string;
 }): string {
   const line = fillPrompt(RESUME_PROMPT, { language: vars.language, notesIndex: "" });
   const question = vars.question ? `## The question that opened this topic\n${vars.question}${vars.questionCut ? `\n${QUESTION_CUT}` : ""}` : null;
   const head =
     vars.brief !== undefined
-      ? [fillPrompt(vars.brief, { language: vars.language, notesIndex: vars.notesIndex }), ...(vars.mode ? [vars.mode] : []), line]
+      ? [
+          fillPrompt(vars.brief, { language: vars.language, notesIndex: vars.notesIndex }),
+          ...(vars.mode ? [vars.mode] : []),
+          ...(vars.phase ? [vars.phase] : []),
+          line,
+        ]
       : [line, ...(vars.notesIndex ? [vars.notesIndex] : []), ...(question ? [question] : [])];
-  return [...head, `## The person's message\n${vars.message}`].join("\n\n");
+  const box = vars.timeLeft ? [`Time left: ${vars.timeLeft}.`] : [];
+  return [...head, ...box, `## The person's message\n${vars.message}`].join("\n\n");
 }
 
 /** A mode as a prompt carries it: its label, its brief (the file's text, not filled yet) and its settings' sentences. */
@@ -135,3 +153,64 @@ export function modeSection(mode: ModeText, language: Language): string {
 export function recommendSection(modes: readonly { id: string; label: string; recommend?: string }[]): string {
   return ["## How to work", RECOMMEND_PROMPT, modes.map((m) => `- \`${m.id}\` (${m.label})${m.recommend ? `: ${m.recommend}` : ""}`).join("\n")].join("\n\n");
 }
+
+/** A part as a prompt carries it: its id, its label (one line) and its brief (the file's text, "" without one). */
+export interface PhaseText {
+  id: string;
+  label: string;
+  brief: string;
+}
+
+/** How the agent moves between parts (task-phases spec §4.1); in the first message and a resumed one. */
+export const PHASES_HOW =
+  "This task has parts, in order. When the current part is done, call `set_phase` at the end of your answer with the next part's id and a short reason; the app moves the task, and may ask the person first. In the last part, call `set_phase` with its own id when the task is done.";
+/** A change's first line (spec §4.4). The mock replay knows a change by this start. */
+export const PHASE_PROMPT = 'Next part of this task: "{{label}}" (`{{phase}}`).';
+/** Said when the person went back to an earlier part (spec §4.2). */
+export const PHASE_BACK = "The person went back to this part.";
+/** A change's last line. */
+export const PHASE_END = "Then continue with the person in this part.";
+/** The time box's wrap-up turn (spec §5). The mock replay knows it by its start. */
+export const WRAP_UP_PROMPT =
+  "Time is almost up: finish the current point briefly, in {{language}}. Do not start anything new and do not call `show_choices`; the app moves on after your answer.";
+
+interface PhaseVars {
+  language: Language;
+  /** The label of the part the task comes from. */
+  previous?: string;
+  /** "about 12 minutes", or "" / absent without a time box. */
+  timeLeft?: string;
+}
+
+/** A part's brief filled (spec §4.4): the language, its label, the previous one's and the time left. Never the notes index. */
+const phaseBrief = (p: PhaseText, vars: PhaseVars): string =>
+  fillPrompt(p.brief, { language: vars.language, notesIndex: "", phase: p.label, previousPhase: vars.previous ?? "", timeLeft: vars.timeLeft ?? "" });
+
+/** The list of the task's parts (spec §4.1): ids, labels, the current one marked. Labels come one-lined from the caller. */
+export function phasesSection(phases: readonly { id: string; label: string }[], current: string): string {
+  const lines = phases.map((p) => `- \`${p.id}\` (${p.label})${p.id === current ? " ← now" : ""}`).join("\n");
+  return ["## Parts of this task", PHASES_HOW, lines].join("\n\n");
+}
+
+/** The current part's heading and brief: at a task's start and in a resumed session. */
+export function phaseSection(p: PhaseText, vars: PhaseVars): string {
+  return [`## Part: ${p.label}`, ...(p.brief ? [phaseBrief(p, vars)] : [])].join("\n\n");
+}
+
+/**
+ * A change's message (spec §4.4): one turn of the same session. `extra`: sections that ride on it (a mode coming back,
+ * a recommendation, modes spec §7). Inserted text is never filled again.
+ */
+export function phasePrompt(p: PhaseText, vars: PhaseVars & { back?: boolean; extra?: readonly string[] }): string {
+  return [
+    PHASE_PROMPT.replace(/\{\{(label|phase)\}\}/g, (_all, key: string) => (key === "label" ? p.label : p.id)),
+    ...(vars.back ? [PHASE_BACK] : []),
+    ...(vars.timeLeft ? [`Time left: ${vars.timeLeft}.`] : []),
+    ...(p.brief ? [phaseBrief(p, vars)] : []),
+    ...(vars.extra ?? []),
+    PHASE_END,
+  ].join("\n\n");
+}
+
+/** The wrap-up's message (spec §5). */
+export const wrapUpPrompt = (language: Language): string => fillPrompt(WRAP_UP_PROMPT, { language, notesIndex: "" });

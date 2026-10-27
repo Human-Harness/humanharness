@@ -357,6 +357,15 @@ select:focus-visible { outline: 2px solid var(--hh-ink); outline-offset: 2px; }
 .hh-mode-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 16px; border-bottom: 1px solid var(--hh-line); }
 .hh-mode-bar .hh-mode-list { flex-basis: 100%; }
 .hh-mode-line { margin: 0; text-align: center; color: var(--hh-muted); font-size: 13px; }
+.hh-phase-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 16px; border-bottom: 1px solid var(--hh-line); }
+.hh-phase-steps { display: flex; flex-wrap: wrap; gap: 4px; list-style: none; margin: 0; padding: 0; }
+.hh-phase-steps button { border-radius: 999px; padding: 4px 12px; }
+.hh-phase-steps button.hh-phase-done { border-color: var(--hh-ink); color: var(--hh-slate); }
+.hh-phase-steps button.hh-phase-done::before { content: "\2713\00a0"; }
+.hh-phase-steps button[aria-current="step"] { background: var(--hh-ink); color: var(--hh-on-ink); border-color: var(--hh-ink); }
+.hh-phase-proposal { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 12px; border: 1px solid var(--hh-line-strong); border-radius: 8px; background: var(--hh-paper); }
+.hh-phase-proposal p { margin: 0; flex: 1 1 240px; }
+.hh-time-box { display: flex; align-items: center; gap: 8px; margin-left: auto; color: var(--hh-muted); font-size: 13px; }
 .hh-notes { position: fixed; inset: 52px 0 0 auto; width: min(420px, 100%); box-sizing: border-box; padding: 16px 18px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; background: var(--hh-sheet); border-left: 1px solid var(--hh-line-strong); box-shadow: -18px 0 50px rgba(25, 30, 36, 0.16); }
 .hh-notes header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .hh-notes h2 { font-size: 15px; font-weight: 600; }

@@ -23,17 +23,23 @@ export interface Play {
 }
 
 /**
- * The app's fixed prompts start with these (CLOSE_PROMPT and CHECKPOINT_PROMPT in the shell's
- * task-prompts.ts; a shell test pins them).
+ * The app's fixed prompts start with these (CLOSE_PROMPT, CHECKPOINT_PROMPT, PHASE_PROMPT and WRAP_UP_PROMPT in the
+ * shell's task-prompts.ts; a shell test pins them).
  */
-export function promptKind(prompt: string): "close" | "checkpoint" | "reply" {
+export function promptKind(prompt: string): "close" | "checkpoint" | "phase" | "wrap-up" | "reply" {
   if (prompt.startsWith("We are closing this topic.")) return "close";
   if (prompt.startsWith("Checkpoint:")) return "checkpoint";
+  if (prompt.startsWith("Next part of this task:")) return "phase";
+  if (prompt.startsWith("Time is almost up:")) return "wrap-up";
   return "reply";
 }
 
+/** The phase id a phase change prompt names: its first line ends with (`<id>`). */
+const phaseOfPrompt = (prompt: string): string | undefined => /^Next part of this task: .*\(`([a-z][a-z0-9_-]{0,63})`\)/.exec(prompt)?.[1];
+
 const defaultNote = (action: string): MockNote => ({ title: action, summary: ["Recorded test run"], decisions: [], files: [], open: [] });
-const firstTurn = (r: Recording) => r.turns.find((t) => t.id !== "close");
+/** A setPhase or timeUp turn answers the app's own prompt, never a first message or a reply. */
+const firstTurn = (r: Recording) => r.turns.find((t) => t.id !== "close" && !t.setPhase && !t.timeUp);
 const closeNote = (r: Recording) => r.turns.find((t) => t.id === "close")?.note ?? defaultNote(r.action);
 /** The options of every `show_choices` block, in order: what the person can pick. */
 export function choiceOptions(blocks: MockBlock[]): { label: string; followUp?: string }[] {
@@ -112,6 +118,13 @@ export function replay(recordings: Recording[], position: SessionPosition | unde
     return { play: quiet("", [], defaultNote(position.action ?? "question")), session: position };
   }
   if (kind === "checkpoint") return { play: quiet("", [], rec ? closeNote(rec) : defaultNote(position.action ?? "question")), session: position };
+  // A phase change or the wrap-up is the app's prompt, not a reply: it plays the turn recorded for it (spec §6).
+  if (kind === "phase" || kind === "wrap-up") {
+    const id = kind === "phase" ? phaseOfPrompt(prompt) : undefined;
+    const turn = rec?.turns.find((t) => (kind === "phase" ? id !== undefined && t.setPhase === id : t.timeUp === true));
+    if (turn) return { play: playTurn(turn), session: { ...position, turn: turn.id } };
+    return { play: quiet(rec?.fallback?.text ?? DEFAULT_FALLBACK), session: position };
+  }
   const current = rec?.turns.find((t) => t.id === position.turn);
   const key = current ? replyKey(current, prompt) : undefined;
   const answered = current ? answerTarget(current, prompt) : undefined;

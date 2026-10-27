@@ -58,6 +58,10 @@ export const mockTurnSchema = z.strictObject({
     .optional(),
   /** Answers to this turn's input blocks: an answer equal to one of these plays its `next`; others follow `next["*"]`. */
   respond: z.array(respondSchema).optional(),
+  /** The recorded answer to the app's move into this part (task-phases spec §6): played for that phase change turn. */
+  setPhase: z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/).optional(),
+  /** The recorded answer to the time box's wrap-up turn. */
+  timeUp: z.literal(true).optional(),
 });
 
 /** One action's recorded conversation (spec 3e §2). */

@@ -2,9 +2,10 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { z } from "zod";
 import { type Block, blockToolName } from "./block";
-import { CORE_BLOCKS, INPUT_CORE_BLOCKS, MODE_CORE_BLOCKS, RESERVED_BLOCK_NAMES } from "./core-blocks";
+import { CORE_BLOCKS, INPUT_CORE_BLOCKS, MODE_CORE_BLOCKS, PHASE_CORE_BLOCKS, RESERVED_BLOCK_NAMES } from "./core-blocks";
 import { dataSchema } from "./data";
 import { DEFAULT_MODE_WORDS, MODE_ID } from "./modes";
+import { PHASE_ID, TIME_BOX_MAX } from "./phases";
 import { SETTING_NAME, checkSettingFields, settingFieldSchema, settingsSchema } from "./settings";
 
 export * from "./block";
@@ -14,6 +15,7 @@ export * from "./input";
 export * from "./answer";
 export * from "./settings";
 export * from "./modes";
+export * from "./phases";
 /** The zod a manifest builds its block schemas with: the same instance the SDK validates them against. */
 export { z } from "zod";
 
@@ -37,6 +39,30 @@ export const tierBelow = (a: Tier, b: Tier): boolean => TIERS.indexOf(a) < TIERS
 /** Where an action runs in a harness with scopes: inside the open scope, or app-wide (spec §3.3). */
 export const SCOPE_MODES = ["required", "none"] as const;
 export type ScopeMode = (typeof SCOPE_MODES)[number];
+/** A part of a task (task-phases spec §3): its brief runs as one turn of the same session when the task enters it. */
+const phaseSchema = z.object({
+  id: z.string().regex(PHASE_ID),
+  label: text.max(80),
+  /** A file in the harness folder, filled like an action's prompt plus {{phase}}, {{previousPhase}}, {{timeLeft}}. Absent: no turn. */
+  brief: z.string().min(1).optional(),
+  /** The agent may move on to the next phase on its own; without it, its request waits for the person. */
+  auto: z.boolean().optional(),
+  /** The modes allowed here (modes spec §7): "any" (the default), "none" or a list of the action's modes. */
+  modes: z.union([z.enum(["any", "none"]), z.array(z.string().regex(MODE_ID)).min(1)]).optional(),
+  /** The last phase only: its end is the core closing turn (D5). */
+  close: z.literal(true).optional(),
+});
+export type HarnessPhase = z.output<typeof phaseSchema>;
+/** A time box the person may choose at the start (spec §5). */
+const timeBoxSchema = z.object({
+  /** Lengths in whole minutes. */
+  options: z.array(z.number().int().min(1).max(TIME_BOX_MAX)).min(1).max(6),
+  /** One of the options, or null for no limit. */
+  default: z.number().int().nullable().default(null),
+  /** The share of the time at which the wrap-up starts; absent: when the time is up. */
+  wrapUpAt: z.number().gt(0).max(1).optional(),
+});
+export type HarnessTimeBox = z.output<typeof timeBoxSchema>;
 /**
  * A task the harness can start (a topic card, a step of the guided path, a button): its brief is the first
  * message of the task's engine session. `cost` is how much of the plan it tends to use.
@@ -56,6 +82,10 @@ const actionSchema = z.object({
   modes: z.array(z.string().regex(MODE_ID)).min(1).optional(),
   /** How its task starts: one of `modes`, "recommend" (the default) or "ask". Only with `modes`. */
   defaultMode: z.string().min(1).optional(),
+  /** Ordered parts inside one task and one session (task-phases spec D1); absent: none (D0). */
+  phases: z.array(phaseSchema).min(1).max(12).optional(),
+  /** Lengths the person may choose for the task (spec D6); absent: no time box. */
+  timeBox: timeBoxSchema.optional(),
 });
 /** A folder the agent may read but never change. */
 const referenceSchema = z.object({
@@ -151,7 +181,7 @@ const manifestSchema = z.object({
   }
   // Every block becomes an MCP tool: two blocks (core ones included) cannot share a tool name.
   const tools = new Map<string, string>(
-    Object.entries({ ...CORE_BLOCKS, ...INPUT_CORE_BLOCKS, ...MODE_CORE_BLOCKS }).map(([name, b]) => [blockToolName(name, b), name]),
+    Object.entries({ ...CORE_BLOCKS, ...INPUT_CORE_BLOCKS, ...MODE_CORE_BLOCKS, ...PHASE_CORE_BLOCKS }).map(([name, b]) => [blockToolName(name, b), name]),
   );
   for (const [name, b] of Object.entries(m.blocks)) {
     const tool = blockToolName(name, b);
@@ -218,6 +248,31 @@ const manifestSchema = z.object({
       });
     }
   }
+  // Phases and the time box (task-phases spec §3).
+  for (const [id, a] of Object.entries(m.actions)) {
+    const phases = a.phases ?? [];
+    const ids = new Set<string>();
+    phases.forEach((p, i) => {
+      const at = ["actions", id, "phases", i];
+      if (ids.has(p.id)) ctx.addIssue({ code: "custom", path: [...at, "id"], message: `Phase "${p.id}" is declared twice` });
+      ids.add(p.id);
+      if (p.close && i !== phases.length - 1) ctx.addIssue({ code: "custom", path: [...at, "close"], message: "Only the last phase can be the close phase" });
+      if (!Array.isArray(p.modes)) return;
+      if (!a.modes) {
+        ctx.addIssue({ code: "custom", path: [...at, "modes"], message: "Only an action with modes can list the modes a phase allows" });
+        return;
+      }
+      for (const mode of p.modes) {
+        if (!a.modes.includes(mode)) ctx.addIssue({ code: "custom", path: [...at, "modes"], message: `"${mode}" is not one of this action's modes` });
+      }
+    });
+    if (!a.timeBox) continue;
+    const options = a.timeBox.options;
+    if (new Set(options).size !== options.length) ctx.addIssue({ code: "custom", path: ["actions", id, "timeBox", "options"], message: "Each length is offered once" });
+    if (a.timeBox.default !== null && !options.includes(a.timeBox.default)) {
+      ctx.addIssue({ code: "custom", path: ["actions", id, "timeBox", "default"], message: "The default is one of the options, or null" });
+    }
+  }
   // A Settings tab needs something to draw: its own fields or a mode's (harness-settings spec §3, §6).
   const modeSettings = Object.values(m.modes).some((mode) => Object.keys(mode.settings ?? {}).length > 0);
   if (m.settings && Object.keys(m.settings.fields).length === 0 && !modeSettings) {
@@ -257,6 +312,8 @@ export async function loadHarness(configPath: string, options: { root?: string }
   for (const action of Object.values(loaded.actions)) resolveInHarness(loaded, action.prompt);
   // So must every mode's brief (task-modes spec §3).
   for (const mode of Object.values(loaded.modes)) resolveInHarness(loaded, mode.brief);
+  // And every phase's brief (task-phases spec §3).
+  for (const action of Object.values(loaded.actions)) for (const p of action.phases ?? []) if (p.brief) resolveInHarness(loaded, p.brief);
   return loaded;
 }
 

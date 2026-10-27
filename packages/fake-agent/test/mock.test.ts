@@ -45,6 +45,14 @@ describe("recordingSchema", () => {
     expect(recordingSchema.safeParse({ ...minimal, version: 2 }).success).toBe(false);
     expect(recordingSchema.safeParse({ ...minimal, extra: true }).success).toBe(false);
   });
+
+  it("a turn may carry setPhase (a phase id) or timeUp: true; nothing else", () => {
+    const base = { version: 1, action: "session", match: "# Task: session" };
+    expect(recordingSchema.safeParse({ ...base, turns: [{ id: "t1" }, { id: "t2", setPhase: "main" }, { id: "t3", timeUp: true }] }).success).toBe(true);
+    for (const bad of [{ id: "t2", setPhase: "Main" }, { id: "t2", timeUp: false }, { id: "t2", setPhase: "" }]) {
+      expect(recordingSchema.safeParse({ ...base, turns: [{ id: "t1" }, bad] }).success).toBe(false);
+    }
+  });
 });
 
 describe("loadRecordings", () => {

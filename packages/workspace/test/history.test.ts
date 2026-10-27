@@ -217,6 +217,13 @@ describe("History trailers", () => {
     expect(parseCommitMessage("Turn: a\n\nTask: t1\nSigned-off-by: x")).toEqual({ subject: "Turn: a", task: null, action: null });
     expect(parseCommitMessage("Turn: a\n\nAction: plan\nTask: t1")).toEqual({ subject: "Turn: a", task: "t1", action: "plan" });
   });
+
+  it("writes and reads the Phase trailer (task-phases spec §6); D0 without it", () => {
+    expect(withTrailer("Before message", { task: "t1", action: "session", phase: "main" })).toBe("Before message\n\nTask: t1\nAction: session\nPhase: main");
+    expect(withTrailer("x", { task: "t1", phase: "bad phase" })).toBe("x\n\nTask: t1");
+    expect(parseCommitMessage("Before message\n\nTask: t1\nAction: session\nPhase: main")).toEqual({ subject: "Before message", task: "t1", action: "session", phase: "main" });
+    expect(parseCommitMessage("Note: x\n\nTask: t1\nAction: plan\n")).not.toHaveProperty("phase");
+  });
 });
 
 describe("History.tasks", () => {

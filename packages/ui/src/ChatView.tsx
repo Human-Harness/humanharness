@@ -16,6 +16,7 @@ import {
   type NoteView,
   type RespondResult,
   type SendOptions,
+  type TaskTurnNotice,
   type TaskView,
   nextInPath,
   partsOf,
@@ -30,6 +31,8 @@ import { ModeBar, ModeList } from "./ModeList";
 import { actionModes, tierBelow } from "./modes";
 import { NotesPanel } from "./NotesPanel";
 import { usePacedAnswer } from "./pace";
+import { PhaseStepper } from "./PhaseStepper";
+import { actionPhases, phaseModesOf } from "./phases";
 import { RecommendModeBlock } from "./RecommendModeBlock";
 import { type StartViewCopy, StartView } from "./StartView";
 import { initialChat, reduceChat } from "./state";
@@ -95,8 +98,9 @@ export function ChatView({
   onTurnOk?: () => void;
 }) {
   const { t, i18n } = useTranslation();
-  // save_note never shows: a note reaches the side panel as a file, through the tasks.
-  const [chat, dispatch] = useReducer(reduceChat, undefined, () => initialChat([], [...stateBlocks, "save_note"]));
+  // save_note never shows: a note reaches the side panel as a file, through the tasks. Nor set_phase: the stepper
+  // shows its proposal, through the tasks.
+  const [chat, dispatch] = useReducer(reduceChat, undefined, () => initialChat([], [...stateBlocks, "save_note", "set_phase"]));
   const [draft, setDraft] = useState("");
   const [showHistory, setShowHistory] = useState(false);
   const [notesPanel, setNotesPanel] = useState<{ expanded?: string } | null>(null);
@@ -133,6 +137,8 @@ export function ChatView({
   const tookSwitch = useRef<(s: ModeSwitch) => void>(() => {});
   /** The last message sent came from a pick (Try again picks it again). */
   const lastPick = useRef<Pick | null>(null);
+  /** The last message sent and its options: Try again sends it with the answers already given (the time box, a mode). */
+  const lastSend = useRef<{ text: string; options: SendOptions } | null>(null);
   /** The last message sent was an answer to an input block: its failed turn reopens the form, never a plain resend. */
   const lastAnswer = useRef(false);
   /** The task open now, read when a turn ends to tag its entry. */
@@ -181,6 +187,21 @@ export function ChatView({
   const labelOf = (id: string) => state.actions[id]?.label ?? id;
   /** The open task's modes (its action's, in its order); none without modes (D0). */
   const taskModes = actionModes(state, tasks.current?.action);
+  /** The open task's parts (task-phases spec §6); none without phases (D0). */
+  const taskPhases = actionPhases(state, tasks.current?.action);
+  const currentPhase = taskPhases.find((p) => p.id === tasks.current?.phase);
+  // A part may allow fewer modes, or none (modes spec §7): the bar lists only those, and hides with none.
+  const barModes =
+    taskPhases.length > 0 ? taskModes.filter((m) => phaseModesOf(taskModes.map((x) => x.id), currentPhase).includes(m.id)) : taskModes;
+  /** An action with a time box: the start waits for "How long?" (no model call before it). */
+  const [timePick, setTimePick] = useState<{ text: string; options: SendOptions } | null>(null);
+  /** The last phase move, Finish or time box control was refused or failed (shown until the next one or a message). */
+  const [phaseFailed, setPhaseFailed] = useState(false);
+  /** A phase move or Finish is on its way: the stepper waits for its answer. */
+  const [phasing, setPhasing] = useState(false);
+  const timeRef = useRef<HTMLDivElement>(null);
+  /** A turn the app starts on its own (a phase change, the wrap-up): draws its line and its turn. Set each render. */
+  const tookTurn = useRef<(n: TaskTurnNotice) => void>(() => {});
   const modeLabel = (id: string) => (state.modes && Object.hasOwn(state.modes, id) ? state.modes[id].label : id);
 
   useEffect(() => {
@@ -217,10 +238,12 @@ export function ChatView({
     // A turn's entry belongs to the task open when it ends (the app tells the window about a task before its turn).
     const offEvents = client.onEvent((e) => dispatch(e.type === "done" ? { ...e, task: openTask.current } : e));
     const offModes = client.onModeSwitch((s) => tookSwitch.current(s));
+    const offTurns = client.onTaskTurn((n) => tookTurn.current(n));
     return () => {
       offTasks();
       offEvents();
       offModes();
+      offTurns();
     };
   }, [client]);
 
@@ -268,6 +291,12 @@ export function ChatView({
     askRef.current?.scrollIntoView?.({ block: "nearest" });
     askRef.current?.querySelector<HTMLButtonElement>(".hh-mode-list button")?.focus();
   }, [askingMode]);
+  const askingTime = timePick !== null;
+  useEffect(() => {
+    if (!askingTime) return;
+    timeRef.current?.scrollIntoView?.({ block: "nearest" });
+    timeRef.current?.querySelector<HTMLButtonElement>(".hh-mode-list button")?.focus();
+  }, [askingTime]);
 
   // The answer appears at a steady pace, word by word and block by block: the turn running now, then its entry
   // once it ends, until all of it is on screen.
@@ -335,13 +364,25 @@ export function ChatView({
   /** True when the message was sent, or is waiting for the user to confirm a heavy action. */
   const send = (text: string, options: SendOptions = {}, confirmed = false): boolean => {
     const message = text.trim();
-    if (!message || blocked() || (pending && !confirmed) || (askPick && !options.mode)) return false;
+    if (!message || blocked() || (pending && !confirmed) || (askPick && !options.mode) || (timePick && options.timeBox === undefined)) return false;
     // A `required` action needs an open scope (spec §3.3); the main process would refuse it.
     if (options.action && state.scopes && state.actions[options.action]?.scope !== "none" && !openScope) {
       const text = t("scopes.pickFirst", { label: state.scopes.label });
       dispatch({ type: "notice", text, at: new Date().toISOString() });
       setNotice(text);
       return false;
+    }
+    // An action with a time box (task-phases spec §5): the person picks how long before anything is sent. It comes
+    // before the mode question; each answer goes along with the next.
+    if (
+      options.action &&
+      options.timeBox === undefined &&
+      Object.hasOwn(state.actions, options.action) &&
+      state.actions[options.action].timeBox
+    ) {
+      questionOpener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      setTimePick({ text: message, options });
+      return true;
     }
     // `defaultMode: "ask"` (task-modes spec §3): the person picks how to work before anything is sent.
     if (
@@ -370,8 +411,10 @@ export function ChatView({
     lastMode.current = null;
     setPickFailed(false);
     setModeFailed(false);
+    setPhaseFailed(false);
     if (flow && (options.action || !tasks.current)) showNewTask();
     dispatch({ type: "user", text: message, at: new Date().toISOString(), ...(options.action ? { action: options.action } : {}) });
+    lastSend.current = { text: message, options };
     client.send(message, options).catch(failTurn);
     inputRef.current?.focus();
     return true;
@@ -468,12 +511,7 @@ export function ChatView({
   tookSwitch.current = (s: ModeSwitch) => {
     const current = tasks.current;
     // A question still open is about the task as it was: answering it now would switch again.
-    if (tierAsk || askPick) {
-      setTierAsk(null);
-      setAskPick(null);
-      questionOpener.current = null;
-      inputRef.current?.focus();
-    }
+    closeQuestions();
     if (s.switched === "quiet") {
       busy.current = false;
       return;
@@ -493,6 +531,67 @@ export function ChatView({
       if (current?.action) dispatch({ type: "user", text: labelOf(current.action), at, action: current.action });
     }
   };
+  /** A question still open (the tier, "ask", "How long?") is about the task as it was: it closes unanswered. */
+  const closeQuestions = () => {
+    if (!tierAsk && !askPick && !timePick) return;
+    setTierAsk(null);
+    setAskPick(null);
+    setTimePick(null);
+    questionOpener.current = null;
+    inputRef.current?.focus();
+  };
+  /**
+   * A turn the app starts on its own is coming (task-phases spec §4.4, §5): a phase change (the agent's, the time
+   * box's, or one asked from the harness's own UI) or the wrap-up. Its line goes first, then its events.
+   */
+  tookTurn.current = (n: TaskTurnNotice) => {
+    if (n.task !== tasks.current?.id) return;
+    closeQuestions();
+    busy.current = true;
+    stick.current = true;
+    pinNext.current = true;
+    lastPick.current = null;
+    lastAnswer.current = false;
+    lastMode.current = null;
+    setPhaseFailed(false);
+    const at = new Date().toISOString();
+    if (n.kind === "wrap-up") {
+      dispatch({ type: "user", text: t("phases.wrapUpLine"), at, timeUp: true });
+      return;
+    }
+    const label = taskPhases.find((p) => p.id === n.phase)?.label ?? n.phase ?? "";
+    dispatch({ type: "user", text: `— ${label} —`, at, ...(n.phase ? { phase: n.phase } : {}) });
+  };
+  /** The tasks as they are now: a Finish may have been stopped, a move may have changed nothing on screen. */
+  const rereadTasks = () => client.getTasks().then(setTasks, () => {});
+  /** Runs one of the stepper's calls: the stepper waits for it, and a refusal or a failure shows a short error. */
+  const taskCall = (call: () => Promise<boolean>) => {
+    setPhaseFailed(false);
+    setPhasing(true);
+    call().then(
+      (ok) => {
+        setPhasing(false);
+        if (!ok) setPhaseFailed(true);
+        void rereadTasks();
+      },
+      () => {
+        setPhasing(false);
+        setPhaseFailed(true);
+      },
+    );
+  };
+  /** The person moves the task (the stepper, or the proposal's button); only while it waits and nothing runs. */
+  const pickPhase = (id: string) => {
+    const task = tasks.current;
+    if (!task || blocked() || pending || task.status !== "waiting") return;
+    taskCall(() => client.setPhase(task.id, id).then((r) => r.ok));
+  };
+  /** Finish: the core closing turn. False back means it was stopped and the task stays open. */
+  const finishTask = () => {
+    if (!tasks.current || blocked() || pending) return;
+    // A stopped closing turn is not a failure: the task simply stays open, as the tasks read again show.
+    taskCall(() => client.finishTask().then(() => true));
+  };
   const openTier = (ask: { mode: string; task: string; required: Tier; current: Tier }) => {
     questionOpener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     setTierAsk(ask);
@@ -510,6 +609,19 @@ export function ChatView({
     setTierAsk(null);
     refocus();
     if (ask && belowTier) chooseMode(ask.mode, ask.task, belowTier);
+  };
+  /** "Not now" (Escape) on "How long?": nothing is sent. */
+  const closeTime = () => {
+    setTimePick(null);
+    refocus();
+  };
+  /** "How long?"'s answers for `action`: its options and "No limit" (null), the action's default first. */
+  const timeChoices = (action: string | undefined): (number | null)[] => {
+    const box = action !== undefined && Object.hasOwn(state.actions, action) ? state.actions[action].timeBox : undefined;
+    if (!box) return [];
+    const all = [...box.options, null];
+    const first = box.default ?? null;
+    return [first, ...all.filter((m) => m !== first)];
   };
   /** "Not now" (Escape) on the "ask" picker: nothing is sent. */
   const closeAsk = () => {
@@ -592,7 +704,8 @@ export function ChatView({
   const modeActions = (task: string | undefined): { chooseMode?: BlockActions["chooseMode"]; modes?: BlockActions["modes"] } => {
     const views = state.modes ?? {};
     if (task === undefined || task !== tasks.current?.id) return { modes: { views, allowed: Object.keys(views) } };
-    const allowed = taskModes.map((m) => m.id);
+    // Only the modes the current part allows (modes spec §7): a block from an earlier part can't pick another.
+    const allowed = barModes.map((m) => m.id);
     if (allowed.length === 0) return {};
     return {
       chooseMode: (mode: string) => chooseMode(mode, task),
@@ -609,6 +722,8 @@ export function ChatView({
     if (lastAnswer.current) return undefined;
     const mode = lastMode.current;
     if (mode && mode.task === tasks.current?.id) return () => void chooseMode(mode.mode, mode.task, mode.belowTier);
+    // A phase change's or the wrap-up's line is the app's, not the person's: nothing to resend (task-phases spec §4.4).
+    if (lastUser?.phase || lastUser?.timeUp) return undefined;
     // A switch's line is never resent as a message: the same mode is picked again.
     if (lastUser?.mode) {
       const id = tasks.current?.id;
@@ -617,7 +732,12 @@ export function ChatView({
     }
     const pick = lastPick.current;
     if (pick && pick.task === tasks.current?.id) return () => void choose(pick.option, pick.task);
-    if (lastUser) return () => void send(lastUser.text, lastUser.action ? { action: lastUser.action } : {});
+    if (lastUser) {
+      // The same message keeps what was answered before it went (a time box picked in "How long?", a mode): never asked twice.
+      const sent = lastSend.current;
+      const options = sent && sent.text === lastUser.text && sent.options.action === lastUser.action ? sent.options : lastUser.action ? { action: lastUser.action } : {};
+      return () => void send(lastUser.text, options);
+    }
     return undefined;
   };
   const onSubmit = (e: FormEvent) => {
@@ -683,12 +803,30 @@ export function ChatView({
           />
         )}
         <main className="hh-main">
-          {flow && since !== null && tasks.current && taskModes.length > 0 && (
+          {/* A time box without phases (spec §5) still shows its time, its controls and, once time is up, Finish. */}
+          {flow && since !== null && tasks.current && (taskPhases.length > 0 || tasks.current.timeBox) && (
+            <PhaseStepper
+              phases={taskPhases}
+              task={tasks.current}
+              disabled={blocked() || phasing || pending !== null || tasks.current.status !== "waiting"}
+              onPhase={pickPhase}
+              onFinish={finishTask}
+              onPause={() => taskCall(() => client.pauseTask())}
+              onResume={() => taskCall(() => client.resumeTask())}
+              onExtend={() => taskCall(() => client.extendTimeBox())}
+            />
+          )}
+          {phaseFailed && (
+            <p className="hh-error" role="alert">
+              {t("phases.failed")}
+            </p>
+          )}
+          {flow && since !== null && tasks.current && barModes.length > 0 && (
             <ModeBar
-              modes={taskModes}
+              modes={barModes}
               current={tasks.current.mode}
               below={tasks.current.belowMinTier === true}
-              disabled={blocked() || pending !== null || tasks.current.status !== "waiting"}
+              disabled={blocked() || phasing || pending !== null || tasks.current.status !== "waiting"}
               onPick={(mode) => void chooseMode(mode, tasks.current?.id)}
             />
           )}
@@ -826,6 +964,43 @@ export function ChatView({
                 <button ref={tierNotNowRef} onClick={() => answerTier()}>
                   {t("modes.notNow")}
                 </button>
+              </div>
+            )}
+            {timePick && (
+              <div
+                ref={timeRef}
+                className="hh-confirm"
+                role="dialog"
+                aria-labelledby="hh-time-title"
+                onKeyDown={(e) => {
+                  if (e.key !== "Escape") return;
+                  e.preventDefault();
+                  closeTime();
+                }}
+              >
+                <p id="hh-time-title">
+                  <strong>{t("phases.timeTitle")}</strong>
+                </p>
+                <div className="hh-mode-list" role="group" aria-labelledby="hh-time-title">
+                  {timeChoices(timePick.options.action).map((m) => (
+                    <button
+                      key={m ?? "none"}
+                      type="button"
+                      className="hh-choice"
+                      onClick={() => {
+                        const p = timePick;
+                        setTimePick(null);
+                        questionOpener.current = null;
+                        // The picker goes: focus on the composer, whether the send went out or waits for another question.
+                        inputRef.current?.focus();
+                        send(p.text, { ...p.options, timeBox: m });
+                      }}
+                    >
+                      {m === null ? t("phases.noLimit") : t("phases.minutes", { count: m })}
+                    </button>
+                  ))}
+                </div>
+                <button onClick={closeTime}>{t("modes.notNow")}</button>
               </div>
             )}
             {askPick && (

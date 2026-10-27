@@ -97,6 +97,10 @@ export interface ActionOption {
   /** The modes its task may work in, and how it starts (task-modes spec §3). Absent without modes (D0). */
   modes?: string[];
   defaultMode?: string;
+  /** Its phases (task-phases spec §3), as the stepper shows them; never a brief. Absent without phases (D0). */
+  phases?: PhaseView[];
+  /** Its time box: the lengths offered and the one picked when the person picks none. Absent without one (D0). */
+  timeBox?: { options: number[]; default: number | null };
 }
 
 /** A read-only reference folder, as the work screen shows it ("~/…" for paths in the home folder). */
@@ -136,6 +140,35 @@ export interface ModeView {
   description?: string;
   minTier?: Tier;
 }
+
+/** A phase as the window shows it (task-phases spec §6): never its brief. */
+export interface PhaseView {
+  id: string;
+  label: string;
+  auto?: true;
+  close?: true;
+  /** The modes allowed in it (modes spec §7): absent or "any", all the action's; "none"; or a list. */
+  modes?: "any" | "none" | string[];
+}
+
+/**
+ * A turn the main process starts on its own is about to run (task-phases spec §4.4, §5): a phase change (`phase`, who
+ * moved, `back` when it went back) or the time box's wrap-up. The window draws its line, then the turn's events follow.
+ */
+export interface TaskTurnNotice {
+  task: string;
+  kind: "phase" | "wrap-up";
+  phase?: string;
+  by?: "agent" | "person" | "app";
+  back?: true;
+}
+
+/**
+ * How a phase pick went (spec §4.2): a change turn runs ("turn"), only the state changed ("quiet"), it already was the
+ * phase ("same"), or the close phase's Finish closes the task ("closing"). Refusals: no task waits ("no-task"), or the
+ * action has no such phase ("unknown").
+ */
+export type PhaseResult = { ok: true; changed: "turn" | "quiet" | "same" | "closing" } | { ok: false; reason: "no-task" | "unknown" };
 
 export interface AppState {
   harness: {
@@ -223,6 +256,10 @@ export interface ChatEntry {
   task?: string;
   /** A mode switch the person picked (task-modes spec §5.4): this user entry is a system line, and this is the mode's id. */
   mode?: string;
+  /** The task entered this phase (task-phases spec §4.4): this user entry is a separator line, and this is the phase's id. */
+  phase?: string;
+  /** The time box's wrap-up (spec §5): this user entry is a system line. */
+  timeUp?: true;
   /** Assistant entries: text runs and blocks in the order they arrived. Older entries lack it: text, then blocks. */
   parts?: AnswerPart[];
 }
@@ -267,6 +304,8 @@ export interface HistoryItem {
   sha: string;
   message: string;
   date: string;
+  /** The task's phase when the commit was made (its `Phase:` trailer). */
+  phase?: string;
 }
 
 /** A file a task added, changed or deleted. */
@@ -385,6 +424,8 @@ export interface SendOptions {
   scope?: string;
   /** With `action`: the mode the person picked for the new task (`defaultMode: "ask"`, task-modes spec §3). */
   mode?: string;
+  /** With `action`: the time box's length in minutes, one of the action's options (task-phases spec §5); null: no limit. */
+  timeBox?: number | null;
 }
 
 /**
@@ -394,6 +435,21 @@ export interface SendOptions {
 export type TaskStatus = "running" | "waiting" | "closing" | "checkpoint";
 /** How an action's last task ended: its note was saved, the closing turn brought none, or it was interrupted. */
 export type ActionStatus = "done" | "unsaved" | "unfinished";
+
+/**
+ * The task's time box as the window sees it (task-phases spec §5): minutes chosen, the whole box and the time used in ms
+ * (a test minute may be short), measured `at`; the window counts down from there unless `paused`. `wrappedUp`: the
+ * wrap-up ran; `ended`: the time is up.
+ */
+export interface TimeBoxView {
+  minutes: number;
+  totalMs: number;
+  usedMs: number;
+  at: string;
+  paused: boolean;
+  wrappedUp?: true;
+  ended?: true;
+}
 
 export interface CurrentTaskView {
   id: string;
@@ -415,6 +471,11 @@ export interface CurrentTaskView {
   tier?: Tier;
   /** It runs below its mode's `minTier`: the person chose to continue. */
   belowMinTier?: true;
+  /** Task phases (task-phases spec §6), only for a task whose action has them: the phase now, its log, the agent's proposal. */
+  phase?: string;
+  phases?: { id: string; at: string; by: "agent" | "person" | "app" }[];
+  phaseProposal?: { to: string; reason: string };
+  timeBox?: TimeBoxView;
 }
 
 /** A note in `.harness/notes/`, for the side panel and "What's clear so far". */
@@ -442,11 +503,12 @@ export interface TaskView {
  * How the person's pick of a mode for the open task went (task-modes spec §5). `switched`: a turn in the new mode runs
  * now ("turn"), the mode was set with no turn because the session is gone ("quiet"), the task closes and a new one
  * starts in that mode ("new-task"), or it already was the mode ("same"). Refusals: no task waits ("no-task"), the action
- * doesn't list the mode ("unknown"), or the mode asks for more than the task's tier ("tier", with both tiers).
+ * doesn't list the mode ("unknown"), the mode asks for more than the task's tier ("tier", with both tiers), or the
+ * current phase doesn't allow it ("phase").
  */
 export type ModeResult =
   | { ok: true; switched: "turn" | "quiet" | "new-task" | "same" }
-  | { ok: false; reason: "no-task" | "unknown" | "tier"; required?: Tier; current?: Tier };
+  | { ok: false; reason: "no-task" | "unknown" | "tier" | "phase"; required?: Tier; current?: Tier };
 
 /** A switch `chooseMode` started (task-modes spec §5), whoever asked for it: a "same" answer is none. */
 export interface ModeSwitch {
@@ -581,6 +643,20 @@ export interface HarnessClient {
    * told when its result arrives and before the switch's turn: the chat draws the "Switched to" line and that turn.
    */
   onModeSwitch(listener: (s: ModeSwitch) => void): () => void;
+  /**
+   * The person moves the open task `taskId` to phase `phaseId` (task-phases spec §4.2): resolves with a refusal or with
+   * how the change goes on. A change turn then arrives as an `onTaskTurn` notice and its events.
+   */
+  setPhase(taskId: string, phaseId: string): Promise<PhaseResult>;
+  /** Closes the open task now with the core closing turn (the stepper's Finish). False when it was stopped first. */
+  finishTask(): Promise<boolean>;
+  /** The time box's clock (spec §5): pause and resume; false when there was nothing to do. */
+  pauseTask(): Promise<boolean>;
+  resumeTask(): Promise<boolean>;
+  /** "+5 min". */
+  extendTimeBox(): Promise<boolean>;
+  /** A turn the app starts on its own (a phase change, the wrap-up) is about to run: draw its line first. */
+  onTaskTurn(listener: (n: TaskTurnNotice) => void): () => void;
   /** Opens a file inside the reference folders or the user's folder in its default app. False when refused or missing. */
   openPath(path: string): Promise<boolean>;
   /** Shows a file inside the reference folders or the user's folder in Finder (any kind of file). False when refused or missing. */

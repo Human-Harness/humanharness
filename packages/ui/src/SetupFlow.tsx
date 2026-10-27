@@ -367,6 +367,6 @@ function ComponentStep({
   const { t } = useTranslation();
   const name = step.component ?? "";
   const Component = Object.hasOwn(components, name) ? components[name] : undefined;
-  if (!Component) return <p className="hh-caption">{t("setupSteps.missingComponent")}</p>;
+  if (!Component) return <p className="hh-caption" role="alert">{t("setupSteps.missingComponent")}</p>;
   return <Component client={client} profile={null} done={done} skip={skip} />;
 }

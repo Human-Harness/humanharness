@@ -289,7 +289,7 @@ describe("SetupFlow: the harness's own steps (setup-steps spec §4)", () => {
     expect(screen.getByRole("heading", { name: "How the AI talks" })).toBeTruthy();
     client.setupFailure = null;
     fireEvent.click(screen.getByRole("button", { name: "Skip" }));
-    expect(await screen.findByText("This step can't be shown. Skip it, or update the app.")).toBeTruthy();
+    expect((await screen.findByText("This step can't be shown. Skip it, or update the app.")).getAttribute("role")).toBe("alert");
   });
 
   it("a refusal with no field errors (setup.json can't be saved) says it didn't go through", async () => {

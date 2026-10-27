@@ -84,7 +84,12 @@ acp
     if (script.failLoad) throw new acp.RequestError(-32603, "Session not found");
     mcpServers = (ctx.params.mcpServers ?? []) as StdioMcp[];
     cwd = ctx.params.cwd;
-    return (script.currentModelId ? { models: { currentModelId: script.currentModelId, availableModels: [] } } : {}) as never;
+    // Like OpenCode: a loaded session answers with its config options too.
+    configOptions = withEffort((script.configOptions ?? []) as Select[]);
+    return {
+      ...(script.configOptions ? { configOptions } : {}),
+      ...(script.currentModelId ? { models: { currentModelId: script.currentModelId, availableModels: [] } } : {}),
+    } as never;
   })
   .onRequest("session/set_mode", (ctx) => {
     log("session/set_mode", ctx.params);
@@ -95,9 +100,11 @@ acp
     const { configId, value } = ctx.params;
     const option = configOptions.find((o) => o.id === configId);
     // OpenCode answers an unknown option, model, effort or mode with invalid params.
-    if (!option) throw new acp.RequestError(-32602, `Unknown config option: ${configId}`);
+    // Its error data names what it refused (modelId, effort or configId).
+    if (!option) throw new acp.RequestError(-32602, `Unknown config option: ${configId}`, { configId });
     if (!values(option).includes(value) || (typeof value === "string" && script.rejectConfigValues?.includes(value))) {
-      throw new acp.RequestError(-32602, `Unknown value: ${String(value)}`);
+      const data = configId === "model" ? { modelId: value } : configId === "effort" ? { effort: value } : { configId };
+      throw new acp.RequestError(-32602, `Unknown value: ${String(value)}`, data);
     }
     configOptions = withEffort(configOptions.map((o) => (o.id === configId ? { ...o, currentValue: value } : o)));
     // Setting the model also sends a config_option_update, like OpenCode.

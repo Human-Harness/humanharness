@@ -816,6 +816,33 @@ describe("AcpTransport: profile by config option (OpenCode)", () => {
     expect(events.find((e) => e.type === "usage")).toMatchObject({ model: "ollama/llama3.2:3b" });
   });
 
+  it("sets the model and the effort on a loaded session, then prompts", async () => {
+    const { transport: t, log } = setup(
+      { loadSession: true, configOptions: OPENCODE_CONFIG, turns: [[{ stop: "end_turn" }]] },
+      { id: "saved", started: true },
+      byConfig,
+    );
+    const events = await run(t, "hi", undefined, openProfile());
+    expect(events.at(-1)).toEqual({ type: "done", ok: true });
+    expect(log().filter((l) => l.method === "session/new")).toHaveLength(0);
+    const order = log().map((l) => l.method);
+    expect(order.indexOf("session/load")).toBeLessThan(order.indexOf("session/set_config_option"));
+    expect(order.lastIndexOf("session/set_config_option")).toBeLessThan(order.indexOf("session/prompt"));
+    expect(configSets(log)).toEqual([
+      ["model", "ollama/llama3.2:3b"],
+      ["effort", "high"],
+    ]);
+  });
+
+  it("after endSession, a profile without a model keeps the process", async () => {
+    const { transport: t, log } = setup({ closeSession: true, configOptions: OPENCODE_CONFIG, turns: [[{ stop: "end_turn" }], [{ stop: "end_turn" }]] }, undefined, byConfig);
+    await run(t, "one", undefined, openProfile());
+    await t.endSession();
+    expect((await run(t, "two", undefined, openProfile({ model: undefined }))).at(-1)).toEqual({ type: "done", ok: true });
+    expect(log().filter((l) => l.method === "initialize")).toHaveLength(1);
+    expect(log().filter((l) => l.method === "session/new")).toHaveLength(2);
+  });
+
   it("reports OpenCode's default model when the profile names none", async () => {
     const { transport: t } = setup({ configOptions: OPENCODE_CONFIG, usage: { inputTokens: 5, outputTokens: 2 }, turns: [[{ stop: "end_turn" }]] }, undefined, byConfig);
     const events = await run(t, "hi", undefined, openProfile({ model: undefined }));
@@ -845,51 +872,67 @@ describe("AcpTransport: cost per turn", () => {
 
   it("records the first turn's total and each later turn's increase", async () => {
     // Like OpenCode: the session's running total, sent once at the end of each prompt.
-    const { transport: t } = setup({ usage, costs: [0.02, 0.05], turns: [[chunk("a")], [chunk("b")]] });
+    const { transport: t } = setup({ usage, costs: [0.02, 0.05], turns: [[chunk("a")], [chunk("b")]] }, undefined, byConfig);
     expect(usageOf(await run(t, "one"))?.costUsd).toBeCloseTo(0.02);
     expect(usageOf(await run(t, "two"))?.costUsd).toBeCloseTo(0.03);
   });
 
   it("keeps the last total when a prompt sends several", async () => {
-    const { transport: t } = setup({ usage, turns: [[costUpdate(0.01), costUpdate(0.02)]] });
+    const { transport: t } = setup({ usage, turns: [[costUpdate(0.01), costUpdate(0.02)]] }, undefined, byConfig);
     expect(usageOf(await run(t))?.costUsd).toBeCloseTo(0.02);
   });
 
   it("records 0 when the provider charges nothing", async () => {
-    const { transport: t } = setup({ usage, costs: [0], turns: [[chunk("a")]] });
+    const { transport: t } = setup({ usage, costs: [0], turns: [[chunk("a")]] }, undefined, byConfig);
     expect(usageOf(await run(t))?.costUsd).toBe(0);
   });
 
-  it("records no cost when the agent sends none, an invalid one or another currency (D0 for Codex)", async () => {
-    const { transport: t } = setup({
-      usage,
-      turns: [[chunk("a")], [{ update: { sessionUpdate: "usage_update", used: 10, size: 100 } }], [costUpdate(1, "EUR")], [costUpdate(-1)]],
-    });
+  it("records no cost when the agent sends none, an invalid one or another currency", async () => {
+    const { transport: t } = setup(
+      {
+        usage,
+        turns: [[chunk("a")], [{ update: { sessionUpdate: "usage_update", used: 10, size: 100 } }], [costUpdate(1, "EUR")], [costUpdate(-1)]],
+      },
+      undefined,
+      byConfig,
+    );
     for (const m of ["one", "two", "three", "four"]) expect(usageOf(await run(t, m))).not.toHaveProperty("costUsd");
   });
 
+  it("never reads a cost from Codex (D0)", async () => {
+    const { transport: t } = setup({ usage, costs: [0.02, 0.05], turns: [[chunk("a")], [chunk("b")]] });
+    for (const m of ["one", "two"]) expect(usageOf(await run(t, m))).not.toHaveProperty("costUsd");
+  });
+
+  it("a turn without a cost records none and keeps the baseline for the next one", async () => {
+    const { transport: t } = setup({ usage, turns: [[costUpdate(0.02)], [chunk("b")], [costUpdate(0.05)]] }, undefined, byConfig);
+    expect(usageOf(await run(t, "one"))?.costUsd).toBeCloseTo(0.02);
+    expect(usageOf(await run(t, "two"))).not.toHaveProperty("costUsd");
+    expect(usageOf(await run(t, "three"))?.costUsd).toBeCloseTo(0.03);
+  });
+
   it("records no cost for a model whose context limit OpenCode does not know (no usage_update at all)", async () => {
-    const { transport: t } = setup({ usage, turns: [[chunk("a")], [chunk("b")]] });
+    const { transport: t } = setup({ usage, turns: [[chunk("a")], [chunk("b")]] }, undefined, byConfig);
     expect(usageOf(await run(t, "one"))).not.toHaveProperty("costUsd");
     expect(usageOf(await run(t, "two"))).not.toHaveProperty("costUsd");
   });
 
   it("after loading a session, the first turn only sets the baseline", async () => {
     // OpenCode sends no usage_update on session/load: the total before this run is unknown.
-    const { transport: t } = setup({ loadSession: true, usage, costs: [0.5, 0.8], turns: [[chunk("a")], [chunk("b")]] }, { id: "saved", started: true });
+    const { transport: t } = setup({ loadSession: true, usage, costs: [0.5, 0.8], turns: [[chunk("a")], [chunk("b")]] }, { id: "saved", started: true }, byConfig);
     expect(usageOf(await run(t, "one"))).not.toHaveProperty("costUsd");
     expect(usageOf(await run(t, "two"))?.costUsd).toBeCloseTo(0.3);
   });
 
   it("a new session starts from zero again", async () => {
-    const { transport: t } = setup({ usage, closeSession: true, costs: [0.4, 0.1], turns: [[chunk("a")], [chunk("b")]] });
+    const { transport: t } = setup({ usage, closeSession: true, costs: [0.4, 0.1], turns: [[chunk("a")], [chunk("b")]] }, undefined, byConfig);
     await run(t, "one");
     await t.endSession();
     expect(usageOf(await run(t, "two"))?.costUsd).toBeCloseTo(0.1);
   });
 
   it("a total that went down records 0, not a negative cost", async () => {
-    const { transport: t } = setup({ usage, costs: [0.4, 0.1], turns: [[chunk("a")], [chunk("b")]] });
+    const { transport: t } = setup({ usage, costs: [0.4, 0.1], turns: [[chunk("a")], [chunk("b")]] }, undefined, byConfig);
     await run(t, "one");
     expect(usageOf(await run(t, "two"))?.costUsd).toBe(0);
   });

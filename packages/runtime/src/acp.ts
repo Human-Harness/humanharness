@@ -189,6 +189,11 @@ function effortOptionId(configOptions: unknown[]): string | undefined {
   return byCategory?.id as string | undefined;
 }
 
+/** An invalid params error's data names a refused config value (OpenCode: modelId, effort or configId). */
+function namesConfigValue(data: unknown): boolean {
+  return typeof data === "object" && data !== null && ["modelId", "effort", "configId"].some((k) => k in data);
+}
+
 /** The current value of a select config option, when it is a string. */
 function currentValue(configOptions: unknown[], id: string): string | undefined {
   const option = configOptions.find((o) => typeof o === "object" && o !== null && (o as { id?: unknown }).id === id) as { currentValue?: unknown } | undefined;
@@ -267,6 +272,8 @@ export class AcpTransport implements Transport {
   /** The session's running cost in USD as the agent last reported it, and that total at the last turn's end (undefined: unknown). */
   private costTotal: number | undefined;
   private costBaseline: number | undefined;
+  /** A cost arrived in this turn (a turn without one records no cost and keeps the baseline). */
+  private costSeen = false;
 
   constructor(private readonly o: TransportOptions) {}
 
@@ -363,6 +370,7 @@ export class AcpTransport implements Transport {
         if (event.type === "done" && !event.ok && event.error?.code === "session-expired") throw e;
       }
       if (this.sessionId) {
+        this.costBaseline = this.costTotal;
         this.reportModels(loaded?.configOptions);
         this.sessionModel(loaded?.configOptions, loaded?.models?.currentModelId);
       }
@@ -429,12 +437,15 @@ export class AcpTransport implements Transport {
         const res = (await agent.request("session/set_config_option", { sessionId, configId, value } as never)) as { configOptions?: unknown } | null;
         if (res?.configOptions) this.reportModels(res.configOptions);
       } catch (e) {
-        if (e instanceof acp.RequestError && e.code === -32602) throw new ModelUnavailableError(`The agent refused ${configId} ${value}: ${e.message}`);
+        // Only an invalid params error about the value itself: a lost session is -32602 too.
+        if (e instanceof acp.RequestError && e.code === -32602 && namesConfigValue(e.data)) {
+          throw new ModelUnavailableError(`The agent refused ${configId} ${value}: ${e.message}`);
+        }
         throw e;
       }
     };
     // Checked on every turn: a config_option_update may have removed the model since it was set.
-    // An offer without models (session/load sends none) says nothing: OpenCode answers the set itself.
+    // An offer without models (an agent that sends no model select) says nothing: the agent answers the set itself.
     const offered = this.offer?.models ?? [];
     if (p.model !== undefined && (!isModelId(p.model) || (offered.length > 0 && !offered.includes(p.model)))) {
       throw new ModelUnavailableError(`The agent does not offer ${String(p.model)}`);
@@ -444,7 +455,8 @@ export class AcpTransport implements Transport {
       this.appliedModel = p.model;
       this.reportedModel = p.model;
     }
-    // Read after the model: OpenCode offers an effort only for a model with variants.
+    // Read after the model: OpenCode offers an effort only for a model with variants. An effort it does not
+    // offer is not sent: the session keeps the effort it runs (the model's default, or one set earlier).
     const offer = this.offer;
     if (offer?.effortId && offer.efforts.includes(p.effort) && offer.effort !== p.effort) {
       await set(offer.effortId, p.effort);
@@ -471,7 +483,7 @@ export class AcpTransport implements Transport {
   /** This turn's cost: the rise of the running total since the last turn; undefined when either end is unknown. */
   private turnCost(): number | undefined {
     const total = this.costTotal;
-    if (total === undefined) return undefined;
+    if (!this.costSeen || total === undefined) return undefined;
     const base = this.costBaseline;
     this.costBaseline = total;
     return base === undefined ? undefined : Math.max(0, total - base);
@@ -521,9 +533,13 @@ export class AcpTransport implements Transport {
       if (this.byConfigOption) this.reportModels(u.configOptions);
       return;
     }
-    if (u.sessionUpdate === "usage_update") {
+    // Only an engine whose profile goes by config option (OpenCode) reports cost; Codex's is never read (D0).
+    if (u.sessionUpdate === "usage_update" && this.byConfigOption) {
       const usd = usdCost(u.cost);
-      if (usd !== undefined) this.costTotal = usd;
+      if (usd !== undefined) {
+        this.costTotal = usd;
+        this.costSeen = true;
+      }
     }
     const emit = this.emit;
     if (!emit) return;
@@ -623,6 +639,7 @@ export class AcpTransport implements Transport {
     this.emit = emit;
     this.afterTool = false;
     this.sawCompaction = false;
+    this.costSeen = false;
     let grace: ReturnType<typeof setTimeout> | undefined;
     const onAbort = () => {
       void agent.notify("session/cancel", { sessionId });
@@ -681,6 +698,8 @@ export class AcpTransport implements Transport {
   async endSession(): Promise<void> {
     const sessionId = this.sessionId;
     this.sessionId = undefined;
+    // The next session starts on the default model: a profile without one must not restart the process.
+    this.appliedModel = undefined;
     this.o.session = { id: randomUUID(), started: false };
     if (!sessionId || !this.conn) return;
     if (!this.closable) {

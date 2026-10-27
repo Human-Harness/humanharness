@@ -418,6 +418,8 @@ export interface UsageSummary {
   tokens: Record<string, number>;
   /** Harnesses with scopes: tokens used per scope id, over the whole log. */
   scopes?: Record<string, number>;
+  /** Harnesses with profiles: tokens used per profile id, over each profile's whole log (profiles spec §4). */
+  profiles?: Record<string, number>;
   /** The window kind estimates measure (the engine's `limits.primary`); absent when the engine reports no limits. */
   primary?: string;
 }

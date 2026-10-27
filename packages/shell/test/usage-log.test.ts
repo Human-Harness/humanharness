@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import type { ChatEntry } from "@humanharness/ui/client";
-import { type UsageMeta, type UsageRecord, UsageLog, compactionRecord, profileMeta, summarizeUsage, usageRecord } from "../src/main/usage-log";
+import { type UsageMeta, type UsageRecord, UsageLog, compactionRecord, mergeUsage, profileMeta, profilesUsage, summarizeUsage, usageRecord } from "../src/main/usage-log";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -313,5 +313,46 @@ describe("usage lines carry the task's phase (task-phases spec §6)", () => {
     expect(usageRecord(entry, "claude", { task: "t1", phase: "phase-change", taskPhase: "main" })).toMatchObject({ phase: "phase-change", taskPhase: "main" });
     expect(usageRecord(entry, "claude", { task: "t1", phase: "run" })).not.toHaveProperty("taskPhase");
     expect(compactionRecord("claude", { task: "t1", taskPhase: "close" }, "2026-10-26T10:00:00.000Z")).toMatchObject({ kind: "compaction", taskPhase: "close" });
+  });
+});
+
+describe("usage across profiles (profiles spec §4 'Usage')", () => {
+  const NOW = new Date("2026-10-27T12:30:00.000Z");
+  const RESET = "2026-10-27T15:00:00.000Z";
+  const turn = (at: string, task: string, fiveHour: number, scope?: string): UsageRecord => ({
+    at,
+    engine: "claude",
+    ok: true,
+    action: "practice",
+    task,
+    ...(scope ? { scope } : {}),
+    usage: { inputTokens: 100, outputTokens: 10, cacheReadTokens: 0, cacheWriteTokens: 0 },
+    limits: [{ kind: "five_hour", utilization: fiveHour, resetsAt: RESET }],
+  });
+  const sofi = [turn("2026-10-27T10:00:00.000Z", "t1", 0.1, "fracciones"), turn("2026-10-27T12:00:00.000Z", "t3", 0.5, "fracciones")];
+  const tomas = [turn("2026-10-27T11:00:00.000Z", "t2", 0.3, "verbos")];
+
+  it("merges every profile's records in time order, each with its profile", () => {
+    expect(mergeUsage({ sofi, tomas }).map((r) => [r.task, r.person])).toEqual([
+      ["t1", "sofi"],
+      ["t2", "tomas"],
+      ["t3", "sofi"],
+    ]);
+  });
+
+  it("measures the shared window across people, counts tokens per person, and keeps the active profile's scopes", () => {
+    const u = profilesUsage({ sofi, tomas }, "sofi", "five_hour", NOW);
+    // The latest window is Sofi's last turn, whoever ran it.
+    expect(u.limits).toEqual([{ kind: "five_hour", utilization: 0.5, resetsAt: RESET }]);
+    expect(u.profiles).toEqual({ sofi: 220, tomas: 110 });
+    expect(u.scopes).toEqual({ fracciones: 220 });
+    // Each task measured against the next record in time, the other person's included.
+    expect(u.estimates.practice).toBeGreaterThan(0);
+  });
+
+  it("a profile with no log counts nothing; an unknown active profile has no scopes", () => {
+    const u = profilesUsage({ sofi: [], tomas }, "nobody", "five_hour", NOW);
+    expect(u.profiles).toEqual({ tomas: 110 });
+    expect(u).not.toHaveProperty("scopes");
   });
 });

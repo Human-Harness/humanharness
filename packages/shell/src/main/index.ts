@@ -68,6 +68,7 @@ import {
   isScopeId,
   migrateToScopes,
   notesPrefix,
+  profileDir,
   readNotes,
   syncLocations,
   syncStatus,
@@ -94,7 +95,7 @@ import { type RunningSetup, runSetupProcess, setupCommand, stopSetupProcess } fr
 import { runSetupStep } from "./setup-step";
 import { type SharedEngineRecord, SharedConfigStore, sharedConfigDir } from "./shared-config";
 import { EngineUnavailable, TurnController, memoise } from "./turn-controller";
-import { UsageLog, compactionRecord, profileMeta, summarizeUsage, usageRecord } from "./usage-log";
+import { type UsageRecord, UsageLog, compactionRecord, profileMeta, profilesUsage, summarizeUsage, usageRecord } from "./usage-log";
 import { type ValidationContext, checkFolder, configProblem, isAppUrl } from "./validate";
 import { openIfStillSafe, openRoots, openableFile, revealIfStillSafe, revealableFile } from "./open-path";
 import { saveWithFolderChange } from "./folder-change";
@@ -1215,7 +1216,14 @@ function registerIpc() {
     if (!c) return { limits: null, estimates: {}, tokens: {} };
     // A mock engine reports no limits, so it measures no window.
     const primary = isMockEngine(hooks, c.engineId) ? undefined : getEngine(c.engineId).limits?.primary;
-    return summarizeUsage((await new UsageLog(baseOf(c)).load()).filter((r) => r.engine === c.engineId), primary);
+    const engineOnly = (records: UsageRecord[]) => records.filter((r) => r.engine === c.engineId);
+    // Profiles: the app's window is shared, so every profile's log counts (spec §4 "Usage").
+    if (profilesCtl && c.profile) {
+      const ids = (await profilesCtl.state()).list.map((p) => p.id);
+      const logs = await Promise.all(ids.map(async (id) => [id, engineOnly(await new UsageLog(profileDir(c.folder, id)).load())] as const));
+      return profilesUsage(Object.fromEntries(logs), c.profile, primary);
+    }
+    return summarizeUsage(engineOnly(await new UsageLog(baseOf(c)).load()), primary);
   });
   handle("hh:revealSharedConfig", () => shell.showItemInFolder(shared.path));
   // Installing by hand: copy the official command (chosen here by engine id) and open Terminal,

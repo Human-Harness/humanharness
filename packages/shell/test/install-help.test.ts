@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { getEngine } from "@humanharness/engines";
-import { engineOptionExtras, installCommandOf, runsInTerminal, setupCommandText, terminalCommand } from "../src/main/install-help";
+import { copySetupStep, engineOptionExtras, installCommandOf, runsInTerminal, setupCommandText, terminalCommand } from "../src/main/install-help";
 
 describe("installCommandOf", () => {
   it("is the engine's official install command, never text from the window", () => {
@@ -69,6 +69,39 @@ describe("engineOptionExtras", () => {
       const extras = engineOptionExtras(getEngine(id));
       expect(extras).toEqual({});
       expect("reportsCost" in extras).toBe(false);
+    }
+  });
+});
+
+describe("copySetupStep", () => {
+  const deps = () => {
+    const calls: string[] = [];
+    return {
+      calls,
+      copy: (text: string) => void calls.push(`copy:${text}`),
+      forgetVerified: async (id: string) => void calls.push(`forget:${id}`),
+    };
+  };
+
+  it("copies OpenCode's login and leaves its test result alone", async () => {
+    const d = deps();
+    await copySetupStep(getEngine("opencode"), "login", d);
+    expect(d.calls).toEqual(["copy:opencode auth login"]);
+  });
+
+  it("copies OpenCode's logout and forgets its passed test prompt, so a provider-less OpenCode reads as signed out", async () => {
+    const d = deps();
+    await copySetupStep(getEngine("opencode"), "logout", d);
+    expect(d.calls).toEqual(["copy:opencode auth logout", "forget:opencode"]);
+  });
+
+  it("refuses Claude and Codex without copying or forgetting anything (D0)", async () => {
+    for (const id of ["claude", "codex"]) {
+      for (const step of ["login", "logout"] as const) {
+        const d = deps();
+        await expect(copySetupStep(getEngine(id), step, d)).rejects.toThrow();
+        expect(d.calls).toEqual([]);
+      }
     }
   });
 });

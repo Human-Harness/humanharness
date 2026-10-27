@@ -85,7 +85,7 @@ import { testPrompt } from "./engine-check";
 import { createCommandDeps } from "./command-deps";
 import { cliCommand, engineCommand, loginShellPath } from "./engine-command";
 import { EngineGuards } from "./engine-guards";
-import { engineOptionExtras, installCommandOf, runsInTerminal, setupCommandText, terminalCommand } from "./install-help";
+import { copySetupStep, engineOptionExtras, installCommandOf, runsInTerminal, terminalCommand } from "./install-help";
 import { detectEngine, hasAcceptedNotice } from "./engine-status";
 import { QUESTIONS, cleanModels, engineOffer, firstOffered, fitEffort, nearestTier, nextFallback, resolveProfile } from "./models";
 import { chooseModeHandler } from "./mode-ipc";
@@ -1428,9 +1428,14 @@ function registerIpc() {
   // Installing by hand: copy the official command (chosen here by engine id) and open Terminal,
   // where the user pastes it. Nothing is run for them.
   handle("hh:copyInstallCommand", (engineId: string) => clipboard.writeText(installCommandOf(engineFor(engineId))));
-  handle("hh:copySetupCommand", (engineId: string, step: unknown) => {
+  handle("hh:copySetupCommand", async (engineId: string, step: unknown) => {
     if (step !== "login" && step !== "logout") throw new Error("Unknown setup step");
-    clipboard.writeText(setupCommandText(engineFor(engineId), step));
+    await copySetupStep(engineFor(engineId), step, {
+      copy: (text) => clipboard.writeText(text),
+      forgetVerified: async (id) => {
+        await shared.update(id, { verifiedAt: null });
+      },
+    });
   });
   handle("hh:openTerminal", async () => {
     const terminal = terminalCommand(process.platform);

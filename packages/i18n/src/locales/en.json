@@ -120,6 +120,7 @@
     "providerStep2": "Pick a provider and follow the steps. Your key stays in {{engine}}.",
     "providerStep3": "Come back and press \"Check again\".",
     "providerRecheck": "Check again",
+    "providerStillMissing": "{{engine}} still has no provider. Finish the steps in Terminal, then check again.",
     "providerLocal": "Using a local model (Ollama)? Set it up in {{engine}}, then test it.",
     "providerLocalTest": "Test my local model",
     "providerDocs": "{{engine}}'s guide to providers",

@@ -461,6 +461,70 @@ describe("EngineTab: OpenCode", () => {
     await waitFor(() => expect(client.tested).toEqual(["opencode"]));
   });
 
+  it("says so when Check again finds no provider yet", async () => {
+    const client = withFolder();
+    addOpenCode(client);
+    client.statusFor.opencode = { ...client.status, engineId: "opencode", loggedIn: false, verified: false };
+    await renderIn("en", <Tab client={client} />);
+    fireEvent.click(await screen.findByRole("button", { name: /OpenCode/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Check again" }));
+    await screen.findByText("OpenCode still has no provider. Finish the steps in Terminal, then check again.");
+  });
+
+  it("shows the test running while it tests a local model", async () => {
+    const client = withFolder();
+    addOpenCode(client);
+    client.statusFor.opencode = { ...client.status, engineId: "opencode", loggedIn: false, verified: false };
+    let release = () => {};
+    client.testError = null;
+    const gate = new Promise<void>((r) => (release = r));
+    const testEngine = client.testEngine.bind(client);
+    client.testEngine = async (id: string) => {
+      await gate;
+      return testEngine(id);
+    };
+    await renderIn("en", <Tab client={client} />);
+    fireEvent.click(await screen.findByRole("button", { name: /OpenCode/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Test my local model" }));
+    await screen.findByText("Sending OpenCode a tiny test message…");
+    await act(async () => release());
+  });
+
+  it("signs in again in Terminal when the test says the session ended", async () => {
+    const client = withFolder();
+    addOpenCode(client);
+    client.statusFor.opencode = { ...client.status, engineId: "opencode", loggedIn: null, verified: false };
+    client.testResult = { ok: false, error: { code: "session-expired" } };
+    await renderIn("en", <Tab client={client} />);
+    fireEvent.click(await screen.findByRole("button", { name: /OpenCode/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Sign in again" }));
+    await waitFor(() => expect(client.terminalOpened).toBe(1));
+    expect(client.setupCopied).toEqual(["opencode:login"]);
+    expect(client.setupRuns).toEqual([]);
+    // What was copied is on screen, for pasting by hand.
+    expect(screen.getByText("opencode auth login")).toBeTruthy();
+    expect(screen.getByText("Copied")).toBeTruthy();
+  });
+
+  it("holds the Sign out button while the command is copied and Terminal opens", async () => {
+    const client = withFolder();
+    addOpenCode(client);
+    client.statusFor.opencode = { ...client.status, engineId: "opencode" };
+    let release = () => {};
+    const gate = new Promise<void>((r) => (release = r));
+    client.openTerminal = async () => {
+      await gate;
+      client.terminalOpened++;
+    };
+    await renderIn("en", <Tab client={client} />);
+    fireEvent.click(await screen.findByRole("button", { name: /OpenCode/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Sign out" }));
+    await screen.findByText("Signing out…");
+    await act(async () => release());
+    await screen.findByText("Finish signing out in Terminal, then press Check again.");
+    expect(screen.queryByText("Signing out…")).toBeNull();
+  });
+
   it("signs out in Terminal", async () => {
     const client = withFolder();
     addOpenCode(client);
@@ -469,6 +533,7 @@ describe("EngineTab: OpenCode", () => {
     fireEvent.click(await screen.findByRole("button", { name: /OpenCode/ }));
     fireEvent.click(await screen.findByRole("button", { name: "Sign out" }));
     await screen.findByText("Finish signing out in Terminal, then press Check again.");
+    expect((screen.getByRole("button", { name: "Sign out" }) as HTMLButtonElement).disabled).toBe(false);
     expect(client.setupCopied).toEqual(["opencode:logout"]);
     expect(client.terminalOpened).toBe(1);
     expect(client.setupRuns).toEqual([]);

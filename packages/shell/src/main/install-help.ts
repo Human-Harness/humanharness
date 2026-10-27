@@ -31,6 +31,20 @@ export function setupCommandText(engine: EngineDef, step: "login" | "logout"): s
   return [engine.detect.binary, ...setup[step]].join(" ");
 }
 
+/**
+ * Copies a Terminal step's command. Signing out also forgets the engine's passed test prompt: with no
+ * provider left, a past test would otherwise keep a local-model engine reading as set up (engine-status).
+ * Only engines whose steps run in Terminal get here; Claude and Codex throw before anything is done (D0).
+ */
+export async function copySetupStep(
+  engine: EngineDef,
+  step: "login" | "logout",
+  deps: { copy: (text: string) => void; forgetVerified: (engineId: string) => Promise<void> },
+): Promise<void> {
+  deps.copy(setupCommandText(engine, step));
+  if (step === "logout") await deps.forgetVerified(engine.id);
+}
+
 /** What the window learns beyond the common fields; empty for engines without these facts (D0). */
 export function engineOptionExtras(
   engine: EngineDef,

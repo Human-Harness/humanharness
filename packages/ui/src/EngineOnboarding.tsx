@@ -95,6 +95,7 @@ export function EngineOnboarding({
     setBusy("test");
     setFailed(false);
     setTestError(null);
+    setStillMissing(false);
     // A rejection (the app couldn't run it) is a plain failure.
     const result: TestResult = await client.testEngine(engine.id).catch(() => ({ ok: false }));
     setBusy(null);
@@ -357,12 +358,14 @@ export function EngineOnboarding({
             {t("engine.copyFailed")}
           </p>
         )}
+        {stillMissing && <p role="status">{t("engine.providerStillMissing", v)}</p>}
         <p>
           {t("engine.providerLocal", v)}{" "}
           <button disabled={busy !== null} onClick={() => void runTest()}>
             {t("engine.providerLocalTest")}
           </button>
         </p>
+        {busy === "test" && <p role="status">{t("engine.testing", v)}</p>}
         {engine.providersUrl && <p>{link(engine.providersUrl, t("engine.providerDocs", v))}</p>}
       </>
     );
@@ -402,6 +405,19 @@ export function EngineOnboarding({
               ) : (
                 <button onClick={() => void runStep("login")}>{t("errors.fix.session-expired", v)}</button>
               ))}
+            {/* What was copied for Terminal, to paste by hand if the clipboard let us down. */}
+            {engine.terminalSteps?.login && copy !== null && (
+              <>
+                <p>
+                  <code>{engine.terminalSteps.login}</code> {copy === "copied" && <span role="status">{t("engine.copied")}</span>}
+                </p>
+                {copy === "failed" && (
+                  <p className="hh-save-error" role="alert">
+                    {t("engine.copyFailed")}
+                  </p>
+                )}
+              </>
+            )}
           </>
         ) : (
           <p role="status">{t("engine.testing", v)}</p>

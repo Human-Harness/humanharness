@@ -92,6 +92,7 @@ export function EngineTab({
     if (!selected) return;
     // OpenCode (spec §2): the person signs out in Terminal; the app copies the command and opens it.
     if (engine?.terminalSteps?.logout) {
+      setBusy("logout");
       setFailed(false);
       try {
         await client.copySetupCommand(selected, "logout");
@@ -100,6 +101,7 @@ export function EngineTab({
       } catch {
         setFailed(true);
       }
+      setBusy(null);
       return;
     }
     setBusy("logout");

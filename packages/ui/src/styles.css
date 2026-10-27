@@ -24,6 +24,12 @@
   --hh-profile-violet: #cdbdf0;
   --hh-profile-pink: #f1bcd6;
   --hh-profile-gray: #d3d5d8;
+  --hh-callout-note: #e8eef8;
+  --hh-callout-tip: #e7f3ec;
+  --hh-callout-warning: #fbefe3;
+  --hh-callout-summary: #efedf8;
+  --hh-callout-decision: #e6f2f1;
+  --hh-callout-question: #fbf3dc;
   --hh-font: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   --hh-display: "Lexend", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   font-family: var(--hh-font);
@@ -56,6 +62,12 @@
     --hh-profile-violet: #4a3a74;
     --hh-profile-pink: #6e3352;
     --hh-profile-gray: #464b52;
+    --hh-callout-note: #1f2a3a;
+    --hh-callout-tip: #1e3026;
+    --hh-callout-warning: #3a2a1c;
+    --hh-callout-summary: #29253a;
+    --hh-callout-decision: #1c302e;
+    --hh-callout-question: #3a321c;
     color-scheme: dark;
   }
 }
@@ -273,7 +285,20 @@ h4.hh-md-h { font-size: 1em; font-weight: 600; color: var(--hh-slate); }
 .hh-md-task > input { margin: 0 6px 0 -18px; vertical-align: middle; }
 .hh-md-raw { white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.9em; color: var(--hh-slate); }
 .hh-md-alt { color: var(--hh-muted); font-style: italic; }
-blockquote { margin: 0.8em 0; padding: 0 0 0 12px; border-left: 3px solid var(--hh-line-strong); color: var(--hh-slate); }
+.hh-md-quote { margin: 0.8em 0; padding: 0 0 0 12px; border-left: 3px solid var(--hh-line-strong); color: var(--hh-slate); }
+.hh-callout { margin: 0.8em 0; padding: 10px 14px; border-radius: 8px; border: 1px solid var(--hh-line); }
+.hh-callout > :last-child { margin-bottom: 0; }
+.hh-callout-label { display: flex; align-items: center; gap: 6px; margin: 0 0 4px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--hh-slate); }
+.hh-callout-note { background: var(--hh-callout-note); }
+.hh-callout-tip { background: var(--hh-callout-tip); }
+.hh-callout-warning { background: var(--hh-callout-warning); }
+.hh-callout-warning .hh-callout-label { color: var(--hh-warn); }
+.hh-callout-summary { background: var(--hh-callout-summary); }
+.hh-callout-decision { background: var(--hh-callout-decision); }
+.hh-callout-question { background: var(--hh-callout-question); }
+.hh-md-caption { margin: -0.3em 0 1em; font-size: 0.9em; color: var(--hh-muted); text-align: center; }
+.hh-md-footnotes { margin-top: 2em; padding-top: 0.6em; border-top: 1px solid var(--hh-line); font-size: 0.9em; color: var(--hh-slate); }
+.hh-md-footnotes a.hh-md-back { text-decoration: none; }
 .hh-message.user { justify-self: end; background: var(--hh-surface); border: 1px solid var(--hh-line); border-radius: 10px; padding: 10px 14px; font-size: 14px; }
 .hh-who { color: var(--hh-muted); font-size: 12px; }
 /* A turn at work (mockups "Trabajando", collapsed and expanded): one status row, the steps behind a toggle. */

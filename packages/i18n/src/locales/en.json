@@ -630,7 +630,17 @@
     "badge": "Test mode (no AI)"
   },
   "reader": {
-    "table": "Table"
+    "table": "Table",
+    "footnotes": "Footnotes",
+    "backToText": "Back to the text",
+    "callout": {
+      "note": "Note",
+      "tip": "Tip",
+      "warning": "Warning",
+      "summary": "Summary",
+      "decision": "Decision",
+      "question": "Question"
+    }
   },
   "errors": {
     "engine-not-installed": "I can't find {{engine}} on this computer.",

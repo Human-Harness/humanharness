@@ -5,7 +5,7 @@ import type { Code, Definition, FootnoteDefinition, Heading, List, Nodes, Parent
 import remarkGfm from "remark-gfm";
 import remarkParse from "remark-parse";
 import { unified } from "unified";
-import { createSlugger, splitFrontMatter } from "@humanharness/harness-sdk/documents";
+import { CALLOUTS, type Callout, createSlugger, splitFrontMatter } from "@humanharness/harness-sdk/documents";
 import { CitationContext, splitCitations } from "./citations";
 
 export { markdownToPlain } from "./markdown-plain";
@@ -33,6 +33,8 @@ interface Ctx {
   /** The document's own path (relative to the folder); "" in the chat. */
   base: string;
   definitions: Map<string, Definition>;
+  /** Footnote ids in the order they are first referenced, and their definitions. */
+  footnotes: { order: string[]; defs: Map<string, FootnoteDefinition> };
   t: TFunction;
 }
 
@@ -168,9 +170,56 @@ function renderImage(_url: string, alt: string, _ctx: Ctx, key: number): ReactNo
   );
 }
 
-/** A footnote reference. Task 6 numbers and links it; until then its label. */
-function renderFootnoteReference(id: string, _ctx: Ctx, key: number): ReactNode {
-  return <sup key={key}>{id}</sup>;
+/** A footnote reference: its number by first use, linked to its note and back (only the first use is the back target). */
+function renderFootnoteReference(id: string, ctx: Ctx, key: number): ReactNode {
+  if (!ctx.footnotes.defs.has(id)) return <Fragment key={key}>{`[^${id}]`}</Fragment>;
+  let n = ctx.footnotes.order.indexOf(id);
+  const first = n < 0;
+  if (first) n = ctx.footnotes.order.push(id) - 1;
+  return (
+    <sup key={key}>
+      <a
+        href={`#${ctx.prefix}fn-${id}`}
+        id={first ? `${ctx.prefix}fnref-${id}` : undefined}
+        className="hh-md-fnref"
+        onClick={(e) => jump(e, `${ctx.prefix}fn-${id}`)}
+      >
+        {n + 1}
+      </a>
+    </sup>
+  );
+}
+
+/** Scrolls to an id inside the app (never a navigation). */
+function jump(e: { preventDefault(): void }, id: string): void {
+  e.preventDefault();
+  document.getElementById(id)?.scrollIntoView?.({ block: "start" });
+}
+
+/** The notes at the end, in the order they were referenced. */
+function renderFootnotes(ctx: Ctx): ReactNode {
+  if (ctx.footnotes.order.length === 0) return null;
+  // Headings inside a note get no id: the outline never lists them.
+  const inner: Ctx = { ...ctx, slug: () => "" };
+  const items: ReactNode[] = [];
+  // A note may reference a later one: `order` grows while the notes are drawn.
+  for (let i = 0; i < ctx.footnotes.order.length; i++) {
+    const id = ctx.footnotes.order[i];
+    const def = ctx.footnotes.defs.get(id)!;
+    items.push(
+      <li key={id} id={`${ctx.prefix}fn-${id}`}>
+        {renderBlocks(def.children, inner, true)}{" "}
+        <a href={`#${ctx.prefix}fnref-${id}`} className="hh-md-back" aria-label={ctx.t("reader.backToText")} onClick={(e) => jump(e, `${ctx.prefix}fnref-${id}`)}>
+          ↩
+        </a>
+      </li>,
+    );
+  }
+  return (
+    <section className="hh-md-footnotes" aria-label={ctx.t("reader.footnotes")}>
+      <ol>{items}</ol>
+    </section>
+  );
 }
 
 function renderHeading(n: Heading, ctx: Ctx, key: number): ReactNode {
@@ -181,7 +230,9 @@ function renderHeading(n: Heading, ctx: Ctx, key: number): ReactNode {
       </p>
     );
   }
-  return createElement(`h${n.depth}`, { key, id: `${ctx.prefix}${ctx.slug(textOf(n))}`, className: "hh-md-h", "data-heading": "" }, renderInline(n.children, ctx));
+  // An empty slug (a heading inside a footnote) means no id.
+  const slug = ctx.slug(textOf(n));
+  return createElement(`h${n.depth}`, { key, id: slug ? `${ctx.prefix}${slug}` : undefined, className: "hh-md-h", "data-heading": "" }, renderInline(n.children, ctx));
 }
 
 function renderList(n: List, ctx: Ctx, key: number): ReactNode {
@@ -250,9 +301,53 @@ function renderCode(n: Code, _ctx: Ctx, key: number, _caption?: string): ReactNo
   );
 }
 
-/** A blockquote. Task 6 turns callouts into boxes. */
+// Linear: one bracketed word, then optional blanks and one newline.
+const CALLOUT_MARK = /^\[!([A-Za-z]+)\][ \t]*\n?/;
+
+/** A blockquote, or a callout (§3.2) when its first paragraph starts with one of the six markers. */
 function renderBlockquote(children: RootContent[], ctx: Ctx, key: number): ReactNode {
-  return <blockquote key={key}>{renderBlocks(children, ctx)}</blockquote>;
+  const first = children[0];
+  const lead = first?.type === "paragraph" ? first.children[0] : undefined;
+  const mark = lead?.type === "text" ? CALLOUT_MARK.exec(lead.value) : null;
+  const kind = mark?.[1].toLowerCase();
+  if (!mark || !kind || !(CALLOUTS as readonly string[]).includes(kind) || first?.type !== "paragraph" || lead?.type !== "text") {
+    return (
+      <blockquote key={key} className="hh-md-quote">
+        {renderBlocks(children, ctx)}
+      </blockquote>
+    );
+  }
+  // The marker goes; the rest of the first paragraph stays (a callout may put text right after the marker).
+  const rest = lead.value.slice(mark[0].length);
+  const inline: PhrasingContent[] = [...(rest ? [{ ...lead, value: rest }] : []), ...first.children.slice(1)];
+  const body: RootContent[] = inline.length > 0 ? [{ ...first, children: inline }, ...children.slice(1)] : children.slice(1);
+  return (
+    <div key={key} className={`hh-callout hh-callout-${kind}`} role="note">
+      <p className="hh-callout-label">
+        <CalloutIcon kind={kind as Callout} />
+        {ctx.t(`reader.callout.${kind}`)}
+      </p>
+      {renderBlocks(body, ctx)}
+    </div>
+  );
+}
+
+const CALLOUT_ICONS: Record<Callout, string> = {
+  note: "M12 8v5M12 16h.01M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z",
+  tip: "M9 18h6M10 21h4M12 3a6 6 0 0 0-4 10.5c.6.6 1 1.4 1 2.5h6c0-1.1.4-1.9 1-2.5A6 6 0 0 0 12 3z",
+  warning: "M12 9v4M12 17h.01M10.3 4l-8 14a2 2 0 0 0 1.7 3h16a2 2 0 0 0 1.7-3l-8-14a2 2 0 0 0-3.4 0z",
+  summary: "M5 6h14M5 12h14M5 18h9",
+  decision: "M5 12l4 4 10-10",
+  question: "M9.1 9a3 3 0 1 1 4.2 2.7c-.8.4-1.3 1.1-1.3 2v.3M12 17h.01",
+};
+
+/** A small line icon per callout, in the text colour (no colour of its own). */
+function CalloutIcon({ kind }: { kind: Callout }) {
+  return (
+    <svg className="hh-callout-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d={CALLOUT_ICONS[kind]} />
+    </svg>
+  );
 }
 
 function renderBlock(n: RootContent, ctx: Ctx, key: number, tight: boolean, caption?: string): ReactNode {
@@ -277,15 +372,34 @@ function renderBlock(n: RootContent, ctx: Ctx, key: number, tight: boolean, capt
           {n.value}
         </p>
       );
-    // Definitions are drawn where they are used; footnote definitions at the end (Task 6).
+    // Definitions are drawn where they are used; footnote definitions at the end.
     default:
       return null;
   }
 }
 
+/** An italic paragraph (one `emphasis` and nothing else), a caption when it follows a table or a Mermaid diagram (§3.2). */
+function captionOf(n: RootContent | undefined): PhrasingContent[] | undefined {
+  if (n?.type !== "paragraph" || n.children.length !== 1) return undefined;
+  const only = n.children[0];
+  return only.type === "emphasis" ? only.children : undefined;
+}
+const captioned = (n: RootContent | undefined) => n?.type === "table" || (n?.type === "code" && n.lang?.toLowerCase() === "mermaid");
+
 /** Children of a block, in order. `tight`: a tight list item's paragraphs are drawn without `<p>`. */
 function renderBlocks(nodes: RootContent[], ctx: Ctx, tight = false): ReactNode[] {
-  return nodes.map((n, i) => renderBlock(n, ctx, i, tight));
+  return nodes.map((n, i) => {
+    const caption = captionOf(n);
+    if (caption && captioned(nodes[i - 1])) {
+      return (
+        <p key={i} className="hh-md-caption">
+          {renderInline(caption, ctx)}
+        </p>
+      );
+    }
+    const next = nodes[i + 1];
+    return renderBlock(n, ctx, i, tight, captioned(n) && captionOf(next) ? textOf(next!) : undefined);
+  });
 }
 
 function collectDefinitions(tree: Root): Map<string, Definition> {
@@ -295,6 +409,12 @@ function collectDefinitions(tree: Root): Map<string, Definition> {
     if ("children" in node) for (const c of node.children as Nodes[]) walk(c);
   };
   walk(tree);
+  return out;
+}
+
+function collectFootnotes(tree: Root): Map<string, FootnoteDefinition> {
+  const out = new Map<string, FootnoteDefinition>();
+  for (const n of tree.children) if (n.type === "footnoteDefinition" && !out.has(n.identifier)) out.set(n.identifier, n);
   return out;
 }
 
@@ -319,9 +439,17 @@ export function Markdown({ source, fade = false, document = false, path = "", id
   const text = document ? splitFrontMatter(source).body : source;
   const tree = useMemo(() => parseMarkdown(text), [text]);
   const definitions = useMemo(() => collectDefinitions(tree), [tree]);
-  // A fresh slugger per draw: ids come out in document order every time.
-  const ctx: Ctx = { fade, breaks: !document, prefix, slug: createSlugger(), source: text, base: path, definitions, t };
-  return <>{renderBlocks(tree.children, ctx)}</>;
+  const defs = useMemo(() => collectFootnotes(tree), [tree]);
+  // A fresh slugger and footnote order per draw: ids and numbers come out in document order every time.
+  const ctx: Ctx = { fade, breaks: !document, prefix, slug: createSlugger(), source: text, base: path, definitions, footnotes: { order: [], defs }, t };
+  // The body first, so the notes' order is known when they are drawn.
+  const body = renderBlocks(tree.children, ctx);
+  return (
+    <>
+      {body}
+      {renderFootnotes(ctx)}
+    </>
+  );
 }
 
 /** A heading the reader's table of contents lists. */
@@ -353,5 +481,3 @@ export function documentOutline(source: string): { front: Record<string, string>
   walk(parseMarkdown(fm.body));
   return { front: fm.data, outline, sections };
 }
-
-export type { FootnoteDefinition };

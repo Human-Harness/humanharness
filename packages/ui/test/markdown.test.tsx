@@ -214,3 +214,86 @@ describe("citations (material spec §9)", () => {
     expect(screen.getAllByRole("button")).toHaveLength(1);
   });
 });
+
+describe("callouts, captions, footnotes (§3.2)", () => {
+  it("draws each of the six callouts as a labelled box; the marker is gone", async () => {
+    const src = ["NOTE", "TIP", "WARNING", "SUMMARY", "DECISION", "QUESTION"].map((c) => `> [!${c}]\n> Body of ${c.toLowerCase()}.`).join("\n\n");
+    const { container } = await renderIn("en", <Markdown source={src} />);
+    const boxes = [...container.querySelectorAll(".hh-callout")];
+    expect(boxes.map((b) => b.className)).toEqual([
+      "hh-callout hh-callout-note",
+      "hh-callout hh-callout-tip",
+      "hh-callout hh-callout-warning",
+      "hh-callout hh-callout-summary",
+      "hh-callout hh-callout-decision",
+      "hh-callout hh-callout-question",
+    ]);
+    expect(boxes.map((b) => b.querySelector(".hh-callout-label")?.textContent)).toEqual(["Note", "Tip", "Warning", "Summary", "Decision", "Question"]);
+    expect(boxes[0].getAttribute("role")).toBe("note");
+    expect(container.textContent).not.toContain("[!");
+    expect(boxes[3].textContent).toContain("Body of summary.");
+  });
+
+  it("is case-insensitive; an unknown marker stays a plain quote", async () => {
+    const { container } = await renderIn("en", <Markdown source={"> [!note] lower\n\n> [!CAUTION]\n> GitHub has it, we do not"} />);
+    expect(container.querySelectorAll(".hh-callout")).toHaveLength(1);
+    expect(container.querySelector(".hh-callout")?.textContent).toContain("lower");
+    expect(container.querySelector("blockquote")?.textContent).toContain("[!CAUTION]");
+    expect(container.querySelector("blockquote")?.className).toBe("hh-md-quote");
+  });
+
+  it("keeps inline content after the marker", async () => {
+    const { container } = await renderIn("en", <Markdown source={"> [!TIP]\n> Use **bold** here."} />);
+    const box = container.querySelector(".hh-callout-tip")!;
+    expect(box.querySelector("strong")?.textContent).toBe("bold");
+    expect(box.textContent).toContain("Use bold here.");
+  });
+
+  it("checks a long first line quickly (no backtracking)", async () => {
+    const start = performance.now();
+    await renderIn("en", <Markdown source={`> [!NOTE${" ".repeat(50000)}x`} />);
+    expect(performance.now() - start).toBeLessThan(2000);
+  });
+
+  it("an italic paragraph right after a table is its caption; elsewhere it is plain", () => {
+    const el = md("| a |\n|---|\n| 1 |\n\n*Costs per month*\n\n*Not a caption*");
+    const ps = [...el.querySelectorAll("p")];
+    expect(ps[0].className).toBe("hh-md-caption");
+    expect(ps[1].className).toBe("");
+  });
+
+  it("footnotes: numbered references, a list at the end, links there and back", async () => {
+    const { container } = await renderIn("en", <Markdown source={"First[^b] and second[^a].\n\n[^a]: Alpha.\n[^b]: Beta."} idPrefix="" />);
+    const refs = [...container.querySelectorAll("sup a")];
+    expect(refs.map((a) => [a.textContent, a.getAttribute("href"), a.id])).toEqual([
+      ["1", "#fn-b", "fnref-b"],
+      ["2", "#fn-a", "fnref-a"],
+    ]);
+    const items = [...container.querySelectorAll(".hh-md-footnotes li")];
+    expect(items.map((li) => [li.id, li.textContent?.replace("↩", "").trim()])).toEqual([
+      ["fn-b", "Beta."],
+      ["fn-a", "Alpha."],
+    ]);
+    expect(items[0].querySelector("a.hh-md-back")?.getAttribute("href")).toBe("#fnref-b");
+    expect(items[0].querySelector("a.hh-md-back")?.getAttribute("aria-label")).toBe("Back to the text");
+  });
+
+  it("a second reference to the same note reuses its number; only the first gets the back-link id", async () => {
+    const { container } = await renderIn("en", <Markdown source={"A[^a] B[^a].\n\n[^a]: Alpha."} idPrefix="" />);
+    const refs = [...container.querySelectorAll("sup a")];
+    expect(refs.map((a) => [a.textContent, a.id])).toEqual([
+      ["1", "fnref-a"],
+      ["1", ""],
+    ]);
+    expect(container.querySelectorAll(".hh-md-footnotes li")).toHaveLength(1);
+  });
+
+  it("a note referenced only from another note is listed too", async () => {
+    const { container } = await renderIn("en", <Markdown source={"Text[^a].\n\n[^a]: See[^b].\n[^b]: Beta."} idPrefix="" />);
+    expect([...container.querySelectorAll(".hh-md-footnotes li")].map((li) => li.id)).toEqual(["fn-a", "fn-b"]);
+  });
+
+  it("a footnote never referenced is not listed", () => {
+    expect(md("Text.\n\n[^x]: Lonely.").querySelector(".hh-md-footnotes")).toBeNull();
+  });
+});

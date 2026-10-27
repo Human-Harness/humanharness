@@ -263,7 +263,8 @@ function HeadsUpCard({ card, headsUp, onSaveDecision, onFinishTask, onDismiss }:
         )}
         <button type="button" onClick={() => onDismiss(card.id, "dismissed")}>{t("sidekick.after.dismiss")}</button>
       </div>
-      {failed !== null && <p role="alert">{t("sidekick.headsUp.saveFailed", { message: failed })}</p>}
+      {/* No message back: the plain line, never "…decision: " with nothing after it. */}
+      {failed !== null && <p role="alert">{failed ? t("sidekick.headsUp.saveFailed", { message: failed }) : t("sidekick.headsUp.saveFailedPlain")}</p>}
     </section>
   );
 }

@@ -676,9 +676,10 @@ export function ChatView({
     if (!task || blocked() || pending || task.status !== "waiting") return;
     taskCall(() => client.setPhase(task.id, id).then((r) => r.ok));
   };
-  /** Finish: the core closing turn. False back means it was stopped and the task stays open. Says whether it started. */
+  /** Finish: the core closing turn. False back means it was stopped and the task stays open. Says whether it started.
+   *  The same guards as the stepper's Finish: a second click or one during a phase move does nothing. */
   const finishTask = (): boolean => {
-    if (!tasks.current || blocked() || pending) return false;
+    if (!tasks.current || blocked() || phasing || pending || tasks.current.status !== "waiting") return false;
     // A stopped closing turn is not a failure: the task simply stays open, as the tasks read again show.
     taskCall(() => client.finishTask().then(() => true));
     return true;

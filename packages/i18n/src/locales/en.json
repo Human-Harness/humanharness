@@ -671,7 +671,8 @@
       "offPhaseNamed": "The last prompts belong to “{{phase}}”.",
       "saveDecision": "Save as decision",
       "finishTask": "Finish task",
-      "saveFailed": "Could not save the decision: {{message}}"
+      "saveFailed": "Could not save the decision: {{message}}",
+      "saveFailedPlain": "Could not save the decision."
     },
     "after": { "title": "After the reply", "next": "Next prompt", "dismiss": "Dismiss" },
     "notice": {

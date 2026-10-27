@@ -219,6 +219,14 @@ describe("heads-ups (spec §4.3, §7)", () => {
     expect(screen.getByRole("button", { name: "Save as decision" })).toBeTruthy();
   });
 
+  it("Save as decision refused without a message: the plain line, nothing dangling", async () => {
+    const h = handlers();
+    h.onSaveDecision.mockResolvedValue({ ok: false } as never);
+    await panel({ ...SK_ON, cards: [hu({ kind: "repeated", topic: "APA style", decision: "Use APA 7." }, "repeated")] }, h);
+    fireEvent.click(screen.getByRole("button", { name: "Save as decision" }));
+    expect((await screen.findByRole("alert")).textContent).toBe("Could not save the decision.");
+  });
+
   it("an after-reply card with neither gap nor next never shows", async () => {
     const empty: SidekickCard = { id: "a9", moment: "after", kind: "gap", speaker: SK_ON.info, prompt: "x", flags: [], issues: [], confidence: 1, at: "2026-10-27T10:00:00Z", after: {} };
     await panel({ ...SK_ON, cards: [empty] });

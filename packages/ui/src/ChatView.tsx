@@ -795,16 +795,17 @@ export function ChatView({
           />
         )}
         <main className="hh-main">
-          {flow && since !== null && tasks.current && taskPhases.length > 0 && (
+          {/* A time box without phases (spec §5) still shows its time, its controls and, once time is up, Finish. */}
+          {flow && since !== null && tasks.current && (taskPhases.length > 0 || tasks.current.timeBox) && (
             <PhaseStepper
               phases={taskPhases}
               task={tasks.current}
               disabled={blocked() || phasing || pending !== null || tasks.current.status !== "waiting"}
               onPhase={pickPhase}
               onFinish={finishTask}
-              onPause={() => void client.pauseTask().then(rereadTasks, () => setPhaseFailed(true))}
-              onResume={() => void client.resumeTask().then(rereadTasks, () => setPhaseFailed(true))}
-              onExtend={() => void client.extendTimeBox().then(rereadTasks, () => setPhaseFailed(true))}
+              onPause={() => taskCall(() => client.pauseTask())}
+              onResume={() => taskCall(() => client.resumeTask())}
+              onExtend={() => taskCall(() => client.extendTimeBox())}
             />
           )}
           {phaseFailed && (
@@ -817,7 +818,7 @@ export function ChatView({
               modes={barModes}
               current={tasks.current.mode}
               below={tasks.current.belowMinTier === true}
-              disabled={blocked() || pending !== null || tasks.current.status !== "waiting"}
+              disabled={blocked() || phasing || pending !== null || tasks.current.status !== "waiting"}
               onPick={(mode) => void chooseMode(mode, tasks.current?.id)}
             />
           )}

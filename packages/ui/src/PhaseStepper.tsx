@@ -50,28 +50,31 @@ export function PhaseStepper({
   const finishCard = target !== undefined && proposalKey !== dismissed && target.id === task.phase && target.close === true;
   return (
     <div className="hh-phase-bar">
-      <nav aria-label={t("phases.stepper")}>
-        <ol className="hh-phase-steps">
-          {phases.map((p, i) => {
-            // The current part is inert: a click on it would mean "same", or "finish" in the close part.
-            const isCurrent = i === currentAt;
-            return (
-              <li key={p.id}>
-                <button
-                  type="button"
-                  className={i < currentAt ? "hh-phase-done" : undefined}
-                  aria-current={isCurrent ? "step" : undefined}
-                  aria-disabled={isCurrent ? true : undefined}
-                  disabled={disabled}
-                  onClick={isCurrent ? undefined : () => onPhase(p.id)}
-                >
-                  {p.label}
-                </button>
-              </li>
-            );
-          })}
-        </ol>
-      </nav>
+      {/* A time box without phases (spec §5): no parts to show, only the time. */}
+      {phases.length > 0 && (
+        <nav aria-label={t("phases.stepper")}>
+          <ol className="hh-phase-steps">
+            {phases.map((p, i) => {
+              // The current part is inert: a click on it would mean "same", or "finish" in the close part.
+              const isCurrent = i === currentAt;
+              return (
+                <li key={p.id}>
+                  <button
+                    type="button"
+                    className={i < currentAt ? "hh-phase-done" : undefined}
+                    aria-current={isCurrent ? "step" : undefined}
+                    aria-disabled={isCurrent ? true : undefined}
+                    disabled={disabled}
+                    onClick={isCurrent ? undefined : () => onPhase(p.id)}
+                  >
+                    {p.label}
+                  </button>
+                </li>
+              );
+            })}
+          </ol>
+        </nav>
+      )}
       {current?.close && !finishCard && (
         <button type="button" disabled={disabled} onClick={onFinish}>
           {t("phases.finish")}

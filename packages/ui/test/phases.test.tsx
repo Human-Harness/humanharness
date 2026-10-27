@@ -114,6 +114,41 @@ describe("task phases in the chat", () => {
     await waitFor(() => expect(client.sentOptions.at(-1)).toMatchObject({ action: "session", timeBox: 30 }));
   });
 
+  it("a failed change turn or wrap-up turn offers no Try again on its line", async () => {
+    for (const notice of [{ task: "t1", kind: "phase" as const, phase: "main", by: "agent" as const }, { task: "t1", kind: "wrap-up" as const }]) {
+      const client = tutorClient();
+      await open(client);
+      act(() => client.emitTaskTurn(notice));
+      act(() => client.emit({ type: "done", ok: false, error: { code: "agent-crashed", detail: "boom" } }));
+      await screen.findByRole("alert");
+      expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+      cleanup();
+    }
+  });
+
+  it("a time box without phases shows its time and controls, with no parts; time up offers Finish", async () => {
+    const client = tutorClient({ current: { action: "quiz", phase: undefined } });
+    client.state.actions = { ...client.state.actions, quiz: { label: "Quiz", cost: "light", timeBox: { options: [15], default: 15 } } };
+    client.tasks.current!.timeBox = { minutes: 15, totalMs: 900_000, usedMs: 900_000, at: new Date().toISOString(), paused: false, wrappedUp: true, ended: true };
+    await open(client);
+    expect(screen.queryByRole("navigation", { name: "Task parts" })).toBeNull();
+    const box = screen.getByRole("group", { name: "How long?" });
+    expect(within(box).getByText("Time is up")).toBeTruthy();
+    fireEvent.click(within(box).getByRole("button", { name: "Finish" }));
+    await waitFor(() => expect(client.taskCalls).toEqual(["finish"]));
+  });
+
+  it("a refused pause shows a short error", async () => {
+    const client = tutorClient({ current: { timeBox: { minutes: 15, totalMs: 900_000, usedMs: 0, at: new Date().toISOString(), paused: false } } });
+    client.pauseTask = async () => {
+      client.taskCalls.push("pause");
+      return false;
+    };
+    await open(client);
+    fireEvent.click(screen.getByRole("button", { name: "Pause" }));
+    expect(await screen.findByText("That didn't go through. Try again.")).toBeTruthy();
+  });
+
   it("the mode bar lists only the modes the part allows, and hides when it allows none", async () => {
     const client = tutorClient({ modes: true });
     await open(client);

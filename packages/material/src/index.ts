@@ -5,6 +5,7 @@ export * from "./blocks";
 export * from "./convert/text";
 export * from "./convert/html";
 export * from "./convert/pdf";
+export * from "./convert/word";
 export * from "./cut";
 export * from "./checks";
 export { estimateTokens } from "@humanharness/workspace";

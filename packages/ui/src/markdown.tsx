@@ -9,6 +9,7 @@ import { CALLOUTS, type Callout, createSlugger, splitFrontMatter } from "@humanh
 import { CitationContext, splitCitations } from "./citations";
 import { imageTarget, isAutolink, linkTarget } from "./doc-links";
 import { DocumentContext, type DocumentHost } from "./documents-context";
+import { highlightCode } from "./highlight";
 
 export { markdownToPlain } from "./markdown-plain";
 
@@ -369,13 +370,44 @@ function renderTable(n: Table, ctx: Ctx, key: number): ReactNode {
   );
 }
 
-/** A fenced or indented code block. Task 8 highlights it and Task 9 draws Mermaid. */
-function renderCode(n: Code, _ctx: Ctx, key: number, _caption?: string): ReactNode {
+/** The label of a code block: `title="…"` in its info string, else its language. */
+function codeLabel(n: Code): string | null {
+  const title = n.meta ? /title="([^"]+)"/.exec(n.meta)?.[1] : undefined;
+  return title ?? n.lang ?? null;
+}
+
+function CodeBlock({ node }: { node: Code }) {
+  const { t } = useTranslation();
+  const [copied, setCopied] = useState(false);
+  const highlighted = useMemo(() => highlightCode(node.lang, node.value), [node.lang, node.value]);
+  const label = codeLabel(node);
   return (
-    <pre key={key} className="hh-md-code">
-      <code>{n.value}</code>
-    </pre>
+    <div className="hh-md-codeblock">
+      <div className="hh-md-codebar">
+        {label && <span className="hh-md-codelabel">{label}</span>}
+        <button
+          type="button"
+          className="hh-md-copy"
+          onClick={() =>
+            void navigator.clipboard?.writeText(node.value).then(
+              () => setCopied(true),
+              () => undefined,
+            )
+          }
+        >
+          {copied ? t("reader.copied") : t("reader.copy")}
+        </button>
+      </div>
+      <pre className="hh-md-code">
+        <code>{highlighted ?? node.value}</code>
+      </pre>
+    </div>
   );
+}
+
+/** A fenced or indented code block. Task 9 draws Mermaid. */
+function renderCode(n: Code, _ctx: Ctx, key: number, _caption?: string): ReactNode {
+  return <CodeBlock key={key} node={n} />;
 }
 
 // Linear: one bracketed word, then optional blanks and one newline.

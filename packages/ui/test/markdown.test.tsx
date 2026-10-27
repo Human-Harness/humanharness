@@ -448,3 +448,36 @@ describe("links and images (§3.4)", () => {
     expect(el.textContent).toBe("Logo (cdn.x.com)");
   });
 });
+
+describe("code blocks (§3.2)", () => {
+  it("highlights a known language from a tree of spans, with its label and Copy", async () => {
+    // happy-dom's navigator.clipboard is a getter, so its method is spied instead of replaced.
+    const write = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue(undefined);
+    const { container } = await renderIn("en", <Markdown source={"```ts\nconst a = 1;\n```"} />);
+    expect(container.querySelector("pre > code")?.textContent).toBe("const a = 1;");
+    expect(container.querySelector("pre span.hljs-keyword")?.textContent).toBe("const");
+    expect(container.querySelector(".hh-md-codelabel")?.textContent).toBe("ts");
+    fireEvent.click(screen.getByRole("button", { name: "Copy" }));
+    expect(write).toHaveBeenCalledWith("const a = 1;");
+    expect(await screen.findByRole("button", { name: "Copied" })).toBeTruthy();
+    write.mockRestore();
+  });
+
+  it("a title in the info string is the label; an unknown language stays plain text", async () => {
+    const { container } = await renderIn("en", <Markdown source={'```cobol title="src/pay.cbl"\nMOVE A TO B.\n```'} />);
+    expect(container.querySelector(".hh-md-codelabel")?.textContent).toBe("src/pay.cbl");
+    expect(container.querySelector("pre span")).toBeNull();
+  });
+
+  it("HTML inside highlighted code stays text", async () => {
+    const { container } = await renderIn("en", <Markdown source={"```html\n<img src=x onerror=alert(1)>\n```"} />);
+    expect(container.querySelector("pre img")).toBeNull();
+    expect(container.querySelector("pre")?.textContent).toBe("<img src=x onerror=alert(1)>");
+  });
+
+  it("a long unclosed title in the info string is read in linear time", async () => {
+    const started = performance.now();
+    await renderIn("en", <Markdown source={"```ts title=\"" + " ".repeat(50_000) + "\nx\n```"} />);
+    expect(performance.now() - started).toBeLessThan(1000);
+  });
+});

@@ -634,6 +634,8 @@
     "footnotes": "Footnotes",
     "backToText": "Back to the text",
     "footnoteRef": "Footnote {{n}}",
+    "copy": "Copy",
+    "copied": "Copied",
     "callout": {
       "note": "Note",
       "tip": "Tip",

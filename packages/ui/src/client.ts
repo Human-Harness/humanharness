@@ -630,6 +630,30 @@ export interface SetupStepProps {
   skip(): void;
 }
 
+/** One profile as the window sees it (profiles spec §4): the registry's entry. */
+export interface ProfileView {
+  id: string;
+  title: string;
+  /** One of the avatar colours, or anything else (drawn neutral). */
+  color?: string;
+  createdAt: string;
+  archived: boolean;
+}
+
+/** The profiles now: the active one (null while none is) and every registered one, archived included, in creation order. */
+export interface ProfilesState {
+  active: string | null;
+  list: ProfileView[];
+}
+
+/**
+ * Why a profile change was refused. `not-ready`: the app's folder isn't set; `busy`: a turn, a restore, a move, an engine
+ * change or another switch runs; `open`: the open task's closing turn was stopped; `invalid`: the form's fields
+ * (`errors`); `unknown`: no such profile (or an archived one, to open); `active`: not on the active profile; `failed`:
+ * anything else (a disk error, a Trash that refused).
+ */
+export type ProfileRefusal = "not-ready" | "busy" | "open" | "invalid" | "unknown" | "active" | "failed";
+
 export { hearsDataChange } from "./data-change";
 
 /** Everything the renderer can ask the main process. Implemented by the preload as `window.hh`. */

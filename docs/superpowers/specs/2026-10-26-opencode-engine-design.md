@@ -96,6 +96,31 @@ It does not replace Claude or Codex. Those stay the route for people who pay a s
 4. Whether `usage_update` arrives with Ollama models (cost 0 or absent).
 5. OpenCode's own terms and privacy URLs, if they exist.
 
+### Spike results (2026-10-27, CLI not run; source read at OpenCode v1.19.4, with a look at v2.2.0)
+
+The spike did not run the CLI: OpenCode is not installed on the planning machine, and nothing was installed. These results come from public material only: the docs (`opencode.ai/docs/cli/`, `opencode.ai/docs/acp/`), the install script, the legal pages and the MIT source on GitHub (`anomalyco/opencode`, tags `v1.19.4` and `v2.2.0`). No account, credential or config file was read. Each line says "confirmed (source)" when the source shows it, or "unverified" when only a real run can tell. The manual check in §7 ("Real") is a release gate: it confirms these lines against the real CLI before release.
+
+**Two major lines.** OpenCode 1 (latest `v1.19.4`, 2026-10-22) and OpenCode 2 (`v2.2.0`, 2026-10-27) are both released. The official installer (`opencode.ai/install`, which redirects to the `v1` branch script) installs only OpenCode 1 and refuses a 2.x version. `opencode upgrade --major` moves a person to OpenCode 2 and removes OpenCode 1. OpenCode 2 changes `auth list` (see A3). The plan targets OpenCode 1. Open decision for Marco: refuse 2.x (a `maxVersion` or a major check), or parse both `auth list` formats.
+
+§8 items:
+1. Install and version: `curl -fsSL https://opencode.ai/install | bash` puts the binary in `~/.opencode/bin` (no override) and adds that folder to the shell's rc file unless `--no-modify-path`. The version flag is `--version` / `-v`; the exact output is unverified. `minVersion` stays `"0.0.0"` until a real run; the source read here is 1.19.4.
+2. `auth list`: in OpenCode 1 it prints a "Credentials ~/.local/share/opencode/auth.json" block (one line per provider stored by `auth login`, then `└  N credentials`), and an "Environment" block only when a provider's key is set in the environment (`└  N environment variable(s)`). Ollama set up in `opencode.json` is in neither, so it does not show (confirmed (source); matches §2). The provider lines carry a raw ANSI dim code (`\x1b[90m`) before the credential type, even when piped. The exact glyphs come from `@clack/prompts` (`┌`, `│`, `●`, `└`); unverified byte for byte.
+3. Modes: the ACP modes are OpenCode's primary, non-hidden agents; by default `build` (the default) and `plan`. `plan` denies every edit except plan files (`.opencode/plans/*.md` and OpenCode's own plans folder). It does not block shell commands: bash keeps the default permission. A person's own `opencode.json` can add agents or change the default (confirmed (source)).
+4. `usage_update` is sent once at the end of each prompt, with `cost: { amount, currency: "USD" }` = the session's running total. It is sent only when OpenCode knows the model's context limit. A local model without a known limit gets no `usage_update` at all, so Usage shows no cost row rather than US$ 0 (confirmed (source); whether Ollama models have a limit is unverified). No `usage_update` is sent on `session/load`.
+5. Terms and privacy: OpenCode has both: `https://opencode.ai/legal/terms-of-service` (Anomaly Innovations, Inc.) and `https://opencode.ai/legal/privacy-policy`. Both cover OpenCode's website, its inference product and hosted offering; the terms say the open-source software, when not hosted, is governed only by its license.
+
+Plan assumptions:
+- A1 (install path `~/.opencode/bin`): confirmed (source), for OpenCode 1 and 2.
+- A2 (`--version` prints `x.y.z`): unverified; the flag exists.
+- A3 (`auth list` format): confirmed for OpenCode 1 in structure (see item 2); the parser must tolerate ANSI codes. Differs in OpenCode 2: a plain table (`<integration>  <source>  stored|environment`), the line `No authenticated integrations` when empty, and `--format json`.
+- A4 (modes `build` and `plan`, `plan` refuses edits): confirmed (source). `session/new` does not return a `modes` field; the modes come as a `configOptions` select with `id: "mode"`, category `mode`. `session/set_mode` is still supported.
+- A5 (`configOptions`: `model` with `provider/model` values; effort select `id: "effort"`, category `thought_level`): confirmed (source). The effort values are the model's variants plus `"default"`, and the effort option is absent for a model without variants.
+- A6 (`session/set_config_option` takes `{ sessionId, configId, value }` and answers `{ configOptions }`): confirmed (source). Setting `model` also sends a `config_option_update`; an unknown model, effort or mode is an `invalid_params` error (`-32602`).
+- A7 (`usage_update.cost` in USD, running total): confirmed (source), with the limits in item 4.
+- A8 (`session/prompt` answers with `usage`): confirmed (source): `inputTokens`, `outputTokens`, `totalTokens`, and `thoughtTokens` / `cachedReadTokens` / `cachedWriteTokens` when above 0.
+- A9 (missing or expired key is `auth_required`, `-32000`): confirmed (source) for a provider auth error during a prompt. What happens with no provider and no local model at all is unverified.
+- A10 (no terms or privacy page of its own): differs. Both pages exist (item 5); the registry uses them.
+
 ## Out of scope
 
 - Subscription logins inside OpenCode (ChatGPT, Copilot, SuperGrok): the app does not guide or block them. The user picks them in OpenCode's own login under those providers' terms. ChatGPT is still offered through the Codex engine.

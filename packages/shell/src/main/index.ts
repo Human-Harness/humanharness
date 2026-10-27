@@ -85,7 +85,7 @@ import { testPrompt } from "./engine-check";
 import { createCommandDeps } from "./command-deps";
 import { cliCommand, engineCommand, loginShellPath } from "./engine-command";
 import { EngineGuards } from "./engine-guards";
-import { installCommandOf, terminalCommand } from "./install-help";
+import { engineOptionExtras, installCommandOf, runsInTerminal, setupCommandText, terminalCommand } from "./install-help";
 import { detectEngine, hasAcceptedNotice } from "./engine-status";
 import { QUESTIONS, cleanModels, engineOffer, firstOffered, fitEffort, nearestTier, nextFallback, resolveProfile } from "./models";
 import { chooseModeHandler } from "./mode-ipc";
@@ -337,6 +337,7 @@ async function appState(): Promise<AppState> {
           privacyUrl: e.privacyUrl,
           reportsLimits: e.reportsLimits,
           ...(e.plansUrl ? { plansUrl: e.plansUrl } : {}),
+          ...engineOptionExtras(e),
           ...(e.setup?.install ? { installCommand: e.setup.install.command, installDocsUrl: e.setup.install.docsUrl } : {}),
           ...(image ? { logo: image } : {}),
         };
@@ -1340,6 +1341,8 @@ function registerIpc() {
     // A fake engine has nothing to install or sign in to, and no real CLI may run.
     const fake = fakeSetupResult(hooks, engineId);
     if (fake) return fake;
+    // A step the person runs in Terminal (OpenCode's provider picker) is never run by the app.
+    if (runsInTerminal(engine, step)) return { ok: false };
     // Start and end are only reported by the call that holds the setup slot, so only it resets these.
     const output = (o: SetupOutput) => {
       if (o.kind === "start") setupUrl = undefined;
@@ -1425,6 +1428,10 @@ function registerIpc() {
   // Installing by hand: copy the official command (chosen here by engine id) and open Terminal,
   // where the user pastes it. Nothing is run for them.
   handle("hh:copyInstallCommand", (engineId: string) => clipboard.writeText(installCommandOf(engineFor(engineId))));
+  handle("hh:copySetupCommand", (engineId: string, step: unknown) => {
+    if (step !== "login" && step !== "logout") throw new Error("Unknown setup step");
+    clipboard.writeText(setupCommandText(engineFor(engineId), step));
+  });
   handle("hh:openTerminal", async () => {
     const terminal = terminalCommand(process.platform);
     if (!terminal) throw new Error("No Terminal app to open here");

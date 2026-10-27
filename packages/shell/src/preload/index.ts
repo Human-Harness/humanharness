@@ -47,6 +47,7 @@ const client: HarnessClient = {
   testEngine: (engineId) => ipcRenderer.invoke("hh:testEngine", engineId),
   revealSharedConfig: () => ipcRenderer.invoke("hh:revealSharedConfig"),
   copyInstallCommand: (engineId: string) => ipcRenderer.invoke("hh:copyInstallCommand", engineId),
+  copySetupCommand: (engineId: string, step: "login" | "logout") => ipcRenderer.invoke("hh:copySetupCommand", engineId, step),
   openTerminal: () => ipcRenderer.invoke("hh:openTerminal"),
   resetSharedConfig: () => ipcRenderer.invoke("hh:resetSharedConfig"),
   getUsage: () => ipcRenderer.invoke("hh:getUsage"),

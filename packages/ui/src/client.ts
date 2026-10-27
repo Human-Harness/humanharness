@@ -78,6 +78,12 @@ export interface EngineOption {
   reportsLimits: boolean;
   /** The engine reports each turn's cost in USD (OpenCode). Absent for the others. */
   reportsCost?: boolean;
+  /** The person picks the provider inside the engine (OpenCode): the notice says its terms are theirs. */
+  userProvider?: boolean;
+  /** The engine's guide to choosing a provider. */
+  providersUrl?: string;
+  /** Steps the person runs in Terminal, with the command to paste. */
+  terminalSteps?: { login?: string; logout?: string };
   /** The provider's page of plans (Settings › Uso); never for a mock engine. */
   plansUrl?: string;
   /** The official install command, shown before the app runs it. */
@@ -790,6 +796,8 @@ export interface HarnessClient {
   testEngine(engineId: string): Promise<TestResult>;
   /** Copies the engine's official install command, for the user to paste in Terminal. */
   copyInstallCommand(engineId: string): Promise<void>;
+  /** Copies the command for a step the person runs in Terminal (`terminalSteps`). */
+  copySetupCommand(engineId: string, step: "login" | "logout"): Promise<void>;
   /** Opens the Terminal app (it runs nothing). */
   openTerminal(): Promise<void>;
   /** Shows ~/.humanharness/engines.json in Finder. */

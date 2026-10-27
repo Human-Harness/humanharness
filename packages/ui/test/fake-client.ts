@@ -110,6 +110,8 @@ export class FakeClient implements HarnessClient {
   sharedReset = 0;
   /** Engines whose install command was copied. */
   copied: string[] = [];
+  /** Commands copied for Terminal steps, as "engine:step". */
+  setupCopied: string[] = [];
   /** When set, copyInstallCommand rejects with it. */
   copyError: Error | null = null;
   terminalOpened = 0;
@@ -290,6 +292,10 @@ export class FakeClient implements HarnessClient {
   async copyInstallCommand(engineId: string) {
     if (this.copyError) throw this.copyError;
     this.copied.push(engineId);
+  }
+  async copySetupCommand(engineId: string, step: "login" | "logout") {
+    if (this.copyError) throw this.copyError;
+    this.setupCopied.push(`${engineId}:${step}`);
   }
   async openTerminal() {
     this.terminalOpened++;

@@ -4,6 +4,7 @@ import { z } from "zod";
 import { type Block, blockToolName } from "./block";
 import { CORE_BLOCKS, INPUT_CORE_BLOCKS, MODE_CORE_BLOCKS, PHASE_CORE_BLOCKS, RESERVED_BLOCK_NAMES } from "./core-blocks";
 import { dataSchema } from "./data";
+import { CORE_SHEET_SECTIONS, MATERIAL_STAGE_KEYS, materialSchema } from "./material";
 import { DEFAULT_MODE_WORDS, MODE_ID } from "./modes";
 import { PHASE_ID, TIME_BOX_MAX } from "./phases";
 import { PROFILE_COLLECTION, profileFormSpec, profilesSchema } from "./profiles";
@@ -20,6 +21,7 @@ export * from "./modes";
 export * from "./phases";
 export * from "./setup";
 export * from "./profiles";
+export * from "./material";
 /** The zod a manifest builds its block schemas with: the same instance the SDK validates them against. */
 export { z } from "zod";
 
@@ -171,6 +173,8 @@ const manifestSchema = z.object({
   setup: setupStepsSchema.optional(),
   /** Several people on one install, each with a folder of their own (profiles spec). Absent: one implicit profile (D4). */
   profiles: profilesSchema.optional(),
+  /** The person's own files, cut into small fragments the agent fetches on demand (material spec). Absent: none (D0). */
+  material: materialSchema.optional(),
   /** One line under the name on the home screen. */
   tagline: text.optional(),
   /** How translations of this harness's screens should sound, in English ("warm and informal, short sentences"). */
@@ -360,6 +364,38 @@ const manifestSchema = z.object({
         if (!Object.hasOwn(shape, f)) issue(["profiles", "fields"], `"${f}" is not a field of "${PROFILE_COLLECTION}"`);
       }
       for (const f of profileFormSpec(m).fields) if (f.kind === null) issue(["profiles", "fields"], `The profile form can't draw "${f.name}"`);
+    }
+  }
+  // Material (material spec §8).
+  if (m.material) {
+    const issue = (p: (string | number)[], message: string) => ctx.addIssue({ code: "custom", path: ["material", ...p], message });
+    const once = (list: readonly string[], key: string) => {
+      const seen = new Set<string>();
+      for (const v of list) {
+        if (seen.has(v)) issue([key], `"${v}" is listed twice`);
+        seen.add(v);
+      }
+    };
+    once(m.material.accepts, "accepts");
+    once(m.material.fragmentKinds, "fragmentKinds");
+    const sections = new Set<string>();
+    for (const s of m.material.sheet.sections) {
+      if (Object.hasOwn(CORE_SHEET_SECTIONS, s.id)) issue(["sheet", "sections"], `"${s.id}" is a core sheet section`);
+      else if (sections.has(s.id)) issue(["sheet", "sections"], `Section "${s.id}" is declared twice`);
+      sections.add(s.id);
+    }
+    const items = m.material.items;
+    if (items) {
+      if (!Object.hasOwn(m.data, items.collection)) issue(["items", "collection"], `Collection "${items.collection}" is not declared in data`);
+      else {
+        const c = m.data[items.collection];
+        if (c.single || c.key === undefined) issue(["items", "collection"], `Fragments link to records by key: "${items.collection}" needs a key, not single: true`);
+        if (!Object.hasOwn(c.schema.shape, items.label)) issue(["items", "label"], `"${items.label}" is not a field of "${items.collection}"`);
+      }
+    }
+    // Settings › Models keys each stage's setting next to the action ids.
+    for (const key of MATERIAL_STAGE_KEYS) {
+      if (Object.hasOwn(m.actions, key)) ctx.addIssue({ code: "custom", path: ["actions", key], message: `"${key}" is reserved for a material stage: use another action id` });
     }
   }
 });

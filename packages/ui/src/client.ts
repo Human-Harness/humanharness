@@ -59,6 +59,8 @@ export interface AppConfig {
   models?: ModelsConfig;
   /** The person said they keep their own copy of the folder: the backup notice stays hidden (Settings › General undoes it). */
   backupDismissed?: boolean;
+  /** Harnesses with profiles: the active profile's id (profiles spec §4). Only the main process changes it. */
+  profile?: string;
 }
 
 export interface EngineOption {
@@ -205,6 +207,8 @@ export interface AppState {
   modes?: Record<string, ModeView>;
   /** The harness's setup steps, in order (setup-steps spec). Absent: none (D0). */
   setup?: SetupStepView[];
+  /** The harness's profiles (manifest `profiles`): what to call one and its form. Absent: one implicit profile (D4). */
+  profiles?: ProfilesInfo;
   /** Folders the agent can read but never change. */
   references?: ReferenceView[];
   /** Settings › Modelos. */
@@ -414,6 +418,8 @@ export interface UsageSummary {
   tokens: Record<string, number>;
   /** Harnesses with scopes: tokens used per scope id, over the whole log. */
   scopes?: Record<string, number>;
+  /** Harnesses with profiles: tokens used per profile id, over each profile's whole log (profiles spec §4). */
+  profiles?: Record<string, number>;
   /** The window kind estimates measure (the engine's `limits.primary`); absent when the engine reports no limits. */
   primary?: string;
 }
@@ -620,13 +626,49 @@ export interface SetupStepView {
 /** What a harness's own setup step component gets (setup-steps spec §3 `component`). */
 export interface SetupStepProps {
   client: HarnessClient;
-  /** The profile the step runs for: null until profiles exist (profiles spec, plan 7). */
-  profile: null;
+  /** The profile the step runs for; null in a harness without profiles. */
+  profile: ProfileView | null;
   /** The step is done: the app marks it and moves on. */
   done(): void;
   /** Skip it; refused (the screen says so) for a required step. */
   skip(): void;
 }
+
+/** One profile as the window sees it (profiles spec §4): the registry's entry. */
+export interface ProfileView {
+  id: string;
+  title: string;
+  /** One of the avatar colours, or anything else (drawn neutral). */
+  color?: string;
+  createdAt: string;
+  archived: boolean;
+}
+
+/** The profiles now: the active one (null while none is) and every registered one, archived included, in creation order. */
+export interface ProfilesState {
+  active: string | null;
+  list: ProfileView[];
+}
+
+/**
+ * Why a profile change was refused. `not-ready`: the app's folder isn't set; `busy`: a turn, a restore, a move, an engine
+ * change or another switch runs; `open`: the open task's closing turn was stopped; `invalid`: the form's fields
+ * (`errors`); `unknown`: no such profile (or an archived one, to open); `active`: not on the active profile; `failed`:
+ * anything else (a disk error, a Trash that refused).
+ */
+export type ProfileRefusal = "not-ready" | "busy" | "open" | "invalid" | "unknown" | "active" | "failed";
+
+/** What the window needs of the manifest's `profiles` (spec §3): the name of one, and the add and edit form. */
+export interface ProfilesInfo {
+  label: string;
+  form: InputSpec;
+}
+
+/**
+ * How a profile change went: the app state as it is now (the active profile, the folder it works in), or why not.
+ * `made`: a create whose switch failed after the profile was made names it (it exists, not active).
+ */
+export type ProfileResult = { ok: true; state: AppState } | { ok: false; reason: ProfileRefusal; errors?: InputIssue[]; made?: string };
 
 export { hearsDataChange } from "./data-change";
 
@@ -762,6 +804,24 @@ export interface HarnessClient {
     /** Settings showed the list: steps a harness update added count from now on. */
     acknowledge(): Promise<SetupStepsState>;
     onChange(listener: (state: SetupStepsState) => void): () => void;
+  };
+  /** The harness's profiles (profiles spec §5). A harness with none answers none and refuses every change. */
+  profiles: {
+    get(): Promise<ProfilesState>;
+    /** A new profile from the form's fields; it becomes the active one (the open task closes first). */
+    create(values: Record<string, unknown>): Promise<ProfileResult>;
+    /** Switches to a profile (the open task closes first). */
+    open(id: string): Promise<ProfileResult>;
+    /**
+     * Saves the edit form's fields to the active profile's record, as the person. A field sent with no value is cleared;
+     * refusals come back by field (`errors`).
+     */
+    edit(values: Record<string, unknown>): Promise<ProfileResult>;
+    archive(id: string): Promise<ProfileResult>;
+    unarchive(id: string): Promise<ProfileResult>;
+    /** Puts a profile's folder and history in the system Trash. Never the active one. */
+    delete(id: string): Promise<ProfileResult>;
+    onChange(listener: (state: ProfilesState) => void): () => void;
   };
   /** The text size changed from the keyboard (⌘+, ⌘−, ⌘0), already saved. */
   onTextSize(listener: (size: TextSize) => void): () => void;

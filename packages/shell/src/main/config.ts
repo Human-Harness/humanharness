@@ -3,6 +3,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { canonicalLanguage } from "@humanharness/harness-sdk";
 import { type AppConfig, isTextSize } from "@humanharness/ui/client";
+import { isProfileId } from "@humanharness/workspace";
 
 /** Where the hidden history of `folder` lives: one gitdir per folder. */
 export function historyDir(userData: string, folder: string): string {
@@ -24,12 +25,13 @@ export class ConfigStore {
       if (!saved || typeof saved !== "object") return saved;
       // Like a bad entry under models: a hand-edited backupDismissed, textSize or language of the wrong kind is dropped,
       // never a reason to treat the whole config as invalid.
-      const { backupDismissed, textSize, language, ...rest } = saved;
+      const { backupDismissed, textSize, language, profile, ...rest } = saved;
       return {
         ...rest,
         ...(typeof backupDismissed === "boolean" ? { backupDismissed } : {}),
         ...(isTextSize(textSize) ? { textSize } : {}),
         ...(typeof language === "string" && canonicalLanguage(language) === language ? { language } : {}),
+        ...(isProfileId(profile) ? { profile } : {}),
       };
     } catch {
       return {};
@@ -45,7 +47,14 @@ export class ConfigStore {
 
   private async saveNow(patch: AppConfig): Promise<AppConfig> {
     const current = await this.load();
-    return this.write({ ...current, ...patch, ...(current.folder ? { folder: current.folder } : {}) });
+    // The folder is fixed once chosen, and the active profile changes only through setProfile (a switch).
+    const { profile: _ignored, ...rest } = patch;
+    return this.write({
+      ...current,
+      ...rest,
+      ...(current.folder ? { folder: current.folder } : {}),
+      ...(current.profile ? { profile: current.profile } : {}),
+    });
   }
 
   /**
@@ -54,6 +63,17 @@ export class ConfigStore {
    */
   replaceFolder(folder: string): Promise<AppConfig> {
     const run = this.queue.then(async () => this.write({ ...(await this.load()), folder }));
+    this.queue = run.catch(() => undefined);
+    return run;
+  }
+
+  /** The active profile (profiles spec §4): only a profile switch calls it. `undefined` clears it. Queued with the saves. */
+  setProfile(id: string | undefined): Promise<AppConfig> {
+    if (id !== undefined && !isProfileId(id)) return Promise.reject(new Error(`Invalid profile: "${id}"`));
+    const run = this.queue.then(async () => {
+      const { profile: _old, ...rest } = await this.load();
+      return this.write(id === undefined ? rest : { ...rest, profile: id });
+    });
     this.queue = run.catch(() => undefined);
     return run;
   }

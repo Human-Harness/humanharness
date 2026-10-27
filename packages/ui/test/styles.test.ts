@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { AVATAR_COLORS } from "../src/profiles";
 
 const css = readFileSync(resolve(__dirname, "../src/styles.css"), "utf8");
 const [light, dark] = css.split("prefers-color-scheme: dark");
@@ -39,6 +40,14 @@ describe("styles", () => {
     expect(css).toMatch(/\.hh-topbar button,[^{]*{[^}]*-webkit-app-region:\s*no-drag/);
   });
 
+  it("lets the top bar's selects open (the scope picker, the profile switcher) instead of dragging the window", () => {
+    expect(css).toMatch(/\.hh-topbar button,[^{]*\.hh-topbar select[^{]*{[^}]*-webkit-app-region:\s*no-drag/);
+  });
+
+  it("keeps the profile switcher's refusal on one line in the top bar", () => {
+    expect(css).toMatch(/\.hh-profile-switcher \[role="alert"\]\s*{[^}]*white-space:\s*nowrap[^}]*text-overflow:\s*ellipsis/);
+  });
+
   it("uses the system font for UI text and Lexend for display text, with no network fonts", () => {
     expect(css).toMatch(/--hh-font:\s*-apple-system/);
     expect(css).toMatch(/--hh-display:\s*"Lexend"/);
@@ -58,5 +67,13 @@ describe("styles", () => {
 describe("annotate marks", () => {
   it("the highlight under a gap keeps ink readable in light and dark", () => {
     for (const block of [light, dark]) expect(ratio(token(block, "ink"), token(block, "highlight"))).toBeGreaterThanOrEqual(7);
+  });
+});
+
+describe("profile avatars", () => {
+  it("every avatar colour has a light and a dark token, and its letter stays readable (≥ 4.5:1)", () => {
+    for (const block of [light, dark]) {
+      for (const color of AVATAR_COLORS) expect(ratio(token(block, "ink"), token(block, `profile-${color}`))).toBeGreaterThanOrEqual(4.5);
+    }
   });
 });

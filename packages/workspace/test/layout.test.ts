@@ -1,6 +1,6 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { APP_SCOPE, MAIN_SCOPE, NOTES_PREFIX, chatFile, chatsDir, isScopeDir, isScopeId, notesPrefix, scopesFile, setupFile, tasksFile, usageFile } from "../src";
+import { APP_SCOPE, MAIN_SCOPE, NOTES_PREFIX, chatFile, chatsDir, isScopeDir, isScopeId, notesPrefix, profilesFile, scopesFile, setupFile, tasksFile, usageFile } from "../src";
 
 describe("layout", () => {
   it("keeps today's places for a harness without scopes", () => {
@@ -14,6 +14,10 @@ describe("layout", () => {
 
   it("setup.json sits under .harness/, next to tasks.json (setup-steps spec §4)", () => {
     expect(setupFile("/f")).toBe(path.join("/f", ".harness", "setup.json"));
+  });
+
+  it("the profile registry sits under the app folder's .harness/ (profiles spec §4)", () => {
+    expect(profilesFile("/f")).toBe(path.join("/f", ".harness", "profiles.json"));
   });
 
   it("gives each scope its own notes folder and chat", () => {

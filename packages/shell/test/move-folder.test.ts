@@ -109,6 +109,198 @@ async function moved(t: Setup) {
   expect(siblings(t)).toEqual(["Work"]);
 }
 
+/** A profiles app: `sofi` and `tomas` inside the folder, each with a history of its own; the root has none. */
+async function setupProfiles(ops: Partial<MoveOps> = {}) {
+  const t = await setup(ops, { subfolders: async () => ["sofi", "tomas"], tracked: async () => ["sofi/a.md", "tomas/a.md"] });
+  fs.rmSync(t.oldHistory, { recursive: true, force: true });
+  const hist = (where: string, id: string) => historyDir(t.userData, path.join(where, id));
+  for (const id of ["sofi", "tomas"]) {
+    fs.mkdirSync(path.join(t.from, id, ".harness", "notes"), { recursive: true });
+    fs.writeFileSync(path.join(t.from, id, "a.md"), id);
+    fs.writeFileSync(path.join(t.from, id, ".harness", "notes", "n.md"), `---\ntitle: "N"\nfiles: ["${path.join(t.from, id)}/a.md"]\n---\n`);
+    fs.mkdirSync(hist(t.from, id), { recursive: true });
+    fs.writeFileSync(path.join(hist(t.from, id), "HEAD"), "ref: refs/heads/main\n");
+  }
+  return { ...t, hist };
+}
+
+describe("moveFolder with profiles (profiles spec §4 'Moving the folder')", () => {
+  it("moves every profile's history with the folder and makes each profile's notes relative", async () => {
+    const t = await setupProfiles();
+    expect(await moveFolder(t.from, t.to, t.deps)).toEqual(DONE);
+    for (const id of ["sofi", "tomas"]) {
+      expect(fs.existsSync(t.hist(t.to, id))).toBe(true);
+      expect(fs.existsSync(t.hist(t.from, id))).toBe(false);
+      expect(fs.readFileSync(path.join(t.to, id, ".harness", "notes", "n.md"), "utf8")).toContain('files: ["a.md"]');
+    }
+    expect(fs.existsSync(t.journal)).toBe(false);
+  });
+
+  it("puts every history back, and the config, when one of them can't follow", async () => {
+    let failTo = "";
+    const t = await setupProfiles({
+      rename: async (a, b) => {
+        if (b === failTo) throw errno("EIO");
+        await fs.promises.rename(a, b);
+      },
+    });
+    failTo = t.hist(t.to, "tomas");
+    expect(await code(moveFolder(t.from, t.to, t.deps))).toBe("failed");
+    expect((await t.config.load()).folder).toBe(t.from);
+    for (const id of ["sofi", "tomas"]) expect(fs.existsSync(t.hist(t.from, id))).toBe(true);
+    expect(fs.existsSync(t.hist(t.to, "sofi"))).toBe(false);
+    expect(fs.existsSync(t.to)).toBe(false);
+  });
+
+  it("keeps every history with the copy when the journal can't record it and the config can't be put back", async () => {
+    const t = await setupProfiles();
+    const write = fs.promises.writeFile;
+    vi.spyOn(fs.promises, "writeFile").mockImplementation(async (file, data, ...rest) => {
+      if (String(data).includes('"history-moved"')) throw errno("ENOSPC");
+      return write(file, data, ...rest);
+    });
+    let saves = 0;
+    const save = t.deps.saveFolder;
+    t.deps.saveFolder = async (folder) => {
+      if (++saves > 1) throw errno("EACCES");
+      return save(folder);
+    };
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    expect(await moveFolder(t.from, t.to, t.deps)).toEqual({ oldRemoved: false, historyMoved: true });
+    for (const id of ["sofi", "tomas"]) expect(fs.existsSync(t.hist(t.to, id))).toBe(true);
+    expect(await recoverMove(t.recoverDeps)).toEqual({ folder: t.to, leftBehind: t.from });
+    for (const id of ["sofi", "tomas"]) expect(fs.existsSync(t.hist(t.to, id))).toBe(true);
+  });
+
+  it("a history that couldn't follow, with the config not put back, follows at the next start", async () => {
+    let failTo = "";
+    const t = await setupProfiles({
+      rename: async (a, b) => {
+        if (b === failTo) throw errno("EIO");
+        await fs.promises.rename(a, b);
+      },
+    });
+    failTo = t.hist(t.to, "tomas");
+    let saves = 0;
+    const save = t.deps.saveFolder;
+    t.deps.saveFolder = async (folder) => {
+      if (++saves > 1) throw errno("EACCES");
+      return save(folder);
+    };
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    expect(await moveFolder(t.from, t.to, t.deps)).toEqual({ oldRemoved: false, historyMoved: false });
+    expect(fs.existsSync(t.hist(t.from, "tomas"))).toBe(true);
+    failTo = "";
+    expect(await recoverMove({ ...t.recoverDeps, ops: { rename: (a, b) => fs.promises.rename(a, b) } })).toEqual({ folder: t.to, leftBehind: t.from });
+    for (const id of ["sofi", "tomas"]) {
+      expect(fs.existsSync(t.hist(t.to, id))).toBe(true);
+      expect(fs.existsSync(t.hist(t.from, id))).toBe(false);
+    }
+  });
+
+  it("D0: a folder without profiles writes the journal as before, with no list of histories", async () => {
+    let seen: unknown = null;
+    const t = await setup({
+      rename: async (a, b) => {
+        if (fs.existsSync(t.journal) && JSON.parse(fs.readFileSync(t.journal, "utf8")).stage === "config-saved") seen ??= JSON.parse(fs.readFileSync(t.journal, "utf8"));
+        await fs.promises.rename(a, b);
+      },
+    });
+    expect(await moveFolder(t.from, t.to, t.deps)).toEqual(DONE);
+    expect(seen).not.toBeNull();
+    expect(seen).not.toHaveProperty("histories");
+  });
+});
+
+describe("recoverMove with profiles", () => {
+  it("closed right after the config was saved: moves every profile's history", async () => {
+    const t = await setupProfiles();
+    fs.mkdirSync(t.to, { recursive: true });
+    await t.config.replaceFolder(t.to);
+    fs.writeFileSync(
+      t.journal,
+      JSON.stringify({ from: t.from, to: t.to, temp: `${t.to}.hh-moving-abc`, stage: "config-saved", histories: [{ rel: "sofi" }, { rel: "tomas" }] }),
+    );
+    expect(await recoverMove(t.recoverDeps)).toEqual({ folder: t.to, leftBehind: t.from });
+    for (const id of ["sofi", "tomas"]) {
+      expect(fs.existsSync(t.hist(t.to, id))).toBe(true);
+      expect(fs.existsSync(t.hist(t.from, id))).toBe(false);
+    }
+  });
+
+  it("closed right after the config named the copy, before the histories were listed: still moves every one", async () => {
+    const t = await setupProfiles();
+    const save = t.deps.saveFolder;
+    t.deps.saveFolder = async (folder) => {
+      await save(folder);
+      return hang();
+    };
+    void moveFolder(t.from, t.to, t.deps);
+    await vi.waitFor(async () => expect((await t.config.load()).folder).toBe(t.to));
+    expect(JSON.parse(fs.readFileSync(t.journal, "utf8")).histories).toEqual([{ rel: "sofi" }, { rel: "tomas" }]);
+    expect(await recoverMove(t.recoverDeps)).toEqual({ folder: t.to, leftBehind: t.from });
+    for (const id of ["sofi", "tomas"]) {
+      expect(fs.existsSync(t.hist(t.to, id))).toBe(true);
+      expect(fs.existsSync(t.hist(t.from, id))).toBe(false);
+    }
+    expect(fs.existsSync(t.journal)).toBe(false);
+  });
+
+  it("the config names the old place after the histories moved: puts each one back and the stale one too", async () => {
+    const t = await setupProfiles();
+    fs.cpSync(t.from, t.to, { recursive: true });
+    const setAside = `${t.hist(t.to, "sofi")}.replaced-1`;
+    fs.mkdirSync(setAside, { recursive: true });
+    fs.writeFileSync(path.join(setAside, "stale"), "x");
+    for (const id of ["sofi", "tomas"]) fs.renameSync(t.hist(t.from, id), t.hist(t.to, id));
+    fs.writeFileSync(
+      t.journal,
+      JSON.stringify({ from: t.from, to: t.to, temp: `${t.to}.hh-moving-abc`, stage: "history-moved", histories: [{ rel: "sofi", setAside }, { rel: "tomas" }] }),
+    );
+    expect(await recoverMove(t.recoverDeps)).toEqual({ folder: t.from });
+    for (const id of ["sofi", "tomas"]) expect(fs.existsSync(path.join(t.hist(t.from, id), "HEAD"))).toBe(true);
+    expect(fs.readFileSync(path.join(t.hist(t.to, "sofi"), "stale"), "utf8")).toBe("x");
+    expect(fs.existsSync(t.hist(t.to, "tomas"))).toBe(false);
+    expect(fs.existsSync(t.to)).toBe(false);
+  });
+
+  it("closed while a rollback put the config back: every moved history goes back", async () => {
+    const t = await setupProfiles();
+    const write = fs.promises.writeFile;
+    vi.spyOn(fs.promises, "writeFile").mockImplementation(async (file, data, ...rest) => {
+      if (String(data).includes('"history-moved"')) throw errno("ENOSPC");
+      return write(file, data, ...rest);
+    });
+    let saves = 0;
+    let stuck = false;
+    const save = t.deps.saveFolder;
+    t.deps.saveFolder = async (folder) => {
+      await save(folder);
+      if (++saves > 1) {
+        stuck = true;
+        return hang();
+      }
+    };
+    void moveFolder(t.from, t.to, t.deps);
+    await vi.waitFor(() => expect(stuck).toBe(true));
+    expect(await recoverMove(t.recoverDeps)).toEqual({ folder: t.from });
+    for (const id of ["sofi", "tomas"]) {
+      expect(fs.existsSync(path.join(t.hist(t.from, id), "HEAD"))).toBe(true);
+      expect(fs.existsSync(t.hist(t.to, id))).toBe(false);
+    }
+    expect(fs.existsSync(t.to)).toBe(false);
+  });
+
+  it("drops a journal whose list of histories names something that isn't a profile, touching nothing", async () => {
+    const t = await setupProfiles();
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    fs.writeFileSync(t.journal, JSON.stringify({ from: t.from, to: t.to, temp: `${t.to}.hh-moving-abc`, stage: "config-saved", histories: [{ rel: "../x" }] }));
+    expect(await recoverMove(t.recoverDeps)).toBeNull();
+    expect(fs.existsSync(t.journal)).toBe(false);
+    expect(fs.existsSync(t.hist(t.from, "sofi"))).toBe(true);
+  });
+});
+
 describe("moveFolder", () => {
   it("moves the folder with its history, makes the notes' old paths relative and puts the old folder in the Trash", async () => {
     const t = await setup();
@@ -582,6 +774,30 @@ describe("recoverMove", () => {
     };
     void moveFolder(t.from, t.to, t.deps);
     await vi.waitFor(() => expect(stuck).toBe(true));
+    expect(await recoverMove(t.recoverDeps)).toEqual({ folder: t.from });
+    await untouched(t);
+  });
+
+  it("closed while a rollback put the config back after the history moved: puts the history back", async () => {
+    const t = await setup();
+    const write = fs.promises.writeFile;
+    vi.spyOn(fs.promises, "writeFile").mockImplementation(async (file, data, ...rest) => {
+      if (String(data).includes('"history-moved"')) throw errno("ENOSPC");
+      return write(file, data, ...rest);
+    });
+    let saves = 0;
+    let stuck = false;
+    const save = t.deps.saveFolder;
+    t.deps.saveFolder = async (folder) => {
+      await save(folder);
+      if (++saves > 1) {
+        stuck = true;
+        return hang();
+      }
+    };
+    void moveFolder(t.from, t.to, t.deps);
+    await vi.waitFor(() => expect(stuck).toBe(true));
+    vi.restoreAllMocks();
     expect(await recoverMove(t.recoverDeps)).toEqual({ folder: t.from });
     await untouched(t);
   });

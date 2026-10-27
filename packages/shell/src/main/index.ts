@@ -9,6 +9,7 @@ import { type EngineDef, type ModelProfile, type ModelSpec, NOTICE_VERSION, avai
 import {
   DEFAULT_LANGUAGE,
   type LoadedHarness,
+  PROFILE_COLLECTION,
   SETTINGS_COLLECTION,
   TIERS,
   type Tier,
@@ -17,10 +18,12 @@ import {
   dataCollections,
   hasModes,
   hasPhases,
+  hasProfiles,
   inputBlocks,
   inputSpecs,
   interviewCollections,
   loadHarness,
+  profileFormSpec,
   resolveInHarness,
   settingsView,
 } from "@humanharness/harness-sdk";
@@ -34,6 +37,8 @@ import {
   type ModelsView,
   type ModeView,
   type MoveResult,
+  type ProfileResult,
+  type ProfilesState,
   type RunningSetup as SetupInfo,
   type ScopesView,
   type SendOptions,
@@ -63,6 +68,7 @@ import {
   isScopeId,
   migrateToScopes,
   notesPrefix,
+  profileDir,
   readNotes,
   syncLocations,
   syncStatus,
@@ -84,12 +90,12 @@ import { QUESTIONS, cleanModels, engineOffer, firstOffered, fitEffort, nearestTi
 import { chooseModeHandler } from "./mode-ipc";
 import { setPhaseHandler, timeBoxOffered } from "./phase-ipc";
 import { requireNoticeForChoice, requireNoticeForTurn } from "./notice-policy";
-import { archiveStaleChat, startNewChatIfEngineChanged } from "./engine-switch";
+import { archiveChatsOnEngineChange, archiveStaleChat, startNewChatIfEngineChanged } from "./engine-switch";
 import { type RunningSetup, runSetupProcess, setupCommand, stopSetupProcess } from "./setup-runner";
 import { runSetupStep } from "./setup-step";
 import { type SharedEngineRecord, SharedConfigStore, sharedConfigDir } from "./shared-config";
 import { EngineUnavailable, TurnController, memoise } from "./turn-controller";
-import { UsageLog, compactionRecord, profileMeta, summarizeUsage, usageRecord } from "./usage-log";
+import { type UsageRecord, UsageLog, compactionRecord, profileMeta, profilesUsage, summarizeUsage, usageRecord } from "./usage-log";
 import { type ValidationContext, checkFolder, configProblem, isAppUrl } from "./validate";
 import { openIfStillSafe, openRoots, openableFile, revealIfStillSafe, revealableFile } from "./open-path";
 import { saveWithFolderChange } from "./folder-change";
@@ -99,6 +105,10 @@ import { respondHandler } from "./respond-ipc";
 import { SettingsController } from "./settings";
 import { SetupSteps, recordSetup, setupStepViews } from "./setup-steps";
 import { TaskManager } from "./task-manager";
+import { baseFor, isInsideFolder } from "./profile-base";
+import { type ProfileOutcome, Profiles, profileResult } from "./profiles";
+import { ProfileSwitch } from "./profile-switch";
+import { holds } from "./holds";
 import { historyView, isSha } from "./history-view";
 import { RestoreGuard, lastOpened } from "./restore-guard";
 import { TaskStore, emptyTasks } from "./task-store";
@@ -157,7 +167,10 @@ let references: Promise<ResolvedReference[]> = Promise.resolve([]);
 let settingsCtl: SettingsController | null = null;
 /** The harness's setup steps (setup-steps spec); null without any (D0): no `.harness/setup.json` is ever read or written. */
 let setupCtl: SetupSteps | null = null;
+/** The harness's profiles (profiles spec); null without them (D4): no `profiles.json` is ever read or written. */
+let profilesCtl: Profiles | null = null;
 const NO_SETUP_STEPS: SetupStepsState = { steps: {}, blocking: [] };
+const NO_PROFILES: ProfilesState = { active: null, list: [] };
 const NO_SETUP_STEP: SetupStepResult = { ok: false, reason: "unknown" };
 
 /**
@@ -168,6 +181,16 @@ async function referencesFor(folder: string | undefined, log = false): Promise<R
   const refs = await references;
   if (!folder) return refs;
   return usableReferences(refs, folder, log ? (message) => console.error(message) : undefined);
+}
+
+/**
+ * The reference folders the agent and `hh:openPath`/`hh:revealPath` use: those usable with the working folder `base`
+ * and, with profiles, none inside the app's folder (another profile's folder never reaches them). Without profiles,
+ * `referencesFor(base)` as before (D0).
+ */
+async function workReferences(c: AppConfig, base: string, log = false): Promise<ResolvedReference[]> {
+  if (!profilesOn() || !c.folder) return referencesFor(base, log);
+  return usableReferences(await references, base, log ? (message) => console.error(message) : undefined, c.folder);
 }
 
 const mode = () => (app.isPackaged ? "distribution" : "development");
@@ -258,12 +281,15 @@ async function backupView(folder: string | undefined): Promise<NonNullable<AppSt
   }
 }
 
+/** The last app state read: it stands in when the state can't be read after a profile change that went through. */
+let lastAppState: AppState | null = null;
+
 async function appState(): Promise<AppState> {
   const harnessImage = await harnessLogo();
   const saved = await config.load();
   const inputs = inputSpecs(harness.blocks);
   const interviews = interviewCollections(harness);
-  return {
+  const state: AppState = {
     harness: {
       id: harness.id,
       name: harness.name,
@@ -357,23 +383,35 @@ async function appState(): Promise<AppState> {
       : {}),
     // Only a harness with setup steps sends them (setup-steps D0).
     ...(harness.setup ? { setup: setupStepViews(harness) } : {}),
+    // Only a harness with profiles sends them (profiles D4): what to call one, and its form.
+    ...(harness.profiles ? { profiles: { label: harness.profiles.label, form: profileFormSpec(harness) } } : {}),
     references: (await referencesFor(saved.folder)).map((r) => ({ id: r.id, label: r.label, path: displayPath(r.path, os.homedir()) })),
     models: await modelsView(),
     backup: await backupView(saved.folder),
   };
+  lastAppState = state;
+  return state;
 }
 
-/** The saved config, only when it is complete and valid. */
+/** The saved config, only when it is complete and valid (and, with profiles, names the active profile). */
 async function validConfig(): Promise<ConfiguredApp | null> {
   const c = await config.load();
-  return isConfigured(c) && (await configProblem(c, validation())) === null ? c : null;
+  return isConfigured(c) && (await configProblem(c, validation())) === null && baseFor(c, profilesOn()) !== null ? c : null;
 }
 
+/** The harness declares profiles (profiles spec); without them the base is the folder itself (D4). */
+const profilesOn = (): boolean => hasProfiles(harness);
+
 /**
- * The folder every path under `.harness/` starts from (packages/workspace/src/layout.ts): the configured folder.
- * The profiles plan makes it the active profile's folder by changing only this function (scopes spec §7.1).
+ * The folder every path under `.harness/` starts from (packages/workspace/src/layout.ts): the configured folder, or
+ * the active profile's folder in a harness with profiles (spec D2). It never answers the root of a profiles app:
+ * callers get the config from `validConfig`, which is null until a profile is active.
  */
-const baseOf = (c: { folder: string }): string => c.folder;
+const baseOf = (c: { folder: string; profile?: string }): string => {
+  const base = baseFor(c, profilesOn());
+  if (base === null) throw new Error("Choose a profile first");
+  return base;
+};
 
 /** The harness declares scopes (spec D1); without them everything stays as before (D2). */
 const scoped = (): boolean => harness.scopes !== undefined;
@@ -421,6 +459,8 @@ function dataStoreFor(base: string): DataStore {
       off: store.onChange((change) => {
         sendToWindow("hh:dataChange", change);
         if (change.collection === SETTINGS_COLLECTION) void settingsCtl?.changed();
+        // Profiles: the registry copies the record's name and colour (spec §4), whoever wrote it. Never rejects.
+        if (change.collection === PROFILE_COLLECTION) void profilesCtl?.sync(path.resolve(base));
       }),
     };
     dataStores.set(base, entry);
@@ -432,6 +472,11 @@ function dataStoreFor(base: string): DataStore {
 function dropDataStore(base: string): void {
   dataStores.get(base)?.off();
   dataStores.delete(base);
+}
+
+/** Every store under `root` (the folder itself, or each profile's): a moved or changed folder drops them all. */
+function dropDataStoresUnder(root: string): void {
+  for (const base of [...dataStores.keys()]) if (isInsideFolder(base, root)) dropDataStore(base);
 }
 
 /** The last migration run (settleScopes). Scope requests wait for it, whether it worked or not. */
@@ -451,6 +496,20 @@ async function scopesChanged(): Promise<void> {
   } catch (err) {
     console.error("Could not send the scopes to the window", err);
   }
+}
+
+/**
+ * A profile switch arrived (profiles spec §5): a task left open there by a crash ends, the settings and AGENTS.md are
+ * read afresh, the scopes migrate and are sent, and the setup steps and tasks of the new folder reach the window.
+ */
+async function arrivedInProfile(): Promise<void> {
+  await tasks.interrupt();
+  settingsCtl?.forget();
+  await settingsCtl?.changed();
+  await settleScopes();
+  await scopesChanged();
+  if (setupCtl) sendToWindow("hh:setupSteps", await setupCtl.state());
+  sendToWindow("hh:tasks", await tasks.view());
 }
 
 async function scopeStore(): Promise<ScopeStore> {
@@ -497,6 +556,9 @@ const runtime = memoise<HarnessRuntime>(async () => {
   if (!isConfigured(c)) throw new Error("The app is not set up yet");
   const problem = await configProblem(c, validation());
   if (problem) throw new Error(problem);
+  // With profiles, the runtime works in the active profile's folder, with that folder's history (spec D2, D5).
+  const base = baseFor(c, profilesOn());
+  if (base === null) throw new Error("Choose a profile first");
   await restores.settled();
   const engine = getEngine(c.engineId);
   let cmd: { command: string[]; env: Record<string, string> } | null;
@@ -515,17 +577,17 @@ const runtime = memoise<HarnessRuntime>(async () => {
   return createRuntime({
     harness,
     engine,
-    folder: c.folder,
-    gitdir: historyDir(app.getPath("userData"), c.folder),
+    folder: base,
+    gitdir: historyDir(app.getPath("userData"), base),
     language: c.language,
     launcher: electronLauncher(process.execPath),
     uiServerEntry: path.join(here, "ui-server.js"),
     dataServerEntry: path.join(here, "data-server.js"),
     // The person's store (one write queue per base), for the folder this runtime runs in.
-    data: (request) => agentDataRequest({ store: async () => dataStoreFor(baseOf(c)), runningTask: () => tasks.runningTask() }, request),
+    data: (request) => agentDataRequest({ store: async () => dataStoreFor(base), runningTask: () => tasks.runningTask() }, request),
     command: cmd.command,
     env: cmd.env,
-    references: (await referencesFor(c.folder, true)).map((r) => ({ label: r.label, path: r.path })),
+    references: (await workReferences(c, base, true)).map((r) => ({ label: r.label, path: r.path })),
     // The settings' sentences, read now and on every refresh (harness-settings spec §5). Absent without settings (D0).
     ...(settings ? { instructionSettings: () => settings.sentences() } : {}),
     onSession: (s) => void tasks.sessionStarted(s).catch((err: unknown) => console.error("Could not record the session", err)),
@@ -573,7 +635,7 @@ async function openHistory(): Promise<History | null> {
   if (!c) return null;
   const extra = getEngine(c.engineId).instructionsFile?.path;
   // Same ignore list as the runtime's: its files under .harness/ and the generated instructions.
-  return standaloneHistory(JSON.stringify({ folder: c.folder, ignore: [".harness/", "AGENTS.md", ...(extra ? [extra] : [])] }));
+  return standaloneHistory(JSON.stringify({ folder: baseOf(c), ignore: [".harness/", "AGENTS.md", ...(extra ? [extra] : [])] }));
 }
 
 function sendToWindow(channel: string, value: unknown) {
@@ -598,9 +660,10 @@ const turns = new TurnController({
   chatLog: async (chat) => {
     const c = await config.load();
     if (!isConfigured(c)) return null;
-    // An invalid saved config still runs the turn, so the runtime start fails with the reason;
-    // nothing is written into a folder that didn't pass validation.
-    return (await configProblem(c, validation())) === null ? new ChatLog(baseOf(c), c.engineId, chat) : { append: async () => {} };
+    // An invalid saved config still runs the turn, so the runtime start fails with the reason; nothing is written into
+    // a folder that didn't pass validation, nor into the root of a profiles app.
+    const base = baseFor(c, profilesOn());
+    return (await configProblem(c, validation())) === null && base !== null ? new ChatLog(base, c.engineId, chat) : { append: async () => {} };
   },
   stateBlocks,
   inputBlocks: () => new Set(Object.keys(inputBlocks(harness.blocks))),
@@ -762,7 +825,8 @@ async function saveConfigPatch(patch: AppConfig, before: AppConfig): Promise<voi
     const engineId = patch.engineId;
     await guards.switchEngine(
       {
-        isBusy: () => tasks.isBusy(),
+        // A profile switch counts too: once its task has closed nothing runs, yet its runtime and profile are pending.
+        isBusy: hold.engineBusy,
         idle: async () => {
           await tasks.idle();
           await turns.flush();
@@ -771,7 +835,16 @@ async function saveConfigPatch(patch: AppConfig, before: AppConfig): Promise<voi
         dropRuntime,
         archiveChat: async () => {
           const c = await validConfig();
-          return c && c.engineId === engineId ? startNewChatIfEngineChanged(baseOf(c), engineId) : null;
+          if (!c || c.engineId !== engineId) return null;
+          // D0: one folder, as before. With profiles, every profile's chat (spec §5).
+          if (!profilesCtl) return startNewChatIfEngineChanged(baseOf(c), engineId);
+          // With no active profile baseOf throws and nothing is archived here: each profile's chat is archived lazily
+          // when it is next loaded (archiveStaleChat in hh:loadChat).
+          const active = baseOf(c);
+          // An unreadable registry still starts the active chat over; the others are archived lazily the same way.
+          const list = await profilesCtl.state().then((s) => s.list, () => []);
+          const others = list.map((p) => profileDir(c.folder, p.id)).filter((f) => f !== active);
+          return archiveChatsOnEngineChange(active, others, engineId);
         },
       },
       // The new engine is saved: the window gets the new state; the next chat load archives the old chat.
@@ -791,14 +864,42 @@ function handle(channel: string, fn: (...args: never[]) => unknown) {
 }
 
 /**
- * Restores: refused while quitting, while a task operation runs or turns are held (engine change, folder
- * move); one at a time; new turns are refused and a runtime starting waits until it ends.
+ * What waits for what (profiles spec §5): turns, restores, profile switches, engine changes, folder moves, archives and
+ * deletes. Each source is read only when a guard asks, after all of them exist.
  */
-const restores = new RestoreGuard({ quitting: () => quitting, busy: () => tasks.isBusy(), turnBlocked: () => guards.turnBlocked() });
+const hold = holds({
+  quitting: () => quitting,
+  tasksBusy: () => tasks.isBusy(),
+  moving: () => moving !== null,
+  engine: () => guards.turnBlocked(),
+  restore: () => restores.turnBlocked(),
+  profileSwitch: () => switches.turnBlocked(),
+  profileChange: () => profilesCtl?.changing() ?? false,
+});
+
+/**
+ * Restores: refused while quitting, while a task operation runs or turns are held (engine change, folder
+ * move, a profile switch); one at a time; new turns are refused and a runtime starting waits until it ends.
+ */
+const restores = new RestoreGuard({ quitting: () => quitting, busy: () => tasks.isBusy(), turnBlocked: hold.restoreHeld });
 const restoreWith = (run: (history: History) => Promise<unknown>) => restores.run(currentHistory, run);
 
-/** Why a new turn can't start now (engine change, folder move, engine update, a restore), or null. */
-const turnBlocked = () => guards.turnBlocked() ?? restores.turnBlocked();
+/**
+ * Profile switches (profiles spec §5): one at a time, refused while a turn, a restore, a move, an engine change, an
+ * archive or a delete runs, and holding all of them off.
+ */
+const switches = new ProfileSwitch({
+  quitting: () => quitting,
+  busy: hold.switchBusy,
+  turnBlocked: hold.switchHeld,
+  closeTask: () => tasks.finish(),
+  closeRuntime,
+  saveActive: async (id) => void (await config.setProfile(id)),
+  arrived: () => arrivedInProfile(),
+});
+
+/** Why a new turn can't start now (engine change, folder move, engine update, a restore, a profile switch), or null. */
+const turnBlocked = hold.turnBlocked;
 
 /** The harness UI's data requests (hh:data): one handler, so the person's writes and their commits run one at a time. */
 const personData = personDataRequests({
@@ -824,7 +925,10 @@ function registerIpc() {
     if (!folder) return null;
     return { folder, problem: await checkFolder(folder, os.homedir()) } satisfies FolderPick;
   });
-  handle("hh:saveConfig", async (input: AppConfig) => {
+  handle("hh:saveConfig", async (raw: unknown) => {
+    if (typeof raw !== "object" || raw === null || Array.isArray(raw)) throw new Error("A config change must be an object");
+    // The active profile changes only through a profile switch (profiles spec §4).
+    const { profile: _profile, ...input }: AppConfig = raw as AppConfig;
     const problem = await configProblem(input, validation());
     if (problem) throw new Error(problem);
     // Spec §7: a bad entry under models is dropped, never stored.
@@ -834,11 +938,11 @@ function registerIpc() {
     await requireNoticeForChoice(patch.engineId, before.engineId, hasNotice);
     // A new folder: refused while a turn or a restore runs, and turns are refused until it is over; the old
     // folder's task ends and its runtime goes.
-    await saveWithFolderChange(patch.folder, before.folder, { isBusy: () => tasks.isBusy() || restores.turnBlocked() !== null, guards, interrupt: () => tasks.interrupt(), dropRuntime }, () =>
+    await saveWithFolderChange(patch.folder, before.folder, { isBusy: hold.folderBusy, guards, interrupt: () => tasks.interrupt(), dropRuntime }, () =>
       saveConfigPatch(patch, before),
     );
     if (patch.folder !== undefined && patch.folder !== before.folder) {
-      if (before.folder) dropDataStore(baseOf({ folder: before.folder }));
+      if (before.folder) dropDataStoresUnder(before.folder);
       await settleScopes()
         .then(scopesChanged)
         .catch((err: unknown) => console.error("Could not prepare the scopes", err));
@@ -856,7 +960,7 @@ function registerIpc() {
     if (!c) return { entries: [] };
     // The engine change archives the chat; the check here only catches a change made while the app was closed.
     const switchedFrom =
-      guards.takeSwitchedFrom() ?? (tasks.isBusy() || guards.turnBlocked() ? null : await archiveStaleChat(baseOf(c), c.engineId, dropRuntime));
+      guards.takeSwitchedFrom() ?? (hold.engineBusy() || guards.turnBlocked() ? null : await archiveStaleChat(baseOf(c), c.engineId, dropRuntime));
     return { entries: await new ChatLog(baseOf(c), undefined, await tasks.chatScope()).load(), ...(switchedFrom ? { switchedFrom } : {}) };
   });
   handle("hh:send", (message: string, options?: SendOptions) => {
@@ -955,6 +1059,23 @@ function registerIpc() {
   handle("hh:setupStepSkip", (id: unknown) => (setupCtl ? setupCtl.skip(id).catch(stepRefused) : NO_SETUP_STEP));
   handle("hh:setupStepsFinish", () => (setupCtl ? setupCtl.finish().catch(stepsAsTheyStand) : NO_SETUP_STEPS));
   handle("hh:setupStepsAcknowledge", () => (setupCtl ? setupCtl.acknowledge().catch(stepsAsTheyStand) : NO_SETUP_STEPS));
+  // Profiles (profiles spec §5). Without them, nothing to read and every change refused (D4). Refusals come back as data.
+  const profileAnswer = (outcome: Promise<ProfileOutcome>): Promise<ProfileResult> =>
+    profileResult(
+      outcome,
+      appState,
+      () => lastAppState,
+      async () => (profilesCtl ? (await profilesCtl.state()).active : null),
+    );
+  const noProfiles = (): ProfileResult => ({ ok: false, reason: "not-ready" });
+  handle("hh:profilesGet", () => (profilesCtl ? profilesCtl.state().catch(() => NO_PROFILES) : NO_PROFILES));
+  handle("hh:profileCreate", (values: unknown) => (profilesCtl ? profileAnswer(profilesCtl.create(values)) : noProfiles()));
+  handle("hh:profileOpen", (id: unknown) => (profilesCtl ? profileAnswer(profilesCtl.open(id)) : noProfiles()));
+  handle("hh:profileArchive", (id: unknown, archived: unknown) =>
+    profilesCtl && typeof archived === "boolean" ? profileAnswer(profilesCtl.setArchived(id, archived)) : noProfiles(),
+  );
+  handle("hh:profileEdit", (values: unknown) => (profilesCtl ? profileAnswer(profilesCtl.edit(values)) : noProfiles()));
+  handle("hh:profileDelete", (id: unknown) => (profilesCtl ? profileAnswer(profilesCtl.remove(id)) : noProfiles()));
   handle("hh:choose", (option: unknown, task: unknown) => {
     if (quitting) throw new Error("The app is closing");
     const blocked = turnBlocked();
@@ -1001,7 +1122,7 @@ function registerIpc() {
   handle("hh:openPath", async (file: unknown) => {
     const c = await validConfig();
     if (!c) return false;
-    const roots = openRoots(c.folder, (await referencesFor(c.folder)).map((r) => r.path));
+    const roots = openRoots(baseOf(c), (await workReferences(c, baseOf(c))).map((r) => r.path));
     const target = await openableFile(file, roots);
     if (!target) return false;
     // Checked again right before opening: the file or a folder above it may have been swapped for a link meanwhile.
@@ -1011,7 +1132,7 @@ function registerIpc() {
   handle("hh:revealPath", async (file: unknown) => {
     const c = await validConfig();
     if (!c) return false;
-    const roots = openRoots(c.folder, (await referencesFor(c.folder)).map((r) => r.path));
+    const roots = openRoots(baseOf(c), (await workReferences(c, baseOf(c))).map((r) => r.path));
     const target = await revealableFile(file, roots);
     if (!target) return false;
     return revealIfStillSafe(target, roots, (p) => shell.showItemInFolder(p));
@@ -1066,7 +1187,7 @@ function registerIpc() {
         guards,
         hasNotice,
         currentEngine: async () => (await config.load()).engineId,
-        isBusy: () => tasks.isBusy(),
+        isBusy: hold.engineBusy,
         quitting: () => quitting,
         command: async () => {
           const cli = step === "install" ? null : await cliCommand(engine, commandDeps);
@@ -1119,7 +1240,15 @@ function registerIpc() {
     if (!c) return { limits: null, estimates: {}, tokens: {} };
     // A mock engine reports no limits, so it measures no window.
     const primary = isMockEngine(hooks, c.engineId) ? undefined : getEngine(c.engineId).limits?.primary;
-    return summarizeUsage((await new UsageLog(baseOf(c)).load()).filter((r) => r.engine === c.engineId), primary);
+    const engineOnly = (records: UsageRecord[]) => records.filter((r) => r.engine === c.engineId);
+    // Profiles: the app's window is shared, so every profile's log counts (spec §4 "Usage").
+    const ids = profilesCtl && c.profile ? await profilesCtl.state().then((s) => s.list.map((p) => p.id), () => null) : null;
+    // An unreadable registry: the active profile's own log, as without profiles.
+    if (ids && c.profile) {
+      const logs = await Promise.all(ids.map(async (id) => [id, engineOnly(await new UsageLog(profileDir(c.folder, id)).load())] as const));
+      return profilesUsage(Object.fromEntries(logs), c.profile, primary);
+    }
+    return summarizeUsage(engineOnly(await new UsageLog(baseOf(c)).load()), primary);
   });
   handle("hh:revealSharedConfig", () => shell.showItemInFolder(shared.path));
   // Installing by hand: copy the official command (chosen here by engine id) and open Terminal,
@@ -1144,13 +1273,30 @@ function registerIpc() {
     const c = await validConfig();
     if (!c) throw new Error("The app is not set up yet");
     const userData = app.getPath("userData");
+    // Read without creating a history: a folder that has none yet has no tracked files.
+    const hasHistory = (folder: string) => fs.access(historyDir(userData, folder)).then(() => true, () => false);
+    // With profiles every profile's history moves with the folder (spec §4); without them, the folder's own (D0).
+    const people = profilesCtl;
+    const profileIds = async () => (people ? (await people.state()).list.map((p) => p.id) : []);
     const deps: MoveDeps = {
       check: (folder) => checkFolder(folder, os.homedir()),
-      // Read without creating a history: a folder that has none yet has no tracked files.
-      tracked: async () => {
-        const has = await fs.access(historyDir(userData, c.folder)).then(() => true, () => false);
-        return has ? ((await (await openHistory())?.trackedFiles()) ?? []) : [];
-      },
+      tracked: people
+        ? async () => {
+            // Every profile's tracked files, relative to the app's folder. The runtime is closed by now
+            // (`guardedMove` closes it before `move()`), so each history is opened on its own.
+            const extra = getEngine(c.engineId).instructionsFile?.path;
+            const ignore = [".harness/", "AGENTS.md", ...(extra ? [extra] : [])];
+            const out: string[] = [];
+            for (const id of await profileIds()) {
+              const folder = profileDir(c.folder, id);
+              if (!(await hasHistory(folder))) continue;
+              const history = await standaloneHistory(JSON.stringify({ folder, ignore }));
+              out.push(...(await history.trackedFiles()).map((f) => `${id}/${f}`));
+            }
+            return out;
+          }
+        : async () => ((await hasHistory(baseOf(c))) ? ((await (await openHistory())?.trackedFiles()) ?? []) : []),
+      ...(people ? { subfolders: profileIds } : {}),
       saveFolder: async (folder) => void (await config.replaceFolder(folder)),
       historyDir: (folder) => historyDir(userData, folder),
       journal: moveJournal(userData),
@@ -1160,7 +1306,7 @@ function registerIpc() {
     if (moving) return { ok: false, error: "busy" };
     const run = guardedMove({
       guards,
-      isBusy: () => tasks.isBusy() || restores.turnBlocked() !== null,
+      isBusy: hold.folderBusy,
       precheck: () => precheckMove(c.folder, to, deps),
       quitting: () => quitting,
       checkpoint: () => tasks.checkpointBeforeMove(),
@@ -1184,7 +1330,7 @@ function registerIpc() {
       return null;
     });
     if (!result.ok) return { ...result, ...(state ? { state } : {}) };
-    dropDataStore(baseOf(c));
+    dropDataStoresUnder(c.folder);
     if (!state) throw new Error("Could not read the app state after the move");
     const { oldRemoved, historyMoved } = result.done;
     return { ok: true, state, ...(oldRemoved ? {} : { leftBehind: c.folder }), ...(historyMoved ? {} : { historyLeftBehind: true }) };
@@ -1297,6 +1443,26 @@ if (loaded) {
       changed: (state) => sendToWindow("hh:setupSteps", state),
     });
   }
+  // Only a harness with profiles gets the controller: it reads and writes `<folder>/.harness/profiles.json` (D4).
+  if (harness.profiles && Object.hasOwn(harness.data, PROFILE_COLLECTION)) {
+    profilesCtl = new Profiles({
+      root: async () => (await config.load()).folder ?? null,
+      active: async () => (await config.load()).profile,
+      collection: harness.data[PROFILE_COLLECTION],
+      ...(harness.folder.seed ? { seed: resolveInHarness(harness, harness.folder.seed) } : {}),
+      // As the person, app-wide, in the new profile's own store. It has no history yet: its runtime's "Start" records it.
+      writeRecord: async (base, record) => void (await dataStoreFor(base).put(PROFILE_COLLECTION, record, { who: "person", scope: APP_SCOPE })),
+      readRecord: (base) => dataStoreFor(base).get(PROFILE_COLLECTION, undefined, { who: "person", scope: APP_SCOPE }),
+      fields: harness.profiles.fields,
+      // As the person, app-wide, in the active profile's store: its checks and its `Data: profile` commit.
+      writeActive: async (record) => void (await personData({ op: "put", collection: PROFILE_COLLECTION, record }, { scope: APP_SCOPE })),
+      switchTo: (target) => switches.run(target),
+      trash: (p) => shell.trashItem(p),
+      historyDir: (folder) => historyDir(app.getPath("userData"), folder),
+      changed: (state) => sendToWindow("hh:profiles", state),
+      blocked: hold.profileChangeBlocked,
+    });
+  }
 }
 
 // One app per data folder (the lock is tied to userData, so it is taken after it is set): a second one would
@@ -1339,6 +1505,12 @@ if (primary) {
     references = resolveReferences(harness.folder.references, { harnessDir: __HARNESS_DIR__, home: os.homedir(), packaged: app.isPackaged });
     nativeTheme.themeSource = (await config.load()).appearance ?? "system";
     nativeTheme.on("updated", () => window?.setBackgroundColor(nativeTheme.shouldUseDarkColors ? PAPER.dark : PAPER.light));
+    // A profile the registry no longer lists (or lists as archived) is not active: Home asks who is using the app.
+    // Before setup.json is recorded, so nothing is written into a profile that is gone.
+    const saved = await config.load();
+    if (profilesCtl && saved.profile && !(await profilesCtl.openable(saved.profile).catch(() => false))) {
+      await config.setProfile(undefined).catch((err: unknown) => console.error("Could not clear the active profile", err));
+    }
     // Before any task: a configured folder with no setup.json is recorded now, fresh or as set up before (D0: no `setup`, nothing).
     await recordSetup(setupCtl, async () => (await validConfig()) !== null);
     registerIpc();

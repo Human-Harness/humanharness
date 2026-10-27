@@ -20,6 +20,9 @@ import type {
   ModeSwitch,
   MoveResult,
   PhaseResult,
+  ProfileResult,
+  ProfilesState,
+  ProfileView,
   RespondResult,
   RunningSetup,
   ScopeView,
@@ -601,6 +604,89 @@ export class FakeClient implements HarnessClient {
       this.setupStepListeners.add(listener);
       return () => {
         this.setupStepListeners.delete(listener);
+      };
+    },
+  };
+  /** The registry; `state.config.profile` is the active one. */
+  profileList: ProfileView[] = [];
+  /** Calls to profiles, in order: "create:<name>", "open:<id>", "edit:<name>", "archive:<id>", "unarchive:<id>", "delete:<id>". */
+  profileCalls: string[] = [];
+  /** When set, create, open and edit are refused with it. */
+  profileRefusal: Exclude<ProfileResult, { ok: true }> | null = null;
+  /** When set, create makes the profile but its switch fails (`failed` with `made`). */
+  profileSwitchFails = false;
+  private profileListeners = new Set<(s: ProfilesState) => void>();
+  private profilesNow(): ProfilesState {
+    return { active: this.state.config.profile ?? null, list: this.profileList };
+  }
+  private profileChanged(): ProfileResult {
+    const s = this.profilesNow();
+    for (const l of this.profileListeners) l(s);
+    return { ok: true, state: this.state };
+  }
+  private setProfileArchived(id: string, archived: boolean): ProfileResult {
+    this.profileCalls.push(`${archived ? "archive" : "unarchive"}:${id}`);
+    if (id === this.state.config.profile) return { ok: false, reason: "active" };
+    this.profileList = this.profileList.map((p) => (p.id === id ? { ...p, archived } : p));
+    return this.profileChanged();
+  }
+  profiles = {
+    get: async () => this.profilesNow(),
+    create: async (values: Record<string, unknown>): Promise<ProfileResult> => {
+      this.profileCalls.push(`create:${String(values.name)}`);
+      if (!this.state.profiles) return { ok: false, reason: "not-ready" };
+      if (this.profileRefusal) return this.profileRefusal;
+      const title = String(values.name ?? "");
+      const id = title
+        .normalize("NFKD")
+        .replace(/[̀-ͯ]/g, "")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-");
+      const color = typeof values.color === "string" ? { color: values.color } : {};
+      this.profileList = [...this.profileList, { id, title, ...color, createdAt: "2026-10-27T10:00:00.000Z", archived: false }];
+      // The profile is made, but its switch fails: it is registered, not active, and the answer names it.
+      if (this.profileSwitchFails) {
+        this.profileChanged();
+        return { ok: false, reason: "failed", made: id };
+      }
+      this.state = { ...this.state, config: { ...this.state.config, profile: id } };
+      return this.profileChanged();
+    },
+    open: async (id: string): Promise<ProfileResult> => {
+      this.profileCalls.push(`open:${id}`);
+      if (this.profileRefusal) return this.profileRefusal;
+      if (!this.profileList.some((p) => p.id === id && !p.archived)) return { ok: false, reason: "unknown" };
+      this.state = { ...this.state, config: { ...this.state.config, profile: id } };
+      return this.profileChanged();
+    },
+    // Like the main process: the form's fields come only from `values` (one left out is cleared); a blank name is refused.
+    edit: async (values: Record<string, unknown>): Promise<ProfileResult> => {
+      const id = this.state.config.profile;
+      this.profileCalls.push(`edit:${String(values.name)}`);
+      if (!this.state.profiles || id === undefined) return { ok: false, reason: "not-ready" };
+      if (this.profileRefusal) return this.profileRefusal;
+      const title = typeof values.name === "string" ? values.name.trim() : "";
+      if (!title) return { ok: false, reason: "invalid", errors: [{ path: "name", message: "Enter a name" }] };
+      const asked = this.state.profiles.form.fields.map((f) => f.name);
+      const stored = (this.records.profile ?? []).at(-1) ?? {};
+      const kept = Object.fromEntries(Object.entries(stored).filter(([k]) => !asked.includes(k)));
+      const given = Object.fromEntries(Object.entries(values).filter(([k]) => asked.includes(k)));
+      this.records.profile = [...(this.records.profile ?? []), { ...kept, ...given, name: title }];
+      this.profileList = this.profileList.map((p) => (p.id === id ? { ...p, title } : p));
+      return this.profileChanged();
+    },
+    archive: async (id: string) => this.setProfileArchived(id, true),
+    unarchive: async (id: string) => this.setProfileArchived(id, false),
+    delete: async (id: string): Promise<ProfileResult> => {
+      this.profileCalls.push(`delete:${id}`);
+      if (id === this.state.config.profile) return { ok: false, reason: "active" };
+      this.profileList = this.profileList.filter((p) => p.id !== id);
+      return this.profileChanged();
+    },
+    onChange: (listener: (s: ProfilesState) => void) => {
+      this.profileListeners.add(listener);
+      return () => {
+        this.profileListeners.delete(listener);
       };
     },
   };

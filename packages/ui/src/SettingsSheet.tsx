@@ -7,6 +7,7 @@ import { EngineTab } from "./EngineTab";
 import { HarnessSettingsTab } from "./HarnessSettingsTab";
 import { ownName, systemLanguage } from "./language";
 import { ModelsTab } from "./ModelsTab";
+import { ProfilesSection } from "./ProfilesSection";
 import { SetupStepsList } from "./SetupStepsList";
 import { UsageTab } from "./UsageTab";
 
@@ -296,6 +297,7 @@ function GeneralTab({ client, state, onChange, move }: { client: HarnessClient; 
         )}
       </div>
       {state.config.folder && <p className="hh-caption">{t("settings.folderFixed")}</p>}
+      {state.profiles && <ProfilesSection client={client} state={state} onChange={onChange} />}
       <BackupNotice client={client} state={state} onChange={onChange} move={move} />
 
       <h3>{t("settings.about")}</h3>

@@ -47,6 +47,20 @@ export async function startNewChatIfEngineChanged(folder: string, engineId: stri
 }
 
 /**
+ * An engine change in a harness with profiles (profiles spec §5): the active profile's chat starts over as today, and
+ * so does every other profile's, now, so no one comes back to a conversation the new engine can't continue. Only the
+ * active profile can have an open task (a switch closes it). Returns the active profile's previous engine, for the
+ * window's notice; a failure in another profile is logged.
+ */
+export async function archiveChatsOnEngineChange(active: string, others: string[], engineId: string): Promise<string | null> {
+  const switchedFrom = await startNewChatIfEngineChanged(active, engineId);
+  for (const folder of others) {
+    await startNewChatIfEngineChanged(folder, engineId).catch((err: unknown) => console.error("Could not start a new chat in another profile", err));
+  }
+  return switchedFrom;
+}
+
+/**
  * For a chat load: archives a chat that belongs to another engine (see startNewChatIfEngineChanged)
  * and then closes the running agent, whose session still holds the archived conversation; the next
  * turn starts a fresh one. Returns the archived chat's engine.

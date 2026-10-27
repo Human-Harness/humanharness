@@ -6,6 +6,7 @@ import { CORE_BLOCKS, INPUT_CORE_BLOCKS, MODE_CORE_BLOCKS, PHASE_CORE_BLOCKS, RE
 import { dataSchema } from "./data";
 import { DEFAULT_MODE_WORDS, MODE_ID } from "./modes";
 import { PHASE_ID, TIME_BOX_MAX } from "./phases";
+import { PROFILE_COLLECTION, profileFormSpec, profilesSchema } from "./profiles";
 import { SETTING_NAME, checkSettingFields, settingFieldSchema, settingsSchema } from "./settings";
 import { type HarnessSetupStep, setupFormSpec, setupStepsSchema } from "./setup";
 
@@ -18,6 +19,7 @@ export * from "./settings";
 export * from "./modes";
 export * from "./phases";
 export * from "./setup";
+export * from "./profiles";
 /** The zod a manifest builds its block schemas with: the same instance the SDK validates them against. */
 export { z } from "zod";
 
@@ -167,6 +169,8 @@ const manifestSchema = z.object({
   modes: z.record(z.string().regex(MODE_ID), modeSchema).default({}),
   /** The harness's own steps on the setup screen, after the engine (setup-steps spec). Absent: none (D0). */
   setup: setupStepsSchema.optional(),
+  /** Several people on one install, each with a folder of their own (profiles spec). Absent: one implicit profile (D4). */
+  profiles: profilesSchema.optional(),
   /** One line under the name on the home screen. */
   tagline: text.optional(),
   /** How translations of this harness's screens should sound, in English ("warm and informal, short sentences"). */
@@ -335,6 +339,29 @@ const manifestSchema = z.object({
     }
     if (s.writes !== undefined && !Object.hasOwn(m.data, s.writes)) issue(["writes"], `Collection "${s.writes}" is not declared in data`);
   });
+  // Profiles (profiles spec §3).
+  if (m.profiles) {
+    const issue = (p: (string | number)[], message: string) => ctx.addIssue({ code: "custom", path: p, message });
+    if (!Object.hasOwn(m.data, PROFILE_COLLECTION)) {
+      issue(["profiles"], `Profiles keep who each person is in a "${PROFILE_COLLECTION}" collection: declare it in data`);
+    } else {
+      const c = m.data[PROFILE_COLLECTION];
+      if (!c.single || c.scoped) issue(["data", PROFILE_COLLECTION], `A profile keeps one app-wide record: "${PROFILE_COLLECTION}" needs single: true and scoped: false`);
+      const shape = c.schema.shape as Record<string, z.ZodType>;
+      // The title: a plain string, never optional (z.string() with or without bounds).
+      if (!Object.hasOwn(shape, "name") || !(shape.name instanceof z.ZodString)) {
+        issue(["data", PROFILE_COLLECTION], 'The profile collection needs a "name" field that is a string');
+      }
+      if (m.profiles.fields[0] !== "name") issue(["profiles", "fields"], 'The first field is "name"');
+      const seen = new Set<string>();
+      for (const f of m.profiles.fields) {
+        if (seen.has(f)) issue(["profiles", "fields"], `"${f}" is listed twice`);
+        seen.add(f);
+        if (!Object.hasOwn(shape, f)) issue(["profiles", "fields"], `"${f}" is not a field of "${PROFILE_COLLECTION}"`);
+      }
+      for (const f of profileFormSpec(m).fields) if (f.kind === null) issue(["profiles", "fields"], `The profile form can't draw "${f.name}"`);
+    }
+  }
 });
 
 export type Harness = z.output<typeof manifestSchema>;

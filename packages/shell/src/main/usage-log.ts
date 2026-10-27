@@ -197,3 +197,32 @@ export function summarizeUsage(records: UsageRecord[], primary: string | undefin
     ...(primary ? { primary } : {}),
   };
 }
+
+/** A turn from one profile's log, with the profile it came from. ("person", not "profile": a model profile is another thing here.) */
+export type PersonUsageRecord = UsageRecord & { person: string };
+
+/** Every profile's records in one list, oldest first (a stable sort keeps each log's own order for equal times). */
+export function mergeUsage(byProfile: Record<string, UsageRecord[]>): PersonUsageRecord[] {
+  return Object.entries(byProfile)
+    .flatMap(([person, records]) => records.map((r) => ({ ...r, person })))
+    .sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
+}
+
+/**
+ * Settings › Usage in a harness with profiles (spec §4 "Usage"): one AI plan for the whole app, so every profile's
+ * turns, in time order, measure its window and estimates. `scopes` are the active profile's only (scope ids repeat
+ * across people); `profiles` counts every turn's tokens per profile.
+ */
+export function profilesUsage(
+  byProfile: Record<string, UsageRecord[]>,
+  activeProfile: string,
+  primary: string | undefined,
+  now: Date = new Date(),
+): UsageSummary {
+  const merged = mergeUsage(byProfile);
+  const { scopes: _everyone, ...summary } = summarizeUsage(merged, primary, now);
+  const own = summarizeUsage(Object.hasOwn(byProfile, activeProfile) ? byProfile[activeProfile] : [], primary, now);
+  const perPerson: Record<string, number> = {};
+  for (const r of merged) if (r.usage) perPerson[r.person] = (perPerson[r.person] ?? 0) + turnTokens(r.usage);
+  return { ...summary, ...(own.scopes ? { scopes: own.scopes } : {}), profiles: perPerson };
+}

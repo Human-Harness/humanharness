@@ -138,6 +138,25 @@ describe("ModelsTab › Tasks", () => {
     expect(patches.every((p) => Object.keys(p).join() === "models")).toBe(true);
     expect(patches[patches.length - 1]).toEqual({ models: whole });
   });
+
+  it("a second field edited before the first save came back keeps the first edit", async () => {
+    const c = modelsClient({ tasks: { turn: { custom: { engine: "claude", model: "opus", effort: "high", cap: 400_000 } } } });
+    const save = c.saveConfig.bind(c);
+    let release = () => {};
+    const gate = new Promise<void>((r) => (release = r));
+    c.saveConfig = async (patch: AppConfig) => {
+      await gate;
+      return save(patch);
+    };
+    await renderIn("en", <Tab client={c} />);
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    const tasks = within(tasksRegion());
+    fireEvent.change(tasks.getByRole("combobox", { name: "Effort" }), { target: { value: "max" } });
+    expect((tasks.getByRole("combobox", { name: "Effort" }) as HTMLSelectElement).value).toBe("max");
+    fireEvent.change(tasks.getByRole("combobox", { name: "Context cap" }), { target: { value: "1000000" } });
+    release();
+    await waitFor(() => expect(saved(c)).toEqual({ tasks: { turn: { custom: { engine: "claude", model: "opus", effort: "max", cap: 1_000_000 } } } }));
+  });
 });
 
 describe("ModelsTab › Levels", () => {

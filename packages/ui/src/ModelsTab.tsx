@@ -71,6 +71,8 @@ function useModels(client: HarnessClient, state: AppState, onChange: (s: AppStat
     latest.current = { ...latest.current, models };
     pending.current++;
     setFailed(false);
+    // Draw the change now: a second edit before the save comes back builds on what the screen shows.
+    rerender();
     client.saveConfig({ models }).then(
       (s) => {
         pending.current--;

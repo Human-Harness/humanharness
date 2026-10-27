@@ -69,6 +69,10 @@ For an action with phases, the prompt line adds `>phase <id> to change part`, an
 
 `setup` adds the harness's own steps to the setup screen (`docs/architecture/setup.md`): a `form` for a few fields of a one-record collection or some settings, an `interview` when the answers need a conversation (an action whose task fills a one-record collection through the data tools), and a `component` for anything else (the harness's own React step, passed to `HarnessApp setupSteps`). `check` warns with `setup-component`, `setup-mock` (only once `mock/` has recordings) and `setup-context`. `run` skips setup steps, but an interview's action runs as in the app, with the core's interview section in its task's first message.
 
+### Profiles
+
+Declare `profiles: { label, fields }` when several people use one install on one computer and each one's work should stay apart (a family, a classroom): each gets a folder of their own inside the app's folder, with their own tasks, notes, data, settings, setup steps and history (`docs/architecture/profiles.md`). It needs a `profile` collection (`single: true`, `scoped: false`, a `name` string); its `context` is how the agent learns who it talks to. It is not a security feature: there is no password, and anyone who uses the computer can open any profile. Adding `profiles` to a harness people already use has no migration yet: their earlier files stay at the folder's root, unread. `check` reports the rules as `schema` findings; `run` works on one folder and reads no registry.
+
 ## run's report
 
 Per phase (`run`, `follow-up`, `checkpoint`, `close`; a phase change turn and the wrap-up count as follow-ups here, while `usage.jsonl` keeps their own kinds): turns, input, output, cache read and cache write tokens; the tier, model (asked and reported), effort and cap; the peak context against the cap; and the verdict, "used about N tokens (input+output, uncached)" with the total cache reads and writes printed next to it (not added), then the action's cost hint. The same lines go to `<folder>/.harness/usage.jsonl`, as in the app.

@@ -16,6 +16,14 @@
   --hh-highlight: #fbefc4;
   --hh-error-bg: #fbeaea;
   --hh-backdrop: rgba(25, 30, 36, 0.18);
+  --hh-profile-coral: #f2b8a8;
+  --hh-profile-amber: #f3d38b;
+  --hh-profile-green: #b5dcb4;
+  --hh-profile-teal: #a6d9d3;
+  --hh-profile-blue: #b4ccef;
+  --hh-profile-violet: #cdbdf0;
+  --hh-profile-pink: #f1bcd6;
+  --hh-profile-gray: #d3d5d8;
   --hh-font: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   --hh-display: "Lexend", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   font-family: var(--hh-font);
@@ -40,6 +48,14 @@
     --hh-highlight: #4a3f1c;
     --hh-error-bg: #3a2222;
     --hh-backdrop: rgba(0, 0, 0, 0.45);
+    --hh-profile-coral: #7a3d2f;
+    --hh-profile-amber: #6e5420;
+    --hh-profile-green: #2f5b37;
+    --hh-profile-teal: #255852;
+    --hh-profile-blue: #2c4670;
+    --hh-profile-violet: #4a3a74;
+    --hh-profile-pink: #6e3352;
+    --hh-profile-gray: #464b52;
     color-scheme: dark;
   }
 }
@@ -71,7 +87,7 @@ input[type="text"], input:not([type]) { font: inherit; height: 28px; padding: 0 
 
 /* Top bar: the window's drag region (hiddenInset title bar), leaving room for the traffic lights. */
 .hh-topbar { height: 52px; box-sizing: border-box; display: flex; align-items: center; gap: 8px; padding: 0 12px 0 80px; -webkit-app-region: drag; user-select: none; border-bottom: 1px solid var(--hh-line); }
-.hh-topbar button, .hh-topbar a, .hh-topbar input { -webkit-app-region: no-drag; }
+.hh-topbar button, .hh-topbar a, .hh-topbar input, .hh-topbar select { -webkit-app-region: no-drag; }
 .hh-title { font-family: var(--hh-display); font-weight: 600; font-size: 14px; white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .hh-spacer { flex: 1; }
 .hh-icon-button { width: 32px; height: 32px; padding: 0; border: none; border-radius: 6px; background: transparent; color: var(--hh-slate); }
@@ -392,6 +408,24 @@ select:focus-visible { outline: 2px solid var(--hh-ink); outline-offset: 2px; }
   display: flex;
   gap: 6px;
 }
+
+/* Profiles (profiles spec §5): the switcher and the avatar. A stored title can be long: it never widens the bar. */
+.hh-profile-switcher { display: flex; align-items: center; gap: 8px; }
+.hh-profile-name { font-weight: 600; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hh-profile-switcher select { max-width: 160px; }
+/* Settings › People and Usage by person: the name takes the row's room, never more. */
+.hh-profile-row-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A refusal sits in the 52px bar: one line, cut short; the whole line stays in its tooltip. */
+.hh-profile-switcher [role="alert"] { max-width: 240px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--hh-warn); }
+.hh-avatar { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--hh-segment); color: var(--hh-ink); font-size: 12px; font-weight: 600; flex: none; }
+.hh-avatar[data-color="coral"] { background: var(--hh-profile-coral); }
+.hh-avatar[data-color="amber"] { background: var(--hh-profile-amber); }
+.hh-avatar[data-color="green"] { background: var(--hh-profile-green); }
+.hh-avatar[data-color="teal"] { background: var(--hh-profile-teal); }
+.hh-avatar[data-color="blue"] { background: var(--hh-profile-blue); }
+.hh-avatar[data-color="violet"] { background: var(--hh-profile-violet); }
+.hh-avatar[data-color="pink"] { background: var(--hh-profile-pink); }
+.hh-avatar[data-color="gray"] { background: var(--hh-profile-gray); }
 
 /* Input blocks (input-blocks spec §5): the core form, and an answer once sent. */
 .hh-input-block { display: flex; flex-direction: column; gap: 8px; }

@@ -12,6 +12,7 @@
       "folder": "Choose where your work is kept",
       "engine": "Connect the AI engine",
       "one": "One step left: {{step}}",
+      "addProfile": "add a {{label}}",
       "step": {
         "notice": "accept {{engine}}'s notice",
         "not-installed": "install {{engine}}",
@@ -144,6 +145,7 @@
   },
   "usage": {
     "byScope": "Usage by {{plural}}",
+    "byProfile": "Usage by person",
     "scopeTokens": "{{tokens}} tokens",
     "appScope": "App-wide",
     "five_hour": "5 h",
@@ -453,6 +455,34 @@
     "cancel": "Cancel",
     "pickFirst": "First choose which {{label}} to work on.",
     "failed": "That didn't work. Try again."
+  },
+  "profiles": {
+    "pick": "Choose {{label}}",
+    "add": "Add {{label}}",
+    "stepLabel": "Who's using it",
+    "heading": "Who's using {{name}}?",
+    "intro": "Each {{label}} has their own work, notes and settings in the same folder.",
+    "privacy": "Profiles keep each person's work apart, but they don't protect it: anyone who uses this computer can open any profile.",
+    "setupTitle": "Set up {{name}} for {{profile}}",
+    "addedNotOpened": "{{title}} was added, but couldn't be opened. Choose {{title}} from the switcher on Home.",
+    "sectionTitle": "People",
+    "active": "In use now",
+    "archived": "Archived",
+    "edit": "Edit",
+    "save": "Save",
+    "archive": "Archive",
+    "unarchive": "Bring back",
+    "delete": "Delete…",
+    "deleteFirst": "Delete {{name}}? This can't be undone from the app.",
+    "deleteGo": "Delete",
+    "deleteSecond": "{{name}}'s folder and history go to the Trash. You can still get them back from there.",
+    "deleteConfirm": "Move to the Trash",
+    "cancel": "Cancel",
+    "refused": {
+      "busy": "Wait until the AI finishes, then try again.",
+      "open": "The open topic is still closing. Try again.",
+      "failed": "That didn't work. Try again."
+    }
   },
   "app": {
     "loadError": "The app couldn't start. Close it and open it again."

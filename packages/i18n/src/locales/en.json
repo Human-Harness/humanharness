@@ -454,6 +454,15 @@
     "pickFirst": "First choose which {{label}} to work on.",
     "failed": "That didn't work. Try again."
   },
+  "profiles": {
+    "pick": "Choose {{label}}",
+    "add": "Add {{label}}",
+    "refused": {
+      "busy": "Wait until the AI finishes, then try again.",
+      "open": "The open topic is still closing. Try again.",
+      "failed": "That didn't work. Try again."
+    }
+  },
   "app": {
     "loadError": "The app couldn't start. Close it and open it again."
   },

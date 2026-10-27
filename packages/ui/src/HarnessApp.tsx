@@ -2,6 +2,7 @@ import { type ComponentType, type ReactNode, useCallback, useEffect, useRef, use
 import { I18nextProvider } from "react-i18next";
 import type { i18n } from "i18next";
 import { type Locales, createI18n } from "@humanharness/i18n";
+import { ProfileSwitcher } from "./ProfileSwitcher";
 import { ScopePicker } from "./ScopePicker";
 import { ChatView, type SendFn } from "./ChatView";
 import { TopBar } from "./chrome";
@@ -41,10 +42,10 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
   const [steps, setSteps] = useState<SetupStepsState | null>(null);
   /**
    * Where the setup screen opens: a harness step (Home's missing one), alone with `only` (Settings' "Do it again"),
-   * and the Settings tab its end reopens (`back`).
+   * the Settings tab its end reopens (`back`), and the profile step for "Add <label>" (`newProfile`).
    */
-  const [setupAt, setSetupAt] = useState<{ step?: string; only?: boolean; back?: SettingsTab }>({});
-  const openSetup = (at: { step?: string; only?: boolean; back?: SettingsTab }) => {
+  const [setupAt, setSetupAt] = useState<{ step?: string; only?: boolean; back?: SettingsTab; newProfile?: boolean }>({});
+  const openSetup = (at: { step?: string; only?: boolean; back?: SettingsTab; newProfile?: boolean }) => {
     setSetupAt(at);
     setScreen("setup");
   };
@@ -73,11 +74,12 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
   }, [client, hasScopes]);
   const hasSetupSteps = Boolean(state?.setup);
   const folder = state?.config.folder;
-  // Another folder has its own setup.json: until it is read, Start waits rather than show the old folder's state.
+  const profile = state?.config.profile;
+  // Another folder (or profile) has its own setup.json: until it is read, Start waits rather than show the old one's state.
   useEffect(() => {
     setSteps(null);
-  }, [folder]);
-  // Read again when the folder changes (its own setup.json) and on every screen change (the setup screen moved it on).
+  }, [folder, profile]);
+  // Read again when the folder or the profile changes (its own setup.json) and on every screen change (the setup screen moved it on).
   useEffect(() => {
     if (!hasSetupSteps) return;
     let live = true;
@@ -99,7 +101,7 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
       live = false;
       off();
     };
-  }, [client, hasSetupSteps, folder, screen]);
+  }, [client, hasSetupSteps, folder, profile, screen]);
   /** Moving the folder: kept here so a move outlives Settings closing or a tab change. */
   const move = useFolderMove(client, setState);
   // Read through a ref so inline `locales` objects don't re-run the load.
@@ -212,6 +214,8 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
     setScreen(next);
     checkEngine();
   };
+  /** "Add <label>": the setup screen at its profile step. */
+  const addProfile = () => openSetup({ newProfile: true });
 
   return (
     <I18nextProvider i18n={i18n}>
@@ -219,7 +223,7 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
       <div className="hh-screen" inert={settings !== null}>
         {screen === "work" && configured ? (
           <ChatView
-            key={`${engineId}:${openScope ?? ""}`}
+            key={`${engineId}:${profile ?? ""}:${openScope ?? ""}`}
             client={client}
             state={state}
             components={blocks}
@@ -227,6 +231,9 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
             renderSide={renderSide}
             startView={startView}
             openScope={openScope}
+            profileBar={
+              state.profiles ? (disabled) => <ProfileSwitcher client={client} state={state} onSwitched={setState} onAdd={addProfile} disabled={disabled} /> : undefined
+            }
             scopeBar={state.scopes ? (disabled) => <ScopePicker client={client} state={state} open={openScope} disabled={disabled} /> : undefined}
             engineProblem={status ? engineProblem(status) : null}
             onHome={() => setScreen("home")}
@@ -266,6 +273,7 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
             onSettings={() => setSettings("general")}
             onEngine={() => setSettings("engine")}
             move={move}
+            onAddProfile={addProfile}
           />
         )}
       </div>

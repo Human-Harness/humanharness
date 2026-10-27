@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { AVATAR_COLORS } from "../src/profiles";
 
 const css = readFileSync(resolve(__dirname, "../src/styles.css"), "utf8");
 const [light, dark] = css.split("prefers-color-scheme: dark");
@@ -58,5 +59,13 @@ describe("styles", () => {
 describe("annotate marks", () => {
   it("the highlight under a gap keeps ink readable in light and dark", () => {
     for (const block of [light, dark]) expect(ratio(token(block, "ink"), token(block, "highlight"))).toBeGreaterThanOrEqual(7);
+  });
+});
+
+describe("profile avatars", () => {
+  it("every avatar colour has a light and a dark token, and its letter stays readable (≥ 4.5:1)", () => {
+    for (const block of [light, dark]) {
+      for (const color of AVATAR_COLORS) expect(ratio(token(block, "ink"), token(block, `profile-${color}`))).toBeGreaterThanOrEqual(4.5);
+    }
   });
 });

@@ -4,6 +4,7 @@ import { BackupNotice, type FolderMove } from "./BackupNotice";
 import { CheckIcon, EngineIcon, GearIcon, HHLogo, TopBar } from "./chrome";
 import { type AppState, type EngineStatus, type HarnessClient, type LimitWindow, type SetupStepsState, engineProblem, isConfigured } from "./client";
 import { WARN_AT, fiveHour, percent } from "./usage";
+import { ProfileSwitcher } from "./ProfileSwitcher";
 import { useCurrentWindows } from "./UsageMeter";
 
 /** The first screen of every launch (spec 2026-10-11 "Home"). */
@@ -20,6 +21,7 @@ export function Home({
   onSettings,
   onEngine,
   move,
+  onAddProfile,
 }: {
   state: AppState;
   client: HarnessClient;
@@ -40,6 +42,8 @@ export function Home({
   onEngine: () => void;
   /** The app's folder move (HarnessApp): a move started in Settings still shows here. */
   move?: FolderMove;
+  /** Harnesses with profiles: "Add <label>" (the setup screen at its profile step). */
+  onAddProfile?: () => void;
 }) {
   const { t } = useTranslation();
   const missingId = useId();
@@ -62,6 +66,7 @@ export function Home({
   return (
     <div className="hh-home">
       <TopBar mock={state.mock}>
+        {configured && state.profiles && onAddProfile && <ProfileSwitcher client={client} state={state} onSwitched={onChange} onAdd={onAddProfile} />}
         <button className="hh-icon-button" aria-label={t("home.settings")} onClick={onSettings}>
           <GearIcon />
         </button>

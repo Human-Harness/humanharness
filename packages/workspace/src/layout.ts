@@ -34,7 +34,12 @@ export const tasksFile = (base: string): string => path.join(base, ".harness", "
 export const usageFile = (base: string): string => path.join(base, ".harness", "usage.jsonl");
 /** The state of the harness's setup steps (setup-steps spec §4). */
 export const setupFile = (base: string): string => path.join(base, ".harness", "setup.json");
-export const scopesFile = (base: string): string => path.join(base, ".harness", "scopes.json");
+/**
+ * The profile registry (profiles spec §4). It sits under the **app's** folder (the root), never under a base: in a
+ * harness with profiles every base is a profile's folder inside the root.
+ */
+export const profilesFile = (root: string): string => path.join(root, ".harness", "profiles.json");
+export const scopesFile =(base: string): string => path.join(base, ".harness", "scopes.json");
 export const chatsDir = (base: string): string => path.join(base, ".harness", "chats");
 /** One chat per scope; `main.jsonl` for `main`, which is also the chat of a harness without scopes. */
 export const chatFile = (base: string, scope: string = MAIN_SCOPE): string => path.join(chatsDir(base), `${scopeDir(scope)}.jsonl`);

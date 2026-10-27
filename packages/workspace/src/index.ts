@@ -7,6 +7,7 @@ export * from "./layout";
 export * from "./backup";
 export * from "./subjects";
 export * from "./scopes";
+export * from "./profiles";
 export * from "./migrate";
 export * from "./data";
 export * from "./data-context";

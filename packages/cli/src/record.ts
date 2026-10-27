@@ -2,6 +2,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { APP_FOLDERS, type MockNote, type MockTurn, type MockUsage, type MockWrite, type Recording } from "@humanharness/fake-agent";
 import type { Event } from "@humanharness/runtime";
+import type { TurnKind } from "@humanharness/shell/tasks";
 
 /** Larger files, and files that aren't text, are left out of a recording (spec 3e §3). */
 export const MAX_RECORDED_FILE = 64 * 1024;
@@ -144,7 +145,7 @@ export class Recorder {
   }
 
   /** One engine turn ended (`recordUsage`): it becomes a recorded turn unless it was a checkpoint. */
-  async turnEnded(meta: { action?: string; task?: string; phase?: "run" | "close" | "checkpoint" }, opts: { failed?: boolean } = {}): Promise<void> {
+  async turnEnded(meta: { action?: string; task?: string; phase?: TurnKind; taskPhase?: string },opts: { failed?: boolean } = {}): Promise<void> {
     const after = await snapshotFolder(this.o.folder, this.o.exclude);
     for (const p of after.skipped) if (this.snapshot.signatures.get(p) !== after.signatures.get(p)) this.skipped.add(p);
     this.ended = null;

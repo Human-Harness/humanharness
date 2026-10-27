@@ -17,7 +17,7 @@ export function historyView(groups: HistoryTask[]): HistoryTaskView[] {
       date: g.date.toISOString(),
       ...(note ? { noteTitle: note } : {}),
       changes: g.changes,
-      entries: g.entries.map((e) => ({ sha: e.sha, message: e.message, date: e.date.toISOString() })),
+      entries: g.entries.map((e) => ({ sha: e.sha, message: e.message, date: e.date.toISOString(), ...(e.phase ? { phase: e.phase } : {}) })),
     };
   });
 }

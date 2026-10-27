@@ -223,6 +223,10 @@ export interface ChatEntry {
   task?: string;
   /** A mode switch the person picked (task-modes spec §5.4): this user entry is a system line, and this is the mode's id. */
   mode?: string;
+  /** The task entered this phase (task-phases spec §4.4): this user entry is a separator line, and this is the phase's id. */
+  phase?: string;
+  /** The time box's wrap-up (spec §5): this user entry is a system line. */
+  timeUp?: true;
   /** Assistant entries: text runs and blocks in the order they arrived. Older entries lack it: text, then blocks. */
   parts?: AnswerPart[];
 }
@@ -267,6 +271,8 @@ export interface HistoryItem {
   sha: string;
   message: string;
   date: string;
+  /** The task's phase when the commit was made (its `Phase:` trailer). */
+  phase?: string;
 }
 
 /** A file a task added, changed or deleted. */

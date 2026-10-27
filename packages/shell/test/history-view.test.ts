@@ -81,3 +81,27 @@ describe("historyView", () => {
     expect(RESTORE_TASK).toBe("Went back to before the task");
   });
 });
+
+describe("historyView: phases (task-phases spec §6)", () => {
+  it("passes each entry's phase to the window; D0 without one", () => {
+    const date = new Date("2026-10-26T10:00:00.000Z");
+    const [view] = historyView([
+      {
+        taskId: "t1",
+        actionId: "session",
+        start: null,
+        end: "b".repeat(40),
+        date,
+        changes: [],
+        entries: [
+          { sha: "b".repeat(40), message: "Turn: x", date, task: "t1", action: "session", phase: "main" },
+          { sha: "a".repeat(40), message: "Before message", date, task: "t1", action: "session" },
+        ],
+      },
+    ]);
+    expect(view.entries).toEqual([
+      { sha: "b".repeat(40), message: "Turn: x", date: date.toISOString(), phase: "main" },
+      { sha: "a".repeat(40), message: "Before message", date: date.toISOString() },
+    ]);
+  });
+});

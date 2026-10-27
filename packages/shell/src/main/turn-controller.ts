@@ -4,7 +4,7 @@ import { blockIdOf } from "@humanharness/harness-sdk";
 import { type Event, type HarnessRuntime, type LimitWindow, type RunningTurn, fail } from "@humanharness/runtime";
 import type { ChatEntry, SendOptions } from "@humanharness/ui/client";
 import { TurnRecorder } from "./chat-log";
-import { type UsageMeta, profileMeta } from "./usage-log";
+import { type TurnKind, type UsageMeta, profileMeta } from "./usage-log";
 
 type Done = Extract<Event, { type: "done" }>;
 
@@ -27,8 +27,8 @@ export interface TurnOptions extends SendOptions {
   scope?: string;
   /** Which scope's chat the turn writes (the open scope's). Absent: `main`, the only chat without scopes. */
   chat?: string;
-  /** `close` for the turn that asks for the task's note; `checkpoint` for the quiet mid-task note. */
-  phase?: "run" | "close" | "checkpoint";
+  /** The turn's kind (TurnKind): `run` by default. */
+  phase?: TurnKind;
   /**
    * The task's finished-turn count when this turn starts. With `task`, in a run turn, each block the person answers
    * gets the id `<task>:<turn>:<index>` (input-blocks spec §4). Absent: no ids (spec D0).
@@ -64,6 +64,12 @@ export interface TurnOptions extends SendOptions {
   mode?: string;
   /** The person picked `mode`: the chat's user entry is a system line naming it, never their message (spec §5.4). */
   modeSwitch?: boolean;
+  /** The task's phase while this turn runs: usage.jsonl and the history trailer record it (task-phases spec §6). */
+  taskPhase?: string;
+  /** The task enters this phase: the chat's user entry is a separator line naming it, never the brief (spec §4.4). */
+  phaseChange?: string;
+  /** The time box's wrap-up: the chat's user entry is a system line saying the time is almost up (spec §5). */
+  wrapUp?: boolean;
 }
 
 export interface TurnDeps {
@@ -86,6 +92,9 @@ export interface TurnDeps {
   /** The configured engine, read when the turn starts: the one `sessionExpired` is told about. */
   engineId?: () => Promise<string | undefined>;
 }
+
+/** The task's own work, whose input blocks get ids (input-blocks spec §4): never the closing or checkpoint turn. */
+export const takesInputs = (phase: TurnKind | undefined): boolean => phase === undefined || phase === "run" || phase === "phase-change" || phase === "wrap-up";
 
 /** The turn's end stays out of the chat and the window (`holdModelError`, `holdFailure`). */
 export function isHeld(done: Done, options: Pick<TurnOptions, "holdModelError" | "holdFailure">): boolean {
@@ -138,7 +147,7 @@ export class TurnController {
   }
 
   private async run(message: string, options: TurnOptions): Promise<void> {
-    const { action, task, scope, chat, phase, turn, display, followUp, quiet, onEvent, profile, holdModelError, holdFailure, skipUserEntry, mode, modeSwitch } = options;
+    const { action, task, scope, chat, phase, turn, display, followUp, quiet, onEvent, profile, holdModelError, holdFailure, skipUserEntry, mode, modeSwitch, taskPhase, phaseChange, wrapUp } = options;
     const current: { cancelled: boolean; running: RunningTurn | null } = { cancelled: false, running: null };
     this.turn = current;
     try {
@@ -157,11 +166,14 @@ export class TurnController {
           ...(task ? { task } : {}),
           // `modeSwitch` needs both `mode` and `display` ("Switched to …"): without `display` the mode's prompt lands here.
           ...(modeSwitch && mode ? { mode } : {}),
+          // `phaseChange` and `wrapUp` always come with `display`: the chat shows the line, never the prompt.
+          ...(phaseChange ? { phase: phaseChange } : {}),
+          ...(wrapUp ? { timeUp: true as const } : {}),
         });
       }
       const recorder = new TurnRecorder(this.deps.stateBlocks());
-      // Every block event counts toward the index; only input blocks of a task's run turn get an id.
-      const inputs = turn !== undefined && task && (phase ?? "run") === "run" ? this.deps.inputBlocks?.() : undefined;
+      // Every block event counts toward the index; only input blocks of a task's own work get an id.
+      const inputs = turn !== undefined && task && takesInputs(phase) ?this.deps.inputBlocks?.() : undefined;
       let blockIndex = 0;
       const stamp = (e: Event): Event => {
         if (e.type !== "block") return e;
@@ -174,6 +186,7 @@ export class TurnController {
         ...(task ? { task } : {}),
         ...(scope ? { scope } : {}),
         ...(mode ? { mode } : {}),
+        ...(taskPhase ? { taskPhase } : {}),
         ...(phase ? { phase } : {}),
         ...(profile ? profileMeta(profile) : {}),
         ...(reportedModel ? { reportedModel } : {}),
@@ -243,7 +256,7 @@ export class TurnController {
             this.emit(e);
           }
         }
-      }, { ...(profile ? { profile } : {}), ...(task ? { trailer: { task, ...(action ? { action } : {}), ...(scope ? { scope } : {}) } } : {}) });
+      }, { ...(profile ? { profile } : {}), ...(task ? { trailer: { task, ...(action ? { action } : {}), ...(scope ? { scope } : {}), ...(taskPhase ? { phase: taskPhase } : {}) } } : {}) });
       await current.running.done;
       await finished;
     } finally {

@@ -25,6 +25,8 @@ export interface HistoryEntry {
   action: string | null;
   /** The task's scope (its `Scope:` trailer), only for a harness with scopes. */
   scope?: string;
+  /** The task's phase (its `Phase:` trailer), only for an action with phases. */
+  phase?: string;
 }
 
 /** The task a history commit belongs to, written as git trailers under its subject. */
@@ -33,6 +35,8 @@ export interface HistoryTrailer {
   action?: string;
   /** The task's scope, `_app` included; only for a harness with scopes (spec §3.3). */
   scope?: string;
+  /** The task's phase now (task-phases spec §6); only for an action with phases. */
+  phase?: string;
 }
 
 /** A file a task added, changed or deleted (tracked files only). */
@@ -115,17 +119,18 @@ export function withTrailer(message: string, trailer?: HistoryTrailer): string {
   if (trailer.action !== undefined && TRAILER_ID.test(trailer.action)) lines.push(`Action: ${trailer.action}`);
   // Checked on its own: `_app` is a scope folder, but not a valid TRAILER_ID.
   if (trailer.scope !== undefined && isScopeDir(trailer.scope)) lines.push(`Scope: ${trailer.scope}`);
+  if (trailer.phase !== undefined && TRAILER_ID.test(trailer.phase)) lines.push(`Phase: ${trailer.phase}`);
   return `${subject}\n\n${lines.join("\n")}`;
 }
 
 /** A trailer line as `withTrailer` writes it. */
-const TRAILER_LINE = /^(Task|Action|Scope): \S+$/;
+const TRAILER_LINE = /^(Task|Action|Scope|Phase): \S+$/;
 
 /**
- * A commit message's subject and its trailers (null when absent or not a valid id; `scope` only when present).
- * Only a last paragraph made entirely of trailer lines counts.
+ * A commit message's subject and its trailers (null when absent or not a valid id; `scope` and `phase` only when
+ * present). Only a last paragraph made entirely of trailer lines counts.
  */
-export function parseCommitMessage(raw: string): { subject: string; task: string | null; action: string | null; scope?: string } {
+export function parseCommitMessage(raw: string): { subject: string; task: string | null; action: string | null; scope?: string; phase?: string } {
   const text = raw.replace(/\r\n/g, "\n").trim();
   const paragraphs = text.split(/\n{2,}/);
   const last = paragraphs.length > 1 ? paragraphs[paragraphs.length - 1] : "";
@@ -135,7 +140,14 @@ export function parseCommitMessage(raw: string): { subject: string; task: string
     return m && TRAILER_ID.test(m[1]) ? m[1] : null;
   };
   const scope = /^Scope: (.+)$/m.exec(trailers)?.[1];
-  return { subject: text.split("\n")[0], task: value("Task"), action: value("Action"), ...(isScopeDir(scope) ? { scope } : {}) };
+  const phase = value("Phase");
+  return {
+    subject: text.split("\n")[0],
+    task: value("Task"),
+    action: value("Action"),
+    ...(isScopeDir(scope) ? { scope } : {}),
+    ...(phase ? { phase } : {}),
+  };
 }
 
 /**
@@ -358,8 +370,8 @@ export class History {
     if ((await this.last()) === null) return [];
     const log = await git.log({ ...this.repo(), depth, cache });
     return log.map((e) => {
-      const { subject, task, action, scope } = parseCommitMessage(e.commit.message);
-      return { sha: e.oid, message: subject, date: new Date(e.commit.author.timestamp * 1000), task, action, ...(scope ? { scope } : {}) };
+      const { subject, task, action, scope, phase } = parseCommitMessage(e.commit.message);
+      return { sha: e.oid, message: subject, date: new Date(e.commit.author.timestamp * 1000), task, action, ...(scope ? { scope } : {}), ...(phase ? { phase } : {}) };
     });
   }
 

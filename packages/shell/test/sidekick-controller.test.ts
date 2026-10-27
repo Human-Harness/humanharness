@@ -11,7 +11,7 @@ const profile = { engine: "claude", tier: "light" as const, model: "haiku", effo
 const json = (o: unknown) => JSON.stringify(o);
 const SUGGEST = json({ verdict: "suggest", issues: [{ kind: "vague", text: "Say what better means." }], rewrite: "Make the intro shorter.", confidence: 0.8 });
 
-export function harness(o: { record?: Partial<SidekickRecord> | null; answers?: (string | ((signal: AbortSignal) => Promise<SidekickAnswer>))[]; task?: { id: string; action?: string; scope: string; phase?: string } | null; usage?: UsageRecord[]; manifest?: SidekickDeps["manifest"]; waitMs?: number; events?: SidekickEvent[]; phases?: { id: string; label: string }[]; extra?: Partial<SidekickRecord>[]; learnMs?: number; routeMs?: number; spent?: number } = {}) {
+export function harness(o: { record?: Partial<SidekickRecord> | null; answers?: (string | ((signal: AbortSignal) => Promise<SidekickAnswer>))[]; task?: { id: string; action?: string; scope: string; phase?: string } | null; usage?: UsageRecord[]; manifest?: SidekickDeps["manifest"]; waitMs?: number; events?: SidekickEvent[]; phases?: { id: string; label: string; brief?: string }[]; phaseBriefs?: Record<string, string | Error>; extra?: Partial<SidekickRecord>[]; learnMs?: number; routeMs?: number; spent?: number } = {}) {
   // The `sidekick` collection by id; `record()` is the settings record.
   const records = new Map<string, Partial<SidekickRecord>>([...(o.record ? [o.record] : []), ...(o.extra ?? [])].map((r) => [r.id ?? "settings", r]));
   const writes: { op: string; record?: Partial<SidekickRecord>; key?: string }[] = [];
@@ -22,6 +22,8 @@ export function harness(o: { record?: Partial<SidekickRecord> | null; answers?: 
   const folders: string[] = [];
   const events: SidekickEvent[] = [...(o.events ?? [])];
   const asked: string[] = [];
+  // Each phase-brief read: `action/phase`.
+  const briefReads: string[] = [];
   const opened: string[] = [];
   // Each opened session's folder name: the sidekick's id, or a one-off turn's (`learn`, `route`).
   const sessions: string[] = [];
@@ -46,6 +48,13 @@ export function harness(o: { record?: Partial<SidekickRecord> | null; answers?: 
     ...(o.manifest ? { manifest: o.manifest } : {}),
     harness: { name: "Essay Coach" },
     phases: () => o.phases ?? [],
+    // A phase's brief file, by phase id: its text, a read failure, or none.
+    phaseBrief: async (action, phase) => {
+      briefReads.push(`${action}/${phase}`);
+      const t = o.phaseBriefs?.[phase];
+      if (t instanceof Error) throw t;
+      return t ?? null;
+    },
     store,
     setup: async () => ({ engineId: "claude", base: "/base" }),
     hasNotice: async () => true,
@@ -98,6 +107,7 @@ export function harness(o: { record?: Partial<SidekickRecord> | null; answers?: 
   return { ctl: new SidekickController(deps), deps, asked, opened, sessions, closed, logged, briefs, states, setTask: (t: typeof task) => (task = t), events,
     writes,
     appWrites,
+    briefReads,
     appCalls,
     folders,
     decisions,
@@ -1376,7 +1386,9 @@ describe("purposes at work (spec §2a.2): the mentor after the reply, the proces
   const GUARD = { id: "guard", type: "sidekick" as const, name: "Guard", mark: "🛡️", personality: "", purposes: [{ id: "process-guard" as const }], order: 2 };
   const END = { task: { id: "t1", scope: "main" }, kind: "run" as const, ok: true, prompt: "Outline chapter 2", reply: "Here it is.", fromBlock: false, modeSwitch: false };
   const BOTH = json({ gap: { title: "Sources", text: "No source." }, next: "Add a source", lesson: "A thesis is the claim the essay defends." });
-  const phases = [{ id: "outline", label: "Outline", brief: "Agree on sections." }, { id: "draft", label: "Draft" }];
+  // A phase's `brief` is a file in the harness folder: turns carry its text (read through phaseBrief), never the path.
+  const phases = [{ id: "outline", label: "Outline", brief: "phases/outline.md" }, { id: "draft", label: "Draft" }];
+  const phaseBriefs = { outline: "Agree on\n  sections.\n\nList each one." };
   const MOVE = { task: { id: "t1", scope: "main", action: "essay" }, from: "outline", to: "draft" };
 
   it("a mentor speaker is asked for a lesson only, and its card carries only the lesson", async () => {
@@ -1403,11 +1415,12 @@ describe("purposes at work (spec §2a.2): the mentor after the reply, the proces
   });
 
   it("a guard speaks with what the phase left missing, in its own session, logged as phase-change", async () => {
-    const h = harness({ record: on, extra: [COACH, GUARD], phases, answers: [json({ missing: ["No agreed section list"] })] });
+    const h = harness({ record: on, extra: [COACH, GUARD], phases, phaseBriefs, answers: [json({ missing: ["No agreed section list"] })] });
     await h.ctl.phaseMoved(MOVE);
     expect(h.sessions).toEqual(["guard"]);
     expect(h.asked[0]).toContain("Sidekick: phase change");
-    expect(h.asked[0]).toContain("Leaving: Outline — Agree on sections.\nEntering: Draft");
+    expect(h.asked[0]).toContain("Leaving: Outline — Agree on sections. List each one.\nEntering: Draft");
+    expect(h.asked[0]).not.toContain("phases/outline.md");
     expect(h.logged[0]).toMatchObject({ sidekick: "guard", moment: "phase-change", task: "t1" });
     expect((await h.ctl.state()).cards).toEqual([expect.objectContaining({ moment: "phase-change", kind: "missing", speaker: { id: "guard", name: "Guard", mark: "🛡️" }, guard: { missing: ["No agreed section list"] } })]);
   });
@@ -1420,6 +1433,48 @@ describe("purposes at work (spec §2a.2): the mentor after the reply, the proces
     await h.ctl.phaseMoved(MOVE);
     expect(h.asked[0]).toContain("Scope purpose: Never draft without an outline.");
     expect(h.asked[0]).toContain("Prompts in the phase left (first lines):\n- List the sections\nUI language");
+  });
+
+  it("the open phase's brief text reaches the pre-send and after-reply turns, read once per task", async () => {
+    const task = { id: "t1", action: "essay", scope: "main", phase: "outline" };
+    const h = harness({ record: on, task, phases, phaseBriefs, answers: [SUGGEST, BOTH, BOTH] });
+    await h.ctl.review({ text: "Outline chapter 2 with three sections and a conclusion", force: true });
+    await h.ctl.afterReply({ ...END, task });
+    await h.ctl.afterReply({ ...END, task });
+    expect(h.asked).toHaveLength(3);
+    for (const p of h.asked) {
+      expect(p).toContain("Open phase: Outline — Agree on sections. List each one.\n");
+      expect(p).not.toContain("phases/outline.md");
+    }
+    expect(h.briefReads).toEqual(["essay/outline"]);
+  });
+
+  it("a brief that can't be read is left out; a long one is cut", async () => {
+    const failed = harness({ record: on, extra: [COACH, GUARD], phases, phaseBriefs: { outline: new Error("ENOENT") }, answers: [json({ missing: [] })] });
+    await failed.ctl.phaseMoved(MOVE);
+    expect(failed.asked[0]).toContain("Leaving: Outline\nEntering: Draft");
+    const long = harness({ record: on, extra: [COACH, GUARD], phases, phaseBriefs: { outline: `${"a".repeat(600)}TAIL` }, answers: [json({ missing: [] })] });
+    await long.ctl.phaseMoved(MOVE);
+    expect(long.asked[0]).toContain(`Leaving: Outline — ${"a".repeat(600)}\nEntering: Draft`);
+  });
+
+  it("two quick moves: the older one, finishing its checks later, never aborts the newer turn", async () => {
+    let release!: () => void;
+    const h = harness({ record: on, extra: [COACH, GUARD], phases, answers: [json({ missing: ["Newer"] })] });
+    const setup = h.deps.setup;
+    let calls = 0;
+    (h.deps as { setup: SidekickDeps["setup"] }).setup = async () => {
+      if (++calls === 1) await new Promise<void>((r) => (release = r));
+      return setup();
+    };
+    const older = h.ctl.phaseMoved(MOVE);
+    await vi.waitFor(() => expect(calls).toBe(1));
+    await h.ctl.phaseMoved({ ...MOVE, from: "draft", to: "outline" });
+    release();
+    await older;
+    expect(h.asked).toHaveLength(1);
+    expect(h.asked[0]).toContain("Leaving: Draft\nEntering: Outline");
+    expect((await h.ctl.state()).cards).toEqual([expect.objectContaining({ kind: "missing", guard: { missing: ["Newer"] } })]);
   });
 
   it("nothing missing, a muted kind, or a task no longer open: no card", async () => {

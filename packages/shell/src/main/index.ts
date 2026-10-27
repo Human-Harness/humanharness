@@ -747,6 +747,12 @@ const turns = new TurnController({
   },
 });
 
+/** A phase's brief text: its `brief` is a file inside the harness folder (the task's phase turn and Sidekick read it). */
+const readPhaseBrief = (action: string, phase: string): Promise<string> => {
+  const p = Object.hasOwn(harness.actions, action) ? harness.actions[action].phases?.find((x) => x.id === phase) : undefined;
+  if (!p?.brief) return Promise.reject(new Error("Unknown phase"));
+  return fs.readFile(resolveInHarness(harness, p.brief), "utf8");
+};
 const tasks = new TaskManager({
   store: {
     load: async () => {
@@ -847,11 +853,7 @@ const tasks = new TaskManager({
     if (!Object.hasOwn(harness.modes, mode)) return Promise.reject(new Error("Unknown mode"));
     return fs.readFile(resolveInHarness(harness, harness.modes[mode].brief), "utf8");
   },
-  readPhaseBrief: (action, phase) => {
-    const p = Object.hasOwn(harness.actions, action) ? harness.actions[action].phases?.find((x) => x.id === phase) : undefined;
-    if (!p?.brief) return Promise.reject(new Error("Unknown phase"));
-    return fs.readFile(resolveInHarness(harness, p.brief), "utf8");
-  },
+  readPhaseBrief,
   // Before the turn's events: the window draws the change's separator or the wrap-up line (task-phases spec §4.4, §5).
   taskTurn: (notice) => sendToWindow("hh:taskTurn", notice),
   ...(hooks.minuteMs ? { minuteMs: hooks.minuteMs } : {}),
@@ -1677,6 +1679,7 @@ if (loaded) {
     ...(harness.sidekick ? { manifest: harness.sidekick } : {}),
     harness: { name: harness.name, ...(harness.tagline ? { tagline: harness.tagline } : {}) },
     phases: (action) => (action && Object.hasOwn(harness.actions, action) ? (harness.actions[action].phases ?? []) : []),
+    phaseBrief: (action, phase) => readPhaseBrief(action, phase).catch(() => null),
     store: new SidekickStore({
       // Every record of the collection (settings, learned items, sidekicks, scope records), with no query limit.
       readAll: async () => {

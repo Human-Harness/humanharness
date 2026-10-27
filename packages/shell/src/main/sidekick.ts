@@ -53,6 +53,8 @@ const ROUTE_MS = 15_000;
 /** The routing session's folder (a reserved sidekick id) and its brief: it only names who speaks. */
 const ROUTE_ID = "route";
 const ROUTE_BRIEF = "# Route\n\nYou pick which sidekick of the app should speak. Answer with one id from the choices only. Never act.\n";
+/** How much of a phase's brief a turn carries: its text's start, on one line. */
+const PHASE_BRIEF_MAX = 600;
 
 /** What a card names: the speaker's id, name and mark. */
 const infoOf = (s: SidekickDef): SidekickInfo => ({ id: s.id, name: s.name, mark: s.mark });
@@ -94,6 +96,8 @@ export interface SidekickDeps {
   harness: { name: string; tagline?: string };
   /** The phases of `action`, in order ([] without). */
   phases(action: string | undefined): readonly { id: string; label: string; brief?: string }[];
+  /** The text of a phase's brief (its `brief` is a file in the harness folder); null when it has none or can't be read. */
+  phaseBrief(action: string, phase: string): Promise<string | null>;
   store: SidekickStore;
   /** The set-up app's engine and base; null when it isn't set up. */
   setup(): Promise<{ engineId: string; base: string } | null>;
@@ -183,6 +187,10 @@ export class SidekickController {
   private cards: { card: SidekickCard; ctx: { task: OpenTask | null; base: string } }[] = [];
   /** The running phase-change turn (spec §2a.2); a newer move, turning off, a profile switch or closing drops it. */
   private guard: AbortController | null = null;
+  /** Bumped by every phase change: a move that finished its awaits after a newer one started never runs. */
+  private moves = 0;
+  /** The open task's phase-brief excerpts, read once per task, keyed `action\nphase`. */
+  private briefs: { task: string; items: Map<string, Promise<string | null>> } = { task: NO_TASK, items: new Map() };
   /** Running routing turns (spec §2a.3); turning off, a profile switch or closing aborts them. */
   private readonly routing = new Set<AbortController>();
   /** The running learning turn (spec §6.4); turning off, a profile switch or closing drops it. */
@@ -641,7 +649,7 @@ export class SidekickController {
       if (!session) return this.finish("error");
       const prompt = preSendPrompt({
         harness: this.d.harness,
-        ...(open ? { phase: { label: open.label, ...(open.brief ? { brief: open.brief } : {}) } } : {}),
+        ...(open ? { phase: { label: open.label, ...(await this.briefOf(task, open)) } } : {}),
         notes: ctx.notes,
         data: ctx.data,
         flags,
@@ -748,7 +756,7 @@ export class SidekickController {
       const parts = afterParts(purposes);
       const prompt = afterReplyPrompt({
         harness: this.d.harness,
-        ...(open ? { phase: { label: open.label, ...(open.brief ? { brief: open.brief } : {}) } } : {}),
+        ...(open ? { phase: { label: open.label, ...(await this.briefOf(task, open)) } } : {}),
         prompt: end.prompt,
         reply: end.reply,
         lastPrompts: earlier,
@@ -794,6 +802,7 @@ export class SidekickController {
    * without a CLI: nothing runs (D0). A newer move, turning off, a profile switch or closing drops it.
    */
   async phaseMoved(e: PhaseMoved): Promise<void> {
+    const move = ++this.moves;
     const settings = await this.d.store.settings();
     if (this.closed || !settings.on) return;
     const task: OpenTask = { ...e.task, phase: e.to };
@@ -807,6 +816,8 @@ export class SidekickController {
     const list = await this.candidatesFor("phase-change", task.scope);
     if (list.length === 0) return;
     if (await this.pastCap(setup.base, task, settings)) return;
+    // A newer move started while this one awaited: it is the newer move's turn (this one must not abort it).
+    if (move !== this.moves) return;
     this.guard?.abort();
     const controller = new AbortController();
     this.guard = controller;
@@ -821,7 +832,7 @@ export class SidekickController {
       const typed = this.prompts.key === task.id ? this.prompts.items.filter((p) => p.phase === e.from).map((p) => p.text) : [];
       const prompt = phaseChangePrompt({
         harness: { name: this.d.harness.name },
-        from: { label: from.label, ...(from.brief ? { brief: from.brief } : {}) },
+        from: { label: from.label, ...(await this.briefOf(task, from)) },
         to: { label: to.label },
         lastPrompts: typed,
         uiLanguage: await this.d.uiLanguage().catch(() => "English"),
@@ -1047,6 +1058,26 @@ export class SidekickController {
     const all = await this.d.store.sidekicks().catch(() => null);
     if (all) await this.closeSessions((s) => !all.some((k) => k.id === s.sidekick));
     return candidates(all ?? [DEFAULT_SIDEKICK], moment, scope ?? MAIN_SCOPE, (sc, id) => this.d.store.scopeFor(sc, id));
+  }
+
+  /**
+   * A phase's brief for a turn's context: the start of its file's text (never its path), on one line and cut to
+   * PHASE_BRIEF_MAX; nothing when the phase has no brief or it can't be read. Read once per task.
+   */
+  private async briefOf(task: OpenTask | null, phase: { id: string; brief?: string }): Promise<{ brief?: string }> {
+    if (!task?.action || !phase.brief) return {};
+    if (this.briefs.task !== task.id) this.briefs = { task: task.id, items: new Map() };
+    const key = `${task.action}\n${phase.id}`;
+    let text = this.briefs.items.get(key);
+    if (!text) {
+      text = this.d.phaseBrief(task.action, phase.id).then(
+        (t) => t?.replace(/\s+/g, " ").trim().slice(0, PHASE_BRIEF_MAX) || null,
+        () => null,
+      );
+      this.briefs.items.set(key, text);
+    }
+    const brief = await text;
+    return brief ? { brief } : {};
   }
 
   /**

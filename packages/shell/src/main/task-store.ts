@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import type { ModelProfile } from "@humanharness/engines";
-import { BLOCK_ID, MODE_ID } from "@humanharness/harness-sdk";
+import { BLOCK_ID, MODE_ID, PHASE_ID } from "@humanharness/harness-sdk";
 import type { Session } from "@humanharness/runtime";
 import type { ActionStatus, TaskStatus } from "@humanharness/ui/client";
 import { MAIN_SCOPE, isScopeDir, isScopeId, tasksFile } from "@humanharness/workspace";
@@ -13,6 +13,25 @@ export interface PendingInput {
   blockId: string;
   block: string;
   shownAt: string;
+}
+
+/** Who moved the task into a phase (task-phases spec §4.4). */
+export type PhaseBy = "agent" | "person" | "app";
+/** One entry of the phase log: the phase entered, when, and by whom. */
+export interface PhaseLogEntry {
+  id: string;
+  at: string;
+  by: PhaseBy;
+}
+/** The task's time box (spec §5): minutes chosen, time folded in, and since when the clock runs (absent: paused). */
+export interface TimeBoxState {
+  minutes: number;
+  usedMs: number;
+  runningSince?: string;
+  /** The wrap-up ran: it never runs again, even after "+5 min". */
+  wrappedUp?: true;
+  /** The 100% step ran; "+5 min" clears it so it runs again at the new end. */
+  ended?: true;
 }
 
 /** The task in progress: one engine session from its first turn to its note. */
@@ -54,6 +73,16 @@ export interface CurrentTask {
   modes?: string[];
   /** The task runs below its mode's `minTier`: the person chose to continue (spec §5.3). */
   belowMinTier?: true;
+  /** The phase the task is in now (task-phases spec §6). Absent: an action without phases (D0). */
+  phase?: { id: string; startedAt: string };
+  /** Every phase change, oldest first, at most PHASE_LOG_MAX. */
+  phases?: PhaseLogEntry[];
+  /** The agent asked to move and the person hasn't answered (spec §4.1). */
+  phaseProposal?: { to: string; reason: string };
+  /** The time box chosen at the start (spec §5). */
+  timeBox?: TimeBoxState;
+  /** A mode the current phase doesn't allow, kept to come back (modes spec §7). Never next to `mode`. */
+  suspendedMode?: string;
 }
 
 /** `<folder>/.harness/tasks.json`: the current task and how each action ended. Replaces the runtime's session.json. */
@@ -83,6 +112,18 @@ export function keptQuestion(text: string): { question: string; questionCut?: tr
 /** How many modes tasks.json keeps for a task: a bound on a hand-edited file. */
 export const MODES_MAX = 50;
 
+/** How many phase changes tasks.json keeps for a task: a bound on a hand-edited file. */
+export const PHASE_LOG_MAX = 200;
+/** The longest time box a task can reach with "+5 min": a bound on a hand-edited file. */
+const TIME_BOX_MINUTES_MAX = 24 * 60;
+const PHASE_BY: readonly string[] = ["agent", "person", "app"];
+
+/** What the manifest declares, when known: mode ids, and each action's phase ids. */
+interface Known {
+  modes?: ReadonlySet<string>;
+  phases?: ReadonlyMap<string, readonly string[]>;
+}
+
 const ACTION_STATUSES: readonly string[] = ["done", "unsaved", "unfinished"];
 const TASK_STATUSES: readonly string[] = ["running", "waiting", "closing", "checkpoint"];
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
@@ -98,7 +139,22 @@ function cleanSession(s: unknown): Session | undefined {
   return { id: s.id, started: s.started };
 }
 
-const BLOCK_NAME = /^[a-z][a-z0-9_]*$/;
+function cleanTimeBox(t: unknown): TimeBoxState | undefined {
+  if (!isObject(t)) return undefined;
+  const { minutes, usedMs, runningSince } = t;
+  if (typeof minutes !== "number" || !Number.isInteger(minutes) || minutes < 1 || minutes > TIME_BOX_MINUTES_MAX) return undefined;
+  if (typeof usedMs !== "number" || !Number.isFinite(usedMs) || usedMs < 0) return undefined;
+  const since = typeof runningSince === "string" && Number.isFinite(Date.parse(runningSince)) ? runningSince : undefined;
+  return {
+    minutes,
+    usedMs,
+    ...(since ? { runningSince: since } : {}),
+    ...(t.wrappedUp === true ? { wrappedUp: true as const } : {}),
+    ...(t.ended === true ? { ended: true as const } : {}),
+  };
+}
+
+const BLOCK_NAME =/^[a-z][a-z0-9_]*$/;
 
 /** The pending input of task `taskId`: a block id of another task (a hand-edited file) is dropped. */
 function cleanPending(p: unknown, taskId: string): PendingInput | undefined {
@@ -108,7 +164,7 @@ function cleanPending(p: unknown, taskId: string): PendingInput | undefined {
 }
 
 /** Built field by field: nothing from the file reaches the engine unchecked. */
-function cleanCurrent(c: unknown, known?: ReadonlySet<string>): CurrentTask | null {
+function cleanCurrent(c: unknown, known: Known = {}): CurrentTask | null {
   if (!isObject(c) || typeof c.id !== "string" || !TASK_STATUSES.includes(c.status as string)) return null;
   const session = cleanSession(c.session);
   const profile = cleanProfile(c.profile);
@@ -116,9 +172,23 @@ function cleanCurrent(c: unknown, known?: ReadonlySet<string>): CurrentTask | nu
   const tokens = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v) && v >= 0;
   const ctx = isObject(c.context) && tokens(c.context.used) ? { used: c.context.used, ...(tokens(c.context.size) ? { size: c.context.size } : {}) } : undefined;
   // A mode the manifest no longer declares is dropped (task-modes spec §6); `known` absent: the shape alone.
-  const isMode = (v: unknown): v is string => typeof v === "string" && MODE_ID.test(v) && (!known || known.has(v));
+  const isMode = (v: unknown): v is string => typeof v === "string" && MODE_ID.test(v) && (!known.modes || known.modes.has(v));
   const mode = isMode(c.mode) ? c.mode : undefined;
   const modes = Array.isArray(c.modes) ? [...new Set(c.modes.filter(isMode))].slice(0, MODES_MAX) : [];
+  // A phase the action no longer declares is dropped (task-phases spec §6); `known.phases` absent: the shape alone.
+  const action = typeof c.action === "string" ? c.action : undefined;
+  const declared = known.phases ? ((action !== undefined ? known.phases.get(action) : undefined) ?? []) : undefined;
+  const isPhase = (v: unknown): v is string => typeof v === "string" && PHASE_ID.test(v) && (!declared || declared.includes(v));
+  const phase = isObject(c.phase) && isPhase(c.phase.id) && typeof c.phase.startedAt === "string" ? { id: c.phase.id, startedAt: c.phase.startedAt } : undefined;
+  const log = Array.isArray(c.phases)
+    ? c.phases
+        .filter((e): e is PhaseLogEntry => isObject(e) && isPhase(e.id) && typeof e.at === "string" && PHASE_BY.includes(e.by as string))
+        .map((e) => ({ id: e.id, at: e.at, by: e.by }))
+        .slice(-PHASE_LOG_MAX)
+    : [];
+  const p = c.phaseProposal;
+  const proposal = phase && isObject(p) && isPhase(p.to) && typeof p.reason === "string" ? { to: p.to, reason: p.reason.slice(0, 300) } : undefined;
+  const timeBox = cleanTimeBox(c.timeBox);
   return {
     id: c.id,
     ...(typeof c.action === "string" ? { action: c.action } : {}),
@@ -140,6 +210,11 @@ function cleanCurrent(c: unknown, known?: ReadonlySet<string>): CurrentTask | nu
     ...(mode ? { mode } : {}),
     ...(modes.length > 0 ? { modes } : {}),
     ...(mode && c.belowMinTier === true ? { belowMinTier: true as const } : {}),
+    ...(phase ? { phase } : {}),
+    ...(log.length > 0 ? { phases: log } : {}),
+    ...(proposal ? { phaseProposal: proposal } : {}),
+    ...(timeBox ? { timeBox } : {}),
+    ...(!mode && isMode(c.suspendedMode) ? { suspendedMode: c.suspendedMode } : {}),
   };
 }
 
@@ -154,7 +229,7 @@ function statuses(raw: unknown): Record<string, ActionStatus> {
 }
 
 /** Keeps what has the right shape; anything else reads as "nothing". */
-function clean(raw: unknown, known?: ReadonlySet<string>): TasksFile {
+function clean(raw: unknown, known: Known = {}): TasksFile {
   if (!isObject(raw) || raw.version !== 1) return emptyTasks();
   let scopes: Record<string, Record<string, ActionStatus>> | undefined;
   if (isObject(raw.scopes)) {
@@ -200,12 +275,15 @@ export function interrupted(state: TasksFile, outcome: ActionStatus = "unfinishe
 
 export class TaskStore {
   readonly file: string;
-  /** The manifest's mode ids, when given: a mode tasks.json names that isn't one of them is dropped. */
-  private readonly known?: ReadonlySet<string>;
+  /** The manifest's mode ids and each action's phase ids, when given: what tasks.json names outside them is dropped. */
+  private readonly known: Known;
 
-  constructor(folder: string, opts: { modes?: readonly string[] } = {}) {
+  constructor(folder: string, opts: { modes?: readonly string[]; phases?: Record<string, readonly string[]> } = {}) {
     this.file = tasksFile(folder);
-    if (opts.modes) this.known = new Set(opts.modes);
+    this.known = {
+      ...(opts.modes ? { modes: new Set(opts.modes) } : {}),
+      ...(opts.phases ? { phases: new Map(Object.entries(opts.phases)) } : {}),
+    };
   }
 
   /** A missing file reads as empty; one that isn't JSON is set aside as `tasks.json.corrupt-<time>`; other errors are thrown. */

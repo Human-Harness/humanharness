@@ -249,3 +249,56 @@ describe("TaskStore: task modes (task-modes spec §5.5, §6)", () => {
     expect((await new TaskStore(folder).load()).current).toEqual({ id: "t1", status: "waiting", startedAt: "", turns: 1 });
   });
 });
+
+describe("TaskStore: task phases and the time box (task-phases spec §6)", () => {
+  const write = (folder: string, current: Record<string, unknown>) => {
+    const file = path.join(folder, ".harness", "tasks.json");
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify({ version: 1, actions: {}, current: { id: "t1", action: "session", status: "waiting", startedAt: "", turns: 1, ...current } }));
+  };
+  const at = "2026-10-26T10:00:00.000Z";
+
+  it("keeps a well-formed phase, its log, a proposal, a time box and a suspended mode", async () => {
+    const folder = tmp();
+    write(folder, {
+      phase: { id: "main", startedAt: at },
+      phases: [{ id: "warmup", at, by: "app" }, { id: "main", at, by: "agent" }, { id: "Bad", at, by: "app" }, { id: "close", at, by: "robot" }],
+      phaseProposal: { to: "close", reason: "Done" },
+      timeBox: { minutes: 30, usedMs: 1000, runningSince: at, wrappedUp: true, ended: "yes" },
+      suspendedMode: "socratic",
+    });
+    expect((await new TaskStore(folder).load()).current).toMatchObject({
+      phase: { id: "main", startedAt: at },
+      phases: [{ id: "warmup", at, by: "app" }, { id: "main", at, by: "agent" }],
+      phaseProposal: { to: "close", reason: "Done" },
+      timeBox: { minutes: 30, usedMs: 1000, runningSince: at, wrappedUp: true },
+      suspendedMode: "socratic",
+    });
+  });
+
+  it("drops what is malformed: a time box without minutes, a proposal without a phase, a suspended mode next to a mode", async () => {
+    const folder = tmp();
+    write(folder, { phaseProposal: { to: "close", reason: "Done" }, timeBox: { usedMs: 3 }, mode: "feynman", suspendedMode: "socratic" });
+    const c = (await new TaskStore(folder).load()).current;
+    for (const key of ["phase", "phases", "phaseProposal", "timeBox", "suspendedMode"]) expect(c).not.toHaveProperty(key);
+    expect(c).toMatchObject({ mode: "feynman" });
+  });
+
+  it("drops a phase the action no longer declares", async () => {
+    const folder = tmp();
+    write(folder, { phase: { id: "main", startedAt: at }, phases: [{ id: "warmup", at, by: "app" }, { id: "main", at, by: "person" }], phaseProposal: { to: "close", reason: "x" } });
+    const c = (await new TaskStore(folder, { phases: { session: ["warmup", "close"] } }).load()).current;
+    expect(c).not.toHaveProperty("phase");
+    expect(c).not.toHaveProperty("phaseProposal");
+    expect(c).toMatchObject({ phases: [{ id: "warmup", at, by: "app" }] });
+    // An action that has no phases any more keeps none.
+    const none = (await new TaskStore(folder, { phases: { quiz: ["a"] } }).load()).current;
+    expect(none).not.toHaveProperty("phases");
+  });
+
+  it("D0: a task without phases reads with no phase fields", async () => {
+    const folder = tmp();
+    write(folder, {});
+    expect((await new TaskStore(folder, { phases: {} }).load()).current).toEqual({ id: "t1", action: "session", status: "waiting", startedAt: "", turns: 1 });
+  });
+});

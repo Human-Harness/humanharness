@@ -11,6 +11,10 @@ describe("cleanDocumentCards (a chat file read from disk is untrusted)", () => {
     ]);
   });
 
+  it("keeps only the first card of a path", () => {
+    expect(cleanDocumentCards([good, { ...good, title: "Again" }])).toEqual([good]);
+  });
+
   it("drops malformed cards and anything that is not a list", () => {
     for (const bad of [null, "x", 3, { path: "a.md" }]) expect(cleanDocumentCards(bad)).toEqual([]);
     expect(

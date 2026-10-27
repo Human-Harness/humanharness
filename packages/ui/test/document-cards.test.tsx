@@ -113,6 +113,47 @@ describe("document cards (§5.1)", () => {
     expect(document.activeElement?.tagName).toBe("TEXTAREA");
   });
 
+  it("closing from full screen gives focus back to the card that opened the reader", async () => {
+    await chatWith([answer([card])], { [card.path]: "# A" });
+    const button = await screen.findByRole("button", { name: /Analysis/ });
+    await vi.waitFor(() => expect(button.getAttribute("aria-disabled")).toBeNull());
+    button.focus();
+    fireEvent.click(button);
+    const reader = await screen.findByRole("complementary", { name: "Document" });
+    await within(reader).findByRole("heading", { name: "A" });
+    fireEvent.click(within(reader).getByRole("button", { name: "Full screen" }));
+    fireEvent.click(within(reader).getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("complementary", { name: "Document" })).toBeNull();
+    expect(document.querySelector(".hh-reader-full")).toBeNull();
+    expect(document.activeElement).toBe(button);
+  });
+
+  it("the cards are checked again when the reader finds a document gone, and when the window gets focus", async () => {
+    const { client, exists } = await chatWith([answer([card])], { [card.path]: "# A" });
+    const button = await screen.findByRole("button", { name: /Analysis/ });
+    await vi.waitFor(() => expect(exists).toHaveBeenCalledTimes(1));
+    expect(button.getAttribute("aria-disabled")).toBeNull();
+    delete client.documents[card.path];
+    fireEvent.click(button);
+    const reader = await screen.findByRole("complementary", { name: "Document" });
+    await within(reader).findByText("This document was moved or deleted.");
+    await vi.waitFor(() => expect(button.getAttribute("aria-disabled")).toBe("true"));
+    client.documents[card.path] = "# A";
+    act(() => void window.dispatchEvent(new Event("focus")));
+    await vi.waitFor(() => expect(button.getAttribute("aria-disabled")).toBeNull());
+  });
+
+  it("slim (the setup screen): nothing opens the reader", async () => {
+    const client = new FakeClient({ language: "en", folder: "/w", engineId: "claude" });
+    client.chat = [answer()];
+    client.documents["x.md"] = "# X";
+    await renderIn("en", <ChatView client={client} state={client.state} components={{}} stateBlocks={[]} slim={{ action: "interview" }} />);
+    act(() => client.openDocument("x.md"));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(screen.queryByRole("complementary", { name: "Document" })).toBeNull();
+    expect(document.querySelector(".hh-with-reader")).toBeNull();
+  });
+
   it("reading preferences are saved with the app config", async () => {
     const { client } = await chatWith([answer([card])], { [card.path]: "# A" });
     const save = vi.spyOn(client, "saveConfig");

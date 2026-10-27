@@ -127,11 +127,25 @@ export function ChatView({
   const [reader, setReader] = useState<ReaderTarget | null>(null);
   /** Every open gets a new nonce: the same document at the same anchor opened again goes there again. */
   const readerOpens = useRef(0);
-  const showReader = useCallback((target: Omit<ReaderTarget, "nonce">) => setReader({ ...target, nonce: ++readerOpens.current }), []);
+  /** What had focus when the reader opened from the chat (a card, a link): it gets focus back when the reader closes. */
+  const readerOpener = useRef<HTMLElement | null>(null);
+  /** Slim (the setup screen) shows no reader: nothing opens one there. */
+  const slimRef = useRef(slim);
+  slimRef.current = slim;
+  const showReader = useCallback((target: Omit<ReaderTarget, "nonce">) => {
+    if (slimRef.current) return;
+    const active = document.activeElement;
+    // A link inside the reader keeps the first opener.
+    if (active instanceof HTMLElement && active !== document.body && !active.closest(".hh-reader")) readerOpener.current = active;
+    setReader({ ...target, nonce: ++readerOpens.current });
+  }, []);
   const [readerFull, setReaderFull] = useState(false);
   const [readerPrefs, setReaderPrefs] = useState<ReaderPrefs>(state.config.reader ?? {});
   /** Card paths that are no longer there (struck through). */
   const [missingDocs, setMissingDocs] = useState<ReadonlySet<string>>(() => new Set());
+  /** Bumped to check the cards' documents again (the window got focus, the reader found one missing). */
+  const [docsCheck, setDocsCheck] = useState(0);
+  const recheckDocs = useCallback(() => setDocsCheck((n) => n + 1), []);
   const [announcement, setAnnouncement] = useState("");
   const [estimates, setEstimates] = useState<Record<string, number>>({});
   /** The saved conversation couldn't be read. */
@@ -805,10 +819,17 @@ export function ChatView({
     ? { id: chat.live.id, role: "assistant", text: chat.live.text, blocks: chat.live.blocks, parts: chat.live.parts, activities: [], at: "" }
     : null;
   const showStart = flow && since === null && !chat.live;
-  // The cards on screen, once per change of the list: a moved or deleted document's card is struck through.
-  const cardKey = shown.flatMap((e) => (e.role === "assistant" && e.documents !== undefined ? cleanDocumentCards(e.documents).map((d) => d.path) : [])).join("\n");
+  // The cards on screen, checked once per change of the list, when the window gets focus back, and when the reader
+  // finds a document gone: a moved or deleted document's card is struck through.
+  const cardKey = useMemo(
+    () =>
+      (!flow ? chat.entries : since === null ? [] : chat.entries.slice(since))
+        .flatMap((e) => (e.role === "assistant" && e.documents !== undefined ? cleanDocumentCards(e.documents).map((d) => d.path) : []))
+        .join("\n"),
+    [chat.entries, flow, since],
+  );
   useEffect(() => {
-    // D0: no cards, no call.
+    // D0: no cards, no call, no listener.
     if (!cardKey) return;
     let live = true;
     const paths = cardKey.split("\n");
@@ -819,7 +840,25 @@ export function ChatView({
     return () => {
       live = false;
     };
-  }, [client, cardKey]);
+  }, [client, cardKey, docsCheck]);
+  useEffect(() => {
+    if (!cardKey) return;
+    window.addEventListener("focus", recheckDocs);
+    return () => window.removeEventListener("focus", recheckDocs);
+  }, [cardKey, recheckDocs]);
+  // Focus goes back once the reader has closed (and the chat shows again, out of full screen): to the card or link
+  // that opened it, else to the composer.
+  const readerOpen = reader !== null;
+  const wasReaderOpen = useRef(false);
+  useEffect(() => {
+    if (wasReaderOpen.current && !readerOpen) {
+      const opener = readerOpener.current;
+      readerOpener.current = null;
+      if (opener?.isConnected && opener.getAttribute("aria-disabled") !== "true") opener.focus();
+      else inputRef.current?.focus();
+    }
+    wasReaderOpen.current = readerOpen;
+  }, [readerOpen]);
   /** The engine's name for an entry's `engine` id, else the configured engine's (the reader's "Written by"). */
   const engineName = (id: unknown): string => state.engines.find((e) => e.id === id)?.name ?? engine;
   const cardsFor = (entry: ChatEntry) => ({
@@ -836,7 +875,6 @@ export function ChatView({
   const closeReader = useCallback(() => {
     setReader(null);
     setReaderFull(false);
-    inputRef.current?.focus();
   }, []);
   const placeholder = !flow ? t("chat.placeholder") : tasks.current ? t("flow.placeholderTask") : t("flow.placeholderStart");
 
@@ -1237,6 +1275,7 @@ export function ChatView({
               onFull={setReaderFull}
               onClose={closeReader}
               onOpen={openDoc}
+              onMissing={recheckDocs}
             />
           )}
         </div>

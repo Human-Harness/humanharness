@@ -61,6 +61,7 @@ export function DocumentReader({
   onFull,
   onClose,
   onOpen,
+  onMissing,
 }: {
   client: HarnessClient;
   target: ReaderTarget;
@@ -73,6 +74,8 @@ export function DocumentReader({
   onClose: () => void;
   /** A `.md` link inside the document. */
   onOpen: (path: string, anchor?: string) => void;
+  /** The document is not there (moved or deleted): the chat checks its cards again. */
+  onMissing?: () => void;
 }) {
   const { t, i18n } = useTranslation();
   const [doc, setDoc] = useState<DocumentRead | null>(null);
@@ -149,6 +152,12 @@ export function DocumentReader({
     restore.current = null;
     scrollToId(scrollRef.current, id);
   }, [doc, path]);
+
+  const missingRef = useRef(onMissing);
+  missingRef.current = onMissing;
+  useEffect(() => {
+    if (doc && !doc.ok && doc.reason === "missing") missingRef.current?.();
+  }, [doc]);
 
   const text = doc?.ok ? doc.text : "";
   const big = doc?.ok === true && doc.size > BIG_BYTES;

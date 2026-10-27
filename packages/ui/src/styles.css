@@ -360,6 +360,8 @@ select:focus-visible { outline: 2px solid var(--hh-ink); outline-offset: 2px; }
 .hh-phase-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 16px; border-bottom: 1px solid var(--hh-line); }
 .hh-phase-steps { display: flex; flex-wrap: wrap; gap: 4px; list-style: none; margin: 0; padding: 0; }
 .hh-phase-steps button { border-radius: 999px; padding: 4px 12px; }
+.hh-phase-steps button.hh-phase-done { border-color: var(--hh-ink); color: var(--hh-slate); }
+.hh-phase-steps button.hh-phase-done::before { content: "\2713\00a0"; }
 .hh-phase-steps button[aria-current="step"] { background: var(--hh-ink); color: var(--hh-on-ink); border-color: var(--hh-ink); }
 .hh-phase-proposal { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 12px; border: 1px solid var(--hh-line-strong); border-radius: 8px; background: var(--hh-paper); }
 .hh-phase-proposal p { margin: 0; flex: 1 1 240px; }

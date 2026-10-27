@@ -31,32 +31,48 @@ export function PhaseStepper({
   // "Not now" hides the proposal on this screen; a new one (another target or reason) shows again.
   const [dismissed, setDismissed] = useState<string | null>(null);
   const box = task.timeBox;
+  // The clock ticks only while time runs: not paused, not ended, some left.
+  const ticking = box !== undefined && !box.paused && !box.ended && timeLeftMs(box, now) > 0;
   useEffect(() => {
-    if (!box || box.paused) return;
+    if (!ticking) return;
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
-  }, [box]);
+  }, [ticking]);
   const current = phases.find((p) => p.id === task.phase);
+  const currentAt = phases.findIndex((p) => p.id === task.phase);
   const proposal = task.phaseProposal;
   const proposalKey = proposal ? `${proposal.to}\n${proposal.reason}` : null;
   const target = proposal ? phases.find((p) => p.id === proposal.to) : undefined;
   const hasClose = closePhaseOf(phases) !== undefined;
   const left = box ? timeLeftMs(box, now) : null;
   const minute = box ? box.totalMs / box.minutes : 60_000;
+  // The agent's "this part is done" card carries its own Finish; the bar's then stays hidden.
+  const finishCard = target !== undefined && proposalKey !== dismissed && target.id === task.phase && target.close === true;
   return (
     <div className="hh-phase-bar">
       <nav aria-label={t("phases.stepper")}>
         <ol className="hh-phase-steps">
-          {phases.map((p) => (
-            <li key={p.id}>
-              <button type="button" aria-current={p.id === task.phase ? "step" : undefined} disabled={disabled} onClick={() => onPhase(p.id)}>
-                {p.label}
-              </button>
-            </li>
-          ))}
+          {phases.map((p, i) => {
+            // The current part is inert: a click on it would mean "same", or "finish" in the close part.
+            const isCurrent = i === currentAt;
+            return (
+              <li key={p.id}>
+                <button
+                  type="button"
+                  className={i < currentAt ? "hh-phase-done" : undefined}
+                  aria-current={isCurrent ? "step" : undefined}
+                  aria-disabled={isCurrent ? true : undefined}
+                  disabled={disabled}
+                  onClick={isCurrent ? undefined : () => onPhase(p.id)}
+                >
+                  {p.label}
+                </button>
+              </li>
+            );
+          })}
         </ol>
       </nav>
-      {current?.close && (
+      {current?.close && !finishCard && (
         <button type="button" disabled={disabled} onClick={onFinish}>
           {t("phases.finish")}
         </button>

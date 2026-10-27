@@ -25,16 +25,23 @@ test("a turn's document: card, reader, contents, full screen, a .md link, live r
     await expect(reader.locator(".hh-callout-summary")).toBeVisible();
     await expect(reader.locator(".hh-md-caption")).toHaveText("What a harness declares");
 
-    // The table of contents jumps. It shows only in a window wider than 1100 px (the default size hides it).
-    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1300, 760));
+    // The table of contents shows at the default window size, and jumps.
     await reader.getByRole("navigation", { name: "Contents" }).getByRole("link", { name: "Risks" }).click();
     await expect(reader.getByRole("heading", { name: "Risks" })).toBeInViewport();
 
-    // Full screen and back.
+    // Full screen and back. In the narrowest window the contents show only in full screen.
+    const contents = reader.getByRole("navigation", { name: "Contents" });
+    const resize = (width: number) => app.evaluate(({ BrowserWindow }, w) => BrowserWindow.getAllWindows()[0].setSize(w, 720), width);
+    await resize(900);
+    await expect(contents).toBeHidden();
     await reader.getByRole("button", { name: "Full screen" }).click();
     await expect(page.getByPlaceholder(COMPOSER)).toBeHidden();
+    await expect(contents).toBeVisible();
     await reader.getByRole("button", { name: "Show chat" }).click();
     await expect(page.getByPlaceholder(COMPOSER)).toBeVisible();
+    await expect(contents).toBeHidden();
+    await resize(1100);
+    await expect(contents).toBeVisible();
 
     // Closing from full screen gives focus back to the card that opened the reader, once the chat shows again.
     await reader.getByRole("button", { name: "Full screen" }).click();

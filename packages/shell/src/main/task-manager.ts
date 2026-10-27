@@ -1166,7 +1166,8 @@ export class TaskManager {
     const shownInputs: Promise<void>[] = [];
     this.lastPhaseAsk = null;
     const kind = options.phase ?? "run";
-    // A proposal the person didn't take goes as soon as they send anything else (spec §4.1 "ignores it").
+    // A proposal the person didn't take goes as soon as they send anything else (spec §4.1 "ignores it"). A mode
+    // switch's turn is a run turn too, so picking a mode drops it as well, by design.
     if (kind === "run" && task.phaseProposal) await this.dropProposal(task.id);
     this.turnTask = task.id;
     try {
@@ -1251,10 +1252,15 @@ export class TaskManager {
       const proposal = { to: ask.to, reason: ask.reason };
       return this.update((s) => (s.current?.id === id ? { ...s, current: { ...s.current, phaseProposal: proposal } } : s));
     }
+    // The caller's turn is the one that asked: how it ended stays `lastDone` (an answer's turn must not reopen its
+    // question because the change turn after it failed).
+    const asked = this.lastDone;
     try {
       await this.endsInWindow(() => this.movePhase(c, phases[to], "agent"));
     } catch (err) {
       console.error("The phase change the agent asked for failed", err);
+    } finally {
+      this.lastDone = asked;
     }
   }
 
@@ -1281,8 +1287,13 @@ export class TaskManager {
     await this.enterPhase(c, to, by, plan, false);
   }
 
-  /** The change's message (spec §4.4): the new part, the way back, the time left, its brief. Modes come in Task 7. */
+  /**
+   * The change's message (spec §4.4): the new part, the way back, the time left, its brief. Modes come in Task 7. A task
+   * whose session is gone (a folder move) gets none: nothing to tell now, the resumed session's first message carries the
+   * part (`resumeMessageFor`), so every move (the person's, the agent's, the time box's) changes only the state.
+   */
   private async phasePlan(c: CurrentTask, to: HarnessPhase, back: boolean): Promise<PhasePlan> {
+    if (c.resume) return { message: null };
     const language = await this.d.language();
     const text = await this.phaseText(c.action!, to);
     const previous = this.phaseOf(c);
@@ -1292,11 +1303,18 @@ export class TaskManager {
   }
 
   /**
-   * Enters phase `to` (spec §4.4), inside the running operation. The state first: the phase, the log, the mode fields, and
-   * the proposal goes. Then, when there is a message: the window is told, a due checkpoint runs, and one run turn of the
-   * same session carries it; its answer shows, and the chat's line is the separator.
+   * Enters phase `to` (spec §4.4), inside the running operation. With a message, the window is told and a due checkpoint
+   * runs first, still in the part the task leaves (a cancelled one moves nothing). Then the state: the phase, the log,
+   * the mode fields, and the proposal goes. Then one run turn of the same session carries the message; its answer
+   * shows, and the chat's line is the separator.
    */
   private async enterPhase(c: CurrentTask, to: HarnessPhase, by: PhaseBy, plan: PhasePlan, back: boolean): Promise<void> {
+    if (plan.message) {
+      this.tellTurn({ task: c.id, kind: "phase", phase: to.id, by, ...(back ? { back: true as const } : {}) });
+      const before = (await this.d.store.load()).current;
+      if (before?.id !== c.id) return this.stopped();
+      if (needsCheckpoint(before) && !(await this.checkpoint(before))) return this.stopped();
+    }
     const at = this.now().toISOString();
     await this.update((s) => {
       if (s.current?.id !== c.id) return s;
@@ -1308,10 +1326,9 @@ export class TaskManager {
       }
       return { ...s, current: next };
     });
+    if (!plan.message) return;
     const now = (await this.d.store.load()).current;
-    if (!plan.message || now?.id !== c.id) return;
-    this.tellTurn({ task: c.id, kind: "phase", phase: to.id, by, ...(back ? { back: true as const } : {}) });
-    if (needsCheckpoint(now) && !(await this.checkpoint(now))) return this.stopped();
+    if (now?.id !== c.id) return this.stopped();
     await this.setStatus(c.id, "running");
     // Checked with no await before the send: a Stop while the status was saved.
     if (this.cancelRequested) {

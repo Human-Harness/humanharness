@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { ModelProfile } from "@humanharness/engines";
-import type { HarnessPhase, HarnessTimeBox, SavedNote } from "@humanharness/harness-sdk";
+import { type HarnessPhase, type HarnessTimeBox, type InputBlock, type SavedNote, defineBlock, z } from "@humanharness/harness-sdk";
 import type { Event } from "@humanharness/runtime";
 import type { TaskTurnNotice, TaskView } from "@humanharness/ui/client";
 import type { NoteMeta } from "@humanharness/workspace";
-import { TaskManager } from "../src/main/task-manager";
-import { CLOSE_PROMPT, PHASE_BACK, phasePrompt, phaseSection, phasesSection, resumeMessage } from "../src/main/task-prompts";
+import { type TaskDeps, TaskManager } from "../src/main/task-manager";
+import { CHECKPOINT_PROMPT, CLOSE_PROMPT, PHASE_BACK, phasePrompt, phaseSection, phasesSection, resumeMessage } from "../src/main/task-prompts";
 import { type TasksFile, emptyTasks } from "../src/main/task-store";
 import type { TurnOptions } from "../src/main/turn-controller";
 
@@ -30,7 +30,7 @@ const profile: ModelProfile = { engine: "claude", tier: "standard", model: "sonn
 
 /** A task manager over memory: `session` has phases (and, when asked, modes and a time box); `quiz` has none. */
 export function setup(
-  opts: { script?: Event[][]; state?: TasksFile; phases?: HarnessPhase[]; modes?: { modes: string[]; defaultMode?: string }; timeBox?: HarnessTimeBox; gate?: Promise<void> } = {},
+  opts: { script?: Event[][]; state?: TasksFile; phases?: HarnessPhase[]; modes?: { modes: string[]; defaultMode?: string }; timeBox?: HarnessTimeBox; gate?: Promise<void>; extra?: Partial<TaskDeps> } = {},
 ) {
   let state = opts.state ?? emptyTasks();
   const script = [...(opts.script ?? [])];
@@ -89,6 +89,7 @@ export function setup(
         }
       : {}),
     minuteMs: 1000,
+    ...opts.extra,
     now: () => new Date(clock),
     newId: () => `t${++n}`,
   });
@@ -227,5 +228,80 @@ describe("TaskManager: phases (task-phases spec §4)", () => {
     const phase = `${phasesSection(LIST, "main")}\n\n${phaseSection(text("main", "Main block"), { language: "en" })}`;
     expect(t.turns[0].message).toBe(resumeMessage({ language: "en", notesIndex: "", brief: "# Task: session\n\n{{notesIndex}}", phase, message: "Hi" }));
     expect(t.turns[0].options).toMatchObject({ taskPhase: "main" });
+  });
+
+  const waitingIn = (phase: string, extra: Record<string, unknown> = {}): TasksFile => ({
+    ...emptyTasks(),
+    current: { id: "t1", action: "session", status: "waiting", startedAt: "", turns: 1, phase: { id: phase, startedAt: NOW }, ...extra } as TasksFile["current"],
+  });
+  const full = { profile: { ...profile, cap: 1000 }, context: { used: 900 } };
+
+  it("a due checkpoint runs before the change, still in the part the task leaves; then the task moves", async () => {
+    const t = setup({ state: waitingIn("warmup", full) });
+    const r = t.manager.setPhase("main", "t1");
+    expect(await r.accepted).toEqual({ ok: true, changed: "turn" });
+    await r.done;
+    expect(t.turns.map((x) => x.message)).toEqual([CHECKPOINT_PROMPT, phasePrompt(text("main", "Main block"), { language: "en", previous: "Warm-up" })]);
+    expect(t.turns[0].options).toMatchObject({ phase: "checkpoint", taskPhase: "warmup" });
+    expect(t.turns[1].options).toMatchObject({ phase: "phase-change", taskPhase: "main" });
+    expect(t.state().current).toMatchObject({ status: "waiting", phase: { id: "main" } });
+  });
+
+  it("a cancelled checkpoint moves nothing", async () => {
+    const t = setup({ state: waitingIn("warmup", full), script: [[{ type: "done", ok: false, error: { code: "cancelled" } }]] });
+    const r = t.manager.setPhase("main", "t1");
+    await r.accepted;
+    await r.done;
+    expect(t.turns).toHaveLength(1);
+    expect(t.state().current).toMatchObject({ status: "waiting", phase: { id: "warmup" } });
+    expect(t.state().current).not.toHaveProperty("phases");
+    expect(t.emitted).toContainEqual({ type: "done", ok: false, error: { code: "cancelled" } });
+  });
+
+  it("a task whose session is gone moves quietly; its resumed session carries the new part", async () => {
+    const t = setup({ state: waitingIn("warmup", { resume: true }) });
+    const r = t.manager.setPhase("main", "t1");
+    expect(await r.accepted).toEqual({ ok: true, changed: "quiet" });
+    await r.done;
+    expect(t.turns).toEqual([]);
+    expect(t.notices).toEqual([]);
+    expect(t.state().current).toMatchObject({ status: "waiting", resume: true, phase: { id: "main" } });
+    await t.manager.ask("Hi");
+    expect(t.turns[0].message).toContain(phaseSection(text("main", "Main block"), { language: "en" }));
+    expect(t.turns[0].options).toMatchObject({ taskPhase: "main" });
+  });
+
+  it("the person's move replaces the agent's pending proposal", async () => {
+    const t = setup({ script: [[ask("close"), ok]] });
+    await t.manager.start("session");
+    expect(t.state().current).toHaveProperty("phaseProposal");
+    const r = t.manager.setPhase("main", "t1");
+    await r.accepted;
+    await r.done;
+    expect(t.state().current?.phase?.id).toBe("main");
+    expect(t.state().current).not.toHaveProperty("phaseProposal");
+    expect(t.views.at(-1)?.current).not.toHaveProperty("phaseProposal");
+  });
+
+  it("an answer whose turn went well stays answered when the move it asked for fails", async () => {
+    const block = defineBlock({
+      description: "Commit.",
+      visible: true,
+      schema: z.object({ question: z.string() }),
+      input: z.object({ why: z.string().min(1) }),
+      inputUi: { why: { label: "Why" } },
+      example: { question: "q" },
+    }) as InputBlock;
+    const t = setup({
+      state: waitingIn("warmup", { pendingInput: { blockId: "t1:0:0", block: "commit_answer", shownAt: NOW } }),
+      script: [[ask("main"), ok], [{ type: "done", ok: false, error: { code: "agent-crashed" } }]],
+      extra: { inputBlocks: { commit_answer: block }, markAnswered: async () => true },
+    });
+    const r = t.manager.respond("t1:0:0", { why: "x" });
+    expect(await r.accepted).toMatchObject({ ok: true });
+    await r.done;
+    expect(t.turns).toHaveLength(2);
+    expect(t.state().current?.phase?.id).toBe("main");
+    expect(t.state().current).not.toHaveProperty("pendingInput");
   });
 });

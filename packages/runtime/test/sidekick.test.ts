@@ -33,6 +33,15 @@ describe("SidekickSession", () => {
     await s.close();
   });
 
+  it("the engine's limit windows ride on the answer", async () => {
+    const limits = { line: { type: "rate_limit_event", rate_limit_info: { status: "allowed", unifiedWindows: { five_hour: { utilization: 0.4, resetsAt: 1_900_000_000 } } } } };
+    const fake = fakeClaude({ steps: [limits, ...claudeTextLines("{}"), result("{}")] });
+    const s = new SidekickSession({ engine: getEngine("claude"), command: fake.command, env: fake.env, folder: fake.folder, profile });
+    const a = await s.ask("x", new AbortController().signal);
+    expect(a.limits).toEqual([{ kind: "five_hour", utilization: 0.4, resetsAt: new Date(1_900_000_000_000).toISOString() }]);
+    await s.close();
+  });
+
   it("turns are serial: a second ask waits for the first", async () => {
     const fake = fakeClaude({ steps: [{ sleep: 150 }, ...claudeTextLines("{}"), result("{}")] });
     const s = new SidekickSession({ engine: getEngine("claude"), command: fake.command, env: fake.env, folder: fake.folder, profile });

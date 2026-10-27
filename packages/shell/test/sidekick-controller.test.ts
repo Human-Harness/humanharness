@@ -62,7 +62,7 @@ export function harness(o: { record?: Partial<SidekickRecord> | null; answers?: 
     changed: (s) => void states.push(s),
     waitMs: () => o.waitMs ?? 5_000,
   };
-  return { ctl: new SidekickController(deps), asked, opened, closed, logged, briefs, states, setTask: (t: typeof task) => (task = t), record: () => record };
+  return { ctl: new SidekickController(deps), deps, asked, opened, closed, logged, briefs, states, setTask: (t: typeof task) => (task = t), record: () => record };
 }
 
 describe("SidekickController state and settings", () => {
@@ -94,5 +94,201 @@ describe("SidekickController state and settings", () => {
   it("the week's tokens", async () => {
     const line = sidekickRecord({ engine: "claude", task: "t0", sidekick: "sidekick", moment: "pre", profile, ok: true, usage: { inputTokens: 100, outputTokens: 10, cacheReadTokens: 0, cacheWriteTokens: 0 } });
     expect((await harness({ usage: [line] }).ctl.state()).week).toBe(110);
+  });
+});
+
+const on = { id: "settings", type: "settings" as const, on: true };
+const slow = (signal: AbortSignal) => new Promise<SidekickAnswer>((resolve) => signal.addEventListener("abort", () => resolve({ ok: false, text: "", error: { code: "cancelled" } })));
+
+describe("SidekickController.review (spec §4.1)", () => {
+  it("D0: off → send, no session, nothing logged", async () => {
+    const h = harness();
+    expect(await h.ctl.review({ text: "make it better" })).toEqual({ kind: "send" });
+    expect(h.opened).toEqual([]);
+    expect(h.logged).toEqual([]);
+    expect(h.briefs).toEqual([]);
+  });
+
+  it("pre-send off, or the action off → send", async () => {
+    expect(await harness({ record: { ...on, preSend: false } }).ctl.review({ text: "make it better" })).toEqual({ kind: "send" });
+    const h = harness({ record: on, task: { id: "t1", action: "export", scope: "main" }, manifest: { default: "off", actions: { export: "off" } } });
+    expect(await h.ctl.review({ text: "make it better", force: true })).toEqual({ kind: "send" });
+    expect(h.opened).toEqual([]);
+  });
+
+  it("auto with no flags → send without the model", async () => {
+    const h = harness({ record: on });
+    expect(await h.ctl.review({ text: "Rewrite the second paragraph of chapter 2 so it cites Smith 2019." })).toEqual({ kind: "send" });
+    expect(h.asked).toEqual([]);
+  });
+
+  it("a send that carries attachments is not flagged missing-context", async () => {
+    const h = harness({ record: on });
+    expect(await h.ctl.review({ text: "Summarize the main argument of the document in three bullet points for my notes", attached: true })).toEqual({ kind: "send" });
+    expect(h.asked).toEqual([]);
+    const bare = harness({ record: on });
+    expect((await bare.ctl.review({ text: "Summarize the main argument of the document in three bullet points for my notes" })).kind).toBe("card");
+  });
+
+  it("a flag → the model → a card; the prompt carries the flags and the context", async () => {
+    const h = harness({ record: on });
+    const r = await h.ctl.review({ text: "make it better" });
+    expect(r.kind).toBe("card");
+    if (r.kind !== "card") return;
+    expect(r.card).toMatchObject({ prompt: "make it better", rewrite: "Make the intro shorter.", flags: [{ kind: "vague", match: "better" }] });
+    expect(h.asked[0]).toContain('- vague: "better"');
+    expect(h.asked[0]).toContain("- Chapter 2 outline");
+    expect(h.asked[0]).toContain("UI language: English");
+    expect((await h.ctl.state()).status).toBe("suggestion");
+  });
+
+  it("the open phase drives the off-phase check", async () => {
+    const h = harness({ record: on, task: { id: "t1", action: "draft", scope: "main", phase: "outline" } });
+    (h.deps as { phases: SidekickDeps["phases"] }).phases = () => [{ id: "outline", label: "Outline" }, { id: "polish", label: "Polish wording" }];
+    const r = await h.ctl.review({ text: "Polish wording of chapter 2, paragraph 3, keep Smith 2019 cited." });
+    expect(r.kind).toBe("card");
+    expect(h.asked[0]).toContain("Open phase: Outline");
+    expect(h.asked[0]).toContain('- off-phase: "Polish"');
+  });
+
+  it("Review (force) and `always` ask the model without flags", async () => {
+    const forced = harness({ record: on });
+    expect((await forced.ctl.review({ text: "Rewrite paragraph 2 of chapter 2 to cite Smith 2019.", force: true })).kind).toBe("card");
+    const always = harness({ record: on, task: { id: "t1", action: "draft", scope: "main" }, manifest: { default: "off", actions: { draft: "always" } } });
+    expect((await always.ctl.review({ text: "Rewrite paragraph 2 of chapter 2 to cite Smith 2019." })).kind).toBe("card");
+  });
+
+  it("a send verdict or low confidence → send", async () => {
+    expect(await harness({ record: on, answers: [json({ verdict: "send", issues: [], confidence: 0.9 })] }).ctl.review({ text: "make it better" })).toEqual({ kind: "send" });
+    expect(await harness({ record: on, answers: [json({ verdict: "suggest", issues: [{ kind: "vague", text: "x" }], rewrite: "y", confidence: 0.3 })] }).ctl.review({ text: "make it better" })).toEqual({ kind: "send" });
+  });
+
+  it("a rewrite that echoes the prompt is dropped", async () => {
+    const h = harness({ record: on, answers: [json({ verdict: "suggest", issues: [], rewrite: "make it better", confidence: 0.9 })] });
+    expect(await h.ctl.review({ text: "make it better" })).toEqual({ kind: "send" });
+  });
+
+  it("invalid JSON or an engine error → error, with the quiet notice", async () => {
+    const h = harness({ record: on, answers: ["not json"] });
+    expect(await h.ctl.review({ text: "make it better" })).toEqual({ kind: "error" });
+    expect((await h.ctl.state()).notice).toBe("failed");
+    const e = harness({ record: on, answers: [async () => ({ ok: false, text: "", error: { code: "agent-crashed" as const } })] });
+    expect(await e.ctl.review({ text: "make it better" })).toEqual({ kind: "error" });
+    expect((await e.ctl.state()).notice).toBe("failed");
+  });
+
+  it("the wait runs out → timeout; the late answer is dropped", async () => {
+    const h = harness({ record: on, answers: [slow], waitMs: 30 });
+    expect(await h.ctl.review({ text: "make it better" })).toEqual({ kind: "timeout" });
+    expect(await h.ctl.state()).toMatchObject({ card: null, notice: "timeout", status: "watching" });
+  });
+
+  it("after a timeout the next review reuses the session, and the notice clears", async () => {
+    const h = harness({ record: on, answers: [slow], waitMs: 30 });
+    expect(await h.ctl.review({ text: "make it better" })).toEqual({ kind: "timeout" });
+    expect((await h.ctl.review({ text: "make it better" })).kind).toBe("card");
+    expect(h.opened).toEqual(["s1"]);
+    expect((await h.ctl.state()).notice).toBeUndefined();
+  });
+
+  it("cancel (⌘⏎) → cancelled, no card", async () => {
+    const h = harness({ record: on, answers: [slow] });
+    const p = h.ctl.review({ text: "make it better" });
+    await vi.waitFor(() => expect(h.asked.length).toBe(1));
+    h.ctl.cancel();
+    expect(await p).toEqual({ kind: "cancelled" });
+    expect(await h.ctl.state()).toMatchObject({ card: null, status: "watching" });
+  });
+
+  it("past the cap → send without the model", async () => {
+    const line = sidekickRecord({ engine: "claude", task: "t1", sidekick: "sidekick", moment: "pre", profile, ok: true, usage: { inputTokens: 20_000, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 } });
+    const h = harness({ record: on, usage: [line] });
+    expect(await h.ctl.review({ text: "make it better" })).toEqual({ kind: "send" });
+    expect(h.asked).toEqual([]);
+  });
+
+  it("logs one tagged usage line per model turn, with the engine's limits", async () => {
+    const limits = [{ kind: "five_hour", utilization: 0.4, resetsAt: "2030-01-01T00:00:00.000Z" }];
+    const h = harness({ record: on, task: { id: "t1", action: "draft", scope: "main" }, answers: [async () => ({ ok: true, text: SUGGEST, usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 }, limits })] });
+    await h.ctl.review({ text: "make it better" });
+    expect(h.logged).toHaveLength(1);
+    expect(h.logged[0]).toMatchObject({ phase: "sidekick", process: "sidekick", moment: "pre", sidekick: "sidekick", task: "t1", action: "draft", tier: "light", limits });
+  });
+
+  it("one session per task: reused, a new task gets a new one, betweenTasks closes the old", async () => {
+    const h = harness({ record: on });
+    await h.ctl.review({ text: "make it better" });
+    await h.ctl.review({ text: "make it better" });
+    expect(h.opened).toEqual(["s1"]);
+    expect(h.briefs).toHaveLength(1);
+    expect(h.briefs[0]).toContain("Essay Coach");
+    h.setTask({ id: "t2", scope: "main" });
+    await h.ctl.betweenTasks();
+    expect(h.closed).toEqual(["s1"]);
+    await h.ctl.review({ text: "make it better" });
+    expect(h.opened).toEqual(["s1", "s2"]);
+  });
+
+  it("betweenTasks keeps the open task's session and closes the rest", async () => {
+    const h = harness({ record: on });
+    await h.ctl.review({ text: "make it better" });
+    await h.ctl.betweenTasks();
+    expect(h.closed).toEqual([]);
+    h.setTask(null);
+    await h.ctl.betweenTasks();
+    expect(h.closed).toEqual(["s1"]);
+  });
+
+  it("a review before the task exists opens a session the task adopts", async () => {
+    const h = harness({ record: on, task: null });
+    await h.ctl.review({ text: "make it better" });
+    h.setTask({ id: "t9", scope: "main" });
+    await h.ctl.betweenTasks();
+    await h.ctl.review({ text: "make it better" });
+    expect(h.opened).toEqual(["s1"]);
+    expect(h.closed).toEqual([]);
+  });
+
+  it("turning off closes the sessions", async () => {
+    const h = harness({ record: on });
+    await h.ctl.review({ text: "make it better" });
+    await h.ctl.set({ on: false });
+    expect(h.closed).toEqual(["s1"]);
+  });
+
+  it("turning off aborts the running review, clears the card and the notice, and closes sessions", async () => {
+    const h = harness({ record: on, answers: [SUGGEST, slow] });
+    expect((await h.ctl.review({ text: "make it better" })).kind).toBe("card");
+    const p = h.ctl.review({ text: "make it better" });
+    await vi.waitFor(() => expect(h.asked.length).toBe(2));
+    await h.ctl.set({ on: false });
+    expect(await p).toEqual({ kind: "cancelled" });
+    expect(h.closed).toEqual(["s1"]);
+    expect(await h.ctl.state()).toMatchObject({ status: "off", card: null });
+    const failed = harness({ record: on, answers: ["not json"] });
+    await failed.ctl.review({ text: "make it better" });
+    expect((await failed.ctl.state()).notice).toBe("failed");
+    await failed.ctl.set({ on: false });
+    expect((await failed.ctl.state()).notice).toBeUndefined();
+  });
+
+  it("an unknown engine id never makes state() reject", async () => {
+    const h = harness({ record: on });
+    (h.deps as { engine: SidekickDeps["engine"] }).engine = () => {
+      throw new Error("unknown engine");
+    };
+    expect(await h.ctl.state()).toMatchObject({ status: "watching", tier: "light" });
+    expect(await h.ctl.review({ text: "make it better" })).toEqual({ kind: "error" });
+  });
+});
+
+describe("SidekickController.review races", () => {
+  it("a review that replaces one still opening its session shares one session", async () => {
+    const h = harness({ record: on });
+    const first = h.ctl.review({ text: "make it better" });
+    const second = h.ctl.review({ text: "make it better" });
+    expect(await first).toEqual({ kind: "cancelled" });
+    expect((await second).kind).toBe("card");
+    expect(h.opened).toEqual(["s1"]);
   });
 });

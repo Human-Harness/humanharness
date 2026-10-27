@@ -1,9 +1,12 @@
+import { randomUUID } from "node:crypto";
 import type { EngineDef, ModelProfile } from "@humanharness/engines";
-import { SIDEKICK_ALWAYS_MAX_MS, type SidekickManifest } from "@humanharness/harness-sdk";
+import { SIDEKICK_ALWAYS_MAX_MS, type SidekickManifest, sidekickMinWords, sidekickMode, sidekickTips } from "@humanharness/harness-sdk";
 import type { SidekickAnswer, SidekickSessionOptions } from "@humanharness/runtime";
 import type { SidekickCard, SidekickOutcome, SidekickReview, SidekickSetResult, SidekickSettings, SidekickSettingsPatch, SidekickState } from "@humanharness/ui/client";
+import { localCheck, sidekickBrief } from "@humanharness/workspace";
 import type { SidekickStore } from "./sidekick-store";
-import { type UsageRecord, sidekickSpent, sidekickWeek } from "./usage-log";
+import { parseReview, preSendPrompt } from "./sidekick-turns";
+import { type UsageRecord, capTokens, sidekickRecord, sidekickSpent, sidekickWeek } from "./usage-log";
 
 /** Part 1's one sidekick (plan Decision 9). */
 export const SIDEKICK_ID = "sidekick";
@@ -69,6 +72,8 @@ export class SidekickController {
   /** Tokens toward the cap of reviews that ran before their task existed (moved on adoption). */
   private readonly pending = new Map<string, number>();
   private running: AbortController | null = null;
+  /** Bumped by every review: a review replaced while it still awaited its inputs ends as cancelled. */
+  private reviews = 0;
   private card: SidekickCard | null = null;
   private notice: SidekickState["notice"];
   private closed = false;
@@ -84,7 +89,10 @@ export class SidekickController {
     const cap = settings.cap === "none" ? null : settings.cap;
     let tier = "light";
     if (setup) {
-      const p = await this.d.profile(this.d.engine(setup.engineId)).catch(() => null);
+      // An unknown engine id (a hand-edited setup) must not make state() reject.
+      const p = await Promise.resolve()
+        .then(() => this.d.profile(this.d.engine(setup.engineId)))
+        .catch(() => null);
       if (p) tier = p.tier;
     }
     const status: SidekickState["status"] = !settings.on
@@ -115,6 +123,7 @@ export class SidekickController {
       // Off: nothing runs and nothing stays open (D0: "the person can turn it off").
       this.running?.abort();
       this.card = null;
+      this.notice = undefined;
       await this.closeSessions(() => true);
     }
     await this.push();
@@ -148,10 +157,153 @@ export class SidekickController {
     await this.closeSessions(() => true);
   }
 
-  review(req: { text: string; force?: boolean }): Promise<SidekickReview> {
-    // Task 11.
-    void req;
-    return Promise.resolve({ kind: "send" });
+  /**
+   * The pre-send review (spec §4.1): the local check, the decision, the model within the wait, the card. `force` is
+   * the Review button; `attached` says the send carries attachments or material, so "the file" isn't missing context.
+   */
+  async review(req: { text: string; force?: boolean; attached?: boolean }): Promise<SidekickReview> {
+    const turn = ++this.reviews;
+    this.running?.abort();
+    this.card = null;
+    this.notice = undefined;
+    const settings = await this.d.store.settings();
+    if (this.closed || !settings.on || !settings.preSend) return { kind: "send" };
+    const task = await this.d.task().catch(() => null);
+    const mode = sidekickMode(this.d.manifest, task?.action);
+    if (mode === "off") return { kind: "send" };
+    const setup = await this.d.setup().catch(() => null);
+    if (!setup || !(await this.d.hasNotice(setup.engineId).catch(() => false))) return { kind: "send" };
+
+    // 1. The local check (0 tokens).
+    const ctx = await this.d.context(setup.base, task?.scope).catch(() => ({ notes: [] as string[], data: [] as string[] }));
+    const phases = this.d.phases(task?.action);
+    const open = phases.find((p) => p.id === task?.phase);
+    const flags = localCheck(req.text, {
+      minWords: sidekickMinWords(this.d.manifest),
+      known: [...ctx.notes, ...ctx.data],
+      ...(open ? { phases: { open, others: phases.filter((p) => p.id !== open.id) } } : {}),
+      ...(req.attached ? { muted: ["missing-context" as const] } : {}),
+    });
+    // 2. The decision.
+    if (flags.length === 0 && mode === "auto" && !req.force) return { kind: "send" };
+    const key = task?.id ?? NO_TASK;
+    const records = await this.d.usage(setup.base).catch(() => []);
+    const spent = (task ? sidekickSpent(records, task.id) : 0) + (this.pending.get(key) ?? 0);
+    if (settings.cap !== "none" && spent >= settings.cap) return { kind: "send" };
+
+    // 3. The model, within the wait (unless a newer review replaced this one meanwhile).
+    if (turn !== this.reviews) return { kind: "cancelled" };
+    const controller = new AbortController();
+    this.running = controller;
+    let timedOut = false;
+    const timer = setTimeout(
+      () => {
+        timedOut = true;
+        controller.abort();
+      },
+      (this.d.waitMs ?? defaultWaitMs)(settings.wait),
+    );
+    try {
+      await this.push();
+      const engine = this.d.engine(setup.engineId);
+      const session = await this.sessionFor(setup.base, engine, key, task?.id);
+      if (timedOut) return this.finish("timeout");
+      if (controller.signal.aborted) return this.finish("cancelled");
+      if (!session) return this.finish("error");
+      const prompt = preSendPrompt({
+        harness: this.d.harness,
+        ...(open ? { phase: { label: open.label, ...(open.brief ? { brief: open.brief } : {}) } } : {}),
+        notes: ctx.notes,
+        data: ctx.data,
+        flags,
+        uiLanguage: await this.d.uiLanguage().catch(() => "English"),
+        prompt: req.text,
+      });
+      const answer = await session.ask(prompt, controller.signal);
+      if (answer.usage) {
+        if (!task) this.pending.set(key, (this.pending.get(key) ?? 0) + capTokens(answer.usage));
+        const record = sidekickRecord({
+          engine: engine.id,
+          ...(task ? { task: task.id, scope: task.scope } : {}),
+          ...(task?.action ? { action: task.action } : {}),
+          sidekick: SIDEKICK_ID,
+          moment: "pre",
+          profile: session.profile,
+          ok: answer.ok,
+          usage: answer.usage,
+          ...(answer.limits ? { limits: answer.limits } : {}),
+        });
+        await this.d.log(setup.base, record).catch((err: unknown) => console.error("Could not record the Sidekick turn", err));
+      }
+      // A late answer is dropped: the prompt already went as typed (or the person sent at once).
+      if (timedOut) return this.finish("timeout");
+      if (controller.signal.aborted) return this.finish("cancelled");
+      const reply = answer.ok ? parseReview(answer.text, req.text) : null;
+      if (!reply) return this.finish("error");
+      if (reply.verdict === "send" || reply.confidence < SIDEKICK_THRESHOLD) return this.finish("send");
+      // 4. The card.
+      this.card = {
+        id: randomUUID(),
+        prompt: req.text,
+        flags,
+        issues: reply.issues,
+        ...(reply.rewrite ? { rewrite: reply.rewrite } : {}),
+        ...(reply.queued?.length ? { queued: reply.queued } : {}),
+        confidence: reply.confidence,
+        at: new Date().toISOString(),
+      };
+      return { kind: "card", card: this.card };
+    } catch (err) {
+      console.error("Sidekick could not review the prompt", err);
+      return this.finish(timedOut ? "timeout" : controller.signal.aborted ? "cancelled" : "error");
+    } finally {
+      clearTimeout(timer);
+      if (this.running === controller) this.running = null;
+      await this.push();
+    }
+  }
+
+  /** Records the quiet notice for a failed review (spec §5 "Errors") and returns what the composer does. */
+  private finish(kind: "send" | "timeout" | "error" | "cancelled"): SidekickReview {
+    if (kind === "timeout") this.notice = "timeout";
+    if (kind === "error") this.notice = "failed";
+    return { kind };
+  }
+
+  /**
+   * The session for `key` (the open task, or NO_TASK): reused; a task adopts the NO_TASK session a review opened
+   * before it existed; else a new one, its brief written first and never again for that session (spec §5). Null
+   * without a CLI.
+   */
+  private async sessionFor(base: string, engine: EngineDef, key: string, taskId: string | undefined): Promise<SidekickLike | null> {
+    const have = this.sessions.get(key);
+    if (have && have.base === base) return have.session;
+    if (taskId !== undefined) {
+      const loose = this.sessions.get(NO_TASK);
+      if (loose && loose.base === base) {
+        // Decision 14: the pre-task spend stays in the week's total; the task's own lines start its cap.
+        this.sessions.delete(NO_TASK);
+        this.pending.delete(NO_TASK);
+        this.sessions.set(key, loose);
+        return loose.session;
+      }
+    }
+    if (have) {
+      this.sessions.delete(key);
+      await have.session.close().catch(() => undefined);
+    }
+    const cmd = await this.d.command(engine).catch(() => null);
+    if (!cmd) return null;
+    const profile = await this.d.profile(engine);
+    const folder = this.d.workDir(base);
+    const tips = sidekickTips(this.d.manifest);
+    await this.d.writeBrief(folder, sidekickBrief({ name: SIDEKICK_NAME, harness: this.d.harness.name, ...(tips ? { tips } : {}) }), engine);
+    // A review that replaced this one may have opened the key's session meanwhile: keep that one.
+    const raced = this.sessions.get(key);
+    if (raced && raced.base === base) return raced.session;
+    const session = this.d.open({ engine, command: cmd.command, env: cmd.env, folder, profile });
+    this.sessions.set(key, { session, base });
+    return session;
   }
 
   private async closeSessions(which: (key: string) => boolean): Promise<void> {

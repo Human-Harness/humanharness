@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { EngineDef, ModelProfile } from "@humanharness/engines";
 import { AcpTransport } from "./acp";
 import { ClaudeCliTransport } from "./claude-cli";
-import type { EngineError, Event } from "./events";
+import type { EngineError, Event, LimitWindow } from "./events";
 import type { SystemTaskResult } from "./system";
 import { type Transport, type TransportOptions, acpFields } from "./transport";
 
@@ -23,6 +23,8 @@ export interface SidekickAnswer {
   /** The reply's text (paragraphs joined by a blank line). */
   text: string;
   usage?: SystemTaskResult["usage"];
+  /** The plan's limit windows, when the engine reported them in this turn. */
+  limits?: LimitWindow[];
   model?: string;
   error?: EngineError;
 }
@@ -81,7 +83,8 @@ export class SidekickSession {
           ...(u.costUsd !== undefined || e.costUsd !== undefined ? { costUsd: (u.costUsd ?? 0) + (e.costUsd ?? 0) } : {}),
         };
         if (e.model) answer.model = e.model;
-      } else if (e.type === "done") {
+      } else if (e.type === "limits") answer.limits = e.windows;
+      else if (e.type === "done") {
         answer.ok = e.ok;
         if (!e.ok) answer.error = e.error;
       }

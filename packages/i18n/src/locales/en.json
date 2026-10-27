@@ -643,6 +643,7 @@
     "diagram": "Diagram",
     "drawing": "Drawing the diagram…",
     "diagramFailed": "This diagram could not be drawn ({{why}}). Showing its source.",
+    "diagramSlow": "it took too long",
     "callout": {
       "note": "Note",
       "tip": "Tip",

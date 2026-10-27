@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState, useSyncExternalStore } from "react";
 import { useTranslation } from "react-i18next";
-import { type Drawn, drawMermaid } from "./mermaid-loader";
+import { type Drawn, drawMermaid, mermaidAccessible } from "./mermaid-loader";
 
 /** The app's colours for Mermaid's `base` theme, read from the tokens when the diagram is drawn. */
 function themeVariables(): Record<string, string> {
@@ -20,63 +20,74 @@ function themeVariables(): Record<string, string> {
   return Object.fromEntries(Object.entries(vars).filter(([, x]) => x));
 }
 
+const DARK = "(prefers-color-scheme: dark)";
+
+function subscribeScheme(onChange: () => void): () => void {
+  const query = typeof window !== "undefined" ? window.matchMedia?.(DARK) : undefined;
+  query?.addEventListener?.("change", onChange);
+  return () => query?.removeEventListener?.("change", onChange);
+}
+
+function schemeNow(): "light" | "dark" {
+  return typeof window !== "undefined" && window.matchMedia?.(DARK).matches ? "dark" : "light";
+}
+
 /** "light" or "dark", following the system (the app sets nativeTheme from Settings › Appearance). */
-function useScheme(): string {
-  const query = typeof window !== "undefined" ? window.matchMedia?.("(prefers-color-scheme: dark)") : undefined;
-  const [dark, setDark] = useState(Boolean(query?.matches));
-  useEffect(() => {
-    if (!query) return;
-    const on = (e: MediaQueryListEvent) => setDark(e.matches);
-    query.addEventListener?.("change", on);
-    return () => query.removeEventListener?.("change", on);
-  }, [query]);
-  return dark ? "dark" : "light";
+function useScheme(): "light" | "dark" {
+  return useSyncExternalStore(subscribeScheme, schemeNow, () => "light");
 }
 
 /** A ```mermaid block (§3.3): its source while the fence is open, else the drawing, or its source and why it failed. */
 export function MermaidDiagram({ code, closed, caption }: { code: string; closed: boolean; caption?: string }) {
   const { t } = useTranslation();
   const scheme = useScheme();
-  const [drawn, setDrawn] = useState<Drawn | null>(null);
+  const bodyId = useId();
+  // The drawing is kept with the code it shows: on a colour change the old drawing stays until the new one arrives.
+  const [drawn, setDrawn] = useState<{ code: string; result: Drawn } | null>(null);
   const [source, setSource] = useState(false);
   useEffect(() => {
     if (!closed) return;
     let live = true;
-    setDrawn(null);
-    drawMermaid(code, themeVariables()).then((d) => live && setDrawn(d));
+    drawMermaid(code, themeVariables(), () => live).then((result) => {
+      if (live && !("skipped" in result)) setDrawn({ code, result });
+    });
     return () => {
       live = false;
     };
   }, [code, closed, scheme]);
   const sourceBlock = (
-    <pre className="hh-md-code">
+    <pre className="hh-md-code" id={bodyId}>
       <code>{code}</code>
     </pre>
   );
   if (!closed) return sourceBlock;
-  if (drawn && !drawn.ok) {
+  const result = drawn?.code === code ? drawn.result : null;
+  if (result && !result.ok) {
+    const why = "slow" in result ? t("reader.diagramSlow") : "why" in result ? result.why : "";
     return (
       <div className="hh-md-diagram hh-md-diagram-failed">
         <p className="hh-md-diagram-error" role="note">
-          {t("reader.diagramFailed", { why: drawn.why })}
+          {t("reader.diagramFailed", { why })}
         </p>
         {sourceBlock}
       </div>
     );
   }
+  const acc = mermaidAccessible(code);
+  const alt = caption || [acc.title, acc.description].filter(Boolean).join(": ") || t("reader.diagram");
   return (
     <figure className="hh-md-diagram">
       <div className="hh-md-diagram-bar">
-        <button type="button" aria-pressed={source} onClick={() => setSource((s) => !s)}>
+        <button type="button" aria-pressed={source} aria-controls={bodyId} onClick={() => setSource((s) => !s)}>
           {t("reader.source")}
         </button>
       </div>
       {source ? (
         sourceBlock
-      ) : drawn ? (
-        <img src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(drawn.svg)}`} alt={caption || t("reader.diagram")} />
+      ) : result?.ok ? (
+        <img id={bodyId} src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(result.svg)}`} alt={alt} />
       ) : (
-        <div className="hh-caption" role="status">
+        <div id={bodyId} className="hh-caption" role="status">
           {t("reader.drawing")}
         </div>
       )}

@@ -42,6 +42,8 @@ interface Ctx {
   definitions: Map<string, Definition>;
   /** Footnote ids in the order they are first referenced, and their definitions. */
   footnotes: { order: string[]; defs: Map<string, FootnoteDefinition> };
+  /** Mermaid diagrams met so far in this draw (past MAX_DIAGRAMS they stay code). */
+  diagrams: number;
   t: TFunction;
 }
 
@@ -424,9 +426,14 @@ function CodeBlock({ node, highlight }: { node: Code; highlight: boolean }) {
   );
 }
 
+/** Diagrams drawn per message or document; any after these show as code (each draw takes a while, one at a time). */
+const MAX_DIAGRAMS = 20;
+
 /** A fenced or indented code block; ```mermaid is a diagram (§3.3), with its caption as the image's alt text. */
 function renderCode(n: Code, ctx: Ctx, key: number, caption?: string): ReactNode {
-  if (n.lang?.toLowerCase() === "mermaid") return <MermaidDiagram key={key} code={n.value} closed={fenceClosed(ctx.source, n)} caption={caption} />;
+  if (n.lang?.toLowerCase() === "mermaid" && ctx.diagrams++ < MAX_DIAGRAMS) {
+    return <MermaidDiagram key={key} code={n.value} closed={fenceClosed(ctx.source, n)} caption={caption} />;
+  }
   // Highlighting a block on every streaming tick is wasted work: it waits for the closing fence.
   return <CodeBlock key={key} node={n} highlight={!ctx.fade || fenceClosed(ctx.source, n)} />;
 }
@@ -600,7 +607,7 @@ export const Markdown = memo(function Markdown({ source, fade = false, document 
   const definitions = useMemo(() => collectDefinitions(tree), [tree]);
   const defs = useMemo(() => collectFootnotes(tree), [tree]);
   // A fresh slugger and footnote order per draw: ids and numbers come out in document order every time.
-  const ctx: Ctx = { fade, breaks: !document, prefix, slug: createSlugger(), source: text, base: path, host, definitions, footnotes: { order: [], defs }, t };
+  const ctx: Ctx = { fade, breaks: !document, prefix, slug: createSlugger(), source: text, base: path, host, definitions, footnotes: { order: [], defs }, diagrams: 0, t };
   // The body first, so the notes' order is known when they are drawn.
   const body = renderBlocks(tree.children, ctx);
   return (

@@ -1,6 +1,6 @@
 # Parallel tasks and background jobs — design
 
-Status: draft, 2026-10-27, written after a brainstorming session with Marco. He approved every decision below on 2026-10-26/27. Waiting for his review of this file. Not in the roadmap yet.
+Status: draft, 2026-10-27, written after a brainstorming session with Marco. He approved every decision below on 2026-10-26/27, and the file on 2026-10-27 with four fixes from his review (§5.3 crash restore, §8 permission requests and per-job permissions, §4 idle Codex adapters, §10 instructions refresh). Not in the roadmap yet.
 
 This is spec A from the dev-vs-core gap analysis (`docs/discovery/2026-10-26-dev-vs-core.md`, candidates C6 and C7). It builds on scopes and data (`2026-10-25-scopes-and-data-design.md`) and refers to task phases (`2026-10-25-task-phases-design.md`).
 
@@ -84,6 +84,7 @@ The runtime is split in two:
 - `createRuntime` returns a `Workspace`, which opens slots with `workspace.openSlot(taskId, session, profile)`. A slot's `send` keeps today's contract: one turn at a time **per slot**, and the `busy` error stays per slot.
 - **Claude.** Nothing changes per turn: each turn is already its own `claude -p --resume <session>` process. Slots differ only in session id and flags.
 - **Codex.** One `codex-acp` process per slot. Slots never share an adapter, even with the same profile, so one slot's `session/cancel` or crash cannot touch another. See open question 1.
+- **Idle Codex adapters.** The cap counts running turns, not open tasks (§7), so many tasks may wait at once. A Codex slot whose task has waited for the person more than 10 minutes closes its adapter process and keeps the session id. The next turn starts a new adapter and resumes with `session/load`. Claude needs nothing: it already runs one process per turn.
 - A slot closes when its task ends (note saved, cancelled, engine switch, quit). `endSession` stays per slot.
 
 ## 5. History with parallel turns
@@ -109,7 +110,7 @@ The edit events come from the transport as `activity` events. They gain an optio
 
 ### 5.3 What uses attribution
 
-- **Crash recovery.** A turn that ends `agent-crashed` restores only the paths it owns, from `before`. Shared paths are left alone and logged.
+- **Crash recovery.** A turn that ends `agent-crashed` restores only the paths it owns, from the queue head (the latest commit of each path), not from `before`. That drops only what the crashed turn left uncommitted: another task's change to the same path, committed during the window, is kept. Shared paths are left alone and logged.
 - **"Undo this task" / "Go back here".** These restore only the task's own paths (owned, plus shared ones after the person confirms). They are refused while a running turn has touched any of those paths; the line says which file. The "this also undoes N later tasks" warning stays, but it counts only later tasks that changed the same paths.
 - **`History.tasks()`.** Unchanged grouping. A task's `FileChange[]` comes from its own commits, not from a tree diff between start and end (other tasks' commits now sit in between).
 - **Conflict.** When a turn ends and one of its paths was also changed by another task's commit since its `before`, both tasks get a notice: "Las dos tareas cambiaron `spec.md`". There is no merge: the file keeps its last content, and both commits stay in the history.
@@ -146,6 +147,8 @@ There is never an overlap, so attribution reduces to "every changed path", and p
   - It uses the harness's permissions and gets the same first message as an action: its brief plus the notes index and the loaded data of its scope.
   - Its history commits carry `Job:` and follow §5.
 - **It cannot ask.** `choices`, input blocks and `set_phase` proposals answer the agent with an error: "A background job cannot ask the person; end with job_result."
+- **It cannot ask for permission either.** An engine permission request (Codex `session/request_permission`, a Claude tool that would need confirmation) is denied by the core at once, with "A background job cannot ask for permission", so the run never hangs.
+- **Its own permissions.** A job may declare `permissions` that narrow the harness's (`{ edit: "none" }` for a sync that only writes data). They can only narrow, never widen; `humanharness check` refuses a widening.
 - **Core block `job_result`:** `{ status: "ok" | "needs-you" | "failed", summary: string, action?: actionId }`. It ends the run. `needs-you` can name an action for the person to start from the inbox ("2 tickets sin AC → Completar AC"). A run that ends without the block counts as `failed`, with the summary "No result".
 - **No closing turn.** A job saves no note and runs no `save_note` turn. Its result is the record (`.harness/jobs.jsonl`: job, scope, trigger, status, summary, tokens, time).
 - **Triggers:**
@@ -198,7 +201,7 @@ type TaskSummary = {
   - Then every open task is marked `resume`.
 - **Quit.** Running turns and jobs are cancelled. At the next start every task left open ends unfinished (as today), the queues are dropped, and `start` jobs run again.
 - **Usage.** Each `usage.jsonl` line gains `kind: "task" | "job"` and `job` when it is one. Settings › Uso shows tasks and jobs apart.
-- **Instructions refresh.** `AGENTS.md` changes only when no turn is running in any slot, so no running session sees its cached prefix change mid-turn.
+- **Instructions refresh.** `AGENTS.md` changes only when no turn is running in any slot, so no running session sees its cached prefix change mid-turn. While a rewrite is pending, both queues hold new turns for up to 10 s so the running ones can finish and the rewrite can happen; after 10 s they start anyway and the rewrite waits for the next gap.
 
 ## 11. Tests
 
@@ -235,6 +238,6 @@ type TaskSummary = {
 
 ## 14. Open questions
 
-1. **One Codex adapter per slot.** It is the safest option, but each process costs memory and start time. To measure in the slot slice; sharing an adapter per profile would be a later optimization.
-2. **OS notifications.** Should a task that starts waiting while the window is in the background send a system notification? Proposal: off by default, a setting in Settings › General.
-3. **A job's own permissions.** Today a job gets the harness's permissions. A read-only job (`permissions: { edit: "none" }` per job) would be safer for syncs that only write data. Proposal: allow an override per job that can only narrow, never widen.
+1. **One Codex adapter per slot.** It is the safest option, but each process costs memory and start time. To measure in the slot slice; idle adapters close after 10 minutes (§4), and sharing an adapter per profile would be a later optimization.
+2. **OS notifications.** Decided (Marco, 2026-10-27): off by default, a setting in Settings › General.
+3. **A job's own permissions.** Decided (Marco, 2026-10-27): an override per job that can only narrow (§8).

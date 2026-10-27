@@ -16,6 +16,7 @@ import {
   choiceOptionSchema,
   dataCollections,
   hasModes,
+  hasPhases,
   inputBlocks,
   inputSpecs,
   loadHarness,
@@ -77,6 +78,7 @@ import { installCommandOf, terminalCommand } from "./install-help";
 import { detectEngine, hasAcceptedNotice } from "./engine-status";
 import { QUESTIONS, cleanModels, engineOffer, firstOffered, fitEffort, nearestTier, nextFallback, resolveProfile } from "./models";
 import { chooseModeHandler } from "./mode-ipc";
+import { setPhaseHandler } from "./phase-ipc";
 import { requireNoticeForChoice, requireNoticeForTurn } from "./notice-policy";
 import { archiveStaleChat, startNewChatIfEngineChanged } from "./engine-switch";
 import { type RunningSetup, runSetupProcess, setupCommand, stopSetupProcess } from "./setup-runner";
@@ -308,6 +310,19 @@ async function appState(): Promise<AppState> {
           ...(a.scope ? { scope: a.scope } : {}),
           ...(a.modes ? { modes: a.modes } : {}),
           ...(a.defaultMode ? { defaultMode: a.defaultMode } : {}),
+          // What the stepper shows of each phase (never its brief), and the time box's lengths (task-phases D0).
+          ...(a.phases
+            ? {
+                phases: a.phases.map((p) => ({
+                  id: p.id,
+                  label: p.label,
+                  ...(p.auto ? { auto: true as const } : {}),
+                  ...(p.close ? { close: true as const } : {}),
+                  ...(p.modes !== undefined ? { modes: p.modes } : {}),
+                })),
+              }
+            : {}),
+          ...(a.timeBox ? { timeBox: { options: a.timeBox.options, default: a.timeBox.default } } : {}),
         },
       ]),
     ),
@@ -350,7 +365,13 @@ const baseOf = (c: { folder: string }): string => c.folder;
 const scoped = (): boolean => harness.scopes !== undefined;
 
 /** tasks.json is read knowing the manifest's modes, so a mode it no longer declares is dropped (task-modes spec §6). */
-const taskStoreOptions = (): { modes?: string[] } => (hasModes(harness) ? { modes: Object.keys(harness.modes) } : {});
+const taskStoreOptions = (): { modes?: string[]; phases?: Record<string, string[]> } => ({
+  ...(hasModes(harness) ? { modes: Object.keys(harness.modes) } : {}),
+  // Each action's own phase ids: a phase another action has is still unknown to this one.
+  ...(hasPhases(harness)
+    ? { phases: Object.fromEntries(Object.entries(harness.actions).flatMap(([id, a]) => (a.phases ? [[id, a.phases.map((p) => p.id)]] : []))) }
+    : {}),
+});
 
 /** One registry per base, so its write queue orders every change. */
 /** Whether `id` is in the configured folder's registry and not archived. */
@@ -648,6 +669,14 @@ const tasks = new TaskManager({
     if (!Object.hasOwn(harness.modes, mode)) return Promise.reject(new Error("Unknown mode"));
     return fs.readFile(resolveInHarness(harness, harness.modes[mode].brief), "utf8");
   },
+  readPhaseBrief: (action, phase) => {
+    const p = Object.hasOwn(harness.actions, action) ? harness.actions[action].phases?.find((x) => x.id === phase) : undefined;
+    if (!p?.brief) return Promise.reject(new Error("Unknown phase"));
+    return fs.readFile(resolveInHarness(harness, p.brief), "utf8");
+  },
+  // Before the turn's events: the window draws the change's separator or the wrap-up line (task-phases spec §4.4, §5).
+  taskTurn: (notice) => sendToWindow("hh:taskTurn", notice),
+  ...(hooks.minuteMs ? { minuteMs: hooks.minuteMs } : {}),
   // Mode settings live in the settings controller (harness-settings spec §6); without settings there are none.
   modeSettings: async (mode) => (settingsCtl ? settingsCtl.modeSentences(mode) : []),
   // Fast on purpose (it runs in the task queue): the saved model table only, never the engine's offer.
@@ -701,6 +730,7 @@ const tasks = new TaskManager({
         ...(task.action ? { action: task.action } : {}),
         task: task.id,
         ...(task.mode ? { mode: task.mode } : {}),
+        ...(task.phase ? { taskPhase: task.phase.id } : {}),
         ...(task.profile ? profileMeta(task.profile) : {}),
       }),
     );
@@ -819,8 +849,12 @@ function registerIpc() {
     if (options?.mode !== undefined && mode === undefined) throw new Error("Unknown mode");
     const scope = options?.scope;
     if (scope !== undefined && !isScopeId(scope)) throw new Error("Unknown scope");
+    // The time box the person picked (task-phases spec §5): one the action doesn't offer is refused before anything closes.
+    const offered = action ? harness.actions[action].timeBox?.options : undefined;
+    const timeBox = options?.timeBox;
+    if (timeBox !== undefined && (timeBox !== null ? !(offered ?? []).includes(timeBox) : !offered)) throw new Error("Unknown time box");
     // A message with an action starts that task (the message is what the chat shows); any other follows up or asks.
-    const sent = action ? tasks.start(action, message, scope, mode) : tasks.ask(message, undefined, scope);
+    const sent = action ? tasks.start(action, message, scope, mode, timeBox !== undefined ? { timeBox } : {}) : tasks.ask(message, undefined, scope);
     return scope === undefined ? sent : sent.finally(() => void scopesChanged());
   });
   handle("hh:getTasks", () => tasks.view());
@@ -903,6 +937,18 @@ function registerIpc() {
       choose: (mode, choice, task) => tasks.chooseMode(mode, choice, task),
     }),
   );
+  // The person's pick of a phase (task-phases spec §4.2): the acceptance comes back as data.
+  handle("hh:setPhase", setPhaseHandler({ quitting: () => quitting, blocked: turnBlocked, setPhase: (to, task) => tasks.setPhase(to, task) }));
+  // The stepper's Finish and the time box's controls.
+  handle("hh:finishTask", () => {
+    if (quitting) throw new Error("The app is closing");
+    const blocked = turnBlocked();
+    if (blocked) throw new Error(blocked);
+    return tasks.finish();
+  });
+  handle("hh:pauseTask", () => tasks.pauseTimeBox());
+  handle("hh:resumeTask", () => tasks.resumeTimeBox());
+  handle("hh:extendTimeBox", () => tasks.extendTimeBox());
   handle("hh:openPath", async (file: unknown) => {
     const c = await validConfig();
     if (!c) return false;

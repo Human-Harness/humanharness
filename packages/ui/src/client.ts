@@ -97,6 +97,10 @@ export interface ActionOption {
   /** The modes its task may work in, and how it starts (task-modes spec §3). Absent without modes (D0). */
   modes?: string[];
   defaultMode?: string;
+  /** Its phases (task-phases spec §3), as the stepper shows them; never a brief. Absent without phases (D0). */
+  phases?: PhaseView[];
+  /** Its time box: the lengths offered and the one picked when the person picks none. Absent without one (D0). */
+  timeBox?: { options: number[]; default: number | null };
 }
 
 /** A read-only reference folder, as the work screen shows it ("~/…" for paths in the home folder). */
@@ -420,6 +424,8 @@ export interface SendOptions {
   scope?: string;
   /** With `action`: the mode the person picked for the new task (`defaultMode: "ask"`, task-modes spec §3). */
   mode?: string;
+  /** With `action`: the time box's length in minutes, one of the action's options (task-phases spec §5); null: no limit. */
+  timeBox?: number | null;
 }
 
 /**
@@ -637,6 +643,20 @@ export interface HarnessClient {
    * told when its result arrives and before the switch's turn: the chat draws the "Switched to" line and that turn.
    */
   onModeSwitch(listener: (s: ModeSwitch) => void): () => void;
+  /**
+   * The person moves the open task `taskId` to phase `phaseId` (task-phases spec §4.2): resolves with a refusal or with
+   * how the change goes on. A change turn then arrives as an `onTaskTurn` notice and its events.
+   */
+  setPhase(taskId: string, phaseId: string): Promise<PhaseResult>;
+  /** Closes the open task now with the core closing turn (the stepper's Finish). False when it was stopped first. */
+  finishTask(): Promise<boolean>;
+  /** The time box's clock (spec §5): pause and resume; false when there was nothing to do. */
+  pauseTask(): Promise<boolean>;
+  resumeTask(): Promise<boolean>;
+  /** "+5 min". */
+  extendTimeBox(): Promise<boolean>;
+  /** A turn the app starts on its own (a phase change, the wrap-up) is about to run: draw its line first. */
+  onTaskTurn(listener: (n: TaskTurnNotice) => void): () => void;
   /** Opens a file inside the reference folders or the user's folder in its default app. False when refused or missing. */
   openPath(path: string): Promise<boolean>;
   /** Shows a file inside the reference folders or the user's folder in Finder (any kind of file). False when refused or missing. */

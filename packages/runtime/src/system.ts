@@ -80,7 +80,8 @@ export async function runSystemTask(o: SystemTaskOptions): Promise<SystemTaskRes
       outputTokens: u.outputTokens + e.outputTokens,
       cacheReadTokens: u.cacheReadTokens + e.cacheReadTokens,
       cacheWriteTokens: u.cacheWriteTokens + e.cacheWriteTokens,
-      // Only when some turn reported a cost (OpenCode): no cost is not US$ 0.
+      // Only when some turn reported a cost (OpenCode): no cost is not US$ 0. A stage where only some turns
+      // reported one records their sum: a lower bound of what it really cost.
       ...(u.costUsd !== undefined || e.costUsd !== undefined ? { costUsd: (u.costUsd ?? 0) + (e.costUsd ?? 0) } : {}),
     };
     if (e.model) result.model = e.model;

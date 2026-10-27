@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import type { ChatEntry } from "@humanharness/ui/client";
-import { type UsageMeta, type UsageRecord, UsageLog, compactionRecord, materialRecord, measuredMaterialCosts, mergeUsage, profileMeta, profilesUsage, summarizeUsage, usageRecord } from "../src/main/usage-log";
+import { type UsageMeta, type UsageRecord, UsageLog, compactionRecord, materialRecord, measuredMaterialCosts, mergeUsage, profileMeta, profilesUsage, summarizeUsage, usageRecord, withSpent } from "../src/main/usage-log";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -447,5 +447,40 @@ describe("summarizeUsage: spentUsd", () => {
   it("counts every profile's spending (one account pays)", () => {
     const s = profilesUsage({ ana: [line("2026-10-27T10:00:00.000Z", 0.1)], ben: [line("2026-10-27T11:00:00.000Z", 0.2)] }, "ana", undefined, now);
     expect(s.spentUsd).toBeCloseTo(0.3);
+  });
+});
+
+describe("withSpent", () => {
+  const now = new Date("2026-10-27T12:00:00.000Z");
+  const line = (engine: string, costUsd?: number): UsageRecord => ({
+    at: "2026-10-27T10:00:00.000Z",
+    engine,
+    ok: true,
+    usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0, ...(costUsd !== undefined ? { costUsd } : {}) },
+  });
+  const write = (records: UsageRecord[]) => {
+    const folder = fs.mkdtempSync(path.join(root, "spent-"));
+    fs.mkdirSync(path.join(folder, ".harness"), { recursive: true });
+    fs.writeFileSync(path.join(folder, ".harness", "usage.jsonl"), records.map((r) => JSON.stringify(r) + "\n").join(""));
+    return folder;
+  };
+  const base = { limits: null, estimates: {}, tokens: {} };
+
+  it("reads every line of the window, not only the latest 500, and only the engine's", async () => {
+    // 600 paid lines, then 600 of another engine: the latest 500 alone would hold no cost at all.
+    const folder = write([...Array.from({ length: 600 }, () => line("opencode", 0.01)), ...Array.from({ length: 600 }, () => line("claude"))]);
+    const s = await withSpent({ ...base, spentUsd: 0 }, [folder], "opencode", true, now);
+    expect(s.spentUsd).toBeCloseTo(6);
+  });
+
+  it("adds up every profile's folder", async () => {
+    const s = await withSpent(base, [write([line("opencode", 0.1)]), write([line("opencode", 0.2)])], "opencode", true, now);
+    expect(s.spentUsd).toBeCloseTo(0.3);
+  });
+
+  it("is absent when no line has a cost, or for an engine that reports none (D0)", async () => {
+    expect(await withSpent(base, [write([line("opencode")])], "opencode", true, now)).toEqual(base);
+    expect(await withSpent(base, [write([line("claude", 1)])], "claude", false, now)).toEqual(base);
+    expect(await withSpent(base, [path.join(root, "missing")], "opencode", true, now)).toEqual(base);
   });
 });

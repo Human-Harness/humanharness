@@ -177,6 +177,19 @@ function spentUsd(records: UsageRecord[], now: Date): number | undefined {
   return withCost.filter((r) => Date.parse(r.at) >= since).reduce((sum, r) => sum + r.usage!.costUsd!, 0);
 }
 
+/**
+ * The summary with `spentUsd` taken from every line of `folders`' logs (every profile's, one account pays) that
+ * `engine` wrote, not only the latest ones the rest of the summary reads. An engine that reports no cost
+ * (`reportsCost` false: Claude, Codex) never gets the field and reads nothing more (D0).
+ */
+export async function withSpent(summary: UsageSummary, folders: string[], engine: string, reportsCost: boolean, now: Date = new Date()): Promise<UsageSummary> {
+  const { spentUsd: _partial, ...rest } = summary;
+  if (!reportsCost) return rest;
+  const lines = (await Promise.all(folders.map((f) => new UsageLog(f).load(Infinity)))).flat().filter((r) => r.engine === engine);
+  const spent = spentUsd(lines, now);
+  return spent !== undefined ? { ...rest, spentUsd: spent } : rest;
+}
+
 /** The average of the last RECENT_TASKS values of each key. */
 function recentAverages(values: Map<string, number[]>): Record<string, number> {
   return Object.fromEntries(

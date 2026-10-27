@@ -96,7 +96,7 @@ import { type RunningSetup, runSetupProcess, setupCommand, stopSetupProcess } fr
 import { runSetupStep } from "./setup-step";
 import { type SharedEngineRecord, SharedConfigStore, sharedConfigDir } from "./shared-config";
 import { EngineUnavailable, TurnController, memoise } from "./turn-controller";
-import { type UsageRecord, UsageLog, compactionRecord, measuredMaterialCosts, profileMeta, profilesUsage, summarizeUsage, usageRecord } from "./usage-log";
+import { type UsageRecord, UsageLog, compactionRecord, measuredMaterialCosts, profileMeta, profilesUsage, summarizeUsage, usageRecord, withSpent } from "./usage-log";
 import { type ValidationContext, checkFolder, configProblem, isAppUrl } from "./validate";
 import { openIfStillSafe, openRoots, openableFile, revealIfStillSafe, revealableFile } from "./open-path";
 import { saveWithFolderChange } from "./folder-change";
@@ -1412,11 +1412,14 @@ function registerIpc() {
     // Profiles: the app's window is shared, so every profile's log counts (spec §4 "Usage").
     const ids = profilesCtl && c.profile ? await profilesCtl.state().then((s) => s.list.map((p) => p.id), () => null) : null;
     // An unreadable registry: the active profile's own log, as without profiles.
+    // The 30-day spend reads every line, not only the latest 500 (OpenCode; spec §4).
+    const reportsCost = !isMockEngine(hooks, c.engineId) && getEngine(c.engineId).reportsCost === true;
     if (ids && c.profile) {
       const logs = await Promise.all(ids.map(async (id) => [id, engineOnly(await new UsageLog(profileDir(c.folder, id)).load())] as const));
-      return profilesUsage(Object.fromEntries(logs), c.profile, primary);
+      const folders = ids.map((id) => profileDir(c.folder, id));
+      return withSpent(profilesUsage(Object.fromEntries(logs), c.profile, primary), folders, c.engineId, reportsCost);
     }
-    return summarizeUsage(engineOnly(await new UsageLog(baseOf(c)).load()), primary);
+    return withSpent(summarizeUsage(engineOnly(await new UsageLog(baseOf(c)).load()), primary), [baseOf(c)], c.engineId, reportsCost);
   });
   handle("hh:revealSharedConfig", () => shell.showItemInFolder(shared.path));
   // Installing by hand: copy the official command (chosen here by engine id) and open Terminal,

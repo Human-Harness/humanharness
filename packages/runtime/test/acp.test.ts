@@ -4,7 +4,7 @@ import path from "node:path";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
 import { type AcpScript, fakeAcpCommand, writeScript } from "@humanharness/fake-agent";
 import type { ModelProfile } from "@humanharness/engines";
-import { AcpTransport, type PermissionPolicy, activityDetail, codexConfig, decidePermission, isUiTool, offeredModels } from "../src/acp";
+import { AcpTransport, type PermissionPolicy, activityDetail, codexConfig, decidePermission, isUiTool, offeredModels, usdCost } from "../src/acp";
 import type { Event } from "../src/events";
 import type { Session, TransportOptions } from "../src/transport";
 
@@ -820,5 +820,77 @@ describe("AcpTransport: profile by config option (OpenCode)", () => {
     const { transport: t } = setup({ configOptions: OPENCODE_CONFIG, usage: { inputTokens: 5, outputTokens: 2 }, turns: [[{ stop: "end_turn" }]] }, undefined, byConfig);
     const events = await run(t, "hi", undefined, openProfile({ model: undefined }));
     expect(events.find((e) => e.type === "usage")).toMatchObject({ model: "anthropic/claude-sonnet-4-5" });
+  });
+});
+
+const costUpdate = (amount: unknown, currency = "USD") => ({ update: { sessionUpdate: "usage_update", used: 1000, size: 200_000, cost: { amount, currency } } });
+const usageOf = (events: Event[]) => events.find((e): e is Extract<Event, { type: "usage" }> => e.type === "usage");
+
+describe("usdCost", () => {
+  it("takes a finite, non-negative USD amount only", () => {
+    expect(usdCost({ amount: 0.25, currency: "USD" })).toBe(0.25);
+    expect(usdCost({ amount: 0, currency: "USD" })).toBe(0);
+    expect(usdCost({ amount: 1, currency: "EUR" })).toBeUndefined();
+    expect(usdCost({ amount: -1, currency: "USD" })).toBeUndefined();
+    expect(usdCost({ amount: Number.NaN, currency: "USD" })).toBeUndefined();
+    expect(usdCost({ amount: Number.POSITIVE_INFINITY, currency: "USD" })).toBeUndefined();
+    expect(usdCost({ amount: "1", currency: "USD" })).toBeUndefined();
+    expect(usdCost(null)).toBeUndefined();
+    expect(usdCost(undefined)).toBeUndefined();
+  });
+});
+
+describe("AcpTransport: cost per turn", () => {
+  const usage = { inputTokens: 10, outputTokens: 5 };
+
+  it("records the first turn's total and each later turn's increase", async () => {
+    // Like OpenCode: the session's running total, sent once at the end of each prompt.
+    const { transport: t } = setup({ usage, costs: [0.02, 0.05], turns: [[chunk("a")], [chunk("b")]] });
+    expect(usageOf(await run(t, "one"))?.costUsd).toBeCloseTo(0.02);
+    expect(usageOf(await run(t, "two"))?.costUsd).toBeCloseTo(0.03);
+  });
+
+  it("keeps the last total when a prompt sends several", async () => {
+    const { transport: t } = setup({ usage, turns: [[costUpdate(0.01), costUpdate(0.02)]] });
+    expect(usageOf(await run(t))?.costUsd).toBeCloseTo(0.02);
+  });
+
+  it("records 0 when the provider charges nothing", async () => {
+    const { transport: t } = setup({ usage, costs: [0], turns: [[chunk("a")]] });
+    expect(usageOf(await run(t))?.costUsd).toBe(0);
+  });
+
+  it("records no cost when the agent sends none, an invalid one or another currency (D0 for Codex)", async () => {
+    const { transport: t } = setup({
+      usage,
+      turns: [[chunk("a")], [{ update: { sessionUpdate: "usage_update", used: 10, size: 100 } }], [costUpdate(1, "EUR")], [costUpdate(-1)]],
+    });
+    for (const m of ["one", "two", "three", "four"]) expect(usageOf(await run(t, m))).not.toHaveProperty("costUsd");
+  });
+
+  it("records no cost for a model whose context limit OpenCode does not know (no usage_update at all)", async () => {
+    const { transport: t } = setup({ usage, turns: [[chunk("a")], [chunk("b")]] });
+    expect(usageOf(await run(t, "one"))).not.toHaveProperty("costUsd");
+    expect(usageOf(await run(t, "two"))).not.toHaveProperty("costUsd");
+  });
+
+  it("after loading a session, the first turn only sets the baseline", async () => {
+    // OpenCode sends no usage_update on session/load: the total before this run is unknown.
+    const { transport: t } = setup({ loadSession: true, usage, costs: [0.5, 0.8], turns: [[chunk("a")], [chunk("b")]] }, { id: "saved", started: true });
+    expect(usageOf(await run(t, "one"))).not.toHaveProperty("costUsd");
+    expect(usageOf(await run(t, "two"))?.costUsd).toBeCloseTo(0.3);
+  });
+
+  it("a new session starts from zero again", async () => {
+    const { transport: t } = setup({ usage, closeSession: true, costs: [0.4, 0.1], turns: [[chunk("a")], [chunk("b")]] });
+    await run(t, "one");
+    await t.endSession();
+    expect(usageOf(await run(t, "two"))?.costUsd).toBeCloseTo(0.1);
+  });
+
+  it("a total that went down records 0, not a negative cost", async () => {
+    const { transport: t } = setup({ usage, costs: [0.4, 0.1], turns: [[chunk("a")], [chunk("b")]] });
+    await run(t, "one");
+    expect(usageOf(await run(t, "two"))?.costUsd).toBe(0);
   });
 });

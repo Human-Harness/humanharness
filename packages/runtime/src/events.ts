@@ -42,6 +42,8 @@ export type Event =
       cacheWriteTokens: number;
       /** API-equivalent cost when the engine reports it. Not what the user pays. */
       costEquivalentUsd?: number;
+      /** Real money the provider charged for this turn, in USD (OpenCode). Absent when the engine reports no cost. */
+      costUsd?: number;
       /** The model the engine says it ran (Claude: system/init; Codex: currentModelId without its effort). */
       model?: string;
     }

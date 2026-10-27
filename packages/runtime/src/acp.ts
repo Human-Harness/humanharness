@@ -228,6 +228,12 @@ function errorFrom(e: unknown, stderr = ""): Event {
   return fail(classifyError(message), message);
 }
 
+/** A `usage_update` cost in USD: a finite amount ≥ 0 in "USD", else undefined (spec §4: other currencies are not recorded). */
+export function usdCost(cost: unknown): number | undefined {
+  const c = cost as { amount?: unknown; currency?: unknown } | null | undefined;
+  return c && c.currency === "USD" && typeof c.amount === "number" && Number.isFinite(c.amount) && c.amount >= 0 ? c.amount : undefined;
+}
+
 type AcpUsage = { inputTokens?: number; outputTokens?: number; cachedReadTokens?: number; cachedWriteTokens?: number };
 
 /** Long-lived ACP agent per window; one `session/prompt` per turn. */
@@ -258,6 +264,9 @@ export class AcpTransport implements Transport {
   private offer: { models: string[]; efforts: string[]; effortId?: string; effort?: string } | undefined;
   /** config-option: the model the app set on the open session (undefined: OpenCode's default). */
   private appliedModel: string | undefined;
+  /** The session's running cost in USD as the agent last reported it, and that total at the last turn's end (undefined: unknown). */
+  private costTotal: number | undefined;
+  private costBaseline: number | undefined;
 
   constructor(private readonly o: TransportOptions) {}
 
@@ -337,6 +346,10 @@ export class AcpTransport implements Transport {
   private async openSession(): Promise<void> {
     this.offer = undefined;
     this.appliedModel = undefined;
+    // A loaded session's total so far is unknown (OpenCode sends no usage_update on session/load):
+    // its first turn only sets the baseline. A new session starts from zero.
+    this.costTotal = undefined;
+    this.costBaseline = undefined;
     const agent = this.conn!.agent;
     const mcpServers = this.mcpServers();
     if (this.o.session.started && this.loadable) {
@@ -361,6 +374,7 @@ export class AcpTransport implements Transport {
         models?: { currentModelId?: unknown } | null;
       };
       this.sessionId = created.sessionId;
+      this.costBaseline = 0;
       this.reportModels(created.configOptions);
       this.sessionModel(created.configOptions, created.models?.currentModelId);
       this.o.session = { id: created.sessionId, started: true };
@@ -454,8 +468,19 @@ export class AcpTransport implements Transport {
     emit({ type: "compaction" });
   }
 
+  /** This turn's cost: the rise of the running total since the last turn; undefined when either end is unknown. */
+  private turnCost(): number | undefined {
+    const total = this.costTotal;
+    if (total === undefined) return undefined;
+    const base = this.costBaseline;
+    this.costBaseline = total;
+    return base === undefined ? undefined : Math.max(0, total - base);
+  }
+
   private reset(): void {
     this.conn = undefined;
+    this.costTotal = undefined;
+    this.costBaseline = undefined;
     this.reportedModel = undefined;
     this.offer = undefined;
     this.appliedModel = undefined;
@@ -495,6 +520,10 @@ export class AcpTransport implements Transport {
     if (u.sessionUpdate === "config_option_update") {
       if (this.byConfigOption) this.reportModels(u.configOptions);
       return;
+    }
+    if (u.sessionUpdate === "usage_update") {
+      const usd = usdCost(u.cost);
+      if (usd !== undefined) this.costTotal = usd;
     }
     const emit = this.emit;
     if (!emit) return;
@@ -610,6 +639,7 @@ export class AcpTransport implements Transport {
       // The signal may have fired while the prompt was being sent.
       if (signal.aborted) onAbort();
       const res = (await pending) as { stopReason: string; usage?: AcpUsage | null };
+      const costUsd = this.turnCost();
       if (res.usage) {
         emit({
           type: "usage",
@@ -618,6 +648,7 @@ export class AcpTransport implements Transport {
           cacheReadTokens: res.usage.cachedReadTokens ?? 0,
           cacheWriteTokens: res.usage.cachedWriteTokens ?? 0,
           ...(this.reportedModel ? { model: this.reportedModel } : {}),
+          ...(costUsd !== undefined ? { costUsd } : {}),
         });
       }
       if (res.stopReason === "cancelled" || signal.aborted) emit(fail("cancelled"));

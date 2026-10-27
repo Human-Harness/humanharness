@@ -78,6 +78,12 @@ export interface AcpScript {
    * only for the current model when it has variants; its values are the variants plus "default".
    */
   variants?: Record<string, string[]>;
+  /**
+   * OpenCode: the session's running cost in USD after each prompt (indexed like `turns`), sent as one
+   * `usage_update` at the prompt's end, never on session/load. Absent (or no entry for a turn) is a
+   * model whose context limit OpenCode does not know: no `usage_update` at all.
+   */
+  costs?: number[];
   turns: AcpStep[][];
 }
 

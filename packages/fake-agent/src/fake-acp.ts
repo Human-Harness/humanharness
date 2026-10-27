@@ -123,8 +123,17 @@ acp
     log("session/prompt", ctx.params);
     cancelled = false;
     const sessionId = ctx.params.sessionId;
+    const cost = script.costs?.[turn];
+    // Like OpenCode: the running cost arrives once, at the prompt's end.
+    const end = async (stopReason: "end_turn" | "cancelled" | "refusal") => {
+      if (cost !== undefined) {
+        const update = { sessionUpdate: "usage_update", used: 1000, size: 200_000, cost: { amount: cost, currency: "USD" } };
+        await ctx.client.notify("session/update", { sessionId, update: update as never });
+      }
+      return withUsage({ stopReason }) as never;
+    };
     for (const step of script.turns[turn++] ?? [{ stop: "end_turn" }]) {
-      if (cancelled) return withUsage({ stopReason: "cancelled" as const }) as never;
+      if (cancelled) return end("cancelled");
       if ("update" in step) {
         await ctx.client.notify("session/update", { sessionId, update: step.update as never });
       } else if ("permission" in step) {
@@ -158,9 +167,9 @@ acp
       } else if ("error" in step) {
         throw new acp.RequestError(step.error.code, step.error.message);
       } else if ("stop" in step) {
-        return withUsage({ stopReason: step.stop }) as never;
+        return end(step.stop);
       }
     }
-    return withUsage({ stopReason: cancelled ? ("cancelled" as const) : ("end_turn" as const) }) as never;
+    return end(cancelled ? "cancelled" : "end_turn");
   })
   .connect(stream);

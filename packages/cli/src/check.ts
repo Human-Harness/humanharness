@@ -6,6 +6,7 @@ import {
   type InputFieldUi,
   type LoadedHarness,
   SETTINGS_TOKENS_WARN,
+  SIDEKICK_TIPS_TOKENS_WARN,
   blockToolName,
   inputBlocks,
   inputFields,
@@ -52,7 +53,8 @@ export type RuleId =
   | "setup-mock"
   | "setup-context"
   | "material-review-tier"
-  | "material-items-scope";
+  | "material-items-scope"
+  | "sidekick-tips";
 
 export interface Finding {
   rule: RuleId;
@@ -97,6 +99,7 @@ export async function checkHarness(dir: string, opts: { mode?: Mode } = {}): Pro
   findings.push(...(await i18nFindings(harness)));
   findings.push(...(await inputFindings(harness)));
   findings.push(...settingsFindings(harness));
+  findings.push(...sidekickFindings(harness));
   findings.push(...(await setupFindings(harness)));
   findings.push(...brandFindings(harness));
   findings.push(...engineFindings(harness, opts.mode ?? "development"));
@@ -386,6 +389,22 @@ function settingsFindings(h: LoadedHarness): Finding[] {
   if (tokens <= SETTINGS_TOKENS_WARN) return [];
   const message = `The settings' sentences take about ${tokens} tokens of AGENTS.md (more than ${SETTINGS_TOKENS_WARN}): keep each one short, or mark the ones that only matter when changed with onlyWhenChanged.`;
   return [warning("settings-tokens", message, MANIFEST)];
+}
+
+/**
+ * Sidekick's tips (sidekick spec §3): they go in the Sidekick brief, read on every review, so each text stays within
+ * SIDEKICK_TIPS_TOKENS_WARN tokens. Unknown action ids and `checks` keys are manifest schema errors, reported as `schema`.
+ */
+function sidekickFindings(h: LoadedHarness): Finding[] {
+  const tips = h.sidekick?.tips;
+  if (tips === undefined) return [];
+  const texts = typeof tips === "string" ? [["", tips] as const] : Object.entries(tips).map(([purpose, text]) => [` (${purpose})`, text ?? ""] as const);
+  return texts.flatMap(([which, text]) => {
+    const tokens = estimateTokens(text);
+    if (tokens <= SIDEKICK_TIPS_TOKENS_WARN) return [];
+    const message = `Sidekick's tips take about ${tokens} tokens (more than ${SIDEKICK_TIPS_TOKENS_WARN})${which}: keep them to the few hints that matter in every review.`;
+    return [warning("sidekick-tips", message, MANIFEST)];
+  });
 }
 
 /**

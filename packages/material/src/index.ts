@@ -3,6 +3,7 @@ export * from "./types";
 export * from "./detect";
 export * from "./blocks";
 export * from "./convert/text";
+export * from "./convert/html";
 export * from "./cut";
 export * from "./checks";
 export { estimateTokens } from "@humanharness/workspace";

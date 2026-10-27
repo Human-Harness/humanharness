@@ -1,4 +1,5 @@
 import path from "node:path";
+import type JSZip from "jszip";
 import { MaterialRefused, withEstimatedPages } from "../blocks";
 import type { MdBlock } from "../types";
 import { htmlBlocks } from "./html";
@@ -16,13 +17,43 @@ const unescape = (href: string): string => {
   }
 };
 
-/** EPUB: the chapters in spine order, each read by the HTML walker under `ch. N` (§3 Ebooks). DRM-locked: refused. */
+/** A path inside the package: relative to `dir`, or from the root when it starts with `/`. */
+const inZip = (dir: string, href: string) => (href.startsWith("/") ? path.posix.normalize(href.slice(1)) : path.posix.join(dir, href));
+
+/** Font obfuscation (IDPF's and Adobe's): it hides embedded fonts only, the text stays readable. */
+const FONT_OBFUSCATION = ["http://www.idpf.org/2008/embedding", "http://ns.adobe.com/pdf/enc#RC"];
+
+/** A tag without its namespace prefix (`enc:EncryptedData` → `EncryptedData`). */
+const local = (n: XNode) => tagOf(n).split(":").pop() ?? "";
+const allLocal = (nodes: XNode[], name: string): XNode[] => nodes.flatMap((n) => [...(local(n) === name ? [n] : []), ...allLocal(kids(n), name)]);
+
+/**
+ * Whether `META-INF/encryption.xml` locks the text: any algorithm other than font obfuscation, or anything encrypted
+ * that the reading order needs (a spine document, the package file).
+ */
+async function locked(zip: JSZip, needed: Set<string>): Promise<boolean> {
+  const enc = await zipXml(zip, "META-INF/encryption.xml");
+  if (!enc) return false;
+  return allLocal(enc, "EncryptedData").some((d) => {
+    const method = allLocal([d], "EncryptionMethod")[0];
+    const ref = allLocal([d], "CipherReference")[0];
+    const algorithm = method ? attr(method, "Algorithm") : undefined;
+    const uri = ref ? attr(ref, "URI") : undefined;
+    if (!algorithm || !FONT_OBFUSCATION.includes(algorithm)) return true;
+    return uri !== undefined && needed.has(inZip("", unescape(uri)));
+  });
+}
+
+/**
+ * EPUB: the chapters in spine order, each read by the HTML walker under `ch. N` (§3 Ebooks). DRM-locked: refused;
+ * fonts obfuscated the standard way are not a lock.
+ */
 export async function epubBlocks(buf: Buffer): Promise<MdBlock[]> {
   const zip = await openZip(buf);
-  if (zip.file("META-INF/encryption.xml")) throw new MaterialRefused("protected");
   const container = await zipXml(zip, "META-INF/container.xml");
   const rootfile = container && findNode(container, "rootfile");
-  const opfPath = rootfile && attr(rootfile, "full-path");
+  const fullPath = rootfile && attr(rootfile, "full-path");
+  const opfPath = fullPath ? inZip("", fullPath) : null;
   const opf = opfPath ? await zipXml(zip, opfPath) : null;
   if (!opf || !opfPath) throw new MaterialRefused("unreadable");
   const manifest = new Map(
@@ -30,12 +61,16 @@ export async function epubBlocks(buf: Buffer): Promise<MdBlock[]> {
       .filter((i) => tagOf(i) === "item")
       .map((i) => [attr(i, "id") ?? "", attr(i, "href") ?? ""]),
   );
+  const spine = kids(findNode(opf, "spine") ?? EMPTY)
+    .filter((i) => tagOf(i) === "itemref")
+    .map((ref) => manifest.get(attr(ref, "idref") ?? ""))
+    .filter((href): href is string => !!href)
+    .map((href) => inZip(path.posix.dirname(opfPath), unescape(href)));
+  if (await locked(zip, new Set([...spine, opfPath]))) throw new MaterialRefused("protected");
   const out: MdBlock[] = [];
   let ch = 0;
-  for (const ref of kids(findNode(opf, "spine") ?? EMPTY).filter((i) => tagOf(i) === "itemref")) {
-    const href = manifest.get(attr(ref, "idref") ?? "");
-    if (!href) continue;
-    const html = await zipText(zip, path.posix.join(path.posix.dirname(opfPath), unescape(href)));
+  for (const file of spine) {
+    const html = await zipText(zip, file);
     if (html === null) continue;
     ch++;
     out.push(...htmlBlocks(html, { prefix: `ch. ${ch}` }));

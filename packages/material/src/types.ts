@@ -58,6 +58,8 @@ export interface SheetRows {
   rows: { md: string; loc: string }[];
   /** The columns' names, for the summary fragment. */
   columns: string[];
+  /** The file held more than a spreadsheet may read (cells, rows, columns): only its first part is here. */
+  cut?: true;
 }
 
 /** How a converter may run a second time (§6.2 `reconvert`). */

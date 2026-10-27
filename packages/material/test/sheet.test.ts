@@ -1,6 +1,6 @@
 import ExcelJS from "exceljs";
 import { describe, expect, it } from "vitest";
-import { csvSheets, odsSheets, rowCount, sheetSummary, xlsxSheets } from "../src";
+import { SHEET_MAX_CELLS, SHEET_MAX_ROWS, csvSheets, odsSheets, rowCount, sheetSummary, xlsxSheets } from "../src";
 import { makeOds } from "./make-office";
 
 async function makeXlsx(sheets: Record<string, unknown[][]>): Promise<Buffer> {
@@ -57,6 +57,45 @@ describe("spreadsheets (§3)", () => {
     const row = (v: string) => `<table:table-row><table:table-cell><text:p>${v}</text:p></table:table-cell></table:table-row>`;
     const buf = await makeOds(`<table:table table:name="S">${row("h")}<table:table-row table:number-rows-repeated="5"><table:table-cell/></table:table-row>${row("x")}</table:table>`);
     expect((await odsSheets(buf))[0].rows).toEqual([{ md: "| x |", loc: "S!A7:A7" }]);
+  });
+
+  it("xlsx: only the cells the file holds; columns empty across the sheet are dropped (a cell in XFD is no bomb)", async () => {
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet("S");
+    for (let r = 1; r <= 2000; r++) {
+      ws.getCell(r, 1).value = r === 1 ? "first" : "a";
+      ws.getCell(r, 16384).value = r === 1 ? "last" : "z";
+    }
+    const [s] = await xlsxSheets(Buffer.from(await wb.xlsx.writeBuffer()));
+    expect(s.columns).toEqual(["first", "last"]);
+    expect(s.rows[0]).toEqual({ md: "| a | z |", loc: "S!A2:XFD2" });
+    expect(s.rows).toHaveLength(1999);
+    expect(s.cut).toBeUndefined();
+  });
+
+  it("csv: a column empty across the sheet is dropped", () => {
+    const [s] = csvSheets(Buffer.from("a,,c\n1,,3\n"), ",", "x.csv");
+    expect(s.header).toBe("| a | c |\n|---|---|");
+    expect(s.rows).toEqual([{ md: "| 1 | 3 |", loc: "x.csv!A2:C2" }]);
+  });
+
+  it("csv: more rows than SHEET_MAX_ROWS are cut, and the summary says so", () => {
+    const text = `n\n${Array.from({ length: 200_000 }, (_, i) => i).join("\n")}\n`;
+    const [s] = csvSheets(Buffer.from(text), ",", "big.csv");
+    expect(s.rows).toHaveLength(SHEET_MAX_ROWS - 1);
+    expect(s.cut).toBe(true);
+    expect(sheetSummary([s], 1)).toContain(`Rows: ${SHEET_MAX_ROWS - 1} (the file has more; it was too large to read whole).`);
+  });
+
+  it("ods: repeats multiply within one budget (a 2 KB file claiming 100 000 rows × 5 000 cells)", async () => {
+    const buf = await makeOds(
+      `<table:table table:name="S"><table:table-row table:number-rows-repeated="100000"><table:table-cell table:number-columns-repeated="5000"><text:p>zz</text:p></table:table-cell></table:table-row></table:table>` +
+        `<table:table table:name="T"><table:table-row table:number-rows-repeated="100000"><table:table-cell table:number-columns-repeated="5000"><text:p>zz</text:p></table:table-cell></table:table-row></table:table>`,
+    );
+    const sheets = await odsSheets(buf);
+    const cells = sheets.reduce((n, s) => n + (s.rows.length + 1) * s.columns.length, 0);
+    expect(cells).toBeLessThanOrEqual(SHEET_MAX_CELLS + 2 * 5000);
+    expect(sheets.every((s) => s.cut)).toBe(true);
   });
 
   it("the summary fragment: sheets, columns, row counts and the first rows", () => {

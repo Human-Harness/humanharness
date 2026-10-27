@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { ZIP_MAX_ENTRIES, checkZip, docxBlocks, epubBlocks, odpBlocks, odsSheets, odtBlocks, openZip, pptxBlocks, xlsxSheets, zipText } from "../src";
 import { makeDocx, makeEpub, makeOdp, makeOds, makeOdt, makePptx } from "./make-office";
 
-const LIMITS = { entries: 5, total: 10_000, entry: 4_000 };
+const LIMITS = { entries: 5, total: 10_000, entry: 4_000, part: 3_500 };
 const make = async (files: Record<string, string>) => {
   const z = new JSZip();
   for (const [name, text] of Object.entries(files)) z.file(name, text);
@@ -40,6 +40,21 @@ describe("the zip guard (zip bombs)", () => {
 
   it("too many entries are refused before anything is inflated", async () => {
     await refused(openZip(await make(Object.fromEntries(Array.from({ length: 6 }, (_, i) => [`${i}.xml`, ""]))), LIMITS));
+  });
+
+  it("directories count as entries, read from the end record before JSZip opens the file", async () => {
+    const z = new JSZip();
+    for (let i = 0; i < 6; i++) z.folder(`d${i}`);
+    await refused(openZip(await z.generateAsync({ type: "nodebuffer" }), LIMITS));
+  });
+
+  it("a part that is kept or parsed has the smaller cap; media that is only counted has the larger one", async () => {
+    const big = "x".repeat(3800);
+    await refused(openZip(await make({ "a.xml": big }), LIMITS));
+    const liar = lie(await make({ "a.xml": big }), 10);
+    await refused(zipText(await openZip(liar, LIMITS), "a.xml"));
+    await expect(checkZip(await make({ "img.png": big }), LIMITS)).resolves.toBeUndefined();
+    await refused(checkZip(await make({ "word/document.xml": big }), LIMITS));
   });
 
   it("a declared size above an entry's or the archive's limit is refused", async () => {

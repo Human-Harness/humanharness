@@ -46,9 +46,34 @@ describe("ebooks (§3)", () => {
     ]);
   });
 
-  it("a DRM-locked ebook is refused as protected", async () => {
+  const withEncryption = async (entries: [algorithm: string, uri: string][]) => {
     const zip = await JSZip.loadAsync(await makeEpub(["<p>x</p>"]));
-    zip.file("META-INF/encryption.xml", "<encryption/>");
-    await expect(epubBlocks(await zip.generateAsync({ type: "nodebuffer" }))).rejects.toMatchObject({ reason: "protected" });
+    const data = entries.map(
+      ([alg, uri]) => `<enc:EncryptedData><enc:EncryptionMethod Algorithm="${alg}"/><enc:CipherData><enc:CipherReference URI="${uri}"/></enc:CipherData></enc:EncryptedData>`,
+    );
+    zip.file("META-INF/encryption.xml", `<?xml version="1.0"?><encryption xmlns="urn:oasis:names:tc:opendocument:xmlns:container" xmlns:enc="http://www.w3.org/2001/04/xmlenc#">${data.join("")}</encryption>`);
+    return epubBlocks(await zip.generateAsync({ type: "nodebuffer" }));
+  };
+  const AES = "http://www.w3.org/2001/04/xmlenc#aes128-cbc";
+
+  it("a DRM-locked ebook is refused as protected: an encrypted chapter, or any algorithm but font obfuscation", async () => {
+    await expect(withEncryption([[AES, "OEBPS/text/c1.xhtml"]])).rejects.toMatchObject({ reason: "protected" });
+    await expect(withEncryption([[AES, "OEBPS/fonts/a.otf"]])).rejects.toMatchObject({ reason: "protected" });
+    await expect(withEncryption([["http://www.idpf.org/2008/embedding", "OEBPS/text/c1.xhtml"]])).rejects.toMatchObject({ reason: "protected" });
+  });
+
+  it("obfuscated fonts are not a lock", async () => {
+    const blocks = await withEncryption([
+      ["http://www.idpf.org/2008/embedding", "OEBPS/fonts/a.otf"],
+      ["http://ns.adobe.com/pdf/enc#RC", "OEBPS/fonts/b.otf"],
+    ]);
+    expect(blocks.map((b) => b.md)).toEqual(["x"]);
+  });
+
+  it("an href from the package's root (a leading /) is found", async () => {
+    const zip = await JSZip.loadAsync(await makeEpub(["<p>rooted</p>"]));
+    const opf = (await zip.file("OEBPS/book.opf")?.async("string")) ?? "";
+    zip.file("OEBPS/book.opf", opf.replace('href="text/c1.xhtml"', 'href="/OEBPS/text/c1.xhtml"'));
+    expect((await epubBlocks(await zip.generateAsync({ type: "nodebuffer" }))).map((b) => b.md)).toEqual(["rooted"]);
   });
 });

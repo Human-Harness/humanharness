@@ -1,14 +1,32 @@
 import JSZip from "jszip";
 import { MaterialRefused } from "../blocks";
-import { ZIP_MAX_ENTRIES, ZIP_MAX_ENTRY, ZIP_MAX_TOTAL } from "../constants";
+import { ZIP_MAX_ENTRIES, ZIP_MAX_ENTRY, ZIP_MAX_PART, ZIP_MAX_TOTAL } from "../constants";
 
-/** How much a zip container may hold: entries, uncompressed bytes in all, uncompressed bytes per entry. */
+/**
+ * How much a zip container may hold: entries (directories too), uncompressed bytes in all, uncompressed bytes per
+ * entry that is only counted, and per entry that is kept or parsed (`part`, much smaller: a parsed tree costs far
+ * more than its text).
+ */
 export interface ZipLimits {
   entries: number;
   total: number;
   entry: number;
+  part: number;
 }
-export const ZIP_LIMITS: ZipLimits = { entries: ZIP_MAX_ENTRIES, total: ZIP_MAX_TOTAL, entry: ZIP_MAX_ENTRY };
+export const ZIP_LIMITS: ZipLimits = { entries: ZIP_MAX_ENTRIES, total: ZIP_MAX_TOTAL, entry: ZIP_MAX_ENTRY, part: ZIP_MAX_PART };
+
+/** The parts a library parses (XML, relationships); the rest (media) it only carries. */
+const parsed = (name: string) => /\.(xml|rels)$/i.test(name);
+
+/**
+ * The entry count the end-of-central-directory record declares, read before JSZip builds an object per entry.
+ * `null` when there is no such record (JSZip then refuses the file anyway). 0xFFFF means Zip64: more than any limit.
+ */
+function declaredEntries(buf: Buffer): number | null {
+  const stop = Math.max(0, buf.length - 22 - 0xffff);
+  for (let i = buf.length - 22; i >= stop; i--) if (buf.readUInt32LE(i) === 0x06054b50) return buf.readUInt16LE(i + 10);
+  return null;
+}
 
 /** Each opened zip's limits and the bytes inflated from it so far. */
 const budgets = new WeakMap<JSZip, { limits: ZipLimits; inflated: number }>();
@@ -24,29 +42,31 @@ const declared = (f: JSZip.JSZipObject): number => {
  * above the limits. Declared sizes can lie, so every read through `zipBytes`/`zipText` also counts what it inflates.
  */
 export async function openZip(buf: Buffer, limits: ZipLimits = ZIP_LIMITS): Promise<JSZip> {
+  const count = declaredEntries(buf);
+  if (count !== null && count > limits.entries) throw new MaterialRefused("unreadable");
   let zip: JSZip;
   try {
     zip = await JSZip.loadAsync(buf);
   } catch {
     throw new MaterialRefused("unreadable");
   }
+  if (Object.keys(zip.files).length > limits.entries) throw new MaterialRefused("unreadable");
   const files = Object.values(zip.files).filter((f) => !f.dir);
-  if (files.length > limits.entries) throw new MaterialRefused("unreadable");
   let total = 0;
   for (const f of files) {
     const size = declared(f);
     total += size;
-    if (size > limits.entry || total > limits.total) throw new MaterialRefused("unreadable");
+    if (size > (parsed(f.name) ? limits.part : limits.entry) || total > limits.total) throw new MaterialRefused("unreadable");
   }
   budgets.set(zip, { limits, inflated: 0 });
   return zip;
 }
 
-/** One entry's bytes, inflated with a running count: past the entry's or the archive's limit it is refused. */
+/** One entry's bytes, inflated with a running count: past `part` or the archive's limit it is refused. */
 export async function zipBytes(zip: JSZip, name: string): Promise<Buffer | null> {
   const file = zip.file(name);
   if (!file || file.dir) return null;
-  return inflate(zip, file, true);
+  return inflate(zip, file, true, budgetOf(zip).limits.part);
 }
 
 /** One entry as UTF-8 text (a byte order mark dropped). */
@@ -61,13 +81,19 @@ export async function zipText(zip: JSZip, name: string): Promise<string | null> 
  */
 export async function checkZip(buf: Buffer, limits: ZipLimits = ZIP_LIMITS): Promise<void> {
   const zip = await openZip(buf, limits);
-  for (const f of Object.values(zip.files)) if (!f.dir) await inflate(zip, f, false);
+  const { limits: l } = budgetOf(zip);
+  for (const f of Object.values(zip.files)) if (!f.dir) await inflate(zip, f, false, parsed(f.name) ? l.part : l.entry);
 }
 
-function inflate(zip: JSZip, file: JSZip.JSZipObject, keep: boolean): Promise<Buffer> {
-  // A zip opened without `openZip` (never in this package) still gets the default limits.
+/** A zip's budget; one opened without `openZip` (never in this package) still gets the default limits. */
+function budgetOf(zip: JSZip): { limits: ZipLimits; inflated: number } {
   const budget = budgets.get(zip) ?? { limits: ZIP_LIMITS, inflated: 0 };
   budgets.set(zip, budget);
+  return budget;
+}
+
+function inflate(zip: JSZip, file: JSZip.JSZipObject, keep: boolean, cap: number): Promise<Buffer> {
+  const budget = budgetOf(zip);
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     let size = 0;
@@ -83,7 +109,7 @@ function inflate(zip: JSZip, file: JSZip.JSZipObject, keep: boolean): Promise<Bu
     stream.on("data", (chunk: Buffer) => {
       size += chunk.length;
       budget.inflated += chunk.length;
-      if (size > budget.limits.entry || budget.inflated > budget.limits.total) return fail();
+      if (size > cap || budget.inflated > budget.limits.total) return fail();
       if (keep) chunks.push(chunk);
     });
     // JSZip reports a corrupt entry (a bad CRC, a size that doesn't match the declared one) as an error.

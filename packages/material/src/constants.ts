@@ -48,5 +48,13 @@ export const FETCH_TIMEOUT_MS = 30_000;
 export const ZIP_MAX_ENTRIES = 10_000;
 /** The uncompressed bytes a whole zip may hold (declared) and inflate (counted). */
 export const ZIP_MAX_TOTAL = 20 * MAX_BYTES;
-/** The uncompressed bytes one zip entry may inflate to. */
+/** The uncompressed bytes one zip entry may inflate to when it is only counted (media a library skips over). */
 export const ZIP_MAX_ENTRY = 4 * MAX_BYTES;
+/** The uncompressed bytes one zip entry may inflate to when it is kept or parsed (XML): a parsed tree costs ~30× its text. */
+export const ZIP_MAX_PART = MAX_BYTES / 2;
+/** Spreadsheets: at most this many cells (rows × kept columns) are read from one file; the rest is cut. */
+export const SHEET_MAX_CELLS = 1_000_000;
+/** Spreadsheets: at most this many rows are read from one file. */
+export const SHEET_MAX_ROWS = 100_000;
+/** Spreadsheets: at most this many non-empty columns are kept from one sheet. */
+export const SHEET_MAX_COLUMNS = 1024;

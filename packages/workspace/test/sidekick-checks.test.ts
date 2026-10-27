@@ -28,6 +28,30 @@ describe("localCheck", () => {
     expect(kinds("Summarize the sources like before, in bullet points please")).toContain("missing-context");
   });
 
+  it("vague: a short prompt is flagged even beside something concrete", () => {
+    const [flag] = localCheck("make it better 2", ctx);
+    expect(flag.kind).toBe("vague");
+  });
+
+  it("contractions, a lone quote and 'e.g.' are not concrete", () => {
+    expect(kinds("please don't just improve it, it's the stuff that matters for us all here")).toContain("vague");
+    expect(kinds("summarize the sources like before, e.g. the usual way we did it, i.e. short")).toContain("missing-context");
+    expect(kinds("I can't remember, summarize the sources like before for the team today")).toContain("missing-context");
+  });
+
+  it("paired quotes, backticks and file names are still concrete", () => {
+    expect(kinds("summarize the sources like before but start with 'Methods' for the team")).not.toContain("missing-context");
+    expect(kinds("summarize the sources like before and keep `refs` short for the team")).not.toContain("missing-context");
+    expect(kinds("summarize the sources like before into notes.md for the whole team")).not.toContain("missing-context");
+  });
+
+  it("missing-context: match and span point at the reference", () => {
+    const prompt = "Summarize the sources like before, in bullet points please";
+    const flag = localCheck(prompt, ctx).find((f) => f.kind === "missing-context")!;
+    expect(flag.match).toBe("the sources");
+    expect(prompt.slice(...flag.span)).toBe("the sources");
+  });
+
   it("missing-context: not when a known note or data title is named", () => {
     expect(kinds("Use the sources from Sources list to write the conclusion of the essay")).not.toContain("missing-context");
   });

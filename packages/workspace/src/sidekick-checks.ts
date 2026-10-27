@@ -47,9 +47,27 @@ function find(prompt: string, phrases: readonly string[]): { match: string; span
 
 const words = (s: string): string[] => s.match(/[\p{L}\p{N}]+/gu) ?? [];
 
-/** A number, a quote, a path or file name, inline code or a URL: something the model can hold on to. */
+/**
+ * A number, a quoted phrase, a path or file name, inline code or a URL: something the model can hold on to.
+ * Only paired quotes count (a contraction's `'` is not a quote), and a file name needs at least two characters
+ * before its dot, so "e.g." and "i.e." are not file names.
+ */
+const CONCRETE = new RegExp(
+  [
+    String.raw`\p{N}`,
+    String.raw`"[^"\n]+"`,
+    String.raw`“[^”\n]+”`,
+    String.raw`«[^»\n]+»`,
+    String.raw`(?<![\p{L}\p{N}])'[^'\n]+'(?![\p{L}\p{N}])`,
+    "`[^`\\n]+`",
+    String.raw`[\\/]`,
+    String.raw`[\p{L}\p{N}_-]{2,}\.[a-z0-9]{1,5}(?![\p{L}\p{N}])`,
+    "https?:",
+  ].join("|"),
+  "iu",
+);
 function concrete(prompt: string): boolean {
-  return /\p{N}|["“”«»'`]|[\\/]|\.[a-z0-9]{1,5}\b|https?:/iu.test(prompt);
+  return CONCRETE.test(prompt);
 }
 
 function namesKnown(prompt: string, known: readonly string[]): boolean {

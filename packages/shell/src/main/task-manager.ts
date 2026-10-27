@@ -734,15 +734,18 @@ export class TaskManager {
   private allowedModes(c: Pick<CurrentTask, "action" | "phase">): string[] {
     const modes = this.modesOf(c.action);
     const phase = this.phaseOf(c);
-    return phase && this.known(c.action) ? phaseModes(this.d.actions[c.action], phase).filter((m) => modes.includes(m)) : modes;
+    // `phaseOf` finds a phase only for a known action.
+    return phase ? phaseModes(this.d.actions[c.action!], phase).filter((m) => modes.includes(m)) : modes;
   }
 
   /**
    * What entering `to` does to the task's mode (modes spec §7), and what the change's message says about it. A mode `to`
    * forbids is suspended. A suspended mode `to` allows comes back, its section riding on the change turn. A task that never
-   * worked in a mode gets its `defaultMode` (a mode id) or a recommendation, at the first phase that allows modes.
+   * worked in a mode gets its `defaultMode` (a mode id) or a recommendation, at the first phase that allows modes (once:
+   * not when a phase in the task's log already allowed some). With no `language` (a resumed task) only the fields: no
+   * section is built, so no mode brief is read.
    */
-  private async modesOnEntry(c: CurrentTask, to: HarnessPhase, language: Language): Promise<{ sections: string[]; fields?: PhasePlan["modes"] }> {
+  private async modesOnEntry(c: CurrentTask, to: HarnessPhase, language?: Language): Promise<{ sections: string[]; fields?: PhasePlan["modes"] }> {
     const modes = this.modesOf(c.action);
     if (modes.length === 0 || !this.known(c.action)) return { sections: [] };
     const action = this.d.actions[c.action];
@@ -759,11 +762,15 @@ export class TaskManager {
     if (comes) {
       const below = await this.belowMinTier(comes, c.profile);
       return {
-        sections: [modeSection(await this.modeText(comes), language)],
+        sections: language ? [modeSection(await this.modeText(comes), language)] : [],
         fields: { mode: comes, modes: used.includes(comes) ? used : [...used, comes], ...(below ? { belowMinTier: true as const } : {}) },
       };
     }
-    if (fresh && allowed.length > 0) return { sections: [recommendSection(allowed.map((id) => this.hintOf(id)))] };
+    const offered = (c.phases ?? []).some((e) => {
+      const p = this.phasesOf(c.action).find((q) => q.id === e.id);
+      return p !== undefined && phaseModes(action, p).some((m) => modes.includes(m));
+    });
+    if (language && fresh && !offered && allowed.length > 0) return { sections: [recommendSection(allowed.map((id) => this.hintOf(id)))] };
     return { sections: [] };
   }
 
@@ -1341,11 +1348,11 @@ export class TaskManager {
    * the time box's) changes only the state.
    */
   private async phasePlan(c: CurrentTask, to: HarnessPhase, back: boolean): Promise<PhasePlan> {
-    const language = await this.d.language();
     if (c.resume) {
-      const { fields } = await this.modesOnEntry(c, to, language);
+      const { fields } = await this.modesOnEntry(c, to);
       return { message: null, ...(fields ? { modes: fields } : {}) };
     }
+    const language = await this.d.language();
     const text = await this.phaseText(c.action!, to);
     const previous = this.phaseOf(c);
     const vars = { language, back, ...(previous ? { previous: oneLine(previous.label) } : {}), ...(c.timeBox ? { timeLeft: this.timeLeft(c) } : {}) };

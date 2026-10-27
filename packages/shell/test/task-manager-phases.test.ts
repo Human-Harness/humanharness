@@ -362,6 +362,38 @@ describe("TaskManager: modes by phase (task-modes spec §7)", () => {
     expect(t.state().current).toMatchObject({ phase: { id: "main" }, mode: "socratic" });
   });
 
+  it("the recommendation comes once: not again when the task moves to another phase that allows modes", async () => {
+    const t = setup({ modes: { modes: ["socratic", "feynman"] }, phases: phases.slice(1).map((p) => ({ ...p, modes: undefined })) });
+    await t.manager.start("session");
+    expect(t.turns[0].message).toContain("## How to work");
+    await t.manager.setPhase("close", "t1").done;
+    expect(t.turns.at(-1)!.message).not.toContain("## How to work");
+    await t.manager.setPhase("main", "t1").done;
+    expect(t.turns.at(-1)!.message).not.toContain("## How to work");
+  });
+
+  it("a resumed task moves without reading the mode's brief", async () => {
+    const current = { id: "t1", action: "session", status: "waiting" as const, startedAt: "", turns: 1, phase: { id: "close", startedAt: NOW }, suspendedMode: "socratic", modes: ["socratic"], resume: true as const };
+    const t = setup({ modes, phases, state: { ...emptyTasks(), current }, extra: { readModeBrief: async () => Promise.reject(new Error("unreadable")) } });
+    const r = t.manager.setPhase("main", "t1");
+    expect(await r.accepted).toEqual({ ok: true, changed: "quiet" });
+    await r.done;
+    expect(t.state().current).toMatchObject({ phase: { id: "main" }, mode: "socratic" });
+  });
+
+  it("a mode restored below the task's tier is marked so", async () => {
+    const current = { id: "t1", action: "session", status: "waiting" as const, startedAt: "", turns: 1, profile, phase: { id: "close", startedAt: NOW }, suspendedMode: "socratic", modes: ["socratic"] };
+    const t = setup({
+      modes,
+      phases,
+      state: { ...emptyTasks(), current },
+      extra: { modes: { socratic: { label: "Socratic", minTier: "deep" }, feynman: { label: "Feynman" } } },
+    });
+    await t.manager.setPhase("main", "t1").done;
+    expect(t.state().current).toMatchObject({ mode: "socratic", belowMinTier: true });
+    expect(t.turns.at(-1)!.options).toMatchObject({ mode: "socratic" });
+  });
+
   it("an explicit mode the first phase forbids starts suspended too", async () => {
     const t = setup({ modes, phases });
     await t.manager.start("session", undefined, undefined, "feynman");

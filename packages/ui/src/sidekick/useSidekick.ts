@@ -4,7 +4,7 @@ import type { HarnessClient, SidekickState } from "../client";
 /**
  * Sidekick's state, live; null while loading, when disabled (no `state.sidekick`, slim mode) or when main has none.
  * A push that lands before a load wins over it (the load may be older). A new `refresh` reads it again (after a
- * restore, which main does not push).
+ * restore; main's `SidekickController.refresh()` pushes then too, and this read is a fallback).
  */
 export function useSidekick(client: HarnessClient, enabled: boolean, refresh = 0): SidekickState | null {
   const [state, setState] = useState<SidekickState | null>(null);

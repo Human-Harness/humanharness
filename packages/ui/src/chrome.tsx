@@ -56,10 +56,11 @@ export function Segmented<T extends string>({
 
 /** The top-bar Sidekick switch (sidekick spec §7): a state dot, filled when on. */
 export function SidekickToggle({ on, label, onToggle }: { on: boolean; label: string; onToggle: () => void }) {
+  const { t } = useTranslation();
   return (
     <button type="button" className="hh-sk-toggle" data-on={on} aria-label={label} onClick={onToggle}>
       <span className="hh-sk-dot" aria-hidden="true" />
-      Sidekick
+      {t("sidekick.toggle")}
     </button>
   );
 }

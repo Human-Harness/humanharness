@@ -1,4 +1,4 @@
-import { type KeyboardEvent, type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { type KeyboardEvent, type ReactNode, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { type DocumentKind, checkTemplate, readingMinutes, refusedShape, wordCount } from "@humanharness/harness-sdk/documents";
 import type { DocumentRead, HarnessClient, ReaderPrefs } from "./client";
@@ -10,6 +10,8 @@ export interface ReaderTarget {
   path: string;
   anchor?: string;
   agent?: string;
+  /** New on every open, so opening the same document at the same anchor again still goes there. */
+  nonce?: number;
 }
 
 /** Over this the reader draws only the first `SHOWN_BYTES` (§6). */
@@ -32,7 +34,21 @@ function headingAtTop(box: HTMLElement | null): string | null {
   return last;
 }
 
-const scrollToId = (id: string) => document.getElementById(id)?.scrollIntoView?.({ block: "start" });
+/** Scrolls to a heading of this document only: its ids have no prefix, so the rest of the window is never searched. */
+function scrollToId(box: HTMLElement | null, id: string) {
+  const el = box?.querySelector<HTMLElement>(`#${CSS.escape(id)}`);
+  el?.scrollIntoView?.({ block: "start" });
+}
+
+/** The longest start of `text` whose UTF-8 encoding fits in `bytes` (never half a character). */
+export function cutToBytes(text: string, bytes: number): string {
+  const encoded = new TextEncoder().encode(text);
+  if (encoded.length <= bytes) return text;
+  let end = bytes;
+  // Back up to the start of a character: continuation bytes are 10xxxxxx.
+  while (end > 0 && (encoded[end] & 0xc0) === 0x80) end--;
+  return new TextDecoder().decode(encoded.subarray(0, end));
+}
 
 /** The reader panel (document-reader spec §5.2): a document beside the chat, or full screen. Never writes. */
 export function DocumentReader({
@@ -67,29 +83,45 @@ export function DocumentReader({
   const [look, setLook] = useState<Required<ReaderPrefs>>({ font: prefs.font ?? "sans", size: prefs.size ?? "normal" });
   useEffect(() => setLook({ font: prefs.font ?? "sans", size: prefs.size ?? "normal" }), [prefs.font, prefs.size]);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  const prefsButton = useRef<HTMLButtonElement>(null);
+  const prefsId = useId();
   /** Where to scroll once the next text is drawn: the anchor asked for, or the heading kept across a reload. */
-  const restore = useRef<string | null>(target.anchor ?? null);
+  const restore = useRef<string | null>(null);
+  /** The path whose text is drawn now (null while another one loads). */
+  const loaded = useRef<string | null>(null);
+  /** The path the reader last took focus for: once per document, never on a reload. */
+  const focused = useRef<string | null>(null);
   // The target may come from a harness's own UI (`client.openDocument`): never trust its shape.
   const path = typeof target.path === "string" ? target.path : "";
   const refused = refusedShape(target.path);
+  const anchor = typeof target.anchor === "string" && target.anchor ? target.anchor : undefined;
 
   useEffect(() => {
+    loaded.current = null;
     setDoc(null);
     setSource(false);
+    setCurrent(null);
     if (refused) {
       setDoc({ ok: false, reason: "outside" });
       return;
     }
     let live = true;
-    const read = () =>
-      client.readDocument(path).then(
-        (d) => live && setDoc(d),
-        () => live && setDoc({ ok: false, reason: "missing" }),
-      );
-    void read();
+    // Only the latest read draws: an older answer arriving late is dropped.
+    let seq = 0;
+    const read = () => {
+      const mine = ++seq;
+      const done = (d: DocumentRead) => {
+        if (!live || mine !== seq) return;
+        loaded.current = path;
+        setDoc(d);
+      };
+      client.readDocument(path).then(done, () => done({ ok: false, reason: "missing" }));
+    };
+    read();
     const off = client.watchDocument(path, () => {
       restore.current = headingAtTop(scrollRef.current);
-      void read();
+      read();
     });
     return () => {
       live = false;
@@ -97,25 +129,30 @@ export function DocumentReader({
     };
   }, [client, path, refused]);
 
-  // A new anchor in the same document: go there now, or once the text is drawn.
-  const docRef = useRef(doc);
-  docRef.current = doc;
+  // Declared after the read: on a path change `loaded` is already reset, so the anchor waits for the new text.
+  // Also a new anchor (or the same one opened again) in the document already drawn: go there now.
   useEffect(() => {
-    if (!target.anchor) return;
-    if (docRef.current?.ok) scrollToId(target.anchor);
-    else restore.current = target.anchor;
-  }, [target]);
+    if (loaded.current === path && doc?.ok) {
+      if (anchor) scrollToId(scrollRef.current, anchor);
+    } else restore.current = anchor ?? null;
+    // `doc` is read, not watched: only a new target moves the place here.
+  }, [path, anchor, target.nonce]);
 
   useLayoutEffect(() => {
+    if (!doc?.ok) return;
+    if (focused.current !== path) {
+      focused.current = path;
+      (titleRef.current ?? scrollRef.current)?.focus({ preventScroll: true });
+    }
     const id = restore.current;
-    if (!doc?.ok || !id) return;
+    if (!id) return;
     restore.current = null;
-    scrollToId(id);
-  }, [doc]);
+    scrollToId(scrollRef.current, id);
+  }, [doc, path]);
 
   const text = doc?.ok ? doc.text : "";
   const big = doc?.ok === true && doc.size > BIG_BYTES;
-  const shown = big ? text.slice(0, SHOWN_BYTES) : text;
+  const shown = useMemo(() => (big ? cutToBytes(text, SHOWN_BYTES) : text), [big, text]);
   const { front, outline, sections } = useMemo(() => documentOutline(shown), [shown]);
   // The whole text, not only the part drawn: the reading time is the document's.
   const minutes = useMemo(() => readingMinutes(wordCount(text)), [text]);
@@ -133,8 +170,10 @@ export function DocumentReader({
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.key !== "Escape") return;
     e.preventDefault();
-    if (prefsOpen) setPrefsOpen(false);
-    else onClose();
+    if (prefsOpen) {
+      setPrefsOpen(false);
+      prefsButton.current?.focus();
+    } else onClose();
   };
 
   let body: ReactNode;
@@ -164,7 +203,7 @@ export function DocumentReader({
           {target.agent && <span>{t("reader.writtenBy", { agent: target.agent })}</span>}
         </div>
         {front.title && (
-          <h1 className="hh-reader-title" tabIndex={-1}>
+          <h1 className="hh-reader-title" tabIndex={-1} ref={titleRef}>
             {front.title}
           </h1>
         )}
@@ -196,8 +235,14 @@ export function DocumentReader({
           <button type="button" aria-pressed={source} disabled={!doc?.ok} onClick={() => setSource((s) => !s)}>
             {t("reader.source")}
           </button>
-          <button type="button" aria-expanded={prefsOpen} onClick={() => setPrefsOpen((o) => !o)} aria-label={t("reader.prefs")}>
-            Aa
+          <button
+            type="button"
+            ref={prefsButton}
+            aria-expanded={prefsOpen}
+            aria-controls={prefsOpen ? prefsId : undefined}
+            onClick={() => setPrefsOpen((o) => !o)}
+          >
+            Aa <span className="hh-sr-only">{t("reader.prefsButton")}</span>
           </button>
           <button type="button" onClick={() => onFull(!full)}>
             {full ? t("reader.showChat") : t("reader.fullScreen")}
@@ -207,7 +252,7 @@ export function DocumentReader({
           </button>
         </div>
         {prefsOpen && (
-          <div className="hh-reader-prefs" role="group" aria-label={t("reader.prefs")}>
+          <div className="hh-reader-prefs" id={prefsId} role="group" aria-label={t("reader.prefs")}>
             <div className="hh-segmented">
               <button type="button" aria-pressed={look.font === "sans"} onClick={() => setPref({ font: "sans" })}>
                 {t("reader.sans")}
@@ -238,7 +283,7 @@ export function DocumentReader({
                     aria-current={current === h.id ? "location" : undefined}
                     onClick={(e) => {
                       e.preventDefault();
-                      scrollToId(h.id);
+                      scrollToId(scrollRef.current, h.id);
                     }}
                   >
                     {h.text}
@@ -254,7 +299,7 @@ export function DocumentReader({
             )}
           </nav>
         )}
-        <div className="hh-reader-scroll" ref={scrollRef} onScroll={() => setCurrent(headingAtTop(scrollRef.current))}>
+        <div className="hh-reader-scroll" ref={scrollRef} tabIndex={-1} onScroll={() => setCurrent(headingAtTop(scrollRef.current))}>
           <article className={`hh-reader-doc hh-reader-${look.font}${look.size === "large" ? " hh-reader-large" : ""}`}>{body}</article>
         </div>
       </div>

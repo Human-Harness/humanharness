@@ -125,6 +125,9 @@ export function ChatView({
   const [notesPanel, setNotesPanel] = useState<{ expanded?: string } | null>(null);
   /** The document reader beside the chat (document-reader spec §5); null: closed. Kept in state: a stable target. */
   const [reader, setReader] = useState<ReaderTarget | null>(null);
+  /** Every open gets a new nonce: the same document at the same anchor opened again goes there again. */
+  const readerOpens = useRef(0);
+  const showReader = useCallback((target: Omit<ReaderTarget, "nonce">) => setReader({ ...target, nonce: ++readerOpens.current }), []);
   const [readerFull, setReaderFull] = useState(false);
   const [readerPrefs, setReaderPrefs] = useState<ReaderPrefs>(state.config.reader ?? {});
   /** Card paths that are no longer there (struck through). */
@@ -212,7 +215,7 @@ export function ChatView({
   );
   const stale = useMemo(() => ({ ...all, choices: StaleChoices, ...(state.modes ? { recommend_mode: StaleRecommend } : {}) }), [all, state.modes]);
   /** Opens a document in the reader (a `.md` link, a card, the harness's own UI). */
-  const openDoc = useCallback((path: string, anchor?: string) => setReader({ path, ...(anchor ? { anchor } : {}) }), []);
+  const openDoc = useCallback((path: string, anchor?: string) => showReader({ path, ...(anchor ? { anchor } : {}) }), []);
   const documentKinds = state.documents?.kinds;
   // Memoised: a new host on every streaming redraw would reload the chat's local images.
   const documentHost = useMemo<DocumentHost>(
@@ -277,7 +280,7 @@ export function ChatView({
     // The harness's own UI may open a document (`client.openDocument`): listened to from the start. Its path is
     // untrusted input, so only a string opens the reader (which checks it again).
     const offDocs = client.onOpenDocument((p) => {
-      if (typeof p === "string" && p) setReader({ path: p });
+      if (typeof p === "string" && p) showReader({ path: p });
     });
     return () => {
       offTasks();
@@ -821,7 +824,7 @@ export function ChatView({
   const engineName = (id: unknown): string => state.engines.find((e) => e.id === id)?.name ?? engine;
   const cardsFor = (entry: ChatEntry) => ({
     missing: missingDocs,
-    open: (card: DocumentCard) => setReader({ path: card.path, agent: engineName(entry.engine) }),
+    open: (card: DocumentCard) => showReader({ path: card.path, agent: engineName(entry.engine) }),
   });
   const saveReaderPrefs = useCallback(
     (p: ReaderPrefs) => {
@@ -1225,7 +1228,6 @@ export function ChatView({
           {renderSide && !slim && <aside className="hh-side">{renderSide(chat.blockState, sendFromHarness)}</aside>}
           {reader && !slim && (
             <DocumentReader
-              key={reader.path}
               client={client}
               target={reader}
               kinds={documentKinds}

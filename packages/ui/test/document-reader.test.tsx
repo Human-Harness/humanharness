@@ -1,7 +1,9 @@
 // @vitest-environment happy-dom
-import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { I18nextProvider } from "react-i18next";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DocumentReader } from "../src/DocumentReader";
+import type { DocumentRead } from "../src/client";
+import { DocumentReader, cutToBytes } from "../src/DocumentReader";
 import { FakeClient } from "./fake-client";
 import { renderIn } from "./render";
 
@@ -115,7 +117,7 @@ describe("DocumentReader (§5.2)", () => {
 
   it("reading preferences: serif and large, always both fields", async () => {
     const { props } = setup({ prefs: { size: "large" } });
-    fireEvent.click(await screen.findByRole("button", { name: "Reading preferences" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Aa reading preferences" }));
     fireEvent.click(screen.getByRole("button", { name: "Serif" }));
     expect(props.onPrefs).toHaveBeenCalledWith({ font: "serif", size: "large" });
     expect(document.querySelector(".hh-reader-doc.hh-reader-large")).not.toBeNull();
@@ -180,7 +182,7 @@ describe("DocumentReader: untrusted targets and big documents", () => {
 
   it("Escape closes the preferences first, then the reader", async () => {
     const { props } = setup();
-    fireEvent.click(await screen.findByRole("button", { name: "Reading preferences" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Aa reading preferences" }));
     fireEvent.keyDown(screen.getByRole("button", { name: "Serif" }), { key: "Escape" });
     expect(screen.queryByRole("button", { name: "Serif" })).toBeNull();
     expect(props.onClose).not.toHaveBeenCalled();
@@ -190,8 +192,126 @@ describe("DocumentReader: untrusted targets and big documents", () => {
 
   it("applies a changed preference at once, even before the parent passes it back", async () => {
     setup();
-    fireEvent.click(await screen.findByRole("button", { name: "Reading preferences" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Aa reading preferences" }));
     fireEvent.click(screen.getByRole("button", { name: "Large" }));
     expect(document.querySelector(".hh-reader-doc.hh-reader-large")).not.toBeNull();
+  });
+});
+
+describe("DocumentReader: anchors, reloads, watches and focus", () => {
+  const OTHER = "# Other\n\n## Intro\n\nText.\n\n## Deep\n\nMore.";
+  const scrolled = () => {
+    const ids: string[] = [];
+    Element.prototype.scrollIntoView = function (this: Element) {
+      ids.push(this.id);
+    };
+    return ids;
+  };
+  async function swap(s: ReturnType<typeof setup>, target: Parameters<typeof DocumentReader>[0]["target"]) {
+    const { rerender, i18n } = await s.view;
+    rerender(
+      <I18nextProvider i18n={i18n}>
+        <DocumentReader {...s.props} target={target} />
+      </I18nextProvider>,
+    );
+  }
+
+  it("opening another document at an anchor goes there once it is drawn", async () => {
+    const ids = scrolled();
+    const s = setup({}, { "docs/cache.md": ANALYSIS, "docs/other.md": OTHER });
+    await screen.findByRole("heading", { name: "Options" });
+    await act(async () => swap(s, { path: "docs/other.md", anchor: "deep", nonce: 2 }));
+    expect(await screen.findByRole("heading", { name: "Deep" })).toBeTruthy();
+    await waitFor(() => expect(ids).toContain("deep"));
+  });
+
+  it("a new anchor in the same document moves there, and the same anchor opened again moves there again", async () => {
+    const ids = scrolled();
+    const s = setup();
+    await screen.findByRole("heading", { name: "Options" });
+    await act(async () => swap(s, { path: "docs/cache.md", anchor: "options", nonce: 2 }));
+    expect(ids).toEqual(["options"]);
+    await act(async () => swap(s, { path: "docs/cache.md", anchor: "options", nonce: 3 }));
+    expect(ids).toEqual(["options", "options"]);
+  });
+
+  it("only the latest read draws: an older answer arriving late is dropped", async () => {
+    const s = setup();
+    await screen.findByRole("heading", { name: "Options" });
+    const answers: ((d: DocumentRead) => void)[] = [];
+    vi.spyOn(s.client, "readDocument").mockImplementation(() => new Promise((resolve) => answers.push(resolve)));
+    await act(async () => s.client.changeDocument("docs/cache.md", ANALYSIS));
+    await act(async () => s.client.changeDocument("docs/cache.md", ANALYSIS));
+    const read = (text: string): DocumentRead => ({ ok: true, text, mtime: s.client.documentMtime, size: text.length });
+    await act(async () => answers[1](read("# Newest")));
+    await act(async () => answers[0](read("# Stale")));
+    expect(screen.getByRole("heading", { name: "Newest" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Stale" })).toBeNull();
+  });
+
+  it("stops watching on unmount and when the path changes", async () => {
+    const client = new FakeClient();
+    const offs: ReturnType<typeof vi.fn>[] = [];
+    const watch = client.watchDocument.bind(client);
+    vi.spyOn(client, "watchDocument").mockImplementation((file, listener) => {
+      const off = vi.fn(watch(file, listener));
+      offs.push(off);
+      return off;
+    });
+    Object.assign(client.documents, { "docs/cache.md": ANALYSIS, "docs/other.md": OTHER });
+    const s = setup({ client });
+    await screen.findByRole("heading", { name: "Options" });
+    await act(async () => swap(s, { path: "docs/other.md" }));
+    expect(offs[0]).toHaveBeenCalledTimes(1);
+    expect(offs[1]).not.toHaveBeenCalled();
+    cleanup();
+    expect(offs[1]).toHaveBeenCalledTimes(1);
+  });
+
+  it("finds heading ids only inside the reader", async () => {
+    const outside = document.createElement("h2");
+    outside.id = "options";
+    document.body.prepend(outside);
+    const hit: Element[] = [];
+    Element.prototype.scrollIntoView = function (this: Element) {
+      hit.push(this);
+    };
+    setup();
+    const toc = await screen.findByRole("navigation", { name: "Contents" });
+    fireEvent.click(within(toc).getByText("Options"));
+    expect(hit).toHaveLength(1);
+    expect(hit[0]).not.toBe(outside);
+    expect(hit[0].closest("aside")).not.toBeNull();
+    outside.remove();
+  });
+
+  it("the Aa button is named with Aa, controls its menu, and Escape gives focus back to it", async () => {
+    setup();
+    const aa = await screen.findByRole("button", { name: "Aa reading preferences" });
+    fireEvent.click(aa);
+    const menu = screen.getByRole("group", { name: "Reading preferences" });
+    expect(aa.getAttribute("aria-controls")).toBe(menu.id);
+    fireEvent.keyDown(within(menu).getByRole("button", { name: "Serif" }), { key: "Escape" });
+    expect(document.activeElement).toBe(aa);
+  });
+
+  it("takes focus on open (the title), so Escape closes it at once", async () => {
+    const { props } = setup();
+    const title = await screen.findByRole("heading", { level: 1, name: "Search cache" });
+    await waitFor(() => expect(document.activeElement).toBe(title));
+    fireEvent.keyDown(title, { key: "Escape" });
+    expect(props.onClose).toHaveBeenCalled();
+  });
+});
+
+describe("cutToBytes", () => {
+  it("cuts by UTF-8 bytes, never inside a character", () => {
+    expect(cutToBytes("abc", 10)).toBe("abc");
+    expect(cutToBytes("aéb", 2)).toBe("a");
+    expect(cutToBytes("aéb", 3)).toBe("aé");
+    expect(cutToBytes("😀😀", 5)).toBe("😀");
+    const shown = cutToBytes("é".repeat(300_000), 200 * 1024);
+    expect(new TextEncoder().encode(shown).length).toBeLessThanOrEqual(200 * 1024);
+    expect(shown.length).toBe(100 * 1024);
   });
 });

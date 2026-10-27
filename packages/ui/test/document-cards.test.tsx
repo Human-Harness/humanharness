@@ -117,7 +117,7 @@ describe("document cards (§5.1)", () => {
     const { client } = await chatWith([answer([card])], { [card.path]: "# A" });
     const save = vi.spyOn(client, "saveConfig");
     fireEvent.click(await screen.findByRole("button", { name: /Analysis/ }));
-    fireEvent.click(await screen.findByRole("button", { name: "Reading preferences" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Aa reading preferences" }));
     fireEvent.click(screen.getByRole("button", { name: "Large" }));
     expect(save).toHaveBeenCalledWith({ reader: { font: "sans", size: "large" } });
   });

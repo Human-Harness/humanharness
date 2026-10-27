@@ -288,6 +288,27 @@
     "notNow": "Not now",
     "failed": "That didn't go through. Pick a mode again."
   },
+  "phases": {
+    "stepper": "Task parts",
+    "proposal": "The AI proposes to move to {{phase}}: {{reason}}",
+    "proposalFinish": "The AI says this part is done: {{reason}}",
+    "go": "Go to {{phase}}",
+    "finish": "Finish",
+    "notNow": "Not now",
+    "left_one": "{{count}} min left",
+    "left_other": "{{count}} min left",
+    "lessThanMinute": "Less than a minute left",
+    "timeUp": "Time is up",
+    "pause": "Pause",
+    "resume": "Resume",
+    "paused": "Paused",
+    "extend": "+5 min",
+    "timeTitle": "How long?",
+    "noLimit": "No limit",
+    "minutes": "{{count}} min",
+    "wrapUpLine": "Time is almost up",
+    "failed": "That didn't go through. Try again."
+  },
   "annotate": {
     "title": "Notes on your answer",
     "noAnswer": "The answer these notes are about isn't in this chat.",

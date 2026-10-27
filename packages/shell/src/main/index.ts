@@ -828,8 +828,12 @@ async function saveConfigPatch(patch: AppConfig, before: AppConfig): Promise<voi
           if (!c || c.engineId !== engineId) return null;
           // D0: one folder, as before. With profiles, every profile's chat (spec §5).
           if (!profilesCtl) return startNewChatIfEngineChanged(baseOf(c), engineId);
+          // With no active profile baseOf throws and nothing is archived here: each profile's chat is archived lazily
+          // when it is next loaded (archiveStaleChat in hh:loadChat).
           const active = baseOf(c);
-          const others = (await profilesCtl.state()).list.map((p) => profileDir(c.folder, p.id)).filter((f) => f !== active);
+          // An unreadable registry still starts the active chat over; the others are archived lazily the same way.
+          const list = await profilesCtl.state().then((s) => s.list, () => []);
+          const others = list.map((p) => profileDir(c.folder, p.id)).filter((f) => f !== active);
           return archiveChatsOnEngineChange(active, others, engineId);
         },
       },
@@ -911,9 +915,10 @@ function registerIpc() {
     if (!folder) return null;
     return { folder, problem: await checkFolder(folder, os.homedir()) } satisfies FolderPick;
   });
-  handle("hh:saveConfig", async (raw: AppConfig) => {
+  handle("hh:saveConfig", async (raw: unknown) => {
+    if (typeof raw !== "object" || raw === null || Array.isArray(raw)) throw new Error("A config change must be an object");
     // The active profile changes only through a profile switch (profiles spec §4).
-    const { profile: _profile, ...input }: AppConfig = raw ?? {};
+    const { profile: _profile, ...input }: AppConfig = raw as AppConfig;
     const problem = await configProblem(input, validation());
     if (problem) throw new Error(problem);
     // Spec §7: a bad entry under models is dropped, never stored.
@@ -1227,8 +1232,9 @@ function registerIpc() {
     const primary = isMockEngine(hooks, c.engineId) ? undefined : getEngine(c.engineId).limits?.primary;
     const engineOnly = (records: UsageRecord[]) => records.filter((r) => r.engine === c.engineId);
     // Profiles: the app's window is shared, so every profile's log counts (spec §4 "Usage").
-    if (profilesCtl && c.profile) {
-      const ids = (await profilesCtl.state()).list.map((p) => p.id);
+    const ids = profilesCtl && c.profile ? await profilesCtl.state().then((s) => s.list.map((p) => p.id), () => null) : null;
+    // An unreadable registry: the active profile's own log, as without profiles.
+    if (ids && c.profile) {
       const logs = await Promise.all(ids.map(async (id) => [id, engineOnly(await new UsageLog(profileDir(c.folder, id)).load())] as const));
       return profilesUsage(Object.fromEntries(logs), c.profile, primary);
     }

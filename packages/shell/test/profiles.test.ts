@@ -114,6 +114,26 @@ describe("Profiles (profiles spec §5)", () => {
     expect(await t.profiles.open("tomas")).toEqual({ ok: false, reason: "unknown" });
   });
 
+  it("a profile archived while the open task closes is not opened", async () => {
+    let root = "";
+    let archiveFirst = false;
+    const t = setup({
+      switchTo: async (target) => {
+        if (archiveFirst) await new ProfileStore(root).setArchived("sofi", true);
+        try {
+          return { ok: true, id: await target() };
+        } catch {
+          return { ok: false, reason: "failed" };
+        }
+      },
+    });
+    root = t.root;
+    await t.profiles.create({ name: "Sofi" });
+    await t.profiles.create({ name: "Tomás" });
+    archiveFirst = true;
+    expect(await t.profiles.open("sofi")).toEqual({ ok: false, reason: "unknown" });
+  });
+
   it("never archives or deletes the active profile", async () => {
     const t = setup();
     await t.profiles.create({ name: "Sofi" });

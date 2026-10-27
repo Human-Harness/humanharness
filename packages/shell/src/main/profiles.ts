@@ -168,7 +168,18 @@ export class Profiles {
     if (!root) return { ok: false, reason: "not-ready" };
     if (!isProfileId(id) || !(await this.openable(id))) return { ok: false, reason: "unknown" };
     if ((await this.d.active()) === id) return { ok: true };
-    return this.answer(await this.d.switchTo(async () => id));
+    // Checked again once the open task has closed: it may have been archived or deleted while it was closing.
+    let gone = false;
+    const r = await this.answer(
+      await this.d.switchTo(async () => {
+        if (!(await this.openable(id))) {
+          gone = true;
+          throw new Error(`The profile ${id} is no longer there`);
+        }
+        return id;
+      }),
+    );
+    return gone ? { ok: false, reason: "unknown" } : r;
   }
 
   /**

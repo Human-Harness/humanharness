@@ -130,7 +130,8 @@ describe("archiveChatsOnEngineChange (profiles spec §5 'Engine switch')", () =>
     expect(fs.readdirSync(path.join(tomas, ".harness", "chats", "archive"))).toHaveLength(1);
   });
 
-  it("another profile that can't be read is logged; the active one still starts over", async () => {
+  // Root reads a folder whatever its mode.
+  it.skipIf(process.getuid?.() === 0)("another profile that can't be read is logged; the active one still starts over", async () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     const sofi = await folderWith("claude", true);
     const broken = await folderWith("claude", true);

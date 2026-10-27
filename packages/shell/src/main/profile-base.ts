@@ -13,11 +13,14 @@ export function baseFor(c: { folder: string; profile?: string }, profiles: boole
 
 /** The profile a base belongs to: its folder's name when it sits right inside `root`; null otherwise. */
 export function profileOfBase(root: string, base: string): string | null {
-  const name = path.basename(base);
-  return path.dirname(base) === root && isProfileId(name) ? name : null;
+  const b = path.resolve(base);
+  const name = path.basename(b);
+  return path.dirname(b) === path.resolve(root) && isProfileId(name) ? name : null;
 }
 
-/** `child` is `parent` or inside it (paths as given). */
+/** `child` is `parent` or inside it (both resolved first, so `..` steps and trailing separators don't count). */
 export function isInsideFolder(child: string, parent: string): boolean {
-  return child === parent || child.startsWith(parent + path.sep);
+  const c = path.resolve(child);
+  const p = path.resolve(parent);
+  return c === p || c.startsWith(p.endsWith(path.sep) ? p : p + path.sep);
 }

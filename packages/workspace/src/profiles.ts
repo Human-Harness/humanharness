@@ -82,7 +82,10 @@ export class ProfileStore {
     try {
       raw = JSON.parse(text);
     } catch {
-      await fs.rename(this.file, `${this.file}.corrupt-${Date.now()}`);
+      await fs.rename(this.file, `${this.file}.corrupt-${Date.now()}`).catch((err: NodeJS.ErrnoException) => {
+        // Another read set it aside first.
+        if (err.code !== "ENOENT") throw err;
+      });
       return [];
     }
     const seen = new Set<string>();

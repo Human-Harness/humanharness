@@ -82,6 +82,15 @@ describe("ProfileStore", () => {
     await expect(store.remove("tomas")).rejects.toThrow(/Unknown profile/);
   });
 
+  it("two reads of a broken file at once both see it empty: the second finds it already set aside", async () => {
+    const folder = tmp();
+    fs.mkdirSync(path.join(folder, ".harness"));
+    fs.writeFileSync(path.join(folder, ".harness", "profiles.json"), "{");
+    const store = new ProfileStore(folder);
+    expect(await Promise.all([store.list(), store.list(), store.list()])).toEqual([[], [], []]);
+    expect(fs.existsSync(path.join(folder, ".harness", "profiles.json"))).toBe(false);
+  });
+
   it("sets a file that isn't JSON aside; keeps only entries with a valid id and title, once each", async () => {
     const folder = tmp();
     fs.mkdirSync(path.join(folder, ".harness"));

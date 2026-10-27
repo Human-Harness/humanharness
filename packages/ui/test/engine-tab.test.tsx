@@ -538,4 +538,32 @@ describe("EngineTab: OpenCode", () => {
     expect(client.terminalOpened).toBe(1);
     expect(client.setupRuns).toEqual([]);
   });
+
+  it("says the command was copied when only Terminal fails to open, not a plain failure", async () => {
+    const client = withFolder();
+    addOpenCode(client);
+    client.statusFor.opencode = { ...client.status, engineId: "opencode" };
+    client.openTerminal = async () => {
+      throw new Error("no Terminal");
+    };
+    await renderIn("en", <Tab client={client} />);
+    fireEvent.click(await screen.findByRole("button", { name: /OpenCode/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Sign out" }));
+    await screen.findByText("The sign-out command is copied, but Terminal didn't open. Open Terminal yourself, paste the command, then press Check again.");
+    expect(client.setupCopied).toEqual(["opencode:logout"]);
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByRole("button", { name: "Check again" })).toBeTruthy();
+  });
+
+  it("is a plain failure when the command could not be copied", async () => {
+    const client = withFolder();
+    addOpenCode(client);
+    client.statusFor.opencode = { ...client.status, engineId: "opencode" };
+    client.copyError = new Error("copy failed");
+    await renderIn("en", <Tab client={client} />);
+    fireEvent.click(await screen.findByRole("button", { name: /OpenCode/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Sign out" }));
+    await screen.findByRole("alert");
+    expect(client.terminalOpened).toBe(0);
+  });
 });

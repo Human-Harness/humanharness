@@ -125,6 +125,7 @@
     "providerLocalTest": "Test my local model",
     "providerDocs": "{{engine}}'s guide to providers",
     "signOutTerminal": "Finish signing out in Terminal, then press Check again.",
+    "signOutManual": "The sign-out command is copied, but Terminal didn't open. Open Terminal yourself, paste the command, then press Check again.",
     "installedRecheck": "I installed it, check again",
     "stillMissing": "I still can't find {{engine}}. If Terminal showed an error, try the official instructions.",
     "updateTitle": "Update {{engine}}",

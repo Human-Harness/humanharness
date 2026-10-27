@@ -35,8 +35,11 @@ export function EngineTab({
   const [statuses, setStatuses] = useState<Record<string, EngineStatus>>({});
   const [busy, setBusy] = useState<null | "use" | "logout">(null);
   const [failed, setFailed] = useState(false);
-  /** Signing out runs in Terminal (`terminalSteps.logout`): says to finish there, then check again. */
-  const [signOutHint, setSignOutHint] = useState(false);
+  /**
+   * Signing out runs in Terminal (`terminalSteps.logout`): says to finish there, then check again.
+   * "manual": the command was copied but Terminal did not open, so the person opens it by hand.
+   */
+  const [signOutHint, setSignOutHint] = useState<false | "opened" | "manual">(false);
   /** Why checking an engine failed, by engine id. */
   const [checkErrors, setCheckErrors] = useState<Record<string, string>>({});
   const ids = state.engines.map((e) => e.id).join(",");
@@ -96,8 +99,12 @@ export function EngineTab({
       setFailed(false);
       try {
         await client.copySetupCommand(selected, "logout");
-        await client.openTerminal();
-        setSignOutHint(true);
+        // The command is on the clipboard: a Terminal that does not open is a step to do by hand, not a failure.
+        const opened = await client.openTerminal().then(
+          () => true,
+          () => false,
+        );
+        setSignOutHint(opened ? "opened" : "manual");
       } catch {
         setFailed(true);
       }
@@ -206,7 +213,7 @@ export function EngineTab({
                 </div>
                 {signOutHint && (
                   <div className="hh-row">
-                    <span role="status">{t("engine.signOutTerminal")}</span>
+                    <span role="status">{t(signOutHint === "manual" ? "engine.signOutManual" : "engine.signOutTerminal")}</span>
                     <button onClick={() => void refresh(engine.id).then(() => setSignOutHint(false))}>{t("engine.providerRecheck")}</button>
                   </div>
                 )}

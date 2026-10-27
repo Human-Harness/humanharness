@@ -243,7 +243,7 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
           />
         ) : screen === "setup" ? (
           <SetupFlow
-            key={`${setupAt.step ?? ""}:${setupAt.only ? "only" : ""}`}
+            key={`${setupAt.step ?? ""}:${setupAt.only ? "only" : ""}:${setupAt.newProfile ? "new" : ""}`}
             client={client}
             state={state}
             onChange={setState}
@@ -255,6 +255,7 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
             onStart={() => leaveSetup("work")}
             {...(setupAt.step ? { startAt: setupAt.step } : {})}
             only={setupAt.only === true}
+            newProfile={setupAt.newProfile === true}
             components={setupSteps}
             blocks={blocks}
             stateBlocks={stateBlocks}

@@ -1,16 +1,18 @@
 import { type ComponentType, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { CheckIcon, TopBar } from "./chrome";
-import { type AppState, type HarnessClient, type SetupStepProps, type SetupStepResult, type SetupStepView, type SetupStepsState, type TaskView, isConfigured } from "./client";
+import { type AppState, type HarnessClient, type ProfileView, type SetupStepProps, type SetupStepResult, type SetupStepView, type SetupStepsState, type TaskView, isConfigured } from "./client";
 import { EngineTab } from "./EngineTab";
 import { FolderStep } from "./FolderStep";
 import { systemLanguage } from "./language";
 import type { BlockProps } from "./Message";
+import { ProfileStep } from "./ProfileStep";
+import { useProfiles } from "./ProfileSwitcher";
 import { SetupInterviewStep } from "./SetupInterviewStep";
 import { SetupStepForm } from "./SetupStepForm";
 
 /** A core step, or a harness step by id (setup-steps spec §4). */
-type Step = "folder" | "engine" | "done" | `step:${string}`;
+type Step = "folder" | "engine" | "profile" | "done" | `step:${string}`;
 const stepOf = (id: string): Step => `step:${id}`;
 
 export interface SetupFlowProps {
@@ -25,6 +27,8 @@ export interface SetupFlowProps {
   startAt?: string;
   /** Only `startAt` (Settings' "Do it again"); its end goes back (`onCancel`). */
   only?: boolean;
+  /** "Add <label>" (profiles spec §5): start at the profile step; the core steps are done. */
+  newProfile?: boolean;
   /** The harness's own step components (`component` steps), by the name the manifest gives. */
   components?: Record<string, ComponentType<SetupStepProps>>;
   /** The harness's block components and state-only blocks, for an interview's chat. */
@@ -34,18 +38,28 @@ export interface SetupFlowProps {
 
 /**
  * First-time setup, a screen of its own (spec 2026-10-14 §2): the folder, the engine, the harness's own steps
- * (setup-steps spec §4), then "All set".
+ * (setup-steps spec §4), then "All set". A harness with profiles has one more core step after the engine: the profile
+ * (profiles spec §5 "Creating a profile"), when none is active and on every "Add <label>".
  */
-export function SetupFlow({ client, state, onChange, onCancel, onStart, startAt, only = false, components = {}, blocks = {}, stateBlocks = [] }: SetupFlowProps) {
+export function SetupFlow({ client, state, onChange, onCancel, onStart, startAt, only = false, newProfile = false, components = {}, blocks = {}, stateBlocks = [] }: SetupFlowProps) {
   const { t } = useTranslation();
   const name = state.harness.name;
   const harnessSteps = state.setup ?? [];
+  /** Harnesses with profiles: the registry (the title, the privacy note) and whether this run made a profile. */
+  const people = useProfiles(client, state.profiles !== undefined);
+  const needsProfile = state.profiles !== undefined && !state.config.profile;
+  const [madeProfile, setMadeProfile] = useState(false);
+  /** A profile was made but couldn't be opened: the step stays, and Next can't make another. */
+  const [stranded, setStranded] = useState(false);
+  const activeProfile = people?.list.find((p) => p.id === state.config.profile) ?? null;
   // A saved folder can't be changed here (it moves from Settings › General): the flow starts at the engine.
   const [withFolder] = useState(!state.config.folder);
   /** Opened at a harness step (Home, Settings): the core steps are done, and its first step's Back is Cancel. */
   const [entered] = useState(Boolean(startAt && isConfigured(state.config) && harnessSteps.some((s) => s.id === startAt)));
   const opened = entered ? startAt : undefined;
-  const [step, setStep] = useState<Step>(opened ? stepOf(opened) : withFolder ? "folder" : "engine");
+  const [step, setStep] = useState<Step>(
+    newProfile && isConfigured(state.config) && state.profiles ? "profile" : opened ? stepOf(opened) : withFolder ? "folder" : "engine",
+  );
   /** The harness steps this run goes through, in manifest order; null while their state loads. */
   const fixed = harnessSteps.length === 0 ? [] : only && opened ? [opened] : null;
   const [queue, setQueue] = useState<string[] | null>(fixed);
@@ -80,6 +94,7 @@ export function SetupFlow({ client, state, onChange, onCancel, onStart, startAt,
   const headingId = useId();
   const folderFormId = useId();
   const stepFormId = useId();
+  const profileFormId = useId();
   const heading = useRef<HTMLHeadingElement>(null);
 
   // A new step takes focus to its heading, so a screen reader starts reading there; an old refusal goes.
@@ -131,7 +146,7 @@ export function SetupFlow({ client, state, onChange, onCancel, onStart, startAt,
   const backFrom = (id: string): Step | null => {
     const i = run.indexOf(id);
     if (i > 0) return stepOf(run[i - 1]);
-    return entered ? null : "engine";
+    return entered || madeProfile || newProfile ? null : "engine";
   };
   const settle = async (id: string, call: () => Promise<SetupStepResult>) => {
     setBusy(true);
@@ -157,6 +172,21 @@ export function SetupFlow({ client, state, onChange, onCancel, onStart, startAt,
       return client.setupSteps.complete(s.id);
     });
 
+  /** The profile exists and is active: this run goes on with its harness steps not done (its own setup.json). */
+  const created = async (next: AppState) => {
+    onChange(next);
+    setMadeProfile(true);
+    let ids = all;
+    try {
+      const s = await client.setupSteps.get();
+      ids = ids.filter((id) => (Object.hasOwn(s.steps, id) ? s.steps[id] : "missing") === "missing");
+    } catch {
+      // Unknown: every step, as on a first run.
+    }
+    setQueue(ids);
+    setStep(ids.length > 0 ? stepOf(ids[0]) : "done");
+  };
+
   const next = async () => {
     if (!selection?.ready) return;
     setSaveError(false);
@@ -180,14 +210,17 @@ export function SetupFlow({ client, state, onChange, onCancel, onStart, startAt,
       }
       setQueue(ids);
     }
-    setStep(ids.length > 0 ? stepOf(ids[0]) : "done");
+    setStep(needsProfile ? "profile" : ids.length > 0 ? stepOf(ids[0]) : "done");
   };
+
+  // Once a profile is active (and not while a new one is being made), the title names the person (spec §5).
+  const title = state.profiles && activeProfile && step !== "profile" ? t("profiles.setupTitle", { name, profile: activeProfile.title }) : t("setupFlow.title", { name });
 
   if (step === "done") {
     const engine = state.engines.find((e) => e.id === state.config.engineId);
     return (
       <div className="hh-setup">
-        <TopBar title={t("setupFlow.title", { name })} mock={state.mock} />
+        <TopBar title={title} mock={state.mock} />
         <main className="hh-setup-body done">
           <section className="hh-setup-step hh-setup-done" aria-labelledby={headingId}>
             <span className="hh-setup-done-mark" aria-hidden="true">
@@ -220,17 +253,21 @@ export function SetupFlow({ client, state, onChange, onCancel, onStart, startAt,
 
   // The core steps as today, then the harness steps of this run (only the opened one for a single step).
   const own = run.flatMap((id) => harnessSteps.filter((s) => s.id === id).map((s) => ({ id: stepOf(s.id), label: s.label })));
+  const profileStep: { id: Step; label: string }[] =
+    state.profiles && (needsProfile || newProfile || madeProfile) ? [{ id: "profile", label: t("profiles.stepLabel") }] : [];
   const steps: { id: Step; label: string }[] =
     only && current
       ? own.filter((s) => s.id === step)
-      : [{ id: "folder", label: t("setupFlow.stepFolder") }, { id: "engine", label: t("setupFlow.stepEngine") }, ...own];
+      : newProfile
+        ? [...profileStep, ...own]
+        : [{ id: "folder", label: t("setupFlow.stepFolder") }, { id: "engine", label: t("setupFlow.stepEngine") }, ...profileStep, ...own];
   const at = steps.findIndex((s) => s.id === step);
   const back = current ? backFrom(current.id) : null;
   const waiting = busy || queue === null;
 
   return (
     <div className="hh-setup">
-      <TopBar title={t("setupFlow.title", { name })} mock={state.mock} />
+      <TopBar title={title} mock={state.mock} />
       <ol className="hh-setup-steps" aria-label={t("setupFlow.stepsLabel")}>
         {steps.map((s, i) => (
           <li key={s.id} aria-current={i === at ? "step" : undefined}>
@@ -248,7 +285,12 @@ export function SetupFlow({ client, state, onChange, onCancel, onStart, startAt,
             {current.description && <p className="hh-setup-intro">{current.description}</p>}
             {current.kind === "form" && <SetupStepForm client={client} step={current} formId={stepFormId} onDone={() => after(current.id)} />}
             {current.kind === "component" && (
-              <ComponentStep client={client} step={current} components={components} done={() => complete(current.id)} skip={() => skip(current.id)} />
+              <ComponentStep
+                client={client}
+                step={current}
+                components={components}
+                profile={state.profiles ? activeProfile : null}
+                done={() => complete(current.id)} skip={() => skip(current.id)} />
             )}
             {current.kind === "interview" && <SetupInterviewStep client={client} state={state} step={current} blocks={blocks} stateBlocks={stateBlocks} />}
             {stepError && (
@@ -256,6 +298,21 @@ export function SetupFlow({ client, state, onChange, onCancel, onStart, startAt,
                 {t(stepError === "incomplete" ? "setupSteps.incomplete" : "setupSteps.failed")}
               </p>
             )}
+          </section>
+        ) : step === "profile" && state.profiles ? (
+          <section className="hh-setup-step" aria-labelledby={headingId}>
+            <h2 id={headingId} ref={heading} tabIndex={-1}>
+              {t("profiles.heading", { name })}
+            </h2>
+            <p className="hh-setup-intro">{t("profiles.intro", { label: state.profiles.label })}</p>
+            <ProfileStep
+              client={client}
+              state={state}
+              formId={profileFormId}
+              others={(people?.list ?? []).filter((p) => !p.archived).length}
+              onCreated={(next) => void created(next)}
+              onStranded={() => setStranded(true)}
+            />
           </section>
         ) : step === "folder" ? (
           <section className="hh-setup-step" aria-labelledby={headingId}>
@@ -326,16 +383,30 @@ export function SetupFlow({ client, state, onChange, onCancel, onStart, startAt,
           </>
         ) : (
           <>
-            {/* Not while the engine is being saved: its answer would move the flow on from wherever it went. */}
-            {step === "engine" && withFolder ? (
-              <button disabled={saving} onClick={() => setStep("folder")}>
-                {t("setupFlow.back")}
-              </button>
-            ) : (
-              <button disabled={saving} onClick={onCancel}>
-                {t("setupFlow.cancel")}
-              </button>
+            {/* The profile step: Cancel when it was opened by "Add", else Back to the engine. */}
+            {step === "profile" && (
+              <>
+                {newProfile ? (
+                  <button onClick={onCancel}>{t("setupFlow.cancel")}</button>
+                ) : (
+                  <button onClick={() => setStep("engine")}>{t("setupFlow.back")}</button>
+                )}
+                <button type="submit" form={profileFormId} className="hh-primary" disabled={stranded}>
+                  {t("setupFlow.next")}
+                </button>
+              </>
             )}
+            {/* Not while the engine is being saved: its answer would move the flow on from wherever it went. */}
+            {step !== "profile" &&
+              (step === "engine" && withFolder ? (
+                <button disabled={saving} onClick={() => setStep("folder")}>
+                  {t("setupFlow.back")}
+                </button>
+              ) : (
+                <button disabled={saving} onClick={onCancel}>
+                  {t("setupFlow.cancel")}
+                </button>
+              ))}
             {/* The folder step's Next submits its form from here, so it sits where the engine step's does. */}
             {step === "folder" && (
               <button type="submit" form={folderFormId} className="hh-primary">
@@ -360,12 +431,15 @@ function ComponentStep({
   client,
   step,
   components,
+  profile,
   done,
   skip,
 }: {
   client: HarnessClient;
   step: SetupStepView;
   components: Record<string, ComponentType<SetupStepProps>>;
+  /** The active profile in a harness with profiles; null without them. */
+  profile: ProfileView | null;
   done: () => void;
   skip: () => void;
 }) {
@@ -373,5 +447,5 @@ function ComponentStep({
   const name = step.component ?? "";
   const Component = Object.hasOwn(components, name) ? components[name] : undefined;
   if (!Component) return <p className="hh-caption" role="alert">{t("setupSteps.missingComponent")}</p>;
-  return <Component client={client} profile={null} done={done} skip={skip} />;
+  return <Component client={client} profile={profile} done={done} skip={skip} />;
 }

@@ -78,7 +78,8 @@ export function ProfileSwitcher({
   return (
     <div className="hh-profile-switcher">
       {active && <Avatar profile={active} />}
-      {shown.length > 1 ? (
+      {/* With none active (a new one whose switch failed), even one profile is a choice: it is opened from here. */}
+      {shown.length > 1 || (!active && shown.length > 0) ? (
         <select aria-label={t("profiles.pick", { label })} value={active?.id ?? ""} disabled={disabled} onChange={(e) => pick(e.target.value)}>
           {!active && <option value="" disabled />}
           {shown.map((p) => (

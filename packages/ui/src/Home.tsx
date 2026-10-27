@@ -57,8 +57,11 @@ export function Home({
   // Setup steps (setup-steps spec §4): a required one not done keeps Home on "Set up"; while their state loads, Start waits.
   const stepsKnown = state.setup === undefined || steps != null;
   const blocking = configured && state.setup ? (steps?.blocking ?? []) : [];
-  const ready = configured && connected === true && stepsKnown && blocking.length === 0;
-  const checking = configured && (connected === null || (connected === true && !stepsKnown));
+  // Profiles (spec §5): with no active profile, nothing under the folder can be used yet. It doesn't wait for the
+  // switcher: "Set up" opens the profile step on its own.
+  const needsProfile = configured && state.profiles !== undefined && !state.config.profile;
+  const ready = configured && !needsProfile && connected === true && stepsKnown && blocking.length === 0;
+  const checking = configured && !needsProfile && (connected === null || (connected === true && !stepsKnown));
   const stepLabel = (id: string) => state.setup?.find((s) => s.id === id)?.label ?? id;
   const engineName = engine?.name ?? state.config.engineId ?? "";
   const missingStep = checkFailed ? "check-failed" : status ? engineProblem(status) : null;
@@ -95,7 +98,12 @@ export function Home({
             <p>{t("home.missing.one", { step: t(`home.missing.step.${missingStep}`, { engine: engineName }) })}</p>
           </section>
         )}
-        {configured && !missingStep && blocking.length > 0 && (
+        {configured && !missingStep && needsProfile && state.profiles && (
+          <section className="hh-missing">
+            <p>{t("home.missing.one", { step: t("home.missing.addProfile", { label: state.profiles.label }) })}</p>
+          </section>
+        )}
+        {configured && !missingStep && !needsProfile && blocking.length > 0 && (
           <section className="hh-missing">
             <p>{t("home.missing.one", { step: stepLabel(blocking[0]) })}</p>
           </section>
@@ -105,7 +113,10 @@ export function Home({
             {t("home.start", { name })}
           </button>
         ) : (
-          <button className="hh-primary hh-start" onClick={() => onSetup(!missingStep && blocking.length > 0 ? blocking[0] : undefined)}>
+          <button
+            className="hh-primary hh-start"
+            onClick={() => (!missingStep && needsProfile && onAddProfile ? onAddProfile() : onSetup(!missingStep && blocking.length > 0 ? blocking[0] : undefined))}
+          >
             {t("setupFlow.configure", { name })}
           </button>
         )}

@@ -16,3 +16,4 @@ export * from "./stages";
 export * from "./word-diff";
 export * from "./decide";
 export * from "./label";
+export * from "./sheet";

@@ -287,6 +287,11 @@ export class MaterialStore {
     await writeAtomic(path.join(this.dir, "sheet.md"), `${md.trim()}\n`);
   }
 
+  /** No sheet (nothing usable left, or an empty answer): the file goes, so `sheet()` is "". */
+  async clearSheet(): Promise<void> {
+    await fs.rm(path.join(this.dir, "sheet.md"), { force: true });
+  }
+
   /** One line per disagreement between the material and the AI's knowledge (§9 "Ground"). */
   async appendConflict(c: { fragment: string; claim: string; resolution: string }, at = new Date()): Promise<void> {
     if (!isFragmentId(c.fragment)) throw new Error("Invalid fragment id");

@@ -1,10 +1,11 @@
-import type { MaterialStage } from "@humanharness/harness-sdk";
+import { CORE_SHEET_SECTIONS, type MaterialStage } from "@humanharness/harness-sdk";
 import { estimateTokens } from "@humanharness/workspace";
 import { z } from "zod";
 import { BATCH, REPAIR_MAX_WORD_DIFF } from "./constants";
 import type { MeasuredCosts } from "./estimate";
 import { applyLabels, labelAnswer, labelPrompt, unlabelled } from "./label";
 import { applyReview, reviewAnswer, reviewPrompt, reviewSet } from "./review";
+import { composeSheet, sheetAnswer, sheetPrompt } from "./sheet";
 import type { MaterialStore } from "./store";
 import type { ConvertSettings, MaterialAsk, SourceEntry } from "./types";
 import { flagFragment } from "./use";
@@ -295,5 +296,41 @@ STAGES.label = {
     const result = await applyLabels(store, job.source, given);
     // A source no longer at this stage (removed, flagged back to review) is not a failure: failing would revive it.
     return result !== "none";
+  },
+};
+
+// The sheet (§8): once per scope after a burst of sources, from the index (never whole fragments); the session may
+// read single fragments with `material_read`. The queue moves the scope's marker on (to the links, or done).
+STAGE_TOOLS.material_sheet = {
+  description: "The sheet: one Markdown text per section id. Call it once.",
+  input: sheetAnswer.shape,
+};
+
+STAGES.sheet = {
+  tools: ["material_sheet"],
+  async prompt(store, _job, ctx) {
+    const rows = await store.indexRows();
+    return rows.length === 0 ? null : sheetPrompt(ctx.sheetSections, rows, ctx.sheetMaxTokens);
+  },
+  async accept(name, args, state) {
+    const a = sheetAnswer.parse(args);
+    const known = new Set([...state.ctx.sheetSections.map((s) => s.id), ...Object.keys(CORE_SHEET_SECTIONS)]);
+    const bad = a.sections.find((s) => !known.has(s.id));
+    if (bad) throw new Error(`"${bad.id}" is not a sheet section. Use one of: ${[...known].join(", ")}`);
+    state.answers.push({ name, ...a });
+    return "Saved.";
+  },
+  async apply(store, _job, state, ctx) {
+    // Nothing usable left (every source removed or refused): no sheet.
+    if ((await store.indexRows()).length === 0) {
+      await store.clearSheet();
+      return true;
+    }
+    const parsed = sheetAnswer.safeParse(state.answers.at(-1));
+    if (!parsed.success) return false;
+    const md = composeSheet(ctx.sheetSections, parsed.data.sections, ctx.sheetMaxTokens);
+    if (md) await store.writeSheet(md);
+    else await store.clearSheet();
+    return true;
   },
 };

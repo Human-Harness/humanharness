@@ -8,8 +8,9 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { type MaterialDeps, MaterialService } from "../src/main/material";
 import { MaterialJobs } from "../src/main/material-jobs";
 
-// The real review stage; some tests below put a stand-in in its place.
+// The real review and sheet stages; some tests below put a stand-in in their place.
 const realReview = STAGES.review;
+const realSheet = STAGES.sheet;
 
 let root: string;
 let base: string;
@@ -437,7 +438,7 @@ describe("AI stages (material spec §10)", () => {
       svc.resetFailures();
       expect(await svc.nextJob()).toEqual(sheet);
     } finally {
-      delete STAGES.sheet;
+      STAGES.sheet = realSheet;
     }
   });
 });
@@ -476,7 +477,7 @@ describe("the review stage in the queue (material spec §6.2)", () => {
     expect(converts).toBe(1);
   });
 
-  it("a review in two batches and labels in two batches run in one kick; then the sheet is due", async () => {
+  it("a review in two batches and labels in two batches run in one kick; then the sheet", async () => {
     const store = new MaterialStore(base, "fractions");
     const ids = Array.from({ length: 25 }, (_, i) => `a-${String(i + 1).padStart(3, "0")}`);
     await store.update(() => [
@@ -492,6 +493,12 @@ describe("the review stage in the queue (material spec §6.2)", () => {
         runStage: async (_j, prompt, tools, handle) => {
           runs++;
           const batch = [...prompt.matchAll(/^\[(a-\d{3})\]/gm)].map((m) => m[1]);
+          if (tools.includes("material_sheet")) {
+            // From the index: every fragment's row, with its summary.
+            expect(prompt).toContain("| a-025 | a.md, lines 1 | A | explanation | About a-025. |");
+            await handle({ op: "material_sheet", sections: [{ id: "terms", markdown: "- a: the letter" }] });
+            return { ok: true };
+          }
           if (tools.includes("material_label")) {
             expect(tools).toEqual(["material_label", "material_flag"]);
             await handle({ op: "material_label", fragments: batch.map((id) => ({ id, summary: `About ${id}.`, keywords: [id], kind: "explanation" })) });
@@ -506,10 +513,12 @@ describe("the review stage in the queue (material spec §6.2)", () => {
     const jobs = new MaterialJobs<Job>({ idle: () => true, next: () => svc.nextJob(), run: (j, signal) => svc.runJob(j, signal), pollMs: 2 });
     jobs.kick();
     await jobs.settled();
-    expect(runs).toBe(4);
+    expect(runs).toBe(5);
     expect(await store.source("a")).toMatchObject({ status: "ready", verdict: "good" });
     expect((await store.readFragment("a-025"))?.meta).toMatchObject({ validated: "sample", kind: "explanation", keywords: ["a-025"] });
-    expect(await store.stale()).toBe("sheet");
+    // The sheet ran once the source was labelled; no items, so nothing is due after it.
+    expect(await store.sheet()).toBe("## Key terms\n\n- a: the letter\n");
+    expect(await store.stale()).toBeNull();
     // Each batch's result reached the history.
     expect(changes).toEqual(["fractions: review a", "fractions: review a", "fractions: label a", "fractions: label a"]);
   });

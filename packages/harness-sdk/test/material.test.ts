@@ -14,6 +14,7 @@ import {
   stageTier,
   z,
 } from "../src";
+import { materialSchema } from "../src/material";
 
 const fixture = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../fake-agent/fixtures/material-harness/harness.config.ts");
 
@@ -79,6 +80,8 @@ describe("material in the manifest (material spec §8)", () => {
     expect(MATERIAL_STAGE_KEYS).toEqual(["material-review", "material-repair", "material-label", "material-sheet", "material-link"]);
     // The stage tiers are the core's tiers.
     for (const t of Object.values(DEFAULT_STAGE_TIERS)) expect(TIERS).toContain(t);
+    // The local tier enum (repeated to avoid an import cycle) offers exactly the core's tiers.
+    expect(materialSchema.shape.tiers.unwrap().shape.review.unwrap().options).toEqual([...TIERS]);
   });
 
   it("items name a keyed collection and one of its fields", () => {

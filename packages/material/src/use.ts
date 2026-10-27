@@ -7,19 +7,15 @@ import type { Fragment, SourceEntry } from "./types";
 const ownerOf = (list: SourceEntry[], id: string) => list.find((s) => Array.isArray(s.fragments) && s.fragments.includes(id));
 
 /**
- * `material_read` (§9 Fetch): the fragment with its citation and where it comes from; counts the source's use.
- * Null when the id isn't one, the fragment is gone, or its source isn't usable (removed, refused, converting…).
+ * `material_read` (§9 Fetch): the fragment with its citation and where it comes from. Null when the id isn't one, the
+ * fragment is gone or flagged (`pending`: out of loading until the review sees it again), or its source isn't usable
+ * (removed, refused, converting…). The caller logs each read in `material-reads.jsonl`; the registry keeps no count,
+ * so reads don't make history commits.
  */
 export async function readForTask(store: MaterialStore, id: string): Promise<string | null> {
-  if (!isFragmentId(id)) return null;
-  return store.transact(async (rewrite) => {
-    const owner = ownerOf(await store.sources(), id);
-    if (!owner || !isUsable(owner)) return null;
-    const f = await store.readFragment(id);
-    if (!f) return null;
-    await rewrite((list) => list.map((s) => (s.id === owner.id ? { ...s, used: s.used + 1 } : s)));
-    return `[[frag:${id}]] ${f.meta.source}, ${f.meta.location}${f.meta.path ? ` (${f.meta.path})` : ""}\n\n${f.md}`;
-  });
+  const f = await usableFragment(store, id);
+  if (!f || f.meta.validated === "pending") return null;
+  return `[[frag:${id}]] ${f.meta.source}, ${f.meta.location}${f.meta.path ? ` (${f.meta.path})` : ""}\n\n${f.md}`;
 }
 
 /**

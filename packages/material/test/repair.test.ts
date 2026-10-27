@@ -7,7 +7,7 @@ import { type Fragment, LABEL_TOKENS, MaterialStore, REPAIR_MAX_WORD_DIFF, REVIE
 let base: string;
 let store: MaterialStore;
 const f5: Fragment = { meta: { id: "ch2-005", source: "ch2.pdf", location: "p.5", path: "T", summary: "", keywords: [], tokens: 50, items: [], checks: ["table"], validated: "not-reviewed" }, md: "a b c\n1 2 3\n4 5 6" };
-const entry: SourceEntry = { id: "ch2", scope: "fractions", path: "ch2.pdf", hash: "x", type: "pdf", family: "pdf", pages: 9, sizeBytes: 1, skippedPages: [], status: "validating", stage: "repair", repairs: [{ id: "ch2-005", issue: "Table lost its columns" }], issues: [], fixes: [], estimate: 0, used: 0, fragments: [], addedAt: "2026-10-27T00:00:00.000Z" };
+const entry: SourceEntry = { id: "ch2", scope: "fractions", path: "ch2.pdf", hash: "x", type: "pdf", family: "pdf", pages: 9, sizeBytes: 1, skippedPages: [], status: "validating", stage: "repair", repairs: [{ id: "ch2-005", issue: "Table lost its columns" }], issues: [], fixes: [], estimate: 0, fragments: [], addedAt: "2026-10-27T00:00:00.000Z" };
 const job = { scope: "fractions", source: "ch2", stage: "repair" as const };
 const ctx = { fragmentKinds: [], sheetSections: [], sheetMaxTokens: 800 };
 const table = "| a | b | c |\n|---|---|---|\n| 1 | 2 | 3 |\n| 4 | 5 | 6 |";
@@ -137,7 +137,7 @@ describe("decide (§6.2 ask)", () => {
   });
 
   it("questions a hand edit broke are left out, never thrown on", async () => {
-    await store.patch("ch2", (s) => ({ ...s, asks: [null, { question: "?", choices: "drop" }, { choices: ["drop"] }, { fragment: "ch2-005", question: "?", choices: ["keep", "x"] }] as never }));
+    await store.patch("ch2", (s) => ({ ...s, asks: [null, { question: "?", choices: "drop" }, { choices: ["drop"] }, { question: "Stuck?", choices: ["x", 3] }, { fragment: "ch2-005", question: "?", choices: ["keep", "x"] }] as never }));
     expect(asksOf((await store.source("ch2"))!)).toEqual([{ fragment: "ch2-005", question: "?", choices: ["keep"] }]);
     expect(await decide(store, "ch2", "ch2-005", "drop", async () => {})).toBe(false);
     expect(await decide(store, "ch2", "ch2-005", "keep", async () => {})).toBe(true);

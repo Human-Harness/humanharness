@@ -68,3 +68,5 @@ export const CONVERT_AT_ONCE = 2;
 export const LINK_MAX_ITEMS = 200;
 /** … and at most this many index rows go into its prompt (the first ones; the rest keep the links they have). */
 export const LINK_MAX_FRAGMENTS = 500;
+/** The sheet stage's prompt carries index rows up to this many tokens (the first ones; a line counts the rest). */
+export const SHEET_INDEX_TOKENS = 12_000;

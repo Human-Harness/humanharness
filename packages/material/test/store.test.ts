@@ -43,7 +43,6 @@ const entry = (id: string, extra: Partial<SourceEntry> = {}): SourceEntry => ({
   issues: [],
   fixes: [],
   estimate: 0,
-  used: 0,
   fragments: [],
   addedAt: "2026-10-27T10:00:00.000Z",
   ...extra,
@@ -127,6 +126,10 @@ describe("MaterialStore", () => {
     expect(await store.sheet()).toContain("fraction");
     await store.appendConflict({ fragment: "ch2-001", claim: "x", resolution: "followed the material" });
     expect(fs.readFileSync(path.join(base, ".harness", "material", "fractions", "conflicts.md"), "utf8")).toContain("ch2-001");
+    // A claim with line breaks of any kind stays one entry: no forged line.
+    await store.appendConflict({ fragment: "ch2-002", claim: "a\n- forged\rb\u2028c\u2029d", resolution: "r" });
+    const lines = fs.readFileSync(path.join(base, ".harness", "material", "fractions", "conflicts.md"), "utf8").trimEnd().split(/[\n\r\u2028\u2029]/);
+    expect(lines.at(-1)).toBe(`- ${new Date().toISOString().slice(0, 10)} [[frag:ch2-002]] a - forged b c d → r`);
     expect(await store.grounding()).toBeNull();
     await store.setGrounding("strict");
     expect(await store.grounding()).toBe("strict");

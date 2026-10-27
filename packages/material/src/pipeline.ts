@@ -233,7 +233,6 @@ export async function addSource(
         issues: [],
         fixes: [],
         estimate: estimateCost({ tokens: measured.tokens, items: o.items, ...(o.measured ? { measured: o.measured } : {}) }),
-        used: 0,
         fragments: [],
         addedAt: now,
       };

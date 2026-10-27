@@ -89,7 +89,7 @@ describe("runMaterialStage (material spec §10)", () => {
         issues: [],
         fixes: [],
         estimate: 0,
-        used: 0,
+       
         fragments: [],
         addedAt: "2026-10-27T00:00:00.000Z",
       },

@@ -134,8 +134,6 @@ export interface SourceEntry {
   fixes: string[];
   /** Estimated tokens of the AI stages still to run. */
   estimate: number;
-  /** How many times a task read one of its fragments. */
-  used: number;
   fragments: string[];
   /** Reconversions done (§6.2: a second `not-usable` goes to the person). */
   reconverted?: number;

@@ -11,7 +11,7 @@ const frag = (n: number, md: string, checks: Fragment["meta"]["checks"] = "ok"):
   meta: { id: `ch2-${String(n).padStart(3, "0")}`, source: "ch2.md", location: `lines ${n}`, path: `T › P${n}`, summary: "", keywords: [], tokens: 50, items: [], checks, validated: "not-reviewed" },
   md,
 });
-const entry: SourceEntry = { id: "ch2", scope: "fractions", path: "ch2.md", hash: "x", type: "md", family: "text", pages: 1, sizeBytes: 1, skippedPages: [], status: "validating", stage: "review", issues: [], fixes: [], estimate: 0, used: 0, fragments: [], addedAt: "2026-10-27T00:00:00.000Z" };
+const entry: SourceEntry = { id: "ch2", scope: "fractions", path: "ch2.md", hash: "x", type: "md", family: "text", pages: 1, sizeBytes: 1, skippedPages: [], status: "validating", stage: "review", issues: [], fixes: [], estimate: 0, fragments: [], addedAt: "2026-10-27T00:00:00.000Z" };
 const ctx = { fragmentKinds: [], sheetSections: [], sheetMaxTokens: 800 };
 
 beforeEach(async () => {

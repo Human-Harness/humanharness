@@ -6,7 +6,7 @@ import { MaterialStore, STAGES, type SourceEntry, uncovered } from "../src";
 
 let base: string;
 let store: MaterialStore;
-const entry: SourceEntry = { id: "ch2", scope: "fractions", path: "ch2.pdf", hash: "x", type: "pdf", family: "pdf", pages: 9, sizeBytes: 1, skippedPages: [], status: "ready", issues: [], fixes: [], estimate: 0, used: 0, fragments: [], addedAt: "2026-10-27T00:00:00.000Z" };
+const entry: SourceEntry = { id: "ch2", scope: "fractions", path: "ch2.pdf", hash: "x", type: "pdf", family: "pdf", pages: 9, sizeBytes: 1, skippedPages: [], status: "ready", issues: [], fixes: [], estimate: 0, fragments: [], addedAt: "2026-10-27T00:00:00.000Z" };
 const items = [{ key: "halves", label: "Halves" }, { key: "equivalent", label: "Equivalent fractions" }, { key: "decimals", label: "Decimals" }];
 const ctx = { fragmentKinds: [], sheetSections: [], sheetMaxTokens: 800, items };
 const job = { scope: "fractions", stage: "link" as const };

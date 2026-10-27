@@ -22,6 +22,21 @@ export interface PersonMaterialDeps {
 
 const short = (id: unknown) => String(id).slice(0, 80);
 
+/** At most this many `material_conflict` lines per task: a looping agent can't flood `conflicts.md` (and the history). */
+export const CONFLICTS_PER_TASK = 20;
+/** Conflict lines written per base and task; only the latest tasks are remembered. */
+const conflictCounts = new Map<string, number>();
+const COUNTS_KEPT = 200;
+
+function countConflict(key: string): boolean {
+  const n = conflictCounts.get(key) ?? 0;
+  if (n >= CONFLICTS_PER_TASK) return false;
+  conflictCounts.delete(key);
+  conflictCounts.set(key, n + 1);
+  if (conflictCounts.size > COUNTS_KEPT) conflictCounts.delete(conflictCounts.keys().next().value as string);
+  return true;
+}
+
 /**
  * The `material` server's person-mode tools (§9 Fetch), in the running task's scope. Each read is logged as
  * `{ at, task, scope, id }` in `.harness/material-reads.jsonl`. Refusals' messages are safe for the agent; anything
@@ -53,6 +68,7 @@ export async function personMaterialRequest(d: PersonMaterialDeps, request: unkn
     if (r.op === "conflict" && typeof r.claim === "string" && typeof r.resolution === "string") {
       // Only a fragment of a usable source in this scope (the same rule as a read); the line goes to `conflicts.md`.
       if (!isFragmentId(r.fragment) || !(await usableFragment(store, r.fragment))) throw new MaterialRefusal(`No fragment ${short(r.fragment)}`);
+      if (!countConflict(`${base}\0${task.id}`)) throw new MaterialRefusal(`This task already noted ${CONFLICTS_PER_TASK} conflicts`);
       await store.appendConflict({ fragment: r.fragment, claim: r.claim.slice(0, 300), resolution: r.resolution.slice(0, 300) }, d.now?.());
       return "Noted.";
     }

@@ -32,7 +32,12 @@ async function writeAtomic(file: string, text: string): Promise<void> {
   }
 }
 
-const cell = (s: string) => s.replace(/\|/g, "\\|").replace(/\s*\n\s*/g, " ").trim();
+/** One line: any line break (`\n`, a lone `\r`, U+2028, U+2029) becomes a space, so a value can't start a new entry. */
+const cell = (s: string) =>
+  s
+    .replace(/\|/g, "\\|")
+    .replace(/\s*[\n\r\u2028\u2029]\s*/g, " ")
+    .trim();
 
 /** A slug of a file name or a link (`fractions-ch-2`), numbered when `taken` holds it; "source" when nothing is left. */
 export function sourceSlug(name: string, taken: ReadonlySet<string>): string {

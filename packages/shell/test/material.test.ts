@@ -282,7 +282,7 @@ describe("MaterialService", () => {
         issues: [],
         fixes: [],
         estimate: 0,
-        used: 0,
+       
         fragments: [],
         addedAt: "2026-10-27T00:00:00.000Z",
       },
@@ -393,7 +393,7 @@ describe("AI stages (material spec §10)", () => {
         issues: [],
         fixes: [],
         estimate: 0,
-        used: 0,
+       
         fragments: [],
         addedAt: "2026-10-27T00:00:00.000Z",
       },
@@ -549,7 +549,7 @@ describe("the review stage in the queue (material spec §6.2)", () => {
     );
     const name = await store.addOriginal("a.md", Buffer.from("# A\n\nText."));
     await store.update(() => [
-      { id: "a", scope: "fractions", path: name, hash: "x", type: "md", family: "text", pages: 1, sizeBytes: 1, skippedPages: [], status: "converting", issues: [], fixes: [], estimate: 0, used: 0, fragments: [], addedAt: "2026-10-27T00:00:00.000Z" },
+      { id: "a", scope: "fractions", path: name, hash: "x", type: "md", family: "text", pages: 1, sizeBytes: 1, skippedPages: [], status: "converting", issues: [], fixes: [], estimate: 0, fragments: [], addedAt: "2026-10-27T00:00:00.000Z" },
     ]);
     const job = { scope: "fractions", source: "a", stage: "review" as const };
     const stop = new AbortController();
@@ -571,7 +571,7 @@ describe("the review stage in the queue (material spec §6.2)", () => {
     const ids = Array.from({ length: 25 }, (_, i) => `a-${String(i + 1).padStart(3, "0")}`);
     keepA();
     await store.update(() => [
-      { id: "a", scope: "fractions", path: "a.md", hash: A_HASH, type: "md", family: "text", pages: 1, sizeBytes: 1, skippedPages: [], status: "validating", stage: "review", fullReview: true, issues: [], fixes: [], estimate: 0, used: 0, fragments: [], addedAt: "2026-10-27T00:00:00.000Z" },
+      { id: "a", scope: "fractions", path: "a.md", hash: A_HASH, type: "md", family: "text", pages: 1, sizeBytes: 1, skippedPages: [], status: "validating", stage: "review", fullReview: true, issues: [], fixes: [], estimate: 0, fragments: [], addedAt: "2026-10-27T00:00:00.000Z" },
     ]);
     await store.writeFragments(
       "a",
@@ -621,7 +621,7 @@ describe("the review stage in the queue (material spec §6.2)", () => {
     const store = new MaterialStore(base, "fractions");
     keepA();
     await store.update(() => [
-      { id: "a", scope: "fractions", path: "a.md", hash: A_HASH, type: "md", family: "text", pages: 1, sizeBytes: 1, skippedPages: [], status: "ready", issues: [], fixes: [], estimate: 0, used: 0, fragments: [], addedAt: "2026-10-27T00:00:00.000Z" },
+      { id: "a", scope: "fractions", path: "a.md", hash: A_HASH, type: "md", family: "text", pages: 1, sizeBytes: 1, skippedPages: [], status: "ready", issues: [], fixes: [], estimate: 0, fragments: [], addedAt: "2026-10-27T00:00:00.000Z" },
     ]);
     await store.writeFragments("a", [{ meta: { id: "a-001", source: "a.md", location: "lines 1", path: "A", kind: "explanation", summary: "Halves of a whole.", keywords: ["half"], tokens: 10, items: [], checks: "ok", validated: "sample" }, md: "Half." }]);
     await store.setStale("sheet");
@@ -661,7 +661,7 @@ describe("the review stage in the queue (material spec §6.2)", () => {
     const store = new MaterialStore(base, "fractions");
     keepA();
     await store.update(() => [
-      { id: "a", scope: "fractions", path: "a.md", hash: A_HASH, type: "md", family: "text", pages: 1, sizeBytes: 1, skippedPages: [], status: "validating", stage: "review", issues: [], fixes: [], estimate: 0, used: 0, fragments: [], addedAt: "2026-10-27T00:00:00.000Z" },
+      { id: "a", scope: "fractions", path: "a.md", hash: A_HASH, type: "md", family: "text", pages: 1, sizeBytes: 1, skippedPages: [], status: "validating", stage: "review", issues: [], fixes: [], estimate: 0, fragments: [], addedAt: "2026-10-27T00:00:00.000Z" },
     ]);
     STAGES.review = { tools: [], prompt: async () => "Review.", accept: async () => "", apply: async () => true };
     const svc = new MaterialService(deps({ runStage: async () => ({ ok: true }) }));
@@ -734,7 +734,7 @@ describe("update, removal and measured estimates (material spec §7, §11)", () 
     const store = new MaterialStore(base, "fractions");
     keepA();
     await store.update(() => [
-      { id: "a", scope: "fractions", path: "a.md", hash: A_HASH, type: "md", family: "text", pages: 1, sizeBytes: 1, skippedPages: [], status: "validating", stage: "review", issues: [], fixes: [], estimate: 0, used: 0, fragments: [], addedAt: "2026-10-27T00:00:00.000Z" },
+      { id: "a", scope: "fractions", path: "a.md", hash: A_HASH, type: "md", family: "text", pages: 1, sizeBytes: 1, skippedPages: [], status: "validating", stage: "review", issues: [], fixes: [], estimate: 0, fragments: [], addedAt: "2026-10-27T00:00:00.000Z" },
     ]);
     STAGES.review = { tools: [], prompt: async () => "Review.\n[a-001] one\n[a-002] two\n[a-009] quoted", accept: async () => "", apply: async () => true, listed: async () => ["a-001", "a-002"] };
     let counted = -1;

@@ -18,6 +18,8 @@ export function asksOf(s: Pick<SourceEntry, "asks">): MaterialAsk[] {
     const { fragment, question, choices } = a as Record<string, unknown>;
     if (typeof question !== "string" || !Array.isArray(choices)) return [];
     const known = choices.filter((c): c is Choice => CHOICES.includes(c as Choice));
+    // A question with no answer the app knows could never be answered: the source would wait for good.
+    if (known.length === 0) return [];
     return [{ ...(typeof fragment === "string" ? { fragment } : {}), question, choices: known }];
   });
 }

@@ -29,6 +29,18 @@ describe("markdownBlocks", () => {
     expect(blocks[5].md).toBe("[image, lines 17]");
   });
 
+  it("an image line inside a paragraph or a list breaks it and becomes a placeholder", () => {
+    const blocks = markdownBlocks(["Some text.", "![d](d.png)", "More text.", "", "- one", "![e](e.png)", "- two"].join("\n"));
+    expect(blocks.map((b) => [b.kind, b.md])).toEqual([
+      ["para", "Some text."],
+      ["image", "[image, lines 2]"],
+      ["para", "More text."],
+      ["list", "- one"],
+      ["image", "[image, lines 6]"],
+      ["list", "- two"],
+    ]);
+  });
+
   it("estimated pages: every PAGE_TOKENS tokens is a page", () => {
     const blocks = withEstimatedPages(markdownBlocks(Array.from({ length: 6 }, (_, i) => `${"word ".repeat(300)}${i}`).join("\n\n")));
     // Each paragraph is 376 tokens; a block's page is where it starts: 0, 376, 752, 1128, 1504, 1880 tokens in.
@@ -63,6 +75,11 @@ describe("textBlocks (§3 plain text)", () => {
       ["heading", "## items"],
       ["code", "```json\n[\n  1,\n  2\n]\n```"],
     ]);
+  });
+
+  it("JSON: a key's whitespace collapses in its heading and location", () => {
+    const blocks = textBlocks("json", Buffer.from(JSON.stringify({ "two\nlines  here": 1 })));
+    expect(blocks.map((b) => [b.md, b.loc])[0]).toEqual(["## two lines here", "key two lines here"]);
   });
 
   it("YAML is cut at top-level keys; code at top-level definitions", () => {

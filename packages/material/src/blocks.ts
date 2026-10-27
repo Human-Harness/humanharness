@@ -71,7 +71,8 @@ export function markdownBlocks(md: string, locOf: (from: number, to: number) => 
     const kind: MdBlock["kind"] = LIST.test(line) ? "list" : TABLE.test(line) ? "table" : "para";
     for (i++; i < all.length && all[i].trim(); i++) {
       const next = all[i];
-      if (FENCE.test(next) || HEADING.test(next)) break;
+      // A lone image line ends the run, so it becomes its own placeholder.
+      if (FENCE.test(next) || HEADING.test(next) || IMAGE.test(next)) break;
       if (kind === "table" && !TABLE.test(next)) break;
       if (kind === "para" && (LIST.test(next) || TABLE.test(next))) break;
     }

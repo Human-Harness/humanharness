@@ -10,7 +10,7 @@ const frag = (n: number, md: string, extra: Partial<Fragment["meta"]> = {}): Fra
   meta: { id: `ch2-00${n}`, source: "ch2.pdf", location: `p.${n}`, path: `Fractions › Part ${n}`, summary: `Summary ${n}.`, keywords: [], tokens: 100, items: [], checks: "ok", validated: "not-reviewed", ...extra },
   md,
 });
-const entry: SourceEntry = { id: "ch2", scope: "fractions", path: "ch2.pdf", hash: "x", type: "pdf", family: "pdf", pages: 3, sizeBytes: 1, skippedPages: [], status: "ready", issues: [], fixes: [], estimate: 0, used: 0, fragments: [], addedAt: "2026-10-27T00:00:00.000Z" };
+const entry: SourceEntry = { id: "ch2", scope: "fractions", path: "ch2.pdf", hash: "x", type: "pdf", family: "pdf", pages: 3, sizeBytes: 1, skippedPages: [], status: "ready", issues: [], fixes: [], estimate: 0, fragments: [], addedAt: "2026-10-27T00:00:00.000Z" };
 
 beforeEach(async () => {
   base = fs.mkdtempSync(path.join(os.tmpdir(), "hh-use-"));
@@ -43,9 +43,10 @@ describe("MaterialSearch", () => {
 });
 
 describe("readForTask and flagFragment", () => {
-  it("reads a fragment with where it comes from; counts the use", async () => {
+  it("reads a fragment with where it comes from; the registry doesn't change", async () => {
+    const before = fs.readFileSync(path.join(store.dir, "sources.json"), "utf8");
     expect(await readForTask(store, "ch2-002")).toBe("[[frag:ch2-002]] ch2.pdf, p.2 (Fractions › Part 2)\n\nSimplify by dividing both terms.");
-    expect((await store.source("ch2"))?.used).toBe(1);
+    expect(fs.readFileSync(path.join(store.dir, "sources.json"), "utf8")).toBe(before);
     expect(await readForTask(store, "ch2-009")).toBeNull();
     expect(await readForTask(store, "../x")).toBeNull();
   });
@@ -56,13 +57,15 @@ describe("readForTask and flagFragment", () => {
     expect((await store.indexRows()).map((r) => r.id)).toEqual(["ch2-002", "ch2-003"]);
     expect(await store.source("ch2")).toMatchObject({ status: "validating", stage: "review", issues: ["Flagged in use: ch2-001: The table is broken"] });
     expect(await flagFragment(store, "nope-001", "x")).toBe(false);
+    // A flagged fragment leaves loading too: asked by its id, it isn't served.
+    expect(await readForTask(store, "ch2-001")).toBeNull();
   });
 
   it("a source that isn't usable: no read, no flag, its status unchanged", async () => {
     await store.patch("ch2", (s) => ({ ...s, status: "removed" }));
     expect(await readForTask(store, "ch2-001")).toBeNull();
     expect(await flagFragment(store, "ch2-001", "Broken")).toBe(false);
-    expect(await store.source("ch2")).toMatchObject({ status: "removed", used: 0, issues: [] });
+    expect(await store.source("ch2")).toMatchObject({ status: "removed", issues: [] });
     expect((await store.readFragment("ch2-001"))?.meta.validated).toBe("not-reviewed");
   });
 });

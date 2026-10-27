@@ -10,7 +10,7 @@ const frag = (n: number): Fragment => ({
   meta: { id: `ch2-${String(n).padStart(3, "0")}`, source: "ch2.pdf", location: `p.${n}`, path: `T › P${n}`, summary: `First sentence ${n}.`, keywords: [], tokens: 50, items: [], checks: "ok", validated: "not-reviewed" },
   md: `Texto ${n} sobre fracciones.`,
 });
-const entry: SourceEntry = { id: "ch2", scope: "fractions", path: "ch2.pdf", hash: "x", type: "pdf", family: "pdf", pages: 9, sizeBytes: 1, skippedPages: [], status: "validating", stage: "label", issues: [], fixes: [], estimate: 0, used: 0, fragments: [], addedAt: "2026-10-27T00:00:00.000Z" };
+const entry: SourceEntry = { id: "ch2", scope: "fractions", path: "ch2.pdf", hash: "x", type: "pdf", family: "pdf", pages: 9, sizeBytes: 1, skippedPages: [], status: "validating", stage: "label", issues: [], fixes: [], estimate: 0, fragments: [], addedAt: "2026-10-27T00:00:00.000Z" };
 const job = { scope: "fractions", source: "ch2", stage: "label" as const };
 const ctx = { fragmentKinds: ["explanation", "example"], sheetSections: [], sheetMaxTokens: 800 };
 const labels = (from: number, to: number) =>

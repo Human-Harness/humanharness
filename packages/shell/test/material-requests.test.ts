@@ -3,10 +3,10 @@ import os from "node:os";
 import path from "node:path";
 import { MaterialStore, type SourceEntry } from "@humanharness/material";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { personMaterialRequest } from "../src/main/material-requests";
+import { CONFLICTS_PER_TASK, personMaterialRequest } from "../src/main/material-requests";
 
 let base: string;
-const entry: SourceEntry = { id: "ch2", scope: "fractions", path: "ch2.pdf", hash: "x", type: "pdf", family: "pdf", pages: 1, sizeBytes: 1, skippedPages: [], status: "ready", issues: [], fixes: [], estimate: 0, used: 0, fragments: [], addedAt: "2026-10-27T00:00:00.000Z" };
+const entry: SourceEntry = { id: "ch2", scope: "fractions", path: "ch2.pdf", hash: "x", type: "pdf", family: "pdf", pages: 1, sizeBytes: 1, skippedPages: [], status: "ready", issues: [], fixes: [], estimate: 0, fragments: [], addedAt: "2026-10-27T00:00:00.000Z" };
 beforeEach(async () => {
   base = fs.mkdtempSync(path.join(os.tmpdir(), "hh-mreq-"));
   const store = new MaterialStore(base, "fractions");
@@ -36,6 +36,16 @@ describe("personMaterialRequest", () => {
     expect(await personMaterialRequest(deps("fractions"), { op: "conflict", fragment: "ch2-001", claim: "1/2 > 2/3", resolution: "Followed the material" })).toBe("Noted.");
     expect(fs.readFileSync(path.join(base, ".harness", "material", "fractions", "conflicts.md"), "utf8")).toContain("[[frag:ch2-001]] 1/2 > 2/3 → Followed the material");
   });
+  it("conflict: at most CONFLICTS_PER_TASK lines per task", async () => {
+    const note = (task: string) => personMaterialRequest({ ...deps("fractions"), runningTask: async () => ({ id: task, scope: "fractions" }) }, { op: "conflict", fragment: "ch2-001", claim: "c", resolution: "r" });
+    for (let i = 0; i < CONFLICTS_PER_TASK; i++) expect(await note("t9")).toBe("Noted.");
+    await expect(note("t9")).rejects.toThrow(`This task already noted ${CONFLICTS_PER_TASK} conflicts`);
+    // Another task has its own count.
+    expect(await note("t10")).toBe("Noted.");
+    const lines = fs.readFileSync(path.join(base, ".harness", "material", "fractions", "conflicts.md"), "utf8").split("\n").filter((l) => l.startsWith("- "));
+    expect(lines).toHaveLength(CONFLICTS_PER_TASK + 1);
+  });
+
   it("conflict: an unknown fragment or a missing field is refused, and nothing is written", async () => {
     await expect(personMaterialRequest(deps("fractions"), { op: "conflict", fragment: "ch2-009", claim: "x", resolution: "y" })).rejects.toThrow("No fragment ch2-009");
     await expect(personMaterialRequest(deps("fractions"), { op: "conflict", fragment: "../x-001", claim: "x", resolution: "y" })).rejects.toThrow("No fragment ../x-001");

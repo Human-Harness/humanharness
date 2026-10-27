@@ -78,10 +78,14 @@ export function textBlocks(type: Extract<MaterialType, "md" | "txt" | "json" | "
         return withEstimatedPages([{ kind: "code", md: fenced(JSON.stringify(value, null, 2), "json"), loc: "lines 1", page: 1 }]);
       }
       return withEstimatedPages(
-        Object.entries(value).flatMap(([k, v]): MdBlock[] => [
-          { kind: "heading", level: 2, md: `## ${k.slice(0, 80)}`, loc: `key ${k.slice(0, 40)}`, page: 1 },
-          { kind: "code", md: fenced(JSON.stringify(v, null, 2), "json"), loc: `key ${k.slice(0, 40)}`, page: 1 },
-        ]),
+        Object.entries(value).flatMap(([k, v]): MdBlock[] => {
+          // A key may hold newlines or runs of spaces: one line for its heading and location.
+          const key = k.replace(/\s+/g, " ").trim() || "(empty key)";
+          return [
+            { kind: "heading", level: 2, md: `## ${key.slice(0, 80)}`, loc: `key ${key.slice(0, 40)}`, page: 1 },
+            { kind: "code", md: fenced(JSON.stringify(v, null, 2), "json"), loc: `key ${key.slice(0, 40)}`, page: 1 },
+          ];
+        }),
       );
     }
     case "yaml":

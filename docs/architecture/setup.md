@@ -42,9 +42,11 @@ A required step that is missing blocks Start on Home ("One step left: <label>"),
 
 An interview's first message is the action's brief, then a core section (`interviewSection` in `packages/shell/src/main/task-prompts.ts`): ask one question at a time, save to the collection with the data tools as you go, and say when Next is fine. An interview action is not offered as a topic on Start.
 
+`humanharness run <action>` wires the same section (`packages/cli/src/run.ts`), so a run of an interview's action in the terminal sees what the app's task sees.
+
 ## Tests
 
-- `packages/harness-sdk/test/setup.test.ts`: the schema and its rules. `packages/cli/test/check.test.ts`: the `setup-*` warnings.
+- `packages/harness-sdk/test/setup.test.ts`: the schema and its rules. `packages/cli/test/check.test.ts`: the `setup-*` warnings. `packages/cli/test/run.test.ts`: the interview section in a terminal run.
 - `packages/shell/test/setup-store.test.ts`, `setup-steps.test.ts` and `task-manager-setup.test.ts`: the file, the controller and the interview section.
 - `packages/ui/test/setup-home.test.tsx`, `setup-flow.test.tsx`, `setup-interview.test.tsx` and `setup-settings.test.tsx`: Home, the setup screen, the slim chat and the Settings list.
 - `packages/fake-agent/fixtures/setup-harness` (id `tutor`) has a step of each kind.
@@ -52,5 +54,5 @@ An interview's first message is the action's brief, then a core section (`interv
 ## Known gaps
 
 - Profiles (plan 7): every step is app-wide for now. `SetupStepProps.profile` is `null`.
-- `humanharness run` doesn't run setup steps; an interview's action runs as a plain task, without the interview section.
+- `humanharness run` doesn't run the setup screen. An interview's action runs like any action, with the same interview section as in the app.
 - Labels are English only, like every manifest string; the app translates them on demand.

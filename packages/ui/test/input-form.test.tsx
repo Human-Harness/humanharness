@@ -3,6 +3,7 @@ import { cleanup, fireEvent, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { InputIssue, InputSpec } from "../src/client";
 import { AnswerView, InputForm } from "../src/InputForm";
+import { draftOf, draftValue } from "../src/input";
 import { renderIn } from "./render";
 
 afterEach(cleanup);
@@ -195,5 +196,15 @@ describe("InputForm for a setup step (setup-steps spec §3 `form`)", () => {
     expect(screen.queryByRole("button", { name: "Send" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
     expect(submit).toHaveBeenCalledWith({ goal: "Pass", tone: "patient", examples: false });
+  });
+
+  it("draftOf keeps only a pairs field's object rows, each cell a string of the field's columns", () => {
+    const cards: InputSpec = {
+      fields: [{ name: "cards", kind: "pairs", label: "Cards", optional: true, columns: [{ name: "front", label: "Front" }, { name: "back", label: "Back" }] }],
+    };
+    const saved = { cards: ["front", null, [1, 2], { front: "Hola", back: 7, extra: "x" }, { front: "Adiós" }] };
+    expect(draftOf(cards, saved)).toEqual({ cards: [{ front: "Hola", back: "7" }, { front: "Adiós", back: "" }] });
+    expect(draftValue(cards, draftOf(cards, saved))).toEqual({ cards: [{ front: "Hola", back: "7" }, { front: "Adiós", back: "" }] });
+    expect(draftOf(cards, { cards: ["only", "strings"] })).toEqual({ cards: [{}] });
   });
 });

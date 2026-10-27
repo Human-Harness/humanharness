@@ -299,6 +299,13 @@ const manifestSchema = z.object({
     if (s.kind === "form") {
       const fromData = s.collection !== undefined || s.fields !== undefined;
       if (fromData === (s.settings !== undefined)) return issue([], "A form takes its fields from a collection (collection and fields) or from the settings (settings), not both");
+      for (const key of ["fields", "settings"] as const) {
+        const seen = new Set<string>();
+        for (const name of s[key] ?? []) {
+          if (seen.has(name)) issue([key], `"${name}" is listed twice`);
+          seen.add(name);
+        }
+      }
       if (s.settings) {
         if (!m.settings) return issue(["settings"], "Only a harness with settings can ask for them in a form");
         for (const name of s.settings) if (!Object.hasOwn(m.settings.fields, name)) issue(["settings"], `"${name}" is not a setting`);

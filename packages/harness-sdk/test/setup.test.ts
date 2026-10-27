@@ -104,11 +104,13 @@ describe("setup steps in the manifest (setup-steps spec §3)", () => {
     }
     expect(issues({ ...base, data, setup: [{ ...form, collection: "profile", fields: ["goal", "nope"] }] })).toEqual(['setup.0.fields: "nope" is not a field of "profile"']);
     expect(issues({ ...base, data, setup: [{ ...form, collection: "deep", fields: ["where"] }] })).toEqual(['setup.0.fields: The setup form can\'t draw "where"']);
+    expect(issues({ ...base, data, setup: [{ ...form, collection: "profile", fields: ["goal", "age", "goal"] }] })).toEqual(['setup.0.fields: "goal" is listed twice']);
   });
 
   it("form over settings: the harness declares them, and each name is one of its fields", () => {
     const form = { id: "f", kind: "form" as const, label: "F", settings: ["tone", "volume"] };
     expect(issues({ ...base, setup: [form] })).toEqual(['setup.0.settings: "volume" is not a setting']);
+    expect(issues({ ...base, setup: [{ ...form, settings: ["tone", "hintAfter", "tone"] }] })).toEqual(['setup.0.settings: "tone" is listed twice']);
     const { settings: _s, ...noSettings } = base;
     expect(issues({ ...noSettings, setup: [{ ...form, settings: ["tone"] }] })).toEqual(["setup.0.settings: Only a harness with settings can ask for them in a form"]);
   });

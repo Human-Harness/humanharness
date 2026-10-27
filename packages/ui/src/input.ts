@@ -37,9 +37,24 @@ export function draftOf(spec: InputSpec, values: Record<string, unknown>): Draft
     else if (f.kind === "boolean" && typeof v === "boolean") draft[f.name] = v;
     else if ((f.kind === "text" || f.kind === "longText" || f.kind === "choice") && typeof v === "string") draft[f.name] = v;
     else if (f.kind === "multiChoice" && Array.isArray(v)) draft[f.name] = v.filter((x) => typeof x === "string");
-    else if (f.kind === "pairs" && Array.isArray(v) && v.length > 0) draft[f.name] = v.map((row) => ({ ...(row as Row) }));
+    else if (f.kind === "pairs" && Array.isArray(v)) {
+      const rows = v.filter(isRecord).map((row) => cellsOf(f, row));
+      if (rows.length > 0) draft[f.name] = rows;
+    }
   }
   return draft;
+}
+
+const isRecord = (x: unknown): x is Record<string, unknown> => typeof x === "object" && x !== null && !Array.isArray(x);
+
+/** A saved pairs row as the form holds it: one string per column (a missing or empty cell is ""). */
+function cellsOf(field: InputField, row: Record<string, unknown>): Row {
+  return Object.fromEntries(
+    (field.columns ?? []).map((c) => {
+      const cell = Object.hasOwn(row, c.name) ? row[c.name] : undefined;
+      return [c.name, cell === undefined || cell === null ? "" : String(cell)];
+    }),
+  );
 }
 
 /** An option's label (a settings form's "Patient"), else the option itself. */

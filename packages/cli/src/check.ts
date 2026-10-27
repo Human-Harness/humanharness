@@ -410,7 +410,7 @@ async function setupFindings(h: LoadedHarness): Promise<Finding[]> {
       }
     }
   }
-  const recordings = (await fs.readdir(path.join(h.root, MOCK_DIR)).catch(() => [])).some((name) => name.endsWith(".json"));
+  const recordings = (await fs.readdir(path.join(h.root, MOCK_DIR), { withFileTypes: true }).catch(() => [])).some((e) => e.isFile() && e.name.endsWith(".json"));
   for (const s of h.setup) {
     if (s.kind !== "interview") continue;
     if (recordings && !(await exists(path.join(h.root, MOCK_DIR, `${s.action}.json`)))) {

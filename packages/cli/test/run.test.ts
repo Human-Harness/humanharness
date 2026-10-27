@@ -890,3 +890,31 @@ describe("run: task phases (task-phases spec §6)", () => {
     expect(r.prompts()[1]).toBe(">phase main");
   });
 });
+
+describe("run: setup steps (setup-steps spec §3 interview)", () => {
+  const tutor = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../fake-agent/fixtures/setup-harness");
+  const tutorScript: ClaudeScript = {
+    steps: [...claudeTextLines("Hi."), result],
+    turns: [{ match: "save_note", steps: [ui("save_note", { title: "Hello", summary: ["x"], decisions: [], files: [], open: [] }), result] }],
+  };
+  const first = async (name: string, action: string) => {
+    const prompts = path.join(root, `${name}-prompts.jsonl`);
+    await runTask({
+      harnessDir: tutor,
+      action,
+      engine: "claude",
+      folder: path.join(root, name),
+      input: lines("q\n"),
+      output: memoryStream().stream,
+      engineCommand: { command: fakeClaudeCommand(), env: { HH_FAKE_SCRIPT: writeScript(root, tutorScript), HH_FAKE_PROMPTS: prompts } },
+    });
+    return (readJsonl(prompts)[0] as { prompt: string }).prompt;
+  };
+
+  it("an interview's action gets the core's interview section, as in the app; any other action doesn't", { timeout: 60_000 }, async () => {
+    const interview = await first("setup-interview", "conocerte");
+    expect(interview).toContain("## Setup interview");
+    expect(interview).toContain("Save what you learn in the `profile` collection");
+    expect(await first("setup-practice", "practice")).not.toContain("## Setup interview");
+  });
+});

@@ -618,4 +618,14 @@ describe("check: setup steps (setup-steps spec §6)", () => {
     expect(errors(r)).toEqual([]);
     expect(setupRules(r)).toEqual([]);
   });
+
+  it("only files count as recordings: a folder named like one in mock/ asks for no recording", async () => {
+    const r = await checkHarness(
+      await fixture((d) => {
+        withSetup(', context: { fields: "all", tokens: 100 }')(d);
+        fs.mkdirSync(path.join(d, "mock", "old.json"), { recursive: true });
+      }),
+    );
+    expect(r.findings.filter((f) => f.rule === "setup-mock")).toEqual([]);
+  });
 });

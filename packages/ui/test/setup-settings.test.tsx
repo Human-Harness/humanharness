@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { SetupStepView } from "../src/client";
+import type { SettingsView, SetupStepView } from "../src/client";
 import { SettingsSheet } from "../src/SettingsSheet";
 import { FakeClient } from "./fake-client";
 import { renderIn } from "./render";
@@ -89,5 +89,21 @@ describe("Settings › Setup (setup-steps spec §5)", () => {
   it("D0: without settings or steps there is no harness tab", async () => {
     await sheet(new FakeClient(configured));
     expect(screen.queryByRole("tab", { name: "Setup" })).toBeNull();
+  });
+
+  it("D0: settings and no steps: the harness's tab as before, no Setup list, nothing acknowledged", async () => {
+    const client = new FakeClient(configured);
+    const view: SettingsView = {
+      tab: "How I learn",
+      sections: [],
+      fields: [{ name: "nickname", control: "text", label: "What the app calls you", default: "", max: 40 }],
+    };
+    client.state = { ...client.state, settings: view };
+    client.settingsState = { values: { nickname: "" }, pending: [] };
+    await sheet(client);
+    expect(screen.getByRole("tab", { name: "How I learn" })).toBeTruthy();
+    await screen.findByLabelText("What the app calls you");
+    expect(screen.queryByRole("heading", { name: "Setup" })).toBeNull();
+    expect(client.setupCalls).not.toContain("acknowledge");
   });
 });

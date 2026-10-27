@@ -54,6 +54,10 @@ describe("the zip guard (zip bombs)", () => {
     await refused(checkZip(liar, LIMITS));
   });
 
+  it("a docx whose entries declare a bomb's size is refused before mammoth reads it", async () => {
+    await refused(docxBlocks(lie(await makeDocx([{ text: "x" }]), 0xfffffff0)));
+  });
+
   it("every zip format refuses a file with more entries than ZIP_MAX_ENTRIES", async () => {
     const wb = new ExcelJS.Workbook();
     wb.addWorksheet("S").addRows([["a"], [1]]);

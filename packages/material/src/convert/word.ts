@@ -47,15 +47,45 @@ export const tagOf = (n: XNode): string => Object.keys(n).find((k) => k !== ":@"
 export const kids = (n: XNode): XNode[] => (Array.isArray(n[tagOf(n)]) ? (n[tagOf(n)] as XNode[]) : []);
 export const attr = (n: XNode, name: string): string | undefined => n[":@"]?.[name];
 
-/** The text of a node: text runs, `text:s` (spaces), `text:tab`, `text:line-break`; annotations and notes' citations left out. */
+/** Never text: comments, tracked deletions, notes (they come last: `odfNotes`), and a picture's alt text. */
+const ODF_HIDDEN = new Set(["office:annotation", "office:annotation-end", "text:tracked-changes", "text:deletion", "text:note", "svg:title", "svg:desc"]);
+/** Children that are paragraphs of their own: their texts are joined with a space ("one two", never "onetwo"). */
+const ODF_BLOCKS = new Set(["text:p", "text:h", "text:list", "text:list-item"]);
+/** The most spaces one `text:s` gives: its count is the file's word, so it is bounded. */
+const ODF_MAX_SPACES = 1000;
+
+/**
+ * The text of a node: text runs, `text:s` (spaces, at most ODF_MAX_SPACES), `text:tab`, `text:line-break`;
+ * annotations, deletions, notes and alt text left out. Paragraphs inside a node (a cell, a list item) are joined with
+ * a space.
+ */
 export function odfText(n: XNode): string {
   const tag = tagOf(n);
   if (tag === "#text") return String(n["#text"] ?? "");
-  if (tag === "text:s") return " ".repeat(Number(attr(n, "text:c") ?? 1));
+  if (tag === "text:s") return " ".repeat(Math.min(ODF_MAX_SPACES, Math.max(0, Math.floor(Number(attr(n, "text:c") ?? 1) || 1))));
   if (tag === "text:tab") return "\t";
   if (tag === "text:line-break") return "\n";
-  if (tag === "office:annotation" || tag === "office:annotation-end" || tag === "text:tracked-changes" || tag === "text:deletion") return "";
-  return kids(n).map(odfText).join("");
+  if (ODF_HIDDEN.has(tag)) return "";
+  let out = "";
+  for (const k of kids(n)) {
+    const t = odfText(k);
+    if (ODF_BLOCKS.has(tagOf(k)) && t.trim() && out.trim() && !/\s$/.test(out)) out += " ";
+    out += t;
+  }
+  return out;
+}
+
+/** Every note's body under `nodes`, in document order (a note inside a note's body is not looked for). */
+export function odfNotes(nodes: XNode[]): string[] {
+  const out: string[] = [];
+  for (const n of nodes) {
+    if (tagOf(n) === "text:note") {
+      const body = kids(n).find((k) => tagOf(k) === "text:note-body");
+      const t = body ? odfText(body).trim() : "";
+      if (t) out.push(t);
+    } else out.push(...odfNotes(kids(n)));
+  }
+  return out;
 }
 
 /** ODF text content as HTML (headings, paragraphs, lists, tables, images), for the walker. */
@@ -75,7 +105,11 @@ export function odfHtml(nodes: XNode[]): string {
       if (tag === "text:list") {
         const items = kids(n)
           .filter((k) => tagOf(k) === "text:list-item")
-          .map((li) => `<li>${kids(li).map((c) => (tagOf(c) === "text:list" ? odfHtml([c]) : esc(odfText(c)))).join("")}</li>`);
+          .map((li) => {
+            const text = kids(li).filter((c) => tagOf(c) !== "text:list").map((c) => odfText(c).trim()).filter(Boolean).join(" ");
+            const nested = kids(li).filter((c) => tagOf(c) === "text:list");
+            return `<li>${esc(text)}${odfHtml(nested)}</li>`;
+          });
         return `<ul>${items.join("")}</ul>`;
       }
       if (tag === "table:table") {
@@ -105,46 +139,72 @@ export async function odtBlocks(buf: Buffer): Promise<MdBlock[]> {
   const content = await zipXml(buf, "content.xml");
   const text = content && findNode(content, "office:text");
   if (!text) throw new MaterialRefused("unreadable");
-  return htmlBlocks(odfHtml(kids(text)));
+  // §3: footnotes and endnotes come last, as a numbered list after the content (as mammoth does for docx).
+  const notes = odfNotes(kids(text));
+  return htmlBlocks(odfHtml(kids(text)) + (notes.length > 0 ? `<ol>${notes.map((t) => `<li>${esc(t)}</li>`).join("")}</ol>` : ""));
 }
 
-/** Groups whose text is never content: fonts, colours, styles, document info, pictures, and every `{\*…}` group. */
-const SKIP = /^(fonttbl|colortbl|stylesheet|info|pict|object|header|footer|headerl|headerr|footerl|footerr|listtable|listoverridetable|rsidtbl|generator|xmlnstbl|themedata|datastore|latentstyles)$/;
+/** Groups whose text is never content: fonts, colours, styles, document info, pictures, shapes, and every `{\*…}` group. */
+const SKIP = /^(fonttbl|colortbl|stylesheet|info|pict|object|header|footer|headerl|headerr|footerl|footerr|listtable|listoverridetable|rsidtbl|generator|xmlnstbl|themedata|datastore|latentstyles|shp|shpgrp|nonshppict)$/;
 
 /** Control words that stand for one character. */
 const CHARS: Record<string, string> = { emdash: "—", endash: "–", bullet: "•", lquote: "‘", rquote: "’", ldblquote: "“", rdblquote: "”", emspace: " ", enspace: " " };
 const cp1252 = new TextDecoder("windows-1252");
 
-/** RTF into plain text: `\par` ends a line, `\'hh` is Windows-1252, `\uN?` is Unicode (its fallback skipped). */
+/** A group's state, restored at its `}`. */
+interface RtfState {
+  /** Not content: a hidden destination or a SKIP group. */
+  skip: boolean;
+  /** `\ucN`: how many fallback characters follow a `\uN`. */
+  uc: number;
+  /** `\deleted`: a tracked deletion, never the text. */
+  deleted: boolean;
+  /** Inside a `\footnote` group: the text goes to the notes, which come last. */
+  note: boolean;
+}
+
+/**
+ * RTF into plain text: `\par` ends a line, `\'hh` is Windows-1252, `\uN` is Unicode (its `\ucN` fallback characters
+ * skipped). Footnotes come last, one per line; tracked deletions, shapes and `\bin` data are dropped.
+ */
 export function rtfText(src: string): string {
   // Sticky, so a control word is matched in place (slicing the rest of the file each time would be quadratic).
   const control = /([a-z]+)(-?\d+)? ?/y;
-  let out = "";
-  const stack: boolean[] = [];
-  let skip = false;
+  let main = "";
+  let notes = "";
+  const stack: RtfState[] = [];
+  let st: RtfState = { skip: false, uc: 1, deleted: false, note: false };
   let skipNext = 0;
+  const emit = (s: string) => {
+    if (st.skip || st.deleted) return;
+    if (st.note) notes += s;
+    else main += s;
+  };
   for (let i = 0; i < src.length; i++) {
     const ch = src[i];
     if (ch === "{") {
-      stack.push(skip);
-      if (src.startsWith("{\\*", i)) skip = true;
+      stack.push(st);
+      st = { ...st, skip: st.skip || src.startsWith("{\\*", i) };
       continue;
     }
     if (ch === "}") {
-      skip = stack.pop() ?? false;
+      const closed = st;
+      st = stack.pop() ?? { skip: false, uc: 1, deleted: false, note: false };
+      if (closed.note && !st.note) notes += "\n";
       continue;
     }
     if (ch === "\\") {
       const next = src[i + 1];
       if (next === "\\" || next === "{" || next === "}") {
-        if (!skip) out += next;
+        if (skipNext > 0) skipNext--;
+        else emit(next);
         i++;
         continue;
       }
       if (next === "'") {
         const byte = Number.parseInt(src.slice(i + 2, i + 4), 16);
-        if (!skip && skipNext === 0 && !Number.isNaN(byte)) out += cp1252.decode(Uint8Array.of(byte));
-        else if (skipNext > 0) skipNext--;
+        if (skipNext > 0) skipNext--;
+        else if (!Number.isNaN(byte)) emit(cp1252.decode(Uint8Array.of(byte)));
         i += 3;
         continue;
       }
@@ -152,34 +212,45 @@ export function rtfText(src: string): string {
       const m = control.exec(src);
       if (!m) {
         // A control symbol: `\~` is a non-breaking space, `\_` a non-breaking hyphen; the rest (`\-`, `\|`…) are not text.
-        if (!skip && next === "~") out += " ";
-        else if (!skip && next === "_") out += "-";
+        if (next === "~") emit(" ");
+        else if (next === "_") emit("-");
         i++;
         continue;
       }
       const [all, word, num] = m;
+      const groupStart = src[i - 1] === "{";
       i += all.length;
-      if (SKIP.test(word) && src[i - all.length - 1] === "{") skip = true;
-      if (skip) continue;
-      if (word === "par" || word === "line") out += "\n";
-      else if (word === "tab") out += "\t";
-      else if (Object.hasOwn(CHARS, word)) out += CHARS[word];
+      // `\binN`: N bytes of binary data follow; never text, and never parsed as RTF.
+      if (word === "bin") {
+        i += Math.max(0, Number(num ?? 0));
+        continue;
+      }
+      if (SKIP.test(word) && groupStart) st.skip = true;
+      if (word === "footnote") st.note = true;
+      if (word === "uc") st.uc = Math.min(10, Math.max(0, Number(num ?? 1) || 0));
+      if (word === "deleted") st.deleted = num !== "0";
+      if (word === "plain") st.deleted = false;
+      if (st.skip) continue;
+      if (word === "par" || word === "line") emit("\n");
+      else if (word === "tab") emit("\t");
+      else if (Object.hasOwn(CHARS, word)) emit(CHARS[word]);
       else if (word === "u" && num !== undefined) {
         const code = Number(num) < 0 ? Number(num) + 65536 : Number(num);
-        out += String.fromCharCode(code);
-        skipNext = 1;
+        emit(String.fromCharCode(code));
+        skipNext = st.uc;
       }
       continue;
     }
     if (ch === "\r" || ch === "\n") continue;
-    if (skip) continue;
     if (skipNext > 0) {
       skipNext--;
       continue;
     }
-    out += ch;
+    emit(ch);
   }
-  return out.replace(/[ \t]+\n/g, "\n").trim();
+  const tidy = (s: string) => s.replace(/[ \t]+\n/g, "\n").trim();
+  const noteLines = notes.split("\n").map((l) => l.trim()).filter(Boolean).join("\n");
+  return [tidy(main), noteLines].filter(Boolean).join("\n");
 }
 
 /** RTF's lines are text, never Markdown: a line that would read as structure gets its marker escaped. */

@@ -430,6 +430,21 @@ export type TaskStatus = "running" | "waiting" | "closing" | "checkpoint";
 /** How an action's last task ended: its note was saved, the closing turn brought none, or it was interrupted. */
 export type ActionStatus = "done" | "unsaved" | "unfinished";
 
+/**
+ * The task's time box as the window sees it (task-phases spec §5): minutes chosen, the whole box and the time used in ms
+ * (a test minute may be short), measured `at`; the window counts down from there unless `paused`. `wrappedUp`: the
+ * wrap-up ran; `ended`: the time is up.
+ */
+export interface TimeBoxView {
+  minutes: number;
+  totalMs: number;
+  usedMs: number;
+  at: string;
+  paused: boolean;
+  wrappedUp?: true;
+  ended?: true;
+}
+
 export interface CurrentTaskView {
   id: string;
   /** Absent for a free question. */
@@ -454,6 +469,7 @@ export interface CurrentTaskView {
   phase?: string;
   phases?: { id: string; at: string; by: "agent" | "person" | "app" }[];
   phaseProposal?: { to: string; reason: string };
+  timeBox?: TimeBoxView;
 }
 
 /** A note in `.harness/notes/`, for the side panel and "What's clear so far". */

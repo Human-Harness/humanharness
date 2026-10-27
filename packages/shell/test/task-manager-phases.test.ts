@@ -1,11 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { ModelProfile } from "@humanharness/engines";
 import { type HarnessPhase, type HarnessTimeBox, type InputBlock, type SavedNote, defineBlock, z } from "@humanharness/harness-sdk";
 import type { Event } from "@humanharness/runtime";
 import type { TaskTurnNotice, TaskView } from "@humanharness/ui/client";
 import type { NoteMeta } from "@humanharness/workspace";
 import { type TaskDeps, TaskManager } from "../src/main/task-manager";
-import { CHECKPOINT_PROMPT, CLOSE_PROMPT, PHASE_BACK, modeSection, phasePrompt, phaseSection, phasesSection, recommendSection, resumeMessage } from "../src/main/task-prompts";
+import { CHECKPOINT_PROMPT, CLOSE_PROMPT, PHASE_BACK, modeSection, phasePrompt, phaseSection, phasesSection, recommendSection, resumeMessage, wrapUpPrompt } from "../src/main/task-prompts";
 import { type TasksFile, emptyTasks } from "../src/main/task-store";
 import type { TurnOptions } from "../src/main/turn-controller";
 
@@ -43,6 +43,7 @@ export function setup(
   let busy = false;
   let gate = opts.gate;
   let n = 0;
+  const timers: { fn: () => void; ms: number }[] = [];
   const manager = new TaskManager({
     store: {
       load: async () => structuredClone(state),
@@ -89,6 +90,17 @@ export function setup(
         }
       : {}),
     minuteMs: 1000,
+    timer: {
+      set: (fn, ms) => {
+        const handle = { fn, ms };
+        timers.push(handle);
+        return handle;
+      },
+      clear: (handle) => {
+        const i = timers.indexOf(handle as (typeof timers)[number]);
+        if (i >= 0) timers.splice(i, 1);
+      },
+    },
     ...opts.extra,
     now: () => new Date(clock),
     newId: () => `t${++n}`,
@@ -100,9 +112,17 @@ export function setup(
     notices,
     written,
     emitted,
+    timers,
     state: () => state,
     advance: (ms: number) => {
       clock += ms;
+    },
+    /** Moves the clock to the armed timer's moment and fires it. */
+    fire: () => {
+      const handle = timers.at(-1);
+      if (!handle) throw new Error("No timer is armed");
+      clock += handle.ms;
+      handle.fn();
     },
   };
 }
@@ -435,5 +455,141 @@ describe("TaskManager: the close phase is the core closing (task-phases spec D5)
     await t.manager.start("session");
     expect(t.turns).toHaveLength(1);
     expect(t.state().current).not.toHaveProperty("phaseProposal");
+  });
+});
+
+describe("TaskManager: the time box (task-phases spec §5)", () => {
+  const box: HarnessTimeBox = { options: [10, 20], default: null, wrapUpAt: 0.5 };
+  // The agent hears the time left through a brief's `{{timeLeft}}` (and a change's "Time left:" line).
+  const timed: Partial<TaskDeps> = { readPhaseBrief: async (_action, phase) => `Brief of ${phase}. Time left: {{timeLeft}}.` };
+
+  it("D0: no time box, no timer, no field", async () => {
+    const t = setup({ timeBox: box });
+    await t.manager.start("session");
+    await t.manager.start("quiz");
+    expect(t.timers).toEqual([]);
+    expect(t.state().current).not.toHaveProperty("timeBox");
+  });
+
+  it("is chosen at the start among the options, counts, and is shown; a length not offered starts nothing", async () => {
+    const t = setup({ timeBox: box, extra: timed });
+    await expect(t.manager.start("session", undefined, undefined, undefined, { timeBox: 15 })).rejects.toThrow("Unknown time box");
+    expect(t.turns).toHaveLength(0);
+    await t.manager.start("session", undefined, undefined, undefined, { timeBox: 10 });
+    expect(t.state().current?.timeBox).toEqual({ minutes: 10, usedMs: 0, runningSince: NOW });
+    // A one-second minute in the test: the wrap-up is due at half of 10 s.
+    expect(t.timers.at(-1)?.ms).toBe(5000);
+    expect(t.turns[0].message).toContain("about 10 minutes");
+    t.advance(2000);
+    await t.manager.ask("Go on");
+    expect(t.views.at(-1)?.current?.timeBox).toMatchObject({ minutes: 10, totalMs: 10_000, usedMs: 2000, paused: false });
+  });
+
+  it("the default applies to a start the window doesn't make itself", async () => {
+    const t = setup({ timeBox: { ...box, default: 20 } });
+    await t.manager.start("session");
+    expect(t.state().current?.timeBox).toMatchObject({ minutes: 20 });
+  });
+
+  it("at wrapUpAt: one wrap-up turn, then the close phase by the app; the window hears both first", async () => {
+    const t = setup({ timeBox: box });
+    await t.manager.start("session", undefined, undefined, undefined, { timeBox: 10 });
+    t.fire();
+    await vi.waitFor(() => expect(t.turns).toHaveLength(3));
+    await t.manager.idle();
+    expect(t.turns[1].message).toBe(wrapUpPrompt("en"));
+    expect(t.turns[1].options).toMatchObject({ phase: "wrap-up", wrapUp: true, display: "Time is almost up", taskPhase: "warmup" });
+    expect(t.turns[2].options).toMatchObject({ phase: "phase-change", phaseChange: "close" });
+    expect(t.notices).toEqual([
+      { task: "t1", kind: "wrap-up" },
+      { task: "t1", kind: "phase", phase: "close", by: "app" },
+    ]);
+    expect(t.state().current).toMatchObject({ phase: { id: "close" }, timeBox: { wrappedUp: true } });
+    // Next: the end, at 100%. It moves nowhere: the close phase already started.
+    t.fire();
+    await t.manager.idle();
+    await vi.waitFor(() => expect(t.state().current?.timeBox).toMatchObject({ ended: true }));
+    expect(t.turns).toHaveLength(3);
+  });
+
+  it("never cuts a turn: a step due during a turn waits for it", async () => {
+    let open!: () => void;
+    const t = setup({ timeBox: box });
+    await t.manager.start("session", undefined, undefined, undefined, { timeBox: 10 });
+    const t2 = setup({ timeBox: box, state: t.state(), gate: new Promise<void>((resolve) => (open = resolve)) });
+    const asked = t2.manager.ask("A long question");
+    await vi.waitFor(() => expect(t2.turns).toHaveLength(1));
+    t2.fire();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(t2.turns).toHaveLength(1);
+    open();
+    await asked;
+    await vi.waitFor(() => expect(t2.turns[1]?.options).toMatchObject({ phase: "wrap-up" }));
+  });
+
+  it("pause (only while waiting), resume, a message resumes, +5 min, quitting pauses", async () => {
+    const t = setup({ timeBox: box });
+    await t.manager.start("session", undefined, undefined, undefined, { timeBox: 10 });
+    t.advance(1000);
+    expect(await t.manager.pauseTimeBox()).toBe(true);
+    expect(t.state().current?.timeBox).toEqual({ minutes: 10, usedMs: 1000 });
+    expect(t.timers).toEqual([]);
+    expect(t.views.at(-1)?.current?.timeBox).toMatchObject({ paused: true });
+    expect(await t.manager.resumeTimeBox()).toBe(true);
+    expect(t.timers).toHaveLength(1);
+    await t.manager.pauseTimeBox();
+    await t.manager.ask("I'm back");
+    expect(t.state().current?.timeBox?.runningSince).toBeDefined();
+    expect(await t.manager.extendTimeBox()).toBe(true);
+    expect(t.state().current?.timeBox?.minutes).toBe(15);
+    t.manager.close();
+    await vi.waitFor(() => expect(t.state().current?.timeBox).not.toHaveProperty("runningSince"));
+  });
+
+  it("without a close phase: the wrap-up, then only the view says the time is up", async () => {
+    const t = setup({ timeBox: box, phases: PHASES.slice(0, 2) });
+    await t.manager.start("session", undefined, undefined, undefined, { timeBox: 10 });
+    t.fire();
+    await vi.waitFor(() => expect(t.turns).toHaveLength(2));
+    await t.manager.idle();
+    expect(t.state().current).toMatchObject({ phase: { id: "warmup" }, timeBox: { wrappedUp: true } });
+    expect(t.views.at(-1)?.current?.timeBox).toMatchObject({ wrappedUp: true });
+  });
+
+  it("a task whose session is gone: no wrap-up turn, the close phase quietly; its resumed session hears the time left", async () => {
+    const current = {
+      id: "t1",
+      action: "session",
+      status: "waiting" as const,
+      startedAt: "",
+      turns: 1,
+      phase: { id: "main", startedAt: NOW },
+      timeBox: { minutes: 10, usedMs: 4000, runningSince: NOW },
+      resume: true as const,
+    };
+    const t = setup({ timeBox: box, state: { ...emptyTasks(), current }, extra: timed });
+    // A write arms the timer: the wrap-up is due in a second.
+    expect(await t.manager.extendTimeBox(0)).toBe(true);
+    expect(t.timers.at(-1)?.ms).toBe(1000);
+    t.fire();
+    await vi.waitFor(() => expect(t.state().current).toMatchObject({ phase: { id: "close" }, timeBox: { wrappedUp: true } }));
+    await t.manager.idle();
+    expect(t.turns).toEqual([]);
+    expect(t.notices).toEqual([]);
+    await t.manager.ask("Hi");
+    expect(t.turns[0].message).toContain("about 5 minutes");
+  });
+
+  it("a due checkpoint runs before the wrap-up, in the same operation", async () => {
+    const t = setup({ timeBox: box });
+    await t.manager.start("session", undefined, undefined, undefined, { timeBox: 10 });
+    const s = t.state();
+    s.current = { ...s.current!, profile: { ...profile, cap: 1000 }, context: { used: 900 } };
+    const t2 = setup({ timeBox: box, state: s, phases: PHASES.slice(0, 2) });
+    expect(await t2.manager.extendTimeBox(0)).toBe(true);
+    t2.fire();
+    await vi.waitFor(() => expect(t2.turns).toHaveLength(2));
+    await t2.manager.idle();
+    expect(t2.turns.map((x) => x.options.phase)).toEqual(["checkpoint", "wrap-up"]);
   });
 });

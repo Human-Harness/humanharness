@@ -115,7 +115,7 @@ export const MODES_MAX = 50;
 /** How many phase changes tasks.json keeps for a task: a bound on a hand-edited file. */
 export const PHASE_LOG_MAX = 200;
 /** The longest time box a task can reach with "+5 min": a bound on a hand-edited file. */
-const TIME_BOX_MINUTES_MAX = 24 * 60;
+export const TIME_BOX_MINUTES_MAX = 24 * 60;
 const PHASE_BY: readonly string[] = ["agent", "person", "app"];
 
 /** What the manifest declares, when known: mode ids, and each action's phase ids. */

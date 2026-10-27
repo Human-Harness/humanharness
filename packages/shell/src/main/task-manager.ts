@@ -34,6 +34,7 @@ import {
   type TaskStatus,
   type TaskTurnNotice,
   type TaskView,
+  type TimeBoxView,
   nextInPath,
 } from "@humanharness/ui/client";
 import { APP_SCOPE, type HistoryTrailer, MAIN_SCOPE, NOTE_PREFIX, type Note, type NoteMeta, buildNotesIndex, isScopeId, noteSlug } from "@humanharness/workspace";
@@ -52,20 +53,23 @@ import {
   phasesSection,
   recommendSection,
   resumeMessage,
+  wrapUpPrompt,
 } from "./task-prompts";
 import {
   type CurrentTask,
   PHASE_LOG_MAX,
   type PendingInput,
   type PhaseBy,
+  TIME_BOX_MINUTES_MAX,
   type TasksFile,
+  type TimeBoxState,
   interrupted,
   keptQuestion,
   scopeOfTask,
   statusesIn,
   withStatus,
 } from "./task-store";
-import { MINUTE_MS, formatTimeLeft, remainingMs } from "./time-box";
+import { EXTEND_MINUTES, MINUTE_MS, formatTimeLeft, nextDue, paused, remainingMs, running, usedMs } from "./time-box";
 import { type TurnOptions, isHeld, takesInputs } from "./turn-controller";
 
 type Done = Extract<Event, { type: "done" }>;
@@ -154,6 +158,8 @@ export interface TaskDeps {
   taskTurn?(notice: TaskTurnNotice): void;
   /** How long a time-box minute lasts. Absent: a real minute. Tests and mock mode pass a short one. */
   minuteMs?: number;
+  /** The time box's timer. Absent: setTimeout and clearTimeout. */
+  timer?: { set(fn: () => void, ms: number): unknown; clear(handle: unknown): void };
   now?: () => Date;
   newId?: () => string;
 }
@@ -193,7 +199,7 @@ export function needsCheckpoint(c: CurrentTask): boolean {
 }
 
 /** The open task as the window sees it: no session, no prompt, just what the screen shows. `tier` only for a task with modes. */
-const currentView = (c: CurrentTask, tier?: Tier): CurrentTaskView => ({
+const currentView = (c: CurrentTask, tier?: Tier, timeBox?: TimeBoxView): CurrentTaskView => ({
   id: c.id,
   ...(c.action ? { action: c.action } : {}),
   ...(c.scope ? { scope: c.scope } : {}),
@@ -210,11 +216,14 @@ const currentView = (c: CurrentTask, tier?: Tier): CurrentTaskView => ({
   ...(c.phase ? { phase: c.phase.id } : {}),
   ...(c.phases ? { phases: c.phases } : {}),
   ...(c.phaseProposal ? { phaseProposal: c.phaseProposal } : {}),
+  ...(timeBox ? { timeBox } : {}),
 });
 
 /** How much of the last checkpoint's summary a mode switch carries (spec §10.1): `save_note`'s own limits. */
 const SO_FAR_POINTS = 5;
 const SO_FAR_CHARS = 400;
+/** setTimeout's longest delay: a longer wait fires early and is armed again. */
+const MAX_TIMER_MS = 2_147_483_647;
 
 /**
  * What entering a phase does, worked out before anything changes (a brief that can't be read changes nothing): the change
@@ -254,6 +263,9 @@ export class TaskManager {
   private lastPhaseAsk: PhaseRequest | null = null;
   /** How long a time-box minute lasts. */
   private readonly minute: number;
+  /** The time box's timer for the open task's next step, or null. */
+  private timer: unknown = null;
+  private readonly timers: { set(fn: () => void, ms: number): unknown; clear(handle: unknown): void };
   /** The slug each free-question task wrote its note under, so a second save replaces its own note. */
   private readonly questionSlugs = new Map<string, string>();
   private readonly now: () => Date;
@@ -263,6 +275,7 @@ export class TaskManager {
     this.now = d.now ?? (() => new Date());
     this.newId = d.newId ?? randomUUID;
     this.minute = d.minuteMs ?? MINUTE_MS;
+    this.timers = d.timer ?? { set: (fn, ms) => setTimeout(fn, ms), clear: (h) => clearTimeout(h as ReturnType<typeof setTimeout>) };
   }
 
   /** A task operation or a turn is under way. */
@@ -298,10 +311,11 @@ export class TaskManager {
   /**
    * Starts a manifest action as a new task, closing the current one first. `display` is what the chat shows.
    * `scope`, in a harness with scopes, is opened first (closing the open task, spec §3.3). `mode`: the mode the
-   * person picked for it (task-modes "ask"); one the action doesn't list is refused before anything closes.
+   * person picked for it (task-modes "ask"); one the action doesn't list is refused before anything closes. `timeBox`:
+   * the minutes picked (null: no limit; absent: the action's default, task-phases spec §5); one not offered is refused too.
    */
-  start(action: string, display?: string, scope?: string, mode?: string): Promise<void> {
-    return this.op(() => this.startNow(action, display, scope, mode));
+  start(action: string, display?: string, scope?: string, mode?: string, opts: { timeBox?: number | null } = {}): Promise<void> {
+    return this.op(() => this.startNow(action, display, scope, mode, undefined, opts));
   }
 
   /** A message from the person: a follow-up of the waiting task, or a new free-question task. `scope` as in `start`. */
@@ -454,10 +468,51 @@ export class TaskManager {
     this.d.turns.cancel();
   }
 
-  /** For quitting: every later operation is refused and the running one starts no further turn. */
+  /** Stops the time box's clock (spec §5), only while the task waits. False when there is nothing to pause. */
+  pauseTimeBox(): Promise<boolean> {
+    return this.op(async () => {
+      const c = (await this.d.store.load()).current;
+      if (!c?.timeBox?.runningSince || c.status !== "waiting") return false;
+      const at = this.now();
+      await this.updateTimeBox(c.id, (t) => paused(t, at));
+      return true;
+    });
+  }
+
+  /** Starts the time box's clock again. False when there is nothing to resume. */
+  resumeTimeBox(): Promise<boolean> {
+    return this.op(async () => {
+      const c = (await this.d.store.load()).current;
+      if (!c?.timeBox || c.timeBox.runningSince) return false;
+      const at = this.now();
+      await this.updateTimeBox(c.id, (t) => running(t, at));
+      return true;
+    });
+  }
+
+  /** "+5 min" (spec §5): the end runs again later, the wrap-up never again. Works during a turn too. */
+  async extendTimeBox(minutes = EXTEND_MINUTES): Promise<boolean> {
+    let changed = false;
+    await this.update((s) => {
+      const box = s.current?.timeBox;
+      if (!s.current || !box) return s;
+      const { ended: _ended, ...rest } = box;
+      changed = true;
+      return { ...s, current: { ...s.current, timeBox: { ...rest, minutes: Math.min(TIME_BOX_MINUTES_MAX, box.minutes + minutes) } } };
+    });
+    return changed;
+  }
+
+  /** For quitting: every later operation is refused, the running one starts no further turn, and the time box pauses. */
   close(): void {
     this.closed = true;
     this.cancelRequested = true;
+    if (this.timer !== null) this.timers.clear(this.timer);
+    this.timer = null;
+    const at = this.now();
+    void this.update((s) => (s.current?.timeBox?.runningSince ? { ...s, current: { ...s.current, timeBox: paused(s.current.timeBox, at) } } : s)).catch(
+      (err: unknown) => console.error("Could not pause the time box", err),
+    );
   }
 
   /** Ends the open task without a note (engine change, quit, dropped runtime, a task left by an earlier run). */
@@ -639,11 +694,15 @@ export class TaskManager {
     return true;
   }
 
-  private async startNow(action: string, display?: string, scope?: string, mode?: string, floor?: Tier): Promise<void> {
+  private async startNow(action: string, display?: string, scope?: string, mode?: string, floor?: Tier, opts: { timeBox?: number | null } = {}): Promise<void> {
     if (!this.known(action)) throw new Error("Unknown action");
     const modes = this.modesOf(action);
     // Checked before anything closes, like the scope below.
     if (mode !== undefined && !modes.includes(mode)) throw new Error("Unknown mode");
+    // The time box (spec §5): the one picked, else the action's default; one it doesn't offer is refused before anything closes.
+    const offered = this.d.actions[action].timeBox;
+    const minutes = opts.timeBox !== undefined ? opts.timeBox : (offered?.default ?? null);
+    if (minutes !== null && !(offered?.options ?? []).includes(minutes)) throw new Error("Unknown time box");
     const first = this.phasesOf(action)[0];
     // How the task starts (spec §3 `defaultMode`): in a mode, asking for a recommendation, or as before (D0). The first
     // phase may allow fewer modes (modes spec §7): a mode it forbids starts suspended; "recommend" waits.
@@ -671,11 +730,14 @@ export class TaskManager {
     const inMode = start !== null && start !== "recommend" ? { mode: start, modes: [start] } : {};
     const at = this.now().toISOString();
     const inPhase = first ? { phase: { id: first.id, startedAt: at }, phases: [{ id: first.id, at, by: "app" as const }] } : {};
+    const inTimeBox = minutes !== null ? { timeBox: { minutes, usedMs: 0, runningSince: at } } : {};
+    // Without phases, a time box adds nothing to the first message.
+    const timeLeft = minutes !== null ? formatTimeLeft(minutes * this.minute, this.minute) : "";
     await this.begin(
-      { action, ...inMode, ...inPhase, ...(suspended ? { suspendedMode: suspended } : {}) },
+      { action, ...inMode, ...inPhase, ...(suspended ? { suspendedMode: suspended } : {}), ...inTimeBox },
       where,
       (notesIndex) => {
-        const parts = first && firstText ? [phasesSection(this.phaseList(action), first.id), phaseSection(firstText, { language })] : [];
+        const parts = first && firstText ? [phasesSection(this.phaseList(action), first.id), phaseSection(firstText, { language, timeLeft })] : [];
         return [fillPrompt(template, { language, notesIndex }), ...(section ? [section] : []), ...parts].join("\n\n");
       },
       display ?? this.d.actions[action].label,
@@ -785,9 +847,22 @@ export class TaskManager {
     return c.timeBox ? formatTimeLeft(remainingMs(c.timeBox, this.now(), this.minute), this.minute) : "";
   }
 
-  /** The open task as the window sees it; its tier only when its action has modes (D0). */
+  /** The open task as the window sees it; its tier only when its action has modes (D0), its time box measured now. */
   private async currentViewOf(c: CurrentTask): Promise<CurrentTaskView> {
-    return currentView(c, this.modesOf(c.action).length > 0 ? await this.tierFor(c) : undefined);
+    return currentView(c, this.modesOf(c.action).length > 0 ? await this.tierFor(c) : undefined, c.timeBox ? this.timeBoxView(c.timeBox) : undefined);
+  }
+
+  private timeBoxView(t: TimeBoxState): TimeBoxView {
+    const now = this.now();
+    return {
+      minutes: t.minutes,
+      totalMs: t.minutes * this.minute,
+      usedMs: usedMs(t, now),
+      at: now.toISOString(),
+      paused: !t.runningSince,
+      ...(t.wrappedUp ? { wrappedUp: true as const } : {}),
+      ...(t.ended ? { ended: true as const } : {}),
+    };
   }
 
   /** The tier the task counts as, or undefined when it can't be told. */
@@ -1223,6 +1298,11 @@ export class TaskManager {
     // A proposal the person didn't take goes as soon as they send anything else (spec §4.1 "ignores it"). A mode
     // switch's turn is a run turn too, so picking a mode drops it as well, by design.
     if (kind === "run" && task.phaseProposal) await this.dropProposal(task.id);
+    // A person who writes is working: a paused time box runs again (spec §5).
+    if (kind === "run" && task.timeBox && !task.timeBox.runningSince) {
+      const since = this.now();
+      await this.updateTimeBox(task.id, (t) => running(t, since));
+    }
     this.turnTask = task.id;
     try {
       const scoped = await this.scopeOptions(task);
@@ -1443,6 +1523,93 @@ export class TaskManager {
     });
   }
 
+  /** Sets the one timer for the open task's next time-box step (spec §5): none while paused, after quit, or when done. */
+  private arm(c: CurrentTask | null): void {
+    if (this.timer !== null) this.timers.clear(this.timer);
+    this.timer = null;
+    const box = c?.timeBox;
+    if (!c || !box?.runningSince || this.closed) return;
+    const wrapUpAt = this.known(c.action) ? this.d.actions[c.action].timeBox?.wrapUpAt : undefined;
+    const due = nextDue(box, wrapUpAt, this.now(), this.minute);
+    if (!due) return;
+    const id = c.id;
+    this.timer = this.timers.set(
+      () => {
+        this.timer = null;
+        // A step never cuts a turn: it waits until nothing runs (spec §5).
+        void this.whenFree(() => this.op(() => this.timeNow(id))).catch((err: unknown) => console.error("The time box's step failed", err));
+      },
+      Math.min(due.inMs, MAX_TIMER_MS),
+    );
+  }
+
+  /** The step that is due now, if the task is still the one and still waits; early (time was added): armed again. */
+  private async timeNow(id: string): Promise<void> {
+    const c = await this.storedCurrent();
+    if (!c || c.id !== id || !c.timeBox?.runningSince || !this.known(c.action)) return;
+    const due = nextDue(c.timeBox, this.d.actions[c.action].timeBox?.wrapUpAt, this.now(), this.minute);
+    if (!due) return;
+    if (due.inMs > 0) return this.arm(c);
+    // Not waiting (a stuck status): the next write arms it again.
+    if (c.status !== "waiting") return;
+    if (due.kind === "wrap-up") return this.wrapUp(c);
+    await this.updateTimeBox(c.id, (t) => ({ ...t, ended: true }));
+    await this.endsInWindow(() => this.toClosePhase(c.id));
+  }
+
+  /**
+   * The wrap-up (spec §5): once, one turn asking to finish the point, then the close phase if it never started. Like a
+   * phase change, a due checkpoint runs first; a task whose session is gone gets no turn, only the move (quiet too).
+   */
+  private async wrapUp(c: CurrentTask): Promise<void> {
+    await this.updateTimeBox(c.id, (t) => ({ ...t, wrappedUp: true }));
+    if (c.resume) return this.toClosePhase(c.id);
+    return this.endsInWindow(async () => {
+      this.tellTurn({ task: c.id, kind: "wrap-up" });
+      const before = (await this.d.store.load()).current;
+      if (before?.id !== c.id) return this.stopped();
+      if (needsCheckpoint(before) && !(await this.checkpoint(before))) return this.stopped();
+      const now = (await this.d.store.load()).current;
+      if (now?.id !== c.id) return this.stopped();
+      await this.setStatus(c.id, "running");
+      // Checked with no await before the send: a Stop while the status was saved.
+      if (this.cancelRequested) {
+        await this.setStatus(c.id, "waiting");
+        return this.stopped();
+      }
+      let done: Done;
+      try {
+        // `display` always goes with `wrapUp`: the chat shows the system line, never the prompt.
+        done = await this.runTurn(now, wrapUpPrompt(await this.d.language()), {
+          display: "Time is almost up",
+          ...(c.action ? { action: c.action } : {}),
+          followUp: true,
+          phase: "wrap-up",
+          wrapUp: true,
+        });
+      } catch (err) {
+        if (err instanceof TurnNotStarted) await this.setStatus(c.id, "waiting");
+        throw unwrap(err);
+      }
+      await this.afterRun(c.id, done, false);
+      if (done.ok && !this.cancelRequested) await this.toClosePhase(c.id);
+    });
+  }
+
+  /** After the wrap-up or at 100% (spec §5): the close phase by the app, unless the task has been in it already. */
+  private async toClosePhase(id: string): Promise<void> {
+    const c = await this.storedCurrent();
+    if (!c || c.id !== id || c.status !== "waiting") return;
+    const close = this.phasesOf(c.action).find((p) => p.close);
+    if (!close || (c.phases ?? []).some((e) => e.id === close.id)) return;
+    await this.movePhase(c, close, "app");
+  }
+
+  /** Changes the open task's time box, if it is still task `id`'s. */
+  private updateTimeBox(id: string, fn: (t: TimeBoxState) => TimeBoxState): Promise<void> {
+    return this.update((s) => (s.current?.id === id && s.current.timeBox ? { ...s, current: { ...s.current, timeBox: fn(s.current.timeBox) } } : s));
+  }
+
   /**
    * Closes the open task: one quiet turn asking for `save_note`, unless its note is already written.
    * False when the closing turn was cancelled (or a cancel or quit came meanwhile): nothing new may start.
@@ -1644,6 +1811,7 @@ export class TaskManager {
       const after = fn(before);
       if (after === before) return;
       await this.d.store.save(after);
+      this.arm(after.current);
       try {
         this.d.changed(await this.view());
       } catch (err) {

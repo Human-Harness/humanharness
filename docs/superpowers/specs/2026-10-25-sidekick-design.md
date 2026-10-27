@@ -1,6 +1,6 @@
 # Sidekick — design
 
-Status: draft, 2026-10-25, waiting for Marco's review. Core spec #9, after the eight approved on 2026-10-25. Builds on `2026-10-25-scopes-and-data-design.md`, `2026-10-25-profiles-design.md`, `2026-10-25-harness-settings-design.md` and `2026-10-25-task-phases-design.md`. Mockup: https://claude.ai/artifact/QjjA1E7C7tK8s7VhdYAgAy (six boards: off, reviewing, before you send, after the reply, heads-ups, Settings › Sidekick).
+Status: draft, 2026-10-25, waiting for Marco's review. **Updated 2026-10-27 for several sidekicks** (spec E from `docs/discovery/2026-10-26-dev-vs-core.md`, candidate C1; decisions from the dev mockup v3, round 4, and a brainstorming session with Marco on 2026-10-27): see D9–D14 and §2a. Where an older section says "Sidekick", read "the sidekick that speaks". Core spec #9, after the eight approved on 2026-10-25. Builds on `2026-10-25-scopes-and-data-design.md`, `2026-10-25-profiles-design.md`, `2026-10-25-harness-settings-design.md` and `2026-10-25-task-phases-design.md`. Mockup: https://claude.ai/artifact/QjjA1E7C7tK8s7VhdYAgAy (six boards: off, reviewing, before you send, after the reply, heads-ups, Settings › Sidekick).
 
 ## 1. Why
 
@@ -41,7 +41,127 @@ Marco confirmed these on 2026-10-25.
   - It has no tools and sees only compact context (§5).
   - It never writes notes or data on its own. Writes happen only when the person presses a button: "Save as decision", "Finish task".
 - **D7. It never drives the flow.** It may suggest a next prompt or closing the task. The app's flow rules (`flow-and-context` spec) are unchanged.
-- **D8. Its spend is visible and capped.** Every Sidekick turn is tagged in `usage.jsonl` (§8). At the cap per task, Sidekick goes quiet and says so once.
+- **D8. Its spend is visible and capped.** Every Sidekick turn is tagged in `usage.jsonl` (§8). At the cap per task, Sidekick goes quiet and says so once. With several sidekicks, **the cap is shared** by all of them (D11).
+
+Added on 2026-10-27 (Marco):
+
+- **D9. Several sidekicks, each with a personality and purposes.** The person writes each sidekick's personality as a prompt and picks its purposes from the core's list, or writes their own (§2a.2). A purpose of their own never grants tools or permissions: no sidekick has tools (D6).
+- **D10. Sidekicks belong to the person; the scope picks them.**
+  - Sidekicks live in the person's profile (the app-wide `sidekick` collection).
+  - Each scope turns them on or off, and may add a purpose text and places of its own.
+  - The personality stays the person's.
+- **D11. One sidekick speaks per moment.**
+  - It is the first one, in the person's order, among those turned on in the scope with a purpose for that moment.
+  - Free signals can route.
+  - Only that one calls the model, so the cost does not grow with the number of sidekicks.
+- **D12. What is learned about the person is shared; what is learned about each sidekick is its own.** Learned items (`you`, `harness`) are read by every sidekick. Thresholds per kind and muting are per sidekick.
+- **D13. Import by paste or file picker.**
+  - The picker refuses `~/.claude` and `~/.codex`, so the engines' compliance rule ("the app never reads `~/.claude` or `~/.codex`", `docs/architecture/engines.md`) holds.
+  - A turn turns the text into a sidekick.
+  - The person confirms it with a copy notice and a checkbox.
+- **D14. Harnesses may ship presets.** Adopting one makes a copy that the person owns and can edit.
+
+## 2a. Several sidekicks
+
+### 2a.1 A sidekick
+
+```ts
+type Sidekick = {
+  id: string;                 // slug of the name
+  name: string;               // "Rulo"
+  mark: string;               // one emoji, or a color token
+  personality: string;        // the person's prompt: how it talks, what it cares about; up to 1,500 characters
+  purposes: Purpose[];
+  order: number;              // who speaks first (D11)
+  tier?: "light" | "standard" | "deep";   // default: the `sidekick` process tier (§5)
+  source?: { kind: "paste" } | { kind: "files"; paths: string[]; hash: string };   // when imported (§2a.6)
+};
+
+type Purpose =
+  | { id: "prompt-coach" | "focus" | "process-guard" | "mentor" | "daily-summary" }
+  | { id: "custom"; text: string; moments: Moment[] };
+
+type Moment = "pre-send" | "after-reply" | "heads-up" | "before-approve" | "phase-change" | "daily" | `place:${string}`;
+```
+
+These are records in the app-wide `sidekick` collection (§6.4), next to the settings and the learned items. With profiles, each profile has its own sidekicks.
+
+### 2a.2 The core's purposes
+
+| Purpose | Speaks at | What it does |
+|---|---|---|
+| `prompt-coach` | `pre-send`, `after-reply` | §4.1 and §4.2 as specified: vague, missing context, two asks, off-phase, gaps, next prompt, repeated asks |
+| `focus` | `heads-up` | §4.3, plus two heads-ups with parallel tasks (`2026-10-27-parallel-tasks-and-jobs-design.md`): a task waiting for the person for more than 30 min, and more than three tasks waiting at once |
+| `process-guard` | `before-approve`, `phase-change` | Checks the moment against the scope's rules (its `purposeText`, §2a.4): "never approve with an unconfirmed assumption" |
+| `mentor` | `after-reply` | Explains, in at most two lines, a term or a decision in the reply that the learned items say the person may not know |
+| `daily-summary` | `daily` | Once a day, at the first app start: what was done yesterday (closed tasks, notes, approvals, spend), from titles only |
+| `custom` | the moments it lists | Its `text` joins the personality in its brief |
+
+**The new moments:**
+- **`before-approve`.** The person presses "Aprobar" on a reviewed document (`2026-10-27-document-review-and-focus-design.md` §5.4). The input is the document's open questions, its comments and the scope's rules. The approval waits, like a pre-send review: about 6 s, then it goes through, and ⌘⏎ approves at once.
+- **`phase-change`.** A phase change is proposed or made (`2026-10-25-task-phases-design.md`). It never blocks.
+- **`daily`.** It runs once a day per app, after setup. Its card waits in the panel.
+- **`place:<id>`.** The harness asks for it (§2a.5).
+
+### 2a.3 Who speaks (D11)
+
+1. **Candidates** are the sidekicks turned on in the open scope (§2a.4) with a purpose for the moment.
+2. **Free routing first.** A local-check flag (§4.1) goes to a `prompt-coach` candidate, and a free heads-up (§4.3) to a `focus` candidate, whatever the order.
+3. **Otherwise** the first candidate in the person's order speaks.
+4. **Only that sidekick** runs its local checks' follow-up, calls the model and shows its card. The others stay quiet for that moment.
+5. **No candidate:** nothing happens, at no cost.
+
+### 2a.4 Per scope (D10)
+
+- A record `{ scope, sidekick, on, purposeText?, places? }` in the `sidekick` collection, one per scope and sidekick.
+- A scope with no record uses each sidekick's default, which is on when the sidekick was created or adopted, unless the person turned it off.
+- `purposeText` (up to 600 characters) is the scope's own purpose: "en este proyecto, cuidá que nadie apruebe un spec sin AC".
+- `places` limits which harness places the sidekick answers in this scope.
+- `purposeText` goes into the per-turn context (§5), not into the sidekick's `AGENTS.md`, so its cached prefix stays the same across scopes.
+
+### 2a.5 Harness places
+
+```ts
+sidekick: {
+  places: [
+    { id: "terminal", label: "Terminal", description: "Output of an agent's CLI session; flag errors the person may miss." },
+  ],
+},
+```
+
+- The harness UI calls `client.sidekick.ask(place, input)`, with `input` a string of up to 4,000 characters.
+- The core routes the call as in §2a.3, among the candidates with that place: a `custom` purpose listing `place:terminal`, or a scope record whose `places` names it.
+- The answer comes back as a card in the panel, and also to the harness as `{ sidekick, text } | null`.
+- It follows the shared cap.
+
+### 2a.6 Import (D13)
+
+- **Where:** Settings › Sidekicks › "Importar".
+- **Two ways in:**
+  - **Paste** the text;
+  - **or pick files** with the system picker. The main process refuses any path inside `~/.claude` or `~/.codex`, resolved through links: "Estos archivos son de la configuración de un motor. Copiá o pegá su contenido."
+- **Conversion.**
+  - One `sidekick`-process turn, with no tools, gets the text and the core's conversion brief.
+  - It returns `{ name, personality, purposes, learned: string[] }`, parsed with zod.
+  - What is not rules or a profile (a task queue, logs) is ignored, and listed as "No se importó: …".
+- **Confirmation.**
+  - The person sees the result, editable, with the copy notice: "Es una copia: los cambios en el original no llegan acá."
+  - A required checkbox: "Entiendo que es una copia".
+  - Confirming creates the sidekick, and the learned items are added as shared items with `source: "person"`.
+- **Source changed.** For files, `source` keeps the paths and a hash. At app start, if the hash changed, Settings shows "El original cambió · Traer cambios", which runs the conversion again and shows a diff to confirm.
+
+### 2a.7 Presets (D14)
+
+```ts
+sidekick: {
+  presets: [
+    { name: "Guardián", mark: "🛡️", personality: "…", purposes: [{ id: "process-guard" }, { id: "focus" }] },
+  ],
+},
+```
+
+- **When they are offered:** the first time the person opens the Sidekick panel, or in Settings › Sidekicks › "Sugeridos por el harness".
+- **Adopting one** copies it into the person's sidekicks. A later harness update never changes an adopted copy.
 
 ## 3. Manifest
 
@@ -49,10 +169,19 @@ Marco confirmed these on 2026-10-25.
 sidekick: {
   default: "on",                                   // "on" | "off": the state for a new profile
   tips: "Essays: one section per task. Claims need a source. APA style unless a decision says otherwise.",
+  // or per purpose: tips: { "prompt-coach": "…", mentor: "…" }
   actions: { "draft-section": "auto", "free-chat": "auto", "export": "off" },   // "auto" | "always" | "off"
   checks: { minWords: 6 },                         // local-check thresholds (§4.1)
+  places: [ /* §2a.5 */ ],
+  presets: [ /* §2a.7 */ ],
 },
 ```
+
+- **Without `presets`,** a new profile gets one sidekick, "Sidekick", with the `prompt-coach` and `focus` purposes and a neutral personality: the single sidekick of the first version of this spec.
+- **Checks** (in addition to the ones below):
+  - place ids follow the action-id pattern and are unique;
+  - preset purposes are known ids, or `custom` with a `text` and known moments;
+  - personalities stay within 1,500 characters.
 
 - **Without `sidekick`:** Sidekick is available, default `off`, with no tips.
 - **`tips`** are domain hints appended to Sidekick's brief, within `SIDEKICK_TIPS_TOKENS_WARN` (300) tokens. They are English, like every manifest text (`2026-10-25-language-on-demand-design.md`).
@@ -144,6 +273,13 @@ Their buttons call existing app paths:
 
 ## 5. The Sidekick session
 
+- **Several sidekicks (2026-10-27).** One session per sidekick and task, opened the first time that sidekick speaks in the task. Its working folder is `.harness/sidekick/<sidekick id>/`, holding its own `AGENTS.md`:
+  - the core's rules;
+  - its personality and purposes;
+  - the harness `tips` (the per-purpose ones for its purposes);
+  - the shared learned items.
+
+  The scope's `purposeText` goes into the per-turn context. The rest of this section applies to each sidekick's session.
 - **One Sidekick session per task**, opened at the first Sidekick turn and closed when the task closes. It is reused for every moment, so the cached prefix pays once. This matters on Codex, where the prefix alone is about 15k tokens (plan 3c, spike S7).
   - It is a second `Transport` next to the task's, with its own session id.
   - Claude: one `claude -p --resume` process per turn, as `ClaudeCliTransport` does today.
@@ -176,8 +312,9 @@ Their buttons call existing app paths:
 - Every card outcome is appended to `<profile folder>/.harness/sidekick/events.jsonl`:
 
   ```ts
-  { at, task, scope, action, moment: "pre" | "after" | "heads-up", kind, outcome: "used" | "edited" | "sent-anyway" | "dismissed" | "muted" | "timeout", confidence }
+  { at, task, scope, action, sidekick, moment: "pre" | "after" | "heads-up" | "before-approve" | "phase-change" | "daily" | "place", kind, outcome: "used" | "edited" | "sent-anyway" | "dismissed" | "muted" | "timeout", confidence }
   ```
+- **Per sidekick (D12).** Thresholds (§6.2) and muting (§6.3) are computed per `sidekick` and `kind`: ignoring the mentor never quiets the prompt coach. The learned items (§6.4) are shared by every sidekick.
 - Like `usage.jsonl`, it is not tracked by the history, never leaves the machine, and is trimmed to the last 2000 lines.
 
 ### 6.2 Thresholds per kind (free)
@@ -218,6 +355,11 @@ Their buttons call existing app paths:
 
 ## 7. UI
 
+- **Several sidekicks (2026-10-27).**
+  - The panel head shows the mark and name of the sidekick that spoke last.
+  - A row of small marks shows which sidekicks are on in this scope.
+  - Every card names who speaks.
+  - The top-bar toggle turns all of them off or on, and each one can be turned off from its mark.
 - **Top bar.** A Sidekick toggle button with a state dot (filled when on, empty when off).
 - **Right column.**
   - The Sidekick panel is 330 px. Its head holds the mark, the name and the state: Watching · Reading your prompt… · Has a suggestion · N heads-ups · Off.
@@ -248,6 +390,15 @@ Their buttons call existing app paths:
   - "What Sidekick learned".
 
   The values live in the `sidekick` collection, so each profile has its own.
+- **Several sidekicks (2026-10-27).** The tab is named **Settings › Sidekicks** and adds:
+  - the list of sidekicks, ordered by drag (the order decides who speaks, D11);
+  - create and edit: name, mark, personality, purposes, and for a `custom` purpose its text and moments;
+  - "Importar" (§2a.6) and "Sugeridos por el harness" (§2a.7);
+  - per sidekick, its muted kinds and its share of the week's spend;
+  - "Lo que aprendieron de vos", shared (§6.4).
+
+  Each scope gets "Sidekicks de este proyecto" (or the scope's label) in the scope's own settings: one switch per sidekick, its `purposeText`, and its places (§2a.4).
+- **Usage.** `usage.jsonl` lines also carry `sidekick: <id>`. The cap per task is shared by every sidekick.
 - **Usage.**
   - Sidekick turns are logged in `usage.jsonl` with `process: "sidekick"`, and `phase` set to `pre`, `after` or `learn`. This is a new field on `UsageMeta` in `packages/shell/src/main/usage-log.ts`.
   - Settings › Usage can split Sidekick's spend from the task's.
@@ -262,6 +413,8 @@ Their buttons call existing app paths:
 | Harness settings | the deferred `AGENTS.md` rewrite pattern, the Settings tab pattern |
 | Task phases | the phase goal, off-phase checks |
 | Input blocks | free-text fields of input blocks are reviewed like the composer (pre-send only) |
+| Document review (`2026-10-27-document-review-and-focus-design.md`) | the `before-approve` moment; Sidekick heads-ups pause in focus mode |
+| Parallel tasks (`2026-10-27-parallel-tasks-and-jobs-design.md`) | the `focus` heads-ups about waiting tasks; jobs never get a sidekick |
 
 ## 10. Delivery slices
 
@@ -279,6 +432,24 @@ Their buttons call existing app paths:
    - `events.jsonl`, the thresholds per kind and muting.
    - The profile update at task close.
    - "What Sidekick learned" in Settings.
+
+4. **Several sidekicks (2026-10-27).**
+   - Sidekick records, the order and routing per moment (§2a.3), one session per sidekick, the shared cap.
+   - Per-sidekick thresholds and muting.
+   - The scope records and their settings.
+   - The `focus`, `process-guard`, `mentor` and `daily-summary` purposes, and `custom`.
+   - The `before-approve`, `phase-change` and `daily` moments.
+5. **Places, presets and import.** `client.sidekick.ask`, `presets`, import by paste or picker with the `~/.claude` / `~/.codex` refusal, the copy confirmation, "El original cambió".
+
+Tests added by slices 4–5:
+- routing: order, a flag routed to `prompt-coach`, no candidate;
+- the shared cap;
+- thresholds and muting per sidekick, with learned items shared;
+- `before-approve` waiting and ⌘⏎;
+- `daily` once per day;
+- `client.sidekick.ask` with and without a candidate;
+- import: the picker refusing `~/.claude` (also through a link), confirmation needing the checkbox, "El original cambió" after a hash change;
+- E2E with two sidekicks, one speaking before send and the other before approve.
 
 ## 11. Language
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MAX, type MdBlock, type Piece, checkPieces, cutBlocks, estimateTokens } from "../src";
+import { MAX, type MdBlock, type Piece, checkPieces, cutBlocks, cutRows, estimateTokens } from "../src";
 
 const piece = (md: string, path = "A", extra: Partial<Piece> = {}): Piece => ({ path, md, location: "p.1", pages: [1], ...extra });
 const prose = (n: number) => Array.from({ length: n }, (_, i) => `Sentence number ${i} explains one idea clearly.`).join(" ");
@@ -82,5 +82,42 @@ describe("checkPieces (material spec §6.1)", () => {
     const r = checkPieces([piece(`${running}\n\n${prose(30)}`), piece(`${running}\n\n${prose(30)}`), piece(`${running}\n\n${prose(30)}`), piece(prose(30))]);
     expect(r.flags.slice(0, 3).every((f) => f.includes("leftover"))).toBe(true);
     expect(r.flags[3]).not.toContain("leftover");
+  });
+
+  it("tables and code are structure, not noise: a numeric sheet and a JSON fragment get no flags", () => {
+    const header = "| Width | Height | Area |\n|---|---|---|";
+    const numbers = (from: number) => Array.from({ length: 30 }, (_, i) => `| ${from + i}.5 | ${from + i}.25 | ${(from + i) * 9} |`).join("\n");
+    const sheet = cutRows({ name: "Data", header, columns: ["Width", "Height", "Area"], rows: Array.from({ length: 300 }, (_, i) => ({ md: `| ${i}.5 | ${i}.25 | ${i * 9} |`, loc: `Data!A${i + 2}:C${i + 2}` })) });
+    expect(sheet.length).toBeGreaterThanOrEqual(3);
+    expect(checkPieces(sheet).flags.every((f) => f.length === 0)).toBe(true);
+    expect(checkPieces([piece(`${header}\n${numbers(1)}`, "Data"), piece(`${header}\n${numbers(40)}`, "Data"), piece(`${header}\n${numbers(80)}`, "Data")]).flags).toEqual([[], [], []]);
+    const json = (n: number) => ["```json", "{", ...Array.from({ length: 20 }, (_, i) => `  "key${n}_${i}": [1.5, 2.25, {"a": null}],`), '  "end": {}', "}", "```"].join("\n");
+    expect(checkPieces([piece(`## A\n\n${json(1)}`, "A"), piece(`## B\n\n${json(2)}`, "B"), piece(`## C\n\n${json(3)}`, "C")]).flags).toEqual([[], [], []]);
+    // A replacement character inside a fence is still garbled.
+    expect(checkPieces([piece(`${json(1)}\n\n�`), piece(prose(30)), piece(prose(30))]).flags[0]).toContain("garbled");
+  });
+
+  it("size: a healthy file of about two TARGETs in two fragments is not flagged", () => {
+    const r = checkPieces([piece(`## A\n\n${prose(45)}`, "A"), piece(`## B\n\n${prose(45)}`, "B")]);
+    expect(r.sourceIssues).toEqual([]);
+    expect(r.flags).toEqual([[], []]);
+  });
+
+  it("fenced lines are code: no leftover, no reading-order; an escaped bar is not a column", () => {
+    const code = "```py\nimport numpy as np\n\nvalue = compute(x)\n\nresult = value * 2\n\nprint(result)\n```";
+    const r = checkPieces([piece(`${prose(10)}\n\n${code}`), piece(`${prose(10)}\n\n${code}`, "B"), piece(`${prose(10)}\n\n${code}`, "C")]);
+    expect(r.flags).toEqual([[], [], []]);
+    const escaped = "| Expression | Meaning |\n|---|---|\n| a \\| b | a or b |\n| a & b | a and b |";
+    expect(checkPieces([piece(escaped), piece(prose(30)), piece(prose(30))]).flags[0]).not.toContain("table");
+  });
+
+  it("no-structure: a long file with only a title; a long sheet is structured by its rows", () => {
+    const titled = checkPieces(Array.from({ length: 6 }, () => piece(prose(60), "My notes")));
+    expect(titled.sourceIssues).toContain("The file has no headings.");
+    expect(titled.flags.every((f) => f.includes("no-structure"))).toBe(true);
+    const header = "| Name | Note |\n|---|---|";
+    const rows = Array.from({ length: 600 }, (_, i) => ({ md: `| Student ${i} | Passed the second exam well |`, loc: `S!A${i + 2}:B${i + 2}` }));
+    const sheet = checkPieces(cutRows({ name: "S", header, columns: ["Name", "Note"], rows }));
+    expect(sheet.sourceIssues).not.toContain("The file has no headings.");
   });
 });

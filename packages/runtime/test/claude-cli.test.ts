@@ -444,3 +444,28 @@ describe("reference folders", () => {
     expect(disallowedTools({ edit: "none", exec: false, web: false }, ["/r"])).toContain("Write(//r/**)");
   });
 });
+
+describe("claudeArgs noTools (sidekick spec §5)", () => {
+  it("D0: without noTools the argv is exactly the old one", () => {
+    const args = claudeArgs({ session: { id: "abc", started: false }, mcp: [uiServer], permissions });
+    expect(args).toContain("--allowedTools");
+    expect(args).not.toContain("--tools");
+  });
+
+  it("passes no tools, denies every built-in and loads no MCP server", () => {
+    const args = claudeArgs({ session: { id: "abc", started: true }, mcp: [], permissions: { edit: "none", exec: false, web: false }, noTools: true });
+    expect(args[args.indexOf("--tools") + 1]).toBe("");
+    expect(args).not.toContain("--allowedTools");
+    const denied = args[args.indexOf("--disallowedTools") + 1].split(",");
+    for (const t of ["Read", "Glob", "Grep", "Edit", "Write", "Bash", "WebSearch", "WebFetch", "Task", "TodoWrite"]) expect(denied).toContain(t);
+    expect(args).toContain("--strict-mcp-config");
+    expect(JSON.parse(args[args.indexOf("--mcp-config") + 1])).toEqual({ mcpServers: {} });
+    expect(args).toContain("--resume");
+    expect(args[args.indexOf("--setting-sources") + 1]).toBe("project");
+  });
+
+  it("refuses MCP servers or reference folders with noTools", () => {
+    expect(() => claudeArgs({ session: { id: "a", started: false }, mcp: [uiServer], permissions, noTools: true })).toThrow(/no-tools/);
+    expect(() => claudeArgs({ session: { id: "a", started: false }, mcp: [], permissions, references: ["/x"], noTools: true })).toThrow(/no-tools/);
+  });
+});

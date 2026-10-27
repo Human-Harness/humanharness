@@ -70,14 +70,30 @@ export function profileArgs(profile: ModelProfile | undefined): string[] {
   return [...(profile.model !== undefined ? ["--model", profile.model] : []), "--effort", profile.effort, "--autocompact", String(profile.cap)];
 }
 
+/** Every built-in Claude Code tool, denied by name in a no-tools session (in case `--tools ""` is ignored). */
+export const ALL_BUILTIN_TOOLS = [
+  "Read", "Glob", "Grep", "Edit", "Write", "MultiEdit", "NotebookEdit", "Bash", "WebSearch", "WebFetch", "TodoWrite", "Task",
+  "AskUserQuestion", "ToolSearch",
+] as const;
+
 /** Arguments for the unmodified official `claude` binary; the prompt goes in via stdin. Never touches credentials or auth settings. */
 export function claudeArgs(
-  o: Pick<TransportOptions, "session" | "mcp" | "permissions" | "persistSession" | "references"> & { profile?: ModelProfile },
+  o: Pick<TransportOptions, "session" | "mcp" | "permissions" | "persistSession" | "references" | "noTools"> & { profile?: ModelProfile },
 ): string[] {
   if (o.session.id.startsWith("-")) throw new Error(`Refusing a session id that reads as a flag: ${JSON.stringify(o.session.id)}`);
+  if (o.noTools && (o.mcp.length > 0 || (o.references ?? []).length > 0)) {
+    throw new Error("A no-tools session takes no MCP servers or reference folders");
+  }
   const mcpServers = Object.fromEntries(
     o.mcp.map((s) => [s.name, { type: "stdio", command: s.command, args: s.args, env: s.env }]),
   );
+  // The non-noTools flags keep their old order: a session without `noTools` runs exactly as before (D0).
+  const tools = o.noTools
+    ? ["--tools", "", "--disallowedTools", ALL_BUILTIN_TOOLS.join(",")]
+    : [
+        "--allowedTools", allowedTools(o.permissions, o.mcp).join(","),
+        "--disallowedTools", disallowedTools(o.permissions, o.references ?? []).join(","),
+      ];
   return [
     "-p",
     "--output-format", "stream-json",
@@ -85,8 +101,7 @@ export function claudeArgs(
     "--include-partial-messages",
     "--setting-sources", "project",
     "--permission-mode", o.permissions.edit === "folder" ? "acceptEdits" : "default",
-    "--allowedTools", allowedTools(o.permissions, o.mcp).join(","),
-    "--disallowedTools", disallowedTools(o.permissions, o.references ?? []).join(","),
+    ...tools,
     "--strict-mcp-config",
     "--mcp-config", JSON.stringify({ mcpServers }),
     ...(o.references ?? []).flatMap((dir) => ["--add-dir", dir]),

@@ -5,7 +5,7 @@ import { type Locales, createI18n } from "@humanharness/i18n";
 import { ScopePicker } from "./ScopePicker";
 import { ChatView, type SendFn } from "./ChatView";
 import { TopBar } from "./chrome";
-import { type AppState, type EngineStatus, type HarnessClient, type LimitWindow, engineProblem, isConfigured } from "./client";
+import { type AppState, type EngineStatus, type HarnessClient, type LimitWindow, type SetupStepsState, engineProblem, isConfigured } from "./client";
 import { useFolderMove } from "./BackupNotice";
 import { Home } from "./Home";
 import { shownLanguage, systemLanguage } from "./language";
@@ -35,6 +35,8 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
   const [status, setStatus] = useState<EngineStatus | null>(null);
   const [checkFailed, setCheckFailed] = useState(false);
   const [limits, setLimits] = useState<LimitWindow[] | null>(null);
+  /** The harness's setup steps' state (setup-steps spec §4): Home waits for it before it offers Start. */
+  const [steps, setSteps] = useState<SetupStepsState | null>(null);
   /** Harnesses with scopes: the open scope; the work screen's chat is that scope's. */
   const [openScope, setOpenScope] = useState<string | null>(null);
   const hasScopes = Boolean(state?.scopes);
@@ -58,6 +60,31 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
       off();
     };
   }, [client, hasScopes]);
+  const hasSetupSteps = Boolean(state?.setup);
+  const folder = state?.config.folder;
+  // Read again when the folder changes (its own setup.json) and on every screen change (the setup screen moved it on).
+  useEffect(() => {
+    if (!hasSetupSteps) return;
+    let live = true;
+    let seen = false;
+    const off = client.setupSteps.onChange((s) => {
+      seen = true;
+      if (live) setSteps(s);
+    });
+    client.setupSteps.get().then(
+      (s) => {
+        if (live && !seen) setSteps(s);
+      },
+      // Unknown: nothing blocks (a failed read must never lock the person out).
+      () => {
+        if (live && !seen) setSteps({ steps: {}, blocking: [] });
+      },
+    );
+    return () => {
+      live = false;
+      off();
+    };
+  }, [client, hasSetupSteps, folder, screen]);
   /** Moving the folder: kept here so a move outlives Settings closing or a tab change. */
   const move = useFolderMove(client, setState);
   // Read through a ref so inline `locales` objects don't re-run the load.
@@ -202,6 +229,7 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
             status={status}
             checkFailed={checkFailed}
             limits={limits}
+            steps={steps}
             onStart={() => setScreen("work")}
             onSetup={() => setScreen("setup")}
             onSettings={() => setSettings("general")}

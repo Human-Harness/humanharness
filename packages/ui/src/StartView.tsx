@@ -33,7 +33,8 @@ export function StartView({
 }) {
   const { t } = useTranslation();
   const path = (state.path ?? []).filter((id) => state.actions[id]);
-  const ids = [...path, ...Object.keys(state.actions).filter((id) => !path.includes(id))];
+  // An interview step's action is no topic (setup-steps spec §3).
+  const ids = [...path, ...Object.keys(state.actions).filter((id) => !path.includes(id) && !state.actions[id].setup)];
   const suggested = nextInPath(path, undefined, tasks.actions);
   const text = (key: string | undefined, fallback: string) => (key ? t(key, { ns: "harness" }) : fallback);
   return (

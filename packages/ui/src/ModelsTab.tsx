@@ -49,8 +49,8 @@ const withModel = (spec: ModelSpec, model: string | undefined): ModelSpec => {
   return model ? { ...rest, model } : rest;
 };
 
-// Local copy of the material stages' reserved ids (harness-sdk MATERIAL_STAGE_KEYS), in their order.
-const MATERIAL_ROWS = ["material-review", "material-repair", "material-label", "material-sheet", "material-link"] as const;
+// Local copy of the material stages' reserved ids (harness-sdk MATERIAL_STAGE_KEYS, tested to match), in their order.
+export const MATERIAL_ROWS = ["material-review", "material-repair", "material-label", "material-sheet", "material-link"] as const;
 
 /**
  * The actions in path order, then the others, then free questions, then (with material, and only when

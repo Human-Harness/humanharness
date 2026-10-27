@@ -1,5 +1,6 @@
 import { Fragment, type ReactNode, useContext, useEffect, useState } from "react";
-import { CitationContext, splitCitations } from "./citations";
+import { useTranslation } from "react-i18next";
+import { CitationContext, plainCitations, splitCitations } from "./citations";
 
 /**
  * A safe Markdown subset for the agent's answers: paragraphs, line breaks, inline code, bold, italics,
@@ -122,6 +123,7 @@ function fadingWords(text: string): ReactNode[] {
 /** `[[frag:<id>]]` (material spec §9): "<source>, <location>", which opens the original; text when there is no such fragment. */
 function Citation({ id }: { id: string }) {
   const cite = useContext(CitationContext);
+  const { t } = useTranslation();
   const [label, setLabel] = useState<string | null | undefined>(undefined);
   useEffect(() => {
     let live = true;
@@ -133,10 +135,12 @@ function Citation({ id }: { id: string }) {
       live = false;
     };
   }, [cite, id]);
-  if (!cite || label === null) return <>{`[[frag:${id}]]`}</>;
+  // Until the label arrives, or when there is none, the marker stays plain text: no empty button to land on.
+  if (!cite || !label) return <>{`[[frag:${id}]]`}</>;
+  const opens = t("material.openOriginal");
   return (
-    <button type="button" className="hh-citation" onClick={() => cite.open(id)}>
-      {label ?? "…"}
+    <button type="button" className="hh-citation" title={opens} aria-description={opens} onClick={() => cite.open(id)}>
+      {label}
     </button>
   );
 }
@@ -247,19 +251,22 @@ function plainInline(nodes: Inline[]): string {
     .join("");
 }
 
-/** The same text without Markdown marks, for screen readers. */
-export function markdownToPlain(text: string): string {
+/**
+ * The same text without Markdown marks, for screen readers. Citations `[[frag:<id>]]` (outside code blocks) are read
+ * as their label when `cite` knows it, else left out (material spec §9).
+ */
+export function markdownToPlain(text: string, cite?: (id: string) => string | undefined): string {
   return parseBlocks(text)
     .map((b) => {
       switch (b.t) {
         case "p":
-          return b.lines.map((l) => plainInline(parseInline(l))).join("\n");
+          return plainCitations(b.lines.map((l) => plainInline(parseInline(l))).join("\n"), cite);
         case "h":
-          return plainInline(parseInline(b.text));
+          return plainCitations(plainInline(parseInline(b.text)), cite);
         case "ul":
-          return b.items.map((item) => item.map((l) => plainInline(parseInline(l))).join("\n")).join("\n");
+          return plainCitations(b.items.map((item) => item.map((l) => plainInline(parseInline(l))).join("\n")).join("\n"), cite);
         case "ol":
-          return b.items.map((item, j) => `${b.start + j}. ${item.map((l) => plainInline(parseInline(l))).join("\n")}`).join("\n");
+          return plainCitations(b.items.map((item, j) => `${b.start + j}. ${item.map((l) => plainInline(parseInline(l))).join("\n")}`).join("\n"), cite);
         case "pre":
           return b.text;
       }

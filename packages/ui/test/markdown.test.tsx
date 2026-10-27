@@ -137,6 +137,31 @@ describe("citations (material spec §9)", () => {
     expect(screen.queryByRole("button")).toBeNull();
   });
 
+  it("plain text until the label arrives; the button says it opens the original", async () => {
+    let arrive: (l: string) => void = () => {};
+    const label = new Promise<string>((r) => {
+      arrive = r;
+    });
+    await renderIn(
+      "en",
+      <CitationContext.Provider value={{ label: () => label, open: () => {} }}>
+        <Markdown text="Same [[frag:ch2-001]]." />
+      </CitationContext.Provider>,
+    );
+    expect(screen.queryByRole("button")).toBeNull();
+    expect(screen.getByText("[[frag:ch2-001]]", { exact: false })).toBeTruthy();
+    arrive("ch2.pdf, p.1");
+    const button = await screen.findByRole("button", { name: "ch2.pdf, p.1" });
+    expect(button.getAttribute("title")).toBe("Open the original");
+    expect(button.getAttribute("aria-description")).toBe("Open the original");
+  });
+
+  it("read aloud: a citation is its label when known, else left out; code keeps it", () => {
+    const text = "Same amount [[frag:ch2-001]]. Also [[frag:ch3-002]].\n\n```\n[[frag:ch2-001]]\n```";
+    expect(markdownToPlain(text, (id) => (id === "ch2-001" ? "ch2.pdf, p.4" : undefined))).toBe("Same amount (ch2.pdf, p.4). Also.\n\n[[frag:ch2-001]]");
+    expect(markdownToPlain("See [[frag:ch2-001]].")).toBe("See.");
+  });
+
   it("a citation inside bold; a malformed one stays text", async () => {
     render(
       <CitationContext.Provider value={{ label: async () => "ch2.pdf, p.1", open: () => {} }}>

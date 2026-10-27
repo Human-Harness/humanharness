@@ -309,6 +309,9 @@ describe("questions and results (§6.2, §11)", () => {
     expect(await screen.findByText("Is this table right?")).toBeTruthy();
     expect(screen.getByRole("group", { name: "Is this table right?" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Keep it" })).toBeTruthy();
+    // The question describes each choice to a screen reader.
+    const described = screen.getByRole("button", { name: "Keep it" }).getAttribute("aria-describedby");
+    expect(described && document.getElementById(described)?.textContent).toBe("Is this table right?");
     fireEvent.click(screen.getByRole("button", { name: "Drop it" }));
     fireEvent.click(screen.getByRole("button", { name: "Use it as it is" }));
     await waitFor(() => expect(client.materialCalls).toEqual(["decide:a:a-005:drop", "decide:b:-:use"]));
@@ -349,6 +352,20 @@ describe("questions and results (§6.2, §11)", () => {
     fireEvent.click(found);
     expect(screen.getByText("Two fragments cut mid-sentence")).toBeTruthy();
     expect(screen.getByText("Merged ch2-001 and ch2-002")).toBeTruthy();
+  });
+
+  it("a source waiting for a full review shows what the check found under its card", async () => {
+    await panel(view([src({ status: "pending", notice: "full-review", issues: ["Tables lost their columns"], fixes: [] })]));
+    fireEvent.click(await screen.findByText("What the check found"));
+    expect(screen.getByText("Tables lost their columns")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Check all of it" })).toBeTruthy();
+  });
+
+  it("two questions that read the same both show", async () => {
+    const ask = { question: "Is this right?", choices: ["keep" as const, "drop" as const] };
+    await panel(view([src({ asks: [ask, ask] })]));
+    await screen.findAllByText("Is this right?");
+    expect(screen.getAllByRole("group", { name: "Is this right?" })).toHaveLength(2);
   });
 
   it("nothing found, nothing folded", async () => {

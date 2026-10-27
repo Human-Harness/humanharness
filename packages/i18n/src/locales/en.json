@@ -246,6 +246,7 @@
     "remove": "Remove {{name}}",
     "removeConfirm": "Remove {{name}}? Its file goes to the Trash.",
     "removeYes": "Remove",
+    "openOriginal": "Open the original",
     "linkFailed": "The page couldn't be read. Check the link and try again.",
     "addFailed": "Couldn't add it. Try again.",
     "confirmFailed": "That didn't go through. Try again.",

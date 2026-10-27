@@ -178,6 +178,8 @@ export function ChatView({
   // Set synchronously on send so two quick clicks can't both pass before the live turn renders.
   const busy = useRef(false);
   const wasLive = useRef(false);
+  /** The chat's citation labels (set further down), so the read-aloud answer can name its sources. */
+  const citationsRef = useRef<CitationResolver | null>(null);
   const engineOption = state.engines.find((e) => e.id === state.config.engineId);
   const engine = engineOption?.name ?? state.config.engineId ?? "";
   /** Any harness with actions runs as tasks: topics, a guided path, one task on screen at a time. */
@@ -353,7 +355,7 @@ export function ChatView({
     // "Working…" is announced by the status row itself; clearing lets the final answer be announced afresh.
     if (chat.live && !wasLive.current) setAnnouncement("");
     if (!chat.live && wasLive.current) {
-      setAnnouncement(markdownToPlain(chat.entries.findLast((e) => e.role === "assistant")?.text ?? ""));
+      setAnnouncement(markdownToPlain(chat.entries.findLast((e) => e.role === "assistant")?.text ?? "", (id) => citationsRef.current?.known?.(id)));
       inputRef.current?.focus();
       client.getUsage().then((u) => setEstimates(u.estimates), () => {});
       if (!chat.entries.at(-1)?.error) onTurnOk?.();
@@ -796,9 +798,12 @@ export function ChatView({
   // Material spec §11: the scope's material panel, only when the harness takes material (D0) and a scope is open.
   const materialScope = state.material ? (state.scopes ? openScope : "main") : null;
   // Citations `[[frag:<id>]]` in the chat (§9): drawn only with material and a scope (D0); one label lookup per id.
+  // Keyed by whether there is material, not by the object: every state refresh brings a new one, and the cache stays.
+  const withMaterial = Boolean(state.material);
   const citations = useMemo<CitationResolver | null>(() => {
-    if (!state.material || !materialScope) return null;
+    if (!withMaterial || !materialScope) return null;
     const cache = new Map<string, Promise<string | null>>();
+    const known = new Map<string, string>();
     return {
       label: (id) => {
         let label = cache.get(id);
@@ -808,12 +813,19 @@ export function ChatView({
             () => null,
           );
           cache.set(id, label);
+          // A fragment not there yet (still converting, or a failed lookup) is asked again next time.
+          label.then((l) => {
+            if (l === null) cache.delete(id);
+            else known.set(id, l);
+          });
         }
         return label;
       },
       open: (id) => void client.material.open(materialScope, id).catch(() => undefined),
+      known: (id) => known.get(id),
     };
-  }, [client, state.material, materialScope]);
+  }, [client, withMaterial, materialScope]);
+  citationsRef.current = citations;
   const Panel = materialPanel ?? MaterialPanel;
   const material =
     state.material && materialScope && !slim ? (

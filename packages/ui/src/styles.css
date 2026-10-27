@@ -361,6 +361,9 @@ select:focus-visible { outline: 2px solid var(--hh-ink); outline-offset: 2px; }
 .hh-material-grounding label { display: flex; gap: 6px; align-items: center; }
 .hh-citation { height: auto; padding: 0; border: none; background: none; color: var(--hh-ink); font: inherit; text-decoration: underline; cursor: pointer; }
 .hh-material-source { display: grid; gap: 6px; }
+.hh-material-remove { width: 22px; height: 22px; padding: 0; border: none; border-radius: 6px; background: transparent; color: var(--hh-muted); font-size: 15px; line-height: 1; vertical-align: middle; }
+.hh-material-remove:hover:not(:disabled) { background: var(--hh-segment); color: var(--hh-ink); }
+.hh-material-confirm button { height: 24px; padding: 0 8px; font-size: 12px; }
 .hh-material-found { padding-left: 6px; font-size: 12px; }
 .hh-material-found summary { cursor: pointer; color: var(--hh-muted); }
 .hh-material-found ul { margin: 4px 0 0; padding-left: 18px; }

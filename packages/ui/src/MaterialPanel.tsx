@@ -207,12 +207,14 @@ function AskCard({
     );
   };
   const off = disabled || busy;
+  // Each choice's name is short ("Keep it"): the question describes it to a screen reader.
+  const questionId = useId();
   return (
     <div className="hh-material-card" role="group" aria-label={ask.question} aria-busy={busy || undefined}>
-      <p>{ask.question}</p>
+      <p id={questionId}>{ask.question}</p>
       <div className="hh-material-actions">
         {ask.choices.map((c) => (
-          <button key={c} type="button" disabled={off} onClick={() => answer(c)}>
+          <button key={c} type="button" disabled={off} aria-describedby={questionId} onClick={() => answer(c)}>
             {t(`material.choice.${c}`)}
           </button>
         ))}
@@ -234,25 +236,32 @@ function AskCard({
   );
 }
 
-/** Under a source's status line: its questions, then what the check found and fixed, folded (§11). */
-function SourceDetails({ client, scope, source, disabled }: { client: HarnessClient; scope: string; source: MaterialSourceView; disabled: boolean }) {
+/** What the check found and fixed, folded (§11). Nothing when there is nothing. */
+function FoundList({ source }: { source: MaterialSourceView }) {
   const { t } = useTranslation();
   const found = [...source.issues, ...source.fixes];
+  if (found.length === 0) return null;
+  return (
+    <details className="hh-material-found">
+      <summary>{t("material.found")}</summary>
+      <ul>
+        {found.map((line, i) => (
+          <li key={`${i}:${line}`}>{line}</li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
+/** Under a source's status line: its questions, then what the check found and fixed. */
+function SourceDetails({ client, scope, source, disabled }: { client: HarnessClient; scope: string; source: MaterialSourceView; disabled: boolean }) {
   return (
     <>
-      {source.asks.map((a) => (
-        <AskCard key={`${a.fragment ?? "-"}:${a.question}`} client={client} scope={scope} source={source} ask={a} disabled={disabled} />
+      {source.asks.map((a, i) => (
+        // Two questions may read the same: the index keeps their keys apart.
+        <AskCard key={`${i}:${a.fragment ?? "-"}:${a.question}`} client={client} scope={scope} source={source} ask={a} disabled={disabled} />
       ))}
-      {found.length > 0 && (
-        <details className="hh-material-found">
-          <summary>{t("material.found")}</summary>
-          <ul>
-            {found.map((line, i) => (
-              <li key={`${i}:${line}`}>{line}</li>
-            ))}
-          </ul>
-        </details>
-      )}
+      <FoundList source={source} />
     </>
   );
 }
@@ -466,7 +475,11 @@ export function MaterialPanel({ client, scope, info, disabled }: MaterialPanelPr
       ))}
       {sources.map((s) =>
         s.status === "pending" && view ? (
-          <WaitingCard key={s.id} client={client} scope={scope} source={s} view={view} maxPages={info.maxPages} disabled={disabled} />
+          <div key={s.id} className="hh-material-source">
+            <WaitingCard client={client} scope={scope} source={s} view={view} maxPages={info.maxPages} disabled={disabled} />
+            {/* A full review is asked for by what the sample found: the person sees it before deciding. */}
+            {s.notice === "full-review" && <FoundList source={s} />}
+          </div>
         ) : (
           <div key={s.id} className="hh-material-source">
             <p className="hh-material-line">

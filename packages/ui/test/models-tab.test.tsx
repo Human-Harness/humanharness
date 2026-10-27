@@ -1,9 +1,10 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { useState } from "react";
+import { MATERIAL_STAGE_KEYS } from "@humanharness/harness-sdk";
 import { afterEach, describe, expect, it } from "vitest";
 import type { AppConfig, AppState } from "../src/client";
-import { ModelsTab, taskRows } from "../src/ModelsTab";
+import { MATERIAL_ROWS, ModelsTab, taskRows } from "../src/ModelsTab";
 import { FakeClient } from "./fake-client";
 import { renderIn } from "./render";
 
@@ -178,6 +179,10 @@ describe("ModelsTab › Tasks", () => {
 });
 
 describe("taskRows", () => {
+  it("the material rows are the SDK's stage keys, in order", () => {
+    expect([...MATERIAL_ROWS]).toEqual([...MATERIAL_STAGE_KEYS]);
+  });
+
   it("material stages are rows only when the harness takes material (D0)", () => {
     const base = { actions: { study: { label: "Study" } } } as unknown as AppState;
     const q = { key: "questions", label: "Questions" };

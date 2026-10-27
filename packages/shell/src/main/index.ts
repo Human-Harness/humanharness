@@ -97,7 +97,7 @@ import { type MoveDeps, guardedMove, moveFolder, moveJournal, precheckMove, reco
 import { type ResolvedReference, displayPath, resolveReferences, usableReferences } from "./references";
 import { respondHandler } from "./respond-ipc";
 import { SettingsController } from "./settings";
-import { SetupSteps, setupStepViews } from "./setup-steps";
+import { SetupSteps, recordSetup, setupStepViews } from "./setup-steps";
 import { TaskManager } from "./task-manager";
 import { historyView, isSha } from "./history-view";
 import { RestoreGuard, lastOpened } from "./restore-guard";
@@ -843,6 +843,8 @@ function registerIpc() {
         .then(scopesChanged)
         .catch((err: unknown) => console.error("Could not prepare the scopes", err));
     }
+    // Set up now (or in a new folder): its setup.json is on file before the window can start a task (the interview's).
+    await recordSetup(setupCtl, async () => (await validConfig()) !== null);
     if (patch.appearance) applyAppearance(patch.appearance);
     if (patch.textSize) applyTextSize(patch.textSize);
     return appState();
@@ -1337,6 +1339,8 @@ if (primary) {
     references = resolveReferences(harness.folder.references, { harnessDir: __HARNESS_DIR__, home: os.homedir(), packaged: app.isPackaged });
     nativeTheme.themeSource = (await config.load()).appearance ?? "system";
     nativeTheme.on("updated", () => window?.setBackgroundColor(nativeTheme.shouldUseDarkColors ? PAPER.dark : PAPER.light));
+    // Before any task: a configured folder with no setup.json is recorded now, fresh or as set up before (D0: no `setup`, nothing).
+    await recordSetup(setupCtl, async () => (await validConfig()) !== null);
     registerIpc();
     // A task left open by an earlier run can't continue: its session is gone.
     void tasks.interrupt().catch((err: unknown) => console.error("Could not settle the last task", err));

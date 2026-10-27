@@ -1,7 +1,7 @@
 import { type ComponentType, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { CheckIcon, TopBar } from "./chrome";
-import { type AppState, type HarnessClient, type SetupStepProps, type SetupStepResult, type SetupStepView, type TaskView, isConfigured } from "./client";
+import { type AppState, type HarnessClient, type SetupStepProps, type SetupStepResult, type SetupStepView, type SetupStepsState, type TaskView, isConfigured } from "./client";
 import { EngineTab } from "./EngineTab";
 import { FolderStep } from "./FolderStep";
 import { systemLanguage } from "./language";
@@ -91,15 +91,16 @@ export function SetupFlow({ client, state, onChange, onCancel, onStart, startAt,
   // The steps not done yet (from the one opened at); skipped ones are offered again from Settings, never here. Read
   // once the folder is known: a folder chosen on the first step has its own setup.json, so nothing is read before it.
   const folder = state.config.folder;
+  const all = harnessSteps.map((s) => s.id);
+  const from = (ids: string[]) => (opened ? ids.slice(Math.max(0, ids.indexOf(opened))) : ids);
+  const queueOf = (s: SetupStepsState) => from(all.filter((id) => id === opened || (Object.hasOwn(s.steps, id) ? s.steps[id] : "missing") === "missing"));
   useEffect(() => {
     if (fixed !== null || !folder) return;
     let live = true;
     setQueue(null);
-    const all = harnessSteps.map((s) => s.id);
-    const from = (ids: string[]) => (opened ? ids.slice(Math.max(0, ids.indexOf(opened))) : ids);
     client.setupSteps.get().then(
       (s) => {
-        if (live) setQueue(from(all.filter((id) => id === opened || (Object.hasOwn(s.steps, id) ? s.steps[id] : "missing") === "missing")));
+        if (live) setQueue(queueOf(s));
       },
       () => {
         if (live) setQueue(from(all));
@@ -164,18 +165,22 @@ export function SetupFlow({ client, state, onChange, onCancel, onStart, startAt,
       ...(selection.engineId !== state.config.engineId ? { engineId: selection.engineId } : {}),
       ...(state.config.language ? {} : { language: systemLanguage() }),
     };
+    let ids = run;
     if (Object.keys(patch).length > 0) {
       setSaving(true);
       try {
         onChange(await client.saveConfig(patch));
+        // Now set up: the folder's setup.json is recorded (main does it on save), so read the steps again from it.
+        if (fixed === null) ids = await client.setupSteps.get().then(queueOf, () => run);
       } catch {
         setSaveError(true);
         return;
       } finally {
         setSaving(false);
       }
+      setQueue(ids);
     }
-    setStep(run.length > 0 ? stepOf(run[0]) : "done");
+    setStep(ids.length > 0 ? stepOf(ids[0]) : "done");
   };
 
   if (step === "done") {

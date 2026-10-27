@@ -1088,7 +1088,7 @@ export function ChatView({
               )}
             </form>
           )}
-          {startView?.hint && <p className="hh-composer-hint">{t(startView.hint, { ns: "harness" })}</p>}
+          {startView?.hint && !slim && <p className="hh-composer-hint">{t(startView.hint, { ns: "harness" })}</p>}
         </Main>
         {renderSide && !slim && <aside className="hh-side">{renderSide(chat.blockState, sendFromHarness)}</aside>}
       </div>

@@ -67,7 +67,7 @@ For an action with phases, the prompt line adds `>phase <id> to change part`, an
 
 ### Setup steps
 
-`setup` adds the harness's own steps to the setup screen (`docs/architecture/setup.md`): a `form` for a few fields of a one-record collection or some settings, an `interview` when the answers need a conversation (an action whose task fills a one-record collection through the data tools), and a `component` for anything else (the harness's own React step, passed to `HarnessApp setupSteps`). `check` warns with `setup-component`, `setup-mock` (only once `mock/` has recordings) and `setup-context`. `run` skips setup steps: an interview's action still runs like any action, but without the core's interview section.
+`setup` adds the harness's own steps to the setup screen (`docs/architecture/setup.md`): a `form` for a few fields of a one-record collection or some settings, an `interview` when the answers need a conversation (an action whose task fills a one-record collection through the data tools), and a `component` for anything else (the harness's own React step, passed to `HarnessApp setupSteps`). `check` warns with `setup-component`, `setup-mock` (only once `mock/` has recordings) and `setup-context`. `run` skips setup steps, but an interview's action runs as in the app, with the core's interview section in its task's first message.
 
 ## run's report
 

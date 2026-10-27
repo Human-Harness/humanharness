@@ -36,6 +36,54 @@ const script: ClaudeScript = {
   ],
 };
 
+test("a fresh setup: the interview started and left (the app quits) still keeps Home on Set up", async () => {
+  test.setTimeout(300_000);
+  // The folder is saved, the engine isn't: the setup screen starts at the engine.
+  const s = makeSandbox("setup-fresh", { engineId: undefined });
+  const outDir = path.join(shellDir, "out", "setup-fresh");
+  const env: NodeJS.ProcessEnv = { ...process.env, HH_HARNESS_DIR: fixture, HH_OUT_DIR: outDir };
+  delete env.ELECTRON_RUN_AS_NODE;
+  const setupFile = path.join(s.folder, ".harness", "setup.json");
+  const json = (file: string) => (fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf8")) : null);
+  let app: ElectronApplication | undefined;
+  try {
+    execFileSync(path.join(shellDir, "node_modules", ".bin", "electron-vite"), ["build"], { cwd: shellDir, env, stdio: "inherit" });
+    const main = path.join(outDir, "main", "index.js");
+    let launched = await launch(s, { claude: script }, main);
+    app = launched.app;
+    let page = launched.page;
+    await page.getByRole("button", { name: "Set up Tutor" }).click();
+    await page.getByRole("group", { name: "AI engines" }).getByRole("button", { name: /Claude/ }).click();
+    const next = page.getByRole("contentinfo").getByRole("button", { name: "Next" });
+    await expect(next).toBeEnabled();
+    await next.click();
+
+    // Saving the engine recorded the fresh folder, before the interview's task could write tasks.json.
+    await expect(page.getByRole("heading", { name: "Get to know you" })).toBeVisible();
+    expect(json(setupFile)).toEqual({ version: 1, steps: {} });
+    await page.getByRole("button", { name: "Start" }).click();
+    await expect(page.getByText("Listo, ya podés tocar Next.")).toBeVisible();
+    await expect.poll(() => fs.existsSync(path.join(s.folder, ".harness", "tasks.json"))).toBe(true);
+
+    // The person quits before Next: on the next start the required interview still blocks.
+    await app.close();
+    app = undefined;
+    launched = await launch(s, { claude: script }, main);
+    app = launched.app;
+    page = launched.page;
+    await expect(page.getByText("One step left: Get to know you")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Start Tutor" })).toHaveCount(0);
+    expect(json(setupFile)).toEqual({ version: 1, steps: {} });
+  } finally {
+    try {
+      if (app) await closeAndClean(app, s);
+      else fs.rmSync(s.root, { recursive: true, force: true });
+    } finally {
+      fs.rmSync(outDir, { recursive: true, force: true });
+    }
+  }
+});
+
 test("a harness's setup steps: Home waits for the interview, then forms, a component and All set", async () => {
   test.setTimeout(300_000);
   const s = makeSandbox("setup-steps");

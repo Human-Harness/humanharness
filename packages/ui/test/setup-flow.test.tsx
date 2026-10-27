@@ -231,6 +231,18 @@ describe("SetupFlow: the harness's own steps (setup-steps spec §4)", () => {
     expect(client.setupCalls.filter((c) => c.startsWith("complete:"))).toEqual(["complete:ready"]);
   });
 
+  it("saving the engine reads the steps again: the folder's setup.json is on file now", async () => {
+    const client = withSteps(new FakeClient({ language: "en", folder: "/Users/me/Documents/Demo" }));
+    await renderIn("en", <Flow client={client} components={{ ReadyStep }} />);
+    await waitFor(() => expect(next().disabled).toBe(false));
+    expect(client.setupCalls).toEqual(["get"]);
+    // What main recorded on the save: the form was done in this folder before.
+    client.setupState = { steps: { estilo: "done", ready: "missing" }, blocking: ["ready"] };
+    fireEvent.click(next());
+    await screen.findByRole("heading", { name: "Ready check" });
+    expect(client.setupCalls).toEqual(["get", "get"]);
+  });
+
   it("Back from the first harness step goes to the engine", async () => {
     const client = withSteps(new FakeClient({ language: "en", folder: "/Users/me/Documents/Demo", engineId: "claude" }));
     await renderIn("en", <Flow client={client} components={{ ReadyStep }} />);

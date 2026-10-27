@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { HarnessApp } from "../src";
-import type { SetupStepView, SetupStepsState } from "../src/client";
+import type { SetupStepProps, SetupStepView, SetupStepsState } from "../src/client";
 import { Home } from "../src/Home";
 import { StartView } from "../src/StartView";
 import { FakeClient } from "./fake-client";
@@ -72,6 +72,24 @@ describe("Home with setup steps (setup-steps spec §4)", () => {
     expect(await screen.findByText("One step left: Get to know you")).toBeTruthy();
     client.emitSetupSteps({ steps: { conocerte: "done" }, blocking: [] });
     await waitFor(() => expect(screen.queryByText("One step left: Get to know you")).toBeNull());
+  });
+
+  it("Settings' Do it now: the step alone, and its end reopens Settings on the harness's tab", async () => {
+    const client = new FakeClient(configured);
+    client.state = { ...client.state, setup: [{ id: "ready", kind: "component", label: "Ready check", required: false, component: "ReadyStep" }] };
+    client.setupState = { steps: { ready: "skipped" }, blocking: [] };
+    const ReadyStep = ({ done }: SetupStepProps) => (
+      <button type="button" onClick={done}>
+        All good
+      </button>
+    );
+    render(<HarnessApp client={client} setupSteps={{ ReadyStep }} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
+    fireEvent.click(await screen.findByRole("tab", { name: "Setup" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Do it now" }));
+    fireEvent.click(await screen.findByRole("button", { name: "All good" }));
+    await waitFor(() => expect(screen.getByRole("tab", { name: "Setup" }).getAttribute("aria-selected")).toBe("true"));
+    expect(screen.getByRole("dialog")).toBeTruthy();
   });
 
   it("D0: a harness without setup steps never asks for them", async () => {

@@ -56,6 +56,18 @@ export class SetupSteps {
     return this.serial(() => this.current());
   }
 
+  /**
+   * The app just became set up (or started set up): the folder's first read records it at once, and the window hears
+   * the state. A fresh folder is then on file as fresh before any task can write tasks.json (spec §8 Q3).
+   */
+  record(): Promise<SetupStepsState> {
+    return this.serial(async () => {
+      const base = await this.ready();
+      const file = base ? await this.read(base) : null;
+      return file ? this.push(file) : setupState(emptySetup(), this.d.steps);
+    });
+  }
+
   /** A form step's current values: the record's fields it asks for, or the settings' values. {} for anything else. */
   async values(id: unknown): Promise<Record<string, unknown>> {
     const step = this.find(id);
@@ -254,6 +266,19 @@ export class SetupSteps {
     const run = this.writes.then(fn, fn);
     this.writes = run.catch(() => undefined);
     return run;
+  }
+}
+
+/**
+ * Called when the config may have just become valid (its save, the app's start): with a valid config, the folder's
+ * setup is recorded before any task starts. A harness with no `setup` has no controller and writes nothing (D0).
+ */
+export async function recordSetup(ctl: SetupSteps | null, configured: () => Promise<boolean>, log: (message: string, err: unknown) => void = console.error): Promise<void> {
+  if (!ctl) return;
+  try {
+    if (await configured()) await ctl.record();
+  } catch (err) {
+    log("Could not record the setup steps", err);
   }
 }
 

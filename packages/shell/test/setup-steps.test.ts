@@ -5,7 +5,7 @@ import { afterAll, describe, expect, it, vi } from "vitest";
 import { type HarnessSetupStep, type SetupFormStep, defineHarness, setupFormSpec, z } from "@humanharness/harness-sdk";
 import type { SettingsResult, SetupStepsState } from "@humanharness/ui/client";
 import { APP_SCOPE, DataStore, runDataRequest } from "@humanharness/workspace";
-import { SetupSteps, setupStepViews } from "../src/main/setup-steps";
+import { SetupSteps, recordSetup, setupStepViews } from "../src/main/setup-steps";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-steps-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -33,7 +33,15 @@ const harness = defineHarness({
 });
 
 function setup(
-  opts: { steps?: HarnessSetupStep[]; base?: string | null; ranBefore?: boolean | (() => Promise<boolean>); settingFails?: boolean; writeFails?: boolean } = {},
+  opts: {
+    steps?: HarnessSetupStep[];
+    base?: string | null;
+    /** Whether the config is valid yet (the folder only counts once it is); true when absent. */
+    configured?: () => boolean;
+    ranBefore?: boolean | (() => Promise<boolean>);
+    settingFails?: boolean;
+    writeFails?: boolean;
+  } = {},
 ) {
   const folder = opts.base === null ? null : (opts.base ?? fs.mkdtempSync(path.join(root, "f-")));
   const store = folder ? new DataStore(folder, harness.data) : null;
@@ -46,7 +54,7 @@ function setup(
     steps: opts.steps ?? harness.setup!,
     data: harness.data,
     settings: harness.settings,
-    base: async () => folder,
+    base: async () => ((opts.configured?.() ?? true) ? folder : null),
     store: async () => store,
     write: async (request) => {
       if (opts.writeFails) throw new Error("disk full");
@@ -139,6 +147,38 @@ describe("SetupSteps: state", () => {
     expect(done.ok).toBe(true);
     expect(t.file().steps.ready?.state).toBe("done");
     expect((await t.ctl.state()).steps.ready).toBe("done");
+  });
+});
+
+describe("recordSetup: a fresh folder is on file before any task", () => {
+  it("folder → engine → the interview starts and is cancelled: the required step still blocks", async () => {
+    let configured = false;
+    let ran = false;
+    const t = setup({ configured: () => configured, ranBefore: async () => ran });
+    const valid = async () => configured;
+    // The folder is saved, the engine not yet: nothing is read, nothing written.
+    await recordSetup(t.ctl, valid);
+    expect(fs.existsSync(path.join(t.folder!, ".harness", "setup.json"))).toBe(false);
+    // The engine is saved: the config is valid, the fresh folder is recorded as fresh, and the window hears it.
+    configured = true;
+    await recordSetup(t.ctl, valid);
+    expect(t.file()).toEqual({ version: 1, steps: {} });
+    expect(t.pushed.at(-1)?.blocking).toEqual(["conocerte", "ready"]);
+    // The interview's task writes tasks.json; the person cancels (or quits) before its Next.
+    ran = true;
+    expect((await t.ctl.state()).blocking).toEqual(["conocerte", "ready"]);
+    // The app starting again changes nothing.
+    await recordSetup(t.ctl, valid);
+    expect(t.file()).toEqual({ version: 1, steps: {} });
+  });
+
+  it("D0: a harness without setup has no controller and nothing runs; a failure is logged, never thrown", async () => {
+    const configured = vi.fn(async () => true);
+    await recordSetup(null, configured);
+    expect(configured).not.toHaveBeenCalled();
+    const logs: string[] = [];
+    await recordSetup(setup().ctl, async () => Promise.reject(new Error("no config")), (m) => void logs.push(m));
+    expect(logs).toEqual(["Could not record the setup steps"]);
   });
 });
 

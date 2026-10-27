@@ -39,9 +39,12 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
   const [limits, setLimits] = useState<LimitWindow[] | null>(null);
   /** The harness's setup steps' state (setup-steps spec §4): Home waits for it before it offers Start. */
   const [steps, setSteps] = useState<SetupStepsState | null>(null);
-  /** Where the setup screen opens: a harness step (Home's missing one), alone with `only` (Settings' "Do it again"). */
-  const [setupAt, setSetupAt] = useState<{ step?: string; only?: boolean }>({});
-  const openSetup = (at: { step?: string; only?: boolean }) => {
+  /**
+   * Where the setup screen opens: a harness step (Home's missing one), alone with `only` (Settings' "Do it again"),
+   * and the Settings tab its end reopens (`back`).
+   */
+  const [setupAt, setSetupAt] = useState<{ step?: string; only?: boolean; back?: SettingsTab }>({});
+  const openSetup = (at: { step?: string; only?: boolean; back?: SettingsTab }) => {
     setSetupAt(at);
     setScreen("setup");
   };
@@ -237,7 +240,11 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
             client={client}
             state={state}
             onChange={setState}
-            onCancel={() => leaveSetup("home")}
+            onCancel={() => {
+              leaveSetup("home");
+              // Opened from Settings: its end (or Cancel) goes back to the tab it came from.
+              if (setupAt.back) setSettings(setupAt.back);
+            }}
             onStart={() => leaveSetup("work")}
             {...(setupAt.step ? { startAt: setupAt.step } : {})}
             only={setupAt.only === true}
@@ -271,8 +278,9 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
           onChange={setState}
           onClose={closeSettings}
           onSetup={(step?: string) => {
+            const back = settings;
             setSettings(null);
-            openSetup(step ? { step, only: true } : {});
+            openSetup(step ? { step, only: true, back } : {});
           }}
           move={move}
         />

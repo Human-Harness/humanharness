@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { HarnessClient, SidekickLearned } from "../client";
 
@@ -17,6 +17,25 @@ export function LearnedList({ client }: { client: HarnessClient }) {
   const [failed, setFailed] = useState<string | null>(null);
   const [loads, setLoads] = useState(0);
   const reload = useCallback(() => setLoads((n) => n + 1), []);
+  const ids = useId();
+  const confirmTextId = `${ids}-confirm`;
+  const yesRef = useRef<HTMLButtonElement>(null);
+  const forgetAllRef = useRef<HTMLButtonElement>(null);
+  const editRef = useRef<HTMLButtonElement>(null);
+  const firstInputRef = useRef<HTMLInputElement>(null);
+  /** The button that opened the closing view, to focus once it is back (it is not mounted while the view is open). */
+  const back = useRef<"edit" | "forgetAll" | null>(null);
+  const isEditing = editing !== null;
+
+  // Every view switch moves focus into the new view, and back to its opener when it closes (as in HistoryPanel).
+  useEffect(() => {
+    if (confirm) yesRef.current?.focus();
+    else if (isEditing) firstInputRef.current?.focus();
+    else if (back.current) {
+      (back.current === "edit" ? editRef : forgetAllRef).current?.focus();
+      back.current = null;
+    }
+  }, [confirm, isEditing]);
 
   useEffect(() => {
     let live = true;
@@ -42,10 +61,13 @@ export function LearnedList({ client }: { client: HarnessClient }) {
     const changes = Object.entries(editing)
       .map(([id, text]) => ({ id, text: text.trim() }))
       .filter(({ id, text }) => text && items.find((i) => i.id === id)?.text !== text);
+    back.current = "edit";
     setEditing(null);
     if (changes.length) run(() => client.sidekick.editLearned(changes));
   };
 
+  // The first input on screen: the "About you" column comes first.
+  const first = items.find((i) => i.level === "you") ?? items[0];
   const column = (level: Level, label: string) => {
     const mine = items.filter((i) => i.level === level);
     return (
@@ -57,6 +79,7 @@ export function LearnedList({ client }: { client: HarnessClient }) {
             <li key={i.id}>
               {editing ? (
                 <input
+                  ref={i === first ? firstInputRef : undefined}
                   type="text"
                   value={editing[i.id] ?? i.text}
                   aria-label={i.text}
@@ -65,9 +88,14 @@ export function LearnedList({ client }: { client: HarnessClient }) {
                 />
               ) : (
                 <>
-                  <span>{i.text}</span>
+                  <span id={`${ids}-${i.id}`}>{i.text}</span>
                   {i.source === "person" && <span className="hh-caption"> · {t("sidekick.learned.yours")}</span>}{" "}
-                  <button type="button" className="hh-link" onClick={() => run(() => client.sidekick.forget(i.id))}>
+                  <button
+                    type="button"
+                    className="hh-link"
+                    aria-describedby={`${ids}-${i.id}`}
+                    onClick={() => run(() => client.sidekick.forget(i.id))}
+                  >
                     {t("sidekick.learned.forget")}
                   </button>
                 </>
@@ -91,15 +119,23 @@ export function LearnedList({ client }: { client: HarnessClient }) {
           <button type="button" className="hh-primary" onClick={save}>
             {t("sidekick.learned.save")}
           </button>
-          <button type="button" onClick={() => setEditing(null)}>
+          <button
+            type="button"
+            onClick={() => {
+              back.current = "edit";
+              setEditing(null);
+            }}
+          >
             {t("sidekick.learned.cancel")}
           </button>
         </div>
       ) : confirm ? (
         <div className="hh-sk-actions">
-          <p>{t("sidekick.learned.confirmAllText")}</p>
+          <p id={confirmTextId}>{t("sidekick.learned.confirmAllText")}</p>
           <button
+            ref={yesRef}
             type="button"
+            aria-describedby={confirmTextId}
             onClick={() => {
               setConfirm(false);
               run(() => client.sidekick.forgetAll());
@@ -107,16 +143,22 @@ export function LearnedList({ client }: { client: HarnessClient }) {
           >
             {t("sidekick.learned.confirmAll")}
           </button>
-          <button type="button" onClick={() => setConfirm(false)}>
+          <button
+            type="button"
+            onClick={() => {
+              back.current = "forgetAll";
+              setConfirm(false);
+            }}
+          >
             {t("sidekick.learned.cancel")}
           </button>
         </div>
       ) : (
         <div className="hh-sk-actions">
-          <button type="button" onClick={() => setEditing({})} disabled={items.length === 0}>
+          <button ref={editRef} type="button" onClick={() => setEditing({})} disabled={items.length === 0}>
             {t("sidekick.learned.edit")}
           </button>
-          <button type="button" onClick={() => setConfirm(true)} disabled={items.length === 0}>
+          <button ref={forgetAllRef} type="button" onClick={() => setConfirm(true)} disabled={items.length === 0}>
             {t("sidekick.learned.forgetAll")}
           </button>
         </div>

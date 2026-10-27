@@ -82,6 +82,40 @@ describe("What Sidekick learned (spec §6.4)", () => {
     expect((await screen.findByRole("alert")).textContent).toBe("Could not save: Turns are running");
   });
 
+  it("Forget everything moves focus to Yes, described by the question; Cancel brings it back", async () => {
+    const c = new FakeClient({ language: "en" });
+    c.sidekickLearned = ITEMS;
+    await renderIn("en", <LearnedList client={c} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Forget everything" }));
+    const yes = screen.getByRole("button", { name: "Yes, forget everything" });
+    expect(document.activeElement).toBe(yes);
+    expect(document.getElementById(yes.getAttribute("aria-describedby") ?? "")?.textContent).toMatch(/forgets everything it learned/);
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Forget everything" }));
+  });
+
+  it("Edit moves focus to the first input; Save and Cancel bring it back to Edit", async () => {
+    const c = new FakeClient({ language: "en" });
+    c.sidekickLearned = ITEMS;
+    await renderIn("en", <LearnedList client={c} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    expect(document.activeElement).toBe(screen.getByDisplayValue("Takes scope fixes."));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Edit" }));
+  });
+
+  it("each Forget this is described by its item", async () => {
+    const c = new FakeClient({ language: "en" });
+    c.sidekickLearned = ITEMS;
+    await renderIn("en", <LearnedList client={c} />);
+    const buttons = await screen.findAllByRole("button", { name: "Forget this" });
+    const described = buttons.map((b) => document.getElementById(b.getAttribute("aria-describedby") ?? "")?.textContent);
+    expect(described).toEqual(["Takes scope fixes.", "Doesn't want vague suggestions.", "Sections stay under 400 words."]);
+  });
+
   it("Settings › Sidekick shows the list", async () => {
     const c = new FakeClient({ language: "en" });
     c.sidekickState = SK_ON;

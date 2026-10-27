@@ -307,6 +307,13 @@
     "engineNow": "Engine: {{engine}}",
     "questions": "Free question",
     "questionsHint": "What you write outside a topic.",
+    "material": {
+      "review": "Material: checking the conversion",
+      "repair": "Material: fixing structure",
+      "label": "Material: labelling",
+      "sheet": "Material: the summary sheet",
+      "link": "Material: linking to topics"
+    },
     "tier": { "light": "Light", "standard": "Standard", "deep": "Deep", "custom": "Custom" },
     "tierHint": { "light": "Simple, quick tasks.", "standard": "Most tasks.", "deep": "Demanding analysis and design." },
     "changed": "Changed · recommended: {{tier}}",

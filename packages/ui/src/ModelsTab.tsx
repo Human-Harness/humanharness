@@ -49,11 +49,22 @@ const withModel = (spec: ModelSpec, model: string | undefined): ModelSpec => {
   return model ? { ...rest, model } : rest;
 };
 
-/** The actions in path order, then the others, then free questions. */
-export function taskRows(state: AppState, questions: TaskRowInfo): TaskRowInfo[] {
+// Local copy of the material stages' reserved ids (harness-sdk MATERIAL_STAGE_KEYS), in their order.
+const MATERIAL_ROWS = ["material-review", "material-repair", "material-label", "material-sheet", "material-link"] as const;
+
+/**
+ * The actions in path order, then the others, then free questions, then (with material, and only when
+ * `material` gives the stages' labels) the material stages; the links stage only with items (material spec §8).
+ */
+export function taskRows(state: AppState, questions: TaskRowInfo, material?: Record<string, string>): TaskRowInfo[] {
   const path = (state.path ?? []).filter((id) => state.actions[id]);
   const ids = [...path, ...Object.keys(state.actions).filter((id) => !path.includes(id))];
-  return [...ids.map((id) => ({ key: id, label: state.actions[id].label, description: state.actions[id].description })), questions];
+  const stages = state.material && material ? MATERIAL_ROWS.filter((k) => k !== "material-link" || state.material?.items) : [];
+  return [
+    ...ids.map((id) => ({ key: id, label: state.actions[id].label, description: state.actions[id].description })),
+    questions,
+    ...stages.map((key) => ({ key, label: material?.[key] ?? key })),
+  ];
 }
 
 /**
@@ -105,7 +116,19 @@ export function ModelsTab({ client, state, onChange }: { client: HarnessClient; 
   const engineName = state.engines.find((e) => e.id === engine)?.name ?? engine;
   const tierSpec = (tier: Tier): ModelSpec => models.tiers?.[engine]?.[tier] ?? view.defaults[engine]?.[tier] ?? FALLBACK_SPEC;
   const offer = view.offered[engine] ?? NO_OFFER;
-  const rows = taskRows(state, { key: QUESTIONS, label: t("models.questions"), description: t("models.questionsHint") });
+  const rows = taskRows(
+    state,
+    { key: QUESTIONS, label: t("models.questions"), description: t("models.questionsHint") },
+    state.material
+      ? {
+          "material-review": t("models.material.review"),
+          "material-repair": t("models.material.repair"),
+          "material-label": t("models.material.label"),
+          "material-sheet": t("models.material.sheet"),
+          "material-link": t("models.material.link"),
+        }
+      : undefined,
+  );
 
   return (
     <div className="hh-tab">

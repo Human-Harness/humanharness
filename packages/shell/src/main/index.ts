@@ -107,7 +107,7 @@ import { SettingsController } from "./settings";
 import { SetupSteps, recordSetup, setupStepViews } from "./setup-steps";
 import { TaskManager } from "./task-manager";
 import type { MaterialService } from "./material";
-import { historyKeep, materialAppState, materialItems, openMaterial } from "./material-ipc";
+import { historyKeep, materialAppState, materialItems, materialRecommended, openMaterial } from "./material-ipc";
 import { MaterialJobs } from "./material-jobs";
 import { type MaterialStageDeps, runMaterialStage } from "./material-stage";
 import { personMaterialRequest } from "./material-requests";
@@ -257,6 +257,8 @@ async function modelsView(): Promise<ModelsView> {
     recommended: {
       ...Object.fromEntries(Object.entries(harness.actions).map(([id, a]) => [id, a.tier ?? "standard"])),
       [QUESTIONS]: harness.questions?.tier ?? "standard",
+      // Material spec §8: each AI stage is a process, only with material (D0); links only with items.
+      ...(harness.material ? materialRecommended(harness.material) : {}),
     },
     defaults: Object.fromEntries(
       engines.map((e) => [e.id, Object.fromEntries(TIERS.map((t) => [t, tierSpec(e.id, t)])) as Record<Tier, ModelSpec>]),

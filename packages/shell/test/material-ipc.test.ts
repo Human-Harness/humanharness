@@ -5,7 +5,7 @@ import { dataSchema, z } from "@humanharness/harness-sdk";
 import { LINK_MAX_ITEMS } from "@humanharness/material/light";
 import { DATA_PREFIX, DataStore, MATERIAL_KEEP, NOTES_PREFIX } from "@humanharness/workspace";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { historyKeep, materialAppState, materialItems, openMaterial } from "../src/main/material-ipc";
+import { historyKeep, materialAppState, materialItems, materialRecommended, openMaterial } from "../src/main/material-ipc";
 
 const material = { accepts: ["text", "pdf"] as ("text" | "pdf")[], grounding: { default: "mixed" as const, personCanChange: true } };
 
@@ -19,6 +19,16 @@ describe("D0: a harness without material", () => {
     expect(Object.hasOwn(state, "material")).toBe(false);
     expect(materialAppState({ material })).toEqual({ material: { accepts: ["text", "pdf"], items: false, grounding: { default: "mixed", personCanChange: true }, maxPages: 300 } });
     expect(materialAppState({ material: { ...material, items: { collection: "concepts", label: "name" } } }).material?.items).toBe(true);
+  });
+  it("recommends a tier per material stage (Settings › Models); links only with items, overrides kept", () => {
+    expect(materialRecommended({ tiers: {} })).toEqual({ "material-review": "standard", "material-repair": "light", "material-label": "light", "material-sheet": "light" });
+    expect(materialRecommended({ tiers: { review: "deep" }, items: { collection: "concepts", label: "name" } })).toEqual({
+      "material-review": "deep",
+      "material-repair": "light",
+      "material-label": "light",
+      "material-sheet": "light",
+      "material-link": "standard",
+    });
   });
 });
 

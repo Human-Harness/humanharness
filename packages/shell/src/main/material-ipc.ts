@@ -1,4 +1,4 @@
-import { type Collection, type HarnessMaterial, hasMaterial } from "@humanharness/harness-sdk";
+import { type Collection, type HarnessMaterial, MATERIAL_STAGES, type Tier, hasMaterial, materialStageKey, stageTier } from "@humanharness/harness-sdk";
 import { LINK_MAX_ITEMS, type LinkItem, MAX_PAGES } from "@humanharness/material/light";
 import type { MaterialInfo, MaterialResult } from "@humanharness/ui/client";
 import { DATA_PREFIX, type HistoryKeep, MATERIAL_KEEP, NOTES_PREFIX } from "@humanharness/workspace";
@@ -34,6 +34,10 @@ export interface ItemsStore {
   scopeFor(name: string, scope: string): string;
   readAll(name: string, scope: string): Promise<{ records: Record<string, unknown>[] }>;
 }
+
+/** Settings › Models' recommendation for each material stage, by its reserved id; the links stage only with items (§8). */
+export const materialRecommended = (m: Pick<HarnessMaterial, "tiers" | "items">): Record<string, Tier> =>
+  Object.fromEntries(MATERIAL_STAGES.filter((s) => s !== "link" || m.items).map((s) => [materialStageKey(s), stageTier(m, s)]));
 
 /**
  * The links stage's items (material spec §8): the first LINK_MAX_ITEMS records of the `items` collection in the

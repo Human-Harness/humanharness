@@ -50,7 +50,9 @@ export type RuleId =
   | "settings-tokens"
   | "setup-component"
   | "setup-mock"
-  | "setup-context";
+  | "setup-context"
+  | "material-review-tier"
+  | "material-items-scope";
 
 export interface Finding {
   rule: RuleId;
@@ -103,6 +105,7 @@ export async function checkHarness(dir: string, opts: { mode?: Mode } = {}): Pro
   const instructions = await readInstructions(harness, findings);
   findings.push(...pillarFindings(harness, briefs, instructions, doc));
   findings.push(...tierCostFindings(harness));
+  findings.push(...materialFindings(harness));
   findings.push(...permissionFindings(harness, doc));
   findings.push(...openQuestionFindings(doc));
   return { findings, harness };
@@ -533,6 +536,25 @@ function tierCostFindings(h: LoadedHarness): Finding[] {
     if (action.cost === "light" && tier === "deep") return [warning("tier-cost", `"${id}" has cost "light" but runs at tier deep: lower the tier or raise the cost hint.`, MANIFEST)];
     return [];
   });
+}
+
+/** Material (material spec §8): two choices that work but cost quality. None without material (D0). */
+function materialFindings(h: LoadedHarness): Finding[] {
+  const m = h.material;
+  if (!m) return [];
+  const out: Finding[] = [];
+  if (m.tiers.review === "light")
+    out.push(warning("material-review-tier", "material.tiers.review is light: the check that keeps broken conversions out of tasks reads better at standard.", MANIFEST));
+  const items = m.items && Object.hasOwn(h.data, m.items.collection) ? h.data[m.items.collection] : undefined;
+  if (m.items && h.scopes && items && !items.scoped)
+    out.push(
+      warning(
+        "material-items-scope",
+        `material.items uses "${m.items.collection}", which is app-wide: every scope's material links to the same items. Make it \`scoped\` if each scope has its own.`,
+        MANIFEST,
+      ),
+    );
+  return out;
 }
 
 function permissionFindings(h: LoadedHarness, doc: HarnessDoc | null): Finding[] {

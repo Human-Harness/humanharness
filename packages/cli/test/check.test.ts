@@ -88,6 +88,26 @@ describe("check: errors", () => {
     expect(errors(r).filter((f) => f.rule !== "brief-missing")).toEqual([]);
   });
 
+  it("brief-missing: a phase's brief that is missing or empty (task-phases spec §3); a phase without one is fine", async () => {
+    const dir = await fixture((d) => {
+      replaceIn(
+        d,
+        "harness.config.ts",
+        'cost: "light",',
+        'cost: "light",\n      phases: [\n        { id: "warmup", label: "Warm-up", brief: "./agent/phases/warmup.md" },\n        { id: "main", label: "Main", brief: "./agent/phases/empty.md" },\n        { id: "extra", label: "Extra", brief: "./agent/phases/gone.md" },\n        { id: "close", label: "Close", close: true },\n      ],',
+      );
+      fs.mkdirSync(path.join(d, "agent", "phases"));
+      fs.writeFileSync(path.join(d, "agent", "phases", "warmup.md"), "Two recall questions.\n");
+      fs.writeFileSync(path.join(d, "agent", "phases", "empty.md"), " \n");
+    });
+    const r = await checkHarness(dir);
+    expect(r.findings.filter((f) => f.rule === "brief-missing").map((f) => `${f.file} ${f.message}`)).toEqual([
+      'agent/phases/empty.md Action "example", phase "main": its brief ./agent/phases/empty.md is empty.',
+      'harness.config.ts Action "example", phase "extra": its brief ./agent/phases/gone.md does not exist.',
+    ]);
+    expect(errors(r).filter((f) => f.rule !== "brief-missing")).toEqual([]);
+  });
+
   it("schema: instructions or locales pointing outside the harness folder", async () => {
     const dir = await fixture((d) => {
       replaceIn(d, "harness.config.ts", 'instructions: "./agent/AGENTS.md",', 'instructions: "../x.md", locales: "../locales",');

@@ -87,6 +87,7 @@ export async function checkHarness(dir: string, opts: { mode?: Mode } = {}): Pro
   const briefs = await readBriefs(harness);
   findings.push(...briefFindings(harness, briefs));
   findings.push(...(await modeFindings(harness)));
+  findings.push(...(await phaseFindings(harness)));
   findings.push(...(await mockFindings(harness, briefs)));
   findings.push(...(await i18nFindings(harness)));
   findings.push(...(await inputFindings(harness)));
@@ -237,6 +238,22 @@ async function modeFindings(h: LoadedHarness): Promise<Finding[]> {
     const text = await read(file);
     if (text === null) out.push(error("brief-missing", `Mode "${id}": its brief ${mode.brief} does not exist.`, MANIFEST));
     else if (!text.trim()) out.push(error("brief-missing", `Mode "${id}": its brief ${mode.brief} is empty.`, path.relative(h.root, file)));
+  }
+  return out;
+}
+
+/** Every phase brief exists and has text (task-phases spec §3); a phase without a brief changes only the state. */
+async function phaseFindings(h: LoadedHarness): Promise<Finding[]> {
+  const out: Finding[] = [];
+  for (const [id, action] of Object.entries(h.actions)) {
+    for (const phase of action.phases ?? []) {
+      if (!phase.brief) continue;
+      const file = resolveInHarness(h, phase.brief);
+      const text = await read(file);
+      const where = `Action "${id}", phase "${phase.id}": its brief ${phase.brief}`;
+      if (text === null) out.push(error("brief-missing", `${where} does not exist.`, MANIFEST));
+      else if (!text.trim()) out.push(error("brief-missing", `${where} is empty.`, path.relative(h.root, file)));
+    }
   }
   return out;
 }

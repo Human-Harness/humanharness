@@ -441,6 +441,34 @@ describe("AI stages (material spec §10)", () => {
       STAGES.sheet = realSheet;
     }
   });
+
+  it("a sheet due again while its session ran stays due, and runs again", async () => {
+    const store = await seed();
+    await store.update(() => []);
+    await store.setStale("sheet");
+    STAGES.sheet = { tools: [], prompt: async () => "Sheet.", accept: async () => "", apply: async () => true };
+    try {
+      let runs = 0;
+      // Another source finishes while the sheet is written: the marker is set again.
+      const svc = new MaterialService(
+        deps({
+          runStage: async () => {
+            if (++runs === 1) await store.setStale("sheet");
+            return { ok: true };
+          },
+        }),
+      );
+      const sheet = { scope: "fractions", stage: "sheet" as const };
+      await svc.runJob(sheet, new AbortController().signal);
+      expect(await store.stale()).toBe("sheet");
+      expect(await svc.nextJob()).toEqual(sheet);
+      await svc.runJob(sheet, new AbortController().signal);
+      expect(await store.stale()).toBeNull();
+      expect(runs).toBe(2);
+    } finally {
+      STAGES.sheet = realSheet;
+    }
+  });
 });
 
 describe("the review stage in the queue (material spec §6.2)", () => {

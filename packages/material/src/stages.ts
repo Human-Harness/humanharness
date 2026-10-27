@@ -3,12 +3,11 @@ import { estimateTokens } from "@humanharness/workspace";
 import { z } from "zod";
 import { BATCH, REPAIR_MAX_WORD_DIFF } from "./constants";
 import type { MeasuredCosts } from "./estimate";
-import { applyLabels, labelAnswer, labelPrompt, unlabelled } from "./label";
+import { alreadyChecked, applyLabels, labelAnswer, labelPrompt, unlabelled } from "./label";
 import { applyReview, reviewAnswer, reviewPrompt, reviewSet } from "./review";
 import { composeSheet, sheetAnswer, sheetPrompt } from "./sheet";
 import type { MaterialStore } from "./store";
 import type { ConvertSettings, MaterialAsk, SourceEntry } from "./types";
-import { flagFragment } from "./use";
 import { wordDiff } from "./word-diff";
 
 /** One unit of AI work (§6.2, §10): a source's stage, or the scope's sheet or links. */
@@ -258,9 +257,10 @@ STAGE_TOOLS.material_label = {
   description: "The labels of this batch: for every fragment its summary, keywords and kind.",
   input: labelAnswer.shape,
 };
+const flagAnswer = z.object({ id: z.string().max(80), reason: z.string().min(1).max(300) });
 STAGE_TOOLS.material_flag = {
   description: "Reports a fragment that reads wrong (garbled, cut, a broken table). It is checked again later.",
-  input: { id: z.string().max(80), reason: z.string().min(1).max(300) },
+  input: flagAnswer.shape,
 };
 
 STAGES.label = {
@@ -273,12 +273,13 @@ STAGES.label = {
   },
   async accept(name, args, state) {
     if (name === "material_flag") {
-      const id = String(args.id ?? "");
+      const a = flagAnswer.parse(args);
       // Only the job's own source: a stage's session works on one source.
       const s = await state.store.source(state.job.source ?? "");
-      const own = Array.isArray(s?.fragments) && s.fragments.includes(id);
-      if (!own || !(await flagFragment(state.store, id, String(args.reason ?? "")))) throw new Error(`No fragment ${id.slice(0, 80)}`);
-      return "Thanks: it will be checked again.";
+      if (!(Array.isArray(s?.fragments) && s.fragments.includes(a.id))) throw new Error(`${a.id.slice(0, 80)} is not a fragment of this source`);
+      // Carried out after the labels (applyLabels), so the batch's labels are kept.
+      state.answers.push({ name, ...a });
+      return alreadyChecked(await state.store.readFragment(a.id)) ? "Noted: it was already checked closely, so label it as it is." : "Thanks: it will be checked again.";
     }
     const a = labelAnswer.parse(args);
     const batch = new Set((await unlabelled(state.store, state.job.source ?? "")).slice(0, BATCH).map((f) => f.meta.id));
@@ -292,8 +293,9 @@ STAGES.label = {
   async apply(store, job, state) {
     if (!job.source) return false;
     // Accepted answers read back (zod drops the extra `name`); a later label of a fragment wins.
-    const given = state.answers.flatMap((a) => labelAnswer.safeParse(a).data?.fragments ?? []);
-    const result = await applyLabels(store, job.source, given);
+    const given = state.answers.filter((a) => a.name === "material_label").flatMap((a) => labelAnswer.safeParse(a).data?.fragments ?? []);
+    const flags = state.answers.filter((a) => a.name === "material_flag").flatMap((a) => flagAnswer.safeParse(a).data ?? []);
+    const result = await applyLabels(store, job.source, given, flags);
     // A source no longer at this stage (removed, flagged back to review) is not a failure: failing would revive it.
     return result !== "none";
   },

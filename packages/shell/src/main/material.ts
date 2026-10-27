@@ -418,6 +418,8 @@ export class MaterialService {
       this.skipped.add(jobKey(job));
       return;
     }
+    // A scope job's marker as it starts: one set again while it runs (another source finished) is not cleared.
+    const seen = job.source ? null : await store.staleMark();
     const ctx = await this.stageContext(job, store, signal);
     const prompt = await def.prompt(store, job, ctx);
     // The source once the prompt is set (it may queue a batch): a stage that changed it since has moved on.
@@ -445,12 +447,12 @@ export class MaterialService {
     } else ok = await def.apply(store, job, state, ctx);
     if (!ok) await failStage(store, job);
     // The scope's stages in order (§10): a sheet done hands over to the links (with items); links done clear the marker.
-    if (ok && job.stage === "sheet") await store.setStale(this.d.material.items !== undefined ? "link" : false);
-    if (ok && job.stage === "link") await store.setStale(false);
+    if (ok && job.stage === "sheet") await store.moveStale(seen, this.d.material.items !== undefined ? "link" : false);
+    if (ok && job.stage === "link") await store.moveStale(seen, false);
     // Still the same job (a scope stage that failed, an answer that left the source as it was): not again until a kick.
     // A source still at its stage but changed (its next batch queued: review, labels) runs on.
     const after = job.source ? await store.source(job.source) : null;
-    const same = job.source ? after?.status === "validating" && after.stage === job.stage && JSON.stringify(after) === before : (await store.stale()) === job.stage;
+    const same = job.source ? after?.status === "validating" && after.stage === job.stage && JSON.stringify(after) === before : (await store.staleMark()) === seen;
     if (same) this.skipped.add(jobKey(job));
     // What the stage did to the source (merges, splits, drops, repairs, questions, a reconversion, a failure) goes
     // into the history, like the person's own changes.

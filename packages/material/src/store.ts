@@ -269,13 +269,44 @@ export class MaterialStore {
    * and the harness has items; null when both are current. Not tracked by the history.
    */
   async stale(): Promise<"sheet" | "link" | null> {
-    const text = await fs.readFile(path.join(this.dir, ".stale"), "utf8").catch(() => null);
-    return text === null ? null : text.trim() === "link" ? "link" : "sheet";
+    const mark = await this.staleMark();
+    return mark === null ? null : mark.split(/\s+/)[0] === "link" ? "link" : "sheet";
   }
 
-  async setStale(next: "sheet" | "link" | false): Promise<void> {
+  /** The marker as written: the stage and a fresh token, so a marker set again reads as new (`moveStale`). */
+  staleMark(): Promise<string | null> {
+    return fs.readFile(path.join(this.dir, ".stale"), "utf8").then(
+      (t) => t.trim(),
+      () => null,
+    );
+  }
+
+  setStale(next: "sheet" | "link" | false): Promise<void> {
+    return this.staleQueued(() => this.writeStale(next));
+  }
+
+  /**
+   * Moves the marker on after a scope stage only when it is still the one seen when the stage started (`staleMark`):
+   * one set again meanwhile (another source finished) stays, so the stage runs again. False when it had changed.
+   */
+  moveStale(seen: string | null, next: "sheet" | "link" | false): Promise<boolean> {
+    return this.staleQueued(async () => {
+      if ((await this.staleMark()) !== seen) return false;
+      await this.writeStale(next);
+      return true;
+    });
+  }
+
+  private staleWrites: Promise<unknown> = Promise.resolve();
+  private staleQueued<T>(job: () => Promise<T>): Promise<T> {
+    const run = this.staleWrites.then(job);
+    this.staleWrites = run.catch(() => undefined);
+    return run;
+  }
+
+  private async writeStale(next: "sheet" | "link" | false): Promise<void> {
     const file = path.join(this.dir, ".stale");
-    if (next) await writeAtomic(file, next);
+    if (next) await writeAtomic(file, `${next} ${randomUUID()}\n`);
     else await fs.rm(file, { force: true });
   }
 

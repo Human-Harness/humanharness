@@ -80,17 +80,34 @@ describe("the label stage", () => {
     expect(await store.stale()).toBeNull();
   });
 
-  it("a flag while labelling sends the source back to review; only the source's own fragments", async () => {
+  it("a flag while labelling keeps the batch's labels, then sends the source back to review; only the source's own fragments", async () => {
     await store.update((list) => [...list, { ...entry, id: "other", path: "other.pdf", fragments: ["other-001"] }]);
     const state = { store, job, answers: [], ctx };
-    await expect(STAGES.label!.accept("material_flag", { id: "other-001", reason: "garbled" }, state)).rejects.toThrow("No fragment other-001");
+    await expect(STAGES.label!.accept("material_flag", { id: "other-001", reason: "garbled" }, state)).rejects.toThrow("other-001 is not a fragment of this source");
     expect(await STAGES.label!.accept("material_flag", { id: "ch2-003", reason: "garbled" }, state)).toContain("checked again");
-    expect(await store.source("ch2")).toMatchObject({ status: "validating", stage: "review" });
+    // Nothing moves until the session's answers are applied.
+    expect(await store.source("ch2")).toMatchObject({ status: "validating", stage: "label" });
     await STAGES.label!.accept("material_label", { fragments: labels(1, 20) }, state);
     expect(await STAGES.label!.apply(store, job, state, ctx)).toBe(true);
-    // It stays at review; the labels given are not applied over the flag.
-    expect(await store.source("ch2")).toMatchObject({ status: "validating", stage: "review" });
+    expect((await store.readFragment("ch2-001"))?.meta.keywords).toEqual(["fracciones equivalentes"]);
+    expect((await store.readFragment("ch2-003"))?.meta).toMatchObject({ validated: "pending", keywords: ["fracciones equivalentes"] });
+    const s = await store.source("ch2");
+    expect(s).toMatchObject({ status: "validating", stage: "review" });
+    expect(s?.issues).toContain("Flagged while labelling: ch2-003: garbled");
     expect(await store.stale()).toBeNull();
+  });
+
+  it("a fragment flagged again after its review is only noted: no second review, the source gets ready", async () => {
+    await store.writeFragments("ch2", [frag(1), { ...frag(2), meta: { ...frag(2).meta, validated: "flagged-reviewed" } }]);
+    const state = { store, job, answers: [], ctx };
+    expect(await STAGES.label!.accept("material_flag", { id: "ch2-002", reason: "still garbled" }, state)).toContain("already checked");
+    await STAGES.label!.accept("material_label", { fragments: labels(1, 2) }, state);
+    expect(await STAGES.label!.apply(store, job, state, ctx)).toBe(true);
+    const s = await store.source("ch2");
+    expect(s?.status).toBe("ready");
+    expect(s?.issues).toContain("Flagged while labelling, already checked: ch2-002: still garbled");
+    expect((await store.readFragment("ch2-002"))?.meta.validated).toBe("flagged-reviewed");
+    expect(await store.stale()).toBe("sheet");
   });
 
   it("nothing left to label: ready at once, with no session", async () => {

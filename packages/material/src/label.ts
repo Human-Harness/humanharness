@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { BATCH } from "./constants";
-import type { MaterialStore } from "./store";
+import { type MaterialStore, isUsable } from "./store";
 import type { Fragment, SourceEntry } from "./types";
+import { flagFragment } from "./use";
 
 export const labelAnswer = z.object({
   fragments: z
@@ -18,6 +19,12 @@ export const labelAnswer = z.object({
 });
 
 export type FragmentLabel = z.infer<typeof labelAnswer>["fragments"][number];
+
+/** A fragment the label stage flagged, and why. */
+export interface LabelFlag {
+  id: string;
+  reason: string;
+}
 
 /** A source's fragments without labels yet (labelling always gives at least one keyword), in order. */
 export async function unlabelledOf(store: MaterialStore, s: Pick<SourceEntry, "fragments">): Promise<Fragment[]> {
@@ -42,40 +49,57 @@ export function labelPrompt(path: string, batch: Fragment[], kinds: readonly str
   ].join("\n\n");
 }
 
+/** A fragment the AI already looked at closely (§6.2): a new flag on it is noted, not reviewed again. */
+export const alreadyChecked = (f: Fragment | null): boolean => f?.meta.validated === "flagged-reviewed" || f?.meta.validated === "repaired";
+
+const flagLine = (prefix: string, f: LabelFlag) => `${prefix}: ${f.id}: ${f.reason.replace(/\s+/g, " ").trim().slice(0, 200)}`;
+
 /**
  * Writes the labels given and moves the source on (§10), in one registry job: `labelled` counts what is done (so a
  * batch changes the source and the queue runs the next one); after the last batch the source is `ready` and the
- * scope's sheet is due. "gone": the source moved on meanwhile (removed, flagged back to review, decided on) and
- * nothing was written; "none": no usable label for what is left.
+ * scope's sheet is due. Then the session's flags: the labels are written first, so a flag never costs the batch. A
+ * flag on a fragment not yet checked closely sends the source back to review (§6.2); one on a fragment already
+ * reviewed or repaired is only noted on the source, so review and labelling can't send a fragment round and round.
+ * "gone": the source moved on meanwhile (removed, flagged in use, decided on); labels of its fragments are still
+ * kept while it is usable. "none": no usable label and no flag.
  */
-export async function applyLabels(store: MaterialStore, sourceId: string, given: FragmentLabel[]): Promise<"gone" | "none" | "more" | "done"> {
-  const result = await store.transact(async (rewrite) => {
+export async function applyLabels(store: MaterialStore, sourceId: string, given: FragmentLabel[], flags: LabelFlag[] = []): Promise<"gone" | "none" | "more" | "done"> {
+  const { result, back } = await store.transact(async (rewrite) => {
     const s = (await store.sources()).find((e) => e.id === sourceId);
-    if (!s || s.status !== "validating" || s.stage !== "label") return "gone" as const;
-    let left = await unlabelledOf(store, s);
-    if (left.length > 0) {
-      const open = new Set(left.map((f) => f.meta.id));
-      const usable = given.filter((l) => open.has(l.id));
-      if (usable.length === 0) return "none" as const;
-      for (const l of usable) await store.patchFragment(l.id, (m) => ({ ...m, summary: l.summary, keywords: l.keywords, kind: l.kind }));
-      left = await unlabelledOf(store, s);
+    if (!s || !isUsable(s)) return { result: "gone" as const, back: [] };
+    const own = Array.isArray(s.fragments) ? s.fragments : [];
+    // The flags that send the source back, and those only noted (this source's fragments only).
+    const back: LabelFlag[] = [];
+    const noted: string[] = [];
+    for (const f of flags) {
+      if (!own.includes(f.id) || back.some((b) => b.id === f.id)) continue;
+      if (alreadyChecked(await store.readFragment(f.id))) noted.push(flagLine("Flagged while labelling, already checked", f));
+      else back.push(f);
     }
-    const total = Array.isArray(s.fragments) ? s.fragments.length : 0;
-    if (left.length > 0) {
-      await rewrite((list) => list.map((e) => (e.id === sourceId ? { ...e, labelled: total - left.length } : e)));
-      return "more" as const;
+    const open = new Set((await unlabelledOf(store, s)).map((f) => f.meta.id));
+    const usable = given.filter((l) => open.has(l.id));
+    for (const l of usable) await store.patchFragment(l.id, (m) => ({ ...m, summary: l.summary, keywords: l.keywords, kind: l.kind }));
+    if (s.status !== "validating" || s.stage !== "label") return { result: "gone" as const, back: [] };
+    if (open.size > 0 && usable.length === 0 && back.length === 0) return { result: "none" as const, back: [] };
+    const left = (await unlabelledOf(store, s)).length;
+    const withNotes = (e: SourceEntry): SourceEntry => (noted.length ? { ...e, issues: [...e.issues, ...noted] } : e);
+    if (left > 0 || back.length > 0) {
+      await rewrite((list) => list.map((e) => (e.id === sourceId ? { ...withNotes(e), labelled: own.length - left } : e)));
+      return { result: "more" as const, back };
     }
     await rewrite((list) =>
       list.map((e): SourceEntry => {
         if (e.id !== sourceId) return e;
-        const { stage: _stage, labelled: _labelled, ...rest } = e;
+        const { stage: _stage, labelled: _labelled, ...rest } = withNotes(e);
         return { ...rest, status: "ready", estimate: 0 };
       }),
     );
-    return "done" as const;
+    return { result: "done" as const, back: [] };
   });
+  // After the labels: the flagged fragments go `pending` and the source back to review.
+  for (const f of back) await flagFragment(store, f.id, f.reason, "Flagged while labelling");
   // The last batch (§10): the scope's sheet (then its links) is due.
   if (result === "done") await store.setStale("sheet");
-  if (result === "more" || result === "done") await store.writeIndex();
+  if (result !== "none") await store.writeIndex();
   return result;
 }

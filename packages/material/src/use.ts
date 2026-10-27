@@ -28,9 +28,9 @@ export async function readForTask(store: MaterialStore, id: string): Promise<str
  * refused or unfinished source keeps its status. The fragment and the registry change in one queued job, so a
  * concurrent `writeFragments` can't erase the mark.
  */
-export async function flagFragment(store: MaterialStore, id: string, reason: string): Promise<boolean> {
+export async function flagFragment(store: MaterialStore, id: string, reason: string, by = "Flagged in use"): Promise<boolean> {
   if (!isFragmentId(id)) return false;
-  const line = `Flagged in use: ${id}: ${reason.replace(/\s+/g, " ").trim().slice(0, 200)}`;
+  const line = `${by}: ${id}: ${reason.replace(/\s+/g, " ").trim().slice(0, 200)}`;
   const done = await store.transact(async (rewrite) => {
     const owner = ownerOf(await store.sources(), id);
     if (!owner || !isUsable(owner)) return false;

@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { HarnessApp } from "../src";
 import type { AppState, SetupStepView, SidekickCard, SidekickReview } from "../src/client";
 import { SetupFlow } from "../src/SetupFlow";
@@ -9,7 +9,10 @@ import { FakeClient } from "./fake-client";
 import { renderIn } from "./render";
 import { SK_ON } from "./sidekick-fixtures";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 const ready = { language: "en" as const, folder: "/Users/me/Documents/Demo", engineId: "claude" };
 const CARD: SidekickCard = {
   id: "c1",
@@ -360,5 +363,81 @@ describe("Sidekick in the chat", () => {
     expect(screen.queryByRole("button", { name: /Sidekick is/ })).toBeNull();
     expect(screen.queryByRole("button", { name: /Open Sidekick|Sidekick has a suggestion/ })).toBeNull();
     expect(screen.queryByRole("button", { name: "Review" })).toBeNull();
+  });
+});
+
+/** Makes `(max-width: 720px)` match: a window too narrow for the Sidekick panel. */
+function narrowWindow() {
+  vi.stubGlobal("matchMedia", (query: string) => ({
+    matches: query.includes("max-width: 720px"),
+    media: query,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+  }));
+}
+/** Opens with a harness side holding a heavy action's button, the panel collapsed, and the pre-flight open. */
+async function openWithPreflight(c: FakeClient) {
+  c.state.actions = { tidy: { label: "Tidy up", cost: "heavy" } };
+  c.usage = { limits: [{ kind: "five_hour", utilization: 0.75, resetsAt: new Date(Date.now() + 7_200_000).toISOString() }], estimates: { tidy: 0.08 }, tokens: {} };
+  render(<HarnessApp client={c} renderSide={(_s, send) => <button onClick={() => send("Tidy all notes", { action: "tidy" })}>tidy</button>} />);
+  const start = (await screen.findByRole("button", { name: "Start Demo" })) as HTMLButtonElement;
+  await waitFor(() => expect(start.disabled).toBe(false));
+  fireEvent.click(start);
+  const box = (await screen.findByRole("textbox")) as HTMLTextAreaElement;
+  fireEvent.click(await screen.findByRole("button", { name: "Collapse Sidekick" }));
+  await screen.findByText(/5 h: 75% used/);
+  fireEvent.click(screen.getByRole("button", { name: "tidy" }));
+  await screen.findByRole("alertdialog");
+  return box;
+}
+
+describe("Sidekick when a send can't go out, or the panel can't show", () => {
+  it("Enter while a pre-flight waits runs no review (nothing would be sent)", async () => {
+    const c = client();
+    const box = await openWithPreflight(c);
+    type(box, "make it better");
+    enter(box);
+    await act(async () => undefined);
+    expect(c.sidekickCalls.filter(([k]) => k === "review")).toEqual([]);
+    expect(c.sent).toEqual([]);
+  });
+
+  it.each(["Send suggested", "Send anyway"])("%s that send refuses keeps the card", async (name) => {
+    const c = client();
+    const box = await openWithPreflight(c);
+    type(box, "make it better");
+    act(() => c.emitSidekick({ ...SK_ON, status: "suggestion", card: CARD }));
+    fireEvent.click(await screen.findByRole("button", { name: "Sidekick has a suggestion" }));
+    fireEvent.click(await screen.findByRole("button", { name }));
+    await act(async () => undefined);
+    expect(c.sent).toEqual([]);
+    expect(c.sidekickCalls.filter(([k]) => k === "resolve")).toEqual([]);
+    expect(box.value).toBe("make it better");
+  });
+
+  it("a window too narrow for the panel: Enter sends as typed, with no review", async () => {
+    narrowWindow();
+    const c = client();
+    c.sidekickReviews = [{ kind: "card", card: CARD }];
+    const box = await open(c);
+    type(box, "make it better");
+    enter(box);
+    await waitFor(() => expect(c.sent).toEqual(["make it better"]));
+    expect(c.sidekickCalls.filter(([k]) => k === "review")).toEqual([]);
+    expect(screen.queryByRole("button", { name: "Review" })).toBeNull();
+  });
+
+  it("D0: a window too narrow for the panel shows the harness's side panel as before, Sidekick on and expanded", async () => {
+    narrowWindow();
+    const c = client();
+    render(<HarnessApp client={c} renderSide={() => <p>Harness side</p>} />);
+    const start = (await screen.findByRole("button", { name: "Start Demo" })) as HTMLButtonElement;
+    await waitFor(() => expect(start.disabled).toBe(false));
+    fireEvent.click(start);
+    await screen.findByRole("button", { name: /Sidekick is/ });
+    const side = (await screen.findByText("Harness side")).parentElement;
+    expect(side?.tagName).toBe("ASIDE");
+    expect(side?.className).toBe("hh-side");
+    expect(document.querySelector(".hh-sk-rail, .hh-sk-panel")).toBeNull();
   });
 });

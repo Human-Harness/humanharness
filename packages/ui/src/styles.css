@@ -515,5 +515,6 @@ select:focus-visible { outline: 2px solid var(--hh-ink); outline-offset: 2px; }
 .hh-sk-flagged textarea { background: transparent; position: relative; scrollbar-gutter: stable; }
 .hh-sk-backdrop { position: absolute; inset: 0; pointer-events: none; color: transparent; white-space: pre-wrap; overflow-wrap: break-word; overflow: hidden; scrollbar-gutter: stable; box-sizing: border-box; padding: 8px; border: 1px solid transparent; border-radius: 8px; font: inherit; line-height: normal; }
 .hh-sk-backdrop mark { color: transparent; background: none; text-decoration: underline wavy var(--hh-warn); text-underline-offset: 3px; }
+/* `useNarrow` (sidekick/useNarrow.ts) mirrors this width: no review, and the harness side panel shows as before. */
 @media (max-width: 720px) { .hh-sk-panel, .hh-sk-rail { display: none; } }
 .hh-sk-fieldset { border: none; margin: 12px 0 0; padding: 0; min-width: 0; }

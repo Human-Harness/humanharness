@@ -41,6 +41,7 @@ import { RecommendModeBlock } from "./RecommendModeBlock";
 import { FlaggedText } from "./sidekick/FlaggedText";
 import { SidekickMark } from "./sidekick/mark";
 import { SidekickPanel } from "./sidekick/SidekickPanel";
+import { useNarrow } from "./sidekick/useNarrow";
 import { useSidekick } from "./sidekick/useSidekick";
 import { type StartViewCopy, StartView } from "./StartView";
 import { initialChat, reduceChat } from "./state";
@@ -176,11 +177,13 @@ export function ChatView({
   const chatRef = useRef<HTMLElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   // Sidekick (sidekick spec §4.1, §7): only when main sends `state.sidekick`, never in slim mode (D0).
-  /** Bumped after a restore: main does not push Sidekick's state then. */
+  /** Bumped after a restore: a fresh read, beside the state main pushes then. */
   const [skRefresh, setSkRefresh] = useState(0);
   const skEnabled = state.sidekick !== undefined && !slim;
   const sidekick = useSidekick(client, skEnabled, skRefresh);
-  const reviewOn = sidekick !== null && sidekick.settings.on && sidekick.settings.preSend;
+  /** Under 720 px the panel can't show: no paid review the person can't see (styles.css). */
+  const narrow = useNarrow();
+  const reviewOn = sidekick !== null && sidekick.settings.on && sidekick.settings.preSend && !narrow;
   /** A review in flight: until when the countdown runs (null: "always wait"). */
   const [reviewing, setReviewing] = useState<{ until: number | null } | null>(null);
   const reviewSeq = useRef(0);
@@ -427,9 +430,12 @@ export function ChatView({
   /** The latest `send`, for code that resumes after an await. */
   const sendRef = useRef<typeof send>(() => false);
   /** True when the message was sent, or is waiting for the user to confirm a heavy action. */
+  /** Nothing in the way of a send: no turn, no pre-flight, no open "how to work" or "how long" question. */
+  const canSend = (options: SendOptions = {}, confirmed = false): boolean =>
+    !blocked() && !(pending && !confirmed) && !(askPick && !options.mode) && !(timePick && options.timeBox === undefined);
   const send = (text: string, options: SendOptions = {}, confirmed = false): boolean => {
     const message = text.trim();
-    if (!message || blocked() || (pending && !confirmed) || (askPick && !options.mode) || (timePick && options.timeBox === undefined)) return false;
+    if (!message || !canSend(options, confirmed)) return false;
     // Slim: only the interview runs here, never a free question or another action's task.
     if (slim && (options.action ? options.action !== slim.action : tasks.current?.action !== slim.action)) return false;
     // A `required` action needs an open scope (spec §3.3); the main process would refuse it.
@@ -812,8 +818,9 @@ export function ChatView({
   };
   /** Enter: a review first when Sidekick is on (spec §4.1); `force` is ⌥⏎ or Review. Enter while reviewing waits. */
   const submit = async (text: string, force = false) => {
-    if (reviewing) return;
-    if (!reviewOn || !text.trim() || blocked()) {
+    // A send that would be refused runs no paid review first.
+    if (reviewing || !canSend()) return;
+    if (!reviewOn || !text.trim()) {
       sendTyped(text);
       return;
     }
@@ -1302,7 +1309,8 @@ export function ChatView({
         {(() => {
           const harnessSide = renderSide && !slim ? renderSide(chat.blockState, sendFromHarness) : undefined;
           // D0: without Sidekick, exactly the harness's side panel as before.
-          if (!sidekick) return harnessSide !== undefined ? <aside className="hh-side">{harnessSide}</aside> : null;
+          // Narrow, the panel and rail hide (styles.css): the harness's side panel shows as before (D0).
+          if (!sidekick || narrow) return harnessSide !== undefined ? <aside className="hh-side">{harnessSide}</aside> : null;
           if (!skExpanded) {
             return (
               <>
@@ -1336,9 +1344,11 @@ export function ChatView({
                 toggleSk(false);
               }}
               // A suggestion goes through `send`, never `submit`: it is never reviewed again.
+              // The card leaves only once the send went: a refused one keeps the rewrite.
               onSendSuggested={(card) => {
+                if (!card.rewrite || !send(card.rewrite)) return;
+                setDraft("");
                 resolveCard(card, "used");
-                if (card.rewrite && send(card.rewrite)) setDraft("");
               }}
               onEdit={(card) => {
                 resolveCard(card, "edited");
@@ -1346,8 +1356,9 @@ export function ChatView({
                 inputRef.current?.focus();
               }}
               onSendAnyway={(card) => {
+                if (!send(card.prompt)) return;
+                setDraft("");
                 resolveCard(card, "sent-anyway");
-                if (send(card.prompt)) setDraft("");
               }}
               onPutInComposer={(text) => {
                 setDraft(text);

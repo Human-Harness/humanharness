@@ -1,4 +1,4 @@
-import { SETTINGS_COLLECTION } from "@humanharness/harness-sdk";
+import { SETTINGS_COLLECTION, SIDEKICK_COLLECTION } from "@humanharness/harness-sdk";
 import { APP_SCOPE, DATA_CHANGE_PREFIX, DataError, type DataStore, type HistoryTrailer, isDataWrite, isScopeDir, runDataRequest } from "@humanharness/workspace";
 
 /** The request can't run now (the app isn't set up, turns are blocked); its message is safe to show. */
@@ -22,6 +22,11 @@ export interface PersonDataDeps {
   blocked(): string | null;
   /** Whether `id` is a scope the person can reach: registered and not archived (`main` without scopes). `_app` is never asked. */
   scopeExists(id: string): Promise<boolean>;
+  /**
+   * A core collection kept in its own store (the reserved `sidekick` one): its store, or undefined for any other
+   * collection. Absent: every request goes to `store()` (D0).
+   */
+  storeFor?(collection: string): Promise<DataStore | null> | undefined;
 }
 
 /**
@@ -40,6 +45,11 @@ export function personDataRequests(d: PersonDataDeps): (request: unknown, option
     writes = next.catch(() => undefined);
     return next;
   };
+  const storeOf = async (request: unknown): Promise<DataStore | null> => {
+    const collection = typeof request === "object" && request !== null ? (request as { collection?: unknown }).collection : undefined;
+    const own = typeof collection === "string" ? d.storeFor?.(collection) : undefined;
+    return own !== undefined ? own : d.store();
+  };
 
   return async (request, options) => {
     const asked = typeof options === "object" && options !== null ? (options as { scope?: unknown }).scope : undefined;
@@ -50,14 +60,14 @@ export function personDataRequests(d: PersonDataDeps): (request: unknown, option
       return scope;
     };
     if (!isDataWrite(request)) {
-      const store = await d.store();
+      const store = await storeOf(request);
       if (!store) throw new Error("The app is not set up yet");
       return runDataRequest(store, request, { who: "person", scope: await scopeOf() });
     }
     return serial(async () => {
       const blocked = d.blocked();
       if (blocked) throw new DataUnavailable(blocked);
-      const store = await d.store();
+      const store = await storeOf(request);
       if (!store) throw new DataUnavailable("The app is not set up yet");
       const scope = await scopeOf();
       const trailer = await d.trailer();
@@ -78,10 +88,15 @@ export function personDataRequests(d: PersonDataDeps): (request: unknown, option
  * The harness UI's requests (`hh:data`): `run` (the person's handler), except that the UI only reads the reserved
  * `settings` collection. It changes settings through `client.settings`, whose controller keeps their rules (only the
  * changed values stored, an empty record deleted) and writes through `run` itself. Without harness settings nothing
- * changes (D0): `settings` is then an unknown collection, refused by the store as before.
+ * changes (D0): `settings` is then an unknown collection, refused by the store as before. The core's `sidekick`
+ * collection is always unknown to the UI.
  */
 export function harnessUiDataRequests(run: (request: unknown, options: unknown) => Promise<unknown>, hasSettings: () => boolean): (request: unknown, options: unknown) => Promise<unknown> {
   return async (request, options) => {
+    // The core's Sidekick collection is never the harness UI's (sidekick spec §6.4): it reads as unknown, as before.
+    if (typeof request === "object" && request !== null && (request as { collection?: unknown }).collection === SIDEKICK_COLLECTION) {
+      throw new DataError("unknown-collection", `There is no collection "${SIDEKICK_COLLECTION}"`);
+    }
     if (hasSettings() && isDataWrite(request) && (request as { collection: unknown }).collection === SETTINGS_COLLECTION) {
       throw new DataError("refused", "Settings change through client.settings");
     }

@@ -11,12 +11,14 @@ const profile = { engine: "claude", tier: "light" as const, model: "haiku", effo
 const json = (o: unknown) => JSON.stringify(o);
 const SUGGEST = json({ verdict: "suggest", issues: [{ kind: "vague", text: "Say what better means." }], rewrite: "Make the intro shorter.", confidence: 0.8 });
 
-export function harness(o: { record?: Partial<SidekickRecord> | null; answers?: (string | ((signal: AbortSignal) => Promise<SidekickAnswer>))[]; task?: { id: string; action?: string; scope: string; phase?: string } | null; usage?: UsageRecord[]; manifest?: SidekickDeps["manifest"]; waitMs?: number; events?: SidekickEvent[]; phases?: { id: string; label: string }[]; extra?: Partial<SidekickRecord>[] } = {}) {
+export function harness(o: { record?: Partial<SidekickRecord> | null; answers?: (string | ((signal: AbortSignal) => Promise<SidekickAnswer>))[]; task?: { id: string; action?: string; scope: string; phase?: string } | null; usage?: UsageRecord[]; manifest?: SidekickDeps["manifest"]; waitMs?: number; events?: SidekickEvent[]; phases?: { id: string; label: string }[]; extra?: Partial<SidekickRecord>[]; learnMs?: number } = {}) {
   // The `sidekick` collection by id; `record()` is the settings record.
   const records = new Map<string, Partial<SidekickRecord>>([...(o.record ? [o.record] : []), ...(o.extra ?? [])].map((r) => [r.id ?? "settings", r]));
   const writes: { op: string; record?: Partial<SidekickRecord>; key?: string }[] = [];
   // Writes as the app (learning, spec §6.4), applied to the same records.
   const appWrites: { op: string; record?: Partial<SidekickRecord>; key?: string }[] = [];
+  // Each writeApp call (one commit): its base and how many requests it carried.
+  const appCalls: { base: string; n: number }[] = [];
   const folders: string[] = [];
   const events: SidekickEvent[] = [...(o.events ?? [])];
   const asked: string[] = [];
@@ -73,16 +75,21 @@ export function harness(o: { record?: Partial<SidekickRecord> | null; answers?: 
     events: { read: async () => [...events], append: async (_b, e) => void events.push(e) },
     waitMs: () => o.waitMs ?? 5_000,
     saveDecision: async (d) => void decisions.push(d),
-    writeApp: async (req) => {
-      const r = req as { op: string; record?: Partial<SidekickRecord>; key?: string };
-      appWrites.push(r);
-      if (r.op === "delete") records.delete(r.key ?? "");
-      else if (r.record) records.set(r.record.id ?? "", r.record);
+    writeApp: async (base, reqs) => {
+      appCalls.push({ base, n: reqs.length });
+      for (const req of reqs) {
+        const r = req as { op: string; record?: Partial<SidekickRecord>; key?: string };
+        appWrites.push(r);
+        if (r.op === "delete") records.delete(r.key ?? "");
+        else if (r.record) records.set(r.record.id ?? "", r.record);
+      }
     },
+    ...(o.learnMs !== undefined ? { learnMs: o.learnMs } : {}),
   };
   return { ctl: new SidekickController(deps), deps, asked, opened, closed, logged, briefs, states, setTask: (t: typeof task) => (task = t), events,
     writes,
     appWrites,
+    appCalls,
     folders,
     decisions,
     records: () => [...records.values()],
@@ -910,21 +917,33 @@ describe("learning at task close (spec §6.4)", () => {
   const ev = (i: number, at = `2026-10-27T10:0${i}:00Z`): SidekickEvent => ({ at, sidekick: "sidekick", moment: "pre", kind: "vague", outcome: "used" });
   const five = [ev(1), ev(2), ev(3), ev(4), ev(5)];
   const learned = (id: string, text: string, source: "learned" | "person" = "learned") => ({ id, type: "learned" as const, text, level: "you" as const, source, updatedAt: "2026-10-26T00:00:00Z" });
+  /** A task opens and closes (two betweenTasks), without waiting for the learning turn. */
+  const closeTask = async (h: ReturnType<typeof harness>) => {
+    h.setTask({ id: "t1", scope: "main" });
+    await h.ctl.betweenTasks();
+    h.setTask(null);
+    await h.ctl.betweenTasks();
+  };
+  /** A task closes and its learning turn ends. */
+  const closeAndLearn = async (h: ReturnType<typeof harness>) => {
+    await closeTask(h);
+    await h.ctl.learningSettled();
+  };
 
   it("fewer than 5 new events: no turn", async () => {
     const h = harness({ record: on, events: [ev(1), ev(2), ev(3), ev(4)], task: null });
-    await h.ctl.betweenTasks();
+    await closeAndLearn(h);
     expect(h.asked).toEqual([]);
     expect(h.opened).toEqual([]);
   });
 
   it("only events after learnedAt count", async () => {
     const h = harness({ record: { ...on, learnedAt: "2026-10-27T10:02:30Z" }, events: five, task: null });
-    await h.ctl.betweenTasks();
+    await closeAndLearn(h);
     expect(h.asked).toEqual([]);
   });
 
-  it("5 or more: one learn turn in its own session; the result goes in as the app; person items never change", async () => {
+  it("5 or more: one learn turn in its own session; the result goes in as the app in one write; person items never change", async () => {
     const h = harness({
       record: on,
       extra: [{ ...learned("l-p", "Doesn't want vague suggestions.", "person"), kind: "vague" }, learned("l-1", "Old."), learned("l-2", "Gone.")],
@@ -932,7 +951,7 @@ describe("learning at task close (spec §6.4)", () => {
       task: null,
       answers: [json({ add: [{ text: "Writes short prompts.", level: "you" }], update: [{ id: "l-1", text: "New." }, { id: "l-p", text: "Hacked." }, { id: "l-x", text: "Unknown." }], remove: ["l-p", "l-2"] })],
     });
-    await h.ctl.betweenTasks();
+    await closeAndLearn(h);
     expect(h.asked).toHaveLength(1);
     expect(h.asked[0]).toContain("Sidekick: learn");
     expect(h.asked[0]).toContain("- [l-p] (person) Doesn't want vague suggestions.");
@@ -943,25 +962,87 @@ describe("learning at task close (spec §6.4)", () => {
       expect.objectContaining({ op: "put", record: expect.objectContaining({ id: "l-1", text: "New.", source: "learned" }) }),
       { op: "delete", collection: "sidekick", key: "l-2" },
     ]);
+    // One call, so one `Data: sidekick` commit, in the base it learned in.
+    expect(h.appCalls).toEqual([{ base: "/base", n: 3 }]);
     expect(h.records()).toContainEqual(expect.objectContaining({ id: "l-p", text: "Doesn't want vague suggestions.", source: "person" }));
     expect(h.record()).toMatchObject({ on: true, learnedAt: expect.any(String) });
     expect(h.logged.at(-1)).toMatchObject({ moment: "learn", sidekick: "sidekick" });
     // Not a loose session's spend: the next task's cap starts at 0.
     expect((await h.ctl.state()).spent).toBe(0);
     // Done until 5 more events come.
-    await h.ctl.betweenTasks();
+    await closeAndLearn(h);
     expect(h.asked).toHaveLength(1);
+  });
+
+  it("the prompt names the newest 50 events only", async () => {
+    const many = Array.from({ length: 60 }, (_, i): SidekickEvent => ({ at: `2026-10-27T10:${String(i).padStart(2, "0")}:00Z`, sidekick: "sidekick", moment: "pre", kind: i < 10 ? "scope" : "vague", outcome: "used" }));
+    const h = harness({ record: on, events: many, task: null, answers: [json({})] });
+    await closeAndLearn(h);
+    expect(h.asked[0]).not.toContain("scope");
+    expect(h.asked[0].match(/- pre vague → used/g)).toHaveLength(50);
+    // learnedAt still covers every event it saw.
+    expect(h.record()).toMatchObject({ learnedAt: "2026-10-27T10:59:00Z" });
   });
 
   it("a task still open: no learning yet", async () => {
     const h = harness({ record: on, events: five });
     await h.ctl.betweenTasks();
+    await h.ctl.learningSettled();
     expect(h.asked).toEqual([]);
+  });
+
+  it("no learning before a task starts (no task → no task); a task seen open at launch counts when it closes", async () => {
+    const h = harness({ record: on, events: five, task: null, answers: [json({})] });
+    await h.ctl.betweenTasks();
+    await h.ctl.learningSettled();
+    expect(h.asked).toEqual([]);
+    // A task restored at launch: state() sees it before any betweenTasks.
+    h.setTask({ id: "t9", scope: "main" });
+    await h.ctl.state();
+    h.setTask(null);
+    await h.ctl.betweenTasks();
+    await h.ctl.learningSettled();
+    expect(h.asked).toHaveLength(1);
+  });
+
+  it("betweenTasks never waits for the learning turn", async () => {
+    let release: (a: SidekickAnswer) => void = () => undefined;
+    const h = harness({ record: on, events: five, task: null, answers: [() => new Promise<SidekickAnswer>((r) => (release = r))] });
+    await closeTask(h);
+    await vi.waitFor(() => expect(h.asked).toHaveLength(1));
+    // The turn is still pending; another close doesn't start a second one.
+    await closeTask(h);
+    expect(h.closed).toEqual([]);
+    release({ ok: true, text: json({ add: [{ text: "Writes short prompts.", level: "you" }] }) });
+    await h.ctl.learningSettled();
+    expect(h.asked).toHaveLength(1);
+    expect(h.appCalls).toHaveLength(1);
+    expect(h.closed).toEqual(["s1"]);
+  });
+
+  it("a hung turn times out: nothing written, the session closes", async () => {
+    const h = harness({ record: on, events: five, task: null, answers: [slow], learnMs: 20 });
+    await closeAndLearn(h);
+    expect(h.asked).toHaveLength(1);
+    expect(h.appWrites).toEqual([]);
+    expect(h.record()?.learnedAt).toBeUndefined();
+    expect(h.closed).toEqual(["s1"]);
+  });
+
+  it("a refused write leaves learnedAt alone, so the next close tries again", async () => {
+    const h = harness({ record: on, events: five, task: null, answers: [json({ add: [{ text: "Writes short prompts.", level: "you" }] })] });
+    h.deps.writeApp = async () => {
+      throw new Error("A profile switch is running");
+    };
+    await closeAndLearn(h);
+    expect(h.asked).toHaveLength(1);
+    expect(h.record()?.learnedAt).toBeUndefined();
+    expect(h.closed).toEqual(["s1"]);
   });
 
   it("an answer that isn't the contract changes nothing, and learnedAt stays", async () => {
     const h = harness({ record: on, events: five, task: null, answers: ["not json"] });
-    await h.ctl.betweenTasks();
+    await closeAndLearn(h);
     expect(h.asked).toHaveLength(1);
     expect(h.appWrites).toEqual([]);
     expect(h.record()).not.toHaveProperty("learnedAt");
@@ -971,19 +1052,50 @@ describe("learning at task close (spec §6.4)", () => {
   it("turned off while the turn runs: nothing is written", async () => {
     let release: (a: SidekickAnswer) => void = () => undefined;
     const h = harness({ record: on, events: five, task: null, answers: [() => new Promise<SidekickAnswer>((r) => (release = r))] });
-    const run = h.ctl.betweenTasks();
+    await closeTask(h);
     await vi.waitFor(() => expect(h.asked).toHaveLength(1));
     await h.ctl.set({ on: false });
     release({ ok: true, text: json({ add: [{ text: "Writes short prompts.", level: "you" }] }) });
-    await run;
+    await h.ctl.learningSettled();
     expect(h.appWrites).toEqual([]);
     expect(h.record()?.learnedAt).toBeUndefined();
     expect(h.closed).toEqual(["s1"]);
   });
 
+  /** A learning turn that answers only when aborted, aborted by `stop`. */
+  const aborted = async (stop: (h: ReturnType<typeof harness>) => Promise<void>) => {
+    const h = harness({ record: on, events: five, task: null, answers: [slow] });
+    await h.ctl.refresh();
+    await closeTask(h);
+    await vi.waitFor(() => expect(h.asked).toHaveLength(1));
+    await stop(h);
+    await h.ctl.learningSettled();
+    expect(h.appWrites).toEqual([]);
+    expect(h.record()?.learnedAt).toBeUndefined();
+    expect(h.closed).toContain("s1");
+  };
+
+  it("a profile switch (refresh with another base) aborts the turn", async () => {
+    await aborted(async (h) => {
+      h.deps.setup = async () => ({ engineId: "claude", base: "/other" });
+      await h.ctl.refresh();
+    });
+  });
+
+  it("an undo that turned Sidekick off (refresh) aborts the turn", async () => {
+    await aborted(async (h) => {
+      h.setRecord({ ...on, on: false });
+      await h.ctl.refresh();
+    });
+  });
+
+  it("closing the app aborts the turn", async () => {
+    await aborted((h) => h.ctl.close());
+  });
+
   it("D0: Sidekick off → no learning turn, no event, no record write", async () => {
     const h = harness({ events: five, task: null, extra: [learned("l-1", "Old.")] });
-    await h.ctl.betweenTasks();
+    await closeAndLearn(h);
     expect(h.asked).toEqual([]);
     expect(h.opened).toEqual([]);
     expect(h.briefs).toEqual([]);
@@ -995,7 +1107,7 @@ describe("learning at task close (spec §6.4)", () => {
 
   it("learnedAt survives a toggle", async () => {
     const h = harness({ record: on, events: five, task: null, answers: [json({})] });
-    await h.ctl.betweenTasks();
+    await closeAndLearn(h);
     const at = (h.record() as { learnedAt?: string }).learnedAt;
     expect(at).toEqual(expect.any(String));
     await h.ctl.set({ afterReply: false });

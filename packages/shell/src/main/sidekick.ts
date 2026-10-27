@@ -32,6 +32,9 @@ const REPEATS = 3;
 const DRIFT = 2;
 /** Every off-phase flag kind but the one that names a phase (finding which other phase a prompt matched). */
 const NOT_OFF_PHASE = SIDEKICK_FLAG_KINDS.filter((k) => k !== "off-phase");
+/** Learning (spec §6.4): the newest events its prompt names, and how long its turn may run. */
+const LEARN_EVENTS = 50;
+const LEARN_MS = 60_000;
 
 /** The events line's short name (spec §6.1) for an SDK moment. */
 export function eventMoment(m: SidekickMoment): SidekickEventMoment {
@@ -92,8 +95,13 @@ export interface SidekickDeps {
   events: { read(base: string): Promise<SidekickEvent[]>; append(base: string, e: SidekickEvent): Promise<void> };
   /** "Save as decision" (plan Decision 7): a note written as the person in the task's scope, with its history commit. */
   saveDecision(o: { task: string; scope: string; action?: string; title: string; decision: string }): Promise<void>;
-  /** A data request on the `sidekick` collection as the app (learning, spec §6.4), with its history commit. */
-  writeApp(request: unknown): Promise<unknown>;
+  /**
+   * Data requests on the `sidekick` collection as the app (learning, spec §6.4), all run then one history commit.
+   * Refused (throws) when `base` is no longer the set-up app's base, or a switch, restore or quit holds turns.
+   */
+  writeApp(base: string, requests: unknown[]): Promise<void>;
+  /** How long a learning turn may run, in ms (tests shorten it). */
+  learnMs?: number;
 }
 
 export const defaultWaitMs = (wait: SidekickSettings["wait"]): number => (wait === "always" ? SIDEKICK_ALWAYS_MAX_MS : wait * 1000);
@@ -134,6 +142,10 @@ export class SidekickController {
   private cards: { card: SidekickCard; ctx: { task: OpenTask | null; base: string } }[] = [];
   /** The running learning turn (spec §6.4); turning off, a profile switch or closing drops it. */
   private learning: AbortController | null = null;
+  /** The running learning turn's promise (never rejects), for `learned`. */
+  private learnRun: Promise<void> | null = null;
+  /** The task open at the last betweenTasks (or seen open since): learning runs only when it closes (spec §6.4). */
+  private lastOpen = NO_TASK;
   /** The task's earlier prompts, oldest first, for its next after-reply turn. */
   private prompts: { key: string; items: string[] } = { key: NO_TASK, items: [] };
   /** The open task's earlier cards (spec §7 "Earlier · used"); reset when another task opens. */
@@ -162,6 +174,8 @@ export class SidekickController {
     const settings = await this.d.store.settings();
     const setup = await this.d.setup().catch(() => null);
     const task = await this.d.task().catch(() => null);
+    // A task restored at launch is seen here first: its close is a close too.
+    if (task) this.lastOpen = task.id;
     const records = setup ? await this.usage(setup.base) : [];
     const events = setup ? await this.events(setup.base) : [];
     const since = Date.now() - WEEK_MS;
@@ -351,10 +365,14 @@ export class SidekickController {
 
   /**
    * Between tasks (TaskDeps.betweenTasks): sessions of tasks no longer open close (spec §5 "closed when the task
-   * closes"); with no task open, Sidekick learns from the new events (spec §6.4).
+   * closes"); when a task just closed, Sidekick learns from the new events (spec §6.4), detached: the task manager's
+   * queue never waits for the model turn.
    */
   async betweenTasks(): Promise<void> {
     const open = (await this.d.task().catch(() => null))?.id;
+    // Learning is for a task → no task change, never before a task starts (no task → no task).
+    const closedTask = open === undefined && this.lastOpen !== NO_TASK;
+    this.lastOpen = open ?? NO_TASK;
     if (this.past.key !== (open ?? NO_TASK)) this.past = { key: open ?? NO_TASK, items: [] };
     // Another task: the old one's waiting cards and its running after-reply turn go (they were about its reply).
     const left = this.cards.filter((c) => (c.ctx.task?.id ?? NO_TASK) === (open ?? NO_TASK));
@@ -370,56 +388,75 @@ export class SidekickController {
       this.card = null;
       await this.push();
     } else if (dropped) await this.push();
-    if (open === undefined) await this.learn().catch((err: unknown) => console.error("Sidekick could not learn", err));
+    if (closedTask) this.startLearning();
+  }
+
+  /** The running learning turn, if any, ended (tests; resolves at once when none runs). */
+  learningSettled(): Promise<void> {
+    return this.learnRun ?? Promise.resolve();
+  }
+
+  /** Starts a learning turn unless one runs: one at a time, never rejecting (errors are logged). */
+  private startLearning(): void {
+    if (this.closed || this.learning) return;
+    const controller = new AbortController();
+    this.learning = controller;
+    const run = this.learn(controller)
+      .catch((err: unknown) => console.error("Sidekick could not learn", err))
+      .finally(() => {
+        if (this.learning === controller) this.learning = null;
+        if (this.learnRun === run) this.learnRun = null;
+      });
+    this.learnRun = run;
   }
 
   /**
    * Learning (spec §6.4, plan Decision 6): with SIDEKICK_LEARN_MIN or more events since the last update, one turn in
    * a one-off session (its own `learn` folder, closed right after) updates the learned items, written as the app.
    * Only Sidekick's own items change; the person's (`source: "person"`) never do. Off, or turned off while the turn
-   * runs: nothing is asked or written (D0).
+   * runs: nothing is asked or written (D0). Turning off, another base (refresh) or closing aborts it; so does LEARN_MS.
    */
-  private async learn(): Promise<void> {
-    if (this.closed || this.learning) return;
+  private async learn(controller: AbortController): Promise<void> {
+    const live = () => !controller.signal.aborted && !this.closed;
     const settings = await this.d.store.settings();
-    if (!settings.on) return;
+    if (!settings.on || !live()) return;
     const setup = await this.d.setup().catch(() => null);
     if (!setup || !(await this.d.hasNotice(setup.engineId).catch(() => false))) return;
     // The events still being written count too.
     await this.eventWrites.get(setup.base);
     const since = settings.learnedAt ?? "";
     const events = (await this.events(setup.base)).filter((e) => e.at > since);
-    if (events.length < SIDEKICK_LEARN_MIN || this.closed || this.learning) return;
-    const controller = new AbortController();
-    this.learning = controller;
-    const live = () => !controller.signal.aborted && !this.closed;
+    if (events.length < SIDEKICK_LEARN_MIN || !live()) return;
     let session: SidekickLike | null = null;
     try {
       const items = (await this.d.store.all()).filter((r) => r.type === "learned" && r.text !== undefined);
       const engine = this.d.engine(setup.engineId);
       session = await this.oneOff(setup.base, engine, "learn", live);
       if (!session || !live()) return;
-      const prompt = learnPrompt({ items: items.map((r) => ({ id: r.id, text: r.text ?? "", level: r.level ?? "you", source: typeof r.source === "string" ? r.source : "learned" })), events });
-      const answer = await session.ask(prompt, controller.signal);
+      const prompt = learnPrompt({ items: items.map((r) => ({ id: r.id, text: r.text ?? "", level: r.level ?? "you", source: typeof r.source === "string" ? r.source : "learned" })), events: events.slice(-LEARN_EVENTS) });
+      // A hung CLI must not keep the turn (and its session) forever.
+      const answer = await session.ask(prompt, AbortSignal.any([controller.signal, AbortSignal.timeout(this.d.learnMs ?? LEARN_MS)]));
       await this.logTurn(setup.base, engine, session, null, "learn", answer);
       const result = answer.ok ? parseLearn(answer.text) : null;
       if (!result || !live()) return;
       // Settings may have changed while the turn ran.
       if (!(await this.d.store.settings()).on || !live()) return;
       const now = new Date().toISOString();
-      const mine = new Map(items.filter((r) => r.source === "learned").map((r) => [r.id, r]));
-      const write = (request: unknown) => this.d.writeApp(request);
-      for (const a of result.add) await write({ op: "put", collection: SIDEKICK_COLLECTION, record: { id: `l-${randomBytes(4).toString("hex")}`, type: "learned", ...a, source: "learned", updatedAt: now } });
+      // Read again: an item the person forgot or edited (now theirs) while the turn ran is no longer Sidekick's to change.
+      const mine = new Map((await this.d.store.all()).filter((r) => r.type === "learned" && r.source === "learned").map((r) => [r.id, r]));
+      const requests: unknown[] = [];
+      for (const a of result.add) requests.push({ op: "put", collection: SIDEKICK_COLLECTION, record: { id: `l-${randomBytes(4).toString("hex")}`, type: "learned", ...a, source: "learned", updatedAt: now } });
       for (const u of result.update) {
         const old = mine.get(u.id);
-        if (old) await write({ op: "put", collection: SIDEKICK_COLLECTION, record: { ...old, text: u.text, updatedAt: now } });
+        if (old) requests.push({ op: "put", collection: SIDEKICK_COLLECTION, record: { ...old, text: u.text, updatedAt: now } });
       }
-      for (const id of result.remove) if (mine.has(id)) await write({ op: "delete", collection: SIDEKICK_COLLECTION, key: id });
+      for (const id of result.remove) if (mine.has(id)) requests.push({ op: "delete", collection: SIDEKICK_COLLECTION, key: id });
+      // All in one write and one commit; a refusal throws before learnedAt moves, so the next close tries again.
+      if (requests.length) await this.d.writeApp(setup.base, requests);
       // Up to the newest event it read: one written while the turn ran counts toward the next update.
       const r = await this.d.store.set({ learnedAt: events.reduce((max, e) => (e.at > max ? e.at : max), since) });
       if (!r.ok) console.error("Could not record when Sidekick learned", r.message);
     } finally {
-      if (this.learning === controller) this.learning = null;
       await session?.close().catch(() => undefined);
     }
   }

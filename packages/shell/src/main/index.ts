@@ -73,6 +73,7 @@ import {
   appendSidekickEvent,
   buildDataContext,
   dataDiffOf,
+  dataRequestSchema,
   isScopeId,
   migrateToScopes,
   notesPrefix,
@@ -1732,15 +1733,19 @@ if (loaded) {
       await writeNote(base, slug, { title, summary: [decision], decisions: [decision], files: [], open: [] }, { ...(action ? { action } : {}), date: new Date().toISOString(), engine: c.engineId }, prefix);
       await (await currentHistory())?.save(`Note: ${title}`, await tasks.trailerNow());
     },
-    // Learning (sidekick spec §6.4): Sidekick's own items, written as the app between tasks, with a `Data: sidekick` commit.
-    writeApp: async (request) => {
+    // Learning (sidekick spec §6.4): Sidekick's own items, written as the app after a task closes, in one `Data: sidekick` commit.
+    writeApp: async (base, requests) => {
       const blocked = quitting ? "The app is closing" : turnBlocked();
       if (blocked) throw new Error(blocked);
       const c = await validConfig();
       if (!c) throw new Error("The app is not set up yet");
-      const result = await runDataRequest(sidekickStoreFor(baseOf(c)), request, { who: "app", scope: APP_SCOPE });
+      // Learned in another profile (or before a move): never written into this one.
+      if (baseOf(c) !== base) throw new Error("The app's folder changed while Sidekick was learning");
+      // Every request checked before any runs, so a malformed one writes nothing.
+      for (const r of requests) if (!dataRequestSchema.safeParse(r).success) throw new Error("Not a data request");
+      const store = sidekickStoreFor(base);
+      for (const r of requests) await runDataRequest(store, r, { who: "app", scope: APP_SCOPE });
       await (await currentHistory())?.save(`${DATA_CHANGE_PREFIX}${SIDEKICK_COLLECTION}`).catch((err: unknown) => console.error("Could not record Sidekick's learning", err));
-      return result;
     },
   });
   // Only a harness with setup steps gets the controller: its reads may write `.harness/setup.json` (setup-steps D0).

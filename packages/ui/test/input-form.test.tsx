@@ -155,3 +155,45 @@ describe("AnswerView", () => {
     expect(screen.getByText("You skipped this question.")).toBeTruthy();
   });
 });
+
+describe("InputForm for a setup step (setup-steps spec §3 `form`)", () => {
+  const spec: InputSpec = {
+    fields: [
+      { name: "goal", kind: "text", label: "Goal", optional: false, max: 200 },
+      { name: "age", kind: "number", label: "Age", optional: true, min: 5, max: 99 },
+      { name: "tone", kind: "choice", label: "Tone", optional: false, options: ["patient", "demanding"], optionLabels: { patient: "Patient", demanding: "Demanding" } },
+      { name: "examples", kind: "boolean", label: "Show examples", optional: false },
+    ],
+  };
+
+  it("starts from saved values and shows the options' labels, sending the values", async () => {
+    const submit = vi.fn();
+    await renderIn(
+      "en",
+      <InputForm spec={spec} data={null} initial={{ goal: "Pass", age: 12, tone: "demanding", examples: true }} disabled={false} sending={false} errors={[]} submit={submit} />,
+    );
+    expect((screen.getByLabelText("Goal") as HTMLInputElement).value).toBe("Pass");
+    expect((screen.getByLabelText(/^Age/) as HTMLInputElement).value).toBe("12");
+    expect((screen.getByRole("radio", { name: "Demanding" }) as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByRole("checkbox", { name: "Show examples" }) as HTMLInputElement).checked).toBe(true);
+    fireEvent.click(screen.getByRole("radio", { name: "Patient" }));
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    expect(submit).toHaveBeenCalledWith({ goal: "Pass", age: 12, tone: "patient", examples: true });
+  });
+
+  it("with a formId it draws no buttons of its own: a button outside submits it", async () => {
+    const submit = vi.fn();
+    await renderIn(
+      "en",
+      <>
+        <InputForm spec={spec} data={null} formId="setup-form" initial={{ goal: "Pass", tone: "patient" }} disabled={false} sending={false} errors={[]} submit={submit} />
+        <button type="submit" form="setup-form">
+          Next
+        </button>
+      </>,
+    );
+    expect(screen.queryByRole("button", { name: "Send" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    expect(submit).toHaveBeenCalledWith({ goal: "Pass", tone: "patient", examples: false });
+  });
+});

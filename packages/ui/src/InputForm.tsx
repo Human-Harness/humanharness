@@ -1,7 +1,7 @@
 import { type ChangeEvent, type FormEvent, type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { BlockAnswer, InputField, InputIssue, InputSpec } from "./client";
-import { type Draft, answerRows, draftValue, emptyDraft, isSkipped, optionsOf } from "./input";
+import { type Draft, answerRows, draftOf, draftValue, emptyDraft, isSkipped, optionLabel, optionsOf } from "./input";
 
 /** Drafts by block id: they survive the chat being drawn again (Home, Settings), not a restart (spec §11.2). */
 const drafts = new Map<string, Draft>();
@@ -23,6 +23,10 @@ export interface InputFormProps {
   data: unknown;
   /** Drafts are kept by it. */
   blockId?: string;
+  /** Saved values to start from (a setup form, setup-steps spec §3). A kept draft wins. */
+  initial?: Record<string, unknown>;
+  /** The form's id: a button elsewhere (the setup screen's footer) submits it, so the form draws no buttons of its own. */
+  formId?: string;
   disabled: boolean;
   sending: boolean;
   /** From the main process: by field (`path`), "" for the whole answer. */
@@ -34,10 +38,10 @@ export interface InputFormProps {
 const ofField = (e: InputIssue, name: string) => e.path === name || e.path.startsWith(`${name}.`);
 
 /** The core form of an input block (input-blocks spec §5): a labelled control per field, errors next to each. */
-export function InputForm({ spec, data, blockId, disabled, sending, errors, submit, skip }: InputFormProps) {
+export function InputForm({ spec, data, blockId, initial, formId, disabled, sending, errors, submit, skip }: InputFormProps) {
   const { t } = useTranslation();
   const base = useId();
-  const [draft, setDraft] = useState<Draft>(() => (blockId ? drafts.get(blockId) : undefined) ?? emptyDraft(spec));
+  const [draft, setDraft] = useState<Draft>(() => (blockId ? drafts.get(blockId) : undefined) ?? (initial ? draftOf(spec, initial) : emptyDraft(spec)));
   const change = (name: string, v: unknown) =>
     setDraft((d) => {
       const next = { ...d, [name]: v };
@@ -52,7 +56,7 @@ export function InputForm({ spec, data, blockId, disabled, sending, errors, subm
     if (!disabled && !sending && !unsupported) submit(draftValue(spec, draft));
   };
   return (
-    <form className="hh-input-form" onSubmit={onSubmit} noValidate>
+    <form id={formId} className="hh-input-form" onSubmit={onSubmit} noValidate>
       {(hasFieldErrors || general.length > 0) && (
         <div className="hh-input-errors" role="alert">
           {hasFieldErrors && <p>{t("input.errorsTitle")}</p>}
@@ -73,16 +77,18 @@ export function InputForm({ spec, data, blockId, disabled, sending, errors, subm
           onChange={(v) => change(f.name, v)}
         />
       ))}
-      <div className="hh-input-actions">
-        <button type="submit" className="hh-primary" disabled={disabled || sending || unsupported}>
-          {sending ? t("input.sending") : (spec.submitLabel ?? t("input.send"))}
-        </button>
-        {skip && (
-          <button type="button" className="hh-link" disabled={disabled || sending} onClick={skip}>
-            {t("input.skip")}
+      {!formId && (
+        <div className="hh-input-actions">
+          <button type="submit" className="hh-primary" disabled={disabled || sending || unsupported}>
+            {sending ? t("input.sending") : (spec.submitLabel ?? t("input.send"))}
           </button>
-        )}
-      </div>
+          {skip && (
+            <button type="button" className="hh-link" disabled={disabled || sending} onClick={skip}>
+              {t("input.skip")}
+            </button>
+          )}
+        </div>
+      )}
     </form>
   );
 }
@@ -137,7 +143,7 @@ function Field({
         {options.map((o) => (
           <label key={o} className="hh-option">
             <input type="radio" name={id} value={o} checked={value === o} disabled={disabled} onChange={() => onChange(o)} {...invalid} />
-            {o}
+            {optionLabel(field, o)}
           </label>
         ))}
         {errorLine}
@@ -162,7 +168,7 @@ function Field({
               onChange={(e) => onChange(options.filter((x) => (x === o ? e.target.checked : picked.includes(x))))}
               {...invalid}
             />
-            {o}
+            {optionLabel(field, o)}
           </label>
         ))}
         {errorLine}

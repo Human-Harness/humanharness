@@ -888,10 +888,10 @@ export interface HarnessClient {
   documentsExist(paths: string[]): Promise<boolean[]>;
   /** Calls `listener` after each change to the document; returns the unsubscribe. */
   watchDocument(path: string, listener: () => void): () => void;
-  /** Opens a document in the reader panel (the harness's own UI may call it). */
-  openDocument(path: string): void;
+  /** Opens a document in the reader panel, at the heading `anchor` when given (the harness's own UI may call it). */
+  openDocument(path: string, anchor?: string): void;
   /** Every `openDocument`, whoever called it: the chat opens the panel. */
-  onOpenDocument(listener: (path: string) => void): () => void;
+  onOpenDocument(listener: (path: string, anchor?: string) => void): () => void;
   /** Harnesses with scopes (spec §3.4). There is no delete: archive instead. */
   scopes: {
     list(): Promise<ScopeView[]>;

@@ -28,7 +28,7 @@ function subscribe<T>(channel: string, listener: (value: T) => void): () => void
 const modeSwitches = new Set<(s: ModeSwitch) => void>();
 
 /** Told of every `openDocument`, from the window or the harness's own UI (document-reader spec §5.1). */
-const documentOpeners = new Set<(path: string) => void>();
+const documentOpeners = new Set<(path: string, anchor?: string) => void>();
 
 const client: HarnessClient = {
   getState: () => ipcRenderer.invoke("hh:getState"),
@@ -83,8 +83,8 @@ const client: HarnessClient = {
   readImage: (file) => ipcRenderer.invoke("hh:readImage", file),
   documentsExist: (paths) => ipcRenderer.invoke("hh:documentsExist", paths),
   watchDocument: documentWatcher(ipcRenderer),
-  openDocument: (file) => {
-    for (const l of [...documentOpeners]) l(file);
+  openDocument: (file, anchor) => {
+    for (const l of [...documentOpeners]) l(file, anchor);
   },
   onOpenDocument: (listener) => {
     documentOpeners.add(listener);

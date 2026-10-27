@@ -425,7 +425,7 @@ export class FakeClient implements HarnessClient {
   /** Images by path, as data: URLs. */
   images: Record<string, string> = {};
   private documentWatchers = new Map<string, Set<() => void>>();
-  private documentOpeners = new Set<(path: string) => void>();
+  private documentOpeners = new Set<(path: string, anchor?: string) => void>();
   async readDocument(file: string): Promise<DocumentRead> {
     if (file.startsWith("../") || file.startsWith("/")) return { ok: false, reason: "outside" };
     if (!Object.hasOwn(this.documents, file)) return { ok: false, reason: "missing" };
@@ -450,10 +450,10 @@ export class FakeClient implements HarnessClient {
     else this.documents[file] = text;
     for (const l of [...(this.documentWatchers.get(file) ?? [])]) l();
   }
-  openDocument(file: string) {
-    for (const l of [...this.documentOpeners]) l(file);
+  openDocument(file: string, anchor?: string) {
+    for (const l of [...this.documentOpeners]) l(file, anchor);
   }
-  onOpenDocument(listener: (path: string) => void) {
+  onOpenDocument(listener: (path: string, anchor?: string) => void) {
     this.documentOpeners.add(listener);
     return () => void this.documentOpeners.delete(listener);
   }

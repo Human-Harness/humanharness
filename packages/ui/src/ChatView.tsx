@@ -292,9 +292,9 @@ export function ChatView({
     const offModes = client.onModeSwitch((s) => tookSwitch.current(s));
     const offTurns = client.onTaskTurn((n) => tookTurn.current(n));
     // The harness's own UI may open a document (`client.openDocument`): listened to from the start. Its path is
-    // untrusted input, so only a string opens the reader (which checks it again).
-    const offDocs = client.onOpenDocument((p) => {
-      if (typeof p === "string" && p) showReader({ path: p });
+    // untrusted input, so only a string opens the reader (which checks it again), and only a string anchor is kept.
+    const offDocs = client.onOpenDocument((p, anchor) => {
+      if (typeof p === "string" && p) showReader({ path: p, ...(typeof anchor === "string" && anchor ? { anchor } : {}) });
     });
     return () => {
       offTasks();

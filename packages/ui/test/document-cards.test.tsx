@@ -96,6 +96,24 @@ describe("document cards (§5.1)", () => {
     expect(await within(again).findByRole("heading", { name: "Plan" })).toBeTruthy();
   });
 
+  it("openDocument with an anchor opens the reader there; an anchor that is not a string is ignored", async () => {
+    const ids: string[] = [];
+    Element.prototype.scrollIntoView = function (this: Element) {
+      ids.push(this.id);
+    };
+    const { client } = await chatWith([answer()], { "x.md": "# X\n\n## Intro\n\nText.\n\n## Risks\n\nMore." });
+    await screen.findByText("I wrote the analysis.");
+    act(() => client.openDocument("x.md", "risks"));
+    const reader = await screen.findByRole("complementary", { name: "Document" });
+    expect(await within(reader).findByRole("heading", { name: "Risks" })).toBeTruthy();
+    await vi.waitFor(() => expect(ids.some((id) => id.endsWith("risks"))).toBe(true));
+    ids.length = 0;
+    act(() => client.openDocument("x.md", 7 as unknown as string));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(ids.some((id) => id.endsWith("risks"))).toBe(false);
+    expect(within(reader).getByRole("heading", { name: "X" })).toBeTruthy();
+  });
+
   it("openDocument from a harness's UI with a non-string path opens nothing", async () => {
     const { client } = await chatWith([answer()]);
     await screen.findByText("I wrote the analysis.");

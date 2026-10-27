@@ -21,8 +21,12 @@ test("OpenCode answers a question, gets its effort by config option, and Setting
     await expect(page.getByRole("main").getByText("Se guarda en .harness/chats.")).toBeVisible();
 
     const log = readJsonl<{ method: string; params: Record<string, unknown> }>(s.opencodeLog);
+    // One OpenCode process: the config-option profile never restarts it.
+    expect(log.filter((l) => l.method === "initialize")).toHaveLength(1);
     // No CODEX_CONFIG for OpenCode; a free question is light: effort "low", OpenCode's default model (no model set).
-    expect(log.find((l) => l.method === "env")?.params.CODEX_CONFIG).toBeNull();
+    const envs = log.filter((l) => l.method === "env");
+    expect(envs.length).toBeGreaterThan(0);
+    for (const env of envs) expect(env.params.CODEX_CONFIG).toBeNull();
     expect(log.filter((l) => l.method === "session/set_config_option").map((l) => [l.params.configId, l.params.value])).toEqual([["effort", "low"]]);
     // The demo edits nothing (permissions.edit "none"): OpenCode's read-only mode.
     expect(log.find((l) => l.method === "session/set_mode")?.params.modeId).toBe("plan");

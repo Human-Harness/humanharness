@@ -1,6 +1,6 @@
 # Topic: engines
 
-Explain how Human Harness finds, sets up and talks to Claude and Codex with the person's own subscription. Answer in {{language}}.
+Explain how Human Harness finds, sets up and talks to Claude, Codex and OpenCode with the person's own subscription or provider. Answer in {{language}}.
 
 1. Read `docs/architecture/engines.md` in the reference folder first.
 2. Then, only as needed: `packages/engines/src/index.ts`, `packages/shell/src/main/engine-status.ts`, `packages/runtime/src/claude-cli.ts`, `packages/runtime/src/acp.ts`.

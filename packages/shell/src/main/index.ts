@@ -321,6 +321,8 @@ async function appState(): Promise<AppState> {
             termsUrl: e.termsUrl,
             privacyUrl: e.privacyUrl,
             reportsLimits: false,
+            // Empty for Claude and Codex (D0); a mocked OpenCode keeps its cost and Terminal facts.
+            ...engineOptionExtras(e),
             mock: true,
           };
         }

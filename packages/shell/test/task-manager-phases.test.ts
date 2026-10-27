@@ -547,6 +547,40 @@ describe("TaskManager: the time box (task-phases spec §5)", () => {
     await vi.waitFor(() => expect(t.state().current?.timeBox).not.toHaveProperty("runningSince"));
   });
 
+  it("a resumed session tells the agent the time left, like the first message; D0 without a box", async () => {
+    const current = { id: "t1", action: "session", status: "waiting" as const, startedAt: "", turns: 2, resume: true as const, timeBox: { minutes: 10, usedMs: 4000 } };
+    const t = setup({ timeBox: box, phases: [], state: { version: 1, actions: {}, current } });
+    await t.manager.ask("Hi");
+    expect(t.turns[0].message).toBe(resumeMessage({ language: "en", notesIndex: "", brief: "# Task: session\n\n{{notesIndex}}", timeLeft: "about 6 minutes", message: "Hi" }));
+    expect(t.turns[0].message).toContain("\n\nTime left: about 6 minutes.\n\n## The person's message\nHi");
+    const { timeBox: _box, ...plain } = current;
+    const d0 = setup({ timeBox: box, phases: [], state: { version: 1, actions: {}, current: plain } });
+    await d0.manager.ask("Hi");
+    expect(d0.turns[0].message).not.toContain("Time left");
+  });
+
+  it("a mode's tier floor starts the new task with the person's time box, not the action's default", async () => {
+    const modes = { socratic: { label: "Socratic" }, feynman: { label: "Feynman", minTier: "deep" as const } };
+    const run = async (minutes: number | null) => {
+      const t = setup({
+        timeBox: { ...box, default: 20 },
+        modes: { modes: ["socratic", "feynman"], defaultMode: "socratic" },
+        extra: { modes },
+        script: [[ok], [saveNote, ok], [ok]],
+      });
+      await t.manager.start("session", undefined, undefined, undefined, { timeBox: minutes });
+      if (minutes !== null) await t.manager.extendTimeBox();
+      const { accepted, done } = t.manager.chooseMode("feynman", { belowTier: "new-task" });
+      expect(await accepted).toEqual({ ok: true, switched: "new-task" });
+      await done;
+      expect(t.state().current).toMatchObject({ id: "t2", mode: "feynman" });
+      return t.state().current?.timeBox;
+    };
+    // Kept even when a "+5 min" made it a length the action doesn't offer.
+    expect(await run(10)).toMatchObject({ minutes: 15, usedMs: 0 });
+    expect(await run(null)).toBeUndefined();
+  });
+
   it("without phases, the first message still tells the agent the time box", async () => {
     const t = setup({ timeBox: box, phases: [] });
     await t.manager.start("session", undefined, undefined, undefined, { timeBox: 20 });

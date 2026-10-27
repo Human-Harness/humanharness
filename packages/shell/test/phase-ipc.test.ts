@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { PhaseResult } from "@humanharness/ui/client";
-import { setPhaseHandler } from "../src/main/phase-ipc";
+import { setPhaseHandler, timeBoxOffered } from "../src/main/phase-ipc";
 
 function setup(opts: { quitting?: boolean; blocked?: string | null; result?: PhaseResult; doneError?: Error } = {}) {
   const calls: { to: string; task: string }[] = [];
@@ -35,5 +35,21 @@ describe("hh:setPhase", () => {
       await expect(t.handler(task, phase)).rejects.toThrow("Invalid phase");
     }
     expect(t.calls).toEqual([]);
+  });
+});
+
+describe("hh:send's time box", () => {
+  it("takes a length the action offers, and no limit only from an action with a box", () => {
+    expect(timeBoxOffered(15, [15, 30])).toBe(true);
+    expect(timeBoxOffered(null, [15, 30])).toBe(true);
+    expect(timeBoxOffered(20, [15, 30])).toBe(false);
+    expect(timeBoxOffered(null, undefined)).toBe(false);
+  });
+
+  it("refuses any box for an unknown action, and anything but a number or null", () => {
+    expect(timeBoxOffered(15, undefined)).toBe(false);
+    expect(timeBoxOffered("15", [15, 30])).toBe(false);
+    expect(timeBoxOffered(Number.NaN, [15, 30])).toBe(false);
+    expect(timeBoxOffered({}, [15, 30])).toBe(false);
   });
 });

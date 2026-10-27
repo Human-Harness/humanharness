@@ -63,10 +63,10 @@ Modes spec §7, as built (see also `modes.md`):
 ## The time box
 
 - **Declared** on the action: `timeBox: { options, default, wrapUpAt }`. `options`: 1 to 6 whole minutes, 1–240 (`TIME_BOX_MAX`), each once; `default`: one of them, or `null` (also when absent) for no limit; `wrapUpAt` (optional, `0 < x ≤ 1`): the share of the time at which the wrap-up runs, else at the end. A time box works with or without phases.
-- **Picked** at the start: the window asks "How long?" (the options and "No limit", the default first; "Not now" sends nothing) before an action with a time box, before the modes' "ask" question; a harness's own UI may pass `SendOptions.timeBox`. A start the window doesn't make itself (a `choices` option, the path's `next`) takes the default. `run --time <minutes>` picks it in the terminal. A length the action doesn't offer is refused before anything closes.
-- **Told to the agent**: the first message ends with `Time left: about N minutes.`, and every change turn carries the time left.
+- **Picked** at the start: the window asks "How long?" (the options and "No limit", the default first; "Not now" sends nothing) before an action with a time box, before the modes' "ask" question; a harness's own UI may pass `SendOptions.timeBox`. A start the window doesn't make itself (a `choices` option, the path's `next`) takes the default; the new task a mode's tier floor starts ("Start a new task with <mode>") keeps the person's length (none stays none). `run --time <minutes>` picks it in the terminal. A length the action doesn't offer is refused before anything closes.
+- **Told to the agent**: the first message ends with `Time left: about N minutes.`, a resumed session's first message has the same line before the person's message, and every change turn carries the time left.
 - **The counter** is `timeBox: { minutes, usedMs, runningSince? }` in `tasks.json`: time used so far, plus the running stretch since `runningSince` (absent: paused). One timer in `TaskManager` is armed after every write for the next step; when it fires, the step waits until no operation or turn runs, so a turn is never cut.
-- **Pause** (`client.pauseTask()`) only while the task waits; **Resume** (`client.resumeTask()`), and any turn the person starts (a message, a phase or mode pick) resumes it. Quitting pauses it. **"+5 min"** (`client.extendTimeBox()`, also during a turn) adds five minutes and clears `ended`, so the end runs again later; the wrap-up never runs twice.
+- **Pause** (`client.pauseTask()`) only while the task waits; **Resume** (`client.resumeTask()`), and any turn the person starts (a message, a phase or mode pick) resumes it. Quitting pauses it. **"+5 min"** (`client.extendTimeBox()`, also during a turn, refused while quitting) adds five minutes and clears `ended`, so the end runs again later; the wrap-up never runs twice.
 - **The wrap-up**, once, at `wrapUpAt`: `wrappedUp` is set, a due checkpoint runs, then one turn with `WRAP_UP_PROMPT` ("Time is almost up: finish the current point briefly…"). Its chat line is "Time is almost up" (`TurnOptions.wrapUp`, `ChatEntry.timeUp`), `usage.jsonl` `phase: "wrap-up"`. After it the app moves to the close part, if the task was never in it.
 - **At 100%** `ended` is set, and the app moves to the close part only if the task was never in it. The close part itself is never cut off: the person or the agent finishes it.
 - **Without a close part** (or without phases), the stepper shows "Time is up" and a Finish button once the wrap-up ran; nothing closes on its own.
@@ -98,8 +98,6 @@ An action without phases or a time box behaves and records exactly as before: th
 
 ## Known gaps
 
-- A resumed session's first message carries the time left only through a brief's `{{timeLeft}}`, not as its own `Time left:` line like the first message.
-- When the tier floor starts a new task ("Start a new task with <mode>"), it gets the action's default time box, not the one the person picked.
 - A restart never keeps a running box: startup ends any open task.
 
 ## Where to look

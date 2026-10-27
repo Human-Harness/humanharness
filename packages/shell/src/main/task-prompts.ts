@@ -86,6 +86,8 @@ export function resumeMessage(vars: {
   mode?: string;
   /** The list of parts and the current part's section (task-phases spec §6), after the mode's. */
   phase?: string;
+  /** "about 12 minutes" with a time box (task-phases spec §5): the same line the first message has. Absent: none (D0). */
+  timeLeft?: string;
   message: string;
 }): string {
   const line = fillPrompt(RESUME_PROMPT, { language: vars.language, notesIndex: "" });
@@ -99,7 +101,8 @@ export function resumeMessage(vars: {
           line,
         ]
       : [line, ...(vars.notesIndex ? [vars.notesIndex] : []), ...(question ? [question] : [])];
-  return [...head, `## The person's message\n${vars.message}`].join("\n\n");
+  const box = vars.timeLeft ? [`Time left: ${vars.timeLeft}.`] : [];
+  return [...head, ...box, `## The person's message\n${vars.message}`].join("\n\n");
 }
 
 /** A mode as a prompt carries it: its label, its brief (the file's text, not filled yet) and its settings' sentences. */

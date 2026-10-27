@@ -224,4 +224,14 @@ describe("phase prompts (task-phases spec §4.4, §5, §6)", () => {
     expect(withPart.indexOf("## Mode: Socratic")).toBeLessThan(withPart.indexOf("## Parts of this task"));
     expect(resumeMessage({ language: "en", notesIndex: "", brief: "# Task: session", message: "Hi" })).not.toContain("Parts of this task");
   });
+
+  it("a resumed session with a time box says the time left before the person's message; D0 without one", () => {
+    const vars = { language: "en" as const, notesIndex: "", brief: "# Task: session", message: "Hi" };
+    const line = fillPrompt(RESUME_PROMPT, { language: "en", notesIndex: "" });
+    expect(resumeMessage({ ...vars, timeLeft: "about 6 minutes" })).toBe(
+      ["# Task: session", line, "Time left: about 6 minutes.", "## The person's message\nHi"].join("\n\n"),
+    );
+    expect(resumeMessage({ ...vars, timeLeft: "" })).toBe(resumeMessage(vars));
+    expect(resumeMessage(vars)).not.toContain("Time left");
+  });
 });

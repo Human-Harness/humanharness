@@ -78,7 +78,7 @@ import { installCommandOf, terminalCommand } from "./install-help";
 import { detectEngine, hasAcceptedNotice } from "./engine-status";
 import { QUESTIONS, cleanModels, engineOffer, firstOffered, fitEffort, nearestTier, nextFallback, resolveProfile } from "./models";
 import { chooseModeHandler } from "./mode-ipc";
-import { setPhaseHandler } from "./phase-ipc";
+import { setPhaseHandler, timeBoxOffered } from "./phase-ipc";
 import { requireNoticeForChoice, requireNoticeForTurn } from "./notice-policy";
 import { archiveStaleChat, startNewChatIfEngineChanged } from "./engine-switch";
 import { type RunningSetup, runSetupProcess, setupCommand, stopSetupProcess } from "./setup-runner";
@@ -852,7 +852,7 @@ function registerIpc() {
     // The time box the person picked (task-phases spec §5): one the action doesn't offer is refused before anything closes.
     const offered = action ? harness.actions[action].timeBox?.options : undefined;
     const timeBox = options?.timeBox;
-    if (timeBox !== undefined && (timeBox !== null ? !(offered ?? []).includes(timeBox) : !offered)) throw new Error("Unknown time box");
+    if (timeBox !== undefined && !timeBoxOffered(timeBox, offered)) throw new Error("Unknown time box");
     // A message with an action starts that task (the message is what the chat shows); any other follows up or asks.
     const sent = action ? tasks.start(action, message, scope, mode, timeBox !== undefined ? { timeBox } : {}) : tasks.ask(message, undefined, scope);
     return scope === undefined ? sent : sent.finally(() => void scopesChanged());
@@ -948,7 +948,10 @@ function registerIpc() {
   });
   handle("hh:pauseTask", () => tasks.pauseTimeBox());
   handle("hh:resumeTask", () => tasks.resumeTimeBox());
-  handle("hh:extendTimeBox", () => tasks.extendTimeBox());
+  handle("hh:extendTimeBox", () => {
+    if (quitting) return false;
+    return tasks.extendTimeBox();
+  });
   handle("hh:openPath", async (file: unknown) => {
     const c = await validConfig();
     if (!c) return false;

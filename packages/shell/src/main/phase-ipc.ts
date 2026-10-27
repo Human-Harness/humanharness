@@ -24,3 +24,12 @@ export function setPhaseHandler(d: SetPhaseDeps): (task: unknown, phase: unknown
     return accepted;
   };
 }
+
+/**
+ * `hh:send`'s time box (task-phases spec §5): a length the action offers, or `null` (no limit) for an action that
+ * offers a box at all. `offered` is the action's options; absent for an action without a box or no known action.
+ */
+export function timeBoxOffered(timeBox: unknown, offered: readonly number[] | undefined): timeBox is number | null {
+  if (timeBox === null) return offered !== undefined;
+  return typeof timeBox === "number" && (offered ?? []).includes(timeBox);
+}

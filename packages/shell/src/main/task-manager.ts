@@ -696,7 +696,18 @@ export class TaskManager {
     return true;
   }
 
-  private async startNow(action: string, display?: string, scope?: string, mode?: string, floor?: Tier, opts: { timeBox?: number | null } = {}): Promise<void> {
+  /**
+   * `opts.timeBox`: the minutes picked (or `null`, no limit); absent, the action's default. `opts.kept`: those minutes
+   * come from the task this one replaces (a mode's tier floor), so they may differ from the options (a "+5 min").
+   */
+  private async startNow(
+    action: string,
+    display?: string,
+    scope?: string,
+    mode?: string,
+    floor?: Tier,
+    opts: { timeBox?: number | null; kept?: true } = {},
+  ): Promise<void> {
     if (!this.known(action)) throw new Error("Unknown action");
     const modes = this.modesOf(action);
     // Checked before anything closes, like the scope below.
@@ -704,7 +715,7 @@ export class TaskManager {
     // The time box (spec §5): the one picked, else the action's default; one it doesn't offer is refused before anything closes.
     const offered = this.d.actions[action].timeBox;
     const minutes = opts.timeBox !== undefined ? opts.timeBox : (offered?.default ?? null);
-    if (minutes !== null && !(offered?.options ?? []).includes(minutes)) throw new Error("Unknown time box");
+    if (minutes !== null && !opts.kept && !(offered?.options ?? []).includes(minutes)) throw new Error("Unknown time box");
     const first = this.phasesOf(action)[0];
     // How the task starts (spec §3 `defaultMode`): in a mode, asking for a recommendation, or as before (D0). The first
     // phase may allow fewer modes (modes spec §7): a mode it forbids starts suspended; "recommend" waits.
@@ -904,7 +915,8 @@ export class TaskManager {
       return this.endsInWindow(async () => {
         // The closing turn saves the note the new task starts from: one turn, where the spec has a checkpoint and a close.
         if (!(await this.closeCurrent())) return this.stopped();
-        return this.startNow(c.action!, undefined, undefined, mode, required);
+        // The person's time box goes with the task (not the action's default); none stays none.
+        return this.startNow(c.action!, undefined, undefined, mode, required, { timeBox: c.timeBox?.minutes ?? null, kept: true });
       });
     }
     if (c.resume) {
@@ -1178,6 +1190,7 @@ export class TaskManager {
       ...(brief !== undefined ? { brief } : {}),
       ...(mode ? { mode } : {}),
       ...(phase ? { phase } : {}),
+      ...(c.timeBox ? { timeLeft: this.timeLeft(c) } : {}),
       ...(c.question ? { question: c.question, ...(c.questionCut ? { questionCut: true } : {}) } : {}),
       message: text,
     });

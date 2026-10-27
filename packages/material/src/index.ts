@@ -29,3 +29,4 @@ export * from "./stages";
 export * from "./review";
 export * from "./word-diff";
 export * from "./decide";
+export * from "./label";

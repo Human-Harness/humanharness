@@ -149,6 +149,8 @@ export interface SourceEntry {
   repairs?: { id: string; issue: string }[];
   /** Questions for the person (§6.2 `ask`); `choices` are ids the window names. */
   asks?: MaterialAsk[];
+  /** Labelling (§10): how many fragments have their labels so far; gone once the source is ready. */
+  labelled?: number;
   /** The person agreed to a full review (§7). */
   fullReview?: boolean;
   addedAt: string;

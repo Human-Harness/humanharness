@@ -118,6 +118,9 @@ describe("MaterialService", () => {
     expect(await service.setGrounding("fractions", "loose" as never)).toEqual({ ok: false, reason: "invalid" });
     const fixed = new MaterialService(deps({ material: { accepts: ["text"], grounding: { default: "strict", personCanChange: false }, budget: { indexTokens: 600 }, ...stageFields } }));
     expect(await fixed.setGrounding("fractions", "mixed")).toEqual({ ok: false, reason: "invalid" });
+    // A choice left on disk (made when the harness still allowed it, or by hand) doesn't override a fixed mode.
+    const left = new MaterialService(deps({ material: { accepts: ["text"], grounding: { default: "mixed", personCanChange: false }, budget: { indexTokens: 600 }, ...stageFields } }));
+    expect((await left.list("fractions")).grounding).toEqual({ mode: "mixed", canChange: false });
   });
 
   it("confirm checks its source id; an answer that doesn't apply is invalid", async () => {
@@ -473,7 +476,7 @@ describe("the review stage in the queue (material spec §6.2)", () => {
     expect(converts).toBe(1);
   });
 
-  it("a review in two batches runs both in one kick, then waits for labelling", async () => {
+  it("a review in two batches and labels in two batches run in one kick; then the sheet is due", async () => {
     const store = new MaterialStore(base, "fractions");
     const ids = Array.from({ length: 25 }, (_, i) => `a-${String(i + 1).padStart(3, "0")}`);
     await store.update(() => [
@@ -488,8 +491,13 @@ describe("the review stage in the queue (material spec §6.2)", () => {
       deps({
         runStage: async (_j, prompt, tools, handle) => {
           runs++;
-          expect(tools).toEqual(["material_review"]);
           const batch = [...prompt.matchAll(/^\[(a-\d{3})\]/gm)].map((m) => m[1]);
+          if (tools.includes("material_label")) {
+            expect(tools).toEqual(["material_label", "material_flag"]);
+            await handle({ op: "material_label", fragments: batch.map((id) => ({ id, summary: `About ${id}.`, keywords: [id], kind: "explanation" })) });
+            return { ok: true };
+          }
+          expect(tools).toEqual(["material_review"]);
           await handle({ op: "material_review", verdict: "good", fragments: batch.map((id) => ({ id, decision: "ok" })), issues: [] });
           return { ok: true };
         },
@@ -498,11 +506,12 @@ describe("the review stage in the queue (material spec §6.2)", () => {
     const jobs = new MaterialJobs<Job>({ idle: () => true, next: () => svc.nextJob(), run: (j, signal) => svc.runJob(j, signal), pollMs: 2 });
     jobs.kick();
     await jobs.settled();
-    expect(runs).toBe(2);
-    expect(await store.source("a")).toMatchObject({ status: "validating", stage: "label", verdict: "good" });
-    expect((await store.readFragment("a-025"))?.meta.validated).toBe("sample");
+    expect(runs).toBe(4);
+    expect(await store.source("a")).toMatchObject({ status: "ready", verdict: "good" });
+    expect((await store.readFragment("a-025"))?.meta).toMatchObject({ validated: "sample", kind: "explanation", keywords: ["a-025"] });
+    expect(await store.stale()).toBe("sheet");
     // Each batch's result reached the history.
-    expect(changes).toEqual(["fractions: review a", "fractions: review a"]);
+    expect(changes).toEqual(["fractions: review a", "fractions: review a", "fractions: label a", "fractions: label a"]);
   });
 
   it("a stage that leaves the source as it was records nothing in the history", async () => {

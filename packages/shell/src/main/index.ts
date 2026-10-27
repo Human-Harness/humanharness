@@ -29,7 +29,7 @@ import {
   settingsView,
   stageTier,
 } from "@humanharness/harness-sdk";
-import { type Job, MaterialStore, materialSection, workerRunner } from "@humanharness/material/light";
+import { type Job, MaterialStore, groundingMode, materialSection, workerRunner } from "@humanharness/material/light";
 import { type Event, type HarnessRuntime, createRuntime, runSystemTask } from "@humanharness/runtime";
 import {
   type AppConfig,
@@ -765,7 +765,7 @@ const tasks = new TaskManager({
       const store = materialStore(baseOf(c), scope);
       const rows = await store.indexRows();
       if (rows.length === 0) return "";
-      return materialSection({ mode: (await store.grounding()) ?? m.grounding.default, sheet: await store.sheet(), rows, budgetTokens: m.budget.indexTokens });
+      return materialSection({ mode: groundingMode(await store.grounding(), m.grounding), sheet: await store.sheet(), rows, budgetTokens: m.budget.indexTokens });
     };
   },
   get path() {

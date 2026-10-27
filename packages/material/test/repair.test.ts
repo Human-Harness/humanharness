@@ -33,7 +33,7 @@ describe("wordDiff", () => {
     expect(wordDiff("about ~5 cm", "about 5 cm")).toBeGreaterThan(0);
     const words = Array.from({ length: 30 }, (_, i) => `w${i}`).join(" ");
     await store.writeFragments("ch2", [{ ...f5, md: `${words} -3/4` }]);
-    await expect(STAGES.repair!.accept("material_repair", { id: "ch2-005", markdown: `${words} 3/4` }, { store, job, answers: [] })).rejects.toThrow("changes the words");
+    await expect(STAGES.repair!.accept("material_repair", { id: "ch2-005", markdown: `${words} 3/4` }, { store, job, answers: [], ctx })).rejects.toThrow("changes the words");
   });
 
   it("a deletion counts in full: 3% of the words gone is over the limit", () => {
@@ -45,7 +45,7 @@ describe("wordDiff", () => {
 
 describe("the repair stage", () => {
   it("accepts a structure-only repair; keeps the program's version", async () => {
-    const state = { store, job, answers: [] };
+    const state = { store, job, answers: [], ctx };
     expect(await STAGES.repair!.prompt(store, job, ctx)).toContain("Table lost its columns");
     expect(await STAGES.repair!.accept("material_repair", { id: "ch2-005", markdown: table }, state)).toBe("Saved.");
     expect(await STAGES.repair!.apply(store, job, state, ctx)).toBe(true);
@@ -58,7 +58,7 @@ describe("the repair stage", () => {
   });
 
   it("refuses a repair that changes words, and asks the person", async () => {
-    const state = { store, job, answers: [] };
+    const state = { store, job, answers: [], ctx };
     await STAGES.repair!.prompt(store, job, ctx);
     await expect(STAGES.repair!.accept("material_repair", { id: "ch2-005", markdown: "x y z\n7 8 9\n4 5 6" }, state)).rejects.toThrow("changes the words");
     await STAGES.repair!.apply(store, job, state, ctx);
@@ -74,7 +74,7 @@ describe("the repair stage", () => {
       repairs: [{ id: "ch2-009", issue: "Merged away" }],
       asks: [{ fragment: "ch2-009", question: "?", choices: ["keep", "drop"] }, { question: "Use it?", choices: ["use", "remove"] }],
     }));
-    const state = { store, job, answers: [] };
+    const state = { store, job, answers: [], ctx };
     expect(await STAGES.repair!.prompt(store, job, ctx)).toBeNull();
     await expect(STAGES.repair!.accept("material_repair", { id: "ch2-009", markdown: f5.md }, state)).rejects.toThrow("not to repair");
     expect(await STAGES.repair!.apply(store, job, state, ctx)).toBe(true);
@@ -85,18 +85,18 @@ describe("the repair stage", () => {
   });
 
   it("refuses a fragment the review didn't ask to repair", async () => {
-    const state = { store, job, answers: [] };
+    const state = { store, job, answers: [], ctx };
     await expect(STAGES.repair!.accept("material_repair", { id: "ch2-001", markdown: "x" }, state)).rejects.toThrow("not to repair");
   });
 
   it("a session that answers nothing still moves on to labelling", async () => {
-    expect(await STAGES.repair!.apply(store, job, { store, job, answers: [] }, ctx)).toBe(true);
+    expect(await STAGES.repair!.apply(store, job, { store, job, answers: [], ctx }, ctx)).toBe(true);
     expect(await store.source("ch2")).toMatchObject({ stage: "label", fixes: [] });
     expect((await store.readFragment("ch2-005"))?.meta.validated).toBe("not-reviewed");
   });
 
   it("a source removed while the stage ran is left alone", async () => {
-    const state = { store, job, answers: [] };
+    const state = { store, job, answers: [], ctx };
     await STAGES.repair!.accept("material_repair", { id: "ch2-005", markdown: table }, state);
     await store.patch("ch2", (s) => ({ ...s, status: "removed" }));
     expect(await STAGES.repair!.apply(store, job, state, ctx)).toBe(true);

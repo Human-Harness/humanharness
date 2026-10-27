@@ -8,6 +8,10 @@ export const GROUNDING_RULES: Record<GroundingMode, string> = {
   mixed: "Prefer the material. You may add your own knowledge; say when you do.",
 };
 
+/** The scope's mode (§9 Ground): the person's choice only when the harness lets them change it; else the harness's. */
+export const groundingMode = (chosen: GroundingMode | null, rule: { default: GroundingMode; personCanChange: boolean }): GroundingMode =>
+  rule.personCanChange && chosen ? chosen : rule.default;
+
 const cell = (s: string) => s.replace(/\|/g, "\\|").replace(/\s*\n\s*/g, " ").trim();
 
 /**

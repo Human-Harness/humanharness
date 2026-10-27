@@ -54,7 +54,7 @@ describe("the review stage", () => {
   });
 
   it("accept refuses fragments outside the batch and answers that break the schema", async () => {
-    const state = { store, job: { scope: "fractions", source: "ch2", stage: "review" as const }, answers: [] };
+    const state = { store, job: { scope: "fractions", source: "ch2", stage: "review" as const }, answers: [], ctx };
     await STAGES.review!.prompt(store, state.job, ctx);
     await expect(STAGES.review!.accept("material_review", { verdict: "good", fragments: [{ id: "ch2-029", decision: "ok" }], issues: [] }, state)).rejects.toThrow("not in this batch");
     await expect(STAGES.review!.accept("material_review", { verdict: "fine", fragments: [], issues: [] }, state)).rejects.toThrow();
@@ -64,7 +64,7 @@ describe("the review stage", () => {
 
   it("apply: no answer is a failed stage; an answer moves the source on; nothing to review goes straight to labelling", async () => {
     const job = { scope: "fractions", source: "ch2", stage: "review" as const };
-    const state = { store, job, answers: [] as Record<string, unknown>[] };
+    const state = { store, job, answers: [] as Record<string, unknown>[], ctx };
     await STAGES.review!.prompt(store, job, ctx);
     expect(await STAGES.review!.apply(store, job, state, ctx)).toBe(false);
     const batch = (await store.source("ch2"))!.reviewQueue!;
@@ -74,7 +74,7 @@ describe("the review stage", () => {
 
     await store.patch("ch2", (s) => ({ ...s, stage: "review" }));
     expect(await STAGES.review!.prompt(store, job, ctx)).toBeNull();
-    expect(await STAGES.review!.apply(store, job, { store, job, answers: [] }, ctx)).toBe(true);
+    expect(await STAGES.review!.apply(store, job, { store, job, answers: [], ctx }, ctx)).toBe(true);
     expect((await store.source("ch2"))?.stage).toBe("label");
   });
 });

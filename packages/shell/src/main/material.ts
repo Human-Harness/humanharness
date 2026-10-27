@@ -19,6 +19,7 @@ import {
   confirmSource,
   decide,
   failStage,
+  groundingMode,
   isFragmentId,
   isSourceId,
   jobKey,
@@ -251,7 +252,7 @@ export class MaterialService {
     return {
       scope,
       sources: sources.filter((s) => s.status !== "removed").map(view),
-      grounding: { mode: chosen ?? this.d.material.grounding.default, canChange: this.d.material.grounding.personCanChange },
+      grounding: { mode: groundingMode(chosen, this.d.material.grounding), canChange: this.d.material.grounding.personCanChange },
       provider: await this.d.provider(),
       window: await this.d.window(),
     };
@@ -421,7 +422,7 @@ export class MaterialService {
     const prompt = await def.prompt(store, job, ctx);
     // The source once the prompt is set (it may queue a batch): a stage that changed it since has moved on.
     const before = job.source ? JSON.stringify(await store.source(job.source)) : null;
-    const state: StageState = { store, job, answers: [] };
+    const state: StageState = { store, job, answers: [], ctx };
     let ok: boolean;
     if (prompt !== null) {
       const handle = async (request: unknown) => {

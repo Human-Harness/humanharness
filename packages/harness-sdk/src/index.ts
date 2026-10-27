@@ -149,13 +149,30 @@ const blockSchema = z.custom<Block>(
 const RESERVED_MCP_NAMES = ["ui", "data"];
 
 /** One kind of document the harness's agent writes (document-reader spec §4.2). */
+/** One line of kind text: a line break would turn the rest into live Markdown in `AGENTS.md`. */
+const oneLine = (max: number) =>
+  z
+    .string()
+    .trim()
+    .min(1)
+    .max(max)
+    .regex(/^[^\r\n]*$/, "Use one line, without line breaks");
 const documentKindSchema = z.object({
-  when: text.max(300),
-  sections: z.array(z.string().trim().min(1).max(120)).min(1).max(20),
-  status: z.array(z.string().trim().min(1).max(40)).min(1).max(10).optional(),
+  when: oneLine(300),
+  sections: z.array(oneLine(120)).min(1).max(20),
+  status: z.array(oneLine(40)).min(1).max(10).optional(),
 });
+/** At most this many kinds: each one adds its template to the agent's `AGENTS.md`. */
+const MAX_DOCUMENT_KINDS = 20;
 /** Document kinds with a template of required `##` sections. Absent: only the base writing guide (D0). */
-const documentsSchema = z.object({ kinds: z.record(z.string().regex(DOCUMENT_KIND_ID), documentKindSchema) });
+const documentsSchema = z.object({
+  kinds: z
+    .record(
+      z.string().max(64, "A kind id has at most 64 characters").regex(DOCUMENT_KIND_ID, "A kind id is lowercase letters, digits and -"),
+      documentKindSchema,
+    )
+    .refine((k) => Object.keys(k).length <= MAX_DOCUMENT_KINDS, { message: `At most ${MAX_DOCUMENT_KINDS} document kinds` }),
+});
 
 const manifestSchema = z.object({
   id: z.string().regex(HARNESS_ID),
@@ -420,6 +437,12 @@ const manifestSchema = z.object({
       const key = s.trim().toLowerCase();
       if (seen.has(key)) ctx.addIssue({ code: "custom", path: ["documents", "kinds", id, "sections", i], message: `"${s}" is listed twice` });
       seen.add(key);
+    });
+    const statuses = new Set<string>();
+    kind.status?.forEach((s, i) => {
+      const key = s.toLowerCase();
+      if (statuses.has(key)) ctx.addIssue({ code: "custom", path: ["documents", "kinds", id, "status", i], message: `"${s}" is listed twice` });
+      statuses.add(key);
     });
   }
 });

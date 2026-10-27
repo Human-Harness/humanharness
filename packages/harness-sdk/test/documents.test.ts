@@ -187,6 +187,36 @@ describe("manifest documents (§4.2)", () => {
     expect(() => defineHarness({ ...base, documents: { kinds: { adr: { when: "x", sections: ["Context", "context "] } } } })).toThrow(/twice/);
   });
 
+  it("trims when and refuses a blank one", () => {
+    const h = defineHarness({ ...base, documents: { kinds: { adr: { when: "  A decision.  ", sections: ["A"] } } } });
+    expect(h.documents!.kinds.adr!.when).toBe("A decision.");
+    expect(() => defineHarness({ ...base, documents: { kinds: { adr: { when: "   ", sections: ["A"] } } } })).toThrow();
+  });
+
+  it("refuses a line break in when, a section or a status", () => {
+    expect(() => defineHarness({ ...base, documents: { kinds: { adr: { when: "a\nb", sections: ["A"] } } } })).toThrow();
+    expect(() => defineHarness({ ...base, documents: { kinds: { adr: { when: "a\rb", sections: ["A"] } } } })).toThrow();
+    expect(() => defineHarness({ ...base, documents: { kinds: { adr: { when: "x", sections: ["A\n## B"] } } } })).toThrow();
+    expect(() => defineHarness({ ...base, documents: { kinds: { adr: { when: "x", sections: ["A"], status: ["o\rk"] } } } })).toThrow();
+  });
+
+  it("explains a bad kind id", () => {
+    expect(() => defineHarness({ ...base, documents: { kinds: { ADR: { when: "x", sections: ["A"] } } } })).toThrow(/lowercase letters, digits and -/);
+  });
+
+  it("refuses the same status twice in a kind", () => {
+    expect(() => defineHarness({ ...base, documents: { kinds: { adr: { when: "x", sections: ["A"], status: ["Done", "done"] } } } })).toThrow(/twice/);
+  });
+
+  it("caps kind ids at 64 characters and kinds at 20", () => {
+    const one = { when: "x", sections: ["A"] };
+    expect(() => defineHarness({ ...base, documents: { kinds: { ["a".repeat(64)]: one } } })).not.toThrow();
+    expect(() => defineHarness({ ...base, documents: { kinds: { ["a".repeat(65)]: one } } })).toThrow();
+    const kinds = (n: number) => Object.fromEntries(Array.from({ length: n }, (_, i) => [`k${i}`, one]));
+    expect(() => defineHarness({ ...base, documents: { kinds: kinds(20) } })).not.toThrow();
+    expect(() => defineHarness({ ...base, documents: { kinds: kinds(21) } })).toThrow(/20/);
+  });
+
   it("D0: without documents the manifest has no documents field", () => {
     expect("documents" in defineHarness(base)).toBe(false);
   });

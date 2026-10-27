@@ -69,6 +69,8 @@ export async function launch(
   s: Sandbox,
   scripts: { claude: ClaudeScript; codex?: AcpScript },
   app: string = shellDir,
+  /** More test hooks (HH_TEST_* only; the shell ignores the rest). */
+  extraEnv: Record<string, string> = {},
 ): Promise<{ app: ElectronApplication; page: Page }> {
   const engines = {
     claude: { command: fakeClaudeCommand(), env: { HH_FAKE_SCRIPT: writeScript(s.root, scripts.claude), HH_FAKE_PROMPTS: s.claudePrompts } },
@@ -77,7 +79,7 @@ export async function launch(
   const electronApp = await electron.launch({
     executablePath: electronBinary,
     args: [app],
-    env: { ...baseEnv(s), HH_TEST_ENGINES: JSON.stringify(engines) },
+    env: { ...baseEnv(s), HH_TEST_ENGINES: JSON.stringify(engines), ...extraEnv },
   });
   return { app: electronApp, page: await electronApp.firstWindow() };
 }

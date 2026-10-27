@@ -1215,7 +1215,7 @@ describe("several sidekicks (spec §2a)", () => {
   });
 
   it("after-reply with two candidates: one speaker by order, the other's session never opens", async () => {
-    const h = harness({ record: on, extra: [{ ...RULO, order: 0 }, { ...DEF, order: 1 }], answers: [json({ next: "Ask for the sources" })] });
+    const h = harness({ record: on, extra: [{ ...RULO, order: 0 }, { ...DEF, order: 1 }], answers: [json({ lesson: "Sources first." })] });
     await h.ctl.afterReply(END);
     expect((await h.ctl.state()).cards[0]?.speaker).toEqual({ id: "rulo", name: "Rulo", mark: "🦊" });
     expect(h.sessions).toEqual(["rulo"]);
@@ -1255,8 +1255,8 @@ describe("several sidekicks (spec §2a)", () => {
     expect(h.sessions).toEqual(["sidekick"]);
   });
 
-  it("each sidekick mutes its own kinds: Sidekick's muted `vague` doesn't mute Rulo's", async () => {
-    const h = harness({ record: { ...on, muted: { rulo: ["next"] } }, extra: [{ ...RULO, order: 0 }, { ...DEF, order: 1 }], answers: [json({ next: "x" })] });
+  it("each sidekick mutes its own kinds: Rulo's muted `gap` silences Rulo's lessons", async () => {
+    const h = harness({ record: { ...on, muted: { rulo: ["gap"] } }, extra: [{ ...RULO, order: 0 }, { ...DEF, order: 1 }], answers: [json({ lesson: "x" })] });
     await h.ctl.afterReply(END);
     expect((await h.ctl.state()).cards).toEqual([]);
   });
@@ -1367,5 +1367,98 @@ describe("scope purpose text (spec §2a.4)", () => {
     const h = harness({ record: on });
     await h.ctl.review({ text: "make it better" });
     expect(h.asked[0]).not.toContain("Scope purpose");
+  });
+});
+
+describe("purposes at work (spec §2a.2): the mentor after the reply, the process-guard at a phase change", () => {
+  const MENTOR = { id: "rulo", type: "sidekick" as const, name: "Rulo", mark: "🦊", personality: "", purposes: [{ id: "mentor" as const }], order: 0 };
+  const COACH = { id: "sidekick", type: "sidekick" as const, name: "Sidekick", mark: "spark", personality: "", purposes: [{ id: "prompt-coach" as const }, { id: "focus" as const }], order: 1 };
+  const GUARD = { id: "guard", type: "sidekick" as const, name: "Guard", mark: "🛡️", personality: "", purposes: [{ id: "process-guard" as const }], order: 2 };
+  const END = { task: { id: "t1", scope: "main" }, kind: "run" as const, ok: true, prompt: "Outline chapter 2", reply: "Here it is.", fromBlock: false, modeSwitch: false };
+  const BOTH = json({ gap: { title: "Sources", text: "No source." }, next: "Add a source", lesson: "A thesis is the claim the essay defends." });
+  const phases = [{ id: "outline", label: "Outline", brief: "Agree on sections." }, { id: "draft", label: "Draft" }];
+  const MOVE = { task: { id: "t1", scope: "main", action: "essay" }, from: "outline", to: "draft" };
+
+  it("a mentor speaker is asked for a lesson only, and its card carries only the lesson", async () => {
+    const h = harness({ record: on, extra: [MENTOR, COACH], answers: [BOTH] });
+    await h.ctl.afterReply(END);
+    expect(h.asked[0]).toContain('{"lesson":string?}');
+    expect(h.asked[0]).not.toContain('"gap"');
+    expect((await h.ctl.state()).cards).toEqual([expect.objectContaining({ moment: "after", kind: "gap", speaker: expect.objectContaining({ id: "rulo" }), after: { lesson: "A thesis is the claim the essay defends." } })]);
+  });
+
+  it("a speaker with both purposes makes one call; the card carries both parts", async () => {
+    const h = harness({ record: on, extra: [{ ...COACH, order: 0, purposes: [{ id: "prompt-coach" as const }, { id: "mentor" as const }] }], answers: [BOTH] });
+    await h.ctl.afterReply(END);
+    expect(h.asked).toHaveLength(1);
+    expect(h.asked[0]).toContain('"lesson":string?');
+    expect((await h.ctl.state()).cards[0]).toMatchObject({ kind: "gap", after: { gap: { title: "Sources" }, next: "Add a source", lesson: "A thesis is the claim the essay defends." } });
+  });
+
+  it("D0: the prompt coach is never asked for a lesson and drops one it makes up", async () => {
+    const h = harness({ record: on, answers: [BOTH] });
+    await h.ctl.afterReply(END);
+    expect(h.asked[0]).not.toContain("lesson");
+    expect((await h.ctl.state()).cards[0]?.after).toEqual({ gap: { title: "Sources", text: "No source." }, next: "Add a source" });
+  });
+
+  it("a guard speaks with what the phase left missing, in its own session, logged as phase-change", async () => {
+    const h = harness({ record: on, extra: [COACH, GUARD], phases, answers: [json({ missing: ["No agreed section list"] })] });
+    await h.ctl.phaseMoved(MOVE);
+    expect(h.sessions).toEqual(["guard"]);
+    expect(h.asked[0]).toContain("Sidekick: phase change");
+    expect(h.asked[0]).toContain("Leaving: Outline — Agree on sections.\nEntering: Draft");
+    expect(h.logged[0]).toMatchObject({ sidekick: "guard", moment: "phase-change", task: "t1" });
+    expect((await h.ctl.state()).cards).toEqual([expect.objectContaining({ moment: "phase-change", kind: "missing", speaker: { id: "guard", name: "Guard", mark: "🛡️" }, guard: { missing: ["No agreed section list"] } })]);
+  });
+
+  it("the phase-change turn names the task's last typed prompts and the scope's purpose text", async () => {
+    const SCOPE = { id: "s-main-guard", type: "scope" as const, scope: "main", sidekick: "guard", on: true, purposeText: "Never draft without an outline." };
+    const h = harness({ record: { ...on, afterReply: false }, extra: [COACH, GUARD, SCOPE], phases, answers: [json({ missing: [] })] });
+    await h.ctl.afterReply({ ...END, task: { ...END.task, phase: "outline" }, prompt: "List the sections" });
+    await h.ctl.afterReply({ ...END, task: { ...END.task, phase: "intro" }, prompt: "Another phase's ask" });
+    await h.ctl.phaseMoved(MOVE);
+    expect(h.asked[0]).toContain("Scope purpose: Never draft without an outline.");
+    expect(h.asked[0]).toContain("Prompts in the phase left (first lines):\n- List the sections\nUI language");
+  });
+
+  it("nothing missing, a muted kind, or a task no longer open: no card", async () => {
+    const none = harness({ record: on, extra: [COACH, GUARD], phases, answers: [json({ missing: [] })] });
+    await none.ctl.phaseMoved(MOVE);
+    expect((await none.ctl.state()).cards).toEqual([]);
+    const muted = harness({ record: { ...on, muted: { guard: ["missing"] } }, extra: [COACH, GUARD], phases, answers: [json({ missing: ["x"] })] });
+    await muted.ctl.phaseMoved(MOVE);
+    expect((await muted.ctl.state()).cards).toEqual([]);
+    const gone = harness({ record: on, extra: [COACH, GUARD], phases, answers: [json({ missing: ["x"] })] });
+    gone.setTask({ id: "t2", scope: "main" });
+    await gone.ctl.phaseMoved(MOVE);
+    expect(gone.asked).toEqual([]);
+  });
+
+  it("turned off while the turn runs: no card", async () => {
+    let answer!: (a: SidekickAnswer) => void;
+    const h = harness({ record: on, extra: [COACH, GUARD], phases, answers: [() => new Promise<SidekickAnswer>((r) => (answer = r))] });
+    const run = h.ctl.phaseMoved(MOVE);
+    await vi.waitFor(() => expect(h.asked).toHaveLength(1));
+    await h.ctl.set({ on: false });
+    answer({ ok: true, text: json({ missing: ["x"] }) });
+    await run;
+    expect((await h.ctl.state()).cards).toEqual([]);
+  });
+
+  it("past the cap: no turn", async () => {
+    const h = harness({ record: { ...on, cap: 20_000 as const }, spent: 20_000, extra: [COACH, GUARD], phases });
+    await h.ctl.phaseMoved(MOVE);
+    expect(h.asked).toEqual([]);
+  });
+
+  it("D0: no process-guard sidekick, or Sidekick off → no turn", async () => {
+    const h = harness({ record: on, phases });
+    await h.ctl.phaseMoved(MOVE);
+    expect(h.asked).toEqual([]);
+    const off = harness({ extra: [COACH, GUARD], phases });
+    await off.ctl.phaseMoved(MOVE);
+    expect(off.asked).toEqual([]);
+    expect(off.events).toEqual([]);
   });
 });

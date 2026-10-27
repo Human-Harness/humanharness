@@ -1,7 +1,25 @@
 import { describe, expect, it } from "vitest";
 import { SIDEKICK_PURPOSE_TEXT_MAX } from "@humanharness/harness-sdk";
 import { MOCK_SIDEKICK_MARKS, isMockSidekickTurn, mockSidekickReply } from "@humanharness/fake-agent";
-import { SIDEKICK_AFTER_MARK, SIDEKICK_LEARN_MARK, SIDEKICK_PRE_MARK, SIDEKICK_ROUTE_CHOICES, SIDEKICK_ROUTE_MARK, afterReplyPrompt, cutReply, learnPrompt, parseAfter, parseLearn, parseReview, parseRoute, preSendPrompt, routePrompt } from "../src/main/sidekick-turns";
+import {
+  SIDEKICK_AFTER_MARK,
+  SIDEKICK_LEARN_MARK,
+  SIDEKICK_PHASE_MARK,
+  SIDEKICK_PRE_MARK,
+  SIDEKICK_ROUTE_CHOICES,
+  SIDEKICK_ROUTE_MARK,
+  afterReplyPrompt,
+  cutReply,
+  learnPrompt,
+  parseAfter,
+  parseGuard,
+  parseLearn,
+  parseReview,
+  parseRoute,
+  phaseChangePrompt,
+  preSendPrompt,
+  routePrompt,
+} from "../src/main/sidekick-turns";
 
 const input = {
   harness: { name: "Essay Coach", tagline: "Write better essays" },
@@ -150,7 +168,7 @@ describe("after the reply (spec §4.2)", () => {
   });
 
   it("fake-agent's mock knows the real marks and answers an after-reply turn with nothing to show", () => {
-    expect(MOCK_SIDEKICK_MARKS).toEqual({ pre: SIDEKICK_PRE_MARK, after: SIDEKICK_AFTER_MARK, learn: SIDEKICK_LEARN_MARK, route: SIDEKICK_ROUTE_MARK });
+    expect(MOCK_SIDEKICK_MARKS).toEqual({ pre: SIDEKICK_PRE_MARK, after: SIDEKICK_AFTER_MARK, learn: SIDEKICK_LEARN_MARK, route: SIDEKICK_ROUTE_MARK, phase: SIDEKICK_PHASE_MARK });
     const p = afterReplyPrompt({ harness: { name: "Essay Coach" }, prompt: "Outline chapter 2", reply: "Here it is.", lastPrompts: [], uiLanguage: "English" });
     expect(isMockSidekickTurn(p)).toBe(true);
     const after = parseAfter(mockSidekickReply(p));
@@ -238,5 +256,58 @@ describe("routing turn (spec §2a.3, D11)", () => {
     const p = routePrompt("after-reply", "Outline chapter 2", choices);
     expect(isMockSidekickTurn(p)).toBe(true);
     expect(parseRoute(mockSidekickReply(p), ["a", "b"])).toBe("a");
+  });
+});
+
+const AFTER_INPUT = { harness: { name: "Essay Coach" }, prompt: "Outline chapter 2", reply: "Here it is.", lastPrompts: [], uiLanguage: "English" };
+
+describe("after-reply follows the speaker's purposes (spec §2a.2)", () => {
+  it("no purposes (part 1) or prompt-coach: gap, next and repeated; never a lesson", () => {
+    for (const p of [afterReplyPrompt(AFTER_INPUT), afterReplyPrompt({ ...AFTER_INPUT, purposes: ["prompt-coach"] })]) {
+      expect(p).toContain('{"gap":{"title":string,"text":string}?,"next":string?,"repeated":{"topic":string,"decision":string}?}');
+      expect(p).not.toContain("lesson");
+    }
+  });
+
+  it("a mentor asks for a lesson; a mentor alone asks for nothing else", () => {
+    expect(afterReplyPrompt({ ...AFTER_INPUT, purposes: ["prompt-coach", "mentor"] })).toContain('"repeated":{"topic":string,"decision":string}?,"lesson":string?}');
+    const mentor = afterReplyPrompt({ ...AFTER_INPUT, purposes: ["mentor"] });
+    expect(mentor).toContain('{"lesson":string?}');
+    expect(mentor).toMatch(/lesson: .*at most two lines/);
+    expect(mentor).not.toContain('"gap"');
+  });
+
+  it("a custom purpose gets the coach's shape (its text is in the brief)", () => {
+    expect(afterReplyPrompt({ ...AFTER_INPUT, purposes: ["custom"] })).toContain('"next":string?');
+  });
+
+  it("parses a lesson, bounded", () => {
+    expect(parseAfter('{"lesson":"A thesis is the claim the essay defends."}')).toEqual({ lesson: "A thesis is the claim the essay defends." });
+    expect(parseAfter(JSON.stringify({ lesson: "x".repeat(301) }))).toBeNull();
+  });
+});
+
+describe("phase-change turn (spec §2a.2 process-guard)", () => {
+  it("names the phase left with its brief, the one entered, the purpose and the last prompts", () => {
+    const p = phaseChangePrompt({ harness: { name: "Essay Coach" }, from: { label: "Outline", brief: "Agree on sections.\nMore." }, to: { label: "Draft" }, lastPrompts: ["a\nmore", "b"], uiLanguage: "English", purposeText: "Never draft\nwithout an outline." });
+    expect(p.startsWith(SIDEKICK_PHASE_MARK)).toBe(true);
+    expect(p).toContain("Leaving: Outline — Agree on sections.\nEntering: Draft\nScope purpose: Never draft without an outline.\n");
+    expect(p).toContain("- a\n- b");
+    expect(p).not.toContain("More.");
+    expect(p).toMatch(/Answer with the JSON object only: \{"missing":\[string\]\}/);
+    expect(phaseChangePrompt({ harness: { name: "E" }, from: { label: "A" }, to: { label: "B" }, lastPrompts: [], uiLanguage: "English" })).toContain("Leaving: A\nEntering: B\nPrompts in the phase left (first lines):\n- (none)");
+  });
+
+  it("parses what is missing; {} is nothing; bounded", () => {
+    expect(parseGuard('{"missing":["No agreed section list"]}')).toEqual({ missing: ["No agreed section list"] });
+    expect(parseGuard("{}")).toEqual({ missing: [] });
+    expect(parseGuard(JSON.stringify({ missing: ["a", "b", "c", "d", "e", "f"] }))).toBeNull();
+    expect(parseGuard("nope")).toBeNull();
+  });
+
+  it("fake-agent's mock answers it with nothing missing", () => {
+    const p = phaseChangePrompt({ harness: { name: "E" }, from: { label: "A" }, to: { label: "B" }, lastPrompts: [], uiLanguage: "English" });
+    expect(isMockSidekickTurn(p)).toBe(true);
+    expect(parseGuard(mockSidekickReply(p))).toEqual({ missing: [] });
   });
 });

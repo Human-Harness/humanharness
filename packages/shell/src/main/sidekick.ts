@@ -1,6 +1,17 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import type { EngineDef, ModelProfile } from "@humanharness/engines";
-import { DEFAULT_SIDEKICK, SIDEKICK_ALWAYS_MAX_MS, SIDEKICK_COLLECTION, type SidekickDef, type SidekickManifest, type SidekickMoment, sidekickMinWords, sidekickMode, sidekickTips } from "@humanharness/harness-sdk";
+import {
+  DEFAULT_SIDEKICK,
+  SIDEKICK_ALWAYS_MAX_MS,
+  SIDEKICK_COLLECTION,
+  type SidekickDef,
+  type SidekickManifest,
+  type SidekickMoment,
+  purposeMoments,
+  sidekickMinWords,
+  sidekickMode,
+  sidekickTips,
+} from "@humanharness/harness-sdk";
 import type { SidekickAnswer, SidekickSessionOptions } from "@humanharness/runtime";
 import type { SidekickCard, SidekickHeadsUp, SidekickInfo, SidekickLearned, SidekickOutcome, SidekickReview, SidekickSetResult, SidekickSettings, SidekickSettingsPatch, SidekickState } from "@humanharness/ui/client";
 import {
@@ -17,8 +28,8 @@ import {
 } from "@humanharness/workspace";
 import { candidates, pickSpeaker } from "./sidekick-route";
 import type { SidekickStore } from "./sidekick-store";
-import { SIDEKICK_LEARN_MIN, afterReplyPrompt, learnPrompt, parseAfter, parseLearn, parseReview, parseRoute, preSendPrompt, routePrompt } from "./sidekick-turns";
-import type { TurnEnd } from "./task-manager";
+import { SIDEKICK_LEARN_MIN, afterParts, afterReplyPrompt, learnPrompt, parseAfter, parseGuard, parseLearn, parseReview, parseRoute, phaseChangePrompt, preSendPrompt, routePrompt } from "./sidekick-turns";
+import type { PhaseMoved, TurnEnd } from "./task-manager";
 import { type UsageRecord, capTokens, sidekickRecord, sidekickSpent, sidekickWeek } from "./usage-log";
 
 /** Part 1's one sidekick (plan Decision 9). */
@@ -26,8 +37,8 @@ export const SIDEKICK_ID = DEFAULT_SIDEKICK.id;
 export const SIDEKICK_NAME = DEFAULT_SIDEKICK.name;
 const SPEAKER: SidekickInfo = { id: DEFAULT_SIDEKICK.id, name: DEFAULT_SIDEKICK.name, mark: DEFAULT_SIDEKICK.mark };
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
-/** The task's earlier prompts an after-reply turn keeps (its prompt names the last three). */
-const PROMPTS_KEPT = 4;
+/** The task's earlier prompts kept (an after-reply turn names the last three, a phase-change turn the phase's last five). */
+const PROMPTS_KEPT = 5;
 /** Heads-ups (spec §4.3): the context share that warns, how often an ask comes back, how many off-phase prompts in a row. */
 const CONTEXT_SHARE = 0.75;
 const REPEATS = 3;
@@ -45,6 +56,8 @@ const ROUTE_BRIEF = "# Route\n\nYou pick which sidekick of the app should speak.
 
 /** What a card names: the speaker's id, name and mark. */
 const infoOf = (s: SidekickDef): SidekickInfo => ({ id: s.id, name: s.name, mark: s.mark });
+/** The ids of the speaker's purposes that speak at `moment` (spec §2a.2): its turn asks for a part per purpose. */
+const purposesAt = (s: SidekickDef, moment: SidekickMoment): string[] => s.purposes.filter((p) => purposeMoments(p).includes(moment)).map((p) => p.id);
 /** Part 1's sidekick unchanged (name, personality, purposes): its session gets part 1's brief (D0). */
 const plainDefault = (s: SidekickDef) =>
   s.name === DEFAULT_SIDEKICK.name && !s.personality.trim() && JSON.stringify(s.purposes) === JSON.stringify(DEFAULT_SIDEKICK.purposes);
@@ -168,6 +181,8 @@ export class SidekickController {
   private sends = 0;
   /** The open task's waiting cards other than the live pre-send one (after the reply), with where each was made. */
   private cards: { card: SidekickCard; ctx: { task: OpenTask | null; base: string } }[] = [];
+  /** The running phase-change turn (spec §2a.2); a newer move, turning off, a profile switch or closing drops it. */
+  private guard: AbortController | null = null;
   /** Running routing turns (spec §2a.3); turning off, a profile switch or closing aborts them. */
   private readonly routing = new Set<AbortController>();
   /** The running learning turn (spec §6.4); turning off, a profile switch or closing drops it. */
@@ -176,8 +191,8 @@ export class SidekickController {
   private learnRun: Promise<void> | null = null;
   /** The task open at the last betweenTasks (or seen open since): learning runs only when it closes (spec §6.4). */
   private lastOpen = NO_TASK;
-  /** The task's earlier prompts, oldest first, for its next after-reply turn. */
-  private prompts: { key: string; items: string[] } = { key: NO_TASK, items: [] };
+  /** The task's earlier typed prompts, oldest first, with the phase each was sent in: for its next after-reply and phase-change turns. */
+  private prompts: { key: string; items: { text: string; phase?: string }[] } = { key: NO_TASK, items: [] };
   /** The open task's earlier cards (spec §7 "Earlier · used"); reset when another task opens. */
   private past: { key: string; items: SidekickState["past"] } = { key: NO_TASK, items: [] };
   /** Per task (spec §4.3): whether the context heads-up showed, how often each topic came back, the off-phase streak. */
@@ -253,6 +268,7 @@ export class SidekickController {
       this.running?.abort();
       this.dropAfter();
       this.learning?.abort();
+      this.guard?.abort();
       this.abortRouting();
       this.card = null;
       this.cards = [];
@@ -417,6 +433,7 @@ export class SidekickController {
       this.running?.abort();
       this.dropAfter();
       this.learning?.abort();
+      this.guard?.abort();
       this.abortRouting();
       this.card = null;
       this.cards = [];
@@ -536,6 +553,7 @@ export class SidekickController {
     this.running?.abort();
     this.dropAfter();
     this.learning?.abort();
+    this.guard?.abort();
     this.abortRouting();
     await this.closeSessions(() => true);
   }
@@ -697,13 +715,13 @@ export class SidekickController {
     if (this.closed || !settings.on) return;
     // The context heads-up costs no tokens: it runs with the after-reply moment off too.
     await this.noteContext(end, settings);
-    if (!settings.afterReply) return;
     // Only what the person typed: no checkpoint, close or wrap-up prompt, no block answer, no mode switch's line.
     if (end.kind !== "run" || end.fromBlock || end.modeSwitch) return;
+    // Kept with the moment off too: a phase-change turn names them.
     if (this.prompts.key !== end.task.id) this.prompts = { key: end.task.id, items: [] };
-    const earlier = [...this.prompts.items];
-    this.prompts.items = [...earlier, end.prompt].slice(-PROMPTS_KEPT);
-    if (!end.ok) return;
+    const earlier = this.prompts.items.map((p) => p.text);
+    this.prompts.items = [...this.prompts.items, { text: end.prompt, ...(end.task.phase ? { phase: end.task.phase } : {}) }].slice(-PROMPTS_KEPT);
+    if (!settings.afterReply || !end.ok) return;
     const setup = await this.d.setup().catch(() => null);
     if (!setup || !(await this.d.hasNotice(setup.engineId).catch(() => false))) return;
     const task: OpenTask = end.task;
@@ -725,6 +743,9 @@ export class SidekickController {
       const session = await this.sessionFor(setup.base, engine, speaker, task.id, task.id, live);
       if (!session || !live()) return;
       const open = this.d.phases(task.action).find((p) => p.id === task.phase);
+      // One call with a part per purpose the speaker has here (spec §2a.2): prompt-coach (or custom) and mentor.
+      const purposes = purposesAt(speaker, "after-reply");
+      const parts = afterParts(purposes);
       const prompt = afterReplyPrompt({
         harness: this.d.harness,
         ...(open ? { phase: { label: open.label, ...(open.brief ? { brief: open.brief } : {}) } } : {}),
@@ -733,23 +754,27 @@ export class SidekickController {
         lastPrompts: earlier,
         uiLanguage: await this.d.uiLanguage().catch(() => "English"),
         ...(await this.purposeText(task.scope, speaker.id)),
+        purposes,
       });
       if (!live()) return;
       const answer = await session.ask(prompt, controller.signal);
       await this.logTurn(setup.base, engine, session, task, "after", answer, speaker.id);
       if (!live() || !answer.ok) return;
-      const after = parseAfter(answer.text);
-      if (!after) return;
+      const parsed = parseAfter(answer.text);
+      if (!parsed) return;
+      // Only the parts its purposes asked for: a part the model made up anyway is dropped.
+      const after = { ...(parts.coach ? { gap: parsed.gap, next: parsed.next, repeated: parsed.repeated } : {}), ...(parts.mentor ? { lesson: parsed.lesson } : {}) };
       // Settings may have changed while the turn ran.
       const now = await this.d.store.settings();
       if (!now.on || !live()) return;
-      // A repeated ask is the heads-up's (spec §4.3): the after card shows only a gap or a next step.
+      // A repeated ask is the heads-up's (spec §4.3): the after card shows a gap, a next step or a lesson.
       if (after.repeated) await this.noteRepeated({ task, base: setup.base }, now, after.repeated);
-      if (!after.gap && !after.next) return;
-      const kind = after.gap ? "gap" : "next";
+      if (!after.gap && !after.next && !after.lesson) return;
+      // A lesson alone counts as a `gap` (the muted list holds at most 10 kinds per sidekick).
+      const kind = after.next && !after.gap ? "next" : "gap";
       // A muted kind never shows (spec §6.3).
       if (!now.afterReply || mutedOf(now, speaker.id).includes(kind) || !live()) return;
-      const shown = { ...(after.gap ? { gap: after.gap } : {}), ...(after.next ? { next: after.next } : {}) };
+      const shown = { ...(after.gap ? { gap: after.gap } : {}), ...(after.next ? { next: after.next } : {}), ...(after.lesson ? { lesson: after.lesson } : {}) };
       this.cards.push({
         card: { id: randomUUID(), moment: eventMoment("after-reply"), speaker: infoOf(speaker), kind, prompt: end.prompt, flags: [], issues: [], confidence: 1, after: shown, at: new Date().toISOString() },
         ctx: { task, base: setup.base },
@@ -759,6 +784,68 @@ export class SidekickController {
       if (!controller.signal.aborted) console.error("Sidekick's after-reply turn failed", err);
     } finally {
       if (this.after === controller) this.after = null;
+    }
+  }
+
+  /**
+   * A phase change (spec §2a.2, TaskDeps.phaseMoved): a process-guard (or a custom purpose with the moment) on in the
+   * task's scope gets one turn on the phase left, the phase entered and the phase's prompts; what the phase left
+   * missing becomes a waiting card. It never blocks the move. Off, no such sidekick, the kind muted, past the cap or
+   * without a CLI: nothing runs (D0). A newer move, turning off, a profile switch or closing drops it.
+   */
+  async phaseMoved(e: PhaseMoved): Promise<void> {
+    const settings = await this.d.store.settings();
+    if (this.closed || !settings.on) return;
+    const task: OpenTask = { ...e.task, phase: e.to };
+    if (!(await this.isOpen(task.id))) return;
+    const phases = this.d.phases(task.action);
+    const from = phases.find((p) => p.id === e.from);
+    const to = phases.find((p) => p.id === e.to);
+    if (!from || !to) return;
+    const setup = await this.d.setup().catch(() => null);
+    if (!setup || !(await this.d.hasNotice(setup.engineId).catch(() => false))) return;
+    const list = await this.candidatesFor("phase-change", task.scope);
+    if (list.length === 0) return;
+    if (await this.pastCap(setup.base, task, settings)) return;
+    this.guard?.abort();
+    const controller = new AbortController();
+    this.guard = controller;
+    const live = () => !controller.signal.aborted && !this.closed;
+    try {
+      const engine = this.d.engine(setup.engineId);
+      const speaker = await this.pick(list, "phase-change", `${from.label} → ${to.label}`, { base: setup.base, task, signal: controller.signal, live });
+      // Its only kind muted: the turn would show nothing.
+      if (!live() || mutedOf(settings, speaker.id).includes("missing")) return;
+      const session = await this.sessionFor(setup.base, engine, speaker, task.id, task.id, live);
+      if (!session || !live()) return;
+      const typed = this.prompts.key === task.id ? this.prompts.items.filter((p) => p.phase === e.from).map((p) => p.text) : [];
+      const prompt = phaseChangePrompt({
+        harness: { name: this.d.harness.name },
+        from: { label: from.label, ...(from.brief ? { brief: from.brief } : {}) },
+        to: { label: to.label },
+        lastPrompts: typed,
+        uiLanguage: await this.d.uiLanguage().catch(() => "English"),
+        ...(await this.purposeText(task.scope, speaker.id)),
+      });
+      if (!live()) return;
+      const answer = await session.ask(prompt, controller.signal);
+      await this.logTurn(setup.base, engine, session, task, "phase-change", answer, speaker.id);
+      if (!live() || !answer.ok) return;
+      const guard = parseGuard(answer.text);
+      if (!guard?.missing.length) return;
+      // Settings may have changed while the turn ran, and the task may have closed.
+      const now = await this.d.store.settings();
+      if (!now.on || mutedOf(now, speaker.id).includes("missing") || !live()) return;
+      if (!(await this.isOpen(task.id)) || !live()) return;
+      this.cards.push({
+        card: { id: randomUUID(), moment: eventMoment("phase-change"), speaker: infoOf(speaker), kind: "missing", prompt: "", flags: [], issues: [], confidence: 1, guard: { missing: guard.missing }, at: new Date().toISOString() },
+        ctx: { task, base: setup.base },
+      });
+      await this.push();
+    } catch (err) {
+      if (!controller.signal.aborted) console.error("Sidekick's phase-change turn failed", err);
+    } finally {
+      if (this.guard === controller) this.guard = null;
     }
   }
 
@@ -853,7 +940,7 @@ export class SidekickController {
     engine: EngineDef,
     session: SidekickLike,
     task: OpenTask | null,
-    moment: "pre" | "after" | "learn" | "route",
+    moment: "pre" | "after" | "learn" | "route" | "phase-change",
     answer: SidekickAnswer,
     sidekick: string = SIDEKICK_ID,
   ): Promise<void> {

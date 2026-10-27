@@ -131,6 +131,18 @@ export interface AfterInput {
   uiLanguage: string;
   /** The scope's purpose text for this sidekick (§2a.4), when any. */
   purposeText?: string;
+  /**
+   * The speaker's purposes that speak after a reply (spec §2a.2): `prompt-coach` and `custom` ask for a gap, a next step
+   * and a repeated ask; `mentor` for a lesson. Absent: part 1's prompt coach.
+   */
+  purposes?: readonly string[];
+}
+
+/** What an after-reply turn asks for, given the speaker's purposes (absent: the prompt coach, D0). */
+export function afterParts(purposes?: readonly string[]): { coach: boolean; mentor: boolean } {
+  const mentor = purposes?.includes("mentor") ?? false;
+  const coach = !mentor || purposes!.some((p) => p !== "mentor");
+  return { coach, mentor };
 }
 
 /** The after-reply turn (spec §4.2): the person's prompt and the cut reply, never the task's history. */
@@ -152,14 +164,27 @@ export function afterReplyPrompt(i: AfterInput): string {
     cutReply(i.reply),
     "</reply>",
     "",
-    'Answer with the JSON object only: {"gap":{"title":string,"text":string}?,"next":string?,"repeated":{"topic":string,"decision":string}?}. Leave out what you have nothing useful for; {} is a fine answer.',
+    ...afterAnswer(afterParts(i.purposes)),
   ].join("\n");
+}
+
+/** The after-reply contract line: one call with a part per purpose (spec §2a.2 "Several purposes in one moment"). */
+function afterAnswer(parts: { coach: boolean; mentor: boolean }): string[] {
+  const fields = [
+    ...(parts.coach ? ['"gap":{"title":string,"text":string}?', '"next":string?', '"repeated":{"topic":string,"decision":string}?'] : []),
+    ...(parts.mentor ? ['"lesson":string?'] : []),
+  ];
+  return [
+    `Answer with the JSON object only: {${fields.join(",")}}. Leave out what you have nothing useful for; {} is a fine answer.`,
+    ...(parts.mentor ? ["lesson: at most two lines explaining a term or a decision in the reply that what you know about the person says they may not know."] : []),
+  ];
 }
 
 export const afterSchema = z.object({
   gap: z.object({ title: z.string().min(1).max(80), text: z.string().min(1).max(400) }).optional(),
   next: z.string().min(1).max(4000).optional(),
   repeated: z.object({ topic: z.string().min(1).max(80), decision: z.string().min(1).max(400) }).optional(),
+  lesson: z.string().min(1).max(300).optional(),
 });
 export type SidekickAfter = z.output<typeof afterSchema>;
 
@@ -241,3 +266,42 @@ export function parseRoute(text: string, ids: readonly string[]): string | null 
   const id = line.replace(/^[-*]\s*/, "").replace(/\.$/, "").replace(/^["'`]+|["'`]+$/g, "").trim();
   return ids.includes(id) ? id : null;
 }
+
+/** The first line of every phase-change turn (mock mode and the e2e scripts match on it). */
+export const SIDEKICK_PHASE_MARK = "Sidekick: phase change";
+/** How much of each earlier prompt's first line a phase-change turn reads. */
+const PHASE_PROMPT_LINE = 200;
+
+export interface PhaseChangeInput {
+  harness: { name: string };
+  from: { label: string; brief?: string };
+  to: { label: string };
+  /** The task's last typed prompts, oldest first; the last five first lines go in. */
+  lastPrompts: readonly string[];
+  uiLanguage: string;
+  /** The scope's purpose text for this sidekick (§2a.4): the rules the guard checks the move against. */
+  purposeText?: string;
+}
+
+/** The phase-change turn (spec §2a.2 process-guard): what the phase left promised that the prompts never reached. */
+export function phaseChangePrompt(i: PhaseChangeInput): string {
+  return [
+    SIDEKICK_PHASE_MARK,
+    "",
+    `App: ${i.harness.name}`,
+    `Leaving: ${i.from.label}${i.from.brief ? ` — ${i.from.brief.split("\n")[0]}` : ""}`,
+    `Entering: ${i.to.label}`,
+    ...purposeLine(i.purposeText),
+    "Prompts in the phase left (first lines):",
+    ...list(i.lastPrompts.slice(-5).map((p) => p.split("\n")[0].slice(0, PHASE_PROMPT_LINE))),
+    `UI language: ${i.uiLanguage}`,
+    "",
+    'Answer with the JSON object only: {"missing":[string]}. What the phase left promised (or the scope purpose asks) that the prompts never reached, one short line each; [] when nothing.',
+  ].join("\n");
+}
+
+export const guardSchema = z.object({ missing: z.array(z.string().min(1).max(200)).max(5).default([]) });
+export type SidekickGuard = z.output<typeof guardSchema>;
+
+/** The phase-change reply, parsed; null when it isn't the contract. */
+export const parseGuard = (text: string): SidekickGuard | null => parseJson(text, guardSchema);

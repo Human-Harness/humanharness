@@ -1043,8 +1043,10 @@ export interface SidekickCard {
   kind: string;
   /** "You took N of your last M <kind> suggestions" (spec §4.1 step 4); absent with fewer than 3. */
   why?: { used: number; of: number };
-  /** After the reply (spec §4.2): a gap, the next prompt (Put in composer), a repeated ask. */
-  after?: { gap?: { title: string; text: string }; next?: string; repeated?: { topic: string; decision: string } };
+  /** After the reply (spec §4.2): a gap, the next prompt (Put in composer), a repeated ask; a mentor's lesson ("Worth knowing"). */
+  after?: { gap?: { title: string; text: string }; next?: string; repeated?: { topic: string; decision: string }; lesson?: string };
+  /** A process-guard's card (spec §2a.2): what the phase left (or the document) is missing. */
+  guard?: { missing: string[] };
   /** A heads-up (spec §4.3): the context near full, an ask that keeps coming back, prompts drifting off the phase. */
   headsUp?: SidekickHeadsUp;
 }

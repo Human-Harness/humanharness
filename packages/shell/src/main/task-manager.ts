@@ -173,6 +173,18 @@ export interface TaskDeps {
   turnStarting?(): void;
   /** A task turn ended (sidekick spec §4.2). Never awaited: it never delays the task. Absent: nothing (D0). */
   turnEnded?(end: TurnEnd): void;
+  /**
+   * A task's phase moved (sidekick spec §2a.2 "phase-change"), by the person, the agent or the app: the phase left and
+   * the phase entered, right after the state is written. Never awaited: it never delays the move. Absent: nothing (D0).
+   */
+  phaseMoved?(e: PhaseMoved): void;
+}
+
+/** What `phaseMoved` gets (sidekick spec §2a.2). */
+export interface PhaseMoved {
+  task: { id: string; action?: string; scope: string };
+  from: string;
+  to: string;
 }
 
 /** What `turnEnded` gets (sidekick spec §4.2). */
@@ -1588,8 +1600,10 @@ export class TaskManager {
       if (needsCheckpoint(before) && !(await this.checkpoint(before))) return this.stopped();
     }
     const at = this.now().toISOString();
+    let moved = false;
     await this.update((s) => {
       if (s.current?.id !== c.id) return s;
+      moved = true;
       const { phaseProposal: _proposal, ...rest } = s.current;
       let next: CurrentTask = { ...rest, phase: { id: to.id, startedAt: at }, phases: [...(rest.phases ?? []), { id: to.id, at, by }].slice(-PHASE_LOG_MAX) };
       if (plan.modes) {
@@ -1598,6 +1612,7 @@ export class TaskManager {
       }
       return { ...s, current: next };
     });
+    if (moved && c.phase && c.phase.id !== to.id) this.phaseMoved(c, c.phase.id, to.id);
     if (!plan.message) return;
     const now = (await this.d.store.load()).current;
     if (now?.id !== c.id) return this.stopped();
@@ -1621,6 +1636,15 @@ export class TaskManager {
       throw unwrap(err);
     }
     return this.afterRun(c.id, done, false);
+  }
+
+  /** Tells Sidekick the phase moved (never awaited; a throwing hook never stops the move). */
+  private phaseMoved(c: CurrentTask, from: string, to: string): void {
+    try {
+      this.d.phaseMoved?.({ task: { id: c.id, ...(c.action ? { action: c.action } : {}), scope: scopeOfTask(c) }, from, to });
+    } catch (err) {
+      console.error("Sidekick's phase hook failed", err);
+    }
   }
 
   /** Tells the window a turn the app starts on its own is coming; that turn's `done` is the window's to see again. */

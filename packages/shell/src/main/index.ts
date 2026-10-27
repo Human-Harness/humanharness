@@ -121,7 +121,7 @@ import { SidekickController } from "./sidekick";
 import { registerSidekickIpc } from "./sidekick-ipc";
 import { SidekickStore } from "./sidekick-store";
 import { SetupSteps, recordSetup, setupStepViews } from "./setup-steps";
-import { TaskManager, type TurnEnd } from "./task-manager";
+import { type PhaseMoved, TaskManager, type TurnEnd } from "./task-manager";
 import type { MaterialService } from "./material";
 import { historyKeep, materialAppState, materialItems, materialRecommended, openMaterial } from "./material-ipc";
 import { MaterialJobs } from "./material-jobs";
@@ -833,6 +833,11 @@ const tasks = new TaskManager({
   get turnEnded() {
     const sidekick = sidekickCtl;
     return sidekick ? (end: TurnEnd) => void sidekick.afterReply(end).catch((err: unknown) => console.error("Sidekick's after-reply turn failed", err)) : undefined;
+  },
+  // Sidekick's phase-change moment (sidekick spec §2a.2 process-guard). A getter for the same reason (D0).
+  get phaseMoved() {
+    const sidekick = sidekickCtl;
+    return sidekick ? (e: PhaseMoved) => void sidekick.phaseMoved(e).catch((err: unknown) => console.error("Sidekick's phase-change turn failed", err)) : undefined;
   },
   // Getters, because the harness is loaded after this object is built. Undefined without modes (task-modes D0).
   get modes() {

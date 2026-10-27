@@ -263,6 +263,14 @@
     "summary": "Summary and first rows",
     "goOn": "Go on",
     "retry": "Try again",
+    "choice": {
+      "keep": "Keep it",
+      "drop": "Drop it",
+      "program": "Keep the program's version",
+      "use": "Use it as it is",
+      "remove": "Remove it"
+    },
+    "found": "What the check found",
     "status": {
       "pending": "{{name}}: waiting for you",
       "converting": "{{name}}: converting…",

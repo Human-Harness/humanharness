@@ -1,6 +1,6 @@
 import { useEffect, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { HarnessClient, MaterialAddResult, MaterialInfo, MaterialResult, MaterialSourceView, MaterialView } from "./client";
+import type { HarnessClient, MaterialAddResult, MaterialChoice, MaterialInfo, MaterialResult, MaterialSourceView, MaterialView } from "./client";
 import { shownLanguage } from "./language";
 
 export interface MaterialPanelProps {
@@ -170,6 +170,89 @@ function WaitingCard({
   );
 }
 
+/** A question for the person (§6.2 `ask`), about one fragment or the whole source; it goes away once answered. */
+function AskCard({
+  client,
+  scope,
+  source,
+  ask,
+  disabled,
+}: {
+  client: HarnessClient;
+  scope: string;
+  source: MaterialSourceView;
+  ask: MaterialSourceView["asks"][number];
+  disabled: boolean;
+}) {
+  const { t } = useTranslation();
+  const [busy, setBusy] = useState(false);
+  /** The answer that didn't go through, to send again with Try again. */
+  const [failed, setFailed] = useState<MaterialChoice | null>(null);
+  const answer = (choice: MaterialChoice) => {
+    setBusy(true);
+    setFailed(null);
+    client.material.decide(scope, source.id, ask.fragment ?? null, choice).then(
+      (r) => {
+        setBusy(false);
+        if (!r.ok) setFailed(choice);
+      },
+      () => {
+        setBusy(false);
+        setFailed(choice);
+      },
+    );
+  };
+  const off = disabled || busy;
+  return (
+    <div className="hh-material-card" role="group" aria-label={ask.question} aria-busy={busy || undefined}>
+      <p>{ask.question}</p>
+      <div className="hh-material-actions">
+        {ask.choices.map((c) => (
+          <button key={c} type="button" disabled={off} onClick={() => answer(c)}>
+            {t(`material.choice.${c}`)}
+          </button>
+        ))}
+      </div>
+      {busy && (
+        <p className="hh-material-notice" role="status">
+          {t("material.sending")}
+        </p>
+      )}
+      {failed && (
+        <p className="hh-material-notice" role="status">
+          {t("material.confirmFailed")}{" "}
+          <button type="button" disabled={off} onClick={() => answer(failed)}>
+            {t("material.retry")}
+          </button>
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** Under a source's status line: its questions, then what the check found and fixed, folded (§11). */
+function SourceDetails({ client, scope, source, disabled }: { client: HarnessClient; scope: string; source: MaterialSourceView; disabled: boolean }) {
+  const { t } = useTranslation();
+  const found = [...source.issues, ...source.fixes];
+  return (
+    <>
+      {source.asks.map((a) => (
+        <AskCard key={`${a.fragment ?? "-"}:${a.question}`} client={client} scope={scope} source={source} ask={a} disabled={disabled} />
+      ))}
+      {found.length > 0 && (
+        <details className="hh-material-found">
+          <summary>{t("material.found")}</summary>
+          <ul>
+            {found.map((line, i) => (
+              <li key={`${i}:${line}`}>{line}</li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </>
+  );
+}
+
 /** One line per source (§11). */
 export function statusLine(t: Translate, s: MaterialSourceView): string {
   if (s.status === "refused") {
@@ -274,23 +357,26 @@ export function MaterialPanel({ client, scope, info, disabled }: MaterialPanelPr
         s.status === "pending" && view ? (
           <WaitingCard key={s.id} client={client} scope={scope} source={s} view={view} maxPages={info.maxPages} disabled={disabled} />
         ) : (
-          <p key={s.id} className="hh-material-line">
-            <span>{statusLine(t, s)}</span>
-            {/* A stage that failed is not retried on its own (§13): the person asks for it. */}
-            {s.status === "ready" && s.failed && (
-              <>
-                {" "}
-                <button
-                  type="button"
-                  disabled={disabled || retrying.includes(s.id)}
-                  aria-busy={retrying.includes(s.id) || undefined}
-                  onClick={() => retry(s.id)}
-                >
-                  {t("material.retry")}
-                </button>
-              </>
-            )}
-          </p>
+          <div key={s.id} className="hh-material-source">
+            <p className="hh-material-line">
+              <span>{statusLine(t, s)}</span>
+              {/* A stage that failed is not retried on its own (§13): the person asks for it. */}
+              {s.status === "ready" && s.failed && (
+                <>
+                  {" "}
+                  <button
+                    type="button"
+                    disabled={disabled || retrying.includes(s.id)}
+                    aria-busy={retrying.includes(s.id) || undefined}
+                    onClick={() => retry(s.id)}
+                  >
+                    {t("material.retry")}
+                  </button>
+                </>
+              )}
+            </p>
+            <SourceDetails client={client} scope={scope} source={s} disabled={disabled} />
+          </div>
         ),
       )}
     </section>

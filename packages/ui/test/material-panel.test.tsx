@@ -251,6 +251,66 @@ describe("MaterialPanel (material spec §11)", () => {
   });
 });
 
+describe("questions and results (§6.2, §11)", () => {
+  it("a question about a fragment, and one about the whole source", async () => {
+    const client = await panel(
+      view([
+        src({ id: "a", name: "a.pdf", asks: [{ fragment: "a-005", question: "Is this table right?", choices: ["keep", "drop"] }] }),
+        src({ id: "b", name: "b.pdf", status: "needs-person", asks: [{ question: "The AI couldn't make b.pdf readable.", choices: ["use", "remove"] }] }),
+      ]),
+    );
+    expect(await screen.findByText("Is this table right?")).toBeTruthy();
+    expect(screen.getByRole("group", { name: "Is this table right?" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Keep it" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Drop it" }));
+    fireEvent.click(screen.getByRole("button", { name: "Use it as it is" }));
+    await waitFor(() => expect(client.materialCalls).toEqual(["decide:a:a-005:drop", "decide:b:-:use"]));
+    expect(screen.getByText("b.pdf: needs your decision")).toBeTruthy();
+  });
+
+  it("a refused repair offers the program's version", async () => {
+    const client = await panel(view([src({ asks: [{ fragment: "ch2-003", question: "The fix changed too many words.", choices: ["program", "drop"] }] })]));
+    fireEvent.click(await screen.findByRole("button", { name: "Keep the program's version" }));
+    await waitFor(() => expect(client.materialCalls).toEqual(["decide:ch2:ch2-003:program"]));
+  });
+
+  it("an answer in flight waits; one that didn't go through offers Try again", async () => {
+    const client = await panel(view([src({ asks: [{ fragment: "ch2-005", question: "Is this table right?", choices: ["keep", "drop"] }] })]));
+    client.materialDecideResult = { ok: false, reason: "invalid" };
+    const keep = (await screen.findByRole("button", { name: "Keep it" })) as HTMLButtonElement;
+    fireEvent.click(keep);
+    expect(keep.disabled).toBe(true);
+    expect(await screen.findByText("That didn't go through. Try again.")).toBeTruthy();
+    expect(keep.disabled).toBe(false);
+    client.materialDecideResult = { ok: true };
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(client.materialCalls).toEqual(["decide:ch2:ch2-005:keep", "decide:ch2:ch2-005:keep"]));
+    await waitFor(() => expect(screen.queryByText("That didn't go through. Try again.")).toBeNull());
+  });
+
+  it("questions wait while a turn runs", async () => {
+    const client = new FakeClient({ language: "en", folder: "/f", engineId: "claude" });
+    client.materialViews.fractions = view([src({ asks: [{ fragment: "ch2-005", question: "Is this table right?", choices: ["keep", "drop"] }] })]);
+    await renderIn("en", <MaterialPanel client={client} scope="fractions" info={info} disabled />);
+    expect(((await screen.findByRole("button", { name: "Keep it" })) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("what the check found and fixed, folded under the status line", async () => {
+    await panel(view([src({ verdict: "usable-with-fixes", issues: ["Two fragments cut mid-sentence"], fixes: ["Merged ch2-001 and ch2-002"] })]));
+    const found = await screen.findByText("What the check found");
+    expect(found.closest("details")?.open).toBe(false);
+    fireEvent.click(found);
+    expect(screen.getByText("Two fragments cut mid-sentence")).toBeTruthy();
+    expect(screen.getByText("Merged ch2-001 and ch2-002")).toBeTruthy();
+  });
+
+  it("nothing found, nothing folded", async () => {
+    await panel(view([src({})]));
+    expect(await screen.findByText("ch2.pdf: ready, 18 fragments")).toBeTruthy();
+    expect(screen.queryByText("What the check found")).toBeNull();
+  });
+});
+
 describe("where the panel goes", () => {
   async function work(client: FakeClient, props: Partial<HarnessAppProps> = {}) {
     render(<HarnessApp client={client} {...props} />);

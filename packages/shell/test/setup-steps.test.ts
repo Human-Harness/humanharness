@@ -21,7 +21,7 @@ const harness = defineHarness({
   permissions: { edit: "none", exec: false, web: false },
   blocks: {},
   actions: { conocerte: { label: "Get to know you", prompt: "t.md", cost: "light" } },
-  data: { profile: { scoped: false, single: true, schema: z.object({ name: z.string().min(1), goal: z.string().min(3) }), agent: "write" } },
+  data: { profile: { scoped: false, single: true, schema: z.object({ name: z.string().min(1), goal: z.string().min(3), note: z.string().optional() }), agent: "write" } },
   settings: { tab: "How I learn", fields: { tone: { schema: z.enum(["patient", "demanding"]), default: "patient", control: "segmented", label: "Tone" } } },
   setup: [
     { id: "conocerte", kind: "interview", label: "Get to know you", action: "conocerte", writes: "profile", required: true },
@@ -218,6 +218,14 @@ describe("SetupSteps: a form", () => {
     spy.mockRestore();
     expect(logs).toEqual(["Could not save the setup form"]);
     expect((await t.ctl.state()).steps.goal).toBe("missing");
+  });
+
+  it("over a collection: a field the form sent no value for (cleared) is cleared in the record; the others stay", async () => {
+    const steps: HarnessSetupStep[] = [{ id: "more", kind: "form", label: "More", required: false, collection: "profile", fields: ["goal", "note"] }];
+    const t = setup({ steps });
+    await t.store!.put("profile", { name: "Sofi", goal: "Pass", note: "Likes maps" }, person);
+    expect((await t.ctl.submit("more", { goal: "Pass maths" })).ok).toBe(true);
+    expect(await t.store!.get("profile", undefined, person)).toEqual({ name: "Sofi", goal: "Pass maths" });
   });
 
   it("over settings: shows their values, saves each through the settings controller, and is done", async () => {

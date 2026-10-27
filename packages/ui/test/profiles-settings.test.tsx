@@ -50,6 +50,18 @@ describe("Settings › General › People (profiles spec §5)", () => {
     await waitFor(() => expect(client.records.profile.at(-1)).toEqual({ name: "Sofía", color: "coral" }));
   });
 
+  it("a blank name is refused next to Name, and nothing is saved", async () => {
+    const client = family();
+    await renderIn("en", <Sheet client={client} tab="general" />);
+    const sofi = await screen.findByRole("listitem", { name: "Sofi" });
+    fireEvent.click(within(sofi).getByRole("button", { name: "Edit" }));
+    fireEvent.change(await within(sofi).findByLabelText("Name"), { target: { value: "   " } });
+    fireEvent.click(within(sofi).getByRole("button", { name: "Save" }));
+    expect(await within(sofi).findByText("Enter a name")).toBeTruthy();
+    expect(client.records.profile).toEqual([{ name: "Sofi", color: "coral" }]);
+    expect(within(sofi).getByLabelText("Name")).toBeTruthy();
+  });
+
   it("archives another profile and brings it back", async () => {
     const client = family();
     await renderIn("en", <Sheet client={client} tab="general" />);
@@ -69,6 +81,32 @@ describe("Settings › General › People (profiles spec §5)", () => {
     expect(within(tomas).getByText("Tomás's folder and history go to the Trash. You can still get them back from there.")).toBeTruthy();
     fireEvent.click(within(tomas).getByRole("button", { name: "Move to the Trash" }));
     await waitFor(() => expect(client.profileCalls).toEqual(["delete:tomas"]));
+  });
+
+  it("Cancel at either question deletes nothing", async () => {
+    const client = family();
+    await renderIn("en", <Sheet client={client} tab="general" />);
+    const tomas = await screen.findByRole("listitem", { name: "Tomás" });
+    fireEvent.click(within(tomas).getByRole("button", { name: "Delete…" }));
+    fireEvent.click(within(tomas).getByRole("button", { name: "Cancel" }));
+    expect(within(tomas).queryByText("Delete Tomás? This can't be undone from the app.")).toBeNull();
+    fireEvent.click(within(tomas).getByRole("button", { name: "Delete…" }));
+    fireEvent.click(within(tomas).getByRole("button", { name: "Delete" }));
+    fireEvent.click(within(tomas).getByRole("button", { name: "Cancel" }));
+    expect(within(tomas).queryByRole("button", { name: "Move to the Trash" })).toBeNull();
+    expect(client.profileCalls).toEqual([]);
+  });
+
+  it("a refused delete says so and keeps the profile", async () => {
+    const client = family();
+    client.profiles.delete = async (id) => (client.profileCalls.push(`delete:${id}`), { ok: false, reason: "failed" });
+    await renderIn("en", <Sheet client={client} tab="general" />);
+    const tomas = await screen.findByRole("listitem", { name: "Tomás" });
+    fireEvent.click(within(tomas).getByRole("button", { name: "Delete…" }));
+    fireEvent.click(within(tomas).getByRole("button", { name: "Delete" }));
+    fireEvent.click(within(tomas).getByRole("button", { name: "Move to the Trash" }));
+    expect((await screen.findByRole("alert")).textContent).toBe("That didn't work. Try again.");
+    expect(screen.getByRole("listitem", { name: "Tomás" })).toBeTruthy();
   });
   it("a refusal says why in one line: busy waits for the AI", async () => {
     const client = family();

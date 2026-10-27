@@ -5,6 +5,7 @@ import { afterAll, describe, expect, it, vi } from "vitest";
 import { type DataRecord, PROFILE_COLORS, z } from "@humanharness/harness-sdk";
 import { ProfileStore } from "@humanharness/workspace";
 import type { AppState } from "@humanharness/ui/client";
+import { DataUnavailable } from "../src/main/data-requests";
 import { Profiles, type ProfilesDeps, profileResult } from "../src/main/profiles";
 import { ProfileSwitch } from "../src/main/profile-switch";
 
@@ -15,7 +16,7 @@ const collection = {
   scoped: false,
   single: true,
   agent: "read" as const,
-  schema: z.object({ name: z.string().min(1).max(40), color: z.enum(PROFILE_COLORS).optional() }),
+  schema: z.object({ name: z.string().min(1).max(40), color: z.enum(PROFILE_COLORS).optional(), goal: z.string().optional() }),
 } as unknown as ProfilesDeps["collection"];
 
 function setup(over: Partial<ProfilesDeps> = {}) {
@@ -50,6 +51,11 @@ function setup(over: Partial<ProfilesDeps> = {}) {
     seed,
     writeRecord: async (b, record) => void records.set(b, record),
     readRecord: async (b) => records.get(b) ?? null,
+    fields: ["name", "color"],
+    writeActive: async (record) => {
+      if (!active) throw new Error("no active profile");
+      records.set(path.join(root, active), record);
+    },
     switchTo: (target) => switcher.run(target),
     trash: async (p) => {
       trashed.push(p);
@@ -286,6 +292,48 @@ describe("Profiles (profiles spec §5)", () => {
     await t.profiles.create({ name: "Sofi" });
     expect(await t.profiles.openable("sofi")).toBe(true);
     expect(await t.profiles.openable("tomas")).toBe(false);
+  });
+});
+
+describe("Profiles: editing the active one (spec §5)", () => {
+  it("writes the form's fields over the record: a field left out is cleared, one the form doesn't ask for stays; the registry follows", async () => {
+    const t = setup();
+    await t.profiles.create({ name: "Sofi", color: "coral" });
+    const dir = path.join(t.root, "sofi");
+    t.records.set(dir, { name: "Sofi", color: "coral", goal: "Pass maths" });
+    expect(await t.profiles.edit({ name: "  Sofía ", goal: "ignored" })).toEqual({ ok: true });
+    expect(t.records.get(dir)).toEqual({ name: "Sofía", goal: "Pass maths" });
+    expect((await t.profiles.state()).list).toEqual([expect.objectContaining({ id: "sofi", title: "Sofía" })]);
+    expect((await t.profiles.state()).list[0].color).toBeUndefined();
+  });
+
+  it("refuses by field like a create (a blank name too), writing nothing", async () => {
+    const t = setup();
+    await t.profiles.create({ name: "Sofi" });
+    const dir = path.join(t.root, "sofi");
+    const blank = await t.profiles.edit({ name: "   " });
+    expect(blank).toMatchObject({ ok: false, reason: "invalid", errors: [{ path: "name" }] });
+    const colour = await t.profiles.edit({ name: "Sofi", color: "black" });
+    expect(colour.ok ? [] : colour.errors?.map((e) => e.path)).toEqual(["color"]);
+    expect(await t.profiles.edit("name")).toMatchObject({ ok: false, reason: "invalid" });
+    expect(t.records.get(dir)).toEqual({ name: "Sofi" });
+  });
+
+  it("is refused with no active profile, while anything else runs, and when writes are held", async () => {
+    expect(await setup().profiles.edit({ name: "Sofi" })).toEqual({ ok: false, reason: "not-ready" });
+    let blocked = false;
+    const t = setup({ blocked: () => blocked });
+    await t.profiles.create({ name: "Sofi" });
+    blocked = true;
+    expect(await t.profiles.edit({ name: "Sofía" })).toEqual({ ok: false, reason: "busy" });
+    const held = setup({
+      writeActive: async () => {
+        throw new DataUnavailable("Switching profiles");
+      },
+    });
+    await held.profiles.create({ name: "Sofi" });
+    expect(await held.profiles.edit({ name: "Sofía" })).toEqual({ ok: false, reason: "busy" });
+    expect(held.records.get(path.join(held.root, "sofi"))).toEqual({ name: "Sofi" });
   });
 });
 

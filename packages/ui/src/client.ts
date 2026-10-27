@@ -812,6 +812,11 @@ export interface HarnessClient {
     create(values: Record<string, unknown>): Promise<ProfileResult>;
     /** Switches to a profile (the open task closes first). */
     open(id: string): Promise<ProfileResult>;
+    /**
+     * Saves the edit form's fields to the active profile's record, as the person. A field sent with no value is cleared;
+     * refusals come back by field (`errors`).
+     */
+    edit(values: Record<string, unknown>): Promise<ProfileResult>;
     archive(id: string): Promise<ProfileResult>;
     unarchive(id: string): Promise<ProfileResult>;
     /** Puts a profile's folder and history in the system Trash. Never the active one. */

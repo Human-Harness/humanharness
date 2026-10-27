@@ -2,6 +2,7 @@ import { promises as fs } from "node:fs";
 import { type Collection, type DataRecord, type InputIssue, inputIssues } from "@humanharness/harness-sdk";
 import { ProfileStore, cleanProfileTitle, isProfileId, prepareFolder, profileDir } from "@humanharness/workspace";
 import type { AppState, ProfileRefusal, ProfileResult, ProfilesState } from "@humanharness/ui/client";
+import { DataUnavailable } from "./data-requests";
 import { profileOfBase } from "./profile-base";
 import type { ProfileSwitchResult } from "./profile-switch";
 
@@ -18,6 +19,13 @@ export interface ProfilesDeps {
   writeRecord(base: string, record: DataRecord): Promise<void>;
   /** A profile's record, read from its own folder; null when there is none. */
   readRecord(base: string): Promise<DataRecord | null>;
+  /** The fields the add and edit form asks for (manifest `profiles.fields`). */
+  fields: readonly string[];
+  /**
+   * Writes the active profile's record as the person (`hh:data`'s write: the store's checks, a `Data: profile` commit).
+   * Throws `DataUnavailable` while writes are held.
+   */
+  writeActive(record: DataRecord): Promise<void>;
   /** The switch (`ProfileSwitch.run`). */
   switchTo(target: () => Promise<string>): Promise<ProfileSwitchResult>;
   /** Puts a file or folder in the system Trash (Electron's `shell.trashItem`). Never a permanent delete. */
@@ -161,6 +169,48 @@ export class Profiles {
     if (!isProfileId(id) || !(await this.openable(id))) return { ok: false, reason: "unknown" };
     if ((await this.d.active()) === id) return { ok: true };
     return this.answer(await this.d.switchTo(async () => id));
+  }
+
+  /**
+   * Edits the active profile's record from the edit form (spec §5): the form's fields come only from `values` (one it
+   * sent no value for, an optional field cleared, is cleared); the rest of the record stays. Checked like a create, by
+   * field; then the registry copies the name and colour. Held like an archive: a switch can't move the folder under it.
+   */
+  edit(values: unknown): Promise<ProfileOutcome> {
+    return this.held(() => this.editNow(values));
+  }
+
+  private async editNow(values: unknown): Promise<ProfileOutcome> {
+    const root = await this.d.root();
+    if (!root) return { ok: false, reason: "not-ready" };
+    const id = await this.d.active();
+    if (id === undefined || !(await this.openable(id))) return { ok: false, reason: "not-ready" };
+    if (typeof values !== "object" || values === null || Array.isArray(values)) {
+      return { ok: false, reason: "invalid", errors: [{ path: "", message: "Expected the form's fields" }] };
+    }
+    const base = profileDir(root, id);
+    const stored = (await this.d.readRecord(base)) ?? {};
+    const asked = (name: string) => this.d.fields.includes(name);
+    const next: Record<string, unknown> = Object.fromEntries(Object.entries(stored).filter(([k]) => !asked(k)));
+    for (const [k, v] of Object.entries(values)) if (asked(k)) next[k] = v;
+    const parsed = this.d.collection.schema.safeParse(next);
+    if (!parsed.success) return { ok: false, reason: "invalid", errors: inputIssues(parsed.error) };
+    const record = parsed.data as DataRecord;
+    let title: string;
+    try {
+      title = cleanProfileTitle(record.name);
+    } catch (err) {
+      return { ok: false, reason: "invalid", errors: [{ path: "name", message: (err as Error).message }] };
+    }
+    try {
+      await this.d.writeActive({ ...record, name: title });
+    } catch (err) {
+      if (err instanceof DataUnavailable) return { ok: false, reason: "busy" };
+      console.error("Could not save the profile", err);
+      return { ok: false, reason: "failed" };
+    }
+    await this.sync(base);
+    return { ok: true };
   }
 
   /** Hides a profile from the switcher, or brings it back. Never the active one. */

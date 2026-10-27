@@ -609,9 +609,9 @@ export class FakeClient implements HarnessClient {
   };
   /** The registry; `state.config.profile` is the active one. */
   profileList: ProfileView[] = [];
-  /** Calls to profiles, in order: "create:<name>", "open:<id>", "archive:<id>", "unarchive:<id>", "delete:<id>". */
+  /** Calls to profiles, in order: "create:<name>", "open:<id>", "edit:<name>", "archive:<id>", "unarchive:<id>", "delete:<id>". */
   profileCalls: string[] = [];
-  /** When set, create and open are refused with it. */
+  /** When set, create, open and edit are refused with it. */
   profileRefusal: Exclude<ProfileResult, { ok: true }> | null = null;
   /** When set, create makes the profile but its switch fails (`failed` with `made`). */
   profileSwitchFails = false;
@@ -657,6 +657,22 @@ export class FakeClient implements HarnessClient {
       if (this.profileRefusal) return this.profileRefusal;
       if (!this.profileList.some((p) => p.id === id && !p.archived)) return { ok: false, reason: "unknown" };
       this.state = { ...this.state, config: { ...this.state.config, profile: id } };
+      return this.profileChanged();
+    },
+    // Like the main process: the form's fields come only from `values` (one left out is cleared); a blank name is refused.
+    edit: async (values: Record<string, unknown>): Promise<ProfileResult> => {
+      const id = this.state.config.profile;
+      this.profileCalls.push(`edit:${String(values.name)}`);
+      if (!this.state.profiles || id === undefined) return { ok: false, reason: "not-ready" };
+      if (this.profileRefusal) return this.profileRefusal;
+      const title = typeof values.name === "string" ? values.name.trim() : "";
+      if (!title) return { ok: false, reason: "invalid", errors: [{ path: "name", message: "Enter a name" }] };
+      const asked = this.state.profiles.form.fields.map((f) => f.name);
+      const stored = (this.records.profile ?? []).at(-1) ?? {};
+      const kept = Object.fromEntries(Object.entries(stored).filter(([k]) => !asked.includes(k)));
+      const given = Object.fromEntries(Object.entries(values).filter(([k]) => asked.includes(k)));
+      this.records.profile = [...(this.records.profile ?? []), { ...kept, ...given, name: title }];
+      this.profileList = this.profileList.map((p) => (p.id === id ? { ...p, title } : p));
       return this.profileChanged();
     },
     archive: async (id: string) => this.setProfileArchived(id, true),

@@ -1059,6 +1059,7 @@ function registerIpc() {
   handle("hh:profileArchive", (id: unknown, archived: unknown) =>
     profilesCtl && typeof archived === "boolean" ? profileAnswer(profilesCtl.setArchived(id, archived)) : noProfiles(),
   );
+  handle("hh:profileEdit", (values: unknown) => (profilesCtl ? profileAnswer(profilesCtl.edit(values)) : noProfiles()));
   handle("hh:profileDelete", (id: unknown) => (profilesCtl ? profileAnswer(profilesCtl.remove(id)) : noProfiles()));
   handle("hh:choose", (option: unknown, task: unknown) => {
     if (quitting) throw new Error("The app is closing");
@@ -1436,6 +1437,9 @@ if (loaded) {
       // As the person, app-wide, in the new profile's own store. It has no history yet: its runtime's "Start" records it.
       writeRecord: async (base, record) => void (await dataStoreFor(base).put(PROFILE_COLLECTION, record, { who: "person", scope: APP_SCOPE })),
       readRecord: (base) => dataStoreFor(base).get(PROFILE_COLLECTION, undefined, { who: "person", scope: APP_SCOPE }),
+      fields: harness.profiles.fields,
+      // As the person, app-wide, in the active profile's store: its checks and its `Data: profile` commit.
+      writeActive: async (record) => void (await personData({ op: "put", collection: PROFILE_COLLECTION, record }, { scope: APP_SCOPE })),
       switchTo: (target) => switches.run(target),
       trash: (p) => shell.trashItem(p),
       historyDir: (folder) => historyDir(app.getPath("userData"), folder),

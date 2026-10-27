@@ -117,6 +117,7 @@ const client: HarnessClient = {
     open: (id) => ipcRenderer.invoke("hh:profileOpen", id),
     archive: (id) => ipcRenderer.invoke("hh:profileArchive", id, true),
     unarchive: (id) => ipcRenderer.invoke("hh:profileArchive", id, false),
+    edit: (values) => ipcRenderer.invoke("hh:profileEdit", values),
     delete: (id) => ipcRenderer.invoke("hh:profileDelete", id),
     onChange: (listener) => subscribe<ProfilesState>("hh:profiles", listener),
   },

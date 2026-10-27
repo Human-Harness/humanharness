@@ -69,7 +69,14 @@ export function ProfilesSection({ client, state, onChange }: { client: HarnessCl
               )}
               {active && editing && (
                 <div className="hh-row-note">
-                  <ProfileEdit client={client} form={form} onSaved={() => setEditing(false)} />
+                  <ProfileEdit
+                    client={client}
+                    form={form}
+                    onSaved={(s) => {
+                      setEditing(false);
+                      onChange(s);
+                    }}
+                  />
                 </div>
               )}
             </li>
@@ -81,8 +88,11 @@ export function ProfilesSection({ client, state, onChange }: { client: HarnessCl
   );
 }
 
-/** The active profile's fields, saved as the person's write (its checks, its `Data: profile` commit). */
-function ProfileEdit({ client, form, onSaved }: { client: HarnessClient; form: InputSpec; onSaved: () => void }) {
+/**
+ * The active profile's fields, saved by the main process as the person's write (its checks, its `Data: profile`
+ * commit). A refusal comes back by field, or as one line.
+ */
+function ProfileEdit({ client, form, onSaved }: { client: HarnessClient; form: InputSpec; onSaved: (state: AppState) => void }) {
   const { t } = useTranslation();
   const [initial, setInitial] = useState<Record<string, unknown> | null>(null);
   const [errors, setErrors] = useState<InputIssue[]>([]);
@@ -105,10 +115,15 @@ function ProfileEdit({ client, form, onSaved }: { client: HarnessClient; form: I
   const submit = (value: Record<string, unknown>) => {
     setSending(true);
     setErrors([]);
-    // The record keeps the fields the form doesn't ask for (its colour, anything the agent wrote).
-    client.data
-      .put(PROFILE_COLLECTION, { ...initial, ...value })
-      .then(onSaved, () => setErrors([{ path: "", message: t("profiles.refused.failed") }]))
+    client.profiles
+      .edit(value)
+      .then(
+        (r) => {
+          if (r.ok) onSaved(r.state);
+          else setErrors(r.errors && r.errors.length > 0 ? r.errors : [{ path: "", message: t(refusalKey(r)) }]);
+        },
+        () => setErrors([{ path: "", message: t("profiles.refused.failed") }]),
+      )
       .finally(() => setSending(false));
   };
   return <InputForm spec={{ ...form, submitLabel: t("profiles.save") }} data={null} initial={initial} disabled={false} sending={sending} errors={errors} submit={submit} />;

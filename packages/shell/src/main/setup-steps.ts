@@ -242,7 +242,10 @@ export class SetupSteps {
     }
     if (errors.length > 0) return errors;
     const store = await this.d.store().catch(() => null);
-    const before = (store ? await store.get(collection, undefined, PERSON).catch(() => null) : null) ?? {};
+    const stored = (store ? await store.get(collection, undefined, PERSON).catch(() => null) : null) ?? {};
+    // The form's fields come only from its answer: one it sent no value for (an optional field cleared) is cleared.
+    const asked = new Set(step.fields ?? []);
+    const before = Object.fromEntries(Object.entries(stored).filter(([k]) => !asked.has(k)));
     try {
       await this.d.write({ op: "put", collection, record: { ...before, ...picked } });
       return [];

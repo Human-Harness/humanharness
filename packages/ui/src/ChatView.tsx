@@ -372,6 +372,8 @@ export function ChatView({
   const send = (text: string, options: SendOptions = {}, confirmed = false): boolean => {
     const message = text.trim();
     if (!message || blocked() || (pending && !confirmed) || (askPick && !options.mode) || (timePick && options.timeBox === undefined)) return false;
+    // Slim: only the interview runs here, never a free question or another action's task.
+    if (slim && (options.action ? options.action !== slim.action : tasks.current?.action !== slim.action)) return false;
     // A `required` action needs an open scope (spec §3.3); the main process would refuse it.
     if (options.action && state.scopes && state.actions[options.action]?.scope !== "none" && !openScope) {
       const text = t("scopes.pickFirst", { label: state.scopes.label });
@@ -438,6 +440,8 @@ export function ChatView({
     const action = option.action && state.actions[option.action] ? option.action : undefined;
     const moves = Boolean(option.next || action);
     const target = option.next ? nextInPath(path, tasks.current?.action, tasks.actions) : (action ?? null);
+    // Slim: a pick never moves the interview to another action (its task would show on the setup screen).
+    if (slim && target && target !== slim.action) return false;
     if (!confirmed && target) {
       const check = preflight(state.actions[target]?.cost, chat.limits, estimates[target]);
       if (check) {
@@ -779,6 +783,8 @@ export function ChatView({
   const Main = slim ? "div" : "main";
   /** Slim: the interview's task isn't the open one (not started, closed, or another task is open). */
   const slimStart = slim !== undefined && loaded && tasksLoaded && !chat.live && tasks.current?.action !== slim.action;
+  /** Slim: the composer only for the interview's own task (or a turn running), never before it is known. */
+  const composer = !slim || Boolean(chat.live) || tasks.current?.action === slim.action;
 
   return (
     <div className={slim ? "hh-app hh-app-slim" : "hh-app"}>
@@ -1057,29 +1063,31 @@ export function ChatView({
             )}
             <div ref={spacerRef} className="hh-chat-spacer" style={{ display: "none" }} aria-hidden="true" />
           </section>
-          <form className="hh-composer" onSubmit={onSubmit}>
-            <textarea
-              ref={inputRef}
-              aria-label={placeholder}
-              placeholder={placeholder}
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key !== "Enter" || e.shiftKey) return;
-                if (e.nativeEvent.isComposing || e.keyCode === 229) return;
-                e.preventDefault();
-                if (send(draft)) setDraft("");
-              }}
-            />
-            {/* A closing or checkpoint turn is quiet (nothing live on screen) but still stoppable. */}
-            {chat.live || closing || checkpoint ? (
-              <button type="button" onClick={() => void client.cancel()}>
-                {t("chat.stop")}
-              </button>
-            ) : (
-              <button type="submit">{t("chat.send")}</button>
-            )}
-          </form>
+          {composer && (
+            <form className="hh-composer" onSubmit={onSubmit}>
+              <textarea
+                ref={inputRef}
+                aria-label={placeholder}
+                placeholder={placeholder}
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key !== "Enter" || e.shiftKey) return;
+                  if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+                  e.preventDefault();
+                  if (send(draft)) setDraft("");
+                }}
+              />
+              {/* A closing or checkpoint turn is quiet (nothing live on screen) but still stoppable. */}
+              {chat.live || closing || checkpoint ? (
+                <button type="button" onClick={() => void client.cancel()}>
+                  {t("chat.stop")}
+                </button>
+              ) : (
+                <button type="submit">{t("chat.send")}</button>
+              )}
+            </form>
+          )}
           {startView?.hint && <p className="hh-composer-hint">{t(startView.hint, { ns: "harness" })}</p>}
         </Main>
         {renderSide && !slim && <aside className="hh-side">{renderSide(chat.blockState, sendFromHarness)}</aside>}

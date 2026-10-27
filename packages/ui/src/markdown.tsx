@@ -169,7 +169,7 @@ function renderLink(url: string, children: PhrasingContent[], ctx: Ctx, key: num
   if (target.kind === "external") {
     return (
       <Fragment key={key}>
-        <a href={target.url} target="_blank" rel="noreferrer noopener" className="hh-md-link">
+        <a href={target.url} target="_blank" rel="noreferrer noopener" className="hh-md-link" aria-description={ctx.t("reader.opensInBrowser")}>
           {label}
         </a>
         {!auto && <span className="hh-md-domain">{` (${target.domain})`}</span>}
@@ -181,7 +181,8 @@ function renderLink(url: string, children: PhrasingContent[], ctx: Ctx, key: num
     return (
       <a
         key={key}
-        href={url}
+        // Never the raw URL: only the resolved path, so the link can't go anywhere by itself.
+        href={`#${target.path}`}
         className="hh-md-link hh-md-doclink"
         onClick={(e) => {
           e.preventDefault();
@@ -214,7 +215,7 @@ function renderImage(url: string, alt: string, ctx: Ctx, key: number): ReactNode
   if (target.kind === "remote") {
     return (
       <Fragment key={key}>
-        <a href={target.url} target="_blank" rel="noreferrer noopener" className="hh-md-link">
+        <a href={target.url} target="_blank" rel="noreferrer noopener" className="hh-md-link" aria-description={ctx.t("reader.opensInBrowser")}>
           {alt || target.url}
         </a>
         <span className="hh-md-domain">{` (${target.domain})`}</span>

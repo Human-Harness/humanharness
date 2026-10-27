@@ -382,6 +382,29 @@ describe("links and images (§3.4)", () => {
     expect(el.textContent).toBe("See the docs (example.com).");
   });
 
+  it("an external link tells a screen reader it opens in the browser, without adding copied text", async () => {
+    const { container } = await renderIn("en", <Markdown source="See [the docs](https://example.com/x) and ![Logo](https://cdn.x.com/l.png)." />);
+    const links = [...container.querySelectorAll("a")];
+    expect(links.map((a) => a.getAttribute("aria-description"))).toEqual(["Opens in the browser", "Opens in the browser"]);
+    expect(container.textContent).toBe("See the docs (example.com) and Logo (cdn.x.com).");
+  });
+
+  it("an autolink with a user part (good.com@evil.com) still shows its real domain", () => {
+    const el = md("Go to <https://good.com@evil.com/x>");
+    expect(el.querySelector("a")?.getAttribute("href")).toBe("https://good.com@evil.com/x");
+    expect(el.textContent).toBe("Go to https://good.com@evil.com/x (evil.com)");
+  });
+
+  it("a document link's href is never the raw URL", () => {
+    const { container } = render(
+      <DocumentContext.Provider value={host()}>
+        <Markdown source="[ADR](javascript:alert(1)) [B](../b.md#x)" path="docs/a.md" document />
+      </DocumentContext.Provider>,
+    );
+    const links = [...container.querySelectorAll("a")];
+    expect(links.map((a) => a.getAttribute("href"))).toEqual(["#b.md"]);
+  });
+
   it("a bare URL is a link too, shown once", () => {
     const el = md("Go to https://example.com now");
     expect(el.querySelector("a")?.getAttribute("href")).toBe("https://example.com/");

@@ -72,7 +72,14 @@ export function imageTarget(src: string, base: string): ImageTarget {
 /**
  * An autolink (`<https://…>`, a bare URL, `www.…`, an email): its label is the URL itself, or the URL without the
  * `http://` or `mailto:` that GFM puts before a `www.` or an email. Such a link shows only its label.
+ * Never when the URL has a user part (`https://good.com@evil.com`): its real domain must show.
  */
 export function isAutolink(label: string, url: string): boolean {
-  return label === url || `http://${label}` === url || `mailto:${label}` === url;
+  if (label !== url && `http://${label}` !== url && `mailto:${label}` !== url) return false;
+  try {
+    const u = new URL(url);
+    return u.username === "" && u.password === "";
+  } catch {
+    return true;
+  }
 }

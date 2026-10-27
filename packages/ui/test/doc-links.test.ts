@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { imageTarget, joinPath, linkTarget } from "../src/doc-links";
+import { imageTarget, isAutolink, joinPath, linkTarget } from "../src/doc-links";
 
 describe("joinPath", () => {
   it("resolves against the document's folder", () => {
@@ -28,6 +28,19 @@ describe("linkTarget (§3.4)", () => {
     for (const href of ["javascript:alert(1)", "file:///etc/passwd", "mailto:a@b.c", "//evil.com/x.md", "src/a.ts", "data:text/html,x", "", "   ", "https://"]) {
       expect(linkTarget(href, "")).toEqual({ kind: "text" });
     }
+  });
+});
+
+describe("isAutolink", () => {
+  it("is the URL itself, or a www/email autolink", () => {
+    expect(isAutolink("https://a.org/x", "https://a.org/x")).toBe(true);
+    expect(isAutolink("www.a.org", "http://www.a.org")).toBe(true);
+    expect(isAutolink("a@b.co", "mailto:a@b.co")).toBe(true);
+    expect(isAutolink("docs", "https://a.org")).toBe(false);
+  });
+  it("never when the URL has a user part, so its real domain shows", () => {
+    expect(isAutolink("https://good.com@evil.com", "https://good.com@evil.com")).toBe(false);
+    expect(isAutolink("http://u:p@evil.com/", "http://u:p@evil.com/")).toBe(false);
   });
 });
 

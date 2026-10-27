@@ -174,6 +174,11 @@ export class MaterialStore {
     return next;
   }
 
+  /** Removes one fragment's file (callers hold the registry queue, `transact`, and take it out of the list). */
+  async removeFragment(id: string): Promise<void> {
+    if (isFragmentId(id)) await fs.rm(this.fragmentFile(id), { force: true });
+  }
+
   /** Keeps the program's version of a fragment before the AI changes it (§6.2), once. */
   async keepOriginal(id: string): Promise<void> {
     if (!isFragmentId(id)) return;

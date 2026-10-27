@@ -373,8 +373,10 @@ export class MaterialService {
       this.skipped.add(jobKey(job));
       return;
     }
-    const ctx = await this.stageContext(job.scope);
+    const ctx = await this.stageContext(job, store);
     const prompt = await def.prompt(store, job, ctx);
+    // The source once the prompt is set (it may queue a batch): a stage that changed it since has moved on.
+    const before = job.source ? JSON.stringify(await store.source(job.source)) : null;
     const state: StageState = { store, job, answers: [] };
     let ok: boolean;
     if (prompt !== null) {
@@ -400,19 +402,33 @@ export class MaterialService {
     // The scope's stages in order (§10): a sheet done hands over to the links (with items); links done clear the marker.
     if (ok && job.stage === "sheet") await store.setStale(this.d.material.items !== undefined ? "link" : false);
     if (ok && job.stage === "link") await store.setStale(false);
-    // Still the same job (a scope stage that failed, an answer that left the source at its stage): not again until a kick.
+    // Still the same job (a scope stage that failed, an answer that left the source as it was): not again until a kick.
+    // A source still at its stage but changed (its next batch queued: review, labels) runs on.
     const after = job.source ? await store.source(job.source) : null;
-    const same = job.source ? after?.status === "validating" && after.stage === job.stage : (await store.stale()) === job.stage;
+    const same = job.source ? after?.status === "validating" && after.stage === job.stage && JSON.stringify(after) === before : (await store.stale()) === job.stage;
     if (same) this.skipped.add(jobKey(job));
     await this.changed(job.scope);
   }
 
-  /** What prompts need from the manifest (Tasks 21–23 add the items). */
-  async stageContext(_scope: string): Promise<StageContext> {
+  /**
+   * What prompts need from the manifest (Tasks 21–23 add the items), and for a source's job how to convert it again
+   * (§6.2 `reconvert`: the review starts over on the new fragments).
+   */
+  async stageContext(job: Job, store: MaterialStore): Promise<StageContext> {
+    const source = job.source;
     return {
       fragmentKinds: [...this.d.material.fragmentKinds],
       sheetSections: this.d.material.sheet.sections.map((s) => ({ id: s.id, label: s.label, prompt: s.prompt })),
       sheetMaxTokens: this.d.material.sheet.maxTokens,
+      ...(source
+        ? {
+            reconvert: async (settings) => {
+              const epoch = this.epoch;
+              await this.track(processSource(store, source, { ...this.pipeline(epoch), settings }));
+              if (epoch === this.epoch) await this.d.afterChange(store.scope, `processed ${source}`).catch((err: unknown) => console.error("Could not record the material change", err));
+            },
+          }
+        : {}),
     };
   }
 

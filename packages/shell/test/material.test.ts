@@ -8,6 +8,9 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { type MaterialDeps, MaterialService } from "../src/main/material";
 import { MaterialJobs } from "../src/main/material-jobs";
 
+// The real review stage; some tests below put a stand-in in its place.
+const realReview = STAGES.review;
+
 let root: string;
 let base: string;
 let picked: string[] | null;
@@ -389,6 +392,43 @@ describe("AI stages (material spec §10)", () => {
     } finally {
       delete STAGES.sheet;
     }
+  });
+});
+
+describe("the review stage in the queue (material spec §6.2)", () => {
+  const review = realReview;
+  beforeEach(() => {
+    STAGES.review = review;
+  });
+
+  it("a review in two batches runs both in one kick, then waits for labelling", async () => {
+    const store = new MaterialStore(base, "fractions");
+    const ids = Array.from({ length: 25 }, (_, i) => `a-${String(i + 1).padStart(3, "0")}`);
+    await store.update(() => [
+      { id: "a", scope: "fractions", path: "a.md", hash: "x", type: "md", family: "text", pages: 1, sizeBytes: 1, skippedPages: [], status: "validating", stage: "review", fullReview: true, issues: [], fixes: [], estimate: 0, used: 0, fragments: [], addedAt: "2026-10-27T00:00:00.000Z" },
+    ]);
+    await store.writeFragments(
+      "a",
+      ids.map((id) => ({ meta: { id, source: "a.md", location: "lines 1", path: "A", summary: "", keywords: [], tokens: 10, items: [], checks: "ok", validated: "not-reviewed" }, md: `Text of ${id}.` })),
+    );
+    let runs = 0;
+    const svc = new MaterialService(
+      deps({
+        runStage: async (_j, prompt, tools, handle) => {
+          runs++;
+          expect(tools).toEqual(["material_review"]);
+          const batch = [...prompt.matchAll(/^\[(a-\d{3})\]/gm)].map((m) => m[1]);
+          await handle({ op: "material_review", verdict: "good", fragments: batch.map((id) => ({ id, decision: "ok" })), issues: [] });
+          return { ok: true };
+        },
+      }),
+    );
+    const jobs = new MaterialJobs<Job>({ idle: () => true, next: () => svc.nextJob(), run: (j, signal) => svc.runJob(j, signal), pollMs: 2 });
+    jobs.kick();
+    await jobs.settled();
+    expect(runs).toBe(2);
+    expect(await store.source("a")).toMatchObject({ status: "validating", stage: "label", verdict: "good" });
+    expect((await store.readFragment("a-025"))?.meta.validated).toBe("sample");
   });
 });
 

@@ -1,5 +1,9 @@
 import type { MaterialStage } from "@humanharness/harness-sdk";
+import type { z } from "zod";
+import { BATCH } from "./constants";
+import { applyReview, reviewAnswer, reviewPrompt, reviewSet } from "./review";
 import type { MaterialStore } from "./store";
+import type { ConvertSettings } from "./types";
 
 /** One unit of AI work (§6.2, §10): a source's stage, or the scope's sheet or links. */
 export interface Job {
@@ -64,6 +68,8 @@ export interface StageContext {
   sheetMaxTokens: number;
   /** `key: label` lines of the items collection in this scope (links stage). */
   items?: { key: string; label: string }[];
+  /** Converts the job's source again with other settings (§6.2 `reconvert`); its review starts over. */
+  reconvert?: (settings: ConvertSettings) => Promise<void>;
 }
 
 /** What a stage's tool calls left, per run. */
@@ -75,7 +81,8 @@ export interface StageState {
 
 /**
  * What a stage needs to run: its tools, its prompt, how to take each tool call, and what to do with the answers.
- * Stage tasks (18–23) register theirs in STAGES, and their tools in `STAGE_TOOLS` (server.ts).
+ * Stage tasks (18–23) register theirs in STAGES, and their tools in `STAGE_TOOLS`. `apply` must move the source on
+ * (its stage, its queue): a job that leaves the source as it was is skipped until the next kick.
  */
 export interface StageDef {
   tools: readonly string[];
@@ -89,3 +96,55 @@ export interface StageDef {
 
 /** The stages that exist so far (Tasks 18–23 fill it). */
 export const STAGES: Partial<Record<MaterialStage, StageDef>> = {};
+
+/** A tool only the AI stages get (system mode): what it says, and its input. */
+export interface StageTool {
+  description: string;
+  input: z.ZodRawShape;
+}
+
+/** The system-mode tools of the `material` server (server.ts registers the ones a stage names). */
+export const STAGE_TOOLS: Record<string, StageTool> = {};
+
+// Review (§6.2): the flagged fragments plus a sample, in batches of BATCH; the program carries out the decisions.
+STAGE_TOOLS.material_review = {
+  description: "Your answer for this batch: the verdict, a decision per fragment, the issues. Call it once.",
+  input: reviewAnswer.shape,
+};
+
+STAGES.review = {
+  tools: ["material_review"],
+  async prompt(store, job) {
+    const s = await store.source(job.source ?? "");
+    if (!s) return null;
+    let queue = s.reviewQueue;
+    if (!Array.isArray(queue) || queue.length === 0) {
+      const next = await reviewSet(store, s);
+      queue = next;
+      if (next.length) await store.patch(s.id, (e) => ({ ...e, reviewQueue: next }));
+    }
+    return queue.length === 0 ? null : reviewPrompt(store, s, queue.slice(0, BATCH));
+  },
+  async accept(name, args, state) {
+    const a = reviewAnswer.parse(args);
+    const s = await state.store.source(state.job.source ?? "");
+    const batch = new Set((s?.reviewQueue ?? []).slice(0, BATCH));
+    const outside = a.fragments.find((d) => !batch.has(d.id));
+    if (outside) throw new Error(`${outside.id} is not in this batch`);
+    state.answers.push({ name, ...a });
+    return "Saved.";
+  },
+  async apply(store, job, state, ctx) {
+    const s = await store.source(job.source ?? "");
+    if (!s) return false;
+    if ((s.reviewQueue ?? []).length === 0) {
+      // Nothing to review (no fragments, or none flagged since): straight to labelling.
+      await store.patch(s.id, (e) => (e.status === "validating" && e.stage === "review" ? { ...e, stage: "label" } : e));
+      return true;
+    }
+    const answer = state.answers.at(-1);
+    if (!answer) return false;
+    await applyReview(store, job, reviewAnswer.parse(answer), { items: ctx.items !== undefined, ...(ctx.reconvert ? { reconvert: ctx.reconvert } : {}) });
+    return true;
+  },
+};

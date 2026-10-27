@@ -2,15 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { RpcRefused, callRpc } from "@humanharness/blocks";
 import { z } from "zod";
 import { FRAGMENT_ID } from "./fragment";
-
-/** A tool only the AI stages get (system mode): its name, what it says, and its input (Tasks 18–23 add theirs). */
-export interface StageTool {
-  description: string;
-  input: z.ZodRawShape;
-}
-
-/** Filled by `stages.ts` (Task 17 on); empty until then. */
-export const STAGE_TOOLS: Record<string, StageTool> = {};
+import { STAGE_TOOLS } from "./stages";
 
 const ID = z.string().regex(FRAGMENT_ID);
 

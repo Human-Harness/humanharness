@@ -143,5 +143,20 @@ export interface SourceEntry {
   settings?: ConvertSettings;
   /** An AI stage failed: the status line says "Not checked by the AI" and offers Try again. */
   failed?: SourceStage | "sheet" | "link";
+  /** Review (§6.2): the fragments still to review, in batches of BATCH. */
+  reviewQueue?: string[];
+  /** Repairs the review asked for, waiting for the repair stage. */
+  repairs?: { id: string; issue: string }[];
+  /** Questions for the person (§6.2 `ask`); `choices` are ids the window names. */
+  asks?: MaterialAsk[];
+  /** The person agreed to a full review (§7). */
+  fullReview?: boolean;
   addedAt: string;
+}
+
+/** A question for the person: about one fragment, or the whole source. */
+export interface MaterialAsk {
+  fragment?: string;
+  question: string;
+  choices: ("keep" | "drop" | "program" | "use" | "remove")[];
 }

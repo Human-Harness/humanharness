@@ -63,6 +63,29 @@ describe("runSystemTask (material spec §10)", () => {
     expect(tempFolders().filter((n) => !before.has(n))).toEqual([]);
   });
 
+  it("the review stage's tool reaches the app, checked by the server's schema", async () => {
+    const seen: unknown[] = [];
+    const fake = fakeClaude({
+      steps: [
+        { mcp: { server: "material", tool: "material_review", args: { verdict: "good", fragments: [], issues: [] } } },
+        { line: { type: "result", subtype: "success", is_error: false, result: "done" } },
+      ],
+    });
+    const r = await runSystemTask({
+      engine: getEngine("claude"),
+      command: fake.command,
+      env: fake.env,
+      prompt: "material-review\n\nCheck these.",
+      tools: ["material_review"],
+      handle: async (req) => {
+        seen.push(req);
+        return "Saved.";
+      },
+    });
+    expect(r.ok).toBe(true);
+    expect(seen).toEqual([{ op: "material_review", verdict: "good", fragments: [], issues: [] }]);
+  });
+
   it("a crash or a timeout is a failed stage, never a throw", async () => {
     const crash = fakeClaude({ steps: [], exitCode: 1, stderr: "boom" });
     const r = await runSystemTask({ engine: getEngine("claude"), command: crash.command, env: crash.env, prompt: "x", tools: [], handle: async () => null });

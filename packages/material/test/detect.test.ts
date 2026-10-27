@@ -52,6 +52,26 @@ describe("detectType (material spec §3: content first, extension second)", () =
     expect(detectType("README", Buffer.from("Just words."))).toEqual({ ok: true, type: "txt", family: "text" });
   });
 
+  it("text that starts like a media header is text; a real header still is media", () => {
+    expect(detectType("bmi.txt", Buffer.from("BMI is weight over height squared.\n"))).toEqual({ ok: true, type: "txt", family: "text" });
+    expect(detectType("id.csv", Buffer.from("ID3,name\n1,a\n"))).toEqual({ ok: true, type: "csv", family: "spreadsheet" });
+    expect(detectType("oggs.md", Buffer.from("OggS are fun"))).toEqual({ ok: true, type: "md", family: "text" });
+    expect(detectType("flac.txt", Buffer.from("fLaC is a codec"))).toEqual({ ok: true, type: "txt", family: "text" });
+    const bmp = Buffer.concat([Buffer.from("BM"), Buffer.alloc(12), bytes(40, 0, 0, 0), Buffer.alloc(8)]);
+    expect(detectType("picture", bmp)).toMatchObject({ ok: false, reason: "media" });
+    expect(detectType("a.bmp", Buffer.from("BM"))).toMatchObject({ ok: false, reason: "media" });
+    expect(detectType("song", Buffer.concat([Buffer.from("OggS"), bytes(0, 2)]))).toMatchObject({ ok: false, reason: "media" });
+    expect(detectType("song", Buffer.concat([Buffer.from("fLaC"), bytes(0x80, 0, 0, 0x22)]))).toMatchObject({ ok: false, reason: "media" });
+  });
+
+  it("sniffs HTML past a UTF-8 BOM, and reads UTF-16 with a BOM as text", () => {
+    expect(detectType("page", Buffer.from("﻿<!DOCTYPE html><p>Hi</p>", "utf8"))).toEqual({ ok: true, type: "html", family: "web" });
+    const le = Buffer.concat([bytes(0xff, 0xfe), Buffer.from("Hello, café", "utf16le")]);
+    const be = Buffer.from(Buffer.concat([bytes(0xfe, 0xff), Buffer.from("<html><body>x</body></html>", "utf16le").swap16()]));
+    expect(detectType("notes.txt", le)).toEqual({ ok: true, type: "txt", family: "text" });
+    expect(detectType("page", be)).toEqual({ ok: true, type: "html", family: "web" });
+  });
+
   it("refuses anything that is not text: NUL bytes or mostly unprintable", () => {
     expect(detectType("a.bin", bytes(0x41, 0x00, 0x42))).toMatchObject({ ok: false, reason: "binary" });
     expect(detectType("a.dat", Buffer.from(Array.from({ length: 100 }, (_, i) => (i % 2 ? 0x01 : 0x41))))).toMatchObject({ ok: false, reason: "binary" });

@@ -6,6 +6,11 @@ describe("decodeText (§3: UTF-8, falling back to Windows-1252)", () => {
     expect(decodeText(Buffer.from("\uFEFFcafé", "utf8"))).toBe("café");
     expect(decodeText(Buffer.from([0x63, 0x61, 0x66, 0xe9]))).toBe("café");
   });
+
+  it("decodes UTF-16 when a BOM says so, little- or big-endian", () => {
+    expect(decodeText(Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from("café ✓", "utf16le")]))).toBe("café ✓");
+    expect(decodeText(Buffer.concat([Buffer.from([0xfe, 0xff]), Buffer.from("café ✓", "utf16le").swap16()]))).toBe("café ✓");
+  });
 });
 
 describe("markdownBlocks", () => {

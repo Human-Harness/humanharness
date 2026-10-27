@@ -1,9 +1,11 @@
 import { markdownBlocks, withEstimatedPages } from "../blocks";
+import { utf16Text } from "../detect";
 import type { MaterialType, MdBlock } from "../types";
 
-/** UTF-8 (strict), else Windows-1252 (§3); a BOM goes. */
+/** UTF-16 when a BOM says so, else UTF-8 (strict), else Windows-1252 (§3); a BOM goes. */
 export function decodeText(b: Buffer): string {
-  let text: string;
+  let text = utf16Text(b);
+  if (text !== null) return text;
   try {
     text = new TextDecoder("utf-8", { fatal: true }).decode(b);
   } catch {

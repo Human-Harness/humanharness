@@ -24,13 +24,32 @@ const MEDIA_EXT = new Set([".jpg", ".jpeg", ".png", ".gif", ".webp", ".heic", ".
 const TEXT_EXT: Record<string, MaterialType> = { ".md": "md", ".markdown": "md", ".txt": "txt", ".json": "json", ".xml": "xml", ".yaml": "yaml", ".yml": "yaml" };
 const CODE_EXT = new Set([".js", ".ts", ".tsx", ".jsx", ".py", ".java", ".c", ".h", ".cpp", ".cs", ".go", ".rs", ".rb", ".php", ".swift", ".kt", ".sql", ".sh", ".css", ".scss"]);
 
-/** Image, audio and video signatures (§3 "Refused at intake"). */
-function isMedia(b: Buffer): boolean {
-  if (starts(b, [0xff, 0xd8, 0xff]) || starts(b, [0x89, 0x50, 0x4e, 0x47]) || starts(b, "GIF8") || starts(b, "II*\0") || starts(b, "MM\0*") || starts(b, "BM")) return true;
+/** The sizes a BMP's info header may have (BITMAPCOREHEADER … BITMAPV5HEADER). */
+const BMP_INFO = new Set([12, 40, 52, 56, 108, 124]);
+
+/**
+ * Image, audio and video signatures (§3 "Refused at intake"). Signatures made only of printable letters ("BM", "ID3",
+ * "OggS", "fLaC") count only with the bytes a real header has after them, or the matching extension, so a text that
+ * starts with "BMI is…" stays text.
+ */
+function isMedia(b: Buffer, ext: string): boolean {
+  if (starts(b, [0xff, 0xd8, 0xff]) || starts(b, [0x89, 0x50, 0x4e, 0x47]) || starts(b, "GIF8") || starts(b, "II*\0") || starts(b, "MM\0*")) return true;
+  if (starts(b, "BM") && (ext === ".bmp" || (b.length >= 18 && BMP_INFO.has(b.readUInt32LE(14))))) return true;
   if (starts(b, "RIFF") && (starts(b, "WEBP", 8) || starts(b, "WAVE", 8) || starts(b, "AVI ", 8))) return true;
   if (starts(b, "ftyp", 4)) return true; // mp4, mov, heic, m4a
-  if (starts(b, "ID3") || starts(b, [0xff, 0xfb]) || starts(b, "OggS") || starts(b, "fLaC") || starts(b, [0x1a, 0x45, 0xdf, 0xa3])) return true;
+  if (starts(b, "ID3") && (ext === ".mp3" || (b.length > 3 && b[3] >= 2 && b[3] <= 4))) return true; // ID3v2.2–2.4
+  if (starts(b, "OggS") && (ext === ".ogg" || starts(b, [0], 4))) return true; // stream structure version 0
+  if (starts(b, "fLaC") && (ext === ".flac" || (b.length > 4 && (b[4] & 0x7f) === 0))) return true; // STREAMINFO first
+  if (starts(b, [0xff, 0xfb]) || starts(b, [0x1a, 0x45, 0xdf, 0xa3])) return true;
   return false;
+}
+
+/** A UTF-16 file's text when a BOM (FF FE little-endian, FE FF big-endian) says it is one; otherwise null. */
+export function utf16Text(b: Buffer): string | null {
+  const le = starts(b, [0xff, 0xfe]);
+  if (!le && !starts(b, [0xfe, 0xff])) return null;
+  const body = Buffer.from(b.subarray(2, 2 + ((b.length - 2) & ~1)));
+  return new TextDecoder("utf-16le").decode(le ? body : body.swap16());
 }
 
 /** Text: no NUL byte, and at most 10% control characters (tabs, line and page breaks excepted) in the first 64 KB. */
@@ -45,12 +64,15 @@ export function looksLikeText(b: Buffer): boolean {
 /**
  * The file's type from its content first (magic bytes), its extension second (§3), or why it is refused. Zip-based
  * formats are told apart by their extension here; their converter refuses a zip that lacks the expected parts.
- * `head` is the file's first bytes (64 KB are enough).
+ * `raw` is the file's first bytes (64 KB are enough).
  */
-export function detectType(name: string, head: Buffer): Detected {
+export function detectType(name: string, raw: Buffer): Detected {
   const ext = path.extname(name).toLowerCase();
+  // A BOM says the file is text: UTF-16 is read as its UTF-8 equivalent, a UTF-8 BOM is skipped.
+  const wide = utf16Text(raw);
+  const head = wide !== null ? Buffer.from(wide, "utf8") : starts(raw, [0xef, 0xbb, 0xbf]) ? raw.subarray(3) : raw;
   if (starts(head, "%PDF-")) return { ok: true, type: "pdf", family: "pdf" };
-  if (isMedia(head)) return { ok: false, reason: "media", message: MEDIA };
+  if (isMedia(head, ext)) return { ok: false, reason: "media", message: MEDIA };
   if (OLD.has(ext) || starts(head, [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1])) return { ok: false, reason: "old-office", message: OLD_OFFICE };
   if (starts(head, [0x50, 0x4b, 0x03, 0x04])) {
     return Object.hasOwn(ZIP_TYPES, ext) ? ZIP_TYPES[ext] : { ok: false, reason: "unreadable", message: BINARY };

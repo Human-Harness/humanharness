@@ -273,10 +273,14 @@ function renderFootnoteReference(id: string, ctx: Ctx, key: number): ReactNode {
   );
 }
 
-/** Scrolls to an id inside the app (never a navigation). */
-function jump(e: { preventDefault(): void }, id: string): void {
+/**
+ * Scrolls to an id (never a navigation), looked for only inside the link's own reader or chat message, so a document's
+ * `#root` can never reach the app's own elements. Elsewhere (a harness view) the ids carry the text's prefix.
+ */
+function jump(e: { preventDefault(): void; currentTarget: Element }, id: string): void {
   e.preventDefault();
-  document.getElementById(id)?.scrollIntoView?.({ block: "start" });
+  const scope: ParentNode = e.currentTarget.closest(".hh-reader-scroll, .hh-message") ?? e.currentTarget.ownerDocument;
+  scope.querySelector(`#${CSS.escape(id)}`)?.scrollIntoView?.({ block: "start" });
 }
 
 /** The notes at the end, in the order they were referenced. */

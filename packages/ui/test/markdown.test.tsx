@@ -455,6 +455,26 @@ describe("links and images (§3.4)", () => {
     expect(container.querySelector("#p-risks")).not.toBeNull();
   });
 
+  it("an #anchor looks only inside its own reader or message, never at the app's own ids", () => {
+    const hits: string[] = [];
+    Element.prototype.scrollIntoView = function (this: Element) {
+      hits.push(this.id);
+    };
+    const { container } = render(
+      <>
+        <div id="root" />
+        <div className="hh-reader-scroll">
+          <Markdown source={"[x](#root) [y](#here)\n\n## Here"} idPrefix="" document />
+        </div>
+      </>,
+    );
+    const [x, y] = [...container.querySelectorAll("a")];
+    fireEvent.click(x);
+    expect(hits).toEqual([]);
+    fireEvent.click(y);
+    expect(hits).toEqual(["here"]);
+  });
+
   it("a local image is read through the context; a refusal shows its alt text", async () => {
     const h = host({ image: vi.fn(async (p: string) => (p === "docs/a.png" ? "data:image/png;base64,AAA" : null)) });
     render(

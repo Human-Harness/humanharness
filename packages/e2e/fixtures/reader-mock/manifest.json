@@ -11,7 +11,7 @@
       "writes": [
         {
           "path": "docs/overview.md",
-          "content": "---\ntitle: Manifest overview\n---\n> [!SUMMARY]\n> The manifest declares the whole harness.\n\n## Context\n\nSee the [decisions](decisions.md#why).\n\n## Parts\n\n| Part | Count |\n|:--|--:|\n| actions | 6 |\n| blocks | 2 |\n\n*What a harness declares*\n\n## Risks\n\nNone yet.\n"
+          "content": "---\ntitle: Manifest overview\n---\n> [!SUMMARY]\n> The manifest declares the whole harness.\n\n## Context\n\nSee the [decisions](decisions.md#why).\n\n## Parts\n\n| Part | Count |\n|:--|--:|\n| actions | 6 |\n| blocks | 2 |\n\n*What a harness declares*\n\n## Flow\n\n```mermaid\nflowchart LR\n  A[Manifest] --> B[App]\n```\n\n## Risks\n\nNone yet.\n"
         },
         { "path": "docs/decisions.md", "content": "# Decisions\n\n## Why\n\nOne file declares everything.\n" }
       ],

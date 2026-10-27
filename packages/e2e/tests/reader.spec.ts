@@ -11,6 +11,11 @@ const COMPOSER = "Ask about this topic…";
 test("a turn's document: card, reader, contents, full screen, a .md link, live reload", async () => {
   const s = makeSandbox("reader");
   const { app, page } = await launchMock(s, readerMock);
+  // The Mermaid diagram draws under the app's CSP: no violation may show in the console.
+  const csp: string[] = [];
+  page.on("console", (m) => {
+    if (/Content Security Policy|Refused to/i.test(m.text())) csp.push(m.text());
+  });
   try {
     await page.getByRole("button", { name: "Start Demo" }).click();
     await page.getByRole("region", { name: START }).getByRole("button", { name: /The manifest/ }).click();
@@ -24,6 +29,8 @@ test("a turn's document: card, reader, contents, full screen, a .md link, live r
     await expect(reader.getByRole("heading", { level: 1, name: "Manifest overview" })).toBeVisible();
     await expect(reader.locator(".hh-callout-summary")).toBeVisible();
     await expect(reader.locator(".hh-md-caption")).toHaveText("What a harness declares");
+    await expect(reader.locator(".hh-md-diagram img")).toBeVisible();
+    expect(csp).toEqual([]);
 
     // The table of contents shows at the default window size, and jumps.
     await reader.getByRole("navigation", { name: "Contents" }).getByRole("link", { name: "Risks" }).click();
@@ -61,6 +68,7 @@ test("a turn's document: card, reader, contents, full screen, a .md link, live r
     await page.getByRole("button", { name: "Send" }).click();
     await expect(reader.getByRole("heading", { name: "Blocks" })).toBeVisible();
     await expect(page.getByRole("button", { name: /Manifest overview.*Updated/ })).toBeVisible();
+    expect(csp).toEqual([]);
   } finally {
     await closeAndClean(app, s);
   }

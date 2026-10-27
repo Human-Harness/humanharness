@@ -41,13 +41,19 @@ export interface SidekickScope {
 }
 
 /**
- * Ids a new sidekick never gets: `learn` is the learning session's folder (`workDir(base, "learn")`), and `sidekick`
- * is the default one's, whose folder, muted kinds and scope records a new sidekick must not inherit.
+ * Ids a new sidekick never gets: `learn` is the learning session's folder (`workDir(base, "learn")`), `sidekick` is
+ * the default one's, whose folder, muted kinds and scope records a new sidekick must not inherit, and `settings` is
+ * the settings record's (all record types share one id space, and a put replaces by id).
  */
-const RESERVED_IDS: ReadonlySet<string> = new Set(["learn", DEFAULT_SIDEKICK.id]);
+const RESERVED_IDS: ReadonlySet<string> = new Set(["learn", DEFAULT_SIDEKICK.id, SIDEKICK_SETTINGS_ID]);
 
-const slug = (name: string) =>
-  name.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40).replace(/-+$/, "") || DEFAULT_SIDEKICK.id;
+/** A name's id: accents dropped, `-` between words; `k-` before it when it would look like a scope (`s-`) or learned (`l-`) id. */
+const slug = (name: string) => {
+  const base =
+    name.toLowerCase().normalize("NFKD").replace(/\p{M}/gu, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40).replace(/-+$/, "") ||
+    DEFAULT_SIDEKICK.id;
+  return /^[sl]-/.test(base) ? `k-${base}` : base;
+};
 
 const toDef = (r: SidekickRecord): SidekickDef => ({
   id: r.id,
@@ -109,7 +115,9 @@ export class SidekickStore {
    */
   async mute(sidekick: string, sidekickName: string, kind: string, now: string): Promise<void> {
     let already = false;
-    const r = await this.change((s) => {
+    const r = await this.change(async (s) => {
+      // A late mute for a removed sidekick would leave muted kinds a later one with its id inherits.
+      if (!(await this.sidekicks()).some((k) => k.id === sidekick)) throw new Error(`No sidekick "${sidekick}"`);
       already = mutedOf(s, sidekick).includes(kind);
       return already ? {} : { muted: { ...s.muted, [sidekick]: [...mutedOf(s, sidekick), kind] } };
     });
@@ -144,9 +152,18 @@ export class SidekickStore {
       let id = old?.id;
       if (!id) {
         const base = slug(s.name);
-        const taken = (x: string) => RESERVED_IDS.has(x) || all.some((k) => k.id === x);
+        // Every record's id, not only the sidekicks': settings, scope and learned records share the id space.
+        const records = await this.d.readAll();
+        const taken = (x: string) => RESERVED_IDS.has(x) || records.some((r) => r.id === x) || all.some((k) => k.id === x);
         id = base;
         for (let n = 2; taken(id); n++) id = `${base}-${n}`;
+        // Muted kinds left by an earlier sidekick with this id (a mute that landed after it was removed).
+        const pruned = await this.change((st) => {
+          if (!Object.hasOwn(st.muted, id!)) return {};
+          const { [id!]: _drop, ...rest } = st.muted;
+          return { muted: rest };
+        });
+        if (!pruned.ok) throw new Error(pruned.message);
       }
       const { id: _id, order: _order, ...fields } = s;
       const def: SidekickDef = { ...fields, id, order: s.order ?? old?.order ?? Math.max(-1, ...all.map((k) => k.order)) + 1 };
@@ -216,12 +233,12 @@ export class SidekickStore {
   }
 
   /** The patch is made from the settings as they are when its turn comes, so quick changes (two mutes) never lose one. */
-  private change(patchOf: (now: SidekickSettings) => SidekickSettingsPatch): Promise<SidekickSetResult> {
+  private change(patchOf: (now: SidekickSettings) => SidekickSettingsPatch | Promise<SidekickSettingsPatch>): Promise<SidekickSetResult> {
     return this.serial(async () => {
       try {
         const stored = await this.read();
         const now = sidekickSettings(stored, this.d.manifest);
-        const parsed = patchSchema.safeParse(patchOf(now));
+        const parsed = patchSchema.safeParse(await patchOf(now));
         if (!parsed.success) return { ok: false, message: "Unknown Sidekick setting" };
         const next: SidekickSettings = { ...now, ...stripUndefined(parsed.data) };
         if (sameSettings(now, next)) return { ok: true, settings: next };

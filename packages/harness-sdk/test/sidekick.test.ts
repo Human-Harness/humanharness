@@ -88,6 +88,7 @@ describe("sidekick collection", () => {
     expect(schema.safeParse({ id: SIDEKICK_SETTINGS_ID, type: "settings", wait: 7 }).success).toBe(false);
     expect(schema.safeParse({ id: SIDEKICK_SETTINGS_ID, type: "settings", cap: 1 }).success).toBe(false);
     expect(schema.safeParse({ id: "x", type: "settings" }).success).toBe(false);
+    expect(schema.safeParse({ id: SIDEKICK_SETTINGS_ID, type: "sidekick", name: "S", mark: "s", personality: "", purposes: [{ id: "mentor" }], order: 1 }).success).toBe(false);
   });
 
   it("settings fall back to the manifest default and the core defaults", () => {

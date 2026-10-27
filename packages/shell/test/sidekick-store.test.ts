@@ -201,6 +201,38 @@ describe("sidekick records (spec §2a.1, Decisions 1–2)", () => {
     expect((await s.store.saveSidekick({ name: "!!!", mark: "x", personality: "", purposes: [{ id: "mentor" }] })).id).toBe("sidekick-3");
   });
 
+  it("a new id never takes another record's: settings, a scope record, a learned item's shape (s-, l-)", async () => {
+    const s = mem([
+      { ...DEFAULT_SIDEKICK, type: "sidekick" },
+      { id: "settings", type: "settings", on: true },
+      { id: "s-main-rulo", type: "scope", scope: "main", sidekick: "rulo", on: false },
+      { id: "l-1a2b3c4d", type: "learned", text: "x", level: "you", source: "person", updatedAt: "2026-10-27T09:00:00Z" },
+    ]);
+    const add = async (name: string) => (await s.store.saveSidekick({ name, mark: "x", personality: "", purposes: [{ id: "mentor" }] })).id;
+    expect(await add("Settings")).toBe("settings-2");
+    expect(await add("S Main Rulo")).toBe("k-s-main-rulo");
+    expect(await add("L 1a2b3c4d")).toBe("k-l-1a2b3c4d");
+    expect(await add("L Other")).toBe("k-l-other");
+    expect(s.records.find((r) => r.id === "settings")).toEqual({ id: "settings", type: "settings", on: true });
+    expect(s.records.filter((r) => r.type !== "sidekick").map((r) => r.id)).toEqual(["settings", "s-main-rulo", "l-1a2b3c4d"]);
+  });
+
+  it("a slug drops accents rather than splitting on them", async () => {
+    const s = mem([]);
+    expect((await s.store.saveSidekick({ name: "Andrés", mark: "x", personality: "", purposes: [{ id: "mentor" }] })).id).toBe("andres");
+  });
+
+  it("muting an unknown sidekick writes nothing; a new sidekick never inherits a stale muted entry", async () => {
+    const s = mem([{ ...DEFAULT_SIDEKICK, type: "sidekick" }, { id: "settings", type: "settings", muted: { rulo: ["gap"] } }]);
+    await expect(s.store.mute("rulo", "Rulo", "vague", "2026-10-27T09:00:00Z")).rejects.toThrow(/No sidekick/);
+    expect(s.writes).toEqual([]);
+    await s.store.saveSidekick({ name: "Rulo", mark: "x", personality: "", purposes: [{ id: "mentor" }] });
+    expect((await s.store.settings()).muted).toEqual({});
+    const d = mem([]);
+    await d.store.mute("sidekick", "Sidekick", "vague", "2026-10-27T09:00:00Z");
+    expect((await d.store.settings()).muted).toEqual({ sidekick: ["vague"] });
+  });
+
   it("reorder rewrites order 0..n by the given ids", async () => {
     const s = mem([{ ...DEFAULT_SIDEKICK, type: "sidekick" }, RULO]);
     await s.store.reorder(["rulo", "sidekick"]);

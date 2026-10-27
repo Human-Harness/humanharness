@@ -187,7 +187,7 @@ export const sidekickRecordSchema = z
     const need = (fields: (keyof typeof r)[]) => {
       for (const f of fields) if (r[f] === undefined) ctx.addIssue({ code: "custom", path: [f], message: `A ${r.type} record needs "${f}"` });
     };
-    if (r.type === "settings" && r.id !== SIDEKICK_SETTINGS_ID) ctx.addIssue({ code: "custom", path: ["id"], message: `The settings record's id is "${SIDEKICK_SETTINGS_ID}"` });
+    if ((r.type === "settings") !== (r.id === SIDEKICK_SETTINGS_ID)) ctx.addIssue({ code: "custom", path: ["id"], message: `Only the settings record's id is "${SIDEKICK_SETTINGS_ID}"` });
     if (r.type === "learned") {
       need(["text", "level", "source", "updatedAt"]);
       if (typeof r.source === "object") ctx.addIssue({ code: "custom", path: ["source"], message: 'A learned item\'s source is "learned" or "person"' });

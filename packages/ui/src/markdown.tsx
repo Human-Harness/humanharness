@@ -170,6 +170,10 @@ function renderImage(_url: string, alt: string, _ctx: Ctx, key: number): ReactNo
   );
 }
 
+// Footnote ids carry a ':', which a heading slug never has, so they never collide with a heading's id.
+const noteId = (ctx: Ctx, id: string) => `${ctx.prefix}fn:${id}`;
+const refId = (ctx: Ctx, id: string) => `${ctx.prefix}fnref:${id}`;
+
 /** A footnote reference: its number by first use, linked to its note and back (only the first use is the back target). */
 function renderFootnoteReference(id: string, ctx: Ctx, key: number): ReactNode {
   if (!ctx.footnotes.defs.has(id)) return <Fragment key={key}>{`[^${id}]`}</Fragment>;
@@ -179,10 +183,11 @@ function renderFootnoteReference(id: string, ctx: Ctx, key: number): ReactNode {
   return (
     <sup key={key}>
       <a
-        href={`#${ctx.prefix}fn-${id}`}
-        id={first ? `${ctx.prefix}fnref-${id}` : undefined}
+        href={`#${noteId(ctx, id)}`}
+        id={first ? refId(ctx, id) : undefined}
         className="hh-md-fnref"
-        onClick={(e) => jump(e, `${ctx.prefix}fn-${id}`)}
+        aria-label={ctx.t("reader.footnoteRef", { n: n + 1 })}
+        onClick={(e) => jump(e, noteId(ctx, id))}
       >
         {n + 1}
       </a>
@@ -207,9 +212,9 @@ function renderFootnotes(ctx: Ctx): ReactNode {
     const id = ctx.footnotes.order[i];
     const def = ctx.footnotes.defs.get(id)!;
     items.push(
-      <li key={id} id={`${ctx.prefix}fn-${id}`}>
+      <li key={id} id={noteId(ctx, id)}>
         {renderBlocks(def.children, inner, true)}{" "}
-        <a href={`#${ctx.prefix}fnref-${id}`} className="hh-md-back" aria-label={ctx.t("reader.backToText")} onClick={(e) => jump(e, `${ctx.prefix}fnref-${id}`)}>
+        <a href={`#${refId(ctx, id)}`} className="hh-md-back" aria-label={ctx.t("reader.backToText")} onClick={(e) => jump(e, refId(ctx, id))}>
           ↩
         </a>
       </li>,
@@ -322,12 +327,22 @@ function renderBlockquote(children: RootContent[], ctx: Ctx, key: number): React
   const inline: PhrasingContent[] = [...(rest ? [{ ...lead, value: rest }] : []), ...first.children.slice(1)];
   const body: RootContent[] = inline.length > 0 ? [{ ...first, children: inline }, ...children.slice(1)] : children.slice(1);
   return (
-    <div key={key} className={`hh-callout hh-callout-${kind}`} role="note">
-      <p className="hh-callout-label">
-        <CalloutIcon kind={kind as Callout} />
-        {ctx.t(`reader.callout.${kind}`)}
-      </p>
+    <CalloutBox key={key} kind={kind as Callout} label={ctx.t(`reader.callout.${kind}`)}>
       {renderBlocks(body, ctx)}
+    </CalloutBox>
+  );
+}
+
+/** The callout's box, named by its label. */
+function CalloutBox({ kind, label, children }: { kind: Callout; label: string; children: ReactNode }) {
+  const labelId = useId();
+  return (
+    <div className={`hh-callout hh-callout-${kind}`} role="note" aria-labelledby={labelId}>
+      <p className="hh-callout-label" id={labelId}>
+        <CalloutIcon kind={kind} />
+        {label}
+      </p>
+      {children}
     </div>
   );
 }
@@ -414,7 +429,12 @@ function collectDefinitions(tree: Root): Map<string, Definition> {
 
 function collectFootnotes(tree: Root): Map<string, FootnoteDefinition> {
   const out = new Map<string, FootnoteDefinition>();
-  for (const n of tree.children) if (n.type === "footnoteDefinition" && !out.has(n.identifier)) out.set(n.identifier, n);
+  // A definition may sit inside a quote or a list item, as GitHub allows.
+  const walk = (node: Nodes) => {
+    if (node.type === "footnoteDefinition" && !out.has(node.identifier)) out.set(node.identifier, node);
+    if ("children" in node) for (const c of node.children as Nodes[]) walk(c);
+  };
+  walk(tree);
   return out;
 }
 

@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { I18nextProvider } from "react-i18next";
 import { afterEach, describe, expect, it } from "vitest";
 import { CitationContext } from "../src/citations";
 import { Markdown, markdownToPlain } from "../src/markdown";
@@ -279,15 +280,15 @@ describe("callouts, captions, footnotes (§3.2)", () => {
     const { container } = await renderIn("en", <Markdown source={"First[^b] and second[^a].\n\n[^a]: Alpha.\n[^b]: Beta."} idPrefix="" />);
     const refs = [...container.querySelectorAll("sup a")];
     expect(refs.map((a) => [a.textContent, a.getAttribute("href"), a.id])).toEqual([
-      ["1", "#fn-b", "fnref-b"],
-      ["2", "#fn-a", "fnref-a"],
+      ["1", "#fn:b", "fnref:b"],
+      ["2", "#fn:a", "fnref:a"],
     ]);
     const items = [...container.querySelectorAll(".hh-md-footnotes li")];
     expect(items.map((li) => [li.id, li.textContent?.replace("↩", "").trim()])).toEqual([
-      ["fn-b", "Beta."],
-      ["fn-a", "Alpha."],
+      ["fn:b", "Beta."],
+      ["fn:a", "Alpha."],
     ]);
-    expect(items[0].querySelector("a.hh-md-back")?.getAttribute("href")).toBe("#fnref-b");
+    expect(items[0].querySelector("a.hh-md-back")?.getAttribute("href")).toBe("#fnref:b");
     expect(items[0].querySelector("a.hh-md-back")?.getAttribute("aria-label")).toBe("Back to the text");
   });
 
@@ -295,7 +296,7 @@ describe("callouts, captions, footnotes (§3.2)", () => {
     const { container } = await renderIn("en", <Markdown source={"A[^a] B[^a].\n\n[^a]: Alpha."} idPrefix="" />);
     const refs = [...container.querySelectorAll("sup a")];
     expect(refs.map((a) => [a.textContent, a.id])).toEqual([
-      ["1", "fnref-a"],
+      ["1", "fnref:a"],
       ["1", ""],
     ]);
     expect(container.querySelectorAll(".hh-md-footnotes li")).toHaveLength(1);
@@ -303,7 +304,58 @@ describe("callouts, captions, footnotes (§3.2)", () => {
 
   it("a note referenced only from another note is listed too", async () => {
     const { container } = await renderIn("en", <Markdown source={"Text[^a].\n\n[^a]: See[^b].\n[^b]: Beta."} idPrefix="" />);
-    expect([...container.querySelectorAll(".hh-md-footnotes li")].map((li) => li.id)).toEqual(["fn-a", "fn-b"]);
+    expect([...container.querySelectorAll(".hh-md-footnotes li")].map((li) => li.id)).toEqual(["fn:a", "fn:b"]);
+  });
+
+  it("footnote ids never collide with a heading's id", async () => {
+    const { container } = await renderIn("en", <Markdown source={"# Fn x\n\nText[^x].\n\n[^x]: Note."} idPrefix="" />);
+    const ids = [...container.querySelectorAll("[id]")].map((e) => e.id);
+    expect(ids).toEqual(["fn-x", "fnref:x", "fn:x"]);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("names each reference by its number and each callout by its label", async () => {
+    const { container } = await renderIn("en", <Markdown source={"Text[^a].\n\n[^a]: Note.\n\n> [!TIP]\n> Body."} />);
+    expect(screen.getByRole("link", { name: "Footnote 1" })).toBeTruthy();
+    expect(screen.getByRole("note", { name: "Tip" })).toBe(container.querySelector(".hh-callout"));
+  });
+
+  it("finds definitions nested in a quote or a list", async () => {
+    const { container } = await renderIn("en", <Markdown source={"A[^q] B[^l].\n\n> [^q]: In a quote.\n\n- [^l]: In a list."} idPrefix="" />);
+    expect([...container.querySelectorAll(".hh-md-footnotes li")].map((li) => li.textContent?.replace("↩", "").trim())).toEqual(["In a quote.", "In a list."]);
+  });
+
+  it("a note that references itself, and two notes that reference each other, end", async () => {
+    const self = await renderIn("en", <Markdown source={"A[^a].\n\n[^a]: See[^a]."} idPrefix="" />);
+    expect(self.container.querySelectorAll(".hh-md-footnotes li")).toHaveLength(1);
+    expect([...self.container.querySelectorAll("sup a")].map((a) => [a.textContent, a.id])).toEqual([
+      ["1", "fnref:a"],
+      ["1", ""],
+    ]);
+    cleanup();
+    const loop = await renderIn("en", <Markdown source={"A[^a].\n\n[^a]: See[^b].\n[^b]: See[^a]."} idPrefix="" />);
+    expect([...loop.container.querySelectorAll(".hh-md-footnotes li")].map((li) => li.id)).toEqual(["fn:a", "fn:b"]);
+    expect([...loop.container.querySelectorAll("sup a")].map((a) => a.textContent)).toEqual(["1", "2", "1"]);
+  });
+
+  it("an italic paragraph right after a Mermaid diagram is its caption", () => {
+    const el = md("```mermaid\ngraph TD; A-->B\n```\n\n*The flow*");
+    expect(el.querySelector("p")?.className).toBe("hh-md-caption");
+    expect(el.querySelector(".hh-md-caption")?.textContent).toBe("The flow");
+  });
+
+  it("numbers footnotes afresh on every draw", async () => {
+    const { container, rerender, i18n } = await renderIn("en", <Markdown source={"A[^a] B[^b].\n\n[^a]: x\n[^b]: y"} idPrefix="" />);
+    expect([...container.querySelectorAll("sup a")].map((a) => a.textContent)).toEqual(["1", "2"]);
+    rerender(
+      <I18nextProvider i18n={i18n}>
+        <Markdown source={"B[^b] A[^a].\n\n[^a]: x\n[^b]: y"} idPrefix="" />
+      </I18nextProvider>,
+    );
+    expect([...container.querySelectorAll("sup a")].map((a) => [a.textContent, a.getAttribute("href")])).toEqual([
+      ["1", "#fn:b"],
+      ["2", "#fn:a"],
+    ]);
   });
 
   it("a footnote never referenced is not listed", () => {

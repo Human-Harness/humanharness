@@ -633,6 +633,7 @@
     "table": "Table",
     "footnotes": "Footnotes",
     "backToText": "Back to the text",
+    "footnoteRef": "Footnote {{n}}",
     "callout": {
       "note": "Note",
       "tip": "Tip",

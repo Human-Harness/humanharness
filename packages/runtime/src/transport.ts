@@ -20,6 +20,11 @@ export interface TransportOptions {
   sessionMode?: string;
   /** ACP only: fail with `outdated-version` if the adapter reports an older agentInfo.version. */
   minAdapterVersion?: string;
+  /**
+   * ACP only: how a turn's model profile reaches the agent. `codex-config` (default): `CODEX_CONFIG` at spawn, a
+   * new process when it changes. `config-option`: `session/set_config_option` on the open session (OpenCode).
+   */
+  profileMethod?: "codex-config" | "config-option";
   /** Claude only: false runs the CLI with `--no-session-persistence` (one-off turns such as the setup test). */
   persistSession?: boolean;
   /** The CLI to run: [binary, ...leading args]. */

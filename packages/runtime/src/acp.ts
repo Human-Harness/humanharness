@@ -179,8 +179,26 @@ function selectOptions(configOptions: unknown[], id: string): SelectOption[] | n
 }
 
 /**
+ * The id of the effort select: Codex's `reasoning_effort`, OpenCode's `effort`, or else the first select of
+ * category `thought_level`. Ids first, so Codex's pick never depends on categories (D0).
+ */
+function effortOptionId(configOptions: unknown[]): string | undefined {
+  const ids = configOptions.map((o) => (typeof o === "object" && o !== null ? (o as { id?: unknown; category?: unknown }) : {}));
+  for (const id of ["reasoning_effort", "effort"]) if (ids.some((o) => o.id === id)) return id;
+  const byCategory = ids.find((o) => o.category === "thought_level" && typeof o.id === "string");
+  return byCategory?.id as string | undefined;
+}
+
+/** The current value of a select config option, when it is a string. */
+function currentValue(configOptions: unknown[], id: string): string | undefined {
+  const option = configOptions.find((o) => typeof o === "object" && o !== null && (o as { id?: unknown }).id === id) as { currentValue?: unknown } | undefined;
+  return typeof option?.currentValue === "string" ? option.currentValue : undefined;
+}
+
+/**
  * The models and efforts an ACP agent offers, from session/new `configOptions` (Codex: the selects
- * "model" and "reasoning_effort"). Unsafe ids and unknown efforts are dropped. Null without models.
+ * "model" and "reasoning_effort"; OpenCode: "model" and "effort"). Unsafe ids and unknown efforts are
+ * dropped. Null without models.
  */
 export function offeredModels(configOptions: unknown): { models: ModelChoice[]; efforts: Effort[] } | null {
   if (!Array.isArray(configOptions)) return null;
@@ -193,7 +211,8 @@ export function offeredModels(configOptions: unknown): { models: ModelChoice[]; 
       ...(typeof o.description === "string" && o.description ? { description: o.description.slice(0, 200) } : {}),
     }));
   if (models.length === 0) return null;
-  const efforts = (selectOptions(configOptions, "reasoning_effort") ?? []).map((o) => o.value).filter(isEffort);
+  const effortId = effortOptionId(configOptions);
+  const efforts = (effortId ? (selectOptions(configOptions, effortId) ?? []) : []).map((o) => o.value).filter(isEffort);
   return { models, efforts };
 }
 
@@ -235,8 +254,16 @@ export class AcpTransport implements Transport {
   private reportedModel: string | undefined;
   /** A compaction was already reported in this turn. */
   private sawCompaction = false;
+  /** config-option: what the agent offers now and the effort it runs (from session/new|load, set_config_option and config_option_update). */
+  private offer: { models: string[]; efforts: string[]; effortId?: string; effort?: string } | undefined;
+  /** config-option: the model the app set on the open session (undefined: OpenCode's default). */
+  private appliedModel: string | undefined;
 
   constructor(private readonly o: TransportOptions) {}
+
+  private get byConfigOption(): boolean {
+    return this.o.profileMethod === "config-option";
+  }
 
   /** Starts the agent process and initializes the connection. */
   private async connect(config: string | undefined): Promise<void> {
@@ -308,6 +335,8 @@ export class AcpTransport implements Transport {
 
   /** Loads the saved session (when there is one and the agent can) or creates a new one, then sets its mode. */
   private async openSession(): Promise<void> {
+    this.offer = undefined;
+    this.appliedModel = undefined;
     const agent = this.conn!.agent;
     const mcpServers = this.mcpServers();
     if (this.o.session.started && this.loadable) {
@@ -322,7 +351,7 @@ export class AcpTransport implements Transport {
       }
       if (this.sessionId) {
         this.reportModels(loaded?.configOptions);
-        this.checkModel(loaded?.models?.currentModelId);
+        this.sessionModel(loaded?.configOptions, loaded?.models?.currentModelId);
       }
     }
     if (!this.sessionId) {
@@ -333,7 +362,7 @@ export class AcpTransport implements Transport {
       };
       this.sessionId = created.sessionId;
       this.reportModels(created.configOptions);
-      this.checkModel(created.models?.currentModelId);
+      this.sessionModel(created.configOptions, created.models?.currentModelId);
       this.o.session = { id: created.sessionId, started: true };
       this.o.onSessionStarted(this.o.session);
     }
@@ -343,12 +372,69 @@ export class AcpTransport implements Transport {
   }
 
   private reportModels(configOptions: unknown): void {
+    if (this.byConfigOption && Array.isArray(configOptions)) {
+      const offered = offeredModels(configOptions);
+      const effortId = effortOptionId(configOptions);
+      const effort = effortId ? currentValue(configOptions, effortId) : undefined;
+      this.offer = {
+        models: offered?.models.map((m) => m.id) ?? [],
+        efforts: offered?.efforts ?? [],
+        ...(effortId ? { effortId } : {}),
+        ...(effort !== undefined ? { effort } : {}),
+      };
+      const model = currentValue(configOptions, "model");
+      if (isModelId(model)) this.reportedModel = model;
+    }
     const offer = offeredModels(configOptions);
     if (!offer) return;
     try {
       this.o.onModels?.(offer);
     } catch (err) {
       console.error("Could not record the engine's models", err);
+    }
+  }
+
+  /** The model the new session runs: Codex's is checked against the profile; OpenCode's is set afterwards (applyProfile). */
+  private sessionModel(configOptions: unknown, currentModelId: unknown): void {
+    if (!this.byConfigOption) return this.checkModel(currentModelId);
+    const model = Array.isArray(configOptions) ? currentValue(configOptions, "model") : undefined;
+    this.reportedModel = isModelId(model) ? model : undefined;
+  }
+
+  /**
+   * OpenCode (spec §3): sets the profile's model, then its effort, on the open session; only what differs.
+   * The cap is not sent: OpenCode compacts on its own. A refused value (-32602) is model-unavailable.
+   */
+  private async applyProfile(): Promise<void> {
+    const p = this.profile;
+    if (!this.byConfigOption || !p) return;
+    const agent = this.conn!.agent;
+    const sessionId = this.sessionId!;
+    const set = async (configId: string, value: string) => {
+      try {
+        const res = (await agent.request("session/set_config_option", { sessionId, configId, value } as never)) as { configOptions?: unknown } | null;
+        if (res?.configOptions) this.reportModels(res.configOptions);
+      } catch (e) {
+        if (e instanceof acp.RequestError && e.code === -32602) throw new ModelUnavailableError(`The agent refused ${configId} ${value}: ${e.message}`);
+        throw e;
+      }
+    };
+    // Checked on every turn: a config_option_update may have removed the model since it was set.
+    // An offer without models (session/load sends none) says nothing: OpenCode answers the set itself.
+    const offered = this.offer?.models ?? [];
+    if (p.model !== undefined && (!isModelId(p.model) || (offered.length > 0 && !offered.includes(p.model)))) {
+      throw new ModelUnavailableError(`The agent does not offer ${String(p.model)}`);
+    }
+    if (p.model !== undefined && p.model !== this.appliedModel) {
+      await set("model", p.model);
+      this.appliedModel = p.model;
+      this.reportedModel = p.model;
+    }
+    // Read after the model: OpenCode offers an effort only for a model with variants.
+    const offer = this.offer;
+    if (offer?.effortId && offer.efforts.includes(p.effort) && offer.effort !== p.effort) {
+      await set(offer.effortId, p.effort);
+      if (this.offer) this.offer.effort = p.effort;
     }
   }
 
@@ -371,6 +457,8 @@ export class AcpTransport implements Transport {
   private reset(): void {
     this.conn = undefined;
     this.reportedModel = undefined;
+    this.offer = undefined;
+    this.appliedModel = undefined;
     this.child = undefined;
     this.sessionId = undefined;
     this.calls.clear();
@@ -403,6 +491,11 @@ export class AcpTransport implements Transport {
   }
 
   private onUpdate(u: Record<string, any>): void {
+    // The offer changes with or without a turn running (OpenCode sends it when the model or the provider's models change).
+    if (u.sessionUpdate === "config_option_update") {
+      if (this.byConfigOption) this.reportModels(u.configOptions);
+      return;
+    }
     const emit = this.emit;
     if (!emit) return;
     switch (u.sessionUpdate) {
@@ -456,7 +549,7 @@ export class AcpTransport implements Transport {
   async turn(message: string, emit: (e: Event) => void, signal: AbortSignal, profile?: ModelProfile): Promise<void> {
     let config: string | undefined;
     try {
-      config = profile ? codexConfig(profile) : undefined;
+      config = profile && !this.byConfigOption ? codexConfig(profile) : undefined;
     } catch (err) {
       // No ErrorCode fits a profile the core built wrong (it is not the plan's model, nor the user's
       // quota): agent-crashed is the generic "this turn could not run" card. The shell cleans every profile
@@ -470,20 +563,26 @@ export class AcpTransport implements Transport {
       await this.close();
       this.o.session = { id: randomUUID(), started: false };
     }
+    // config-option: a session can't go back to the default model, so a profile without one starts afresh (D2).
+    if (this.byConfigOption && this.appliedModel !== undefined && profile?.model === undefined) {
+      await this.close();
+      this.o.session = { id: randomUUID(), started: false };
+    }
     this.profile = profile;
     this.calls.clear();
     this.hidden.clear();
     this.activities.clear();
-    if (!this.conn || !this.sessionId) {
-      try {
+    try {
+      if (!this.conn || !this.sessionId) {
         if (!this.conn) await this.connect(config);
         await this.openSession();
-      } catch (e) {
-        const event = errorFrom(e, this.stderrTail);
-        await this.close();
-        emit(event);
-        return;
       }
+      await this.applyProfile();
+    } catch (e) {
+      const event = errorFrom(e, this.stderrTail);
+      await this.close();
+      emit(event);
+      return;
     }
     if (signal.aborted) {
       emit(fail("cancelled"));

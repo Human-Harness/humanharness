@@ -22,7 +22,7 @@ afterEach(async () => {
 function setup(
   scriptOrFn: AcpScript | ((folder: string) => AcpScript),
   session: Session = { id: "local-id", started: false },
-  extra: { minAdapterVersion?: string; references?: string[]; onModels?: TransportOptions["onModels"] } = {},
+  extra: { minAdapterVersion?: string; references?: string[]; onModels?: TransportOptions["onModels"]; profileMethod?: TransportOptions["profileMethod"] } = {},
 ) {
   const folder = fs.mkdtempSync(path.join(root, "t-"));
   const script = typeof scriptOrFn === "function" ? scriptOrFn(folder) : scriptOrFn;
@@ -539,9 +539,11 @@ describe("AcpTransport profiles", () => {
 
   it("reports the models the agent offers after session/new", async () => {
     const offers: unknown[] = [];
-    const { transport } = setup({ configOptions: MODEL_OPTIONS, turns: [[chunk("ok")]] }, undefined, { onModels: (o) => offers.push(o) });
+    const { transport, log } = setup({ configOptions: MODEL_OPTIONS, turns: [[chunk("ok")]] }, undefined, { onModels: (o) => offers.push(o) });
     await run(transport, "hi", undefined, deep);
     expect(offers).toEqual([offeredModels(MODEL_OPTIONS)]);
+    // D0: Codex gets its profile through CODEX_CONFIG only.
+    expect(log().filter((l) => l.method === "session/set_config_option")).toEqual([]);
   });
 
   it("reports the context in use, and one compaction per turn that never shows as activity", async () => {
@@ -642,5 +644,181 @@ describe("fake agent: session/set_config_option", () => {
     res = await set(t, "model", "local/plain");
     expect(effortOf(res.configOptions)).toBeUndefined();
     await expect(set(t, "effort", "default")).rejects.toMatchObject({ code: -32602 });
+  });
+});
+
+// OpenCode's shape (spike): a `mode` select, a `model` select with provider/model values, and an
+// `effort` select (category thought_level) for a model with variants.
+const OPENCODE_MODEL = {
+  id: "model",
+  name: "Model",
+  category: "model",
+  type: "select",
+  currentValue: "anthropic/claude-sonnet-4-5",
+  options: [
+    { value: "anthropic/claude-sonnet-4-5", name: "Claude Sonnet 4.5" },
+    { value: "ollama/llama3.2:3b", name: "Llama 3.2" },
+  ],
+};
+const OPENCODE_EFFORT = {
+  id: "effort",
+  name: "Variant",
+  category: "thought_level",
+  type: "select",
+  currentValue: "medium",
+  // `name` is required: the ACP SDK drops an option without one from a session/update.
+  options: ["low", "medium", "high", "default"].map((v) => ({ value: v, name: v })),
+};
+const OPENCODE_CONFIG = [
+  { id: "mode", name: "Mode", category: "mode", type: "select", currentValue: "build", options: [{ value: "build", name: "build" }, { value: "plan", name: "plan" }] },
+  OPENCODE_MODEL,
+  OPENCODE_EFFORT,
+];
+const openProfile = (o: Partial<ModelProfile> = {}): ModelProfile => ({ engine: "opencode", tier: "standard", model: "ollama/llama3.2:3b", effort: "high", cap: 200_000, ...o });
+const byConfig = { profileMethod: "config-option" as const };
+const configSets = (log: () => { method: string; params: any }[]) =>
+  log()
+    .filter((l) => l.method === "session/set_config_option")
+    .map((l) => [l.params.configId, l.params.value]);
+
+describe("offeredModels: OpenCode", () => {
+  it("reads provider/model ids and the effort select by id or thought_level category", () => {
+    expect(offeredModels(OPENCODE_CONFIG)).toEqual({
+      models: [
+        { id: "anthropic/claude-sonnet-4-5", name: "Claude Sonnet 4.5" },
+        { id: "ollama/llama3.2:3b", name: "Llama 3.2" },
+      ],
+      efforts: ["low", "medium", "high"],
+    });
+    const byCategory = [OPENCODE_MODEL, { ...OPENCODE_EFFORT, id: "variant" }];
+    expect(offeredModels(byCategory)?.efforts).toEqual(["low", "medium", "high"]);
+  });
+
+  it("reads Codex's options as before (D0)", () => {
+    // codex-acp's session/new configOptions (spike 2026-10-10): mode, collaboration_mode, model, reasoning_effort.
+    const codex = [
+      { id: "mode", name: "Mode", category: "mode", type: "select", currentValue: "agent", options: [{ value: "read-only" }, { value: "workspace-write" }, { value: "agent" }] },
+      { id: "collaboration_mode", name: "Collaboration", type: "select", currentValue: "default", options: [{ value: "default" }, { value: "plan" }] },
+      ...MODEL_OPTIONS,
+    ];
+    expect(offeredModels(codex)).toEqual({
+      models: [{ id: "gpt-5.5", name: "GPT-5.5", description: "Frontier model" }, { id: "gpt-5.5-mini", name: "GPT-5.5 mini" }],
+      efforts: ["low", "high"],
+    });
+  });
+});
+
+describe("AcpTransport: profile by config option (OpenCode)", () => {
+  it("sets the model and the effort after session/new, never CODEX_CONFIG", async () => {
+    const { transport: t, log } = setup({ configOptions: OPENCODE_CONFIG, turns: [[{ stop: "end_turn" }]] }, undefined, byConfig);
+    const events = await run(t, "hi", undefined, openProfile());
+    expect(events.at(-1)).toEqual({ type: "done", ok: true });
+    expect(log().find((l) => l.method === "env")?.params.CODEX_CONFIG).toBeNull();
+    expect(configSets(log)).toEqual([
+      ["model", "ollama/llama3.2:3b"],
+      ["effort", "high"],
+    ]);
+    const order = log().map((l) => l.method);
+    expect(order.indexOf("session/set_config_option")).toBeGreaterThan(order.indexOf("session/new"));
+    expect(order.indexOf("session/set_config_option")).toBeLessThan(order.indexOf("session/prompt"));
+  });
+
+  it("keeps the process and the session when the next turn's profile changes; sets only what changed", async () => {
+    const { transport: t, log } = setup({ configOptions: OPENCODE_CONFIG, turns: [[{ stop: "end_turn" }], [{ stop: "end_turn" }], [{ stop: "end_turn" }]] }, undefined, byConfig);
+    await run(t, "one", undefined, openProfile());
+    await run(t, "two", undefined, openProfile({ effort: "low" }));
+    await run(t, "three", undefined, openProfile({ effort: "low" }));
+    expect(log().filter((l) => l.method === "initialize")).toHaveLength(1);
+    expect(log().filter((l) => l.method === "session/new")).toHaveLength(1);
+    expect(configSets(log)).toEqual([
+      ["model", "ollama/llama3.2:3b"],
+      ["effort", "high"],
+      ["effort", "low"],
+    ]);
+  });
+
+  it("sends no effort OpenCode does not offer, and no model for the default profile", async () => {
+    const { transport: t, log } = setup({ configOptions: OPENCODE_CONFIG, turns: [[{ stop: "end_turn" }]] }, undefined, byConfig);
+    const events = await run(t, "hi", undefined, openProfile({ model: undefined, effort: "max" }));
+    expect(events.at(-1)).toEqual({ type: "done", ok: true });
+    expect(configSets(log)).toEqual([]);
+  });
+
+  it("does not send the effort the session already runs", async () => {
+    const { transport: t, log } = setup({ configOptions: OPENCODE_CONFIG, turns: [[{ stop: "end_turn" }]] }, undefined, byConfig);
+    await run(t, "hi", undefined, openProfile({ model: undefined, effort: "medium" }));
+    expect(configSets(log)).toEqual([]);
+  });
+
+  it("fails with model-unavailable when the model is not offered, without sending it", async () => {
+    const { transport: t, log } = setup({ configOptions: OPENCODE_CONFIG, turns: [[{ stop: "end_turn" }]] }, undefined, byConfig);
+    const events = await run(t, "hi", undefined, openProfile({ model: "openai/gpt-9" }));
+    expect(events.at(-1)).toMatchObject({ type: "done", ok: false, error: { code: "model-unavailable" } });
+    expect(configSets(log)).toEqual([]);
+    expect(log().filter((l) => l.method === "session/prompt")).toEqual([]);
+  });
+
+  it("fails with model-unavailable when OpenCode refuses the model (-32602)", async () => {
+    const { transport: t, log } = setup({ configOptions: OPENCODE_CONFIG, rejectConfigValues: ["ollama/llama3.2:3b"], turns: [[{ stop: "end_turn" }]] }, undefined, byConfig);
+    const events = await run(t, "hi", undefined, openProfile());
+    expect(events.at(-1)).toMatchObject({ type: "done", ok: false, error: { code: "model-unavailable" } });
+    expect(log().filter((l) => l.method === "session/prompt")).toEqual([]);
+  });
+
+  it("fails with model-unavailable when OpenCode refuses the effort (-32602)", async () => {
+    const { transport: t } = setup({ configOptions: OPENCODE_CONFIG, rejectConfigValues: ["high"], turns: [[{ stop: "end_turn" }]] }, undefined, byConfig);
+    const events = await run(t, "hi", undefined, openProfile());
+    expect(events.at(-1)).toMatchObject({ type: "done", ok: false, error: { code: "model-unavailable" } });
+  });
+
+  it("starts a fresh session when a profile without a model follows one with a model", async () => {
+    const { transport: t, log } = setup({ configOptions: OPENCODE_CONFIG, turns: [[{ stop: "end_turn" }], [{ stop: "end_turn" }]] }, undefined, byConfig);
+    await run(t, "one", undefined, openProfile());
+    const events = await run(t, "two", undefined, openProfile({ model: undefined }));
+    expect(events.at(-1)).toEqual({ type: "done", ok: true });
+    expect(log().filter((l) => l.method === "session/new")).toHaveLength(2);
+  });
+
+  it("refreshes the offer from config_option_update: a removed model is unavailable on the next turn", async () => {
+    const onlySonnet = [{ ...OPENCODE_MODEL, options: [OPENCODE_MODEL.options[0]] }, OPENCODE_EFFORT];
+    const offers: unknown[] = [];
+    const { transport: t } = setup(
+      {
+        configOptions: OPENCODE_CONFIG,
+        turns: [[{ update: { sessionUpdate: "config_option_update", configOptions: onlySonnet } }, { stop: "end_turn" }], [{ stop: "end_turn" }]],
+      },
+      undefined,
+      { ...byConfig, onModels: (o) => offers.push(o) },
+    );
+    expect((await run(t, "one", undefined, openProfile())).at(-1)).toEqual({ type: "done", ok: true });
+    expect(offers.at(-1)).toEqual({ models: [{ id: "anthropic/claude-sonnet-4-5", name: "Claude Sonnet 4.5" }], efforts: ["low", "medium", "high"] });
+    const second = await run(t, "two", undefined, openProfile({ effort: "low" }));
+    expect(second.at(-1)).toMatchObject({ type: "done", ok: false, error: { code: "model-unavailable" } });
+  });
+
+  it("sets the effort a model with variants offers, after the model (OpenCode's variants)", async () => {
+    const { transport: t, log } = setup(
+      { configOptions: [OPENCODE_CONFIG[0], OPENCODE_MODEL], variants: { "ollama/llama3.2:3b": ["high"] }, turns: [[{ stop: "end_turn" }]] },
+      undefined,
+      byConfig,
+    );
+    const events = await run(t, "hi", undefined, openProfile());
+    expect(events.at(-1)).toEqual({ type: "done", ok: true });
+    expect(configSets(log)).toEqual([
+      ["model", "ollama/llama3.2:3b"],
+      ["effort", "high"],
+    ]);
+  });
+
+  it("reports the model it set as the turn's model", async () => {
+    const { transport: t } = setup({ configOptions: OPENCODE_CONFIG, usage: { inputTokens: 5, outputTokens: 2 }, turns: [[{ stop: "end_turn" }]] }, undefined, byConfig);
+    const events = await run(t, "hi", undefined, openProfile());
+    expect(events.find((e) => e.type === "usage")).toMatchObject({ model: "ollama/llama3.2:3b" });
+  });
+
+  it("reports OpenCode's default model when the profile names none", async () => {
+    const { transport: t } = setup({ configOptions: OPENCODE_CONFIG, usage: { inputTokens: 5, outputTokens: 2 }, turns: [[{ stop: "end_turn" }]] }, undefined, byConfig);
+    const events = await run(t, "hi", undefined, openProfile({ model: undefined }));
+    expect(events.find((e) => e.type === "usage")).toMatchObject({ model: "anthropic/claude-sonnet-4-5" });
   });
 });

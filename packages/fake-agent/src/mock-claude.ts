@@ -46,6 +46,35 @@ function safeTarget(cwd: string, p: string): string {
   return target;
 }
 
+/** The first line of Sidekick's pre-send turns (shell `SIDEKICK_PRE_MARK`; a copy: fake-agent never imports the shell). */
+const SIDEKICK_MARK = "Sidekick: pre-send review";
+
+const HINTS: Record<string, string> = {
+  vague: "Say exactly what should change and how you'll know it's done.",
+  "missing-context": "Name the note or file you mean.",
+  "two-asks": "One ask per prompt: the second one is kept for later.",
+  "off-phase": "This looks like another phase's work.",
+};
+
+/** A canned Sidekick answer in mock mode, built from the flags the prompt lists: no model, no recordings. */
+export function mockSidekickReply(prompt: string): string {
+  const typed = /<prompt>\n([\s\S]*)\n<\/prompt>/.exec(prompt)?.[1] ?? "";
+  // Only the "Local flags:" section: a note title may look like a flag line.
+  const section = /^Local flags:[^\n]*\n([\s\S]*?)^UI language:/m.exec(prompt)?.[1] ?? "";
+  const kinds = [...section.matchAll(/^- (vague|missing-context|two-asks|off-phase): "([^"]*)"/gm)].map((m) => ({ kind: m[1], match: m[2] }));
+  if (kinds.length === 0) return JSON.stringify({ verdict: "send", issues: [], confidence: 0.9 });
+  const two = kinds.find((k) => k.kind === "two-asks");
+  const [first, ...rest] = two ? typed.split(two.match) : [typed];
+  const keep = (two ? first : typed).trim();
+  return JSON.stringify({
+    verdict: "suggest",
+    issues: kinds.map((k) => ({ kind: k.kind, text: HINTS[k.kind] })),
+    rewrite: kinds.some((k) => k.kind !== "two-asks") ? `${keep} (mock: name the part and the result you want)` : keep,
+    ...(two ? { queued: [rest.join(two.match).trim()] } : {}),
+    confidence: 0.8,
+  });
+}
+
 /** One engine turn in mock mode: prints Claude's stream-json, calls the ui tools and writes the files. Returns the exit code. */
 export async function runMockTurn(argv: string[], prompt: string, mcpServers: McpServers, env: { dir: string; state: string }): Promise<number> {
   const resumed = flag(argv, "--resume");
@@ -60,6 +89,17 @@ export async function runMockTurn(argv: string[], prompt: string, mcpServers: Mc
 }
 
 async function playTurn(argv: string[], prompt: string, mcpServers: McpServers, env: { dir: string; state: string }, sessionId: string, newSession: boolean): Promise<void> {
+  // Sidekick's own turns never touch the recordings or the session state (sidekick plan Decision 12).
+  if (prompt.startsWith(SIDEKICK_MARK)) {
+    const text = mockSidekickReply(prompt);
+    const event = (e: unknown) => print({ type: "stream_event", parent_tool_use_id: null, session_id: sessionId, event: e });
+    print({ type: "system", subtype: "init", session_id: sessionId, tools: [] });
+    event({ type: "content_block_start", index: 0, content_block: { type: "text", text: "" } });
+    event({ type: "content_block_delta", index: 0, delta: { type: "text_delta", text } });
+    event({ type: "content_block_stop", index: 0 });
+    print({ type: "result", subtype: "success", is_error: false, result: text, session_id: sessionId, usage: { input_tokens: 400, output_tokens: 60, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } });
+    return;
+  }
   const { recordings, problems } = loadRecordings(env.dir);
   for (const p of problems) process.stderr.write(`mock: skipped ${p}\n`);
   const sessions = readState(env.state);

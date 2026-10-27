@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "action": "session",
+  "match": "# Task: session",
+  "recordedWith": "hand-written",
+  "turns": [
+    {
+      "id": "t1",
+      "text": "Before we start: what is a half?",
+      "blocks": [{ "tool": "set_phase", "input": { "to": "main", "reason": "The recall is done." } }]
+    },
+    { "id": "t2", "text": "Main block: let's split a pizza in four.", "setPhase": "main", "next": { "*": "t3" } },
+    {
+      "id": "t3",
+      "text": "Good. I think we covered it.",
+      "blocks": [{ "tool": "set_phase", "input": { "to": "close", "reason": "We covered quarters." } }]
+    },
+    { "id": "t4", "text": "Time is almost up: one last idea, quickly.", "timeUp": true },
+    { "id": "t5", "text": "Sum up what you learned in three lines.", "setPhase": "close" },
+    { "id": "close", "note": { "title": "Fractions", "summary": ["Halves and quarters"], "decisions": [], "files": [], "open": [] } }
+  ]
+}

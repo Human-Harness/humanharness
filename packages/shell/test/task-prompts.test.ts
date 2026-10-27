@@ -4,6 +4,7 @@ import {
   CHECKPOINT_PROMPT,
   CLOSE_PROMPT,
   PHASES_HOW,
+  PHASE_PROMPT,
   QUESTION_PROMPT,
   RESUME_PROMPT,
   WRAP_UP_PROMPT,
@@ -114,6 +115,10 @@ describe("mock mode markers", () => {
   it("fake-claude tells the closing turn and the checkpoint by their first words", () => {
     expect(promptKind(CLOSE_PROMPT)).toBe("close");
     expect(promptKind(CHECKPOINT_PROMPT)).toBe("checkpoint");
+    expect(promptKind(PHASE_PROMPT)).toBe("phase");
+    expect(promptKind(WRAP_UP_PROMPT)).toBe("wrap-up");
+    expect(promptKind(phasePrompt({ id: "main", label: "Main block", brief: "Teach." }, { language: "en" }))).toBe("phase");
+    expect(promptKind(wrapUpPrompt("en"))).toBe("wrap-up");
   });
 });
 

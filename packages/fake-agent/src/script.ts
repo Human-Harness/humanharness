@@ -71,6 +71,13 @@ export interface AcpScript {
   configOptions?: unknown[];
   /** Returned as `models.currentModelId` by session/new and session/load (Codex: "<model>[<effort>]"). */
   currentModelId?: string;
+  /** `session/set_config_option` fails (invalid params) for these values. */
+  rejectConfigValues?: string[];
+  /**
+   * OpenCode: each model's variants. When set, an `effort` select (category thought_level) is offered
+   * only for the current model when it has variants; its values are the variants plus "default".
+   */
+  variants?: Record<string, string[]>;
   turns: AcpStep[][];
 }
 

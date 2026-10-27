@@ -573,3 +573,74 @@ describe("AcpTransport profiles", () => {
     expect(events.at(-1)).toEqual({ type: "done", ok: true });
   });
 });
+
+describe("fake agent: session/set_config_option", () => {
+  // OpenCode's shape (spike): a `mode` select, a `model` select with provider/model values, and an
+  // `effort` select (category thought_level) only for a model with variants.
+  const OPENCODE_OPTIONS = [
+    { id: "mode", name: "Mode", category: "mode", type: "select", currentValue: "build", options: [{ value: "build", name: "build" }, { value: "plan", name: "plan" }] },
+    {
+      id: "model",
+      name: "Model",
+      category: "model",
+      type: "select",
+      currentValue: "ok/model",
+      options: [{ value: "ok/model", name: "OK" }, { value: "bad/model", name: "Bad" }, { value: "local/plain", name: "Plain" }],
+    },
+  ];
+  const variants = { "ok/model": ["low", "high"], "bad/model": ["high"] };
+
+  // The transport keeps its connection open after the turn; reach it to send requests by hand.
+  const set = (t: AcpTransport, configId: string, value: string) =>
+    (t as unknown as { conn: { agent: { request: (m: string, p: unknown) => Promise<any> } } }).conn.agent.request("session/set_config_option", {
+      sessionId: "fake-acp-session",
+      configId,
+      value,
+    });
+  const effortOf = (options: any[]) => options.find((o) => o.id === "effort");
+
+  it("logs the request and refuses the values the script lists", async () => {
+    const { log } = setup({ turns: [[{ stop: "end_turn" }]], configOptions: OPENCODE_OPTIONS, rejectConfigValues: ["bad/model"] });
+    const t = transport!;
+    await run(t);
+    const res = await set(t, "model", "ok/model");
+    expect(res.configOptions.find((o: any) => o.id === "model").currentValue).toBe("ok/model");
+    await expect(set(t, "model", "bad/model")).rejects.toMatchObject({ code: -32602 });
+    expect(log().filter((l) => l.method === "session/set_config_option").map((l) => l.params.value)).toEqual(["ok/model", "bad/model"]);
+  });
+
+  it("refuses an unknown option or value with -32602, like OpenCode", async () => {
+    setup({ turns: [[{ stop: "end_turn" }]], configOptions: OPENCODE_OPTIONS });
+    const t = transport!;
+    await run(t);
+    await expect(set(t, "model", "nobody/none")).rejects.toMatchObject({ code: -32602 });
+    await expect(set(t, "reasoning_effort", "high")).rejects.toMatchObject({ code: -32602 });
+    const res = await set(t, "mode", "plan");
+    expect(res.configOptions.find((o: any) => o.id === "mode").currentValue).toBe("plan");
+  });
+
+  it("offers `effort` only for a model with variants: the variants plus default", async () => {
+    const { log } = setup({ turns: [[{ stop: "end_turn" }]], configOptions: OPENCODE_OPTIONS, variants });
+    const t = transport!;
+    await run(t);
+    const created = log().find((l) => l.method === "session/new");
+    expect(created).toBeDefined();
+    let res = await set(t, "effort", "low");
+    expect(effortOf(res.configOptions)).toMatchObject({
+      category: "thought_level",
+      type: "select",
+      currentValue: "low",
+      options: [{ value: "low" }, { value: "high" }, { value: "default" }],
+    });
+    await expect(set(t, "effort", "max")).rejects.toMatchObject({ code: -32602 });
+    // The new model lacks "low": the effort falls back to "default".
+    res = await set(t, "model", "bad/model");
+    expect(effortOf(res.configOptions)).toMatchObject({ currentValue: "default", options: [{ value: "high" }, { value: "default" }] });
+    res = await set(t, "effort", "high");
+    res = await set(t, "model", "ok/model");
+    expect(effortOf(res.configOptions).currentValue).toBe("high");
+    res = await set(t, "model", "local/plain");
+    expect(effortOf(res.configOptions)).toBeUndefined();
+    await expect(set(t, "effort", "default")).rejects.toMatchObject({ code: -32602 });
+  });
+});

@@ -22,6 +22,31 @@ let sessions = 0;
 let cancelled = false;
 let wake: (() => void) | undefined;
 
+// The session's config options, as `session/set_config_option` changes them.
+type Select = { id: string; type?: string; currentValue?: unknown; options?: ({ value?: unknown } | { options?: { value?: unknown }[] })[] };
+let configOptions: Select[] = [];
+const values = (o: Select) => (o.options ?? []).flatMap((x) => ("options" in x && Array.isArray(x.options) ? x.options : [x])).map((x) => (x as { value?: unknown }).value);
+
+/** Like OpenCode: an `effort` select only for a model with variants, keeping the effort when the model offers it. */
+function withEffort(options: Select[]): Select[] {
+  if (!script.variants) return options;
+  const model = options.find((o) => o.id === "model")?.currentValue;
+  const variants = typeof model === "string" ? (script.variants[model] ?? []) : [];
+  const rest = options.filter((o) => o.id !== "effort");
+  if (variants.length === 0) return rest;
+  const offered = [...variants, "default"];
+  const current = options.find((o) => o.id === "effort")?.currentValue;
+  const effort = {
+    id: "effort",
+    name: "Variant",
+    category: "thought_level",
+    type: "select",
+    currentValue: typeof current === "string" && offered.includes(current) ? current : "default",
+    options: offered.map((v) => ({ value: v, name: v })),
+  };
+  return [...rest, effort];
+}
+
 const stream = acp.ndJsonStream(
   Writable.toWeb(process.stdout) as WritableStream<Uint8Array>,
   Readable.toWeb(process.stdin) as ReadableStream<Uint8Array>,
@@ -47,9 +72,10 @@ acp
     cwd = ctx.params.cwd;
     const base = script.sessionId ?? "fake-acp-session";
     sessions++;
+    configOptions = withEffort((script.configOptions ?? []) as Select[]);
     return {
       sessionId: sessions === 1 ? base : `${base}-${sessions}`,
-      ...(script.configOptions ? { configOptions: script.configOptions } : {}),
+      ...(script.configOptions ? { configOptions } : {}),
       ...(script.currentModelId ? { models: { currentModelId: script.currentModelId, availableModels: [] } } : {}),
     } as never;
   })
@@ -63,6 +89,25 @@ acp
   .onRequest("session/set_mode", (ctx) => {
     log("session/set_mode", ctx.params);
     return {};
+  })
+  .onRequest("session/set_config_option", async (ctx) => {
+    log("session/set_config_option", ctx.params);
+    const { configId, value } = ctx.params;
+    const option = configOptions.find((o) => o.id === configId);
+    // OpenCode answers an unknown option, model, effort or mode with invalid params.
+    if (!option) throw new acp.RequestError(-32602, `Unknown config option: ${configId}`);
+    if (!values(option).includes(value) || (typeof value === "string" && script.rejectConfigValues?.includes(value))) {
+      throw new acp.RequestError(-32602, `Unknown value: ${String(value)}`);
+    }
+    configOptions = withEffort(configOptions.map((o) => (o.id === configId ? { ...o, currentValue: value } : o)));
+    // Setting the model also sends a config_option_update, like OpenCode.
+    if (configId === "model") {
+      await ctx.client.notify("session/update", {
+        sessionId: ctx.params.sessionId,
+        update: { sessionUpdate: "config_option_update", configOptions } as never,
+      });
+    }
+    return { configOptions } as never;
   })
   .onRequest("session/close", async (ctx) => {
     log("session/close", ctx.params);

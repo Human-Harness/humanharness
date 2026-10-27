@@ -1,0 +1,62 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`writing for the reader (document-reader spec §4) > the base guide: last part of the section, English, the six callouts and nothing else 1`] = `
+"### Writing for the reader
+
+The person reads the \`.md\` files you write in a reader with rich Markdown. Write them for that reader:
+
+- **Structure.** One idea per section. Use \`##\` for sections and \`###\` for subsections, and never skip a level. Keep paragraphs to two to four sentences.
+- **Summary first.** A document longer than about 300 words starts with a \`> [!SUMMARY]\` callout that holds the conclusion.
+- **Pick the element by the content:**
+  - two or more options compared on two or more criteria: a table;
+  - a flow, a sequence, states or components: a Mermaid diagram (a \`\`\`mermaid fence), followed by a one-line caption in italics;
+  - a decision: \`> [!DECISION]\`, with the reason;
+  - a question for the person: \`> [!QUESTION]\`;
+  - a risk: \`> [!WARNING]\`;
+  - pending steps: a task list (\`- [ ]\`).
+- **Callouts.** Use only these six: \`> [!NOTE]\`, \`> [!TIP]\`, \`> [!WARNING]\`, \`> [!SUMMARY]\`, \`> [!DECISION]\`, \`> [!QUESTION]\`. The first line is the marker alone; the text follows on the next lines of the quote.
+- **Limits.** Tables up to about six columns: split them, or use a list, beyond that. Diagrams up to about 15 nodes: split them beyond that.
+- **No raw HTML.** It shows as text. Use Markdown only.
+- **Links.** Link between documents with relative paths (\`adr-007.md\`, \`../notes/x.md#context\`). Links to the web use \`https://\`.
+- **Front-matter.** Start every document with a front-matter block holding \`title\` always.
+
+Example of the start of a document:
+
+    ---
+    title: Caching the search results
+    ---
+    > [!SUMMARY]
+    > Cache in memory for ten minutes; it removes most of the slow calls.
+
+    ## Context
+"
+`;
+
+exports[`writing for the reader (document-reader spec §4) > with kinds: each kind's id, when and its template (front-matter, then headings in order) 1`] = `
+"### Document kinds
+
+When a document fits one of these kinds, put its id in the front-matter \`kind\` and use its \`##\` sections, in this order. Extra sections are fine. The reader warns the person when a section is missing.
+
+- \`adr\`: A decision with real alternatives.
+  Template:
+
+    ---
+    title: …
+    kind: adr
+    status: proposed | accepted | superseded
+    ---
+    ## Status
+    ## Context
+    ## Decision
+
+- \`analysis\`: Exploring options before deciding.
+  Template:
+
+    ---
+    title: …
+    kind: analysis
+    ---
+    ## Context
+    ## Options
+"
+`;

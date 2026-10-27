@@ -86,11 +86,13 @@ describe("createRuntime", () => {
     expect(agents()).not.toContain("patient");
   });
 
-  it("D0: without settings, AGENTS.md is the base and today's managed section, and a refresh writes nothing", async () => {
+  it("without settings, AGENTS.md is the base, today's managed section and the writing guide; a refresh writes nothing", async () => {
     const { runtime, folder } = await setup({ steps: [] });
     const harness = await loadHarness(FIXTURE);
     const base = fs.readFileSync(resolveInHarness(harness, harness.instructions), "utf8");
-    expect(fs.readFileSync(path.join(folder, "AGENTS.md"), "utf8")).toBe(`${base.trimEnd()}\n\n${managedSection({ language: "en", blocks: allBlocks(harness) })}`);
+    expect(fs.readFileSync(path.join(folder, "AGENTS.md"), "utf8")).toBe(
+      `${base.trimEnd()}\n\n${managedSection({ language: "en", blocks: allBlocks(harness), writing: { kinds: {} } })}`,
+    );
     expect(await runtime.refreshInstructions()).toBe(false);
   });
 

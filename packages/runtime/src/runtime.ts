@@ -110,7 +110,9 @@ export async function createRuntime(opts: RuntimeOptions): Promise<HarnessRuntim
   const settings = await opts.instructionSettings?.();
   const material = opts.material && hasMaterial(harness) ? opts.material : undefined;
   const withMaterial = material ? { material: true } : {};
-  const generated = await writeInstructions({ folder, base, language: opts.language, blocks, references, engine, ...(settings ? { settings } : {}), ...withMaterial });
+  // Every harness gets the writing guide; its kinds only when it declares them (document-reader spec D4).
+  const writing = { kinds: harness.documents?.kinds ?? {} };
+  const generated = await writeInstructions({ folder, base, language: opts.language, blocks, references, engine, writing, ...(settings ? { settings } : {}), ...withMaterial });
 
   // The history skips the app's files under .harness/ (except the notes, the data and, with material, its registry
   // and decisions) and the generated instructions.
@@ -226,7 +228,7 @@ export async function createRuntime(opts: RuntimeOptions): Promise<HarnessRuntim
         if (closing) return Promise.resolve(false);
         const run = async () => {
           const now = await opts.instructionSettings?.();
-          return refreshInstructions({ folder, base, language: opts.language, blocks, references, ...(now ? { settings: now } : {}), ...withMaterial });
+          return refreshInstructions({ folder, base, language: opts.language, blocks, references, writing, ...(now ? { settings: now } : {}), ...withMaterial });
         };
         refreshing = refreshing.catch(() => false).then(run);
         return refreshing;

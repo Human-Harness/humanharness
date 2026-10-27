@@ -183,6 +183,30 @@ describe("addSource and confirmSource", () => {
     expect(await processSource(store, r.id, { items: false })).toMatchObject({ status: "validating", stage: "review" });
   });
 
+  it("a source removed meanwhile is not converted again nor brought back", async () => {
+    const real = workerRunner();
+    const r = await addSource(store, { name: "a.md", data: Buffer.from(chapter) }, { accepts: ["text"], items: false, runner: real });
+    if (!r.ok) throw new Error("unreachable");
+    await store.patch(r.id, (s) => ({ ...s, status: "removed" }));
+    let converts = 0;
+    const counting: ConvertRunner = { measure: real.measure, convert: (...a) => (converts++, real.convert(...a)) };
+    expect(await processSource(store, r.id, { items: false, runner: counting })).toBeNull();
+    expect(converts).toBe(0);
+    expect((await store.source(r.id))?.status).toBe("removed");
+    // Removed while it converted: it stays removed.
+    const removing: ConvertRunner = {
+      measure: real.measure,
+      convert: async (...a) => {
+        const c = await real.convert(...a);
+        await store.patch(r.id, (s) => ({ ...s, status: "removed" }));
+        return c;
+      },
+    };
+    await store.patch(r.id, (s) => ({ ...s, status: "validating" }));
+    expect(await processSource(store, r.id, { items: false, runner: removing })).toBeNull();
+    expect((await store.source(r.id))?.status).toBe("removed");
+  });
+
   it("the disk failing is a refusal, never a throw, and leaves no stray original", async () => {
     // The originals' folder can't be made: a file is in its way.
     fs.writeFileSync(path.join(base, "material"), "");

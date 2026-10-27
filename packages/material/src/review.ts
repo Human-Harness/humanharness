@@ -54,13 +54,26 @@ export async function reviewSet(store: MaterialStore, s: SourceEntry): Promise<s
   return [...bad, first.meta.id, ...sample];
 }
 
-/** The review prompt for one batch (English; the stage's marker on the first line). */
+/** A fragment's first non-empty line, short, for the review to see where the next one starts. */
+const firstLine = (md: string): string => {
+  const line = md.split("\n").find((l) => l.trim() !== "")?.trim() ?? "";
+  return line.length > 120 ? `${line.slice(0, 120)}…` : line;
+};
+
+/**
+ * The review prompt for one batch (English; the stage's marker on the first line). Each fragment says which one
+ * follows it and how that one starts (§6.2), so a merge can name `with`.
+ */
 export async function reviewPrompt(store: MaterialStore, s: SourceEntry, batch: string[]): Promise<string> {
+  const order = Array.isArray(s.fragments) ? s.fragments : [];
   const parts: string[] = [];
   for (const id of batch) {
     const f = await store.readFragment(id);
     if (!f) continue;
-    parts.push(`[${id}] (checks: ${f.meta.checks === "ok" ? "none" : f.meta.checks.join(", ")}; ${f.meta.location}; ${f.meta.path || "no heading"})\n${f.md}`);
+    const nextId = order[order.indexOf(id) + 1];
+    const next = order.includes(id) && nextId ? await store.readFragment(nextId) : null;
+    const after = next ? `Next: ${nextId}, starting "${firstLine(next.md)}"` : "Next: none (the last fragment)";
+    parts.push(`[${id}] (checks: ${f.meta.checks === "ok" ? "none" : f.meta.checks.join(", ")}; ${f.meta.location}; ${f.meta.path || "no heading"})\n${f.md}\n\n${after}`);
   }
   return [
     "material-review",
@@ -105,18 +118,21 @@ export async function applyReview(
     const patch = (fn: (e: SourceEntry) => SourceEntry) => rewrite((list) => list.map((e) => (e.id === id ? fn(e) : e)));
     const queue = Array.isArray(s.reviewQueue) ? s.reviewQueue : [];
     const batch = new Set(queue.slice(0, BATCH));
-    const rest = queue.slice(BATCH);
+    const queued = queue.slice(BATCH);
     const issues = [...s.issues, ...a.issues];
 
     if (a.verdict === "not-usable" || a.reconvert) {
       const settings = o.reconvert ? reconvertSettings(s) : null;
       if (settings) {
-        // Converted again from the start: no verdict, so its first review samples afresh. The settings are kept now,
-        // so a conversion stopped half-way resumes with them.
+        // Converted again from the start: no verdict, so its first review samples afresh; no repairs, questions, fixes
+        // or kept versions, since the same ids will name new text. It goes `converting` here, in the same queued job
+        // that saw it validating (a removal can't slip in between), with its settings kept: a conversion stopped
+        // half-way resumes with them.
         const next = { ...s.settings, ...settings };
+        await store.clearOriginalVersions(id);
         await patch((e) => {
-          const { verdict: _v, reviewQueue: _q, ...r } = e;
-          return { ...r, issues, settings: next, reconverted: (e.reconverted ?? 0) + 1 };
+          const { verdict: _v, reviewQueue: _q, repairs: _r, asks: _a, stage: _st, fullReview: _f, ...r } = e;
+          return { ...r, status: "converting", issues, fixes: [], settings: next, reconverted: (e.reconverted ?? 0) + 1 };
         });
         return next;
       }
@@ -135,7 +151,9 @@ export async function applyReview(
     const fixes = [...s.fixes];
     const repairs = [...(s.repairs ?? [])];
     const asks = [...(s.asks ?? [])];
-    let next = Math.max(0, ...list.map((f) => Number(f.slice(f.lastIndexOf("-") + 1)) || 0)) + 1;
+    // New ids (a split's second part) never reuse one a kept version still names (a fragment dropped earlier).
+    const used = [...list, ...(await store.originalVersionIds(id))];
+    let next = used.reduce((m, f) => Math.max(m, Number(f.slice(f.lastIndexOf("-") + 1)) || 0), 0) + 1;
 
     for (const d of a.fragments) {
       if (!batch.has(d.id) || !list.includes(d.id)) continue;
@@ -179,19 +197,24 @@ export async function applyReview(
       }
     }
     for (const g of gone) await store.removeFragment(g);
+    // A later decision in the same answer may have merged or dropped a fragment that an earlier one asked about.
+    const kept = new Set(list);
+    const repairsLeft = repairs.filter((r) => kept.has(r.id));
+    const asksLeft = asks.filter((q) => !q.fragment || kept.has(q.fragment));
+    const rest = queued.filter((x) => kept.has(x));
 
     if (a.fullReview && !s.fullReview) {
       await patch((e) => {
         const { stage: _st, reviewQueue: _q, ...r } = e;
         // A full review reads every fragment (reviewSet), so its review share is the whole source.
         const estimate = estimateCost({ tokens: 0, items: o.items, fragments: list.length, reviewShare: 1, ...(o.measured ? { measured: o.measured } : {}) });
-        return { ...r, fragments: list, issues, fixes, repairs, asks, verdict: a.verdict, status: "pending", notice: "full-review", estimate };
+        return { ...r, fragments: list, issues, fixes, repairs: repairsLeft, asks: asksLeft, verdict: a.verdict, status: "pending", notice: "full-review", estimate };
       });
       return null;
     }
     // Flagged in use while this batch ran (outside it): reviewed next, so its mark isn't left hanging.
     const late = rest.length === 0 && (await Promise.all(list.filter((x) => !batch.has(x)).map((x) => store.readFragment(x)))).some((x) => x?.meta.validated === "pending");
-    const stage = rest.length > 0 || late ? "review" : repairs.length > 0 ? "repair" : "label";
+    const stage = rest.length > 0 || late ? "review" : repairsLeft.length > 0 ? "repair" : "label";
     await patch((e) => {
       const { reviewQueue: _q, fullReview: _full, ...r } = e;
       return {
@@ -199,8 +222,8 @@ export async function applyReview(
         fragments: list,
         issues,
         fixes,
-        repairs,
-        asks,
+        repairs: repairsLeft,
+        asks: asksLeft,
         verdict: a.verdict,
         stage,
         status: "validating",

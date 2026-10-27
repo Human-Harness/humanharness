@@ -173,7 +173,10 @@ STAGES.repair = {
     const s = await store.source(job.source ?? "");
     if (!s?.repairs?.length) return null;
     const parts: string[] = [];
+    // Only the source's own fragments: one merged or dropped since (a file left behind, a hand edit) is skipped.
+    const own = Array.isArray(s.fragments) ? s.fragments : [];
     for (const r of s.repairs) {
+      if (!own.includes(r.id)) continue;
       const f = await store.readFragment(r.id);
       if (f) parts.push(`[${r.id}] Problem: ${r.issue}\n${f.md}`);
     }
@@ -188,7 +191,7 @@ STAGES.repair = {
   async accept(name, args, state) {
     const a = repairAnswer.parse(args);
     const s = await state.store.source(state.job.source ?? "");
-    if (!s?.repairs?.some((r) => r.id === a.id)) throw new Error(`${a.id} is not to repair`);
+    if (!s?.repairs?.some((r) => r.id === a.id) || !(Array.isArray(s.fragments) && s.fragments.includes(a.id))) throw new Error(`${a.id} is not to repair`);
     const f = await state.store.readFragment(a.id);
     if (!f) throw new Error(`No fragment ${a.id}`);
     if (wordDiff(f.md, a.markdown) > REPAIR_MAX_WORD_DIFF) {
@@ -208,8 +211,9 @@ STAGES.repair = {
       // Removed or moved on meanwhile: nothing to do here.
       if (!s || s.status !== "validating" || s.stage !== "repair") return false;
       const fixes = [...s.fixes];
-      const asks: MaterialAsk[] = [...(s.asks ?? [])];
       const fragments = Array.isArray(s.fragments) ? s.fragments : [];
+      // Questions about fragments that are gone have nothing left to decide.
+      const asks: MaterialAsk[] = (Array.isArray(s.asks) ? s.asks : []).filter((q) => !q.fragment || fragments.includes(q.fragment));
       for (const r of s.repairs ?? []) {
         if (!fragments.includes(r.id)) continue;
         const last = state.answers.filter((a) => a.id === r.id).at(-1);

@@ -416,7 +416,7 @@ export class MaterialService {
       this.skipped.add(jobKey(job));
       return;
     }
-    const ctx = await this.stageContext(job, store);
+    const ctx = await this.stageContext(job, store, signal);
     const prompt = await def.prompt(store, job, ctx);
     // The source once the prompt is set (it may queue a batch): a stage that changed it since has moved on.
     const before = job.source ? JSON.stringify(await store.source(job.source)) : null;
@@ -450,6 +450,11 @@ export class MaterialService {
     const after = job.source ? await store.source(job.source) : null;
     const same = job.source ? after?.status === "validating" && after.stage === job.stage && JSON.stringify(after) === before : (await store.stale()) === job.stage;
     if (same) this.skipped.add(jobKey(job));
+    // What the stage did to the source (merges, splits, drops, repairs, questions, a reconversion, a failure) goes
+    // into the history, like the person's own changes.
+    if (job.source && JSON.stringify(after) !== before) {
+      await this.d.afterChange(job.scope, `${job.stage} ${job.source}`).catch((err: unknown) => console.error("Could not record the material change", err));
+    }
     await this.changed(job.scope);
   }
 
@@ -457,9 +462,12 @@ export class MaterialService {
    * What prompts need from the manifest (Tasks 21–23 add the items), and for a source's job how to convert it again
    * (§6.2 `reconvert`: the review starts over on the new fragments).
    */
-  async stageContext(job: Job, store: MaterialStore): Promise<StageContext> {
+  async stageContext(job: Job, store: MaterialStore, signal?: AbortSignal): Promise<StageContext> {
     const source = job.source;
     const measured = this.measured();
+    // The job's epoch: a stop (closeRuntime) after the job started leaves the source `converting`, so it is converted
+    // again (with its kept settings) when its base is next used, not on the old run's account.
+    const epoch = this.epoch;
     return {
       ...(measured ? { measured } : {}),
       fragmentKinds: [...this.d.material.fragmentKinds],
@@ -468,9 +476,8 @@ export class MaterialService {
       ...(source
         ? {
             reconvert: async (settings) => {
-              const epoch = this.epoch;
+              if (signal?.aborted || epoch !== this.epoch) return;
               await this.track(processSource(store, source, { ...this.pipeline(epoch), settings }));
-              if (epoch === this.epoch) await this.d.afterChange(store.scope, `processed ${source}`).catch((err: unknown) => console.error("Could not record the material change", err));
             },
           }
         : {}),

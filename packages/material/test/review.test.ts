@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { type Fragment, MaterialStore, STAGES, STAGE_TOOLS, type SourceEntry, applyReview, flagFragment, reviewSet } from "../src";
+import { type Fragment, MaterialStore, STAGES, STAGE_TOOLS, type SourceEntry, applyReview, flagFragment, reviewPrompt, reviewSet } from "../src";
 import "../src/stages";
 
 let base: string;
@@ -125,6 +125,45 @@ describe("applyReview", () => {
     expect(fs.readFileSync(path.join(store.dir, "index.md"), "utf8")).not.toContain("ch2-005");
   });
 
+  it("a split never reuses the id of a fragment dropped earlier (its kept version names it)", async () => {
+    await store.patch("ch2", (s) => ({ ...s, reviewQueue: ["ch2-030"] }));
+    await applyReview(store, job, { verdict: "good", fragments: [{ id: "ch2-030", decision: "drop" }], issues: [] }, { items: false });
+    await store.patch("ch2", (s) => ({ ...s, status: "validating", stage: "review", reviewQueue: ["ch2-003"] }));
+    await applyReview(store, job, { verdict: "good", fragments: [{ id: "ch2-003", decision: "split", at: 2 }], issues: [] }, { items: false });
+    expect((await store.source("ch2"))!.fragments).toContain("ch2-031");
+    expect((await store.readOriginalVersion("ch2-030"))?.md).toBe("Paragraph 30.\n\nSecond line 30.");
+  });
+
+  it("repairs, questions and queued ids for fragments a later decision merged or dropped are forgotten", async () => {
+    await store.patch("ch2", (s) => ({ ...s, reviewQueue: ["ch2-002", "ch2-001", "ch2-005", "ch2-004"] }));
+    await applyReview(
+      store,
+      job,
+      {
+        verdict: "usable-with-fixes",
+        fragments: [
+          { id: "ch2-002", decision: "repair", issue: "Broken list" },
+          { id: "ch2-005", decision: "ask", question: "Footnote?" },
+          { id: "ch2-001", decision: "merge", with: "ch2-002" },
+          { id: "ch2-004", decision: "merge", with: "ch2-005" },
+        ],
+        issues: [],
+      },
+      { items: false },
+    );
+    const s = (await store.source("ch2"))!;
+    expect(s.repairs).toEqual([]);
+    expect(s.asks).toEqual([]);
+    expect(s.stage).toBe("label");
+  });
+
+  it("the prompt names each fragment's next one and how it starts, so a merge can name it", async () => {
+    const s = (await store.source("ch2"))!;
+    const prompt = await reviewPrompt(store, s, ["ch2-004", "ch2-030"]);
+    expect(prompt).toContain('Next: ch2-005, starting "Paragraph 5."');
+    expect(prompt).toContain("Next: none (the last fragment)");
+  });
+
   it("decisions that can't be carried out are left alone", async () => {
     await store.patch("ch2", (s) => ({ ...s, reviewQueue: ["ch2-001", "ch2-003"] }));
     await applyReview(
@@ -197,15 +236,29 @@ describe("applyReview", () => {
   });
 
   it("not-usable: one reconversion for a PDF, then the person decides", async () => {
-    await store.patch("ch2", (s) => ({ ...s, type: "pdf", family: "pdf", reviewQueue: ["ch2-001"] }));
+    await store.keepOriginal("ch2-007");
+    await store.patch("ch2", (s) => ({
+      ...s,
+      type: "pdf",
+      family: "pdf",
+      reviewQueue: ["ch2-001"],
+      fixes: ["Dropped ch2-007"],
+      repairs: [{ id: "ch2-002", issue: "x" }],
+      asks: [{ fragment: "ch2-003", question: "?", choices: ["keep", "drop"] }],
+    }));
     const reconverted: unknown[] = [];
     const reconvert = async (settings: unknown) => void reconverted.push(settings);
     await applyReview(store, job, { verdict: "not-usable", fragments: [], issues: ["Columns are mixed"], reconvert: true }, { items: false, reconvert });
     expect(reconverted).toEqual([{ columns: true }]);
-    expect((await store.source("ch2"))?.reconverted).toBe(1);
-    // The reconversion starts over: no verdict yet, so its first review samples again.
-    expect((await store.source("ch2"))?.verdict).toBeUndefined();
-    await store.patch("ch2", (s) => ({ ...s, reviewQueue: ["ch2-001"] }));
+    const s = (await store.source("ch2"))!;
+    // The reconversion starts over: no verdict, repairs, questions, fixes or kept versions (the ids name new text).
+    expect(s).toMatchObject({ reconverted: 1, status: "converting", fixes: [], settings: { columns: true } });
+    expect(s.verdict).toBeUndefined();
+    expect(s.repairs).toBeUndefined();
+    expect(s.asks).toBeUndefined();
+    expect(await store.readOriginalVersion("ch2-007")).toBeNull();
+    // What processSource does once it converted again.
+    await store.patch("ch2", (e) => ({ ...e, status: "validating", stage: "review", reviewQueue: ["ch2-001"] }));
     await applyReview(store, job, { verdict: "not-usable", fragments: [], issues: [] }, { items: false, reconvert });
     expect(reconverted).toHaveLength(1);
     expect(await store.source("ch2")).toMatchObject({ status: "needs-person", asks: [{ question: expect.stringContaining("ch2.md"), choices: ["use", "remove"] }] });

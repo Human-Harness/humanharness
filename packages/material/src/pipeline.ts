@@ -69,6 +69,7 @@ async function refuse(store: MaterialStore, id: string, reason: Refusal): Promis
   }
   try {
     const next = await store.patch(id, (e) => {
+      if (e.status === "removed") return e;
       const { stage: _s, ...rest } = e;
       return { ...rest, status: "refused", refusal: reason, fragments: [] };
     });
@@ -104,7 +105,14 @@ export async function processSource(
   if (!s || !file) return null;
   const entry = s;
   try {
-    await store.patch(id, (e) => ({ ...e, status: "converting" }));
+    // Atomically: a source removed meanwhile (a reconversion after the person removed it) is never brought back.
+    let started = false;
+    await store.patch(id, (e) => {
+      if (e.status === "removed") return e;
+      started = true;
+      return { ...e, status: "converting" };
+    });
+    if (!started) return null;
     const buf = await fs.readFile(file);
     const settings = o.settings ?? entry.settings;
     const runner = o.runner ?? workerRunner();
@@ -137,7 +145,8 @@ export async function processSource(
     // The review reads every flagged fragment plus its sample of the rest (§6.2).
     const flagged = flags.filter((f) => f.length > 0).length;
     const reviewShare = (flagged + sampleSize(fragments.length, flagged)) / fragments.length;
-    const next = await store.patch(id, (e) => ({
+    // Removed while it converted: it stays removed.
+    const next = await store.patch(id, (e) => e.status === "removed" ? e : ({
       ...e,
       status: "validating",
       stage: "review",
@@ -148,7 +157,7 @@ export async function processSource(
       estimate: estimateCost({ tokens: 0, items: o.items, fragments: fragments.length, reviewShare, ...(o.measured ? { measured: o.measured } : {}) }),
     }));
     await store.writeIndex();
-    return next;
+    return next?.status === "removed" ? null : next;
   } catch (err) {
     // Stopped on purpose (a profile switch, closeRuntime): it stays `converting` and is converted again later.
     if (err instanceof ConvertStopped) return null;

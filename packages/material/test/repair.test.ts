@@ -51,6 +51,24 @@ describe("the repair stage", () => {
     expect((await store.readFragment("ch2-005"))?.md).toBe(f5.md);
   });
 
+  it("ignores repairs and questions whose fragment is gone, even with its file left behind", async () => {
+    const gone: Fragment = { ...f5, meta: { ...f5.meta, id: "ch2-009" } };
+    await store.writeFragment(gone);
+    await store.patch("ch2", (s) => ({
+      ...s,
+      repairs: [{ id: "ch2-009", issue: "Merged away" }],
+      asks: [{ fragment: "ch2-009", question: "?", choices: ["keep", "drop"] }, { question: "Use it?", choices: ["use", "remove"] }],
+    }));
+    const state = { store, job, answers: [] };
+    expect(await STAGES.repair!.prompt(store, job, ctx)).toBeNull();
+    await expect(STAGES.repair!.accept("material_repair", { id: "ch2-009", markdown: f5.md }, state)).rejects.toThrow("not to repair");
+    expect(await STAGES.repair!.apply(store, job, state, ctx)).toBe(true);
+    const s = await store.source("ch2");
+    expect(s?.asks).toEqual([{ question: "Use it?", choices: ["use", "remove"] }]);
+    expect(s?.fixes).toEqual([]);
+    expect(s?.stage).toBe("label");
+  });
+
   it("refuses a fragment the review didn't ask to repair", async () => {
     const state = { store, job, answers: [] };
     await expect(STAGES.repair!.accept("material_repair", { id: "ch2-001", markdown: "x" }, state)).rejects.toThrow("not to repair");

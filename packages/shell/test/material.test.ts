@@ -304,7 +304,7 @@ describe("AI stages (material spec §10)", () => {
     };
   });
   afterEach(() => {
-    delete STAGES.review;
+    STAGES.review = realReview;
   });
 
   const seed = async () => {
@@ -437,9 +437,37 @@ describe("AI stages (material spec §10)", () => {
 });
 
 describe("the review stage in the queue (material spec §6.2)", () => {
-  const review = realReview;
-  beforeEach(() => {
-    STAGES.review = review;
+  it("a reconversion asked for by a stopped job converts nothing: the source waits, converting, for its base's next use", async () => {
+    const store = new MaterialStore(base, "fractions");
+    let converts = 0;
+    const svc = new MaterialService(
+      deps({
+        runner: {
+          convert: () => {
+            converts++;
+            return Promise.reject(new Error("no"));
+          },
+          measure: () => Promise.reject(new Error("no")),
+        },
+      }),
+    );
+    const name = await store.addOriginal("a.md", Buffer.from("# A\n\nText."));
+    await store.update(() => [
+      { id: "a", scope: "fractions", path: name, hash: "x", type: "md", family: "text", pages: 1, sizeBytes: 1, skippedPages: [], status: "converting", issues: [], fixes: [], estimate: 0, used: 0, fragments: [], addedAt: "2026-10-27T00:00:00.000Z" },
+    ]);
+    const job = { scope: "fractions", source: "a", stage: "review" as const };
+    const stop = new AbortController();
+    const ctx = await svc.stageContext(job, store, stop.signal);
+    stop.abort();
+    await ctx.reconvert!({ columns: true });
+    const later = await svc.stageContext(job, store);
+    await svc.stop();
+    await later.reconvert!({ columns: true });
+    expect(converts).toBe(0);
+    expect((await store.source("a"))?.status).toBe("converting");
+    // A live job does convert (here refused by the runner).
+    await (await svc.stageContext(job, store)).reconvert!({ columns: true });
+    expect(converts).toBe(1);
   });
 
   it("a review in two batches runs both in one kick, then waits for labelling", async () => {
@@ -470,6 +498,20 @@ describe("the review stage in the queue (material spec §6.2)", () => {
     expect(runs).toBe(2);
     expect(await store.source("a")).toMatchObject({ status: "validating", stage: "label", verdict: "good" });
     expect((await store.readFragment("a-025"))?.meta.validated).toBe("sample");
+    // Each batch's result reached the history.
+    expect(changes).toEqual(["fractions: review a", "fractions: review a"]);
+  });
+
+  it("a stage that leaves the source as it was records nothing in the history", async () => {
+    const store = new MaterialStore(base, "fractions");
+    await store.update(() => [
+      { id: "a", scope: "fractions", path: "a.md", hash: "x", type: "md", family: "text", pages: 1, sizeBytes: 1, skippedPages: [], status: "validating", stage: "review", issues: [], fixes: [], estimate: 0, used: 0, fragments: [], addedAt: "2026-10-27T00:00:00.000Z" },
+    ]);
+    STAGES.review = { tools: [], prompt: async () => "Review.", accept: async () => "", apply: async () => true };
+    const svc = new MaterialService(deps({ runStage: async () => ({ ok: true }) }));
+    await svc.runJob({ scope: "fractions", source: "a", stage: "review" }, new AbortController().signal);
+    STAGES.review = realReview;
+    expect(changes).toEqual([]);
   });
 });
 

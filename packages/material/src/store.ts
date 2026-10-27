@@ -188,6 +188,20 @@ export class MaterialStore {
     if (text !== null) await writeAtomic(file, text);
   }
 
+  /** The ids of a source's fragments kept in `.orig/` (dropped, merged, split, repaired ones). */
+  async originalVersionIds(sourceId: string): Promise<string[]> {
+    const names = await fs.readdir(path.join(this.dir, "fragments", ".orig")).catch(() => [] as string[]);
+    return names
+      .filter((n) => n.endsWith(".md"))
+      .map((n) => n.slice(0, -3))
+      .filter((id) => isFragmentId(id) && id.slice(0, id.lastIndexOf("-")) === sourceId);
+  }
+
+  /** Forgets a source's `.orig/` copies (a reconversion: the same ids will name new text). */
+  async clearOriginalVersions(sourceId: string): Promise<void> {
+    for (const id of await this.originalVersionIds(sourceId)) await fs.rm(this.origFile(id), { force: true });
+  }
+
   async readOriginalVersion(id: string): Promise<Fragment | null> {
     if (!isFragmentId(id)) return null;
     const text = await fs.readFile(this.origFile(id), "utf8").catch(() => null);

@@ -332,7 +332,7 @@ export function mergeUsage(byProfile: Record<string, UsageRecord[]>): PersonUsag
 /**
  * Settings › Usage in a harness with profiles (spec §4 "Usage"): one AI plan for the whole app, so every profile's
  * turns, in time order, measure its window and estimates. `scopes` are the active profile's only (scope ids repeat
- * across people), and so is `material` (each profile processes its own); `profiles` counts every turn's tokens per
+ * across people), and so are `material` (each profile processes its own) and `sidekick`; `profiles` counts every turn's tokens per
  * profile, material stages included. `spentUsd` is everyone's: one provider account pays.
  */
 export function profilesUsage(

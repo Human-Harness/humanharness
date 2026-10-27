@@ -62,7 +62,7 @@ export function harness(o: { record?: Partial<SidekickRecord> | null; answers?: 
     changed: (s) => void states.push(s),
     waitMs: () => o.waitMs ?? 5_000,
   };
-  return { ctl: new SidekickController(deps), deps, asked, opened, closed, logged, briefs, states, setTask: (t: typeof task) => (task = t), record: () => record };
+  return { ctl: new SidekickController(deps), deps, asked, opened, closed, logged, briefs, states, setTask: (t: typeof task) => (task = t), record: () => record, setRecord: (r: Partial<SidekickRecord> | null) => (record = r) };
 }
 
 describe("SidekickController state and settings", () => {
@@ -279,6 +279,43 @@ describe("SidekickController.review (spec §4.1)", () => {
     };
     expect(await h.ctl.state()).toMatchObject({ status: "watching", tier: "light" });
     expect(await h.ctl.review({ text: "make it better" })).toEqual({ kind: "error" });
+  });
+});
+
+describe("SidekickController.refresh (undo, profile switch)", () => {
+  it("pushes the state the store now holds (an undo turned it on)", async () => {
+    const h = harness();
+    h.setRecord(on);
+    await h.ctl.refresh();
+    expect(h.states.at(-1)).toMatchObject({ status: "watching", settings: { on: true } });
+  });
+
+  it("an undo that turned it off closes the sessions and clears the card", async () => {
+    const h = harness({ record: on });
+    expect((await h.ctl.review({ text: "make it better" })).kind).toBe("card");
+    h.setRecord(null);
+    await h.ctl.refresh();
+    expect(h.closed).toEqual(["s1"]);
+    expect(h.states.at(-1)).toMatchObject({ status: "off", card: null });
+  });
+
+  it("same base: keeps the sessions and the card", async () => {
+    const h = harness({ record: on });
+    await h.ctl.review({ text: "make it better" });
+    await h.ctl.refresh();
+    expect(h.closed).toEqual([]);
+    expect(h.states.at(-1)).toMatchObject({ status: "suggestion" });
+  });
+
+  it("a profile switch (new base) closes the old base's sessions, the loose one too, and drops the card", async () => {
+    const h = harness({ record: on, task: null });
+    await h.ctl.review({ text: "make it better" });
+    h.deps.setup = async () => ({ engineId: "claude", base: "/other" });
+    await h.ctl.refresh();
+    expect(h.closed).toEqual(["s1"]);
+    expect(h.states.at(-1)).toMatchObject({ status: "watching", card: null, spent: 0 });
+    await h.ctl.review({ text: "make it better" });
+    expect(h.opened).toEqual(["s1", "s2"]);
   });
 });
 

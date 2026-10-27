@@ -517,6 +517,7 @@ function sidekickStoreFor(base: string): DataStore {
 function dropDataStore(base: string): void {
   dataStores.get(base)?.off();
   dataStores.delete(base);
+  sidekickStores.delete(base);
 }
 
 /** Every store under `root` (the folder itself, or each profile's): a moved or changed folder drops them all. */
@@ -559,6 +560,8 @@ async function arrivedInProfile(): Promise<void> {
   // Without material, nothing (D0).
   void materialSvc?.settle().catch((err: unknown) => console.error("Could not resume the material", err));
   kickMaterial();
+  // The new profile's Sidekick settings; the old base's sessions close.
+  void sidekickCtl?.refresh().catch((err: unknown) => console.error("Could not refresh Sidekick", err));
 }
 
 async function scopeStore(): Promise<ScopeStore> {
@@ -1355,7 +1358,10 @@ function registerIpc() {
   handle("hh:restore", (sha: unknown) => {
     if (!isSha(sha)) throw new Error("Invalid point");
     // A restore changes tracked files with no data event: the settings may have changed.
-    return restoreWith((history) => history.restore(sha, RESTORE_POINT)).then(() => void settingsCtl?.changed());
+    return restoreWith((history) => history.restore(sha, RESTORE_POINT)).then(() => {
+      void settingsCtl?.changed();
+      void sidekickCtl?.refresh().catch((err: unknown) => console.error("Could not refresh Sidekick", err));
+    });
   });
   handle("hh:historyTasks", async () => {
     const history = await currentHistory();
@@ -1367,7 +1373,10 @@ function registerIpc() {
       const group = (await history.tasks()).find((g) => g.taskId === taskId);
       if (!group?.start) throw new Error("Nothing to go back to");
       await history.restore(group.start, RESTORE_TASK);
-    }).then(() => void settingsCtl?.changed()),
+    }).then(() => {
+      void settingsCtl?.changed();
+      void sidekickCtl?.refresh().catch((err: unknown) => console.error("Could not refresh Sidekick", err));
+    }),
   );
   handle("hh:engineStatus", async (engineId: string) => {
     const engine = engineFor(engineId);

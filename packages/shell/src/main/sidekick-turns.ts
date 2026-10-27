@@ -31,7 +31,7 @@ export function preSendPrompt(i: PreSendInput): string {
     "Data tables:",
     ...list(i.data),
     i.flags.length ? "Local flags:" : "Local flags: none (the person asked for a review)",
-    ...i.flags.map((f) => `- ${f.kind}: "${f.match}" at [${f.span[0]}, ${f.span[1]}]`),
+    ...i.flags.map((f) => `- ${f.kind}: ${JSON.stringify(f.match)} at [${f.span[0]}, ${f.span[1]}]`),
     `UI language: ${i.uiLanguage}`,
     "",
     "<prompt>",
@@ -50,7 +50,10 @@ export const reviewSchema = z.object({
       z.object({
         kind: z.enum(["vague", "missing-context", "two-asks", "off-phase", "other"]),
         text: z.string().min(1).max(400),
-        span: z.tuple([z.number().int().min(0), z.number().int().min(0)]).optional(),
+        span: z
+          .tuple([z.number().int().min(0), z.number().int().min(0)])
+          .refine(([start, end]) => start <= end, "span start after its end")
+          .optional(),
       }),
     )
     .max(6)

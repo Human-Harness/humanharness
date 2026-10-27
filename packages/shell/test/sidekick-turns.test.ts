@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { mockSidekickReply } from "@humanharness/fake-agent";
 import { SIDEKICK_PRE_MARK, parseReview, preSendPrompt } from "../src/main/sidekick-turns";
 
 const input = {
@@ -81,5 +82,28 @@ describe("parseReview", () => {
     expect(onlyEcho?.rewrite).toBeUndefined();
     const real = parseReview('{"verdict":"suggest","issues":[],"rewrite":"Shorten the intro.","confidence":0.9}', "make it better");
     expect(real?.rewrite).toBe("Shorten the intro.");
+  });
+});
+
+describe("sidekick turns and the mock (fake-agent copies the mark and format)", () => {
+  it("quotes a flag match as JSON, so a match holding a quote stays one string", () => {
+    const p = preSendPrompt({ ...input, flags: [{ kind: "vague", match: 'the "stuff"', span: [0, 11] }] });
+    expect(p).toContain('- vague: "the \\"stuff\\"" at [0, 11]');
+  });
+
+  it("the mock's reply to preSendPrompt parses as a suggestion", () => {
+    const flagged = parseReview(mockSidekickReply(preSendPrompt(input)), input.prompt);
+    expect(flagged?.verdict).toBe("suggest");
+    const prompt = "Write it and also translate it";
+    const two = parseReview(mockSidekickReply(preSendPrompt({ ...input, prompt, flags: [{ kind: "two-asks", match: "and also", span: [9, 17] }] })), prompt);
+    expect(two?.verdict).toBe("suggest");
+    expect(two?.queued).toEqual(["translate it"]);
+  });
+});
+
+describe("reviewSchema spans", () => {
+  it("rejects a span whose start is after its end", () => {
+    expect(parseReview('{"verdict":"suggest","issues":[{"kind":"vague","text":"x","span":[5,2]}],"confidence":0.9}')).toBeNull();
+    expect(parseReview('{"verdict":"suggest","issues":[{"kind":"vague","text":"x","span":[2,5]}],"confidence":0.9}')?.issues[0].span).toEqual([2, 5]);
   });
 });

@@ -73,7 +73,10 @@ const NO_TASK = "";
  */
 export class SidekickController {
   private readonly sessions = new Map<string, { session: SidekickLike; base: string }>();
-  /** Tokens toward the cap of reviews that ran before their task existed (moved on adoption). */
+  /**
+   * Tokens toward the cap of reviews that ran before their task existed, counted by state() only while no task is
+   * open; dropped on adoption (Decision 14: the task's own lines start its cap; the week's total keeps them).
+   */
   private readonly pending = new Map<string, number>();
   private running: AbortController | null = null;
   /** Bumped by every review, cancel, turn-off and close: a review superseded while it awaited its inputs ends as cancelled. */
@@ -83,7 +86,12 @@ export class SidekickController {
   private card: SidekickCard | null = null;
   private notice: SidekickState["notice"];
   private closed = false;
-  /** Sidekick's usage lines per base, read once: only the controller writes them, and each write drops the copy. */
+  /** The base the last review or refresh saw: a refresh with another one is a profile switch. */
+  private base: string | undefined;
+  /**
+   * Sidekick's usage lines per base, read once: only the controller writes them, and each write drops the copy.
+   * This assumes one app process per base (the single-instance lock); another process writing the same log goes unseen.
+   */
   private readonly lines = new Map<string, Promise<UsageRecord[]>>();
 
   constructor(private readonly d: SidekickDeps) {}
@@ -147,6 +155,28 @@ export class SidekickController {
     await this.push();
   }
 
+  /**
+   * After an undo (hh:restore, hh:restoreTask) or a profile switch (arrivedInProfile): the settings may have changed
+   * under the controller, and so may the base. Off closes everything (like `set`); another base drops the running
+   * review, the card and the old base's sessions, the loose one too. Then it pushes the state.
+   */
+  async refresh(): Promise<void> {
+    if (this.closed) return;
+    const settings = await this.d.store.settings();
+    const base = (await this.d.setup().catch(() => null))?.base;
+    const moved = this.base !== undefined && this.base !== base;
+    this.base = base;
+    if (!settings.on || moved) {
+      this.reviews++;
+      this.running?.abort();
+      this.card = null;
+      this.notice = undefined;
+    }
+    if (moved) this.pending.clear();
+    await this.closeSessions(settings.on ? (_key, s) => s.base !== base : () => true);
+    await this.push();
+  }
+
   cancel(): void {
     this.reviews++;
     this.running?.abort();
@@ -194,6 +224,7 @@ export class SidekickController {
     if (mode === "off") return early("send");
     const setup = await this.d.setup().catch(() => null);
     if (!setup || !(await this.d.hasNotice(setup.engineId).catch(() => false))) return early("send");
+    this.base = setup.base;
 
     // 1. The local check (0 tokens).
     const ctx = await this.d.context(setup.base, task?.scope).catch(() => ({ notes: [] as string[], data: [] as string[] }));
@@ -351,8 +382,8 @@ export class SidekickController {
     return lines.catch(() => []);
   }
 
-  private async closeSessions(which: (key: string) => boolean): Promise<void> {
-    const gone = [...this.sessions].filter(([key]) => which(key));
+  private async closeSessions(which: (key: string, s: { session: SidekickLike; base: string }) => boolean): Promise<void> {
+    const gone = [...this.sessions].filter(([key, s]) => which(key, s));
     for (const [key] of gone) {
       this.sessions.delete(key);
       this.pending.delete(key);

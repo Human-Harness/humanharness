@@ -11,6 +11,7 @@ import {
   summarizeDocument,
   wordCount,
 } from "../src/documents";
+import { type HarnessInput, defineHarness } from "../src";
 
 describe("splitFrontMatter", () => {
   it("reads simple key: value pairs and strips the block from the body", () => {
@@ -115,5 +116,48 @@ describe("constants", () => {
     expect(DOCUMENT_KIND_ID.test("design-doc2")).toBe(true);
     expect(DOCUMENT_KIND_ID.test("ADR")).toBe(false);
     expect(DOCUMENT_KIND_ID.test("2x")).toBe(false);
+  });
+});
+
+const base: HarnessInput = {
+  id: "dev",
+  name: "Dev",
+  core: "^0.1.0",
+  engines: ["claude"],
+  folder: { suggested: "Documents/Dev" },
+  instructions: "./AGENTS.md",
+  permissions: { edit: "folder", exec: false, web: false },
+  blocks: {},
+  author: "t",
+};
+
+describe("manifest documents (§4.2)", () => {
+  it("takes kinds with when, sections and an optional status", () => {
+    const h = defineHarness({
+      ...base,
+      documents: {
+        kinds: {
+          adr: { when: "A decision with real alternatives.", sections: ["Status", "Context"], status: ["proposed", "accepted"] },
+          analysis: { when: "Exploring options.", sections: ["Context"] },
+        },
+      },
+    });
+    expect(Object.keys(h.documents!.kinds)).toEqual(["adr", "analysis"]);
+  });
+
+  it("refuses a bad id, an empty sections list, an empty heading and an empty when", () => {
+    expect(() => defineHarness({ ...base, documents: { kinds: { ADR: { when: "x", sections: ["A"] } } } })).toThrow();
+    expect(() => defineHarness({ ...base, documents: { kinds: { adr: { when: "x", sections: [] } } } })).toThrow();
+    expect(() => defineHarness({ ...base, documents: { kinds: { adr: { when: "x", sections: [" "] } } } })).toThrow();
+    expect(() => defineHarness({ ...base, documents: { kinds: { adr: { when: "", sections: ["A"] } } } })).toThrow();
+    expect(() => defineHarness({ ...base, documents: { kinds: { adr: { when: "x", sections: ["A"], status: [] } } } })).toThrow();
+  });
+
+  it("refuses the same section twice in a kind", () => {
+    expect(() => defineHarness({ ...base, documents: { kinds: { adr: { when: "x", sections: ["Context", "context "] } } } })).toThrow(/twice/);
+  });
+
+  it("D0: without documents the manifest has no documents field", () => {
+    expect("documents" in defineHarness(base)).toBe(false);
   });
 });

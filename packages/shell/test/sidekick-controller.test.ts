@@ -372,15 +372,25 @@ describe("SidekickController state() cost", () => {
     let reads = 0;
     const usage = h.deps.usage;
     (h.deps as { usage: SidekickDeps["usage"] }).usage = (b) => (reads++, usage(b));
+    // An empty log is not kept (the loader answers [] on read errors too), so reads go on until a line exists.
     await h.ctl.state();
     await h.ctl.state();
-    expect(reads).toBe(1);
-    expect((await h.ctl.review({ text: "make it better" })).kind).toBe("card");
-    const s = await h.ctl.state();
-    // One more read, after the turn was logged.
     expect(reads).toBe(2);
-    expect(s.spent).toBe(340);
-    expect(s.week).toBe(2340);
+    reads = 0;
+    expect((await h.ctl.review({ text: "make it better" })).kind).toBe("card");
+    await h.ctl.state();
+    reads = 0;
+    // Now a line exists: kept.
+    await h.ctl.state();
+    await h.ctl.state();
+    expect(reads).toBe(0);
+    expect((await h.ctl.review({ text: "make it better" })).kind).toBe("card");
+    reads = 0;
+    const s = await h.ctl.state();
+    // The logged turn dropped the copy: at most one fresh read.
+    expect(reads).toBeLessThanOrEqual(1);
+    expect(s.spent).toBe(680);
+    expect(s.week).toBe(4680);
   });
 
   it("a failed read is not kept", async () => {
@@ -395,11 +405,9 @@ describe("SidekickController state() cost", () => {
     expect((await h.ctl.state()).week).toBe(10);
   });
 
-  it("off: state() never resolves the profile", async () => {
+  it("off: state() still shows the tier the Models row sets", async () => {
     const h = harness();
-    let resolved = 0;
-    (h.deps as { profile: SidekickDeps["profile"] }).profile = async () => (resolved++, profile);
-    expect(await h.ctl.state()).toMatchObject({ status: "off", tier: "light" });
-    expect(resolved).toBe(0);
+    (h.deps as { profile: SidekickDeps["profile"] }).profile = async () => ({ ...profile, tier: "standard" as const });
+    expect(await h.ctl.state()).toMatchObject({ status: "off", tier: "standard" });
   });
 });

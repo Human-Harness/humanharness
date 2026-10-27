@@ -85,8 +85,6 @@ export class SidekickController {
   private closed = false;
   /** Sidekick's usage lines per base, read once: only the controller writes them, and each write drops the copy. */
   private readonly lines = new Map<string, Promise<UsageRecord[]>>();
-  /** The tier last resolved; state() resolves it only while on (Settings › Models changes show from the next state). */
-  private tier = "light";
 
   constructor(private readonly d: SidekickDeps) {}
 
@@ -97,12 +95,14 @@ export class SidekickController {
     const records = setup ? await this.usage(setup.base) : [];
     const spent = (task ? sidekickSpent(records, task.id) : 0) + (this.pending.get(task?.id ?? NO_TASK) ?? 0);
     const cap = settings.cap === "none" ? null : settings.cap;
-    if (setup && settings.on) {
+    let tier = "light";
+    if (setup) {
+      // Read from the saved models (no model runs), so Settings shows the right tier while off too.
       // An unknown engine id (a hand-edited setup) must not make state() reject.
       const p = await Promise.resolve()
         .then(() => this.d.profile(this.d.engine(setup.engineId)))
         .catch(() => null);
-      if (p) this.tier = p.tier;
+      if (p) tier = p.tier;
     }
     const status: SidekickState["status"] = !settings.on
       ? "off"
@@ -119,7 +119,7 @@ export class SidekickController {
       status,
       spent,
       cap,
-      tier: this.tier,
+      tier,
       card: this.card,
       week: sidekickWeek(records),
       ...(this.notice ? { notice: this.notice } : {}),
@@ -337,15 +337,16 @@ export class SidekickController {
     return session;
   }
 
-  /** Sidekick's usage lines in `base` (cached; [] when the log can't be read, which is not kept). */
+  /** Sidekick's usage lines in `base` (cached; a failed or empty read is not kept, since the log loader answers [] on errors). */
   private usage(base: string): Promise<UsageRecord[]> {
     let lines = this.lines.get(base);
     if (!lines) {
       lines = this.d.usage(base).then((rs) => rs.filter((r) => r.phase === "sidekick"));
       this.lines.set(base, lines);
-      lines.catch(() => {
+      const drop = () => {
         if (this.lines.get(base) === lines) this.lines.delete(base);
-      });
+      };
+      lines.then((rs) => rs.length === 0 && drop(), drop);
     }
     return lines.catch(() => []);
   }

@@ -52,7 +52,7 @@ export class SidekickStore {
         const next: SidekickSettings = { ...now, ...stripUndefined(parsed.data) };
         if (sameSettings(now, next)) return { ok: true, settings: next };
         const defaults = sidekickSettings(null, this.d.manifest);
-        const changed = Object.fromEntries(Object.entries(next).filter(([k, v]) => defaults[k as keyof SidekickSettings] !== v));
+        const changed = Object.fromEntries(Object.entries(next).filter(([k, v]) => !sameValue(defaults[k as keyof SidekickSettings], v)));
         if (Object.keys(changed).length > 0) {
           await this.d.write({ op: "put", collection: SIDEKICK_COLLECTION, record: { id: SIDEKICK_SETTINGS_ID, type: "settings", ...changed } });
         } else if (stored) {
@@ -73,7 +73,12 @@ export class SidekickStore {
 }
 
 function sameSettings(a: SidekickSettings, b: SidekickSettings): boolean {
-  return (Object.keys(a) as (keyof SidekickSettings)[]).every((k) => a[k] === b[k]);
+  return (Object.keys(a) as (keyof SidekickSettings)[]).every((k) => sameValue(a[k], b[k]));
+}
+
+/** Settings are primitives or small JSON values (`muted`), so JSON equality is enough. */
+function sameValue(a: unknown, b: unknown): boolean {
+  return a === b || JSON.stringify(a) === JSON.stringify(b);
 }
 
 function stripUndefined<T extends object>(o: T): Partial<T> {

@@ -23,14 +23,22 @@ Manifest (`defineHarness`) with actions + tiers + `path`; blocks (`defineBlock`,
 | Harness | Interview | Mockup | Features extracted |
 |---|---|---|---|
 | dev | parked (rounds 1–3 done) | v2 canvas + clickable prototype | draft |
-| student | rounds 1–3 done | v1 canvas published, review pending | draft |
+| student | rounds 1–3 done | layout v3 ("study IDE") on the canvas, review pending | draft |
 | teacher | – | – | – |
 | thinker | – | – | – |
 | writer | – | – | – |
 
-**Dev vs core (2026-10-26):** `docs/discovery/2026-10-26-dev-vs-core.md`. Filter (Marco): only dev features useful to other harnesses go into the core; the rest gets a minimal hatch. Marco answered §5 the same day: C1–C7 into the core except C8 (⌘K); hatches H1–H3 yes, H4 dropped. Next: specs A–F listed there. Spec A written 2026-10-27: `docs/superpowers/specs/2026-10-27-parallel-tasks-and-jobs-design.md`, waiting for Marco's review; then B–F. Spec B written 2026-10-27 on top of the document reader spec (master): `docs/superpowers/specs/2026-10-27-document-review-and-focus-design.md`, waiting for review. Spec C written 2026-10-27: `docs/superpowers/specs/2026-10-27-file-timeline-design.md`, waiting for review. Spec D written 2026-10-27: `docs/superpowers/specs/2026-10-27-context-panel-design.md`, waiting for review. Spec E done 2026-10-27 as an update of `2026-10-25-sidekick-design.md` (D9–D14, §2a), waiting for review. Spec F written 2026-10-27: `docs/superpowers/specs/2026-10-27-harness-hatches-design.md`, waiting for review. All six specs (A–F) from the dev gap analysis are drafted. Next: Marco reviews them and places them in the core-spec order; then the next harness interview (teacher).
+**Dev vs core (2026-10-26):** `docs/discovery/2026-10-26-dev-vs-core.md`. Filter (Marco): only dev features useful to other harnesses go into the core; the rest gets a minimal hatch. Marco answered §5 the same day: C1–C7 into the core except C8 (⌘K); hatches H1–H3 yes, H4 dropped. Specs A–F, all in `docs/superpowers/specs/`, written 2026-10-27 and **approved by Marco the same day**, file by file, with review fixes; merged to master in PR #43:
+- A `2026-10-27-parallel-tasks-and-jobs-design.md`;
+- B `2026-10-27-document-review-and-focus-design.md` (on top of the document reader spec);
+- C `2026-10-27-file-timeline-design.md`;
+- D `2026-10-27-context-panel-design.md`;
+- E an update of `2026-10-25-sidekick-design.md` (D9–D14, §2a);
+- F `2026-10-27-harness-hatches-design.md`.
 
-**Next step:** Marco reviews student mockup v1 (https://claude.ai/artifact/WASSbMqoJYVBsAo41fx6nK, 15 screens). Student prototype (2026-10-20): https://claude.ai/artifact/5wNPm3RGiNXrdzEP4st9Qp, source `docs/discovery/prototypes/student/index.html`. Next: Marco tests it and gives feedback.
+They are in the core-spec queue (sidekick as plan 11, then plugins, parallel tasks, B, C, D; hatches last). The dev gap analysis is closed. Next: the next harness interview (teacher).
+
+**Next step (student):** Marco reviews layout v3, the "study IDE" (2026-10-27): page "Layout v3 (study IDE)" in `mockups/student/canvas.json`, boards `InicioCamino.dc.html` and `SesionTresPaneles.dc.html`, references and open questions in `docs/discovery/2026-10-27-student-ui-references.md`. Earlier: mockup v1 (https://claude.ai/artifact/WASSbMqoJYVBsAo41fx6nK, 15 screens). Student prototype (2026-10-20): https://claude.ai/artifact/5wNPm3RGiNXrdzEP4st9Qp, source `docs/discovery/prototypes/student/index.html`. Next: Marco tests it and gives feedback.
 
 - **Works:**
   - all 10 flows;

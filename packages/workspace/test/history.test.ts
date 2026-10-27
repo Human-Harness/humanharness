@@ -83,6 +83,15 @@ describe("History", () => {
     expect(read("AGENTS.md")).toBe("generated");
   });
 
+  it("never tracks Sidekick's events log (sidekick spec §6.1)", async () => {
+    write(".harness/sidekick/events.jsonl", '{"outcome":"used"}\n');
+    write("a.md", "1");
+    const before = (await history.save("before"))!;
+    write(".harness/sidekick/events.jsonl", '{"outcome":"used"}\n{"outcome":"dismissed"}\n');
+    await history.restore(before, "undo");
+    expect(read(".harness/sidekick/events.jsonl")).toBe('{"outcome":"used"}\n{"outcome":"dismissed"}\n');
+  });
+
   it("lists entries newest first", async () => {
     write("a.md", "1");
     await history.save("one");

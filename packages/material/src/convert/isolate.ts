@@ -2,14 +2,14 @@ import { fileURLToPath } from "node:url";
 import { Worker } from "node:worker_threads";
 import { devLauncher } from "@humanharness/blocks";
 import { MaterialRefused } from "../blocks";
-import { CONVERT_HEAP_MB, CONVERT_TIMEOUT_MS } from "../constants";
+import { CONVERT_AT_ONCE, CONVERT_HEAP_MB, CONVERT_TIMEOUT_MS } from "../constants";
 import type { ConvertSettings, Converted, MaterialType } from "../types";
 import type { ConvertOptions, Measured } from "./index";
 
 /** One file to convert or measure, as the worker gets it. */
 export type ConvertJob =
-  | { op: "convert"; type: MaterialType; data: Buffer; name: string; pageRange?: [number, number]; settings?: ConvertSettings }
-  | { op: "measure"; type: MaterialType; data: Buffer; name: string };
+  | { op: "convert"; type: MaterialType; data: Buffer; name: string; pageRange?: [number, number]; settings?: ConvertSettings; link?: boolean }
+  | { op: "measure"; type: MaterialType; data: Buffer; name: string; link?: boolean };
 
 /** The worker's answer: the result, or the reason it refused the file. */
 export type ConvertReply = { ok: true; value: Converted | Measured } | { ok: false; reason: string };
@@ -78,13 +78,38 @@ export function convertInWorker<J extends ConvertJob>(job: J, o: WorkerOptions =
 /** Converting and measuring, wherever they run. */
 export interface ConvertRunner {
   convert(type: MaterialType, buf: Buffer, opts: ConvertOptions): Promise<Converted>;
-  measure(type: MaterialType, buf: Buffer, name: string): Promise<Measured>;
+  measure(type: MaterialType, buf: Buffer, name: string, link?: boolean): Promise<Measured>;
 }
 
 /** A runner that sends every file to its own worker (`convertInWorker`) with these options. */
 export function workerRunner(o: WorkerOptions = {}): ConvertRunner {
   return {
     convert: (type, data, opts) => convertInWorker({ op: "convert", type, data, ...opts }, o),
-    measure: (type, data, name) => convertInWorker({ op: "measure", type, data, name }, o),
+    measure: (type, data, name, link) => convertInWorker({ op: "measure", type, data, name, ...(link ? { link } : {}) }, o),
+  };
+}
+
+/**
+ * A runner that lets at most `n` jobs run at once; the others wait their turn, in order. The app shares one, so many
+ * files added together never start many workers (each may take CONVERT_HEAP_MB).
+ */
+export function limitRunner(inner: ConvertRunner, n = CONVERT_AT_ONCE): ConvertRunner {
+  let running = 0;
+  const waiting: (() => void)[] = [];
+  const slot = async <T>(job: () => Promise<T>): Promise<T> => {
+    if (running >= n) await new Promise<void>((r) => waiting.push(r));
+    else running++;
+    try {
+      return await job();
+    } finally {
+      // The place passes straight to the next job waiting; otherwise it frees up.
+      const next = waiting.shift();
+      if (next) next();
+      else running--;
+    }
+  };
+  return {
+    convert: (type, data, opts) => slot(() => inner.convert(type, data, opts)),
+    measure: (type, data, name, link) => slot(() => inner.measure(type, data, name, link)),
   };
 }

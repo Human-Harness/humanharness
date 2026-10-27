@@ -8,8 +8,13 @@ import type { ConvertJob, ConvertReply } from "./isolate";
 async function run(job: ConvertJob) {
   // A Buffer arrives as a plain Uint8Array.
   const data = Buffer.from(job.data.buffer, job.data.byteOffset, job.data.byteLength);
-  if (job.op === "measure") return measureFile(job.type, data, job.name);
-  return convertFile(job.type, data, { name: job.name, ...(job.pageRange ? { pageRange: job.pageRange } : {}), ...(job.settings ? { settings: job.settings } : {}) });
+  if (job.op === "measure") return measureFile(job.type, data, job.name, job.link === true);
+  return convertFile(job.type, data, {
+    name: job.name,
+    ...(job.pageRange ? { pageRange: job.pageRange } : {}),
+    ...(job.settings ? { settings: job.settings } : {}),
+    ...(job.link ? { link: true } : {}),
+  });
 }
 
 run(workerData as ConvertJob).then(

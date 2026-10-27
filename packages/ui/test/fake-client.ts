@@ -15,6 +15,7 @@ import type {
   HarnessClient,
   HistoryItem,
   HistoryTaskView,
+  MaterialView,
   ModeChoice,
   ModeResult,
   ModeSwitch,
@@ -687,6 +688,45 @@ export class FakeClient implements HarnessClient {
       this.profileListeners.add(listener);
       return () => {
         this.profileListeners.delete(listener);
+      };
+    },
+  };
+
+  /** Calls to material, in order: "add:<scope>", "link:<scope>:<url>", "confirm:<id>", "grounding:<mode>", "open:<id>". */
+  materialCalls: string[] = [];
+  materialViews: Record<string, MaterialView> = {};
+  private materialListeners = new Set<(v: MaterialView) => void>();
+  /** Pushes a view as the main process would. */
+  pushMaterial(view: MaterialView) {
+    this.materialViews[view.scope] = view;
+    for (const l of this.materialListeners) l(view);
+  }
+  material = {
+    list: async (scope: string) => (Object.hasOwn(this.materialViews, scope) ? this.materialViews[scope] : null),
+    add: async (scope: string) => {
+      this.materialCalls.push(`add:${scope}`);
+      return { ok: true as const, added: [], refused: [] };
+    },
+    addLink: async (scope: string, url: string) => {
+      this.materialCalls.push(`link:${scope}:${url}`);
+      return { ok: true as const, added: [], refused: [] };
+    },
+    confirm: async (_scope: string, id: string) => {
+      this.materialCalls.push(`confirm:${id}`);
+      return { ok: true as const };
+    },
+    setGrounding: async (_scope: string, mode: "strict" | "mixed") => {
+      this.materialCalls.push(`grounding:${mode}`);
+      return { ok: true as const };
+    },
+    open: async (_scope: string, id: string) => {
+      this.materialCalls.push(`open:${id}`);
+      return { ok: true as const };
+    },
+    onChange: (l: (v: MaterialView) => void) => {
+      this.materialListeners.add(l);
+      return () => {
+        this.materialListeners.delete(l);
       };
     },
   };

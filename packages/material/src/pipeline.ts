@@ -107,7 +107,12 @@ export async function processSource(
     const buf = await fs.readFile(file);
     const settings = o.settings ?? entry.settings;
     const runner = o.runner ?? workerRunner();
-    const c = await runner.convert(entry.type, buf, { name: entry.path, ...(entry.pageRange ? { pageRange: entry.pageRange } : {}), ...(settings ? { settings } : {}) });
+    const c = await runner.convert(entry.type, buf, {
+      name: entry.path,
+      ...(entry.pageRange ? { pageRange: entry.pageRange } : {}),
+      ...(settings ? { settings } : {}),
+      ...(entry.url !== undefined ? { link: true } : {}),
+    });
     const pieces = piecesOf(c, entry.sheets);
     if (pieces.length === 0) throw new MaterialRefused(entry.type === "pdf" ? "scanned" : "unreadable");
     const { flags, sourceIssues } = checkPieces(pieces);
@@ -172,7 +177,7 @@ export async function addSource(
   const runner = o.runner ?? workerRunner();
   let measured: Measured;
   try {
-    measured = await runner.measure(detected.type, file.data, file.name);
+    measured = await runner.measure(detected.type, file.data, file.name, file.url !== undefined);
   } catch (err) {
     return refused(reasonOf(err));
   }

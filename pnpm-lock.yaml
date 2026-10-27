@@ -404,6 +404,9 @@ importers:
       '@humanharness/harness-sdk':
         specifier: workspace:*
         version: link:../harness-sdk
+      '@humanharness/material':
+        specifier: workspace:*
+        version: link:../material
       '@humanharness/runtime':
         specifier: workspace:*
         version: link:../runtime
@@ -413,6 +416,9 @@ importers:
       '@humanharness/workspace':
         specifier: workspace:*
         version: link:../workspace
+      pdfjs-dist:
+        specifier: ^6.4.299
+        version: 6.4.299
     devDependencies:
       '@fontsource/lexend':
         specifier: 5.3.0

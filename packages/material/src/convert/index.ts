@@ -3,7 +3,7 @@ import { pagesOf } from "../blocks";
 import { PAGE_TOKENS } from "../constants";
 import type { ConvertSettings, Converted, MaterialType, SheetRows } from "../types";
 import { epubBlocks } from "./epub";
-import { htmlBlocks } from "./html";
+import { htmlBlocks, readablePage } from "./html";
 import { measurePdf, pdfBlocks } from "./pdf";
 import { csvSheets, odsSheets, rowCount, xlsxSheets } from "./sheet";
 import { odpBlocks, pptxBlocks } from "./slides";
@@ -15,6 +15,8 @@ export interface ConvertOptions {
   settings?: ConvertSettings;
   /** The original's file name (a CSV's sheet is named after it). */
   name: string;
+  /** A page fetched from a link: read with readability (menus and footers go); a saved page is read whole. */
+  link?: boolean;
 }
 
 type SheetType = Extract<MaterialType, "xlsx" | "ods" | "csv" | "tsv">;
@@ -40,7 +42,7 @@ export async function convertFile(type: MaterialType, buf: Buffer, opts: Convert
     : type === "pptx" ? await pptxBlocks(buf)
     : type === "odp" ? await odpBlocks(buf)
     : type === "epub" ? await epubBlocks(buf)
-    : type === "html" ? htmlBlocks(decodeText(buf))
+    : type === "html" ? (opts.link ? readablePage(decodeText(buf)).blocks : htmlBlocks(decodeText(buf)))
     : textBlocks(type, buf);
   const pages = pagesOf(blocks);
   const [from, to] = opts.pageRange ?? [1, pages];
@@ -62,7 +64,7 @@ export interface Measured {
  * The size of a file before anything is converted for good (§7): a PDF's pages and text pages without reading their
  * text twice, a spreadsheet's rows; for the rest it converts (fast, no model) and counts.
  */
-export async function measureFile(type: MaterialType, buf: Buffer, name: string): Promise<Measured> {
+export async function measureFile(type: MaterialType, buf: Buffer, name: string, link = false): Promise<Measured> {
   if (type === "pdf") {
     const { pages, textPages, checked } = await measurePdf(buf);
     // The text pages of the part checked stand for the whole file.
@@ -75,6 +77,6 @@ export async function measureFile(type: MaterialType, buf: Buffer, name: string)
     for (const s of sheets) tokens += estimateTokens(s.header) + s.rows.reduce((n, r) => n + estimateTokens(r.md), 0);
     return { pages: 1, rows: rowCount(sheets), tokens };
   }
-  const c = await convertFile(type, buf, { name });
+  const c = await convertFile(type, buf, { name, ...(link ? { link } : {}) });
   return { pages: c.pages, tokens: c.blocks.reduce((n, b) => n + estimateTokens(b.md), 0) };
 }

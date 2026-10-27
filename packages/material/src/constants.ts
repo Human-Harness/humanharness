@@ -62,3 +62,5 @@ export const SHEET_MAX_COLUMNS = 1024;
 export const CONVERT_HEAP_MB = 1536;
 /** How long converting or measuring one file may take before its worker is stopped and the file refused. */
 export const CONVERT_TIMEOUT_MS = 120_000;
+/** How many files the app converts or measures at once (each worker may take CONVERT_HEAP_MB); the rest wait. */
+export const CONVERT_AT_ONCE = 2;

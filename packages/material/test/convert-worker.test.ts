@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MaterialRefused, convertFile, convertInWorker, measureFile, workerRunner } from "../src";
+import { type ConvertRunner, MaterialRefused, convertFile, convertInWorker, limitRunner, measureFile, workerRunner } from "../src";
 import { body, makePdf } from "./make-pdf";
 
 const worker = (name: string) => new URL(`./workers/${name}.mjs`, import.meta.url);
@@ -44,5 +44,30 @@ describe("convertInWorker: every converter runs off the calling thread", () => {
   it("workerRunner binds the options", async () => {
     const runner = workerRunner({ entry: worker("hang"), timeoutMs: 200 });
     await expect(runner.convert("md", md, { name: "a.md" })).rejects.toMatchObject({ reason: "too-big" });
+  });
+});
+
+describe("limitRunner: a few conversions at a time", () => {
+  it("runs at most `n` jobs at once, in order, and a refusal frees its place", async () => {
+    let running = 0;
+    let most = 0;
+    const order: string[] = [];
+    const slow = (name: string) =>
+      new Promise<never>((_, reject) => {
+        running++;
+        most = Math.max(most, running);
+        order.push(name);
+        setTimeout(() => {
+          running--;
+          reject(new MaterialRefused("unreadable"));
+        }, 20);
+      });
+    const inner: ConvertRunner = { convert: (_t, _b, o) => slow(o.name), measure: (_t, _b, name) => slow(name) };
+    const runner = limitRunner(inner, 2);
+    const jobs = ["a", "b", "c", "d", "e"].map((n, i) => (i % 2 ? runner.measure("md", md, n) : runner.convert("md", md, { name: n })));
+    const results = await Promise.allSettled(jobs);
+    expect(results.every((r) => r.status === "rejected")).toBe(true);
+    expect(most).toBe(2);
+    expect(order).toEqual(["a", "b", "c", "d", "e"]);
   });
 });

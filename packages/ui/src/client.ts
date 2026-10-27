@@ -209,6 +209,8 @@ export interface AppState {
   setup?: SetupStepView[];
   /** The harness's profiles (manifest `profiles`): what to call one and its form. Absent: one implicit profile (D4). */
   profiles?: ProfilesInfo;
+  /** The harness takes the person's material (manifest `material`). Absent: none (D0). */
+  material?: MaterialInfo;
   /** Folders the agent can read but never change. */
   references?: ReferenceView[];
   /** Settings › Modelos. */
@@ -670,6 +672,64 @@ export interface ProfilesInfo {
  */
 export type ProfileResult = { ok: true; state: AppState } | { ok: false; reason: ProfileRefusal; errors?: InputIssue[]; made?: string };
 
+/** A source of the person's material as the window shows it (material spec §11). */
+export interface MaterialSourceView {
+  id: string;
+  name: string;
+  url?: string;
+  status: "pending" | "converting" | "validating" | "needs-person" | "ready" | "refused" | "removed";
+  stage?: "review" | "repair" | "label";
+  notice?: "warn" | "max" | "rows" | "full-review" | "no-text-pages";
+  refusal?: string;
+  pages: number;
+  rows?: number;
+  pageRange?: [number, number];
+  estimate: number;
+  issues: string[];
+  fixes: string[];
+  fragments: number;
+  verdict?: "good" | "usable-with-fixes" | "not-usable";
+  failed: boolean;
+}
+
+/** One scope's material now (`hh:materialStatus`). */
+export interface MaterialView {
+  scope: string;
+  sources: MaterialSourceView[];
+  grounding: { mode: "strict" | "mixed"; canChange: boolean };
+  /** The engine's provider, for the privacy line (§13.3). */
+  provider: string;
+  /** The engine's usage window now, when it reports one (§7). */
+  window: { kind: string; utilization: number } | null;
+  /** Items with no fragment yet; absent without `items`. */
+  uncovered?: string[];
+}
+
+/** What the harness takes (manifest `material`). Absent: no material (D0). */
+export interface MaterialInfo {
+  accepts: string[];
+  items: boolean;
+  grounding: { default: "strict" | "mixed"; personCanChange: boolean };
+}
+
+export type MaterialResult = { ok: true } | { ok: false; reason: "not-ready" | "unknown-scope" | "unknown-source" | "invalid" | "fetch" };
+export type MaterialAddResult =
+  | { ok: true; added: string[]; refused: { name: string; message: string }[] }
+  | { ok: false; reason: "not-ready" | "unknown-scope" | "fetch" };
+
+export interface MaterialClient {
+  /** Null without material. */
+  list(scope: string): Promise<MaterialView | null>;
+  /** Opens the main process's file dialog, then takes in each file picked. */
+  add(scope: string): Promise<MaterialAddResult>;
+  addLink(scope: string, url: string): Promise<MaterialAddResult>;
+  confirm(scope: string, id: string, choice: { pageRange?: [number, number]; sheets?: string[] | "summary" }): Promise<MaterialResult>;
+  setGrounding(scope: string, mode: "strict" | "mixed"): Promise<MaterialResult>;
+  /** Opens the original of a source or a fragment's source. */
+  open(scope: string, id: string): Promise<MaterialResult>;
+  onChange(listener: (view: MaterialView) => void): () => void;
+}
+
 export { hearsDataChange } from "./data-change";
 
 /** Everything the renderer can ask the main process. Implemented by the preload as `window.hh`. */
@@ -823,6 +883,8 @@ export interface HarnessClient {
     delete(id: string): Promise<ProfileResult>;
     onChange(listener: (state: ProfilesState) => void): () => void;
   };
+  /** The person's material (material spec §10). A harness without material answers null and "not-ready". */
+  material: MaterialClient;
   /** The text size changed from the keyboard (⌘+, ⌘−, ⌘0), already saved. */
   onTextSize(listener: (size: TextSize) => void): () => void;
 }

@@ -154,6 +154,16 @@ describe("addSource and confirmSource", () => {
     expect(await confirmSource(store, r.id, { sheets: "summary" }, { items: false })).toMatchObject({ status: "validating", sheets: "summary" });
   });
 
+  it("a link's page is read with readability; a saved page as a whole", async () => {
+    const html = `<html><head><title>T</title></head><body><nav>Menu item</nav><article><h1>T</h1>${"<p>Real content sentence about fractions here.</p>".repeat(12)}</article></body></html>`;
+    const r = await addSource(store, { name: "t.html", data: Buffer.from(html), url: "https://example.org/t" }, { accepts: ["web"], items: false });
+    if (!r.ok) throw new Error("unreachable");
+    expect((await store.fragments()).map((f) => f.md).join("\n")).not.toContain("Menu item");
+    const saved = await addSource(store, { name: "s.html", data: Buffer.from(html) }, { accepts: ["web"], items: false });
+    if (!saved.ok) throw new Error("unreachable");
+    expect((await store.fragments()).map((f) => f.md).join("\n")).toContain("Menu item");
+  });
+
   it("a file past the size limit is refused before it is measured", async () => {
     const runner = { convert: () => Promise.reject(new Error("not called")), measure: () => Promise.reject(new Error("not called")) };
     const r = await addSource(store, { name: "big.txt", data: Buffer.alloc(MAX_BYTES + 1, "a") }, { accepts: ["text"], items: false, runner });

@@ -18,7 +18,7 @@ A developer wants to understand the core. The demo walks them through six topics
 | Action | Tier | Cost | Purpose |
 |---|---|---|---|
 | manifest | standard | medium | What a harness declares in harness.config.ts and what the core does with it |
-| engines | standard | medium | How Claude or Codex is detected, installed and connected without API keys |
+| engines | standard | medium | How Claude, Codex or OpenCode is detected, installed and connected without the app handling keys |
 | turn | deep | medium | From typing to the answer on screen |
 | blocks | standard | medium | How the AI shows cards and options instead of loose text |
 | context | deep | medium | What goes to the engine each turn and what is kept |
@@ -46,7 +46,7 @@ Each closed topic saves a note with the core `save_note` fields: a title, up to 
 - edit: none — the demo only reads the repository.
 - exec: false — no commands are needed.
 - web: false — no web access is needed.
-- engines: claude, codex
+- engines: claude, codex, opencode
 
 ## Identity
 

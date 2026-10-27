@@ -40,7 +40,7 @@ export default defineHarness({
   id: "demo",
   name: "Demo",
   core: "^0.1.0",
-  engines: ["claude", "codex"],
+  engines: ["claude", "codex", "opencode"],
   folder: {
     suggested: "Documents/Human Harness Demo",
     seed: "./agent/seed",
@@ -51,7 +51,7 @@ export default defineHarness({
   blocks: { diagram, files },
   actions: {
     manifest: topic("manifest", "The manifest", "What a harness declares in harness.config.ts and what the core does with it."),
-    engines: topic("engines", "Engines", "How Claude or Codex is detected, installed and connected without API keys."),
+    engines: topic("engines", "Engines", "How Claude, Codex or OpenCode is detected, installed and connected without the app handling keys."),
     turn: topic("turn", "A turn end to end", "From typing to the answer on screen.", "deep"),
     blocks: topic("blocks", "Blocks", "How the AI shows cards and options instead of loose text."),
     context: topic("context", "Context and memory", "What goes to the engine each turn and what is kept.", "deep"),

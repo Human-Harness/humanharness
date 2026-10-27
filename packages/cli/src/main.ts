@@ -13,7 +13,7 @@ export const USAGE = [
   "  init <dir> [--core <path>] [--id <id>] [--skip-install]",
   "                                           Create a harness repo from the template and install the guide",
   "  check [--json]                           Validate the harness in the current folder",
-  "  run <action> [--engine claude|codex] [--tier light|standard|deep] [--folder <dir>] [--language <tag>] [--record [--force]]",
+  "  run <action> [--engine claude|codex|opencode] [--tier light|standard|deep] [--folder <dir>] [--language <tag>] [--record [--force]]",
   "                                           Run one task against a real engine in the terminal",
   "  dev [--engine <id>] [--mock [--keep]] [--build <dir>]",
   "                                           Check the harness, then open the app with it (--mock: replay mock/, no AI)",

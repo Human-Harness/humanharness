@@ -15,7 +15,8 @@ import {
   whyShown,
 } from "@humanharness/workspace";
 import type { SidekickStore } from "./sidekick-store";
-import { parseReview, preSendPrompt } from "./sidekick-turns";
+import { afterReplyPrompt, parseAfter, parseReview, preSendPrompt } from "./sidekick-turns";
+import type { TurnEnd } from "./task-manager";
 import { type UsageRecord, capTokens, sidekickRecord, sidekickSpent, sidekickWeek } from "./usage-log";
 
 /** Part 1's one sidekick (plan Decision 9). */
@@ -23,6 +24,8 @@ export const SIDEKICK_ID = DEFAULT_SIDEKICK.id;
 export const SIDEKICK_NAME = DEFAULT_SIDEKICK.name;
 const SPEAKER: SidekickInfo = { id: DEFAULT_SIDEKICK.id, name: DEFAULT_SIDEKICK.name, mark: DEFAULT_SIDEKICK.mark };
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+/** The task's earlier prompts an after-reply turn keeps (its prompt names the last three). */
+const PROMPTS_KEPT = 4;
 
 /** The events line's short name (spec §6.1) for an SDK moment. */
 export function eventMoment(m: SidekickMoment): SidekickEventMoment {
@@ -110,6 +113,12 @@ export class SidekickController {
   private card: SidekickCard | null = null;
   /** The task and base the card was made in: its outcome's event names them. */
   private cardCtx: { task: OpenTask | null; base: string } | null = null;
+  /** The running after-reply turn; a send drops it (spec §5 "Sending cancels"). */
+  private after: AbortController | null = null;
+  /** The open task's waiting cards other than the live pre-send one (after the reply), with where each was made. */
+  private cards: { card: SidekickCard; ctx: { task: OpenTask | null; base: string } }[] = [];
+  /** The task's earlier prompts, oldest first, for its next after-reply turn. */
+  private prompts: { key: string; items: string[] } = { key: NO_TASK, items: [] };
   /** The open task's earlier cards (spec §7 "Earlier · used"); reset when another task opens. */
   private past: { key: string; items: SidekickState["past"] } = { key: NO_TASK, items: [] };
   /**
@@ -152,7 +161,7 @@ export class SidekickController {
       ? "off"
       : this.running
         ? "reading"
-        : this.card
+        : this.card || this.cards.length
           ? "suggestion"
           : cap !== null && spent >= cap
             ? "capped"
@@ -165,6 +174,7 @@ export class SidekickController {
       cap,
       tier,
       card: this.card,
+      cards: this.cards.map((c) => c.card),
       week: sidekickWeek(records),
       past: this.past.key === (task?.id ?? NO_TASK) ? [...this.past.items] : [],
       used: usedShare(events.filter((e) => Date.parse(e.at) >= since)),
@@ -178,7 +188,9 @@ export class SidekickController {
       // Off: nothing runs and nothing stays open (D0: "the person can turn it off").
       this.reviews++;
       this.running?.abort();
+      this.after?.abort();
       this.card = null;
+      this.cards = [];
       this.notice = undefined;
       await this.closeSessions(() => true);
     }
@@ -210,14 +222,19 @@ export class SidekickController {
     await this.push();
   }
 
-  /** The card `cardId` if it is the one shown; it leaves the panel. */
+  /** The card `cardId` if it is shown (the pre-send one or a waiting one); it leaves the panel. */
   private take(cardId: string): { card: SidekickCard; ctx: { task: OpenTask | null; base: string } } | null {
     const card = this.card;
     const ctx = this.cardCtx;
-    if (!card || card.id !== cardId || !ctx) return null;
-    this.card = null;
-    this.cardCtx = null;
-    return { card, ctx };
+    if (card && card.id === cardId && ctx) {
+      this.card = null;
+      this.cardCtx = null;
+      return { card, ctx };
+    }
+    const at = this.cards.findIndex((c) => c.card.id === cardId);
+    if (at < 0) return null;
+    const [taken] = this.cards.splice(at, 1);
+    return taken;
   }
 
   private async outcome(card: SidekickCard, ctx: { task: OpenTask | null; base: string }, outcome: SidekickOutcome | "muted"): Promise<void> {
@@ -230,9 +247,11 @@ export class SidekickController {
       outcome,
       confidence: card.confidence,
     });
+    // The list is the open task's: a card of another task (resolved late) gets its event but never resets the list.
     const key = ctx.task?.id ?? NO_TASK;
-    if (this.past.key !== key) this.past = { key, items: [] };
-    this.past.items.push({ id: card.id, kind: card.kind, outcome, speaker: card.speaker.id });
+    const open = (await this.d.task().catch(() => null))?.id ?? NO_TASK;
+    if (this.past.key !== open) this.past = { key: open, items: [] };
+    if (key === open) this.past.items.push({ id: card.id, kind: card.kind, outcome, speaker: card.speaker.id });
     await write;
   }
 
@@ -273,7 +292,9 @@ export class SidekickController {
     if (!settings.on || moved) {
       this.reviews++;
       this.running?.abort();
+      this.after?.abort();
       this.card = null;
+      this.cards = [];
       this.notice = undefined;
     }
     if (moved) this.pending.clear();
@@ -290,19 +311,27 @@ export class SidekickController {
   async betweenTasks(): Promise<void> {
     const open = (await this.d.task().catch(() => null))?.id;
     if (this.past.key !== (open ?? NO_TASK)) this.past = { key: open ?? NO_TASK, items: [] };
+    // Another task: the old one's waiting cards and its running after-reply turn go (they were about its reply).
+    const left = this.cards.filter((c) => (c.ctx.task?.id ?? NO_TASK) === (open ?? NO_TASK));
+    const dropped = left.length !== this.cards.length;
+    if (dropped) {
+      this.after?.abort();
+      this.cards = left;
+    }
     const keepLoose = this.looseArmed;
     this.looseArmed = false;
     await this.closeSessions((key) => (key === NO_TASK ? !keepLoose : key !== open));
     if (this.card && open === undefined) {
       this.card = null;
       await this.push();
-    }
+    } else if (dropped) await this.push();
   }
 
   async close(): Promise<void> {
     this.closed = true;
     this.reviews++;
     this.running?.abort();
+    this.after?.abort();
     await this.closeSessions(() => true);
   }
 
@@ -313,6 +342,7 @@ export class SidekickController {
   async review(req: { text: string; force?: boolean; attached?: boolean }): Promise<SidekickReview> {
     const turn = ++this.reviews;
     this.running?.abort();
+    this.after?.abort();
     // An early return still pushes when it cleared a card or notice, so the renderer drops them too.
     const stale = this.card !== null || this.notice !== undefined;
     this.card = null;
@@ -346,9 +376,7 @@ export class SidekickController {
     // 2. The decision.
     if (flags.length === 0 && mode === "auto" && !req.force) return early("send");
     const key = task?.id ?? NO_TASK;
-    const records = await this.usage(setup.base);
-    const spent = (task ? sidekickSpent(records, task.id) : 0) + (this.pending.get(key) ?? 0);
-    if (settings.cap !== "none" && spent >= settings.cap) return early("send");
+    if (await this.pastCap(setup.base, task, settings)) return early("send");
 
     // 3. The model, within the wait (unless a newer review, ⌘⏎, turning off or closing superseded this one meanwhile).
     if (!live()) return early("cancelled");
@@ -385,22 +413,7 @@ export class SidekickController {
       });
       if (!live()) return this.finish("cancelled");
       const answer = await session.ask(prompt, controller.signal);
-      if (answer.usage) {
-        if (!task) this.pending.set(key, (this.pending.get(key) ?? 0) + capTokens(answer.usage));
-        const record = sidekickRecord({
-          engine: engine.id,
-          ...(task ? { task: task.id, scope: task.scope } : {}),
-          ...(task?.action ? { action: task.action } : {}),
-          sidekick: SIDEKICK_ID,
-          moment: "pre",
-          profile: session.profile,
-          ok: answer.ok,
-          usage: answer.usage,
-          ...(answer.limits ? { limits: answer.limits } : {}),
-        });
-        await this.d.log(setup.base, record).catch((err: unknown) => console.error("Could not record the Sidekick turn", err));
-        this.lines.delete(setup.base);
-      }
+      await this.logTurn(setup.base, engine, session, task, "pre", answer);
       // A late answer is dropped: the prompt already went as typed (or the person sent at once).
       if (timedOut) return await timeout();
       if (controller.signal.aborted) return this.finish("cancelled");
@@ -440,6 +453,92 @@ export class SidekickController {
       if (this.running === controller) this.running = null;
       await this.push();
     }
+  }
+
+  /** A task turn is about to run: a running after-reply turn is dropped (spec §5 "Sending cancels"). */
+  turnStarting(): void {
+    this.after?.abort();
+  }
+
+  /**
+   * After the reply (spec §4.2): a run turn that ended well, typed by the person (not a block's answer), gets one
+   * Sidekick turn on the prompt and the cut reply; a gap, a next step or a repeated ask becomes a waiting card.
+   * Off, the setting off, past the cap or without a CLI: nothing runs (D0). A send drops it while it runs.
+   */
+  async afterReply(end: TurnEnd): Promise<void> {
+    const settings = await this.d.store.settings();
+    if (this.closed || !settings.on || !settings.afterReply) return;
+    if (this.prompts.key !== end.task.id) this.prompts = { key: end.task.id, items: [] };
+    const earlier = [...this.prompts.items];
+    this.prompts.items = [...earlier, end.prompt].slice(-PROMPTS_KEPT);
+    if (!end.ok || end.kind !== "run" || end.fromBlock) return;
+    const setup = await this.d.setup().catch(() => null);
+    if (!setup || !(await this.d.hasNotice(setup.engineId).catch(() => false))) return;
+    const task: OpenTask = end.task;
+    if (await this.pastCap(setup.base, task, settings)) return;
+    this.after?.abort();
+    const controller = new AbortController();
+    this.after = controller;
+    const live = () => !controller.signal.aborted && !this.closed;
+    try {
+      const engine = this.d.engine(setup.engineId);
+      const session = await this.sessionFor(setup.base, engine, task.id, task.id, live);
+      if (!session || !live()) return;
+      const open = this.d.phases(task.action).find((p) => p.id === task.phase);
+      const prompt = afterReplyPrompt({
+        harness: this.d.harness,
+        ...(open ? { phase: { label: open.label, ...(open.brief ? { brief: open.brief } : {}) } } : {}),
+        prompt: end.prompt,
+        reply: end.reply,
+        lastPrompts: earlier,
+        uiLanguage: await this.d.uiLanguage().catch(() => "English"),
+      });
+      if (!live()) return;
+      const answer = await session.ask(prompt, controller.signal);
+      await this.logTurn(setup.base, engine, session, task, "after", answer);
+      if (!live() || !answer.ok) return;
+      const after = parseAfter(answer.text);
+      if (!after || (!after.gap && !after.next && !after.repeated)) return;
+      const kind = after.gap ? "gap" : after.next ? "next" : "repeated";
+      // Settings may have changed while the turn ran; a muted kind never shows (spec §6.3).
+      const now = await this.d.store.settings();
+      if (!now.on || !now.afterReply || mutedOf(now, SPEAKER.id).includes(kind) || !live()) return;
+      this.cards.push({
+        card: { id: randomUUID(), moment: eventMoment("after-reply"), speaker: SPEAKER, kind, prompt: end.prompt, flags: [], issues: [], confidence: 1, after, at: new Date().toISOString() },
+        ctx: { task, base: setup.base },
+      });
+      await this.push();
+    } catch (err) {
+      if (!controller.signal.aborted) console.error("Sidekick's after-reply turn failed", err);
+    } finally {
+      if (this.after === controller) this.after = null;
+    }
+  }
+
+  /** The open task (or the loose session's pre-task spend) is past the cap; no cap: never. */
+  private async pastCap(base: string, task: OpenTask | null, settings: SidekickSettings): Promise<boolean> {
+    const records = await this.usage(base);
+    const spent = (task ? sidekickSpent(records, task.id) : 0) + (this.pending.get(task?.id ?? NO_TASK) ?? 0);
+    return settings.cap !== "none" && spent >= settings.cap;
+  }
+
+  /** One tagged usage line for a model turn (spec §8); a turn before its task counts toward the loose session's spend. */
+  private async logTurn(base: string, engine: EngineDef, session: SidekickLike, task: OpenTask | null, moment: "pre" | "after" | "learn", answer: SidekickAnswer): Promise<void> {
+    if (!answer.usage) return;
+    if (!task) this.pending.set(NO_TASK, (this.pending.get(NO_TASK) ?? 0) + capTokens(answer.usage));
+    const record = sidekickRecord({
+      engine: engine.id,
+      ...(task ? { task: task.id, scope: task.scope } : {}),
+      ...(task?.action ? { action: task.action } : {}),
+      sidekick: SIDEKICK_ID,
+      moment,
+      profile: session.profile,
+      ok: answer.ok,
+      usage: answer.usage,
+      ...(answer.limits ? { limits: answer.limits } : {}),
+    });
+    await this.d.log(base, record).catch((err: unknown) => console.error("Could not record the Sidekick turn", err));
+    this.lines.delete(base);
   }
 
   /** Records the quiet notice for a failed review (spec §5 "Errors") and returns what the composer does. */

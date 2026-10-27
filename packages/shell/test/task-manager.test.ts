@@ -55,6 +55,8 @@ function setup(
     /** Real turns (a TurnController) instead of the scripted ones; `window` then gets the manager's events too. */
     turns?: TaskDeps["turns"];
     window?: Event[];
+    /** Extra deps, spread last (the Sidekick hooks). */
+    deps?: Partial<TaskDeps>;
   } = {},
 ) {
   let state = opts.state ?? emptyTasks();
@@ -126,6 +128,7 @@ function setup(
       : {}),
     now: () => new Date("2026-10-12T11:20:00.000Z"),
     newId: () => `t${++n}`,
+    ...opts.deps,
   });
   return { manager, turns, views, log, emitted, trailers, state: () => state };
 }
@@ -1132,5 +1135,45 @@ describe("TaskManager: between tasks (harness-settings D4)", () => {
     await t.manager.start("manifest");
     await pick(t, { label: "Next", next: true });
     expect(t.log).not.toContain("between");
+  });
+});
+
+describe("Sidekick hooks (sidekick spec §4.2)", () => {
+  it("turnEnded gets the prompt, the reply text and the kind; turnStarting runs before each run turn", async () => {
+    const ended: unknown[] = [];
+    let starting = 0;
+    const t = setup({
+      script: [[{ type: "text", delta: "Hello " }, { type: "text", delta: "there." }, { type: "paragraph" }, { type: "text", delta: "Bye." }, { type: "context", used: 1200 }, ok]],
+      deps: { turnEnded: (e) => void ended.push(e), turnStarting: () => void starting++ },
+    });
+    await t.manager.ask("What is a manifest?");
+    expect(starting).toBe(1);
+    expect(ended).toEqual([
+      expect.objectContaining({ kind: "run", ok: true, prompt: "What is a manifest?", reply: "Hello there.\n\nBye.", fromBlock: false, context: { used: 1200 }, task: expect.objectContaining({ id: "t1", scope: "main" }) }),
+    ]);
+  });
+
+  it("the closing turn ends with kind close, and turnStarting does not run for it", async () => {
+    const kinds: string[] = [];
+    let starting = 0;
+    const t = setup({ deps: { turnEnded: (e) => void kinds.push(e.kind), turnStarting: () => void starting++ } });
+    await t.manager.start("manifest");
+    await t.manager.finish();
+    expect(kinds).toEqual(["run", "close"]);
+    expect(starting).toBe(1);
+  });
+
+  it("a throwing hook never breaks the task", async () => {
+    const t = setup({ deps: { turnEnded: () => { throw new Error("boom"); } } });
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    await t.manager.ask("x");
+    expect(t.state().current).toMatchObject({ status: "waiting", turns: 1 });
+  });
+
+  it("D0: without the hooks nothing changes", async () => {
+    const t = setup({ script: [[ok]] });
+    await t.manager.ask("x");
+    expect(t.turns).toHaveLength(1);
+    expect(t.state().current).toMatchObject({ status: "waiting", turns: 1 });
   });
 });

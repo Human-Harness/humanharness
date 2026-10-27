@@ -1,5 +1,5 @@
 import { z } from "@humanharness/harness-sdk";
-import type { SidekickFlag } from "@humanharness/workspace";
+import { type SidekickFlag, estimateTokens } from "@humanharness/workspace";
 
 /** The first line of every pre-send turn (mock mode and the e2e scripts match on it). */
 export const SIDEKICK_PRE_MARK = "Sidekick: pre-send review";
@@ -69,18 +69,8 @@ export type SidekickReviewReply = z.output<typeof reviewSchema>;
  * A `rewrite` equal to `prompt` (trimmed) is the model echoing it and is dropped.
  */
 export function parseReview(text: string, prompt?: string): SidekickReviewReply | null {
-  const start = text.indexOf("{");
-  const end = text.lastIndexOf("}");
-  if (start < 0 || end <= start) return null;
-  let raw: unknown;
-  try {
-    raw = JSON.parse(text.slice(start, end + 1));
-  } catch {
-    return null;
-  }
-  const parsed = reviewSchema.safeParse(raw);
-  if (!parsed.success) return null;
-  let r = parsed.data;
+  let r = parseJson(text, reviewSchema);
+  if (!r) return null;
   if (r.rewrite !== undefined && prompt !== undefined && r.rewrite.trim() === prompt.trim()) {
     const { rewrite: _echo, ...rest } = r;
     r = rest;
@@ -89,3 +79,77 @@ export function parseReview(text: string, prompt?: string): SidekickReviewReply 
   if (r.verdict === "suggest" && !r.rewrite && r.issues.length === 0 && !r.queued?.length) return { ...r, verdict: "send" };
   return r;
 }
+
+/** Shared by every JSON reply: the object between the first "{" and the last "}", parsed with `schema`; null otherwise. */
+export function parseJson<T>(text: string, schema: z.ZodType<T>): T | null {
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start < 0 || end <= start) return null;
+  try {
+    const r = schema.safeParse(JSON.parse(text.slice(start, end + 1)));
+    return r.success ? r.data : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The first line of every after-reply turn (mock mode and the e2e scripts match on it). */
+export const SIDEKICK_AFTER_MARK = "Sidekick: after the reply";
+/** How much of the task's reply an after-reply turn reads (spec §4.2). */
+export const SIDEKICK_REPLY_TOKENS = 1500;
+
+/** The reply cut to about `maxTokens` (spec §4.2): its head and tail, plus every heading in between. */
+export function cutReply(reply: string, maxTokens: number = SIDEKICK_REPLY_TOKENS): string {
+  if (estimateTokens(reply) <= maxTokens) return reply;
+  const chars = maxTokens * 4;
+  const head = reply.slice(0, Math.floor(chars * 0.45));
+  const tail = reply.slice(-Math.floor(chars * 0.45));
+  const middle = reply.slice(head.length, reply.length - tail.length);
+  const headings = middle.split("\n").filter((l) => /^#{1,6}\s/.test(l));
+  return [head, "[…]", ...headings, "[…]", tail].join("\n");
+}
+
+export interface AfterInput {
+  harness: { name: string; tagline?: string };
+  phase?: { label: string; brief?: string };
+  prompt: string;
+  reply: string;
+  /** The task's earlier prompts, oldest first; the last three first lines go in. */
+  lastPrompts: readonly string[];
+  uiLanguage: string;
+  /** The scope's purpose text for this sidekick (§2a.4), when any. */
+  purposeText?: string;
+}
+
+/** The after-reply turn (spec §4.2): the person's prompt and the cut reply, never the task's history. */
+export function afterReplyPrompt(i: AfterInput): string {
+  return [
+    SIDEKICK_AFTER_MARK,
+    "",
+    `App: ${i.harness.name}${i.harness.tagline ? ` — ${i.harness.tagline}` : ""}`,
+    ...(i.phase ? [`Open phase: ${i.phase.label}${i.phase.brief ? ` — ${i.phase.brief.split("\n")[0]}` : ""}`] : []),
+    ...(i.purposeText ? [`Scope purpose: ${i.purposeText}`] : []),
+    "Earlier prompts (first lines):",
+    ...list(i.lastPrompts.slice(-3).map((p) => p.split("\n")[0])),
+    `UI language: ${i.uiLanguage}`,
+    "",
+    "<prompt>",
+    i.prompt,
+    "</prompt>",
+    "<reply>",
+    cutReply(i.reply),
+    "</reply>",
+    "",
+    'Answer with the JSON object only: {"gap":{"title":string,"text":string}?,"next":string?,"repeated":{"topic":string,"decision":string}?}. Leave out what you have nothing useful for; {} is a fine answer.',
+  ].join("\n");
+}
+
+export const afterSchema = z.object({
+  gap: z.object({ title: z.string().min(1).max(80), text: z.string().min(1).max(400) }).optional(),
+  next: z.string().min(1).max(4000).optional(),
+  repeated: z.object({ topic: z.string().min(1).max(80), decision: z.string().min(1).max(400) }).optional(),
+});
+export type SidekickAfter = z.output<typeof afterSchema>;
+
+/** The after-reply reply, parsed; null when it isn't the contract. */
+export const parseAfter = (text: string): SidekickAfter | null => parseJson(text, afterSchema);

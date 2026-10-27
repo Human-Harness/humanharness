@@ -1020,6 +1020,8 @@ export interface SidekickCard {
   kind: string;
   /** "You took N of your last M <kind> suggestions" (spec §4.1 step 4); absent with fewer than 3. */
   why?: { used: number; of: number };
+  /** After the reply (spec §4.2): a gap, the next prompt (Put in composer), a repeated ask. */
+  after?: { gap?: { title: string; text: string }; next?: string; repeated?: { topic: string; decision: string } };
 }
 
 export type SidekickCardMoment = "pre" | "after" | "heads-up" | "before-approve" | "phase-change" | "daily" | "place";
@@ -1038,6 +1040,8 @@ export interface SidekickState {
   /** The tier Sidekick's turns run at (Settings › Models), or "custom". */
   tier: string;
   card: SidekickCard | null;
+  /** The open task's waiting cards other than the live pre-send one (after the reply). */
+  cards: SidekickCard[];
   /** Sidekick's tokens in the last 7 days. */
   week: number;
   /** The last review could not finish: the prompt went as typed (spec §5 "Errors"). */

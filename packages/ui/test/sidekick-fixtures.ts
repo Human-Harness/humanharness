@@ -9,6 +9,7 @@ export const SK_ON: SidekickState = {
   cap: 20_000,
   tier: "light",
   card: null,
+  cards: [],
   week: 3400,
   past: [],
   used: { used: 0, of: 0 },

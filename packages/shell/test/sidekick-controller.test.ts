@@ -558,3 +558,111 @@ describe("outcomes and learning signals (spec §6.1–6.3)", () => {
     expect(h.writes.filter((w) => w.record?.type === "learned")).toEqual([]);
   });
 });
+
+describe("after the reply (spec §4.2)", () => {
+  const end = (o: Partial<Parameters<SidekickController["afterReply"]>[0]> = {}) => ({ task: { id: "t1", scope: "main" }, kind: "run" as const, ok: true, prompt: "Outline chapter 2", reply: "Here it is.", fromBlock: false, ...o });
+  const GAP = json({ gap: { title: "Sources", text: "No source for claim 2." }, next: "Add a source for claim 2" });
+
+  it("D0: off → nothing: no session, no turn, no event, no usage line", async () => {
+    const h = harness();
+    await h.ctl.afterReply(end());
+    h.ctl.turnStarting();
+    expect(h.asked).toEqual([]);
+    expect(h.opened).toEqual([]);
+    expect(h.events).toEqual([]);
+    expect(h.logged).toEqual([]);
+    expect((await h.ctl.state()).cards).toEqual([]);
+  });
+
+  it("a gap becomes an after card, with Put in composer's text", async () => {
+    const h = harness({ record: on, answers: [GAP] });
+    await h.ctl.afterReply(end());
+    expect(h.asked[0]).toContain("Sidekick: after the reply");
+    const s = await h.ctl.state();
+    expect(s.cards).toEqual([expect.objectContaining({ moment: "after", kind: "gap", speaker: expect.objectContaining({ id: "sidekick" }), after: { gap: { title: "Sources", text: "No source for claim 2." }, next: "Add a source for claim 2" } })]);
+    expect(s.card).toBeNull();
+    expect(s.status).toBe("suggestion");
+    expect(h.logged.at(-1)).toMatchObject({ moment: "after", task: "t1" });
+    expect(h.states.at(-1)).toMatchObject({ cards: [expect.objectContaining({ kind: "gap" })] });
+  });
+
+  it("the turn carries the task's earlier prompts", async () => {
+    const h = harness({ record: on, answers: ["{}", "{}"] });
+    await h.ctl.afterReply(end({ prompt: "First ask" }));
+    await h.ctl.afterReply(end({ prompt: "Second ask" }));
+    expect(h.asked[1]).toContain("Earlier prompts (first lines):\n- First ask\n");
+  });
+
+  it("skipped: checkpoint or close turns, failed turns, block answers, the setting off, nothing to show", async () => {
+    for (const e of [end({ kind: "checkpoint" }), end({ kind: "close" }), end({ ok: false }), end({ fromBlock: true })]) {
+      const h = harness({ record: on });
+      await h.ctl.afterReply(e);
+      expect(h.asked).toEqual([]);
+    }
+    const off = harness({ record: { ...on, afterReply: false } });
+    await off.ctl.afterReply(end());
+    expect(off.asked).toEqual([]);
+    const empty = harness({ record: on, answers: ["{}"] });
+    await empty.ctl.afterReply(end());
+    expect((await empty.ctl.state()).cards).toEqual([]);
+  });
+
+  it("past the cap → no turn", async () => {
+    const line = sidekickRecord({ engine: "claude", task: "t1", sidekick: "sidekick", moment: "pre", profile, ok: true, usage: { inputTokens: 25_000, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 } });
+    const h = harness({ record: on, usage: [line] });
+    await h.ctl.afterReply(end());
+    expect(h.asked).toEqual([]);
+  });
+
+  it("a muted kind shows no card", async () => {
+    const h = harness({ record: { ...on, muted: { sidekick: ["gap"] } }, answers: [GAP] });
+    await h.ctl.afterReply(end());
+    expect((await h.ctl.state()).cards).toEqual([]);
+  });
+
+  it("a new send cancels a running after-reply turn", async () => {
+    const h = harness({ record: on, answers: [slow] });
+    const running = h.ctl.afterReply(end());
+    await vi.waitFor(() => expect(h.asked).toHaveLength(1));
+    h.ctl.turnStarting();
+    await running;
+    expect((await h.ctl.state()).cards).toEqual([]);
+  });
+
+  it("resolve takes an after card: one event with moment after, a past line", async () => {
+    const h = harness({ record: on, answers: [GAP] });
+    await h.ctl.afterReply(end());
+    const card = (await h.ctl.state()).cards[0];
+    await h.ctl.resolve(card.id, "used");
+    expect(h.events).toEqual([expect.objectContaining({ sidekick: "sidekick", moment: "after", kind: "gap", outcome: "used", task: "t1" })]);
+    const s = await h.ctl.state();
+    expect(s.cards).toEqual([]);
+    expect(s.past).toEqual([{ id: card.id, kind: "gap", outcome: "used", speaker: "sidekick" }]);
+  });
+
+  it("an older task's card resolving does not wipe the open task's past list", async () => {
+    const h = harness({ record: on, answers: [SUGGEST, GAP] });
+    const r = await h.ctl.review({ text: "make it better" });
+    if (r.kind !== "card") throw new Error("card expected");
+    h.setTask({ id: "t2", scope: "main" });
+    await h.ctl.betweenTasks();
+    await h.ctl.afterReply(end({ task: { id: "t2", scope: "main" } }));
+    const after = (await h.ctl.state()).cards[0];
+    await h.ctl.resolve(after.id, "dismissed");
+    await h.ctl.resolve(r.card.id, "used");
+    expect((await h.ctl.state()).past).toEqual([{ id: after.id, kind: "gap", outcome: "dismissed", speaker: "sidekick" }]);
+    expect(h.events.map((e) => [e.task, e.outcome])).toEqual([["t2", "dismissed"], ["t1", "used"]]);
+  });
+
+  it("another task drops the cards; turning off drops them too", async () => {
+    const h = harness({ record: on, answers: [GAP, GAP] });
+    await h.ctl.afterReply(end());
+    h.setTask({ id: "t2", scope: "main" });
+    await h.ctl.betweenTasks();
+    expect((await h.ctl.state()).cards).toEqual([]);
+    await h.ctl.afterReply(end({ task: { id: "t2", scope: "main" } }));
+    expect((await h.ctl.state()).cards).toHaveLength(1);
+    await h.ctl.set({ on: false });
+    expect((await h.ctl.state()).cards).toEqual([]);
+  });
+});

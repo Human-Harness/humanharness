@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { mockSidekickReply } from "@humanharness/fake-agent";
-import { SIDEKICK_PRE_MARK, parseReview, preSendPrompt } from "../src/main/sidekick-turns";
+import { SIDEKICK_AFTER_MARK, SIDEKICK_PRE_MARK, afterReplyPrompt, cutReply, parseAfter, parseReview, preSendPrompt } from "../src/main/sidekick-turns";
 
 const input = {
   harness: { name: "Essay Coach", tagline: "Write better essays" },
@@ -105,5 +105,35 @@ describe("reviewSchema spans", () => {
   it("rejects a span whose start is after its end", () => {
     expect(parseReview('{"verdict":"suggest","issues":[{"kind":"vague","text":"x","span":[5,2]}],"confidence":0.9}')).toBeNull();
     expect(parseReview('{"verdict":"suggest","issues":[{"kind":"vague","text":"x","span":[2,5]}],"confidence":0.9}')?.issues[0].span).toEqual([2, 5]);
+  });
+});
+
+describe("after the reply (spec §4.2)", () => {
+  it("cuts a long reply to head, headings and tail", () => {
+    const reply = ["# Intro", "a ".repeat(4000), "## Middle", "b ".repeat(4000), "## End", "c ".repeat(4000)].join("\n");
+    const cut = cutReply(reply, 1500);
+    expect(cut).toContain("# Intro");
+    expect(cut).toContain("## Middle");
+    expect(cut).toContain("## End");
+    expect(cut).toContain("[…]");
+    expect(cut.length).toBeLessThan(reply.length / 2);
+    expect(cutReply("short", 1500)).toBe("short");
+  });
+
+  it("the prompt holds the person's prompt, the cut reply, the phase goal and the last three prompts' first lines", () => {
+    const p = afterReplyPrompt({ harness: { name: "Essay Coach" }, phase: { label: "Outline", brief: "Agree on sections." }, prompt: "Outline chapter 2", reply: "Here it is.", lastPrompts: ["one\nmore", "two", "three", "four"], uiLanguage: "English", purposeText: "No spec without AC." });
+    expect(p.startsWith(SIDEKICK_AFTER_MARK)).toBe(true);
+    expect(p).toContain("- two\n- three\n- four");
+    expect(p).not.toContain("one");
+    expect(p).toContain("Open phase: Outline — Agree on sections.");
+    expect(p).toContain("<prompt>\nOutline chapter 2\n</prompt>\n<reply>\nHere it is.\n</reply>");
+    expect(p).toContain("Scope purpose: No spec without AC.");
+  });
+
+  it("parses gap, next and repeated; empty means nothing", () => {
+    expect(parseAfter('{"gap":{"title":"Sources","text":"No source for claim 2."},"next":"Add a source for claim 2"}')).toEqual({ gap: { title: "Sources", text: "No source for claim 2." }, next: "Add a source for claim 2" });
+    expect(parseAfter("```json\n{\"repeated\":{\"topic\":\"Tone\",\"decision\":\"Formal\"}}\n```")).toEqual({ repeated: { topic: "Tone", decision: "Formal" } });
+    expect(parseAfter("{}")).toEqual({});
+    expect(parseAfter("nope")).toBeNull();
   });
 });

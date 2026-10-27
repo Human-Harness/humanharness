@@ -117,7 +117,7 @@ import { SidekickController } from "./sidekick";
 import { registerSidekickIpc } from "./sidekick-ipc";
 import { SidekickStore } from "./sidekick-store";
 import { SetupSteps, recordSetup, setupStepViews } from "./setup-steps";
-import { TaskManager } from "./task-manager";
+import { TaskManager, type TurnEnd } from "./task-manager";
 import type { MaterialService } from "./material";
 import { historyKeep, materialAppState, materialItems, materialRecommended, openMaterial } from "./material-ipc";
 import { MaterialJobs } from "./material-jobs";
@@ -820,6 +820,15 @@ const tasks = new TaskManager({
       await settings?.betweenTasks();
       await sidekick?.betweenTasks();
     };
+  },
+  // Sidekick's after-reply moment (sidekick spec §4.2). Getters: undefined until the controller exists (D0).
+  get turnStarting() {
+    const sidekick = sidekickCtl;
+    return sidekick ? () => sidekick.turnStarting() : undefined;
+  },
+  get turnEnded() {
+    const sidekick = sidekickCtl;
+    return sidekick ? (end: TurnEnd) => void sidekick.afterReply(end).catch((err: unknown) => console.error("Sidekick's after-reply turn failed", err)) : undefined;
   },
   // Getters, because the harness is loaded after this object is built. Undefined without modes (task-modes D0).
   get modes() {

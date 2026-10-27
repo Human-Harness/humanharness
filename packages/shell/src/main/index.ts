@@ -96,7 +96,7 @@ import { type RunningSetup, runSetupProcess, setupCommand, stopSetupProcess } fr
 import { runSetupStep } from "./setup-step";
 import { type SharedEngineRecord, SharedConfigStore, sharedConfigDir } from "./shared-config";
 import { EngineUnavailable, TurnController, memoise } from "./turn-controller";
-import { type UsageRecord, UsageLog, compactionRecord, materialRecord, profileMeta, profilesUsage, summarizeUsage, usageRecord } from "./usage-log";
+import { type UsageRecord, UsageLog, compactionRecord, profileMeta, profilesUsage, summarizeUsage, usageRecord } from "./usage-log";
 import { type ValidationContext, checkFolder, configProblem, isAppUrl } from "./validate";
 import { openIfStillSafe, openRoots, openableFile, revealIfStillSafe, revealableFile } from "./open-path";
 import { saveWithFolderChange } from "./folder-change";
@@ -109,6 +109,7 @@ import { TaskManager } from "./task-manager";
 import type { MaterialService } from "./material";
 import { historyKeep, materialAppState, openMaterial } from "./material-ipc";
 import { MaterialJobs } from "./material-jobs";
+import { type MaterialStageDeps, runMaterialStage } from "./material-stage";
 import { personMaterialRequest } from "./material-requests";
 import { baseFor, isInsideFolder } from "./profile-base";
 import { type ProfileOutcome, Profiles, profileResult } from "./profiles";
@@ -875,60 +876,24 @@ function kickMaterial(): void {
 const materialRequest = (base: string, request: unknown) =>
   personMaterialRequest({ base: async () => base, runningTask: () => tasks.runningTask(), store: materialStore, flagged: kickMaterial }, request);
 
-/**
- * One AI stage's session (material spec §10): the engine in use, the stage's model (Settings › Models keys it by the
- * stage's reserved id), only the `material` server, and one usage line. A stage needs what a turn needs: a set-up
- * app, the engine's CLI and its notice accepted; otherwise it fails (and is not retried on its own).
- */
-async function runMaterialStage(
-  job: Job,
-  prompt: string,
-  tools: readonly string[],
-  handle: (request: unknown) => Promise<unknown>,
-  signal: AbortSignal,
-): Promise<{ ok: boolean }> {
-  const c = await validConfig();
-  if (!c || !harness.material || !(await hasNotice(c.engineId))) return { ok: false };
-  const engine = getEngine(c.engineId);
-  const cmd = hooks.engines?.[engine.id] ?? (await engineCommand(engine, commandDeps).catch(() => null));
-  if (!cmd || signal.aborted) return { ok: false };
-  const models = cleanModels(c.models);
-  const saved = await savedOffer(engine.id);
-  const profile = await supportedEffort(
-    firstOffered(resolveProfile({ engine: engine.id, action: materialStageKey(job.stage), manifestTier: stageTier(harness.material, job.stage), models }), models, saved.models),
-    saved,
-  );
-  const r = await runSystemTask({
-    engine,
-    command: cmd.command,
-    env: cmd.env,
-    launcher: electronLauncher(process.execPath),
-    entry: path.join(here, "material-server.js"),
-    prompt,
-    tools,
-    handle,
-    profile,
-    signal,
-  });
-  // A stage stopped by closeRuntime runs again later: its line would count it twice.
-  if (!signal.aborted) {
-    await new UsageLog(baseOf(c))
-      .append(
-        materialRecord({
-          engine: engine.id,
-          stage: job.stage,
-          scope: job.scope,
-          ...(job.source ? { source: job.source } : {}),
-          profile,
-          ok: r.ok,
-          ...(r.usage ? { usage: r.usage } : {}),
-          ...(r.limits ? { limits: r.limits } : {}),
-        }),
-      )
-      .catch((err: unknown) => console.error("Could not record the material stage", err));
-  }
-  return { ok: r.ok };
-}
+/** What one AI stage's session needs from the app (material spec §10; `runMaterialStage`). */
+const materialStageDeps: MaterialStageDeps = {
+  setup: async () => {
+    const c = await validConfig();
+    return c && harness.material ? { engineId: c.engineId, base: baseOf(c) } : null;
+  },
+  hasNotice,
+  engine: getEngine,
+  command: async (engine) => hooks.engines?.[engine.id] ?? engineCommand(engine, commandDeps),
+  profile: async (engine, job) => {
+    const models = cleanModels((await config.load()).models);
+    const saved = await savedOffer(engine.id);
+    const manifestTier = harness.material ? stageTier(harness.material, job.stage) : undefined;
+    return supportedEffort(firstOffered(resolveProfile({ engine: engine.id, action: materialStageKey(job.stage), manifestTier, models }), models, saved.models), saved);
+  },
+  run: (o) => runSystemTask({ ...o, launcher: electronLauncher(process.execPath), entry: path.join(here, "material-server.js") }),
+  log: (base, record) => new UsageLog(base).append(record),
+};
 
 /** Loaded only for a harness with material: the service and the converters' runner stay out of every other app (D0). */
 async function buildMaterial(): Promise<MaterialService | null> {
@@ -968,7 +933,7 @@ async function buildMaterial(): Promise<MaterialService | null> {
     },
     // The built converter worker (its own entry beside this file), at most CONVERT_AT_ONCE at a time.
     runner: workerRunner({ entry: path.join(here, "material-worker.js") }),
-    runStage: runMaterialStage,
+    runStage: (job, prompt, tools, handle, signal) => runMaterialStage(materialStageDeps, job, prompt, tools, handle, signal),
     kick: kickMaterial,
   });
 }

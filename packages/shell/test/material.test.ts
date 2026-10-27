@@ -2,10 +2,11 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { hasMaterial } from "@humanharness/harness-sdk";
-import { type ConvertRunner, ConvertStopped, MAX_BYTES, MaterialStore, STAGES, workerRunner } from "@humanharness/material";
+import { type ConvertRunner, ConvertStopped, type Job, MAX_BYTES, MaterialStore, STAGES, workerRunner } from "@humanharness/material";
 import { DATA_PREFIX, MATERIAL_KEEP, NOTES_PREFIX } from "@humanharness/workspace";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { type MaterialDeps, MaterialService } from "../src/main/material";
+import { MaterialJobs } from "../src/main/material-jobs";
 
 let root: string;
 let base: string;
@@ -336,6 +337,40 @@ describe("AI stages (material spec §10)", () => {
     ok = true;
     await svc.runJob(job, new AbortController().signal);
     expect((await svc.list("fractions")).sources[0]).toMatchObject({ status: "ready", failed: false });
+  });
+
+  it("a job no stage can run yet is stepped past: the queue settles instead of looping", async () => {
+    await seed();
+    delete STAGES.review;
+    const svc = new MaterialService(deps({ runStage: async () => ({ ok: true }) }));
+    let nexts = 0;
+    const jobs = new MaterialJobs<Job>({ idle: () => true, next: () => (nexts++, svc.nextJob()), run: (j, signal) => svc.runJob(j, signal), pollMs: 2 });
+    jobs.kick();
+    await jobs.settled();
+    expect(nexts).toBe(2);
+    // Still waiting at its stage, for when the stage exists (the next kick).
+    expect((await svc.list("fractions")).sources[0]).toMatchObject({ status: "validating", stage: "review" });
+    svc.resetFailures();
+    expect(await svc.nextJob()).toEqual(job);
+  });
+
+  it("an answer that leaves the source at its stage is not run again until a kick", async () => {
+    await seed();
+    answer = false;
+    STAGES.review!.apply = async () => true;
+    let runs = 0;
+    const svc = new MaterialService(
+      deps({
+        runStage: async () => {
+          runs++;
+          return { ok: true };
+        },
+      }),
+    );
+    const jobs = new MaterialJobs<Job>({ idle: () => true, next: () => svc.nextJob(), run: (j, signal) => svc.runJob(j, signal), pollMs: 2 });
+    jobs.kick();
+    await jobs.settled();
+    expect(runs).toBe(1);
   });
 
   it("a scope stage that fails is skipped until the next kick", async () => {

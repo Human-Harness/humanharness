@@ -17,6 +17,7 @@ import {
   failStage,
   isFragmentId,
   isSourceId,
+  jobKey,
   limitRunner,
   nextJob,
   processSource,
@@ -128,8 +129,12 @@ export class MaterialService {
   private epoch = 0;
   /** Conversions under way (intake, answers, resumes): `stop()` waits for them. */
   private readonly inflight = new Set<Promise<unknown>>();
-  /** Scope stages that failed since the last kick (`scope:stage`): skipped until then, so a failure doesn't loop. */
-  private readonly failedScopes = new Set<string>();
+  /**
+   * Jobs (`jobKey`) that ran since the last kick without moving on: a stage nobody registered yet, one with no way to
+   * run, a scope stage that failed, an answer that left the source where it was. Skipped until the next kick, so the
+   * queue never runs the same job in a loop.
+   */
+  private readonly skipped = new Set<string>();
 
   constructor(private readonly d: MaterialDeps) {
     this.runner = limitRunner(d.runner ?? workerRunner());
@@ -351,21 +356,23 @@ export class MaterialService {
     for (const scope of scopes.sort()) {
       const store = await this.store(scope);
       if (typeof store === "string") continue;
-      const job = await nextJob(store, { items: this.d.material.items !== undefined });
-      if (job && !job.source && this.failedScopes.has(`${scope}:${job.stage}`)) continue;
+      const job = await nextJob(store, { items: this.d.material.items !== undefined, skip: (j) => this.skipped.has(jobKey(j)) });
       if (job) return job;
     }
     return null;
   }
 
   /**
-   * Runs one job: the stage's session, then its answers applied; a failure marks the source (§13). A stage nobody
-   * registered yet, or no way to run one, leaves the job as it is.
+   * Runs one job: the stage's session, then its answers applied; a failure marks the source (§13). A job that can't
+   * run (a stage nobody registered yet, no way to run one) or didn't move on is skipped until the next kick.
    */
   async runJob(job: Job, signal: AbortSignal): Promise<void> {
     const store = await this.store(job.scope);
     const def = Object.hasOwn(STAGES, job.stage) ? STAGES[job.stage] : undefined;
-    if (typeof store === "string" || !def || !this.d.runStage) return;
+    if (typeof store === "string" || !def || !this.d.runStage) {
+      this.skipped.add(jobKey(job));
+      return;
+    }
     const ctx = await this.stageContext(job.scope);
     const prompt = await def.prompt(store, job, ctx);
     const state: StageState = { store, job, answers: [] };
@@ -389,13 +396,14 @@ export class MaterialService {
       if (signal.aborted) return;
       ok = result.ok && (await def.apply(store, job, state, ctx));
     } else ok = await def.apply(store, job, state, ctx);
-    if (!ok) {
-      await failStage(store, job);
-      if (!job.source) this.failedScopes.add(`${job.scope}:${job.stage}`);
-    }
+    if (!ok) await failStage(store, job);
     // The scope's stages in order (§10): a sheet done hands over to the links (with items); links done clear the marker.
     if (ok && job.stage === "sheet") await store.setStale(this.d.material.items !== undefined ? "link" : false);
     if (ok && job.stage === "link") await store.setStale(false);
+    // Still the same job (a scope stage that failed, an answer that left the source at its stage): not again until a kick.
+    const after = job.source ? await store.source(job.source) : null;
+    const same = job.source ? after?.status === "validating" && after.stage === job.stage : (await store.stale()) === job.stage;
+    if (same) this.skipped.add(jobKey(job));
     await this.changed(job.scope);
   }
 
@@ -408,9 +416,9 @@ export class MaterialService {
     };
   }
 
-  /** A kick: scope stages that failed may run again. */
+  /** A kick: the jobs skipped since the last one may run again. */
   resetFailures(): void {
-    this.failedScopes.clear();
+    this.skipped.clear();
   }
 
   /** Try again (§11): the failed stage runs once more. */

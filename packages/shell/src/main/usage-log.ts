@@ -186,20 +186,22 @@ function recentAverages(values: Map<string, number[]>): Record<string, number> {
  * count as the latest limits).
  */
 export function summarizeUsage(records: UsageRecord[], primary: string | undefined, now: Date = new Date()): UsageSummary {
-  const last = records.filter((r) => r.kind !== "compaction" && r.limits && r.limits.length > 0).at(-1);
-  records = records.filter((r) => r.kind !== "compaction" && r.phase !== "material");
+  const all = records.filter((r) => r.kind !== "compaction");
+  const last = all.filter((r) => r.limits && r.limits.length > 0).at(-1);
   const window = (r: UsageRecord | undefined) => (primary ? (r?.firstLimits ?? r?.limits)?.find((w) => w.kind === primary) : undefined);
   const tasks = new Map<string, { action: string; total: number; measured: boolean; tokens: number; counted: boolean }>();
-  for (let i = 0; i < records.length; i++) {
-    const r = records[i];
-    if (r.phase === "close" || r.kind) continue;
+  for (let i = 0; i < all.length; i++) {
+    const r = all[i];
+    if (r.phase === "close" || r.phase === "material" || r.kind) continue;
     const action = r.action ?? QUESTIONS;
     const key = r.task ? `task:${r.task}` : `line:${i}`;
     const task = tasks.get(key) ?? { action, total: 0, measured: true, tokens: 0, counted: true };
     tasks.set(key, task);
     const before = window(r);
-    const after = window(records[i + 1]);
-    if (!before || !after || before.resetsAt !== after.resetsAt) task.measured = false;
+    const next = all[i + 1];
+    const after = window(next);
+    // A material stage right after the turn would be charged to it: the turn can't be measured.
+    if (!before || !after || before.resetsAt !== after.resetsAt || next?.phase === "material") task.measured = false;
     else task.total += Math.max(0, after.utilization - before.utilization);
     if (r.usage) task.tokens += turnTokens(r.usage);
     else task.counted = false;
@@ -212,7 +214,7 @@ export function summarizeUsage(records: UsageRecord[], primary: string | undefin
   }
   // Settings › Uso per scope (spec §3.3): every turn's tokens, close and checkpoint turns included.
   const perScope = new Map<string, number>();
-  for (const r of records) if (r.scope) perScope.set(r.scope, (perScope.get(r.scope) ?? 0) + (r.usage ? turnTokens(r.usage) : 0));
+  for (const r of all) if (r.scope && r.phase !== "material") perScope.set(r.scope, (perScope.get(r.scope) ?? 0) + (r.usage ? turnTokens(r.usage) : 0));
   return {
     limits: last ? last.limits!.filter((w) => Date.parse(w.resetsAt) > now.getTime()) : null,
     estimates: recentAverages(shares),

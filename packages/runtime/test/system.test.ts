@@ -51,6 +51,14 @@ describe("runSystemTask (material spec §10)", () => {
     expect(Object.keys(servers)).toEqual(["material"]);
     expect(servers.material.env.HH_MATERIAL_MODE).toBe("system");
     expect(argv).toContain("--no-session-persistence");
+    // No edits, no commands, no web: only reading and the material server.
+    const allowed = argv[argv.indexOf("--allowedTools") + 1].split(",");
+    const denied = argv[argv.indexOf("--disallowedTools") + 1].split(",");
+    for (const tool of ["Edit", "Write", "MultiEdit", "Bash", "WebFetch", "WebSearch"]) {
+      expect(allowed.some((t) => t === tool || t.startsWith(`${tool}(`))).toBe(false);
+      expect(denied).toContain(tool);
+    }
+    expect(allowed).toContain("mcp__material");
     // The empty working folder is gone afterwards.
     expect(tempFolders().filter((n) => !before.has(n))).toEqual([]);
   });

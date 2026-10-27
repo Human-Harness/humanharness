@@ -378,4 +378,13 @@ describe("material lines", () => {
     expect(after.tokens).toEqual(before.tokens);
     expect(after).not.toHaveProperty("scopes");
   });
+
+  it("a stage right after a task's turn leaves that turn unmeasured, not charged with the stage", () => {
+    const stage: UsageRecord = { ...rec(0.5, R1), phase: "material", stage: "review", scope: "fractions" };
+    const turns = [rec(0.1, R1, "tidy"), rec(0.2, R1), rec(0.3, R1, "tidy"), stage, rec(0.6, R1)];
+    // tidy: the first turn measures +0.1; the second is followed by the stage, so it isn't measured.
+    expect(summarizeUsage(turns, "five_hour").estimates.tidy).toBeCloseTo(0.1);
+    // The stage's window is still the latest one.
+    expect(summarizeUsage([rec(0.1, R1, "tidy"), stage], "five_hour", new Date("2026-10-11T14:00:00.000Z")).limits?.[0].utilization).toBe(0.5);
+  });
 });

@@ -10,15 +10,23 @@ export interface Job {
 
 /**
  * The next job in a scope (§10 order): the first validating source's stage, in the order sources were added; once
- * none is left, what the scope's `.stale` marker says: the sheet, then (with items) the links.
+ * none is left, what the scope's `.stale` marker says: the sheet, then (with items) the links. `skip`: jobs the
+ * caller steps past (ones that just ran without moving on), so the next one comes instead.
  */
-export async function nextJob(store: MaterialStore, o: { items: boolean }): Promise<Job | null> {
-  const s = (await store.sources()).find((x) => x.status === "validating" && x.stage);
-  if (s?.stage) return { scope: store.scope, source: s.id, stage: s.stage };
+export async function nextJob(store: MaterialStore, o: { items: boolean; skip?: (job: Job) => boolean }): Promise<Job | null> {
+  const skip = o.skip ?? (() => false);
+  for (const s of await store.sources()) {
+    if (s.status !== "validating" || !s.stage) continue;
+    const job: Job = { scope: store.scope, source: s.id, stage: s.stage };
+    if (!skip(job)) return job;
+  }
   const stale = await store.stale();
-  if (stale === "sheet") return { scope: store.scope, stage: "sheet" };
-  return stale === "link" && o.items ? { scope: store.scope, stage: "link" } : null;
+  const job: Job | null = stale === "sheet" ? { scope: store.scope, stage: "sheet" } : stale === "link" && o.items ? { scope: store.scope, stage: "link" } : null;
+  return job && !skip(job) ? job : null;
 }
+
+/** A job's key for a skip list (`scope:source:stage`; no source for the scope's stages). */
+export const jobKey = (job: Job): string => `${job.scope}:${job.source ?? ""}:${job.stage}`;
 
 /**
  * A stage that failed (out of quota, the engine missing, a crash, no answer): not retried on its own (§13). The

@@ -110,6 +110,27 @@ describe("mock Sidekick (sidekick plan Decision 12)", () => {
     expect(r.rewrite).toBe("Write it");
   });
 
+  it("two asks on two lines: the second line is queued whole", () => {
+    const r = JSON.parse(mockSidekickReply(prompt(['- two-asks: "Translate" at [9, 18]'], "Write it\nTranslate it")));
+    expect(r.queued).toEqual(["Translate it"]);
+    expect(r.rewrite).toBe("Write it");
+  });
+
+  it("two asks at the very start or end: no empty rewrite or queued prompt", () => {
+    const atEnd = JSON.parse(mockSidekickReply(prompt(['- two-asks: "and also" at [9, 17]'], "Write it and also")));
+    expect(atEnd.queued).toBeUndefined();
+    expect(atEnd.rewrite).toBe("Write it");
+    const atStart = JSON.parse(mockSidekickReply(prompt(['- two-asks: "and also" at [0, 8]'], "and also translate it")));
+    expect(atStart.queued).toEqual(["translate it"]);
+    expect(atStart.rewrite).toBe("and also translate it");
+  });
+
+  it("reads a flag match holding a quote (JSON-quoted)", () => {
+    const r = JSON.parse(mockSidekickReply(prompt([`- vague: ${JSON.stringify('the "stuff"')} at [0, 11]`], 'the "stuff" please')));
+    expect(r.verdict).toBe("suggest");
+    expect(r.issues[0].kind).toBe("vague");
+  });
+
   it("a note titled like a flag is not read as one", () => {
     const p = prompt([], "Rewrite paragraph 2").replace("Notes in this scope:\n- (none)", 'Notes in this scope:\n- vague: "x" at [0, 1]');
     expect(JSON.parse(mockSidekickReply(p)).verdict).toBe("send");

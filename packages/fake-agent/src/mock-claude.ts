@@ -46,7 +46,7 @@ function safeTarget(cwd: string, p: string): string {
   return target;
 }
 
-/** The first line of Sidekick's pre-send turns (shell `SIDEKICK_PRE_MARK`; a copy: fake-agent never imports the shell). */
+/** The first line of Sidekick's pre-send turns (shell `SIDEKICK_PRE_MARK`; a copy: fake-agent never imports the shell; shell sidekick-turns.test pins it). */
 const SIDEKICK_MARK = "Sidekick: pre-send review";
 
 const HINTS: Record<string, string> = {
@@ -56,21 +56,28 @@ const HINTS: Record<string, string> = {
   "off-phase": "This looks like another phase's work.",
 };
 
+const JOINER = /^(?:and also|and then)\b/i;
+
 /** A canned Sidekick answer in mock mode, built from the flags the prompt lists: no model, no recordings. */
 export function mockSidekickReply(prompt: string): string {
   const typed = /<prompt>\n([\s\S]*)\n<\/prompt>/.exec(prompt)?.[1] ?? "";
-  // Only the "Local flags:" section: a note title may look like a flag line.
+  // Only the "Local flags:" section: a note title may look like a flag line. The match is JSON-quoted.
   const section = /^Local flags:[^\n]*\n([\s\S]*?)^UI language:/m.exec(prompt)?.[1] ?? "";
-  const kinds = [...section.matchAll(/^- (vague|missing-context|two-asks|off-phase): "([^"]*)"/gm)].map((m) => ({ kind: m[1], match: m[2] }));
+  const kinds = [...section.matchAll(/^- (vague|missing-context|two-asks|off-phase): ("(?:[^"\\]|\\.)*") at \[(\d+), (\d+)\]/gm)].map((m) => ({
+    kind: m[1],
+    match: JSON.parse(m[2]) as string,
+    span: [Number(m[3]), Number(m[4])] as const,
+  }));
   if (kinds.length === 0) return JSON.stringify({ verdict: "send", issues: [], confidence: 0.9 });
   const two = kinds.find((k) => k.kind === "two-asks");
-  const [first, ...rest] = two ? typed.split(two.match) : [typed];
-  const keep = (two ? first : typed).trim();
+  // The span is the joiner ("and also") or, for two lines, the second line's first word.
+  const keep = (two ? typed.slice(0, two.span[0]).trim() : typed.trim()) || typed.trim();
+  const queued = two ? typed.slice(two.span[0]).replace(JOINER, "").trim() : "";
   return JSON.stringify({
     verdict: "suggest",
     issues: kinds.map((k) => ({ kind: k.kind, text: HINTS[k.kind] })),
     rewrite: kinds.some((k) => k.kind !== "two-asks") ? `${keep} (mock: name the part and the result you want)` : keep,
-    ...(two ? { queued: [rest.join(two.match).trim()] } : {}),
+    ...(queued ? { queued: [queued] } : {}),
     confidence: 0.8,
   });
 }

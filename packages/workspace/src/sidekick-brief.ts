@@ -51,8 +51,13 @@ export async function writeSidekickBrief(folder: string, text: string, engine: E
     const file = path.join(folder, name);
     if ((await fs.readFile(file, "utf8").catch(() => null)) === content) return;
     const tmp = path.join(folder, `.${name}.${randomUUID()}.tmp`);
-    await fs.writeFile(tmp, content);
-    await fs.rename(tmp, file);
+    try {
+      await fs.writeFile(tmp, content);
+      await fs.rename(tmp, file);
+    } catch (err) {
+      await fs.rm(tmp, { force: true });
+      throw err;
+    }
     wrote = true;
   };
   await put("AGENTS.md", text);

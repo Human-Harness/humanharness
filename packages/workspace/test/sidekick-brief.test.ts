@@ -42,6 +42,14 @@ describe("sidekick brief", () => {
     expect((await fs.readdir(folder)).sort()).toEqual(["AGENTS.md", "CLAUDE.md"]);
   });
 
+  it("leaves no temp file behind when the write fails", async () => {
+    const folder = await fs.mkdtemp(path.join(os.tmpdir(), "hh-sk-"));
+    // A non-empty folder where AGENTS.md goes makes the rename fail.
+    await fs.mkdir(path.join(folder, "AGENTS.md", "x"), { recursive: true });
+    await expect(writeSidekickBrief(folder, "# A\n", getEngine("claude"))).rejects.toThrow();
+    expect((await fs.readdir(folder)).filter((f) => f.endsWith(".tmp"))).toEqual([]);
+  });
+
   it("writes only AGENTS.md for an engine without its own file", async () => {
     const folder = await fs.mkdtemp(path.join(os.tmpdir(), "hh-sk-"));
     expect(await writeSidekickBrief(folder, "# A\n", getEngine("codex"))).toBe(true);

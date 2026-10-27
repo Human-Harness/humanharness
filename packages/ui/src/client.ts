@@ -481,11 +481,12 @@ export interface TaskView {
  * How the person's pick of a mode for the open task went (task-modes spec §5). `switched`: a turn in the new mode runs
  * now ("turn"), the mode was set with no turn because the session is gone ("quiet"), the task closes and a new one
  * starts in that mode ("new-task"), or it already was the mode ("same"). Refusals: no task waits ("no-task"), the action
- * doesn't list the mode ("unknown"), or the mode asks for more than the task's tier ("tier", with both tiers).
+ * doesn't list the mode ("unknown"), the mode asks for more than the task's tier ("tier", with both tiers), or the
+ * current phase doesn't allow it ("phase").
  */
 export type ModeResult =
   | { ok: true; switched: "turn" | "quiet" | "new-task" | "same" }
-  | { ok: false; reason: "no-task" | "unknown" | "tier"; required?: Tier; current?: Tier };
+  | { ok: false; reason: "no-task" | "unknown" | "tier" | "phase"; required?: Tier; current?: Tier };
 
 /** A switch `chooseMode` started (task-modes spec §5), whoever asked for it: a "same" answer is none. */
 export interface ModeSwitch {

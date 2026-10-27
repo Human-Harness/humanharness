@@ -18,6 +18,7 @@ import {
   answerRecords,
   defaultModeOf,
   parseAnswer,
+  phaseModes,
   saveNoteSchema,
   setPhaseSchema,
   tierBelow,
@@ -643,12 +644,20 @@ export class TaskManager {
     const modes = this.modesOf(action);
     // Checked before anything closes, like the scope below.
     if (mode !== undefined && !modes.includes(mode)) throw new Error("Unknown mode");
-    // How the task starts (spec §3 `defaultMode`): in a mode, asking for a recommendation, or as before (D0).
-    const start = mode ?? this.startMode(action, modes);
+    const first = this.phasesOf(action)[0];
+    // How the task starts (spec §3 `defaultMode`): in a mode, asking for a recommendation, or as before (D0). The first
+    // phase may allow fewer modes (modes spec §7): a mode it forbids starts suspended; "recommend" waits.
+    const startable = first ? phaseModes(this.d.actions[action], first).filter((m) => modes.includes(m)) : modes;
+    let start = mode ?? this.startMode(action, modes);
+    let suspended: string | undefined;
+    if (start === "recommend" && startable.length === 0) start = null;
+    else if (start !== null && start !== "recommend" && !startable.includes(start)) {
+      suspended = start;
+      start = null;
+    }
     // Read before anything closes (a scope switch closes too): a mode brief that can't be read starts nothing.
     const text = start !== null && start !== "recommend" ? await this.modeText(start) : null;
     // The task starts in its first phase (task-phases spec §4.4); read before anything closes, like the mode's brief.
-    const first = this.phasesOf(action)[0];
     const firstText = first ? await this.phaseText(action, first) : null;
     if (scope !== undefined && !(await this.switchNow(scope))) return this.stopped();
     // Checked before anything closes: a required action with no open scope starts nothing.
@@ -657,13 +666,13 @@ export class TaskManager {
     const template = await this.d.readPrompt(action);
     const language = await this.d.language();
     let section = "";
-    if (start === "recommend") section = recommendSection(modes.map((id) => this.hintOf(id)));
+    if (start === "recommend") section = recommendSection(startable.map((id) => this.hintOf(id)));
     else if (text) section = modeSection(text, language);
     const inMode = start !== null && start !== "recommend" ? { mode: start, modes: [start] } : {};
     const at = this.now().toISOString();
     const inPhase = first ? { phase: { id: first.id, startedAt: at }, phases: [{ id: first.id, at, by: "app" as const }] } : {};
     await this.begin(
-      { action, ...inMode, ...inPhase },
+      { action, ...inMode, ...inPhase, ...(suspended ? { suspendedMode: suspended } : {}) },
       where,
       (notesIndex) => {
         const parts = first && firstText ? [phasesSection(this.phaseList(action), first.id), phaseSection(firstText, { language })] : [];
@@ -721,6 +730,43 @@ export class TaskManager {
     return this.phasesOf(action).map((p) => ({ id: p.id, label: oneLine(p.label) }));
   }
 
+  /** The modes the task may work in now: its action's, narrowed by its phase (modes spec §7). */
+  private allowedModes(c: Pick<CurrentTask, "action" | "phase">): string[] {
+    const modes = this.modesOf(c.action);
+    const phase = this.phaseOf(c);
+    return phase && this.known(c.action) ? phaseModes(this.d.actions[c.action], phase).filter((m) => modes.includes(m)) : modes;
+  }
+
+  /**
+   * What entering `to` does to the task's mode (modes spec §7), and what the change's message says about it. A mode `to`
+   * forbids is suspended. A suspended mode `to` allows comes back, its section riding on the change turn. A task that never
+   * worked in a mode gets its `defaultMode` (a mode id) or a recommendation, at the first phase that allows modes.
+   */
+  private async modesOnEntry(c: CurrentTask, to: HarnessPhase, language: Language): Promise<{ sections: string[]; fields?: PhasePlan["modes"] }> {
+    const modes = this.modesOf(c.action);
+    if (modes.length === 0 || !this.known(c.action)) return { sections: [] };
+    const action = this.d.actions[c.action];
+    const allowed = phaseModes(action, to).filter((m) => modes.includes(m));
+    const used = c.modes ?? [];
+    if (c.mode) {
+      if (allowed.includes(c.mode)) return { sections: [] };
+      return { sections: [], fields: { suspendedMode: c.mode, ...(used.length > 0 ? { modes: used } : {}) } };
+    }
+    const fresh = !c.suspendedMode && used.length === 0;
+    const preferred = fresh ? defaultModeOf(action) : null;
+    const comes =
+      c.suspendedMode && allowed.includes(c.suspendedMode) ? c.suspendedMode : preferred !== null && allowed.includes(preferred) ? preferred : undefined;
+    if (comes) {
+      const below = await this.belowMinTier(comes, c.profile);
+      return {
+        sections: [modeSection(await this.modeText(comes), language)],
+        fields: { mode: comes, modes: used.includes(comes) ? used : [...used, comes], ...(below ? { belowMinTier: true as const } : {}) },
+      };
+    }
+    if (fresh && allowed.length > 0) return { sections: [recommendSection(allowed.map((id) => this.hintOf(id)))] };
+    return { sections: [] };
+  }
+
   /** A phase's id, label and brief text ("" without a brief). */
   private async phaseText(action: string, p: HarnessPhase): Promise<PhaseText> {
     const brief = p.brief && this.d.readPhaseBrief ? await this.d.readPhaseBrief(action, p.id) : "";
@@ -759,6 +805,7 @@ export class TaskManager {
     const c = await this.storedCurrent();
     if (!c || c.status !== "waiting" || (task !== undefined && c.id !== task)) return take({ ok: false, reason: "no-task" });
     if (!this.modesOf(c.action).includes(mode)) return take({ ok: false, reason: "unknown" });
+    if (!this.allowedModes(c).includes(mode)) return take({ ok: false, reason: "phase" });
     if (c.mode === mode) return take({ ok: true, switched: "same" });
     const required = this.d.modes![mode].minTier;
     const current = await this.tierFor(c);
@@ -841,7 +888,7 @@ export class TaskManager {
   private setMode(id: string, mode: string, below: boolean): Promise<void> {
     return this.update((s) => {
       if (s.current?.id !== id) return s;
-      const { belowMinTier: _below, ...rest } = s.current;
+      const { belowMinTier: _below, suspendedMode: _suspended, ...rest } = s.current;
       const modes = rest.modes?.includes(mode) ? rest.modes : [...(rest.modes ?? []), mode];
       return { ...s, current: { ...rest, mode, modes, ...(below ? { belowMinTier: true as const } : {}) } };
     });
@@ -1288,18 +1335,26 @@ export class TaskManager {
   }
 
   /**
-   * The change's message (spec §4.4): the new part, the way back, the time left, its brief. Modes come in Task 7. A task
-   * whose session is gone (a folder move) gets none: nothing to tell now, the resumed session's first message carries the
-   * part (`resumeMessageFor`), so every move (the person's, the agent's, the time box's) changes only the state.
+   * The change's message (spec §4.4): the new part, the way back, the time left, its brief, and what it does to the mode
+   * (modes spec §7). A task whose session is gone (a folder move) gets no message: nothing to tell now, the resumed
+   * session's first message carries the part and the mode (`resumeMessageFor`), so every move (the person's, the agent's,
+   * the time box's) changes only the state.
    */
   private async phasePlan(c: CurrentTask, to: HarnessPhase, back: boolean): Promise<PhasePlan> {
-    if (c.resume) return { message: null };
     const language = await this.d.language();
+    if (c.resume) {
+      const { fields } = await this.modesOnEntry(c, to, language);
+      return { message: null, ...(fields ? { modes: fields } : {}) };
+    }
     const text = await this.phaseText(c.action!, to);
     const previous = this.phaseOf(c);
-    const extra: string[] = [];
     const vars = { language, back, ...(previous ? { previous: oneLine(previous.label) } : {}), ...(c.timeBox ? { timeLeft: this.timeLeft(c) } : {}) };
-    return { message: text.brief || extra.length > 0 ? phasePrompt(text, { ...vars, extra }) : null };
+    const entry = await this.modesOnEntry(c, to, language);
+    const extra = entry.sections;
+    return {
+      message: text.brief || extra.length > 0 ? phasePrompt(text, { ...vars, extra }) : null,
+      ...(entry.fields ? { modes: entry.fields } : {}),
+    };
   }
 
   /**

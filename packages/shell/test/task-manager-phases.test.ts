@@ -5,7 +5,7 @@ import type { Event } from "@humanharness/runtime";
 import type { TaskTurnNotice, TaskView } from "@humanharness/ui/client";
 import type { NoteMeta } from "@humanharness/workspace";
 import { type TaskDeps, TaskManager } from "../src/main/task-manager";
-import { CHECKPOINT_PROMPT, CLOSE_PROMPT, PHASE_BACK, phasePrompt, phaseSection, phasesSection, resumeMessage } from "../src/main/task-prompts";
+import { CHECKPOINT_PROMPT, CLOSE_PROMPT, PHASE_BACK, modeSection, phasePrompt, phaseSection, phasesSection, recommendSection, resumeMessage } from "../src/main/task-prompts";
 import { type TasksFile, emptyTasks } from "../src/main/task-store";
 import type { TurnOptions } from "../src/main/turn-controller";
 
@@ -303,5 +303,69 @@ describe("TaskManager: phases (task-phases spec §4)", () => {
     expect(t.turns).toHaveLength(2);
     expect(t.state().current?.phase?.id).toBe("main");
     expect(t.state().current).not.toHaveProperty("pendingInput");
+  });
+});
+
+describe("TaskManager: modes by phase (task-modes spec §7)", () => {
+  const modes = { modes: ["socratic", "feynman"], defaultMode: "socratic" };
+  const phases: HarnessPhase[] = [
+    { id: "warmup", label: "Warm-up", brief: "w.md", auto: true, modes: "none" },
+    { id: "main", label: "Main block", brief: "m.md" },
+    { id: "close", label: "Close", brief: "c.md", close: true, modes: "none" },
+  ];
+  const socratic = modeSection({ label: "Socratic", brief: "Brief of socratic.", settings: [] }, "en");
+
+  it("a default mode the first phase forbids starts suspended and comes back with the first phase that allows it", async () => {
+    const t = setup({ modes, phases, script: [[ask("main"), ok], [ok]] });
+    await t.manager.start("session");
+    expect(t.turns[0].message).not.toContain("## Mode:");
+    expect(t.turns[0].options).not.toHaveProperty("mode");
+    expect(t.turns[1].message).toBe(phasePrompt(text("main", "Main block"), { language: "en", previous: "Warm-up", extra: [socratic] }));
+    expect(t.turns[1].options).toMatchObject({ mode: "socratic" });
+    expect(t.state().current).toMatchObject({ mode: "socratic", modes: ["socratic"] });
+    expect(t.state().current).not.toHaveProperty("suspendedMode");
+  });
+
+  it("a phase that forbids the mode suspends it; going back restores it; chooseMode refuses a forbidden one", async () => {
+    const t = setup({ modes, phases: phases.slice(1) });
+    await t.manager.start("session");
+    expect(t.state().current).toMatchObject({ mode: "socratic", phase: { id: "main" } });
+    await t.manager.setPhase("close", "t1").done;
+    expect(t.state().current).toMatchObject({ suspendedMode: "socratic", modes: ["socratic"] });
+    expect(t.state().current).not.toHaveProperty("mode");
+    expect(t.turns.at(-1)!.options).not.toHaveProperty("mode");
+    const pick = t.manager.chooseMode("feynman");
+    expect(await pick.accepted).toEqual({ ok: false, reason: "phase" });
+    await pick.done;
+    await t.manager.setPhase("main", "t1").done;
+    expect(t.turns.at(-1)!.message).toContain(socratic);
+    expect(t.state().current).toMatchObject({ mode: "socratic" });
+    expect(t.state().current).not.toHaveProperty("suspendedMode");
+  });
+
+  it("recommend waits for the first phase that allows modes, and lists only those", async () => {
+    const t = setup({ modes: { modes: ["socratic", "feynman"] }, phases: [phases[0], { ...phases[1], modes: ["feynman"] }, phases[2]], script: [[ask("main"), ok], [ok]] });
+    await t.manager.start("session");
+    expect(t.turns[0].message).not.toContain("## How to work");
+    expect(t.turns[1].message).toContain(recommendSection([{ id: "feynman", label: "Feynman" }]));
+    expect(t.state().current).not.toHaveProperty("mode");
+  });
+
+  it("a task whose session is gone suspends and restores its mode quietly", async () => {
+    const current = { id: "t1", action: "session", status: "waiting" as const, startedAt: "", turns: 1, phase: { id: "main", startedAt: NOW }, mode: "socratic", modes: ["socratic"], resume: true as const };
+    const t = setup({ modes, phases, state: { ...emptyTasks(), current } });
+    await t.manager.setPhase("close", "t1").done;
+    expect(t.state().current).toMatchObject({ phase: { id: "close" }, suspendedMode: "socratic" });
+    expect(t.state().current).not.toHaveProperty("mode");
+    await t.manager.setPhase("main", "t1").done;
+    expect(t.turns).toEqual([]);
+    expect(t.state().current).toMatchObject({ phase: { id: "main" }, mode: "socratic" });
+  });
+
+  it("an explicit mode the first phase forbids starts suspended too", async () => {
+    const t = setup({ modes, phases });
+    await t.manager.start("session", undefined, undefined, "feynman");
+    expect(t.state().current).toMatchObject({ suspendedMode: "feynman" });
+    expect(t.state().current).not.toHaveProperty("mode");
   });
 });

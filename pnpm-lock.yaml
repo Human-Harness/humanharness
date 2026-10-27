@@ -358,6 +358,9 @@ importers:
       mammoth:
         specifier: ^1.13.0
         version: 1.13.0
+      minisearch:
+        specifier: ^7.2.0
+        version: 7.2.0
       pdfjs-dist:
         specifier: ^6.4.299
         version: 6.4.299
@@ -2406,6 +2409,9 @@ packages:
 
   minimisted@2.0.1:
     resolution: {integrity: sha512-1oPjfuLQa2caorJUM8HV8lGgWCc0qqAO1MNv/k05G4qslmsndV/5WdNZrqCiyqiz3wohia2Ij2B7w2Dr7/IyrA==}
+
+  minisearch@7.2.0:
+    resolution: {integrity: sha512-dqT2XBYUOZOiC5t2HRnwADjhNS2cecp9u+TJRiJ1Qp/f5qjkeT5APcGPjHw+bz89Ms8Jp+cG4AlE+QZ/QnDglg==}
 
   mkdirp@0.5.6:
     resolution: {integrity: sha512-FP+p8RB8OWpF3YZBCrP5gtADmtXApB5AMLn+vdyA+PyxCjrCs00mjyUozssO33cwDeT3wNGdLxJ5M//YqtHAJw==}
@@ -4835,6 +4841,8 @@ snapshots:
   minimisted@2.0.1:
     dependencies:
       minimist: 1.2.8
+
+  minisearch@7.2.0: {}
 
   mkdirp@0.5.6:
     dependencies:

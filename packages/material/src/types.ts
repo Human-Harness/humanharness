@@ -22,7 +22,7 @@ export type MaterialType =
   | "code";
 
 /** Why a file is refused at intake (§3 "Refused at intake"). */
-export type Refusal = "media" | "old-office" | "binary" | "unreadable" | "scanned" | "protected" | "too-big" | "not-accepted" | "fetch";
+export type Refusal = "media" | "old-office" | "binary" | "unreadable" | "scanned" | "protected" | "too-big" | "not-accepted" | "fetch" | "storage";
 
 export type Detected = { ok: true; type: MaterialType; family: MaterialFamily } | { ok: false; reason: Refusal; message: string };
 

@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { MAX_PAGES, MaterialStore, addSource, confirmSource, estimateCost, intakeDecision } from "../src";
+import { type ConvertRunner, MAX_BYTES, MAX_PAGES, MaterialStore, addSource, confirmSource, estimateCost, intakeDecision, processSource, sampleSize, workerRunner } from "../src";
 import { body, makePdf } from "./make-pdf";
 
 let base: string;
@@ -120,6 +120,67 @@ describe("addSource and confirmSource", () => {
     // The original changed on disk into something no converter reads.
     fs.writeFileSync(path.join(base, "material", "fractions", "notes.md"), "");
     await store.patch(r.id, (e) => ({ ...e, status: "pending", type: "docx", family: "word" }));
-    expect(await confirmSource(store, r.id, {}, { items: false })).toMatchObject({ status: "refused", refusal: "unreadable" });
+    const before = (await store.source(r.id))!.fragments;
+    expect(before.length).toBeGreaterThan(0);
+    const s = await confirmSource(store, r.id, {}, { items: false });
+    expect(s).toMatchObject({ status: "refused", refusal: "unreadable", fragments: [] });
+    expect(s!.stage).toBeUndefined();
+    // The old fragments go with it: no file, no index row.
+    for (const id of before) expect(fs.existsSync(path.join(store.dir, "fragments", `${id}.md`))).toBe(false);
+    expect(fs.readFileSync(path.join(store.dir, "index.md"), "utf8")).not.toContain(before[0]);
+  });
+
+  it("two quick answers to one waiting source convert it once", async () => {
+    const pages = Array.from({ length: 60 }, (_, i) => body([`Page ${i + 1} has its own sentence.`]));
+    const r = await addSource(store, { name: "book.pdf", data: makePdf(pages) }, { accepts: ["pdf"], items: false });
+    if (!r.ok) throw new Error("unreachable");
+    let converts = 0;
+    const runner = { ...workerRunner(), convert: (...a: Parameters<ConvertRunner["convert"]>) => (converts++, workerRunner().convert(...a)) };
+    const [a, b] = await Promise.all([confirmSource(store, r.id, { pageRange: [1, 2] }, { items: false, runner }), confirmSource(store, r.id, { pageRange: [3, 4] }, { items: false, runner })]);
+    expect(converts).toBe(1);
+    expect([a, b].filter((x) => x === null)).toHaveLength(1);
+    expect((await store.source(r.id))!.status).toBe("validating");
+  });
+
+  it("a sheet choice that names no sheet of the file changes nothing", async () => {
+    const csv = Buffer.from(["name,score", ...Array.from({ length: 2100 }, (_, i) => `p${i},${i}`)].join("\n"));
+    const r = await addSource(store, { name: "scores.csv", data: csv }, { accepts: ["spreadsheet"], items: false });
+    if (!r.ok) throw new Error("unreachable");
+    const waiting = (await store.source(r.id))!;
+    expect(waiting).toMatchObject({ status: "pending", notice: "rows" });
+    expect(await confirmSource(store, r.id, { sheets: [] }, { items: false })).toBeNull();
+    expect(await confirmSource(store, r.id, { sheets: ["Nope"] }, { items: false })).toBeNull();
+    expect(await store.source(r.id)).toEqual(waiting);
+    expect(await confirmSource(store, r.id, { sheets: "summary" }, { items: false })).toMatchObject({ status: "validating", sheets: "summary" });
+  });
+
+  it("a file past the size limit is refused before it is measured", async () => {
+    const runner = { convert: () => Promise.reject(new Error("not called")), measure: () => Promise.reject(new Error("not called")) };
+    const r = await addSource(store, { name: "big.txt", data: Buffer.alloc(MAX_BYTES + 1, "a") }, { accepts: ["text"], items: false, runner });
+    expect(r).toMatchObject({ ok: false, reason: "too-big" });
+    expect(fs.existsSync(path.join(base, "material"))).toBe(false);
+  });
+
+  it("the disk failing is a refusal, never a throw, and leaves no stray original", async () => {
+    // The originals' folder can't be made: a file is in its way.
+    fs.writeFileSync(path.join(base, "material"), "");
+    expect(await addSource(store, { name: "a.md", data: Buffer.from(chapter) }, { accepts: ["text"], items: false })).toMatchObject({ ok: false, reason: "storage" });
+    fs.rmSync(path.join(base, "material"));
+    // The registry can't be read: a folder is where it should be.
+    fs.mkdirSync(path.join(store.dir, "sources.json"), { recursive: true });
+    expect(await addSource(store, { name: "a.md", data: Buffer.from(chapter) }, { accepts: ["text"], items: false })).toMatchObject({ ok: false, reason: "storage" });
+    expect(fs.readdirSync(path.join(base, "material", "fractions"))).toEqual([]);
+    expect(await confirmSource(store, "a", {}, { items: false })).toBeNull();
+    expect(await processSource(store, "a", { items: false })).toBeNull();
+  });
+});
+
+describe("sampleSize (§6.2)", () => {
+  it("the first unflagged fragment plus 10% of the rest, at most 15", () => {
+    expect(sampleSize(200, 0)).toBe(15);
+    expect(sampleSize(10, 0)).toBe(2);
+    expect(sampleSize(1, 0)).toBe(1);
+    expect(sampleSize(10, 3)).toBe(2);
+    expect(sampleSize(5, 5)).toBe(0);
   });
 });

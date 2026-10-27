@@ -1,4 +1,4 @@
-import { LABEL_TOKENS, LINK_TOKENS, REVIEW_TOKENS, SAMPLE_SHARE, SHEET_TOKENS, TARGET } from "./constants";
+import { LABEL_TOKENS, LINK_TOKENS, REVIEW_TOKENS, SAMPLE_MAX, SAMPLE_SHARE, SHEET_TOKENS, TARGET } from "./constants";
 
 /** Per-fragment token costs measured in the base's usage.jsonl (Task 25); a stage without measures uses the constant. */
 export interface MeasuredCosts {
@@ -19,4 +19,13 @@ export function estimateCost(o: { tokens: number; items: boolean; reviewShare?: 
   const m = o.measured ?? {};
   const per = (m.label ?? LABEL_TOKENS) + (m.review ?? REVIEW_TOKENS) * (o.reviewShare ?? SAMPLE_SHARE) + (o.items ? (m.link ?? LINK_TOKENS) : 0);
   return Math.round(n * per + (m.sheet ?? SHEET_TOKENS));
+}
+
+/**
+ * How many unflagged fragments the review samples (§6.2): the first unflagged one plus SAMPLE_SHARE of the rest
+ * (rounded up), at most SAMPLE_MAX; none when every fragment is flagged.
+ */
+export function sampleSize(fragments: number, flagged: number): number {
+  const unflagged = Math.max(0, fragments - flagged);
+  return unflagged > 0 ? Math.min(SAMPLE_MAX, 1 + Math.ceil((unflagged - 1) * SAMPLE_SHARE)) : 0;
 }

@@ -97,4 +97,5 @@ export const REFUSAL_TEXT = {
   "too-big": "This file is too big. Add only the chapters you need.",
   "not-accepted": "This app doesn't take this kind of file.",
   fetch: "The page couldn't be read. Check the link and try again.",
+  storage: "The file couldn't be saved in your folder. Check that the disk has room and try again.",
 } as const;

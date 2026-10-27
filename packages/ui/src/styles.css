@@ -486,3 +486,30 @@ select:focus-visible { outline: 2px solid var(--hh-ink); outline-offset: 2px; }
 .hh-setting-pending { padding: 0 6px; border: 1px solid var(--hh-line-strong); border-radius: 999px; color: var(--hh-warn); font-size: 12px; }
 .hh-setting-control { display: inline-flex; align-items: center; gap: 6px; }
 .hh-setting-control input[type="number"] { width: 5em; }
+
+/* Sidekick (sidekick spec §7) */
+.hh-sk-panel { width: 330px; flex: none; display: flex; flex-direction: column; border-left: 1px solid var(--hh-line); background: var(--hh-paper); min-height: 0; }
+.hh-sk-head { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--hh-line); }
+.hh-sk-name { font-size: 1rem; margin: 0; }
+.hh-sk-status { color: var(--hh-muted); font-size: 0.85rem; }
+.hh-sk-body, .hh-sk-harness { flex: 1; overflow-y: auto; padding: 12px 14px; }
+.hh-sk-card { border: 1px solid var(--hh-line); border-radius: 10px; padding: 12px; background: var(--hh-surface); }
+.hh-sk-card h3 { margin: 0 0 8px; font-size: 0.95rem; }
+.hh-sk-card h4 { margin: 10px 0 4px; font-size: 0.8rem; color: var(--hh-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.hh-sk-issues { margin: 0; padding-left: 18px; }
+.hh-sk-rewrite ins { text-decoration: none; background: var(--hh-highlight); border-radius: 3px; }
+.hh-sk-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.hh-sk-foot { border-top: 1px solid var(--hh-line); padding: 10px 14px; font-size: 0.85rem; }
+.hh-sk-foot progress { width: 100%; height: 4px; accent-color: var(--hh-ink); }
+.hh-sk-mark { color: var(--hh-ink); flex: none; }
+.hh-sk-mark-off { color: var(--hh-muted); }
+.hh-sk-rail { width: 52px; flex: none; display: flex; flex-direction: column; align-items: center; padding-top: 12px; border-left: 1px solid var(--hh-line); background: var(--hh-paper); }
+.hh-sk-rail button { position: relative; }
+.hh-sk-rail .hh-sk-dot { position: absolute; top: 2px; right: 2px; width: 8px; height: 8px; border-radius: 50%; background: var(--hh-ink); }
+.hh-sk-toggle .hh-sk-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--hh-ink); margin-right: 6px; }
+.hh-sk-toggle[aria-pressed="true"] .hh-sk-dot { background: var(--hh-ink); }
+.hh-sk-composer-hint { color: var(--hh-muted); font-size: 0.85rem; margin: 4px 0 0; }
+.hh-sk-flagged { position: relative; }
+.hh-sk-backdrop { position: absolute; inset: 0; pointer-events: none; color: transparent; white-space: pre-wrap; overflow-wrap: break-word; overflow: hidden; }
+.hh-sk-backdrop mark { color: transparent; background: none; text-decoration: underline wavy var(--hh-warn); text-underline-offset: 3px; }
+@media (max-width: 720px) { .hh-sk-panel, .hh-sk-rail { display: none; } }

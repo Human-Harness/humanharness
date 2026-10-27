@@ -629,6 +629,82 @@
     "only": "In test mode there is only one engine: it answers with recorded conversations, with no AI and without using your plan.",
     "badge": "Test mode (no AI)"
   },
+  "sidekick": {
+    "tab": "Sidekick",
+    "toggle": "Sidekick",
+    "toggleOn": "Sidekick is on. Turn it off",
+    "toggleOff": "Sidekick is off. Turn it on",
+    "open": "Open Sidekick",
+    "collapse": "Collapse Sidekick",
+    "waiting": "Sidekick has a suggestion",
+    "status": {
+      "off": "Off",
+      "watching": "Watching",
+      "reading": "Reading your prompt…",
+      "suggestion": "Has a suggestion",
+      "capped": "Past its cap for this task"
+    },
+    "switch": { "label": "Show", "sidekick": "Sidekick", "harness": "Harness" },
+    "flag": {
+      "vague": "“{{match}}” is vague",
+      "missing-context": "“{{match}}” points at something that isn't attached",
+      "two-asks": "Two asks in one prompt",
+      "off-phase": "“{{match}}” belongs to another phase"
+    },
+    "card": {
+      "title": "Before you send",
+      "rewrite": "Suggested prompt",
+      "queued": "For later",
+      "sendSuggested": "Send suggested",
+      "edit": "Edit",
+      "sendAnyway": "Send anyway",
+      "putInComposer": "Put in composer",
+      "drop": "Drop",
+      "announce": "Sidekick has a suggestion for your prompt."
+    },
+    "notice": {
+      "failed": "Sidekick couldn't review this one. Your prompt went as typed.",
+      "timeout": "Sidekick took too long. Your prompt went as typed."
+    },
+    "foot": "Sidekick in this task — {{spent}} / {{cap}} tokens",
+    "footNoCap": "Sidekick in this task — {{spent}} tokens",
+    "tier": "Tier: {{tier}}",
+    "tiers": { "light": "Light", "standard": "Standard", "deep": "Deep", "custom": "Custom" },
+    "sendNow": "{{key}}⏎ sends now",
+    "off": "Sidekick is off.",
+    "intro": {
+      "title": "Meet Sidekick",
+      "body": "Sidekick reads your prompt before it goes out and suggests a clearer one when something looks off. It uses a small model, up to {{cap}} tokens per task, and you can turn it off at any time.",
+      "turnOn": "Turn on",
+      "notNow": "Not now"
+    },
+    "composer": {
+      "reviewing": "Reviewing…",
+      "countdown": "Sends anyway in {{seconds}} s",
+      "waitingLong": "Waiting for Sidekick",
+      "review": "Review"
+    },
+    "settings": {
+      "on": "Sidekick",
+      "onHint": "Reads your prompt before it goes out and suggests a clearer one.",
+      "preSend": "Before you send",
+      "preSendHint": "Review prompts before they go out.",
+      "wait": "Longest wait",
+      "wait6": "6 s",
+      "wait10": "10 s",
+      "waitAlways": "Always wait",
+      "tier": "Model",
+      "changeTier": "Change in Models",
+      "cap": "Cap per task",
+      "cap20": "20k tokens",
+      "cap50": "50k tokens",
+      "capNone": "No cap",
+      "week": "This week: {{tokens}} tokens",
+      "failed": "Could not save: {{message}}"
+    },
+    "models": { "label": "Sidekick", "hint": "Reviews your prompts before they go out" },
+    "usage": "Sidekick: about {{tokens}} tokens"
+  },
   "errors": {
     "engine-not-installed": "I can't find {{engine}} on this computer.",
     "session-expired": "Your {{engine}} session ended. Sign in again to continue.",

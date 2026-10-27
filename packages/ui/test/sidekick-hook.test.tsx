@@ -4,18 +4,9 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { SidekickState } from "../src/client";
 import { useSidekick } from "../src/sidekick/useSidekick";
 import { FakeClient } from "./fake-client";
+import { SK_ON } from "./sidekick-fixtures";
 
 afterEach(cleanup);
-export const SK_ON: SidekickState = {
-  info: { id: "sidekick", name: "Sidekick" },
-  settings: { on: true, preSend: true, wait: 6, cap: 20_000, introSeen: true },
-  status: "watching",
-  spent: 1200,
-  cap: 20_000,
-  tier: "light",
-  card: null,
-  week: 3400,
-};
 
 describe("useSidekick", () => {
   it("null when disabled; never asks the client", async () => {

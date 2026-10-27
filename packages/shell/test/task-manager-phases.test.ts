@@ -472,14 +472,15 @@ describe("TaskManager: the time box (task-phases spec §5)", () => {
   });
 
   it("is chosen at the start among the options, counts, and is shown; a length not offered starts nothing", async () => {
-    const t = setup({ timeBox: box, extra: timed });
+    const t = setup({ timeBox: box });
     await expect(t.manager.start("session", undefined, undefined, undefined, { timeBox: 15 })).rejects.toThrow("Unknown time box");
     expect(t.turns).toHaveLength(0);
     await t.manager.start("session", undefined, undefined, undefined, { timeBox: 10 });
     expect(t.state().current?.timeBox).toEqual({ minutes: 10, usedMs: 0, runningSince: NOW });
     // A one-second minute in the test: the wrap-up is due at half of 10 s.
     expect(t.timers.at(-1)?.ms).toBe(5000);
-    expect(t.turns[0].message).toContain("about 10 minutes");
+    // The first message tells the agent, whether or not the brief uses `{{timeLeft}}`.
+    expect(t.turns[0].message.endsWith("\n\nTime left: about 10 minutes.")).toBe(true);
     t.advance(2000);
     await t.manager.ask("Go on");
     expect(t.views.at(-1)?.current?.timeBox).toMatchObject({ minutes: 10, totalMs: 10_000, usedMs: 2000, paused: false });
@@ -544,6 +545,76 @@ describe("TaskManager: the time box (task-phases spec §5)", () => {
     expect(t.state().current?.timeBox?.minutes).toBe(15);
     t.manager.close();
     await vi.waitFor(() => expect(t.state().current?.timeBox).not.toHaveProperty("runningSince"));
+  });
+
+  it("without phases, the first message still tells the agent the time box", async () => {
+    const t = setup({ timeBox: box, phases: [] });
+    await t.manager.start("session", undefined, undefined, undefined, { timeBox: 20 });
+    expect(t.turns[0].message).toBe("# Task: session\n\nTime left: about 20 minutes.");
+  });
+
+  it("any turn the person starts resumes a paused box: a phase pick, a mode pick", async () => {
+    const t = setup({ timeBox: box, modes: { modes: ["socratic", "feynman"], defaultMode: "socratic" } });
+    await t.manager.start("session", undefined, undefined, undefined, { timeBox: 10 });
+    await t.manager.pauseTimeBox();
+    await t.manager.setPhase("main", "t1").done;
+    expect(t.state().current?.timeBox?.runningSince).toBeDefined();
+    await t.manager.pauseTimeBox();
+    const pick = t.manager.chooseMode("feynman");
+    expect(await pick.accepted).toEqual({ ok: true, switched: "turn" });
+    await pick.done;
+    expect(t.state().current?.timeBox?.runningSince).toBeDefined();
+  });
+
+  it("a pause is refused while a turn runs", async () => {
+    let open!: () => void;
+    const t = setup({ timeBox: box, gate: new Promise<void>((resolve) => (open = resolve)) });
+    const started = t.manager.start("session", undefined, undefined, undefined, { timeBox: 10 });
+    await vi.waitFor(() => expect(t.turns).toHaveLength(1));
+    await expect(t.manager.pauseTimeBox()).rejects.toThrow("A turn is already running");
+    open();
+    await started;
+    expect(t.state().current?.timeBox?.runningSince).toBeDefined();
+  });
+
+  it("one pending step: writes during a long turn arm nothing more, and the wrap-up runs once", async () => {
+    let open!: () => void;
+    const t = setup({ timeBox: box });
+    await t.manager.start("session", undefined, undefined, undefined, { timeBox: 10 });
+    const t2 = setup({ timeBox: box, state: t.state(), gate: new Promise<void>((resolve) => (open = resolve)) });
+    const asked = t2.manager.ask("A long question");
+    await vi.waitFor(() => expect(t2.turns).toHaveLength(1));
+    t2.fire();
+    const armed = t2.timers.length;
+    await t2.manager.extendTimeBox(0);
+    await t2.manager.extendTimeBox(0);
+    expect(t2.timers).toHaveLength(armed);
+    open();
+    await asked;
+    await vi.waitFor(() => expect(t2.turns).toHaveLength(3));
+    await t2.manager.idle();
+    expect(t2.turns.filter((x) => x.options.phase === "wrap-up")).toHaveLength(1);
+    expect(t2.notices.filter((x) => x.kind === "wrap-up")).toHaveLength(1);
+  });
+
+  it("+5 min after the end runs the end again, never the wrap-up", async () => {
+    const t = setup({ timeBox: box });
+    await t.manager.start("session", undefined, undefined, undefined, { timeBox: 10 });
+    t.fire();
+    await vi.waitFor(() => expect(t.turns).toHaveLength(3));
+    await t.manager.idle();
+    t.fire();
+    await vi.waitFor(() => expect(t.state().current?.timeBox).toMatchObject({ ended: true }));
+    await t.manager.idle();
+    expect(await t.manager.extendTimeBox()).toBe(true);
+    expect(t.state().current?.timeBox).toMatchObject({ minutes: 15, wrappedUp: true });
+    expect(t.state().current?.timeBox).not.toHaveProperty("ended");
+    expect(t.timers.at(-1)?.ms).toBe(5000);
+    t.fire();
+    await vi.waitFor(() => expect(t.state().current?.timeBox).toMatchObject({ ended: true }));
+    await t.manager.idle();
+    expect(t.turns).toHaveLength(3);
+    expect(t.notices.filter((x) => x.kind === "wrap-up")).toHaveLength(1);
   });
 
   it("without a close phase: the wrap-up, then only the view says the time is up", async () => {

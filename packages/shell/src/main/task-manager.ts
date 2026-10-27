@@ -265,6 +265,8 @@ export class TaskManager {
   private readonly minute: number;
   /** The time box's timer for the open task's next step, or null. */
   private timer: unknown = null;
+  /** A time-box step fired and waits for its turn or runs: no other is armed until it is over. */
+  private stepPending = false;
   private readonly timers: { set(fn: () => void, ms: number): unknown; clear(handle: unknown): void };
   /** The slug each free-question task wrote its note under, so a second save replaces its own note. */
   private readonly questionSlugs = new Map<string, string>();
@@ -731,14 +733,15 @@ export class TaskManager {
     const at = this.now().toISOString();
     const inPhase = first ? { phase: { id: first.id, startedAt: at }, phases: [{ id: first.id, at, by: "app" as const }] } : {};
     const inTimeBox = minutes !== null ? { timeBox: { minutes, usedMs: 0, runningSince: at } } : {};
-    // Without phases, a time box adds nothing to the first message.
+    // A time box is told to the agent, with or without phases (none: D0).
     const timeLeft = minutes !== null ? formatTimeLeft(minutes * this.minute, this.minute) : "";
     await this.begin(
       { action, ...inMode, ...inPhase, ...(suspended ? { suspendedMode: suspended } : {}), ...inTimeBox },
       where,
       (notesIndex) => {
         const parts = first && firstText ? [phasesSection(this.phaseList(action), first.id), phaseSection(firstText, { language, timeLeft })] : [];
-        return [fillPrompt(template, { language, notesIndex }), ...(section ? [section] : []), ...parts].join("\n\n");
+        const box = timeLeft ? [`Time left: ${timeLeft}.`] : [];
+        return [fillPrompt(template, { language, notesIndex }), ...(section ? [section] : []), ...parts, ...box].join("\n\n");
       },
       display ?? this.d.actions[action].label,
       floor,
@@ -895,6 +898,7 @@ export class TaskManager {
     if (below && choice.belowTier === undefined) return take({ ok: false, reason: "tier", required, current });
     // Read before anything is taken: a brief that can't be read refuses the switch (and a new task, before the close).
     const text = await this.modeText(mode);
+    await this.personWorks(c);
     if (below && choice.belowTier === "new-task") {
       take({ ok: true, switched: "new-task" });
       return this.endsInWindow(async () => {
@@ -1298,11 +1302,7 @@ export class TaskManager {
     // A proposal the person didn't take goes as soon as they send anything else (spec §4.1 "ignores it"). A mode
     // switch's turn is a run turn too, so picking a mode drops it as well, by design.
     if (kind === "run" && task.phaseProposal) await this.dropProposal(task.id);
-    // A person who writes is working: a paused time box runs again (spec §5).
-    if (kind === "run" && task.timeBox && !task.timeBox.runningSince) {
-      const since = this.now();
-      await this.updateTimeBox(task.id, (t) => running(t, since));
-    }
+    if (kind === "run") await this.personWorks(task);
     this.turnTask = task.id;
     try {
       const scoped = await this.scopeOptions(task);
@@ -1422,6 +1422,7 @@ export class TaskManager {
     }
     const back = phases.indexOf(target) < phases.findIndex((p) => p.id === c.phase?.id);
     const plan = await this.phasePlan(c, target, back);
+    await this.personWorks(c);
     take({ ok: true, changed: plan.message ? "turn" : "quiet" });
     return this.endsInWindow(() => this.enterPhase(c, target, "person", plan, back));
   }
@@ -1525,32 +1526,49 @@ export class TaskManager {
 
   /** Sets the one timer for the open task's next time-box step (spec §5): none while paused, after quit, or when done. */
   private arm(c: CurrentTask | null): void {
+    // A step already waits to run: it arms the next one when it is over.
+    if (this.stepPending) return;
     if (this.timer !== null) this.timers.clear(this.timer);
     this.timer = null;
     const box = c?.timeBox;
     if (!c || !box?.runningSince || this.closed) return;
     const wrapUpAt = this.known(c.action) ? this.d.actions[c.action].timeBox?.wrapUpAt : undefined;
     const due = nextDue(box, wrapUpAt, this.now(), this.minute);
-    if (!due) return;
+    // A step due now for a task that doesn't wait: the write that makes it wait arms it.
+    if (!due || (due.inMs === 0 && c.status !== "waiting")) return;
     const id = c.id;
     this.timer = this.timers.set(
       () => {
         this.timer = null;
+        this.stepPending = true;
         // A step never cuts a turn: it waits until nothing runs (spec §5).
-        void this.whenFree(() => this.op(() => this.timeNow(id))).catch((err: unknown) => console.error("The time box's step failed", err));
+        void this.whenFree(() => this.op(() => this.timeNow(id)))
+          .catch((err: unknown) => {
+            // Quitting refuses the waiting step: nothing went wrong.
+            if (!this.closed) console.error("The time box's step failed", err);
+          })
+          .finally(() => {
+            this.stepPending = false;
+            this.rearm();
+          });
       },
       Math.min(due.inMs, MAX_TIMER_MS),
     );
   }
 
-  /** The step that is due now, if the task is still the one and still waits; early (time was added): armed again. */
+  /** Arms the timer from tasks.json as it is after the pending writes. */
+  private rearm(): void {
+    const run = this.writes.then(async () => this.arm((await this.d.store.load()).current));
+    this.writes = run.catch((err: unknown) => console.error("Could not arm the time box", err));
+  }
+
+  /** The step that is due now, if the task is still the one and still waits; early (time was added): armed again after it. */
   private async timeNow(id: string): Promise<void> {
     const c = await this.storedCurrent();
     if (!c || c.id !== id || !c.timeBox?.runningSince || !this.known(c.action)) return;
     const due = nextDue(c.timeBox, this.d.actions[c.action].timeBox?.wrapUpAt, this.now(), this.minute);
-    if (!due) return;
-    if (due.inMs > 0) return this.arm(c);
-    // Not waiting (a stuck status): the next write arms it again.
+    if (!due || due.inMs > 0) return;
+    // Not waiting (a stuck status): the write that makes it wait arms it again.
     if (c.status !== "waiting") return;
     if (due.kind === "wrap-up") return this.wrapUp(c);
     await this.updateTimeBox(c.id, (t) => ({ ...t, ended: true }));
@@ -1603,6 +1621,13 @@ export class TaskManager {
     const close = this.phasesOf(c.action).find((p) => p.close);
     if (!close || (c.phases ?? []).some((e) => e.id === close.id)) return;
     await this.movePhase(c, close, "app");
+  }
+
+  /** A turn the person starts (a message, a phase or mode pick): they are working, so a paused time box runs again (spec §5). */
+  private async personWorks(c: CurrentTask): Promise<void> {
+    if (!c.timeBox || c.timeBox.runningSince) return;
+    const since = this.now();
+    await this.updateTimeBox(c.id, (t) => running(t, since));
   }
 
   /** Changes the open task's time box, if it is still task `id`'s. */

@@ -305,3 +305,49 @@ describe("Settings › Usage with material (material spec §11)", () => {
     expect(screen.queryByText(/Material processing/)).toBeNull();
   });
 });
+
+function opencode(): FakeClient {
+  const client = new FakeClient({ language: "en", folder: "/Users/me/Documents/Demo", engineId: "opencode" });
+  client.state.engines = [
+    { ...client.state.engines[0], id: "opencode", name: "OpenCode", provider: "OpenCode", reportsLimits: false, reportsCost: true, plansUrl: undefined },
+  ];
+  client.state.actions = ACTIONS;
+  return client;
+}
+
+describe("UsageTab: OpenCode", () => {
+  it("says the engine reports cost, and shows the last 30 days' spending", async () => {
+    const client = opencode();
+    client.usage = { limits: null, estimates: {}, tokens: {}, spentUsd: 1.234 };
+    await renderIn("en", <UsageTab client={client} state={client.state} />);
+    await screen.findByText("Spent in the last 30 days");
+    expect(screen.getByText("US$ 1.23")).toBeTruthy();
+    expect(screen.getByText("OpenCode reports it. With local models it is 0.")).toBeTruthy();
+    expect(screen.getByText("OpenCode reports what each reply costs, not a plan's limits. Your provider bills you for it.")).toBeTruthy();
+    expect(screen.queryByRole("link", { name: /plans/ })).toBeNull();
+  });
+
+  it("shows US$ 0.00 for local models", async () => {
+    const client = opencode();
+    client.usage = { limits: null, estimates: {}, tokens: {}, spentUsd: 0 };
+    await renderIn("en", <UsageTab client={client} state={client.state} />);
+    expect(await screen.findByText("US$ 0.00")).toBeTruthy();
+  });
+
+  it("shows no spending row when no turn reported a cost", async () => {
+    const client = opencode();
+    client.usage = { limits: null, estimates: {}, tokens: {} };
+    await renderIn("en", <UsageTab client={client} state={client.state} />);
+    await screen.findByText(/OpenCode reports what each reply costs/);
+    expect(screen.queryByText("Spent in the last 30 days")).toBeNull();
+    expect(screen.queryByText(/US\$/)).toBeNull();
+  });
+
+  it("shows no spending row without spentUsd (D0)", async () => {
+    const client = codex();
+    client.usage = { limits: null, estimates: {}, tokens: {} };
+    await renderIn("en", <UsageTab client={client} state={client.state} />);
+    await screen.findByText(/Codex doesn't tell the app how much you have left/);
+    expect(screen.queryByText("Spent in the last 30 days")).toBeNull();
+  });
+});

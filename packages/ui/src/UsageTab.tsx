@@ -37,6 +37,22 @@ export function UsageTab({ client, state }: { client: HarnessClient; state: AppS
       {usage && <TopicTable state={state} usage={usage} reportsLimits={reportsLimits} near={near ? primary : undefined} labelledBy={tableTitle} />}
       {/* Material spec §11: what processing the person's material used (only once a stage has run). */}
       {usage?.material !== undefined && <p className="hh-caption">{t("usage.material", { tokens: usage.material.toLocaleString(shownLanguage(i18n)) })}</p>}
+      {/* OpenCode spec §4: real money, as the engine reported it (only once a turn reported a cost; 0 is a real US$ 0.00). */}
+      {usage?.spentUsd !== undefined && engine && (
+        <>
+          <div className="hh-rows">
+            <div className="hh-row">
+              <span>{t("usage.spent")}</span>
+              <span>
+                {t("usage.spentAmount", {
+                  amount: usage.spentUsd.toLocaleString(shownLanguage(i18n), { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+                })}
+              </span>
+            </div>
+          </div>
+          <p className="hh-caption">{t("usage.spentCaption", { engine: engine.name })}</p>
+        </>
+      )}
       {usage?.scopes && state.scopes && <ScopeUsage client={client} tokens={usage.scopes} plural={state.scopes.plural} />}
       {usage?.profiles && state.profiles && <ProfileUsage client={client} tokens={usage.profiles} />}
       {showPlans && engine && (
@@ -60,6 +76,7 @@ function PlanSection({ engine, limits, reported }: { engine?: EngineOption; limi
   const { t, i18n } = useTranslation();
   if (!engine) return <p className="hh-caption">{t("home.noEngine")}</p>;
   if (engine.mock) return <p className="hh-caption">{t("usage.mock")}</p>;
+  if (engine.reportsCost) return <p className="hh-caption">{t("usage.noLimitsCost", { engine: engine.name })}</p>;
   if (!engine.reportsLimits) return <p className="hh-caption">{t("usage.noLimitsPlan", { engine: engine.name })}</p>;
   if (!limits?.length) return <p className="hh-caption">{t(reported ? "usage.renewed" : "usage.notYet", { engine: engine.name })}</p>;
   return (

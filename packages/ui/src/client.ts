@@ -76,6 +76,8 @@ export interface EngineOption {
   privacyUrl: string;
   /** Whether the engine reports plan-limit windows (Claude) or only tokens (Codex). */
   reportsLimits: boolean;
+  /** The engine reports each turn's cost in USD (OpenCode). Absent for the others. */
+  reportsCost?: boolean;
   /** The provider's page of plans (Settings › Uso); never for a mock engine. */
   plansUrl?: string;
   /** The official install command, shown before the app runs it. */

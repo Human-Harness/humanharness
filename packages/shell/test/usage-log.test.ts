@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import type { ChatEntry } from "@humanharness/ui/client";
-import { type UsageMeta, type UsageRecord, UsageLog, compactionRecord, materialRecord, measuredMaterialCosts, mergeUsage, profileMeta, profilesUsage, summarizeUsage, usageRecord, withSpent } from "../src/main/usage-log";
+import { type UsageMeta, type UsageRecord, UsageLog, compactionRecord, materialRecord, measuredMaterialCosts, mergeUsage, profileMeta, profilesUsage, sidekickRecord, sidekickSpent, sidekickWeek, summarizeUsage, usageRecord, withSpent } from "../src/main/usage-log";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -492,5 +492,54 @@ describe("withSpent", () => {
     expect(await withSpent(base, [write([line("opencode")])], "opencode", true, now)).toEqual(base);
     expect(await withSpent(base, [write([line("claude", 1)])], "claude", false, now)).toEqual(base);
     expect(await withSpent(base, [path.join(root, "missing")], "opencode", true, now)).toEqual(base);
+  });
+});
+
+describe("sidekick lines (sidekick spec §8)", () => {
+  const profile = { engine: "claude", tier: "light" as const, model: "haiku", effort: "low" as const, cap: 100000 };
+  const usage = { inputTokens: 300, outputTokens: 40, cacheReadTokens: 2000, cacheWriteTokens: 100 };
+  const turn = (task: string, at: string): UsageRecord => ({ at, engine: "claude", task, action: "draft", ok: true, usage: { inputTokens: 1000, outputTokens: 100, cacheReadTokens: 0, cacheWriteTokens: 0 } });
+  const sk = (task: string, at: string) => sidekickRecord({ engine: "claude", task, action: "draft", sidekick: "sidekick", moment: "pre", profile, ok: true, usage }, at);
+
+  it("a line is tagged process, phase, moment and sidekick", () => {
+    expect(sk("t1", "2026-10-27T10:00:00Z")).toMatchObject({ phase: "sidekick", process: "sidekick", moment: "pre", sidekick: "sidekick", task: "t1", tier: "light" });
+  });
+
+  it("D0: a log without sidekick lines summarizes exactly as before", () => {
+    const s = summarizeUsage([turn("t1", "2026-10-27T10:00:00Z"), turn("t1", "2026-10-27T10:01:00Z")], undefined);
+    expect(Object.hasOwn(s, "sidekick")).toBe(false);
+    expect(s).toEqual({ limits: null, estimates: {}, tokens: { draft: 2200 } });
+  });
+
+  it("sidekick lines stay out of task tokens and add a sidekick total", () => {
+    const s = summarizeUsage([turn("t1", "2026-10-27T10:00:00Z"), sk("t1", "2026-10-27T10:00:30Z"), turn("t1", "2026-10-27T10:01:00Z")], undefined);
+    expect(s.tokens).toEqual({ draft: 2200 });
+    expect(s.sidekick).toBe(2440);
+  });
+
+  it("stay out of the per-scope totals", () => {
+    const line = sidekickRecord({ engine: "claude", task: "t1", scope: "s1", sidekick: "sidekick", moment: "pre", profile, ok: true, usage });
+    expect(summarizeUsage([line], undefined)).not.toHaveProperty("scopes");
+  });
+
+  it("a sidekick line right after a task's turn leaves that turn unmeasured", () => {
+    const between: UsageRecord = { ...sk("t1", "t"), limits: rec(0.25, R1).limits };
+    const measured = [rec(0.1, R1, "tidy"), rec(0.2, R1)];
+    expect(summarizeUsage(measured, "five_hour").estimates.tidy).toBeCloseTo(0.1);
+    expect(summarizeUsage([rec(0.1, R1, "tidy"), between, rec(0.2, R1)], "five_hour").estimates).toEqual({});
+  });
+
+  it("spend toward the cap: input + output + cache writes of the task's lines", () => {
+    expect(sidekickSpent([sk("t1", "2026-10-27T10:00:00Z"), sk("t2", "2026-10-27T10:00:00Z"), turn("t1", "2026-10-27T10:00:00Z")], "t1")).toBe(440);
+  });
+
+  it("the week's tokens", () => {
+    expect(sidekickWeek([sk("t0", "2026-10-01T10:00:00Z"), sk("t1", "2026-10-26T10:00:00Z")], new Date("2026-10-27T12:00:00Z"))).toBe(2440);
+  });
+
+  it("with profiles, the sidekick total is the active profile's", () => {
+    const u = profilesUsage({ sofi: [sk("t1", "2026-10-27T10:00:00Z")], tomas: [sk("t2", "2026-10-27T10:00:00Z"), sk("t3", "2026-10-27T10:00:00Z")] }, "sofi", undefined);
+    expect(u.sidekick).toBe(2440);
+    expect(profilesUsage({ sofi: [], tomas: [sk("t2", "2026-10-27T10:00:00Z")] }, "sofi", undefined)).not.toHaveProperty("sidekick");
   });
 });

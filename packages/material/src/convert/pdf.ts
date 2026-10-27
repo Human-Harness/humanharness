@@ -1,5 +1,5 @@
 import { MaterialRefused, plainLine } from "../blocks";
-import { RUNNING_SHARE } from "../constants";
+import { MAX_PAGES, RUNNING_SHARE } from "../constants";
 import type { ConvertSettings, MdBlock } from "../types";
 
 interface Item {
@@ -78,6 +78,15 @@ async function pageItems(doc: PdfDoc, n: number, fonts = false): Promise<{ items
   const page = await doc.getPage(n);
   const [x0, y0, x1, y1] = page.view;
   const box = Number.isFinite(x1 - x0) && Number.isFinite(y1 - y0) && x1 > x0 && y1 > y0 ? { width: x1 - x0, height: y1 - y0 } : LETTER;
+  try {
+    return { items: await readItems(page, fonts), box };
+  } finally {
+    page.cleanup();
+  }
+}
+
+type PdfPage = Awaited<ReturnType<PdfDoc["getPage"]>>;
+async function readItems(page: PdfPage, fonts: boolean): Promise<Item[]> {
   if (fonts) await page.getOperatorList();
   const content = await page.getTextContent();
   const styles = content.styles as Record<string, { fontFamily?: string } | undefined>;
@@ -99,18 +108,44 @@ async function pageItems(doc: PdfDoc, n: number, fonts = false): Promise<{ items
     }
     items.push({ str: raw.str, x: e, y: f, size: Math.round(Math.hypot(a, b) * 10) / 10, width: typeof raw.width === "number" && Number.isFinite(raw.width) ? raw.width : 0, bold });
   }
-  page.cleanup();
-  return { items, box };
+  return items;
+}
+
+/** Half the width of the empty band around the page's middle that two columns need, in points. */
+const GUTTER = 7;
+
+/**
+ * Two columns only when a real gutter splits the page: no item touches the band [mid - GUTTER, mid + GUTTER], each
+ * side holds more than one item, and on every baseline with items on both sides the gap between them is at least
+ * 1.5× the font size (a single column whose lines happen to be split into two items near the middle stays one).
+ */
+function hasGutter(items: Item[], mid: number): boolean {
+  const left = items.filter((i) => i.x + i.width <= mid - GUTTER);
+  const right = items.filter((i) => i.x >= mid + GUTTER);
+  if (left.length < 2 || right.length < 2 || left.length + right.length !== items.length) return false;
+  // The nearest right item per whole-point baseline (and its size), so the check stays linear on busy pages.
+  const nearest = new Map<number, { x: number; size: number }>();
+  for (const r of right) {
+    const k = Math.round(r.y);
+    const seen = nearest.get(k);
+    if (!seen || r.x < seen.x) nearest.set(k, { x: r.x, size: r.size });
+  }
+  for (const l of left) {
+    const end = l.x + l.width;
+    for (let k = Math.round(l.y) - 2; k <= Math.round(l.y) + 2; k++) {
+      const r = nearest.get(k);
+      if (r && r.x - end < 1.5 * Math.max(l.size, r.size)) return false;
+    }
+  }
+  return true;
 }
 
 /** Items into lines: same baseline (±2 pt), left to right. Two columns: everything left of the gutter first. */
 function lines(items: Item[], page: number, columns: boolean | undefined, box: Box): Line[] {
   const mid = box.width / 2;
   const band = box.height * 0.1;
-  const leftOnly = items.filter((i) => i.x + i.width < mid - 10).length;
-  const rightOnly = items.filter((i) => i.x > mid - 10).length;
-  const twoColumns = columns ?? (leftOnly > 1 && rightOnly > 1 && items.every((i) => i.x + i.width < mid + 10 || i.x > mid - 10));
-  const groups = twoColumns ? [items.filter((i) => i.x < mid - 10), items.filter((i) => i.x >= mid - 10)] : [items];
+  const twoColumns = columns ?? hasGutter(items, mid);
+  const groups = twoColumns ? [items.filter((i) => i.x < mid), items.filter((i) => i.x >= mid)] : [items];
   const out: Line[] = [];
   for (const group of groups) {
     const sorted = [...group].sort((p, q) => q.y - p.y || p.x - q.x);
@@ -144,6 +179,9 @@ function running(all: Line[][]): Set<string> {
   const pages = all.filter((p) => p.length > 0).length;
   return new Set([...count].filter(([k, n]) => pages >= 3 && n / pages >= RUNNING_SHARE && k.length <= 120).map(([k]) => k));
 }
+
+/** Heading text that stays text: leading markup and a trailing run of `#` (a closing sequence) are escaped. */
+const headingText = (t: string) => plainLine(t).replace(/(?<!\\)(#+)\s*$/, "\\$1");
 
 const PAGE_NUMBER = /^\s*(page\s*)?\d+(\s*(of|\/)\s*\d+)?\s*$/i;
 const ENDS = /[.!?:;)"'»”’]$/;
@@ -210,7 +248,7 @@ export async function pdfBlocks(data: Buffer, opts: { pageRange?: [number, numbe
         const h = level(l);
         if (h !== null) {
           flush();
-          blocks.push({ kind: "heading", level: h, md: `${"#".repeat(h)} ${l.text}`, loc: `p.${l.page}`, page: l.page });
+          blocks.push({ kind: "heading", level: h, md: `${"#".repeat(h)} ${headingText(l.text)}`, loc: `p.${l.page}`, page: l.page });
           continue;
         }
         const prev = para[para.length - 1];
@@ -225,11 +263,15 @@ export async function pdfBlocks(data: Buffer, opts: { pageRange?: [number, numbe
   });
 }
 
-/** Pages, and pages with a text layer, without converting: intake measures before it warns (§7). */
-export async function measurePdf(data: Buffer): Promise<{ pages: number; textPages: number }> {
+/**
+ * Pages, and pages with a text layer, without converting: intake measures before it warns (§7). Only the first `cap`
+ * pages are checked for text (`checked` says how many): a huge file is not read page by page just to be measured.
+ */
+export async function measurePdf(data: Buffer, cap = MAX_PAGES): Promise<{ pages: number; textPages: number; checked: number }> {
   return withDoc(data, async (doc) => {
+    const checked = Math.min(doc.numPages, Math.max(0, cap));
     let textPages = 0;
-    for (let n = 1; n <= doc.numPages; n++) if ((await pageItems(doc, n)).items.length > 0) textPages++;
-    return { pages: doc.numPages, textPages };
+    for (let n = 1; n <= checked; n++) if ((await pageItems(doc, n)).items.length > 0) textPages++;
+    return { pages: doc.numPages, textPages, checked };
   });
 }

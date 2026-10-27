@@ -42,6 +42,39 @@ describe("pdfBlocks (material spec §3 PDF)", () => {
     expect(text.indexOf("left column second")).toBeLessThan(text.indexOf("Right column first"));
   });
 
+  it("a single column whose lines are split into two items near the middle keeps its line order", async () => {
+    const split = ["First", "Second", "Third"].flatMap((w, i) => [
+      { x: 72, y: 700 - i * 14, size: 11, text: `${w} line starts here and` },
+      { x: 300, y: 700 - i * 14, size: 11, text: "ends over here." },
+    ]);
+    const text = (await pdfBlocks(makePdf([split]))).blocks.map((b) => b.md).join("\n");
+    expect(text).toContain("First line starts here and ends over here.");
+    expect(text.indexOf("First line")).toBeLessThan(text.indexOf("Second line"));
+    expect(text.indexOf("Second line")).toBeLessThan(text.indexOf("Third line"));
+  });
+
+  it("an empty gutter narrower than 1.5x the font size is not a column break", async () => {
+    // Helvetica x is 0.5 em: 22 of them at 20 pt end at 72 + 220 = 292; the right item starts at 314 (gap 22 < 30).
+    const near = ["a", "b", "c"].flatMap((w, i) => [
+      { x: 72, y: 700 - i * 24, size: 20, text: `${w}${"x".repeat(21)}` },
+      { x: 314, y: 700 - i * 24, size: 20, text: `${w}end` },
+    ]);
+    const text = (await pdfBlocks(makePdf([near]))).blocks.map((b) => b.md).join("\n");
+    expect(text).toContain(`a${"x".repeat(21)} aend`);
+    expect(text).toContain(`b${"x".repeat(21)} bend`);
+  });
+
+  it("a heading's trailing # run and leading markup stay text", async () => {
+    const pdf = makePdf([[{ x: 72, y: 720, size: 20, text: "Learning C#" }, { x: 72, y: 680, size: 20, text: "> Quoted ##" }, ...body(["Body text long enough to set the body size of the page."], 72, 640)]]);
+    const md = (await pdfBlocks(pdf)).blocks.filter((b) => b.kind === "heading").map((b) => b.md);
+    expect(md).toEqual(["# Learning C\\#", "# \\> Quoted \\##"]);
+  });
+
+  it("measure counts text pages only up to a cap", async () => {
+    const pdf = makePdf([body(["One."]), body(["Two."]), body(["Three."])]);
+    expect(await measurePdf(pdf, 2)).toEqual({ pages: 3, textPages: 2, checked: 2 });
+  });
+
   it("records pages with no text layer; a page range keeps only those pages", async () => {
     const pdf = makePdf([body(["One."]), [], body(["Three."])]);
     const all = await pdfBlocks(pdf);
@@ -51,7 +84,7 @@ describe("pdfBlocks (material spec §3 PDF)", () => {
   });
 
   it("measure: pages and pages with text, without reading the text", async () => {
-    expect(await measurePdf(makePdf([body(["One."]), []]))).toEqual({ pages: 2, textPages: 1 });
+    expect(await measurePdf(makePdf([body(["One."]), []]))).toEqual({ pages: 2, textPages: 1, checked: 2 });
     await expect(measurePdf(Buffer.from("%PDF-1.4 broken"))).rejects.toMatchObject({ reason: "unreadable" });
   });
 

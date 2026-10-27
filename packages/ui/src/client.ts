@@ -725,6 +725,8 @@ export interface MaterialClient {
   addLink(scope: string, url: string): Promise<MaterialAddResult>;
   confirm(scope: string, id: string, choice: { pageRange?: [number, number]; sheets?: string[] | "summary" }): Promise<MaterialResult>;
   setGrounding(scope: string, mode: "strict" | "mixed"): Promise<MaterialResult>;
+  /** Try again: a source whose AI stage failed goes back to that stage. */
+  retry(scope: string, id: string): Promise<MaterialResult>;
   /** Opens the original of a source or a fragment's source. */
   open(scope: string, id: string): Promise<MaterialResult>;
   onChange(listener: (view: MaterialView) => void): () => void;

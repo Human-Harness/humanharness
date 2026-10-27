@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import type { ChatEntry } from "@humanharness/ui/client";
-import { type UsageMeta, type UsageRecord, UsageLog, compactionRecord, mergeUsage, profileMeta, profilesUsage, summarizeUsage, usageRecord } from "../src/main/usage-log";
+import { type UsageMeta, type UsageRecord, UsageLog, compactionRecord, materialRecord, mergeUsage, profileMeta, profilesUsage, summarizeUsage, usageRecord } from "../src/main/usage-log";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -354,5 +354,28 @@ describe("usage across profiles (profiles spec §4 'Usage')", () => {
     const u = profilesUsage({ sofi: [], tomas }, "nobody", "five_hour", NOW);
     expect(u.profiles).toEqual({ tomas: 110 });
     expect(u).not.toHaveProperty("scopes");
+  });
+});
+
+describe("material lines", () => {
+  it("their own record, left out of the per-action estimates (material spec §11)", () => {
+    const line = materialRecord(
+      {
+        engine: "claude",
+        stage: "label",
+        scope: "fractions",
+        source: "ch2",
+        profile: { engine: "claude", tier: "light", effort: "low", cap: 100000 },
+        ok: true,
+        usage: { inputTokens: 900, outputTokens: 100, cacheReadTokens: 0, cacheWriteTokens: 0 },
+      },
+      "2026-10-27T10:00:00.000Z",
+    );
+    expect(line).toMatchObject({ at: "2026-10-27T10:00:00.000Z", engine: "claude", phase: "material", stage: "label", scope: "fractions", source: "ch2", tier: "light", ok: true });
+    const before = summarizeUsage([], undefined);
+    const after = summarizeUsage([line], undefined);
+    expect(after.estimates).toEqual(before.estimates);
+    expect(after.tokens).toEqual(before.tokens);
+    expect(after).not.toHaveProperty("scopes");
   });
 });

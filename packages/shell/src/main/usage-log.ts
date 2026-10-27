@@ -18,9 +18,10 @@ interface ProfileFields {
 /**
  * What kind of turn it was: `run` (the task's own turns), `close` (the turn that asks for its note), `checkpoint` (the
  * quiet note before the cap), `phase-change` (the brief of the phase the task enters) and `wrap-up` (the time box's
- * last turn before the close phase). Not the task's phase: that is `taskPhase`.
+ * last turn before the close phase). Not the task's phase: that is `taskPhase`. `material`: an AI stage of material
+ * processing, not a task's turn (material spec §11).
  */
-export type TurnKind = "run" | "close" | "checkpoint" | "phase-change" | "wrap-up";
+export type TurnKind = "run" | "close" | "checkpoint" | "phase-change" | "wrap-up" | "material";
 
 /** Which task (and which kind of turn) a turn belongs to. */
 export interface UsageMeta extends ProfileFields {
@@ -49,6 +50,9 @@ export interface UsageRecord extends ProfileFields {
   /** The task's phase while the turn ran (task-phases spec §6). Absent without phases. */
   taskPhase?: string;
   phase?: TurnKind;
+  /** Material lines only: the stage, and the source it ran for (none for the scope's sheet and links). */
+  stage?: string;
+  source?: string;
   /** `checkpoint`: the quiet turn that saves a note before the cap; `compaction`: the engine compacted (no usage). */
   kind?: "checkpoint" | "compaction";
   ok: boolean;
@@ -132,6 +136,25 @@ export function compactionRecord(engine: string, meta: UsageMeta, at: string = n
   return { at, engine, ...metaFields(meta), kind: "compaction", ok: true };
 }
 
+/** One AI stage of material processing (material spec §11). */
+export function materialRecord(
+  o: { engine: string; stage: string; scope: string; source?: string; profile: ModelProfile; ok: boolean; usage?: TurnUsage; limits?: LimitWindow[] },
+  at: string = new Date().toISOString(),
+): UsageRecord {
+  return {
+    at,
+    engine: o.engine,
+    phase: "material",
+    stage: o.stage,
+    scope: o.scope,
+    ...(o.source ? { source: o.source } : {}),
+    ...profileMeta(o.profile),
+    ok: o.ok,
+    ...(o.usage ? { usage: o.usage } : {}),
+    ...(o.limits ? { limits: o.limits } : {}),
+  };
+}
+
 /** Free questions (no action) are measured under this key, like Settings › Modelos. */
 const QUESTIONS = "questions";
 /** Estimates and tokens average each action's latest tasks, so a change of model or plan settles in after a few uses. */
@@ -159,12 +182,13 @@ function recentAverages(values: Map<string, number[]>): Record<string, number> {
  * last RECENT_TASKS measured tasks. Tokens work the same way for every engine: a task counts when all
  * of its turns reported usage. Free questions count under "questions". Lines from before tasks were
  * logged count as a task each. Other use of the same account counts too, so it is a rough guide.
- * Checkpoint turns and compaction lines are left out.
+ * Checkpoint turns and compaction lines are left out, and so are material stages (not tasks; their windows still
+ * count as the latest limits).
  */
 export function summarizeUsage(records: UsageRecord[], primary: string | undefined, now: Date = new Date()): UsageSummary {
-  records = records.filter((r) => r.kind !== "compaction");
+  const last = records.filter((r) => r.kind !== "compaction" && r.limits && r.limits.length > 0).at(-1);
+  records = records.filter((r) => r.kind !== "compaction" && r.phase !== "material");
   const window = (r: UsageRecord | undefined) => (primary ? (r?.firstLimits ?? r?.limits)?.find((w) => w.kind === primary) : undefined);
-  const last = records.filter((r) => r.limits && r.limits.length > 0).at(-1);
   const tasks = new Map<string, { action: string; total: number; measured: boolean; tokens: number; counted: boolean }>();
   for (let i = 0; i < records.length; i++) {
     const r = records[i];

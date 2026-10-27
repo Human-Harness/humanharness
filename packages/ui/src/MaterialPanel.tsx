@@ -162,7 +162,16 @@ export function MaterialPanel({ client, scope, disabled }: MaterialPanelProps) {
           <WaitingCard key={s.id} client={client} scope={scope} source={s} view={view} />
         ) : (
           <p key={s.id} className="hh-material-line">
-            {statusLine(t, s)}
+            <span>{statusLine(t, s)}</span>
+            {/* A stage that failed is not retried on its own (§13): the person asks for it. */}
+            {s.status === "ready" && s.failed && (
+              <>
+                {" "}
+                <button type="button" disabled={disabled} onClick={() => void client.material.retry(scope, s.id).catch(() => undefined)}>
+                  {t("material.retry")}
+                </button>
+              </>
+            )}
           </p>
         ),
       )}

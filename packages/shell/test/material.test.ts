@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { hasMaterial } from "@humanharness/harness-sdk";
-import { type ConvertRunner, MAX_BYTES, MaterialStore, workerRunner } from "@humanharness/material";
+import { type ConvertRunner, ConvertStopped, MAX_BYTES, MaterialStore, STAGES, workerRunner } from "@humanharness/material";
 import { DATA_PREFIX, MATERIAL_KEEP, NOTES_PREFIX } from "@humanharness/workspace";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { type MaterialDeps, MaterialService } from "../src/main/material";
@@ -14,8 +14,10 @@ const sent: [string, unknown][] = [];
 const changes: string[] = [];
 let service: MaterialService;
 
+const stageFields = { fragmentKinds: ["explanation"], sheet: { sections: [{ id: "terms", label: "Key terms", prompt: "List them." }], maxTokens: 800 }, tiers: {} };
+
 const deps = (over: Partial<MaterialDeps> = {}): MaterialDeps => ({
-  material: { accepts: ["text", "pdf", "web"], grounding: { default: "mixed", personCanChange: true }, budget: { indexTokens: 600 } },
+  material: { accepts: ["text", "pdf", "web"], grounding: { default: "mixed", personCanChange: true }, budget: { indexTokens: 600 }, ...stageFields },
   base: async () => base,
   scopeOk: async (s) => s === "fractions",
   pickFiles: async () => picked,
@@ -107,7 +109,7 @@ describe("MaterialService", () => {
     expect(await service.setGrounding("fractions", "strict")).toEqual({ ok: true });
     expect((await service.list("fractions")).grounding.mode).toBe("strict");
     expect(await service.setGrounding("fractions", "loose" as never)).toEqual({ ok: false, reason: "invalid" });
-    const fixed = new MaterialService(deps({ material: { accepts: ["text"], grounding: { default: "strict", personCanChange: false }, budget: { indexTokens: 600 } } }));
+    const fixed = new MaterialService(deps({ material: { accepts: ["text"], grounding: { default: "strict", personCanChange: false }, budget: { indexTokens: 600 }, ...stageFields } }));
     expect(await fixed.setGrounding("fractions", "mixed")).toEqual({ ok: false, reason: "invalid" });
   });
 
@@ -180,6 +182,178 @@ describe("MaterialService", () => {
     expect(view.sources[0].fragments).toBeGreaterThan(0);
     expect(sent.some(([channel]) => channel === "hh:materialStatus")).toBe(true);
     expect(changes).toEqual(["fractions: processed left"]);
+  });
+});
+
+describe("stopping conversions (closeRuntime, a profile switch)", () => {
+  it("a conversion under way stops; nothing is recorded; the source resumes on its base's next use", async () => {
+    const real = workerRunner();
+    let hold = true;
+    let stopped = 0;
+    let release: (() => void) | null = null;
+    const runner: ConvertRunner = {
+      measure: real.measure,
+      convert: (...a) =>
+        hold
+          ? new Promise((_, reject) => {
+              release = () => reject(new ConvertStopped());
+            })
+          : real.convert(...a),
+      stop: () => {
+        stopped++;
+        release?.();
+      },
+    };
+    const svc = new MaterialService(deps({ runner }));
+    picked = [write("a.md", `# A\n\n${"Some text. ".repeat(30)}`)];
+    const adding = svc.add("fractions");
+    while (!release) await new Promise((r) => setTimeout(r, 5));
+    await svc.stop();
+    expect(stopped).toBe(1);
+    expect(await adding).toEqual({ ok: true, added: ["a"], refused: [] });
+    expect(changes).toEqual([]);
+    expect(await new MaterialStore(base, "fractions").source("a")).toMatchObject({ status: "converting" });
+    // Another profile meanwhile, then back: the base is looked at afresh and the source converts.
+    hold = false;
+    const anna = base;
+    base = path.join(root, "ben");
+    fs.mkdirSync(base);
+    await svc.settle();
+    base = anna;
+    await svc.settle();
+    expect((await svc.list("fractions")).sources[0]).toMatchObject({ id: "a", status: "validating", stage: "review" });
+    expect(changes).toEqual(["fractions: processed a"]);
+  });
+
+  it("a stop is not a lasting state: work asked for afterwards converts", async () => {
+    let converts = 0;
+    const real = workerRunner();
+    const runner: ConvertRunner = { measure: real.measure, convert: (...a) => (converts++, real.convert(...a)) };
+    const svc = new MaterialService(deps({ runner }));
+    await svc.stop();
+    picked = [write("a.md", `# A\n\n${"Some text. ".repeat(30)}`)];
+    expect(await svc.add("fractions")).toMatchObject({ ok: true, added: ["a"] });
+    expect(converts).toBe(1);
+  });
+});
+
+describe("AI stages (material spec §10)", () => {
+  const job = { scope: "fractions", source: "a", stage: "review" as const };
+  let applied: boolean;
+  let answer: boolean;
+  beforeEach(() => {
+    applied = false;
+    answer = true;
+    STAGES.review = {
+      tools: ["material_review"],
+      prompt: async () => "Review a.",
+      accept: async (_name, args, state) => {
+        state.answers.push(args);
+        return "Saved.";
+      },
+      apply: async (store, j, state) => {
+        applied = state.answers.length > 0 && answer;
+        if (applied) await store.patch(j.source!, (s) => ({ ...s, status: "ready", stage: undefined }));
+        return applied;
+      },
+    };
+  });
+  afterEach(() => {
+    delete STAGES.review;
+  });
+
+  const seed = async () => {
+    const store = new MaterialStore(base, "fractions");
+    await store.update(() => [
+      {
+        id: "a",
+        scope: "fractions",
+        path: "a.md",
+        hash: "x",
+        type: "md",
+        family: "text",
+        pages: 1,
+        sizeBytes: 1,
+        skippedPages: [],
+        status: "validating",
+        stage: "review",
+        issues: [],
+        fixes: [],
+        estimate: 0,
+        used: 0,
+        fragments: [],
+        addedAt: "2026-10-27T00:00:00.000Z",
+      },
+    ]);
+    return store;
+  };
+
+  it("finds the next job in the base, runs its session with the stage's tools, and applies its answers", async () => {
+    await seed();
+    const calls: unknown[] = [];
+    const svc = new MaterialService(
+      deps({
+        runStage: async (j, prompt, tools, handle) => {
+          calls.push([j, prompt, tools]);
+          expect(await handle({ op: "material_review", verdict: "good" })).toBe("Saved.");
+          await expect(handle({ op: "material_label" })).rejects.toThrow("Unknown request");
+          return { ok: true };
+        },
+      }),
+    );
+    expect(await svc.nextJob()).toEqual(job);
+    await svc.runJob(job, new AbortController().signal);
+    expect(calls).toEqual([[job, "Review a.", ["material_review"]]]);
+    expect(applied).toBe(true);
+    expect(sent.at(-1)?.[0]).toBe("hh:materialStatus");
+    expect(await svc.nextJob()).toBeNull();
+  });
+
+  it("a failed session marks the source; Try again sends it back; a stopped one changes nothing", async () => {
+    await seed();
+    let ok = false;
+    const kicks: number[] = [];
+    const svc = new MaterialService(
+      deps({
+        runStage: async (_j, _p, _t, handle) => {
+          await handle({ op: "material_review" });
+          return { ok };
+        },
+        kick: () => void kicks.push(1),
+      }),
+    );
+    const stop = new AbortController();
+    stop.abort();
+    await svc.runJob(job, stop.signal);
+    expect(await svc.nextJob()).toEqual(job);
+    await svc.runJob(job, new AbortController().signal);
+    expect((await svc.list("fractions")).sources[0]).toMatchObject({ status: "ready", failed: true });
+    // Not retried on its own: the scope's sheet is next (no stage registered for it, so it waits).
+    expect(await svc.nextJob()).toEqual({ scope: "fractions", stage: "sheet" });
+    expect(await svc.retry("fractions", "nothing")).toEqual({ ok: false, reason: "unknown-source" });
+    expect(await svc.retry("fractions", "a")).toEqual({ ok: true });
+    expect(kicks).toHaveLength(1);
+    ok = true;
+    await svc.runJob(job, new AbortController().signal);
+    expect((await svc.list("fractions")).sources[0]).toMatchObject({ status: "ready", failed: false });
+  });
+
+  it("a scope stage that fails is skipped until the next kick", async () => {
+    const store = await seed();
+    await store.update(() => []);
+    await store.setStale("sheet");
+    STAGES.sheet = { tools: [], prompt: async () => "Sheet.", accept: async () => "", apply: async () => true };
+    try {
+      const svc = new MaterialService(deps({ runStage: async () => ({ ok: false }) }));
+      const sheet = { scope: "fractions", stage: "sheet" as const };
+      expect(await svc.nextJob()).toEqual(sheet);
+      await svc.runJob(sheet, new AbortController().signal);
+      expect(await svc.nextJob()).toBeNull();
+      svc.resetFailures();
+      expect(await svc.nextJob()).toEqual(sheet);
+    } finally {
+      delete STAGES.sheet;
+    }
   });
 });
 

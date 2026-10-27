@@ -15,6 +15,8 @@ export interface PersonMaterialDeps {
    * Default: a new store (tests).
    */
   store?(base: string, scope: string): MaterialStore;
+  /** A fragment was flagged: the queue of AI stages looks for work. */
+  flagged?(): void;
   now?: () => Date;
 }
 
@@ -45,6 +47,7 @@ export async function personMaterialRequest(d: PersonMaterialDeps, request: unkn
     if (r.op === "search" && typeof r.query === "string") return MaterialSearch.of(await store.fragments()).search(r.query);
     if (r.op === "flag" && typeof r.reason === "string") {
       if (!isFragmentId(r.id) || !(await flagFragment(store, r.id, r.reason))) throw new MaterialRefusal(`No fragment ${short(r.id)}`);
+      d.flagged?.();
       return "Thanks: it will be checked again.";
     }
     throw new MaterialRefusal("Unknown request");

@@ -245,6 +245,21 @@ export class MaterialStore {
     return path.dirname(file) === path.resolve(this.originals) ? file : null;
   }
 
+  /**
+   * The scope's next scope stage (§10): "sheet" after a source finished or went away, "link" once the sheet is done
+   * and the harness has items; null when both are current. Not tracked by the history.
+   */
+  async stale(): Promise<"sheet" | "link" | null> {
+    const text = await fs.readFile(path.join(this.dir, ".stale"), "utf8").catch(() => null);
+    return text === null ? null : text.trim() === "link" ? "link" : "sheet";
+  }
+
+  async setStale(next: "sheet" | "link" | false): Promise<void> {
+    const file = path.join(this.dir, ".stale");
+    if (next) await writeAtomic(file, next);
+    else await fs.rm(file, { force: true });
+  }
+
   async sheet(): Promise<string> {
     return fs.readFile(path.join(this.dir, "sheet.md"), "utf8").catch(() => "");
   }

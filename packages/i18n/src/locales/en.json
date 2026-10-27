@@ -256,6 +256,7 @@
     "all": "All of it",
     "summary": "Summary and first rows",
     "goOn": "Go on",
+    "retry": "Try again",
     "status": {
       "pending": "{{name}}: waiting for you",
       "converting": "{{name}}: converting…",

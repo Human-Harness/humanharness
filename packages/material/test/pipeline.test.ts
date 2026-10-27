@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { type ConvertRunner, MAX_BYTES, MAX_PAGES, MaterialStore, addSource, confirmSource, estimateCost, intakeDecision, processSource, sampleSize, workerRunner } from "../src";
+import { type ConvertRunner, ConvertStopped, MAX_BYTES, MAX_PAGES, MaterialStore, addSource, confirmSource, estimateCost, intakeDecision, processSource, sampleSize, workerRunner } from "../src";
 import { body, makePdf } from "./make-pdf";
 
 let base: string;
@@ -169,6 +169,18 @@ describe("addSource and confirmSource", () => {
     const r = await addSource(store, { name: "big.txt", data: Buffer.alloc(MAX_BYTES + 1, "a") }, { accepts: ["text"], items: false, runner });
     expect(r).toMatchObject({ ok: false, reason: "too-big" });
     expect(fs.existsSync(path.join(base, "material"))).toBe(false);
+  });
+
+  it("a conversion stopped (a profile switch, closeRuntime) leaves the source converting, to resume later", async () => {
+    const real = workerRunner();
+    const runner: ConvertRunner = { measure: real.measure, convert: () => Promise.reject(new ConvertStopped()) };
+    const r = await addSource(store, { name: "a.md", data: Buffer.from(chapter) }, { accepts: ["text"], items: false, runner });
+    expect(r).toMatchObject({ ok: true, waiting: false });
+    if (!r.ok) throw new Error("unreachable");
+    expect(await store.source(r.id)).toMatchObject({ status: "converting", fragments: [] });
+    expect((await store.source(r.id))?.refusal).toBeUndefined();
+    // Resumed: it converts as usual.
+    expect(await processSource(store, r.id, { items: false })).toMatchObject({ status: "validating", stage: "review" });
   });
 
   it("the disk failing is a refusal, never a throw, and leaves no stray original", async () => {

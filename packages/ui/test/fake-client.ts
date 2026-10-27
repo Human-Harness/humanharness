@@ -725,6 +725,10 @@ export class FakeClient implements HarnessClient {
       this.materialCalls.push(`grounding:${mode}`);
       return { ok: true as const };
     },
+    retry: async (_scope: string, id: string) => {
+      this.materialCalls.push(`retry:${id}`);
+      return { ok: true as const };
+    },
     open: async (_scope: string, id: string) => {
       this.materialCalls.push(`open:${id}`);
       return { ok: true as const };

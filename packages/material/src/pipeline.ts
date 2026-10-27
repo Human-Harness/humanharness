@@ -6,7 +6,7 @@ import { MaterialRefused } from "./blocks";
 import { checkPieces } from "./checks";
 import { FIRST_ROWS, MAX_BYTES, MAX_PAGES } from "./constants";
 import type { Measured } from "./convert";
-import { type ConvertRunner, workerRunner } from "./convert/isolate";
+import { ConvertStopped, type ConvertRunner, workerRunner } from "./convert/isolate";
 import { sheetSummary } from "./convert/sheet";
 import { type Piece, cutBlocks, cutRows } from "./cut";
 import { REFUSAL_TEXT, detectType } from "./detect";
@@ -84,6 +84,7 @@ async function refuse(store: MaterialStore, id: string, reason: Refusal): Promis
  * Converts, cuts, checks and stores a source (§3, §5, §6.1): its fragments are usable at once (`not-reviewed`) and
  * the source goes `validating` at the `review` stage, with the AI stages' estimate. Any failure (a converter's
  * refusal, the worker's heap or time limit, a crash, the disk) marks it `refused` with no fragments; it never throws.
+ * A stopped conversion (`ConvertStopped`) leaves it `converting` and returns null: it is converted again later.
  * `restore`: the entry before the person's sheet choice, put back when the choice names none of the file's sheets
  * (the result is then null). Rebuilds the index.
  */
@@ -149,6 +150,8 @@ export async function processSource(
     await store.writeIndex();
     return next;
   } catch (err) {
+    // Stopped on purpose (a profile switch, closeRuntime): it stays `converting` and is converted again later.
+    if (err instanceof ConvertStopped) return null;
     if (err instanceof NoSuchSheets && o.restore) {
       const before = o.restore;
       await store.patch(id, () => before).catch((e: unknown) => console.error("Could not undo a sheet choice", e));

@@ -102,6 +102,14 @@ describe("MaterialPanel (material spec §11)", () => {
     expect(screen.queryByText(/g\.pdf/)).toBeNull();
   });
 
+  it("a source the AI couldn't check offers Try again; others don't", async () => {
+    const client = await panel(view([src({ id: "e", name: "e.pdf", status: "ready", failed: true }), src({ id: "c", name: "c.pdf", status: "ready" })]));
+    const retry = await screen.findAllByRole("button", { name: "Try again" });
+    expect(retry).toHaveLength(1);
+    fireEvent.click(retry[0]);
+    await waitFor(() => expect(client.materialCalls).toEqual(["retry:e"]));
+  });
+
   it("follows the main process's updates", async () => {
     const client = await panel(view([]));
     client.pushMaterial(view([src({})]));

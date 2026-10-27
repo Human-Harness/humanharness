@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { type ConvertRunner, MaterialRefused, convertFile, convertInWorker, limitRunner, measureFile, workerRunner } from "../src";
+import { type ConvertRunner, ConvertStopped, MaterialRefused,convertFile, convertInWorker, limitRunner, measureFile, workerRunner } from "../src";
 import { body, makePdf } from "./make-pdf";
 
 const worker = (name: string) => new URL(`./workers/${name}.mjs`, import.meta.url);
@@ -45,6 +45,18 @@ describe("convertInWorker: every converter runs off the calling thread", () => {
     const runner = workerRunner({ entry: worker("hang"), timeoutMs: 200 });
     await expect(runner.convert("md", md, { name: "a.md" })).rejects.toMatchObject({ reason: "too-big" });
   });
+
+  it("stop ends every running job with ConvertStopped (not a refusal); later jobs run again", async () => {
+    const runner = workerRunner({ entry: worker("hang") });
+    const t = Date.now();
+    const job = runner.convert("md", md, { name: "a.md" });
+    setTimeout(() => runner.stop?.(), 100);
+    await expect(job).rejects.toBeInstanceOf(ConvertStopped);
+    expect(Date.now() - t).toBeLessThan(5000);
+    const fresh = workerRunner({ entry: worker("hang"), timeoutMs: 200 });
+    fresh.stop?.();
+    await expect(fresh.convert("md", md, { name: "a.md" })).rejects.toMatchObject({ reason: "too-big" });
+  });
 });
 
 describe("limitRunner: a few conversions at a time", () => {
@@ -69,5 +81,34 @@ describe("limitRunner: a few conversions at a time", () => {
     expect(results.every((r) => r.status === "rejected")).toBe(true);
     expect(most).toBe(2);
     expect(order).toEqual(["a", "b", "c", "d", "e"]);
+  });
+
+  it("stop ends the running jobs through the inner runner and the waiting ones at once; new jobs run", async () => {
+    let stops = 0;
+    const started: string[] = [];
+    let release: (() => void) | null = null;
+    const inner: ConvertRunner = {
+      convert: (_t, _b, o) =>
+        new Promise((_, reject) => {
+          started.push(o.name);
+          release = () => reject(new ConvertStopped());
+        }),
+      measure: (_t, _b, name) => (started.push(name), Promise.resolve({ pages: 1, tokens: 1 })),
+      stop: () => {
+        stops++;
+        release?.();
+      },
+    };
+    const runner = limitRunner(inner, 1);
+    const a = runner.convert("md", md, { name: "a" });
+    const b = runner.convert("md", md, { name: "b" });
+    await new Promise((r) => setTimeout(r, 5));
+    runner.stop?.();
+    await expect(a).rejects.toBeInstanceOf(ConvertStopped);
+    await expect(b).rejects.toBeInstanceOf(ConvertStopped);
+    expect(stops).toBe(1);
+    expect(started).toEqual(["a"]);
+    await expect(runner.measure("md", md, "c")).resolves.toMatchObject({ pages: 1 });
+    expect(started).toEqual(["a", "c"]);
   });
 });

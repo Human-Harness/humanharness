@@ -26,6 +26,17 @@ export interface WorkerOptions {
   timeoutMs?: number;
 }
 
+/**
+ * A job stopped on purpose (`ConvertRunner.stop`: a profile switch, closeRuntime, quitting), not a refusal: the file
+ * may be fine, and its source is converted again later.
+ */
+export class ConvertStopped extends Error {
+  constructor() {
+    super("The conversion was stopped");
+    this.name = "ConvertStopped";
+  }
+}
+
 const REASONS: readonly MaterialRefused["reason"][] = ["unreadable", "protected", "scanned", "too-big"];
 
 /**
@@ -34,11 +45,19 @@ const REASONS: readonly MaterialRefused["reason"][] = ["unreadable", "protected"
  * parsers build big trees: files are untrusted). Always settles: the result, or a `MaterialRefused` — "too-big" for
  * the heap or the time limit, the converter's own reason, "unreadable" for anything else.
  */
-export function convertInWorker<J extends ConvertJob>(job: J, o: WorkerOptions = {}): Promise<J extends { op: "measure" } ? Measured : Converted> {
+export function convertInWorker<J extends ConvertJob>(
+  job: J,
+  o: WorkerOptions = {},
+  signal?: AbortSignal,
+): Promise<J extends { op: "measure" } ? Measured : Converted> {
   const entry = o.entry ?? new URL("./worker.ts", import.meta.url);
   // Built JavaScript needs no loader; the TypeScript source needs tsx.
   const execArgv = o.entry ? [] : devLauncher().args;
   return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new ConvertStopped());
+      return;
+    }
     let worker: Worker;
     try {
       worker = new Worker(entry instanceof URL ? fileURLToPath(entry) : entry, {
@@ -56,11 +75,15 @@ export function convertInWorker<J extends ConvertJob>(job: J, o: WorkerOptions =
       if (done) return;
       done = true;
       clearTimeout(timer);
+      signal?.removeEventListener("abort", onStop);
       void worker.terminate().catch(() => undefined);
       settle();
     };
     const refuse = (reason: MaterialRefused["reason"]) => finish(() => reject(new MaterialRefused(reason)));
     const timer = setTimeout(() => refuse("too-big"), o.timeoutMs ?? CONVERT_TIMEOUT_MS);
+    // A stop ends the worker at once; the job is neither a result nor a refusal.
+    const onStop = () => finish(() => reject(new ConvertStopped()));
+    signal?.addEventListener("abort", onStop, { once: true });
     worker.once("message", (m: ConvertReply) => {
       if (m && typeof m === "object" && m.ok === true) finish(() => resolve(m.value as J extends { op: "measure" } ? Measured : Converted));
       else refuse(m && typeof m === "object" && m.ok === false && REASONS.includes(m.reason as MaterialRefused["reason"]) ? (m.reason as MaterialRefused["reason"]) : "unreadable");
@@ -79,13 +102,21 @@ export function convertInWorker<J extends ConvertJob>(job: J, o: WorkerOptions =
 export interface ConvertRunner {
   convert(type: MaterialType, buf: Buffer, opts: ConvertOptions): Promise<Converted>;
   measure(type: MaterialType, buf: Buffer, name: string, link?: boolean): Promise<Measured>;
+  /** Stops every job running or waiting now: each rejects with `ConvertStopped`. Jobs asked for later run as usual. */
+  stop?(): void;
 }
 
 /** A runner that sends every file to its own worker (`convertInWorker`) with these options. */
 export function workerRunner(o: WorkerOptions = {}): ConvertRunner {
+  // The jobs started since the last stop share one signal.
+  let stopper = new AbortController();
   return {
-    convert: (type, data, opts) => convertInWorker({ op: "convert", type, data, ...opts }, o),
-    measure: (type, data, name, link) => convertInWorker({ op: "measure", type, data, name, ...(link ? { link } : {}) }, o),
+    convert: (type, data, opts) => convertInWorker({ op: "convert", type, data, ...opts }, o, stopper.signal),
+    measure: (type, data, name, link) => convertInWorker({ op: "measure", type, data, name, ...(link ? { link } : {}) }, o, stopper.signal),
+    stop: () => {
+      stopper.abort();
+      stopper = new AbortController();
+    },
   };
 }
 
@@ -96,10 +127,14 @@ export function workerRunner(o: WorkerOptions = {}): ConvertRunner {
 export function limitRunner(inner: ConvertRunner, n = CONVERT_AT_ONCE): ConvertRunner {
   let running = 0;
   const waiting: (() => void)[] = [];
+  // Bumped by a stop: a job that waited since before it never starts.
+  let generation = 0;
   const slot = async <T>(job: () => Promise<T>): Promise<T> => {
+    const asked = generation;
     if (running >= n) await new Promise<void>((r) => waiting.push(r));
     else running++;
     try {
+      if (asked !== generation) throw new ConvertStopped();
       return await job();
     } finally {
       // The place passes straight to the next job waiting; otherwise it frees up.
@@ -111,5 +146,9 @@ export function limitRunner(inner: ConvertRunner, n = CONVERT_AT_ONCE): ConvertR
   return {
     convert: (type, data, opts) => slot(() => inner.convert(type, data, opts)),
     measure: (type, data, name, link) => slot(() => inner.measure(type, data, name, link)),
+    stop: () => {
+      generation++;
+      inner.stop?.();
+    },
   };
 }

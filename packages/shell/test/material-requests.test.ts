@@ -24,7 +24,13 @@ describe("personMaterialRequest", () => {
   });
   it("search and flag", async () => {
     expect(await personMaterialRequest(deps("fractions"), { op: "search", query: "half" })).toEqual([{ id: "ch2-001", where: "ch2.pdf, p.1", path: "Fractions", summary: "Halves." }]);
-    expect(await personMaterialRequest(deps("fractions"), { op: "flag", id: "ch2-001", reason: "cut" })).toBe("Thanks: it will be checked again.");
+    let woke = 0;
+    const d = { ...deps("fractions"), flagged: () => void woke++ };
+    expect(await personMaterialRequest(d, { op: "flag", id: "ch2-001", reason: "cut" })).toBe("Thanks: it will be checked again.");
+    // The flag wakes the queue of AI stages; a refused one doesn't.
+    expect(woke).toBe(1);
+    await expect(personMaterialRequest(d, { op: "flag", id: "ch2-009", reason: "cut" })).rejects.toThrow();
+    expect(woke).toBe(1);
   });
   it("uses the store it is given (one write queue per base and scope)", async () => {
     const asked: string[] = [];

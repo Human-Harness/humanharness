@@ -2,10 +2,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
-import { type HarnessSetupStep, defineHarness, z } from "@humanharness/harness-sdk";
+import { type HarnessSetupStep, type SetupFormStep, defineHarness, setupFormSpec, z } from "@humanharness/harness-sdk";
 import type { SettingsResult, SetupStepsState } from "@humanharness/ui/client";
 import { APP_SCOPE, DataStore, runDataRequest } from "@humanharness/workspace";
-import { SetupSteps } from "../src/main/setup-steps";
+import { SetupSteps, setupStepViews } from "../src/main/setup-steps";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-steps-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -253,5 +253,25 @@ describe("SetupSteps: finish and acknowledge (spec §8 Q3)", () => {
     const first = fs.statSync(path.join(t.folder!, ".harness", "setup.json")).mtimeMs;
     await t.ctl.acknowledge();
     expect(fs.statSync(path.join(t.folder!, ".harness", "setup.json")).mtimeMs).toBe(first);
+  });
+});
+
+describe("setupStepViews", () => {
+  it("what the window draws: a form's fields, an interview's action and cost, a component's name; never a brief", () => {
+    const views = setupStepViews(harness);
+    expect(views.map((v) => [v.id, v.kind, v.label, v.required])).toEqual([
+      ["conocerte", "interview", "Get to know you", true],
+      ["estilo", "form", "How the AI talks", false],
+      ["goal", "form", "Your goal", false],
+      ["ready", "component", "Ready check", true],
+    ]);
+    expect(views[0]).toEqual({ id: "conocerte", kind: "interview", label: "Get to know you", required: true, action: "conocerte", cost: "light" });
+    const [, estilo] = harness.setup!;
+    expect(views[1].form).toEqual(setupFormSpec(estilo as SetupFormStep, harness));
+    expect(views[1].form?.fields.map((f) => [f.name, f.kind])).toEqual([["tone", "choice"]]);
+    // `goal` is z.string().min(3) with no max: a long text field.
+    expect(views[2].form?.fields.map((f) => [f.name, f.kind, f.min])).toEqual([["goal", "longText", 3]]);
+    expect(views[3]).toEqual({ id: "ready", kind: "component", label: "Ready check", required: true, component: "ReadyStep" });
+    expect(setupStepViews({ actions: {}, data: {} })).toEqual([]);
   });
 });

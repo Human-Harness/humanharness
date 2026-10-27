@@ -39,6 +39,8 @@ import {
   type SendOptions,
   type SetupOutput,
   type SetupStep,
+  type SetupStepResult,
+  type SetupStepsState,
   type TestResult,
   type UsageSummary,
   RESTORE_POINT,
@@ -64,6 +66,7 @@ import {
   readNotes,
   syncLocations,
   syncStatus,
+  tasksFile,
   writeNote,
 } from "@humanharness/workspace";
 import { imageDataUrl } from "./assets";
@@ -94,6 +97,7 @@ import { type MoveDeps, guardedMove, moveFolder, moveJournal, precheckMove, reco
 import { type ResolvedReference, displayPath, resolveReferences, usableReferences } from "./references";
 import { respondHandler } from "./respond-ipc";
 import { SettingsController } from "./settings";
+import { SetupSteps, setupStepViews } from "./setup-steps";
 import { TaskManager } from "./task-manager";
 import { historyView, isSha } from "./history-view";
 import { RestoreGuard, lastOpened } from "./restore-guard";
@@ -151,6 +155,10 @@ let historyHeld = false;
 let references: Promise<ResolvedReference[]> = Promise.resolve([]);
 /** The harness's settings (harness-settings spec); null when it declares none (D0). Set once the harness is loaded. */
 let settingsCtl: SettingsController | null = null;
+/** The harness's setup steps (setup-steps spec); null without any (D0): no `.harness/setup.json` is ever read or written. */
+let setupCtl: SetupSteps | null = null;
+const NO_SETUP_STEPS: SetupStepsState = { steps: {}, blocking: [] };
+const NO_SETUP_STEP: SetupStepResult = { ok: false, reason: "unknown" };
 
 /**
  * The reference folders usable with the working folder: one that is or contains it is left out (its
@@ -254,6 +262,7 @@ async function appState(): Promise<AppState> {
   const harnessImage = await harnessLogo();
   const saved = await config.load();
   const inputs = inputSpecs(harness.blocks);
+  const interviews = interviewCollections(harness);
   return {
     harness: {
       id: harness.id,
@@ -324,6 +333,8 @@ async function appState(): Promise<AppState> {
               }
             : {}),
           ...(a.timeBox ? { timeBox: { options: a.timeBox.options, default: a.timeBox.default } } : {}),
+          // An interview step's action is no topic (setup-steps spec §3): the setup screen and Settings start it.
+          ...(Object.hasOwn(interviews, id) ? { setup: true as const } : {}),
         },
       ]),
     ),
@@ -344,6 +355,8 @@ async function appState(): Promise<AppState> {
           ),
         }
       : {}),
+    // Only a harness with setup steps sends them (setup-steps D0).
+    ...(harness.setup ? { setup: setupStepViews(harness) } : {}),
     references: (await referencesFor(saved.folder)).map((r) => ({ id: r.id, label: r.label, path: displayPath(r.path, os.homedir()) })),
     models: await modelsView(),
     backup: await backupView(saved.folder),
@@ -922,6 +935,23 @@ function registerIpc() {
     settingsCtl ? settingsCtl.set(field, value) : { ok: false, message: "This harness has no settings" },
   );
   handle("hh:settingsReset", () => (settingsCtl ? settingsCtl.reset() : { ok: false, message: "This harness has no settings" }));
+  // The harness's setup steps (setup-steps spec §4, §5). Without any, nothing to read and every change refused (D0).
+  // A setup.json that can't be saved is a refusal (or the state as it stands), never a thrown error.
+  const stepRefused = (err: unknown): SetupStepResult => {
+    console.error("Could not save the setup steps", err);
+    return { ok: false, reason: "not-ready" };
+  };
+  const stepsAsTheyStand = (err: unknown): Promise<SetupStepsState> => {
+    console.error("Could not save the setup steps", err);
+    return setupCtl ? setupCtl.state().catch(() => NO_SETUP_STEPS) : Promise.resolve(NO_SETUP_STEPS);
+  };
+  handle("hh:setupStepsGet", () => (setupCtl ? setupCtl.state().catch(() => NO_SETUP_STEPS) : NO_SETUP_STEPS));
+  handle("hh:setupStepValues", (id: unknown) => (setupCtl ? setupCtl.values(id).catch(() => ({})) : {}));
+  handle("hh:setupStepSubmit", (id: unknown, value: unknown) => (setupCtl ? setupCtl.submit(id, value).catch(stepRefused) : NO_SETUP_STEP));
+  handle("hh:setupStepComplete", (id: unknown) => (setupCtl ? setupCtl.complete(id).catch(stepRefused) : NO_SETUP_STEP));
+  handle("hh:setupStepSkip", (id: unknown) => (setupCtl ? setupCtl.skip(id).catch(stepRefused) : NO_SETUP_STEP));
+  handle("hh:setupStepsFinish", () => (setupCtl ? setupCtl.finish().catch(stepsAsTheyStand) : NO_SETUP_STEPS));
+  handle("hh:setupStepsAcknowledge", () => (setupCtl ? setupCtl.acknowledge().catch(stepsAsTheyStand) : NO_SETUP_STEPS));
   handle("hh:choose", (option: unknown, task: unknown) => {
     if (quitting) throw new Error("The app is closing");
     const blocked = turnBlocked();
@@ -1237,6 +1267,31 @@ if (loaded) {
         return rt ? rt.refreshInstructions() : false;
       },
       changed: (state) => sendToWindow("hh:settings", state),
+    });
+  }
+  // Only a harness with setup steps gets the controller: its reads may write `.harness/setup.json` (setup-steps D0).
+  if (harness.setup) {
+    const settings = settingsCtl;
+    setupCtl = new SetupSteps({
+      steps: harness.setup,
+      data: harness.data,
+      ...(harness.settings ? { settings: harness.settings } : {}),
+      base: async () => {
+        const c = await validConfig();
+        return c ? baseOf(c) : null;
+      },
+      store: async () => {
+        const c = await validConfig();
+        return c ? dataStoreFor(baseOf(c)) : null;
+      },
+      // As the person, app-wide: the store's checks, turns-blocked refusals and a `Data: <collection>` commit.
+      write: (request) => personData(request, { scope: APP_SCOPE }),
+      ...(settings ? { setSetting: (field: string, value: unknown) => settings.set(field, value), settingValues: () => settings.values() } : {}),
+      openAction: async () => (await tasks.runningTask())?.action,
+      // A folder that ran tasks before these steps existed counts as set up (spec §8 Q3).
+      ranBefore: (base) => fs.access(tasksFile(base)).then(() => true, () => false),
+      quitting: () => quitting,
+      changed: (state) => sendToWindow("hh:setupSteps", state),
     });
   }
 }

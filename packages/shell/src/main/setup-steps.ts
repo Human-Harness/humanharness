@@ -1,5 +1,5 @@
-import type { Collection, HarnessSettings, HarnessSetupStep, z } from "@humanharness/harness-sdk";
-import type { InputIssue, SettingsResult, SetupStepResult, SetupStepsState } from "@humanharness/ui/client";
+import { type ActionCost, type Collection, type HarnessSettings, type HarnessSetupStep, setupFormSpec, type z } from "@humanharness/harness-sdk";
+import type { InputIssue, SettingsResult, SetupStepResult, SetupStepView, SetupStepsState } from "@humanharness/ui/client";
 import { APP_SCOPE, type DataContext, DataError, type DataRequest, type DataStore } from "@humanharness/workspace";
 import { DataUnavailable } from "./data-requests";
 import { type SetupFile, SetupStore, type StepMark, emptySetup, setupState } from "./setup-store";
@@ -252,4 +252,20 @@ export class SetupSteps {
     this.writes = run.catch(() => undefined);
     return run;
   }
+}
+
+/** What the window draws of each setup step (spec §3), in order: a form's fields, an interview's action and cost, a component's name. */
+export function setupStepViews(h: {
+  setup?: readonly HarnessSetupStep[];
+  actions: Record<string, { cost: ActionCost }>;
+  data: Record<string, Collection>;
+  settings?: HarnessSettings;
+}): SetupStepView[] {
+  return (h.setup ?? []).map((s): SetupStepView => {
+    const base = { id: s.id, kind: s.kind, label: s.label, required: s.required, ...(s.description ? { description: s.description } : {}) };
+    if (s.kind === "form") return { ...base, form: setupFormSpec(s, h) };
+    // The manifest guarantees an interview's action exists.
+    if (s.kind === "interview") return { ...base, action: s.action, cost: h.actions[s.action].cost };
+    return { ...base, component: s.component };
+  });
 }

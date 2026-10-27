@@ -894,3 +894,17 @@ describe("AcpTransport: cost per turn", () => {
     expect(usageOf(await run(t, "two"))?.costUsd).toBe(0);
   });
 });
+
+describe("AcpTransport: auth_required (OpenCode)", () => {
+  it("maps -32000 on a prompt to session-expired and closes the process", async () => {
+    const { transport: t, log } = setup(
+      { turns: [[{ error: { code: -32000, message: "Authentication required" } }], [{ stop: "end_turn" }]] },
+      undefined,
+      byConfig,
+    );
+    const events = await run(t);
+    expect(events.at(-1)).toMatchObject({ type: "done", ok: false, error: { code: "session-expired" } });
+    await run(t);
+    expect(log().filter((l) => l.method === "initialize")).toHaveLength(2);
+  });
+});

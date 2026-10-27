@@ -15,9 +15,20 @@ export interface PreSendInput {
   /** The app's UI language, by name ("English"); the brief's rules answer in it. */
   uiLanguage: string;
   prompt: string;
+  /** The scope's purpose text for the speaker (§2a.4), when any. */
+  purposeText?: string;
 }
 
 const list = (items: readonly string[]) => (items.length ? items.map((i) => `- ${i}`) : ["- (none)"]);
+
+/**
+ * The scope's purpose line (spec §2a.4), when there is text. It is the person's own text: kept to one line (so it
+ * can't pose as another context line) and cut to SIDEKICK_PURPOSE_TEXT_MAX.
+ */
+const purposeLine = (text: string | undefined): string[] => {
+  const t = text?.replace(/\s+/g, " ").trim().slice(0, SIDEKICK_PURPOSE_TEXT_MAX);
+  return t ? [`Scope purpose: ${t}`] : [];
+};
 
 /** The per-turn context (spec §5): compact, never the task's history. */
 export function preSendPrompt(i: PreSendInput): string {
@@ -26,6 +37,7 @@ export function preSendPrompt(i: PreSendInput): string {
     "",
     `App: ${i.harness.name}${i.harness.tagline ? ` — ${i.harness.tagline}` : ""}`,
     ...(i.phase ? [`Open phase: ${i.phase.label}${i.phase.brief ? ` — ${i.phase.brief.split("\n")[0]}` : ""}`] : []),
+    ...purposeLine(i.purposeText),
     "Notes in this scope:",
     ...list(i.notes.slice(0, 20)),
     "Data tables:",
@@ -128,7 +140,7 @@ export function afterReplyPrompt(i: AfterInput): string {
     "",
     `App: ${i.harness.name}${i.harness.tagline ? ` — ${i.harness.tagline}` : ""}`,
     ...(i.phase ? [`Open phase: ${i.phase.label}${i.phase.brief ? ` — ${i.phase.brief.split("\n")[0]}` : ""}`] : []),
-    ...(i.purposeText ? [`Scope purpose: ${i.purposeText}`] : []),
+    ...purposeLine(i.purposeText),
     "Earlier prompts (first lines):",
     ...list(i.lastPrompts.slice(-3).map((p) => p.split("\n")[0])),
     `UI language: ${i.uiLanguage}`,

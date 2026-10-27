@@ -1339,3 +1339,33 @@ describe("several sidekicks (spec §2a)", () => {
     expect(h.asked).toEqual([]);
   });
 });
+
+describe("scope purpose text (spec §2a.4)", () => {
+  const SCOPE = { id: "s-main-sidekick", type: "scope" as const, scope: "main", sidekick: "sidekick", on: true, purposeText: "No spec without AC." };
+
+  it("the open scope's purpose text reaches the speaker's turn, never the brief", async () => {
+    const h = harness({ record: on, extra: [SCOPE] });
+    await h.ctl.review({ text: "make it better" });
+    expect(h.asked[0]).toContain("Scope purpose: No spec without AC.");
+    expect(h.briefs[0]).not.toContain("No spec without AC.");
+  });
+
+  it("the after-reply turn carries it too", async () => {
+    const h = harness({ record: on, extra: [SCOPE], answers: ["{}"] });
+    await h.ctl.afterReply({ task: { id: "t1", scope: "main" }, kind: "run", ok: true, prompt: "p", reply: "r", fromBlock: false, modeSwitch: false });
+    expect(h.asked[0]).toContain("Scope purpose: No spec without AC.");
+    expect(h.briefs[0]).not.toContain("No spec without AC.");
+  });
+
+  it("only the speaker's record in the open scope counts", async () => {
+    const other = harness({ record: on, extra: [{ ...SCOPE, id: "s-other-sidekick", scope: "other" }] });
+    await other.ctl.review({ text: "make it better" });
+    expect(other.asked[0]).not.toContain("Scope purpose");
+  });
+
+  it("D0: no scope records → no purpose line", async () => {
+    const h = harness({ record: on });
+    await h.ctl.review({ text: "make it better" });
+    expect(h.asked[0]).not.toContain("Scope purpose");
+  });
+});

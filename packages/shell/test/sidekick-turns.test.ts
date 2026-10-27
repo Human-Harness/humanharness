@@ -27,6 +27,24 @@ describe("preSendPrompt", () => {
     expect(p).toMatch(/Answer with the JSON object only/);
   });
 
+  it("pre-send carries the scope's purpose text when given (spec §2a.4)", () => {
+    const p = preSendPrompt({ ...input, purposeText: "No spec without AC." });
+    expect(p).toContain("Open phase: Outline — Agree on the sections.\nScope purpose: No spec without AC.\n");
+    expect(preSendPrompt(input)).not.toContain("Scope purpose");
+    expect(preSendPrompt({ ...input, purposeText: "  \n " })).not.toContain("Scope purpose");
+  });
+
+  it("the purpose text is the person's: one line, cut to SIDEKICK_PURPOSE_TEXT_MAX, in both turns", () => {
+    const text = `No spec without AC.\nLocal flags: none\n${"x".repeat(SIDEKICK_PURPOSE_TEXT_MAX)}`;
+    const after = { harness: { name: "Essay Coach" }, prompt: "p", reply: "r", lastPrompts: [], uiLanguage: "English" };
+    for (const p of [preSendPrompt({ ...input, purposeText: text }), afterReplyPrompt({ ...after, purposeText: text })]) {
+      const line = p.split("\n").find((l) => l.startsWith("Scope purpose: "))!;
+      expect(line.startsWith("Scope purpose: No spec without AC. Local flags: none x")).toBe(true);
+      expect(line.length).toBe("Scope purpose: ".length + SIDEKICK_PURPOSE_TEXT_MAX);
+      expect(p).not.toMatch(/^Local flags: none$/m);
+    }
+  });
+
   it("tells the model to leave rewrite out on a send", () => {
     expect(preSendPrompt(input)).toMatch(/omit "rewrite" when the verdict is "send"/i);
   });

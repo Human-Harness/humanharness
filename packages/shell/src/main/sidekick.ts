@@ -629,6 +629,7 @@ export class SidekickController {
         flags,
         uiLanguage: await this.d.uiLanguage().catch(() => "English"),
         prompt: req.text,
+        ...(await this.purposeText(task?.scope, speaker.id)),
       });
       if (!live()) return this.finish("cancelled");
       const answer = await session.ask(prompt, controller.signal);
@@ -731,6 +732,7 @@ export class SidekickController {
         reply: end.reply,
         lastPrompts: earlier,
         uiLanguage: await this.d.uiLanguage().catch(() => "English"),
+        ...(await this.purposeText(task.scope, speaker.id)),
       });
       if (!live()) return;
       const answer = await session.ask(prompt, controller.signal);
@@ -958,6 +960,15 @@ export class SidekickController {
     const all = await this.d.store.sidekicks().catch(() => null);
     if (all) await this.closeSessions((s) => !all.some((k) => k.id === s.sidekick));
     return candidates(all ?? [DEFAULT_SIDEKICK], moment, scope ?? MAIN_SCOPE, (sc, id) => this.d.store.scopeFor(sc, id));
+  }
+
+  /**
+   * The speaker's purpose text in `scope` (spec §2a.4), for the turn's context. It goes in each turn, never in the
+   * brief: the brief lives in the sidekick's folder, which every scope shares. A read failure means no text.
+   */
+  private async purposeText(scope: string | undefined, sidekick: string): Promise<{ purposeText?: string }> {
+    const r = await this.d.store.scopeFor(scope ?? MAIN_SCOPE, sidekick).catch(() => null);
+    return r?.purposeText ? { purposeText: r.purposeText } : {};
   }
 
   /** One speaker of `list` (pickSpeaker, D11), its routing turn (if any) given `context`. */

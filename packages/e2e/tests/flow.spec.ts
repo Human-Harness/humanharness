@@ -90,7 +90,7 @@ test("a topic answered with blocks, then next: the note is saved and the next to
 
     // Settings › Uso: the manifest task took the five-hour window from 10 % to 14 % (spec 3b).
     await page.getByRole("button", { name: "Settings" }).click();
-    await expect(page.getByRole("tab")).toHaveText(["General", "Engine", "Models", "Usage"]);
+    await expect(page.getByRole("tab")).toHaveText(["General", "Engine", "Models", "Sidekick", "Usage"]);
     await page.getByRole("tab", { name: "Usage" }).click();
     const usage = page.getByRole("tabpanel", { name: "Usage" });
     await expect(usage.getByText("15% used")).toBeVisible();

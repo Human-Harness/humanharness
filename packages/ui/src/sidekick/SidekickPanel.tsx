@@ -22,6 +22,8 @@ export interface SidekickPanelProps {
   onEdit(card: SidekickCard): void;
   onSendAnyway(card: SidekickCard): void;
   onPutInComposer(text: string): void;
+  /** Opens Settings › Sidekick from the foot's tier; without it the tier is plain text. */
+  onTier?: () => void;
 }
 
 /** The expanded Sidekick panel, 330 px (spec §7, mockup boards 1–3). Never takes focus. */
@@ -30,6 +32,7 @@ export function SidekickPanel(p: SidekickPanelProps) {
   const n = (v: number) => v.toLocaleString(shownLanguage(i18n));
   const s = p.state;
   const showHarness = p.harnessSide !== undefined && p.view === "harness";
+  const tierText = t("sidekick.tier", { tier: t(`sidekick.tiers.${s.tier}`, { defaultValue: s.tier }) });
   return (
     <aside className="hh-sk-panel" aria-label={s.info.name}>
       <header className="hh-sk-head">
@@ -85,7 +88,14 @@ export function SidekickPanel(p: SidekickPanelProps) {
           <p>{s.cap === null ? t("sidekick.footNoCap", { spent: n(s.spent) }) : t("sidekick.foot", { spent: n(s.spent), cap: n(s.cap) })}</p>
           {s.cap !== null && <progress max={s.cap} value={Math.min(s.spent, s.cap)} aria-label={t("sidekick.toggle")} />}
           <p className="hh-caption">
-            <span>{t("sidekick.tier", { tier: t(`sidekick.tiers.${s.tier}`, { defaultValue: s.tier }) })}</span> · <span>{t("sidekick.sendNow", { key: p.sendKey })}</span>
+            {p.onTier ? (
+              <button type="button" className="hh-link" onClick={p.onTier}>
+                {tierText}
+              </button>
+            ) : (
+              <span>{tierText}</span>
+            )}{" "}
+            · <span>{t("sidekick.sendNow", { key: p.sendKey })}</span>
           </p>
         </footer>
       )}

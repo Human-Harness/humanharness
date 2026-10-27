@@ -44,6 +44,13 @@ describe("SidekickPanel", () => {
     expect(screen.getByRole("progressbar")).toBeTruthy();
   });
 
+  it("with onTier, the foot's tier is a button that opens Settings › Sidekick", async () => {
+    const onTier = vi.fn();
+    await panel(SK_ON, handlers(), { onTier });
+    fireEvent.click(screen.getByRole("button", { name: "Tier: Light" }));
+    expect(onTier).toHaveBeenCalled();
+  });
+
   it("the card: issues, the rewrite with added words marked, the three buttons", async () => {
     const h = await panel({ ...SK_ON, status: "suggestion", card: CARD });
     expect(screen.getByText("Say what better means.")).toBeTruthy();

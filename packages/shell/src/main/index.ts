@@ -936,13 +936,14 @@ function registerIpc() {
   );
   handle("hh:settingsReset", () => (settingsCtl ? settingsCtl.reset() : { ok: false, message: "This harness has no settings" }));
   // The harness's setup steps (setup-steps spec §4, §5). Without any, nothing to read and every change refused (D0).
-  // A setup.json that can't be saved is a refusal (or the state as it stands), never a thrown error.
+  // A call that fails (a setup.json that can't be saved, a settings write that throws) is a refusal, or the state as
+  // it stands, never a thrown error.
   const stepRefused = (err: unknown): SetupStepResult => {
-    console.error("Could not save the setup steps", err);
+    console.error("A setup step call failed", err);
     return { ok: false, reason: "not-ready" };
   };
   const stepsAsTheyStand = (err: unknown): Promise<SetupStepsState> => {
-    console.error("Could not save the setup steps", err);
+    console.error("A setup step call failed", err);
     return setupCtl ? setupCtl.state().catch(() => NO_SETUP_STEPS) : Promise.resolve(NO_SETUP_STEPS);
   };
   handle("hh:setupStepsGet", () => (setupCtl ? setupCtl.state().catch(() => NO_SETUP_STEPS) : NO_SETUP_STEPS));

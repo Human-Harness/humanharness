@@ -72,10 +72,22 @@ function setup(
 const person = { who: "person" as const, scope: APP_SCOPE };
 
 describe("SetupSteps: state", () => {
-  it("a fresh folder: every step missing, the required ones blocking; nothing is written by a read", async () => {
+  it("a fresh folder: every step missing, the required ones blocking; the first read records it as fresh", async () => {
     const t = setup();
     expect(await t.ctl.state()).toEqual({ steps: { conocerte: "missing", estilo: "missing", goal: "missing", ready: "missing" }, blocking: ["conocerte", "ready"] });
-    expect(fs.existsSync(path.join(t.folder!, ".harness", "setup.json"))).toBe(false);
+    expect(t.file()).toEqual({ version: 1, steps: {} });
+    expect(t.pushed).toEqual([]);
+  });
+
+  it("a fresh folder whose first task (the interview's) then writes tasks.json still has its required steps blocking", async () => {
+    let ran = false;
+    const t = setup({ ranBefore: async () => ran });
+    expect((await t.ctl.state()).blocking).toEqual(["conocerte", "ready"]);
+    ran = true;
+    await t.store!.put("profile", { name: "Sofi", goal: "Pass" }, person);
+    expect(await t.ctl.complete("conocerte")).toMatchObject({ ok: true, state: { blocking: ["ready"] } });
+    expect((await t.ctl.state()).blocking).toEqual(["ready"]);
+    expect(t.file().finishedAt).toBeUndefined();
   });
 
   it("before the app is set up: all missing, and every change is refused", async () => {
@@ -149,7 +161,8 @@ describe("SetupSteps: a form", () => {
     // No name yet: the merged record fails the collection's schema.
     const whole = await t.ctl.submit("goal", { goal: "Pass maths" });
     expect(whole).toEqual({ ok: false, reason: "invalid", errors: [{ path: "", message: expect.any(String) }] });
-    expect(fs.existsSync(path.join(t.folder!, ".harness", "setup.json"))).toBe(false);
+    // The read recorded the folder as fresh; no step was marked.
+    expect(t.file()).toEqual({ version: 1, steps: {} });
     expect(await t.ctl.submit("goal", "goal")).toEqual({ ok: false, reason: "invalid", errors: [{ path: "", message: "Expected the form's fields" }] });
   });
 

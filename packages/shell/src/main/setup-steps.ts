@@ -154,7 +154,8 @@ export class SetupSteps {
 
   /**
    * The folder's file; a folder with no file that ran tasks before counts as set up before these steps existed.
-   * Null when the file is there but can't be read (EACCES, EIO, a failed set-aside): no write may save over it.
+   * Either way the first read saves what it found. Null when the file is there but can't be read (EACCES, EIO, a
+   * failed set-aside): no write may save over it.
    */
   private async read(base: string): Promise<SetupFile | null> {
     let stored: SetupFile | null;
@@ -165,8 +166,10 @@ export class SetupSteps {
       return null;
     }
     if (stored) return stored;
-    if (!(await this.d.ranBefore(base).catch(() => false))) return emptySetup();
-    const file: SetupFile = { ...emptySetup(), finishedAt: this.nowIso(), known: [] };
+    // A fresh folder is recorded as fresh at once: its first task (the interview's) writes tasks.json, and a later
+    // read must not then take it for a folder that predates these steps.
+    const ran = await this.d.ranBefore(base).catch(() => false);
+    const file: SetupFile = ran ? { ...emptySetup(), finishedAt: this.nowIso(), known: [] } : emptySetup();
     await this.save(base, file).catch((err: unknown) => this.log("Could not write setup.json", err));
     return file;
   }

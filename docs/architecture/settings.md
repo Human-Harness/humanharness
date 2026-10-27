@@ -43,6 +43,10 @@ The structural rules are manifest schema errors: `defineHarness` and `loadHarnes
 - The record is read field by field (`validFields` in `packages/workspace/src/data.ts`): a stored value its field no longer takes (a hand edit, or a harness update that narrowed the field) is dropped and its default applies; the other fields keep their values, and later changes still save. Mode settings under `modes.<mode>` are read the same way, one level deeper. Only a file that isn't a JSON object is `broken-file`, which reads as the defaults and refuses writes until it is fixed or restored.
 - `SettingsController` writes the person's changes through the person's data handler (`personDataRequests`, the one behind `hh:data`): the store's checks, a refusal while turns are blocked (a restore, a folder move, an engine change), and a `Data: settings` history commit tagged with the open task. Undoing a task therefore also undoes settings changed during it, so `dataDiff` lists such a change in that task's diff, under collection `settings`, scope `_app`.
 
+## Profiles
+
+In a harness with profiles (`docs/architecture/profiles.md`) the settings are per profile: they are a collection, so they live in the active profile's folder, and a new profile starts with the defaults. Settings › Modelos (`config.json` → `models`), the language and the appearance stay app-wide. Settings › General has a People section (the active profile's Edit; Archive or Bring back, and Delete… for the others), and Settings › Usage adds up every profile and adds "Usage by person".
+
 ## The window
 
 - The tab comes right after General and is labelled with `settings.tab`; a harness without `settings` has no such tab. Before the app is set up it shows the "set up first" card, like Engine, Models and Usage.

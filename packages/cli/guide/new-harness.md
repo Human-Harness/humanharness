@@ -21,7 +21,7 @@ Resources are part of the third pillar. A harness never names a model: each task
 
 - The core checkout is the folder `package.json` links to: `"@humanharness/cli": "link:<core>/packages/cli"`. Below, `<core>` is that folder.
 - `<core>/harnesses/demo` is a complete example (custom blocks, a guided path, briefs, references). Read it for ideas; never copy it as a starting point.
-- `<core>/docs/architecture/` explains how the core works: `manifest.md`, `blocks.md`, `context.md`, `modes.md`, `phases.md`, `setup.md`, `turn.md`, `engines.md`, `authoring.md`.
+- `<core>/docs/architecture/` explains how the core works: `manifest.md`, `blocks.md`, `context.md`, `modes.md`, `phases.md`, `setup.md`, `profiles.md`, `turn.md`, `engines.md`, `authoring.md`.
 - In this repository: `harness.config.ts` (the manifest), `agent/AGENTS.md` (the instructions to the AI), `agent/tasks/*.md` (one brief per action), `agent/phases/*.md` (one brief per part, when an action has parts), `ui/` (the screen and the block components), `locales/en.json` (the UI strings).
 - Import the SDK from `@humanharness/cli/sdk` (`defineHarness`, `defineBlock`, `z`) and the UI kit from `@humanharness/cli/ui` (`HarnessApp`, `BlockProps`, `useTranslation`).
 
@@ -90,6 +90,12 @@ Every task ends with a note the app writes from the core `save_note` block (titl
   - a short interview: `kind: "interview"` with an `action` (not in `path`, not `deep`, `scope: "none"` when the harness has scopes) and the collection it `writes` (`single`, unscoped, `agent: "write"`, with a `context` so a second run sees the first one's answers). Its brief says what to find out; the core adds how to save it. If the harness has mock recordings, record one for the action (`humanharness run <action> --record`);
   - a screen of your own: `kind: "component"` with the name of a React component in `ui/`, passed to `HarnessApp setupSteps={{ Name }}`; it calls `done()` or `skip()`.
   See `<core>/docs/architecture/setup.md`.
+- **Who uses it?** One person, or several people on one computer (a family, a classroom)? If several, declare
+  `profiles: { label, fields }` with a `profile` collection (`single: true`, `scoped: false`, a `name` string). Ask
+  what to call one of them (the `label`: "student", "player") and what the add form asks (`fields`, `name` first; a
+  `color` field of `PROFILE_COLORS` colours each avatar). Give the collection a `context` if the AI should know who it
+  talks to. Tell the author that profiles keep work apart but don't protect it, and that adding them later has no
+  migration yet. See `<core>/docs/architecture/profiles.md`.
 
 Say it in the briefs where it matters, for example: "the decisions are the options the person chose, each with its reason".
 

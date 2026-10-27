@@ -44,3 +44,9 @@ export const RUNNING_SHARE = 0.6;
 export const NO_STRUCTURE_TOKENS = 3000;
 /** How long a link fetch may take. */
 export const FETCH_TIMEOUT_MS = 30_000;
+/** Zip containers (docx, odt, xlsx, ods, pptx, odp, epub): a file with more entries than this is a zip bomb. */
+export const ZIP_MAX_ENTRIES = 10_000;
+/** The uncompressed bytes a whole zip may hold (declared) and inflate (counted). */
+export const ZIP_MAX_TOTAL = 20 * MAX_BYTES;
+/** The uncompressed bytes one zip entry may inflate to. */
+export const ZIP_MAX_ENTRY = 4 * MAX_BYTES;

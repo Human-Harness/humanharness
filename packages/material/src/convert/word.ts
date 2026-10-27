@@ -5,6 +5,7 @@ import { MaterialRefused, markdownBlocks, plainLine, withEstimatedPages } from "
 import type { MdBlock } from "../types";
 import { decodeText } from "./text";
 import { htmlBlocks } from "./html";
+import { checkZip, openZip, zipText } from "./zip";
 
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
@@ -14,6 +15,8 @@ const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replac
  * mammoth puts them.
  */
 export async function docxBlocks(buf: Buffer): Promise<MdBlock[]> {
+  // mammoth inflates the zip itself: the guard reads it first, so a zip bomb never reaches it.
+  await checkZip(buf);
   let html: string;
   try {
     const result = await mammoth.convertToHtml({ buffer: buf }, { convertImage: mammoth.images.imgElement(async () => ({ src: "" })), ignoreEmptyParagraphs: true });
@@ -27,16 +30,11 @@ export async function docxBlocks(buf: Buffer): Promise<MdBlock[]> {
 /** An XML part of a zip, parsed keeping order (`preserveOrder`): each node is `{ tag: children, ":@": attrs }`. */
 export type XNode = Record<string, unknown> & { ":@"?: Record<string, string> };
 export async function zipXml(buf: Buffer | JSZip, name: string): Promise<XNode[] | null> {
-  let zip: JSZip;
-  try {
-    zip = buf instanceof JSZip ? buf : await JSZip.loadAsync(buf);
-  } catch {
-    throw new MaterialRefused("unreadable");
-  }
-  const file = zip.file(name);
-  if (!file) return null;
+  // A zip given as a Buffer is opened with the zip-bomb guard; a JSZip given must come from `openZip`.
+  const zip = buf instanceof JSZip ? buf : await openZip(buf);
+  const xml = await zipText(zip, name);
+  if (xml === null) return null;
   const parser = new XMLParser({ preserveOrder: true, ignoreAttributes: false, attributeNamePrefix: "", trimValues: false, processEntities: true, htmlEntities: false });
-  const xml = await file.async("string");
   try {
     return parser.parse(xml) as XNode[];
   } catch {

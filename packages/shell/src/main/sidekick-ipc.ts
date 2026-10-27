@@ -5,7 +5,7 @@ const OUTCOMES: readonly SidekickOutcome[] = ["used", "edited", "sent-anyway", "
 const MAX_PROMPT = 20_000;
 
 type Handle = (channel: string, fn: (...args: never[]) => unknown) => void;
-type Ctl = Pick<SidekickController, "state" | "set" | "review" | "cancel" | "resolve" | "mute" | "unmute">;
+type Ctl = Pick<SidekickController, "state" | "set" | "review" | "cancel" | "resolve" | "mute" | "unmute" | "saveDecision">;
 const MAX_ID = 80;
 const isId = (v: unknown): v is string => typeof v === "string" && v.length > 0 && v.length <= MAX_ID;
 
@@ -37,5 +37,11 @@ export function registerSidekickIpc(handle: Handle, ctl: () => Ctl | null): void
   handle("hh:sidekickUnmute", async (sidekick: unknown, kind: unknown) => {
     if (!isId(sidekick) || !isId(kind)) return;
     await ctl()?.unmute(sidekick, kind);
+  });
+  handle("hh:sidekickSaveDecision", async (id: unknown): Promise<{ ok: boolean; message?: string }> => {
+    const c = ctl();
+    if (!c) return { ok: false, message: "Sidekick is not available" };
+    if (!isId(id)) return { ok: false, message: "Not a Sidekick card" };
+    return c.saveDecision(id);
   });
 }

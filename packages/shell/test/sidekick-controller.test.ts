@@ -11,7 +11,7 @@ const profile = { engine: "claude", tier: "light" as const, model: "haiku", effo
 const json = (o: unknown) => JSON.stringify(o);
 const SUGGEST = json({ verdict: "suggest", issues: [{ kind: "vague", text: "Say what better means." }], rewrite: "Make the intro shorter.", confidence: 0.8 });
 
-export function harness(o: { record?: Partial<SidekickRecord> | null; answers?: (string | ((signal: AbortSignal) => Promise<SidekickAnswer>))[]; task?: { id: string; action?: string; scope: string; phase?: string } | null; usage?: UsageRecord[]; manifest?: SidekickDeps["manifest"]; waitMs?: number; events?: SidekickEvent[] } = {}) {
+export function harness(o: { record?: Partial<SidekickRecord> | null; answers?: (string | ((signal: AbortSignal) => Promise<SidekickAnswer>))[]; task?: { id: string; action?: string; scope: string; phase?: string } | null; usage?: UsageRecord[]; manifest?: SidekickDeps["manifest"]; waitMs?: number; events?: SidekickEvent[]; phases?: { id: string; label: string }[] } = {}) {
   // The `sidekick` collection by id; `record()` is the settings record.
   const records = new Map<string, Partial<SidekickRecord>>(o.record ? [[o.record.id ?? "settings", o.record]] : []);
   const writes: { op: string; record?: Partial<SidekickRecord>; key?: string }[] = [];
@@ -22,6 +22,7 @@ export function harness(o: { record?: Partial<SidekickRecord> | null; answers?: 
   const logged: UsageRecord[] = [];
   const briefs: string[] = [];
   const states: unknown[] = [];
+  const decisions: unknown[] = [];
   let task = o.task === undefined ? { id: "t1", scope: "main" } : o.task;
   const answers = [...(o.answers ?? [])];
   const store = new SidekickStore({
@@ -37,7 +38,7 @@ export function harness(o: { record?: Partial<SidekickRecord> | null; answers?: 
   const deps: SidekickDeps = {
     ...(o.manifest ? { manifest: o.manifest } : {}),
     harness: { name: "Essay Coach" },
-    phases: () => [],
+    phases: () => o.phases ?? [],
     store,
     setup: async () => ({ engineId: "claude", base: "/base" }),
     hasNotice: async () => true,
@@ -68,9 +69,11 @@ export function harness(o: { record?: Partial<SidekickRecord> | null; answers?: 
     changed: (s) => void states.push(s),
     events: { read: async () => [...events], append: async (_b, e) => void events.push(e) },
     waitMs: () => o.waitMs ?? 5_000,
+    saveDecision: async (d) => void decisions.push(d),
   };
   return { ctl: new SidekickController(deps), deps, asked, opened, closed, logged, briefs, states, setTask: (t: typeof task) => (task = t), events,
     writes,
+    decisions,
     record: () => records.get("settings") ?? null,
     setRecord: (r: Partial<SidekickRecord> | null) => (r ? records.set("settings", r) : records.delete("settings")),
   };
@@ -703,5 +706,136 @@ describe("after the reply (spec §4.2)", () => {
     expect((await h.ctl.state()).cards).toHaveLength(1);
     await h.ctl.set({ on: false });
     expect((await h.ctl.state()).cards).toEqual([]);
+  });
+});
+
+describe("heads-ups (spec §4.3)", () => {
+  const end = (o: Partial<Parameters<SidekickController["afterReply"]>[0]> = {}) => ({ task: { id: "t1", scope: "main" }, kind: "run" as const, ok: true, prompt: "p", reply: "r", fromBlock: false, modeSwitch: false, ...o });
+  const REP = json({ repeated: { topic: "APA style", decision: "Use APA 7 everywhere." } });
+  const phases = [{ id: "outline", label: "Outline" }, { id: "review", label: "Review citations" }];
+  const essay = { id: "t1", action: "essay", scope: "main", phase: "outline" };
+  const SEND = json({ verdict: "send", issues: [], confidence: 1 });
+  const headsUps = async (h: ReturnType<typeof harness>) => (await h.ctl.state()).cards.filter((c) => c.moment === "heads-up");
+
+  it("context ≥ 75% of the cap: one heads-up per task, 0 tokens", async () => {
+    const h = harness({ record: { ...on, afterReply: false } });
+    await h.ctl.afterReply(end({ context: { used: 120_000, cap: 200_000 } }));
+    expect(await headsUps(h)).toEqual([]);
+    await h.ctl.afterReply(end({ context: { used: 160_000, cap: 200_000 } }));
+    await h.ctl.afterReply(end({ context: { used: 170_000, cap: 200_000 } }));
+    expect(await headsUps(h)).toEqual([expect.objectContaining({ kind: "context", speaker: expect.objectContaining({ id: "sidekick" }), headsUp: { kind: "context", share: 0.8 } })]);
+    expect(h.asked).toEqual([]);
+    expect(h.logged).toEqual([]);
+    expect((await h.ctl.state()).status).toBe("suggestion");
+  });
+
+  it("the context heads-up comes back in another task", async () => {
+    const h = harness({ record: { ...on, afterReply: false } });
+    await h.ctl.afterReply(end({ context: { used: 160_000, cap: 200_000 } }));
+    h.setTask({ id: "t2", scope: "main" });
+    await h.ctl.betweenTasks();
+    expect(await headsUps(h)).toEqual([]);
+    await h.ctl.afterReply(end({ task: { id: "t2", scope: "main" }, context: { used: 160_000, cap: 200_000 } }));
+    expect(await headsUps(h)).toHaveLength(1);
+  });
+
+  it("no cap reported, or a turn of a task no longer open: no heads-up", async () => {
+    const h = harness({ record: { ...on, afterReply: false } });
+    await h.ctl.afterReply(end({ context: { used: 190_000 } }));
+    await h.ctl.afterReply(end({ task: { id: "t0", scope: "main" }, context: { used: 190_000, cap: 200_000 } }));
+    expect(await headsUps(h)).toEqual([]);
+  });
+
+  it("the same topic asked 3 times: a heads-up with the draft decision, never an after card", async () => {
+    const h = harness({ record: on, answers: [REP, REP, json({ repeated: { topic: "apa Style ", decision: "Use APA 7 everywhere." } })] });
+    await h.ctl.afterReply(end());
+    await h.ctl.afterReply(end());
+    expect((await h.ctl.state()).cards).toEqual([]);
+    await h.ctl.afterReply(end());
+    const s = await h.ctl.state();
+    expect(s.cards).toEqual([expect.objectContaining({ moment: "heads-up", kind: "repeated", headsUp: { kind: "repeated", topic: "apa Style", decision: "Use APA 7 everywhere." } })]);
+  });
+
+  it("a gap with a repeated ask: the after card leaves the repeated part to the heads-up", async () => {
+    const h = harness({ record: on, answers: [json({ gap: { title: "Sources", text: "No source." }, repeated: { topic: "APA style", decision: "Use APA 7." } })] });
+    await h.ctl.afterReply(end());
+    expect((await h.ctl.state()).cards).toEqual([expect.objectContaining({ moment: "after", kind: "gap", after: { gap: { title: "Sources", text: "No source." } } })]);
+  });
+
+  it("two off-phase flags in a row: drift, naming the other phase", async () => {
+    const h = harness({ record: on, task: essay, phases, answers: [SEND, SEND] });
+    await h.ctl.review({ text: "Check the citations in section 2 against the bibliography" });
+    expect(await headsUps(h)).toEqual([]);
+    await h.ctl.review({ text: "Check the citations in section 3 against the bibliography" });
+    expect(await headsUps(h)).toEqual([expect.objectContaining({ kind: "off-phase", headsUp: { kind: "off-phase", phase: "Review citations" } })]);
+  });
+
+  it("a prompt on the open phase breaks the streak", async () => {
+    const h = harness({ record: on, task: essay, phases, answers: [SEND, SEND, SEND] });
+    await h.ctl.review({ text: "Check the citations in section 2 against the bibliography" });
+    await h.ctl.review({ text: "Rewrite the outline of section 2 so it has three numbered parts" });
+    await h.ctl.review({ text: "Check the citations in section 3 against the bibliography" });
+    expect(await headsUps(h)).toEqual([]);
+  });
+
+  it("heads-ups off: none", async () => {
+    const h = harness({ record: { ...on, headsUps: false }, task: essay, phases, answers: [REP, REP, REP, SEND, SEND] });
+    for (let i = 0; i < 3; i++) await h.ctl.afterReply(end({ context: { used: 190_000, cap: 200_000 } }));
+    await h.ctl.review({ text: "Check the citations in section 2 against the bibliography" });
+    await h.ctl.review({ text: "Check the citations in section 3 against the bibliography" });
+    expect((await h.ctl.state()).cards).toEqual([]);
+  });
+
+  it("D0: Sidekick off → no heads-up, no turn, no event", async () => {
+    const h = harness({ task: essay, phases });
+    await h.ctl.afterReply(end({ context: { used: 190_000, cap: 200_000 } }));
+    await h.ctl.review({ text: "Check the citations in section 2 against the bibliography" });
+    await h.ctl.review({ text: "Check the citations in section 3 against the bibliography" });
+    expect((await h.ctl.state()).cards).toEqual([]);
+    expect(h.asked).toEqual([]);
+    expect(h.events).toEqual([]);
+    expect(h.decisions).toEqual([]);
+  });
+
+  it("a muted heads-up kind never shows", async () => {
+    const h = harness({ record: { ...on, afterReply: false, muted: { sidekick: ["context"] } } });
+    await h.ctl.afterReply(end({ context: { used: 190_000, cap: 200_000 } }));
+    expect(await headsUps(h)).toEqual([]);
+  });
+
+  it("Dismiss: one event with moment heads-up", async () => {
+    const h = harness({ record: { ...on, afterReply: false } });
+    await h.ctl.afterReply(end({ context: { used: 190_000, cap: 200_000 } }));
+    const [card] = await headsUps(h);
+    await h.ctl.resolve(card.id, "dismissed");
+    expect(h.events).toEqual([expect.objectContaining({ moment: "heads-up", kind: "context", outcome: "dismissed", task: "t1" })]);
+    expect((await h.ctl.state()).cards).toEqual([]);
+  });
+
+  it("Save as decision writes the note as the person, then the card goes", async () => {
+    const h = harness({ record: on, answers: [REP, REP, REP] });
+    for (let i = 0; i < 3; i++) await h.ctl.afterReply(end());
+    const [card] = await headsUps(h);
+    expect(await h.ctl.saveDecision(card.id)).toEqual({ ok: true });
+    expect(h.decisions).toEqual([{ task: "t1", scope: "main", title: "Decision: APA style", decision: "Use APA 7 everywhere." }]);
+    expect((await h.ctl.state()).cards).toEqual([]);
+    expect(h.events).toEqual([expect.objectContaining({ moment: "heads-up", kind: "repeated", outcome: "used" })]);
+  });
+
+  it("Save as decision refuses another card, and keeps the card when the write fails", async () => {
+    const h = harness({ record: { ...on, afterReply: false } });
+    await h.ctl.afterReply(end({ context: { used: 190_000, cap: 200_000 } }));
+    const [context] = await headsUps(h);
+    expect(await h.ctl.saveDecision(context.id)).toMatchObject({ ok: false });
+    expect(await h.ctl.saveDecision("nope")).toMatchObject({ ok: false });
+    const f = harness({ record: on, answers: [REP, REP, REP] });
+    f.deps.saveDecision = async () => {
+      throw new Error("disk full");
+    };
+    for (let i = 0; i < 3; i++) await f.ctl.afterReply(end());
+    const [rep] = await headsUps(f);
+    expect(await f.ctl.saveDecision(rep.id)).toEqual({ ok: false, message: "disk full" });
+    expect(await headsUps(f)).toHaveLength(1);
+    expect(f.events).toEqual([]);
   });
 });

@@ -12,6 +12,7 @@ function wire(available = true) {
     resolve: async (id: unknown, o: unknown) => void calls.push(["resolve", id, o]),
     mute: async (id: unknown) => void calls.push(["mute", id]),
     unmute: async (s: unknown, k: unknown) => void calls.push(["unmute", s, k]),
+    saveDecision: async (id: unknown) => (calls.push(["saveDecision", id]), { ok: true }),
   };
   registerSidekickIpc(
     (ch, fn) => void handlers.set(ch, fn),
@@ -69,5 +70,14 @@ describe("sidekick IPC", () => {
     await w.call("hh:sidekickResolve", "c1", "used");
     await w.call("hh:sidekickMute", "c1");
     await w.call("hh:sidekickUnmute", "sidekick", "vague");
+  });
+
+  it("Save as decision: a valid card id reaches the controller; anything else is refused as data", async () => {
+    const w = wire();
+    expect(await w.call("hh:sidekickSaveDecision", "c1")).toEqual({ ok: true });
+    expect(await w.call("hh:sidekickSaveDecision", 42)).toMatchObject({ ok: false });
+    expect(await w.call("hh:sidekickSaveDecision", "x".repeat(81))).toMatchObject({ ok: false });
+    expect(w.calls).toEqual([["saveDecision", "c1"]]);
+    expect(await wire(false).call("hh:sidekickSaveDecision", "c1")).toMatchObject({ ok: false });
   });
 });

@@ -907,6 +907,8 @@ export interface HarnessClient {
     mute(cardId: string): Promise<void>;
     /** Undoes a mute (Settings). */
     unmute(sidekick: string, kind: string): Promise<void>;
+    /** "Save as decision" on a repeated-ask heads-up: a note written as the person; the card goes. */
+    saveDecision(cardId: string): Promise<{ ok: boolean; message?: string }>;
     onChange(listener: (state: SidekickState) => void): () => void;
   };
   /** The harness's setup steps (setup-steps spec). A harness with none answers no steps and refuses every change. */
@@ -1022,7 +1024,12 @@ export interface SidekickCard {
   why?: { used: number; of: number };
   /** After the reply (spec §4.2): a gap, the next prompt (Put in composer), a repeated ask. */
   after?: { gap?: { title: string; text: string }; next?: string; repeated?: { topic: string; decision: string } };
+  /** A heads-up (spec §4.3): the context near full, an ask that keeps coming back, prompts drifting off the phase. */
+  headsUp?: SidekickHeadsUp;
 }
+
+/** Context near full → Finish task; a repeated ask → Save as decision; off-phase drift → Finish task (plan Decision 7). */
+export type SidekickHeadsUp = { kind: "context"; share: number } | { kind: "repeated"; topic: string; decision: string } | { kind: "off-phase"; phase?: string };
 
 export type SidekickCardMoment = "pre" | "after" | "heads-up" | "before-approve" | "phase-change" | "daily" | "place";
 

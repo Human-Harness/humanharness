@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { EngineDef, ModelProfile } from "@humanharness/engines";
 import { DEFAULT_SIDEKICK, SIDEKICK_ALWAYS_MAX_MS, type SidekickManifest, type SidekickMoment, sidekickMinWords, sidekickMode, sidekickTips } from "@humanharness/harness-sdk";
 import type { SidekickAnswer, SidekickSessionOptions } from "@humanharness/runtime";
-import type { SidekickCard, SidekickInfo, SidekickOutcome, SidekickReview, SidekickSetResult, SidekickSettings, SidekickSettingsPatch, SidekickState } from "@humanharness/ui/client";
+import type { SidekickCard, SidekickHeadsUp, SidekickInfo, SidekickOutcome, SidekickReview, SidekickSetResult, SidekickSettings, SidekickSettingsPatch, SidekickState } from "@humanharness/ui/client";
 import {
   SIDEKICK_FLAG_KINDS,
   type SidekickEvent,
@@ -26,6 +26,12 @@ const SPEAKER: SidekickInfo = { id: DEFAULT_SIDEKICK.id, name: DEFAULT_SIDEKICK.
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 /** The task's earlier prompts an after-reply turn keeps (its prompt names the last three). */
 const PROMPTS_KEPT = 4;
+/** Heads-ups (spec §4.3): the context share that warns, how often an ask comes back, how many off-phase prompts in a row. */
+const CONTEXT_SHARE = 0.75;
+const REPEATS = 3;
+const DRIFT = 2;
+/** Every off-phase flag kind but the one that names a phase (finding which other phase a prompt matched). */
+const NOT_OFF_PHASE = SIDEKICK_FLAG_KINDS.filter((k) => k !== "off-phase");
 
 /** The events line's short name (spec §6.1) for an SDK moment. */
 export function eventMoment(m: SidekickMoment): SidekickEventMoment {
@@ -84,6 +90,8 @@ export interface SidekickDeps {
   waitMs?(wait: SidekickSettings["wait"]): number;
   /** The learning signals (`.harness/sidekick/events.jsonl`, spec §6.1). */
   events: { read(base: string): Promise<SidekickEvent[]>; append(base: string, e: SidekickEvent): Promise<void> };
+  /** "Save as decision" (plan Decision 7): a note written as the person in the task's scope, with its history commit. */
+  saveDecision(o: { task: string; scope: string; action?: string; title: string; decision: string }): Promise<void>;
 }
 
 export const defaultWaitMs = (wait: SidekickSettings["wait"]): number => (wait === "always" ? SIDEKICK_ALWAYS_MAX_MS : wait * 1000);
@@ -126,6 +134,8 @@ export class SidekickController {
   private prompts: { key: string; items: string[] } = { key: NO_TASK, items: [] };
   /** The open task's earlier cards (spec §7 "Earlier · used"); reset when another task opens. */
   private past: { key: string; items: SidekickState["past"] } = { key: NO_TASK, items: [] };
+  /** Per task (spec §4.3): whether the context heads-up showed, how often each topic came back, the off-phase streak. */
+  private signals = { task: NO_TASK, context: false, topics: new Map<string, number>(), drift: 0 };
   /**
    * Event writes per base, one at a time: appendSidekickEvent's trim (read, temp file, rename) must not race another
    * append. The events per base are read once and dropped after each write.
@@ -225,6 +235,27 @@ export class SidekickController {
   async unmute(sidekick: string, kind: string): Promise<void> {
     await this.d.store.unmute(sidekick, kind);
     await this.push();
+  }
+
+  /**
+   * "Save as decision" on a repeated-ask heads-up of the open task (plan Decision 7): the note is written as the
+   * person, then the card goes with a `used` outcome. A failed write keeps the card and says why.
+   */
+  async saveDecision(cardId: string): Promise<{ ok: boolean; message?: string }> {
+    const found = this.cards.find((c) => c.card.id === cardId);
+    const h = found?.card.headsUp;
+    const task = found?.ctx.task;
+    if (!found || h?.kind !== "repeated" || !task) return { ok: false, message: "This suggestion can't be saved as a decision" };
+    if ((await this.d.task().catch(() => null))?.id !== task.id) return { ok: false, message: "Its task is no longer open" };
+    try {
+      await this.d.saveDecision({ task: task.id, scope: task.scope, ...(task.action ? { action: task.action } : {}), title: `Decision: ${h.topic}`, decision: h.decision });
+    } catch (err) {
+      return { ok: false, message: err instanceof Error ? err.message : String(err) };
+    }
+    const taken = this.take(cardId);
+    if (taken) await this.outcome(taken.card, taken.ctx, "used");
+    await this.push();
+    return { ok: true };
   }
 
   /** The card `cardId` if it is shown (the pre-send one or a waiting one); it leaves the panel. */
@@ -378,6 +409,7 @@ export class SidekickController {
       ...(open ? { phases: { open, others: phases.filter((p) => p.id !== open.id) } } : {}),
       ...(muted.length ? { muted } : {}),
     });
+    if (task && open) await this.noteDrift({ task, base: setup.base }, settings, flags, open, phases, req.text);
     // 2. The decision.
     if (flags.length === 0 && mode === "auto" && !req.force) return early("send");
     const key = task?.id ?? NO_TASK;
@@ -479,7 +511,10 @@ export class SidekickController {
   async afterReply(end: TurnEnd): Promise<void> {
     const send = this.sends;
     const settings = await this.d.store.settings();
-    if (this.closed || !settings.on || !settings.afterReply) return;
+    if (this.closed || !settings.on) return;
+    // The context heads-up costs no tokens: it runs with the after-reply moment off too.
+    await this.noteContext(end, settings);
+    if (!settings.afterReply) return;
     // Only what the person typed: no checkpoint, close or wrap-up prompt, no block answer, no mode switch's line.
     if (end.kind !== "run" || end.fromBlock || end.modeSwitch) return;
     if (this.prompts.key !== end.task.id) this.prompts = { key: end.task.id, items: [] };
@@ -515,13 +550,19 @@ export class SidekickController {
       await this.logTurn(setup.base, engine, session, task, "after", answer);
       if (!live() || !answer.ok) return;
       const after = parseAfter(answer.text);
-      if (!after || (!after.gap && !after.next && !after.repeated)) return;
-      const kind = after.gap ? "gap" : after.next ? "next" : "repeated";
-      // Settings may have changed while the turn ran; a muted kind never shows (spec §6.3).
+      if (!after) return;
+      // Settings may have changed while the turn ran.
       const now = await this.d.store.settings();
-      if (!now.on || !now.afterReply || mutedOf(now, SPEAKER.id).includes(kind) || !live()) return;
+      if (!now.on || !live()) return;
+      // A repeated ask is the heads-up's (spec §4.3): the after card shows only a gap or a next step.
+      if (after.repeated) await this.noteRepeated({ task, base: setup.base }, now, after.repeated);
+      if (!after.gap && !after.next) return;
+      const kind = after.gap ? "gap" : "next";
+      // A muted kind never shows (spec §6.3).
+      if (!now.afterReply || mutedOf(now, SPEAKER.id).includes(kind) || !live()) return;
+      const shown = { ...(after.gap ? { gap: after.gap } : {}), ...(after.next ? { next: after.next } : {}) };
       this.cards.push({
-        card: { id: randomUUID(), moment: eventMoment("after-reply"), speaker: SPEAKER, kind, prompt: end.prompt, flags: [], issues: [], confidence: 1, after, at: new Date().toISOString() },
+        card: { id: randomUUID(), moment: eventMoment("after-reply"), speaker: SPEAKER, kind, prompt: end.prompt, flags: [], issues: [], confidence: 1, after: shown, at: new Date().toISOString() },
         ctx: { task, base: setup.base },
       });
       await this.push();
@@ -530,6 +571,65 @@ export class SidekickController {
     } finally {
       if (this.after === controller) this.after = null;
     }
+  }
+
+  /** The task's heads-up signals; another task starts them afresh. */
+  private signalsFor(task: string) {
+    if (this.signals.task !== task) this.signals = { task, context: false, topics: new Map(), drift: 0 };
+    return this.signals;
+  }
+
+  /** The context at or past CONTEXT_SHARE of the task's cap: one heads-up per task, 0 tokens. */
+  private async noteContext(end: TurnEnd, settings: SidekickSettings): Promise<void> {
+    const c = end.context;
+    if (!settings.headsUps || !c?.cap || c.used / c.cap < CONTEXT_SHARE) return;
+    const signals = this.signalsFor(end.task.id);
+    if (signals.context) return;
+    signals.context = true;
+    const setup = await this.d.setup().catch(() => null);
+    if (!setup) return;
+    await this.headsUp({ task: end.task, base: setup.base }, settings, { kind: "context", share: Math.round((c.used / c.cap) * 100) / 100 });
+  }
+
+  /** An ask the after-reply turn saw come back: at exactly REPEATS times, a heads-up with its draft decision. */
+  private async noteRepeated(ctx: { task: OpenTask; base: string }, settings: SidekickSettings, repeated: { topic: string; decision: string }): Promise<void> {
+    const signals = this.signalsFor(ctx.task.id);
+    const topic = repeated.topic.trim();
+    const key = topic.toLowerCase();
+    const n = (signals.topics.get(key) ?? 0) + 1;
+    signals.topics.set(key, n);
+    if (n === REPEATS) await this.headsUp(ctx, settings, { kind: "repeated", topic, decision: repeated.decision.trim() });
+  }
+
+  /** The off-phase streak of the task's reviewed prompts: at exactly DRIFT in a row, a heads-up naming the phase they matched. */
+  private async noteDrift(
+    ctx: { task: OpenTask; base: string },
+    settings: SidekickSettings,
+    flags: readonly { kind: string }[],
+    open: { id: string; label: string },
+    phases: readonly { id: string; label: string }[],
+    text: string,
+  ): Promise<void> {
+    const signals = this.signalsFor(ctx.task.id);
+    if (!flags.some((f) => f.kind === "off-phase")) {
+      signals.drift = 0;
+      return;
+    }
+    if (++signals.drift !== DRIFT) return;
+    const other = phases.find((p) => p.id !== open.id && localCheck(text, { minWords: 0, known: [], phases: { open, others: [p] }, muted: NOT_OFF_PHASE }).length > 0);
+    await this.headsUp(ctx, settings, { kind: "off-phase", ...(other ? { phase: other.label } : {}) });
+  }
+
+  /**
+   * A heads-up card (spec §4.3), waiting with the after-reply cards: only with Sidekick and heads-ups on, its kind not
+   * muted, and its task still the open one (it was about that task).
+   */
+  private async headsUp(ctx: { task: OpenTask; base: string }, settings: SidekickSettings, headsUp: SidekickHeadsUp): Promise<void> {
+    if (this.closed || !settings.on || !settings.headsUps || mutedOf(settings, SPEAKER.id).includes(headsUp.kind)) return;
+    if ((await this.d.task().catch(() => null))?.id !== ctx.task.id || this.closed) return;
+    const card: SidekickCard = { id: randomUUID(), moment: eventMoment("heads-up"), speaker: SPEAKER, kind: headsUp.kind, prompt: "", flags: [], issues: [], confidence: 1, headsUp, at: new Date().toISOString() };
+    this.cards.push({ card, ctx });
+    await this.push();
   }
 
   /** The open task (or the loose session's pre-task spend) is past the cap; no cap: never. */

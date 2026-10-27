@@ -75,6 +75,7 @@ import {
   isScopeId,
   migrateToScopes,
   notesPrefix,
+  noteSlug,
   profileDir,
   readNotes,
   readSidekickEvents,
@@ -1715,6 +1716,20 @@ if (loaded) {
     log: (base, record) => new UsageLog(base).append(record),
     changed: (state) => sendToWindow("hh:sidekick", state),
     events: { read: readSidekickEvents, append: appendSidekickEvent },
+    // "Save as decision" (sidekick plan Decision 7): a note like any other, written as the person when they press the button.
+    saveDecision: async ({ scope, action, title, decision }) => {
+      const c = await validConfig();
+      if (!c) throw new Error("The app is not set up yet");
+      const base = baseOf(c);
+      const prefix = notesPrefix(scoped(), scope === APP_SCOPE ? MAIN_SCOPE : scope);
+      // Never over another note of the scope: numbered (`-2`, `-3`…) like a question's note.
+      const exists = (slug: string) => fs.access(path.join(base, prefix, `${slug}.md`)).then(() => true, () => false);
+      const first = noteSlug(title);
+      let slug = first;
+      for (let i = 2; await exists(slug); i++) slug = `${first}-${i}`;
+      await writeNote(base, slug, { title, summary: [decision], decisions: [decision], files: [], open: [] }, { ...(action ? { action } : {}), date: new Date().toISOString(), engine: c.engineId }, prefix);
+      await (await currentHistory())?.save(`Note: ${title}`, await tasks.trailerNow());
+    },
   });
   // Only a harness with setup steps gets the controller: its reads may write `.harness/setup.json` (setup-steps D0).
   if (harness.setup) {

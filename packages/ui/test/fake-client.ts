@@ -595,6 +595,10 @@ export class FakeClient implements HarnessClient {
     resolve: async (id: string, outcome: SidekickOutcome) => void this.sidekickCalls.push(["resolve", id, outcome]),
     mute: async (id: string) => void this.sidekickCalls.push(["mute", id]),
     unmute: async (sidekick: string, kind: string) => void this.sidekickCalls.push(["unmute", sidekick, kind]),
+    saveDecision: async (id: string) => {
+      this.sidekickCalls.push(["saveDecision", id]);
+      return { ok: true };
+    },
     onChange: (l: (s: SidekickState) => void) => {
       this.sidekickListeners.add(l);
       return () => void this.sidekickListeners.delete(l);

@@ -70,7 +70,7 @@ test("profiles: add two students, each with their own folder and setup, switch, 
     // Sofi practises once: her usage.
     await page.getByRole("button", { name: "Start Family Tutor" }).click();
     await page.getByRole("button", { name: /Practice/ }).first().click();
-    await expect(page.getByText("Una pregunta corta.")).toBeVisible();
+    await expect(page.getByRole("main").getByText("Una pregunta corta.")).toBeVisible();
     await expect.poll(() => fs.existsSync(path.join(s.folder, "sofi", ".harness", "usage.jsonl"))).toBe(true);
 
     // Add a second student from the work screen: the open task closes; the privacy note shows once.

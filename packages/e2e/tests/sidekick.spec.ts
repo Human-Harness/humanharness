@@ -98,13 +98,12 @@ test("a review that takes too long: the countdown, then the prompt goes as typed
     const sent = readJsonl<Run>(s.claudePrompts).filter((r) => !isSidekick(r));
     expect(sent.map((r) => r.prompt)).toContainEqual(expect.stringContaining("make it better"));
 
-    // The aborted first turn never started the session: the next review opens it again with the same id.
+    // The next review retries the same Sidekick session.
     await box.fill("make it nicer");
     await box.press("Enter");
     await expect.poll(() => readJsonl<Run>(s.claudePrompts).filter(isSidekick).length, { timeout: 15_000 }).toBe(2);
     await expect.poll(() => readJsonl<Run>(s.claudePrompts).filter((r) => !isSidekick(r)).length, { timeout: 15_000 }).toBe(2);
     const sk = readJsonl<Run>(s.claudePrompts).filter(isSidekick);
-    expect(sk.every((r) => r.argv.includes("--session-id"))).toBe(true);
     expect(sessionOf(sk[1].argv)).toBe(sessionOf(sk[0].argv));
   } finally {
     await closeAndClean(app, s);

@@ -1,4 +1,4 @@
-import { useId } from "react";
+import { type ReactNode, useId } from "react";
 import { useTranslation } from "react-i18next";
 import { CheckIcon, LockIcon, NoteIcon } from "./chrome";
 import { type AppState, type TaskView, nextInPath } from "./client";
@@ -36,12 +36,15 @@ export function FlowSide({
   disabled,
   onStart,
   onOpenNote,
+  material,
 }: {
   state: AppState;
   tasks: TaskView;
   disabled: boolean;
   onStart: (action: string) => void;
   onOpenNote: (slug: string) => void;
+  /** The scope's material panel, after the notes (only with `state.material`). */
+  material?: ReactNode;
 }) {
   const { t } = useTranslation();
   const pathId = useId();
@@ -104,6 +107,7 @@ export function FlowSide({
           </ul>
         </section>
       )}
+      {material}
       {(state.references ?? []).length > 0 && (
         <div className="hh-flow-refs">
           {(state.references ?? []).map((r) => (

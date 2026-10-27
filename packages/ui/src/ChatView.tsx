@@ -27,6 +27,7 @@ import { HistoryPanel } from "./HistoryPanel";
 import { pruneDrafts } from "./InputForm";
 import { type BlockActions, type BlockProps, type InputContext, Message } from "./Message";
 import { markdownToPlain } from "./markdown";
+import { MaterialPanel, type MaterialPanelProps } from "./MaterialPanel";
 import { ModeBar, ModeList } from "./ModeList";
 import { actionModes, tierBelow } from "./modes";
 import { NotesPanel } from "./NotesPanel";
@@ -79,6 +80,7 @@ export function ChatView({
   onFixEngine,
   onTurnOk,
   slim,
+  materialPanel,
 }: {
   client: HarnessClient;
   state: AppState;
@@ -105,6 +107,8 @@ export function ChatView({
    * history or topics. A button starts it (or continues it) when it isn't on screen.
    */
   slim?: { action: string };
+  /** Replaces the default material panel; only with `state.material`. */
+  materialPanel?: ComponentType<MaterialPanelProps>;
 }) {
   const { t, i18n } = useTranslation();
   // save_note never shows: a note reaches the side panel as a file, through the tasks. Nor set_phase: the stepper
@@ -788,6 +792,13 @@ export function ChatView({
   const slimStart = slim !== undefined && loaded && tasksLoaded && !chat.live && tasks.current?.action !== slim.action;
   /** Slim: the composer only for the interview's own task (or a turn running), never before it is known. */
   const composer = !slim || Boolean(chat.live) || tasks.current?.action === slim.action;
+  // Material spec §11: the scope's material panel, only when the harness takes material (D0) and a scope is open.
+  const materialScope = state.material ? (state.scopes ? openScope : "main") : null;
+  const Panel = materialPanel ?? MaterialPanel;
+  const material =
+    state.material && materialScope && !slim ? (
+      <Panel client={client} scope={materialScope} info={state.material} disabled={blocked() || !loaded} />
+    ) : null;
 
   return (
     <div className={slim ? "hh-app hh-app-slim" : "hh-app"}>
@@ -824,7 +835,14 @@ export function ChatView({
               setShowHistory(false);
               setNotesPanel({ expanded: slug });
             }}
+            material={material}
           />
+        )}
+        {/* Without actions there is no flow side panel: the material panel gets one of its own. */}
+        {!flow && material && (
+          <nav className="hh-flow-side" aria-label={t("material.title")}>
+            {material}
+          </nav>
         )}
         <Main className="hh-main">
           {/* A time box without phases (spec §5) still shows its time, its controls and, once time is up, Finish. */}

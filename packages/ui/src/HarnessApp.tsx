@@ -10,6 +10,7 @@ import { type AppState, type EngineStatus, type HarnessClient, type LimitWindow,
 import { useFolderMove } from "./BackupNotice";
 import { Home } from "./Home";
 import { shownLanguage, systemLanguage } from "./language";
+import type { MaterialPanelProps } from "./MaterialPanel";
 import type { BlockProps } from "./Message";
 import { type SettingsTab, SettingsSheet } from "./SettingsSheet";
 import { SetupFlow } from "./SetupFlow";
@@ -26,9 +27,11 @@ export interface HarnessAppProps {
   startView?: StartViewCopy;
   /** The harness's own setup step components (`component` steps, setup-steps spec §3), by the name the manifest gives. */
   setupSteps?: Record<string, ComponentType<SetupStepProps>>;
+  /** A harness's own material panel (material spec §11); absent: the core's. Only drawn when the harness takes material. */
+  materialPanel?: ComponentType<MaterialPanelProps>;
 }
 
-export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, locales, startView, setupSteps = {} }: HarnessAppProps) {
+export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, locales, startView, setupSteps = {}, materialPanel }: HarnessAppProps) {
   const [state, setState] = useState<AppState | null>(null);
   const [i18n, setI18n] = useState<i18n | null>(null);
   const [failed, setFailed] = useState(false);
@@ -236,6 +239,7 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
             renderSide={renderSide}
             startView={startView}
             openScope={openScope}
+            materialPanel={materialPanel}
             profileBar={
               state.profiles ? (disabled) => <ProfileSwitcher client={client} state={state} onSwitched={switched} onAdd={addProfile} disabled={disabled} /> : undefined
             }

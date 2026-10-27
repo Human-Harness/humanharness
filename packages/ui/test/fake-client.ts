@@ -15,6 +15,7 @@ import type {
   HarnessClient,
   HistoryItem,
   HistoryTaskView,
+  MaterialAddResult,
   MaterialView,
   ModeChoice,
   ModeResult,
@@ -695,6 +696,10 @@ export class FakeClient implements HarnessClient {
   /** Calls to material, in order: "add:<scope>", "link:<scope>:<url>", "confirm:<id>", "grounding:<mode>", "open:<id>". */
   materialCalls: string[] = [];
   materialViews: Record<string, MaterialView> = {};
+  /** The choices `confirm` got, in order. */
+  materialChoices: unknown[] = [];
+  /** What `add` and `addLink` answer. */
+  materialAddResult: MaterialAddResult = { ok: true, added: [], refused: [] };
   private materialListeners = new Set<(v: MaterialView) => void>();
   /** Pushes a view as the main process would. */
   pushMaterial(view: MaterialView) {
@@ -705,14 +710,15 @@ export class FakeClient implements HarnessClient {
     list: async (scope: string) => (Object.hasOwn(this.materialViews, scope) ? this.materialViews[scope] : null),
     add: async (scope: string) => {
       this.materialCalls.push(`add:${scope}`);
-      return { ok: true as const, added: [], refused: [] };
+      return this.materialAddResult;
     },
     addLink: async (scope: string, url: string) => {
       this.materialCalls.push(`link:${scope}:${url}`);
-      return { ok: true as const, added: [], refused: [] };
+      return this.materialAddResult;
     },
-    confirm: async (_scope: string, id: string) => {
+    confirm: async (_scope: string, id: string, choice: unknown) => {
       this.materialCalls.push(`confirm:${id}`);
+      this.materialChoices.push(choice);
       return { ok: true as const };
     },
     setGrounding: async (_scope: string, mode: "strict" | "mixed") => {

@@ -5,7 +5,7 @@ import { AnnotateBlock } from "./AnnotateBlock";
 import { findAnswer } from "./annotate";
 import { ChoicesBlock } from "./ChoicesBlock";
 import { CitationContext, type CitationResolver } from "./citations";
-import { GearIcon, TopBar } from "./chrome";
+import { GearIcon, SidekickToggle, TopBar } from "./chrome";
 import {
   type AppState,
   type ChatEntry,
@@ -17,6 +17,8 @@ import {
   type NoteView,
   type RespondResult,
   type SendOptions,
+  type SidekickCard,
+  type SidekickReview,
   type TaskTurnNotice,
   type TaskView,
   nextInPath,
@@ -36,6 +38,9 @@ import { usePacedAnswer } from "./pace";
 import { PhaseStepper } from "./PhaseStepper";
 import { actionPhases, phaseModesOf } from "./phases";
 import { RecommendModeBlock } from "./RecommendModeBlock";
+import { SidekickMark } from "./sidekick/mark";
+import { SidekickPanel } from "./sidekick/SidekickPanel";
+import { useSidekick } from "./sidekick/useSidekick";
 import { type StartViewCopy, StartView } from "./StartView";
 import { initialChat, reduceChat } from "./state";
 import { UsageMeter } from "./UsageMeter";
@@ -110,6 +115,8 @@ export function ChatView({
   slim?: { action: string };
   /** Replaces the default material panel; only with `state.material`. */
   materialPanel?: ComponentType<MaterialPanelProps>;
+  /** Opens Settings › Sidekick. */
+  onSidekickSettings?: () => void;
 }) {
   const { t, i18n } = useTranslation();
   // save_note never shows: a note reaches the side panel as a file, through the tasks. Nor set_phase: the stepper
@@ -166,6 +173,25 @@ export function ChatView({
   const preflightOpener = useRef<HTMLElement | null>(null);
   const chatRef = useRef<HTMLElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  // Sidekick (sidekick spec §4.1, §7): only when main sends `state.sidekick`, never in slim mode (D0).
+  /** Bumped after a restore: main does not push Sidekick's state then. */
+  const [skRefresh, setSkRefresh] = useState(0);
+  const sidekick = useSidekick(client, state.sidekick !== undefined && !slim, skRefresh);
+  const reviewOn = sidekick !== null && sidekick.settings.on && sidekick.settings.preSend;
+  /** A review in flight: until when the countdown runs (null: "always wait"). */
+  const [reviewing, setReviewing] = useState<{ until: number | null } | null>(null);
+  const reviewSeq = useRef(0);
+  /** The panel opened or collapsed by the person; null: expanded when Sidekick is on. */
+  const [skOpen, setSkOpen] = useState<boolean | null>(null);
+  const [skView, setSkView] = useState<"sidekick" | "harness">("sidekick");
+  const skExpanded = sidekick !== null && (skOpen ?? sidekick.settings.on);
+  const skCard = sidekick?.card?.id;
+  const skAnnounced = useRef<string | undefined>(undefined);
+  // Each new card is announced once (spec §7 accessibility); the panel itself never takes focus.
+  useEffect(() => {
+    if (skCard && skCard !== skAnnounced.current) setAnnouncement(t("sidekick.card.announce"));
+    skAnnounced.current = skCard;
+  }, [skCard, t]);
   /** Away from a turn just sent (loading, a notice): new content keeps the chat at the bottom while the user is there. */
   const stick = useRef(true);
   /** Set on send: the question that goes on screen next is pinned to the top of the chat. */
@@ -761,9 +787,50 @@ export function ChatView({
     }
     return undefined;
   };
+  /** Enter: a review first when Sidekick is on (spec §4.1); `force` is ⌥⏎ or Review. Enter while reviewing waits. */
+  const submit = async (text: string, force = false) => {
+    if (reviewing) return;
+    if (!reviewOn || !text.trim() || blocked()) {
+      if (send(text)) setDraft("");
+      return;
+    }
+    const seq = ++reviewSeq.current;
+    const wait = sidekick.settings.wait;
+    setReviewing({ until: wait === "always" ? null : Date.now() + wait * 1000 });
+    // Material in the open scope goes with the prompt: the missing-context flag stays quiet.
+    const scope = state.material ? materialScope : null;
+    const attached = scope ? await client.material.list(scope).then((v) => (v?.sources.length ?? 0) > 0, () => false) : false;
+    const r: SidekickReview =
+      seq !== reviewSeq.current
+        ? { kind: "cancelled" }
+        : await client.sidekick
+            .review({ text, ...(force ? { force: true } : {}), ...(attached ? { attached: true } : {}) })
+            .catch(() => ({ kind: "error" }) as const);
+    if (seq !== reviewSeq.current) return;
+    setReviewing(null);
+    if (r.kind === "card") {
+      setSkOpen(true);
+      setSkView("sidekick");
+      return;
+    }
+    // Cancelled: the person sent at once, or a newer review replaced this one.
+    if (r.kind === "cancelled") return;
+    if (send(text)) setDraft("");
+  };
+  /** ⌘⏎ / Ctrl⏎: send now, cancelling a running review. */
+  const sendNow = (text: string) => {
+    if (reviewing) {
+      reviewSeq.current++;
+      setReviewing(null);
+      void client.sidekick.cancelReview().catch(() => undefined);
+    }
+    if (send(text)) setDraft("");
+  };
+  const resolveCard = (card: SidekickCard, outcome: "used" | "edited" | "sent-anyway") =>
+    void client.sidekick.resolve(card.id, outcome).catch(() => undefined);
   const onSubmit = (e: FormEvent) => {
     e.preventDefault();
-    if (send(draft)) setDraft("");
+    void submit(draft);
   };
   const onScroll = () => {
     const el = chatRef.current;
@@ -856,6 +923,17 @@ export function ChatView({
           {scopeBar?.(blocked())}
           <UsageMeter engine={engineOption} limits={chat.limits} lastTokens={lastTurnTokens(chat.entries)} />
           {onHome && <button onClick={onHome}>{t("chat.home")}</button>}
+          {sidekick && (
+            <SidekickToggle
+              on={sidekick.settings.on}
+              label={t(sidekick.settings.on ? "sidekick.toggleOn" : "sidekick.toggleOff")}
+              onToggle={() => {
+                const on = !sidekick.settings.on;
+                void client.sidekick.set(on ? { on, introSeen: true } : { on }).catch(() => undefined);
+                setSkOpen(on);
+              }}
+            />
+          )}
           <button
             onClick={() => {
               // One panel at a time: Escape closes the one on screen.
@@ -1142,12 +1220,15 @@ export function ChatView({
                 aria-label={placeholder}
                 placeholder={placeholder}
                 value={draft}
+                readOnly={reviewing !== null}
                 onChange={(e) => setDraft(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key !== "Enter" || e.shiftKey) return;
                   if (e.nativeEvent.isComposing || e.keyCode === 229) return;
                   e.preventDefault();
-                  if (send(draft)) setDraft("");
+                  // ⌘⏎ / Ctrl⏎ sends at once; ⌥⏎ asks for a review even without flags (spec §4.1).
+                  if (sidekick && (e.metaKey || e.ctrlKey)) sendNow(draft);
+                  else void submit(draft, e.altKey);
                 }}
               />
               {/* A closing or checkpoint turn is quiet (nothing live on screen) but still stoppable. */}
@@ -1155,14 +1236,76 @@ export function ChatView({
                 <button type="button" onClick={() => void client.cancel()}>
                   {t("chat.stop")}
                 </button>
+              ) : reviewing ? (
+                <button type="button" disabled>
+                  {t("sidekick.composer.reviewing")}
+                </button>
               ) : (
-                <button type="submit">{t("chat.send")}</button>
+                <>
+                  {reviewOn && (
+                    <button type="button" onClick={() => void submit(draft, true)}>
+                      {t("sidekick.composer.review")}
+                    </button>
+                  )}
+                  <button type="submit">{t("chat.send")}</button>
+                </>
               )}
             </form>
           )}
+          {reviewing && <ReviewHint until={reviewing.until} sendKey={SEND_KEY} />}
           {startView?.hint && !slim && <p className="hh-composer-hint">{t(startView.hint, { ns: "harness" })}</p>}
         </Main>
-        {renderSide && !slim && <aside className="hh-side">{renderSide(chat.blockState, sendFromHarness)}</aside>}
+        {(() => {
+          const harnessSide = renderSide && !slim ? renderSide(chat.blockState, sendFromHarness) : undefined;
+          // D0: without Sidekick, exactly the harness's side panel as before.
+          if (!sidekick) return harnessSide !== undefined ? <aside className="hh-side">{harnessSide}</aside> : null;
+          if (!skExpanded) {
+            return (
+              <>
+                {harnessSide !== undefined && <aside className="hh-side">{harnessSide}</aside>}
+                <div className="hh-sk-rail">
+                  <button type="button" aria-label={sidekick.card ? t("sidekick.waiting") : t("sidekick.open")} onClick={() => setSkOpen(true)}>
+                    <SidekickMark off={!sidekick.settings.on} />
+                    {sidekick.card && <span className="hh-sk-dot" aria-hidden="true" />}
+                  </button>
+                </div>
+              </>
+            );
+          }
+          return (
+            <SidekickPanel
+              state={sidekick}
+              view={harnessSide !== undefined ? skView : "sidekick"}
+              onView={setSkView}
+              {...(harnessSide !== undefined ? { harnessSide } : {})}
+              sendKey={SEND_KEY}
+              onCollapse={() => setSkOpen(false)}
+              onTurnOn={() => void client.sidekick.set({ on: true, introSeen: true }).catch(() => undefined)}
+              onNotNow={() => {
+                void client.sidekick.set({ introSeen: true }).catch(() => undefined);
+                setSkOpen(false);
+              }}
+              // A suggestion goes through `send`, never `submit`: it is never reviewed again.
+              onSendSuggested={(card) => {
+                resolveCard(card, "used");
+                if (card.rewrite && send(card.rewrite)) setDraft("");
+              }}
+              onEdit={(card) => {
+                resolveCard(card, "edited");
+                setDraft(card.rewrite ?? card.prompt);
+                inputRef.current?.focus();
+              }}
+              onSendAnyway={(card) => {
+                resolveCard(card, "sent-anyway");
+                if (send(card.prompt)) setDraft("");
+              }}
+              onPutInComposer={(text) => {
+                setDraft(text);
+                inputRef.current?.focus();
+              }}
+            />
+          );
+        })()}
       </div>
       <div className="hh-sr-only" aria-live="polite">
         {announcement}
@@ -1175,6 +1318,7 @@ export function ChatView({
           disabled={Boolean(chat.live) || closing || checkpoint}
           onClose={() => setShowHistory(false)}
           onRestored={(kind) => {
+            setSkRefresh((n) => n + 1);
             const text = t(kind === "task" ? "history.restoredTask" : "history.restored");
             dispatch({ type: "notice", text, at: new Date().toISOString() });
             setNotice(text);
@@ -1192,5 +1336,24 @@ export function ChatView({
         />
       )}
     </div>
+  );
+}
+
+/** "⌘" on macOS, "Ctrl" elsewhere: the key that sends at once. */
+const SEND_KEY = typeof navigator !== "undefined" && /Mac/.test(navigator.userAgent) ? "⌘" : "Ctrl";
+
+/** "Sends anyway in N s · ⌘⏎ sends now": the countdown's text equivalent (sidekick spec §7 accessibility). */
+function ReviewHint({ until, sendKey }: { until: number | null; sendKey: string }) {
+  const { t } = useTranslation();
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 250);
+    return () => clearInterval(id);
+  }, []);
+  const left = until === null ? null : Math.max(0, Math.ceil((until - now) / 1000));
+  return (
+    <p className="hh-sk-composer-hint">
+      {left === null ? t("sidekick.composer.waitingLong") : t("sidekick.composer.countdown", { seconds: left })} · {t("sidekick.sendNow", { key: sendKey })}
+    </p>
   );
 }

@@ -47,4 +47,14 @@ describe("useSidekick", () => {
     rerender({ on: false });
     expect(result.current).toBeNull();
   });
+
+  it("a new refresh key reads the state again (a restore, which main does not push)", async () => {
+    const client = new FakeClient({ language: "en" });
+    client.sidekickState = SK_ON;
+    const { result, rerender } = renderHook(({ k }) => useSidekick(client, true, k), { initialProps: { k: 0 } });
+    await waitFor(() => expect(result.current?.settings.on).toBe(true));
+    client.sidekickState = { ...SK_ON, status: "off", settings: { ...SK_ON.settings, on: false } };
+    rerender({ k: 1 });
+    await waitFor(() => expect(result.current?.settings.on).toBe(false));
+  });
 });

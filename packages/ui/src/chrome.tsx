@@ -54,6 +54,16 @@ export function Segmented<T extends string>({
   );
 }
 
+/** The top-bar Sidekick switch (sidekick spec §7): a state dot, filled when on. */
+export function SidekickToggle({ on, label, onToggle }: { on: boolean; label: string; onToggle: () => void }) {
+  return (
+    <button type="button" className="hh-sk-toggle" aria-pressed={on} aria-label={label} onClick={onToggle}>
+      <span className="hh-sk-dot" aria-hidden="true" />
+      Sidekick
+    </button>
+  );
+}
+
 /** Settings: a line gear (path from Lucide's "settings" icon, ISC license). */
 export function GearIcon() {
   return (

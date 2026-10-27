@@ -3,9 +3,10 @@ import type { HarnessClient, SidekickState } from "../client";
 
 /**
  * Sidekick's state, live; null while loading, when disabled (no `state.sidekick`, slim mode) or when main has none.
- * A push that lands before the first load wins over it (the load may be older).
+ * A push that lands before a load wins over it (the load may be older). A new `refresh` reads it again (after a
+ * restore, which main does not push).
  */
-export function useSidekick(client: HarnessClient, enabled: boolean): SidekickState | null {
+export function useSidekick(client: HarnessClient, enabled: boolean, refresh = 0): SidekickState | null {
   const [state, setState] = useState<SidekickState | null>(null);
   useEffect(() => {
     if (!enabled) {
@@ -13,12 +14,14 @@ export function useSidekick(client: HarnessClient, enabled: boolean): SidekickSt
       return;
     }
     let live = true;
+    let pushed = false;
     const off = client.sidekick.onChange((s) => {
+      pushed = true;
       if (live) setState(s);
     });
     client.sidekick.get().then(
       (s) => {
-        if (live) setState((now) => now ?? s);
+        if (live && !pushed) setState((now) => s ?? now);
       },
       () => undefined,
     );
@@ -26,6 +29,6 @@ export function useSidekick(client: HarnessClient, enabled: boolean): SidekickSt
       live = false;
       off();
     };
-  }, [client, enabled]);
+  }, [client, enabled, refresh]);
   return enabled ? state : null;
 }

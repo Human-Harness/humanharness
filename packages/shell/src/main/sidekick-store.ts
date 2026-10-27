@@ -78,7 +78,10 @@ export class SidekickStore {
     });
     if (!r.ok) throw new Error(r.message);
     if (already) return;
-    await this.put({ id: `l-${randomBytes(4).toString("hex")}`, type: "learned", text: `Doesn't want ${kind} suggestions from ${sidekickName}.`, level: "you", kind, source: "person", updatedAt: now });
+    const text = `Doesn't want ${kind} suggestions from ${sidekickName}.`;
+    // Muted again after an unmute: the item the person kept from the first time is enough.
+    if ((await this.all()).some((r) => r.type === "learned" && r.source === "person" && r.kind === kind && r.text === text)) return;
+    await this.put({ id: `l-${randomBytes(4).toString("hex")}`, type: "learned", text, level: "you", kind, source: "person", updatedAt: now });
   }
 
   async unmute(sidekick: string, kind: string): Promise<SidekickSetResult> {

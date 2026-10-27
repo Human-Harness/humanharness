@@ -1122,3 +1122,63 @@ describe("learning at task close (spec §6.4)", () => {
     expect(h.briefs[0]).toContain("- Doesn't want vague suggestions.");
   });
 });
+
+describe("What Sidekick learned in Settings (spec §6.4)", () => {
+  const items: Partial<SidekickRecord>[] = [
+    { id: "l-00000001", type: "learned", text: "Takes scope fixes.", level: "you", source: "learned", updatedAt: "2026-10-26T09:00:00Z" },
+    { id: "l-00000002", type: "learned", text: "Sections stay under 400 words.", level: "harness", source: "learned", updatedAt: "2026-10-26T09:00:00Z" },
+    { id: "l-00000003", type: "learned", text: "Doesn't want vague suggestions from Sidekick.", level: "you", kind: "vague", source: "person", updatedAt: "2026-10-26T09:00:00Z" },
+  ];
+
+  it("lists the learned items of both levels, and nothing else of the collection", async () => {
+    const h = harness({ record: { id: "settings", type: "settings", on: true }, extra: [...items, { id: "sidekick", type: "sidekick", name: "Sidekick" } as Partial<SidekickRecord>] });
+    expect(await h.ctl.learned()).toEqual([
+      { id: "l-00000001", text: "Takes scope fixes.", level: "you", source: "learned" },
+      { id: "l-00000002", text: "Sections stay under 400 words.", level: "harness", source: "learned" },
+      { id: "l-00000003", text: "Doesn't want vague suggestions from Sidekick.", level: "you", kind: "vague", source: "person" },
+    ]);
+  });
+
+  it("works with Sidekick off too: it is the person's data", async () => {
+    const h = harness({ extra: items });
+    expect(await h.ctl.learned()).toHaveLength(3);
+  });
+
+  it("Forget this deletes that item as the person; an unknown id or another record type is left alone", async () => {
+    const h = harness({ extra: items });
+    await h.ctl.forget("l-00000001");
+    await h.ctl.forget("l-99999999");
+    await h.ctl.forget("settings");
+    expect(h.writes).toEqual([{ op: "delete", collection: "sidekick", key: "l-00000001" }]);
+    expect(h.appWrites).toEqual([]);
+    expect((await h.ctl.learned()).map((i) => i.id)).toEqual(["l-00000002", "l-00000003"]);
+  });
+
+  it("Forget everything deletes every learned item, the person's too, and keeps the settings", async () => {
+    const h = harness({ record: { id: "settings", type: "settings", on: true }, extra: items });
+    await h.ctl.forgetAll();
+    expect(h.writes.map((w) => [w.op, w.key])).toEqual([["delete", "l-00000001"], ["delete", "l-00000002"], ["delete", "l-00000003"]]);
+    expect(await h.ctl.learned()).toEqual([]);
+    expect(h.record()).toMatchObject({ on: true });
+  });
+
+  it("an edit makes the item the person's, with the new text; unchanged and unknown items are not written", async () => {
+    const h = harness({ extra: items });
+    await h.ctl.editLearned([
+      { id: "l-00000002", text: "Sections stay under 500 words." },
+      { id: "l-00000001", text: "Takes scope fixes." },
+      { id: "l-99999999", text: "Made up." },
+    ]);
+    expect(h.writes).toHaveLength(1);
+    expect(h.writes[0]).toMatchObject({ op: "put", collection: "sidekick", record: { id: "l-00000002", type: "learned", text: "Sections stay under 500 words.", level: "harness", source: "person", updatedAt: expect.any(String) } });
+    expect(h.writes[0].record?.updatedAt).not.toBe("2026-10-26T09:00:00Z");
+  });
+
+  it("a failed write reaches the caller", async () => {
+    const h = harness({ extra: items });
+    h.deps.store.remove = async () => {
+      throw new Error("Turns are running");
+    };
+    await expect(h.ctl.forget("l-00000001")).rejects.toThrow("Turns are running");
+  });
+});

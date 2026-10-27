@@ -3,12 +3,13 @@ import { useTranslation } from "react-i18next";
 import { Segmented } from "../chrome";
 import type { HarnessClient, SidekickSettings, SidekickSettingsPatch } from "../client";
 import { shownLanguage } from "../language";
+import { LearnedList } from "./LearnedList";
 import { useSidekick } from "./useSidekick";
 
 type Wait = "6" | "10" | "always";
 type Cap = "20000" | "50000" | "none";
 
-/** Settings › Sidekick (spec §8, mockup board 6), the share used and the muted kinds; no learned section yet. Each change saves at once. */
+/** Settings › Sidekick (spec §8, mockup board 6), the share used, the muted kinds and what Sidekick learned. Each change saves at once. */
 export function SidekickTab({ client, onModels }: { client: HarnessClient; onModels: () => void }) {
   const { t, i18n } = useTranslation();
   const state = useSidekick(client, true);
@@ -143,6 +144,7 @@ export function SidekickTab({ client, onModels }: { client: HarnessClient; onMod
         </section>
       )}
       {failed !== null && <p role="alert">{t("sidekick.settings.failed", { message: failed })}</p>}
+      <LearnedList client={client} />
     </div>
   );
 }

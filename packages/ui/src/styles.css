@@ -499,6 +499,11 @@ select:focus-visible { outline: 2px solid var(--hh-ink); outline-offset: 2px; }
 .hh-sk-issues { margin: 0; padding-left: 18px; }
 .hh-sk-past { list-style: none; margin: 12px 0 0; padding: 0; }
 .hh-sk-muted { list-style: none; margin: 0; padding: 0; }
+.hh-sk-learned { margin-top: 20px; }
+.hh-sk-learned-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
+.hh-sk-learned-col h4 { margin: 0 0 6px; font-size: 0.8rem; color: var(--hh-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.hh-sk-learned-items { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.hh-sk-learned-items input { width: 100%; box-sizing: border-box; }
 .hh-sk-rewrite ins { text-decoration: none; background: var(--hh-highlight); border-radius: 3px; }
 .hh-sk-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .hh-sk-foot { border-top: 1px solid var(--hh-line); padding: 10px 14px; font-size: 0.85rem; }

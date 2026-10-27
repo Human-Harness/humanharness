@@ -2,7 +2,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import type { EngineDef, ModelProfile } from "@humanharness/engines";
 import { DEFAULT_SIDEKICK, SIDEKICK_ALWAYS_MAX_MS, SIDEKICK_COLLECTION, type SidekickManifest, type SidekickMoment, sidekickMinWords, sidekickMode, sidekickTips } from "@humanharness/harness-sdk";
 import type { SidekickAnswer, SidekickSessionOptions } from "@humanharness/runtime";
-import type { SidekickCard, SidekickHeadsUp, SidekickInfo, SidekickOutcome, SidekickReview, SidekickSetResult, SidekickSettings, SidekickSettingsPatch, SidekickState } from "@humanharness/ui/client";
+import type { SidekickCard, SidekickHeadsUp, SidekickInfo, SidekickLearned, SidekickOutcome, SidekickReview, SidekickSetResult, SidekickSettings, SidekickSettingsPatch, SidekickState } from "@humanharness/ui/client";
 import {
   SIDEKICK_FLAG_KINDS,
   type SidekickEvent,
@@ -275,6 +275,43 @@ export class SidekickController {
     if (taken) await this.outcome(taken.card, taken.ctx, "used");
     await this.push();
     return { ok: true };
+  }
+
+  /** What Sidekick learned (spec §6.4), both levels, for Settings; off too, since the items are the person's data. */
+  async learned(): Promise<SidekickLearned[]> {
+    return (await this.learnedRecords()).map((r) => ({
+      id: r.id,
+      text: r.text ?? "",
+      level: r.level ?? "you",
+      ...(r.kind !== undefined ? { kind: r.kind } : {}),
+      source: r.source === "person" ? "person" : "learned",
+    }));
+  }
+
+  /** "Forget this": the item is deleted as the person (a `Data: sidekick` commit). Only a learned item; a failed write throws. */
+  async forget(id: string): Promise<void> {
+    if (!(await this.learnedRecords()).some((r) => r.id === id)) return;
+    await this.d.store.remove(id);
+  }
+
+  /** "Forget everything": every learned item of both levels, the person's too (they asked). The settings stay. */
+  async forgetAll(): Promise<void> {
+    for (const r of await this.learnedRecords()) await this.d.store.remove(r.id);
+  }
+
+  /** The person's edits: each changed item gets the new text and becomes theirs, so learning never changes it again. */
+  async editLearned(changes: { id: string; text: string }[]): Promise<void> {
+    const items = new Map((await this.learnedRecords()).map((r) => [r.id, r]));
+    const now = new Date().toISOString();
+    for (const { id, text } of changes) {
+      const old = items.get(id);
+      if (!old || old.text === text) continue;
+      await this.d.store.put({ ...old, text, source: "person", updatedAt: now });
+    }
+  }
+
+  private async learnedRecords() {
+    return (await this.d.store.all()).filter((r) => r.type === "learned" && r.text !== undefined);
   }
 
   /** The card `cardId` if it is shown (the pre-send one or a waiting one); it leaves the panel. */

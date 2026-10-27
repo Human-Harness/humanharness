@@ -113,6 +113,10 @@ const client: HarnessClient = {
     mute: (id) => ipcRenderer.invoke("hh:sidekickMute", id),
     unmute: (sidekick, kind) => ipcRenderer.invoke("hh:sidekickUnmute", sidekick, kind),
     saveDecision: (id) => ipcRenderer.invoke("hh:sidekickSaveDecision", id),
+    learned: () => ipcRenderer.invoke("hh:sidekickLearned"),
+    forget: (id) => ipcRenderer.invoke("hh:sidekickForget", id),
+    forgetAll: () => ipcRenderer.invoke("hh:sidekickForgetAll"),
+    editLearned: (changes) => ipcRenderer.invoke("hh:sidekickEditLearned", changes),
     onChange: (listener) => subscribe<SidekickState>("hh:sidekick", listener),
   },
   setupSteps: {

@@ -909,6 +909,14 @@ export interface HarnessClient {
     unmute(sidekick: string, kind: string): Promise<void>;
     /** "Save as decision" on a repeated-ask heads-up: a note written as the person; the card goes. */
     saveDecision(cardId: string): Promise<{ ok: boolean; message?: string }>;
+    /** What Sidekick learned (spec §6.4), both levels. */
+    learned(): Promise<SidekickLearned[]>;
+    /** "Forget this": deletes one learned item, as the person. */
+    forget(id: string): Promise<void>;
+    /** "Forget everything": deletes every learned item of both levels, the person's too. */
+    forgetAll(): Promise<void>;
+    /** Edits from the person: their items become `source: "person"` (learning never changes them again). */
+    editLearned(changes: { id: string; text: string }[]): Promise<void>;
     onChange(listener: (state: SidekickState) => void): () => void;
   };
   /** The harness's setup steps (setup-steps spec). A harness with none answers no steps and refuses every change. */
@@ -988,6 +996,19 @@ export interface SidekickSettings {
   presetsOffered: boolean;
   /** Muted kinds per sidekick id (spec §6.3). */
   muted: Record<string, string[]>;
+  /** The newest event the last learning turn read (spec §6.4); absent until it first ran. */
+  learnedAt?: string;
+  /** The day of the last daily card (YYYY-MM-DD); absent until the first one. */
+  lastDaily?: string;
+}
+
+/** An item of "What Sidekick learned" (spec §6.4). `person`: written or edited by the person; learning never changes it. */
+export interface SidekickLearned {
+  id: string;
+  text: string;
+  level: "you" | "harness";
+  source: "learned" | "person";
+  kind?: string;
 }
 export type SidekickSettingsPatch = Partial<SidekickSettings>;
 export type SidekickSetResult = { ok: true; settings: SidekickSettings } | { ok: false; message: string };

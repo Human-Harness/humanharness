@@ -39,6 +39,7 @@ import type {
   SetupStep,
   SetupStepResult,
   SetupStepsState,
+  SidekickLearned,
   SidekickOutcome,
   SidekickReview,
   SidekickSetResult,
@@ -570,7 +571,11 @@ export class FakeClient implements HarnessClient {
   sidekickState: SidekickState | null = null;
   /** What sidekick.review answers, in order; then `send`. */
   sidekickReviews: SidekickReview[] = [];
-  /** What the sidekick namespace was asked, in order. */
+  /** What sidekick.learned answers; forget, forgetAll and editLearned change it. */
+  sidekickLearned: SidekickLearned[] = [];
+  /** When set, forget, forgetAll and editLearned reject with this message. */
+  sidekickLearnedFails: string | null = null;
+  /** What the sidekick namespace was asked, in order (reads are not recorded). */
   readonly sidekickCalls: unknown[][] = [];
   private sidekickListeners = new Set<(s: SidekickState) => void>();
   /** The main process sent a new Sidekick state. */
@@ -598,6 +603,23 @@ export class FakeClient implements HarnessClient {
     saveDecision: async (id: string) => {
       this.sidekickCalls.push(["saveDecision", id]);
       return { ok: true };
+    },
+    learned: async () => this.sidekickLearned.map((i) => ({ ...i })),
+    forget: async (id: string) => {
+      this.sidekickCalls.push(["forget", id]);
+      if (this.sidekickLearnedFails) throw new Error(this.sidekickLearnedFails);
+      this.sidekickLearned = this.sidekickLearned.filter((i) => i.id !== id);
+    },
+    forgetAll: async () => {
+      this.sidekickCalls.push(["forgetAll"]);
+      if (this.sidekickLearnedFails) throw new Error(this.sidekickLearnedFails);
+      this.sidekickLearned = [];
+    },
+    editLearned: async (changes: { id: string; text: string }[]) => {
+      this.sidekickCalls.push(["editLearned", changes]);
+      if (this.sidekickLearnedFails) throw new Error(this.sidekickLearnedFails);
+      const next = new Map(changes.map((c) => [c.id, c.text]));
+      this.sidekickLearned = this.sidekickLearned.map((i) => (next.has(i.id) ? { ...i, text: next.get(i.id) ?? i.text, source: "person" } : i));
     },
     onChange: (l: (s: SidekickState) => void) => {
       this.sidekickListeners.add(l);

@@ -13,6 +13,10 @@ function wire(available = true) {
     mute: async (id: unknown) => void calls.push(["mute", id]),
     unmute: async (s: unknown, k: unknown) => void calls.push(["unmute", s, k]),
     saveDecision: async (id: unknown) => (calls.push(["saveDecision", id]), { ok: true }),
+    learned: async () => [{ id: "l-1", text: "Takes scope fixes.", level: "you", source: "learned" }],
+    forget: async (id: unknown) => void calls.push(["forget", id]),
+    forgetAll: async () => void calls.push(["forgetAll"]),
+    editLearned: async (changes: unknown) => void calls.push(["editLearned", changes]),
   };
   registerSidekickIpc(
     (ch, fn) => void handlers.set(ch, fn),
@@ -79,5 +83,35 @@ describe("sidekick IPC", () => {
     expect(await w.call("hh:sidekickSaveDecision", "x".repeat(81))).toMatchObject({ ok: false });
     expect(w.calls).toEqual([["saveDecision", "c1"]]);
     expect(await wire(false).call("hh:sidekickSaveDecision", "c1")).toMatchObject({ ok: false });
+  });
+
+  it("What Sidekick learned: list, forget, forget everything and edits pass through", async () => {
+    const w = wire();
+    expect(await w.call("hh:sidekickLearned")).toEqual([{ id: "l-1", text: "Takes scope fixes.", level: "you", source: "learned" }]);
+    await w.call("hh:sidekickForget", "l-1");
+    await w.call("hh:sidekickForgetAll");
+    await w.call("hh:sidekickEditLearned", [{ id: "l-1", text: "Usually takes scope fixes." }]);
+    expect(w.calls).toEqual([["forget", "l-1"], ["forgetAll"], ["editLearned", [{ id: "l-1", text: "Usually takes scope fixes." }]]]);
+  });
+
+  it("What Sidekick learned: malformed requests are ignored; without a controller, nothing learned", async () => {
+    const w = wire();
+    await w.call("hh:sidekickForget", 7);
+    await w.call("hh:sidekickForget", "x".repeat(81));
+    await w.call("hh:sidekickEditLearned", "l-1");
+    await w.call("hh:sidekickEditLearned", { id: "l-1", text: "x" });
+    await w.call("hh:sidekickEditLearned", [{ id: "l-1", text: "" }]);
+    await w.call("hh:sidekickEditLearned", [{ id: "l-1", text: "   " }]);
+    await w.call("hh:sidekickEditLearned", [{ id: "l-1", text: "x".repeat(301) }]);
+    await w.call("hh:sidekickEditLearned", [{ id: 1, text: "fine" }]);
+    await w.call("hh:sidekickEditLearned", [{ id: "l-1", text: "fine" }, null]);
+    await w.call("hh:sidekickEditLearned", Array.from({ length: 51 }, (_, i) => ({ id: `l-${i}`, text: "fine" })));
+    expect(w.calls).toEqual([]);
+    const off = wire(false);
+    expect(await off.call("hh:sidekickLearned")).toEqual([]);
+    await off.call("hh:sidekickForget", "l-1");
+    await off.call("hh:sidekickForgetAll");
+    await off.call("hh:sidekickEditLearned", [{ id: "l-1", text: "fine" }]);
+    expect(off.calls).toEqual([]);
   });
 });

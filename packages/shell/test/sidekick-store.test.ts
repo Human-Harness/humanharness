@@ -115,4 +115,18 @@ describe("SidekickStore", () => {
     await s.unmute("sidekick", "two-asks");
     expect((await s.settings()).muted).toEqual({});
   });
+
+  it("muted again after an unmute: muted, with no second learned item; after Forget this, a new one", async () => {
+    const { s } = await store();
+    await s.mute("sidekick", "Sidekick", "vague", "2026-10-27T09:00:00Z");
+    await s.unmute("sidekick", "vague");
+    await s.mute("sidekick", "Sidekick", "vague", "2026-10-27T10:00:00Z");
+    expect((await s.settings()).muted).toEqual({ sidekick: ["vague"] });
+    const learned = (await s.all()).filter((r) => r.type === "learned");
+    expect(learned).toHaveLength(1);
+    await s.remove(learned[0].id);
+    await s.unmute("sidekick", "vague");
+    await s.mute("sidekick", "Sidekick", "vague", "2026-10-27T11:00:00Z");
+    expect((await s.all()).filter((r) => r.type === "learned")).toHaveLength(1);
+  });
 });

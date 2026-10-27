@@ -727,6 +727,20 @@
       "unmute": "Flag “{{kind}}” again",
       "failed": "Could not save: {{message}}"
     },
+    "learned": {
+      "title": "What Sidekick learned",
+      "you": "About you",
+      "harness": "In this app",
+      "forget": "Forget this",
+      "edit": "Edit",
+      "save": "Save",
+      "cancel": "Cancel",
+      "forgetAll": "Forget everything",
+      "confirmAll": "Yes, forget everything",
+      "confirmAllText": "Sidekick forgets everything it learned, here and about you. This can't be undone from here.",
+      "empty": "Nothing yet.",
+      "yours": "Yours"
+    },
     "models": { "label": "Sidekick", "hint": "Reviews your prompts before they go out" },
     "usage": "Sidekick: about {{tokens}} tokens"
   },

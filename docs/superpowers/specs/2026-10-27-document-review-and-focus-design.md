@@ -1,6 +1,6 @@
 # Document review and focus mode — design
 
-Status: draft, 2026-10-27, written after a brainstorming session with Marco, who approved every decision below that day. Waiting for his review of this file. Not in the roadmap yet.
+Status: approved by Marco on 2026-10-27, with four fixes from his review (§5.1 swap guard and writes during a turn, §5.4 unsent comments and the Sidekick `before-approve` moment) and the open questions decided (§11). Not in the roadmap yet.
 
 This is spec B from the dev-vs-core gap analysis (`docs/discovery/2026-10-26-dev-vs-core.md`, candidates C2 and C3). It builds on the document reader (`2026-10-27-document-reader-design.md`, 10th in the core order), which leaves comments, approval and focus mode to this spec (its §8). It adds one key to task phases (`2026-10-25-task-phases-design.md`). With parallel tasks (`2026-10-27-parallel-tasks-and-jobs-design.md`), its writes follow that spec's attribution; without them, nothing here depends on it.
 
@@ -90,6 +90,9 @@ Three core tools on the `ui` MCP server, next to `choices` and `save_note`. They
 
 Answers stay changeable until the document is approved.
 
+- **Swap guard.** A change of answer, or "no answer", swaps only while the anchored passage still equals the current option's text. If the agent (or the person) rewrote it since, the swap is disabled and the card says "El pasaje cambió: la respuesta va al agente en el próximo envío"; the new choice travels in the next batch, like "Other".
+- **Writes during a turn.** An answer's write goes through the history queue (parallel-tasks spec §5.1) as its own commit with `Who: person`. If a running turn's edit events already named the file, the answer waits until that turn ends, and the card shows "Esperando que termine el turno".
+
 ### 5.2 Commenting
 
 - The person selects text in the reader and picks "Comentar". The comment is saved as a `draft`, anchored on the selection.
@@ -118,6 +121,8 @@ Edit the document, then answer each one with reply_to_comment.
 
 - **"Aprobar"** appends `{ blob, at }`, commits `Approved: <path>`, and locks the answers.
 - **With blocking questions open,** the button reads "Aprobar igual, con motivo". The reason is required and stored with the approval.
+- **With unsent drafts or "Other" answers,** approving first asks: "Tenés N comentarios sin enviar · Enviar primero / Descartar y aprobar".
+- **Sidekick.** When a sidekick has a `before-approve` purpose (sidekick spec §2a.2), the approval waits for its review like a pre-send review: about 6 s, then it goes through; ⌘⏎ approves at once.
 - **The document's task is told.** If it is open, it gets a quiet message: "The person approved tickets/SHOP-142/spec.md" plus ", with reason: …" when there is one. When its current phase declares `approve`, the phase advances (§5.5).
 - **When the file changes later,** the document is stale:
   - the answers unlock;
@@ -234,6 +239,8 @@ Dev-only and left out: review findings with "send to dev / the spec is wrong / d
 
 ## 11. Open questions
 
-1. **Comments on a diagram or a table cell.** A quote inside a Mermaid block or a table is matched on its source text. Should marks inside a drawn diagram be shown? Proposal: no; the card says "en el diagrama de § Flujo".
-2. **Who may resolve a person's comment.** Today the agent resolves it with `reply_to_comment`. Should the person confirm? Proposal: the person can reopen any resolved comment, and that is enough.
-3. **Review task tier.** `standard` by default. A harness may want `deep` for specs. Proposal: `documents.kinds.<kind>.reviewTier`, next to the kind's template.
+Decided by Marco on 2026-10-27, as proposed:
+
+1. **Comments on a diagram or a table cell.** A quote inside a Mermaid block or a table is matched on its source text. No marks inside a drawn diagram; the card says "en el diagrama de § Flujo".
+2. **Who may resolve a person's comment.** The agent resolves it with `reply_to_comment`; the person can reopen any resolved comment.
+3. **Review task tier.** `standard` by default; a harness may set `documents.kinds.<kind>.reviewTier`, next to the kind's template.

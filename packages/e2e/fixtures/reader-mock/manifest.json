@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "action": "manifest",
+  "match": "# Topic: the manifest",
+  "recordedWith": "claude",
+  "fallback": { "text": "Not recorded." },
+  "turns": [
+    {
+      "id": "t1",
+      "text": "I wrote an overview of the manifest.",
+      "writes": [
+        {
+          "path": "docs/overview.md",
+          "content": "---\ntitle: Manifest overview\n---\n> [!SUMMARY]\n> The manifest declares the whole harness.\n\n## Context\n\nSee the [decisions](decisions.md#why).\n\n## Parts\n\n| Part | Count |\n|:--|--:|\n| actions | 6 |\n| blocks | 2 |\n\n*What a harness declares*\n\n## Risks\n\nNone yet.\n"
+        },
+        { "path": "docs/decisions.md", "content": "# Decisions\n\n## Why\n\nOne file declares everything.\n" }
+      ],
+      "usage": { "input": 1000, "output": 100, "cacheRead": 0, "cacheWrite": 0 },
+      "next": { "*": "t2" }
+    },
+    {
+      "id": "t2",
+      "text": "I added a section on blocks.",
+      "writes": [
+        {
+          "path": "docs/overview.md",
+          "content": "---\ntitle: Manifest overview\n---\n> [!SUMMARY]\n> The manifest declares the whole harness.\n\n## Context\n\nSee the [decisions](decisions.md#why).\n\n## Parts\n\nActions and blocks.\n\n## Blocks\n\nBlocks are cards the agent shows.\n\n## Risks\n\nNone yet.\n"
+        }
+      ],
+      "usage": { "input": 1200, "output": 120, "cacheRead": 0, "cacheWrite": 0 }
+    },
+    {
+      "id": "close",
+      "note": { "title": "Manifest overview", "summary": ["Wrote the overview"], "decisions": [], "files": ["docs/overview.md"], "open": [] }
+    }
+  ]
+}

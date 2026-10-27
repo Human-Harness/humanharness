@@ -1,9 +1,10 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import type { EngineDef, ModelProfile } from "@humanharness/engines";
-import { DEFAULT_SIDEKICK, SIDEKICK_ALWAYS_MAX_MS, SIDEKICK_COLLECTION, type SidekickManifest, type SidekickMoment, sidekickMinWords, sidekickMode, sidekickTips } from "@humanharness/harness-sdk";
+import { DEFAULT_SIDEKICK, SIDEKICK_ALWAYS_MAX_MS, SIDEKICK_COLLECTION, type SidekickDef, type SidekickManifest, type SidekickMoment, sidekickMinWords, sidekickMode, sidekickTips } from "@humanharness/harness-sdk";
 import type { SidekickAnswer, SidekickSessionOptions } from "@humanharness/runtime";
 import type { SidekickCard, SidekickHeadsUp, SidekickInfo, SidekickLearned, SidekickOutcome, SidekickReview, SidekickSetResult, SidekickSettings, SidekickSettingsPatch, SidekickState } from "@humanharness/ui/client";
 import {
+  MAIN_SCOPE,
   SIDEKICK_FLAG_KINDS,
   type SidekickEvent,
   type SidekickEventMoment,
@@ -14,8 +15,9 @@ import {
   usedShare,
   whyShown,
 } from "@humanharness/workspace";
+import { candidates, pickSpeaker } from "./sidekick-route";
 import type { SidekickStore } from "./sidekick-store";
-import { SIDEKICK_LEARN_MIN, afterReplyPrompt, learnPrompt, parseAfter, parseLearn, parseReview, preSendPrompt } from "./sidekick-turns";
+import { SIDEKICK_LEARN_MIN, afterReplyPrompt, learnPrompt, parseAfter, parseLearn, parseReview, parseRoute, preSendPrompt, routePrompt } from "./sidekick-turns";
 import type { TurnEnd } from "./task-manager";
 import { type UsageRecord, capTokens, sidekickRecord, sidekickSpent, sidekickWeek } from "./usage-log";
 
@@ -35,6 +37,17 @@ const NOT_OFF_PHASE = SIDEKICK_FLAG_KINDS.filter((k) => k !== "off-phase");
 /** Learning (spec §6.4): the newest events its prompt names, and how long its turn may run. */
 const LEARN_EVENTS = 50;
 const LEARN_MS = 60_000;
+/** How long a routing turn (spec §2a.3) may run before the person's order decides. */
+const ROUTE_MS = 15_000;
+/** The routing session's folder (a reserved sidekick id) and its brief: it only names who speaks. */
+const ROUTE_ID = "route";
+const ROUTE_BRIEF = "# Route\n\nYou pick which sidekick of the app should speak. Answer with one id from the choices only. Never act.\n";
+
+/** What a card names: the speaker's id, name and mark. */
+const infoOf = (s: SidekickDef): SidekickInfo => ({ id: s.id, name: s.name, mark: s.mark });
+/** Part 1's sidekick unchanged (name, personality, purposes): its session gets part 1's brief (D0). */
+const plainDefault = (s: SidekickDef) =>
+  s.name === DEFAULT_SIDEKICK.name && !s.personality.trim() && JSON.stringify(s.purposes) === JSON.stringify(DEFAULT_SIDEKICK.purposes);
 
 /** The events line's short name (spec §6.1) for an SDK moment. */
 export function eventMoment(m: SidekickMoment): SidekickEventMoment {
@@ -75,8 +88,11 @@ export interface SidekickDeps {
   engine(engineId: string): EngineDef;
   /** The engine's CLI; null when it can't be found. */
   command(engine: EngineDef): Promise<{ command: string[]; env: Record<string, string> } | null>;
-  /** Sidekick's model (the `sidekick` process in Settings › Models), resolved when a session opens. */
-  profile(engine: EngineDef): Promise<ModelProfile>;
+  /**
+   * Sidekick's model (the `sidekick` process in Settings › Models), resolved when a session opens; with `tier`, that
+   * tier's model instead (a sidekick's own tier, or the routing turn's light one).
+   */
+  profile(engine: EngineDef, tier?: "light" | "standard" | "deep"): Promise<ModelProfile>;
   /** The session's working folder for `base` (sidekickWorkDir): the sidekick's, or a one-off turn's (`id`). */
   workDir(base: string, id?: string): string;
   writeBrief(folder: string, text: string, engine: EngineDef): Promise<unknown>;
@@ -102,22 +118,34 @@ export interface SidekickDeps {
   writeApp(base: string, requests: unknown[]): Promise<void>;
   /** How long a learning turn may run, in ms (tests shorten it). */
   learnMs?: number;
+  /** How long a routing turn may run, in ms (tests shorten it). */
+  routeMs?: number;
 }
 
 export const defaultWaitMs = (wait: SidekickSettings["wait"]): number => (wait === "always" ? SIDEKICK_ALWAYS_MAX_MS : wait * 1000);
 /**
- * Sessions are bound to the open task; a review with no task open binds to NO_TASK, adopted by the next task. A NO_TASK
- * session survives one betweenTasks (the one right before its task starts); the next closes it, so it never outlives
- * the task it was made for.
+ * Sessions are bound to a sidekick and the open task; a review with no task open binds to NO_TASK, adopted by that
+ * sidekick's session in the next task. A NO_TASK session survives one betweenTasks (the one right before its task
+ * starts); the next closes it, so it never outlives the task it was made for.
  */
 const NO_TASK = "";
+
+/** One sidekick's session (spec §2a: one per sidekick and task), with the base and task it was opened for. */
+interface Held {
+  session: SidekickLike;
+  base: string;
+  sidekick: string;
+  task: string;
+}
+const heldKey = (sidekick: string, task: string) => `${sidekick}\n${task}`;
 
 /**
  * Sidekick (spec §4.1, §5, §8): the local check, the decision, the model review with its timeout, the card, the
  * cap, and one no-tools session per task. Never blocks a send: every failure sends the prompt as typed.
  */
 export class SidekickController {
-  private readonly sessions = new Map<string, { session: SidekickLike; base: string }>();
+  /** Keyed by heldKey(sidekick, task). */
+  private readonly sessions = new Map<string, Held>();
   /**
    * Tokens toward the cap of reviews that ran before their task existed, counted by state() only while no task is
    * open; dropped on adoption (Decision 14: the task's own lines start its cap; the week's total keeps them).
@@ -140,6 +168,8 @@ export class SidekickController {
   private sends = 0;
   /** The open task's waiting cards other than the live pre-send one (after the reply), with where each was made. */
   private cards: { card: SidekickCard; ctx: { task: OpenTask | null; base: string } }[] = [];
+  /** Running routing turns (spec §2a.3); turning off, a profile switch or closing aborts them. */
+  private readonly routing = new Set<AbortController>();
   /** The running learning turn (spec §6.4); turning off, a profile switch or closing drops it. */
   private learning: AbortController | null = null;
   /** The running learning turn's promise (never rejects), for `learned`. */
@@ -223,6 +253,7 @@ export class SidekickController {
       this.running?.abort();
       this.dropAfter();
       this.learning?.abort();
+      this.abortRouting();
       this.card = null;
       this.cards = [];
       this.notice = undefined;
@@ -386,12 +417,13 @@ export class SidekickController {
       this.running?.abort();
       this.dropAfter();
       this.learning?.abort();
+      this.abortRouting();
       this.card = null;
       this.cards = [];
       this.notice = undefined;
     }
     if (moved) this.pending.clear();
-    await this.closeSessions(settings.on ? (_key, s) => s.base !== base : () => true);
+    await this.closeSessions(settings.on ? (s) => s.base !== base : () => true);
     await this.push();
   }
 
@@ -420,7 +452,7 @@ export class SidekickController {
     }
     const keepLoose = this.looseArmed;
     this.looseArmed = false;
-    await this.closeSessions((key) => (key === NO_TASK ? !keepLoose : key !== open));
+    await this.closeSessions((s) => (s.task === NO_TASK ? !keepLoose : s.task !== open));
     if (this.card && open === undefined) {
       this.card = null;
       await this.push();
@@ -504,6 +536,7 @@ export class SidekickController {
     this.running?.abort();
     this.dropAfter();
     this.learning?.abort();
+    this.abortRouting();
     await this.closeSessions(() => true);
   }
 
@@ -532,14 +565,16 @@ export class SidekickController {
     const setup = await this.d.setup().catch(() => null);
     if (!setup || !(await this.d.hasNotice(setup.engineId).catch(() => false))) return early("send");
     this.base = setup.base;
+    // The sidekicks that speak before a send in this scope (spec §2a.3); none: the prompt goes as typed.
+    const list = await this.candidatesFor("pre-send", task?.scope);
+    if (list.length === 0) return early("send");
 
-    // 1. The local check (0 tokens), without the kinds the person muted for this sidekick (spec §6.3).
-    const mutedKinds = mutedOf(settings, SPEAKER.id);
-    const muted = SIDEKICK_FLAG_KINDS.filter((k) => mutedKinds.includes(k) || (req.attached && k === "missing-context"));
+    // 1. The local check (0 tokens), without the kinds every candidate muted (spec §6.3); the speaker's own are dropped below.
+    const muted = SIDEKICK_FLAG_KINDS.filter((k) => list.every((c) => mutedOf(settings, c.id).includes(k)) || (req.attached && k === "missing-context"));
     const ctx = await this.d.context(setup.base, task?.scope).catch(() => ({ notes: [] as string[], data: [] as string[] }));
     const phases = this.d.phases(task?.action);
     const open = phases.find((p) => p.id === task?.phase);
-    const flags = localCheck(req.text, {
+    let flags = localCheck(req.text, {
       minWords: sidekickMinWords(this.d.manifest),
       known: [...ctx.notes, ...ctx.data],
       ...(open ? { phases: { open, others: phases.filter((p) => p.id !== open.id) } } : {}),
@@ -556,9 +591,11 @@ export class SidekickController {
     const controller = new AbortController();
     this.running = controller;
     let timedOut = false;
+    // The first in the person's order until the speaker is picked (a timeout's event names it).
+    let speaker = list[0]!;
     // A timeout is a learning signal too (spec §6.1); it doesn't count as a card.
     const timeout = async (): Promise<SidekickReview> => {
-      await this.event(setup.base, { at: new Date().toISOString(), ...taskFields(task), sidekick: SPEAKER.id, moment: eventMoment("pre-send"), kind: flags[0]?.kind ?? "other", outcome: "timeout" });
+      await this.event(setup.base, { at: new Date().toISOString(), ...taskFields(task), sidekick: speaker.id, moment: eventMoment("pre-send"), kind: flags[0]?.kind ?? "other", outcome: "timeout" });
       return this.finish("timeout");
     };
     const timer = setTimeout(
@@ -571,7 +608,16 @@ export class SidekickController {
     try {
       await this.push();
       const engine = this.d.engine(setup.engineId);
-      const session = await this.sessionFor(setup.base, engine, key, task?.id, live);
+      // A local-check flag goes to a prompt-coach sidekick (spec §2a.3); a routing turn runs within the wait.
+      speaker = await this.pick(list, "pre-send", req.text, { base: setup.base, task, signal: controller.signal, live, ...(flags.length ? { prefer: "prompt-coach" as const } : {}) });
+      if (timedOut) return await timeout();
+      if (controller.signal.aborted || !live()) return this.finish("cancelled");
+      const mutedKinds = mutedOf(settings, speaker.id);
+      if (flags.some((f) => mutedKinds.includes(f.kind))) {
+        flags = flags.filter((f) => !mutedKinds.includes(f.kind));
+        if (flags.length === 0 && mode === "auto" && !req.force) return this.finish("send");
+      }
+      const session = await this.sessionFor(setup.base, engine, speaker, key, task?.id, live);
       if (timedOut) return await timeout();
       if (controller.signal.aborted || !live()) return this.finish("cancelled");
       if (!session) return this.finish("error");
@@ -586,7 +632,7 @@ export class SidekickController {
       });
       if (!live()) return this.finish("cancelled");
       const answer = await session.ask(prompt, controller.signal);
-      await this.logTurn(setup.base, engine, session, task, "pre", answer);
+      await this.logTurn(setup.base, engine, session, task, "pre", answer, speaker.id);
       // A late answer is dropped: the prompt already went as typed (or the person sent at once).
       if (timedOut) return await timeout();
       if (controller.signal.aborted) return this.finish("cancelled");
@@ -595,11 +641,11 @@ export class SidekickController {
       // The kind's threshold (spec §6.2): raised for a kind the person keeps ignoring; a muted kind never shows.
       const kind = reply.issues[0]?.kind ?? flags[0]?.kind ?? "other";
       const events = await this.events(setup.base);
-      if (reply.verdict === "send" || mutedKinds.includes(kind) || reply.confidence < thresholdFor(events, SPEAKER.id, kind)) return this.finish("send");
+      if (reply.verdict === "send" || mutedKinds.includes(kind) || reply.confidence < thresholdFor(events, speaker.id, kind)) return this.finish("send");
       // The events read may have outlasted the wait, or a newer review may have replaced this one meanwhile.
       if (timedOut) return await timeout();
       if (controller.signal.aborted || !live()) return this.finish("cancelled");
-      const why = whyShown(events, SPEAKER.id, kind);
+      const why = whyShown(events, speaker.id, kind);
       // 4. The card.
       this.cardCtx = { task, base: setup.base };
       this.card = {
@@ -612,7 +658,7 @@ export class SidekickController {
         confidence: reply.confidence,
         at: new Date().toISOString(),
         moment: eventMoment("pre-send"),
-        speaker: SPEAKER,
+        speaker: infoOf(speaker),
         kind,
         ...(why ? { why: { used: why.used, of: why.of } } : {}),
       };
@@ -660,6 +706,9 @@ export class SidekickController {
     const setup = await this.d.setup().catch(() => null);
     if (!setup || !(await this.d.hasNotice(setup.engineId).catch(() => false))) return;
     const task: OpenTask = end.task;
+    // The sidekicks that speak after a reply in the task's scope (spec §2a.3).
+    const list = await this.candidatesFor("after-reply", task.scope);
+    if (list.length === 0) return;
     if (await this.pastCap(setup.base, task, settings)) return;
     // A send, a review or another after-reply came while this one was setting up: it is about an old reply.
     if (this.sends !== send) return;
@@ -670,7 +719,9 @@ export class SidekickController {
     const live = () => !controller.signal.aborted && !this.closed && this.sends === turn;
     try {
       const engine = this.d.engine(setup.engineId);
-      const session = await this.sessionFor(setup.base, engine, task.id, task.id, live);
+      const speaker = await this.pick(list, "after-reply", `${end.prompt}\n\n${end.reply}`, { base: setup.base, task, signal: controller.signal, live });
+      if (!live()) return;
+      const session = await this.sessionFor(setup.base, engine, speaker, task.id, task.id, live);
       if (!session || !live()) return;
       const open = this.d.phases(task.action).find((p) => p.id === task.phase);
       const prompt = afterReplyPrompt({
@@ -683,7 +734,7 @@ export class SidekickController {
       });
       if (!live()) return;
       const answer = await session.ask(prompt, controller.signal);
-      await this.logTurn(setup.base, engine, session, task, "after", answer);
+      await this.logTurn(setup.base, engine, session, task, "after", answer, speaker.id);
       if (!live() || !answer.ok) return;
       const after = parseAfter(answer.text);
       if (!after) return;
@@ -695,10 +746,10 @@ export class SidekickController {
       if (!after.gap && !after.next) return;
       const kind = after.gap ? "gap" : "next";
       // A muted kind never shows (spec §6.3).
-      if (!now.afterReply || mutedOf(now, SPEAKER.id).includes(kind) || !live()) return;
+      if (!now.afterReply || mutedOf(now, speaker.id).includes(kind) || !live()) return;
       const shown = { ...(after.gap ? { gap: after.gap } : {}), ...(after.next ? { next: after.next } : {}) };
       this.cards.push({
-        card: { id: randomUUID(), moment: eventMoment("after-reply"), speaker: SPEAKER, kind, prompt: end.prompt, flags: [], issues: [], confidence: 1, after: shown, at: new Date().toISOString() },
+        card: { id: randomUUID(), moment: eventMoment("after-reply"), speaker: infoOf(speaker), kind, prompt: end.prompt, flags: [], issues: [], confidence: 1, after: shown, at: new Date().toISOString() },
         ctx: { task, base: setup.base },
       });
       await this.push();
@@ -773,12 +824,16 @@ export class SidekickController {
    * push: the caller's read may predate turning Sidekick off.
    */
   private async headsUp(ctx: { task: OpenTask; base: string }, settings: SidekickSettings, headsUp: SidekickHeadsUp, live: () => boolean = () => true): Promise<void> {
-    const allowed = (s: SidekickSettings) => s.on && s.headsUps && !mutedOf(s, SPEAKER.id).includes(headsUp.kind);
-    if (this.closed || !allowed(settings)) return;
+    const allowed = (s: SidekickSettings, id: string) => s.on && s.headsUps && !mutedOf(s, id).includes(headsUp.kind);
+    if (this.closed || !settings.on || !settings.headsUps) return;
     if (!(await this.isOpen(ctx.task.id)) || this.closed) return;
+    // A heads-up goes to a focus sidekick on in the task's scope (spec §2a.3); none: no heads-up.
+    const list = await this.candidatesFor("heads-up", ctx.task.scope);
+    if (list.length === 0 || !live()) return;
+    const speaker = await this.pick(list, "heads-up", JSON.stringify(headsUp), { base: ctx.base, task: ctx.task, live: () => live() && !this.closed, prefer: "focus" });
     const now = await this.d.store.settings();
-    if (this.closed || !allowed(now) || !live()) return;
-    const card: SidekickCard = { id: randomUUID(), moment: eventMoment("heads-up"), speaker: SPEAKER, kind: headsUp.kind, prompt: "", flags: [], issues: [], confidence: 1, headsUp, at: new Date().toISOString() };
+    if (this.closed || !allowed(now, speaker.id) || !live()) return;
+    const card: SidekickCard = { id: randomUUID(), moment: eventMoment("heads-up"), speaker: infoOf(speaker), kind: headsUp.kind, prompt: "", flags: [], issues: [], confidence: 1, headsUp, at: new Date().toISOString() };
     this.cards.push({ card, ctx });
     await this.push();
   }
@@ -791,7 +846,15 @@ export class SidekickController {
   }
 
   /** One tagged usage line for a model turn (spec §8); a turn before its task counts toward the loose session's spend. */
-  private async logTurn(base: string, engine: EngineDef, session: SidekickLike, task: OpenTask | null, moment: "pre" | "after" | "learn", answer: SidekickAnswer): Promise<void> {
+  private async logTurn(
+    base: string,
+    engine: EngineDef,
+    session: SidekickLike,
+    task: OpenTask | null,
+    moment: "pre" | "after" | "learn" | "route",
+    answer: SidekickAnswer,
+    sidekick: string = SIDEKICK_ID,
+  ): Promise<void> {
     if (!answer.usage) return;
     // Learning runs between tasks: no loose session's spend.
     if (!task && moment !== "learn") this.pending.set(NO_TASK, (this.pending.get(NO_TASK) ?? 0) + capTokens(answer.usage));
@@ -799,7 +862,7 @@ export class SidekickController {
       engine: engine.id,
       ...(task ? { task: task.id, scope: task.scope } : {}),
       ...(task?.action ? { action: task.action } : {}),
-      sidekick: SIDEKICK_ID,
+      sidekick,
       moment,
       profile: session.profile,
       ok: answer.ok,
@@ -818,63 +881,127 @@ export class SidekickController {
   }
 
   /**
-   * The session for `key` (the open task, or NO_TASK): reused; a task adopts the NO_TASK session a review opened
-   * before it existed; else a new one, its brief written first and never again for that session (spec §5). Null
-   * without a CLI, or once `live` says the review was superseded (nothing written, nothing opened).
+   * The speaker's session for `key` (the open task, or NO_TASK): reused; a task adopts the speaker's NO_TASK session a
+   * review opened before it existed; else a new one in the speaker's folder, its brief written first and never again
+   * for that session (spec §5). Null without a CLI, or once `live` says the review was superseded (nothing written,
+   * nothing opened).
    */
-  private async sessionFor(base: string, engine: EngineDef, key: string, taskId: string | undefined, live: () => boolean): Promise<SidekickLike | null> {
-    const s = await this.findSession(base, engine, key, taskId, live);
+  private async sessionFor(base: string, engine: EngineDef, speaker: SidekickDef, key: string, taskId: string | undefined, live: () => boolean): Promise<SidekickLike | null> {
+    const s = await this.findSession(base, engine, speaker, key, taskId, live);
     if (s && key === NO_TASK) this.looseArmed = true;
     return s;
   }
 
-  private async findSession(base: string, engine: EngineDef, key: string, taskId: string | undefined, live: () => boolean): Promise<SidekickLike | null> {
-    const have = this.sessions.get(key);
+  private async findSession(base: string, engine: EngineDef, speaker: SidekickDef, key: string, taskId: string | undefined, live: () => boolean): Promise<SidekickLike | null> {
+    const at = heldKey(speaker.id, key);
+    const have = this.sessions.get(at);
     if (have && have.base === base) return have.session;
     if (taskId !== undefined) {
-      const loose = this.sessions.get(NO_TASK);
+      const looseAt = heldKey(speaker.id, NO_TASK);
+      const loose = this.sessions.get(looseAt);
       if (loose && loose.base === base) {
         // Decision 14: the pre-task spend stays in the week's total; the task's own lines start its cap.
-        this.sessions.delete(NO_TASK);
+        this.sessions.delete(looseAt);
         this.pending.delete(NO_TASK);
-        this.sessions.set(key, loose);
+        this.sessions.set(at, { ...loose, task: key });
         return loose.session;
       }
     }
     if (have) {
-      this.sessions.delete(key);
+      this.sessions.delete(at);
       await have.session.close().catch(() => undefined);
     }
     const cmd = await this.d.command(engine).catch(() => null);
     if (!cmd) return null;
-    const profile = await this.d.profile(engine);
+    // The sidekick's own tier, else the `sidekick` process's.
+    const profile = await this.d.profile(engine, speaker.tier);
     if (!live()) return null;
-    const folder = this.d.workDir(base);
+    const folder = this.d.workDir(base, speaker.id);
     const tips = sidekickTips(this.d.manifest);
     // What Sidekick learned (spec §6.4): read when the session opens, so the brief changes only between tasks.
     const learned = (await this.d.store.all()).filter((r) => r.type === "learned" && r.text).map((r) => r.text as string);
     if (!live()) return null;
-    await this.d.writeBrief(folder, sidekickBrief({ name: SIDEKICK_NAME, harness: this.d.harness.name, ...(tips ? { tips } : {}), ...(learned.length ? { learned } : {}) }), engine);
+    // Part 1's Sidekick keeps part 1's brief (D0); any other gets its name, personality and purposes (spec §2a.1).
+    const own = plainDefault(speaker) ? {} : { sidekick: { name: speaker.name, personality: speaker.personality, purposes: speaker.purposes } };
+    await this.d.writeBrief(folder, sidekickBrief({ name: SIDEKICK_NAME, harness: this.d.harness.name, ...(tips ? { tips } : {}), ...(learned.length ? { learned } : {}), ...own }), engine);
     // A review that replaced this one may have opened the key's session meanwhile: keep that one.
-    const raced = this.sessions.get(key);
+    const raced = this.sessions.get(at);
     if (raced && raced.base === base) return raced.session;
     if (!live()) return null;
     const session = this.d.open({ engine, command: cmd.command, env: cmd.env, folder, profile });
-    this.sessions.set(key, { session, base });
+    this.sessions.set(at, { session, base, sidekick: speaker.id, task: key });
     return session;
   }
 
-  /** A one-off session in its own folder (`id`), never kept in `sessions`: the caller closes it. Null without a CLI or once `live` says no. */
-  private async oneOff(base: string, engine: EngineDef, id: string, live: () => boolean): Promise<SidekickLike | null> {
+  /**
+   * A one-off session in its own folder (`id`), never kept in `sessions`: the caller closes it. Null without a CLI or
+   * once `live` says no. `tier` and `brief` replace the `sidekick` process's tier and part 1's brief.
+   */
+  private async oneOff(base: string, engine: EngineDef, id: string, live: () => boolean, o: { tier?: "light"; brief?: string } = {}): Promise<SidekickLike | null> {
     const cmd = await this.d.command(engine).catch(() => null);
     if (!cmd) return null;
-    const profile = await this.d.profile(engine);
+    const profile = await (o.tier ? this.d.profile(engine, o.tier) : this.d.profile(engine));
     if (!live()) return null;
     const folder = this.d.workDir(base, id);
     const tips = sidekickTips(this.d.manifest);
-    await this.d.writeBrief(folder, sidekickBrief({ name: SIDEKICK_NAME, harness: this.d.harness.name, ...(tips ? { tips } : {}) }), engine);
+    await this.d.writeBrief(folder, o.brief ?? sidekickBrief({ name: SIDEKICK_NAME, harness: this.d.harness.name, ...(tips ? { tips } : {}) }), engine);
     if (!live()) return null;
     return this.d.open({ engine, command: cmd.command, env: cmd.env, folder, profile });
+  }
+
+  /**
+   * The sidekicks that speak at `moment` in `scope` (spec §2a.3), in the person's order. A sidekick no longer in the
+   * list (removed) has its sessions closed here; its folder is never opened again under that id unless a new sidekick
+   * takes the id, and then the new one's brief replaces the old (a session carries no state from its folder).
+   */
+  private async candidatesFor(moment: SidekickMoment, scope: string | undefined): Promise<SidekickDef[]> {
+    const all = await this.d.store.sidekicks().catch(() => null);
+    if (all) await this.closeSessions((s) => !all.some((k) => k.id === s.sidekick));
+    return candidates(all ?? [DEFAULT_SIDEKICK], moment, scope ?? MAIN_SCOPE, (sc, id) => this.d.store.scopeFor(sc, id));
+  }
+
+  /** One speaker of `list` (pickSpeaker, D11), its routing turn (if any) given `context`. */
+  private pick(
+    list: readonly SidekickDef[],
+    moment: SidekickMoment,
+    context: string,
+    o: { base: string; task: OpenTask | null; signal?: AbortSignal; live: () => boolean; prefer?: "prompt-coach" | "focus" },
+  ): Promise<SidekickDef> {
+    return pickSpeaker(list, moment, (choices) => this.routeTurn(moment, context, choices, o), o.prefer);
+  }
+
+  /**
+   * The routing turn (spec §2a.3): a light one-off session in the `route` folder, closed right after, logged with
+   * moment `route` toward the shared cap. Off, past the cap, another base, ROUTE_MS, turning off, a profile switch or
+   * closing: "" (the person's order decides).
+   */
+  private async routeTurn(moment: SidekickMoment, context: string, choices: { id: string; text: string }[], o: { base: string; task: OpenTask | null; signal?: AbortSignal; live: () => boolean }): Promise<string> {
+    const settings = await this.d.store.settings();
+    if (this.closed || !settings.on || !o.live()) return "";
+    const setup = await this.d.setup().catch(() => null);
+    if (!setup || setup.base !== o.base || !(await this.d.hasNotice(setup.engineId).catch(() => false))) return "";
+    if (await this.pastCap(o.base, o.task, settings)) return "";
+    const controller = new AbortController();
+    this.routing.add(controller);
+    const live = () => !controller.signal.aborted && !o.signal?.aborted && !this.closed && o.live();
+    let session: SidekickLike | null = null;
+    try {
+      const engine = this.d.engine(setup.engineId);
+      session = await this.oneOff(o.base, engine, ROUTE_ID, live, { tier: "light", brief: ROUTE_BRIEF });
+      if (!session || !live()) return "";
+      // A hung CLI must not hold the moment: the person's order decides after ROUTE_MS.
+      const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(this.d.routeMs ?? ROUTE_MS), ...(o.signal ? [o.signal] : [])]);
+      const answer = await session.ask(routePrompt(moment, context, choices), signal);
+      await this.logTurn(o.base, engine, session, o.task, "route", answer, ROUTE_ID);
+      return answer.ok && live() ? (parseRoute(answer.text, choices.map((c) => c.id)) ?? "") : "";
+    } finally {
+      this.routing.delete(controller);
+      await session?.close().catch(() => undefined);
+    }
+  }
+
+  private abortRouting(): void {
+    for (const c of this.routing) c.abort();
   }
 
   /** Sidekick's usage lines in `base` (cached; a failed or empty read is not kept, since the log loader answers [] on errors). */
@@ -891,11 +1018,11 @@ export class SidekickController {
     return lines.catch(() => []);
   }
 
-  private async closeSessions(which: (key: string, s: { session: SidekickLike; base: string }) => boolean): Promise<void> {
-    const gone = [...this.sessions].filter(([key, s]) => which(key, s));
-    for (const [key] of gone) {
+  private async closeSessions(which: (s: Held) => boolean): Promise<void> {
+    const gone = [...this.sessions].filter(([, s]) => which(s));
+    for (const [key, s] of gone) {
       this.sessions.delete(key);
-      this.pending.delete(key);
+      this.pending.delete(s.task);
     }
     await Promise.all(gone.map(([, s]) => s.session.close().catch(() => undefined)));
   }

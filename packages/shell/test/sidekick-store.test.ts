@@ -201,6 +201,11 @@ describe("sidekick records (spec §2a.1, Decisions 1–2)", () => {
     expect((await s.store.saveSidekick({ name: "!!!", mark: "x", personality: "", purposes: [{ id: "mentor" }] })).id).toBe("sidekick-3");
   });
 
+  it("reserved ids: a new one is never `route` (the routing turn's folder)", async () => {
+    const s = mem([{ ...RULO, order: 0 }]);
+    expect((await s.store.saveSidekick({ name: "Route", mark: "x", personality: "", purposes: [{ id: "mentor" }] })).id).toBe("route-2");
+  });
+
   it("a new id never takes another record's: settings, a scope record, a learned item's shape (s-, l-)", async () => {
     const s = mem([
       { ...DEFAULT_SIDEKICK, type: "sidekick" },

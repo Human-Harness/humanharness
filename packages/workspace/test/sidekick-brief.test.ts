@@ -56,3 +56,55 @@ describe("sidekick brief", () => {
     expect(await fs.readdir(folder)).toEqual(["AGENTS.md"]);
   });
 });
+
+describe("a brief per sidekick (spec §2a.1)", () => {
+  const BASE = { name: "Sidekick", harness: "Essay Coach", tips: "Claims need a source.", learned: ["Writes in Spanish."] };
+
+  it("names the sidekick, carries its personality and only its purposes' tips", () => {
+    const b = sidekickBrief({ ...BASE, sidekick: { name: "Rulo", personality: "Direct, dry humour.", purposes: [{ id: "mentor" }] } });
+    expect(b).toMatch(/^# Rulo/);
+    expect(b).toContain('You are Rulo, a sidekick inside the app "Essay Coach". You never act; you only suggest.');
+    expect(b).toContain("## Personality\n\nDirect, dry humour.");
+    expect(b).toContain("## Mentor");
+    expect(b).not.toContain("## Prompt coach");
+    expect(b).toContain("Claims need a source.");
+    expect(b).toContain("- Writes in Spanish.");
+  });
+
+  it("no personality section when it is empty", () => {
+    expect(sidekickBrief({ ...BASE, sidekick: { name: "A", personality: " ", purposes: [{ id: "focus" }] } })).not.toContain("## Personality");
+  });
+
+  it("D0: without `sidekick`, the part 1 brief exactly", () => {
+    expect(sidekickBrief(BASE)).toMatchInlineSnapshot(`
+      "# Sidekick
+
+      You are Sidekick, the prompt coach inside the app "Essay Coach".
+
+      ## Rules
+
+      - You review the person's prompt before it goes to the main assistant of this app. You never answer the prompt itself.
+      - Answer only with one JSON object, exactly as the turn asks. No prose before or after it, no code fences.
+      - Suggest; never act. You have no tools and you change nothing.
+      - Be brief: issues are one short sentence each.
+      - Say \`send\` when the prompt is clear enough; a good prompt needs no rewrite.
+      - Write the rewrite and the queued prompts in the same language as the person's prompt.
+      - Write the issues in the app's UI language that the turn names.
+      - Keep the person's intent. Add only what is missing; do not invent facts, files or sources.
+
+      ## Harness tips
+
+      Claims need a source.
+
+      ## About this person
+
+      - Writes in Spanish.
+      "
+    `);
+  });
+
+  it("custom purposes go in as their text", () => {
+    const b = sidekickBrief({ ...BASE, sidekick: { name: "A", personality: "", purposes: [{ id: "custom", text: "Watch the tests.", moments: ["after-reply"] }] } });
+    expect(b).toContain("## Your purpose\n\nWatch the tests.");
+  });
+});

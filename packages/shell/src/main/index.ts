@@ -100,7 +100,7 @@ import { cliCommand, engineCommand, loginShellPath } from "./engine-command";
 import { EngineGuards } from "./engine-guards";
 import { copySetupStep, engineOptionExtras, installCommandOf, runsInTerminal, terminalCommand } from "./install-help";
 import { detectEngine, hasAcceptedNotice } from "./engine-status";
-import { QUESTIONS, cleanModels, engineOffer, firstOffered, fitEffort, nearestTier, nextFallback, resolveProfile } from "./models";
+import { QUESTIONS, cleanModels, engineOffer, firstOffered, fitEffort, nearestTier, nextFallback, resolveProfile, tierSpec } from "./models";
 import { chooseModeHandler } from "./mode-ipc";
 import { setPhaseHandler, timeBoxOffered } from "./phase-ipc";
 import { requireNoticeForChoice, requireNoticeForTurn } from "./notice-policy";
@@ -1690,11 +1690,13 @@ if (loaded) {
     hasNotice,
     engine: getEngine,
     command: async (engine) => hooks.engines?.[engine.id] ?? engineCommand(engine, commandDeps),
-    // The `sidekick` process in Settings › Models, light by default (plan 3c), resolved when a session opens.
-    profile: async (engine) => {
+    // The `sidekick` process in Settings › Models, light by default (plan 3c), resolved when a session opens; a
+    // sidekick's own tier (or the routing turn's light one) uses that tier's model instead.
+    profile: async (engine, tier) => {
       const models = cleanModels((await config.load()).models);
       const saved = await savedOffer(engine.id);
-      return supportedEffort(firstOffered(resolveProfile({ engine: engine.id, action: SIDEKICK_PROCESS, manifestTier: "light", models }), models, saved.models), saved);
+      const p = tier ? { engine: engine.id, tier, ...tierSpec(engine.id, tier, models) } : resolveProfile({ engine: engine.id, action: SIDEKICK_PROCESS, manifestTier: "light", models });
+      return supportedEffort(firstOffered(p, models, saved.models), saved);
     },
     // Outside the base (plan Decision 1), so the task's CLAUDE.md/AGENTS.md never load in the Sidekick session.
     workDir: (base, id = "sidekick") => sidekickWorkDir(app.getPath("userData"), base, id),

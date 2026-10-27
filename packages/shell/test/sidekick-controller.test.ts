@@ -11,7 +11,7 @@ const profile = { engine: "claude", tier: "light" as const, model: "haiku", effo
 const json = (o: unknown) => JSON.stringify(o);
 const SUGGEST = json({ verdict: "suggest", issues: [{ kind: "vague", text: "Say what better means." }], rewrite: "Make the intro shorter.", confidence: 0.8 });
 
-export function harness(o: { record?: Partial<SidekickRecord> | null; answers?: (string | ((signal: AbortSignal) => Promise<SidekickAnswer>))[]; task?: { id: string; action?: string; scope: string; phase?: string } | null; usage?: UsageRecord[]; manifest?: SidekickDeps["manifest"]; waitMs?: number; events?: SidekickEvent[]; phases?: { id: string; label: string }[]; extra?: Partial<SidekickRecord>[]; learnMs?: number } = {}) {
+export function harness(o: { record?: Partial<SidekickRecord> | null; answers?: (string | ((signal: AbortSignal) => Promise<SidekickAnswer>))[]; task?: { id: string; action?: string; scope: string; phase?: string } | null; usage?: UsageRecord[]; manifest?: SidekickDeps["manifest"]; waitMs?: number; events?: SidekickEvent[]; phases?: { id: string; label: string }[]; extra?: Partial<SidekickRecord>[]; learnMs?: number; routeMs?: number; spent?: number } = {}) {
   // The `sidekick` collection by id; `record()` is the settings record.
   const records = new Map<string, Partial<SidekickRecord>>([...(o.record ? [o.record] : []), ...(o.extra ?? [])].map((r) => [r.id ?? "settings", r]));
   const writes: { op: string; record?: Partial<SidekickRecord>; key?: string }[] = [];
@@ -23,6 +23,8 @@ export function harness(o: { record?: Partial<SidekickRecord> | null; answers?: 
   const events: SidekickEvent[] = [...(o.events ?? [])];
   const asked: string[] = [];
   const opened: string[] = [];
+  // Each opened session's folder name: the sidekick's id, or a one-off turn's (`learn`, `route`).
+  const sessions: string[] = [];
   const closed: string[] = [];
   const logged: UsageRecord[] = [];
   const briefs: string[] = [];
@@ -49,12 +51,14 @@ export function harness(o: { record?: Partial<SidekickRecord> | null; answers?: 
     hasNotice: async () => true,
     engine: getEngine,
     command: async () => ({ command: ["claude"], env: {} }),
-    profile: async () => profile,
+    // A sidekick's own tier (or the routing turn's light one) when given.
+    profile: async (_e, tier) => (tier ? { ...profile, tier } : profile),
     workDir: (_b, id = "sidekick") => (folders.push(id), `/ud/sidekick/k/${id}`),
     writeBrief: async (_f, text) => void briefs.push(text),
     open: (s) => {
       const id = `s${opened.length + 1}`;
       opened.push(id);
+      sessions.push(s.folder.split("/").at(-1) ?? "");
       return {
         profile: s.profile,
         ask: async (prompt, signal) => {
@@ -69,7 +73,11 @@ export function harness(o: { record?: Partial<SidekickRecord> | null; answers?: 
     task: async () => task,
     context: async () => ({ notes: ["Chapter 2 outline"], data: ["sources"] }),
     uiLanguage: async () => "English",
-    usage: async () => [...(o.usage ?? []), ...logged],
+    usage: async () => [
+      ...(o.usage ?? []),
+      ...(o.spent ? [sidekickRecord({ engine: "claude", task: "t1", sidekick: "rulo", moment: "after", profile, ok: true, usage: { inputTokens: o.spent, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 } })] : []),
+      ...logged,
+    ],
     log: async (_b, r) => void logged.push(r),
     changed: (s) => void states.push(s),
     events: { read: async () => [...events], append: async (_b, e) => void events.push(e) },
@@ -85,8 +93,9 @@ export function harness(o: { record?: Partial<SidekickRecord> | null; answers?: 
       }
     },
     ...(o.learnMs !== undefined ? { learnMs: o.learnMs } : {}),
+    ...(o.routeMs !== undefined ? { routeMs: o.routeMs } : {}),
   };
-  return { ctl: new SidekickController(deps), deps, asked, opened, closed, logged, briefs, states, setTask: (t: typeof task) => (task = t), events,
+  return { ctl: new SidekickController(deps), deps, asked, opened, sessions, closed, logged, briefs, states, setTask: (t: typeof task) => (task = t), events,
     writes,
     appWrites,
     appCalls,
@@ -1180,5 +1189,153 @@ describe("What Sidekick learned in Settings (spec §6.4)", () => {
       throw new Error("Turns are running");
     };
     await expect(h.ctl.forget("l-00000001")).rejects.toThrow("Turns are running");
+  });
+});
+
+describe("several sidekicks (spec §2a)", () => {
+  const RULO = { id: "rulo", type: "sidekick" as const, name: "Rulo", mark: "🦊", personality: "Direct.", purposes: [{ id: "mentor" as const }], order: 1 };
+  const DEF = { id: "sidekick", type: "sidekick" as const, name: "Sidekick", mark: "spark", personality: "", purposes: [{ id: "prompt-coach" as const }, { id: "focus" as const }], order: 0 };
+  const CUSTOM = (id: string, text: string, order: number) => ({ id, type: "sidekick" as const, name: id.toUpperCase(), mark: "x", personality: "", purposes: [{ id: "custom" as const, text, moments: ["after-reply" as const] }], order });
+  const END = { task: { id: "t1", scope: "main" }, kind: "run" as const, ok: true, prompt: "p", reply: "r", fromBlock: false, modeSwitch: false };
+
+  it("pre-send: only Sidekick speaks (Rulo has no pre-send purpose); one session", async () => {
+    const h = harness({ record: on, extra: [DEF, RULO] });
+    const r = await h.ctl.review({ text: "make it better" });
+    expect(r.kind === "card" && r.card.speaker).toEqual({ id: "sidekick", name: "Sidekick", mark: "spark" });
+    expect(h.sessions).toEqual(["sidekick"]);
+    expect(h.logged[0]).toMatchObject({ sidekick: "sidekick", moment: "pre" });
+  });
+
+  it("D0: no sidekick records → the part 1 session, folder, brief and usage line", async () => {
+    const h = harness({ record: on });
+    await h.ctl.review({ text: "make it better" });
+    expect(h.sessions).toEqual(["sidekick"]);
+    expect(h.briefs[0]).toMatch(/^# Sidekick\n\nYou are Sidekick, the prompt coach inside the app "Essay Coach"\./);
+    expect(h.logged[0]).toMatchObject({ sidekick: "sidekick", moment: "pre", tier: "light" });
+  });
+
+  it("after-reply with two candidates: one speaker by order, the other's session never opens", async () => {
+    const h = harness({ record: on, extra: [{ ...RULO, order: 0 }, { ...DEF, order: 1 }], answers: [json({ next: "Ask for the sources" })] });
+    await h.ctl.afterReply(END);
+    expect((await h.ctl.state()).cards[0]?.speaker).toEqual({ id: "rulo", name: "Rulo", mark: "🦊" });
+    expect(h.sessions).toEqual(["rulo"]);
+    expect(h.briefs[0]).toContain("You are Rulo");
+    expect(h.briefs[0]).toContain("## Mentor");
+    expect(h.logged[0]).toMatchObject({ sidekick: "rulo", moment: "after" });
+  });
+
+  it("a sidekick's own tier opens its session", async () => {
+    const h = harness({ record: on, extra: [{ ...RULO, order: 0, tier: "deep" as const }, { ...DEF, order: 1 }], answers: [json({ next: "x" })] });
+    await h.ctl.afterReply(END);
+    expect(h.logged[0]).toMatchObject({ sidekick: "rulo", tier: "deep" });
+  });
+
+  it("a sidekick off in the scope never speaks there", async () => {
+    const h = harness({ record: on, extra: [{ ...DEF, purposes: [{ id: "focus" as const }] }, RULO, { id: "s-main-rulo", type: "scope", scope: "main", sidekick: "rulo", on: false }] });
+    await h.ctl.afterReply(END);
+    expect(h.asked).toEqual([]);
+  });
+
+  it("pre-send with no candidate sends as typed", async () => {
+    const h = harness({ record: on, extra: [{ ...DEF, purposes: [{ id: "focus" as const }] }, RULO] });
+    expect(await h.ctl.review({ text: "make it better" })).toEqual({ kind: "send" });
+    expect(h.opened).toEqual([]);
+  });
+
+  it("the cap is shared", async () => {
+    const h = harness({ record: { ...on, cap: 20_000 as const }, extra: [DEF, RULO], spent: 20_000 });
+    expect(await h.ctl.review({ text: "make it better" })).toMatchObject({ kind: "send" });
+  });
+
+  it("a flag goes to the prompt-coach candidate, whatever the order (prefer)", async () => {
+    const coach = { ...CUSTOM("aaa", "Watch the tests.", 0), purposes: [{ id: "custom" as const, text: "Watch the tests.", moments: ["pre-send" as const] }] };
+    const h = harness({ record: on, extra: [coach, { ...DEF, order: 1 }] });
+    const r = await h.ctl.review({ text: "make it better" });
+    expect(r.kind === "card" && r.card.speaker.id).toBe("sidekick");
+    expect(h.sessions).toEqual(["sidekick"]);
+  });
+
+  it("each sidekick mutes its own kinds: Sidekick's muted `vague` doesn't mute Rulo's", async () => {
+    const h = harness({ record: { ...on, muted: { rulo: ["next"] } }, extra: [{ ...RULO, order: 0 }, { ...DEF, order: 1 }], answers: [json({ next: "x" })] });
+    await h.ctl.afterReply(END);
+    expect((await h.ctl.state()).cards).toEqual([]);
+  });
+
+  it("custom-only candidates: one light routing turn in its own `route` session picks, logged as `route`", async () => {
+    const h = harness({ record: on, extra: [{ ...DEF, purposes: [{ id: "focus" as const }] }, CUSTOM("aaa", "Watch the tests.", 1), CUSTOM("bbb", "Watch the style.", 2)], answers: ["bbb", json({ next: "Fix the style" })] });
+    await h.ctl.afterReply(END);
+    expect(h.sessions).toEqual(["route", "bbb"]);
+    expect(h.asked[0]).toContain("Sidekick: route");
+    expect(h.asked[0]).toContain("- aaa: Watch the tests.");
+    expect(h.closed).toContain("s1");
+    expect(h.logged.map((l) => [l.moment, l.sidekick, l.tier])).toEqual([["route", "route", "light"], ["after", "bbb", "light"]]);
+    expect((await h.ctl.state()).cards[0]?.speaker.id).toBe("bbb");
+  });
+
+  it("an unknown routing answer falls back to the person's order", async () => {
+    const h = harness({ record: on, extra: [CUSTOM("aaa", "Watch the tests.", 1), CUSTOM("bbb", "Watch the style.", 2)], answers: ["nobody", json({ next: "x" })] });
+    await h.ctl.afterReply(END);
+    expect(h.sessions).toEqual(["route", "aaa"]);
+  });
+
+  it("a hung routing turn times out to the person's order", async () => {
+    const h = harness({ record: on, routeMs: 20, extra: [CUSTOM("aaa", "Watch the tests.", 1), CUSTOM("bbb", "Watch the style.", 2)], answers: [slow, json({ next: "x" })] });
+    await h.ctl.afterReply(END);
+    expect(h.sessions).toEqual(["route", "aaa"]);
+    expect(h.closed).toContain("s1");
+  });
+
+  it("past the cap: no routing turn (and no speaker turn)", async () => {
+    const h = harness({ record: { ...on, cap: 20_000 as const }, spent: 20_000, extra: [CUSTOM("aaa", "Watch the tests.", 1), CUSTOM("bbb", "Watch the style.", 2)] });
+    await h.ctl.afterReply(END);
+    expect(h.asked).toEqual([]);
+  });
+
+  it("turning off aborts a running routing turn and nothing more is asked", async () => {
+    const h = harness({ record: on, extra: [CUSTOM("aaa", "Watch the tests.", 1), CUSTOM("bbb", "Watch the style.", 2)], answers: [slow] });
+    const run = h.ctl.afterReply(END);
+    await vi.waitFor(() => expect(h.asked).toHaveLength(1));
+    await h.ctl.set({ on: false });
+    await run;
+    expect(h.asked).toHaveLength(1);
+    expect(h.closed).toContain("s1");
+    expect(h.sessions).toEqual(["route"]);
+  });
+
+  it("closing aborts a running routing turn", async () => {
+    const h = harness({ record: on, extra: [CUSTOM("aaa", "Watch the tests.", 1), CUSTOM("bbb", "Watch the style.", 2)], answers: [slow] });
+    const run = h.ctl.afterReply(END);
+    await vi.waitFor(() => expect(h.asked).toHaveLength(1));
+    await h.ctl.close();
+    await run;
+    expect(h.asked).toHaveLength(1);
+  });
+
+  it("a removed sidekick's session closes", async () => {
+    const h = harness({ record: on, extra: [{ ...RULO, order: 0 }, { ...DEF, order: 1 }], answers: [json({ next: "x" })] });
+    await h.ctl.afterReply(END);
+    expect(h.sessions).toEqual(["rulo"]);
+    await h.deps.store.removeSidekick("rulo");
+    await h.ctl.review({ text: "make it better" });
+    expect(h.closed).toContain("s1");
+    expect(h.sessions).toEqual(["rulo", "sidekick"]);
+  });
+
+  it("each sidekick keeps its own session across moments; betweenTasks closes them all", async () => {
+    const h = harness({ record: on, extra: [{ ...RULO, order: 0 }, { ...DEF, order: 1 }], answers: [json({ next: "x" })] });
+    await h.ctl.afterReply(END);
+    await h.ctl.review({ text: "make it better" });
+    await h.ctl.afterReply(END);
+    expect(h.sessions).toEqual(["rulo", "sidekick"]);
+    h.setTask(null);
+    await h.ctl.betweenTasks();
+    expect(h.closed.sort()).toEqual(["s1", "s2"]);
+  });
+
+  it("a heads-up goes to the focus candidate", async () => {
+    const h = harness({ record: on, extra: [{ ...RULO, order: 0, purposes: [{ id: "custom" as const, text: "x", moments: ["heads-up" as const] }] }, { ...DEF, order: 1 }] });
+    await h.ctl.afterReply({ ...END, modeSwitch: true, context: { used: 80, cap: 100 } });
+    expect((await h.ctl.state()).cards[0]).toMatchObject({ speaker: { id: "sidekick" }, headsUp: { kind: "context" } });
+    expect(h.asked).toEqual([]);
   });
 });

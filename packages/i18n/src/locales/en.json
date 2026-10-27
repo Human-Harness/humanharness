@@ -25,7 +25,7 @@
   "settings": {
     "title": "Settings",
     "done": "Done",
-    "tabs": { "general": "General", "engine": "Engine", "models": "Models", "usage": "Usage" },
+    "tabs": { "general": "General", "setup": "Setup", "engine": "Engine", "models": "Models", "usage": "Usage" },
     "language": "Language",
     "languageHint": "The app's texts are in English for now. The AI answers in this language.",
     "appearance": "Appearance",
@@ -486,7 +486,14 @@
     "startInterview": "Start",
     "continueInterview": "Continue the interview",
     "costMedium": "This conversation uses some of your AI plan.",
-    "costHeavy": "This conversation uses a good part of your AI plan."
+    "costHeavy": "This conversation uses a good part of your AI plan.",
+    "listTitle": "Setup",
+    "status": { "done": "Done", "skipped": "Skipped. You can do it now.", "missing": "Not done yet" },
+    "redo": "Do it again",
+    "doNow": "Do it now",
+    "edit": "Edit",
+    "save": "Save",
+    "saved": "Saved"
   },
   "mock": {
     "model": "Model",

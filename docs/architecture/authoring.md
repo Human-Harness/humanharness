@@ -29,7 +29,8 @@ The template (`packages/cli/template/`) runs as is: one action (`example`, stand
 - Warnings:
   - one per pillar plus resources: `pillar-decisions`, `pillar-flow`, `pillar-context`, `tier-cost`, `permissions-wide`, `open-questions`;
   - for input blocks: `input-hidden` (an input block that isn't visible), `input-form` (a field the core form can't draw, with no component in `ui/`) and `input-choice`. `input-choice` is a choice whose options can't come from the shown data (`inputUi.<field>.optionsFrom` names no list of strings or string enums, or `kind: "choice"` has no options, and the form draws it as text), or `inputUi.<field>.kind` on a field that isn't a string, where it is ignored;
-  - for settings: `settings-tokens` (the settings' sentences, at their defaults, would take more than 400 tokens of `AGENTS.md`).
+  - for settings: `settings-tokens` (the settings' sentences, at their defaults, would take more than 400 tokens of `AGENTS.md`);
+  - for setup steps: `setup-component` (a component step not found in `ui/`), `setup-mock` (an interview's action without a recording, once `mock/` has any) and `setup-context` (an interview's collection without `context`).
 
 ## run
 
@@ -63,6 +64,10 @@ For an action with phases, the prompt line adds `>phase <id> to change part`, an
 ### Settings
 
 `--set name=value` (repeatable) stores harness settings in the run folder before the task, as the window would, and `run` prints them (`Settings: name=value, …`). Each value is checked as the typed text first, then as JSON (`4`, `true`). An unknown name, a value its schema refuses, or `--set` on a harness without settings stops the run with exit 2 before the engine or the folder. The run folder is throwaway, so these values are stored without a history commit of their own. Without `--set`, `run` is unchanged. See `docs/architecture/settings.md`.
+
+### Setup steps
+
+`setup` adds the harness's own steps to the setup screen (`docs/architecture/setup.md`): a `form` for a few fields of a one-record collection or some settings, an `interview` when the answers need a conversation (an action whose task fills a one-record collection through the data tools), and a `component` for anything else (the harness's own React step, passed to `HarnessApp setupSteps`). `check` warns with `setup-component`, `setup-mock` (only once `mock/` has recordings) and `setup-context`. `run` skips setup steps, but an interview's action runs as in the app, with the core's interview section in its task's first message.
 
 ## run's report
 

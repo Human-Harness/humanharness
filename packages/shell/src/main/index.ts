@@ -19,6 +19,7 @@ import {
   hasPhases,
   inputBlocks,
   inputSpecs,
+  interviewCollections,
   loadHarness,
   resolveInHarness,
   settingsView,
@@ -38,6 +39,8 @@ import {
   type SendOptions,
   type SetupOutput,
   type SetupStep,
+  type SetupStepResult,
+  type SetupStepsState,
   type TestResult,
   type UsageSummary,
   RESTORE_POINT,
@@ -63,6 +66,7 @@ import {
   readNotes,
   syncLocations,
   syncStatus,
+  tasksFile,
   writeNote,
 } from "@humanharness/workspace";
 import { imageDataUrl } from "./assets";
@@ -93,6 +97,7 @@ import { type MoveDeps, guardedMove, moveFolder, moveJournal, precheckMove, reco
 import { type ResolvedReference, displayPath, resolveReferences, usableReferences } from "./references";
 import { respondHandler } from "./respond-ipc";
 import { SettingsController } from "./settings";
+import { SetupSteps, recordSetup, setupStepViews } from "./setup-steps";
 import { TaskManager } from "./task-manager";
 import { historyView, isSha } from "./history-view";
 import { RestoreGuard, lastOpened } from "./restore-guard";
@@ -150,6 +155,10 @@ let historyHeld = false;
 let references: Promise<ResolvedReference[]> = Promise.resolve([]);
 /** The harness's settings (harness-settings spec); null when it declares none (D0). Set once the harness is loaded. */
 let settingsCtl: SettingsController | null = null;
+/** The harness's setup steps (setup-steps spec); null without any (D0): no `.harness/setup.json` is ever read or written. */
+let setupCtl: SetupSteps | null = null;
+const NO_SETUP_STEPS: SetupStepsState = { steps: {}, blocking: [] };
+const NO_SETUP_STEP: SetupStepResult = { ok: false, reason: "unknown" };
 
 /**
  * The reference folders usable with the working folder: one that is or contains it is left out (its
@@ -253,6 +262,7 @@ async function appState(): Promise<AppState> {
   const harnessImage = await harnessLogo();
   const saved = await config.load();
   const inputs = inputSpecs(harness.blocks);
+  const interviews = interviewCollections(harness);
   return {
     harness: {
       id: harness.id,
@@ -323,6 +333,8 @@ async function appState(): Promise<AppState> {
               }
             : {}),
           ...(a.timeBox ? { timeBox: { options: a.timeBox.options, default: a.timeBox.default } } : {}),
+          // An interview step's action is no topic (setup-steps spec §3): the setup screen and Settings start it.
+          ...(Object.hasOwn(interviews, id) ? { setup: true as const } : {}),
         },
       ]),
     ),
@@ -343,6 +355,8 @@ async function appState(): Promise<AppState> {
           ),
         }
       : {}),
+    // Only a harness with setup steps sends them (setup-steps D0).
+    ...(harness.setup ? { setup: setupStepViews(harness) } : {}),
     references: (await referencesFor(saved.folder)).map((r) => ({ id: r.id, label: r.label, path: displayPath(r.path, os.homedir()) })),
     models: await modelsView(),
     backup: await backupView(saved.folder),
@@ -677,6 +691,11 @@ const tasks = new TaskManager({
   // Before the turn's events: the window draws the change's separator or the wrap-up line (task-phases spec §4.4, §5).
   taskTurn: (notice) => sendToWindow("hh:taskTurn", notice),
   ...(hooks.minuteMs ? { minuteMs: hooks.minuteMs } : {}),
+  // A getter, because the harness is loaded after this object is built. Undefined without interview steps (setup-steps D0).
+  get interviews() {
+    const map = interviewCollections(harness);
+    return Object.keys(map).length > 0 ? map : undefined;
+  },
   // Mode settings live in the settings controller (harness-settings spec §6); without settings there are none.
   modeSettings: async (mode) => (settingsCtl ? settingsCtl.modeSentences(mode) : []),
   // Fast on purpose (it runs in the task queue): the saved model table only, never the engine's offer.
@@ -824,6 +843,8 @@ function registerIpc() {
         .then(scopesChanged)
         .catch((err: unknown) => console.error("Could not prepare the scopes", err));
     }
+    // Set up now (or in a new folder): its setup.json is on file before the window can start a task (the interview's).
+    await recordSetup(setupCtl, async () => (await validConfig()) !== null);
     if (patch.appearance) applyAppearance(patch.appearance);
     if (patch.textSize) applyTextSize(patch.textSize);
     return appState();
@@ -916,6 +937,24 @@ function registerIpc() {
     settingsCtl ? settingsCtl.set(field, value) : { ok: false, message: "This harness has no settings" },
   );
   handle("hh:settingsReset", () => (settingsCtl ? settingsCtl.reset() : { ok: false, message: "This harness has no settings" }));
+  // The harness's setup steps (setup-steps spec §4, §5). Without any, nothing to read and every change refused (D0).
+  // A call that fails (a setup.json that can't be saved, a settings write that throws) is a refusal, or the state as
+  // it stands, never a thrown error.
+  const stepRefused = (err: unknown): SetupStepResult => {
+    console.error("A setup step call failed", err);
+    return { ok: false, reason: "not-ready" };
+  };
+  const stepsAsTheyStand = (err: unknown): Promise<SetupStepsState> => {
+    console.error("A setup step call failed", err);
+    return setupCtl ? setupCtl.state().catch(() => NO_SETUP_STEPS) : Promise.resolve(NO_SETUP_STEPS);
+  };
+  handle("hh:setupStepsGet", () => (setupCtl ? setupCtl.state().catch(() => NO_SETUP_STEPS) : NO_SETUP_STEPS));
+  handle("hh:setupStepValues", (id: unknown) => (setupCtl ? setupCtl.values(id).catch(() => ({})) : {}));
+  handle("hh:setupStepSubmit", (id: unknown, value: unknown) => (setupCtl ? setupCtl.submit(id, value).catch(stepRefused) : NO_SETUP_STEP));
+  handle("hh:setupStepComplete", (id: unknown) => (setupCtl ? setupCtl.complete(id).catch(stepRefused) : NO_SETUP_STEP));
+  handle("hh:setupStepSkip", (id: unknown) => (setupCtl ? setupCtl.skip(id).catch(stepRefused) : NO_SETUP_STEP));
+  handle("hh:setupStepsFinish", () => (setupCtl ? setupCtl.finish().catch(stepsAsTheyStand) : NO_SETUP_STEPS));
+  handle("hh:setupStepsAcknowledge", () => (setupCtl ? setupCtl.acknowledge().catch(stepsAsTheyStand) : NO_SETUP_STEPS));
   handle("hh:choose", (option: unknown, task: unknown) => {
     if (quitting) throw new Error("The app is closing");
     const blocked = turnBlocked();
@@ -1233,6 +1272,31 @@ if (loaded) {
       changed: (state) => sendToWindow("hh:settings", state),
     });
   }
+  // Only a harness with setup steps gets the controller: its reads may write `.harness/setup.json` (setup-steps D0).
+  if (harness.setup) {
+    const settings = settingsCtl;
+    setupCtl = new SetupSteps({
+      steps: harness.setup,
+      data: harness.data,
+      ...(harness.settings ? { settings: harness.settings } : {}),
+      base: async () => {
+        const c = await validConfig();
+        return c ? baseOf(c) : null;
+      },
+      store: async () => {
+        const c = await validConfig();
+        return c ? dataStoreFor(baseOf(c)) : null;
+      },
+      // As the person, app-wide: the store's checks, turns-blocked refusals and a `Data: <collection>` commit.
+      write: (request) => personData(request, { scope: APP_SCOPE }),
+      ...(settings ? { setSetting: (field: string, value: unknown) => settings.set(field, value), settingValues: () => settings.values() } : {}),
+      openAction: async () => (await tasks.runningTask())?.action,
+      // A folder that ran tasks before these steps existed counts as set up (spec §8 Q3).
+      ranBefore: (base) => fs.access(tasksFile(base)).then(() => true, () => false),
+      quitting: () => quitting,
+      changed: (state) => sendToWindow("hh:setupSteps", state),
+    });
+  }
 }
 
 // One app per data folder (the lock is tied to userData, so it is taken after it is set): a second one would
@@ -1275,6 +1339,8 @@ if (primary) {
     references = resolveReferences(harness.folder.references, { harnessDir: __HARNESS_DIR__, home: os.homedir(), packaged: app.isPackaged });
     nativeTheme.themeSource = (await config.load()).appearance ?? "system";
     nativeTheme.on("updated", () => window?.setBackgroundColor(nativeTheme.shouldUseDarkColors ? PAPER.dark : PAPER.light));
+    // Before any task: a configured folder with no setup.json is recorded now, fresh or as set up before (D0: no `setup`, nothing).
+    await recordSetup(setupCtl, async () => (await validConfig()) !== null);
     registerIpc();
     // A task left open by an earlier run can't continue: its session is gone.
     void tasks.interrupt().catch((err: unknown) => console.error("Could not settle the last task", err));

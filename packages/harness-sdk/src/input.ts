@@ -18,6 +18,8 @@ export interface InputField {
   options?: string[];
   /** A `choice` on a string field: the shown data's field that holds the options. */
   optionsFrom?: string;
+  /** A choice's labels by value (a setup form over settings, setup-steps spec §3); a value with none shows as itself. */
+  optionLabels?: Record<string, string>;
   /** `pairs`: the two inner fields, in order, with their labels. */
   columns?: { name: string; label: string }[];
 }

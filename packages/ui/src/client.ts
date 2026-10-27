@@ -101,6 +101,8 @@ export interface ActionOption {
   phases?: PhaseView[];
   /** Its time box: the lengths offered and the one picked when the person picks none. Absent without one (D0). */
   timeBox?: { options: number[]; default: number | null };
+  /** An interview step's action (setup-steps spec §3): no topic card; the setup screen and Settings start it. Absent otherwise (D0). */
+  setup?: true;
 }
 
 /** A read-only reference folder, as the work screen shows it ("~/…" for paths in the home folder). */
@@ -201,6 +203,8 @@ export interface AppState {
   settings?: SettingsView;
   /** The harness's modes, by id (task-modes spec). Absent: none (D0). */
   modes?: Record<string, ModeView>;
+  /** The harness's setup steps, in order (setup-steps spec). Absent: none (D0). */
+  setup?: SetupStepView[];
   /** Folders the agent can read but never change. */
   references?: ReferenceView[];
   /** Settings › Modelos. */
@@ -577,6 +581,53 @@ export interface SettingsState {
 /** How a settings change ended: the new state, or why it was refused (`message` absent: something went wrong). */
 export type SettingsResult = { ok: true; state: SettingsState } | { ok: false; message?: string };
 
+/** A harness setup step's state (setup-steps spec §4): done, skipped, or not done yet. */
+export type SetupStepStatus = "done" | "skipped" | "missing";
+
+/** The harness's setup steps now: each one's status, and the required ones that keep Home on "Set up" (manifest order). */
+export interface SetupStepsState {
+  steps: Record<string, SetupStepStatus>;
+  blocking: string[];
+}
+
+/**
+ * How a step's submit, completion or skip went: the new state, or why not. `unknown`: no such step (or the wrong call for
+ * its kind); `not-ready`: the app isn't set up, is closing, or can't read its setup.json; `open`: the interview's task is still open; `incomplete`:
+ * its collection holds no valid record; `required`: a required step can't be skipped; `invalid`: the form's fields were
+ * refused (`errors`, by field; "" for the whole form).
+ */
+export type SetupStepResult =
+  | { ok: true; state: SetupStepsState }
+  | { ok: false; reason: "unknown" | "not-ready" | "open" | "incomplete" | "required" | "invalid"; errors?: InputIssue[] };
+
+/** A harness setup step as the window draws it (setup-steps spec §3): never an action's brief. */
+export interface SetupStepView {
+  id: string;
+  kind: "form" | "interview" | "component";
+  label: string;
+  /** One line under the step's heading. */
+  description?: string;
+  required: boolean;
+  /** form: the fields the core form draws. */
+  form?: InputSpec;
+  /** interview: the action its task runs, and that action's cost hint. */
+  action?: string;
+  cost?: ActionCost;
+  /** component: the name the harness registers its component under. */
+  component?: string;
+}
+
+/** What a harness's own setup step component gets (setup-steps spec §3 `component`). */
+export interface SetupStepProps {
+  client: HarnessClient;
+  /** The profile the step runs for: null until profiles exist (profiles spec, plan 7). */
+  profile: null;
+  /** The step is done: the app marks it and moves on. */
+  done(): void;
+  /** Skip it; refused (the screen says so) for a required step. */
+  skip(): void;
+}
+
 export { hearsDataChange } from "./data-change";
 
 /** Everything the renderer can ask the main process. Implemented by the preload as `window.hh`. */
@@ -695,6 +746,22 @@ export interface HarnessClient {
     /** Every field back to its default. */
     reset(): Promise<SettingsResult>;
     onChange(listener: (state: SettingsState) => void): () => void;
+  };
+  /** The harness's setup steps (setup-steps spec). A harness with none answers no steps and refuses every change. */
+  setupSteps: {
+    get(): Promise<SetupStepsState>;
+    /** A form step's current values: the record's fields it asks for, or the settings' values. */
+    values(id: string): Promise<Record<string, unknown>>;
+    /** A form step's Next: saved through the same checks as any write. Refusals come back as data. */
+    submit(id: string, value: Record<string, unknown>): Promise<SetupStepResult>;
+    /** An interview's end (its task closed, its record valid) or a component's `done()`. */
+    complete(id: string): Promise<SetupStepResult>;
+    skip(id: string): Promise<SetupStepResult>;
+    /** The setup screen reached "All set". */
+    finish(): Promise<SetupStepsState>;
+    /** Settings showed the list: steps a harness update added count from now on. */
+    acknowledge(): Promise<SetupStepsState>;
+    onChange(listener: (state: SetupStepsState) => void): () => void;
   };
   /** The text size changed from the keyboard (⌘+, ⌘−, ⌘0), already saved. */
   onTextSize(listener: (size: TextSize) => void): () => void;

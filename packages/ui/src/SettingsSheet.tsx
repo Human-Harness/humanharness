@@ -7,6 +7,7 @@ import { EngineTab } from "./EngineTab";
 import { HarnessSettingsTab } from "./HarnessSettingsTab";
 import { ownName, systemLanguage } from "./language";
 import { ModelsTab } from "./ModelsTab";
+import { SetupStepsList } from "./SetupStepsList";
 import { UsageTab } from "./UsageTab";
 
 export type SettingsTab = "general" | "harness" | "engine" | "models" | "usage";
@@ -33,8 +34,11 @@ export function SettingsSheet({
   onTab: (tab: SettingsTab) => void;
   onChange: (state: AppState) => void;
   onClose: () => void;
-  /** Opens the setup flow (the empty state of the harness's tab, Engine, Models and Usage before the app is configured). */
-  onSetup: () => void;
+  /**
+   * Opens the setup flow (the empty state of the harness's tab, Engine, Models and Usage before the app is configured);
+   * at a harness step when one is given (the Setup list's Do it again / Do it now).
+   */
+  onSetup: (step?: string) => void;
   /** The app's folder move (HarnessApp), so a move outlives the sheet; without it the sheet keeps its own. */
   move?: FolderMove;
 }) {
@@ -46,8 +50,10 @@ export function SettingsSheet({
   const tabId = (id: SettingsTab) => `${baseId}-tab-${id}`;
   const panelId = `${baseId}-panel`;
   // Models only shows when the main process sent its view (every packaged app does); the harness's tab only when it
-  // declares settings (harness-settings D0).
-  const tabs = TABS.filter((id) => (id !== "models" || state.models !== undefined) && (id !== "harness" || state.settings !== undefined));
+  // declares settings or setup steps (harness-settings D0, setup-steps D0).
+  const tabs = TABS.filter(
+    (id) => (id !== "models" || state.models !== undefined) && (id !== "harness" || state.settings !== undefined || state.setup !== undefined),
+  );
   const configured = isConfigured(state.config);
   const doneRef = useRef<HTMLButtonElement>(null);
   const sheetRef = useRef<HTMLDivElement>(null);
@@ -139,7 +145,7 @@ export function SettingsSheet({
                 onClick={() => onTab(id)}
                 onKeyDown={(e) => onTabKey(e, id)}
               >
-                {id === "harness" ? state.settings?.tab : t(`settings.tabs.${id}`)}
+                {id === "harness" ? (state.settings?.tab ?? t("settings.tabs.setup")) : t(`settings.tabs.${id}`)}
               </button>
             ))}
           </div>
@@ -168,7 +174,12 @@ export function SettingsSheet({
           {tab === "engine" && configured && <EngineTab client={client} state={state} onChange={onChange} setupEngine={running?.engineId} />}
           {tab === "models" && configured && <ModelsTab client={client} state={state} onChange={onChange} />}
           {tab === "usage" && configured && <UsageTab client={client} state={state} />}
-          {tab === "harness" && configured && state.settings && <HarnessSettingsTab client={client} view={state.settings} />}
+          {tab === "harness" && configured && (
+            <>
+              {state.setup && <SetupStepsList client={client} steps={state.setup} onRun={(id) => onSetup(id)} />}
+              {state.settings && <HarnessSettingsTab client={client} view={state.settings} />}
+            </>
+          )}
         </div>
       </div>
     </div>
@@ -307,7 +318,7 @@ function GeneralTab({ client, state, onChange, move }: { client: HarnessClient; 
 }
 
 /** The harness's tab, Engine, Models and Usage before the app is configured: they all lead to the setup flow. */
-function NotConfigured({ state, onSetup }: { state: AppState; onSetup: () => void }) {
+function NotConfigured({ state, onSetup }: { state: AppState; onSetup: (step?: string) => void }) {
   const { t } = useTranslation();
   const name = state.harness.name;
   return (
@@ -315,7 +326,8 @@ function NotConfigured({ state, onSetup }: { state: AppState; onSetup: () => voi
       <EngineIcon size={40} />
       <h3>{t("setupFlow.notConfiguredTitle")}</h3>
       <p>{t("setupFlow.notConfiguredText")}</p>
-      <button className="hh-primary" onClick={onSetup}>
+      {/* No step: the click event must not arrive as one (the flow would open that step alone). */}
+      <button className="hh-primary" onClick={() => onSetup()}>
         {t("setupFlow.configure", { name })}
       </button>
     </div>

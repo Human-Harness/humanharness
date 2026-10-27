@@ -2,7 +2,7 @@ import { useId } from "react";
 import { useTranslation } from "react-i18next";
 import { BackupNotice, type FolderMove } from "./BackupNotice";
 import { CheckIcon, EngineIcon, GearIcon, HHLogo, TopBar } from "./chrome";
-import { type AppState, type EngineStatus, type HarnessClient, type LimitWindow, engineProblem, isConfigured } from "./client";
+import { type AppState, type EngineStatus, type HarnessClient, type LimitWindow, type SetupStepsState, engineProblem, isConfigured } from "./client";
 import { WARN_AT, fiveHour, percent } from "./usage";
 import { useCurrentWindows } from "./UsageMeter";
 
@@ -14,6 +14,7 @@ export function Home({
   status,
   checkFailed = false,
   limits,
+  steps,
   onStart,
   onSetup,
   onSettings,
@@ -29,10 +30,12 @@ export function Home({
   /** The background check itself failed: shown as not connected. */
   checkFailed?: boolean;
   limits: LimitWindow[] | null;
+  /** The harness's setup steps' state (setup-steps spec §4); null while it loads. Unused without setup steps. */
+  steps?: SetupStepsState | null;
   /** The app is ready: the work screen. */
   onStart: () => void;
-  /** Something is missing: the setup flow. */
-  onSetup: () => void;
+  /** Something is missing: the setup flow, at this harness step when it is one. */
+  onSetup: (step?: string) => void;
   onSettings: () => void;
   onEngine: () => void;
   /** The app's folder move (HarnessApp): a move started in Settings still shows here. */
@@ -47,8 +50,12 @@ export function Home({
   const window = engine?.reportsLimits ? fiveHour(current) : undefined;
   // Spec 3f §1: start only when set up and the engine check passed; otherwise say what is missing.
   const configured = isConfigured(state.config);
-  const ready = configured && connected === true;
-  const checking = configured && connected === null;
+  // Setup steps (setup-steps spec §4): a required one not done keeps Home on "Set up"; while their state loads, Start waits.
+  const stepsKnown = state.setup === undefined || steps != null;
+  const blocking = configured && state.setup ? (steps?.blocking ?? []) : [];
+  const ready = configured && connected === true && stepsKnown && blocking.length === 0;
+  const checking = configured && (connected === null || (connected === true && !stepsKnown));
+  const stepLabel = (id: string) => state.setup?.find((s) => s.id === id)?.label ?? id;
   const engineName = engine?.name ?? state.config.engineId ?? "";
   const missingStep = checkFailed ? "check-failed" : status ? engineProblem(status) : null;
 
@@ -83,12 +90,17 @@ export function Home({
             <p>{t("home.missing.one", { step: t(`home.missing.step.${missingStep}`, { engine: engineName }) })}</p>
           </section>
         )}
+        {configured && !missingStep && blocking.length > 0 && (
+          <section className="hh-missing">
+            <p>{t("home.missing.one", { step: stepLabel(blocking[0]) })}</p>
+          </section>
+        )}
         {ready || checking ? (
           <button className="hh-primary hh-start" disabled={checking} onClick={onStart}>
             {t("home.start", { name })}
           </button>
         ) : (
-          <button className="hh-primary hh-start" onClick={onSetup}>
+          <button className="hh-primary hh-start" onClick={() => onSetup(!missingStep && blocking.length > 0 ? blocking[0] : undefined)}>
             {t("setupFlow.configure", { name })}
           </button>
         )}

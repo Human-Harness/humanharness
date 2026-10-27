@@ -30,6 +30,8 @@ import type {
   SetupOutput,
   SetupResult,
   SetupStep,
+  SetupStepResult,
+  SetupStepsState,
   TaskTurnNotice,
   TaskView,
   TestResult,
@@ -543,6 +545,62 @@ export class FakeClient implements HarnessClient {
       this.settingsListeners.add(listener);
       return () => {
         this.settingsListeners.delete(listener);
+      };
+    },
+  };
+  /** What setupSteps.get answers; submit, complete and skip change it. */
+  setupState: SetupStepsState = { steps: {}, blocking: [] };
+  /** What setupSteps.values answers, by step id. */
+  setupValues: Record<string, Record<string, unknown>> = {};
+  /** Calls to setupSteps, in order: "get", "submit:<id>", "complete:<id>", "skip:<id>", "finish", "acknowledge". */
+  setupCalls: string[] = [];
+  /** What submit was sent, by step id. */
+  setupSubmits: Record<string, Record<string, unknown>> = {};
+  /** When set, submit, complete and skip answer it instead. */
+  setupFailure: SetupStepResult | null = null;
+  private setupStepListeners = new Set<(s: SetupStepsState) => void>();
+  /** The main process sent the steps' state. */
+  emitSetupSteps(state: SetupStepsState) {
+    this.setupState = state;
+    for (const l of this.setupStepListeners) l(state);
+  }
+  private markStep(id: string, status: "done" | "skipped"): SetupStepResult {
+    if (this.setupFailure) return this.setupFailure;
+    const blocking = status === "done" ? this.setupState.blocking.filter((b) => b !== id) : this.setupState.blocking;
+    this.emitSetupSteps({ steps: { ...this.setupState.steps, [id]: status }, blocking });
+    return { ok: true, state: this.setupState };
+  }
+  setupSteps = {
+    get: async () => {
+      this.setupCalls.push("get");
+      return this.setupState;
+    },
+    values: async (id: string) => this.setupValues[id] ?? {},
+    submit: async (id: string, value: Record<string, unknown>) => {
+      this.setupCalls.push(`submit:${id}`);
+      this.setupSubmits[id] = value;
+      return this.markStep(id, "done");
+    },
+    complete: async (id: string) => {
+      this.setupCalls.push(`complete:${id}`);
+      return this.markStep(id, "done");
+    },
+    skip: async (id: string) => {
+      this.setupCalls.push(`skip:${id}`);
+      return this.markStep(id, "skipped");
+    },
+    finish: async () => {
+      this.setupCalls.push("finish");
+      return this.setupState;
+    },
+    acknowledge: async () => {
+      this.setupCalls.push("acknowledge");
+      return this.setupState;
+    },
+    onChange: (listener: (s: SetupStepsState) => void) => {
+      this.setupStepListeners.add(listener);
+      return () => {
+        this.setupStepListeners.delete(listener);
       };
     },
   };

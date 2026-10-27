@@ -565,3 +565,67 @@ describe("check: settings", () => {
     expect(found[0].message).toMatch(/^The settings' sentences take about \d+ tokens of AGENTS\.md \(more than 400\)/);
   });
 });
+
+describe("check: setup steps (setup-steps spec §6)", () => {
+  const setupRules = (r: CheckResult) => r.findings.filter((f) => f.rule.startsWith("setup-")).map((f) => `${f.severity}:${f.rule}`);
+  const withSetup = (context: string) => (d: string) =>
+    replaceIn(
+      d,
+      "harness.config.ts",
+      "  // Free questions",
+      [
+        `  data: { profile: { scoped: false, single: true, schema: z.object({ name: z.string().min(1).max(40) }), agent: "write"${context} } },`,
+        "  setup: [",
+        '    { id: "intro", kind: "interview", label: "Get to know you", action: "example", writes: "profile" },',
+        '    { id: "ready", kind: "component", label: "Ready check", component: "ReadyStep" },',
+        "  ],",
+        "  // Free questions",
+      ].join("\n"),
+    );
+  // A second action with its own recording: mock/ holds a recording, and the interview's action has none.
+  const withOtherRecording = (d: string) => {
+    replaceIn(d, "harness.config.ts", "    example: {", '    meet: { label: "Meet", description: "Says hello.", prompt: "./agent/tasks/meet.md", cost: "light", tier: "standard" },\n    example: {');
+    replaceIn(d, "HARNESS.md", "| (questions) |", "| meet | standard | light | Says hello |\n| (questions) |");
+    fs.writeFileSync(path.join(d, "agent", "tasks", "meet.md"), "# Task: meet\n\nSay hello in {{language}}.\n");
+    fs.mkdirSync(path.join(d, "mock"));
+    const recording = { version: 1, action: "meet", match: "# Task: meet", turns: [{ id: "t1", text: "hello" }] };
+    fs.writeFileSync(path.join(d, "mock", "meet.json"), JSON.stringify(recording));
+  };
+
+  it("D0: the template has no setup findings", async () => {
+    expect(setupRules(await checkHarness(await fixture()))).toEqual([]);
+  });
+
+  it("warns: a component not registered in ui/, an interview with no recording, a collection the agent can't see", async () => {
+    const r = await checkHarness(
+      await fixture((d) => {
+        withSetup("")(d);
+        withOtherRecording(d);
+      }),
+    );
+    expect(errors(r)).toEqual([]);
+    expect(setupRules(r)).toEqual(["warning:setup-component", "warning:setup-mock", "warning:setup-context"]);
+    expect(r.findings.find((f) => f.rule === "setup-component")?.message).toContain('"ReadyStep"');
+    expect(r.findings.find((f) => f.rule === "setup-mock")?.message).toContain("mock/example.json");
+  });
+
+  it("a registered component and a collection with context clear their warnings; no mock/ means no setup-mock", async () => {
+    const dir = await fixture((d) => {
+      withSetup(', context: { fields: "all", tokens: 100 }')(d);
+      fs.appendFileSync(path.join(d, "ui", "App.tsx"), "\nexport const setupStepComponents = { ReadyStep: () => null };\n");
+    });
+    const r = await checkHarness(dir);
+    expect(errors(r)).toEqual([]);
+    expect(setupRules(r)).toEqual([]);
+  });
+
+  it("only files count as recordings: a folder named like one in mock/ asks for no recording", async () => {
+    const r = await checkHarness(
+      await fixture((d) => {
+        withSetup(', context: { fields: "all", tokens: 100 }')(d);
+        fs.mkdirSync(path.join(d, "mock", "old.json"), { recursive: true });
+      }),
+    );
+    expect(r.findings.filter((f) => f.rule === "setup-mock")).toEqual([]);
+  });
+});

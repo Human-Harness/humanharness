@@ -45,6 +45,7 @@ import {
   QUESTION_PROMPT,
   closePrompt,
   fillPrompt,
+  interviewSection,
   modePrompt,
   modeSection,
   oneLine,
@@ -158,6 +159,8 @@ export interface TaskDeps {
   taskTurn?(notice: TaskTurnNotice): void;
   /** How long a time-box minute lasts. Absent: a real minute. Tests and mock mode pass a short one. */
   minuteMs?: number;
+  /** Each interview step's action and the collection it writes (setup-steps spec §3). Absent or empty: none (D0). */
+  interviews?: Record<string, string>;
   /** The time box's timer. Absent: setTimeout and clearTimeout. */
   timer?: { set(fn: () => void, ms: number): unknown; clear(handle: unknown): void };
   now?: () => Date;
@@ -774,7 +777,7 @@ export class TaskManager {
       (notesIndex) => {
         const parts = first && firstText ? [phasesSection(this.phaseList(action), first.id), phaseSection(firstText, { language, timeLeft })] : [];
         const box = timeLeft ? [`Time left: ${timeLeft}.`] : [];
-        return [fillPrompt(template, { language, notesIndex }), ...(section ? [section] : []), ...parts, ...box].join("\n\n");
+        return [fillPrompt(template, { language, notesIndex }), ...this.interviewOf(action), ...(section ? [section] : []), ...parts, ...box].join("\n\n");
       },
       display ?? this.d.actions[action].label,
       floor,
@@ -811,6 +814,12 @@ export class TaskManager {
       console.error("Could not read the mode's settings; it starts with none", err);
     }
     return { label: oneLine(this.d.modes![mode].label), brief, settings };
+  }
+
+  /** The core's section for a task of an interview step's action, or none (setup-steps D0). */
+  private interviewOf(action: string): string[] {
+    const interviews = this.d.interviews;
+    return interviews && Object.hasOwn(interviews, action) ? [interviewSection(interviews[action])] : [];
   }
 
   /** The phases of `action`; none for a free question or an action without them (D0). */

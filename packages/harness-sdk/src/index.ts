@@ -7,6 +7,7 @@ import { dataSchema } from "./data";
 import { DEFAULT_MODE_WORDS, MODE_ID } from "./modes";
 import { PHASE_ID, TIME_BOX_MAX } from "./phases";
 import { SETTING_NAME, checkSettingFields, settingFieldSchema, settingsSchema } from "./settings";
+import { type HarnessSetupStep, setupFormSpec, setupStepsSchema } from "./setup";
 
 export * from "./block";
 export * from "./core-blocks";
@@ -16,6 +17,7 @@ export * from "./answer";
 export * from "./settings";
 export * from "./modes";
 export * from "./phases";
+export * from "./setup";
 /** The zod a manifest builds its block schemas with: the same instance the SDK validates them against. */
 export { z } from "zod";
 
@@ -163,6 +165,8 @@ const manifestSchema = z.object({
   settings: settingsSchema.optional(),
   /** Ways the AI works inside a task, by id (task-modes spec). Absent: none, and nothing changes (D0). */
   modes: z.record(z.string().regex(MODE_ID), modeSchema).default({}),
+  /** The harness's own steps on the setup screen, after the engine (setup-steps spec). Absent: none (D0). */
+  setup: setupStepsSchema.optional(),
   /** One line under the name on the home screen. */
   tagline: text.optional(),
   /** How translations of this harness's screens should sound, in English ("warm and informal, short sentences"). */
@@ -278,6 +282,59 @@ const manifestSchema = z.object({
   if (m.settings && Object.keys(m.settings.fields).length === 0 && !modeSettings) {
     ctx.addIssue({ code: "custom", path: ["settings", "fields"], message: "Declare at least one setting" });
   }
+  // Setup steps (setup-steps spec §3).
+  const stepIds = new Set<string>();
+  const interviewed = new Map<string, string>();
+  (m.setup ?? []).forEach((s: HarnessSetupStep, i) => {
+    const issue = (p: (string | number)[], message: string) => ctx.addIssue({ code: "custom", path: ["setup", i, ...p], message });
+    if (stepIds.has(s.id)) issue(["id"], `Step "${s.id}" is declared twice`);
+    stepIds.add(s.id);
+    /** A collection a step keeps its one app-wide record in; undefined (and an issue) when it can't. */
+    const oneRecord = (name: string, field: string) => {
+      if (!Object.hasOwn(m.data, name)) return void issue([field], `Collection "${name}" is not declared in data`);
+      const c = m.data[name];
+      if (!c.single || c.scoped) return void issue([field], `A setup step keeps one app-wide record: "${name}" needs single: true and scoped: false`);
+      return c;
+    };
+    if (s.kind === "form") {
+      const fromData = s.collection !== undefined || s.fields !== undefined;
+      if (fromData === (s.settings !== undefined)) return issue([], "A form takes its fields from a collection (collection and fields) or from the settings (settings), not both");
+      for (const key of ["fields", "settings"] as const) {
+        const seen = new Set<string>();
+        for (const name of s[key] ?? []) {
+          if (seen.has(name)) issue([key], `"${name}" is listed twice`);
+          seen.add(name);
+        }
+      }
+      if (s.settings) {
+        if (!m.settings) return issue(["settings"], "Only a harness with settings can ask for them in a form");
+        for (const name of s.settings) if (!Object.hasOwn(m.settings.fields, name)) issue(["settings"], `"${name}" is not a setting`);
+        return;
+      }
+      if (s.collection === undefined || s.fields === undefined) return issue([], "A form over a collection names the collection and its fields");
+      const c = oneRecord(s.collection, "collection");
+      if (!c) return;
+      for (const f of s.fields) if (!Object.hasOwn(c.schema.shape, f)) issue(["fields"], `"${f}" is not a field of "${s.collection}"`);
+      for (const f of setupFormSpec(s, m).fields) if (f.kind === null) issue(["fields"], `The setup form can't draw "${f.name}"`);
+      return;
+    }
+    if (s.kind === "interview") {
+      if (!Object.hasOwn(m.actions, s.action)) issue(["action"], `Unknown action "${s.action}"`);
+      else {
+        const a = m.actions[s.action];
+        if ((m.path ?? []).includes(s.action)) issue(["action"], `"${s.action}" runs as a setup step: it can't be in the path`);
+        if (a.tier === "deep") issue(["action"], "An interview runs at tier light or standard");
+        if (m.scopes && a.scope !== "none") issue(["action"], `An interview runs app-wide: set scope: "none" on "${s.action}"`);
+        const other = interviewed.get(s.action);
+        if (other !== undefined) issue(["action"], `"${s.action}" already runs the interview "${other}"`);
+        else interviewed.set(s.action, s.id);
+      }
+      const c = oneRecord(s.writes, "writes");
+      if (c && c.agent !== "write") issue(["writes"], `The agent writes "${s.writes}" during the interview: give it agent: "write"`);
+      return;
+    }
+    if (s.writes !== undefined && !Object.hasOwn(m.data, s.writes)) issue(["writes"], `Collection "${s.writes}" is not declared in data`);
+  });
 });
 
 export type Harness = z.output<typeof manifestSchema>;

@@ -214,3 +214,13 @@ export function phasePrompt(p: PhaseText, vars: PhaseVars & { back?: boolean; ex
 
 /** The wrap-up's message (spec §5). */
 export const wrapUpPrompt = (language: Language): string => fillPrompt(WRAP_UP_PROMPT, { language, notesIndex: "" });
+
+/** The core's part of an interview step's first message, after the brief (setup-steps spec §3 `interview`). */
+export function interviewSection(collection: string): string {
+  return [
+    "## Setup interview",
+    "This task is a setup step: get to know the person before they use the app. Ask one question at a time, with `show_choices` or an input block when one fits.",
+    `Save what you learn in the \`${collection}\` collection with the data tools as you go (data_put the first time, then data_patch).`,
+    "When the record holds everything its schema asks for, tell the person they can press Next.",
+  ].join("\n");
+}

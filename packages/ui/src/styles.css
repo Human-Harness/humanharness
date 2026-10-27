@@ -210,6 +210,9 @@ select:focus-visible { outline: 2px solid var(--hh-ink); outline-offset: 2px; }
 /* Work screen: the 2a chat layout with the tokens (its own design comes later). */
 /* minmax(0, 1fr): the column is the window's width, never its content's (a big text size would push the page sideways). */
 .hh-app { display: grid; grid-template-rows: 52px 1fr; grid-template-columns: minmax(0, 1fr); height: 100vh; }
+/* An interview inside the setup screen (setup-steps spec §3): the chat only, in the step's column. */
+.hh-app.hh-app-slim { grid-template-rows: minmax(0, 1fr); height: min(60vh, 520px); border: 1px solid var(--hh-line); border-radius: 10px; }
+.hh-slim-start { display: grid; place-items: center; padding: 24px; }
 /* Gives way long before the harness's name does when the top bar runs out of room (a narrow window, a big text size). */
 .hh-usage { margin: 0; color: var(--hh-muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex-shrink: 100; }
 .hh-body { display: flex; min-height: 0; overflow: hidden; }

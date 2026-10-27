@@ -24,6 +24,7 @@ import {
   hasModes,
   inputBlocks,
   inputSpecs,
+  interviewCollections,
   loadHarness,
   modeSentences,
   resolveInHarness,
@@ -336,6 +337,7 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
       await recorder?.turnEnded(meta, { failed: !!entry.error }).catch((err) => out.write(`Warning: could not record a turn: ${err instanceof Error ? err.message : String(err)}\n`));
     },
   });
+  const interviews = interviewCollections(harness);
   const tasks: TaskManager = new TaskManager({
     store,
     turns,
@@ -406,6 +408,8 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
     },
     taskTurn: (n) => view.taskTurn(n, phasesOf(taskAction).find((p) => p.id === n.phase)?.label),
     ...(o.minuteMs ? { minuteMs: o.minuteMs } : {}),
+    // As the app wires them: an interview's task gets the core's interview section; undefined without one (setup-steps D0).
+    ...(Object.keys(interviews).length > 0 ? { interviews } : {}),
   });
 
   // Ctrl-C during an operation cancels its turn; at the prompt it closes the task like q, and once a close was

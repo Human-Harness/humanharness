@@ -77,6 +77,7 @@ export function ChatView({
   onSettings,
   onFixEngine,
   onTurnOk,
+  slim,
 }: {
   client: HarnessClient;
   state: AppState;
@@ -96,6 +97,11 @@ export function ChatView({
   onFixEngine?: () => void;
   /** A turn has just ended without an error (the engine works: its background check can be redone). */
   onTurnOk?: () => void;
+  /**
+   * An interview on the setup screen (setup-steps spec §3): only this action's task, with no top bar, side panel,
+   * history or topics. A button starts it (or continues it) when it isn't on screen.
+   */
+  slim?: { action: string };
 }) {
   const { t, i18n } = useTranslation();
   // save_note never shows: a note reaches the side panel as a file, through the tasks. Nor set_phase: the stepper
@@ -252,7 +258,8 @@ export function ChatView({
     if (!flow || placed.current || !loaded || !tasksLoaded) return;
     placed.current = true;
     const id = tasks.current?.id;
-    if (!id) return;
+    // Slim: only the interview's own task is shown.
+    if (!id || (slim && tasks.current?.action !== slim.action)) return;
     const first = chat.entries.findIndex((e) => e.task === id);
     setSince(first >= 0 ? first : chat.entries.length);
   }, [flow, loaded, tasksLoaded, tasks, chat.entries]);
@@ -365,6 +372,8 @@ export function ChatView({
   const send = (text: string, options: SendOptions = {}, confirmed = false): boolean => {
     const message = text.trim();
     if (!message || blocked() || (pending && !confirmed) || (askPick && !options.mode) || (timePick && options.timeBox === undefined)) return false;
+    // Slim: only the interview runs here, never a free question or another action's task.
+    if (slim && (options.action ? options.action !== slim.action : tasks.current?.action !== slim.action)) return false;
     // A `required` action needs an open scope (spec §3.3); the main process would refuse it.
     if (options.action && state.scopes && state.actions[options.action]?.scope !== "none" && !openScope) {
       const text = t("scopes.pickFirst", { label: state.scopes.label });
@@ -431,6 +440,8 @@ export function ChatView({
     const action = option.action && state.actions[option.action] ? option.action : undefined;
     const moves = Boolean(option.next || action);
     const target = option.next ? nextInPath(path, tasks.current?.action, tasks.actions) : (action ?? null);
+    // Slim: a pick never moves the interview to another action (its task would show on the setup screen).
+    if (slim && target && target !== slim.action) return false;
     if (!confirmed && target) {
       const check = preflight(state.actions[target]?.cost, chat.limits, estimates[target]);
       if (check) {
@@ -768,29 +779,38 @@ export function ChatView({
         : t("preflight.hint", { action: label, left });
   }
 
+  // One `main` per page: the setup screen has its own.
+  const Main = slim ? "div" : "main";
+  /** Slim: the interview's task isn't the open one (not started, closed, or another task is open). */
+  const slimStart = slim !== undefined && loaded && tasksLoaded && !chat.live && tasks.current?.action !== slim.action;
+  /** Slim: the composer only for the interview's own task (or a turn running), never before it is known. */
+  const composer = !slim || Boolean(chat.live) || tasks.current?.action === slim.action;
+
   return (
-    <div className="hh-app">
-      <TopBar title={state.harness.name} mock={state.mock}>
-        {scopeBar?.(blocked())}
-        <UsageMeter engine={engineOption} limits={chat.limits} lastTokens={lastTurnTokens(chat.entries)} />
-        {onHome && <button onClick={onHome}>{t("chat.home")}</button>}
-        <button
-          onClick={() => {
-            // One panel at a time: Escape closes the one on screen.
-            setNotesPanel(null);
-            setShowHistory(true);
-          }}
-        >
-          {t("history.title")}
-        </button>
-        {onSettings && (
-          <button className="hh-icon-button" aria-label={t("home.settings")} onClick={onSettings}>
-            <GearIcon />
+    <div className={slim ? "hh-app hh-app-slim" : "hh-app"}>
+      {!slim && (
+        <TopBar title={state.harness.name} mock={state.mock}>
+          {scopeBar?.(blocked())}
+          <UsageMeter engine={engineOption} limits={chat.limits} lastTokens={lastTurnTokens(chat.entries)} />
+          {onHome && <button onClick={onHome}>{t("chat.home")}</button>}
+          <button
+            onClick={() => {
+              // One panel at a time: Escape closes the one on screen.
+              setNotesPanel(null);
+              setShowHistory(true);
+            }}
+          >
+            {t("history.title")}
           </button>
-        )}
-      </TopBar>
+          {onSettings && (
+            <button className="hh-icon-button" aria-label={t("home.settings")} onClick={onSettings}>
+              <GearIcon />
+            </button>
+          )}
+        </TopBar>
+      )}
       <div className="hh-body">
-        {flow && (
+        {flow && !slim && (
           <FlowSide
             state={state}
             tasks={tasks}
@@ -802,7 +822,7 @@ export function ChatView({
             }}
           />
         )}
-        <main className="hh-main">
+        <Main className="hh-main">
           {/* A time box without phases (spec §5) still shows its time, its controls and, once time is up, Finish. */}
           {flow && since !== null && tasks.current && (taskPhases.length > 0 || tasks.current.timeBox) && (
             <PhaseStepper
@@ -840,7 +860,7 @@ export function ChatView({
             {backgroundError && !(isFixable(last?.error) && last?.error?.code === backgroundError.code) && (
               <ErrorCard error={backgroundError} engine={engine} onFix={onFixEngine} />
             )}
-            {showStart && (
+            {showStart && !slim && (
               <StartView
                 state={state}
                 tasks={tasks}
@@ -851,7 +871,14 @@ export function ChatView({
                 onAsk={(q) => void send(q)}
               />
             )}
-            {flow && since !== null && !tasks.current && !chat.live && (
+            {slim && slimStart && (
+              <div className="hh-slim-start">
+                <button type="button" className="hh-primary" disabled={blocked()} onClick={() => startTopic(slim.action)}>
+                  {t(Object.hasOwn(tasks.actions, slim.action) ? "setupSteps.continueInterview" : "setupSteps.startInterview")}
+                </button>
+              </div>
+            )}
+            {flow && !slim && since !== null && !tasks.current && !chat.live && (
               <button type="button" className="hh-back-topics" onClick={() => setSince(null)}>
                 {t("flow.backToTopics")}
               </button>
@@ -1036,32 +1063,34 @@ export function ChatView({
             )}
             <div ref={spacerRef} className="hh-chat-spacer" style={{ display: "none" }} aria-hidden="true" />
           </section>
-          <form className="hh-composer" onSubmit={onSubmit}>
-            <textarea
-              ref={inputRef}
-              aria-label={placeholder}
-              placeholder={placeholder}
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key !== "Enter" || e.shiftKey) return;
-                if (e.nativeEvent.isComposing || e.keyCode === 229) return;
-                e.preventDefault();
-                if (send(draft)) setDraft("");
-              }}
-            />
-            {/* A closing or checkpoint turn is quiet (nothing live on screen) but still stoppable. */}
-            {chat.live || closing || checkpoint ? (
-              <button type="button" onClick={() => void client.cancel()}>
-                {t("chat.stop")}
-              </button>
-            ) : (
-              <button type="submit">{t("chat.send")}</button>
-            )}
-          </form>
-          {startView?.hint && <p className="hh-composer-hint">{t(startView.hint, { ns: "harness" })}</p>}
-        </main>
-        {renderSide && <aside className="hh-side">{renderSide(chat.blockState, sendFromHarness)}</aside>}
+          {composer && (
+            <form className="hh-composer" onSubmit={onSubmit}>
+              <textarea
+                ref={inputRef}
+                aria-label={placeholder}
+                placeholder={placeholder}
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key !== "Enter" || e.shiftKey) return;
+                  if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+                  e.preventDefault();
+                  if (send(draft)) setDraft("");
+                }}
+              />
+              {/* A closing or checkpoint turn is quiet (nothing live on screen) but still stoppable. */}
+              {chat.live || closing || checkpoint ? (
+                <button type="button" onClick={() => void client.cancel()}>
+                  {t("chat.stop")}
+                </button>
+              ) : (
+                <button type="submit">{t("chat.send")}</button>
+              )}
+            </form>
+          )}
+          {startView?.hint && !slim && <p className="hh-composer-hint">{t(startView.hint, { ns: "harness" })}</p>}
+        </Main>
+        {renderSide && !slim && <aside className="hh-side">{renderSide(chat.blockState, sendFromHarness)}</aside>}
       </div>
       <div className="hh-sr-only" aria-live="polite">
         {announcement}

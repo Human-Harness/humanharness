@@ -154,7 +154,7 @@ function cleanTimeBox(t: unknown): TimeBoxState | undefined {
   };
 }
 
-const BLOCK_NAME =/^[a-z][a-z0-9_]*$/;
+const BLOCK_NAME = /^[a-z][a-z0-9_]*$/;
 
 /** The pending input of task `taskId`: a block id of another task (a hand-edited file) is dropped. */
 function cleanPending(p: unknown, taskId: string): PendingInput | undefined {

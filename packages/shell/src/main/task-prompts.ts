@@ -25,8 +25,9 @@ export function closePrompt(modes: readonly string[]): string {
 /**
  * Fills `{{language}}`, `{{notesIndex}}`, `{{question}}` and a phase brief's `{{phase}}`, `{{previousPhase}}`,
  * `{{timeLeft}}` in one pass (inserted text is never filled again). Only the template is tidied, before filling:
- * a line holding just a placeholder whose value is empty goes away and blank runs collapse; inserted text stays exactly as given. A brief without
- * `{{notesIndex}}` gets the index appended, so every new session starts with it. The language is named in English ("pt-BR" → "Brazilian Portuguese").
+ * a line holding just a placeholder whose value is empty goes away and blank runs collapse; inserted text stays
+ * exactly as given. A brief without `{{notesIndex}}` gets the index appended, so every new session starts with it.
+ * The language is named in English ("pt-BR" → "Brazilian Portuguese").
  */
 export function fillPrompt(
   template: string,

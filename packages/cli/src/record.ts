@@ -193,11 +193,8 @@ export class Recorder {
     };
     rec.turns.push(turn);
     const appPrompt = meta.phase === "phase-change" || meta.phase === "wrap-up";
-    if (appPrompt) {
-      // A reply pending from the turn before is dropped: the run turn after the change links from the change.
-      this.replyKey = undefined;
-      this.answerKey = undefined;
-    }
+    // An app prompt takes no link: a reply pending from the turn before is dropped (cleared below), and the run turn
+    // after the change links from the change.
     if (meta.phase !== "close" && !appPrompt && this.lastTurn?.action === action) {
       if (this.answerKey) this.lastTurn.turn.respond = [...(this.lastTurn.turn.respond ?? []), { ...this.answerKey, next: id }];
       else if (this.replyKey !== undefined) this.lastTurn.turn.next = { ...this.lastTurn.turn.next, [this.replyKey]: id };

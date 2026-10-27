@@ -1368,8 +1368,8 @@ export class TaskManager {
   /**
    * The agent's `set_phase` (spec §4.1), after its turn ended well. With the current phase's `auto`: `to` the next phase
    * moves now, and the close phase's own id closes the task (D5). Anything else: a proposal the person confirms or
-   * ignores. An id this action doesn't have is
-   * ignored (the `ui` server only knows the harness's ids). A failed move is logged: the agent's turn itself went well.
+   * ignores. An id this action doesn't have is ignored (the `ui` server only knows the harness's ids). A failed move
+   * is logged: the agent's turn itself went well.
    */
   private async phaseAsked(id: string, ask: PhaseRequest): Promise<void> {
     const c = await this.storedCurrent();

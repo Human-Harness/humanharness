@@ -30,8 +30,9 @@ export interface TurnOptions extends SendOptions {
   /** The turn's kind (TurnKind): `run` by default. */
   phase?: TurnKind;
   /**
-   * The task's finished-turn count when this turn starts. With `task`, in a run turn, each block the person answers
-   * gets the id `<task>:<turn>:<index>` (input-blocks spec §4). Absent: no ids (spec D0).
+   * The task's finished-turn count when this turn starts. With `task`, in a turn of the task's own work
+   * (`takesInputs`), each block the person answers gets the id `<task>:<turn>:<index>` (input-blocks spec §4).
+   * Absent: no ids (spec D0).
    */
   turn?: number;
   /** What the chat shows as the person's message when the engine gets something else (a task brief). */
@@ -94,7 +95,8 @@ export interface TurnDeps {
 }
 
 /** The task's own work, whose input blocks get ids (input-blocks spec §4): never the closing or checkpoint turn. */
-export const takesInputs = (phase: TurnKind | undefined): boolean => phase === undefined || phase === "run" || phase === "phase-change" || phase === "wrap-up";
+export const takesInputs = (phase: TurnKind | undefined): boolean =>
+  phase === undefined || phase === "run" || phase === "phase-change" || phase === "wrap-up";
 
 /** The turn's end stays out of the chat and the window (`holdModelError`, `holdFailure`). */
 export function isHeld(done: Done, options: Pick<TurnOptions, "holdModelError" | "holdFailure">): boolean {
@@ -173,7 +175,7 @@ export class TurnController {
       }
       const recorder = new TurnRecorder(this.deps.stateBlocks());
       // Every block event counts toward the index; only input blocks of a task's own work get an id.
-      const inputs = turn !== undefined && task && takesInputs(phase) ?this.deps.inputBlocks?.() : undefined;
+      const inputs = turn !== undefined && task && takesInputs(phase) ? this.deps.inputBlocks?.() : undefined;
       let blockIndex = 0;
       const stamp = (e: Event): Event => {
         if (e.type !== "block") return e;

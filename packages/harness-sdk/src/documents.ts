@@ -28,7 +28,8 @@ export interface FrontMatter {
   lines: number;
 }
 
-const KEY_VALUE = /^([A-Za-z_][\w-]*):(?:\s+(.*?))?\s*$/;
+// No lazy group before trailing whitespace: that backtracks quadratically on long runs of spaces.
+const KEY_VALUE = /^([A-Za-z_][\w-]*):(?:[ \t]+(.*))?$/;
 
 function unquote(v: string): string {
   if (v.length >= 2 && v.startsWith('"') && v.endsWith('"')) {
@@ -48,7 +49,7 @@ export function splitFrontMatter(text: string): FrontMatter {
   const src = text.replace(/^﻿/, "");
   const lines = src.split(/\r?\n/);
   if (lines[0] !== "---") return { data: {}, body: text, broken: false, lines: 0 };
-  const end = lines.findIndex((l, i) => i > 0 && (l === "---" || l === "..."));
+  const end = lines.findIndex((l, i) => i > 0 && (l.trimEnd() === "---" || l.trimEnd() === "..."));
   if (end < 0) return { data: {}, body: text, broken: false, lines: 0 };
   const data: Record<string, string> = {};
   let broken = false;
@@ -59,7 +60,7 @@ export function splitFrontMatter(text: string): FrontMatter {
       broken = true;
       continue;
     }
-    data[m[1]] = unquote(m[2] ?? "");
+    data[m[1]] = unquote((m[2] ?? "").trimEnd());
   }
   // The body keeps its own line endings: only the block's lines are cut (line endings may be mixed).
   const body = stripLines(src, end + 1);
@@ -99,32 +100,53 @@ export function createSlugger(): (text: string) => string {
 }
 
 const FENCE = /^ {0,3}(`{3,}|~{3,})/;
-const H1 = /^ {0,3}#\s+(.*?)(?:\s+#+)?\s*$/;
+const CLOSING_FENCE = /^ {0,3}(`{3,}|~{3,})[ \t]*$/;
+// The heading's text is cut by hand below: a regex with optional trailing parts backtracks quadratically.
+const H1 = /^ {0,3}#[ \t]+(.*)$/;
 
-/** A card's title (§5.1): front-matter `title`, else the first `#` heading outside code, else the file name. */
-export function documentTitle(path: string, text: string): string {
-  const fm = splitFrontMatter(text);
+/** An `# H1` line's text: trailing spaces and a closing `#` run (after whitespace) removed. */
+function headingText(raw: string): string {
+  let t = raw.trimEnd();
+  let i = t.length;
+  while (i > 0 && t[i - 1] === "#") i--;
+  if (i < t.length && (i === 0 || t[i - 1] === " " || t[i - 1] === "\t")) t = t.slice(0, i).trimEnd();
+  return t.trim();
+}
+
+/** The title from an already split document. */
+function titleOf(path: string, fm: FrontMatter): string {
   const fromFm = fm.data.title?.trim();
   if (fromFm) return fromFm;
-  let fence: string | null = null;
+  let fence: { char: string; length: number } | null = null;
   for (const line of fm.body.split(/\r?\n/)) {
-    const f = FENCE.exec(line);
-    if (f) {
-      if (fence === null) fence = f[1][0];
-      else if (f[1][0] === fence) fence = null;
+    if (fence) {
+      const c = CLOSING_FENCE.exec(line);
+      if (c && c[1][0] === fence.char && c[1].length >= fence.length) fence = null;
       continue;
     }
-    if (fence !== null) continue;
+    const f = FENCE.exec(line);
+    if (f) {
+      fence = { char: f[1][0], length: f[1].length };
+      continue;
+    }
     const h = H1.exec(line);
-    if (h && h[1].trim()) return h[1].trim();
+    const title = h ? headingText(h[1]) : "";
+    if (title) return title;
   }
   const name = path.split("/").pop() ?? path;
   return name.replace(/\.md$/i, "");
 }
 
+/** A card's title (§5.1): front-matter `title`, else the first `#` heading outside code, else the file name. */
+export function documentTitle(path: string, text: string): string {
+  return titleOf(path, splitFrontMatter(text));
+}
+
+const wordsIn = (body: string) => body.split(/\s+/).filter(Boolean).length;
+
 /** Words in the body (front-matter left out). */
 export function wordCount(text: string): number {
-  return splitFrontMatter(text).body.split(/\s+/).filter(Boolean).length;
+  return wordsIn(splitFrontMatter(text).body);
 }
 
 /** Reading time at 230 words a minute (§5.1), at least one minute. */
@@ -139,8 +161,9 @@ export function isMarkdownPath(path: string): boolean {
 
 /** What a card shows of a document. `kind` only when the front-matter has one. */
 export function summarizeDocument(path: string, text: string): { title: string; kind?: string; words: number } {
-  const kind = splitFrontMatter(text).data.kind?.trim();
-  return { title: documentTitle(path, text), ...(kind ? { kind } : {}), words: wordCount(text) };
+  const fm = splitFrontMatter(text);
+  const kind = fm.data.kind?.trim();
+  return { title: titleOf(path, fm), ...(kind ? { kind } : {}), words: wordsIn(fm.body) };
 }
 
 export interface TemplateResult {

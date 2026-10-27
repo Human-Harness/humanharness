@@ -119,6 +119,35 @@ describe("constants", () => {
   });
 });
 
+describe("hostile and edge input", () => {
+  it("a long run of spaces in a heading stays linear (no ReDoS)", () => {
+    const t0 = performance.now();
+    expect(documentTitle("a.md", `# x${" ".repeat(50_000)}y`)).toBe(`x${" ".repeat(50_000)}y`);
+    expect(performance.now() - t0).toBeLessThan(200);
+  });
+
+  it("a long run of spaces in a front-matter value stays linear (no ReDoS)", () => {
+    const t0 = performance.now();
+    const fm = splitFrontMatter(`---\ntitle: a${" ".repeat(50_000)}b${" ".repeat(50_000)}\n---\n`);
+    expect(fm.data.title).toBe(`a${" ".repeat(50_000)}b`);
+    expect(performance.now() - t0).toBeLessThan(200);
+  });
+
+  it("closing #s are stripped only after whitespace", () => {
+    expect(documentTitle("a.md", "# C# ##  ")).toBe("C#");
+    expect(documentTitle("a.md", "# C#")).toBe("C#");
+  });
+
+  it("a fence closes only on the same character, at least as long, with nothing else on the line", () => {
+    expect(documentTitle("a.md", "````\n```\n# no\n```js\n# no\n````\n# Yes")).toBe("Yes");
+    expect(documentTitle("a.md", "```\n~~~\n# no\n```\n# Yes")).toBe("Yes");
+  });
+
+  it("the closing delimiter may carry trailing spaces", () => {
+    expect(splitFrontMatter("---\ntitle: T\n---  \nBody")).toEqual({ data: { title: "T" }, body: "Body", broken: false, lines: 3 });
+  });
+});
+
 const base: HarnessInput = {
   id: "dev",
   name: "Dev",

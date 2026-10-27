@@ -444,3 +444,56 @@ describe("Sidekick when a send can't go out, or the panel can't show", () => {
     expect(document.querySelector(".hh-sk-rail, .hh-sk-panel")).toBeNull();
   });
 });
+
+describe("after the reply and queued prompts in the chat (spec §4.2)", () => {
+  const QUEUED: SidekickCard = { ...CARD, queued: ["Translate chapter 2", "Add a summary"] };
+  const AFTER: SidekickCard = { id: "a1", moment: "after", kind: "gap", speaker: SK_ON.info, prompt: "Outline", flags: [], issues: [], confidence: 1, at: "2026-10-27T10:00:00Z", after: { gap: { title: "Sources", text: "No source for claim 2." }, next: "Add a source for claim 2" } };
+
+  it("a sent card's queued asks stay For later after it leaves; Drop takes the one pressed; Put in composer fills the field", async () => {
+    const c = client();
+    c.sidekickReviews = [{ kind: "card", card: QUEUED }];
+    const box = await open(c);
+    type(box, "make it better");
+    enter(box);
+    act(() => c.emitSidekick({ ...SK_ON, status: "suggestion", card: QUEUED }));
+    expect(await screen.findByText("Translate chapter 2")).toBeTruthy();
+    fireEvent.click(screen.getAllByRole("button", { name: "Drop" })[0]!);
+    expect(screen.queryByText("Translate chapter 2")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Send suggested" }));
+    await waitFor(() => expect(c.sent).toEqual(["make the intro shorter"]));
+    // Main takes the card away: the queued ask outlives it.
+    act(() => c.emitSidekick(SK_ON));
+    expect(screen.queryByRole("button", { name: "Send suggested" })).toBeNull();
+    expect(screen.getByRole("heading", { name: "For later" })).toBeTruthy();
+    expect(screen.queryByText("Translate chapter 2")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Put in composer" }));
+    expect(box.value).toBe("Add a summary");
+    fireEvent.click(screen.getByRole("button", { name: "Drop" }));
+    expect(screen.queryByText("Add a summary", { selector: "p" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "For later" })).toBeNull();
+  });
+
+  it("Edit sends nothing: the card's queued asks leave with it (a new review finds them again)", async () => {
+    const c = client();
+    c.sidekickReviews = [{ kind: "card", card: QUEUED }];
+    const box = await open(c);
+    type(box, "make it better");
+    enter(box);
+    act(() => c.emitSidekick({ ...SK_ON, status: "suggestion", card: QUEUED }));
+    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    act(() => c.emitSidekick(SK_ON));
+    expect(screen.queryByRole("heading", { name: "For later" })).toBeNull();
+  });
+
+  it("an after-reply card: Put in composer fills the field and resolves used; Dismiss resolves dismissed", async () => {
+    const c = client();
+    const box = await open(c);
+    act(() => c.emitSidekick({ ...SK_ON, cards: [AFTER] }));
+    fireEvent.click(await screen.findByRole("button", { name: "Put in composer" }));
+    expect(box.value).toBe("Add a source for claim 2");
+    await waitFor(() => expect(c.sidekickCalls).toContainEqual(["resolve", "a1", "used"]));
+    expect(c.sent).toEqual([]);
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    await waitFor(() => expect(c.sidekickCalls).toContainEqual(["resolve", "a1", "dismissed"]));
+  });
+});

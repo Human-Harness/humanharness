@@ -22,7 +22,7 @@ const CARD: SidekickCard = {
   kind: "vague",
 };
 const handlers = () => ({
-  onCollapse: vi.fn(), onTurnOn: vi.fn(), onNotNow: vi.fn(), onSendSuggested: vi.fn(), onEdit: vi.fn(), onSendAnyway: vi.fn(), onPutInComposer: vi.fn(), onView: vi.fn(), onMute: vi.fn(),
+  onCollapse: vi.fn(), onTurnOn: vi.fn(), onNotNow: vi.fn(), onSendSuggested: vi.fn(), onEdit: vi.fn(), onSendAnyway: vi.fn(), onPutInComposer: vi.fn(), onView: vi.fn(), onMute: vi.fn(), onDismiss: vi.fn(), onDropQueued: vi.fn(),
 });
 const panel = (state: SidekickState, h = handlers(), extra: Partial<Parameters<typeof SidekickPanel>[0]> = {}) =>
   renderIn("en", <SidekickPanel state={state} view="sidekick" sendKey="⌘" {...h} {...extra} />).then(() => h);
@@ -66,19 +66,26 @@ describe("SidekickPanel", () => {
     expect(h.onSendAnyway).toHaveBeenCalledWith(CARD);
   });
 
-  it("queued prompts: Put in composer and Drop", async () => {
-    const h = await panel({ ...SK_ON, status: "suggestion", card: CARD });
+  it("queued prompts live in the panel body under For later: Put in composer and Drop (by key)", async () => {
+    const h = await panel({ ...SK_ON, status: "suggestion", card: CARD }, handlers(), { queued: [{ key: "c1:0", text: "Translate chapter 2 into Spanish" }] });
+    expect(screen.getByRole("heading", { name: "For later" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Put in composer" }));
     expect(h.onPutInComposer).toHaveBeenCalledWith("Translate chapter 2 into Spanish");
     fireEvent.click(screen.getByRole("button", { name: "Drop" }));
-    expect(screen.queryByText("Translate chapter 2 into Spanish")).toBeNull();
+    expect(h.onDropQueued).toHaveBeenCalledWith("c1:0");
   });
 
-  it("queued prompts with the same text: Drop removes only the one pressed", async () => {
-    await panel({ ...SK_ON, status: "suggestion", card: { ...CARD, queued: ["Same ask", "Same ask"] } });
+  it("queued prompts with the same text: Drop names only the one pressed", async () => {
+    const h = await panel(SK_ON, handlers(), { queued: [{ key: "c1:0", text: "Same ask" }, { key: "c1:1", text: "Same ask" }] });
     expect(screen.getAllByText("Same ask")).toHaveLength(2);
-    fireEvent.click(screen.getAllByRole("button", { name: "Drop" })[0]!);
-    expect(screen.getAllByText("Same ask")).toHaveLength(1);
+    fireEvent.click(screen.getAllByRole("button", { name: "Drop" })[1]!);
+    expect(h.onDropQueued).toHaveBeenCalledWith("c1:1");
+  });
+
+  it("the live card itself no longer lists its queued asks; nothing For later without queued", async () => {
+    await panel({ ...SK_ON, status: "suggestion", card: CARD });
+    expect(screen.queryByText("Translate chapter 2 into Spanish")).toBeNull();
+    expect(screen.queryByRole("heading", { name: "For later" })).toBeNull();
   });
 
   it("a card without a rewrite has no Send suggested or Edit", async () => {
@@ -142,5 +149,34 @@ describe("learning in the panel (spec §4.1, §7)", () => {
     await panel({ ...SK_ON, past: [{ id: "c0", kind: "two-asks", outcome: "used", speaker: "sidekick" }, { id: "c00", kind: "vague", outcome: "sent-anyway", speaker: "sidekick" }] });
     expect(screen.getByText("Earlier · used")).toBeTruthy();
     expect(screen.getByText("Earlier · sent anyway")).toBeTruthy();
+  });
+});
+
+describe("after-reply card (spec §4.2)", () => {
+  const AFTER: SidekickCard = { id: "a1", moment: "after", kind: "gap", speaker: SK_ON.info, prompt: "Outline", flags: [], issues: [], confidence: 1, at: "2026-10-27T10:00:00Z", after: { gap: { title: "Sources", text: "No source for claim 2." }, next: "Add a source for claim 2" } };
+
+  it("shows the gap and the next prompt; Put in composer and Dismiss", async () => {
+    const h = handlers();
+    await panel({ ...SK_ON, cards: [AFTER] }, h);
+    expect(screen.getByRole("heading", { name: "After the reply" })).toBeTruthy();
+    expect(screen.getByText("Sources")).toBeTruthy();
+    expect(screen.getByText("No source for claim 2.")).toBeTruthy();
+    expect(screen.getByText("Add a source for claim 2")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Put in composer" }));
+    expect(h.onPutInComposer).toHaveBeenCalledWith("Add a source for claim 2");
+    expect(h.onDismiss).toHaveBeenCalledWith("a1", "used");
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(h.onDismiss).toHaveBeenLastCalledWith("a1", "dismissed");
+  });
+
+  it("a card with only a gap has Dismiss and no Put in composer; several cards show newest first", async () => {
+    const { next: _n, ...gapOnly } = AFTER.after!;
+    const older: SidekickCard = { ...AFTER, id: "a0", at: "2026-10-27T09:00:00Z", after: gapOnly };
+    const newer: SidekickCard = { ...AFTER, id: "a2", at: "2026-10-27T11:00:00Z", after: { gap: { title: "Tone", text: "Too formal." } } };
+    await panel({ ...SK_ON, cards: [older, newer] });
+    expect(screen.queryByRole("button", { name: "Put in composer" })).toBeNull();
+    expect(screen.getAllByRole("button", { name: "Dismiss" })).toHaveLength(2);
+    const titles = screen.getAllByRole("heading", { level: 4 }).map((h) => h.textContent);
+    expect(titles).toEqual(["Tone", "Sources"]);
   });
 });

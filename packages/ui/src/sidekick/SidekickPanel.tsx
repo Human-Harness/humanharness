@@ -1,4 +1,4 @@
-import { type ReactNode, useState } from "react";
+import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Segmented } from "../chrome";
 import type { SidekickCard, SidekickState } from "../client";
@@ -24,6 +24,11 @@ export interface SidekickPanelProps {
   onPutInComposer(text: string): void;
   /** "Don't flag …": mutes the card's kind for its sidekick (spec §6.3). */
   onMute(cardId: string): void;
+  /** An after-reply card leaves: `used` by Put in composer, or `dismissed` (spec §4.2). */
+  onDismiss(cardId: string, outcome: "used" | "dismissed"): void;
+  /** Queued asks "For later", kept by the chat so they survive the card that found them; `key` tells equal texts apart. */
+  queued?: { key: string; text: string }[];
+  onDropQueued(key: string): void;
   /** Opens Settings › Sidekick from the foot's tier; without it the tier is plain text. */
   onTier?: () => void;
 }
@@ -81,6 +86,24 @@ export function SidekickPanel(p: SidekickPanelProps) {
             <>
               {s.notice && <p className="hh-caption hh-sk-notice">{t(`sidekick.notice.${s.notice}`)}</p>}
               {s.card && <Card key={s.card.id} card={s.card} {...p} />}
+              {/* Main keeps them oldest first: the newest reads first. */}
+              {[...s.cards].reverse().map((card) => (
+                <AfterCard key={card.id} card={card} onPutInComposer={p.onPutInComposer} onDismiss={p.onDismiss} />
+              ))}
+              {p.queued && p.queued.length > 0 && (
+                <div className="hh-sk-queued">
+                  <h4>{t("sidekick.card.queued")}</h4>
+                  <ul>
+                    {p.queued.map((q) => (
+                      <li key={q.key}>
+                        <p>{q.text}</p>
+                        <button type="button" onClick={() => p.onPutInComposer(q.text)}>{t("sidekick.card.putInComposer")}</button>
+                        <button type="button" onClick={() => p.onDropQueued(q.key)}>{t("sidekick.card.drop")}</button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               {s.past.length > 0 && (
                 <ul className="hh-sk-past">
                   {s.past.map((past) => (
@@ -114,11 +137,8 @@ export function SidekickPanel(p: SidekickPanelProps) {
   );
 }
 
-function Card({ card, onSendSuggested, onEdit, onSendAnyway, onPutInComposer, onMute }: { card: SidekickCard } & SidekickPanelProps) {
+function Card({ card, onSendSuggested, onEdit, onSendAnyway, onMute }: { card: SidekickCard } & SidekickPanelProps) {
   const { t } = useTranslation();
-  // By position: two queued asks can read the same, and Drop takes only the one pressed.
-  const [dropped, setDropped] = useState<number[]>([]);
-  const queued = (card.queued ?? []).map((text, at) => ({ text, at })).filter((q) => !dropped.includes(q.at));
   return (
     <section className="hh-sk-card" aria-label={t("sidekick.card.title")}>
       <h3>{t("sidekick.card.title")}</h3>
@@ -135,20 +155,6 @@ function Card({ card, onSendSuggested, onEdit, onSendAnyway, onPutInComposer, on
           </p>
         </div>
       )}
-      {queued.length > 0 && (
-        <div className="hh-sk-queued">
-          <h4>{t("sidekick.card.queued")}</h4>
-          <ul>
-            {queued.map((q) => (
-              <li key={q.at}>
-                <p>{q.text}</p>
-                <button type="button" onClick={() => onPutInComposer(q.text)}>{t("sidekick.card.putInComposer")}</button>
-                <button type="button" onClick={() => setDropped((d) => [...d, q.at])}>{t("sidekick.card.drop")}</button>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
       <div className="hh-sk-actions">
         {card.rewrite && (
           <>
@@ -162,6 +168,45 @@ function Card({ card, onSendSuggested, onEdit, onSendAnyway, onPutInComposer, on
       <button type="button" className="hh-link" onClick={() => onMute(card.id)}>
         {t("sidekick.mute", { kind: card.kind })}
       </button>
+    </section>
+  );
+}
+
+/** After the reply (spec §4.2): the gap it saw and the next prompt, which goes to the composer, never sent by itself. */
+function AfterCard({ card, onPutInComposer, onDismiss }: { card: SidekickCard } & Pick<SidekickPanelProps, "onPutInComposer" | "onDismiss">) {
+  const { t } = useTranslation();
+  const a = card.after ?? {};
+  const next = a.next;
+  return (
+    <section className="hh-sk-card" aria-label={t("sidekick.after.title")}>
+      <h3>{t("sidekick.after.title")}</h3>
+      {a.gap && (
+        <>
+          <h4>{a.gap.title}</h4>
+          <p>{a.gap.text}</p>
+        </>
+      )}
+      {next && (
+        <>
+          <h4>{t("sidekick.after.next")}</h4>
+          <p>{next}</p>
+        </>
+      )}
+      <div className="hh-sk-actions">
+        {next && (
+          <button
+            type="button"
+            className="hh-primary"
+            onClick={() => {
+              onPutInComposer(next);
+              onDismiss(card.id, "used");
+            }}
+          >
+            {t("sidekick.card.putInComposer")}
+          </button>
+        )}
+        <button type="button" onClick={() => onDismiss(card.id, "dismissed")}>{t("sidekick.after.dismiss")}</button>
+      </div>
     </section>
   );
 }

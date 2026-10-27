@@ -662,6 +662,7 @@
       "drop": "Drop",
       "announce": "Sidekick has a suggestion for your prompt."
     },
+    "after": { "title": "After the reply", "next": "Next prompt", "dismiss": "Dismiss" },
     "notice": {
       "failed": "Sidekick couldn't review this one. Your prompt went as typed.",
       "timeout": "Sidekick took too long. Your prompt went as typed."

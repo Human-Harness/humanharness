@@ -192,6 +192,20 @@ export function ChatView({
   const [skView, setSkView] = useState<"sidekick" | "harness">("sidekick");
   const skExpanded = sidekick !== null && (skOpen ?? sidekick.settings.on);
   const skCard = sidekick?.card?.id;
+  /** Queued asks "For later" (spec §4.1): the live card's, then those of cards that were sent, which outlive them. */
+  const [later, setLater] = useState<{ key: string; text: string }[]>([]);
+  /** The live card's asks the person dropped, by key (`<card id>:<position>`): equal texts are told apart. */
+  const [droppedLive, setDroppedLive] = useState<string[]>([]);
+  const liveQueued = (sidekick?.card?.queued ?? [])
+    .map((text, at) => ({ key: `${skCard}:${at}`, text }))
+    .filter((q) => !droppedLive.includes(q.key));
+  // They belong to the task: another task (or none) starts with none. The first send opening a task keeps them.
+  const laterTask = useRef(tasks.current?.id);
+  useEffect(() => {
+    const was = laterTask.current;
+    laterTask.current = tasks.current?.id;
+    if (was !== undefined && was !== tasks.current?.id) setLater([]);
+  }, [tasks.current?.id]);
   const skAnnounced = useRef<string | undefined>(undefined);
   // Each new card is announced once (spec §7 accessibility); the panel itself never takes focus.
   // Cleared, then set on the next frame: two cards in a row put the same words, which a screen reader would skip.
@@ -863,8 +877,14 @@ export function ChatView({
     setDraft("");
     if (sidekick?.card) resolveCard(sidekick.card, "sent-anyway");
   };
-  const resolveCard = (card: SidekickCard, outcome: "used" | "edited" | "sent-anyway") =>
+  const resolveCard = (card: SidekickCard, outcome: "used" | "edited" | "sent-anyway") => {
+    // A card that was sent keeps its queued asks for later; Edit sends nothing, and the next review finds them again.
+    if (outcome !== "edited" && card.id === skCard && liveQueued.length > 0) {
+      const keep = liveQueued;
+      setLater((l) => [...keep, ...l.filter((q) => !keep.some((k) => k.key === q.key))]);
+    }
     void client.sidekick.resolve(card.id, outcome).catch(() => undefined);
+  };
   const onSubmit = (e: FormEvent) => {
     e.preventDefault();
     void submit(draft);
@@ -1338,6 +1358,12 @@ export function ChatView({
               sendKey={SEND_KEY}
               onCollapse={() => toggleSk(false)}
               onMute={(id) => void client.sidekick.mute(id).catch(() => undefined)}
+              onDismiss={(id, outcome) => void client.sidekick.resolve(id, outcome).catch(() => undefined)}
+              queued={[...liveQueued, ...later]}
+              onDropQueued={(key) => {
+                setLater((l) => l.filter((q) => q.key !== key));
+                setDroppedLive((d) => [...d, key]);
+              }}
               {...(onSidekickSettings ? { onTier: onSidekickSettings } : {})}
               onTurnOn={() => void client.sidekick.set({ on: true, introSeen: true }).catch(() => undefined)}
               onNotNow={() => {

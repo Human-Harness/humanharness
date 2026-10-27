@@ -175,6 +175,8 @@ export const sidekickRecordSchema = z
     tier: z.enum(["light", "standard", "deep"]).optional(),
     /** The preset name it was adopted from (§2a.7). */
     preset: z.string().max(40).optional(),
+    /** On in a scope with no scope record (§2a.1, §2a.4); absent = true. */
+    defaultOn: z.boolean().optional(),
     // scope
     scope: z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/).optional(),
     sidekick: z.string().max(80).optional(),
@@ -248,6 +250,8 @@ export interface SidekickDef {
   tier?: "light" | "standard" | "deep";
   source?: { kind: "paste" } | { kind: "files"; paths: string[]; hash: string };
   preset?: string;
+  /** On in a scope with no scope record (spec §2a.1, §2a.4); absent = true. */
+  defaultOn?: boolean;
 }
 
 /** Without sidekick records, a profile gets this one (spec §3): part 1's single Sidekick. `"spark"` names the core's SVG mark. */

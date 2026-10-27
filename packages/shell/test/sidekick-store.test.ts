@@ -2,7 +2,7 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { SIDEKICK_COLLECTION, sidekickCollection } from "@humanharness/harness-sdk";
+import { DEFAULT_SIDEKICK, SIDEKICK_COLLECTION, type SidekickRecord, sidekickCollection } from "@humanharness/harness-sdk";
 import { APP_SCOPE, DataStore, runDataRequest } from "@humanharness/workspace";
 import { SidekickStore } from "../src/main/sidekick-store";
 
@@ -128,5 +128,153 @@ describe("SidekickStore", () => {
     await s.unmute("sidekick", "vague");
     await s.mute("sidekick", "Sidekick", "vague", "2026-10-27T11:00:00Z");
     expect((await s.all()).filter((r) => r.type === "learned")).toHaveLength(1);
+  });
+});
+
+/** An in-memory collection: `readAll` returns `records`, `write` mutates them (put replaces by id, delete removes). */
+function mem(initial: object[]) {
+  const records = initial.map((r) => ({ ...r })) as SidekickRecord[];
+  const writes: unknown[] = [];
+  const deleted: string[] = [];
+  const s = new SidekickStore({
+    readAll: async () => records.map((r) => ({ ...r })),
+    write: async (request) => {
+      writes.push(request);
+      const r = request as { op: string; record?: SidekickRecord; key?: string };
+      if (r.op === "put" && r.record) {
+        const at = records.findIndex((x) => x.id === r.record!.id);
+        if (at >= 0) records[at] = r.record;
+        else records.push(r.record);
+      } else if (r.op === "delete" && r.key) {
+        deleted.push(r.key);
+        const at = records.findIndex((x) => x.id === r.key);
+        if (at >= 0) records.splice(at, 1);
+      }
+      return { ok: true };
+    },
+  });
+  return { store: s, writes, deleted, records };
+}
+
+const RULO = { id: "rulo", type: "sidekick", name: "Rulo", mark: "x", personality: "", purposes: [{ id: "mentor" }], order: 1 };
+
+describe("sidekick records (spec §2a.1, Decisions 1–2)", () => {
+  it("D0: no sidekick records → the implicit default, nothing written", async () => {
+    const s = mem([]);
+    expect(await s.store.sidekicks()).toEqual([DEFAULT_SIDEKICK]);
+    expect(await s.store.scopeFor("main", "sidekick")).toEqual({ on: true });
+    expect(s.writes).toEqual([]);
+  });
+
+  it("D0: a part 1 profile (settings only) still has exactly the default Sidekick", async () => {
+    const s = mem([{ id: "settings", type: "settings", on: true }]);
+    expect(await s.store.sidekicks()).toEqual([DEFAULT_SIDEKICK]);
+    expect((await s.store.settings()).on).toBe(true);
+    expect(s.writes).toEqual([]);
+  });
+
+  it("saving a new one writes the default first, then the new one with a slug id and the next order", async () => {
+    const s = mem([]);
+    const saved = await s.store.saveSidekick({ name: "Rulo", mark: "🦊", personality: "Direct.", purposes: [{ id: "mentor" }] });
+    expect(saved.id).toBe("rulo");
+    expect(s.writes.map((w) => (w as { record: { id: string } }).record.id)).toEqual(["sidekick", "rulo"]);
+    expect((await s.store.sidekicks()).map((k) => [k.id, k.order])).toEqual([["sidekick", 0], ["rulo", 1]]);
+  });
+
+  it("editing keeps the id and the order; an unknown id is refused", async () => {
+    const s = mem([{ ...DEFAULT_SIDEKICK, type: "sidekick" }, RULO]);
+    const saved = await s.store.saveSidekick({ id: "rulo", name: "Rulo II", mark: "y", personality: "Calm.", purposes: [{ id: "focus" }], defaultOn: false });
+    expect(saved).toEqual({ id: "rulo", name: "Rulo II", mark: "y", personality: "Calm.", purposes: [{ id: "focus" }], order: 1, defaultOn: false });
+    await expect(s.store.saveSidekick({ id: "nope", name: "N", mark: "n", personality: "", purposes: [{ id: "focus" }] })).rejects.toThrow(/No sidekick/);
+  });
+
+  it("name clashes get -2, -3", async () => {
+    const s = mem([{ ...DEFAULT_SIDEKICK, type: "sidekick" }]);
+    expect((await s.store.saveSidekick({ name: "Sidekick", mark: "x", personality: "", purposes: [{ id: "mentor" }] })).id).toBe("sidekick-2");
+    expect((await s.store.saveSidekick({ name: "Sidekick", mark: "x", personality: "", purposes: [{ id: "mentor" }] })).id).toBe("sidekick-3");
+  });
+
+  it("reserved ids: a new one is never `learn` (the learning folder) nor `sidekick` (the default's), even after it is gone", async () => {
+    const s = mem([{ ...RULO, order: 0 }]);
+    expect((await s.store.saveSidekick({ name: "Learn", mark: "x", personality: "", purposes: [{ id: "mentor" }] })).id).toBe("learn-2");
+    expect((await s.store.saveSidekick({ name: "Sidekick", mark: "x", personality: "", purposes: [{ id: "mentor" }] })).id).toBe("sidekick-2");
+    expect((await s.store.saveSidekick({ name: "!!!", mark: "x", personality: "", purposes: [{ id: "mentor" }] })).id).toBe("sidekick-3");
+  });
+
+  it("reorder rewrites order 0..n by the given ids", async () => {
+    const s = mem([{ ...DEFAULT_SIDEKICK, type: "sidekick" }, RULO]);
+    await s.store.reorder(["rulo", "sidekick"]);
+    expect((await s.store.sidekicks()).map((k) => [k.id, k.order])).toEqual([["rulo", 0], ["sidekick", 1]]);
+  });
+
+  it("removing deletes the record, its scope records and its muted kinds; the last one can't go", async () => {
+    const s = mem([
+      { ...DEFAULT_SIDEKICK, type: "sidekick" },
+      RULO,
+      { id: "s-main-rulo", type: "scope", scope: "main", sidekick: "rulo", on: false },
+      { id: "s-main-sidekick", type: "scope", scope: "main", sidekick: "sidekick", on: false },
+      { id: "settings", type: "settings", muted: { rulo: ["gap"] } },
+    ]);
+    await s.store.removeSidekick("rulo");
+    expect(s.deleted).toEqual(["rulo", "s-main-rulo", "settings"]);
+    expect(await s.store.settings()).toMatchObject({ muted: {} });
+    await expect(s.store.removeSidekick("sidekick")).rejects.toThrow(/at least one/);
+  });
+
+  it("removing an unknown id or `__proto__` changes nothing", async () => {
+    const s = mem([{ ...DEFAULT_SIDEKICK, type: "sidekick" }, RULO, { id: "settings", type: "settings", on: true }]);
+    await expect(s.store.removeSidekick("__proto__")).rejects.toThrow(/No sidekick/);
+    expect(s.writes).toEqual([]);
+  });
+
+  it("refusals write nothing: removing the implicit default, a scope for an unknown sidekick", async () => {
+    const s = mem([]);
+    await expect(s.store.removeSidekick("sidekick")).rejects.toThrow(/at least one/);
+    await expect(s.store.setScope("main", "rulo", { on: false })).rejects.toThrow(/No sidekick/);
+    expect(s.writes).toEqual([]);
+  });
+
+  it("two quick saves: the default written once, two distinct ids", async () => {
+    const s = mem([]);
+    const [a, b] = await Promise.all([
+      s.store.saveSidekick({ name: "Rulo", mark: "x", personality: "", purposes: [{ id: "mentor" }] }),
+      s.store.saveSidekick({ name: "Rulo", mark: "x", personality: "", purposes: [{ id: "mentor" }] }),
+    ]);
+    expect([a.id, b.id]).toEqual(["rulo", "rulo-2"]);
+    expect((await s.store.sidekicks()).map((k) => [k.id, k.order])).toEqual([["sidekick", 0], ["rulo", 1], ["rulo-2", 2]]);
+    expect(s.writes).toHaveLength(3);
+  });
+
+  it("a scope id another pair already holds gets a hashed one", async () => {
+    const s = mem([{ ...DEFAULT_SIDEKICK, type: "sidekick" }, { ...RULO, id: "b-c" }, { ...RULO, id: "c", order: 2 }]);
+    await s.store.setScope("a", "b-c", { on: false });
+    await s.store.setScope("a-b", "c", { on: false });
+    expect(s.records.filter((r) => r.type === "scope").map((r) => r.id)).toEqual(["s-a-b-c", expect.stringMatching(/^s-[0-9a-f]{32}$/)]);
+    expect(await s.store.scopeFor("a", "b-c")).toEqual({ on: false });
+    expect(await s.store.scopeFor("a-b", "c")).toEqual({ on: false });
+  });
+
+  it("scope records: setScope writes s-<scope>-<sidekick>; on by default when absent", async () => {
+    const s = mem([]);
+    await s.store.setScope("main", "sidekick", { on: false, purposeText: "No spec without AC." });
+    expect(s.writes.at(-1)).toMatchObject({ op: "put", record: { id: "s-main-sidekick", type: "scope", scope: "main", sidekick: "sidekick", on: false, purposeText: "No spec without AC." } });
+    expect(await s.store.scopeFor("main", "sidekick")).toEqual({ on: false, purposeText: "No spec without AC." });
+    expect(await s.store.scopeFor("main", "rulo")).toEqual({ on: true });
+  });
+
+  it("defaultOn (spec §2a.1): a scope with no record uses it; a record wins", async () => {
+    const s = mem([{ ...DEFAULT_SIDEKICK, type: "sidekick" }, { ...RULO, defaultOn: false }]);
+    expect(await s.store.scopeFor("main", "rulo")).toEqual({ on: false });
+    expect(await s.store.scopeFor("main", "sidekick")).toEqual({ on: true });
+    await s.store.setScope("main", "rulo", { on: true });
+    expect(await s.store.scopeFor("main", "rulo")).toEqual({ on: true });
+    expect(await s.store.scopeFor("docs", "rulo")).toEqual({ on: false });
+  });
+
+  it("the collection schema accepts a sidekick with defaultOn and the store reads it back", async () => {
+    const { s } = await store();
+    const saved = await s.saveSidekick({ name: "Rulo", mark: "x", personality: "", purposes: [{ id: "mentor" }], defaultOn: false });
+    expect((await s.sidekicks()).find((k) => k.id === saved.id)).toEqual({ id: "rulo", name: "Rulo", mark: "x", personality: "", purposes: [{ id: "mentor" }], order: 1, defaultOn: false });
+    expect(await s.scopeFor("main", "rulo")).toEqual({ on: false });
   });
 });

@@ -1,9 +1,11 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import {
+  DEFAULT_SIDEKICK,
   SIDEKICK_CAPS,
   SIDEKICK_COLLECTION,
   SIDEKICK_SETTINGS_ID,
   SIDEKICK_WAITS,
+  type SidekickDef,
   type SidekickManifest,
   type SidekickRecord,
   type SidekickSettings,
@@ -29,6 +31,39 @@ const patchSchema = z.strictObject({
   lastDaily: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
 });
 
+/** A sidekick to save: new without `id`, else an edit of that one (its order kept unless given). */
+export type SidekickInput = Omit<SidekickDef, "id" | "order"> & { id?: string; order?: number };
+/** A sidekick in a scope (spec §2a.4). */
+export interface SidekickScope {
+  on: boolean;
+  purposeText?: string;
+  places?: string[];
+}
+
+/**
+ * Ids a new sidekick never gets: `learn` is the learning session's folder (`workDir(base, "learn")`), and `sidekick`
+ * is the default one's, whose folder, muted kinds and scope records a new sidekick must not inherit.
+ */
+const RESERVED_IDS: ReadonlySet<string> = new Set(["learn", DEFAULT_SIDEKICK.id]);
+
+const slug = (name: string) =>
+  name.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40).replace(/-+$/, "") || DEFAULT_SIDEKICK.id;
+
+const toDef = (r: SidekickRecord): SidekickDef => ({
+  id: r.id,
+  name: r.name!,
+  mark: r.mark!,
+  personality: r.personality ?? "",
+  purposes: r.purposes!,
+  order: r.order!,
+  ...(r.tier ? { tier: r.tier } : {}),
+  ...(typeof r.source === "object" ? { source: r.source } : {}),
+  ...(r.preset ? { preset: r.preset } : {}),
+  ...(r.defaultOn !== undefined ? { defaultOn: r.defaultOn } : {}),
+});
+
+const toRecord = (d: SidekickDef): SidekickRecord => ({ ...d, type: "sidekick" });
+
 export interface SidekickStoreDeps {
   /** Every record of the profile's `sidekick` collection (settings, learned items, sidekicks, scope records). */
   readAll(): Promise<SidekickRecord[]>;
@@ -40,6 +75,8 @@ export interface SidekickStoreDeps {
 /** Sidekick's settings (spec §8): the stored values over the defaults; only changed values are stored. */
 export class SidekickStore {
   private writes: Promise<unknown> = Promise.resolve();
+  /** Sidekick and scope record changes, one at a time (two quick saves never both write the default or the same id). */
+  private recordWrites: Promise<unknown> = Promise.resolve();
 
   constructor(private readonly d: SidekickStoreDeps) {}
 
@@ -93,6 +130,87 @@ export class SidekickStore {
     });
   }
 
+  /** The person's sidekicks by order; the implicit default when none is written (Decision 2, D0). */
+  async sidekicks(): Promise<SidekickDef[]> {
+    return sidekicksOf(await this.all());
+  }
+
+  /** New when `s.id` is absent (a slug of its name, `-2`, `-3` on clashes, last in order); else replaces that one's fields. */
+  saveSidekick(s: SidekickInput): Promise<SidekickDef> {
+    return this.serialRecords(async () => {
+      const all = await this.materialize();
+      const old = s.id !== undefined ? all.find((k) => k.id === s.id) : undefined;
+      if (s.id !== undefined && !old) throw new Error(`No sidekick "${s.id}"`);
+      let id = old?.id;
+      if (!id) {
+        const base = slug(s.name);
+        const taken = (x: string) => RESERVED_IDS.has(x) || all.some((k) => k.id === x);
+        id = base;
+        for (let n = 2; taken(id); n++) id = `${base}-${n}`;
+      }
+      const { id: _id, order: _order, ...fields } = s;
+      const def: SidekickDef = { ...fields, id, order: s.order ?? old?.order ?? Math.max(-1, ...all.map((k) => k.order)) + 1 };
+      await this.put(toRecord(def));
+      return def;
+    });
+  }
+
+  /** Orders the sidekicks as `ids` (spec §2a.2: the person's order breaks ties); ones not named keep their turn after. */
+  reorder(ids: readonly string[]): Promise<void> {
+    return this.serialRecords(async () => {
+      const all = await this.materialize();
+      const named = [...new Set(ids)].map((id) => all.find((k) => k.id === id)).filter((k): k is SidekickDef => !!k);
+      const ordered = [...named, ...all.filter((k) => !named.includes(k))];
+      for (const [order, k] of ordered.entries()) if (k.order !== order) await this.put(toRecord({ ...k, order }));
+    });
+  }
+
+  /** Deletes a sidekick, its scope records and its muted kinds; the last one stays. */
+  async removeSidekick(id: string): Promise<void> {
+    await this.serialRecords(async () => {
+      // Refused before anything is written: the implicit default alone is "the last one".
+      const records = await this.d.readAll();
+      const all = sidekicksOf(records);
+      if (!all.some((k) => k.id === id)) throw new Error(`No sidekick "${id}"`);
+      if (all.length <= 1) throw new Error("Keep at least one sidekick");
+      await this.remove(id);
+      for (const r of records) if (r.type === "scope" && r.sidekick === id) await this.remove(r.id);
+    });
+    const r = await this.change((s) => {
+      if (!Object.hasOwn(s.muted, id)) return {};
+      const { [id]: _drop, ...rest } = s.muted;
+      return { muted: rest };
+    });
+    if (!r.ok) throw new Error(r.message);
+  }
+
+  /** A sidekick in a scope (spec §2a.4): its scope record, else on per its `defaultOn` (absent = on). */
+  async scopeFor(scope: string, sidekick: string): Promise<SidekickScope> {
+    const all = await this.all();
+    const r = all.find((x) => x.type === "scope" && x.scope === scope && x.sidekick === sidekick);
+    if (r) return { on: r.on!, ...(r.purposeText ? { purposeText: r.purposeText } : {}), ...(r.places ? { places: r.places } : {}) };
+    return { on: sidekicksOf(all).find((k) => k.id === sidekick)?.defaultOn ?? true };
+  }
+
+  /** Writes the scope record `s-<scope>-<sidekick>` (Decision 1), replacing that pair's earlier one. */
+  setScope(scope: string, sidekick: string, v: SidekickScope): Promise<void> {
+    return this.serialRecords(async () => {
+      if (!sidekicksOf(await this.d.readAll()).some((k) => k.id === sidekick)) throw new Error(`No sidekick "${sidekick}"`);
+      await this.materialize();
+      const all = await this.d.readAll();
+      const old = all.find((x) => x.type === "scope" && x.scope === scope && x.sidekick === sidekick);
+      await this.put({ id: old?.id ?? scopeId(scope, sidekick, all), type: "scope", scope, sidekick, ...v });
+    });
+  }
+
+  /** Writes the implicit default when no sidekick record exists yet (Decision 2: the first change writes it). */
+  private async materialize(): Promise<SidekickDef[]> {
+    const all = await this.d.readAll();
+    if (all.some((r) => r.type === "sidekick")) return sidekicksOf(all);
+    await this.put(toRecord(DEFAULT_SIDEKICK));
+    return [DEFAULT_SIDEKICK];
+  }
+
   private async read(): Promise<SidekickRecord | null> {
     return (await this.d.readAll()).find((r) => r.type === "settings" && r.id === SIDEKICK_SETTINGS_ID) ?? null;
   }
@@ -126,6 +244,24 @@ export class SidekickStore {
     this.writes = run.catch(() => undefined);
     return run;
   }
+
+  private serialRecords<T>(fn: () => Promise<T>): Promise<T> {
+    const run = this.recordWrites.then(fn, fn);
+    this.recordWrites = run.catch(() => undefined);
+    return run;
+  }
+}
+
+function sidekicksOf(all: SidekickRecord[]): SidekickDef[] {
+  const written = all.filter((r) => r.type === "sidekick").map(toDef);
+  return written.length ? written.sort((a, b) => a.order - b.order) : [DEFAULT_SIDEKICK];
+}
+
+/** `s-<scope>-<sidekick>`; a hashed id when that is too long or already another pair's (`a-b`+`c` vs `a`+`b-c`). */
+function scopeId(scope: string, sidekick: string, all: SidekickRecord[]): string {
+  const plain = `s-${scope}-${sidekick}`;
+  if (plain.length <= 80 && !all.some((r) => r.id === plain)) return plain;
+  return `s-${createHash("sha256").update(`${scope}\n${sidekick}`).digest("hex").slice(0, 32)}`;
 }
 
 function sameSettings(a: SidekickSettings, b: SidekickSettings): boolean {

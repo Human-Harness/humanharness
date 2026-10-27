@@ -343,6 +343,10 @@ export function HistoryPanel({
                           <li key={e.sha}>
                             <span className="hh-history-entry-text">
                               <span>{entryText(e)}</span>
+                              {/* The part the task was in (task-phases spec §6); none for a part the manifest no longer has. */}
+                              {e.phase && g.actionId && Object.hasOwn(actions, g.actionId) && (
+                                <span className="hh-caption">{actions[g.actionId].phases?.find((p) => p.id === e.phase)?.label}</span>
+                              )}
                               {when(e.date)}
                             </span>
                             {goBack({ kind: "point", id: e.sha }, laterTasks(groups ?? [], g.taskId, e.date))}

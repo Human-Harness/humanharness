@@ -38,7 +38,7 @@ type DoneAction = Extract<Event, { type: "done" }> & { task?: string };
 export type ChatAction =
   | Exclude<Event, { type: "done" }>
   | DoneAction
-  | { type: "user"; text: string; at: string; action?: string; mode?: string }
+  | { type: "user"; text: string; at: string; action?: string; mode?: string; phase?: string; timeUp?: true }
   | { type: "loaded"; entries: ChatEntry[] }
   /** The person's answer to an input block was taken: it goes on its block (input-blocks spec §8). */
   | { type: "answered"; answer: BlockAnswer }
@@ -81,6 +81,8 @@ export function reduceChat(state: ChatState, action: ChatAction): ChatState {
             at: action.at,
             ...(action.action ? { action: action.action } : {}),
             ...(action.mode ? { mode: action.mode } : {}),
+            ...(action.phase ? { phase: action.phase } : {}),
+            ...(action.timeUp ? { timeUp: true as const } : {}),
           },
         ],
         live: { id: newId(), text: "", blocks: [], parts: [], activities: [] },

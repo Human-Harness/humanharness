@@ -219,6 +219,28 @@ describe("HistoryPanel", () => {
     expect(screen.getByText("You went back to before this task")).toBeTruthy();
   });
 
+  it("shows a commit's part next to its text, and nothing for one without a part", async () => {
+    const client = new FakeClient();
+    client.historyGroups = [
+      {
+        ...groups[0],
+        entries: [
+          { sha: "m3", message: "Turn: go on", date, phase: "main" },
+          { sha: "m2", message: "Turn: plan it", date },
+          { sha: "m1", message: "Turn: gone", date, phase: "removed" },
+        ],
+      },
+    ];
+    const phased = { plan: { ...actions.plan, phases: [{ id: "warmup", label: "Warm-up" }, { id: "main", label: "Main block" }] } };
+    await open({ client, actions: phased });
+    const entries = await screen.findByRole("list", { name: "Points in this task" });
+    const items = within(entries).getAllByRole("listitem");
+    expect(within(items[0]).getByText("Main block")).toBeTruthy();
+    expect(within(items[1]).queryByText("Main block")).toBeNull();
+    expect(within(items[1]).queryByText("Warm-up")).toBeNull();
+    expect(within(items[2]).queryByText("Main block")).toBeNull();
+  });
+
   it("goes back to before a task after a confirmation", async () => {
     const { client, onRestored, onClose } = await open();
     fireEvent.click(await screen.findByRole("button", { name: "Undo this task" }));

@@ -26,6 +26,8 @@ export interface ProfilesDeps {
   historyDir(folder: string): string;
   /** The profiles changed: the window's switcher redraws. */
   changed(state: ProfilesState): void;
+  /** A switch, a turn, a restore, a move or an engine change runs: archiving and deleting wait (they would race it). */
+  blocked(): boolean;
 }
 
 /** How a change went, before the main process adds the new app state. */
@@ -85,7 +87,7 @@ export class Profiles {
         const entry = await this.store(root).create(title, typeof record.color === "string" ? record.color : undefined);
         const base = profileDir(root, entry.id);
         await prepareFolder(base, this.d.seed);
-        await this.d.writeRecord(base, record);
+        await this.d.writeRecord(base, { ...record, name: title });
         return entry.id;
       }),
     );
@@ -102,6 +104,7 @@ export class Profiles {
 
   /** Hides a profile from the switcher, or brings it back. Never the active one. */
   async setArchived(id: unknown, archived: boolean): Promise<ProfileOutcome> {
+    if (this.d.blocked()) return { ok: false, reason: "busy" };
     const root = await this.d.root();
     if (!root) return { ok: false, reason: "not-ready" };
     if (!isProfileId(id) || !(await this.registered(root, id))) return { ok: false, reason: "unknown" };
@@ -121,6 +124,7 @@ export class Profiles {
    * active one. A Trash that refuses the folder changes nothing; one that refuses the history leaves it (logged).
    */
   async remove(id: unknown): Promise<ProfileOutcome> {
+    if (this.d.blocked()) return { ok: false, reason: "busy" };
     const root = await this.d.root();
     if (!root) return { ok: false, reason: "not-ready" };
     if (!isProfileId(id) || !(await this.registered(root, id))) return { ok: false, reason: "unknown" };
@@ -149,21 +153,25 @@ export class Profiles {
   /**
    * A profile's record changed (any writer): the registry copies its name and colour (spec §4). `base` is the folder
    * whose store changed; anything that isn't a registered profile's folder, or a record without a usable name, changes
-   * nothing.
+   * nothing. It never rejects: a failure is logged.
    */
   async sync(base: string): Promise<void> {
-    const root = await this.d.root();
-    const id = root ? profileOfBase(root, base) : null;
-    if (!root || !id || !(await this.registered(root, id))) return;
-    const record = await this.d.readRecord(base);
-    if (!record) return;
     try {
-      cleanProfileTitle(record.name);
-    } catch {
-      return;
+      const root = await this.d.root();
+      const id = root ? profileOfBase(root, base) : null;
+      if (!root || !id || !(await this.registered(root, id))) return;
+      const record = await this.d.readRecord(base);
+      if (!record) return;
+      try {
+        cleanProfileTitle(record.name);
+      } catch {
+        return;
+      }
+      await this.store(root).setIdentity(id, { title: record.name, color: record.color });
+      this.d.changed(await this.state());
+    } catch (err) {
+      console.error("Could not copy the profile's name and colour to the registry", err);
     }
-    await this.store(root).setIdentity(id, { title: record.name, color: record.color });
-    this.d.changed(await this.state());
   }
 
   private async registered(root: string, id: string): Promise<boolean> {

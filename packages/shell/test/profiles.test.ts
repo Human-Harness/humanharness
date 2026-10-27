@@ -56,6 +56,7 @@ function setup(over: Partial<ProfilesDeps> = {}) {
     },
     historyDir: (folder) => path.join(userData, "history", path.basename(folder)),
     changed,
+    blocked: () => false,
     ...over,
   };
   return { root, userData, records, trashed, changed, calls, profiles: new Profiles(d), active: () => active };
@@ -170,6 +171,40 @@ describe("Profiles (profiles spec §5)", () => {
     });
     expect(await t.profiles.create({ name: "Sofi" })).toEqual({ ok: false, reason: "failed" });
     expect(t.changed).toHaveBeenLastCalledWith({ active: null, list: [expect.objectContaining({ id: "sofi" })] });
+  });
+
+  it("archiving and deleting are refused while a switch, a turn or a move runs, touching nothing", async () => {
+    let blocked = false;
+    const t = setup({ blocked: () => blocked });
+    await t.profiles.create({ name: "Sofi" });
+    await t.profiles.create({ name: "Tomás" });
+    await t.profiles.open("sofi");
+    t.changed.mockClear();
+    blocked = true;
+    expect(await t.profiles.remove("tomas")).toEqual({ ok: false, reason: "busy" });
+    expect(await t.profiles.setArchived("tomas", true)).toEqual({ ok: false, reason: "busy" });
+    expect(t.trashed).toEqual([]);
+    expect(fs.existsSync(path.join(t.root, "tomas"))).toBe(true);
+    expect(await t.profiles.state()).toMatchObject({ list: [{ id: "sofi" }, { id: "tomas", archived: false }] });
+    expect(t.changed).not.toHaveBeenCalled();
+  });
+
+  it("the new profile's record carries the cleaned name", async () => {
+    const t = setup();
+    expect(await t.profiles.create({ name: "  Sofi\n Pérez " })).toEqual({ ok: true });
+    expect(t.records.get(path.join(t.root, "sofi-perez"))).toEqual({ name: "Sofi Pérez" });
+    expect((await t.profiles.state()).list[0].title).toBe("Sofi Pérez");
+  });
+
+  it("sync never rejects: a failing read is logged", async () => {
+    const t = setup({ readRecord: async () => Promise.reject(new Error("disk")) });
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    await t.profiles.create({ name: "Sofi" });
+    t.changed.mockClear();
+    await expect(t.profiles.sync(path.join(t.root, "sofi"))).resolves.toBeUndefined();
+    expect(log).toHaveBeenCalled();
+    expect(t.changed).not.toHaveBeenCalled();
+    log.mockRestore();
   });
 
   it("openable: registered and not archived", async () => {

@@ -67,6 +67,7 @@ profiles: { label: "student", fields: ["name", "color", "ageBand"] },
   folder's place, its backup status and "Move folder…", the reference folders. The agent and
   `hh:openPath`/`hh:revealPath` never get a reference folder inside the app's folder (another profile's folder),
   besides one that is or contains the working folder (`usableReferences` with the root, `references.ts`).
+- Material (`docs/architecture/material.md`) is per profile: originals under `<folder>/<profile>/material/`, the registry and fragments under its `.harness/material/`, the stages' usage lines in its `usage.jsonl`, the measured costs from it.
 - In code: `baseFor(config, profiles)` (`packages/shell/src/main/profile-base.ts`) is `<folder>/<profile>` in a
   profiles app, `<folder>` otherwise, and null in a profiles app with no active profile. `baseOf` in
   `packages/shell/src/main/index.ts` throws rather than answer the root of a profiles app, and `validConfig()` is null
@@ -86,6 +87,10 @@ profiles: { label: "student", fields: ["name", "color", "ageBand"] },
 4. Arrival: a task left open there by a crash ends unfinished (`tasks.interrupt()`); the settings controller forgets the
    old AGENTS.md and reads afresh; the scopes migrate and are sent; the setup steps' state and the tasks are sent. A
    failed arrival is logged; the switch stands.
+
+With material, closing the runtime in step 3 (`closeRuntime`) first stops the material queue and the conversions of
+the old profile (`MaterialJobs.stop`, `MaterialService.stop`). After arrival, the new profile's unfinished material
+resumes: sources left `converting` are converted again (`settle`) and the queue is kicked, so its pending stages run.
 
 The window gets the new `AppState` in the result (`ProfileResult`) and goes to Home, from the work screen too, so the
 new profile's required setup steps are checked before its work screen. Switching to the active profile does

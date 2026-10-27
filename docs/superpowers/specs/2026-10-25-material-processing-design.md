@@ -70,6 +70,7 @@ Every converter is a program, with no model, and its output is Markdown with loc
   sheet.md            the material sheet
   index.md            one line per fragment
   conflicts.md        material vs AI knowledge, and how each was resolved
+  grounding.json      the scope's grounding mode, once the person changed it
   fragments/<sourceSlug>-<nnn>.md
   fragments/.orig/<id>.md                      ← the program's version of a fragment the AI repaired
 ```
@@ -77,7 +78,7 @@ Every converter is a program, with no model, and its output is Markdown with loc
 - **Scope.** The harness's unit of material: a topic, a project. It is an id the harness passes when it adds material (§8).
 - **History.**
   - Originals live in the visible folder, so the hidden history and the backup cover them.
-  - `.harness/material/` can be rebuilt from the originals, so the history skips it, except `sources.json` and `conflicts.md`, which hold the person's decisions.
+  - `.harness/material/` can be rebuilt from the originals, so the history skips it, except `sources.json`, `conflicts.md` and `grounding.json`, which hold the person's decisions.
 - **Token counts** are estimated as characters ÷ 4. No tokenizer dependency.
 
 ### 4.1 Fragment file
@@ -304,4 +305,4 @@ material: {
 5. **Language.** The sheet's language when the material and the app differ.
 6. **Thresholds.** `WARN_PAGES`, `MAX_PAGES`, `MAX_BYTES`, `MAX_ROWS`, the sample size, `REPAIR_MAX_WORD_DIFF` and the cut sizes are placeholders until measured.
 7. ~~Old Office formats.~~ **Decided (Marco, 2026-10-25):** `.doc`, `.xls` and `.ppt` are refused in the first version, with the "guardalo como…" message.
-8. **Libraries.** Their licenses and the bundle size: check them when planning slice 1.
+8. **Libraries.** Their licenses and the bundle size: check them when planning slice 1. **Checked (plan 8):** the list, with `exceljs`'s transitive licences, is in `docs/architecture/material.md` → Licences.

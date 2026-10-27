@@ -27,6 +27,7 @@ Every text in the manifest is one English string.
 | `settings` | Optional. Knobs the person sets in a Settings tab of the harness's own; their sentences go into `AGENTS.md` (`docs/architecture/settings.md`) |
 | `modes` | Optional. Ways the AI works inside a task: `label`, `description`, `brief`, `minTier`, a `recommend` hint only the agent reads, and mode settings (`docs/architecture/modes.md`) |
 | `setup` | Optional. The harness's own setup steps, after the folder and the engine: a form, an interview or a component (`docs/architecture/setup.md`) |
+| `material` | Optional. The person's own files (PDF, Word, spreadsheets, slides, ebooks, web pages, text), cut into fragments a task fetches on demand: the families it `accepts`, the `sheet` sections, `fragmentKinds`, the `items` collection fragments link to, `grounding`, the index `budget` and per-stage `tiers` (`docs/architecture/material.md`) |
 | `profiles` | Optional. Several people on one install, each with a folder of their own: `label` (what to call one, "student") and `fields` (the `profile` collection's fields the add and edit form asks for, `name` first) (`docs/architecture/profiles.md`) |
 
 ### Phases and the time box
@@ -66,6 +67,7 @@ The harness's screen is `ui/App.tsx`: the shell build (`packages/shell/electron.
 - Phases: ids unique within the action; `close` only on the last phase; a phase's list of `modes` only on an action with modes, each one of its modes. A time box's options are each offered once and its `default` is one of them or `null`. `humanharness check` also reports a phase brief that is missing or empty (`brief-missing`).
 - Setup steps: 1 to 8, ids unique. A form takes a `single`, unscoped collection and fields the core form can draw, or settings of the harness, not both. An interview's action isn't in `path`, isn't `deep`, runs app-wide and backs one interview; its `writes` collection is `single`, unscoped and `agent: "write"`. `humanharness check` also warns about a component it can't find in `ui/` (`setup-component`), an interview's action without a recording once `mock/` has recordings (`setup-mock`) and an interview's collection without `context` (`setup-context`) (`docs/architecture/setup.md`).
 - Profiles: `profiles` needs a `profile` collection with `single: true`, `scoped: false` and a `name` field that is a string (`z.string()`, with or without bounds). `fields` has 1 to 6 entries, each once, starts with `name`, and names only fields of that collection the core form can draw (`docs/architecture/profiles.md`).
+- Material: `accepts` and `fragmentKinds` list each value once; `sheet.sections` ids are unique and aren't the core's (`notation`, `not-covered`); `items.collection` is declared in `data`, has a key (not `single`) and isn't hidden from the agent (`agent: "none"`), and `items.label` is one of its fields; the action ids `material-review`, `material-repair`, `material-label`, `material-sheet` and `material-link` are reserved. `humanharness check` also warns about a `light` review tier (`material-review-tier`) and an app-wide `items` collection in a harness with scopes (`material-items-scope`) (`docs/architecture/material.md`).
 - A harness whose id is `ui` or `data` can't have `mcp` entries (those are the built-in server names).
 - `resolveInHarness` refuses any path that leaves the harness folder: every action's prompt, every mode's brief and every phase's brief (checked by `loadHarness`), and the instructions, seed, logo and MCP servers when they are used.
 
@@ -77,5 +79,6 @@ The harness's screen is `ui/App.tsx`: the shell build (`packages/shell/electron.
 - `packages/harness-sdk/src/modes.ts`: mode ids and `defaultModeOf`.
 - `packages/harness-sdk/src/phases.ts`: phase ids, `TIME_BOX_MAX`, `phaseModes`.
 - `packages/harness-sdk/src/setup.ts`: the `setup` schema, `interviewCollections`, `setupFormSpec`.
+- `packages/harness-sdk/src/material.ts`: the `material` schema, `MATERIAL_FAMILIES`, `MATERIAL_STAGES`, `hasMaterial`, `materialStageKey`, `stageTier`.
 - `packages/harness-sdk/src/profiles.ts`: the `profiles` schema, `PROFILE_COLLECTION`, `PROFILE_COLORS`, `hasProfiles`, `profileFormSpec`.
 - `harnesses/demo/harness.config.ts`: a complete manifest.

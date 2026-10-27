@@ -35,6 +35,8 @@ export function EngineTab({
   const [statuses, setStatuses] = useState<Record<string, EngineStatus>>({});
   const [busy, setBusy] = useState<null | "use" | "logout">(null);
   const [failed, setFailed] = useState(false);
+  /** Signing out runs in Terminal (`terminalSteps.logout`): says to finish there, then check again. */
+  const [signOutHint, setSignOutHint] = useState(false);
   /** Why checking an engine failed, by engine id. */
   const [checkErrors, setCheckErrors] = useState<Record<string, string>>({});
   const ids = state.engines.map((e) => e.id).join(",");
@@ -72,6 +74,9 @@ export function EngineTab({
     if (selected) onSelectionRef.current?.(selected, ready);
   }, [selected, ready]);
 
+  // The Terminal sign-out hint belongs to the engine it was shown for.
+  useEffect(() => setSignOutHint(false), [selected]);
+
   const use = async () => {
     if (!selected) return;
     setBusy("use");
@@ -85,6 +90,18 @@ export function EngineTab({
   };
   const signOut = async () => {
     if (!selected) return;
+    // OpenCode (spec §2): the person signs out in Terminal; the app copies the command and opens it.
+    if (engine?.terminalSteps?.logout) {
+      setFailed(false);
+      try {
+        await client.copySetupCommand(selected, "logout");
+        await client.openTerminal();
+        setSignOutHint(true);
+      } catch {
+        setFailed(true);
+      }
+      return;
+    }
     setBusy("logout");
     setFailed(false);
     const result = await client.runSetup(selected, "logout").catch(() => ({ ok: false }));
@@ -185,6 +202,12 @@ export function EngineTab({
                     </button>
                   )}
                 </div>
+                {signOutHint && (
+                  <div className="hh-row">
+                    <span role="status">{t("engine.signOutTerminal")}</span>
+                    <button onClick={() => void refresh(engine.id).then(() => setSignOutHint(false))}>{t("engine.providerRecheck")}</button>
+                  </div>
+                )}
                 <div className="hh-row">
                   <span className="hh-row-label">{t("engine.plan")}</span>
                   <span>{engine.requires}</span>

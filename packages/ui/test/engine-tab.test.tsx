@@ -393,3 +393,84 @@ describe("EngineTab", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 });
+
+const addOpenCode = (client: FakeClient) => {
+  client.state.engines = [
+    ...client.state.engines,
+    {
+      ...client.state.engines[0],
+      id: "opencode",
+      name: "OpenCode",
+      provider: "OpenCode",
+      requires: "An account or API key with a provider you set up in OpenCode, or a local model (Ollama)",
+      reportsLimits: false,
+      reportsCost: true,
+      userProvider: true,
+      providersUrl: "https://opencode.ai/docs/providers/",
+      terminalSteps: { login: "opencode auth login", logout: "opencode auth logout" },
+    },
+  ];
+};
+
+describe("EngineTab: OpenCode", () => {
+  it("says in the notice that the provider's terms are the person's", async () => {
+    const client = withFolder();
+    addOpenCode(client);
+    client.statusFor.opencode = { ...client.status, engineId: "opencode", noticeAccepted: false };
+    await renderIn("en", <Tab client={client} />);
+    fireEvent.click(await screen.findByRole("button", { name: /OpenCode/ }));
+    await screen.findByRole("heading", { name: "Before using OpenCode" });
+    expect(screen.getByText("You choose the provider in OpenCode. Its terms and privacy rules apply between you and that provider.")).toBeTruthy();
+  });
+
+  it("keeps Claude's notice and sign-in as before (D0)", async () => {
+    const client = withFolder();
+    client.status = { ...client.status, noticeAccepted: false, loggedIn: false };
+    await renderIn("en", <Tab client={client} />);
+    await screen.findByRole("heading", { name: "Before using Claude" });
+    expect(screen.queryByText(/You choose the provider/)).toBeNull();
+    fireEvent.click(screen.getByRole("checkbox", { name: "I understand and accept" }));
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    await screen.findByRole("heading", { name: "Sign in to Claude" });
+    expect(screen.queryByRole("heading", { name: /Choose a provider/ })).toBeNull();
+  });
+
+  it("asks to choose a provider in Terminal, never runs the login itself", async () => {
+    const client = withFolder();
+    addOpenCode(client);
+    client.statusFor.opencode = { ...client.status, engineId: "opencode", loggedIn: false, verified: false };
+    await renderIn("en", <Tab client={client} />);
+    fireEvent.click(await screen.findByRole("button", { name: /OpenCode/ }));
+    await screen.findByRole("heading", { name: "Choose a provider in OpenCode" });
+    expect(screen.getByText("opencode auth login")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Copy command" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open Terminal" }));
+    await waitFor(() => expect(client.setupCopied).toEqual(["opencode:login"]));
+    expect(client.terminalOpened).toBe(1);
+    expect(client.setupRuns).toEqual([]);
+    expect(screen.getByRole("link", { name: "OpenCode's guide to providers" }).getAttribute("href")).toBe("https://opencode.ai/docs/providers/");
+  });
+
+  it("tests a local model from the same card", async () => {
+    const client = withFolder();
+    addOpenCode(client);
+    client.statusFor.opencode = { ...client.status, engineId: "opencode", loggedIn: false, verified: false };
+    await renderIn("en", <Tab client={client} />);
+    fireEvent.click(await screen.findByRole("button", { name: /OpenCode/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Test my local model" }));
+    await waitFor(() => expect(client.tested).toEqual(["opencode"]));
+  });
+
+  it("signs out in Terminal", async () => {
+    const client = withFolder();
+    addOpenCode(client);
+    client.statusFor.opencode = { ...client.status, engineId: "opencode" };
+    await renderIn("en", <Tab client={client} />);
+    fireEvent.click(await screen.findByRole("button", { name: /OpenCode/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Sign out" }));
+    await screen.findByText("Finish signing out in Terminal, then press Check again.");
+    expect(client.setupCopied).toEqual(["opencode:logout"]);
+    expect(client.terminalOpened).toBe(1);
+    expect(client.setupRuns).toEqual([]);
+  });
+});

@@ -169,6 +169,16 @@ export function EngineOnboarding({
     }
   };
 
+  /** A step the person runs in Terminal (`terminalSteps`): the app copies its command and runs nothing. */
+  const copySetup = async (step: "login" | "logout") => {
+    try {
+      await client.copySetupCommand(engine.id, step);
+      setCopy("copied");
+    } catch {
+      setCopy("failed");
+    }
+  };
+
   /** "I installed it, check again": detects the CLI again, and says so when it still isn't there. */
   const recheck = async () => {
     setRechecking(true);
@@ -258,6 +268,7 @@ export function EngineOnboarding({
         <p>{t("engine.noticeProvider", { ...v, where: engine.dataLocation })}</p>
         <p>{t("engine.noticeTraining", { trains: engine.trainsOnData })}</p>
         <p>{t("engine.noticeAccount", { ...v, plan: engine.requires })}</p>
+        {engine.userProvider && <p>{t("engine.noticeUserProvider", v)}</p>}
         <p>{t("engine.noticeContent", v)}</p>
         <p>
           {link(engine.termsUrl, t("engine.terms", v))} · {link(engine.privacyUrl, t("engine.privacy", v))}
@@ -319,6 +330,42 @@ export function EngineOnboarding({
         {engine.installDocsUrl && <p>{link(engine.installDocsUrl, t("engine.installDocs"))}</p>}
       </>
     );
+  } else if (problem === "logged-out" && engine.terminalSteps?.login) {
+    // OpenCode (spec §2): the person picks a provider in OpenCode's own login, in Terminal. The app runs nothing there.
+    body = (
+      <>
+        <h3>{t("engine.providerTitle", v)}</h3>
+        <p>{t("engine.providerText", v)}</p>
+        <code>{engine.terminalSteps.login}</code>
+        <ol aria-label={t("engine.providerTitle", v)}>
+          <li>{t("engine.providerStep1")}</li>
+          <li>{t("engine.providerStep2", v)}</li>
+          <li>{t("engine.providerStep3")}</li>
+        </ol>
+        <p>
+          <button className="hh-primary" onClick={() => void copySetup("login")}>
+            {t("engine.copyCommand")}
+          </button>{" "}
+          <button onClick={() => void client.openTerminal().catch(() => {})}>{t("engine.openTerminal")}</button>{" "}
+          <button disabled={busy !== null || rechecking} onClick={() => void recheck()}>
+            {t("engine.providerRecheck")}
+          </button>{" "}
+          {copy === "copied" && <span role="status">{t("engine.copied")}</span>}
+        </p>
+        {copy === "failed" && (
+          <p className="hh-save-error" role="alert">
+            {t("engine.copyFailed")}
+          </p>
+        )}
+        <p>
+          {t("engine.providerLocal", v)}{" "}
+          <button disabled={busy !== null} onClick={() => void runTest()}>
+            {t("engine.providerLocalTest")}
+          </button>
+        </p>
+        {engine.providersUrl && <p>{link(engine.providersUrl, t("engine.providerDocs", v))}</p>}
+      </>
+    );
   } else if (problem === "logged-out") {
     body = (
       <>
@@ -345,9 +392,16 @@ export function EngineOnboarding({
               {t("engine.retry")}
             </button>
             {/* The CLI can't say whether it is signed in: signing in again may be the fix. */}
-            {failed === "step" && (status.loggedIn === null || testError?.code === "session-expired") && (
-              <button onClick={() => void runStep("login")}>{t("errors.fix.session-expired", v)}</button>
-            )}
+            {failed === "step" &&
+              (status.loggedIn === null || testError?.code === "session-expired") &&
+              (engine.terminalSteps?.login ? (
+                // Signing in runs in Terminal: copy the command and open it.
+                <button onClick={() => void copySetup("login").then(() => client.openTerminal().catch(() => {}))}>
+                  {t("errors.fix.session-expired", v)}
+                </button>
+              ) : (
+                <button onClick={() => void runStep("login")}>{t("errors.fix.session-expired", v)}</button>
+              ))}
           </>
         ) : (
           <p role="status">{t("engine.testing", v)}</p>

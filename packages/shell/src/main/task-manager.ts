@@ -109,6 +109,8 @@ export interface TaskDeps {
   noteExists?(slug: string, scope?: string): Promise<boolean>;
   /** The data tables a new session's first message carries after the notes (spec §4.4); "" for none. */
   dataContext?(scope: string, action: string | undefined): Promise<string>;
+  /** The scope's material section, after the data (material spec §9 Load); "" for none. Absent without material (D0). */
+  materialContext?(scope: string): Promise<string>;
   /** Ends the engine session (Codex: `session/close`); the next turn starts a new one. */
   endSession(): Promise<void>;
   /** Records the folder in the local history (a note was written), tagged with the task it belongs to. */
@@ -701,6 +703,14 @@ export class TaskManager {
       parts.push(
         await this.d.dataContext(scope, action).catch((err: unknown) => {
           console.error("Could not load the data for the task", err);
+          return "";
+        }),
+      );
+    }
+    if (this.d.materialContext) {
+      parts.push(
+        await this.d.materialContext(scope).catch((err: unknown) => {
+          console.error("Could not load the material for the task", err);
           return "";
         }),
       );

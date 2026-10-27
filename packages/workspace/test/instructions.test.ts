@@ -39,6 +39,17 @@ describe("managedSection", () => {
     expect(managedSection({ language: "pt-BR", blocks })).toContain("in Brazilian Portuguese:");
   });
 
+  it("the Material part only with material (material spec §9)", () => {
+    const without = managedSection({ language: "en", blocks: {} });
+    expect(without).not.toContain("### Material");
+    const withIt = managedSection({ language: "en", blocks: {}, material: true });
+    expect(withIt).toContain("### Material");
+    expect(withIt).toContain("[[frag:<id>]]");
+    expect(withIt).toContain("material_conflict");
+    expect(withIt).toContain("never open the files under `.harness/material/`");
+    expect(withIt.trimEnd().endsWith(MANAGED_END)).toBe(true);
+  });
+
   it("documents every block tool with its example and schema", () => {
     const s = managedSection({ language: "en", blocks });
     expect(s).toContain("`show_note`");

@@ -28,7 +28,7 @@ import {
   resolveInHarness,
   settingsView,
 } from "@humanharness/harness-sdk";
-import { workerRunner } from "@humanharness/material";
+import { MaterialStore, materialSection, workerRunner } from "@humanharness/material";
 import { type Event, type HarnessRuntime, createRuntime } from "@humanharness/runtime";
 import {
   type AppConfig,
@@ -110,6 +110,7 @@ import { SetupSteps, recordSetup, setupStepViews } from "./setup-steps";
 import { TaskManager } from "./task-manager";
 import { MaterialService } from "./material";
 import { fetchLink } from "./material-fetch";
+import { personMaterialRequest } from "./material-requests";
 import { baseFor, isInsideFolder } from "./profile-base";
 import { type ProfileOutcome, Profiles, profileResult } from "./profiles";
 import { ProfileSwitch } from "./profile-switch";
@@ -597,6 +598,9 @@ const runtime = memoise<HarnessRuntime>(async () => {
     dataServerEntry: path.join(here, "data-server.js"),
     // The person's store (one write queue per base), for the folder this runtime runs in.
     data: (request) => agentDataRequest({ store: async () => dataStoreFor(base), runningTask: () => tasks.runningTask() }, request),
+    // The person's material in this folder, for the running task's scope (material spec §9): the base this runtime was
+    // built for, so a request never reaches another profile's material. Absent without material (D0).
+    ...(harness.material ? { material: { request: (request: unknown) => materialRequest(base, request), entry: path.join(here, "material-server.js") } } : {}),
     command: cmd.command,
     env: cmd.env,
     references: (await workReferences(c, base, true)).map((r) => ({ label: r.label, path: r.path })),
@@ -742,6 +746,20 @@ const tasks = new TaskManager({
       return c ? buildDataContext(dataStoreFor(baseOf(c)), harness.data, scope, action) : "";
     };
   },
+  // Material spec §9 Load: only a harness with material gets the hook (D0). A getter: the harness loads later.
+  // Only usable sources' fragments make rows (`indexRows`); none: no section.
+  get materialContext() {
+    const m = harness.material;
+    if (!m) return undefined;
+    return async (scope: string) => {
+      const c = await validConfig();
+      if (!c || scope === APP_SCOPE || !isScopeId(scope)) return "";
+      const store = materialStore(baseOf(c), scope);
+      const rows = await store.indexRows();
+      if (rows.length === 0) return "";
+      return materialSection({ mode: (await store.grounding()) ?? m.grounding.default, sheet: await store.sheet(), rows, budgetTokens: m.budget.indexTokens });
+    };
+  },
   get path() {
     return harness.path ?? [];
   },
@@ -833,6 +851,13 @@ const tasks = new TaskManager({
 
 /** The person's material (material spec); null without `material` (D0). Built once the harness is loaded. */
 let materialSvc: MaterialService | null = null;
+
+/** The app's one store of a base and scope (one write queue each); a plain one only before the service exists. */
+const materialStore = (base: string, scope: string): MaterialStore => materialSvc?.storeAt(base, scope) ?? new MaterialStore(base, scope);
+
+/** The agent's material tools in `base` (the runtime's), in the running task's scope (material spec §9 Fetch). */
+const materialRequest = (base: string, request: unknown) =>
+  personMaterialRequest({ base: async () => base, runningTask: () => tasks.runningTask(), store: materialStore }, request);
 
 function buildMaterial(): MaterialService | null {
   const m = harness.material;

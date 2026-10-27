@@ -28,6 +28,13 @@ const TEXT = {
   schema: "Schema",
   references: "### Reference folders (read only)",
   referencesIntro: "You may read these folders with your read tools. Never change anything in them.",
+  material: "### Material",
+  materialRules: [
+    "The person's own material is cut into fragments. Your task's first message lists the ones in its scope; fetch a fragment with `material_read` and find more with `material_search`; never open the files under `.harness/material/`.",
+    "Cite each fragment you use as [[frag:<id>]], right after what it supports.",
+    "When the material and your own knowledge disagree, follow the material, say so once, and call `material_conflict` with the fragment, the claim and how you resolved it.",
+    "If a fragment reads wrong (garbled, cut, a broken table), call `material_flag` and go on.",
+  ],
   answer: "Answer",
   answers: "### Answers from input blocks",
   answerRules: [
@@ -55,7 +62,13 @@ export function settingsLines(sentences: readonly string[] | undefined): string[
   return sentences && sentences.length > 0 ? ["", TEXT.settings, "", ...sentences.map((s) => `- ${s}`)] : [];
 }
 
-export function managedSection(opts: { language: Language; blocks: Record<string, Block>; references?: ReferenceFolder[]; settings?: readonly string[] }): string {
+export function managedSection(opts: {
+  language: Language;
+  blocks: Record<string, Block>;
+  references?: ReferenceFolder[];
+  settings?: readonly string[];
+  material?: boolean;
+}): string {
   const t = TEXT;
   const lines = [MANAGED_START, t.title, "", ...t.rules(opts.language).map((r) => `- ${r}`), ...settingsLines(opts.settings)];
   const entries = Object.entries(opts.blocks);
@@ -81,6 +94,8 @@ export function managedSection(opts: { language: Language; blocks: Record<string
     lines.push("", t.references, "", t.referencesIntro, "");
     for (const r of references) lines.push(`- ${r.label}: \`${r.path}\``);
   }
+  // Only a harness with material gets this part (material spec D0).
+  if (opts.material) lines.push("", t.material, "", ...t.materialRules.map((r) => `- ${r}`));
   lines.push(MANAGED_END, "");
   return lines.join("\n");
 }
@@ -98,10 +113,13 @@ export interface InstructionsText {
   references?: ReferenceFolder[];
   /** The harness's settings as sentences (harness-settings spec §5). Absent or empty: no section (D0). */
   settings?: readonly string[];
+  /** The harness takes material: the Material part. Absent: none (D0). */
+  material?: boolean;
 }
 
 function agentsText(opts: InstructionsText): string {
-  return `${opts.base.trimEnd()}\n\n${managedSection({ language: opts.language, blocks: opts.blocks, references: opts.references, settings: opts.settings })}`;
+  const section = managedSection({ language: opts.language, blocks: opts.blocks, references: opts.references, settings: opts.settings, material: opts.material });
+  return `${opts.base.trimEnd()}\n\n${section}`;
 }
 
 /** Writes AGENTS.md (harness base + managed section) and the engine's own file. Returns the relative paths written. */

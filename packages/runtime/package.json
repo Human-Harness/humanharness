@@ -9,6 +9,7 @@
     "@humanharness/blocks": "workspace:*",
     "@humanharness/engines": "workspace:*",
     "@humanharness/harness-sdk": "workspace:*",
+    "@humanharness/material": "workspace:*",
     "@humanharness/workspace": "workspace:*"
   },
   "devDependencies": {

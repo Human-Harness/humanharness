@@ -111,7 +111,11 @@ export class MaterialService {
     this.runner = limitRunner(d.runner ?? workerRunner());
   }
 
-  private storeFor(base: string, scope: string): MaterialStore {
+  /**
+   * The one store of `base` and `scope`, unchecked: the caller passes a base it holds and a scope it checked (a running
+   * task's). Everything that writes a registry (the window, the agent's tools, the queue) goes through it.
+   */
+  storeAt(base: string, scope: string): MaterialStore {
     const key = `${base}\0${scope}`;
     let store = this.stores.get(key);
     if (!store) {
@@ -128,7 +132,7 @@ export class MaterialService {
     if (!base) return "not-ready";
     if (!(await this.d.scopeOk(scope))) return "unknown-scope";
     await this.scan(base);
-    return this.storeFor(base, scope);
+    return this.storeAt(base, scope);
   }
 
   /**
@@ -161,7 +165,7 @@ export class MaterialService {
     const out: { store: MaterialStore; ids: string[] }[] = [];
     for (const scope of names) {
       if (!isScopeId(scope) || !(await this.d.scopeOk(scope))) continue;
-      const store = this.storeFor(base, scope);
+      const store = this.storeAt(base, scope);
       const ids = (await store.sources().catch(() => [])).filter((s) => s.status === "converting").map((s) => s.id);
       if (ids.length > 0) out.push({ store, ids });
     }

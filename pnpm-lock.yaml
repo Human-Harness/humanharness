@@ -382,6 +382,9 @@ importers:
       '@humanharness/harness-sdk':
         specifier: workspace:*
         version: link:../harness-sdk
+      '@humanharness/material':
+        specifier: workspace:*
+        version: link:../material
       '@humanharness/workspace':
         specifier: workspace:*
         version: link:../workspace

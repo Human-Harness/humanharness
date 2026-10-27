@@ -1,4 +1,4 @@
-import { Fragment, type ReactNode, createElement, useContext, useEffect, useId, useMemo, useState } from "react";
+import { Fragment, type ReactNode, createElement, memo, useContext, useEffect, useId, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import type { Code, Definition, FootnoteDefinition, Heading, List, Nodes, Parents, PhrasingContent, Root, RootContent, Table } from "mdast";
@@ -238,7 +238,7 @@ function renderHeading(n: Heading, ctx: Ctx, key: number): ReactNode {
 function renderList(n: List, ctx: Ctx, key: number): ReactNode {
   const items = n.children.map((item, j) => (
     <li key={j} className={item.checked === null || item.checked === undefined ? undefined : "hh-md-task"}>
-      {typeof item.checked === "boolean" && <input type="checkbox" checked={item.checked} disabled readOnly />}
+      {typeof item.checked === "boolean" && <input type="checkbox" checked={item.checked} disabled readOnly aria-label={textOf(item).trim()} />}
       {renderBlocks(item.children, ctx, !n.spread && !item.spread)}
     </li>
   ));
@@ -431,12 +431,25 @@ export interface MarkdownProps {
   idPrefix?: string;
 }
 
-/** Markdown as React elements (document-reader spec §3). */
-export function Markdown({ source, fade = false, document = false, path = "", idPrefix }: MarkdownProps) {
+// A last line of only `-` or `=`: under a paragraph it makes a setext heading. Linear: the two parts never overlap.
+const SETEXT_UNDERLINE = /^ {0,3}(?:-+|=+)[ \t]*$/;
+
+/**
+ * While an answer arrives, its last line may be the start of a list item ("- ") or a rule: drawn now, it would turn
+ * the paragraph above into a heading for a moment. Leave that line out until more text follows it.
+ */
+function withoutPendingUnderline(text: string): string {
+  const cut = text.lastIndexOf("\n");
+  return cut >= 0 && SETEXT_UNDERLINE.test(text.slice(cut + 1)) ? text.slice(0, cut) : text;
+}
+
+/** Markdown as React elements (document-reader spec §3). Memoized: a streaming chat redraws only the growing message. */
+export const Markdown = memo(function Markdown({ source, fade = false, document = false, path = "", idPrefix }: MarkdownProps) {
   const { t } = useTranslation();
   const auto = useId();
   const prefix = idPrefix ?? `m${auto.replace(/[^A-Za-z0-9]/g, "")}-`;
-  const text = document ? splitFrontMatter(source).body : source;
+  const raw = document ? splitFrontMatter(source).body : source;
+  const text = fade ? withoutPendingUnderline(raw) : raw;
   const tree = useMemo(() => parseMarkdown(text), [text]);
   const definitions = useMemo(() => collectDefinitions(tree), [tree]);
   const defs = useMemo(() => collectFootnotes(tree), [tree]);
@@ -450,7 +463,7 @@ export function Markdown({ source, fade = false, document = false, path = "", id
       {renderFootnotes(ctx)}
     </>
   );
-}
+});
 
 /** A heading the reader's table of contents lists. */
 export interface OutlineItem {

@@ -277,7 +277,7 @@ h4.hh-md-h { font-size: 1em; font-weight: 600; color: var(--hh-slate); }
 .hh-md-table { overflow-x: auto; max-width: 100%; margin: 0.8em 0; border: 1px solid var(--hh-line); border-radius: 8px; }
 .hh-md-table table { border-collapse: collapse; width: max-content; min-width: 100%; font-size: 0.95em; }
 .hh-md-table th, .hh-md-table td { padding: 6px 10px; border-bottom: 1px solid var(--hh-line); text-align: left; vertical-align: top; }
-.hh-md-table thead th { position: sticky; top: 0; background: var(--hh-sheet); font-weight: 600; }
+.hh-md-table thead th { background: var(--hh-sheet); font-weight: 600; }
 .hh-md-table tbody tr:last-child td { border-bottom: none; }
 .hh-md-table .hh-num { text-align: right; font-variant-numeric: tabular-nums; }
 .hh-md-table .hh-align-center { text-align: center; }

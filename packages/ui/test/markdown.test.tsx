@@ -100,6 +100,19 @@ describe("Markdown", () => {
     const el = md("- [x] done\n- [ ] to do");
     const boxes = [...el.querySelectorAll<HTMLInputElement>("li input[type=checkbox]")];
     expect(boxes.map((b) => [b.checked, b.disabled])).toEqual([[true, true], [false, true]]);
+    expect(screen.getByRole("checkbox", { name: "done" })).toBe(boxes[0]);
+    expect(screen.getByRole("checkbox", { name: "to do" })).toBe(boxes[1]);
+  });
+
+  it("while an answer arrives, a trailing '- ' or '=' line never turns the paragraph into a heading", () => {
+    const streaming = render(<Markdown source={"Options:\n- "} fade />).container;
+    expect(streaming.querySelector("h1,h2")).toBeNull();
+    expect(streaming.textContent).toBe("Options:");
+    expect(render(<Markdown source={"Title\n==="} fade />).container.querySelector("h1")).toBeNull();
+    // Finished text is CommonMark as written.
+    expect(render(<Markdown source={"Title\n---"} />).container.querySelector("h2")?.textContent).toBe("Title");
+    // Once more text follows, the list item is a list item.
+    expect(render(<Markdown source={"Options:\n- a"} fade />).container.querySelector("ul > li")?.textContent).toBe("a");
   });
 
   it("strikethrough", () => {

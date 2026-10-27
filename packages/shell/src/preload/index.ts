@@ -26,6 +26,9 @@ function subscribe<T>(channel: string, listener: (value: T) => void): () => void
 /** Told of every mode switch, whoever called `chooseMode` (the window or the harness's own UI). */
 const modeSwitches = new Set<(s: ModeSwitch) => void>();
 
+/** Told of every `openDocument`, from the window or the harness's own UI (document-reader spec §5.1). */
+const documentOpeners = new Set<(path: string) => void>();
+
 const client: HarnessClient = {
   getState: () => ipcRenderer.invoke("hh:getState"),
   pickFolder: (defaultPath) => ipcRenderer.invoke("hh:pickFolder", defaultPath),
@@ -75,6 +78,37 @@ const client: HarnessClient = {
   onTaskTurn: (listener) => subscribe<TaskTurnNotice>("hh:taskTurn", listener),
   openPath: (file) => ipcRenderer.invoke("hh:openPath", file),
   revealPath: (file) => ipcRenderer.invoke("hh:revealPath", file),
+  readDocument: (file) => ipcRenderer.invoke("hh:readDocument", file),
+  readImage: (file) => ipcRenderer.invoke("hh:readImage", file),
+  documentsExist: (paths) => ipcRenderer.invoke("hh:documentsExist", paths),
+  watchDocument: (file, listener) => {
+    let id: number | null = null;
+    let closed = false;
+    const off = subscribe<number>("hh:documentChanged", (changed) => {
+      if (id !== null && changed === id) listener();
+    });
+    void ipcRenderer.invoke("hh:watchDocument", file).then(
+      (got: number | null) => {
+        // Unsubscribed before main answered: the watch it made goes at once.
+        if (closed && got !== null) void ipcRenderer.invoke("hh:unwatchDocument", got);
+        else id = got;
+      },
+      () => undefined,
+    );
+    return () => {
+      if (closed) return;
+      closed = true;
+      off();
+      if (id !== null) void ipcRenderer.invoke("hh:unwatchDocument", id);
+    };
+  },
+  openDocument: (file) => {
+    for (const l of [...documentOpeners]) l(file);
+  },
+  onOpenDocument: (listener) => {
+    documentOpeners.add(listener);
+    return () => void documentOpeners.delete(listener);
+  },
   scopes: {
     list: () => ipcRenderer.invoke("hh:scopes"),
     create: (title) => ipcRenderer.invoke("hh:scopeCreate", title),

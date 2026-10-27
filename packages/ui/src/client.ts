@@ -5,6 +5,7 @@ import type {
   ChoiceOption,
   DataKey,
   DataRecord,
+  DocumentKind,
   InputField,
   InputIssue,
   InputSpec,
@@ -15,7 +16,7 @@ import type {
   SettingsView,
   Tier,
 } from "@humanharness/harness-sdk";
-import type { ActivityKind, EngineError, Event, LimitWindow } from "@humanharness/runtime";
+import type { ActivityKind, DocumentCard, EngineError, Event, LimitWindow } from "@humanharness/runtime";
 import type {
   CollectionDiff,
   DataChange,
@@ -219,6 +220,8 @@ export interface AppState {
   profiles?: ProfilesInfo;
   /** The harness takes the person's material (manifest `material`). Absent: none (D0). */
   material?: MaterialInfo;
+  /** The harness's document kinds (manifest `documents`): the reader's template check. Absent: none (D0). */
+  documents?: { kinds: Record<string, DocumentKind> };
   /** Folders the agent can read but never change. */
   references?: ReferenceView[];
   /** Settings › Modelos. */
@@ -282,6 +285,8 @@ export interface ChatEntry {
   timeUp?: true;
   /** Assistant entries: text runs and blocks in the order they arrived. Older entries lack it: text, then blocks. */
   parts?: AnswerPart[];
+  /** The `.md` files this turn added or changed (document-reader spec §5.1). Absent: none. */
+  documents?: DocumentCard[];
 }
 
 /** A piece of an answer: a run of text, or one of the entry's `blocks` (by index). */
@@ -856,6 +861,18 @@ export interface HarnessClient {
   openPath(path: string): Promise<boolean>;
   /** Shows a file inside the reference folders or the user's folder in Finder (any kind of file). False when refused or missing. */
   revealPath(path: string): Promise<boolean>;
+  /** A Markdown document inside the folder or a reference folder (document-reader spec §5.3). Never writes. */
+  readDocument(path: string): Promise<DocumentRead>;
+  /** A local image (png, jpeg, gif, webp) inside the folder or a reference folder, as a data: URL; null when refused. */
+  readImage(path: string): Promise<string | null>;
+  /** Whether each path is still there (a card of a moved or deleted file is struck through). */
+  documentsExist(paths: string[]): Promise<boolean[]>;
+  /** Calls `listener` after each change to the document; returns the unsubscribe. */
+  watchDocument(path: string, listener: () => void): () => void;
+  /** Opens a document in the reader panel (the harness's own UI may call it). */
+  openDocument(path: string): void;
+  /** Every `openDocument`, whoever called it: the chat opens the panel. */
+  onOpenDocument(listener: (path: string) => void): () => void;
   /** Harnesses with scopes (spec §3.4). There is no delete: archive instead. */
   scopes: {
     list(): Promise<ScopeView[]>;
@@ -938,4 +955,5 @@ export function isConfigured(config: AppConfig): config is ConfiguredApp {
   return Boolean(config.language && config.folder && config.engineId);
 }
 
-export type { BlockAnswer, ChoiceOption, Event, EngineError, InputField, InputIssue, InputSpec, LimitWindow, RespondResult, SettingFieldView, SettingsView };
+export type { DocumentCard } from "@humanharness/runtime";
+export type { BlockAnswer, ChoiceOption, Event,EngineError, InputField, InputIssue, InputSpec, LimitWindow, RespondResult, SettingFieldView, SettingsView };

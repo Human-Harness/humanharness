@@ -168,3 +168,26 @@ describe("client.profiles (profiles spec §5)", () => {
     expect(await client.profiles.archive("sofi")).toEqual({ ok: false, reason: "active" });
   });
 });
+
+describe("FakeClient documents (document-reader spec §5)", () => {
+  it("reads, refuses, watches and opens like main and the preload", async () => {
+    const c = new FakeClient();
+    c.documents["docs/a.md"] = "# A";
+    expect(await c.readDocument("docs/a.md")).toEqual({ ok: true, text: "# A", mtime: c.documentMtime, size: 3 });
+    expect(await c.readDocument("docs/b.md")).toEqual({ ok: false, reason: "missing" });
+    expect(await c.readDocument("../x.md")).toEqual({ ok: false, reason: "outside" });
+    expect(await c.documentsExist(["docs/a.md", "docs/b.md"])).toEqual([true, false]);
+    let heard = 0;
+    const off = c.watchDocument("docs/a.md", () => heard++);
+    c.changeDocument("docs/a.md", "# A2");
+    off();
+    c.changeDocument("docs/a.md", "# A3");
+    expect(heard).toBe(1);
+    const opened: string[] = [];
+    const offOpen = c.onOpenDocument((p) => opened.push(p));
+    c.openDocument("docs/a.md");
+    offOpen();
+    c.openDocument("docs/b.md");
+    expect(opened).toEqual(["docs/a.md"]);
+  });
+});

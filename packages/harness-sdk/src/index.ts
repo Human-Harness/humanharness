@@ -148,7 +148,6 @@ const blockSchema = z.custom<Block>(
 /** The core's MCP servers (packages/blocks): a harness's own servers can't take these names. */
 const RESERVED_MCP_NAMES = ["ui", "data"];
 
-/** One kind of document the harness's agent writes (document-reader spec §4.2). */
 /** One line of kind text: a line break would turn the rest into live Markdown in `AGENTS.md`. */
 const oneLine = (max: number) =>
   z
@@ -157,6 +156,7 @@ const oneLine = (max: number) =>
     .min(1)
     .max(max)
     .regex(/^[^\r\n]*$/, "Use one line, without line breaks");
+/** One kind of document the harness's agent writes (document-reader spec §4.2). */
 const documentKindSchema = z.object({
   when: oneLine(300),
   sections: z.array(oneLine(120)).min(1).max(20),

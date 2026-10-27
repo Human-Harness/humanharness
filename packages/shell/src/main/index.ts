@@ -19,6 +19,7 @@ import {
   hasPhases,
   inputBlocks,
   inputSpecs,
+  interviewCollections,
   loadHarness,
   resolveInHarness,
   settingsView,
@@ -677,6 +678,11 @@ const tasks = new TaskManager({
   // Before the turn's events: the window draws the change's separator or the wrap-up line (task-phases spec §4.4, §5).
   taskTurn: (notice) => sendToWindow("hh:taskTurn", notice),
   ...(hooks.minuteMs ? { minuteMs: hooks.minuteMs } : {}),
+  // A getter, because the harness is loaded after this object is built. Undefined without interview steps (setup-steps D0).
+  get interviews() {
+    const map = interviewCollections(harness);
+    return Object.keys(map).length > 0 ? map : undefined;
+  },
   // Mode settings live in the settings controller (harness-settings spec §6); without settings there are none.
   modeSettings: async (mode) => (settingsCtl ? settingsCtl.modeSentences(mode) : []),
   // Fast on purpose (it runs in the task queue): the saved model table only, never the engine's offer.

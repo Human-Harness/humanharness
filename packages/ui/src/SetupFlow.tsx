@@ -1,10 +1,12 @@
 import { type ComponentType, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { CheckIcon, TopBar } from "./chrome";
-import { type AppState, type HarnessClient, type SetupStepProps, type SetupStepResult, type SetupStepView, isConfigured } from "./client";
+import { type AppState, type HarnessClient, type SetupStepProps, type SetupStepResult, type SetupStepView, type TaskView, isConfigured } from "./client";
 import { EngineTab } from "./EngineTab";
 import { FolderStep } from "./FolderStep";
 import { systemLanguage } from "./language";
+import type { BlockProps } from "./Message";
+import { SetupInterviewStep } from "./SetupInterviewStep";
 import { SetupStepForm } from "./SetupStepForm";
 
 /** A core step, or a harness step by id (setup-steps spec §4). */
@@ -25,13 +27,16 @@ export interface SetupFlowProps {
   only?: boolean;
   /** The harness's own step components (`component` steps), by the name the manifest gives. */
   components?: Record<string, ComponentType<SetupStepProps>>;
+  /** The harness's block components and state-only blocks, for an interview's chat. */
+  blocks?: Record<string, ComponentType<BlockProps>>;
+  stateBlocks?: string[];
 }
 
 /**
  * First-time setup, a screen of its own (spec 2026-10-14 §2): the folder, the engine, the harness's own steps
  * (setup-steps spec §4), then "All set".
  */
-export function SetupFlow({ client, state, onChange, onCancel, onStart, startAt, only = false, components = {} }: SetupFlowProps) {
+export function SetupFlow({ client, state, onChange, onCancel, onStart, startAt, only = false, components = {}, blocks = {}, stateBlocks = [] }: SetupFlowProps) {
   const { t } = useTranslation();
   const name = state.harness.name;
   const harnessSteps = state.setup ?? [];
@@ -50,6 +55,28 @@ export function SetupFlow({ client, state, onChange, onCancel, onStart, startAt,
   /** A harness step's skip or completion is on its way. */
   const [busy, setBusy] = useState(false);
   const [stepError, setStepError] = useState<"failed" | "incomplete" | null>(null);
+  const hasInterview = harnessSteps.some((s) => s.kind === "interview");
+  /** The open task, for an interview's Next (it closes the interview's task first). */
+  const [tasks, setTasks] = useState<TaskView | null>(null);
+  useEffect(() => {
+    if (!hasInterview) return;
+    let live = true;
+    let seen = false;
+    const off = client.onTasks((v) => {
+      seen = true;
+      if (live) setTasks(v);
+    });
+    client.getTasks().then(
+      (v) => {
+        if (live && !seen) setTasks(v);
+      },
+      () => {},
+    );
+    return () => {
+      live = false;
+      off();
+    };
+  }, [client, hasInterview]);
   const headingId = useId();
   const folderFormId = useId();
   const stepFormId = useId();
@@ -121,6 +148,13 @@ export function SetupFlow({ client, state, onChange, onCancel, onStart, startAt,
   };
   const skip = (id: string) => void settle(id, () => client.setupSteps.skip(id));
   const complete = (id: string) => void settle(id, () => client.setupSteps.complete(id));
+  /** An interview's Next (spec §3): its open task closes with the core closing turn, then the step completes. */
+  const finishInterview = (s: SetupStepView) =>
+    void settle(s.id, async () => {
+      // A stopped closing turn leaves the task open: "didn't go through", and Next can be pressed again.
+      if (tasks?.current?.action === s.action && !(await client.finishTask())) return { ok: false, reason: "open" };
+      return client.setupSteps.complete(s.id);
+    });
 
   const next = async () => {
     if (!selection?.ready) return;
@@ -211,6 +245,7 @@ export function SetupFlow({ client, state, onChange, onCancel, onStart, startAt,
             {current.kind === "component" && (
               <ComponentStep client={client} step={current} components={components} done={() => complete(current.id)} skip={() => skip(current.id)} />
             )}
+            {current.kind === "interview" && <SetupInterviewStep client={client} state={state} step={current} blocks={blocks} stateBlocks={stateBlocks} />}
             {stepError && (
               <p className="hh-save-error" role="alert">
                 {t(stepError === "incomplete" ? "setupSteps.incomplete" : "setupSteps.failed")}
@@ -270,6 +305,16 @@ export function SetupFlow({ client, state, onChange, onCancel, onStart, startAt,
             {/* A form's Next submits it from here, like the folder step's; a component step ends itself (done()). */}
             {current.kind === "form" && (
               <button type="submit" form={stepFormId} className="hh-primary" disabled={waiting}>
+                {t("setupFlow.next")}
+              </button>
+            )}
+            {/* An interview's Next waits while its task is busy (a turn, the closing turn). */}
+            {current.kind === "interview" && (
+              <button
+                className="hh-primary"
+                disabled={waiting || (tasks?.current?.action === current.action && tasks?.current?.status !== "waiting")}
+                onClick={() => finishInterview(current)}
+              >
                 {t("setupFlow.next")}
               </button>
             )}

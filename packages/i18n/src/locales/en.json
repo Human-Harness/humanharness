@@ -482,7 +482,11 @@
     "skip": "Skip",
     "failed": "That didn't go through. Try again.",
     "incomplete": "The app doesn't have what it needs yet. Continue the interview to finish it.",
-    "missingComponent": "This step can't be shown. Skip it, or update the app."
+    "missingComponent": "This step can't be shown. Skip it, or update the app.",
+    "startInterview": "Start",
+    "continueInterview": "Continue the interview",
+    "costMedium": "This conversation uses some of your AI plan.",
+    "costHeavy": "This conversation uses a good part of your AI plan."
   },
   "mock": {
     "model": "Model",

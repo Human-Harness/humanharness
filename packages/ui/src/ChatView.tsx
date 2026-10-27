@@ -77,6 +77,7 @@ export function ChatView({
   onSettings,
   onFixEngine,
   onTurnOk,
+  slim,
 }: {
   client: HarnessClient;
   state: AppState;
@@ -96,6 +97,11 @@ export function ChatView({
   onFixEngine?: () => void;
   /** A turn has just ended without an error (the engine works: its background check can be redone). */
   onTurnOk?: () => void;
+  /**
+   * An interview on the setup screen (setup-steps spec §3): only this action's task, with no top bar, side panel,
+   * history or topics. A button starts it (or continues it) when it isn't on screen.
+   */
+  slim?: { action: string };
 }) {
   const { t, i18n } = useTranslation();
   // save_note never shows: a note reaches the side panel as a file, through the tasks. Nor set_phase: the stepper
@@ -252,7 +258,8 @@ export function ChatView({
     if (!flow || placed.current || !loaded || !tasksLoaded) return;
     placed.current = true;
     const id = tasks.current?.id;
-    if (!id) return;
+    // Slim: only the interview's own task is shown.
+    if (!id || (slim && tasks.current?.action !== slim.action)) return;
     const first = chat.entries.findIndex((e) => e.task === id);
     setSince(first >= 0 ? first : chat.entries.length);
   }, [flow, loaded, tasksLoaded, tasks, chat.entries]);
@@ -768,29 +775,36 @@ export function ChatView({
         : t("preflight.hint", { action: label, left });
   }
 
+  // One `main` per page: the setup screen has its own.
+  const Main = slim ? "div" : "main";
+  /** Slim: the interview's task isn't the open one (not started, closed, or another task is open). */
+  const slimStart = slim !== undefined && loaded && tasksLoaded && !chat.live && tasks.current?.action !== slim.action;
+
   return (
-    <div className="hh-app">
-      <TopBar title={state.harness.name} mock={state.mock}>
-        {scopeBar?.(blocked())}
-        <UsageMeter engine={engineOption} limits={chat.limits} lastTokens={lastTurnTokens(chat.entries)} />
-        {onHome && <button onClick={onHome}>{t("chat.home")}</button>}
-        <button
-          onClick={() => {
-            // One panel at a time: Escape closes the one on screen.
-            setNotesPanel(null);
-            setShowHistory(true);
-          }}
-        >
-          {t("history.title")}
-        </button>
-        {onSettings && (
-          <button className="hh-icon-button" aria-label={t("home.settings")} onClick={onSettings}>
-            <GearIcon />
+    <div className={slim ? "hh-app hh-app-slim" : "hh-app"}>
+      {!slim && (
+        <TopBar title={state.harness.name} mock={state.mock}>
+          {scopeBar?.(blocked())}
+          <UsageMeter engine={engineOption} limits={chat.limits} lastTokens={lastTurnTokens(chat.entries)} />
+          {onHome && <button onClick={onHome}>{t("chat.home")}</button>}
+          <button
+            onClick={() => {
+              // One panel at a time: Escape closes the one on screen.
+              setNotesPanel(null);
+              setShowHistory(true);
+            }}
+          >
+            {t("history.title")}
           </button>
-        )}
-      </TopBar>
+          {onSettings && (
+            <button className="hh-icon-button" aria-label={t("home.settings")} onClick={onSettings}>
+              <GearIcon />
+            </button>
+          )}
+        </TopBar>
+      )}
       <div className="hh-body">
-        {flow && (
+        {flow && !slim && (
           <FlowSide
             state={state}
             tasks={tasks}
@@ -802,7 +816,7 @@ export function ChatView({
             }}
           />
         )}
-        <main className="hh-main">
+        <Main className="hh-main">
           {/* A time box without phases (spec §5) still shows its time, its controls and, once time is up, Finish. */}
           {flow && since !== null && tasks.current && (taskPhases.length > 0 || tasks.current.timeBox) && (
             <PhaseStepper
@@ -840,7 +854,7 @@ export function ChatView({
             {backgroundError && !(isFixable(last?.error) && last?.error?.code === backgroundError.code) && (
               <ErrorCard error={backgroundError} engine={engine} onFix={onFixEngine} />
             )}
-            {showStart && (
+            {showStart && !slim && (
               <StartView
                 state={state}
                 tasks={tasks}
@@ -851,7 +865,14 @@ export function ChatView({
                 onAsk={(q) => void send(q)}
               />
             )}
-            {flow && since !== null && !tasks.current && !chat.live && (
+            {slim && slimStart && (
+              <div className="hh-slim-start">
+                <button type="button" className="hh-primary" disabled={blocked()} onClick={() => startTopic(slim.action)}>
+                  {t(Object.hasOwn(tasks.actions, slim.action) ? "setupSteps.continueInterview" : "setupSteps.startInterview")}
+                </button>
+              </div>
+            )}
+            {flow && !slim && since !== null && !tasks.current && !chat.live && (
               <button type="button" className="hh-back-topics" onClick={() => setSince(null)}>
                 {t("flow.backToTopics")}
               </button>
@@ -1060,8 +1081,8 @@ export function ChatView({
             )}
           </form>
           {startView?.hint && <p className="hh-composer-hint">{t(startView.hint, { ns: "harness" })}</p>}
-        </main>
-        {renderSide && <aside className="hh-side">{renderSide(chat.blockState, sendFromHarness)}</aside>}
+        </Main>
+        {renderSide && !slim && <aside className="hh-side">{renderSide(chat.blockState, sendFromHarness)}</aside>}
       </div>
       <div className="hh-sr-only" aria-live="polite">
         {announcement}

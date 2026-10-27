@@ -242,6 +242,8 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
             {...(setupAt.step ? { startAt: setupAt.step } : {})}
             only={setupAt.only === true}
             components={setupSteps}
+            blocks={blocks}
+            stateBlocks={stateBlocks}
           />
         ) : (
           <Home

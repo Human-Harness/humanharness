@@ -24,10 +24,15 @@ const Note = ({ data, respond }: BlockProps) => (
 /** Renders the app and goes from Home to the work screen, as a returning user does (Start waits for the engine check). */
 async function startWork(ui: ReactElement) {
   const result = render(ui);
+  await clickStart();
+  return result;
+}
+
+/** Home's Start, once the engine check has passed: a click before that does nothing. */
+async function clickStart() {
   const start = (await screen.findByRole("button", { name: "Start Demo" })) as HTMLButtonElement;
   await waitFor(() => expect(start.disabled).toBe(false));
   fireEvent.click(start);
-  return result;
 }
 
 /** On the work screen, the engine develops a problem that the next background check (Settings closing) finds. */
@@ -420,7 +425,7 @@ describe("HarnessApp", () => {
     const next = screen.getByRole("button", { name: "Next" }) as HTMLButtonElement;
     await waitFor(() => expect(next.disabled).toBe(false));
     fireEvent.click(next);
-    fireEvent.click(await screen.findByRole("button", { name: "Start Demo" }));
+    await clickStart();
     await screen.findByPlaceholderText("Write a message…");
     expect(client.state.config).toEqual({ language: "en", folder: "/Users/me/Documents/Demo", engineId: "claude" });
   });
@@ -541,7 +546,7 @@ describe("HarnessApp", () => {
     // The sheet hangs under Home's top bar, which stays in place.
     expect(dragStrip(container)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Done" }));
-    fireEvent.click(screen.getByRole("button", { name: "Start Demo" }));
+    await clickStart();
     await screen.findByPlaceholderText("Write a message…");
     expect(dragStrip(container)?.textContent).toContain("Demo");
   });

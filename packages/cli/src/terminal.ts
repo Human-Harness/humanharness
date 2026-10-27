@@ -45,7 +45,11 @@ export class TerminalView {
     else if (e.type === "activity" && e.state === "start") this.line(this.dim(`  · ${e.kind}: ${e.detail}`));
     else if (e.type === "block") this.block(e.name, e.data, e.id);
     // A path is the agent's text: drawn without terminal control characters.
-    else if (e.type === "documents") for (const d of e.documents) this.line(`Documents: ${plain(d.path)} (${d.change})`);
+    else if (e.type === "documents")
+      for (const d of e.documents) {
+        const path = plain(d.path);
+        if (path) this.line(`Documents: ${path} (${d.change})`);
+      }
     else if (e.type === "done") {
       if (e.ok) this.newline();
       else this.line(`✗ ${errorMessage(e.error.code, this.engineName)}${e.error.detail ? ` (${e.error.detail})` : ""}`);

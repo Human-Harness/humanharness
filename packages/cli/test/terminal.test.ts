@@ -39,6 +39,19 @@ describe("TerminalView", () => {
     expect(out.text()).toBe(["Wrote it.", "Documents: tickets/MUS-412/analysis.md (new)", "Documents: README.md (updated)", ""].join("\n"));
   });
 
+  it("skips a card whose path is nothing once control characters are removed", () => {
+    const out = memoryStream();
+    const view = new TerminalView(out.stream, "Claude");
+    view.event({
+      type: "documents",
+      documents: [
+        { path: "\x1b\x07", title: "Bad", change: "new", words: 1 },
+        { path: "a.md", title: "A", change: "new", words: 1 },
+      ],
+    });
+    expect(out.text()).toBe("Documents: a.md (new)\n");
+  });
+
   it("dims activities on a terminal", () => {
     const out = memoryStream();
     new TerminalView(out.stream, "Codex", true).event({ type: "activity", id: "a", kind: "web", detail: "search", state: "start" });

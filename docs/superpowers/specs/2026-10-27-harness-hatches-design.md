@@ -1,6 +1,6 @@
 # Harness hatches: linked folders, harness backend, engine config per scope — design
 
-Status: draft, 2026-10-27, written after a brainstorming session with Marco, who approved every decision below that day. Waiting for his review of this file. Not in the roadmap yet.
+Status: approved by Marco on 2026-10-27, with five fixes from his review (§3.2 nested linked folders and unlinked history, §3.3 deny rules in linked folders, §4.3 harness update, §5.3 referenced scripts in the hash). Not in the roadmap yet.
 
 This is spec F from the dev-vs-core gap analysis (`docs/discovery/2026-10-26-dev-vs-core.md`, hatches H1–H3). A hatch is a small, generic extension point: the core adds an option any harness may declare, and does nothing harness-specific with it. The dev harness builds its git, terminal and preset features on top. It builds on scopes (`docs/architecture/data.md`), the history (`docs/architecture/history.md`) and the engines (`docs/architecture/engines.md`). It refers to parallel tasks (`2026-10-27-parallel-tasks-and-jobs-design.md`) for attribution.
 
@@ -62,14 +62,15 @@ linkedFolders: {
   - the home folder itself;
   - the main folder, a folder inside it, or a folder that contains it;
   - another scope's linked folder in `write` mode;
+  - a folder inside, or containing, another linked folder of the same scope, since their histories would overlap;
   - system folders (`/`, `/System`, `/usr`, `/Applications`, `C:\Windows`…).
   - With `history: "own"`, a folder that is not a git repository.
-- **Stored** in `.harness/scopes.json`, on the scope: `linked: [{ key, path, mode, tracked: boolean }]`. Unlinking removes the entry and never touches the folder.
+- **Stored** in `.harness/scopes.json`, on the scope: `linked: [{ key, path, mode, tracked: boolean }]`. Unlinking removes the entry and never touches the folder. A tracked folder's core history (§3.4) is kept for 30 days in the app's data folder, so linking the same path again picks it up; after that it is deleted.
 - **Moving the main folder** keeps linked paths as they are, since they are absolute and outside it.
 
 ### 3.3 To the agent
 
-- **Claude.** `--add-dir <path>` for each linked folder of the task's scope. In `read` mode it also gets the same deny rules for edits as reference folders get today.
+- **Claude.** `--add-dir <path>` for each linked folder of the task's scope. In `read` mode it also gets the same deny rules for edits as reference folders get today. In `write` mode, edits to `<path>/.claude/**` and `<path>/.git/**` are denied, as `.claude/**` is in the main folder: a repo's settings and git hooks would otherwise run unapproved commands. `git` commands still work.
 - **Codex.** The session's permission answers allow writes under `write` folders, and `additionalDirectories` at `session/new` when the adapter supports it. Spike S1 (§6) confirms what `codex-acp` offers. Until then, the plan does not ship H1 on Codex: a scope with linked folders on Codex shows "Las carpetas vinculadas todavía no funcionan con Codex".
 - **The managed section** of `AGENTS.md` lists the linked folders of the open scope by key and path, under "Folders of this scope". It is written between tasks, as today.
 
@@ -119,6 +120,7 @@ backend: "backend/index.ts",     // resolved in the harness folder (resolveInHar
 - **Quit.** SIGTERM, then SIGKILL after 3 s.
 - **Moving the folder.** The backend is stopped with the runtime (history.md, moving the folder, step 2) and launched again with the new path once the move ends.
 - **Engine switch.** It keeps running.
+- **Harness update.** It is stopped before the update is applied and launched again after it.
 - **Logs.** `backend.log` in the app's data folder, rotated at 5 MB.
 - **Mock mode.** The backend runs as usual. A harness that wants to fake it checks `init.mock`.
 
@@ -171,6 +173,7 @@ If the backend runs `claude` or `codex` interactively in a terminal, that is the
   - the skills and agents by name;
   - and the same for each action layer.
 - **Approving** stores `{ hash, at }` in `.harness/scopes.json`. The hash is over every file of the scope's engine folder, action layers included.
+- **Referenced scripts.** When a hook command, or an MCP server's command or argument, names a file inside the person's folder or a linked folder (`node ./tools/x.js`), that file joins the hash and the screen lists it. Otherwise an agent could change the script after approval and run code nobody approved.
 - **When the content changes:**
   - new sessions of the scope start **without** the scope's engine config, with only the core's and the harness's;
   - the task shows "Config del motor sin aprobar · Revisar";
@@ -200,7 +203,8 @@ Each spike writes its findings into this spec before its slice is planned.
 - **H1:**
   - every picker refusal, through links too;
   - `auto` with and without git; `own` without git;
-  - `--add-dir` and the deny rules in `read`;
+  - `--add-dir` and the deny rules in `read`; `.claude/**` and `.git/**` denied in `write`;
+  - nested linked folders refused;
   - two histories committed together; undo over both;
   - the "no cubre" line; a folder that gains git.
 - **H2:**
@@ -210,7 +214,7 @@ Each spike writes its findings into this spec before its slice is planned.
 - **H3:**
   - instructions in the first message;
   - servers merged without name clashes;
-  - a changed hash drops the config from new sessions;
+  - a changed hash drops the config from new sessions, including a change to a referenced script;
   - `global` flags;
   - manifest denies over a preset allow; refused keys;
   - action layers.

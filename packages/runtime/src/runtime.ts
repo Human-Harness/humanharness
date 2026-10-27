@@ -20,6 +20,7 @@ import {
 } from "@humanharness/workspace";
 import { AcpTransport } from "./acp";
 import { ClaudeCliTransport } from "./claude-cli";
+import { turnDocuments } from "./documents";
 import type { Event } from "./events";
 import { type Session, type Transport, type TransportOptions, acpFields } from "./transport";
 
@@ -200,8 +201,17 @@ export async function createRuntime(opts: RuntimeOptions): Promise<HarnessRuntim
             );
             emitCurrent = null;
             const f: Event = final ?? { type: "done", ok: false, error: { code: "agent-crashed" } };
-            if (f.type === "done" && f.ok) await history.save(`${TURN_PREFIX}${message.slice(0, 60)}`, options.trailer);
-            else if (f.type === "done" && f.error.code === "agent-crashed") await history.restore(before, `${UNDO_PREFIX}the turn did not finish`, options.trailer);
+            if (f.type === "done" && f.ok) {
+              const after = await history.save(`${TURN_PREFIX}${message.slice(0, 60)}`, options.trailer);
+              // A card for each .md the turn added or changed (document-reader spec §5.1); none: no event at all.
+              if (after) {
+                const documents = await turnDocuments(history, before, after).catch((err: unknown) => {
+                  console.error("Could not list the turn's documents", err);
+                  return [];
+                });
+                if (documents.length > 0) emitOnce({ type: "documents", documents });
+              }
+            } else if (f.type === "done" && f.error.code === "agent-crashed") await history.restore(before, `${UNDO_PREFIX}the turn did not finish`, options.trailer);
             else await history.save(`${STOPPED_PREFIX}${message.slice(0, 60)}`, options.trailer);
             emitOnce(f);
           } catch (err) {

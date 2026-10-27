@@ -114,6 +114,19 @@ describe("task phases in the chat", () => {
     await waitFor(() => expect(client.sentOptions.at(-1)).toMatchObject({ action: "session", timeBox: 30 }));
   });
 
+  it("Try again on a failed start keeps the length picked: no second How long?", async () => {
+    const client = tutorClient({ current: null, timeBox: true });
+    client.sendError = new Error("boom");
+    await open(client, null);
+    fireEvent.click((await screen.findAllByRole("button", { name: /Session/ }))[0]);
+    fireEvent.click(within(await screen.findByRole("dialog", { name: "How long?" })).getByRole("button", { name: "30 min" }));
+    client.sendError = null;
+    fireEvent.click(await screen.findByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(client.sentOptions).toHaveLength(2));
+    expect(client.sentOptions[1]).toMatchObject({ action: "session", timeBox: 30 });
+    expect(screen.queryByRole("dialog", { name: "How long?" })).toBeNull();
+  });
+
   it("a failed change turn or wrap-up turn offers no Try again on its line", async () => {
     for (const notice of [{ task: "t1", kind: "phase" as const, phase: "main", by: "agent" as const }, { task: "t1", kind: "wrap-up" as const }]) {
       const client = tutorClient();

@@ -137,6 +137,8 @@ export function ChatView({
   const tookSwitch = useRef<(s: ModeSwitch) => void>(() => {});
   /** The last message sent came from a pick (Try again picks it again). */
   const lastPick = useRef<Pick | null>(null);
+  /** The last message sent and its options: Try again sends it with the answers already given (the time box, a mode). */
+  const lastSend = useRef<{ text: string; options: SendOptions } | null>(null);
   /** The last message sent was an answer to an input block: its failed turn reopens the form, never a plain resend. */
   const lastAnswer = useRef(false);
   /** The task open now, read when a turn ends to tag its entry. */
@@ -412,6 +414,7 @@ export function ChatView({
     setPhaseFailed(false);
     if (flow && (options.action || !tasks.current)) showNewTask();
     dispatch({ type: "user", text: message, at: new Date().toISOString(), ...(options.action ? { action: options.action } : {}) });
+    lastSend.current = { text: message, options };
     client.send(message, options).catch(failTurn);
     inputRef.current?.focus();
     return true;
@@ -729,7 +732,12 @@ export function ChatView({
     }
     const pick = lastPick.current;
     if (pick && pick.task === tasks.current?.id) return () => void choose(pick.option, pick.task);
-    if (lastUser) return () => void send(lastUser.text, lastUser.action ? { action: lastUser.action } : {});
+    if (lastUser) {
+      // The same message keeps what was answered before it went (a time box picked in "How long?", a mode): never asked twice.
+      const sent = lastSend.current;
+      const options = sent && sent.text === lastUser.text && sent.options.action === lastUser.action ? sent.options : lastUser.action ? { action: lastUser.action } : {};
+      return () => void send(lastUser.text, options);
+    }
     return undefined;
   };
   const onSubmit = (e: FormEvent) => {

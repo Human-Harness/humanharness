@@ -505,14 +505,17 @@ export class TaskManager {
     return changed;
   }
 
-  /** For quitting: every later operation is refused, the running one starts no further turn, and the time box pauses. */
-  close(): void {
+  /**
+   * For quitting: every later operation is refused, the running one starts no further turn, and the time box pauses
+   * (no timer is left behind). Resolves once the pause is written; it never rejects.
+   */
+  close(): Promise<void> {
     this.closed = true;
     this.cancelRequested = true;
     if (this.timer !== null) this.timers.clear(this.timer);
     this.timer = null;
     const at = this.now();
-    void this.update((s) => (s.current?.timeBox?.runningSince ? { ...s, current: { ...s.current, timeBox: paused(s.current.timeBox, at) } } : s)).catch(
+    return this.update((s) => (s.current?.timeBox?.runningSince ? { ...s, current: { ...s.current, timeBox: paused(s.current.timeBox, at) } } : s)).catch(
       (err: unknown) => console.error("Could not pause the time box", err),
     );
   }
@@ -588,6 +591,24 @@ export class TaskManager {
       await this.idle();
       // A turn the window started outside an operation: look again shortly.
       if (this.isBusy()) await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+  }
+
+  /**
+   * `read()`'s result once no operation, turn or time-box step runs, read again when one started meanwhile. A caller
+   * that acts on the person's typed line (`humanharness run`) waits here first: the time box may have started a turn on
+   * its own (the wrap-up, the move to the close part), and that turn may even have closed the task. Quitting: at once.
+   */
+  async whenSettled<T>(read: () => Promise<T>): Promise<T> {
+    const unsettled = () => (this.isBusy() || this.stepPending) && !this.closed;
+    for (;;) {
+      while (unsettled()) {
+        await this.idle();
+        // A turn outside an operation, or a step about to start its operation: look again shortly.
+        if (unsettled()) await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      const value = await read();
+      if (!unsettled()) return value;
     }
   }
 
@@ -697,8 +718,9 @@ export class TaskManager {
   }
 
   /**
-   * `opts.timeBox`: the minutes picked (or `null`, no limit); absent, the action's default. `opts.kept`: those minutes
-   * come from the task this one replaces (a mode's tier floor), so they may differ from the options (a "+5 min").
+   * `opts.timeBox`: the minutes picked (or `null`, no limit); absent, the action's default. `opts.kept`: the box of the
+   * task this one replaces (a mode's tier floor), paused: its minutes may differ from the options (a "+5 min"), and its
+   * time used and wrap-up go on.
    */
   private async startNow(
     action: string,
@@ -706,7 +728,7 @@ export class TaskManager {
     scope?: string,
     mode?: string,
     floor?: Tier,
-    opts: { timeBox?: number | null; kept?: true } = {},
+    opts: { timeBox?: number | null; kept?: TimeBoxState } = {},
   ): Promise<void> {
     if (!this.known(action)) throw new Error("Unknown action");
     const modes = this.modesOf(action);
@@ -743,9 +765,9 @@ export class TaskManager {
     const inMode = start !== null && start !== "recommend" ? { mode: start, modes: [start] } : {};
     const at = this.now().toISOString();
     const inPhase = first ? { phase: { id: first.id, startedAt: at }, phases: [{ id: first.id, at, by: "app" as const }] } : {};
-    const inTimeBox = minutes !== null ? { timeBox: { minutes, usedMs: 0, runningSince: at } } : {};
+    const inTimeBox = minutes !== null ? { timeBox: { minutes, usedMs: opts.kept?.usedMs ?? 0, runningSince: at, ...(opts.kept?.wrappedUp ? { wrappedUp: true as const } : {}), ...(opts.kept?.ended ? { ended: true as const } : {}) } } : {};
     // A time box is told to the agent, with or without phases (none: D0).
-    const timeLeft = minutes !== null ? formatTimeLeft(minutes * this.minute, this.minute) : "";
+    const timeLeft = minutes !== null ? formatTimeLeft(minutes * this.minute - (opts.kept?.usedMs ?? 0), this.minute) : "";
     await this.begin(
       { action, ...inMode, ...inPhase, ...(suspended ? { suspendedMode: suspended } : {}), ...inTimeBox },
       where,
@@ -915,8 +937,10 @@ export class TaskManager {
       return this.endsInWindow(async () => {
         // The closing turn saves the note the new task starts from: one turn, where the spec has a checkpoint and a close.
         if (!(await this.closeCurrent())) return this.stopped();
-        // The person's time box goes with the task (not the action's default); none stays none.
-        return this.startNow(c.action!, undefined, undefined, mode, required, { timeBox: c.timeBox?.minutes ?? null, kept: true });
+        // The person's time box goes with the task (not the action's default), with the time used and the wrap-up
+        // done: no fresh clock. Measured now, after the closing turn; none stays none.
+        const box = c.timeBox ? paused((await this.d.store.load()).current?.timeBox ?? c.timeBox, this.now()) : undefined;
+        return this.startNow(c.action!, undefined, undefined, mode, required, box ? { timeBox: box.minutes, kept: box } : { timeBox: null });
       });
     }
     if (c.resume) {
@@ -1226,7 +1250,7 @@ export class TaskManager {
       suspendedMode?: string;
       phase?: { id: string; startedAt: string };
       phases?: { id: string; at: string; by: PhaseBy }[];
-      timeBox?: { minutes: number; usedMs: number; runningSince?: string };
+      timeBox?: TimeBoxState;
     },
     scope: string,
     message: (notesIndex: string) => string,

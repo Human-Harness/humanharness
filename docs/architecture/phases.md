@@ -75,7 +75,7 @@ Modes spec §7, as built (see also `modes.md`):
 
 ## The window
 
-`PhaseStepper` (`packages/ui/src/PhaseStepper.tsx`) sits under the mode bar for a task with phases or a time box: one pill per part (done ones styled, the current one marked and inert), Finish in the close part, the agent's proposal, and the time left with Pause/Resume and "+5 min". A time box without phases shows only its time and controls. Its calls disable the stepper and the mode bar until they answer; a refusal or failure shows "That didn't go through. Try again." The History panel shows the part next to each commit.
+`PhaseStepper` (`packages/ui/src/PhaseStepper.tsx`) sits above the mode bar, at the top of the chat, for a task with phases or a time box: one pill per part (done ones styled, the current one marked and inert), Finish in the close part, the agent's proposal, and the time left with Pause/Resume and "+5 min". A time box without phases shows only its time and controls. Its calls disable the stepper and the mode bar until they answer; a refusal or failure shows "That didn't go through. Try again." The History panel shows the part next to each commit.
 
 ## State and records
 

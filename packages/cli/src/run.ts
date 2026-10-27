@@ -90,6 +90,8 @@ export interface RunOptions {
   force?: boolean;
   /** Tests: run this command instead of the engine's CLI, with no readiness check. Never credentials. */
   engineCommand?: { command: string[]; env: Record<string, string> };
+  /** Tests: how long a time-box minute lasts, in ms (default: a real minute). */
+  minuteMs?: number;
   /** Tests: where the readiness check looks (default: the official CLIs and `~/.humanharness/engines.json`). */
   readiness?: { deps: CommandDeps; shared: SharedConfigStore };
 }
@@ -403,6 +405,7 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
       return p?.brief ? fs.readFile(resolveInHarness(harness, p.brief), "utf8") : Promise.reject(new Error("Unknown phase"));
     },
     taskTurn: (n) => view.taskTurn(n, phasesOf(taskAction).find((p) => p.id === n.phase)?.label),
+    ...(o.minuteMs ? { minuteMs: o.minuteMs } : {}),
   });
 
   // Ctrl-C during an operation cancels its turn; at the prompt it closes the task like q, and once a close was
@@ -452,13 +455,12 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
           proposalKey = `${proposal.to}\n${proposal.reason}`;
           view.proposal(proposal, phasesOf(current.action).find((p) => p.id === proposal.to)?.label ?? proposal.to, proposal.to === current.phase?.id);
         }
-        const options = view.choices;
         const modeIds = modesOf(current.action);
         const phaseIds = phasesOf(current.action).map((p) => p.id);
         const interrupted = new Promise<"interrupt">((resolve) => {
           promptInterrupted = () => resolve("interrupt");
         });
-        out.write(promptFor(options.length, current.pendingInput !== undefined, modeIds.length > 0, phaseIds.length > 0));
+        out.write(promptFor(view.choices.length, current.pendingInput !== undefined, modeIds.length > 0, phaseIds.length > 0));
         pending ??= typed.next();
         const next = await Promise.race([pending, interrupted]);
         promptInterrupted = undefined;
@@ -475,6 +477,15 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
           line = next.done ? "q" : next.value.trim();
         }
         if (line === "") continue;
+        // The time box may have started a turn on its own while the person typed (the wrap-up, the move to the close
+        // part): the line waits for it, then goes to the task as it is now. That turn may have closed the task.
+        const now = await tasks.whenSettled(async () => (await store.load()).current);
+        if (!now) {
+          out.write(lastNote ? `\nThe task closed. Note: ${lastNote}\n` : "\nThe task closed.\n");
+          break;
+        }
+        // A turn that ran meanwhile drew its own choices: a pick is one of those.
+        const options = view.choices;
         view.choices = [];
         /** After a closing turn: the note it saved, or why it stopped (the task stays open). True: the task closed. */
         const closed = (finished: boolean, before: number): boolean => {
@@ -494,7 +505,7 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
           continue;
         }
         closeStopped = false;
-        const asked = current.pendingInput;
+        const asked = now.pendingInput;
         if (line === "a" && asked && Object.hasOwn(specs, asked.block)) {
           answerDropped = false;
           const value = await promptAnswer(specs[asked.block], view.shown.get(asked.blockId), ask, out);
@@ -502,6 +513,11 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
             // The question stays open: `a` asks it again.
             if (answerDropped) out.write("\nAnswer dropped.\n");
             continue;
+          }
+          // The fields took a while: wait again for a turn the time box started meanwhile.
+          if (!(await tasks.whenSettled(async () => (await store.load()).current))) {
+            out.write(lastNote ? `\nThe task closed. Note: ${lastNote}\n` : "\nThe task closed.\n");
+            break;
           }
           const { accepted, done } = tasks.respond(asked.blockId, value);
           // Awaited below; marked handled here so a refusal before `accepted` leaves no unhandled rejection.
@@ -524,7 +540,7 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
         const phaseId = line.slice(7).trim();
         if (phaseIds.length > 0 && line.startsWith(">phase ") && PHASE_ID.test(phaseId)) {
           const before = notesWritten;
-          const { accepted, done } = tasks.setPhase(phaseId, current.id);
+          const { accepted, done } = tasks.setPhase(phaseId, now.id);
           // Awaited below; marked handled here so a refusal before `accepted` leaves no unhandled rejection.
           done.catch(() => undefined);
           const r = await accepted;
@@ -565,7 +581,7 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
         const pick = Number(line);
         if (Number.isInteger(pick) && pick >= 1 && pick <= options.length) {
           recorder?.reply(options[pick - 1].label);
-          await tasks.choose(options[pick - 1], current.id);
+          await tasks.choose(options[pick - 1], now.id);
         } else {
           recorder?.reply("*");
           await tasks.ask(line);
@@ -573,6 +589,9 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
       }
     } finally {
       promptInterrupted = undefined;
+      // First: a task left open (Ctrl-C after a stopped close, an error) keeps no time-box timer alive, so the process
+      // ends and no step runs a turn after the runtime closes. Its box is paused, as quitting the app does.
+      await tasks.close();
       reader.close();
       await turns.flush();
       const rt = await runtime.peek()?.catch(() => null);

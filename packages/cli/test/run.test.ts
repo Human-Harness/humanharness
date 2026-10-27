@@ -821,6 +821,61 @@ describe("run: task phases (task-phases spec §6)", () => {
     expect(fs.existsSync(path.join(root, "tutor-bad-time"))).toBe(false);
   });
 
+  it("--time: a line typed while the time box runs its own turn waits for it, then goes to the task", { timeout: 60_000 }, async () => {
+    const prompts = path.join(root, "tutor-wrap-prompts.jsonl");
+    const folder = path.join(root, "tutor-wrap");
+    const input = new PassThrough();
+    const out = memoryStream();
+    // Typed as soon as the wrap-up starts: the app's turn runs while the line arrives.
+    const output = watch(out, (text) => {
+      if (text.includes("Time is almost up")) input.end("Tell me more\nq\n");
+    });
+    await runTask({
+      harnessDir: tutor,
+      action: "session",
+      engine: "claude",
+      folder,
+      time: 15,
+      // A 20 ms minute: the wrap-up is due about a quarter of a second in.
+      minuteMs: 20,
+      input,
+      output,
+      engineCommand: { command: fakeClaudeCommand(), env: { HH_FAKE_SCRIPT: writeScript(root, tutorScript), HH_FAKE_PROMPTS: prompts } },
+    });
+    const sent = readJsonl(prompts).map((p) => (p as { prompt: string }).prompt);
+    const wrap = sent.findIndex((p) => p.startsWith("Time is almost up:"));
+    expect(wrap).toBeGreaterThan(-1);
+    // The wrap-up, the move to the close part, then the person's line, then the closing turn.
+    expect(sent[wrap + 1].startsWith('Next part of this task: "Close"')).toBe(true);
+    expect(sent[wrap + 2]).toBe("Tell me more");
+    expect(sent.at(-1)).toContain("save_note");
+    expect(out.text()).toContain(`Note: ${path.join(folder, ".harness", "notes", "session.md")}`);
+  });
+
+  it("--time: a run that stops with the task open pauses its time box and leaves no timer behind", { timeout: 60_000 }, async () => {
+    const folder = path.join(root, "tutor-broken-input");
+    const input = new PassThrough();
+    const out = memoryStream();
+    const output = watch(out, (text) => {
+      if (text.includes("q to close the task")) input.destroy(new Error("The input broke"));
+    });
+    await expect(
+      runTask({
+        harnessDir: tutor,
+        action: "session",
+        engine: "claude",
+        folder,
+        time: 15,
+        input,
+        output,
+        engineCommand: { command: fakeClaudeCommand(), env: { HH_FAKE_SCRIPT: writeScript(root, tutorScript) } },
+      }),
+    ).rejects.toThrow("The input broke");
+    const current = JSON.parse(fs.readFileSync(path.join(folder, ".harness", "tasks.json"), "utf8")).current;
+    expect(current.timeBox).toMatchObject({ minutes: 15 });
+    expect(current.timeBox).not.toHaveProperty("runningSince");
+  });
+
   it("humanharness run refuses a --time that isn't whole minutes", async () => {
     const m = memoryIo(root);
     expect(await main(["run", "session", "--time", "half", "--harness", tutor], m.io)).toBe(2);

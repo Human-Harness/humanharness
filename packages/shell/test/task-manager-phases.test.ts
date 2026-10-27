@@ -528,6 +528,22 @@ describe("TaskManager: the time box (task-phases spec §5)", () => {
     await vi.waitFor(() => expect(t2.turns[1]?.options).toMatchObject({ phase: "wrap-up" }));
   });
 
+  it("whenSettled waits for a step due during a turn and the turns it starts, then reads", async () => {
+    let open!: () => void;
+    const t = setup({ timeBox: box });
+    await t.manager.start("session", undefined, undefined, undefined, { timeBox: 10 });
+    const t2 = setup({ timeBox: box, state: t.state(), gate: new Promise<void>((resolve) => (open = resolve)) });
+    const asked = t2.manager.ask("A long question");
+    await vi.waitFor(() => expect(t2.turns).toHaveLength(1));
+    t2.fire();
+    open();
+    await asked;
+    // The person's line comes now, while the step waits or runs: it settles after the wrap-up and the move.
+    expect(await t2.manager.whenSettled(async () => t2.turns.length)).toBe(3);
+    expect(t2.turns[1].options).toMatchObject({ phase: "wrap-up" });
+    expect(t2.turns[2].options).toMatchObject({ phase: "phase-change", phaseChange: "close" });
+  });
+
   it("pause (only while waiting), resume, a message resumes, +5 min, quitting pauses", async () => {
     const t = setup({ timeBox: box });
     await t.manager.start("session", undefined, undefined, undefined, { timeBox: 10 });
@@ -543,8 +559,10 @@ describe("TaskManager: the time box (task-phases spec §5)", () => {
     expect(t.state().current?.timeBox?.runningSince).toBeDefined();
     expect(await t.manager.extendTimeBox()).toBe(true);
     expect(t.state().current?.timeBox?.minutes).toBe(15);
-    t.manager.close();
-    await vi.waitFor(() => expect(t.state().current?.timeBox).not.toHaveProperty("runningSince"));
+    // Resolves once the pause is written, and no timer is left.
+    await t.manager.close();
+    expect(t.state().current?.timeBox).not.toHaveProperty("runningSince");
+    expect(t.timers).toEqual([]);
   });
 
   it("a resumed session tells the agent the time left, like the first message; D0 without a box", async () => {
@@ -570,15 +588,31 @@ describe("TaskManager: the time box (task-phases spec §5)", () => {
       });
       await t.manager.start("session", undefined, undefined, undefined, { timeBox: minutes });
       if (minutes !== null) await t.manager.extendTimeBox();
+      t.advance(3000);
       const { accepted, done } = t.manager.chooseMode("feynman", { belowTier: "new-task" });
       expect(await accepted).toEqual({ ok: true, switched: "new-task" });
       await done;
       expect(t.state().current).toMatchObject({ id: "t2", mode: "feynman" });
       return t.state().current?.timeBox;
     };
-    // Kept even when a "+5 min" made it a length the action doesn't offer.
-    expect(await run(10)).toMatchObject({ minutes: 15, usedMs: 0 });
+    // Kept even when a "+5 min" made it a length the action doesn't offer, with the time already used: no fresh clock.
+    expect(await run(10)).toEqual({ minutes: 15, usedMs: 3000, runningSince: new Date(Date.parse(NOW) + 3000).toISOString() });
     expect(await run(null)).toBeUndefined();
+  });
+
+  it("a mode's tier floor keeps the wrap-up done: the new task's next step is the end", async () => {
+    const modes = { socratic: { label: "Socratic" }, feynman: { label: "Feynman", minTier: "deep" as const } };
+    const opts = { timeBox: box, modes: { modes: ["socratic", "feynman"], defaultMode: "socratic" }, extra: { modes } };
+    const first = setup(opts);
+    await first.manager.start("session", undefined, undefined, undefined, { timeBox: 10 });
+    const state = first.state();
+    state.current!.timeBox = { minutes: 10, usedMs: 6000, wrappedUp: true };
+    const t = setup({ ...opts, state, script: [[saveNote, ok], [ok]] });
+    const { accepted, done } = t.manager.chooseMode("feynman", { belowTier: "new-task" });
+    expect(await accepted).toEqual({ ok: true, switched: "new-task" });
+    await done;
+    expect(t.state().current?.timeBox).toMatchObject({ minutes: 10, usedMs: 6000, wrappedUp: true });
+    expect(t.timers.at(-1)?.ms).toBe(4000);
   });
 
   it("without phases, the first message still tells the agent the time box", async () => {

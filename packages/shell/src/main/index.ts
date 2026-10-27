@@ -946,8 +946,15 @@ function registerIpc() {
     if (blocked) throw new Error(blocked);
     return tasks.finish();
   });
-  handle("hh:pauseTask", () => tasks.pauseTimeBox());
-  handle("hh:resumeTask", () => tasks.resumeTimeBox());
+  // Quitting already paused the box (TaskManager.close): nothing may run it again.
+  handle("hh:pauseTask", () => {
+    if (quitting) return false;
+    return tasks.pauseTimeBox();
+  });
+  handle("hh:resumeTask", () => {
+    if (quitting) return false;
+    return tasks.resumeTimeBox();
+  });
   handle("hh:extendTimeBox", () => {
     if (quitting) return false;
     return tasks.extendTimeBox();

@@ -60,7 +60,11 @@ export interface SidekickDeps {
 }
 
 export const defaultWaitMs = (wait: SidekickSettings["wait"]): number => (wait === "always" ? SIDEKICK_ALWAYS_MAX_MS : wait * 1000);
-/** Sessions are bound to the open task; a review with no task open binds to NO_TASK, adopted by the next task. */
+/**
+ * Sessions are bound to the open task; a review with no task open binds to NO_TASK, adopted by the next task. A NO_TASK
+ * session survives one betweenTasks (the one right before its task starts); the next closes it, so it never outlives
+ * the task it was made for.
+ */
 const NO_TASK = "";
 
 /**
@@ -72,8 +76,10 @@ export class SidekickController {
   /** Tokens toward the cap of reviews that ran before their task existed (moved on adoption). */
   private readonly pending = new Map<string, number>();
   private running: AbortController | null = null;
-  /** Bumped by every review: a review replaced while it still awaited its inputs ends as cancelled. */
+  /** Bumped by every review, cancel, turn-off and close: a review superseded while it awaited its inputs ends as cancelled. */
   private reviews = 0;
+  /** The NO_TASK session may survive the next betweenTasks (set whenever a review uses it). */
+  private looseArmed = false;
   private card: SidekickCard | null = null;
   private notice: SidekickState["notice"];
   private closed = false;
@@ -121,6 +127,7 @@ export class SidekickController {
     const r = await this.d.store.set(patch);
     if (r.ok && !r.settings.on) {
       // Off: nothing runs and nothing stays open (D0: "the person can turn it off").
+      this.reviews++;
       this.running?.abort();
       this.card = null;
       this.notice = undefined;
@@ -138,13 +145,16 @@ export class SidekickController {
   }
 
   cancel(): void {
+    this.reviews++;
     this.running?.abort();
   }
 
   /** Between tasks (TaskDeps.betweenTasks): sessions of tasks no longer open close (spec §5 "closed when the task closes"). */
   async betweenTasks(): Promise<void> {
     const open = (await this.d.task().catch(() => null))?.id;
-    await this.closeSessions((key) => key !== NO_TASK && key !== open);
+    const keepLoose = this.looseArmed;
+    this.looseArmed = false;
+    await this.closeSessions((key) => (key === NO_TASK ? !keepLoose : key !== open));
     if (this.card && open === undefined) {
       this.card = null;
       await this.push();
@@ -153,6 +163,7 @@ export class SidekickController {
 
   async close(): Promise<void> {
     this.closed = true;
+    this.reviews++;
     this.running?.abort();
     await this.closeSessions(() => true);
   }
@@ -164,15 +175,22 @@ export class SidekickController {
   async review(req: { text: string; force?: boolean; attached?: boolean }): Promise<SidekickReview> {
     const turn = ++this.reviews;
     this.running?.abort();
+    // An early return still pushes when it cleared a card or notice, so the renderer drops them too.
+    const stale = this.card !== null || this.notice !== undefined;
     this.card = null;
     this.notice = undefined;
+    const early = async (kind: "send" | "cancelled"): Promise<SidekickReview> => {
+      if (stale) await this.push();
+      return { kind };
+    };
+    const live = () => turn === this.reviews && !this.closed;
     const settings = await this.d.store.settings();
-    if (this.closed || !settings.on || !settings.preSend) return { kind: "send" };
+    if (this.closed || !settings.on || !settings.preSend) return early("send");
     const task = await this.d.task().catch(() => null);
     const mode = sidekickMode(this.d.manifest, task?.action);
-    if (mode === "off") return { kind: "send" };
+    if (mode === "off") return early("send");
     const setup = await this.d.setup().catch(() => null);
-    if (!setup || !(await this.d.hasNotice(setup.engineId).catch(() => false))) return { kind: "send" };
+    if (!setup || !(await this.d.hasNotice(setup.engineId).catch(() => false))) return early("send");
 
     // 1. The local check (0 tokens).
     const ctx = await this.d.context(setup.base, task?.scope).catch(() => ({ notes: [] as string[], data: [] as string[] }));
@@ -185,14 +203,14 @@ export class SidekickController {
       ...(req.attached ? { muted: ["missing-context" as const] } : {}),
     });
     // 2. The decision.
-    if (flags.length === 0 && mode === "auto" && !req.force) return { kind: "send" };
+    if (flags.length === 0 && mode === "auto" && !req.force) return early("send");
     const key = task?.id ?? NO_TASK;
     const records = await this.d.usage(setup.base).catch(() => []);
     const spent = (task ? sidekickSpent(records, task.id) : 0) + (this.pending.get(key) ?? 0);
-    if (settings.cap !== "none" && spent >= settings.cap) return { kind: "send" };
+    if (settings.cap !== "none" && spent >= settings.cap) return early("send");
 
-    // 3. The model, within the wait (unless a newer review replaced this one meanwhile).
-    if (turn !== this.reviews) return { kind: "cancelled" };
+    // 3. The model, within the wait (unless a newer review, ⌘⏎, turning off or closing superseded this one meanwhile).
+    if (!live()) return early("cancelled");
     const controller = new AbortController();
     this.running = controller;
     let timedOut = false;
@@ -206,9 +224,9 @@ export class SidekickController {
     try {
       await this.push();
       const engine = this.d.engine(setup.engineId);
-      const session = await this.sessionFor(setup.base, engine, key, task?.id);
+      const session = await this.sessionFor(setup.base, engine, key, task?.id, live);
       if (timedOut) return this.finish("timeout");
-      if (controller.signal.aborted) return this.finish("cancelled");
+      if (controller.signal.aborted || !live()) return this.finish("cancelled");
       if (!session) return this.finish("error");
       const prompt = preSendPrompt({
         harness: this.d.harness,
@@ -219,6 +237,7 @@ export class SidekickController {
         uiLanguage: await this.d.uiLanguage().catch(() => "English"),
         prompt: req.text,
       });
+      if (!live()) return this.finish("cancelled");
       const answer = await session.ask(prompt, controller.signal);
       if (answer.usage) {
         if (!task) this.pending.set(key, (this.pending.get(key) ?? 0) + capTokens(answer.usage));
@@ -273,9 +292,15 @@ export class SidekickController {
   /**
    * The session for `key` (the open task, or NO_TASK): reused; a task adopts the NO_TASK session a review opened
    * before it existed; else a new one, its brief written first and never again for that session (spec §5). Null
-   * without a CLI.
+   * without a CLI, or once `live` says the review was superseded (nothing written, nothing opened).
    */
-  private async sessionFor(base: string, engine: EngineDef, key: string, taskId: string | undefined): Promise<SidekickLike | null> {
+  private async sessionFor(base: string, engine: EngineDef, key: string, taskId: string | undefined, live: () => boolean): Promise<SidekickLike | null> {
+    const s = await this.findSession(base, engine, key, taskId, live);
+    if (s && key === NO_TASK) this.looseArmed = true;
+    return s;
+  }
+
+  private async findSession(base: string, engine: EngineDef, key: string, taskId: string | undefined, live: () => boolean): Promise<SidekickLike | null> {
     const have = this.sessions.get(key);
     if (have && have.base === base) return have.session;
     if (taskId !== undefined) {
@@ -295,12 +320,14 @@ export class SidekickController {
     const cmd = await this.d.command(engine).catch(() => null);
     if (!cmd) return null;
     const profile = await this.d.profile(engine);
+    if (!live()) return null;
     const folder = this.d.workDir(base);
     const tips = sidekickTips(this.d.manifest);
     await this.d.writeBrief(folder, sidekickBrief({ name: SIDEKICK_NAME, harness: this.d.harness.name, ...(tips ? { tips } : {}) }), engine);
     // A review that replaced this one may have opened the key's session meanwhile: keep that one.
     const raced = this.sessions.get(key);
     if (raced && raced.base === base) return raced.session;
+    if (!live()) return null;
     const session = this.d.open({ engine, command: cmd.command, env: cmd.env, folder, profile });
     this.sessions.set(key, { session, base });
     return session;

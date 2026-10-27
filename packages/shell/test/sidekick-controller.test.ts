@@ -291,4 +291,77 @@ describe("SidekickController.review races", () => {
     expect((await second).kind).toBe("card");
     expect(h.opened).toEqual(["s1"]);
   });
+
+  const gate = <T>() => {
+    let open!: (v: T) => void;
+    const p = new Promise<T>((r) => (open = r));
+    return { p, open };
+  };
+
+  it("cancel while the inputs load (reading usage) → cancelled, the model is never asked", async () => {
+    const h = harness({ record: on });
+    const g = gate<UsageRecord[]>();
+    let reading = false;
+    (h.deps as { usage: SidekickDeps["usage"] }).usage = () => ((reading = true), g.p);
+    const p = h.ctl.review({ text: "make it better" });
+    await vi.waitFor(() => expect(reading).toBe(true));
+    h.ctl.cancel();
+    g.open([]);
+    expect(await p).toEqual({ kind: "cancelled" });
+    expect(h.asked).toEqual([]);
+    expect(h.opened).toEqual([]);
+    expect(h.logged).toEqual([]);
+  });
+
+  it("close while the inputs load → no session opened", async () => {
+    const h = harness({ record: on });
+    const g = gate<UsageRecord[]>();
+    let reading = false;
+    (h.deps as { usage: SidekickDeps["usage"] }).usage = () => ((reading = true), g.p);
+    const p = h.ctl.review({ text: "make it better" });
+    await vi.waitFor(() => expect(reading).toBe(true));
+    await h.ctl.close();
+    g.open([]);
+    expect((await p).kind).toBe("cancelled");
+    expect(h.opened).toEqual([]);
+    expect(h.asked).toEqual([]);
+  });
+
+  it("turned off while the session's CLI is found → no brief written, no session kept", async () => {
+    const h = harness({ record: on });
+    const g = gate<{ command: string[]; env: Record<string, string> } | null>();
+    let finding = false;
+    (h.deps as { command: SidekickDeps["command"] }).command = () => ((finding = true), g.p);
+    const p = h.ctl.review({ text: "make it better" });
+    await vi.waitFor(() => expect(finding).toBe(true));
+    await h.ctl.set({ on: false });
+    g.open({ command: ["claude"], env: {} });
+    expect(await p).toEqual({ kind: "cancelled" });
+    expect(h.briefs).toEqual([]);
+    expect(h.opened).toEqual([]);
+  });
+});
+
+describe("SidekickController loose sessions and stale cards", () => {
+  it("a session made with no task open closes after the task it was made for ends", async () => {
+    const h = harness({ record: on, task: null });
+    await h.ctl.review({ text: "make it better" });
+    // task-manager: betweenTasks before the task is current, then again after it ends.
+    await h.ctl.betweenTasks();
+    expect(h.closed).toEqual([]);
+    h.setTask({ id: "t5", scope: "main" });
+    h.setTask(null);
+    await h.ctl.betweenTasks();
+    expect(h.closed).toEqual(["s1"]);
+    h.setTask({ id: "t6", scope: "main" });
+    await h.ctl.review({ text: "make it better" });
+    expect(h.opened).toEqual(["s1", "s2"]);
+  });
+
+  it("an early send clears a stale card in the renderer", async () => {
+    const h = harness({ record: on });
+    expect((await h.ctl.review({ text: "make it better" })).kind).toBe("card");
+    expect(await h.ctl.review({ text: "Rewrite the second paragraph of chapter 2 so it cites Smith 2019." })).toEqual({ kind: "send" });
+    expect(h.states.at(-1)).toMatchObject({ card: null, status: "watching" });
+  });
 });

@@ -28,6 +28,18 @@ describe("MaterialSearch", () => {
     expect(s.search("simpl")[0].id).toBe("ch2-002");
     expect(s.search("nothing here at all")).toEqual([]);
   });
+
+  it("folds accents, leaves pending fragments out, skips a duplicate id, caps the hits", () => {
+    const list = [frag(1, "La fracción equivalente. Un té."), frag(2, "Fraccion simple.", { validated: "pending" }), frag(1, "La fracción equivalente.")];
+    const s = MaterialSearch.of(list);
+    expect(s.search("fraccion").map((h) => h.id)).toEqual(["ch2-001"]);
+    expect(s.search("FRACCIÓN").map((h) => h.id)).toEqual(["ch2-001"]);
+    // Too short for a fuzzy match: only folding finds it.
+    expect(s.search("te").map((h) => h.id)).toEqual(["ch2-001"]);
+    const many = Array.from({ length: 12 }, (_, i) => frag(i + 1, "fractions everywhere", { id: `ch2-0${String(i + 1).padStart(2, "0")}` }));
+    expect(MaterialSearch.of(many).search("fractions")).toHaveLength(8);
+    expect(MaterialSearch.of(many).search("fractions", 3)).toHaveLength(3);
+  });
 });
 
 describe("readForTask and flagFragment", () => {
@@ -44,6 +56,14 @@ describe("readForTask and flagFragment", () => {
     expect((await store.indexRows()).map((r) => r.id)).toEqual(["ch2-002", "ch2-003"]);
     expect(await store.source("ch2")).toMatchObject({ status: "validating", stage: "review", issues: ["Flagged in use: ch2-001: The table is broken"] });
     expect(await flagFragment(store, "nope-001", "x")).toBe(false);
+  });
+
+  it("a source that isn't usable: no read, no flag, its status unchanged", async () => {
+    await store.patch("ch2", (s) => ({ ...s, status: "removed" }));
+    expect(await readForTask(store, "ch2-001")).toBeNull();
+    expect(await flagFragment(store, "ch2-001", "Broken")).toBe(false);
+    expect(await store.source("ch2")).toMatchObject({ status: "removed", used: 0, issues: [] });
+    expect((await store.readFragment("ch2-001"))?.meta.validated).toBe("not-reviewed");
   });
 });
 

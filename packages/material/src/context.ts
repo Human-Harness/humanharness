@@ -12,7 +12,8 @@ const cell = (s: string) => s.replace(/\|/g, "\\|").replace(/\s*\n\s*/g, " ").tr
 
 /**
  * The first message's `## Material` (§9 Load): the scope's rule, how to fetch, the sheet, then index rows until
- * `budgetTokens`; the rest is found with `material_search`. Empty when nothing is usable.
+ * `budgetTokens` (the table only; the first row always shows, even over the budget); the rest is found with
+ * `material_search`. Empty when nothing is usable.
  */
 export function materialSection(o: { mode: GroundingMode; sheet: string; rows: IndexRow[]; budgetTokens: number }): string {
   if (o.rows.length === 0) return "";

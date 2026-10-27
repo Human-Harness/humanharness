@@ -18,6 +18,7 @@ export interface IndexRow {
 
 /** Sources whose fragments a task may load (§9): ready, or still being checked (their fragments are usable meanwhile). */
 const USABLE = new Set(["ready", "validating"]);
+export const isUsable = (s: Pick<SourceEntry, "status">): boolean => USABLE.has(s.status);
 
 async function writeAtomic(file: string, text: string): Promise<void> {
   await fs.mkdir(path.dirname(file), { recursive: true });
@@ -109,6 +110,14 @@ export class MaterialStore {
     return this.queued(() => this.rewrite(fn));
   }
 
+  /**
+   * Runs `job` inside the registry queue, so fragment files and the registry change together; `job` changes the
+   * registry only through the `rewrite` it gets (calling `update` from inside would wait on itself).
+   */
+  transact<T>(job: (rewrite: (fn: (list: SourceEntry[]) => SourceEntry[]) => Promise<SourceEntry[]>) => Promise<T>): Promise<T> {
+    return this.queued(() => job((fn) => this.rewrite(fn)));
+  }
+
   /** Runs `job` after every earlier registry change, one at a time. */
   private queued<T>(job: () => Promise<T>): Promise<T> {
     const run = this.writes.then(job);
@@ -185,7 +194,7 @@ export class MaterialStore {
     const out: Fragment[] = [];
     for (const s of await this.sources()) {
       // A hand edit may have broken the list: then the source loads nothing.
-      if (!USABLE.has(s.status) || !Array.isArray(s.fragments)) continue;
+      if (!isUsable(s) || !Array.isArray(s.fragments)) continue;
       for (const id of s.fragments) {
         const f = await this.readFragment(id);
         if (f) out.push(f);

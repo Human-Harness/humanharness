@@ -46,6 +46,17 @@ describe("material MCP server", () => {
     expect((r.content as { text: string }[])[0].text).toBe("Refused: This task has no material");
   });
 
+  it("a bad id is refused by the server before any call to the app", async () => {
+    const seen: unknown[] = [];
+    const c = await connect(async (r) => {
+      seen.push(r);
+      return "x";
+    });
+    const r = await c.callTool({ name: "material_read", arguments: { id: "../x" } });
+    expect(r.isError).toBe(true);
+    expect(seen).toEqual([]);
+  });
+
   it("system mode with no stage tools offers only reading", async () => {
     const c = await connect(async () => null, "system", []);
     expect((await c.listTools()).tools.map((t) => t.name)).toEqual(["material_read"]);

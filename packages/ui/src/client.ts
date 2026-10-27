@@ -234,6 +234,8 @@ export interface TurnUsage {
   outputTokens: number;
   cacheReadTokens: number;
   cacheWriteTokens: number;
+  /** What the provider charged for the turn, in USD (OpenCode). Absent when the engine reports no cost. */
+  costUsd?: number;
 }
 
 /** A block in the chat. Input blocks carry the id the app gave them and, once answered, the answer (input-blocks spec §8). */
@@ -427,6 +429,8 @@ export interface UsageSummary {
    * profile's: each processes its own). Absent when none ran.
    */
   material?: number;
+  /** USD the engine reported over the last 30 days (OpenCode; every profile's turns). Absent when no turn reported a cost. */
+  spentUsd?: number;
   /** The window kind estimates measure (the engine's `limits.primary`); absent when the engine reports no limits. */
   primary?: string;
 }

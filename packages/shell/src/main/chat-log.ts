@@ -153,6 +153,7 @@ export class TurnRecorder {
         outputTokens: e.outputTokens,
         cacheReadTokens: e.cacheReadTokens,
         cacheWriteTokens: e.cacheWriteTokens,
+        ...(e.costUsd !== undefined ? { costUsd: e.costUsd } : {}),
       };
     }
   }

@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { getEngine } from "@humanharness/engines";
-import { type ClaudeScript, fakeClaudeCommand, writeScript } from "@humanharness/fake-agent";
+import { type AcpScript, type ClaudeScript, fakeAcpCommand, fakeClaudeCommand, writeScript } from "@humanharness/fake-agent";
 import { runSystemTask } from "../src";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-system-"));
@@ -93,6 +93,24 @@ describe("runSystemTask (material spec §10)", () => {
     const slow = fakeClaude({ steps: [{ sleep: 5000 }] });
     const t = await runSystemTask({ engine: getEngine("claude"), command: slow.command, env: slow.env, prompt: "x", tools: [], handle: async () => null, timeoutMs: 200 });
     expect(t.ok).toBe(false);
+  });
+
+  it("keeps the stage's cost when the engine reports one, and none for Claude (D0)", async () => {
+    const dir = fs.mkdtempSync(path.join(root, "t-"));
+    const script: AcpScript = { usage: { inputTokens: 10, outputTokens: 5 }, costs: [0.03], turns: [[]] };
+    const r = await runSystemTask({
+      engine: getEngine("opencode"),
+      command: fakeAcpCommand(),
+      env: { HH_FAKE_SCRIPT: writeScript(dir, script) },
+      prompt: "x",
+      tools: [],
+      handle: async () => null,
+    });
+    expect(r.ok).toBe(true);
+    expect(r.usage?.costUsd).toBeCloseTo(0.03);
+    const claude = fakeClaude({ steps: [{ line: { type: "result", subtype: "success", is_error: false, result: "done", usage: { input_tokens: 1, output_tokens: 1 } } }] });
+    const c = await runSystemTask({ engine: getEngine("claude"), command: claude.command, env: claude.env, prompt: "x", tools: [], handle: async () => null });
+    expect(c.usage).not.toHaveProperty("costUsd");
   });
 
   it("a stop ends the session as a failure", async () => {

@@ -117,6 +117,15 @@ describe("TurnRecorder usage", () => {
     expect("firstLimits" in entry).toBe(false);
   });
 
+  it("keeps the turn's cost in its usage, only when the engine reported one", () => {
+    const r = new TurnRecorder(new Set());
+    r.add({ type: "usage", inputTokens: 3, outputTokens: 2, cacheReadTokens: 0, cacheWriteTokens: 0, costUsd: 0.004 });
+    expect(r.finish({ type: "done", ok: true }).usage).toEqual({ inputTokens: 3, outputTokens: 2, cacheReadTokens: 0, cacheWriteTokens: 0, costUsd: 0.004 });
+    const plain = new TurnRecorder(new Set());
+    plain.add({ type: "usage", inputTokens: 3, outputTokens: 2, cacheReadTokens: 0, cacheWriteTokens: 0 });
+    expect(plain.finish({ type: "done", ok: true }).usage).not.toHaveProperty("costUsd");
+  });
+
   it("adds nothing when the engine reported nothing", () => {
     const entry = new TurnRecorder(new Set()).finish({ type: "done", ok: true });
     expect("usage" in entry || "limits" in entry || "state" in entry).toBe(false);

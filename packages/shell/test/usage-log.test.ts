@@ -418,3 +418,34 @@ describe("material lines", () => {
     expect(profilesUsage({ sofi: [], tomas: [line("label", 500, 5)] }, "sofi", undefined)).not.toHaveProperty("material");
   });
 });
+
+describe("summarizeUsage: spentUsd", () => {
+  const now = new Date("2026-10-27T12:00:00.000Z");
+  const line = (at: string, costUsd?: number): UsageRecord => ({
+    at,
+    engine: "opencode",
+    ok: true,
+    usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0, ...(costUsd !== undefined ? { costUsd } : {}) },
+  });
+
+  it("adds up the cost of the last 30 days", () => {
+    const s = summarizeUsage([line("2026-09-01T00:00:00.000Z", 5), line("2026-10-20T00:00:00.000Z", 0.25), line("2026-10-27T11:00:00.000Z", 0.5)], undefined, now);
+    expect(s.spentUsd).toBeCloseTo(0.75);
+  });
+
+  it("is 0 for local models, and absent when no line has a cost (D0)", () => {
+    expect(summarizeUsage([line("2026-10-27T11:00:00.000Z", 0)], undefined, now).spentUsd).toBe(0);
+    expect(summarizeUsage([line("2026-10-27T11:00:00.000Z")], undefined, now)).not.toHaveProperty("spentUsd");
+  });
+
+  it("counts material stages, and is 0 when every cost is older than 30 days", () => {
+    const stage: UsageRecord = { ...line("2026-10-27T10:00:00.000Z", 0.1), phase: "material", stage: "label" };
+    expect(summarizeUsage([stage, line("2026-10-27T11:00:00.000Z", 0.2)], undefined, now).spentUsd).toBeCloseTo(0.3);
+    expect(summarizeUsage([line("2026-09-01T00:00:00.000Z", 5)], undefined, now).spentUsd).toBe(0);
+  });
+
+  it("counts every profile's spending (one account pays)", () => {
+    const s = profilesUsage({ ana: [line("2026-10-27T10:00:00.000Z", 0.1)], ben: [line("2026-10-27T11:00:00.000Z", 0.2)] }, "ana", undefined, now);
+    expect(s.spentUsd).toBeCloseTo(0.3);
+  });
+});

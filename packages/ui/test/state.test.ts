@@ -126,6 +126,16 @@ describe("reduceChat", () => {
       limits: windows,
       state: { progress: { percent: 10 } },
     });
+    expect(s.entries[1].usage).not.toHaveProperty("costUsd");
+  });
+
+  it("keeps the turn's cost on the live entry when the engine reported one", () => {
+    const s = run([
+      { type: "user", text: "hi", at: "t" },
+      { type: "usage", inputTokens: 1, outputTokens: 2, cacheReadTokens: 0, cacheWriteTokens: 0, costUsd: 0.01 },
+      { type: "done", ok: true },
+    ]);
+    expect(s.entries[1].usage).toEqual({ inputTokens: 1, outputTokens: 2, cacheReadTokens: 0, cacheWriteTokens: 0, costUsd: 0.01 });
   });
 
   it("restores state blocks from the saved conversation; newer live data wins", () => {

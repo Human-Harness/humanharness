@@ -31,7 +31,7 @@ export interface SystemTaskOptions {
 export interface SystemTaskResult {
   ok: boolean;
   error?: EngineError;
-  usage?: { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number };
+  usage?: { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; costUsd?: number };
   model?: string;
   limits?: LimitWindow[];
 }
@@ -80,6 +80,8 @@ export async function runSystemTask(o: SystemTaskOptions): Promise<SystemTaskRes
       outputTokens: u.outputTokens + e.outputTokens,
       cacheReadTokens: u.cacheReadTokens + e.cacheReadTokens,
       cacheWriteTokens: u.cacheWriteTokens + e.cacheWriteTokens,
+      // Only when some turn reported a cost (OpenCode): no cost is not US$ 0.
+      ...(u.costUsd !== undefined || e.costUsd !== undefined ? { costUsd: (u.costUsd ?? 0) + (e.costUsd ?? 0) } : {}),
     };
     if (e.model) result.model = e.model;
   };

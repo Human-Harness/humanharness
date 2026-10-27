@@ -1253,13 +1253,30 @@ function registerIpc() {
     const c = await validConfig();
     if (!c) throw new Error("The app is not set up yet");
     const userData = app.getPath("userData");
+    // Read without creating a history: a folder that has none yet has no tracked files.
+    const hasHistory = (folder: string) => fs.access(historyDir(userData, folder)).then(() => true, () => false);
+    // With profiles every profile's history moves with the folder (spec §4); without them, the folder's own (D0).
+    const people = profilesCtl;
+    const profileIds = async () => (people ? (await people.state()).list.map((p) => p.id) : []);
     const deps: MoveDeps = {
       check: (folder) => checkFolder(folder, os.homedir()),
-      // Read without creating a history: a folder that has none yet has no tracked files.
-      tracked: async () => {
-        const has = await fs.access(historyDir(userData, baseOf(c))).then(() => true, () => false);
-        return has ? ((await (await openHistory())?.trackedFiles()) ?? []) : [];
-      },
+      tracked: people
+        ? async () => {
+            // Every profile's tracked files, relative to the app's folder. The runtime is closed by now
+            // (`guardedMove` closes it before `move()`), so each history is opened on its own.
+            const extra = getEngine(c.engineId).instructionsFile?.path;
+            const ignore = [".harness/", "AGENTS.md", ...(extra ? [extra] : [])];
+            const out: string[] = [];
+            for (const id of await profileIds()) {
+              const folder = profileDir(c.folder, id);
+              if (!(await hasHistory(folder))) continue;
+              const history = await standaloneHistory(JSON.stringify({ folder, ignore }));
+              out.push(...(await history.trackedFiles()).map((f) => `${id}/${f}`));
+            }
+            return out;
+          }
+        : async () => ((await hasHistory(baseOf(c))) ? ((await (await openHistory())?.trackedFiles()) ?? []) : []),
+      ...(people ? { subfolders: profileIds } : {}),
       saveFolder: async (folder) => void (await config.replaceFolder(folder)),
       historyDir: (folder) => historyDir(userData, folder),
       journal: moveJournal(userData),

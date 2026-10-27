@@ -2,7 +2,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { createReadStream, promises as fs } from "node:fs";
 import path from "node:path";
 import type { FolderProblem, MoveError } from "@humanharness/ui/client";
-import { relativizeNoteFiles } from "@humanharness/workspace";
+import { isProfileId, relativizeNoteFiles } from "@humanharness/workspace";
 
 /** A move that failed with the reason the window shows. The old folder is untouched and still the app's folder. */
 export class MoveFailed extends Error {
@@ -66,6 +66,11 @@ export interface MoveDeps {
   saveFolder(folder: string): Promise<void>;
   /** Where the hidden history of a folder lives (`historyDir`). */
   historyDir(folder: string): string;
+  /**
+   * The folders inside the folder that keep a history of their own, relative (a harness with profiles: each profile's
+   * id). Absent: the folder itself keeps the one history, as before (profiles D4).
+   */
+  subfolders?(): Promise<string[]>;
   /** The move journal in the app's data folder (`moveJournal`): `recoverMove` finishes or undoes a move cut short. */
   journal: string;
   ops?: Partial<MoveOps>;
@@ -96,6 +101,8 @@ export interface MoveJournal {
   stage: MoveStage;
   /** Where a stale history of `to` was set aside. */
   setAside?: string;
+  /** A harness with profiles: each history the move carries (`rel` is the profile's folder) and where a stale one went. */
+  histories?: { rel: string; setAside?: string }[];
 }
 
 /** Where the move journal lives in the app's data folder. */
@@ -272,6 +279,13 @@ export async function moveFolder(from: string, to: string, d: MoveDeps): Promise
   const ops: MoveOps = { ...realOps, ...d.ops };
   const now = d.now ?? Date.now;
   const { source, target, before } = await precheckMove(from, to, d);
+  // The folders whose histories follow: each profile's, or the folder itself (D0).
+  let rels: string[];
+  try {
+    rels = d.subfolders ? (await d.subfolders()).filter((rel) => isProfileId(rel)) : [""];
+  } catch (err) {
+    throw new MoveFailed("failed", err);
+  }
   const temp = `${target}${TEMP_MARK}${randomBytes(6).toString("hex")}`;
   const copy = copyIn(temp, target);
   const journal: MoveJournal = { from: source, to: target, temp, stage: "copying" };
@@ -323,7 +337,7 @@ export async function moveFolder(from: string, to: string, d: MoveDeps): Promise
   // 3. Verify in the temporary place; then the notes stop naming the old place.
   try {
     if (!(await sameContents(source, copy, await d.tracked(), ops.hash))) return await abandon(new MoveFailed("mismatch"));
-    await relativizeNoteFiles(copy, source);
+    for (const rel of rels) await relativizeNoteFiles(path.join(copy, rel), path.join(source, rel));
   } catch (err) {
     if (err instanceof MoveFailed) throw err;
     return abandon(new MoveFailed("failed", err));
@@ -356,19 +370,34 @@ export async function moveFolder(from: string, to: string, d: MoveDeps): Promise
     throw new MoveFailed("failed", err);
   }
 
-  // 5. The history follows the folder; a history the new place already had is set aside.
-  const oldHistory = d.historyDir(source);
-  const newHistory = d.historyDir(target);
-  let setAside: string | null = null;
-  let historyRenamed = false;
+  // 5. Each history follows its folder (the folder's own, or one per profile); a history a new place already had is set
+  // aside. A failure puts every one of them back (profiles spec §4).
+  const histories = rels.map((rel) => ({
+    rel,
+    from: d.historyDir(path.join(source, rel)),
+    to: d.historyDir(path.join(target, rel)),
+    setAside: null as string | null,
+    has: false,
+    renamed: false,
+  }));
   try {
-    const stale = await exists(newHistory);
-    if (stale) setAside = `${newHistory}.replaced-${now()}`;
-    await step("config-saved", setAside ? { setAside } : {});
-    if (setAside) await ops.rename(newHistory, setAside);
-    if (await exists(oldHistory)) {
-      await ops.rename(oldHistory, newHistory);
-      historyRenamed = true;
+    for (const h of histories) {
+      h.has = await exists(h.from);
+      if (await exists(h.to)) h.setAside = `${h.to}.replaced-${now()}`;
+    }
+    // D0: without profiles the journal is written as before, with one `setAside`.
+    const recorded = d.subfolders
+      ? { histories: histories.map((h) => ({ rel: h.rel, ...(h.setAside ? { setAside: h.setAside } : {}) })) }
+      : histories[0].setAside
+        ? { setAside: histories[0].setAside }
+        : {};
+    await step("config-saved", recorded);
+    for (const h of histories) {
+      if (h.setAside) await ops.rename(h.to, h.setAside);
+      if (h.has) {
+        await ops.rename(h.from, h.to);
+        h.renamed = true;
+      }
     }
     await step("history-moved");
   } catch (err) {
@@ -380,26 +409,30 @@ export async function moveFolder(from: string, to: string, d: MoveDeps): Promise
       },
     );
     if (restored) {
-      // The history moved but the journal couldn't say so: it goes back first, so it isn't left under the copy.
-      if (historyRenamed && !(await exists(oldHistory))) {
-        await ops.rename(newHistory, oldHistory).catch((e: unknown) => console.error("Could not put the history back", e));
-      }
-      if (setAside && (await exists(setAside)) && !(await exists(newHistory))) {
-        await ops.rename(setAside, newHistory).catch((e: unknown) => console.error("Could not put the old history back", e));
+      for (const h of histories) {
+        // A history that moved but the journal couldn't say so goes back first, so it isn't left under the copy.
+        if (h.renamed && !(await exists(h.from))) {
+          await ops.rename(h.to, h.from).catch((e: unknown) => console.error("Could not put the history back", e));
+        }
+        if (h.setAside && (await exists(h.setAside)) && !(await exists(h.to))) {
+          await ops.rename(h.setAside, h.to).catch((e: unknown) => console.error("Could not put the old history back", e));
+        }
       }
       await removeCopy();
       throw new MoveFailed("failed", err);
     }
-    // The config still names the copy: it stays the folder and the old one is kept. The journal stays,
-    // so the next start moves the history after it (when it didn't get there already).
-    if (historyRenamed) {
+    // The config still names the copy: it stays the folder and the old one is kept. The journal stays, so the next
+    // start moves the histories after it (those that didn't get there already).
+    // D0: one history, moved or not (as before). Profiles: every history that existed has moved.
+    const moved = d.subfolders ? histories.every((h) => h.renamed || !h.has) : histories[0].renamed;
+    if (moved) {
       console.error("The move couldn't be recorded; the folder and its history are at the new place", err);
       return { oldRemoved: false, historyMoved: true };
     }
     console.error("The folder moved without its history; the next start moves it", err);
     return { oldRemoved: false, historyMoved: false };
   }
-  await pruneReplaced(path.dirname(newHistory), now());
+  await pruneReplaced(path.dirname(d.historyDir(target)), now());
 
   // 6. The old folder goes to the Trash, only if nothing in it changed since the copy. The move is done either way.
   try {
@@ -457,6 +490,22 @@ export async function recoverMove(d: RecoverDeps): Promise<{ folder: string; lef
     await clearJournal(d.journal);
     return null;
   }
+  // Profiles: every history the journal lists; an older journal (or a folder without profiles) has the one.
+  const histories = j.histories ?? [{ rel: "", ...(j.setAside ? { setAside: j.setAside } : {}) }];
+  if (
+    !Array.isArray(histories) ||
+    !histories.every(
+      (h) =>
+        typeof h === "object" &&
+        h !== null &&
+        (h.rel === "" || isProfileId(h.rel)) &&
+        (h.setAside === undefined || (typeof h.setAside === "string" && h.setAside.startsWith(`${d.historyDir(path.join(j.to, h.rel))}.replaced-`))),
+    )
+  ) {
+    console.error("The move journal makes no sense; nothing was touched");
+    await clearJournal(d.journal);
+    return null;
+  }
 
   // The config decides: while it names no folder (or can't be read) nothing is touched and the journal stays.
   const folder = await d.currentFolder().catch((err: unknown) => {
@@ -472,21 +521,24 @@ export async function recoverMove(d: RecoverDeps): Promise<{ folder: string; lef
   if (await exists(j.temp)) await ops.rm(j.temp, { recursive: true, force: true }).catch((err: unknown) => console.error("Could not remove the temporary copy", err));
   // `to` is ours once the copy was renamed there (it is gone from the temporary place by then).
   const toIsOurs = j.stage !== "copying" && !copyLeft;
-  const oldHistory = d.historyDir(j.from);
-  const newHistory = d.historyDir(j.to);
   try {
+    const pairs = histories.map((h) => ({ ...h, old: d.historyDir(path.join(j.from, h.rel)), new: d.historyDir(path.join(j.to, h.rel)) }));
     if (folder === j.to) {
-      if (await exists(oldHistory)) {
-        if (await exists(newHistory)) await ops.rename(newHistory, `${newHistory}.replaced-${(d.now ?? Date.now)()}`);
-        await ops.rename(oldHistory, newHistory);
+      for (const p of pairs) {
+        if (await exists(p.old)) {
+          if (await exists(p.new)) await ops.rename(p.new, `${p.new}.replaced-${(d.now ?? Date.now)()}`);
+          await ops.rename(p.old, p.new);
+        }
       }
-      await pruneReplaced(path.dirname(newHistory), (d.now ?? Date.now)());
+      await pruneReplaced(path.dirname(d.historyDir(j.to)), (d.now ?? Date.now)());
       await clearJournal(d.journal);
       return { folder, ...((await exists(j.from)) ? { leftBehind: j.from } : {}) };
     }
     if (folder === j.from) {
-      if (j.stage === "history-moved" && !(await exists(oldHistory)) && (await exists(newHistory))) await ops.rename(newHistory, oldHistory);
-      if (j.setAside && (await exists(j.setAside)) && !(await exists(newHistory))) await ops.rename(j.setAside, newHistory);
+      for (const p of pairs) {
+        if (j.stage === "history-moved" && !(await exists(p.old)) && (await exists(p.new))) await ops.rename(p.new, p.old);
+        if (p.setAside && (await exists(p.setAside)) && !(await exists(p.new))) await ops.rename(p.setAside, p.new);
+      }
       // The copy goes only while the old folder is still there.
       if (toIsOurs && (await exists(j.to)) && (await exists(j.from))) await ops.rm(j.to, { recursive: true, force: true });
       await clearJournal(d.journal);

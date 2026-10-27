@@ -109,6 +109,89 @@ async function moved(t: Setup) {
   expect(siblings(t)).toEqual(["Work"]);
 }
 
+/** A profiles app: `sofi` and `tomas` inside the folder, each with a history of its own; the root has none. */
+async function setupProfiles(ops: Partial<MoveOps> = {}) {
+  const t = await setup(ops, { subfolders: async () => ["sofi", "tomas"], tracked: async () => ["sofi/a.md", "tomas/a.md"] });
+  fs.rmSync(t.oldHistory, { recursive: true, force: true });
+  const hist = (where: string, id: string) => historyDir(t.userData, path.join(where, id));
+  for (const id of ["sofi", "tomas"]) {
+    fs.mkdirSync(path.join(t.from, id, ".harness", "notes"), { recursive: true });
+    fs.writeFileSync(path.join(t.from, id, "a.md"), id);
+    fs.writeFileSync(path.join(t.from, id, ".harness", "notes", "n.md"), `---\ntitle: "N"\nfiles: ["${path.join(t.from, id)}/a.md"]\n---\n`);
+    fs.mkdirSync(hist(t.from, id), { recursive: true });
+    fs.writeFileSync(path.join(hist(t.from, id), "HEAD"), "ref: refs/heads/main\n");
+  }
+  return { ...t, hist };
+}
+
+describe("moveFolder with profiles (profiles spec §4 'Moving the folder')", () => {
+  it("moves every profile's history with the folder and makes each profile's notes relative", async () => {
+    const t = await setupProfiles();
+    expect(await moveFolder(t.from, t.to, t.deps)).toEqual(DONE);
+    for (const id of ["sofi", "tomas"]) {
+      expect(fs.existsSync(t.hist(t.to, id))).toBe(true);
+      expect(fs.existsSync(t.hist(t.from, id))).toBe(false);
+      expect(fs.readFileSync(path.join(t.to, id, ".harness", "notes", "n.md"), "utf8")).toContain('files: ["a.md"]');
+    }
+    expect(fs.existsSync(t.journal)).toBe(false);
+  });
+
+  it("puts every history back, and the config, when one of them can't follow", async () => {
+    let failTo = "";
+    const t = await setupProfiles({
+      rename: async (a, b) => {
+        if (b === failTo) throw errno("EIO");
+        await fs.promises.rename(a, b);
+      },
+    });
+    failTo = t.hist(t.to, "tomas");
+    expect(await code(moveFolder(t.from, t.to, t.deps))).toBe("failed");
+    expect((await t.config.load()).folder).toBe(t.from);
+    for (const id of ["sofi", "tomas"]) expect(fs.existsSync(t.hist(t.from, id))).toBe(true);
+    expect(fs.existsSync(t.hist(t.to, "sofi"))).toBe(false);
+    expect(fs.existsSync(t.to)).toBe(false);
+  });
+
+  it("D0: a folder without profiles writes the journal as before, with no list of histories", async () => {
+    let seen: unknown = null;
+    const t = await setup({
+      rename: async (a, b) => {
+        if (fs.existsSync(t.journal) && JSON.parse(fs.readFileSync(t.journal, "utf8")).stage === "config-saved") seen ??= JSON.parse(fs.readFileSync(t.journal, "utf8"));
+        await fs.promises.rename(a, b);
+      },
+    });
+    expect(await moveFolder(t.from, t.to, t.deps)).toEqual(DONE);
+    expect(seen).not.toBeNull();
+    expect(seen).not.toHaveProperty("histories");
+  });
+});
+
+describe("recoverMove with profiles", () => {
+  it("closed right after the config was saved: moves every profile's history", async () => {
+    const t = await setupProfiles();
+    fs.mkdirSync(t.to, { recursive: true });
+    await t.config.replaceFolder(t.to);
+    fs.writeFileSync(
+      t.journal,
+      JSON.stringify({ from: t.from, to: t.to, temp: `${t.to}.hh-moving-abc`, stage: "config-saved", histories: [{ rel: "sofi" }, { rel: "tomas" }] }),
+    );
+    expect(await recoverMove(t.recoverDeps)).toEqual({ folder: t.to, leftBehind: t.from });
+    for (const id of ["sofi", "tomas"]) {
+      expect(fs.existsSync(t.hist(t.to, id))).toBe(true);
+      expect(fs.existsSync(t.hist(t.from, id))).toBe(false);
+    }
+  });
+
+  it("drops a journal whose list of histories names something that isn't a profile, touching nothing", async () => {
+    const t = await setupProfiles();
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    fs.writeFileSync(t.journal, JSON.stringify({ from: t.from, to: t.to, temp: `${t.to}.hh-moving-abc`, stage: "config-saved", histories: [{ rel: "../x" }] }));
+    expect(await recoverMove(t.recoverDeps)).toBeNull();
+    expect(fs.existsSync(t.journal)).toBe(false);
+    expect(fs.existsSync(t.hist(t.from, "sofi"))).toBe(true);
+  });
+});
+
 describe("moveFolder", () => {
   it("moves the folder with its history, makes the notes' old paths relative and puts the old folder in the Trash", async () => {
     const t = await setup();

@@ -364,6 +364,11 @@ export interface FolderPick {
   problem: FolderProblem | null;
 }
 
+/** `hh:readDocument` (document-reader spec §5.3). Main never writes; a refusal is data. */
+export type DocumentRead =
+  | { ok: true; text: string; mtime: string; size: number }
+  | { ok: false; reason: "outside" | "missing" | "not-markdown" | "too-large" | "not-ready"; size?: number };
+
 export interface EngineStatus {
   engineId: string;
   installed: boolean;

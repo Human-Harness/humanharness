@@ -1,6 +1,6 @@
 import { Readability } from "@mozilla/readability";
 import { parseHTML } from "linkedom";
-import { withEstimatedPages } from "../blocks";
+import { fenced, withEstimatedPages } from "../blocks";
 import type { MdBlock } from "../types";
 
 /** Never read: they hold code, chrome or inputs, not the material (Conventions: files are untrusted). */
@@ -16,6 +16,7 @@ interface DomNode {
   nodeName: string;
   textContent: string | null;
   childNodes?: ArrayLike<DomNode>;
+  parentNode?: DomNode | null;
   querySelectorAll?(s: string): ArrayLike<DomNode>;
 }
 
@@ -23,12 +24,9 @@ const squash = (s: string) => s.replace(/\s+/g, " ");
 const tagOf = (n: DomNode) => n.nodeName.toUpperCase();
 const kids = (n: DomNode) => Array.from(n.childNodes ?? []);
 
-/** A fence one backtick longer than the longest backtick run inside, so the body can't close it. */
-function fenced(body: string): string {
-  const longest = Math.max(0, ...(body.match(/`+/g) ?? []).map((r) => r.length));
-  const fence = "`".repeat(Math.max(3, longest + 1));
-  return `${fence}\n${body.replace(/\n+$/, "")}\n${fence}`;
-}
+/** A line of text that would read as Markdown structure (a heading, a quote, a list, a fence, a table) gets its marker escaped. */
+const plainLine = (l: string) =>
+  l.replace(/^(\d{1,9})([.)])(?=\s|$)/, "$1\\$2").replace(/^(#{1,6}(?=\s|$)|>|[-*+](?=\s|$)|`{3,}|~{3,}|\|)/, "\\$1");
 
 /** Inline Markdown of an element: bold, italics, code, line breaks; links keep their text; images are placeholders. */
 function inline(node: DomNode, image: () => void): string {
@@ -62,7 +60,14 @@ function listMd(el: DomNode, depth: number, image: () => void): string {
 }
 
 function tableMd(el: DomNode, image: () => void): string {
+  // Only this table's own rows: a nested table's rows are read inside its cell.
+  const ownTable = (tr: DomNode) => {
+    let p = tr.parentNode;
+    while (p && tagOf(p) !== "TABLE") p = p.parentNode;
+    return p === el;
+  };
   const rows = Array.from(el.querySelectorAll?.("tr") ?? [])
+    .filter(ownTable)
     .map((tr) =>
       kids(tr)
         .filter((c) => ["TD", "TH"].includes(tagOf(c)))
@@ -81,7 +86,10 @@ function tableMd(el: DomNode, image: () => void): string {
  * An image is a block of its own, numbered like one, right after the block it sat in.
  */
 export function htmlBlocks(html: string, opts: { prefix?: string } = {}): MdBlock[] {
-  const doc = parseHTML(/<body[\s>]/i.test(html) ? html : `<!doctype html><html><body>${html}</body></html>`).document;
+  const wrapped = () => parseHTML(`<!doctype html><html><body>${html}</body></html>`).document;
+  let doc = /<body[\s>]/i.test(html) ? parseHTML(html).document : wrapped();
+  // A `<body` inside a comment or a script string is not a real one: read the fragment wrapped, never nothing.
+  if (kids(doc.body as unknown as DomNode).length === 0 && html.trim()) doc = wrapped();
   const out: MdBlock[] = [];
   // The current heading at each level (index = level - 1); a skipped level stays empty.
   const heads: (string | undefined)[] = [];
@@ -108,7 +116,7 @@ export function htmlBlocks(html: string, opts: { prefix?: string } = {}): MdBloc
   };
   let loose = "";
   const flush = () => {
-    const text = loose.split("\n").map((l) => squash(l).trim()).filter(Boolean).join("\n");
+    const text = loose.split("\n").map((l) => plainLine(squash(l).trim())).filter(Boolean).join("\n");
     loose = "";
     add("para", text);
   };
@@ -133,12 +141,16 @@ export function htmlBlocks(html: string, opts: { prefix?: string } = {}): MdBloc
     }
     if (LISTS.includes(tag)) return void (flush(), add("list", listMd(node, 0, image)));
     if (tag === "TABLE") return void (flush(), add("table", tableMd(node, image)));
-    if (tag === "PRE") return void (flush(), add("code", (node.textContent ?? "").trim() ? fenced(node.textContent ?? "") : ""));
+    if (tag === "PRE") {
+      // HTML drops one newline right after `<pre>`.
+      const code = (node.textContent ?? "").replace(/^\r?\n/, "");
+      return void (flush(), add("code", code.trim() ? fenced(code) : ""));
+    }
     if (tag === "IMG") return void (flush(), image(), emitImages());
     if (tag === "HR") return void flush();
     if (BLOCKS.has(tag)) {
       flush();
-      const text = inline(node, image).split("\n").map((l) => squash(l).trim()).filter(Boolean).join("\n");
+      const text = inline(node, image).split("\n").map((l) => plainLine(squash(l).trim())).filter(Boolean).join("\n");
       add("para", tag === "BLOCKQUOTE" ? text.split("\n").map((l) => `> ${l}`).join("\n") : text);
       return;
     }

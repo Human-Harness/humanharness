@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { htmlBlocks, readablePage } from "../src";
+import { htmlBlocks, markdownBlocks, readablePage } from "../src";
 
 describe("htmlBlocks", () => {
   it("headings, paragraphs, lists, tables, code and images, with heading-path locations", () => {
@@ -32,6 +32,27 @@ describe("htmlBlocks", () => {
 
   it("code holding backticks gets a longer fence", () => {
     expect(htmlBlocks("<pre>a ``` b</pre>")[0].md).toBe("````\na ``` b\n````");
+  });
+
+  it("a <body> inside a comment or a script string never loses the content", () => {
+    expect(htmlBlocks("<!-- <body> --><p>Kept.</p>").map((b) => b.md)).toEqual(["Kept."]);
+    expect(htmlBlocks("<script>var s = '<body>';</script><p>Kept.</p>").map((b) => b.md)).toEqual(["Kept."]);
+  });
+
+  it("a nested table's rows are read once, inside their own table", () => {
+    const blocks = htmlBlocks("<table><tr><td>outer</td><td><table><tr><td>inner</td></tr></table></td></tr><tr><td>2</td><td>3</td></tr></table>");
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].md).toBe("| outer | inner |\n|---|---|\n| 2 | 3 |");
+  });
+
+  it("the newline right after <pre> is not part of the code", () => {
+    expect(htmlBlocks("<pre>\nx = 1\n</pre>")[0].md).toBe("```\nx = 1\n```");
+  });
+
+  it("paragraph text that looks like Markdown structure is escaped", () => {
+    const md = htmlBlocks("<p># not a heading</p><p>> no quote</p><p>- no</p><p>* no</p><p>+ no</p><p>1. no</p><p>2) no</p>").map((b) => b.md);
+    expect(md).toEqual(["\\# not a heading", "\\> no quote", "\\- no", "\\* no", "\\+ no", "1\\. no", "2\\) no"]);
+    expect(md.flatMap((m) => markdownBlocks(m)).map((b) => b.kind)).toEqual(Array(7).fill("para"));
   });
 
   it("a prefix for every location (an ebook's chapter)", () => {

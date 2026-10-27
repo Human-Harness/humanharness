@@ -1,4 +1,4 @@
-import { markdownBlocks, withEstimatedPages } from "../blocks";
+import { fenced, markdownBlocks, withEstimatedPages } from "../blocks";
 import { utf16Text } from "../detect";
 import type { MaterialType, MdBlock } from "../types";
 
@@ -15,7 +15,6 @@ export function decodeText(b: Buffer): string {
 }
 
 const lines = (from: number, to: number) => (from === to ? `lines ${from}` : `lines ${from}–${to}`);
-const fenced = (lang: string, body: string) => `\`\`\`${lang}\n${body.replace(/\n+$/, "")}\n\`\`\``;
 const DEFINITION = /^(export\s+)?(default\s+)?(async\s+)?(function|class|def|interface|type|enum|struct|impl|fn|func|pub\s+fn|const|let|var)\b/;
 const YAML_KEY = /^[A-Za-z0-9_"'][^:#]*:(\s|$)/;
 
@@ -32,7 +31,7 @@ function cutAt(text: string, lang: string, isStart: (line: string) => boolean, t
     while (to >= from && !all[to].trim()) to--;
     if (from > to) return;
     if (headed) out.push({ kind: "heading", level: 2, md: `## ${title(all[start]).slice(0, 80)}`, loc: lines(start + 1, start + 1), page: 1 });
-    out.push({ kind: "code", md: fenced(lang, all.slice(from, to + 1).join("\n")), loc: lines(from + 1, to + 1), page: 1 });
+    out.push({ kind: "code", md: fenced(all.slice(from, to + 1).join("\n"), lang), loc: lines(from + 1, to + 1), page: 1 });
   };
   let headed = false;
   for (let i = 0; i < all.length; i++) {
@@ -73,15 +72,15 @@ export function textBlocks(type: Extract<MaterialType, "md" | "txt" | "json" | "
       try {
         value = JSON.parse(text);
       } catch {
-        return withEstimatedPages([{ kind: "code", md: fenced("json", text.trim()), loc: "lines 1", page: 1 }]);
+        return withEstimatedPages([{ kind: "code", md: fenced(text.trim(), "json"), loc: "lines 1", page: 1 }]);
       }
       if (typeof value !== "object" || value === null || Array.isArray(value)) {
-        return withEstimatedPages([{ kind: "code", md: fenced("json", JSON.stringify(value, null, 2)), loc: "lines 1", page: 1 }]);
+        return withEstimatedPages([{ kind: "code", md: fenced(JSON.stringify(value, null, 2), "json"), loc: "lines 1", page: 1 }]);
       }
       return withEstimatedPages(
         Object.entries(value).flatMap(([k, v]): MdBlock[] => [
           { kind: "heading", level: 2, md: `## ${k.slice(0, 80)}`, loc: `key ${k.slice(0, 40)}`, page: 1 },
-          { kind: "code", md: fenced("json", JSON.stringify(v, null, 2)), loc: `key ${k.slice(0, 40)}`, page: 1 },
+          { kind: "code", md: fenced(JSON.stringify(v, null, 2), "json"), loc: `key ${k.slice(0, 40)}`, page: 1 },
         ]),
       );
     }

@@ -8,6 +8,13 @@ const LIST = /^ {0,3}([-*+]|\d{1,9}[.)])\s+/;
 const TABLE = /^ {0,3}\|/;
 const IMAGE = /^ {0,3}!\[[^\]]*\]\([^)]*\)\s*$/;
 
+/** A code block: a fence one backtick longer than the longest backtick run inside, so no body line can close it. */
+export function fenced(body: string, lang = ""): string {
+  const longest = Math.max(0, ...(body.match(/`+/g) ?? []).map((r) => r.length));
+  const fence = "`".repeat(Math.max(3, longest + 1));
+  return `${fence}${lang}\n${body.replace(/\n+$/, "")}\n${fence}`;
+}
+
 /** `lines 3–4`, or `lines 3` for one line. */
 const lines = (from: number, to: number) => (from === to ? `lines ${from}` : `lines ${from}–${to}`);
 

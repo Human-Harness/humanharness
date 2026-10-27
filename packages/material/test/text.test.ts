@@ -73,6 +73,13 @@ describe("textBlocks (§3 plain text)", () => {
     expect(code[0]).toMatchObject({ kind: "code", md: "```\nimport x from 'y';\n```" });
   });
 
+  it("code holding a fence line gets a longer fence, so the body can't close it", () => {
+    const code = textBlocks("code", Buffer.from("const s = `\n```\n`;\n"));
+    const block = code.find((b) => b.kind === "code");
+    expect(block?.md).toBe("````\nconst s = `\n```\n`;\n````");
+    expect(markdownBlocks(block?.md ?? "").map((b) => b.kind)).toEqual(["code"]);
+  });
+
   it("an empty file has no blocks", () => {
     expect(textBlocks("txt", Buffer.from("  \n\n"))).toEqual([]);
   });

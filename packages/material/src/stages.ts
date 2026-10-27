@@ -76,8 +76,10 @@ export interface StageContext {
   fragmentKinds: string[];
   sheetSections: { id: string; label: string; prompt: string }[];
   sheetMaxTokens: number;
-  /** `key: label` lines of the items collection in this scope (links stage). */
+  /** `key: label` lines of the items collection in this scope (links stage only: the others never get the list). */
   items?: { key: string; label: string }[];
+  /** The harness declares `items` (so estimates count the links), for the stages that don't get the list. */
+  hasItems?: boolean;
   /** Converts the job's source again with other settings (§6.2 `reconvert`); its review starts over. */
   reconvert?: (settings: ConvertSettings) => Promise<void>;
   /** Per-fragment costs measured in this base (Task 25), for the estimates a stage sets (a full review's). */
@@ -159,7 +161,7 @@ STAGES.review = {
     const answer = state.answers.at(-1);
     if (!answer) return false;
     await applyReview(store, job, reviewAnswer.parse(answer), {
-      items: ctx.items !== undefined,
+      items: ctx.hasItems === true || ctx.items !== undefined,
       ...(ctx.reconvert ? { reconvert: ctx.reconvert } : {}),
       ...(ctx.measured ? { measured: ctx.measured } : {}),
     });

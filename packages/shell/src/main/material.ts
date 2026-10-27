@@ -255,8 +255,13 @@ export class MaterialService {
     const store = await this.store(scope);
     const sources = typeof store === "string" ? [] : await store.sources();
     const chosen = typeof store === "string" ? null : await store.grounding();
-    // Coverage (§8): only with `items`, once the scope has something usable to cover them with.
-    const coverage = typeof store !== "string" && this.d.material.items && this.d.items && sources.some(isUsable) ? await uncovered(store, await this.d.items(scope)) : null;
+    // Coverage (§8): only with `items`, once the scope has something usable to cover them with and its links are done:
+    // while a source is still being checked or the sheet or the links are due, every item would read as missing.
+    const settled = sources.some(isUsable) && !sources.some((s) => s.status === "validating");
+    const coverage =
+      typeof store !== "string" && this.d.material.items && this.d.items && settled && (await store.stale()) === null
+        ? await uncovered(store, await this.d.items(scope))
+        : null;
     return {
       scope,
       sources: sources.filter((s) => s.status !== "removed").map(view),
@@ -486,8 +491,9 @@ export class MaterialService {
       fragmentKinds: [...this.d.material.fragmentKinds],
       sheetSections: this.d.material.sheet.sections.map((s) => ({ id: s.id, label: s.label, prompt: s.prompt })),
       sheetMaxTokens: this.d.material.sheet.maxTokens,
-      // The links stage's items: only with `material.items` (the review only asks whether there are any).
-      ...(this.d.material.items && this.d.items ? { items: await this.d.items(job.scope) } : {}),
+      // With `material.items`: the links stage gets the list; the others only that there is one (for estimates).
+      ...(this.d.material.items ? { hasItems: true } : {}),
+      ...(job.stage === "link" && this.d.material.items && this.d.items ? { items: await this.d.items(job.scope) } : {}),
       ...(source
         ? {
             reconvert: async (settings) => {

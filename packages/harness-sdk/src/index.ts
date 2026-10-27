@@ -391,6 +391,8 @@ const manifestSchema = z.object({
         const c = m.data[items.collection];
         if (c.single || c.key === undefined) issue(["items", "collection"], `Fragments link to records by key: "${items.collection}" needs a key, not single: true`);
         if (!Object.hasOwn(c.schema.shape, items.label)) issue(["items", "label"], `"${items.label}" is not a field of "${items.collection}"`);
+        // Linking sends the items to the engine's provider: a collection hidden from the agent can't be linked to.
+        if (c.agent === "none") issue(["items", "collection"], `"${items.collection}" is hidden from the agent (agent: "none"): fragments can't link to it`);
       }
     }
     // Settings › Models keys each stage's setting next to the action ids.

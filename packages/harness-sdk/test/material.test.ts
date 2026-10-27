@@ -92,6 +92,10 @@ describe("material in the manifest (material spec §8)", () => {
     expect(issues({ ...withMaterial, data: { concepts, single }, material: { sheet, items: { collection: "single", label: "name" } } })).toContain(
       'material.items.collection: Fragments link to records by key: "single" needs a key, not single: true',
     );
+    const hidden = { ...concepts, agent: "none" as const };
+    expect(issues({ ...withMaterial, data: { concepts: hidden } })).toContain(
+      'material.items.collection: "concepts" is hidden from the agent (agent: "none"): fragments can\'t link to it',
+    );
   });
 
   it("sheet sections and kinds are unique, and the core's sheet sections are reserved", () => {

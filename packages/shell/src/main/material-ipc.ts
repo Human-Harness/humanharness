@@ -1,5 +1,5 @@
-import { type HarnessMaterial, hasMaterial } from "@humanharness/harness-sdk";
-import { MAX_PAGES } from "@humanharness/material/light";
+import { type Collection, type HarnessMaterial, hasMaterial } from "@humanharness/harness-sdk";
+import { LINK_MAX_ITEMS, type LinkItem, MAX_PAGES } from "@humanharness/material/light";
 import type { MaterialInfo, MaterialResult } from "@humanharness/ui/client";
 import { DATA_PREFIX, type HistoryKeep, MATERIAL_KEEP, NOTES_PREFIX } from "@humanharness/workspace";
 
@@ -27,4 +27,45 @@ export async function openMaterial(
   const file = await svc.originalOf(scope, id);
   if (!file) return { ok: false, reason: "unknown-source" };
   return (await openPath(file)) ? { ok: false, reason: "invalid" } : { ok: true };
+}
+
+/** The part of the data store the items are read through. */
+export interface ItemsStore {
+  scopeFor(name: string, scope: string): string;
+  readAll(name: string, scope: string): Promise<{ records: Record<string, unknown>[] }>;
+}
+
+/**
+ * The links stage's items (material spec §8): the first LINK_MAX_ITEMS records of the `items` collection in the
+ * scope (or the app-wide one), as `key: label`, the label cut to 200 characters (the key when it has none). Empty for
+ * a collection hidden from the agent (its labels would reach the engine's provider), one with no key, no store yet,
+ * or a read that fails: never throws.
+ */
+export async function materialItems(
+  items: HarnessMaterial["items"],
+  data: Record<string, Pick<Collection, "key" | "agent">>,
+  store: () => Promise<ItemsStore | null>,
+  scope: string,
+): Promise<LinkItem[]> {
+  if (!items || !Object.hasOwn(data, items.collection)) return [];
+  const c = data[items.collection];
+  const key = c.key;
+  if (!key || c.agent === "none") return [];
+  const text = (v: unknown): string | null => (typeof v === "string" || typeof v === "number" ? String(v) : null);
+  try {
+    const s = await store();
+    if (!s) return [];
+    const { records } = await s.readAll(items.collection, s.scopeFor(items.collection, scope));
+    const out: LinkItem[] = [];
+    for (const r of records) {
+      if (out.length >= LINK_MAX_ITEMS) break;
+      const k = text(r[key]);
+      if (k === null) continue;
+      out.push({ key: k, label: (text(r[items.label]) ?? k).slice(0, 200) });
+    }
+    return out;
+  } catch (err) {
+    console.error("Could not read the material's items", err);
+    return [];
+  }
 }

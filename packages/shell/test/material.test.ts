@@ -116,18 +116,38 @@ describe("MaterialService", () => {
   it("coverage: the items no fragment links to, once a source is usable; no `uncovered` without items (§8)", async () => {
     const withItems = deps({
       material: { accepts: ["text"], grounding: { default: "mixed", personCanChange: true }, budget: { indexTokens: 600 }, items: { collection: "concepts", label: "name" }, ...stageFields },
-      items: async () => [{ key: "halves", label: "Halves" }],
+      items: async () => {
+        reads++;
+        return [{ key: "halves", label: "Halves" }];
+      },
     });
+    let reads = 0;
     const svc = new MaterialService(withItems);
     expect(await svc.list("fractions")).not.toHaveProperty("uncovered");
     picked = [write("a.md", `# A\n\n${"Text about a whole. ".repeat(30)}`)];
     await svc.add("fractions");
+    // Still being checked: no coverage yet (every item would read as missing).
+    expect(await svc.list("fractions")).not.toHaveProperty("uncovered");
+    const store = svc.storeAt(base, "fractions");
+    await store.update((l) => l.map((s) => ({ ...s, status: "ready" as const, stage: undefined })));
+    // Labelled, but the sheet and the links are still due.
+    await store.setStale("link");
+    expect(await svc.list("fractions")).not.toHaveProperty("uncovered");
+    await store.setStale(false);
     expect((await svc.list("fractions")).uncovered).toEqual(["Halves"]);
-    // The stages get the items too.
-    expect((await svc.stageContext({ scope: "fractions", stage: "link" }, new MaterialStore(base, "fractions"))).items).toEqual([{ key: "halves", label: "Halves" }]);
+    // Only the links stage reads the items; the others only learn there are some.
+    reads = 0;
+    const link = await svc.stageContext({ scope: "fractions", stage: "link" }, store);
+    expect(link).toMatchObject({ items: [{ key: "halves", label: "Halves" }], hasItems: true });
+    const review = await svc.stageContext({ scope: "fractions", source: "a", stage: "review" }, store);
+    expect(review).not.toHaveProperty("items");
+    expect(review.hasItems).toBe(true);
+    expect(reads).toBe(1);
     // Without `items` in the manifest: no key, and the stages get none.
     expect(await service.list("fractions")).not.toHaveProperty("uncovered");
-    expect(await service.stageContext({ scope: "fractions", stage: "sheet" }, new MaterialStore(base, "fractions"))).not.toHaveProperty("items");
+    const sheet = await service.stageContext({ scope: "fractions", stage: "sheet" }, new MaterialStore(base, "fractions"));
+    expect(sheet).not.toHaveProperty("items");
+    expect(sheet).not.toHaveProperty("hasItems");
   });
 
   it("the grounding mode is per scope, and only when the person may change it", async () => {

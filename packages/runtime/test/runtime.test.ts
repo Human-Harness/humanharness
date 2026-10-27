@@ -13,7 +13,7 @@ import { type HarnessRuntime, type RuntimeOptions, createRuntime } from "../src/
 import type { Session } from "../src/transport";
 
 /** Sockets the runtime opened: a test can make the bridge's close fail and see the rpc's close. */
-const sockets = vi.hoisted(() => ({ failBridgeClose: false, rpcClosed: 0 }));
+const sockets = vi.hoisted(() => ({ failBridgeClose: false, failRpcClose: false, rpcClosed: 0 }));
 vi.mock("@humanharness/blocks", async (importOriginal) => {
   const blocks = await importOriginal<typeof import("@humanharness/blocks")>();
   return {
@@ -24,7 +24,14 @@ vi.mock("@humanharness/blocks", async (importOriginal) => {
     },
     openRpc: async (...args: Parameters<typeof blocks.openRpc>) => {
       const rpc = await blocks.openRpc(...args);
-      return { ...rpc, close: () => rpc.close().then(() => void sockets.rpcClosed++) };
+      return {
+        ...rpc,
+        close: async () => {
+          await rpc.close();
+          sockets.rpcClosed++;
+          if (sockets.failRpcClose) throw new Error("rpc");
+        },
+      };
     },
   };
 });
@@ -34,6 +41,7 @@ afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
 
 const FIXTURE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../fake-agent/fixtures/notes-harness/harness.config.ts");
 const STUDY = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../fake-agent/fixtures/data-harness/harness.config.ts");
+const READER = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../fake-agent/fixtures/material-harness/harness.config.ts");
 const mcpServers = (argv: string[]) => Object.keys((JSON.parse(argv[argv.indexOf("--mcp-config") + 1]) as { mcpServers: object }).mcpServers);
 let runtime: HarnessRuntime | undefined;
 
@@ -354,6 +362,48 @@ describe("createRuntime", () => {
     expect(seen).toEqual([{ op: "put", collection: "concepts", record: { id: "halves", name: "Halves", state: "seen", evidence: [] } }]);
   });
 
+  it("starts no material server without material in the manifest, and AGENTS.md has no Material part (material D0)", async () => {
+    const { runtime, args, folder } = await setup({ steps: [claudeResultLine(true)] }, undefined, { material: { request: async () => "x" } });
+    // Files where material would live are not tracked either: the keep list is today's.
+    fs.mkdirSync(path.join(folder, ".harness", "material", "fractions"), { recursive: true });
+    fs.writeFileSync(path.join(folder, ".harness", "material", "fractions", "sources.json"), "[]\n");
+    await send(runtime);
+    expect(mcpServers(args())).toEqual(["ui"]);
+    expect(fs.readFileSync(path.join(folder, "AGENTS.md"), "utf8")).not.toContain("### Material");
+    expect((await runtime.history.trackedFiles()).filter((f) => f.startsWith(".harness/"))).toEqual([]);
+  });
+
+  it("starts the material server in person mode with material, sends its calls to the handler, and keeps its registry", async () => {
+    const seen: unknown[] = [];
+    const folder = path.join(fs.mkdtempSync(path.join(root, "t-")), "Work");
+    const { runtime, args } = await setup(
+      { steps: [{ mcp: { server: "material", tool: "material_read", args: { id: "ch2-001" } } }, claudeResultLine(true)] },
+      folder,
+      {
+        harness: await loadHarness(READER),
+        data: async () => null,
+        material: {
+          request: async (request) => {
+            seen.push(request);
+            fs.mkdirSync(path.join(folder, ".harness", "material", "fractions", "fragments"), { recursive: true });
+            fs.writeFileSync(path.join(folder, ".harness", "material", "fractions", "sources.json"), "[]\n");
+            fs.writeFileSync(path.join(folder, ".harness", "material", "fractions", "index.md"), "\n");
+            return "x";
+          },
+        },
+      },
+    );
+    await send(runtime);
+    const servers = JSON.parse(args()[args().indexOf("--mcp-config") + 1]) as { mcpServers: Record<string, { env: Record<string, string> }> };
+    expect(Object.keys(servers.mcpServers)).toEqual(["ui", "data", "material"]);
+    expect(servers.mcpServers.material.env.HH_MATERIAL_MODE).toBe("person");
+    expect(seen).toEqual([{ op: "read", id: "ch2-001" }]);
+    expect(fs.readFileSync(path.join(folder, "AGENTS.md"), "utf8")).toContain("### Material");
+    const tracked = await runtime.history.trackedFiles();
+    expect(tracked).toContain(".harness/material/fractions/sources.json");
+    expect(tracked).not.toContain(".harness/material/fractions/index.md");
+  });
+
   it("closes the data socket even when closing the ui bridge fails", async () => {
     const { runtime: r } = await setup({ steps: [claudeResultLine(true)] }, undefined, { harness: await loadHarness(STUDY), data: async () => null });
     runtime = undefined;
@@ -365,5 +415,25 @@ describe("createRuntime", () => {
       sockets.failBridgeClose = false;
     }
     expect(sockets.rpcClosed).toBe(closed + 1);
+  });
+
+  it("closes the material socket even when the earlier closes fail", async () => {
+    const { runtime: r } = await setup({ steps: [claudeResultLine(true)] }, undefined, {
+      harness: await loadHarness(READER),
+      data: async () => null,
+      material: { request: async () => null },
+    });
+    runtime = undefined;
+    const closed = sockets.rpcClosed;
+    sockets.failBridgeClose = true;
+    sockets.failRpcClose = true;
+    try {
+      await expect(r.close()).rejects.toThrow();
+    } finally {
+      sockets.failBridgeClose = false;
+      sockets.failRpcClose = false;
+    }
+    // The data socket's close failed, and the material socket still closed after it.
+    expect(sockets.rpcClosed).toBe(closed + 2);
   });
 });

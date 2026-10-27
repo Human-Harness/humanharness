@@ -15,6 +15,10 @@ import type {
   HarnessClient,
   HistoryItem,
   HistoryTaskView,
+  MaterialAddResult,
+  MaterialChoice,
+  MaterialResult,
+  MaterialView,
   ModeChoice,
   ModeResult,
   ModeSwitch,
@@ -687,6 +691,84 @@ export class FakeClient implements HarnessClient {
       this.profileListeners.add(listener);
       return () => {
         this.profileListeners.delete(listener);
+      };
+    },
+  };
+
+  /**
+   * Calls to material, in order: "add:<scope>", "link:<scope>:<url>", "confirm:<id>", "grounding:<mode>", "retry:<id>",
+   * "decide:<id>:<fragment or ->:<choice>", "remove:<id>", "open:<id>".
+   */
+  materialCalls: string[] = [];
+  materialViews: Record<string, MaterialView> = {};
+  /** The choices `confirm` got, in order. */
+  materialChoices: unknown[] = [];
+  /** What `add` and `addLink` answer; an Error rejects. */
+  materialAddResult: MaterialAddResult | Error = { ok: true, added: [], refused: [] };
+  /** What `confirm` answers; an Error rejects. */
+  materialConfirmResult: MaterialResult | Error = { ok: true };
+  /** What `decide` answers; an Error rejects. */
+  materialDecideResult: MaterialResult | Error = { ok: true };
+  /** What `remove` answers; an Error rejects. */
+  materialRemoveResult: MaterialResult | Error = { ok: true };
+  /** What `cite` answers per fragment id; absent: no such fragment. */
+  citeLabels: Record<string, string> = {};
+  /** The scope of every citation lookup, in order. */
+  citeScopes: string[] = [];
+  private materialListeners = new Set<(v: MaterialView) => void>();
+  /** Pushes a view as the main process would. */
+  pushMaterial(view: MaterialView) {
+    this.materialViews[view.scope] = view;
+    for (const l of this.materialListeners) l(view);
+  }
+  material = {
+    list: async (scope: string) => (Object.hasOwn(this.materialViews, scope) ? this.materialViews[scope] : null),
+    add: async (scope: string) => {
+      this.materialCalls.push(`add:${scope}`);
+      if (this.materialAddResult instanceof Error) throw this.materialAddResult;
+      return this.materialAddResult;
+    },
+    addLink: async (scope: string, url: string) => {
+      this.materialCalls.push(`link:${scope}:${url}`);
+      if (this.materialAddResult instanceof Error) throw this.materialAddResult;
+      return this.materialAddResult;
+    },
+    confirm: async (_scope: string, id: string, choice: unknown) => {
+      this.materialCalls.push(`confirm:${id}`);
+      this.materialChoices.push(choice);
+      if (this.materialConfirmResult instanceof Error) throw this.materialConfirmResult;
+      return this.materialConfirmResult;
+    },
+    setGrounding: async (_scope: string, mode: "strict" | "mixed") => {
+      this.materialCalls.push(`grounding:${mode}`);
+      return { ok: true as const };
+    },
+    retry: async (_scope: string, id: string) => {
+      this.materialCalls.push(`retry:${id}`);
+      return { ok: true as const };
+    },
+    decide: async (_scope: string, id: string, fragment: string | null, choice: MaterialChoice) => {
+      this.materialCalls.push(`decide:${id}:${fragment ?? "-"}:${choice}`);
+      if (this.materialDecideResult instanceof Error) throw this.materialDecideResult;
+      return this.materialDecideResult;
+    },
+    remove: async (_scope: string, id: string): Promise<MaterialResult> => {
+      this.materialCalls.push(`remove:${id}`);
+      if (this.materialRemoveResult instanceof Error) throw this.materialRemoveResult;
+      return this.materialRemoveResult;
+    },
+    open: async (_scope: string, id: string) => {
+      this.materialCalls.push(`open:${id}`);
+      return { ok: true as const };
+    },
+    cite: async (scope: string, id: string) => {
+      this.citeScopes.push(scope);
+      return Object.hasOwn(this.citeLabels, id) ? { label: this.citeLabels[id] } : null;
+    },
+    onChange: (l: (v: MaterialView) => void) => {
+      this.materialListeners.add(l);
+      return () => {
+        this.materialListeners.delete(l);
       };
     },
   };

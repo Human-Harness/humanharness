@@ -4,6 +4,7 @@ import type { Tier } from "@humanharness/harness-sdk";
 import { AnnotateBlock } from "./AnnotateBlock";
 import { findAnswer } from "./annotate";
 import { ChoicesBlock } from "./ChoicesBlock";
+import { CitationContext, type CitationResolver } from "./citations";
 import { GearIcon, TopBar } from "./chrome";
 import {
   type AppState,
@@ -27,6 +28,7 @@ import { HistoryPanel } from "./HistoryPanel";
 import { pruneDrafts } from "./InputForm";
 import { type BlockActions, type BlockProps, type InputContext, Message } from "./Message";
 import { markdownToPlain } from "./markdown";
+import { MaterialPanel, type MaterialPanelProps } from "./MaterialPanel";
 import { ModeBar, ModeList } from "./ModeList";
 import { actionModes, tierBelow } from "./modes";
 import { NotesPanel } from "./NotesPanel";
@@ -79,6 +81,7 @@ export function ChatView({
   onFixEngine,
   onTurnOk,
   slim,
+  materialPanel,
 }: {
   client: HarnessClient;
   state: AppState;
@@ -105,6 +108,8 @@ export function ChatView({
    * history or topics. A button starts it (or continues it) when it isn't on screen.
    */
   slim?: { action: string };
+  /** Replaces the default material panel; only with `state.material`. */
+  materialPanel?: ComponentType<MaterialPanelProps>;
 }) {
   const { t, i18n } = useTranslation();
   // save_note never shows: a note reaches the side panel as a file, through the tasks. Nor set_phase: the stepper
@@ -173,6 +178,8 @@ export function ChatView({
   // Set synchronously on send so two quick clicks can't both pass before the live turn renders.
   const busy = useRef(false);
   const wasLive = useRef(false);
+  /** The chat's citation labels (set further down), so the read-aloud answer can name its sources. */
+  const citationsRef = useRef<CitationResolver | null>(null);
   const engineOption = state.engines.find((e) => e.id === state.config.engineId);
   const engine = engineOption?.name ?? state.config.engineId ?? "";
   /** Any harness with actions runs as tasks: topics, a guided path, one task on screen at a time. */
@@ -348,7 +355,7 @@ export function ChatView({
     // "Working…" is announced by the status row itself; clearing lets the final answer be announced afresh.
     if (chat.live && !wasLive.current) setAnnouncement("");
     if (!chat.live && wasLive.current) {
-      setAnnouncement(markdownToPlain(chat.entries.findLast((e) => e.role === "assistant")?.text ?? ""));
+      setAnnouncement(markdownToPlain(chat.entries.findLast((e) => e.role === "assistant")?.text ?? "", (id) => citationsRef.current?.known?.(id)));
       inputRef.current?.focus();
       client.getUsage().then((u) => setEstimates(u.estimates), () => {});
       if (!chat.entries.at(-1)?.error) onTurnOk?.();
@@ -788,6 +795,58 @@ export function ChatView({
   const slimStart = slim !== undefined && loaded && tasksLoaded && !chat.live && tasks.current?.action !== slim.action;
   /** Slim: the composer only for the interview's own task (or a turn running), never before it is known. */
   const composer = !slim || Boolean(chat.live) || tasks.current?.action === slim.action;
+  // Material spec §11: the scope's material panel, only when the harness takes material (D0) and a scope is open.
+  const materialScope = state.material ? (state.scopes ? openScope : "main") : null;
+  // Citations `[[frag:<id>]]` in the chat (§9): drawn only with material and a scope (D0); one label lookup per id.
+  // Keyed by whether there is material, not by the object: every state refresh brings a new one, and the cache stays.
+  const withMaterial = Boolean(state.material);
+  /** One resolver per scope, each with its own label cache; null without material (D0). */
+  const citationsFor = useMemo<((scope: string) => CitationResolver) | null>(() => {
+    if (!withMaterial) return null;
+    const byScope = new Map<string, CitationResolver>();
+    return (scope) => {
+      const made = byScope.get(scope);
+      if (made) return made;
+      const cache = new Map<string, Promise<string | null>>();
+      const known = new Map<string, string>();
+      const resolver: CitationResolver = {
+        label: (id) => {
+          let label = cache.get(id);
+          if (!label) {
+            label = client.material.cite(scope, id).then(
+              (r) => r?.label ?? null,
+              () => null,
+            );
+            cache.set(id, label);
+            // A fragment not there yet (still converting, or a failed lookup) is asked again next time.
+            label.then((l) => {
+              if (l === null) cache.delete(id);
+              else known.set(id, l);
+            });
+          }
+          return label;
+        },
+        open: (id) => void client.material.open(scope, id).catch(() => undefined),
+        known: (id) => known.get(id),
+      };
+      byScope.set(scope, resolver);
+      return resolver;
+    };
+  }, [client, withMaterial]);
+  /** A citation is resolved in the scope of the task that wrote it when that is known, else in the open scope. */
+  const citeScope = (task: string | undefined): string | null =>
+    (task !== undefined && task === tasks.current?.id && tasks.current.scope) || materialScope;
+  const citationsOf = (task: string | undefined): CitationResolver | null => {
+    const scope = citeScope(task);
+    return citationsFor && scope ? citationsFor(scope) : null;
+  };
+  citationsRef.current = citationsOf(tasks.current?.id);
+  const Panel = materialPanel ?? MaterialPanel;
+  const material =
+    state.material && materialScope && !slim ? (
+      // Keyed by scope: another scope's panel starts fresh (its form, notices and cards are not this one's).
+      <Panel key={materialScope} client={client} scope={materialScope} info={state.material} disabled={blocked() || !loaded} />
+    ) : null;
 
   return (
     <div className={slim ? "hh-app hh-app-slim" : "hh-app"}>
@@ -824,7 +883,14 @@ export function ChatView({
               setShowHistory(false);
               setNotesPanel({ expanded: slug });
             }}
+            material={material}
           />
+        )}
+        {/* Without actions there is no flow side panel: the material panel gets one of its own. */}
+        {!flow && material && (
+          <nav className="hh-flow-side" aria-label={t("material.title")}>
+            {material}
+          </nav>
         )}
         <Main className="hh-main">
           {/* A time box without phases (spec §5) still shows its time, its controls and, once time is up, Finish. */}
@@ -889,25 +955,27 @@ export function ChatView({
             )}
             {/* The running turn is the list's last item, under the id its entry gets: it stays the same element when it ends. */}
             {(liveEntry ? [...shown, liveEntry] : shown).map((entry) => (
-              <div key={entry.id} data-entry={entry.id} data-role={entry.role}>
-                <Message
-                  key={pickResets}
-                  entry={entry}
-                  components={entry === liveEntry || ofWaitingTask(entry.task) ? all : stale}
-                  actions={blockActions(entry === lastAssistant && !chat.live && !closing, entry.task, entry === liveEntry ? null : entry.id)}
-                  live={entry === liveEntry ? { activities: chat.live!.activities, label: checkpoint ? t("flow.checkpoint") : undefined } : undefined}
-                  reveal={entry.id === pacedTurn.current ? (reveal ?? undefined) : undefined}
-                />
-                {entry.error && entry === last && (
-                  <ErrorCard
-                    error={entry.error}
-                    engine={engine}
-                    limits={chat.limits}
-                    onFix={onFixEngine}
-                    onRetry={retry()}
+              <CitationContext.Provider key={entry.id} value={citationsOf(entry.task)}>
+                <div data-entry={entry.id} data-role={entry.role}>
+                  <Message
+                    key={pickResets}
+                    entry={entry}
+                    components={entry === liveEntry || ofWaitingTask(entry.task) ? all : stale}
+                    actions={blockActions(entry === lastAssistant && !chat.live && !closing, entry.task, entry === liveEntry ? null : entry.id)}
+                    live={entry === liveEntry ? { activities: chat.live!.activities, label: checkpoint ? t("flow.checkpoint") : undefined } : undefined}
+                    reveal={entry.id === pacedTurn.current ? (reveal ?? undefined) : undefined}
                   />
-                )}
-              </div>
+                  {entry.error && entry === last && (
+                    <ErrorCard
+                      error={entry.error}
+                      engine={engine}
+                      limits={chat.limits}
+                      onFix={onFixEngine}
+                      onRetry={retry()}
+                    />
+                  )}
+                </div>
+              </CitationContext.Provider>
             ))}
             {pickFailed && (
               <p className="hh-error" role="alert">

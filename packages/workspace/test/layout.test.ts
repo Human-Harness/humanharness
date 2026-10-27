@@ -1,6 +1,6 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { APP_SCOPE, MAIN_SCOPE, NOTES_PREFIX, chatFile, chatsDir, isScopeDir, isScopeId, notesPrefix, profilesFile, scopesFile, setupFile, tasksFile, usageFile } from "../src";
+import { APP_SCOPE, MAIN_SCOPE, MATERIAL_KEEP, NOTES_PREFIX, chatFile, chatsDir, isScopeDir, isScopeId, materialDir, materialReadsFile, materialStoreDir, notesPrefix, profilesFile, scopesFile, setupFile, tasksFile, usageFile } from "../src";
 
 describe("layout", () => {
   it("keeps today's places for a harness without scopes", () => {
@@ -45,5 +45,31 @@ describe("layout", () => {
     expect(isScopeDir("main")).toBe(true);
     expect(isScopeDir("_other")).toBe(false);
     expect(isScopeDir(3)).toBe(false);
+  });
+});
+
+describe("material paths (material spec §4)", () => {
+  it("the originals are visible, the rest is hidden, both per scope", () => {
+    expect(materialDir("/w", "fractions")).toBe(path.join("/w", "material", "fractions"));
+    expect(materialStoreDir("/w", "main")).toBe(path.join("/w", ".harness", "material", "main"));
+    expect(materialReadsFile("/w")).toBe(path.join("/w", ".harness", "material-reads.jsonl"));
+  });
+
+  it("app-wide work has no material, and a bad scope names no folder", () => {
+    expect(() => materialDir("/w", APP_SCOPE)).toThrow();
+    expect(() => materialStoreDir("/w", APP_SCOPE)).toThrow();
+    expect(() => materialStoreDir("/w", "../x")).toThrow();
+  });
+
+  it("MATERIAL_KEEP: the registry, the conflicts and the grounding mode, nothing else", () => {
+    const keeps = (p: string) => MATERIAL_KEEP.match.test(p);
+    expect(keeps(".harness/material/main/sources.json")).toBe(true);
+    expect(keeps(".harness/material/fractions/conflicts.md")).toBe(true);
+    expect(keeps(".harness/material/fractions/grounding.json")).toBe(true);
+    expect(keeps(".harness/material/main/index.md")).toBe(false);
+    expect(keeps(".harness/material/main/fragments/a-001.md")).toBe(false);
+    expect(keeps(".harness/material/main/fragments/sources.json")).toBe(false);
+    expect(keeps(".harness/material/main/sources.json.1234.tmp")).toBe(false);
+    expect(keeps(".harness/material/_app/sources.json")).toBe(false);
   });
 });

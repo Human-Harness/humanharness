@@ -1,8 +1,22 @@
 import fs from "node:fs";
 import path from "node:path";
 import git from "isomorphic-git";
-import { DATA_PREFIX, NOTES_PREFIX, isScopeDir } from "./layout";
+import { DATA_PREFIX, MATERIAL_KEEP, NOTES_PREFIX, isScopeDir } from "./layout";
 import { BEFORE_MESSAGE } from "./subjects";
+
+/**
+ * A path the history tracks inside an ignored folder: a prefix (the notes, the data), or the files `match` names at
+ * most `depth` folders below `prefix` (material spec §4: `MATERIAL_KEEP`).
+ */
+export type HistoryKeep = string | { readonly prefix: string; readonly match: RegExp; readonly depth: number };
+
+/**
+ * What the app's history keeps under `.harness/`: the notes and the data; with material, its registry and decisions
+ * (`MATERIAL_KEEP`). The one rule for the shell's history and the runtime's, so both agree (D0 without material).
+ */
+export const appHistoryKeep = (material: boolean): HistoryKeep[] => [NOTES_PREFIX, DATA_PREFIX, ...(material ? [MATERIAL_KEEP] : [])];
+
+const keeps = (k: HistoryKeep, file: string): boolean => (typeof k === "string" ? file.startsWith(k) : k.match.test(file));
 
 const AUTHOR = { name: "Human Harness", email: "history@humanharness.local" };
 
@@ -159,8 +173,8 @@ export class History {
     private readonly folder: string,
     private readonly gitdir: string,
     private readonly ignore: string[] = [".harness/"],
-    /** Prefixes tracked even inside an ignored one (the notes under `.harness/`). */
-    private readonly keep: string[] = [],
+    /** Paths tracked even inside an ignored folder (the notes and the data under `.harness/`, the material's decisions). */
+    private readonly keep: HistoryKeep[] = [],
   ) {}
 
   private headTime = 0;
@@ -190,7 +204,7 @@ export class History {
   private tracked = (file: string): boolean =>
     !file.endsWith(".DS_Store") &&
     !isAppTempFile(file) &&
-    (this.keep.some((k) => file.startsWith(k)) || !this.ignore.some((i) => (i.endsWith("/") ? file.startsWith(i) : file === i)));
+    (this.keep.some((k) => keeps(k, file)) || !this.ignore.some((i) => (i.endsWith("/") ? file.startsWith(i) : file === i)));
 
   async init(): Promise<void> {
     await fs.promises.mkdir(this.gitdir, { recursive: true });
@@ -452,13 +466,17 @@ export class History {
     return commit.parent[0] ?? null;
   }
 
-  /** A folder the history never tracks anything in: ignored, and no `keep` prefix lies inside it. */
+  /** A folder the history never tracks anything in: ignored, and no `keep` entry can name a file inside it. */
   private skipsFolder(dir: string): boolean {
     const prefix = `${dir}/`;
-    return (
-      this.ignore.some((i) => i.endsWith("/") && prefix.startsWith(i)) &&
-      !this.keep.some((k) => k.startsWith(prefix) || prefix.startsWith(k))
-    );
+    const keepsInside = (k: HistoryKeep): boolean => {
+      if (typeof k === "string") return k.startsWith(prefix) || prefix.startsWith(k);
+      if (k.prefix.startsWith(prefix)) return true;
+      if (!prefix.startsWith(k.prefix)) return false;
+      // Folders deeper than `depth` below the prefix hold nothing the pattern names (the fragments folder).
+      return prefix.slice(k.prefix.length).split("/").filter(Boolean).length <= k.depth;
+    };
+    return this.ignore.some((i) => i.endsWith("/") && prefix.startsWith(i)) && !this.keep.some(keepsInside);
   }
 
   /** Tracked files that differ between two commits; with no `from`, every file of `to` is added. */

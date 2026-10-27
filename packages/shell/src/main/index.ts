@@ -23,11 +23,14 @@ import {
   inputSpecs,
   interviewCollections,
   loadHarness,
+  materialStageKey,
   profileFormSpec,
   resolveInHarness,
   settingsView,
+  stageTier,
 } from "@humanharness/harness-sdk";
-import { type Event, type HarnessRuntime, createRuntime } from "@humanharness/runtime";
+import { type Job, MaterialStore, groundingMode, materialSection, workerRunner } from "@humanharness/material/light";
+import { type Event, type HarnessRuntime, createRuntime, runSystemTask } from "@humanharness/runtime";
 import {
   type AppConfig,
   type AppState,
@@ -57,11 +60,9 @@ import {
 } from "@humanharness/ui/client";
 import {
   APP_SCOPE,
-  DATA_PREFIX,
   DataStore,
   History,
   MAIN_SCOPE,
-  NOTES_PREFIX,
   ScopeStore,
   buildDataContext,
   dataDiffOf,
@@ -95,7 +96,7 @@ import { type RunningSetup, runSetupProcess, setupCommand, stopSetupProcess } fr
 import { runSetupStep } from "./setup-step";
 import { type SharedEngineRecord, SharedConfigStore, sharedConfigDir } from "./shared-config";
 import { EngineUnavailable, TurnController, memoise } from "./turn-controller";
-import { type UsageRecord, UsageLog, compactionRecord, profileMeta, profilesUsage, summarizeUsage, usageRecord } from "./usage-log";
+import { type UsageRecord, UsageLog, compactionRecord, measuredMaterialCosts, profileMeta, profilesUsage, summarizeUsage, usageRecord } from "./usage-log";
 import { type ValidationContext, checkFolder, configProblem, isAppUrl } from "./validate";
 import { openIfStillSafe, openRoots, openableFile, revealIfStillSafe, revealableFile } from "./open-path";
 import { saveWithFolderChange } from "./folder-change";
@@ -105,6 +106,11 @@ import { respondHandler } from "./respond-ipc";
 import { SettingsController } from "./settings";
 import { SetupSteps, recordSetup, setupStepViews } from "./setup-steps";
 import { TaskManager } from "./task-manager";
+import type { MaterialService } from "./material";
+import { historyKeep, materialAppState, materialItems, materialRecommended, openMaterial } from "./material-ipc";
+import { MaterialJobs } from "./material-jobs";
+import { type MaterialStageDeps, runMaterialStage } from "./material-stage";
+import { personMaterialRequest } from "./material-requests";
 import { baseFor, isInsideFolder } from "./profile-base";
 import { type ProfileOutcome, Profiles, profileResult } from "./profiles";
 import { ProfileSwitch } from "./profile-switch";
@@ -251,6 +257,8 @@ async function modelsView(): Promise<ModelsView> {
     recommended: {
       ...Object.fromEntries(Object.entries(harness.actions).map(([id, a]) => [id, a.tier ?? "standard"])),
       [QUESTIONS]: harness.questions?.tier ?? "standard",
+      // Material spec §8: each AI stage is a process, only with material (D0); links only with items.
+      ...(harness.material ? materialRecommended(harness.material) : {}),
     },
     defaults: Object.fromEntries(
       engines.map((e) => [e.id, Object.fromEntries(TIERS.map((t) => [t, tierSpec(e.id, t)])) as Record<Tier, ModelSpec>]),
@@ -385,6 +393,8 @@ async function appState(): Promise<AppState> {
     ...(harness.setup ? { setup: setupStepViews(harness) } : {}),
     // Only a harness with profiles sends them (profiles D4): what to call one, and its form.
     ...(harness.profiles ? { profiles: { label: harness.profiles.label, form: profileFormSpec(harness) } } : {}),
+    // Only a harness with material sends what it takes (material D0).
+    ...materialAppState(harness),
     references: (await referencesFor(saved.folder)).map((r) => ({ id: r.id, label: r.label, path: displayPath(r.path, os.homedir()) })),
     models: await modelsView(),
     backup: await backupView(saved.folder),
@@ -415,6 +425,7 @@ const baseOf = (c: { folder: string; profile?: string }): string => {
 
 /** The harness declares scopes (spec D1); without them everything stays as before (D2). */
 const scoped = (): boolean => harness.scopes !== undefined;
+
 
 /** tasks.json is read knowing the manifest's modes, so a mode it no longer declares is dropped (task-modes spec §6). */
 const taskStoreOptions = (): { modes?: string[]; phases?: Record<string, string[]> } => ({
@@ -510,6 +521,10 @@ async function arrivedInProfile(): Promise<void> {
   await scopesChanged();
   if (setupCtl) sendToWindow("hh:setupSteps", await setupCtl.state());
   sendToWindow("hh:tasks", await tasks.view());
+  // The new profile's material: what an earlier run (or the switch) left converting resumes, and its AI stages run.
+  // Without material, nothing (D0).
+  void materialSvc?.settle().catch((err: unknown) => console.error("Could not resume the material", err));
+  kickMaterial();
 }
 
 async function scopeStore(): Promise<ScopeStore> {
@@ -574,7 +589,7 @@ const runtime = memoise<HarnessRuntime>(async () => {
   }
   if (!cmd) return null;
   const settings = settingsCtl;
-  return createRuntime({
+  const rt = await createRuntime({
     harness,
     engine,
     folder: base,
@@ -585,6 +600,9 @@ const runtime = memoise<HarnessRuntime>(async () => {
     dataServerEntry: path.join(here, "data-server.js"),
     // The person's store (one write queue per base), for the folder this runtime runs in.
     data: (request) => agentDataRequest({ store: async () => dataStoreFor(base), runningTask: () => tasks.runningTask() }, request),
+    // The person's material in this folder, for the running task's scope (material spec §9): the base this runtime was
+    // built for, so a request never reaches another profile's material. Absent without material (D0).
+    ...(harness.material ? { material: { request: (request: unknown) => materialRequest(base, request), entry: path.join(here, "material-server.js") } } : {}),
     command: cmd.command,
     env: cmd.env,
     references: (await workReferences(c, base, true)).map((r) => ({ label: r.label, path: r.path })),
@@ -594,10 +612,18 @@ const runtime = memoise<HarnessRuntime>(async () => {
     onModels: (offer) =>
       void shared.update(engine.id, { models: offer.models, efforts: offer.efforts }).catch((err: unknown) => console.error("Could not save the engine's models", err)),
   });
+  // A new runtime: the material queue, stopped by closeRuntime, goes on (in this base). Without material, nothing.
+  kickMaterial();
+  return rt;
 });
 
-/** Closes the running runtime and keeps the open task; the next turn starts a new runtime (and engine session). */
+/**
+ * Closes the running runtime and keeps the open task; the next turn starts a new runtime (and engine session). First
+ * the person's material stops (material spec §10): its AI stage and its conversions, which belong to this base.
+ */
 async function closeRuntime() {
+  await materialJobs?.stop();
+  await materialSvc?.stop();
   const rt = await runtime.peek()?.catch(() => null);
   runtime.clear();
   await rt?.close();
@@ -615,7 +641,7 @@ async function dropRuntime() {
 /** The history of the folder when no runtime runs: one per folder and ignore list (its queue orders every write). */
 const standaloneHistory = lastOpened(async (key) => {
   const { folder, ignore } = JSON.parse(key) as { folder: string; ignore: string[] };
-  const history = new History(folder, historyDir(app.getPath("userData"), folder), ignore, [NOTES_PREFIX, DATA_PREFIX]);
+  const history = new History(folder, historyDir(app.getPath("userData"), folder), ignore, historyKeep(harness));
   await history.init();
   return history;
 });
@@ -730,6 +756,20 @@ const tasks = new TaskManager({
       return c ? buildDataContext(dataStoreFor(baseOf(c)), harness.data, scope, action) : "";
     };
   },
+  // Material spec §9 Load: only a harness with material gets the hook (D0). A getter: the harness loads later.
+  // Only usable sources' fragments make rows (`indexRows`); none: no section.
+  get materialContext() {
+    const m = harness.material;
+    if (!m) return undefined;
+    return async (scope: string) => {
+      const c = await validConfig();
+      if (!c || scope === APP_SCOPE || !isScopeId(scope)) return "";
+      const store = materialStore(baseOf(c), scope);
+      const rows = await store.indexRows();
+      if (rows.length === 0) return "";
+      return materialSection({ mode: groundingMode(await store.grounding(), m.grounding), sheet: await store.sheet(), rows, budgetTokens: m.budget.indexTokens });
+    };
+  },
   get path() {
     return harness.path ?? [];
   },
@@ -818,6 +858,120 @@ const tasks = new TaskManager({
     );
   },
 });
+
+/** The person's material (material spec); null without `material` (D0). Built once the harness is loaded. */
+let materialSvc: MaterialService | null = null;
+
+/** The app's one store of a base and scope (one write queue each); a plain one only before the service exists. */
+const materialStore = (base: string, scope: string): MaterialStore => materialSvc?.storeAt(base, scope) ?? new MaterialStore(base, scope);
+
+/** The material queue of AI stages (material spec §10); null without material (D0). */
+let materialJobs: MaterialJobs<Job> | null = null;
+
+/** Wakes the material queue; scope stages that failed since the last kick may run again. Without material, nothing. */
+function kickMaterial(): void {
+  materialSvc?.resetFailures();
+  materialJobs?.kick();
+}
+
+/** The agent's material tools in `base` (the runtime's), in the running task's scope (material spec §9 Fetch). */
+const materialRequest = (base: string, request: unknown) =>
+  personMaterialRequest({ base: async () => base, runningTask: () => tasks.runningTask(), store: materialStore, flagged: kickMaterial }, request);
+
+/** What one AI stage's session needs from the app (material spec §10; `runMaterialStage`). */
+const materialStageDeps: MaterialStageDeps = {
+  setup: async () => {
+    const c = await validConfig();
+    return c && harness.material ? { engineId: c.engineId, base: baseOf(c) } : null;
+  },
+  hasNotice,
+  engine: getEngine,
+  command: async (engine) => hooks.engines?.[engine.id] ?? engineCommand(engine, commandDeps),
+  profile: async (engine, job) => {
+    const models = cleanModels((await config.load()).models);
+    const saved = await savedOffer(engine.id);
+    const manifestTier = harness.material ? stageTier(harness.material, job.stage) : undefined;
+    return supportedEffort(firstOffered(resolveProfile({ engine: engine.id, action: materialStageKey(job.stage), manifestTier, models }), models, saved.models), saved);
+  },
+  run: (o) => runSystemTask({ ...o, launcher: electronLauncher(process.execPath), entry: path.join(here, "material-server.js") }),
+  log: (base, record) => new UsageLog(base).append(record),
+};
+
+/** Loaded only for a harness with material: the service and the converters' runner stay out of every other app (D0). */
+async function buildMaterial(): Promise<MaterialService | null> {
+  const m = harness.material;
+  if (!m) return null;
+  const [{ MaterialService }, { fetchLink }] = await Promise.all([import("./material"), import("./material-fetch")]);
+  return new MaterialService({
+    material: m,
+    base: async () => {
+      const c = await validConfig();
+      return c ? baseOf(c) : null;
+    },
+    scopeOk: async (scope) => (scoped() ? activeScope(scope) : scope === MAIN_SCOPE),
+    pickFiles: async () => {
+      if (!window || window.isDestroyed()) return null;
+      const r = await dialog.showOpenDialog(window, { properties: ["openFile", "multiSelections"] });
+      return r.canceled ? null : r.filePaths;
+    },
+    fetchLink: (url) => fetchLink(url),
+    send: sendToWindow,
+    provider: async () => {
+      const engineId = (await config.load()).engineId;
+      return engineId ? getEngine(engineId).provider : "";
+    },
+    window: async () => {
+      const c = await validConfig();
+      if (!c) return null;
+      const primary = getEngine(c.engineId).limits?.primary;
+      const last = (await new UsageLog(baseOf(c)).load(50)).filter((r) => r.limits?.length).at(-1);
+      const w = last?.limits?.find((x) => x.kind === primary) ?? last?.limits?.[0];
+      return w && Date.parse(w.resetsAt) > Date.now() ? { kind: w.kind, utilization: w.utilization } : null;
+    },
+    afterChange: async (_scope, what) => {
+      kickMaterial();
+      const history = await currentHistory();
+      await history?.save(`Material: ${what}`, await tasks.trailerNow()).catch((err: unknown) => console.error("Could not record the material change", err));
+    },
+    // The built converter worker (its own entry beside this file), at most CONVERT_AT_ONCE at a time.
+    runner: workerRunner({ entry: path.join(here, "material-worker.js") }),
+    runStage: (job, prompt, tools, handle, signal, fragments) => runMaterialStage(materialStageDeps, job, prompt, tools, handle, signal, fragments),
+    // The stages' costs measured in this base's log (§7): each profile's own.
+    measured: async () => {
+      const c = await validConfig();
+      return c ? measuredMaterialCosts(await new UsageLog(baseOf(c)).load()) : undefined;
+    },
+    kick: kickMaterial,
+    trash: (file) => shell.trashItem(file),
+    // The links stage's items (§8), from the current base's data store; never throws.
+    ...(m.items
+      ? {
+          items: (scope: string) =>
+            materialItems(
+              m.items,
+              harness.data,
+              async () => {
+                const c = await validConfig();
+                return c ? dataStoreFor(baseOf(c)) : null;
+              },
+              scope,
+            ),
+        }
+      : {}),
+  });
+}
+
+/**
+ * The queue of AI stages over the service (material spec §10): one at a time, started only when no turn, task
+ * operation, hold, move or quit is under way.
+ */
+function buildMaterialJobs(svc: MaterialService): MaterialJobs<Job> {
+  return new MaterialJobs<Job>({
+    idle: () => !quitting && moving === null && !tasks.isBusy() && hold.turnBlocked() === null && !hold.folderBusy(),
+    next: () => svc.nextJob(),
+    run: (job, signal) => svc.runJob(job, signal),
+  });
+}
 
 /** Saves a config patch; an engine change ends the task, drops the runtime and archives the chat (see EngineGuards). */
 async function saveConfigPatch(patch: AppConfig, before: AppConfig): Promise<void> {
@@ -1076,6 +1230,20 @@ function registerIpc() {
   );
   handle("hh:profileEdit", (values: unknown) => (profilesCtl ? profileAnswer(profilesCtl.edit(values)) : noProfiles()));
   handle("hh:profileDelete", (id: unknown) => (profilesCtl ? profileAnswer(profilesCtl.remove(id)) : noProfiles()));
+  // The person's material (material spec §10). Answers are data; without material every call is "not-ready" (D0).
+  const noMaterial = { ok: false, reason: "not-ready" } as const;
+  handle("hh:materialList", async (scope: unknown) => (materialSvc && typeof scope === "string" ? materialSvc.list(scope) : null));
+  handle("hh:materialAdd", (scope: unknown) => materialSvc?.add(scope) ?? noMaterial);
+  handle("hh:materialAddLink", (scope: unknown, url: unknown) => materialSvc?.addLink(scope, url) ?? noMaterial);
+  handle("hh:materialConfirm", (scope: unknown, id: unknown, choice: unknown) => materialSvc?.confirm(scope, id, choice) ?? noMaterial);
+  handle("hh:materialGrounding", (scope: unknown, mode: unknown) => materialSvc?.setGrounding(scope, mode) ?? noMaterial);
+  handle("hh:materialRetry", (scope: unknown, id: unknown) => materialSvc?.retry(scope, id) ?? noMaterial);
+  handle("hh:materialRemove", (scope: unknown, id: unknown) => materialSvc?.remove(scope, id) ?? noMaterial);
+  handle("hh:materialDecide", (scope: unknown, id: unknown, fragment: unknown, choice: unknown) => materialSvc?.decide(scope, id, fragment, choice) ?? noMaterial);
+  handle("hh:materialCite", async (scope: unknown, id: unknown) => (materialSvc ? materialSvc.cite(scope, id) : null));
+  handle("hh:materialOpen", (scope: unknown, id: unknown) =>
+    openMaterial(materialSvc, scope, id, (file) => shell.openPath(file), (file) => shell.showItemInFolder(file)),
+  );
   handle("hh:choose", (option: unknown, task: unknown) => {
     if (quitting) throw new Error("The app is closing");
     const blocked = turnBlocked();
@@ -1463,6 +1631,8 @@ if (loaded) {
       blocked: hold.profileChangeBlocked,
     });
   }
+  materialSvc = await buildMaterial();
+  materialJobs = materialSvc ? buildMaterialJobs(materialSvc) : null;
 }
 
 // One app per data folder (the lock is tied to userData, so it is taken after it is set): a second one would
@@ -1520,6 +1690,11 @@ if (primary) {
     void settleScopes()
       .then(scopesChanged)
       .catch((err: unknown) => console.error("Could not prepare the scopes", err));
+    // Material an earlier run left converting (a quit or crash mid-way) is converted again; other bases (profiles)
+    // resume the first time they are used. Without material there is nothing (D0).
+    void materialSvc?.settle().catch((err: unknown) => console.error("Could not resume the material", err));
+    // AI stages an earlier run left to do (the queue looks only once the app is set up).
+    if (await validConfig()) kickMaterial();
     await createWindow();
   });
 

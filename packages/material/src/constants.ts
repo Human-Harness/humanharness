@@ -1,0 +1,72 @@
+// Every threshold and size of material processing (spec §3, §5, §6, §7). They are placeholders until measured
+// (spec §13.6): change them here only.
+
+/** A fragment's target size, in estimated tokens (§5). */
+export const TARGET = 600;
+/** Above this a section is split at paragraph breaks (§5.2). */
+export const MAX = 800;
+/** Below this a section is merged with the next one under the same parent (§5.3). */
+export const MIN = 150;
+/** A sheet above this many rows is a data dump (§3). */
+export const MAX_ROWS = 2000;
+/** The rows a "summary and first rows" spreadsheet keeps, and the summary fragment shows. */
+export const FIRST_ROWS = 20;
+/** At or above: the warning and the page-range offer (§7). */
+export const WARN_PAGES = 50;
+/** At or above: the whole file is not processed (§7). */
+export const MAX_PAGES = 300;
+/** At or above: the whole file is not processed, and a link is not fetched past it (§7). */
+export const MAX_BYTES = 50 * 1024 * 1024;
+/** A page of a file without pages, in estimated tokens (§7). */
+export const PAGE_TOKENS = 500;
+/** The share of words a repair may change (§6.2). */
+export const REPAIR_MAX_WORD_DIFF = 0.02;
+/** The review's sample: the first unflagged fragment plus this share of the rest, at most SAMPLE_MAX (§6.2). */
+export const SAMPLE_SHARE = 0.1;
+export const SAMPLE_MAX = 15;
+/** Fragments per batch in the label stage and a full review. */
+export const BATCH = 20;
+/** Starting per-fragment token costs of each AI stage, until usage.jsonl has measured ones (§7). */
+export const LABEL_TOKENS = 700;
+export const REVIEW_TOKENS = 900;
+export const LINK_TOKENS = 120;
+export const SHEET_TOKENS = 4000;
+/** Measured stages needed before averages replace the constants. */
+export const MEASURED_MIN = 5;
+/** Checks (§6.1). */
+export const GARBLED_SHARE = 0.4;
+export const NOISE_SHARE = 0.4;
+/** A line repeated in this many fragments of a source is a header or footer that survived. */
+export const LEFTOVER_REPEATS = 3;
+/** A PDF line repeated on this share of pages is a running header or footer (§3 conversion rules). */
+export const RUNNING_SHARE = 0.6;
+/** A long source with no headings: above this many tokens. */
+export const NO_STRUCTURE_TOKENS = 3000;
+/** How long a link fetch may take. */
+export const FETCH_TIMEOUT_MS = 30_000;
+/** Zip containers (docx, odt, xlsx, ods, pptx, odp, epub): a file with more entries than this is a zip bomb. */
+export const ZIP_MAX_ENTRIES = 10_000;
+/** The uncompressed bytes a whole zip may hold (declared) and inflate (counted). */
+export const ZIP_MAX_TOTAL = 20 * MAX_BYTES;
+/** The uncompressed bytes one zip entry may inflate to when it is only counted (media a library skips over). */
+export const ZIP_MAX_ENTRY = 4 * MAX_BYTES;
+/** The uncompressed bytes one zip entry may inflate to when it is kept or parsed (XML): a parsed tree costs ~30× its text. */
+export const ZIP_MAX_PART = MAX_BYTES / 2;
+/** Spreadsheets: at most this many cells (rows × kept columns) are read from one file; the rest is cut. */
+export const SHEET_MAX_CELLS = 1_000_000;
+/** Spreadsheets: at most this many rows are read from one file. */
+export const SHEET_MAX_ROWS = 100_000;
+/** Spreadsheets: at most this many non-empty columns are kept from one sheet. */
+export const SHEET_MAX_COLUMNS = 1024;
+/** Converting runs in a worker thread with this much heap: a file that needs more is refused, the app lives on. */
+export const CONVERT_HEAP_MB = 1536;
+/** How long converting or measuring one file may take before its worker is stopped and the file refused. */
+export const CONVERT_TIMEOUT_MS = 120_000;
+/** How many files the app converts or measures at once (each worker may take CONVERT_HEAP_MB); the rest wait. */
+export const CONVERT_AT_ONCE = 2;
+/** The link stage (§8): at most this many items are offered (the first ones of the collection) … */
+export const LINK_MAX_ITEMS = 200;
+/** … and at most this many index rows go into its prompt (the first ones; the rest keep the links they have). */
+export const LINK_MAX_FRAGMENTS = 500;
+/** The sheet stage's prompt carries index rows up to this many tokens (the first ones; a line counts the rest). */
+export const SHEET_INDEX_TOKENS = 12_000;

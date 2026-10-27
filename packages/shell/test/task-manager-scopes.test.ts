@@ -23,7 +23,7 @@ const note = (slug: string, dir: string): Note => ({
 });
 
 /** A task manager over memory for a harness with scopes (or without, `scoped: false`). Notes are kept per scope; "flat" is the folder without scopes. */
-function setup(opts: { scoped?: boolean; state?: TasksFile; notes?: Record<string, Note[]>; script?: Event[][]; data?: (scope: string, action?: string) => string } = {}) {
+function setup(opts: { scoped?: boolean; state?: TasksFile; notes?: Record<string, Note[]>; script?: Event[][]; data?: (scope: string, action?: string) => string; material?: (scope: string) => Promise<string> } = {}) {
   let state = opts.state ?? emptyTasks();
   const notes: Record<string, Note[]> = structuredClone(opts.notes ?? {});
   const script = [...(opts.script ?? [])];
@@ -61,6 +61,7 @@ function setup(opts: { scoped?: boolean; state?: TasksFile; notes?: Record<strin
     saveHistory: async (_message, trailer) => void trailers.push(trailer),
     changed: () => {},
     ...(opts.data ? { dataContext: async (scope: string, action?: string) => opts.data!(scope, action) } : {}),
+    ...(opts.material ? { materialContext: opts.material } : {}),
     now: () => new Date("2026-10-25T10:00:00.000Z"),
     newId: () => `t${++n}`,
   });
@@ -103,6 +104,38 @@ describe("TaskManager with scopes", () => {
     expect(first).not.toContain("d1");
     expect(first.indexOf("## What we already covered")).toBeLessThan(first.indexOf("## App-wide notes"));
     expect(first.indexOf("## App-wide notes")).toBeLessThan(first.indexOf("## Data: concepts\n(fracciones, study)"));
+  });
+
+  it("gives a new session the scope's material after the data; without the hook the first message is the same (material §9, D0)", async () => {
+    const notes = { fracciones: [note("f1", "fracciones/")] };
+    const data = (scope: string, action?: string) => `## Data: concepts\n(${scope}, ${action})`;
+    const plain = setup({ notes, data });
+    await plain.manager.switchScope("fracciones");
+    await plain.manager.start("study");
+    const asked: string[] = [];
+    const t = setup({
+      notes,
+      data,
+      material: async (scope) => (asked.push(scope), scope === "fracciones" ? "## Material\n\nrows" : ""),
+    });
+    await t.manager.switchScope("fracciones");
+    await t.manager.start("study");
+    const first = t.turns[0].message;
+    expect(asked).toEqual(["fracciones"]);
+    expect(first).toBe(`${plain.turns[0].message.trimEnd()}\n\n## Material\n\nrows`);
+    expect(first.indexOf("## Data: concepts")).toBeLessThan(first.indexOf("## Material"));
+  });
+
+  it("an empty or failing material section adds nothing to the first message", async () => {
+    const plain = setup();
+    await plain.manager.switchScope("fracciones");
+    await plain.manager.start("study");
+    for (const material of [async () => "", async () => Promise.reject(new Error("disk"))]) {
+      const t = setup({ material });
+      await t.manager.switchScope("fracciones");
+      await t.manager.start("study");
+      expect(t.turns[0].message).toBe(plain.turns[0].message);
+    }
   });
 
   it("runs an app-wide action in _app while the chat stays the open scope's", async () => {

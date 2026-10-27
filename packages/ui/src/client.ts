@@ -209,6 +209,8 @@ export interface AppState {
   setup?: SetupStepView[];
   /** The harness's profiles (manifest `profiles`): what to call one and its form. Absent: one implicit profile (D4). */
   profiles?: ProfilesInfo;
+  /** The harness takes the person's material (manifest `material`). Absent: none (D0). */
+  material?: MaterialInfo;
   /** Folders the agent can read but never change. */
   references?: ReferenceView[];
   /** Settings › Modelos. */
@@ -420,6 +422,11 @@ export interface UsageSummary {
   scopes?: Record<string, number>;
   /** Harnesses with profiles: tokens used per profile id, over each profile's whole log (profiles spec §4). */
   profiles?: Record<string, number>;
+  /**
+   * Harnesses with material: tokens the material's AI stages used, over the whole log (with profiles, the active
+   * profile's: each processes its own). Absent when none ran.
+   */
+  material?: number;
   /** The window kind estimates measure (the engine's `limits.primary`); absent when the engine reports no limits. */
   primary?: string;
 }
@@ -670,6 +677,82 @@ export interface ProfilesInfo {
  */
 export type ProfileResult = { ok: true; state: AppState } | { ok: false; reason: ProfileRefusal; errors?: InputIssue[]; made?: string };
 
+/** A source of the person's material as the window shows it (material spec §11). */
+export interface MaterialSourceView {
+  id: string;
+  name: string;
+  url?: string;
+  status: "pending" | "converting" | "validating" | "needs-person" | "ready" | "refused" | "removed";
+  stage?: "review" | "repair" | "label";
+  notice?: "warn" | "max" | "rows" | "full-review" | "no-text-pages";
+  refusal?: string;
+  pages: number;
+  rows?: number;
+  pageRange?: [number, number];
+  estimate: number;
+  issues: string[];
+  fixes: string[];
+  fragments: number;
+  verdict?: "good" | "usable-with-fixes" | "not-usable";
+  failed: boolean;
+  /** Questions for the person (§6.2 `ask`): about one fragment, or the whole source. */
+  asks: { fragment?: string; question: string; choices: MaterialChoice[] }[];
+}
+
+/** An answer to a material question: a fragment's (`keep`, `drop`, `program`) or a whole source's (`use`, `remove`). */
+export type MaterialChoice = "keep" | "drop" | "program" | "use" | "remove";
+
+/** One scope's material now (`hh:materialStatus`). */
+export interface MaterialView {
+  scope: string;
+  sources: MaterialSourceView[];
+  grounding: { mode: "strict" | "mixed"; canChange: boolean };
+  /** The engine's provider, for the privacy line (§13.3). */
+  provider: string;
+  /** The engine's usage window now, when it reports one (§7). */
+  window: { kind: string; utilization: number } | null;
+  /** Items with no fragment yet; absent without `items`. */
+  uncovered?: string[];
+}
+
+/** What the harness takes (manifest `material`). Absent: no material (D0). */
+export interface MaterialInfo {
+  accepts: string[];
+  items: boolean;
+  grounding: { default: "strict" | "mixed"; personCanChange: boolean };
+  /** A source this many pages long or more goes on only with a range shorter than this (§7 `MAX_PAGES`). */
+  maxPages: number;
+}
+
+export type MaterialResult = { ok: true } | { ok: false; reason: "not-ready" | "unknown-scope" | "unknown-source" | "invalid" | "fetch" };
+export type MaterialAddResult =
+  | { ok: true; added: string[]; refused: { name: string; message: string }[] }
+  | { ok: false; reason: "not-ready" | "unknown-scope" | "fetch" };
+
+export interface MaterialClient {
+  /** Null without material. */
+  list(scope: string): Promise<MaterialView | null>;
+  /** Opens the main process's file dialog, then takes in each file picked. */
+  add(scope: string): Promise<MaterialAddResult>;
+  addLink(scope: string, url: string): Promise<MaterialAddResult>;
+  confirm(scope: string, id: string, choice: { pageRange?: [number, number]; sheets?: string[] | "summary" }): Promise<MaterialResult>;
+  setGrounding(scope: string, mode: "strict" | "mixed"): Promise<MaterialResult>;
+  /** Try again: a source whose AI stage failed goes back to that stage. */
+  retry(scope: string, id: string): Promise<MaterialResult>;
+  /**
+   * The person's answer to a question (`fragment` null: about the whole source). `use` on a source waiting for a full
+   * review goes on without it.
+   */
+  decide(scope: string, id: string, fragment: string | null, choice: MaterialChoice): Promise<MaterialResult>;
+  /** Removes a source: its original goes to the system Trash, its fragments go (also Cancel on a waiting one). */
+  remove(scope: string, id: string): Promise<MaterialResult>;
+  /** Opens the original of a source or a fragment's source. */
+  open(scope: string, id: string): Promise<MaterialResult>;
+  /** A citation's label, "<source>, <location>"; null: no such fragment in the scope (the text stays as it is). */
+  cite(scope: string, id: string): Promise<{ label: string } | null>;
+  onChange(listener: (view: MaterialView) => void): () => void;
+}
+
 export { hearsDataChange } from "./data-change";
 
 /** Everything the renderer can ask the main process. Implemented by the preload as `window.hh`. */
@@ -823,6 +906,8 @@ export interface HarnessClient {
     delete(id: string): Promise<ProfileResult>;
     onChange(listener: (state: ProfilesState) => void): () => void;
   };
+  /** The person's material (material spec §10). A harness without material answers null and "not-ready". */
+  material: MaterialClient;
   /** The text size changed from the keyboard (⌘+, ⌘−, ⌘0), already saved. */
   onTextSize(listener: (size: TextSize) => void): () => void;
 }

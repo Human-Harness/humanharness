@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import git from "isomorphic-git";
-import { DATA_PREFIX, History, NOTES_PREFIX, parseCommitMessage, withTrailer } from "../src";
+import { DATA_PREFIX, History, MATERIAL_KEEP, NOTES_PREFIX, parseCommitMessage, withTrailer } from "../src";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -610,5 +610,39 @@ describe("data in the history", () => {
     await h.init();
     await h.save("Data: concepts");
     expect(await h.trackedFiles()).toEqual([".harness/data/main/concepts.json"]);
+  });
+});
+
+describe("History keep patterns (material spec §4)", () => {
+  it("tracks files a keep pattern names inside an ignored folder, and skips the rest of it", async () => {
+    const kept = new History(folder, `${gitdir}-keep`, [".harness/", "AGENTS.md"], [NOTES_PREFIX, DATA_PREFIX, MATERIAL_KEEP]);
+    await kept.init();
+    write(".harness/material/main/sources.json", "{}");
+    write(".harness/material/main/conflicts.md", "# Conflicts");
+    write(".harness/material/main/index.md", "| id |");
+    write(".harness/material/main/fragments/a-001.md", "x");
+    write("material/main/ch2.pdf", "%PDF-1.7");
+    const sha = await kept.save("first");
+    const files = await git.listFiles({ fs, gitdir: `${gitdir}-keep`, ref: sha! });
+    expect(files.sort()).toEqual([".harness/material/main/conflicts.md", ".harness/material/main/sources.json", "material/main/ch2.pdf"]);
+  });
+
+  it("a task's changes show the kept files and none of the skipped ones", async () => {
+    const kept = new History(folder, `${gitdir}-keep`, [".harness/", "AGENTS.md"], [NOTES_PREFIX, DATA_PREFIX, MATERIAL_KEEP]);
+    await kept.init();
+    write("a.md", "1");
+    await kept.save("first");
+    write(".harness/material/main/sources.json", "{}");
+    write(".harness/material/main/fragments/a-001.md", "x");
+    await kept.save("added", { task: "t1" });
+    const [group] = await kept.tasks();
+    expect(group.changes).toEqual([{ path: ".harness/material/main/sources.json", kind: "added" }]);
+  });
+
+  it("D0: without the pattern nothing under .harness/material is tracked", async () => {
+    write(".harness/material/main/sources.json", "{}");
+    write("a.md", "1");
+    const sha = await history.save("first");
+    expect(await git.listFiles({ fs, gitdir, ref: sha! })).toEqual(["a.md"]);
   });
 });

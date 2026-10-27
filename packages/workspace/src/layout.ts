@@ -68,3 +68,28 @@ export function parseDataPath(rel: string): { scope: string; collection: string 
   const m = /^\.harness\/data\/([^/]+)\/([^/]+)\.json$/.exec(rel);
   return m && isScopeDir(m[1]) && COLLECTION_NAME.test(m[2]) ? { scope: m[1], collection: m[2] } : null;
 }
+
+/** The person's originals, visible and theirs (material spec §4): `material/<scope>/`. */
+export const MATERIAL_DIR = "material";
+
+/** A material scope: a scope id, never `_app` (app-wide work has no material). Throws otherwise: it names a folder. */
+function materialScope(scope: string): string {
+  if (!isScopeId(scope)) throw new Error(`Invalid material scope: "${scope}"`);
+  return scope;
+}
+
+export const materialDir = (base: string, scope: string): string => path.join(base, MATERIAL_DIR, materialScope(scope));
+/** Everything the program builds from the originals, plus the person's decisions (§4). */
+export const materialStoreDir = (base: string, scope: string): string => path.join(base, ".harness", "material", materialScope(scope));
+/** Which fragments each task opened (§11). Never tracked. */
+export const materialReadsFile = (base: string): string => path.join(base, ".harness", "material-reads.jsonl");
+
+/**
+ * The hidden material files the history tracks (§4 "History"): the registry, the conflicts and the grounding mode hold
+ * the person's decisions; fragments, the index and the sheet are rebuilt from the originals.
+ */
+export const MATERIAL_KEEP = {
+  prefix: ".harness/material/",
+  match: /^\.harness\/material\/[a-z0-9][a-z0-9-]{0,63}\/(sources\.json|conflicts\.md|grounding\.json)$/,
+  depth: 1,
+} as const;

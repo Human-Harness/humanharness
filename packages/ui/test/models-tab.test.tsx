@@ -1,9 +1,10 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { useState } from "react";
+import { MATERIAL_STAGE_KEYS } from "@humanharness/harness-sdk";
 import { afterEach, describe, expect, it } from "vitest";
 import type { AppConfig, AppState } from "../src/client";
-import { ModelsTab } from "../src/ModelsTab";
+import { MATERIAL_ROWS, ModelsTab, taskRows } from "../src/ModelsTab";
 import { FakeClient } from "./fake-client";
 import { renderIn } from "./render";
 
@@ -60,6 +61,24 @@ describe("ModelsTab › Tasks", () => {
     expect(within(row("A turn")).getByRole("button", { name: "Deep" }).getAttribute("aria-pressed")).toBe("true");
     expect(within(row("Free question")).getByRole("button", { name: "Light" }).getAttribute("aria-pressed")).toBe("true");
     expect(screen.queryByText(/Changed/)).toBeNull();
+  });
+
+  it("with material, lists each material stage after free questions and saves it by its reserved id", async () => {
+    const c = modelsClient();
+    c.state.material = { accepts: ["text"], items: false, grounding: { default: "mixed", personCanChange: true }, maxPages: 300 };
+    c.state.models = { ...c.state.models!, recommended: { ...c.state.models!.recommended, "material-review": "standard", "material-repair": "light", "material-label": "light", "material-sheet": "light" } };
+    await renderIn("en", <Tab client={c} />);
+    expect(within(tasksRegion()).getAllByRole("group").map((g) => g.getAttribute("aria-label"))).toEqual([
+      "The manifest",
+      "A turn",
+      "Free question",
+      "Material: checking the conversion",
+      "Material: fixing structure",
+      "Material: labelling",
+      "Material: the summary sheet",
+    ]);
+    fireEvent.click(within(row("Material: labelling")).getByRole("button", { name: "Standard" }));
+    await waitFor(() => expect(saved(c)).toEqual({ tasks: { "material-label": "standard" } }));
   });
 
   it("saves a changed level, marks it changed with the recommendation, and restores it", async () => {
@@ -156,6 +175,27 @@ describe("ModelsTab › Tasks", () => {
     fireEvent.change(tasks.getByRole("combobox", { name: "Context cap" }), { target: { value: "1000000" } });
     release();
     await waitFor(() => expect(saved(c)).toEqual({ tasks: { turn: { custom: { engine: "claude", model: "opus", effort: "max", cap: 1_000_000 } } } }));
+  });
+});
+
+describe("taskRows", () => {
+  it("the material rows are the SDK's stage keys, in order", () => {
+    expect([...MATERIAL_ROWS]).toEqual([...MATERIAL_STAGE_KEYS]);
+  });
+
+  it("material stages are rows only when the harness takes material (D0)", () => {
+    const base = { actions: { study: { label: "Study" } } } as unknown as AppState;
+    const q = { key: "questions", label: "Questions" };
+    expect(taskRows(base, q).map((r) => r.key)).toEqual(["study", "questions"]);
+    const withMaterial = { ...base, material: { accepts: [], items: true, grounding: { default: "mixed", personCanChange: true }, maxPages: 300 } } as AppState;
+    const labels = { "material-review": "Material: checking", "material-repair": "Material: fixing", "material-label": "Material: labelling", "material-sheet": "Material: summary sheet", "material-link": "Material: linking" };
+    // Without labels (Settings › Usage) the stages are no rows: material usage is one total there.
+    expect(taskRows(withMaterial, q).map((r) => r.key)).toEqual(["study", "questions"]);
+    const rows = taskRows(withMaterial, q, labels);
+    expect(rows.map((r) => r.key)).toEqual(["study", "questions", "material-review", "material-repair", "material-label", "material-sheet", "material-link"]);
+    expect(rows[2].label).toBe("Material: checking");
+    const noItems = { ...withMaterial, material: { ...withMaterial.material!, items: false } } as AppState;
+    expect(taskRows(noItems, q, labels).map((r) => r.key)).not.toContain("material-link");
   });
 });
 

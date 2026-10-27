@@ -3,6 +3,7 @@ import path from "node:path";
 import { usageFile } from "@humanharness/workspace";
 import type { Effort, ModelProfile } from "@humanharness/engines";
 import type { Tier } from "@humanharness/harness-sdk";
+import { MEASURED_MIN, type MeasuredCosts } from "@humanharness/material/light";
 import type { LimitWindow } from "@humanharness/runtime";
 import type { ChatEntry, TurnUsage, UsageSummary } from "@humanharness/ui/client";
 
@@ -18,9 +19,10 @@ interface ProfileFields {
 /**
  * What kind of turn it was: `run` (the task's own turns), `close` (the turn that asks for its note), `checkpoint` (the
  * quiet note before the cap), `phase-change` (the brief of the phase the task enters) and `wrap-up` (the time box's
- * last turn before the close phase). Not the task's phase: that is `taskPhase`.
+ * last turn before the close phase). Not the task's phase: that is `taskPhase`. `material`: an AI stage of material
+ * processing, not a task's turn (material spec §11).
  */
-export type TurnKind = "run" | "close" | "checkpoint" | "phase-change" | "wrap-up";
+export type TurnKind = "run" | "close" | "checkpoint" | "phase-change" | "wrap-up" | "material";
 
 /** Which task (and which kind of turn) a turn belongs to. */
 export interface UsageMeta extends ProfileFields {
@@ -49,6 +51,11 @@ export interface UsageRecord extends ProfileFields {
   /** The task's phase while the turn ran (task-phases spec §6). Absent without phases. */
   taskPhase?: string;
   phase?: TurnKind;
+  /** Material lines only: the stage, and the source it ran for (none for the scope's sheet and links). */
+  stage?: string;
+  source?: string;
+  /** Material lines only: the fragments the stage handled (its prompt listed). */
+  fragments?: number;
   /** `checkpoint`: the quiet turn that saves a note before the cap; `compaction`: the engine compacted (no usage). */
   kind?: "checkpoint" | "compaction";
   ok: boolean;
@@ -132,6 +139,26 @@ export function compactionRecord(engine: string, meta: UsageMeta, at: string = n
   return { at, engine, ...metaFields(meta), kind: "compaction", ok: true };
 }
 
+/** One AI stage of material processing (material spec §11). */
+export function materialRecord(
+  o: { engine: string; stage: string; scope: string; source?: string; profile: ModelProfile; ok: boolean; fragments?: number; usage?: TurnUsage; limits?: LimitWindow[] },
+  at: string = new Date().toISOString(),
+): UsageRecord {
+  return {
+    at,
+    engine: o.engine,
+    phase: "material",
+    stage: o.stage,
+    scope: o.scope,
+    ...(o.source ? { source: o.source } : {}),
+    ...profileMeta(o.profile),
+    ok: o.ok,
+    ...(o.fragments !== undefined ? { fragments: o.fragments } : {}),
+    ...(o.usage ? { usage: o.usage } : {}),
+    ...(o.limits ? { limits: o.limits } : {}),
+  };
+}
+
 /** Free questions (no action) are measured under this key, like Settings › Modelos. */
 const QUESTIONS = "questions";
 /** Estimates and tokens average each action's latest tasks, so a change of model or plan settles in after a few uses. */
@@ -159,23 +186,26 @@ function recentAverages(values: Map<string, number[]>): Record<string, number> {
  * last RECENT_TASKS measured tasks. Tokens work the same way for every engine: a task counts when all
  * of its turns reported usage. Free questions count under "questions". Lines from before tasks were
  * logged count as a task each. Other use of the same account counts too, so it is a rough guide.
- * Checkpoint turns and compaction lines are left out.
+ * Checkpoint turns and compaction lines are left out, and so are material stages (not tasks; their windows still
+ * count as the latest limits).
  */
 export function summarizeUsage(records: UsageRecord[], primary: string | undefined, now: Date = new Date()): UsageSummary {
-  records = records.filter((r) => r.kind !== "compaction");
+  const all = records.filter((r) => r.kind !== "compaction");
+  const last = all.filter((r) => r.limits && r.limits.length > 0).at(-1);
   const window = (r: UsageRecord | undefined) => (primary ? (r?.firstLimits ?? r?.limits)?.find((w) => w.kind === primary) : undefined);
-  const last = records.filter((r) => r.limits && r.limits.length > 0).at(-1);
   const tasks = new Map<string, { action: string; total: number; measured: boolean; tokens: number; counted: boolean }>();
-  for (let i = 0; i < records.length; i++) {
-    const r = records[i];
-    if (r.phase === "close" || r.kind) continue;
+  for (let i = 0; i < all.length; i++) {
+    const r = all[i];
+    if (r.phase === "close" || r.phase === "material" || r.kind) continue;
     const action = r.action ?? QUESTIONS;
     const key = r.task ? `task:${r.task}` : `line:${i}`;
     const task = tasks.get(key) ?? { action, total: 0, measured: true, tokens: 0, counted: true };
     tasks.set(key, task);
     const before = window(r);
-    const after = window(records[i + 1]);
-    if (!before || !after || before.resetsAt !== after.resetsAt) task.measured = false;
+    const next = all[i + 1];
+    const after = window(next);
+    // A material stage right after the turn would be charged to it: the turn can't be measured.
+    if (!before || !after || before.resetsAt !== after.resetsAt || next?.phase === "material") task.measured = false;
     else task.total += Math.max(0, after.utilization - before.utilization);
     if (r.usage) task.tokens += turnTokens(r.usage);
     else task.counted = false;
@@ -188,14 +218,35 @@ export function summarizeUsage(records: UsageRecord[], primary: string | undefin
   }
   // Settings › Uso per scope (spec §3.3): every turn's tokens, close and checkpoint turns included.
   const perScope = new Map<string, number>();
-  for (const r of records) if (r.scope) perScope.set(r.scope, (perScope.get(r.scope) ?? 0) + (r.usage ? turnTokens(r.usage) : 0));
+  for (const r of all) if (r.scope && r.phase !== "material") perScope.set(r.scope, (perScope.get(r.scope) ?? 0) + (r.usage ? turnTokens(r.usage) : 0));
+  // Material processing's own total (material spec §11); absent when no stage ever ran, so D0 keeps its summary.
+  const material = all.filter((r) => r.phase === "material" && r.usage).reduce((n, r) => n + turnTokens(r.usage!), 0);
   return {
     limits: last ? last.limits!.filter((w) => Date.parse(w.resetsAt) > now.getTime()) : null,
     estimates: recentAverages(shares),
     tokens: recentAverages(tokens),
     ...(perScope.size ? { scopes: Object.fromEntries(perScope) } : {}),
+    ...(material > 0 ? { material } : {}),
     ...(primary ? { primary } : {}),
   };
+}
+
+/**
+ * Per-fragment token costs of each material stage, measured from its lines (material spec §7): a stage with at least
+ * MEASURED_MIN lines that ran and report usage (and, but for the sheet, the fragments they handled) gets its average;
+ * the sheet's is per run. Undefined when no stage has enough, so the estimates keep the constants.
+ */
+export function measuredMaterialCosts(records: UsageRecord[]): MeasuredCosts | undefined {
+  const out: MeasuredCosts = {};
+  for (const stage of ["label", "review", "link", "sheet"] as const) {
+    const per = records.flatMap((r) => {
+      if (r.phase !== "material" || r.stage !== stage || !r.ok || !r.usage) return [];
+      const n = stage === "sheet" ? 1 : (r.fragments ?? 0);
+      return n > 0 ? [turnTokens(r.usage) / n] : [];
+    });
+    if (per.length >= MEASURED_MIN) out[stage] = Math.round(per.reduce((a, b) => a + b, 0) / per.length);
+  }
+  return Object.keys(out).length ? out : undefined;
 }
 
 /** A turn from one profile's log, with the profile it came from. ("person", not "profile": a model profile is another thing here.) */
@@ -211,7 +262,8 @@ export function mergeUsage(byProfile: Record<string, UsageRecord[]>): PersonUsag
 /**
  * Settings › Usage in a harness with profiles (spec §4 "Usage"): one AI plan for the whole app, so every profile's
  * turns, in time order, measure its window and estimates. `scopes` are the active profile's only (scope ids repeat
- * across people); `profiles` counts every turn's tokens per profile.
+ * across people), and so is `material` (each profile processes its own); `profiles` counts every turn's tokens per
+ * profile, material stages included.
  */
 export function profilesUsage(
   byProfile: Record<string, UsageRecord[]>,
@@ -220,9 +272,10 @@ export function profilesUsage(
   now: Date = new Date(),
 ): UsageSummary {
   const merged = mergeUsage(byProfile);
-  const { scopes: _everyone, ...summary } = summarizeUsage(merged, primary, now);
+  const { scopes: _everyone, material: _all, ...summary } = summarizeUsage(merged, primary, now);
   const own = summarizeUsage(Object.hasOwn(byProfile, activeProfile) ? byProfile[activeProfile] : [], primary, now);
+  // Material stages count as their person's use: each profile processes its own material (material spec §4).
   const perPerson: Record<string, number> = {};
   for (const r of merged) if (r.usage) perPerson[r.person] = (perPerson[r.person] ?? 0) + turnTokens(r.usage);
-  return { ...summary, ...(own.scopes ? { scopes: own.scopes } : {}), profiles: perPerson };
+  return { ...summary, ...(own.scopes ? { scopes: own.scopes } : {}), ...(own.material !== undefined ? { material: own.material } : {}), profiles: perPerson };
 }

@@ -24,6 +24,7 @@ export * from "./setup";
 export * from "./profiles";
 export * from "./material";
 export * from "./documents";
+export * from "./review";
 /** The zod a manifest builds its block schemas with: the same instance the SDK validates them against. */
 export { z } from "zod";
 

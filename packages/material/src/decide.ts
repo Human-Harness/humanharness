@@ -7,6 +7,22 @@ export type Choice = MaterialAsk["choices"][number];
 export const CHOICES: readonly Choice[] = ["keep", "drop", "program", "use", "remove"];
 
 /**
+ * A source's questions as far as they are well formed: `sources.json` can be edited by hand, so an entry that isn't an
+ * object with a string `question` and a list of `choices` is left out, and so are choices the app doesn't know.
+ */
+export function asksOf(s: Pick<SourceEntry, "asks">): MaterialAsk[] {
+  const list: unknown = s.asks;
+  if (!Array.isArray(list)) return [];
+  return list.flatMap((a: unknown): MaterialAsk[] => {
+    if (typeof a !== "object" || a === null) return [];
+    const { fragment, question, choices } = a as Record<string, unknown>;
+    if (typeof question !== "string" || !Array.isArray(choices)) return [];
+    const known = choices.filter((c): c is Choice => CHOICES.includes(c as Choice));
+    return [{ ...(typeof fragment === "string" ? { fragment } : {}), question, choices: known }];
+  });
+}
+
+/**
  * The person's answer to a question (§6.2 `ask`): `keep`, `drop` or `program` for a fragment; `use` or `remove` for a
  * whole source. `use` also answers a source waiting for a full review (§7) without one: it goes on with what the
  * sample found. False when there is no such question or choice. `trash` moves the original to the system Trash.
@@ -24,17 +40,19 @@ export async function decide(store: MaterialStore, sourceId: string, fragment: s
       });
       return true;
     }
-    const ask = (s.asks ?? []).find((a) => (a.fragment ?? null) === fragment && a.choices.includes(choice));
+    const asks = asksOf(s);
+    const ask = asks.find((a) => (a.fragment ?? null) === fragment && a.choices.includes(choice));
     if (!ask) return false;
     if (choice === "remove") return "remove";
     // `asks` is read from the file: a hand edit could hold anything, so only this source's own fragments are touched.
-    const others = (s.asks ?? []).filter((a) => a !== ask);
+    const others = asks.filter((a) => a !== ask);
     const fragments = Array.isArray(s.fragments) ? s.fragments : [];
     if (choice === "use") {
+      // Used as it is: still labelled (summaries, keywords), so it can be found like any other.
       await patch((e) => {
         if (e.status !== "needs-person") return { ...e, asks: others };
-        const { stage: _s, reviewQueue: _q, repairs: _r, ...rest } = e;
-        return { ...rest, asks: others, status: "ready" };
+        const { reviewQueue: _q, repairs: _r, ...rest } = e;
+        return { ...rest, asks: others, status: "validating", stage: "label" };
       });
     } else if (choice === "drop" && fragment && fragments.includes(fragment)) {
       await store.keepOriginal(fragment);

@@ -65,6 +65,17 @@ describe("nextJob", () => {
     expect((await store.source("a"))?.stage).toBeUndefined();
     expect(await nextJob(store, { items: false })).toEqual({ scope: "fractions", stage: "sheet" });
   });
+
+  it("a source removed or moved on while its stage ran is not marked failed (nor revived)", async () => {
+    await store.update(() => [entry("a", { status: "removed" }), entry("b", { status: "validating", stage: "label" })]);
+    await failStage(store, { scope: "fractions", source: "a", stage: "review" });
+    await failStage(store, { scope: "fractions", source: "b", stage: "review" });
+    expect(await store.source("a")).toMatchObject({ status: "removed" });
+    expect((await store.source("a"))?.failed).toBeUndefined();
+    expect(await store.source("b")).toMatchObject({ status: "validating", stage: "label" });
+    expect((await store.source("b"))?.failed).toBeUndefined();
+    expect(await store.stale()).toBeNull();
+  });
 });
 
 describe("retryStage", () => {

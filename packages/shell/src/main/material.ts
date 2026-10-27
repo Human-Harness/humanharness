@@ -15,6 +15,7 @@ import {
   CHOICES,
   type Choice,
   addSource,
+  asksOf,
   confirmSource,
   decide,
   failStage,
@@ -116,7 +117,7 @@ const view = (s: SourceEntry): MaterialSourceView => ({
   ...(s.verdict ? { verdict: s.verdict } : {}),
   failed: s.failed !== undefined,
   // A hand edit may have broken the list: then there is nothing to ask.
-  asks: (Array.isArray(s.asks) ? s.asks : []).map((a) => ({ ...(a.fragment ? { fragment: a.fragment } : {}), question: a.question, choices: a.choices })),
+  asks: asksOf(s),
 });
 
 /**

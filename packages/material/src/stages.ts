@@ -42,11 +42,15 @@ export const jobKey = (job: Job): string => `${job.scope}:${job.source ?? ""}:${
  */
 export async function failStage(store: MaterialStore, job: Job): Promise<void> {
   if (job.source) {
+    // Only a source still at this stage: one removed or answered while the stage ran keeps what it became.
+    let marked = false;
     await store.patch(job.source, (s) => {
+      if (s.status !== "validating" || s.stage !== job.stage) return s;
+      marked = true;
       const { stage: _stage, ...rest } = s;
       return { ...rest, status: "ready", failed: job.stage };
     });
-    await store.setStale("sheet");
+    if (marked) await store.setStale("sheet");
   }
   await store.writeIndex();
 }

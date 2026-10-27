@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { type Fragment, LABEL_TOKENS, MaterialStore, REVIEW_TOKENS, SHEET_TOKENS, STAGES, type SourceEntry, applyReview, decide, wordDiff } from "../src";
+import { type Fragment, LABEL_TOKENS, MaterialStore, REPAIR_MAX_WORD_DIFF, REVIEW_TOKENS, SHEET_TOKENS, STAGES, type SourceEntry, applyReview, asksOf, decide, wordDiff } from "../src";
 
 let base: string;
 let store: MaterialStore;
@@ -25,6 +25,21 @@ describe("wordDiff", () => {
     expect(wordDiff("a b c\n1 2 3", "| a | b | c |\n|---|---|---|\n| 1 | 2 | 3 |")).toBe(0);
     expect(wordDiff("one two three four", "one two three five")).toBe(0.25);
     expect(wordDiff("", "")).toBe(0);
+    expect(wordDiff("first\nsecond", "- first\n- second")).toBe(0);
+  });
+
+  it("a sign or a tilde is part of the word: a flipped sign is a change, and the repair is refused", async () => {
+    expect(wordDiff("x = -3/4", "x = 3/4")).toBeGreaterThan(0);
+    expect(wordDiff("about ~5 cm", "about 5 cm")).toBeGreaterThan(0);
+    const words = Array.from({ length: 30 }, (_, i) => `w${i}`).join(" ");
+    await store.writeFragments("ch2", [{ ...f5, md: `${words} -3/4` }]);
+    await expect(STAGES.repair!.accept("material_repair", { id: "ch2-005", markdown: `${words} 3/4` }, { store, job, answers: [] })).rejects.toThrow("changes the words");
+  });
+
+  it("a deletion counts in full: 3% of the words gone is over the limit", () => {
+    const all = Array.from({ length: 100 }, (_, i) => `w${i}`);
+    expect(wordDiff(all.join(" "), all.slice(3).join(" "))).toBe(0.03);
+    expect(wordDiff(all.join(" "), all.slice(3).join(" "))).toBeGreaterThan(REPAIR_MAX_WORD_DIFF);
   });
 });
 
@@ -116,8 +131,33 @@ describe("decide (§6.2 ask)", () => {
     expect((await store.readOriginalVersion("ch2-005"))?.md).toBe(f5.md);
     await store.patch("ch2", (s) => ({ ...s, status: "needs-person", asks: [{ question: "?", choices: ["use", "remove"] }] }));
     expect(await decide(store, "ch2", null, "use", async () => {})).toBe(true);
-    expect((await store.source("ch2"))?.status).toBe("ready");
+    // Used as it is, it is still labelled.
+    expect(await store.source("ch2")).toMatchObject({ status: "validating", stage: "label", asks: [] });
     expect(await decide(store, "ch2", null, "keep", async () => {})).toBe(false);
+  });
+
+  it("questions a hand edit broke are left out, never thrown on", async () => {
+    await store.patch("ch2", (s) => ({ ...s, asks: [null, { question: "?", choices: "drop" }, { choices: ["drop"] }, { fragment: "ch2-005", question: "?", choices: ["keep", "x"] }] as never }));
+    expect(asksOf((await store.source("ch2"))!)).toEqual([{ fragment: "ch2-005", question: "?", choices: ["keep"] }]);
+    expect(await decide(store, "ch2", "ch2-005", "drop", async () => {})).toBe(false);
+    expect(await decide(store, "ch2", "ch2-005", "keep", async () => {})).toBe(true);
+    expect((await store.source("ch2"))?.asks).toEqual([]);
+    await store.patch("ch2", (s) => ({ ...s, asks: "nonsense" as never }));
+    expect(await decide(store, "ch2", "ch2-005", "keep", async () => {})).toBe(false);
+  });
+
+  it("an ask naming another source's fragment leaves that fragment alone", async () => {
+    const other: SourceEntry = { ...entry, id: "ch3", path: "ch3.pdf", stage: "label", repairs: [] };
+    const f: Fragment = { ...f5, meta: { ...f5.meta, id: "ch3-001", source: "ch3.pdf" } };
+    await store.update((list) => [...list, other]);
+    await store.writeFragments("ch3", [f]);
+    for (const choice of ["drop", "keep"] as const) {
+      await store.patch("ch2", (s) => ({ ...s, asks: [{ fragment: "ch3-001", question: "?", choices: ["keep", "drop"] }] }));
+      expect(await decide(store, "ch2", "ch3-001", choice, async () => {})).toBe(true);
+      expect(await store.readFragment("ch3-001")).toEqual(f);
+      expect((await store.source("ch3"))?.fragments).toEqual(["ch3-001"]);
+      expect((await store.source("ch2"))?.fragments).toEqual(["ch2-005"]);
+    }
   });
 
   it("keep the program's version: the fragment stays, looked at by the person", async () => {

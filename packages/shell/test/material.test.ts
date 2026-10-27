@@ -155,8 +155,11 @@ describe("MaterialService", () => {
     expect(await service.decide("fractions", "../x", null, "use")).toEqual({ ok: false, reason: "unknown-source" });
     expect(await service.decide("fractions", "fractions", null, "keep")).toEqual({ ok: false, reason: "invalid" });
     expect(await service.decide("fractions", "fractions", null, "use")).toEqual({ ok: true });
-    expect((await store.source("fractions"))?.status).toBe("ready");
+    expect(await store.source("fractions")).toMatchObject({ status: "validating", stage: "label" });
     expect(changes.at(-1)).toBe("fractions: decided fractions");
+    // Questions a hand edit broke don't reach the window.
+    await store.patch("fractions", (s) => ({ ...s, asks: [null, { question: "?", choices: null }, { question: "Use it?", choices: ["use"] }] as never }));
+    expect((await service.list("fractions")).sources[0].asks).toEqual([{ question: "Use it?", choices: ["use"] }]);
     await store.patch("fractions", (s) => ({ ...s, status: "needs-person", asks: [{ question: "Use it?", choices: ["use", "remove"] }] }));
     expect(await service.decide("fractions", "fractions", null, "remove")).toEqual({ ok: true });
     expect(trashed).toEqual([path.join(base, "material", "fractions", "Fractions.md")]);

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { type Block, defineBlock } from "./block";
 import { MODE_ID, hasModes } from "./modes";
+import { PHASE_ID, hasPhases } from "./phases";
 
 /** One way to continue: `followUp` stays on the topic, `action` starts another task, `next: true` follows the guided path. */
 export const choiceOptionSchema = z.object({
@@ -111,20 +112,49 @@ export const MODE_CORE_BLOCKS = {
   }),
 } satisfies Record<string, Block>;
 
+/** The agent asks the app to move the task to another of its phases (task-phases spec §4.1). The app decides. */
+export const setPhaseSchema = z.object({
+  to: z.string().regex(PHASE_ID),
+  reason: z.string().min(1).max(300),
+});
+export type PhaseRequest = z.infer<typeof setPhaseSchema>;
+
+/** Core blocks only a harness with phases gets (spec §4.1). Their names are reserved for all. */
+export const PHASE_CORE_BLOCKS = {
+  set_phase: defineBlock({
+    description:
+      "Asks the app to move this task to another of its parts. `to`: a part id the app gave you; in the last part, its own id means the task is done. `reason`: one short sentence the person may read. Call it once, at the end of your answer, then stop: the app acts after your answer and may ask the person first.",
+    visible: false,
+    tool: "set_phase",
+    schema: setPhaseSchema,
+    example: { to: "main", reason: "The warm-up questions are done" },
+  }),
+} satisfies Record<string, Block>;
+
 /** Every core block name, offered or not: no harness block may take one. */
-export const RESERVED_BLOCK_NAMES: readonly string[] = [...CORE_BLOCK_NAMES, ...Object.keys(INPUT_CORE_BLOCKS), ...Object.keys(MODE_CORE_BLOCKS)];
+export const RESERVED_BLOCK_NAMES: readonly string[] = [
+  ...CORE_BLOCK_NAMES,
+  ...Object.keys(INPUT_CORE_BLOCKS),
+  ...Object.keys(MODE_CORE_BLOCKS),
+  ...Object.keys(PHASE_CORE_BLOCKS),
+];
 
 export const hasInputBlocks = (blocks: Record<string, Block>): boolean => Object.values(blocks).some((b) => b.input !== undefined);
 
 /**
  * The core blocks plus the harness's own: what the agent gets as tools. `annotate` only with input blocks (input-blocks
- * D0), `recommend_mode` only with modes (task-modes D0).
+ * D0), `recommend_mode` only with modes (task-modes D0), `set_phase` only with phases (task-phases D0).
  */
-export function allBlocks(harness: { blocks: Record<string, Block>; modes?: Record<string, unknown> }): Record<string, Block> {
+export function allBlocks(harness: {
+  blocks: Record<string, Block>;
+  modes?: Record<string, unknown>;
+  actions?: Record<string, { phases?: readonly unknown[] }>;
+}): Record<string, Block> {
   return {
     ...CORE_BLOCKS,
     ...(hasInputBlocks(harness.blocks) ? INPUT_CORE_BLOCKS : {}),
     ...(hasModes(harness) ? MODE_CORE_BLOCKS : {}),
+    ...(harness.actions && hasPhases({ actions: harness.actions }) ? PHASE_CORE_BLOCKS : {}),
     ...harness.blocks,
   };
 }

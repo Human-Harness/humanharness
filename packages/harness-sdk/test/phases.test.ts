@@ -2,7 +2,19 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { type HarnessInput, PHASE_ID, defineHarness, hasPhases, loadHarness, phaseIds, phaseModes } from "../src";
+import {
+  type HarnessInput,
+  PHASE_CORE_BLOCKS,
+  PHASE_ID,
+  RESERVED_BLOCK_NAMES,
+  allBlocks,
+  defineHarness,
+  hasPhases,
+  loadHarness,
+  phaseIds,
+  phaseModes,
+  setPhaseSchema,
+} from "../src";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-phases-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -88,5 +100,25 @@ describe("loadHarness and phase briefs", () => {
     const manifest = { ...base, actions: { quiz: { ...quiz, phases: [{ id: "far", label: "Far", brief: "../../outside.md" }] } } };
     fs.writeFileSync(file, `export default ${JSON.stringify(manifest)};`);
     await expect(loadHarness(file)).rejects.toThrow("Path escapes the harness folder: ../../outside.md");
+  });
+});
+
+describe("the set_phase core block (spec §4.1)", () => {
+  it("is offered only to a harness with phases, hidden, under its own tool name; its name is reserved for all", () => {
+    const phased = defineHarness({ ...base, modes, actions: { session, quiz } });
+    expect(Object.keys(allBlocks(phased))).toContain("set_phase");
+    expect(allBlocks(phased).set_phase.visible).toBe(false);
+    expect(allBlocks(phased).set_phase.tool).toBe("set_phase");
+    expect(Object.keys(allBlocks(defineHarness({ ...base, actions: { quiz } })))).not.toContain("set_phase");
+    expect(RESERVED_BLOCK_NAMES).toContain("set_phase");
+    expect(Object.keys(PHASE_CORE_BLOCKS)).toEqual(["set_phase"]);
+    expect(issues({ ...base, blocks: { set_phase: PHASE_CORE_BLOCKS.set_phase } })).toContain('blocks.set_phase: "set_phase" is a core block name');
+  });
+
+  it("takes a phase id and a short reason", () => {
+    expect(setPhaseSchema.safeParse({ to: "main", reason: "Warm-up done" }).success).toBe(true);
+    expect(setPhaseSchema.safeParse({ to: "Main", reason: "x" }).success).toBe(false);
+    expect(setPhaseSchema.safeParse({ to: "main", reason: "" }).success).toBe(false);
+    expect(setPhaseSchema.safeParse({ to: "main", reason: "x".repeat(301) }).success).toBe(false);
   });
 });

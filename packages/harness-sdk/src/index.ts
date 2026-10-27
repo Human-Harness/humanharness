@@ -2,7 +2,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { z } from "zod";
 import { type Block, blockToolName } from "./block";
-import { CORE_BLOCKS, INPUT_CORE_BLOCKS, MODE_CORE_BLOCKS, RESERVED_BLOCK_NAMES } from "./core-blocks";
+import { CORE_BLOCKS, INPUT_CORE_BLOCKS, MODE_CORE_BLOCKS, PHASE_CORE_BLOCKS, RESERVED_BLOCK_NAMES } from "./core-blocks";
 import { dataSchema } from "./data";
 import { DEFAULT_MODE_WORDS, MODE_ID } from "./modes";
 import { PHASE_ID, TIME_BOX_MAX } from "./phases";
@@ -181,7 +181,7 @@ const manifestSchema = z.object({
   }
   // Every block becomes an MCP tool: two blocks (core ones included) cannot share a tool name.
   const tools = new Map<string, string>(
-    Object.entries({ ...CORE_BLOCKS, ...INPUT_CORE_BLOCKS, ...MODE_CORE_BLOCKS }).map(([name, b]) => [blockToolName(name, b), name]),
+    Object.entries({ ...CORE_BLOCKS, ...INPUT_CORE_BLOCKS, ...MODE_CORE_BLOCKS, ...PHASE_CORE_BLOCKS }).map(([name, b]) => [blockToolName(name, b), name]),
   );
   for (const [name, b] of Object.entries(m.blocks)) {
     const tool = blockToolName(name, b);

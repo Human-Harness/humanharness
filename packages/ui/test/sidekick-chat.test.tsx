@@ -1,9 +1,12 @@
 // @vitest-environment happy-dom
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { useState } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import { HarnessApp } from "../src";
-import type { SidekickCard, SidekickReview } from "../src/client";
+import type { AppState, SetupStepView, SidekickCard, SidekickReview } from "../src/client";
+import { SetupFlow } from "../src/SetupFlow";
 import { FakeClient } from "./fake-client";
+import { renderIn } from "./render";
 import { SK_ON } from "./sidekick-fixtures";
 
 afterEach(cleanup);
@@ -71,16 +74,48 @@ describe("Sidekick in the chat", () => {
     await waitFor(() => expect(c.sent).toEqual(["first one"]));
   });
 
-  it("a cancelled (superseded) review sends nothing and keeps the draft", async () => {
+  it("a review main cancelled (Sidekick turned off mid-review) sends as typed", async () => {
     const c = client();
     c.sidekickReviews = [{ kind: "cancelled" }];
     const box = await open(c);
     type(box, "second one");
     enter(box);
-    await waitFor(() => expect(c.sidekickCalls.filter(([k]) => k === "review")).toHaveLength(1));
-    await act(async () => undefined);
+    await waitFor(() => expect(c.sent).toEqual(["second one"]));
+    expect(box.value).toBe("");
+  });
+
+  it("the review's answer is checked against the latest state: a pre-flight opened meanwhile holds the send", async () => {
+    const c = client();
+    c.state.actions = { tidy: { label: "Tidy up", cost: "heavy" } };
+    c.usage = { limits: [{ kind: "five_hour", utilization: 0.75, resetsAt: new Date(Date.now() + 7_200_000).toISOString() }], estimates: { tidy: 0.08 }, tokens: {} };
+    let resolve!: (r: SidekickReview) => void;
+    c.sidekick.review = (req) => (c.sidekickCalls.push(["review", req]), new Promise((r) => (resolve = r)));
+    render(<HarnessApp client={c} renderSide={(_s, send) => <button onClick={() => send("Tidy all notes", { action: "tidy" })}>tidy</button>} />);
+    const start = (await screen.findByRole("button", { name: "Start Demo" })) as HTMLButtonElement;
+    await waitFor(() => expect(start.disabled).toBe(false));
+    fireEvent.click(start);
+    const box = (await screen.findByRole("textbox")) as HTMLTextAreaElement;
+    // Collapsed, the rail sits beside the harness's own panel.
+    fireEvent.click(await screen.findByRole("button", { name: "Collapse Sidekick" }));
+    await screen.findByText(/5 h: 75% used/);
+    type(box, "make it better");
+    enter(box);
+    await screen.findByRole("button", { name: "Reviewing…" });
+    fireEvent.click(screen.getByRole("button", { name: "tidy" }));
+    await screen.findByRole("alertdialog");
+    await act(async () => resolve({ kind: "send" }));
     expect(c.sent).toEqual([]);
-    expect(box.value).toBe("second one");
+  });
+
+  it("IME composition: Enter with Sidekick on neither reviews nor sends", async () => {
+    const c = client();
+    const box = await open(c);
+    type(box, "かんじ");
+    fireEvent.keyDown(box, { key: "Enter", isComposing: true });
+    fireEvent.keyDown(box, { key: "Enter", keyCode: 229 });
+    await act(async () => undefined);
+    expect(c.sidekickCalls).toEqual([]);
+    expect(c.sent).toEqual([]);
   });
 
   it("a card holds the prompt: nothing is sent; Send suggested sends the rewrite and resolves the card", async () => {
@@ -134,6 +169,39 @@ describe("Sidekick in the chat", () => {
     enter(box, { [key]: true });
     await waitFor(() => expect(c.sent).toEqual(["make it better"]));
     expect(c.sidekickCalls.filter(([k]) => k === "review")).toEqual([]);
+  });
+
+  it("a card waiting: ⌘⏎ sends the draft and the card leaves as sent anyway", async () => {
+    const c = client();
+    c.sidekickReviews = [{ kind: "card", card: CARD }];
+    const box = await open(c);
+    type(box, "make it better");
+    enter(box);
+    act(() => c.emitSidekick({ ...SK_ON, status: "suggestion", card: CARD }));
+    await screen.findByRole("button", { name: "Send suggested" });
+    enter(box, { metaKey: true });
+    await waitFor(() => expect(c.sent).toEqual(["make it better"]));
+    expect(c.sidekickCalls).toContainEqual(["resolve", "c1", "sent-anyway"]);
+  });
+
+  it("a card waiting while pre-send is off: Enter sends and the card leaves as sent anyway", async () => {
+    const c = client();
+    c.sidekickState = { ...SK_ON, settings: { ...SK_ON.settings, preSend: false }, status: "suggestion", card: CARD };
+    const box = await open(c);
+    type(box, "make it better");
+    enter(box);
+    await waitFor(() => expect(c.sent).toEqual(["make it better"]));
+    expect(c.sidekickCalls.filter(([k]) => k === "review")).toEqual([]);
+    expect(c.sidekickCalls).toContainEqual(["resolve", "c1", "sent-anyway"]);
+  });
+
+  it("no card: ⌘⏎ resolves nothing", async () => {
+    const c = client();
+    const box = await open(c);
+    type(box, "make it better");
+    enter(box, { metaKey: true });
+    await waitFor(() => expect(c.sent).toEqual(["make it better"]));
+    expect(c.sidekickCalls.filter(([k]) => k === "resolve")).toEqual([]);
   });
 
   it("⌥⏎ asks for a review even without flags", async () => {
@@ -196,7 +264,11 @@ describe("Sidekick in the chat", () => {
     enter(box);
     await waitFor(() => expect(c.sent).toEqual(["make it better"]));
     expect(c.sidekickCalls).toEqual([]);
-    fireEvent.click(screen.getByRole("button", { name: "Sidekick is off. Turn it on" }));
+    const toggle = screen.getByRole("button", { name: "Sidekick is off. Turn it on" });
+    // The label names the state: no aria-pressed on top of it (announced twice); styled through data-on.
+    expect(toggle.hasAttribute("aria-pressed")).toBe(false);
+    expect(toggle.getAttribute("data-on")).toBe("false");
+    fireEvent.click(toggle);
     await waitFor(() => expect(c.sidekickCalls).toContainEqual(["set", { on: true, introSeen: true }]));
     expect(await screen.findByRole("complementary", { name: "Sidekick" })).toBeTruthy();
   });
@@ -204,10 +276,23 @@ describe("Sidekick in the chat", () => {
   it("the panel collapses to the rail and opens again", async () => {
     const c = client();
     await open(c);
-    fireEvent.click(await screen.findByRole("button", { name: "Collapse Sidekick" }));
+    const collapse = await screen.findByRole("button", { name: "Collapse Sidekick" });
+    collapse.focus();
+    fireEvent.click(collapse);
     expect(screen.queryByRole("complementary", { name: "Sidekick" })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Open Sidekick" }));
+    // Focus follows to the counterpart button instead of dropping to the body.
+    const rail = screen.getByRole("button", { name: "Open Sidekick" });
+    await waitFor(() => expect(document.activeElement).toBe(rail));
+    fireEvent.click(rail);
     expect(await screen.findByRole("complementary", { name: "Sidekick" })).toBeTruthy();
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "Collapse Sidekick" })));
+  });
+
+  it("the tier in the panel foot opens Settings › Sidekick", async () => {
+    const c = client();
+    await open(c);
+    fireEvent.click(await screen.findByRole("button", { name: "Tier: Light" }));
+    expect(await screen.findByRole("tab", { name: "Sidekick", selected: true })).toBeTruthy();
   });
 
   it("a new card is announced once in the polite live region", async () => {
@@ -222,5 +307,47 @@ describe("Sidekick in the chat", () => {
     // The same card pushed again is not announced again.
     act(() => c.emitSidekick({ ...SK_ON, status: "suggestion", card: CARD, spent: 1300 }));
     expect(live()).toBe("Sidekick has a suggestion for your prompt.");
+    // A second card puts the same words: the region is cleared first, so it is announced again.
+    act(() => c.emitSidekick({ ...SK_ON, status: "suggestion", card: { ...CARD, id: "c2" } }));
+    expect(live()).toBe("");
+    await waitFor(() => expect(live()).toBe("Sidekick has a suggestion for your prompt."));
+  });
+
+  it("D0: with renderSide and no state.sidekick, the harness's side column as before", async () => {
+    const c = client(false);
+    render(<HarnessApp client={c} renderSide={() => <p>Harness side</p>} />);
+    const start = (await screen.findByRole("button", { name: "Start Demo" })) as HTMLButtonElement;
+    await waitFor(() => expect(start.disabled).toBe(false));
+    fireEvent.click(start);
+    await screen.findByRole("textbox");
+    const side = (await screen.findByText("Harness side")).parentElement;
+    expect(side?.tagName).toBe("ASIDE");
+    expect(side?.className).toBe("hh-side");
+    expect(document.querySelector(".hh-sk-rail, .hh-sk-panel")).toBeNull();
+  });
+
+  it("slim (interview) mode with state.sidekick: no toggle, no rail, no review", async () => {
+    const c = client();
+    const step: SetupStepView = { id: "conocerte", kind: "interview", label: "Get to know you", required: true, action: "conocerte", cost: "light" };
+    c.state = { ...c.state, setup: [step], actions: { conocerte: { label: "Get to know you", cost: "light", setup: true } } };
+    c.setupState = { steps: { conocerte: "missing" }, blocking: ["conocerte"] };
+    c.tasks = { current: { id: "t1", action: "conocerte", status: "waiting" }, actions: {}, notes: [] };
+    c.chat = [
+      { id: "u1", role: "user", text: "Get to know you", blocks: [], activities: [], at: "t", task: "t1", action: "conocerte" },
+      { id: "a1", role: "assistant", text: "Hi.", blocks: [], activities: [], at: "t", task: "t1" },
+    ];
+    function Flow() {
+      const [state, setState] = useState<AppState>(c.state);
+      return <SetupFlow client={c} state={state} onChange={setState} onCancel={() => {}} onStart={() => {}} startAt="conocerte" />;
+    }
+    await renderIn("en", <Flow />);
+    const box = (await screen.findByRole("textbox")) as HTMLTextAreaElement;
+    type(box, "make it better");
+    enter(box);
+    await waitFor(() => expect(c.sent).toEqual(["make it better"]));
+    expect(c.sidekickCalls).toEqual([]);
+    expect(screen.queryByRole("button", { name: /Sidekick is/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Open Sidekick|Sidekick has a suggestion/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Review" })).toBeNull();
   });
 });

@@ -84,6 +84,7 @@ export function ChatView({
   openScope = null,
   onHome,
   onSettings,
+  onSidekickSettings,
   onFixEngine,
   onTurnOk,
   slim,
@@ -190,10 +191,27 @@ export function ChatView({
   const skCard = sidekick?.card?.id;
   const skAnnounced = useRef<string | undefined>(undefined);
   // Each new card is announced once (spec §7 accessibility); the panel itself never takes focus.
+  // Cleared, then set on the next frame: two cards in a row put the same words, which a screen reader would skip.
   useEffect(() => {
-    if (skCard && skCard !== skAnnounced.current) setAnnouncement(t("sidekick.card.announce"));
+    const isNew = skCard && skCard !== skAnnounced.current;
     skAnnounced.current = skCard;
+    if (!isNew) return;
+    setAnnouncement("");
+    const frame = requestAnimationFrame(() => setAnnouncement(t("sidekick.card.announce")));
+    return () => cancelAnimationFrame(frame);
   }, [skCard, t]);
+  /** Collapse ↔ open unmounts the focused button: focus moves to its counterpart (rail ↔ collapse). */
+  const skFocus = useRef(false);
+  const railRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!skFocus.current) return;
+    skFocus.current = false;
+    (skExpanded ? document.querySelector<HTMLButtonElement>(".hh-sk-collapse") : railRef.current)?.focus();
+  }, [skExpanded]);
+  const toggleSk = (open: boolean) => {
+    skFocus.current = true;
+    setSkOpen(open);
+  };
   /** Away from a turn just sent (loading, a notice): new content keeps the chat at the bottom while the user is there. */
   const stick = useRef(true);
   /** Set on send: the question that goes on screen next is pinned to the top of the chat. */
@@ -406,6 +424,8 @@ export function ChatView({
     setPending(p);
   };
 
+  /** The latest `send`, for code that resumes after an await. */
+  const sendRef = useRef<typeof send>(() => false);
   /** True when the message was sent, or is waiting for the user to confirm a heavy action. */
   const send = (text: string, options: SendOptions = {}, confirmed = false): boolean => {
     const message = text.trim();
@@ -466,6 +486,7 @@ export function ChatView({
     inputRef.current?.focus();
     return true;
   };
+  sendRef.current = send;
 
   /**
    * A pick in a `choices` block of task `task`: a follow-up stays on screen; another topic replaces it; the end
@@ -793,7 +814,7 @@ export function ChatView({
   const submit = async (text: string, force = false) => {
     if (reviewing) return;
     if (!reviewOn || !text.trim() || blocked()) {
-      if (send(text)) setDraft("");
+      sendTyped(text);
       return;
     }
     const seq = ++reviewSeq.current;
@@ -808,6 +829,7 @@ export function ChatView({
         : await client.sidekick
             .review({ text, ...(force ? { force: true } : {}), ...(attached ? { attached: true } : {}) })
             .catch(() => ({ kind: "error" }) as const);
+    // Superseded: the person sent at once, or a newer review replaced this one.
     if (seq !== reviewSeq.current) return;
     setReviewing(null);
     if (r.kind === "card") {
@@ -815,9 +837,9 @@ export function ChatView({
       setSkView("sidekick");
       return;
     }
-    // Cancelled: the person sent at once, or a newer review replaced this one.
-    if (r.kind === "cancelled") return;
-    if (send(text)) setDraft("");
+    // Anything else, a `cancelled` from main included (Sidekick turned off mid-review), sends as typed. The latest
+    // `send`: a pre-flight or a turn that opened during the review is seen.
+    if (sendRef.current(text)) setDraft("");
   };
   /** ⌘⏎ / Ctrl⏎: send now, cancelling a running review. */
   const sendNow = (text: string) => {
@@ -826,7 +848,13 @@ export function ChatView({
       setReviewing(null);
       void client.sidekick.cancelReview().catch(() => undefined);
     }
-    if (send(text)) setDraft("");
+    sendTyped(text);
+  };
+  /** Sends the draft as typed; a card still waiting leaves as sent anyway (spec §4.1: never about a prompt already sent). */
+  const sendTyped = (text: string) => {
+    if (!send(text)) return;
+    setDraft("");
+    if (sidekick?.card) resolveCard(sidekick.card, "sent-anyway");
   };
   const resolveCard = (card: SidekickCard, outcome: "used" | "edited" | "sent-anyway") =>
     void client.sidekick.resolve(card.id, outcome).catch(() => undefined);
@@ -1280,7 +1308,12 @@ export function ChatView({
               <>
                 {harnessSide !== undefined && <aside className="hh-side">{harnessSide}</aside>}
                 <div className="hh-sk-rail">
-                  <button type="button" aria-label={sidekick.card ? t("sidekick.waiting") : t("sidekick.open")} onClick={() => setSkOpen(true)}>
+                  <button
+                    ref={railRef}
+                    type="button"
+                    aria-label={sidekick.card ? t("sidekick.waiting") : t("sidekick.open")}
+                    onClick={() => toggleSk(true)}
+                  >
                     <SidekickMark off={!sidekick.settings.on} />
                     {sidekick.card && <span className="hh-sk-dot" aria-hidden="true" />}
                   </button>
@@ -1295,11 +1328,12 @@ export function ChatView({
               onView={setSkView}
               {...(harnessSide !== undefined ? { harnessSide } : {})}
               sendKey={SEND_KEY}
-              onCollapse={() => setSkOpen(false)}
+              onCollapse={() => toggleSk(false)}
+              {...(onSidekickSettings ? { onTier: onSidekickSettings } : {})}
               onTurnOn={() => void client.sidekick.set({ on: true, introSeen: true }).catch(() => undefined)}
               onNotNow={() => {
                 void client.sidekick.set({ introSeen: true }).catch(() => undefined);
-                setSkOpen(false);
+                toggleSk(false);
               }}
               // A suggestion goes through `send`, never `submit`: it is never reviewed again.
               onSendSuggested={(card) => {

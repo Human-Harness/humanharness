@@ -507,7 +507,7 @@ select:focus-visible { outline: 2px solid var(--hh-ink); outline-offset: 2px; }
 .hh-sk-rail button { position: relative; }
 .hh-sk-rail .hh-sk-dot { position: absolute; top: 2px; right: 2px; width: 8px; height: 8px; border-radius: 50%; background: var(--hh-ink); }
 .hh-sk-toggle .hh-sk-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--hh-ink); margin-right: 6px; }
-.hh-sk-toggle[aria-pressed="true"] .hh-sk-dot { background: var(--hh-ink); }
+.hh-sk-toggle[data-on="true"] .hh-sk-dot { background: var(--hh-ink); }
 .hh-sk-composer-hint { color: var(--hh-muted); font-size: 0.85rem; margin: 4px 0 0; }
 /* The composer field over its underline backdrop: same box metrics as `.hh-composer textarea` (1px border + 8px padding). */
 .hh-sk-flagged { position: relative; flex: 1; display: flex; border-radius: 8px; background: var(--hh-surface); }

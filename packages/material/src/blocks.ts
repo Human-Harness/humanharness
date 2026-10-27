@@ -10,7 +10,7 @@ const IMAGE = /^ {0,3}!\[[^\]]*\]\([^)]*\)\s*$/;
 
 /** A refusal a converter throws, with its reason; the pipeline turns it into the source's `refused` status. */
 export class MaterialRefused extends Error {
-  constructor(readonly reason: Extract<Refusal, "unreadable" | "protected" | "scanned">) {
+  constructor(readonly reason: Extract<Refusal, "unreadable" | "protected" | "scanned" | "too-big">) {
     super(reason);
     this.name = "MaterialRefused";
   }

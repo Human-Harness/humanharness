@@ -58,3 +58,7 @@ export const SHEET_MAX_CELLS = 1_000_000;
 export const SHEET_MAX_ROWS = 100_000;
 /** Spreadsheets: at most this many non-empty columns are kept from one sheet. */
 export const SHEET_MAX_COLUMNS = 1024;
+/** Converting runs in a worker thread with this much heap: a file that needs more is refused, the app lives on. */
+export const CONVERT_HEAP_MB = 1536;
+/** How long converting or measuring one file may take before its worker is stopped and the file refused. */
+export const CONVERT_TIMEOUT_MS = 120_000;

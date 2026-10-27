@@ -15,3 +15,8 @@ export * from "./checks";
 export { estimateTokens } from "@humanharness/workspace";
 export * from "./fragment";
 export * from "./store";
+export * from "./convert";
+export * from "./convert/isolate";
+export * from "./estimate";
+export * from "./intake";
+export * from "./pipeline";

@@ -131,6 +131,7 @@ const client: HarnessClient = {
     retry: (scope, id) => ipcRenderer.invoke("hh:materialRetry", scope, id),
     decide: (scope, id, fragment, choice) => ipcRenderer.invoke("hh:materialDecide", scope, id, fragment, choice),
     open: (scope, id) => ipcRenderer.invoke("hh:materialOpen", scope, id),
+    cite: (scope, id) => ipcRenderer.invoke("hh:materialCite", scope, id),
     onChange: (listener) => subscribe<MaterialView>("hh:materialStatus", listener),
   },
   onTextSize: (listener) => subscribe<TextSize>("hh:textSize", listener),

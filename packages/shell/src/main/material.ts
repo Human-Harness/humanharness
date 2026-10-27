@@ -31,6 +31,7 @@ import {
   refusalText,
   retryStage,
   uncovered,
+  usableFragment,
   workerRunner,
 } from "@humanharness/material";
 import { APP_SCOPE, MATERIAL_DIR, isScopeId } from "@humanharness/workspace";
@@ -522,6 +523,17 @@ export class MaterialService {
     await this.d.afterChange(store.scope, `grounding ${mode}`);
     await this.changed(store.scope);
     return { ok: true };
+  }
+
+  /**
+   * A citation's label (§9): "<source>, <location>" for a fragment of a usable source of the scope; null for anything
+   * else, so the chat leaves the text as it is.
+   */
+  async cite(scope: unknown, id: unknown): Promise<{ label: string } | null> {
+    const store = await this.store(scope);
+    if (typeof store === "string" || !isFragmentId(id)) return null;
+    const f = await usableFragment(store, id);
+    return f ? { label: `${f.meta.source}, ${f.meta.location}` } : null;
   }
 
   /**

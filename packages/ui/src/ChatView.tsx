@@ -4,6 +4,7 @@ import type { Tier } from "@humanharness/harness-sdk";
 import { AnnotateBlock } from "./AnnotateBlock";
 import { findAnswer } from "./annotate";
 import { ChoicesBlock } from "./ChoicesBlock";
+import { CitationContext, type CitationResolver } from "./citations";
 import { GearIcon, TopBar } from "./chrome";
 import {
   type AppState,
@@ -794,6 +795,25 @@ export function ChatView({
   const composer = !slim || Boolean(chat.live) || tasks.current?.action === slim.action;
   // Material spec §11: the scope's material panel, only when the harness takes material (D0) and a scope is open.
   const materialScope = state.material ? (state.scopes ? openScope : "main") : null;
+  // Citations `[[frag:<id>]]` in the chat (§9): drawn only with material and a scope (D0); one label lookup per id.
+  const citations = useMemo<CitationResolver | null>(() => {
+    if (!state.material || !materialScope) return null;
+    const cache = new Map<string, Promise<string | null>>();
+    return {
+      label: (id) => {
+        let label = cache.get(id);
+        if (!label) {
+          label = client.material.cite(materialScope, id).then(
+            (r) => r?.label ?? null,
+            () => null,
+          );
+          cache.set(id, label);
+        }
+        return label;
+      },
+      open: (id) => void client.material.open(materialScope, id).catch(() => undefined),
+    };
+  }, [client, state.material, materialScope]);
   const Panel = materialPanel ?? MaterialPanel;
   const material =
     state.material && materialScope && !slim ? (
@@ -907,27 +927,29 @@ export function ChatView({
               </button>
             )}
             {/* The running turn is the list's last item, under the id its entry gets: it stays the same element when it ends. */}
-            {(liveEntry ? [...shown, liveEntry] : shown).map((entry) => (
-              <div key={entry.id} data-entry={entry.id} data-role={entry.role}>
-                <Message
-                  key={pickResets}
-                  entry={entry}
-                  components={entry === liveEntry || ofWaitingTask(entry.task) ? all : stale}
-                  actions={blockActions(entry === lastAssistant && !chat.live && !closing, entry.task, entry === liveEntry ? null : entry.id)}
-                  live={entry === liveEntry ? { activities: chat.live!.activities, label: checkpoint ? t("flow.checkpoint") : undefined } : undefined}
-                  reveal={entry.id === pacedTurn.current ? (reveal ?? undefined) : undefined}
-                />
-                {entry.error && entry === last && (
-                  <ErrorCard
-                    error={entry.error}
-                    engine={engine}
-                    limits={chat.limits}
-                    onFix={onFixEngine}
-                    onRetry={retry()}
+            <CitationContext.Provider value={citations}>
+              {(liveEntry ? [...shown, liveEntry] : shown).map((entry) => (
+                <div key={entry.id} data-entry={entry.id} data-role={entry.role}>
+                  <Message
+                    key={pickResets}
+                    entry={entry}
+                    components={entry === liveEntry || ofWaitingTask(entry.task) ? all : stale}
+                    actions={blockActions(entry === lastAssistant && !chat.live && !closing, entry.task, entry === liveEntry ? null : entry.id)}
+                    live={entry === liveEntry ? { activities: chat.live!.activities, label: checkpoint ? t("flow.checkpoint") : undefined } : undefined}
+                    reveal={entry.id === pacedTurn.current ? (reveal ?? undefined) : undefined}
                   />
-                )}
-              </div>
-            ))}
+                  {entry.error && entry === last && (
+                    <ErrorCard
+                      error={entry.error}
+                      engine={engine}
+                      limits={chat.limits}
+                      onFix={onFixEngine}
+                      onRetry={retry()}
+                    />
+                  )}
+                </div>
+              ))}
+            </CitationContext.Provider>
             {pickFailed && (
               <p className="hh-error" role="alert">
                 {t("choices.failed")}

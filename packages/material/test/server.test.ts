@@ -29,7 +29,7 @@ describe("material MCP server", () => {
       seen.push(r);
       return (r as { op: string }).op === "read" ? "[[frag:a-001]] a.pdf, p.1\n\nText" : [{ id: "a-001", where: "a.pdf, p.1", summary: "S." }];
     });
-    expect((await c.listTools()).tools.map((t) => t.name).sort()).toEqual(["material_flag", "material_read", "material_search"]);
+    expect((await c.listTools()).tools.map((t) => t.name).sort()).toEqual(["material_conflict", "material_flag", "material_read", "material_search"]);
     const read = await c.callTool({ name: "material_read", arguments: { id: "a-001" } });
     expect((read.content as { text: string }[])[0].text).toContain("Text");
     await c.callTool({ name: "material_search", arguments: { query: "fractions" } });

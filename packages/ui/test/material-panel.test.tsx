@@ -153,6 +153,17 @@ describe("MaterialPanel (material spec §11)", () => {
     expect(screen.queryByText(/window is at/)).toBeNull();
   });
 
+  it("the grounding toggle, only when the person may change it", async () => {
+    const client = await panel(view([src({})]));
+    expect(((await screen.findByRole("radio", { name: "The material first" })) as HTMLInputElement).checked).toBe(true);
+    fireEvent.click(screen.getByRole("radio", { name: "Only the material" }));
+    await waitFor(() => expect(client.materialCalls).toContain("grounding:strict"));
+    cleanup();
+    await panel({ ...view([src({})]), grounding: { mode: "mixed", canChange: false } });
+    await screen.findByText("ch2.pdf: ready, 18 fragments");
+    expect(screen.queryByRole("radio", { name: "Only the material" })).toBeNull();
+  });
+
   it("status lines", async () => {
     await panel(
       view([
@@ -382,6 +393,24 @@ describe("where the panel goes", () => {
     client.state = { ...client.state, material: info };
     await work(client);
     expect(await screen.findByRole("navigation", { name: "Material" })).toBeTruthy();
+  });
+
+  it("citations in the chat: the source and location, which open the original; literal text without material (D0)", async () => {
+    const entry = { id: "a1", role: "assistant" as const, text: "Same amount [[frag:ch2-001]].", blocks: [], activities: [], at: "t" };
+    const client = new FakeClient({ language: "en", folder: "/f", engineId: "claude" });
+    client.state = { ...client.state, material: info };
+    client.chat = [entry];
+    client.citeLabels = { "ch2-001": "ch2.pdf, p.4" };
+    await work(client);
+    fireEvent.click(await screen.findByRole("button", { name: "ch2.pdf, p.4" }));
+    await waitFor(() => expect(client.materialCalls).toContain("open:ch2-001"));
+    cleanup();
+    const plain = new FakeClient({ language: "en", folder: "/f", engineId: "claude" });
+    plain.chat = [entry];
+    const cite = vi.spyOn(plain.material, "cite");
+    await work(plain);
+    expect(await screen.findByText("Same amount [[frag:ch2-001]].")).toBeTruthy();
+    expect(cite).not.toHaveBeenCalled();
   });
 
   it("a harness's own panel replaces the default", async () => {

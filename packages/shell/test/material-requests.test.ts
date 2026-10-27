@@ -32,6 +32,16 @@ describe("personMaterialRequest", () => {
     await expect(personMaterialRequest(d, { op: "flag", id: "ch2-009", reason: "cut" })).rejects.toThrow();
     expect(woke).toBe(1);
   });
+  it("conflict: one line in conflicts.md", async () => {
+    expect(await personMaterialRequest(deps("fractions"), { op: "conflict", fragment: "ch2-001", claim: "1/2 > 2/3", resolution: "Followed the material" })).toBe("Noted.");
+    expect(fs.readFileSync(path.join(base, ".harness", "material", "fractions", "conflicts.md"), "utf8")).toContain("[[frag:ch2-001]] 1/2 > 2/3 → Followed the material");
+  });
+  it("conflict: an unknown fragment or a missing field is refused, and nothing is written", async () => {
+    await expect(personMaterialRequest(deps("fractions"), { op: "conflict", fragment: "ch2-009", claim: "x", resolution: "y" })).rejects.toThrow("No fragment ch2-009");
+    await expect(personMaterialRequest(deps("fractions"), { op: "conflict", fragment: "../x-001", claim: "x", resolution: "y" })).rejects.toThrow("No fragment ../x-001");
+    await expect(personMaterialRequest(deps("fractions"), { op: "conflict", fragment: "ch2-001", claim: "x" })).rejects.toThrow("Unknown request");
+    expect(fs.existsSync(path.join(base, ".harness", "material", "fractions", "conflicts.md"))).toBe(false);
+  });
   it("uses the store it is given (one write queue per base and scope)", async () => {
     const asked: string[] = [];
     const store = new MaterialStore(base, "fractions");

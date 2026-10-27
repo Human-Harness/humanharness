@@ -1,6 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { MaterialSearch, MaterialStore, flagFragment, isFragmentId, readForTask } from "@humanharness/material/light";
+import { MaterialSearch, MaterialStore, flagFragment, isFragmentId, readForTask, usableFragment } from "@humanharness/material/light";
 import { APP_SCOPE, isScopeId, materialReadsFile } from "@humanharness/workspace";
 
 /** A refusal whose message goes back to the agent. */
@@ -49,6 +49,12 @@ export async function personMaterialRequest(d: PersonMaterialDeps, request: unkn
       if (!isFragmentId(r.id) || !(await flagFragment(store, r.id, r.reason))) throw new MaterialRefusal(`No fragment ${short(r.id)}`);
       d.flagged?.();
       return "Thanks: it will be checked again.";
+    }
+    if (r.op === "conflict" && typeof r.claim === "string" && typeof r.resolution === "string") {
+      // Only a fragment of a usable source in this scope (the same rule as a read); the line goes to `conflicts.md`.
+      if (!isFragmentId(r.fragment) || !(await usableFragment(store, r.fragment))) throw new MaterialRefusal(`No fragment ${short(r.fragment)}`);
+      await store.appendConflict({ fragment: r.fragment, claim: r.claim.slice(0, 300), resolution: r.resolution.slice(0, 300) }, d.now?.());
+      return "Noted.";
     }
     throw new MaterialRefusal("Unknown request");
   } catch (err) {

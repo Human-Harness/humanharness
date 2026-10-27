@@ -197,6 +197,20 @@ describe("MaterialService", () => {
     expect(await service.originalOf("other", "fractions")).toBeNull();
   });
 
+  it("a citation's label: the source and the fragment's location; null for anything else", async () => {
+    picked = [write("Fractions.md", `# Fractions\n\n${"A fraction names a part. ".repeat(40)}`)];
+    await service.add("fractions");
+    const store = service.storeAt(base, "fractions");
+    const location = (await store.readFragment("fractions-001"))!.meta.location;
+    expect(await service.cite("fractions", "fractions-001")).toEqual({ label: `Fractions.md, ${location}` });
+    expect(await service.cite("fractions", "fractions-009")).toBeNull();
+    expect(await service.cite("fractions", "../x-001")).toBeNull();
+    expect(await service.cite("other", "fractions-001")).toBeNull();
+    // A removed source's fragments are no longer cited.
+    await store.patch("fractions", (s) => ({ ...s, status: "removed" }));
+    expect(await service.cite("fractions", "fractions-001")).toBeNull();
+  });
+
   it("conversions share one runner that runs a few at a time", async () => {
     let running = 0;
     let most = 0;

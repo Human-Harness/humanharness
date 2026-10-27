@@ -272,6 +272,7 @@
       "remove": "Remove it"
     },
     "found": "What the check found",
+    "grounding": { "label": "How the AI uses this material", "strict": "Only the material", "mixed": "The material first" },
     "status": {
       "pending": "{{name}}: waiting for you",
       "converting": "{{name}}: converting…",

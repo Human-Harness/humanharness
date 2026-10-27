@@ -1,6 +1,6 @@
 import { isFragmentId } from "./fragment";
 import { type MaterialStore, isUsable } from "./store";
-import type { SourceEntry } from "./types";
+import type { Fragment, SourceEntry } from "./types";
 
 // These run in the app process, the one owner of a scope's registry; the `material` server only forwards the calls.
 
@@ -20,6 +20,16 @@ export async function readForTask(store: MaterialStore, id: string): Promise<str
     await rewrite((list) => list.map((s) => (s.id === owner.id ? { ...s, used: s.used + 1 } : s)));
     return `[[frag:${id}]] ${f.meta.source}, ${f.meta.location}${f.meta.path ? ` (${f.meta.path})` : ""}\n\n${f.md}`;
   });
+}
+
+/**
+ * A fragment of a usable source of the scope, read without counting a use: what `material_conflict` and a citation's
+ * label (§9) may name. Null otherwise.
+ */
+export async function usableFragment(store: MaterialStore, id: string): Promise<Fragment | null> {
+  if (!isFragmentId(id)) return null;
+  const owner = ownerOf(await store.sources(), id);
+  return owner && isUsable(owner) ? store.readFragment(id) : null;
 }
 
 /**

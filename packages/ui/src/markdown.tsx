@@ -1,4 +1,5 @@
-import { Fragment, type ReactNode } from "react";
+import { Fragment, type ReactNode, useContext, useEffect, useState } from "react";
+import { CitationContext, splitCitations } from "./citations";
 
 /**
  * A safe Markdown subset for the agent's answers: paragraphs, line breaks, inline code, bold, italics,
@@ -118,11 +119,46 @@ function fadingWords(text: string): ReactNode[] {
   return text.split(/(\s+)/).map((w, i) => (!w || /^\s+$/.test(w) ? w : <span key={i} className="hh-word">{w}</span>));
 }
 
+/** `[[frag:<id>]]` (material spec §9): "<source>, <location>", which opens the original; text when there is no such fragment. */
+function Citation({ id }: { id: string }) {
+  const cite = useContext(CitationContext);
+  const [label, setLabel] = useState<string | null | undefined>(undefined);
+  useEffect(() => {
+    let live = true;
+    cite?.label(id).then(
+      (l) => live && setLabel(l),
+      () => live && setLabel(null),
+    );
+    return () => {
+      live = false;
+    };
+  }, [cite, id]);
+  if (!cite || label === null) return <>{`[[frag:${id}]]`}</>;
+  return (
+    <button type="button" className="hh-citation" onClick={() => cite.open(id)}>
+      {label ?? "…"}
+    </button>
+  );
+}
+
+/** A text run with its citations drawn, only inside a `CitationContext`; otherwise exactly the text (D0). */
+function CitedText({ text, fade }: { text: string; fade: boolean }) {
+  const cite = useContext(CitationContext);
+  if (!cite || !text.includes("[[frag:")) return <>{fade ? fadingWords(text) : text}</>;
+  return (
+    <>
+      {splitCitations(text).map((part, i) =>
+        typeof part === "string" ? <Fragment key={i}>{fade ? fadingWords(part) : part}</Fragment> : <Citation key={i} id={part.id} />,
+      )}
+    </>
+  );
+}
+
 function renderInline(nodes: Inline[], fade: boolean): ReactNode[] {
   return nodes.map((n, i) => {
     switch (n.t) {
       case "text":
-        return <Fragment key={i}>{fade ? fadingWords(n.v) : n.v}</Fragment>;
+        return <CitedText key={i} text={n.v} fade={fade} />;
       case "code":
         return (
           <code key={i} className={fade ? "hh-word" : undefined}>

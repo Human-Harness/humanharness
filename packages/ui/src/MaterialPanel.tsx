@@ -274,6 +274,7 @@ export function MaterialPanel({ client, scope, info, disabled }: MaterialPanelPr
   const [notice, setNotice] = useState<string[]>([]);
   const [adding, setAdding] = useState(false);
   const [retrying, setRetrying] = useState<string[]>([]);
+  const [grounding, setGrounding] = useState(false);
   const addFailed = () => {
     setAdding(false);
     setNotice([t("material.addFailed")]);
@@ -347,6 +348,27 @@ export function MaterialPanel({ client, scope, info, disabled }: MaterialPanelPr
             {t("material.cancel")}
           </button>
         </form>
+      )}
+      {/* §9 Ground: the scope's mode, when the harness lets the person change it; the next task's first message carries it. */}
+      {view?.grounding.canChange && (
+        <fieldset className="hh-material-grounding" disabled={disabled || grounding}>
+          <legend>{t("material.grounding.label")}</legend>
+          {(["strict", "mixed"] as const).map((mode) => (
+            <label key={mode}>
+              <input
+                type="radio"
+                name={`grounding-${scope}`}
+                checked={view.grounding.mode === mode}
+                onChange={() => {
+                  setGrounding(true);
+                  const done = () => setGrounding(false);
+                  client.material.setGrounding(scope, mode).then(done, done);
+                }}
+              />
+              {t(`material.grounding.${mode}`)}
+            </label>
+          ))}
+        </fieldset>
       )}
       {notice.map((n) => (
         <p key={n} className="hh-material-notice" role="status">

@@ -741,6 +741,8 @@ export interface MaterialClient {
   decide(scope: string, id: string, fragment: string | null, choice: MaterialChoice): Promise<MaterialResult>;
   /** Opens the original of a source or a fragment's source. */
   open(scope: string, id: string): Promise<MaterialResult>;
+  /** A citation's label, "<source>, <location>"; null: no such fragment in the scope (the text stays as it is). */
+  cite(scope: string, id: string): Promise<{ label: string } | null>;
   onChange(listener: (view: MaterialView) => void): () => void;
 }
 

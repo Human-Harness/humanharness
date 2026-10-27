@@ -7,8 +7,8 @@ import { STAGE_TOOLS } from "./stages";
 const ID = z.string().regex(FRAGMENT_ID);
 
 /**
- * The `material` MCP server (§9, §10). Person mode: a task's `material_read`, `material_search`, `material_flag`
- * (and `material_conflict`, Task 24). System mode: `material_read` plus the stage's own tools. Every call goes to the
+ * The `material` MCP server (§9, §10). Person mode: a task's `material_read`, `material_search`, `material_flag` and
+ * `material_conflict`. System mode: `material_read` plus the stage's own tools. Every call goes to the
  * app over `rpc` as `{ op, ...args }`; a refusal comes back as a tool error. The server writes nothing itself: the app
  * process is the one owner of each scope's registry (`MaterialStore` serializes writes within one object only).
  */
@@ -39,6 +39,14 @@ export function createMaterialServer(rpc: { path: string; token: string }, mode:
       "material_flag",
       { description: "Reports a fragment that reads wrong (garbled, cut, a broken table). It is checked again later.", inputSchema: { id: ID, reason: z.string().min(1).max(300) } },
       call("flag"),
+    );
+    server.registerTool(
+      "material_conflict",
+      {
+        description: "Records that the material and your own knowledge disagree: the fragment, the claim, and how you resolved it (you follow the material).",
+        inputSchema: { fragment: ID, claim: z.string().min(1).max(300), resolution: z.string().min(1).max(300) },
+      },
+      call("conflict"),
     );
   }
   if (mode === "system") {

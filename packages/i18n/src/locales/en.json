@@ -631,6 +631,10 @@
   },
   "reader": {
     "title": "Document",
+    "cards": "Documents from this answer",
+    "new": "New",
+    "updated": "Updated",
+    "moved": "This document was moved or deleted.",
     "path": "Path",
     "contents": "Contents",
     "loading": "Opening the document…",

@@ -1,8 +1,9 @@
-import { type ComponentType, type FormEvent, type ReactNode, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
+import { type ComponentType, type FormEvent, type ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Tier } from "@humanharness/harness-sdk";
 import { AnnotateBlock } from "./AnnotateBlock";
 import { findAnswer } from "./annotate";
+import { cleanDocumentCards } from "./card-shape";
 import { ChoicesBlock } from "./ChoicesBlock";
 import { CitationContext, type CitationResolver } from "./citations";
 import { GearIcon, TopBar } from "./chrome";
@@ -10,11 +11,13 @@ import {
   type AppState,
   type ChatEntry,
   type ChoiceOption,
+  type DocumentCard,
   type EngineProblem,
   type HarnessClient,
   type ModeChoice,
   type ModeSwitch,
   type NoteView,
+  type ReaderPrefs,
   type RespondResult,
   type SendOptions,
   type TaskTurnNotice,
@@ -22,6 +25,8 @@ import {
   nextInPath,
   partsOf,
 } from "./client";
+import { DocumentContext, type DocumentHost } from "./documents-context";
+import { DocumentReader, type ReaderTarget } from "./DocumentReader";
 import { ErrorCard, isFixable, problemError } from "./ErrorCard";
 import { FlowSide } from "./FlowSide";
 import { HistoryPanel } from "./HistoryPanel";
@@ -118,6 +123,12 @@ export function ChatView({
   const [draft, setDraft] = useState("");
   const [showHistory, setShowHistory] = useState(false);
   const [notesPanel, setNotesPanel] = useState<{ expanded?: string } | null>(null);
+  /** The document reader beside the chat (document-reader spec §5); null: closed. Kept in state: a stable target. */
+  const [reader, setReader] = useState<ReaderTarget | null>(null);
+  const [readerFull, setReaderFull] = useState(false);
+  const [readerPrefs, setReaderPrefs] = useState<ReaderPrefs>(state.config.reader ?? {});
+  /** Card paths that are no longer there (struck through). */
+  const [missingDocs, setMissingDocs] = useState<ReadonlySet<string>>(() => new Set());
   const [announcement, setAnnouncement] = useState("");
   const [estimates, setEstimates] = useState<Record<string, number>>({});
   /** The saved conversation couldn't be read. */
@@ -200,6 +211,14 @@ export function ChatView({
     [components, state.inputs, state.modes],
   );
   const stale = useMemo(() => ({ ...all, choices: StaleChoices, ...(state.modes ? { recommend_mode: StaleRecommend } : {}) }), [all, state.modes]);
+  /** Opens a document in the reader (a `.md` link, a card, the harness's own UI). */
+  const openDoc = useCallback((path: string, anchor?: string) => setReader({ path, ...(anchor ? { anchor } : {}) }), []);
+  const documentKinds = state.documents?.kinds;
+  // Memoised: a new host on every streaming redraw would reload the chat's local images.
+  const documentHost = useMemo<DocumentHost>(
+    () => ({ open: openDoc, image: (p) => client.readImage(p).catch(() => null), ...(documentKinds ? { kinds: documentKinds } : {}) }),
+    [client, openDoc, documentKinds],
+  );
   const labelOf = (id: string) => state.actions[id]?.label ?? id;
   /** The open task's modes (its action's, in its order); none without modes (D0). */
   const taskModes = actionModes(state, tasks.current?.action);
@@ -255,11 +274,17 @@ export function ChatView({
     const offEvents = client.onEvent((e) => dispatch(e.type === "done" ? { ...e, task: openTask.current } : e));
     const offModes = client.onModeSwitch((s) => tookSwitch.current(s));
     const offTurns = client.onTaskTurn((n) => tookTurn.current(n));
+    // The harness's own UI may open a document (`client.openDocument`): listened to from the start. Its path is
+    // untrusted input, so only a string opens the reader (which checks it again).
+    const offDocs = client.onOpenDocument((p) => {
+      if (typeof p === "string" && p) setReader({ path: p });
+    });
     return () => {
       offTasks();
       offEvents();
       offModes();
       offTurns();
+      offDocs();
     };
   }, [client]);
 
@@ -777,6 +802,39 @@ export function ChatView({
     ? { id: chat.live.id, role: "assistant", text: chat.live.text, blocks: chat.live.blocks, parts: chat.live.parts, activities: [], at: "" }
     : null;
   const showStart = flow && since === null && !chat.live;
+  // The cards on screen, once per change of the list: a moved or deleted document's card is struck through.
+  const cardKey = shown.flatMap((e) => (e.role === "assistant" && e.documents !== undefined ? cleanDocumentCards(e.documents).map((d) => d.path) : [])).join("\n");
+  useEffect(() => {
+    // D0: no cards, no call.
+    if (!cardKey) return;
+    let live = true;
+    const paths = cardKey.split("\n");
+    client.documentsExist(paths).then(
+      (found) => live && setMissingDocs(new Set(paths.filter((_, i) => found[i] !== true))),
+      () => undefined,
+    );
+    return () => {
+      live = false;
+    };
+  }, [client, cardKey]);
+  /** The engine's name for an entry's `engine` id, else the configured engine's (the reader's "Written by"). */
+  const engineName = (id: unknown): string => state.engines.find((e) => e.id === id)?.name ?? engine;
+  const cardsFor = (entry: ChatEntry) => ({
+    missing: missingDocs,
+    open: (card: DocumentCard) => setReader({ path: card.path, agent: engineName(entry.engine) }),
+  });
+  const saveReaderPrefs = useCallback(
+    (p: ReaderPrefs) => {
+      setReaderPrefs(p);
+      client.saveConfig({ reader: p }).catch(() => undefined);
+    },
+    [client],
+  );
+  const closeReader = useCallback(() => {
+    setReader(null);
+    setReaderFull(false);
+    inputRef.current?.focus();
+  }, []);
   const placeholder = !flow ? t("chat.placeholder") : tasks.current ? t("flow.placeholderTask") : t("flow.placeholderStart");
 
   let preflightText = "";
@@ -849,348 +907,365 @@ export function ChatView({
     ) : null;
 
   return (
-    <div className={slim ? "hh-app hh-app-slim" : "hh-app"}>
-      {!slim && (
-        <TopBar title={state.harness.name} mock={state.mock}>
-          {profileBar?.(blocked())}
-          {scopeBar?.(blocked())}
-          <UsageMeter engine={engineOption} limits={chat.limits} lastTokens={lastTurnTokens(chat.entries)} />
-          {onHome && <button onClick={onHome}>{t("chat.home")}</button>}
-          <button
-            onClick={() => {
-              // One panel at a time: Escape closes the one on screen.
-              setNotesPanel(null);
-              setShowHistory(true);
-            }}
-          >
-            {t("history.title")}
-          </button>
-          {onSettings && (
-            <button className="hh-icon-button" aria-label={t("home.settings")} onClick={onSettings}>
-              <GearIcon />
+    <DocumentContext.Provider value={documentHost}>
+      <div className={slim ? "hh-app hh-app-slim" : "hh-app"}>
+        {!slim && (
+          <TopBar title={state.harness.name} mock={state.mock}>
+            {profileBar?.(blocked())}
+            {scopeBar?.(blocked())}
+            <UsageMeter engine={engineOption} limits={chat.limits} lastTokens={lastTurnTokens(chat.entries)} />
+            {onHome && <button onClick={onHome}>{t("chat.home")}</button>}
+            <button
+              onClick={() => {
+                // One panel at a time: Escape closes the one on screen.
+                setNotesPanel(null);
+                setShowHistory(true);
+              }}
+            >
+              {t("history.title")}
             </button>
-          )}
-        </TopBar>
-      )}
-      <div className="hh-body">
-        {flow && !slim && (
-          <FlowSide
-            state={state}
-            tasks={tasks}
-            disabled={blocked() || !loaded}
-            onStart={startTopic}
-            onOpenNote={(slug) => {
-              setShowHistory(false);
-              setNotesPanel({ expanded: slug });
-            }}
-            material={material}
-          />
-        )}
-        {/* Without actions there is no flow side panel: the material panel gets one of its own. */}
-        {!flow && material && (
-          <nav className="hh-flow-side" aria-label={t("material.title")}>
-            {material}
-          </nav>
-        )}
-        <Main className="hh-main">
-          {/* A time box without phases (spec §5) still shows its time, its controls and, once time is up, Finish. */}
-          {flow && since !== null && tasks.current && (taskPhases.length > 0 || tasks.current.timeBox) && (
-            <PhaseStepper
-              phases={taskPhases}
-              task={tasks.current}
-              disabled={blocked() || phasing || pending !== null || tasks.current.status !== "waiting"}
-              onPhase={pickPhase}
-              onFinish={finishTask}
-              onPause={() => taskCall(() => client.pauseTask())}
-              onResume={() => taskCall(() => client.resumeTask())}
-              onExtend={() => taskCall(() => client.extendTimeBox())}
-            />
-          )}
-          {phaseFailed && (
-            <p className="hh-error" role="alert">
-              {t("phases.failed")}
-            </p>
-          )}
-          {flow && since !== null && tasks.current && barModes.length > 0 && (
-            <ModeBar
-              modes={barModes}
-              current={tasks.current.mode}
-              below={tasks.current.belowMinTier === true}
-              disabled={blocked() || phasing || pending !== null || tasks.current.status !== "waiting"}
-              onPick={(mode) => void chooseMode(mode, tasks.current?.id)}
-            />
-          )}
-          <section className="hh-chat" ref={chatRef} onScroll={onScroll}>
-            {loadFailed && (
-              <p className="hh-error" role="alert">
-                {t("chat.loadError")}
-              </p>
-            )}
-            {/* The last turn's card already offers the fix for this same problem: one fix button is enough. */}
-            {backgroundError && !(isFixable(last?.error) && last?.error?.code === backgroundError.code) && (
-              <ErrorCard error={backgroundError} engine={engine} onFix={onFixEngine} />
-            )}
-            {showStart && !slim && (
-              <StartView
-                state={state}
-                tasks={tasks}
-                copy={startView}
-                notice={notice}
-                disabled={blocked() || !loaded}
-                onStart={startTopic}
-                onAsk={(q) => void send(q)}
-              />
-            )}
-            {slim && slimStart && (
-              <div className="hh-slim-start">
-                <button type="button" className="hh-primary" disabled={blocked()} onClick={() => startTopic(slim.action)}>
-                  {t(Object.hasOwn(tasks.actions, slim.action) ? "setupSteps.continueInterview" : "setupSteps.startInterview")}
-                </button>
-              </div>
-            )}
-            {flow && !slim && since !== null && !tasks.current && !chat.live && (
-              <button type="button" className="hh-back-topics" onClick={() => setSince(null)}>
-                {t("flow.backToTopics")}
+            {onSettings && (
+              <button className="hh-icon-button" aria-label={t("home.settings")} onClick={onSettings}>
+                <GearIcon />
               </button>
             )}
-            {/* The running turn is the list's last item, under the id its entry gets: it stays the same element when it ends. */}
-            {(liveEntry ? [...shown, liveEntry] : shown).map((entry) => (
-              <CitationContext.Provider key={entry.id} value={citationsOf(entry.task)}>
-                <div data-entry={entry.id} data-role={entry.role}>
-                  <Message
-                    key={pickResets}
-                    entry={entry}
-                    components={entry === liveEntry || ofWaitingTask(entry.task) ? all : stale}
-                    actions={blockActions(entry === lastAssistant && !chat.live && !closing, entry.task, entry === liveEntry ? null : entry.id)}
-                    live={entry === liveEntry ? { activities: chat.live!.activities, label: checkpoint ? t("flow.checkpoint") : undefined } : undefined}
-                    reveal={entry.id === pacedTurn.current ? (reveal ?? undefined) : undefined}
-                  />
-                  {entry.error && entry === last && (
-                    <ErrorCard
-                      error={entry.error}
-                      engine={engine}
-                      limits={chat.limits}
-                      onFix={onFixEngine}
-                      onRetry={retry()}
-                    />
-                  )}
-                </div>
-              </CitationContext.Provider>
-            ))}
-            {pickFailed && (
+          </TopBar>
+        )}
+        <div className={`hh-body${reader && !slim ? " hh-with-reader" : ""}${reader && readerFull && !slim ? " hh-reader-full" : ""}`}>
+          {flow && !slim && (
+            <FlowSide
+              state={state}
+              tasks={tasks}
+              disabled={blocked() || !loaded}
+              onStart={startTopic}
+              onOpenNote={(slug) => {
+                setShowHistory(false);
+                setNotesPanel({ expanded: slug });
+              }}
+              material={material}
+            />
+          )}
+          {/* Without actions there is no flow side panel: the material panel gets one of its own. */}
+          {!flow && material && (
+            <nav className="hh-flow-side" aria-label={t("material.title")}>
+              {material}
+            </nav>
+          )}
+          <Main className="hh-main">
+            {/* A time box without phases (spec §5) still shows its time, its controls and, once time is up, Finish. */}
+            {flow && since !== null && tasks.current && (taskPhases.length > 0 || tasks.current.timeBox) && (
+              <PhaseStepper
+                phases={taskPhases}
+                task={tasks.current}
+                disabled={blocked() || phasing || pending !== null || tasks.current.status !== "waiting"}
+                onPhase={pickPhase}
+                onFinish={finishTask}
+                onPause={() => taskCall(() => client.pauseTask())}
+                onResume={() => taskCall(() => client.resumeTask())}
+                onExtend={() => taskCall(() => client.extendTimeBox())}
+              />
+            )}
+            {phaseFailed && (
               <p className="hh-error" role="alert">
-                {t("choices.failed")}
+                {t("phases.failed")}
               </p>
             )}
-            {modeFailed && (
-              <p className="hh-error" role="alert">
-                {t("modes.failed")}
-              </p>
+            {flow && since !== null && tasks.current && barModes.length > 0 && (
+              <ModeBar
+                modes={barModes}
+                current={tasks.current.mode}
+                below={tasks.current.belowMinTier === true}
+                disabled={blocked() || phasing || pending !== null || tasks.current.status !== "waiting"}
+                onPick={(mode) => void chooseMode(mode, tasks.current?.id)}
+              />
             )}
-            {fallback && (
-              <p className="hh-caption hh-fallback" role="status">
-                {fallback.tier
-                  ? t("models.fallbackNotice", { model: fallback.model, tier: t(`models.tier.${fallback.tier}`) })
-                  : t("models.fallbackDefault", { model: fallback.model })}
-              </p>
-            )}
-            {closing && !chat.live && (
-              <p className="hh-working" role="status">
-                {t("flow.closing")}
-              </p>
-            )}
-            {checkpoint && !chat.live && (
-              <p className="hh-working" role="status">
-                {t("flow.checkpoint")}
-              </p>
-            )}
-            {pending && (
-              <div
-                ref={preflightRef}
-                className="hh-confirm"
-                role="alertdialog"
-                aria-labelledby="hh-preflight-title"
-                aria-describedby="hh-preflight-text"
-                onKeyDown={(e) => {
-                  if (e.key !== "Escape") return;
-                  e.preventDefault();
-                  closePreflight();
-                }}
-              >
-                <p id="hh-preflight-title">
-                  <strong className="hh-warn">{t("preflight.title")}</strong>
+            <section className="hh-chat" ref={chatRef} onScroll={onScroll}>
+              {loadFailed && (
+                <p className="hh-error" role="alert">
+                  {t("chat.loadError")}
                 </p>
-                <p id="hh-preflight-text">{preflightText}</p>
-                <button
-                  className="hh-primary"
-                  onClick={() => {
-                    const p = pending;
-                    setPending(null);
-                    if (p.kind === "send") send(p.text, p.options, true);
-                    else choose(p.option, p.task, true);
+              )}
+              {/* The last turn's card already offers the fix for this same problem: one fix button is enough. */}
+              {backgroundError && !(isFixable(last?.error) && last?.error?.code === backgroundError.code) && (
+                <ErrorCard error={backgroundError} engine={engine} onFix={onFixEngine} />
+              )}
+              {showStart && !slim && (
+                <StartView
+                  state={state}
+                  tasks={tasks}
+                  copy={startView}
+                  notice={notice}
+                  disabled={blocked() || !loaded}
+                  onStart={startTopic}
+                  onAsk={(q) => void send(q)}
+                />
+              )}
+              {slim && slimStart && (
+                <div className="hh-slim-start">
+                  <button type="button" className="hh-primary" disabled={blocked()} onClick={() => startTopic(slim.action)}>
+                    {t(Object.hasOwn(tasks.actions, slim.action) ? "setupSteps.continueInterview" : "setupSteps.startInterview")}
+                  </button>
+                </div>
+              )}
+              {flow && !slim && since !== null && !tasks.current && !chat.live && (
+                <button type="button" className="hh-back-topics" onClick={() => setSince(null)}>
+                  {t("flow.backToTopics")}
+                </button>
+              )}
+              {/* The running turn is the list's last item, under the id its entry gets: it stays the same element when it ends. */}
+              {(liveEntry ? [...shown, liveEntry] : shown).map((entry) => (
+                <CitationContext.Provider key={entry.id} value={citationsOf(entry.task)}>
+                  <div data-entry={entry.id} data-role={entry.role}>
+                    <Message
+                      key={pickResets}
+                      entry={entry}
+                      components={entry === liveEntry || ofWaitingTask(entry.task) ? all : stale}
+                      actions={blockActions(entry === lastAssistant && !chat.live && !closing, entry.task, entry === liveEntry ? null : entry.id)}
+                      live={entry === liveEntry ? { activities: chat.live!.activities, label: checkpoint ? t("flow.checkpoint") : undefined } : undefined}
+                      reveal={entry.id === pacedTurn.current ? (reveal ?? undefined) : undefined}
+                      documents={cardsFor(entry)}
+                    />
+                    {entry.error && entry === last && (
+                      <ErrorCard
+                        error={entry.error}
+                        engine={engine}
+                        limits={chat.limits}
+                        onFix={onFixEngine}
+                        onRetry={retry()}
+                      />
+                    )}
+                  </div>
+                </CitationContext.Provider>
+              ))}
+              {pickFailed && (
+                <p className="hh-error" role="alert">
+                  {t("choices.failed")}
+                </p>
+              )}
+              {modeFailed && (
+                <p className="hh-error" role="alert">
+                  {t("modes.failed")}
+                </p>
+              )}
+              {fallback && (
+                <p className="hh-caption hh-fallback" role="status">
+                  {fallback.tier
+                    ? t("models.fallbackNotice", { model: fallback.model, tier: t(`models.tier.${fallback.tier}`) })
+                    : t("models.fallbackDefault", { model: fallback.model })}
+                </p>
+              )}
+              {closing && !chat.live && (
+                <p className="hh-working" role="status">
+                  {t("flow.closing")}
+                </p>
+              )}
+              {checkpoint && !chat.live && (
+                <p className="hh-working" role="status">
+                  {t("flow.checkpoint")}
+                </p>
+              )}
+              {pending && (
+                <div
+                  ref={preflightRef}
+                  className="hh-confirm"
+                  role="alertdialog"
+                  aria-labelledby="hh-preflight-title"
+                  aria-describedby="hh-preflight-text"
+                  onKeyDown={(e) => {
+                    if (e.key !== "Escape") return;
+                    e.preventDefault();
+                    closePreflight();
                   }}
                 >
-                  {t("preflight.continue")}
-                </button>
-                <button ref={notNowRef} onClick={closePreflight}>
-                  {t("preflight.notNow")}
-                </button>
-              </div>
-            )}
-            {tierAsk && (
-              <div
-                ref={tierRef}
-                className="hh-confirm"
-                role="alertdialog"
-                aria-labelledby="hh-tier-title"
-                aria-describedby="hh-tier-text"
-                onKeyDown={(e) => {
-                  if (e.key !== "Escape") return;
-                  e.preventDefault();
-                  answerTier();
-                }}
-              >
-                <p id="hh-tier-title">
-                  <strong className="hh-warn">{t("modes.tierTitle", { mode: modeLabel(tierAsk.mode) })}</strong>
-                </p>
-                <p id="hh-tier-text">
-                  {t("modes.tierText", { required: t(`models.tier.${tierAsk.required}`), current: t(`models.tier.${tierAsk.current}`) })}
-                </p>
-                <button className="hh-primary" onClick={() => answerTier("continue")}>
-                  {t("modes.keepTier")}
-                </button>
-                <button onClick={() => answerTier("new-task")}>{t("modes.newTask", { mode: modeLabel(tierAsk.mode) })}</button>
-                <button ref={tierNotNowRef} onClick={() => answerTier()}>
-                  {t("modes.notNow")}
-                </button>
-              </div>
-            )}
-            {timePick && (
-              <div
-                ref={timeRef}
-                className="hh-confirm"
-                role="dialog"
-                aria-labelledby="hh-time-title"
-                onKeyDown={(e) => {
-                  if (e.key !== "Escape") return;
-                  e.preventDefault();
-                  closeTime();
-                }}
-              >
-                <p id="hh-time-title">
-                  <strong>{t("phases.timeTitle")}</strong>
-                </p>
-                <div className="hh-mode-list" role="group" aria-labelledby="hh-time-title">
-                  {timeChoices(timePick.options.action).map((m) => (
-                    <button
-                      key={m ?? "none"}
-                      type="button"
-                      className="hh-choice"
-                      onClick={() => {
-                        const p = timePick;
-                        setTimePick(null);
-                        questionOpener.current = null;
-                        // The picker goes: focus on the composer, whether the send went out or waits for another question.
-                        inputRef.current?.focus();
-                        send(p.text, { ...p.options, timeBox: m });
-                      }}
-                    >
-                      {m === null ? t("phases.noLimit") : t("phases.minutes", { count: m })}
-                    </button>
-                  ))}
+                  <p id="hh-preflight-title">
+                    <strong className="hh-warn">{t("preflight.title")}</strong>
+                  </p>
+                  <p id="hh-preflight-text">{preflightText}</p>
+                  <button
+                    className="hh-primary"
+                    onClick={() => {
+                      const p = pending;
+                      setPending(null);
+                      if (p.kind === "send") send(p.text, p.options, true);
+                      else choose(p.option, p.task, true);
+                    }}
+                  >
+                    {t("preflight.continue")}
+                  </button>
+                  <button ref={notNowRef} onClick={closePreflight}>
+                    {t("preflight.notNow")}
+                  </button>
                 </div>
-                <button onClick={closeTime}>{t("modes.notNow")}</button>
-              </div>
-            )}
-            {askPick && (
-              <div
-                ref={askRef}
-                className="hh-confirm"
-                role="dialog"
-                aria-labelledby="hh-ask-title"
-                onKeyDown={(e) => {
-                  if (e.key !== "Escape") return;
-                  e.preventDefault();
-                  closeAsk();
-                }}
-              >
-                <p id="hh-ask-title">
-                  <strong>{t("modes.askTitle")}</strong>
-                </p>
-                <ModeList
-                  modes={actionModes(state, askPick.options.action)}
-                  disabled={false}
-                  labelledBy="hh-ask-title"
-                  onPick={(mode) => {
-                    const p = askPick;
-                    setAskPick(null);
-                    questionOpener.current = null;
-                    // The picker goes: focus on the composer, whether the send went out or waits for the pre-flight.
-                    inputRef.current?.focus();
-                    send(p.text, { ...p.options, mode });
+              )}
+              {tierAsk && (
+                <div
+                  ref={tierRef}
+                  className="hh-confirm"
+                  role="alertdialog"
+                  aria-labelledby="hh-tier-title"
+                  aria-describedby="hh-tier-text"
+                  onKeyDown={(e) => {
+                    if (e.key !== "Escape") return;
+                    e.preventDefault();
+                    answerTier();
+                  }}
+                >
+                  <p id="hh-tier-title">
+                    <strong className="hh-warn">{t("modes.tierTitle", { mode: modeLabel(tierAsk.mode) })}</strong>
+                  </p>
+                  <p id="hh-tier-text">
+                    {t("modes.tierText", { required: t(`models.tier.${tierAsk.required}`), current: t(`models.tier.${tierAsk.current}`) })}
+                  </p>
+                  <button className="hh-primary" onClick={() => answerTier("continue")}>
+                    {t("modes.keepTier")}
+                  </button>
+                  <button onClick={() => answerTier("new-task")}>{t("modes.newTask", { mode: modeLabel(tierAsk.mode) })}</button>
+                  <button ref={tierNotNowRef} onClick={() => answerTier()}>
+                    {t("modes.notNow")}
+                  </button>
+                </div>
+              )}
+              {timePick && (
+                <div
+                  ref={timeRef}
+                  className="hh-confirm"
+                  role="dialog"
+                  aria-labelledby="hh-time-title"
+                  onKeyDown={(e) => {
+                    if (e.key !== "Escape") return;
+                    e.preventDefault();
+                    closeTime();
+                  }}
+                >
+                  <p id="hh-time-title">
+                    <strong>{t("phases.timeTitle")}</strong>
+                  </p>
+                  <div className="hh-mode-list" role="group" aria-labelledby="hh-time-title">
+                    {timeChoices(timePick.options.action).map((m) => (
+                      <button
+                        key={m ?? "none"}
+                        type="button"
+                        className="hh-choice"
+                        onClick={() => {
+                          const p = timePick;
+                          setTimePick(null);
+                          questionOpener.current = null;
+                          // The picker goes: focus on the composer, whether the send went out or waits for another question.
+                          inputRef.current?.focus();
+                          send(p.text, { ...p.options, timeBox: m });
+                        }}
+                      >
+                        {m === null ? t("phases.noLimit") : t("phases.minutes", { count: m })}
+                      </button>
+                    ))}
+                  </div>
+                  <button onClick={closeTime}>{t("modes.notNow")}</button>
+                </div>
+              )}
+              {askPick && (
+                <div
+                  ref={askRef}
+                  className="hh-confirm"
+                  role="dialog"
+                  aria-labelledby="hh-ask-title"
+                  onKeyDown={(e) => {
+                    if (e.key !== "Escape") return;
+                    e.preventDefault();
+                    closeAsk();
+                  }}
+                >
+                  <p id="hh-ask-title">
+                    <strong>{t("modes.askTitle")}</strong>
+                  </p>
+                  <ModeList
+                    modes={actionModes(state, askPick.options.action)}
+                    disabled={false}
+                    labelledBy="hh-ask-title"
+                    onPick={(mode) => {
+                      const p = askPick;
+                      setAskPick(null);
+                      questionOpener.current = null;
+                      // The picker goes: focus on the composer, whether the send went out or waits for the pre-flight.
+                      inputRef.current?.focus();
+                      send(p.text, { ...p.options, mode });
+                    }}
+                  />
+                  <button onClick={closeAsk}>{t("modes.notNow")}</button>
+                </div>
+              )}
+              <div ref={spacerRef} className="hh-chat-spacer" style={{ display: "none" }} aria-hidden="true" />
+            </section>
+            {composer && (
+              <form className="hh-composer" onSubmit={onSubmit}>
+                <textarea
+                  ref={inputRef}
+                  aria-label={placeholder}
+                  placeholder={placeholder}
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key !== "Enter" || e.shiftKey) return;
+                    if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+                    e.preventDefault();
+                    if (send(draft)) setDraft("");
                   }}
                 />
-                <button onClick={closeAsk}>{t("modes.notNow")}</button>
-              </div>
+                {/* A closing or checkpoint turn is quiet (nothing live on screen) but still stoppable. */}
+                {chat.live || closing || checkpoint ? (
+                  <button type="button" onClick={() => void client.cancel()}>
+                    {t("chat.stop")}
+                  </button>
+                ) : (
+                  <button type="submit">{t("chat.send")}</button>
+                )}
+              </form>
             )}
-            <div ref={spacerRef} className="hh-chat-spacer" style={{ display: "none" }} aria-hidden="true" />
-          </section>
-          {composer && (
-            <form className="hh-composer" onSubmit={onSubmit}>
-              <textarea
-                ref={inputRef}
-                aria-label={placeholder}
-                placeholder={placeholder}
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key !== "Enter" || e.shiftKey) return;
-                  if (e.nativeEvent.isComposing || e.keyCode === 229) return;
-                  e.preventDefault();
-                  if (send(draft)) setDraft("");
-                }}
-              />
-              {/* A closing or checkpoint turn is quiet (nothing live on screen) but still stoppable. */}
-              {chat.live || closing || checkpoint ? (
-                <button type="button" onClick={() => void client.cancel()}>
-                  {t("chat.stop")}
-                </button>
-              ) : (
-                <button type="submit">{t("chat.send")}</button>
-              )}
-            </form>
+            {startView?.hint && !slim && <p className="hh-composer-hint">{t(startView.hint, { ns: "harness" })}</p>}
+          </Main>
+          {renderSide && !slim && <aside className="hh-side">{renderSide(chat.blockState, sendFromHarness)}</aside>}
+          {reader && !slim && (
+            <DocumentReader
+              key={reader.path}
+              client={client}
+              target={reader}
+              kinds={documentKinds}
+              prefs={readerPrefs}
+              onPrefs={saveReaderPrefs}
+              full={readerFull}
+              onFull={setReaderFull}
+              onClose={closeReader}
+              onOpen={openDoc}
+            />
           )}
-          {startView?.hint && !slim && <p className="hh-composer-hint">{t(startView.hint, { ns: "harness" })}</p>}
-        </Main>
-        {renderSide && !slim && <aside className="hh-side">{renderSide(chat.blockState, sendFromHarness)}</aside>}
+        </div>
+        <div className="hh-sr-only" aria-live="polite">
+          {announcement}
+        </div>
+        {showHistory && (
+          <HistoryPanel
+            client={client}
+            actions={state.actions}
+            currentTask={tasks.current?.id}
+            disabled={Boolean(chat.live) || closing || checkpoint}
+            onClose={() => setShowHistory(false)}
+            onRestored={(kind) => {
+              const text = t(kind === "task" ? "history.restoredTask" : "history.restored");
+              dispatch({ type: "notice", text, at: new Date().toISOString() });
+              setNotice(text);
+            }}
+          />
+        )}
+        {notesPanel && (
+          <NotesPanel
+            notes={tasks.notes}
+            expanded={notesPanel.expanded}
+            disabled={blocked()}
+            onResume={resume}
+            onOpen={openFile}
+            onClose={() => setNotesPanel(null)}
+          />
+        )}
       </div>
-      <div className="hh-sr-only" aria-live="polite">
-        {announcement}
-      </div>
-      {showHistory && (
-        <HistoryPanel
-          client={client}
-          actions={state.actions}
-          currentTask={tasks.current?.id}
-          disabled={Boolean(chat.live) || closing || checkpoint}
-          onClose={() => setShowHistory(false)}
-          onRestored={(kind) => {
-            const text = t(kind === "task" ? "history.restoredTask" : "history.restored");
-            dispatch({ type: "notice", text, at: new Date().toISOString() });
-            setNotice(text);
-          }}
-        />
-      )}
-      {notesPanel && (
-        <NotesPanel
-          notes={tasks.notes}
-          expanded={notesPanel.expanded}
-          disabled={blocked()}
-          onResume={resume}
-          onOpen={openFile}
-          onClose={() => setNotesPanel(null)}
-        />
-      )}
-    </div>
+    </DocumentContext.Provider>
   );
 }

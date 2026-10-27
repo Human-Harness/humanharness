@@ -1,6 +1,6 @@
 # Context panel — design
 
-Status: draft, 2026-10-27, written after a brainstorming session with Marco, who approved every decision below that day. Waiting for his review of this file. Not in the roadmap yet.
+Status: approved by Marco on 2026-10-27, with three fixes from his review (§3.1 `scope-instructions` item, §4.2 pins in linked folders and no binary pins) and the open questions decided (§10). Not in the roadmap yet.
 
 This is spec D from the dev-vs-core gap analysis (`docs/discovery/2026-10-26-dev-vs-core.md`, candidate C5). It builds on context and memory (`docs/architecture/context.md`) and on scopes and data (`docs/architecture/data.md`). It shares the `activity` paths of parallel tasks (`2026-10-27-parallel-tasks-and-jobs-design.md` §5.2) and respects its cap and queue. It does not need that spec to land first.
 
@@ -36,7 +36,7 @@ When `task-prompts.ts` builds a task's first message, it also returns the list o
 ```ts
 type ContextItem = {
   id: string;
-  kind: "instructions" | "brief" | "notes-index" | "app-notes-index" | "data" | "material" | "pinned" | "pinned-title";
+  kind: "instructions" | "scope-instructions" | "brief" | "notes-index" | "app-notes-index" | "data" | "material" | "pinned" | "pinned-title";
   label: string;              // "Instrucciones del harness", "Notas de Fracciones (6)", "Datos · tickets"
   path?: string;              // relative to the folder, when the item is a file
   tokens: number;             // estimate: characters / 4, rounded to 100
@@ -44,6 +44,7 @@ type ContextItem = {
 ```
 
 - `instructions` is `AGENTS.md` with its managed section: one item, even though the engine caches it.
+- `scope-instructions` is the scope's `instructions.md` (hatches spec §5.2), with its action layer, when approved and loaded.
 - `brief` is the action's prompt. Mode and phase briefs are added when they are sent (task modes and phases specs), as `brief` items with the time they arrived.
 - `data` gives one item per collection that has `context`, with the rows it actually loaded.
 - `pinned` and `pinned-title` are explained in §4.2.
@@ -75,7 +76,8 @@ type ContextItem = {
 - **Stored in** `.harness/context/<scope>.json`: `{ pinned: [{ path, at }], excluded: [{ note, at }] }`. Tracked by the history (it joins notes, data and reviews in the list of tracked `.harness/` folders), so undo covers it.
 - **At the start of every new task in the scope,** pinned files are added after the notes index and the data tables, as "Pinned by the person:", each under its path.
 - **Budget.** `context.pinnedTokens` in the manifest suggests a budget (default 3,000); the person changes it in Settings › Modelos, next to the context caps. Files enter in pin order until the budget is spent. The rest enter as their title and path only (`pinned-title`), and the agent opens them on demand, like older notes in the index (`buildNotesIndex`).
-- **Allowed files:** files inside the person's folder only. A `folder.references` folder is refused too: the agent can already read those, and the pin would hide where the text came from.
+- **Allowed files:** files inside the person's folder, or inside a linked folder of the same scope (hatches spec §3), stored with the link's key (`{ link: "repos", path }`). A `folder.references` folder is refused: the agent can already read those, and the pin would hide where the text came from.
+- **Text only.** A binary file (the file-timeline spec's detection: a NUL byte in the first 8 KB, or a known binary extension) is refused with "Solo archivos de texto".
 - **App-wide pins.** With scopes, a pin can be for the scope or for `_app` (every task). Without scopes, the scope is `main`.
 
 ### 4.3 Excluir
@@ -119,7 +121,8 @@ The SDK exports `<ContextPanel taskId />` with the core's look, so the dev harne
 | Case | Behavior |
 |---|---|
 | A pinned file was deleted or moved | Skipped when the first message is built. The panel shows it struck through, with "Quitar" |
-| Pinning a path outside the folder, or in a reference folder | Refused: "Solo archivos de tu carpeta" |
+| Pinning a path outside the folder and its linked folders, or in a reference folder | Refused: "Solo archivos de tu carpeta" |
+| A linked folder is unlinked | Its pins are skipped, shown struck through with "Quitar", like a deleted pin |
 | Excluding a note the open task already has in its index | Nothing changes for that task. The panel says "Aplica desde la próxima tarea" |
 | A pinned file is also read during the task | Listed in both sections; that is what happened |
 | "Agregar ahora" on a waiting task while the cap is full | Queued, shown as "En espera" (parallel spec §7) |
@@ -160,6 +163,8 @@ The SDK exports `<ContextPanel taskId />` with the core's look, so the dev harne
 
 ## 10. Open questions
 
-1. **Per-item real tokens.** The engines report tokens per turn, not per item, so items show estimates. Proposal: keep estimates, labelled "aprox.", and show the real total only.
-2. **Pin order.** Today pins enter in the order they were pinned. A drag to reorder may matter once a scope has many pins. Proposal: not in v1.
-3. **The agent proposing pins.** At the end of a task, the agent could suggest "pin `conventions.md` for this project". Proposal: later, as a Sidekick purpose, not a core flow.
+Decided by Marco on 2026-10-27, as proposed:
+
+1. **Per-item real tokens.** Items keep estimates, labelled "aprox."; only the total is real.
+2. **Pin order.** Pin order only; no reordering in v1.
+3. **The agent proposing pins.** Later, as a Sidekick purpose (sidekick spec §2a.2), not a core flow.

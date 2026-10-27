@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Importar proyecto</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;color:#1d1d1f}
+a{color:#0a5bc4}a:hover{color:#083f88}
+.btn{font:inherit;font-size:14px;padding:9px 18px;border-radius:8px;border:1px solid #d2d2d7;background:#fff;color:#1d1d1f;text-decoration:none;display:inline-block;cursor:pointer}
+.btn.p{background:#0a5bc4;border-color:#0a5bc4;color:#fff}
+.k{font-size:12px;color:#5f5f66;font-weight:600}
+.col{background:#fff;border:1px solid #e3e3e8;border-radius:14px;padding:20px;display:flex;flex-direction:column;gap:10px;box-sizing:border-box}
+.it{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border:1px solid #e3e3e8;border-radius:9px;font-size:13px;line-height:1.45}
+</style>
+</helmet>
+<div style="width:1440px;height:900px;display:flex;flex-direction:column;background:#f5f5f7;padding:32px 40px;box-sizing:border-box;gap:20px">
+  <div style="display:flex;align-items:center;gap:14px">
+    <a href="InicioVacio.dc.html" style="font-size:13px">‹ Volver</a>
+    <h1 style="margin:0;font-size:24px">Importar un proyecto</h1>
+  </div>
+  <div style="flex:1;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;min-height:0">
+    <section class="col" aria-labelledby="s1">
+      <h2 id="s1" style="margin:0;font-size:16px">1 · Proyecto de Jira</h2>
+      <label class="it" style="border-color:#0a5bc4"><input type="radio" name="jp" checked><span><strong>SHOP · Tienda web</strong><br><span style="color:#5f5f66">Scrum · 214 tickets · sprint 14 activo</span></span></label>
+      <label class="it"><input type="radio" name="jp"><span><strong>INT · App interna</strong><br><span style="color:#5f5f66">Kanban · 58 tickets</span></span></label>
+      <label class="it"><input type="radio" name="jp"><span><strong>OPS · Infraestructura</strong><br><span style="color:#5f5f66">Kanban · 31 tickets</span></span></label>
+      <div class="k" style="margin-top:8px">ESTADOS DEL BOARD</div>
+      <div style="font-size:13px;color:#3a3a40;line-height:1.5">To Do → En progreso → En review → Hecho. La app los usa para mover el ticket en cada etapa.</div>
+    </section>
+    <section class="col" aria-labelledby="s2">
+      <h2 id="s2" style="margin:0;font-size:16px">2 · Repos de GitHub</h2>
+      <label class="it"><input type="checkbox" checked><span><strong>empresa/shop-api</strong><br><span style="color:#1f5a28">Ya está en tu Mac: ~/code/shop-api</span></span></label>
+      <label class="it"><input type="checkbox" checked><span><strong>empresa/shop-web</strong><br><span style="color:#5f5f66">Se clona en ~/code/shop-web</span></span></label>
+      <label class="it"><input type="checkbox"><span><strong>empresa/shop-mobile</strong><br><span style="color:#5f5f66">Sin cambios hace 8 meses</span></span></label>
+      <a href="#" style="font-size:13px">Agregar una carpeta local que no está en GitHub</a>
+      <div class="k" style="margin-top:8px">DÓNDE CLONAR</div>
+      <div style="font-size:13px">~/code <a href="#" style="margin-left:6px">Cambiar</a></div>
+    </section>
+    <section class="col" aria-labelledby="s3" style="background:#fbfbfd">
+      <h2 id="s3" style="margin:0;font-size:16px">3 · Lo que la IA entiende del proyecto</h2>
+      <div style="font-size:13px;color:#3a3a40;line-height:1.5">Al importar, la IA lee los repos y propone las notas del proyecto. Las confirmás o corregís; después las usa en cada ticket.</div>
+      <div class="it" style="flex-direction:column;gap:4px"><span class="k">STACK</span><span>shop-api: Node + Postgres · shop-web: Next.js</span></div>
+      <div class="it" style="flex-direction:column;gap:4px"><span class="k">CÓMO SE PRUEBA</span><span>pnpm test en ambos · e2e con Playwright en shop-web</span></div>
+      <div class="it" style="flex-direction:column;gap:4px"><span class="k">CONVENCIONES</span><span>Branches feat/KEY-desc · commits convencionales · PR con template</span></div>
+      <div style="font-size:12px;color:#5f5f66">Usa el modelo liviano. Aprox. 1 a 2 minutos.</div>
+    </section>
+  </div>
+  <div style="display:flex;justify-content:flex-end;gap:10px">
+    <a class="btn" href="InicioVacio.dc.html">Cancelar</a>
+    <a class="btn p" href="Proyecto.dc.html">Importar SHOP con 2 repos</a>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

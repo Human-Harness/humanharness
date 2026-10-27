@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Inicio propuesto: siguiente paso y caminos</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#5E4B0A}a:hover{color:#22211E}
+.th{font-family:"Geist",system-ui,sans-serif;--bd:radial-gradient(60% 50% at 0% 40%,#CFE8D2 0%,transparent 70%),radial-gradient(60% 40% at 70% 0%,#BFE0EA 0%,transparent 70%),radial-gradient(60% 50% at 100% 100%,#F8F0C8 0%,transparent 70%),#EEF3EC;--sh:#F7F6F1;--pn:#EFEEE8;--fd:#FBFAF7;--ln:#E4E2DA;--tx:#22211E;--mu:#6B6860;--ac:#F3D54E;--on:#2A2410;--so:#FBF0C0;--st:#5E4B0A;--m1:#6E9A62;--m2:#B9D3A8;--m3:#E8C04A;--m4:#9EC3D6;--m5:#E4E2DA;--shadow:0 1px 2px rgba(40,40,30,.04),0 24px 60px rgba(40,50,40,.08)}
+.th.dark{--bd:radial-gradient(60% 50% at 0% 40%,#1C3326 0%,transparent 70%),radial-gradient(60% 40% at 70% 0%,#173039 0%,transparent 70%),radial-gradient(60% 50% at 100% 100%,#3A3418 0%,transparent 70%),#121614;--sh:#1D1D1A;--pn:#252522;--fd:#2C2C28;--ln:#34332E;--tx:#ECEAE3;--mu:#A6A397;--ac:#E9C944;--on:#241E08;--so:#3A3318;--st:#F0D873;--m1:#8DBB7E;--m2:#4D6B44;--m3:#C9A43A;--m4:#5E8597;--m5:#34332E;--shadow:0 1px 2px rgba(0,0,0,.3),0 24px 60px rgba(0,0,0,.35)}
+.th a{color:var(--st)}
+.th h1,.th h2,.th h3{margin:0;letter-spacing:-.02em;font-weight:500}
+.th p{font-family:"Newsreader",Georgia,serif;margin:0}
+.stage{width:1440px;height:900px;background:var(--bd);padding:20px;box-sizing:border-box;display:flex}
+.sheet{flex:1;min-width:0;background:var(--sh);color:var(--tx);border-radius:28px;box-shadow:var(--shadow);display:flex;gap:28px;padding:26px 32px 26px 22px;overflow:hidden}
+.rail{display:flex;flex-direction:column;gap:10px;align-items:center}
+.ib{width:44px;height:44px;border-radius:12px;border:0;background:var(--pn);color:var(--tx) !important;display:flex;align-items:center;justify-content:center;cursor:pointer;text-decoration:none}
+.ib.on{background:var(--ac);color:var(--on) !important}
+.k{font-size:13px;color:var(--mu);margin:0;font-weight:500}
+.btn{font:inherit;font-size:15px;font-weight:500;padding:11px 20px;border-radius:12px;border:0;background:var(--pn);color:var(--tx) !important;cursor:pointer;text-decoration:none;display:inline-block}
+.btn.p{background:var(--ac);color:var(--on) !important}
+.btn.f{background:var(--fd)}
+.btn.g{background:transparent;color:var(--mu) !important;text-decoration:underline;text-underline-offset:4px;padding:0}
+.panel{background:var(--pn);border-radius:20px;padding:20px 22px;display:flex;flex-direction:column;gap:12px;color:var(--tx);text-decoration:none}
+.path{position:relative;display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:4px}
+.track{position:absolute;left:6%;right:6%;top:15px;height:2px;background:var(--ln)}
+.step{position:relative;display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center;font-size:12px;line-height:1.3;color:var(--mu)}
+.nd{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600}
+.lg{display:flex;gap:14px;font-size:13px;color:var(--mu);flex-wrap:wrap}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:1px}
+.day{width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:12px;background:var(--fd);color:var(--mu)}
+.day.on{background:var(--m2);color:var(--tx);font-weight:500}
+</style>
+</helmet>
+<div class="th {{mode}}">
+<div class="stage">
+<div class="sheet">
+  <nav class="rail" aria-label="Navegación">
+    <svg width="40" height="40" viewBox="0 0 40 40" aria-hidden="true" style="margin-bottom:22px;color:var(--tx)"><circle cx="20" cy="20" r="16" fill="currentColor"></circle><circle cx="20" cy="20" r="6" fill="var(--sh)"></circle></svg>
+    <a class="ib on" href="InicioCamino.dc.html" aria-label="Inicio"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"></path></svg></a>
+    <a class="ib" href="#" aria-label="Temas"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><path d="M4 19V5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2 2 2 0 0 0 2 2h13"></path></svg></a>
+    <a class="ib" href="#" aria-label="Flashcards"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="7" width="13" height="14" rx="2"></rect><path d="M8 3h11a2 2 0 0 1 2 2v12"></path></svg></a>
+    <a class="ib" href="#" aria-label="Mi perfil y ajustes"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="8" r="4"></circle><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"></path></svg></a>
+    <div style="flex:1"></div>
+    <a href="#" aria-label="Sofi · cambiar perfil" style="width:40px;height:40px;border-radius:50%;background:var(--m2);color:var(--tx);display:flex;align-items:center;justify-content:center;font-weight:600;text-decoration:none">S</a>
+  </nav>
+
+  <main style="flex:1;min-width:0;display:flex;flex-direction:column;gap:22px;padding:8px 0 0 8px">
+    <h1 style="font-size:40px;line-height:1.1;margin-top:14px">Hola, Sofi</h1>
+
+    <section aria-labelledby="sig" class="panel" style="background:var(--so);padding:26px 28px;gap:14px">
+      <h2 id="sig" class="k" style="color:var(--st)">Tu siguiente paso · unos 20 minutos</h2>
+      <div style="display:flex;gap:28px;align-items:center">
+        <div style="flex:1;display:flex;flex-direction:column;gap:8px">
+          <div style="font-size:26px;font-weight:500;letter-spacing:-.015em;line-height:1.2">Fracciones equivalentes</div>
+          <p style="font-size:17px;color:var(--mu);line-height:1.5">Ya dominás “Leer y escribir”, así que se abre este. Arrancamos con 3 minutos de repaso y después un ejercicio de tu cuaderno.</p>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px;align-items:flex-end">
+          <a class="btn p" href="SesionTresPaneles.dc.html" style="font-size:17px;padding:15px 34px">Empezar</a>
+          <a class="btn g" href="#" style="font-size:14px">Prefiero otra cosa</a>
+        </div>
+      </div>
+    </section>
+
+    <section aria-labelledby="cam" style="display:flex;flex-direction:column;gap:14px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline">
+        <h2 id="cam" style="font-size:20px">Tus caminos</h2>
+        <a class="btn g" href="#" style="font-size:14px">+ Nuevo tema</a>
+      </div>
+
+      <a class="panel" href="#" style="gap:18px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline"><strong style="font-size:18px;font-weight:500">Fracciones</strong><span style="font-size:13px;color:var(--mu)">2 fotos del cuaderno · 3 de 8 en camino</span></div>
+        <ol class="path" style="list-style:none;margin:0;padding:0">
+          <span class="track" aria-hidden="true"></span>
+          <sc-for list="{{fr}}" as="s" hint-placeholder-count="8">
+            <li class="step"><span class="nd" style="{{s.style}}">{{s.mark}}</span><span style="{{s.label}}">{{s.name}}</span></li>
+          </sc-for>
+        </ol>
+      </a>
+
+      <a class="panel" href="#" style="gap:18px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline"><strong style="font-size:18px;font-weight:500">El sistema solar</strong><span style="font-size:13px;color:var(--mu)">Lo que sabe la IA · hace 5 días</span></div>
+        <ol class="path" style="list-style:none;margin:0;padding:0">
+          <span class="track" aria-hidden="true"></span>
+          <sc-for list="{{ss}}" as="s" hint-placeholder-count="8">
+            <li class="step"><span class="nd" style="{{s.style}}">{{s.mark}}</span><span style="{{s.label}}">{{s.name}}</span></li>
+          </sc-for>
+        </ol>
+      </a>
+
+      <div class="lg"><span><span class="dot" style="background:var(--m1)"></span>Dominado</span><span><span class="dot" style="background:var(--m2)"></span>Para repasar</span><span><span class="dot" style="background:var(--m3)"></span>Practicando</span><span><span class="dot" style="background:var(--m4)"></span>Visto</span><span><span class="dot" style="background:var(--m5)"></span>Sin ver</span></div>
+    </section>
+  </main>
+
+  <aside aria-label="Al costado" style="width:300px;display:flex;flex-direction:column;gap:16px;padding-top:70px">
+    <section aria-labelledby="rep" class="panel">
+      <h2 id="rep" style="font-size:16px">Repaso</h2>
+      <div style="display:flex;align-items:baseline;gap:8px"><span style="font-size:34px;font-weight:500">7</span><span style="font-size:14px;color:var(--mu)">tarjetas que escribiste vos</span></div>
+      <span style="font-size:13px;color:var(--mu)">Mezcla Fracciones y Sistema solar</span>
+      <a class="btn f" href="#" style="text-align:center">Repasar · 5 min</a>
+    </section>
+    <section aria-labelledby="sem" class="panel">
+      <h2 id="sem" style="font-size:16px">Esta semana</h2>
+      <div style="display:flex;gap:6px" role="img" aria-label="Estudiaste lunes, martes y jueves">
+        <span class="day on">L</span><span class="day on">M</span><span class="day">M</span><span class="day on">J</span><span class="day">V</span><span class="day">S</span><span class="day">D</span>
+      </div>
+      <span style="font-size:13px;color:var(--mu);line-height:1.45">3 días. Sin rachas: si un día no estudiás, no perdés nada.</span>
+    </section>
+    <section aria-labelledby="pre" class="panel">
+      <h2 id="pre" style="font-size:16px">Preguntas que quedaron</h2>
+      <a href="#" style="font-size:14px;line-height:1.45;color:var(--tx) !important;text-decoration:none">¿Por qué 2/4 se puede “achicar” y 3/5 no?</a>
+      <a href="#" style="font-size:14px;line-height:1.45;color:var(--tx) !important;text-decoration:none">¿Plutón es un planeta o no?</a>
+    </section>
+  </aside>
+</div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":false},"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+renderVals() {
+  const st = {
+    dom: { style: 'background:var(--m1);color:var(--fd)', mark: '✓' },
+    rep: { style: 'background:var(--m2);color:var(--tx)', mark: '↻' },
+    cur: { style: 'background:var(--m3);color:var(--on);box-shadow:0 0 0 5px var(--so),0 0 0 7px var(--m3)', mark: '' },
+    vis: { style: 'background:var(--m4);color:var(--tx)', mark: '' },
+    new: { style: 'background:var(--fd);box-shadow:inset 0 0 0 1.5px var(--mu)', mark: '' }
+  };
+  const mk = (list) => list.map(([name, s]) => ({
+    name, style: st[s].style, mark: st[s].mark,
+    label: s === 'cur' ? 'color:var(--tx);font-weight:600' : ''
+  }));
+  return {
+    mode: this.props.dark ? 'dark' : 'light',
+    fr: mk([['Leer y escribir', 'dom'], ['Comparar', 'rep'], ['Equivalentes', 'cur'], ['Simplificar', 'new'], ['Sumar, igual den.', 'vis'], ['Sumar, distinto den.', 'new'], ['Multiplicar', 'new'], ['Problemas', 'new']]),
+    ss: mk([['El Sol', 'dom'], ['Planetas rocosos', 'cur'], ['Gigantes gaseosos', 'new'], ['Lunas', 'new'], ['Órbitas', 'vis'], ['Estaciones', 'new'], ['Asteroides', 'new'], ['Escalas', 'new']])
+  };
+}
+}
+</script>
+</body>
+</html>

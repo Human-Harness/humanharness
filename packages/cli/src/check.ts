@@ -47,7 +47,10 @@ export type RuleId =
   | "input-form"
   | "input-choice"
   | "mock-input"
-  | "settings-tokens";
+  | "settings-tokens"
+  | "setup-component"
+  | "setup-mock"
+  | "setup-context";
 
 export interface Finding {
   rule: RuleId;
@@ -92,6 +95,7 @@ export async function checkHarness(dir: string, opts: { mode?: Mode } = {}): Pro
   findings.push(...(await i18nFindings(harness)));
   findings.push(...(await inputFindings(harness)));
   findings.push(...settingsFindings(harness));
+  findings.push(...(await setupFindings(harness)));
   findings.push(...brandFindings(harness));
   findings.push(...engineFindings(harness, opts.mode ?? "development"));
   if (doc) findings.push(...malformedPermissionFindings(doc));
@@ -379,6 +383,45 @@ function settingsFindings(h: LoadedHarness): Finding[] {
   if (tokens <= SETTINGS_TOKENS_WARN) return [];
   const message = `The settings' sentences take about ${tokens} tokens of AGENTS.md (more than ${SETTINGS_TOKENS_WARN}): keep each one short, or mark the ones that only matter when changed with onlyWhenChanged.`;
   return [warning("settings-tokens", message, MANIFEST)];
+}
+
+/**
+ * Setup steps (setup-steps spec §6): what the manifest's schema can't see. A component step needs the harness's
+ * component in ui/ (guessed like input-form's); an interview needs a recording once the harness has mock recordings
+ * (spec §8 Q2), and a collection the agent sees when it runs again.
+ */
+async function setupFindings(h: LoadedHarness): Promise<Finding[]> {
+  if (!h.setup) return [];
+  const out: Finding[] = [];
+  const components = h.setup.flatMap((s) => (s.kind === "component" ? [s] : []));
+  if (components.length > 0) {
+    let uiDir: string | null = null;
+    try {
+      uiDir = resolveInHarness(h, h.ui ?? "ui");
+    } catch {
+      // reported by i18nFindings
+    }
+    const texts = uiDir ? await Promise.all((await sourceFiles(uiDir)).map((f) => fs.readFile(f, "utf8"))) : [];
+    for (const s of components) {
+      const key = new RegExp(`(?<![A-Za-z0-9_])${escapeRegExp(s.component)}\\s*[:,}]`);
+      if (!texts.some((t) => key.test(t))) {
+        const message = `Step "${s.id}": no component "${s.component}" in ui/. Pass it to HarnessApp (setupSteps={{ ${s.component} }}); until then the setup screen says the step can't be shown.`;
+        out.push(warning("setup-component", message, MANIFEST));
+      }
+    }
+  }
+  const recordings = (await fs.readdir(path.join(h.root, MOCK_DIR)).catch(() => [])).some((name) => name.endsWith(".json"));
+  for (const s of h.setup) {
+    if (s.kind !== "interview") continue;
+    if (recordings && !(await exists(path.join(h.root, MOCK_DIR, `${s.action}.json`)))) {
+      out.push(warning("setup-mock", `Step "${s.id}": its action "${s.action}" has no recording (${MOCK_DIR}/${s.action}.json), so mock mode can't play the interview.`, MANIFEST));
+    }
+    const c = Object.hasOwn(h.data, s.writes) ? h.data[s.writes] : undefined;
+    if (c && !c.context) {
+      out.push(warning("setup-context", `Step "${s.id}": collection "${s.writes}" has no context, so a second run of the interview can't see what the first one saved. Give it context: { fields: "all", tokens: … }.`, MANIFEST));
+    }
+  }
+  return out;
 }
 
 /** The first provider or model brand in `text` (whole words, any case), or null. */

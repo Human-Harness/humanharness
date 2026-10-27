@@ -322,7 +322,7 @@ describe("UsageTab: OpenCode", () => {
     await renderIn("en", <UsageTab client={client} state={client.state} />);
     await screen.findByText("Spent in the last 30 days");
     expect(screen.getByText("US$ 1.23")).toBeTruthy();
-    expect(screen.getByText("OpenCode reports it. With local models it is 0.")).toBeTruthy();
+    expect(screen.getByText("OpenCode reports it. With local models it is usually 0.")).toBeTruthy();
     expect(screen.getByText("OpenCode reports what each reply costs, not a plan's limits. Your provider bills you for it.")).toBeTruthy();
     expect(screen.queryByRole("link", { name: /plans/ })).toBeNull();
   });
@@ -332,6 +332,14 @@ describe("UsageTab: OpenCode", () => {
     client.usage = { limits: null, estimates: {}, tokens: {}, spentUsd: 0 };
     await renderIn("en", <UsageTab client={client} state={client.state} />);
     expect(await screen.findByText("US$ 0.00")).toBeTruthy();
+  });
+
+  it("says less than a cent when the spend would round to US$ 0.00", async () => {
+    const client = opencode();
+    client.usage = { limits: null, estimates: {}, tokens: {}, spentUsd: 0.0031 };
+    await renderIn("en", <UsageTab client={client} state={client.state} />);
+    expect(await screen.findByText("less than US$ 0.01")).toBeTruthy();
+    expect(screen.queryByText("US$ 0.00")).toBeNull();
   });
 
   it("shows no spending row when no turn reported a cost", async () => {

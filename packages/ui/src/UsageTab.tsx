@@ -44,9 +44,12 @@ export function UsageTab({ client, state }: { client: HarnessClient; state: AppS
             <div className="hh-row">
               <span>{t("usage.spent")}</span>
               <span>
-                {t("usage.spentAmount", {
-                  amount: usage.spentUsd.toLocaleString(shownLanguage(i18n), { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
-                })}
+                {/* A spend that would round to US$ 0.00 is not nothing: say it is under a cent. */}
+                {usage.spentUsd > 0 && usage.spentUsd < 0.005
+                  ? t("usage.spentTiny", { amount: (0.01).toLocaleString(shownLanguage(i18n), { minimumFractionDigits: 2 }) })
+                  : t("usage.spentAmount", {
+                      amount: usage.spentUsd.toLocaleString(shownLanguage(i18n), { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+                    })}
               </span>
             </div>
           </div>

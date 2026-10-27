@@ -4,7 +4,7 @@ import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { NOTICE_VERSION, getEngine } from "@humanharness/engines";
 import type { CommandDeps } from "../src/main/engine-command";
-import { detectEngine, hasAcceptedNotice, parseLoggedIn } from "../src/main/engine-status";
+import { countProviders, detectEngine, hasAcceptedNotice, parseLoggedIn } from "../src/main/engine-status";
 import { SharedConfigStore } from "../src/main/shared-config";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
@@ -138,6 +138,114 @@ describe("detectEngine", () => {
     await s.update("claude", { notice: { version: NOTICE_VERSION - 1, acceptedAt: "t" } });
     const { d } = deps({ "--version": { stdout: "2.1.296", code: 0 }, "auth status --json": { stdout: signedIn, code: 0 } });
     expect((await detectEngine(getEngine("claude"), d, s)).noticeAccepted).toBe(false);
+  });
+});
+
+const fixture = (name: string) => fs.readFileSync(path.join(__dirname, "fixtures", name), "utf8");
+
+describe("countProviders (opencode-auth-list)", () => {
+  it("counts the providers OpenCode 1.x lists, in both sections", () => {
+    expect(countProviders(fixture("opencode-auth-list-one.txt"))).toBe(2);
+    expect(countProviders(fixture("opencode-auth-list-empty.txt"))).toBe(0);
+  });
+
+  it("ignores colours (printed even when piped) and unknown lines", () => {
+    expect(countProviders("\u001b[34m●\u001b[39m  OpenRouter \u001b[90mapi\u001b[0m\n")).toBe(1);
+    expect(countProviders("\u001b[90m│\u001b[0m\n\u001b[34m●\u001b[39m  Anthropic \u001b[90mANTHROPIC_API_KEY\n")).toBe(1);
+    expect(countProviders("something else\n")).toBe(0);
+    expect(countProviders("")).toBe(0);
+  });
+
+  it("counts the integrations of OpenCode 2.x's JSON, and none in its empty answers", () => {
+    expect(countProviders(fixture("opencode-auth-list-v2.json"))).toBe(2);
+    expect(countProviders(fixture("opencode-auth-list-v2-empty.json"))).toBe(0);
+    expect(countProviders("No authenticated integrations\n")).toBe(0);
+    expect(countProviders('[{"id":"x","connections":[]}]')).toBe(0);
+    expect(countProviders("[not json")).toBe(0);
+  });
+
+  it("ignores a notice printed before 2.x's JSON", () => {
+    expect(countProviders(`A new version of opencode is available\n${fixture("opencode-auth-list-v2.json")}`)).toBe(2);
+    expect(countProviders("Update available\n[]\n")).toBe(0);
+  });
+
+  it("strips OSC and charset escapes before parsing", () => {
+    expect(countProviders("\u001b]0;opencode\u0007\u001b(B\u001b[34m●\u001b[39m  OpenRouter\n")).toBe(1);
+    expect(countProviders(`\u001b]8;;https://opencode.ai\u001b\\\u001b(B\n${fixture("opencode-auth-list-v2.json")}`)).toBe(2);
+  });
+});
+
+describe("parseLoggedIn: opencode-auth-list", () => {
+  it("is signed in with a provider, signed out without one or on a failure", () => {
+    expect(parseLoggedIn("opencode-auth-list", { stdout: fixture("opencode-auth-list-one.txt"), code: 0 })).toBe(true);
+    expect(parseLoggedIn("opencode-auth-list", { stdout: fixture("opencode-auth-list-v2.json"), code: 0 })).toBe(true);
+    expect(parseLoggedIn("opencode-auth-list", { stdout: fixture("opencode-auth-list-empty.txt"), code: 0 })).toBe(false);
+    expect(parseLoggedIn("opencode-auth-list", { stdout: fixture("opencode-auth-list-v2-empty.json"), code: 0 })).toBe(false);
+    expect(parseLoggedIn("opencode-auth-list", { stdout: fixture("opencode-auth-list-one.txt"), code: 1 })).toBe(false);
+  });
+});
+
+describe("detectEngine: OpenCode", () => {
+  const opencode = getEngine("opencode");
+  const opencodeDeps = (version: string, replies: Record<string, Reply>) =>
+    deps({ "--version": { stdout: `${version}\n`, code: 0 }, ...replies }, { isExecutable: async (p) => p === "/Users/me/.opencode/bin/opencode" });
+  const v1 = (list: string) => opencodeDeps("1.19.4", { "auth list": { stdout: list, code: 0 } });
+
+  it("is ready with a provider", async () => {
+    const { d, calls } = v1(fixture("opencode-auth-list-one.txt"));
+    expect(await detectEngine(opencode, d, store())).toMatchObject({ installed: true, loggedIn: true });
+    expect(calls.map((c) => c.args.join(" "))).toEqual(["--version", "auth list"]);
+  });
+
+  it("asks OpenCode 2.x for JSON and reads it", async () => {
+    const one = opencodeDeps("2.0.1", { "auth list --format json": { stdout: fixture("opencode-auth-list-v2.json"), code: 0 } });
+    expect(await detectEngine(opencode, one.d, store())).toMatchObject({ installed: true, version: "2.0.1", loggedIn: true });
+    expect(one.calls.map((c) => c.args.join(" "))).toEqual(["--version", "auth list --format json"]);
+    const none = opencodeDeps("2.0.1", { "auth list --format json": { stdout: fixture("opencode-auth-list-v2-empty.json"), code: 0 } });
+    expect(await detectEngine(opencode, none.d, store())).toMatchObject({ loggedIn: false, verified: false });
+  });
+
+  it("asks to choose a provider when none is listed and no test prompt worked", async () => {
+    const { d } = v1(fixture("opencode-auth-list-empty.txt"));
+    expect(await detectEngine(opencode, d, store())).toMatchObject({ installed: true, loggedIn: false, verified: false });
+  });
+
+  it("counts a past test prompt as set up (local models only)", async () => {
+    const s = store();
+    await s.update("opencode", { verifiedAt: "2026-10-27T10:00:00.000Z" });
+    const { d } = v1(fixture("opencode-auth-list-empty.txt"));
+    expect(await detectEngine(opencode, d, s)).toMatchObject({ installed: true, loggedIn: null, verified: true });
+  });
+
+  it("is signed in and set up with a provider listed and a past test prompt", async () => {
+    const s = store();
+    await s.update("opencode", { verifiedAt: "2026-10-27T10:00:00.000Z" });
+    const { d } = v1(fixture("opencode-auth-list-one.txt"));
+    expect(await detectEngine(opencode, d, s)).toMatchObject({ installed: true, loggedIn: true, verified: true });
+  });
+
+  it("runs plain auth list when --version fails", async () => {
+    const { d, calls } = deps(
+      { "--version": { code: 1 }, "auth list": { stdout: fixture("opencode-auth-list-one.txt"), code: 0 } },
+      { isExecutable: async (p) => p === "/Users/me/.opencode/bin/opencode" },
+    );
+    expect(await detectEngine(opencode, d, store())).toMatchObject({ installed: true, version: null, loggedIn: true });
+    expect(calls.map((c) => c.args.join(" "))).toEqual(["--version", "auth list"]);
+  });
+
+  it("never applies the past-test rule to Claude when its status check fails (D0)", async () => {
+    const s = store();
+    await s.update("claude", { verifiedAt: "2026-10-27T10:00:00.000Z" });
+    const { d } = deps({ "--version": { stdout: "2.1.296 (Claude Code)", code: 0 }, "auth status --json": { stdout: "", code: 1 } });
+    expect(await detectEngine(getEngine("claude"), d, s)).toMatchObject({ loggedIn: false, verified: false });
+  });
+
+  it("keeps Claude's and Codex's answers as they were (D0)", async () => {
+    const s = store();
+    await s.update("claude", { verifiedAt: "2026-10-27T10:00:00.000Z" });
+    const { d, calls } = deps({ "--version": { stdout: "2.1.296 (Claude Code)", code: 0 }, "auth status --json": { stdout: signedOut, code: 1 } });
+    expect(await detectEngine(getEngine("claude"), d, s)).toMatchObject({ loggedIn: false, verified: false });
+    expect(calls.map((c) => c.args.join(" "))).toEqual(["--version", "auth status --json"]);
   });
 });
 

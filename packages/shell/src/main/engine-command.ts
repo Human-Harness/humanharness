@@ -34,8 +34,15 @@ const BUNDLED_CLIS: Record<string, { adapter: string; cli: string }> = {
   codex: { adapter: "@agentclientprotocol/codex-acp/dist/index.js", cli: "@openai/codex/bin/codex.js" },
 };
 
-/** Folders official installers use, searched after PATH: a fresh install may not be on the login PATH yet. */
-export const knownBinDirs = (home: string): string[] => [path.join(home, ".local/bin"), "/opt/homebrew/bin", "/usr/local/bin"];
+/** Common bin folders: also the PATH when the login shell can't tell. */
+const commonBinDirs = (home: string): string[] => [path.join(home, ".local/bin"), "/opt/homebrew/bin", "/usr/local/bin"];
+
+/**
+ * Folders official installers use, searched after PATH: a fresh install may not be on the login PATH yet.
+ * OpenCode's installer folder (spike A1) is searched only for `opencode`, so the other engines stay as they were.
+ */
+export const knownBinDirs = (home: string, name: string): string[] =>
+  name === "opencode" ? [...commonBinDirs(home), path.join(home, ".opencode/bin")] : commonBinDirs(home);
 
 export async function loginShellPath(d: CommandDeps): Promise<string> {
   try {
@@ -44,11 +51,11 @@ export async function loginShellPath(d: CommandDeps): Promise<string> {
   } catch {
     // fall through
   }
-  return [...knownBinDirs(d.home), "/usr/bin", "/bin"].join(":");
+  return [...commonBinDirs(d.home), "/usr/bin", "/bin"].join(":");
 }
 
 export async function resolveBinary(name: string, searchPath: string, d: CommandDeps): Promise<string | null> {
-  const dirs = new Set([...searchPath.split(":").filter(Boolean), ...knownBinDirs(d.home)]);
+  const dirs = new Set([...searchPath.split(":").filter(Boolean), ...knownBinDirs(d.home, name)]);
   for (const dir of dirs) {
     const candidate = path.join(dir, name);
     if (await d.isExecutable(candidate)) return candidate;

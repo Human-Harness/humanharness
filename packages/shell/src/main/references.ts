@@ -28,7 +28,7 @@ export async function appSourceDir(harnessDir: string): Promise<string | null> {
 
 /**
  * Whether the agent may read `dir` (a real path; `home` real too): never a dot-folder directly in the home
- * folder or anything inside one (~/.claude, ~/.codex, ~/.gemini, ~/.ssh, ~/.aws, ~/.config...), ~/Library,
+ * folder or anything inside one (~/.claude, ~/.codex, ~/.gemini, ~/.opencode, ~/.local/share/opencode, ~/.ssh, ~/.aws, ~/.config...), ~/Library,
  * system folders, the whole home or a standard home folder as a whole. A comma would break Claude's tool lists.
  */
 export function referenceAllowed(dir: string, home: string): boolean {

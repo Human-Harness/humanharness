@@ -85,7 +85,7 @@ import { testPrompt } from "./engine-check";
 import { createCommandDeps } from "./command-deps";
 import { cliCommand, engineCommand, loginShellPath } from "./engine-command";
 import { EngineGuards } from "./engine-guards";
-import { installCommandOf, terminalCommand } from "./install-help";
+import { copySetupStep, engineOptionExtras, installCommandOf, runsInTerminal, terminalCommand } from "./install-help";
 import { detectEngine, hasAcceptedNotice } from "./engine-status";
 import { QUESTIONS, cleanModels, engineOffer, firstOffered, fitEffort, nearestTier, nextFallback, resolveProfile } from "./models";
 import { chooseModeHandler } from "./mode-ipc";
@@ -96,7 +96,7 @@ import { type RunningSetup, runSetupProcess, setupCommand, stopSetupProcess } fr
 import { runSetupStep } from "./setup-step";
 import { type SharedEngineRecord, SharedConfigStore, sharedConfigDir } from "./shared-config";
 import { EngineUnavailable, TurnController, memoise } from "./turn-controller";
-import { type UsageRecord, UsageLog, compactionRecord, measuredMaterialCosts, profileMeta, profilesUsage, summarizeUsage, usageRecord } from "./usage-log";
+import { type UsageRecord, UsageLog, compactionRecord, measuredMaterialCosts, profileMeta, profilesUsage, summarizeUsage, usageRecord, withSpent } from "./usage-log";
 import { type ValidationContext, checkFolder, configProblem, isAppUrl } from "./validate";
 import { openIfStillSafe, openRoots, openableFile, revealIfStillSafe, revealableFile } from "./open-path";
 import { saveWithFolderChange } from "./folder-change";
@@ -321,6 +321,8 @@ async function appState(): Promise<AppState> {
             termsUrl: e.termsUrl,
             privacyUrl: e.privacyUrl,
             reportsLimits: false,
+            // Empty for Claude and Codex (D0); a mocked OpenCode keeps its cost and Terminal facts.
+            ...engineOptionExtras(e),
             mock: true,
           };
         }
@@ -337,6 +339,7 @@ async function appState(): Promise<AppState> {
           privacyUrl: e.privacyUrl,
           reportsLimits: e.reportsLimits,
           ...(e.plansUrl ? { plansUrl: e.plansUrl } : {}),
+          ...engineOptionExtras(e),
           ...(e.setup?.install ? { installCommand: e.setup.install.command, installDocsUrl: e.setup.install.docsUrl } : {}),
           ...(image ? { logo: image } : {}),
         };
@@ -1340,6 +1343,8 @@ function registerIpc() {
     // A fake engine has nothing to install or sign in to, and no real CLI may run.
     const fake = fakeSetupResult(hooks, engineId);
     if (fake) return fake;
+    // A step the person runs in Terminal (OpenCode's provider picker) is never run by the app.
+    if (runsInTerminal(engine, step)) return { ok: false };
     // Start and end are only reported by the call that holds the setup slot, so only it resets these.
     const output = (o: SetupOutput) => {
       if (o.kind === "start") setupUrl = undefined;
@@ -1412,16 +1417,28 @@ function registerIpc() {
     // Profiles: the app's window is shared, so every profile's log counts (spec §4 "Usage").
     const ids = profilesCtl && c.profile ? await profilesCtl.state().then((s) => s.list.map((p) => p.id), () => null) : null;
     // An unreadable registry: the active profile's own log, as without profiles.
+    // The 30-day spend reads every line, not only the latest 500 (OpenCode; spec §4).
+    const reportsCost = !isMockEngine(hooks, c.engineId) && getEngine(c.engineId).reportsCost === true;
     if (ids && c.profile) {
       const logs = await Promise.all(ids.map(async (id) => [id, engineOnly(await new UsageLog(profileDir(c.folder, id)).load())] as const));
-      return profilesUsage(Object.fromEntries(logs), c.profile, primary);
+      const folders = ids.map((id) => profileDir(c.folder, id));
+      return withSpent(profilesUsage(Object.fromEntries(logs), c.profile, primary), folders, c.engineId, reportsCost);
     }
-    return summarizeUsage(engineOnly(await new UsageLog(baseOf(c)).load()), primary);
+    return withSpent(summarizeUsage(engineOnly(await new UsageLog(baseOf(c)).load()), primary), [baseOf(c)], c.engineId, reportsCost);
   });
   handle("hh:revealSharedConfig", () => shell.showItemInFolder(shared.path));
   // Installing by hand: copy the official command (chosen here by engine id) and open Terminal,
   // where the user pastes it. Nothing is run for them.
   handle("hh:copyInstallCommand", (engineId: string) => clipboard.writeText(installCommandOf(engineFor(engineId))));
+  handle("hh:copySetupCommand", async (engineId: string, step: unknown) => {
+    if (step !== "login" && step !== "logout") throw new Error("Unknown setup step");
+    await copySetupStep(engineFor(engineId), step, {
+      copy: (text) => clipboard.writeText(text),
+      forgetVerified: async (id) => {
+        await shared.update(id, { verifiedAt: null });
+      },
+    });
+  });
   handle("hh:openTerminal", async () => {
     const terminal = terminalCommand(process.platform);
     if (!terminal) throw new Error("No Terminal app to open here");

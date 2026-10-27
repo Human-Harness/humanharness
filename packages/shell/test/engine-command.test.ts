@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { getEngine } from "@humanharness/engines";
-import { type CommandDeps, cliCommand, engineCommand, loginShellPath, resolveBinary } from "../src/main/engine-command";
+import { type CommandDeps, cliCommand, engineCommand, knownBinDirs, loginShellPath, resolveBinary } from "../src/main/engine-command";
 
 function deps(overrides: Partial<CommandDeps> = {}): CommandDeps {
   return {
@@ -27,6 +27,30 @@ describe("loginShellPath", () => {
 
   it("falls back to common locations when the shell fails", async () => {
     expect(await loginShellPath(deps())).toBe("/Users/me/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin");
+  });
+});
+
+describe("knownBinDirs", () => {
+  it("includes OpenCode's install folder after the others, for opencode only", () => {
+    expect(knownBinDirs("/Users/me", "opencode")).toEqual(["/Users/me/.local/bin", "/opt/homebrew/bin", "/usr/local/bin", "/Users/me/.opencode/bin"]);
+    expect(knownBinDirs("/Users/me", "claude")).toEqual(["/Users/me/.local/bin", "/opt/homebrew/bin", "/usr/local/bin"]);
+  });
+
+  it("never looks in OpenCode's install folder for Claude", async () => {
+    const looked: string[] = [];
+    const d = deps({
+      isExecutable: async (p) => {
+        looked.push(p);
+        return p === "/Users/me/.opencode/bin/claude";
+      },
+    });
+    expect(await resolveBinary("claude", "/usr/bin", d)).toBeNull();
+    expect(looked.some((p) => p.includes(".opencode"))).toBe(false);
+  });
+
+  it("finds OpenCode in its install folder when the login PATH misses it", async () => {
+    const d = deps({ isExecutable: async (p) => p === "/Users/me/.opencode/bin/opencode" });
+    expect(await resolveBinary("opencode", "/usr/bin", d)).toBe("/Users/me/.opencode/bin/opencode");
   });
 });
 

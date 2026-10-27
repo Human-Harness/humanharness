@@ -7,7 +7,7 @@ import { type AppConfig, type FolderProblem, isTextSize } from "@humanharness/ui
 /** Home folders the user keeps other things in: too broad to hand to an agent as a whole (~/Library is PROTECTED). */
 const STANDARD_HOME_FOLDERS = ["Desktop", "Documents", "Downloads", "Pictures", "Movies", "Music", "Public", "Applications"];
 /** Folders holding CLI credentials and app data: never inside or above them. Path checks only, never read. */
-const PROTECTED = [".claude", ".codex", ".gemini", "Library"];
+const PROTECTED = [".claude", ".codex", ".gemini", ".config/opencode", ".local/share/opencode", ".opencode", "Library"];
 /** Top-level system folders: never inside or above them. */
 const SYSTEM = ["/System", "/usr", "/bin", "/sbin", "/etc", "/private", "/var", "/Applications", "/Library", "/opt"];
 /** Folders that are fine to use inside, but not as themselves or above. */

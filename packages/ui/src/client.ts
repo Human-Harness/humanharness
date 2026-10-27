@@ -76,6 +76,14 @@ export interface EngineOption {
   privacyUrl: string;
   /** Whether the engine reports plan-limit windows (Claude) or only tokens (Codex). */
   reportsLimits: boolean;
+  /** The engine reports each turn's cost in USD (OpenCode). Absent for the others. */
+  reportsCost?: boolean;
+  /** The person picks the provider inside the engine (OpenCode): the notice says its terms are theirs. */
+  userProvider?: boolean;
+  /** The engine's guide to choosing a provider. */
+  providersUrl?: string;
+  /** Steps the person runs in Terminal, with the command to paste. */
+  terminalSteps?: { login?: string; logout?: string };
   /** The provider's page of plans (Settings › Uso); never for a mock engine. */
   plansUrl?: string;
   /** The official install command, shown before the app runs it. */
@@ -234,6 +242,8 @@ export interface TurnUsage {
   outputTokens: number;
   cacheReadTokens: number;
   cacheWriteTokens: number;
+  /** What the provider charged for the turn, in USD (OpenCode). Absent when the engine reports no cost. */
+  costUsd?: number;
 }
 
 /** A block in the chat. Input blocks carry the id the app gave them and, once answered, the answer (input-blocks spec §8). */
@@ -427,6 +437,8 @@ export interface UsageSummary {
    * profile's: each processes its own). Absent when none ran.
    */
   material?: number;
+  /** USD the engine reported over the last 30 days (OpenCode; every profile's turns). Absent when no turn reported a cost. */
+  spentUsd?: number;
   /** The window kind estimates measure (the engine's `limits.primary`); absent when the engine reports no limits. */
   primary?: string;
 }
@@ -784,6 +796,8 @@ export interface HarnessClient {
   testEngine(engineId: string): Promise<TestResult>;
   /** Copies the engine's official install command, for the user to paste in Terminal. */
   copyInstallCommand(engineId: string): Promise<void>;
+  /** Copies the command for a step the person runs in Terminal (`terminalSteps`). */
+  copySetupCommand(engineId: string, step: "login" | "logout"): Promise<void>;
   /** Opens the Terminal app (it runs nothing). */
   openTerminal(): Promise<void>;
   /** Shows ~/.humanharness/engines.json in Finder. */

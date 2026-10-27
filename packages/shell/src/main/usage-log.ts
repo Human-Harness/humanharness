@@ -166,6 +166,31 @@ export const RECENT_TASKS = 10;
 
 const turnTokens = (u: TurnUsage): number => u.inputTokens + u.outputTokens + u.cacheReadTokens + u.cacheWriteTokens;
 
+/** The spending window of Settings › Usage (spec §4). */
+export const SPENT_DAYS = 30;
+
+/** USD spent in the last SPENT_DAYS days, material stages included; undefined when no line has a cost (D0: Claude and Codex never do). */
+function spentUsd(records: UsageRecord[], now: Date): number | undefined {
+  // The log is a file on disk: a NaN, Infinity or negative cost (hand edit, damage) is not a cost.
+  const withCost = records.filter((r) => typeof r.usage?.costUsd === "number" && Number.isFinite(r.usage.costUsd) && r.usage.costUsd >= 0);
+  if (withCost.length === 0) return undefined;
+  const since = now.getTime() - SPENT_DAYS * 86_400_000;
+  return withCost.filter((r) => Date.parse(r.at) >= since).reduce((sum, r) => sum + r.usage!.costUsd!, 0);
+}
+
+/**
+ * The summary with `spentUsd` taken from every line of `folders`' logs (every profile's, one account pays) that
+ * `engine` wrote, not only the latest ones the rest of the summary reads. An engine that reports no cost
+ * (`reportsCost` false: Claude, Codex) never gets the field and reads nothing more (D0).
+ */
+export async function withSpent(summary: UsageSummary, folders: string[], engine: string, reportsCost: boolean, now: Date = new Date()): Promise<UsageSummary> {
+  const { spentUsd: _partial, ...rest } = summary;
+  if (!reportsCost) return rest;
+  const lines = (await Promise.all(folders.map((f) => new UsageLog(f).load(Infinity)))).flat().filter((r) => r.engine === engine);
+  const spent = spentUsd(lines, now);
+  return spent !== undefined ? { ...rest, spentUsd: spent } : rest;
+}
+
 /** The average of the last RECENT_TASKS values of each key. */
 function recentAverages(values: Map<string, number[]>): Record<string, number> {
   return Object.fromEntries(
@@ -221,12 +246,14 @@ export function summarizeUsage(records: UsageRecord[], primary: string | undefin
   for (const r of all) if (r.scope && r.phase !== "material") perScope.set(r.scope, (perScope.get(r.scope) ?? 0) + (r.usage ? turnTokens(r.usage) : 0));
   // Material processing's own total (material spec §11); absent when no stage ever ran, so D0 keeps its summary.
   const material = all.filter((r) => r.phase === "material" && r.usage).reduce((n, r) => n + turnTokens(r.usage!), 0);
+  const spent = spentUsd(all, now);
   return {
     limits: last ? last.limits!.filter((w) => Date.parse(w.resetsAt) > now.getTime()) : null,
     estimates: recentAverages(shares),
     tokens: recentAverages(tokens),
     ...(perScope.size ? { scopes: Object.fromEntries(perScope) } : {}),
     ...(material > 0 ? { material } : {}),
+    ...(spent !== undefined ? { spentUsd: spent } : {}),
     ...(primary ? { primary } : {}),
   };
 }
@@ -263,7 +290,7 @@ export function mergeUsage(byProfile: Record<string, UsageRecord[]>): PersonUsag
  * Settings › Usage in a harness with profiles (spec §4 "Usage"): one AI plan for the whole app, so every profile's
  * turns, in time order, measure its window and estimates. `scopes` are the active profile's only (scope ids repeat
  * across people), and so is `material` (each profile processes its own); `profiles` counts every turn's tokens per
- * profile, material stages included.
+ * profile, material stages included. `spentUsd` is everyone's: one provider account pays.
  */
 export function profilesUsage(
   byProfile: Record<string, UsageRecord[]>,

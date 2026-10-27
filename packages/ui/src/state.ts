@@ -135,6 +135,7 @@ export function reduceChat(state: ChatState, action: ChatAction): ChatState {
                 outputTokens: action.outputTokens,
                 cacheReadTokens: action.cacheReadTokens,
                 cacheWriteTokens: action.cacheWriteTokens,
+                ...(action.costUsd !== undefined ? { costUsd: action.costUsd } : {}),
               },
             },
           }

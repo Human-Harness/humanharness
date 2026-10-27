@@ -133,8 +133,10 @@ test("changing the engine keeps the notes, and the first task on the new engine 
       "- El manifiesto (manifest): defineHarness valida el manifiesto; Las acciones traen su brief → .harness/notes/manifest.md",
     );
     // Free questions are light; Codex runs its default model, so CODEX_CONFIG has no model.
-    const env = readJsonl<{ method: string; params: { CODEX_CONFIG: string | null } }>(s.acpLog).find((l) => l.method === "env");
+    const env = readJsonl<{ method: string; params: { CODEX_CONFIG: string | null; OPENCODE_CONFIG_CONTENT?: string | null } }>(s.acpLog).find((l) => l.method === "env");
     expect(JSON.parse(env!.params.CODEX_CONFIG!)).toEqual({ model_reasoning_effort: "low", model_auto_compact_token_limit: 100_000 });
+    // OpenCode's permission environment never reaches Codex (D0).
+    expect(env!.params.OPENCODE_CONFIG_CONTENT).toBeNull();
     // The models Codex offered are saved for Settings › Modelos.
     await expect
       .poll(() => JSON.parse(fs.readFileSync(path.join(s.sharedDir, "engines.json"), "utf8")).engines.codex.models)

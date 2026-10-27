@@ -629,7 +629,7 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
 }
 
 const RUN_USAGE =
-  "Usage: humanharness run <action> [--engine claude|codex] [--tier light|standard|deep] [--mode <id>] [--time <minutes>] [--folder <dir>] [--language <tag>] [--set <name>=<value>]... [--harness <dir>] [--record [--force]]";
+  "Usage: humanharness run <action> [--engine claude|codex|opencode] [--tier light|standard|deep] [--mode <id>] [--time <minutes>] [--folder <dir>] [--language <tag>] [--set <name>=<value>]... [--harness <dir>] [--record [--force]]";
 
 export async function runCommand(args: string[], io: Io): Promise<number> {
   const { values, positionals } = parseCommand(args, {

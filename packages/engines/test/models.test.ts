@@ -30,8 +30,12 @@ describe("DEFAULT_TIERS", () => {
 
 describe("value checks", () => {
   it("accepts model ids that are safe on a command line, never a flag", () => {
-    for (const id of ["opus", "gpt-5.5", "claude-opus-4-1[1m]", "o3_mini"]) expect(isModelId(id)).toBe(true);
-    for (const id of ["-rf", "--model", "a b", "", "x".repeat(65), "a;b", "a/b", 7]) expect(isModelId(id)).toBe(false);
+    for (const id of ["opus", "gpt-5.5", "claude-opus-4-1[1m]", "o3_mini", "anthropic/claude-sonnet-4-5", "ollama/llama3.2:3b", "openrouter/meta-llama/llama-3.3-70b"]) {
+      expect(isModelId(id)).toBe(true);
+    }
+    for (const id of ["-rf", "--model", "a b", "", "x".repeat(129), "a;b", "/a", "a/", "a//b", "a/../b", "..", "a/b/c/d", 7]) {
+      expect(isModelId(id)).toBe(false);
+    }
   });
 
   it("accepts the known efforts and integer caps from 100k to 1M", () => {

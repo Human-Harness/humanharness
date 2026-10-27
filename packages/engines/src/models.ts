@@ -57,11 +57,17 @@ export const CAP_OPTIONS = [100_000, 200_000, 400_000, 1_000_000] as const;
 /** Claude's aliases always point at the latest model of each family. */
 export const CLAUDE_MODELS = ["haiku", "sonnet", "opus"] as const;
 
-/** A model id safe to put on a command line or in CODEX_CONFIG: never a flag. */
-const MODEL_ID = /^[A-Za-z0-9._\[\]-]{1,64}$/;
+/** One part of a model id: letters, digits and `._:[]-`. */
+const MODEL_PART = /^[A-Za-z0-9._:\[\]-]+$/;
 
+/**
+ * A model id safe to put on a command line, in CODEX_CONFIG or in an ACP request: never a flag. OpenCode names
+ * models `provider/model` (OpenRouter adds one more part), so up to three `/`-separated parts.
+ */
 export function isModelId(v: unknown): v is string {
-  return typeof v === "string" && MODEL_ID.test(v) && !v.startsWith("-");
+  if (typeof v !== "string" || v.length === 0 || v.length > 128 || v.startsWith("-")) return false;
+  const parts = v.split("/");
+  return parts.length <= 3 && parts.every((p) => p !== "" && p !== "." && p !== ".." && MODEL_PART.test(p));
 }
 
 export function isEffort(v: unknown): v is Effort {

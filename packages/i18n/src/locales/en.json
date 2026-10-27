@@ -629,6 +629,9 @@
     "only": "In test mode there is only one engine: it answers with recorded conversations, with no AI and without using your plan.",
     "badge": "Test mode (no AI)"
   },
+  "reader": {
+    "table": "Table"
+  },
   "errors": {
     "engine-not-installed": "I can't find {{engine}} on this computer.",
     "session-expired": "Your {{engine}} session ended. Sign in again to continue.",

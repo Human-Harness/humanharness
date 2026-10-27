@@ -109,7 +109,7 @@ function Answer({
           const text = reveal && i === reveal.part ? wordsOf(p.text).slice(0, reveal.words).join("") : p.text;
           return (
             <Fragment key={i}>
-              <Markdown text={text} fade={fade} />
+              <Markdown source={text} fade={fade} />
             </Fragment>
           );
         }

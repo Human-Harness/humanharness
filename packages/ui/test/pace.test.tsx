@@ -112,7 +112,8 @@ describe("Message with an answer arriving", () => {
 
   it("shows only what is revealed, each word and block fading in", () => {
     const { container } = render(<Message entry={entry} components={{ box: Box }} actions={actions} reveal={{ part: 2, words: 1 }} />);
-    expect(container.textContent).toBe("One two three.box 1Four ");
+    // CommonMark drops a paragraph's trailing space ("Four " revealed so far).
+    expect(container.textContent).toBe("One two three.box 1Four");
     expect([...container.querySelectorAll(".hh-word")].map((w) => w.textContent)).toEqual(["One", "two", "three.", "Four"]);
     expect(container.querySelector(".hh-block")?.className).toBe("hh-block hh-appear");
   });

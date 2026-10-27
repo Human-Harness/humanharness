@@ -1,115 +1,46 @@
-import { Fragment, type ReactNode, useContext, useEffect, useState } from "react";
+import { Fragment, type ReactNode, createElement, useContext, useEffect, useId, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { CitationContext, plainCitations, splitCitations } from "./citations";
+import type { TFunction } from "i18next";
+import type { Code, Definition, FootnoteDefinition, Heading, List, Nodes, Parents, PhrasingContent, Root, RootContent, Table } from "mdast";
+import remarkGfm from "remark-gfm";
+import remarkParse from "remark-parse";
+import { unified } from "unified";
+import { createSlugger, splitFrontMatter } from "@humanharness/harness-sdk/documents";
+import { CitationContext, splitCitations } from "./citations";
+
+export { markdownToPlain } from "./markdown-plain";
 
 /**
- * A safe Markdown subset for the agent's answers: paragraphs, line breaks, inline code, bold, italics,
- * bulleted and numbered lists, headings (shown as bold lines) and fenced code blocks.
- * It only ever builds React elements from text: raw HTML stays text and links are not clickable
- * (their URL is shown after the text).
+ * The rich renderer for the chat and the document reader (document-reader spec §3): `remark-parse` + `remark-gfm`
+ * into mdast, then straight to React elements. There is no raw-HTML path: HTML in the source is shown as text.
  */
+const processor = unified().use(remarkParse).use(remarkGfm);
 
-type Inline =
-  | { t: "text"; v: string }
-  | { t: "code"; v: string }
-  | { t: "strong"; c: Inline[] }
-  | { t: "em"; c: Inline[] }
-  | { t: "link"; text: Inline[]; url: string };
-
-type Block =
-  | { t: "p"; lines: string[] }
-  | { t: "h"; text: string }
-  | { t: "ul"; items: string[][] }
-  | { t: "ol"; start: number; items: string[][] }
-  | { t: "pre"; text: string };
-
-const FENCE = /^ {0,3}(`{3,}|~{3,})/;
-const HEADING = /^ {0,3}#{1,6}\s+(.*?)(?:\s+#+)?\s*$/;
-const BULLET = /^ {0,3}[-*+]\s+(.*)$/;
-const ORDERED = /^ {0,3}(\d{1,9})[.)]\s+(.*)$/;
-const RULE = /^ {0,3}([-*_])(?:\s*\1){2,}\s*$/;
-
-export function parseBlocks(text: string): Block[] {
-  const lines = text.replace(/\r\n?/g, "\n").split("\n");
-  const blocks: Block[] = [];
-  let para: string[] | null = null;
-  let list: Extract<Block, { t: "ul" | "ol" }> | null = null;
-  const end = () => {
-    para = null;
-    list = null;
-  };
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const fence = FENCE.exec(line);
-    if (fence) {
-      end();
-      const body: string[] = [];
-      const close = new RegExp(`^ {0,3}${fence[1][0] === "`" ? "`" : "~"}{${fence[1].length},}\\s*$`);
-      for (i++; i < lines.length && !close.test(lines[i]); i++) body.push(lines[i]);
-      blocks.push({ t: "pre", text: body.join("\n") });
-      continue;
-    }
-    if (!line.trim()) {
-      end();
-      continue;
-    }
-    const heading = HEADING.exec(line);
-    if (heading) {
-      end();
-      blocks.push({ t: "h", text: heading[1] });
-      continue;
-    }
-    if (RULE.test(line)) {
-      end();
-      continue;
-    }
-    const bullet = BULLET.exec(line);
-    const ordered = bullet ? null : ORDERED.exec(line);
-    if (bullet || ordered) {
-      para = null;
-      const kind = bullet ? "ul" : "ol";
-      const item = bullet ? bullet[1] : ordered![2];
-      const current = list as Extract<Block, { t: "ul" | "ol" }> | null;
-      if (current && current.t === kind) current.items.push([item]);
-      else {
-        list = bullet ? { t: "ul", items: [[item]] } : { t: "ol", start: Number(ordered![1]), items: [[item]] };
-        blocks.push(list);
-      }
-      continue;
-    }
-    const openList = list as Extract<Block, { t: "ul" | "ol" }> | null;
-    if (openList && /^\s/.test(line)) {
-      // An indented line continues the last item.
-      openList.items[openList.items.length - 1].push(line.trim());
-      continue;
-    }
-    list = null;
-    if (para) (para as string[]).push(line);
-    else {
-      para = [line];
-      blocks.push({ t: "p", lines: para });
-    }
-  }
-  return blocks;
+export function parseMarkdown(text: string): Root {
+  return processor.parse(text) as Root;
 }
 
-// Order matters: code spans first (nothing inside them is Markdown), then links, bold, italics.
-const INLINE =
-  /(`+)([^`]|[^`][\s\S]*?[^`])\1(?!`)|\[([^\]\n]+)\]\(([^)\s]+)\)|\*\*(?=\S)([\s\S]*?\S)\*\*(?!\*)|(?<!\w)__(?=\S)([\s\S]*?\S)__(?!\w)|\*(?=[^\s*])([\s\S]*?[^\s*])\*(?!\*)|(?<!\w)_(?=[^\s_])([\s\S]*?[^\s_])_(?!\w)/g;
+/** Everything a node needs to draw itself. */
+interface Ctx {
+  fade: boolean;
+  /** A single newline is a line break (the chat); off in documents. */
+  breaks: boolean;
+  /** Put before every id this text makes (headings, footnotes). */
+  prefix: string;
+  slug: (text: string) => string;
+  /** The parsed text, for the source of a node (an unclosed fence). */
+  source: string;
+  /** The document's own path (relative to the folder); "" in the chat. */
+  base: string;
+  definitions: Map<string, Definition>;
+  t: TFunction;
+}
 
-export function parseInline(text: string): Inline[] {
-  const out: Inline[] = [];
-  let last = 0;
-  for (const m of text.matchAll(INLINE)) {
-    if (m.index > last) out.push({ t: "text", v: text.slice(last, m.index) });
-    if (m[1]) out.push({ t: "code", v: m[2].replace(/^ (.*) $/, "$1") });
-    else if (m[3] !== undefined) out.push({ t: "link", text: parseInline(m[3]), url: m[4] });
-    else if (m[5] !== undefined || m[6] !== undefined) out.push({ t: "strong", c: parseInline(m[5] ?? m[6]) });
-    else out.push({ t: "em", c: parseInline(m[7] ?? m[8]) });
-    last = m.index + m[0].length;
-  }
-  if (last < text.length) out.push({ t: "text", v: text.slice(last) });
-  return out;
+/** A node's plain text (headings' ids, captions, link labels). */
+export function textOf(node: Nodes): string {
+  if ("value" in node && typeof node.value === "string" && node.type !== "html") return node.value;
+  if ("children" in node) return (node.children as Nodes[]).map(textOf).join("");
+  return "";
 }
 
 /**
@@ -158,118 +89,269 @@ function CitedText({ text, fade }: { text: string; fade: boolean }) {
   );
 }
 
-function renderInline(nodes: Inline[], fade: boolean): ReactNode[] {
-  return nodes.map((n, i) => {
-    switch (n.t) {
-      case "text":
-        return <CitedText key={i} text={n.v} fade={fade} />;
-      case "code":
-        return (
-          <code key={i} className={fade ? "hh-word" : undefined}>
-            {n.v}
-          </code>
-        );
-      case "strong":
-        return <strong key={i}>{renderInline(n.c, fade)}</strong>;
-      case "em":
-        return <em key={i}>{renderInline(n.c, fade)}</em>;
-      case "link": {
-        const label = plainInline(n.text);
-        return (
-          <Fragment key={i}>
-            {renderInline(n.text, fade)}
-            {label !== n.url && <span className="hh-md-url">{` (${n.url})`}</span>}
-          </Fragment>
-        );
-      }
-    }
-  });
-}
-
-function renderLines(lines: string[], fade: boolean): ReactNode[] {
-  return lines.flatMap((line, i) => [...(i > 0 ? [<br key={`br${i}`} />] : []), <Fragment key={i}>{renderInline(parseInline(line), fade)}</Fragment>]);
-}
-
-/** The agent's Markdown as React elements; `fade` makes each word fade in as it appears (an answer arriving). */
-export function Markdown({ text, fade = false }: { text: string; fade?: boolean }) {
+/** A text node: in the chat a single newline is a line break. */
+function renderText(value: string, ctx: Ctx, key: number): ReactNode {
+  if (!ctx.breaks || !value.includes("\n")) return <CitedText key={key} text={value} fade={ctx.fade} />;
   return (
-    <>
-      {parseBlocks(text).map((b, i) => {
-        switch (b.t) {
-          case "p":
-            return <p key={i}>{renderLines(b.lines, fade)}</p>;
-          case "h":
-            return (
-              <p key={i} className="hh-md-heading">
-                <strong>{renderInline(parseInline(b.text), fade)}</strong>
-              </p>
-            );
-          case "ul":
-            return (
-              <ul key={i} className="hh-md-list">
-                {b.items.map((item, j) => (
-                  <li key={j}>{renderLines(item, fade)}</li>
-                ))}
-              </ul>
-            );
-          case "ol":
-            return (
-              <ol key={i} className="hh-md-list" start={b.start === 1 ? undefined : b.start}>
-                {b.items.map((item, j) => (
-                  <li key={j}>{renderLines(item, fade)}</li>
-                ))}
-              </ol>
-            );
-          case "pre":
-            return (
-              <pre key={i} className="hh-md-code">
-                <code>{b.text}</code>
-              </pre>
-            );
-        }
-      })}
-    </>
+    <Fragment key={key}>
+      {value.split("\n").map((line, i) => (
+        <Fragment key={i}>
+          {i > 0 && <br />}
+          <CitedText text={line} fade={ctx.fade} />
+        </Fragment>
+      ))}
+    </Fragment>
   );
 }
 
-function plainInline(nodes: Inline[]): string {
-  return nodes
-    .map((n) => {
-      switch (n.t) {
-        case "text":
-        case "code":
-          return n.v;
-        case "strong":
-        case "em":
-          return plainInline(n.c);
-        case "link": {
-          const label = plainInline(n.text);
-          return label === n.url ? label : `${label} (${n.url})`;
-        }
-      }
-    })
-    .join("");
+function renderInline(nodes: PhrasingContent[], ctx: Ctx): ReactNode[] {
+  return nodes.map((n, i) => renderPhrasing(n, ctx, i));
+}
+
+function renderPhrasing(n: PhrasingContent, ctx: Ctx, i: number): ReactNode {
+  switch (n.type) {
+    case "text":
+      return renderText(n.value, ctx, i);
+    case "html":
+      // Raw HTML stays text, always.
+      return <Fragment key={i}>{n.value}</Fragment>;
+    case "inlineCode":
+      return (
+        <code key={i} className={ctx.fade ? "hh-word" : undefined}>
+          {n.value}
+        </code>
+      );
+    case "strong":
+      return <strong key={i}>{renderInline(n.children, ctx)}</strong>;
+    case "emphasis":
+      return <em key={i}>{renderInline(n.children, ctx)}</em>;
+    case "delete":
+      return <del key={i}>{renderInline(n.children, ctx)}</del>;
+    case "break":
+      return <br key={i} />;
+    case "link":
+      return renderLink(n.url, n.children, ctx, i);
+    case "linkReference": {
+      const def = ctx.definitions.get(n.identifier);
+      return def ? renderLink(def.url, n.children, ctx, i) : <Fragment key={i}>{renderInline(n.children, ctx)}</Fragment>;
+    }
+    case "image":
+      return renderImage(n.url, n.alt ?? "", ctx, i);
+    case "imageReference": {
+      const def = ctx.definitions.get(n.identifier);
+      return def ? renderImage(def.url, n.alt ?? "", ctx, i) : <Fragment key={i}>{n.alt ?? ""}</Fragment>;
+    }
+    case "footnoteReference":
+      return renderFootnoteReference(n.identifier, ctx, i);
+    default:
+      return null;
+  }
+}
+
+/** A link (§3.4). Task 7 gives it its rules; until then it is today's: the text, then its URL. */
+function renderLink(url: string, children: PhrasingContent[], ctx: Ctx, key: number): ReactNode {
+  const label = children.map(textOf).join("");
+  return (
+    <Fragment key={key}>
+      {renderInline(children, ctx)}
+      {label !== url && <span className="hh-md-url">{` (${url})`}</span>}
+    </Fragment>
+  );
+}
+
+/** An image (§3.2). Task 7 reads local files; until then its alt text. */
+function renderImage(_url: string, alt: string, _ctx: Ctx, key: number): ReactNode {
+  return (
+    <span key={key} className="hh-md-alt">
+      {alt}
+    </span>
+  );
+}
+
+/** A footnote reference. Task 6 numbers and links it; until then its label. */
+function renderFootnoteReference(id: string, _ctx: Ctx, key: number): ReactNode {
+  return <sup key={key}>{id}</sup>;
+}
+
+function renderHeading(n: Heading, ctx: Ctx, key: number): ReactNode {
+  if (n.depth > 4) {
+    return (
+      <p key={key} className="hh-md-heading">
+        <strong>{renderInline(n.children, ctx)}</strong>
+      </p>
+    );
+  }
+  return createElement(`h${n.depth}`, { key, id: `${ctx.prefix}${ctx.slug(textOf(n))}`, className: "hh-md-h", "data-heading": "" }, renderInline(n.children, ctx));
+}
+
+function renderList(n: List, ctx: Ctx, key: number): ReactNode {
+  const items = n.children.map((item, j) => (
+    <li key={j} className={item.checked === null || item.checked === undefined ? undefined : "hh-md-task"}>
+      {typeof item.checked === "boolean" && <input type="checkbox" checked={item.checked} disabled readOnly />}
+      {renderBlocks(item.children, ctx, !n.spread && !item.spread)}
+    </li>
+  ));
+  if (n.ordered) {
+    return (
+      <ol key={key} className="hh-md-list" start={n.start === 1 || n.start === null || n.start === undefined ? undefined : n.start}>
+        {items}
+      </ol>
+    );
+  }
+  return (
+    <ul key={key} className="hh-md-list">
+      {items}
+    </ul>
+  );
+}
+
+const alignClass = (a: NonNullable<Table["align"]>[number] | undefined): string | undefined =>
+  a === "right" ? "hh-num" : a === "center" ? "hh-align-center" : undefined;
+
+function renderTable(n: Table, ctx: Ctx, key: number): ReactNode {
+  const [head, ...rows] = n.children;
+  const align = n.align ?? [];
+  return (
+    <div key={key} className="hh-md-table" role="region" tabIndex={0} aria-label={ctx.t("reader.table")}>
+      <table>
+        {head && (
+          <thead>
+            <tr>
+              {head.children.map((c, i) => (
+                <th key={i} className={alignClass(align[i])}>
+                  {renderInline(c.children, ctx)}
+                </th>
+              ))}
+            </tr>
+          </thead>
+        )}
+        <tbody>
+          {rows.map((r, j) => (
+            <tr key={j}>
+              {r.children.map((c, i) => (
+                <td key={i} className={alignClass(align[i])}>
+                  {renderInline(c.children, ctx)}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/** A fenced or indented code block. Task 8 highlights it and Task 9 draws Mermaid. */
+function renderCode(n: Code, _ctx: Ctx, key: number, _caption?: string): ReactNode {
+  return (
+    <pre key={key} className="hh-md-code">
+      <code>{n.value}</code>
+    </pre>
+  );
+}
+
+/** A blockquote. Task 6 turns callouts into boxes. */
+function renderBlockquote(children: RootContent[], ctx: Ctx, key: number): ReactNode {
+  return <blockquote key={key}>{renderBlocks(children, ctx)}</blockquote>;
+}
+
+function renderBlock(n: RootContent, ctx: Ctx, key: number, tight: boolean, caption?: string): ReactNode {
+  switch (n.type) {
+    case "paragraph":
+      return tight ? <Fragment key={key}>{renderInline(n.children, ctx)}</Fragment> : <p key={key}>{renderInline(n.children, ctx)}</p>;
+    case "heading":
+      return renderHeading(n, ctx, key);
+    case "list":
+      return renderList(n, ctx, key);
+    case "table":
+      return renderTable(n, ctx, key);
+    case "code":
+      return renderCode(n, ctx, key, caption);
+    case "blockquote":
+      return renderBlockquote(n.children, ctx, key);
+    case "thematicBreak":
+      return <hr key={key} />;
+    case "html":
+      return (
+        <p key={key} className="hh-md-raw">
+          {n.value}
+        </p>
+      );
+    // Definitions are drawn where they are used; footnote definitions at the end (Task 6).
+    default:
+      return null;
+  }
+}
+
+/** Children of a block, in order. `tight`: a tight list item's paragraphs are drawn without `<p>`. */
+function renderBlocks(nodes: RootContent[], ctx: Ctx, tight = false): ReactNode[] {
+  return nodes.map((n, i) => renderBlock(n, ctx, i, tight));
+}
+
+function collectDefinitions(tree: Root): Map<string, Definition> {
+  const out = new Map<string, Definition>();
+  const walk = (node: Nodes) => {
+    if (node.type === "definition" && !out.has(node.identifier)) out.set(node.identifier, node);
+    if ("children" in node) for (const c of node.children as Nodes[]) walk(c);
+  };
+  walk(tree);
+  return out;
+}
+
+export interface MarkdownProps {
+  /** The Markdown text. */
+  source: string;
+  /** Each new word fades in (an answer arriving). */
+  fade?: boolean;
+  /** A document (the reader, or a harness view of a file): its front-matter is hidden and soft breaks are spaces. */
+  document?: boolean;
+  /** The document's path inside the folder: relative links and images resolve from its folder. */
+  path?: string;
+  /** Put before every id; default: one of this component's own (the reader passes ""). */
+  idPrefix?: string;
+}
+
+/** Markdown as React elements (document-reader spec §3). */
+export function Markdown({ source, fade = false, document = false, path = "", idPrefix }: MarkdownProps) {
+  const { t } = useTranslation();
+  const auto = useId();
+  const prefix = idPrefix ?? `m${auto.replace(/[^A-Za-z0-9]/g, "")}-`;
+  const text = document ? splitFrontMatter(source).body : source;
+  const tree = useMemo(() => parseMarkdown(text), [text]);
+  const definitions = useMemo(() => collectDefinitions(tree), [tree]);
+  // A fresh slugger per draw: ids come out in document order every time.
+  const ctx: Ctx = { fade, breaks: !document, prefix, slug: createSlugger(), source: text, base: path, definitions, t };
+  return <>{renderBlocks(tree.children, ctx)}</>;
+}
+
+/** A heading the reader's table of contents lists. */
+export interface OutlineItem {
+  depth: 2 | 3;
+  text: string;
+  id: string;
 }
 
 /**
- * The same text without Markdown marks, for screen readers. Citations `[[frag:<id>]]` (outside code blocks) are read
- * as their label when `cite` knows it, else left out (material spec §9).
+ * The document's `##` and `###` headings with the ids `Markdown` gives them (empty prefix), its `##` texts for the
+ * template check, and its front-matter. Ids are made in the same order as the renderer makes them.
  */
-export function markdownToPlain(text: string, cite?: (id: string) => string | undefined): string {
-  return parseBlocks(text)
-    .map((b) => {
-      switch (b.t) {
-        case "p":
-          return plainCitations(b.lines.map((l) => plainInline(parseInline(l))).join("\n"), cite);
-        case "h":
-          return plainCitations(plainInline(parseInline(b.text)), cite);
-        case "ul":
-          return plainCitations(b.items.map((item) => item.map((l) => plainInline(parseInline(l))).join("\n")).join("\n"), cite);
-        case "ol":
-          return plainCitations(b.items.map((item, j) => `${b.start + j}. ${item.map((l) => plainInline(parseInline(l))).join("\n")}`).join("\n"), cite);
-        case "pre":
-          return b.text;
-      }
-    })
-    .join("\n\n");
+export function documentOutline(source: string): { front: Record<string, string>; outline: OutlineItem[]; sections: string[] } {
+  const fm = splitFrontMatter(source);
+  const slug = createSlugger();
+  const outline: OutlineItem[] = [];
+  const sections: string[] = [];
+  const walk = (node: Nodes) => {
+    if (node.type === "footnoteDefinition") return;
+    if (node.type === "heading" && node.depth <= 4) {
+      const text = textOf(node);
+      const id = slug(text);
+      if (node.depth === 2) sections.push(text);
+      if (node.depth === 2 || node.depth === 3) outline.push({ depth: node.depth, text, id });
+    }
+    if ("children" in node) for (const c of (node as Parents).children as Nodes[]) walk(c);
+  };
+  walk(parseMarkdown(fm.body));
+  return { front: fm.data, outline, sections };
 }
+
+export type { FootnoteDefinition };

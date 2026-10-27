@@ -8,7 +8,7 @@ import { renderIn } from "./render";
 
 afterEach(cleanup);
 
-const md = (text: string) => render(<div>{<Markdown text={text} />}</div>).container.firstElementChild as HTMLElement;
+const md = (text: string) => render(<div>{<Markdown source={text} />}</div>).container.firstElementChild as HTMLElement;
 const actions = { respond: () => true, choose: () => true, open: async () => true, reveal: async () => true, active: false };
 
 describe("Markdown", () => {
@@ -54,14 +54,6 @@ describe("Markdown", () => {
     expect(lists[1].getAttribute("start")).toBe("3");
   });
 
-  it("shows headings as bold lines", () => {
-    const el = md("## The **manifest** ##\nBody");
-    expect(el.querySelector("h1,h2,h3,h4,h5,h6")).toBeNull();
-    const heading = el.querySelector("p.hh-md-heading > strong");
-    expect(heading?.textContent).toBe("The manifest");
-    expect(el.querySelectorAll("p")[1].textContent).toBe("Body");
-  });
-
   it("renders fenced code blocks verbatim, also unclosed while streaming", () => {
     const el = md("Before\n```ts\nconst a = **b**;\n\n<b>x</b>\n```\nAfter");
     expect(el.querySelector("pre > code")?.textContent).toBe("const a = **b**;\n\n<b>x</b>");
@@ -70,10 +62,60 @@ describe("Markdown", () => {
     expect(md("```\nhalf").querySelector("pre")?.textContent).toBe("half");
   });
 
-  it("shows links as text with their URL, never as clickable links", () => {
-    const el = md("See [the docs](https://example.com/x) and [js](javascript:alert(1)) and https://example.com");
-    expect(el.querySelector("a")).toBeNull();
-    expect(el.textContent).toBe("See the docs (https://example.com/x) and js (javascript:alert(1)) and https://example.com");
+  it("draws real headings # to #### with deduplicated anchor ids; ##### stays a bold line", () => {
+    const el = render(<Markdown source={"# Top\n## The **manifest**\n## The manifest\n#### Four\n##### Five"} idPrefix="" />).container;
+    expect([...el.querySelectorAll("h1,h2,h3,h4")].map((h) => [h.tagName, h.id, h.textContent])).toEqual([
+      ["H1", "top", "Top"],
+      ["H2", "the-manifest", "The manifest"],
+      ["H2", "the-manifest-1", "The manifest"],
+      ["H4", "four", "Four"],
+    ]);
+    expect(el.querySelector("p.hh-md-heading > strong")?.textContent).toBe("Five");
+  });
+
+  it("prefixes ids per message, so two answers never share one", () => {
+    const { container } = render(
+      <>
+        <Markdown source="## Same" />
+        <Markdown source="## Same" />
+      </>,
+    );
+    const ids = [...container.querySelectorAll("h2")].map((h) => h.id);
+    expect(ids[0]).not.toBe(ids[1]);
+    expect(ids.every((id) => id.endsWith("same"))).toBe(true);
+  });
+
+  it("draws GFM tables in a scrolling box, right-aligned columns with tabular numbers", () => {
+    const el = md("| Option | Cost |\n|:--|--:|\n| A | 10 |\n| B | 200 |");
+    const box = el.querySelector(".hh-md-table");
+    expect(box?.getAttribute("role")).toBe("region");
+    expect(box?.getAttribute("tabindex")).toBe("0");
+    expect([...el.querySelectorAll("thead th")].map((th) => th.textContent)).toEqual(["Option", "Cost"]);
+    expect([...el.querySelectorAll("tbody tr")].map((tr) => [...tr.children].map((c) => c.textContent))).toEqual([["A", "10"], ["B", "200"]]);
+    expect(el.querySelectorAll("td.hh-num")).toHaveLength(2);
+    expect(el.querySelector("th.hh-num")?.textContent).toBe("Cost");
+  });
+
+  it("task lists are read-only checkboxes", () => {
+    const el = md("- [x] done\n- [ ] to do");
+    const boxes = [...el.querySelectorAll<HTMLInputElement>("li input[type=checkbox]")];
+    expect(boxes.map((b) => [b.checked, b.disabled])).toEqual([[true, true], [false, true]]);
+  });
+
+  it("strikethrough", () => {
+    expect(md("~~gone~~").querySelector("del")?.textContent).toBe("gone");
+  });
+
+  it("a document hides its front-matter and keeps soft line breaks as spaces", () => {
+    const el = render(<Markdown source={"---\ntitle: T\nkind: adr\n---\nOne\ntwo"} document />).container;
+    expect(el.textContent).not.toContain("title:");
+    expect(el.querySelector("p")?.innerHTML).toBe("One\ntwo");
+  });
+
+  it("parses long runs of spaces without stalling", () => {
+    const start = Date.now();
+    md(`# x${" ".repeat(50_000)}y\n\n- a${" ".repeat(50_000)}b\n\n| a${" ".repeat(50_000)}| b |\n|--|--|`);
+    expect(Date.now() - start).toBeLessThan(2000);
   });
 
   it("keeps raw HTML as text", () => {
@@ -114,7 +156,7 @@ describe("citations (material spec §9)", () => {
     const cite = { label: async (id: string) => (id === "ch2-007" ? "ch2.pdf, p.4–5" : null), open: (id: string) => void opened.push(id) };
     render(
       <CitationContext.Provider value={cite}>
-        <Markdown text="Equivalent fractions name the same amount [[frag:ch2-007]]." />
+        <Markdown source="Equivalent fractions name the same amount [[frag:ch2-007]]." />
       </CitationContext.Provider>,
     );
     const button = await screen.findByRole("button", { name: "ch2.pdf, p.4–5" });
@@ -123,14 +165,14 @@ describe("citations (material spec §9)", () => {
   });
 
   it("without material the text stays as it is (D0)", () => {
-    render(<Markdown text="Look [[frag:ch2-007]]." />);
+    render(<Markdown source="Look [[frag:ch2-007]]." />);
     expect(screen.getByText("Look [[frag:ch2-007]].")).toBeTruthy();
   });
 
   it("an unknown fragment stays text", async () => {
     render(
       <CitationContext.Provider value={{ label: async () => null, open: () => {} }}>
-        <Markdown text="See [[frag:zz-001]]." />
+        <Markdown source="See [[frag:zz-001]]." />
       </CitationContext.Provider>,
     );
     expect(await screen.findByText("[[frag:zz-001]]", { exact: false })).toBeTruthy();
@@ -145,7 +187,7 @@ describe("citations (material spec §9)", () => {
     await renderIn(
       "en",
       <CitationContext.Provider value={{ label: () => label, open: () => {} }}>
-        <Markdown text="Same [[frag:ch2-001]]." />
+        <Markdown source="Same [[frag:ch2-001]]." />
       </CitationContext.Provider>,
     );
     expect(screen.queryByRole("button")).toBeNull();
@@ -165,7 +207,7 @@ describe("citations (material spec §9)", () => {
   it("a citation inside bold; a malformed one stays text", async () => {
     render(
       <CitationContext.Provider value={{ label: async () => "ch2.pdf, p.1", open: () => {} }}>
-        <Markdown text="**See [[frag:ch2-001]]** and [[frag:Bad id]]." />
+        <Markdown source="**See [[frag:ch2-001]]** and [[frag:Bad id]]." />
       </CitationContext.Provider>,
     );
     expect(await screen.findByRole("button", { name: "ch2.pdf, p.1" })).toBeTruthy();

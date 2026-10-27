@@ -256,6 +256,24 @@ select:focus-visible { outline: 2px solid var(--hh-ink); outline-offset: 2px; }
 .hh-md-code { margin: 0 0 14px; padding: 10px 12px; overflow-x: auto; border: 1px solid var(--hh-line); border-radius: 8px; background: var(--hh-surface); }
 .hh-md-code code { font-size: 13px; line-height: 1.5; white-space: pre; overflow-wrap: normal; }
 .hh-md-url { color: var(--hh-muted); overflow-wrap: anywhere; }
+.hh-md-h { font-family: var(--hh-display); line-height: 1.25; margin: 1.2em 0 0.4em; color: var(--hh-ink); scroll-margin-top: 16px; }
+h1.hh-md-h { font-size: 1.6em; font-weight: 600; }
+h2.hh-md-h { font-size: 1.3em; font-weight: 600; }
+h3.hh-md-h { font-size: 1.1em; font-weight: 600; }
+h4.hh-md-h { font-size: 1em; font-weight: 600; color: var(--hh-slate); }
+.hh-message .hh-md-h:first-child { margin-top: 0; }
+.hh-md-table { overflow-x: auto; max-width: 100%; margin: 0.8em 0; border: 1px solid var(--hh-line); border-radius: 8px; }
+.hh-md-table table { border-collapse: collapse; width: max-content; min-width: 100%; font-size: 0.95em; }
+.hh-md-table th, .hh-md-table td { padding: 6px 10px; border-bottom: 1px solid var(--hh-line); text-align: left; vertical-align: top; }
+.hh-md-table thead th { position: sticky; top: 0; background: var(--hh-sheet); font-weight: 600; }
+.hh-md-table tbody tr:last-child td { border-bottom: none; }
+.hh-md-table .hh-num { text-align: right; font-variant-numeric: tabular-nums; }
+.hh-md-table .hh-align-center { text-align: center; }
+.hh-md-task { list-style: none; }
+.hh-md-task > input { margin: 0 6px 0 -18px; vertical-align: middle; }
+.hh-md-raw { white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.9em; color: var(--hh-slate); }
+.hh-md-alt { color: var(--hh-muted); font-style: italic; }
+blockquote { margin: 0.8em 0; padding: 0 0 0 12px; border-left: 3px solid var(--hh-line-strong); color: var(--hh-slate); }
 .hh-message.user { justify-self: end; background: var(--hh-surface); border: 1px solid var(--hh-line); border-radius: 10px; padding: 10px 14px; font-size: 14px; }
 .hh-who { color: var(--hh-muted); font-size: 12px; }
 /* A turn at work (mockups "Trabajando", collapsed and expanded): one status row, the steps behind a toggle. */

@@ -39,9 +39,11 @@ export function sidekickBrief(o: {
   sidekick?: { name: string; personality: string; purposes: readonly SidekickPurposeDef[] };
 }): string {
   const k = o.sidekick;
+  // A name is the person's text: one line, so it can't open a section of its own.
+  const name = (k?.name ?? o.name).replace(/\s+/g, " ").trim();
   const lines = k
-    ? [`# ${k.name}`, "", `You are ${k.name}, a sidekick inside the app "${o.harness}". You never act; you only suggest.`]
-    : [`# ${o.name}`, "", `You are ${o.name}, the prompt coach inside the app "${o.harness}".`];
+    ? [`# ${name}`, "", `You are ${name}, a sidekick inside the app "${o.harness}". You never act; you only suggest.`]
+    : [`# ${name}`, "", `You are ${name}, the prompt coach inside the app "${o.harness}".`];
   if (k?.personality.trim()) lines.push("", "## Personality", "", k.personality.trim());
   lines.push("", "## Rules", "", ...SIDEKICK_RULES.map((r) => `- ${r}`));
   for (const p of k?.purposes ?? []) {

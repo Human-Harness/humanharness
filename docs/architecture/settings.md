@@ -49,6 +49,7 @@ The structural rules are manifest schema errors: `defineHarness` and `loadHarnes
 - Segmented, select and switch save on change; number and text inputs save on blur or Enter. A value the store refuses shows its message under the field.
 - "More options" holds the `advanced` fields. "Back to the app's defaults" deletes the stored record, resetting every field of the tab; it shows only when some value differs from its default.
 - `SettingsController` (`packages/shell/src/main/settings.ts`) answers the window over IPC: `hh:settingsGet` (values and pending fields), `hh:settingsSet`, `hh:settingsReset`, and the push event `hh:settings` on every change. Results travel as data (`SettingsResult`), never as thrown errors.
+- A `form` setup step can show some settings on the setup screen; it saves them through the same controller, one field at a time. The harness's tab starts with the setup steps list ("Setup") when the harness has `setup`, and is named Setup when it has steps but no settings (`docs/architecture/setup.md`).
 - A harness's own screens use `HarnessClient.settings` (`get`, `set`, `reset`, `onChange`). `get()` gives every field's value, defaults included. `client.data` can read `settings` (it holds only the changed fields) but not write it: `hh:data` refuses a put, patch or delete on `settings` with "Settings change through client.settings" (`harnessUiDataRequests`), so every change keeps the controller's rules.
 
 ## How values reach the agent

@@ -123,6 +123,8 @@ The agent's own request to move stays a recorded `set_phase` call in `blocks` (`
 
 `run --record` warns up front when the match it will save is also in another brief.
 
+`check` also warns with `setup-mock` when an interview setup step's action has no recording, since mock mode can't play the interview. It does so only when `mock/` already holds at least one recording: a harness that doesn't use mock mode gets no warning (`docs/architecture/setup.md`).
+
 ## Tests
 
 - `packages/fake-agent/test/mock.test.ts` and `mock-replay.test.ts`: the schema and the walk (branch, `*`, fallback, close, missing close, state, phase changes and the wrap-up). `packages/fake-agent/fixtures/phases-harness/mock/session.json` is a recording with them.

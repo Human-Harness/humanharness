@@ -90,7 +90,7 @@ import { QUESTIONS, cleanModels, engineOffer, firstOffered, fitEffort, nearestTi
 import { chooseModeHandler } from "./mode-ipc";
 import { setPhaseHandler, timeBoxOffered } from "./phase-ipc";
 import { requireNoticeForChoice, requireNoticeForTurn } from "./notice-policy";
-import { archiveStaleChat, startNewChatIfEngineChanged } from "./engine-switch";
+import { archiveChatsOnEngineChange, archiveStaleChat, startNewChatIfEngineChanged } from "./engine-switch";
 import { type RunningSetup, runSetupProcess, setupCommand, stopSetupProcess } from "./setup-runner";
 import { runSetupStep } from "./setup-step";
 import { type SharedEngineRecord, SharedConfigStore, sharedConfigDir } from "./shared-config";
@@ -820,7 +820,12 @@ async function saveConfigPatch(patch: AppConfig, before: AppConfig): Promise<voi
         dropRuntime,
         archiveChat: async () => {
           const c = await validConfig();
-          return c && c.engineId === engineId ? startNewChatIfEngineChanged(baseOf(c), engineId) : null;
+          if (!c || c.engineId !== engineId) return null;
+          // D0: one folder, as before. With profiles, every profile's chat (spec §5).
+          if (!profilesCtl) return startNewChatIfEngineChanged(baseOf(c), engineId);
+          const active = baseOf(c);
+          const others = (await profilesCtl.state()).list.map((p) => profileDir(c.folder, p.id)).filter((f) => f !== active);
+          return archiveChatsOnEngineChange(active, others, engineId);
         },
       },
       // The new engine is saved: the window gets the new state; the next chat load archives the old chat.

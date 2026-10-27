@@ -32,7 +32,9 @@ const harness = defineHarness({
   author: "t",
 });
 
-function setup(opts: { steps?: HarnessSetupStep[]; base?: string | null; ranBefore?: boolean; settingFails?: boolean; writeFails?: boolean } = {}) {
+function setup(
+  opts: { steps?: HarnessSetupStep[]; base?: string | null; ranBefore?: boolean | (() => Promise<boolean>); settingFails?: boolean; writeFails?: boolean } = {},
+) {
   const folder = opts.base === null ? null : (opts.base ?? fs.mkdtempSync(path.join(root, "f-")));
   const store = folder ? new DataStore(folder, harness.data) : null;
   const pushed: SetupStepsState[] = [];
@@ -58,7 +60,7 @@ function setup(opts: { steps?: HarnessSetupStep[]; base?: string | null; ranBefo
     },
     settingValues: async () => values,
     openAction: async () => open,
-    ranBefore: async () => opts.ranBefore ?? false,
+    ranBefore: async () => (typeof opts.ranBefore === "function" ? opts.ranBefore() : (opts.ranBefore ?? false)),
     quitting: () => quitting,
     changed: (s) => void pushed.push(s),
     now: () => new Date(NOW),
@@ -86,6 +88,45 @@ describe("SetupSteps: state", () => {
     const t = setup({ ranBefore: true });
     expect((await t.ctl.state()).blocking).toEqual([]);
     expect(t.file()).toEqual({ version: 1, steps: {}, finishedAt: NOW, known: [] });
+  });
+
+  it("a setup.json it can't read (EACCES) reads as empty, and nothing ever saves over it", async () => {
+    const t = setup({ ranBefore: true });
+    const file = path.join(t.folder!, ".harness", "setup.json");
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const text = `${JSON.stringify({ version: 1, steps: { ready: { state: "done", at: NOW }, estilo: { state: "skipped", at: NOW } } })}\n`;
+    fs.writeFileSync(file, text);
+    fs.chmodSync(file, 0o000);
+    const logs: unknown[] = [];
+    const spy = vi.spyOn(console, "error").mockImplementation((m: unknown) => void logs.push(m));
+    try {
+      expect((await t.ctl.state()).steps.ready).toBe("missing");
+      await t.store!.put("profile", { name: "Sofi", goal: "Pass" }, person);
+      expect(await t.ctl.complete("ready")).toEqual({ ok: false, reason: "not-ready" });
+      expect(await t.ctl.complete("conocerte")).toEqual({ ok: false, reason: "not-ready" });
+      expect(await t.ctl.skip("goal")).toEqual({ ok: false, reason: "not-ready" });
+      expect(await t.ctl.submit("goal", { goal: "Pass maths" })).toEqual({ ok: false, reason: "not-ready" });
+      expect((await t.ctl.finish()).steps.ready).toBe("missing");
+      await t.ctl.acknowledge();
+    } finally {
+      spy.mockRestore();
+      fs.chmodSync(file, 0o644);
+    }
+    expect(fs.readFileSync(file, "utf8")).toBe(text);
+    // The form's write didn't happen either: the step's state couldn't be kept.
+    expect(await t.store!.get("profile", undefined, person)).toEqual({ name: "Sofi", goal: "Pass" });
+    expect(logs.every((m) => m === "Could not read setup.json")).toBe(true);
+    expect(t.pushed).toEqual([]);
+  });
+
+  it("state() waits for a change in flight, so its backfill never lands over a new mark", async () => {
+    // state() looks at the folder first and slowly: unserialized, its backfill would be saved after the mark.
+    let calls = 0;
+    const t = setup({ ranBefore: async () => (calls++ === 0 ? new Promise((r) => setTimeout(() => r(true), 50)) : true) });
+    const [, done] = await Promise.all([t.ctl.state(), t.ctl.complete("ready")]);
+    expect(done.ok).toBe(true);
+    expect(t.file().steps.ready?.state).toBe("done");
+    expect((await t.ctl.state()).steps.ready).toBe("done");
   });
 });
 

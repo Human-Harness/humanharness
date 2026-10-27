@@ -588,7 +588,7 @@ export interface SetupStepsState {
 
 /**
  * How a step's submit, completion or skip went: the new state, or why not. `unknown`: no such step (or the wrong call for
- * its kind); `not-ready`: the app isn't set up or is closing; `open`: the interview's task is still open; `incomplete`:
+ * its kind); `not-ready`: the app isn't set up, is closing, or can't read its setup.json; `open`: the interview's task is still open; `incomplete`:
  * its collection holds no valid record; `required`: a required step can't be skipped; `invalid`: the form's fields were
  * refused (`errors`, by field; "" for the whole form).
  */

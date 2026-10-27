@@ -35,7 +35,9 @@ export interface SetupStepsDeps {
 }
 
 const invalid = (errors: InputIssue[]): SetupStepResult => ({ ok: false, reason: "invalid", errors });
-const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+/** Also when `setup.json` can't be read: saving would lose every recorded step. */
+const NOT_READY: SetupStepResult = { ok: false, reason: "not-ready" };
+const isRecord =(v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
 /**
  * The harness's setup steps in the main process (setup-steps spec §3–§5). State lives in `.harness/setup.json`; what a
@@ -49,9 +51,9 @@ export class SetupSteps {
     this.ids = d.steps.map((s) => s.id);
   }
 
-  async state(): Promise<SetupStepsState> {
-    const base = await this.d.base().catch(() => null);
-    return setupState(base ? await this.read(base) : emptySetup(), this.d.steps);
+  /** In line with the changes: a read can write the backfill (`read`), which must not land over a new mark. */
+  state(): Promise<SetupStepsState> {
+    return this.serial(() => this.current());
   }
 
   /** A form step's current values: the record's fields it asks for, or the settings' values. {} for anything else. */
@@ -75,6 +77,8 @@ export class SetupSteps {
       const base = await this.ready();
       if (!base) return { ok: false, reason: "not-ready" };
       if (!isRecord(value)) return invalid([{ path: "", message: "Expected the form's fields" }]);
+      // The step's state couldn't be kept: don't write its data either.
+      if (!(await this.read(base))) return NOT_READY;
       const errors = step.settings ? await this.saveSettings(step.settings, value) : await this.saveRecord(step, value);
       if (errors.length > 0) return invalid(errors);
       return this.mark(base, step.id, "done");
@@ -105,6 +109,7 @@ export class SetupSteps {
       const base = await this.ready();
       if (!base) return { ok: false, reason: "not-ready" };
       const file = await this.read(base);
+      if (!file) return NOT_READY;
       if (Object.hasOwn(file.steps, step.id) && file.steps[step.id].state === "done") return { ok: true, state: setupState(file, this.d.steps) };
       return this.mark(base, step.id, "skipped");
     });
@@ -122,8 +127,9 @@ export class SetupSteps {
 
   private async see(finishing: boolean): Promise<SetupStepsState> {
     const base = await this.ready();
-    if (!base) return this.state();
+    if (!base) return this.current();
     const file = await this.read(base);
+    if (!file) return setupState(emptySetup(), this.d.steps);
     const known = file.known ?? [];
     if ((!finishing || file.finishedAt) && this.ids.every((id) => known.includes(id))) return setupState(file, this.d.steps);
     const next: SetupFile = { ...file, ...(file.finishedAt || !finishing ? {} : { finishedAt: this.nowIso() }), known: [...this.ids] };
@@ -140,12 +146,24 @@ export class SetupSteps {
     return this.d.base().catch(() => null);
   }
 
-  /** The folder's file; a folder with no file that ran tasks before counts as set up before these steps existed. */
-  private async read(base: string): Promise<SetupFile> {
-    const stored = await new SetupStore(base, this.ids).load().catch((err: unknown) => {
+  /** What the window sees: an unreadable file reads as empty (nothing is saved over it). Not serialized: callers are. */
+  private async current(): Promise<SetupStepsState> {
+    const base = await this.d.base().catch(() => null);
+    return setupState((base ? await this.read(base) : null) ?? emptySetup(), this.d.steps);
+  }
+
+  /**
+   * The folder's file; a folder with no file that ran tasks before counts as set up before these steps existed.
+   * Null when the file is there but can't be read (EACCES, EIO, a failed set-aside): no write may save over it.
+   */
+  private async read(base: string): Promise<SetupFile | null> {
+    let stored: SetupFile | null;
+    try {
+      stored = await new SetupStore(base, this.ids).load();
+    } catch (err) {
       this.log("Could not read setup.json", err);
       return null;
-    });
+    }
     if (stored) return stored;
     if (!(await this.d.ranBefore(base).catch(() => false))) return emptySetup();
     const file: SetupFile = { ...emptySetup(), finishedAt: this.nowIso(), known: [] };
@@ -155,6 +173,7 @@ export class SetupSteps {
 
   private async mark(base: string, id: string, state: StepMark): Promise<SetupStepResult> {
     const file = await this.read(base);
+    if (!file) return NOT_READY;
     const next: SetupFile = { ...file, steps: { ...file.steps, [id]: { state, at: this.nowIso() } } };
     await this.save(base, next);
     return { ok: true, state: this.push(next) };

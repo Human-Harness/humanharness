@@ -7,6 +7,8 @@ import remarkParse from "remark-parse";
 import { unified } from "unified";
 import { CALLOUTS, type Callout, createSlugger, splitFrontMatter } from "@humanharness/harness-sdk/documents";
 import { CitationContext, splitCitations } from "./citations";
+import { imageTarget, isAutolink, linkTarget } from "./doc-links";
+import { DocumentContext, type DocumentHost } from "./documents-context";
 
 export { markdownToPlain } from "./markdown-plain";
 
@@ -32,6 +34,8 @@ interface Ctx {
   source: string;
   /** The document's own path (relative to the folder); "" in the chat. */
   base: string;
+  /** Opens documents and reads local images; null outside the chat and the reader. */
+  host: DocumentHost | null;
   definitions: Map<string, Definition>;
   /** Footnote ids in the order they are first referenced, and their definitions. */
   footnotes: { order: string[]; defs: Map<string, FootnoteDefinition> };
@@ -150,24 +154,92 @@ function renderPhrasing(n: PhrasingContent, ctx: Ctx, i: number): ReactNode {
   }
 }
 
-/** A link (§3.4). Task 7 gives it its rules; until then it is today's: the text, then its URL. */
+/** A link (§3.4): a document in the reader, an anchor, the browser for http(s), plain text for anything else. */
 function renderLink(url: string, children: PhrasingContent[], ctx: Ctx, key: number): ReactNode {
-  const label = children.map(textOf).join("");
+  const label = renderInline(children, ctx);
+  const text = children.map(textOf).join("");
+  // An autolink already shows its URL: no domain or URL after it.
+  const auto = isAutolink(text, url);
+  const target = linkTarget(url, ctx.base);
+  if (target.kind === "external") {
+    return (
+      <Fragment key={key}>
+        <a href={target.url} target="_blank" rel="noreferrer noopener" className="hh-md-link">
+          {label}
+        </a>
+        {!auto && <span className="hh-md-domain">{` (${target.domain})`}</span>}
+      </Fragment>
+    );
+  }
+  if (target.kind === "doc" && ctx.host) {
+    const host = ctx.host;
+    return (
+      <a
+        key={key}
+        href={url}
+        className="hh-md-link hh-md-doclink"
+        onClick={(e) => {
+          e.preventDefault();
+          host.open(target.path, target.anchor);
+        }}
+      >
+        {label}
+      </a>
+    );
+  }
+  if (target.kind === "anchor") {
+    const id = `${ctx.prefix}${target.id}`;
+    return (
+      <a key={key} href={`#${id}`} className="hh-md-link" onClick={(e) => jump(e, id)}>
+        {label}
+      </a>
+    );
+  }
   return (
     <Fragment key={key}>
-      {renderInline(children, ctx)}
-      {label !== url && <span className="hh-md-url">{` (${url})`}</span>}
+      {label}
+      {!auto && <span className="hh-md-url">{` (${url})`}</span>}
     </Fragment>
   );
 }
 
-/** An image (§3.2). Task 7 reads local files; until then its alt text. */
-function renderImage(_url: string, alt: string, _ctx: Ctx, key: number): ReactNode {
+/** An image (§3.2): only local files, read by the main process; a remote one is a link with its domain. */
+function renderImage(url: string, alt: string, ctx: Ctx, key: number): ReactNode {
+  const target = imageTarget(url, ctx.base);
+  if (target.kind === "remote") {
+    return (
+      <Fragment key={key}>
+        <a href={target.url} target="_blank" rel="noreferrer noopener" className="hh-md-link">
+          {alt || target.url}
+        </a>
+        <span className="hh-md-domain">{` (${target.domain})`}</span>
+      </Fragment>
+    );
+  }
+  if (target.kind === "local" && ctx.host) return <LocalImage key={key} path={target.path} alt={alt} host={ctx.host} />;
   return (
     <span key={key} className="hh-md-alt">
       {alt}
     </span>
   );
+}
+
+/** A local image, read through the host; its alt text until it arrives, or when it is refused. */
+function LocalImage({ path, alt, host }: { path: string; alt: string; host: DocumentHost }) {
+  const [src, setSrc] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    setSrc(null);
+    host.image(path).then(
+      (s) => live && setSrc(s),
+      () => live && setSrc(null),
+    );
+    return () => {
+      live = false;
+    };
+  }, [host, path]);
+  if (!src) return <span className="hh-md-alt">{alt}</span>;
+  return <img className="hh-md-img" src={src} alt={alt} />;
 }
 
 // Footnote ids carry a ':', which a heading slug never has, so they never collide with a heading's id.
@@ -466,6 +538,7 @@ function withoutPendingUnderline(text: string): string {
 /** Markdown as React elements (document-reader spec §3). Memoized: a streaming chat redraws only the growing message. */
 export const Markdown = memo(function Markdown({ source, fade = false, document = false, path = "", idPrefix }: MarkdownProps) {
   const { t } = useTranslation();
+  const host = useContext(DocumentContext);
   const auto = useId();
   const prefix = idPrefix ?? `m${auto.replace(/[^A-Za-z0-9]/g, "")}-`;
   const raw = document ? splitFrontMatter(source).body : source;
@@ -474,7 +547,7 @@ export const Markdown = memo(function Markdown({ source, fade = false, document 
   const definitions = useMemo(() => collectDefinitions(tree), [tree]);
   const defs = useMemo(() => collectFootnotes(tree), [tree]);
   // A fresh slugger and footnote order per draw: ids and numbers come out in document order every time.
-  const ctx: Ctx = { fade, breaks: !document, prefix, slug: createSlugger(), source: text, base: path, definitions, footnotes: { order: [], defs }, t };
+  const ctx: Ctx = { fade, breaks: !document, prefix, slug: createSlugger(), source: text, base: path, host, definitions, footnotes: { order: [], defs }, t };
   // The body first, so the notes' order is known when they are drawn.
   const body = renderBlocks(tree.children, ctx);
   return (

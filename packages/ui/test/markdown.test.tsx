@@ -1,8 +1,9 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { I18nextProvider } from "react-i18next";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { CitationContext } from "../src/citations";
+import { DocumentContext } from "../src/documents-context";
 import { Markdown, markdownToPlain } from "../src/markdown";
 import { Message } from "../src/Message";
 import { renderIn } from "./render";
@@ -360,5 +361,90 @@ describe("callouts, captions, footnotes (§3.2)", () => {
 
   it("a footnote never referenced is not listed", () => {
     expect(md("Text.\n\n[^x]: Lonely.").querySelector(".hh-md-footnotes")).toBeNull();
+  });
+});
+
+describe("links and images (§3.4)", () => {
+  const host = (over: Partial<{ open: (p: string, a?: string) => void; image: (p: string) => Promise<string | null> }> = {}) => ({
+    open: vi.fn(),
+    image: vi.fn(async () => null),
+    ...over,
+  });
+
+  it("an external link opens in the browser (target _blank) and shows its domain", () => {
+    const el = md("See [the docs](https://example.com/x).");
+    const a = el.querySelector("a")!;
+    expect(a.getAttribute("href")).toBe("https://example.com/x");
+    expect(a.getAttribute("target")).toBe("_blank");
+    expect(a.getAttribute("rel")).toBe("noreferrer noopener");
+    expect(el.textContent).toBe("See the docs (example.com).");
+  });
+
+  it("a bare URL is a link too, shown once", () => {
+    const el = md("Go to https://example.com now");
+    expect(el.querySelector("a")?.getAttribute("href")).toBe("https://example.com/");
+    expect(el.textContent).toBe("Go to https://example.com now");
+  });
+
+  it("www and email autolinks show only their label", () => {
+    const el = md("See www.example.com or <https://a.org/x> or write to a@b.co.");
+    expect(el.querySelector("a")?.getAttribute("href")).toBe("http://www.example.com/");
+    expect(el.textContent).toBe("See www.example.com or https://a.org/x or write to a@b.co.");
+  });
+
+  it("other schemes are plain text with their URL, as before", () => {
+    const el = md("[js](javascript:alert(1)) and [f](file:///etc/passwd)");
+    expect(el.querySelector("a")).toBeNull();
+    expect(el.textContent).toBe("js (javascript:alert(1)) and f (file:///etc/passwd)");
+  });
+
+  it("a reference definition to javascript: is plain text too", () => {
+    const el = md("Click [x] or [y][x].\n\n[x]: javascript:alert(1)");
+    expect(el.querySelector("a")).toBeNull();
+    expect(el.textContent).toBe("Click x (javascript:alert(1)) or y (javascript:alert(1)).");
+  });
+
+  it("a relative .md opens the reader through the context, resolved from the document", () => {
+    const h = host();
+    const { container } = render(
+      <DocumentContext.Provider value={h}>
+        <Markdown source="Read [ADR 7](../adr/007.md#context)." path="docs/notes/a.md" document />
+      </DocumentContext.Provider>,
+    );
+    fireEvent.click(container.querySelector("a")!);
+    expect(h.open).toHaveBeenCalledWith("docs/adr/007.md", "context");
+  });
+
+  it("without a context a .md link is plain text", () => {
+    const el = md("[ADR](adr.md)");
+    expect(el.querySelector("a")).toBeNull();
+    expect(el.textContent).toBe("ADR (adr.md)");
+  });
+
+  it("#anchor scrolls to the heading with this text's prefix", () => {
+    const scroll = vi.fn();
+    Element.prototype.scrollIntoView = scroll;
+    const { container } = render(<Markdown source={"[Risks](#risks)\n\n## Risks"} idPrefix="p-" />);
+    fireEvent.click(container.querySelector("a")!);
+    expect(scroll).toHaveBeenCalledTimes(1);
+    expect(container.querySelector("#p-risks")).not.toBeNull();
+  });
+
+  it("a local image is read through the context; a refusal shows its alt text", async () => {
+    const h = host({ image: vi.fn(async (p: string) => (p === "docs/a.png" ? "data:image/png;base64,AAA" : null)) });
+    render(
+      <DocumentContext.Provider value={h}>
+        <Markdown source={"![Chart](a.png) ![Gone](b.png)"} path="docs/x.md" document />
+      </DocumentContext.Provider>,
+    );
+    expect((await screen.findByRole("img", { name: "Chart" })).getAttribute("src")).toBe("data:image/png;base64,AAA");
+    expect(await screen.findByText("Gone")).toBeTruthy();
+  });
+
+  it("a remote image is a link with its domain, never loaded", () => {
+    const el = md("![Logo](https://cdn.x.com/l.png)");
+    expect(el.querySelector("img")).toBeNull();
+    expect(el.querySelector("a")?.getAttribute("href")).toBe("https://cdn.x.com/l.png");
+    expect(el.textContent).toBe("Logo (cdn.x.com)");
   });
 });

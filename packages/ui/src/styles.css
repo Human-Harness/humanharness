@@ -267,7 +267,11 @@ select:focus-visible { outline: 2px solid var(--hh-ink); outline-offset: 2px; }
 .hh-message.assistant > .hh-md-heading { margin: 24px 0 8px; }
 .hh-md-code { margin: 0 0 14px; padding: 10px 12px; overflow-x: auto; border: 1px solid var(--hh-line); border-radius: 8px; background: var(--hh-surface); }
 .hh-md-code code { font-size: 13px; line-height: 1.5; white-space: pre; overflow-wrap: normal; }
-.hh-md-url { color: var(--hh-muted); overflow-wrap: anywhere; }
+.hh-md-link { color: var(--hh-ink); text-decoration: underline; text-decoration-color: var(--hh-line-strong); text-underline-offset: 2px; overflow-wrap: anywhere; }
+.hh-md-link:hover { text-decoration-color: var(--hh-ink); }
+.hh-md-domain, .hh-md-url { color: var(--hh-muted); font-size: 0.9em; }
+.hh-md-url { overflow-wrap: anywhere; }
+.hh-md-img { max-width: 100%; height: auto; border-radius: 6px; }
 .hh-md-h { font-family: var(--hh-display); line-height: 1.25; margin: 1.2em 0 0.4em; color: var(--hh-ink); scroll-margin-top: 16px; }
 h1.hh-md-h { font-size: 1.6em; font-weight: 600; }
 h2.hh-md-h { font-size: 1.3em; font-weight: 600; }

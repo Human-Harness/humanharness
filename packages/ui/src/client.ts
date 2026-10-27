@@ -577,6 +577,25 @@ export interface SettingsState {
 /** How a settings change ended: the new state, or why it was refused (`message` absent: something went wrong). */
 export type SettingsResult = { ok: true; state: SettingsState } | { ok: false; message?: string };
 
+/** A harness setup step's state (setup-steps spec §4): done, skipped, or not done yet. */
+export type SetupStepStatus = "done" | "skipped" | "missing";
+
+/** The harness's setup steps now: each one's status, and the required ones that keep Home on "Set up" (manifest order). */
+export interface SetupStepsState {
+  steps: Record<string, SetupStepStatus>;
+  blocking: string[];
+}
+
+/**
+ * How a step's submit, completion or skip went: the new state, or why not. `unknown`: no such step (or the wrong call for
+ * its kind); `not-ready`: the app isn't set up or is closing; `open`: the interview's task is still open; `incomplete`:
+ * its collection holds no valid record; `required`: a required step can't be skipped; `invalid`: the form's fields were
+ * refused (`errors`, by field; "" for the whole form).
+ */
+export type SetupStepResult =
+  | { ok: true; state: SetupStepsState }
+  | { ok: false; reason: "unknown" | "not-ready" | "open" | "incomplete" | "required" | "invalid"; errors?: InputIssue[] };
+
 export { hearsDataChange } from "./data-change";
 
 /** Everything the renderer can ask the main process. Implemented by the preload as `window.hh`. */

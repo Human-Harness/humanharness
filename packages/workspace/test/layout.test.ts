@@ -1,6 +1,6 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { APP_SCOPE, MAIN_SCOPE, NOTES_PREFIX, chatFile, chatsDir, isScopeDir, isScopeId, notesPrefix, scopesFile, tasksFile, usageFile } from "../src";
+import { APP_SCOPE, MAIN_SCOPE, NOTES_PREFIX, chatFile, chatsDir, isScopeDir, isScopeId, notesPrefix, scopesFile, setupFile, tasksFile, usageFile } from "../src";
 
 describe("layout", () => {
   it("keeps today's places for a harness without scopes", () => {
@@ -10,6 +10,10 @@ describe("layout", () => {
     expect(chatFile("/w", MAIN_SCOPE)).toBe(path.join("/w", ".harness", "chats", "main.jsonl"));
     expect(tasksFile("/w")).toBe(path.join("/w", ".harness", "tasks.json"));
     expect(usageFile("/w")).toBe(path.join("/w", ".harness", "usage.jsonl"));
+  });
+
+  it("setup.json sits under .harness/, next to tasks.json (setup-steps spec §4)", () => {
+    expect(setupFile("/f")).toBe(path.join("/f", ".harness", "setup.json"));
   });
 
   it("gives each scope its own notes folder and chat", () => {

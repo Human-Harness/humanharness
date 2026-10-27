@@ -2,6 +2,7 @@ import type { Writable } from "node:stream";
 import { type ChoiceOption, type InputSpec, annotateSchema, choicesSchema, recommendModeSchema } from "@humanharness/harness-sdk";
 import { CORE_LOCALES } from "@humanharness/i18n";
 import type { Event } from "@humanharness/runtime";
+import type { TaskTurnNotice } from "@humanharness/ui/client";
 
 const DIM = "\x1b[2m";
 const RESET = "\x1b[0m";
@@ -49,8 +50,28 @@ export class TerminalView {
     }
   }
 
+  /** A turn the app starts on its own (task-phases spec §4.4, §5): its line, before its answer. */
+  taskTurn(n: TaskTurnNotice, label?: string): void {
+    this.newline();
+    this.write(n.kind === "wrap-up" ? "\nTime is almost up\n" : `\n— ${plain(label ?? n.phase ?? "")} —\n`);
+  }
+
+  /**
+   * The agent's proposal to move (task-phases spec §4.3), with how to act on it: to the current part (the close part
+   * is done) it says how to finish, to another part how to go there.
+   */
+  proposal(p: { to: string; reason: string }, label: string, current: boolean): void {
+    const reason = plain(p.reason);
+    const why = /[.!?]$/.test(reason) ? reason : `${reason}.`;
+    this.newline();
+    this.write(
+      current ? `\nThe AI says this part is done: ${why} Type q to finish.\n` : `\nThe AI proposes to move to ${plain(label)}: ${why} Type >phase ${p.to} to go there.\n`,
+    );
+  }
+
   private block(name: string, data: unknown, id?: string): void {
-    if (name === "save_note") return;
+    // Hidden state blocks: the run prints what follows from `set_phase` (a proposal, a part's line), never the call.
+    if (name === "save_note" || name === "set_phase") return;
     if (name === "choices") {
       const parsed = choicesSchema.safeParse(data);
       if (!parsed.success) return;

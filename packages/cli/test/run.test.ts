@@ -632,50 +632,51 @@ describe("run --set (harness settings)", () => {
   });
 });
 
-describe("run: task modes", () => {
-  const coach = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../fake-agent/fixtures/modes-harness");
-  const coachScript: ClaudeScript = {
-    steps: [...claudeTextLines("Done."), result],
-    turns: [
-      { match: "save_note", steps: [ui("save_note", { title: "Halves", summary: ["x"], decisions: [], files: [], open: [] }), result] },
-      { match: 'From now on work in the mode "Worked examples"', steps: [...claudeTextLines("Step one."), result] },
-      { match: 'From now on work in the mode "Feynman"', steps: [...claudeTextLines("Explain it to me."), result] },
-      {
-        match: "# Task: study",
-        steps: [
-          ...claudeTextLines("Let's pick a way."),
-          ui("show_recommend_mode", {
-            recommended: "socratic",
-            reasons: ["One key idea."],
-            alternatives: [
-              { mode: "feynman", why: "To say it back." },
-              { mode: "nope", why: "Not listed." },
-            ],
-          }),
-          result,
-        ],
-      },
-    ],
-  };
-  const run = (name: string, input: string, extra: { mode?: string } = {}) => {
-    const out = memoryStream();
-    const prompts = path.join(root, `${name}-prompts.jsonl`);
-    const folder = path.join(root, name);
-    const done = runTask({
-      harnessDir: coach,
-      action: "study",
-      engine: "claude",
-      folder,
-      ...extra,
-      input: lines(input),
-      output: out.stream,
-      engineCommand: { command: fakeClaudeCommand(), env: { HH_FAKE_SCRIPT: writeScript(root, coachScript), HH_FAKE_PROMPTS: prompts } },
-    });
-    return { done, out, folder, prompts: () => readJsonl(prompts).map((p) => (p as { prompt: string }).prompt) };
-  };
+const coach = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../fake-agent/fixtures/modes-harness");
+const coachScript: ClaudeScript = {
+  steps: [...claudeTextLines("Done."), result],
+  turns: [
+    { match: "save_note", steps: [ui("save_note", { title: "Halves", summary: ["x"], decisions: [], files: [], open: [] }), result] },
+    { match: 'From now on work in the mode "Worked examples"', steps: [...claudeTextLines("Step one."), result] },
+    { match: 'From now on work in the mode "Feynman"', steps: [...claudeTextLines("Explain it to me."), result] },
+    {
+      match: "# Task: study",
+      steps: [
+        ...claudeTextLines("Let's pick a way."),
+        ui("show_recommend_mode", {
+          recommended: "socratic",
+          reasons: ["One key idea."],
+          alternatives: [
+            { mode: "feynman", why: "To say it back." },
+            { mode: "nope", why: "Not listed." },
+          ],
+        }),
+        result,
+      ],
+    },
+  ],
+};
+/** Runs the modes fixture's `study` action (the coach). */
+const runCoach = (name: string, input: string, extra: { mode?: string } = {}) => {
+  const out = memoryStream();
+  const prompts = path.join(root, `${name}-prompts.jsonl`);
+  const folder = path.join(root, name);
+  const done = runTask({
+    harnessDir: coach,
+    action: "study",
+    engine: "claude",
+    folder,
+    ...extra,
+    input: lines(input),
+    output: out.stream,
+    engineCommand: { command: fakeClaudeCommand(), env: { HH_FAKE_SCRIPT: writeScript(root, coachScript), HH_FAKE_PROMPTS: prompts } },
+  });
+  return { done, out, folder, prompts: () => readJsonl(prompts).map((p) => (p as { prompt: string }).prompt) };
+};
 
+describe("run: task modes", () => {
   it("recommends first, then `m <id>` switches in the same session; a tier refusal says so and goes on", { timeout: 60_000 }, async () => {
-    const r = run("coach-switch", "m feynman\nm feynman\nm nope\nm worked\nq\n");
+    const r = runCoach("coach-switch", "m feynman\nm feynman\nm nope\nm worked\nq\n");
     await r.done;
     const text = r.out.text();
     expect(text).toContain("Recommended mode: socratic");
@@ -729,7 +730,7 @@ describe("run: task modes", () => {
   });
 
   it("--mode starts in that mode, its brief and default settings after the action's", { timeout: 60_000 }, async () => {
-    const r = run("coach-mode", "q\n", { mode: "socratic" });
+    const r = runCoach("coach-mode", "q\n", { mode: "socratic" });
     await r.done;
     expect(r.prompts()[0]).toContain(
       "## Mode: Socratic\n\nWork in this mode.\n\nLead with questions; let the person find the idea before you name it. Answer in English.\n\n- Ask few questions before explaining.",
@@ -738,7 +739,7 @@ describe("run: task modes", () => {
   });
 
   it("refuses a mode the action doesn't list, before anything runs", async () => {
-    await expect(run("coach-bad", "q\n", { mode: "nope" }).done).rejects.toThrow('Unknown mode "nope" for study. Modes: socratic, feynman, worked.');
+    await expect(runCoach("coach-bad", "q\n", { mode: "nope" }).done).rejects.toThrow('Unknown mode "nope" for study. Modes: socratic, feynman, worked.');
     expect(fs.existsSync(path.join(root, "coach-bad"))).toBe(false);
   });
 
@@ -749,5 +750,88 @@ describe("run: task modes", () => {
     const n = memoryIo(root);
     expect(await main(["run", "quiz", "--mode", "socratic", "--harness", coach], n.io)).toBe(2);
     expect(n.err()).toContain('Unknown mode "socratic" for quiz. Modes: (none).');
+  });
+});
+
+describe("run: task phases (task-phases spec §6)", () => {
+  const tutor = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../fake-agent/fixtures/phases-harness");
+  const tutorScript: ClaudeScript = {
+    steps: [...claudeTextLines("Listo."), result],
+    turns: [
+      { match: "save_note", steps: [ui("save_note", { title: "Fractions", summary: ["x"], decisions: [], files: [], open: [] }), result] },
+      { match: 'Next part of this task: "Close"', steps: [...claudeTextLines("Sum it up."), result] },
+      { match: 'Next part of this task: "Main block"', steps: [...claudeTextLines("Main now."), ui("set_phase", { to: "close", reason: "Covered." }), result] },
+      { match: "# Task: session", steps: [...claudeTextLines("What is a half?"), ui("set_phase", { to: "main", reason: "Recall done." }), result] },
+    ],
+  };
+  const run = (name: string, input: string, extra: { time?: number } = {}) => {
+    const out = memoryStream();
+    const prompts = path.join(root, `${name}-prompts.jsonl`);
+    const folder = path.join(root, name);
+    const done = runTask({
+      harnessDir: tutor,
+      action: "session",
+      engine: "claude",
+      folder,
+      ...extra,
+      input: lines(input),
+      output: out.stream,
+      engineCommand: { command: fakeClaudeCommand(), env: { HH_FAKE_SCRIPT: writeScript(root, tutorScript), HH_FAKE_PROMPTS: prompts } },
+    });
+    return { done, out, folder, prompts: () => readJsonl(prompts).map((p) => (p as { prompt: string }).prompt) };
+  };
+
+  it("auto moves from the warm-up; a proposal prints with its command; >phase moves; the close part closes on q", { timeout: 60_000 }, async () => {
+    const r = run("tutor-phases", ">phase close\nq\n");
+    await r.done;
+    const text = r.out.text();
+    expect(text).toContain("— Main block —");
+    expect(text).toContain("The AI proposes to move to Close: Covered. Type >phase close to go there.");
+    expect(text).toContain(">phase <id> to change part");
+    expect(text).toContain("— Close —");
+    const [first, main, close, closing] = r.prompts();
+    expect(first).toContain("## Parts of this task");
+    expect(main.startsWith('Next part of this task: "Main block" (`main`).')).toBe(true);
+    expect(close.startsWith('Next part of this task: "Close" (`close`).')).toBe(true);
+    expect(closing).toContain("save_note");
+    const usage = readJsonl(path.join(r.folder, ".harness", "usage.jsonl"));
+    expect(usage.map((u) => [u.phase, u.taskPhase])).toEqual([
+      ["run", "warmup"],
+      ["phase-change", "main"],
+      ["phase-change", "close"],
+      ["close", "close"],
+    ]);
+  });
+
+  it(">phase to the close part the task is in finishes it; a refused move says why", { timeout: 60_000 }, async () => {
+    const r = run("tutor-finish", ">phase nope\n>phase close\n>phase close\n");
+    await r.done;
+    const text = r.out.text();
+    expect(text).toContain("Not moved (unknown). Parts: warmup, main, close.");
+    expect(text).toContain(`Note: ${path.join(r.folder, ".harness", "notes", "session.md")}`);
+    expect(r.prompts().at(-1)).toContain("save_note");
+    expect(JSON.parse(fs.readFileSync(path.join(r.folder, ".harness", "tasks.json"), "utf8")).current).toBeNull();
+  });
+
+  it("--time starts with a time box: the first message says the time; a length not offered is refused", { timeout: 60_000 }, async () => {
+    const r = run("tutor-time", "q\n", { time: 30 });
+    await r.done;
+    expect(r.prompts()[0]).toContain("Time left: about 30 minutes.");
+    await expect(run("tutor-bad-time", "q\n", { time: 20 }).done).rejects.toThrow('Unknown time box "20" for session. Lengths: 15, 30, 45.');
+    expect(fs.existsSync(path.join(root, "tutor-bad-time"))).toBe(false);
+  });
+
+  it("humanharness run refuses a --time that isn't whole minutes", async () => {
+    const m = memoryIo(root);
+    expect(await main(["run", "session", "--time", "half", "--harness", tutor], m.io)).toBe(2);
+    expect(m.err()).toContain("--time takes minutes, such as 30.");
+  });
+
+  it("D0: an action without phases prints no part hint and >phase is a follow-up", { timeout: 60_000 }, async () => {
+    // The coach fixture's study action has no phases.
+    const r = runCoach("coach-no-phases", ">phase main\nq\n");
+    await r.done;
+    expect(r.out.text()).not.toContain(">phase <id>");
+    expect(r.prompts()[1]).toBe(">phase main");
   });
 });

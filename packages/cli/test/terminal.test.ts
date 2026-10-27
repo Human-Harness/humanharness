@@ -68,6 +68,26 @@ describe("TerminalView", () => {
     expect(out.text()).toBe("\n  Recommended mode: socratic\n    - One key idea.\n  Type m <mode> to pick one.\n");
   });
 
+  it("prints a turn the app starts on its own as its line: the part's label, or the wrap-up", () => {
+    const out = memoryStream();
+    const view = new TerminalView(out.stream, "Claude");
+    view.taskTurn({ task: "t1", kind: "phase", phase: "main", by: "agent" }, "Main block");
+    expect(out.text()).toBe("\n— Main block —\n");
+    view.taskTurn({ task: "t1", kind: "wrap-up" });
+    expect(out.text()).toBe("\n— Main block —\n\nTime is almost up\n");
+  });
+
+  it("prints a proposal with how to act on it, and never the set_phase call", () => {
+    const out = memoryStream();
+    const view = new TerminalView(out.stream, "Claude");
+    view.event({ type: "block", name: "set_phase", data: { to: "close", reason: "Covered." } });
+    view.proposal({ to: "close", reason: "Covered." }, "Close", false);
+    view.proposal({ to: "close", reason: "All\x1b[2J summed up" }, "Close", true);
+    expect(out.text()).toBe(
+      "\nThe AI proposes to move to Close: Covered. Type >phase close to go there.\n\nThe AI says this part is done: All[2J summed up. Type q to finish.\n",
+    );
+  });
+
   it("reads error messages from the core's English strings", () => {
     expect(errorMessage("engine-not-installed", "Codex")).toBe("I can't find Codex on this computer.");
     expect(errorMessage("something-new", "Codex")).toBe("something-new");

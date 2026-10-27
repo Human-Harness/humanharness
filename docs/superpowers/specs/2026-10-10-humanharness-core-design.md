@@ -110,6 +110,7 @@ Install and login data are added in the desktop-app plan, where onboarding uses 
 | Claude | unmodified official binary `claude -p`, user's own login | **allowed** | Claude Code's docs allow an end user to use their subscription in the unmodified binary even when a third-party product runs it. Conditions: accept the Commercial Terms (Console account), don't modify the binary, don't intermediate usage |
 | Claude | ACP adapter (Agent SDK) | **excluded** | The Agent SDK requires prior approval for claude.ai login. Reconsidered if Anthropic approves in writing |
 | Codex | `codex-acp` (or `codex exec --json`) with the user's ChatGPT login | **allowed** | OpenAI documents ChatGPT plan usage in open-source, locally hosted apps. A paid or server-hosted app requires filling their form |
+| OpenCode | `opencode acp`, user's own provider set up in OpenCode | **allowed** | MIT, unmodified; ACP documented by OpenCode. Provider terms are the user's; the notice says so. Claude Pro/Max does not work through it (Anthropic forbids it); an Anthropic API key does |
 | Gemini CLI | Google account login | **excluded** | Since 2026-06-18 it no longer serves free or AI Pro/Ultra accounts. Update 2026-10-11: Gemini Code Assist Standard/Enterprise went off sale on 2026-10-09 (auto-renewal ends in 2027); Google points individuals to Antigravity CLI |
 | Antigravity | official `agy_acp_server` | **pending** | Its terms forbid access through third-party software; no official permission |
 | Qwen Code | Qwen OAuth | **excluded** | The free tier closed on 2026-04-15 and there is no paid OAuth |
@@ -118,13 +119,13 @@ Install and login data are added in the desktop-app plan, where onboarding uses 
 | GLM Coding Plan | Claude Code against Z.ai's endpoint | **excluded** | The terms exclude third-party integrations |
 | MiniMax / DeepSeek | Claude Code against a compatible endpoint | **pending** | DeepSeek allows it, but the user configures the endpoint. MiniMax's binding terms unread. Both have strong data implications |
 
-**v1 engines:** Claude and Codex.
+**v1 engines:** Claude, Codex and OpenCode. A harness manifest's `engines` may include `"opencode"`; the demo does.
 
 **Legal gate:** only `allowed` engines appear in the onboarding of a distributed build. Development mode may use `pending` ones. Changing a status is a one-line change.
 
 ### Compliance rules (non-negotiable in the code)
 
-1. Never read, copy, forward or refresh tokens. Never read `~/.claude`, `~/.codex` or `~/.gemini`.
+1. Never read, copy, forward or refresh tokens. Never read `~/.claude`, `~/.codex`, `~/.gemini`, `~/.config/opencode` or `~/.local/share/opencode`.
 2. Never inject `ANTHROPIC_BASE_URL`, keys or credential configuration. Never alter the User-Agent. Never modify or patch binaries. Never hide or disable authentication methods (this includes stripping auth-related environment variables).
 3. No intermediary server. One account per user, interactive use (no mass loops or scheduled jobs).
 4. Login always goes through the provider's official flow (browser/CLI).

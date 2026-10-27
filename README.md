@@ -11,7 +11,7 @@ Each user brings **their own AI subscription** through the provider's official C
 ## How it works
 
 - **One harness = configuration + agentic flow + its own UI.** Engine, onboarding, files, history, languages, updates and packaging live in the core.
-- **Engine-agnostic.** Harnesses talk to the core runtime, which picks the transport for each CLI: the unmodified official `claude` binary for Claude, [ACP](https://agentclientprotocol.com) for the rest (Codex today).
+- **Engine-agnostic.** Harnesses talk to the core runtime, which picks the transport for each CLI: the unmodified official `claude` binary for Claude, [ACP](https://agentclientprotocol.com) for the rest: Codex, and OpenCode (any provider you set up in it, or a local model).
 - **An engine is supported only if its terms allow it.** Working technically is not enough.
 - **Users own their data.** It lives in a visible folder they choose, with an invisible local history to undo what the agent did. Nothing leaves their machine except toward the AI provider they picked. No telemetry.
 - **Usage awareness.** The app shows where the user stands on their plan's limits before running heavy workflows.

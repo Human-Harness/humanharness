@@ -1,6 +1,6 @@
 # OpenCode as a third engine
 
-Date: 2026-10-26. Status: approved design.
+Date: 2026-10-26. Status: approved design; implemented by plan 2026-10-27-opencode-engine.md.
 
 ## Why
 
@@ -60,6 +60,7 @@ It does not replace Claude or Codex. Those stay the route for people who pay a s
 - On `session/new`, OpenCode sends `configOptions` with `model` (values `provider/model`) and, for models with variants, `effort` (category `thought_level`). The runtime already turns `configOptions` into the model offer (`offeredModels`); Settings › Modelos shows that list.
 - To apply a task's model profile, the ACP transport calls `session/set_config_option` (`configId: "model"` or `"effort"`) after `session/new` or `session/load`. Codex applies profiles through `CODEX_CONFIG` at spawn; OpenCode does not need a restart. The transport picks the method per engine: a new optional `TransportDef` field `profile: "codex-config" | "config-option"`.
 - **light / standard / deep.** There is no fixed mapping, because the models depend on the provider. Default: every tier uses the session's default model; the user may assign a model per tier in Settings › Modelos (existing override). A `config_option_update` that removes the chosen model falls back to the default and emits the existing `model-unavailable` error.
+- The context cap is not sent to OpenCode; it compacts on its own (plan Q4).
 
 ## 4. Usage
 

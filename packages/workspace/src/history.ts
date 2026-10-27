@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import git from "isomorphic-git";
-import { DATA_PREFIX, NOTES_PREFIX, isScopeDir } from "./layout";
+import { DATA_PREFIX, MATERIAL_KEEP, NOTES_PREFIX, isScopeDir } from "./layout";
 import { BEFORE_MESSAGE } from "./subjects";
 
 /**
@@ -9,6 +9,12 @@ import { BEFORE_MESSAGE } from "./subjects";
  * most `depth` folders below `prefix` (material spec §4: `MATERIAL_KEEP`).
  */
 export type HistoryKeep = string | { readonly prefix: string; readonly match: RegExp; readonly depth: number };
+
+/**
+ * What the app's history keeps under `.harness/`: the notes and the data; with material, its registry and decisions
+ * (`MATERIAL_KEEP`). The one rule for the shell's history and the runtime's, so both agree (D0 without material).
+ */
+export const appHistoryKeep = (material: boolean): HistoryKeep[] => [NOTES_PREFIX, DATA_PREFIX, ...(material ? [MATERIAL_KEEP] : [])];
 
 const keeps = (k: HistoryKeep, file: string): boolean => (typeof k === "string" ? file.startsWith(k) : k.match.test(file));
 

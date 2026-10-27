@@ -544,7 +544,7 @@ function materialFindings(h: LoadedHarness): Finding[] {
   if (!m) return [];
   const out: Finding[] = [];
   if (m.tiers.review === "light")
-    out.push(warning("material-review-tier", "material.tiers.review is light: the check that keeps broken conversions out of tasks reads better at standard.", MANIFEST));
+    out.push(warning("material-review-tier", "material.tiers.review is light: the check that keeps broken conversions out of tasks works better at standard.", MANIFEST));
   const items = m.items && Object.hasOwn(h.data, m.items.collection) ? h.data[m.items.collection] : undefined;
   if (m.items && h.scopes && items && !items.scoped)
     out.push(

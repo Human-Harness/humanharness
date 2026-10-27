@@ -6,16 +6,14 @@ import { type Language, type LoadedHarness, allBlocks, hasMaterial, resolveInHar
 import { materialServerSpec } from "@humanharness/material/light";
 import {
   BEFORE_MESSAGE,
-  DATA_PREFIX,
   History,
   type HistoryTrailer,
-  MATERIAL_KEEP,
-  NOTES_PREFIX,
   type ReferenceFolder,
   START,
   STOPPED_PREFIX,
   TURN_PREFIX,
   UNDO_PREFIX,
+  appHistoryKeep,
   prepareFolder,
   refreshInstructions,
   writeInstructions,
@@ -116,7 +114,7 @@ export async function createRuntime(opts: RuntimeOptions): Promise<HarnessRuntim
 
   // The history skips the app's files under .harness/ (except the notes, the data and, with material, its registry
   // and decisions) and the generated instructions.
-  const history = new History(folder, opts.gitdir, [".harness/", ...generated], [NOTES_PREFIX, DATA_PREFIX, ...(material ? [MATERIAL_KEEP] : [])]);
+  const history = new History(folder, opts.gitdir, [".harness/", ...generated], appHistoryKeep(material !== undefined));
   await history.init();
   await history.save(START);
 

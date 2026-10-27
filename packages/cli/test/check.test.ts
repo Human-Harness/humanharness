@@ -280,12 +280,12 @@ describe("check: warnings", () => {
   });
 
   it("material: a light review tier, and app-wide items in a harness with scopes (D0: none without material)", async () => {
-    const withMaterial = (scoped: boolean, tiers: string) => (d: string) =>
+    const withMaterial = (scoped: boolean, tiers: string, scopes = true) => (d: string) =>
       replaceIn(
         d,
         "harness.config.ts",
         '  questions: { tier: "light" },',
-        `  questions: { tier: "light" },\n  scopes: { label: "topic", plural: "topics" },\n  data: { concepts: { scoped: ${scoped}, key: "id", schema: z.object({ id: z.string(), name: z.string() }), agent: "read" } },\n  material: { sheet: { sections: [{ id: "terms", label: "Terms", prompt: "The key terms." }] }, items: { collection: "concepts", label: "name" }${tiers} },`,
+        `  questions: { tier: "light" },\n${scopes ? '  scopes: { label: "topic", plural: "topics" },\n' : ""}  data: { concepts: { scoped: ${scoped}, key: "id", schema: z.object({ id: z.string(), name: z.string() }), agent: "read" } },\n  material: { sheet: { sections: [{ id: "terms", label: "Terms", prompt: "The key terms." }] }, items: { collection: "concepts", label: "name" }${tiers} },`,
       );
     const material = (r: CheckResult) => r.findings.filter((f) => f.rule.startsWith("material-")).map((f) => `${f.severity}:${f.rule}`);
     const clean = await checkHarness(await fixture(withMaterial(true, "")));
@@ -293,6 +293,10 @@ describe("check: warnings", () => {
     expect(material(clean)).toEqual([]);
     expect(material(await checkHarness(await fixture(withMaterial(true, ', tiers: { review: "light" }'))))).toEqual(["warning:material-review-tier"]);
     expect(material(await checkHarness(await fixture(withMaterial(false, ""))))).toEqual(["warning:material-items-scope"]);
+    // Without scopes every collection is app-wide: nothing to warn about.
+    const unscoped = await checkHarness(await fixture(withMaterial(false, "", false)));
+    expect(errors(unscoped)).toEqual([]);
+    expect(material(unscoped)).toEqual([]);
   });
 
   it("permissions-wide: exec, web or edit: folder without a reason line", async () => {

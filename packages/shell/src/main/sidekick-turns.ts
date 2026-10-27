@@ -195,3 +195,34 @@ export type SidekickLearn = z.output<typeof learnSchema>;
 
 /** The learning reply, parsed; null when it isn't the contract. */
 export const parseLearn = (text: string): SidekickLearn | null => parseJson(text, learnSchema);
+
+/** The first line of every routing turn (mock mode and the e2e scripts match on it). */
+export const SIDEKICK_ROUTE_MARK = "Sidekick: route";
+/** How much of the moment's context the routing turn sees. */
+export const SIDEKICK_ROUTE_CONTEXT = 2000;
+
+/**
+ * The routing turn (spec §2a.3, D11): which of several sidekicks, each speaking here only through custom purposes,
+ * should speak at `moment`. One line per choice: a purpose text's line breaks become spaces.
+ */
+export function routePrompt(moment: string, context: string, choices: readonly { id: string; text: string }[]): string {
+  return [
+    SIDEKICK_ROUTE_MARK,
+    "",
+    `Moment: ${moment}`,
+    "Context:",
+    context.slice(0, SIDEKICK_ROUTE_CONTEXT),
+    "",
+    "Who should speak? Choices:",
+    ...choices.map((c) => `- ${c.id}: ${c.text.replace(/\s+/g, " ").trim()}`),
+    "",
+    "Answer with the id only.",
+  ].join("\n");
+}
+
+/** The routing reply: one of `ids` (quotes, backticks, a bullet or a final period around it are fine); else null. */
+export function parseRoute(text: string, ids: readonly string[]): string | null {
+  const line = text.split("\n").map((l) => l.trim()).find(Boolean) ?? "";
+  const id = line.replace(/^[-*]\s*/, "").replace(/\.$/, "").replace(/^["'`]+|["'`]+$/g, "").trim();
+  return ids.includes(id) ? id : null;
+}

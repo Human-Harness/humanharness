@@ -47,10 +47,10 @@ function safeTarget(cwd: string, p: string): string {
 }
 
 /**
- * The first lines of Sidekick's turns (shell `SIDEKICK_PRE_MARK`, `SIDEKICK_AFTER_MARK` and `SIDEKICK_LEARN_MARK`; a
+ * The first lines of Sidekick's turns (shell `SIDEKICK_PRE_MARK`, `SIDEKICK_AFTER_MARK`, `SIDEKICK_LEARN_MARK` and `SIDEKICK_ROUTE_MARK`; a
  * copy: fake-agent never imports the shell; shell sidekick-turns.test pins them).
  */
-export const MOCK_SIDEKICK_MARKS = { pre: "Sidekick: pre-send review", after: "Sidekick: after the reply", learn: "Sidekick: learn" } as const;
+export const MOCK_SIDEKICK_MARKS = { pre: "Sidekick: pre-send review", after: "Sidekick: after the reply", learn: "Sidekick: learn", route: "Sidekick: route" } as const;
 
 /** A Sidekick turn: answered by `mockSidekickReply`, never by the recordings (sidekick plan Decision 12). */
 export const isMockSidekickTurn = (prompt: string): boolean => Object.values(MOCK_SIDEKICK_MARKS).some((m) => prompt.startsWith(m));
@@ -70,6 +70,8 @@ export function mockSidekickReply(prompt: string): string {
   if (prompt.startsWith(MOCK_SIDEKICK_MARKS.after)) return "{}";
   // Learning (sidekick spec §6.4): no changes.
   if (prompt.startsWith(MOCK_SIDEKICK_MARKS.learn)) return "{}";
+  // Routing (sidekick spec §2a.3): the first choice, the person's order.
+  if (prompt.startsWith(MOCK_SIDEKICK_MARKS.route)) return /^Who should speak\? Choices:\n- ([^:\n]+):/m.exec(prompt)?.[1] ?? "";
   const typed = /<prompt>\n([\s\S]*)\n<\/prompt>/.exec(prompt)?.[1] ?? "";
   // Only the "Local flags:" section: a note title may look like a flag line. The match is JSON-quoted.
   const section = /^Local flags:[^\n]*\n([\s\S]*?)^UI language:/m.exec(prompt)?.[1] ?? "";

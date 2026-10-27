@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { MOCK_SIDEKICK_MARKS, isMockSidekickTurn, mockSidekickReply } from "@humanharness/fake-agent";
-import { SIDEKICK_AFTER_MARK, SIDEKICK_LEARN_MARK, SIDEKICK_PRE_MARK, afterReplyPrompt, cutReply, learnPrompt, parseAfter, parseLearn, parseReview, preSendPrompt } from "../src/main/sidekick-turns";
+import { SIDEKICK_AFTER_MARK, SIDEKICK_LEARN_MARK, SIDEKICK_PRE_MARK, SIDEKICK_ROUTE_MARK, afterReplyPrompt, cutReply, learnPrompt, parseAfter, parseLearn, parseReview, parseRoute, preSendPrompt, routePrompt } from "../src/main/sidekick-turns";
 
 const input = {
   harness: { name: "Essay Coach", tagline: "Write better essays" },
@@ -131,7 +131,7 @@ describe("after the reply (spec §4.2)", () => {
   });
 
   it("fake-agent's mock knows the real marks and answers an after-reply turn with nothing to show", () => {
-    expect(MOCK_SIDEKICK_MARKS).toEqual({ pre: SIDEKICK_PRE_MARK, after: SIDEKICK_AFTER_MARK, learn: SIDEKICK_LEARN_MARK });
+    expect(MOCK_SIDEKICK_MARKS).toEqual({ pre: SIDEKICK_PRE_MARK, after: SIDEKICK_AFTER_MARK, learn: SIDEKICK_LEARN_MARK, route: SIDEKICK_ROUTE_MARK });
     const p = afterReplyPrompt({ harness: { name: "Essay Coach" }, prompt: "Outline chapter 2", reply: "Here it is.", lastPrompts: [], uiLanguage: "English" });
     expect(isMockSidekickTurn(p)).toBe(true);
     const after = parseAfter(mockSidekickReply(p));
@@ -178,5 +178,37 @@ describe("learning turn (spec §6.4)", () => {
     const p = learnPrompt({ items: [], events: [{ kind: "vague", outcome: "used", moment: "pre", sidekick: "sidekick" }] });
     expect(isMockSidekickTurn(p)).toBe(true);
     expect(parseLearn(mockSidekickReply(p))).toEqual({ add: [], update: [], remove: [] });
+  });
+});
+
+describe("routing turn (spec §2a.3, D11)", () => {
+  const choices = [
+    { id: "a", text: "Watch tests." },
+    { id: "b", text: "Watch\ndocs." },
+  ];
+
+  it("names the moment, the cut context and one line per choice", () => {
+    const p = routePrompt("after-reply", "x".repeat(3000), choices);
+    expect(p.startsWith(SIDEKICK_ROUTE_MARK)).toBe(true);
+    expect(p).toContain("Moment: after-reply");
+    expect(p).toContain("x".repeat(2000));
+    expect(p).not.toContain("x".repeat(2001));
+    expect(p).toContain("- a: Watch tests.\n- b: Watch docs.");
+    expect(p).toContain("Answer with the id only.");
+  });
+
+  it("parses a known id, loosely wrapped; anything else is null", () => {
+    expect(parseRoute("b", ["a", "b"])).toBe("b");
+    expect(parseRoute('\n  "b".\n', ["a", "b"])).toBe("b");
+    expect(parseRoute("`a`", ["a", "b"])).toBe("a");
+    expect(parseRoute("- a", ["a", "b"])).toBe("a");
+    expect(parseRoute("nobody", ["a", "b"])).toBeNull();
+    expect(parseRoute("", ["a", "b"])).toBeNull();
+  });
+
+  it("fake-agent's mock answers a routing turn with the first choice", () => {
+    const p = routePrompt("after-reply", "Outline chapter 2", choices);
+    expect(isMockSidekickTurn(p)).toBe(true);
+    expect(parseRoute(mockSidekickReply(p), ["a", "b"])).toBe("a");
   });
 });

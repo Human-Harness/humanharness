@@ -128,6 +128,8 @@ const sidekickReply = (o: unknown) => [...claudeTextLines(JSON.stringify(o)), re
 const afterReplyTurn = { match: `^${MOCK_SIDEKICK_MARKS.after}`, steps: sidekickReply({}) };
 /** Sidekick's learning turn at task close (sidekick spec §6.4): no changes. */
 const learnTurn = { match: `^${MOCK_SIDEKICK_MARKS.learn}`, steps: sidekickReply({}) };
+/** Sidekick's routing turn (sidekick spec §2a.3): no known id, so the person's order picks the speaker. */
+const routeTurn = { match: `^${MOCK_SIDEKICK_MARKS.route}`, steps: [...claudeTextLines("none"), result] };
 
 /** Claude where Sidekick's pre-send turn suggests a rewrite; every other turn answers "Listo." (sidekick spec §4.1). */
 export const sidekickScript: ClaudeScript = {
@@ -144,11 +146,12 @@ export const sidekickScript: ClaudeScript = {
     },
     afterReplyTurn,
     learnTurn,
+    routeTurn,
   ],
 };
 
 /** Sidekick's turn never answers in time: the prompt goes as typed after the wait. */
 export const slowSidekickScript: ClaudeScript = {
   steps: [...claudeTextLines("Listo."), result],
-  turns: [{ match: `^${MOCK_SIDEKICK_MARKS.pre}`, steps: [{ sleep: 15_000 }] }, afterReplyTurn, learnTurn],
+  turns: [{ match: `^${MOCK_SIDEKICK_MARKS.pre}`, steps: [{ sleep: 15_000 }] }, afterReplyTurn, learnTurn, routeTurn],
 };

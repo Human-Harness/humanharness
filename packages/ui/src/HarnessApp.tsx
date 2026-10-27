@@ -5,7 +5,7 @@ import { type Locales, createI18n } from "@humanharness/i18n";
 import { ScopePicker } from "./ScopePicker";
 import { ChatView, type SendFn } from "./ChatView";
 import { TopBar } from "./chrome";
-import { type AppState, type EngineStatus, type HarnessClient, type LimitWindow, type SetupStepsState, engineProblem, isConfigured } from "./client";
+import { type AppState, type EngineStatus, type HarnessClient, type LimitWindow, type SetupStepProps, type SetupStepsState, engineProblem, isConfigured } from "./client";
 import { useFolderMove } from "./BackupNotice";
 import { Home } from "./Home";
 import { shownLanguage, systemLanguage } from "./language";
@@ -23,9 +23,11 @@ export interface HarnessAppProps {
   locales?: Locales;
   /** Flow mode's start view: keys of `locales` for its title, intro, frequent questions and composer hint. */
   startView?: StartViewCopy;
+  /** The harness's own setup step components (`component` steps, setup-steps spec §3), by the name the manifest gives. */
+  setupSteps?: Record<string, ComponentType<SetupStepProps>>;
 }
 
-export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, locales, startView }: HarnessAppProps) {
+export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, locales, startView, setupSteps = {} }: HarnessAppProps) {
   const [state, setState] = useState<AppState | null>(null);
   const [i18n, setI18n] = useState<i18n | null>(null);
   const [failed, setFailed] = useState(false);
@@ -37,6 +39,12 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
   const [limits, setLimits] = useState<LimitWindow[] | null>(null);
   /** The harness's setup steps' state (setup-steps spec §4): Home waits for it before it offers Start. */
   const [steps, setSteps] = useState<SetupStepsState | null>(null);
+  /** Where the setup screen opens: a harness step (Home's missing one), alone with `only` (Settings' "Do it again"). */
+  const [setupAt, setSetupAt] = useState<{ step?: string; only?: boolean }>({});
+  const openSetup = (at: { step?: string; only?: boolean }) => {
+    setSetupAt(at);
+    setScreen("setup");
+  };
   /** Harnesses with scopes: the open scope; the work screen's chat is that scope's. */
   const [openScope, setOpenScope] = useState<string | null>(null);
   const hasScopes = Boolean(state?.scopes);
@@ -62,6 +70,10 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
   }, [client, hasScopes]);
   const hasSetupSteps = Boolean(state?.setup);
   const folder = state?.config.folder;
+  // Another folder has its own setup.json: until it is read, Start waits rather than show the old folder's state.
+  useEffect(() => {
+    setSteps(null);
+  }, [folder]);
   // Read again when the folder changes (its own setup.json) and on every screen change (the setup screen moved it on).
   useEffect(() => {
     if (!hasSetupSteps) return;
@@ -220,7 +232,17 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
             onTurnOk={checkEngine}
           />
         ) : screen === "setup" ? (
-          <SetupFlow client={client} state={state} onChange={setState} onCancel={() => leaveSetup("home")} onStart={() => leaveSetup("work")} />
+          <SetupFlow
+            key={`${setupAt.step ?? ""}:${setupAt.only ? "only" : ""}`}
+            client={client}
+            state={state}
+            onChange={setState}
+            onCancel={() => leaveSetup("home")}
+            onStart={() => leaveSetup("work")}
+            {...(setupAt.step ? { startAt: setupAt.step } : {})}
+            only={setupAt.only === true}
+            components={setupSteps}
+          />
         ) : (
           <Home
             state={state}
@@ -231,7 +253,7 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
             limits={limits}
             steps={steps}
             onStart={() => setScreen("work")}
-            onSetup={() => setScreen("setup")}
+            onSetup={(step) => openSetup(step ? { step } : {})}
             onSettings={() => setSettings("general")}
             onEngine={() => setSettings("engine")}
             move={move}
@@ -246,9 +268,9 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
           onTab={setSettings}
           onChange={setState}
           onClose={closeSettings}
-          onSetup={() => {
+          onSetup={(step?: string) => {
             setSettings(null);
-            setScreen("setup");
+            openSetup(step ? { step, only: true } : {});
           }}
           move={move}
         />

@@ -478,6 +478,12 @@
     "readyEngine": "Engine",
     "readyHint": "You can change all of this whenever you like in Settings."
   },
+  "setupSteps": {
+    "skip": "Skip",
+    "failed": "That didn't go through. Try again.",
+    "incomplete": "The app doesn't have what it needs yet. Continue the interview to finish it.",
+    "missingComponent": "This step can't be shown. Skip it, or update the app."
+  },
   "mock": {
     "model": "Model",
     "modelName": "Test model",

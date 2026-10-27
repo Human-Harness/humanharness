@@ -186,6 +186,8 @@ export interface TurnEnd {
   reply: string;
   /** The turn answered an input block (no free text). */
   fromBlock: boolean;
+  /** The turn was a mode switch's (its prompt is the mode's brief; `prompt` is the "Switched to" line): no after-reply. */
+  modeSwitch: boolean;
   /** Context used and the task's cap, when the engine reported it (heads-ups). */
   context?: { used: number; cap?: number };
 }
@@ -1387,7 +1389,13 @@ export class TaskManager {
     // switch's turn is a run turn too, so picking a mode drops it as well, by design.
     if (kind === "run" && task.phaseProposal) await this.dropProposal(task.id);
     if (kind === "run") await this.personWorks(task);
-    if (kind === "run") this.d.turnStarting?.();
+    if (kind === "run" && this.d.turnStarting) {
+      try {
+        this.d.turnStarting();
+      } catch (err) {
+        console.error("Sidekick's turn hook failed", err);
+      }
+    }
     this.turnTask = task.id;
     try {
       const scoped = await this.scopeOptions(task);
@@ -1440,22 +1448,23 @@ export class TaskManager {
     if (d && !isHeld(d, options) && (!options.quiet || (!d.ok && d.error.code !== "cancelled"))) this.windowDone = true;
     if (seen.note) await this.saveNote(task, seen.note, options.phase !== "checkpoint");
     if (seen.used !== undefined || seen.compacted) await this.track(task.id, seen);
-    if (this.d.turnEnded) this.turnEnded(task, kind, result, message, options.display, parts, seen.used);
+    if (this.d.turnEnded) this.turnEnded(task, kind, result, message, options, parts, seen.used);
     return result;
   }
 
   /** Tells Sidekick the turn ended (sidekick spec §4.2); a throwing hook is logged, never the task's failure. */
-  private turnEnded(task: CurrentTask, kind: TurnKind, result: Done, message: string, display: string | undefined, parts: string[], used: number | undefined): void {
+  private turnEnded(task: CurrentTask, kind: TurnKind, result: Done, message: string, options: { display?: string; modeSwitch?: boolean }, parts: string[], used: number | undefined): void {
     const end: TurnEnd = {
       task: { id: task.id, ...(task.action ? { action: task.action } : {}), scope: scopeOfTask(task), ...(task.phase ? { phase: task.phase.id } : {}) },
       kind,
       ok: result.ok,
-      prompt: display ?? message,
+      prompt: options.display ?? message,
       reply: parts
         .filter((p) => p.trim())
         .join("\n\n")
         .trim(),
       fromBlock: readAnswer(message) !== null,
+      modeSwitch: options.modeSwitch === true,
       ...(used !== undefined ? { context: { used, ...(task.profile ? { cap: task.profile.cap } : {}) } } : {}),
     };
     try {

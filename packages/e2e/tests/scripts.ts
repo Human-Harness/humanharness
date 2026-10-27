@@ -1,4 +1,4 @@
-import { type AcpScript, type ClaudeScript, claudeTextLines } from "@humanharness/fake-agent";
+import { type AcpScript, type ClaudeScript, MOCK_SIDEKICK_MARKS, claudeTextLines } from "@humanharness/fake-agent";
 
 /** A result line with usage, so usage.jsonl gets a record per turn. */
 const result = {
@@ -124,13 +124,15 @@ export const templateScript: ClaudeScript = {
 };
 
 const sidekickReply = (o: unknown) => [...claudeTextLines(JSON.stringify(o)), result];
+/** Sidekick's after-reply turn (on by default with Sidekick on): nothing to show, so no card (sidekick spec §4.2). */
+const afterReplyTurn = { match: `^${MOCK_SIDEKICK_MARKS.after}`, steps: sidekickReply({}) };
 
 /** Claude where Sidekick's pre-send turn suggests a rewrite; every other turn answers "Listo." (sidekick spec §4.1). */
 export const sidekickScript: ClaudeScript = {
   steps: [...claudeTextLines("Listo."), result],
   turns: [
     {
-      match: "^Sidekick: pre-send review",
+      match: `^${MOCK_SIDEKICK_MARKS.pre}`,
       steps: sidekickReply({
         verdict: "suggest",
         issues: [{ kind: "vague", text: "Say which part should be better." }],
@@ -138,11 +140,12 @@ export const sidekickScript: ClaudeScript = {
         confidence: 0.8,
       }),
     },
+    afterReplyTurn,
   ],
 };
 
 /** Sidekick's turn never answers in time: the prompt goes as typed after the wait. */
 export const slowSidekickScript: ClaudeScript = {
   steps: [...claudeTextLines("Listo."), result],
-  turns: [{ match: "^Sidekick: pre-send review", steps: [{ sleep: 15_000 }] }],
+  turns: [{ match: `^${MOCK_SIDEKICK_MARKS.pre}`, steps: [{ sleep: 15_000 }] }, afterReplyTurn],
 };

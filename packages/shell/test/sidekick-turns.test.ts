@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mockSidekickReply } from "@humanharness/fake-agent";
+import { MOCK_SIDEKICK_MARKS, isMockSidekickTurn, mockSidekickReply } from "@humanharness/fake-agent";
 import { SIDEKICK_AFTER_MARK, SIDEKICK_PRE_MARK, afterReplyPrompt, cutReply, parseAfter, parseReview, preSendPrompt } from "../src/main/sidekick-turns";
 
 const input = {
@@ -128,6 +128,15 @@ describe("after the reply (spec §4.2)", () => {
     expect(p).toContain("Open phase: Outline — Agree on sections.");
     expect(p).toContain("<prompt>\nOutline chapter 2\n</prompt>\n<reply>\nHere it is.\n</reply>");
     expect(p).toContain("Scope purpose: No spec without AC.");
+  });
+
+  it("fake-agent's mock knows the real marks and answers an after-reply turn with nothing to show", () => {
+    expect(MOCK_SIDEKICK_MARKS).toEqual({ pre: SIDEKICK_PRE_MARK, after: SIDEKICK_AFTER_MARK });
+    const p = afterReplyPrompt({ harness: { name: "Essay Coach" }, prompt: "Outline chapter 2", reply: "Here it is.", lastPrompts: [], uiLanguage: "English" });
+    expect(isMockSidekickTurn(p)).toBe(true);
+    const after = parseAfter(mockSidekickReply(p));
+    expect(after).not.toBeNull();
+    expect(after?.gap ?? after?.next ?? after?.repeated).toBeUndefined();
   });
 
   it("parses gap, next and repeated; empty means nothing", () => {

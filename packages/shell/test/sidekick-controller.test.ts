@@ -560,7 +560,7 @@ describe("outcomes and learning signals (spec §6.1–6.3)", () => {
 });
 
 describe("after the reply (spec §4.2)", () => {
-  const end = (o: Partial<Parameters<SidekickController["afterReply"]>[0]> = {}) => ({ task: { id: "t1", scope: "main" }, kind: "run" as const, ok: true, prompt: "Outline chapter 2", reply: "Here it is.", fromBlock: false, ...o });
+  const end = (o: Partial<Parameters<SidekickController["afterReply"]>[0]> = {}) => ({ task: { id: "t1", scope: "main" }, kind: "run" as const, ok: true, prompt: "Outline chapter 2", reply: "Here it is.", fromBlock: false, modeSwitch: false, ...o });
   const GAP = json({ gap: { title: "Sources", text: "No source for claim 2." }, next: "Add a source for claim 2" });
 
   it("D0: off → nothing: no session, no turn, no event, no usage line", async () => {
@@ -605,6 +605,45 @@ describe("after the reply (spec §4.2)", () => {
     const empty = harness({ record: on, answers: ["{}"] });
     await empty.ctl.afterReply(end());
     expect((await empty.ctl.state()).cards).toEqual([]);
+  });
+
+  it("earlier prompts hold only the person's typed run prompts: no checkpoint, close, block answer or mode switch", async () => {
+    const h = harness({ record: on, answers: ["{}", "{}"] });
+    await h.ctl.afterReply(end({ prompt: "Typed first" }));
+    await h.ctl.afterReply(end({ kind: "checkpoint", prompt: "CHECKPOINT internal" }));
+    await h.ctl.afterReply(end({ kind: "close", prompt: "CLOSE internal" }));
+    await h.ctl.afterReply(end({ fromBlock: true, prompt: "BLOCK answer" }));
+    await h.ctl.afterReply(end({ modeSwitch: true, prompt: "Switched to Socratic" }));
+    await h.ctl.afterReply(end({ prompt: "Typed second" }));
+    expect(h.asked).toHaveLength(2);
+    expect(h.asked[1]).toContain("Earlier prompts (first lines):\n- Typed first\nUI language");
+  });
+
+  it("a mode switch's turn gets no after-reply turn", async () => {
+    const h = harness({ record: on, answers: [GAP] });
+    await h.ctl.afterReply(end({ modeSwitch: true, prompt: "Switched to Socratic" }));
+    expect(h.asked).toEqual([]);
+  });
+
+  it("a send or a review while the turn is still setting up drops it: no ask, no card", async () => {
+    for (const cut of [(c: SidekickController) => c.turnStarting(), (c: SidekickController) => void c.review({ text: "next ask" })]) {
+      const h = harness({ record: on, answers: [GAP, json({ verdict: "send", issues: [], confidence: 1 })] });
+      let release!: () => void;
+      const gate = new Promise<void>((r) => (release = r));
+      const real = h.deps.setup;
+      let calls = 0;
+      h.deps.setup = async () => {
+        if (calls++ === 0) await gate;
+        return real();
+      };
+      const running = h.ctl.afterReply(end());
+      await vi.waitFor(() => expect(calls).toBe(1));
+      cut(h.ctl);
+      release();
+      await running;
+      expect(h.asked.filter((a) => a.startsWith("Sidekick: after the reply"))).toEqual([]);
+      expect((await h.ctl.state()).cards).toEqual([]);
+    }
   });
 
   it("past the cap → no turn", async () => {

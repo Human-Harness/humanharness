@@ -1149,7 +1149,7 @@ describe("Sidekick hooks (sidekick spec §4.2)", () => {
     await t.manager.ask("What is a manifest?");
     expect(starting).toBe(1);
     expect(ended).toEqual([
-      expect.objectContaining({ kind: "run", ok: true, prompt: "What is a manifest?", reply: "Hello there.\n\nBye.", fromBlock: false, context: { used: 1200 }, task: expect.objectContaining({ id: "t1", scope: "main" }) }),
+      expect.objectContaining({ kind: "run", ok: true, prompt: "What is a manifest?", reply: "Hello there.\n\nBye.", fromBlock: false, modeSwitch: false, context: { used: 1200 }, task: expect.objectContaining({ id: "t1", scope: "main" }) }),
     ]);
   });
 
@@ -1168,6 +1168,14 @@ describe("Sidekick hooks (sidekick spec §4.2)", () => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     await t.manager.ask("x");
     expect(t.state().current).toMatchObject({ status: "waiting", turns: 1 });
+  });
+
+  it("a throwing turnStarting hook is logged and never breaks the task", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const t = setup({ deps: { turnStarting: () => { throw new Error("boom"); } } });
+    await t.manager.ask("x");
+    expect(t.state().current).toMatchObject({ status: "waiting", turns: 1 });
+    expect(err).toHaveBeenCalled();
   });
 
   it("D0: without the hooks nothing changes", async () => {

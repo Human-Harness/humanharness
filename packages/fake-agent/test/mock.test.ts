@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { loadRecordings, recordingSchema } from "../src/mock";
-import { mockSidekickReply, runMockTurn } from "../src/mock-claude";
+import { MOCK_SIDEKICK_MARKS, isMockSidekickTurn, mockSidekickReply, runMockTurn } from "../src/mock-claude";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-mock-schema-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -151,6 +151,26 @@ describe("mock Sidekick (sidekick plan Decision 12)", () => {
     const result = lines.at(-1);
     expect(result).toMatchObject({ type: "result", subtype: "success", session_id: "sk-1" });
     expect(JSON.parse(result.result).verdict).toBe("suggest");
+    expect(fs.existsSync(state)).toBe(false);
+  });
+
+  it("an after-reply turn is a Sidekick turn too: a no-card answer, no recordings, no state, no delay", async () => {
+    const after = [MOCK_SIDEKICK_MARKS.after, "", "App: Demo", "<prompt>", "make it better", "</prompt>", "<reply>", "Done.", "</reply>"].join("\n");
+    expect(isMockSidekickTurn(after)).toBe(true);
+    expect(isMockSidekickTurn("make it better")).toBe(false);
+    expect(JSON.parse(mockSidekickReply(after))).toEqual({});
+    const dir = fs.mkdtempSync(path.join(root, "ska-"));
+    const state = path.join(dir, "state", "mock.json");
+    const out: string[] = [];
+    const spy = vi.spyOn(process.stdout, "write").mockImplementation((s) => (out.push(String(s)), true));
+    try {
+      expect(await runMockTurn(["--session-id", "sk-2"], after, {}, { dir: path.join(dir, "no-recordings"), state })).toBe(0);
+    } finally {
+      spy.mockRestore();
+    }
+    const result = out.join("").trim().split("\n").map((l) => JSON.parse(l)).at(-1);
+    expect(result).toMatchObject({ type: "result", subtype: "success", session_id: "sk-2" });
+    expect(JSON.parse(result.result)).toEqual({});
     expect(fs.existsSync(state)).toBe(false);
   });
 });

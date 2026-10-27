@@ -115,6 +115,11 @@ export class SidekickController {
   private cardCtx: { task: OpenTask | null; base: string } | null = null;
   /** The running after-reply turn; a send drops it (spec §5 "Sending cancels"). */
   private after: AbortController | null = null;
+  /**
+   * Bumped by every send, review, turn-off, move and close: an after-reply turn that started before one of them never
+   * asks or shows its card, even while it is still setting up (before `after` holds its controller).
+   */
+  private sends = 0;
   /** The open task's waiting cards other than the live pre-send one (after the reply), with where each was made. */
   private cards: { card: SidekickCard; ctx: { task: OpenTask | null; base: string } }[] = [];
   /** The task's earlier prompts, oldest first, for its next after-reply turn. */
@@ -188,7 +193,7 @@ export class SidekickController {
       // Off: nothing runs and nothing stays open (D0: "the person can turn it off").
       this.reviews++;
       this.running?.abort();
-      this.after?.abort();
+      this.dropAfter();
       this.card = null;
       this.cards = [];
       this.notice = undefined;
@@ -292,7 +297,7 @@ export class SidekickController {
     if (!settings.on || moved) {
       this.reviews++;
       this.running?.abort();
-      this.after?.abort();
+      this.dropAfter();
       this.card = null;
       this.cards = [];
       this.notice = undefined;
@@ -315,7 +320,7 @@ export class SidekickController {
     const left = this.cards.filter((c) => (c.ctx.task?.id ?? NO_TASK) === (open ?? NO_TASK));
     const dropped = left.length !== this.cards.length;
     if (dropped) {
-      this.after?.abort();
+      this.dropAfter();
       this.cards = left;
     }
     const keepLoose = this.looseArmed;
@@ -331,7 +336,7 @@ export class SidekickController {
     this.closed = true;
     this.reviews++;
     this.running?.abort();
-    this.after?.abort();
+    this.dropAfter();
     await this.closeSessions(() => true);
   }
 
@@ -342,7 +347,7 @@ export class SidekickController {
   async review(req: { text: string; force?: boolean; attached?: boolean }): Promise<SidekickReview> {
     const turn = ++this.reviews;
     this.running?.abort();
-    this.after?.abort();
+    this.dropAfter();
     // An early return still pushes when it cleared a card or notice, so the renderer drops them too.
     const stale = this.card !== null || this.notice !== undefined;
     this.card = null;
@@ -457,6 +462,12 @@ export class SidekickController {
 
   /** A task turn is about to run: a running after-reply turn is dropped (spec §5 "Sending cancels"). */
   turnStarting(): void {
+    this.dropAfter();
+  }
+
+  /** Drops the after-reply turn, running or still setting up. */
+  private dropAfter(): void {
+    this.sends++;
     this.after?.abort();
   }
 
@@ -466,20 +477,26 @@ export class SidekickController {
    * Off, the setting off, past the cap or without a CLI: nothing runs (D0). A send drops it while it runs.
    */
   async afterReply(end: TurnEnd): Promise<void> {
+    const send = this.sends;
     const settings = await this.d.store.settings();
     if (this.closed || !settings.on || !settings.afterReply) return;
+    // Only what the person typed: no checkpoint, close or wrap-up prompt, no block answer, no mode switch's line.
+    if (end.kind !== "run" || end.fromBlock || end.modeSwitch) return;
     if (this.prompts.key !== end.task.id) this.prompts = { key: end.task.id, items: [] };
     const earlier = [...this.prompts.items];
     this.prompts.items = [...earlier, end.prompt].slice(-PROMPTS_KEPT);
-    if (!end.ok || end.kind !== "run" || end.fromBlock) return;
+    if (!end.ok) return;
     const setup = await this.d.setup().catch(() => null);
     if (!setup || !(await this.d.hasNotice(setup.engineId).catch(() => false))) return;
     const task: OpenTask = end.task;
     if (await this.pastCap(setup.base, task, settings)) return;
+    // A send, a review or another after-reply came while this one was setting up: it is about an old reply.
+    if (this.sends !== send) return;
     this.after?.abort();
+    const turn = ++this.sends;
     const controller = new AbortController();
     this.after = controller;
-    const live = () => !controller.signal.aborted && !this.closed;
+    const live = () => !controller.signal.aborted && !this.closed && this.sends === turn;
     try {
       const engine = this.d.engine(setup.engineId);
       const session = await this.sessionFor(setup.base, engine, task.id, task.id, live);

@@ -46,8 +46,14 @@ function safeTarget(cwd: string, p: string): string {
   return target;
 }
 
-/** The first line of Sidekick's pre-send turns (shell `SIDEKICK_PRE_MARK`; a copy: fake-agent never imports the shell; shell sidekick-turns.test pins it). */
-const SIDEKICK_MARK = "Sidekick: pre-send review";
+/**
+ * The first lines of Sidekick's turns (shell `SIDEKICK_PRE_MARK` and `SIDEKICK_AFTER_MARK`; a copy: fake-agent never
+ * imports the shell; shell sidekick-turns.test pins them).
+ */
+export const MOCK_SIDEKICK_MARKS = { pre: "Sidekick: pre-send review", after: "Sidekick: after the reply" } as const;
+
+/** A Sidekick turn: answered by `mockSidekickReply`, never by the recordings (sidekick plan Decision 12). */
+export const isMockSidekickTurn = (prompt: string): boolean => Object.values(MOCK_SIDEKICK_MARKS).some((m) => prompt.startsWith(m));
 
 const HINTS: Record<string, string> = {
   vague: "Say exactly what should change and how you'll know it's done.",
@@ -60,6 +66,8 @@ const JOINER = /^(?:and also|and then)\b/i;
 
 /** A canned Sidekick answer in mock mode, built from the flags the prompt lists: no model, no recordings. */
 export function mockSidekickReply(prompt: string): string {
+  // After the reply: nothing to show (a gap, a next step or a repeated ask would need a model).
+  if (prompt.startsWith(MOCK_SIDEKICK_MARKS.after)) return "{}";
   const typed = /<prompt>\n([\s\S]*)\n<\/prompt>/.exec(prompt)?.[1] ?? "";
   // Only the "Local flags:" section: a note title may look like a flag line. The match is JSON-quoted.
   const section = /^Local flags:[^\n]*\n([\s\S]*?)^UI language:/m.exec(prompt)?.[1] ?? "";
@@ -97,7 +105,7 @@ export async function runMockTurn(argv: string[], prompt: string, mcpServers: Mc
 
 async function playTurn(argv: string[], prompt: string, mcpServers: McpServers, env: { dir: string; state: string }, sessionId: string, newSession: boolean): Promise<void> {
   // Sidekick's own turns never touch the recordings or the session state (sidekick plan Decision 12).
-  if (prompt.startsWith(SIDEKICK_MARK)) {
+  if (isMockSidekickTurn(prompt)) {
     const text = mockSidekickReply(prompt);
     const event = (e: unknown) => print({ type: "stream_event", parent_tool_use_id: null, session_id: sessionId, event: e });
     print({ type: "system", subtype: "init", session_id: sessionId, tools: [] });

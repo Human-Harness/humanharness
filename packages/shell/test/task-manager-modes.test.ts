@@ -4,7 +4,7 @@ import type { SavedNote, Tier } from "@humanharness/harness-sdk";
 import type { Event } from "@humanharness/runtime";
 import type { ModeChoice, TaskView } from "@humanharness/ui/client";
 import type { Note, NoteMeta } from "@humanharness/workspace";
-import { TaskManager } from "../src/main/task-manager";
+import { TaskManager, type TurnEnd } from "../src/main/task-manager";
 import { CLOSE_PROMPT, closePrompt, modePrompt, modeSection, recommendSection, resumeMessage } from "../src/main/task-prompts";
 import { type TasksFile, emptyTasks } from "../src/main/task-store";
 import type { TurnOptions } from "../src/main/turn-controller";
@@ -23,7 +23,7 @@ const brief = (mode: string) => `Brief of ${mode}, in {{language}}.`;
 
 /** A task manager over memory, for a harness whose `study` action has three modes and whose `quiz` has none. */
 export function setup(
-  opts: { script?: Event[][]; state?: TasksFile; modes?: false; defaultMode?: string; notes?: Note[]; gate?: Promise<void>; gateTurn?: number; failSend?: number; labels?: Record<string, string>; badBrief?: string } = {},
+  opts: { script?: Event[][]; state?: TasksFile; modes?: false; defaultMode?: string; notes?: Note[]; gate?: Promise<void>; gateTurn?: number; failSend?: number; labels?: Record<string, string>; badBrief?: string; ended?: TurnEnd[] } = {},
 ) {
   let state = opts.state ?? emptyTasks();
   const script = [...(opts.script ?? [])];
@@ -91,6 +91,7 @@ export function setup(
         }),
     now: () => new Date(NOW),
     newId: () => `t${++n}`,
+    ...(opts.ended ? { turnEnded: (e: TurnEnd) => void opts.ended?.push(e) } : {}),
   });
   return { manager, turns, views, written, floors, emitted, state: () => state };
 }
@@ -217,6 +218,17 @@ const pick = async (t: ReturnType<typeof setup>, mode: string, choice?: ModeChoi
 };
 
 describe("TaskManager.chooseMode (task-modes spec §5)", () => {
+  it("a switch's turn tells Sidekick it was a mode switch (no after-reply on it)", async () => {
+    const ended: TurnEnd[] = [];
+    const t = setup({ ended });
+    await t.manager.start("study");
+    await pick(t, "socratic");
+    expect(ended.map((e) => [e.kind, e.prompt, e.modeSwitch])).toEqual([
+      ["run", "Study", false],
+      ["run", "Switched to Socratic", true],
+    ]);
+  });
+
   it("switches in one turn of the same session: the mode's brief and settings, a system line, then the state", async () => {
     const t = setup();
     await t.manager.start("study");

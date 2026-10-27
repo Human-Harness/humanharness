@@ -146,3 +146,25 @@ describe("FakeClient settings", () => {
     expect(client.settingsResets).toBe(1);
   });
 });
+
+describe("client.profiles (profiles spec §5)", () => {
+  it("D0: a fake client without profiles has none and refuses changes", async () => {
+    const client = new FakeClient({ language: "en", folder: "/w", engineId: "claude" });
+    expect(client.state.profiles).toBeUndefined();
+    expect(await client.profiles.get()).toEqual({ active: null, list: [] });
+    expect(await client.profiles.create({ name: "Sofi" })).toEqual({ ok: false, reason: "not-ready" });
+  });
+
+  it("creates and opens profiles, telling every listener", async () => {
+    const client = new FakeClient({ language: "en", folder: "/w", engineId: "claude" });
+    client.state = { ...client.state, profiles: { label: "student", form: { fields: [] } } };
+    const seen: (string | null)[] = [];
+    client.profiles.onChange((s) => seen.push(s.active));
+    const made = await client.profiles.create({ name: "Sofi" });
+    expect(made.ok && made.state.config.profile).toBe("sofi");
+    await client.profiles.create({ name: "Tomás" });
+    expect((await client.profiles.open("sofi")).ok).toBe(true);
+    expect(seen).toEqual(["sofi", "tomas", "sofi"]);
+    expect(await client.profiles.archive("sofi")).toEqual({ ok: false, reason: "active" });
+  });
+});

@@ -189,6 +189,66 @@ describe("Profiles (profiles spec §5)", () => {
     expect(t.changed).not.toHaveBeenCalled();
   });
 
+  it("while a profile is being deleted, a switch, another delete and an archive are refused", async () => {
+    let releaseTrash!: () => void;
+    const trashGate = new Promise<void>((r) => (releaseTrash = r));
+    let hold = false;
+    let active: string | undefined;
+    let profiles!: Profiles;
+    // The switch's busy reads `changing()`, as the main process wires it.
+    const switcher = new ProfileSwitch({
+      quitting: () => false,
+      busy: () => profiles.changing(),
+      turnBlocked: () => null,
+      closeTask: async () => true,
+      closeRuntime: async () => {},
+      saveActive: async (id) => void (active = id),
+      arrived: async () => {},
+    });
+    const t = setup({
+      active: async () => active,
+      switchTo: (target) => switcher.run(target),
+      trash: async (p) => {
+        if (hold) await trashGate;
+        await fs.promises.rm(p, { recursive: true, force: true });
+      },
+    });
+    profiles = t.profiles;
+    await t.profiles.create({ name: "Sofi" });
+    await t.profiles.create({ name: "Tomás" });
+    await t.profiles.create({ name: "Ana" });
+    await t.profiles.open("sofi");
+    expect(t.profiles.changing()).toBe(false);
+    hold = true;
+    const removing = t.profiles.remove("tomas");
+    expect(t.profiles.changing()).toBe(true);
+    expect(await t.profiles.open("tomas")).toEqual({ ok: false, reason: "busy" });
+    expect(await t.profiles.open("ana")).toEqual({ ok: false, reason: "busy" });
+    expect(await t.profiles.remove("tomas")).toEqual({ ok: false, reason: "busy" });
+    expect(await t.profiles.setArchived("ana", true)).toEqual({ ok: false, reason: "busy" });
+    expect(active).toBe("sofi");
+    releaseTrash();
+    expect(await removing).toEqual({ ok: true });
+    expect(t.profiles.changing()).toBe(false);
+    expect((await t.profiles.state()).list.map((p) => p.id)).toEqual(["sofi", "ana"]);
+    expect(await t.profiles.open("tomas")).toEqual({ ok: false, reason: "unknown" });
+  });
+
+  it("archiving holds a switch off too, and lets go when it fails", async () => {
+    let profiles!: Profiles;
+    const seen: boolean[] = [];
+    const t = setup({ active: async () => (seen.push(profiles.changing()), "sofi") });
+    profiles = t.profiles;
+    await t.profiles.create({ name: "Sofi" });
+    await t.profiles.create({ name: "Tomás" });
+    seen.length = 0;
+    expect(await t.profiles.setArchived("tomas", true)).toEqual({ ok: true });
+    expect(seen.length > 0 && seen.every(Boolean)).toBe(true);
+    expect(t.profiles.changing()).toBe(false);
+    expect(await t.profiles.setArchived("sofi", true)).toEqual({ ok: false, reason: "active" });
+    expect(t.profiles.changing()).toBe(false);
+  });
+
   it("the new profile's record carries the cleaned name", async () => {
     const t = setup();
     expect(await t.profiles.create({ name: "  Sofi\n Pérez " })).toEqual({ ok: true });

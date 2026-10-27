@@ -38,8 +38,29 @@ const exists = (p: string) => fs.access(p).then(() => true, () => false);
 /** The profiles of the app's folder (profiles spec §4, §5). Every refusal comes back as data. */
 export class Profiles {
   private readonly stores = new Map<string, ProfileStore>();
+  /** A profile is being archived, brought back or deleted. */
+  private pending = false;
 
   constructor(private readonly d: ProfilesDeps) {}
+
+  /**
+   * A profile is being archived, brought back or deleted: a switch and a move wait (a switch to a profile whose folder
+   * is going to the Trash would open it half gone).
+   */
+  changing(): boolean {
+    return this.pending;
+  }
+
+  /** Runs an archive or a delete, one at a time and never beside a switch: checked and flagged with no await between. */
+  private async held(run: () => Promise<ProfileOutcome>): Promise<ProfileOutcome> {
+    if (this.pending || this.d.blocked()) return { ok: false, reason: "busy" };
+    this.pending = true;
+    try {
+      return await run();
+    } finally {
+      this.pending = false;
+    }
+  }
 
   /** One registry per root, so its write queue orders every change. */
   private store(root: string): ProfileStore {
@@ -103,8 +124,11 @@ export class Profiles {
   }
 
   /** Hides a profile from the switcher, or brings it back. Never the active one. */
-  async setArchived(id: unknown, archived: boolean): Promise<ProfileOutcome> {
-    if (this.d.blocked()) return { ok: false, reason: "busy" };
+  setArchived(id: unknown, archived: boolean): Promise<ProfileOutcome> {
+    return this.held(() => this.archiveNow(id, archived));
+  }
+
+  private async archiveNow(id: unknown, archived: boolean): Promise<ProfileOutcome> {
     const root = await this.d.root();
     if (!root) return { ok: false, reason: "not-ready" };
     if (!isProfileId(id) || !(await this.registered(root, id))) return { ok: false, reason: "unknown" };
@@ -123,8 +147,11 @@ export class Profiles {
    * Deletes a profile (spec §5): its folder goes to the system Trash, then its history; then the entry goes. Never the
    * active one. A Trash that refuses the folder changes nothing; one that refuses the history leaves it (logged).
    */
-  async remove(id: unknown): Promise<ProfileOutcome> {
-    if (this.d.blocked()) return { ok: false, reason: "busy" };
+  remove(id: unknown): Promise<ProfileOutcome> {
+    return this.held(() => this.removeNow(id));
+  }
+
+  private async removeNow(id: unknown): Promise<ProfileOutcome> {
     const root = await this.d.root();
     if (!root) return { ok: false, reason: "not-ready" };
     if (!isProfileId(id) || !(await this.registered(root, id))) return { ok: false, reason: "unknown" };

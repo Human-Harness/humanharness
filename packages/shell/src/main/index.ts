@@ -9,6 +9,7 @@ import { type EngineDef, type ModelProfile, type ModelSpec, NOTICE_VERSION, avai
 import {
   DEFAULT_LANGUAGE,
   type LoadedHarness,
+  PROFILE_COLLECTION,
   SETTINGS_COLLECTION,
   TIERS,
   type Tier,
@@ -22,6 +23,7 @@ import {
   inputSpecs,
   interviewCollections,
   loadHarness,
+  profileFormSpec,
   resolveInHarness,
   settingsView,
 } from "@humanharness/harness-sdk";
@@ -35,6 +37,8 @@ import {
   type ModelsView,
   type ModeView,
   type MoveResult,
+  type ProfileResult,
+  type ProfilesState,
   type RunningSetup as SetupInfo,
   type ScopesView,
   type SendOptions,
@@ -101,7 +105,9 @@ import { SettingsController } from "./settings";
 import { SetupSteps, recordSetup, setupStepViews } from "./setup-steps";
 import { TaskManager } from "./task-manager";
 import { baseFor, isInsideFolder } from "./profile-base";
-import { Profiles } from "./profiles";
+import { type ProfileOutcome, Profiles } from "./profiles";
+import { ProfileSwitch } from "./profile-switch";
+import { holds } from "./holds";
 import { historyView, isSha } from "./history-view";
 import { RestoreGuard, lastOpened } from "./restore-guard";
 import { TaskStore, emptyTasks } from "./task-store";
@@ -163,6 +169,7 @@ let setupCtl: SetupSteps | null = null;
 /** The harness's profiles (profiles spec); null without them (D4): no `profiles.json` is ever read or written. */
 let profilesCtl: Profiles | null = null;
 const NO_SETUP_STEPS: SetupStepsState = { steps: {}, blocking: [] };
+const NO_PROFILES: ProfilesState = { active: null, list: [] };
 const NO_SETUP_STEP: SetupStepResult = { ok: false, reason: "unknown" };
 
 /**
@@ -362,6 +369,8 @@ async function appState(): Promise<AppState> {
       : {}),
     // Only a harness with setup steps sends them (setup-steps D0).
     ...(harness.setup ? { setup: setupStepViews(harness) } : {}),
+    // Only a harness with profiles sends them (profiles D4): what to call one, and its form.
+    ...(harness.profiles ? { profiles: { label: harness.profiles.label, form: profileFormSpec(harness) } } : {}),
     references: (await referencesFor(saved.folder)).map((r) => ({ id: r.id, label: r.label, path: displayPath(r.path, os.homedir()) })),
     models: await modelsView(),
     backup: await backupView(saved.folder),
@@ -434,6 +443,8 @@ function dataStoreFor(base: string): DataStore {
       off: store.onChange((change) => {
         sendToWindow("hh:dataChange", change);
         if (change.collection === SETTINGS_COLLECTION) void settingsCtl?.changed();
+        // Profiles: the registry copies the record's name and colour (spec §4), whoever wrote it. Never rejects.
+        if (change.collection === PROFILE_COLLECTION) void profilesCtl?.sync(path.resolve(base));
       }),
     };
     dataStores.set(base, entry);
@@ -469,6 +480,20 @@ async function scopesChanged(): Promise<void> {
   } catch (err) {
     console.error("Could not send the scopes to the window", err);
   }
+}
+
+/**
+ * A profile switch arrived (profiles spec §5): a task left open there by a crash ends, the settings and AGENTS.md are
+ * read afresh, the scopes migrate and are sent, and the setup steps and tasks of the new folder reach the window.
+ */
+async function arrivedInProfile(): Promise<void> {
+  await tasks.interrupt();
+  settingsCtl?.forget();
+  await settingsCtl?.changed();
+  await settleScopes();
+  await scopesChanged();
+  if (setupCtl) sendToWindow("hh:setupSteps", await setupCtl.state());
+  sendToWindow("hh:tasks", await tasks.view());
 }
 
 async function scopeStore(): Promise<ScopeStore> {
@@ -784,7 +809,8 @@ async function saveConfigPatch(patch: AppConfig, before: AppConfig): Promise<voi
     const engineId = patch.engineId;
     await guards.switchEngine(
       {
-        isBusy: () => tasks.isBusy(),
+        // A profile switch counts too: once its task has closed nothing runs, yet its runtime and profile are pending.
+        isBusy: hold.engineBusy,
         idle: async () => {
           await tasks.idle();
           await turns.flush();
@@ -813,14 +839,42 @@ function handle(channel: string, fn: (...args: never[]) => unknown) {
 }
 
 /**
- * Restores: refused while quitting, while a task operation runs or turns are held (engine change, folder
- * move); one at a time; new turns are refused and a runtime starting waits until it ends.
+ * What waits for what (profiles spec §5): turns, restores, profile switches, engine changes, folder moves, archives and
+ * deletes. Each source is read only when a guard asks, after all of them exist.
  */
-const restores = new RestoreGuard({ quitting: () => quitting, busy: () => tasks.isBusy(), turnBlocked: () => guards.turnBlocked() });
+const hold = holds({
+  quitting: () => quitting,
+  tasksBusy: () => tasks.isBusy(),
+  moving: () => moving !== null,
+  engine: () => guards.turnBlocked(),
+  restore: () => restores.turnBlocked(),
+  profileSwitch: () => switches.turnBlocked(),
+  profileChange: () => profilesCtl?.changing() ?? false,
+});
+
+/**
+ * Restores: refused while quitting, while a task operation runs or turns are held (engine change, folder
+ * move, a profile switch); one at a time; new turns are refused and a runtime starting waits until it ends.
+ */
+const restores = new RestoreGuard({ quitting: () => quitting, busy: () => tasks.isBusy(), turnBlocked: hold.restoreHeld });
 const restoreWith = (run: (history: History) => Promise<unknown>) => restores.run(currentHistory, run);
 
-/** Why a new turn can't start now (engine change, folder move, engine update, a restore), or null. */
-const turnBlocked = () => guards.turnBlocked() ?? restores.turnBlocked();
+/**
+ * Profile switches (profiles spec §5): one at a time, refused while a turn, a restore, a move, an engine change, an
+ * archive or a delete runs, and holding all of them off.
+ */
+const switches = new ProfileSwitch({
+  quitting: () => quitting,
+  busy: hold.switchBusy,
+  turnBlocked: hold.switchHeld,
+  closeTask: () => tasks.finish(),
+  closeRuntime,
+  saveActive: async (id) => void (await config.setProfile(id)),
+  arrived: () => arrivedInProfile(),
+});
+
+/** Why a new turn can't start now (engine change, folder move, engine update, a restore, a profile switch), or null. */
+const turnBlocked = hold.turnBlocked;
 
 /** The harness UI's data requests (hh:data): one handler, so the person's writes and their commits run one at a time. */
 const personData = personDataRequests({
@@ -858,7 +912,7 @@ function registerIpc() {
     await requireNoticeForChoice(patch.engineId, before.engineId, hasNotice);
     // A new folder: refused while a turn or a restore runs, and turns are refused until it is over; the old
     // folder's task ends and its runtime goes.
-    await saveWithFolderChange(patch.folder, before.folder, { isBusy: () => tasks.isBusy() || restores.turnBlocked() !== null, guards, interrupt: () => tasks.interrupt(), dropRuntime }, () =>
+    await saveWithFolderChange(patch.folder, before.folder, { isBusy: hold.folderBusy, guards, interrupt: () => tasks.interrupt(), dropRuntime }, () =>
       saveConfigPatch(patch, before),
     );
     if (patch.folder !== undefined && patch.folder !== before.folder) {
@@ -880,7 +934,7 @@ function registerIpc() {
     if (!c) return { entries: [] };
     // The engine change archives the chat; the check here only catches a change made while the app was closed.
     const switchedFrom =
-      guards.takeSwitchedFrom() ?? (tasks.isBusy() || guards.turnBlocked() ? null : await archiveStaleChat(baseOf(c), c.engineId, dropRuntime));
+      guards.takeSwitchedFrom() ?? (hold.engineBusy() || guards.turnBlocked() ? null : await archiveStaleChat(baseOf(c), c.engineId, dropRuntime));
     return { entries: await new ChatLog(baseOf(c), undefined, await tasks.chatScope()).load(), ...(switchedFrom ? { switchedFrom } : {}) };
   });
   handle("hh:send", (message: string, options?: SendOptions) => {
@@ -979,6 +1033,24 @@ function registerIpc() {
   handle("hh:setupStepSkip", (id: unknown) => (setupCtl ? setupCtl.skip(id).catch(stepRefused) : NO_SETUP_STEP));
   handle("hh:setupStepsFinish", () => (setupCtl ? setupCtl.finish().catch(stepsAsTheyStand) : NO_SETUP_STEPS));
   handle("hh:setupStepsAcknowledge", () => (setupCtl ? setupCtl.acknowledge().catch(stepsAsTheyStand) : NO_SETUP_STEPS));
+  // Profiles (profiles spec §5). Without them, nothing to read and every change refused (D4). Refusals come back as data.
+  const profileAnswer = async (outcome: Promise<ProfileOutcome>): Promise<ProfileResult> => {
+    try {
+      const r = await outcome;
+      return r.ok ? { ok: true, state: await appState() } : r;
+    } catch (err) {
+      console.error("A profile change failed", err);
+      return { ok: false, reason: "failed" };
+    }
+  };
+  const noProfiles = (): ProfileResult => ({ ok: false, reason: "not-ready" });
+  handle("hh:profilesGet", () => (profilesCtl ? profilesCtl.state().catch(() => NO_PROFILES) : NO_PROFILES));
+  handle("hh:profileCreate", (values: unknown) => (profilesCtl ? profileAnswer(profilesCtl.create(values)) : noProfiles()));
+  handle("hh:profileOpen", (id: unknown) => (profilesCtl ? profileAnswer(profilesCtl.open(id)) : noProfiles()));
+  handle("hh:profileArchive", (id: unknown, archived: unknown) =>
+    profilesCtl && typeof archived === "boolean" ? profileAnswer(profilesCtl.setArchived(id, archived)) : noProfiles(),
+  );
+  handle("hh:profileDelete", (id: unknown) => (profilesCtl ? profileAnswer(profilesCtl.remove(id)) : noProfiles()));
   handle("hh:choose", (option: unknown, task: unknown) => {
     if (quitting) throw new Error("The app is closing");
     const blocked = turnBlocked();
@@ -1090,7 +1162,7 @@ function registerIpc() {
         guards,
         hasNotice,
         currentEngine: async () => (await config.load()).engineId,
-        isBusy: () => tasks.isBusy(),
+        isBusy: hold.engineBusy,
         quitting: () => quitting,
         command: async () => {
           const cli = step === "install" ? null : await cliCommand(engine, commandDeps);
@@ -1184,7 +1256,7 @@ function registerIpc() {
     if (moving) return { ok: false, error: "busy" };
     const run = guardedMove({
       guards,
-      isBusy: () => tasks.isBusy() || restores.turnBlocked() !== null,
+      isBusy: hold.folderBusy,
       precheck: () => precheckMove(c.folder, to, deps),
       quitting: () => quitting,
       checkpoint: () => tasks.checkpointBeforeMove(),
@@ -1321,6 +1393,23 @@ if (loaded) {
       changed: (state) => sendToWindow("hh:setupSteps", state),
     });
   }
+  // Only a harness with profiles gets the controller: it reads and writes `<folder>/.harness/profiles.json` (D4).
+  if (harness.profiles && Object.hasOwn(harness.data, PROFILE_COLLECTION)) {
+    profilesCtl = new Profiles({
+      root: async () => (await config.load()).folder ?? null,
+      active: async () => (await config.load()).profile,
+      collection: harness.data[PROFILE_COLLECTION],
+      ...(harness.folder.seed ? { seed: resolveInHarness(harness, harness.folder.seed) } : {}),
+      // As the person, app-wide, in the new profile's own store. It has no history yet: its runtime's "Start" records it.
+      writeRecord: async (base, record) => void (await dataStoreFor(base).put(PROFILE_COLLECTION, record, { who: "person", scope: APP_SCOPE })),
+      readRecord: (base) => dataStoreFor(base).get(PROFILE_COLLECTION, undefined, { who: "person", scope: APP_SCOPE }),
+      switchTo: (target) => switches.run(target),
+      trash: (p) => shell.trashItem(p),
+      historyDir: (folder) => historyDir(app.getPath("userData"), folder),
+      changed: (state) => sendToWindow("hh:profiles", state),
+      blocked: hold.profileChangeBlocked,
+    });
+  }
 }
 
 // One app per data folder (the lock is tied to userData, so it is taken after it is set): a second one would
@@ -1364,11 +1453,9 @@ if (primary) {
     nativeTheme.themeSource = (await config.load()).appearance ?? "system";
     nativeTheme.on("updated", () => window?.setBackgroundColor(nativeTheme.shouldUseDarkColors ? PAPER.dark : PAPER.light));
     // A profile the registry no longer lists (or lists as archived) is not active: Home asks who is using the app.
-    // Before setup.json is recorded, so nothing is written into a profile that is gone. (Task 7 builds the controller;
-    // the cast keeps the compiler from narrowing it to null meanwhile.)
-    const people = profilesCtl as Profiles | null;
+    // Before setup.json is recorded, so nothing is written into a profile that is gone.
     const saved = await config.load();
-    if (people && saved.profile && !(await people.openable(saved.profile).catch(() => false))) {
+    if (profilesCtl && saved.profile && !(await profilesCtl.openable(saved.profile).catch(() => false))) {
       await config.setProfile(undefined).catch((err: unknown) => console.error("Could not clear the active profile", err));
     }
     // Before any task: a configured folder with no setup.json is recorded now, fresh or as set up before (D0: no `setup`, nothing).

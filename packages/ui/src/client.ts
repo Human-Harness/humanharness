@@ -207,6 +207,8 @@ export interface AppState {
   modes?: Record<string, ModeView>;
   /** The harness's setup steps, in order (setup-steps spec). Absent: none (D0). */
   setup?: SetupStepView[];
+  /** The harness's profiles (manifest `profiles`): what to call one and its form. Absent: one implicit profile (D4). */
+  profiles?: ProfilesInfo;
   /** Folders the agent can read but never change. */
   references?: ReferenceView[];
   /** Settings › Modelos. */
@@ -622,8 +624,8 @@ export interface SetupStepView {
 /** What a harness's own setup step component gets (setup-steps spec §3 `component`). */
 export interface SetupStepProps {
   client: HarnessClient;
-  /** The profile the step runs for: null until profiles exist (profiles spec, plan 7). */
-  profile: null;
+  /** The profile the step runs for; null in a harness without profiles. */
+  profile: ProfileView | null;
   /** The step is done: the app marks it and moves on. */
   done(): void;
   /** Skip it; refused (the screen says so) for a required step. */
@@ -653,6 +655,15 @@ export interface ProfilesState {
  * anything else (a disk error, a Trash that refused).
  */
 export type ProfileRefusal = "not-ready" | "busy" | "open" | "invalid" | "unknown" | "active" | "failed";
+
+/** What the window needs of the manifest's `profiles` (spec §3): the name of one, and the add and edit form. */
+export interface ProfilesInfo {
+  label: string;
+  form: InputSpec;
+}
+
+/** How a profile change went: the app state as it is now (the active profile, the folder it works in), or why not. */
+export type ProfileResult = { ok: true; state: AppState } | { ok: false; reason: ProfileRefusal; errors?: InputIssue[] };
 
 export { hearsDataChange } from "./data-change";
 
@@ -788,6 +799,19 @@ export interface HarnessClient {
     /** Settings showed the list: steps a harness update added count from now on. */
     acknowledge(): Promise<SetupStepsState>;
     onChange(listener: (state: SetupStepsState) => void): () => void;
+  };
+  /** The harness's profiles (profiles spec §5). A harness with none answers none and refuses every change. */
+  profiles: {
+    get(): Promise<ProfilesState>;
+    /** A new profile from the form's fields; it becomes the active one (the open task closes first). */
+    create(values: Record<string, unknown>): Promise<ProfileResult>;
+    /** Switches to a profile (the open task closes first). */
+    open(id: string): Promise<ProfileResult>;
+    archive(id: string): Promise<ProfileResult>;
+    unarchive(id: string): Promise<ProfileResult>;
+    /** Puts a profile's folder and history in the system Trash. Never the active one. */
+    delete(id: string): Promise<ProfileResult>;
+    onChange(listener: (state: ProfilesState) => void): () => void;
   };
   /** The text size changed from the keyboard (⌘+, ⌘−, ⌘0), already saved. */
   onTextSize(listener: (size: TextSize) => void): () => void;

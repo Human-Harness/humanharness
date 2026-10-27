@@ -53,4 +53,24 @@ describe("SidekickStore", () => {
     const s = new SidekickStore({ read: async () => null, write: async () => Promise.reject(new Error("The app is closing")) });
     expect(await s.set({ on: true })).toEqual({ ok: false, message: "The app is closing" });
   });
+
+  it("two quick changes both survive", async () => {
+    const { s } = await store();
+    await Promise.all([s.set({ wait: 10 }), s.set({ cap: 50_000 })]);
+    expect(await s.settings()).toMatchObject({ wait: 10, cap: 50_000 });
+  });
+
+  it("a change to the same value writes nothing", async () => {
+    const { s, writes } = await store();
+    await s.set({ on: true });
+    await s.set({ on: true });
+    expect(writes).toHaveLength(1);
+  });
+
+  it("a failed read writes nothing", async () => {
+    const writes: unknown[] = [];
+    const s = new SidekickStore({ read: async () => Promise.reject(new Error("disk")), write: async (r) => writes.push(r) });
+    expect(await s.set({ on: true })).toEqual({ ok: false, message: "disk" });
+    expect(writes).toEqual([]);
+  });
 });

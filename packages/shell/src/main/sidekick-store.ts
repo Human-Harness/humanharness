@@ -32,6 +32,8 @@ export interface SidekickStoreDeps {
 
 /** Sidekick's settings (spec §8): the stored values over the defaults; only changed values are stored. */
 export class SidekickStore {
+  private writes: Promise<unknown> = Promise.resolve();
+
   constructor(private readonly d: SidekickStoreDeps) {}
 
   async settings(): Promise<SidekickSettings> {
@@ -39,25 +41,39 @@ export class SidekickStore {
     return sidekickSettings(stored, this.d.manifest);
   }
 
-  /** Applies `patch`; a bad value or a failed write comes back as data, never thrown. */
-  async set(patch: SidekickSettingsPatch): Promise<SidekickSetResult> {
+  /** Applies `patch`, one change at a time; a bad value or a failed read or write comes back as data, never thrown. */
+  set(patch: SidekickSettingsPatch): Promise<SidekickSetResult> {
     const parsed = patchSchema.safeParse(patch);
-    if (!parsed.success) return { ok: false, message: "Unknown Sidekick setting" };
-    try {
-      const stored = await this.d.read().catch(() => null);
-      const next: SidekickSettings = { ...sidekickSettings(stored, this.d.manifest), ...stripUndefined(parsed.data) };
-      const defaults = sidekickSettings(null, this.d.manifest);
-      const changed = Object.fromEntries(Object.entries(next).filter(([k, v]) => defaults[k as keyof SidekickSettings] !== v));
-      if (Object.keys(changed).length > 0) {
-        await this.d.write({ op: "put", collection: SIDEKICK_COLLECTION, record: { id: SIDEKICK_SETTINGS_ID, type: "settings", ...changed } });
-      } else if (stored) {
-        await this.d.write({ op: "delete", collection: SIDEKICK_COLLECTION, key: SIDEKICK_SETTINGS_ID });
+    if (!parsed.success) return Promise.resolve({ ok: false, message: "Unknown Sidekick setting" });
+    return this.serial(async () => {
+      try {
+        const stored = await this.d.read();
+        const now = sidekickSettings(stored, this.d.manifest);
+        const next: SidekickSettings = { ...now, ...stripUndefined(parsed.data) };
+        if (sameSettings(now, next)) return { ok: true, settings: next };
+        const defaults = sidekickSettings(null, this.d.manifest);
+        const changed = Object.fromEntries(Object.entries(next).filter(([k, v]) => defaults[k as keyof SidekickSettings] !== v));
+        if (Object.keys(changed).length > 0) {
+          await this.d.write({ op: "put", collection: SIDEKICK_COLLECTION, record: { id: SIDEKICK_SETTINGS_ID, type: "settings", ...changed } });
+        } else if (stored) {
+          await this.d.write({ op: "delete", collection: SIDEKICK_COLLECTION, key: SIDEKICK_SETTINGS_ID });
+        }
+        return { ok: true, settings: next };
+      } catch (err) {
+        return { ok: false, message: err instanceof Error ? err.message : String(err) };
       }
-      return { ok: true, settings: next };
-    } catch (err) {
-      return { ok: false, message: err instanceof Error ? err.message : String(err) };
-    }
+    });
   }
+
+  private serial<T>(fn: () => Promise<T>): Promise<T> {
+    const run = this.writes.then(fn, fn);
+    this.writes = run.catch(() => undefined);
+    return run;
+  }
+}
+
+function sameSettings(a: SidekickSettings, b: SidekickSettings): boolean {
+  return (Object.keys(a) as (keyof SidekickSettings)[]).every((k) => a[k] === b[k]);
 }
 
 function stripUndefined<T extends object>(o: T): Partial<T> {

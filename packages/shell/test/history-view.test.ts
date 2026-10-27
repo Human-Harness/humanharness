@@ -7,6 +7,21 @@ const at = (iso: string) => new Date(iso);
 const entry = (sha: string, message: string, task: string | null = "t1") => ({ sha, message, date: at("2026-10-13T10:00:00.000Z"), task, action: null });
 
 describe("historyView", () => {
+  it("passes the task's scope through, only when there is one", () => {
+    const g = (scopeId?: string): HistoryTask => ({
+      taskId: "t1",
+      actionId: null,
+      ...(scopeId ? { scopeId } : {}),
+      start: null,
+      end: "b".repeat(40),
+      date: at("2026-10-13T10:00:00.000Z"),
+      changes: [],
+      entries: [entry("b".repeat(40), "Turn: x")],
+    });
+    expect(historyView([g("fracciones")])[0].scopeId).toBe("fracciones");
+    expect(historyView([g()])[0]).not.toHaveProperty("scopeId");
+  });
+
   it("sends dates as ISO strings and the title of the note the task saved", () => {
     const groups: HistoryTask[] = [
       {
@@ -64,5 +79,29 @@ describe("historyView", () => {
   it("names the two restores in English (the raw git data)", () => {
     expect(RESTORE_POINT).toBe("Went back to an earlier point");
     expect(RESTORE_TASK).toBe("Went back to before the task");
+  });
+});
+
+describe("historyView: phases (task-phases spec §6)", () => {
+  it("passes each entry's phase to the window; D0 without one", () => {
+    const date = new Date("2026-10-26T10:00:00.000Z");
+    const [view] = historyView([
+      {
+        taskId: "t1",
+        actionId: "session",
+        start: null,
+        end: "b".repeat(40),
+        date,
+        changes: [],
+        entries: [
+          { sha: "b".repeat(40), message: "Turn: x", date, task: "t1", action: "session", phase: "main" },
+          { sha: "a".repeat(40), message: "Before message", date, task: "t1", action: "session" },
+        ],
+      },
+    ]);
+    expect(view.entries).toEqual([
+      { sha: "b".repeat(40), message: "Turn: x", date: date.toISOString(), phase: "main" },
+      { sha: "a".repeat(40), message: "Before message", date: date.toISOString() },
+    ]);
   });
 });

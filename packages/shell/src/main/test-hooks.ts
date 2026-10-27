@@ -1,6 +1,5 @@
 import path from "node:path";
 import type { EngineDef, ModelChoice } from "@humanharness/engines";
-import type { Language, LocalizedText } from "@humanharness/harness-sdk";
 import type { EngineStatus } from "@humanharness/ui/client";
 
 /** A fake engine for the end-to-end tests: the command to run instead of the real CLI. */
@@ -18,14 +17,16 @@ export interface TestHooks {
   mock?: boolean;
   /** Where the folder step suggests the folder (mock mode keeps it in its temp folder). */
   suggestedFolder?: string;
+  /** How long a time-box minute lasts (HH_TEST_MINUTE_MS, 10..60000): tests and mock mode run a time box fast. */
+  minuteMs?: number;
 }
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
 /**
  * End-to-end test settings from the environment: HH_TEST_USER_DATA, HH_TEST_SHARED_DIR,
- * HH_TEST_SUGGESTED_FOLDER, HH_TEST_MOCK ("1") and HH_TEST_ENGINES (JSON: engine id → { command, env }). Development builds only: a packaged app
- * ignores them. Engine environments keep only HH_FAKE_* variables, so no credential or auth variable
+ * HH_TEST_SUGGESTED_FOLDER, HH_TEST_MOCK ("1"), HH_TEST_MINUTE_MS (a time-box minute in ms) and HH_TEST_ENGINES
+ * (JSON: engine id → { command, env }). Development builds only: a packaged app ignores them. Engine environments keep only HH_FAKE_* variables, so no credential or auth variable
  * can be passed this way.
  */
 export function readTestHooks(env: Record<string, string | undefined>, packaged: boolean): TestHooks {
@@ -39,6 +40,8 @@ export function readTestHooks(env: Record<string, string | undefined>, packaged:
   const suggestedFolder = dir(env.HH_TEST_SUGGESTED_FOLDER);
   if (suggestedFolder) hooks.suggestedFolder = suggestedFolder;
   if (env.HH_TEST_MOCK === "1") hooks.mock = true;
+  const minute = Number(env.HH_TEST_MINUTE_MS);
+  if (env.HH_TEST_MINUTE_MS && Number.isInteger(minute) && minute >= 10 && minute <= 60_000) hooks.minuteMs = minute;
   let raw: unknown;
   try {
     raw = env.HH_TEST_ENGINES ? JSON.parse(env.HH_TEST_ENGINES) : undefined;
@@ -101,35 +104,20 @@ export function isMockEngine(hooks: Pick<TestHooks, "mock" | "engines">, engineI
   return hooks.mock === true && hooks.engines?.[engineId] !== undefined;
 }
 
-/**
- * The language the test engine is shown in: the saved one, else the system's when the harness offers it
- * ("es-AR" → es), else the harness's first language.
- */
-export function mockLanguage(saved: Language | undefined, locale: string, languages: readonly Language[]): Language {
-  if (saved) return saved;
-  return languages.find((l) => locale.toLowerCase().startsWith(l)) ?? languages[0]!;
-}
-
 /** How a faked engine presents itself in mock mode (spec 3f §4): no provider to disclose, nothing leaves the computer. */
-export function mockEngineText(language: Language): {
-  name: string;
-  provider: string;
-  requires: LocalizedText;
-  dataLocation: LocalizedText;
-  trainsOnData: LocalizedText;
-} {
+export function mockEngineText(): { name: string; provider: string; requires: string; dataLocation: string; trainsOnData: string } {
   return {
-    name: language === "es" ? "IA simulada (mock)" : "Simulated AI (mock)",
+    name: "Simulated AI (mock)",
     provider: "Human Harness",
-    requires: { es: "Nada", en: "Nothing" },
-    dataLocation: { es: "Tus datos no salen de esta compu", en: "Your data stays on this computer" },
-    trainsOnData: { es: "No", en: "No" },
+    requires: "Nothing",
+    dataLocation: "Your data stays on this computer",
+    trainsOnData: "No",
   };
 }
 
 /** The one model a faked engine offers in mock mode; every tier uses it (the fake ignores --model). */
 export const MOCK_MODEL = "mock";
 
-export function mockModels(language: Language): ModelChoice[] {
-  return [{ id: MOCK_MODEL, name: language === "es" ? "Modelo de prueba" : "Test model" }];
+export function mockModels(): ModelChoice[] {
+  return [{ id: MOCK_MODEL, name: "Test model" }];
 }

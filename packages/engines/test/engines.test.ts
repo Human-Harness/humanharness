@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
-import { ENGINES, NOTICE_VERSION, availableEngines, brandNames, getEngine, meetsMinVersion, parseVersion } from "../src";
+import { ENGINES, NOTICE_VERSION, OPENCODE_ENV, availableEngines, brandNames, getEngine, meetsMinVersion, parseVersion } from "../src";
 
 describe("ENGINES", () => {
   it("pins the Codex ACP adapter and its session modes", () => {
@@ -19,8 +19,60 @@ describe("ENGINES", () => {
     for (const e of ENGINES) expect(e.statusSource).toMatch(/^https:\/\/\S+ \(\d{4}-\d{2}-\d{2}\)$/);
   });
 
-  it("allows only Claude and Codex in v1", () => {
-    expect(ENGINES.filter((e) => e.status === "allowed").map((e) => e.id).sort()).toEqual(["claude", "codex"]);
+  it("allows Claude, Codex and OpenCode", () => {
+    expect(ENGINES.filter((e) => e.status === "allowed").map((e) => e.id).sort()).toEqual(["claude", "codex", "opencode"]);
+  });
+
+  it("runs the unmodified OpenCode over ACP and sets its profile by config option", () => {
+    const e = getEngine("opencode");
+    expect(e.transport).toEqual({ kind: "acp", command: ["opencode", "acp"], modes: { edit: "build", readOnly: "plan" }, profile: "config-option", env: OPENCODE_ENV });
+    // Every bash, edit, webfetch and websearch call asks, so the harness's permissions decide it.
+    const ask = { bash: "ask", edit: "ask", webfetch: "ask", websearch: "ask" };
+    expect(JSON.parse(OPENCODE_ENV.OPENCODE_CONFIG_CONTENT)).toEqual({ permission: ask });
+    expect(JSON.parse(OPENCODE_ENV.OPENCODE_PERMISSION)).toEqual(ask);
+    expect(OPENCODE_ENV.OPENCODE_DISABLE_CLAUDE_CODE).toBe("1");
+    // Only OpenCode has a fixed environment (D0).
+    expect(ENGINES.filter((x) => x.transport.kind === "acp" && x.transport.env).map((x) => x.id)).toEqual(["opencode"]);
+    expect(e.detect.binary).toBe("opencode");
+    expect(e.reportsLimits).toBe(false);
+    expect(e.reportsCost).toBe(true);
+    expect(e.plansUrl).toBeUndefined();
+    expect(e.setup).toMatchObject({
+      install: { command: "curl -fsSL https://opencode.ai/install | bash", docsUrl: "https://opencode.ai/docs/" },
+      login: ["auth", "login"],
+      status: { args: ["auth", "list"], format: "opencode-auth-list" },
+      update: ["upgrade"],
+      logout: ["auth", "logout"],
+      inTerminal: ["login", "logout"],
+      providersUrl: "https://opencode.ai/docs/providers/",
+    });
+    expect(e.dataLocation).toBe("Depends on the provider you set up in OpenCode");
+    expect(e.brands ?? []).toEqual([]);
+  });
+
+  it("links OpenCode's own terms and privacy policy (spike)", () => {
+    expect(getEngine("opencode").termsUrl).toBe("https://opencode.ai/legal/terms-of-service");
+    expect(getEngine("opencode").privacyUrl).toBe("https://opencode.ai/legal/privacy-policy");
+  });
+
+  it("accepts OpenCode 1.x and 2.x", () => {
+    const min = getEngine("opencode").detect.minVersion;
+    expect(meetsMinVersion("1.19.4", min)).toBe(true);
+    expect(meetsMinVersion("2.0.0", min)).toBe(true);
+  });
+
+  it("keeps the other engines as they were (D0)", () => {
+    for (const id of ["claude", "codex", "kimi", "gemini", "qwen"]) {
+      const e = getEngine(id);
+      expect(e.reportsCost).toBeUndefined();
+      expect(e.setup?.inTerminal).toBeUndefined();
+      expect(e.setup?.providersUrl).toBeUndefined();
+      if (e.transport.kind === "acp") expect(e.transport.profile).toBeUndefined();
+    }
+  });
+
+  it("names OpenCode among the brands a harness may not use", () => {
+    expect(brandNames()).toContain("OpenCode");
   });
 
   it("runs Claude through the official binary, never through ACP", () => {
@@ -31,6 +83,10 @@ describe("ENGINES", () => {
 describe("availableEngines", () => {
   it("offers only allowed engines in distribution builds", () => {
     expect(availableEngines(["claude", "codex", "kimi", "gemini"], "distribution").map((e) => e.id)).toEqual(["claude", "codex"]);
+  });
+
+  it("offers OpenCode in distribution builds", () => {
+    expect(availableEngines(["claude", "codex", "opencode"], "distribution").map((e) => e.id)).toEqual(["claude", "codex", "opencode"]);
   });
 
   it("adds pending engines in development, never excluded ones", () => {
@@ -70,7 +126,7 @@ describe("engine setup data", () => {
   });
 
   it("ships a logo file for each engine the app sets up (placeholders until the official assets pass brand review)", () => {
-    for (const id of ["claude", "codex"]) {
+    for (const id of ["claude", "codex", "opencode"]) {
       const logo = getEngine(id).logo;
       expect(logo).toBe(`assets/${id}.svg`);
       expect(fs.readFileSync(fileURLToPath(new URL(`../${logo}`, import.meta.url)), "utf8")).toMatch(/^<svg /);
@@ -113,6 +169,6 @@ describe("versions", () => {
 
 describe("brandNames", () => {
   it("lists every engine's name, its provider and extra marks, once each", () => {
-    expect(brandNames()).toEqual(["Claude", "Anthropic", "Codex", "OpenAI", "ChatGPT", "GPT", "Kimi", "Moonshot", "Gemini", "Google", "Qwen", "Alibaba"]);
+    expect(brandNames()).toEqual(["Claude", "Anthropic", "Codex", "OpenAI", "ChatGPT", "GPT", "OpenCode", "Kimi", "Moonshot", "Gemini", "Google", "Qwen", "Alibaba"]);
   });
 });

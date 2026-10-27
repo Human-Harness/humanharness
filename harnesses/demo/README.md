@@ -14,7 +14,6 @@ The demo explains Human Harness to developers who clone this repository, and exe
 | `agent/seed/` | Copied into the user's folder the first time. |
 | `ui/App.tsx` | Mounts `HarnessApp` with the two block components and the start view's strings. |
 | `ui/DiagramBlock.tsx`, `ui/FilesBlock.tsx`, `ui/demo.css` | The demo's blocks. |
-| `locales/es.json`, `locales/en.json` | The demo's strings (start view, blocks). |
 | `test/` | The manifest and the block components. |
 
 ## Topics

@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import git from "isomorphic-git";
-import { History, parseCommitMessage, withTrailer } from "../src";
+import { DATA_PREFIX, History, MATERIAL_KEEP, NOTES_PREFIX, parseCommitMessage, withTrailer } from "../src";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -216,6 +216,13 @@ describe("History trailers", () => {
     expect(parseCommitMessage("Turn: a\n\nSome body text\nTask: t1")).toEqual({ subject: "Turn: a", task: null, action: null });
     expect(parseCommitMessage("Turn: a\n\nTask: t1\nSigned-off-by: x")).toEqual({ subject: "Turn: a", task: null, action: null });
     expect(parseCommitMessage("Turn: a\n\nAction: plan\nTask: t1")).toEqual({ subject: "Turn: a", task: "t1", action: "plan" });
+  });
+
+  it("writes and reads the Phase trailer (task-phases spec §6); D0 without it", () => {
+    expect(withTrailer("Before message", { task: "t1", action: "session", phase: "main" })).toBe("Before message\n\nTask: t1\nAction: session\nPhase: main");
+    expect(withTrailer("x", { task: "t1", phase: "bad phase" })).toBe("x\n\nTask: t1");
+    expect(parseCommitMessage("Before message\n\nTask: t1\nAction: session\nPhase: main")).toEqual({ subject: "Before message", task: "t1", action: "session", phase: "main" });
+    expect(parseCommitMessage("Note: x\n\nTask: t1\nAction: plan\n")).not.toHaveProperty("phase");
   });
 });
 
@@ -567,5 +574,75 @@ describe.skipIf(process.platform === "win32")("History restore and symlinks", ()
     fs.symlinkSync("b", link("l"));
     expect(await history.save("after")).toMatch(/^[0-9a-f]{40}$/);
     expect(await history.save("again")).toBeNull();
+  });
+});
+
+describe("Scope trailer", () => {
+  it("writes the scope after the task and reads it back", async () => {
+    write("a.md", "scoped-1");
+    const sha = (await history.save("Turn: fracciones", { task: "t-9", action: "study", scope: "fracciones" }))!;
+    const { commit } = await git.readCommit({ fs, gitdir, oid: sha });
+    expect(commit.message.trim()).toBe("Turn: fracciones\n\nTask: t-9\nAction: study\nScope: fracciones");
+    expect((await history.list())[0]).toMatchObject({ task: "t-9", action: "study", scope: "fracciones" });
+    expect((await history.tasks()).find((g) => g.taskId === "t-9")?.scopeId).toBe("fracciones");
+  });
+
+  it("takes _app, drops an invalid scope, and adds no field without one", () => {
+    expect(withTrailer("Note: x", { task: "t1", scope: "_app" })).toBe("Note: x\n\nTask: t1\nScope: _app");
+    expect(withTrailer("Note: x", { task: "t1", scope: "Bad Scope" })).toBe("Note: x\n\nTask: t1");
+    expect(parseCommitMessage("Note: x\n\nTask: t1\nScope: _app")).toEqual({ subject: "Note: x", task: "t1", action: null, scope: "_app" });
+    expect(parseCommitMessage("Note: x\n\nTask: t1\nScope: ../x")).toEqual({ subject: "Note: x", task: "t1", action: null });
+    expect(parseCommitMessage("Note: x\n\nTask: t1")).toEqual({ subject: "Note: x", task: "t1", action: null });
+  });
+});
+
+describe("data in the history", () => {
+  it("tracks .harness/data/ like the notes, never its temp files or the data-meta stamps", async () => {
+    const dir = fs.mkdtempSync(path.join(root, "data-"));
+    const work = path.join(dir, "Work");
+    fs.mkdirSync(path.join(work, ".harness", "data", "main"), { recursive: true });
+    fs.mkdirSync(path.join(work, ".harness", "data-meta", "main"), { recursive: true });
+    fs.writeFileSync(path.join(work, ".harness", "data", "main", "concepts.json"), "[]\n");
+    fs.writeFileSync(path.join(work, ".harness", "data", "main", "concepts.json.0a1b2c3d-1111-2222-3333-444455556666.tmp"), "[");
+    fs.writeFileSync(path.join(work, ".harness", "data-meta", "main", "concepts.json"), "{}\n");
+    fs.writeFileSync(path.join(work, ".harness", "tasks.json"), "{}");
+    const h = new History(work, path.join(dir, "store"), [".harness/"], [NOTES_PREFIX, DATA_PREFIX]);
+    await h.init();
+    await h.save("Data: concepts");
+    expect(await h.trackedFiles()).toEqual([".harness/data/main/concepts.json"]);
+  });
+});
+
+describe("History keep patterns (material spec §4)", () => {
+  it("tracks files a keep pattern names inside an ignored folder, and skips the rest of it", async () => {
+    const kept = new History(folder, `${gitdir}-keep`, [".harness/", "AGENTS.md"], [NOTES_PREFIX, DATA_PREFIX, MATERIAL_KEEP]);
+    await kept.init();
+    write(".harness/material/main/sources.json", "{}");
+    write(".harness/material/main/conflicts.md", "# Conflicts");
+    write(".harness/material/main/index.md", "| id |");
+    write(".harness/material/main/fragments/a-001.md", "x");
+    write("material/main/ch2.pdf", "%PDF-1.7");
+    const sha = await kept.save("first");
+    const files = await git.listFiles({ fs, gitdir: `${gitdir}-keep`, ref: sha! });
+    expect(files.sort()).toEqual([".harness/material/main/conflicts.md", ".harness/material/main/sources.json", "material/main/ch2.pdf"]);
+  });
+
+  it("a task's changes show the kept files and none of the skipped ones", async () => {
+    const kept = new History(folder, `${gitdir}-keep`, [".harness/", "AGENTS.md"], [NOTES_PREFIX, DATA_PREFIX, MATERIAL_KEEP]);
+    await kept.init();
+    write("a.md", "1");
+    await kept.save("first");
+    write(".harness/material/main/sources.json", "{}");
+    write(".harness/material/main/fragments/a-001.md", "x");
+    await kept.save("added", { task: "t1" });
+    const [group] = await kept.tasks();
+    expect(group.changes).toEqual([{ path: ".harness/material/main/sources.json", kind: "added" }]);
+  });
+
+  it("D0: without the pattern nothing under .harness/material is tracked", async () => {
+    write(".harness/material/main/sources.json", "{}");
+    write("a.md", "1");
+    const sha = await history.save("first");
+    expect(await git.listFiles({ fs, gitdir, ref: sha! })).toEqual(["a.md"]);
   });
 });

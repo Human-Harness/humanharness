@@ -1,6 +1,6 @@
 # Profiles — design
 
-Status: draft, 2026-10-25, waiting for Marco's review. Not in the roadmap yet. Closes gap #2 of `docs/discovery/2026-10-25-student-vs-core.md` (several people per install). Builds on `2026-10-25-scopes-and-data-design.md`. That spec's open question 1 is answered here: a profile is a level **above** scopes.
+Status: approved by Marco on 2026-10-25, with every open question resolved by its proposal (where a question had none, the simplest option, noted in place). Not in the roadmap yet. Closes gap #2 of `docs/discovery/2026-10-25-student-vs-core.md` (several people per install). Builds on `2026-10-25-scopes-and-data-design.md`. That spec's open question 1 is answered here: a profile is a level **above** scopes.
 
 ## 1. Why
 

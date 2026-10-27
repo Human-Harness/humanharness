@@ -1,3 +1,4 @@
+import { answerMessage } from "@humanharness/harness-sdk";
 import { describe, expect, it } from "vitest";
 import { recordingSchema } from "../src/mock";
 import { DEFAULT_FALLBACK, promptKind, replay } from "../src/mock-replay";
@@ -25,6 +26,8 @@ describe("promptKind", () => {
     expect(promptKind("We are closing this topic. Call the `save_note` tool…")).toBe("close");
     expect(promptKind("Checkpoint: this conversation is getting long.")).toBe("checkpoint");
     expect(promptKind("Contame más.")).toBe("reply");
+    expect(promptKind('Next part of this task: "Main block" (`main`).\n\nTeach.')).toBe("phase");
+    expect(promptKind("Time is almost up: finish the current point briefly, in en.")).toBe("wrap-up");
   });
 });
 
@@ -118,5 +121,72 @@ describe("replay", () => {
   it("a recording with only a close turn uses its fallback for a new session", () => {
     const r = recordingSchema.parse({ version: 1, action: "c", match: "# c", fallback: { text: "Nada." }, turns: [{ id: "close", note: { title: "c" } }] });
     expect(replay([r], undefined, "# c", true).play.text).toBe("Nada.");
+  });
+});
+
+describe("replay: answers to input blocks", () => {
+  const quiz = recordingSchema.parse({
+    version: 1,
+    action: "practice",
+    match: "# Task: practice",
+    turns: [
+      {
+        id: "t1",
+        text: "Commit first.",
+        blocks: [{ tool: "show_commit_answer", input: { question: "Who ate more?" } }],
+        respond: [{ block: "commit_answer", value: { choice: "Me", why: "two halves" }, next: "t2" }],
+        next: { "*": "t3" },
+      },
+      { id: "t2", text: "Right." },
+      { id: "t3", text: "Let's see." },
+    ],
+  });
+  const at = { action: "practice", turn: "t1" };
+  const answering = (value: Record<string, unknown>) => answerMessage({ name: "commit_answer", blockId: "t1:0:0", value, display: "x" });
+
+  it("an answer equal to a recorded one, key order aside, plays its turn", () => {
+    const r = replay([quiz], at, answering({ why: "two halves", choice: "Me" }), false);
+    expect(r.play.text).toBe("Right.");
+    expect(r.session).toEqual({ action: "practice", turn: "t2" });
+  });
+
+  it("any other answer follows *, and without * the fallback", () => {
+    expect(replay([quiz], at, answering({ why: "no idea" }), false).play.text).toBe("Let's see.");
+    const strict = recordingSchema.parse({ ...quiz, turns: [{ ...quiz.turns[0], next: undefined }, quiz.turns[1], quiz.turns[2]] });
+    expect(replay([strict], at, answering({ why: "no idea" }), false).play.text).toBe(DEFAULT_FALLBACK);
+  });
+});
+
+describe("replay: phases (task-phases spec §6)", () => {
+  const tutor = recordingSchema.parse({
+    version: 1,
+    action: "session",
+    match: "# Task: session",
+    turns: [
+      { id: "t1", text: "What do you remember?", blocks: [{ tool: "set_phase", input: { to: "main", reason: "Recall done" } }], next: { "*": "t2" } },
+      { id: "t2", text: "Let's start.", setPhase: "main" },
+      { id: "t3", text: "Last point, quickly.", timeUp: true },
+      { id: "t4", text: "Sum it up.", setPhase: "close" },
+    ],
+  });
+  const at = { action: "session", turn: "t1" };
+
+  it("a phase change plays the turn recorded for that part, wherever the session is", () => {
+    const r = replay([tutor], at, 'Next part of this task: "Main block" (`main`).\n\nTeach.', false);
+    expect(r.play.text).toBe("Let's start.");
+    expect(r.session).toEqual({ action: "session", turn: "t2" });
+    expect(replay([tutor], r.session, 'Next part of this task: "Close" (`close`).', false).play.text).toBe("Sum it up.");
+  });
+
+  it("the wrap-up plays the timeUp turn; a part or wrap-up not recorded plays the fallback and stays put", () => {
+    expect(replay([tutor], at, "Time is almost up: finish the current point briefly, in en.", false).play.text).toBe("Last point, quickly.");
+    const none = replay([tutor], at, 'Next part of this task: "Extra" (`extra`).', false);
+    expect(none.play.text).toBe(DEFAULT_FALLBACK);
+    expect(none.session).toEqual(at);
+  });
+
+  it("a setPhase or timeUp turn is never reached by a reply", () => {
+    const r = replay([tutor], { action: "session", turn: "t2" }, "Tell me more", false);
+    expect(r.play.text).toBe(DEFAULT_FALLBACK);
   });
 });

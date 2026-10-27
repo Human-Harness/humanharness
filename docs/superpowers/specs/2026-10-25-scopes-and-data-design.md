@@ -1,6 +1,6 @@
 # Scopes and harness data — design
 
-Status: draft, 2026-10-25, waiting for Marco's review. Not in the roadmap yet. Comes from the student-vs-core gap analysis (`docs/discovery/2026-10-25-student-vs-core.md`), which puts these two first, because most of the other gaps and the material processing spec (`2026-10-25-material-processing-design.md`) depend on them.
+Status: approved by Marco on 2026-10-25, with every open question resolved by its proposal (where a question had none, the simplest option, noted in place). Not in the roadmap yet. Comes from the student-vs-core gap analysis (`docs/discovery/2026-10-25-student-vs-core.md`), which puts these two first, because most of the other gaps and the material processing spec (`2026-10-25-material-processing-design.md`) depend on them.
 
 ## 1. Why
 

@@ -1,9 +1,9 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import { ChatLog } from "../src/main/chat-log";
-import { archiveStaleChat, sessionEngine, startNewChatIfEngineChanged } from "../src/main/engine-switch";
+import { archiveChatsOnEngineChange, archiveStaleChat, sessionEngine, startNewChatIfEngineChanged } from "../src/main/engine-switch";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -25,6 +25,20 @@ describe("startNewChatIfEngineChanged", () => {
     expect(fs.existsSync(path.join(folder, ".harness", "session.json"))).toBe(false);
     expect(fs.readdirSync(path.join(folder, ".harness", "chats", "archive"))).toHaveLength(1);
     expect(await startNewChatIfEngineChanged(folder, "codex")).toBeNull();
+  });
+
+  it("archives every scope's chat", async () => {
+    const folder = await folderWith("claude", true);
+    await new ChatLog(folder, undefined, "fracciones").append({ id: "2", role: "user", text: "x", blocks: [], activities: [], at: "t" });
+    expect(await startNewChatIfEngineChanged(folder, "codex")).toBe("claude");
+    expect(await ChatLog.scopesIn(folder)).toEqual([]);
+    expect(fs.readdirSync(path.join(folder, ".harness", "chats", "archive"))).toHaveLength(2);
+  });
+
+  it("finds the previous engine in any scope's chat", async () => {
+    const folder = await folderWith(null, false);
+    await new ChatLog(folder, "claude", "fracciones").append({ id: "2", role: "user", text: "x", blocks: [], activities: [], at: "t" });
+    expect(await startNewChatIfEngineChanged(folder, "codex")).toBe("claude");
   });
 
   it("keeps everything when the engine is the same or there was no session", async () => {
@@ -103,5 +117,31 @@ describe("engine switch with tasks", () => {
     expect(fs.existsSync(path.join(folder, ".harness", "notes", "manifest.md"))).toBe(true);
     expect(await sessionEngine(folder)).toBeNull();
     expect(await startNewChatIfEngineChanged(folder, "codex")).toBeNull();
+  });
+});
+
+describe("archiveChatsOnEngineChange (profiles spec §5 'Engine switch')", () => {
+  it("archives the active profile's chat and every other one's, answering the active one's engine", async () => {
+    const sofi = await folderWith("claude", true);
+    const tomas = await folderWith("claude", true);
+    expect(await archiveChatsOnEngineChange(sofi, [tomas], "codex")).toBe("claude");
+    expect(await new ChatLog(sofi).load()).toEqual([]);
+    expect(await new ChatLog(tomas).load()).toEqual([]);
+    expect(fs.readdirSync(path.join(tomas, ".harness", "chats", "archive"))).toHaveLength(1);
+  });
+
+  // Root reads a folder whatever its mode.
+  it.skipIf(process.getuid?.() === 0)("another profile that can't be read is logged; the active one still starts over", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const sofi = await folderWith("claude", true);
+    const broken = await folderWith("claude", true);
+    fs.chmodSync(path.join(broken, ".harness"), 0o000);
+    try {
+      expect(await archiveChatsOnEngineChange(sofi, [broken], "codex")).toBe("claude");
+    } finally {
+      fs.chmodSync(path.join(broken, ".harness"), 0o755);
+    }
+    expect(error).toHaveBeenCalled();
+    error.mockRestore();
   });
 });

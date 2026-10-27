@@ -15,9 +15,11 @@
     "@humanharness/blocks": "workspace:*",
     "@humanharness/engines": "workspace:*",
     "@humanharness/harness-sdk": "workspace:*",
+    "@humanharness/material": "workspace:*",
     "@humanharness/runtime": "workspace:*",
     "@humanharness/ui": "workspace:*",
-    "@humanharness/workspace": "workspace:*"
+    "@humanharness/workspace": "workspace:*",
+    "pdfjs-dist": "^6.4.299"
   },
   "devDependencies": {
     "@fontsource/lexend": "5.3.0",

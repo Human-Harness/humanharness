@@ -1,14 +1,32 @@
 import fs from "node:fs";
 import path from "node:path";
 import git from "isomorphic-git";
-import { NOTES_PREFIX } from "./notes";
+import { DATA_PREFIX, MATERIAL_KEEP, NOTES_PREFIX, isScopeDir } from "./layout";
 import { BEFORE_MESSAGE } from "./subjects";
+
+/**
+ * A path the history tracks inside an ignored folder: a prefix (the notes, the data), or the files `match` names at
+ * most `depth` folders below `prefix` (material spec §4: `MATERIAL_KEEP`).
+ */
+export type HistoryKeep = string | { readonly prefix: string; readonly match: RegExp; readonly depth: number };
+
+/**
+ * What the app's history keeps under `.harness/`: the notes and the data; with material, its registry and decisions
+ * (`MATERIAL_KEEP`). The one rule for the shell's history and the runtime's, so both agree (D0 without material).
+ */
+export const appHistoryKeep = (material: boolean): HistoryKeep[] => [NOTES_PREFIX, DATA_PREFIX, ...(material ? [MATERIAL_KEEP] : [])];
+
+const keeps = (k: HistoryKeep, file: string): boolean => (typeof k === "string" ? file.startsWith(k) : k.match.test(file));
 
 const AUTHOR = { name: "Human Harness", email: "history@humanharness.local" };
 
-/** The temp file `writeNote` renames into place (`.harness/notes/<slug>.md.<uuid>.tmp`); the person's own `.tmp` files stay tracked. */
-const isNoteTempFile = (file: string): boolean =>
-  file.startsWith(NOTES_PREFIX) && /\.md\.[0-9a-f-]+\.tmp$/.test(file.slice(NOTES_PREFIX.length));
+/**
+ * The temp files `writeNote` and the data store rename into place (`<file>.md.<uuid>.tmp`, `<file>.json.<uuid>.tmp`);
+ * the person's own `.tmp` files stay tracked.
+ */
+const isAppTempFile = (file: string): boolean =>
+  (file.startsWith(NOTES_PREFIX) && /\.md\.[0-9a-f-]+\.tmp$/.test(file.slice(NOTES_PREFIX.length))) ||
+  (file.startsWith(DATA_PREFIX) && /\.json\.[0-9a-f-]+\.tmp$/.test(file.slice(DATA_PREFIX.length)));
 
 export interface HistoryEntry {
   sha: string;
@@ -19,12 +37,20 @@ export interface HistoryEntry {
   task: string | null;
   /** The task's manifest action (its `Action:` trailer); null for a free question or outside any task. */
   action: string | null;
+  /** The task's scope (its `Scope:` trailer), only for a harness with scopes. */
+  scope?: string;
+  /** The task's phase (its `Phase:` trailer), only for an action with phases. */
+  phase?: string;
 }
 
 /** The task a history commit belongs to, written as git trailers under its subject. */
 export interface HistoryTrailer {
   task: string;
   action?: string;
+  /** The task's scope, `_app` included; only for a harness with scopes (spec §3.3). */
+  scope?: string;
+  /** The task's phase now (task-phases spec §6); only for an action with phases. */
+  phase?: string;
 }
 
 /** A file a task added, changed or deleted (tracked files only). */
@@ -35,11 +61,13 @@ export interface FileChange {
 
 /** The history commits of one task, as the History panel shows them. */
 export interface HistoryTask {
-  /** Null: the "Other changes" group (commits outside any task). */
+  /** Null: the "Outside a task" group (commits outside any task). */
   taskId: string | null;
   actionId: string | null;
+  /** The scope the task ran in, when the harness has scopes. */
+  scopeId?: string;
   /**
-   * Where "Go back to before this task" lands: the task's first "Before message" snapshot when its first
+   * Where "Undo this task" lands: the task's first "Before message" snapshot when its first
    * commit is one (so the person's own edits made before the task stay), else the commit before the task's
    * first commit; null when the group starts at the very first commit.
    */
@@ -48,7 +76,7 @@ export interface HistoryTask {
   end: string;
   /** The date of `end`. */
   date: Date;
-  /** Tasks: the tree diff from `start` to `end`. Other changes: the union of its commits' own changes. */
+  /** Tasks: the tree diff from `start` to `end`. Outside a task: the union of its commits' own changes. */
   changes: FileChange[];
   /** Newest first. */
   entries: HistoryEntry[];
@@ -103,14 +131,20 @@ export function withTrailer(message: string, trailer?: HistoryTrailer): string {
   if (!trailer || !TRAILER_ID.test(trailer.task)) return subject;
   const lines = [`Task: ${trailer.task}`];
   if (trailer.action !== undefined && TRAILER_ID.test(trailer.action)) lines.push(`Action: ${trailer.action}`);
+  // Checked on its own: `_app` is a scope folder, but not a valid TRAILER_ID.
+  if (trailer.scope !== undefined && isScopeDir(trailer.scope)) lines.push(`Scope: ${trailer.scope}`);
+  if (trailer.phase !== undefined && TRAILER_ID.test(trailer.phase)) lines.push(`Phase: ${trailer.phase}`);
   return `${subject}\n\n${lines.join("\n")}`;
 }
 
 /** A trailer line as `withTrailer` writes it. */
-const TRAILER_LINE = /^(Task|Action): \S+$/;
+const TRAILER_LINE = /^(Task|Action|Scope|Phase): \S+$/;
 
-/** A commit message's subject and its trailers (null when absent or not a valid id). Only a last paragraph made entirely of trailer lines counts. */
-export function parseCommitMessage(raw: string): { subject: string; task: string | null; action: string | null } {
+/**
+ * A commit message's subject and its trailers (null when absent or not a valid id; `scope` and `phase` only when
+ * present). Only a last paragraph made entirely of trailer lines counts.
+ */
+export function parseCommitMessage(raw: string): { subject: string; task: string | null; action: string | null; scope?: string; phase?: string } {
   const text = raw.replace(/\r\n/g, "\n").trim();
   const paragraphs = text.split(/\n{2,}/);
   const last = paragraphs.length > 1 ? paragraphs[paragraphs.length - 1] : "";
@@ -119,7 +153,15 @@ export function parseCommitMessage(raw: string): { subject: string; task: string
     const m = new RegExp(`^${key}: (.+)$`, "m").exec(trailers);
     return m && TRAILER_ID.test(m[1]) ? m[1] : null;
   };
-  return { subject: text.split("\n")[0], task: value("Task"), action: value("Action") };
+  const scope = /^Scope: (.+)$/m.exec(trailers)?.[1];
+  const phase = value("Phase");
+  return {
+    subject: text.split("\n")[0],
+    task: value("Task"),
+    action: value("Action"),
+    ...(isScopeDir(scope) ? { scope } : {}),
+    ...(phase ? { phase } : {}),
+  };
 }
 
 /**
@@ -131,8 +173,8 @@ export class History {
     private readonly folder: string,
     private readonly gitdir: string,
     private readonly ignore: string[] = [".harness/"],
-    /** Prefixes tracked even inside an ignored one (the notes under `.harness/`). */
-    private readonly keep: string[] = [],
+    /** Paths tracked even inside an ignored folder (the notes and the data under `.harness/`, the material's decisions). */
+    private readonly keep: HistoryKeep[] = [],
   ) {}
 
   private headTime = 0;
@@ -161,8 +203,8 @@ export class History {
 
   private tracked = (file: string): boolean =>
     !file.endsWith(".DS_Store") &&
-    !isNoteTempFile(file) &&
-    (this.keep.some((k) => file.startsWith(k)) || !this.ignore.some((i) => (i.endsWith("/") ? file.startsWith(i) : file === i)));
+    !isAppTempFile(file) &&
+    (this.keep.some((k) => keeps(k, file)) || !this.ignore.some((i) => (i.endsWith("/") ? file.startsWith(i) : file === i)));
 
   async init(): Promise<void> {
     await fs.promises.mkdir(this.gitdir, { recursive: true });
@@ -342,13 +384,13 @@ export class History {
     if ((await this.last()) === null) return [];
     const log = await git.log({ ...this.repo(), depth, cache });
     return log.map((e) => {
-      const { subject, task, action } = parseCommitMessage(e.commit.message);
-      return { sha: e.oid, message: subject, date: new Date(e.commit.author.timestamp * 1000), task, action };
+      const { subject, task, action, scope, phase } = parseCommitMessage(e.commit.message);
+      return { sha: e.oid, message: subject, date: new Date(e.commit.author.timestamp * 1000), task, action, ...(scope ? { scope } : {}), ...(phase ? { phase } : {}) };
     });
   }
 
   /**
-   * The commits of the last `depth`, grouped by task id, newest task first; the "Other changes" group always last.
+   * The commits of the last `depth`, grouped by task id, newest task first; the "Outside a task" group always last.
    * A task's commits need not be contiguous: its changes run from its `start` to its last commit, so they
    * include whatever happened in between (untagged commits too). A task cut by `depth` is followed back
    * past it to find its true first commit.
@@ -367,9 +409,11 @@ export class History {
       const oldest = entries[entries.length - 1].sha;
       const start = taskId === null ? await this.parentOf(oldest, cache) : await this.taskStart(taskId, oldest, cache);
       const end = entries[0];
+      const scopeId = entries.find((e) => e.scope !== undefined)?.scope;
       out.push({
         taskId,
         actionId: entries.find((e) => e.action !== null)?.action ?? null,
+        ...(scopeId ? { scopeId } : {}),
         start,
         end: end.sha,
         date: end.date,
@@ -386,6 +430,18 @@ export class History {
       const matrix = await git.statusMatrix({ ...this.repo(), filter: this.tracked });
       return matrix.filter(([, , workdir]) => workdir !== 0).map(([file]) => file);
     });
+  }
+
+  /** A file's content at commit `sha` (relative path, forward slashes); null when the commit or the file isn't there. */
+  async readFileAt(sha: string | null, file: string): Promise<string | null> {
+    if (sha === null) return null;
+    try {
+      const { blob } = await git.readBlob({ fs, gitdir: this.gitdir, oid: sha, filepath: file });
+      return Buffer.from(blob).toString("utf8");
+    } catch (err) {
+      if ((err as { code?: string }).code === "NotFoundError") return null;
+      throw err;
+    }
   }
 
   private async parentOf(sha: string, cache: object = {}): Promise<string | null> {
@@ -410,13 +466,17 @@ export class History {
     return commit.parent[0] ?? null;
   }
 
-  /** A folder the history never tracks anything in: ignored, and no `keep` prefix lies inside it. */
+  /** A folder the history never tracks anything in: ignored, and no `keep` entry can name a file inside it. */
   private skipsFolder(dir: string): boolean {
     const prefix = `${dir}/`;
-    return (
-      this.ignore.some((i) => i.endsWith("/") && prefix.startsWith(i)) &&
-      !this.keep.some((k) => k.startsWith(prefix) || prefix.startsWith(k))
-    );
+    const keepsInside = (k: HistoryKeep): boolean => {
+      if (typeof k === "string") return k.startsWith(prefix) || prefix.startsWith(k);
+      if (k.prefix.startsWith(prefix)) return true;
+      if (!prefix.startsWith(k.prefix)) return false;
+      // Folders deeper than `depth` below the prefix hold nothing the pattern names (the fragments folder).
+      return prefix.slice(k.prefix.length).split("/").filter(Boolean).length <= k.depth;
+    };
+    return this.ignore.some((i) => i.endsWith("/") && prefix.startsWith(i)) && !this.keep.some(keepsInside);
   }
 
   /** Tracked files that differ between two commits; with no `from`, every file of `to` is added. */

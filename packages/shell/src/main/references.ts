@@ -1,11 +1,11 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import type { HarnessReference, LocalizedText } from "@humanharness/harness-sdk";
+import type { HarnessReference } from "@humanharness/harness-sdk";
 import { folderProblem, realFolder } from "./validate";
 
 export interface ResolvedReference {
   id: string;
-  label: LocalizedText;
+  label: string;
   /** Absolute real path. */
   path: string;
 }
@@ -28,7 +28,7 @@ export async function appSourceDir(harnessDir: string): Promise<string | null> {
 
 /**
  * Whether the agent may read `dir` (a real path; `home` real too): never a dot-folder directly in the home
- * folder or anything inside one (~/.claude, ~/.codex, ~/.gemini, ~/.ssh, ~/.aws, ~/.config...), ~/Library,
+ * folder or anything inside one (~/.claude, ~/.codex, ~/.gemini, ~/.opencode, ~/.local/share/opencode, ~/.ssh, ~/.aws, ~/.config...), ~/Library,
  * system folders, the whole home or a standard home folder as a whole. A comma would break Claude's tool lists.
  */
 export function referenceAllowed(dir: string, home: string): boolean {
@@ -77,24 +77,37 @@ export async function resolveReferences(
 /**
  * The references that may be used with the working folder `folder`. A reference that is the working
  * folder or contains it is refused (`refused` gets why): its read-only rules would stop the agent from
- * changing the person's files.
+ * changing the person's files. With profiles, `root` is the app's folder: a reference inside it (another profile's
+ * folder) is refused too, so one person's work never reaches another's agent. Without `root`, as before.
  */
 export async function usableReferences(
   refs: ResolvedReference[],
   folder: string,
   refused: (message: string) => void = () => {},
+  root?: string,
 ): Promise<ResolvedReference[]> {
-  let real: string;
-  try {
-    real = await realFolder(folder);
-  } catch {
-    real = path.resolve(folder);
-  }
+  const real = await realOr(folder);
   const f = norm(real);
+  const realRoot = root === undefined ? null : await realOr(root);
+  const r0 = realRoot === null ? null : norm(realRoot);
   return refs.filter((r) => {
     const ref = norm(r.path);
-    if (f !== ref && !f.startsWith(ref + path.sep)) return true;
-    refused(`The reference folder "${r.id}" (${r.path}) contains the working folder ${real}: it is left out, so the agent can still change your files.`);
-    return false;
+    if (f === ref || f.startsWith(ref + path.sep)) {
+      refused(`The reference folder "${r.id}" (${r.path}) contains the working folder ${real}: it is left out, so the agent can still change your files.`);
+      return false;
+    }
+    if (r0 !== null && ref.startsWith(r0 + path.sep)) {
+      refused(`The reference folder "${r.id}" (${r.path}) is inside the app's folder ${realRoot}: it is left out, so one person never reads another's work.`);
+      return false;
+    }
+    return true;
   });
+}
+
+async function realOr(folder: string): Promise<string> {
+  try {
+    return await realFolder(folder);
+  } catch {
+    return path.resolve(folder);
+  }
 }

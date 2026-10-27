@@ -1,0 +1,773 @@
+import { createHash } from "node:crypto";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { hasMaterial } from "@humanharness/harness-sdk";
+import { type ConvertRunner, ConvertStopped, type Job, MAX_BYTES, MaterialStore, STAGES, workerRunner } from "@humanharness/material";
+import { DATA_PREFIX, MATERIAL_KEEP, NOTES_PREFIX } from "@humanharness/workspace";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { type MaterialDeps, MaterialService, promptFragments } from "../src/main/material";
+import { MaterialJobs } from "../src/main/material-jobs";
+
+// The real review and sheet stages; some tests below put a stand-in in their place.
+const realReview = STAGES.review;
+const realSheet = STAGES.sheet;
+
+let root: string;
+let base: string;
+let picked: string[] | null;
+const sent: [string, unknown][] = [];
+const changes: string[] = [];
+const trashed: string[] = [];
+let service: MaterialService;
+
+const stageFields = { fragmentKinds: ["explanation"], sheet: { sections: [{ id: "terms", label: "Key terms", prompt: "List them." }], maxTokens: 800 }, tiers: {} };
+
+const deps = (over: Partial<MaterialDeps> = {}): MaterialDeps => ({
+  material: { accepts: ["text", "pdf", "web"], grounding: { default: "mixed", personCanChange: true }, budget: { indexTokens: 600 }, ...stageFields },
+  base: async () => base,
+  scopeOk: async (s) => s === "fractions",
+  pickFiles: async () => picked,
+  fetchLink: async () => ({ ok: false }),
+  send: (channel, value) => void sent.push([channel, value]),
+  provider: async () => "Anthropic",
+  window: async () => null,
+  afterChange: async (scope, what) => void changes.push(`${scope}: ${what}`),
+  trash: async (file) => void trashed.push(file),
+  ...over,
+});
+
+/** A seeded source's original, as kept: the queue looks at originals (§11 update), so one that is missing is removed. */
+const A_TEXT = "# A\n\nText.";
+const A_HASH = createHash("sha256").update(A_TEXT).digest("hex");
+const keepA = () => {
+  fs.mkdirSync(path.join(base, "material", "fractions"), { recursive: true });
+  fs.writeFileSync(path.join(base, "material", "fractions", "a.md"), A_TEXT);
+};
+
+const write = (name: string, text: string) => {
+  const file = path.join(root, name);
+  fs.writeFileSync(file, text);
+  return file;
+};
+
+beforeEach(() => {
+  root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-mat-"));
+  base = path.join(root, "anna");
+  fs.mkdirSync(base);
+  picked = null;
+  sent.length = 0;
+  changes.length = 0;
+  trashed.length = 0;
+  service = new MaterialService(deps());
+});
+afterEach(() => fs.rmSync(root, { recursive: true, force: true }));
+
+describe("MaterialService", () => {
+  it("adds a picked file to the scope, in the base, and sends the scope's view", async () => {
+    picked = [write("Fractions.md", `# Fractions\n\n${"A fraction names a part. ".repeat(40)}`)];
+    expect(await service.add("fractions")).toEqual({ ok: true, added: ["fractions"], refused: [] });
+    expect(fs.existsSync(path.join(base, "material", "fractions", "Fractions.md"))).toBe(true);
+    const view = await service.list("fractions");
+    expect(view).toMatchObject({ scope: "fractions", grounding: { mode: "mixed", canChange: true }, provider: "Anthropic", window: null });
+    expect(view.sources[0]).toMatchObject({ id: "fractions", name: "Fractions.md", status: "validating", stage: "review", failed: false });
+    expect(view.sources[0].fragments).toBeGreaterThan(0);
+    expect(sent.at(-1)).toEqual(["hh:materialStatus", view]);
+    expect(changes).toEqual(["fractions: added fractions"]);
+  });
+
+  it("refused files come back with their message; nothing is kept", async () => {
+    picked = [write("song.mp3", "ID3....")];
+    const r = await service.add("fractions");
+    expect(r).toEqual({ ok: true, added: [], refused: [{ name: "song.mp3", message: expect.any(String) }] });
+    expect(r.ok && r.refused[0].message.length).toBeGreaterThan(0);
+    expect(fs.existsSync(path.join(base, "material"))).toBe(false);
+    expect(changes).toEqual([]);
+  });
+
+  it("a file past the size limit is refused without being read", async () => {
+    const file = write("huge.txt", "");
+    fs.truncateSync(file, MAX_BYTES + 1);
+    picked = [file];
+    expect(await service.add("fractions")).toMatchObject({ ok: true, added: [], refused: [{ name: "huge.txt" }] });
+    expect(fs.existsSync(path.join(base, "material"))).toBe(false);
+  });
+
+  it("unknown scopes, `_app` and a cancelled dialog", async () => {
+    expect(await service.add("other")).toEqual({ ok: false, reason: "unknown-scope" });
+    expect(await service.add("_app")).toEqual({ ok: false, reason: "unknown-scope" });
+    expect(await service.add("../x")).toEqual({ ok: false, reason: "unknown-scope" });
+    expect(await service.add("fractions")).toEqual({ ok: true, added: [], refused: [] });
+    const notReady = new MaterialService(deps({ base: async () => null }));
+    expect(await notReady.add("fractions")).toEqual({ ok: false, reason: "not-ready" });
+  });
+
+  it("a link is fetched, kept as its page and read with its url", async () => {
+    const html = `<html><body><nav>Menu item</nav><article><h1>Halves</h1>${"<p>Half of a whole is one of two equal parts.</p>".repeat(12)}</article></body></html>`;
+    const linked = new MaterialService(
+      deps({ fetchLink: async (u) => ({ ok: true, name: "example-org-halves.html", data: Buffer.from(html), url: u, fetchedAt: "2026-10-27T00:00:00.000Z" }) }),
+    );
+    expect(await linked.addLink("fractions", "https://example.org/halves")).toEqual({ ok: true, added: ["example-org-halves"], refused: [] });
+    const view = await linked.list("fractions");
+    expect(view.sources[0]).toMatchObject({ name: "example-org-halves.html", url: "https://example.org/halves", status: "validating" });
+    expect(await service.addLink("fractions", "https://example.org/x")).toEqual({ ok: false, reason: "fetch" });
+    expect(await service.addLink("fractions", 42)).toEqual({ ok: false, reason: "fetch" });
+  });
+
+  it("a profile switch changes the base: each profile sees its own material", async () => {
+    picked = [write("a.md", "# A\n\nText.")];
+    await service.add("fractions");
+    base = path.join(root, "ben");
+    fs.mkdirSync(base);
+    expect((await service.list("fractions")).sources).toEqual([]);
+  });
+
+  it("coverage: the items no fragment links to, once a source is usable; no `uncovered` without items (§8)", async () => {
+    const withItems = deps({
+      material: { accepts: ["text"], grounding: { default: "mixed", personCanChange: true }, budget: { indexTokens: 600 }, items: { collection: "concepts", label: "name" }, ...stageFields },
+      items: async () => {
+        reads++;
+        return [{ key: "halves", label: "Halves" }];
+      },
+    });
+    let reads = 0;
+    const svc = new MaterialService(withItems);
+    expect(await svc.list("fractions")).not.toHaveProperty("uncovered");
+    picked = [write("a.md", `# A\n\n${"Text about a whole. ".repeat(30)}`)];
+    await svc.add("fractions");
+    // Still being checked: no coverage yet (every item would read as missing).
+    expect(await svc.list("fractions")).not.toHaveProperty("uncovered");
+    const store = svc.storeAt(base, "fractions");
+    await store.update((l) => l.map((s) => ({ ...s, status: "ready" as const, stage: undefined })));
+    // Labelled, but the sheet and the links are still due.
+    await store.setStale("link");
+    expect(await svc.list("fractions")).not.toHaveProperty("uncovered");
+    await store.setStale(false);
+    expect((await svc.list("fractions")).uncovered).toEqual(["Halves"]);
+    // Only the links stage reads the items; the others only learn there are some.
+    reads = 0;
+    const link = await svc.stageContext({ scope: "fractions", stage: "link" }, store);
+    expect(link).toMatchObject({ items: [{ key: "halves", label: "Halves" }], hasItems: true });
+    const review = await svc.stageContext({ scope: "fractions", source: "a", stage: "review" }, store);
+    expect(review).not.toHaveProperty("items");
+    expect(review.hasItems).toBe(true);
+    expect(reads).toBe(1);
+    // Without `items` in the manifest: no key, and the stages get none.
+    expect(await service.list("fractions")).not.toHaveProperty("uncovered");
+    const sheet = await service.stageContext({ scope: "fractions", stage: "sheet" }, new MaterialStore(base, "fractions"));
+    expect(sheet).not.toHaveProperty("items");
+    expect(sheet).not.toHaveProperty("hasItems");
+  });
+
+  it("the grounding mode is per scope, and only when the person may change it", async () => {
+    expect(await service.setGrounding("fractions", "strict")).toEqual({ ok: true });
+    expect((await service.list("fractions")).grounding.mode).toBe("strict");
+    expect(await service.setGrounding("fractions", "loose" as never)).toEqual({ ok: false, reason: "invalid" });
+    const fixed = new MaterialService(deps({ material: { accepts: ["text"], grounding: { default: "strict", personCanChange: false }, budget: { indexTokens: 600 }, ...stageFields } }));
+    expect(await fixed.setGrounding("fractions", "mixed")).toEqual({ ok: false, reason: "invalid" });
+    // A choice left on disk (made when the harness still allowed it, or by hand) doesn't override a fixed mode.
+    const left = new MaterialService(deps({ material: { accepts: ["text"], grounding: { default: "mixed", personCanChange: false }, budget: { indexTokens: 600 }, ...stageFields } }));
+    expect((await left.list("fractions")).grounding).toEqual({ mode: "mixed", canChange: false });
+  });
+
+  it("confirm checks its source id; an answer that doesn't apply is invalid", async () => {
+    expect(await service.confirm("fractions", "../x", {})).toEqual({ ok: false, reason: "unknown-source" });
+    expect(await service.confirm("fractions", "nothing", {})).toEqual({ ok: false, reason: "invalid" });
+  });
+
+  it("a full review: confirming it reviews every fragment, without converting again", async () => {
+    picked = [write("Fractions.md", `# Fractions\n\n${"A fraction names a part. ".repeat(40)}`)];
+    await service.add("fractions");
+    const store = new MaterialStore(base, "fractions");
+    const before = (await store.source("fractions"))!.fragments;
+    await store.patch("fractions", (s) => {
+      const { stage: _s, ...rest } = s;
+      return { ...rest, status: "pending", notice: "full-review", reviewQueue: ["x"] };
+    });
+    expect((await service.list("fractions")).sources[0]).toMatchObject({ status: "pending", notice: "full-review", asks: [] });
+    // Converting would go through the runner: one that refuses everything shows it didn't.
+    const strict = new MaterialService(deps({ runner: { convert: () => Promise.reject(new Error("no")), measure: () => Promise.reject(new Error("no")) } }));
+    expect(await strict.confirm("fractions", "fractions", {})).toEqual({ ok: true });
+    const s = (await store.source("fractions"))!;
+    expect(s).toMatchObject({ status: "validating", stage: "review", fullReview: true, fragments: before });
+    expect(s.notice).toBeUndefined();
+    expect(s.reviewQueue).toBeUndefined();
+  });
+
+  it("decide: the person's answer to a question; anything else is refused", async () => {
+    picked = [write("Fractions.md", `# Fractions\n\n${"A fraction names a part. ".repeat(40)}`)];
+    await service.add("fractions");
+    const store = new MaterialStore(base, "fractions");
+    await store.patch("fractions", (s) => ({ ...s, status: "needs-person", asks: [{ question: "Use it?", choices: ["use", "remove"] }] }));
+    expect((await service.list("fractions")).sources[0].asks).toEqual([{ question: "Use it?", choices: ["use", "remove"] }]);
+    expect(await service.decide("fractions", "fractions", null, "nope")).toEqual({ ok: false, reason: "invalid" });
+    expect(await service.decide("fractions", "fractions", "../x", "use")).toEqual({ ok: false, reason: "invalid" });
+    expect(await service.decide("fractions", "../x", null, "use")).toEqual({ ok: false, reason: "unknown-source" });
+    expect(await service.decide("fractions", "fractions", null, "keep")).toEqual({ ok: false, reason: "invalid" });
+    expect(await service.decide("fractions", "fractions", null, "use")).toEqual({ ok: true });
+    expect(await store.source("fractions")).toMatchObject({ status: "validating", stage: "label" });
+    expect(changes.at(-1)).toBe("fractions: decided fractions");
+    // Questions a hand edit broke don't reach the window.
+    await store.patch("fractions", (s) => ({ ...s, asks: [null, { question: "?", choices: null }, { question: "Use it?", choices: ["use"] }] as never }));
+    expect((await service.list("fractions")).sources[0].asks).toEqual([{ question: "Use it?", choices: ["use"] }]);
+    await store.patch("fractions", (s) => ({ ...s, status: "needs-person", asks: [{ question: "Use it?", choices: ["use", "remove"] }] }));
+    expect(await service.decide("fractions", "fractions", null, "remove")).toEqual({ ok: true });
+    expect(trashed).toEqual([path.join(base, "material", "fractions", "Fractions.md")]);
+    expect((await service.list("fractions")).sources).toEqual([]);
+  });
+
+  it("the original of a source or a fragment, only inside the scope's folder", async () => {
+    picked = [write("Fractions.md", `# Fractions\n\n${"A fraction names a part. ".repeat(40)}`)];
+    await service.add("fractions");
+    const kept = path.join(base, "material", "fractions", "Fractions.md");
+    expect(await service.originalOf("fractions", "fractions")).toBe(kept);
+    expect(await service.originalOf("fractions", "fractions-001")).toBe(kept);
+    expect(await service.originalOf("fractions", "../../etc")).toBeNull();
+    expect(await service.originalOf("other", "fractions")).toBeNull();
+  });
+
+  it("a citation's label: the source and the fragment's location; null for anything else", async () => {
+    picked = [write("Fractions.md", `# Fractions\n\n${"A fraction names a part. ".repeat(40)}`)];
+    await service.add("fractions");
+    const store = service.storeAt(base, "fractions");
+    const location = (await store.readFragment("fractions-001"))!.meta.location;
+    expect(await service.cite("fractions", "fractions-001")).toEqual({ label: `Fractions.md, ${location}` });
+    expect(await service.cite("fractions", "fractions-009")).toBeNull();
+    expect(await service.cite("fractions", "../x-001")).toBeNull();
+    expect(await service.cite("other", "fractions-001")).toBeNull();
+    // A removed source's fragments are no longer cited.
+    await store.patch("fractions", (s) => ({ ...s, status: "removed" }));
+    expect(await service.cite("fractions", "fractions-001")).toBeNull();
+  });
+
+  it("conversions share one runner that runs a few at a time", async () => {
+    let running = 0;
+    let most = 0;
+    const real = workerRunner();
+    const counted = async <T>(job: () => Promise<T>): Promise<T> => {
+      running++;
+      most = Math.max(most, running);
+      try {
+        return await job();
+      } finally {
+        running--;
+      }
+    };
+    const counting: ConvertRunner = {
+      convert: (...a) => counted(() => real.convert(...a)),
+      measure: (...a) => counted(() => real.measure(...a)),
+    };
+    const limited = new MaterialService(deps({ runner: counting }));
+    picked = ["a", "b", "c"].map((n) => write(`${n}.md`, `# ${n}\n\nText about ${n}.`));
+    await Promise.all([limited.add("fractions"), limited.add("fractions")]);
+    expect(most).toBeLessThanOrEqual(2);
+    expect((await limited.list("fractions")).sources).toHaveLength(6);
+  });
+
+  it("a source left converting by an earlier run is converted again the first time its base is opened", async () => {
+    const store = new MaterialStore(base, "fractions");
+    const original = await store.addOriginal("left.md", Buffer.from(`# Left\n\n${"Some text. ".repeat(30)}`));
+    await store.update(() => [
+      {
+        id: "left",
+        scope: "fractions",
+        path: original,
+        hash: "x",
+        type: "md",
+        family: "text",
+        pages: 1,
+        sizeBytes: 10,
+        skippedPages: [],
+        status: "converting",
+        issues: [],
+        fixes: [],
+        estimate: 0,
+       
+        fragments: [],
+        addedAt: "2026-10-27T00:00:00.000Z",
+      },
+    ]);
+    const fresh = new MaterialService(deps());
+    await fresh.settle();
+    const view = await fresh.list("fractions");
+    expect(view.sources[0]).toMatchObject({ id: "left", status: "validating", stage: "review" });
+    expect(view.sources[0].fragments).toBeGreaterThan(0);
+    expect(sent.some(([channel]) => channel === "hh:materialStatus")).toBe(true);
+    expect(changes).toEqual(["fractions: processed left"]);
+  });
+});
+
+describe("stopping conversions (closeRuntime, a profile switch)", () => {
+  it("a conversion under way stops; nothing is recorded; the source resumes on its base's next use", async () => {
+    const real = workerRunner();
+    let hold = true;
+    let stopped = 0;
+    let release: (() => void) | null = null;
+    const runner: ConvertRunner = {
+      measure: real.measure,
+      convert: (...a) =>
+        hold
+          ? new Promise((_, reject) => {
+              release = () => reject(new ConvertStopped());
+            })
+          : real.convert(...a),
+      stop: () => {
+        stopped++;
+        release?.();
+      },
+    };
+    const svc = new MaterialService(deps({ runner }));
+    picked = [write("a.md", `# A\n\n${"Some text. ".repeat(30)}`)];
+    const adding = svc.add("fractions");
+    while (!release) await new Promise((r) => setTimeout(r, 5));
+    await svc.stop();
+    expect(stopped).toBe(1);
+    expect(await adding).toEqual({ ok: true, added: ["a"], refused: [] });
+    expect(changes).toEqual([]);
+    expect(await new MaterialStore(base, "fractions").source("a")).toMatchObject({ status: "converting" });
+    // Another profile meanwhile, then back: the base is looked at afresh and the source converts.
+    hold = false;
+    const anna = base;
+    base = path.join(root, "ben");
+    fs.mkdirSync(base);
+    await svc.settle();
+    base = anna;
+    await svc.settle();
+    expect((await svc.list("fractions")).sources[0]).toMatchObject({ id: "a", status: "validating", stage: "review" });
+    expect(changes).toEqual(["fractions: processed a"]);
+  });
+
+  it("a stop is not a lasting state: work asked for afterwards converts", async () => {
+    let converts = 0;
+    const real = workerRunner();
+    const runner: ConvertRunner = { measure: real.measure, convert: (...a) => (converts++, real.convert(...a)) };
+    const svc = new MaterialService(deps({ runner }));
+    await svc.stop();
+    picked = [write("a.md", `# A\n\n${"Some text. ".repeat(30)}`)];
+    expect(await svc.add("fractions")).toMatchObject({ ok: true, added: ["a"] });
+    expect(converts).toBe(1);
+  });
+});
+
+describe("AI stages (material spec §10)", () => {
+  const job = { scope: "fractions", source: "a", stage: "review" as const };
+  let applied: boolean;
+  let answer: boolean;
+  beforeEach(() => {
+    applied = false;
+    answer = true;
+    STAGES.review = {
+      tools: ["material_review"],
+      prompt: async () => "Review a.",
+      accept: async (_name, args, state) => {
+        state.answers.push(args);
+        return "Saved.";
+      },
+      apply: async (store, j, state) => {
+        applied = state.answers.length > 0 && answer;
+        if (applied) await store.patch(j.source!, (s) => ({ ...s, status: "ready", stage: undefined }));
+        return applied;
+      },
+    };
+  });
+  afterEach(() => {
+    STAGES.review = realReview;
+  });
+
+  const seed = async () => {
+    const store = new MaterialStore(base, "fractions");
+    keepA();
+    await store.update(() => [
+      {
+        id: "a",
+        scope: "fractions",
+        path: "a.md",
+        hash: A_HASH,
+        type: "md",
+        family: "text",
+        pages: 1,
+        sizeBytes: 1,
+        skippedPages: [],
+        status: "validating",
+        stage: "review",
+        issues: [],
+        fixes: [],
+        estimate: 0,
+       
+        fragments: [],
+        addedAt: "2026-10-27T00:00:00.000Z",
+      },
+    ]);
+    return store;
+  };
+
+  it("finds the next job in the base, runs its session with the stage's tools, and applies its answers", async () => {
+    await seed();
+    const calls: unknown[] = [];
+    const svc = new MaterialService(
+      deps({
+        runStage: async (j, prompt, tools, handle) => {
+          calls.push([j, prompt, tools]);
+          expect(await handle({ op: "material_review", verdict: "good" })).toBe("Saved.");
+          await expect(handle({ op: "material_label" })).rejects.toThrow("Unknown request");
+          return { ok: true };
+        },
+      }),
+    );
+    expect(await svc.nextJob()).toEqual(job);
+    await svc.runJob(job, new AbortController().signal);
+    expect(calls).toEqual([[job, "Review a.", ["material_review"]]]);
+    expect(applied).toBe(true);
+    expect(sent.at(-1)?.[0]).toBe("hh:materialStatus");
+    expect(await svc.nextJob()).toBeNull();
+  });
+
+  it("a failed session marks the source; Try again sends it back; a stopped one changes nothing", async () => {
+    await seed();
+    let ok = false;
+    const kicks: number[] = [];
+    const svc = new MaterialService(
+      deps({
+        runStage: async (_j, _p, _t, handle) => {
+          await handle({ op: "material_review" });
+          return { ok };
+        },
+        kick: () => void kicks.push(1),
+      }),
+    );
+    const stop = new AbortController();
+    stop.abort();
+    await svc.runJob(job, stop.signal);
+    expect(await svc.nextJob()).toEqual(job);
+    await svc.runJob(job, new AbortController().signal);
+    expect((await svc.list("fractions")).sources[0]).toMatchObject({ status: "ready", failed: true });
+    // Not retried on its own: the scope's sheet is next (no stage registered for it, so it waits).
+    expect(await svc.nextJob()).toEqual({ scope: "fractions", stage: "sheet" });
+    expect(await svc.retry("fractions", "nothing")).toEqual({ ok: false, reason: "unknown-source" });
+    expect(await svc.retry("fractions", "a")).toEqual({ ok: true });
+    expect(kicks).toHaveLength(1);
+    ok = true;
+    await svc.runJob(job, new AbortController().signal);
+    expect((await svc.list("fractions")).sources[0]).toMatchObject({ status: "ready", failed: false });
+  });
+
+  it("a job no stage can run yet is stepped past: the queue settles instead of looping", async () => {
+    await seed();
+    delete STAGES.review;
+    const svc = new MaterialService(deps({ runStage: async () => ({ ok: true }) }));
+    let nexts = 0;
+    const jobs = new MaterialJobs<Job>({ idle: () => true, next: () => (nexts++, svc.nextJob()), run: (j, signal) => svc.runJob(j, signal), pollMs: 2 });
+    jobs.kick();
+    await jobs.settled();
+    expect(nexts).toBe(2);
+    // Still waiting at its stage, for when the stage exists (the next kick).
+    expect((await svc.list("fractions")).sources[0]).toMatchObject({ status: "validating", stage: "review" });
+    svc.resetFailures();
+    expect(await svc.nextJob()).toEqual(job);
+  });
+
+  it("an answer that leaves the source at its stage is not run again until a kick", async () => {
+    await seed();
+    answer = false;
+    STAGES.review!.apply = async () => true;
+    let runs = 0;
+    const svc = new MaterialService(
+      deps({
+        runStage: async () => {
+          runs++;
+          return { ok: true };
+        },
+      }),
+    );
+    const jobs = new MaterialJobs<Job>({ idle: () => true, next: () => svc.nextJob(), run: (j, signal) => svc.runJob(j, signal), pollMs: 2 });
+    jobs.kick();
+    await jobs.settled();
+    expect(runs).toBe(1);
+  });
+
+  it("a scope stage that fails is skipped until the next kick", async () => {
+    const store = await seed();
+    await store.update(() => []);
+    await store.setStale("sheet");
+    STAGES.sheet = { tools: [], prompt: async () => "Sheet.", accept: async () => "", apply: async () => true };
+    try {
+      const svc = new MaterialService(deps({ runStage: async () => ({ ok: false }) }));
+      const sheet = { scope: "fractions", stage: "sheet" as const };
+      expect(await svc.nextJob()).toEqual(sheet);
+      await svc.runJob(sheet, new AbortController().signal);
+      expect(await svc.nextJob()).toBeNull();
+      svc.resetFailures();
+      expect(await svc.nextJob()).toEqual(sheet);
+    } finally {
+      STAGES.sheet = realSheet;
+    }
+  });
+
+  it("a sheet due again while its session ran stays due, and runs again", async () => {
+    const store = await seed();
+    await store.update(() => []);
+    await store.setStale("sheet");
+    STAGES.sheet = { tools: [], prompt: async () => "Sheet.", accept: async () => "", apply: async () => true };
+    try {
+      let runs = 0;
+      // Another source finishes while the sheet is written: the marker is set again.
+      const svc = new MaterialService(
+        deps({
+          runStage: async () => {
+            if (++runs === 1) await store.setStale("sheet");
+            return { ok: true };
+          },
+        }),
+      );
+      const sheet = { scope: "fractions", stage: "sheet" as const };
+      await svc.runJob(sheet, new AbortController().signal);
+      expect(await store.stale()).toBe("sheet");
+      expect(await svc.nextJob()).toEqual(sheet);
+      await svc.runJob(sheet, new AbortController().signal);
+      expect(await store.stale()).toBeNull();
+      expect(runs).toBe(2);
+    } finally {
+      STAGES.sheet = realSheet;
+    }
+  });
+});
+
+describe("the review stage in the queue (material spec §6.2)", () => {
+  it("a reconversion asked for by a stopped job converts nothing: the source waits, converting, for its base's next use", async () => {
+    const store = new MaterialStore(base, "fractions");
+    let converts = 0;
+    const svc = new MaterialService(
+      deps({
+        runner: {
+          convert: () => {
+            converts++;
+            return Promise.reject(new Error("no"));
+          },
+          measure: () => Promise.reject(new Error("no")),
+        },
+      }),
+    );
+    const name = await store.addOriginal("a.md", Buffer.from("# A\n\nText."));
+    await store.update(() => [
+      { id: "a", scope: "fractions", path: name, hash: "x", type: "md", family: "text", pages: 1, sizeBytes: 1, skippedPages: [], status: "converting", issues: [], fixes: [], estimate: 0, fragments: [], addedAt: "2026-10-27T00:00:00.000Z" },
+    ]);
+    const job = { scope: "fractions", source: "a", stage: "review" as const };
+    const stop = new AbortController();
+    const ctx = await svc.stageContext(job, store, stop.signal);
+    stop.abort();
+    await ctx.reconvert!({ columns: true });
+    const later = await svc.stageContext(job, store);
+    await svc.stop();
+    await later.reconvert!({ columns: true });
+    expect(converts).toBe(0);
+    expect((await store.source("a"))?.status).toBe("converting");
+    // A live job does convert (here refused by the runner).
+    await (await svc.stageContext(job, store)).reconvert!({ columns: true });
+    expect(converts).toBe(1);
+  });
+
+  it("a review in two batches and labels in two batches run in one kick; then the sheet", async () => {
+    const store = new MaterialStore(base, "fractions");
+    const ids = Array.from({ length: 25 }, (_, i) => `a-${String(i + 1).padStart(3, "0")}`);
+    keepA();
+    await store.update(() => [
+      { id: "a", scope: "fractions", path: "a.md", hash: A_HASH, type: "md", family: "text", pages: 1, sizeBytes: 1, skippedPages: [], status: "validating", stage: "review", fullReview: true, issues: [], fixes: [], estimate: 0, fragments: [], addedAt: "2026-10-27T00:00:00.000Z" },
+    ]);
+    await store.writeFragments(
+      "a",
+      ids.map((id) => ({ meta: { id, source: "a.md", location: "lines 1", path: "A", summary: "", keywords: [], tokens: 10, items: [], checks: "ok", validated: "not-reviewed" }, md: `Text of ${id}.` })),
+    );
+    let runs = 0;
+    const counts: number[] = [];
+    const svc = new MaterialService(
+      deps({
+        runStage: async (_j, prompt, tools, handle, _signal, fragments) => {
+          runs++;
+          counts.push(fragments);
+          const batch = [...prompt.matchAll(/^\[(a-\d{3})\]/gm)].map((m) => m[1]);
+          if (tools.includes("material_sheet")) {
+            // From the index: every fragment's row, with its summary.
+            expect(prompt).toContain("| a-025 | a.md, lines 1 | A | explanation | About a-025. |");
+            await handle({ op: "material_sheet", sections: [{ id: "terms", markdown: "- a: the letter" }] });
+            return { ok: true };
+          }
+          if (tools.includes("material_label")) {
+            expect(tools).toEqual(["material_label", "material_flag"]);
+            await handle({ op: "material_label", fragments: batch.map((id) => ({ id, summary: `About ${id}.`, keywords: [id], kind: "explanation" })) });
+            return { ok: true };
+          }
+          expect(tools).toEqual(["material_review"]);
+          await handle({ op: "material_review", verdict: "good", fragments: batch.map((id) => ({ id, decision: "ok" })), issues: [] });
+          return { ok: true };
+        },
+      }),
+    );
+    const jobs = new MaterialJobs<Job>({ idle: () => true, next: () => svc.nextJob(), run: (j, signal) => svc.runJob(j, signal), pollMs: 2 });
+    jobs.kick();
+    await jobs.settled();
+    expect(runs).toBe(5);
+    // Each usage line counts the batch it handled; the sheet is per run.
+    expect(counts).toEqual([20, 5, 20, 5, 0]);
+    expect(await store.source("a")).toMatchObject({ status: "ready", verdict: "good" });
+    expect((await store.readFragment("a-025"))?.meta).toMatchObject({ validated: "sample", kind: "explanation", keywords: ["a-025"] });
+    // The sheet ran once the source was labelled; no items, so nothing is due after it.
+    expect(await store.sheet()).toBe("## Key terms\n\n- a: the letter\n");
+    expect(await store.stale()).toBeNull();
+    // Each batch's result reached the history.
+    expect(changes).toEqual(["fractions: review a", "fractions: review a", "fractions: label a", "fractions: label a"]);
+  });
+
+  it("with items the sheet hands over to the links; links done clear the marker; nothing usable: no session", async () => {
+    const store = new MaterialStore(base, "fractions");
+    keepA();
+    await store.update(() => [
+      { id: "a", scope: "fractions", path: "a.md", hash: A_HASH, type: "md", family: "text", pages: 1, sizeBytes: 1, skippedPages: [], status: "ready", issues: [], fixes: [], estimate: 0, fragments: [], addedAt: "2026-10-27T00:00:00.000Z" },
+    ]);
+    await store.writeFragments("a", [{ meta: { id: "a-001", source: "a.md", location: "lines 1", path: "A", kind: "explanation", summary: "Halves of a whole.", keywords: ["half"], tokens: 10, items: [], checks: "ok", validated: "sample" }, md: "Half." }]);
+    await store.setStale("sheet");
+    const sessions: string[] = [];
+    const svc = new MaterialService(
+      deps({
+        material: { accepts: ["text"], grounding: { default: "mixed", personCanChange: true }, budget: { indexTokens: 600 }, items: { collection: "concepts", label: "name" }, ...stageFields },
+        items: async () => [{ key: "halves", label: "Halves" }, { key: "thirds", label: "Thirds" }],
+        runStage: async (_j, prompt, tools, handle) => {
+          sessions.push(tools[0]);
+          if (tools.includes("material_sheet")) await handle({ op: "material_sheet", sections: [{ id: "terms", markdown: "- half" }] });
+          else {
+            expect(prompt).toContain("halves: Halves");
+            await handle({ op: "material_link", links: [{ fragment: "a-001", items: ["halves", "quarters"] }] });
+          }
+          return { ok: true };
+        },
+      }),
+    );
+    const jobs = new MaterialJobs<Job>({ idle: () => true, next: () => svc.nextJob(), run: (j, signal) => svc.runJob(j, signal), pollMs: 2 });
+    jobs.kick();
+    await jobs.settled();
+    expect(sessions).toEqual(["material_sheet", "material_link"]);
+    expect((await store.readFragment("a-001"))?.meta.items).toEqual(["halves"]);
+    expect(await store.stale()).toBeNull();
+    expect((await svc.list("fractions")).uncovered).toEqual(["Thirds"]);
+    // Every source gone: the links are due, but there is nothing to link, so no session and the marker clears.
+    await store.update((l) => l.map((s) => ({ ...s, status: "removed" as const })));
+    await store.setStale("link");
+    jobs.kick();
+    await jobs.settled();
+    expect(sessions).toHaveLength(2);
+    expect(await store.stale()).toBeNull();
+  });
+
+  it("a stage that leaves the source as it was records nothing in the history", async () => {
+    const store = new MaterialStore(base, "fractions");
+    keepA();
+    await store.update(() => [
+      { id: "a", scope: "fractions", path: "a.md", hash: A_HASH, type: "md", family: "text", pages: 1, sizeBytes: 1, skippedPages: [], status: "validating", stage: "review", issues: [], fixes: [], estimate: 0, fragments: [], addedAt: "2026-10-27T00:00:00.000Z" },
+    ]);
+    STAGES.review = { tools: [], prompt: async () => "Review.", accept: async () => "", apply: async () => true };
+    const svc = new MaterialService(deps({ runStage: async () => ({ ok: true }) }));
+    await svc.runJob({ scope: "fractions", source: "a", stage: "review" }, new AbortController().signal);
+    STAGES.review = realReview;
+    expect(changes).toEqual([]);
+  });
+});
+
+describe("update, removal and measured estimates (material spec §7, §11)", () => {
+  const text = (words: string) => `# Fractions\n\n${`${words} `.repeat(40)}`;
+
+  it("remove: the original goes to the Trash, the view no longer lists it, the sheet is due again", async () => {
+    picked = [write("Fractions.md", text("A fraction names a part."))];
+    await service.add("fractions");
+    expect(await service.remove("fractions", "fractions")).toEqual({ ok: true });
+    expect(trashed).toEqual([path.join(base, "material", "fractions", "Fractions.md")]);
+    expect((await service.list("fractions")).sources).toEqual([]);
+    expect(changes.at(-1)).toBe("fractions: removed fractions");
+    expect(await service.storeAt(base, "fractions").stale()).toBe("sheet");
+    expect(await service.remove("fractions", "fractions")).toEqual({ ok: false, reason: "unknown-source" });
+    expect(await service.remove("fractions", "../x")).toEqual({ ok: false, reason: "unknown-source" });
+    expect(await service.remove("other", "fractions")).toEqual({ ok: false, reason: "unknown-scope" });
+  });
+
+  it("an original changed by hand is converted again once per kick; one deleted by hand is removed", async () => {
+    picked = [write("Fractions.md", text("First version."))];
+    await service.add("fractions");
+    const store = service.storeAt(base, "fractions");
+    const kept = path.join(base, "material", "fractions", "Fractions.md");
+    fs.writeFileSync(kept, text("Second version."));
+    changes.length = 0;
+    expect(await service.nextJob()).toEqual({ scope: "fractions", source: "fractions", stage: "review" });
+    expect((await store.fragments()).map((f) => f.md).join("")).toContain("Second version.");
+    expect(changes).toEqual(["fractions: updated fractions"]);
+    // Not looked at again until the next kick.
+    fs.rmSync(kept);
+    await service.nextJob();
+    expect((await store.source("fractions"))?.status).toBe("validating");
+    service.resetFailures();
+    expect(await service.nextJob()).toEqual({ scope: "fractions", stage: "sheet" });
+    expect((await store.source("fractions"))?.status).toBe("removed");
+    expect(trashed).toEqual([]);
+  });
+
+  it("an unchanged original is not read again on a later kick, nor are the measured costs", async () => {
+    let measuredReads = 0;
+    const svc = new MaterialService(deps({ measured: async () => (measuredReads++, undefined) }));
+    picked = [write("Fractions.md", text("A fraction names a part."))];
+    await svc.add("fractions");
+    await svc.nextJob();
+    const before = measuredReads;
+    const kept = path.join(base, "material", "fractions", "Fractions.md");
+    const reads = vi.spyOn(fs.promises, "readFile");
+    try {
+      svc.resetFailures();
+      await svc.nextJob();
+      expect(reads.mock.calls.some(([f]) => f === kept)).toBe(false);
+    } finally {
+      reads.mockRestore();
+    }
+    expect(measuredReads).toBe(before);
+  });
+
+  it("a stage's session is told how many fragments its prompt lists", async () => {
+    // Only the batch's ids count: a fragment's text naming another fragment at a line's start doesn't.
+    expect(promptFragments("material-label\n[a-001] (x)\n[a-003]: in the text\n[a-002] (y)\n[a-001] again\n[b-003] other", ["a-001", "a-002"])).toBe(2);
+    expect(promptFragments("[a-001] x", ["a-001", "a-002"])).toBe(1);
+    expect(promptFragments("no fragments [a-001] mid-line", ["a-001"])).toBe(0);
+    const store = new MaterialStore(base, "fractions");
+    keepA();
+    await store.update(() => [
+      { id: "a", scope: "fractions", path: "a.md", hash: A_HASH, type: "md", family: "text", pages: 1, sizeBytes: 1, skippedPages: [], status: "validating", stage: "review", issues: [], fixes: [], estimate: 0, fragments: [], addedAt: "2026-10-27T00:00:00.000Z" },
+    ]);
+    STAGES.review = { tools: [], prompt: async () => "Review.\n[a-001] one\n[a-002] two\n[a-009] quoted", accept: async () => "", apply: async () => true, listed: async () => ["a-001", "a-002"] };
+    let counted = -1;
+    const svc = new MaterialService(
+      deps({
+        runStage: async (_j, _p, _t, _h, _s, fragments) => {
+          counted = fragments;
+          return { ok: true };
+        },
+      }),
+    );
+    await svc.runJob({ scope: "fractions", source: "a", stage: "review" }, new AbortController().signal);
+    STAGES.review = realReview;
+    expect(counted).toBe(2);
+  });
+
+  it("estimates use the costs measured in the base's log once there are enough", async () => {
+    const svc = new MaterialService(deps({ measured: async () => ({ label: 1, review: 1, sheet: 1 }) }));
+    picked = [write("Fractions.md", text("A fraction names a part."))];
+    await svc.add("fractions");
+    const measured = (await svc.list("fractions")).sources[0].estimate;
+    picked = [write("Other.md", text("A fraction names a part."))];
+    await service.add("fractions");
+    const constant = (await service.list("fractions")).sources.find((s) => s.name === "Other.md")!.estimate;
+    expect(measured).toBeLessThan(constant);
+    expect(measured).toBeLessThan(100);
+  });
+});
+
+describe("D0", () => {
+  it("a harness without material keeps today's keep list", () => {
+    const keep = (h: { material?: unknown }) => [NOTES_PREFIX, DATA_PREFIX, ...(hasMaterial(h) ? [MATERIAL_KEEP] : [])];
+    expect(keep({})).toEqual([NOTES_PREFIX, DATA_PREFIX]);
+    expect(keep({ material: {} })).toContain(MATERIAL_KEEP);
+  });
+});

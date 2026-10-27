@@ -11,16 +11,15 @@ import { renderIn } from "./render";
 
 afterEach(cleanup);
 
-const L = (en: string, es = en) => ({ es, en });
 function state(): AppState {
   const s = new FakeClient().state;
   s.actions = {
-    manifest: { label: L("The manifest", "El manifiesto"), description: L("What a harness declares."), cost: "medium" },
-    engines: { label: L("Engines", "Motores"), cost: "medium" },
-    turn: { label: L("A turn", "Un turno"), cost: "medium" },
+    manifest: { label: "The manifest", description: "What a harness declares.", cost: "medium" },
+    engines: { label: "Engines", cost: "medium" },
+    turn: { label: "A turn", cost: "medium" },
   };
   s.path = ["manifest", "engines", "turn"];
-  s.references = [{ id: "source", label: L("Source", "Código"), path: "~/code/humanharness" }];
+  s.references = [{ id: "source", label: "Source", path: "~/code/humanharness" }];
   return s;
 }
 const idle = (actions: TaskView["actions"] = {}): TaskView => ({ current: null, actions, notes: [] });
@@ -28,7 +27,7 @@ const idle = (actions: TaskView["actions"] = {}): TaskView => ({ current: null, 
 describe("FlowSide", () => {
   it("marks done, current and pending steps, starts a step, and shows the read-only folder", async () => {
     const onStart = vi.fn();
-    await renderIn("en", <FlowSide state={state()} lang="en" tasks={idle({ manifest: "done" })} disabled={false} onStart={onStart} onOpenNote={() => {}} />);
+    await renderIn("en", <FlowSide state={state()} tasks={idle({ manifest: "done" })} disabled={false} onStart={onStart} onOpenNote={() => {}} />);
     const steps = screen.getByRole("list", { name: "Guided path" });
     expect(within(steps).getByRole("button", { name: /Engines/ }).getAttribute("aria-current")).toBe("step");
     expect(within(steps).getByRole("button", { name: /The manifest/ }).textContent).toContain("Done");
@@ -47,17 +46,17 @@ describe("FlowSide", () => {
       actions: {},
       notes: [{ slug: "manifest", title: "El manifiesto", action: "manifest", date: "", summary: ["a"], decisions: [], path: ".harness/notes/manifest.md" }],
     };
-    await renderIn("es", <FlowSide state={state()} lang="es" tasks={tasks} disabled={false} onStart={() => {}} onOpenNote={onOpenNote} />);
-    const turn = within(screen.getByRole("list", { name: "Recorrido" })).getByRole("button", { name: /Un turno/ });
+    await renderIn("en", <FlowSide state={state()} tasks={tasks} disabled={false} onStart={() => {}} onOpenNote={onOpenNote} />);
+    const turn = within(screen.getByRole("list", { name: "Guided path" })).getByRole("button", { name: /A turn/ });
     expect(turn.getAttribute("aria-current")).toBe("step");
     expect((turn as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.click(within(screen.getByRole("list", { name: "Lo que ya quedó claro" })).getByRole("button", { name: "El manifiesto" }));
+    fireEvent.click(within(screen.getByRole("list", { name: "What's clear so far" })).getByRole("button", { name: "El manifiesto" }));
     expect(onOpenNote).toHaveBeenCalledWith("manifest");
   });
 
   it("shows the running task's context in use against its cap, with the exact tokens on hover", async () => {
     const tasks: TaskView = { current: { id: "t1", action: "engines", status: "waiting", context: { used: 170_000, cap: 200_000 } }, actions: {}, notes: [] };
-    await renderIn("en", <FlowSide state={state()} lang="en" tasks={tasks} disabled={false} onStart={() => {}} onOpenNote={() => {}} />);
+    await renderIn("en", <FlowSide state={state()} tasks={tasks} disabled={false} onStart={() => {}} onOpenNote={() => {}} />);
     const meter = screen.getByRole("meter", { name: "Context in use" });
     expect(meter.getAttribute("aria-valuenow")).toBe("85");
     expect(meter.getAttribute("title")).toBe("170,000 of 200,000 tokens");
@@ -67,11 +66,11 @@ describe("FlowSide", () => {
 
   it("shows a free question's meter on its own row, and none before the engine reports any", async () => {
     const question: TaskView = { current: { id: "t2", status: "waiting", context: { used: 20_000, cap: 100_000 } }, actions: {}, notes: [] };
-    const { unmount } = await renderIn("en", <FlowSide state={state()} lang="en" tasks={question} disabled={false} onStart={() => {}} onOpenNote={() => {}} />);
+    const { unmount } = await renderIn("en", <FlowSide state={state()} tasks={question} disabled={false} onStart={() => {}} onOpenNote={() => {}} />);
     expect(screen.getByText("Free question")).toBeTruthy();
     expect(screen.getByRole("meter", { name: "Context in use" }).getAttribute("aria-valuenow")).toBe("20");
     unmount();
-    await renderIn("en", <FlowSide state={state()} lang="en" tasks={{ ...question, current: { id: "t2", status: "waiting" } }} disabled={false} onStart={() => {}} onOpenNote={() => {}} />);
+    await renderIn("en", <FlowSide state={state()} tasks={{ ...question, current: { id: "t2", status: "waiting" } }} disabled={false} onStart={() => {}} onOpenNote={() => {}} />);
     expect(screen.queryByRole("meter")).toBeNull();
   });
 });
@@ -83,6 +82,8 @@ describe("ContextMeter", () => {
     unmount();
     const { unmount: again } = await renderIn("en", <ContextMeter used={500_000} cap={200_000} />);
     expect(screen.getByRole("meter").getAttribute("aria-valuenow")).toBe("100");
+    // The ring's arc draws the same percent.
+    expect(screen.getByRole("meter").querySelector("circle + circle")?.getAttribute("stroke-dasharray")).toBe("100 100");
     again();
     await renderIn("en", <ContextMeter used={-5} cap={200_000} />);
     expect(screen.getByRole("meter").getAttribute("aria-valuenow")).toBe("0");
@@ -93,10 +94,10 @@ describe("StartView", () => {
   it("shows the topics in path order with their badges, then the rest, and starts them", async () => {
     const onStart = vi.fn();
     const s = state();
-    s.actions.extra = { label: L("Extra"), description: L("Not on the path"), cost: "light" };
+    s.actions.extra = { label: "Extra", description: "Not on the path", cost: "light" };
     await renderIn(
       "en",
-      <StartView state={s} lang="en" tasks={idle({ manifest: "done", turn: "unsaved" })} notice={null} disabled={false} onStart={onStart} onAsk={() => {}} />,
+      <StartView state={s} tasks={idle({ manifest: "done", turn: "unsaved" })} notice={null} disabled={false} onStart={onStart} onAsk={() => {}} />,
     );
     const topics = within(screen.getByRole("region", { name: "Where do we start?" })).getAllByRole("button");
     expect(topics.map((b) => b.querySelector(".hh-topic-title")?.textContent)).toEqual(["The manifest", "Engines", "A turn", "Extra"]);
@@ -117,7 +118,7 @@ describe("StartView", () => {
       <I18nextProvider i18n={i18n}>
         <StartView
           state={state()}
-          lang="en"
+         
           tasks={idle()}
           copy={{ title: "title", intro: "intro", faq: ["faq.own"] }}
           notice="You're now using Codex."

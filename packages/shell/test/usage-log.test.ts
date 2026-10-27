@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import type { ChatEntry } from "@humanharness/ui/client";
-import { type UsageMeta, type UsageRecord, UsageLog, compactionRecord, profileMeta, summarizeUsage, usageRecord } from "../src/main/usage-log";
+import { type UsageMeta, type UsageRecord, UsageLog, compactionRecord, materialRecord, measuredMaterialCosts, mergeUsage, profileMeta, profilesUsage, summarizeUsage, usageRecord, withSpent } from "../src/main/usage-log";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -256,5 +256,241 @@ describe("usage records with the task's profile", () => {
       rec(0.5, R1),
     ];
     expect(summarizeUsage(records, "five_hour", new Date("2026-10-11T12:00:00.000Z")).estimates.turn).toBeCloseTo(0.3);
+  });
+});
+
+describe("usage per scope", () => {
+  const usage = (tokens: number) => ({ inputTokens: tokens, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 });
+  it("tags a scoped turn's line with its scope, and only then", () => {
+    const entry = { id: "1", role: "assistant" as const, text: "", blocks: [], activities: [], at: "t", usage: usage(10) };
+    expect(usageRecord(entry, "claude", { task: "t1", scope: "fracciones" })).toMatchObject({ task: "t1", scope: "fracciones" });
+    expect(usageRecord(entry, "claude", { task: "t1" })).not.toHaveProperty("scope");
+  });
+
+  it("sums the tokens per scope, and adds nothing when no line has one", () => {
+    const line = (scope: string | undefined, tokens: number, phase: "run" | "close" = "run"): UsageRecord => ({
+      at: "2026-10-25T10:00:00.000Z",
+      engine: "claude",
+      ok: true,
+      task: `t-${scope}-${tokens}`,
+      phase,
+      ...(scope ? { scope } : {}),
+      usage: usage(tokens),
+    });
+    expect(summarizeUsage([line("a", 100), line("a", 50, "close"), line("b", 10), line(undefined, 7)], undefined).scopes).toEqual({ a: 150, b: 10 });
+    expect(summarizeUsage([line(undefined, 7)], undefined)).not.toHaveProperty("scopes");
+  });
+});
+
+describe("usage.jsonl: the task's mode (task-modes spec §5.5)", () => {
+  const entry: ChatEntry = {
+    id: "e",
+    role: "assistant",
+    text: "",
+    blocks: [],
+    activities: [],
+    at: "t",
+    usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
+  };
+  it("every line of a task in a mode carries it; none without (D0)", () => {
+    expect(usageRecord(entry, "claude", { task: "t1", action: "study", mode: "socratic", phase: "close" })).toMatchObject({ mode: "socratic", phase: "close" });
+    expect(usageRecord(entry, "claude", { task: "t1" })).not.toHaveProperty("mode");
+    expect(compactionRecord("claude", { task: "t1", mode: "feynman" }, "t")).toMatchObject({ kind: "compaction", mode: "feynman" });
+  });
+});
+
+describe("usage lines carry the task's phase (task-phases spec §6)", () => {
+  it("records taskPhase and the new turn kinds; D0 without them", () => {
+    const entry = {
+      id: "a",
+      role: "assistant" as const,
+      text: "",
+      blocks: [],
+      activities: [],
+      at: "2026-10-26T10:00:00.000Z",
+      usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
+    };
+    expect(usageRecord(entry, "claude", { task: "t1", phase: "phase-change", taskPhase: "main" })).toMatchObject({ phase: "phase-change", taskPhase: "main" });
+    expect(usageRecord(entry, "claude", { task: "t1", phase: "run" })).not.toHaveProperty("taskPhase");
+    expect(compactionRecord("claude", { task: "t1", taskPhase: "close" }, "2026-10-26T10:00:00.000Z")).toMatchObject({ kind: "compaction", taskPhase: "close" });
+  });
+});
+
+describe("usage across profiles (profiles spec §4 'Usage')", () => {
+  const NOW = new Date("2026-10-27T12:30:00.000Z");
+  const RESET = "2026-10-27T15:00:00.000Z";
+  const turn = (at: string, task: string, fiveHour: number, scope?: string): UsageRecord => ({
+    at,
+    engine: "claude",
+    ok: true,
+    action: "practice",
+    task,
+    ...(scope ? { scope } : {}),
+    usage: { inputTokens: 100, outputTokens: 10, cacheReadTokens: 0, cacheWriteTokens: 0 },
+    limits: [{ kind: "five_hour", utilization: fiveHour, resetsAt: RESET }],
+  });
+  const sofi = [turn("2026-10-27T10:00:00.000Z", "t1", 0.1, "fracciones"), turn("2026-10-27T12:00:00.000Z", "t3", 0.5, "fracciones")];
+  const tomas = [turn("2026-10-27T11:00:00.000Z", "t2", 0.3, "verbos")];
+
+  it("merges every profile's records in time order, each with its profile", () => {
+    expect(mergeUsage({ sofi, tomas }).map((r) => [r.task, r.person])).toEqual([
+      ["t1", "sofi"],
+      ["t2", "tomas"],
+      ["t3", "sofi"],
+    ]);
+  });
+
+  it("measures the shared window across people, counts tokens per person, and keeps the active profile's scopes", () => {
+    const u = profilesUsage({ sofi, tomas }, "sofi", "five_hour", NOW);
+    // The latest window is Sofi's last turn, whoever ran it.
+    expect(u.limits).toEqual([{ kind: "five_hour", utilization: 0.5, resetsAt: RESET }]);
+    expect(u.profiles).toEqual({ sofi: 220, tomas: 110 });
+    expect(u.scopes).toEqual({ fracciones: 220 });
+    // Each task measured against the next record in time, the other person's included.
+    expect(u.estimates.practice).toBeGreaterThan(0);
+  });
+
+  it("a profile with no log counts nothing; an unknown active profile has no scopes", () => {
+    const u = profilesUsage({ sofi: [], tomas }, "nobody", "five_hour", NOW);
+    expect(u.profiles).toEqual({ tomas: 110 });
+    expect(u).not.toHaveProperty("scopes");
+  });
+});
+
+describe("material lines", () => {
+  it("their own record, left out of the per-action estimates (material spec §11)", () => {
+    const line = materialRecord(
+      {
+        engine: "claude",
+        stage: "label",
+        scope: "fractions",
+        source: "ch2",
+        profile: { engine: "claude", tier: "light", effort: "low", cap: 100000 },
+        ok: true,
+        usage: { inputTokens: 900, outputTokens: 100, cacheReadTokens: 0, cacheWriteTokens: 0 },
+      },
+      "2026-10-27T10:00:00.000Z",
+    );
+    expect(line).toMatchObject({ at: "2026-10-27T10:00:00.000Z", engine: "claude", phase: "material", stage: "label", scope: "fractions", source: "ch2", tier: "light", ok: true });
+    const before = summarizeUsage([], undefined);
+    const after = summarizeUsage([line], undefined);
+    expect(after.estimates).toEqual(before.estimates);
+    expect(after.tokens).toEqual(before.tokens);
+    expect(after).not.toHaveProperty("scopes");
+  });
+
+  it("a stage right after a task's turn leaves that turn unmeasured, not charged with the stage", () => {
+    const stage: UsageRecord = { ...rec(0.5, R1), phase: "material", stage: "review", scope: "fractions" };
+    const turns = [rec(0.1, R1, "tidy"), rec(0.2, R1), rec(0.3, R1, "tidy"), stage, rec(0.6, R1)];
+    // tidy: the first turn measures +0.1; the second is followed by the stage, so it isn't measured.
+    expect(summarizeUsage(turns, "five_hour").estimates.tidy).toBeCloseTo(0.1);
+    // The stage's window is still the latest one.
+    expect(summarizeUsage([rec(0.1, R1, "tidy"), stage], "five_hour", new Date("2026-10-11T14:00:00.000Z")).limits?.[0].utilization).toBe(0.5);
+  });
+
+  const line = (stage: string, tokens: number, fragments: number, ok = true) =>
+    materialRecord({
+      engine: "claude",
+      stage,
+      scope: "s",
+      profile: { engine: "claude", tier: "light", effort: "low", cap: 1 },
+      ok,
+      fragments,
+      usage: { inputTokens: tokens, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+    });
+
+  it("measured material costs per fragment, once there are enough lines (material spec §7)", () => {
+    expect(line("label", 2000, 20).fragments).toBe(20);
+    expect(measuredMaterialCosts([line("label", 2000, 20)])).toBeUndefined();
+    const five = Array.from({ length: 5 }, () => line("label", 2000, 20));
+    expect(measuredMaterialCosts(five)).toEqual({ label: 100 });
+    // Failed lines and lines with no fragments don't count; the sheet is per run.
+    expect(measuredMaterialCosts([...Array.from({ length: 4 }, () => line("review", 900, 3)), line("review", 900, 3, false), line("review", 900, 0)])).toBeUndefined();
+    expect(measuredMaterialCosts(Array.from({ length: 5 }, () => line("sheet", 3000, 0)))).toEqual({ sheet: 3000 });
+    expect(summarizeUsage(five, undefined).material).toBe(10000);
+    expect(summarizeUsage([], undefined)).not.toHaveProperty("material");
+  });
+
+  it("with profiles, the material total is the active profile's, and each person's total includes their stages", () => {
+    const u = profilesUsage({ sofi: [line("label", 2000, 20)], tomas: [line("label", 500, 5)] }, "sofi", undefined);
+    expect(u.material).toBe(2000);
+    expect(u.profiles).toEqual({ sofi: 2000, tomas: 500 });
+    expect(profilesUsage({ sofi: [], tomas: [line("label", 500, 5)] }, "sofi", undefined)).not.toHaveProperty("material");
+  });
+});
+
+describe("summarizeUsage: spentUsd", () => {
+  const now = new Date("2026-10-27T12:00:00.000Z");
+  const line = (at: string, costUsd?: number): UsageRecord => ({
+    at,
+    engine: "opencode",
+    ok: true,
+    usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0, ...(costUsd !== undefined ? { costUsd } : {}) },
+  });
+
+  it("adds up the cost of the last 30 days", () => {
+    const s = summarizeUsage([line("2026-09-01T00:00:00.000Z", 5), line("2026-10-20T00:00:00.000Z", 0.25), line("2026-10-27T11:00:00.000Z", 0.5)], undefined, now);
+    expect(s.spentUsd).toBeCloseTo(0.75);
+  });
+
+  it("is 0 for local models, and absent when no line has a cost (D0)", () => {
+    expect(summarizeUsage([line("2026-10-27T11:00:00.000Z", 0)], undefined, now).spentUsd).toBe(0);
+    expect(summarizeUsage([line("2026-10-27T11:00:00.000Z")], undefined, now)).not.toHaveProperty("spentUsd");
+  });
+
+  it("counts material stages, and is 0 when every cost is older than 30 days", () => {
+    const stage: UsageRecord = { ...line("2026-10-27T10:00:00.000Z", 0.1), phase: "material", stage: "label" };
+    expect(summarizeUsage([stage, line("2026-10-27T11:00:00.000Z", 0.2)], undefined, now).spentUsd).toBeCloseTo(0.3);
+    expect(summarizeUsage([line("2026-09-01T00:00:00.000Z", 5)], undefined, now).spentUsd).toBe(0);
+  });
+
+  it("skips a cost that is not finite or is negative", () => {
+    const s = summarizeUsage(
+      [line("2026-10-27T08:00:00.000Z", Number.NaN), line("2026-10-27T09:00:00.000Z", Number.POSITIVE_INFINITY), line("2026-10-27T10:00:00.000Z", -3), line("2026-10-27T11:00:00.000Z", 0.4)],
+      undefined,
+      now,
+    );
+    expect(s.spentUsd).toBeCloseTo(0.4);
+    expect(summarizeUsage([line("2026-10-27T10:00:00.000Z", -1), line("2026-10-27T11:00:00.000Z", Number.NaN)], undefined, now)).not.toHaveProperty("spentUsd");
+  });
+
+  it("counts every profile's spending (one account pays)", () => {
+    const s = profilesUsage({ ana: [line("2026-10-27T10:00:00.000Z", 0.1)], ben: [line("2026-10-27T11:00:00.000Z", 0.2)] }, "ana", undefined, now);
+    expect(s.spentUsd).toBeCloseTo(0.3);
+  });
+});
+
+describe("withSpent", () => {
+  const now = new Date("2026-10-27T12:00:00.000Z");
+  const line = (engine: string, costUsd?: number): UsageRecord => ({
+    at: "2026-10-27T10:00:00.000Z",
+    engine,
+    ok: true,
+    usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0, ...(costUsd !== undefined ? { costUsd } : {}) },
+  });
+  const write = (records: UsageRecord[]) => {
+    const folder = fs.mkdtempSync(path.join(root, "spent-"));
+    fs.mkdirSync(path.join(folder, ".harness"), { recursive: true });
+    fs.writeFileSync(path.join(folder, ".harness", "usage.jsonl"), records.map((r) => JSON.stringify(r) + "\n").join(""));
+    return folder;
+  };
+  const base = { limits: null, estimates: {}, tokens: {} };
+
+  it("reads every line of the window, not only the latest 500, and only the engine's", async () => {
+    // 600 paid lines, then 600 of another engine: the latest 500 alone would hold no cost at all.
+    const folder = write([...Array.from({ length: 600 }, () => line("opencode", 0.01)), ...Array.from({ length: 600 }, () => line("claude"))]);
+    const s = await withSpent({ ...base, spentUsd: 0 }, [folder], "opencode", true, now);
+    expect(s.spentUsd).toBeCloseTo(6);
+  });
+
+  it("adds up every profile's folder", async () => {
+    const s = await withSpent(base, [write([line("opencode", 0.1)]), write([line("opencode", 0.2)])], "opencode", true, now);
+    expect(s.spentUsd).toBeCloseTo(0.3);
+  });
+
+  it("is absent when no line has a cost, or for an engine that reports none (D0)", async () => {
+    expect(await withSpent(base, [write([line("opencode")])], "opencode", true, now)).toEqual(base);
+    expect(await withSpent(base, [write([line("claude", 1)])], "claude", false, now)).toEqual(base);
+    expect(await withSpent(base, [path.join(root, "missing")], "opencode", true, now)).toEqual(base);
   });
 });

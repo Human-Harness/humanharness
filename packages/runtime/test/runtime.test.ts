@@ -3,18 +3,46 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
-import { getEngine } from "@humanharness/engines";
+import { OPENCODE_ENV, getEngine } from "@humanharness/engines";
 import { type ClaudeScript, claudeResultLine, claudeTextLines, fakeAcpCommand, fakeClaudeCommand, writeScript } from "@humanharness/fake-agent";
-import { loadHarness } from "@humanharness/harness-sdk";
+import { allBlocks, loadHarness, resolveInHarness } from "@humanharness/harness-sdk";
+import { managedSection } from "@humanharness/workspace";
 import { ClaudeCliTransport } from "../src/claude-cli";
 import type { Event } from "../src/events";
 import { type HarnessRuntime, type RuntimeOptions, createRuntime } from "../src/runtime";
-import type { Session } from "../src/transport";
+import { type Session, acpFields } from "../src/transport";
+
+/** Sockets the runtime opened: a test can make the bridge's close fail and see the rpc's close. */
+const sockets = vi.hoisted(() => ({ failBridgeClose: false, failRpcClose: false, rpcClosed: 0 }));
+vi.mock("@humanharness/blocks", async (importOriginal) => {
+  const blocks = await importOriginal<typeof import("@humanharness/blocks")>();
+  return {
+    ...blocks,
+    openBridge: async (...args: Parameters<typeof blocks.openBridge>) => {
+      const bridge = await blocks.openBridge(...args);
+      return { ...bridge, close: () => (sockets.failBridgeClose ? bridge.close().then(() => Promise.reject(new Error("bridge"))) : bridge.close()) };
+    },
+    openRpc: async (...args: Parameters<typeof blocks.openRpc>) => {
+      const rpc = await blocks.openRpc(...args);
+      return {
+        ...rpc,
+        close: async () => {
+          await rpc.close();
+          sockets.rpcClosed++;
+          if (sockets.failRpcClose) throw new Error("rpc");
+        },
+      };
+    },
+  };
+});
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
 
 const FIXTURE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../fake-agent/fixtures/notes-harness/harness.config.ts");
+const STUDY = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../fake-agent/fixtures/data-harness/harness.config.ts");
+const READER = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../fake-agent/fixtures/material-harness/harness.config.ts");
+const mcpServers = (argv: string[]) => Object.keys((JSON.parse(argv[argv.indexOf("--mcp-config") + 1]) as { mcpServers: object }).mcpServers);
 let runtime: HarnessRuntime | undefined;
 
 afterEach(async () => {
@@ -46,6 +74,56 @@ async function send(r: HarnessRuntime, message = "hi") {
 }
 
 describe("createRuntime", () => {
+  it("puts the settings' sentences in AGENTS.md, and rewrites it only when they change (harness-settings §5)", async () => {
+    let sentences = ["Use a patient tone."];
+    const { runtime, folder } = await setup({ steps: [] }, undefined, { instructionSettings: async () => sentences });
+    const agents = () => fs.readFileSync(path.join(folder, "AGENTS.md"), "utf8");
+    expect(agents()).toContain("### How to work with this person\n\n- Use a patient tone.\n");
+    expect(await runtime.refreshInstructions()).toBe(false);
+    sentences = ["Use a demanding tone."];
+    expect(await runtime.refreshInstructions()).toBe(true);
+    expect(agents()).toContain("- Use a demanding tone.");
+    expect(agents()).not.toContain("patient");
+  });
+
+  it("D0: without settings, AGENTS.md is the base and today's managed section, and a refresh writes nothing", async () => {
+    const { runtime, folder } = await setup({ steps: [] });
+    const harness = await loadHarness(FIXTURE);
+    const base = fs.readFileSync(resolveInHarness(harness, harness.instructions), "utf8");
+    expect(fs.readFileSync(path.join(folder, "AGENTS.md"), "utf8")).toBe(`${base.trimEnd()}\n\n${managedSection({ language: "en", blocks: allBlocks(harness) })}`);
+    expect(await runtime.refreshInstructions()).toBe(false);
+  });
+
+  it("a closed runtime never rewrites AGENTS.md, and close waits for a running refresh", async () => {
+    let sentences = ["Use a patient tone."];
+    let release: () => void = () => {};
+    let gate: Promise<void> | null = null;
+    const { runtime: rt, folder } = await setup({ steps: [] }, undefined, {
+      instructionSettings: async () => {
+        await gate;
+        return sentences;
+      },
+    });
+    // This test closes the runtime itself.
+    runtime = undefined;
+    // A refresh rewrites only AGENTS.md: the engine's own instructions file is static.
+    const agents = () => fs.readFileSync(path.join(folder, "AGENTS.md"), "utf8");
+    sentences = ["Use a demanding tone."];
+    gate = new Promise((r) => (release = r));
+    const refreshing = rt.refreshInstructions();
+    let closed = false;
+    const closing = rt.close().then(() => void (closed = true));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(closed).toBe(false);
+    release();
+    await closing;
+    expect(await refreshing).toBe(true);
+    expect(agents()).toContain("demanding");
+    sentences = ["Use a gentle tone."];
+    expect(await rt.refreshInstructions()).toBe(false);
+    expect(agents()).not.toContain("gentle");
+  });
+
   it("enforces the engine's minAdapterVersion on ACP engines", async () => {
     const codex = getEngine("codex");
     if (codex.transport.kind !== "acp") throw new Error("codex must use ACP");
@@ -72,7 +150,7 @@ describe("createRuntime", () => {
     const agents = fs.readFileSync(path.join(folder, "AGENTS.md"), "utf8");
     expect(agents).toContain("You are a test assistant");
     expect(agents).toContain("`show_note`");
-    expect(agents).toContain("Always answer in English.");
+    expect(agents).toContain("Think and reason in English.");
     expect(fs.readFileSync(path.join(folder, "CLAUDE.md"), "utf8")).toBe("@AGENTS.md\n");
   });
 
@@ -254,5 +332,127 @@ describe("createRuntime", () => {
     expect(() => runtime.send("two", () => {})).toThrow(/already running/);
     turn.cancel();
     await turn.done;
+  });
+
+  it("starts no data server without data, or without a handler (D2)", async () => {
+    const plain = await setup({ steps: [claudeResultLine(true)] }, undefined, { data: async (request) => request });
+    await send(plain.runtime);
+    expect(mcpServers(plain.args())).toEqual(["ui"]);
+    await plain.runtime.close();
+    const noHandler = await setup({ steps: [claudeResultLine(true)] }, undefined, { harness: await loadHarness(STUDY) });
+    await send(noHandler.runtime);
+    expect(mcpServers(noHandler.args())).toEqual(["ui"]);
+  });
+
+  it("starts the data server next to ui and sends the agent's data calls to the handler", async () => {
+    const seen: unknown[] = [];
+    const { runtime, args } = await setup(
+      { steps: [{ mcp: { server: "data", tool: "data_put", args: { collection: "concepts", record: { id: "halves", name: "Halves", state: "seen", evidence: [] } } } }, claudeResultLine(true)] },
+      undefined,
+      {
+        harness: await loadHarness(STUDY),
+        data: async (request) => {
+          seen.push(request);
+          return request;
+        },
+      },
+    );
+    await send(runtime);
+    expect(mcpServers(args())).toEqual(["ui", "data"]);
+    expect(seen).toEqual([{ op: "put", collection: "concepts", record: { id: "halves", name: "Halves", state: "seen", evidence: [] } }]);
+  });
+
+  it("starts no material server without material in the manifest, and AGENTS.md has no Material part (material D0)", async () => {
+    const { runtime, args, folder } = await setup({ steps: [claudeResultLine(true)] }, undefined, { material: { request: async () => "x" } });
+    // Files where material would live are not tracked either: the keep list is today's.
+    fs.mkdirSync(path.join(folder, ".harness", "material", "fractions"), { recursive: true });
+    fs.writeFileSync(path.join(folder, ".harness", "material", "fractions", "sources.json"), "[]\n");
+    await send(runtime);
+    expect(mcpServers(args())).toEqual(["ui"]);
+    expect(fs.readFileSync(path.join(folder, "AGENTS.md"), "utf8")).not.toContain("### Material");
+    expect((await runtime.history.trackedFiles()).filter((f) => f.startsWith(".harness/"))).toEqual([]);
+  });
+
+  it("starts the material server in person mode with material, sends its calls to the handler, and keeps its registry", async () => {
+    const seen: unknown[] = [];
+    const folder = path.join(fs.mkdtempSync(path.join(root, "t-")), "Work");
+    const { runtime, args } = await setup(
+      { steps: [{ mcp: { server: "material", tool: "material_read", args: { id: "ch2-001" } } }, claudeResultLine(true)] },
+      folder,
+      {
+        harness: await loadHarness(READER),
+        data: async () => null,
+        material: {
+          request: async (request) => {
+            seen.push(request);
+            fs.mkdirSync(path.join(folder, ".harness", "material", "fractions", "fragments"), { recursive: true });
+            fs.writeFileSync(path.join(folder, ".harness", "material", "fractions", "sources.json"), "[]\n");
+            fs.writeFileSync(path.join(folder, ".harness", "material", "fractions", "index.md"), "\n");
+            return "x";
+          },
+        },
+      },
+    );
+    await send(runtime);
+    const servers = JSON.parse(args()[args().indexOf("--mcp-config") + 1]) as { mcpServers: Record<string, { env: Record<string, string> }> };
+    expect(Object.keys(servers.mcpServers)).toEqual(["ui", "data", "material"]);
+    expect(servers.mcpServers.material.env.HH_MATERIAL_MODE).toBe("person");
+    expect(seen).toEqual([{ op: "read", id: "ch2-001" }]);
+    expect(fs.readFileSync(path.join(folder, "AGENTS.md"), "utf8")).toContain("### Material");
+    const tracked = await runtime.history.trackedFiles();
+    expect(tracked).toContain(".harness/material/fractions/sources.json");
+    expect(tracked).not.toContain(".harness/material/fractions/index.md");
+  });
+
+  it("closes the data socket even when closing the ui bridge fails", async () => {
+    const { runtime: r } = await setup({ steps: [claudeResultLine(true)] }, undefined, { harness: await loadHarness(STUDY), data: async () => null });
+    runtime = undefined;
+    const closed = sockets.rpcClosed;
+    sockets.failBridgeClose = true;
+    try {
+      await expect(r.close()).rejects.toThrow("bridge");
+    } finally {
+      sockets.failBridgeClose = false;
+    }
+    expect(sockets.rpcClosed).toBe(closed + 1);
+  });
+
+  it("closes the material socket even when the earlier closes fail", async () => {
+    const { runtime: r } = await setup({ steps: [claudeResultLine(true)] }, undefined, {
+      harness: await loadHarness(READER),
+      data: async () => null,
+      material: { request: async () => null },
+    });
+    runtime = undefined;
+    const closed = sockets.rpcClosed;
+    sockets.failBridgeClose = true;
+    sockets.failRpcClose = true;
+    try {
+      await expect(r.close()).rejects.toThrow();
+    } finally {
+      sockets.failBridgeClose = false;
+      sockets.failRpcClose = false;
+    }
+    // The data socket's close failed, and the material socket still closed after it.
+    expect(sockets.rpcClosed).toBe(closed + 2);
+  });
+});
+
+describe("acpFields", () => {
+  it("gives OpenCode its modes and the config-option profile", () => {
+    const engineEnv = { ...OPENCODE_ENV };
+    expect(acpFields(getEngine("opencode"), "folder")).toEqual({ sessionMode: "build", minAdapterVersion: undefined, profileMethod: "config-option", engineEnv });
+    expect(acpFields(getEngine("opencode"), "none")).toEqual({ sessionMode: "plan", minAdapterVersion: undefined, profileMethod: "config-option", engineEnv });
+  });
+
+  it("gives Codex and Claude no engine environment (D0)", () => {
+    for (const id of ["codex", "claude"]) for (const edit of ["folder", "none"] as const) expect(acpFields(getEngine(id), edit)).not.toHaveProperty("engineEnv");
+  });
+
+  it("gives Codex what it had, and Claude nothing (D0)", () => {
+    expect(acpFields(getEngine("codex"), "folder")).toEqual({ sessionMode: "workspace-write", minAdapterVersion: "2.2.2", profileMethod: undefined });
+    expect(acpFields(getEngine("codex"), "none")).toEqual({ sessionMode: "read-only", minAdapterVersion: "2.2.2", profileMethod: undefined });
+    expect(acpFields(getEngine("claude"), "folder")).toEqual({ sessionMode: undefined, minAdapterVersion: undefined, profileMethod: undefined });
+    expect(acpFields(getEngine("claude"), "none")).toEqual({ sessionMode: undefined, minAdapterVersion: undefined, profileMethod: undefined });
   });
 });

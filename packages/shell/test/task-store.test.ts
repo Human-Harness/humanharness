@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { QUESTION_MAX, type TasksFile, TaskStore, emptyTasks, interrupted } from "../src/main/task-store";
+import { QUESTION_MAX, type TasksFile, TaskStore, emptyTasks, interrupted, scopeOfTask, statusesIn, withStatus } from "../src/main/task-store";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -166,5 +166,139 @@ describe("interrupted", () => {
     const checkpointed = { ...waiting, current: { ...waiting.current!, checkpointNote: true } };
     expect(interrupted(checkpointed).actions).toEqual({ manifest: "done", turn: "done" });
     expect(interrupted(checkpointed, "unsaved").actions).toEqual({ manifest: "done", turn: "done" });
+  });
+});
+
+describe("scopes in tasks.json", () => {
+  it("keeps the open scope, each scope's statuses and the task's scope; drops what is malformed", async () => {
+    const dir = tmp();
+    fs.mkdirSync(path.join(dir, ".harness"), { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, ".harness", "tasks.json"),
+      JSON.stringify({
+        version: 1,
+        open: "fracciones",
+        current: { id: "t1", action: "study", status: "waiting", startedAt: "s", turns: 1, scope: "fracciones" },
+        actions: { study: "done" },
+        scopes: { fracciones: { study: "unsaved", bad: "nope" }, _app: { onboarding: "done" }, main: { x: "done" }, "../x": { y: "done" } },
+      }),
+    );
+    const s = await new TaskStore(dir).load();
+    expect(s.open).toBe("fracciones");
+    expect(s.current?.scope).toBe("fracciones");
+    expect(s.actions).toEqual({ study: "done" });
+    expect(s.scopes).toEqual({ fracciones: { study: "unsaved" }, _app: { onboarding: "done" } });
+    fs.writeFileSync(path.join(dir, ".harness", "tasks.json"), JSON.stringify({ version: 1, open: "_app", current: { id: "t1", status: "waiting", scope: "../x" }, actions: {} }));
+    const bad = await new TaskStore(dir).load();
+    expect(bad.open).toBeUndefined();
+    expect(bad.current?.scope).toBeUndefined();
+    expect(bad).not.toHaveProperty("scopes");
+  });
+
+  it("reads and writes a scope's statuses; main's are the old `actions`", () => {
+    const s: TasksFile = { ...emptyTasks(), actions: { study: "done" } };
+    expect(statusesIn(s, "main")).toEqual({ study: "done" });
+    expect(statusesIn(s, "fracciones")).toEqual({});
+    const t = withStatus(s, "fracciones", "study", "unsaved");
+    expect(t.scopes).toEqual({ fracciones: { study: "unsaved" } });
+    expect(t.actions).toEqual({ study: "done" });
+    expect(withStatus(s, "main", "review", "done").actions).toEqual({ study: "done", review: "done" });
+    expect(scopeOfTask({})).toBe("main");
+    expect(scopeOfTask({ scope: "_app" })).toBe("_app");
+  });
+
+  it("marks an interrupted task's action in its own scope", () => {
+    const s: TasksFile = { ...emptyTasks(), current: { id: "t1", action: "study", status: "waiting", startedAt: "s", turns: 1, scope: "fracciones" } };
+    const after = interrupted(s);
+    expect(after.current).toBeNull();
+    expect(after.scopes).toEqual({ fracciones: { study: "unfinished" } });
+    expect(after.actions).toEqual({});
+  });
+});
+
+describe("TaskStore: task modes (task-modes spec §5.5, §6)", () => {
+  const write = (folder: string, current: Record<string, unknown>) => {
+    const file = path.join(folder, ".harness", "tasks.json");
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify({ version: 1, actions: {}, current: { id: "t1", status: "waiting", startedAt: "", turns: 1, ...current } }));
+  };
+
+  it("keeps a well-formed mode, the modes used (distinct, in order) and belowMinTier", async () => {
+    const folder = tmp();
+    write(folder, { mode: "socratic", modes: ["socratic", "feynman", "socratic", "Bad Id", 3], belowMinTier: true });
+    expect((await new TaskStore(folder).load()).current).toMatchObject({ mode: "socratic", modes: ["socratic", "feynman"], belowMinTier: true });
+    write(folder, { mode: "../x", modes: "socratic", belowMinTier: "yes" });
+    const bad = (await new TaskStore(folder).load()).current;
+    expect(bad).not.toHaveProperty("mode");
+    expect(bad).not.toHaveProperty("modes");
+    expect(bad).not.toHaveProperty("belowMinTier");
+  });
+
+  it("drops a mode the manifest no longer declares; belowMinTier goes with its mode", async () => {
+    const folder = tmp();
+    write(folder, { mode: "socratic", modes: ["socratic", "feynman"], belowMinTier: true });
+    const current = (await new TaskStore(folder, { modes: ["feynman"] }).load()).current;
+    expect(current).toMatchObject({ modes: ["feynman"] });
+    expect(current).not.toHaveProperty("mode");
+    expect(current).not.toHaveProperty("belowMinTier");
+  });
+
+  it("D0: a task without modes reads with no mode fields", async () => {
+    const folder = tmp();
+    write(folder, {});
+    expect((await new TaskStore(folder).load()).current).toEqual({ id: "t1", status: "waiting", startedAt: "", turns: 1 });
+  });
+});
+
+describe("TaskStore: task phases and the time box (task-phases spec §6)", () => {
+  const write = (folder: string, current: Record<string, unknown>) => {
+    const file = path.join(folder, ".harness", "tasks.json");
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify({ version: 1, actions: {}, current: { id: "t1", action: "session", status: "waiting", startedAt: "", turns: 1, ...current } }));
+  };
+  const at = "2026-10-26T10:00:00.000Z";
+
+  it("keeps a well-formed phase, its log, a proposal, a time box and a suspended mode", async () => {
+    const folder = tmp();
+    write(folder, {
+      phase: { id: "main", startedAt: at },
+      phases: [{ id: "warmup", at, by: "app" }, { id: "main", at, by: "agent" }, { id: "Bad", at, by: "app" }, { id: "close", at, by: "robot" }],
+      phaseProposal: { to: "close", reason: "Done" },
+      timeBox: { minutes: 30, usedMs: 1000, runningSince: at, wrappedUp: true, ended: "yes" },
+      suspendedMode: "socratic",
+    });
+    expect((await new TaskStore(folder).load()).current).toMatchObject({
+      phase: { id: "main", startedAt: at },
+      phases: [{ id: "warmup", at, by: "app" }, { id: "main", at, by: "agent" }],
+      phaseProposal: { to: "close", reason: "Done" },
+      timeBox: { minutes: 30, usedMs: 1000, runningSince: at, wrappedUp: true },
+      suspendedMode: "socratic",
+    });
+  });
+
+  it("drops what is malformed: a time box without minutes, a proposal without a phase, a suspended mode next to a mode", async () => {
+    const folder = tmp();
+    write(folder, { phaseProposal: { to: "close", reason: "Done" }, timeBox: { usedMs: 3 }, mode: "feynman", suspendedMode: "socratic" });
+    const c = (await new TaskStore(folder).load()).current;
+    for (const key of ["phase", "phases", "phaseProposal", "timeBox", "suspendedMode"]) expect(c).not.toHaveProperty(key);
+    expect(c).toMatchObject({ mode: "feynman" });
+  });
+
+  it("drops a phase the action no longer declares", async () => {
+    const folder = tmp();
+    write(folder, { phase: { id: "main", startedAt: at }, phases: [{ id: "warmup", at, by: "app" }, { id: "main", at, by: "person" }], phaseProposal: { to: "close", reason: "x" } });
+    const c = (await new TaskStore(folder, { phases: { session: ["warmup", "close"] } }).load()).current;
+    expect(c).not.toHaveProperty("phase");
+    expect(c).not.toHaveProperty("phaseProposal");
+    expect(c).toMatchObject({ phases: [{ id: "warmup", at, by: "app" }] });
+    // An action that has no phases any more keeps none.
+    const none = (await new TaskStore(folder, { phases: { quiz: ["a"] } }).load()).current;
+    expect(none).not.toHaveProperty("phases");
+  });
+
+  it("D0: a task without phases reads with no phase fields", async () => {
+    const folder = tmp();
+    write(folder, {});
+    expect((await new TaskStore(folder, { phases: {} }).load()).current).toEqual({ id: "t1", action: "session", status: "waiting", startedAt: "", turns: 1 });
   });
 });

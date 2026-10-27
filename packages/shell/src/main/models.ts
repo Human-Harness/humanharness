@@ -1,4 +1,4 @@
-import { TIERS, type Tier } from "@humanharness/harness-sdk";
+import { TIERS, type Tier, tierBelow } from "@humanharness/harness-sdk";
 import {
   EFFORTS,
   type Effort,
@@ -84,16 +84,30 @@ export function tierSpec(engine: string, tier: Tier, models: ModelsConfig): Mode
 
 /**
  * The task's profile (spec §5): the user's custom setting for this engine, else the user's tier for the
- * task, else the manifest's, else "standard", through the user's table, else the core's.
+ * task, else the manifest's, else "standard", through the user's table, else the core's. `floor` (a mode's
+ * `minTier`, task-modes spec §5.3) raises a lower tier to it and never lowers one; a custom setting stays.
  */
-export function resolveProfile(o: { engine: string; action?: string; manifestTier?: Tier; models: ModelsConfig }): ModelProfile {
+export function resolveProfile(o: { engine: string; action?: string; manifestTier?: Tier; models: ModelsConfig; floor?: Tier }): ModelProfile {
   const choice = o.models.tasks?.[taskKey(o.action)];
   if (typeof choice === "object" && choice.custom.engine === o.engine) {
     const { engine: _engine, ...spec } = choice.custom;
     return { engine: o.engine, tier: "custom", ...spec };
   }
-  const tier: Tier = typeof choice === "string" ? choice : (o.manifestTier ?? "standard");
+  const chosen: Tier = typeof choice === "string" ? choice : (o.manifestTier ?? "standard");
+  const tier = o.floor !== undefined && tierBelow(chosen, o.floor) ? o.floor : chosen;
   return { engine: o.engine, tier, ...tierSpec(o.engine, tier, o.models) };
+}
+
+/**
+ * The tier a profile counts as (task-modes spec §5.3): its own; a custom one, the highest tier whose model it runs on
+ * this engine (the user's table, else the core's), else by its effort (low → light, medium → standard, more → deep).
+ */
+export function nearestTier(p: ModelProfile, models: ModelsConfig): Tier {
+  if (p.tier !== "custom") return p.tier;
+  if (p.model !== undefined) {
+    for (const tier of [...TIERS].reverse()) if (tierSpec(p.engine, tier, models).model === p.model) return tier;
+  }
+  return p.effort === "low" ? "light" : p.effort === "medium" ? "standard" : "deep";
 }
 
 /**

@@ -1,22 +1,22 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { useState } from "react";
+import { MATERIAL_STAGE_KEYS } from "@humanharness/harness-sdk";
 import { afterEach, describe, expect, it } from "vitest";
 import type { AppConfig, AppState } from "../src/client";
-import { ModelsTab } from "../src/ModelsTab";
+import { MATERIAL_ROWS, ModelsTab, taskRows } from "../src/ModelsTab";
 import { FakeClient } from "./fake-client";
 import { renderIn } from "./render";
 
 afterEach(cleanup);
 
-const L = (en: string, es = en) => ({ es, en });
 const ready = { language: "en" as const, folder: "/Users/me/Documents/Demo", engineId: "claude" };
 
 function modelsClient(models?: AppConfig["models"]) {
   const c = new FakeClient({ ...ready, ...(models ? { models } : {}) });
   c.state.actions = {
-    manifest: { label: L("The manifest"), cost: "medium", tier: "standard" },
-    turn: { label: L("A turn"), cost: "medium", tier: "deep" },
+    manifest: { label: "The manifest", cost: "medium", tier: "standard" },
+    turn: { label: "A turn", cost: "medium", tier: "deep" },
   };
   c.state.path = ["manifest", "turn"];
   c.state.engines.push({ ...c.state.engines[0], id: "codex", name: "Codex", reportsLimits: false });
@@ -61,6 +61,24 @@ describe("ModelsTab › Tasks", () => {
     expect(within(row("A turn")).getByRole("button", { name: "Deep" }).getAttribute("aria-pressed")).toBe("true");
     expect(within(row("Free question")).getByRole("button", { name: "Light" }).getAttribute("aria-pressed")).toBe("true");
     expect(screen.queryByText(/Changed/)).toBeNull();
+  });
+
+  it("with material, lists each material stage after free questions and saves it by its reserved id", async () => {
+    const c = modelsClient();
+    c.state.material = { accepts: ["text"], items: false, grounding: { default: "mixed", personCanChange: true }, maxPages: 300 };
+    c.state.models = { ...c.state.models!, recommended: { ...c.state.models!.recommended, "material-review": "standard", "material-repair": "light", "material-label": "light", "material-sheet": "light" } };
+    await renderIn("en", <Tab client={c} />);
+    expect(within(tasksRegion()).getAllByRole("group").map((g) => g.getAttribute("aria-label"))).toEqual([
+      "The manifest",
+      "A turn",
+      "Free question",
+      "Material: checking the conversion",
+      "Material: fixing structure",
+      "Material: labelling",
+      "Material: the summary sheet",
+    ]);
+    fireEvent.click(within(row("Material: labelling")).getByRole("button", { name: "Standard" }));
+    await waitFor(() => expect(saved(c)).toEqual({ tasks: { "material-label": "standard" } }));
   });
 
   it("saves a changed level, marks it changed with the recommendation, and restores it", async () => {
@@ -138,6 +156,46 @@ describe("ModelsTab › Tasks", () => {
     await waitFor(() => expect(saved(c)).toEqual(whole));
     expect(patches.every((p) => Object.keys(p).join() === "models")).toBe(true);
     expect(patches[patches.length - 1]).toEqual({ models: whole });
+  });
+
+  it("a second field edited before the first save came back keeps the first edit", async () => {
+    const c = modelsClient({ tasks: { turn: { custom: { engine: "claude", model: "opus", effort: "high", cap: 400_000 } } } });
+    const save = c.saveConfig.bind(c);
+    let release = () => {};
+    const gate = new Promise<void>((r) => (release = r));
+    c.saveConfig = async (patch: AppConfig) => {
+      await gate;
+      return save(patch);
+    };
+    await renderIn("en", <Tab client={c} />);
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    const tasks = within(tasksRegion());
+    fireEvent.change(tasks.getByRole("combobox", { name: "Effort" }), { target: { value: "max" } });
+    expect((tasks.getByRole("combobox", { name: "Effort" }) as HTMLSelectElement).value).toBe("max");
+    fireEvent.change(tasks.getByRole("combobox", { name: "Context cap" }), { target: { value: "1000000" } });
+    release();
+    await waitFor(() => expect(saved(c)).toEqual({ tasks: { turn: { custom: { engine: "claude", model: "opus", effort: "max", cap: 1_000_000 } } } }));
+  });
+});
+
+describe("taskRows", () => {
+  it("the material rows are the SDK's stage keys, in order", () => {
+    expect([...MATERIAL_ROWS]).toEqual([...MATERIAL_STAGE_KEYS]);
+  });
+
+  it("material stages are rows only when the harness takes material (D0)", () => {
+    const base = { actions: { study: { label: "Study" } } } as unknown as AppState;
+    const q = { key: "questions", label: "Questions" };
+    expect(taskRows(base, q).map((r) => r.key)).toEqual(["study", "questions"]);
+    const withMaterial = { ...base, material: { accepts: [], items: true, grounding: { default: "mixed", personCanChange: true }, maxPages: 300 } } as AppState;
+    const labels = { "material-review": "Material: checking", "material-repair": "Material: fixing", "material-label": "Material: labelling", "material-sheet": "Material: summary sheet", "material-link": "Material: linking" };
+    // Without labels (Settings › Usage) the stages are no rows: material usage is one total there.
+    expect(taskRows(withMaterial, q).map((r) => r.key)).toEqual(["study", "questions"]);
+    const rows = taskRows(withMaterial, q, labels);
+    expect(rows.map((r) => r.key)).toEqual(["study", "questions", "material-review", "material-repair", "material-label", "material-sheet", "material-link"]);
+    expect(rows[2].label).toBe("Material: checking");
+    const noItems = { ...withMaterial, material: { ...withMaterial.material!, items: false } } as AppState;
+    expect(taskRows(noItems, q, labels).map((r) => r.key)).not.toContain("material-link");
   });
 });
 

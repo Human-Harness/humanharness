@@ -11,7 +11,7 @@ Resources are part of the third pillar. A harness never names a model: each task
 ## How to work
 
 - Ask **one question at a time**, in the developer's language, and wait for the answer. Offer a suggested answer when it helps.
-- Write every file in English; the harness's UI strings stay in Spanish and English in `locales/`.
+- Write every file in English, including the harness's UI strings in `locales/en.json`.
 - Read `HARNESS.md` first: it is this harness's living decision log. Never ask again what it already answers; offer to revisit it instead.
 - Each phase ends with two things done together: its `HARNESS.md` section updated, and the code changed to match. Add a dated entry to **Decision log** for each decision: the decision, the reason, the alternatives rejected.
 - After each phase, suggest running `corepack pnpm check` (it runs `humanharness check`), and fix every error it reports.
@@ -21,8 +21,8 @@ Resources are part of the third pillar. A harness never names a model: each task
 
 - The core checkout is the folder `package.json` links to: `"@humanharness/cli": "link:<core>/packages/cli"`. Below, `<core>` is that folder.
 - `<core>/harnesses/demo` is a complete example (custom blocks, a guided path, briefs, references). Read it for ideas; never copy it as a starting point.
-- `<core>/docs/architecture/` explains how the core works: `manifest.md`, `blocks.md`, `context.md`, `turn.md`, `engines.md`, `authoring.md`.
-- In this repository: `harness.config.ts` (the manifest), `agent/AGENTS.md` (the instructions to the AI), `agent/tasks/*.md` (one brief per action), `ui/` (the screen and the block components), `locales/es.json` and `locales/en.json` (the UI strings).
+- `<core>/docs/architecture/` explains how the core works: `manifest.md`, `blocks.md`, `context.md`, `modes.md`, `phases.md`, `setup.md`, `profiles.md`, `turn.md`, `engines.md`, `authoring.md`.
+- In this repository: `harness.config.ts` (the manifest), `agent/AGENTS.md` (the instructions to the AI), `agent/tasks/*.md` (one brief per action), `agent/phases/*.md` (one brief per part, when an action has parts), `ui/` (the screen and the block components), `locales/en.json` (the UI strings).
 - Import the SDK from `@humanharness/cli/sdk` (`defineHarness`, `defineBlock`, `z`) and the UI kit from `@humanharness/cli/ui` (`HarnessApp`, `BlockProps`, `useTranslation`).
 
 ## Rules
@@ -48,6 +48,7 @@ Ask which choices the person makes along the way, and what they need to see in o
 
 - When picking among up to four ways to continue is enough, it is the core `choices` block (`show_choices`).
 - When they need to see structured information (a comparison, a plan, a diagram), design a custom block: `defineBlock({ description, visible: true, schema, example })` in `harness.config.ts`, a component in `ui/` registered in `ui/App.tsx`, and its strings in both locale files. Keep schemas small and bounded (maximum lengths, maximum items). A state-only block (`visible: false`) updates a side panel instead.
+- When the person must answer something the task depends on (commit to an answer, explain in their own words, sum up, make flashcards), give the block an `input`: a `z.object` of the answer, checked by the app. Name each field's label in `inputUi` (in English), a `submitLabel` if "Send" doesn't fit, and `skippable: true` when skipping is fine. The core draws the form; register a component only for fields it can't draw (`check` says which), and if that component reuses `InputForm`, key it by `input.blockId`. Add `saveTo: { collection }` to keep each answer in `data`; when `saveTo.records` maps an answer to records, derive their keys from the answer, so answering again replaces them instead of adding copies. The core `annotate` block lets the agent mark the person's words. Ask what the agent does with the answer, and write it in the brief.
 
 Replace the template's `example_card` block once the harness has its own.
 
@@ -55,11 +56,15 @@ Replace the template's `example_card` block once the harness has its own.
 
 Fills: HARNESS.md → Flow
 
-Ask which tasks (actions) exist. For each one: an id, a label and a one-line description in Spanish and English, a brief in `agent/tasks/<id>.md`, and a cost hint (`light`, `medium` or `heavy`).
+Ask which tasks (actions) exist. For each one: an id, a label and a one-line description in English, a brief in `agent/tasks/<id>.md`, and a cost hint (`light`, `medium` or `heavy`).
 
 - A brief is the first message of the task's own engine session: what to do, what to read, which blocks to show, and to end with `show_choices`. It may use `{{language}}` and `{{notesIndex}}`.
 - Ask whether the actions have a natural order. If so, set `path` (the guided path).
 - For each `choices` option, decide where it leads: `followUp` (stays on the task), `action` (starts another task by its id) or `next: true` (the next task of the path).
+- Ask whether a task has ways of working the person should pick between (task modes: Socratic or worked examples, plan or review). If so, declare `modes` (a `label`, a `description`, a brief in `agent/modes/<id>.md`, an optional `minTier` and a `recommend` hint only the AI reads) and list them on the action with a `defaultMode`: `recommend` (the default) lets the AI suggest one with the core `recommend_mode` block, `ask` asks the person first, a mode id starts in it. A mode's own settings go in its `settings` and need the harness's `settings` for their tab. Try one with `humanharness run <action> --mode <id>`, and `m <id>` at its prompt. See `<core>/docs/architecture/modes.md`.
+- Ask whether a task has parts that always come in the same order (a warm-up, the main block, a close). If so, list them as the action's `phases`: an `id`, a `label`, a brief in `agent/phases/<id>.md`, `auto: true` on the parts the AI may leave on its own (without it, the AI's request waits for the person), `close: true` on the last part when it closes the task, and which modes each part allows (`modes`: `"any"`, `"none"` or a list of the action's modes). The whole task stays one conversation; the core gives the AI a `set_phase` tool to ask for the next part.
+- Ask whether the person should pick how long a task lasts. If so, set `timeBox`: the lengths in minutes (`options`), a `default` (one of them, or `null` for no limit) and when to wrap up (`wrapUpAt`; suggest 0.85, which leaves the last 15% for the close part; without it the wrap-up comes when the time is up). Near the end the AI is asked to finish its point, then the task moves to the close part.
+- A part's brief is one more message in the same conversation, not a new start: say what this part is for, what to do first (often the first question to the person) and when to call `set_phase` with the next part's id (in the close part, its own id when the task is done). It may use `{{language}}`, `{{phase}}` (this part's label), `{{previousPhase}}` and `{{timeLeft}}`. Leave `brief` out for a part that needs no words; then moving there changes only what the person sees. Try it with `humanharness run <action> --time <minutes>` and `>phase <id>` at its prompt. See `<core>/docs/architecture/phases.md`.
 - Rewrite `agent/AGENTS.md`: what the AI does in this harness, and when it calls each block's tool.
 - Keep the Flow table in sync, one row per action plus `(questions)` for free questions; `check` compares it with `harness.config.ts`:
 
@@ -76,7 +81,17 @@ Every task ends with a note the app writes from the core `save_note` block (titl
 
 - what each closed task must keep, and what goes in each `save_note` field for this harness;
 - which folders, if any, the AI should read but never change (`folder.references`);
-- what must never be lost.
+- what must never be lost;
+- whether the work splits into scopes the person opens one at a time (a topic, a project). If it does, declare `scopes` with its label and plural; each scope then gets its own tasks, notes, chat and data. Every action runs inside the open scope, except the ones marked `scope: "none"`, which run app-wide (a welcome, a profile);
+- which structured records the harness keeps besides the notes, in `data`. For each collection: its zod schema and key (or `single: true`), whether it belongs to a scope (`scoped`), what the agent may do with it (`agent`: `write`, `read` or `none`), which fields go into a task's first message and in how many tokens (`context`), and the `rules` every write must pass (a pure function that returns `true` or the reason it refuses);
+- which knobs the person sets for themselves (tone, how much to explain, after how many tries a hint comes, which checks to run). Declare them in `settings`: a zod `schema`, a `default` (given here, not on the schema), a `control` (`segmented`, `select`, `toggle`, `number`, `text`), a `label`, and an `agent` sentence in English with `{{value}}` or `{{value:label}}` ("Use a {{value}} tone."; `{{value:label}}` inserts the option's label as written). A `text` setting whose sentence uses the value needs `.max(n)` on its schema, so a long answer can't flood the instructions. The core draws the tab and writes the sentences into the agent's instructions; changes apply from the next task. Leave `agent` out for a setting only the harness's screens use, and use `onlyWhenChanged: true` for sentences that only matter when the person changed the default. Try values with `humanharness run <action> --set name=value`.
+- whether the app needs to know something before the first task. If so, which of: a short form, a short interview, a screen of your own. Declare it in `setup`, in order, each step with an `id`, a `label`, an optional `description` and `required: true` only when the app can't work without it (a skippable step can be done later from Settings):
+  - a short form: `kind: "form"` with a `single`, unscoped collection and the `fields` to ask for, or `settings` with names of harness settings;
+  - a short interview: `kind: "interview"` with an `action` (not in `path`, not `deep`, `scope: "none"` when the harness has scopes) and the collection it `writes` (`single`, unscoped, `agent: "write"`, with a `context` so a second run sees the first one's answers). Its brief says what to find out; the core adds how to save it. If the harness has mock recordings, record one for the action (`humanharness run <action> --record`);
+  - a screen of your own: `kind: "component"` with the name of a React component in `ui/`, passed to `HarnessApp setupSteps={{ Name }}`; it calls `done()` or `skip()`.
+  See `<core>/docs/architecture/setup.md`.
+- whether several people use the app on one computer (a family, a classroom). If they do, declare `profiles` with its `label` (what one of them is called: "student", "player") and the `fields` its add form asks for (`name` first; a `color` field of `PROFILE_COLORS` colours each avatar), and a `profile` collection (`single: true`, `scoped: false`, a `name` string) with a `context` when the AI should know who it talks to; each profile then gets its own folder, tasks, notes, chats, data and history. Profiles keep work apart but don't protect it, and adding them later has no migration yet. See `<core>/docs/architecture/profiles.md`.
+- whether the person brings their own material (a textbook chapter, class notes, a spreadsheet, a web page) that tasks should work from. If so, declare `material`: which families it `accepts` (`pdf`, `word`, `spreadsheet`, `presentation`, `ebook`, `web`, `text`; all by default), the `sheet` sections the AI writes once per scope (an `id`, a `label` and a `prompt`, in English; the core adds "Notation and conventions" and "What the material does not cover"), the `fragmentKinds` your briefs talk about, the `items` collection fragments link to (a keyed collection the agent can see, and its label field) if the harness tracks topics, and whether the person may switch `grounding` between `strict` (only the material) and `mixed`. The core converts, cuts, checks and labels the files, warns about cost before any model runs, and gives each task a short index; the agent fetches fragments with `material_read` and cites them as `[[frag:<id>]]`. Each stage is a row in Settings › Models. See `<core>/docs/architecture/material.md`.
 
 Say it in the briefs where it matters, for example: "the decisions are the options the person chose, each with its reason".
 
@@ -108,7 +123,14 @@ Write one line each in `HARNESS.md` (`- edit: none — reason`) and one `- engin
 
 Fills: HARNESS.md → Identity
 
-Ask for the name in Spanish and English, a one-line tagline, the author and, optionally, a logo file (SVG, PNG or JPEG) in this repository. Write them in `harness.config.ts` (`name`, `tagline`, `author`, `logo`). No provider or model brands.
+Ask for the name, a one-line tagline, the author and, optionally, a logo file (SVG, PNG or JPEG) in this repository. Write them in `harness.config.ts` (`name`, `tagline`, `author`, `logo`), in English. No provider or model brands.
+
+### Language
+
+- Write everything in English: the manifest's texts, `locales/en.json`, the instructions and every brief. The app ships in English and translates the screens into the person's language on their own engine; the AI reads English and answers in the person's language. English is what the models reason best in.
+- Don't add other `locales/*.json` files: the app doesn't read them.
+- Give the manifest a `tone`: one English line on how the translated screens should sound ("warm and informal, short sentences"). Record it in `HARNESS.md`.
+- In a brief, `{{language}}` is the person's language by its English name ("Brazilian Portuguese").
 
 ## Phase 8 — Verify
 

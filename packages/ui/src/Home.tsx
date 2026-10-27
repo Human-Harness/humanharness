@@ -2,9 +2,9 @@ import { useId } from "react";
 import { useTranslation } from "react-i18next";
 import { BackupNotice, type FolderMove } from "./BackupNotice";
 import { CheckIcon, EngineIcon, GearIcon, HHLogo, TopBar } from "./chrome";
-import { type AppState, type EngineStatus, type HarnessClient, type LimitWindow, engineProblem, isConfigured } from "./client";
-import { uiLanguage } from "./FolderStep";
+import { type AppState, type EngineStatus, type HarnessClient, type LimitWindow, type SetupStepsState, engineProblem, isConfigured } from "./client";
 import { WARN_AT, fiveHour, percent } from "./usage";
+import { ProfileSwitcher } from "./ProfileSwitcher";
 import { useCurrentWindows } from "./UsageMeter";
 
 /** The first screen of every launch (spec 2026-10-11 "Home"). */
@@ -15,11 +15,13 @@ export function Home({
   status,
   checkFailed = false,
   limits,
+  steps,
   onStart,
   onSetup,
   onSettings,
   onEngine,
   move,
+  onAddProfile,
 }: {
   state: AppState;
   client: HarnessClient;
@@ -30,33 +32,44 @@ export function Home({
   /** The background check itself failed: shown as not connected. */
   checkFailed?: boolean;
   limits: LimitWindow[] | null;
+  /** The harness's setup steps' state (setup-steps spec §4); null while it loads. Unused without setup steps. */
+  steps?: SetupStepsState | null;
   /** The app is ready: the work screen. */
   onStart: () => void;
-  /** Something is missing: the setup flow. */
-  onSetup: () => void;
+  /** Something is missing: the setup flow, at this harness step when it is one. */
+  onSetup: (step?: string) => void;
   onSettings: () => void;
   onEngine: () => void;
   /** The app's folder move (HarnessApp): a move started in Settings still shows here. */
   move?: FolderMove;
+  /** Harnesses with profiles: "Add <label>" (the setup screen at its profile step). */
+  onAddProfile?: () => void;
 }) {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const missingId = useId();
-  const lang = uiLanguage(state, i18n.language);
-  const name = state.harness.name[lang];
+  const name = state.harness.name;
   const engine = state.engines.find((e) => e.id === state.config.engineId);
   const connected = checkFailed ? false : status ? engineProblem(status) === null : null;
   const current = useCurrentWindows(limits);
   const window = engine?.reportsLimits ? fiveHour(current) : undefined;
   // Spec 3f §1: start only when set up and the engine check passed; otherwise say what is missing.
   const configured = isConfigured(state.config);
-  const ready = configured && connected === true;
-  const checking = configured && connected === null;
+  // Setup steps (setup-steps spec §4): a required one not done keeps Home on "Set up"; while their state loads, Start waits.
+  const stepsKnown = state.setup === undefined || steps != null;
+  const blocking = configured && state.setup ? (steps?.blocking ?? []) : [];
+  // Profiles (spec §5): with no active profile, nothing under the folder can be used yet. It doesn't wait for the
+  // switcher: "Set up" opens the profile step on its own.
+  const needsProfile = configured && state.profiles !== undefined && !state.config.profile;
+  const ready = configured && !needsProfile && connected === true && stepsKnown && blocking.length === 0;
+  const checking = configured && !needsProfile && (connected === null || (connected === true && !stepsKnown));
+  const stepLabel = (id: string) => state.setup?.find((s) => s.id === id)?.label ?? id;
   const engineName = engine?.name ?? state.config.engineId ?? "";
   const missingStep = checkFailed ? "check-failed" : status ? engineProblem(status) : null;
 
   return (
     <div className="hh-home">
       <TopBar mock={state.mock}>
+        {configured && state.profiles && onAddProfile && <ProfileSwitcher client={client} state={state} onSwitched={onChange} onAdd={onAddProfile} disabled={move?.moving === true} />}
         <button className="hh-icon-button" aria-label={t("home.settings")} onClick={onSettings}>
           <GearIcon />
         </button>
@@ -64,7 +77,7 @@ export function Home({
       <main className="hh-home-main">
         {state.harness.logo ? <img className="hh-home-logo" src={state.harness.logo} alt="" /> : <HHLogo className="hh-home-logo" />}
         <h1 className="hh-home-name">{name}</h1>
-        {state.harness.tagline && <p className="hh-home-tagline">{state.harness.tagline[lang]}</p>}
+        {state.harness.tagline && <p className="hh-home-tagline">{state.harness.tagline}</p>}
         {!configured && (
           <section className="hh-missing" aria-labelledby={missingId}>
             <h2 id={missingId}>{t("home.missing.title")}</h2>
@@ -85,12 +98,25 @@ export function Home({
             <p>{t("home.missing.one", { step: t(`home.missing.step.${missingStep}`, { engine: engineName }) })}</p>
           </section>
         )}
+        {configured && !missingStep && needsProfile && state.profiles && (
+          <section className="hh-missing">
+            <p>{t("home.missing.one", { step: t("home.missing.addProfile", { label: state.profiles.label }) })}</p>
+          </section>
+        )}
+        {configured && !missingStep && !needsProfile && blocking.length > 0 && (
+          <section className="hh-missing">
+            <p>{t("home.missing.one", { step: stepLabel(blocking[0]) })}</p>
+          </section>
+        )}
         {ready || checking ? (
           <button className="hh-primary hh-start" disabled={checking} onClick={onStart}>
             {t("home.start", { name })}
           </button>
         ) : (
-          <button className="hh-primary hh-start" onClick={onSetup}>
+          <button
+            className="hh-primary hh-start"
+            onClick={() => (!missingStep && needsProfile && onAddProfile ? onAddProfile() : onSetup(!missingStep && blocking.length > 0 ? blocking[0] : undefined))}
+          >
             {t("setupFlow.configure", { name })}
           </button>
         )}

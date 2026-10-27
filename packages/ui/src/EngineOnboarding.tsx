@@ -1,6 +1,5 @@
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { Language } from "@humanharness/harness-sdk";
 import { type EngineError, type EngineOption, type EngineStatus, type HarnessClient, type SetupResult, type SetupStep, type TestResult, engineProblem } from "./client";
 
 type Busy = null | "notice" | "test" | SetupStep;
@@ -24,8 +23,7 @@ export function EngineOnboarding({
   status: EngineStatus;
   refresh: () => Promise<void>;
 }) {
-  const { t, i18n } = useTranslation();
-  const lang: Language = i18n.language === "es" ? "es" : "en";
+  const { t } = useTranslation();
   const [busy, setBusy] = useState<Busy>(null);
   /**
    * "step": the last step failed; "timeout": it ran too long and was stopped; "shared":
@@ -97,6 +95,7 @@ export function EngineOnboarding({
     setBusy("test");
     setFailed(false);
     setTestError(null);
+    setStillMissing(false);
     // A rejection (the app couldn't run it) is a plain failure.
     const result: TestResult = await client.testEngine(engine.id).catch(() => ({ ok: false }));
     setBusy(null);
@@ -165,6 +164,16 @@ export function EngineOnboarding({
   const copyCommand = async () => {
     try {
       await client.copyInstallCommand(engine.id);
+      setCopy("copied");
+    } catch {
+      setCopy("failed");
+    }
+  };
+
+  /** A step the person runs in Terminal (`terminalSteps`): the app copies its command and runs nothing. */
+  const copySetup = async (step: "login" | "logout") => {
+    try {
+      await client.copySetupCommand(engine.id, step);
       setCopy("copied");
     } catch {
       setCopy("failed");
@@ -257,9 +266,10 @@ export function EngineOnboarding({
     body = (
       <>
         <h3>{t("engine.noticeTitle", v)}</h3>
-        <p>{t("engine.noticeProvider", { ...v, where: engine.dataLocation[lang] })}</p>
-        <p>{t("engine.noticeTraining", { trains: engine.trainsOnData[lang] })}</p>
-        <p>{t("engine.noticeAccount", { ...v, plan: engine.requires[lang] })}</p>
+        <p>{t("engine.noticeProvider", { ...v, where: engine.dataLocation })}</p>
+        <p>{t("engine.noticeTraining", { trains: engine.trainsOnData })}</p>
+        <p>{t("engine.noticeAccount", { ...v, plan: engine.requires })}</p>
+        {engine.userProvider && <p>{t("engine.noticeUserProvider", v)}</p>}
         <p>{t("engine.noticeContent", v)}</p>
         <p>
           {link(engine.termsUrl, t("engine.terms", v))} · {link(engine.privacyUrl, t("engine.privacy", v))}
@@ -321,6 +331,44 @@ export function EngineOnboarding({
         {engine.installDocsUrl && <p>{link(engine.installDocsUrl, t("engine.installDocs"))}</p>}
       </>
     );
+  } else if (problem === "logged-out" && engine.terminalSteps?.login) {
+    // OpenCode (spec §2): the person picks a provider in OpenCode's own login, in Terminal. The app runs nothing there.
+    body = (
+      <>
+        <h3>{t("engine.providerTitle", v)}</h3>
+        <p>{t("engine.providerText", v)}</p>
+        <code>{engine.terminalSteps.login}</code>
+        <ol aria-label={t("engine.providerTitle", v)}>
+          <li>{t("engine.providerStep1")}</li>
+          <li>{t("engine.providerStep2", v)}</li>
+          <li>{t("engine.providerStep3")}</li>
+        </ol>
+        <p>
+          <button className="hh-primary" onClick={() => void copySetup("login")}>
+            {t("engine.copyCommand")}
+          </button>{" "}
+          <button onClick={() => void client.openTerminal().catch(() => {})}>{t("engine.openTerminal")}</button>{" "}
+          <button disabled={busy !== null || rechecking} onClick={() => void recheck()}>
+            {t("engine.providerRecheck")}
+          </button>{" "}
+          {copy === "copied" && <span role="status">{t("engine.copied")}</span>}
+        </p>
+        {copy === "failed" && (
+          <p className="hh-save-error" role="alert">
+            {t("engine.copyFailed")}
+          </p>
+        )}
+        {stillMissing && <p role="status">{t("engine.providerStillMissing", v)}</p>}
+        <p>
+          {t("engine.providerLocal", v)}{" "}
+          <button disabled={busy !== null} onClick={() => void runTest()}>
+            {t("engine.providerLocalTest")}
+          </button>
+        </p>
+        {busy === "test" && <p role="status">{t("engine.testing", v)}</p>}
+        {engine.providersUrl && <p>{link(engine.providersUrl, t("engine.providerDocs", v))}</p>}
+      </>
+    );
   } else if (problem === "logged-out") {
     body = (
       <>
@@ -347,8 +395,28 @@ export function EngineOnboarding({
               {t("engine.retry")}
             </button>
             {/* The CLI can't say whether it is signed in: signing in again may be the fix. */}
-            {failed === "step" && (status.loggedIn === null || testError?.code === "session-expired") && (
-              <button onClick={() => void runStep("login")}>{t("errors.fix.session-expired", v)}</button>
+            {failed === "step" &&
+              (status.loggedIn === null || testError?.code === "session-expired") &&
+              (engine.terminalSteps?.login ? (
+                // Signing in runs in Terminal: copy the command and open it.
+                <button onClick={() => void copySetup("login").then(() => client.openTerminal().catch(() => {}))}>
+                  {t("errors.fix.session-expired", v)}
+                </button>
+              ) : (
+                <button onClick={() => void runStep("login")}>{t("errors.fix.session-expired", v)}</button>
+              ))}
+            {/* What was copied for Terminal, to paste by hand if the clipboard let us down. */}
+            {engine.terminalSteps?.login && copy !== null && (
+              <>
+                <p>
+                  <code>{engine.terminalSteps.login}</code> {copy === "copied" && <span role="status">{t("engine.copied")}</span>}
+                </p>
+                {copy === "failed" && (
+                  <p className="hh-save-error" role="alert">
+                    {t("engine.copyFailed")}
+                  </p>
+                )}
+              </>
             )}
           </>
         ) : (

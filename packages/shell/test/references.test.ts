@@ -7,7 +7,7 @@ import { appSourceDir, displayPath, homeOrDotFolder, referenceAllowed, resolveRe
 const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "hh-")));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
 
-const label = { es: "Código", en: "Source" };
+const label = "Source";
 const repo = path.join(root, "repo");
 fs.mkdirSync(path.join(repo, "harnesses", "demo"), { recursive: true });
 fs.writeFileSync(path.join(repo, "pnpm-workspace.yaml"), "packages: []\n");
@@ -106,5 +106,20 @@ describe("usableReferences", () => {
     fs.symlinkSync(work, link);
     expect(await usableReferences([{ id: "source", label, path: repo }], link)).toEqual([]);
     expect(await usableReferences([{ id: "source", label, path: repo }], path.join(home, "new-folder"))).toHaveLength(1);
+  });
+
+  it("with profiles, nothing inside the app's folder either: another profile's folder is never a reference", async () => {
+    const app = path.join(root, "Family");
+    const sofi = path.join(app, "sofi");
+    const tomas = path.join(app, "tomas");
+    fs.mkdirSync(sofi, { recursive: true });
+    fs.mkdirSync(tomas, { recursive: true });
+    const refs = [{ id: "app", label, path: app }, { id: "tomas", label, path: tomas }, { id: "sofi", label, path: sofi }, docs];
+    const refused: string[] = [];
+    expect(await usableReferences(refs, sofi, (message) => refused.push(message), app)).toEqual([docs]);
+    expect(refused).toHaveLength(3);
+    expect(refused[1]).toBe(`The reference folder "tomas" (${tomas}) is inside the app's folder ${app}: it is left out, so one person never reads another's work.`);
+    // Without profiles (no root), a folder beside the working one is kept as before.
+    expect(await usableReferences(refs, sofi)).toEqual([refs[1], docs]);
   });
 });

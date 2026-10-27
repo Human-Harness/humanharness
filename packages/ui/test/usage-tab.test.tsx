@@ -1,9 +1,10 @@
 // @vitest-environment happy-dom
-import { cleanup, screen, within } from "@testing-library/react";
+import { cleanup, screen, waitFor, within } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import type { AppState, EngineOption } from "../src/client";
 import { SettingsSheet } from "../src/SettingsSheet";
+import { UsageTab } from "../src/UsageTab";
 import { compactTokens, formatReset } from "../src/usage";
 import { FakeClient } from "./fake-client";
 import { renderIn } from "./render";
@@ -17,13 +18,13 @@ function Sheet({ client }: { client: FakeClient }) {
 
 const in2h = () => new Date(Date.now() + 2 * 3600_000).toISOString();
 const ACTIONS: AppState["actions"] = {
-  research: { label: { es: "Investigar", en: "Research" }, cost: "heavy" },
-  tidy: { label: { es: "Ordenar", en: "Tidy up" }, cost: "medium" },
-  note: { label: { es: "Nota", en: "Quick note" }, cost: "light" },
+  research: { label: "Research", cost: "heavy" },
+  tidy: { label: "Tidy up", cost: "medium" },
+  note: { label: "Quick note", cost: "light" },
 };
 
 function claude(): FakeClient {
-  const client = new FakeClient({ language: "es", folder: "/Users/me/Documents/Demo", engineId: "claude" });
+  const client = new FakeClient({ language: "en", folder: "/Users/me/Documents/Demo", engineId: "claude" });
   client.state.engines = [{ ...client.state.engines[0], plansUrl: "https://claude.com/pricing" }];
   client.state.actions = ACTIONS;
   client.state.path = ["tidy", "research"];
@@ -31,7 +32,7 @@ function claude(): FakeClient {
 }
 
 function codex(engine: Partial<EngineOption> = {}): FakeClient {
-  const client = new FakeClient({ language: "es", folder: "/Users/me/Documents/Demo", engineId: "codex" });
+  const client = new FakeClient({ language: "en", folder: "/Users/me/Documents/Demo", engineId: "codex" });
   client.state.engines = [
     { ...client.state.engines[0], id: "codex", name: "Codex", provider: "OpenAI", reportsLimits: false, plansUrl: "https://chatgpt.com/pricing", ...engine },
   ];
@@ -66,24 +67,24 @@ describe("Settings › Uso with an engine that reports limits", () => {
       tokens: {},
       primary: "five_hour",
     };
-    await renderIn("es", <Sheet client={client} />);
-    expect(await screen.findByText("42 % usado")).toBeTruthy();
-    expect(screen.getByText(`se renueva ${formatReset(reset, "es")}`)).toBeTruthy();
-    expect(screen.getByText("lo informa Claude en cada respuesta")).toBeTruthy();
-    expect(headers()).toEqual(["Tema", "Cada vez", "Te alcanza para"]);
+    await renderIn("en", <Sheet client={client} />);
+    expect(await screen.findByText("42% used")).toBeTruthy();
+    expect(screen.getByText(`renews ${formatReset(reset, "en")}`)).toBeTruthy();
+    expect(screen.getByText("Claude reports it with every reply")).toBeTruthy();
+    expect(headers()).toEqual(["Topic", "Each time", "Enough for"]);
     // The table is named by its heading.
-    expect(screen.getByRole("table", { name: "Cuánto usa cada tema" })).toBeTruthy();
+    expect(screen.getByRole("table", { name: "How much each topic uses" })).toBeTruthy();
     // Path order (tidy, research), then the other actions, then free questions.
     expect(rows()).toEqual([
-      ["Ordenar", "≈ 1 % de 5 h", "más de 50"],
-      ["Investigar", "≈ 8 % de 5 h", "unas 13 veces"],
-      ["Nota", "Uso bajo · te digo cuánto después de usarlo"],
-      ["Pregunta libre", "≈ 3 % de 5 h", "unas 33 veces"],
+      ["Tidy up", "≈ 1% of 5 h", "more than 50"],
+      ["Research", "≈ 8% of 5 h", "about 13 times"],
+      ["Quick note", "Low use · I'll tell you how much once you use it"],
+      ["Free question", "≈ 3% of 5 h", "about 33 times"],
     ]);
     // A heavy action's share is in the warning colour.
-    expect(screen.getByText("≈ 8 % de 5 h").className).toBe("hh-warn");
-    expect(screen.getByText("≈ 1 % de 5 h").className).toBe("");
-    expect(screen.getByText("'Te alcanza para' es con una ventana de 5 horas entera y tu plan de hoy. Se recalcula solo si cambia el modelo o tu plan.")).toBeTruthy();
+    expect(screen.getByText("≈ 8% of 5 h").className).toBe("hh-warn");
+    expect(screen.getByText("≈ 1% of 5 h").className).toBe("");
+    expect(screen.getByText("'Enough for' assumes a whole 5-hour window and your plan today. It recalculates on its own if the model or your plan changes.")).toBeTruthy();
     // Below WARN_AT the plans link stays out.
     expect(screen.queryByRole("link")).toBeNull();
   });
@@ -91,27 +92,27 @@ describe("Settings › Uso with an engine that reports limits", () => {
   it("says once and fifty, and drops the suffix for an unknown window", async () => {
     const client = claude();
     client.usage = { limits: null, estimates: { research: 0.9, tidy: 1 / 50 }, tokens: {}, primary: "rolling" };
-    await renderIn("es", <Sheet client={client} />);
+    await renderIn("en", <Sheet client={client} />);
     await screen.findByRole("table");
     expect(rows().slice(0, 2)).toEqual([
-      ["Ordenar", "≈ 2 %", "unas 50 veces"],
-      ["Investigar", "≈ 90 %", "una vez"],
+      ["Tidy up", "≈ 2%", "about 50 times"],
+      ["Research", "≈ 90%", "about once"],
     ]);
   });
 
   it("before any report: says the engine tells with the first reply, and shows the harness's hints", async () => {
     const client = claude();
     client.usage = { limits: null, estimates: {}, tokens: {}, primary: "five_hour" };
-    await renderIn("es", <Sheet client={client} />);
-    expect(await screen.findByText("Todavía no sé cuánto usaste: Claude lo informa con tu primera respuesta.")).toBeTruthy();
+    await renderIn("en", <Sheet client={client} />);
+    expect(await screen.findByText("I don't know how much you've used yet: Claude reports it with your first reply.")).toBeTruthy();
     expect(rows()).toEqual([
-      ["Ordenar", "Uso medio · te digo cuánto después de usarlo"],
-      ["Investigar", "Uso alto · te digo cuánto después de usarlo"],
-      ["Nota", "Uso bajo · te digo cuánto después de usarlo"],
-      ["Pregunta libre", "— · te digo cuánto después de usarlo"],
+      ["Tidy up", "Medium use · I'll tell you how much once you use it"],
+      ["Research", "High use · I'll tell you how much once you use it"],
+      ["Quick note", "Low use · I'll tell you how much once you use it"],
+      ["Free question", "— · I'll tell you how much once you use it"],
     ]);
     expect(
-      screen.getByText("Por ahora es lo que dice el harness de cada tema. Cuando uses uno, acá aparece cuánto usó de verdad y cuántas veces te alcanza."),
+      screen.getByText("For now this is what the harness says about each topic. Once you use one, you'll see here how much it really used and how many times your plan has room for it."),
     ).toBeTruthy();
   });
 
@@ -124,12 +125,12 @@ describe("Settings › Uso with an engine that reports limits", () => {
       tokens: {},
       primary: "five_hour",
     };
-    await renderIn("es", <Sheet client={client} />);
-    expect((await screen.findByText("85 % usado")).className).toBe("hh-warn");
-    expect(headers()).toEqual(["Tema", "Cada vez", `Hasta las ${formatReset(reset, "es")}`]);
-    expect(rows().map((r) => r[2])).toEqual(["3 veces más", "1 vez más", undefined, "más de 50"]);
-    expect(screen.getByText("Si te quedás corto seguido, Anthropic tiene planes con más uso.")).toBeTruthy();
-    const link = screen.getByRole("link", { name: "Ver planes de Anthropic" });
+    await renderIn("en", <Sheet client={client} />);
+    expect((await screen.findByText("85% used")).className).toBe("hh-warn");
+    expect(headers()).toEqual(["Topic", "Each time", `Until ${formatReset(reset, "en")}`]);
+    expect(rows().map((r) => r[2])).toEqual(["3 more times", "1 more time", undefined, "more than 50"]);
+    expect(screen.getByText("If you often run short, Anthropic has plans with more use.")).toBeTruthy();
+    const link = screen.getByRole("link", { name: "See Anthropic plans" });
     expect(link.getAttribute("href")).toBe("https://claude.com/pricing");
     expect(link.getAttribute("target")).toBe("_blank");
     expect(link.getAttribute("rel")).toBe("noopener noreferrer");
@@ -138,9 +139,9 @@ describe("Settings › Uso with an engine that reports limits", () => {
   it("near the limit: a topic that won't fit whole says so", async () => {
     const client = claude();
     client.usage = { limits: [{ kind: "five_hour", utilization: 0.95, resetsAt: in2h() }], estimates: { research: 0.08 }, tokens: {}, primary: "five_hour" };
-    await renderIn("es", <Sheet client={client} />);
-    await screen.findByText("95 % usado");
-    expect(rows()[1]).toEqual(["Investigar", "≈ 8 % de 5 h", "no entra entero"]);
+    await renderIn("en", <Sheet client={client} />);
+    await screen.findByText("95% used");
+    expect(rows()[1]).toEqual(["Research", "≈ 8% of 5 h", "won't fit whole"]);
   });
 
   it("leaves out windows that have already reset, and names an unknown one generically", async () => {
@@ -154,17 +155,17 @@ describe("Settings › Uso with an engine that reports limits", () => {
       tokens: {},
       primary: "five_hour",
     };
-    await renderIn("es", <Sheet client={client} />);
-    expect(await screen.findByText("30 % usado")).toBeTruthy();
-    expect(screen.getByText("Límite")).toBeTruthy();
-    expect(screen.queryByText("97 % usado")).toBeNull();
+    await renderIn("en", <Sheet client={client} />);
+    expect(await screen.findByText("30% used")).toBeTruthy();
+    expect(screen.getByText("Limit")).toBeTruthy();
+    expect(screen.queryByText("97% used")).toBeNull();
   });
 
   it("after every window has reset: says the window renewed, not that the first reply is still to come", async () => {
     const client = claude();
     client.usage = { limits: [], estimates: { research: 0.08 }, tokens: { research: 5000 }, primary: "five_hour" };
-    await renderIn("es", <Sheet client={client} />);
-    expect(await screen.findByText("Tu ventana se renovó: Claude te dice cuánto usaste con tu próxima respuesta.")).toBeTruthy();
+    await renderIn("en", <Sheet client={client} />);
+    expect(await screen.findByText("Your window has renewed: Claude tells you how much you've used with your next reply.")).toBeTruthy();
     expect(screen.queryByText(/primera respuesta/)).toBeNull();
   });
 
@@ -172,12 +173,12 @@ describe("Settings › Uso with an engine that reports limits", () => {
     const client = claude();
     // tidy has tokens (it was used) but no estimate (no task of it could be measured against the window).
     client.usage = { limits: [{ kind: "five_hour", utilization: 0.2, resetsAt: in2h() }], estimates: {}, tokens: { tidy: 3000 }, primary: "five_hour" };
-    await renderIn("es", <Sheet client={client} />);
+    await renderIn("en", <Sheet client={client} />);
     await screen.findByRole("table");
     expect(rows().slice(0, 3)).toEqual([
-      ["Ordenar", "Uso medio · no pude medirlo todavía"],
-      ["Investigar", "Uso alto · te digo cuánto después de usarlo"],
-      ["Nota", "Uso bajo · te digo cuánto después de usarlo"],
+      ["Tidy up", "Medium use · I couldn't measure it yet"],
+      ["Research", "High use · I'll tell you how much once you use it"],
+      ["Quick note", "Low use · I'll tell you how much once you use it"],
     ]);
   });
 });
@@ -187,37 +188,37 @@ describe("Settings › Uso with an engine that reports no limits", () => {
     const client = codex();
     client.state.actions = {
       ...ACTIONS,
-      a: { label: { es: "A", en: "A" }, cost: "light" },
-      b: { label: { es: "B", en: "B" }, cost: "light" },
+      a: { label: "A", cost: "light" },
+      b: { label: "B", cost: "light" },
     };
     // Six measured topics adding up to 6000: the average is 1000.
     client.usage = { limits: null, estimates: {}, tokens: { research: 2400, tidy: 1000, note: 500, a: 700, b: 1340, questions: 60 } };
-    await renderIn("es", <Sheet client={client} />);
+    await renderIn("en", <Sheet client={client} />);
     expect(
       await screen.findByText(
-        "Codex no le dice a la app cuánto te queda, así que no puedo calcular cuántas veces te alcanza. Si llegás al límite, Codex te avisa cuándo se renueva.",
+        "Codex doesn't tell the app how much you have left, so I can't work out how far your plan goes. If you reach the limit, Codex tells you when it renews.",
       ),
     ).toBeTruthy();
-    expect(headers()).toEqual(["Tema", "Cada vez"]);
+    expect(headers()).toEqual(["Topic", "Each time"]);
     expect(rows()).toEqual([
-      ["Investigar", "2,4 veces el promedio"],
-      ["Ordenar", "como el promedio"],
-      ["Nota", "la mitad del promedio"],
-      ["A", "un poco menos que el promedio"],
-      ["B", "1,3 veces el promedio"],
-      ["Pregunta libre", "la mitad del promedio"],
+      ["Research", "2.4 times the average"],
+      ["Tidy up", "about the average"],
+      ["Quick note", "half the average"],
+      ["A", "a bit less than the average"],
+      ["B", "1.3 times the average"],
+      ["Free question", "half the average"],
     ]);
-    const cell = screen.getByText("2,4 veces el promedio").closest("td")!;
-    expect(cell.getAttribute("title")).toBe(`≈ ${compactTokens(2400, "es")} tokens cada vez`);
+    const cell = screen.getByText("2.4 times the average").closest("td")!;
+    expect(cell.getAttribute("title")).toBe(`≈ ${compactTokens(2400, "en")} tokens each time`);
     // The same detail reaches the keyboard and screen readers as hidden text.
-    expect(cell.querySelector(".hh-sr-only")!.textContent).toBe(` (≈ ${compactTokens(2400, "es")} tokens cada vez)`);
+    expect(cell.querySelector(".hh-sr-only")!.textContent).toBe(` (≈ ${compactTokens(2400, "en")} tokens each time)`);
     // The bar is relative to the largest topic.
     const bar = (text: string) => (screen.getByText(text).closest("td")!.querySelector(".hh-usage-bar > span") as HTMLElement).style.width;
-    expect(bar("2,4 veces el promedio")).toBe("100%");
-    expect(bar("como el promedio")).toBe("42%");
-    expect(screen.getByText("Sale de tus últimas veces con cada tema. Pasá el mouse para ver los tokens.")).toBeTruthy();
-    expect(screen.getByText("Si te quedás corto seguido, OpenAI tiene planes con más uso.")).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Ver planes de OpenAI" }).getAttribute("href")).toBe("https://chatgpt.com/pricing");
+    expect(bar("2.4 times the average")).toBe("100%");
+    expect(bar("about the average")).toBe("42%");
+    expect(screen.getByText("From your last few times with each topic. Hover to see the tokens.")).toBeTruthy();
+    expect(screen.getByText("If you often run short, OpenAI has plans with more use.")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "See OpenAI plans" }).getAttribute("href")).toBe("https://chatgpt.com/pricing");
   });
 
   it("says a bit more than the average just above 1.33×", async () => {
@@ -225,29 +226,29 @@ describe("Settings › Uso with an engine that reports no limits", () => {
     client.state.actions = { a: ACTIONS.note, b: ACTIONS.tidy };
     // Average 1000: a is 1335 (1.335×), b and questions make up the rest.
     client.usage = { limits: null, estimates: {}, tokens: { a: 1335, b: 1000, questions: 665 } };
-    await renderIn("es", <Sheet client={client} />);
+    await renderIn("en", <Sheet client={client} />);
     await screen.findByRole("table");
-    expect(rows()[0]).toEqual(["Nota", "un poco más que el promedio"]);
+    expect(rows()[0]).toEqual(["Quick note", "a bit more than the average"]);
   });
 
   it("before any use: shows the hints alone", async () => {
     const client = codex();
-    await renderIn("es", <Sheet client={client} />);
+    await renderIn("en", <Sheet client={client} />);
     await screen.findByRole("table");
     expect(rows()).toEqual([
-      ["Investigar", "Uso alto"],
-      ["Ordenar", "Uso medio"],
-      ["Nota", "Uso bajo"],
-      ["Pregunta libre", "—"],
+      ["Research", "High use"],
+      ["Tidy up", "Medium use"],
+      ["Quick note", "Low use"],
+      ["Free question", "—"],
     ]);
-    expect(screen.getByText(/^Por ahora es lo que dice el harness/)).toBeTruthy();
+    expect(screen.getByText(/^For now this is what the harness says about each topic/)).toBeTruthy();
   });
 
   it("without a plans page there is no link", async () => {
-    await renderIn("es", <Sheet client={codex({ plansUrl: undefined })} />);
+    await renderIn("en", <Sheet client={codex({ plansUrl: undefined })} />);
     await screen.findByRole("table");
     expect(screen.queryByRole("link")).toBeNull();
-    expect(screen.queryByText(/tiene planes con más uso/)).toBeNull();
+    expect(screen.queryByText(/has plans with more use/)).toBeNull();
   });
 });
 
@@ -256,11 +257,11 @@ describe("Settings › Uso in mock mode", () => {
     const client = claude();
     client.state.engines = [{ ...client.state.engines[0], name: "IA simulada", plansUrl: undefined, reportsLimits: false, mock: true }];
     client.usage = { limits: null, estimates: {}, tokens: { tidy: 1000, research: 1000 } };
-    await renderIn("es", <Sheet client={client} />);
-    expect(await screen.findByText("Modo prueba: no gasta tu plan.")).toBeTruthy();
+    await renderIn("en", <Sheet client={client} />);
+    expect(await screen.findByText("Test mode: uses none of your plan.")).toBeTruthy();
     expect(rows().slice(0, 2)).toEqual([
-      ["Ordenar", "como el promedio"],
-      ["Investigar", "como el promedio"],
+      ["Tidy up", "about the average"],
+      ["Research", "about the average"],
     ]);
     expect(screen.queryByText(/no le dice a la app/)).toBeNull();
     expect(screen.queryByRole("link")).toBeNull();
@@ -275,5 +276,86 @@ describe("Settings › Uso in mock mode", () => {
     expect(screen.getByRole("table", { name: "How much each topic uses" })).toBeTruthy();
     expect(rows()[1]).toEqual(["Research", "≈ 10% of 5 h", "about 10 times"]);
     expect(screen.getByText("'Enough for' assumes a whole 5-hour window and your plan today. It recalculates on its own if the model or your plan changes.")).toBeTruthy();
+  });
+});
+
+describe("usage per scope", () => {
+  it("lists the scopes by tokens used, most first", async () => {
+    const client = new FakeClient({ language: "en", folder: "/f", engineId: "claude" });
+    client.state.scopes = { label: "topic", plural: "topics" };
+    client.scopeList = [{ id: "fracciones", title: "Fractions", createdAt: "c", archived: false }];
+    client.usage = { limits: null, estimates: {}, tokens: {}, scopes: { _app: 300, fracciones: 12_000 } };
+    await renderIn("en", <UsageTab client={client} state={client.state} />);
+    const list = await screen.findByRole("list", { name: "Usage by topics" });
+    await waitFor(() => expect([...list.querySelectorAll("li")].map((li) => li.firstChild?.textContent)).toEqual(["Fractions", "App-wide"]));
+  });
+});
+
+describe("Settings › Usage with material (material spec §11)", () => {
+  it("shows the material's total tokens; without any, no such line", async () => {
+    const client = new FakeClient({ language: "en", folder: "/f", engineId: "claude" });
+    client.usage = { limits: null, estimates: {}, tokens: {}, material: 12000 };
+    await renderIn("en", <UsageTab client={client} state={client.state} />);
+    expect(await screen.findByText("Material processing: about 12,000 tokens")).toBeTruthy();
+    cleanup();
+    const plain = new FakeClient({ language: "en", folder: "/f", engineId: "claude" });
+    plain.usage = { limits: null, estimates: {}, tokens: {} };
+    await renderIn("en", <UsageTab client={plain} state={plain.state} />);
+    await screen.findByText("How much each topic uses");
+    expect(screen.queryByText(/Material processing/)).toBeNull();
+  });
+});
+
+function opencode(): FakeClient {
+  const client = new FakeClient({ language: "en", folder: "/Users/me/Documents/Demo", engineId: "opencode" });
+  client.state.engines = [
+    { ...client.state.engines[0], id: "opencode", name: "OpenCode", provider: "OpenCode", reportsLimits: false, reportsCost: true, plansUrl: undefined },
+  ];
+  client.state.actions = ACTIONS;
+  return client;
+}
+
+describe("UsageTab: OpenCode", () => {
+  it("says the engine reports cost, and shows the last 30 days' spending", async () => {
+    const client = opencode();
+    client.usage = { limits: null, estimates: {}, tokens: {}, spentUsd: 1.234 };
+    await renderIn("en", <UsageTab client={client} state={client.state} />);
+    await screen.findByText("Spent in the last 30 days");
+    expect(screen.getByText("US$ 1.23")).toBeTruthy();
+    expect(screen.getByText("OpenCode reports it. With local models it is usually 0.")).toBeTruthy();
+    expect(screen.getByText("OpenCode reports what each reply costs, not a plan's limits. Your provider bills you for it.")).toBeTruthy();
+    expect(screen.queryByRole("link", { name: /plans/ })).toBeNull();
+  });
+
+  it("shows US$ 0.00 for local models", async () => {
+    const client = opencode();
+    client.usage = { limits: null, estimates: {}, tokens: {}, spentUsd: 0 };
+    await renderIn("en", <UsageTab client={client} state={client.state} />);
+    expect(await screen.findByText("US$ 0.00")).toBeTruthy();
+  });
+
+  it("says less than a cent when the spend would round to US$ 0.00", async () => {
+    const client = opencode();
+    client.usage = { limits: null, estimates: {}, tokens: {}, spentUsd: 0.0031 };
+    await renderIn("en", <UsageTab client={client} state={client.state} />);
+    expect(await screen.findByText("less than US$ 0.01")).toBeTruthy();
+    expect(screen.queryByText("US$ 0.00")).toBeNull();
+  });
+
+  it("shows no spending row when no turn reported a cost", async () => {
+    const client = opencode();
+    client.usage = { limits: null, estimates: {}, tokens: {} };
+    await renderIn("en", <UsageTab client={client} state={client.state} />);
+    await screen.findByText(/OpenCode reports what each reply costs/);
+    expect(screen.queryByText("Spent in the last 30 days")).toBeNull();
+    expect(screen.queryByText(/US\$/)).toBeNull();
+  });
+
+  it("shows no spending row without spentUsd (D0)", async () => {
+    const client = codex();
+    client.usage = { limits: null, estimates: {}, tokens: {} };
+    await renderIn("en", <UsageTab client={client} state={client.state} />);
+    await screen.findByText(/Codex doesn't tell the app how much you have left/);
+    expect(screen.queryByText("Spent in the last 30 days")).toBeNull();
   });
 });

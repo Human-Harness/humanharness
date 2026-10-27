@@ -2,10 +2,11 @@ import { useEffect, useId, useState } from "react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import type { AppState, EngineOption, HarnessClient, LimitWindow, UsageSummary } from "./client";
-import { uiLanguage } from "./FolderStep";
 import { QUESTIONS, taskRows } from "./ModelsTab";
+import { shownTitle, useProfiles } from "./ProfileSwitcher";
 import { WARN_AT, compactTokens, compareTokens, formatReset, percent, timesFit, timesLeft } from "./usage";
 import { useCurrentWindows } from "./UsageMeter";
+import { shownLanguage } from "./language";
 
 const EMPTY: UsageSummary = { limits: null, estimates: {}, tokens: {} };
 
@@ -14,7 +15,7 @@ const EMPTY: UsageSummary = { limits: null, estimates: {}, tokens: {} };
  * how much each topic uses, measured from the local log. The app knows nothing about plans.
  */
 export function UsageTab({ client, state }: { client: HarnessClient; state: AppState }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [usage, setUsage] = useState<UsageSummary | null>(null);
   useEffect(() => {
     client.getUsage().then(setUsage, () => setUsage(EMPTY));
@@ -34,6 +35,29 @@ export function UsageTab({ client, state }: { client: HarnessClient; state: AppS
       <PlanSection engine={engine} limits={limits} reported={Boolean(usage?.limits)} />
       <h3 id={tableTitle}>{t("usage.actionsTitle")}</h3>
       {usage && <TopicTable state={state} usage={usage} reportsLimits={reportsLimits} near={near ? primary : undefined} labelledBy={tableTitle} />}
+      {/* Material spec §11: what processing the person's material used (only once a stage has run). */}
+      {usage?.material !== undefined && <p className="hh-caption">{t("usage.material", { tokens: usage.material.toLocaleString(shownLanguage(i18n)) })}</p>}
+      {/* OpenCode spec §4: real money, as the engine reported it (only once a turn reported a cost; 0 is a real US$ 0.00). */}
+      {usage?.spentUsd !== undefined && engine && (
+        <>
+          <div className="hh-rows">
+            <div className="hh-row">
+              <span>{t("usage.spent")}</span>
+              <span>
+                {/* A spend that would round to US$ 0.00 is not nothing: say it is under a cent. */}
+                {usage.spentUsd > 0 && usage.spentUsd < 0.005
+                  ? t("usage.spentTiny", { amount: (0.01).toLocaleString(shownLanguage(i18n), { minimumFractionDigits: 2 }) })
+                  : t("usage.spentAmount", {
+                      amount: usage.spentUsd.toLocaleString(shownLanguage(i18n), { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+                    })}
+              </span>
+            </div>
+          </div>
+          <p className="hh-caption">{t("usage.spentCaption", { engine: engine.name })}</p>
+        </>
+      )}
+      {usage?.scopes && state.scopes && <ScopeUsage client={client} tokens={usage.scopes} plural={state.scopes.plural} />}
+      {usage?.profiles && state.profiles && <ProfileUsage client={client} tokens={usage.profiles} />}
       {showPlans && engine && (
         <div className="hh-rows">
           <div className="hh-row">
@@ -55,6 +79,7 @@ function PlanSection({ engine, limits, reported }: { engine?: EngineOption; limi
   const { t, i18n } = useTranslation();
   if (!engine) return <p className="hh-caption">{t("home.noEngine")}</p>;
   if (engine.mock) return <p className="hh-caption">{t("usage.mock")}</p>;
+  if (engine.reportsCost) return <p className="hh-caption">{t("usage.noLimitsCost", { engine: engine.name })}</p>;
   if (!engine.reportsLimits) return <p className="hh-caption">{t("usage.noLimitsPlan", { engine: engine.name })}</p>;
   if (!limits?.length) return <p className="hh-caption">{t(reported ? "usage.renewed" : "usage.notYet", { engine: engine.name })}</p>;
   return (
@@ -67,7 +92,7 @@ function PlanSection({ engine, limits, reported }: { engine?: EngineOption; limi
               <span>{windowName(t, w.kind)}</span>
               <span className={warn ? "hh-warn" : undefined}>{t("usage.used", { percent: percent(w.utilization) })}</span>
               <Bar share={w.utilization} warn={warn} />
-              <span className="hh-caption">{t("usage.renews", { time: formatReset(w.resetsAt, i18n.language) })}</span>
+              <span className="hh-caption">{t("usage.renews", { time: formatReset(w.resetsAt, shownLanguage(i18n)) })}</span>
             </div>
           );
         })}
@@ -99,8 +124,7 @@ function TopicTable({
   labelledBy: string;
 }) {
   const { t, i18n } = useTranslation();
-  const lang = uiLanguage(state, i18n.language);
-  const rows = taskRows(state, lang, { key: QUESTIONS, label: t("models.questions") });
+  const rows = taskRows(state, { key: QUESTIONS, label: t("models.questions") });
   const kind = usage.primary;
   const measured = rows.filter((r) => (reportsLimits ? usage.estimates[r.key] : usage.tokens[r.key]) !== undefined);
   const tokens = measured.map((r) => usage.tokens[r.key]).filter((n) => n !== undefined);
@@ -128,7 +152,7 @@ function TopicTable({
   const comparison = (n: number) => {
     const c = compareTokens(n, average);
     if (c.kind !== "times") return t(`usage.compare.${c.kind}`);
-    const times = new Intl.NumberFormat(i18n.language, { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(c.times);
+    const times = new Intl.NumberFormat(shownLanguage(i18n), { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(c.times);
     return t("usage.compare.times", { times });
   };
 
@@ -144,7 +168,7 @@ function TopicTable({
           <tr>
             <th scope="col">{t("usage.col.topic")}</th>
             <th scope="col">{t("usage.col.each")}</th>
-            {reportsLimits && <th scope="col">{near ? t("usage.col.until", { time: formatReset(near.resetsAt, i18n.language) }) : t("usage.col.fits")}</th>}
+            {reportsLimits && <th scope="col">{near ? t("usage.col.until", { time: formatReset(near.resetsAt, shownLanguage(i18n)) }) : t("usage.col.fits")}</th>}
           </tr>
         </thead>
         <tbody>
@@ -164,7 +188,7 @@ function TopicTable({
               );
             } else if (!reportsLimits && n !== undefined) {
               // The tooltip is for the mouse; the hidden text gives the same detail to screen readers.
-              const detail = t("usage.tokensEach", { tokens: compactTokens(n, i18n.language) });
+              const detail = t("usage.tokensEach", { tokens: compactTokens(n, shownLanguage(i18n)) });
               cells = (
                 <td title={detail}>
                   <Bar share={largest > 0 ? n / largest : 0} />
@@ -189,6 +213,66 @@ function TopicTable({
         </tbody>
       </table>
       <p className="hh-caption">{caption}</p>
+    </>
+  );
+}
+
+/** Settings › Uso per scope (spec §3.3): tokens per scope over the whole log, most first. */
+function ScopeUsage({ client, tokens, plural }: { client: HarnessClient; tokens: Record<string, number>; plural: string }) {
+  const { t, i18n } = useTranslation();
+  const [titles, setTitles] = useState<Record<string, string>>({});
+  useEffect(() => {
+    client.scopes.list().then(
+      (list) => setTitles(Object.fromEntries(list.map((s) => [s.id, s.title]))),
+      () => undefined,
+    );
+  }, [client]);
+  const heading = t("usage.byScope", { plural });
+  const rows = Object.entries(tokens).sort((a, b) => b[1] - a[1]);
+  return (
+    <>
+      <h3>{heading}</h3>
+      <ul className="hh-rows" aria-label={heading}>
+        {rows.map(([id, n]) => (
+          <li key={id} className="hh-row">
+            <span>{id === "_app" ? t("usage.appScope") : (titles[id] ?? id)}</span>
+            <span className="hh-caption">{t("usage.scopeTokens", { tokens: compactTokens(n, shownLanguage(i18n)) })}</span>
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+}
+
+/**
+ * Settings › Usage by person (profiles spec §4): tokens per profile over each profile's whole log, most first. A profile
+ * with no log yet has no key (0); an archived one still counts; an id the registry no longer lists shows as itself.
+ */
+function ProfileUsage({ client, tokens }: { client: HarnessClient; tokens: Record<string, number> }) {
+  const { t, i18n } = useTranslation();
+  const people = useProfiles(client, true);
+  const heading = t("usage.byProfile");
+  // Drawn once the names are in: before, every row would show its bare id.
+  if (!people) return null;
+  const list = people.list;
+  const known = list.map((p) => ({ id: p.id, name: shownTitle(p.title), n: Object.hasOwn(tokens, p.id) ? tokens[p.id] : 0 }));
+  const lost = Object.entries(tokens)
+    .filter(([id]) => !list.some((p) => p.id === id))
+    .map(([id, n]) => ({ id, name: id, n }));
+  const rows = [...known, ...lost].sort((a, b) => b.n - a.n);
+  return (
+    <>
+      <h3>{heading}</h3>
+      <ul className="hh-rows" aria-label={heading}>
+        {rows.map((r) => (
+          <li key={r.id} className="hh-row">
+            <span className="hh-profile-row-name" title={r.name}>
+              {r.name}
+            </span>
+            <span className="hh-caption">{t("usage.scopeTokens", { tokens: compactTokens(r.n, shownLanguage(i18n)) })}</span>
+          </li>
+        ))}
+      </ul>
     </>
   );
 }

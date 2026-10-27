@@ -2,6 +2,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { APP_FOLDERS, type MockNote, type MockTurn, type MockUsage, type MockWrite, type Recording } from "@humanharness/fake-agent";
 import type { Event } from "@humanharness/runtime";
+import type { TurnKind } from "@humanharness/shell/tasks";
 
 /** Larger files, and files that aren't text, are left out of a recording (spec 3e §3). */
 export const MAX_RECORDED_FILE = 64 * 1024;
@@ -93,6 +94,8 @@ export class Recorder {
   private blocks: MockTurn["blocks"] = [];
   private usage: MockUsage | undefined;
   private replyKey: string | undefined;
+  /** What the person answered the last turn's input block with (`run`'s `a`). */
+  private answerKey: { block: string; value: Record<string, unknown> } | undefined;
   private lastTurn: { action: string; turn: MockTurn } | undefined;
   /** The turn that ended last: where a note written right after it belongs. `null`: a turn that takes none. */
   private ended: MockTurn | null | undefined;
@@ -122,6 +125,14 @@ export class Recorder {
   /** What the person answered the last turn with: a choice's label, or `*` for typed text. */
   reply(key: string): void {
     this.replyKey = key;
+    // An answer whose turn never ended (stopped, not retried) must not take this reply's link.
+    this.answerKey = undefined;
+  }
+
+  /** The person answered the last turn's input block: replay follows this answer by its JSON (`respond`). */
+  answer(block: string, value: Record<string, unknown>): void {
+    this.answerKey = { block, value };
+    this.replyKey = undefined;
   }
 
   /**
@@ -134,7 +145,7 @@ export class Recorder {
   }
 
   /** One engine turn ended (`recordUsage`): it becomes a recorded turn unless it was a checkpoint. */
-  async turnEnded(meta: { action?: string; task?: string; phase?: "run" | "close" | "checkpoint" }, opts: { failed?: boolean } = {}): Promise<void> {
+  async turnEnded(meta: { action?: string; task?: string; phase?: TurnKind; taskPhase?: string }, opts: { failed?: boolean } = {}): Promise<void> {
     const after = await snapshotFolder(this.o.folder, this.o.exclude);
     for (const p of after.skipped) if (this.snapshot.signatures.get(p) !== after.signatures.get(p)) this.skipped.add(p);
     this.ended = null;
@@ -161,6 +172,7 @@ export class Recorder {
       if (!this.ignored.has(action)) this.o.warn?.(`"${action}" was run again in this folder: only its first visit is recorded.`);
       this.ignored.add(action);
       this.replyKey = undefined;
+      this.answerKey = undefined;
       return;
     }
     let rec = this.byAction.get(action);
@@ -169,12 +181,26 @@ export class Recorder {
       this.byAction.set(action, rec);
     }
     const id = meta.phase === "close" ? "close" : `t${rec.turns.filter((t) => t.id !== "close").length + 1}`;
-    const turn: MockTurn = { id, text: taken.text, blocks: taken.blocks, writes, ...(taken.usage ? { usage: taken.usage } : {}) };
+    const turn: MockTurn = {
+      id,
+      text: taken.text,
+      blocks: taken.blocks,
+      writes,
+      ...(taken.usage ? { usage: taken.usage } : {}),
+      // The app's own prompts (task-phases spec §6): replayed by what they answer, never by a reply.
+      ...(meta.phase === "phase-change" && meta.taskPhase ? { setPhase: meta.taskPhase } : {}),
+      ...(meta.phase === "wrap-up" ? { timeUp: true as const } : {}),
+    };
     rec.turns.push(turn);
-    if (meta.phase !== "close" && this.lastTurn?.action === action && this.replyKey !== undefined) {
-      this.lastTurn.turn.next = { ...this.lastTurn.turn.next, [this.replyKey]: id };
+    const appPrompt = meta.phase === "phase-change" || meta.phase === "wrap-up";
+    // An app prompt takes no link: a reply pending from the turn before is dropped (cleared below), and the run turn
+    // after the change links from the change.
+    if (meta.phase !== "close" && !appPrompt && this.lastTurn?.action === action) {
+      if (this.answerKey) this.lastTurn.turn.respond = [...(this.lastTurn.turn.respond ?? []), { ...this.answerKey, next: id }];
+      else if (this.replyKey !== undefined) this.lastTurn.turn.next = { ...this.lastTurn.turn.next, [this.replyKey]: id };
     }
     this.replyKey = undefined;
+    this.answerKey = undefined;
     this.ended = turn;
     this.lastTurn = meta.phase === "close" ? undefined : { action, turn };
   }

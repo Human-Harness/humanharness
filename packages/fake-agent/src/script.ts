@@ -43,7 +43,8 @@ export interface ClaudeScript {
 }
 
 export type AcpStep =
-  | { update: Record<string, unknown> }
+  /** A session/update; `sessionId` sends it for another session than the prompt's (default: the prompt's). */
+  | { update: Record<string, unknown>; sessionId?: string }
   | { permission: { toolCall: Record<string, unknown>; _meta?: Record<string, unknown> } }
   | McpStep
   | WriteStep
@@ -67,10 +68,23 @@ export interface AcpScript {
   closeSession?: boolean;
   /** Never answer `session/close` (an agent stuck on it). */
   hangClose?: boolean;
-  /** Returned as `configOptions` by session/new (the models and efforts the agent offers). */
+  /** Returned as `configOptions` by session/new and session/load (the models and efforts the agent offers). */
   configOptions?: unknown[];
   /** Returned as `models.currentModelId` by session/new and session/load (Codex: "<model>[<effort>]"). */
   currentModelId?: string;
+  /** `session/set_config_option` fails (invalid params) for these values. */
+  rejectConfigValues?: string[];
+  /**
+   * OpenCode: each model's variants. When set, an `effort` select (category thought_level) is offered
+   * only for the current model when it has variants; its values are the variants plus "default".
+   */
+  variants?: Record<string, string[]>;
+  /**
+   * OpenCode: the session's running cost in USD after each prompt (indexed like `turns`), sent as one
+   * `usage_update` at the prompt's end, never on session/load. Absent (or no entry for a turn) is a
+   * model whose context limit OpenCode does not know: no `usage_update` at all.
+   */
+  costs?: number[];
   turns: AcpStep[][];
 }
 

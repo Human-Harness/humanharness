@@ -34,14 +34,17 @@ export function Segmented<T extends string>({
   options,
   value,
   onChange,
+  describedBy,
 }: {
   label: string;
   options: SegmentOption<T>[];
   value: T;
   onChange: (value: T) => void;
+  /** Ids of the texts that describe the group (help, an error). */
+  describedBy?: string;
 }) {
   return (
-    <div className="hh-segmented" role="group" aria-label={label}>
+    <div className="hh-segmented" role="group" aria-label={label} aria-describedby={describedBy}>
       {options.map((o) => (
         <button key={o.value} type="button" aria-pressed={value === o.value} onClick={() => onChange(o.value)}>
           {o.label}
@@ -119,6 +122,54 @@ export function NoteIcon() {
   return (
     <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
       <path d="M5 4h11l3 3v13H5z" />
+    </svg>
+  );
+}
+
+/** Closes a panel. */
+export function CloseIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+      <path d="M6 6l12 12M18 6L6 18" />
+    </svg>
+  );
+}
+
+/** A row that opens (points down when open). */
+export function ChevronIcon({ open }: { open: boolean }) {
+  return (
+    <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d={open ? "M6 9l6 6 6-6" : "M9 6l6 6-6 6"} />
+    </svg>
+  );
+}
+
+/** Undoing: going back. */
+export function UndoIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M9 5L4 10l5 5" />
+      <path d="M4 10h11a5 5 0 0 1 0 10h-4" />
+    </svg>
+  );
+}
+
+/** Time: the history, or waiting for the AI. */
+export function ClockIcon({ size = 16 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 2" />
+    </svg>
+  );
+}
+
+/** Something that can't be taken back. */
+export function WarnIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M12 3l9.5 17h-19z" />
+      <path d="M12 10v4M12 17.5v.01" />
     </svg>
   );
 }

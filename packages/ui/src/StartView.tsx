@@ -1,5 +1,4 @@
 import { useTranslation } from "react-i18next";
-import type { Language } from "@humanharness/harness-sdk";
 import { CheckIcon } from "./chrome";
 import { type AppState, type TaskView, nextInPath } from "./client";
 
@@ -16,7 +15,6 @@ export interface StartViewCopy {
 /** Flow mode with no task on screen: the topics (path order first) and frequent questions. */
 export function StartView({
   state,
-  lang,
   tasks,
   copy = {},
   notice,
@@ -25,7 +23,6 @@ export function StartView({
   onAsk,
 }: {
   state: AppState;
-  lang: Language;
   tasks: TaskView;
   copy?: StartViewCopy;
   /** A notice to show first (the engine changed, the folder went back). */
@@ -36,7 +33,8 @@ export function StartView({
 }) {
   const { t } = useTranslation();
   const path = (state.path ?? []).filter((id) => state.actions[id]);
-  const ids = [...path, ...Object.keys(state.actions).filter((id) => !path.includes(id))];
+  // An interview step's action is no topic (setup-steps spec §3).
+  const ids = [...path, ...Object.keys(state.actions).filter((id) => !path.includes(id) && !state.actions[id].setup)];
   const suggested = nextInPath(path, undefined, tasks.actions);
   const text = (key: string | undefined, fallback: string) => (key ? t(key, { ns: "harness" }) : fallback);
   return (
@@ -64,7 +62,7 @@ export function StartView({
               onClick={() => onStart(id)}
             >
               <span className="hh-topic-head">
-                <span className="hh-topic-title">{action.label[lang]}</span>
+                <span className="hh-topic-title">{action.label}</span>
                 {status === "done" ? (
                   <span className="hh-badge ok">
                     <CheckIcon />
@@ -76,7 +74,7 @@ export function StartView({
                   <span className="hh-badge">{t(`flow.${status}`)}</span>
                 ) : null}
               </span>
-              {action.description && <span className="hh-topic-text">{action.description[lang]}</span>}
+              {action.description && <span className="hh-topic-text">{action.description}</span>}
             </button>
           );
         })}

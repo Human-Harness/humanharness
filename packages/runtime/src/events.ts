@@ -31,7 +31,8 @@ export type Event =
   | { type: "text"; delta: string }
   | { type: "paragraph" }
   | { type: "activity"; id: string; kind: ActivityKind; detail: string; state: "start" | "end"; error?: boolean }
-  | { type: "block"; name: string; data: unknown }
+  /** `id`: set by the app on a block the person answers (input-blocks spec §4), never by an engine. */
+  | { type: "block"; name: string; data: unknown; id?: string }
   | { type: "limits"; status: string; windows: LimitWindow[] }
   | {
       type: "usage";
@@ -41,6 +42,8 @@ export type Event =
       cacheWriteTokens: number;
       /** API-equivalent cost when the engine reports it. Not what the user pays. */
       costEquivalentUsd?: number;
+      /** Real money the provider charged for this turn, in USD (OpenCode). Absent when the engine reports no cost. */
+      costUsd?: number;
       /** The model the engine says it ran (Claude: system/init; Codex: currentModelId without its effort). */
       model?: string;
     }

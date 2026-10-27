@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { recordingSchema } from "@humanharness/fake-agent";
@@ -151,6 +152,30 @@ describe("Recorder", () => {
     expect(warnings).toHaveLength(1);
   });
 
+  it("a phase change turn is recorded with setPhase, a wrap-up with timeUp; neither is linked by next", async () => {
+    const folder = path.join(root, "rec-phases");
+    fs.mkdirSync(folder, { recursive: true });
+    const r = new Recorder({ folder, toolFor, matchFor, recordedWith: "claude" });
+    await r.begin();
+    r.event({ type: "text", delta: "Recall?" });
+    await r.turnEnded({ action: "session", task: "t1", phase: "run", taskPhase: "warmup" });
+    r.event({ type: "text", delta: "Main now." });
+    await r.turnEnded({ action: "session", task: "t1", phase: "phase-change", taskPhase: "main" });
+    r.reply("*");
+    r.event({ type: "text", delta: "Sure." });
+    await r.turnEnded({ action: "session", task: "t1", phase: "run", taskPhase: "main" });
+    r.event({ type: "text", delta: "Wrap up." });
+    await r.turnEnded({ action: "session", task: "t1", phase: "wrap-up", taskPhase: "main" });
+    const [rec] = r.recordings();
+    expect(rec.turns.map((t) => ({ id: t.id, setPhase: t.setPhase, timeUp: t.timeUp, next: t.next }))).toEqual([
+      { id: "t1", setPhase: undefined, timeUp: undefined, next: undefined },
+      { id: "t2", setPhase: "main", timeUp: undefined, next: { "*": "t3" } },
+      { id: "t3", setPhase: undefined, timeUp: undefined, next: undefined },
+      { id: "t4", setPhase: undefined, timeUp: true, next: undefined },
+    ]);
+    expect(recordingSchema.safeParse(rec).success).toBe(true);
+  });
+
   it("lists only skipped files that are new or changed during the run", async () => {
     const folder = path.join(root, "work-skipped");
     fs.mkdirSync(folder, { recursive: true });
@@ -180,5 +205,45 @@ describe("Recorder", () => {
     expect(rec.turns.map((t) => t.id)).toEqual(["t1", "t2"]);
     expect(rec.turns[0].next).toEqual({ Go: "t2" });
     expect(rec.turns[1]).toEqual({ id: "t2", text: "retry", blocks: [], writes: [{ path: "x.md", content: "x" }] });
+  });
+});
+
+describe("Recorder: answers", () => {
+  it("links the answer given to a turn's input block to the next turn, under respond", async () => {
+    const folder = fs.mkdtempSync(path.join(os.tmpdir(), "hh-rec-"));
+    try {
+      const r = new Recorder({ folder, toolFor: (b) => `show_${b}`, matchFor: () => "# Task: practice", recordedWith: "claude" });
+      await r.begin();
+      r.event({ type: "block", name: "commit_answer", data: { question: "Who?" }, id: "t1:0:0" });
+      await r.turnEnded({ action: "practice", task: "t1", phase: "run" });
+      r.answer("commit_answer", { choice: "Me", why: "x" });
+      r.event({ type: "text", delta: "Right." });
+      await r.turnEnded({ action: "practice", task: "t1", phase: "run" });
+      const [rec] = r.recordings();
+      expect(rec.turns[0].respond).toEqual([{ block: "commit_answer", value: { choice: "Me", why: "x" }, next: "t2" }]);
+      expect(rec.turns[0].next).toBeUndefined();
+    } finally {
+      fs.rmSync(folder, { recursive: true, force: true });
+    }
+  });
+
+  it("a follow-up typed after an answer whose turn failed is linked as the follow-up, not the answer", async () => {
+    const folder = fs.mkdtempSync(path.join(os.tmpdir(), "hh-rec-"));
+    try {
+      const r = new Recorder({ folder, toolFor: (b) => `show_${b}`, matchFor: () => "# Task: practice", recordedWith: "claude" });
+      await r.begin();
+      r.event({ type: "block", name: "commit_answer", data: { question: "Who?" }, id: "t1:0:0" });
+      await r.turnEnded({ action: "practice", task: "t1", phase: "run" });
+      r.answer("commit_answer", { choice: "Me", why: "x" });
+      await r.turnEnded({ action: "practice", task: "t1", phase: "run" }, { failed: true });
+      r.reply("*");
+      r.event({ type: "text", delta: "Sure." });
+      await r.turnEnded({ action: "practice", task: "t1", phase: "run" });
+      const [rec] = r.recordings();
+      expect(rec.turns[0].next).toEqual({ "*": "t2" });
+      expect(rec.turns[0].respond).toBeUndefined();
+    } finally {
+      fs.rmSync(folder, { recursive: true, force: true });
+    }
   });
 });

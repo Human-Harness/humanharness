@@ -1,0 +1,25 @@
+{
+  "name": "@humanharness/material",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "Apache-2.0",
+  "exports": {
+    ".": "./src/index.ts",
+    "./light": "./src/light.ts"
+  },
+  "dependencies": {
+    "@humanharness/blocks": "workspace:*",
+    "@humanharness/harness-sdk": "workspace:*",
+    "@humanharness/workspace": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "@mozilla/readability": "^0.6.0",
+    "exceljs": "^4.4.0",
+    "fast-xml-parser": "^5.11.2",
+    "jszip": "^3.10.2",
+    "linkedom": "^0.18.14",
+    "mammoth": "^1.13.0",
+    "minisearch": "^7.2.0",
+    "pdfjs-dist": "^6.4.299",
+    "zod": "^4.6.5"
+  }
+}

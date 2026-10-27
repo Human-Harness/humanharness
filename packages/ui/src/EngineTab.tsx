@@ -3,7 +3,6 @@ import { useTranslation } from "react-i18next";
 import { EngineIcon } from "./chrome";
 import { type AppState, type EngineStatus, type HarnessClient, engineProblem } from "./client";
 import { EngineOnboarding } from "./EngineOnboarding";
-import { uiLanguage } from "./FolderStep";
 
 /** The reason behind a failed call, without Electron's English "Error invoking remote method …: Error:" wrapper. */
 export function errorDetail(err: unknown): string {
@@ -30,13 +29,17 @@ export function EngineTab({
   /** Told whenever the selected engine or its readiness changes. */
   onSelection?: (engineId: string, ready: boolean) => void;
 }) {
-  const { t, i18n } = useTranslation();
-  const lang = uiLanguage(state, i18n.language);
+  const { t } = useTranslation();
   const current = state.config.engineId;
   const [selected, setSelected] = useState(current ?? state.engines[0]?.id);
   const [statuses, setStatuses] = useState<Record<string, EngineStatus>>({});
   const [busy, setBusy] = useState<null | "use" | "logout">(null);
   const [failed, setFailed] = useState(false);
+  /**
+   * Signing out runs in Terminal (`terminalSteps.logout`): says to finish there, then check again.
+   * "manual": the command was copied but Terminal did not open, so the person opens it by hand.
+   */
+  const [signOutHint, setSignOutHint] = useState<false | "opened" | "manual">(false);
   /** Why checking an engine failed, by engine id. */
   const [checkErrors, setCheckErrors] = useState<Record<string, string>>({});
   const ids = state.engines.map((e) => e.id).join(",");
@@ -74,6 +77,9 @@ export function EngineTab({
     if (selected) onSelectionRef.current?.(selected, ready);
   }, [selected, ready]);
 
+  // The Terminal sign-out hint belongs to the engine it was shown for.
+  useEffect(() => setSignOutHint(false), [selected]);
+
   const use = async () => {
     if (!selected) return;
     setBusy("use");
@@ -87,6 +93,24 @@ export function EngineTab({
   };
   const signOut = async () => {
     if (!selected) return;
+    // OpenCode (spec §2): the person signs out in Terminal; the app copies the command and opens it.
+    if (engine?.terminalSteps?.logout) {
+      setBusy("logout");
+      setFailed(false);
+      try {
+        await client.copySetupCommand(selected, "logout");
+        // The command is on the clipboard: a Terminal that does not open is a step to do by hand, not a failure.
+        const opened = await client.openTerminal().then(
+          () => true,
+          () => false,
+        );
+        setSignOutHint(opened ? "opened" : "manual");
+      } catch {
+        setFailed(true);
+      }
+      setBusy(null);
+      return;
+    }
     setBusy("logout");
     setFailed(false);
     const result = await client.runSetup(selected, "logout").catch(() => ({ ok: false }));
@@ -187,13 +211,19 @@ export function EngineTab({
                     </button>
                   )}
                 </div>
+                {signOutHint && (
+                  <div className="hh-row">
+                    <span role="status">{t(signOutHint === "manual" ? "engine.signOutManual" : "engine.signOutTerminal")}</span>
+                    <button onClick={() => void refresh(engine.id).then(() => setSignOutHint(false))}>{t("engine.providerRecheck")}</button>
+                  </div>
+                )}
                 <div className="hh-row">
                   <span className="hh-row-label">{t("engine.plan")}</span>
-                  <span>{engine.requires[lang]}</span>
+                  <span>{engine.requires}</span>
                 </div>
                 <div className="hh-row">
                   <span className="hh-row-label">{t("engine.data")}</span>
-                  <span>{engine.dataLocation[lang]}</span>
+                  <span>{engine.dataLocation}</span>
                 </div>
                 <div className="hh-row">
                   <span className="hh-row-label">{t("engine.version")}</span>

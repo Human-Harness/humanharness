@@ -3,6 +3,11 @@ import type {
   AppState,
   ChatEntry,
   ChoiceOption,
+  DataChangeView,
+  DataDiffView,
+  DataKey,
+  DataQuery,
+  DataRecord,
   EngineError,
   EngineStatus,
   Event,
@@ -10,17 +15,37 @@ import type {
   HarnessClient,
   HistoryItem,
   HistoryTaskView,
+  MaterialAddResult,
+  MaterialChoice,
+  MaterialResult,
+  MaterialView,
+  ModeChoice,
+  ModeResult,
+  ModeSwitch,
   MoveResult,
+  PhaseResult,
+  ProfileResult,
+  ProfilesState,
+  ProfileView,
+  RespondResult,
   RunningSetup,
+  ScopeView,
+  ScopesView,
   SendOptions,
+  SettingsResult,
+  SettingsState,
   SetupOutput,
   SetupResult,
   SetupStep,
+  SetupStepResult,
+  SetupStepsState,
+  TaskTurnNotice,
   TaskView,
   TestResult,
   TextSize,
   UsageSummary,
 } from "../src/client";
+import { hearsDataChange } from "../src/client";
 
 export class FakeClient implements HarnessClient {
   state: AppState;
@@ -85,6 +110,8 @@ export class FakeClient implements HarnessClient {
   sharedReset = 0;
   /** Engines whose install command was copied. */
   copied: string[] = [];
+  /** Commands copied for Terminal steps, as "engine:step". */
+  setupCopied: string[] = [];
   /** When set, copyInstallCommand rejects with it. */
   copyError: Error | null = null;
   terminalOpened = 0;
@@ -117,6 +144,14 @@ export class FakeClient implements HarnessClient {
   opened: string[] = [];
   /** What openPath answers. */
   openResult = true;
+  /** What settings.get answers. */
+  settingsState: SettingsState = { values: {}, pending: [] };
+  /** What settings.set was asked, in order. */
+  settingsSets: { field: string; value: unknown }[] = [];
+  settingsResets = 0;
+  /** When set, settings.set and reset answer it instead of saving. */
+  settingsFailure: SettingsResult | null = null;
+  private settingsListeners = new Set<(s: SettingsState) => void>();
   private taskListeners = new Set<(v: TaskView) => void>();
   private listeners = new Set<(e: Event) => void>();
   private setupListeners = new Set<(o: SetupOutput) => void>();
@@ -125,9 +160,8 @@ export class FakeClient implements HarnessClient {
     this.state = {
       harness: {
         id: "demo",
-        name: { es: "Demo", en: "Demo" },
-        languages: ["es", "en"],
-        tagline: { es: "Notas de prueba", en: "Test notes" },
+        name: "Demo",
+        tagline: "Test notes",
         author: "Marco Zanger",
         donate: "https://example.com/donate",
         version: "0.1.0",
@@ -140,9 +174,9 @@ export class FakeClient implements HarnessClient {
           name: "Claude",
           status: "allowed",
           provider: "Anthropic",
-          requires: { es: "Plan Pro", en: "Pro plan" },
-          dataLocation: { es: "EE. UU.", en: "USA" },
-          trainsOnData: { es: "Según tu configuración", en: "Depends on your settings" },
+          requires: "Pro plan",
+          dataLocation: "USA",
+          trainsOnData: "Depends on your settings",
           termsUrl: "https://example.com/terms",
           privacyUrl: "https://example.com/privacy",
           reportsLimits: true,
@@ -259,6 +293,10 @@ export class FakeClient implements HarnessClient {
     if (this.copyError) throw this.copyError;
     this.copied.push(engineId);
   }
+  async copySetupCommand(engineId: string, step: "login" | "logout") {
+    if (this.copyError) throw this.copyError;
+    this.setupCopied.push(`${engineId}:${step}`);
+  }
   async openTerminal() {
     this.terminalOpened++;
   }
@@ -299,6 +337,81 @@ export class FakeClient implements HarnessClient {
     this.chosenTasks.push(task);
     if (this.chooseError) throw this.chooseError;
   }
+  /** What respond was asked, in order. */
+  responded: { blockId: string; value: Record<string, unknown> }[] = [];
+  /** What respond answers; default: taken, with the line "answered" (a taken answer clears the task's pendingInput). */
+  respondResult: RespondResult | null = null;
+  /** When set, respond rejects with it. */
+  respondError: Error | null = null;
+  /** While set, respond waits for it before answering. */
+  respondGate: Promise<void> | null = null;
+  async respond(blockId: string, value: Record<string, unknown>): Promise<RespondResult> {
+    this.responded.push({ blockId, value });
+    if (this.respondGate) await this.respondGate;
+    if (this.respondError) throw this.respondError;
+    const result: RespondResult = this.respondResult ?? { ok: true, display: "answered", value, answeredAt: "2026-10-25T10:00:00.000Z" };
+    // Like the main process: a taken answer clears the task's pending question before `accepted` resolves.
+    const current = this.tasks.current;
+    if (result.ok && current?.pendingInput === blockId) {
+      const { pendingInput: _, ...rest } = current;
+      this.emitTasks({ ...this.tasks, current: rest });
+    }
+    return result;
+  }
+  /** What chooseMode was asked, in order. */
+  modeChoices: { mode: string; choice: ModeChoice }[] = [];
+  /** What chooseMode answers; default: a switch turn runs. */
+  modeResult: ModeResult | null = null;
+  /** When set, chooseMode rejects with it. */
+  modeError: Error | null = null;
+  async chooseMode(mode: string, choice: ModeChoice = {}): Promise<ModeResult> {
+    this.modeChoices.push({ mode, choice });
+    if (this.modeError) throw this.modeError;
+    const result: ModeResult = this.modeResult ?? { ok: true, switched: "turn" };
+    // Like the preload: a switch is told before the result resolves.
+    if (result.ok && result.switched !== "same") for (const l of this.modeSwitchListeners) l({ mode, switched: result.switched });
+    return result;
+  }
+  modeSwitchListeners = new Set<(s: ModeSwitch) => void>();
+  onModeSwitch(listener: (s: ModeSwitch) => void) {
+    this.modeSwitchListeners.add(listener);
+    return () => void this.modeSwitchListeners.delete(listener);
+  }
+  /** What setPhase was asked, in order. */
+  phaseCalls: { taskId: string; phaseId: string }[] = [];
+  /** What setPhase answers; default: a change turn runs. */
+  phaseResult: PhaseResult | null = null;
+  async setPhase(taskId: string, phaseId: string): Promise<PhaseResult> {
+    this.phaseCalls.push({ taskId, phaseId });
+    return this.phaseResult ?? { ok: true, changed: "turn" };
+  }
+  /** Calls to finishTask, pauseTask, resumeTask and extendTimeBox, in order. */
+  taskCalls: string[] = [];
+  async finishTask() {
+    this.taskCalls.push("finish");
+    return true;
+  }
+  async pauseTask() {
+    this.taskCalls.push("pause");
+    return true;
+  }
+  async resumeTask() {
+    this.taskCalls.push("resume");
+    return true;
+  }
+  async extendTimeBox() {
+    this.taskCalls.push("extend");
+    return true;
+  }
+  taskTurnListeners = new Set<(n: TaskTurnNotice) => void>();
+  onTaskTurn(listener: (n: TaskTurnNotice) => void) {
+    this.taskTurnListeners.add(listener);
+    return () => void this.taskTurnListeners.delete(listener);
+  }
+  /** Tells the window a phase change or wrap-up turn starts, as main does before its events. */
+  emitTaskTurn(n: TaskTurnNotice) {
+    for (const l of this.taskTurnListeners) l(n);
+  }
   /** Files revealPath was asked to show. */
   revealedFiles: string[] = [];
   async revealPath(file: string) {
@@ -321,4 +434,348 @@ export class FakeClient implements HarnessClient {
       this.textSizeListeners.delete(listener);
     };
   }
+  /** The scope registry the fake answers with. */
+  scopeList: ScopeView[] = [];
+  /** The open scope. */
+  openScope: string | null = null;
+  private scopeListeners = new Set<(v: ScopesView) => void>();
+  emitScopes() {
+    const view = { open: this.openScope, list: this.scopeList };
+    for (const l of this.scopeListeners) l(view);
+  }
+  private changeScope(id: string, change: Partial<ScopeView>): ScopeView {
+    const i = this.scopeList.findIndex((s) => s.id === id);
+    if (i < 0) throw new Error(`Unknown scope: "${id}"`);
+    const next = { ...this.scopeList[i], ...change };
+    this.scopeList = this.scopeList.map((s, j) => (j === i ? next : s));
+    return next;
+  }
+  scopes = {
+    list: async () => this.scopeList,
+    create: async (title: string) => {
+      const s: ScopeView = { id: title.toLowerCase().replace(/[^a-z0-9]+/g, "-"), title, createdAt: "2026-10-25T10:00:00.000Z", archived: false };
+      this.scopeList = [...this.scopeList, s];
+      this.emitScopes();
+      return s;
+    },
+    rename: async (id: string, title: string) => {
+      const s = this.changeScope(id, { title });
+      this.emitScopes();
+      return s;
+    },
+    archive: async (id: string) => {
+      if (this.openScope === id) this.openScope = null;
+      this.changeScope(id, { archived: true });
+      this.emitScopes();
+    },
+    unarchive: async (id: string) => {
+      this.changeScope(id, { archived: false });
+      this.emitScopes();
+    },
+    open: async (id: string | null) => {
+      this.openScope = id;
+      this.emitScopes();
+      return true;
+    },
+    current: async () => this.openScope,
+    onChange: (listener: (v: ScopesView) => void) => {
+      this.scopeListeners.add(listener);
+      return () => {
+        this.scopeListeners.delete(listener);
+      };
+    },
+  };
+  /** The fake's data: records by collection, in the order they were put; `dataKey` names the key field. */
+  records: Record<string, DataRecord[]> = {};
+  dataKey = "id";
+  private dataListeners = new Set<(c: DataChangeView) => void>();
+  private dataChanged(change: DataChangeView) {
+    for (const l of this.dataListeners) l(change);
+  }
+  dataDiffs: Record<string, DataDiffView[]> = {};
+  dataDiff = async (taskId: string) => this.dataDiffs[taskId] ?? [];
+  data = {
+    get: async (collection: string, key?: DataKey) => (this.records[collection] ?? []).find((r) => key === undefined || r[this.dataKey] === key) ?? null,
+    query: async (collection: string, query: DataQuery = {}) => {
+      const all = (this.records[collection] ?? []).filter((r) => Object.entries(query.where ?? {}).every(([f, v]) => r[f] === v));
+      return { records: all.slice(0, query.limit ?? 50), total: all.length, invalid: 0 };
+    },
+    put: async (collection: string, record: DataRecord) => {
+      const key = record[this.dataKey] as DataKey | undefined;
+      this.records[collection] = [...(this.records[collection] ?? []).filter((r) => key === undefined || r[this.dataKey] !== key), record];
+      this.dataChanged({ collection, scope: this.openScope ?? "main", who: "person", op: "put", ...(key !== undefined ? { key } : {}) });
+      return record;
+    },
+    patch: async (collection: string, key: DataKey | undefined, patch: DataRecord) => {
+      const prev = (this.records[collection] ?? []).find((r) => key === undefined || r[this.dataKey] === key);
+      if (!prev) throw new Error("not found");
+      const next = { ...prev, ...patch };
+      this.records[collection] = (this.records[collection] ?? []).map((r) => (r === prev ? next : r));
+      this.dataChanged({ collection, scope: this.openScope ?? "main", who: "person", op: "patch", ...(key !== undefined ? { key } : {}) });
+      return next;
+    },
+    delete: async (collection: string, key?: DataKey) => {
+      const before = this.records[collection] ?? [];
+      this.records[collection] = before.filter((r) => key !== undefined && r[this.dataKey] !== key);
+      this.dataChanged({ collection, scope: this.openScope ?? "main", who: "person", op: "delete", ...(key !== undefined ? { key } : {}) });
+      return before.length !== this.records[collection].length;
+    },
+    subscribe: (collection: string, scope: string | null, listener: (c: DataChangeView) => void) => {
+      const l = (c: DataChangeView) => {
+        if (hearsDataChange(c, collection, scope)) listener(c);
+      };
+      this.dataListeners.add(l);
+      return () => {
+        this.dataListeners.delete(l);
+      };
+    },
+  };
+  /** A write the agent made (for tests of harness UIs that subscribe). */
+  emitDataChange(change: DataChangeView) {
+    this.dataChanged(change);
+  }
+  /** The main process sent new settings (a pending field applied, another window's change). */
+  emitSettings(state: SettingsState) {
+    this.settingsState = state;
+    for (const l of this.settingsListeners) l(state);
+  }
+  settings = {
+    get: async () => this.settingsState,
+    set: async (field: string, value: unknown): Promise<SettingsResult> => {
+      this.settingsSets.push({ field, value });
+      if (this.settingsFailure) return this.settingsFailure;
+      this.emitSettings({ ...this.settingsState, values: { ...this.settingsState.values, [field]: value } });
+      return { ok: true, state: this.settingsState };
+    },
+    reset: async (): Promise<SettingsResult> => {
+      this.settingsResets++;
+      if (this.settingsFailure) return this.settingsFailure;
+      const defaults = Object.fromEntries((this.state.settings?.fields ?? []).map((f) => [f.name, f.default]));
+      this.emitSettings({ values: defaults, pending: [] });
+      return { ok: true, state: this.settingsState };
+    },
+    onChange: (listener: (s: SettingsState) => void) => {
+      this.settingsListeners.add(listener);
+      return () => {
+        this.settingsListeners.delete(listener);
+      };
+    },
+  };
+  /** What setupSteps.get answers; submit, complete and skip change it. */
+  setupState: SetupStepsState = { steps: {}, blocking: [] };
+  /** What setupSteps.values answers, by step id. */
+  setupValues: Record<string, Record<string, unknown>> = {};
+  /** Calls to setupSteps, in order: "get", "submit:<id>", "complete:<id>", "skip:<id>", "finish", "acknowledge". */
+  setupCalls: string[] = [];
+  /** What submit was sent, by step id. */
+  setupSubmits: Record<string, Record<string, unknown>> = {};
+  /** When set, submit, complete and skip answer it instead. */
+  setupFailure: SetupStepResult | null = null;
+  private setupStepListeners = new Set<(s: SetupStepsState) => void>();
+  /** The main process sent the steps' state. */
+  emitSetupSteps(state: SetupStepsState) {
+    this.setupState = state;
+    for (const l of this.setupStepListeners) l(state);
+  }
+  private markStep(id: string, status: "done" | "skipped"): SetupStepResult {
+    if (this.setupFailure) return this.setupFailure;
+    const blocking = status === "done" ? this.setupState.blocking.filter((b) => b !== id) : this.setupState.blocking;
+    this.emitSetupSteps({ steps: { ...this.setupState.steps, [id]: status }, blocking });
+    return { ok: true, state: this.setupState };
+  }
+  setupSteps = {
+    get: async () => {
+      this.setupCalls.push("get");
+      return this.setupState;
+    },
+    values: async (id: string) => this.setupValues[id] ?? {},
+    submit: async (id: string, value: Record<string, unknown>) => {
+      this.setupCalls.push(`submit:${id}`);
+      this.setupSubmits[id] = value;
+      return this.markStep(id, "done");
+    },
+    complete: async (id: string) => {
+      this.setupCalls.push(`complete:${id}`);
+      return this.markStep(id, "done");
+    },
+    skip: async (id: string) => {
+      this.setupCalls.push(`skip:${id}`);
+      return this.markStep(id, "skipped");
+    },
+    finish: async () => {
+      this.setupCalls.push("finish");
+      return this.setupState;
+    },
+    acknowledge: async () => {
+      this.setupCalls.push("acknowledge");
+      return this.setupState;
+    },
+    onChange: (listener: (s: SetupStepsState) => void) => {
+      this.setupStepListeners.add(listener);
+      return () => {
+        this.setupStepListeners.delete(listener);
+      };
+    },
+  };
+  /** The registry; `state.config.profile` is the active one. */
+  profileList: ProfileView[] = [];
+  /** Calls to profiles, in order: "create:<name>", "open:<id>", "edit:<name>", "archive:<id>", "unarchive:<id>", "delete:<id>". */
+  profileCalls: string[] = [];
+  /** When set, create, open and edit are refused with it. */
+  profileRefusal: Exclude<ProfileResult, { ok: true }> | null = null;
+  /** When set, create makes the profile but its switch fails (`failed` with `made`). */
+  profileSwitchFails = false;
+  private profileListeners = new Set<(s: ProfilesState) => void>();
+  private profilesNow(): ProfilesState {
+    return { active: this.state.config.profile ?? null, list: this.profileList };
+  }
+  private profileChanged(): ProfileResult {
+    const s = this.profilesNow();
+    for (const l of this.profileListeners) l(s);
+    return { ok: true, state: this.state };
+  }
+  private setProfileArchived(id: string, archived: boolean): ProfileResult {
+    this.profileCalls.push(`${archived ? "archive" : "unarchive"}:${id}`);
+    if (id === this.state.config.profile) return { ok: false, reason: "active" };
+    this.profileList = this.profileList.map((p) => (p.id === id ? { ...p, archived } : p));
+    return this.profileChanged();
+  }
+  profiles = {
+    get: async () => this.profilesNow(),
+    create: async (values: Record<string, unknown>): Promise<ProfileResult> => {
+      this.profileCalls.push(`create:${String(values.name)}`);
+      if (!this.state.profiles) return { ok: false, reason: "not-ready" };
+      if (this.profileRefusal) return this.profileRefusal;
+      const title = String(values.name ?? "");
+      const id = title
+        .normalize("NFKD")
+        .replace(/[̀-ͯ]/g, "")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-");
+      const color = typeof values.color === "string" ? { color: values.color } : {};
+      this.profileList = [...this.profileList, { id, title, ...color, createdAt: "2026-10-27T10:00:00.000Z", archived: false }];
+      // The profile is made, but its switch fails: it is registered, not active, and the answer names it.
+      if (this.profileSwitchFails) {
+        this.profileChanged();
+        return { ok: false, reason: "failed", made: id };
+      }
+      this.state = { ...this.state, config: { ...this.state.config, profile: id } };
+      return this.profileChanged();
+    },
+    open: async (id: string): Promise<ProfileResult> => {
+      this.profileCalls.push(`open:${id}`);
+      if (this.profileRefusal) return this.profileRefusal;
+      if (!this.profileList.some((p) => p.id === id && !p.archived)) return { ok: false, reason: "unknown" };
+      this.state = { ...this.state, config: { ...this.state.config, profile: id } };
+      return this.profileChanged();
+    },
+    // Like the main process: the form's fields come only from `values` (one left out is cleared); a blank name is refused.
+    edit: async (values: Record<string, unknown>): Promise<ProfileResult> => {
+      const id = this.state.config.profile;
+      this.profileCalls.push(`edit:${String(values.name)}`);
+      if (!this.state.profiles || id === undefined) return { ok: false, reason: "not-ready" };
+      if (this.profileRefusal) return this.profileRefusal;
+      const title = typeof values.name === "string" ? values.name.trim() : "";
+      if (!title) return { ok: false, reason: "invalid", errors: [{ path: "name", message: "Enter a name" }] };
+      const asked = this.state.profiles.form.fields.map((f) => f.name);
+      const stored = (this.records.profile ?? []).at(-1) ?? {};
+      const kept = Object.fromEntries(Object.entries(stored).filter(([k]) => !asked.includes(k)));
+      const given = Object.fromEntries(Object.entries(values).filter(([k]) => asked.includes(k)));
+      this.records.profile = [...(this.records.profile ?? []), { ...kept, ...given, name: title }];
+      this.profileList = this.profileList.map((p) => (p.id === id ? { ...p, title } : p));
+      return this.profileChanged();
+    },
+    archive: async (id: string) => this.setProfileArchived(id, true),
+    unarchive: async (id: string) => this.setProfileArchived(id, false),
+    delete: async (id: string): Promise<ProfileResult> => {
+      this.profileCalls.push(`delete:${id}`);
+      if (id === this.state.config.profile) return { ok: false, reason: "active" };
+      this.profileList = this.profileList.filter((p) => p.id !== id);
+      return this.profileChanged();
+    },
+    onChange: (listener: (s: ProfilesState) => void) => {
+      this.profileListeners.add(listener);
+      return () => {
+        this.profileListeners.delete(listener);
+      };
+    },
+  };
+
+  /**
+   * Calls to material, in order: "add:<scope>", "link:<scope>:<url>", "confirm:<id>", "grounding:<mode>", "retry:<id>",
+   * "decide:<id>:<fragment or ->:<choice>", "remove:<id>", "open:<id>".
+   */
+  materialCalls: string[] = [];
+  materialViews: Record<string, MaterialView> = {};
+  /** The choices `confirm` got, in order. */
+  materialChoices: unknown[] = [];
+  /** What `add` and `addLink` answer; an Error rejects. */
+  materialAddResult: MaterialAddResult | Error = { ok: true, added: [], refused: [] };
+  /** What `confirm` answers; an Error rejects. */
+  materialConfirmResult: MaterialResult | Error = { ok: true };
+  /** What `decide` answers; an Error rejects. */
+  materialDecideResult: MaterialResult | Error = { ok: true };
+  /** What `remove` answers; an Error rejects. */
+  materialRemoveResult: MaterialResult | Error = { ok: true };
+  /** What `cite` answers per fragment id; absent: no such fragment. */
+  citeLabels: Record<string, string> = {};
+  /** The scope of every citation lookup, in order. */
+  citeScopes: string[] = [];
+  private materialListeners = new Set<(v: MaterialView) => void>();
+  /** Pushes a view as the main process would. */
+  pushMaterial(view: MaterialView) {
+    this.materialViews[view.scope] = view;
+    for (const l of this.materialListeners) l(view);
+  }
+  material = {
+    list: async (scope: string) => (Object.hasOwn(this.materialViews, scope) ? this.materialViews[scope] : null),
+    add: async (scope: string) => {
+      this.materialCalls.push(`add:${scope}`);
+      if (this.materialAddResult instanceof Error) throw this.materialAddResult;
+      return this.materialAddResult;
+    },
+    addLink: async (scope: string, url: string) => {
+      this.materialCalls.push(`link:${scope}:${url}`);
+      if (this.materialAddResult instanceof Error) throw this.materialAddResult;
+      return this.materialAddResult;
+    },
+    confirm: async (_scope: string, id: string, choice: unknown) => {
+      this.materialCalls.push(`confirm:${id}`);
+      this.materialChoices.push(choice);
+      if (this.materialConfirmResult instanceof Error) throw this.materialConfirmResult;
+      return this.materialConfirmResult;
+    },
+    setGrounding: async (_scope: string, mode: "strict" | "mixed") => {
+      this.materialCalls.push(`grounding:${mode}`);
+      return { ok: true as const };
+    },
+    retry: async (_scope: string, id: string) => {
+      this.materialCalls.push(`retry:${id}`);
+      return { ok: true as const };
+    },
+    decide: async (_scope: string, id: string, fragment: string | null, choice: MaterialChoice) => {
+      this.materialCalls.push(`decide:${id}:${fragment ?? "-"}:${choice}`);
+      if (this.materialDecideResult instanceof Error) throw this.materialDecideResult;
+      return this.materialDecideResult;
+    },
+    remove: async (_scope: string, id: string): Promise<MaterialResult> => {
+      this.materialCalls.push(`remove:${id}`);
+      if (this.materialRemoveResult instanceof Error) throw this.materialRemoveResult;
+      return this.materialRemoveResult;
+    },
+    open: async (_scope: string, id: string) => {
+      this.materialCalls.push(`open:${id}`);
+      return { ok: true as const };
+    },
+    cite: async (scope: string, id: string) => {
+      this.citeScopes.push(scope);
+      return Object.hasOwn(this.citeLabels, id) ? { label: this.citeLabels[id] } : null;
+    },
+    onChange: (l: (v: MaterialView) => void) => {
+      this.materialListeners.add(l);
+      return () => {
+        this.materialListeners.delete(l);
+      };
+    },
+  };
 }

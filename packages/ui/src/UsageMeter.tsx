@@ -2,6 +2,7 @@ import { useEffect, useReducer } from "react";
 import { useTranslation } from "react-i18next";
 import type { EngineOption, LimitWindow } from "./client";
 import { HIGH_AT, WARN_AT, compactTokens, currentWindows, formatReset, percent } from "./usage";
+import { shownLanguage } from "./language";
 
 /** Longest delay setTimeout accepts. */
 const MAX_DELAY = 2 ** 31 - 1;
@@ -28,7 +29,7 @@ export function UsageMeter({ engine, limits: reported, lastTokens }: { engine?: 
   const limits = useCurrentWindows(reported);
   if (!engine) return null;
   if (!engine.reportsLimits) {
-    const tokens = lastTokens !== null ? ` ${t("usage.lastTurn", { tokens: compactTokens(lastTokens, i18n.language) })}` : "";
+    const tokens = lastTokens !== null ? ` ${t("usage.lastTurn", { tokens: compactTokens(lastTokens, shownLanguage(i18n)) })}` : "";
     // The test engine (mock mode) has no plan to report on: say it uses none.
     const line = engine.mock ? t("usage.mock") : t("usage.noLimits", { engine: engine.name });
     return <p className="hh-usage">{line + tokens}</p>;
@@ -37,7 +38,7 @@ export function UsageMeter({ engine, limits: reported, lastTokens }: { engine?: 
   const text = limits
     .map((w) => {
       const part = t("usage.window", { label: t(`usage.${w.kind}`, { defaultValue: w.kind }), percent: percent(w.utilization) });
-      return w.kind === "five_hour" ? `${part} · ${t("usage.resets", { time: formatReset(w.resetsAt, i18n.language) })}` : part;
+      return w.kind === "five_hour" ? `${part} · ${t("usage.resets", { time: formatReset(w.resetsAt, shownLanguage(i18n)) })}` : part;
     })
     .join(" — ");
   const highest = Math.max(...limits.map((w) => w.utilization));

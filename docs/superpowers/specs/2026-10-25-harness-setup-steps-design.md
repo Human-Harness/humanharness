@@ -1,6 +1,6 @@
 # Harness setup steps — design
 
-Status: draft, 2026-10-25, waiting for Marco's review. Not in the roadmap yet. Closes gap #3a of `docs/discovery/2026-10-25-student-vs-core.md` (the "Conocerte" interview) and dev's "multi-step setup with extra steps declared by the harness" (accounts). Builds on:
+Status: approved by Marco on 2026-10-25, with every open question resolved by its proposal (where a question had none, the simplest option, noted in place). Not in the roadmap yet. Closes gap #3a of `docs/discovery/2026-10-25-student-vs-core.md` (the "Conocerte" interview) and dev's "multi-step setup with extra steps declared by the harness" (accounts). Builds on:
 - plan 3f, the setup flow (`2026-10-14-setup-flow-design.md`);
 - `2026-10-25-scopes-and-data-design.md`;
 - `2026-10-25-profiles-design.md`.

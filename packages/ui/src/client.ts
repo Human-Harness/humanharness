@@ -1,7 +1,33 @@
 import type { Effort, ModelChoice, ModelSpec, ModelsConfig } from "@humanharness/engines";
-import type { ActionCost, ChoiceOption, Language, LocalizedText, Tier } from "@humanharness/harness-sdk";
+import type {
+  ActionCost,
+  BlockAnswer,
+  ChoiceOption,
+  DataKey,
+  DataRecord,
+  InputField,
+  InputIssue,
+  InputSpec,
+  Language,
+  RespondResult,
+  ScopeMode,
+  SettingFieldView,
+  SettingsView,
+  Tier,
+} from "@humanharness/harness-sdk";
 import type { ActivityKind, EngineError, Event, LimitWindow } from "@humanharness/runtime";
-import type { FileChange, SyncProvider, SyncStatus } from "@humanharness/workspace";
+import type {
+  CollectionDiff,
+  DataChange,
+  DataQuery,
+  DataQueryResult,
+  FileChange,
+  ScopeEntry,
+  SyncProvider,
+  SyncStatus,
+} from "@humanharness/workspace";
+
+export type { DataKey, DataQuery, DataQueryResult, DataRecord };
 
 export type Appearance = "system" | "light" | "dark";
 
@@ -33,6 +59,8 @@ export interface AppConfig {
   models?: ModelsConfig;
   /** The person said they keep their own copy of the folder: the backup notice stays hidden (Settings › General undoes it). */
   backupDismissed?: boolean;
+  /** Harnesses with profiles: the active profile's id (profiles spec §4). Only the main process changes it. */
+  profile?: string;
 }
 
 export interface EngineOption {
@@ -41,13 +69,21 @@ export interface EngineOption {
   status: "allowed" | "pending";
   /** Company that runs the service (legal notice). */
   provider: string;
-  requires: LocalizedText;
-  dataLocation: LocalizedText;
-  trainsOnData: LocalizedText;
+  requires: string;
+  dataLocation: string;
+  trainsOnData: string;
   termsUrl: string;
   privacyUrl: string;
   /** Whether the engine reports plan-limit windows (Claude) or only tokens (Codex). */
   reportsLimits: boolean;
+  /** The engine reports each turn's cost in USD (OpenCode). Absent for the others. */
+  reportsCost?: boolean;
+  /** The person picks the provider inside the engine (OpenCode): the notice says its terms are theirs. */
+  userProvider?: boolean;
+  /** The engine's guide to choosing a provider. */
+  providersUrl?: string;
+  /** Steps the person runs in Terminal, with the command to paste. */
+  terminalSteps?: { login?: string; logout?: string };
   /** The provider's page of plans (Settings › Uso); never for a mock engine. */
   plansUrl?: string;
   /** The official install command, shown before the app runs it. */
@@ -60,18 +96,29 @@ export interface EngineOption {
 }
 
 export interface ActionOption {
-  label: LocalizedText;
+  label: string;
   /** One line under the label on the topic card. */
-  description?: LocalizedText;
+  description?: string;
   cost: ActionCost;
   /** The tier the harness recommends for the action. */
   tier?: Tier;
+  /** Harnesses with scopes: "none" runs app-wide; anything else needs an open scope. */
+  scope?: ScopeMode;
+  /** The modes its task may work in, and how it starts (task-modes spec §3). Absent without modes (D0). */
+  modes?: string[];
+  defaultMode?: string;
+  /** Its phases (task-phases spec §3), as the stepper shows them; never a brief. Absent without phases (D0). */
+  phases?: PhaseView[];
+  /** Its time box: the lengths offered and the one picked when the person picks none. Absent without one (D0). */
+  timeBox?: { options: number[]; default: number | null };
+  /** An interview step's action (setup-steps spec §3): no topic card; the setup screen and Settings start it. Absent otherwise (D0). */
+  setup?: true;
 }
 
 /** A read-only reference folder, as the work screen shows it ("~/…" for paths in the home folder). */
 export interface ReferenceView {
   id: string;
-  label: LocalizedText;
+  label: string;
   path: string;
 }
 
@@ -99,12 +146,47 @@ export type MoveResult =
   | { ok: true; state: AppState; leftBehind?: string; historyLeftBehind?: boolean }
   | { ok: false; error: MoveError; state?: AppState };
 
+/** A mode as the window shows it (task-modes spec §3): never its brief or the agent's hint. */
+export interface ModeView {
+  label: string;
+  description?: string;
+  minTier?: Tier;
+}
+
+/** A phase as the window shows it (task-phases spec §6): never its brief. */
+export interface PhaseView {
+  id: string;
+  label: string;
+  auto?: true;
+  close?: true;
+  /** The modes allowed in it (modes spec §7): absent or "any", all the action's; "none"; or a list. */
+  modes?: "any" | "none" | string[];
+}
+
+/**
+ * A turn the main process starts on its own is about to run (task-phases spec §4.4, §5): a phase change (`phase`, who
+ * moved, `back` when it went back) or the time box's wrap-up. The window draws its line, then the turn's events follow.
+ */
+export interface TaskTurnNotice {
+  task: string;
+  kind: "phase" | "wrap-up";
+  phase?: string;
+  by?: "agent" | "person" | "app";
+  back?: true;
+}
+
+/**
+ * How a phase pick went (spec §4.2): a change turn runs ("turn"), only the state changed ("quiet"), it already was the
+ * phase ("same"), or the close phase's Finish closes the task ("closing"). Refusals: no task waits ("no-task"), or the
+ * action has no such phase ("unknown").
+ */
+export type PhaseResult = { ok: true; changed: "turn" | "quiet" | "same" | "closing" } | { ok: false; reason: "no-task" | "unknown" };
+
 export interface AppState {
   harness: {
     id: string;
-    name: LocalizedText;
-    languages: Language[];
-    tagline?: LocalizedText;
+    name: string;
+    tagline?: string;
     /** The harness logo as a data: URL; absent means the Human Harness H. */
     logo?: string;
     /** Who made the harness (manifest `author`), for "made by … with Human Harness". */
@@ -123,6 +205,20 @@ export interface AppState {
   actions: Record<string, ActionOption>;
   /** The guided path: action ids in order. */
   path?: string[];
+  /** The harness's unit of work (manifest `scopes`): what to call it. Absent: no scopes (spec D2). */
+  scopes?: { label: string; plural: string };
+  /** The blocks the person answers, by name: how the core form draws each (input-blocks spec §5). Absent: none (D0). */
+  inputs?: Record<string, InputSpec>;
+  /** The harness's settings (manifest `settings`): its own Settings tab. Absent: no tab (harness-settings D0). */
+  settings?: SettingsView;
+  /** The harness's modes, by id (task-modes spec). Absent: none (D0). */
+  modes?: Record<string, ModeView>;
+  /** The harness's setup steps, in order (setup-steps spec). Absent: none (D0). */
+  setup?: SetupStepView[];
+  /** The harness's profiles (manifest `profiles`): what to call one and its form. Absent: one implicit profile (D4). */
+  profiles?: ProfilesInfo;
+  /** The harness takes the person's material (manifest `material`). Absent: none (D0). */
+  material?: MaterialInfo;
   /** Folders the agent can read but never change. */
   references?: ReferenceView[];
   /** Settings › Modelos. */
@@ -146,13 +242,23 @@ export interface TurnUsage {
   outputTokens: number;
   cacheReadTokens: number;
   cacheWriteTokens: number;
+  /** What the provider charged for the turn, in USD (OpenCode). Absent when the engine reports no cost. */
+  costUsd?: number;
+}
+
+/** A block in the chat. Input blocks carry the id the app gave them and, once answered, the answer (input-blocks spec §8). */
+export interface ChatBlock {
+  name: string;
+  data: unknown;
+  id?: string;
+  input?: BlockAnswer;
 }
 
 export interface ChatEntry {
   id: string;
   role: "user" | "assistant";
   text: string;
-  blocks: { name: string; data: unknown }[];
+  blocks: ChatBlock[];
   activities: { kind: ActivityKind; detail: string }[];
   at: string;
   error?: EngineError;
@@ -168,6 +274,12 @@ export interface ChatEntry {
   engine?: string;
   /** The task the entry belongs to (flow mode shows one task at a time). */
   task?: string;
+  /** A mode switch the person picked (task-modes spec §5.4): this user entry is a system line, and this is the mode's id. */
+  mode?: string;
+  /** The task entered this phase (task-phases spec §4.4): this user entry is a separator line, and this is the phase's id. */
+  phase?: string;
+  /** The time box's wrap-up (spec §5): this user entry is a system line. */
+  timeUp?: true;
   /** Assistant entries: text runs and blocks in the order they arrived. Older entries lack it: text, then blocks. */
   parts?: AnswerPart[];
 }
@@ -212,22 +324,26 @@ export interface HistoryItem {
   sha: string;
   message: string;
   date: string;
+  /** The task's phase when the commit was made (its `Phase:` trailer). */
+  phase?: string;
 }
 
 /** A file a task added, changed or deleted. */
 export type HistoryFileChange = FileChange;
 
 // The history's commit subjects (raw git data, English; the History panel shows them through i18n keys).
-export { BEFORE_MESSAGE, NOTE, RESTORE_POINT, RESTORE_TASK, START, STOPPED_PREFIX, TURN_PREFIX, UNDO_PREFIX } from "@humanharness/workspace/subjects";
+export { BEFORE_MESSAGE, DATA_CHANGE_PREFIX, NOTE, RESTORE_POINT, RESTORE_TASK, START, STOPPED_PREFIX, TURN_PREFIX, UNDO_PREFIX } from "@humanharness/workspace/subjects";
 
 /**
  * One row of the History panel: a task's commits, or the group of commits outside any task (`taskId: null`:
- * "Other changes", which holds the restores too).
+ * "Outside a task", which holds the restores too).
  */
 export interface HistoryTaskView {
   taskId: string | null;
   actionId: string | null;
-  /** What "Go back to before this task" restores; null when there is nothing before it. */
+  /** The scope the task ran in (harnesses with scopes). */
+  scopeId?: string;
+  /** What "Undo this task" restores; null when there is nothing before it. */
   start: string | null;
   end: string;
   /** ISO date of the task's last commit. */
@@ -312,6 +428,17 @@ export interface UsageSummary {
   estimates: Record<string, number>;
   /** Typical total tokens per task of each task key lately, for every engine. */
   tokens: Record<string, number>;
+  /** Harnesses with scopes: tokens used per scope id, over the whole log. */
+  scopes?: Record<string, number>;
+  /** Harnesses with profiles: tokens used per profile id, over each profile's whole log (profiles spec §4). */
+  profiles?: Record<string, number>;
+  /**
+   * Harnesses with material: tokens the material's AI stages used, over the whole log (with profiles, the active
+   * profile's: each processes its own). Absent when none ran.
+   */
+  material?: number;
+  /** USD the engine reported over the last 30 days (OpenCode; every profile's turns). Absent when no turn reported a cost. */
+  spentUsd?: number;
   /** The window kind estimates measure (the engine's `limits.primary`); absent when the engine reports no limits. */
   primary?: string;
 }
@@ -322,6 +449,12 @@ export interface SendOptions {
    * message is what the chat shows). Heavy actions may ask first.
    */
   action?: string;
+  /** Harnesses with scopes: run in this scope (it opens first). Default: the open one. */
+  scope?: string;
+  /** With `action`: the mode the person picked for the new task (`defaultMode: "ask"`, task-modes spec §3). */
+  mode?: string;
+  /** With `action`: the time box's length in minutes, one of the action's options (task-phases spec §5); null: no limit. */
+  timeBox?: number | null;
 }
 
 /**
@@ -332,18 +465,49 @@ export type TaskStatus = "running" | "waiting" | "closing" | "checkpoint";
 /** How an action's last task ended: its note was saved, the closing turn brought none, or it was interrupted. */
 export type ActionStatus = "done" | "unsaved" | "unfinished";
 
+/**
+ * The task's time box as the window sees it (task-phases spec §5): minutes chosen, the whole box and the time used in ms
+ * (a test minute may be short), measured `at`; the window counts down from there unless `paused`. `wrappedUp`: the
+ * wrap-up ran; `ended`: the time is up.
+ */
+export interface TimeBoxView {
+  minutes: number;
+  totalMs: number;
+  usedMs: number;
+  at: string;
+  paused: boolean;
+  wrappedUp?: true;
+  ended?: true;
+}
+
 export interface CurrentTaskView {
   id: string;
   /** Absent for a free question. */
   action?: string;
+  /** The scope the task runs in (harnesses with scopes). */
+  scope?: string;
   status: TaskStatus;
   /** Context in use by the task's session, and the task's cap (the side panel's meter). */
   context?: { used: number; cap: number };
   /** The plan lacked `model`: the task runs one tier down (`tier`), or on the engine's default model (no `tier`). */
   fallback?: { model: string; tier?: Tier };
+  /** The id of the input block the task waits an answer for (input-blocks spec §4). */
+  pendingInput?: string;
+  /** Task modes (task-modes spec §5.5), only for a task whose action has them: the mode now and those used. */
+  mode?: string;
+  modes?: string[];
+  /** The tier the task counts as (a custom profile: its nearest), so the window can ask before a switch (§5.3). */
+  tier?: Tier;
+  /** It runs below its mode's `minTier`: the person chose to continue. */
+  belowMinTier?: true;
+  /** Task phases (task-phases spec §6), only for a task whose action has them: the phase now, its log, the agent's proposal. */
+  phase?: string;
+  phases?: { id: string; at: string; by: "agent" | "person" | "app" }[];
+  phaseProposal?: { to: string; reason: string };
+  timeBox?: TimeBoxView;
 }
 
-/** A note in `.harness/notes/`, for the side panel and "Lo que quedó claro". */
+/** A note in `.harness/notes/`, for the side panel and "What's clear so far". */
 export interface NoteView {
   slug: string;
   title: string;
@@ -360,6 +524,30 @@ export interface TaskView {
   actions: Record<string, ActionStatus>;
   /** Newest first. */
   notes: NoteView[];
+  /** Harnesses with scopes: the open scope (null when none is open). Absent without scopes. */
+  scope?: string | null;
+}
+
+/**
+ * How the person's pick of a mode for the open task went (task-modes spec §5). `switched`: a turn in the new mode runs
+ * now ("turn"), the mode was set with no turn because the session is gone ("quiet"), the task closes and a new one
+ * starts in that mode ("new-task"), or it already was the mode ("same"). Refusals: no task waits ("no-task"), the action
+ * doesn't list the mode ("unknown"), the mode asks for more than the task's tier ("tier", with both tiers), or the
+ * current phase doesn't allow it ("phase").
+ */
+export type ModeResult =
+  | { ok: true; switched: "turn" | "quiet" | "new-task" | "same" }
+  | { ok: false; reason: "no-task" | "unknown" | "tier" | "phase"; required?: Tier; current?: Tier };
+
+/** A switch `chooseMode` started (task-modes spec §5), whoever asked for it: a "same" answer is none. */
+export interface ModeSwitch {
+  mode: string;
+  switched: "turn" | "quiet" | "new-task";
+}
+
+/** The answer to the tier question (spec §5.3): continue at the task's tier, or start a new task at the mode's. */
+export interface ModeChoice {
+  belowTier?: "continue" | "new-task";
 }
 
 /** The action to start after `current` on the guided path: the next one, or else the first one not done yet. */
@@ -387,6 +575,197 @@ export function canOpenFile(file: string): boolean {
   const dot = name.lastIndexOf(".");
   return dot > 0 && OPENABLE_EXTENSIONS.has(name.slice(dot).toLowerCase());
 }
+
+/** A scope as the window sees it (spec §3.4). */
+export type ScopeView = ScopeEntry;
+
+/** The open scope and the registry, sent whenever either changes. */
+export interface ScopesView {
+  open: string | null;
+  list: ScopeView[];
+}
+
+/** A write to the harness's data, from anyone (spec §4.5). */
+export type DataChangeView = DataChange;
+/** What a task changed in one collection of one scope. */
+export type DataDiffView = CollectionDiff;
+
+/** Default: the open scope. App-wide collections ignore it. */
+export interface DataOptions {
+  scope?: string;
+}
+
+/** The harness's settings as the window sees them (harness-settings spec §4). */
+export interface SettingsState {
+  /** Every field's value: the stored one, else its default. */
+  values: Record<string, unknown>;
+  /** Fields the agent reads whose new value waits for the next task (D4). */
+  pending: string[];
+}
+
+/** How a settings change ended: the new state, or why it was refused (`message` absent: something went wrong). */
+export type SettingsResult = { ok: true; state: SettingsState } | { ok: false; message?: string };
+
+/** A harness setup step's state (setup-steps spec §4): done, skipped, or not done yet. */
+export type SetupStepStatus = "done" | "skipped" | "missing";
+
+/** The harness's setup steps now: each one's status, and the required ones that keep Home on "Set up" (manifest order). */
+export interface SetupStepsState {
+  steps: Record<string, SetupStepStatus>;
+  blocking: string[];
+}
+
+/**
+ * How a step's submit, completion or skip went: the new state, or why not. `unknown`: no such step (or the wrong call for
+ * its kind); `not-ready`: the app isn't set up, is closing, or can't read its setup.json; `open`: the interview's task is still open; `incomplete`:
+ * its collection holds no valid record; `required`: a required step can't be skipped; `invalid`: the form's fields were
+ * refused (`errors`, by field; "" for the whole form).
+ */
+export type SetupStepResult =
+  | { ok: true; state: SetupStepsState }
+  | { ok: false; reason: "unknown" | "not-ready" | "open" | "incomplete" | "required" | "invalid"; errors?: InputIssue[] };
+
+/** A harness setup step as the window draws it (setup-steps spec §3): never an action's brief. */
+export interface SetupStepView {
+  id: string;
+  kind: "form" | "interview" | "component";
+  label: string;
+  /** One line under the step's heading. */
+  description?: string;
+  required: boolean;
+  /** form: the fields the core form draws. */
+  form?: InputSpec;
+  /** interview: the action its task runs, and that action's cost hint. */
+  action?: string;
+  cost?: ActionCost;
+  /** component: the name the harness registers its component under. */
+  component?: string;
+}
+
+/** What a harness's own setup step component gets (setup-steps spec §3 `component`). */
+export interface SetupStepProps {
+  client: HarnessClient;
+  /** The profile the step runs for; null in a harness without profiles. */
+  profile: ProfileView | null;
+  /** The step is done: the app marks it and moves on. */
+  done(): void;
+  /** Skip it; refused (the screen says so) for a required step. */
+  skip(): void;
+}
+
+/** One profile as the window sees it (profiles spec §4): the registry's entry. */
+export interface ProfileView {
+  id: string;
+  title: string;
+  /** One of the avatar colours, or anything else (drawn neutral). */
+  color?: string;
+  createdAt: string;
+  archived: boolean;
+}
+
+/** The profiles now: the active one (null while none is) and every registered one, archived included, in creation order. */
+export interface ProfilesState {
+  active: string | null;
+  list: ProfileView[];
+}
+
+/**
+ * Why a profile change was refused. `not-ready`: the app's folder isn't set; `busy`: a turn, a restore, a move, an engine
+ * change or another switch runs; `open`: the open task's closing turn was stopped; `invalid`: the form's fields
+ * (`errors`); `unknown`: no such profile (or an archived one, to open); `active`: not on the active profile; `failed`:
+ * anything else (a disk error, a Trash that refused).
+ */
+export type ProfileRefusal = "not-ready" | "busy" | "open" | "invalid" | "unknown" | "active" | "failed";
+
+/** What the window needs of the manifest's `profiles` (spec §3): the name of one, and the add and edit form. */
+export interface ProfilesInfo {
+  label: string;
+  form: InputSpec;
+}
+
+/**
+ * How a profile change went: the app state as it is now (the active profile, the folder it works in), or why not.
+ * `made`: a create whose switch failed after the profile was made names it (it exists, not active).
+ */
+export type ProfileResult = { ok: true; state: AppState } | { ok: false; reason: ProfileRefusal; errors?: InputIssue[]; made?: string };
+
+/** A source of the person's material as the window shows it (material spec §11). */
+export interface MaterialSourceView {
+  id: string;
+  name: string;
+  url?: string;
+  status: "pending" | "converting" | "validating" | "needs-person" | "ready" | "refused" | "removed";
+  stage?: "review" | "repair" | "label";
+  notice?: "warn" | "max" | "rows" | "full-review" | "no-text-pages";
+  refusal?: string;
+  pages: number;
+  rows?: number;
+  pageRange?: [number, number];
+  estimate: number;
+  issues: string[];
+  fixes: string[];
+  fragments: number;
+  verdict?: "good" | "usable-with-fixes" | "not-usable";
+  failed: boolean;
+  /** Questions for the person (§6.2 `ask`): about one fragment, or the whole source. */
+  asks: { fragment?: string; question: string; choices: MaterialChoice[] }[];
+}
+
+/** An answer to a material question: a fragment's (`keep`, `drop`, `program`) or a whole source's (`use`, `remove`). */
+export type MaterialChoice = "keep" | "drop" | "program" | "use" | "remove";
+
+/** One scope's material now (`hh:materialStatus`). */
+export interface MaterialView {
+  scope: string;
+  sources: MaterialSourceView[];
+  grounding: { mode: "strict" | "mixed"; canChange: boolean };
+  /** The engine's provider, for the privacy line (§13.3). */
+  provider: string;
+  /** The engine's usage window now, when it reports one (§7). */
+  window: { kind: string; utilization: number } | null;
+  /** Items with no fragment yet; absent without `items`. */
+  uncovered?: string[];
+}
+
+/** What the harness takes (manifest `material`). Absent: no material (D0). */
+export interface MaterialInfo {
+  accepts: string[];
+  items: boolean;
+  grounding: { default: "strict" | "mixed"; personCanChange: boolean };
+  /** A source this many pages long or more goes on only with a range shorter than this (§7 `MAX_PAGES`). */
+  maxPages: number;
+}
+
+export type MaterialResult = { ok: true } | { ok: false; reason: "not-ready" | "unknown-scope" | "unknown-source" | "invalid" | "fetch" };
+export type MaterialAddResult =
+  | { ok: true; added: string[]; refused: { name: string; message: string }[] }
+  | { ok: false; reason: "not-ready" | "unknown-scope" | "fetch" };
+
+export interface MaterialClient {
+  /** Null without material. */
+  list(scope: string): Promise<MaterialView | null>;
+  /** Opens the main process's file dialog, then takes in each file picked. */
+  add(scope: string): Promise<MaterialAddResult>;
+  addLink(scope: string, url: string): Promise<MaterialAddResult>;
+  confirm(scope: string, id: string, choice: { pageRange?: [number, number]; sheets?: string[] | "summary" }): Promise<MaterialResult>;
+  setGrounding(scope: string, mode: "strict" | "mixed"): Promise<MaterialResult>;
+  /** Try again: a source whose AI stage failed goes back to that stage. */
+  retry(scope: string, id: string): Promise<MaterialResult>;
+  /**
+   * The person's answer to a question (`fragment` null: about the whole source). `use` on a source waiting for a full
+   * review goes on without it.
+   */
+  decide(scope: string, id: string, fragment: string | null, choice: MaterialChoice): Promise<MaterialResult>;
+  /** Removes a source: its original goes to the system Trash, its fragments go (also Cancel on a waiting one). */
+  remove(scope: string, id: string): Promise<MaterialResult>;
+  /** Opens the original of a source or a fragment's source. */
+  open(scope: string, id: string): Promise<MaterialResult>;
+  /** A citation's label, "<source>, <location>"; null: no such fragment in the scope (the text stays as it is). */
+  cite(scope: string, id: string): Promise<{ label: string } | null>;
+  onChange(listener: (view: MaterialView) => void): () => void;
+}
+
+export { hearsDataChange } from "./data-change";
 
 /** Everything the renderer can ask the main process. Implemented by the preload as `window.hh`. */
 export interface HarnessClient {
@@ -417,6 +796,8 @@ export interface HarnessClient {
   testEngine(engineId: string): Promise<TestResult>;
   /** Copies the engine's official install command, for the user to paste in Terminal. */
   copyInstallCommand(engineId: string): Promise<void>;
+  /** Copies the command for a step the person runs in Terminal (`terminalSteps`). */
+  copySetupCommand(engineId: string, step: "login" | "logout"): Promise<void>;
   /** Opens the Terminal app (it runs nothing). */
   openTerminal(): Promise<void>;
   /** Shows ~/.humanharness/engines.json in Finder. */
@@ -436,10 +817,111 @@ export interface HarnessClient {
    * `task` is the task the block was shown for; a block of an earlier task is refused.
    */
   choose(option: ChoiceOption, task: string): Promise<void>;
+  /**
+   * The person's answer to input block `blockId` (input-blocks spec §4). Resolves with the refusal and its field
+   * errors, or with the chat's line once the answer is taken; the agent's turn then arrives as events.
+   */
+  respond(blockId: string, value: Record<string, unknown>): Promise<RespondResult>;
+  /**
+   * The person picks a mode for the open task (task-modes spec §5): resolves with a refusal (with the tiers when the
+   * mode asks for more) or with how the switch goes on; the switch's turn then arrives as events. `choice` answers the
+   * tier question.
+   */
+  chooseMode(mode: string, choice?: ModeChoice): Promise<ModeResult>;
+  /**
+   * Every switch `chooseMode` started, whoever called it (the window's mode bar and blocks, or the harness's own UI),
+   * told when its result arrives and before the switch's turn: the chat draws the "Switched to" line and that turn.
+   */
+  onModeSwitch(listener: (s: ModeSwitch) => void): () => void;
+  /**
+   * The person moves the open task `taskId` to phase `phaseId` (task-phases spec §4.2): resolves with a refusal or with
+   * how the change goes on. A change turn then arrives as an `onTaskTurn` notice and its events.
+   */
+  setPhase(taskId: string, phaseId: string): Promise<PhaseResult>;
+  /** Closes the open task now with the core closing turn (the stepper's Finish). False when it was stopped first. */
+  finishTask(): Promise<boolean>;
+  /** The time box's clock (spec §5): pause and resume; false when there was nothing to do. */
+  pauseTask(): Promise<boolean>;
+  resumeTask(): Promise<boolean>;
+  /** "+5 min". */
+  extendTimeBox(): Promise<boolean>;
+  /** A turn the app starts on its own (a phase change, the wrap-up) is about to run: draw its line first. */
+  onTaskTurn(listener: (n: TaskTurnNotice) => void): () => void;
   /** Opens a file inside the reference folders or the user's folder in its default app. False when refused or missing. */
   openPath(path: string): Promise<boolean>;
   /** Shows a file inside the reference folders or the user's folder in Finder (any kind of file). False when refused or missing. */
   revealPath(path: string): Promise<boolean>;
+  /** Harnesses with scopes (spec §3.4). There is no delete: archive instead. */
+  scopes: {
+    list(): Promise<ScopeView[]>;
+    create(title: string): Promise<ScopeView>;
+    rename(id: string, title: string): Promise<ScopeView>;
+    /** Archiving the open scope closes it first. */
+    archive(id: string): Promise<void>;
+    unarchive(id: string): Promise<void>;
+    /** Opens a scope (null: none), closing the open task first; false when that close was stopped. */
+    open(id: string | null): Promise<boolean>;
+    current(): Promise<string | null>;
+    onChange(listener: (view: ScopesView) => void): () => void;
+  };
+  /** The harness's data (spec §4.5), as the person: the same checks as the agent's tools. `settings` is read-only here: use `settings`. */
+  data: {
+    get(collection: string, key?: DataKey, options?: DataOptions): Promise<DataRecord | null>;
+    query(collection: string, query?: DataQuery, options?: DataOptions): Promise<DataQueryResult>;
+    put(collection: string, record: DataRecord, options?: DataOptions): Promise<DataRecord>;
+    patch(collection: string, key: DataKey | undefined, patch: DataRecord, options?: DataOptions): Promise<DataRecord>;
+    delete(collection: string, key?: DataKey, options?: DataOptions): Promise<boolean>;
+    /** Every write to `collection` (in `scope`; null: any scope), from any writer. App-wide collections ignore the scope. */
+    subscribe(collection: string, scope: string | null, listener: (change: DataChangeView) => void): () => void;
+  };
+  /** What a task changed in the harness's data ("what changed in this session", spec §4.5). */
+  dataDiff(taskId: string): Promise<DataDiffView[]>;
+  /** The harness's settings (harness-settings spec §4). A harness with none answers no values and refuses changes. */
+  settings: {
+    /** Every field's value (the default when unchanged) and the fields waiting for the next task. */
+    get(): Promise<SettingsState>;
+    /** Saves one field now, as the person. Refusals come back as data. */
+    set(field: string, value: unknown): Promise<SettingsResult>;
+    /** Every field back to its default. */
+    reset(): Promise<SettingsResult>;
+    onChange(listener: (state: SettingsState) => void): () => void;
+  };
+  /** The harness's setup steps (setup-steps spec). A harness with none answers no steps and refuses every change. */
+  setupSteps: {
+    get(): Promise<SetupStepsState>;
+    /** A form step's current values: the record's fields it asks for, or the settings' values. */
+    values(id: string): Promise<Record<string, unknown>>;
+    /** A form step's Next: saved through the same checks as any write. Refusals come back as data. */
+    submit(id: string, value: Record<string, unknown>): Promise<SetupStepResult>;
+    /** An interview's end (its task closed, its record valid) or a component's `done()`. */
+    complete(id: string): Promise<SetupStepResult>;
+    skip(id: string): Promise<SetupStepResult>;
+    /** The setup screen reached "All set". */
+    finish(): Promise<SetupStepsState>;
+    /** Settings showed the list: steps a harness update added count from now on. */
+    acknowledge(): Promise<SetupStepsState>;
+    onChange(listener: (state: SetupStepsState) => void): () => void;
+  };
+  /** The harness's profiles (profiles spec §5). A harness with none answers none and refuses every change. */
+  profiles: {
+    get(): Promise<ProfilesState>;
+    /** A new profile from the form's fields; it becomes the active one (the open task closes first). */
+    create(values: Record<string, unknown>): Promise<ProfileResult>;
+    /** Switches to a profile (the open task closes first). */
+    open(id: string): Promise<ProfileResult>;
+    /**
+     * Saves the edit form's fields to the active profile's record, as the person. A field sent with no value is cleared;
+     * refusals come back by field (`errors`).
+     */
+    edit(values: Record<string, unknown>): Promise<ProfileResult>;
+    archive(id: string): Promise<ProfileResult>;
+    unarchive(id: string): Promise<ProfileResult>;
+    /** Puts a profile's folder and history in the system Trash. Never the active one. */
+    delete(id: string): Promise<ProfileResult>;
+    onChange(listener: (state: ProfilesState) => void): () => void;
+  };
+  /** The person's material (material spec §10). A harness without material answers null and "not-ready". */
+  material: MaterialClient;
   /** The text size changed from the keyboard (⌘+, ⌘−, ⌘0), already saved. */
   onTextSize(listener: (size: TextSize) => void): () => void;
 }
@@ -451,4 +933,4 @@ export function isConfigured(config: AppConfig): config is ConfiguredApp {
   return Boolean(config.language && config.folder && config.engineId);
 }
 
-export type { ChoiceOption, Event, EngineError, LimitWindow };
+export type { BlockAnswer, ChoiceOption, Event, EngineError, InputField, InputIssue, InputSpec, LimitWindow, RespondResult, SettingFieldView, SettingsView };

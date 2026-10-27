@@ -61,6 +61,32 @@ describe("ChatLog", () => {
     );
     expect((await new ChatLog(folder).load(1)).map((e) => e.text)).toEqual(["b"]);
   });
+
+  it("puts an answer on its block, rewriting the file and keeping broken lines; a second answer replaces it", async () => {
+    const folder = fs.mkdtempSync(path.join(root, "f-"));
+    const log = new ChatLog(folder, "claude");
+    await log.append({ id: "1", role: "assistant", text: "", blocks: [{ name: "commit_answer", data: { question: "q" }, id: "t1:0:0" }], activities: [], at: "t1" });
+    fs.appendFileSync(path.join(folder, ".harness", "chats", "main.jsonl"), "{broken\n");
+    const answer = { blockId: "t1:0:0", value: { why: "porque" }, answeredAt: "2026-10-25T10:00:00.000Z" };
+    expect(await log.markAnswered({ ...answer, value: { why: "primero" } })).toBe(true);
+    // A send stopped before its turn reopens the question: the second answer wins.
+    expect(await log.markAnswered(answer)).toBe(true);
+    expect(await log.markAnswered({ ...answer, blockId: "t9:0:0" })).toBe(false);
+    const [entry] = await log.load();
+    expect(entry.blocks[0]).toEqual({ name: "commit_answer", data: { question: "q" }, id: "t1:0:0", input: answer });
+    expect(entry.engine).toBe("claude");
+    expect(fs.readFileSync(path.join(folder, ".harness", "chats", "main.jsonl"), "utf8")).toContain("{broken\n");
+  });
+
+  it("an id survives the recorder", () => {
+    const r = new TurnRecorder(new Set());
+    r.add({ type: "block", name: "commit_answer", data: { question: "q" }, id: "t1:0:0" });
+    r.add({ type: "block", name: "card", data: {} });
+    expect(r.finish({ type: "done", ok: true }).blocks).toEqual([
+      { name: "commit_answer", data: { question: "q" }, id: "t1:0:0" },
+      { name: "card", data: {} },
+    ]);
+  });
 });
 
 describe("TurnRecorder usage", () => {
@@ -91,6 +117,15 @@ describe("TurnRecorder usage", () => {
     expect("firstLimits" in entry).toBe(false);
   });
 
+  it("keeps the turn's cost in its usage, only when the engine reported one", () => {
+    const r = new TurnRecorder(new Set());
+    r.add({ type: "usage", inputTokens: 3, outputTokens: 2, cacheReadTokens: 0, cacheWriteTokens: 0, costUsd: 0.004 });
+    expect(r.finish({ type: "done", ok: true }).usage).toEqual({ inputTokens: 3, outputTokens: 2, cacheReadTokens: 0, cacheWriteTokens: 0, costUsd: 0.004 });
+    const plain = new TurnRecorder(new Set());
+    plain.add({ type: "usage", inputTokens: 3, outputTokens: 2, cacheReadTokens: 0, cacheWriteTokens: 0 });
+    expect(plain.finish({ type: "done", ok: true }).usage).not.toHaveProperty("costUsd");
+  });
+
   it("adds nothing when the engine reported nothing", () => {
     const entry = new TurnRecorder(new Set()).finish({ type: "done", ok: true });
     expect("usage" in entry || "limits" in entry || "state" in entry).toBe(false);
@@ -112,5 +147,23 @@ describe("ChatLog.archive", () => {
     const folder = fs.mkdtempSync(path.join(root, "f-"));
     expect(await new ChatLog(folder).archive("claude")).toBeNull();
     expect(fs.existsSync(path.join(folder, ".harness", "chats", "archive"))).toBe(false);
+  });
+});
+
+describe("a chat per scope", () => {
+  it("writes each scope's chat to its own file and lists them", async () => {
+    const folder = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
+    const entry = (id: string) => ({ id, role: "user" as const, text: id, blocks: [], activities: [], at: "t" });
+    await new ChatLog(folder).append(entry("m"));
+    await new ChatLog(folder, "claude", "fracciones").append(entry("f"));
+    await new ChatLog(folder, undefined, "_app").append(entry("a"));
+    expect((await new ChatLog(folder, undefined, "fracciones").load()).map((e) => e.id)).toEqual(["f"]);
+    expect((await new ChatLog(folder).load()).map((e) => e.id)).toEqual(["m"]);
+    expect(fs.existsSync(path.join(folder, ".harness", "chats", "fracciones.jsonl"))).toBe(true);
+    expect(await ChatLog.scopesIn(folder)).toEqual(["_app", "fracciones", "main"]);
+    expect(await new ChatLog(folder, undefined, "fracciones").archive("claude")).toMatch(/-fracciones-claude\.jsonl$/);
+    expect(await ChatLog.scopesIn(folder)).toEqual(["_app", "main"]);
+    expect(() => new ChatLog(folder, undefined, "../x")).toThrow(/scope/);
+    fs.rmSync(folder, { recursive: true, force: true });
   });
 });

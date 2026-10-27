@@ -1,5 +1,7 @@
 # Human Harness
 
+[![M8ven Score](https://m8ven.ai/badge/mcp/human-harness-humanharness-1d6spo?v=1d3758b41668165f3f7e0509b9d40355)](https://m8ven.ai/mcp/human-harness-humanharness-1d6spo?s=readme)
+
 Open-source framework for building **harnesses**: installable desktop apps that put a purpose-built interface and workflow on top of an AI agent.
 
 Each user brings **their own AI subscription** through the provider's official CLI, which the app installs and configures. No developer API keys, no terminals, no Node or git in sight: harnesses are made for non-technical people.
@@ -9,14 +11,14 @@ Each user brings **their own AI subscription** through the provider's official C
 ## How it works
 
 - **One harness = configuration + agentic flow + its own UI.** Engine, onboarding, files, history, languages, updates and packaging live in the core.
-- **Engine-agnostic.** Harnesses talk to the core runtime, which picks the transport for each CLI: the unmodified official `claude` binary for Claude, [ACP](https://agentclientprotocol.com) for the rest (Codex today).
+- **Engine-agnostic.** Harnesses talk to the core runtime, which picks the transport for each CLI: the unmodified official `claude` binary for Claude, [ACP](https://agentclientprotocol.com) for the rest: Codex, and OpenCode (any provider you set up in it, or a local model).
 - **An engine is supported only if its terms allow it.** Working technically is not enough.
 - **Users own their data.** It lives in a visible folder they choose, with an invisible local history to undo what the agent did. Nothing leaves their machine except toward the AI provider they picked. No telemetry.
 - **Usage awareness.** The app shows where the user stands on their plan's limits before running heavy workflows.
 
 ## Stack
 
-Electron · TypeScript · React · pnpm workspaces · MCP servers for harness tools and UI blocks · isomorphic-git for local history. macOS first, then Windows and Linux. Spanish and English from v1.
+Electron · TypeScript · React · pnpm workspaces · MCP servers for harness tools and UI blocks · isomorphic-git for local history. macOS first, then Windows and Linux. The app ships in English; the AI thinks in English and answers in the person's language, and (plan 5b) the screens are translated into that language on their own engine.
 
 ## Repository layout
 

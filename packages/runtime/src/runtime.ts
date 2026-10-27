@@ -1,29 +1,44 @@
 import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
-import { type Bridge, type Launcher, type McpServerSpec, devLauncher, openBridge, uiServerSpec } from "@humanharness/blocks";
+import { type Bridge, type Launcher, type McpServerSpec, type Rpc, dataServerSpec, devLauncher, hasAgentData, openBridge, openRpc, uiServerSpec } from "@humanharness/blocks";
 import type { Effort, EngineDef, ModelChoice, ModelProfile } from "@humanharness/engines";
-import { type Language, type LoadedHarness, allBlocks, resolveInHarness } from "@humanharness/harness-sdk";
+import { type Language, type LoadedHarness, allBlocks, hasMaterial, resolveInHarness } from "@humanharness/harness-sdk";
+import { materialServerSpec } from "@humanharness/material/light";
 import {
   BEFORE_MESSAGE,
   History,
   type HistoryTrailer,
-  NOTES_PREFIX,
   type ReferenceFolder,
   START,
   STOPPED_PREFIX,
   TURN_PREFIX,
   UNDO_PREFIX,
+  appHistoryKeep,
   prepareFolder,
+  refreshInstructions,
   writeInstructions,
 } from "@humanharness/workspace";
 import { AcpTransport } from "./acp";
 import { ClaudeCliTransport } from "./claude-cli";
 import type { Event } from "./events";
-import type { Session, Transport, TransportOptions } from "./transport";
+import { type Session, type Transport, type TransportOptions, acpFields } from "./transport";
 
 export interface RuntimeOptions {
   /** Built `ui` MCP server entry (app). Defaults to the TS source (dev). */
   uiServerEntry?: string;
+  /** Built `data` MCP server entry (app). Defaults to the TS source (dev). */
+  dataServerEntry?: string;
+  /**
+   * Answers the agent's data tools (spec §4.4): the caller runs each request as the agent, in the running task's
+   * scope. Without it, or without collections the agent may see, there is no `data` server (D2).
+   */
+  data?: (request: unknown) => Promise<unknown>;
+  /**
+   * Answers the `material` server's tools (material spec §9) for the running task; `entry` is the built server (app),
+   * defaulting to the TS source (dev). Only with `material` in the manifest; absent: no `material` server, no Material
+   * part in AGENTS.md, the same history keep list (D0).
+   */
+  material?: { request: (request: unknown) => Promise<unknown>; entry?: string };
   harness: LoadedHarness;
   engine: EngineDef;
   /** The user's visible folder. */
@@ -39,6 +54,11 @@ export interface RuntimeOptions {
   env?: Record<string, string>;
   /** Folders the agent may read but never change (absolute paths), with the label `AGENTS.md` shows. */
   references?: ReferenceFolder[];
+  /**
+   * The harness's settings as sentences for AGENTS.md (harness-settings spec §5), asked when the runtime starts and
+   * on every `refreshInstructions`. Absent: no settings section (D0).
+   */
+  instructionSettings?: () => Promise<string[]>;
   /** The engine session to continue (the dev CLI). Default: a new one. */
   session?: Session;
   /** Called when the engine starts a session. */
@@ -60,6 +80,12 @@ export interface HarnessRuntime {
   send(message: string, emit: (e: Event) => void, options?: { profile?: ModelProfile; trailer?: HistoryTrailer }): RunningTurn;
   /** Ends the engine session (Codex: `session/close`); the next turn starts a new one. Not while a turn runs. */
   endSession(): Promise<void>;
+  /**
+   * Rewrites AGENTS.md with the settings as they are now, when its text changed (spec §5). Only between tasks: the
+   * next session reads it, a running one keeps what it started with (D4). True when it wrote; false once closing.
+   * The caller must not run it while another runtime is being created on the same folder.
+   */
+  refreshInstructions(): Promise<boolean>;
   history: History;
   close(): Promise<void>;
 }
@@ -80,35 +106,47 @@ export async function createRuntime(opts: RuntimeOptions): Promise<HarnessRuntim
 
   await prepareFolder(folder, harness.folder.seed ? resolveInHarness(harness, harness.folder.seed) : undefined);
   const base = await fs.readFile(resolveInHarness(harness, harness.instructions), "utf8");
-  const generated = await writeInstructions({ folder, base, language: opts.language, blocks: allBlocks(harness), references, engine });
+  const blocks = allBlocks(harness);
+  const settings = await opts.instructionSettings?.();
+  const material = opts.material && hasMaterial(harness) ? opts.material : undefined;
+  const withMaterial = material ? { material: true } : {};
+  const generated = await writeInstructions({ folder, base, language: opts.language, blocks, references, engine, ...(settings ? { settings } : {}), ...withMaterial });
 
-  // The history skips the app's files under .harness/ (except the notes) and the generated instructions.
-  const history = new History(folder, opts.gitdir, [".harness/", ...generated], [NOTES_PREFIX]);
+  // The history skips the app's files under .harness/ (except the notes, the data and, with material, its registry
+  // and decisions) and the generated instructions.
+  const history = new History(folder, opts.gitdir, [".harness/", ...generated], appHistoryKeep(material !== undefined));
   await history.init();
   await history.save(START);
 
   let emitCurrent: ((e: Event) => void) | null = null;
   const session: Session = opts.session ?? { id: randomUUID(), started: false };
   const bridge: Bridge = await openBridge((m) => emitCurrent?.({ type: "block", name: m.name, data: m.data }));
+  let rpc: Rpc | null = null;
+  let materialRpc: Rpc | null = null;
   try {
-    return await buildRuntime(bridge);
+    if (opts.data && hasAgentData(harness)) rpc = await openRpc(opts.data);
+    if (material) materialRpc = await openRpc(material.request);
+    return await buildRuntime(bridge, rpc, materialRpc);
   } catch (err) {
+    await materialRpc?.close().catch(() => {});
+    await rpc?.close().catch(() => {});
     await bridge.close().catch(() => {});
     throw err;
   }
 
-  async function buildRuntime(bridge: Bridge): Promise<HarnessRuntime> {
+  async function buildRuntime(bridge: Bridge, rpc: Rpc | null, materialRpc: Rpc | null): Promise<HarnessRuntime> {
     const transportOptions: TransportOptions = {
       folder,
       session,
-      mcp: [uiServerSpec({ harnessConfig: harness.configPath, bridge, launcher, entry: opts.uiServerEntry }), ...harnessMcpServers(harness, launcher)],
+      mcp: [
+        uiServerSpec({ harnessConfig: harness.configPath, bridge, launcher, entry: opts.uiServerEntry }),
+        ...(rpc ? [dataServerSpec({ harnessConfig: harness.configPath, rpc, launcher, entry: opts.dataServerEntry })] : []),
+        ...(materialRpc ? [materialServerSpec({ rpc: materialRpc, launcher, mode: "person", entry: material?.entry })] : []),
+        ...harnessMcpServers(harness, launcher),
+      ],
       permissions: harness.permissions,
       references: references.map((r) => r.path),
-      sessionMode:
-        engine.transport.kind === "acp"
-          ? engine.transport.modes?.[harness.permissions.edit === "folder" ? "edit" : "readOnly"]
-          : undefined,
-      minAdapterVersion: engine.transport.kind === "acp" ? engine.transport.minAdapterVersion : undefined,
+      ...acpFields(engine, harness.permissions.edit),
       command: opts.command ?? (engine.transport.kind === "claude-cli" ? [engine.transport.binary] : engine.transport.command),
       env: opts.env,
       onModels: opts.onModels,
@@ -125,6 +163,9 @@ export async function createRuntime(opts: RuntimeOptions): Promise<HarnessRuntim
 
     let busy = false;
     let current: { controller: AbortController; done: Promise<void> } | null = null;
+    // Refreshes run one at a time, and close waits for the last one: once closed, this runtime never writes AGENTS.md.
+    let closing = false;
+    let refreshing: Promise<boolean> = Promise.resolve(false);
 
     return {
       history,
@@ -181,7 +222,18 @@ export async function createRuntime(opts: RuntimeOptions): Promise<HarnessRuntim
           busy = false;
         }
       },
+      refreshInstructions() {
+        if (closing) return Promise.resolve(false);
+        const run = async () => {
+          const now = await opts.instructionSettings?.();
+          return refreshInstructions({ folder, base, language: opts.language, blocks, references, ...(now ? { settings: now } : {}), ...withMaterial });
+        };
+        refreshing = refreshing.catch(() => false).then(run);
+        return refreshing;
+      },
       async close() {
+        closing = true;
+        await refreshing.catch(() => {});
         if (current) {
           current.controller.abort();
           await current.done;
@@ -189,7 +241,15 @@ export async function createRuntime(opts: RuntimeOptions): Promise<HarnessRuntim
         try {
           await transport.close();
         } finally {
-          await bridge.close();
+          try {
+            await bridge.close();
+          } finally {
+            try {
+              await rpc?.close();
+            } finally {
+              await materialRpc?.close();
+            }
+          }
         }
       },
     };

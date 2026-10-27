@@ -1,6 +1,10 @@
 import { type ComponentType, type FormEvent, type ReactNode, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import type { Tier } from "@humanharness/harness-sdk";
+import { AnnotateBlock } from "./AnnotateBlock";
+import { findAnswer } from "./annotate";
 import { ChoicesBlock } from "./ChoicesBlock";
+import { CitationContext, type CitationResolver } from "./citations";
 import { GearIcon, TopBar } from "./chrome";
 import {
   type AppState,
@@ -8,20 +12,30 @@ import {
   type ChoiceOption,
   type EngineProblem,
   type HarnessClient,
+  type ModeChoice,
+  type ModeSwitch,
   type NoteView,
+  type RespondResult,
   type SendOptions,
+  type TaskTurnNotice,
   type TaskView,
   nextInPath,
   partsOf,
 } from "./client";
 import { ErrorCard, isFixable, problemError } from "./ErrorCard";
 import { FlowSide } from "./FlowSide";
-import { uiLanguage } from "./FolderStep";
 import { HistoryPanel } from "./HistoryPanel";
-import { type BlockActions, type BlockProps, Message } from "./Message";
+import { pruneDrafts } from "./InputForm";
+import { type BlockActions, type BlockProps, type InputContext, Message } from "./Message";
 import { markdownToPlain } from "./markdown";
+import { MaterialPanel, type MaterialPanelProps } from "./MaterialPanel";
+import { ModeBar, ModeList } from "./ModeList";
+import { actionModes, tierBelow } from "./modes";
 import { NotesPanel } from "./NotesPanel";
 import { usePacedAnswer } from "./pace";
+import { PhaseStepper } from "./PhaseStepper";
+import { actionPhases, phaseModesOf } from "./phases";
+import { RecommendModeBlock } from "./RecommendModeBlock";
 import { type StartViewCopy, StartView } from "./StartView";
 import { initialChat, reduceChat } from "./state";
 import { UsageMeter } from "./UsageMeter";
@@ -48,6 +62,9 @@ interface Pick {
 /** The `choices` block of an answer outside the waiting task: shown, but it can't act. */
 const StaleChoices = (props: BlockProps) => <ChoicesBlock data={props.data} choose={props.choose} active={false} />;
 
+/** A `recommend_mode` block of an earlier task, or once the conversation moved on: drawn, never usable. */
+const StaleRecommend = (props: BlockProps) => <RecommendModeBlock {...props} active={false} chooseMode={undefined} />;
+
 export function ChatView({
   client,
   state,
@@ -56,10 +73,15 @@ export function ChatView({
   renderSide,
   startView,
   engineProblem,
+  scopeBar,
+  profileBar,
+  openScope = null,
   onHome,
   onSettings,
   onFixEngine,
   onTurnOk,
+  slim,
+  materialPanel,
 }: {
   client: HarnessClient;
   state: AppState;
@@ -70,15 +92,29 @@ export function ChatView({
   startView?: StartViewCopy;
   /** What the background check found wrong with the engine, if anything. */
   engineProblem?: EngineProblem | null;
+  /** Harnesses with scopes: the picker shown first in the top bar (disabled while a turn runs or a task closes). */
+  scopeBar?: (disabled: boolean) => ReactNode;
+  /** Harnesses with profiles: the switcher in the top bar, disabled while a turn runs. */
+  profileBar?: (disabled: boolean) => ReactNode;
+  /** Harnesses with scopes: the open scope (its chat is the one on screen). */
+  openScope?: string | null;
   onHome?: () => void;
   onSettings?: () => void;
   onFixEngine?: () => void;
   /** A turn has just ended without an error (the engine works: its background check can be redone). */
   onTurnOk?: () => void;
+  /**
+   * An interview on the setup screen (setup-steps spec §3): only this action's task, with no top bar, side panel,
+   * history or topics. A button starts it (or continues it) when it isn't on screen.
+   */
+  slim?: { action: string };
+  /** Replaces the default material panel; only with `state.material`. */
+  materialPanel?: ComponentType<MaterialPanelProps>;
 }) {
   const { t, i18n } = useTranslation();
-  // save_note never shows: a note reaches the side panel as a file, through the tasks.
-  const [chat, dispatch] = useReducer(reduceChat, undefined, () => initialChat([], [...stateBlocks, "save_note"]));
+  // save_note never shows: a note reaches the side panel as a file, through the tasks. Nor set_phase: the stepper
+  // shows its proposal, through the tasks.
+  const [chat, dispatch] = useReducer(reduceChat, undefined, () => initialChat([], [...stateBlocks, "save_note", "set_phase"]));
   const [draft, setDraft] = useState("");
   const [showHistory, setShowHistory] = useState(false);
   const [notesPanel, setNotesPanel] = useState<{ expanded?: string } | null>(null);
@@ -98,8 +134,27 @@ export function ChatView({
   const [pickFailed, setPickFailed] = useState(false);
   /** Bumped when a pick fails: the blocks are drawn afresh, so their options can be picked again. */
   const [pickResets, setPickResets] = useState(0);
+  /** The tier question (task-modes spec §5.3): the mode asks for more than the task's tier. */
+  const [tierAsk, setTierAsk] = useState<{ mode: string; task: string; required: Tier; current: Tier } | null>(null);
+  /** `defaultMode: "ask"`: the start waits for the person's mode (no model call before it). */
+  const [askPick, setAskPick] = useState<{ text: string; options: SendOptions } | null>(null);
+  /** The last mode pick was refused or failed (shown until the next pick or message). */
+  const [modeFailed, setModeFailed] = useState(false);
+  /** The last thing sent was a mode switch: Try again picks it again. */
+  const lastMode = useRef<{ mode: string; task: string; belowTier?: ModeChoice["belowTier"] } | null>(null);
+  const tierRef = useRef<HTMLDivElement>(null);
+  const tierNotNowRef = useRef<HTMLButtonElement>(null);
+  const askRef = useRef<HTMLDivElement>(null);
+  /** What had focus when the tier or "ask" question opened: it gets focus back when the question closes unanswered. */
+  const questionOpener = useRef<HTMLElement | null>(null);
+  /** A switch was taken (from this window or the harness's own UI): draws its line and its turn. Set each render. */
+  const tookSwitch = useRef<(s: ModeSwitch) => void>(() => {});
   /** The last message sent came from a pick (Try again picks it again). */
   const lastPick = useRef<Pick | null>(null);
+  /** The last message sent and its options: Try again sends it with the answers already given (the time box, a mode). */
+  const lastSend = useRef<{ text: string; options: SendOptions } | null>(null);
+  /** The last message sent was an answer to an input block: its failed turn reopens the form, never a plain resend. */
+  const lastAnswer = useRef(false);
   /** The task open now, read when a turn ends to tag its entry. */
   const openTask = useRef<string | undefined>(undefined);
   openTask.current = tasks.current?.id;
@@ -123,7 +178,8 @@ export function ChatView({
   // Set synchronously on send so two quick clicks can't both pass before the live turn renders.
   const busy = useRef(false);
   const wasLive = useRef(false);
-  const lang = uiLanguage(state, i18n.language);
+  /** The chat's citation labels (set further down), so the read-aloud answer can name its sources. */
+  const citationsRef = useRef<CitationResolver | null>(null);
   const engineOption = state.engines.find((e) => e.id === state.config.engineId);
   const engine = engineOption?.name ?? state.config.engineId ?? "";
   /** Any harness with actions runs as tasks: topics, a guided path, one task on screen at a time. */
@@ -132,9 +188,37 @@ export function ChatView({
   const closing = tasks.current?.status === "closing";
   const checkpoint = tasks.current?.status === "checkpoint";
   const fallback = tasks.current?.fallback;
-  const all = useMemo(() => ({ ...components, choices: ChoicesBlock as ComponentType<BlockProps> }), [components]);
-  const stale = useMemo(() => ({ ...all, choices: StaleChoices }), [all]);
-  const labelOf = (id: string) => state.actions[id]?.label[lang] ?? id;
+  // `annotate` is drawn only for a harness with input blocks, the only ones that offer it (spec D0).
+  // `recommend_mode` likewise, only for a harness with modes (task-modes D0).
+  const all = useMemo(
+    () => ({
+      ...components,
+      choices: ChoicesBlock as ComponentType<BlockProps>,
+      ...(state.inputs ? { annotate: AnnotateBlock } : {}),
+      ...(state.modes ? { recommend_mode: RecommendModeBlock } : {}),
+    }),
+    [components, state.inputs, state.modes],
+  );
+  const stale = useMemo(() => ({ ...all, choices: StaleChoices, ...(state.modes ? { recommend_mode: StaleRecommend } : {}) }), [all, state.modes]);
+  const labelOf = (id: string) => state.actions[id]?.label ?? id;
+  /** The open task's modes (its action's, in its order); none without modes (D0). */
+  const taskModes = actionModes(state, tasks.current?.action);
+  /** The open task's parts (task-phases spec §6); none without phases (D0). */
+  const taskPhases = actionPhases(state, tasks.current?.action);
+  const currentPhase = taskPhases.find((p) => p.id === tasks.current?.phase);
+  // A part may allow fewer modes, or none (modes spec §7): the bar lists only those, and hides with none.
+  const barModes =
+    taskPhases.length > 0 ? taskModes.filter((m) => phaseModesOf(taskModes.map((x) => x.id), currentPhase).includes(m.id)) : taskModes;
+  /** An action with a time box: the start waits for "How long?" (no model call before it). */
+  const [timePick, setTimePick] = useState<{ text: string; options: SendOptions } | null>(null);
+  /** The last phase move, Finish or time box control was refused or failed (shown until the next one or a message). */
+  const [phaseFailed, setPhaseFailed] = useState(false);
+  /** A phase move or Finish is on its way: the stepper waits for its answer. */
+  const [phasing, setPhasing] = useState(false);
+  const timeRef = useRef<HTMLDivElement>(null);
+  /** A turn the app starts on its own (a phase change, the wrap-up): draws its line and its turn. Set each render. */
+  const tookTurn = useRef<(n: TaskTurnNotice) => void>(() => {});
+  const modeLabel = (id: string) => (state.modes && Object.hasOwn(state.modes, id) ? state.modes[id].label : id);
 
   useEffect(() => {
     client.loadChat().then(
@@ -169,9 +253,13 @@ export function ChatView({
     const offTasks = client.onTasks(setTasks);
     // A turn's entry belongs to the task open when it ends (the app tells the window about a task before its turn).
     const offEvents = client.onEvent((e) => dispatch(e.type === "done" ? { ...e, task: openTask.current } : e));
+    const offModes = client.onModeSwitch((s) => tookSwitch.current(s));
+    const offTurns = client.onTaskTurn((n) => tookTurn.current(n));
     return () => {
       offTasks();
       offEvents();
+      offModes();
+      offTurns();
     };
   }, [client]);
 
@@ -180,7 +268,8 @@ export function ChatView({
     if (!flow || placed.current || !loaded || !tasksLoaded) return;
     placed.current = true;
     const id = tasks.current?.id;
-    if (!id) return;
+    // Slim: only the interview's own task is shown.
+    if (!id || (slim && tasks.current?.action !== slim.action)) return;
     const first = chat.entries.findIndex((e) => e.task === id);
     setSince(first >= 0 ? first : chat.entries.length);
   }, [flow, loaded, tasksLoaded, tasks, chat.entries]);
@@ -189,6 +278,14 @@ export function ChatView({
     if (!chat.live) busy.current = false;
   }, [chat.live]);
 
+  // Drafts of questions that can't come back go. Only once the tasks are known: before that `tasks` is empty, and
+  // the chat drawn again (Home, Settings) would lose every draft.
+  const taskId = tasks.current?.id;
+  const pendingInput = tasks.current?.pendingInput;
+  useEffect(() => {
+    if (tasksLoaded && state.inputs) pruneDrafts(taskId, pendingInput);
+  }, [tasksLoaded, state.inputs, taskId, pendingInput]);
+
   // The pre-flight question gets focus on its safe answer ("Not now") and comes into view.
   const asking = pending !== null;
   useEffect(() => {
@@ -196,6 +293,27 @@ export function ChatView({
     preflightRef.current?.scrollIntoView?.({ block: "nearest" });
     notNowRef.current?.focus();
   }, [asking]);
+
+  // The tier question takes focus on its safe answer ("Not now"), like the pre-flight one; the "ask" picker on its
+  // first mode.
+  const askingTier = tierAsk !== null;
+  useEffect(() => {
+    if (!askingTier) return;
+    tierRef.current?.scrollIntoView?.({ block: "nearest" });
+    tierNotNowRef.current?.focus();
+  }, [askingTier]);
+  const askingMode = askPick !== null;
+  useEffect(() => {
+    if (!askingMode) return;
+    askRef.current?.scrollIntoView?.({ block: "nearest" });
+    askRef.current?.querySelector<HTMLButtonElement>(".hh-mode-list button")?.focus();
+  }, [askingMode]);
+  const askingTime = timePick !== null;
+  useEffect(() => {
+    if (!askingTime) return;
+    timeRef.current?.scrollIntoView?.({ block: "nearest" });
+    timeRef.current?.querySelector<HTMLButtonElement>(".hh-mode-list button")?.focus();
+  }, [askingTime]);
 
   // The answer appears at a steady pace, word by word and block by block: the turn running now, then its entry
   // once it ends, until all of it is on screen.
@@ -237,7 +355,7 @@ export function ChatView({
     // "Working…" is announced by the status row itself; clearing lets the final answer be announced afresh.
     if (chat.live && !wasLive.current) setAnnouncement("");
     if (!chat.live && wasLive.current) {
-      setAnnouncement(markdownToPlain(chat.entries.findLast((e) => e.role === "assistant")?.text ?? ""));
+      setAnnouncement(markdownToPlain(chat.entries.findLast((e) => e.role === "assistant")?.text ?? "", (id) => citationsRef.current?.known?.(id)));
       inputRef.current?.focus();
       client.getUsage().then((u) => setEstimates(u.estimates), () => {});
       if (!chat.entries.at(-1)?.error) onTurnOk?.();
@@ -263,7 +381,40 @@ export function ChatView({
   /** True when the message was sent, or is waiting for the user to confirm a heavy action. */
   const send = (text: string, options: SendOptions = {}, confirmed = false): boolean => {
     const message = text.trim();
-    if (!message || blocked() || (pending && !confirmed)) return false;
+    if (!message || blocked() || (pending && !confirmed) || (askPick && !options.mode) || (timePick && options.timeBox === undefined)) return false;
+    // Slim: only the interview runs here, never a free question or another action's task.
+    if (slim && (options.action ? options.action !== slim.action : tasks.current?.action !== slim.action)) return false;
+    // A `required` action needs an open scope (spec §3.3); the main process would refuse it.
+    if (options.action && state.scopes && state.actions[options.action]?.scope !== "none" && !openScope) {
+      const text = t("scopes.pickFirst", { label: state.scopes.label });
+      dispatch({ type: "notice", text, at: new Date().toISOString() });
+      setNotice(text);
+      return false;
+    }
+    // An action with a time box (task-phases spec §5): the person picks how long before anything is sent. It comes
+    // before the mode question; each answer goes along with the next.
+    if (
+      options.action &&
+      options.timeBox === undefined &&
+      Object.hasOwn(state.actions, options.action) &&
+      state.actions[options.action].timeBox
+    ) {
+      questionOpener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      setTimePick({ text: message, options });
+      return true;
+    }
+    // `defaultMode: "ask"` (task-modes spec §3): the person picks how to work before anything is sent.
+    if (
+      options.action &&
+      !options.mode &&
+      Object.hasOwn(state.actions, options.action) &&
+      state.actions[options.action].defaultMode === "ask" &&
+      actionModes(state, options.action).length > 0
+    ) {
+      questionOpener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      setAskPick({ text: message, options });
+      return true;
+    }
     if (!confirmed && options.action) {
       const check = preflight(state.actions[options.action]?.cost, chat.limits, estimates[options.action]);
       if (check) {
@@ -275,9 +426,14 @@ export function ChatView({
     stick.current = true;
     pinNext.current = true;
     lastPick.current = null;
+    lastAnswer.current = false;
+    lastMode.current = null;
     setPickFailed(false);
+    setModeFailed(false);
+    setPhaseFailed(false);
     if (flow && (options.action || !tasks.current)) showNewTask();
     dispatch({ type: "user", text: message, at: new Date().toISOString(), ...(options.action ? { action: options.action } : {}) });
+    lastSend.current = { text: message, options };
     client.send(message, options).catch(failTurn);
     inputRef.current?.focus();
     return true;
@@ -294,6 +450,8 @@ export function ChatView({
     const action = option.action && state.actions[option.action] ? option.action : undefined;
     const moves = Boolean(option.next || action);
     const target = option.next ? nextInPath(path, tasks.current?.action, tasks.actions) : (action ?? null);
+    // Slim: a pick never moves the interview to another action (its task would show on the setup screen).
+    if (slim && target && target !== slim.action) return false;
     if (!confirmed && target) {
       const check = preflight(state.actions[target]?.cost, chat.limits, estimates[target]);
       if (check) {
@@ -303,7 +461,10 @@ export function ChatView({
     }
     stick.current = true;
     lastPick.current = { option, task };
+    lastAnswer.current = false;
+    lastMode.current = null;
     setPickFailed(false);
+    setModeFailed(false);
     const at = new Date().toISOString();
     pinNext.current = !moves || target !== null;
     if (!moves) {
@@ -325,6 +486,201 @@ export function ChatView({
     return true;
   };
 
+  /**
+   * The person picks a mode for task `task` (task-modes spec §5). Above the task's tier, the question comes first;
+   * `belowTier` is its answer. True only when the switch was sent. A taken switch is drawn by `tookSwitch`.
+   */
+  const chooseMode = (mode: string, task: string | undefined, belowTier?: ModeChoice["belowTier"]): boolean => {
+    if (blocked() || pending) return false;
+    const current = tasks.current;
+    if (!task || task !== current?.id || current.status !== "waiting" || mode === current.mode) return false;
+    const view = actionModes(state, current.action).find((m) => m.id === mode);
+    if (!view) return false;
+    if (!belowTier && view.minTier && current.tier && tierBelow(current.tier, view.minTier)) {
+      openTier({ mode, task, required: view.minTier, current: current.tier });
+      return false;
+    }
+    busy.current = true;
+    lastPick.current = null;
+    lastAnswer.current = false;
+    lastMode.current = { mode, task, ...(belowTier ? { belowTier } : {}) };
+    setPickFailed(false);
+    setModeFailed(false);
+    const failed = () => {
+      busy.current = false;
+      setModeFailed(true);
+      // The blocks are drawn afresh, so the mode can be picked again.
+      setPickResets((n) => n + 1);
+    };
+    client.chooseMode(mode, belowTier ? { belowTier } : {}).then((r) => {
+      if (r.ok) {
+        // "turn" and "new-task" run on (see `tookSwitch`); "quiet" and "same" run nothing: the tasks view brings the mode.
+        if (r.switched === "same") busy.current = false;
+        return;
+      }
+      if (r.reason === "tier" && r.required && r.current) {
+        busy.current = false;
+        openTier({ mode, task, required: r.required, current: r.current });
+      } else failed();
+    }, failed);
+    return true;
+  };
+  /**
+   * A switch was taken, whoever asked (this window or the harness's own UI): a turn in the same task shows its
+   * "Switched to" line and the agent's answer; a new task goes on screen under its action's label (its own chat).
+   */
+  tookSwitch.current = (s: ModeSwitch) => {
+    const current = tasks.current;
+    // A question still open is about the task as it was: answering it now would switch again.
+    closeQuestions();
+    if (s.switched === "quiet") {
+      busy.current = false;
+      return;
+    }
+    busy.current = true;
+    stick.current = true;
+    pinNext.current = true;
+    lastPick.current = null;
+    lastAnswer.current = false;
+    // A switch the harness's UI started: Try again picks it again too.
+    if (current && lastMode.current?.mode !== s.mode) lastMode.current = { mode: s.mode, task: current.id };
+    const at = new Date().toISOString();
+    if (s.switched === "turn") {
+      dispatch({ type: "user", text: t("modes.switched", { mode: modeLabel(s.mode) }), at, mode: s.mode });
+    } else {
+      showNewTask();
+      if (current?.action) dispatch({ type: "user", text: labelOf(current.action), at, action: current.action });
+    }
+  };
+  /** A question still open (the tier, "ask", "How long?") is about the task as it was: it closes unanswered. */
+  const closeQuestions = () => {
+    if (!tierAsk && !askPick && !timePick) return;
+    setTierAsk(null);
+    setAskPick(null);
+    setTimePick(null);
+    questionOpener.current = null;
+    inputRef.current?.focus();
+  };
+  /**
+   * A turn the app starts on its own is coming (task-phases spec §4.4, §5): a phase change (the agent's, the time
+   * box's, or one asked from the harness's own UI) or the wrap-up. Its line goes first, then its events.
+   */
+  tookTurn.current = (n: TaskTurnNotice) => {
+    if (n.task !== tasks.current?.id) return;
+    closeQuestions();
+    busy.current = true;
+    stick.current = true;
+    pinNext.current = true;
+    lastPick.current = null;
+    lastAnswer.current = false;
+    lastMode.current = null;
+    setPhaseFailed(false);
+    const at = new Date().toISOString();
+    if (n.kind === "wrap-up") {
+      dispatch({ type: "user", text: t("phases.wrapUpLine"), at, timeUp: true });
+      return;
+    }
+    const label = taskPhases.find((p) => p.id === n.phase)?.label ?? n.phase ?? "";
+    dispatch({ type: "user", text: `— ${label} —`, at, ...(n.phase ? { phase: n.phase } : {}) });
+  };
+  /** The tasks as they are now: a Finish may have been stopped, a move may have changed nothing on screen. */
+  const rereadTasks = () => client.getTasks().then(setTasks, () => {});
+  /** Runs one of the stepper's calls: the stepper waits for it, and a refusal or a failure shows a short error. */
+  const taskCall = (call: () => Promise<boolean>) => {
+    setPhaseFailed(false);
+    setPhasing(true);
+    call().then(
+      (ok) => {
+        setPhasing(false);
+        if (!ok) setPhaseFailed(true);
+        void rereadTasks();
+      },
+      () => {
+        setPhasing(false);
+        setPhaseFailed(true);
+      },
+    );
+  };
+  /** The person moves the task (the stepper, or the proposal's button); only while it waits and nothing runs. */
+  const pickPhase = (id: string) => {
+    const task = tasks.current;
+    if (!task || blocked() || pending || task.status !== "waiting") return;
+    taskCall(() => client.setPhase(task.id, id).then((r) => r.ok));
+  };
+  /** Finish: the core closing turn. False back means it was stopped and the task stays open. */
+  const finishTask = () => {
+    if (!tasks.current || blocked() || pending) return;
+    // A stopped closing turn is not a failure: the task simply stays open, as the tasks read again show.
+    taskCall(() => client.finishTask().then(() => true));
+  };
+  const openTier = (ask: { mode: string; task: string; required: Tier; current: Tier }) => {
+    questionOpener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setTierAsk(ask);
+  };
+  /** Focus goes back to whatever opened the question, else to the composer. */
+  const refocus = () => {
+    const opener = questionOpener.current;
+    questionOpener.current = null;
+    if (opener?.isConnected) opener.focus();
+    else inputRef.current?.focus();
+  };
+  /** The tier question's answer, or "Not now" (Escape): the question closes first. */
+  const answerTier = (belowTier?: ModeChoice["belowTier"]) => {
+    const ask = tierAsk;
+    setTierAsk(null);
+    refocus();
+    if (ask && belowTier) chooseMode(ask.mode, ask.task, belowTier);
+  };
+  /** "Not now" (Escape) on "How long?": nothing is sent. */
+  const closeTime = () => {
+    setTimePick(null);
+    refocus();
+  };
+  /** "How long?"'s answers for `action`: its options and "No limit" (null), the action's default first. */
+  const timeChoices = (action: string | undefined): (number | null)[] => {
+    const box = action !== undefined && Object.hasOwn(state.actions, action) ? state.actions[action].timeBox : undefined;
+    if (!box) return [];
+    const all = [...box.options, null];
+    const first = box.default ?? null;
+    return [first, ...all.filter((m) => m !== first)];
+  };
+  /** "Not now" (Escape) on the "ask" picker: nothing is sent. */
+  const closeAsk = () => {
+    setAskPick(null);
+    refocus();
+  };
+
+  /**
+   * An answer to an input block (input-blocks spec §4). A refusal comes back with its errors for the form; a taken
+   * answer marks its block, shows the person's line and the turn it starts.
+   */
+  const respondTo = async (blockId: string, value: Record<string, unknown>): Promise<RespondResult> => {
+    if (blocked() || pending) return { ok: false, reason: "busy", errors: [{ path: "", message: t("input.wait") }] };
+    busy.current = true;
+    let r: RespondResult;
+    try {
+      r = await client.respond(blockId, value);
+    } catch {
+      busy.current = false;
+      return { ok: false, reason: "failed", errors: [{ path: "", message: t("input.failed") }] };
+    }
+    if (!r.ok) {
+      busy.current = false;
+      if (r.reason === "stale") return { ...r, errors: [{ path: "", message: t("input.closed") }] };
+      if (r.reason === "stopped") return { ...r, errors: [{ path: "", message: t("input.stopped") }] };
+      return r;
+    }
+    stick.current = true;
+    lastPick.current = null;
+    lastAnswer.current = true;
+    lastMode.current = null;
+    setPickFailed(false);
+    setModeFailed(false);
+    dispatch({ type: "answered", answer: { blockId, value: r.value, answeredAt: r.answeredAt } });
+    dispatch({ type: "user", text: r.display, at: r.answeredAt });
+    return r;
+  };
+
   const startTopic = (id: string) => void send(labelOf(id), { action: id });
   const resume = (note: NoteView) => {
     setNotesPanel(null);
@@ -344,14 +700,65 @@ export function ChatView({
   /** What harness UI gets: it can't skip the pre-flight check. */
   const sendFromHarness: SendFn = (text, options) => send(text, options);
   const lastAssistant = chat.entries.findLast((e) => e.role === "assistant");
-  const blockActions = (active: boolean, task?: string): BlockActions => ({ respond: sendFromHarness, choose: (o) => choose(o, task), open: openFile, reveal: revealFile, active });
+  const inputs: InputContext | undefined = state.inputs
+    ? {
+        specs: state.inputs,
+        ...(tasks.current?.pendingInput ? { pending: tasks.current.pendingInput } : {}),
+        waiting: tasks.current?.status === "waiting",
+        ready: tasks.current?.status === "waiting" && !blocked() && !pending,
+        respond: respondTo,
+      }
+    : undefined;
+  const blockActions = (active: boolean, task?: string, entryId: string | null = null): BlockActions => ({
+    respond: sendFromHarness,
+    choose: (o) => choose(o, task),
+    open: openFile,
+    reveal: revealFile,
+    active,
+    ...(inputs ? { inputs, answerOf: (ref: string) => findAnswer(chat.entries, entryId, ref) } : {}),
+    ...(state.modes ? modeActions(task) : {}),
+  });
+  /**
+   * Task modes for a block of task `task`: the open task's blocks may switch it, among its action's modes (none: no
+   * modes at all, D0); a block of another task only draws, disabled, among every mode the harness declares.
+   */
+  const modeActions = (task: string | undefined): { chooseMode?: BlockActions["chooseMode"]; modes?: BlockActions["modes"] } => {
+    const views = state.modes ?? {};
+    if (task === undefined || task !== tasks.current?.id) return { modes: { views, allowed: Object.keys(views) } };
+    // Only the modes the current part allows (modes spec §7): a block from an earlier part can't pick another.
+    const allowed = barModes.map((m) => m.id);
+    if (allowed.length === 0) return {};
+    return {
+      chooseMode: (mode: string) => chooseMode(mode, task),
+      modes: { views, allowed, ...(tasks.current.mode ? { current: tasks.current.mode } : {}) },
+    };
+  };
   /** The entry's answer belongs to the task waiting now: its `choices` block may act. */
   const ofWaitingTask = (task: string | undefined) => task !== undefined && task === tasks.current?.id && tasks.current.status === "waiting";
-  /** Try again: a failed pick of the still-open task is picked again; anything else resends the last message. */
+  /**
+   * Try again: a failed pick of the still-open task is picked again; a failed answer has none (its question opens
+   * again, to be sent through `respond` with its JSON); anything else resends the last message.
+   */
   const retry = (): (() => void) | undefined => {
+    if (lastAnswer.current) return undefined;
+    const mode = lastMode.current;
+    if (mode && mode.task === tasks.current?.id) return () => void chooseMode(mode.mode, mode.task, mode.belowTier);
+    // A phase change's or the wrap-up's line is the app's, not the person's: nothing to resend (task-phases spec §4.4).
+    if (lastUser?.phase || lastUser?.timeUp) return undefined;
+    // A switch's line is never resent as a message: the same mode is picked again.
+    if (lastUser?.mode) {
+      const id = tasks.current?.id;
+      const again = lastUser.mode;
+      return id ? () => void chooseMode(again, id) : undefined;
+    }
     const pick = lastPick.current;
     if (pick && pick.task === tasks.current?.id) return () => void choose(pick.option, pick.task);
-    if (lastUser) return () => void send(lastUser.text, lastUser.action ? { action: lastUser.action } : {});
+    if (lastUser) {
+      // The same message keeps what was answered before it went (a time box picked in "How long?", a mode): never asked twice.
+      const sent = lastSend.current;
+      const options = sent && sent.text === lastUser.text && sent.options.action === lastUser.action ? sent.options : lastUser.action ? { action: lastUser.action } : {};
+      return () => void send(lastUser.text, options);
+    }
     return undefined;
   };
   const onSubmit = (e: FormEvent) => {
@@ -382,31 +789,93 @@ export function ChatView({
         : t("preflight.hint", { action: label, left });
   }
 
+  // One `main` per page: the setup screen has its own.
+  const Main = slim ? "div" : "main";
+  /** Slim: the interview's task isn't the open one (not started, closed, or another task is open). */
+  const slimStart = slim !== undefined && loaded && tasksLoaded && !chat.live && tasks.current?.action !== slim.action;
+  /** Slim: the composer only for the interview's own task (or a turn running), never before it is known. */
+  const composer = !slim || Boolean(chat.live) || tasks.current?.action === slim.action;
+  // Material spec §11: the scope's material panel, only when the harness takes material (D0) and a scope is open.
+  const materialScope = state.material ? (state.scopes ? openScope : "main") : null;
+  // Citations `[[frag:<id>]]` in the chat (§9): drawn only with material and a scope (D0); one label lookup per id.
+  // Keyed by whether there is material, not by the object: every state refresh brings a new one, and the cache stays.
+  const withMaterial = Boolean(state.material);
+  /** One resolver per scope, each with its own label cache; null without material (D0). */
+  const citationsFor = useMemo<((scope: string) => CitationResolver) | null>(() => {
+    if (!withMaterial) return null;
+    const byScope = new Map<string, CitationResolver>();
+    return (scope) => {
+      const made = byScope.get(scope);
+      if (made) return made;
+      const cache = new Map<string, Promise<string | null>>();
+      const known = new Map<string, string>();
+      const resolver: CitationResolver = {
+        label: (id) => {
+          let label = cache.get(id);
+          if (!label) {
+            label = client.material.cite(scope, id).then(
+              (r) => r?.label ?? null,
+              () => null,
+            );
+            cache.set(id, label);
+            // A fragment not there yet (still converting, or a failed lookup) is asked again next time.
+            label.then((l) => {
+              if (l === null) cache.delete(id);
+              else known.set(id, l);
+            });
+          }
+          return label;
+        },
+        open: (id) => void client.material.open(scope, id).catch(() => undefined),
+        known: (id) => known.get(id),
+      };
+      byScope.set(scope, resolver);
+      return resolver;
+    };
+  }, [client, withMaterial]);
+  /** A citation is resolved in the scope of the task that wrote it when that is known, else in the open scope. */
+  const citeScope = (task: string | undefined): string | null =>
+    (task !== undefined && task === tasks.current?.id && tasks.current.scope) || materialScope;
+  const citationsOf = (task: string | undefined): CitationResolver | null => {
+    const scope = citeScope(task);
+    return citationsFor && scope ? citationsFor(scope) : null;
+  };
+  citationsRef.current = citationsOf(tasks.current?.id);
+  const Panel = materialPanel ?? MaterialPanel;
+  const material =
+    state.material && materialScope && !slim ? (
+      // Keyed by scope: another scope's panel starts fresh (its form, notices and cards are not this one's).
+      <Panel key={materialScope} client={client} scope={materialScope} info={state.material} disabled={blocked() || !loaded} />
+    ) : null;
+
   return (
-    <div className="hh-app">
-      <TopBar title={state.harness.name[lang]} mock={state.mock}>
-        <UsageMeter engine={engineOption} limits={chat.limits} lastTokens={lastTurnTokens(chat.entries)} />
-        {onHome && <button onClick={onHome}>{t("chat.home")}</button>}
-        <button
-          onClick={() => {
-            // One panel at a time: Escape closes the one on screen.
-            setNotesPanel(null);
-            setShowHistory(true);
-          }}
-        >
-          {t("history.title")}
-        </button>
-        {onSettings && (
-          <button className="hh-icon-button" aria-label={t("home.settings")} onClick={onSettings}>
-            <GearIcon />
+    <div className={slim ? "hh-app hh-app-slim" : "hh-app"}>
+      {!slim && (
+        <TopBar title={state.harness.name} mock={state.mock}>
+          {profileBar?.(blocked())}
+          {scopeBar?.(blocked())}
+          <UsageMeter engine={engineOption} limits={chat.limits} lastTokens={lastTurnTokens(chat.entries)} />
+          {onHome && <button onClick={onHome}>{t("chat.home")}</button>}
+          <button
+            onClick={() => {
+              // One panel at a time: Escape closes the one on screen.
+              setNotesPanel(null);
+              setShowHistory(true);
+            }}
+          >
+            {t("history.title")}
           </button>
-        )}
-      </TopBar>
+          {onSettings && (
+            <button className="hh-icon-button" aria-label={t("home.settings")} onClick={onSettings}>
+              <GearIcon />
+            </button>
+          )}
+        </TopBar>
+      )}
       <div className="hh-body">
-        {flow && (
+        {flow && !slim && (
           <FlowSide
             state={state}
-            lang={lang}
             tasks={tasks}
             disabled={blocked() || !loaded}
             onStart={startTopic}
@@ -414,9 +883,43 @@ export function ChatView({
               setShowHistory(false);
               setNotesPanel({ expanded: slug });
             }}
+            material={material}
           />
         )}
-        <main className="hh-main">
+        {/* Without actions there is no flow side panel: the material panel gets one of its own. */}
+        {!flow && material && (
+          <nav className="hh-flow-side" aria-label={t("material.title")}>
+            {material}
+          </nav>
+        )}
+        <Main className="hh-main">
+          {/* A time box without phases (spec §5) still shows its time, its controls and, once time is up, Finish. */}
+          {flow && since !== null && tasks.current && (taskPhases.length > 0 || tasks.current.timeBox) && (
+            <PhaseStepper
+              phases={taskPhases}
+              task={tasks.current}
+              disabled={blocked() || phasing || pending !== null || tasks.current.status !== "waiting"}
+              onPhase={pickPhase}
+              onFinish={finishTask}
+              onPause={() => taskCall(() => client.pauseTask())}
+              onResume={() => taskCall(() => client.resumeTask())}
+              onExtend={() => taskCall(() => client.extendTimeBox())}
+            />
+          )}
+          {phaseFailed && (
+            <p className="hh-error" role="alert">
+              {t("phases.failed")}
+            </p>
+          )}
+          {flow && since !== null && tasks.current && barModes.length > 0 && (
+            <ModeBar
+              modes={barModes}
+              current={tasks.current.mode}
+              below={tasks.current.belowMinTier === true}
+              disabled={blocked() || phasing || pending !== null || tasks.current.status !== "waiting"}
+              onPick={(mode) => void chooseMode(mode, tasks.current?.id)}
+            />
+          )}
           <section className="hh-chat" ref={chatRef} onScroll={onScroll}>
             {loadFailed && (
               <p className="hh-error" role="alert">
@@ -427,10 +930,9 @@ export function ChatView({
             {backgroundError && !(isFixable(last?.error) && last?.error?.code === backgroundError.code) && (
               <ErrorCard error={backgroundError} engine={engine} onFix={onFixEngine} />
             )}
-            {showStart && (
+            {showStart && !slim && (
               <StartView
                 state={state}
-                lang={lang}
                 tasks={tasks}
                 copy={startView}
                 notice={notice}
@@ -439,36 +941,50 @@ export function ChatView({
                 onAsk={(q) => void send(q)}
               />
             )}
-            {flow && since !== null && !tasks.current && !chat.live && (
+            {slim && slimStart && (
+              <div className="hh-slim-start">
+                <button type="button" className="hh-primary" disabled={blocked()} onClick={() => startTopic(slim.action)}>
+                  {t(Object.hasOwn(tasks.actions, slim.action) ? "setupSteps.continueInterview" : "setupSteps.startInterview")}
+                </button>
+              </div>
+            )}
+            {flow && !slim && since !== null && !tasks.current && !chat.live && (
               <button type="button" className="hh-back-topics" onClick={() => setSince(null)}>
                 {t("flow.backToTopics")}
               </button>
             )}
             {/* The running turn is the list's last item, under the id its entry gets: it stays the same element when it ends. */}
             {(liveEntry ? [...shown, liveEntry] : shown).map((entry) => (
-              <div key={entry.id} data-entry={entry.id} data-role={entry.role}>
-                <Message
-                  key={pickResets}
-                  entry={entry}
-                  components={entry === liveEntry || ofWaitingTask(entry.task) ? all : stale}
-                  actions={blockActions(entry === lastAssistant && !chat.live && !closing, entry.task)}
-                  live={entry === liveEntry ? { activities: chat.live!.activities, label: checkpoint ? t("flow.checkpoint") : undefined } : undefined}
-                  reveal={entry.id === pacedTurn.current ? (reveal ?? undefined) : undefined}
-                />
-                {entry.error && entry === last && (
-                  <ErrorCard
-                    error={entry.error}
-                    engine={engine}
-                    limits={chat.limits}
-                    onFix={onFixEngine}
-                    onRetry={retry()}
+              <CitationContext.Provider key={entry.id} value={citationsOf(entry.task)}>
+                <div data-entry={entry.id} data-role={entry.role}>
+                  <Message
+                    key={pickResets}
+                    entry={entry}
+                    components={entry === liveEntry || ofWaitingTask(entry.task) ? all : stale}
+                    actions={blockActions(entry === lastAssistant && !chat.live && !closing, entry.task, entry === liveEntry ? null : entry.id)}
+                    live={entry === liveEntry ? { activities: chat.live!.activities, label: checkpoint ? t("flow.checkpoint") : undefined } : undefined}
+                    reveal={entry.id === pacedTurn.current ? (reveal ?? undefined) : undefined}
                   />
-                )}
-              </div>
+                  {entry.error && entry === last && (
+                    <ErrorCard
+                      error={entry.error}
+                      engine={engine}
+                      limits={chat.limits}
+                      onFix={onFixEngine}
+                      onRetry={retry()}
+                    />
+                  )}
+                </div>
+              </CitationContext.Provider>
             ))}
             {pickFailed && (
               <p className="hh-error" role="alert">
                 {t("choices.failed")}
+              </p>
+            )}
+            {modeFailed && (
+              <p className="hh-error" role="alert">
+                {t("modes.failed")}
               </p>
             )}
             {fallback && (
@@ -521,34 +1037,132 @@ export function ChatView({
                 </button>
               </div>
             )}
+            {tierAsk && (
+              <div
+                ref={tierRef}
+                className="hh-confirm"
+                role="alertdialog"
+                aria-labelledby="hh-tier-title"
+                aria-describedby="hh-tier-text"
+                onKeyDown={(e) => {
+                  if (e.key !== "Escape") return;
+                  e.preventDefault();
+                  answerTier();
+                }}
+              >
+                <p id="hh-tier-title">
+                  <strong className="hh-warn">{t("modes.tierTitle", { mode: modeLabel(tierAsk.mode) })}</strong>
+                </p>
+                <p id="hh-tier-text">
+                  {t("modes.tierText", { required: t(`models.tier.${tierAsk.required}`), current: t(`models.tier.${tierAsk.current}`) })}
+                </p>
+                <button className="hh-primary" onClick={() => answerTier("continue")}>
+                  {t("modes.keepTier")}
+                </button>
+                <button onClick={() => answerTier("new-task")}>{t("modes.newTask", { mode: modeLabel(tierAsk.mode) })}</button>
+                <button ref={tierNotNowRef} onClick={() => answerTier()}>
+                  {t("modes.notNow")}
+                </button>
+              </div>
+            )}
+            {timePick && (
+              <div
+                ref={timeRef}
+                className="hh-confirm"
+                role="dialog"
+                aria-labelledby="hh-time-title"
+                onKeyDown={(e) => {
+                  if (e.key !== "Escape") return;
+                  e.preventDefault();
+                  closeTime();
+                }}
+              >
+                <p id="hh-time-title">
+                  <strong>{t("phases.timeTitle")}</strong>
+                </p>
+                <div className="hh-mode-list" role="group" aria-labelledby="hh-time-title">
+                  {timeChoices(timePick.options.action).map((m) => (
+                    <button
+                      key={m ?? "none"}
+                      type="button"
+                      className="hh-choice"
+                      onClick={() => {
+                        const p = timePick;
+                        setTimePick(null);
+                        questionOpener.current = null;
+                        // The picker goes: focus on the composer, whether the send went out or waits for another question.
+                        inputRef.current?.focus();
+                        send(p.text, { ...p.options, timeBox: m });
+                      }}
+                    >
+                      {m === null ? t("phases.noLimit") : t("phases.minutes", { count: m })}
+                    </button>
+                  ))}
+                </div>
+                <button onClick={closeTime}>{t("modes.notNow")}</button>
+              </div>
+            )}
+            {askPick && (
+              <div
+                ref={askRef}
+                className="hh-confirm"
+                role="dialog"
+                aria-labelledby="hh-ask-title"
+                onKeyDown={(e) => {
+                  if (e.key !== "Escape") return;
+                  e.preventDefault();
+                  closeAsk();
+                }}
+              >
+                <p id="hh-ask-title">
+                  <strong>{t("modes.askTitle")}</strong>
+                </p>
+                <ModeList
+                  modes={actionModes(state, askPick.options.action)}
+                  disabled={false}
+                  labelledBy="hh-ask-title"
+                  onPick={(mode) => {
+                    const p = askPick;
+                    setAskPick(null);
+                    questionOpener.current = null;
+                    // The picker goes: focus on the composer, whether the send went out or waits for the pre-flight.
+                    inputRef.current?.focus();
+                    send(p.text, { ...p.options, mode });
+                  }}
+                />
+                <button onClick={closeAsk}>{t("modes.notNow")}</button>
+              </div>
+            )}
             <div ref={spacerRef} className="hh-chat-spacer" style={{ display: "none" }} aria-hidden="true" />
           </section>
-          <form className="hh-composer" onSubmit={onSubmit}>
-            <textarea
-              ref={inputRef}
-              aria-label={placeholder}
-              placeholder={placeholder}
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key !== "Enter" || e.shiftKey) return;
-                if (e.nativeEvent.isComposing || e.keyCode === 229) return;
-                e.preventDefault();
-                if (send(draft)) setDraft("");
-              }}
-            />
-            {/* A closing or checkpoint turn is quiet (nothing live on screen) but still stoppable. */}
-            {chat.live || closing || checkpoint ? (
-              <button type="button" onClick={() => void client.cancel()}>
-                {t("chat.stop")}
-              </button>
-            ) : (
-              <button type="submit">{t("chat.send")}</button>
-            )}
-          </form>
-          {startView?.hint && <p className="hh-composer-hint">{t(startView.hint, { ns: "harness" })}</p>}
-        </main>
-        {renderSide && <aside className="hh-side">{renderSide(chat.blockState, sendFromHarness)}</aside>}
+          {composer && (
+            <form className="hh-composer" onSubmit={onSubmit}>
+              <textarea
+                ref={inputRef}
+                aria-label={placeholder}
+                placeholder={placeholder}
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key !== "Enter" || e.shiftKey) return;
+                  if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+                  e.preventDefault();
+                  if (send(draft)) setDraft("");
+                }}
+              />
+              {/* A closing or checkpoint turn is quiet (nothing live on screen) but still stoppable. */}
+              {chat.live || closing || checkpoint ? (
+                <button type="button" onClick={() => void client.cancel()}>
+                  {t("chat.stop")}
+                </button>
+              ) : (
+                <button type="submit">{t("chat.send")}</button>
+              )}
+            </form>
+          )}
+          {startView?.hint && !slim && <p className="hh-composer-hint">{t(startView.hint, { ns: "harness" })}</p>}
+        </Main>
+        {renderSide && !slim && <aside className="hh-side">{renderSide(chat.blockState, sendFromHarness)}</aside>}
       </div>
       <div className="hh-sr-only" aria-live="polite">
         {announcement}
@@ -557,7 +1171,7 @@ export function ChatView({
         <HistoryPanel
           client={client}
           actions={state.actions}
-          lang={lang}
+          currentTask={tasks.current?.id}
           disabled={Boolean(chat.live) || closing || checkpoint}
           onClose={() => setShowHistory(false)}
           onRestored={(kind) => {
@@ -571,7 +1185,6 @@ export function ChatView({
         <NotesPanel
           notes={tasks.notes}
           expanded={notesPanel.expanded}
-          lang={lang}
           disabled={blocked()}
           onResume={resume}
           onOpen={openFile}

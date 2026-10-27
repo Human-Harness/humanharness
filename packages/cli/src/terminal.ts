@@ -1,10 +1,12 @@
 import type { Writable } from "node:stream";
-import { type ChoiceOption, choicesSchema } from "@humanharness/harness-sdk";
+import { type ChoiceOption, type InputSpec, annotateSchema, choicesSchema, recommendModeSchema } from "@humanharness/harness-sdk";
 import { CORE_LOCALES } from "@humanharness/i18n";
 import type { Event } from "@humanharness/runtime";
+import type { TaskTurnNotice } from "@humanharness/ui/client";
 
 const DIM = "\x1b[2m";
 const RESET = "\x1b[0m";
+const MARK: Record<string, string> = { ok: "✓", gap: "…", wrong: "✗", note: "•" };
 
 /** The app's own English message for an error code (`errors.*`), with the engine's name filled in. */
 export function errorMessage(code: string, engine: string): string {
@@ -13,31 +15,63 @@ export function errorMessage(code: string, engine: string): string {
   return (typeof text === "string" ? text : code).replaceAll("{{engine}}", engine);
 }
 
+/**
+ * The agent's text as one plain line: no terminal control characters (an escape sequence could redraw the terminal),
+ * line breaks and tabs as spaces.
+ */
+const plain = (s: string) => s.replace(/[\t\n\v\f\r]/g, " ").replace(/[\x00-\x1f\x7f-\x9f]/g, "").replace(/ {2,}/g, " ").trim();
+
 /** `run`'s window: the events the app would show, as plain text. */
 export class TerminalView {
   /** The options of the last `choices` block shown; `run` clears it before each operation. */
   choices: ChoiceOption[] = [];
   private lineStart = true;
+  /** The data each input block was shown with, by its id: `run` answers from it. */
+  readonly shown = new Map<string, unknown>();
 
   constructor(
     private readonly out: Writable,
     private readonly engineName: string,
     private readonly color = false,
+    /** The harness's input blocks, by name (input-blocks spec §8). */
+    private readonly inputs: Record<string, InputSpec> = {},
+    /** The open task's action's modes (task-modes spec §4); undefined: not known, every valid id is drawn. */
+    private readonly listedModes: () => readonly string[] | undefined = () => undefined,
   ) {}
 
   event(e: Event): void {
     if (e.type === "text") this.write(e.delta);
     else if (e.type === "paragraph") this.write("\n\n");
     else if (e.type === "activity" && e.state === "start") this.line(this.dim(`  · ${e.kind}: ${e.detail}`));
-    else if (e.type === "block") this.block(e.name, e.data);
+    else if (e.type === "block") this.block(e.name, e.data, e.id);
     else if (e.type === "done") {
       if (e.ok) this.newline();
       else this.line(`✗ ${errorMessage(e.error.code, this.engineName)}${e.error.detail ? ` (${e.error.detail})` : ""}`);
     }
   }
 
-  private block(name: string, data: unknown): void {
-    if (name === "save_note") return;
+  /** A turn the app starts on its own (task-phases spec §4.4, §5): its line, before its answer. */
+  taskTurn(n: TaskTurnNotice, label?: string): void {
+    this.newline();
+    this.write(n.kind === "wrap-up" ? "\nTime is almost up\n" : `\n— ${plain(label ?? n.phase ?? "")} —\n`);
+  }
+
+  /**
+   * The agent's proposal to move (task-phases spec §4.3), with how to act on it: to the current part (the close part
+   * is done) it says how to finish, to another part how to go there.
+   */
+  proposal(p: { to: string; reason: string }, label: string, current: boolean): void {
+    const reason = plain(p.reason);
+    const why = /[.!?]$/.test(reason) ? reason : `${reason}.`;
+    this.newline();
+    this.write(
+      current ? `\nThe AI says this part is done: ${why} Type q to finish.\n` : `\nThe AI proposes to move to ${plain(label)}: ${why} Type >phase ${p.to} to go there.\n`,
+    );
+  }
+
+  private block(name: string, data: unknown, id?: string): void {
+    // Hidden state blocks: the run prints what follows from `set_phase` (a proposal, a part's line), never the call.
+    if (name === "save_note" || name === "set_phase") return;
     if (name === "choices") {
       const parsed = choicesSchema.safeParse(data);
       if (!parsed.success) return;
@@ -47,6 +81,32 @@ export class TerminalView {
       parsed.data.options.forEach((o, i) => this.line(`  ${i + 1}. ${o.label}`));
       return;
     }
+    if (name === "recommend_mode") {
+      const parsed = recommendModeSchema.safeParse(data);
+      if (!parsed.success) return;
+      // Ids the action doesn't list are dropped; an unlisted recommendation draws nothing.
+      const listed = this.listedModes();
+      const known = (mode: string) => listed === undefined || listed.includes(mode);
+      if (!known(parsed.data.recommended)) return;
+      this.newline();
+      this.write("\n");
+      this.line(`  Recommended mode: ${parsed.data.recommended}`);
+      for (const reason of parsed.data.reasons.map(plain).filter(Boolean)) this.line(`    - ${reason}`);
+      const alternatives = (parsed.data.alternatives ?? []).filter((a) => known(a.mode));
+      if (alternatives.length > 0) {
+        this.line("  Or:");
+        for (const a of alternatives) this.line(`    ${a.mode}: ${plain(a.why)}`);
+      }
+      this.line("  Type m <mode> to pick one.");
+      return;
+    }
+    if (name === "annotate") {
+      const parsed = annotateSchema.safeParse(data);
+      if (!parsed.success) return;
+      this.line("  [annotate]");
+      for (const m of parsed.data.marks) this.line(`    ${MARK[m.kind]} "${m.quote}"${m.comment ? ` — ${m.comment}` : ""}`);
+      return;
+    }
     this.line(`  [${name}]`);
     this.line(
       (JSON.stringify(data, null, 2) ?? "null")
@@ -54,6 +114,12 @@ export class TerminalView {
         .map((l) => `    ${l}`)
         .join("\n"),
     );
+    // Own keys only: a block named `constructor` is no input block (D0).
+    if (!Object.hasOwn(this.inputs, name)) return;
+    const spec = this.inputs[name];
+    if (id) this.shown.set(id, data);
+    const fields = spec.fields.map((f) => `${f.label} (${f.kind ?? "not here"})`).join(", ");
+    this.line(`    Answer with a: ${fields}${spec.skippable ? " · can be skipped" : ""}`);
   }
 
   private dim(s: string): string {

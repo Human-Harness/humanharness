@@ -1,17 +1,19 @@
 import { type KeyboardEvent as ReactKeyboardEvent, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { Language } from "@humanharness/harness-sdk";
 import { BackupNotice, type FolderMove, MovePlaces, needsBackupNotice, useFolderMove } from "./BackupNotice";
 import { EngineIcon, Segmented } from "./chrome";
 import { type AppConfig, type AppState, type Appearance, type HarnessClient, type RunningSetup, TEXT_SIZES, type TextSize, isConfigured } from "./client";
 import { EngineTab } from "./EngineTab";
-import { uiLanguage } from "./FolderStep";
+import { HarnessSettingsTab } from "./HarnessSettingsTab";
+import { ownName, systemLanguage } from "./language";
 import { ModelsTab } from "./ModelsTab";
+import { ProfilesSection } from "./ProfilesSection";
+import { SetupStepsList } from "./SetupStepsList";
 import { UsageTab } from "./UsageTab";
 
-export type SettingsTab = "general" | "engine" | "models" | "usage";
-const TABS: SettingsTab[] = ["general", "engine", "models", "usage"];
-const LANGUAGE_NAMES: Record<Language, string> = { es: "Español", en: "English" };
+export type SettingsTab = "general" | "harness" | "engine" | "models" | "usage";
+/** `harness` is the harness's own tab (manifest `settings`), right after General (harness-settings spec §4). */
+const TABS: SettingsTab[] = ["general", "harness", "engine", "models", "usage"];
 const TEXT_SIZE_KEYS = Object.keys(TEXT_SIZES) as TextSize[];
 /** The key that zooms with + and −: ⌘ on macOS, Ctrl elsewhere. */
 const ZOOM_KEY = /Mac/.test(navigator.userAgent) ? "⌘" : "Ctrl";
@@ -33,8 +35,11 @@ export function SettingsSheet({
   onTab: (tab: SettingsTab) => void;
   onChange: (state: AppState) => void;
   onClose: () => void;
-  /** Opens the setup flow (the empty state of Motor, Modelos and Uso before the app is configured). */
-  onSetup: () => void;
+  /**
+   * Opens the setup flow (the empty state of the harness's tab, Engine, Models and Usage before the app is configured);
+   * at a harness step when one is given (the Setup list's Do it again / Do it now).
+   */
+  onSetup: (step?: string) => void;
   /** The app's folder move (HarnessApp), so a move outlives the sheet; without it the sheet keeps its own. */
   move?: FolderMove;
 }) {
@@ -45,8 +50,11 @@ export function SettingsSheet({
   const baseId = useId();
   const tabId = (id: SettingsTab) => `${baseId}-tab-${id}`;
   const panelId = `${baseId}-panel`;
-  // Models only shows when the main process sent its view (every packaged app does).
-  const tabs = TABS.filter((id) => id !== "models" || state.models !== undefined);
+  // Models only shows when the main process sent its view (every packaged app does); the harness's tab only when it
+  // declares settings or setup steps (harness-settings D0, setup-steps D0).
+  const tabs = TABS.filter(
+    (id) => (id !== "models" || state.models !== undefined) && (id !== "harness" || state.settings !== undefined || state.setup !== undefined),
+  );
   const configured = isConfigured(state.config);
   const doneRef = useRef<HTMLButtonElement>(null);
   const sheetRef = useRef<HTMLDivElement>(null);
@@ -138,7 +146,7 @@ export function SettingsSheet({
                 onClick={() => onTab(id)}
                 onKeyDown={(e) => onTabKey(e, id)}
               >
-                {t(`settings.tabs.${id}`)}
+                {id === "harness" ? (state.settings?.tab ?? t("settings.tabs.setup")) : t(`settings.tabs.${id}`)}
               </button>
             ))}
           </div>
@@ -167,6 +175,12 @@ export function SettingsSheet({
           {tab === "engine" && configured && <EngineTab client={client} state={state} onChange={onChange} setupEngine={running?.engineId} />}
           {tab === "models" && configured && <ModelsTab client={client} state={state} onChange={onChange} />}
           {tab === "usage" && configured && <UsageTab client={client} state={state} />}
+          {tab === "harness" && configured && (
+            <>
+              {state.setup && <SetupStepsList client={client} steps={state.setup} onRun={(id) => onSetup(id)} />}
+              {state.settings && <HarnessSettingsTab client={client} view={state.settings} />}
+            </>
+          )}
         </div>
       </div>
     </div>
@@ -195,7 +209,7 @@ function trapTab(sheet: HTMLElement, e: KeyboardEvent) {
 }
 
 function GeneralTab({ client, state, onChange, move }: { client: HarnessClient; state: AppState; onChange: (s: AppState) => void; move: FolderMove }) {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const placesId = useId();
   const sizeId = useId();
   /** The places to move the folder to are open (the backup notice, when it shows, offers them itself). */
@@ -210,12 +224,8 @@ function GeneralTab({ client, state, onChange, move }: { client: HarnessClient; 
     const lost = active === null || active === document.body || document.getElementById(placesId)?.contains(active) === true;
     if (lost && toggleRef.current?.isConnected) toggleRef.current.focus();
   }, [move.moved]);
-  const lang = uiLanguage(state, i18n.language);
+  const lang = state.config.language ?? systemLanguage();
   const save = (patch: AppConfig) => client.saveConfig(patch).then(onChange, () => {});
-  const changeLanguage = (language: Language) => {
-    void i18n.changeLanguage(language);
-    void save({ language });
-  };
   const appearances: { value: Appearance; label: string }[] = [
     { value: "system", label: t("settings.appearanceSystem") },
     { value: "light", label: t("settings.appearanceLight") },
@@ -234,14 +244,10 @@ function GeneralTab({ client, state, onChange, move }: { client: HarnessClient; 
   return (
     <div className="hh-tab">
       <div className="hh-rows">
-        <div className="hh-row">
+        <div className="hh-row hh-row-wrap">
           <span className="hh-row-label">{t("settings.language")}</span>
-          <Segmented
-            label={t("settings.language")}
-            value={lang}
-            onChange={changeLanguage}
-            options={state.harness.languages.map((l) => ({ value: l, label: LANGUAGE_NAMES[l] }))}
-          />
+          <span>{ownName(lang)}</span>
+          <p className="hh-caption hh-row-note">{t("settings.languageHint")}</p>
         </div>
         <div className="hh-row">
           <span className="hh-row-label">{t("settings.appearance")}</span>
@@ -291,12 +297,13 @@ function GeneralTab({ client, state, onChange, move }: { client: HarnessClient; 
         )}
       </div>
       {state.config.folder && <p className="hh-caption">{t("settings.folderFixed")}</p>}
+      {state.profiles && <ProfilesSection client={client} state={state} onChange={onChange} />}
       <BackupNotice client={client} state={state} onChange={onChange} move={move} />
 
       <h3>{t("settings.about")}</h3>
       <div className="hh-rows">
         <div className="hh-row">
-          <span className="hh-display">{state.harness.name[lang]}</span>
+          <span className="hh-display">{state.harness.name}</span>
           <span className="hh-caption">{t("settings.version", { version: state.harness.version })}</span>
         </div>
         <div className="hh-row">
@@ -312,16 +319,17 @@ function GeneralTab({ client, state, onChange, move }: { client: HarnessClient; 
   );
 }
 
-/** Motor, Modelos and Uso before the app is configured: they all lead to the setup flow. */
-function NotConfigured({ state, onSetup }: { state: AppState; onSetup: () => void }) {
-  const { t, i18n } = useTranslation();
-  const name = state.harness.name[uiLanguage(state, i18n.language)];
+/** The harness's tab, Engine, Models and Usage before the app is configured: they all lead to the setup flow. */
+function NotConfigured({ state, onSetup }: { state: AppState; onSetup: (step?: string) => void }) {
+  const { t } = useTranslation();
+  const name = state.harness.name;
   return (
     <div className="hh-tab hh-not-configured">
       <EngineIcon size={40} />
       <h3>{t("setupFlow.notConfiguredTitle")}</h3>
       <p>{t("setupFlow.notConfiguredText")}</p>
-      <button className="hh-primary" onClick={onSetup}>
+      {/* No step: the click event must not arrive as one (the flow would open that step alone). */}
+      <button className="hh-primary" onClick={() => onSetup()}>
         {t("setupFlow.configure", { name })}
       </button>
     </div>

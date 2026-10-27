@@ -27,14 +27,37 @@ export async function startNewChatIfEngineChanged(folder: string, engineId: stri
   // chat itself tells: any entry from another engine (an earlier change that couldn't archive it,
   // or an engine that never started a session) means it belongs to that conversation.
   const session = await sessionEngine(folder);
-  const previous =
-    (session && session !== engineId ? session : null) ?? (await new ChatLog(folder).load()).find((e) => e.engine && e.engine !== engineId)?.engine ?? null;
+  const chats = await ChatLog.scopesIn(folder);
+  const engineInChats = async (): Promise<string | null> => {
+    for (const scope of chats) {
+      const other = (await new ChatLog(folder, undefined, scope).load()).find((e) => e.engine && e.engine !== engineId)?.engine;
+      if (other) return other;
+    }
+    return null;
+  };
+  const previous = (session && session !== engineId ? session : null) ?? (await engineInChats());
   if (!previous || previous === engineId) return null;
-  const archived = await new ChatLog(folder).archive(previous);
+  // Every scope's chat belongs to the old engine's conversations (spec §3.2: one chat per scope).
+  let archived = false;
+  for (const scope of chats) if (await new ChatLog(folder, undefined, scope).archive(previous)) archived = true;
   await fs.rm(sessionFile(folder), { force: true });
   // The open task can't continue on another engine; the notes stay.
   await new TaskStore(folder).forgetEngine();
   return archived ? previous : null;
+}
+
+/**
+ * An engine change in a harness with profiles (profiles spec §5): the active profile's chat starts over as today, and
+ * so does every other profile's, now, so no one comes back to a conversation the new engine can't continue. Only the
+ * active profile can have an open task (a switch closes it). Returns the active profile's previous engine, for the
+ * window's notice; a failure in another profile is logged.
+ */
+export async function archiveChatsOnEngineChange(active: string, others: string[], engineId: string): Promise<string | null> {
+  const switchedFrom = await startNewChatIfEngineChanged(active, engineId);
+  for (const folder of others) {
+    await startNewChatIfEngineChanged(folder, engineId).catch((err: unknown) => console.error("Could not start a new chat in another profile", err));
+  }
+  return switchedFrom;
 }
 
 /**

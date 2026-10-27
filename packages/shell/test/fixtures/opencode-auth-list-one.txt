@@ -1,0 +1,11 @@
+┌  Credentials ~/.local/share/opencode/auth.json
+│
+●  OpenRouter api
+│
+└  1 credentials
+
+┌  Environment
+│
+●  Anthropic ANTHROPIC_API_KEY
+│
+└  1 environment variable

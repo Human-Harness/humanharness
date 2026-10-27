@@ -1,0 +1,22 @@
+[
+  {
+    "id": "openrouter",
+    "name": "OpenRouter",
+    "connections": [
+      {
+        "type": "credential",
+        "label": "api"
+      }
+    ]
+  },
+  {
+    "id": "anthropic",
+    "name": "Anthropic",
+    "connections": [
+      {
+        "type": "environment",
+        "name": "ANTHROPIC_API_KEY"
+      }
+    ]
+  }
+]

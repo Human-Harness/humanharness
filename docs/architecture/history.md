@@ -7,9 +7,9 @@
 
 ## History
 
-- Every change is recorded in an invisible local git history kept outside the folder (`packages/workspace/src/history.ts`, built on isomorphic-git). Its data lives in the app's data folder, one per folder (`historyDir` in `packages/shell/src/main/config.ts`), so cloud sync never touches it.
-- The runtime (`packages/runtime/src/runtime.ts`) commits when it starts ("Start"), before each message ("Before message") and after the turn ("Turn: …", or "Stopped: …" when it didn't finish). If the agent crashes mid-turn, it restores the point before the message ("Undo: …"). A saved note is committed as "Note: …".
-- The history skips `.harness/` except `.harness/notes/`, and skips the generated `AGENTS.md` and the engine's own instructions file.
+- Every change is recorded in an invisible local git history kept outside the folder (`packages/workspace/src/history.ts`, built on isomorphic-git). Its data lives in the app's data folder, one per folder (`historyDir` in `packages/shell/src/main/config.ts`), so cloud sync never touches it. In a harness with profiles each profile has its own (`historyDir(userData, <folder>/<profile>)`) and none tracks the root; deleting a profile puts its history in the system Trash after its folder (`docs/architecture/profiles.md`).
+- The runtime (`packages/runtime/src/runtime.ts`) commits when it starts ("Start"), before each message ("Before message") and after the turn ("Turn: …", or "Stopped: …" when it didn't finish). If the agent crashes mid-turn, it restores the point before the message ("Undo: …"). A saved note is committed as "Note: …". A person's data write is committed as "Data: <collection>" (see `data.md`).
+- The history skips `.harness/` except `.harness/notes/` and `.harness/data/`, and skips the generated `AGENTS.md` and the engine's own instructions file.
 - Symlinks are recorded as links (git mode 120000, the blob is the target path), never as what they point to. A restore never writes through a link: it removes a link in its way (the link, not its target), recreates a link entry as a link, writes regular files with `O_NOFOLLOW` where the OS has it, and skips (and logs) any entry whose parent folder resolves outside the folder through a linked folder. It checks the parent's real path before and again right after creating it, just before the write. An entry it can't write safely (outside the folder, a folder in its place, a link the OS won't create, such as on Windows without Developer Mode) is skipped and the rest of the restore goes on; `History.restoreReport` returns the skipped paths with the new commit.
 
 ### Commits belong to tasks
@@ -23,16 +23,21 @@
   Action: <action id>
   ```
 
+  In a harness with scopes the trailers also carry `Scope: <scope id>`. A task whose action has phases adds `Phase: <phase id>`, the part it is in when the commit is made (a change turn's commits carry the new part), on every commit it makes: "Before message", the turn, its notes and the person's data writes (`docs/architecture/phases.md`). `parseCommitMessage` reads it back as the entry's `phase`.
+
   The task manager passes the task id and action with each turn (`TurnOptions.task`/`action` → `HarnessRuntime.send(…, { trailer })`) and with each note (`TaskDeps.saveHistory(message, trailer)`).
 - Untagged: "Start" (it records changes made outside the app) and every restore ("Go back to …" commits). A restore is not part of the task it undid, so it never changes that task's own row.
-- `History.tasks(depth)` groups commits by `Task:` (not by adjacency), newest first. Each group has `start` (its first "Before message" snapshot when its first commit is one, so the person's own edits before the task stay; else the parent of its first commit), `end`, the tree diff between them (`FileChange[]`, tracked files only, from `git.walk` over two trees) and its entries. Untagged commits form the "Other changes" group, always last, whose changes are the union of its commits' own changes.
+- `History.tasks(depth)` groups commits by `Task:` (not by adjacency), newest first. Each group has `start` (its first "Before message" snapshot when its first commit is one, so the person's own edits before the task stay; else the parent of its first commit), `end`, the tree diff between them (`FileChange[]`, tracked files only, from `git.walk` over two trees) and its entries. Untagged commits form the "Outside a task" group, always last, whose changes are the union of its commits' own changes.
+
+An answer's `saveTo` write has no commit of its own: it lands in the follow-up turn's "Before message" commit, which carries the task's trailer, so undoing the task undoes it too. A write whose follow-up turn then never starts (a Stop, or the send fails before it begins) stays, and the question reopens (see `blocks.md`).
 
 ### The History panel
 
-- One row per task: the action's label (or "A question"), the title of the note it saved, the date and "N files changed". The newest row starts open. The untagged group is the last row, "Other changes": that is where "Start" and the restores show.
-- An open row lists the changed files (added, changed, deleted) and the task's entries in plain language (i18n keys `history.entry.*`; the commit subjects stay in English).
-- "Go back to before this task" restores the group's `start`; "Go back to this point" restores one entry. Both ask first, record a new commit (so they can be undone too) and are disabled while a turn is live; the main process refuses them while a task operation runs or turns are held.
-- Going back resets every tracked file, so it also undoes tasks that changed something later. The confirmation says how many ("This also undoes 2 later tasks"; `laterTasks` in `HistoryPanel.tsx`).
+- Tasks are grouped under their day ("Today", "Yesterday", "Oct 17"; `byDay` in `HistoryPanel.tsx`). One row per task: the action's label (or "A question"), the time and "N files changed", and a "Note saved" tag when it saved one (the note's title on hover). The newest row starts open. The untagged group is the last row, in a section of its own, "Outside a task": that is where "Start" and the restores show.
+- An open row lists the changed files (added, changed, deleted) and the task's entries in plain language as a timeline (i18n keys `history.entry.*`; the commit subjects stay in English). An entry with a `Phase:` trailer shows the part's label as a caption next to it; a part the manifest no longer declares shows nothing.
+- "Go back here" restores one entry; it shows when the entry is hovered or focused. "Undo this task", under the entries, restores the group's `start`. Both ask first, record a new commit (so they can be undone too) and are disabled while a turn is live, with a line saying why; the main process refuses them while a task operation runs or turns are held.
+- Going back resets every tracked file, `.harness/notes` included, so it also undoes tasks that changed something later. The confirmation says how many ("This also undoes 2 later tasks"; `laterTasks` in `HistoryPanel.tsx`) and lists them with their files (the task being undone first), and undoing a task names the count on its button ("Undo 3 tasks").
+- The open task's row says "In progress" (`currentTask`, the id of `TaskView.current`, which is the id in the commits' `Task:` trailer).
 
 ## Backup
 
@@ -71,6 +76,8 @@ Compliance: the module reads only paths (realpath, stat/lstat), the names in the
 
 A failure before step 6 removes the temporary place (or the copy, once renamed) and the parents the move made, and the old folder stays the app's folder. A failure at step 7 (also a journal that can't record that the history moved) puts the config back on the old folder, then the history (when it had moved already) and a set-aside history, then removes the copy. If the config can't be put back, the copy stays the folder (the person never loses it): the move answers success with the old folder kept and, when the history hadn't moved yet, `historyLeftBehind`; it keeps its journal so the next start moves the history after it.
 
+In a harness with profiles (`MoveDeps.subfolders`: the registry's ids, archived ones included) steps 4 and 7 run once per profile: each profile's tracked files are compared (prefixed with its id), its notes made relative and its history moved, and a failure at step 7 puts every moved history back. The journal then lists them from the start, `histories: [{ rel, setAside? }]`, and `recoverMove` settles each one; without profiles the journal is as before, and an older journal is read as before. In a profiles app with no active profile a move is refused as not set up: switch to a profile first.
+
 The journal is written before each step (`copying`, `renaming`, `copied`, `config-saved`, `history-moved`) and cleared at the end. At startup, before anything opens the folder or its history, `recoverMove` settles a move a quit or crash cut short. The config decides: when it names the new place, the history is moved after it (a stale one set aside); when it names the old place, the copy the move made is removed (only once it was renamed into place, and only while the old folder is still there) and the history and a set-aside one are put back. The temporary place the journal names is removed; another `*.hh-moving-*` is left alone. The old folder is never removed at startup: it is logged as kept. A journal that can't be read is dropped without touching anything; while the config names no folder (or can't be read), nothing is touched and the journal stays for a later start.
 
 While a move runs, quitting waits for it. From the moment turns are held (after the checkpoint turn, whose "Note: …" commit still goes in) until it ends, `hh:historyTasks` answers an empty list and no history is opened or created (`currentHistory` answers none); the tracked files are read only from a history that already exists.
@@ -85,6 +92,7 @@ What under `.harness/` names a place: only notes' `files:` (agent-provided paths
 
 ## Known gaps
 
+- A history the root kept before the harness added profiles is not moved by a folder move: no history tracks the root any more.
 - No size limit for the history yet: a folder with large media inflates it in the app's data folder.
 - A restore's skipped paths (`RestoreResult.skipped`) are only logged: the History panel doesn't tell the person yet.
 - A restore checks a file's parent folder right before writing, but another process could still swap that folder for a link between the check and the write. Where the OS has no `O_NOFOLLOW` (Windows), the last path part isn't protected that way either; only the `lstat` check before the write is.

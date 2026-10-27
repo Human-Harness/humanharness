@@ -126,6 +126,16 @@ describe("reduceChat", () => {
       limits: windows,
       state: { progress: { percent: 10 } },
     });
+    expect(s.entries[1].usage).not.toHaveProperty("costUsd");
+  });
+
+  it("keeps the turn's cost on the live entry when the engine reported one", () => {
+    const s = run([
+      { type: "user", text: "hi", at: "t" },
+      { type: "usage", inputTokens: 1, outputTokens: 2, cacheReadTokens: 0, cacheWriteTokens: 0, costUsd: 0.01 },
+      { type: "done", ok: true },
+    ]);
+    expect(s.entries[1].usage).toEqual({ inputTokens: 1, outputTokens: 2, cacheReadTokens: 0, cacheWriteTokens: 0, costUsd: 0.01 });
   });
 
   it("restores state blocks from the saved conversation; newer live data wins", () => {
@@ -135,5 +145,38 @@ describe("reduceChat", () => {
     ];
     const s = run([{ type: "loaded", entries: saved }], { ...initialChat([]), blockState: { phase: { n: 2 } } });
     expect(s.blockState).toEqual({ progress: { percent: 60 }, phase: { n: 2 } });
+  });
+});
+
+describe("input blocks", () => {
+  it("a live block keeps its id into the saved entry, and an answer marks it once", () => {
+    let s = run([
+      { type: "user", text: "go", at: "t" },
+      { type: "block", name: "commit_answer", data: { question: "q" }, id: "t1:0:0" },
+      { type: "block", name: "card", data: {} },
+      { type: "done", ok: true },
+    ]);
+    expect(s.entries[1].blocks).toEqual([{ name: "commit_answer", data: { question: "q" }, id: "t1:0:0" }, { name: "card", data: {} }]);
+    const answer = { blockId: "t1:0:0", value: { why: "x" }, answeredAt: "a" };
+    s = reduceChat(s, { type: "answered", answer });
+    expect(s.entries[1].blocks[0].input).toEqual(answer);
+    expect(s.entries[1].blocks[1]).toEqual({ name: "card", data: {} });
+    // A reopened question's second answer replaces the first.
+    const second = { ...answer, value: { why: "y" } };
+    s = reduceChat(s, { type: "answered", answer: second });
+    expect(s.entries[1].blocks[0].input).toEqual(second);
+  });
+
+  it("D0: a block without an id stays exactly as before", () => {
+    const s = run([{ type: "user", text: "go", at: "t" }, { type: "block", name: "card", data: { t: 1 } }, { type: "done", ok: true }]);
+    expect(s.entries[1].blocks).toEqual([{ name: "card", data: { t: 1 } }]);
+  });
+});
+
+describe("reduceChat: a mode switch's line (task-modes spec §5.4)", () => {
+  it("keeps the mode on the user entry; D0: no mode, no field", () => {
+    const s = reduceChat(initialChat([]), { type: "user", text: "Switched to Socratic", at: "t", mode: "socratic" });
+    expect(s.entries[0]).toMatchObject({ role: "user", text: "Switched to Socratic", mode: "socratic" });
+    expect(reduceChat(initialChat([]), { type: "user", text: "Hi", at: "t" }).entries[0]).not.toHaveProperty("mode");
   });
 });

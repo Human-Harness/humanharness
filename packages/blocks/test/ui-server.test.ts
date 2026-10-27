@@ -4,8 +4,11 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { afterEach, describe, expect, it } from "vitest";
 import { type BlockMessage, type Bridge, devLauncher, openBridge, uiServerSpec } from "../src";
+import { INPUT_DONE } from "../src/ui-server";
 
 const FIXTURE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../fake-agent/fixtures/notes-harness/harness.config.ts");
+const INPUT_FIXTURE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../fake-agent/fixtures/input-harness/harness.config.ts");
+const PHASES_FIXTURE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../fake-agent/fixtures/phases-harness/harness.config.ts");
 
 let bridge: Bridge | undefined;
 let client: Client | undefined;
@@ -15,9 +18,9 @@ afterEach(async () => {
   await bridge?.close();
 });
 
-async function connect(received: BlockMessage[]) {
+async function connect(received: BlockMessage[], harnessConfig = FIXTURE) {
   bridge = await openBridge((m) => received.push(m));
-  const spec = uiServerSpec({ harnessConfig: FIXTURE, bridge: { path: bridge.path, token: bridge.token }, launcher: devLauncher() });
+  const spec = uiServerSpec({ harnessConfig, bridge: { path: bridge.path, token: bridge.token }, launcher: devLauncher() });
   client = new Client({ name: "test", version: "0.0.0" });
   await client.connect(
     new StdioClientTransport({
@@ -71,6 +74,48 @@ describe("ui MCP server", () => {
       .catch(() => ({ isError: true }));
     expect(result.isError).toBe(true);
     expect(received).toEqual([]);
+  });
+
+  it("tells the agent to wait after showing a block the person answers", async () => {
+    const received: BlockMessage[] = [];
+    const c = await connect(received, INPUT_FIXTURE);
+    const { tools } = await c.listTools();
+    expect(tools.map((t) => t.name)).toContain("show_commit_answer");
+    expect(tools.map((t) => t.name)).toContain("show_annotate");
+    const result = await c.callTool({ name: "show_commit_answer", arguments: { question: "¿Quién comió más?", options: ["Yo", "Las dos igual"] } });
+    expect((result.content as { text: string }[])[0].text).toBe(INPUT_DONE);
+    expect(INPUT_DONE).toBe("Done: the person can see it and will answer; wait for their answer.");
+    expect(received).toEqual([{ name: "commit_answer", data: { question: "¿Quién comió más?", options: ["Yo", "Las dos igual"] } }]);
+  });
+
+  it("D0: a block with no input keeps today's answer text", async () => {
+    const c = await connect([]);
+    const shown = await c.callTool({ name: "show_note", arguments: { title: "Hello", body: "World" } });
+    expect((shown.content as { text: string }[])[0].text).toBe("Done: the person can see it now.");
+    const state = await c.callTool({ name: "update_progress", arguments: { percent: 5 } });
+    expect((state.content as { text: string }[])[0].text).toBe("Done: state updated.");
+  });
+});
+
+describe("ui MCP server: set_phase (task-phases spec §4.1)", () => {
+  it("is a tool only in a harness with phases", async () => {
+    const plain = await connect([]);
+    expect((await plain.listTools()).tools.map((t) => t.name)).not.toContain("set_phase");
+    await client?.close();
+    await bridge?.close();
+    const phased = await connect([], PHASES_FIXTURE);
+    expect((await phased.listTools()).tools.map((t) => t.name)).toContain("set_phase");
+  });
+
+  it("forwards a known phase id; answers an unknown one with the valid ids and sends nothing", async () => {
+    const received: BlockMessage[] = [];
+    const c = await connect(received, PHASES_FIXTURE);
+    const ok = await c.callTool({ name: "set_phase", arguments: { to: "main", reason: "Warm-up done" } });
+    expect(ok.isError).toBeFalsy();
+    const bad = await c.callTool({ name: "set_phase", arguments: { to: "dessert", reason: "Hungry" } });
+    expect(bad.isError).toBe(true);
+    expect((bad.content as { text: string }[])[0].text).toBe("Unknown part. Use one of: warmup, main, close.");
+    expect(received).toEqual([{ name: "set_phase", data: { to: "main", reason: "Warm-up done" } }]);
   });
 });
 

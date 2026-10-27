@@ -1,6 +1,6 @@
 # Task modes — design
 
-Status: draft, 2026-10-25, waiting for Marco's review. Not in the roadmap yet. Comes from the student-vs-core gap analysis (`docs/discovery/2026-10-25-student-vs-core.md`, gap #8). Related specs:
+Status: approved by Marco on 2026-10-25, with every open question resolved by its proposal (where a question had none, the simplest option, noted in place). Not in the roadmap yet. Comes from the student-vs-core gap analysis (`docs/discovery/2026-10-25-student-vs-core.md`, gap #8). Related specs:
 - `2026-10-25-harness-settings-design.md` (mode settings);
 - `2026-10-25-task-phases-design.md` (phases that allow or forbid modes);
 - `2026-10-25-input-blocks-design.md`;

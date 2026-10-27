@@ -1,16 +1,27 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { allBlocks, blockToolName, loadHarness } from "@humanharness/harness-sdk";
+import { allBlocks, blockToolName, loadHarness, phaseIds } from "@humanharness/harness-sdk";
 import { sendToBridge } from "./bridge";
+
+/** What the agent reads after showing a block the person answers (input-blocks spec §4): the answer is the next message. */
+export const INPUT_DONE = "Done: the person can see it and will answer; wait for their answer.";
+
+/** What the agent reads when `set_phase` names no part of this harness (task-phases spec §4.1). */
+export const unknownPhase = (ids: readonly string[]): string => `Unknown part. Use one of: ${ids.join(", ")}.`;
 
 /** MCP server with one tool per harness block. Valid calls are forwarded to the runtime through the bridge. */
 export async function createUiServer(harnessConfig: string, bridge: { path: string; token: string }): Promise<McpServer> {
   const harness = await loadHarness(harnessConfig);
   const server = new McpServer({ name: "ui", version: "0.1.0" });
+  const phases = phaseIds(harness);
   for (const [name, block] of Object.entries(allBlocks(harness))) {
     server.registerTool(
       blockToolName(name, block),
       { description: block.description, inputSchema: block.schema.shape },
       async (args) => {
+        // The server knows the harness, not the open task: an id of another action reaches the app, which ignores it.
+        if (name === "set_phase" && !phases.includes(String((args as { to?: unknown }).to))) {
+          return { isError: true, content: [{ type: "text" as const, text: unknownPhase(phases) }] };
+        }
         try {
           await sendToBridge(bridge, { name, data: args });
         } catch (e) {
@@ -25,7 +36,8 @@ export async function createUiServer(harnessConfig: string, bridge: { path: stri
             ],
           };
         }
-        const text = block.visible ? "Done: the person can see it now." : "Done: state updated.";
+        // Only input blocks get the new text: every other block's answer stays as it was (spec D0).
+        const text = block.input ? INPUT_DONE : block.visible ? "Done: the person can see it now." : "Done: state updated.";
         return { content: [{ type: "text" as const, text }] };
       },
     );

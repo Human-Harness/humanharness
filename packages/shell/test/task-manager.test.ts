@@ -9,7 +9,7 @@ import { CHECKPOINT_PROMPT, CLOSE_PROMPT } from "../src/main/task-prompts";
 import { type CurrentTask, QUESTION_MAX, type TasksFile, emptyTasks } from "../src/main/task-store";
 import { TurnController, type TurnOptions } from "../src/main/turn-controller";
 
-const label = (en: string, es = en) => ({ es, en });
+const label = (en: string) => en;
 const note: SavedNote = {
   title: "The manifest",
   summary: ["It declares the harness"],
@@ -48,6 +48,8 @@ function setup(
     fit?: (p: ModelProfile) => ModelProfile;
     /** recordCompaction. */
     recordCompaction?: (task: CurrentTask) => void;
+    /** betweenTasks: logged as "between", then this runs. */
+    betweenTasks?: () => void;
     /** readPrompt instead of the default brief. */
     readPrompt?: (action: string) => Promise<string>;
     /** Real turns (a TurnController) instead of the scripted ones; `window` then gets the manager's events too. */
@@ -87,7 +89,7 @@ function setup(
         busy = false;
       },
     },
-    actions: { manifest: { label: label("The manifest", "El manifiesto") }, engines: { label: label("Engines", "Motores") }, turn: { label: label("A turn") } },
+    actions: { manifest: { label: label("The manifest") }, engines: { label: label("Engines") }, turn: { label: label("A turn") } },
     path: opts.path ?? ["manifest", "engines", "turn"],
     readPrompt: opts.readPrompt ?? (async (action) => `# Topic: ${action}\nAnswer in {{language}}.\n\n{{notesIndex}}`),
     language: async () => "en",
@@ -114,6 +116,14 @@ function setup(
     ...(opts.fallback ? { fallbackFor: async (p: ModelProfile, tried: string[]) => opts.fallback!(p, tried) } : {}),
     ...(opts.fit ? { fitProfile: async (p: ModelProfile) => opts.fit!(p) } : {}),
     ...(opts.recordCompaction ? { recordCompaction: async (task: CurrentTask) => opts.recordCompaction!(task) } : {}),
+    ...(opts.betweenTasks
+      ? {
+          betweenTasks: async () => {
+            log.push("between");
+            opts.betweenTasks!();
+          },
+        }
+      : {}),
     now: () => new Date("2026-10-12T11:20:00.000Z"),
     newId: () => `t${++n}`,
   });
@@ -1055,5 +1065,72 @@ describe("TaskManager over real turns: what the window sees", () => {
     expect(r.messages).toHaveLength(1);
     expect(r.window).toEqual([cancelled]);
     expect(t.state()).toMatchObject({ current: null, actions: { manifest: "unfinished" } });
+  });
+});
+
+describe("TaskManager: between tasks (harness-settings D4)", () => {
+  const sessions = (log: string[]) => log.filter((l) => l === "endSession" || l === "between" || l.startsWith("turn:"));
+
+  it("runs betweenTasks after a task ends and before the next task's first turn", async () => {
+    const t = setup({ betweenTasks: () => {} });
+    await t.manager.start("manifest");
+    await pick(t, { label: "Next", next: true });
+    expect(sessions(t.log)).toEqual(["endSession", "between", "turn:run", "turn:close", "endSession", "between", "endSession", "between", "turn:run"]);
+  });
+
+  it("runs it when the open task is interrupted, and when a first turn fails", async () => {
+    const t = setup({ betweenTasks: () => {} });
+    await t.manager.start("manifest");
+    await t.manager.interrupt();
+    expect(t.log.at(-1)).toBe("between");
+    const u = setup({ betweenTasks: () => {}, script: [[crashed]] });
+    await u.manager.start("manifest");
+    expect(u.state().current).toBeNull();
+    expect(u.log.at(-1)).toBe("between");
+  });
+
+  it("a failing betweenTasks is logged and never stops the task", async () => {
+    const t = setup({
+      betweenTasks: () => {
+        throw new Error("disk full");
+      },
+    });
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    await t.manager.start("manifest");
+    expect(t.state().current).toMatchObject({ status: "waiting" });
+    expect(errors).toHaveBeenCalledWith("Could not prepare the next session", expect.any(Error));
+    errors.mockRestore();
+  });
+
+  it("whenNoTask runs after the running operation, and only when no task is open then", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const t = setup({ gate });
+    const order: string[] = [];
+    const started = t.manager.start("manifest").then(() => void order.push("started"));
+    const ran = t.manager.whenNoTask(async () => void order.push("fn"));
+    release();
+    expect(await ran).toBe(false);
+    await started;
+    expect(order).toEqual(["started"]);
+
+    await t.manager.interrupt();
+    expect(await t.manager.whenNoTask(async () => void order.push("fn"))).toBe(true);
+    expect(order).toEqual(["started", "fn"]);
+  });
+
+  it("whenNoTask runs nothing once the app is closing", async () => {
+    const t = setup();
+    t.manager.close();
+    const fn = vi.fn(async () => {});
+    expect(await t.manager.whenNoTask(fn)).toBe(false);
+    expect(fn).not.toHaveBeenCalled();
+  });
+
+  it("D0: without betweenTasks nothing new runs", async () => {
+    const t = setup();
+    await t.manager.start("manifest");
+    await pick(t, { label: "Next", next: true });
+    expect(t.log).not.toContain("between");
   });
 });

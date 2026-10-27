@@ -1,4 +1,3 @@
-import type { LocalizedText } from "@humanharness/harness-sdk";
 import { CLAUDE_MODELS, EFFORTS, type EngineModels } from "./models";
 
 export * from "./models";
@@ -14,7 +13,42 @@ export type TransportDef =
       modes?: { edit: string; readOnly: string };
       /** Lowest adapter version (agentInfo.version at initialize) the harness accepts. */
       minAdapterVersion?: string;
+      /**
+       * How a task's model profile reaches the agent: `codex-config` (default) through `CODEX_CONFIG` at spawn,
+       * `config-option` through `session/set_config_option` on the open session (OpenCode).
+       */
+      profile?: "codex-config" | "config-option";
+      /**
+       * Fixed environment for the agent process, set over the inherited one. Never credentials. Only OpenCode has
+       * one (its permission config and the switch that keeps it from reading `~/.claude`); Claude and Codex none.
+       */
+      env?: Record<string, string>;
     };
+
+/**
+ * OpenCode's permission config (the 1.x `permission` map, which 2.x migrates): these tools ask before they run,
+ * so every such call reaches `session/request_permission` and the harness's permissions decide it. Without it
+ * OpenCode runs bash and webfetch without asking, even in its read-only `plan` agent.
+ */
+export const OPENCODE_PERMISSION = { bash: "ask", edit: "ask", webfetch: "ask", websearch: "ask" } as const;
+
+/**
+ * OpenCode's environment. Sources (github.com/anomalyco/opencode, formerly sst/opencode):
+ * - 1.x (tag v1.19.4): packages/core/src/flag/flag.ts:22,69; packages/opencode/src/config/config.ts:482-489
+ *   (OPENCODE_CONFIG_CONTENT) and :559-561 (OPENCODE_PERMISSION); packages/opencode/src/effect/runtime-flags.ts:24,28.
+ * - 2.x (branch dev): packages/cli/src/server-process.ts:128-133; packages/core/src/config.ts:255-263;
+ *   packages/core/src/config/normalize.ts:180 (the 1.x `permission` map becomes rules).
+ * - Docs: packages/web/src/content/docs/cli.mdx:757,761,766 (opencode.ai/docs/cli, environment variables).
+ *
+ * `OPENCODE_CONFIG_CONTENT` is an inline config layer (1.x and 2.x) above the person's global and project config.
+ * `OPENCODE_PERMISSION` is merged last over `permission` (1.x; 2.x does not read it). `OPENCODE_DISABLE_CLAUDE_CODE`
+ * stops OpenCode from reading `~/.claude/CLAUDE.md` and `.claude/skills`, so they never reach the person's provider.
+ */
+export const OPENCODE_ENV: Readonly<Record<string, string>> = Object.freeze({
+  OPENCODE_CONFIG_CONTENT: JSON.stringify({ permission: OPENCODE_PERMISSION }),
+  OPENCODE_PERMISSION: JSON.stringify(OPENCODE_PERMISSION),
+  OPENCODE_DISABLE_CLAUDE_CODE: "1",
+});
 
 /** How the app gets an engine ready, always through the provider's own CLI and installer. */
 export interface EngineSetup {
@@ -23,11 +57,18 @@ export interface EngineSetup {
   /** CLI args for the official login flow (it opens the browser). */
   login: string[];
   /** CLI args for the login status check, and how to read its result. */
-  status: { args: string[]; format: "json-logged-in" | "exit-code" };
+  status: { args: string[]; format: "json-logged-in" | "exit-code" | "opencode-auth-list" };
   /** CLI args for the official self-update, when there is one. */
   update?: string[];
   /** CLI args for the official sign-out (Settings → Engine → Sign out, only when the user asks). */
   logout: string[];
+  /**
+   * Steps that are interactive in the CLI (a provider picker): the app copies the command and opens Terminal,
+   * and the person runs it there. Never run by the app.
+   */
+  inTerminal?: ("login" | "logout")[];
+  /** The CLI's own guide to choosing a provider, for an engine whose provider the person sets up. */
+  providersUrl?: string;
 }
 
 export interface EngineDef {
@@ -39,6 +80,8 @@ export interface EngineDef {
   brands?: string[];
   /** Whether the engine reports plan-limit windows (Claude) or only tokens (Codex). */
   reportsLimits: boolean;
+  /** Whether the engine reports what each turn cost in USD (OpenCode). Absent: it does not. */
+  reportsCost?: boolean;
   /** Install / login / status / update / logout. Absent for engines the app can't set up itself. */
   setup?: EngineSetup;
   /**
@@ -50,9 +93,10 @@ export interface EngineDef {
   status: LegalStatus;
   /** Where the status comes from: "<url> (<yyyy-mm-dd>)". */
   statusSource: string;
-  requires: LocalizedText;
-  dataLocation: LocalizedText;
-  trainsOnData: LocalizedText;
+  /** Legal facts shown in the engine's notice: always English (spec 5 D5). */
+  requires: string;
+  dataLocation: string;
+  trainsOnData: string;
   termsUrl: string;
   privacyUrl: string;
   detect: { binary: string; versionArgs: string[]; minVersion: string };
@@ -73,12 +117,9 @@ export const ENGINES: readonly EngineDef[] = [
     name: "Claude",
     status: "allowed",
     statusSource: "https://code.claude.com/docs/en/legal-and-compliance (2026-10-10)",
-    requires: { es: "Plan Claude Pro o Max", en: "Claude Pro or Max plan" },
-    dataLocation: { es: "Anthropic, EE. UU.", en: "Anthropic, USA" },
-    trainsOnData: {
-      es: "Según tu configuración de privacidad en claude.ai",
-      en: "Depends on your privacy settings in claude.ai",
-    },
+    requires: "Claude Pro or Max plan",
+    dataLocation: "Anthropic, USA",
+    trainsOnData: "Depends on your privacy settings in claude.ai",
     termsUrl: "https://www.anthropic.com/legal/consumer-terms",
     privacyUrl: "https://www.anthropic.com/legal/privacy",
     detect: { binary: "claude", versionArgs: ["--version"], minVersion: "2.1.296" },
@@ -103,12 +144,9 @@ export const ENGINES: readonly EngineDef[] = [
     name: "Codex",
     status: "allowed",
     statusSource: "https://developers.openai.com/siwc/token-sharing-open-source (2026-10-10)",
-    requires: { es: "Plan de ChatGPT (Plus, Pro o superior)", en: "ChatGPT plan (Plus, Pro or higher)" },
-    dataLocation: { es: "OpenAI, EE. UU.", en: "OpenAI, USA" },
-    trainsOnData: {
-      es: "Según tu configuración de controles de datos en ChatGPT",
-      en: "Depends on your data controls in ChatGPT",
-    },
+    requires: "ChatGPT plan (Plus, Pro or higher)",
+    dataLocation: "OpenAI, USA",
+    trainsOnData: "Depends on your data controls in ChatGPT",
     termsUrl: "https://openai.com/policies/terms-of-use/",
     privacyUrl: "https://openai.com/policies/privacy-policy/",
     // The adapter bundles its own Codex core; `codex` itself is only needed for `codex login`
@@ -137,15 +175,46 @@ export const ENGINES: readonly EngineDef[] = [
     logo: "assets/codex.svg",
   },
   {
+    id: "opencode",
+    name: "OpenCode",
+    provider: "OpenCode",
+    status: "allowed",
+    statusSource: "https://opencode.ai/docs/acp (2026-10-26)",
+    requires: "An account or API key with a provider you set up in OpenCode, or a local model (Ollama)",
+    dataLocation: "Depends on the provider you set up in OpenCode",
+    trainsOnData: "Depends on the provider you set up in OpenCode",
+    // OpenCode's own terms and privacy policy (spike); the chosen provider's terms apply on top.
+    termsUrl: "https://opencode.ai/legal/terms-of-service",
+    privacyUrl: "https://opencode.ai/legal/privacy-policy",
+    // OpenCode 1.x and 2.x are both accepted (the status check reads either `auth list` format).
+    // minVersion: set from the spike before release.
+    detect: { binary: "opencode", versionArgs: ["--version"], minVersion: "0.0.0" },
+    transport: { kind: "acp", command: ["opencode", "acp"], modes: { edit: "build", readOnly: "plan" }, profile: "config-option", env: { ...OPENCODE_ENV } },
+    // The models come from OpenCode at session start; these efforts are what Settings offers until it does.
+    models: { efforts: ["low", "medium", "high"] },
+    reportsLimits: false,
+    reportsCost: true,
+    setup: {
+      install: { command: "curl -fsSL https://opencode.ai/install | bash", docsUrl: "https://opencode.ai/docs/" },
+      login: ["auth", "login"],
+      status: { args: ["auth", "list"], format: "opencode-auth-list" },
+      update: ["upgrade"],
+      logout: ["auth", "logout"],
+      inTerminal: ["login", "logout"],
+      providersUrl: "https://opencode.ai/docs/providers/",
+    },
+    logo: "assets/opencode.svg",
+  },
+  {
     id: "kimi",
     name: "Kimi",
     provider: "Moonshot AI",
     reportsLimits: false,
     status: "pending",
     statusSource: "https://www.kimi.com/en/help/kimi-code/membership-guide (2026-10-10)",
-    requires: { es: "Membresía Kimi Code", en: "Kimi Code membership" },
-    dataLocation: { es: "Moonshot AI, China", en: "Moonshot AI, China" },
-    trainsOnData: { es: "Sí, por defecto (opt-out por solicitud)", en: "Yes, by default (opt-out on request)" },
+    requires: "Kimi Code membership",
+    dataLocation: "Moonshot AI, China",
+    trainsOnData: "Yes, by default (opt-out on request)",
     termsUrl: "https://www.kimi.com/user/agreement/en/modelUse?version=v2",
     privacyUrl: "https://www.kimi.com/es-419/help/others/data-usage",
     detect: { binary: "kimi", versionArgs: ["--version"], minVersion: "0.0.0" },
@@ -158,9 +227,9 @@ export const ENGINES: readonly EngineDef[] = [
     reportsLimits: false,
     status: "excluded",
     statusSource: "https://github.com/google-gemini/gemini-cli/discussions/27274 (2026-10-10)",
-    requires: { es: "—", en: "—" },
-    dataLocation: { es: "Google, EE. UU.", en: "Google, USA" },
-    trainsOnData: { es: "—", en: "—" },
+    requires: "—",
+    dataLocation: "Google, USA",
+    trainsOnData: "—",
     termsUrl: "https://geminicli.com/docs/resources/tos-privacy/",
     privacyUrl: "https://policies.google.com/privacy",
     detect: { binary: "gemini", versionArgs: ["--version"], minVersion: "0.0.0" },
@@ -173,9 +242,9 @@ export const ENGINES: readonly EngineDef[] = [
     reportsLimits: false,
     status: "excluded",
     statusSource: "https://qwenlm.github.io/qwen-code-docs/en/users/configuration/auth/ (2026-10-10)",
-    requires: { es: "—", en: "—" },
-    dataLocation: { es: "Alibaba Cloud", en: "Alibaba Cloud" },
-    trainsOnData: { es: "—", en: "—" },
+    requires: "—",
+    dataLocation: "Alibaba Cloud",
+    trainsOnData: "—",
     termsUrl: "https://qwenlm.github.io/qwen-code-docs/en/users/support/tos-privacy/",
     privacyUrl: "https://qwenlm.github.io/qwen-code-docs/en/users/support/tos-privacy/",
     detect: { binary: "qwen", versionArgs: ["--version"], minVersion: "0.0.0" },

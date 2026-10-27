@@ -78,4 +78,20 @@ describe("buildNotesIndex", () => {
     const many = Array.from({ length: 60 }, (_, i) => note(i, { summary: ["y".repeat(300)] }));
     expect(estimateTokens(buildNotesIndex(many))).toBeLessThanOrEqual(1500);
   });
+
+  it("takes its own headings and footer, and names the notes' own folder", () => {
+    const scoped = (i: number) => note(i, { path: `.harness/notes/_app/n${i}.md`, title: `A rather long topic title number ${i}` });
+    const index = buildNotesIndex(Array.from({ length: 40 }, (_, i) => scoped(i)), {
+      budgetTokens: 120,
+      heading: "## App-wide notes",
+      decisionsHeading: "## App-wide decisions",
+      footer: null,
+    });
+    expect(index.startsWith("## App-wide notes\n")).toBe(true);
+    expect(index).toMatch(/- … \d+ older notes in \.harness\/notes\/_app\//);
+    expect(index).not.toContain("Open a note with your read tool");
+    expect(buildNotesIndex([note(1)], { decisionsHeading: "## App-wide decisions", footer: null })).toBe(
+      ["## What we already covered", "- Topic 1 (t1): point 1a; point 1b → .harness/notes/n1.md", "", "## App-wide decisions", "- decision 1"].join("\n"),
+    );
+  });
 });

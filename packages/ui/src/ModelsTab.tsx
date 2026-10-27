@@ -1,10 +1,9 @@
 import { useId, useReducer, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { Language, Tier } from "@humanharness/harness-sdk";
+import type { Tier } from "@humanharness/harness-sdk";
 import type { Effort, ModelSpec, ModelsConfig, TaskModelChoice } from "@humanharness/engines";
 import { Segmented } from "./chrome";
 import type { AppState, HarnessClient, ModelsView } from "./client";
-import { uiLanguage } from "./FolderStep";
 
 // Local copies: the UI only imports types from the core packages.
 const TIERS: readonly Tier[] = ["light", "standard", "deep"];
@@ -50,11 +49,22 @@ const withModel = (spec: ModelSpec, model: string | undefined): ModelSpec => {
   return model ? { ...rest, model } : rest;
 };
 
-/** The actions in path order, then the others, then free questions. */
-export function taskRows(state: AppState, lang: Language, questions: TaskRowInfo): TaskRowInfo[] {
+// Local copy of the material stages' reserved ids (harness-sdk MATERIAL_STAGE_KEYS, tested to match), in their order.
+export const MATERIAL_ROWS = ["material-review", "material-repair", "material-label", "material-sheet", "material-link"] as const;
+
+/**
+ * The actions in path order, then the others, then free questions, then (with material, and only when
+ * `material` gives the stages' labels) the material stages; the links stage only with items (material spec §8).
+ */
+export function taskRows(state: AppState, questions: TaskRowInfo, material?: Record<string, string>): TaskRowInfo[] {
   const path = (state.path ?? []).filter((id) => state.actions[id]);
   const ids = [...path, ...Object.keys(state.actions).filter((id) => !path.includes(id))];
-  return [...ids.map((id) => ({ key: id, label: state.actions[id].label[lang], description: state.actions[id].description?.[lang] })), questions];
+  const stages = state.material && material ? MATERIAL_ROWS.filter((k) => k !== "material-link" || state.material?.items) : [];
+  return [
+    ...ids.map((id) => ({ key: id, label: state.actions[id].label, description: state.actions[id].description })),
+    questions,
+    ...stages.map((key) => ({ key, label: material?.[key] ?? key })),
+  ];
 }
 
 /**
@@ -72,6 +82,8 @@ function useModels(client: HarnessClient, state: AppState, onChange: (s: AppStat
     latest.current = { ...latest.current, models };
     pending.current++;
     setFailed(false);
+    // Draw the change now: a second edit before the save comes back builds on what the screen shows.
+    rerender();
     client.saveConfig({ models }).then(
       (s) => {
         pending.current--;
@@ -94,18 +106,29 @@ function useModels(client: HarnessClient, state: AppState, onChange: (s: AppStat
  * engine. Saved in config.json; a change applies to the next task, never to the running one.
  */
 export function ModelsTab({ client, state, onChange }: { client: HarnessClient; state: AppState; onChange: (s: AppState) => void }) {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const tasksId = useId();
   const [models, update, saveFailed] = useModels(client, state, onChange);
   const [part, setPart] = useState<"tasks" | "levels">("tasks");
   const view = state.models;
   if (!view) return null;
-  const lang = uiLanguage(state, i18n.language);
   const engine = state.config.engineId ?? state.engines[0]?.id ?? "";
   const engineName = state.engines.find((e) => e.id === engine)?.name ?? engine;
   const tierSpec = (tier: Tier): ModelSpec => models.tiers?.[engine]?.[tier] ?? view.defaults[engine]?.[tier] ?? FALLBACK_SPEC;
   const offer = view.offered[engine] ?? NO_OFFER;
-  const rows = taskRows(state, lang, { key: QUESTIONS, label: t("models.questions"), description: t("models.questionsHint") });
+  const rows = taskRows(
+    state,
+    { key: QUESTIONS, label: t("models.questions"), description: t("models.questionsHint") },
+    state.material
+      ? {
+          "material-review": t("models.material.review"),
+          "material-repair": t("models.material.repair"),
+          "material-label": t("models.material.label"),
+          "material-sheet": t("models.material.sheet"),
+          "material-link": t("models.material.link"),
+        }
+      : undefined,
+  );
 
   return (
     <div className="hh-tab">

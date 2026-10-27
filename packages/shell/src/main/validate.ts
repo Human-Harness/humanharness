@@ -1,12 +1,13 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { canonicalLanguage } from "@humanharness/harness-sdk";
 import { type AppConfig, type FolderProblem, isTextSize } from "@humanharness/ui/client";
 
 /** Home folders the user keeps other things in: too broad to hand to an agent as a whole (~/Library is PROTECTED). */
 const STANDARD_HOME_FOLDERS = ["Desktop", "Documents", "Downloads", "Pictures", "Movies", "Music", "Public", "Applications"];
 /** Folders holding CLI credentials and app data: never inside or above them. Path checks only, never read. */
-const PROTECTED = [".claude", ".codex", ".gemini", "Library"];
+const PROTECTED = [".claude", ".codex", ".gemini", ".config/opencode", ".local/share/opencode", ".opencode", "Library"];
 /** Top-level system folders: never inside or above them. */
 const SYSTEM = ["/System", "/usr", "/bin", "/sbin", "/etc", "/private", "/var", "/Applications", "/Library", "/opt"];
 /** Folders that are fine to use inside, but not as themselves or above. */
@@ -93,7 +94,6 @@ export async function checkFolder(folder: string, home: string, realpath: Realpa
 
 export interface ValidationContext {
   engineIds: string[];
-  languages: string[];
   home: string;
   /** Defaults to the real file system. */
   realpath?: Realpath;
@@ -107,7 +107,8 @@ export async function configProblem(c: AppConfig, ctx: ValidationContext): Promi
   if (c.engineId !== undefined && (typeof c.engineId !== "string" || !ctx.engineIds.includes(c.engineId))) {
     return "engine-unavailable";
   }
-  if (c.language !== undefined && (typeof c.language !== "string" || !ctx.languages.includes(c.language))) {
+  // Any language: saved in canonical form so the translation cache (plan 5b) has one name per language.
+  if (c.language !== undefined && (typeof c.language !== "string" || canonicalLanguage(c.language) !== c.language)) {
     return "language-unavailable";
   }
   if (c.appearance !== undefined && !["system", "light", "dark"].includes(c.appearance as string)) return "invalid";

@@ -1,6 +1,6 @@
 # Task phases and time box — design
 
-Status: draft, 2026-10-25, waiting for Marco's review. Not in the roadmap yet. Comes from the student-vs-core gap analysis (`docs/discovery/2026-10-25-student-vs-core.md`, gaps #9 and #10) and from the dev harness's "phase stepper" candidate. It refers to `2026-10-25-task-modes-design.md` for modes.
+Status: approved by Marco on 2026-10-25, with every open question resolved by its proposal (where a question had none, the simplest option, noted in place). Not in the roadmap yet. Comes from the student-vs-core gap analysis (`docs/discovery/2026-10-25-student-vs-core.md`, gaps #9 and #10) and from the dev harness's "phase stepper" candidate. It refers to `2026-10-25-task-modes-design.md` for modes.
 
 ## 1. Why
 

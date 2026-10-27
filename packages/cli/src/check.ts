@@ -2,7 +2,22 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { type Recording, choiceLabels, recordingSchema } from "@humanharness/fake-agent";
 import { ENGINES, type Mode, brandNames } from "@humanharness/engines";
-import { type LoadedHarness, loadHarness, resolveInHarness } from "@humanharness/harness-sdk";
+import {
+  type InputFieldUi,
+  type LoadedHarness,
+  SETTINGS_TOKENS_WARN,
+  blockToolName,
+  inputBlocks,
+  inputFields,
+  isStringArray,
+  loadHarness,
+  parseAnswer,
+  resolveInHarness,
+  settingsSentences,
+  settingsValues,
+  type z,
+} from "@humanharness/harness-sdk";
+import { estimateTokens, settingsLines } from "@humanharness/workspace";
 import { type Io, UsageError, parseCommand } from "./cli";
 import { type HarnessDoc, PERMISSION_KEYS, type PermissionKey, QUESTIONS_ROW, parseHarnessMd, sectionText } from "./harness-md";
 import { clashMessage, matchClashes } from "./mock-match";
@@ -27,7 +42,17 @@ export type RuleId =
   | "mock-action"
   | "mock-match"
   | "mock-next"
-  | "mock-choice";
+  | "mock-choice"
+  | "input-hidden"
+  | "input-form"
+  | "input-choice"
+  | "mock-input"
+  | "settings-tokens"
+  | "setup-component"
+  | "setup-mock"
+  | "setup-context"
+  | "material-review-tier"
+  | "material-items-scope";
 
 export interface Finding {
   rule: RuleId;
@@ -66,8 +91,13 @@ export async function checkHarness(dir: string, opts: { mode?: Mode } = {}): Pro
 
   const briefs = await readBriefs(harness);
   findings.push(...briefFindings(harness, briefs));
+  findings.push(...(await modeFindings(harness)));
+  findings.push(...(await phaseFindings(harness)));
   findings.push(...(await mockFindings(harness, briefs)));
   findings.push(...(await i18nFindings(harness)));
+  findings.push(...(await inputFindings(harness)));
+  findings.push(...settingsFindings(harness));
+  findings.push(...(await setupFindings(harness)));
   findings.push(...brandFindings(harness));
   findings.push(...engineFindings(harness, opts.mode ?? "development"));
   if (doc) findings.push(...malformedPermissionFindings(doc));
@@ -75,6 +105,7 @@ export async function checkHarness(dir: string, opts: { mode?: Mode } = {}): Pro
   const instructions = await readInstructions(harness, findings);
   findings.push(...pillarFindings(harness, briefs, instructions, doc));
   findings.push(...tierCostFindings(harness));
+  findings.push(...materialFindings(harness));
   findings.push(...permissionFindings(harness, doc));
   findings.push(...openQuestionFindings(doc));
   return { findings, harness };
@@ -168,6 +199,23 @@ async function mockFindings(h: LoadedHarness, briefs: Map<string, string | null>
         if (!ids.includes(target)) findings.push(error("mock-next", `Turn "${turn.id}": "${key}" leads to "${target}", which is not a turn.`, file));
         if (key !== "*" && !labels.has(key)) findings.push(error("mock-choice", `Turn "${turn.id}": "${key}" is not a choice it offers.`, file));
       }
+      // Each recorded answer answers an input block this turn shows, and is one the app would take (spec §8).
+      for (const [i, r] of (turn.respond ?? []).entries()) {
+        const where = `Turn "${turn.id}": respond[${i}]`;
+        if (!ids.includes(r.next)) findings.push(error("mock-next", `${where} leads to "${r.next}", which is not a turn.`, file));
+        const block = Object.hasOwn(h.blocks, r.block) ? h.blocks[r.block] : undefined;
+        if (!block?.input) {
+          findings.push(error("mock-input", `${where} answers "${r.block}", which is not an input block.`, file));
+          continue;
+        }
+        if (!turn.blocks.some((b) => b.tool === blockToolName(r.block, block))) {
+          findings.push(error("mock-input", `${where} answers "${r.block}", which this turn doesn't show.`, file));
+        }
+        const parsed = parseAnswer(block, r.value);
+        if (!parsed.ok) {
+          findings.push(error("mock-input", `${where} is not a valid answer: ${parsed.errors.map((e) => `${e.path || "(answer)"} ${e.message}`).join("; ")}.`, file));
+        }
+      }
     }
   }
   // Replay picks the recording with the longest `match` found in a task's first message, so one action's match
@@ -187,6 +235,34 @@ function briefFindings(h: LoadedHarness, briefs: Map<string, string | null>): Fi
     if (!text.trim()) return [error("brief-missing", `Action "${id}": its brief ${action.prompt} is empty.`, path.relative(h.root, resolveInHarness(h, action.prompt)))];
     return [];
   });
+}
+
+/** Every mode's brief exists and says something (task-modes spec §3 `check`). No modes: nothing (D0). */
+async function modeFindings(h: LoadedHarness): Promise<Finding[]> {
+  const out: Finding[] = [];
+  for (const [id, mode] of Object.entries(h.modes)) {
+    const file = resolveInHarness(h, mode.brief);
+    const text = await read(file);
+    if (text === null) out.push(error("brief-missing", `Mode "${id}": its brief ${mode.brief} does not exist.`, MANIFEST));
+    else if (!text.trim()) out.push(error("brief-missing", `Mode "${id}": its brief ${mode.brief} is empty.`, path.relative(h.root, file)));
+  }
+  return out;
+}
+
+/** Every phase brief exists and has text (task-phases spec §3); a phase without a brief changes only the state. */
+async function phaseFindings(h: LoadedHarness): Promise<Finding[]> {
+  const out: Finding[] = [];
+  for (const [id, action] of Object.entries(h.actions)) {
+    for (const phase of action.phases ?? []) {
+      if (!phase.brief) continue;
+      const file = resolveInHarness(h, phase.brief);
+      const text = await read(file);
+      const where = `Action "${id}", phase "${phase.id}": its brief ${phase.brief}`;
+      if (text === null) out.push(error("brief-missing", `${where} does not exist.`, MANIFEST));
+      else if (!text.trim()) out.push(error("brief-missing", `${where} is empty.`, path.relative(h.root, file)));
+    }
+  }
+  return out;
 }
 
 /** Every key of a locale file, nested keys joined with dots. */
@@ -218,41 +294,138 @@ async function i18nFindings(h: LoadedHarness): Promise<Finding[]> {
   if (localesPath === null) return out;
   const uiFiles = uiPath === null ? [] : await sourceFiles(uiPath);
   if (!(await exists(localesPath)) && uiFiles.length === 0) return out;
-  const keys = new Map<string, Set<string>>();
-  for (const lang of h.languages) {
-    const file = path.join(localesDir, `${lang}.json`);
-    const text = await read(path.join(localesPath, `${lang}.json`));
-    if (text === null) {
-      out.push(error("i18n", `${file} is missing: every declared language needs its strings.`, file));
-      continue;
-    }
-    let parsed: unknown;
+  let enKeys: Set<string> | null = null;
+  const file = path.join(localesDir, "en.json");
+  const text = await read(path.join(localesPath, "en.json"));
+  if (text === null) {
+    out.push(error("i18n", `${file} is missing: the harness's strings are English.`, file));
+  } else {
     try {
-      parsed = JSON.parse(text);
+      const parsed: unknown = JSON.parse(text);
+      if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) out.push(error("i18n", `${file} must be a JSON object.`, file));
+      else enKeys = new Set(flatKeys(parsed as Record<string, unknown>));
     } catch {
       out.push(error("i18n", `${file} is not valid JSON.`, file));
-      continue;
     }
-    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) out.push(error("i18n", `${file} must be a JSON object.`, file));
-    else keys.set(lang, new Set(flatKeys(parsed as Record<string, unknown>)));
   }
-  const all = [...new Set([...keys.values()].flatMap((s) => [...s]))];
-  for (const [lang, set] of keys) {
-    for (const key of all) if (!set.has(key)) out.push(error("i18n", `"${key}" is missing in ${lang}.`, path.join(localesDir, `${lang}.json`)));
+  // Only en.json is read: the app generates every other language (spec 5 D1).
+  const others = (await fs.readdir(localesPath).catch(() => [])).filter((f) => f.endsWith(".json") && f !== "en.json").sort();
+  for (const other of others) {
+    const rel = path.join(localesDir, other);
+    out.push(warning("i18n", `${rel} is not read: the app translates from en.json.`, rel));
   }
-  for (const file of uiFiles) {
-    const text = await fs.readFile(file, "utf8");
+  for (const uiFile of uiFiles) {
+    const text = await fs.readFile(uiFile, "utf8");
     for (const m of text.matchAll(UI_KEY)) {
       const line = text.slice(0, m.index).split("\n").length;
-      for (const [lang, set] of keys) {
-        if (!set.has(m[2])) out.push(error("i18n", `"${m[2]}" is used here but missing in ${lang}.`, path.relative(h.root, file), line));
-      }
+      if (enKeys && !enKeys.has(m[2])) out.push(error("i18n", `"${m[2]}" is used here but missing in en.`, path.relative(h.root, uiFile), line));
     }
   }
   return out;
 }
 
 const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * Input blocks (input-blocks spec §8): one the person can't see can't be answered; a field the core form can't draw
+ * needs the block's own component; a choice needs a list of options in the shown data. That a component is registered
+ * is guessed from the ui/ sources: the block's name used as an object key (`name:`, `name,` or `name }`).
+ */
+async function inputFindings(h: LoadedHarness): Promise<Finding[]> {
+  const inputs = Object.entries(inputBlocks(h.blocks));
+  if (inputs.length === 0) return [];
+  let uiDir: string | null = null;
+  try {
+    uiDir = resolveInHarness(h, h.ui ?? "ui");
+  } catch {
+    // reported by i18nFindings
+  }
+  const texts = uiDir ? await Promise.all((await sourceFiles(uiDir)).map((f) => fs.readFile(f, "utf8"))) : [];
+  const out: Finding[] = [];
+  for (const [name, block] of inputs) {
+    if (!block.visible) out.push(warning("input-hidden", `Block "${name}" asks for an answer but is not visible: the person can't see it to answer.`, MANIFEST));
+    const fields = inputFields(block);
+    const drawless = fields.filter((f) => f.kind === null).map((f) => `"${f.name}"`);
+    const key = new RegExp(`(?<![A-Za-z0-9_])${escapeRegExp(name)}\\s*[:,}]`);
+    if (drawless.length > 0 && !texts.some((t) => key.test(t))) {
+      out.push(warning("input-form", `Block "${name}": the core form can't draw ${drawless.join(", ")}. Register a component for it in ui/ (blocks: { ${name}: … }).`, MANIFEST));
+    }
+    // A choice whose options can't come from the shown data quietly falls back to a text field.
+    const ui = (block.inputUi ?? {}) as Record<string, InputFieldUi | undefined>;
+    const shown = block.schema.shape as Record<string, z.ZodType>;
+    for (const field of fields) {
+      const fieldUi = Object.hasOwn(ui, field.name) ? ui[field.name] : undefined;
+      const from = fieldUi?.optionsFrom;
+      const kind = fieldUi?.kind;
+      const isString = field.kind === "text" || field.kind === "longText" || field.optionsFrom !== undefined;
+      if (from !== undefined && field.optionsFrom === from && !(Object.hasOwn(shown, from) && isStringArray(shown[from]))) {
+        const message = `Block "${name}": inputUi.${field.name}.optionsFrom is "${from}", which is not a string-list field of the shown data. The form draws "${field.name}" as text.`;
+        out.push(warning("input-choice", message, MANIFEST));
+      } else if (kind !== undefined && !isString && !(kind === "choice" && field.kind === "choice")) {
+        // inputUi.kind only switches a string field; any other field's kind comes from its zod type.
+        const message = `Block "${name}": inputUi.${field.name}.kind "${kind}" is ignored: only a z.string() field can be text, longText or a choice, and "${field.name}" is drawn from its type.`;
+        out.push(warning("input-choice", message, MANIFEST));
+      } else if (kind === "choice" && field.kind !== "choice") {
+        const message = `Block "${name}": "${field.name}" is a choice with no options: set inputUi.${field.name}.optionsFrom to a string-list field of the shown data. The form draws it as text.`;
+        out.push(warning("input-choice", message, MANIFEST));
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Harness settings (harness-settings spec §5 "Measuring"): their section of AGENTS.md is in every session's stable
+ * prefix. Measured with every sentence filled with its default, `onlyWhenChanged` ones included. The structural
+ * rules (defaults, options, sections, placeholders) are manifest schema errors, reported as `schema`.
+ */
+function settingsFindings(h: LoadedHarness): Finding[] {
+  if (!h.settings) return [];
+  const sentences = settingsSentences(h.settings, settingsValues(h.settings, null), { all: true });
+  const tokens = estimateTokens(settingsLines(sentences).join("\n"));
+  if (tokens <= SETTINGS_TOKENS_WARN) return [];
+  const message = `The settings' sentences take about ${tokens} tokens of AGENTS.md (more than ${SETTINGS_TOKENS_WARN}): keep each one short, or mark the ones that only matter when changed with onlyWhenChanged.`;
+  return [warning("settings-tokens", message, MANIFEST)];
+}
+
+/**
+ * Setup steps (setup-steps spec §6): what the manifest's schema can't see. A component step needs the harness's
+ * component in ui/ (guessed like input-form's); an interview needs a recording once the harness has mock recordings
+ * (spec §8 Q2), and a collection the agent sees when it runs again.
+ */
+async function setupFindings(h: LoadedHarness): Promise<Finding[]> {
+  if (!h.setup) return [];
+  const out: Finding[] = [];
+  const components = h.setup.flatMap((s) => (s.kind === "component" ? [s] : []));
+  if (components.length > 0) {
+    let uiDir: string | null = null;
+    try {
+      uiDir = resolveInHarness(h, h.ui ?? "ui");
+    } catch {
+      // reported by i18nFindings
+    }
+    const texts = uiDir ? await Promise.all((await sourceFiles(uiDir)).map((f) => fs.readFile(f, "utf8"))) : [];
+    for (const s of components) {
+      const key = new RegExp(`(?<![A-Za-z0-9_])${escapeRegExp(s.component)}\\s*[:,}]`);
+      if (!texts.some((t) => key.test(t))) {
+        const message = `Step "${s.id}": no component "${s.component}" in ui/. Pass it to HarnessApp (setupSteps={{ ${s.component} }}); until then the setup screen says the step can't be shown.`;
+        out.push(warning("setup-component", message, MANIFEST));
+      }
+    }
+  }
+  const recordings = (await fs.readdir(path.join(h.root, MOCK_DIR), { withFileTypes: true }).catch(() => [])).some((e) => e.isFile() && e.name.endsWith(".json"));
+  for (const s of h.setup) {
+    if (s.kind !== "interview") continue;
+    if (recordings && !(await exists(path.join(h.root, MOCK_DIR, `${s.action}.json`)))) {
+      out.push(warning("setup-mock", `Step "${s.id}": its action "${s.action}" has no recording (${MOCK_DIR}/${s.action}.json), so mock mode can't play the interview.`, MANIFEST));
+    }
+    const c = Object.hasOwn(h.data, s.writes) ? h.data[s.writes] : undefined;
+    if (c && !c.context) {
+      out.push(warning("setup-context", `Step "${s.id}": collection "${s.writes}" has no context, so a second run of the interview can't see what the first one saved. Give it context: { fields: "all", tokens: … }.`, MANIFEST));
+    }
+  }
+  return out;
+}
 
 /** The first provider or model brand in `text` (whole words, any case), or null. */
 export function findBrand(text: string): string | null {
@@ -266,10 +439,8 @@ function brandFindings(h: LoadedHarness): Finding[] {
   // Only the app's identity is checked: briefs and instructions may name engines freely, and a word
   // that merely contains a brand ("Claudette", "codexes") is not one.
   const places: [where: string, field: string, text: string | undefined][] = [
-    ["name (es)", "app name", h.name.es],
-    ["name (en)", "app name", h.name.en],
-    ["tagline (es)", "app tagline", h.tagline?.es],
-    ["tagline (en)", "app tagline", h.tagline?.en],
+    ["name", "app name", h.name],
+    ["tagline", "app tagline", h.tagline],
     ["logo file name", "logo file name", h.logo ? path.basename(h.logo) : undefined],
   ];
   return places.flatMap(([where, field, text]) => {
@@ -365,6 +536,25 @@ function tierCostFindings(h: LoadedHarness): Finding[] {
     if (action.cost === "light" && tier === "deep") return [warning("tier-cost", `"${id}" has cost "light" but runs at tier deep: lower the tier or raise the cost hint.`, MANIFEST)];
     return [];
   });
+}
+
+/** Material (material spec §8): two choices that work but cost quality. None without material (D0). */
+function materialFindings(h: LoadedHarness): Finding[] {
+  const m = h.material;
+  if (!m) return [];
+  const out: Finding[] = [];
+  if (m.tiers.review === "light")
+    out.push(warning("material-review-tier", "material.tiers.review is light: the check that keeps broken conversions out of tasks works better at standard.", MANIFEST));
+  const items = m.items && Object.hasOwn(h.data, m.items.collection) ? h.data[m.items.collection] : undefined;
+  if (m.items && h.scopes && items && !items.scoped)
+    out.push(
+      warning(
+        "material-items-scope",
+        `material.items uses "${m.items.collection}", which is app-wide: every scope's material links to the same items. Make it \`scoped\` if each scope has its own.`,
+        MANIFEST,
+      ),
+    );
+  return out;
 }
 
 function permissionFindings(h: LoadedHarness, doc: HarnessDoc | null): Finding[] {

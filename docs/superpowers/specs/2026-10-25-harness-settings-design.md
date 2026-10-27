@@ -1,6 +1,6 @@
 # Harness settings — design
 
-Status: draft, 2026-10-25, waiting for Marco's review. Not in the roadmap yet. Comes from the student-vs-core gap analysis (`docs/discovery/2026-10-25-student-vs-core.md`, gap #16). Builds on `2026-10-25-scopes-and-data-design.md` and `2026-10-25-profiles-design.md`.
+Status: approved by Marco on 2026-10-25, with every open question resolved by its proposal (where a question had none, the simplest option, noted in place). Not in the roadmap yet. Comes from the student-vs-core gap analysis (`docs/discovery/2026-10-25-student-vs-core.md`, gap #16). Builds on `2026-10-25-scopes-and-data-design.md` and `2026-10-25-profiles-design.md`.
 
 ## 1. Why
 

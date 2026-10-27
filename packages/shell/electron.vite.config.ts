@@ -13,6 +13,7 @@ const workspacePackages = [
   "@humanharness/blocks",
   "@humanharness/engines",
   "@humanharness/harness-sdk",
+  "@humanharness/material",
   "@humanharness/runtime",
   "@humanharness/workspace",
   "@humanharness/ui",
@@ -32,6 +33,10 @@ export default defineConfig({
         entry: {
           index: path.join(__dirname, "src/main/index.ts"),
           "ui-server": path.join(__dirname, "../blocks/src/ui-server-bin.ts"),
+          "data-server": path.join(__dirname, "../blocks/src/data-server-bin.ts"),
+          "material-server": path.join(__dirname, "../material/src/server-bin.ts"),
+          // The converter's worker thread (material convert/isolate.ts): the app passes this built file as its entry.
+          "material-worker": path.join(__dirname, "../material/src/convert/worker.ts"),
           harness: path.join(harnessDir, "harness.config.ts"),
         },
       },

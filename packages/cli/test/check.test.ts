@@ -44,20 +44,20 @@ describe("check: errors", () => {
     expect(rules(await checkHarness(dir))).toEqual(["error:schema"]);
   });
 
-  it("i18n: a key missing in one language, a missing locale file, a UI key with no string", async () => {
-    const dir = await fixture((d) => {
-      replaceIn(d, "locales/en.json", '"hint": "The AI can be wrong: check what matters.",', "");
-      replaceIn(d, "ui/ExampleCard.tsx", '<h3>{data.title}</h3>', '<h3 title={t("cardTitle")}>{data.title}</h3>');
-    });
-    const r = await checkHarness(dir);
-    const i18n = r.findings.filter((f) => f.rule === "i18n").map((f) => `${f.file}${f.line ? `:${f.line}` : ""} ${f.message}`);
-    expect(i18n).toEqual([
-      'locales/en.json "hint" is missing in en.',
-      'ui/ExampleCard.tsx:10 "cardTitle" is used here but missing in es.',
-      'ui/ExampleCard.tsx:10 "cardTitle" is used here but missing in en.',
-    ]);
-    const gone = await checkHarness(await fixture((d) => fs.rmSync(path.join(d, "locales", "es.json"))));
-    expect(gone.findings.filter((f) => f.rule === "i18n").map((f) => f.message)).toEqual(["locales/es.json is missing: every declared language needs its strings."]);
+  it("i18n: a missing en.json", async () => {
+    const gone = await checkHarness(await fixture((d) => fs.rmSync(path.join(d, "locales", "en.json"))));
+    expect(gone.findings.filter((f) => f.rule === "i18n").map((f) => f.message)).toEqual(["locales/en.json is missing: the harness's strings are English."]);
+  });
+
+  it("i18n: an en.json that is not valid JSON", async () => {
+    const r = await checkHarness(await fixture((d) => fs.writeFileSync(path.join(d, "locales", "en.json"), "{")));
+    expect(r.findings.filter((f) => f.rule === "i18n").map((f) => f.message)).toEqual(["locales/en.json is not valid JSON."]);
+  });
+
+  it("i18n: another language's file is ignored with a warning", async () => {
+    const r = await checkHarness(await fixture((d) => fs.writeFileSync(path.join(d, "locales", "es.json"), "{}\n")));
+    const f = r.findings.filter((x) => x.rule === "i18n");
+    expect(f.map((x) => [x.severity, x.message])).toEqual([["warning", "locales/es.json is not read: the app translates from en.json."]]);
   });
 
   it("brief-missing: a missing or empty brief", async () => {
@@ -65,6 +65,47 @@ describe("check: errors", () => {
     expect(missing.findings.filter((f) => f.rule === "brief-missing").map((f) => f.message)).toEqual(['Action "example": its brief ./agent/tasks/example.md does not exist.']);
     const empty = await checkHarness(await fixture((d) => fs.writeFileSync(path.join(d, "agent", "tasks", "example.md"), " \n")));
     expect(empty.findings.filter((f) => f.rule === "brief-missing").map((f) => f.message)).toEqual(['Action "example": its brief ./agent/tasks/example.md is empty.']);
+  });
+
+  it("brief-missing: a mode's brief that is missing or empty (task-modes spec §3); D0: the template has no modes", async () => {
+    const dir = await fixture((d) => {
+      replaceIn(d, "harness.config.ts", 'cost: "light",', 'cost: "light",\n      modes: ["plain", "empty", "gone"],');
+      replaceIn(
+        d,
+        "harness.config.ts",
+        'questions: { tier: "light" },',
+        'questions: { tier: "light" },\n  modes: {\n    plain: { label: "Plain", brief: "./agent/modes/plain.md" },\n    empty: { label: "Empty", brief: "./agent/modes/empty.md" },\n    gone: { label: "Gone", brief: "./agent/modes/gone.md" },\n  },',
+      );
+      fs.mkdirSync(path.join(d, "agent", "modes"));
+      fs.writeFileSync(path.join(d, "agent", "modes", "plain.md"), "Work plainly, in {{language}}.\n");
+      fs.writeFileSync(path.join(d, "agent", "modes", "empty.md"), " \n");
+    });
+    const r = await checkHarness(dir);
+    expect(r.findings.filter((f) => f.rule === "brief-missing").map((f) => `${f.file} ${f.message}`)).toEqual([
+      'agent/modes/empty.md Mode "empty": its brief ./agent/modes/empty.md is empty.',
+      'harness.config.ts Mode "gone": its brief ./agent/modes/gone.md does not exist.',
+    ]);
+    expect(errors(r).filter((f) => f.rule !== "brief-missing")).toEqual([]);
+  });
+
+  it("brief-missing: a phase's brief that is missing or empty (task-phases spec §3); a phase without one is fine", async () => {
+    const dir = await fixture((d) => {
+      replaceIn(
+        d,
+        "harness.config.ts",
+        'cost: "light",',
+        'cost: "light",\n      phases: [\n        { id: "warmup", label: "Warm-up", brief: "./agent/phases/warmup.md" },\n        { id: "main", label: "Main", brief: "./agent/phases/empty.md" },\n        { id: "extra", label: "Extra", brief: "./agent/phases/gone.md" },\n        { id: "close", label: "Close", close: true },\n      ],',
+      );
+      fs.mkdirSync(path.join(d, "agent", "phases"));
+      fs.writeFileSync(path.join(d, "agent", "phases", "warmup.md"), "Two recall questions.\n");
+      fs.writeFileSync(path.join(d, "agent", "phases", "empty.md"), " \n");
+    });
+    const r = await checkHarness(dir);
+    expect(r.findings.filter((f) => f.rule === "brief-missing").map((f) => `${f.file} ${f.message}`)).toEqual([
+      'agent/phases/empty.md Action "example", phase "main": its brief ./agent/phases/empty.md is empty.',
+      'harness.config.ts Action "example", phase "extra": its brief ./agent/phases/gone.md does not exist.',
+    ]);
+    expect(errors(r).filter((f) => f.rule !== "brief-missing")).toEqual([]);
   });
 
   it("schema: instructions or locales pointing outside the harness folder", async () => {
@@ -85,9 +126,9 @@ describe("check: errors", () => {
     ]);
   });
 
-  it("i18n: a locale file that is JSON but not an object", async () => {
-    const r = await checkHarness(await fixture((d) => fs.writeFileSync(path.join(d, "locales", "es.json"), "null\n")));
-    expect(r.findings.filter((f) => f.rule === "i18n").map((f) => f.message)).toEqual(["locales/es.json must be a JSON object."]);
+  it("i18n: en.json that is JSON but not an object", async () => {
+    const r = await checkHarness(await fixture((d) => fs.writeFileSync(path.join(d, "locales", "en.json"), "null\n")));
+    expect(r.findings.filter((f) => f.rule === "i18n").map((f) => f.message)).toEqual(["locales/en.json must be a JSON object."]);
   });
 
   it("i18n: scans the manifest's ui folder; a template-literal key is not a key", async () => {
@@ -98,26 +139,25 @@ describe("check: errors", () => {
     });
     const r = await checkHarness(dir);
     expect(r.findings.filter((f) => f.rule === "i18n").map((f) => `${f.file} ${f.message}`)).toEqual([
-      'screens/ExampleCard.tsx "cardTitle" is used here but missing in es.',
       'screens/ExampleCard.tsx "cardTitle" is used here but missing in en.',
     ]);
   });
 
   it("brand: a provider or model brand in the name, tagline or logo file name", async () => {
     const dir = await fixture((d) => {
-      replaceIn(d, "harness.config.ts", `name: { es: "h${n}", en: "h${n}" },`, `name: { es: "Tutor Claude", en: "Tutor" }, tagline: { es: "Con GPT", en: "Plain" }, logo: "./gemini-logo.svg",`);
+      replaceIn(d, "harness.config.ts", `name: "h${n}",`, `name: "Tutor Claude", tagline: "Con GPT", logo: "./gemini-logo.svg",`);
     });
     const r = await checkHarness(dir);
     expect(r.findings.filter((f) => f.rule === "brand").map((f) => f.message)).toEqual([
-      'The name (es) "Tutor Claude" uses the word "Claude", a provider or model brand in the app name: the app would look made or endorsed by that provider. Use no provider or model brands in names, taglines or logos.',
-      'The tagline (es) "Con GPT" uses the word "GPT", a provider or model brand in the app tagline: the app would look made or endorsed by that provider. Use no provider or model brands in names, taglines or logos.',
+      'The name "Tutor Claude" uses the word "Claude", a provider or model brand in the app name: the app would look made or endorsed by that provider. Use no provider or model brands in names, taglines or logos.',
+      'The tagline "Con GPT" uses the word "GPT", a provider or model brand in the app tagline: the app would look made or endorsed by that provider. Use no provider or model brands in names, taglines or logos.',
       'The logo file name "gemini-logo.svg" uses the word "Gemini", a provider or model brand in the logo file name: the app would look made or endorsed by that provider. Use no provider or model brands in names, taglines or logos.',
     ]);
   });
 
   it("brand: a word that only contains a brand is not one", async () => {
     const dir = await fixture((d) => {
-      replaceIn(d, "harness.config.ts", `name: { es: "h${n}", en: "h${n}" },`, `name: { es: "Claudette", en: "Googleplex notes" }, tagline: { es: "Codexes antiguos", en: "Old codexes" }, logo: "./geminid-logo.svg",`);
+      replaceIn(d, "harness.config.ts", `name: "h${n}",`, `name: "Claudette", tagline: "Codexes antiguos", logo: "./geminid-logo.svg",`);
     });
     expect((await checkHarness(dir)).findings.filter((f) => f.rule === "brand")).toEqual([]);
   });
@@ -180,6 +220,33 @@ describe("check: errors", () => {
   });
 });
 
+describe("check: scopes and data", () => {
+  it("schema: a data collection with no key, and an action scope without scopes", async () => {
+    const data = await checkHarness(
+      await fixture((d) =>
+        replaceIn(d, "harness.config.ts", '  questions: { tier: "light" },', '  questions: { tier: "light" },\n  data: { cards: { scoped: false, schema: z.object({ front: z.string() }), agent: "write" } },'),
+      ),
+    );
+    expect(data.findings.filter((f) => f.rule === "schema").map((f) => f.message.split(":")[0])).toEqual(["data.cards.key"]);
+    const scope = await checkHarness(await fixture((d) => replaceIn(d, "harness.config.ts", 'cost: "light"', 'cost: "light", scope: "none"')));
+    expect(scope.findings.filter((f) => f.rule === "schema").map((f) => f.message.split(":")[0])).toEqual(["actions.example.scope"]);
+  });
+
+  it("finds no error in a template with scopes and data (D2: both optional)", async () => {
+    const r = await checkHarness(
+      await fixture((d) =>
+        replaceIn(
+          d,
+          "harness.config.ts",
+          '  questions: { tier: "light" },',
+          '  questions: { tier: "light" },\n  scopes: { label: "topic", plural: "topics" },\n  data: { cards: { scoped: true, key: "id", schema: z.object({ id: z.string() }), agent: "read" } },',
+        ),
+      ),
+    );
+    expect(errors(r)).toEqual([]);
+  });
+});
+
 describe("check: warnings", () => {
   it("finds nothing at all in the untouched template", async () => {
     expect((await checkHarness(await fixture())).findings).toEqual([]);
@@ -210,6 +277,26 @@ describe("check: warnings", () => {
       replaceIn(d, "HARNESS.md", "| example | standard | light |", "| example | deep | light |");
     });
     expect((await checkHarness(dir)).findings.map((f) => f.message)).toEqual(['"example" has cost "light" but runs at tier deep: lower the tier or raise the cost hint.']);
+  });
+
+  it("material: a light review tier, and app-wide items in a harness with scopes (D0: none without material)", async () => {
+    const withMaterial = (scoped: boolean, tiers: string, scopes = true) => (d: string) =>
+      replaceIn(
+        d,
+        "harness.config.ts",
+        '  questions: { tier: "light" },',
+        `  questions: { tier: "light" },\n${scopes ? '  scopes: { label: "topic", plural: "topics" },\n' : ""}  data: { concepts: { scoped: ${scoped}, key: "id", schema: z.object({ id: z.string(), name: z.string() }), agent: "read" } },\n  material: { sheet: { sections: [{ id: "terms", label: "Terms", prompt: "The key terms." }] }, items: { collection: "concepts", label: "name" }${tiers} },`,
+      );
+    const material = (r: CheckResult) => r.findings.filter((f) => f.rule.startsWith("material-")).map((f) => `${f.severity}:${f.rule}`);
+    const clean = await checkHarness(await fixture(withMaterial(true, "")));
+    expect(errors(clean)).toEqual([]);
+    expect(material(clean)).toEqual([]);
+    expect(material(await checkHarness(await fixture(withMaterial(true, ', tiers: { review: "light" }'))))).toEqual(["warning:material-review-tier"]);
+    expect(material(await checkHarness(await fixture(withMaterial(false, ""))))).toEqual(["warning:material-items-scope"]);
+    // Without scopes every collection is app-wide: nothing to warn about.
+    const unscoped = await checkHarness(await fixture(withMaterial(false, "", false)));
+    expect(errors(unscoped)).toEqual([]);
+    expect(material(unscoped)).toEqual([]);
   });
 
   it("permissions-wide: exec, web or edit: folder without a reason line", async () => {
@@ -317,7 +404,7 @@ describe("mock recordings", () => {
           cfg,
           fs.readFileSync(cfg, "utf8").replace(
             "  actions: {\n",
-            `  actions: {\n    other: { label: { es: "Otro", en: "Other" }, description: { es: "Otro.", en: "Other." }, prompt: "./agent/tasks/other.md", cost: "light", tier: "standard" },\n`,
+            `  actions: {\n    other: { label: "Other", description: "Other.", prompt: "./agent/tasks/other.md", cost: "light", tier: "standard" },\n`,
           ),
         );
         fs.writeFileSync(path.join(d, "agent", "tasks", "other.md"), otherBrief);
@@ -343,5 +430,222 @@ describe("mock recordings", () => {
     }));
     expect(JSON.parse(JSON.stringify(r)).findings.some((f: { rule: string; file: string }) => f.rule === "mock-schema" && f.file === "mock/example.json")).toBe(true);
     expect(formatFindings(r.findings)).toContain("mock-schema");
+  });
+});
+
+describe("check: input blocks", () => {
+  const EXAMPLE = 'example: { title: "One idea", body: "A short explanation of why it matters." },';
+  const withInput = (input: string) => (d: string) => replaceIn(d, "harness.config.ts", EXAMPLE, `input: ${input},\n  ${EXAMPLE}`);
+  const inputRules = (r: CheckResult) => r.findings.filter((f) => f.rule.startsWith("input-")).map((f) => `${f.severity}:${f.rule}`);
+
+  it("an input the core form draws gives no warning", async () => {
+    expect(inputRules(await checkHarness(await fixture(withInput("z.object({ why: z.string().min(1) })"))))).toEqual([]);
+  });
+
+  it("input-hidden: a block that asks for an answer can't be hidden", async () => {
+    const dir = await fixture((d) => {
+      withInput("z.object({ why: z.string() })")(d);
+      replaceIn(d, "harness.config.ts", "visible: true,", "visible: false,");
+    });
+    expect(inputRules(await checkHarness(dir))).toEqual(["warning:input-hidden"]);
+  });
+
+  it("input-form: a field the core form can't draw needs the block's own component", async () => {
+    const deep = withInput("z.object({ deep: z.object({ x: z.string() }) })");
+    // The template's ui/App.tsx registers `example_card`: no warning.
+    expect(inputRules(await checkHarness(await fixture(deep)))).toEqual([]);
+    const bare = await fixture((d) => {
+      deep(d);
+      replaceIn(d, "ui/App.tsx", "const blocks = { example_card: ExampleCard };", "const blocks = {};");
+    });
+    const r = await checkHarness(bare);
+    expect(inputRules(r)).toEqual(["warning:input-form"]);
+    expect(r.findings.find((f) => f.rule === "input-form")?.message).toBe(
+      'Block "example_card": the core form can\'t draw "deep". Register a component for it in ui/ (blocks: { example_card: … }).',
+    );
+  });
+
+  it("input-choice: a choice with no options source, or an optionsFrom that names no string list", async () => {
+    const messages = async (input: string) =>
+      (await checkHarness(await fixture(withInput(input)))).findings.filter((f) => f.rule === "input-choice").map((f) => `${f.severity} ${f.message}`);
+    expect(await messages('z.object({ pick: z.string() }),\n  inputUi: { pick: { kind: "choice" } }')).toEqual([
+      'warning Block "example_card": "pick" is a choice with no options: set inputUi.pick.optionsFrom to a string-list field of the shown data. The form draws it as text.',
+    ]);
+    expect(await messages('z.object({ pick: z.string() }),\n  inputUi: { pick: { optionsFrom: "title" } }')).toEqual([
+      'warning Block "example_card": inputUi.pick.optionsFrom is "title", which is not a string-list field of the shown data. The form draws "pick" as text.',
+    ]);
+    expect(await messages('z.object({ pick: z.string() }),\n  inputUi: { pick: { kind: "choice", optionsFrom: "nope" } }')).toEqual([
+      'warning Block "example_card": inputUi.pick.optionsFrom is "nope", which is not a string-list field of the shown data. The form draws "pick" as text.',
+    ]);
+  });
+
+  it("input-choice: optionsFrom naming a string list of the shown data is fine", async () => {
+    const dir = await fixture((d) => {
+      withInput('z.object({ pick: z.string() }),\n  inputUi: { pick: { optionsFrom: "options" } }')(d);
+      replaceIn(d, "harness.config.ts", "body: z.string().min(1).max(400) })", "body: z.string().min(1).max(400), options: z.array(z.string()).optional() })");
+    });
+    expect(inputRules(await checkHarness(dir))).toEqual([]);
+  });
+
+  it("input-choice: optionsFrom naming a list of string enums, and the choice + options convention, are fine", async () => {
+    const shownWith = (options: string, input: string) =>
+      fixture((d) => {
+        withInput(input)(d);
+        replaceIn(d, "harness.config.ts", "body: z.string().min(1).max(400) })", `body: z.string().min(1).max(400), options: ${options} })`);
+      });
+    const enums = await shownWith('z.array(z.enum(["a", "b"])).optional()', 'z.object({ pick: z.string() }),\n  inputUi: { pick: { optionsFrom: "options" } }');
+    expect(inputRules(await checkHarness(enums))).toEqual([]);
+    const convention = await shownWith("z.array(z.string()).optional()", "z.object({ choice: z.string() })");
+    expect(inputRules(await checkHarness(convention))).toEqual([]);
+  });
+
+  it("input-choice: inputUi.kind on a field that isn't a string says it is ignored", async () => {
+    const found = (await checkHarness(await fixture(withInput('z.object({ count: z.number() }),\n  inputUi: { count: { kind: "choice" } }'))))
+      .findings.filter((f) => f.rule === "input-choice")
+      .map((f) => f.message);
+    expect(found).toEqual([
+      'Block "example_card": inputUi.count.kind "choice" is ignored: only a z.string() field can be text, longText or a choice, and "count" is drawn from its type.',
+    ]);
+  });
+});
+
+describe("check: recorded answers", () => {
+  const EXAMPLE = 'example: { title: "One idea", body: "A short explanation of why it matters." },';
+  const card = { tool: "show_example_card", input: { title: "T", body: "B" } };
+  const rec = (turn1: Record<string, unknown>) => ({ version: 1, action: "example", match: "# Task: example", turns: [{ id: "t1", text: "hi", ...turn1 }, { id: "t2", text: "ok" }] });
+  const mockRules = async (recording: object) => {
+    const dir = await fixture((d) => {
+      replaceIn(d, "harness.config.ts", EXAMPLE, `input: z.object({ why: z.string().min(1) }),\n  ${EXAMPLE}`);
+      fs.mkdirSync(path.join(d, "mock"));
+      fs.writeFileSync(path.join(d, "mock", "example.json"), JSON.stringify(recording));
+    });
+    return (await checkHarness(dir)).findings.filter((f) => f.rule.startsWith("mock-")).map((f) => `${f.rule}: ${f.message}`);
+  };
+
+  it("a recorded answer to an input block the turn shows passes", async () => {
+    expect(await mockRules(rec({ blocks: [card], respond: [{ block: "example_card", value: { why: "because" }, next: "t2" }] }))).toEqual([]);
+  });
+
+  it("mock-input: not an input block, not shown in that turn, or not a valid answer; mock-next: no such turn", async () => {
+    expect(await mockRules(rec({ blocks: [card], respond: [{ block: "choices", value: {}, next: "t2" }] }))).toEqual([
+      'mock-input: Turn "t1": respond[0] answers "choices", which is not an input block.',
+    ]);
+    expect(await mockRules(rec({ respond: [{ block: "example_card", value: { why: "x" }, next: "t2" }] }))).toEqual([
+      'mock-input: Turn "t1": respond[0] answers "example_card", which this turn doesn\'t show.',
+    ]);
+    const invalid = await mockRules(rec({ blocks: [card], respond: [{ block: "example_card", value: { why: "" }, next: "t2" }] }));
+    expect(invalid).toHaveLength(1);
+    expect(invalid[0]).toMatch(/^mock-input: Turn "t1": respond\[0\] is not a valid answer: why /);
+    expect(await mockRules(rec({ blocks: [card], respond: [{ block: "example_card", value: { why: "x" }, next: "t9" }] }))).toEqual([
+      'mock-next: Turn "t1": respond[0] leads to "t9", which is not a turn.',
+    ]);
+  });
+});
+
+describe("check: settings", () => {
+  const AFTER = '  questions: { tier: "light" },';
+  const tone = (extra = "") =>
+    `tone: { schema: z.enum(["patient", "demanding"]), default: "patient", control: "segmented", label: "Tone", options: { patient: "Patient", demanding: "Demanding" }, agent: "Use a {{value:label}} tone."${extra} }`;
+  const withSettings = (fields: string, sections = "") => (d: string) =>
+    replaceIn(d, "harness.config.ts", AFTER, `${AFTER}\n  settings: { tab: "How I learn",${sections} fields: { ${fields} } },`);
+  const settingsRules = (r: CheckResult) =>
+    r.findings.filter((f) => f.rule === "settings-tokens" || f.message.startsWith("settings.")).map((f) => `${f.severity}:${f.rule}:${f.message.split(":")[0]}`);
+
+  it("a valid declaration gives no finding", async () => {
+    const r = await checkHarness(await fixture(withSettings(tone())));
+    expect(errors(r)).toEqual([]);
+    expect(settingsRules(r)).toEqual([]);
+  });
+
+  it("schema: a default, an option, a section and a placeholder that don't fit", async () => {
+    const r = await checkHarness(
+      await fixture(
+        withSettings(
+          `${tone()}, pace: { schema: z.enum(["slow", "fast"]), default: "slow", control: "select", label: "Pace", options: { slow: "Slow", nope: "Nope" } }, hint: { schema: z.number().min(1), default: 0, section: "nope", control: "number", label: "Hint", agent: "After {{tries}} tries." }`,
+          ' sections: [{ id: "help", label: "Help" }],',
+        ),
+      ),
+    );
+    expect(r.harness).toBeNull();
+    expect(settingsRules(r).sort()).toEqual([
+      "error:schema:settings.fields.hint.agent",
+      "error:schema:settings.fields.hint.default",
+      "error:schema:settings.fields.hint.section",
+      "error:schema:settings.fields.pace.options.nope",
+    ]);
+  });
+
+  it("settings-tokens: warns when the sentences make a long section", async () => {
+    const long = "Explain every step slowly and check that the person follows before going on, using {{value}} as the level of detail. ".repeat(2).trim();
+    const fields = Array.from({ length: 8 }, (_, i) => `f${i}: { schema: z.number(), default: ${i}, control: "number", label: "F${i}", agent: ${JSON.stringify(long)} }`).join(", ");
+    const r = await checkHarness(await fixture(withSettings(fields)));
+    expect(errors(r)).toEqual([]);
+    const found = r.findings.filter((f) => f.rule === "settings-tokens");
+    expect(found.map((f) => f.severity)).toEqual(["warning"]);
+    expect(found[0].message).toMatch(/^The settings' sentences take about \d+ tokens of AGENTS\.md \(more than 400\)/);
+  });
+});
+
+describe("check: setup steps (setup-steps spec §6)", () => {
+  const setupRules = (r: CheckResult) => r.findings.filter((f) => f.rule.startsWith("setup-")).map((f) => `${f.severity}:${f.rule}`);
+  const withSetup = (context: string) => (d: string) =>
+    replaceIn(
+      d,
+      "harness.config.ts",
+      "  // Free questions",
+      [
+        `  data: { profile: { scoped: false, single: true, schema: z.object({ name: z.string().min(1).max(40) }), agent: "write"${context} } },`,
+        "  setup: [",
+        '    { id: "intro", kind: "interview", label: "Get to know you", action: "example", writes: "profile" },',
+        '    { id: "ready", kind: "component", label: "Ready check", component: "ReadyStep" },',
+        "  ],",
+        "  // Free questions",
+      ].join("\n"),
+    );
+  // A second action with its own recording: mock/ holds a recording, and the interview's action has none.
+  const withOtherRecording = (d: string) => {
+    replaceIn(d, "harness.config.ts", "    example: {", '    meet: { label: "Meet", description: "Says hello.", prompt: "./agent/tasks/meet.md", cost: "light", tier: "standard" },\n    example: {');
+    replaceIn(d, "HARNESS.md", "| (questions) |", "| meet | standard | light | Says hello |\n| (questions) |");
+    fs.writeFileSync(path.join(d, "agent", "tasks", "meet.md"), "# Task: meet\n\nSay hello in {{language}}.\n");
+    fs.mkdirSync(path.join(d, "mock"));
+    const recording = { version: 1, action: "meet", match: "# Task: meet", turns: [{ id: "t1", text: "hello" }] };
+    fs.writeFileSync(path.join(d, "mock", "meet.json"), JSON.stringify(recording));
+  };
+
+  it("D0: the template has no setup findings", async () => {
+    expect(setupRules(await checkHarness(await fixture()))).toEqual([]);
+  });
+
+  it("warns: a component not registered in ui/, an interview with no recording, a collection the agent can't see", async () => {
+    const r = await checkHarness(
+      await fixture((d) => {
+        withSetup("")(d);
+        withOtherRecording(d);
+      }),
+    );
+    expect(errors(r)).toEqual([]);
+    expect(setupRules(r)).toEqual(["warning:setup-component", "warning:setup-mock", "warning:setup-context"]);
+    expect(r.findings.find((f) => f.rule === "setup-component")?.message).toContain('"ReadyStep"');
+    expect(r.findings.find((f) => f.rule === "setup-mock")?.message).toContain("mock/example.json");
+  });
+
+  it("a registered component and a collection with context clear their warnings; no mock/ means no setup-mock", async () => {
+    const dir = await fixture((d) => {
+      withSetup(', context: { fields: "all", tokens: 100 }')(d);
+      fs.appendFileSync(path.join(d, "ui", "App.tsx"), "\nexport const setupStepComponents = { ReadyStep: () => null };\n");
+    });
+    const r = await checkHarness(dir);
+    expect(errors(r)).toEqual([]);
+    expect(setupRules(r)).toEqual([]);
+  });
+
+  it("only files count as recordings: a folder named like one in mock/ asks for no recording", async () => {
+    const r = await checkHarness(
+      await fixture((d) => {
+        withSetup(', context: { fields: "all", tokens: 100 }')(d);
+        fs.mkdirSync(path.join(d, "mock", "old.json"), { recursive: true });
+      }),
+    );
+    expect(r.findings.filter((f) => f.rule === "setup-mock")).toEqual([]);
   });
 });

@@ -45,6 +45,14 @@ describe("recordingSchema", () => {
     expect(recordingSchema.safeParse({ ...minimal, version: 2 }).success).toBe(false);
     expect(recordingSchema.safeParse({ ...minimal, extra: true }).success).toBe(false);
   });
+
+  it("a turn may carry setPhase (a phase id) or timeUp: true; nothing else", () => {
+    const base = { version: 1, action: "session", match: "# Task: session" };
+    expect(recordingSchema.safeParse({ ...base, turns: [{ id: "t1" }, { id: "t2", setPhase: "main" }, { id: "t3", timeUp: true }] }).success).toBe(true);
+    for (const bad of [{ id: "t2", setPhase: "Main" }, { id: "t2", timeUp: false }, { id: "t2", setPhase: "" }]) {
+      expect(recordingSchema.safeParse({ ...base, turns: [{ id: "t1" }, bad] }).success).toBe(false);
+    }
+  });
 });
 
 describe("loadRecordings", () => {
@@ -65,5 +73,16 @@ describe("loadRecordings", () => {
 
   it("returns nothing for a missing folder", () => {
     expect(loadRecordings(path.join(root, "nope"))).toEqual({ recordings: [], problems: [] });
+  });
+});
+
+describe("respond", () => {
+  const base = { version: 1, action: "a", match: "# A", turns: [{ id: "t1" }, { id: "t2" }] };
+  it("a turn may record answers, each with the turn it leads to", () => {
+    const ok = { ...base, turns: [{ id: "t1", respond: [{ block: "commit_answer", value: { why: "x" }, next: "t2" }] }, { id: "t2" }] };
+    expect(recordingSchema.safeParse(ok).success).toBe(true);
+    for (const bad of [{ block: "commit_answer", value: { why: "x" } }, { block: "Bad", value: {}, next: "t2" }, { block: "b", value: "x", next: "t2" }, { block: "b", value: {}, next: "t2", extra: 1 }]) {
+      expect(recordingSchema.safeParse({ ...base, turns: [{ id: "t1", respond: [bad] }, { id: "t2" }] }).success).toBe(false);
+    }
   });
 });

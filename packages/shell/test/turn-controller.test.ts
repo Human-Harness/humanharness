@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Event, HarnessRuntime, LimitWindow } from "@humanharness/runtime";
 import type { ChatEntry } from "@humanharness/ui";
-import { EngineUnavailable, TurnController, memoise } from "../src/main/turn-controller";
+import { EngineUnavailable, TurnController, type TurnOptions, memoise } from "../src/main/turn-controller";
 import type { UsageMeta } from "../src/main/usage-log";
 
 type Emit = (e: Event) => void;
@@ -45,6 +45,7 @@ function setup(
     ensureRuntime?: () => Promise<HarnessRuntime | null>;
     append?: (e: ChatEntry) => Promise<void>;
     emit?: (e: Event) => void;
+    inputBlocks?: string[];
   } = {},
 ) {
   const order: string[] = [];
@@ -60,6 +61,7 @@ function setup(
     ensureRuntime: opts.ensureRuntime ?? (async () => null),
     chatLog: async () => ({ append }),
     stateBlocks: () => new Set(),
+    ...(opts.inputBlocks ? { inputBlocks: () => new Set(opts.inputBlocks) } : {}),
     emit: (e) => {
       order.push(`emit:${e.type}`);
       events.push(e);
@@ -598,5 +600,160 @@ describe("TurnController for tasks", () => {
     fake.finish([{ type: "text", delta: "ok" }, { type: "done", ok: true }]);
     await sent;
     expect(entries.map((e) => e.role)).toEqual(["assistant"]);
+  });
+});
+
+describe("TurnController: input block ids", () => {
+  const card: Event = { type: "block", name: "card", data: { t: "a" } };
+  const ask: Event = { type: "block", name: "commit_answer", data: { question: "q" } };
+
+  it("stamps <task>:<turn>:<index> on the input blocks of a task's run turn, for the window and the log", async () => {
+    const fake = fakeRuntime();
+    const { controller, entries, events } = setup({ ensureRuntime: async () => fake.runtime, inputBlocks: ["commit_answer"] });
+    const sent = controller.send("hi", { task: "t1", turn: 2 });
+    await vi.waitFor(() => expect(fake.send).toHaveBeenCalled());
+    fake.finish([card, ask, { type: "done", ok: true }]);
+    await sent;
+    expect(events.filter((e) => e.type === "block")).toEqual([card, { ...ask, id: "t1:2:1" }]);
+    expect(entries.at(-1)?.blocks).toEqual([
+      { name: "card", data: { t: "a" } },
+      { name: "commit_answer", data: { question: "q" }, id: "t1:2:1" },
+    ]);
+  });
+
+  it("D0: no id without a turn number, outside a task, in a closing turn, or for a block with no input", async () => {
+    const cases: [TurnOptions, string[]][] = [
+      [{ task: "t1" }, ["commit_answer"]],
+      [{ turn: 0 }, ["commit_answer"]],
+      [{ task: "t1", turn: 0, phase: "close" }, ["commit_answer"]],
+      [{ task: "t1", turn: 0 }, []],
+    ];
+    for (const [options, inputBlocks] of cases) {
+      const fake = fakeRuntime();
+      const { controller, events } = setup({ ensureRuntime: async () => fake.runtime, inputBlocks });
+      const sent = controller.send("hi", options);
+      await vi.waitFor(() => expect(fake.send).toHaveBeenCalled());
+      fake.finish([ask, { type: "done", ok: true }]);
+      await sent;
+      expect(events.find((e) => e.type === "block")).toEqual(ask);
+    }
+  });
+});
+
+describe("TurnController: modes (task-modes spec §5.4, §5.5)", () => {
+  function modeSetup() {
+    const rt = fakeRuntime();
+    const entries: ChatEntry[] = [];
+    const metas: UsageMeta[] = [];
+    const controller = new TurnController({
+      ensureRuntime: async () => rt.runtime,
+      chatLog: async () => ({ append: async (e: ChatEntry) => void entries.push(e) }),
+      stateBlocks: () => new Set(),
+      emit: () => {},
+      recordUsage: async (_entry, meta) => void metas.push(meta),
+    });
+    return { rt, controller, entries, metas };
+  }
+
+  it("a switch's user entry is a system line naming the mode; usage carries the turn's mode", async () => {
+    const t = modeSetup();
+    const sent = t.controller.send("From now on work in the mode…", {
+      task: "t1",
+      action: "study",
+      followUp: true,
+      display: "Switched to Feynman",
+      mode: "feynman",
+      modeSwitch: true,
+    });
+    await vi.waitFor(() => expect(t.rt.send).toHaveBeenCalled());
+    t.rt.finish([{ type: "done", ok: true }]);
+    await sent;
+    await t.controller.flush();
+    expect(t.entries[0]).toMatchObject({ role: "user", text: "Switched to Feynman", mode: "feynman", task: "t1" });
+    expect(t.metas[0]).toMatchObject({ task: "t1", mode: "feynman" });
+  });
+
+  it("a turn in a mode that isn't a switch: the mode in usage only; D0 without one", async () => {
+    const t = modeSetup();
+    const sent = t.controller.send("Go on", { task: "t1", followUp: true, mode: "feynman" });
+    await vi.waitFor(() => expect(t.rt.send).toHaveBeenCalled());
+    t.rt.finish([{ type: "done", ok: true }]);
+    await sent;
+    await t.controller.flush();
+    expect(t.entries[0]).not.toHaveProperty("mode");
+    expect(t.metas[0]).toMatchObject({ mode: "feynman" });
+
+    const plain = modeSetup();
+    const again = plain.controller.send("Go on", { task: "t1", followUp: true });
+    await vi.waitFor(() => expect(plain.rt.send).toHaveBeenCalled());
+    plain.rt.finish([{ type: "done", ok: true }]);
+    await again;
+    await plain.controller.flush();
+    expect(plain.entries[0]).not.toHaveProperty("mode");
+    expect(plain.metas[0]).not.toHaveProperty("mode");
+  });
+});
+
+describe("TurnController: phases (task-phases spec §4.4, §5, §6)", () => {
+  function phaseSetup(inputBlocks?: string[]) {
+    const rt = fakeRuntime();
+    const entries: ChatEntry[] = [];
+    const metas: UsageMeta[] = [];
+    const events: Event[] = [];
+    const controller = new TurnController({
+      ensureRuntime: async () => rt.runtime,
+      chatLog: async () => ({ append: async (e: ChatEntry) => void entries.push(e) }),
+      stateBlocks: () => new Set(),
+      ...(inputBlocks ? { inputBlocks: () => new Set(inputBlocks) } : {}),
+      emit: (e) => void events.push(e),
+      recordUsage: async (_entry, meta) => void metas.push(meta),
+    });
+    return { rt, controller, entries, metas, events };
+  }
+
+  it("a phase change's user entry is the separator; usage has the turn kind and the task's phase; the trailer the phase", async () => {
+    const t = phaseSetup(["recall"]);
+    const sent = t.controller.send("Next part of this task: …", {
+      task: "t1",
+      action: "session",
+      followUp: true,
+      display: "— Main block —",
+      phase: "phase-change",
+      phaseChange: "main",
+      taskPhase: "main",
+      turn: 2,
+    });
+    await vi.waitFor(() => expect(t.rt.send).toHaveBeenCalled());
+    t.rt.finish([{ type: "block", name: "recall", data: {} }, { type: "done", ok: true }]);
+    await sent;
+    await t.controller.flush();
+    expect(t.entries[0]).toMatchObject({ role: "user", text: "— Main block —", phase: "main", task: "t1" });
+    expect(t.metas[0]).toMatchObject({ phase: "phase-change", taskPhase: "main" });
+    expect(t.rt.send.mock.calls[0][2]).toEqual({ trailer: { task: "t1", action: "session", phase: "main" } });
+    // Input blocks get ids in a phase change turn too.
+    expect(t.events.find((e) => e.type === "block")).toMatchObject({ id: "t1:2:0" });
+  });
+
+  it("the wrap-up's user entry says the time is up", async () => {
+    const t = phaseSetup();
+    const sent = t.controller.send("Time is almost up: …", { task: "t1", followUp: true, display: "Time is almost up", phase: "wrap-up", wrapUp: true, taskPhase: "main" });
+    await vi.waitFor(() => expect(t.rt.send).toHaveBeenCalled());
+    t.rt.finish([{ type: "done", ok: true }]);
+    await sent;
+    await t.controller.flush();
+    expect(t.entries[0]).toMatchObject({ role: "user", text: "Time is almost up", timeUp: true });
+    expect(t.metas[0]).toMatchObject({ phase: "wrap-up", taskPhase: "main" });
+  });
+
+  it("D0: a turn without a phase has none anywhere", async () => {
+    const t = phaseSetup();
+    const sent = t.controller.send("Go on", { task: "t1", action: "quiz", followUp: true });
+    await vi.waitFor(() => expect(t.rt.send).toHaveBeenCalled());
+    t.rt.finish([{ type: "done", ok: true }]);
+    await sent;
+    await t.controller.flush();
+    for (const key of ["phase", "timeUp"]) expect(t.entries[0]).not.toHaveProperty(key);
+    expect(t.metas[0]).not.toHaveProperty("taskPhase");
+    expect(t.rt.send.mock.calls[0][2]).toEqual({ trailer: { task: "t1", action: "quiz" } });
   });
 });

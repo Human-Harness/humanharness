@@ -21,6 +21,8 @@ export interface Sandbox {
   claudePrompts: string;
   /** fake-acp appends every request it gets here. */
   acpLog: string;
+  /** fake-acp appends every request it gets as OpenCode here. */
+  opencodeLog: string;
 }
 
 /**
@@ -36,23 +38,24 @@ export function makeFreshSandbox(name: string): Sandbox {
     sharedDir: path.join(root, "shared"),
     claudePrompts: path.join(root, "claude-prompts.jsonl"),
     acpLog: path.join(root, "acp-log.jsonl"),
+    opencodeLog: path.join(root, "opencode-log.jsonl"),
   };
   for (const dir of [s.userData, s.sharedDir]) fs.mkdirSync(dir, { recursive: true });
   return s;
 }
 
-/** A configured app (Spanish, Claude, plus `config`) with both engines' notices accepted, in packages/e2e/.tmp/. */
+/** A configured app (saved language "es", Claude, plus `config`) with every engine's notice accepted, in packages/e2e/.tmp/. */
 export function makeSandbox(name: string, config: Record<string, unknown> = {}): Sandbox {
   const s = makeFreshSandbox(name);
   fs.mkdirSync(s.folder, { recursive: true });
   fs.writeFileSync(path.join(s.userData, "config.json"), JSON.stringify({ language: "es", folder: s.folder, engineId: "claude", ...config }));
   const now = new Date().toISOString();
   const ready = { notice: { version: NOTICE_VERSION, acceptedAt: now }, verifiedAt: now };
-  fs.writeFileSync(path.join(s.sharedDir, "engines.json"), JSON.stringify({ version: 1, engines: { claude: ready, codex: ready } }));
+  fs.writeFileSync(path.join(s.sharedDir, "engines.json"), JSON.stringify({ version: 1, engines: { claude: ready, codex: ready, opencode: ready } }));
   return s;
 }
 
-/** A Codex that is never asked anything: keeps every engine fake, so no status check reaches a real CLI. */
+/** A Codex or OpenCode that is never asked anything: keeps every engine fake, so no status check reaches a real CLI. */
 const idleCodex: AcpScript = { turns: [] };
 
 /** The environment of a launched shell: ours without the Electron dev variables, pointed at the sandbox. */
@@ -64,20 +67,23 @@ function baseEnv(s: Sandbox): Record<string, string> {
   return { ...env, HH_TEST_USER_DATA: s.userData, HH_TEST_SHARED_DIR: s.sharedDir, HH_TEST_SUGGESTED_FOLDER: s.folder };
 }
 
-/** Launches the built shell (or the build at `app`, a main/index.js) with the fake agents in place of both engines. */
+/** Launches the built shell (or the build at `app`, a main/index.js) with the fake agents in place of every engine. */
 export async function launch(
   s: Sandbox,
-  scripts: { claude: ClaudeScript; codex?: AcpScript },
+  scripts: { claude: ClaudeScript; codex?: AcpScript; opencode?: AcpScript },
   app: string = shellDir,
+  /** More test hooks (HH_TEST_* only; the shell ignores the rest). */
+  extraEnv: Record<string, string> = {},
 ): Promise<{ app: ElectronApplication; page: Page }> {
   const engines = {
     claude: { command: fakeClaudeCommand(), env: { HH_FAKE_SCRIPT: writeScript(s.root, scripts.claude), HH_FAKE_PROMPTS: s.claudePrompts } },
     codex: { command: fakeAcpCommand(), env: { HH_FAKE_SCRIPT: writeScript(s.root, scripts.codex ?? idleCodex), HH_FAKE_LOG: s.acpLog } },
+    opencode: { command: fakeAcpCommand(), env: { HH_FAKE_SCRIPT: writeScript(s.root, scripts.opencode ?? idleCodex), HH_FAKE_LOG: s.opencodeLog } },
   };
   const electronApp = await electron.launch({
     executablePath: electronBinary,
     args: [app],
-    env: { ...baseEnv(s), HH_TEST_ENGINES: JSON.stringify(engines) },
+    env: { ...baseEnv(s), HH_TEST_ENGINES: JSON.stringify(engines), ...extraEnv },
   });
   return { app: electronApp, page: await electronApp.firstWindow() };
 }
@@ -90,8 +96,8 @@ export async function launchMock(s: Sandbox, mockDir: string = demoMockDir): Pro
   const engines = { claude: { command: fakeClaudeCommand(), env: { HH_FAKE_MOCK_DIR: mockDir, HH_FAKE_MOCK_STATE: path.join(s.root, "mock-state.json") } } };
   const electronApp = await electron.launch({
     executablePath: electronBinary,
-    // Spanish as the system language too, so a fresh app (no saved language) reads as the configured ones do.
-    args: [shellDir, "--lang=es"],
+    // English as the system language: the screens are English (plan 5a); a fresh app saves the system's tag.
+    args: [shellDir, "--lang=en"],
     env: { ...baseEnv(s), HH_TEST_ENGINES: JSON.stringify(engines), HH_TEST_MOCK: "1" },
   });
   return { app: electronApp, page: await electronApp.firstWindow() };

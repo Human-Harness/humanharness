@@ -1,6 +1,6 @@
 # File timeline — design
 
-Status: draft, 2026-10-27, written after a brainstorming session with Marco, who approved every decision below that day. Waiting for his review of this file. Not in the roadmap yet.
+Status: approved by Marco on 2026-10-27, with four fixes from his review (§3.1 subject before trailer, §3.4 linked folders, §5 history queue and core-owned confirmation) and the open questions decided (§11). Not in the roadmap yet.
 
 This is spec C from the dev-vs-core gap analysis (`docs/discovery/2026-10-26-dev-vs-core.md`, candidate C4). It builds on the history (`docs/architecture/history.md`) and the document reader (`2026-10-27-document-reader-design.md`). It refers to document review (`2026-10-27-document-review-and-focus-design.md`) for answers and approvals, and to parallel tasks (`2026-10-27-parallel-tasks-and-jobs-design.md`) for partial commits. Neither is required: without them, those entry kinds never appear.
 
@@ -41,6 +41,7 @@ The dev harness asked for it (mockup v3, round 5): each `.md` has a timeline of 
 | `outside` | An untagged "Start" commit that changed the file | "Fuera de la app" | "Cambiado fuera de la app" |
 | `goBack` | A restore commit ("Go back to …", "Undo: …", and `Go back: <path>` of §5) | "Vos" | "Volviste a v2" / "Volviste a lo de las 10:41" |
 
+- **Subject before trailer.** A commit whose subject starts with `Answer:`, `Approved:`, `Go back`, `Undo:` or is a restore is classified by its subject, even when it carries a `Task:` trailer. Only the remaining commits group by `Task:`.
 - **Same task, not adjacent.** A task's commits split by another entry (an answer in between) form two entries: the timeline is in time order.
 - **Partial commits.** With parallel tasks, each commit holds only its task's paths (parallel spec §5.2), so authors stay right with no extra work. Shared paths show both tasks on the entry: "Spec writer + Planner".
 - **Deleted file.** The last entry says "Borrado" and keeps "Volver a esta versión" on the entry before it.
@@ -72,6 +73,7 @@ Walking the whole log for each file would get slow on a long history. Instead, t
 ### 3.4 Not covered
 
 - **Renames are not detected.** A moved file starts a new timeline. The old path's timeline ends with "Borrado".
+- **Linked folders** (hatches spec §3.4). A file in a tracked linked folder reads that folder's own `History` and index. A file in a linked folder with its own git shows "Esta carpeta tiene su propio git: mirá su historial ahí".
 - **Files the history skips** (`.harness/` except notes, data and reviews; the generated `AGENTS.md`) show "Este archivo no tiene historial".
 
 ## 4. The diff
@@ -105,7 +107,7 @@ The diff library is `diff` (jsdiff): `diffArrays` for blocks, `diffWordsWithSpac
 ## 5. Going back
 
 - **"Volver a esta versión"** on an entry writes the file as it was at the entry's `to`, and nothing else.
-- It commits `Go back: <path> to <entry label>`, with no task trailer, like today's restores (history.md: a restore is not part of a task). It is itself an entry (`goBack`), so it can be undone the same way.
+- It commits `Go back: <path> to <entry label>`, with no task trailer, like today's restores (history.md: a restore is not part of a task). It is itself an entry (`goBack`), so it can be undone the same way. The commit goes through the history's single queue (parallel-tasks spec §5.1).
 - **It asks first**: "Volver `spec.md` a como estaba después de Spec writer (hace 20 min). El resto de la carpeta no cambia."
 - **Refused while a running turn has touched the file,** with a line saying which task (parallel spec §5.3). With one task at a time, it is refused while a turn runs, as today's restores are.
 - **A reviewed document** goes stale after a go-back, like any change (review spec D4). Review records are not restored by a file go-back: the comments stay, and their anchors are matched again.
@@ -131,7 +133,7 @@ The changed files listed under each task become links. A link opens that file's 
 ```ts
 client.files.timeline(path): Promise<TimelineEntry[]>
 client.files.diff(path, from, to | "current"): Promise<FileDiff>    // blocks for .md, hunks for text, { binary: true } otherwise
-client.files.restore(path, commit): Promise<void>                    // §5, same checks and confirmation copy for the harness to show
+client.files.restore(path, commit): Promise<"restored" | "cancelled"> // §5; the core always shows the confirmation itself
 client.files.onChange(path, cb): Unsubscribe                         // a new entry for that file
 ```
 
@@ -180,6 +182,8 @@ The SDK exports `<FileTimeline path />` and `<FileDiff path from to />` with the
 
 ## 11. Open questions
 
-1. **Diff between two arbitrary entries** (v1 against v3). Not in v1: the two compare modes cover the asks so far. Proposal: add it when a harness asks, as `client.files.diff` already takes any two commits.
-2. **Timeline for a folder** ("what changed in `tickets/SHOP-142/`"). The History panel's task view covers part of it. Proposal: not now.
-3. **History size.** Long-lived files make the index grow. The history already has no size limit (history.md, known gaps), and this does not make that worse in a meaningful way. To revisit with that gap.
+Decided by Marco on 2026-10-27, as proposed:
+
+1. **Diff between two arbitrary entries** (v1 against v3). Not in v1; added when a harness asks, as `client.files.diff` already takes any two commits.
+2. **Timeline for a folder.** Not now; the History panel's task view covers part of it.
+3. **History size.** Revisited with the history's existing size gap (history.md, known gaps).

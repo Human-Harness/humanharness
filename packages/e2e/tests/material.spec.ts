@@ -143,6 +143,8 @@ test("D0: a harness without material has no panel and no material files", async 
     await page.getByRole("button", { name: "Set up Family Tutor" }).click();
     await page.getByRole("textbox", { name: "Name" }).fill("Sofi");
     await next.click();
+    // Wait for each step before typing into it: the first textbox is still the name until the goal step shows.
+    await expect(page.getByRole("heading", { name: "Your goal" })).toBeVisible();
     await page.getByRole("textbox").first().fill("Fractions");
     await next.click();
     await expect(page.getByRole("heading", { name: "All set" })).toBeVisible();

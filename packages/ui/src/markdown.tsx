@@ -378,11 +378,29 @@ function codeLabel(n: Code): string | null {
   return title ?? n.lang ?? null;
 }
 
-function CodeBlock({ node }: { node: Code }) {
+/** How long "Copied" (or "Couldn't copy") shows before the button reads "Copy" again. */
+const COPY_RESET_MS = 2000;
+
+/** `highlight` is false while the block is still arriving (an open fence in a streaming answer). */
+function CodeBlock({ node, highlight }: { node: Code; highlight: boolean }) {
   const { t } = useTranslation();
-  const [copied, setCopied] = useState(false);
-  const highlighted = useMemo(() => highlightCode(node.lang, node.value), [node.lang, node.value]);
+  const [copy, setCopy] = useState<"idle" | "copied" | "failed">("idle");
+  const highlighted = useMemo(() => (highlight ? highlightCode(node.lang, node.value) : null), [highlight, node.lang, node.value]);
   const label = codeLabel(node);
+  useEffect(() => {
+    if (copy === "idle") return;
+    const timer = setTimeout(() => setCopy("idle"), COPY_RESET_MS);
+    return () => clearTimeout(timer);
+  }, [copy]);
+  const onCopy = () => {
+    const clipboard = typeof navigator === "undefined" ? undefined : navigator.clipboard;
+    if (!clipboard) return setCopy("failed");
+    clipboard.writeText(node.value).then(
+      () => setCopy("copied"),
+      () => setCopy("failed"),
+    );
+  };
+  const status = copy === "copied" ? t("reader.copied") : copy === "failed" ? t("reader.copyFailed") : "";
   return (
     <div className="hh-md-codeblock">
       <div className="hh-md-codebar">
@@ -390,15 +408,14 @@ function CodeBlock({ node }: { node: Code }) {
         <button
           type="button"
           className="hh-md-copy"
-          onClick={() =>
-            void navigator.clipboard?.writeText(node.value).then(
-              () => setCopied(true),
-              () => undefined,
-            )
-          }
+          aria-label={label ? t("reader.copyNamed", { label }) : t("reader.copyCode")}
+          onClick={onCopy}
         >
-          {copied ? t("reader.copied") : t("reader.copy")}
+          {copy === "idle" ? t("reader.copy") : status}
         </button>
+        <span className="hh-sr-only" aria-live="polite">
+          {status}
+        </span>
       </div>
       <pre className="hh-md-code">
         <code>{highlighted ?? node.value}</code>
@@ -410,7 +427,8 @@ function CodeBlock({ node }: { node: Code }) {
 /** A fenced or indented code block; ```mermaid is a diagram (§3.3), with its caption as the image's alt text. */
 function renderCode(n: Code, ctx: Ctx, key: number, caption?: string): ReactNode {
   if (n.lang?.toLowerCase() === "mermaid") return <MermaidDiagram key={key} code={n.value} closed={fenceClosed(ctx.source, n)} caption={caption} />;
-  return <CodeBlock key={key} node={n} />;
+  // Highlighting a block on every streaming tick is wasted work: it waits for the closing fence.
+  return <CodeBlock key={key} node={n} highlight={!ctx.fade || fenceClosed(ctx.source, n)} />;
 }
 
 // Linear: one bracketed word, then optional blanks and one newline.

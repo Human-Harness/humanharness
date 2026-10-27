@@ -38,9 +38,20 @@ function draw(node: RootContent | ElementContent, key: number): ReactNode {
   return createElement("span", { key, className: className || undefined }, node.children.map((c, i) => draw(c, i)));
 }
 
-/** `code` as highlighted spans, or null when the language is not in the set. Never an HTML string. */
+/** Above these, a block is shown as plain text: highlighting runs on the main thread and grows with the size. */
+export const HIGHLIGHT_MAX_CHARS = 100_000;
+export const HIGHLIGHT_MAX_LINES = 3000;
+
+function tooLarge(code: string): boolean {
+  if (code.length > HIGHLIGHT_MAX_CHARS) return true;
+  let lines = 1;
+  for (let i = code.indexOf("\n"); i !== -1; i = code.indexOf("\n", i + 1)) if (++lines > HIGHLIGHT_MAX_LINES) return true;
+  return false;
+}
+
+/** `code` as highlighted spans, or null when the language is not in the set or the code is too large. Never an HTML string. */
 export function highlightCode(lang: string | null | undefined, code: string): ReactNode[] | null {
   const name = lang?.toLowerCase();
-  if (!name || !low.registered(name)) return null;
+  if (!name || !low.registered(name) || tooLarge(code)) return null;
   return low.highlight(name, code).children.map((c, i) => draw(c, i));
 }

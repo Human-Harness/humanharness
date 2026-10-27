@@ -1,9 +1,10 @@
 // @vitest-environment happy-dom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { I18nextProvider } from "react-i18next";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CitationContext } from "../src/citations";
 import { DocumentContext } from "../src/documents-context";
+import { highlightCode } from "../src/highlight";
 import { Markdown, markdownToPlain } from "../src/markdown";
 import { Message } from "../src/Message";
 import { renderIn } from "./render";
@@ -457,10 +458,49 @@ describe("code blocks (§3.2)", () => {
     expect(container.querySelector("pre > code")?.textContent).toBe("const a = 1;");
     expect(container.querySelector("pre span.hljs-keyword")?.textContent).toBe("const");
     expect(container.querySelector(".hh-md-codelabel")?.textContent).toBe("ts");
-    fireEvent.click(screen.getByRole("button", { name: "Copy" }));
-    expect(write).toHaveBeenCalledWith("const a = 1;");
-    expect(await screen.findByRole("button", { name: "Copied" })).toBeTruthy();
+    const button = screen.getByRole("button", { name: "Copy ts" });
+    expect(button.textContent).toBe("Copy");
+    vi.useFakeTimers();
+    try {
+      fireEvent.click(button);
+      await act(async () => {});
+      expect(write).toHaveBeenCalledWith("const a = 1;");
+      expect(button.textContent).toBe("Copied");
+      expect(container.querySelector("[aria-live=polite]")?.textContent).toBe("Copied");
+      act(() => void vi.advanceTimersByTime(2000));
+      expect(button.textContent).toBe("Copy");
+      expect(container.querySelector("[aria-live=polite]")?.textContent).toBe("");
+    } finally {
+      vi.useRealTimers();
+      write.mockRestore();
+    }
+  });
+
+  it("a block without a label is named Copy code; a refused copy says so", async () => {
+    const write = vi.spyOn(navigator.clipboard, "writeText").mockRejectedValue(new Error("denied"));
+    const { container } = await renderIn("en", <Markdown source={"    indented"} />);
+    fireEvent.click(screen.getByRole("button", { name: "Copy code" }));
+    await act(async () => {});
+    expect(screen.getByRole("button", { name: "Copy code" }).textContent).toBe("Couldn't copy");
+    expect(container.querySelector("[aria-live=polite]")?.textContent).toBe("Couldn't copy");
     write.mockRestore();
+  });
+
+  it("a block too large is plain text", async () => {
+    const lines = Array.from({ length: 3001 }, () => "const a = 1;").join("\n");
+    const { container } = await renderIn("en", <Markdown source={"```ts\n" + lines + "\n```"} />);
+    expect(container.querySelector("pre span")).toBeNull();
+    expect(highlightCode("ts", "x".repeat(100_001))).toBeNull();
+    expect(highlightCode("ts", "const a = 1;")).not.toBeNull();
+  });
+
+  it("a block still arriving is highlighted only once its fence closes", async () => {
+    const open = await renderIn("en", <Markdown fade source={"```ts\nconst a = 1;"} />);
+    expect(open.container.querySelector("pre span")).toBeNull();
+    expect(open.container.querySelector("pre")?.textContent).toBe("const a = 1;");
+    cleanup();
+    const closed = await renderIn("en", <Markdown fade source={"```ts\nconst a = 1;\n```"} />);
+    expect(closed.container.querySelector("pre span.hljs-keyword")?.textContent).toBe("const");
   });
 
   it("a title in the info string is the label; an unknown language stays plain text", async () => {

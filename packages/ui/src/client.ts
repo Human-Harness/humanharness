@@ -936,3 +936,78 @@ export function isConfigured(config: AppConfig): config is ConfiguredApp {
 }
 
 export type { BlockAnswer, ChoiceOption, Event, EngineError, InputField, InputIssue, InputSpec, LimitWindow, RespondResult, SettingFieldView, SettingsView };
+
+// ── Sidekick (sidekick spec; plan 2026-10-27 part 1) ──
+
+/** The sidekick that speaks. Part 1 has one: `{ id: "sidekick", name: "Sidekick" }`. */
+export interface SidekickInfo {
+  id: string;
+  name: string;
+}
+
+export interface SidekickSettings {
+  on: boolean;
+  /** The pre-send moment (spec §8 "the three moments, each on its own"). */
+  preSend: boolean;
+  /** Longest wait before the prompt goes out as typed, in seconds; "always" waits up to 60 s. */
+  wait: 6 | 10 | "always";
+  /** Sidekick's tokens per task. */
+  cap: 20_000 | 50_000 | "none";
+  /** The off-state intro was answered. */
+  introSeen: boolean;
+}
+export type SidekickSettingsPatch = Partial<SidekickSettings>;
+export type SidekickSetResult = { ok: true; settings: SidekickSettings } | { ok: false; message: string };
+
+export type SidekickFlagKind = "vague" | "missing-context" | "two-asks" | "off-phase";
+export interface SidekickFlagView {
+  kind: SidekickFlagKind;
+  match: string;
+  span: [number, number];
+}
+export interface SidekickIssue {
+  kind: SidekickFlagKind | "other";
+  text: string;
+  span?: [number, number];
+}
+
+/** A suggestion (spec §4.1 step 4). */
+export interface SidekickCard {
+  id: string;
+  /** The prompt as typed. */
+  prompt: string;
+  flags: SidekickFlagView[];
+  issues: SidekickIssue[];
+  rewrite?: string;
+  queued?: string[];
+  confidence: number;
+  at: string;
+}
+
+/** Off · Watching · Reading your prompt… · Has a suggestion · Past its cap (spec §7). */
+export type SidekickStatus = "off" | "watching" | "reading" | "suggestion" | "capped";
+
+export interface SidekickState {
+  info: SidekickInfo;
+  settings: SidekickSettings;
+  status: SidekickStatus;
+  /** Tokens toward the cap in the open task (input + output + cache writes). */
+  spent: number;
+  /** The cap in tokens; null for no cap. */
+  cap: number | null;
+  /** The tier Sidekick's turns run at (Settings › Models), or "custom". */
+  tier: string;
+  card: SidekickCard | null;
+  /** Sidekick's tokens in the last 7 days. */
+  week: number;
+  /** The last review could not finish: the prompt went as typed (spec §5 "Errors"). */
+  notice?: "failed" | "timeout";
+}
+
+/**
+ * What the composer does with a review: `send` the prompt as typed (no flags, a clean verdict, Sidekick off or past
+ * its cap), show the `card`, send as typed after a `timeout` or an `error`, or nothing (`cancelled`: the person
+ * sent at once or the review was replaced).
+ */
+export type SidekickReview = { kind: "send" } | { kind: "card"; card: SidekickCard } | { kind: "timeout" } | { kind: "error" } | { kind: "cancelled" };
+export type SidekickOutcome = "used" | "edited" | "sent-anyway" | "dismissed";

@@ -1,5 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { RESERVED_COLLECTIONS, SIDEKICK_MIN_WORDS, defineHarness, sidekickMinWords, sidekickMode, sidekickTips } from "../src";
+import {
+  RESERVED_COLLECTIONS,
+  SIDEKICK_COLLECTION,
+  SIDEKICK_MIN_WORDS,
+  SIDEKICK_SETTINGS_ID,
+  dataCollections,
+  defineHarness,
+  sidekickCollection,
+  sidekickMinWords,
+  sidekickMode,
+  sidekickSettings,
+  sidekickTips,
+} from "../src";
 
 const minimal = {
   id: "notes",
@@ -56,5 +68,34 @@ describe("manifest sidekick", () => {
   it("reserves the action id and the collection", () => {
     expect(() => defineHarness({ ...minimal, actions: { sidekick: action } })).toThrow(/reserved/);
     expect(RESERVED_COLLECTIONS).toContain("sidekick");
+  });
+});
+
+describe("sidekick collection", () => {
+  it("is app-wide, keyed by id, hidden from the agent", () => {
+    const c = sidekickCollection();
+    expect(c.scoped).toBe(false);
+    expect(c.key).toBe("id");
+    expect(c.agent).toBe("none");
+  });
+
+  it("accepts the settings record and refuses unknown values", () => {
+    const schema = sidekickCollection().schema;
+    expect(schema.safeParse({ id: SIDEKICK_SETTINGS_ID, type: "settings", on: true, wait: 10, cap: "none" }).success).toBe(true);
+    expect(schema.safeParse({ id: SIDEKICK_SETTINGS_ID, type: "settings", wait: 7 }).success).toBe(false);
+    expect(schema.safeParse({ id: SIDEKICK_SETTINGS_ID, type: "settings", cap: 1 }).success).toBe(false);
+    expect(schema.safeParse({ id: "x", type: "settings" }).success).toBe(false);
+  });
+
+  it("settings fall back to the manifest default and the core defaults", () => {
+    expect(sidekickSettings(null, undefined)).toEqual({ on: false, preSend: true, wait: 6, cap: 20_000, introSeen: false });
+    expect(sidekickSettings(null, { default: "on" }).on).toBe(true);
+    expect(sidekickSettings({ id: "settings", type: "settings", on: false, cap: 50_000 }, { default: "on" })).toEqual({ on: false, preSend: true, wait: 6, cap: 50_000, introSeen: false });
+  });
+
+  it("D0: dataCollections never includes it", () => {
+    const h = defineHarness({ ...minimal });
+    expect(dataCollections(h)).toBe(h.data);
+    expect(Object.hasOwn(dataCollections(h), SIDEKICK_COLLECTION)).toBe(false);
   });
 });

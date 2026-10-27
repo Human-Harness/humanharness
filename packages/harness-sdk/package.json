@@ -3,6 +3,6 @@
   "version": "0.1.0",
   "type": "module",
   "license": "Apache-2.0",
-  "exports": { ".": "./src/index.ts", "./language": "./src/language.ts" },
+  "exports": { ".": "./src/index.ts", "./language": "./src/language.ts", "./documents": "./src/documents.ts" },
   "dependencies": { "zod": "^4.6.5" }
 }

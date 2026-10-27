@@ -1,0 +1,119 @@
+import { describe, expect, it } from "vitest";
+import {
+  CALLOUTS,
+  DOCUMENT_KIND_ID,
+  checkTemplate,
+  createSlugger,
+  documentTitle,
+  isMarkdownPath,
+  readingMinutes,
+  splitFrontMatter,
+  summarizeDocument,
+  wordCount,
+} from "../src/documents";
+
+describe("splitFrontMatter", () => {
+  it("reads simple key: value pairs and strips the block from the body", () => {
+    const fm = splitFrontMatter('---\ntitle: "ADR 7: Cache"\nkind: adr\nstatus: \'accepted\'\n---\n# Body\n');
+    expect(fm).toEqual({ data: { title: "ADR 7: Cache", kind: "adr", status: "accepted" }, body: "# Body\n", broken: false, lines: 5 });
+  });
+
+  it("no front-matter: everything is body", () => {
+    expect(splitFrontMatter("# Hi\n---\n")).toEqual({ data: {}, body: "# Hi\n---\n", broken: false, lines: 0 });
+  });
+
+  it("an unclosed block is not front-matter", () => {
+    expect(splitFrontMatter("---\ntitle: x\n").data).toEqual({});
+    expect(splitFrontMatter("---\ntitle: x\n").body).toBe("---\ntitle: x\n");
+  });
+
+  it("broken front-matter is hidden but ignored (§6)", () => {
+    const fm = splitFrontMatter("---\ntitle: x\nthis is not yaml\n---\nText");
+    expect(fm).toEqual({ data: {}, body: "Text", broken: true, lines: 4 });
+  });
+
+  it("skips indented lines, comments and empty lines; takes CRLF and a BOM", () => {
+    const fm = splitFrontMatter("\uFEFF---\r\ntags:\r\n  - a\r\n# note\r\n\r\ntitle: T\r\n...\r\nX");
+    expect(fm.data).toEqual({ tags: "", title: "T" });
+    expect(fm.body).toBe("X");
+  });
+});
+
+describe("createSlugger", () => {
+  it("makes GitHub-style ids, deduplicated in order", () => {
+    const slug = createSlugger();
+    expect(slug("Alternatives considered")).toBe("alternatives-considered");
+    expect(slug("Alternatives considered")).toBe("alternatives-considered-1");
+    expect(slug("¿Qué pasa? — Ñandú")).toBe("qué-pasa--ñandú");
+    expect(slug("!!!")).toBe("section");
+    expect(slug("!!!")).toBe("section-1");
+  });
+});
+
+describe("documentTitle", () => {
+  it("front-matter title, else the first # heading outside code, else the file name", () => {
+    expect(documentTitle("a/b.md", "---\ntitle: From FM\n---\n# H1")).toBe("From FM");
+    expect(documentTitle("a/b.md", "```\n# not this\n```\n## Two\n# Real one #\n")).toBe("Real one");
+    expect(documentTitle("tickets/MUS-412/analysis.md", "No heading")).toBe("analysis");
+  });
+});
+
+describe("words and reading time", () => {
+  it("counts the body's words, without the front-matter", () => {
+    expect(wordCount("---\ntitle: a b c\n---\none two\nthree")).toBe(3);
+  });
+  it("230 words a minute, at least one", () => {
+    expect(readingMinutes(0)).toBe(1);
+    expect(readingMinutes(230)).toBe(1);
+    expect(readingMinutes(231)).toBe(2);
+  });
+});
+
+describe("isMarkdownPath", () => {
+  it("takes .md in any case, nothing else", () => {
+    expect(isMarkdownPath("a/B.MD")).toBe(true);
+    expect(isMarkdownPath("a.markdown")).toBe(false);
+    expect(isMarkdownPath("a.md.txt")).toBe(false);
+  });
+});
+
+describe("summarizeDocument", () => {
+  it("title, kind and words for a card", () => {
+    expect(summarizeDocument("x/plan.md", "---\nkind: analysis\n---\n# The plan\nGo now.")).toEqual({ title: "The plan", kind: "analysis", words: 5 });
+    expect(summarizeDocument("x/plan.md", "Hi")).toEqual({ title: "plan", words: 1 });
+  });
+});
+
+describe("checkTemplate (§4.3)", () => {
+  const kinds = {
+    analysis: { when: "x", sections: ["Context", "Options", "Risks"] },
+    adr: { when: "y", sections: ["Status"], status: ["proposed", "accepted"] },
+  };
+  it("a missing section, matched without case and trimmed; order and extras are fine", () => {
+    expect(checkTemplate(kinds, { kind: "analysis" }, ["  options ", "CONTEXT", "Extra"])).toEqual({ kind: "analysis", missing: ["Risks"] });
+  });
+  it("an unknown kind", () => {
+    expect(checkTemplate(kinds, { kind: "memo" }, [])).toEqual({ kind: "memo", unknownKind: true, missing: [] });
+  });
+  it("a status outside the kind's list", () => {
+    expect(checkTemplate(kinds, { kind: "adr", status: "done" }, ["Status"])).toEqual({ kind: "adr", missing: [], badStatus: "done" });
+    expect(checkTemplate(kinds, { kind: "adr", status: "accepted" }, ["Status"])).toEqual({ kind: "adr", missing: [] });
+  });
+  it("no kind, or no kinds declared: no check", () => {
+    expect(checkTemplate(kinds, {}, [])).toBeNull();
+    expect(checkTemplate(undefined, { kind: "adr" }, [])).toBeNull();
+    expect(checkTemplate({}, { kind: "adr" }, [])).toBeNull();
+  });
+});
+
+describe("constants", () => {
+  it("six callouts, three GitHub's and three of the core", () => {
+    expect(CALLOUTS).toEqual(["note", "tip", "warning", "summary", "decision", "question"]);
+  });
+  it("kind ids are lowercase", () => {
+    expect(DOCUMENT_KIND_ID.test("adr")).toBe(true);
+    expect(DOCUMENT_KIND_ID.test("design-doc2")).toBe(true);
+    expect(DOCUMENT_KIND_ID.test("ADR")).toBe(false);
+    expect(DOCUMENT_KIND_ID.test("2x")).toBe(false);
+  });
+});

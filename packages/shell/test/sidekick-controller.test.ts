@@ -770,6 +770,60 @@ describe("heads-ups (spec §4.3)", () => {
     expect(await headsUps(h)).toEqual([expect.objectContaining({ kind: "off-phase", headsUp: { kind: "off-phase", phase: "Review citations" } })]);
   });
 
+  it("turned off while the drift review reads the context → no heads-up", async () => {
+    const h = harness({ record: on, task: essay, phases, answers: [SEND, SEND] });
+    await h.ctl.review({ text: "Check the citations in section 2 against the bibliography" });
+    let open!: () => void;
+    const held = new Promise<void>((r) => (open = r));
+    let reading = false;
+    const context = h.deps.context;
+    h.deps.context = async (...args) => {
+      reading = true;
+      await held;
+      return context(...args);
+    };
+    const p = h.ctl.review({ text: "Check the citations in section 3 against the bibliography" });
+    await vi.waitFor(() => expect(reading).toBe(true));
+    await h.ctl.set({ on: false });
+    open();
+    await p;
+    const s = await h.ctl.state();
+    expect(s.status).toBe("off");
+    expect(s.cards).toEqual([]);
+  });
+
+  it("turned off while the context heads-up checks its task → no heads-up", async () => {
+    const h = harness({ record: { ...on, afterReply: false } });
+    let open!: () => void;
+    const held = new Promise<void>((r) => (open = r));
+    let hold = true;
+    let checking = false;
+    const task = h.deps.task;
+    h.deps.task = async () => {
+      // The heads-up's first look at the open task waits while Sidekick is turned off; later reads (state) don't.
+      if (hold) {
+        hold = false;
+        checking = true;
+        await held;
+      }
+      return task();
+    };
+    const p = h.ctl.afterReply(end({ context: { used: 190_000, cap: 200_000 } }));
+    await vi.waitFor(() => expect(checking).toBe(true));
+    await h.ctl.set({ on: false });
+    open();
+    await p;
+    expect((await h.ctl.state()).cards).toEqual([]);
+  });
+
+  it("a late turn of a closed task keeps the open task's signals", async () => {
+    const h = harness({ record: { ...on, afterReply: false } });
+    await h.ctl.afterReply(end({ context: { used: 190_000, cap: 200_000 } }));
+    await h.ctl.afterReply(end({ task: { id: "t0", scope: "main" }, context: { used: 190_000, cap: 200_000 } }));
+    await h.ctl.afterReply(end({ context: { used: 195_000, cap: 200_000 } }));
+    expect(await headsUps(h)).toHaveLength(1);
+  });
+
   it("a prompt on the open phase breaks the streak", async () => {
     const h = harness({ record: on, task: essay, phases, answers: [SEND, SEND, SEND] });
     await h.ctl.review({ text: "Check the citations in section 2 against the bibliography" });

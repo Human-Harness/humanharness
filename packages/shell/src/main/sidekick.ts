@@ -409,7 +409,7 @@ export class SidekickController {
       ...(open ? { phases: { open, others: phases.filter((p) => p.id !== open.id) } } : {}),
       ...(muted.length ? { muted } : {}),
     });
-    if (task && open) await this.noteDrift({ task, base: setup.base }, settings, flags, open, phases, req.text);
+    if (task && open) await this.noteDrift({ task, base: setup.base }, settings, flags, open, phases, req.text, live);
     // 2. The decision.
     if (flags.length === 0 && mode === "auto" && !req.force) return early("send");
     const key = task?.id ?? NO_TASK;
@@ -583,6 +583,8 @@ export class SidekickController {
   private async noteContext(end: TurnEnd, settings: SidekickSettings): Promise<void> {
     const c = end.context;
     if (!settings.headsUps || !c?.cap || c.used / c.cap < CONTEXT_SHARE) return;
+    // A late turn of a closed task must not reset the open task's signals.
+    if (!(await this.isOpen(end.task.id))) return;
     const signals = this.signalsFor(end.task.id);
     if (signals.context) return;
     signals.context = true;
@@ -593,6 +595,7 @@ export class SidekickController {
 
   /** An ask the after-reply turn saw come back: at exactly REPEATS times, a heads-up with its draft decision. */
   private async noteRepeated(ctx: { task: OpenTask; base: string }, settings: SidekickSettings, repeated: { topic: string; decision: string }): Promise<void> {
+    if (!(await this.isOpen(ctx.task.id))) return;
     const signals = this.signalsFor(ctx.task.id);
     const topic = repeated.topic.trim();
     const key = topic.toLowerCase();
@@ -609,7 +612,10 @@ export class SidekickController {
     open: { id: string; label: string },
     phases: readonly { id: string; label: string }[],
     text: string,
+    live: () => boolean,
   ): Promise<void> {
+    // A superseded or cancelled review (turned off, closed) counts nothing.
+    if (!live() || !(await this.isOpen(ctx.task.id)) || !live()) return;
     const signals = this.signalsFor(ctx.task.id);
     if (!flags.some((f) => f.kind === "off-phase")) {
       signals.drift = 0;
@@ -617,16 +623,25 @@ export class SidekickController {
     }
     if (++signals.drift !== DRIFT) return;
     const other = phases.find((p) => p.id !== open.id && localCheck(text, { minWords: 0, known: [], phases: { open, others: [p] }, muted: NOT_OFF_PHASE }).length > 0);
-    await this.headsUp(ctx, settings, { kind: "off-phase", ...(other ? { phase: other.label } : {}) });
+    await this.headsUp(ctx, settings, { kind: "off-phase", ...(other ? { phase: other.label } : {}) }, live);
+  }
+
+  /** Whether `task` is the open task. */
+  private async isOpen(task: string): Promise<boolean> {
+    return (await this.d.task().catch(() => null))?.id === task;
   }
 
   /**
    * A heads-up card (spec §4.3), waiting with the after-reply cards: only with Sidekick and heads-ups on, its kind not
-   * muted, and its task still the open one (it was about that task).
+   * muted, and its task still the open one (it was about that task). The settings are read again right before the
+   * push: the caller's read may predate turning Sidekick off.
    */
-  private async headsUp(ctx: { task: OpenTask; base: string }, settings: SidekickSettings, headsUp: SidekickHeadsUp): Promise<void> {
-    if (this.closed || !settings.on || !settings.headsUps || mutedOf(settings, SPEAKER.id).includes(headsUp.kind)) return;
-    if ((await this.d.task().catch(() => null))?.id !== ctx.task.id || this.closed) return;
+  private async headsUp(ctx: { task: OpenTask; base: string }, settings: SidekickSettings, headsUp: SidekickHeadsUp, live: () => boolean = () => true): Promise<void> {
+    const allowed = (s: SidekickSettings) => s.on && s.headsUps && !mutedOf(s, SPEAKER.id).includes(headsUp.kind);
+    if (this.closed || !allowed(settings)) return;
+    if (!(await this.isOpen(ctx.task.id)) || this.closed) return;
+    const now = await this.d.store.settings();
+    if (this.closed || !allowed(now) || !live()) return;
     const card: SidekickCard = { id: randomUUID(), moment: eventMoment("heads-up"), speaker: SPEAKER, kind: headsUp.kind, prompt: "", flags: [], issues: [], confidence: 1, headsUp, at: new Date().toISOString() };
     this.cards.push({ card, ctx });
     await this.push();

@@ -178,7 +178,7 @@ describe("parseLoggedIn: opencode-auth-list", () => {
 describe("detectEngine: OpenCode", () => {
   const opencode = getEngine("opencode");
   const opencodeDeps = (version: string, replies: Record<string, Reply>) =>
-    deps({ "--version": { stdout: `${version}\n`, code: 0 }, ...replies }, { isExecutable: async (p) => p === "/Users/me/.local/bin/opencode" });
+    deps({ "--version": { stdout: `${version}\n`, code: 0 }, ...replies }, { isExecutable: async (p) => p === "/Users/me/.opencode/bin/opencode" });
   const v1 = (list: string) => opencodeDeps("1.19.4", { "auth list": { stdout: list, code: 0 } });
 
   it("is ready with a provider", async () => {

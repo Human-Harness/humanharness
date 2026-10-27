@@ -34,8 +34,15 @@ const BUNDLED_CLIS: Record<string, { adapter: string; cli: string }> = {
   codex: { adapter: "@agentclientprotocol/codex-acp/dist/index.js", cli: "@openai/codex/bin/codex.js" },
 };
 
+/** Common bin folders: also the PATH when the login shell can't tell. */
+const commonBinDirs = (home: string): string[] => [path.join(home, ".local/bin"), "/opt/homebrew/bin", "/usr/local/bin"];
+
 /** Folders official installers use, searched after PATH: a fresh install may not be on the login PATH yet. */
-export const knownBinDirs = (home: string): string[] => [path.join(home, ".local/bin"), "/opt/homebrew/bin", "/usr/local/bin"];
+export const knownBinDirs = (home: string): string[] => [
+  ...commonBinDirs(home),
+  // OpenCode's installer (spike A1). Searched only: the fallback PATH stays as it was for the other engines.
+  path.join(home, ".opencode/bin"),
+];
 
 export async function loginShellPath(d: CommandDeps): Promise<string> {
   try {
@@ -44,7 +51,7 @@ export async function loginShellPath(d: CommandDeps): Promise<string> {
   } catch {
     // fall through
   }
-  return [...knownBinDirs(d.home), "/usr/bin", "/bin"].join(":");
+  return [...commonBinDirs(d.home), "/usr/bin", "/bin"].join(":");
 }
 
 export async function resolveBinary(name: string, searchPath: string, d: CommandDeps): Promise<string | null> {

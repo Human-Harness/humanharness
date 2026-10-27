@@ -401,3 +401,39 @@ describe("TaskManager: modes by phase (task-modes spec §7)", () => {
     expect(t.state().current).not.toHaveProperty("mode");
   });
 });
+
+describe("TaskManager: the close phase is the core closing (task-phases spec D5)", () => {
+  it("the person's Finish in the close phase runs the closing turn and ends the task", async () => {
+    const t = setup({ script: [[ok], [ok], [saveNote, ok]] });
+    await t.manager.start("session");
+    await t.manager.setPhase("close", "t1").done;
+    const r = t.manager.setPhase("close", "t1");
+    expect(await r.accepted).toEqual({ ok: true, changed: "closing" });
+    await r.done;
+    expect(t.turns.at(-1)!.message).toBe(CLOSE_PROMPT);
+    expect(t.turns.at(-1)!.options).toMatchObject({ phase: "close", taskPhase: "close", quiet: true });
+    expect(t.state().current).toBeNull();
+    expect(t.state().actions).toEqual({ session: "done" });
+    expect(t.written[0].meta).toMatchObject({ action: "session" });
+  });
+
+  it("the agent says the close phase is done: closed at once with auto, else a proposal to finish", async () => {
+    const auto = setup({ phases: [PHASES[0], { ...PHASES[2], auto: true }], script: [[ask("close"), ok], [ask("close", "All summed up"), ok], [saveNote, ok]] });
+    await auto.manager.start("session");
+    expect(auto.turns.map((x) => x.options.phase)).toEqual(["run", "phase-change", "close"]);
+    expect(auto.state().current).toBeNull();
+
+    const asks = setup({ script: [[ok], [ask("close", "All summed up"), ok]] });
+    await asks.manager.start("session");
+    await asks.manager.setPhase("close", "t1").done;
+    expect(asks.turns).toHaveLength(2);
+    expect(asks.state().current).toMatchObject({ phase: { id: "close" }, phaseProposal: { to: "close", reason: "All summed up" } });
+  });
+
+  it("the same id in any other phase does nothing", async () => {
+    const t = setup({ script: [[ask("warmup"), ok]] });
+    await t.manager.start("session");
+    expect(t.turns).toHaveLength(1);
+    expect(t.state().current).not.toHaveProperty("phaseProposal");
+  });
+});

@@ -1286,8 +1286,9 @@ export class TaskManager {
   }
 
   /**
-   * The agent's `set_phase` (spec §4.1), after its turn ended well. The current phase has `auto` and `to` is the next one:
-   * the app moves now. Anything else: a proposal the person confirms or ignores. An id this action doesn't have is
+   * The agent's `set_phase` (spec §4.1), after its turn ended well. With the current phase's `auto`: `to` the next phase
+   * moves now, and the close phase's own id closes the task (D5). Anything else: a proposal the person confirms or
+   * ignores. An id this action doesn't have is
    * ignored (the `ui` server only knows the harness's ids). A failed move is logged: the agent's turn itself went well.
    */
   private async phaseAsked(id: string, ask: PhaseRequest): Promise<void> {
@@ -1300,9 +1301,11 @@ export class TaskManager {
       console.error(`The agent asked for a phase this task doesn't have: "${ask.to}"`);
       return;
     }
-    // The same part: the close part's "done" comes with the close part (Task 8); any other does nothing.
-    if (to === here) return;
-    if (phases[here].auto !== true || to !== here + 1) {
+    const current = phases[here];
+    // Its own id: "this part is done", which means something only in the close phase (D5).
+    if (to === here && !current.close) return;
+    const auto = current.auto === true && (to === here + 1 || to === here);
+    if (!auto) {
       const proposal = { to: ask.to, reason: ask.reason };
       return this.update((s) => (s.current?.id === id ? { ...s, current: { ...s.current, phaseProposal: proposal } } : s));
     }
@@ -1310,7 +1313,8 @@ export class TaskManager {
     // question because the change turn after it failed).
     const asked = this.lastDone;
     try {
-      await this.endsInWindow(() => this.movePhase(c, phases[to], "agent"));
+      if (to === here) await this.closeCurrent();
+      else await this.endsInWindow(() => this.movePhase(c, phases[to], "agent"));
     } catch (err) {
       console.error("The phase change the agent asked for failed", err);
     } finally {
@@ -1319,8 +1323,9 @@ export class TaskManager {
   }
 
   /**
-   * Checks, in order: a task waits (the one the caller saw); the action has the phase; it isn't the current one. Then
-   * the change: its message read first (a brief that can't be read refuses it), then the state and the turn.
+   * Checks, in order: a task waits (the one the caller saw); the action has the phase; it isn't the current one (the
+   * close phase's own id is its Finish). Then the change: its message read first (a brief that can't be read refuses
+   * it), then the state and the turn.
    */
   private async phaseNow(to: string, take: (r: PhaseResult) => void, task?: string): Promise<void> {
     const c = await this.storedCurrent();
@@ -1328,7 +1333,13 @@ export class TaskManager {
     const phases = this.phasesOf(c.action);
     const target = phases.find((p) => p.id === to);
     if (!target) return take({ ok: false, reason: "unknown" });
-    if (c.phase?.id === to) return take({ ok: true, changed: "same" });
+    if (c.phase?.id === to) {
+      if (!target.close) return take({ ok: true, changed: "same" });
+      // The close phase's Finish (D5): the core closing turn asks for the note and ends the task.
+      take({ ok: true, changed: "closing" });
+      await this.closeCurrent();
+      return;
+    }
     const back = phases.indexOf(target) < phases.findIndex((p) => p.id === c.phase?.id);
     const plan = await this.phasePlan(c, target, back);
     take({ ok: true, changed: plan.message ? "turn" : "quiet" });

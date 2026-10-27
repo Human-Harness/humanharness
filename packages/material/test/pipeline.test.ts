@@ -1,8 +1,8 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { type ConvertRunner, ConvertStopped, MAX_BYTES, MAX_PAGES, MaterialStore, addSource, confirmSource, estimateCost, intakeDecision, processSource, refreshSources, sampleSize, workerRunner } from "../src";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { type ConvertRunner, ConvertStopped, MAX_BYTES, MAX_PAGES, MaterialStore, type OriginalStamp, addSource, confirmSource, estimateCost, intakeDecision, processSource, refreshSources, sampleSize, workerRunner } from "../src";
 import { body, makePdf } from "./make-pdf";
 
 let base: string;
@@ -286,5 +286,83 @@ describe("refreshSources (§11 update)", () => {
     fs.rmSync(original("a.md"));
     expect(await refreshSources(store, { items: false })).toEqual([]);
     expect((await store.source("a"))?.status).toBe("pending");
+  });
+
+  it("an original that can't be read for now (permissions, a privacy prompt) is left as it is, not removed", async () => {
+    const r = await addSource(store, { name: "a.md", data: Buffer.from(chapter) }, { accepts: ["text"], items: false });
+    if (!r.ok) throw new Error("unreachable");
+    fs.writeFileSync(original("a.md"), chapter.replace("# Fractions", "# Changed"));
+    fs.chmodSync(original("a.md"), 0o000);
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      expect(await refreshSources(store, { items: false })).toEqual([]);
+    } finally {
+      errors.mockRestore();
+      fs.chmodSync(original("a.md"), 0o644);
+    }
+    expect((await store.source("a"))?.status).toBe("validating");
+    expect((await store.fragments()).length).toBeGreaterThan(0);
+  });
+
+  it("a changed original goes through intake again: grown past the warning, it waits with a new estimate", async () => {
+    const short = Array.from({ length: 10 }, (_, i) => body([`Page ${i + 1} is short.`]));
+    const r = await addSource(store, { name: "book.pdf", data: makePdf(short) }, { accepts: ["pdf"], items: false });
+    if (!r.ok) throw new Error("unreachable");
+    const before = (await store.source(r.id))!;
+    expect(before.status).toBe("validating");
+    await store.patch(r.id, (e) => ({ ...e, pageRange: [1, 5] }));
+    const long = Array.from({ length: 900 }, (_, i) => body([`Page ${i + 1} is in the long version.`]));
+    fs.writeFileSync(original("book.pdf"), makePdf(long));
+    expect(await refreshSources(store, { items: false, accepts: ["pdf"] })).toEqual([r.id]);
+    const s = (await store.source(r.id))!;
+    expect(s).toMatchObject({ status: "pending", notice: "max", pages: 900, fragments: [] });
+    expect(s.pageRange).toBeUndefined();
+    expect(s.estimate).toBeGreaterThan(before.estimate);
+    expect(await store.fragments()).toEqual([]);
+  });
+
+  it("a changed original past the size limit is refused without being read whole", async () => {
+    const r = await addSource(store, { name: "a.md", data: Buffer.from(chapter) }, { accepts: ["text"], items: false });
+    if (!r.ok) throw new Error("unreachable");
+    fs.writeFileSync(original("a.md"), Buffer.alloc(MAX_BYTES + 1, "a"));
+    const reads = vi.spyOn(fs.promises, "readFile");
+    try {
+      expect(await refreshSources(store, { items: false })).toEqual(["a"]);
+      expect(reads.mock.calls.some(([f]) => f === original("a.md"))).toBe(false);
+    } finally {
+      reads.mockRestore();
+    }
+    expect(await store.source("a")).toMatchObject({ status: "refused", refusal: "too-big", fragments: [] });
+  });
+
+  it("an original whose size and time haven't changed is not read again; options are built only for a change", async () => {
+    const r = await addSource(store, { name: "a.md", data: Buffer.from(chapter) }, { accepts: ["text"], items: false });
+    if (!r.ok) throw new Error("unreachable");
+    const seen = new Map<string, OriginalStamp>();
+    let built = 0;
+    const options = async () => (built++, { items: false });
+    expect(await refreshSources(store, options, seen)).toEqual([]);
+    const reads = vi.spyOn(fs.promises, "readFile");
+    try {
+      expect(await refreshSources(store, options, seen)).toEqual([]);
+      expect(reads.mock.calls.some(([f]) => f === original("a.md"))).toBe(false);
+      expect(built).toBe(0);
+      // A change shows in its size or time: read, hashed, converted again.
+      fs.writeFileSync(original("a.md"), chapter.replace("# Fractions", "# Fractions, longer"));
+      expect(await refreshSources(store, options, seen)).toEqual(["a"]);
+      expect(reads.mock.calls.some(([f]) => f === original("a.md"))).toBe(true);
+      expect(built).toBe(1);
+    } finally {
+      reads.mockRestore();
+    }
+  });
+
+  it("fragments written for a source removed meanwhile are not kept", async () => {
+    const r = await addSource(store, { name: "a.md", data: Buffer.from(chapter) }, { accepts: ["text"], items: false });
+    if (!r.ok) throw new Error("unreachable");
+    const f = (await store.readFragment("a-001"))!;
+    await store.patch("a", (e) => ({ ...e, status: "removed" }));
+    await store.writeFragments("a", [{ ...f, meta: { ...f.meta, id: "a-050" } }]);
+    expect(await store.readFragment("a-050")).toBeNull();
   });
 });

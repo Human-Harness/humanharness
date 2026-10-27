@@ -290,14 +290,42 @@ export async function confirmSource(
 /** The sources whose original is looked at again (§11 update): processed ones. Waiting, converting, refused and removed ones are not. */
 const REFRESHED = new Set(["validating", "ready", "needs-person"]);
 
+/** An original as last hashed: while its size and modification time stay, its hash is taken to stay too. */
+export interface OriginalStamp {
+  size: number;
+  mtimeMs: number;
+  hash: string;
+}
+
+/** The original is gone for good; any other error (a privacy prompt, permissions, too many open files) is passing. */
+const isGone = (err: unknown): boolean => {
+  const code = (err as NodeJS.ErrnoException | null)?.code;
+  return code === "ENOENT" || code === "ENOTDIR";
+};
+
+/** What refreshing takes: the pipeline's options (built only once an original changed), and the families accepted. */
+export type RefreshOptions = PipelineOptions & { accepts?: readonly MaterialFamily[] };
+
 /**
- * Originals the person changed or removed by hand in `material/<scope>/` (§11 update). A changed one is converted again
- * under the same id: what the AI stages left on it (verdict, queues, repairs, questions, labels so far, the review's
- * conversion settings, its `.orig/` copies) goes, its fragments are renumbered, and its AI stages run again. A missing
- * one is removed like the person's Remove (nothing to put in the Trash). Either way the scope's sheet and links run
- * again. Returns the ids touched; never throws for one source (a failure is logged and the next one is looked at).
+ * Originals the person changed or removed by hand in `material/<scope>/` (§11 update).
+ * - A changed one goes through intake again under the same id, like a new file (§3, §7): past MAX_BYTES it is refused
+ *   unread; it is detected and measured, and then refused, left waiting for the person (with the warning and a new
+ *   estimate), or converted at once. What the AI stages and the person's earlier answers left on it goes (verdict,
+ *   queues, repairs, questions, labels so far, conversion settings, page range, sheets, its `.orig/` copies), and its
+ *   fragments are renumbered.
+ * - A missing one (ENOENT, ENOTDIR) is removed like the person's Remove, with nothing to put in the Trash. Any other
+ *   error reading it is logged and the source is left as it is.
+ * Either way the scope's sheet and links run again. `seen` keeps each original's size and time since it was last
+ *   hashed, so an unchanged one is not read again. `o` may be a function: it is called only once an original changed.
+ * Returns the ids touched; never throws for one source (a failure is logged and the next one is looked at).
  */
-export async function refreshSources(store: MaterialStore, o: PipelineOptions): Promise<string[]> {
+export async function refreshSources(
+  store: MaterialStore,
+  o: RefreshOptions | (() => Promise<RefreshOptions>),
+  seen: Map<string, OriginalStamp> = new Map(),
+): Promise<string[]> {
+  let built: RefreshOptions | undefined;
+  const options = async () => (built ??= typeof o === "function" ? await o() : o);
   const touched: string[] = [];
   let sources: SourceEntry[];
   try {
@@ -306,38 +334,152 @@ export async function refreshSources(store: MaterialStore, o: PipelineOptions): 
     console.error("Could not read the material registry", err);
     return [];
   }
+  const removed = async (id: string) => {
+    seen.delete(id);
+    if (await removeSource(store, id, async () => undefined)) touched.push(id);
+  };
   for (const s of sources) {
     if (!REFRESHED.has(s.status)) continue;
     try {
       const file = store.originalPath(s.path);
-      const data = file ? await fs.readFile(file).catch(() => null) : null;
-      if (!data) {
-        if (await removeSource(store, s.id, async () => undefined)) touched.push(s.id);
+      // A name a hand edit made that would leave the folder: there is no original.
+      if (!file) {
+        await removed(s.id);
         continue;
       }
-      const hash = createHash("sha256").update(data).digest("hex");
-      if (hash === s.hash) continue;
-      // One registry job: only the entry as it was read (not answered or removed meanwhile) starts over.
-      const started = await store.transact(async (rewrite) => {
-        let ok = false;
-        await rewrite((list) =>
-          list.map((e) => {
-            if (e.id !== s.id || e.hash !== s.hash || !REFRESHED.has(e.status)) return e;
-            ok = true;
-            const { stage: _s, notice: _n, verdict: _v, reviewQueue: _q, repairs: _r, failed: _f, labelled: _l, fullReview: _full, settings: _set, ...rest } = e;
-            return { ...rest, status: "converting", hash, sizeBytes: data.length, issues: [], fixes: [], asks: [], reconverted: 0 };
-          }),
-        );
-        if (ok) await store.clearOriginalVersions(s.id);
-        return ok;
-      });
-      if (!started) continue;
-      await store.setStale("sheet");
-      await processSource(store, s.id, o);
-      touched.push(s.id);
+      let stat: Awaited<ReturnType<typeof fs.stat>>;
+      try {
+        stat = await fs.stat(file);
+      } catch (err) {
+        if (isGone(err)) await removed(s.id);
+        else console.error("Could not look at an original", err);
+        continue;
+      }
+      const stamp = seen.get(s.id);
+      if (stamp && stamp.hash === s.hash && stamp.size === stat.size && stamp.mtimeMs === stat.mtimeMs) continue;
+      if (!stat.isFile()) {
+        console.error("An original is no longer a file", file);
+        continue;
+      }
+      let data: Buffer | null = null;
+      if (stat.size <= MAX_BYTES) {
+        try {
+          data = await fs.readFile(file);
+        } catch (err) {
+          if (isGone(err)) await removed(s.id);
+          else console.error("Could not read an original", err);
+          continue;
+        }
+        const hash = createHash("sha256").update(data).digest("hex");
+        if (hash === s.hash) {
+          seen.set(s.id, { size: stat.size, mtimeMs: stat.mtimeMs, hash });
+          continue;
+        }
+      }
+      if (await intakeAgain(store, s, data, stat.size, await options())) touched.push(s.id);
+      seen.delete(s.id);
     } catch (err) {
       console.error("Could not look at a changed original", err);
     }
   }
   return touched;
+}
+
+/**
+ * A changed original taken in again (§3, §7) under its id; `data` null: past MAX_BYTES, not read. False when nothing
+ * changed: the entry changed meanwhile (an answer, a removal), or measuring was stopped (it is looked at again later).
+ */
+async function intakeAgain(store: MaterialStore, s: SourceEntry, data: Buffer | null, size: number, o: RefreshOptions): Promise<boolean> {
+  type Next = { kind: "refuse"; reason: Refusal } | { kind: "wait"; notice: NonNullable<SourceEntry["notice"]>; m: Measured } | { kind: "process"; m: Measured };
+  let next: Next | undefined;
+  let type = s.type;
+  let family = s.family;
+  if (!data) next = { kind: "refuse", reason: "too-big" };
+  else {
+    const detected = detectType(s.path, data.subarray(0, 65536));
+    if (!detected.ok) next = { kind: "refuse", reason: detected.reason };
+    else if (o.accepts && !o.accepts.includes(detected.family)) next = { kind: "refuse", reason: "not-accepted" };
+    else {
+      type = detected.type;
+      family = detected.family;
+      let m: Measured;
+      try {
+        m = await (o.runner ?? workerRunner()).measure(detected.type, data, s.path, s.url !== undefined);
+      } catch (err) {
+        if (err instanceof ConvertStopped) return false;
+        m = { pages: 0, tokens: 0 };
+        next = { kind: "refuse", reason: reasonOf(err) };
+      }
+      next ??= ((): Next => {
+        const d = intakeDecision({
+          family: detected.family,
+          pages: m.pages,
+          sizeBytes: data.length,
+          ...(m.textPages !== undefined ? { textPages: m.textPages } : {}),
+          ...(m.checked !== undefined ? { checked: m.checked } : {}),
+          ...(m.rows !== undefined ? { rows: m.rows } : {}),
+        });
+        return d.kind === "refuse" ? d : d.kind === "wait" ? { kind: "wait", notice: d.notice, m } : { kind: "process", m };
+      })();
+    }
+  }
+  if (!next) return false;
+  const decided: Next = next;
+  const hash = data ? createHash("sha256").update(data).digest("hex") : s.hash;
+  // One registry job: only the entry as it was read (not answered or removed meanwhile) starts over.
+  const started = await store.transact(async (rewrite) => {
+    let ok = false;
+    await rewrite((list) =>
+      list.map((e) => {
+        if (e.id !== s.id || e.hash !== s.hash || !REFRESHED.has(e.status)) return e;
+        ok = true;
+        const {
+          stage: _s,
+          notice: _n,
+          refusal: _ref,
+          verdict: _v,
+          reviewQueue: _q,
+          repairs: _r,
+          failed: _f,
+          labelled: _l,
+          fullReview: _full,
+          settings: _set,
+          pageRange: _range,
+          sheets: _sheets,
+          rows: _rows,
+          ...rest
+        } = e;
+        const m = decided.kind === "refuse" ? undefined : decided.m;
+        const fresh: SourceEntry = {
+          ...rest,
+          type,
+          family,
+          hash,
+          sizeBytes: size,
+          ...(m ? { pages: m.pages, ...(m.rows !== undefined ? { rows: m.rows } : {}) } : {}),
+          skippedPages: [],
+          issues: [],
+          fixes: [],
+          asks: [],
+          reconverted: 0,
+          status: "converting",
+        };
+        if (decided.kind === "wait")
+          return { ...fresh, status: "pending", notice: decided.notice, estimate: estimateCost({ tokens: decided.m.tokens, items: o.items, ...(o.measured ? { measured: o.measured } : {}) }) };
+        return fresh;
+      }),
+    );
+    if (ok) await store.clearOriginalVersions(s.id);
+    return ok;
+  });
+  if (!started) return false;
+  await store.setStale("sheet");
+  if (decided.kind === "process") await processSource(store, s.id, o);
+  else if (decided.kind === "refuse") await refuse(store, s.id, decided.reason);
+  else {
+    // A source waiting for the person loads nothing until the answer.
+    await store.writeFragments(s.id, []);
+    await store.writeIndex();
+  }
+  return true;
 }

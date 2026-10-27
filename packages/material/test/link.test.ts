@@ -39,8 +39,10 @@ describe("the link stage", () => {
   it("refuses a fragment that is not in the index; never writes fragments of unusable sources", async () => {
     const state = { store, job, answers: [] as Record<string, unknown>[], ctx };
     await expect(STAGES.link!.accept("material_link", { links: [{ fragment: "zz-001", items: ["halves"] }] }, state)).rejects.toThrow("zz-001 is not a fragment");
-    await store.update((l) => [...l, { ...entry, id: "zz", status: "removed" }]);
+    // Its file left behind (a hand edit): a removed source gets no fragments written any more.
+    await store.update((l) => [...l, { ...entry, id: "zz", status: "ready" }]);
     await store.writeFragments("zz", [{ meta: meta("zz-001"), md: "z" }]);
+    await store.patch("zz", (e) => ({ ...e, status: "removed" }));
     await expect(STAGES.link!.accept("material_link", { links: [{ fragment: "zz-001", items: ["halves"] }] }, state)).rejects.toThrow();
     // An answer naming it anyway (accepted before its source went): it is not written.
     state.answers.push({ name: "material_link", links: [{ fragment: "zz-001", items: ["halves"] }] });

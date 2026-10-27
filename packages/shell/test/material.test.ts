@@ -5,7 +5,7 @@ import path from "node:path";
 import { hasMaterial } from "@humanharness/harness-sdk";
 import { type ConvertRunner, ConvertStopped, type Job, MAX_BYTES, MaterialStore, STAGES, workerRunner } from "@humanharness/material";
 import { DATA_PREFIX, MATERIAL_KEEP, NOTES_PREFIX } from "@humanharness/workspace";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type MaterialDeps, MaterialService, promptFragments } from "../src/main/material";
 import { MaterialJobs } from "../src/main/material-jobs";
 
@@ -578,10 +578,12 @@ describe("the review stage in the queue (material spec §6.2)", () => {
       ids.map((id) => ({ meta: { id, source: "a.md", location: "lines 1", path: "A", summary: "", keywords: [], tokens: 10, items: [], checks: "ok", validated: "not-reviewed" }, md: `Text of ${id}.` })),
     );
     let runs = 0;
+    const counts: number[] = [];
     const svc = new MaterialService(
       deps({
-        runStage: async (_j, prompt, tools, handle) => {
+        runStage: async (_j, prompt, tools, handle, _signal, fragments) => {
           runs++;
+          counts.push(fragments);
           const batch = [...prompt.matchAll(/^\[(a-\d{3})\]/gm)].map((m) => m[1]);
           if (tools.includes("material_sheet")) {
             // From the index: every fragment's row, with its summary.
@@ -604,6 +606,8 @@ describe("the review stage in the queue (material spec §6.2)", () => {
     jobs.kick();
     await jobs.settled();
     expect(runs).toBe(5);
+    // Each usage line counts the batch it handled; the sheet is per run.
+    expect(counts).toEqual([20, 5, 20, 5, 0]);
     expect(await store.source("a")).toMatchObject({ status: "ready", verdict: "good" });
     expect((await store.readFragment("a-025"))?.meta).toMatchObject({ validated: "sample", kind: "explanation", keywords: ["a-025"] });
     // The sheet ran once the source was labelled; no items, so nothing is due after it.
@@ -703,16 +707,36 @@ describe("update, removal and measured estimates (material spec §7, §11)", () 
     expect(trashed).toEqual([]);
   });
 
+  it("an unchanged original is not read again on a later kick, nor are the measured costs", async () => {
+    let measuredReads = 0;
+    const svc = new MaterialService(deps({ measured: async () => (measuredReads++, undefined) }));
+    picked = [write("Fractions.md", text("A fraction names a part."))];
+    await svc.add("fractions");
+    await svc.nextJob();
+    const before = measuredReads;
+    const kept = path.join(base, "material", "fractions", "Fractions.md");
+    const reads = vi.spyOn(fs.promises, "readFile");
+    try {
+      svc.resetFailures();
+      await svc.nextJob();
+      expect(reads.mock.calls.some(([f]) => f === kept)).toBe(false);
+    } finally {
+      reads.mockRestore();
+    }
+    expect(measuredReads).toBe(before);
+  });
+
   it("a stage's session is told how many fragments its prompt lists", async () => {
-    expect(promptFragments("material-label\n[a-001] (x)\ntext\n[a-002] (y)\n[a-001] again\n[b-003] another source's", "a")).toBe(2);
-    expect(promptFragments("[a-001] x\n[b-002] y")).toBe(2);
-    expect(promptFragments("no fragments [a-001] mid-line")).toBe(0);
+    // Only the batch's ids count: a fragment's text naming another fragment at a line's start doesn't.
+    expect(promptFragments("material-label\n[a-001] (x)\n[a-003]: in the text\n[a-002] (y)\n[a-001] again\n[b-003] other", ["a-001", "a-002"])).toBe(2);
+    expect(promptFragments("[a-001] x", ["a-001", "a-002"])).toBe(1);
+    expect(promptFragments("no fragments [a-001] mid-line", ["a-001"])).toBe(0);
     const store = new MaterialStore(base, "fractions");
     keepA();
     await store.update(() => [
       { id: "a", scope: "fractions", path: "a.md", hash: A_HASH, type: "md", family: "text", pages: 1, sizeBytes: 1, skippedPages: [], status: "validating", stage: "review", issues: [], fixes: [], estimate: 0, used: 0, fragments: [], addedAt: "2026-10-27T00:00:00.000Z" },
     ]);
-    STAGES.review = { tools: [], prompt: async () => "Review.\n[a-001] one\n[a-002] two", accept: async () => "", apply: async () => true };
+    STAGES.review = { tools: [], prompt: async () => "Review.\n[a-001] one\n[a-002] two\n[a-009] quoted", accept: async () => "", apply: async () => true, listed: async () => ["a-001", "a-002"] };
     let counted = -1;
     const svc = new MaterialService(
       deps({

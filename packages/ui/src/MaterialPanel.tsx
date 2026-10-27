@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { HarnessClient, MaterialAddResult, MaterialChoice, MaterialInfo, MaterialResult, MaterialSourceView, MaterialView } from "./client";
 import { shownLanguage } from "./language";
@@ -257,20 +257,33 @@ function SourceDetails({ client, scope, source, disabled }: { client: HarnessCli
   );
 }
 
-/** Remove at the end of a source's line (§11): it asks first, then the original goes to the system Trash. */
+/**
+ * Remove at the end of a source's line (§11): it asks first, then the original goes to the system Trash. Opening the
+ * question moves focus to its Remove; Cancel brings it back to the button that opened it.
+ */
 function RemoveButton({ client, scope, source, disabled }: { client: HarnessClient; scope: string; source: MaterialSourceView; disabled: boolean }) {
   const { t } = useTranslation();
   const [asking, setAsking] = useState(false);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
+  const opener = useRef<HTMLButtonElement>(null);
+  const yes = useRef<HTMLButtonElement>(null);
+  /** Where focus goes once the question opens or closes; set by the click that did it, not on the first render. */
+  const focusNext = useRef<"yes" | "opener" | null>(null);
+  useEffect(() => {
+    const next = focusNext.current;
+    focusNext.current = null;
+    if (next === "yes") yes.current?.focus();
+    if (next === "opener") opener.current?.focus();
+  }, [asking]);
   const remove = () => {
     setBusy(true);
     setFailed(false);
     client.material.remove(scope, source.id).then(
       (r) => {
         setBusy(false);
-        setAsking(false);
-        if (!r.ok) setFailed(true);
+        if (r.ok) setAsking(false);
+        else setFailed(true);
       },
       () => {
         setBusy(false);
@@ -278,31 +291,53 @@ function RemoveButton({ client, scope, source, disabled }: { client: HarnessClie
       },
     );
   };
+  const name = t("material.remove", { name: source.name });
   if (!asking)
     return (
       <>
         {" "}
-        <button type="button" className="hh-material-remove" disabled={disabled} aria-label={t("material.remove", { name: source.name })} onClick={() => setAsking(true)}>
-          ×
+        <button
+          ref={opener}
+          type="button"
+          className="hh-material-remove"
+          disabled={disabled}
+          aria-label={name}
+          title={name}
+          onClick={() => {
+            setFailed(false);
+            focusNext.current = "yes";
+            setAsking(true);
+          }}
+        >
+          <span aria-hidden="true">×</span>
         </button>
-        {failed && (
-          <span className="hh-material-notice" role="status">
-            {" "}
-            {t("material.confirmFailed")}
-          </span>
-        )}
       </>
     );
   return (
-    <span className="hh-material-confirm" role="group" aria-label={t("material.removeConfirm", { name: source.name })} aria-busy={busy || undefined}>
+    <span className="hh-material-confirm" role="group" aria-label={name} aria-busy={busy || undefined}>
       {" "}
       {t("material.removeConfirm", { name: source.name })}{" "}
-      <button type="button" disabled={disabled || busy} onClick={remove}>
+      <button ref={yes} type="button" disabled={disabled || busy} onClick={remove}>
         {t("material.removeYes")}
       </button>{" "}
-      <button type="button" disabled={busy} onClick={() => setAsking(false)}>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => {
+          focusNext.current = "opener";
+          setFailed(false);
+          setAsking(false);
+        }}
+      >
         {t("material.cancel")}
       </button>
+      {/* A removal that didn't go through: the question stays open, so Remove can be pressed again. */}
+      {failed && (
+        <span className="hh-material-notice" role="status">
+          {" "}
+          {t("material.confirmFailed")}
+        </span>
+      )}
     </span>
   );
 }
@@ -450,7 +485,8 @@ export function MaterialPanel({ client, scope, info, disabled }: MaterialPanelPr
                   </button>
                 </>
               )}
-              <RemoveButton client={client} scope={scope} source={s} disabled={disabled} />
+              {/* Not while it converts: the conversion would write fragments for a source that is gone. */}
+              {s.status !== "converting" && <RemoveButton client={client} scope={scope} source={s} disabled={disabled} />}
             </p>
             <SourceDetails client={client} scope={scope} source={s} disabled={disabled} />
           </div>

@@ -29,6 +29,34 @@ describe("MaterialJobs (material spec §10)", () => {
     expect(ran).toEqual(["a", "b"]);
   });
 
+  it("a turn that starts while the next job is looked for comes first: the job waits for it", async () => {
+    let idle = true;
+    const ran: string[] = [];
+    let looks = 0;
+    const jobs = new MaterialJobs<string>({
+      idle: () => idle,
+      next: async () => {
+        looks++;
+        if (looks === 1) {
+          // Converting a changed original takes a while; the person sends a message meanwhile.
+          idle = false;
+          setTimeout(() => (idle = true), 20);
+        }
+        return ran.length === 0 ? "a" : null;
+      },
+      run: async (j) => {
+        ran.push(`${j}:${idle ? "idle" : "busy"}`);
+      },
+      pollMs: 2,
+    });
+    jobs.kick();
+    await tick();
+    expect(ran).toEqual([]);
+    await jobs.settled();
+    expect(ran).toEqual(["a:idle"]);
+    expect(looks).toBeGreaterThanOrEqual(2);
+  });
+
   it("stop aborts the running job and waits for it; a kick starts again", async () => {
     let aborted = false;
     let calls = 0;

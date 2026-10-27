@@ -50,6 +50,21 @@ describe("MaterialPanel (material spec §11)", () => {
     await waitFor(() => expect(client.materialCalls).toEqual(["remove:ch2", "remove:w"]));
   });
 
+  it("the question takes focus, Cancel gives it back; a failed removal says so and stays open; none while converting", async () => {
+    const client = await panel(view([src({}), src({ id: "c", name: "c.pdf", status: "converting", fragments: 0 })]));
+    expect(screen.queryByRole("button", { name: "Remove c.pdf" })).toBeNull();
+    const opener = await screen.findByRole("button", { name: "Remove ch2.pdf" });
+    fireEvent.click(opener);
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Remove" }));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Remove ch2.pdf" }));
+    client.materialRemoveResult = { ok: false, reason: "invalid" };
+    fireEvent.click(screen.getByRole("button", { name: "Remove ch2.pdf" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+    expect(await screen.findByText("That didn't go through. Try again.")).toBeTruthy();
+    expect(screen.getByText("Remove ch2.pdf? Its file goes to the Trash.")).toBeTruthy();
+  });
+
   it("the confirmation's Cancel keeps the source", async () => {
     const client = await panel(view([src({})]));
     fireEvent.click(await screen.findByRole("button", { name: "Remove ch2.pdf" }));

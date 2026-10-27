@@ -137,13 +137,16 @@ export class MaterialStore {
     return this.update((list) => list.map((s) => (s.id === id ? fn(s) : s))).then((list) => list.find((s) => s.id === id) ?? null);
   }
 
-  /** Writes a source's fragments and records their ids; files of fragments it no longer has go. */
+  /** Writes a source's fragments and records their ids; files of fragments it no longer has go. A removed source gets none. */
   async writeFragments(sourceId: string, fragments: Fragment[]): Promise<void> {
     // Every id names a file: all are checked before anything is written.
     if (!fragments.every((f) => isFragmentId(f.meta.id))) throw new Error("Invalid fragment id");
     // Inside the registry queue, so two writes for one source can't delete each other's files.
     await this.queued(async () => {
-      const prev = (await this.sources()).find((s) => s.id === sourceId)?.fragments;
+      const entry = (await this.sources()).find((s) => s.id === sourceId);
+      // Removed while it converted: no files for it (they would belong to nothing).
+      if (entry?.status === "removed" && fragments.length > 0) return;
+      const prev = entry?.fragments;
       const before = Array.isArray(prev) ? prev : [];
       for (const f of fragments) await writeAtomic(this.fragmentFile(f.meta.id), renderFragment(f));
       const now = new Set(fragments.map((f) => f.meta.id));

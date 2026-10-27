@@ -709,6 +709,8 @@ export class FakeClient implements HarnessClient {
   materialConfirmResult: MaterialResult | Error = { ok: true };
   /** What `decide` answers; an Error rejects. */
   materialDecideResult: MaterialResult | Error = { ok: true };
+  /** What `remove` answers; an Error rejects. */
+  materialRemoveResult: MaterialResult | Error = { ok: true };
   /** What `cite` answers per fragment id; absent: no such fragment. */
   citeLabels: Record<string, string> = {};
   private materialListeners = new Set<(v: MaterialView) => void>();
@@ -748,9 +750,10 @@ export class FakeClient implements HarnessClient {
       if (this.materialDecideResult instanceof Error) throw this.materialDecideResult;
       return this.materialDecideResult;
     },
-    remove: async (_scope: string, id: string) => {
+    remove: async (_scope: string, id: string): Promise<MaterialResult> => {
       this.materialCalls.push(`remove:${id}`);
-      return { ok: true as const };
+      if (this.materialRemoveResult instanceof Error) throw this.materialRemoveResult;
+      return this.materialRemoveResult;
     },
     open: async (_scope: string, id: string) => {
       this.materialCalls.push(`open:${id}`);

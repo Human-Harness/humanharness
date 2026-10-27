@@ -8,6 +8,7 @@ import {
   MAX_BYTES,
   MaterialStore,
   type MeasuredCosts,
+  type OriginalStamp,
   STAGES,
   type SourceEntry,
   type StageContext,
@@ -116,12 +117,12 @@ export interface MaterialDeps {
 }
 
 /**
- * How many fragments a stage's prompt lists: each one is on a line starting `[<id>]`. A source's stage counts only
- * that source's ids (a fragment's own text could hold such a line); each id once.
+ * How many of the fragments a stage handles (`listed`, its batch) its prompt lists: each one on a line starting
+ * `[<id>]`. Ids that only show up inside a fragment's own text, or more than once, count no more.
  */
-export function promptFragments(prompt: string, source?: string): number {
-  const ids = new Set((prompt.match(/^\[[a-z0-9][a-z0-9-]*-\d{3,4}\]/gm) ?? []).map((m) => m.slice(1, -1)));
-  return source ? [...ids].filter((id) => id.slice(0, id.lastIndexOf("-")) === source).length : ids.size;
+export function promptFragments(prompt: string, listed: readonly string[]): number {
+  const shown = new Set((prompt.match(/^\[[a-z0-9][a-z0-9-]*-\d{3,4}\]/gm) ?? []).map((m) => m.slice(1, -1)));
+  return new Set(listed.filter((id) => shown.has(id))).size;
 }
 
 /** A file not added because the app stopped converting (a profile switch, a folder or engine change, quitting). */
@@ -175,6 +176,8 @@ export class MaterialService {
   private readonly skipped = new Set<string>();
   /** Scopes (`base\0scope`) whose originals were looked at since the last kick (§11 update). */
   private readonly refreshed = new Set<string>();
+  /** Per scope (`base\0scope`): each original's size and time when last hashed, so an unchanged one isn't read again. */
+  private readonly stamps = new Map<string, Map<string, OriginalStamp>>();
 
   constructor(private readonly d: MaterialDeps) {
     this.runner = limitRunner(d.runner ?? workerRunner());
@@ -452,14 +455,22 @@ export class MaterialService {
 
   /**
    * Originals the person changed or removed by hand (§11 update), once per kick per scope: a changed one is converted
-   * again, a missing one removed. Its conversions count among those `stop()` waits for.
+   * again, a missing one removed. Only an original whose size or time changed is read. Its conversions count among
+   * those `stop()` waits for.
    */
   private async refresh(store: MaterialStore): Promise<void> {
     const key = `${store.base}\0${store.scope}`;
     if (this.refreshed.has(key)) return;
     this.refreshed.add(key);
     const epoch = this.epoch;
-    const touched = await this.track(refreshSources(store, await this.pipeline(epoch)));
+    let seen = this.stamps.get(key);
+    if (!seen) {
+      seen = new Map();
+      this.stamps.set(key, seen);
+    }
+    // The options (the measured costs read from usage.jsonl) only once an original changed.
+    const options = async () => ({ accepts: this.d.material.accepts, ...(await this.pipeline(epoch)) });
+    const touched = await this.track(refreshSources(store, options, seen));
     if (touched.length === 0 || epoch !== this.epoch) return;
     await this.d.afterChange(store.scope, `updated ${touched.join(", ")}`).catch((err: unknown) => console.error("Could not record the material change", err));
     await this.changed(store.scope).catch((err: unknown) => console.error("Could not show the material", err));
@@ -513,7 +524,8 @@ export class MaterialService {
         }
         throw new Error("Unknown request");
       };
-      const result = await this.d.runStage(job, prompt, def.tools, handle, signal, promptFragments(prompt, job.source));
+      const listed = def.listed ? await def.listed(store, job).catch(() => [] as string[]) : [];
+      const result = await this.d.runStage(job, prompt, def.tools, handle, signal, promptFragments(prompt, listed));
       // Stopped by closeRuntime: the stage runs again later, from the start.
       if (signal.aborted) return;
       ok = result.ok && (await def.apply(store, job, state, ctx));

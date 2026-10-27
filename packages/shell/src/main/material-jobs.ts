@@ -47,6 +47,9 @@ export class MaterialJobs<J> {
         return null;
       });
       if (!job || !live()) return;
+      // Finding the job may take a while (an original changed by hand is converted again): a turn that started
+      // meanwhile comes first, and the job is looked for again once it ends.
+      if (!this.d.idle()) continue;
       const controller = new AbortController();
       this.controller = controller;
       try {

@@ -108,6 +108,11 @@ export interface StageDef {
   accept(name: string, args: Record<string, unknown>, state: StageState): Promise<string>;
   /** After the session ended well: apply what was accepted. False: no usable answer (the stage failed). */
   apply(store: MaterialStore, job: Job, state: StageState, ctx: StageContext): Promise<boolean>;
+  /**
+   * The fragments the prompt just set handles (its batch, its repairs, its rows), for the usage line's count (§7
+   * measured estimates). Asked right after `prompt`. Absent: none are counted.
+   */
+  listed?(store: MaterialStore, job: Job): Promise<string[]>;
 }
 
 /** The stages that exist so far (Tasks 18–23 fill it). */
@@ -140,6 +145,10 @@ STAGES.review = {
       if (next.length) await store.patch(s.id, (e) => ({ ...e, reviewQueue: next }));
     }
     return queue.length === 0 ? null : reviewPrompt(store, s, queue.slice(0, BATCH));
+  },
+  async listed(store, job) {
+    const s = await store.source(job.source ?? "");
+    return (Array.isArray(s?.reviewQueue) ? s.reviewQueue : []).slice(0, BATCH);
   },
   async accept(name, args, state) {
     const a = reviewAnswer.parse(args);
@@ -180,6 +189,11 @@ STAGE_TOOLS.material_repair = {
 
 STAGES.repair = {
   tools: ["material_repair"],
+  async listed(store, job) {
+    const s = await store.source(job.source ?? "");
+    const own = Array.isArray(s?.fragments) ? s.fragments : [];
+    return (s?.repairs ?? []).map((r) => r.id).filter((id) => own.includes(id));
+  },
   async prompt(store, job) {
     const s = await store.source(job.source ?? "");
     if (!s?.repairs?.length) return null;
@@ -274,6 +288,9 @@ STAGES.label = {
     const batch = (await unlabelled(store, s.id)).slice(0, BATCH);
     return batch.length === 0 ? null : labelPrompt(s.path, batch, ctx.fragmentKinds);
   },
+  async listed(store, job) {
+    return (await unlabelled(store, job.source ?? "")).slice(0, BATCH).map((f) => f.meta.id);
+  },
   async accept(name, args, state) {
     if (name === "material_flag") {
       const a = flagAnswer.parse(args);
@@ -353,6 +370,9 @@ STAGES.link = {
     if (!ctx.items?.length) return null;
     const rows = await store.indexRows();
     return rows.length === 0 ? null : linkPrompt(ctx.items, rows);
+  },
+  async listed(store) {
+    return (await store.indexRows()).slice(0, LINK_MAX_FRAGMENTS).map((r) => r.id);
   },
   async accept(name, args, state) {
     const a = linkAnswer.parse(args);

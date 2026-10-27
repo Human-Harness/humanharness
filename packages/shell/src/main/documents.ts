@@ -104,12 +104,13 @@ export async function readImage(rel: unknown, roots: string[]): Promise<string |
   return `data:${type};base64,${got.bytes.toString("base64")}`;
 }
 
-/** Most paths one `documentsExist` call answers; a longer list gets no answer (`[]`). */
+/** Most paths one `documentsExist` call checks; a longer list gets `false` for every path, unchecked. */
 export const MAX_EXIST_PATHS = 200;
 
 /** Whether each path is a file the reader could open (cards of moved or deleted files are struck through). */
 export async function documentsExist(paths: unknown, roots: string[]): Promise<boolean[]> {
-  if (!Array.isArray(paths) || paths.length > MAX_EXIST_PATHS) return [];
+  if (!Array.isArray(paths)) return [];
+  if (paths.length > MAX_EXIST_PATHS) return paths.map(() => false);
   return Promise.all(paths.map(async (p) => (await locate(p, roots)).ok));
 }
 

@@ -94,6 +94,44 @@ describe("DocumentSessions (document-reader spec §5.3)", () => {
     expect(await pending).toBeNull();
     expect(pool.open.size).toBe(0);
   });
+
+  it("tells the owner of every watch that ends without it asking, and never for its own unwatch", async () => {
+    const pool = fakePool();
+    const ended: [number, number][] = [];
+    const s = new DocumentSessions(pool, (owner, id) => ended.push([owner, id]));
+    const a = await s.watch(1, "a.md", roots);
+    const b = await s.watch(2, "b.md", roots);
+    const c = await s.watch(1, "c.md", roots);
+    s.unwatch(1, c);
+    expect(ended).toEqual([]);
+    s.closeOwner(1);
+    expect(ended).toEqual([[1, a]]);
+    s.closeAll();
+    expect(ended).toEqual([[1, a], [2, b]]);
+    // Other roots (the folder changed) end the old watches too.
+    const d = await s.watch(3, "d.md", roots);
+    await s.watch(3, "e.md", ["/other"]);
+    expect(ended.at(-1)).toEqual([3, d]);
+    // The pool ending one by itself (room, failure) is told as well, once.
+    const e = await s.watch(3, "f.md", ["/other"]);
+    pool.onClosed?.(e!);
+    pool.onClosed?.(e!);
+    expect(ended.at(-1)).toEqual([3, e]);
+    expect(ended.filter(([, id]) => id === e)).toHaveLength(1);
+  });
+
+  it("does not give a reloaded window the watch its old page was setting up", async () => {
+    const pool = fakePool();
+    const s = new DocumentSessions(pool);
+    pool.hold = true;
+    const pending = s.watch(1, "a.md", roots);
+    s.closeOwner(1);
+    pool.release();
+    expect(await pending).toBeNull();
+    expect(pool.open.size).toBe(0);
+    pool.hold = false;
+    expect(await s.watch(1, "a.md", roots)).not.toBeNull();
+  });
 });
 
 describe("DocumentSessions with DocumentWatchers", () => {
@@ -118,13 +156,15 @@ describe("DocumentSessions with DocumentWatchers", () => {
     expect(heard).toHaveLength(before);
   });
 
-  it("drops the owner of a watch the pool closed to make room", async () => {
+  it("drops the owner of a watch the pool closed to make room, and tells it", async () => {
     const watchers = new DocumentWatchers(() => {}, 20);
-    const sessions = new DocumentSessions(watchers);
+    const ended: [number, number][] = [];
+    const sessions = new DocumentSessions(watchers, (owner, id) => ended.push([owner, id]));
     const first = await sessions.watch(1, "a.md", [root]);
     for (let i = 0; i < MAX_WATCHES; i++) await sessions.watch(2, "a.md", [root]);
     expect(first).not.toBeNull();
     expect(sessions.ownerOf(first as number)).toBeNull();
+    expect(ended).toEqual([[1, first]]);
     expect(watchers.size).toBe(MAX_WATCHES);
     sessions.closeAll();
   });

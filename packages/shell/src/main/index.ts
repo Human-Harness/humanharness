@@ -297,15 +297,25 @@ let lastAppState: AppState | null = null;
 
 /**
  * The reader's open documents (document-reader spec §5.3), by window: main tells the window that asked for a watch
- * when its document changes, and only that window.
+ * when its document changes, and only that window; and when a watch ends without the window asking, so it watches again.
  */
 const documentSessions: DocumentSessions = new DocumentSessions(
   new DocumentWatchers((id) => {
     const owner = documentSessions.ownerOf(id);
-    const to = owner === null ? undefined : webContents.fromId(owner);
-    if (to && !to.isDestroyed()) to.send("hh:documentChanged", id);
+    if (owner !== null) sendToContents(owner, "hh:documentChanged", id);
   }),
+  (owner, id) => sendToContents(owner, "hh:documentWatchEnded", id),
 );
+
+/** Sends to one window by its webContents id, when it is still there. */
+function sendToContents(id: number, channel: string, value: unknown) {
+  try {
+    const to = webContents.fromId(id);
+    if (to && !to.isDestroyed()) to.send(channel, value);
+  } catch (err) {
+    console.error("Could not send to the window", err);
+  }
+}
 
 /**
  * Where documents and images may be read, from the config only: the person's folder (checked by `validConfig`), then
@@ -1365,7 +1375,9 @@ function registerIpc() {
     }
   });
   handle("hh:documentsExist", async (paths: unknown): Promise<boolean[]> => {
-    if (!Array.isArray(paths) || paths.length > MAX_EXIST_PATHS) return [];
+    if (!Array.isArray(paths)) return [];
+    // Too many to check: none counts as there (one answer per path, as the window expects).
+    if (paths.length > MAX_EXIST_PATHS) return paths.map(() => false);
     try {
       const roots = await documentRoots();
       return roots ? await documentsExist(paths, roots) : paths.map(() => false);

@@ -16,6 +16,7 @@ import type {
   TextSize,
 } from "@humanharness/ui/client";
 import { hearsDataChange } from "@humanharness/ui/data-change";
+import { documentWatcher } from "./document-watch";
 
 function subscribe<T>(channel: string, listener: (value: T) => void): () => void {
   const handler = (_e: unknown, value: T) => listener(value);
@@ -81,27 +82,7 @@ const client: HarnessClient = {
   readDocument: (file) => ipcRenderer.invoke("hh:readDocument", file),
   readImage: (file) => ipcRenderer.invoke("hh:readImage", file),
   documentsExist: (paths) => ipcRenderer.invoke("hh:documentsExist", paths),
-  watchDocument: (file, listener) => {
-    let id: number | null = null;
-    let closed = false;
-    const off = subscribe<number>("hh:documentChanged", (changed) => {
-      if (id !== null && changed === id) listener();
-    });
-    void ipcRenderer.invoke("hh:watchDocument", file).then(
-      (got: number | null) => {
-        // Unsubscribed before main answered: the watch it made goes at once.
-        if (closed && got !== null) void ipcRenderer.invoke("hh:unwatchDocument", got);
-        else id = got;
-      },
-      () => undefined,
-    );
-    return () => {
-      if (closed) return;
-      closed = true;
-      off();
-      if (id !== null) void ipcRenderer.invoke("hh:unwatchDocument", id);
-    };
-  },
+  watchDocument: documentWatcher(ipcRenderer),
   openDocument: (file) => {
     for (const l of [...documentOpeners]) l(file);
   },

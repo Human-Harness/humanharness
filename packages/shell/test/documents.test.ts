@@ -197,9 +197,9 @@ describe("documentsExist", () => {
   it("refuses a list that isn't one", async () => {
     expect(await documentsExist("docs/plan.md" as unknown as unknown[], roots)).toEqual([]);
   });
-  it(`answers at most ${MAX_EXIST_PATHS} paths`, async () => {
-    expect(await documentsExist(Array(MAX_EXIST_PATHS).fill("docs/plan.md"), roots)).toHaveLength(MAX_EXIST_PATHS);
-    expect(await documentsExist(Array(MAX_EXIST_PATHS + 1).fill("docs/plan.md"), roots)).toEqual([]);
+  it(`checks at most ${MAX_EXIST_PATHS} paths; a longer list is all false, one answer per path`, async () => {
+    expect(await documentsExist(Array(MAX_EXIST_PATHS).fill("docs/plan.md"), roots)).toEqual(Array(MAX_EXIST_PATHS).fill(true));
+    expect(await documentsExist(Array(MAX_EXIST_PATHS + 1).fill("docs/plan.md"), roots)).toEqual(Array(MAX_EXIST_PATHS + 1).fill(false));
   });
 });
 

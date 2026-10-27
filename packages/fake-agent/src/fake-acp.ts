@@ -55,7 +55,12 @@ const stream = acp.ndJsonStream(
 acp
   .agent({ name: "fake-acp" })
   .onRequest("initialize", (ctx) => {
-    log("env", { CODEX_CONFIG: process.env.CODEX_CONFIG ?? null });
+    log("env", {
+      CODEX_CONFIG: process.env.CODEX_CONFIG ?? null,
+      OPENCODE_CONFIG_CONTENT: process.env.OPENCODE_CONFIG_CONTENT ?? null,
+      OPENCODE_PERMISSION: process.env.OPENCODE_PERMISSION ?? null,
+      OPENCODE_DISABLE_CLAUDE_CODE: process.env.OPENCODE_DISABLE_CLAUDE_CODE ?? null,
+    });
     log("initialize", ctx.params);
     return {
       protocolVersion: acp.PROTOCOL_VERSION,
@@ -142,7 +147,7 @@ acp
     for (const step of script.turns[turn++] ?? [{ stop: "end_turn" }]) {
       if (cancelled) return end("cancelled");
       if ("update" in step) {
-        await ctx.client.notify("session/update", { sessionId, update: step.update as never });
+        await ctx.client.notify("session/update", { sessionId: step.sessionId ?? sessionId, update: step.update as never });
       } else if ("permission" in step) {
         const res = await ctx.client.request("session/request_permission", {
           sessionId,

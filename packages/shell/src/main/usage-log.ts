@@ -171,7 +171,8 @@ export const SPENT_DAYS = 30;
 
 /** USD spent in the last SPENT_DAYS days, material stages included; undefined when no line has a cost (D0: Claude and Codex never do). */
 function spentUsd(records: UsageRecord[], now: Date): number | undefined {
-  const withCost = records.filter((r) => typeof r.usage?.costUsd === "number");
+  // The log is a file on disk: a NaN, Infinity or negative cost (hand edit, damage) is not a cost.
+  const withCost = records.filter((r) => typeof r.usage?.costUsd === "number" && Number.isFinite(r.usage.costUsd) && r.usage.costUsd >= 0);
   if (withCost.length === 0) return undefined;
   const since = now.getTime() - SPENT_DAYS * 86_400_000;
   return withCost.filter((r) => Date.parse(r.at) >= since).reduce((sum, r) => sum + r.usage!.costUsd!, 0);

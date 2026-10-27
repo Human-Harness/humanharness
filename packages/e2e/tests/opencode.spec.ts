@@ -27,6 +27,11 @@ test("OpenCode answers a question, gets its effort by config option, and Setting
     const envs = log.filter((l) => l.method === "env");
     expect(envs.length).toBeGreaterThan(0);
     for (const env of envs) expect(env.params.CODEX_CONFIG).toBeNull();
+    // OpenCode asks before bash, edits and web tools (the demo allows none of them) and never reads ~/.claude.
+    for (const env of envs) {
+      expect(JSON.parse(String(env.params.OPENCODE_CONFIG_CONTENT))).toEqual({ permission: { bash: "ask", edit: "ask", webfetch: "ask", websearch: "ask" } });
+      expect(env.params.OPENCODE_DISABLE_CLAUDE_CODE).toBe("1");
+    }
     expect(log.filter((l) => l.method === "session/set_config_option").map((l) => [l.params.configId, l.params.value])).toEqual([["effort", "low"]]);
     // The demo edits nothing (permissions.edit "none"): OpenCode's read-only mode.
     expect(log.find((l) => l.method === "session/set_mode")?.params.modeId).toBe("plan");

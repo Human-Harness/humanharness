@@ -444,6 +444,16 @@ describe("summarizeUsage: spentUsd", () => {
     expect(summarizeUsage([line("2026-09-01T00:00:00.000Z", 5)], undefined, now).spentUsd).toBe(0);
   });
 
+  it("skips a cost that is not finite or is negative", () => {
+    const s = summarizeUsage(
+      [line("2026-10-27T08:00:00.000Z", Number.NaN), line("2026-10-27T09:00:00.000Z", Number.POSITIVE_INFINITY), line("2026-10-27T10:00:00.000Z", -3), line("2026-10-27T11:00:00.000Z", 0.4)],
+      undefined,
+      now,
+    );
+    expect(s.spentUsd).toBeCloseTo(0.4);
+    expect(summarizeUsage([line("2026-10-27T10:00:00.000Z", -1), line("2026-10-27T11:00:00.000Z", Number.NaN)], undefined, now)).not.toHaveProperty("spentUsd");
+  });
+
   it("counts every profile's spending (one account pays)", () => {
     const s = profilesUsage({ ana: [line("2026-10-27T10:00:00.000Z", 0.1)], ben: [line("2026-10-27T11:00:00.000Z", 0.2)] }, "ana", undefined, now);
     expect(s.spentUsd).toBeCloseTo(0.3);

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
-import { ENGINES, NOTICE_VERSION, availableEngines, brandNames, getEngine, meetsMinVersion, parseVersion } from "../src";
+import { ENGINES, NOTICE_VERSION, OPENCODE_ENV, availableEngines, brandNames, getEngine, meetsMinVersion, parseVersion } from "../src";
 
 describe("ENGINES", () => {
   it("pins the Codex ACP adapter and its session modes", () => {
@@ -25,7 +25,14 @@ describe("ENGINES", () => {
 
   it("runs the unmodified OpenCode over ACP and sets its profile by config option", () => {
     const e = getEngine("opencode");
-    expect(e.transport).toEqual({ kind: "acp", command: ["opencode", "acp"], modes: { edit: "build", readOnly: "plan" }, profile: "config-option" });
+    expect(e.transport).toEqual({ kind: "acp", command: ["opencode", "acp"], modes: { edit: "build", readOnly: "plan" }, profile: "config-option", env: OPENCODE_ENV });
+    // Every bash, edit, webfetch and websearch call asks, so the harness's permissions decide it.
+    const ask = { bash: "ask", edit: "ask", webfetch: "ask", websearch: "ask" };
+    expect(JSON.parse(OPENCODE_ENV.OPENCODE_CONFIG_CONTENT)).toEqual({ permission: ask });
+    expect(JSON.parse(OPENCODE_ENV.OPENCODE_PERMISSION)).toEqual(ask);
+    expect(OPENCODE_ENV.OPENCODE_DISABLE_CLAUDE_CODE).toBe("1");
+    // Only OpenCode has a fixed environment (D0).
+    expect(ENGINES.filter((x) => x.transport.kind === "acp" && x.transport.env).map((x) => x.id)).toEqual(["opencode"]);
     expect(e.detect.binary).toBe("opencode");
     expect(e.reportsLimits).toBe(false);
     expect(e.reportsCost).toBe(true);

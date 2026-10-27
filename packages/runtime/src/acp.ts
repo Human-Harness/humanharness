@@ -205,6 +205,11 @@ function currentValue(configOptions: unknown[], id: string): string | undefined 
  * "model" and "reasoning_effort"; OpenCode: "model" and "effort"). Unsafe ids and unknown efforts are
  * dropped. Null without models.
  */
+/** Every safe model id the agent offers, uncut (the profile check needs them all; Settings shows the first 50). */
+function offeredModelIds(configOptions: unknown[]): string[] {
+  return (selectOptions(configOptions, "model") ?? []).map((o) => o.value).filter((v): v is string => isModelId(v));
+}
+
 export function offeredModels(configOptions: unknown): { models: ModelChoice[]; efforts: Effort[] } | null {
   if (!Array.isArray(configOptions)) return null;
   const models = (selectOptions(configOptions, "model") ?? [])
@@ -286,7 +291,8 @@ export class AcpTransport implements Transport {
     const [binary, ...args] = this.o.command;
     // CODEX_CONFIG is ours: built from the profile, replacing any inherited value (never merged).
     // Without a profile it is removed, even when `o.env` sets it: the profile is its only source.
-    const env: NodeJS.ProcessEnv = { ...process.env, ...this.o.env };
+    // The engine's fixed environment (OpenCode's permission config) goes last: nothing inherited overrides it.
+    const env: NodeJS.ProcessEnv = { ...process.env, ...this.o.env, ...this.o.engineEnv };
     if (config !== undefined) env.CODEX_CONFIG = config;
     else delete env.CODEX_CONFIG;
     const child = spawn(binary, args, {
@@ -325,7 +331,7 @@ export class AcpTransport implements Transport {
     this.conn = acp
       .client({ name: "humanharness" })
       .onRequest("session/request_permission", (ctx) => decidePermission(ctx.params as PermissionRequest, policy) as never)
-      .onNotification("session/update", (ctx) => this.onUpdate(ctx.params.update as Record<string, any>))
+      .onNotification("session/update", (ctx) => this.onUpdate(ctx.params.update as Record<string, any>, ctx.params.sessionId))
       .connect(stream);
 
     const init = await this.conn.agent.request("initialize", {
@@ -399,7 +405,8 @@ export class AcpTransport implements Transport {
       const effortId = effortOptionId(configOptions);
       const effort = effortId ? currentValue(configOptions, effortId) : undefined;
       this.offer = {
-        models: offered?.models.map((m) => m.id) ?? [],
+        // Every offered id, not the 50 Settings shows: a profile's model past the 50th is still offered.
+        models: offered ? offeredModelIds(configOptions) : [],
         efforts: offered?.efforts ?? [],
         ...(effortId ? { effortId } : {}),
         ...(effort !== undefined ? { effort } : {}),
@@ -527,14 +534,15 @@ export class AcpTransport implements Transport {
     });
   }
 
-  private onUpdate(u: Record<string, any>): void {
+  private onUpdate(u: Record<string, any>, sessionId?: unknown): void {
     // The offer changes with or without a turn running (OpenCode sends it when the model or the provider's models change).
     if (u.sessionUpdate === "config_option_update") {
       if (this.byConfigOption) this.reportModels(u.configOptions);
       return;
     }
     // Only an engine whose profile goes by config option (OpenCode) reports cost; Codex's is never read (D0).
-    if (u.sessionUpdate === "usage_update" && this.byConfigOption) {
+    // A cost of another session (one closed or loaded before) is not this session's running total.
+    if (u.sessionUpdate === "usage_update" && this.byConfigOption && sessionId === this.sessionId) {
       const usd = usdCost(u.cost);
       if (usd !== undefined) {
         this.costTotal = usd;
@@ -656,14 +664,16 @@ export class AcpTransport implements Transport {
       // The signal may have fired while the prompt was being sent.
       if (signal.aborted) onAbort();
       const res = (await pending) as { stopReason: string; usage?: AcpUsage | null };
-      const costUsd = this.turnCost();
-      if (res.usage) {
+      // Only OpenCode reports cost (Codex's turn is unchanged, D0). The cost is taken here, where it is always
+      // emitted: a response without token usage still carries it (spec A8), so the baseline never moves silently.
+      const costUsd = this.byConfigOption ? this.turnCost() : undefined;
+      if (res.usage || costUsd !== undefined) {
         emit({
           type: "usage",
-          inputTokens: res.usage.inputTokens ?? 0,
-          outputTokens: res.usage.outputTokens ?? 0,
-          cacheReadTokens: res.usage.cachedReadTokens ?? 0,
-          cacheWriteTokens: res.usage.cachedWriteTokens ?? 0,
+          inputTokens: res.usage?.inputTokens ?? 0,
+          outputTokens: res.usage?.outputTokens ?? 0,
+          cacheReadTokens: res.usage?.cachedReadTokens ?? 0,
+          cacheWriteTokens: res.usage?.cachedWriteTokens ?? 0,
           ...(this.reportedModel ? { model: this.reportedModel } : {}),
           ...(costUsd !== undefined ? { costUsd } : {}),
         });

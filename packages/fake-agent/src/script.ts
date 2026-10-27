@@ -43,7 +43,8 @@ export interface ClaudeScript {
 }
 
 export type AcpStep =
-  | { update: Record<string, unknown> }
+  /** A session/update; `sessionId` sends it for another session than the prompt's (default: the prompt's). */
+  | { update: Record<string, unknown>; sessionId?: string }
   | { permission: { toolCall: Record<string, unknown>; _meta?: Record<string, unknown> } }
   | McpStep
   | WriteStep

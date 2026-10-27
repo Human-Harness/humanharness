@@ -25,6 +25,8 @@ export interface TransportOptions {
    * new process when it changes. `config-option`: `session/set_config_option` on the open session (OpenCode).
    */
   profileMethod?: "codex-config" | "config-option";
+  /** ACP only: the engine's fixed environment (registry `transport.env`, OpenCode only), set over the inherited one and `env`. */
+  engineEnv?: Record<string, string>;
   /** Claude only: false runs the CLI with `--no-session-persistence` (one-off turns such as the setup test). */
   persistSession?: boolean;
   /** The CLI to run: [binary, ...leading args]. */
@@ -47,12 +49,20 @@ export interface Transport {
   close(): Promise<void>;
 }
 
-/** The ACP fields of an engine's transport options: the mode for the harness's edit permission, the adapter gate, the profile method. */
+/**
+ * The ACP fields of an engine's transport options: the mode for the harness's edit permission, the adapter gate,
+ * the profile method, and the engine's fixed environment (only when the registry sets one: Codex gets none, D0).
+ */
 export function acpFields(
   engine: EngineDef,
   edit: Permissions["edit"],
-): Pick<TransportOptions, "sessionMode" | "minAdapterVersion" | "profileMethod"> {
+): Pick<TransportOptions, "sessionMode" | "minAdapterVersion" | "profileMethod" | "engineEnv"> {
   const t = engine.transport;
   if (t.kind !== "acp") return { sessionMode: undefined, minAdapterVersion: undefined, profileMethod: undefined };
-  return { sessionMode: t.modes?.[edit === "folder" ? "edit" : "readOnly"], minAdapterVersion: t.minAdapterVersion, profileMethod: t.profile };
+  return {
+    sessionMode: t.modes?.[edit === "folder" ? "edit" : "readOnly"],
+    minAdapterVersion: t.minAdapterVersion,
+    profileMethod: t.profile,
+    ...(t.env ? { engineEnv: { ...t.env } } : {}),
+  };
 }

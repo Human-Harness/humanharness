@@ -413,6 +413,8 @@ select:focus-visible { outline: 2px solid var(--hh-ink); outline-offset: 2px; }
 .hh-profile-switcher { display: flex; align-items: center; gap: 8px; }
 .hh-profile-name { font-weight: 600; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hh-profile-switcher select { max-width: 160px; }
+/* Settings › People and Usage by person: the name takes the row's room, never more. */
+.hh-profile-row-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* A refusal sits in the 52px bar: one line, cut short; the whole line stays in its tooltip. */
 .hh-profile-switcher [role="alert"] { max-width: 240px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--hh-warn); }
 .hh-avatar { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--hh-segment); color: var(--hh-ink); font-size: 12px; font-weight: 600; flex: none; }

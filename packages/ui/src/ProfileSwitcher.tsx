@@ -13,6 +13,9 @@ export function Avatar({ profile }: { profile: Pick<ProfileView, "title" | "colo
   );
 }
 
+/** A stored title on one line: it isn't cleaned again when read, so it may hold line breaks or runs of spaces. */
+export const shownTitle = (title: string): string => title.replace(/\s+/g, " ").trim();
+
 /** Reads the profiles and follows every change (a change that arrived is newer than the first reply). */
 export function useProfiles(client: HarnessClient, on: boolean): ProfilesState | null {
   const [profiles, setProfiles] = useState<ProfilesState | null>(null);

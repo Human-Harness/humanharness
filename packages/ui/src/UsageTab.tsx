@@ -3,6 +3,7 @@ import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import type { AppState, EngineOption, HarnessClient, LimitWindow, UsageSummary } from "./client";
 import { QUESTIONS, taskRows } from "./ModelsTab";
+import { shownTitle, useProfiles } from "./ProfileSwitcher";
 import { WARN_AT, compactTokens, compareTokens, formatReset, percent, timesFit, timesLeft } from "./usage";
 import { useCurrentWindows } from "./UsageMeter";
 import { shownLanguage } from "./language";
@@ -35,6 +36,7 @@ export function UsageTab({ client, state }: { client: HarnessClient; state: AppS
       <h3 id={tableTitle}>{t("usage.actionsTitle")}</h3>
       {usage && <TopicTable state={state} usage={usage} reportsLimits={reportsLimits} near={near ? primary : undefined} labelledBy={tableTitle} />}
       {usage?.scopes && state.scopes && <ScopeUsage client={client} tokens={usage.scopes} plural={state.scopes.plural} />}
+      {usage?.profiles && state.profiles && <ProfileUsage client={client} tokens={usage.profiles} />}
       {showPlans && engine && (
         <div className="hh-rows">
           <div className="hh-row">
@@ -213,6 +215,39 @@ function ScopeUsage({ client, tokens, plural }: { client: HarnessClient; tokens:
           <li key={id} className="hh-row">
             <span>{id === "_app" ? t("usage.appScope") : (titles[id] ?? id)}</span>
             <span className="hh-caption">{t("usage.scopeTokens", { tokens: compactTokens(n, shownLanguage(i18n)) })}</span>
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+}
+
+/**
+ * Settings › Usage by person (profiles spec §4): tokens per profile over each profile's whole log, most first. A profile
+ * with no log yet has no key (0); an archived one still counts; an id the registry no longer lists shows as itself.
+ */
+function ProfileUsage({ client, tokens }: { client: HarnessClient; tokens: Record<string, number> }) {
+  const { t, i18n } = useTranslation();
+  const people = useProfiles(client, true);
+  const heading = t("usage.byProfile");
+  // Drawn once the names are in: before, every row would show its bare id.
+  if (!people) return null;
+  const list = people.list;
+  const known = list.map((p) => ({ id: p.id, name: shownTitle(p.title), n: Object.hasOwn(tokens, p.id) ? tokens[p.id] : 0 }));
+  const lost = Object.entries(tokens)
+    .filter(([id]) => !list.some((p) => p.id === id))
+    .map(([id, n]) => ({ id, name: id, n }));
+  const rows = [...known, ...lost].sort((a, b) => b.n - a.n);
+  return (
+    <>
+      <h3>{heading}</h3>
+      <ul className="hh-rows" aria-label={heading}>
+        {rows.map((r) => (
+          <li key={r.id} className="hh-row">
+            <span className="hh-profile-row-name" title={r.name}>
+              {r.name}
+            </span>
+            <span className="hh-caption">{t("usage.scopeTokens", { tokens: compactTokens(r.n, shownLanguage(i18n)) })}</span>
           </li>
         ))}
       </ul>

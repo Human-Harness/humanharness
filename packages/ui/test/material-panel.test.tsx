@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { HarnessApp, type HarnessAppProps, type MaterialView } from "../src";
 import { MaterialPanel } from "../src/MaterialPanel";
 import { FakeClient } from "./fake-client";
@@ -8,7 +8,7 @@ import { renderIn } from "./render";
 
 afterEach(cleanup);
 
-const info = { accepts: ["pdf", "text"], items: false, grounding: { default: "mixed" as const, personCanChange: true } };
+const info = { accepts: ["pdf", "text"], items: false, grounding: { default: "mixed" as const, personCanChange: true }, maxPages: 300 };
 const src = (over: Partial<MaterialView["sources"][number]>): MaterialView["sources"][number] => ({
   id: "ch2",
   name: "ch2.pdf",
@@ -40,7 +40,10 @@ describe("MaterialPanel (material spec §11)", () => {
   it("adds a file and a link", async () => {
     const client = await panel(view([]));
     fireEvent.click(await screen.findByRole("button", { name: "Add a file" }));
-    fireEvent.click(screen.getByRole("button", { name: "Add a link" }));
+    // Adding waits for the add in flight.
+    const link = screen.getByRole("button", { name: "Add a link" }) as HTMLButtonElement;
+    await waitFor(() => expect(link.disabled).toBe(false));
+    fireEvent.click(link);
     fireEvent.change(screen.getByRole("textbox", { name: "Link" }), { target: { value: "https://example.org/halves" } });
     fireEvent.click(screen.getByRole("button", { name: "Add" }));
     await waitFor(() => expect(client.materialCalls).toEqual(["add:fractions", "link:fractions:https://example.org/halves"]));
@@ -49,20 +52,54 @@ describe("MaterialPanel (material spec §11)", () => {
   it("a waiting source: the estimate, the window, the privacy line, a page range", async () => {
     const client = await panel(view([src({ status: "pending", notice: "warn", pages: 180, estimate: 154000, fragments: 0 })]));
     expect(await screen.findByText("ch2.pdf has 180 pages. Checking and labelling it will use about 154,000 tokens.")).toBeTruthy();
-    expect(screen.getByText("Your plan's five_hour window is at 42% now.")).toBeTruthy();
+    expect(screen.getByText("Your plan's 5-hour window is at 42% now.")).toBeTruthy();
     expect(screen.getByText("Checking and labelling send parts of this material to Anthropic.")).toBeTruthy();
     fireEvent.change(screen.getByRole("spinbutton", { name: "From page" }), { target: { value: "40" } });
     fireEvent.change(screen.getByRole("spinbutton", { name: "To page" }), { target: { value: "62" } });
     fireEvent.click(screen.getByRole("button", { name: "Only these pages" }));
-    fireEvent.click(screen.getByRole("button", { name: "All of it" }));
+    const all = screen.getByRole("button", { name: "All of it" }) as HTMLButtonElement;
+    await waitFor(() => expect(all.disabled).toBe(false));
+    fireEvent.click(all);
     await waitFor(() => expect(client.materialCalls).toEqual(["confirm:ch2", "confirm:ch2"]));
     expect(client.materialChoices).toEqual([{ pageRange: [40, 62] }, {}]);
   });
 
-  it("at the hard limit only a page range goes on", async () => {
-    await panel(view([src({ status: "pending", notice: "max", pages: 420, fragments: 0 })]));
-    expect(await screen.findByRole("button", { name: "Only these pages" })).toBeTruthy();
+  it("at the hard limit only a page range shorter than the limit goes on", async () => {
+    const client = await panel(view([src({ status: "pending", notice: "max", pages: 420, fragments: 0 })]));
+    expect(await screen.findByText("ch2.pdf has 420 pages: too many to process whole. Choose up to 299 pages you need.")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "All of it" })).toBeNull();
+    const range = screen.getByRole("button", { name: "Only these pages" }) as HTMLButtonElement;
+    fireEvent.change(screen.getByRole("spinbutton", { name: "To page" }), { target: { value: "420" } });
+    expect(range.disabled).toBe(true);
+    fireEvent.change(screen.getByRole("spinbutton", { name: "To page" }), { target: { value: "300" } });
+    expect(range.disabled).toBe(true);
+    fireEvent.change(screen.getByRole("spinbutton", { name: "To page" }), { target: { value: "299" } });
+    expect(range.disabled).toBe(false);
+    fireEvent.click(range);
+    await waitFor(() => expect(client.materialChoices).toEqual([{ pageRange: [1, 299] }]));
+  });
+
+  it("a confirm that doesn't go through says so, and the buttons wait while it runs", async () => {
+    const client = await panel(view([src({ status: "pending", notice: "warn", pages: 180, estimate: 154000, fragments: 0 })]));
+    client.materialConfirmResult = { ok: false, reason: "invalid" };
+    const all = (await screen.findByRole("button", { name: "All of it" })) as HTMLButtonElement;
+    fireEvent.click(all);
+    expect(all.disabled).toBe(true);
+    expect(await screen.findByText("That didn't go through. Try again.")).toBeTruthy();
+    expect(all.disabled).toBe(false);
+    cleanup();
+    const rejecting = await panel(view([src({ status: "pending", notice: "warn", pages: 180, estimate: 154000, fragments: 0 })]));
+    rejecting.materialConfirmResult = new Error("ipc");
+    fireEvent.click(await screen.findByRole("button", { name: "All of it" }));
+    expect(await screen.findByText("That didn't go through. Try again.")).toBeTruthy();
+  });
+
+  it("a waiting card waits while a turn runs", async () => {
+    const client = new FakeClient({ language: "en", folder: "/f", engineId: "claude" });
+    client.materialViews.fractions = view([src({ status: "pending", notice: "warn", pages: 180, estimate: 154000, fragments: 0 })]);
+    await renderIn("en", <MaterialPanel client={client} scope="fractions" info={info} disabled={true} />);
+    expect(((await screen.findByRole("button", { name: "All of it" })) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Only these pages" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("a big spreadsheet: summary and first rows, or all of it", async () => {
@@ -126,6 +163,55 @@ describe("MaterialPanel (material spec §11)", () => {
     fireEvent.change(screen.getByRole("textbox", { name: "Link" }), { target: { value: "https://example.org/x" } });
     fireEvent.click(screen.getByRole("button", { name: "Add" }));
     expect(await screen.findByText("The page couldn't be read. Check the link and try again.")).toBeTruthy();
+    // The form and the link stay, to fix and send again.
+    expect((screen.getByRole("textbox", { name: "Link" }) as HTMLInputElement).value).toBe("https://example.org/x");
+    client.materialAddResult = { ok: true, added: ["x"], refused: [] };
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    expect(await screen.findByText("Checking and labelling send parts of this material to Anthropic.")).toBeTruthy();
+    expect(screen.queryByRole("textbox", { name: "Link" })).toBeNull();
+  });
+
+  it("an add that fails, or doesn't answer, says so", async () => {
+    const client = await panel(view([]));
+    client.materialAddResult = { ok: false, reason: "not-ready" };
+    fireEvent.click(await screen.findByRole("button", { name: "Add a file" }));
+    expect(await screen.findByText("Couldn't add it. Try again.")).toBeTruthy();
+    cleanup();
+    const other = await panel(view([]));
+    other.materialAddResult = new Error("ipc");
+    fireEvent.click(await screen.findByRole("button", { name: "Add a file" }));
+    expect(await screen.findByText("Couldn't add it. Try again.")).toBeTruthy();
+  });
+
+  it("the link form: expanded state, focus, Cancel", async () => {
+    await panel(view([]));
+    const toggle = await screen.findByRole("button", { name: "Add a link" });
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    const input = screen.getByRole("textbox", { name: "Link" });
+    expect(document.activeElement).toBe(input);
+    fireEvent.change(input, { target: { value: "https://example.org/y" } });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("textbox", { name: "Link" })).toBeNull();
+    fireEvent.click(toggle);
+    expect((screen.getByRole("textbox", { name: "Link" }) as HTMLInputElement).value).toBe("");
+  });
+
+  it("Try again waits while it runs", async () => {
+    const client = await panel(view([src({ id: "e", name: "e.pdf", status: "ready", failed: true })]));
+    let finish = () => {};
+    client.material.retry = (_scope: string, id: string) => {
+      client.materialCalls.push(`retry:${id}`);
+      return new Promise((resolve) => {
+        finish = () => resolve({ ok: true });
+      });
+    };
+    const retry = (await screen.findByRole("button", { name: "Try again" })) as HTMLButtonElement;
+    fireEvent.click(retry);
+    expect(retry.disabled).toBe(true);
+    finish();
+    await waitFor(() => expect(retry.disabled).toBe(false));
   });
 });
 
@@ -145,9 +231,34 @@ describe("where the panel goes", () => {
     cleanup();
     const plain = new FakeClient({ language: "en", folder: "/f", engineId: "claude" });
     plain.state = { ...plain.state, actions: { study: { label: "Study", cost: "light" } } };
+    const list = vi.spyOn(plain.material, "list");
+    const onChange = vi.spyOn(plain.material, "onChange");
     await work(plain);
     await screen.findByRole("navigation", { name: "Guided path" });
     expect(screen.queryByRole("heading", { name: "Material" })).toBeNull();
+    // D0: the window never asks for material.
+    expect(list).not.toHaveBeenCalled();
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("a scope switch starts the panel fresh", async () => {
+    const client = new FakeClient({ language: "en", folder: "/f", engineId: "claude" });
+    client.state = { ...client.state, actions: { study: { label: "Study", cost: "light" } }, material: info, scopes: { label: "topic", plural: "topics" } };
+    client.scopeList = [
+      { id: "fractions", title: "Fractions", createdAt: "c", archived: false },
+      { id: "decimals", title: "Decimals", createdAt: "c", archived: false },
+    ];
+    client.openScope = "fractions";
+    client.materialViews.fractions = view([src({ status: "pending", notice: "warn", pages: 180, estimate: 154000, fragments: 0 })]);
+    client.materialViews.decimals = { ...view([src({ status: "pending", notice: "warn", pages: 90, estimate: 50000, fragments: 0 })]), scope: "decimals" };
+    await work(client);
+    fireEvent.click(await screen.findByRole("button", { name: "Add a link" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Link" }), { target: { value: "https://example.org/z" } });
+    fireEvent.change(await screen.findByRole("spinbutton", { name: "From page" }), { target: { value: "7" } });
+    fireEvent.change(await screen.findByRole("combobox", { name: "Choose topic" }), { target: { value: "decimals" } });
+    expect(await screen.findByText("ch2.pdf has 90 pages. Checking and labelling it will use about 50,000 tokens.")).toBeTruthy();
+    expect(screen.queryByRole("textbox", { name: "Link" })).toBeNull();
+    expect((screen.getByRole("spinbutton", { name: "From page" }) as HTMLInputElement).value).toBe("1");
   });
 
   it("with scopes: only once a scope is open, and that scope's", async () => {

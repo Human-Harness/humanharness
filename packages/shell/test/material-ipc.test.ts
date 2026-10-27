@@ -12,7 +12,7 @@ describe("D0: a harness without material", () => {
   it("adds no `material` key to AppState", () => {
     const state = { name: "x", ...materialAppState({}) };
     expect(Object.hasOwn(state, "material")).toBe(false);
-    expect(materialAppState({ material })).toEqual({ material: { accepts: ["text", "pdf"], items: false, grounding: { default: "mixed", personCanChange: true } } });
+    expect(materialAppState({ material })).toEqual({ material: { accepts: ["text", "pdf"], items: false, grounding: { default: "mixed", personCanChange: true }, maxPages: 300 } });
     expect(materialAppState({ material: { ...material, items: { collection: "concepts", label: "name" } } }).material?.items).toBe(true);
   });
 });

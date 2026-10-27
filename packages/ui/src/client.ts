@@ -710,6 +710,8 @@ export interface MaterialInfo {
   accepts: string[];
   items: boolean;
   grounding: { default: "strict" | "mixed"; personCanChange: boolean };
+  /** A source this many pages long or more goes on only with a range shorter than this (§7 `MAX_PAGES`). */
+  maxPages: number;
 }
 
 export type MaterialResult = { ok: true } | { ok: false; reason: "not-ready" | "unknown-scope" | "unknown-source" | "invalid" | "fetch" };

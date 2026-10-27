@@ -13,6 +13,9 @@ export interface MaterialPanelProps {
   disabled: boolean;
 }
 
+type Translate = (k: string, o?: Record<string, unknown>) => string;
+type ConfirmChoice = Parameters<HarnessClient["material"]["confirm"]>[2];
+
 /** The refusal reasons the strings know; anything else reads as "unreadable". */
 const REFUSALS = ["media", "old-office", "binary", "unreadable", "scanned", "protected", "too-big", "not-accepted", "fetch", "storage"];
 
@@ -38,13 +41,36 @@ export function useMaterial(client: HarnessClient, scope: string): MaterialView 
   return view;
 }
 
+/** The usage window's name the way Settings › Usage says it ("5-hour"), or a plain "Limit". */
+function windowLabel(t: Translate, kind: string): string {
+  return t(`usage.long.${kind}`, { defaultValue: t(`usage.${kind}`, { defaultValue: t("usage.limit") }) });
+}
+
 /** A source waiting for the person (§7): what it costs, where it goes, and what to process. */
-function WaitingCard({ client, scope, source, view }: { client: HarnessClient; scope: string; source: MaterialSourceView; view: MaterialView }) {
+function WaitingCard({
+  client,
+  scope,
+  source,
+  view,
+  maxPages,
+  disabled,
+}: {
+  client: HarnessClient;
+  scope: string;
+  source: MaterialSourceView;
+  view: MaterialView;
+  maxPages: number;
+  disabled: boolean;
+}) {
   const { t, i18n } = useTranslation();
   const fmt = (n: number) => n.toLocaleString(shownLanguage(i18n));
+  // At the hard limit a range must be shorter than `maxPages`: the main process leaves a wider one waiting.
+  const widest = source.notice === "max" ? Math.max(1, maxPages - 1) : source.pages;
   const [from, setFrom] = useState(1);
-  const [to, setTo] = useState(Math.max(1, Math.min(source.pages, 50)));
-  const vars = { name: source.name, pages: fmt(source.pages), rows: fmt(source.rows ?? 0), tokens: fmt(source.estimate) };
+  const [to, setTo] = useState(Math.max(1, Math.min(source.pages, 50, widest)));
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const vars = { name: source.name, pages: fmt(source.pages), rows: fmt(source.rows ?? 0), tokens: fmt(source.estimate), limit: fmt(widest) };
   const text =
     source.notice === "max"
       ? t("material.max", vars)
@@ -54,11 +80,26 @@ function WaitingCard({ client, scope, source, view }: { client: HarnessClient; s
           ? t("material.noTextPages", vars)
           : t("material.warn", vars);
   const ranged = source.notice === "warn" || source.notice === "max";
-  const rangeOk = Number.isInteger(from) && Number.isInteger(to) && from >= 1 && from <= to && to <= source.pages;
+  const rangeOk = Number.isInteger(from) && Number.isInteger(to) && from >= 1 && from <= to && to <= source.pages && to - from + 1 <= widest;
+  const off = disabled || busy;
+  const confirm = (choice: ConfirmChoice) => {
+    setBusy(true);
+    setFailed(false);
+    client.material.confirm(scope, source.id, choice).then(
+      (r) => {
+        setBusy(false);
+        if (!r.ok) setFailed(true);
+      },
+      () => {
+        setBusy(false);
+        setFailed(true);
+      },
+    );
+  };
   return (
-    <div className="hh-material-card" role="group" aria-label={source.name}>
+    <div className="hh-material-card" role="group" aria-label={source.name} aria-busy={busy || undefined}>
       <p>{text}</p>
-      {view.window && <p>{t("material.window", { window: view.window.kind, percent: Math.round(view.window.utilization * 100) })}</p>}
+      {view.window && <p>{t("material.window", { window: windowLabel(t, view.window.kind), percent: Math.round(view.window.utilization * 100) })}</p>}
       <p className="hh-material-privacy">{t("material.privacy", { provider: view.provider })}</p>
       {ranged && (
         <div className="hh-material-range">
@@ -70,30 +111,35 @@ function WaitingCard({ client, scope, source, view }: { client: HarnessClient; s
             {t("material.to")}
             <input type="number" min={1} max={source.pages} value={to} onChange={(e) => setTo(Number(e.target.value))} />
           </label>
-          <button type="button" disabled={!rangeOk} onClick={() => void client.material.confirm(scope, source.id, { pageRange: [from, to] })}>
+          <button type="button" disabled={off || !rangeOk} onClick={() => confirm({ pageRange: [from, to] })}>
             {t("material.range")}
           </button>
         </div>
       )}
       <div className="hh-material-actions">
         {source.notice === "rows" && (
-          <button type="button" onClick={() => void client.material.confirm(scope, source.id, { sheets: "summary" })}>
+          <button type="button" disabled={off} onClick={() => confirm({ sheets: "summary" })}>
             {t("material.summary")}
           </button>
         )}
         {/* At the hard limit only a page range goes on. */}
         {source.notice !== "max" && (
-          <button type="button" onClick={() => void client.material.confirm(scope, source.id, {})}>
+          <button type="button" disabled={off} onClick={() => confirm({})}>
             {source.notice === "no-text-pages" ? t("material.goOn") : t("material.all")}
           </button>
         )}
       </div>
+      {failed && (
+        <p className="hh-material-notice" role="status">
+          {t("material.confirmFailed")}
+        </p>
+      )}
     </div>
   );
 }
 
 /** One line per source (§11). */
-export function statusLine(t: (k: string, o?: Record<string, unknown>) => string, s: MaterialSourceView): string {
+export function statusLine(t: Translate, s: MaterialSourceView): string {
   if (s.status === "refused") {
     const reason = s.refusal && REFUSALS.includes(s.refusal) ? s.refusal : "unreadable";
     return t("material.status.refused", { name: s.name, message: t(`material.refusal.${reason}`) });
@@ -104,34 +150,62 @@ export function statusLine(t: (k: string, o?: Record<string, unknown>) => string
 }
 
 /** The default material panel (material spec §11): add a file or a link, the waiting sources' cards, a line per source. */
-export function MaterialPanel({ client, scope, disabled }: MaterialPanelProps) {
+export function MaterialPanel({ client, scope, info, disabled }: MaterialPanelProps) {
   const { t } = useTranslation();
   const headingId = useId();
   const view = useMaterial(client, scope);
   const [linking, setLinking] = useState(false);
   const [url, setUrl] = useState("");
   const [notice, setNotice] = useState<string[]>([]);
-  const report = (r: MaterialAddResult) => {
-    if (!r.ok) setNotice(r.reason === "fetch" ? [t("material.linkFailed")] : []);
-    else
-      setNotice([
-        ...r.refused.map((x) => t("material.refusedFile", { name: x.name, message: x.message })),
-        // §13.3: a source processed at once still tells the person, once, where its parts go.
-        ...(r.added.length > 0 && view ? [t("material.privacy", { provider: view.provider })] : []),
-      ]);
+  const [adding, setAdding] = useState(false);
+  const [retrying, setRetrying] = useState<string[]>([]);
+  const addFailed = () => {
+    setAdding(false);
+    setNotice([t("material.addFailed")]);
   };
+  /** Takes the answer of an add; true when it went through. */
+  const report = (r: MaterialAddResult): boolean => {
+    setAdding(false);
+    if (!r.ok) {
+      setNotice([r.reason === "fetch" ? t("material.linkFailed") : t("material.addFailed")]);
+      return false;
+    }
+    setNotice([
+      ...r.refused.map((x) => t("material.refusedFile", { name: x.name, message: x.message })),
+      // §13.3: a source processed at once still tells the person, once, where its parts go.
+      ...(r.added.length > 0 && view ? [t("material.privacy", { provider: view.provider })] : []),
+    ]);
+    return true;
+  };
+  const closeLink = () => {
+    setLinking(false);
+    setUrl("");
+  };
+  const retry = (id: string) => {
+    setRetrying((now) => [...now, id]);
+    const done = () => setRetrying((now) => now.filter((x) => x !== id));
+    client.material.retry(scope, id).then(done, done);
+  };
+  const off = disabled || adding;
   // A removed source is gone for the person (its original is in the Trash).
   const sources = (view?.sources ?? []).filter((s) => s.status !== "removed");
   return (
-    <section className="hh-material" aria-labelledby={headingId}>
+    <section className="hh-material" aria-labelledby={headingId} aria-busy={adding || undefined}>
       <h2 id={headingId} className="hh-flow-heading">
         {t("material.title")}
       </h2>
       <div className="hh-material-actions">
-        <button type="button" disabled={disabled} onClick={() => void client.material.add(scope).then(report, () => undefined)}>
+        <button
+          type="button"
+          disabled={off}
+          onClick={() => {
+            setAdding(true);
+            client.material.add(scope).then(report, addFailed);
+          }}
+        >
           {t("material.addFile")}
         </button>
-        <button type="button" disabled={disabled} onClick={() => setLinking((v) => !v)}>
+        <button type="button" disabled={off} aria-expanded={linking} onClick={() => (linking ? closeLink() : setLinking(true))}>
           {t("material.addLink")}
         </button>
       </div>
@@ -140,15 +214,22 @@ export function MaterialPanel({ client, scope, disabled }: MaterialPanelProps) {
           className="hh-material-link"
           onSubmit={(e) => {
             e.preventDefault();
-            if (disabled || !url.trim()) return;
-            void client.material.addLink(scope, url.trim()).then(report, () => undefined);
-            setLinking(false);
-            setUrl("");
+            const link = url.trim();
+            if (off || !link) return;
+            setAdding(true);
+            // The form and its link stay until the add goes through, so a failed one can be fixed and sent again.
+            client.material.addLink(scope, link).then((r) => {
+              if (report(r)) closeLink();
+            }, addFailed);
           }}
         >
-          <input type="url" aria-label={t("material.link")} value={url} onChange={(e) => setUrl(e.target.value)} />
-          <button type="submit" disabled={disabled || !url.trim()}>
+          {/* The person just asked for the link field. */}
+          <input type="url" aria-label={t("material.link")} value={url} autoFocus onChange={(e) => setUrl(e.target.value)} />
+          <button type="submit" disabled={off || !url.trim()}>
             {t("material.add")}
+          </button>
+          <button type="button" onClick={closeLink}>
+            {t("material.cancel")}
           </button>
         </form>
       )}
@@ -159,7 +240,7 @@ export function MaterialPanel({ client, scope, disabled }: MaterialPanelProps) {
       ))}
       {sources.map((s) =>
         s.status === "pending" && view ? (
-          <WaitingCard key={s.id} client={client} scope={scope} source={s} view={view} />
+          <WaitingCard key={s.id} client={client} scope={scope} source={s} view={view} maxPages={info.maxPages} disabled={disabled} />
         ) : (
           <p key={s.id} className="hh-material-line">
             <span>{statusLine(t, s)}</span>
@@ -167,7 +248,12 @@ export function MaterialPanel({ client, scope, disabled }: MaterialPanelProps) {
             {s.status === "ready" && s.failed && (
               <>
                 {" "}
-                <button type="button" disabled={disabled} onClick={() => void client.material.retry(scope, s.id).catch(() => undefined)}>
+                <button
+                  type="button"
+                  disabled={disabled || retrying.includes(s.id)}
+                  aria-busy={retrying.includes(s.id) || undefined}
+                  onClick={() => retry(s.id)}
+                >
                   {t("material.retry")}
                 </button>
               </>

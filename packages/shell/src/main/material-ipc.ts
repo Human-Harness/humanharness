@@ -1,4 +1,5 @@
 import { type HarnessMaterial, hasMaterial } from "@humanharness/harness-sdk";
+import { MAX_PAGES } from "@humanharness/material/light";
 import type { MaterialInfo, MaterialResult } from "@humanharness/ui/client";
 import { DATA_PREFIX, type HistoryKeep, MATERIAL_KEEP, NOTES_PREFIX } from "@humanharness/workspace";
 
@@ -10,7 +11,7 @@ export const historyKeep = (h: { material?: unknown }): HistoryKeep[] => [NOTES_
 
 /** `AppState`'s `material`, spread in: nothing at all without material (D0). */
 export const materialAppState = (h: { material?: Pick<HarnessMaterial, "accepts" | "items" | "grounding"> }): { material?: MaterialInfo } =>
-  h.material ? { material: { accepts: [...h.material.accepts], items: h.material.items !== undefined, grounding: h.material.grounding } } : {};
+  h.material ? { material: { accepts: [...h.material.accepts], items: h.material.items !== undefined, grounding: h.material.grounding, maxPages: MAX_PAGES } } : {};
 
 /**
  * `hh:materialOpen`: opens the original of a source or a fragment's source. "not-ready" without material, "unknown-source"

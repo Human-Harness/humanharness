@@ -797,7 +797,8 @@ export function ChatView({
   const Panel = materialPanel ?? MaterialPanel;
   const material =
     state.material && materialScope && !slim ? (
-      <Panel client={client} scope={materialScope} info={state.material} disabled={blocked() || !loaded} />
+      // Keyed by scope: another scope's panel starts fresh (its form, notices and cards are not this one's).
+      <Panel key={materialScope} client={client} scope={materialScope} info={state.material} disabled={blocked() || !loaded} />
     ) : null;
 
   return (

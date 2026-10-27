@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { FileChange } from "@humanharness/workspace";
-import { MAX_CARDS, turnDocuments } from "../src/documents";
+import { MAX_CARDS, MAX_CARD_TEXT, turnDocuments } from "../src/documents";
 
 const history = (changes: FileChange[], files: Record<string, string>) => ({
   changes: async () => changes,
@@ -35,6 +35,9 @@ describe("turnDocuments (document-reader §5.1)", () => {
           { path: ".harness/notes/x.md", kind: "added" },
           { path: "Notes.MD", kind: "added" },
           { path: "gone.md", kind: "added" },
+          { path: "a\\b.md", kind: "added" },
+          { path: "C:x.md", kind: "added" },
+          { path: `${"d/".repeat(600)}x.md`, kind: "added" },
         ],
         { "Notes.MD": "x" },
       ),
@@ -50,5 +53,15 @@ describe("turnDocuments (document-reader §5.1)", () => {
     const cards = await turnDocuments(history(changes.reverse(), files), "b", "a");
     expect(cards).toHaveLength(MAX_CARDS);
     expect(cards[0].path).toBe("d/00.md");
+  });
+
+  it("reads at most MAX_CARD_TEXT of a document, fast, whatever its size", async () => {
+    const huge = `---\ntitle: Big\n---\n${"word ".repeat(2_000_000)}`;
+    const started = Date.now();
+    const [card] = await turnDocuments(history([{ path: "big.md", kind: "added" }], { "big.md": huge }), "b", "a");
+    expect(Date.now() - started).toBeLessThan(1000);
+    expect(card.title).toBe("Big");
+    expect(card.words).toBeGreaterThan(200_000);
+    expect(card.words).toBeLessThanOrEqual(MAX_CARD_TEXT / 5);
   });
 });

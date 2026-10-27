@@ -142,7 +142,25 @@ export function documentTitle(path: string, text: string): string {
   return titleOf(path, splitFrontMatter(text));
 }
 
-const wordsIn = (body: string) => body.split(/\s+/).filter(Boolean).length;
+/** What `\s` matches in a JavaScript regex. */
+function isSpace(c: number): boolean {
+  return (
+    (c >= 9 && c <= 13) || c === 32 || c === 0xa0 || c === 0x1680 || (c >= 0x2000 && c <= 0x200a) ||
+    c === 0x2028 || c === 0x2029 || c === 0x202f || c === 0x205f || c === 0x3000 || c === 0xfeff
+  );
+}
+
+/** Runs of non-space characters, counted in one pass (no arrays: a long document costs no extra memory). */
+function wordsIn(body: string): number {
+  let words = 0;
+  let inWord = false;
+  for (let i = 0; i < body.length; i++) {
+    const space = isSpace(body.charCodeAt(i));
+    if (!space && !inWord) words++;
+    inWord = !space;
+  }
+  return words;
+}
 
 /** Words in the body (front-matter left out). */
 export function wordCount(text: string): number {
@@ -152,6 +170,27 @@ export function wordCount(text: string): number {
 /** Reading time at 230 words a minute (§5.1), at least one minute. */
 export function readingMinutes(words: number): number {
   return Math.max(1, Math.ceil(words / 230));
+}
+
+/**
+ * Whether `rel` is not a plain relative path, so the reader always refuses it (checked before any file system call):
+ * not a string, empty, too long, a NUL, a backslash (also every UNC path), absolute (also `//host`), a drive letter, or
+ * leaving upward from the start (`..`, `../x`, `./../x`, `a/../../x`). A `..` further in that stays inside is left to
+ * the shell's containment check.
+ */
+export function refusedShape(rel: unknown): boolean {
+  if (typeof rel !== "string" || !rel || rel.length > 1000) return true;
+  if (rel.includes("\0") || rel.includes("\\")) return true;
+  if (rel.startsWith("/") || /^[A-Za-z]:/.test(rel)) return true;
+  // Like path.posix.normalize(rel) starting with "..": some ".." climbs above the start.
+  let depth = 0;
+  for (const part of rel.split("/")) {
+    if (part === "..") {
+      if (depth === 0) return true;
+      depth--;
+    } else if (part !== "" && part !== ".") depth++;
+  }
+  return false;
 }
 
 /** A Markdown document the reader opens and cards are made for: `.md`, any case. */

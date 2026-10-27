@@ -7,6 +7,7 @@ import {
   documentTitle,
   isMarkdownPath,
   readingMinutes,
+  refusedShape,
   splitFrontMatter,
   summarizeDocument,
   wordCount,
@@ -188,5 +189,37 @@ describe("manifest documents (§4.2)", () => {
 
   it("D0: without documents the manifest has no documents field", () => {
     expect("documents" in defineHarness(base)).toBe(false);
+  });
+});
+
+describe("wordCount on large or odd text", () => {
+  it("counts runs of any JavaScript whitespace, like split(/\\s+/)", () => {
+    const text = "a\tb\u00a0c\u2003d\u3000e\ufeff f\n\n  g";
+    expect(wordCount(text)).toBe(text.split(/\s+/).filter(Boolean).length);
+    expect(wordCount("")).toBe(0);
+    expect(wordCount("   ")).toBe(0);
+  });
+
+  it("is linear: 50k spaces and a 5 MB body stay fast", () => {
+    const started = Date.now();
+    expect(wordCount(`a${" ".repeat(50_000)}b`)).toBe(2);
+    expect(wordCount("word ".repeat(1_000_000))).toBe(1_000_000);
+    expect(Date.now() - started).toBeLessThan(1000);
+  });
+});
+
+describe("refusedShape", () => {
+  it("refuses what is not a plain relative path", () => {
+    for (const rel of [null, 3, "", "a".repeat(1001), "a\0.md", "a\\b.md", "/abs.md", "//host/x.md", "C:a.md", "..", "../x.md", "./../x.md", "a/../../x.md", "../a/.."])
+      expect(refusedShape(rel)).toBe(true);
+  });
+  it("takes plain relative paths, also with a leading ./ or a .. that stays inside", () => {
+    for (const rel of ["docs/plan.md", "./docs/plan.md", "docs/../docs/plan.md", "a..b.md", "..hidden.md", "a/b/../../c.md"]) expect(refusedShape(rel)).toBe(false);
+  });
+  it("is fast on a long path of spaces", () => {
+    const started = Date.now();
+    expect(refusedShape(" ".repeat(50_000))).toBe(true);
+    expect(refusedShape(`${" ".repeat(999)}`)).toBe(false);
+    expect(Date.now() - started).toBeLessThan(100);
   });
 });

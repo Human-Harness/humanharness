@@ -9,7 +9,8 @@ import {
   MAX_EXIST_PATHS,
   MAX_IMAGE_BYTES,
   MAX_WATCHES,
-  documentsExist, locate, readDocument, readImage, refusedShape } from "../src/main/documents";
+  documentsExist, locate, readDocument, readImage } from "../src/main/documents";
+import { refusedShape } from "@humanharness/harness-sdk/documents";
 
 const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "hh-docs-")));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));

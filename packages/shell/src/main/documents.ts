@@ -1,5 +1,6 @@
 import nodeFs, { type FSWatcher, constants, promises as fs } from "node:fs";
 import path from "node:path";
+import { refusedShape } from "@humanharness/harness-sdk/documents";
 import type { DocumentRead } from "@humanharness/ui/client";
 import { stillSafe } from "./open-path";
 
@@ -10,19 +11,6 @@ export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const IMAGE_TYPES: Record<string, string> = { ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp" };
 /** `.md` and `.markdown` (the SDK's `isMarkdownPath` takes only `.md`). */
 const MARKDOWN = /\.(md|markdown)$/i;
-
-/**
- * Whether `rel` is not a plain relative path, checked before any file system call: not a string, empty, too long, a
- * NUL, a backslash (also every UNC path), absolute (also `//host`), a drive letter, or leaving upward from the start
- * (`..`, `../x`, `./../x`). A `..` further in is caught later by the containment check.
- */
-export function refusedShape(rel: unknown): boolean {
-  if (typeof rel !== "string" || !rel || rel.length > 1000) return true;
-  if (rel.includes("\0") || rel.includes("\\")) return true;
-  if (rel.startsWith("/") || path.isAbsolute(rel) || /^[A-Za-z]:/.test(rel)) return true;
-  const normal = path.posix.normalize(rel);
-  return normal === ".." || normal.startsWith("../");
-}
 
 export type Located = { ok: true; file: string; root: string } | { ok: false; reason: "outside" | "missing" };
 

@@ -206,6 +206,19 @@ describe("createRuntime", () => {
     expect(events.at(-1)).toEqual({ type: "done", ok: true });
   });
 
+  it("a failure listing the turn's documents still ends the turn well, with no documents event", async () => {
+    const { runtime } = await setup({ steps: [{ write: { path: "plan.md", content: "x" } }, ...claudeTextLines("ok"), claudeResultLine(true)] });
+    const changes = vi.spyOn(runtime.history, "changes").mockRejectedValue(new Error("boom"));
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const events = await send(runtime);
+    expect(changes).toHaveBeenCalled();
+    expect(logged).toHaveBeenCalledWith("Could not list the turn's documents", expect.any(Error));
+    expect(events.some((e) => e.type === "documents")).toBe(false);
+    expect(events.at(-1)).toEqual({ type: "done", ok: true });
+    changes.mockRestore();
+    logged.mockRestore();
+  });
+
   it("D0: a turn that changes no .md sends no documents event; neither does a stopped one", async () => {
     const quiet = await setup({ steps: [{ write: { path: "src/a.ts", content: "x" } }, ...claudeTextLines("ok"), claudeResultLine(true)] });
     expect((await send(quiet.runtime)).some((e) => e.type === "documents")).toBe(false);

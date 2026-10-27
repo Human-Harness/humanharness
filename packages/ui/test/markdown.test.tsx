@@ -7,6 +7,7 @@ import { DocumentContext } from "../src/documents-context";
 import { highlightCode } from "../src/highlight";
 import { Markdown, markdownToPlain } from "../src/markdown";
 import { Message } from "../src/Message";
+import * as sdk from "../src/index";
 import { renderIn } from "./render";
 
 afterEach(cleanup);
@@ -519,5 +520,14 @@ describe("code blocks (§3.2)", () => {
     const started = performance.now();
     await renderIn("en", <Markdown source={"```ts title=\"" + " ".repeat(50_000) + "\nx\n```"} />);
     expect(performance.now() - started).toBeLessThan(1000);
+  });
+});
+
+describe("SDK export (§5.1)", () => {
+  it("harness views render documents with the same component", () => {
+    const { container } = render(<sdk.Markdown source={"---\ntitle: T\n---\n## Hello"} document path="docs/a.md" />);
+    expect(container.querySelector("h2")?.textContent).toBe("Hello");
+    expect(container.textContent).not.toContain("title:");
+    expect(typeof sdk.DocumentContext).toBe("object");
   });
 });

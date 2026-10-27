@@ -83,6 +83,10 @@ export class SidekickController {
   private card: SidekickCard | null = null;
   private notice: SidekickState["notice"];
   private closed = false;
+  /** Sidekick's usage lines per base, read once: only the controller writes them, and each write drops the copy. */
+  private readonly lines = new Map<string, Promise<UsageRecord[]>>();
+  /** The tier last resolved; state() resolves it only while on (Settings › Models changes show from the next state). */
+  private tier = "light";
 
   constructor(private readonly d: SidekickDeps) {}
 
@@ -90,16 +94,15 @@ export class SidekickController {
     const settings = await this.d.store.settings();
     const setup = await this.d.setup().catch(() => null);
     const task = await this.d.task().catch(() => null);
-    const records = setup ? await this.d.usage(setup.base).catch(() => []) : [];
+    const records = setup ? await this.usage(setup.base) : [];
     const spent = (task ? sidekickSpent(records, task.id) : 0) + (this.pending.get(task?.id ?? NO_TASK) ?? 0);
     const cap = settings.cap === "none" ? null : settings.cap;
-    let tier = "light";
-    if (setup) {
+    if (setup && settings.on) {
       // An unknown engine id (a hand-edited setup) must not make state() reject.
       const p = await Promise.resolve()
         .then(() => this.d.profile(this.d.engine(setup.engineId)))
         .catch(() => null);
-      if (p) tier = p.tier;
+      if (p) this.tier = p.tier;
     }
     const status: SidekickState["status"] = !settings.on
       ? "off"
@@ -116,7 +119,7 @@ export class SidekickController {
       status,
       spent,
       cap,
-      tier,
+      tier: this.tier,
       card: this.card,
       week: sidekickWeek(records),
       ...(this.notice ? { notice: this.notice } : {}),
@@ -205,7 +208,7 @@ export class SidekickController {
     // 2. The decision.
     if (flags.length === 0 && mode === "auto" && !req.force) return early("send");
     const key = task?.id ?? NO_TASK;
-    const records = await this.d.usage(setup.base).catch(() => []);
+    const records = await this.usage(setup.base);
     const spent = (task ? sidekickSpent(records, task.id) : 0) + (this.pending.get(key) ?? 0);
     if (settings.cap !== "none" && spent >= settings.cap) return early("send");
 
@@ -253,6 +256,7 @@ export class SidekickController {
           ...(answer.limits ? { limits: answer.limits } : {}),
         });
         await this.d.log(setup.base, record).catch((err: unknown) => console.error("Could not record the Sidekick turn", err));
+        this.lines.delete(setup.base);
       }
       // A late answer is dropped: the prompt already went as typed (or the person sent at once).
       if (timedOut) return this.finish("timeout");
@@ -331,6 +335,19 @@ export class SidekickController {
     const session = this.d.open({ engine, command: cmd.command, env: cmd.env, folder, profile });
     this.sessions.set(key, { session, base });
     return session;
+  }
+
+  /** Sidekick's usage lines in `base` (cached; [] when the log can't be read, which is not kept). */
+  private usage(base: string): Promise<UsageRecord[]> {
+    let lines = this.lines.get(base);
+    if (!lines) {
+      lines = this.d.usage(base).then((rs) => rs.filter((r) => r.phase === "sidekick"));
+      this.lines.set(base, lines);
+      lines.catch(() => {
+        if (this.lines.get(base) === lines) this.lines.delete(base);
+      });
+    }
+    return lines.catch(() => []);
   }
 
   private async closeSessions(which: (key: string) => boolean): Promise<void> {

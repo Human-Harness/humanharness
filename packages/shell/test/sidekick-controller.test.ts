@@ -365,3 +365,41 @@ describe("SidekickController loose sessions and stale cards", () => {
     expect(h.states.at(-1)).toMatchObject({ card: null, status: "watching" });
   });
 });
+
+describe("SidekickController state() cost", () => {
+  it("reads usage.jsonl once per base; a Sidekick turn reloads it", async () => {
+    const h = harness({ record: on });
+    let reads = 0;
+    const usage = h.deps.usage;
+    (h.deps as { usage: SidekickDeps["usage"] }).usage = (b) => (reads++, usage(b));
+    await h.ctl.state();
+    await h.ctl.state();
+    expect(reads).toBe(1);
+    expect((await h.ctl.review({ text: "make it better" })).kind).toBe("card");
+    const s = await h.ctl.state();
+    // One more read, after the turn was logged.
+    expect(reads).toBe(2);
+    expect(s.spent).toBe(340);
+    expect(s.week).toBe(2340);
+  });
+
+  it("a failed read is not kept", async () => {
+    const h = harness({ record: on });
+    let fail = true;
+    const usage = h.deps.usage;
+    (h.deps as { usage: SidekickDeps["usage"] }).usage = (b) => (fail ? Promise.reject(new Error("busy")) : usage(b));
+    expect((await h.ctl.state()).week).toBe(0);
+    fail = false;
+    const line = sidekickRecord({ engine: "claude", task: "t0", sidekick: "sidekick", moment: "pre", profile, ok: true, usage: { inputTokens: 5, outputTokens: 5, cacheReadTokens: 0, cacheWriteTokens: 0 } });
+    h.logged.push(line);
+    expect((await h.ctl.state()).week).toBe(10);
+  });
+
+  it("off: state() never resolves the profile", async () => {
+    const h = harness();
+    let resolved = 0;
+    (h.deps as { profile: SidekickDeps["profile"] }).profile = async () => (resolved++, profile);
+    expect(await h.ctl.state()).toMatchObject({ status: "off", tier: "light" });
+    expect(resolved).toBe(0);
+  });
+});

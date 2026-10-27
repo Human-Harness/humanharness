@@ -419,3 +419,155 @@ export function diagramOf(text: string, at: number): string | null {
   }
   return null;
 }
+
+/** What the person picks on a question card: an option, "no answer" (null), or "Other" (§5.1). */
+export type AnswerPick = number | null | { other: string };
+
+export type AnswerResult =
+  | { ok: true; text: string | null; comment: ReviewComment }
+  | { ok: false; reason: "not-a-question" | "bad-option" | "resolved" };
+
+/** Longest "Other" answer. */
+export const MAX_OTHER = 2000;
+
+/** The comment without the fields an answer replaces. */
+function bare(c: ReviewComment): ReviewComment {
+  const { answer: _a, unapplied: _u, ...rest } = c;
+  return rest;
+}
+
+/**
+ * An answer to a question (§5.1). An option swaps the anchored passage for its text (the first answer keeps the
+ * original); "no answer" puts the original back; "Other" keeps the passage. The swap guard: when the passage is no
+ * longer where the anchor says (strictly inside its section), nothing is swapped and the answer is `unapplied`, so it
+ * travels in the next batch. `text` is the document's new text, or null when it doesn't change.
+ */
+export function answerQuestion(text: string, c: ReviewComment, pick: AnswerPick): AnswerResult {
+  if (c.kind !== "question" || !c.options) return { ok: false, reason: "not-a-question" };
+  if (c.state === "resolved") return { ok: false, reason: "resolved" };
+  if (typeof pick === "number" && (!Number.isInteger(pick) || pick < 0 || pick >= c.options.length)) return { ok: false, reason: "bad-option" };
+  if (pick !== null && typeof pick === "object") {
+    const other = typeof pick.other === "string" ? pick.other.trim() : "";
+    if (!other || other.length > MAX_OTHER) return { ok: false, reason: "bad-option" };
+    return { ok: true, text: null, comment: { ...bare(c), answer: { other }, state: "answered" } };
+  }
+  const secs = sections(text);
+  const where = c.unapplied ? null : locate(text, c.anchor, { strict: true, secs });
+  if (!where) {
+    const answer = pick === null ? {} : { answer: { option: pick } };
+    return { ok: true, text: null, comment: { ...bare(c), ...answer, unapplied: true, state: pick === null ? "open" : "answered" } };
+  }
+  const passage = text.slice(where.start, where.end);
+  const original = c.original ?? passage;
+  const target = pick === null ? original : c.options[pick].text;
+  const next = text.slice(0, where.start) + target + text.slice(where.end);
+  const anchor = anchorOf(next, where.start, target);
+  if (pick === null) {
+    const { original: _o, ...rest } = bare(c);
+    return { ok: true, text: next, comment: { ...rest, anchor, state: "open" } };
+  }
+  return { ok: true, text: next, comment: { ...bare(c), anchor, answer: { option: pick }, original, state: "answered" } };
+}
+
+/** Goes in the next batch (§5.3): a draft, an "Other" answer, or an answer the app could not swap in. */
+export const isUnsent = (c: ReviewComment): boolean =>
+  c.state === "draft" || (c.kind === "question" && (c.state === "answered" || c.state === "open") && (c.unapplied === true || (c.answer !== undefined && "other" in c.answer)));
+
+export type ReviewStatus = "none" | "draft" | "approved" | "stale";
+
+/** Approved: the current blob is the last approval's. Stale: approved before, changed since (§3). */
+export function reviewStatus(review: Review | null, blob: string | null): ReviewStatus {
+  if (!review) return "none";
+  const last = review.approvals.at(-1);
+  if (!last) return "draft";
+  return blob !== null && last.blob === blob ? "approved" : "stale";
+}
+
+/** What a chip, the footer bar, a harness view and `humanharness run` show (§5.6). */
+export interface ReviewSummary {
+  status: ReviewStatus;
+  /** Questions without an answer. */
+  questions: number;
+  /** Of those, the blocking ones. */
+  blocking: number;
+  /** Items the next batch would carry. */
+  unsent: number;
+  /** Comments and questions not resolved. */
+  comments: number;
+  /** The last approval's time, when there is one. */
+  approvedAt?: string;
+}
+
+export function summarizeReview(review: Review | null, blob: string | null): ReviewSummary {
+  const status = reviewStatus(review, blob);
+  const all = review?.comments ?? [];
+  const live = all.filter((c) => c.state !== "resolved");
+  const unanswered = live.filter((c) => c.kind === "question" && c.state === "open" && c.answer === undefined);
+  const last = review?.approvals.at(-1);
+  return {
+    status,
+    questions: unanswered.length,
+    blocking: unanswered.filter((c) => c.blocking === true).length,
+    unsent: all.filter(isUnsent).length,
+    comments: live.length,
+    ...(last ? { approvedAt: last.at } : {}),
+  };
+}
+
+/** `c<n+1>` for the highest `c<n>` in the record. */
+export function nextCommentId(review: Review): string {
+  let max = 0;
+  for (const c of review.comments) {
+    const n = Number(c.id.slice(1));
+    if (Number.isInteger(n) && n > max) max = n;
+  }
+  return `c${max + 1}`;
+}
+
+/** `s` cut to `max` characters, with "…". */
+export function cut(s: string, max: number): string {
+  return s.length <= max ? s : `${s.slice(0, max - 1)}…`;
+}
+
+const quoted = (s: string, max: number) => JSON.stringify(cut(collapse(s), max));
+
+function answerLine(c: ReviewComment): string {
+  if (c.answer && "other" in c.answer) return JSON.stringify(c.answer.other);
+  if (c.answer && "option" in c.answer && c.options) {
+    const o = c.options[c.answer.option];
+    return `picked ${JSON.stringify(o.label)}, but the passage changed: write it as ${quoted(o.text, 400)}`;
+  }
+  return "took the answer back, but the passage changed: check it";
+}
+
+/**
+ * The review round's message (§5.3), or null when nothing is unsent. `text` is the document now (for the headings'
+ * titles); null when it can't be read. `ids` are the items it carries, which become `sent`.
+ */
+export function batchMessage(path: string, review: Review, text: string | null): { message: string; ids: string[] } | null {
+  const secs = text === null ? [] : sections(text);
+  const headingOf = (slug: string | null): string => {
+    const s = slug === null ? undefined : secs.find((x) => x.slug === slug);
+    return s ? ` (${"#".repeat(s.level)} ${s.title})` : "";
+  };
+  const comments = review.comments.filter((c) => c.kind === "comment" && c.state === "draft");
+  const answers = review.comments.filter((c) => c.kind === "question" && isUnsent(c));
+  if (comments.length === 0 && answers.length === 0) return null;
+  const lines = [`Review round for ${path}.`];
+  if (comments.length > 0) {
+    lines.push("Comments:");
+    for (const c of comments) lines.push(`- ${c.id} on ${quoted(c.anchor.quote, 40)}${headingOf(c.anchor.heading)}: ${JSON.stringify(c.text)}`);
+  }
+  if (answers.length > 0) {
+    lines.push("Custom answers:");
+    for (const c of answers) lines.push(`- ${c.id} ${quoted(c.text, 80)}: ${answerLine(c)}`);
+  }
+  lines.push("Edit the document, then answer each one with reply_to_comment.");
+  return { message: lines.join("\n"), ids: [...comments, ...answers].map((c) => c.id) };
+}
+
+/** The batch's items become `sent`. */
+export function markSent(review: Review, ids: readonly string[]): Review {
+  const sent = new Set(ids);
+  return { ...review, comments: review.comments.map((c) => (sent.has(c.id) ? { ...c, state: "sent" as const } : c)) };
+}

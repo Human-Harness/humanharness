@@ -48,6 +48,23 @@ export function stepTextSize(current: TextSize | undefined, step: "in" | "out" |
   return TEXT_SIZE_ORDER[Math.min(Math.max(i + (step === "in" ? 1 : -1), 0), TEXT_SIZE_ORDER.length - 1)];
 }
 
+/** The reader's look (document-reader spec §5.2): global app preferences. */
+export interface ReaderPrefs {
+  font?: "sans" | "serif";
+  size?: "normal" | "large";
+}
+
+/** The valid part of saved reading preferences; null when nothing is valid. */
+export function cleanReaderPrefs(value: unknown): ReaderPrefs | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const v = value as Record<string, unknown>;
+  const out: ReaderPrefs = {
+    ...(v.font === "sans" || v.font === "serif" ? { font: v.font } : {}),
+    ...(v.size === "normal" || v.size === "large" ? { size: v.size } : {}),
+  };
+  return Object.keys(out).length > 0 ? out : null;
+}
+
 export interface AppConfig {
   language?: Language;
   folder?: string;
@@ -56,6 +73,8 @@ export interface AppConfig {
   appearance?: Appearance;
   /** Settings → General → Text size. Absent means normal. */
   textSize?: TextSize;
+  /** The reader's font and text size. Absent until the person changes one (D0). */
+  reader?: ReaderPrefs;
   /** Settings › Modelos: each task's tier or custom model, and the tier tables per engine. Cleaned when read. */
   models?: ModelsConfig;
   /** The person said they keep their own copy of the folder: the backup notice stays hidden (Settings › General undoes it). */

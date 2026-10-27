@@ -148,6 +148,17 @@ describe("configProblem", () => {
     expect(await configProblem({ textSize: 1.5 as never }, ctx)).toBe("invalid");
   });
 
+  it("reading preferences: sans or serif, normal or large, nothing else", async () => {
+    expect(await configProblem({ reader: { font: "serif", size: "large" } }, ctx)).toBeNull();
+    expect(await configProblem({ reader: { size: "normal" } }, ctx)).toBeNull();
+    expect(await configProblem({ reader: { font: "mono" } } as never, ctx)).toBe("invalid");
+    expect(await configProblem({ reader: { font: "sans", size: "huge" } } as never, ctx)).toBe("invalid");
+    expect(await configProblem({ reader: { font: "sans", extra: 1 } } as never, ctx)).toBe("invalid");
+    expect(await configProblem({ reader: {} }, ctx)).toBe("invalid");
+    expect(await configProblem({ reader: [] } as never, ctx)).toBe("invalid");
+    expect(await configProblem({ reader: null } as never, ctx)).toBe("invalid");
+  });
+
   it("rejects a bad folder, with the folder's code", async () => {
     expect(await configProblem({ folder: "/Users/ana" }, ctx)).toBe("home");
     expect(await configProblem({ folder: "/Users/ana/Work/link" }, ctx)).toBe("protected");

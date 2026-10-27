@@ -2,7 +2,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { canonicalLanguage } from "@humanharness/harness-sdk";
-import { type AppConfig, type FolderProblem, isTextSize } from "@humanharness/ui/client";
+import { type AppConfig, cleanReaderPrefs, type FolderProblem, isTextSize } from "@humanharness/ui/client";
 
 /** Home folders the user keeps other things in: too broad to hand to an agent as a whole (~/Library is PROTECTED). */
 const STANDARD_HOME_FOLDERS = ["Desktop", "Documents", "Downloads", "Pictures", "Movies", "Music", "Public", "Applications"];
@@ -113,6 +113,11 @@ export async function configProblem(c: AppConfig, ctx: ValidationContext): Promi
   }
   if (c.appearance !== undefined && !["system", "light", "dark"].includes(c.appearance as string)) return "invalid";
   if (c.textSize !== undefined && !isTextSize(c.textSize)) return "invalid";
+  if (c.reader !== undefined) {
+    const clean = cleanReaderPrefs(c.reader);
+    // Every field given must be valid: nothing is silently dropped from what the window sends.
+    if (!clean || Object.keys(clean).length !== Object.keys(c.reader).length) return "invalid";
+  }
   if (c.models !== undefined && (typeof c.models !== "object" || c.models === null || Array.isArray(c.models))) return "invalid";
   if (c.backupDismissed !== undefined && typeof c.backupDismissed !== "boolean") return "invalid";
   if (c.folder !== undefined) return checkFolder(c.folder, ctx.home, ctx.realpath);

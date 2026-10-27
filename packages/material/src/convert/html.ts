@@ -1,6 +1,6 @@
 import { Readability } from "@mozilla/readability";
 import { parseHTML } from "linkedom";
-import { fenced, withEstimatedPages } from "../blocks";
+import { fenced, plainLine, withEstimatedPages } from "../blocks";
 import type { MdBlock } from "../types";
 
 /** Never read: they hold code, chrome or inputs, not the material (Conventions: files are untrusted). */
@@ -23,10 +23,6 @@ interface DomNode {
 const squash = (s: string) => s.replace(/\s+/g, " ");
 const tagOf = (n: DomNode) => n.nodeName.toUpperCase();
 const kids = (n: DomNode) => Array.from(n.childNodes ?? []);
-
-/** A line of text that would read as Markdown structure (a heading, a quote, a list, a fence, a table) gets its marker escaped. */
-const plainLine = (l: string) =>
-  l.replace(/^(\d{1,9})([.)])(?=\s|$)/, "$1\\$2").replace(/^(#{1,6}(?=\s|$)|>|[-*+](?=\s|$)|`{3,}|~{3,}|\|)/, "\\$1");
 
 /** Inline Markdown of an element: bold, italics, code, line breaks; links keep their text; images are placeholders. */
 function inline(node: DomNode, image: () => void): string {

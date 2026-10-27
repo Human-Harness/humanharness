@@ -1,6 +1,6 @@
 import { estimateTokens } from "@humanharness/workspace";
 import { PAGE_TOKENS } from "./constants";
-import type { MdBlock } from "./types";
+import type { MdBlock, Refusal } from "./types";
 
 const FENCE = /^ {0,3}(`{3,}|~{3,})/;
 const HEADING = /^ {0,3}(#{1,6})\s+(.*?)\s*#*\s*$/;
@@ -8,12 +8,24 @@ const LIST = /^ {0,3}([-*+]|\d{1,9}[.)])\s+/;
 const TABLE = /^ {0,3}\|/;
 const IMAGE = /^ {0,3}!\[[^\]]*\]\([^)]*\)\s*$/;
 
+/** A refusal a converter throws, with its reason; the pipeline turns it into the source's `refused` status. */
+export class MaterialRefused extends Error {
+  constructor(readonly reason: Extract<Refusal, "unreadable" | "protected" | "scanned">) {
+    super(reason);
+    this.name = "MaterialRefused";
+  }
+}
+
 /** A code block: a fence one backtick longer than the longest backtick run inside, so no body line can close it. */
 export function fenced(body: string, lang = ""): string {
   const longest = Math.max(0, ...(body.match(/`+/g) ?? []).map((r) => r.length));
   const fence = "`".repeat(Math.max(3, longest + 1));
   return `${fence}${lang}\n${body.replace(/\n+$/, "")}\n${fence}`;
 }
+
+/** A line of text that would read as Markdown structure (a heading, a quote, a list, a fence, a table) gets its marker escaped. */
+export const plainLine = (l: string) =>
+  l.replace(/^(\d{1,9})([.)])(?=\s|$)/, "$1\\$2").replace(/^(#{1,6}(?=\s|$)|>|[-*+](?=\s|$)|`{3,}|~{3,}|\|)/, "\\$1");
 
 /** `lines 3–4`, or `lines 3` for one line. */
 const lines = (from: number, to: number) => (from === to ? `lines ${from}` : `lines ${from}–${to}`);

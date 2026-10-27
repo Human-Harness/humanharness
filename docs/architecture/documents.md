@@ -151,6 +151,8 @@ All in `@humanharness/ui`: `unified`, `remark-parse`, `remark-gfm`, `lowlight`, 
 ## Known gaps
 
 - A timed-out Mermaid draw may keep running while the next one starts.
+- A hard-linked file (`nlink > 1`) is refused, even inside the folder: for example a `.md` that pnpm hard-links from its store into `node_modules` does not open.
+- The demo's own recordings write no documents (plan Q10: the demo is read-only); only the e2e recording `packages/e2e/fixtures/reader-mock` shows cards and the reader.
 - Word counts include Markdown symbols, and past 1 MB the card's count is a floor.
 - A `---` thematic break as the first line, with another `---` later, is read as broken front-matter: the text between is hidden.
 - In a slim chat `openDocument` does nothing (no panel shows).

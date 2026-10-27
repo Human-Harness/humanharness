@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { MaterialStore, type SourceEntry } from "@humanharness/material";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { CONFLICTS_PER_TASK, personMaterialRequest } from "../src/main/material-requests";
+import { CONFLICTS_PER_TASK, FLAGS_PER_TASK, personMaterialRequest } from "../src/main/material-requests";
 
 let base: string;
 const entry: SourceEntry = { id: "ch2", scope: "fractions", path: "ch2.pdf", hash: "x", type: "pdf", family: "pdf", pages: 1, sizeBytes: 1, skippedPages: [], status: "ready", issues: [], fixes: [], estimate: 0, fragments: [], addedAt: "2026-10-27T00:00:00.000Z" };
@@ -32,6 +32,24 @@ describe("personMaterialRequest", () => {
     await expect(personMaterialRequest(d, { op: "flag", id: "ch2-009", reason: "cut" })).rejects.toThrow();
     expect(woke).toBe(1);
   });
+  it("flag: a fragment already checked closely is only noted, and nothing is queued", async () => {
+    const store = new MaterialStore(base, "fractions");
+    await store.patchFragment("ch2-001", (m) => ({ ...m, validated: "flagged-reviewed" }));
+    let woke = 0;
+    const d = { ...deps("fractions"), flagged: () => void woke++ };
+    expect(await personMaterialRequest(d, { op: "flag", id: "ch2-001", reason: "still odd" })).toBe("Noted: it was already checked closely, so it won't be checked again.");
+    expect(woke).toBe(0);
+    expect(await store.source("ch2")).toMatchObject({ status: "ready", issues: ["Flagged in use, already checked: ch2-001: still odd"] });
+    expect((await store.readFragment("ch2-001"))?.meta.validated).toBe("flagged-reviewed");
+  });
+
+  it("flag: at most FLAGS_PER_TASK per task", async () => {
+    const flag = (task: string) => personMaterialRequest({ ...deps("fractions"), runningTask: async () => ({ id: task, scope: "fractions" }) }, { op: "flag", id: "ch2-001", reason: "cut" });
+    for (let i = 0; i < FLAGS_PER_TASK; i++) expect(await flag("t7")).toBe("Thanks: it will be checked again.");
+    await expect(flag("t7")).rejects.toThrow(`This task already flagged ${FLAGS_PER_TASK} fragments`);
+    expect(await flag("t8")).toBe("Thanks: it will be checked again.");
+  });
+
   it("conflict: one line in conflicts.md", async () => {
     expect(await personMaterialRequest(deps("fractions"), { op: "conflict", fragment: "ch2-001", claim: "1/2 > 2/3", resolution: "Followed the material" })).toBe("Noted.");
     expect(fs.readFileSync(path.join(base, ".harness", "material", "fractions", "conflicts.md"), "utf8")).toContain("[[frag:ch2-001]] 1/2 > 2/3 → Followed the material");

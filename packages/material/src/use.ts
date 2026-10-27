@@ -34,16 +34,25 @@ export async function usableFragment(store: MaterialStore, id: string): Promise<
  * refused or unfinished source keeps its status. The fragment and the registry change in one queued job, so a
  * concurrent `writeFragments` can't erase the mark.
  */
-export async function flagFragment(store: MaterialStore, id: string, reason: string, by = "Flagged in use"): Promise<boolean> {
+export async function flagFragment(store: MaterialStore, id: string, reason: string, by = "Flagged in use"): Promise<boolean | "noted"> {
   if (!isFragmentId(id)) return false;
-  const line = `${by}: ${id}: ${reason.replace(/\s+/g, " ").trim().slice(0, 200)}`;
-  const done = await store.transact(async (rewrite) => {
+  const why = reason.replace(/\s+/g, " ").trim().slice(0, 200);
+  const line = `${by}: ${id}: ${why}`;
+  const done = await store.transact(async (rewrite): Promise<boolean | "noted"> => {
     const owner = ownerOf(await store.sources(), id);
     if (!owner || !isUsable(owner)) return false;
+    // A fragment the AI already looked at closely (reviewed after a flag, or repaired) is not reviewed again: the flag
+    // is only noted, so repeated flags can't queue paid reviews (the label stage's rule, §6.2).
+    const f = await store.readFragment(id);
+    if (!f) return false;
+    if (f.meta.validated === "flagged-reviewed" || f.meta.validated === "repaired") {
+      await rewrite((list) => list.map((s) => (s.id === owner.id ? { ...s, issues: [...s.issues, `${by}, already checked: ${id}: ${why}`] } : s)));
+      return "noted";
+    }
     if (!(await store.patchFragment(id, (m) => ({ ...m, validated: "pending" })))) return false;
     await rewrite((list) => list.map((s) => (s.id === owner.id ? { ...s, status: "validating", stage: "review", issues: [...s.issues, line] } : s)));
     return true;
   });
-  if (done) await store.writeIndex();
+  if (done === true) await store.writeIndex();
   return done;
 }

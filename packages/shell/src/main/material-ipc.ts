@@ -1,3 +1,4 @@
+import path from "node:path";
 import { type Collection, type HarnessMaterial, MATERIAL_STAGES, type Tier, hasMaterial, materialStageKey, stageTier } from "@humanharness/harness-sdk";
 import { LINK_MAX_ITEMS, type LinkItem, MAX_PAGES } from "@humanharness/material/light";
 import type { MaterialInfo, MaterialResult } from "@humanharness/ui/client";
@@ -14,18 +15,40 @@ export const materialAppState = (h: { material?: Pick<HarnessMaterial, "accepts"
   h.material ? { material: { accepts: [...h.material.accepts], items: h.material.items !== undefined, grounding: h.material.grounding, maxPages: MAX_PAGES } } : {};
 
 /**
- * `hh:materialOpen`: opens the original of a source or a fragment's source. "not-ready" without material, "unknown-source"
- * for an id (or scope) that names no original, "invalid" when the system could not open it.
+ * Originals the system may open with their app: documents only. Anything else the person added keeps its name and may
+ * be a script (`.command`, `.sh`, `.bat`, `.js`…) that opening would run; a saved web page (`.html`) would run its
+ * scripts from `file://`. Those are shown in Finder instead.
+ */
+export const MATERIAL_OPENABLE: ReadonlySet<string> = new Set([
+  ".pdf", ".docx", ".xlsx", ".pptx", ".odt", ".ods", ".odp", ".epub", ".rtf", ".txt", ".md", ".markdown", ".csv", ".tsv",
+]);
+
+/** Whether an original opens with its app (else it is only shown in Finder). */
+export function materialOpens(file: string): boolean {
+  const name = path.basename(file);
+  const dot = name.lastIndexOf(".");
+  return dot > 0 && MATERIAL_OPENABLE.has(name.slice(dot).toLowerCase());
+}
+
+/**
+ * `hh:materialOpen`: opens the original of a source or a fragment's source when it is a document
+ * (`MATERIAL_OPENABLE`), else shows it in Finder. "not-ready" without material, "unknown-source" for an id (or scope)
+ * that names no original, "invalid" when the system could not open it.
  */
 export async function openMaterial(
   svc: { originalOf(scope: unknown, id: unknown): Promise<string | null> } | null,
   scope: unknown,
   id: unknown,
   openPath: (file: string) => Promise<string>,
+  reveal: (file: string) => void,
 ): Promise<MaterialResult> {
   if (!svc) return { ok: false, reason: "not-ready" };
   const file = await svc.originalOf(scope, id);
   if (!file) return { ok: false, reason: "unknown-source" };
+  if (!materialOpens(file)) {
+    reveal(file);
+    return { ok: true };
+  }
   return (await openPath(file)) ? { ok: false, reason: "invalid" } : { ok: true };
 }
 

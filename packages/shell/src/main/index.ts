@@ -1241,7 +1241,9 @@ function registerIpc() {
   handle("hh:materialRemove", (scope: unknown, id: unknown) => materialSvc?.remove(scope, id) ?? noMaterial);
   handle("hh:materialDecide", (scope: unknown, id: unknown, fragment: unknown, choice: unknown) => materialSvc?.decide(scope, id, fragment, choice) ?? noMaterial);
   handle("hh:materialCite", async (scope: unknown, id: unknown) => (materialSvc ? materialSvc.cite(scope, id) : null));
-  handle("hh:materialOpen", (scope: unknown, id: unknown) => openMaterial(materialSvc, scope, id, (file) => shell.openPath(file)));
+  handle("hh:materialOpen", (scope: unknown, id: unknown) =>
+    openMaterial(materialSvc, scope, id, (file) => shell.openPath(file), (file) => shell.showItemInFolder(file)),
+  );
   handle("hh:choose", (option: unknown, task: unknown) => {
     if (quitting) throw new Error("The app is closing");
     const blocked = turnBlocked();

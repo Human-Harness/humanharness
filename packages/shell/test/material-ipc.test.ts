@@ -40,11 +40,26 @@ describe("openMaterial (hh:materialOpen)", () => {
   };
   const svc = { originalOf: async (_scope: unknown, id: unknown) => (id === "ch2" ? "/b/material/main/ch2.pdf" : id === "bad" ? "/b/material/main/broken.pdf" : null) };
   it("without material: not-ready; an unknown id: unknown-source; otherwise opened", async () => {
-    expect(await openMaterial(null, "main", "ch2", open)).toEqual({ ok: false, reason: "not-ready" });
-    expect(await openMaterial(svc, "main", "nope", open)).toEqual({ ok: false, reason: "unknown-source" });
-    expect(await openMaterial(svc, "main", "ch2", open)).toEqual({ ok: true });
-    expect(await openMaterial(svc, "main", "bad", open)).toEqual({ ok: false, reason: "invalid" });
+    const reveal = () => {};
+    expect(await openMaterial(null, "main", "ch2", open, reveal)).toEqual({ ok: false, reason: "not-ready" });
+    expect(await openMaterial(svc, "main", "nope", open, reveal)).toEqual({ ok: false, reason: "unknown-source" });
+    expect(await openMaterial(svc, "main", "ch2", open, reveal)).toEqual({ ok: true });
+    expect(await openMaterial(svc, "main", "bad", open, reveal)).toEqual({ ok: false, reason: "invalid" });
     expect(opened).toEqual(["/b/material/main/ch2.pdf", "/b/material/main/broken.pdf"]);
+  });
+
+  it("only documents open with their app; a script or a saved page is shown in Finder, never run", async () => {
+    const files: Record<string, string> = { run: "/b/material/main/run.command", page: "/b/material/main/page.html", sh: "/b/material/main/x.SH", doc: "/b/material/main/notes.DOCX" };
+    const s = { originalOf: async (_scope: unknown, id: unknown) => files[String(id)] ?? null };
+    const shown: string[] = [];
+    const openedHere: string[] = [];
+    const openHere = async (f: string) => {
+      openedHere.push(f);
+      return "";
+    };
+    for (const id of ["run", "page", "sh", "doc"]) expect(await openMaterial(s, "main", id, openHere, (f) => void shown.push(f))).toEqual({ ok: true });
+    expect(shown).toEqual([files.run, files.page, files.sh]);
+    expect(openedHere).toEqual([files.doc]);
   });
 });
 

@@ -713,6 +713,8 @@ export class FakeClient implements HarnessClient {
   materialRemoveResult: MaterialResult | Error = { ok: true };
   /** What `cite` answers per fragment id; absent: no such fragment. */
   citeLabels: Record<string, string> = {};
+  /** The scope of every citation lookup, in order. */
+  citeScopes: string[] = [];
   private materialListeners = new Set<(v: MaterialView) => void>();
   /** Pushes a view as the main process would. */
   pushMaterial(view: MaterialView) {
@@ -759,7 +761,10 @@ export class FakeClient implements HarnessClient {
       this.materialCalls.push(`open:${id}`);
       return { ok: true as const };
     },
-    cite: async (_scope: string, id: string) => (Object.hasOwn(this.citeLabels, id) ? { label: this.citeLabels[id] } : null),
+    cite: async (scope: string, id: string) => {
+      this.citeScopes.push(scope);
+      return Object.hasOwn(this.citeLabels, id) ? { label: this.citeLabels[id] } : null;
+    },
     onChange: (l: (v: MaterialView) => void) => {
       this.materialListeners.add(l);
       return () => {

@@ -24,16 +24,18 @@ const short = (id: unknown) => String(id).slice(0, 80);
 
 /** At most this many `material_conflict` lines per task: a looping agent can't flood `conflicts.md` (and the history). */
 export const CONFLICTS_PER_TASK = 20;
-/** Conflict lines written per base and task; only the latest tasks are remembered. */
-const conflictCounts = new Map<string, number>();
-const COUNTS_KEPT = 200;
+/** At most this many `material_flag` calls per task: each real flag queues a review the person pays for. */
+export const FLAGS_PER_TASK = 20;
+/** Calls counted per kind, base and task; only the latest tasks are remembered. */
+const counts = new Map<string, number>();
+const COUNTS_KEPT = 400;
 
-function countConflict(key: string): boolean {
-  const n = conflictCounts.get(key) ?? 0;
-  if (n >= CONFLICTS_PER_TASK) return false;
-  conflictCounts.delete(key);
-  conflictCounts.set(key, n + 1);
-  if (conflictCounts.size > COUNTS_KEPT) conflictCounts.delete(conflictCounts.keys().next().value as string);
+function countCall(key: string, max: number): boolean {
+  const n = counts.get(key) ?? 0;
+  if (n >= max) return false;
+  counts.delete(key);
+  counts.set(key, n + 1);
+  if (counts.size > COUNTS_KEPT) counts.delete(counts.keys().next().value as string);
   return true;
 }
 
@@ -61,14 +63,18 @@ export async function personMaterialRequest(d: PersonMaterialDeps, request: unkn
     }
     if (r.op === "search" && typeof r.query === "string") return MaterialSearch.of(await store.fragments()).search(r.query);
     if (r.op === "flag" && typeof r.reason === "string") {
-      if (!isFragmentId(r.id) || !(await flagFragment(store, r.id, r.reason))) throw new MaterialRefusal(`No fragment ${short(r.id)}`);
+      if (!isFragmentId(r.id)) throw new MaterialRefusal(`No fragment ${short(r.id)}`);
+      if (!countCall(`flag\0${base}\0${task.id}`, FLAGS_PER_TASK)) throw new MaterialRefusal(`This task already flagged ${FLAGS_PER_TASK} fragments`);
+      const flagged = await flagFragment(store, r.id, r.reason);
+      if (!flagged) throw new MaterialRefusal(`No fragment ${short(r.id)}`);
+      if (flagged === "noted") return "Noted: it was already checked closely, so it won't be checked again.";
       d.flagged?.();
       return "Thanks: it will be checked again.";
     }
     if (r.op === "conflict" && typeof r.claim === "string" && typeof r.resolution === "string") {
       // Only a fragment of a usable source in this scope (the same rule as a read); the line goes to `conflicts.md`.
       if (!isFragmentId(r.fragment) || !(await usableFragment(store, r.fragment))) throw new MaterialRefusal(`No fragment ${short(r.fragment)}`);
-      if (!countConflict(`${base}\0${task.id}`)) throw new MaterialRefusal(`This task already noted ${CONFLICTS_PER_TASK} conflicts`);
+      if (!countCall(`conflict\0${base}\0${task.id}`, CONFLICTS_PER_TASK)) throw new MaterialRefusal(`This task already noted ${CONFLICTS_PER_TASK} conflicts`);
       await store.appendConflict({ fragment: r.fragment, claim: r.claim.slice(0, 300), resolution: r.resolution.slice(0, 300) }, d.now?.());
       return "Noted.";
     }

@@ -800,32 +800,47 @@ export function ChatView({
   // Citations `[[frag:<id>]]` in the chat (§9): drawn only with material and a scope (D0); one label lookup per id.
   // Keyed by whether there is material, not by the object: every state refresh brings a new one, and the cache stays.
   const withMaterial = Boolean(state.material);
-  const citations = useMemo<CitationResolver | null>(() => {
-    if (!withMaterial || !materialScope) return null;
-    const cache = new Map<string, Promise<string | null>>();
-    const known = new Map<string, string>();
-    return {
-      label: (id) => {
-        let label = cache.get(id);
-        if (!label) {
-          label = client.material.cite(materialScope, id).then(
-            (r) => r?.label ?? null,
-            () => null,
-          );
-          cache.set(id, label);
-          // A fragment not there yet (still converting, or a failed lookup) is asked again next time.
-          label.then((l) => {
-            if (l === null) cache.delete(id);
-            else known.set(id, l);
-          });
-        }
-        return label;
-      },
-      open: (id) => void client.material.open(materialScope, id).catch(() => undefined),
-      known: (id) => known.get(id),
+  /** One resolver per scope, each with its own label cache; null without material (D0). */
+  const citationsFor = useMemo<((scope: string) => CitationResolver) | null>(() => {
+    if (!withMaterial) return null;
+    const byScope = new Map<string, CitationResolver>();
+    return (scope) => {
+      const made = byScope.get(scope);
+      if (made) return made;
+      const cache = new Map<string, Promise<string | null>>();
+      const known = new Map<string, string>();
+      const resolver: CitationResolver = {
+        label: (id) => {
+          let label = cache.get(id);
+          if (!label) {
+            label = client.material.cite(scope, id).then(
+              (r) => r?.label ?? null,
+              () => null,
+            );
+            cache.set(id, label);
+            // A fragment not there yet (still converting, or a failed lookup) is asked again next time.
+            label.then((l) => {
+              if (l === null) cache.delete(id);
+              else known.set(id, l);
+            });
+          }
+          return label;
+        },
+        open: (id) => void client.material.open(scope, id).catch(() => undefined),
+        known: (id) => known.get(id),
+      };
+      byScope.set(scope, resolver);
+      return resolver;
     };
-  }, [client, withMaterial, materialScope]);
-  citationsRef.current = citations;
+  }, [client, withMaterial]);
+  /** A citation is resolved in the scope of the task that wrote it when that is known, else in the open scope. */
+  const citeScope = (task: string | undefined): string | null =>
+    (task !== undefined && task === tasks.current?.id && tasks.current.scope) || materialScope;
+  const citationsOf = (task: string | undefined): CitationResolver | null => {
+    const scope = citeScope(task);
+    return citationsFor && scope ? citationsFor(scope) : null;
+  };
+  citationsRef.current = citationsOf(tasks.current?.id);
   const Panel = materialPanel ?? MaterialPanel;
   const material =
     state.material && materialScope && !slim ? (
@@ -939,9 +954,9 @@ export function ChatView({
               </button>
             )}
             {/* The running turn is the list's last item, under the id its entry gets: it stays the same element when it ends. */}
-            <CitationContext.Provider value={citations}>
-              {(liveEntry ? [...shown, liveEntry] : shown).map((entry) => (
-                <div key={entry.id} data-entry={entry.id} data-role={entry.role}>
+            {(liveEntry ? [...shown, liveEntry] : shown).map((entry) => (
+              <CitationContext.Provider key={entry.id} value={citationsOf(entry.task)}>
+                <div data-entry={entry.id} data-role={entry.role}>
                   <Message
                     key={pickResets}
                     entry={entry}
@@ -960,8 +975,8 @@ export function ChatView({
                     />
                   )}
                 </div>
-              ))}
-            </CitationContext.Provider>
+              </CitationContext.Provider>
+            ))}
             {pickFailed && (
               <p className="hh-error" role="alert">
                 {t("choices.failed")}

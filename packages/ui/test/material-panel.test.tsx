@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { HarnessApp, type HarnessAppProps, type MaterialView } from "../src";
 import { MaterialPanel } from "../src/MaterialPanel";
@@ -464,6 +464,19 @@ describe("where the panel goes", () => {
     await work(plain);
     expect(await screen.findByText("Same amount [[frag:ch2-001]].")).toBeTruthy();
     expect(cite).not.toHaveBeenCalled();
+  });
+
+  it("a citation is looked up in the scope of the task that wrote it", async () => {
+    const client = new FakeClient({ language: "en", folder: "/f", engineId: "claude" });
+    client.state = { ...client.state, material: info };
+    client.chat = [{ id: "a1", role: "assistant" as const, text: "See [[frag:ch2-001]].", blocks: [], activities: [], at: "t", task: "t1" }];
+    client.citeLabels = { "ch2-001": "ch2.pdf, p.4" };
+    await work(client);
+    expect(await screen.findByRole("button", { name: "ch2.pdf, p.4" })).toBeTruthy();
+    // The task that wrote it runs in another scope than the one on screen: its scope wins.
+    act(() => client.emitTasks({ ...client.tasks, current: { id: "t1", scope: "algebra", status: "waiting" } }));
+    await waitFor(() => expect(client.citeScopes.at(-1)).toBe("algebra"));
+    expect(client.citeScopes.slice(0, -1).every((s) => s === "main")).toBe(true);
   });
 
   it("a harness's own panel replaces the default", async () => {

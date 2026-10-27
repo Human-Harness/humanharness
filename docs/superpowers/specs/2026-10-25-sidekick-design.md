@@ -1,6 +1,6 @@
 # Sidekick — design
 
-Status: draft, 2026-10-25, waiting for Marco's review. **Updated 2026-10-27 for several sidekicks** (spec E from `docs/discovery/2026-10-26-dev-vs-core.md`, candidate C1; decisions from the dev mockup v3, round 4, and a brainstorming session with Marco on 2026-10-27): see D9–D14 and §2a. Where an older section says "Sidekick", read "the sidekick that speaks". Core spec #9, after the eight approved on 2026-10-25. Builds on `2026-10-25-scopes-and-data-design.md`, `2026-10-25-profiles-design.md`, `2026-10-25-harness-settings-design.md` and `2026-10-25-task-phases-design.md`. Mockup: https://claude.ai/artifact/QjjA1E7C7tK8s7VhdYAgAy (six boards: off, reviewing, before you send, after the reply, heads-ups, Settings › Sidekick).
+Status: approved by Marco on 2026-10-27, including the several-sidekicks update and five fixes from his review (§2a.1 `defaultOn`, §2a.2 several purposes in one moment, §2a.6 re-check on "Traer cambios", §5 folder and sessions without a task). **Updated 2026-10-27 for several sidekicks** (spec E from `docs/discovery/2026-10-26-dev-vs-core.md`, candidate C1; decisions from the dev mockup v3, round 4, and a brainstorming session with Marco on 2026-10-27): see D9–D14 and §2a. Where an older section says "Sidekick", read "the sidekick that speaks". Core spec #9, after the eight approved on 2026-10-25. Builds on `2026-10-25-scopes-and-data-design.md`, `2026-10-25-profiles-design.md`, `2026-10-25-harness-settings-design.md` and `2026-10-25-task-phases-design.md`. Mockup: https://claude.ai/artifact/QjjA1E7C7tK8s7VhdYAgAy (six boards: off, reviewing, before you send, after the reply, heads-ups, Settings › Sidekick).
 
 ## 1. Why
 
@@ -73,6 +73,7 @@ type Sidekick = {
   personality: string;        // the person's prompt: how it talks, what it cares about; up to 1,500 characters
   purposes: Purpose[];
   order: number;              // who speaks first (D11)
+  defaultOn: boolean;         // on in a scope with no record (§2a.4); true when created or adopted
   tier?: "light" | "standard" | "deep";   // default: the `sidekick` process tier (§5)
   source?: { kind: "paste" } | { kind: "files"; paths: string[]; hash: string };   // when imported (§2a.6)
 };
@@ -103,6 +104,8 @@ These are records in the app-wide `sidekick` collection (§6.4), next to the set
 - **`daily`.** It runs once a day per app, after setup. Its card waits in the panel.
 - **`place:<id>`.** The harness asks for it (§2a.5).
 
+**Several purposes in one moment.** When the sidekick that speaks has more than one purpose for the moment (`prompt-coach` and `mentor` both speak `after-reply`), it makes one model call. The turn's brief lists every such purpose, and the card may carry a part for each.
+
 ### 2a.3 Who speaks (D11)
 
 1. **Candidates** are the sidekicks turned on in the open scope (§2a.4) with a purpose for the moment.
@@ -114,7 +117,7 @@ These are records in the app-wide `sidekick` collection (§6.4), next to the set
 ### 2a.4 Per scope (D10)
 
 - A record `{ scope, sidekick, on, purposeText?, places? }` in the `sidekick` collection, one per scope and sidekick.
-- A scope with no record uses each sidekick's default, which is on when the sidekick was created or adopted, unless the person turned it off.
+- A scope with no record uses the sidekick's `defaultOn`, which is `true` when the sidekick is created or adopted. The person can change it in Settings › Sidekicks.
 - `purposeText` (up to 600 characters) is the scope's own purpose: "en este proyecto, cuidá que nadie apruebe un spec sin AC".
 - `places` limits which harness places the sidekick answers in this scope.
 - `purposeText` goes into the per-turn context (§5), not into the sidekick's `AGENTS.md`, so its cached prefix stays the same across scopes.
@@ -148,7 +151,7 @@ sidekick: {
   - The person sees the result, editable, with the copy notice: "Es una copia: los cambios en el original no llegan acá."
   - A required checkbox: "Entiendo que es una copia".
   - Confirming creates the sidekick, and the learned items are added as shared items with `source: "person"`.
-- **Source changed.** For files, `source` keeps the paths and a hash. At app start, if the hash changed, Settings shows "El original cambió · Traer cambios", which runs the conversion again and shows a diff to confirm.
+- **Source changed.** For files, `source` keeps the paths and a hash. At app start, if the hash changed, Settings shows "El original cambió · Traer cambios", which runs the conversion again and shows a diff to confirm. Both the hash check and "Traer cambios" resolve the paths again and apply the same `~/.claude` / `~/.codex` refusal, since a link may now point there.
 
 ### 2a.7 Presets (D14)
 
@@ -280,12 +283,13 @@ Their buttons call existing app paths:
   - the shared learned items.
 
   The scope's `purposeText` goes into the per-turn context. The rest of this section applies to each sidekick's session.
+- **Moments with no task open.** `daily`, and a `place:` ask made while no task is open, run as a one-turn session in the same folder: no `--resume`, closed after the turn. They count against the shared cap (D8), charged to the app day instead of a task.
 - **One Sidekick session per task**, opened at the first Sidekick turn and closed when the task closes. It is reused for every moment, so the cached prefix pays once. This matters on Codex, where the prefix alone is about 15k tokens (plan 3c, spike S7).
   - It is a second `Transport` next to the task's, with its own session id.
   - Claude: one `claude -p --resume` process per turn, as `ClaudeCliTransport` does today.
   - Codex: a second ACP session.
 - **No tools, its own working folder.**
-  - cwd is `<profile folder>/.harness/sidekick/`, which holds its own `AGENTS.md` (plus the engine's file). The task's instructions, MCP servers and permissions never load.
+  - cwd is `<profile folder>/.harness/sidekick/<sidekick id>/`, which holds its own `AGENTS.md` (plus the engine's file). The task's instructions, MCP servers and permissions never load.
   - `allowedTools` is empty and no MCP spec is passed.
 - **Brief, in the generated `AGENTS.md`:**
   - the core's Sidekick rules: answer only with the JSON, suggest and never act, be brief;

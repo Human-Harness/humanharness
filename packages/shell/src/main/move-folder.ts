@@ -288,7 +288,9 @@ export async function moveFolder(from: string, to: string, d: MoveDeps): Promise
   }
   const temp = `${target}${TEMP_MARK}${randomBytes(6).toString("hex")}`;
   const copy = copyIn(temp, target);
-  const journal: MoveJournal = { from: source, to: target, temp, stage: "copying" };
+  // With profiles the journal names every history from the start, so a crash before "config-saved" (after the config
+  // named the copy) still moves them all at the next start. D0: the journal is as before.
+  const journal: MoveJournal = { from: source, to: target, temp, stage: "copying", ...(d.subfolders ? { histories: rels.map((rel) => ({ rel })) } : {}) };
   const step = async (stage: MoveStage, extra: Partial<MoveJournal> = {}) => writeJournal(d.journal, Object.assign(journal, { stage }, extra));
 
   try {
@@ -535,8 +537,12 @@ export async function recoverMove(d: RecoverDeps): Promise<{ folder: string; lef
       return { folder, ...((await exists(j.from)) ? { leftBehind: j.from } : {}) };
     }
     if (folder === j.from) {
+      // A history may have moved from "config-saved" on (a rollback cut short puts the config back first). What is at
+      // the new place is ours once a stale one there was set aside (or there was none).
+      const mayHaveMoved = j.stage === "config-saved" || j.stage === "history-moved";
       for (const p of pairs) {
-        if (j.stage === "history-moved" && !(await exists(p.old)) && (await exists(p.new))) await ops.rename(p.new, p.old);
+        const ours = !p.setAside || (await exists(p.setAside));
+        if (mayHaveMoved && ours && !(await exists(p.old)) && (await exists(p.new))) await ops.rename(p.new, p.old);
         if (p.setAside && (await exists(p.setAside)) && !(await exists(p.new))) await ops.rename(p.setAside, p.new);
       }
       // The copy goes only while the old folder is still there.

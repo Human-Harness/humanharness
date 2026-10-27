@@ -23,7 +23,7 @@
   Action: <action id>
   ```
 
-  In a harness with scopes the trailers also carry `Scope: <scope id>`.
+  In a harness with scopes the trailers also carry `Scope: <scope id>`. A task whose action has phases adds `Phase: <phase id>`, the part it is in when the commit is made (a change turn's commits carry the new part), on every commit it makes: "Before message", the turn, its notes and the person's data writes (`docs/architecture/phases.md`). `parseCommitMessage` reads it back as the entry's `phase`.
 
   The task manager passes the task id and action with each turn (`TurnOptions.task`/`action` → `HarnessRuntime.send(…, { trailer })`) and with each note (`TaskDeps.saveHistory(message, trailer)`).
 - Untagged: "Start" (it records changes made outside the app) and every restore ("Go back to …" commits). A restore is not part of the task it undid, so it never changes that task's own row.
@@ -34,7 +34,7 @@ An answer's `saveTo` write has no commit of its own: it lands in the follow-up t
 ### The History panel
 
 - Tasks are grouped under their day ("Today", "Yesterday", "Oct 17"; `byDay` in `HistoryPanel.tsx`). One row per task: the action's label (or "A question"), the time and "N files changed", and a "Note saved" tag when it saved one (the note's title on hover). The newest row starts open. The untagged group is the last row, in a section of its own, "Outside a task": that is where "Start" and the restores show.
-- An open row lists the changed files (added, changed, deleted) and the task's entries in plain language as a timeline (i18n keys `history.entry.*`; the commit subjects stay in English).
+- An open row lists the changed files (added, changed, deleted) and the task's entries in plain language as a timeline (i18n keys `history.entry.*`; the commit subjects stay in English). An entry with a `Phase:` trailer shows the part's label as a caption next to it; a part the manifest no longer declares shows nothing.
 - "Go back here" restores one entry; it shows when the entry is hovered or focused. "Undo this task", under the entries, restores the group's `start`. Both ask first, record a new commit (so they can be undone too) and are disabled while a turn is live, with a line saying why; the main process refuses them while a task operation runs or turns are held.
 - Going back resets every tracked file, `.harness/notes` included, so it also undoes tasks that changed something later. The confirmation says how many ("This also undoes 2 later tasks"; `laterTasks` in `HistoryPanel.tsx`) and lists them with their files (the task being undone first), and undoing a task names the count on its button ("Undo 3 tasks").
 - The open task's row says "In progress" (`currentTask`, the id of `TaskView.current`, which is the id in the commits' `Task:` trailer).

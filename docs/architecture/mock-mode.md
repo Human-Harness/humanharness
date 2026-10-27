@@ -10,7 +10,7 @@ It is for the developer only. The window shows a "Test mode (no AI)" badge (`moc
 
 `dev --mock` (`packages/cli/src/dev.ts`, `mock-session.ts`) checks the harness first, then sets this env for the shell:
 
-- `HH_TEST_MOCK=1`, `HH_TEST_USER_DATA`, `HH_TEST_SHARED_DIR` and `HH_TEST_SUGGESTED_FOLDER`.
+- `HH_TEST_MOCK=1`, `HH_TEST_MINUTE_MS=1000` (a time-box minute is a second), `HH_TEST_USER_DATA`, `HH_TEST_SHARED_DIR` and `HH_TEST_SUGGESTED_FOLDER`.
 - `HH_TEST_ENGINES`, one entry for `claude`: the command is `fake-claude` and its env holds only `HH_FAKE_MOCK_DIR` (the `mock/` folder) and `HH_FAKE_MOCK_STATE` (a file, see below).
 
 The shell reads them through `readTestHooks` (`packages/shell/src/main/test-hooks.ts`), the same path the end-to-end tests use. A packaged app returns no hooks. Engine envs keep only `HH_FAKE_*` variables.
@@ -73,6 +73,10 @@ One file per action, `mock/<action>.json`, meant to be edited by hand. The schem
 - `usage`: feeds the usage and context meters (400 in, 20 out when missing).
 - `next`: reply to next turn id. A key is the label of a choice the turn offers, or `*` for anything else. A turn with no `next` ends the script.
 - `respond`: recorded answers to an input block the turn shows, each `{ "block", "value", "next" }`. An answer whose JSON equals `value` (key order aside) plays `next`; any other answer follows the turn's `next["*"]`, then the fallback.
+- `setPhase`: a phase id. This turn is the recorded answer to the app's move into that part (its phase change turn, `docs/architecture/phases.md`), never a first message or a reply.
+- `timeUp: true`: this turn is the recorded answer to the time box's wrap-up.
+
+The agent's own request to move stays a recorded `set_phase` call in `blocks` (`{ "tool": "set_phase", "input": { "to": "main", "reason": "…" } }`).
 
 ## How replay walks it
 
@@ -83,6 +87,8 @@ One file per action, `mock/<action>.json`, meant to be edited by hand. The schem
 - **An answer.** A prompt that ends with an answer's ```json fence (`readAnswer` in `packages/harness-sdk/src/answer.ts`) is matched against the turn's `respond` first.
 - **Closing.** The app's closing prompt plays the `close` turn (its blocks dropped; a default note titled after the action when it has none). Without a `close` turn, a default note is saved.
 - **Checkpoint.** A checkpoint prompt saves the closing note and changes nothing else.
+- **Phase change and wrap-up.** `promptKind` knows the app's own prompts by their start: `Next part of this task:` (`PHASE_PROMPT`, whose first line names the part's id) and `Time is almost up:` (`WRAP_UP_PROMPT`). A phase change plays the turn whose `setPhase` is that id, the wrap-up the turn with `timeUp`, and the session continues from it. An unrecorded one plays the fallback and stays where it was. The first message never plays a `setPhase` or `timeUp` turn.
+- **Time.** `dev --mock` sets `HH_TEST_MINUTE_MS=1000`: a time-box minute lasts one second, so a 15-minute box wraps up in about 13 seconds of test.
 - **Free questions.** They match no recording and always get the default fallback.
 - **Errors.** Any failure inside a turn (a write refused, a `ui` call rejected) becomes an error result `mock: <reason>` and exit code 1. The app shows it as an engine error.
 - **Write containment.** A write or delete is refused when its path leaves the work folder, lands in `.claude` or `.harness`, goes through a symlinked folder that resolves outside, or targets a symlink itself.
@@ -98,6 +104,7 @@ One file per action, `mock/<action>.json`, meant to be edited by hand. The schem
 - **Replies.** The person's reply becomes the `next` key along the path walked: the picked choice's label, or `*` for typed text. Other branches are added by hand.
 - **Answers.** `a` at `run`'s prompt answers the pending input block field by field; the accepted answer is recorded under the turn's `respond`, leading to the next turn. A typed reply after an answer that never got its turn (a Stop) links by `*` as usual, not by the stale answer.
 - **Notes.** A note written right after a turn belongs to that turn. The closing turn's note becomes the `close` turn's note. A checkpoint is not a turn, and its note is replaced by the closing one.
+- **Phases and the time box.** A phase change turn is recorded with `setPhase` (the part it entered) and a wrap-up turn with `timeUp: true`. Neither is linked from the previous turn's `next`: replay finds them by the app's prompt. `>phase <id>` at the prompt records no reply for the same reason.
 - **Failed turns.** A failed or held attempt is dropped. The retry carries any files the attempt wrote and is linked by the same reply.
 - **First visit only.** If an action is run again in the same folder as another task, only its first visit is recorded, with a warning.
 - **Atomic write.** Each file is written to a temp file and renamed, so a recording is never half written.
@@ -118,7 +125,7 @@ One file per action, `mock/<action>.json`, meant to be edited by hand. The schem
 
 ## Tests
 
-- `packages/fake-agent/test/mock.test.ts` and `mock-replay.test.ts`: the schema and the walk (branch, `*`, fallback, close, missing close, state).
+- `packages/fake-agent/test/mock.test.ts` and `mock-replay.test.ts`: the schema and the walk (branch, `*`, fallback, close, missing close, state, phase changes and the wrap-up). `packages/fake-agent/fixtures/phases-harness/mock/session.json` is a recording with them.
 - `packages/cli/test/record.test.ts`, `run.test.ts`, `dev.test.ts` and `check.test.ts`: the recorder, `run --record`, `dev --mock` and each `check` rule.
 - `packages/e2e/tests/mock.spec.ts`: `launchMock` opens the demo with its recordings and walks a topic end to end, including one off-script reply, the note and the engine list (only the test engine). A second test starts from a fresh app (`makeFreshSandbox`) and walks the setup flow to the demo, then checks Settings › Models shows the test model.
 - `packages/e2e/tests/scripts.ts` keeps the hand-written scripts for what a recording can't express: crashes, resume failures, model fallback.

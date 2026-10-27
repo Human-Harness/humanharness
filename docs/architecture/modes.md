@@ -90,9 +90,18 @@ Harness-settings spec §6. A mode's `settings` use the same field shape and chec
 - The terminal draws `recommend_mode` as "Recommended mode: <id>", its reasons, the alternatives ("Or:") and "Type m <mode> to pick one.", dropping ids the action doesn't list.
 - `packages/fake-agent/fixtures/modes-harness` (id `coach`) is the fixture for these tests.
 
+## Modes and phases
+
+An action with phases may narrow the modes part by part (spec §7; `docs/architecture/phases.md`). A phase's `modes` is absent or `"any"` (all the action's), `"none"`, or a list of the action's mode ids (`phaseModes` in `harness-sdk`).
+
+- Entering a part that doesn't allow the current mode suspends it: `mode` is cleared and `tasks.json` keeps it as `suspendedMode` (`belowMinTier` goes with it). A later part that allows it brings it back; the mode's section rides on that part's change turn, so a restore costs no turn of its own.
+- A task whose first part allows no modes starts with none: an explicit mode or a `defaultMode` id starts suspended, and `"recommend"` waits. At the first part that allows modes, a task that never worked in a mode gets its `defaultMode` mode's section, or the recommendation's section (only the modes that part allows) for `"recommend"` and `"ask"`, since a change the app makes can't ask. It is offered once per task: not again when an earlier part in the task's log already allowed modes.
+- `chooseMode` refuses a mode the current part doesn't allow with `reason: "phase"` (a `recommend_mode` block from an earlier part gets the same refusal). Picking any mode clears `suspendedMode`.
+- The mode bar lists only the modes the current part allows and hides when it allows none; a phase move or Finish on its way disables it.
+- A resumed task (after "Move folder") that moves to another part changes only the mode fields; no mode brief is read until its session's first message.
+
 ## Known gaps
 
-- Phases (spec §7) wait for task phases: no mode is refused by phase yet.
 - Settings › Usage doesn't break costs down by mode; `usage.jsonl` has the field for it.
 - `belowMinTier` is set only at a start and at a switch: a later model fallback to a lower tier doesn't update it.
 - There is no multi-select settings control, so a mode setting can't be a list (the spec's `z.array(z.enum(...))` example).
@@ -105,6 +114,6 @@ Harness-settings spec §6. A mode's `settings` use the same field shape and chec
 ## Where to look
 
 - `packages/harness-sdk/src/modes.ts`, `index.ts` (schema, checks, `tierBelow`), `core-blocks.ts` (`recommend_mode`), `settings.ts` (mode settings).
-- `packages/shell/src/main/task-manager.ts` (`startNow`, `chooseMode`, `modeNow`), `task-prompts.ts`, `task-store.ts`, `models.ts` (`nearestTier`, the floor), `mode-ipc.ts`.
+- `packages/shell/src/main/task-manager.ts` (`startNow`, `chooseMode`, `modeNow`, `modesOnEntry` for phases), `task-prompts.ts`, `task-store.ts`, `models.ts` (`nearestTier`, the floor), `mode-ipc.ts`.
 - `packages/ui/src/RecommendModeBlock.tsx`, `ModeList.tsx`, `modes.ts`, `ChatView.tsx`.
 - `packages/cli/src/run.ts`, `terminal.ts`, `check.ts`.

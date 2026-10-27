@@ -636,6 +636,10 @@
     "footnoteRef": "Footnote {{n}}",
     "copy": "Copy",
     "copied": "Copied",
+    "source": "Source",
+    "diagram": "Diagram",
+    "drawing": "Drawing the diagram…",
+    "diagramFailed": "This diagram could not be drawn ({{why}}). Showing its source.",
     "callout": {
       "note": "Note",
       "tip": "Tip",

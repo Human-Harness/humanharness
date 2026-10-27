@@ -272,6 +272,13 @@ select:focus-visible { outline: 2px solid var(--hh-ink); outline-offset: 2px; }
 .hh-md-codelabel { margin-right: auto; font-size: 12px; color: var(--hh-muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hh-md-copy { height: 22px; padding: 0 8px; font-size: 12px; }
 .hh-md-codeblock .hh-md-code { margin: 0; border: none; border-radius: 0; }
+.hh-md-diagram { margin: 0.8em 0; padding: 8px; border: 1px solid var(--hh-line); border-radius: 8px; background: var(--hh-surface); }
+.hh-md-diagram img { display: block; max-width: 100%; height: auto; margin: 0 auto; }
+.hh-md-diagram-bar { display: flex; justify-content: flex-end; }
+.hh-md-diagram-bar button { height: 22px; padding: 0 8px; font-size: 12px; }
+.hh-md-diagram-bar button[aria-pressed="true"] { background: var(--hh-segment); }
+.hh-md-diagram-error { margin: 0 0 6px; font-size: 13px; color: var(--hh-warn); }
+.hh-md-diagram-failed { background: transparent; }
 .hljs-keyword, .hljs-built_in, .hljs-type, .hljs-selector-tag { color: var(--hh-ink); font-weight: 600; }
 .hljs-string, .hljs-attr, .hljs-template-tag, .hljs-addition { color: var(--hh-ok); }
 .hljs-number, .hljs-literal, .hljs-symbol { color: var(--hh-warn); }

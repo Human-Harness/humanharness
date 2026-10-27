@@ -10,6 +10,8 @@ import { CitationContext, splitCitations } from "./citations";
 import { imageTarget, isAutolink, linkTarget } from "./doc-links";
 import { DocumentContext, type DocumentHost } from "./documents-context";
 import { highlightCode } from "./highlight";
+import { MermaidDiagram } from "./MermaidDiagram";
+import { fenceClosed } from "./mermaid-loader";
 
 export { markdownToPlain } from "./markdown-plain";
 
@@ -405,8 +407,9 @@ function CodeBlock({ node }: { node: Code }) {
   );
 }
 
-/** A fenced or indented code block. Task 9 draws Mermaid. */
-function renderCode(n: Code, _ctx: Ctx, key: number, _caption?: string): ReactNode {
+/** A fenced or indented code block; ```mermaid is a diagram (§3.3), with its caption as the image's alt text. */
+function renderCode(n: Code, ctx: Ctx, key: number, caption?: string): ReactNode {
+  if (n.lang?.toLowerCase() === "mermaid") return <MermaidDiagram key={key} code={n.value} closed={fenceClosed(ctx.source, n)} caption={caption} />;
   return <CodeBlock key={key} node={n} />;
 }
 

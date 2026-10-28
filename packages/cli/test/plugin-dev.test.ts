@@ -1,13 +1,13 @@
 import { EventEmitter } from "node:events";
 import fs from "node:fs";
 import path from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { UsageError } from "../src/cli";
 import type { DevSpawn } from "../src/dev";
 import { initHarness } from "../src/init";
 import { main } from "../src/main";
 import { PLUGIN_USAGE } from "../src/plugin";
-import { type PluginWatch, ignoredChange, pluginDevCommand } from "../src/plugin-dev";
+import { type PluginWatch, fsWatch, ignoredChange, pluginDevCommand, pluginDevCommandLine } from "../src/plugin-dev";
 import { initPlugin } from "../src/plugin-init";
 import { CORE, memoryIo, memoryStream, replaceIn, tempRoot } from "./helpers";
 
@@ -33,19 +33,42 @@ function heldSpawn() {
   return { spawn, calls, exit: (code = 0) => child.emit("exit", code) };
 }
 
-/** A watcher the test drives: `change(file)` is what fs.watch would report. */
+/** A watcher the test drives: `change(file)` is what fs.watch would report, `fail()` a watcher error. */
 function fakeWatch() {
-  const state = { started: 0, closed: 0, dir: "", listener: null as ((file: string | null) => void) | null };
-  const watch: PluginWatch = (dir, onChange) => {
+  const state = { started: 0, closed: 0, dir: "", listener: null as ((file: string | null) => void) | null, onError: null as ((err: unknown) => void) | null };
+  const watch: PluginWatch = (dir, onChange, onError) => {
     state.started++;
     state.dir = dir;
     state.listener = onChange;
+    state.onError = onError;
     return { close: () => void state.closed++ };
   };
-  return { watch, state, change: (file: string | null) => state.listener?.(file) };
+  return { watch, state, change: (file: string | null) => state.listener?.(file), fail: () => state.onError?.(new Error("EPERM")) };
 }
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+/** One turn of the event loop; not a timer, so fake timers don't hold it. */
+const tick = () => new Promise((r) => setImmediate(r));
+
+/** Turns the event loop (calling `poke` each turn) until `done()`, for at most 10 s of real time. */
+async function until(done: () => boolean, poke: () => void = () => {}) {
+  const deadline = performance.now() + 10_000;
+  for (let i = 0; !done() && performance.now() < deadline; i++) {
+    if (i % 200 === 0) poke();
+    await tick();
+  }
+  expect(done()).toBe(true);
+}
+
+/** The debounce and rebuild timers are fake from here to the end of `body`. */
+async function withFakeTimers(body: () => Promise<void>) {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  try {
+    await body();
+  } finally {
+    vi.useRealTimers();
+  }
+}
 
 /** Waits until the fake app has been spawned (the check and build ran). */
 async function spawned(calls: unknown[]) {
@@ -103,16 +126,18 @@ describe("humanharness plugin dev", () => {
       },
     });
     await spawned(s.calls);
-    for (const f of ["dist/plugin.json", "dist.tmp-ab12/backend.js", "dist.old-ab12", "fixtures/items/001.json", "node_modules/x/index.js", ".git/index", "panels/.cache/x", null]) w.change(f);
-    await wait(450);
-    expect(builds).toHaveLength(0);
-    w.change("backend.ts");
-    await wait(150);
-    w.change("panels/main.tsx");
-    await wait(200);
-    expect(builds).toHaveLength(0);
-    await wait(250);
-    expect(builds).toEqual([plugin]);
+    await withFakeTimers(async () => {
+      for (const f of ["dist/plugin.json", "dist.tmp-ab12/backend.js", "dist.old-ab12", "fixtures/items/001.json", "node_modules/x/index.js", ".git/index", "panels/.cache/x", null]) w.change(f);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(builds).toHaveLength(0);
+      w.change("backend.ts");
+      await vi.advanceTimersByTimeAsync(150);
+      w.change("panels/main.tsx");
+      await vi.advanceTimersByTimeAsync(299);
+      expect(builds).toHaveLength(0);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(builds).toEqual([plugin]);
+    });
     expect(out.text()).toContain("Rebuilt my-items.");
     s.exit(0);
     expect(await done).toBe(0);
@@ -135,46 +160,151 @@ describe("humanharness plugin dev", () => {
       },
     });
     await spawned(s.calls);
-    w.change("backend.ts");
-    await wait(400);
-    expect(builds).toBe(1);
-    expect(out.text()).toContain("The build failed; the app keeps the last good dist/: backend.ts:3: Unexpected token");
-    // A change pending when the app closes never builds: the debounce timer is cleared with the watcher.
-    w.change("backend.ts");
-    s.exit(0);
-    expect(await done).toBe(0);
-    expect(w.state.closed).toBe(1);
-    await wait(400);
-    expect(builds).toBe(1);
+    await withFakeTimers(async () => {
+      w.change("backend.ts");
+      await vi.advanceTimersByTimeAsync(300);
+      expect(builds).toBe(1);
+      expect(out.text()).toContain("The build failed; the app keeps the last good dist/: backend.ts:3: Unexpected token");
+      // A change pending when the app closes never builds: the debounce timer is cleared with the watcher.
+      w.change("backend.ts");
+      s.exit(0);
+      expect(await done).toBe(0);
+      expect(w.state.closed).toBe(1);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(builds).toBe(1);
+    });
   }, 60_000);
 
   it("the real watcher sees a source change, not a dist/ write, and stops with the app", async () => {
     const s = heldSpawn();
     let builds = 0;
+    // The real watcher, with what it reports kept: the test waits for the OS's event, not for a fixed time.
+    const seen: (string | null)[] = [];
+    let closed = 0;
     const done = pluginDevCommand({
       pluginDir: plugin,
       harnessDir: harness,
       out: memoryStream().stream,
       spawn: s.spawn,
+      watch: (dir, onChange, onError) => {
+        const w = fsWatch(
+          dir,
+          (file) => {
+            seen.push(file);
+            onChange(file);
+          },
+          onError,
+        );
+        return { close: () => (closed++, w.close()) };
+      },
       rebuild: async () => {
         builds++;
       },
     });
     await spawned(s.calls);
-    await wait(200);
-    fs.writeFileSync(path.join(plugin, "dist", "touched.txt"), "x");
-    await wait(600);
-    expect(builds).toBe(0);
-    fs.appendFileSync(path.join(plugin, "panels", "main.tsx"), "\n");
-    for (let i = 0; i < 40 && builds === 0; i++) await wait(50);
-    expect(builds).toBe(1);
-    s.exit(0);
-    expect(await done).toBe(0);
-    fs.appendFileSync(path.join(plugin, "backend.ts"), "\n");
-    await wait(600);
-    expect(builds).toBe(1);
+    const sawFile = (rel: string) => seen.some((f) => f !== null && path.normalize(f) === path.normalize(rel));
+    await withFakeTimers(async () => {
+      await until(
+        () => sawFile("dist/touched.txt"),
+        () => fs.writeFileSync(path.join(plugin, "dist", "touched.txt"), "x"),
+      );
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(builds).toBe(0);
+      await until(
+        () => sawFile("panels/main.tsx"),
+        () => fs.appendFileSync(path.join(plugin, "panels", "main.tsx"), "\n"),
+      );
+      await vi.advanceTimersByTimeAsync(300);
+      expect(builds).toBe(1);
+      s.exit(0);
+      expect(await done).toBe(0);
+      expect(closed).toBe(1);
+      fs.appendFileSync(path.join(plugin, "backend.ts"), "\n");
+      for (let i = 0; i < 50; i++) await tick();
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(builds).toBe(1);
+    });
     fs.rmSync(path.join(plugin, "dist", "touched.txt"));
   }, 60_000);
+
+  it("a change during a build queues one more build, however many changes come", async () => {
+    const s = heldSpawn();
+    const w = fakeWatch();
+    const releases: (() => void)[] = [];
+    const out = memoryStream();
+    const done = pluginDevCommand({
+      pluginDir: plugin,
+      harnessDir: harness,
+      out: out.stream,
+      spawn: s.spawn,
+      watch: w.watch,
+      rebuild: () => new Promise<void>((r) => releases.push(r)),
+    });
+    await spawned(s.calls);
+    await withFakeTimers(async () => {
+      w.change("backend.ts");
+      await vi.advanceTimersByTimeAsync(300);
+      expect(releases).toHaveLength(1);
+      for (const f of ["backend.ts", "panels/main.tsx"]) {
+        w.change(f);
+        await vi.advanceTimersByTimeAsync(300);
+      }
+      expect(releases).toHaveLength(1);
+      releases[0]();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(releases).toHaveLength(2);
+      releases[1]();
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(releases).toHaveLength(2);
+    });
+    expect(out.text().match(/Rebuilt my-items\./g)).toHaveLength(2);
+    s.exit(0);
+    expect(await done).toBe(0);
+  }, 60_000);
+
+  it("a watcher that stops on its own says so in one line, and the app keeps running", async () => {
+    const s = heldSpawn();
+    const w = fakeWatch();
+    const out = memoryStream();
+    const done = pluginDevCommand({ pluginDir: plugin, harnessDir: harness, out: out.stream, spawn: s.spawn, watch: w.watch });
+    await spawned(s.calls);
+    w.fail();
+    expect(out.text()).toContain(`Stopped watching ${plugin}; restart plugin dev.\n`);
+    s.exit(0);
+    expect(await done).toBe(0);
+  }, 60_000);
+
+  it("the fs watcher closes itself and calls onError on an error event, without throwing", () => {
+    const fake = Object.assign(new EventEmitter(), { closed: 0, close: () => void fake.closed++ });
+    const spy = vi.spyOn(fs, "watch").mockReturnValue(fake as never);
+    try {
+      const errors: unknown[] = [];
+      fsWatch(root, () => {}, (err) => errors.push(err));
+      fake.emit("error", new Error("EPERM"));
+      expect(errors).toHaveLength(1);
+      expect(fake.closed).toBe(1);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("the command line passes --live and --mock through, and refuses both together", async () => {
+    const seen: { live?: boolean; mock?: boolean; pluginDir: string; harnessDir: string }[] = [];
+    const run = async (o: { live?: boolean; mock?: boolean; pluginDir: string; harnessDir: string }) => {
+      seen.push(o);
+      return 0;
+    };
+    const m = memoryIo(root);
+    expect(await pluginDevCommandLine(["--harness", "harness", "--plugin", "my-items", "--live"], m.io, run as never)).toBe(0);
+    expect(await pluginDevCommandLine(["--harness", "harness", "--plugin", "my-items", "--mock"], m.io, run as never)).toBe(0);
+    expect(seen.map((o) => [o.pluginDir, o.harnessDir, o.live, o.mock])).toEqual([
+      [plugin, harness, true, undefined],
+      [plugin, harness, undefined, true],
+    ]);
+    const both = memoryIo(root);
+    expect(await main(["plugin", "dev", "--harness", harness, "--plugin", plugin, "--live", "--mock"], both.io)).toBe(2);
+    expect(both.err()).toContain("--live and --mock don't go together");
+  });
 
   it("a check error stops before the app opens and before anything is watched", async () => {
     const broken = path.join(root, "broken");

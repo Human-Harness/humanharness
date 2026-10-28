@@ -17,8 +17,11 @@ export const DEV_USAGE = [
   "",
 ].join("\n");
 
-/** Watches a folder recursively; `onChange` gets the changed path relative to it (null when the OS doesn't say). */
-export type PluginWatch = (dir: string, onChange: (file: string | null) => void) => { close(): void };
+/**
+ * Watches a folder recursively; `onChange` gets the changed path relative to it (null when the OS doesn't say), and
+ * `onError` is called once if the watcher stops on its own (the folder removed).
+ */
+export type PluginWatch = (dir: string, onChange: (file: string | null) => void, onError: (err: unknown) => void) => { close(): void };
 
 /** Quiet time after the last change before a rebuild. */
 const DEBOUNCE_MS = 300;
@@ -37,10 +40,13 @@ export function ignoredChange(file: string | null): boolean {
   return parts.some((p) => p === "node_modules" || p.startsWith("."));
 }
 
-const fsWatch: PluginWatch = (dir, onChange) => {
+export const fsWatch: PluginWatch = (dir, onChange, onError) => {
   const w = fs.watch(dir, { recursive: true }, (_event, file) => onChange(file === null ? null : String(file)));
-  // A watcher error (the folder removed) must not kill the app the developer is looking at.
-  w.on("error", () => {});
+  // A watcher error (the folder removed) must not kill the app the developer is looking at: it is said, not thrown.
+  w.on("error", (err) => {
+    w.close();
+    onError(err);
+  });
   return { close: () => w.close() };
 };
 
@@ -118,7 +124,9 @@ export async function pluginDevCommand(o: PluginDevOptions): Promise<number> {
   };
   // The watcher starts with the app: a harness that fails its check opens nothing and watches nothing.
   const spawn: DevSpawn = (command, args, options) => {
-    watcher = (o.watch ?? fsWatch)(dir, onChange);
+    watcher = (o.watch ?? fsWatch)(dir, onChange, () => {
+      if (!closed) o.out.write(`Stopped watching ${dir}; restart plugin dev.\n`);
+    });
     return (o.spawn ?? (nodeSpawn as unknown as DevSpawn))(command, args, options);
   };
 
@@ -139,14 +147,14 @@ export async function pluginDevCommand(o: PluginDevOptions): Promise<number> {
   }
 }
 
-export async function pluginDevCommandLine(args: string[], io: Io): Promise<number> {
+export async function pluginDevCommandLine(args: string[], io: Io, run: typeof pluginDevCommand = pluginDevCommand): Promise<number> {
   if (args.includes("--help") || args.includes("-h")) {
     io.stdout.write(DEV_USAGE);
     return 0;
   }
   const { values, positionals } = parseCommand(args, { harness: { type: "string" }, plugin: { type: "string" }, live: { type: "boolean" }, mock: { type: "boolean" } });
   if (positionals.length > 0 || values.harness === undefined) throw new UsageError(DEV_USAGE.trim());
-  return pluginDevCommand({
+  return run({
     pluginDir: path.resolve(io.cwd, values.plugin ?? "."),
     harnessDir: path.resolve(io.cwd, values.harness),
     ...(values.live ? { live: true } : {}),

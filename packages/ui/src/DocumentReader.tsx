@@ -9,6 +9,7 @@ import { FocusMarkers } from "./FocusMarkers";
 import { Markdown, documentOutline } from "./markdown";
 import { type BarDraft, NO_BAR_DRAFT, ReviewBar } from "./ReviewBar";
 import { ReviewColumn } from "./ReviewColumn";
+import { formatSize } from "./sizes";
 import { type MarkSpec, clearMarks, drawMarks, findMarks } from "./review-marks";
 
 /** What the reader shows: a document, the place to open at, and the agent of the turn that wrote it. */
@@ -24,9 +25,8 @@ export interface ReaderTarget {
 const BIG_BYTES = 1024 * 1024;
 const SHOWN_BYTES = 200 * 1024;
 
-export function formatSize(bytes: number): string {
-  return bytes >= 1024 * 1024 ? `${(bytes / (1024 * 1024)).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
-}
+// Kept here too: callers imported it from the reader before it moved (the file diff needs it without the reader).
+export { formatSize };
 
 /** The id of the last heading at or above the top of `box` (the place to keep across a reload). */
 function headingAtTop(box: HTMLElement | null): string | null {

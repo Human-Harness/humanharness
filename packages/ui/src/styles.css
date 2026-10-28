@@ -420,6 +420,30 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-timeline-chip-amber { background: var(--hh-review-question); }
 .hh-timeline-chip-green { background: var(--hh-diff-ins); color: var(--hh-ok); }
 .hh-timeline-chip-grey { background: var(--hh-review-done); }
+/* File diff (file-timeline spec §4): marks carry a line or strike as well as colour. Every class is hh-filediff-*. */
+.hh-filediff { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.hh-filediff-tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.hh-filediff ins { background: var(--hh-diff-ins); text-decoration: underline; text-decoration-color: var(--hh-diff-bar-ins); }
+.hh-filediff del { background: var(--hh-diff-del); text-decoration: line-through; text-decoration-color: var(--hh-diff-bar-del); }
+.hh-filediff-block { padding-left: 10px; border-left: 3px solid transparent; }
+.hh-filediff-added { border-left: 3px solid var(--hh-diff-bar-ins); background: var(--hh-diff-ins); }
+.hh-filediff-removed { border-left: 3px solid var(--hh-diff-bar-del); background: var(--hh-diff-del); text-decoration: line-through; }
+.hh-filediff-lines { width: 100%; border-collapse: collapse; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+.hh-filediff-lines td { padding: 0 6px; vertical-align: top; white-space: pre-wrap; overflow-wrap: anywhere; }
+.hh-filediff-no { width: 1%; color: var(--hh-muted); text-align: right; user-select: none; }
+.hh-filediff-sign { width: 1%; user-select: none; }
+.hh-filediff-ins { background: var(--hh-diff-ins); }
+.hh-filediff-del { background: var(--hh-diff-del); }
+.hh-filediff-gap td, .hh-filediff-gaprow { color: var(--hh-muted); }
+.hh-filediff-gaprow { grid-column: 1 / -1; }
+.hh-filediff-table { border-collapse: collapse; }
+.hh-filediff-table td { padding: 2px 8px; border: 1px solid var(--hh-line); }
+.hh-filediff-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0 12px; }
+.hh-filediff-mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.hh-filediff-row { display: contents; }
+.hh-filediff-before, .hh-filediff-after { min-width: 0; padding: 2px 6px; }
+.hh-filediff-diagrams figure { margin: 0 0 8px; }
+.hh-filediff-diagrams figcaption { font-size: 12px; color: var(--hh-muted); }
 .hh-change { flex: none; font-size: 12px; color: var(--hh-muted); }
 .hh-change.added { color: var(--hh-ok); }
 .hh-change.deleted { color: var(--hh-warn); }

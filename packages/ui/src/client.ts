@@ -1150,6 +1150,7 @@ export type SidekickReview = { kind: "send" } | { kind: "card"; card: SidekickCa
 /** What the document-review flow does before approving (spec §2a.2): approve, or show the card next to Approve. */
 export type SidekickApproveCheck = { kind: "approve" } | { kind: "card"; card: SidekickCard };
 /** A harness place's answer (spec §2a.5, plan Decision 13): free text, at most 600 characters. */
+export type SidekickPlaceAnswer = { ok: true; text: string; speaker: SidekickInfo } | { ok: false };
 /** A sidekick's purpose as the UI shows it: a core purpose id, or `custom` with its text and moments. */
 export interface SidekickPurposeView {
   id: string;
@@ -1164,7 +1165,6 @@ export interface SidekickPreset {
   purposes: SidekickPurposeView[];
   adopted: boolean;
 }
-export type SidekickPlaceAnswer = { ok: true; text: string; speaker: SidekickInfo } | { ok: false };
 /** Where an imported sidekick came from: pasted text, or files with the hash of what was read. */
 export type SidekickSource = { kind: "paste" } | { kind: "files"; paths: string[]; hash: string };
 export type SidekickImportInput = { kind: "paste"; text: string } | { kind: "files"; token: string } | { kind: "original"; sidekickId: string };

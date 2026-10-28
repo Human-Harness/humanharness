@@ -86,7 +86,7 @@ test("two sidekicks: Sidekick reviews before sending, a muted kind stays quiet, 
     const guardRuns = runs.filter(isGuard);
     expect(guardRuns).toHaveLength(1);
     expect(sessionOf(guardRuns[0].argv)).not.toBe(sessionOf(runs.filter(isPreSend)[0].argv));
-    // Only Sidekick reviewed before sending; the muted kind's resend cost no model turn of its own.
+    // Send anyway sends without another review; only Sidekick reviewed.
     expect(usageOf(usageFile(s), "pre").map((r) => r.sidekick)).toEqual(["sidekick", "sidekick"]);
   } finally {
     try {

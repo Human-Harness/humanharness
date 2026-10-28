@@ -225,8 +225,11 @@ describe("prepared-task card", () => {
     expect(startButton(r).disabled).toBe(true);
     c.openScope = "fracciones";
     act(() => c.emitScopes());
-    // The chat (and the card with it) may be drawn afresh for the scope: read it again.
+    // The chat (and the card with it) is drawn afresh for the scope: read it again. Its arming delay starts in the new
+    // card's mount effect, which React may run on a later macrotask than the render waitFor saw: wait for that effect
+    // (it fills the status line too), or `arm` could move the clock before the delay exists.
     await waitFor(() => expect(within(card() as HTMLElement).queryByText("Open a topic first")).toBeNull());
+    await waitFor(() => expect(within(card() as HTMLElement).getByRole("status").textContent).not.toBe(""));
     arm();
     expect(startButton(card() as HTMLElement).disabled).toBe(false);
   });

@@ -214,9 +214,14 @@ describe("the two ctx builders", () => {
         const v = o[k];
         if (typeof v === "function") {
           const before = calls.length;
-          await (v as (...a: unknown[]) => Promise<unknown>)("a1", "a2", "a3");
+          const result = await (v as (...a: unknown[]) => Promise<unknown>)("a1", "a2", "a3");
           const [name, args] = calls[before] ?? ["(none)", []];
           shape[`${prefix}${k}`] = `${name}/${args.length}`;
+          // What a backend reads off a response: its keys, their types and what text() and json() give.
+          if (name === "fetch") {
+            const r = result as Record<string, unknown> & { text(): unknown; json(): unknown };
+            shape[`${prefix}${k}()`] = JSON.stringify([Object.keys(r).sort().map((key) => `${key}:${typeof r[key]}`), r.headers, r.text(), r.json()]);
+          }
         } else if (v && typeof v === "object") await walk(v as Record<string, unknown>, `${prefix}${k}.`);
       }
     };
@@ -224,7 +229,8 @@ describe("the two ctx builders", () => {
     return shape;
   }
 
-  const answer = (name: string) => ({ ok: true as const, value: name === "fetch" ? { text: "{}" } : null });
+  const RESPONSE = { url: "https://api.example.com/x", status: 200, ok: true, headers: { "content-type": "application/json" }, text: '{"n":1}' };
+  const answer = (name: string) => ({ ok: true as const, value: name === "fetch" ? RESPONSE : null });
 
   it("plugin-run's ctx and the host script's contextOf have the same methods making the same calls", async () => {
     const ours: [string, unknown[]][] = [];
@@ -269,7 +275,8 @@ describe("the two ctx builders", () => {
     );
     await ran;
     const hostShape = await shapeOf(hostCtx!, theirs);
-    expect(Object.keys(runShape).length).toBe(14);
+    expect(Object.keys(runShape).length).toBe(15);
+    expect(runShape["fetch()"]).toBe(JSON.stringify([["headers:object", "json:function", "ok:boolean", "status:number", "text:function", "url:string"], RESPONSE.headers, RESPONSE.text, { n: 1 }]));
     expect(runShape).toEqual(hostShape);
   });
 });

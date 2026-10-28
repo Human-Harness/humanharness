@@ -209,6 +209,7 @@ const isEnglish = (tag: string): boolean => tag === "en" || tag.startsWith("en-"
 function LanguageRow({ state, language }: { state: AppState; language?: LanguageControl }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState<null | { pick?: Language } | { notice: Language }>(null);
+  const reasonId = useId();
   const view = language?.view ?? null;
   const lang = view?.language ?? state.config.language ?? systemLanguage();
   const run = view?.run ?? null;
@@ -243,31 +244,37 @@ function LanguageRow({ state, language }: { state: AppState; language?: Language
         )}
         <p className="hh-caption hh-row-note">{t("settings.languageHint")}</p>
       </div>
-      {language && running && (
-        <div className="hh-row hh-langrow-progress">
-          <span role="status">{t("language.progress", { done: run.done, total: run.total })}</span>
-          <button type="button" onClick={() => language.cancel()}>
-            {t("language.cancel")}
-          </button>
-        </div>
-      )}
-      {language && stopped && (
-        <div className="hh-row hh-langrow-stopped">
-          <span>{t("language.stopped")}</span>
-          <button type="button" disabled={!can} onClick={() => notice(stopped.tag)}>
-            {t("language.tryAgain")}
-          </button>
+      {language && (running || stopped) && (
+        // One row and one live region for a run's progress and its stop, so the change from one to the other is
+        // announced. While the chooser is open its own progress dialog speaks: the row has no role then.
+        <div className={`hh-row ${running ? "hh-langrow-progress" : "hh-langrow-stopped"}`}>
+          <span role={open ? undefined : "status"}>{running ? t("language.progress", { done: run.done, total: run.total }) : t("language.stopped")}</span>
+          {running ? (
+            <button type="button" onClick={() => language.cancel()}>
+              {t("language.cancel")}
+            </button>
+          ) : (
+            stopped && (
+              <button type="button" disabled={!can} aria-describedby={!can ? reasonId : undefined} onClick={() => notice(stopped.tag)}>
+                {t("language.tryAgain")}
+              </button>
+            )
+          )}
         </div>
       )}
       {language && !stopped && untranslated && (
         <div className="hh-row hh-langrow-new">
           <span>{none ? t("language.notYet", { language: ownName(lang) }) : t("language.newTexts")}</span>
-          <button type="button" disabled={!can} onClick={() => notice(lang)}>
+          <button type="button" disabled={!can} aria-describedby={!can ? reasonId : undefined} onClick={() => notice(lang)}>
             {t("language.translate")}
           </button>
         </div>
       )}
-      {language && view && !can && (stopped || untranslated) && <p className="hh-caption hh-langrow-reason">{t("language.needsEngine")}</p>}
+      {language && view && !can && (stopped || untranslated) && (
+        <p id={reasonId} className="hh-caption hh-langrow-reason">
+          {t("language.needsEngine")}
+        </p>
+      )}
       {language && open && <LanguageChooser control={language} start={open} harnessName={state.harness.name} onClose={() => setOpen(null)} />}
     </>
   );

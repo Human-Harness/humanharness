@@ -287,13 +287,14 @@ export function EngineOnboarding({
         <p lang={legalLang}>{t("legal.engine.noticeAccount", { ...v, plan: engine.requires })}</p>
         {engine.userProvider && <p lang={legalLang}>{t("legal.engine.noticeUserProvider", v)}</p>}
         <p lang={legalLang}>{t("legal.engine.noticeContent", v)}</p>
-        <LegalInEnglish />
         <p>
           {link(engine.termsUrl, t("engine.terms", v))} · {link(engine.privacyUrl, t("engine.privacy", v))}
         </p>
         <label>
           <input type="checkbox" checked={accepted} onChange={(e) => setAccepted(e.target.checked)} /> <span lang={legalLang}>{t("legal.engine.accept")}</span>
         </label>
+        {/* After the accept text, so the line covers every legal block of the notice. */}
+        <LegalInEnglish />
         <button className="hh-primary" disabled={!accepted || busy !== null} onClick={() => void accept()}>
           {t("engine.continue")}
         </button>

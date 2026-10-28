@@ -358,6 +358,29 @@ describe("Settings › General › Language (spec §3, §5, §6)", () => {
     expect(screen.queryByRole("alertdialog")).toBeNull();
   });
 
+  it("progress and stopped share one live region, which goes quiet while the chooser is open", async () => {
+    await renderSettings({ language: control({ run: { tag: "es", done: 1, total: 5, status: "failed", reason: "quota" } }) });
+    const stopped = screen.getByText("The translation stopped. What it finished is kept.");
+    expect(stopped.getAttribute("role")).toBe("status");
+    expect(document.querySelectorAll(".hh-langrow-progress, .hh-langrow-stopped")).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await screen.findByRole("alertdialog");
+    expect(screen.getByText("The translation stopped. What it finished is kept.").hasAttribute("role")).toBe(false);
+  });
+
+  it("the needs-engine reason describes the disabled buttons", async () => {
+    await renderSettings({ language: control({ missing: 800, canTranslate: "mock" }) });
+    const reason = screen.getByText("Connect an AI engine to translate the app.");
+    expect(reason.id).not.toBe("");
+    expect(screen.getByRole("button", { name: "Translate" }).getAttribute("aria-describedby")).toBe(reason.id);
+    cleanup();
+    await renderSettings({ language: control({ run: { tag: "es", done: 1, total: 5, status: "cancelled" }, canTranslate: "no-engine" }) });
+    expect(screen.getByRole("button", { name: "Try again" }).getAttribute("aria-describedby")).toBe(screen.getByText("Connect an AI engine to translate the app.").id);
+    cleanup();
+    await renderSettings({ language: control({ missing: 4, cached: [{ tag: "es", complete: false }] }) });
+    expect(screen.getByRole("button", { name: "Translate" }).hasAttribute("aria-describedby")).toBe(false);
+  });
+
   it("English (and its variants) never offers a translation", async () => {
     await renderSettings({ language: control({ language: "en-GB", missing: 800 }) });
     expect(screen.queryByRole("button", { name: "Translate" })).toBeNull();

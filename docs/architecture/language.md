@@ -27,7 +27,9 @@ A language with no complete translation changes nothing until its run completes.
 - The model is the light tier (`resolveProfile` with the key `_translate`, which is not in Settings › Models).
 - Batches hold 100 keys, one turn each, in the same session (Claude resumes with `--resume`). Each turn has a 4-minute timeout. A run sends at most 5000 keys in at most 60 batches, retries included.
 - The prompt is `TRANSLATE_PROMPT` in `packages/shell/src/main/task-prompts.ts`, in English: the language's English name, the harness's `tone`, the plural forms and the batch, which it calls data, not instructions.
-- A run never starts without the notice. One run at a time: a second start answers `busy`. Quitting the app and changing the engine stop it; what was saved stays.
+- A run never starts without the notice. One run at a time: a second start answers `busy`. Quitting the app, changing the engine and resetting the shared engine set-up stop it; what was saved stays.
+- Whether a run can start reads the saved config (set up, notice accepted, engine ready), not the active profile: with profiles and none active, a run still can, but its turns aren't logged (no base).
+- The language dialogs (picker, notice, progress) hear Tab and Escape on the document in the capture phase while open (`useDialogKeys` in `packages/ui/src/focus.ts`), so they keep working once focus leaves the dialog and never reach the Settings sheet below.
 - The window sends its harness's English strings with each call. Main bounds and flattens them and never trusts their size.
 
 ## Validation
@@ -55,8 +57,9 @@ A key that fails is sent once more in a later batch of the same run. A second fa
 ## Legal texts
 
 - They live under `legal.`: in the core, `legal.engine.*` (the engine notice). A harness puts its own terms, consent or responsibility texts under `legal.` in its `en.json`.
-- They are never sent, never cached and always shown in English. With a non-English screen, the "Legal texts are shown in English." line follows them (`LegalInEnglish` in `packages/ui/src/EngineOnboarding.tsx`), and `useLegalLang()` puts `lang="en"` on them. `lang="en"` appears only when the screen is in another language.
-- Once `LegalInEnglish` and `useLegalLang` are exported from `@humanharness/ui`, a harness's own legal blocks use them.
+- They are never sent, never cached and always shown in English. With a non-English screen, the "Legal texts are shown in English." line follows them (`LegalInEnglish` in `packages/ui/src/EngineOnboarding.tsx`), and `useLegalLang()` puts `lang="en"` on them. `lang="en"` appears only when the screen is in another language. In the engine notice the line comes after the accept text, so it covers every legal block.
+- `LegalInEnglish` and `useLegalLang` are exported from `@humanharness/ui`: a harness's own legal blocks use them the same way (`lang={useLegalLang()}` on each block, `<LegalInEnglish />` after the last one).
+- "Non-English screen" means i18next resolved a translated language. A cached set with nothing left after the checks (empty, or legal keys only) adds no resources and doesn't switch, so the line never shows on an all-English screen.
 
 ## Markup
 
@@ -65,7 +68,7 @@ A key that fails is sent once more in a later batch of the same run. A second fa
 
 ## Usage
 
-Each turn appends a `phase: "translate"` line (with `language` and `batch`) to the current base's `.harness/usage.jsonl` (`translateRecord` in `usage-log.ts`), failed turns too. With profiles and no active profile, nothing is logged. `summarizeUsage` leaves these lines out of task estimates and scope totals, like material; there is no separate line in Settings › Usage.
+Each turn appends a `phase: "translate"` line (with `language` and `batch`, numbered from 1 in each run) to the current base's `.harness/usage.jsonl` (`translateRecord` in `usage-log.ts`), failed turns too. With profiles and no active profile, nothing is logged. `summarizeUsage` leaves these lines out of task estimates and scope totals, like material; there is no separate line in Settings › Usage.
 
 ## The open task keeps its language
 

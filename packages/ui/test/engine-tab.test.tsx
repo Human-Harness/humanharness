@@ -617,18 +617,20 @@ describe("EngineTab: legal texts in another language", () => {
     }
   });
 
-  it("the engine notice keeps its legal text in English, with the line right under it", async () => {
+  it("the engine notice keeps its legal text in English, with the line right after the accept text", async () => {
     const client = withFolder();
     client.status = { ...client.status, noticeAccepted: false };
     await renderEs(<Tab client={client} />);
     await screen.findByRole("heading", { name: "Before using Claude" });
     const content = screen.getByText(/this app is not responsible for what the AI writes/);
-    expect(content.nextElementSibling).toBe(screen.getByText("Los textos legales se muestran en inglés."));
+    const line = screen.getByText("Los textos legales se muestran en inglés.");
+    const accept = screen.getByText("I understand and accept");
+    expect(accept.closest("label")?.nextElementSibling).toBe(line);
     // The English blocks are marked English for screen readers; the line itself is in the screen's language.
     expect(content.getAttribute("lang")).toBe("en");
     expect(screen.getByRole("heading", { name: "Before using Claude" }).getAttribute("lang")).toBe("en");
-    expect(screen.getByText("I understand and accept").getAttribute("lang")).toBe("en");
-    expect(content.nextElementSibling?.hasAttribute("lang")).toBe(false);
+    expect(accept.getAttribute("lang")).toBe("en");
+    expect(line.hasAttribute("lang")).toBe(false);
   });
 
   it("D0: the engine notice in English has no legal line", async () => {

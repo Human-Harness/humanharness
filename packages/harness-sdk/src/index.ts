@@ -7,10 +7,10 @@ import { dataSchema } from "./data";
 import { CORE_SHEET_SECTIONS, MATERIAL_STAGE_KEYS, materialSchema } from "./material";
 import { DEFAULT_MODE_WORDS, MODE_ID } from "./modes";
 import { PHASE_ID, TIME_BOX_MAX } from "./phases";
+import { harnessPluginsSchema } from "./plugin";
 import { PROFILE_COLLECTION, profileFormSpec, profilesSchema } from "./profiles";
 import { SETTING_NAME, checkSettingFields, settingFieldSchema, settingsSchema } from "./settings";
 import { type HarnessSetupStep, setupFormSpec, setupStepsSchema } from "./setup";
-import { harnessPluginsSchema } from "./plugin";
 import { SIDEKICK_PROCESS, sidekickSchema } from "./sidekick";
 
 export * from "./block";

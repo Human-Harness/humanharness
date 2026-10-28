@@ -22,6 +22,8 @@ export interface DevOptions {
   keep?: boolean;
   /** Where the mock session folders go (default: the OS temp folder; tests). */
   tmpRoot?: string;
+  /** Added to the app's environment, replacing any inherited HH_PLUGIN_* (`plugin dev`). Default: none, as before (D0). */
+  env?: Record<string, string>;
   out: Writable;
   spawn?: DevSpawn;
 }
@@ -60,6 +62,10 @@ export async function devCommand(o: DevOptions): Promise<number> {
       o.out.write(`${err.message}\n`);
       return 1;
     }
+  }
+  if (o.env) {
+    for (const k of Object.keys(env)) if (k.startsWith("HH_PLUGIN_")) delete env[k];
+    Object.assign(env, o.env);
   }
   if (o.engine) env.HH_DEV_ENGINE = o.engine;
   if (o.build) env.HH_OUT_DIR = path.resolve(o.build);

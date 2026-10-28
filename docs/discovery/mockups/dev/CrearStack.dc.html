@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Crear proyecto, stack</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;color:#1d1d1f}
+a{color:#0a5bc4}a:hover{color:#083f88}
+.btn{font:inherit;font-size:14px;padding:9px 18px;border-radius:8px;border:1px solid #d2d2d7;background:#fff;color:#1d1d1f;text-decoration:none;display:inline-block;cursor:pointer}
+.btn.p{background:#0a5bc4;border-color:#0a5bc4;color:#fff}
+.st{font-size:13px;padding:6px 12px;border-radius:999px;background:#ececf0;color:#5f5f66}
+.k{font-size:12px;color:#5f5f66;font-weight:600}
+.dec{display:grid;grid-template-columns:170px minmax(0,1fr);gap:16px;padding:14px 0;border-bottom:1px solid #eee;align-items:start}
+.opts{display:flex;gap:10px;flex-wrap:wrap}
+.o{font:inherit;text-align:left;font-size:13px;padding:10px 12px;border-radius:10px;border:1px solid #d2d2d7;background:#fff;cursor:pointer;width:250px;line-height:1.4}
+.o.sel{border:2px solid #0a5bc4;background:#f3f8ff}
+.o small{display:block;color:#5f5f66;font-size:12px;margin-top:3px}
+</style>
+</helmet>
+<div style="width:1440px;height:900px;display:flex;flex-direction:column;background:#f5f5f7;padding:32px 40px;box-sizing:border-box;gap:18px">
+  <div style="display:flex;align-items:center;gap:14px">
+    <a href="CrearIdea.dc.html" style="font-size:13px">‹ La idea</a>
+    <h1 style="margin:0;font-size:24px">Decisiones de stack · Turnero</h1>
+    <div style="flex:1"></div>
+    <ol aria-label="Pasos" style="display:flex;gap:8px;list-style:none;margin:0;padding:0">
+      <li class="st" style="background:#d9f0dc;color:#1f5a28">✓ La idea</li>
+      <li class="st" style="background:#0a5bc4;color:#fff;font-weight:600">2 · Stack · 4 de 6</li>
+      <li class="st">3 · Confirmar</li>
+    </ol>
+  </div>
+  <div style="flex:1;display:flex;gap:20px;min-height:0">
+    <section style="flex:1;background:#fff;border:1px solid #e3e3e8;border-radius:14px;padding:6px 24px;overflow:hidden">
+      <div class="dec"><div><strong style="font-size:14px">Repos</strong><div class="k">✓ decidido</div></div><div class="opts">
+        <button class="o sel">Monorepo (web + api)<small>Un solo PR por ticket. Recomendado para un equipo chico.</small></button>
+        <button class="o">Dos repos<small>Deploys separados; un ticket puede pedir 2 PR.</small></button></div></div>
+      <div class="dec"><div><strong style="font-size:14px">Frontend</strong><div class="k">✓ decidido</div></div><div class="opts">
+        <button class="o sel">Next.js<small>Server rendering para la página pública de turnos.</small></button>
+        <button class="o">React + Vite<small>Más simple; sin server rendering.</small></button></div></div>
+      <div class="dec"><div><strong style="font-size:14px">Base de datos</strong><div class="k">✓ decidido</div></div><div class="opts">
+        <button class="o sel">Postgres<small>Turnos sin solaparse: se resuelve con una restricción.</small></button>
+        <button class="o">SQLite<small>Cero infraestructura; queda chico con varios consultorios.</small></button></div></div>
+      <div class="dec"><div><strong style="font-size:14px">Login de pacientes</strong><div class="k">✓ decidido</div></div><div class="opts">
+        <button class="o sel">Link mágico por email<small>Respondiste "solo email".</small></button></div></div>
+      <div class="dec" style="background:#fffaf1;margin:0 -24px;padding:14px 24px"><div><strong style="font-size:14px">Hosting</strong><div class="k" style="color:#7a4a00">te espera</div></div><div class="opts">
+        <button class="o">Vercel + Neon<small>Lo más rápido para arrancar. Costo según uso.</small></button>
+        <button class="o">Fly.io<small>Un contenedor; más control y precio fijo.</small></button>
+        <button class="o">Decidir después<small>Se crea un ticket para decidirlo más adelante.</small></button></div></div>
+      <div class="dec" style="border:0"><div><strong style="font-size:14px">Tests y CI</strong><div class="k">pendiente</div></div><div style="font-size:13px;color:#5f5f66">Después del hosting</div></div>
+    </section>
+    <aside style="width:360px;background:#fbfbfd;border:1px solid #e3e3e8;border-radius:14px;padding:22px;display:flex;flex-direction:column;gap:12px">
+      <div class="k">TODAS LAS DECISIONES QUEDAN GUARDADAS</div>
+      <div style="font-size:13px;color:#3a3a40;line-height:1.5">Se escriben como decisiones del proyecto (un ADR por decisión) en el repo. La IA las respeta en cada ticket.</div>
+      <div class="k" style="margin-top:8px">¿NINGUNA TE CONVENCE?</div>
+      <label for="q" style="position:absolute;left:-9999px">Pregunta para la IA</label>
+      <textarea id="q" rows="3" placeholder="Preguntá o pedí otra opción…" style="font:inherit;font-size:13px;padding:9px;border:1px solid #d2d2d7;border-radius:8px;resize:none"></textarea>
+      <button class="btn" style="align-self:flex-start;font-size:13px">Enviar</button>
+    </aside>
+  </div>
+  <div style="display:flex;justify-content:flex-end;gap:10px">
+    <a class="btn p" href="CrearConfirmar.dc.html">Seguir a confirmar</a>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

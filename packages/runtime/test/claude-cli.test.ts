@@ -274,6 +274,36 @@ describe("ClaudeCliTransport", () => {
     expect(events.at(-1)).toEqual({ type: "done", ok: true });
   });
 
+  it("leaves out a limits window whose reset is missing or invalid, and keeps the turn going", async () => {
+    const { transport } = setup({
+      steps: [
+        {
+          line: {
+            type: "rate_limit_event",
+            rate_limit_info: {
+              status: "allowed",
+              unifiedWindows: {
+                five_hour: { utilization: 0.5 },
+                seven_day: { utilization: 0.2, resetsAt: "soon" },
+                opus: { utilization: 0.1, resetsAt: 1e20 },
+                weekly: { utilization: 0.3, resetsAt: 1792004400 },
+              },
+            },
+          },
+        },
+        ...claudeTextLines("ok"),
+        { line: { type: "result", subtype: "success", is_error: false, result: "ok" } },
+      ],
+    });
+    const events = await run(transport);
+    expect(events).toContainEqual({
+      type: "limits",
+      status: "allowed",
+      windows: [{ kind: "weekly", utilization: 0.3, resetsAt: new Date(1792004400 * 1000).toISOString() }],
+    });
+    expect(events.at(-1)).toEqual({ type: "done", ok: true });
+  });
+
   it("separates text blocks with a paragraph event", async () => {
     const { transport } = setup({ steps: [...claudeTextLines("One"), ...claudeTextLines("Two"), claudeResultLine(true)] });
     const events = await run(transport);

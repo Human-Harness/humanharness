@@ -179,11 +179,11 @@ export class StreamJsonReader {
 
     if (o.type === "rate_limit_event") {
       const info = o.rate_limit_info ?? {};
-      const windows = Object.entries((info.unifiedWindows ?? {}) as Record<string, any>).map(([kind, w]) => ({
-        kind,
-        utilization: Number(w.utilization),
-        resetsAt: new Date(Number(w.resetsAt) * 1000).toISOString(),
-      }));
+      // A window without a valid reset is left out: `toISOString` would throw, and no reader can place it in time.
+      const windows = Object.entries((info.unifiedWindows ?? {}) as Record<string, any>).flatMap(([kind, w]) => {
+        const at = new Date(w?.resetsAt == null || w.resetsAt === "" ? Number.NaN : Number(w.resetsAt) * 1000);
+        return Number.isFinite(at.getTime()) ? [{ kind, utilization: Number(w.utilization), resetsAt: at.toISOString() }] : [];
+      });
       this.emit({ type: "limits", status: String(info.status ?? "allowed"), windows });
       return;
     }

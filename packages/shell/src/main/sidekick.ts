@@ -923,8 +923,9 @@ export class SidekickController {
   /**
    * The pre-send review (spec §4.1): the local check, the decision, the model within the wait, the card. `force` is
    * the Review button; `attached` says the send carries attachments or material, so "the file" isn't missing context.
+   * `block`: a block answer's free text; its card says so, and it isn't a prompt that drifts off the phase.
    */
-  async review(req: { text: string; force?: boolean; attached?: boolean }): Promise<SidekickReview> {
+  async review(req: { text: string; force?: boolean; attached?: boolean; block?: boolean }): Promise<SidekickReview> {
     const turn = ++this.reviews;
     this.running?.abort();
     this.dropAfter();
@@ -960,7 +961,7 @@ export class SidekickController {
       ...(open ? { phases: { open, others: phases.filter((p) => p.id !== open.id) } } : {}),
       ...(muted.length ? { muted } : {}),
     });
-    if (task && open) await this.noteDrift({ task, base: setup.base }, settings, flags, open, phases, req.text, live);
+    if (task && open && !req.block) await this.noteDrift({ task, base: setup.base }, settings, flags, open, phases, req.text, live);
     // 2. The decision.
     if (flags.length === 0 && mode === "auto" && !req.force) return early("send");
     const key = task?.id ?? NO_TASK;
@@ -1032,6 +1033,7 @@ export class SidekickController {
       this.card = {
         id: randomUUID(),
         prompt: req.text,
+        ...(req.block ? { block: true as const } : {}),
         flags,
         issues: reply.issues,
         ...(reply.rewrite ? { rewrite: reply.rewrite } : {}),

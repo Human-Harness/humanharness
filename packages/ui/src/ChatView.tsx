@@ -27,7 +27,7 @@ import {
 import { ErrorCard, isFixable, problemError } from "./ErrorCard";
 import { FlowSide } from "./FlowSide";
 import { HistoryPanel } from "./HistoryPanel";
-import { pruneDrafts } from "./InputForm";
+import { type AnswerHold, pruneDrafts } from "./InputForm";
 import { type BlockActions, type BlockProps, type InputContext, Message } from "./Message";
 import { markdownToPlain } from "./markdown";
 import { MaterialPanel, type MaterialPanelProps } from "./MaterialPanel";
@@ -187,6 +187,10 @@ export function ChatView({
   /** A review in flight: until when the countdown runs (null: "always wait"). */
   const [reviewing, setReviewing] = useState<{ until: number | null } | null>(null);
   const reviewSeq = useRef(0);
+  /** A block answer's review (spec §4.1): its number, the composer review's number when it started, the form a card holds. */
+  const answerSeq = useRef(0);
+  const answerRun = useRef<{ seq: number; composerSeq: number } | null>(null);
+  const answerHold = useRef<{ cardId: string; hold: AnswerHold } | null>(null);
   /** The panel opened or collapsed by the person; null: expanded when Sidekick is on. */
   const [skOpen, setSkOpen] = useState<boolean | null>(null);
   const [skView, setSkView] = useState<"sidekick" | "harness">("sidekick");
@@ -783,6 +787,46 @@ export function ChatView({
   /** What harness UI gets: it can't skip the pre-flight check. */
   const sendFromHarness: SendFn = (text, options) => send(text, options);
   const lastAssistant = chat.entries.findLast((e) => e.role === "assistant");
+  /**
+   * A block answer's free text before it goes (spec §4.1): `card` holds the form, anything else sends it. The same
+   * text sent again while its card waits goes as is (the card leaves as sent anyway); a composer review in flight
+   * goes first, so the answer is never held behind it.
+   */
+  const reviewAnswer = async (text: string, hold: AnswerHold): Promise<{ kind: "send" } | { kind: "card" }> => {
+    const held = answerHold.current;
+    const card = sidekick?.card;
+    if (held && card?.id === held.cardId && card.prompt === text) {
+      answerHold.current = null;
+      resolveCard(card, "sent-anyway");
+      return { kind: "send" };
+    }
+    if (reviewing) return { kind: "send" };
+    const seq = ++answerSeq.current;
+    const composerSeq = reviewSeq.current;
+    answerRun.current = { seq, composerSeq };
+    const r: SidekickReview = await client.sidekick.review({ text, block: true }).catch(() => ({ kind: "error" }) as const);
+    if (answerRun.current?.seq === seq) answerRun.current = null;
+    // Stopped by Send now (the form already sent), or replaced by a composer review in main.
+    if (seq !== answerSeq.current || composerSeq !== reviewSeq.current || r.kind !== "card") return { kind: "send" };
+    answerHold.current = { cardId: r.card.id, hold };
+    setSkOpen(true);
+    setSkView("sidekick");
+    return { kind: "card" };
+  };
+  /** Send now on the answer form: stops its review in main, never a composer review that started since. */
+  const cancelAnswerReview = () => {
+    const run = answerRun.current;
+    answerRun.current = null;
+    answerSeq.current++;
+    if (run && run.composerSeq === reviewSeq.current) void client.sidekick.cancelReview().catch(() => undefined);
+  };
+  /** The form a block card holds, while that card is the live one. */
+  const heldBy = (card: SidekickCard): AnswerHold | null => {
+    const held = answerHold.current;
+    if (!held || held.cardId !== card.id) return null;
+    answerHold.current = null;
+    return held.hold;
+  };
   const inputs: InputContext | undefined = state.inputs
     ? {
         specs: state.inputs,
@@ -790,6 +834,8 @@ export function ChatView({
         waiting: tasks.current?.status === "waiting",
         ready: tasks.current?.status === "waiting" && !blocked() && !pending,
         respond: respondTo,
+        // D0: without Sidekick (or with the review off) the form sends as before.
+        ...(reviewOn ? { review: reviewAnswer, cancelReview: cancelAnswerReview } : {}),
       }
     : undefined;
   const blockActions = (active: boolean, task?: string, entryId: string | null = null): BlockActions => ({
@@ -1383,16 +1429,36 @@ export function ChatView({
               // A suggestion goes through `send`, never `submit`: it is never reviewed again.
               // The card leaves only once the send went: a refused one keeps the rewrite.
               onSendSuggested={(card) => {
+                // A block answer's rewrite goes to the composer: the person sends it, or copies it into the form.
+                if (card.block) {
+                  heldBy(card);
+                  resolveCard(card, "used");
+                  if (card.rewrite) setDraft(card.rewrite);
+                  inputRef.current?.focus();
+                  return;
+                }
                 if (!card.rewrite || !send(card.rewrite)) return;
                 setDraft("");
                 resolveCard(card, "used");
               }}
               onEdit={(card) => {
+                if (card.block) {
+                  const hold = heldBy(card);
+                  resolveCard(card, "edited");
+                  hold?.focus();
+                  return;
+                }
                 resolveCard(card, "edited");
                 setDraft(card.rewrite ?? card.prompt);
                 inputRef.current?.focus();
               }}
               onSendAnyway={(card) => {
+                // A block answer's card sends its form as it is, unreviewed.
+                if (card.block) {
+                  heldBy(card)?.anyway();
+                  resolveCard(card, "sent-anyway");
+                  return;
+                }
                 if (!send(card.prompt)) return;
                 setDraft("");
                 resolveCard(card, "sent-anyway");

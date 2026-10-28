@@ -896,9 +896,10 @@ export interface HarnessClient {
     set(patch: SidekickSettingsPatch): Promise<SidekickSetResult>;
     /**
      * Reviews the prompt before it goes out; the composer sends as typed unless a card comes back or it was cancelled.
-     * `attached`: the send carries attachments or material (mutes the missing-context flag).
+     * `attached`: the send carries attachments or material (mutes the missing-context flag). `block`: the text is a
+     * block answer's free text, its card marked `block`.
      */
-    review(req: { text: string; force?: boolean; attached?: boolean }): Promise<SidekickReview>;
+    review(req: { text: string; force?: boolean; attached?: boolean; block?: boolean }): Promise<SidekickReview>;
     /** Stops a running review (⌘⏎ sends at once). */
     cancelReview(): Promise<void>;
     /** What the person did with a card; it leaves the panel. */
@@ -1080,6 +1081,8 @@ export interface SidekickCard {
   id: string;
   /** The prompt as typed. */
   prompt: string;
+  /** About a block answer's free text (spec §4.1): its Send anyway sends the form, not the composer. */
+  block?: true;
   flags: SidekickFlagView[];
   issues: SidekickIssue[];
   rewrite?: string;

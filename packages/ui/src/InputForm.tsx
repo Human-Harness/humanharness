@@ -33,14 +33,43 @@ export interface InputFormProps {
   errors: InputIssue[];
   submit(value: Record<string, unknown>): void;
   skip?: () => void;
+  /**
+   * Sidekick's pre-send review of the answer's free text (sidekick spec §4.1), absent with Sidekick off (D0). A card
+   * holds the answer: the form stays as it is and `hold.anyway` (the card's "Send anyway") sends it unreviewed.
+   */
+  review?: (text: string, hold: AnswerHold) => Promise<{ kind: "send" } | { kind: "card" }>;
+  /** "Send now" while the review runs: stops the review this form started. */
+  cancelReview?: () => void;
+}
+
+/** What a held answer's card can do with the form. */
+export interface AnswerHold {
+  /** Sends the form as it is now, without another review. */
+  anyway(): void;
+  /** Moves focus to the answer's first text field. */
+  focus(): void;
+}
+
+/** The answer's free text: its text fields' non-empty values, in the fields' order. */
+function freeText(spec: InputSpec, value: Record<string, unknown>): string {
+  return spec.fields
+    .filter((f) => f.kind === "text" || f.kind === "longText")
+    .map((f) => value[f.name])
+    .filter((v): v is string => typeof v === "string" && v.trim() !== "")
+    .join("\n\n");
 }
 
 const ofField = (e: InputIssue, name: string) => e.path === name || e.path.startsWith(`${name}.`);
 
 /** The core form of an input block (input-blocks spec §5): a labelled control per field, errors next to each. */
-export function InputForm({ spec, data, blockId, initial, formId, disabled, sending, errors, submit, skip }: InputFormProps) {
+export function InputForm({ spec, data, blockId, initial, formId, disabled, sending, errors, submit, skip, review, cancelReview }: InputFormProps) {
   const { t } = useTranslation();
   const base = useId();
+  const box = useRef<HTMLFormElement>(null);
+  /** A review in flight: a second Send starts no second one, and a late answer (after Send now) is dropped. */
+  const [reviewing, setReviewing] = useState(false);
+  const reviewSeq = useRef(0);
+  const running = useRef(false);
   const [draft, setDraft] = useState<Draft>(() => (blockId ? drafts.get(blockId) : undefined) ?? (initial ? draftOf(spec, initial) : emptyDraft(spec)));
   const change = (name: string, v: unknown) =>
     setDraft((d) => {
@@ -51,12 +80,61 @@ export function InputForm({ spec, data, blockId, initial, formId, disabled, send
   const general = errors.filter((e) => !spec.fields.some((f) => ofField(e, f.name)) && e.message);
   const hasFieldErrors = errors.some((e) => spec.fields.some((f) => ofField(e, f.name)));
   const unsupported = spec.fields.some((f) => f.kind === null);
-  const onSubmit = (e: FormEvent) => {
-    e.preventDefault();
+  const send = () => {
     if (!disabled && !sending && !unsupported) submit(draftValue(spec, draft));
   };
+  // The hold outlives this render: it sends whatever the form holds when the card's button is pressed.
+  const latest = useRef(send);
+  latest.current = send;
+  const latestCancel = useRef(cancelReview);
+  latestCancel.current = cancelReview;
+  const stopReview = () => {
+    reviewSeq.current++;
+    running.current = false;
+    setReviewing(false);
+    latestCancel.current?.();
+  };
+  // A form gone while its review runs (the question closed, the task changed) stops that review.
+  useEffect(
+    () => () => {
+      if (running.current) {
+        reviewSeq.current++;
+        latestCancel.current?.();
+      }
+    },
+    [],
+  );
+  const onSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (running.current || disabled || sending || unsupported) return;
+    const value = draftValue(spec, draft);
+    const text = review ? freeText(spec, value) : "";
+    // D0: no review (Sidekick off), choices only or no text: sent as before.
+    if (!review || !text) {
+      submit(value);
+      return;
+    }
+    const seq = ++reviewSeq.current;
+    running.current = true;
+    setReviewing(true);
+    const hold: AnswerHold = {
+      anyway: () => latest.current(),
+      focus: () => box.current?.querySelector<HTMLElement>("input[type=text], textarea")?.focus(),
+    };
+    // Any failure sends the answer: Sidekick never stands in its way beyond the person's wait.
+    const r = await review(text, hold).catch(() => ({ kind: "send" }) as const);
+    if (seq !== reviewSeq.current) return;
+    running.current = false;
+    setReviewing(false);
+    if (r.kind !== "card") latest.current();
+  };
+  const sendNow = () => {
+    if (!running.current) return;
+    stopReview();
+    send();
+  };
   return (
-    <form id={formId} className="hh-input-form" onSubmit={onSubmit} noValidate>
+    <form ref={box} id={formId} className="hh-input-form" onSubmit={(e) => void onSubmit(e)} noValidate {...(reviewing ? { "aria-busy": true } : {})}>
       {(hasFieldErrors || general.length > 0) && (
         <div className="hh-input-errors" role="alert">
           {hasFieldErrors && <p>{t("input.errorsTitle")}</p>}
@@ -79,11 +157,25 @@ export function InputForm({ spec, data, blockId, initial, formId, disabled, send
       ))}
       {!formId && (
         <div className="hh-input-actions">
-          <button type="submit" className="hh-primary" disabled={disabled || sending || unsupported}>
-            {sending ? t("input.sending") : (spec.submitLabel ?? t("input.send"))}
+          {/* Reviewing keeps the button (and focus) in place: aria-disabled, never disabled. */}
+          <button type="submit" className="hh-primary" disabled={disabled || sending || unsupported} {...(reviewing ? { "aria-disabled": true } : {})}>
+            {reviewing ? t("sidekick.composer.reviewing") : sending ? t("input.sending") : (spec.submitLabel ?? t("input.send"))}
           </button>
+          {reviewing && (
+            <button type="button" onClick={sendNow}>
+              {t("sidekick.answer.sendNow")}
+            </button>
+          )}
           {skip && (
-            <button type="button" className="hh-link" disabled={disabled || sending} onClick={skip}>
+            <button
+              type="button"
+              className="hh-link"
+              disabled={disabled || sending}
+              onClick={() => {
+                if (running.current) stopReview();
+                skip();
+              }}
+            >
               {t("input.skip")}
             </button>
           )}

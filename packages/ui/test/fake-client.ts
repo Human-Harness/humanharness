@@ -627,7 +627,7 @@ export class FakeClient implements HarnessClient {
       this.emitSidekick({ ...this.sidekickState, settings, status: settings.on ? "watching" : "off" });
       return { ok: true, settings };
     },
-    review: async (req: { text: string; force?: boolean; attached?: boolean }): Promise<SidekickReview> => {
+    review: async (req: { text: string; force?: boolean; attached?: boolean; block?: boolean }): Promise<SidekickReview> => {
       this.sidekickCalls.push(["review", req]);
       return this.sidekickReviews.shift() ?? { kind: "send" };
     },

@@ -699,6 +699,9 @@
       "turnOn": "Turn on",
       "notNow": "Not now"
     },
+    "answer": {
+      "sendNow": "Send now"
+    },
     "composer": {
       "reviewing": "Reviewing…",
       "countdown": "Sends anyway in {{seconds}} s",

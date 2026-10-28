@@ -105,9 +105,9 @@ export function registerSidekickIpc(handle: Handle, ctl: () => Ctl | null): void
   handle("hh:sidekickReview", async (req: unknown): Promise<SidekickReview> => {
     const c = ctl();
     if (!c || typeof req !== "object" || req === null) return { kind: "send" };
-    const { text, force, attached } = req as { text?: unknown; force?: unknown; attached?: unknown };
+    const { text, force, attached, block } = req as { text?: unknown; force?: unknown; attached?: unknown; block?: unknown };
     if (typeof text !== "string" || !text.trim() || text.length > MAX_PROMPT) return { kind: "send" };
-    return c.review({ text, ...(force === true ? { force: true } : {}), ...(attached === true ? { attached: true } : {}) });
+    return c.review({ text, ...(force === true ? { force: true } : {}), ...(attached === true ? { attached: true } : {}), ...(block === true ? { block: true } : {}) });
   });
   handle("hh:sidekickCancel", () => ctl()?.cancel());
   handle("hh:sidekickResolve", async (id: unknown, outcome: unknown) => {

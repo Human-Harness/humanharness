@@ -841,6 +841,15 @@ describe("heads-ups (spec §4.3)", () => {
     expect(await headsUps(h)).toEqual([expect.objectContaining({ kind: "off-phase", headsUp: { kind: "off-phase", phase: "Review citations" } })]);
   });
 
+  it("a block answer's review: its card says `block`, and it never counts toward drift", async () => {
+    const h = harness({ record: on, task: essay, phases, answers: [SEND, SEND, SUGGEST] });
+    await h.ctl.review({ text: "Check the citations in section 2 against the bibliography", block: true });
+    await h.ctl.review({ text: "Check the citations in section 3 against the bibliography", block: true });
+    expect(await headsUps(h)).toEqual([]);
+    const r = await h.ctl.review({ text: "make it better", block: true });
+    expect(r).toMatchObject({ kind: "card", card: { moment: "pre", block: true, prompt: "make it better" } });
+  });
+
   it("turned off while the drift review reads the context → no heads-up", async () => {
     const h = harness({ record: on, task: essay, phases, answers: [SEND, SEND] });
     await h.ctl.review({ text: "Check the citations in section 2 against the bibliography" });

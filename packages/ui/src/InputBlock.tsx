@@ -1,7 +1,7 @@
 import { type ComponentType, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { ChatBlock, InputIssue, InputSpec } from "./client";
-import { AnswerView, InputForm } from "./InputForm";
+import { AnswerView, InputForm, type InputFormProps } from "./InputForm";
 import type { BlockActions, BlockProps, InputContext, InputProps } from "./Message";
 
 /** The shown data's first text: the core view's heading (usually the question). */
@@ -63,13 +63,22 @@ export function InputHost({
   };
   return (
     <div className={fade ? "hh-block hh-appear" : "hh-block"}>
-      {Component ? <Component data={block.data} {...actions} input={input} /> : <CoreInputBlock data={block.data} input={input} />}
+      {Component ? (
+        <Component data={block.data} {...actions} input={input} />
+      ) : (
+        <CoreInputBlock
+          data={block.data}
+          input={input}
+          {...(inputs.review ? { review: inputs.review } : {})}
+          {...(inputs.cancelReview ? { cancelReview: inputs.cancelReview } : {})}
+        />
+      )}
     </div>
   );
 }
 
 /** The core view of an input block: its question, then the form, the answer, or "closed". */
-export function CoreInputBlock({ data, input }: { data: unknown; input: InputProps }) {
+export function CoreInputBlock({ data, input, review, cancelReview }: { data: unknown; input: InputProps } & Pick<InputFormProps, "review" | "cancelReview">) {
   const { t } = useTranslation();
   const heading = headingOf(data);
   return (
@@ -87,6 +96,8 @@ export function CoreInputBlock({ data, input }: { data: unknown; input: InputPro
           errors={input.errors}
           submit={input.submit}
           {...(input.skip ? { skip: input.skip } : {})}
+          {...(review ? { review } : {})}
+          {...(cancelReview ? { cancelReview } : {})}
         />
       ) : (
         <p className="hh-caption">{t("input.closed")}</p>

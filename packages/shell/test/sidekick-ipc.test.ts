@@ -33,6 +33,8 @@ describe("sidekick IPC", () => {
     await w.call("hh:sidekickSet", { on: true });
     expect(await w.call("hh:sidekickReview", { text: "make it better", force: true })).toEqual({ kind: "card" });
     await w.call("hh:sidekickReview", { text: "see the file", attached: true, force: "yes" });
+    await w.call("hh:sidekickReview", { text: "my answer", block: true });
+    await w.call("hh:sidekickReview", { text: "my answer", block: "yes" });
     await w.call("hh:sidekickCancel");
     await w.call("hh:sidekickResolve", "c1", "used");
     await w.call("hh:sidekickMute", "c1");
@@ -41,6 +43,8 @@ describe("sidekick IPC", () => {
       ["set", { on: true }],
       ["review", { text: "make it better", force: true }],
       ["review", { text: "see the file", attached: true }],
+      ["review", { text: "my answer", block: true }],
+      ["review", { text: "my answer" }],
       ["cancel"],
       ["resolve", "c1", "used"],
       ["mute", "c1"],

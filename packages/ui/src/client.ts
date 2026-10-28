@@ -465,6 +465,8 @@ export interface AppState {
   models?: ModelsView;
   /** The configured folder's backup status (null before a folder is chosen) and the synced places. */
   backup?: { status: SyncStatus | null; locations: SyncLocationView[] };
+  /** The hatches the harness declares (hatches spec). Absent: none (D0). */
+  hatches?: HatchesState;
 }
 
 /** What Settings › Modelos needs (resources spec §7). */
@@ -855,8 +857,26 @@ export function canOpenFile(file: string): boolean {
   return dot > 0 && OPENABLE_EXTENSIONS.has(name.slice(dot).toLowerCase());
 }
 
-/** A scope as the window sees it (spec §3.4). */
-export type ScopeView = ScopeEntry;
+/** A scope as the window sees it (spec §3.4). Its linked folders come only through `scopes.linked` (signed ones). */
+export type ScopeView = Omit<ScopeEntry, "linked">;
+
+/** A scope's linked folder as the window sees it (hatches spec §3.2). */
+export interface LinkedView {
+  key: string;
+  label: string;
+  path: string;
+  mode: "read" | "write";
+  tracked: boolean;
+  gitChanged?: true;
+}
+/** Why a link was refused: a key of en.json `hatches.refused`. */
+export type LinkRefusalView =
+  | "engine-home" | "home" | "system" | "too-broad" | "protected" | "main-folder" | "other-scope-write" | "nested"
+  | "already-linked" | "not-git" | "not-folder" | "unsafe-name" | "reference" | "one-only" | "too-many";
+/** The hatches a harness declares (hatches spec). Absent from AppState without any (D0). */
+export interface HatchesState {
+  linkedFolders?: Record<string, { label: string; mode: "read" | "write"; history: "auto" | "own"; many: boolean }>;
+}
 
 /** The open scope and the registry, sent whenever either changes. */
 export interface ScopesView {
@@ -1246,6 +1266,14 @@ export interface HarnessClient {
     open(id: string | null): Promise<boolean>;
     current(): Promise<string | null>;
     onChange(listener: (view: ScopesView) => void): () => void;
+    /** Harnesses with `linkedFolders` only; the others reject. The scope's links the app signed, and Decision 15's flag. */
+    linked(scope: string): Promise<{ folders: LinkedView[]; unsupported: boolean }>;
+    /** Opens the system picker; nothing is linked without the person choosing it. Null: cancelled. */
+    linkFolder(scope: string, key: string): Promise<{ linked: LinkedView } | { refused: LinkRefusalView } | null>;
+    /** Never touches the folder itself. */
+    unlinkFolder(scope: string, key: string, path: string): Promise<void>;
+    /** After a folder gained or lost git (Decision 13): keep it tracked or leave it to its git. */
+    confirmGit(scope: string, key: string, path: string, tracked: boolean): Promise<void>;
   };
   /** The harness's data (spec §4.5), as the person: the same checks as the agent's tools. `settings` is read-only here: use `settings`. */
   data: {

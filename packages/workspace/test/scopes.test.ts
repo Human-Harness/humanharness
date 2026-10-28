@@ -149,6 +149,41 @@ describe("ScopeStore links (hatches spec §3.2)", () => {
     expect((await store.list())[0].linked?.[0]).toEqual({ key: "repos", path: "/a", mode: "write", tracked: false });
   });
 
+  it("keeps a link's tag; one that is too long or no string is dropped, the link kept", async () => {
+    const base = tmp();
+    const store = new ScopeStore(base, at);
+    await store.create("App");
+    await store.link("app", { key: "repos", path: "/a", mode: "write", tracked: true, tag: "f".repeat(64) });
+    await store.markGitChanged("app", "repos", "/a");
+    expect((await store.list())[0].linked).toEqual([{ key: "repos", path: "/a", mode: "write", tracked: true, gitChanged: true, tag: "f".repeat(64) }]);
+    const raw = JSON.parse(fs.readFileSync(file(base), "utf8"));
+    raw[0].linked.push({ key: "repos", path: "/b", mode: "read", tracked: false, tag: "x".repeat(129) }, { key: "repos", path: "/c", mode: "read", tracked: false, tag: 7 });
+    fs.writeFileSync(file(base), JSON.stringify(raw));
+    expect((await store.list())[0].linked?.slice(1)).toEqual([
+      { key: "repos", path: "/b", mode: "read", tracked: false },
+      { key: "repos", path: "/c", mode: "read", tracked: false },
+    ]);
+  });
+
+  it("setTracked takes the new tag, or leaves the link untagged", async () => {
+    const store = new ScopeStore(tmp(), at);
+    await store.create("App");
+    await store.link("app", { key: "repos", path: "/a", mode: "write", tracked: true, tag: "old" });
+    await store.setTracked("app", "repos", "/a", false, "new");
+    expect((await store.list())[0].linked?.[0]).toEqual({ key: "repos", path: "/a", mode: "write", tracked: false, tag: "new" });
+    await store.setTracked("app", "repos", "/a", true);
+    expect((await store.list())[0].linked?.[0]).toEqual({ key: "repos", path: "/a", mode: "write", tracked: true });
+  });
+
+  it("link with valid drops the scope's links it rejects before counting, in the same write", async () => {
+    const store = new ScopeStore(tmp(), at);
+    await store.create("App");
+    await store.link("app", { key: "repos", path: "/forged", mode: "write", tracked: false });
+    const signed = { key: "repos", path: "/a", mode: "write" as const, tracked: false, tag: "ok" };
+    await store.link("app", signed, { valid: (l) => l.tag === "ok" });
+    expect((await store.list())[0].linked).toEqual([signed]);
+  });
+
   it("drops a hand-edited link entry that isn't valid, keeping the scope", async () => {
     const base = tmp();
     fs.mkdirSync(path.join(base, ".harness"), { recursive: true });

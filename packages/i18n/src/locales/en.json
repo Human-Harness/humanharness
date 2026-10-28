@@ -1316,5 +1316,38 @@
     "jobsUsage": "Background jobs: about {{tokens}} tokens",
     "historyJob": "Job · {{label}}",
     "historyJobUnknown": "A background job"
+  },
+  "hatches": {
+    "scopeSettings": "{{scope}} settings",
+    "linkedTitle": "Linked folders",
+    "link": "Link a folder…",
+    "unlink": "Unlink",
+    "modeRead": "Read only",
+    "modeWrite": "Read and write",
+    "tracked": "Tracked by the app's history",
+    "ownGit": "Has its own git",
+    "gainedGit": "This folder now has its own git.",
+    "lostGit": "This folder no longer has git.",
+    "keepTracked": "Track with the app's history",
+    "leaveToGit": "Leave to its own git",
+    "notCovered": "Undo doesn't cover this folder: it has its own git.",
+    "codexUnsupported": "Linked folders don't work with this version of Codex yet.",
+    "refused": {
+      "engine-home": "This folder holds an app's settings or keys, so it can't be linked.",
+      "home": "Your whole home folder can't be linked. Choose a folder inside it.",
+      "system": "System folders can't be linked.",
+      "too-broad": "This folder is too broad to link. Choose a folder inside it.",
+      "protected": "This folder can't be linked.",
+      "main-folder": "This is your work folder, or inside or around it. Link a folder outside it.",
+      "other-scope-write": "Another {{scope}} already changes this folder.",
+      "nested": "This folder is inside, or contains, another folder linked here.",
+      "already-linked": "This folder is already linked here.",
+      "not-git": "This needs a git repository.",
+      "not-folder": "That isn't a folder.",
+      "unsafe-name": "A folder whose path has a comma, brackets, braces, parentheses, * or ? can't be linked yet.",
+      "reference": "The app already reads this folder as a reference, so it can't be linked to change it.",
+      "one-only": "Only one folder can be linked here. Unlink it first.",
+      "too-many": "No more folders can be linked here. Unlink one first."
+    }
   }
 }

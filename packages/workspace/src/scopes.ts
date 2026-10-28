@@ -13,6 +13,11 @@ export interface LinkedFolderEntry {
   tracked: boolean;
   /** The folder gained or lost git since it was linked; the person hasn't confirmed the change yet (Decision 13). */
   gitChanged?: true;
+  /**
+   * The app's signature of the link (an HMAC with a key in its data folder): the file sits in the folder the agent can
+   * write, so a link without a valid tag is ignored by the app. The store keeps it; the shell makes and checks it.
+   */
+  tag?: string;
 }
 
 /** One entry of `.harness/scopes.json` (spec §3.2). The id never changes; renaming changes only the title. */
@@ -54,13 +59,22 @@ const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "obj
 
 const LINK_KEY = /^[a-z][a-z0-9_-]{0,63}$/;
 const LINK_PATH_MAX = 4096;
+const LINK_TAG_MAX = 128;
 
 function cleanLink(v: unknown): LinkedFolderEntry | null {
   if (!isObject(v) || typeof v.key !== "string" || !LINK_KEY.test(v.key)) return null;
   if (typeof v.path !== "string" || v.path.length > LINK_PATH_MAX || !path.isAbsolute(v.path)) return null;
   if (v.mode !== "read" && v.mode !== "write") return null;
   if (typeof v.tracked !== "boolean") return null;
-  return { key: v.key, path: v.path, mode: v.mode, tracked: v.tracked, ...(v.gitChanged === true ? { gitChanged: true as const } : {}) };
+  return {
+    key: v.key,
+    path: v.path,
+    mode: v.mode,
+    tracked: v.tracked,
+    ...(v.gitChanged === true ? { gitChanged: true as const } : {}),
+    // A tag that isn't a short string is dropped: the link stays, untagged (so the app ignores it).
+    ...(typeof v.tag === "string" && v.tag.length > 0 && v.tag.length <= LINK_TAG_MAX ? { tag: v.tag } : {}),
+  };
 }
 
 function cleanEntry(v: unknown): ScopeEntry | null {
@@ -155,13 +169,16 @@ export class ScopeStore {
   /**
    * Adds a link to scope `id`. Refuses a path the scope already links, and a key that is full: one folder,
    * or `LINKED_MANY_MAX` when the manifest declares the key `many`. The caller checked every refusal (L2).
+   * With `valid`, the scope's links it rejects (ones the app didn't sign) are dropped in the same write, first.
+   * Throws synchronously on an invalid entry, as `cleanTitle` does for `create`.
    */
-  link(id: string, entry: LinkedFolderEntry, opts: { many?: boolean } = {}): Promise<ScopeEntry> {
+  link(id: string, entry: LinkedFolderEntry, opts: { many?: boolean; valid?: (l: LinkedFolderEntry) => boolean } = {}): Promise<ScopeEntry> {
     const clean = cleanLink(entry);
     if (!clean) throw new Error("Invalid linked folder");
     const max = opts.many === true ? LINKED_MANY_MAX : 1;
+    const valid = opts.valid;
     return this.update(id, (s) => {
-      const links = s.linked ?? [];
+      const links = valid ? (s.linked ?? []).filter((l) => valid(l)) : (s.linked ?? []);
       if (links.some((l) => l.path === clean.path)) throw new Error(`${clean.path} is already linked to this scope`);
       if (links.filter((l) => l.key === clean.key).length >= max) throw new Error(`"${clean.key}" takes at most ${max} linked folder${max === 1 ? "" : "s"}`);
       return { ...s, linked: [...links, clean] };
@@ -177,9 +194,16 @@ export class ScopeStore {
     });
   }
 
-  /** Sets whether the core history tracks the folder; confirms a git change (drops `gitChanged`). */
-  setTracked(id: string, key: string, folder: string, tracked: boolean): Promise<ScopeEntry> {
-    return this.updateLink(id, key, folder, (l) => ({ key: l.key, path: l.path, mode: l.mode, tracked }));
+  /**
+   * Sets whether the core history tracks the folder; confirms a git change (drops `gitChanged`). `tracked` is signed,
+   * so the old tag no longer holds: `tag` is the new one (without it the link is left untagged).
+   */
+  setTracked(id: string, key: string, folder: string, tracked: boolean, tag?: string): Promise<ScopeEntry> {
+    return this.updateLink(id, key, folder, (l) => {
+      const next = cleanLink({ key: l.key, path: l.path, mode: l.mode, tracked, ...(tag !== undefined ? { tag } : {}) });
+      if (!next) throw new Error("Invalid linked folder");
+      return next;
+    });
   }
 
   /** Records that the folder gained or lost git since it was linked (Decision 13). */

@@ -37,6 +37,7 @@ import {
   choiceOptionSchema,
   dataCollections,
   hasJobs,
+  hasLinkedFolders,
   hasModes,
   hasPhases,
   hasProfiles,
@@ -194,6 +195,8 @@ import type { Turns } from "./gated-turns";
 import type { TurnGate } from "./turn-gate";
 import { cleanCaps, engineHold, parallelInfo } from "./parallel-config";
 import { restoreTaskByPaths } from "./restore-paths";
+import { type LinkedIpcDeps, hatchesState, linkedSecret, registerLinkedIpc } from "./linked-ipc";
+import { pruneUnlinked } from "./linked-history";
 import { restoreTaskArgs, tasksIpc, undoRefusalOf } from "./tasks-ipc";
 import { PluginsController, watchPluginFolder } from "./plugins";
 import { respondHandler } from "./respond-ipc";
@@ -251,6 +254,8 @@ let shared: SharedConfigStore;
 let window: BrowserWindow | null = null;
 /** Set on the first before-quit: from then on, no new turns or restores. */
 let quitting = false;
+/** Codex can't take linked folders (hatches Decision 15): set once its transport says so. */
+let linkedUnsupported = false;
 /** The install, update, login or logout process running now, if any. */
 let setupRun: RunningSetup | null = null;
 /** The first web address the running step printed, for a screen that reopens while it runs. */
@@ -534,6 +539,7 @@ async function appState(): Promise<AppState> {
   const inputs = inputSpecs(harness.blocks);
   const interviews = interviewCollections(harness);
   const parallel = parallelInfo(harness, saved, engineHold(saved.engineId));
+  const hatches = hatchesState(harness);
   const state: AppState = {
     harness: {
       id: harness.id,
@@ -647,6 +653,8 @@ async function appState(): Promise<AppState> {
     ...(harness.documents ? { documents: { kinds: harness.documents.kinds } } : {}),
     // Documents can be reviewed only when the agent may edit the folder (review spec D0).
     ...(harness.permissions.edit === "folder" ? { review: true as const } : {}),
+    // Only a harness that declares a hatch sends this: Scope settings (hatches D0).
+    ...(hatches ? { hatches } : {}),
     references: (await referencesFor(saved.folder)).map((r) => ({ id: r.id, label: r.label, path: displayPath(r.path, os.homedir()) })),
     models: await modelsView(),
     backup: await backupView(saved.folder),
@@ -771,7 +779,9 @@ async function scopesView(): Promise<ScopesView> {
   await scopesSettled();
   const c = await validConfig();
   if (!c || !scoped()) return { open: null, list: [] };
-  return { open: await tasks.currentScope(), list: await scopeStoreFor(baseOf(c)).list() };
+  // Linked folders reach the window only through their own channel, signed ones only (hatches L1). D0: no key to drop.
+  const list = (await scopeStoreFor(baseOf(c)).list()).map(({ linked: _linked, ...s }) => s);
+  return { open: await tasks.currentScope(), list };
 }
 
 async function scopesChanged(): Promise<void> {
@@ -1807,6 +1817,56 @@ function buildTaskAttention(): TaskAttention {
   return attention;
 }
 
+/** What the linked-folder channels need (hatches spec §3.2); built only for a harness with linked folders. */
+function linkedIpcDeps(): LinkedIpcDeps {
+  const userData = app.getPath("userData");
+  // Histories unlinked over 30 days ago go to the Trash first: no link handler runs before, so a relink never races it.
+  const ready = pruneUnlinked(userData, new Date(), (d) => shell.trashItem(d)).catch((err: unknown) =>
+    console.error("Could not prune the linked folders' histories", err),
+  );
+  return {
+    linkedFolders: harness.linkedFolders ?? {},
+    store: scopeStore,
+    // With profiles, every other profile's registry: a folder another profile changes or tracks counts.
+    otherStores: async () => {
+      const c = await validConfig();
+      if (!c || !profilesCtl) return [];
+      const here = path.resolve(baseOf(c));
+      const bases = (await profilesCtl.state()).list.map((p) => baseFor({ folder: c.folder, profile: p.id }, true));
+      return bases.filter((b): b is string => b !== null && path.resolve(b) !== here).map(scopeStoreFor);
+    },
+    context: async () => {
+      const c = await validConfig();
+      if (!c) throw new Error("The app is not set up yet");
+      return { home: os.homedir(), folder: baseOf(c), ...(profilesOn() ? { root: c.folder } : {}) };
+    },
+    references: async () => {
+      const c = await validConfig();
+      return c ? (await workReferences(c, baseOf(c))).map((r) => r.path) : [];
+    },
+    pick: async () => {
+      if (!window || window.isDestroyed()) return null;
+      const r = await dialog.showOpenDialog(window, { properties: ["openDirectory"] });
+      return r.canceled ? null : (r.filePaths[0] ?? null);
+    },
+    userData,
+    secret: linkedSecret(userData),
+    now: () => new Date(),
+    ready,
+    changed: async () => {
+      await scopesChanged();
+      // AGENTS.md lists the open scope's folders: rewritten now when no task is open, else between tasks.
+      void tasks
+        .whenNoTask(async () => {
+          if (host) await host.refreshInstructions();
+          else await (await runtime.peek()?.catch(() => null))?.refreshInstructions();
+        })
+        .catch((err: unknown) => console.error("Could not rewrite AGENTS.md after a link change", err));
+    },
+    unsupported: () => linkedUnsupported,
+  };
+}
+
 /** Registers an IPC handler that only answers the app's own page. */
 function handle(channel: string, fn: (...args: never[]) => unknown) {
   handleFrom(channel, (_sender, ...args) => fn(...(args as never[])));
@@ -2109,6 +2169,8 @@ function registerIpc() {
     await scopesChanged();
     return opened;
   });
+  // Linked folders (hatches spec §3.2): only a harness that declares them has these channels, or its key (D0).
+  if (hasLinkedFolders(harness)) registerLinkedIpc(handle, linkedIpcDeps());
   handle("hh:data", async (request: unknown, options: unknown) => {
     // After the migration: it opens `main`, the scope a request made on mount acts in.
     await scopesSettled();

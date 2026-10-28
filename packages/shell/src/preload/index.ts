@@ -167,6 +167,11 @@ const client: HarnessClient = {
     open: (id) => ipcRenderer.invoke("hh:scopeOpen", id),
     current: () => ipcRenderer.invoke("hh:scopeCurrent"),
     onChange: (listener) => subscribe<ScopesView>("hh:scopes", listener),
+    // Harnesses with linked folders only (main registers these channels then, hatches D0). No path ever goes to link.
+    linked: (scope) => ipcRenderer.invoke("hh:scopeLinked", scope),
+    linkFolder: (scope, key) => ipcRenderer.invoke("hh:scopeLinkFolder", scope, key),
+    unlinkFolder: (scope, key, path) => ipcRenderer.invoke("hh:scopeUnlinkFolder", scope, key, path),
+    confirmGit: (scope, key, path, tracked) => ipcRenderer.invoke("hh:scopeConfirmGit", scope, key, path, tracked),
   },
   data: {
     get: (collection, key, options) => ipcRenderer.invoke("hh:data", { op: "get", collection, ...(key !== undefined ? { key } : {}) }, options),

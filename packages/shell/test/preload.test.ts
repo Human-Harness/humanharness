@@ -101,3 +101,25 @@ describe("the preload's jobs namespace", () => {
     expect(main).toMatch(/async function scopesChanged\(\): Promise<void> \{[^}]*jobsChanged\(\);/);
   });
 });
+
+/** `client.scopes` linked folders (hatches spec §3.2): no path ever goes to link; main registers these only with linkedFolders. */
+describe("the preload's linked-folder calls", () => {
+  it("linkFolder invokes hh:scopeLinkFolder with exactly the scope and the key", async () => {
+    electron.invoke.mockClear();
+    await client.scopes.linkFolder("app", "repos");
+    await client.scopes.linked("app");
+    await client.scopes.unlinkFolder("app", "repos", "/code/app");
+    await client.scopes.confirmGit("app", "repos", "/code/app", false);
+    expect(electron.invoke.mock.calls).toEqual([
+      ["hh:scopeLinkFolder", "app", "repos"],
+      ["hh:scopeLinked", "app"],
+      ["hh:scopeUnlinkFolder", "app", "repos", "/code/app"],
+      ["hh:scopeConfirmGit", "app", "repos", "/code/app", false],
+    ]);
+  });
+
+  it("uses only channels linked-ipc.ts registers", async () => {
+    const ipc = await fs.readFile(path.resolve(__dirname, "../src/main/linked-ipc.ts"), "utf8");
+    for (const ch of ["hh:scopeLinked", "hh:scopeLinkFolder", "hh:scopeUnlinkFolder", "hh:scopeConfirmGit"]) expect(ipc).toContain(`handle("${ch}"`);
+  });
+});

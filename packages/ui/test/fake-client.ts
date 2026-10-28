@@ -13,6 +13,8 @@ import type {
   DataQuery,
   DataRecord,
   DocumentRead,
+  LinkRefusalView,
+  LinkedView,
   EngineError,
   FileDiffResult,
   FileRestoreAnswer,
@@ -818,6 +820,14 @@ export class FakeClient implements HarnessClient {
     this.scopeList = this.scopeList.map((s, j) => (j === i ? next : s));
     return next;
   }
+  /** Linked folders by scope id (hatches spec §3.2); `linkedSet` replaces a scope's. */
+  linkedFolders: Record<string, LinkedView[]> = {};
+  linkedUnsupported = false;
+  linkedSet(scope: string, folders: LinkedView[]) {
+    this.linkedFolders = { ...this.linkedFolders, [scope]: folders };
+  }
+  /** What the next `linkFolder` "picks": a folder (linked as read and write, tracked), a refusal, or null (cancelled). */
+  linkPickAnswer: { path: string; label?: string; mode?: "read" | "write"; tracked?: boolean } | { refused: LinkRefusalView } | null = null;
   scopes = {
     list: async () => this.scopeList,
     create: async (title: string) => {
@@ -852,6 +862,24 @@ export class FakeClient implements HarnessClient {
         this.scopeListeners.delete(listener);
       };
     },
+    linked: vi.fn(async (scope: string) => ({ folders: this.linkedFolders[scope] ?? [], unsupported: this.linkedUnsupported })),
+    linkFolder: vi.fn(async (scope: string, key: string): Promise<{ linked: LinkedView } | { refused: LinkRefusalView } | null> => {
+      const a = this.linkPickAnswer;
+      if (a === null || "refused" in a) return a;
+      const linked: LinkedView = { key, label: a.label ?? key, path: a.path, mode: a.mode ?? "write", tracked: a.tracked ?? true };
+      this.linkedSet(scope, [...(this.linkedFolders[scope] ?? []), linked]);
+      return { linked };
+    }),
+    unlinkFolder: vi.fn(async (scope: string, key: string, path: string) => {
+      const was = this.linkedFolders[scope] ?? [];
+      if (!was.some((l) => l.key === key && l.path === path)) throw new Error("Unknown linked folder");
+      this.linkedSet(scope, was.filter((l) => !(l.key === key && l.path === path)));
+    }),
+    confirmGit: vi.fn(async (scope: string, key: string, path: string, tracked: boolean) => {
+      const was = this.linkedFolders[scope] ?? [];
+      if (!was.some((l) => l.key === key && l.path === path)) throw new Error("Unknown linked folder");
+      this.linkedSet(scope, was.map((l) => (l.key === key && l.path === path ? { key: l.key, label: l.label, path: l.path, mode: l.mode, tracked } : l)));
+    }),
   };
   /** The fake's data: records by collection, in the order they were put; `dataKey` names the key field. */
   records: Record<string, DataRecord[]> = {};

@@ -1,0 +1,310 @@
+import { execFileSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import type { LinkedFolderDecl } from "@humanharness/harness-sdk";
+import { ScopeStore, scopesFile } from "@humanharness/workspace";
+import { linkTag, linkTagValid, linkedSecret, registerLinkedIpc } from "../src/main/linked-ipc";
+import { linkedHistoryDir } from "../src/main/linked-history";
+import { folderProblem } from "../src/main/validate";
+
+// As linked-folders.test.ts: on macOS the temporary folder is under /private, where every link is refused.
+const tmpBase = (() => {
+  const t = fs.realpathSync(os.tmpdir());
+  if (folderProblem(path.join(t, "x"), path.join(t, "home")) === null) return t;
+  const cache = path.resolve(__dirname, "../node_modules/.cache");
+  fs.mkdirSync(cache, { recursive: true });
+  return fs.realpathSync(cache);
+})();
+const root = fs.realpathSync(fs.mkdtempSync(path.join(tmpBase, "hh-linkipc-")));
+afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
+const mk = (p: string) => (fs.mkdirSync(p, { recursive: true }), p);
+
+const DECLS: Record<string, LinkedFolderDecl> = {
+  repos: { label: "Repositories", mode: "write", history: "auto", many: true },
+  docs: { label: "Docs", mode: "read", history: "auto", many: false },
+  site: { label: "Site", mode: "write", history: "auto", many: false },
+  mirror: { label: "Mirror", mode: "read", history: "own", many: false },
+};
+
+let n = 0;
+function setup(over: { picks?: (string | null)[]; references?: string[]; unsupported?: boolean; other?: ScopeStore[] } = {}) {
+  const t = mk(path.join(root, `t${n++}`));
+  const home = mk(path.join(t, "home"));
+  const work = mk(path.join(home, "Documents", "Work"));
+  const userData = mk(path.join(t, "userData"));
+  const code = mk(path.join(home, "code"));
+  const store = new ScopeStore(work, () => new Date("2026-10-28T10:00:00.000Z"));
+  const handlers = new Map<string, (...args: unknown[]) => unknown>();
+  const picks = [...(over.picks ?? [])];
+  const pick = vi.fn(async () => (picks.length > 0 ? picks.shift()! : null));
+  const changed = vi.fn(async () => {});
+  const secret = vi.fn(linkedSecret(userData));
+  registerLinkedIpc((ch, fn) => void handlers.set(ch, fn as (...args: unknown[]) => unknown), {
+    linkedFolders: DECLS,
+    store: async () => store,
+    otherStores: async () => over.other ?? [],
+    context: async () => ({ home, folder: work }),
+    references: async () => over.references ?? [],
+    pick,
+    userData,
+    secret,
+    now: () => new Date("2026-10-28T10:00:00.000Z"),
+    ready: Promise.resolve(),
+    changed,
+    unsupported: () => over.unsupported ?? false,
+  });
+  const call = (ch: string, ...args: unknown[]) => Promise.resolve(handlers.get(ch)!(...args));
+  const raw = () => fs.readFileSync(scopesFile(work), "utf8");
+  return { t, home, work, userData, code, store, handlers, pick, changed, secret, call, raw };
+}
+
+describe("linked folders IPC (hatches spec §3.2)", () => {
+  let s: ReturnType<typeof setup>;
+  beforeEach(async () => {
+    s = setup();
+    await s.store.create("App");
+    await s.store.create("Other");
+  });
+
+  it("registers exactly the four channels and reads no key while registering", () => {
+    expect([...s.handlers.keys()].sort()).toEqual(["hh:scopeConfirmGit", "hh:scopeLinkFolder", "hh:scopeLinked", "hh:scopeUnlinkFolder"]);
+    expect(s.secret).not.toHaveBeenCalled();
+  });
+
+  it("a path argument is ignored; the picker always opens (L1)", async () => {
+    const repo = mk(path.join(s.code, "app"));
+    const t = setup({ picks: [repo] });
+    await t.store.create("App");
+    const got = await t.call("hh:scopeLinkFolder", "app", "repos", "/etc");
+    expect(t.pick).toHaveBeenCalledTimes(1);
+    expect(got).toEqual({ linked: { key: "repos", label: "Repositories", path: fs.realpathSync.native(repo), mode: "write", tracked: true } });
+  });
+
+  it("refuses an undeclared key, an unknown or archived scope, a too-long id (L9)", async () => {
+    await s.store.setArchived("other", true);
+    await expect(s.call("hh:scopeLinkFolder", "app", "nope")).rejects.toThrow(/Unknown linked folder kind/);
+    await expect(s.call("hh:scopeLinkFolder", "app", "__proto__")).rejects.toThrow(/Unknown linked folder kind/);
+    await expect(s.call("hh:scopeLinkFolder", "app", "constructor")).rejects.toThrow(/Unknown linked folder kind/);
+    await expect(s.call("hh:scopeLinkFolder", "app", "r".repeat(65))).rejects.toThrow(/Unknown linked folder kind/);
+    await expect(s.call("hh:scopeLinkFolder", "x".repeat(65), "repos")).rejects.toThrow(/Unknown scope/);
+    await expect(s.call("hh:scopeLinkFolder", "missing", "repos")).rejects.toThrow(/Unknown scope/);
+    await expect(s.call("hh:scopeLinkFolder", "other", "repos")).rejects.toThrow(/Unknown scope/);
+    await expect(s.call("hh:scopeLinked", { id: "app" })).rejects.toThrow(/Unknown scope/);
+    expect(s.pick).not.toHaveBeenCalled();
+  });
+
+  it("answers the refusal reason, linking nothing", async () => {
+    const before = s.raw();
+    s.pick.mockImplementationOnce(async () => mk(path.join(s.home, ".claude")));
+    expect(await s.call("hh:scopeLinkFolder", "app", "repos")).toEqual({ refused: "engine-home" });
+    expect(s.raw()).toBe(before);
+    expect(s.changed).not.toHaveBeenCalled();
+  });
+
+  it("a cancelled picker links nothing and answers null", async () => {
+    const before = s.raw();
+    expect(await s.call("hh:scopeLinkFolder", "app", "repos")).toBeNull();
+    expect(s.raw()).toBe(before);
+    expect(s.changed).not.toHaveBeenCalled();
+  });
+
+  it("one folder per key unless many: refused 'one-only' before the picker opens", async () => {
+    const a = mk(path.join(s.code, "site-a"));
+    s.pick.mockImplementationOnce(async () => a);
+    expect(await s.call("hh:scopeLinkFolder", "app", "site")).toMatchObject({ linked: { key: "site" } });
+    expect(await s.call("hh:scopeLinkFolder", "app", "site")).toEqual({ refused: "one-only" });
+    expect(s.pick).toHaveBeenCalledTimes(1);
+  });
+
+  it("links: stores { key, path (real), mode, tracked, tag }, relinks an old history, calls changed()", async () => {
+    const repo = mk(path.join(s.code, "app"));
+    const dir = mk(linkedHistoryDir(s.userData, fs.realpathSync.native(repo)));
+    fs.writeFileSync(path.join(dir, "unlinked-at"), "2026-10-01T00:00:00.000Z");
+    // Picked through a link: the stored path is where it really is.
+    const via = path.join(s.code, "via");
+    fs.symlinkSync(repo, via);
+    s.pick.mockImplementationOnce(async () => via);
+    await s.call("hh:scopeLinkFolder", "app", "repos");
+    const [stored] = (await s.store.list())[0].linked ?? [];
+    expect(stored).toMatchObject({ key: "repos", path: fs.realpathSync.native(repo), mode: "write", tracked: true });
+    expect(stored.tag).toMatch(/^[0-9a-f]{64}$/);
+    expect(fs.existsSync(path.join(dir, "unlinked-at"))).toBe(false);
+    expect(s.changed).toHaveBeenCalledTimes(1);
+  });
+
+  it("a git folder is linked untracked; history 'own' refuses a folder without git", async () => {
+    const git = mk(path.join(s.code, "withgit"));
+    execFileSync("git", ["init", "-q", git]);
+    s.pick.mockImplementationOnce(async () => git);
+    expect(await s.call("hh:scopeLinkFolder", "app", "repos")).toMatchObject({ linked: { tracked: false } });
+    s.pick.mockImplementationOnce(async () => mk(path.join(s.code, "plain")));
+    expect(await s.call("hh:scopeLinkFolder", "app", "mirror")).toEqual({ refused: "not-git" });
+  });
+
+  it("other scopes' write folders are refused; their read folders are not", async () => {
+    const w = mk(path.join(s.code, "w"));
+    const r = mk(path.join(s.code, "r"));
+    s.pick.mockImplementationOnce(async () => w);
+    await s.call("hh:scopeLinkFolder", "other", "repos");
+    s.pick.mockImplementationOnce(async () => r);
+    await s.call("hh:scopeLinkFolder", "other", "docs");
+    s.pick.mockImplementationOnce(async () => w);
+    expect(await s.call("hh:scopeLinkFolder", "app", "repos")).toEqual({ refused: "other-scope-write" });
+    s.pick.mockImplementationOnce(async () => r);
+    expect(await s.call("hh:scopeLinkFolder", "app", "repos")).toMatchObject({ linked: { key: "repos" } });
+  });
+
+  it("another profile's write folder is refused too", async () => {
+    const w = mk(path.join(s.code, "w"));
+    s.pick.mockImplementationOnce(async () => w);
+    await s.call("hh:scopeLinkFolder", "other", "repos");
+    const t = setup({ picks: [w], other: [s.store] });
+    await t.store.create("App");
+    // The tag key is per app (userData): the other profile's links were signed with this tree's key.
+    t.secret.mockImplementation(linkedSecret(s.userData));
+    expect(await t.call("hh:scopeLinkFolder", "app", "repos")).toEqual({ refused: "other-scope-write" });
+  });
+
+  it("refuses a write link equal to or inside a reference folder; a read link there is fine", async () => {
+    const ref = mk(path.join(s.code, "ref"));
+    const t = setup({ references: [ref] });
+    await t.store.create("App");
+    t.pick.mockImplementation(async () => mk(path.join(ref, "inner")));
+    expect(await t.call("hh:scopeLinkFolder", "app", "repos")).toEqual({ refused: "reference" });
+    t.pick.mockImplementation(async () => ref);
+    expect(await t.call("hh:scopeLinkFolder", "app", "site")).toEqual({ refused: "reference" });
+    expect(await t.call("hh:scopeLinkFolder", "app", "docs")).toMatchObject({ linked: { key: "docs", mode: "read" } });
+  });
+
+  it("unlink removes only a stored entry, marks its history unlinked, never touches the folder", async () => {
+    const repo = mk(path.join(s.code, "app"));
+    fs.writeFileSync(path.join(repo, "file.txt"), "kept");
+    const real = fs.realpathSync.native(repo);
+    const dir = mk(linkedHistoryDir(s.userData, real));
+    s.pick.mockImplementationOnce(async () => repo);
+    await s.call("hh:scopeLinkFolder", "app", "repos");
+    await expect(s.call("hh:scopeUnlinkFolder", "app", "repos", path.join(s.code, "nope"))).rejects.toThrow(/Unknown linked folder/);
+    await expect(s.call("hh:scopeUnlinkFolder", "app", "docs", real)).rejects.toThrow(/Unknown linked folder/);
+    await s.call("hh:scopeUnlinkFolder", "app", "repos", real);
+    expect("linked" in (await s.store.list())[0]).toBe(false);
+    expect(fs.readFileSync(path.join(dir, "unlinked-at"), "utf8")).toBe("2026-10-28T10:00:00.000Z");
+    expect(fs.readFileSync(path.join(repo, "file.txt"), "utf8")).toBe("kept");
+  });
+
+  it("unlink marks the history only when no other tracked link to the folder remains, in any profile", async () => {
+    const repo = mk(path.join(s.code, "shared"));
+    const real = fs.realpathSync.native(repo);
+    const mark = path.join(mk(linkedHistoryDir(s.userData, real)), "unlinked-at");
+    // Read in one scope, tracked in another: the read link doesn't keep the history.
+    s.pick.mockImplementation(async () => repo);
+    await s.call("hh:scopeLinkFolder", "other", "docs");
+    await s.call("hh:scopeLinkFolder", "app", "repos");
+    await s.call("hh:scopeUnlinkFolder", "app", "repos", real);
+    expect(fs.existsSync(mark)).toBe(true);
+    // Tracked here and in another profile (signed with the app's one key): unlinking there leaves it.
+    fs.rmSync(mark);
+    await s.call("hh:scopeLinkFolder", "app", "repos");
+    const t = setup({ other: [s.store] });
+    await t.store.create("App");
+    t.secret.mockImplementation(linkedSecret(s.userData));
+    const key = (await linkedSecret(s.userData)(false))!;
+    const e = { key: "repos", path: real, mode: "write" as const, tracked: true };
+    await t.store.link("app", { ...e, tag: linkTag("app", e, key) });
+    await t.call("hh:scopeUnlinkFolder", "app", "repos", real);
+    expect(fs.existsSync(mark)).toBe(false);
+  });
+
+  it("confirmGit sets tracked as the person chose, re-signs, clears gitChanged; never tracked with git", async () => {
+    const repo = mk(path.join(s.code, "app"));
+    const real = fs.realpathSync.native(repo);
+    s.pick.mockImplementationOnce(async () => repo);
+    await s.call("hh:scopeLinkFolder", "app", "repos");
+    await s.store.markGitChanged("app", "repos", real);
+    execFileSync("git", ["init", "-q", repo]);
+    await expect(s.call("hh:scopeConfirmGit", "app", "repos", real, true)).rejects.toThrow(/can't be tracked/);
+    await s.call("hh:scopeConfirmGit", "app", "repos", real, false);
+    expect(await s.call("hh:scopeLinked", "app")).toEqual({
+      folders: [{ key: "repos", label: "Repositories", path: real, mode: "write", tracked: false }],
+      unsupported: false,
+    });
+    expect(fs.existsSync(path.join(linkedHistoryDir(s.userData, real), "unlinked-at"))).toBe(false); // no history dir: nothing marked
+    fs.rmSync(path.join(repo, ".git"), { recursive: true });
+    await s.call("hh:scopeConfirmGit", "app", "repos", real, true);
+    expect((await s.call("hh:scopeLinked", "app")) as { folders: { tracked: boolean }[] }).toMatchObject({ folders: [{ tracked: true }] });
+    await expect(s.call("hh:scopeConfirmGit", "app", "repos", real, "yes")).rejects.toThrow(/Invalid/);
+  });
+
+  it("hh:scopeLinked answers the scope's links, the declaration labels and the unsupported flag", async () => {
+    const t = setup({ unsupported: true });
+    await t.store.create("App");
+    const d = mk(path.join(t.code, "d"));
+    t.pick.mockImplementationOnce(async () => d);
+    await t.call("hh:scopeLinkFolder", "app", "docs");
+    expect(await t.call("hh:scopeLinked", "app")).toEqual({
+      folders: [{ key: "docs", label: "Docs", path: fs.realpathSync.native(d), mode: "read", tracked: false }],
+      unsupported: true,
+    });
+  });
+});
+
+describe("links the app didn't sign (scopes.json is in the agent's folder)", () => {
+  const forge = (work: string, linked: unknown[]) => {
+    const file = scopesFile(work);
+    const raw = JSON.parse(fs.readFileSync(file, "utf8"));
+    raw[0].linked = [...(raw[0].linked ?? []), ...linked];
+    fs.writeFileSync(file, JSON.stringify(raw));
+  };
+
+  it("a link added without a tag, or with another scope's/path's/mode's tag, is not listed; a signed one is", async () => {
+    const s = setup();
+    await s.store.create("App");
+    const good = mk(path.join(s.code, "good"));
+    s.pick.mockImplementationOnce(async () => good);
+    await s.call("hh:scopeLinkFolder", "app", "docs");
+    const key = (await linkedSecret(s.userData)(false))!;
+    const claude = path.join(s.home, ".claude");
+    const signed = (scope: string, e: { key: string; path: string; mode: "read" | "write"; tracked: boolean }) => linkTag(scope, e, key);
+    forge(s.work, [
+      { key: "repos", path: claude, mode: "write", tracked: false },
+      { key: "repos", path: "/x1", mode: "write", tracked: false, tag: signed("other", { key: "repos", path: "/x1", mode: "write", tracked: false }) },
+      { key: "repos", path: "/x2", mode: "write", tracked: false, tag: signed("app", { key: "repos", path: "/elsewhere", mode: "write", tracked: false }) },
+      { key: "repos", path: "/x3", mode: "write", tracked: false, tag: signed("app", { key: "repos", path: "/x3", mode: "read", tracked: false }) },
+      { key: "repos", path: "/x4", mode: "write", tracked: true, tag: signed("app", { key: "repos", path: "/x4", mode: "write", tracked: false }) },
+      { key: "repos", path: "/x5", mode: "write", tracked: false, tag: "0".repeat(64) },
+    ]);
+    const listed = (await s.call("hh:scopeLinked", "app")) as { folders: { path: string }[] };
+    expect(listed.folders.map((f) => f.path)).toEqual([fs.realpathSync.native(good)]);
+  });
+
+  it("an unsigned link never counts: no 'one-only', no 'already-linked', dropped when the person links", async () => {
+    const s = setup();
+    await s.store.create("App");
+    const site = mk(path.join(s.code, "site"));
+    forge(s.work, [{ key: "site", path: site, mode: "write", tracked: true }]);
+    s.pick.mockImplementationOnce(async () => site);
+    expect(await s.call("hh:scopeLinkFolder", "app", "site")).toMatchObject({ linked: { key: "site" } });
+    const linked = (await s.store.list())[0].linked ?? [];
+    expect(linked).toHaveLength(1);
+    expect(linkTagValid(linked[0], "app", (await linkedSecret(s.userData)(false))!)).toBe(true);
+  });
+
+  it("an unsigned link can't be unlinked or confirmed through the window (it isn't there)", async () => {
+    const s = setup();
+    await s.store.create("App");
+    forge(s.work, [{ key: "repos", path: "/forged", mode: "write", tracked: true }]);
+    await expect(s.call("hh:scopeUnlinkFolder", "app", "repos", "/forged")).rejects.toThrow(/Unknown linked folder/);
+    await expect(s.call("hh:scopeConfirmGit", "app", "repos", "/forged", false)).rejects.toThrow(/Unknown linked folder/);
+  });
+
+  it("without a key nothing is valid, and listing never makes one", async () => {
+    const s = setup();
+    await s.store.create("App");
+    forge(s.work, [{ key: "repos", path: "/forged", mode: "write", tracked: true, tag: "a".repeat(64) }]);
+    expect(await s.call("hh:scopeLinked", "app")).toEqual({ folders: [], unsupported: false });
+    expect(s.secret.mock.calls).toEqual([[false]]);
+    expect(fs.existsSync(path.join(s.userData, "linked-key"))).toBe(false);
+    expect(linkTagValid({ key: "repos", path: "/x", mode: "write", tracked: true, tag: "a" }, "app", null)).toBe(false);
+  });
+});

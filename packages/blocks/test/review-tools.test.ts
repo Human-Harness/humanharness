@@ -3,7 +3,8 @@ import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { afterEach, describe, expect, it } from "vitest";
-import { type Bridge, type Rpc, devLauncher, openBridge, openRpc, uiServerSpec } from "../src";
+import { type Bridge, type Rpc, RpcRefused, RpcTimeout, devLauncher, openBridge, openRpc, uiServerSpec } from "../src";
+import { reviewToolError } from "../src/ui-server";
 
 const FIXTURE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../fake-agent/fixtures/notes-harness/harness.config.ts");
 let bridge: Bridge | undefined;
@@ -59,5 +60,26 @@ describe("review tools", () => {
     const res = await c.callTool({ name: "ask_in_document", arguments: { path: "a.md", quote: "x", question: "Q?", options: [{ label: "A", text: "x" }] } });
     expect(res.isError).toBe(true);
     expect((res.content as { text: string }[])[0].text).toBe("options: 2 to 5");
+  });
+
+  it("an `op` argument never picks another request, and over-long strings are refused before the app", async () => {
+    const seen: unknown[] = [];
+    const c = await connect(async (r) => {
+      seen.push(r);
+      return {};
+    });
+    await c.callTool({ name: "read_review", arguments: { path: "a.md", op: "ask" } });
+    expect(seen).toEqual([expect.objectContaining({ op: "read" })]);
+    const res = await c.callTool({ name: "read_review", arguments: { path: "x".repeat(50_001) } });
+    expect(res.isError).toBe(true);
+    expect(seen).toHaveLength(1);
+  });
+
+  it("a timeout says to check before asking again; other failures never show their text", () => {
+    expect(reviewToolError(new RpcRefused("options: 2 to 5"))).toBe("options: 2 to 5");
+    expect(reviewToolError(new RpcTimeout())).toBe("The app did not answer; check with read_review before asking again");
+    const generic = reviewToolError(new Error("connect ENOENT /tmp/hh-rpc-secret.sock"));
+    expect(generic).not.toContain("/tmp");
+    expect(generic).toContain("Could not reach the app");
   });
 });

@@ -142,6 +142,14 @@ export class RpcRefused extends Error {
   }
 }
 
+/** The app took the request but did not answer in time: it may still have done it. */
+export class RpcTimeout extends Error {
+  constructor() {
+    super("The app did not answer in time");
+    this.name = "RpcTimeout";
+  }
+}
+
 /**
  * Opens a socket in a private directory. Each line is `{ token, request }`; each answer is one line,
  * `{ ok: true, result }` or `{ ok: false, error }`, written when `handler` settles.
@@ -218,7 +226,7 @@ export function callRpc(rpc: { path: string; token: string }, request: unknown, 
       socket.destroy();
       fn();
     };
-    const timer = setTimeout(() => settle(() => reject(new Error("The app did not answer in time"))), timeoutMs);
+    const timer = setTimeout(() => settle(() => reject(new RpcTimeout())), timeoutMs);
     let answer = "";
     socket.setEncoding("utf8");
     socket.on("connect", () => socket.write(`${JSON.stringify({ token: rpc.token, request })}\n`));

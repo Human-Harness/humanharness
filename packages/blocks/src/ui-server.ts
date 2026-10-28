@@ -1,6 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { allBlocks, blockToolName, loadHarness, phaseIds, z } from "@humanharness/harness-sdk";
-import { RpcRefused, callRpc, sendToBridge } from "./bridge";
+import { RpcRefused, RpcTimeout, callRpc, sendToBridge } from "./bridge";
 
 /** What the agent reads after showing a block the person answers (input-blocks spec §4): the answer is the next message. */
 export const INPUT_DONE = "Done: the person can see it and will answer; wait for their answer.";
@@ -15,29 +15,39 @@ export const REPLY_TO_COMMENT =
 export const READ_REVIEW =
   "Reads a document's review: the comments and questions not resolved, their answers, and whether the document is approved, or changed since it was.";
 
+/**
+ * What the agent reads when a review call fails: the app's own refusal, or a fixed line (never a socket path or another
+ * error's text).
+ */
+export function reviewToolError(e: unknown): string {
+  if (e instanceof RpcRefused) return e.message;
+  if (e instanceof RpcTimeout) return "The app did not answer; check with read_review before asking again";
+  return "Could not reach the app. Nothing was saved; do not retry in a loop.";
+}
+
 /** The review tools (review spec §4): each call is a request the app answers; a refusal comes back as a tool error. */
 function addReviewTools(server: McpServer, rpc: { path: string; token: string }): void {
   const call = (op: "ask" | "reply" | "read") => async (args: Record<string, unknown>) => {
     try {
-      const result = await callRpc(rpc, { op, ...args });
+      // `op` last: an argument named `op` never picks another request.
+      const result = await callRpc(rpc, { ...args, op });
       return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
     } catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
-      const text = e instanceof RpcRefused ? message : `Could not reach the app (${message}). Nothing was saved; do not retry in a loop.`;
-      return { isError: true, content: [{ type: "text" as const, text }] };
+      return { isError: true, content: [{ type: "text" as const, text: reviewToolError(e) }] };
     }
   };
+  const str = z.string().max(50_000);
   // Loose shapes on purpose: the app checks and answers with the spec's messages ("options: 2 to 5").
   server.registerTool(
     "ask_in_document",
     {
       description: ASK_IN_DOCUMENT,
       inputSchema: {
-        path: z.string(),
-        quote: z.string(),
-        heading: z.string().optional(),
-        question: z.string(),
-        options: z.array(z.object({ label: z.string(), text: z.string() })),
+        path: str,
+        quote: str,
+        heading: str.optional(),
+        question: str,
+        options: z.array(z.object({ label: str, text: str })),
         blocking: z.boolean().optional(),
       },
     },
@@ -45,10 +55,10 @@ function addReviewTools(server: McpServer, rpc: { path: string; token: string })
   );
   server.registerTool(
     "reply_to_comment",
-    { description: REPLY_TO_COMMENT, inputSchema: { path: z.string(), id: z.string(), reply: z.string(), resolve: z.boolean() } },
+    { description: REPLY_TO_COMMENT, inputSchema: { path: str, id: str, reply: str, resolve: z.boolean() } },
     call("reply"),
   );
-  server.registerTool("read_review", { description: READ_REVIEW, inputSchema: { path: z.string() } }, call("read"));
+  server.registerTool("read_review", { description: READ_REVIEW, inputSchema: { path: str } }, call("read"));
 }
 
 /**

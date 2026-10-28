@@ -148,6 +148,9 @@ describe("the /new-plugin guide", () => {
   it("names no engine's home folder and never sends the agent to engine config", () => {
     const g = file();
     expect(g).not.toMatch(/~\/\.(claude|codex|gemini)|\.config\/opencode|\.local\/share\/opencode/);
+    // The "stay out" rule names them by folder, as new-harness.md does, without a home path.
+    const rule = g.split("\n").find((l) => l.includes("Stay out of the AI engines' own folders"));
+    for (const dir of ["`.claude`", "`.codex`", "`.gemini`", "OpenCode"]) expect(rule).toContain(dir);
     expect(g).not.toMatch(/\b(read|open|check|look at)\b[^.\n]*\b(engine|claude|codex|gemini|opencode)\b[^.\n]*\b(config|settings|credentials?|tokens?)\b/i);
   });
 

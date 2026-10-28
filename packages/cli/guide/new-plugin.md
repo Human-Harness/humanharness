@@ -29,7 +29,7 @@ The app treats plugin code as hostile, because it is expected to be AI-written c
 - Declare every host the backend reaches (`permissions.hosts`) and every command it runs (`permissions.exec`). The broker refuses anything else.
 - Keys only through `{{secret:<id>}}` in a request's header values or body, with `<id>` declared in `permissions.secrets`. Never in a URL, never in a command, never in code, fixtures or `PLUGIN.md`. Never ask the developer or the person for a key's value: the person pastes keys in Settings › Plugins, and types them into the terminal for `record`.
 - Actions never write without asking: an action's prompt asks the agent to propose, and to change nothing outside the app without the person's yes.
-- Never edit files outside this plugin's folder. Stay out of the AI engines' own folders in the home directory, and never touch credentials or their environment variables.
+- Never edit files outside this plugin's folder. Stay out of the AI engines' own folders in the home directory (`.claude`, `.codex`, `.gemini`, and OpenCode's under `.config` and `.local/share`), and never touch credentials or their environment variables.
 - No provider or model brands (Claude, Anthropic, Codex, OpenAI, ChatGPT, GPT, Gemini, Google, Kimi, Moonshot, Qwen, Alibaba) in the plugin's name.
 
 ## 1. Purpose

@@ -115,7 +115,18 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
   // never opens with the file replaced right after.
   let writing: Promise<boolean> | null = null;
 
-  async function openSlot(o: SlotOptions): Promise<SessionSlot> {
+  // Opens under way: close waits for each, so none still holds a socket once close resolves.
+  const opening = new Set<Promise<unknown>>();
+
+  function openSlot(o: SlotOptions): Promise<SessionSlot> {
+    const open = openSlotNow(o);
+    const settled = open.catch(() => {});
+    opening.add(settled);
+    void settled.finally(() => opening.delete(settled));
+    return open;
+  }
+
+  async function openSlotNow(o: SlotOptions): Promise<SessionSlot> {
     if (closing) throw new Error("The workspace is closing");
     if (slots.has(o.key)) throw new Error(`A slot is already open for ${o.key}`);
     const ref: SlotRef = { key: o.key };
@@ -325,6 +336,8 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
     async close() {
       closing = true;
       await refreshing.catch(() => {});
+      // An open past its last `closing` check registers its slot before it settles; any other one closes its sockets.
+      await Promise.all(opening);
       const results = await Promise.allSettled([...slots.values()].map((s) => s.close()));
       const failed = results.find((r): r is PromiseRejectedResult => r.status === "rejected");
       if (failed) throw failed.reason;

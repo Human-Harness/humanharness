@@ -249,6 +249,19 @@ describe("Workspace and slots (parallel spec §4)", () => {
     expect(ws.anyRunning()).toBe(false);
   });
 
+  it("close waits for a slot still opening: its sockets are closed before close resolves", async () => {
+    const { ws } = await setup({ steps: [claudeResultLine(true)] }, { fixture: STUDY, data: async () => ({}) });
+    const order: string[] = [];
+    const opening = ws.openSlot({ key: "A" }).then(
+      () => order.push("opened"),
+      (err: Error) => order.push(`refused: ${err.message}`),
+    );
+    await ws.close();
+    order.push("closed");
+    await opening;
+    expect(order).toEqual(["refused: The workspace is closing", "closed"]);
+  });
+
   it("a closed slot frees its key; a closing workspace opens no slot", async () => {
     const { ws } = await setup({ steps: [claudeResultLine(true)] });
     const a = await ws.openSlot({ key: "A" });

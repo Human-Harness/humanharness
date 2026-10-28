@@ -52,6 +52,9 @@ export default definePluginBackend({
       const year = now.getFullYear();
       const round = kept.filter((e) => year - e.year > 0 && (year - e.year) % ROUND === 0);
       const today = new Set(round.map((e) => roundKey(e.year)));
+      // Resolved before the list is replaced: a write that fails can't leave yesterday's items open for good.
+      const old = new Set(before.records.map((r) => r.year).filter((y): y is number => typeof y === "number").map(roundKey));
+      for (const key of old) if (!today.has(key)) await ctx.attention.resolve(key);
 
       await ctx.data.replaceAll("events", kept);
       const raised = new Set<string>();
@@ -67,8 +70,6 @@ export default definePluginBackend({
           target: { panel: "events", focus: e.id },
         });
       }
-      const old = new Set(before.records.map((r) => r.year).filter((y): y is number => typeof y === "number").map(roundKey));
-      for (const key of old) if (!today.has(key)) await ctx.attention.resolve(key);
 
       const first = round[0];
       await ctx.chip.set("today", { text: first ? `${year - first.year}-year anniversary today` : `${kept.length} events today` });

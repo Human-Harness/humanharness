@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import backend from "../plugins/on-this-day/backend";
 import { loadHarness, pluginsAccepted } from "@humanharness/harness-sdk";
 import { buildPlugin } from "../../../packages/cli/src/plugin-build";
 import { checkPlugin } from "../../../packages/cli/src/plugin-check";
@@ -93,6 +94,27 @@ describe("the events source on its fixture", () => {
       expect(report.chips.today).toBe(`${year - round}-year anniversary today`);
     }
   }, 120_000);
+});
+
+describe("the events source on a ctx of its own", () => {
+  // runSource starts each run with no stored data, so yesterday's records are seeded through a hand-made ctx here.
+  it("resolves yesterday's round items before it replaces the list, so a failed write doesn't lose them", async () => {
+    const resolved: string[] = [];
+    const ctx = {
+      settings: { get: async () => ({ count: 25 }) },
+      fetch: async () => ({ url: "", status: 200, ok: true, headers: {}, text: () => '{"selected":[]}', json: () => ({ selected: [] }) }),
+      data: {
+        query: async () => ({ records: [{ year: 1001 }, { year: "x" }], total: 2 }),
+        replaceAll: async () => {
+          throw new Error("disk full");
+        },
+      },
+      attention: { raise: async () => {}, resolve: async (key: string) => void resolved.push(key) },
+      chip: { set: async () => {} },
+    };
+    await expect((backend.sources.events as (c: unknown) => Promise<void>)(ctx)).rejects.toThrow("disk full");
+    expect(resolved).toEqual(["round-1001"]);
+  });
 });
 
 describe("the demo lists it", () => {

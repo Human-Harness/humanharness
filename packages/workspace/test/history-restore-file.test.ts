@@ -73,6 +73,41 @@ describe("History.restoreFile (file-timeline spec §5)", () => {
     expect(fs.readdirSync(outside)).toEqual([]);
   });
 
+  it("a file that is a link to an outside file: the link is replaced, the outside file never changes", async () => {
+    write("a.md", "a1");
+    const v1 = (await history.save("Turn: one"))!;
+    const outside = path.join(fs.mkdtempSync(path.join(root, "out-")), "secret.md");
+    fs.writeFileSync(outside, "secret");
+    fs.rmSync(path.join(folder, "a.md"));
+    fs.symlinkSync(outside, path.join(folder, "a.md"));
+    await history.restoreFile("a.md", v1, "Go back: a.md to v1");
+    expect(fs.readFileSync(outside, "utf8")).toBe("secret");
+    expect(fs.lstatSync(path.join(folder, "a.md")).isSymbolicLink()).toBe(false);
+    expect(read("a.md")).toBe("a1");
+  });
+
+  it("a file that is a hard link to an outside file: the outside file never changes", async () => {
+    write("a.md", "a1");
+    const v1 = (await history.save("Turn: one"))!;
+    const outside = path.join(fs.mkdtempSync(path.join(root, "out-")), "shared.md");
+    fs.writeFileSync(outside, "shared");
+    fs.rmSync(path.join(folder, "a.md"));
+    fs.linkSync(outside, path.join(folder, "a.md"));
+    await history.restoreFile("a.md", v1, "Go back: a.md to v1");
+    expect(fs.readFileSync(outside, "utf8")).toBe("shared");
+    expect(read("a.md")).toBe("a1");
+    expect(fs.statSync(path.join(folder, "a.md")).nlink).toBe(1);
+  });
+
+  it("the commit that deleted the file is not a version to go back to", async () => {
+    write("a.md", "a1");
+    await history.save("Turn: one");
+    fs.rmSync(path.join(folder, "a.md"));
+    const gone = (await history.save("Turn: delete"))!;
+    await expect(history.restoreFile("a.md", gone, "x")).rejects.toThrow("not in that version");
+    expect(fs.existsSync(path.join(folder, "a.md"))).toBe(false);
+  });
+
   it("refuses a path the history does not track or a version without it", async () => {
     write("a.md", "a1");
     const v1 = (await history.save("Turn: one"))!;

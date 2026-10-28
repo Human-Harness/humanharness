@@ -69,6 +69,12 @@ export interface HarnessWorkspace {
   /** A turn runs in some slot. */
   anyRunning(): boolean;
   /**
+   * Each running turn's task (its slot key when it has none) and the paths it touched so far: the ones its edit tools
+   * named and the ones that changed in the folder since it began (parallel spec §5.3, P2). An undo by paths is refused
+   * on any of them.
+   */
+  runningPaths(): Promise<{ task: string; paths: ReadonlySet<string> }[]>;
+  /**
    * Rewrites AGENTS.md with the settings as they are now, when its text changed (harness-settings spec §5), and only
    * while no slot runs a turn (parallel spec §10, Decision 12). True when it wrote; false while a turn runs or once
    * closing. The caller must not run it while another workspace is being created on the same folder.
@@ -313,6 +319,14 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
     history,
     openSlot,
     anyRunning: () => ledger.anyRunning(),
+    async runningPaths() {
+      const out: { task: string; paths: ReadonlySet<string> }[] = [];
+      for (const w of ledger.running()) {
+        const changed = await history.changedSince(w.startDirty);
+        out.push({ task: w.task ?? w.key, paths: new Set([...w.edits, ...changed]) });
+      }
+      return out;
+    },
     refreshInstructions() {
       if (closing || ledger.anyRunning()) return Promise.resolve(false);
       const run = async () => {

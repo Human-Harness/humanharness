@@ -270,6 +270,25 @@ describe("Workspace and slots (parallel spec §4)", () => {
     expect(order).toEqual(["refused: The workspace is closing", "closed"]);
   });
 
+  it("runningPaths: each running turn's task with the paths it named or changed; nothing once it ended (P2)", async () => {
+    const script: ClaudeScript = {
+      steps: [claudeResultLine(true)],
+      turns: [{ match: "^one", steps: [claudeEditLine("e1", "a.md"), { write: { path: "a.md", content: "a" } }, { write: { path: "c.md", content: "c" } }, { sleep: 600 }, claudeResultLine(true)] }],
+    };
+    const { ws, folder } = await setup(script);
+    expect(await ws.runningPaths()).toEqual([]);
+    const a = await ws.openSlot({ key: "t1" });
+    const t = a.send("one", () => {}, { trailer: { task: "t1" } });
+    await until(() => fs.existsSync(path.join(folder, "c.md")));
+    const running = await ws.runningPaths();
+    expect(running).toHaveLength(1);
+    expect(running[0].task).toBe("t1");
+    // a.md was named by the edit tool; c.md was only written (a shell write names no file).
+    expect([...running[0].paths].sort()).toEqual(expect.arrayContaining(["a.md", "c.md"]));
+    await t.done;
+    expect(await ws.runningPaths()).toEqual([]);
+  });
+
   it("a closed slot frees its key; a closing workspace opens no slot", async () => {
     const { ws } = await setup({ steps: [claudeResultLine(true)] });
     const a = await ws.openSlot({ key: "A" });

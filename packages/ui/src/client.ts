@@ -1335,3 +1335,44 @@ export interface AttentionView {
   badge: number;
   show: boolean;
 }
+/** A running plugin's panel in a slot (plugins part 2): served from `url` into a sandboxed frame. */
+export interface PluginPanelView {
+  plugin: string;
+  pluginName: string;
+  id: string;
+  title: string;
+  slot: string;
+  url: string;
+}
+/** A chip the core draws as text; a click opens `panel` (the plugin's first) when there is one. */
+export interface PluginChipView {
+  plugin: string;
+  pluginName: string;
+  id: string;
+  slot: string;
+  text: string;
+  severity: "info" | "warn" | "action";
+  panel?: string;
+}
+/** The one prepared task waiting for the person's Start (P6, P13): `prompt` is exactly the task's question. */
+export interface PreparedTaskView {
+  token: string;
+  plugin: string;
+  pluginName: string;
+  title: string;
+  prompt: string;
+  tier: "light" | "standard" | "deep";
+  /** "app": runs app-wide (`scope: "none"`); "open": needs the open scope. */
+  scope: "open" | "app";
+  expiresAt: string;
+}
+export interface PluginSurfaceView {
+  panels: PluginPanelView[];
+  chips: PluginChipView[];
+  prepared?: PreparedTaskView;
+  /** Per plugin, bumped when its dist changed in dev: the renderer remounts its frames. */
+  reloads: Record<string, number>;
+}
+export type PanelCall = "data.query" | "settings.get" | "refresh" | "requestAction";
+export type PanelAnswer = { ok: true; value: unknown } | { ok: false; error: string };
+export type AttentionTarget = { kind: "panel"; plugin: string; panel: string; focus?: string } | { kind: "prepared" } | { kind: "none" };

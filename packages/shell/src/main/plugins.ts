@@ -8,20 +8,41 @@ import {
   HIDDEN_CHARS,
   type PluginManifest,
   type SettingRef,
+  type SlotDef,
   agentText,
+  checkActionVars,
+  fillActionPrompt,
   jsonSchemaToZod,
   permissionLines,
   permissionsAdded,
   pluginSettings,
   pluginsAccepted,
+  preparedTitle,
   redact,
   sameSetting,
   settingsSentences,
   settingsValues,
   settingsView,
+  slotFor,
   withSetting,
 } from "@humanharness/harness-sdk";
-import type { AttentionItemView, AttentionView, PluginDetail, PluginPick, PluginResult, PluginReview, PluginRow, PluginsView, PluginTestResult } from "@humanharness/ui/client";
+import type {
+  AttentionItemView,
+  AttentionView,
+  AttentionTarget as OpenTarget,
+  PanelAnswer,
+  PluginChipView,
+  PluginDetail,
+  PluginPanelView,
+  PluginPick,
+  PluginResult,
+  PluginReview,
+  PluginRow,
+  PluginSurfaceView,
+  PluginsView,
+  PluginTestResult,
+  PreparedTaskView,
+} from "@humanharness/ui/client";
 import { type AttentionInput, type AttentionItem, type AttentionOrigin, AttentionStore, type AttentionTarget, DataError } from "@humanharness/workspace";
 import { type BrokerDataOp, PluginBroker, type PluginAttentionInput } from "./plugin-broker";
 import { PluginChannel } from "./plugin-channel";
@@ -53,7 +74,7 @@ export interface BackendHost {
 }
 
 export interface PluginsDeps {
-  harness: { id: string; name: string; root: string; plugins?: HarnessPlugins };
+  harness: { id: string; name: string; root: string; plugins?: HarnessPlugins; slots?: SlotDef[] };
   devDirs: string[];
   pointers: PluginPointers;
   secrets: SecretStore;
@@ -75,6 +96,10 @@ export interface PluginsDeps {
   runLimitMs: number;
   changed(view: PluginsView): void;
   attentionChanged(view: AttentionView): void;
+  /** The plugin surface changed (panels, chips, the prepared task, reloads); optional until the window is wired. */
+  surfaceChanged?(view: PluginSurfaceView): void;
+  /** A run of `plugin` wrote these collections (a signal only: panels query again, Decision 8). */
+  dataChanged?(plugin: string, collections: string[]): void;
   now?(): Date;
   /** A monotonic clock in ms for the crash policy (default performance.now). */
   clock?(): number;
@@ -106,6 +131,15 @@ interface Running {
   data: PluginData;
   workHours: WorkHours;
   chips: Map<string, { text: string; severity: string }>;
+  /** Panels and chips with their slots resolved at start (slotFor). */
+  panels: { id: string; title: string; slot: string }[];
+  chipSlots: Map<string, string>;
+  /** Collections written since the last run ended (pushed as one data event at a run's end). */
+  written: Set<string>;
+  /** When each source's last run started (clock), for a panel's refresh (Decision 9). */
+  lastStart: Map<string, number>;
+  /** When this plugin's last prepared task was made (clock): one per 2 s (P6). */
+  lastAction?: number;
   /** The live run id per source, so a run over the limit can be killed. */
   runs: Map<string, string>;
   restartTimer?: ReturnType<typeof setTimeout>;
@@ -128,6 +162,35 @@ const NOT_SET_UP = "The app is not set up yet";
 const UNKNOWN = "Unknown plugin";
 const EXEC_ENV_KEYS = ["PATH", "HOME", "LANG"] as const;
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+/** Panel calls and prepared tasks (Decisions 7–10, P5, P6, P9). */
+const PANEL_ARGS_MAX_BYTES = 4096;
+const PANEL_QUERY_MAX = 500;
+const REFRESH_GAP_MS = 10_000;
+const ACTION_GAP_MS = 2000;
+const PREPARED_MS = 10 * 60_000;
+const PREPARED_TITLE_MAX = 120;
+/** The template (≤ 4,000) plus its vars (≤ 4 KB): a filled prompt longer than this is refused, never cut. */
+const PREPARED_PROMPT_MAX = 8000;
+const TIERS = ["light", "standard", "deep"] as const;
+const NOT_RUNNING = "Not running";
+const EMPTY_SURFACE: PluginSurfaceView = { panels: [], chips: [], reloads: {} };
+const WRITE_OPS = new Set<BrokerDataOp["op"]>(["put", "patch", "delete", "replaceAll"]);
+
+interface Prepared {
+  view: PreparedTaskView;
+  /** The action's own scope, handed to TaskManager.startPrepared as is. */
+  scope: "none" | "required";
+  base: string;
+  expires: number;
+  timer: ReturnType<typeof setTimeout>;
+}
+export interface PreparedStart {
+  prompt: string;
+  display: string;
+  tier: (typeof TIERS)[number];
+  plugin: string;
+  scope: "none" | "required";
+}
 
 export class PluginsController {
   private entries: PluginEntry[] = [];
@@ -147,6 +210,10 @@ export class PluginsController {
   private readonly devCrashed = new Set<string>();
   private readonly now: () => Date;
   private readonly clock: () => number;
+  /** The one prepared task waiting for Start (Decision 10); never survives a base change or a restart. */
+  private prepared: Prepared | null = null;
+  private readonly reloads: Record<string, number> = {};
+  private lastSurface = JSON.stringify(EMPTY_SURFACE);
 
   constructor(private readonly d: PluginsDeps) {
     this.now = d.now ?? (() => new Date());
@@ -167,6 +234,7 @@ export class PluginsController {
   /** The base changed (profile switch, setup done): every backend of the old base stops, the new base's start. */
   rebase(): Promise<void> {
     return this.serial(async () => {
+      this.clearPrepared();
       await this.stopAll();
       this.ctx = null;
       this.detached = false;
@@ -181,6 +249,7 @@ export class PluginsController {
    */
   stop(): Promise<void> {
     return this.serial(async () => {
+      this.clearPrepared();
       await this.stopAll();
       this.detached = true;
       this.ctx = null;
@@ -238,6 +307,7 @@ export class PluginsController {
 
   /** Stops every plugin of the old base at once (no awaiting: a caller may be outside the serial queue). */
   private detach(): void {
+    this.clearPrepared();
     this.detached = true;
     this.ctx = null;
     for (const id of [...this.running.keys()]) void this.stopPlugin(id);
@@ -290,12 +360,22 @@ export class PluginsController {
       data,
       workHours: parseWorkHours(stored[WORK_HOURS_KEY]) ?? DEFAULT_WORK_HOURS(),
       chips: new Map(),
+      panels: m.panels.map((p) => ({ id: p.id, title: p.title, slot: slotFor(this.d.harness, "panel", p.slot) })),
+      chipSlots: new Map(m.chips.map((ch) => [ch.id, slotFor(this.d.harness, "chip", ch.slot)])),
+      written: new Set(),
+      lastStart: new Map(),
       runs: new Map(),
       stopped: false,
     });
     r.broker = new PluginBroker({
       manifest: m,
-      data: { run: (op) => runData(data, op) },
+      data: {
+        run: async (op) => {
+          const value = await runData(data, op);
+          if (WRITE_OPS.has(op.op)) r.written.add(op.collection);
+          return value;
+        },
+      },
       secrets: (ids) => this.secretValues(r, ids),
       settings: () => this.settingsAnswer(c, r),
       attention: {
@@ -312,6 +392,7 @@ export class PluginsController {
       chips: (chip, value) => {
         if (value) r.chips.set(chip, value);
         else r.chips.delete(chip);
+        this.pushSurface();
       },
       log: (level, message) => this.appendError(c, id, { message: level === "error" ? message : `${level}: ${message}` }),
       fetch: this.d.fetch,
@@ -383,6 +464,7 @@ export class PluginsController {
   private async runSource(c: BaseCtx, r: Running, source: string): Promise<{ writes: number }> {
     const { id: runId } = r.broker.startRun(source);
     r.runs.set(source, runId);
+    r.lastStart.set(source, this.clock());
     try {
       await r.channel.run(runId, source);
       return r.broker.endRun(runId);
@@ -396,6 +478,20 @@ export class PluginsController {
       throw new Error(message);
     } finally {
       if (r.runs.get(source) === runId) r.runs.delete(source);
+      this.flushWritten(r);
+    }
+  }
+
+  /** One data event for what the plugin wrote since the last one (Decision 8). */
+  private flushWritten(r: Running): void {
+    if (r.written.size === 0) return;
+    const collections = [...r.written].sort();
+    r.written.clear();
+    if (r.stopped || !this.d.dataChanged) return;
+    try {
+      this.d.dataChanged(r.entry.id, collections);
+    } catch (err) {
+      this.log("Could not send a plugin data event to the window", err);
     }
   }
 
@@ -467,6 +563,7 @@ export class PluginsController {
     r.stopped = true;
     clearTimeout(r.restartTimer);
     this.running.delete(id);
+    if (this.prepared?.view.plugin === id) this.clearPrepared();
     r.scheduler.stop();
     r.broker.killAll();
     r.channel.close();
@@ -943,6 +1040,183 @@ export class PluginsController {
     return out.ok ? { ok: true } : { ok: false, message: out.error };
   }
 
+  // ── the surface: panels, chips, panel calls, the prepared task (part 2) ─────
+
+  /** What the window draws for the running plugins (D0: empty with none running). */
+  surface(): PluginSurfaceView {
+    const panels: PluginPanelView[] = [];
+    const chips: PluginChipView[] = [];
+    for (const r of this.running.values()) {
+      if (r.stopped) continue;
+      const m = r.entry.manifest;
+      for (const p of r.panels) panels.push({ plugin: r.entry.id, pluginName: m.name, id: p.id, title: p.title, slot: p.slot, url: `hh-plugin://${r.entry.id}/panel-${p.id}.html` });
+      // Chips in the manifest's order; their text is the plugin's, drawn as text (P9, ≤ 40 by the broker).
+      for (const ch of m.chips) {
+        const v = r.chips.get(ch.id);
+        if (!v) continue;
+        const severity = v.severity === "warn" || v.severity === "action" ? v.severity : "info";
+        chips.push({ plugin: r.entry.id, pluginName: m.name, id: ch.id, slot: r.chipSlots.get(ch.id) ?? "chips", text: v.text, severity, ...(r.panels[0] ? { panel: r.panels[0].id } : {}) });
+      }
+    }
+    return { panels, chips, ...(this.prepared ? { prepared: { ...this.prepared.view } } : {}), reloads: { ...this.reloads } };
+  }
+
+  /** Sends the surface when it changed since the last push (D0: never for a harness without plugins). */
+  private pushSurface(): void {
+    if (!this.active || !this.d.surfaceChanged) return;
+    const view = this.surface();
+    const text = JSON.stringify(view);
+    if (text === this.lastSurface) return;
+    this.lastSurface = text;
+    try {
+      this.d.surfaceChanged(view);
+    } catch (err) {
+      this.log("Could not send the plugin surface to the window", err);
+    }
+  }
+
+  /** The dev watcher's (Task 9): the plugin's frames remount. */
+  bumpReload(id: string): void {
+    if (typeof id !== "string" || !this.entry(id)) return;
+    this.reloads[id] = (Object.hasOwn(this.reloads, id) ? this.reloads[id] : 0) + 1;
+    this.pushSurface();
+  }
+
+  /**
+   * A call from a panel (Decision 7; P4, P5). The plugin and panel come from the frame the window created, and are
+   * checked again here: the plugin runs and declares the panel. Reads only its own collections; never a key.
+   */
+  async panelCall(plugin: string, panel: string, call: string, args: unknown): Promise<PanelAnswer> {
+    const r = typeof plugin === "string" ? this.running.get(plugin) : undefined;
+    if (!r || r.stopped || typeof panel !== "string" || !r.panels.some((p) => p.id === panel)) return { ok: false, error: NOT_RUNNING };
+    let json: string | undefined;
+    try {
+      json = JSON.stringify(args ?? null);
+    } catch {
+      json = undefined;
+    }
+    if (json === undefined || new TextEncoder().encode(json).length > PANEL_ARGS_MAX_BYTES) return { ok: false, error: "Too large" };
+    const a = isRecord(args) ? args : {};
+    switch (call) {
+      case "data.query":
+        return this.panelQuery(r, a);
+      case "settings.get": {
+        const c = await this.base();
+        if (!c || r.stopped) return { ok: false, error: NOT_RUNNING };
+        return { ok: true, value: await this.settingsAnswer(c, r) };
+      }
+      case "refresh":
+        return this.panelRefresh(r, a);
+      case "requestAction":
+        if (!onlyKeys(a, ["action", "vars"]) || typeof a.action !== "string") return { ok: false, error: "Wrong arguments" };
+        return this.requestAction(r.entry.id, a.action, a.vars ?? {});
+      default:
+        return { ok: false, error: "Unknown call" };
+    }
+  }
+
+  private async panelQuery(r: Running, a: Record<string, unknown>): Promise<PanelAnswer> {
+    if (!onlyKeys(a, ["collection", "where", "fields", "limit"])) return { ok: false, error: "Wrong arguments" };
+    const col = a.collection;
+    if (typeof col !== "string" || !Object.hasOwn(r.entry.manifest.data, col)) return { ok: false, error: "Unknown collection" };
+    if ((a.where !== undefined && !isRecord(a.where)) || (a.fields !== undefined && !(Array.isArray(a.fields) && a.fields.every((f) => typeof f === "string")))) {
+      return { ok: false, error: "Wrong arguments" };
+    }
+    if (a.limit !== undefined && (typeof a.limit !== "number" || !Number.isInteger(a.limit) || a.limit < 0)) return { ok: false, error: "Wrong arguments" };
+    const limit = Math.min((a.limit as number | undefined) ?? PANEL_QUERY_MAX, PANEL_QUERY_MAX);
+    try {
+      const value = await r.data.query(col, { ...(a.where ? { where: a.where as Record<string, unknown> } : {}), ...(a.fields ? { fields: a.fields as string[] } : {}), limit });
+      return { ok: true, value };
+    } catch (err) {
+      return { ok: false, error: err instanceof DataError ? err.message.slice(0, 200) : "The query failed" };
+    }
+  }
+
+  /** Runs the source now, unless it runs or its last run started less than 10 s ago (Decision 9). */
+  private async panelRefresh(r: Running, a: Record<string, unknown>): Promise<PanelAnswer> {
+    const source = a.source;
+    if (!onlyKeys(a, ["source"]) || typeof source !== "string" || !r.entry.manifest.sources.some((s) => s.id === source)) return { ok: false, error: "Unknown source" };
+    const last = r.lastStart.get(source);
+    if (r.scheduler.status(source).running || (last !== undefined && this.clock() - last < REFRESH_GAP_MS)) return { ok: true, value: "skipped" };
+    // Taken now, so a second call before the run starts is skipped too.
+    r.lastStart.set(source, this.clock());
+    const out = await this.refresh(r.entry.id, source);
+    return out.ok ? { ok: true, value: "refreshed" } : { ok: false, error: out.message ?? "The sync failed" };
+  }
+
+  /**
+   * An action asks for a prepared task (P6): never a start. The vars pass checkActionVars, the template is filled
+   * once and literally with the vars it returned, and the card keeps the exact text the task will get (P13). One card
+   * at a time, at most one per 2 s per plugin; it dies at Start, Cancel, a base change, its plugin stopping or 10 min.
+   */
+  async requestAction(plugin: string, action: string, vars: unknown): Promise<PanelAnswer> {
+    const r = typeof plugin === "string" ? this.running.get(plugin) : undefined;
+    if (!r || r.stopped) return { ok: false, error: NOT_RUNNING };
+    const m = r.entry.manifest;
+    if (!m.permissions.tasks || !r.approvedTasks) return { ok: false, error: "This plugin may not prepare tasks" };
+    const a = typeof action === "string" ? m.actions.find((x) => x.id === action) : undefined;
+    if (!a || !(TIERS as readonly string[]).includes(a.tier)) return { ok: false, error: "Unknown action" };
+    if (r.lastAction !== undefined && this.clock() - r.lastAction < ACTION_GAP_MS) return { ok: false, error: "Too soon" };
+    const checked = checkActionVars(a, vars);
+    if (!checked.ok) return { ok: false, error: checked.message };
+    const filled = fillActionPrompt(a.prompt, checked.vars);
+    if (!filled.ok) return { ok: false, error: filled.message };
+    if (filled.text.length > PREPARED_PROMPT_MAX) return { ok: false, error: "The prompt is too long" };
+    const c = await this.base();
+    if (!c || r.stopped) return { ok: false, error: NOT_RUNNING };
+    r.lastAction = this.clock();
+    const title = preparedTitle(m.name, a, checked.vars);
+    const expires = this.now().getTime() + PREPARED_MS;
+    const token = randomBytes(16).toString("hex");
+    this.clearPrepared(false);
+    this.prepared = {
+      view: {
+        token,
+        plugin: r.entry.id,
+        pluginName: m.name,
+        title: title.length > PREPARED_TITLE_MAX ? `${title.slice(0, PREPARED_TITLE_MAX - 1)}…` : title,
+        prompt: filled.text,
+        tier: a.tier as PreparedStart["tier"],
+        scope: a.scope === "none" ? "app" : "open",
+        expiresAt: new Date(expires).toISOString(),
+      },
+      scope: a.scope,
+      base: c.base,
+      expires,
+      timer: setTimeout(() => {
+        if (this.prepared?.view.token === token) this.clearPrepared();
+      }, PREPARED_MS),
+    };
+    this.pushSurface();
+    return { ok: true, value: "prepared" };
+  }
+
+  /**
+   * Start's single-use token (P6, P13): the stored card's own prompt, title, tier, scope and plugin, once; null for a
+   * token that is dead, expired, of another base or of a plugin that stopped. The caller passes them on unchanged.
+   */
+  async takePrepared(token: string): Promise<PreparedStart | null> {
+    const p = this.prepared;
+    if (!p || typeof token !== "string" || token !== p.view.token) return null;
+    const c = await this.base();
+    if (this.prepared !== p) return null;
+    this.clearPrepared();
+    const r = this.running.get(p.view.plugin);
+    if (!c || c.base !== p.base || this.now().getTime() > p.expires || !r || r.stopped || !r.approvedTasks) return null;
+    return { prompt: p.view.prompt, display: p.view.title, tier: p.view.tier, plugin: p.view.plugin, scope: p.scope };
+  }
+
+  cancelPrepared(token: string): void {
+    if (this.prepared && typeof token === "string" && token === this.prepared.view.token) this.clearPrepared();
+  }
+
+  private clearPrepared(push = true): void {
+    if (!this.prepared) return;
+    clearTimeout(this.prepared.timer);
+    this.prepared = null;
+    if (push) this.pushSurface();
+  }
+
   // ── attention ──────────────────────────────────────────────────────────────
 
   readonly attention = {
@@ -960,6 +1234,22 @@ export class PluginsController {
       const store = c ? await this.attentionStore(c, false) : null;
       await store?.markRead(plugin === undefined ? undefined : { kind: "plugin", id: plugin }, key).catch((err: unknown) => this.log("Could not mark attention items read", err));
       await this.pushAttention();
+    },
+    /**
+     * A click on an item (Decision 12): it is read, and its target as attentionTarget checks it now opens — a panel
+     * (the window opens it with `focus`) or a prepared task (through requestAction, so every P6 rule holds).
+     */
+    open: async (plugin: string, key: string): Promise<OpenTarget> => {
+      if (typeof plugin !== "string" || typeof key !== "string") return { kind: "none" };
+      const target = await this.attentionTarget(plugin, key);
+      await this.attention.read(plugin, key);
+      if (!target) return { kind: "none" };
+      if ("panel" in target) return { kind: "panel", plugin, panel: target.panel, ...(target.focus !== undefined ? { focus: target.focus } : {}) };
+      const out = await this.requestAction(plugin, target.action, target.vars ?? {});
+      if (out.ok) return { kind: "prepared" };
+      const c = await this.base();
+      if (c) await this.appendError(c, plugin, { message: `The action ${target.action} of attention item ${key.slice(0, 80)} could not be prepared: ${out.error}` });
+      return { kind: "none" };
     },
   };
 
@@ -1148,6 +1438,7 @@ export class PluginsController {
   }
 
   private async push(): Promise<PluginsView> {
+    this.pushSurface();
     const view = await this.view();
     if (this.active) {
       try {
@@ -1200,6 +1491,11 @@ function runData(data: PluginData, op: BrokerDataOp): Promise<unknown> {
     case "replaceAll":
       return data.replaceAll(op.collection, op.records as never);
   }
+}
+
+/** Only these keys (own properties): a panel's arguments carry nothing else. */
+function onlyKeys(o: Record<string, unknown>, keys: string[]): boolean {
+  return Object.keys(o).every((k) => keys.includes(k));
 }
 
 /** B7: a plugin's command sees PATH, HOME and LANG from the given env and TERM=dumb, nothing else. */

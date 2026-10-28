@@ -19,6 +19,26 @@ describe("reduceChat", () => {
     ]);
   });
 
+  it("a task notice (board mode) during a turn follows its answer; with no turn it shows at once", () => {
+    const conflict = { kind: "conflict" as const, paths: ["spec.md"], other: "Write" };
+    const s = run([
+      { type: "user", text: "hi", at: "t" },
+      { type: "text", delta: "Done." },
+      { type: "task-notice", notice: conflict },
+    ]);
+    expect(s.entries.map((e) => e.role)).toEqual(["user"]);
+    expect(s.live?.activities).toEqual([]);
+    const ended = run([{ type: "done", ok: true, task: "t1" }], s);
+    expect(ended.entries.map((e) => [e.role, e.text, e.notice])).toEqual([
+      ["user", "hi", undefined],
+      ["assistant", "Done.", undefined],
+      ["assistant", "", conflict],
+    ]);
+    const idle = run([{ type: "task-notice", notice: { kind: "resume-failed" } }], ended);
+    expect(idle.entries.at(-1)?.notice).toEqual({ kind: "resume-failed" });
+    expect(idle.live).toBeNull();
+  });
+
   it("adds the user's message and starts a live turn", () => {
     const s = run([{ type: "user", text: "hi", at: "2026-10-10T00:00:00Z" }]);
     expect(s.entries.map((e) => [e.role, e.text])).toEqual([["user", "hi"]]);

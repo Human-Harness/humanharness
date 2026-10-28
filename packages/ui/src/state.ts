@@ -1,4 +1,4 @@
-import { type AnswerPart, type BlockAnswer, type ChatBlock, type ChatEntry, type Event, type LimitWindow, type TurnUsage, addParagraph, addText, finishParts } from "./client";
+import { type AnswerPart, type BlockAnswer, type ChatBlock, type ChatEntry, type ChatNotice, type Event, type LimitWindow, type TurnUsage, addParagraph, addText, finishParts } from "./client";
 
 export interface LiveActivity {
   id: string;
@@ -20,6 +20,8 @@ export interface LiveTurn {
   limits?: LimitWindow[];
   /** State-only blocks emitted during this turn (saved on the entry). */
   state?: Record<string, unknown>;
+  /** Board mode: the app's notices for this task that came during the turn; they follow its answer. */
+  notices?: ChatNotice[];
 }
 
 export interface ChatState {
@@ -103,6 +105,11 @@ export function reduceChat(state: ChatState, action: ChatAction): ChatState {
       };
     case "resume":
       return { ...state, live: newLive() };
+    case "task-notice": {
+      // During a turn it follows the answer, as the saved chat has it; otherwise it goes on screen at once.
+      if (live) return { ...state, live: { ...live, notices: [...(live.notices ?? []), action.notice] } };
+      return { ...state, entries: [...state.entries, noticeEntry(action.notice)] };
+    }
     case "text":
       return live ? { ...state, live: { ...live, text: live.text + action.delta, parts: addText(live.parts, action.delta) } } : state;
     case "paragraph":
@@ -196,7 +203,12 @@ export function reduceChat(state: ChatState, action: ChatAction): ChatState {
         ...(action.ok ? {} : { error: action.error }),
         ...(action.task ? { task: action.task } : {}),
       };
-      return { ...state, entries: [...state.entries, entry], live: null };
+      return { ...state, entries: [...state.entries, entry, ...(live.notices ?? []).map(noticeEntry)], live: null };
     }
   }
+}
+
+/** A notice's own entry: no text of its own (a system line, never a reply). */
+function noticeEntry(notice: ChatNotice): ChatEntry {
+  return { id: newId(), role: "assistant", text: "", blocks: [], activities: [], at: new Date().toISOString(), notice };
 }

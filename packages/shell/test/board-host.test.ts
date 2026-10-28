@@ -4,7 +4,7 @@ import path from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import type { Event, HarnessWorkspace, SessionSlot, SlotOptions, SlotRef, SlotSendOptions, TurnAttribution } from "@humanharness/runtime";
 import type { AppConfig, ChatEntry, ChatNotice, TaskSummary, TasksState } from "@humanharness/ui/client";
-import { type BoardHostDeps, RESUME_FAILED, conflictNotice, conflictOf, createBoardHost, hostMode } from "../src/main/board-host";
+import { type BoardHostDeps, conflictOf, createBoardHost, hostMode } from "../src/main/board-host";
 import { ChatLog } from "../src/main/chat-log";
 import type { TaskDeps } from "../src/main/task-manager";
 import { TaskStore } from "../src/main/task-store";
@@ -401,12 +401,14 @@ describe("the board host (parallel spec §6, §7)", () => {
     opts.onSession?.({ id: "s1", started: true });
     t.turns[0].end();
     await a;
-    expect(t.window.some((e) => e.type === "activity" && e.detail === RESUME_FAILED)).toBe(false);
+    expect(t.window.some((e) => e.type === "task-notice")).toBe(false);
     // After a sleep the adapter reconnects; a failed session/load makes a new session.
     const follow = t.h.board.ask("More");
     await until(() => t.turns.length === 2);
     opts.onSession?.({ id: "s2", started: true });
-    expect(t.window.filter((e) => e.type === "activity" && e.detail === RESUME_FAILED)).toHaveLength(2);
+    // The window's own notice, a system line (never a "Working on …" activity).
+    expect(t.window.filter((e) => e.type === "task-notice")).toEqual([{ type: "task-notice", notice: { kind: "resume-failed" } }]);
+    expect(t.window.some((e) => e.type === "activity" && e.kind === "other")).toBe(false);
     t.turns[1].end();
     await follow;
   });
@@ -493,7 +495,7 @@ describe("the board host (parallel spec §6, §7)", () => {
 describe("conflicts and tokens per task (parallel spec §5.3, §9.1)", () => {
   const usage = (input: number, output: number): Event => ({ type: "usage", inputTokens: input, outputTokens: output, cacheReadTokens: 1000, cacheWriteTokens: 500 });
   const attribution = (conflicts: TurnAttribution["conflicts"]): TurnAttribution => ({ owned: [], shared: conflicts.map((c) => c.path), with: [], conflicts });
-  const notices = (events: Event[]) => events.filter((e) => e.type === "activity" && e.kind === "other" && e.state === "start").map((e) => (e as { detail: string }).detail);
+  const notices = (events: Event[]): unknown[] => events.flatMap((e): unknown[] => (e.type === "task-notice" ? [e.notice] : e.type === "activity" && e.kind === "other" ? ["activity"] : []));
 
   it("a conflict marks both tasks and adds a notice to both chats (spec §5.3)", async () => {
     const t = host({ tasks: 2 });
@@ -507,12 +509,10 @@ describe("conflicts and tokens per task (parallel spec §5.3, §9.1)", () => {
     tb.end([{ type: "text", delta: "Done B" }, ok], attribution([{ path: "spec.md", tasks: [ta.slot] }]));
     await b;
     const notice: ChatNotice = { kind: "conflict", paths: ["spec.md"], other: "write" };
-    const text = conflictNotice(notice);
-    expect(text).toBe("This task and “write” both changed spec.md.");
-    // The window shows B's notice now (B is focused); A's goes only to A's buffer.
-    expect(notices(t.window)).toEqual([text]);
+    // The window gets B's notice now (B is focused), structured, never as an activity line; A's goes only to A's buffer.
+    expect(notices(t.window)).toEqual([notice]);
     await t.h.board.focus(ta.slot);
-    expect(notices((await t.h.loadChat(t.base)).live?.events ?? [])).toEqual([text]);
+    expect(notices((await t.h.loadChat(t.base)).live?.events ?? [])).toEqual([notice]);
     const lanes = (await t.file()).lanes!;
     expect(lanes.find((l) => l.id === ta.slot)?.conflict).toEqual(["spec.md"]);
     expect(lanes.find((l) => l.id === tb.slot)?.conflict).toEqual(["spec.md"]);
@@ -568,7 +568,6 @@ describe("conflicts and tokens per task (parallel spec §5.3, §9.1)", () => {
     // A was idle: its notice is in its chat now, naming B and the first five paths, then how many more.
     const last = (await t.chat("main", idA)).at(-1)!;
     expect(last.notice).toEqual({ kind: "conflict", paths: ["spec.md", "n/0.md", "n/1.md", "n/2.md", "n/3.md"], more: 18, other: "write" });
-    expect(conflictNotice(last.notice!)).toBe("This task and “write” both changed spec.md, n/0.md, n/1.md, n/2.md, n/3.md and 18 more.");
     // B's own notice: its task in `tasks` is never a conflict with itself, so it names A once.
     expect((await t.chat("main", idB)).filter((e) => e.notice)).toHaveLength(1);
     const follow = t.h.board.ask("More");
@@ -589,17 +588,7 @@ describe("conflicts and tokens per task (parallel spec §5.3, §9.1)", () => {
     const id = t.turns[0].slot;
     expect((await t.file()).lanes!.map((l) => [l.id, l.conflict])).toEqual([[id, ["spec.md"]]]);
     expect((await t.chat("main", id)).at(-1)?.notice).toEqual({ kind: "conflict", paths: ["spec.md"], ended: true });
-    expect(conflictNotice(conflictOf(["spec.md"], null))).toBe("A task that has ended also changed spec.md.");
-  });
-
-  it("the notices read as the window's parallel strings", () => {
-    const en = JSON.parse(fs.readFileSync(path.resolve(__dirname, "../../i18n/src/locales/en.json"), "utf8")) as { parallel: Record<string, string> };
-    const fill = (s: string, v: Record<string, string>) => s.replace(/\{\{(\w+)\}\}/g, (_, k: string) => v[k]);
-    expect(conflictNotice(conflictOf(["a.md", "b.md"], "Write"))).toBe(fill(en.parallel.conflict, { task: "Write", path: "a.md, b.md" }));
-    expect(conflictNotice(conflictOf(["a.md"], null))).toBe(fill(en.parallel.conflictEnded, { path: "a.md" }));
-    const six = ["1", "2", "3", "4", "5", "6"];
-    const path6 = fill(en.parallel.pathsMore, { paths: "1, 2, 3, 4, 5", count: "1" });
-    expect(conflictNotice(conflictOf(six, null))).toBe(fill(en.parallel.conflictEnded, { path: path6 }));
+    expect(conflictOf(["spec.md"], null)).toEqual({ kind: "conflict", paths: ["spec.md"], ended: true });
   });
 
   it("tokens: each usage event adds its total to the lane's tokens", async () => {
@@ -662,7 +651,7 @@ describe("conflicts and tokens per task (parallel spec §5.3, §9.1)", () => {
     const follow = t.h.board.ask("More");
     await until(() => t.turns.length === 2);
     opts.onSession?.({ id: "s2", started: true });
-    expect(t.window.some((e) => e.type === "activity" && e.detail === RESUME_FAILED)).toBe(false);
+    expect(t.window.some((e) => e.type === "task-notice")).toBe(false);
     t.turns[1].end();
     await follow;
   });

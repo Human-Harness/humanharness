@@ -15,7 +15,7 @@ import type {
   SettingsView,
   Tier,
 } from "@humanharness/harness-sdk";
-import type { ActivityKind, EngineError, Event, LimitWindow } from "@humanharness/runtime";
+import type { ActivityKind, EngineError, Event, LimitWindow, TaskNotice } from "@humanharness/runtime";
 import type {
   CollectionDiff,
   DataChange,
@@ -345,10 +345,9 @@ export interface ChatEntry {
   notice?: ChatNotice;
 }
 
-/**
- * Another task also changed these paths (parallel spec §5.3): `other` names it (absent when it has ended, `ended`).
- * `paths` holds the first few; `more` counts the rest.
- */
+/** A line the app added to a task's chat (board mode): see the runtime's `TaskNotice`. */
+export type ChatNotice = TaskNotice;
+
 /**
  * Why board mode refused "Undo this task" (parallel spec §5.3): a running task is changing `path`, `path` has changes
  * the history hasn't saved, a later task (`by: "task"`) or a change outside any task (`by: "outside"`) also changed
@@ -358,8 +357,6 @@ export type UndoRefusal =
   | { reason: "running" | "uncommitted"; path: string }
   | { reason: "later"; path: string; by: "task" | "outside" }
   | { reason: "too-far" | "nothing" };
-
-export type ChatNotice = { kind: "conflict"; paths: string[]; more?: number; other?: string; ended?: true };
 
 /** The entry is the person's line or the agent's reply, not a notice the app added. */
 export const isTurnEntry = (e: Pick<ChatEntry, "notice">): boolean => e.notice === undefined;

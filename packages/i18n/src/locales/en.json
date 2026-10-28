@@ -992,6 +992,7 @@
     "undoLaterTask": "A later task also changed {{path}}, so this task can't be undone by itself.",
     "undoLaterOutside": "{{path}} was changed after this task, so it can't be undone by itself.",
     "undoTooFar": "This task is too far back to undo by its files.",
-    "undoNothing": "This task has no files of its own to take back."
+    "undoNothing": "This task has no files of its own to take back.",
+    "resumeFailed": "Couldn't resume the earlier conversation; started a new one."
   }
 }

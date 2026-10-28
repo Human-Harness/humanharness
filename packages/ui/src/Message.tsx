@@ -152,7 +152,8 @@ export function Message({
   reveal?: Reveal;
 }) {
   const { t } = useTranslation();
-  // A line the app added (another task changed the same files, parallel spec §5.3): a system line, never a reply.
+  // A line the app added (another task changed the same files, parallel spec §5.3; a new session, PT-S4): a system
+  // line, never a reply.
   if (entry.notice) {
     return (
       <article className="hh-message system">
@@ -186,6 +187,7 @@ export function Message({
 
 /** A notice's line in the person's language: the paths it names, then how many more there are. */
 function noticeText(t: (key: string, values?: Record<string, unknown>) => string, n: ChatNotice): string {
+  if (n.kind === "resume-failed") return t("parallel.resumeFailed");
   const list = n.paths.join(", ");
   const path = n.more ? t("parallel.pathsMore", { paths: list, count: n.more }) : list;
   return n.other !== undefined ? t("parallel.conflict", { task: n.other, path }) : t("parallel.conflictEnded", { path });

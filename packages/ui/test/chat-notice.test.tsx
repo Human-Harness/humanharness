@@ -45,6 +45,28 @@ describe("a notice in a task's chat (parallel spec §5.3)", () => {
     expect(screen.getByText("A task that has ended also changed a.md, b.md, c.md, d.md, e.md and 3 more.")).toBeTruthy();
   });
 
+  it("a notice that comes during the turn shows as the same system line after the answer, never as an activity", async () => {
+    const client = new FakeClient(ready);
+    render(<HarnessApp client={client} />);
+    await clickStart();
+    const box = await screen.findByRole("textbox");
+    fireEvent.change(box, { target: { value: "both" } });
+    fireEvent.keyDown(box, { key: "Enter" });
+    await waitFor(() => expect(client.sent).toEqual(["both"]));
+    client.emit({ type: "text", delta: "Wrote spec." });
+    client.emit({ type: "task-notice", notice: { kind: "conflict", paths: ["spec.md"], other: "Write" } });
+    client.emit({ type: "task-notice", notice: { kind: "resume-failed" } });
+    client.emit({ type: "done", ok: true });
+    const line = await screen.findByText("This task and “Write” both changed spec.md.");
+    expect(line.closest("article")?.className).toBe("hh-message system");
+    expect(screen.getByText("Couldn't resume the earlier conversation; started a new one.").closest("article")?.className).toBe("hh-message system");
+    expect(screen.queryByText(/Working on/)).toBeNull();
+    // After the answer, in the order the saved chat has them.
+    const order = [...document.querySelectorAll("article")].map((a) => a.textContent ?? "");
+    const at = (text: string) => order.findIndex((t) => t.includes(text));
+    expect(at("Wrote spec.")).toBeLessThan(at("both changed spec.md"));
+  });
+
   it("a waiting task's choices stay answerable after a notice", async () => {
     const client = new FakeClient(ready);
     client.chat = [

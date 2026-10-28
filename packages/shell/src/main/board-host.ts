@@ -23,9 +23,6 @@ export function hostMode(harness: { parallel?: unknown }): HostMode {
   return isConcurrent(harness as { parallel?: ParallelCaps }) ? "board" : "plain";
 }
 
-/** What the person sees when a sleeping lane's engine couldn't load its earlier conversation (spec §4, PT-S4). */
-export const RESUME_FAILED = "Couldn't resume the earlier conversation; started a new one.";
-
 /** How many paths a conflict notice names; it counts the rest. */
 export const NOTICE_PATHS = 5;
 
@@ -33,20 +30,12 @@ export const NOTICE_PATHS = 5;
  * The notice both tasks get when a turn's path was also changed by another task (spec §5.3). `other`: the other task's
  * name, or null when it has ended.
  */
-export function conflictOf(paths: readonly string[], other: string | null): ChatNotice {
+export function conflictOf(paths: readonly string[], other: string | null): ConflictNotice {
   const more = paths.length - NOTICE_PATHS;
   return { kind: "conflict", paths: paths.slice(0, NOTICE_PATHS), ...(more > 0 ? { more } : {}), ...(other === null ? { ended: true as const } : { other }) };
 }
 
-/**
- * A notice's line while its task's turn runs (an activity line; the chat draws the saved notice in the person's
- * language). The same text as the window's `parallel.*` strings in English.
- */
-export function conflictNotice(n: ChatNotice): string {
-  const list = n.paths.join(", ");
-  const path = n.more ? `${list} and ${n.more} more` : list;
-  return n.other === undefined ? `A task that has ended also changed ${path}.` : `This task and “${n.other}” both changed ${path}.`;
-}
+type ConflictNotice = Extract<ChatNotice, { kind: "conflict" }>;
 
 /** A usage event's tokens for the task's count (spec §9.1): what the engine read and wrote, never the cache. */
 function tokensOf(e: Extract<Event, { type: "usage" }>): number {
@@ -475,11 +464,11 @@ export function createBoardHost(d: BoardHostDeps, initial: { engineId: string | 
   }
 
   /**
-   * A notice for lane `x`'s chat. While its turn runs, the buffer and (when focused) the window show it now, and its
+   * A notice for lane `x`'s chat. While its turn runs, the buffer and (when focused) the window get it now, and its
    * chat gets it after the turn's own entries; otherwise it goes to `now`, for its chat at once (the window shows it on
    * its next load).
    */
-  function notify(x: Lane, conflict: ChatNotice, now: [Lane, Notice][]): void {
+  function notify(x: Lane, conflict: ConflictNotice, now: [Lane, Notice][]): void {
     const notice: Notice = {
       scope: x.task ? scopeOfTask(x.task) : MAIN_SCOPE,
       // Empty text: an app that doesn't know notices shows nothing for it.
@@ -490,10 +479,8 @@ export function createBoardHost(d: BoardHostDeps, initial: { engineId: string | 
       return;
     }
     x.notices.push(notice);
-    const id = randomUUID();
-    const detail = conflictNotice(conflict);
-    x.emit({ type: "activity", id, kind: "other", detail, state: "start" });
-    x.emit({ type: "activity", id, kind: "other", detail, state: "end" });
+    // The window draws it as the same system line the saved chat shows, after the turn's answer.
+    x.emit({ type: "task-notice", notice: conflict });
   }
 
   async function appendNotices(x: Lane, notices: Notice[]): Promise<void> {
@@ -532,10 +519,8 @@ export function createBoardHost(d: BoardHostDeps, initial: { engineId: string | 
     void lane.manager.sessionStarted(s).catch((err: unknown) => console.error("Could not record the session", err));
     if (resumed) return;
     console.error(`Task ${lane.id}: the earlier engine session couldn't be loaded; a new one started`);
-    const notice = randomUUID();
     const emit = laneEmit(lane.id, buffer, { isFocused: (x) => board.isFocused(x), toWindow: (e) => d.emit(e) });
-    emit({ type: "activity", id: notice, kind: "other", detail: RESUME_FAILED, state: "start" });
-    emit({ type: "activity", id: notice, kind: "other", detail: RESUME_FAILED, state: "end" });
+    emit({ type: "task-notice", notice: { kind: "resume-failed" } });
   }
 
   /**

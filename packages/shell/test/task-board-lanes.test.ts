@@ -58,7 +58,7 @@ function lanes(o: { script?: Event[][]; init?: Partial<TasksFile>; scoped?: bool
         changed: () => void board.laneSettled(id),
         now: () => new Date("2026-10-28T10:00:00.000Z"),
         newId: () => id,
-        successor: (start) => board.handOver((next) => start(managers.get(next.id)!)),
+        successor: (start) => board.handOver((next) => start(managers.get(next.id)!), id),
       });
       managers.set(id, m);
       return Object.assign(m, { id });

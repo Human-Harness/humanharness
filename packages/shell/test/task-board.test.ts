@@ -153,13 +153,64 @@ describe("TaskBoard (parallel spec §6)", () => {
     await board.ask("other");
     expect(board.laneIds()).toEqual(["t1", "t2"]);
   });
-  it("a start that leaves no task (refused, failed) drops its lane and shows the start view", async () => {
+  it("a start that leaves no task (refused, failed) drops its lane and gives the focus back to the task shown before", async () => {
     const { board, made, file } = harness();
     await board.start("intro");
+    await board.start("plan");
+    await board.focus("t1");
     await expect(board.start("refused")).rejects.toThrow("That mode isn't offered");
-    expect(board.laneIds()).toEqual(["t1"]);
+    expect(board.laneIds()).toEqual(["t1", "t2"]);
+    expect(file().focus).toBe("t1");
+    expect(board.focusedId()).toBe("t1");
+    expect(made.some((l) => l.closed)).toBe(false);
+    // From the start view, it stays there.
+    await board.focus(null);
+    await expect(board.start("refused")).rejects.toThrow("That mode isn't offered");
     expect(file().focus).toBeNull();
-    expect(made[0].closed).toBe(false);
+  });
+  it("no more than LANES_MAX open tasks: one more is refused before any lane is made", async () => {
+    const { board, made, file } = harness();
+    for (let i = 0; i < 32; i++) await board.start(`a${i}`);
+    await expect(board.start("one-more")).rejects.toThrow("Too many open tasks");
+    await expect(board.ask("one more")).resolves.toBeUndefined();
+    await board.focus(null);
+    await expect(board.ask("one more")).rejects.toThrow("Too many open tasks");
+    expect(board.laneIds()).toHaveLength(32);
+    expect(file().lanes).toHaveLength(32);
+    expect(made).toHaveLength(32);
+    // A task handed over by a lane that is closing takes that lane's place.
+    await expect(board.handOver((l) => l.start("next"), "t1")).resolves.toBeUndefined();
+    expect(file().lanes).toHaveLength(33);
+  });
+  it("a start asked for during interruptAll runs after it: its lane stays open, on the board and in the file", async () => {
+    const { board, made, file } = harness();
+    await board.start("a");
+    const slow = made[0].interrupt.bind(made[0]);
+    let release!: () => void;
+    made[0].interrupt = async () => {
+      await new Promise<void>((r) => (release = r));
+      await slow();
+    };
+    const all = board.interruptAll();
+    await vi.waitFor(() => expect(release).toBeTypeOf("function"));
+    const started = board.start("b");
+    release();
+    await all;
+    await started;
+    expect(board.laneIds()).toEqual(["t2"]);
+    expect(file().lanes?.map((l) => l.id)).toEqual(["t2"]);
+    expect(file().actions).toEqual({});
+    expect(file().focus).toBe("t2");
+  });
+  it("interruptAll closes the idle lane too: the next start gets a new one, made for the new engine", async () => {
+    const { board, made } = harness();
+    const spare = board.focused();
+    const close = vi.fn(async () => {});
+    spare.close = close;
+    await board.interruptAll();
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(board.focused()).not.toBe(spare);
+    expect(made).toHaveLength(2);
   });
   it("focus refuses ids that aren't a lane id (P1), and never a lane that is gone", async () => {
     const { board } = harness();
@@ -415,7 +466,7 @@ describe("board edge cases (parallel spec §10)", () => {
     await board.interruptAll();
     await queued;
     // Dropped before any lane ended: the slot t1's end freed never started it.
-    expect(order).toEqual(["interrupt t1", "The queued turn was cancelled", "interrupt t2"]);
+    expect(order).toEqual(["The queued turn was cancelled", "interrupt t1", "interrupt t2"]);
     expect(gate.running("tasks")).toBe(0);
     expect(made.filter((l) => l.started.length > 0).every((l) => l.closed)).toBe(true);
     expect(board.laneIds()).toEqual([]);

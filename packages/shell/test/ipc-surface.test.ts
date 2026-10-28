@@ -52,10 +52,12 @@ function group(text: string, start: number, opener = /[({]/): string {
 describe("the prepared task's one way in (plugins spec P6)", () => {
   it("startPrepared is called only in the hh:pluginsStartPrepared handler and the deps index.ts gives registerPluginsIpc", async () => {
     const all = await sources();
-    const calling = all.filter(([, text]) => /\bstartPrepared\s*\(/.test(text)).map(([f]) => f);
+    // A call by name, optional (`?.(`) or by bracket (`["startPrepared"](`) all count.
+    const CALL = /(?:\bstartPrepared|\[\s*(["'`])startPrepared\1\s*\])\s*(?:\?\.\s*)?\(/g;
+    const calling = all.filter(([, text]) => new RegExp(CALL.source).test(text)).map(([f]) => f);
     expect(calling.sort()).toEqual(["index.ts", "plugin-ipc.ts", "task-board.ts", "task-manager.ts"]);
     const text = (f: string) => all.find(([n]) => n === f)![1];
-    const count = (t: string) => [...t.matchAll(/\bstartPrepared\s*\(/g)].length;
+    const count = (t: string) => [...t.matchAll(CALL)].length;
 
     const ipc = text("plugin-ipc.ts");
     const handler = group(ipc, ipc.indexOf('handle("hh:pluginsStartPrepared"'));
@@ -67,9 +69,18 @@ describe("the prepared task's one way in (plugins spec P6)", () => {
     expect(count(register)).toBe(1);
     expect(count(index)).toBe(1);
     // task-manager.ts only declares it.
-    expect([...text("task-manager.ts").matchAll(/\bstartPrepared\s*\(/g)].length).toBe(1);
+    expect(count(text("task-manager.ts"))).toBe(1);
     // task-board.ts declares it too (board mode, parallel spec §6) and passes it on to a lane by name, never calling it.
-    expect(count(text("task-board.ts"))).toBe(1);
+    const board = text("task-board.ts");
+    expect(count(board)).toBe(1);
+    // Every mention of the name is pinned: the Forwarded union's entry, and the method (its name, its parameter type and
+    // the one `need` that hands it to the new lane). A call any other way would add one.
+    const literal = (t: string) => [...t.matchAll(/startPrepared/g)].length;
+    expect(literal(board)).toBe(4);
+    expect([...board.matchAll(/\| "startPrepared"\n/g)].length).toBe(1);
+    const method = group(board, board.indexOf("\n  startPrepared("), /\{/);
+    expect(literal(method)).toBe(3);
+    expect(method).toMatch(/\{\s*return this\.begin\(\(l\) => need\(l, "startPrepared"\)\(p\)\);\s*\}$/);
   });
 
   it("D0: index.ts installs panels only through PluginPanelsOnDemand, needed by the controller, per window in createWindow's plugins block", async () => {

@@ -94,23 +94,25 @@ export class TaskBoard {
    * LANES_MAX, or with an id that can't name a lane, it ends unfinished instead.
    */
   restore(): Promise<void> {
-    return this.serial(async () => {
-      const f = await withTasksFile(this.d.file, async () => {
-        const f = await this.d.file.load();
-        const c = f.current;
-        if (!c) return f;
-        const lanes = f.lanes ?? [];
-        const next: TasksFile =
-          !isLaneId(c.id) || lanes.length >= LANES_MAX
-            ? interrupted(f)
-            : { ...f, current: null, lanes: lanes.some((l) => l.id === c.id) ? lanes : [c, ...lanes] };
-        await this.d.file.save(next);
-        return next;
-      });
-      for (const t of f.lanes ?? []) if (isLaneId(t.id) && !this.lanes.has(t.id)) this.lanes.set(t.id, this.d.newLane(t.id));
-      this.focusId = typeof f.focus === "string" && this.lanes.get(f.focus) !== undefined ? f.focus : null;
-      this.d.changed();
+    return this.serial(() => this.restoreNow());
+  }
+
+  private async restoreNow(): Promise<void> {
+    const f = await withTasksFile(this.d.file, async () => {
+      const f = await this.d.file.load();
+      const c = f.current;
+      if (!c) return f;
+      const lanes = f.lanes ?? [];
+      const next: TasksFile =
+        !isLaneId(c.id) || lanes.length >= LANES_MAX
+          ? interrupted(f)
+          : { ...f, current: null, lanes: lanes.some((l) => l.id === c.id) ? lanes : [c, ...lanes] };
+      await this.d.file.save(next);
+      return next;
     });
+    for (const t of f.lanes ?? []) if (isLaneId(t.id) && !this.lanes.has(t.id)) this.lanes.set(t.id, this.d.newLane(t.id));
+    this.focusId = typeof f.focus === "string" && this.lanes.get(f.focus) !== undefined ? f.focus : null;
+    this.d.changed();
   }
 
   laneIds(): string[] {
@@ -296,25 +298,42 @@ export class TaskBoard {
    * Every open task ends without a note: at start (the tasks a quit left open, Decision 16) and after a profile switch.
    * The lanes tasks.json lists are reopened first; any its lanes failed to end are ended in the file.
    */
-  async interrupt(): Promise<void> {
-    await this.restore();
-    await this.interruptAll();
+  interrupt(): Promise<void> {
+    return this.serial(async () => {
+      await this.restoreNow();
+      await this.interruptAllNow();
+    });
   }
 
   /**
    * Every lane ends unfinished (engine switch, spec §10; Decision 14), then leaves the board. The queued turns go
-   * first: a running turn's slot, freed as its lane ends, must not start one.
+   * first: a running turn's slot, freed as its lane ends, must not start one. No lane starts meanwhile; one asked for
+   * then starts after, on the new engine.
    */
-  async interruptAll(): Promise<void> {
+  interruptAll(): Promise<void> {
+    this.d.gate?.dropAll();
+    return this.serial(() => this.interruptAllNow());
+  }
+
+  private async interruptAllNow(): Promise<void> {
     this.d.gate?.dropAll();
     for (const l of [...this.lanes.values()]) {
       await l.interrupt().catch((err: unknown) => console.error("Could not end a task", err));
       await this.laneEnded(l.id);
     }
+    // The idle lane was made for the old engine (its session, its runtime): the next start gets a new one.
+    const spare = this.spare;
+    this.spare = null;
+    await spare?.close().catch((err: unknown) => console.error("Could not close a lane", err));
+    // Lanes the board no longer holds (their interrupt failed) end in the file; a held one is never ended there.
     await withTasksFile(this.d.file, async () => {
       const f = await this.d.file.load();
-      if (!f.current && (f.lanes ?? []).length === 0 && (f.focus ?? null) === null) return;
-      await this.d.file.save(interruptedLanes(interrupted(f)));
+      const held = (f.lanes ?? []).filter((t) => this.lanes.has(t.id));
+      const gone = (f.lanes ?? []).filter((t) => !this.lanes.has(t.id));
+      const focusHeld = typeof f.focus === "string" && this.lanes.has(f.focus);
+      if (!f.current && gone.length === 0 && (focusHeld || (f.focus ?? null) === null)) return;
+      const ended = interruptedLanes(interrupted({ ...f, lanes: gone }));
+      await this.d.file.save({ ...ended, lanes: held, ...("focus" in f ? { focus: focusHeld ? f.focus : null } : {}) });
     });
   }
 
@@ -346,10 +365,11 @@ export class TaskBoard {
 
   /**
    * A lane's `TaskDeps.successor`: the task that follows one a lane closed starts in a fresh lane, focused, as a new
-   * task does (LaneStore never lets a lane save a second task). `start` runs it on that lane.
+   * task does (LaneStore never lets a lane save a second task). `start` runs it on that lane. `from`: the lane whose
+   * task closed, which leaves the board right after and so doesn't count against LANES_MAX.
    */
-  handOver(start: (next: LaneHandle) => Promise<void>): Promise<void> {
-    return this.begin(start);
+  handOver(start: (next: LaneHandle) => Promise<void>, from?: string): Promise<void> {
+    return this.begin(start, from);
   }
 
   /**
@@ -455,8 +475,13 @@ export class TaskBoard {
    * quick starts get two lanes, each running its first turn on its own. A lane left with no task (refused, failed
    * before it began) leaves the board.
    */
-  private async begin(fn: (l: LaneHandle) => Promise<void>): Promise<void> {
+  private async begin(fn: (l: LaneHandle) => Promise<void>, leaving?: string): Promise<void> {
+    let before: string | null = null;
     const l = await this.serial(async () => {
+      // tasks.json keeps LANES_MAX lanes: one more would drop an open task from it on the next load.
+      const open = this.lanes.size - (leaving !== undefined && this.lanes.has(leaving) ? 1 : 0);
+      if (open >= LANES_MAX) throw new Error("Too many open tasks");
+      before = this.focusId;
       const l = this.idleLane();
       this.spare = null;
       this.lanes.set(l.id, l);
@@ -468,7 +493,12 @@ export class TaskBoard {
     try {
       await fn(l);
     } finally {
-      if (this.lanes.get(l.id) === l && !l.isBusy() && (await l.view().catch(() => null))?.current == null) await this.laneEnded(l.id);
+      if (this.lanes.get(l.id) === l && !l.isBusy() && (await l.view().catch(() => null))?.current == null) {
+        const focused = this.focusId === l.id;
+        await this.laneEnded(l.id);
+        // A start that left no task gives the focus back to the task shown before, if it is still open.
+        if (focused && this.focusId === null && before !== null && this.lanes.has(before)) await this.focus(before);
+      }
     }
   }
 

@@ -4,6 +4,9 @@ dist/
 !packages/e2e/fixtures/plugins/*/dist/
 # A harness's bundled plugins ship their built dist/ (a test checks it matches a fresh build).
 !harnesses/*/plugins/*/dist/
+# The build's swap folders (plugin-build.ts), left behind only by an interrupted build.
+**/plugins/*/dist.tmp-*/
+**/plugins/*/dist.old-*/
 tmp-spike/
 .DS_Store
 *.log

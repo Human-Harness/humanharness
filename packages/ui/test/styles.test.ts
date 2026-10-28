@@ -32,6 +32,14 @@ describe("design tokens", () => {
       expect(ratio(token(block, "on-ink"), token(block, "ink"))).toBeGreaterThanOrEqual(7);
     }
   });
+
+  it("defines the diff tokens in light and dark, and keeps the timeline's chips readable (file-timeline spec §6.1)", () => {
+    for (const block of [light, dark]) {
+      for (const n of ["diff-ins", "diff-del", "diff-bar-ins", "diff-bar-del"]) expect(token(block, n)).toMatch(/^#/);
+      expect(ratio(token(block, "ok"), token(block, "diff-ins"))).toBeGreaterThanOrEqual(4.5);
+      for (const bg of ["review-question", "review-done"]) expect(ratio(token(block, "ink"), token(block, bg))).toBeGreaterThanOrEqual(4.5);
+    }
+  });
 });
 
 describe("styles", () => {

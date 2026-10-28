@@ -34,6 +34,10 @@
   --hh-review-comment: #dde8f8;
   --hh-review-done: #e9ebe6;
   --hh-review-active: #f6d77a;
+  --hh-diff-ins: #e3f2e6;
+  --hh-diff-del: #fbe3e3;
+  --hh-diff-bar-ins: #2e8a5c;
+  --hh-diff-bar-del: #b3402f;
   --hh-font: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   --hh-display: "Lexend", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   font-family: var(--hh-font);
@@ -76,6 +80,10 @@
     --hh-review-comment: #243a5a;
     --hh-review-done: #30332e;
     --hh-review-active: #7a5f12;
+    --hh-diff-ins: #1e3026;
+    --hh-diff-del: #3a2222;
+    --hh-diff-bar-ins: #4fb07f;
+    --hh-diff-bar-del: #e07a6a;
     color-scheme: dark;
   }
 }
@@ -400,6 +408,18 @@ h4.hh-md-h { font-size: 1em; font-weight: 600; color: var(--hh-slate); }
 .hh-history-undone { grid-column: 1 / -1; list-style: none; margin: 0; padding: 8px 10px; display: grid; gap: 4px; border-radius: 6px; background: var(--hh-sheet); }
 .hh-history-undone li { display: flex; justify-content: space-between; gap: 8px; }
 .hh-history-confirm-buttons { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 8px; }
+
+/* File timeline (file-timeline spec §6.1). */
+.hh-timeline { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
+.hh-timeline-pick { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; width: 100%; height: auto; padding: 6px 8px; text-align: left; border-radius: 6px; background: none; border: 1px solid transparent; }
+.hh-timeline-pick:hover:not(:disabled), .hh-timeline-selected .hh-timeline-pick { border-color: var(--hh-line-strong); background: var(--hh-surface); }
+.hh-timeline-author { font-weight: 600; }
+.hh-timeline-more { margin-left: 8px; font-size: 12px; }
+.hh-timeline-turns { margin: 2px 0 4px 16px; padding: 0; list-style: none; font-size: 13px; }
+.hh-chip { padding: 0 6px; border-radius: 999px; font-size: 12px; color: var(--hh-ink); }
+.hh-chip-amber { background: var(--hh-review-question); }
+.hh-chip-green { background: var(--hh-diff-ins); color: var(--hh-ok); }
+.hh-chip-grey { background: var(--hh-review-done); }
 .hh-change { flex: none; font-size: 12px; color: var(--hh-muted); }
 .hh-change.added { color: var(--hh-ok); }
 .hh-change.deleted { color: var(--hh-warn); }

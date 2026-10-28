@@ -106,6 +106,21 @@ describe("plugin slots", () => {
     expect(frames().map((f) => f.getAttribute("src"))).toEqual([QUEUE.url]);
   });
 
+  it("Home and End move to the first and last tab", async () => {
+    const third = panel({ id: "log", title: "Log", url: "hh-plugin://oncall/panel-log.html" });
+    const c = makeClient({ view: surface({ panels: [QUEUE, DIGEST, third] }) });
+    await open(c);
+    const tabs = await screen.findAllByRole("tab");
+    fireEvent.keyDown(tabs[0], { key: "End" });
+    expect(tabs[2].getAttribute("aria-selected")).toBe("true");
+    expect(document.activeElement).toBe(tabs[2]);
+    expect(frames().map((f) => f.getAttribute("src"))).toEqual([third.url]);
+    fireEvent.keyDown(tabs[2], { key: "Home" });
+    expect(tabs[0].getAttribute("aria-selected")).toBe("true");
+    expect(document.activeElement).toBe(tabs[0]);
+    expect(frames().map((f) => f.getAttribute("src"))).toEqual([QUEUE.url]);
+  });
+
   it("follows main's pushes: a panel that appears adds the section, one that goes removes it", async () => {
     const c = makeClient();
     const sub = vi.spyOn(c.plugins, "onSurface");
@@ -177,6 +192,34 @@ describe("plugin slots", () => {
     await waitFor(() => expect(frames().map((f) => f.getAttribute("src"))).toEqual([QUEUE.url]));
     const tabs = screen.getAllByRole("tab");
     expect(tabs[1].getAttribute("aria-selected")).toBe("true");
+  });
+
+  it("an open for a panel not there yet selects its tab once the panel appears", async () => {
+    const c = makeClient({ view: surface({ panels: [DIGEST], chips: [chip({ panel: "queue" })] }) });
+    const sub = vi.spyOn(c.plugins, "onSurface");
+    await open(c);
+    await waitFor(() => expect(sub).toHaveBeenCalled());
+    fireEvent.click(await screen.findByRole("button", { name: /^3 open/ }));
+    expect(frames().map((f) => f.getAttribute("src"))).toEqual([DIGEST.url]);
+    act(() => c.emitSurface(surface({ panels: [DIGEST, QUEUE], chips: [chip({ panel: "queue" })] })));
+    await waitFor(() => expect(frames().map((f) => f.getAttribute("src"))).toEqual([QUEUE.url]));
+    expect(screen.getAllByRole("tab")[1].getAttribute("aria-selected")).toBe("true");
+  });
+
+  it("<PluginSlot> for the core's own slots draws nothing, so no frame is doubled", async () => {
+    const c = makeClient({ view: surface({ panels: [QUEUE], chips: [chip({ panel: "queue" })] }) });
+    await open(c, {
+      renderSide: () => (
+        <div data-testid="side">
+          <PluginSlot id="plugins" />
+          <PluginSlot id="chips" />
+        </div>
+      ),
+    });
+    await screen.findByRole("region", { name: "Plugins" });
+    expect(screen.getByTestId("side").innerHTML).toBe("");
+    expect(frames()).toHaveLength(1);
+    expect(document.querySelectorAll(".hh-pl-chip")).toHaveLength(1);
   });
 
   it("P9: chip text and panel titles are plain text, never markup", async () => {

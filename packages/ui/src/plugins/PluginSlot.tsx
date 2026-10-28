@@ -2,17 +2,18 @@ import { useContext, useEffect, useRef } from "react";
 import type { PluginPanelView } from "../client";
 import { PanelFrame } from "./PanelFrame";
 import { PluginChips } from "./PluginChips";
-import { type PluginSurfaceContextValue, PluginSurfaceContext, isTarget, reloadOf } from "./surface";
+import { CHIPS_SLOT, PLUGINS_SLOT, type PluginSurfaceContextValue, PluginSurfaceContext, isTarget, reloadOf } from "./surface";
 
 /**
  * A slot the harness declared (manifest `slots`, plugins spec §3.4), drawn where the harness's own UI mounts it: a
  * panel slot stacks its panels, each headed "<title> · <plugin>"; a chip slot shows its chips. Main has already sent
  * each panel and chip to its slot (an unknown slot falls back to the core's default one). Outside the chat, or with no
- * surface (no plugins, D0), it draws nothing.
+ * surface (no plugins, D0), it draws nothing. The core's own slots ("plugins", "chips") draw nothing here either: the
+ * core already draws them, and a second copy would mount a second frame and bridge per panel.
  */
 export function PluginSlot({ id }: { id: string }) {
   const ctx = useContext(PluginSurfaceContext);
-  if (!ctx) return null;
+  if (!ctx || id === PLUGINS_SLOT || id === CHIPS_SLOT) return null;
   const panels = ctx.surface.panels.filter((p) => p.slot === id);
   if (panels.length > 0)
     return (

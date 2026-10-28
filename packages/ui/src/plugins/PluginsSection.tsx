@@ -19,22 +19,33 @@ export function PluginsSection({ ctx }: { ctx: PluginSurfaceContextValue }) {
   const tabsRef = useRef<HTMLDivElement>(null);
   const panels = surface.panels.filter((p) => p.slot === PLUGINS_SLOT);
   const shown = panels.find((p) => keyOf(p) === active) ?? panels[0];
+  const targetHere = panels.some((p) => isTarget(target, p.plugin, p.id));
 
-  // An open (a chip, an attention item) for a panel here selects its tab and brings the section into view.
+  // An open (a chip, an attention item) for a panel here selects its tab and brings the section into view, also when
+  // that panel only appears after the open.
   useEffect(() => {
-    if (!target || !panels.some((p) => isTarget(target, p.plugin, p.id))) return;
+    if (!target || !targetHere) return;
     setActive(keyOf({ plugin: target.plugin, id: target.panel }));
     sectionRef.current?.scrollIntoView?.({ block: "nearest" });
-    // Only a new open counts, not the panels' list, which changes on every push.
-  }, [target]);
+    // Only a new open, or its panel appearing, counts, not the panels' list, which changes on every push.
+  }, [target, targetHere]);
 
   if (!shown) return null;
   const index = panels.indexOf(shown);
   const onKeyDown = (e: KeyboardEvent) => {
-    const step = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : 0;
-    if (!step) return;
+    const last = panels.length - 1;
+    const next =
+      e.key === "ArrowRight" || e.key === "ArrowDown"
+        ? (index + 1) % panels.length
+        : e.key === "ArrowLeft" || e.key === "ArrowUp"
+          ? (index + last) % panels.length
+          : e.key === "Home"
+            ? 0
+            : e.key === "End"
+              ? last
+              : -1;
+    if (next < 0) return;
     e.preventDefault();
-    const next = (index + step + panels.length) % panels.length;
     setActive(keyOf(panels[next]));
     tabsRef.current?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus();
   };

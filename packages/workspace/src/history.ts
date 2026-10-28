@@ -261,8 +261,9 @@ export class History {
     return this.serialize(() => this.saveNow(withTrailer(message, trailer)));
   }
 
-  private async saveNow(message: string): Promise<string | null> {
-    const matrix = await git.statusMatrix({ ...this.repo(), filter: this.tracked });
+  private async saveNow(message: string, only?: ReadonlySet<string>): Promise<string | null> {
+    const filter = only ? (file: string) => only.has(file) && this.tracked(file) : this.tracked;
+    const matrix = await git.statusMatrix({ ...this.repo(), filter });
     let changed = false;
     for (const [file, head, workdir, stage] of matrix) {
       if (head === 1 && workdir === 1 && stage === 1 && !(await this.differsFromHead(file))) continue;
@@ -325,40 +326,102 @@ export class History {
     }
     // Removing and pruning changed folders: check them afresh.
     inside.clear();
-    for (const [file, { mode, oid }] of target) {
-      const absolute = path.join(this.folder, file);
-      const parent = path.dirname(absolute);
-      if (!(await staysInside(parent))) {
-        skip(file, "its folder leads outside the folder");
-        continue;
+    for (const [file, entry] of target) await this.writeEntry(root, file, entry, staysInside, (dir) => inside.delete(dir), skip);
+    return { sha: await this.saveNow(message), skipped };
+  }
+
+  /**
+   * Writes one entry of a restore point (never through a link): a link entry as a link, a file with O_NOFOLLOW; its
+   * parent's real path checked before and again right after `mkdir`. False when it was skipped.
+   */
+  private async writeEntry(
+    root: string,
+    file: string,
+    { mode, oid }: { mode: number; oid: string },
+    staysInside: (dir: string) => Promise<boolean>,
+    forget: (dir: string) => void,
+    skip: (file: string, why: unknown) => void,
+  ): Promise<boolean> {
+    const absolute = path.join(this.folder, file);
+    const parent = path.dirname(absolute);
+    if (!(await staysInside(parent))) {
+      skip(file, "its folder leads outside the folder");
+      return false;
+    }
+    try {
+      const { blob } = await git.readBlob({ ...this.repo(), oid });
+      const wanted = Buffer.from(blob);
+      const existing = await fs.promises.lstat(absolute).catch(() => null);
+      if (existing?.isDirectory()) {
+        skip(file, "a folder is in its place");
+        return false;
       }
-      try {
-        const { blob } = await git.readBlob({ ...this.repo(), oid });
-        const wanted = Buffer.from(blob);
-        const existing = await fs.promises.lstat(absolute).catch(() => null);
-        if (existing?.isDirectory()) {
-          skip(file, "a folder is in its place");
+      if (mode === LINK_MODE) {
+        if (existing?.isSymbolicLink() && wanted.equals(await fs.promises.readlink(absolute, { encoding: "buffer" }))) return true;
+      } else if (existing?.isFile() && wanted.equals(await fs.promises.readFile(absolute))) return true;
+      // unlink removes a link itself, never its target.
+      if (existing) await fs.promises.unlink(absolute);
+      await fs.promises.mkdir(parent, { recursive: true });
+      // mkdir follows links: check again, as close to the write as possible.
+      if (!(await resolvesInside(root, parent))) {
+        forget(parent);
+        skip(file, "its folder leads outside the folder");
+        return false;
+      }
+      if (mode === LINK_MODE) await fs.promises.symlink(wanted.toString(), absolute);
+      else await writeNoFollow(absolute, wanted, mode & 0o111 ? 0o777 : 0o666);
+      return true;
+    } catch (err) {
+      skip(file, err);
+      return false;
+    }
+  }
+
+  /**
+   * Commits only `paths` (tracked ones) as they are in the folder now; every other path keeps HEAD's content (parallel
+   * spec §5.2 step 4: a turn's partial commit). Null when none of them changed.
+   */
+  commitPaths(paths: readonly string[], message: string, trailer?: HistoryTrailer): Promise<string | null> {
+    return this.serialize(() => this.saveNow(withTrailer(message, trailer), new Set(paths)));
+  }
+
+  /**
+   * Brings only `paths` back to how they were at `sha` (a path absent there is removed) and commits just them (spec
+   * §5.3: a crashed turn's own paths, a task's undo). The same link checks as `restore`: never through a link, never
+   * outside the folder. The paths it couldn't write safely are skipped and reported.
+   */
+  restorePaths(paths: readonly string[], sha: string, message: string, trailer?: HistoryTrailer): Promise<RestoreResult> {
+    return this.serialize(async () => {
+      const wanted = new Set(paths.filter((p) => this.tracked(p)));
+      const target = await this.entriesAt(sha);
+      const root = await fs.promises.realpath(this.folder);
+      const skipped: string[] = [];
+      const skip = (file: string, why: unknown) => {
+        console.error(`Restore skipped ${file}`, why);
+        skipped.push(file);
+      };
+      for (const file of wanted) {
+        const entry = target.get(file);
+        if (entry) {
+          await this.writeEntry(root, file, entry, (dir) => resolvesInside(root, dir), () => undefined, skip);
           continue;
         }
-        if (mode === LINK_MODE) {
-          if (existing?.isSymbolicLink() && wanted.equals(await fs.promises.readlink(absolute, { encoding: "buffer" }))) continue;
-        } else if (existing?.isFile() && wanted.equals(await fs.promises.readFile(absolute))) continue;
-        // unlink removes a link itself, never its target.
-        if (existing) await fs.promises.unlink(absolute);
-        await fs.promises.mkdir(parent, { recursive: true });
-        // mkdir follows links: check again, as close to the write as possible.
-        if (!(await resolvesInside(root, parent))) {
-          inside.delete(parent);
+        const absolute = path.join(this.folder, file);
+        if (!(await resolvesInside(root, path.dirname(absolute)))) {
           skip(file, "its folder leads outside the folder");
           continue;
         }
-        if (mode === LINK_MODE) await fs.promises.symlink(wanted.toString(), absolute);
-        else await writeNoFollow(absolute, wanted, mode & 0o111 ? 0o777 : 0o666);
-      } catch (err) {
-        skip(file, err);
+        try {
+          // rm never follows a link: it removes the link itself.
+          await fs.promises.rm(absolute, { force: true });
+        } catch (err) {
+          skip(file, err);
+          continue;
+        }
+        await this.pruneEmptyParents(path.dirname(file));
       }
-    }
-    return { sha: await this.saveNow(message), skipped };
+      return { sha: await this.saveNow(withTrailer(message, trailer), wanted), skipped };
+    });
   }
 
   /** The tracked files of `sha` with their mode and blob id. */

@@ -1403,7 +1403,14 @@ export class PluginsController {
       if ((plugin !== undefined && typeof plugin !== "string") || (key !== undefined && typeof key !== "string")) return;
       const c = await this.base();
       const store = c ? await this.attentionStore(c, false) : null;
-      await store?.markRead(plugin === undefined ? undefined : { kind: "plugin", id: plugin }, key).catch((err: unknown) => this.log("Could not mark attention items read", err));
+      const mark = async (s: AttentionStore): Promise<unknown> => {
+        if (plugin !== undefined) return s.markRead({ kind: "plugin", id: plugin }, key);
+        // Board mode shares the store with the waiting tasks' items: "all" is every plugin's, never a task's.
+        if (!this.d.attentionStoreFor) return s.markRead();
+        const ids = new Set((await s.list()).filter((i) => i.origin.kind === "plugin" && !i.read).map((i) => i.origin.id));
+        for (const id of ids) await s.markRead({ kind: "plugin", id });
+      };
+      if (store) await mark(store).catch((err: unknown) => this.log("Could not mark attention items read", err));
       await this.pushAttention();
     },
     /**

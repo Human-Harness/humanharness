@@ -549,6 +549,10 @@ describe("PluginsController: attention", () => {
     const v = await u.ctl.attention.view();
     expect(v.items.map((i) => [i.plugin, i.key])).toEqual([["oncall", "a1"]]);
     expect(v.badge).toBe(1);
+    // "Mark all read" in the plugins inbox reads plugin items only: the waiting task's item stays unread.
+    await u.ctl.attention.read();
+    expect((await shared.list()).map((i) => `${i.origin.kind}:${i.origin.id}/${i.key}:${i.read}`).sort()).toEqual(["plugin:oncall/a1:true", "task:t1/waiting:false"]);
+    expect((await u.ctl.attention.view()).badge).toBe(0);
     await u.ctl.setOn("oncall", false);
     expect(stores.known({ kind: "plugin", id: "oncall" })).toBe(false);
   });

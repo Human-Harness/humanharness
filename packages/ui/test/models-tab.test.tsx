@@ -30,6 +30,7 @@ function modelsClient(models?: AppConfig["models"]) {
       claude: { models: [{ id: "haiku" }, { id: "sonnet" }, { id: "opus" }], efforts: ["low", "medium", "high", "xhigh", "max"] },
       codex: { models: [], efforts: ["low", "medium", "high"] },
     },
+    pinnedTokens: 3000,
   };
   return c;
 }
@@ -175,6 +176,28 @@ describe("ModelsTab › Tasks", () => {
     fireEvent.change(tasks.getByRole("combobox", { name: "Context cap" }), { target: { value: "1000000" } });
     release();
     await waitFor(() => expect(saved(c)).toEqual({ tasks: { turn: { custom: { engine: "claude", model: "opus", effort: "max", cap: 1_000_000 } } } }));
+  });
+
+  it("sets the pinned files budget; the harness's suggestion drops the key (context-panel spec §4.2)", async () => {
+    const c = modelsClient({ tasks: { manifest: "deep" } });
+    await renderIn("en", <Tab client={c} />);
+    const select = within(tasksRegion()).getByRole("combobox", { name: "Pinned files budget", description: /every new task gets whole/ }) as HTMLSelectElement;
+    expect(select.value).toBe("3000");
+    expect([...select.options].map((o) => o.value)).toEqual(["1000", "3000", "6000", "12000"]);
+    expect(select.options[1].textContent).toBe("3,000 tokens (suggested)");
+    fireEvent.change(select, { target: { value: "6000" } });
+    await waitFor(() => expect(saved(c)).toEqual({ tasks: { manifest: "deep" }, pinnedTokens: 6000 }));
+    fireEvent.change(select, { target: { value: "3000" } });
+    await waitFor(() => expect(saved(c)).toEqual({ tasks: { manifest: "deep" } }));
+  });
+
+  it("offers the harness's suggested budget and a saved one even when they are not in the list", async () => {
+    const c = modelsClient({ pinnedTokens: 2000 });
+    c.state.models = { ...c.state.models!, pinnedTokens: 4500 };
+    await renderIn("en", <Tab client={c} />);
+    const select = within(tasksRegion()).getByRole("combobox", { name: "Pinned files budget" }) as HTMLSelectElement;
+    expect(select.value).toBe("2000");
+    expect([...select.options].map((o) => o.value)).toEqual(["1000", "2000", "3000", "4500", "6000", "12000"]);
   });
 });
 

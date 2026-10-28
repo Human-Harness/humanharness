@@ -22,11 +22,45 @@ function lie(buf: Buffer, size: number): Buffer {
   return out;
 }
 
-/** A real document with `extra` more (empty) entries in it. */
+/**
+ * A real document with `extra` more (empty, stored) entries in it. The entries are written as raw zip records
+ * rather than through JSZip, which took seconds per file and timed out under a loaded full run.
+ */
 async function padded(buf: Buffer, extra: number): Promise<Buffer> {
-  const z = await JSZip.loadAsync(buf);
-  for (let i = 0; i < extra; i++) z.file(`pad/${i}.xml`, "");
-  return z.generateAsync({ type: "nodebuffer" });
+  let end = buf.length - 22;
+  while (end >= 0 && buf.readUInt32LE(end) !== 0x06054b50) end--;
+  const count = buf.readUInt16LE(end + 10);
+  const cdSize = buf.readUInt32LE(end + 12);
+  const cdOffset = buf.readUInt32LE(end + 16);
+  const locals: Buffer[] = [];
+  const centrals: Buffer[] = [];
+  let offset = cdOffset;
+  for (let i = 0; i < extra; i++) {
+    const name = Buffer.from(`pad/${i}.xml`);
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(20, 4); // version needed; flags, method, time, crc and sizes stay 0 (an empty stored file)
+    local.writeUInt16LE(0x21, 12); // date: 1980-01-01
+    local.writeUInt16LE(name.length, 26);
+    const central = Buffer.alloc(46);
+    central.writeUInt32LE(0x02014b50, 0);
+    central.writeUInt16LE(20, 4);
+    central.writeUInt16LE(20, 6);
+    central.writeUInt16LE(0x21, 14);
+    central.writeUInt16LE(name.length, 28);
+    central.writeUInt32LE(offset, 42);
+    locals.push(local, name);
+    centrals.push(central, name);
+    offset += local.length + name.length;
+  }
+  const cd = Buffer.concat([buf.subarray(cdOffset, cdOffset + cdSize), ...centrals]);
+  const eocd = Buffer.alloc(22);
+  eocd.writeUInt32LE(0x06054b50, 0);
+  eocd.writeUInt16LE(count + extra, 8);
+  eocd.writeUInt16LE(count + extra, 10);
+  eocd.writeUInt32LE(cd.length, 12);
+  eocd.writeUInt32LE(offset, 16);
+  return Buffer.concat([buf.subarray(0, cdOffset), ...locals, cd, eocd]);
 }
 
 const refused = (p: Promise<unknown>) => expect(p).rejects.toMatchObject({ reason: "unreadable" });
@@ -85,5 +119,14 @@ describe("the zip guard (zip bombs)", () => {
     await refused(pptxBlocks(await padded(await makePptx([{ body: ["x"] }]), extra)));
     await refused(odpBlocks(await padded(await makeOdp('<draw:page draw:name="p"/>'), extra)));
     await refused(epubBlocks(await padded(await makeEpub(["<p>x</p>"]), extra)));
-  }, 30_000);
+  });
+
+  it("a padded file is a valid zip that still reads under the limit (so a refusal above is the count)", async () => {
+    const docx = await makeDocx([{ text: "kept" }]);
+    const before = Object.keys((await JSZip.loadAsync(docx)).files).length;
+    const zip = await JSZip.loadAsync(await padded(docx, 3));
+    expect(Object.keys(zip.files)).toHaveLength(before + 3);
+    expect(await zip.file("pad/2.xml")!.async("string")).toBe("");
+    await expect(docxBlocks(await padded(docx, 3))).resolves.toBeTruthy();
+  });
 });

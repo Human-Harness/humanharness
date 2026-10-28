@@ -45,8 +45,9 @@ async function open(client: FakeClient, text: string | null = "What do you remem
   if (text) await screen.findByText(text);
 }
 
-const steps = () => screen.getByRole("navigation", { name: "Task parts" });
-const pill = (name: string) => within(steps()).getByRole("button", { name }) as HTMLButtonElement;
+// The chat and the tasks load on their own: wait for the stepper rather than expect it right after the chat shows.
+const steps = () => screen.findByRole("navigation", { name: "Task parts" });
+const pill = async (name: string) => (await within(await steps()).findByRole("button", { name })) as HTMLButtonElement;
 
 describe("task phases in the chat", () => {
   it("D0: an action without phases has no stepper and no time picker", async () => {
@@ -67,22 +68,23 @@ describe("task phases in the chat", () => {
   it("shows the stepper and moves the task; the change's line comes before its answer", async () => {
     const client = tutorClient();
     await open(client);
-    fireEvent.click(pill("Main block"));
+    fireEvent.click(await pill("Main block"));
     await waitFor(() => expect(client.phaseCalls).toEqual([{ taskId: "t1", phaseId: "main" }]));
     act(() => client.emitTaskTurn({ task: "t1", kind: "phase", phase: "main", by: "person" }));
     expect(await screen.findByText("— Main block —")).toBeTruthy();
     // While the change's turn runs, the stepper can't move the task again.
-    expect(pill("Close").disabled).toBe(true);
+    expect((await pill("Close")).disabled).toBe(true);
     act(() => client.emit({ type: "text", delta: "Now the main block." }));
     act(() => client.emit({ type: "done", ok: true }));
-    await waitFor(() => expect(pill("Close").disabled).toBe(false));
+    const close = await pill("Close");
+    await waitFor(() => expect(close.disabled).toBe(false));
   });
 
   it("a refused move shows a short error", async () => {
     const client = tutorClient();
     client.phaseResult = { ok: false, reason: "unknown" };
     await open(client);
-    fireEvent.click(pill("Main block"));
+    fireEvent.click(await pill("Main block"));
     expect(await screen.findByText("That didn't go through. Try again.")).toBeTruthy();
   });
 
@@ -93,11 +95,19 @@ describe("task phases in the chat", () => {
     expect(await screen.findByText("Time is almost up")).toBeTruthy();
   });
 
+  it("an Add now turn draws the person's line naming the file, not a phase line (context-panel spec §4.1)", async () => {
+    const client = tutorClient();
+    await open(client);
+    act(() => client.emitTaskTurn({ task: "t1", kind: "context", path: "docs/plan.md" }));
+    expect(await screen.findByText("Take docs/plan.md into account")).toBeTruthy();
+    expect(screen.queryByText("—  —")).toBeNull();
+  });
+
   it("Finish closes the task and reads the tasks again: the stepper goes once the task is gone", async () => {
     const client = tutorClient({ current: { phase: "close" } });
     await open(client);
     client.tasks = { ...client.tasks, current: null };
-    fireEvent.click(screen.getByRole("button", { name: "Finish" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Finish" }));
     await waitFor(() => expect(client.taskCalls).toEqual(["finish"]));
     await waitFor(() => expect(screen.queryByRole("navigation", { name: "Task parts" })).toBeNull());
   });
@@ -145,7 +155,7 @@ describe("task phases in the chat", () => {
     client.tasks.current!.timeBox = { minutes: 15, totalMs: 900_000, usedMs: 900_000, at: new Date().toISOString(), paused: false, wrappedUp: true, ended: true };
     await open(client);
     expect(screen.queryByRole("navigation", { name: "Task parts" })).toBeNull();
-    const box = screen.getByRole("group", { name: "How long?" });
+    const box = await screen.findByRole("group", { name: "How long?" });
     expect(within(box).getByText("Time is up")).toBeTruthy();
     fireEvent.click(within(box).getByRole("button", { name: "Finish" }));
     await waitFor(() => expect(client.taskCalls).toEqual(["finish"]));
@@ -158,7 +168,7 @@ describe("task phases in the chat", () => {
       return false;
     };
     await open(client);
-    fireEvent.click(screen.getByRole("button", { name: "Pause" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Pause" }));
     expect(await screen.findByText("That didn't go through. Try again.")).toBeTruthy();
   });
 

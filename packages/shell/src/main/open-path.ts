@@ -45,7 +45,7 @@ export function revealableFile(rel: unknown, roots: string[]): Promise<string | 
  * on its way (its real path is itself), inside one of `roots`: it or a folder above it may have been
  * swapped since it was checked.
  */
-async function stillSafe(target: string, roots: string[]): Promise<boolean> {
+export async function stillSafe(target: string, roots: string[]): Promise<boolean> {
   const stat = await fs.lstat(target).catch(() => null);
   if (!stat || stat.isSymbolicLink() || !stat.isFile()) return false;
   const real = await fs.realpath(target).catch(() => null);

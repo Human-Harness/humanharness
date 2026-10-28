@@ -54,6 +54,18 @@ describe("recordingSchema", () => {
       expect(recordingSchema.safeParse({ ...base, turns: [{ id: "t1" }, bad] }).success).toBe(false);
     }
   });
+
+  it("a turn may record reads: folder-relative paths, never outside (context-panel spec §7)", () => {
+    const base = { version: 1, action: "a", match: "m" };
+    const ok = recordingSchema.parse({ ...base, turns: [{ id: "t1", reads: ["README.md", "docs/a.md", ".harness/notes/n.md"] }] });
+    expect(ok.turns[0].reads).toEqual(["README.md", "docs/a.md", ".harness/notes/n.md"]);
+    // Absent stays absent: recordings without reads parse as before.
+    expect(recordingSchema.parse({ ...base, turns: [{ id: "t1" }] }).turns[0]).not.toHaveProperty("reads");
+    for (const bad of ["../x.md", "/etc/passwd", "C:\\x", "\\\\host\\share", "", ".", "a/.."]) {
+      expect(recordingSchema.safeParse({ ...base, turns: [{ id: "t1", reads: [bad] }] }).success, bad).toBe(false);
+    }
+    expect(recordingSchema.safeParse({ ...base, turns: [{ id: "t1", reads: Array.from({ length: 21 }, (_, i) => `f${i}.md`) }] }).success).toBe(false);
+  });
 });
 
 describe("loadRecordings", () => {

@@ -24,10 +24,15 @@ const Note = ({ data, respond }: BlockProps) => (
 /** Renders the app and goes from Home to the work screen, as a returning user does (Start waits for the engine check). */
 async function startWork(ui: ReactElement) {
   const result = render(ui);
+  await clickStart();
+  return result;
+}
+
+/** Home's Start, once the engine check has passed: a click before that does nothing. */
+async function clickStart() {
   const start = (await screen.findByRole("button", { name: "Start Demo" })) as HTMLButtonElement;
   await waitFor(() => expect(start.disabled).toBe(false));
   fireEvent.click(start);
-  return result;
 }
 
 /** On the work screen, the engine develops a problem that the next background check (Settings closing) finds. */
@@ -152,7 +157,6 @@ describe("HarnessApp", () => {
     fireEvent.click(screen.getByRole("button", { name: "History" }));
     await screen.findByText("The AI finished");
     fireEvent.click(screen.getByRole("button", { name: "Go back here" }));
-    fireEvent.click(screen.getByRole("button", { name: "Yes, go back" }));
     await waitFor(() => expect(client.restored).toEqual(["abc"]));
   });
 
@@ -162,7 +166,6 @@ describe("HarnessApp", () => {
     await screen.findByPlaceholderText("Write a message…");
     fireEvent.click(screen.getByRole("button", { name: "History" }));
     fireEvent.click(await screen.findByRole("button", { name: "Undo this task" }));
-    fireEvent.click(screen.getByRole("button", { name: "Undo task" }));
     await waitFor(() => expect(client.restoredTasks).toEqual(["t1"]));
     await screen.findByText("I went back to before that task. Everything it changed in your files was undone.");
   });
@@ -175,7 +178,6 @@ describe("HarnessApp", () => {
     fireEvent.click(screen.getByRole("button", { name: "History" }));
     await screen.findByText("The AI finished");
     fireEvent.click(screen.getByRole("button", { name: "Go back here" }));
-    fireEvent.click(screen.getByRole("button", { name: "Yes, go back" }));
     expect((await screen.findByRole("alert")).textContent).toMatch(/couldn't go back/i);
   });
 
@@ -254,8 +256,9 @@ describe("HarnessApp", () => {
     expect(screen.getByText("typed early")).toBeTruthy();
   });
 
-  it("disables restore while a turn is live, asks for confirmation and adds a notice", async () => {
+  it("disables restore while a turn is live, goes back only after main's yes and adds a notice", async () => {
     const client = new FakeClient(ready);
+    client.confirmGoBack = async () => false;
     await startWork(<HarnessApp client={client} />);
     await typeAndSend(client, "go");
     fireEvent.click(screen.getByRole("button", { name: "History" }));
@@ -263,10 +266,11 @@ describe("HarnessApp", () => {
     expect((screen.getByRole("button", { name: "Go back here" }) as HTMLButtonElement).disabled).toBe(true);
     act(() => client.emit({ type: "done", ok: true }));
     fireEvent.click(screen.getByRole("button", { name: "Go back here" }));
+    await waitFor(() => expect(client.goBackAsks).toHaveLength(1));
     expect(client.restored).toEqual([]);
-    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    client.confirmGoBack = async () => true;
+    await waitFor(() => expect((screen.getByRole("button", { name: "Go back here" }) as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(screen.getByRole("button", { name: "Go back here" }));
-    fireEvent.click(screen.getByRole("button", { name: "Yes, go back" }));
     await waitFor(() => expect(client.restored).toEqual(["abc"]));
     await screen.findByText("I went back to that point. Files changed after it were undone.");
     expect(screen.queryByRole("dialog")).toBeNull();
@@ -420,7 +424,7 @@ describe("HarnessApp", () => {
     const next = screen.getByRole("button", { name: "Next" }) as HTMLButtonElement;
     await waitFor(() => expect(next.disabled).toBe(false));
     fireEvent.click(next);
-    fireEvent.click(await screen.findByRole("button", { name: "Start Demo" }));
+    await clickStart();
     await screen.findByPlaceholderText("Write a message…");
     expect(client.state.config).toEqual({ language: "en", folder: "/Users/me/Documents/Demo", engineId: "claude" });
   });
@@ -541,7 +545,7 @@ describe("HarnessApp", () => {
     // The sheet hangs under Home's top bar, which stays in place.
     expect(dragStrip(container)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Done" }));
-    fireEvent.click(screen.getByRole("button", { name: "Start Demo" }));
+    await clickStart();
     await screen.findByPlaceholderText("Write a message…");
     expect(dragStrip(container)?.textContent).toContain("Demo");
   });
@@ -796,5 +800,94 @@ describe("HarnessApp", () => {
       <HarnessApp client={client} stateBlocks={["progress"]} renderSide={(s) => <p>Progress {(s.progress as { percent: number } | undefined)?.percent ?? 0}%</p>} />,
     );
     await screen.findByText("Progress 60%");
+  });
+});
+
+describe("HarnessApp language on demand (plan 5b)", () => {
+  it("starts in the saved language's cached strings; D0 English asks for none", async () => {
+    // Answered offer: the Home card (and its state ask) is another test's.
+    const client = new FakeClient({ ...ready, languageOffered: true });
+    client.state.config.language = "es";
+    client.languageStrings.es = { "core:home.start": "Empezar {{name}}" };
+    render(<HarnessApp client={client} locales={{ en: { title: "Notes" } }} />);
+    expect(await screen.findByRole("button", { name: "Empezar Demo" })).toBeTruthy();
+    expect(document.documentElement.lang).toBe("es");
+    expect(client.languageCalls).toEqual([{ op: "strings", args: ["es", { title: "Notes" }] }]);
+    cleanup();
+    for (const language of ["en", "en-GB"]) {
+      const en = new FakeClient({ ...ready, language });
+      render(<HarnessApp client={en} />);
+      // Ready (the engine check passed): Home would have asked by now if it had something to offer.
+      await waitFor(() => expect((screen.getByRole("button", { name: "Start Demo" }) as HTMLButtonElement).disabled).toBe(false));
+      // No strings for English, and no state ask (an engine check) at start; no offer card (D0).
+      expect(en.languageCalls).toEqual([]);
+      expect(document.querySelector(".hh-langoffer")).toBeNull();
+      cleanup();
+    }
+  });
+
+  it("a failed strings answer starts in English", async () => {
+    const client = new FakeClient({ ...ready, language: "es" });
+    client.language.strings = async () => Promise.reject(new Error("gone"));
+    render(<HarnessApp client={client} />);
+    expect(await screen.findByRole("button", { name: "Start Demo" })).toBeTruthy();
+  });
+
+  it("Settings › General asks for the state and offers Change…; a finished run switches the screen live", async () => {
+    const client = new FakeClient(ready);
+    client.languageState = { ...client.languageState, language: "en" };
+    client.languageStrings.es = { "core:home.start": "Empezar {{name}}" };
+    render(<HarnessApp client={client} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Change…" }));
+    expect(screen.getByRole("dialog", { name: "Language" })).toBeTruthy();
+    fireEvent.keyDown(screen.getByRole("dialog", { name: "Language" }), { key: "Escape" });
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    act(() => client.pushLanguage({ language: "es", run: { tag: "es", done: 0, total: 1, status: "running" } }));
+    act(() => client.pushLanguage({ language: "es", cached: [{ tag: "es", complete: true }], run: { tag: "es", done: 1, total: 1, status: "done" } }));
+    expect(await screen.findByRole("button", { name: "Empezar Demo" })).toBeTruthy();
+  });
+
+  it("Home offers a saved language with no translation once the engine is ready (spec §10); Not now saves it", async () => {
+    const client = new FakeClient({ ...ready, language: "es" });
+    client.languageState = { ...client.languageState, language: "es", missing: 9 };
+    render(<HarnessApp client={client} />);
+    const card = await screen.findByRole("region", { name: "Use Demo in another language?" });
+    expect(card.textContent).toContain("Suggested: Español");
+    expect(client.languageCalls.filter((c) => c.op === "state")).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "Not now" }));
+    await waitFor(() => expect(client.state.config.languageOffered).toBe(true));
+    expect(screen.queryByRole("region", { name: "Use Demo in another language?" })).toBeNull();
+  });
+
+  it("a language chosen in Settings answers the offer: back on Home, no state ask and no card", async () => {
+    // An English person (no offer to answer yet) picks French, already translated, in Settings.
+    const client = new FakeClient(ready);
+    client.languageState = { ...client.languageState, cached: [{ tag: "fr", complete: true }] };
+    client.languageStrings.fr = { "core:home.start": "Démarrer {{name}}" };
+    render(<HarnessApp client={client} />);
+    await waitFor(() => expect((screen.getByRole("button", { name: "Start Demo" }) as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Change…" }));
+    fireEvent.click(await screen.findByRole("radio", { name: /Français/ }));
+    client.languageCalls = [];
+    fireEvent.click(screen.getByRole("button", { name: "Use" }));
+    // The window's own state says the offer is answered (main saved it too), so Home, still under the sheet, doesn't ask.
+    expect(await screen.findByRole("button", { name: "Démarrer Demo", hidden: true })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    await screen.findByRole("button", { name: "Démarrer Demo" });
+    expect(client.languageCalls.map((c) => c.op)).toEqual(["choose"]);
+    expect(document.querySelector(".hh-langoffer")).toBeNull();
+  });
+
+  it("D0: without client.language Home has no card and Settings keeps the read-only row", async () => {
+    const client = new FakeClient({ ...ready, language: "es" });
+    (client as { language?: unknown }).language = undefined;
+    render(<HarnessApp client={client} />);
+    await waitFor(() => expect((screen.getByRole("button", { name: "Start Demo" }) as HTMLButtonElement).disabled).toBe(false));
+    expect(document.querySelector(".hh-langoffer")).toBeNull();
+    fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
+    await screen.findByText("The AI always thinks in English and writes to you in this language.");
+    expect(screen.queryByRole("button", { name: "Change…" })).toBeNull();
   });
 });

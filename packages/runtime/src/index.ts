@@ -6,3 +6,4 @@ export { AcpTransport, codexConfig, decidePermission, isUiTool, offeredModels, t
 export { createRuntime, type HarnessRuntime, type RunningTurn, type RuntimeOptions } from "./runtime";
 export { runSystemTask, type SystemTaskOptions, type SystemTaskResult } from "./system";
 export { SidekickSession, type SidekickAnswer, type SidekickSessionOptions } from "./sidekick";
+export { runSystemSession, type SystemSessionOptions, type SystemSessionResult } from "./system-session";

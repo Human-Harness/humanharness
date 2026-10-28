@@ -143,12 +143,15 @@ test("D0: a harness without material has no panel and no material files", async 
     await page.getByRole("button", { name: "Set up Family Tutor" }).click();
     await page.getByRole("textbox", { name: "Name" }).fill("Sofi");
     await next.click();
+    // Wait for each step before typing into it: the first textbox is still the name until the goal step shows.
+    await expect(page.getByRole("heading", { name: "Your goal" })).toBeVisible();
     await page.getByRole("textbox").first().fill("Fractions");
     await next.click();
     await expect(page.getByRole("heading", { name: "All set" })).toBeVisible();
     await page.getByRole("button", { name: "Start Family Tutor" }).click();
     await page.getByRole("button", { name: /Practice/ }).first().click();
-    await expect(page.getByText("Una pregunta corta.")).toBeVisible();
+    // In the chat: the screen reader's live region repeats the answer for a moment.
+    await expect(page.getByRole("main").getByText("Una pregunta corta.")).toBeVisible();
     await expect(page.getByRole("heading", { name: "Material" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Add a file" })).toHaveCount(0);
     const sofi = path.join(s.folder, "sofi");

@@ -1,7 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import git from "isomorphic-git";
-import { DATA_PREFIX, MATERIAL_KEEP, NOTES_PREFIX, isScopeDir } from "./layout";
+import { CONTEXT_PREFIX, DATA_PREFIX, MATERIAL_KEEP, NOTES_PREFIX, REVIEWS_PREFIX, isScopeDir } from "./layout";
+import { FileIndex, type FileIndexData, addCommit, emptyIndex } from "./file-index";
+import { type TimelineCommit, type TimelineEntry, groupTimeline, namedPath } from "./file-timeline";
 import { BEFORE_MESSAGE } from "./subjects";
 
 /**
@@ -11,22 +13,52 @@ import { BEFORE_MESSAGE } from "./subjects";
 export type HistoryKeep = string | { readonly prefix: string; readonly match: RegExp; readonly depth: number };
 
 /**
- * What the app's history keeps under `.harness/`: the notes and the data; with material, its registry and decisions
- * (`MATERIAL_KEEP`). The one rule for the shell's history and the runtime's, so both agree (D0 without material).
+ * What the app's history keeps under `.harness/`: the notes, the data, the review records and the context pins; with
+ * material, its registry and decisions (`MATERIAL_KEEP`). The one rule for the shell's history and the runtime's, so
+ * both agree (D0 without material). A harness that never reviews has no file under `REVIEWS_PREFIX`, and one whose
+ * person never pins has no file under `CONTEXT_PREFIX`, so its commits don't change.
  */
-export const appHistoryKeep = (material: boolean): HistoryKeep[] => [NOTES_PREFIX, DATA_PREFIX, ...(material ? [MATERIAL_KEEP] : [])];
+export const appHistoryKeep = (material: boolean): HistoryKeep[] => [
+  NOTES_PREFIX,
+  DATA_PREFIX,
+  REVIEWS_PREFIX,
+  CONTEXT_PREFIX,
+  ...(material ? [MATERIAL_KEEP] : []),
+];
 
 const keeps = (k: HistoryKeep, file: string): boolean => (typeof k === "string" ? file.startsWith(k) : k.match.test(file));
 
 const AUTHOR = { name: "Human Harness", email: "history@humanharness.local" };
 
 /**
- * The temp files `writeNote` and the data store rename into place (`<file>.md.<uuid>.tmp`, `<file>.json.<uuid>.tmp`);
- * the person's own `.tmp` files stay tracked.
+ * How long after a commit the file index is written (file-timeline spec §3.3). A commit only advances the index this
+ * History holds; the file follows once things go quiet, in one write for a burst of commits, so a big index never
+ * slows a commit down. `flush` writes it at once (closing, quitting, moving the folder).
+ */
+export const INDEX_WRITE_DELAY_MS = 1000;
+
+/** The Histories whose index has changed since it was last written. */
+const pendingIndexes = new Set<History>();
+
+/** Writes every History's pending file index now (the app quits, the folder moves). */
+export async function flushFileIndexes(): Promise<void> {
+  await Promise.all([...pendingIndexes].map((h) => h.flush()));
+}
+
+/** The newest commits of a file a timeline reads (Open questions Q7). */
+export const MAX_TIMELINE_COMMITS = 1000;
+
+/**
+ * The temp files `writeNote`, the data store, the review records and the context pins rename into place (`<file>.md.<uuid>.tmp`,
+ * `<file>.json.<uuid>.tmp`), and the hidden `.<name>.md.<uuid>.tmp` a review's answer renames over a document (left
+ * behind only by a crash); the person's own `.tmp` files stay tracked.
  */
 const isAppTempFile = (file: string): boolean =>
+  /(^|\/)\.[^/]+\.md\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.tmp$/i.test(file) ||
   (file.startsWith(NOTES_PREFIX) && /\.md\.[0-9a-f-]+\.tmp$/.test(file.slice(NOTES_PREFIX.length))) ||
-  (file.startsWith(DATA_PREFIX) && /\.json\.[0-9a-f-]+\.tmp$/.test(file.slice(DATA_PREFIX.length)));
+  (file.startsWith(DATA_PREFIX) && /\.json\.[0-9a-f-]+\.tmp$/.test(file.slice(DATA_PREFIX.length))) ||
+  (file.startsWith(REVIEWS_PREFIX) && /\.json\.[0-9a-f-]+\.tmp$/.test(file.slice(REVIEWS_PREFIX.length))) ||
+  (file.startsWith(CONTEXT_PREFIX) && /\.json\.[0-9a-f-]+\.tmp$/.test(file.slice(CONTEXT_PREFIX.length)));
 
 export interface HistoryEntry {
   sha: string;
@@ -91,6 +123,12 @@ const LINK_MODE = 0o120000;
 export interface RestoreResult {
   sha: string | null;
   skipped: string[];
+}
+
+/** A commit and the tracked paths it touched (plus the path an `Answer:`/`Approved:` subject names). */
+export interface CommitPaths {
+  sha: string;
+  paths: string[];
 }
 
 /** True when `dir` (or its nearest existing ancestor) resolves inside `root`, the folder's real path. */
@@ -179,6 +217,37 @@ export class History {
 
   private headTime = 0;
   private queue: Promise<unknown> = Promise.resolve();
+  // Lazy: a field initializer would run before the constructor's parameter properties are set.
+  private fileIndex: FileIndex | null = null;
+  private get index(): FileIndex {
+    return (this.fileIndex ??= new FileIndex(this.gitdir));
+  }
+  private readonly commitListeners = new Set<(c: CommitPaths) => void>();
+  /** Bumped by every commit of this History: a read shares an update only with reads started since the same commit. */
+  private generation = 0;
+  /** The index being brought up to date, shared by every read of the same generation meanwhile. */
+  private updating: { generation: number; run: Promise<FileIndexData> } | null = null;
+  /**
+   * The last index this History computed or advanced; only a commit adds to it, in place. A read at its head needs no
+   * file, so an index file that can't be written or read back (a folder in its place) costs one rebuild, not one per
+   * read.
+   */
+  private known: FileIndexData | null = null;
+  /** `known` changed since it was last written; the timer that writes it. */
+  private indexDirty = false;
+  private indexTimer: ReturnType<typeof setTimeout> | null = null;
+  private indexWrites: Promise<void> = Promise.resolve();
+
+  /** Told after every commit, with the paths it touched (the window refreshes a file's timeline). */
+  onCommit(listener: (c: CommitPaths) => void): () => void {
+    this.commitListeners.add(listener);
+    return () => void this.commitListeners.delete(listener);
+  }
+
+  /** Whether the history tracks `file` (relative, forward slashes). */
+  tracks(file: string): boolean {
+    return this.tracked(file);
+  }
 
   /** Runs `fn` after every previously queued operation has settled. */
   private serialize<T>(fn: () => Promise<T>): Promise<T> {
@@ -246,19 +315,150 @@ export class History {
     return this.serialize(() => this.saveNow(withTrailer(message, trailer)));
   }
 
-  private async saveNow(message: string): Promise<string | null> {
-    const matrix = await git.statusMatrix({ ...this.repo(), filter: this.tracked });
-    let changed = false;
+  private async saveNow(message: string, only?: ReadonlySet<string>): Promise<string | null> {
+    const parent = await this.last();
+    const filter = only ? (file: string) => only.has(file) && this.tracked(file) : this.tracked;
+    const matrix = await git.statusMatrix({ ...this.repo(), filter });
+    const paths: string[] = [];
     for (const [file, head, workdir, stage] of matrix) {
       if (head === 1 && workdir === 1 && stage === 1 && !(await this.differsFromHead(file))) continue;
-      changed = true;
+      paths.push(file);
       if (workdir === 0) await git.remove({ ...this.repo(), filepath: file });
       else await git.add({ ...this.repo(), filepath: file });
     }
-    if (!changed && (await this.last()) !== null) return null;
+    if (paths.length === 0 && parent !== null) return null;
     const sha = await git.commit({ ...this.repo(), message, author: AUTHOR });
     await this.refreshHeadTime();
+    await this.committed(parent, sha, message, paths);
     return sha;
+  }
+
+  /**
+   * After a commit: the index this History holds (in memory; the file is written later and never fails the commit),
+   * then the listeners. An index behind HEAD is left alone: the next read catches it up.
+   */
+  private async committed(parent: string | null, sha: string, message: string, staged: string[]): Promise<void> {
+    const named = namedPath(parseCommitMessage(message).subject);
+    const paths = named !== null && !staged.includes(named) ? [...staged, named] : staged;
+    // A read started before this commit may still run at the old head: later reads must not join it.
+    this.generation++;
+    if (parent === null) this.known = emptyIndex(null);
+    if (this.known !== null && this.known.head === parent) {
+      // In place: a read that already holds it only ever copies a list out, so it sees this commit or not.
+      addCommit(this.known, sha, paths);
+      this.indexChanged();
+    }
+    const failed = (err: unknown) => console.error("A commit listener failed", err);
+    for (const l of [...this.commitListeners]) {
+      try {
+        // Each listener its own copy; an async listener's rejection is caught too.
+        const r: unknown = l({ sha, paths: [...paths] });
+        if (r instanceof Promise) r.catch(failed);
+      } catch (err) {
+        failed(err);
+      }
+    }
+  }
+
+  /** The commits that touched `file`, oldest first (file-timeline spec §3.3). */
+  async fileCommits(file: string): Promise<string[]> {
+    const data = await this.currentIndex();
+    // A copy: the index's own lists grow with later commits.
+    return Object.hasOwn(data.paths, file) ? [...data.paths[file]] : [];
+  }
+
+  /** The index changed: write it once things go quiet. */
+  private indexChanged(): void {
+    this.indexDirty = true;
+    pendingIndexes.add(this);
+    if (this.indexTimer) return;
+    this.indexTimer = setTimeout(() => void this.flush(), INDEX_WRITE_DELAY_MS);
+    // A pending write never keeps a process (the CLI) alive; a lost one costs a catch-up on the next read.
+    this.indexTimer.unref?.();
+  }
+
+  /** Writes the index this History holds, when it changed since the last write. Never throws. */
+  flush(): Promise<void> {
+    if (this.indexTimer) clearTimeout(this.indexTimer);
+    this.indexTimer = null;
+    pendingIndexes.delete(this);
+    this.indexWrites = this.indexWrites.then(async () => {
+      if (!this.indexDirty || this.known === null) return;
+      this.indexDirty = false;
+      // `save` serialises it before its first await: later commits wait for the next write.
+      await this.saveIndex(this.known);
+    });
+    return this.indexWrites;
+  }
+
+  private currentIndex(): Promise<FileIndexData> {
+    const generation = this.generation;
+    if (this.updating?.generation !== generation) {
+      const run: Promise<FileIndexData> = this.bringIndexUpToDate().then(({ data, built }) => {
+        // An update a commit overtook leaves `known` to the newer one.
+        if (this.generation === generation) {
+          this.known = data;
+          if (built) this.indexChanged();
+        }
+        return data;
+      });
+      const entry = { generation, run };
+      this.updating = entry;
+      void run.finally(() => {
+        if (this.updating === entry) this.updating = null;
+      }).catch(() => undefined);
+    }
+    return this.updating!.run;
+  }
+
+  /**
+   * The index at HEAD: this History's own when it is at HEAD; else the file's when it is; else whichever of the two is
+   * found walking back from HEAD, caught up on the commits after it (another History's); else rebuilt from that same
+   * walk, down to the first commit. Reads git objects only (immutable), so it runs outside the write queue; a commit
+   * meanwhile starts a new generation of reads. Never changes `known` (a commit may meanwhile). `built`: caught up or
+   * rebuilt here, so the file is behind it.
+   */
+  private async bringIndexUpToDate(): Promise<{ data: FileIndexData; built: boolean }> {
+    const head = await this.last();
+    if (head === null) return { data: emptyIndex(null), built: false };
+    const mine = this.known;
+    if (mine?.head === head) return { data: mine, built: false };
+    const file = await this.index.load();
+    if (file?.head === head) return { data: file, built: false };
+    const bases = [mine, file].filter((d): d is FileIndexData => d !== null && d.head !== null);
+    const cache = {};
+    // First parents back from HEAD to a base's head; to the first commit when there is none (a rebuild).
+    const newer: string[] = [];
+    let base: FileIndexData | undefined;
+    for (let at: string | null = head; at !== null; at = await this.parentOf(at, cache)) {
+      base = bases.find((d) => d.head === at);
+      if (base) break;
+      newer.push(at);
+    }
+    const next = base ? structuredClone(base) : emptyIndex(null);
+    for (const sha of newer.reverse()) addCommit(next, sha, await this.pathsOf(sha, cache));
+    return { data: next, built: true };
+  }
+
+  private async saveIndex(data: FileIndexData): Promise<void> {
+    try {
+      await this.index.save(data);
+    } catch (err) {
+      // The git data is gone (moved, pruned): nothing to keep the index for.
+      if ((err as NodeJS.ErrnoException).code !== "ENOENT") console.error("Could not save the file index", err);
+    }
+  }
+
+  /**
+   * Every path commit `sha` changed against its parent, plus the path its subject names. Not filtered by this History's
+   * rules: the index is shared by every History on the same git data, whatever each one keeps.
+   */
+  private async pathsOf(sha: string, cache: object): Promise<string[]> {
+    const { commit } = await git.readCommit({ fs, gitdir: this.gitdir, oid: sha, cache });
+    const paths = (await this.diff(commit.parent[0] ?? null, sha, cache, true)).map((c) => c.path);
+    const named = namedPath(parseCommitMessage(commit.message).subject);
+    if (named !== null && !paths.includes(named)) paths.push(named);
+    return paths;
   }
 
   /** Makes the folder look exactly like `sha` (tracked files only) and records that as a new commit, tagged with `trailer`. */
@@ -310,40 +510,82 @@ export class History {
     }
     // Removing and pruning changed folders: check them afresh.
     inside.clear();
-    for (const [file, { mode, oid }] of target) {
-      const absolute = path.join(this.folder, file);
-      const parent = path.dirname(absolute);
-      if (!(await staysInside(parent))) {
-        skip(file, "its folder leads outside the folder");
-        continue;
-      }
-      try {
-        const { blob } = await git.readBlob({ ...this.repo(), oid });
-        const wanted = Buffer.from(blob);
-        const existing = await fs.promises.lstat(absolute).catch(() => null);
-        if (existing?.isDirectory()) {
-          skip(file, "a folder is in its place");
-          continue;
-        }
-        if (mode === LINK_MODE) {
-          if (existing?.isSymbolicLink() && wanted.equals(await fs.promises.readlink(absolute, { encoding: "buffer" }))) continue;
-        } else if (existing?.isFile() && wanted.equals(await fs.promises.readFile(absolute))) continue;
-        // unlink removes a link itself, never its target.
-        if (existing) await fs.promises.unlink(absolute);
-        await fs.promises.mkdir(parent, { recursive: true });
-        // mkdir follows links: check again, as close to the write as possible.
-        if (!(await resolvesInside(root, parent))) {
-          inside.delete(parent);
-          skip(file, "its folder leads outside the folder");
-          continue;
-        }
-        if (mode === LINK_MODE) await fs.promises.symlink(wanted.toString(), absolute);
-        else await writeNoFollow(absolute, wanted, mode & 0o111 ? 0o777 : 0o666);
-      } catch (err) {
-        skip(file, err);
-      }
-    }
+    for (const [file, entry] of target) await this.writeEntry(root, file, entry, staysInside, (dir) => inside.delete(dir), skip);
     return { sha: await this.saveNow(message), skipped };
+  }
+
+  /**
+   * Writes one entry of a restore point (never through a link): a link entry as a link, a file with O_NOFOLLOW; its
+   * parent's real path checked before and again right after `mkdir`. False when it was skipped.
+   */
+  private async writeEntry(
+    root: string,
+    file: string,
+    { mode, oid }: { mode: number; oid: string },
+    staysInside: (dir: string) => Promise<boolean>,
+    forget: (dir: string) => void,
+    skip: (file: string, why: unknown) => void,
+  ): Promise<boolean> {
+    const absolute = path.join(this.folder, file);
+    const parent = path.dirname(absolute);
+    if (!(await staysInside(parent))) {
+      skip(file, "its folder leads outside the folder");
+      return false;
+    }
+    try {
+      const { blob } = await git.readBlob({ ...this.repo(), oid });
+      const wanted = Buffer.from(blob);
+      const existing = await fs.promises.lstat(absolute).catch(() => null);
+      if (existing?.isDirectory()) {
+        skip(file, "a folder is in its place");
+        return false;
+      }
+      if (mode === LINK_MODE) {
+        if (existing?.isSymbolicLink() && wanted.equals(await fs.promises.readlink(absolute, { encoding: "buffer" }))) return true;
+      } else if (existing?.isFile() && wanted.equals(await fs.promises.readFile(absolute))) return true;
+      // unlink removes a link itself, never its target.
+      if (existing) await fs.promises.unlink(absolute);
+      await fs.promises.mkdir(parent, { recursive: true });
+      // mkdir follows links: check again, as close to the write as possible.
+      if (!(await resolvesInside(root, parent))) {
+        forget(parent);
+        skip(file, "its folder leads outside the folder");
+        return false;
+      }
+      if (mode === LINK_MODE) await fs.promises.symlink(wanted.toString(), absolute);
+      else await writeNoFollow(absolute, wanted, mode & 0o111 ? 0o777 : 0o666);
+      return true;
+    } catch (err) {
+      skip(file, err);
+      return false;
+    }
+  }
+
+  /**
+   * Brings `file` back to how it was at `sha`, and nothing else (file-timeline spec §5): the commit stages only that
+   * path, so the person's other edits wait for the next commit. Untagged, like every restore.
+   */
+  restoreFile(file: string, sha: string, message: string): Promise<RestoreResult> {
+    return this.serialize(async () => {
+      if (!this.tracked(file)) throw new Error("That file is not tracked");
+      const entry = await this.entryAt(sha, file);
+      if (!entry) throw new Error("That file is not in that version");
+      const root = await fs.promises.realpath(this.folder);
+      const skipped: string[] = [];
+      const written = await this.writeEntry(
+        root,
+        file,
+        entry,
+        (dir) => resolvesInside(root, dir),
+        () => undefined,
+        (f, why) => {
+          console.error(`Restore skipped ${f}`, why);
+          skipped.push(f);
+        },
+      );
+      if (!written) return { sha: null, skipped };
+      return { sha: await this.saveNow(withTrailer(message), new Set([file])), skipped };
+    });
   }
 
   /** The tracked files of `sha` with their mode and blob id. */
@@ -444,6 +686,90 @@ export class History {
     }
   }
 
+  /**
+   * The text of blob `oid` (an approved version, review spec §5.4); null when the history doesn't have it, or when it
+   * is over `max` bytes.
+   */
+  async readBlob(oid: string, max = Number.POSITIVE_INFINITY): Promise<string | null> {
+    if (!/^[0-9a-f]{40}$/.test(oid)) return null;
+    try {
+      const { blob } = await git.readBlob({ fs, gitdir: this.gitdir, oid });
+      if (blob.length > max) return null;
+      return Buffer.from(blob).toString("utf8");
+    } catch (err) {
+      // Not there, or a commit or tree id rather than a blob's.
+      const code = (err as { code?: string }).code;
+      if (code === "NotFoundError" || code === "ObjectTypeError") return null;
+      throw err;
+    }
+  }
+
+  /** `file`'s mode and blob id at commit or tree `sha`, without reading the blob; null when it is not there. */
+  private async entryAt(sha: string, file: string, cache: object = {}): Promise<{ mode: number; oid: string } | null> {
+    const cut = file.lastIndexOf("/");
+    const dir = cut < 0 ? undefined : file.slice(0, cut);
+    const name = file.slice(cut + 1);
+    try {
+      const { tree } = await git.readTree({ fs, gitdir: this.gitdir, oid: sha, ...(dir ? { filepath: dir } : {}), cache });
+      const e = tree.find((t) => t.path === name && t.type === "blob");
+      return e ? { mode: parseInt(e.mode, 8), oid: e.oid } : null;
+    } catch (err) {
+      const code = (err as { code?: string }).code;
+      if (code === "NotFoundError" || code === "ObjectTypeError") return null;
+      throw err;
+    }
+  }
+
+  /**
+   * `file`'s first `max` bytes at commit `sha`, its whole size and its blob id; null when the commit or the file isn't
+   * there. Only the kept bytes outlive the call: a bigger blob is copied down to `max`, so a timeline's diff never holds
+   * a whole historical file (isomorphic-git still inflates it once).
+   */
+  async readBytesAt(sha: string, file: string, max = Number.POSITIVE_INFINITY): Promise<{ bytes: Buffer; size: number; oid: string } | null> {
+    const entry = await this.entryAt(sha, file);
+    if (!entry) return null;
+    try {
+      const { blob } = await git.readBlob({ fs, gitdir: this.gitdir, oid: entry.oid });
+      // A view when it all stays; a copy of the prefix otherwise, so the whole blob can go.
+      const bytes = blob.length <= max ? Buffer.from(blob.buffer, blob.byteOffset, blob.byteLength) : Buffer.from(blob.subarray(0, max));
+      return { bytes, size: blob.length, oid: entry.oid };
+    } catch (err) {
+      const code = (err as { code?: string }).code;
+      if (code === "NotFoundError" || code === "ObjectTypeError") return null;
+      throw err;
+    }
+  }
+
+  /**
+   * `file`'s timeline, newest first (file-timeline spec §3), from at most its `max` newest commits. Approvals are
+   * numbered within that window, so once an older approval falls out of it the later ones renumber.
+   */
+  async fileTimeline(file: string, actionLabel: (id: string | null) => string, max = MAX_TIMELINE_COMMITS): Promise<TimelineEntry[]> {
+    const ids = (await this.fileCommits(file)).slice(-max);
+    const cache = {};
+    const commits: TimelineCommit[] = [];
+    for (const id of ids) {
+      const { commit } = await git.readCommit({ fs, gitdir: this.gitdir, oid: id, cache });
+      const { subject, task, action } = parseCommitMessage(commit.message);
+      commits.push({
+        id,
+        parent: commit.parent[0] ?? null,
+        subject,
+        task,
+        action,
+        at: new Date(commit.author.timestamp * 1000).toISOString(),
+        // The tree it already read: no second read of the commit.
+        blob: (await this.entryAt(commit.tree, file, cache))?.oid ?? null,
+      });
+    }
+    return groupTimeline(commits, file, actionLabel);
+  }
+
+  /** What changed between two commits (tracked files only); `from` null: everything in `to` counts as added. */
+  changes(from: string | null, to: string): Promise<FileChange[]> {
+    return this.diff(from, to);
+  }
+
   private async parentOf(sha: string, cache: object = {}): Promise<string | null> {
     const { commit } = await git.readCommit({ fs, gitdir: this.gitdir, oid: sha, cache });
     return commit.parent[0] ?? null;
@@ -479,9 +805,10 @@ export class History {
     return this.ignore.some((i) => i.endsWith("/") && prefix.startsWith(i)) && !this.keep.some(keepsInside);
   }
 
-  /** Tracked files that differ between two commits; with no `from`, every file of `to` is added. */
-  private async diff(from: string | null, to: string, cache: object = {}): Promise<FileChange[]> {
+  /** Tracked files (`all`: every file) that differ between two commits; with no `from`, every file of `to` is added. */
+  private async diff(from: string | null, to: string, cache: object = {}, all = false): Promise<FileChange[]> {
     const changes: FileChange[] = [];
+    const tracked = all ? () => true : this.tracked;
     const trees = from === null ? [git.TREE({ ref: to })] : [git.TREE({ ref: from }), git.TREE({ ref: to })];
     await git.walk({
       fs,
@@ -495,13 +822,13 @@ export class History {
         const [ta, tb] = await Promise.all([a?.type(), b?.type()]);
         const [oa, ob] = await Promise.all([a?.oid(), b?.oid()]);
         if (ta === "tree" || tb === "tree") {
-          if (oa === ob || this.skipsFolder(filepath)) return null;
+          if (oa === ob || (!all && this.skipsFolder(filepath))) return null;
           // A file replaced by a folder (or the reverse): the file side is deleted or added.
-          if (ta === "blob" && this.tracked(filepath)) changes.push({ path: filepath, kind: "deleted" });
-          if (tb === "blob" && this.tracked(filepath)) changes.push({ path: filepath, kind: "added" });
+          if (ta === "blob" && tracked(filepath)) changes.push({ path: filepath, kind: "deleted" });
+          if (tb === "blob" && tracked(filepath)) changes.push({ path: filepath, kind: "added" });
           return undefined;
         }
-        if (!this.tracked(filepath) || oa === ob) return undefined;
+        if (!tracked(filepath) || oa === ob) return undefined;
         changes.push({ path: filepath, kind: !a ? "added" : !b ? "deleted" : "modified" });
         return undefined;
       },

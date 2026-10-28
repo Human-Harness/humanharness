@@ -65,6 +65,13 @@ describe("SetupFlow", () => {
     expect(onStart).toHaveBeenCalledOnce();
   });
 
+  it("the folder step says the language comes once the app is set up (spec §3, D2)", async () => {
+    await renderIn("en", <Flow client={new FakeClient()} />);
+    const line = screen.getByText("You can choose the app's language once it's set up.");
+    expect(line.className).toBe("hh-caption hh-setup-language");
+    expect(line.previousElementSibling?.className).toBe("hh-setup-intro");
+  });
+
   it("skips the folder step when a folder is saved, and Cancel goes back", async () => {
     const client = new FakeClient({ language: "en", folder: "/Users/me/Documents/Demo" });
     const onCancel = vi.fn();

@@ -6,14 +6,14 @@ import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { OPENCODE_ENV, getEngine } from "@humanharness/engines";
 import { type ClaudeScript, claudeResultLine, claudeTextLines, fakeAcpCommand, fakeClaudeCommand, writeScript } from "@humanharness/fake-agent";
 import { allBlocks, loadHarness, resolveInHarness } from "@humanharness/harness-sdk";
-import { managedSection } from "@humanharness/workspace";
+import { ReviewRefused, managedSection } from "@humanharness/workspace";
 import { ClaudeCliTransport } from "../src/claude-cli";
 import type { Event } from "../src/events";
-import { type HarnessRuntime, type RuntimeOptions, createRuntime } from "../src/runtime";
+import { type HarnessRuntime, REVIEW_FAILED, type RuntimeOptions, createRuntime, reviewHandler } from "../src/runtime";
 import { type Session, acpFields } from "../src/transport";
 
 /** Sockets the runtime opened: a test can make the bridge's close fail and see the rpc's close. */
-const sockets = vi.hoisted(() => ({ failBridgeClose: false, failRpcClose: false, rpcClosed: 0 }));
+const sockets = vi.hoisted(() => ({ failBridgeClose: false, failRpcClose: false, rpcClosed: 0, rpcOpened: 0 }));
 vi.mock("@humanharness/blocks", async (importOriginal) => {
   const blocks = await importOriginal<typeof import("@humanharness/blocks")>();
   return {
@@ -24,6 +24,7 @@ vi.mock("@humanharness/blocks", async (importOriginal) => {
     },
     openRpc: async (...args: Parameters<typeof blocks.openRpc>) => {
       const rpc = await blocks.openRpc(...args);
+      sockets.rpcOpened++;
       return {
         ...rpc,
         close: async () => {
@@ -86,12 +87,24 @@ describe("createRuntime", () => {
     expect(agents()).not.toContain("patient");
   });
 
-  it("D0: without settings, AGENTS.md is the base and today's managed section, and a refresh writes nothing", async () => {
+  it("without settings, AGENTS.md is the base, today's managed section and the writing guide; a refresh writes nothing", async () => {
     const { runtime, folder } = await setup({ steps: [] });
     const harness = await loadHarness(FIXTURE);
     const base = fs.readFileSync(resolveInHarness(harness, harness.instructions), "utf8");
-    expect(fs.readFileSync(path.join(folder, "AGENTS.md"), "utf8")).toBe(`${base.trimEnd()}\n\n${managedSection({ language: "en", blocks: allBlocks(harness) })}`);
+    expect(fs.readFileSync(path.join(folder, "AGENTS.md"), "utf8")).toBe(
+      `${base.trimEnd()}\n\n${managedSection({ language: "en", blocks: allBlocks(harness), writing: { kinds: {} } })}`,
+    );
     expect(await runtime.refreshInstructions()).toBe(false);
+  });
+
+  it("a harness's declared document kinds reach AGENTS.md (document-reader §4.2)", async () => {
+    const harness = await loadHarness(FIXTURE);
+    const withKinds = { ...harness, documents: { kinds: { adr: { when: "A decision with real alternatives.", sections: ["Status", "Decision"] } } } };
+    const { folder } = await setup({ steps: [] }, undefined, { harness: withKinds });
+    const agents = fs.readFileSync(path.join(folder, "AGENTS.md"), "utf8");
+    expect(agents).toContain("### Document kinds");
+    expect(agents).toContain("- `adr`: A decision with real alternatives.");
+    expect(agents).toContain("      ## Decision");
   });
 
   it("a closed runtime never rewrites AGENTS.md, and close waits for a running refresh", async () => {
@@ -188,6 +201,47 @@ describe("createRuntime", () => {
     turn.cancel();
     await turn.done;
     expect(fs.existsSync(path.join(folder, "kept.md"))).toBe(true);
+  }, 10_000);
+
+  it("sends a documents event before done for the .md files the turn wrote (document-reader §5.1)", async () => {
+    const { runtime } = await setup({
+      steps: [
+        { write: { path: "docs/plan.md", content: "---\ntitle: The plan\n---\nGo." } },
+        { write: { path: "src/a.ts", content: "x" } },
+        ...claudeTextLines("ok"),
+        claudeResultLine(true),
+      ],
+    });
+    const events = await send(runtime, "plan it");
+    expect(events.at(-2)).toEqual({ type: "documents", documents: [{ path: "docs/plan.md", title: "The plan", change: "new", words: 1 }] });
+    expect(events.at(-1)).toEqual({ type: "done", ok: true });
+  });
+
+  it("a failure listing the turn's documents still ends the turn well, with no documents event", async () => {
+    const { runtime } = await setup({ steps: [{ write: { path: "plan.md", content: "x" } }, ...claudeTextLines("ok"), claudeResultLine(true)] });
+    const changes = vi.spyOn(runtime.history, "changes").mockRejectedValue(new Error("boom"));
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const events = await send(runtime);
+    expect(changes).toHaveBeenCalled();
+    expect(logged).toHaveBeenCalledWith("Could not list the turn's documents", expect.any(Error));
+    expect(events.some((e) => e.type === "documents")).toBe(false);
+    expect(events.at(-1)).toEqual({ type: "done", ok: true });
+    changes.mockRestore();
+    logged.mockRestore();
+  });
+
+  it("D0: a turn that changes no .md sends no documents event; neither does a stopped one", async () => {
+    const quiet = await setup({ steps: [{ write: { path: "src/a.ts", content: "x" } }, ...claudeTextLines("ok"), claudeResultLine(true)] });
+    expect((await send(quiet.runtime)).some((e) => e.type === "documents")).toBe(false);
+    await quiet.runtime.close();
+    runtime = undefined;
+    const stopped = await setup({ steps: [{ write: { path: "kept.md", content: "x" } }, { sleep: 10_000 }] });
+    const events: Event[] = [];
+    const turn = stopped.runtime.send("hi", (e) => events.push(e));
+    while (!fs.existsSync(path.join(stopped.folder, "kept.md"))) await new Promise((r) => setTimeout(r, 50));
+    turn.cancel();
+    await turn.done;
+    expect(events.some((e) => e.type === "documents")).toBe(false);
   }, 10_000);
 
   it("tags the turn's commits with the task it belongs to", async () => {
@@ -317,7 +371,8 @@ describe("createRuntime", () => {
     expect(agents).toContain("`save_note`");
     expect(agents).toContain(`- Source: \`${ref}\``);
     await send(runtime);
-    expect(args()[args().indexOf("--add-dir") + 1]).toBe(ref);
+    expect(args()).not.toContain("--add-dir");
+    expect(JSON.parse(args()[args().indexOf("--settings") + 1])).toEqual({ permissions: { additionalDirectories: [ref] } });
   });
 
   it("delivers a save_note call as a block event", async () => {
@@ -435,6 +490,104 @@ describe("createRuntime", () => {
     }
     // The data socket's close failed, and the material socket still closed after it.
     expect(sockets.rpcClosed).toBe(closed + 2);
+  });
+
+  const uiEnv = (argv: string[]) =>
+    (JSON.parse(argv[argv.indexOf("--mcp-config") + 1]) as { mcpServers: { ui: { env: Record<string, string> } } }).mcpServers.ui.env;
+
+  it("with a review handler and an agent that edits the folder: review tools and guide lines (review §4)", async () => {
+    const seen: unknown[] = [];
+    const { runtime: r, folder, args } = await setup(
+      {
+        steps: [
+          { write: { path: "spec.md", content: "## Scope\n\nBy size.\n" } },
+          {
+            mcp: {
+              server: "ui",
+              tool: "ask_in_document",
+              args: { path: "spec.md", quote: "By size.", question: "Which?", options: [{ label: "A", text: "By size." }, { label: "B", text: "By colour." }] },
+            },
+          },
+          claudeResultLine(true),
+        ],
+      },
+      undefined,
+      {
+        review: async (request) => {
+          seen.push(request);
+          return { id: "c1" };
+        },
+      },
+    );
+    await send(r);
+    expect(uiEnv(args()).HH_REVIEW_RPC).toBeTruthy();
+    expect(uiEnv(args()).HH_REVIEW_RPC_TOKEN).toBeTruthy();
+    expect(seen).toEqual([expect.objectContaining({ op: "ask", path: "spec.md" })]);
+    expect(fs.readFileSync(path.join(folder, "AGENTS.md"), "utf8")).toContain("`ask_in_document`");
+    // The review socket closes with the runtime, even when closing the ui bridge before it fails.
+    runtime = undefined;
+    const closed = sockets.rpcClosed;
+    sockets.failBridgeClose = true;
+    try {
+      await expect(r.close()).rejects.toThrow("bridge");
+    } finally {
+      sockets.failBridgeClose = false;
+    }
+    expect(sockets.rpcClosed).toBe(closed + 1);
+  });
+
+  it("D0: no review channel without a handler, or for an agent that can't edit the folder", async () => {
+    const plain = await setup({ steps: [claudeResultLine(true)] });
+    await send(plain.runtime);
+    expect(uiEnv(plain.args()).HH_REVIEW_RPC).toBeUndefined();
+    expect(uiEnv(plain.args()).HH_REVIEW_RPC_TOKEN).toBeUndefined();
+    expect(fs.readFileSync(path.join(plain.folder, "AGENTS.md"), "utf8")).not.toContain("ask_in_document");
+    await plain.runtime.close();
+    const readOnly = await setup({ steps: [claudeResultLine(true)] }, undefined, { harness: await loadHarness(READER), review: async () => null });
+    await send(readOnly.runtime);
+    expect(uiEnv(readOnly.args()).HH_REVIEW_RPC).toBeUndefined();
+    expect(uiEnv(readOnly.args()).HH_REVIEW_RPC_TOKEN).toBeUndefined();
+    expect(fs.readFileSync(path.join(readOnly.folder, "AGENTS.md"), "utf8")).not.toContain("ask_in_document");
+  });
+
+  it('D0: with edit "none" a review handler opens no socket and changes neither the ui env nor AGENTS.md', async () => {
+    const run = async (extra: Partial<RuntimeOptions>) => {
+      const opened = sockets.rpcOpened;
+      const r = await setup({ steps: [claudeResultLine(true)] }, undefined, { harness: await loadHarness(READER), ...extra });
+      await send(r.runtime);
+      // The bridge's socket and token are new on every run; everything else must match byte for byte.
+      const env = { ...uiEnv(r.args()), HH_BRIDGE: "<bridge>", HH_BRIDGE_TOKEN: "<token>" };
+      const agents = fs.readFileSync(path.join(r.folder, "AGENTS.md"), "utf8");
+      const servers = mcpServers(r.args());
+      await r.runtime.close();
+      runtime = undefined;
+      return { env: JSON.stringify(env), agents, servers, opened: sockets.rpcOpened - opened };
+    };
+    const without = await run({});
+    const withReview = await run({ review: async () => null });
+    expect(withReview).toEqual(without);
+    expect(withReview.opened).toBe(0);
+  });
+});
+
+describe("reviewHandler", () => {
+  it("passes the app's refusals to the agent, and a fixed line for any other error", async () => {
+    const refused = reviewHandler(async () => {
+      throw new ReviewRefused("spec.md has too many comments", "full");
+    });
+    await expect(refused({})).rejects.toThrow("spec.md has too many comments");
+    const failed = reviewHandler(async () => {
+      throw new Error("EACCES: /Users/someone/Work/.harness/reviews/spec.md.json");
+    });
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const err = await failed({}).catch((e: Error) => e);
+    expect(logged).toHaveBeenCalledOnce();
+    logged.mockRestore();
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error).message).not.toContain("/Users");
+    expect((err as Error).message).toBe(REVIEW_FAILED);
+    const ok = reviewHandler(async (r) => ({ echo: r }));
+    await expect(ok({ op: "read" })).resolves.toEqual({ echo: { op: "read" } });
   });
 });
 

@@ -292,6 +292,7 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
             onEngine={() => setSettings("engine")}
             move={move}
             onAddProfile={addProfile}
+            language={client.language ? language : undefined}
           />
         )}
       </div>

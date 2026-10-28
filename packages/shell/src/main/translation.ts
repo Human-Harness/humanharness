@@ -78,6 +78,12 @@ export function classify(items: readonly TranslateItem[], file: CacheFile) {
 }
 
 /**
+ * Whether a cache is a usable translation of these items: nothing missing, and at least one entry kept. A cache whose
+ * every key was given up (each failed twice) has nothing missing too, yet would show the app all in English.
+ */
+const isComplete = ({ kept, missing }: ReturnType<typeof classify>): boolean => missing.length === 0 && kept.size > 0;
+
+/**
  * Language on demand in the main process (language spec §4–§6, §9): the state the window shows, switching to English
  * or a complete translation, and the translation run itself. One run at a time; a run never changes the saved language
  * until it completes, and a cancelled or failed one never does (plan Q6: "Try again" resumes). Every public method
@@ -110,7 +116,7 @@ export class TranslationService {
   private async stateOf(items: readonly TranslateItem[]): Promise<LanguageState> {
     const language = await this.d.language();
     const cached = await Promise.all(
-      (await this.d.cache.tags()).map(async (tag) => ({ tag, complete: classify(items, await this.load(tag, items)).missing.length === 0 })),
+      (await this.d.cache.tags()).map(async (tag) => ({ tag, complete: isComplete(classify(items, await this.load(tag, items))) })),
     );
     const missing = isEnglish(language) || !offeredLanguage(language) ? 0 : classify(items, await this.load(language, items)).missing.length;
     const engineName = await this.d.engineName().catch(() => undefined);
@@ -130,7 +136,10 @@ export class TranslationService {
     if (this.running) return { ok: false, reason: "busy" };
     if (!isEnglish(tag)) {
       const items = this.items(harnessRaw);
-      if (classify(items, await this.load(tag, items)).missing.length > 0) return { ok: false, reason: "needs-translation" };
+      const sorted = classify(items, await this.load(tag, items));
+      if (sorted.missing.length > 0) return { ok: false, reason: "needs-translation" };
+      // Every key was given up: switching would only change dates and numbers, the text staying English.
+      if (sorted.kept.size === 0) return { ok: false, reason: "failed" };
     }
     if ((await this.d.language()) !== tag) await this.d.saveLanguage(tag);
     if (!isEnglish(tag)) await this.answerOffer();
@@ -307,7 +316,10 @@ export class TranslationService {
       current = null;
       // A failed turn leaves its unanswered keys missing: "Try again" sends them (Q6).
       if (!open || !result.ok || writeFailed) return;
-      // A key the agent left out counts as a failure, like a refused one.
+      // A turn that ended without any save is a failed turn too: its keys stay missing and aren't counted as failures,
+      // or a few silent turns would give every key up and make an empty cache look complete.
+      if (answered.size === 0) return;
+      // A key the agent left out of a save counts as a failure, like a refused one.
       for (const [key, item] of open) if (!answered.has(key)) fail(key, item);
       if (!(await store())) return;
       this.run = { ...this.run!, done: this.run!.done + 1 };
@@ -322,7 +334,10 @@ export class TranslationService {
       outcome = { ok: false, turns: 0, error: { code: "agent-crashed" } };
     }
     current = null;
-    if (outcome.ok && !runSignal.aborted && !writeFailed) {
+    // A run that ends with no entry kept for these items (every turn silent, every key refused) has nothing to show:
+    // it fails, and the language never switches to an all-English "translation".
+    const keptNone = outcome.ok && classify(items, file).kept.size === 0;
+    if (outcome.ok && !runSignal.aborted && !writeFailed && !keptNone) {
       await this.d.saveLanguage(tag).catch((err: unknown) => console.error("Could not save the language", err));
       this.run = { ...this.run!, status: "done" };
     } else {

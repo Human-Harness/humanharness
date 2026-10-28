@@ -308,6 +308,41 @@ describe("TranslationService (language spec §4–§6, §9)", () => {
     expect(t.sent.at(-1)!.run).toMatchObject({ status: "done", done: 60, total: 60 });
   });
 
+  it("a run whose engine never saves keeps nothing: failed, no switch, never complete", async () => {
+    const r = runner(() => null);
+    const t = make({ run: r });
+    expect(await t.svc.translate("es", HARNESS)).toEqual({ ok: true });
+    await t.svc.settled();
+    // A turn with no save is a failed turn: its keys stay missing, never counted as failures, so no retry batch.
+    expect(r.prompts).toHaveLength(2);
+    expect(t.saved()).toBe("en");
+    expect(t.sent.at(-1)).toMatchObject({ language: "en", run: { tag: "es", status: "failed", reason: "engine", done: 0 } });
+    expect(t.sent.some((s) => s.cached.some((c) => c.complete))).toBe(false);
+    expect((await t.svc.state(HARNESS)).cached.filter((c) => c.complete)).toEqual([]);
+    expect(await t.svc.choose("es", HARNESS)).toEqual({ ok: false, reason: "needs-translation" });
+  });
+
+  it("a run whose every save is refused keeps nothing: failed, no switch, never complete", async () => {
+    const r = runner((b) => Object.fromEntries(Object.keys(b).map((k) => [k, "<i>no</i>"])));
+    const t = make({ run: r });
+    await t.svc.translate("es", HARNESS);
+    await t.svc.settled();
+    expect(t.saved()).toBe("en");
+    expect(t.sent.at(-1)!.run).toMatchObject({ tag: "es", status: "failed", reason: "engine" });
+    expect(t.sent.some((s) => s.cached.some((c) => c.complete))).toBe(false);
+    expect((await t.svc.state(HARNESS)).cached).toEqual([{ tag: "es", complete: false }]);
+  });
+
+  it("choosing a language whose cache holds only failures doesn't save it", async () => {
+    const t = make({ run: runner((b) => Object.fromEntries(Object.keys(b).map((k) => [k, "<i>no</i>"]))) });
+    await t.svc.translate("es", HARNESS);
+    await t.svc.settled();
+    // Every key failed twice: nothing is missing, yet nothing would show in Spanish.
+    expect(await t.svc.choose("es", HARNESS)).toEqual({ ok: false, reason: "failed" });
+    expect(t.saved()).toBe("en");
+    expect(t.offered()).toBe(1);
+  });
+
   it("after an update, changed English is missing again and never sent without asking", async () => {
     const t = make({ run: runner(pseudo) });
     await t.svc.translate("es", HARNESS);

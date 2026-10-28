@@ -40,7 +40,7 @@ describe("History.restoreFile (file-timeline spec §5)", () => {
     expect(read("a.md")).toBe("a1");
     expect(read("b.md")).toBe("b3 (the person's, not committed)");
     expect(await git.listFiles({ fs, gitdir, ref: r.sha! })).toEqual(["a.md", "b.md"]);
-    expect((await history.readBytesAt(r.sha!, "b.md"))?.toString()).toBe("b2");
+    expect((await history.readBytesAt(r.sha!, "b.md"))?.bytes.toString()).toBe("b2");
     const { commit } = await git.readCommit({ fs, gitdir, oid: r.sha! });
     expect(commit.message.trim()).toBe("Go back: a.md to v1");
     // The next save takes the person's edit.

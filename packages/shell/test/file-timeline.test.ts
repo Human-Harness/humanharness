@@ -1,0 +1,204 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { History, MAX_DIFF_BYTES, REVIEWS_PREFIX } from "@humanharness/workspace";
+import { workerDiff } from "../src/main/diff-runner";
+import { FileTimelineService } from "../src/main/file-timeline";
+
+const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-fts-"));
+afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
+
+const DOC = "specs/filter.md";
+let folder: string;
+let history: History;
+let busy: boolean;
+let restored: number;
+let approvals: { blob: string; at: string; reason?: string }[];
+let svc: FileTimelineService;
+const write = (rel: string, content: string) => {
+  fs.mkdirSync(path.dirname(path.join(folder, rel)), { recursive: true });
+  fs.writeFileSync(path.join(folder, rel), content);
+};
+
+beforeEach(async () => {
+  const base = fs.mkdtempSync(path.join(root, "t-"));
+  folder = path.join(base, "work");
+  fs.mkdirSync(folder);
+  history = new History(folder, path.join(base, "history.git"), [".harness/", "AGENTS.md"], [REVIEWS_PREFIX]);
+  await history.init();
+  busy = false;
+  restored = 0;
+  approvals = [];
+  svc = new FileTimelineService({
+    base: async () => folder,
+    history: async () => history,
+    actionLabel: (id) => (id === "spec" ? "Spec writer" : "A question"),
+    approvals: async () => approvals,
+    busy: () => busy,
+    restore: async (run) => void (await run(history)),
+    restored: () => void restored++,
+  });
+});
+
+async function writeSpec() {
+  await history.save("Start");
+  write(DOC, "## Scope\n\nFilter by size.\n");
+  const t1 = (await history.save("Turn: write", { task: "t1", action: "spec" }))!;
+  write(DOC, "## Scope\n\nFilter by size and colour.\n");
+  const t2 = (await history.save("Turn: edit", { task: "t2", action: "spec" }))!;
+  return { t1, t2 };
+}
+
+describe("FileTimelineService (file-timeline spec §3–§5)", () => {
+  it("refuses bad, outside and untracked paths, as data", async () => {
+    expect(await svc.timeline("../x.md")).toEqual({ ok: false, reason: "outside" });
+    expect(await svc.timeline("/etc/passwd")).toEqual({ ok: false, reason: "outside" });
+    expect(await svc.timeline(42)).toEqual({ ok: false, reason: "outside" });
+    expect(await svc.timeline(".harness/tasks.json")).toEqual({ ok: false, reason: "untracked" });
+    expect(await svc.timeline("AGENTS.md")).toEqual({ ok: false, reason: "untracked" });
+    expect(await svc.timeline("new.md")).toEqual({ ok: true, entries: [] });
+  });
+
+  it("not ready without a folder or a history", async () => {
+    const off = new FileTimelineService({ base: async () => null, history: async () => null, actionLabel: () => "", approvals: async () => [], busy: () => false, restore: async () => undefined, restored: () => undefined });
+    expect(await off.timeline(DOC)).toEqual({ ok: false, reason: "not-ready" });
+  });
+
+  it("the timeline, normalised path, with an approval's reason", async () => {
+    const { t2 } = await writeSpec();
+    write(`${REVIEWS_PREFIX}${DOC}.json`, "{}");
+    await history.save(`Approved: ${DOC}`, { task: "t2", action: "spec" });
+    approvals = [{ blob: "b".repeat(40), at: "2026-10-28T10:00:00.000Z", reason: "Decided on the call" }];
+    const r = await svc.timeline(`./specs//filter.md`);
+    if (!r.ok) throw new Error(r.reason);
+    expect(r.entries.map((e) => [e.kind, e.author.label])).toEqual([
+      ["approval", "You"],
+      ["task", "Spec writer"],
+      ["task", "Spec writer"],
+    ]);
+    expect(r.entries[0].reason).toBe(true);
+    expect(r.entries[1].to).toBe(t2);
+  });
+
+  it("a diff between two commits, and against the current file", async () => {
+    const { t1, t2 } = await writeSpec();
+    const here = await svc.diff(DOC, t1, t2);
+    expect(here).toMatchObject({ ok: true, kind: "markdown", same: false });
+    write(DOC, "## Scope\n\nFilter by size and colour.\n");
+    expect(await svc.diff(DOC, t2, "current")).toMatchObject({ ok: true, same: true });
+    expect(await svc.diff(DOC, null, t1)).toMatchObject({ ok: true, kind: "markdown" });
+    expect(await svc.diff(DOC, "nope", t1)).toEqual({ ok: false, reason: "bad-input" });
+    fs.rmSync(path.join(folder, DOC));
+    expect(await svc.diff(DOC, t2, "current")).toMatchObject({ ok: true, same: false });
+  });
+
+  it("the current side never follows a link out of the folder", async () => {
+    const { t2 } = await writeSpec();
+    const outside = path.join(root, "secret.md");
+    fs.writeFileSync(outside, "secret");
+    fs.rmSync(path.join(folder, DOC));
+    fs.symlinkSync(outside, path.join(folder, DOC));
+    expect(await svc.diff(DOC, t2, "current")).toEqual({ ok: false, reason: "outside" });
+  });
+
+  it("restore: a prompt for an entry's version, then one file back, untagged, with its own commit", async () => {
+    const { t1 } = await writeSpec();
+    expect(await svc.restorePrompt(DOC, "f".repeat(40))).toEqual({ ok: false, reason: "not-found" });
+    const p = await svc.restorePrompt(DOC, t1);
+    expect(p).toMatchObject({ ok: true, prompt: { path: DOC, author: { label: "Spec writer" }, kind: "task" } });
+    expect(await svc.restore(DOC, t1)).toEqual({ ok: true });
+    expect(fs.readFileSync(path.join(folder, DOC), "utf8")).toBe("## Scope\n\nFilter by size.\n");
+    expect(restored).toBe(1);
+    const r = await svc.timeline(DOC);
+    if (!r.ok) throw new Error(r.reason);
+    expect(r.entries[0]).toMatchObject({ kind: "goBack", author: { kind: "person" }, back: { at: expect.any(String) } });
+    expect(r.entries[0].commits[0].subject.startsWith(`Go back: ${DOC} to the version of `)).toBe(true);
+  });
+
+  it("restore is refused while a turn runs, and a deleted entry can't be the target", async () => {
+    const { t1 } = await writeSpec();
+    busy = true;
+    expect(await svc.restorePrompt(DOC, t1)).toEqual({ ok: false, reason: "busy" });
+    expect(await svc.restore(DOC, t1)).toEqual({ ok: false, reason: "busy" });
+    busy = false;
+    fs.rmSync(path.join(folder, DOC));
+    const gone = (await history.save("Turn: remove", { task: "t3" }))!;
+    expect(await svc.restorePrompt(DOC, gone)).toEqual({ ok: false, reason: "deleted" });
+    expect(await svc.restore(DOC, t1)).toEqual({ ok: true });
+    expect(fs.existsSync(path.join(folder, DOC))).toBe(true);
+  });
+
+  it("a shape refused before the history is asked for; a commit not on this path's timeline is never read", async () => {
+    const { t1 } = await writeSpec();
+    let asked = 0;
+    const counting = new FileTimelineService({ base: async () => folder, history: async () => (asked++, history), actionLabel: () => "", approvals: async () => [], busy: () => false, restore: async () => undefined, restored: () => undefined });
+    expect(await counting.timeline("../x.md")).toEqual({ ok: false, reason: "outside" });
+    expect(await counting.diff("a\0b", t1, "current")).toEqual({ ok: false, reason: "outside" });
+    expect(asked).toBe(0);
+    write("other.md", "other");
+    const other = (await history.save("Turn: other", { task: "t9" }))!;
+    let read = 0;
+    const readBytesAt = history.readBytesAt.bind(history);
+    history.readBytesAt = (...a) => (read++, readBytesAt(...a));
+    expect(await svc.diff(DOC, other, "current")).toEqual({ ok: false, reason: "not-found" });
+    expect(await svc.diff(DOC, t1, other)).toEqual({ ok: false, reason: "not-found" });
+    expect(await svc.restorePrompt(DOC, other)).toEqual({ ok: false, reason: "not-found" });
+    expect(await svc.restore(DOC, other)).toEqual({ ok: false, reason: "not-found" });
+    expect(read).toBe(0);
+  });
+
+  it("same comes from the blob ids: two big files equal up to the cap are not the same", async () => {
+    await history.save("Start");
+    const head = "x".repeat(MAX_DIFF_BYTES + 100);
+    write("big.txt", `${head}a`);
+    const a = (await history.save("Turn: a", { task: "t1" }))!;
+    write("big.txt", `${head}b`);
+    const b = (await history.save("Turn: b", { task: "t2" }))!;
+    expect(await svc.diff("big.txt", a, b)).toMatchObject({ ok: true, kind: "text", same: false, truncated: true });
+    expect(await svc.diff("big.txt", b, "current")).toMatchObject({ ok: true, same: true, truncated: true });
+    write("big.txt", `${head}c`);
+    expect(await svc.diff("big.txt", b, "current")).toMatchObject({ ok: true, same: false, truncated: true });
+  });
+
+  it("the timeline is cached per path until the path gets a new commit", async () => {
+    await writeSpec();
+    let built = 0;
+    const fileTimeline = history.fileTimeline.bind(history);
+    history.fileTimeline = (...a) => (built++, fileTimeline(...a));
+    const first = await svc.timeline(DOC);
+    if (!first.ok) throw new Error(first.reason);
+    first.entries[0].author.label = "changed by the caller";
+    expect(await svc.timeline(DOC)).toMatchObject({ ok: true, entries: [{ author: { label: "Spec writer" } }, {}] });
+    write("elsewhere.md", "x");
+    await history.save("Turn: elsewhere", { task: "t3" });
+    await svc.timeline(DOC);
+    expect(built).toBe(1);
+    write(DOC, "## Scope\n\nAgain.\n");
+    await history.save("Turn: again", { task: "t4", action: "spec" });
+    const r = await svc.timeline(DOC);
+    expect(built).toBe(2);
+    expect(r.ok && r.entries.length).toBe(3);
+  });
+
+  it("a throw inside answers failed, as data", async () => {
+    await writeSpec();
+    history.fileTimeline = async () => {
+      throw new Error("broken history");
+    };
+    expect(await svc.timeline(DOC)).toEqual({ ok: false, reason: "failed" });
+    const crashing = new FileTimelineService({ base: async () => folder, history: async () => history, actionLabel: () => "", approvals: async () => [], busy: () => false, restore: async () => undefined, restored: () => undefined, diff: async () => null });
+    expect(await crashing.diff("new.md", null, "current")).toEqual({ ok: false, reason: "failed" });
+  });
+
+  it("the diff runs in a worker thread when the app gives one", async () => {
+    const { t1, t2 } = await writeSpec();
+    const inWorker = new FileTimelineService({ base: async () => folder, history: async () => history, actionLabel: () => "", approvals: async () => [], busy: () => false, restore: async () => undefined, restored: () => undefined, diff: workerDiff() });
+    const r = await inWorker.diff(DOC, t1, t2);
+    expect(r).toMatchObject({ ok: true, kind: "markdown", same: false });
+    if (!r.ok || r.kind !== "markdown") throw new Error("no diff");
+    expect(r.blocks.some((b) => b.status === "changed")).toBe(true);
+    // A worker that can't finish in time answers null, never hangs.
+    expect(await workerDiff({ timeoutMs: 1 })(DOC, { kind: "absent" }, { kind: "absent" })).toBeNull();
+  }, 20_000);
+});

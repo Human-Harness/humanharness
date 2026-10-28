@@ -665,11 +665,19 @@ export class History {
     }
   }
 
-  /** `file`'s bytes at commit `sha`; null when the commit or the file isn't there. */
-  async readBytesAt(sha: string, file: string): Promise<Buffer | null> {
+  /**
+   * `file`'s first `max` bytes at commit `sha`, its whole size and its blob id; null when the commit or the file isn't
+   * there. Only the kept bytes outlive the call: a bigger blob is copied down to `max`, so a timeline's diff never holds
+   * a whole historical file (isomorphic-git still inflates it once).
+   */
+  async readBytesAt(sha: string, file: string, max = Number.POSITIVE_INFINITY): Promise<{ bytes: Buffer; size: number; oid: string } | null> {
+    const entry = await this.entryAt(sha, file);
+    if (!entry) return null;
     try {
-      const { blob } = await git.readBlob({ fs, gitdir: this.gitdir, oid: sha, filepath: file });
-      return Buffer.from(blob);
+      const { blob } = await git.readBlob({ fs, gitdir: this.gitdir, oid: entry.oid });
+      // A view when it all stays; a copy of the prefix otherwise, so the whole blob can go.
+      const bytes = blob.length <= max ? Buffer.from(blob.buffer, blob.byteOffset, blob.byteLength) : Buffer.from(blob.subarray(0, max));
+      return { bytes, size: blob.length, oid: entry.oid };
     } catch (err) {
       const code = (err as { code?: string }).code;
       if (code === "NotFoundError" || code === "ObjectTypeError") return null;

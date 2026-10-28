@@ -49,7 +49,7 @@ describe("History.fileTimeline (file-timeline spec §3)", () => {
     expect(entries[2].version).toBe(1);
     expect(entries[4].from).not.toBeNull();
     expect(await history.readBytesAt(entries[4].from!, DOC)).toBeNull();
-    expect((await history.readBytesAt(entries[4].to, DOC))?.toString()).toBe("Filter by size.\n");
+    expect((await history.readBytesAt(entries[4].to, DOC))?.bytes.toString()).toBe("Filter by size.\n");
   });
 
   it("a deleted file ends with a Deleted entry; nothing yet: no entries", async () => {
@@ -70,5 +70,19 @@ describe("History.fileTimeline (file-timeline spec §3)", () => {
     }
     const entries = await history.fileTimeline("a.md", label, 3);
     expect(entries.map((e) => e.commits[0].subject)).toEqual(["Turn: 4", "Turn: 3", "Turn: 2"]);
+  });
+
+  it("readBytesAt keeps at most `max` bytes, with the whole size and the blob id", async () => {
+    write(DOC, "0123456789");
+    const sha = (await history.save("Turn: write", { task: "t1" }))!;
+    const all = await history.readBytesAt(sha, DOC);
+    expect(all?.bytes.toString()).toBe("0123456789");
+    const cut = await history.readBytesAt(sha, DOC, 4);
+    expect(cut).toEqual({ bytes: Buffer.from("0123"), size: 10, oid: all!.oid });
+    // The prefix is a copy: it does not keep a big blob's memory alive.
+    write(DOC, "x".repeat(100_000));
+    const big = (await history.save("Turn: grow", { task: "t1" }))!;
+    expect((await history.readBytesAt(big, DOC, 4))!.bytes.buffer.byteLength).toBeLessThan(100_000);
+    expect(await history.readBytesAt(sha, "nope.md", 4)).toBeNull();
   });
 });

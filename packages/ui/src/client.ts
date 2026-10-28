@@ -23,9 +23,13 @@ import type {
   DataQuery,
   DataQueryResult,
   FileChange,
+  FileDiffView,
   ScopeEntry,
   SyncProvider,
   SyncStatus,
+  TimelineAuthor,
+  TimelineEntry,
+  TimelineKind,
 } from "@humanharness/workspace";
 import type { AnswerPick, Review, ReviewSummary } from "@humanharness/harness-sdk/review";
 
@@ -1057,3 +1061,22 @@ export interface FocusState {
   path?: string;
 }
 export type { AnswerPick, Review, ReviewComment, ReviewSummary } from "@humanharness/harness-sdk/review";
+
+export type { DiffPart, FileDiffView, LineChange, MdBlockType, MdDiffBlock, TimelineAuthor, TimelineEntry, TimelineKind } from "@humanharness/workspace";
+
+/** Why a file-timeline call did nothing (file-timeline spec; errors over IPC are data). */
+export type FileRefusal = "not-ready" | "outside" | "untracked" | "bad-input" | "not-found" | "deleted" | "busy" | "unsafe" | "failed";
+export type FileTimelineResult = { ok: true; entries: TimelineEntry[] } | { ok: false; reason: FileRefusal };
+export type FileDiffResult = FileDiffView | { ok: false; reason: FileRefusal };
+/** What the core's confirmation says before a file goes back (§5). */
+export interface FileRestorePrompt {
+  path: string;
+  author: TimelineAuthor;
+  at: string;
+  kind: TimelineKind;
+  version?: number;
+}
+export type FileRestorePromptResult = { ok: true; prompt: FileRestorePrompt } | { ok: false; reason: FileRefusal };
+export type FileRestoreAnswer = { ok: true } | { ok: false; reason: FileRefusal };
+/** `client.files.restore`'s answer: done, the person said no (or no core is there to ask), or refused. */
+export type FileRestoreResult = "restored" | "cancelled" | { refused: FileRefusal };

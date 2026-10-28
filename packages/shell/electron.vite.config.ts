@@ -37,6 +37,8 @@ export default defineConfig({
           "material-server": path.join(__dirname, "../material/src/server-bin.ts"),
           // The converter's worker thread (material convert/isolate.ts): the app passes this built file as its entry.
           "material-worker": path.join(__dirname, "../material/src/convert/worker.ts"),
+          // A file diff's worker thread (main/diff-runner.ts): the app passes this built file to `workerDiff`.
+          "diff-worker": path.join(__dirname, "src/main/diff-worker.ts"),
           harness: path.join(harnessDir, "harness.config.ts"),
         },
       },

@@ -2,6 +2,7 @@ import path from "node:path";
 import { type Io, UsageError, parseCommand } from "./cli";
 import { buildPlugin } from "./plugin-build";
 import { checkPlugin, formatPluginFindings } from "./plugin-check";
+import { pluginInitCommand } from "./plugin-init";
 import { liveRecordDeps, recordPlugin } from "./plugin-record";
 import { P12_NOTE, formatTestReports, testPlugin } from "./plugin-test";
 
@@ -11,12 +12,14 @@ export const PLUGIN_USAGE = [
   "Usage: humanharness plugin <command>",
   "",
   "Commands:",
+  "  init <dir> [--harness <id>] [--name <name>]",
+  "                                           Create a plugin from the template and install the /new-plugin guide",
   "  build [--plugin <dir>] [--out <dir>]     Build the plugin into dist/: plugin.json, backend.js and the panels",
   "  check [--json] [--harness <dir>] [--no-build]",
   "                                           Build, then check the plugin, its sources, fixtures and PLUGIN.md",
   "  record <source> [--yes] [--no-build]     Build, run one real sync of a source and write its fixtures",
   "",
-  "Each command works on the plugin in the current folder unless --plugin <dir> names another.",
+  "Each command but init works on the plugin in the current folder unless --plugin <dir> names another.",
   "",
 ].join("\n");
 
@@ -132,6 +135,7 @@ async function recordCommand(args: string[], io: Io): Promise<number> {
 const PLUGIN_COMMANDS: Record<string, Command> = {
   build: buildCommand,
   check: checkCommand,
+  init: pluginInitCommand,
   record: recordCommand,
   test: testCommand,
 };

@@ -1,7 +1,19 @@
 import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { LINKED_MANY_MAX } from "@humanharness/harness-sdk";
 import { isScopeId, scopesFile } from "./layout";
+
+/** A folder linked to a scope (hatches spec §3.2). `path` is absolute and real (links resolved at link time). */
+export interface LinkedFolderEntry {
+  key: string;
+  path: string;
+  mode: "read" | "write";
+  /** True: the core history tracks it (no git, D1). False: its own git is its history. */
+  tracked: boolean;
+  /** The folder gained or lost git since it was linked; the person hasn't confirmed the change yet (Decision 13). */
+  gitChanged?: true;
+}
 
 /** One entry of `.harness/scopes.json` (spec §3.2). The id never changes; renaming changes only the title. */
 export interface ScopeEntry {
@@ -9,6 +21,8 @@ export interface ScopeEntry {
   title: string;
   createdAt: string;
   archived: boolean;
+  /** Linked folders (hatches spec §3.2). Absent when there are none, so the file is today's (D0). */
+  linked?: LinkedFolderEntry[];
 }
 
 export const SCOPE_TITLE_MAX = 120;
@@ -38,9 +52,31 @@ export function scopeSlug(title: string, taken: ReadonlySet<string>): string {
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
+const LINK_KEY = /^[a-z][a-z0-9_-]{0,63}$/;
+const LINK_PATH_MAX = 4096;
+
+function cleanLink(v: unknown): LinkedFolderEntry | null {
+  if (!isObject(v) || typeof v.key !== "string" || !LINK_KEY.test(v.key)) return null;
+  if (typeof v.path !== "string" || v.path.length > LINK_PATH_MAX || !path.isAbsolute(v.path)) return null;
+  if (v.mode !== "read" && v.mode !== "write") return null;
+  if (typeof v.tracked !== "boolean") return null;
+  return { key: v.key, path: v.path, mode: v.mode, tracked: v.tracked, ...(v.gitChanged === true ? { gitChanged: true as const } : {}) };
+}
+
 function cleanEntry(v: unknown): ScopeEntry | null {
   if (!isObject(v) || !isScopeId(v.id) || typeof v.title !== "string" || !v.title.trim()) return null;
-  return { id: v.id, title: v.title, createdAt: typeof v.createdAt === "string" ? v.createdAt : "", archived: v.archived === true };
+  const links: LinkedFolderEntry[] = [];
+  for (const l of Array.isArray(v.linked) ? v.linked : []) {
+    const c = cleanLink(l);
+    if (c && !links.some((x) => x.path === c.path)) links.push(c);
+  }
+  return {
+    id: v.id,
+    title: v.title,
+    createdAt: typeof v.createdAt === "string" ? v.createdAt : "",
+    archived: v.archived === true,
+    ...(links.length > 0 ? { linked: links } : {}),
+  };
 }
 
 /** The scope registry of a base folder. Writes are atomic and one at a time. */
@@ -114,6 +150,50 @@ export class ScopeStore {
 
   setArchived(id: string, archived: boolean): Promise<ScopeEntry> {
     return this.update(id, (s) => ({ ...s, archived }));
+  }
+
+  /**
+   * Adds a link to scope `id`. Refuses a path the scope already links, and a key that is full: one folder,
+   * or `LINKED_MANY_MAX` when the manifest declares the key `many`. The caller checked every refusal (L2).
+   */
+  link(id: string, entry: LinkedFolderEntry, opts: { many?: boolean } = {}): Promise<ScopeEntry> {
+    const clean = cleanLink(entry);
+    if (!clean) throw new Error("Invalid linked folder");
+    const max = opts.many === true ? LINKED_MANY_MAX : 1;
+    return this.update(id, (s) => {
+      const links = s.linked ?? [];
+      if (links.some((l) => l.path === clean.path)) throw new Error(`${clean.path} is already linked to this scope`);
+      if (links.filter((l) => l.key === clean.key).length >= max) throw new Error(`"${clean.key}" takes at most ${max} linked folder${max === 1 ? "" : "s"}`);
+      return { ...s, linked: [...links, clean] };
+    });
+  }
+
+  /** Removes the link; never touches the folder. The last link removes the key (D0 shape). */
+  unlink(id: string, key: string, folder: string): Promise<ScopeEntry> {
+    return this.update(id, (s) => {
+      const rest = (s.linked ?? []).filter((l) => !(l.key === key && l.path === folder));
+      const { linked: _old, ...plain } = s;
+      return rest.length > 0 ? { ...plain, linked: rest } : plain;
+    });
+  }
+
+  /** Sets whether the core history tracks the folder; confirms a git change (drops `gitChanged`). */
+  setTracked(id: string, key: string, folder: string, tracked: boolean): Promise<ScopeEntry> {
+    return this.updateLink(id, key, folder, (l) => ({ key: l.key, path: l.path, mode: l.mode, tracked }));
+  }
+
+  /** Records that the folder gained or lost git since it was linked (Decision 13). */
+  markGitChanged(id: string, key: string, folder: string): Promise<ScopeEntry> {
+    return this.updateLink(id, key, folder, (l) => ({ ...l, gitChanged: true }));
+  }
+
+  private updateLink(id: string, key: string, folder: string, fn: (l: LinkedFolderEntry) => LinkedFolderEntry): Promise<ScopeEntry> {
+    return this.update(id, (s) => {
+      const links = s.linked ?? [];
+      const i = links.findIndex((l) => l.key === key && l.path === folder);
+      if (i < 0) throw new Error("Unknown linked folder");
+      return { ...s, linked: links.map((l, j) => (j === i ? fn(l) : l)) };
+    });
   }
 
   private update(id: string, fn: (s: ScopeEntry) => ScopeEntry): Promise<ScopeEntry> {

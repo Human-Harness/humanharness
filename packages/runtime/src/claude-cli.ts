@@ -19,6 +19,8 @@ const contextOf = (u: Record<string, unknown>): number =>
 
 /** Claude's built-in reading tools; an MCP-only session gets none of them. */
 const READ_TOOLS = ["Read", "Glob", "Grep", "TodoWrite"];
+/** Further built-in tools an MCP-only session never needs: subagents, listing, notebooks, skills, slash commands, web. */
+const MCP_ONLY_DENIED = [...READ_TOOLS, "Task", "Agent", "LS", "NotebookRead", "NotebookEdit", "Skill", "SlashCommand", "WebFetch", "WebSearch"];
 
 export function allowedTools(permissions: Permissions, mcp: McpServerSpec[], mcpOnly = false): string[] {
   const tools = mcpOnly ? [] : [...READ_TOOLS];
@@ -31,10 +33,11 @@ export function allowedTools(permissions: Permissions, mcp: McpServerSpec[], mcp
 
 /** Deny rules beat allow rules, so project settings or hooks cannot re-enable what the manifest excludes. */
 export function disallowedTools(permissions: Permissions, references: string[] = [], mcpOnly = false): string[] {
-  const tools = ["AskUserQuestion", ...(mcpOnly ? READ_TOOLS : [])];
-  if (permissions.edit === "none") tools.push("Edit", "Write", "MultiEdit", "NotebookEdit");
-  if (!permissions.exec) tools.push("Bash");
-  if (!permissions.web) tools.push("WebSearch", "WebFetch");
+  const tools = ["AskUserQuestion", ...(mcpOnly ? MCP_ONLY_DENIED : [])];
+  const deny = (...names: string[]) => tools.push(...names.filter((n) => !tools.includes(n)));
+  if (permissions.edit === "none") deny("Edit", "Write", "MultiEdit", "NotebookEdit");
+  if (!permissions.exec) deny("Bash");
+  if (!permissions.web) deny("WebSearch", "WebFetch");
   tools.push("Edit(.claude/**)", "Write(.claude/**)", "MultiEdit(.claude/**)");
   // `--add-dir` makes a reference folder a working directory, where acceptEdits would accept edits:
   // deny them by absolute path (`//` starts an absolute path in permission rules).

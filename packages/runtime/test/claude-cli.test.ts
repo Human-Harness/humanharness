@@ -457,6 +457,20 @@ describe("reference folders", () => {
     expect(on[on.indexOf("--allowedTools") + 1]).toBe("mcp__translate");
     expect(on[on.indexOf("--disallowedTools") + 1].split(",")).toEqual(expect.arrayContaining(["Read", "Glob", "Grep", "TodoWrite"]));
   });
+
+  it("an MCP-only session also denies subagents, listing, notebooks, skills, slash commands and the web; each once", () => {
+    const extra = ["Task", "Agent", "LS", "NotebookRead", "NotebookEdit", "Skill", "SlashCommand", "WebFetch", "WebSearch"];
+    // Even with permissions that would allow edits and the web, an MCP-only session gets none of them.
+    for (const permissions of [{ edit: "none", exec: false, web: false }, { edit: "folder", exec: false, web: true }] as const) {
+      const denied = disallowedTools(permissions, [], true);
+      expect(denied).toEqual(expect.arrayContaining(extra));
+      expect(new Set(denied).size).toBe(denied.length);
+    }
+    // D0: material and task turns (no mcpOnly) deny exactly what they did.
+    const none = { edit: "none", exec: false, web: false } as const;
+    expect(disallowedTools(none)).toEqual(["AskUserQuestion", "Edit", "Write", "MultiEdit", "NotebookEdit", "Bash", "WebSearch", "WebFetch", "Edit(.claude/**)", "Write(.claude/**)", "MultiEdit(.claude/**)"]);
+    expect(disallowedTools({ edit: "folder", exec: true, web: true })).not.toEqual(expect.arrayContaining(["Task", "Agent", "LS", "Skill"]));
+  });
 });
 
 describe("activity extras (context-panel spec §3.2)", () => {

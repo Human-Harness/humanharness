@@ -9,6 +9,24 @@ import { CALLOUTS, splitFrontMatter } from "@humanharness/harness-sdk/documents"
 export const MAX_DIFF_BYTES = 200 * 1024;
 /** jsdiff gives up after this long; the piece then shows as all removed, then all added. */
 export const DIFF_TIMEOUT_MS = 2000;
+/** The most blocks a side of a Markdown diff may have; past it (or a pre-scan's estimate past it) the file diffs as text. */
+export const MAX_DIFF_BLOCKS = 5000;
+/** About the most characters a Markdown diff's blocks may carry (text plus a little per piece); past it, text. */
+export const MAX_DIFF_OUTPUT = 2_000_000;
+/**
+ * The pre-scan's limits on what the parser may see (it is superlinear on some inputs): container markers opening one
+ * line (`> > - …`), a line's indent in columns (nested lists), `[` nesting inside one paragraph, and the sum over
+ * paragraphs of (`*` `_` `~` `[` `]` count)². Measured on this repo's 120 Markdown files: at most 6 columns of indent
+ * and a cost of 16,283; one paragraph at the cost limit (2,000 delimiters) parses in well under 100 ms.
+ */
+const MAX_LINE_NESTING = 16;
+const MAX_INDENT = 128;
+const MAX_BRACKET_DEPTH = 32;
+const MAX_DELIMITER_COST = 4_000_000;
+/** Setext underlines (`===`/`---` under a text line): the parser is quadratic in them (5,000 take 1.6 s, 50,000 over 3 min). */
+const MAX_SETEXT = 1000;
+/** How deep `plain` follows a node's children. */
+const MAX_PLAIN_DEPTH = 64;
 /** Bytes looked at for a NUL. */
 const SNIFF_BYTES = 8 * 1024;
 const BINARY_EXTENSIONS = new Set([
@@ -41,7 +59,7 @@ export interface MdBlock {
   cells?: string[];
 }
 
-/** A block of a Markdown diff. `before`/`after`: the block's source on each side. */
+/** A block of a Markdown diff. `before`/`after`: the block's source on each side; an unchanged block has `after` only. */
 export interface MdDiffBlock {
   type: MdBlockType;
   status: "same" | "added" | "removed" | "changed";
@@ -143,10 +161,106 @@ const cut = (a: DiffSide, b: DiffSide): boolean => (sizeOf(a) ?? 0) > MAX_DIFF_B
 /** The reader's parser (document-reader spec §3): remark-parse + remark-gfm, no raw HTML path. */
 const processor = unified().use(remarkParse).use(remarkGfm);
 
-function plain(node: Nodes): string {
+function plain(node: Nodes, depth = 0): string {
   if ("value" in node && typeof node.value === "string" && node.type !== "html") return node.value;
-  if ("children" in node) return (node.children as Nodes[]).map(plain).join(node.type === "listItem" || node.type === "blockquote" ? "\n" : "");
+  if ("children" in node && depth < MAX_PLAIN_DEPTH) {
+    const sep = node.type === "listItem" || node.type === "blockquote" ? "\n" : "";
+    return (node.children as Nodes[]).map((c) => plain(c, depth + 1)).join(sep);
+  }
   return "";
+}
+
+const isSpace = (c: string) => c === " " || c === "\t";
+const isDigit = (c: string) => c >= "0" && c <= "9";
+
+/** How many container markers (`>`, `-`/`*`/`+` then a space, `1.`/`1)` then a space) open the line at `i`. */
+function lineNesting(text: string, i: number, end: number): number {
+  let n = 0;
+  while (i < end) {
+    while (i < end && isSpace(text[i])) i++;
+    const c = text[i];
+    if (c === ">") i++;
+    else if ((c === "-" || c === "*" || c === "+") && isSpace(text[i + 1] ?? "")) i += 2;
+    else {
+      let j = i;
+      while (j < end && j - i < 9 && isDigit(text[j])) j++;
+      if (j === i || (text[j] !== "." && text[j] !== ")") || !isSpace(text[j + 1] ?? "")) return n;
+      i = j + 2;
+    }
+    n++;
+  }
+  return n;
+}
+
+/** The line from `i` is only `mark` characters, then spaces (a setext underline when a text line is above it). */
+function underline(text: string, i: number, end: number, mark: string): boolean {
+  while (i < end && text[i] === mark) i++;
+  while (i < end && (isSpace(text[i]) || text[i] === "\r")) i++;
+  return i === end;
+}
+
+/** A line that may start a block of its own: after a blank line, holding a `|` (a table row), or opening with a marker. */
+const BLOCK_MARKERS = new Set(["#", ">", "-", "*", "+", "=", "|", "[", "0", "1", "2", "3", "4", "5", "6", "7", "8", "9"]);
+
+/**
+ * One linear pass that tells whether the parser can take `text` in reasonable time (remark is superlinear on dense
+ * emphasis, strikethrough and bracket runs, and deep nesting overflows its stack). Fenced code is skipped. False also
+ * when it would clearly make more than `MAX_DIFF_BLOCKS` blocks.
+ */
+export function parseableMarkdown(text: string): boolean {
+  let fence = "";
+  let blank = true;
+  let starts = 0;
+  let delimiters = 0;
+  let depth = 0;
+  let cost = 0;
+  let setext = 0;
+  for (let start = 0; start < text.length; ) {
+    let end = text.indexOf("\n", start);
+    if (end === -1) end = text.length;
+    let p = start;
+    let indent = 0;
+    for (; p < end && isSpace(text[p]); p++) indent += text[p] === "\t" ? 4 : 1;
+    if (p === end || (p === end - 1 && text[p] === "\r")) {
+      if (!fence) {
+        cost += delimiters * delimiters;
+        if (cost > MAX_DELIMITER_COST) return false;
+        delimiters = 0;
+        depth = 0;
+      }
+      blank = true;
+      start = end + 1;
+      continue;
+    }
+    const mark = text[p];
+    if ((mark === "`" || mark === "~") && p - start <= 3 && text[p + 1] === mark && text[p + 2] === mark) {
+      let q = p;
+      while (q < end && text[q] === mark) q++;
+      const run = text.slice(p, q);
+      if (!fence) fence = run;
+      else if (run[0] === fence[0] && run.length >= fence.length) fence = "";
+    } else if (!fence) {
+      if (indent > MAX_INDENT || lineNesting(text, p, end) > MAX_LINE_NESTING) return false;
+      if (!blank && (mark === "=" || mark === "-") && underline(text, p, end, mark) && ++setext > MAX_SETEXT) return false;
+      let pipe = false;
+      for (let i = p; i < end; i++) {
+        const c = text[i];
+        if (c === "|") pipe = true;
+        else if (c === "*" || c === "_" || c === "~") delimiters++;
+        else if (c === "[") {
+          delimiters++;
+          if (++depth > MAX_BRACKET_DEPTH) return false;
+        } else if (c === "]") {
+          delimiters++;
+          if (depth > 0) depth--;
+        }
+      }
+      if ((blank || pipe || BLOCK_MARKERS.has(mark)) && ++starts > MAX_DIFF_BLOCKS) return false;
+    }
+    blank = false;
+    start = end + 1;
+  }
+  return cost + delimiters * delimiters <= MAX_DELIMITER_COST;
 }
 
 const slice = (text: string, n: { position?: { start: { offset?: number }; end: { offset?: number } } }): string =>
@@ -212,19 +326,55 @@ const added = (b: MdBlock): MdDiffBlock => ({ type: b.type, status: "added", aft
 const kept = (b: MdBlock): MdDiffBlock => ({
   type: b.type,
   status: "same",
-  before: b.source,
   after: b.source,
   ...depthOf(b),
-  ...(b.cells ? { cells: { before: b.cells, after: b.cells } } : {}),
+  ...(b.cells ? { cells: { after: b.cells } } : {}),
 });
+
+/** Both sides' blocks, or null when the pre-scan refuses a side, the parser throws, or a side has too many blocks. */
+function parseBoth(before: string, after: string): [MdBlock[], MdBlock[]] | null {
+  if (!parseableMarkdown(before) || !parseableMarkdown(after)) return null;
+  try {
+    const a = markdownBlocks(before);
+    if (a.length > MAX_DIFF_BLOCKS) return null;
+    const b = markdownBlocks(after);
+    return b.length > MAX_DIFF_BLOCKS ? null : [a, b];
+  } catch {
+    // A stack overflow on deep nesting the pre-scan let through, or any parser failure: the caller shows text.
+    return null;
+  }
+}
+
+/** About how many characters `blocks` carry once serialized: their texts plus a little per piece. */
+function weightOf(blocks: MdDiffBlock[]): number {
+  const PIECE = 32;
+  const strings = (xs: readonly string[] | undefined) => (xs ?? []).reduce((n, s) => n + s.length + PIECE, 0);
+  const parts = (xs: readonly DiffPart[] | undefined) => (xs ?? []).reduce((n, p) => n + p.text.length + PIECE, 0);
+  let n = 0;
+  for (const b of blocks) {
+    n += PIECE + (b.before?.length ?? 0) + (b.after?.length ?? 0) + parts(b.parts);
+    for (const l of b.lines ?? []) n += l.text.length + PIECE;
+    if (b.cells) n += strings(b.cells.before) + strings(b.cells.after) + (b.cells.parts ?? []).reduce((m, p) => m + parts(p), 0);
+  }
+  return n;
+}
 
 /**
  * Blocks aligned on their source (§4.2): in a run of removed-then-added blocks, the i-th of each pair up when they are
- * the same type ("changed"); the rest stay removed or added. Every jsdiff call shares `deadline` (a `Date.now()` value).
+ * the same type ("changed"); the rest stay removed or added. The time budget starts after both sides are parsed, and
+ * every jsdiff call shares it. Null when the text should show as plain text: the pre-scan or the parser refuses a
+ * side, a side has more than `MAX_DIFF_BLOCKS` blocks, or the result carries more than `MAX_DIFF_OUTPUT`.
  */
-export function diffMarkdown(before: string, after: string, deadline = deadlineIn(DIFF_TIMEOUT_MS)): MdDiffBlock[] {
-  const a = markdownBlocks(before);
-  const b = markdownBlocks(after);
+export function diffMarkdown(before: string, after: string, budgetMs = DIFF_TIMEOUT_MS, maxOutput = MAX_DIFF_OUTPUT): MdDiffBlock[] | null {
+  return alignMarkdown(before, after, budgetMs, maxOutput)?.blocks ?? null;
+}
+
+/** `diffMarkdown`, plus the deadline it used (the rest of the budget is the caller's). */
+function alignMarkdown(before: string, after: string, budgetMs: number, maxOutput = MAX_DIFF_OUTPUT): { blocks: MdDiffBlock[]; deadline: number } | null {
+  const parsed = parseBoth(before, after);
+  if (!parsed) return null;
+  const [a, b] = parsed;
+  const deadline = deadlineIn(budgetMs);
   const ms = timeLeft(deadline);
   const aligned = ms > 0 ? diffArrays(a, b, { comparator: (x, y) => x.type === y.type && x.source === y.source, timeout: ms }) : undefined;
   const changes = aligned ?? [
@@ -247,23 +397,38 @@ export function diffMarkdown(before: string, after: string, deadline = deadlineI
     }
     out.push(...gone.slice(pairs).map(removed), ...next.slice(pairs).map(added));
   }
-  return out;
+  return weightOf(out) > maxOutput ? null : { blocks: out, deadline };
 }
+
+/** The plain line diff of `file` (what a Markdown file falls back to), with its own `budgetMs`. */
+export function textDiff(file: string, before: DiffSide, after: DiffSide, budgetMs = DIFF_TIMEOUT_MS): FileDiffView {
+  const ext = extensionOf(file);
+  const lines = lineChanges(textOf(before), textOf(after), deadlineIn(budgetMs));
+  return { ok: true, kind: "text", same: sameSides(before, after), truncated: cut(before, after), lines, lang: ext || null };
+}
+
+export const isMarkdownFile = (file: string): boolean => {
+  const ext = extensionOf(file);
+  return ext === "md" || ext === "markdown";
+};
 
 /**
  * What changed in `file` from `before` to `after` (§4.2): blocks for Markdown, lines for text, sizes for binary.
- * The whole call shares one time budget (`budgetMs`); what is left when it runs out shows as removed, then added.
+ * Each diff shares one time budget (`budgetMs`, for Markdown counted from after the parse); what is left when it runs
+ * out shows as removed, then added. Two equal Markdown sides answer no blocks at all. A Markdown file the parser should
+ * not take (see `diffMarkdown`) answers its plain text diff (`kind: "text"`).
  */
 export function diffFile(file: string, before: DiffSide, after: DiffSide, budgetMs = DIFF_TIMEOUT_MS): FileDiffView {
-  const deadline = deadlineIn(budgetMs);
   const same = sameSides(before, after);
   const binary = (before.kind === "bytes" && isBinary(file, before.bytes)) || (after.kind === "bytes" && isBinary(file, after.bytes));
   if (binary) return { ok: true, kind: "binary", same, sizes: { before: sizeOf(before), after: sizeOf(after) } };
-  const ext = extensionOf(file);
-  if (ext === "md" || ext === "markdown") {
-    const a = textOf(before);
-    const b = textOf(after);
-    return { ok: true, kind: "markdown", same, truncated: cut(before, after), blocks: diffMarkdown(a, b, deadline), source: lineChanges(a, b, deadline) };
-  }
-  return { ok: true, kind: "text", same, truncated: cut(before, after), lines: lineChanges(textOf(before), textOf(after), deadline), lang: ext || null };
+  if (!isMarkdownFile(file)) return textDiff(file, before, after, budgetMs);
+  const truncated = cut(before, after);
+  if (same) return { ok: true, kind: "markdown", same, truncated, blocks: [], source: [] };
+  const a = textOf(before);
+  const b = textOf(after);
+  const md = alignMarkdown(a, b, budgetMs);
+  if (!md) return textDiff(file, before, after, budgetMs);
+  // The Source toggle's line diff gets what the blocks left of the budget.
+  return { ok: true, kind: "markdown", same, truncated, blocks: md.blocks, source: lineChanges(a, b, md.deadline) };
 }

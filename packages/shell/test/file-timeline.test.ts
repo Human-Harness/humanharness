@@ -188,7 +188,19 @@ describe("FileTimelineService (file-timeline spec §3–§5)", () => {
     };
     expect(await svc.timeline(DOC)).toEqual({ ok: false, reason: "failed" });
     const crashing = new FileTimelineService({ base: async () => folder, history: async () => history, actionLabel: () => "", approvals: async () => [], busy: () => false, restore: async () => undefined, restored: () => undefined, diff: async () => null });
-    expect(await crashing.diff("new.md", null, "current")).toEqual({ ok: false, reason: "failed" });
+    expect(await crashing.diff("new.txt", null, "current")).toEqual({ ok: false, reason: "failed" });
+  });
+
+  it("a Markdown diff the worker couldn't finish shows as plain lines, computed here", async () => {
+    const { t1, t2 } = await writeSpec();
+    const failing = new FileTimelineService({ base: async () => folder, history: async () => history, actionLabel: () => "", approvals: async () => [], busy: () => false, restore: async () => undefined, restored: () => undefined, diff: async () => null });
+    const r = await failing.diff(DOC, t1, t2);
+    expect(r).toMatchObject({ ok: true, kind: "text", lang: "md", same: false });
+    if (!r.ok || r.kind !== "text") throw new Error("not text");
+    expect(r.lines.filter((l) => l.kind !== "same").map((l) => [l.kind, l.text])).toEqual([
+      ["del", "Filter by size."],
+      ["ins", "Filter by size and colour."],
+    ]);
   });
 
   it("the diff runs in a worker thread when the app gives one", async () => {

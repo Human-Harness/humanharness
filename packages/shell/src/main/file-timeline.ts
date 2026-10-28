@@ -2,8 +2,17 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { isMarkdownPath, refusedShape } from "@humanharness/harness-sdk/documents";
 import type { FileDiffResult, FileRefusal, FileRestoreAnswer, FileRestorePromptResult, FileTimelineResult, TimelineEntry } from "@humanharness/ui/client";
-import { type DiffSide, FILE_RESTORE_PREFIX, type History, MAX_DIFF_BYTES, canonicalDocumentPath, readPrefix } from "@humanharness/workspace";
-import { type DiffRunner, inProcessDiff } from "./diff-runner";
+import {
+  type DiffSide,
+  FILE_RESTORE_PREFIX,
+  type History,
+  MAX_DIFF_BYTES,
+  canonicalDocumentPath,
+  isMarkdownFile,
+  readPrefix,
+  textDiff,
+} from "@humanharness/workspace";
+import { type DiffRunner, IN_PROCESS_DIFF_MS, inProcessDiff } from "./diff-runner";
 import { locate } from "./documents";
 import { isSha } from "./history-view";
 import { stillSafe } from "./open-path";
@@ -140,7 +149,11 @@ export class FileTimelineService {
       const before = from === null ? absent : await this.sideAt(r.history, from, r.path);
       const after = to === "current" ? await this.current(r.base, r.path, before) : await this.sideAt(r.history, to as string, r.path);
       if (after === "outside" || after === "unsafe") return no(after);
-      const view = await this.runDiff(r.path, before.side, after.side);
+      // A Markdown diff the worker couldn't finish (its time limit, its heap) still shows: as plain lines, here, on a
+      // small budget (no parse, so it stays short on Electron main).
+      const view =
+        (await this.runDiff(r.path, before.side, after.side)) ??
+        (isMarkdownFile(r.path) ? textDiff(r.path, before.side, after.side, IN_PROCESS_DIFF_MS) : null);
       if (!view) return no("failed");
       return { ...view, same: sameContent(before, after) };
     });

@@ -274,3 +274,28 @@ export function pluginSettings(m: PluginManifest): HarnessSettings | undefined {
   const fields = Object.fromEntries(Object.entries(m.settings.fields).map(([n, f]) => [n, { ...f, schema: jsonSchemaToZod(f.schema) }]));
   return settingsSchema.parse({ tab: m.settings.tab ?? m.name, sections: m.settings.sections, fields });
 }
+
+/** The harness's `plugins` (§3.4): bundled ids, the ones that start on, and whether the person may add local ones. */
+export const harnessPluginsSchema = z
+  .strictObject({
+    bundled: z.array(z.string().regex(PLUGIN_ID)).max(20).default([]),
+    on: z.array(z.string().regex(PLUGIN_ID)).default([]),
+    local: z.boolean().default(false),
+  })
+  .superRefine((p, ctx) => {
+    const seen = new Set<string>();
+    p.bundled.forEach((id, i) => {
+      if (seen.has(id)) ctx.addIssue({ code: "custom", path: ["bundled", i], message: `"${id}" is listed twice` });
+      seen.add(id);
+    });
+    const on = new Set<string>();
+    p.on.forEach((id, i) => {
+      if (!seen.has(id)) ctx.addIssue({ code: "custom", path: ["on", i], message: `"${id}" is not bundled` });
+      else if (on.has(id)) ctx.addIssue({ code: "custom", path: ["on", i], message: `"${id}" is listed twice` });
+      on.add(id);
+    });
+  });
+export type HarnessPlugins = z.output<typeof harnessPluginsSchema>;
+
+/** The harness takes plugins at all (D1, D0): a bundled one or local ones. */
+export const pluginsAccepted = (h: { plugins?: HarnessPlugins }): boolean => !!h.plugins && (h.plugins.bundled.length > 0 || h.plugins.local);

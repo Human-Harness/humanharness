@@ -10,6 +10,7 @@ import { PHASE_ID, TIME_BOX_MAX } from "./phases";
 import { PROFILE_COLLECTION, profileFormSpec, profilesSchema } from "./profiles";
 import { SETTING_NAME, checkSettingFields, settingFieldSchema, settingsSchema } from "./settings";
 import { type HarnessSetupStep, setupFormSpec, setupStepsSchema } from "./setup";
+import { harnessPluginsSchema } from "./plugin";
 import { SIDEKICK_PROCESS, sidekickSchema } from "./sidekick";
 
 export * from "./block";
@@ -180,6 +181,8 @@ const manifestSchema = z.object({
   material: materialSchema.optional(),
   /** The prompt coach's hints and per-action review modes (sidekick spec §3). Absent: available, default off (D0). */
   sidekick: sidekickSchema.optional(),
+  /** Plugins the harness ships and whether the person may add their own (plugins spec §3.4). Absent: none (D0). */
+  plugins: harnessPluginsSchema.optional(),
   /** One line under the name on the home screen. */
   tagline: text.optional(),
   /** How translations of this harness's screens should sound, in English ("warm and informal, short sentences"). */

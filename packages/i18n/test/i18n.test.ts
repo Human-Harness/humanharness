@@ -48,3 +48,28 @@ describe("legal strings (spec §8)", () => {
     expect(en.setupFlow.languageLater).toBe("You can choose the app's language once it's set up.");
   });
 });
+
+describe("generated strings (spec §6)", () => {
+  it("D0: no generated strings build exactly today's resources", async () => {
+    const i18n = await createI18n("es");
+    expect(Object.keys(i18n.options.resources ?? {})).toEqual(["en"]);
+    const empty = await createI18n("es", {}, {});
+    expect(Object.keys(empty.options.resources ?? {})).toEqual(["en"]);
+    expect(empty.resolvedLanguage).toBe("en");
+  });
+
+  it("shows the cached strings, English for the rest and for legal keys", async () => {
+    const i18n = await createI18n("es", { en: { title: "Notes" } }, { "core:chat.send": "Enviar", "harness:title": "Notas", "core:legal.engine.accept": "Acepto" });
+    expect(i18n.resolvedLanguage).toBe("es");
+    expect(i18n.t("chat.send")).toBe("Enviar");
+    expect(i18n.t("harness:title")).toBe("Notas");
+    expect(i18n.t("legal.engine.accept")).toBe("I understand and accept");
+    expect(i18n.t("settings.title")).toBe("Settings");
+  });
+
+  it("English never takes generated strings", async () => {
+    const i18n = await createI18n("en", {}, { "core:chat.send": "Enviar" });
+    expect(i18n.t("chat.send")).toBe("Send");
+    expect(Object.keys(i18n.options.resources ?? {})).toEqual(["en"]);
+  });
+});

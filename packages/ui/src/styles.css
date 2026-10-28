@@ -610,3 +610,19 @@ select:focus-visible { outline: 2px solid var(--hh-ink); outline-offset: 2px; }
 .hh-pl-prepared-error { color: var(--hh-warn); font-size: 0.85rem; white-space: pre-wrap; }
 .hh-pl-item-open { align-self: flex-start; margin-top: 2px; font-size: 0.75rem; text-decoration: underline; }
 .hh-pl-item-gone { color: var(--hh-muted); font-size: 0.8rem; }
+/* The task inbox (parallel spec §9.2): a top-bar button and the shared popover, with four sections. */
+.hh-tk-button { position: relative; display: inline-flex; align-items: center; gap: 6px; }
+.hh-tk-badge { min-width: 16px; height: 16px; box-sizing: border-box; padding: 0 4px; border-radius: 8px; background: var(--hh-ink); color: var(--hh-on-ink); font-size: 0.7rem; line-height: 16px; text-align: center; }
+.hh-tk-paused { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 4px 6px 8px; color: var(--hh-warn); font-size: 0.85rem; }
+.hh-tk-section { margin: 0 0 6px; }
+.hh-tk-section h3 { margin: 6px 6px 2px; color: var(--hh-muted); font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+.hh-tk-empty { margin: 2px 8px 6px; color: var(--hh-muted); font-size: 0.85rem; }
+.hh-tk-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.hh-tk-item { display: flex; align-items: flex-start; gap: 4px; border-radius: 8px; }
+.hh-tk-item:hover { background: var(--hh-segment); }
+.hh-tk-row { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 8px; border: none; background: transparent; color: inherit; font: inherit; text-align: left; overflow-wrap: anywhere; }
+.hh-tk-row[aria-current="true"] .hh-tk-label { font-weight: 600; }
+.hh-tk-meta { display: flex; flex-wrap: wrap; min-width: 0; gap: 8px; color: var(--hh-muted); font-size: 0.8rem; }
+.hh-tk-conflict { padding: 0 6px; border: 1px solid var(--hh-warn); border-radius: 6px; color: var(--hh-warn); font-size: 0.75rem; }
+.hh-tk-cancel { flex: none; margin: 6px 6px 0 0; font-size: 0.8rem; }
+.hh-tk-new { display: block; width: calc(100% - 12px); margin: 4px 6px 2px; }

@@ -170,14 +170,30 @@ describe("client.profiles (profiles spec §5)", () => {
 });
 
 describe("client.tasks (parallel spec §9.1)", () => {
-  it("answers no tasks at cap 1 by default, and its methods sit beside the task view without spreading", async () => {
+  const parallel = { caps: { tasks: 2, jobs: 1 }, suggested: { tasks: 2, jobs: 1 }, inbox: true, notifyWaiting: false };
+  /** A fake of a harness that declares `parallel`: without it every call is refused, as main does. */
+  function parallelClient() {
     const client = new FakeClient();
+    client.state.parallel = parallel;
+    return client;
+  }
+
+  it("D0: without state.parallel every call is refused, as main does", async () => {
+    const client = new FakeClient();
+    await expect(client.tasks.list()).rejects.toThrow("No parallel tasks");
+    await expect(client.tasks.focus("a")).rejects.toThrow("No parallel tasks");
+    await expect(client.tasks.cancelQueued("c")).rejects.toThrow("No parallel tasks");
+    await expect(client.tasks.resumeQueues()).rejects.toThrow("No parallel tasks");
+  });
+
+  it("answers no tasks at cap 1 by default, and its methods sit beside the task view without spreading", async () => {
+    const client = parallelClient();
     expect(await client.tasks.list()).toEqual({ tasks: [], caps: { tasks: 1, jobs: 1 } });
     expect(Object.keys({ ...client.tasks }).sort()).toEqual(["actions", "current", "notes"]);
   });
 
   it("set() answers list and reaches every onChange listener until it unsubscribes", async () => {
-    const client = new FakeClient();
+    const client = parallelClient();
     const heard: string[][] = [];
     const off = client.tasks.onChange((s) => heard.push(s.tasks.map((t) => t.id)));
     const summary = { id: "a", scope: "main", action: null, label: "A question", state: "waiting" as const, startedAt: "2026-10-28T10:00:00Z", tokens: 0 };
@@ -189,7 +205,7 @@ describe("client.tasks (parallel spec §9.1)", () => {
   });
 
   it("records focus, cancelQueued and resumeQueues as spies; cancelQueued answers null unless a test says otherwise", async () => {
-    const client = new FakeClient();
+    const client = parallelClient();
     await client.tasks.focus("a");
     await client.tasks.focus(null);
     expect(await client.tasks.cancelQueued("c")).toBeNull();
@@ -204,8 +220,8 @@ describe("client.tasks (parallel spec §9.1)", () => {
   });
 
   it("each FakeClient has its own spies", async () => {
-    const a = new FakeClient();
-    const b = new FakeClient();
+    const a = parallelClient();
+    const b = parallelClient();
     await a.tasks.focus("x");
     expect(b.tasks.focus).not.toHaveBeenCalled();
   });

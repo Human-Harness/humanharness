@@ -960,6 +960,26 @@
     "conflict": "This task and “{{task}}” both changed {{path}}.",
     "conflictEnded": "A task that has ended also changed {{path}}.",
     "pathsMore": "{{paths}} and {{count}} more",
-    "waitingBody": "Waiting for you"
+    "waitingBody": "Waiting for you",
+    "inbox": "Inbox",
+    "inboxButton": "Inbox, {{count}} waiting",
+    "waitingTitle": "Waiting for you",
+    "workingTitle": "Working",
+    "queuedTitle": "Queued",
+    "jobsTitle": "Jobs",
+    "noJobs": "No jobs",
+    "none": "None",
+    "yourTurn": "Your turn",
+    "hasQuestion": "Has a question",
+    "wantsPhase": "Wants to change phase",
+    "closing": "Wrapping up",
+    "checkpoint": "Saving notes",
+    "conflictChip": "Another task changed the same files",
+    "cancel": "Cancel",
+    "resume": "Resume",
+    "outOfQuota": "Out of quota",
+    "outOfQuotaUntil": "Out of quota until {{time}}",
+    "pausedMove": "Paused while the folder moves",
+    "newTask": "New task"
   }
 }

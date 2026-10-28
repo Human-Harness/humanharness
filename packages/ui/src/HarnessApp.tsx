@@ -9,6 +9,8 @@ import { TopBar } from "./chrome";
 import { type AppState, type EngineStatus, type HarnessClient, type LimitWindow, type SetupStepProps, type SetupStepsState, engineProblem, isConfigured } from "./client";
 import { useFolderMove } from "./BackupNotice";
 import { Home } from "./Home";
+import { Inbox } from "./parallel/Inbox";
+import { useTasks } from "./parallel/useTasks";
 import { shownLanguage, systemLanguage } from "./language";
 import type { MaterialPanelProps } from "./MaterialPanel";
 import type { BlockProps } from "./Message";
@@ -105,6 +107,8 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
       off();
     };
   }, [client, hasSetupSteps, folder, profile, screen]);
+  /** A harness that declares `parallel`: its open tasks (spec §9.1). Plain mode asks nothing (D0). */
+  const tasksState = useTasks(client, Boolean(state?.parallel));
   /** Moving the folder: kept here so a move outlives Settings closing or a tab change. */
   const move = useFolderMove(client, setState);
   // Read through a ref so inline `locales` objects don't re-run the load.
@@ -243,6 +247,7 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
             profileBar={
               state.profiles ? (disabled) => <ProfileSwitcher client={client} state={state} onSwitched={switched} onAdd={addProfile} disabled={disabled} /> : undefined
             }
+            inboxBar={state.parallel?.inbox ? (refill) => <Inbox client={client} state={state} tasks={tasksState} onRefill={refill} /> : undefined}
             scopeBar={state.scopes ? (disabled) => <ScopePicker client={client} state={state} open={openScope} disabled={disabled} /> : undefined}
             engineProblem={status ? engineProblem(status) : null}
             onHome={() => setScreen("home")}

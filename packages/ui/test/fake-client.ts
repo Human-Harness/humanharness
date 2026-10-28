@@ -181,15 +181,25 @@ export class FakeClient implements HarnessClient {
   /** What `tasks.list` answers (parallel spec §9.1); `tasks.set` changes it. */
   tasksState: TasksState = { tasks: [], caps: { tasks: 1, jobs: 1 } };
   private tasksStateListeners = new Set<(s: TasksState) => void>();
+  /** Like main: without `state.parallel` every task call is refused (D0), so a UI that forgets its gate fails its test. */
+  private needParallel() {
+    if (!this.state.parallel) throw new Error("No parallel tasks");
+  }
   private readonly tasksApi: FakeTasks = {
-    list: async () => this.tasksState,
+    list: async () => {
+      this.needParallel();
+      return this.tasksState;
+    },
     onChange: (listener) => {
       this.tasksStateListeners.add(listener);
       return () => void this.tasksStateListeners.delete(listener);
     },
-    focus: vi.fn(async (_id: string | null) => undefined),
-    cancelQueued: vi.fn(async (_id: string): Promise<string | null> => null),
-    resumeQueues: vi.fn(async () => undefined),
+    focus: vi.fn(async (_id: string | null) => this.needParallel()),
+    cancelQueued: vi.fn(async (_id: string): Promise<string | null> => {
+      this.needParallel();
+      return null;
+    }),
+    resumeQueues: vi.fn(async () => this.needParallel()),
     set: (state) => {
       this.tasksState = state;
       for (const l of this.tasksStateListeners) l(state);

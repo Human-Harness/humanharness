@@ -90,6 +90,7 @@ export function ChatView({
   engineProblem,
   scopeBar,
   profileBar,
+  inboxBar,
   openScope = null,
   onHome,
   onSettings,
@@ -112,6 +113,8 @@ export function ChatView({
   scopeBar?: (disabled: boolean) => ReactNode;
   /** Harnesses with profiles: the switcher in the top bar, disabled while a turn runs. */
   profileBar?: (disabled: boolean) => ReactNode;
+  /** A harness with `parallel` and its inbox (spec §9.2): the inbox button; `refill` puts text back in the box. */
+  inboxBar?: (refill: (text: string) => void) => ReactNode;
   /** Harnesses with scopes: the open scope (its chat is the one on screen). */
   openScope?: string | null;
   onHome?: () => void;
@@ -134,6 +137,8 @@ export function ChatView({
   // shows its proposal, through the tasks.
   const [chat, dispatch] = useReducer(reduceChat, undefined, () => initialChat([], [...stateBlocks, "save_note", "set_phase"]));
   const [draft, setDraft] = useState("");
+  /** A cancelled queued message (parallel Decision 7): back in the box, after whatever is typed there. */
+  const refillDraft = useCallback((text: string) => setDraft((d) => (d.trim() ? `${d}\n${text}` : text)), []);
   const [showHistory, setShowHistory] = useState(false);
   const [notesPanel, setNotesPanel] = useState<{ expanded?: string } | null>(null);
   const [announcement, setAnnouncement] = useState("");
@@ -1098,6 +1103,7 @@ export function ChatView({
               }}
             />
           )}
+          {inboxBar?.(refillDraft)}
           {attention?.show && <AttentionInbox client={client} view={attention} onOpenPanel={openPanel} />}
           <button
             onClick={() => {

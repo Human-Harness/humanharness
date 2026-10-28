@@ -192,12 +192,15 @@ test.describe("the review fixture", () => {
       page.on("console", (m) => {
         if (/Content Security Policy|Refused to/i.test(m.text())) csp.push(m.text());
       });
-      // Every worker thread main starts, and whether it answered a view: the diffs below must run in the built worker.
+      // Every worker thread main starts, and whether it answered a diff's view (a DiffReply, nothing else): the diffs below
+      // must run in the built worker.
       expect(fs.existsSync(path.join(outDir, "main", "diff-worker.js"))).toBe(true);
       await app.evaluate(() => {
         const seen: boolean[] = [];
         (globalThis as { hhWorkers?: boolean[] }).hhWorkers = seen;
-        process.on("worker", (w) => w.once("message", (m: { ok?: unknown } | null) => seen.push(m?.ok === true)));
+        process.on("worker", (w) =>
+          w.once("message", (m: unknown) => seen.push(typeof m === "object" && m !== null && (m as { ok?: unknown }).ok === true && "view" in m)),
+        );
       });
       const workers = () => launched.app.evaluate(() => (globalThis as { hhWorkers?: boolean[] }).hhWorkers ?? []);
       const doc = path.join(s.folder, "specs", "filter.md");
@@ -227,12 +230,15 @@ test.describe("the review fixture", () => {
       await expect.poll(async () => (await workers()).filter(Boolean).length).toBeGreaterThanOrEqual(2);
       expect(await workers()).not.toContain(false);
 
-      // Go back to the agent's version: the core asks first; only this file changes.
+      // Go back to the agent's version: the core asks first; only this file changes (the review record stays as it was).
+      const record = path.join(s.folder, ".harness", "reviews", "specs", "filter.md.json");
+      const recordBefore = fs.readFileSync(record, "utf8");
       await reader.getByRole("button", { name: "Go back to this version" }).click();
       const confirm = page.getByRole("alertdialog");
       await expect(confirm).toContainText("Go back specs/filter.md to how it was after Ticket");
       await confirm.getByRole("button", { name: "Yes, go back" }).click();
       await expect.poll(() => fs.readFileSync(doc, "utf8")).toBe(written);
+      expect(fs.readFileSync(record, "utf8")).toBe(recordBefore);
       await expect(drawer.getByRole("button", { name: /You went back to the version of/ })).toBeVisible();
 
       // Undo the go-back the same way: back to the answers entry.
@@ -295,7 +301,8 @@ test("a harness whose agent can't edit the folder (D0): no review in the reader,
     // The file timeline's index (core, every harness) sits in the history's data, never in the person's folder.
     const named = (dir: string) => fs.readdirSync(dir, { recursive: true }).map(String).filter((f) => path.basename(f) === "hh-file-index.json");
     expect(named(s.folder)).toEqual([]);
-    expect(named(s.userData)).toHaveLength(1);
+    // Written a moment after the commits, off their path.
+    await expect.poll(() => named(s.userData)).toHaveLength(1);
   } finally {
     await closeAndClean(app, s);
   }

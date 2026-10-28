@@ -166,6 +166,16 @@ describe("configProblem", () => {
     expect(await configProblem({ models: null } as never, ctx)).toBe("invalid");
   });
 
+  it("accepts the parallel caps only as whole numbers 1..8 under tasks and jobs, and notifyWaiting only as a boolean", async () => {
+    expect(await configProblem({ parallel: { tasks: 3, jobs: 1 } }, ctx)).toBeNull();
+    expect(await configProblem({ parallel: { tasks: 8 } }, ctx)).toBeNull();
+    for (const bad of [{ tasks: 0 }, { tasks: 9 }, { jobs: 1.5 }, { tasks: "2" }, { other: 1 }, [], null, 3]) {
+      expect(await configProblem({ parallel: bad } as never, ctx)).toBe("invalid");
+    }
+    expect(await configProblem({ notifyWaiting: true }, ctx)).toBeNull();
+    expect(await configProblem({ notifyWaiting: "yes" } as never, ctx)).toBe("invalid");
+  });
+
   it("accepts backupDismissed only as a boolean", async () => {
     expect(await configProblem({ backupDismissed: true }, ctx)).toBeNull();
     expect(await configProblem({ backupDismissed: false }, ctx)).toBeNull();

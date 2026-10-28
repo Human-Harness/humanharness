@@ -255,6 +255,43 @@ describe("SettingsSheet", () => {
     expect(onSetup).toHaveBeenCalledTimes(1);
   });
 
+  it("General shows caps and the notification toggle only with state.parallel (D7); each saves the person's whole caps", async () => {
+    const plain = new FakeClient(ready);
+    const { unmount } = await renderIn("en", <Sheet client={plain} />);
+    expect(screen.queryByRole("heading", { name: "Parallel tasks" })).toBeNull();
+    expect(screen.queryByLabelText("Tasks at once")).toBeNull();
+    unmount();
+
+    const client = new FakeClient({ ...ready, parallel: { jobs: 2 } });
+    client.state.parallel = { caps: { tasks: 2, jobs: 2 }, suggested: { tasks: 2, jobs: 1 }, inbox: true, notifyWaiting: false };
+    const save = vi.spyOn(client, "saveConfig");
+    await renderIn("en", <Sheet client={client} />);
+    expect(screen.getByRole("heading", { name: "Parallel tasks" })).toBeTruthy();
+    const tasks = screen.getByLabelText("Tasks at once") as HTMLSelectElement;
+    expect([...tasks.options].map((o) => o.value)).toEqual(["1", "2", "3", "4", "5", "6", "7", "8"]);
+    expect(tasks.value).toBe("2");
+    expect((screen.getByLabelText("Jobs at once") as HTMLSelectElement).value).toBe("2");
+    const notify = screen.getByRole("checkbox", { name: "Notify me when a task waits" }) as HTMLInputElement;
+    expect(notify.checked).toBe(false);
+    fireEvent.change(tasks, { target: { value: "4" } });
+    // The jobs cap the person set goes with it: the store merges the top level only.
+    await waitFor(() => expect(save).toHaveBeenCalledWith({ parallel: { jobs: 2, tasks: 4 } }));
+    fireEvent.click(notify);
+    await waitFor(() => expect(save).toHaveBeenCalledWith({ notifyWaiting: true }));
+  });
+
+  it("General: an engine not yet checked with two sessions holds both caps at 1 and says why", async () => {
+    const client = new FakeClient({ ...ready, engineId: "opencode" });
+    client.state.engines = [...client.state.engines, { ...client.state.engines[0], id: "opencode", name: "OpenCode" }];
+    client.state.parallel = { caps: { tasks: 1, jobs: 1 }, suggested: { tasks: 3, jobs: 1 }, inbox: true, notifyWaiting: true, heldReason: "engine" };
+    await renderIn("en", <Sheet client={client} />);
+    const tasks = screen.getByLabelText("Tasks at once") as HTMLSelectElement;
+    expect(tasks.disabled).toBe(true);
+    expect((screen.getByLabelText("Jobs at once") as HTMLSelectElement).disabled).toBe(true);
+    expect(screen.getByText(/not yet checked with OpenCode/).id).toBe(tasks.getAttribute("aria-describedby"));
+    expect((screen.getByRole("checkbox", { name: "Notify me when a task waits" }) as HTMLInputElement).checked).toBe(true);
+  });
+
   it("D0: no harness tab when the harness declares no settings", async () => {
     await renderIn("en", <Sheet client={new FakeClient(ready)} />);
     expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["General", "Engine", "Usage"]);

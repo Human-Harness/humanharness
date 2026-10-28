@@ -611,6 +611,11 @@ export function createBoardHost(d: BoardHostDeps, initial: { engineId: string | 
         board.engineChanged(caps, hold);
       }
     },
+    /** Settings › General changed the person's caps (spec §7): the gate takes them now, under the engine's hold. */
+    capsChanged(person: AppConfig["parallel"]): void {
+      caps = effectiveCaps(d.suggested, person, hold);
+      gate.setCaps(caps, hold);
+    },
     closeWorkspace,
     /** A workspace is open or opening. */
     workspaceOpen: (): boolean => workspace.peek() !== null,

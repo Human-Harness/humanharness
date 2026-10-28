@@ -222,6 +222,28 @@ describe("the board host (parallel spec §6, §7)", () => {
     expect((await t.h.tasksState()).tasks.map((s) => s.state)).toEqual(["waiting", "waiting"]);
   });
 
+  it("Settings › General's caps reach the running gate: a queued turn starts once the cap is raised, and the window hears the caps", async () => {
+    const t = host({ tasks: 1 });
+    await t.h.interrupt();
+    const a = t.h.board.start("write", "First");
+    await until(() => t.turns.length === 1);
+    const b = t.h.board.start("write", "Second");
+    await until(() => (t.lastState()?.tasks ?? []).some((s) => s.state === "queued"));
+    t.h.capsChanged({ tasks: 2, jobs: 1 });
+    await until(() => t.turns.length === 2);
+    await until(() => t.lastState()?.caps.tasks === 2);
+    expect((await t.h.tasksState()).caps).toEqual({ tasks: 2, jobs: 1 });
+    t.turns[0].end();
+    t.turns[1].end();
+    await Promise.all([a, b]);
+  });
+
+  it("an engine held at one session keeps the caps at 1 whatever Settings › General asks", async () => {
+    const t = host({ engineId: "opencode" });
+    t.h.capsChanged({ tasks: 4, jobs: 3 });
+    expect((await t.h.tasksState()).caps).toEqual({ tasks: 1, jobs: 1 });
+  });
+
   it("the attention gets the open tasks as they change, one update at a time: a lane that waits, then closes (Decision 10)", async () => {
     const seen: TaskSummary[][] = [];
     let inFlight = 0;

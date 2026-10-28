@@ -980,6 +980,12 @@
     "outOfQuota": "Out of quota",
     "outOfQuotaUntil": "Out of quota until {{time}}",
     "pausedMove": "Paused while the folder moves",
-    "newTask": "New task"
+    "newTask": "New task",
+    "shownTask": "Task on screen",
+    "parallelSection": "Parallel tasks",
+    "tasksAtOnce": "Tasks at once",
+    "jobsAtOnce": "Jobs at once",
+    "notifyWaiting": "Notify me when a task waits",
+    "engineHeld": "One at a time: running more at once is not yet checked with {{engine}}."
   }
 }

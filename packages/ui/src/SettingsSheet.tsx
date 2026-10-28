@@ -1,5 +1,6 @@
 import { type KeyboardEvent as ReactKeyboardEvent, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { PARALLEL_MAX } from "@humanharness/harness-sdk";
 import { BackupNotice, type FolderMove, MovePlaces, needsBackupNotice, useFolderMove } from "./BackupNotice";
 import { EngineIcon, Segmented } from "./chrome";
 import { type AppConfig, type AppState, type Appearance, type HarnessClient, type RunningSetup, TEXT_SIZES, type TextSize, isConfigured } from "./client";
@@ -313,6 +314,7 @@ function GeneralTab({ client, state, onChange, move }: { client: HarnessClient; 
         )}
       </div>
       {state.config.folder && <p className="hh-caption">{t("settings.folderFixed")}</p>}
+      {state.parallel && <ParallelSection state={state} save={save} />}
       {state.profiles && <ProfilesSection client={client} state={state} onChange={onChange} />}
       <BackupNotice client={client} state={state} onChange={onChange} move={move} />
 
@@ -332,6 +334,61 @@ function GeneralTab({ client, state, onChange, move }: { client: HarnessClient; 
         </div>
       </div>
     </div>
+  );
+}
+
+const CAP_CHOICES = Array.from({ length: PARALLEL_MAX }, (_, i) => i + 1);
+
+/**
+ * Settings › General for a harness that declares `parallel` (spec §7, §9.2): how many tasks and jobs run at once, and
+ * the notification when a task waits. A cap saves the person's whole `parallel` (the store merges the top level only),
+ * so the other cap they set stays; one they never set keeps following the manifest. An engine not yet checked with
+ * two sessions holds both at 1.
+ */
+function ParallelSection({ state, save }: { state: AppState; save: (patch: AppConfig) => Promise<unknown> }) {
+  const { t } = useTranslation();
+  const id = useId();
+  const info = state.parallel!;
+  const held = info.heldReason === "engine";
+  const engine = state.engines.find((e) => e.id === state.config.engineId)?.name ?? state.config.engineId ?? "";
+  const cap = (key: "tasks" | "jobs", label: string) => (
+    <div className="hh-row">
+      <label className="hh-row-label" htmlFor={`${id}-${key}`}>
+        {label}
+      </label>
+      <select
+        id={`${id}-${key}`}
+        value={info.caps[key]}
+        disabled={held}
+        aria-describedby={held ? `${id}-held` : undefined}
+        onChange={(e) => void save({ parallel: { ...state.config.parallel, [key]: Number(e.target.value) } })}
+      >
+        {CAP_CHOICES.map((n) => (
+          <option key={n} value={n}>
+            {n}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+  return (
+    <>
+      <h3>{t("parallel.parallelSection")}</h3>
+      <div className="hh-rows">
+        {cap("tasks", t("parallel.tasksAtOnce"))}
+        {cap("jobs", t("parallel.jobsAtOnce"))}
+        {held && (
+          <p className="hh-caption hh-row-note" id={`${id}-held`}>
+            {t("parallel.engineHeld", { engine })}
+          </p>
+        )}
+        <div className="hh-row">
+          <label>
+            <input type="checkbox" checked={info.notifyWaiting} onChange={(e) => void save({ notifyWaiting: e.target.checked })} /> {t("parallel.notifyWaiting")}
+          </label>
+        </div>
+      </div>
+    </>
   );
 }
 

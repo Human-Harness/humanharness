@@ -91,6 +91,8 @@ export function ChatView({
   scopeBar,
   profileBar,
   inboxBar,
+  taskStrip,
+  draftKeep,
   openScope = null,
   onHome,
   onSettings,
@@ -115,6 +117,13 @@ export function ChatView({
   profileBar?: (disabled: boolean) => ReactNode;
   /** A harness with `parallel` and its inbox (spec §9.2): the inbox button; `refill` puts text back in the box. */
   inboxBar?: (refill: (text: string) => void) => ReactNode;
+  /** Board mode: the bar naming the task on screen, over the chat (parallel spec §9.1). */
+  taskStrip?: ReactNode;
+  /**
+   * Board mode: the box's text outlives this view, which remounts on every change of task shown (a message the inbox
+   * put back stays). Absent: the box starts empty, as always.
+   */
+  draftKeep?: { current: string };
   /** Harnesses with scopes: the open scope (its chat is the one on screen). */
   openScope?: string | null;
   onHome?: () => void;
@@ -136,7 +145,10 @@ export function ChatView({
   // save_note never shows: a note reaches the side panel as a file, through the tasks. Nor set_phase: the stepper
   // shows its proposal, through the tasks.
   const [chat, dispatch] = useReducer(reduceChat, undefined, () => initialChat([], [...stateBlocks, "save_note", "set_phase"]));
-  const [draft, setDraft] = useState("");
+  const [draft, setDraft] = useState(() => draftKeep?.current ?? "");
+  useEffect(() => {
+    if (draftKeep) draftKeep.current = draft;
+  }, [draftKeep, draft]);
   /** A cancelled queued message (parallel Decision 7): back in the box, after whatever is typed there. */
   const refillDraft = useCallback((text: string) => setDraft((d) => (d.trim() ? `${d}\n${text}` : text)), []);
   const [showHistory, setShowHistory] = useState(false);
@@ -338,8 +350,13 @@ export function ChatView({
 
   useEffect(() => {
     client.loadChat().then(
-      ({ entries, switchedFrom }) => {
+      ({ entries, switchedFrom, live }) => {
         dispatch({ type: "loaded", entries });
+        // Board mode: the task's turn already runs; its user line is in `entries`, its events so far come again.
+        if (live) {
+          dispatch({ type: "resume", at: live.user.at });
+          for (const e of live.events) dispatch(e.type === "done" ? { ...e, task: openTask.current } : e);
+        }
         setLoaded(true);
         if (switchedFrom) {
           const text = t("chat.switched", { engine });
@@ -1144,6 +1161,7 @@ export function ChatView({
           </nav>
         )}
         <Main className="hh-main">
+          {taskStrip}
           {/* A time box without phases (spec §5) still shows its time, its controls and, once time is up, Finish. */}
           {flow && since !== null && tasks.current && (taskPhases.length > 0 || tasks.current.timeBox) && (
             <PhaseStepper

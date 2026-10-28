@@ -1441,6 +1441,8 @@ function registerIpc() {
     await recordSetup(setupCtl, async () => (await validConfig()) !== null);
     if (patch.appearance) applyAppearance(patch.appearance);
     if (patch.textSize) applyTextSize(patch.textSize);
+    // Board mode: the person's caps reach the running gate at once (parallel spec §7), under the engine's hold.
+    if (host && patch.parallel !== undefined) host.capsChanged((await config.load()).parallel);
     return appState();
   });
   handle("hh:loadChat", async (): Promise<ChatLoad> => {

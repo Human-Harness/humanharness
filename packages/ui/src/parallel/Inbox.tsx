@@ -8,19 +8,23 @@ const WORKING: TaskSummary["state"][] = ["running", "closing", "checkpoint"];
 /**
  * The core inbox of open tasks (parallel spec §9.2): a top-bar button with the waiting count, opening four sections.
  * It reads only `client.tasks` (never the attention items' `read` flag, which the plugins inbox shares). A row asks
- * main to focus its task and closes the list; the chat follows main's tasks change, never the click.
+ * main to focus its task and closes the list; the chat follows main's tasks change, never the click ("New task" excepted:
+ * the start view is no task, so `onStartView` tells the app once main took it).
  */
 export function Inbox({
   client,
   state,
   tasks,
   onRefill,
+  onStartView,
 }: {
   client: HarnessClient;
   state: AppState;
   tasks: TasksState | null;
   /** A cancelled queued message of the focused task: its text goes back in the box (Decision 7). */
   onRefill?: (text: string) => void;
+  /** "New task" went through: main shows the start view, and the chat on screen must follow (it has no task change to see). */
+  onStartView?: () => void;
 }) {
   const { t, i18n } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -85,6 +89,7 @@ export function Inbox({
     try {
       await client.tasks.focus(taskId);
       setOpen(false);
+      if (taskId === null) onStartView?.();
     } catch {
       // Main refused (the task has just ended): the list stays, and its next change drops the row.
     } finally {

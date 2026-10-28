@@ -626,3 +626,6 @@ select:focus-visible { outline: 2px solid var(--hh-ink); outline-offset: 2px; }
 .hh-tk-conflict { padding: 0 6px; border: 1px solid var(--hh-warn); border-radius: 6px; color: var(--hh-warn); font-size: 0.75rem; }
 .hh-tk-cancel { flex: none; margin: 6px 6px 0 0; font-size: 0.8rem; }
 .hh-tk-new { display: block; width: calc(100% - 12px); margin: 4px 6px 2px; }
+.hh-tk-strip { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 6px 16px; border-bottom: 1px solid var(--hh-line); font-size: 0.9rem; }
+.hh-tk-strip .hh-tk-label { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.hh-tk-strip button { margin-left: auto; flex: none; }

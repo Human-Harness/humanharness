@@ -119,7 +119,7 @@ describe("Inbox (parallel spec §9.2)", () => {
     const c = client(parallel(), { tasks: [summary("a", "running", { focused: true })], caps: { tasks: 2, jobs: 1 } });
     await open(c);
     fireEvent.click(await inbox());
-    fireEvent.click(screen.getByRole("button", { name: "New task" }));
+    fireEvent.click(within(screen.getByRole("dialog", { name: "Inbox" })).getByRole("button", { name: "New task" }));
     await waitFor(() => expect(c.tasks.focus).toHaveBeenCalledWith(null));
   });
 

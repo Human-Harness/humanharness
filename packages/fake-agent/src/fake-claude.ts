@@ -1,7 +1,8 @@
 // Stand-in for `claude -p ... --output-format stream-json`. Reads its script from HH_FAKE_SCRIPT,
 // records its argv in HH_FAKE_ARGS, the prompt in HH_FAKE_STDIN, and appends {argv, prompt} for
 // every run to HH_FAKE_PROMPTS, so tests can assert on the flags and messages the runtime sent.
-// In mock mode (HH_FAKE_MOCK_DIR and HH_FAKE_MOCK_STATE) it replays the harness's recordings instead (mock-claude.ts).
+// In mock mode (HH_FAKE_MOCK_DIR and HH_FAKE_MOCK_STATE) it replays the harness's recordings instead (mock-claude.ts);
+// HH_FAKE_MOCK_ACTIONS (optional JSON [{action, match}]) names the actions of tasks no recording matches.
 import { spawn } from "node:child_process";
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -18,7 +19,11 @@ if (process.env.HH_FAKE_MOCK_DIR && process.env.HH_FAKE_MOCK_STATE) {
   const servers = i >= 0 ? (JSON.parse(argv[i + 1]) as { mcpServers: Record<string, any> }).mcpServers : {};
   const { runMockTurn } = await import("./mock-claude");
   // exitCode, not process.exit: let stdout drain.
-  process.exitCode = await runMockTurn(argv, prompt, servers, { dir: process.env.HH_FAKE_MOCK_DIR, state: process.env.HH_FAKE_MOCK_STATE });
+  process.exitCode = await runMockTurn(argv, prompt, servers, {
+    dir: process.env.HH_FAKE_MOCK_DIR,
+    state: process.env.HH_FAKE_MOCK_STATE,
+    actions: process.env.HH_FAKE_MOCK_ACTIONS,
+  });
 } else {
   const script = JSON.parse(readFileSync(process.env.HH_FAKE_SCRIPT!, "utf8")) as ClaudeScript;
   let input = "";

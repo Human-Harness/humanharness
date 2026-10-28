@@ -1,0 +1,1850 @@
+<title>Dev Harness IDE</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#6ea8fe}a:hover{color:#9cc4ff}
+@keyframes hhspin{to{transform:rotate(360deg)}}
+.spin{animation:hhspin 1.1s linear infinite}
+.ib{font:inherit;background:none;border:0;padding:0;margin:0;color:inherit;cursor:pointer;text-align:left}
+.mono{font-family:"JetBrains Mono",ui-monospace,Menlo,monospace}
+</style>
+<style>
+:root { --shell: #101114; --pill: #26282f; --pill-text: #e7e7ea; --pill-muted: #9a9ca5; --pill-line: #3a3d46; --pill-on: #6ea8fe; color-scheme: dark; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--shell); overflow: hidden; }
+#stage { position: absolute; left: 0; top: 0; width: 1440px; height: 900px; transform-origin: 0 0; }
+#demo-btn { position: fixed; z-index: 50; top: calc(8px + env(safe-area-inset-top, 0px)); right: calc(12px + env(safe-area-inset-right, 0px)); font: 600 12px Inter, system-ui, sans-serif; color: var(--pill-text); background: var(--pill); border: 1px solid var(--pill-line); border-radius: 999px; padding: 5px 12px; cursor: pointer; opacity: .82; }
+#demo-btn:hover, #demo-btn[aria-expanded="true"] { opacity: 1; }
+#demo-btn:focus-visible, .dm-item:focus-visible, .dm-reset:focus-visible { outline: 2px solid var(--pill-on); outline-offset: 2px; }
+#demo-pane { position: fixed; z-index: 50; top: calc(40px + env(safe-area-inset-top, 0px)); right: calc(12px + env(safe-area-inset-right, 0px)); width: 280px; max-height: calc(100% - 60px); overflow: auto; background: var(--pill); color: var(--pill-text); border: 1px solid var(--pill-line); border-radius: 10px; padding: 12px; box-shadow: 0 12px 32px rgba(0,0,0,.45); font: 13px Inter, system-ui, sans-serif; display: flex; flex-direction: column; gap: 2px; }
+.dm-head { display: flex; flex-direction: column; gap: 4px; padding-bottom: 8px; }
+.dm-head span, .dm-foot { color: var(--pill-muted); font-size: 12px; line-height: 1.4; }
+.dm-foot { padding-top: 10px; }
+.dm-group { color: var(--pill-muted); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; padding: 10px 6px 4px; }
+.dm-item, .dm-reset { font: inherit; color: inherit; background: none; border: 0; text-align: left; padding: 6px 8px; border-radius: 6px; cursor: pointer; }
+.dm-item:hover, .dm-reset:hover { background: var(--pill-line); }
+.dm-item.on { color: var(--pill-on); font-weight: 600; }
+.dm-reset { border: 1px solid var(--pill-line); text-align: center; font-weight: 600; }
+</style>
+<div id="stage" aria-label="Dev Harness IDE"></div>
+<button id="demo-btn" aria-expanded="false" aria-controls="demo-pane">Demo ▾</button>
+<div id="demo-pane" hidden></div>
+<template id="ide-tpl">
+<div style="position:relative;width:1440px;height:900px;box-sizing:border-box;display:flex;flex-direction:column;font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;font-size:13px;background:{{t.bg}};color:{{t.text}};overflow:hidden">
+
+  <!-- FOCUS MODE: full screen reading -->
+  <sc-if value="{{focusOn}}" hint-placeholder-val="{{false}}">
+    <div role="dialog" aria-label="Focus mode" style="position:absolute;inset:0;z-index:10;display:flex;flex-direction:column;background:{{t.focusBg}}">
+      <div style="height:44px;flex:none;display:flex;align-items:center;gap:14px;padding:0 20px;color:{{t.muted}};opacity:{{focusBarOpacity}}">
+        <span class="mono" style="font-size:12px">{{focusName}}</span>
+        <div style="flex:1;display:flex;justify-content:center"><div aria-hidden="true" style="width:220px;height:3px;border-radius:2px;background:{{t.chip}}"><div style="width:38%;height:3px;border-radius:2px;background:{{t.muted}}"></div></div></div>
+        <sc-if value="{{focusHasComments}}" hint-placeholder-val="{{true}}"><button class="ib" onClick="{{toggleFocusComments}}" aria-pressed="{{focusComments}}" style="font-size:12px;padding:4px 10px;border-radius:5px;border:1px solid {{t.border}}">{{focusCommentsLabel}}</button></sc-if>
+        <button class="ib" onClick="{{exitFocus}}" style="font-size:12px;padding:4px 10px;border-radius:5px;border:1px solid {{t.border}}">Salir · Esc</button>
+      </div>
+      <div style="flex:1;min-height:0;overflow:auto;display:flex;justify-content:center;gap:40px;padding:36px 40px 60px">
+        <article style="width:680px;flex:none;display:flex;flex-direction:column;gap:4px;font-family:{{focusFont}};color:{{t.text}}">
+          <sc-for list="{{focusBlocks}}" as="b" hint-placeholder-count="10">
+            <div style="{{b.style}}"><span>{{b.text}}</span><sc-for list="{{b.tags}}" as="tg" hint-placeholder-count="1"><span class="mono" style="{{tg.style}}">{{tg.label}}</span></sc-for><sc-if value="{{b.marker}}" hint-placeholder-val="{{false}}"><span style="margin-left:6px;font-family:Inter,sans-serif;font-size:11px;font-weight:700;padding:0 6px;border-radius:999px;background:{{t.waitBg}};color:{{t.wait}}">{{b.marker}}</span></sc-if></div>
+          </sc-for>
+          <sc-if value="{{focusApprove}}" hint-placeholder-val="{{false}}">
+            <div style="display:flex;gap:10px;align-items:center;margin-top:36px;padding-top:20px;border-top:1px solid {{t.border}};font-family:Inter,sans-serif">
+              <span style="flex:1;color:{{t.muted}}">Terminaste de leer. {{focusApproveHint}}</span>
+              <button class="ib" onClick="{{doc.approve}}" style="padding:7px 14px;border-radius:7px;font-weight:600;{{doc.approveStyle}}">{{doc.approveLabel}}</button>
+            </div>
+          </sc-if>
+        </article>
+        <sc-if value="{{focusComments}}" hint-placeholder-val="{{false}}">
+          <aside aria-label="Comentarios" style="width:260px;flex:none;display:flex;flex-direction:column;gap:10px;padding-top:60px">
+            <sc-for list="{{doc.comments}}" as="c" hint-placeholder-count="3">
+              <div style="display:flex;flex-direction:column;gap:6px;padding:10px 11px;border-radius:8px;border:1px solid {{c.border}};background:{{t.panel}}">
+                <div style="font-size:11px;font-weight:700"><span style="color:{{c.whoColor}}">{{c.who}}</span><span style="color:{{t.muted}}"> · {{c.kind}}</span></div>
+                <div style="line-height:1.45">{{c.text}}</div>
+                <sc-if value="{{c.showOptions}}" hint-placeholder-val="{{true}}"><div style="display:flex;flex-wrap:wrap;gap:6px"><sc-for list="{{c.options}}" as="op" hint-placeholder-count="2"><button class="ib" onClick="{{op.pick}}" aria-pressed="{{op.on}}" style="font-size:12px;padding:4px 9px;border-radius:5px;{{op.style}}">{{op.label}}</button></sc-for></div></sc-if>
+                <sc-if value="{{c.changeHint}}" hint-placeholder-val="{{false}}"><div style="font-size:11.5px;color:{{t.muted}}">{{c.changeHint}}</div></sc-if>
+                <sc-if value="{{c.resolution}}" hint-placeholder-val="{{false}}"><div style="font-size:12px;color:{{t.ok}}">✓ {{c.resolution}}</div></sc-if>
+              </div>
+            </sc-for>
+          </aside>
+        </sc-if>
+      </div>
+      <div style="height:30px;flex:none;display:flex;align-items:center;justify-content:center;font-size:11.5px;color:{{t.muted}};opacity:.8">Terminal, sidekicks y avisos en pausa mientras leés · {{focusWaiting}}</div>
+    </div>
+  </sc-if>
+
+  <!-- COMMAND PALETTE: tickets, md files and actions -->
+  <sc-if value="{{cmdOpen}}" hint-placeholder-val="{{false}}">
+    <div style="position:absolute;inset:0;z-index:20;display:flex;justify-content:center;align-items:flex-start;padding-top:64px;background:{{t.scrim}}">
+      <button class="ib" aria-label="Cerrar la paleta" onClick="{{closePalette}}" style="position:absolute;inset:0;cursor:default"></button>
+      <div role="dialog" aria-label="Paleta de comandos" style="position:relative;width:620px;max-height:540px;display:flex;flex-direction:column;border-radius:10px;border:1px solid {{t.border}};background:{{t.panel}};box-shadow:0 18px 48px rgba(0,0,0,0.35);overflow:hidden">
+        <label style="display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid {{t.border}};color:{{t.muted}}">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg>
+          <span style="position:absolute;left:-9999px">Buscar ticket, archivo o acción</span>
+          <input type="text" data-cmd-input="1" placeholder="Ticket, archivo o acción · empezá con &gt; para ver solo acciones" onChange="{{cmdType}}" style="flex:1;font:inherit;font-size:14px;background:transparent;border:0;outline:none;color:{{t.text}}">
+          <span class="mono" style="font-size:11px">Esc</span>
+        </label>
+        <div style="overflow:auto;padding:4px 6px 8px;display:flex;flex-direction:column">
+          <sc-for list="{{cmdGroups}}" as="cg" hint-placeholder-count="3">
+            <div style="display:flex;flex-direction:column">
+              <div style="padding:10px 10px 4px;font-size:10.5px;font-weight:600;letter-spacing:.06em;color:{{t.muted}}">{{cg.label}}</div>
+              <sc-for list="{{cg.items}}" as="ci" hint-placeholder-count="3">
+                <button class="ib" onClick="{{ci.run}}" style="display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:6px;background:{{ci.bg}}">
+                  <span class="mono" style="width:14px;text-align:center;color:{{t.muted}}">{{ci.icon}}</span>
+                  <span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ci.label}}</span>
+                  <span style="font-size:12px;color:{{t.muted}}">{{ci.detail}}</span>
+                  <sc-if value="{{ci.key}}" hint-placeholder-val="{{false}}"><span class="mono" style="font-size:11px;padding:1px 6px;border-radius:4px;background:{{t.chip}};color:{{t.muted}}">{{ci.key}}</span></sc-if>
+                </button>
+              </sc-for>
+            </div>
+          </sc-for>
+          <sc-if value="{{cmdEmpty}}" hint-placeholder-val="{{false}}"><div style="padding:18px 10px;color:{{t.muted}}">Nada coincide con "{{cmdQ}}".</div></sc-if>
+        </div>
+        <div style="display:flex;gap:16px;padding:8px 14px;border-top:1px solid {{t.border}};font-size:11.5px;color:{{t.muted}}"><span>↑↓ moverse</span><span>⏎ abrir</span><span>&gt; solo acciones</span><span style="flex:1;text-align:right">⌘K abre y cierra</span></div>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- Title bar -->
+  <header style="height:40px;flex:none;display:flex;align-items:center;gap:14px;padding:0 12px;background:{{t.side}};border-bottom:1px solid {{t.border}}">
+    <div aria-hidden="true" style="display:flex;gap:8px;width:62px">
+      <span style="width:12px;height:12px;border-radius:50%;background:#ff5f57"></span>
+      <span style="width:12px;height:12px;border-radius:50%;background:#febc2e"></span>
+      <span style="width:12px;height:12px;border-radius:50%;background:#28c840"></span>
+    </div>
+    <div style="font-weight:700">Dev Harness</div>
+    <div class="mono" style="font-size:12px;color:{{t.muted}}">{{crumb}}</div>
+    <div style="flex:1"></div>
+    <button class="ib" onClick="{{openPalette}}" aria-label="Abrir la paleta de comandos" style="display:flex;align-items:center;gap:10px;width:300px;height:26px;box-sizing:border-box;padding:0 10px;border-radius:6px;border:1px solid {{t.border}};background:{{t.bg}};color:{{t.muted}}">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg>
+      <span style="flex:1">Buscar ticket, archivo o comando</span>
+      <span class="mono" style="font-size:11px">⌘K</span>
+    </button>
+    <div style="flex:1"></div>
+    <sc-if value="{{isWork}}" hint-placeholder-val="{{true}}">
+      <button class="ib" style="font-size:12px;font-weight:600;padding:5px 10px;border-radius:6px;background:{{t.accent}};color:{{t.onAccent}}">Tomar ticket</button>
+    </sc-if>
+  </header>
+
+  <div style="flex:1;display:flex;min-height:0">
+
+    <!-- Left: explorer -->
+    <nav aria-label="Proyectos" style="width:272px;flex:none;display:flex;flex-direction:column;background:{{t.side}};border-right:1px solid {{t.border}}">
+      <div style="display:flex;align-items:center;gap:6px;padding:12px 12px 8px 14px">
+        <span style="flex:1;font-size:11px;font-weight:600;letter-spacing:.06em;color:{{t.muted}}">PROYECTOS</span>
+        <button class="ib" aria-label="Actualizar desde Jira" style="display:flex;padding:4px;color:{{t.muted}}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7"></path><path d="M20 4v7h-7"></path></svg></button>
+        <button class="ib" aria-label="Agregar proyecto" onClick="{{goStart}}" style="display:flex;padding:4px;color:{{t.muted}}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg></button>
+      </div>
+      <div style="flex:1;overflow:auto;padding:0 8px 8px">
+        <sc-if value="{{noProjects}}" hint-placeholder-val="{{false}}">
+          <div style="display:flex;flex-direction:column;gap:8px;padding:10px 8px">
+            <div style="color:{{t.muted}};line-height:1.5">Sin proyectos todavía.</div>
+            <button class="ib" onClick="{{goImport}}" style="padding:7px 10px;border-radius:6px;border:1px solid {{t.border}}">Importar Jira + repos</button>
+            <button class="ib" onClick="{{goCreate}}" style="padding:7px 10px;border-radius:6px;border:1px solid {{t.border}}">Crear desde cero</button>
+          </div>
+        </sc-if>
+        <sc-for list="{{projects}}" as="p" hint-placeholder-count="2">
+          <div style="display:flex;flex-direction:column">
+            <div style="display:flex;align-items:center;gap:6px;padding:6px;border-radius:6px">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true" style="color:{{t.muted}}"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg>
+              <span style="flex:1;font-weight:600">{{p.name}}</span>
+              <sc-if value="{{p.learning}}" hint-placeholder-val="{{false}}"><span class="spin" style="display:inline-block;width:10px;height:10px;box-sizing:border-box;border-radius:50%;border:2px solid {{t.accent}};border-top-color:transparent" aria-hidden="true"></span><span style="font-size:11px;color:{{t.muted}}">{{p.learning}}</span></sc-if>
+            </div>
+            <div style="display:flex;flex-direction:column;padding:0 0 8px 16px">
+              <div style="font-size:10.5px;font-weight:600;letter-spacing:.06em;color:{{t.muted}};padding:4px 6px 2px">PROYECTO</div>
+              <sc-for list="{{p.files}}" as="f" hint-placeholder-count="3">
+                <button class="ib" onClick="{{f.open}}" style="display:flex;align-items:center;gap:7px;padding:3px 6px 3px {{f.indent}};border-radius:5px;background:{{f.rowBg}}">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" style="color:{{t.muted}};flex:none"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><path d="M14 3v6h6"></path></svg>
+                  <span class="mono" style="flex:1;font-size:12px">{{f.name}}</span>
+                  <span class="mono" style="font-size:11px;font-weight:600;color:{{f.markColor}}">{{f.mark}}</span>
+                </button>
+              </sc-for>
+              <sc-for list="{{p.groups}}" as="g" hint-placeholder-count="3">
+                <div style="display:flex;flex-direction:column">
+                  <div style="display:flex;gap:6px;align-items:baseline;padding:8px 6px 2px;font-size:10.5px;font-weight:600;letter-spacing:.06em;color:{{t.muted}}"><span>{{g.label}}</span><span style="font-weight:400;letter-spacing:0">{{g.hint}}</span></div>
+                  <sc-for list="{{g.items}}" as="it" hint-placeholder-count="2">
+                    <div style="display:flex;flex-direction:column">
+                      <button class="ib" onClick="{{it.toggle}}" aria-expanded="{{it.expanded}}" style="display:flex;align-items:center;gap:7px;padding:4px 6px;border-radius:6px;background:{{it.rowBg}}">
+                        <span style="display:inline-flex;width:10px;color:{{t.muted}};transform:{{it.chev}}"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg></span>
+                        <span class="{{it.dotClass}}" style="{{it.dotStyle}}" aria-hidden="true"></span>
+                        <span style="flex:1;min-width:0;display:flex;flex-direction:column">
+                          <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{it.title}}</span>
+                          <span style="font-size:11px;color:{{t.muted}}"><span class="mono">{{it.key}}</span> · {{it.label}}</span>
+                        </span>
+                      </button>
+                      <sc-if value="{{it.expanded}}" hint-placeholder-val="{{false}}">
+                        <sc-for list="{{it.files}}" as="f" hint-placeholder-count="3">
+                          <button class="ib" onClick="{{f.open}}" style="display:flex;align-items:center;gap:7px;padding:3px 6px 3px 34px;border-radius:5px;background:{{f.rowBg}}">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" style="color:{{t.muted}};flex:none"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><path d="M14 3v6h6"></path></svg>
+                            <span class="mono" style="flex:1;font-size:12px">{{f.name}}</span>
+                            <span class="mono" style="font-size:11px;font-weight:600;color:{{f.markColor}}">{{f.mark}}</span>
+                          </button>
+                        </sc-for>
+                      </sc-if>
+                    </div>
+                  </sc-for>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+      <sc-if value="{{tlShow}}" hint-placeholder-val="{{true}}">
+        <section aria-label="Línea de tiempo" style="flex:none;border-top:1px solid {{t.border}};display:flex;flex-direction:column;max-height:230px">
+          <button class="ib" onClick="{{toggleTl}}" aria-expanded="{{tlOpen}}" style="display:flex;align-items:center;gap:6px;padding:8px 12px 6px 14px">
+            <span style="display:inline-flex;width:10px;color:{{t.muted}};transform:{{tlChev}}"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg></span>
+            <span style="flex:1;font-size:11px;font-weight:600;letter-spacing:.06em;color:{{t.muted}}">LÍNEA DE TIEMPO</span>
+            <span class="mono" style="font-size:11px;color:{{t.muted}}">{{tlFile}}</span>
+          </button>
+          <sc-if value="{{tlOpen}}" hint-placeholder-val="{{true}}">
+            <div style="min-height:0;overflow:auto;padding:0 8px 8px;display:flex;flex-direction:column">
+              <sc-for list="{{timeline}}" as="te" hint-placeholder-count="4">
+                <button class="ib" onClick="{{te.open}}" style="display:flex;gap:9px;align-items:flex-start;padding:5px 6px;border-radius:5px">
+                  <span aria-hidden="true" style="flex:none;width:7px;height:7px;margin-top:5px;border-radius:50%;background:{{te.dot}}"></span>
+                  <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:1px">
+                    <span style="line-height:1.35">{{te.what}}</span>
+                    <span style="font-size:11px;color:{{t.muted}}">{{te.meta}}</span>
+                  </span>
+                  <sc-if value="{{te.canDiff}}" hint-placeholder-val="{{false}}"><span style="font-size:11px;color:{{t.accent}}">diff</span></sc-if>
+                </button>
+              </sc-for>
+            </div>
+          </sc-if>
+        </section>
+      </sc-if>
+      <div style="border-top:1px solid {{t.border}};padding:8px;display:flex;flex-direction:column;gap:2px">
+        <button class="ib" onClick="{{openAgents}}" style="display:flex;gap:8px;align-items:center;padding:6px;border-radius:6px">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="9" cy="8" r="3"></circle><circle cx="17" cy="10" r="2.5"></circle><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6M14 20c0-2.5 1.5-4.5 3-4.5s4 1.5 4 4.5"></path></svg>
+          <span>Agentes</span>
+        </button>
+        <button class="ib" onClick="{{openSkLib}}" style="display:flex;gap:8px;align-items:center;padding:6px;border-radius:6px">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="8"></circle><circle cx="12" cy="12" r="3"></circle></svg>
+          <span>Sidekicks</span>
+        </button>
+        <button class="ib" onClick="{{openMcp}}" style="display:flex;gap:8px;align-items:center;padding:6px;border-radius:6px">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M8 7l-5 5 5 5M16 7l5 5-5 5"></path></svg>
+          <span>MCP del IDE</span>
+        </button>
+        <button class="ib" style="display:flex;gap:8px;align-items:center;padding:6px;border-radius:6px">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"></path></svg>
+          <span>Ajustes</span>
+        </button>
+      </div>
+    </nav>
+
+    <!-- Center: tabs, document, terminal -->
+    <main style="flex:1;min-width:0;display:flex;flex-direction:column">
+      <div role="tablist" aria-label="Abiertos" style="height:36px;flex:none;display:flex;align-items:stretch;background:{{t.side}};border-bottom:1px solid {{t.border}};overflow:hidden">
+        <sc-for list="{{tabs}}" as="tb" hint-placeholder-count="3">
+          <div style="display:flex;align-items:center;gap:4px;padding:0 6px 0 12px;border-right:1px solid {{t.border}};background:{{tb.bg}};box-shadow:{{tb.shadow}}">
+            <button class="ib" role="tab" aria-selected="{{tb.active}}" onClick="{{tb.select}}" style="display:flex;align-items:center;gap:7px;height:100%;color:{{tb.color}}">
+              <span class="mono" style="font-size:12px">{{tb.label}}</span>
+              <span class="mono" style="font-size:11px;font-weight:600;color:{{t.wait}}">{{tb.mark}}</span>
+            </button>
+            <button class="ib" aria-label="Cerrar {{tb.label}}" onClick="{{tb.close}}" style="display:flex;padding:4px;border-radius:4px;color:{{t.muted}}"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg></button>
+          </div>
+        </sc-for>
+        <div style="flex:1"></div>
+      </div>
+
+      <div style="flex:1;min-height:0;overflow:auto;background:{{t.bg}}">
+        <div style="display:flex;flex-direction:column;gap:14px;padding:18px 24px 24px">
+
+          <!-- Ticket header with stepper (only for ticket docs) -->
+          <sc-if value="{{hasTicket}}" hint-placeholder-val="{{true}}">
+            <div style="display:flex;flex-direction:column;gap:10px">
+              <div style="display:flex;align-items:center;gap:10px">
+                <span class="mono" style="color:{{t.muted}}">{{tk.key}}</span>
+                <span style="font-size:16px;font-weight:600">{{tk.title}}</span>
+                <span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px;background:{{t.chip}};color:{{t.muted}}">Jira: {{tk.jira}}</span>
+              </div>
+              <ol aria-label="Etapas" style="list-style:none;margin:0;padding:0;display:flex;gap:6px;flex-wrap:wrap">
+                <sc-for list="{{steps}}" as="s" hint-placeholder-count="6"><li style="font-size:12px;padding:4px 10px;border-radius:999px;{{s.style}}">{{s.label}}</li></sc-for>
+              </ol>
+            </div>
+          </sc-if>
+
+          <!-- SETUP: first run walkthrough -->
+          <sc-if value="{{vSetup}}" hint-placeholder-val="{{false}}">
+            <div style="max-width:720px;display:flex;flex-direction:column;gap:14px;padding-top:12px">
+              <div style="font-size:24px;font-weight:700">Preparar Dev Harness</div>
+              <div style="color:{{t.muted}};line-height:1.5">Cada paso corre su chequeo en la terminal de abajo, a la vista. Nada se guarda en la app: usa tu motor, tu <span class="mono">gh</span> y el MCP de Atlassian de tu motor.</div>
+              <div style="display:flex;flex-direction:column;border:1px solid {{t.border}};border-radius:8px;background:{{t.panel}}">
+                <sc-for list="{{setupSteps}}" as="st" hint-placeholder-count="4">
+                  <div style="display:flex;gap:12px;align-items:center;padding:12px 14px;border-bottom:1px solid {{t.border}}">
+                    <span class="mono" style="width:18px;font-weight:600;color:{{st.color}}">{{st.mark}}</span>
+                    <span style="flex:1;display:flex;flex-direction:column;gap:2px"><span style="font-weight:600">{{st.title}}</span><span style="color:{{t.muted}}">{{st.detail}}</span></span>
+                    <sc-if value="{{st.action}}" hint-placeholder-val="{{false}}"><button class="ib" onClick="{{st.run}}" style="padding:6px 12px;border-radius:6px;font-weight:600;background:{{t.accent}};color:{{t.onAccent}}">{{st.action}}</button></sc-if>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </sc-if>
+
+          <!-- START: empty explorer -->
+          <sc-if value="{{vStart}}" hint-placeholder-val="{{false}}">
+            <div style="max-width:720px;display:flex;flex-direction:column;gap:14px;padding-top:12px">
+              <div style="font-size:24px;font-weight:700">Empezar</div>
+              <sc-for list="{{startOpts}}" as="o" hint-placeholder-count="3">
+                <button class="ib" onClick="{{o.go}}" style="display:flex;flex-direction:column;gap:4px;padding:14px 16px;border-radius:8px;border:1px solid {{t.border}};background:{{t.panel}}">
+                  <span style="font-weight:600;color:{{t.accent}}">{{o.title}}</span><span style="color:{{t.muted}};line-height:1.45">{{o.detail}}</span>
+                </button>
+              </sc-for>
+              <div style="color:{{t.muted}}">Recientes: ninguno</div>
+            </div>
+          </sc-if>
+
+          <!-- IMPORT form -->
+          <sc-if value="{{vImport}}" hint-placeholder-val="{{false}}">
+            <div style="max-width:720px;display:flex;flex-direction:column;gap:14px;padding-top:12px">
+              <div style="font-size:24px;font-weight:700">Importar proyecto</div>
+              <div style="display:flex;flex-direction:column;gap:6px"><span style="font-size:12px;font-weight:600;color:{{t.muted}}">Proyecto de Jira (lo trae el agente por MCP)</span>
+                <div style="padding:9px 12px;border-radius:7px;border:1px solid {{t.border}};background:{{t.input}}"><span class="mono">SHOP</span> · Tienda web · 47 tickets abiertos</div></div>
+              <div style="display:flex;flex-direction:column;gap:6px"><span style="font-size:12px;font-weight:600;color:{{t.muted}}">Repos</span>
+                <div style="display:flex;flex-direction:column;border:1px solid {{t.border}};border-radius:7px;background:{{t.panel}}">
+                  <div style="display:flex;gap:10px;padding:9px 12px;border-bottom:1px solid {{t.border}}"><span style="color:{{t.ok}}">✓</span><span class="mono" style="flex:1">tienda/api</span><span style="color:{{t.muted}}">ya está en ~/code/tienda-api</span></div>
+                  <div style="display:flex;gap:10px;padding:9px 12px"><span style="color:{{t.ok}}">✓</span><span class="mono" style="flex:1">tienda/web</span><span style="color:{{t.muted}}">clonar en ~/code/tienda-web</span></div>
+                </div></div>
+              <div style="color:{{t.muted}};line-height:1.5">Al importar, un agente liviano lee los repos y escribe <span class="mono">project.md</span> y <span class="mono">conventions.md</span>. Los revisás como cualquier documento.</div>
+              <button class="ib" onClick="{{doImport}}" style="align-self:flex-start;padding:8px 14px;border-radius:7px;font-weight:600;background:{{t.accent}};color:{{t.onAccent}}">Importar</button>
+            </div>
+          </sc-if>
+
+          <!-- CREATE wizard -->
+          <sc-if value="{{vCreate}}" hint-placeholder-val="{{false}}">
+            <div style="max-width:760px;display:flex;flex-direction:column;gap:14px;padding-top:12px">
+              <div style="color:{{t.muted}}">Nuevo proyecto · Turnos · decisión {{wiz.n}} de {{wiz.total}}</div>
+              <div style="font-size:22px;font-weight:700">{{wiz.title}}</div>
+              <div style="color:{{t.muted}};line-height:1.5">{{wiz.why}}</div>
+              <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px">
+                <sc-for list="{{wiz.options}}" as="o" hint-placeholder-count="2">
+                  <div style="display:flex;flex-direction:column;gap:8px;padding:14px;border-radius:8px;border:1px solid {{t.border}};background:{{t.panel}}">
+                    <div style="display:flex;gap:8px;align-items:center"><span style="font-weight:700">{{o.name}}</span><sc-if value="{{o.rec}}" hint-placeholder-val="{{false}}"><span style="font-size:11px;font-weight:600;padding:1px 7px;border-radius:999px;background:{{t.accentBg}};color:{{t.accent}}">Recomendado</span></sc-if></div>
+                    <div style="color:{{t.ok}}">+ {{o.pro}}</div>
+                    <div style="color:{{t.err}}">− {{o.con}}</div>
+                    <button class="ib" onClick="{{o.pick}}" style="align-self:flex-start;padding:6px 12px;border-radius:6px;font-weight:600;background:{{t.accent}};color:{{t.onAccent}}">Elegir</button>
+                  </div>
+                </sc-for>
+              </div>
+              <sc-if value="{{wiz.done}}" hint-placeholder-val="{{false}}">
+                <div style="display:flex;flex-direction:column;gap:10px;padding:14px;border-radius:8px;border:1px solid {{t.border}};background:{{t.panel}}">
+                  <div style="font-weight:700">Listo para armar</div>
+                  <div style="color:{{t.muted}};line-height:1.5">4 ADRs escritos. Al confirmar: crear repo en GitHub, proyecto en Jira, scaffold y CI. Cada paso corre en la terminal de abajo.</div>
+                  <button class="ib" style="align-self:flex-start;padding:7px 14px;border-radius:7px;font-weight:600;background:{{t.accent}};color:{{t.onAccent}}">Confirmar y armar</button>
+                </div>
+              </sc-if>
+              <div style="font-size:12px;color:{{t.muted}}">Cada decisión se guarda como <span class="mono">adr/NNN.md</span>: mirá cómo aparecen a la izquierda.</div>
+            </div>
+          </sc-if>
+
+          <!-- DOC REVIEW: spec.md and project.md -->
+          <sc-if value="{{vDoc}}" hint-placeholder-val="{{true}}">
+            <div style="display:flex;flex-direction:column;gap:12px">
+              <div style="display:flex;align-items:center;gap:10px">
+                <span class="mono" style="font-size:12px;color:{{t.muted}}">{{doc.meta}}</span>
+                <div style="flex:1"></div>
+                <button class="ib" onClick="{{enterFocus}}" aria-label="Leer en focus mode" style="display:flex;align-items:center;gap:6px;padding:5px 11px;border-radius:6px;border:1px solid {{t.border}}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"></path></svg>Focus</button>
+                <sc-for list="{{doc.secondary}}" as="b" hint-placeholder-count="2"><button class="ib" onClick="{{b.run}}" style="padding:5px 11px;border-radius:6px;border:1px solid {{t.border}}">{{b.label}}</button></sc-for>
+                <button class="ib" onClick="{{doc.approve}}" aria-disabled="{{doc.blocked}}" style="padding:6px 12px;border-radius:6px;font-weight:600;{{doc.approveStyle}}">{{doc.approveLabel}}</button>
+              </div>
+              <sc-if value="{{doc.banner}}" hint-placeholder-val="{{false}}"><div style="padding:10px 12px;border-radius:8px;background:{{t.okBg}};color:{{t.ok}};font-weight:600">{{doc.banner}}</div></sc-if>
+              <div style="display:flex;gap:18px;align-items:flex-start">
+                <article style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;padding:18px 22px;border-radius:8px;border:1px solid {{t.border}};background:{{t.panel}}">
+                  <sc-for list="{{doc.blocks}}" as="b" hint-placeholder-count="8">
+                    <div style="{{b.style}}">
+                      <span>{{b.text}}</span>
+                      <sc-for list="{{b.tags}}" as="tg" hint-placeholder-count="1"><span class="mono" style="{{tg.style}}">{{tg.label}}</span></sc-for>
+                    </div>
+                  </sc-for>
+                </article>
+                <aside aria-label="Comentarios" style="width:290px;flex:none;display:flex;flex-direction:column;gap:10px">
+                  <div style="font-size:10.5px;font-weight:600;letter-spacing:.06em;color:{{t.muted}}">{{doc.commentsLabel}}</div>
+                  <sc-for list="{{doc.comments}}" as="c" hint-placeholder-count="3">
+                    <div style="display:flex;flex-direction:column;gap:7px;padding:11px 12px;border-radius:8px;border:1px solid {{c.border}};background:{{t.panel}}">
+                      <div style="display:flex;gap:6px;align-items:center;font-size:11px;font-weight:700"><span style="color:{{c.whoColor}}">{{c.who}}</span><span style="color:{{t.muted}};font-weight:600">· {{c.kind}}</span></div>
+                      <div style="line-height:1.45">{{c.text}}</div>
+                      <sc-if value="{{c.showOptions}}" hint-placeholder-val="{{true}}">
+                        <div style="display:flex;flex-wrap:wrap;gap:6px">
+                          <sc-for list="{{c.options}}" as="op" hint-placeholder-count="2"><button class="ib" onClick="{{op.pick}}" aria-pressed="{{op.on}}" style="font-size:12px;padding:4px 9px;border-radius:5px;{{op.style}}">{{op.label}}</button></sc-for>
+                        </div>
+                      </sc-if>
+                      <sc-if value="{{c.changeHint}}" hint-placeholder-val="{{false}}"><div style="font-size:11.5px;color:{{t.muted}}">{{c.changeHint}}</div></sc-if>
+                      <sc-if value="{{c.resolution}}" hint-placeholder-val="{{false}}"><div style="font-size:12px;color:{{t.ok}}">✓ {{c.resolution}}</div></sc-if>
+                    </div>
+                  </sc-for>
+                </aside>
+              </div>
+              <sc-if value="{{doc.coverage}}" hint-placeholder-val="{{true}}">
+                <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 14px;border-radius:8px;border:1px solid {{t.border}};background:{{t.panel}}">
+                  <span style="font-size:10.5px;font-weight:600;letter-spacing:.06em;color:{{t.muted}};padding-right:6px">COBERTURA AC → SPEC</span>
+                  <sc-for list="{{doc.coverage}}" as="cv" hint-placeholder-count="4"><span style="font-size:12px;padding:3px 9px;border-radius:999px;{{cv.style}}">{{cv.label}}</span></sc-for>
+                </div>
+              </sc-if>
+            </div>
+          </sc-if>
+
+          <!-- MD DIFF: a frozen version against the current text -->
+          <sc-if value="{{vDiff}}" hint-placeholder-val="{{false}}">
+            <div style="display:flex;flex-direction:column;gap:12px">
+              <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                <span class="mono" style="font-size:12px;color:{{t.muted}}">{{diff.meta}}</span>
+                <span class="mono" style="font-size:12px;font-weight:600;color:{{t.ok}}">{{diff.adds}}</span>
+                <span class="mono" style="font-size:12px;font-weight:600;color:{{t.err}}">{{diff.dels}}</span>
+                <div style="flex:1"></div>
+                <div role="group" aria-label="Comparar desde" style="display:flex;gap:2px;padding:2px;border-radius:6px;background:{{t.chip}}">
+                  <sc-for list="{{diff.froms}}" as="df" hint-placeholder-count="2"><button class="ib" onClick="{{df.pick}}" style="padding:4px 10px;border-radius:5px;font-size:12px;{{df.style}}">{{df.label}}</button></sc-for>
+                </div>
+                <div role="group" aria-label="Vista del diff" style="display:flex;gap:2px;padding:2px;border-radius:6px;background:{{t.chip}}">
+                  <button class="ib" onClick="{{diffInline}}" style="padding:4px 10px;border-radius:5px;font-size:12px;{{diffInlineStyle}}">En línea</button>
+                  <button class="ib" onClick="{{diffSide}}" style="padding:4px 10px;border-radius:5px;font-size:12px;{{diffSideStyle}}">Lado a lado</button>
+                </div>
+                <button class="ib" onClick="{{diff.openDoc}}" style="padding:5px 11px;border-radius:6px;border:1px solid {{t.border}}">Abrir spec.md</button>
+              </div>
+              <sc-if value="{{diff.empty}}" hint-placeholder-val="{{false}}"><div style="padding:10px 12px;border-radius:8px;background:{{t.chip}};color:{{t.muted}}">Sin cambios desde esta versión.</div></sc-if>
+              <sc-if value="{{diffIsInline}}" hint-placeholder-val="{{true}}">
+                <article style="display:flex;flex-direction:column;gap:2px;padding:14px 16px;border-radius:8px;border:1px solid {{t.border}};background:{{t.panel}}">
+                  <sc-for list="{{diff.rows}}" as="dr" hint-placeholder-count="10">
+                    <div style="{{dr.box}}"><span class="mono" aria-hidden="true" style="width:12px;flex:none;font-weight:700;color:{{dr.pc}}">{{dr.p}}</span><span style="flex:1;min-width:0;{{dr.style}}">{{dr.text}}</span></div>
+                  </sc-for>
+                </article>
+              </sc-if>
+              <sc-if value="{{diffIsSide}}" hint-placeholder-val="{{false}}">
+                <div style="display:flex;flex-direction:column;gap:2px;padding:14px 16px;border-radius:8px;border:1px solid {{t.border}};background:{{t.panel}}">
+                  <div style="display:flex;gap:16px;padding-bottom:6px;font-size:10.5px;font-weight:600;letter-spacing:.06em;color:{{t.muted}}"><span style="flex:1">{{diff.leftLabel}}</span><span style="flex:1">{{diff.rightLabel}}</span></div>
+                  <sc-for list="{{diff.pairs}}" as="pr" hint-placeholder-count="10">
+                    <div style="display:flex;gap:16px"><div style="{{pr.l.box}}"><span style="{{pr.l.style}}">{{pr.l.text}}</span></div><div style="{{pr.r.box}}"><span style="{{pr.r.style}}">{{pr.r.text}}</span></div></div>
+                  </sc-for>
+                </div>
+              </sc-if>
+              <div style="font-size:12px;color:{{t.muted}};line-height:1.5">El diff compara el texto del md, no el código. Tus respuestas a los comentarios cambian el spec al instante, y se ven acá antes de aprobar.</div>
+            </div>
+          </sc-if>
+
+          <!-- CODE REVIEW -->
+          <sc-if value="{{vReview}}" hint-placeholder-val="{{false}}">
+            <div style="display:flex;flex-direction:column;gap:12px">
+              <div style="display:flex;align-items:center;gap:12px">
+                <span style="font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;background:{{t.errBg}};color:{{t.err}}">CAMBIOS PEDIDOS</span>
+                <span style="color:{{t.muted}}">review.md · Reviewer + Security reviewer (tuyo) · vuelta 1 · modelo profundo</span>
+              </div>
+              <div style="color:{{t.muted}};line-height:1.45">Revisa contra el <span class="mono">spec.md</span>, no solo el código. Tu ajuste: iterar solo hasta 2 vueltas con el dev, pero un bloqueante siempre te para.</div>
+              <div style="display:flex;flex-direction:column;border:1px solid {{t.border}};border-radius:8px;background:{{t.panel}}">
+                <sc-for list="{{findings}}" as="fd" hint-placeholder-count="5">
+                  <div style="display:flex;flex-direction:column;gap:7px;padding:11px 14px;border-bottom:1px solid {{t.border}}">
+                    <div style="display:flex;gap:10px;align-items:center">
+                      <span style="font-size:11px;font-weight:700;width:76px;color:{{fd.sevColor}}">{{fd.sevMark}} {{fd.sev}}</span>
+                      <span class="mono" style="font-size:12px;color:{{t.muted}}">{{fd.file}}</span>
+                      <span style="font-size:11px;color:{{t.muted}}">{{fd.agent}}</span>
+                      <div style="flex:1"></div>
+                      <span class="mono" style="font-size:11px;padding:1px 7px;border-radius:999px;background:{{t.accentBg}};color:{{t.accent}}">{{fd.ref}}</span>
+                    </div>
+                    <div style="padding-left:86px;line-height:1.45">{{fd.text}}</div>
+                    <div style="padding-left:86px;display:flex;gap:6px;flex-wrap:wrap">
+                      <button class="ib" onClick="{{fd.diff}}" style="font-size:12px;padding:4px 9px;border-radius:5px;border:1px solid {{t.border}}">Ver diff abajo</button>
+                      <sc-for list="{{fd.actions}}" as="ac" hint-placeholder-count="2"><button class="ib" onClick="{{ac.pick}}" style="font-size:12px;padding:4px 9px;border-radius:5px;{{ac.style}}">{{ac.label}}</button></sc-for>
+                    </div>
+                  </div>
+                </sc-for>
+              </div>
+              <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 14px;border-radius:8px;border:1px solid {{t.border}};background:{{t.panel}}">
+                <span style="font-size:10.5px;font-weight:600;letter-spacing:.06em;color:{{t.muted}};padding-right:6px">CUMPLE EL SPEC</span>
+                <span style="font-size:12px;padding:3px 9px;border-radius:999px;background:{{t.okBg}};color:{{t.ok}}">§1 ✓</span>
+                <span style="font-size:12px;padding:3px 9px;border-radius:999px;background:{{t.okBg}};color:{{t.ok}}">§2 ✓</span>
+                <span style="font-size:12px;padding:3px 9px;border-radius:999px;background:{{t.errBg}};color:{{t.err}}">§3 ✗ talles sin stock</span>
+                <span style="font-size:12px;padding:3px 9px;border-radius:999px;background:{{t.waitBg}};color:{{t.wait}}">1 cambio fuera del spec</span>
+              </div>
+              <div style="display:flex;gap:8px">
+                <button class="ib" onClick="{{sendToDev}}" style="padding:7px 14px;border-radius:7px;font-weight:600;background:{{t.accent}};color:{{t.onAccent}}">{{sendLabel}}</button>
+                <button class="ib" style="padding:7px 14px;border-radius:7px;border:1px solid {{t.border}}">Aprobar igual, con motivo</button>
+              </div>
+            </div>
+          </sc-if>
+
+          <!-- QA -->
+          <sc-if value="{{vQa}}" hint-placeholder-val="{{false}}">
+            <div style="display:flex;flex-direction:column;gap:12px">
+              <div style="display:flex;align-items:center;gap:12px">
+                <span style="color:{{t.muted}}">qa.md · QA · corrió en el worktree · 4 min</span>
+                <div style="flex:1"></div>
+                <div role="group" aria-label="Modo de QA" style="display:flex;padding:2px;border-radius:7px;background:{{t.chip}}">
+                  <button class="ib" onClick="{{qaGuided}}" aria-pressed="{{qaIsGuided}}" style="padding:4px 12px;border-radius:5px;font-size:12px;font-weight:600;{{qaGuidedStyle}}">Guiado</button>
+                  <button class="ib" onClick="{{qaAuto}}" aria-pressed="{{qaIsAuto}}" style="padding:4px 12px;border-radius:5px;font-size:12px;font-weight:600;{{qaAutoStyle}}">100% autónomo</button>
+                </div>
+              </div>
+              <div style="color:{{t.muted}};line-height:1.45">{{qaExplain}}</div>
+              <div style="display:flex;flex-direction:column;border:1px solid {{t.border}};border-radius:8px;background:{{t.panel}}">
+                <sc-for list="{{qaRows}}" as="q" hint-placeholder-count="3">
+                  <div style="display:flex;flex-direction:column;gap:7px;padding:12px 14px;border-bottom:1px solid {{t.border}}">
+                    <div style="display:flex;gap:10px;align-items:center">
+                      <span class="mono" style="font-size:11px;width:30px;color:{{t.accent}}">{{q.ac}}</span>
+                      <span style="flex:1">{{q.text}}</span>
+                      <span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;{{q.badgeStyle}}">{{q.badge}}</span>
+                    </div>
+                    <div style="padding-left:40px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+                      <span class="mono" style="font-size:12px;color:{{t.muted}}">{{q.evidence}}</span>
+                      <sc-for list="{{q.links}}" as="lk" hint-placeholder-count="1"><button class="ib" style="font-size:12px;color:{{t.accent}}">{{lk}}</button></sc-for>
+                    </div>
+                    <sc-if value="{{q.manual}}" hint-placeholder-val="{{false}}">
+                      <div style="padding-left:40px;display:flex;flex-direction:column;gap:8px">
+                        <div style="line-height:1.45">{{q.ask}}</div>
+                        <div style="display:flex;gap:10px">
+                          <div style="width:180px;height:96px;border-radius:6px;border:1px dashed {{t.border}};display:flex;align-items:center;justify-content:center;color:{{t.muted}};font-size:12px">[captura: Gmail]</div>
+                          <div style="width:180px;height:96px;border-radius:6px;border:1px dashed {{t.border}};display:flex;align-items:center;justify-content:center;color:{{t.muted}};font-size:12px">[captura: Outlook]</div>
+                        </div>
+                        <div style="display:flex;gap:6px"><button class="ib" onClick="{{qaPass}}" style="font-size:12px;padding:5px 11px;border-radius:5px;font-weight:600;background:{{t.okBg}};color:{{t.ok}}">Pasa</button><button class="ib" onClick="{{qaFail}}" style="font-size:12px;padding:5px 11px;border-radius:5px;font-weight:600;background:{{t.errBg}};color:{{t.err}}">No pasa</button></div>
+                      </div>
+                    </sc-if>
+                  </div>
+                </sc-for>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:8px;padding:12px 14px;border-radius:8px;border:1px solid {{t.border}};background:{{t.panel}}">
+                <div style="display:flex;gap:10px"><span style="font-size:10.5px;font-weight:600;letter-spacing:.06em;color:{{t.muted}};width:110px">REGRESIÓN</span><span>web 214 ✓ 0 ✗ · api 98 ✓ 0 ✗</span></div>
+                <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span style="font-size:10.5px;font-weight:600;letter-spacing:.06em;color:{{t.muted}};width:110px">EXPLORATORIO</span><span style="flex:1">El botón "Guardar" queda activo mientras se envía el email.</span>
+                  <button class="ib" style="font-size:12px;padding:4px 9px;border-radius:5px;border:1px solid {{t.border}}">Crear ticket nuevo</button><button class="ib" style="font-size:12px;padding:4px 9px;border-radius:5px;border:1px solid {{t.border}}">Arreglar en este</button></div>
+              </div>
+              <button class="ib" aria-disabled="{{qaBlocked}}" style="align-self:flex-start;padding:7px 14px;border-radius:7px;font-weight:600;{{qaPrStyle}}">{{qaPrLabel}}</button>
+            </div>
+          </sc-if>
+
+          <!-- PROCESS import -->
+          <sc-if value="{{vProcess}}" hint-placeholder-val="{{false}}">
+            <div style="max-width:1000px;display:flex;flex-direction:column;gap:14px">
+              <div style="font-size:22px;font-weight:700">Importar proceso</div>
+              <div style="color:{{t.muted}};line-height:1.5">Encontré procesos en esta máquina. Elegí cuál usar como base para el flujo de Tienda web.</div>
+              <div style="display:flex;flex-direction:column;border:1px solid {{t.border}};border-radius:8px;background:{{t.panel}}">
+                <sc-for list="{{procSources}}" as="ps" hint-placeholder-count="4">
+                  <button class="ib" onClick="{{ps.pick}}" aria-pressed="{{ps.on}}" style="display:flex;gap:12px;align-items:center;padding:10px 14px;border-bottom:1px solid {{t.border}};background:{{ps.bg}}">
+                    <span class="mono" style="width:18px;color:{{t.accent}}">{{ps.mark}}</span>
+                    <span style="width:200px;font-weight:600">{{ps.name}}</span>
+                    <span class="mono" style="width:240px;font-size:12px;color:{{t.muted}}">{{ps.path}}</span>
+                    <span style="flex:1;color:{{t.muted}}">{{ps.detail}}</span>
+                  </button>
+                </sc-for>
+              </div>
+              <div style="display:flex;align-items:baseline;gap:10px;padding-top:4px"><span style="font-size:16px;font-weight:700">Cómo lo entendí</span><span style="color:{{t.muted}}">Configurador · modelo profundo · leyó SKILL.md de ticket2 y 11 agentes</span></div>
+              <div style="display:flex;flex-direction:column;border:1px solid {{t.border}};border-radius:8px;background:{{t.panel}}">
+                <sc-for list="{{procMap}}" as="m" hint-placeholder-count="6">
+                  <div style="display:flex;gap:12px;align-items:center;padding:9px 14px;border-bottom:1px solid {{t.border}}">
+                    <span class="mono" style="width:110px;font-size:12px;color:{{t.muted}}">{{m.from}}</span>
+                    <span style="color:{{t.muted}}">→</span>
+                    <span style="width:120px;font-weight:600">{{m.stage}}</span>
+                    <span class="mono" style="flex:1;font-size:12px;color:{{t.muted}}">{{m.agents}}</span>
+                    <span style="font-size:12px;font-weight:600;color:{{m.color}}">{{m.status}}</span>
+                  </div>
+                </sc-for>
+                <div style="display:flex;flex-direction:column;gap:8px;padding:11px 14px">
+                  <span style="font-size:10.5px;font-weight:600;letter-spacing:.06em;color:{{t.muted}}">SIN LUGAR EN EL FLUJO TODAVÍA</span>
+                  <sc-for list="{{procLoose}}" as="lo" hint-placeholder-count="2">
+                    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+                      <span class="mono" style="width:110px;font-size:12px">{{lo.file}}</span><span style="flex:1;color:{{t.muted}}">{{lo.what}}</span>
+                      <sc-for list="{{lo.actions}}" as="ac" hint-placeholder-count="3"><button class="ib" onClick="{{ac.pick}}" style="font-size:12px;padding:4px 9px;border-radius:5px;{{ac.style}}">{{ac.label}}</button></sc-for>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:8px;padding:14px;border-radius:8px;border:1px solid {{t.wait}};background:{{t.waitBg}}">
+                <div style="font-weight:700;color:{{t.wait}}">Esto es una copia</div>
+                <div style="line-height:1.5">El proceso y sus 9 agentes se copian a <span class="mono">Tienda web/proyecto/</span>. Desde ahí este proyecto usa su propia versión. Si después cambiás <span class="mono">~/.claude/skills/ticket2</span> o tus agentes, <b>este proyecto no se actualiza solo</b>: te va a avisar "El origen cambió" y vos decidís si traer los cambios.</div>
+                <div style="line-height:1.5">El estado de cada ticket también queda en el proyecto, no en <span class="mono">~/.claude</span>.</div>
+                <label style="display:flex;gap:8px;align-items:center;font-weight:600"><input type="checkbox" checked="{{procAck}}" onChange="{{toggleAck}}"><span>Entiendo que es una copia y que el original no se sincroniza</span></label>
+              </div>
+              <sc-if value="{{procCopied}}" hint-placeholder-val="{{false}}"><div style="padding:10px 12px;border-radius:8px;background:{{t.okBg}};color:{{t.ok}};font-weight:600">Copiado: flow.md, 9 agentes y 3 skills a proyecto/. Origen anotado en flow.md.</div></sc-if>
+              <div style="display:flex;gap:8px">
+                <button class="ib" onClick="{{doCopy}}" aria-disabled="{{procBlocked}}" style="padding:7px 14px;border-radius:7px;font-weight:600;{{procBtnStyle}}">{{procBtnLabel}}</button>
+                <sc-if value="{{procCopied}}" hint-placeholder-val="{{false}}"><button class="ib" onClick="{{openFlow}}" style="padding:7px 14px;border-radius:7px;border:1px solid {{t.border}}">Abrir flow.md</button></sc-if>
+              </div>
+            </div>
+          </sc-if>
+
+          <!-- FLOW: proyecto/flow.md -->
+          <sc-if value="{{vFlow}}" hint-placeholder-val="{{false}}">
+            <div style="display:flex;flex-direction:column;gap:12px">
+              <div style="display:flex;align-items:center;gap:10px">
+                <span style="font-size:20px;font-weight:700">Flujo de Tienda web</span>
+                <span class="mono" style="font-size:12px;color:{{t.muted}}">proyecto/flow.md</span>
+                <div style="flex:1"></div>
+                <button class="ib" onClick="{{enterFocus}}" aria-label="Leer en focus mode" style="display:flex;align-items:center;gap:6px;padding:5px 11px;border-radius:6px;border:1px solid {{t.border}}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"></path></svg>Focus</button>
+                <div role="group" aria-label="Vista" style="display:flex;padding:2px;border-radius:7px;background:{{t.chip}}">
+                  <button class="ib" onClick="{{flowAsFlow}}" aria-pressed="{{flowIsFlow}}" style="padding:4px 12px;border-radius:5px;font-size:12px;font-weight:600;{{flowFlowStyle}}">Flujo</button>
+                  <button class="ib" onClick="{{flowAsMd}}" aria-pressed="{{flowIsMd}}" style="padding:4px 12px;border-radius:5px;font-size:12px;font-weight:600;{{flowMdStyle}}">Markdown</button>
+                </div>
+              </div>
+              <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:9px 12px;border-radius:8px;border:1px solid {{t.border}};background:{{t.panel}}">
+                <span style="flex:1;min-width:300px;line-height:1.45;color:{{t.muted}}">Copiado de <span class="mono">~/.claude/skills/ticket2</span> y <span class="mono">~/.claude/agents</span> el 26 oct. Es una copia: los cambios en el original no llegan solos.</span>
+                <span style="font-size:12px;font-weight:600;padding:2px 8px;border-radius:999px;background:{{t.waitBg}};color:{{t.wait}}">El origen cambió: reviewer.md, hace 2 días</span>
+                <button class="ib" style="font-size:12px;padding:4px 9px;border-radius:5px;border:1px solid {{t.border}}">Ver diferencias</button>
+                <button class="ib" style="font-size:12px;padding:4px 9px;border-radius:5px;border:1px solid {{t.border}}">Traer cambios</button>
+              </div>
+              <sc-if value="{{proposalOpen}}" hint-placeholder-val="{{false}}">
+                <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:12px 14px;border-radius:8px;border:1px solid {{t.wait}};background:{{t.panel}}">
+                  <div style="flex:1;min-width:320px;display:flex;flex-direction:column;gap:4px">
+                    <span style="font-size:11px;font-weight:700;color:{{t.ok}}">CONFIGURADOR · PROPUESTA · pedida desde la terminal</span>
+                    <span style="line-height:1.45">Agregar la etapa <b>A11y</b> después de QA, solo si el diff toca <span class="mono">web/</span>. Agente nuevo: <span class="mono">agents/a11y-reviewer.md</span> (modelo estándar, contexto: checklist WCAG + design system).</span>
+                  </div>
+                  <button class="ib" style="padding:6px 12px;border-radius:6px;border:1px solid {{t.border}}">Ver a11y-reviewer.md</button>
+                  <button class="ib" style="padding:6px 12px;border-radius:6px;border:1px solid {{t.border}}">Pedir otra vuelta</button>
+                  <button class="ib" onClick="{{approveProposal}}" style="padding:6px 12px;border-radius:6px;font-weight:600;background:{{t.accent}};color:{{t.onAccent}}">Aprobar cambio</button>
+                </div>
+              </sc-if>
+              <sc-if value="{{proposalOk}}" hint-placeholder-val="{{false}}"><div style="padding:10px 12px;border-radius:8px;background:{{t.okBg}};color:{{t.ok}};font-weight:600">Cambio aprobado. flow.md v4. Los tickets que ya están en vuelo siguen con la versión con la que empezaron.</div></sc-if>
+
+              <sc-if value="{{flowIsFlow}}" hint-placeholder-val="{{true}}">
+                <div style="display:flex;flex-direction:column;gap:12px">
+                  <div style="display:flex;gap:8px;align-items:stretch;overflow-x:auto;padding-bottom:4px">
+                    <sc-for list="{{flowStages}}" as="fs" hint-placeholder-count="6">
+                      <button class="ib" onClick="{{fs.pick}}" aria-pressed="{{fs.on}}" style="flex:1;min-width:132px;display:flex;flex-direction:column;gap:6px;padding:11px 12px;border-radius:8px;background:{{t.panel}};{{fs.cardStyle}}">
+                        <span style="display:flex;gap:6px;align-items:center"><span style="font-weight:700">{{fs.name}}</span><sc-if value="{{fs.proposed}}" hint-placeholder-val="{{false}}"><span style="font-size:10.5px;font-weight:700;padding:1px 6px;border-radius:999px;background:{{t.okBg}};color:{{t.ok}}">propuesto</span></sc-if></span>
+                        <span class="mono" style="font-size:11px;color:{{t.muted}}">{{fs.from}}</span>
+                        <sc-for list="{{fs.agents}}" as="ag" hint-placeholder-count="2"><span class="mono" style="font-size:11.5px">{{ag}}</span></sc-for>
+                        <span style="font-size:12px;color:{{fs.gateColor}}">{{fs.gate}}</span>
+                        <sc-if value="{{fs.cond}}" hint-placeholder-val="{{false}}"><span style="font-size:11.5px;color:{{t.muted}}">{{fs.cond}}</span></sc-if>
+                      </button>
+                    </sc-for>
+                  </div>
+                  <div style="display:flex;gap:14px;align-items:flex-start">
+                    <section aria-label="Etapa seleccionada" style="flex:1;min-width:0;display:flex;flex-direction:column;gap:10px;padding:14px;border-radius:8px;border:1px solid {{t.border}};background:{{t.panel}}">
+                      <div style="font-size:10.5px;font-weight:600;letter-spacing:.06em;color:{{t.muted}}">ETAPA: {{fsel.name}}</div>
+                      <sc-for list="{{fsel.rows}}" as="r" hint-placeholder-count="5">
+                        <div style="display:flex;gap:12px;line-height:1.45"><span style="width:90px;color:{{t.muted}}">{{r.k}}</span><span style="flex:1">{{r.v}}</span></div>
+                      </sc-for>
+                      <div style="display:flex;gap:6px;padding-top:4px"><button class="ib" onClick="{{askConfigurator}}" style="font-size:12px;padding:5px 10px;border-radius:5px;border:1px solid {{t.border}}">Cambiar con el Configurador</button><button class="ib" style="font-size:12px;padding:5px 10px;border-radius:5px;border:1px solid {{t.border}}">Editar a mano</button></div>
+                    </section>
+                    <section aria-label="Fuera del flujo" style="width:300px;flex:none;display:flex;flex-direction:column;gap:8px;padding:14px;border-radius:8px;border:1px solid {{t.border}};background:{{t.panel}}">
+                      <div style="font-size:10.5px;font-weight:600;letter-spacing:.06em;color:{{t.muted}}">FUERA DEL FLUJO</div>
+                      <div style="line-height:1.45"><span class="mono">em.md</span> · a mano, desde Pendiente: "ordená el backlog"</div>
+                      <div style="line-height:1.45"><span class="mono">devops.md</span> · por evento: CI en rojo o label needs-infra</div>
+                    </section>
+                  </div>
+                </div>
+              </sc-if>
+              <sc-if value="{{flowIsMd}}" hint-placeholder-val="{{false}}">
+                <div class="mono" style="padding:16px 18px;border-radius:8px;border:1px solid {{t.border}};background:{{t.term}};font-size:12.5px;line-height:1.7">
+                  <sc-for list="{{flowMd}}" as="l" hint-placeholder-count="12"><div style="white-space:pre-wrap;color:{{l.color}};background:{{l.bg}}">{{l.text}}</div></sc-for>
+                </div>
+              </sc-if>
+            </div>
+          </sc-if>
+
+          <!-- PRESET -->
+          <sc-if value="{{vPreset}}" hint-placeholder-val="{{false}}">
+            <div style="display:flex;flex-direction:column;gap:14px;max-width:1000px">
+              <div style="display:flex;align-items:center;gap:12px">
+                <span style="font-size:22px;font-weight:700">Preset de Tienda web</span>
+                <div style="flex:1"></div>
+                <div role="group" aria-label="Motor" style="display:flex;padding:2px;border-radius:7px;background:{{t.chip}}">
+                  <sc-for list="{{presetEngines}}" as="pe" hint-placeholder-count="3"><button class="ib" onClick="{{pe.pick}}" aria-pressed="{{pe.on}}" style="padding:4px 12px;border-radius:5px;font-size:12px;font-weight:600;{{pe.style}}">{{pe.label}}</button></sc-for>
+                </div>
+              </div>
+              <div style="color:{{t.muted}};line-height:1.5">Lo que se carga cada vez que el IDE lanza una sesión de agente para este proyecto. Vive en <span class="mono">.devharness/preset/</span> dentro del proyecto. No escribe en <span class="mono">~/.claude</span> ni en <span class="mono">~/.codex</span>.</div>
+              <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:10px 14px;border-radius:8px;border:1px solid {{t.border}};background:{{t.panel}}">
+                <span style="font-weight:600;width:60px">Base</span>
+                <div role="group" aria-label="Base del preset" style="display:flex;padding:2px;border-radius:7px;background:{{t.chip}}">
+                  <button class="ib" onClick="{{presetLayer}}" aria-pressed="{{presetIsLayer}}" style="padding:4px 10px;border-radius:5px;font-size:12px;font-weight:600;{{presetLayerStyle}}">Tu config global + preset</button>
+                  <button class="ib" onClick="{{presetIsolate}}" aria-pressed="{{presetIsIso}}" style="padding:4px 10px;border-radius:5px;font-size:12px;font-weight:600;{{presetIsoStyle}}">Solo el preset (aislado)</button>
+                </div>
+                <span style="flex:1;font-size:12px;color:{{t.muted}}">{{presetBaseNote}}</span>
+              </div>
+              <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px">
+                <sc-for list="{{presetSections}}" as="sec" hint-placeholder-count="4">
+                  <div style="display:flex;flex-direction:column;gap:6px;padding:12px 14px;border-radius:8px;border:1px solid {{t.border}};background:{{t.panel}}">
+                    <div style="display:flex"><span style="flex:1;font-size:10.5px;font-weight:600;letter-spacing:.06em;color:{{t.muted}}">{{sec.title}}</span><button class="ib" style="font-size:12px;color:{{t.accent}}">+ Agregar</button></div>
+                    <sc-for list="{{sec.items}}" as="it" hint-placeholder-count="3">
+                      <div style="display:flex;gap:8px;align-items:center"><span class="mono" style="flex:1;font-size:12px">{{it.name}}</span><span style="font-size:11px;padding:1px 7px;border-radius:999px;background:{{t.chip}};color:{{t.muted}}">{{it.src}}</span></div>
+                    </sc-for>
+                  </div>
+                </sc-for>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:6px;padding:12px 14px;border-radius:8px;border:1px solid {{t.border}};background:{{t.panel}}">
+                <div style="font-size:10.5px;font-weight:600;letter-spacing:.06em;color:{{t.muted}}">POR AGENTE (además del preset)</div>
+                <div style="line-height:1.5"><b>QA</b> suma el MCP de Playwright · <b>Security reviewer</b> suma <span class="mono">security-checklist.md</span> · <b>Spec writer</b> no carga plugins de código</div>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:8px;padding:12px 14px;border-radius:8px;border:1px solid {{t.border}};background:{{t.term}}">
+                <div style="display:flex"><span style="flex:1;font-size:10.5px;font-weight:600;letter-spacing:.06em;color:{{t.muted}}">ASÍ SE LANZA UNA SESIÓN (ilustrativo)</span><button class="ib" onClick="{{showLaunch}}" style="font-size:12px;color:{{t.accent}}">Ver en la terminal</button></div>
+                <sc-for list="{{presetLaunch}}" as="l" hint-placeholder-count="5"><div class="mono" style="font-size:12px;white-space:pre-wrap;color:{{l.color}}">{{l.text}}</div></sc-for>
+              </div>
+            </div>
+          </sc-if>
+
+          <!-- MCP of the IDE -->
+          <sc-if value="{{vMcp}}" hint-placeholder-val="{{false}}">
+            <div style="display:flex;flex-direction:column;gap:14px;max-width:1000px">
+              <div style="display:flex;align-items:center;gap:12px">
+                <span style="font-size:22px;font-weight:700">MCP del IDE</span>
+                <span style="font-size:12px;font-weight:600;padding:2px 9px;border-radius:999px;background:{{t.okBg}};color:{{t.ok}}">● activo · devharness</span>
+              </div>
+              <div style="color:{{t.muted}};line-height:1.5">Cualquier agente, de adentro o de afuera del IDE, puede leer y configurar el proceso, los agentes y el preset de tus proyectos. <b style="color:{{t.text}}">Todo cambio llega como propuesta</b> a <span class="mono">flow.md</span> o <span class="mono">agents/*.md</span>, y vos lo aprobás acá.</div>
+              <div style="display:flex;flex-direction:column;border:1px solid {{t.border}};border-radius:8px;background:{{t.panel}}">
+                <div style="padding:9px 14px;border-bottom:1px solid {{t.border}};font-size:10.5px;font-weight:600;letter-spacing:.06em;color:{{t.muted}}">CONECTAR DESDE AFUERA</div>
+                <sc-for list="{{mcpConnect}}" as="mc" hint-placeholder-count="3">
+                  <div style="display:flex;gap:12px;align-items:center;padding:9px 14px;border-bottom:1px solid {{t.border}}">
+                    <span style="width:110px;font-weight:600">{{mc.engine}}</span><span class="mono" style="flex:1;font-size:12px;color:{{t.muted}}">{{mc.cmd}}</span><button class="ib" style="font-size:12px;padding:4px 9px;border-radius:5px;border:1px solid {{t.border}}">Copiar</button>
+                  </div>
+                </sc-for>
+              </div>
+              <div style="display:flex;flex-direction:column;border:1px solid {{t.border}};border-radius:8px;background:{{t.panel}}">
+                <div style="padding:9px 14px;border-bottom:1px solid {{t.border}};font-size:10.5px;font-weight:600;letter-spacing:.06em;color:{{t.muted}}">CONECTADOS AHORA</div>
+                <sc-for list="{{mcpClients}}" as="cl" hint-placeholder-count="3">
+                  <div style="display:flex;gap:12px;align-items:center;padding:9px 14px;border-bottom:1px solid {{t.border}}">
+                    <span class="{{cl.dotClass}}" style="{{cl.dotStyle}}" aria-hidden="true"></span><span style="width:240px;font-weight:600">{{cl.name}}</span><span style="flex:1;color:{{t.muted}}">{{cl.detail}}</span><span style="font-size:12px;color:{{t.muted}}">{{cl.calls}}</span>
+                  </div>
+                </sc-for>
+              </div>
+              <div style="display:flex;flex-direction:column;border:1px solid {{t.border}};border-radius:8px;background:{{t.panel}}">
+                <div style="display:flex;gap:12px;padding:9px 14px;border-bottom:1px solid {{t.border}};font-size:10.5px;font-weight:600;letter-spacing:.06em;color:{{t.muted}}"><span style="width:200px">TOOL</span><span style="flex:1">QUÉ HACE</span><span style="width:150px">AGENTES EXTERNOS</span></div>
+                <sc-for list="{{mcpTools}}" as="tl" hint-placeholder-count="6">
+                  <div style="display:flex;gap:12px;align-items:center;padding:8px 14px;border-bottom:1px solid {{t.border}}">
+                    <span class="mono" style="width:200px;font-size:12px">{{tl.name}}</span><span style="flex:1;color:{{t.muted}}">{{tl.desc}}</span>
+                    <span style="width:150px"><button class="ib" onClick="{{tl.toggle}}" style="font-size:11.5px;font-weight:600;padding:2px 8px;border-radius:999px;{{tl.style}}">{{tl.perm}}</button></span>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </sc-if>
+
+          <!-- SIDEKICK library (user level) -->
+          <sc-if value="{{vSkLib}}" hint-placeholder-val="{{false}}">
+            <div style="display:flex;flex-direction:column;gap:12px">
+              <div style="display:flex;align-items:center;gap:12px">
+                <span style="font-size:22px;font-weight:700">Tus sidekicks</span>
+                <span style="color:{{t.muted}}">Viven en tu perfil del IDE. Cada proyecto elige cuáles usa.</span>
+                <div style="flex:1"></div>
+                <button class="ib" onClick="{{openSkImport}}" style="padding:6px 12px;border-radius:6px;border:1px solid {{t.border}}">Importar</button>
+                <button class="ib" style="padding:6px 12px;border-radius:6px;font-weight:600;background:{{t.accent}};color:{{t.onAccent}}">+ Nuevo sidekick</button>
+              </div>
+              <div style="display:flex;gap:14px;align-items:flex-start">
+                <div style="width:250px;flex:none;display:flex;flex-direction:column;gap:8px">
+                  <sc-for list="{{skList}}" as="sk" hint-placeholder-count="3">
+                    <button class="ib" onClick="{{sk.pick}}" aria-pressed="{{sk.on}}" style="display:flex;gap:10px;align-items:flex-start;padding:11px 12px;border-radius:8px;background:{{t.panel}};{{sk.cardStyle}}">
+                      <span style="flex:none;width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;background:{{sk.color}};color:#111">{{sk.initial}}</span>
+                      <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
+                        <span style="font-weight:700">{{sk.name}}</span>
+                        <span style="font-size:12px;color:{{t.muted}};line-height:1.4">{{sk.purposeLine}}</span>
+                        <span style="font-size:11px;color:{{t.muted}}">{{sk.usedIn}}</span>
+                      </span>
+                    </button>
+                  </sc-for>
+                </div>
+                <section aria-label="Editar sidekick" style="flex:1;min-width:0;display:flex;flex-direction:column;gap:12px;padding:16px;border-radius:8px;border:1px solid {{t.border}};background:{{t.panel}}">
+                  <div style="display:flex;align-items:center;gap:10px">
+                    <span style="width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:15px;background:{{skSel.color}};color:#111">{{skSel.initial}}</span>
+                    <span style="font-size:18px;font-weight:700">{{skSel.name}}</span>
+                    <span class="mono" style="font-size:12px;color:{{t.muted}}">{{skSel.file}}</span>
+                    <div style="flex:1"></div>
+                    <sc-if value="{{skSel.origin}}" hint-placeholder-val="{{false}}"><span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px;background:{{t.waitBg}};color:{{t.wait}}">{{skSel.origin}}</span></sc-if>
+                  </div>
+                  <div style="display:flex;flex-direction:column;gap:6px">
+                    <div style="display:flex"><span style="flex:1;font-size:10.5px;font-weight:600;letter-spacing:.06em;color:{{t.muted}}">PERSONALIDAD · EL PROMPT CON EL QUE TE HABLA</span><button class="ib" style="font-size:12px;color:{{t.accent}}">Editar</button></div>
+                    <div style="white-space:pre-wrap;line-height:1.5;padding:9px 11px;border-radius:7px;border:1px solid {{t.border}};background:{{t.input}}">{{skSel.personality}}</div>
+                  </div>
+                  <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span style="font-size:12px;color:{{t.muted}}">Empezar de:</span>
+                    <sc-for list="{{skStarters}}" as="st" hint-placeholder-count="4"><button class="ib" onClick="{{st.pick}}" style="font-size:12px;padding:3px 9px;border-radius:999px;{{st.style}}">{{st.label}}</button></sc-for>
+                  </div>
+                  <div style="display:flex;flex-direction:column;gap:6px">
+                    <span style="font-size:10.5px;font-weight:600;letter-spacing:.06em;color:{{t.muted}}">PARA QUÉ SIRVE</span>
+                    <sc-for list="{{skPurposes}}" as="pu" hint-placeholder-count="5">
+                      <button class="ib" onClick="{{pu.toggle}}" aria-pressed="{{pu.on}}" style="display:flex;gap:10px;align-items:baseline;padding:3px 0">
+                        <span class="mono" style="width:16px;color:{{pu.color}}">{{pu.mark}}</span><span style="width:170px;font-weight:600">{{pu.name}}</span><span style="flex:1;color:{{t.muted}}">{{pu.desc}}</span><span style="font-size:11px;color:{{t.muted}}">{{pu.cost}}</span>
+                      </button>
+                    </sc-for>
+                    <div style="display:flex;flex-direction:column;gap:4px;padding-top:4px"><span style="font-size:12px;font-weight:600">Propósito propio</span>
+                      <div style="white-space:pre-wrap;line-height:1.45;padding:7px 10px;border-radius:7px;border:1px solid {{t.border}};background:{{t.input}}">{{skSel.own}}</div></div>
+                  </div>
+                  <div style="display:flex;gap:18px;flex-wrap:wrap;font-size:12px;color:{{t.muted}}"><span>Momentos: <span style="color:{{t.text}}">{{skSel.moments}}</span></span><span>Modelo: <span style="color:{{t.text}}">{{skSel.tier}}</span></span></div>
+                  <div style="display:flex;flex-direction:column;gap:6px;padding:12px;border-radius:8px;border:1px dashed {{t.border}}">
+                    <span style="font-size:10.5px;font-weight:600;letter-spacing:.06em;color:{{t.muted}}">ASÍ TE HABLARÍA · ante "sumá A11y y además cambiá el preset de QA"</span>
+                    <span style="line-height:1.5">{{skPreview}}</span>
+                  </div>
+                  <div style="display:flex;flex-direction:column;gap:5px">
+                    <div style="display:flex"><span style="flex:1;font-size:10.5px;font-weight:600;letter-spacing:.06em;color:{{t.muted}}">LO QUE APRENDIÓ DE VOS</span><button class="ib" style="font-size:12px;color:{{t.accent}}">Editar</button></div>
+                    <sc-for list="{{skSel.learned}}" as="le" hint-placeholder-count="3"><div style="display:flex;gap:8px;line-height:1.4"><span style="flex:1">{{le}}</span><button class="ib" style="font-size:12px;color:{{t.muted}}">Olvidar</button></div></sc-for>
+                  </div>
+                </section>
+              </div>
+            </div>
+          </sc-if>
+
+          <!-- SIDEKICKS of the project -->
+          <sc-if value="{{vSkProj}}" hint-placeholder-val="{{false}}">
+            <div style="display:flex;flex-direction:column;gap:14px;max-width:1000px">
+              <div style="display:flex;align-items:center;gap:12px">
+                <span style="font-size:22px;font-weight:700">Sidekicks de Tienda web</span>
+                <span class="mono" style="font-size:12px;color:{{t.muted}}">proyecto/sidekicks.md</span>
+                <div style="flex:1"></div>
+                <button class="ib" onClick="{{askConfigurator}}" style="padding:6px 12px;border-radius:6px;border:1px solid {{t.border}}">Que el Configurador sugiera</button>
+              </div>
+              <div style="color:{{t.muted}};line-height:1.5">Elegí cuáles de tus sidekicks trabajan en este proyecto y qué más tienen que saber acá. La personalidad sigue siendo la tuya; el proyecto solo suma propósito y lugares.</div>
+              <div style="display:flex;flex-direction:column;border:1px solid {{t.border}};border-radius:8px;background:{{t.panel}}">
+                <sc-for list="{{skProject}}" as="sp" hint-placeholder-count="3">
+                  <div style="display:flex;gap:12px;align-items:flex-start;padding:12px 14px;border-bottom:1px solid {{t.border}}">
+                    <button class="ib" onClick="{{sp.toggle}}" aria-pressed="{{sp.on}}" aria-label="Usar {{sp.name}} en este proyecto" style="flex:none;width:36px;height:20px;border-radius:999px;position:relative;background:{{sp.trackColor}}"><span style="position:absolute;top:2px;left:{{sp.knob}};width:16px;height:16px;border-radius:50%;background:#fff"></span></button>
+                    <span style="flex:none;width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;background:{{sp.color}};color:#111">{{sp.initial}}</span>
+                    <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:5px">
+                      <div style="display:flex;gap:8px;align-items:baseline"><span style="font-weight:700">{{sp.name}}</span><span style="font-size:12px;color:{{t.muted}}">{{sp.purposeLine}}</span></div>
+                      <sc-if value="{{sp.on}}" hint-placeholder-val="{{true}}">
+                        <div style="display:flex;flex-direction:column;gap:5px">
+                          <div style="line-height:1.45"><span style="color:{{t.muted}}">En este proyecto, además: </span>{{sp.extra}}</div>
+                          <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span style="font-size:12px;color:{{t.muted}}">Dónde actúa:</span><sc-for list="{{sp.places}}" as="pl" hint-placeholder-count="4"><span style="font-size:11.5px;padding:2px 8px;border-radius:999px;{{pl.style}}">{{pl.label}}</span></sc-for></div>
+                        </div>
+                      </sc-if>
+                    </div>
+                    <span style="font-size:12px;color:{{t.muted}};white-space:nowrap">{{sp.cost}}</span>
+                  </div>
+                </sc-for>
+              </div>
+              <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:11px 14px;border-radius:8px;border:1px solid {{t.border}};background:{{t.panel}}">
+                <span style="font-weight:600">Cuando varios quieren hablar</span>
+                <span style="flex:1;color:{{t.muted}};line-height:1.45">Una sola tarjeta por momento: habla el más relevante y los demás quedan como "también: Guardián tiene 1 aviso". Tope compartido: 20k tokens por ticket.</span>
+              </div>
+            </div>
+          </sc-if>
+
+          <!-- SIDEKICK import -->
+          <sc-if value="{{vSkImport}}" hint-placeholder-val="{{false}}">
+            <div style="display:flex;flex-direction:column;gap:14px;max-width:1000px">
+              <div style="font-size:22px;font-weight:700">Importar un sidekick</div>
+              <div style="color:{{t.muted}};line-height:1.5">Encontré un coach en <span class="mono">~/.claude/coach</span>. El Configurador lo leyó y propone este sidekick.</div>
+              <div style="display:flex;flex-direction:column;border:1px solid {{t.border}};border-radius:8px;background:{{t.panel}}">
+                <sc-for list="{{skImportMap}}" as="m" hint-placeholder-count="5">
+                  <div style="display:flex;gap:12px;align-items:flex-start;padding:10px 14px;border-bottom:1px solid {{t.border}}">
+                    <span class="mono" style="width:190px;font-size:12px;color:{{t.muted}}">{{m.from}}</span><span style="color:{{t.muted}}">→</span>
+                    <span style="width:150px;font-weight:600">{{m.to}}</span><span style="flex:1;line-height:1.45">{{m.what}}</span>
+                    <span style="font-size:12px;font-weight:600;color:{{m.color}}">{{m.status}}</span>
+                  </div>
+                </sc-for>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:6px;padding:12px 14px;border-radius:8px;border:1px dashed {{t.border}}">
+                <span style="font-size:10.5px;font-weight:600;letter-spacing:.06em;color:{{t.muted}}">PERSONALIDAD PROPUESTA (editable después)</span>
+                <span style="line-height:1.5">Sos el coach de trabajo de Marco. Hablale en español rioplatense, breve y sin sermones. Antes de que mande algo, fijate si pide varias cosas, si mete una idea nueva en medio de otra tarea, si choca con trabajo en vuelo, si retoma algo perdido o si es demasiado vago. Si el impacto es bajo, una línea; si es alto, frená y proponé cómo partirlo.</span>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:8px;padding:14px;border-radius:8px;border:1px solid {{t.wait}};background:{{t.waitBg}}">
+                <div style="font-weight:700;color:{{t.wait}}">Esto es una copia</div>
+                <div style="line-height:1.5">El sidekick se crea en tu perfil del IDE a partir de <span class="mono">~/.claude/coach</span>. Si después cambiás tu coach original, <b>este sidekick no se actualiza solo</b>: el IDE te avisa "El origen cambió". Tu cola de ideas no se copia: el sidekick usa la cola de cada proyecto.</div>
+                <label style="display:flex;gap:8px;align-items:center;font-weight:600"><input type="checkbox" checked="{{skAck}}" onChange="{{toggleSkAck}}"><span>Entiendo que es una copia y que el original no se sincroniza</span></label>
+              </div>
+              <sc-if value="{{skImported}}" hint-placeholder-val="{{false}}"><div style="padding:10px 12px;border-radius:8px;background:{{t.okBg}};color:{{t.ok}};font-weight:600">Creado: Rulo, con 6 cosas aprendidas. Ya está en tu biblioteca; elegí en qué proyectos trabaja.</div></sc-if>
+              <div style="display:flex;gap:8px">
+                <button class="ib" onClick="{{doSkImport}}" style="padding:7px 14px;border-radius:7px;font-weight:600;{{skImportBtnStyle}}">{{skImportBtnLabel}}</button>
+                <sc-if value="{{skImported}}" hint-placeholder-val="{{false}}"><button class="ib" onClick="{{openSkLib}}" style="padding:7px 14px;border-radius:7px;border:1px solid {{t.border}}">Ver en tus sidekicks</button></sc-if>
+              </div>
+            </div>
+          </sc-if>
+
+          <!-- AGENTS settings -->
+          <sc-if value="{{vAgents}}" hint-placeholder-val="{{false}}">
+            <div style="display:flex;flex-direction:column;gap:14px;max-width:980px">
+              <div style="font-size:22px;font-weight:700">Agentes de Tienda web</div>
+              <div style="color:{{t.muted}};line-height:1.5">El IDE trae un equipo estándar del proceso de desarrollo. Cada agente es un <span class="mono">.md</span> con su rol, su modelo y su contexto. Podés editarlos o sumar los tuyos en cualquier etapa.</div>
+              <div style="display:flex;flex-direction:column;border:1px solid {{t.border}};border-radius:8px;background:{{t.panel}}">
+                <div style="display:flex;gap:12px;padding:8px 14px;border-bottom:1px solid {{t.border}};font-size:10.5px;font-weight:600;letter-spacing:.06em;color:{{t.muted}}"><span style="width:170px">AGENTE</span><span style="width:110px">ETAPA</span><span style="width:90px">MODELO</span><span style="flex:1">CONTEXTO</span><span style="width:70px"></span></div>
+                <sc-for list="{{agents}}" as="ag" hint-placeholder-count="6">
+                  <div style="display:flex;gap:12px;align-items:center;padding:10px 14px;border-bottom:1px solid {{t.border}}">
+                    <span style="width:170px;display:flex;flex-direction:column"><span style="font-weight:600">{{ag.name}}</span><span class="mono" style="font-size:11px;color:{{t.muted}}">{{ag.file}}</span></span>
+                    <span style="width:110px">{{ag.stage}}</span>
+                    <span style="width:90px;font-size:12px;font-weight:600;color:{{t.accent}}">{{ag.model}}</span>
+                    <span style="flex:1;display:flex;flex-wrap:wrap;gap:5px"><sc-for list="{{ag.ctx}}" as="cx" hint-placeholder-count="2"><span style="font-size:11px;padding:2px 7px;border-radius:999px;background:{{t.chip}};color:{{t.muted}}">{{cx}}</span></sc-for></span>
+                    <span style="width:70px;display:flex;justify-content:flex-end"><span style="font-size:11px;font-weight:600;padding:2px 7px;border-radius:999px;{{ag.badgeStyle}}">{{ag.badge}}</span></span>
+                  </div>
+                </sc-for>
+                <button class="ib" style="padding:11px 14px;color:{{t.accent}};font-weight:600">+ Agregar agente: nombre, etapa donde se engancha, prompt .md, modelo, contexto</button>
+              </div>
+              <div style="font-size:16px;font-weight:700;padding-top:6px">Cuándo te paran</div>
+              <div style="display:flex;flex-direction:column;border:1px solid {{t.border}};border-radius:8px;background:{{t.panel}}">
+                <sc-for list="{{autonomy}}" as="au" hint-placeholder-count="4">
+                  <div style="display:flex;gap:12px;align-items:center;padding:10px 14px;border-bottom:1px solid {{t.border}}">
+                    <span style="width:230px;font-weight:600">{{au.label}}</span>
+                    <div role="group" aria-label="{{au.label}}" style="display:flex;padding:2px;border-radius:7px;background:{{t.chip}}">
+                      <sc-for list="{{au.options}}" as="op" hint-placeholder-count="3"><button class="ib" onClick="{{op.pick}}" aria-pressed="{{op.on}}" style="padding:4px 10px;border-radius:5px;font-size:12px;font-weight:600;{{op.style}}">{{op.label}}</button></sc-for>
+                    </div>
+                    <span style="flex:1;color:{{t.muted}};font-size:12px">{{au.note}}</span>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </sc-if>
+
+        </div>
+      </div>
+
+      <!-- Bottom: terminal + diff/log/CI -->
+      <section aria-label="Terminal" style="flex:none;display:flex;flex-direction:column;height:{{drawerH}};border-top:1px solid {{t.border}};background:{{t.side}}">
+        <div style="height:32px;flex:none;display:flex;align-items:center;gap:4px;padding:0 10px;overflow-x:auto;overflow-y:hidden">
+          <span style="font-size:11px;font-weight:600;letter-spacing:.06em;color:{{t.muted}};padding-right:8px">TERMINAL</span>
+          <sc-for list="{{sessions}}" as="se" hint-placeholder-count="3">
+            <button class="ib" onClick="{{se.select}}" style="flex:none;white-space:nowrap;display:flex;align-items:center;gap:6px;padding:4px 9px;border-radius:5px;font-size:12px;{{se.style}}">
+              <span class="{{se.dotClass}}" style="{{se.dotStyle}}" aria-hidden="true"></span><span class="mono">{{se.label}}</span>
+            </button>
+          </sc-for>
+          <span style="width:1px;height:16px;background:{{t.border}};margin:0 6px"></span>
+          <sc-for list="{{panels}}" as="pn" hint-placeholder-count="3"><button class="ib" onClick="{{pn.select}}" style="flex:none;white-space:nowrap;padding:4px 9px;border-radius:5px;font-size:12px;{{pn.style}}">{{pn.label}}</button></sc-for>
+          <div style="flex:1"></div>
+          <button class="ib" aria-label="Nueva terminal" style="display:flex;padding:4px;color:{{t.muted}}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg></button>
+          <button class="ib" aria-label="Maximizar terminal" onClick="{{toggleMax}}" style="display:flex;padding:4px;color:{{t.muted}}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"></path></svg></button>
+          <button class="ib" aria-label="Abrir o cerrar la terminal" onClick="{{toggleDrawer}}" style="display:flex;padding:4px;color:{{t.muted}};transform:{{drawerChev}}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M6 15l6-6 6 6"></path></svg></button>
+        </div>
+        <sc-if value="{{drawerOpen}}" hint-placeholder-val="{{true}}">
+          <div class="mono" style="flex:1;min-height:0;overflow:auto;padding:6px 16px 10px;font-size:12px;line-height:1.65;background:{{t.term}}">
+            <sc-if value="{{problemsShow}}" hint-placeholder-val="{{false}}">
+              <div style="font-family:Inter,sans-serif;font-size:12.5px;display:flex;flex-direction:column">
+                <div style="padding:0 0 4px;color:{{t.muted}}">{{probSummary}}</div>
+                <sc-for list="{{problems}}" as="pb" hint-placeholder-count="5">
+                  <button class="ib" onClick="{{pb.open}}" style="display:flex;gap:10px;align-items:baseline;padding:3px 6px;border-radius:5px">
+                    <span aria-hidden="true" style="width:14px;flex:none;color:{{pb.color}}">{{pb.icon}}</span>
+                    <span style="flex:1;min-width:0">{{pb.text}}</span>
+                    <span class="mono" style="font-size:11.5px;color:{{t.muted}}">{{pb.where}}</span>
+                    <span class="mono" style="font-size:11.5px;width:84px;text-align:right;color:{{t.muted}}">{{pb.key}}</span>
+                  </button>
+                </sc-for>
+              </div>
+            </sc-if>
+            <sc-for list="{{termLines}}" as="l" hint-placeholder-count="6"><div style="white-space:pre-wrap;color:{{l.color}}">{{l.text}}</div></sc-for>
+            <sc-if value="{{skDraftShow}}" hint-placeholder-val="{{false}}">
+              <div style="display:flex;flex-direction:column;gap:4px;padding-top:4px">
+                <div style="font-family:Inter,sans-serif;font-size:11.5px;color:#f0a64b">● Rulo tiene una sugerencia → panel derecho · ⌘⏎ manda igual</div>
+                <div><span style="color:{{t.ok}}">› </span><span>sumá A11y después de QA </span><span style="text-decoration:underline wavy #f0a64b;text-underline-offset:3px">y además cambiá el preset de QA para que use Playwright</span></div>
+              </div>
+            </sc-if>
+            <sc-if value="{{termInput}}" hint-placeholder-val="{{true}}">
+              <label style="display:flex;gap:8px;align-items:center;padding-top:4px">
+                <span style="color:{{t.ok}}">›</span>
+                <span style="position:absolute;left:-9999px">Mensaje a la sesión</span>
+                <input type="text" placeholder="{{termPlaceholder}}" style="flex:1;font:inherit;background:transparent;border:0;outline:none;color:{{t.text}}">
+              </label>
+            </sc-if>
+          </div>
+        </sc-if>
+      </section>
+    </main>
+
+    <!-- Right: Pendiente | Este ticket -->
+    <aside aria-label="Panel derecho" style="width:300px;flex:none;display:flex;flex-direction:column;background:{{t.side}};border-left:1px solid {{t.border}}">
+      <div role="tablist" aria-label="Panel derecho" style="height:36px;flex:none;display:flex;align-items:stretch;padding:0 8px;gap:4px;border-bottom:1px solid {{t.border}}">
+        <button class="ib" role="tab" aria-selected="{{rPending}}" onClick="{{showPending}}" style="padding:0 10px;font-size:12px;font-weight:600;{{rPendStyle}}">Pendiente <sc-if value="{{pendingCount}}" hint-placeholder-val="{{true}}"><span style="padding:1px 6px;margin-left:4px;border-radius:999px;background:{{t.waitBg}};color:{{t.wait}}">{{pendingCount}}</span></sc-if></button>
+        <button class="ib" role="tab" aria-selected="{{rTicket}}" onClick="{{showTicket}}" style="padding:0 10px;font-size:12px;font-weight:600;{{rTickStyle}}">Este ticket</button>
+        <sc-if value="{{isWork}}" hint-placeholder-val="{{true}}">
+          <button class="ib" role="tab" aria-selected="{{rSidekick}}" onClick="{{showSidekick}}" style="display:flex;align-items:center;gap:5px;padding:0 10px;font-size:12px;font-weight:600;{{rSkStyle}}">
+            <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:{{skTabDot}}" aria-hidden="true"></span>Sidekicks
+          </button>
+        </sc-if>
+      </div>
+
+      <sc-if value="{{rSidekick}}" hint-placeholder-val="{{false}}">
+        <div style="flex:1;min-height:0;overflow:auto;padding:10px 10px;display:flex;flex-direction:column;gap:10px">
+          <div style="display:flex;flex-direction:column;gap:6px;padding:0 4px">
+            <sc-for list="{{skActive}}" as="sa" hint-placeholder-count="2">
+              <div style="display:flex;gap:8px;align-items:center">
+                <span style="flex:none;width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;background:{{sa.color}};color:#111">{{sa.initial}}</span>
+                <span style="font-weight:600">{{sa.name}}</span><span style="flex:1;font-size:12px;color:{{t.muted}}">{{sa.state}}</span>
+              </div>
+            </sc-for>
+          </div>
+          <sc-if value="{{skCardShow}}" hint-placeholder-val="{{true}}">
+            <div style="display:flex;flex-direction:column;gap:8px;padding:12px;border-radius:8px;border:1px solid #f0a64b;background:{{t.panel}}">
+              <div style="display:flex;gap:6px;align-items:center;font-size:11px;font-weight:700"><span style="width:18px;height:18px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:#f0a64b;color:#111;font-size:10px">R</span><span>Rulo</span><span style="color:{{t.muted}};font-weight:600">· antes de mandar · configurador</span></div>
+              <div style="line-height:1.45">Dos pedidos en uno. Mandá el de A11y; lo del preset lo dejo en la cola de Tienda web.</div>
+              <div style="font-size:10.5px;font-weight:600;letter-spacing:.06em;color:{{t.muted}}">SUGERIDO</div>
+              <div class="mono" style="font-size:12px;line-height:1.5;padding:7px 9px;border-radius:6px;background:{{t.term}}">sumá A11y después de QA, solo si el diff toca web/</div>
+              <div style="font-size:10.5px;font-weight:600;letter-spacing:.06em;color:{{t.muted}}">A LA COLA</div>
+              <div class="mono" style="font-size:12px;line-height:1.5;padding:7px 9px;border-radius:6px;background:{{t.term}}">cambiá el preset de QA para que use Playwright</div>
+              <div style="display:flex;gap:6px;flex-wrap:wrap">
+                <button class="ib" onClick="{{skUse}}" style="font-size:12px;padding:5px 10px;border-radius:5px;font-weight:600;background:{{t.accent}};color:{{t.onAccent}}">Mandar sugerido</button>
+                <button class="ib" onClick="{{skEdit}}" style="font-size:12px;padding:5px 10px;border-radius:5px;border:1px solid {{t.border}}">Editar</button>
+                <button class="ib" onClick="{{skAnyway}}" style="font-size:12px;padding:5px 10px;border-radius:5px;border:1px solid {{t.border}}">Mandar igual</button>
+              </div>
+              <div style="font-size:11.5px;color:{{t.muted}};line-height:1.4">Te lo muestro porque casi siempre partís los pedidos dobles. · <button class="ib" style="font-size:11.5px;color:{{t.accent}}">No marques esto</button></div>
+            </div>
+          </sc-if>
+          <sc-if value="{{skCardDone}}" hint-placeholder-val="{{false}}"><div style="font-size:12px;color:{{t.muted}};padding:0 4px">Rulo · antes · {{skCardDone}}</div></sc-if>
+          <div style="display:flex;flex-direction:column;gap:8px;padding:12px;border-radius:8px;border:1px solid {{t.border}};background:{{t.panel}}">
+            <div style="display:flex;gap:6px;align-items:center;font-size:11px;font-weight:700"><span style="width:18px;height:18px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:#6ea8fe;color:#111;font-size:10px">G</span><span>Guardián</span><span style="color:{{t.muted}};font-weight:600">· aviso · SHOP-138</span></div>
+            <div style="line-height:1.45">flow.md §Code review: security-reviewer es obligatorio si el diff toca <span class="mono">auth/</span>. SHOP-138 lo toca y tiene un bloqueante abierto.</div>
+            <div style="display:flex;gap:6px"><button class="ib" onClick="{{openFlow}}" style="font-size:12px;padding:5px 10px;border-radius:5px;border:1px solid {{t.border}}">Ver la regla</button><button class="ib" style="font-size:12px;padding:5px 10px;border-radius:5px;border:1px solid {{t.border}}">Entendido</button></div>
+          </div>
+          <div style="font-size:12px;color:{{t.muted}};padding:0 4px;line-height:1.45">Profe no trabaja en este proyecto. <button class="ib" onClick="{{openSkProj}}" style="font-size:12px;color:{{t.accent}}">Elegir sidekicks</button></div>
+        </div>
+        <div style="flex:none;border-top:1px solid {{t.border}};padding:10px 14px;display:flex;flex-direction:column;gap:6px;font-size:12px">
+          <div style="display:flex"><span style="flex:1;color:{{t.muted}}">En este ticket</span><span>Rulo 1.2k · Guardián 0</span></div>
+          <div aria-hidden="true" style="height:4px;border-radius:2px;background:{{t.chip}}"><div style="width:6%;height:4px;border-radius:2px;background:#f0a64b"></div></div>
+          <div style="color:{{t.muted}}">tope compartido 20k · modelo liviano · ⌘⏎ manda sin revisar</div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{rPending}}" hint-placeholder-val="{{true}}">
+        <div style="flex:1;min-height:0;overflow:auto;padding:6px 10px 10px;display:flex;flex-direction:column">
+          <sc-if value="{{noPending}}" hint-placeholder-val="{{false}}"><div style="padding:12px 6px;color:{{t.muted}};line-height:1.5">Nada todavía. Cuando tengas proyectos, acá aparece lo que te espera en todos.</div></sc-if>
+          <sc-for list="{{pending}}" as="sec" hint-placeholder-count="4">
+            <div style="display:flex;flex-direction:column;padding-top:10px">
+              <div style="display:flex;padding:0 4px 4px;font-size:10.5px;font-weight:600;letter-spacing:.06em;color:{{t.muted}}"><span style="flex:1">{{sec.label}}</span><span>{{sec.count}}</span></div>
+              <sc-for list="{{sec.items}}" as="x" hint-placeholder-count="2">
+                <button class="ib" onClick="{{x.open}}" style="display:flex;gap:9px;align-items:flex-start;padding:7px 6px;border-radius:6px">
+                  <span class="{{x.dotClass}}" style="{{x.dotStyle}};margin-top:5px" aria-hidden="true"></span>
+                  <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
+                    <span style="font-weight:600">{{x.label}}</span>
+                    <span style="line-height:1.4;color:{{t.muted}}">{{x.detail}}</span>
+                    <span style="font-size:11px;color:{{t.muted}}"><span class="mono">{{x.key}}</span> · {{x.proj}}</span>
+                  </span>
+                </button>
+              </sc-for>
+            </div>
+          </sc-for>
+        </div>
+        <div style="flex:none;border-top:1px solid {{t.border}};padding:12px 14px;display:flex;flex-direction:column;gap:8px;font-size:12px">
+          <div style="display:flex"><span style="flex:1;color:{{t.muted}}">Agentes en vuelo</span><span>{{agentsInFlight}}</span></div>
+          <div style="display:flex"><span style="flex:1;color:{{t.muted}}">Uso del plan</span><span>42% de 5 h</span></div>
+          <div aria-hidden="true" style="height:4px;border-radius:2px;background:{{t.chip}}"><div style="width:42%;height:4px;border-radius:2px;background:{{t.accent}}"></div></div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{rTicket}}" hint-placeholder-val="{{false}}">
+        <div style="flex:1;min-height:0;overflow:auto;padding:12px 14px;display:flex;flex-direction:column;gap:16px">
+          <sc-if value="{{noTicket}}" hint-placeholder-val="{{false}}"><div style="color:{{t.muted}};line-height:1.5">Abrí un documento de un ticket para ver su cadena de agentes y su contexto.</div></sc-if>
+          <sc-if value="{{hasTicket}}" hint-placeholder-val="{{true}}">
+            <div style="display:flex;flex-direction:column;gap:6px">
+              <div style="font-size:10.5px;font-weight:600;letter-spacing:.06em;color:{{t.muted}}">CADENA</div>
+              <sc-for list="{{chain}}" as="ch" hint-placeholder-count="6">
+                <div style="display:flex;gap:8px;align-items:baseline"><span class="mono" style="width:14px;color:{{ch.color}}">{{ch.mark}}</span><span style="flex:1;color:{{ch.textColor}}">{{ch.name}}</span><span style="font-size:11px;color:{{t.muted}}">{{ch.note}}</span></div>
+              </sc-for>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:4px">
+              <div style="font-size:10.5px;font-weight:600;letter-spacing:.06em;color:{{t.muted}}">DOCUMENTOS</div>
+              <sc-for list="{{tkFiles}}" as="f" hint-placeholder-count="3"><button class="ib" onClick="{{f.open}}" style="display:flex;gap:8px;padding:2px 0"><span class="mono" style="flex:1;font-size:12px;color:{{t.accent}}">{{f.name}}</span><span class="mono" style="font-size:11px;color:{{f.markColor}}">{{f.mark}}</span></button></sc-for>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:6px">
+              <div style="font-size:10.5px;font-weight:600;letter-spacing:.06em;color:{{t.muted}}">LO QUE LA IA TIENE EN CUENTA</div>
+              <sc-for list="{{tk.context}}" as="cx" hint-placeholder-count="3"><div style="line-height:1.4">{{cx}}</div></sc-for>
+              <button class="ib" style="align-self:flex-start;color:{{t.accent}}">+ Agregar contexto</button>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:4px">
+              <div style="font-size:10.5px;font-weight:600;letter-spacing:.06em;color:{{t.muted}}">CÓDIGO</div>
+              <div class="mono" style="font-size:12px;line-height:1.6">{{tk.branch}}</div>
+              <div style="color:{{t.muted}}">repos: {{tk.repos}}</div>
+            </div>
+          </sc-if>
+        </div>
+      </sc-if>
+    </aside>
+  </div>
+
+  <!-- Status bar -->
+  <footer style="height:24px;flex:none;display:flex;align-items:center;gap:16px;padding:0 12px;font-size:11.5px;background:{{t.status}};color:{{t.statusText}}">
+    <sc-if value="{{hasTicket}}" hint-placeholder-val="{{true}}"><span class="mono">{{tk.branch}}</span></sc-if>
+    <sc-if value="{{isWork}}" hint-placeholder-val="{{true}}"><button class="ib" onClick="{{showProblems}}" aria-label="Ver problemas" style="display:flex;gap:8px"><span>⊗ {{probErr}}</span><span>⚠ {{probWarn}}</span></button></sc-if>
+    <div style="flex:1"></div>
+    <span>Claude Code</span>
+    <span>{{agentsInFlight}} agentes</span>
+    <span>Uso 42%</span>
+    <span>{{jiraStatus}}</span>
+    <span>{{ghStatus}}</span>
+    <button class="ib" onClick="{{toggleTheme}}" aria-label="Cambiar a tema {{otherTheme}}">Tema {{otherTheme}}</button>
+  </footer>
+</div>
+</template>
+<script>
+const SCENES = [["Inicio",[["setup","Primera vez: preparar"],["start","Sin proyectos: empezar"],["import","Importar: el proyecto aprende"],["create","Crear: decisiones → ADRs"]]],["Ticket spec-first",[["spec","Revisar el spec"],["review","Agente de code review"],["qa","Agente QA"],["agents","Agentes y autonomía"]]],["Proceso, preset y MCP",[["process","Importar un proceso (copia)"],["flow","flow.md del proyecto"],["flowchange","El Configurador propone"],["preset","Preset al lanzar el CLI"],["mcp","MCP abierto a agentes externos"]]],["Sidekicks",[["sidekick","Sidekicks en acción"],["sklib","Tus sidekicks"],["skproj","Sidekicks del proyecto"],["skimport","Importar tu coach"]]],["Focus mode",[["focus","Leer un spec en focus"]]]];
+class DCLogic { constructor(props) { this.props = props; this.state = null; } setState(s) { this.state = s; App.render(); } }
+
+class Component extends DCLogic {
+  sceneDefaults(scene) {
+    const work = { phase: 'work', right: 'ticket', drawer: true, max: false };
+    switch (scene) {
+      case 'setup': return { phase: 'setup', tabs: ['@welcome'], active: '@welcome', right: 'pending', drawer: true, term: 'setup', setupDone: 1 };
+      case 'start': return { phase: 'start', tabs: ['@welcome'], active: '@welcome', right: 'pending', drawer: true, term: 'shell', setupDone: 4 };
+      case 'import': return { phase: 'import', tabs: ['proyecto/project.md'], active: 'proyecto/project.md', right: 'pending', drawer: true, term: 'learn' };
+      case 'create': return { phase: 'create', tabs: ['@new'], active: '@new', right: 'pending', drawer: true, term: 'shell', wiz: 2 };
+      case 'review': return Object.assign({}, work, { tabs: ['SHOP-142/spec.md', 'SHOP-138/review.md'], active: 'SHOP-138/review.md', term: 'diff', expanded: { 'SHOP-138': true } });
+      case 'qa': return Object.assign({}, work, { tabs: ['SHOP-138/review.md', 'SHOP-136/qa.md'], active: 'SHOP-136/qa.md', term: 'qa', expanded: { 'SHOP-136': true } });
+      case 'agents': return Object.assign({}, work, { tabs: ['SHOP-142/spec.md', '@agents'], active: '@agents', term: 'shell', right: 'pending' });
+      case 'process': return Object.assign({}, work, { tabs: ['@process'], active: '@process', term: 'config', right: 'pending', extra: ['config'] });
+      case 'flow': return Object.assign({}, work, { tabs: ['SHOP-142/spec.md', 'proyecto/flow.md'], active: 'proyecto/flow.md', term: 'shell', right: 'pending' });
+      case 'flowchange': return Object.assign({}, work, { tabs: ['proyecto/flow.md'], active: 'proyecto/flow.md', term: 'config', right: 'pending', proposal: true, flowSel: 5, extra: ['config'] });
+      case 'preset': return Object.assign({}, work, { tabs: ['proyecto/flow.md', '@preset'], active: '@preset', term: 'launch', right: 'pending', extra: ['launch'] });
+      case 'sidekick': return Object.assign({}, work, { tabs: ['SHOP-138/review.md', 'proyecto/flow.md'], active: 'proyecto/flow.md', term: 'config', right: 'sidekick', extra: ['config'], skDraft: true });
+      case 'sklib': return Object.assign({}, work, { tabs: ['@sidekicks'], active: '@sidekicks', term: 'shell', right: 'pending' });
+      case 'skproj': return Object.assign({}, work, { tabs: ['@sidekicks', '@skproj'], active: '@skproj', term: 'shell', right: 'sidekick' });
+      case 'skimport': return Object.assign({}, work, { tabs: ['@sidekicks', '@skimport'], active: '@skimport', term: 'shell', right: 'pending' });
+      case 'focus': return Object.assign({}, work, { tabs: ['SHOP-142/spec.md'], active: 'SHOP-142/spec.md', term: 'spec', expanded: { 'SHOP-142': true }, focus: true });
+      case 'mcp': return Object.assign({}, work, { tabs: ['proyecto/flow.md', '@mcp'], active: '@mcp', term: 'ext', right: 'pending', proposal: true, extProposal: true, extra: ['ext'] });
+      default: return Object.assign({}, work, { tabs: ['SHOP-142/spec.md', 'SHOP-138/review.md', 'SHOP-136/qa.md'], active: 'SHOP-142/spec.md', term: 'spec', expanded: { 'SHOP-142': true } });
+    }
+  }
+
+  st() {
+    const p = this.props;
+    const base = { theme: p.theme ?? 'dark', expanded: {}, answers: {}, approved: false, sent: {}, qaMode: 'guided', qaManual: null, setupDone: 4, wiz: 0, auto: { spec: 'always', loop: '2', qa: 'guided', pr: 'ask' }, max: false, learnOk: false,
+      procSrc: 'claude', procAck: false, procCopied: false, flowSel: 3, flowView: 'flow', proposal: false, proposalOk: false, extProposal: false, presetEngine: 'claude', presetIso: false, mcpRun: false, extra: [],
+      skSel: 'rulo', skStarter: null, skPurp: {}, skProjOn: { rulo: true, guardian: true, profe: false }, skAck: false, skImported: false, skDraft: false, skCard: null,
+      focus: false, focusComments: false, diffFrom: 'v1', diffView: 'inline', tlOpen: true, cmd: false, cmdQ: '', cmdSel: 0 };
+    return Object.assign(base, this.sceneDefaults(p.scene ?? 'spec'), this.state || {});
+  }
+
+  tokens(theme) {
+    if (theme === 'light') return {
+      bg: '#ffffff', side: '#f4f4f6', panel: '#fafafb', border: '#e2e2e7', text: '#1d1d1f', muted: '#5f5f66',
+      accent: '#0a5bc4', onAccent: '#ffffff', accentBg: '#e3edfb', wait: '#9a5200', waitBg: '#fbecd6',
+      err: '#b3261e', errBg: '#fbe3e1', ok: '#1e7a45', okBg: '#e1f3e8', sel: '#e3e5ec', chip: '#ececf0',
+      input: '#ffffff', term: '#f7f7f9', status: '#0a5bc4', statusText: '#ffffff', tabActive: '#ffffff', changed: '#fff4dd', focusBg: '#fbfaf7', scrim: 'rgba(20,20,30,0.28)'
+    };
+    return {
+      bg: '#17181b', side: '#1d1e22', panel: '#202126', border: '#2d2f36', text: '#e7e7ea', muted: '#9a9da7',
+      accent: '#6ea8fe', onAccent: '#0b1a33', accentBg: '#1e2f4d', wait: '#f0a64b', waitBg: '#3a2c17',
+      err: '#f2786d', errBg: '#3d1f1c', ok: '#62cc8f', okBg: '#18331f', sel: '#2a2c34', chip: '#2a2c33',
+      input: '#17181b', term: '#131417', status: '#25272d', statusText: '#c9cbd2', tabActive: '#17181b', changed: '#33291a', focusBg: '#121316', scrim: 'rgba(0,0,0,0.5)'
+    };
+  }
+
+  tickets() {
+    return {
+      'SHOP-142': { project: 'shop', title: 'Recuperar contraseña por email', status: 'wait', label: 'Spec v2 · revisar', jira: 'En progreso', stage: 0, branch: 'shop-142-reset', repos: 'api, web',
+        files: [['spec.md', '●'], ['decisions.md', '']], live: 'spec.md', context: ['Ticket, 3 AC y 2 comentarios', 'SHOP-120 (linkeado)', 'proyecto/project.md', 'proyecto/conventions.md'] },
+      'SHOP-138': { project: 'shop', title: 'Filtro de productos por talle', status: 'wait', label: 'Code review · 1 bloqueante', jira: 'En progreso', stage: 3, branch: 'shop-138-talle', repos: 'web',
+        files: [['spec.md', ''], ['plan.md', ''], ['decisions.md', 'M'], ['review.md', '●']], live: 'review.md', context: ['spec.md v3 (aprobado)', 'plan.md', 'diff contra main', 'security-checklist.md (tuyo)'] },
+      'SHOP-136': { project: 'shop', title: 'Cambiar email de la cuenta', status: 'wait', label: 'QA · 1 check tuyo', jira: 'En QA', stage: 4, branch: 'shop-136-email', repos: 'api, web',
+        files: [['spec.md', ''], ['plan.md', ''], ['review.md', ''], ['qa.md', '●']], live: 'qa.md', context: ['spec.md (aprobado)', 'review.md (aprobado)', 'suite e2e de cuenta'] },
+      'SHOP-151': { project: 'shop', title: 'Exportar pedidos a CSV', status: 'running', label: 'Dev · tarea 3 de 5', jira: 'En progreso', stage: 2, branch: 'shop-151-csv', repos: 'api, web',
+        files: [['spec.md', ''], ['plan.md', ''], ['decisions.md', 'M']], live: 'plan.md', context: ['spec.md', 'plan.md', 'api/orders/*'] },
+      'SHOP-155': { project: 'shop', title: 'Mostrar stock en la ficha', status: 'plan', label: 'Faltan AC', jira: 'Por hacer', stage: 0, branch: 'sin branch', repos: 'web',
+        files: [], live: null, context: ['Ticket'] },
+      'SHOP-129': { project: 'shop', title: 'Cupones por categoría', status: 'err', label: 'PR #212 · CI rojo', jira: 'En review', stage: 5, branch: 'shop-129-cupones', repos: 'api, web',
+        files: [['spec.md', ''], ['plan.md', ''], ['review.md', ''], ['qa.md', '']], live: 'qa.md', context: ['PR #212', 'log de CI'] },
+      'INT-77': { project: 'int', title: 'Login con SSO de Google', status: 'running', label: 'Spec writer redactando', jira: 'En progreso', stage: 0, branch: 'int-77-sso', repos: 'app',
+        files: [['spec.md', 'A']], live: 'spec.md', context: ['Ticket (AC2 editado por el PO)'] },
+      'INT-80': { project: 'int', title: 'Auditoría de accesos', status: 'plan', label: 'Sin empezar', jira: 'Por hacer', stage: 0, branch: 'sin branch', repos: 'app', files: [], live: null, context: ['Ticket'] }
+    };
+  }
+
+  dot(status, t) {
+    const base = 'display:inline-block;flex:none;width:8px;height:8px;box-sizing:border-box;';
+    if (status === 'running') return { cls: 'spin', style: base + 'width:10px;height:10px;border-radius:50%;border:2px solid ' + t.accent + ';border-top-color:transparent' };
+    if (status === 'wait') return { cls: '', style: base + 'border-radius:50%;background:' + t.wait };
+    if (status === 'err') return { cls: '', style: base + 'border-radius:1px;background:' + t.err };
+    if (status === 'ok') return { cls: '', style: base + 'border-radius:50%;background:' + t.ok };
+    return { cls: '', style: base + 'border-radius:50%;border:1.5px solid ' + t.muted };
+  }
+
+  renderVals() {
+    const s = this.st();
+    const t = this.tokens(s.theme);
+    const T = this.tickets();
+    const set = (patch) => this.setState(Object.assign({}, this.st(), patch));
+    const open = (id) => { const c = this.st(); set({ tabs: c.tabs.indexOf(id) >= 0 ? c.tabs : c.tabs.concat([id]), active: id }); };
+    const close = (id) => { const c = this.st(); const tabs = c.tabs.filter((x) => x !== id); set({ tabs: tabs, active: c.active === id ? (tabs[tabs.length - 1] ?? null) : c.active }); };
+    const markColor = (m) => m === '●' ? t.wait : (m === 'A' ? t.ok : (m === 'M' ? t.accent : t.muted));
+    const phase = s.phase;
+    const isWork = phase === 'work';
+    const projName = { shop: 'Tienda web', int: 'App interna', new: 'Turnos' };
+
+    // Explorer
+    const fileRow = (path, name, mark, indent) => ({ name: name, mark: mark, markColor: markColor(mark), indent: indent || '6px', rowBg: s.active === path ? t.sel : 'transparent', open: () => open(path) });
+    const tRow = (key) => {
+      const d = T[key]; const dt = this.dot(d.status, t); const ex = !!s.expanded[key];
+      const activeHere = (s.active || '').indexOf(key + '/') === 0;
+      return { key: key, title: d.title, label: d.label, dotClass: dt.cls, dotStyle: dt.style, expanded: ex, chev: ex ? 'rotate(90deg)' : 'none',
+        rowBg: activeHere && !ex ? t.sel : 'transparent', files: d.files.map((f) => fileRow(key + '/' + f[0], f[0], f[1])),
+        toggle: () => { const e = Object.assign({}, this.st().expanded); e[key] = !e[key]; set({ expanded: e }); if (!ex && d.live) open(key + '/' + d.live); } };
+    };
+    let projects = [];
+    if (phase === 'import') {
+      projects = [{ name: 'Tienda web', learning: s.learnOk ? false : 'aprendiendo', files: [fileRow('proyecto/project.md', 'project.md', s.learnOk ? '' : '●'), fileRow('proyecto/conventions.md', 'conventions.md', s.learnOk ? '' : 'A')],
+        groups: [{ label: 'TICKETS', hint: 'sincronizando desde Jira…', items: [] }] }];
+    } else if (phase === 'create') {
+      const adrs = [['adr/001-repos.md'], ['adr/002-frontend.md'], ['adr/003-base-de-datos.md'], ['adr/004-auth.md']].slice(0, s.wiz);
+      projects = [{ name: 'Turnos', learning: 'creando', files: [fileRow('proyecto/project.md', 'project.md', 'A')].concat(adrs.map((a) => fileRow('proyecto/' + a[0], a[0], 'A'))), groups: [] }];
+    } else if (isWork) {
+      projects = [
+        { name: 'Tienda web', learning: false, files: [fileRow('proyecto/flow.md', 'flow.md', s.proposal && !s.proposalOk ? '●' : 'M'), fileRow('proyecto/project.md', 'project.md', ''), fileRow('proyecto/conventions.md', 'conventions.md', ''), fileRow('@agents', 'agents/  9', ''), fileRow('@preset', 'preset/', '')],
+          groups: [{ label: 'TE ESPERA', hint: '', items: ['SHOP-142', 'SHOP-138', 'SHOP-136'].map(tRow) }, { label: 'EN VUELO', hint: 'desatendido', items: ['SHOP-151'].map(tRow) }, { label: 'PLANNING', hint: '', items: ['SHOP-155'].map(tRow) }, { label: 'EN PR', hint: '', items: ['SHOP-129'].map(tRow) }] },
+        { name: 'App interna', learning: false, files: [fileRow('proyecto/int.md', 'project.md', '')],
+          groups: [{ label: 'EN VUELO', hint: 'desatendido', items: ['INT-77'].map(tRow) }, { label: 'PLANNING', hint: '', items: ['INT-80'].map(tRow) }] }
+      ];
+    }
+
+    // Tabs
+    const specialTabs = { '@welcome': 'Bienvenida', '@new': 'Nuevo proyecto', '@import': 'Importar', '@agents': 'Agentes', '@process': 'Importar proceso', '@preset': 'Preset', '@mcp': 'MCP del IDE', '@sidekicks': 'Tus sidekicks', '@skproj': 'Sidekicks del proyecto', '@skimport': 'Importar sidekick' };
+    const tabLabel = (id) => specialTabs[id] || (id.indexOf('@diff:') === 0 ? id.slice(6) + ' ↔ ' + (s.diffFrom || 'v1') : id);
+    const tabMark = (id) => {
+      const k = id.split('/')[0]; if (!T[k]) return '';
+      const f = T[k].files.find((x) => k + '/' + x[0] === id); return f && f[1] === '●' ? '●' : '';
+    };
+    const tabs = s.tabs.map((id) => { const act = s.active === id; return { label: tabLabel(id), mark: tabMark(id), active: act, bg: act ? t.tabActive : 'transparent', shadow: act ? 'inset 0 2px 0 ' + t.accent : 'none', color: act ? t.text : t.muted, select: () => set({ active: id }), close: () => close(id) }; });
+
+    const id = s.active || '';
+    const tkKey = id.split('/')[0];
+    const hasTicket = !!T[tkKey] && id.indexOf('/') > 0;
+    const tk = hasTicket ? Object.assign({ key: tkKey }, T[tkKey]) : { key: '', title: '', context: [], branch: '', repos: '' };
+    const doc = id.split('/').slice(1).join('/');
+
+    const stages = ['Spec', 'Plan', 'Implementar', 'Code review', 'QA', 'PR'];
+    let stage = hasTicket ? tk.stage : 0;
+    if (tkKey === 'SHOP-142' && s.approved) stage = 1;
+    const steps = hasTicket ? stages.map((n, i) => {
+      if (i < stage) return { label: '✓ ' + n, style: 'background:' + t.okBg + ';color:' + t.ok };
+      if (i === stage) { const run = tk.status === 'running' || (tkKey === 'SHOP-142' && s.approved); return { label: n + (run ? ' · en vuelo' : ' · te espera'), style: 'font-weight:600;background:' + (run ? t.accentBg : t.waitBg) + ';color:' + (run ? t.accent : t.wait) }; }
+      return { label: n, style: 'background:' + t.chip + ';color:' + t.muted };
+    }) : [];
+
+    // Views
+    const vSetup = id === '@welcome' && phase === 'setup';
+    const vStart = id === '@welcome' && phase !== 'setup';
+    const vImport = id === '@import';
+    const vCreate = id === '@new';
+    const vAgents = id === '@agents';
+    const vReview = hasTicket && doc === 'review.md' && tkKey === 'SHOP-138';
+    const vQa = hasTicket && doc === 'qa.md' && tkKey === 'SHOP-136';
+    const vProcess = id === '@process';
+    const vFlow = id === 'proyecto/flow.md';
+    const vPreset = id === '@preset';
+    const vMcp = id === '@mcp';
+    const vSkLib = id === '@sidekicks';
+    const vSkProj = id === '@skproj';
+    const vSkImport = id === '@skimport';
+    const vDiff = id.indexOf('@diff:') === 0;
+    const vDoc = !vSetup && !vStart && !vImport && !vCreate && !vAgents && !vReview && !vQa && !vProcess && !vFlow && !vPreset && !vMcp && !vSkLib && !vSkProj && !vSkImport && !vDiff && !!id;
+    const seg = (on) => on ? 'background:' + t.bg + ';color:' + t.text : 'color:' + t.muted;
+
+    // Process import
+    const procSources = [['claude', 'Claude Code', '~/.claude', 'skill ticket2 · 11 agentes · 2 plugins'], ['repo', 'Este repo', 'AGENTS.md + .claude/agents/', '3 agentes'], ['codex', 'Codex', '~/.codex/prompts', '2 prompts'], ['std', 'Estándar del IDE', '—', 'Spec › Plan › Dev › Review › QA › PR']]
+      .map((x) => ({ name: x[1], path: x[2], detail: x[3], on: s.procSrc === x[0], mark: s.procSrc === x[0] ? '◉' : '○', bg: s.procSrc === x[0] ? t.sel : 'transparent', pick: () => set({ procSrc: x[0] }) }));
+    const okC = t.ok; const wC = t.wait;
+    const procMap = [['investigar', 'Spec', 'pm.md · designer.md', '✓', okC], ['plan', 'Plan', '"Marco elige plan" → gate: pararme', '✓', okC], ['implementar', 'Dev', 'dev-task.md · una sesión por task', '✓', okC],
+      ['revisar', 'Code review', 'reviewer-task.md · reviewer.md', '✓', okC], ['verificar', 'QA', 'qa.md', '✓', okC], ['cerrar', 'PR + Jira', 'no hay agente: uso pr-writer.md del IDE', '⚠ completado', wC]]
+      .map((m) => ({ from: m[0], stage: m[1], agents: m[2], status: m[3], color: m[4] }));
+    const loose = s.loose || {};
+    const procLoose = [['em.md', 'Ordena el backlog. No es una etapa de un ticket.'], ['devops.md', 'CI, migrations, infra. Se usa cuando algo lo pide.']].map((x) => ({ file: x[0], what: x[1],
+      actions: [['stage', 'Etapa nueva'], ['out', 'Agente fuera del flujo'], ['skip', 'Ignorar']].map((a) => ({ label: (loose[x[0]] === a[0] ? '✓ ' : '') + a[1], style: loose[x[0]] === a[0] ? 'background:' + t.okBg + ';color:' + t.ok + ';font-weight:600' : 'border:1px solid ' + t.border,
+        pick: () => { const l = Object.assign({}, this.st().loose || {}); l[x[0]] = a[0]; set({ loose: l }); } })) }));
+    const procBlocked = !s.procAck || s.procCopied;
+
+    // Flow
+    const baseStages = [
+      { name: 'Spec', from: 'de: investigar', agents: ['pm.md', 'designer.md'], gate: '⏸ pararme siempre', g: 'stop', inp: 'ticket de Jira, comentarios, linkeados', out: 'spec.md', cond: '' },
+      { name: 'Plan', from: 'de: plan', agents: ['planner.md'], gate: '⏸ elegís el plan', g: 'stop', inp: 'spec.md aprobado', out: 'plan.md', cond: '' },
+      { name: 'Dev', from: 'de: implementar', agents: ['dev-task.md ×N'], gate: '▶ solo', g: 'auto', inp: 'plan.md, una task por sesión', out: 'código + decisions.md', cond: '' },
+      { name: 'Code review', from: 'de: revisar', agents: ['reviewer-task.md', 'reviewer.md', 'security-reviewer.md'], gate: '↻ hasta 2 vueltas', g: 'loop', inp: 'spec.md, plan.md, diff', out: 'review.md', cond: 'security: solo si toca auth/' },
+      { name: 'QA', from: 'de: verificar', agents: ['qa.md'], gate: '◐ guiado', g: 'guided', inp: 'spec.md, AC, worktree', out: 'qa.md', cond: '' },
+      { name: 'PR', from: 'de: cerrar', agents: ['pr-writer.md'], gate: '⏸ preguntar', g: 'stop', inp: 'decisions.md, review.md, qa.md', out: 'PR + Jira a En review', cond: '' }
+    ];
+    const a11y = { name: 'A11y', from: 'nuevo', agents: ['a11y-reviewer.md'], gate: '◐ guiado', g: 'guided', inp: 'diff de web/, design system', out: 'a11y.md', cond: 'solo si el diff toca web/', proposed: !s.proposalOk };
+    const stagesNow = s.proposal ? baseStages.slice(0, 5).concat([a11y], baseStages.slice(5)) : baseStages;
+    const gateColor = { stop: t.wait, auto: t.ok, loop: t.accent, guided: t.accent };
+    const selIdx = Math.min(s.flowSel, stagesNow.length - 1);
+    const flowStages = stagesNow.map((x, i) => ({ name: x.name, from: x.from, agents: x.agents, gate: x.gate, gateColor: gateColor[x.g], cond: x.cond || false, proposed: !!x.proposed, on: i === selIdx,
+      cardStyle: x.proposed ? 'border:1.5px dashed ' + t.ok : (i === selIdx ? 'border:1.5px solid ' + t.accent : 'border:1px solid ' + t.border), pick: () => set({ flowSel: i }) }));
+    const fx = stagesNow[selIdx];
+    const fsel = { name: fx.name, rows: [{ k: 'Entra', v: fx.inp }, { k: 'Sale', v: fx.out }, { k: 'Agentes', v: fx.agents.join(', ') }, { k: 'Gate', v: fx.gate + (fx.g === 'loop' ? '. Un bloqueante te para siempre.' : '') }, { k: 'Condición', v: fx.cond || 'siempre' }] };
+    const M = (text, kind) => ({ text: text, color: kind === 'h' ? t.accent : (kind === 'add' ? t.ok : t.text), bg: kind === 'add' ? t.okBg : 'transparent' });
+    const flowMd = [M('# Flujo · Tienda web', 'h'), M('origen: ~/.claude/skills/ticket2 (copia del 26 oct)'), M(''), M('## Spec', 'h'), M('agentes: pm, designer · gate: stop · sale: spec.md'), M('## Plan', 'h'), M('agentes: planner · gate: stop (elegir plan) · sale: plan.md'),
+      M('## Dev', 'h'), M('agentes: dev-task (una sesión por task) · gate: auto'), M('## Code review', 'h'), M('agentes: reviewer-task, reviewer, security-reviewer [si: auth/**]'), M('gate: loop(max: 2, stop_on: bloqueante)'), M('## QA', 'h'), M('agentes: qa · modo: guiado')]
+      .concat(s.proposal ? [M('## A11y', 'add'), M('agentes: a11y-reviewer [si: web/**] · modo: guiado', 'add')] : [])
+      .concat([M('## PR', 'h'), M('agentes: pr-writer · gate: ask · jira: En review'), M('## Fuera del flujo', 'h'), M('em: manual · devops: on(ci.red, label:needs-infra)')]);
+
+    // Preset
+    const presetData = {
+      claude: [['SKILLS', [['ticket2-flow', 'copiado de ~/.claude'], ['tdd', 'copiado de ~/.claude'], ['spec-review', 'del IDE']]], ['PLUGINS', [['cockpit', 'copiado de ~/.claude'], ['caveman', 'copiado de ~/.claude']]],
+        ['MCP SERVERS', [['devharness', 'del IDE'], ['atlassian', 'tu cuenta'], ['github (gh)', 'tu cuenta']]], ['HOOKS E INSTRUCCIONES', [['re-inyectar contexto al compactar', 'del IDE'], ['CLAUDE.md del repo', 'del repo'], ['project.md + conventions.md', 'del proyecto']]]],
+      codex: [['PROMPTS', [['ticket2-flow (convertido)', 'del proyecto'], ['spec-review', 'del IDE']]], ['PERFIL', [['tienda-web', 'generado por el IDE']]],
+        ['MCP SERVERS', [['devharness', 'del IDE'], ['atlassian', 'tu cuenta']]], ['INSTRUCCIONES', [['AGENTS.md del repo', 'del repo'], ['project.md + conventions.md', 'del proyecto']]]],
+      opencode: [['AGENTES', [['dev, reviewer, qa (convertidos)', 'del proyecto']]], ['PROVEEDOR', [['el que configuraste', 'tu cuenta']]], ['MCP SERVERS', [['devharness', 'del IDE']]], ['INSTRUCCIONES', [['AGENTS.md del repo', 'del repo']]]]
+    };
+    const presetEngines = [['claude', 'Claude Code'], ['codex', 'Codex'], ['opencode', 'OpenCode']].map((x) => ({ label: x[1], on: s.presetEngine === x[0], style: seg(s.presetEngine === x[0]), pick: () => set({ presetEngine: x[0] }) }));
+    const presetSections = presetData[s.presetEngine].map((sec) => ({ title: sec[0], items: sec[1].map((it) => ({ name: it[0], src: it[1] })) }));
+    const P = (text, c) => ({ text: text, color: c || t.text });
+    const launchByEngine = {
+      claude: [P('# dev · SHOP-151 · worktree shop-151-csv', t.muted), P('claude \\'), P('  --settings .devharness/preset/claude/settings.json \\'), P('  --mcp-config .devharness/preset/mcp.json \\'), P('  --plugin-dir .devharness/preset/plugins/cockpit \\'),
+        P('  --append-system-prompt "$(cat .devharness/sessions/SHOP-151/context.md)"'), P(s.presetIso ? '# aislado: CLAUDE_CONFIG_DIR=.devharness/preset/claude' : '# además carga tu ~/.claude como siempre', t.muted)],
+      codex: [P('# dev · SHOP-151 · worktree shop-151-csv', t.muted), P('codex --profile tienda-web \\'), P('  -c mcp_servers.devharness.command="devharness mcp"'), P(s.presetIso ? '# aislado: CODEX_HOME=.devharness/preset/codex' : '# además carga tu ~/.codex como siempre', t.muted)],
+      opencode: [P('# dev · SHOP-151 · worktree shop-151-csv', t.muted), P('opencode --agent dev'), P('# config: .devharness/preset/opencode.json', t.muted)]
+    };
+
+    // MCP of the IDE
+    const mcpConnect = [['Claude Code', 'claude mcp add devharness -- devharness mcp'], ['Codex', 'codex mcp add devharness -- devharness mcp'], ['Otro cliente', 'stdio: devharness mcp · o http://127.0.0.1:4711/mcp']].map((x) => ({ engine: x[0], cmd: x[1] }));
+    const dRun = this.dot('running', t); const dOk = this.dot('ok', t);
+    const mcpClients = [{ name: 'Claude Code · terminal externa', detail: '~/code/tienda-web · propuso un gate en PR hace 3 min', calls: '12 llamadas', dotClass: dOk.cls, dotStyle: dOk.style },
+      { name: 'Configurador (adentro del IDE)', detail: 'sesión abierta abajo', calls: '31 llamadas', dotClass: dRun.cls, dotStyle: dRun.style },
+      { name: 'Agentes de tickets', detail: '3 sesiones · solo lectura', calls: '58 llamadas', dotClass: dRun.cls, dotStyle: dRun.style }];
+    const permStyle = { 'Leer': 'background:' + t.chip + ';color:' + t.muted, 'Proponer': 'background:' + t.accentBg + ';color:' + t.accent, 'Ejecutar': 'background:' + t.waitBg + ';color:' + t.wait, 'Bloqueado': 'background:' + t.errBg + ';color:' + t.err };
+    const mcpTools = [['get_flow · list_agents · get_agent', 'leer el proceso y los agentes', 'Leer'], ['list_tickets · get_ticket_docs', 'leer tickets y sus md', 'Leer'], ['get_preset', 'leer el preset del proyecto', 'Leer'],
+      ['propose_flow_change · propose_gate', 'proponer cambios a flow.md', 'Proponer'], ['propose_agent · propose_preset', 'proponer agentes, skills, plugins o MCPs', 'Proponer'], ['import_process(source)', 'leer un proceso de la máquina y mapearlo', 'Proponer'],
+      ['run_stage(ticket, stage)', 'arrancar una etapa de un ticket', s.mcpRun ? 'Ejecutar' : 'Bloqueado']]
+      .map((x) => ({ name: x[0], desc: x[1], perm: x[2], style: permStyle[x[2]], toggle: x[0].indexOf('run_stage') === 0 ? () => set({ mcpRun: !this.st().mcpRun }) : () => {} }));
+
+    // Setup steps
+    const setupDefs = [['Motor', 'Claude Code 2.x encontrado. Codex también disponible.', ''], ['GitHub', 'gh auth status: sesión como marco', ''], ['Jira', 'Falta el MCP de Atlassian en tu motor', 'Agregar MCP'], ['Primer proyecto', 'Importar uno existente o crear desde cero', 'Continuar']];
+    const setupSteps = setupDefs.map((d, i) => {
+      const done = i < s.setupDone + 1 && i !== 2 ? i < 2 || s.setupDone > 2 : s.setupDone > 2 && i === 2;
+      const isDone = i === 3 ? false : (i < 2 ? true : s.setupDone > 2);
+      void done;
+      const current = i === 2 ? s.setupDone <= 2 : (i === 3 ? s.setupDone > 2 : false);
+      return { title: (i + 1) + ' · ' + d[0], detail: i === 2 && isDone ? 'MCP de Atlassian agregado. Solo los agentes tocan Jira.' : d[1], mark: isDone ? '✓' : (current ? '›' : '·'), color: isDone ? t.ok : (current ? t.accent : t.muted),
+        action: current ? d[2] : false, run: () => { if (i === 2) set({ setupDone: 3, term: 'setup' }); else set({ phase: 'start', setupDone: 4 }); } };
+    });
+    const startOpts = [
+      { title: 'Importar proyecto existente', detail: 'Proyecto de Jira + sus repos, locales o a clonar. Un agente aprende el proyecto y escribe project.md.', go: () => { set({ tabs: ['@welcome', '@import'], active: '@import' }); } },
+      { title: 'Crear proyecto desde cero', detail: 'Decisiones de stack una por una; cada una queda como ADR. Después: repo, Jira, scaffold y CI.', go: () => set({ phase: 'create', tabs: ['@new'], active: '@new', wiz: 0 }) },
+      { title: 'Abrir solo un repo, sin Jira', detail: 'Para entender un repo ajeno o trabajar sin tickets.', go: () => {} }
+    ];
+
+    // Wizard
+    const wizDefs = [
+      { title: 'Repos', why: 'Una app web con backend propio. ¿Uno o varios repos?', options: [{ name: 'Monorepo', rec: true, pro: 'un PR por feature, CI único', con: 'deploys acoplados' }, { name: 'api + web separados', rec: false, pro: 'deploys independientes', con: 'PRs en dos repos' }] },
+      { title: 'Frontend', why: 'Turnos necesita agenda y formularios, sin SEO fuerte.', options: [{ name: 'Next.js', rec: true, pro: 'conocido por el equipo', con: 'más de lo que hace falta' }, { name: 'Vite + React', rec: false, pro: 'simple, rápido', con: 'routing y SSR a mano' }] },
+      { title: 'Base de datos', why: 'Datos relacionales chicos: profesionales, turnos, clientes.', options: [{ name: 'Postgres', rec: true, pro: 'relacional, estándar', con: 'hosting aparte' }, { name: 'SQLite + Turso', rec: false, pro: 'simple, barato', con: 'menos herramientas' }] },
+      { title: 'Autenticación', why: 'Clientes que reservan y profesionales que administran.', options: [{ name: 'Magic link por email', rec: true, pro: 'sin contraseñas', con: 'depende del email' }, { name: 'Proveedor externo', rec: false, pro: 'SSO listo', con: 'costo por usuario' }] }
+    ];
+    const wi = Math.min(s.wiz, 3);
+    const wiz = Object.assign({}, wizDefs[wi], { n: wi + 1, total: 4, done: s.wiz >= 4, options: wizDefs[wi].options.map((o) => Object.assign({}, o, { pick: () => set({ wiz: Math.min(this.st().wiz + 1, 4) }) })) });
+
+    // Generic doc rendering
+    const blk = (k, text, tags, changed, marker) => {
+      const styles = {
+        h1: 'font-size:22px;font-weight:700;padding:2px 0 8px',
+        meta: 'font-size:12px;color:' + t.muted + ';padding-bottom:10px',
+        h2: 'font-size:15px;font-weight:700;padding:14px 0 4px',
+        p: 'line-height:1.55;padding:2px 0',
+        li: 'line-height:1.55;padding:3px 0 3px 14px'
+      };
+      return { k: k, changed: !!changed, marker: marker || false, rawTags: tags || [], text: text, style: styles[k] + (changed ? ';background:' + t.changed + ';border-radius:4px;padding-left:8px;padding-right:8px' : ''),
+        tags: (tags || []).map((g) => ({ label: g, style: 'margin-left:8px;font-size:11px;padding:1px 6px;border-radius:999px;' + (g === 'sin AC' ? 'background:' + t.waitBg + ';color:' + t.wait : (g === 'v2' ? 'background:' + t.chip + ';color:' + t.muted : 'background:' + t.accentBg + ';color:' + t.accent)) })) };
+    };
+    const ans = s.answers;
+    // An answer can be changed until the doc is approved; after that it is locked.
+    const comment = (cid, who, kind, text, opts, resolvedText, locked) => {
+      const r = ans[cid];
+      const open = !r && kind !== 'resuelto';
+      return { who: who, kind: r ? 'respondido' : kind, text: text, whoColor: who === 'Vos' ? t.accent : t.ok, border: r || kind === 'resuelto' ? t.border : t.wait,
+        open: open, showOptions: open || (!!r && !locked), changeHint: r && !locked ? 'Podés cambiar la respuesta hasta aprobar.' : false,
+        resolution: r ? (locked ? r : false) : (resolvedText || false),
+        options: opts.map((o) => ({ label: r === o ? '✓ ' + o : o, on: r === o,
+          style: r === o ? 'background:' + t.okBg + ';color:' + t.ok + ';font-weight:600;border:1px solid ' + t.ok : 'border:1px solid ' + t.border,
+          pick: () => { if (locked) return; const a = Object.assign({}, this.st().answers); a[cid] = o; set({ answers: a }); } })) };
+    };
+    // spec.md of SHOP-142: current text depends on your answers; v1/v2 are frozen versions for the diff.
+    const specNow = (q1, q2) => [
+      ['h1', 'Recuperar contraseña por email'],
+      ['h2', 'Objetivo'],
+      ['p', 'Un cliente que olvidó su contraseña la recupera solo, sin escribirle a soporte.'],
+      ['h2', 'Comportamiento'],
+      ['li', '1. POST /auth/forgot responde 202 siempre, exista o no la cuenta.', ['AC3']],
+      ['li', '2. El email usa la plantilla base de SHOP-120, con un link de un solo uso.', ['AC2', 'v2'], true],
+      ['li', q1 === 'Desde la apertura' ? '3. El link vence 30 minutos después de abrir el email.' : '3. El link vence 30 minutos después de enviado el email.', ['AC1'], !!q1, q1 ? false : '1'],
+      q2 === 'Sacarlo' ? ['li', ''] : ['li', '4. Al elegir la nueva contraseña se cierran las demás sesiones.', [q2 ? 'AC4' : 'sin AC'], !!q2, q2 ? false : '2'],
+      ['h2', 'Fuera de alcance'],
+      ['li', '· Rate limiting del endpoint (queda en SHOP-160).'],
+      ['h2', 'Preguntas abiertas (' + (q1 ? 0 : 1) + ')'],
+      ['li', q1 ? '· Ninguna.' : '· ¿Los 30 minutos corren desde el envío o desde que se abre el email?']
+    ];
+    const specV1 = [['h1', 'Recuperar contraseña por email'], ['h2', 'Objetivo'], ['p', 'Un cliente que olvidó su contraseña la recupera solo, sin escribirle a soporte.'], ['h2', 'Comportamiento'],
+      ['li', '1. POST /auth/forgot responde 202 siempre, exista o no la cuenta.'], ['li', '2. El email incluye un link de un solo uso.'], ['li', '3. El link vence 30 minutos después de enviado el email.'],
+      ['h2', 'Fuera de alcance'], ['li', '· Rate limiting del endpoint (queda en SHOP-160).'], ['h2', 'Preguntas abiertas (1)'], ['li', '· ¿Los 30 minutos corren desde el envío o desde que se abre el email?']];
+    const specVersions = { v1: specV1, v2: specNow(undefined, undefined) };
+    const openDiff = (from) => { const c = this.st(); const did = '@diff:SHOP-142/spec.md'; set({ tabs: c.tabs.indexOf(did) >= 0 ? c.tabs : c.tabs.concat([did]), active: did, diffFrom: from, focus: false }); };
+    let docv = { meta: '', blocks: [], comments: [], commentsLabel: 'COMENTARIOS', secondary: [], coverage: false, banner: false, approveLabel: '', approveStyle: '', blocked: false, approve: () => {} };
+    if (vDoc && id === 'SHOP-142/spec.md') {
+      const q1 = ans.q1; const q2 = ans.q2;
+      const nOpen = (q1 ? 0 : 1) + (q2 ? 0 : 1);
+      const blocked = nOpen > 0;
+      docv = {
+        meta: 'spec.md · v2 · Spec writer · hace 6 min · fuente: Jira + 2 comentarios',
+        secondary: [{ label: 'Cambios v1 → actual', run: () => openDiff('v1') }, { label: 'Pedir otra vuelta', run: () => {} }],
+        blocks: specNow(q1, q2).map((x) => blk.apply(null, x)),
+        commentsLabel: 'COMENTARIOS · ' + nOpen + ' ABIERTOS',
+        comments: [
+          comment('q1', 'IA', 'pregunta · bloquea', '¿Los 30 minutos corren desde el envío o desde que se abre el email?', ['Desde el envío', 'Desde la apertura', 'Preguntar al PO en Jira'], null, !!s.approved),
+          comment('q2', 'IA', 'propuesta', 'Agregué §4 (cerrar las otras sesiones) por seguridad. No está en los AC.', ['Dejarlo y sumar AC4', 'Sacarlo'], null, !!s.approved),
+          comment('c3', 'Vos', 'resuelto', 'Usar la plantilla de email existente.', [], 'La IA editó §2 en v2')
+        ],
+        coverage: [{ label: 'AC1 → §3 ✓', style: 'background:' + t.okBg + ';color:' + t.ok }, { label: 'AC2 → §2 ✓', style: 'background:' + t.okBg + ';color:' + t.ok }, { label: 'AC3 → §1 ✓', style: 'background:' + t.okBg + ';color:' + t.ok },
+          q2 ? { label: q2 === 'Sacarlo' ? '§4 sacado' : 'AC4 nuevo → §4 ✓ (avisar al PO)', style: 'background:' + t.okBg + ';color:' + t.ok } : { label: '§4 sin AC', style: 'background:' + t.waitBg + ';color:' + t.wait }],
+        banner: s.approved ? 'Spec aprobado. El Planificador arrancó y va a escribir plan.md. Queda en decisions.md.' : false,
+        blocked: blocked,
+        approveLabel: s.approved ? 'Aprobado' : (blocked ? 'Aprobar spec · ' + nOpen + ' abierto' + (nOpen > 1 ? 's' : '') : 'Aprobar spec'),
+        approveStyle: s.approved ? 'background:' + t.okBg + ';color:' + t.ok : (blocked ? 'background:' + t.chip + ';color:' + t.muted + ';cursor:not-allowed' : 'background:' + t.accent + ';color:' + t.onAccent),
+        approve: () => { if (!blocked) set({ approved: true }); }
+      };
+    } else if (vDoc && id === 'proyecto/project.md' && phase === 'import') {
+      const blocked = !(ans.l1 && ans.l2);
+      docv = {
+        meta: 'project.md · escrito por el agente de importación · modelo liviano · leyó 2 repos',
+        secondary: [],
+        blocks: [blk('h1', 'Tienda web'), blk('h2', 'Stack'), blk('p', 'api: Node 20 + Fastify + Postgres (Prisma). web: Next.js 14, Tailwind.', [], true), blk('h2', 'Cómo correr y testear'),
+          blk('li', '· pnpm dev en cada repo. Tests: pnpm test (vitest).', [], true), blk('li', ans.l2 ? '· e2e: ' + ans.l2 : '· e2e: no encontrado.', [], true), blk('h2', 'Convenciones'), blk('p', 'Ver conventions.md: branches feature/KEY-n, commits convencionales, PR con template.')],
+        commentsLabel: 'LO QUE APRENDIÓ · CONFIRMÁ',
+        comments: [comment('l1', 'IA', 'aprendido de package.json y CI', 'Stack y comandos de test.', ['Está bien', 'Corregir'], null, !!s.learnOk),
+          comment('l2', 'IA', 'no encontrado', 'No encontré cómo se corren los e2e.', ['pnpm e2e (Playwright)', 'No hay e2e todavía'], null, !!s.learnOk)],
+        coverage: false, banner: s.learnOk ? 'Notas confirmadas. Los agentes las leen al empezar cada ticket.' : false, blocked: blocked,
+        approveLabel: s.learnOk ? 'Confirmado' : 'Confirmar notas',
+        approveStyle: s.learnOk ? 'background:' + t.okBg + ';color:' + t.ok : (blocked ? 'background:' + t.chip + ';color:' + t.muted : 'background:' + t.accent + ';color:' + t.onAccent),
+        approve: () => { if (!blocked) set({ learnOk: true, phase: 'work', tabs: ['SHOP-142/spec.md'], active: 'SHOP-142/spec.md', expanded: { 'SHOP-142': true }, right: 'pending', term: 'spec' }); }
+      };
+    } else if (vDoc) {
+      const name = id.split('/').pop();
+      docv = Object.assign({}, docv, { meta: name + ' · documento generado', approveLabel: 'Editar', approveStyle: 'border:1px solid ' + t.border,
+        blocks: [blk('h1', name), blk('p', 'Vista del documento renderizado. Los md que no te esperan se leen como en un editor: con historial de versiones y quién escribió cada parte (vos o un agente).')] });
+    }
+
+    // Diff of md: line diff (LCS) between a frozen version and the current text
+    const lineDiff = (a, b) => {
+      const n = a.length; const m = b.length;
+      const L = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
+      for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) L[i][j] = a[i][1] === b[j][1] ? L[i + 1][j + 1] + 1 : Math.max(L[i + 1][j], L[i][j + 1]);
+      const out = []; let i = 0; let j = 0;
+      while (i < n && j < m) {
+        if (a[i][1] === b[j][1]) { out.push({ op: 'same', k: b[j][0], text: b[j][1] }); i++; j++; }
+        else if (L[i + 1][j] >= L[i][j + 1]) { out.push({ op: 'del', k: a[i][0], text: a[i][1] }); i++; }
+        else { out.push({ op: 'add', k: b[j][0], text: b[j][1] }); j++; }
+      }
+      while (i < n) { out.push({ op: 'del', k: a[i][0], text: a[i][1] }); i++; }
+      while (j < m) { out.push({ op: 'add', k: b[j][0], text: b[j][1] }); j++; }
+      return out;
+    };
+    const dFrom = s.diffFrom || 'v1';
+    const dOps = vDiff ? lineDiff(specVersions[dFrom].filter((x) => x[1] !== ''), specNow(ans.q1, ans.q2).filter((x) => x[1] !== '')) : [];
+    const dText = (k) => k === 'h1' ? 'font-size:18px;font-weight:700' : (k === 'h2' ? 'font-size:14px;font-weight:700' : 'line-height:1.5');
+    const dBox = (op) => 'display:flex;gap:10px;padding:3px 10px;border-radius:4px;' + (op === 'add' ? 'background:' + t.okBg : (op === 'del' ? 'background:' + t.errBg : ''));
+    const dCell = (op, text, k) => ({ text: text || '', style: dText(k) + (op === 'del' ? ';text-decoration:line-through;text-decoration-color:' + t.err : ''), box: 'flex:1;min-width:0;' + dBox(text ? op : 'same') });
+    const diffRows = dOps.map((o) => ({ p: o.op === 'add' ? '+' : (o.op === 'del' ? '−' : ''), pc: o.op === 'add' ? t.ok : t.err, text: o.text, style: dText(o.k) + (o.op === 'del' ? ';text-decoration:line-through;text-decoration-color:' + t.err : ''), box: dBox(o.op) }));
+    const diffPairs = [];
+    for (let i = 0; i < dOps.length;) {
+      if (dOps[i].op === 'same') { diffPairs.push({ l: dCell('same', dOps[i].text, dOps[i].k), r: dCell('same', dOps[i].text, dOps[i].k) }); i++; continue; }
+      const dels = []; const adds = [];
+      while (i < dOps.length && dOps[i].op === 'del') dels.push(dOps[i++]);
+      while (i < dOps.length && dOps[i].op === 'add') adds.push(dOps[i++]);
+      for (let k = 0; k < Math.max(dels.length, adds.length); k++) {
+        const d = dels[k]; const a = adds[k];
+        diffPairs.push({ l: d ? dCell('del', d.text, d.k) : dCell('same', '', 'li'), r: a ? dCell('add', a.text, a.k) : dCell('same', '', 'li') });
+      }
+    }
+    const nAdd = dOps.filter((o) => o.op === 'add').length; const nDel = dOps.filter((o) => o.op === 'del').length;
+    const diffv = { meta: 'spec.md · ' + dFrom + ' → actual' + (s.approved ? ' (aprobado)' : ' (con tus respuestas sin aprobar)'), adds: '+' + nAdd, dels: '−' + nDel, empty: vDiff && nAdd + nDel === 0, rows: diffRows, pairs: diffPairs,
+      froms: [['v1', 'v1 · primer borrador'], ['v2', 'v2 · Spec writer']].map((f) => ({ label: f[1], style: seg(dFrom === f[0]), pick: () => set({ diffFrom: f[0] }) })),
+      leftLabel: dFrom === 'v1' ? 'v1 · Spec writer · hace 22 min' : 'v2 · Spec writer · hace 6 min', rightLabel: 'actual',
+      openDoc: () => open('SHOP-142/spec.md') };
+
+    // Timeline: versions and edits of the active md, who made them (you or an agent)
+    const tlKey = vDiff ? id.slice(6) : id;
+    const tlAgent = t.accent; const tlYou = t.ok;
+    const tlDefs = {
+      'SHOP-142/spec.md': [
+        s.approved ? ['Aprobaste el spec. Pasa a Plan.', 'Vos · ahora', tlYou, null] : null,
+        ans.q2 ? ['Respondiste §4: ' + ans.q2, 'Vos · ahora · sin aprobar', tlYou, 'v2'] : null,
+        ans.q1 ? ['Respondiste §3: ' + ans.q1, 'Vos · ahora · sin aprobar', tlYou, 'v2'] : null,
+        ['v2: usó la plantilla de SHOP-120 en §2 y agregó §4', 'Spec writer · hace 6 min', tlAgent, 'v2'],
+        ['Comentaste §2: usar la plantilla de email existente', 'Vos · hace 14 min', tlYou, null],
+        ['v1: primer borrador desde Jira y 2 comentarios', 'Spec writer · hace 22 min', tlAgent, 'v1']
+      ],
+      'proyecto/flow.md': [
+        s.proposalOk ? ['v4: aprobaste la etapa A11y', 'Vos · ahora', tlYou, null] : null,
+        s.proposal && !s.proposalOk ? ['Propuesta: etapa A11y después de QA', 'Configurador · hace 1 min · sin aprobar', t.wait, null] : null,
+        ['v3: gate de security solo si toca auth/', 'Vos · ayer', tlYou, null],
+        ['v2: QA guiado en vez de autónomo', 'Vos · hace 3 días', tlYou, null],
+        ['v1: copiado de ~/.claude/skills/ticket2', 'Configurador · hace 5 días', tlAgent, null]
+      ],
+      'SHOP-138/review.md': [['Vuelta 1: 1 bloqueante (XSS)', 'Security reviewer · tuyo · hace 50 min', tlAgent, null], ['Vuelta 1: 3 hallazgos contra spec.md', 'Reviewer · hace 52 min', tlAgent, null]],
+      'SHOP-136/qa.md': [s.qaManual ? ['Check manual de AC3: ' + (s.qaManual === 'pass' ? 'pasó' : 'falló'), 'Vos · ahora', tlYou, null] : null, ['AC1 y AC2 verificados solos; AC3 queda para vos', 'QA · hace 40 min', tlAgent, null]],
+      'proyecto/project.md': [['Aprendido de package.json y CI', 'Agente de importación · ayer', tlAgent, null]]
+    };
+    const timeline = (tlDefs[tlKey] || []).filter(Boolean).map((e) => ({ what: e[0], meta: e[1], dot: e[2], canDiff: !!e[3], open: e[3] ? () => openDiff(e[3]) : () => {} }));
+    const tlOpen = s.tlOpen !== false;
+
+    // Problems: what is broken or blocking, anchored to a file
+    const sentNow = s.sent || {};
+    const probDefs = isWork ? [
+      sentNow.f1 !== 'dev' ? ['err', 'XSS: el talle de la URL va al HTML sin escapar', 'review.md · hallazgo 1', 'SHOP-138', 'SHOP-138/review.md'] : null,
+      ['err', 'CI en rojo: checkout-coupon.spec.ts', 'PR #212 · e2e', 'SHOP-129', '@ci'],
+      !ans.q1 ? ['wait', 'Pregunta abierta que bloquea la aprobación', 'spec.md §3', 'SHOP-142', 'SHOP-142/spec.md'] : null,
+      !ans.q2 ? ['wait', '§4 no tiene AC', 'spec.md §4', 'SHOP-142', 'SHOP-142/spec.md'] : null,
+      s.qaMode !== 'auto' && s.qaManual !== 'pass' ? ['wait', 'AC3 espera tu check manual', 'qa.md · AC3', 'SHOP-136', 'SHOP-136/qa.md'] : null,
+      ['wait', 'El origen cambió: reviewer.md en ~/.claude', 'flow.md · origen', 'Tienda web', 'proyecto/flow.md'],
+      ['info', 'Faltan AC para poder tomarlo', 'Jira', 'SHOP-155', null]
+    ].filter(Boolean) : [];
+    const probIcon = { err: ['⊗', t.err], wait: ['⚠', t.wait], info: ['ⓘ', t.muted] };
+    const problems = probDefs.map((p) => ({ icon: probIcon[p[0]][0], color: probIcon[p[0]][1], text: p[1], where: p[2], key: p[3],
+      open: () => { if (p[4] === '@ci') set({ term: 'ci', drawer: true }); else if (p[4]) { const e = Object.assign({}, this.st().expanded); if (T[p[3]]) e[p[3]] = true; set({ expanded: e }); open(p[4]); } } }));
+    const probErr = probDefs.filter((p) => p[0] === 'err').length; const probWarn = probDefs.filter((p) => p[0] === 'wait').length;
+
+    // Command palette: tickets, md files and actions, filtered by what you type
+    const cq = (s.cmdQ || '').trim().toLowerCase();
+    const onlyAct = cq.indexOf('>') === 0;
+    const words = (onlyAct ? cq.slice(1) : cq).split(/\s+/).filter(Boolean);
+    const hit = (x) => { const hay = (x.label + ' ' + x.detail).toLowerCase(); return words.every((w) => hay.indexOf(w) >= 0); };
+    const cmdClose = { cmd: false, cmdQ: '', cmdSel: 0 };
+    const run = (fn) => () => { this.setState(Object.assign({}, this.st(), cmdClose)); fn(); };
+    const cmdDefs = [];
+    if (isWork) {
+      Object.keys(T).forEach((k) => { const d = T[k]; cmdDefs.push({ g: 'TICKETS', icon: '#', label: k + ' · ' + d.title, detail: d.label, key: '',
+        fn: () => { const e = Object.assign({}, this.st().expanded); e[k] = true; set({ expanded: e }); if (d.live) open(k + '/' + d.live); } }); });
+      [['proyecto/flow.md', 'flow.md'], ['proyecto/project.md', 'project.md'], ['proyecto/conventions.md', 'conventions.md']].forEach((f) => cmdDefs.push({ g: 'ARCHIVOS', icon: '¶', label: f[1], detail: 'Tienda web / proyecto', key: '', fn: () => open(f[0]) }));
+      Object.keys(T).forEach((k) => T[k].files.forEach((f) => cmdDefs.push({ g: 'ARCHIVOS', icon: '¶', label: k + '/' + f[0], detail: projName[T[k].project], key: '', fn: () => { const e = Object.assign({}, this.st().expanded); e[k] = true; set({ expanded: e }); open(k + '/' + f[0]); } })));
+      [
+        ['Revisar el spec de SHOP-142', 'te espera', '', () => open('SHOP-142/spec.md')],
+        ['Comparar spec.md: v1 → actual', 'diff de md', '', () => openDiff('v1')],
+        ['Ver problemas', probErr + ' errores · ' + probWarn + ' avisos', '⇧⌘M', () => set({ term: 'problems', drawer: true })],
+        ['Leer en focus mode', 'archivo abierto', '⌘.', () => { if (vDoc || vFlow) set({ focus: true }); }],
+        ['Pedirle un cambio al Configurador', 'proceso, agentes, preset', '', () => { const c = this.st(); set({ extra: (c.extra || []).indexOf('config') >= 0 ? c.extra : ['config'].concat(c.extra || []), term: 'config', drawer: true }); }],
+        ['Abrir flow.md', 'flujo del proyecto', '', () => open('proyecto/flow.md')],
+        ['Agentes y autonomía', '9 agentes', '', () => open('@agents')],
+        ['Preset del proyecto', 'skills, plugins, MCP', '', () => open('@preset')],
+        ['MCP del IDE', 'agentes externos', '', () => open('@mcp')],
+        ['Tus sidekicks', 'personalidad y propósito', '', () => open('@sidekicks')],
+        ['Mostrar Pendiente', 'panel derecho', '', () => set({ right: 'pending' })],
+        ['Abrir o cerrar la terminal', 'panel de abajo', '⌃`', () => set({ drawer: !this.st().drawer })]
+      ].forEach((a) => cmdDefs.push({ g: 'ACCIONES', icon: '›', label: a[0], detail: a[1], key: a[2], fn: a[3] }));
+    } else {
+      [['Importar Jira + repos', 'primer proyecto', () => set({ tabs: ['@welcome', '@import'], active: '@import', phase: 'start' })], ['Crear proyecto desde cero', 'decisiones → ADRs', () => set({ phase: 'create', tabs: ['@new'], active: '@new', wiz: 0 })]]
+        .forEach((a) => cmdDefs.push({ g: 'ACCIONES', icon: '›', label: a[0], detail: a[1], key: '', fn: a[2] }));
+    }
+    cmdDefs.push({ g: 'ACCIONES', icon: '›', label: 'Cambiar a tema ' + (s.theme === 'dark' ? 'claro' : 'oscuro'), detail: 'apariencia', key: '', fn: () => set({ theme: this.st().theme === 'dark' ? 'light' : 'dark' }) });
+    const cmdHits = cmdDefs.filter((x) => (!onlyAct || x.g === 'ACCIONES') && hit(x));
+    const cmdOrder = words.length || onlyAct ? ['ACCIONES', 'TICKETS', 'ARCHIVOS'] : ['TICKETS', 'ACCIONES', 'ARCHIVOS'];
+    const cmdFlat = [];
+    cmdOrder.forEach((g) => cmdHits.filter((x) => x.g === g).slice(0, 6).forEach((x) => cmdFlat.push(x)));
+    const cmdSel = Math.max(0, Math.min(s.cmdSel || 0, cmdFlat.length - 1));
+    const cmdGroups = cmdOrder.map((g) => ({ label: g, items: cmdFlat.map((x, i) => ({ x: x, i: i })).filter((o) => o.x.g === g)
+      .map((o) => ({ icon: o.x.icon, label: o.x.label, detail: o.x.detail, key: o.x.key, bg: o.i === cmdSel ? t.sel : 'transparent', run: run(o.x.fn) })) })).filter((g) => g.items.length);
+
+    // Sidekicks
+    const purposeCat =[['prompts', 'Coach de prompts', 'revisa lo que mandás: vago, sin contexto, dos pedidos', '~200 tokens por revisión'], ['foco', 'Foco', 'tangentes e ideas nuevas → a la cola del proyecto', 'local, 0 tokens'],
+      ['proceso', 'Guardián del proceso', 'avisa si salteás un gate o una etapa de flow.md', 'local, 0 tokens'], ['mentor', 'Mentor técnico', 'explica en simple lo que decidió un agente', '~600 tokens por respuesta'], ['resumen', 'Resumen del día', 'al abrir: qué te espera y qué quedó en vuelo', '~1k por día']];
+    const SK = {
+      rulo: { name: 'Rulo', initial: 'R', color: '#f0a64b', file: 'sidekicks/rulo.md', origin: 'copiado de ~/.claude/coach', purposes: ['prompts', 'foco'], moments: 'antes de mandar · avisos', tier: 'liviano', usedIn: 'Tienda web · App interna',
+        personality: 'Hablame en español rioplatense, breve y sin sermones. Primero el problema en una línea, después la sugerencia.\nSi el impacto es bajo, una línea. Si es alto, frená y proponé cómo partirlo.\nSi repito el mismo error, decímelo más corto y nombrá el patrón.',
+        own: 'Cuando junto varias ideas, mandá la primera y el resto a la cola del proyecto.', learned: ['Casi siempre acepta partir pedidos dobles.', 'Le sirven los tips proactivos de git.', 'Los pedidos nuevos aparecen mientras prueba la app.'],
+        preview: 'Dos pedidos en uno. Mandá "sumá A11y después de QA"; lo del preset va a la cola.' },
+      guardian: { name: 'Guardián', initial: 'G', color: '#6ea8fe', file: 'sidekicks/guardian.md', origin: false, purposes: ['proceso'], moments: 'avisos', tier: 'liviano (casi todo local)', usedIn: 'Tienda web',
+        personality: 'Seco y preciso. Hablá solo cuando un gate o una etapa se saltea.\nCitá la regla de flow.md que aplica. Nada de opiniones.',
+        own: 'Nunca dejes aprobar con un supuesto sin confirmar.', learned: ['Aprueba igual, con motivo, cuando es un hotfix.'],
+        preview: 'flow.md no dice nada del preset de QA. Cambiarlo es un cambio de proceso: va como propuesta aparte.' },
+      profe: { name: 'Profe', initial: 'P', color: '#62cc8f', file: 'sidekicks/profe.md', origin: false, purposes: ['mentor'], moments: 'después de la respuesta', tier: 'estándar', usedIn: 'App interna',
+        personality: 'Explicame como a alguien que programa hace años pero no conoce este stack.\nUna analogía como mucho. Terminá con qué mirar en el diff.',
+        own: '', learned: [], preview: 'A11y es accesibilidad: que se pueda usar con teclado y lector de pantalla. Son dos cambios distintos; conviene uno por vez.' }
+    };
+    const starters = { directo: ['Directo', 'Dos pedidos. Mandá uno.'], mentor: ['Mentor', 'Estás pidiendo dos cosas que tocan partes distintas del proceso. Si las separás, cada propuesta se revisa sola y es más fácil aprobarla.'],
+      socratico: ['Socrático', '¿Estas dos cosas tienen que aprobarse juntas, o podrías revisar cada una por separado?'], tranquilo: ['Tranquilo', 'Las dos ideas están bien. Te propongo mandar primero A11y y dejar el preset para después.'] };
+    const skKey = SK[s.skSel] ? s.skSel : 'rulo';
+    const purpOn = (k, p) => { const o = (s.skPurp || {})[k + ':' + p]; return o === undefined ? SK[k].purposes.indexOf(p) >= 0 : o; };
+    const purposeLine = (k) => purposeCat.filter((p) => purpOn(k, p[0])).map((p) => p[1]).join(' · ') || 'sin propósito';
+    const skList = Object.keys(SK).map((k) => ({ name: SK[k].name, initial: SK[k].initial, color: SK[k].color, usedIn: 'Usado en: ' + SK[k].usedIn, purposeLine: purposeLine(k), on: k === skKey,
+      cardStyle: k === skKey ? 'border:1.5px solid ' + t.accent : 'border:1px solid ' + t.border, pick: () => set({ skSel: k, skStarter: null }) }));
+    const skSel = Object.assign({}, SK[skKey], { own: SK[skKey].own || 'Ninguno todavía.', learned: SK[skKey].learned.length ? SK[skKey].learned : ['Todavía nada.'] });
+    const skStarters = Object.keys(starters).map((k) => ({ label: starters[k][0], style: s.skStarter === k ? 'background:' + t.accentBg + ';color:' + t.accent + ';font-weight:600' : 'border:1px solid ' + t.border, pick: () => set({ skStarter: this.st().skStarter === k ? null : k }) }));
+    const skPurposes = purposeCat.map((p) => { const on = purpOn(skKey, p[0]); return { name: p[1], desc: p[2], cost: p[3], on: on, mark: on ? '☑' : '☐', color: on ? t.accent : t.muted,
+      toggle: () => { const x = Object.assign({}, this.st().skPurp || {}); x[skKey + ':' + p[0]] = !on; set({ skPurp: x }); } }; });
+    const skPreview = s.skStarter ? starters[s.skStarter][1] : SK[skKey].preview;
+    const projExtra = { rulo: 'Las tangentes van a la cola de Tienda web.', guardian: 'Cualquier cambio en payments/ necesita security-reviewer.', profe: 'Explicá con más detalle las decisiones de Next.js.' };
+    const projPlaces = { rulo: [['Terminal', 1], ['Comentarios del spec', 1], ['Configurador', 1], ['PRs', 0]], guardian: [['Aprobaciones', 1], ['Gates', 1], ['Terminal', 0], ['PRs', 1]], profe: [['Después de cada respuesta', 1], ['Review', 1], ['Terminal', 0], ['QA', 0]] };
+    const projCost = { rulo: '~2k por ticket', guardian: '~0 por ticket', profe: '~4k por ticket' };
+    const skProject = Object.keys(SK).map((k) => { const on = !!(s.skProjOn || {})[k]; return { name: SK[k].name, initial: SK[k].initial, color: SK[k].color, purposeLine: purposeLine(k), on: on, extra: projExtra[k], cost: on ? projCost[k] : 'apagado',
+      trackColor: on ? t.accent : t.chip, knob: on ? '18px' : '2px', places: projPlaces[k].map((pl) => ({ label: pl[0], style: pl[1] ? 'background:' + t.accentBg + ';color:' + t.accent : 'background:' + t.chip + ';color:' + t.muted })),
+      toggle: () => { const x = Object.assign({}, this.st().skProjOn || {}); x[k] = !x[k]; set({ skProjOn: x }); } }; });
+    const skActive = Object.keys(SK).filter((k) => (s.skProjOn || {})[k]).map((k) => ({ name: SK[k].name, initial: SK[k].initial, color: SK[k].color,
+      state: k === 'rulo' ? (s.skDraft && !s.skCard ? 'tiene una sugerencia' : 'mirando') : (k === 'guardian' ? '1 aviso' : 'mirando') }));
+    const skImportMap = [['~/.claude/coach/rules.md', 'Personalidad', 'Cómo hablar y cuándo frenar se vuelve el prompt de personalidad.', '✓', t.ok],
+      ['rules.md · 5 patrones', 'Propósitos', 'multi-ask, scope-leak, vague → Coach de prompts. collision, lost-thread → Foco.', '✓', t.ok],
+      ['rules.md · niveles de impacto', 'Propósito propio', 'Bajo: una línea. Alto: frenar y proponer cómo partirlo.', '✓', t.ok],
+      ['profile.md', 'Lo que aprendió', '6 cosas: le sirven los tips de git, los pedidos se acumulan probando la app…', '✓', t.ok],
+      ['queue/*.md', '—', 'La cola no se copia: cada proyecto tiene la suya.', 'no se copia', t.muted]].map((m) => ({ from: m[0], to: m[1], what: m[2], status: m[3], color: m[4] }));
+    const skDone = { used: 'usada · lo del preset quedó en la cola', edited: 'editada', anyway: 'mandada igual' };
+
+    // Focus mode
+    const fStyle = (b, i) => {
+      const base = { h1: 'font-size:34px;font-weight:700;line-height:1.2;padding-bottom:18px', meta: 'font-family:Inter,sans-serif;font-size:12.5px;color:' + t.muted, h2: 'font-size:22px;font-weight:700;padding:28px 0 6px',
+        p: 'font-size:18px;line-height:1.75', li: 'font-size:18px;line-height:1.75;padding-left:18px', code: 'font-family:"JetBrains Mono",monospace;font-size:14.5px;line-height:1.7;color:' + t.muted };
+      return (base[b.k] || base.p) + (b.changed ? ';background:' + t.changed + ';border-radius:4px;padding-left:10px;padding-right:10px' : '');
+    };
+    let focusSrc = [];
+    if (vDoc) focusSrc = docv.blocks.filter((b) => b.text !== '');
+    else if (vFlow) focusSrc = flowMd.map((l, i) => ({ k: i === 0 ? 'h1' : (l.text.indexOf('## ') === 0 ? 'h2' : 'code'), text: l.text.replace(/^#+ /, ''), changed: l.bg !== 'transparent', marker: false, rawTags: [] }));
+    const focusBlocks = focusSrc.map((b, i) => ({ text: b.text, style: fStyle(b, i), marker: b.marker || false,
+      tags: (b.rawTags || []).map((g) => ({ label: g, style: 'margin-left:8px;font-size:11px;padding:1px 6px;border-radius:999px;vertical-align:middle;' + (g === 'sin AC' ? 'background:' + t.waitBg + ';color:' + t.wait : 'background:' + t.accentBg + ';color:' + t.accent) })) }));
+    const nOpenComments = (docv.comments || []).filter((c) => c.open).length;
+    const focusOn = !!s.focus && (vDoc || vFlow);
+    const sent = s.sent;
+    const fdDefs = [
+      { id: 'f1', sev: 'Bloqueante', mark: '■', color: t.err, file: 'web/filters/size.ts:42', agent: 'Security reviewer (tuyo)', ref: 'AC1', text: 'El talle de la URL se inserta en el HTML sin escapar.' },
+      { id: 'f2', sev: 'Importante', mark: '▲', color: t.wait, file: 'web/filters/size.ts:88', agent: 'Reviewer', ref: 'spec §3', text: 'Los talles sin stock se ocultan; el spec dice que se muestran deshabilitados.', specWrong: true },
+      { id: 'f3', sev: 'Importante', mark: '▲', color: t.wait, file: 'web/filters/*', agent: 'Reviewer', ref: 'AC3', text: 'AC3 no tiene test: recargar con el filtro aplicado.' },
+      { id: 'f4', sev: 'Menor', mark: '·', color: t.muted, file: 'web/components/ProductList.tsx', agent: 'Reviewer', ref: 'fuera de spec', text: 'Renombró ProductGrid a ProductList. No lo pide el ticket.', outOfScope: true }
+    ];
+    const findings = fdDefs.map((f) => {
+      const st = sent[f.id];
+      const mk = (label, val) => ({ label: st === val ? '✓ ' + label : label, style: st === val ? 'background:' + t.okBg + ';color:' + t.ok + ';font-weight:600' : 'border:1px solid ' + t.border, pick: () => { const x = Object.assign({}, this.st().sent); x[f.id] = val; set({ sent: x }); } });
+      const actions = f.outOfScope ? [mk('Revertir', 'dev'), mk('Aceptar el cambio', 'ok')] : [mk('Mandar al dev', 'dev'), f.specWrong ? mk('El spec está mal', 'spec') : mk('Descartar con motivo', 'no')];
+      return { diff: () => set({ term: 'diff', drawer: true }), sev: f.sev, sevMark: f.mark, sevColor: f.color, file: f.file, agent: f.agent, ref: f.ref, text: f.text, actions: actions };
+    });
+    const nDev = Object.keys(sent).filter((k) => sent[k] === 'dev').length;
+
+    // QA
+    const qaAutoMode = s.qaMode === 'auto';
+    const qaRows = [
+      { ac: 'AC1', text: 'Se manda una confirmación al email nuevo', badge: '✓ auto', badgeStyle: 'background:' + t.okBg + ';color:' + t.ok, evidence: 'api/account.email.spec.ts', links: ['log'], manual: false },
+      { ac: 'AC2', text: 'El link de confirmación vence a las 24 h', badge: '✓ auto', badgeStyle: 'background:' + t.okBg + ';color:' + t.ok, evidence: 'e2e/change-email.spec.ts', links: ['video 0:14'], manual: false },
+      qaAutoMode
+        ? { ac: 'AC3', text: 'El email viejo recibe un aviso legible', badge: 'sin cobertura', badgeStyle: 'background:' + t.chip + ';color:' + t.muted, evidence: 'Se verificó que el email se envía; no cómo se ve. Queda anotado en el PR.', links: [], manual: false }
+        : { ac: 'AC3', text: 'El email viejo recibe un aviso legible', badge: s.qaManual === 'pass' ? '✓ vos' : (s.qaManual === 'fail' ? '✗ vos' : '◐ manual'), badgeStyle: s.qaManual === 'pass' ? 'background:' + t.okBg + ';color:' + t.ok : (s.qaManual === 'fail' ? 'background:' + t.errBg + ';color:' + t.err : 'background:' + t.waitBg + ';color:' + t.wait),
+          evidence: 'El envío está testeado. Cómo se ve, no.', links: [], manual: !s.qaManual, ask: 'Mirá el aviso en los dos clientes: ¿se entiende que alguien cambió el email y cómo revertirlo?' }
+    ];
+    const qaBlocked = !qaAutoMode && s.qaManual !== 'pass';
+
+    // Agents
+    const badge = (b) => b === 'tuyo' ? 'background:' + t.accentBg + ';color:' + t.accent : 'background:' + t.chip + ';color:' + t.muted;
+    const agents = [
+      ['Spec writer', 'spec-writer.md', 'Spec', 'profundo', ['Jira + comentarios', 'linkeados', 'project.md'], 'estándar'],
+      ['Planificador', 'planner.md', 'Plan', 'profundo', ['spec.md', 'repos', 'ADRs'], 'estándar'],
+      ['Dev', 'dev.md', 'Implementar', 'estándar', ['spec.md', 'plan.md', 'conventions.md'], 'estándar'],
+      ['Reviewer', 'reviewer.md', 'Code review', 'profundo', ['spec.md', 'diff', 'conventions.md'], 'estándar'],
+      ['Security reviewer', 'security-reviewer.md', 'Code review', 'profundo', ['diff', 'security-checklist.md'], 'tuyo'],
+      ['QA', 'qa.md', 'QA', 'estándar', ['spec.md', 'AC', 'suite e2e'], 'estándar'],
+      ['PR writer', 'pr-writer.md', 'PR', 'liviano', ['decisions.md', 'review.md', 'qa.md'], 'estándar']
+    ].map((a) => ({ name: a[0], file: 'agents/' + a[1], stage: a[2], model: a[3], ctx: a[4], badge: a[5], badgeStyle: badge(a[5]) }));
+    const auto = s.auto;
+    const autoRow = (key, label, opts, notes) => ({ label: label, note: notes[auto[key]] || '', options: opts.map((o) => ({ label: o[1], on: auto[key] === o[0], style: auto[key] === o[0] ? 'background:' + t.bg + ';color:' + t.text : 'color:' + t.muted,
+      pick: () => { const a = Object.assign({}, this.st().auto); a[key] = o[0]; set({ auto: a }); } })) });
+    const autonomy = [
+      autoRow('spec', 'Spec listo', [['always', 'Pararme siempre'], ['questions', 'Solo si hay preguntas']], { always: 'Revisás cada spec antes del plan.', questions: 'Si no hay preguntas abiertas, sigue solo.' }),
+      autoRow('loop', 'Review ↔ Dev', [['0', 'Pararme cada vuelta'], ['2', 'Hasta 2 vueltas'], ['inf', 'Hasta que apruebe']], { '0': 'Ves cada hallazgo antes de que vuelva al dev.', '2': 'Un bloqueante te para siempre.', inf: 'Te avisa solo si se traba.' }),
+      autoRow('qa', 'QA', [['guided', 'Guiado'], ['auto', '100% autónomo']], { guided: 'Lo que no puede probar te lo pide como check manual.', auto: 'Lo que no puede probar queda como "sin cobertura" en el PR.' }),
+      autoRow('pr', 'Abrir el PR', [['ask', 'Preguntarme'], ['auto', 'Solo']], { ask: 'Ves la descripción antes de publicarla.', auto: 'El PR writer lo abre y te avisa.' })
+    ];
+
+    // Right panel
+    const pendDefs = isWork ? [
+      ['TE ESPERAN', [['SHOP-142', 'spec.md', 'Revisar spec v2', '2 comentarios abiertos; uno bloquea.'], ['SHOP-138', 'review.md', 'Code review: 1 bloqueante', 'Security reviewer encontró un XSS.'], ['SHOP-136', 'qa.md', 'QA: 1 check tuyo', '¿Se entiende el aviso al email viejo?']]],
+      ['PR Y CI', [['SHOP-129', 'qa.md', 'CI en rojo', 'PR #212 · 2 comentarios de review.']]],
+      ['JIRA CAMBIÓ', [['INT-77', 'spec.md', 'El PO editó AC2', 'El Spec writer ya lo está incorporando.']]],
+      ['LISTOS PARA TOMAR', [['SHOP-155', null, 'Faltan AC', 'El Spec writer puede proponerlos.'], ['INT-80', null, 'Auditoría de accesos', 'Sprint 14 · Media']]],
+      ['PROCESO', [s.proposal && !s.proposalOk ? ['flow.md', 'proyecto/flow.md', s.extProposal ? 'Propuestas al flujo (2)' : 'Propuesta al flujo', s.extProposal ? 'Del Configurador y de tu Claude Code externo.' : 'El Configurador sumó la etapa A11y.'] : null,
+        ['flow.md', 'proyecto/flow.md', 'El origen cambió', 'reviewer.md cambió en ~/.claude hace 2 días. No se aplica solo.']].filter(Boolean)]
+    ] : [];
+    const pending = pendDefs.map((sec) => ({ label: sec[0], count: sec[1].length, items: sec[1].map((x) => {
+      const d = T[x[0]];
+      if (!d) { const dt = this.dot('wait', t); return { key: x[0], label: x[2], detail: x[3], proj: 'Tienda web', dotClass: dt.cls, dotStyle: dt.style, open: () => open(x[1]) }; }
+      const dt = this.dot(sec[0] === 'JIRA CAMBIÓ' ? 'plan' : d.status, t);
+      return { key: x[0], label: x[2], detail: x[3], proj: projName[d.project], dotClass: dt.cls, dotStyle: dt.style, open: () => { const e = Object.assign({}, this.st().expanded); e[x[0]] = true; set({ expanded: e }); if (x[1]) open(x[0] + '/' + x[1]); } }; }) }));
+
+    const chainDefs = [['Spec writer', 0], ['Planificador', 1], ['Dev', 2], ['Reviewer', 3], ['Security reviewer · tuyo', 3], ['QA', 4], ['PR writer', 5]];
+    const chainNotes = { 'SHOP-142': ['v2 · te espera', '', '', '', '', '', ''], 'SHOP-138': ['v3 aprobado', 'plan A', '5/5 tareas', '3 hallazgos', '1 bloqueante', '', ''], 'SHOP-136': ['aprobado', 'plan A', '4/4', '2 vueltas', 'ok', '1 check tuyo', ''] };
+    const chain = hasTicket ? chainDefs.map((c, i) => { const done = c[1] < stage; const cur = c[1] === stage;
+      return { name: c[0], note: (chainNotes[tkKey] || [])[i] || '', mark: done ? '✓' : (cur ? '●' : '○'), color: done ? t.ok : (cur ? t.wait : t.muted), textColor: done || cur ? t.text : t.muted }; }) : [];
+    const tkFiles = hasTicket ? tk.files.map((f) => ({ name: f[0], mark: f[1], markColor: markColor(f[1]), open: () => open(tkKey + '/' + f[0]) })) : [];
+
+    // Terminal
+    const sessionDefs = phase === 'setup' ? [['setup', 'setup', 'running']]
+      : phase === 'import' ? [['learn', 'import · Tienda web', s.learnOk ? 'ok' : 'running'], ['shell', 'shell', 'plan']]
+      : phase !== 'work' ? [['shell', 'shell', 'plan']]
+      : [['config', 'configurador', 'running'], ['ext', 'claude externo · MCP', 'ok'], ['launch', 'dev · SHOP-151 (lanzando)', 'running']].filter((x) => (s.extra || []).indexOf(x[0]) >= 0)
+        .concat([['spec', 'spec · INT-77', 'running'], ['dev', 'dev · SHOP-151', 'running'], ['qa', 'qa · SHOP-136', 'wait'], ['shell', 'shell', 'plan']]);
+    const sessions = sessionDefs.map((x) => { const dt = this.dot(x[2], t); const on = s.term === x[0];
+      return { label: x[1], dotClass: dt.cls, dotStyle: dt.style, style: on ? 'background:' + t.chip + ';color:' + t.text : 'color:' + t.muted, select: () => set({ term: x[0], drawer: true }) }; });
+    const panels = (isWork ? [['problems', 'Problemas · ' + problems.length], ['diff', 'Diff'], ['log', 'Log'], ['ci', 'CI']] : []).map((x) => ({ label: x[1], style: s.term === x[0] ? 'background:' + t.chip + ';color:' + t.text : 'color:' + t.muted, select: () => set({ term: x[0], drawer: true }) }));
+    const L = (text, c) => ({ text: text, color: c || t.text });
+    const termMap = {
+      setup: [L('$ claude --version', t.muted), L('2.4.1 (Claude Code)', t.ok), L('$ gh auth status', t.muted), L('✓ Logged in to github.com as marco', t.ok), L('$ claude mcp list', t.muted),
+        s.setupDone > 2 ? L('✓ atlassian  connected', t.ok) : L('✗ atlassian  no configurado', t.err), s.setupDone > 2 ? L('Listo. Solo los agentes van a tocar Jira, por MCP.', t.muted) : L('→ "Agregar MCP" corre: claude mcp add atlassian …', t.muted)],
+      learn: [L('import · modelo liviano', t.muted), L('● Leí tienda-api/package.json, .github/workflows/ci.yml', t.muted), L('● Leí tienda-web/package.json, README.md', t.muted), L('● Write(proyecto/project.md)', t.accent), L('● Write(proyecto/conventions.md)', t.accent),
+        L('● Jira: trayendo 47 tickets abiertos de SHOP…', t.muted), s.learnOk ? L('✓ Notas confirmadas por vos.', t.ok) : L('  Esperando que confirmes project.md.', t.wait)],
+      shell: [L('~ % ▍', t.text)],
+      problems: [],
+      spec: [L('spec-writer · INT-77 · modelo profundo', t.muted), L('● Comparé el ticket con Jira: el PO editó AC2 hace 20 min.', t.muted), L('● Edit(INT-77/spec.md) §Comportamiento', t.accent), L('  + 3. Si el dominio no es de la empresa, se rechaza con un mensaje claro.', t.ok), L('● Agregué una pregunta: ¿qué pasa con cuentas ya creadas con contraseña?', t.wait)],
+      dev: [L('dev · SHOP-151 · modelo estándar', t.muted), L('● Edit(web/pages/orders.tsx)', t.accent), L('  + <DownloadButton href={exportUrl(filters)} label="Exportar CSV" />', t.ok), L('● Bash(pnpm --filter web test orders)', t.accent), L('  ✓ 14 tests', t.ok)],
+      qa: [L('qa · SHOP-136 · modelo estándar · modo guiado', t.muted), L('● Bash(pnpm test api/account)', t.accent), L('  ✓ 23 tests', t.ok), L('● Bash(pnpm e2e change-email)', t.accent), L('  ✓ 1 test · video guardado', t.ok), L('● AC3 no se puede verificar solo: armé el check manual con 2 capturas.', t.wait)],
+      diff: [L('SHOP-138 · web/filters/size.ts', t.muted), L('@@ 40,6 @@', t.muted), L('-  el.innerHTML = `Talle ${talle}`', t.err), L('+  el.innerHTML = `Talle ${params.get("talle")}`   ← hallazgo bloqueante', t.ok), L('@@ 86,4 @@', t.muted), L('-  sizes.map(renderSize)', t.err), L('+  sizes.filter(s => s.stock > 0).map(renderSize)   ← contradice spec §3', t.ok)],
+      log: [L('10:31  spec-writer  SHOP-142 v2 listo · 11k tokens', t.muted), L('10:40  reviewer     SHOP-138 vuelta 1 · 3 hallazgos', t.muted), L('10:41  security     SHOP-138 · 1 bloqueante → te para', t.wait), L('10:47  qa           SHOP-136 · 2/3 AC solos', t.muted)],
+      config: vProcess ? [L('configurador · modelo profundo', t.muted), L('● devharness.import_process("~/.claude")', t.accent), L('  Leí skills/ticket2/SKILL.md: 6 fases, estado en disco por ticket.', t.text), L('  Leí 11 agentes en agents/. Mapeé 9 a etapas; em y devops no son etapas.', t.text),
+          L('  "cerrar" no tiene agente: propongo pr-writer.md del IDE.', t.wait), L('  Nada se copia hasta que confirmes arriba.', t.muted)]
+        : (s.skDraft && !s.skCard) ? [L('configurador · modelo profundo', t.muted), L('› mostrame el flujo de Tienda web', t.text), L('● devharness.get_flow()', t.accent), L('  6 etapas, 9 agentes. Abrí flow.md arriba.', t.text)]
+        : [L('configurador · modelo profundo', t.muted), L(s.skCard === 'anyway' ? '› sumá A11y después de QA y además cambiá el preset de QA para que use Playwright' : '› sumá un paso de accesibilidad después de QA, solo si el diff toca web/', t.text), L('● devharness.get_flow()', t.accent), L('● devharness.list_agents()  → no hay agente de a11y', t.accent),
+          L('● devharness.propose_agent("a11y-reviewer.md", modelo: estándar, contexto: WCAG, design system)', t.accent), L('● devharness.propose_flow_change(agregar "A11y" después de QA, si: web/**, modo: guiado)', t.accent), L('  Propuesta lista: la ves arriba en flow.md.', s.proposalOk ? t.muted : t.wait), s.proposalOk ? L('✓ Aprobada por vos. flow.md v4.', t.ok) : L('', t.muted)],
+      ext: [L('~/code/tienda-web % claude', t.muted), L('> en Tienda web, que no se abra el PR si baja la cobertura de tests', t.text), L('● devharness.get_flow("Tienda web")', t.accent), L('● devharness.propose_gate(stage: "PR", condición: "cobertura no baja")', t.accent),
+        L('  Listo: el cambio quedó como propuesta en el IDE. Lo tenés que aprobar ahí.', t.text)],
+      launch: launchByEngine.claude.map((x) => ({ text: x.text, color: x.color })).concat([L('✓ preset: 3 skills · 2 plugins · MCP devharness, atlassian, github', t.ok), L('✓ contexto: spec.md, plan.md, conventions.md', t.ok), L('● Arrancando tarea 3 de 5…', t.muted)]),
+      ci: [L('SHOP-129 · PR #212 · e2e', t.muted), L('✗ checkout-coupon.spec.ts › aplica cupón por categoría', t.err), L('  expected 899.10, received 899.1', t.muted)]
+    };
+    const termLines = termMap[s.term] || termMap.shell;
+    const skDraftShow = !!s.skDraft && !s.skCard && s.term === 'config';
+    const termInput = !skDraftShow && ['setup', 'shell', 'spec', 'dev', 'qa', 'learn', 'config', 'ext'].indexOf(s.term) >= 0;
+    const placeholders = { setup: 'Escribí un comando', shell: 'Shell en ~/code', learn: 'Decile algo al agente de importación', spec: 'Escribile al spec-writer de INT-77', dev: 'Escribile al dev de SHOP-151', qa: 'Escribile al QA de SHOP-136', config: 'Pedile un cambio al proceso, a los agentes o al preset', ext: 'Tu Claude Code de siempre, conectado por MCP' };
+
+    const crumb = vDiff ? 'Tienda web / ' + id.slice(6) + ' / cambios' : id === '@welcome' ? 'Bienvenida' : id === '@new' ? 'Turnos / nuevo proyecto' : id === '@import' ? 'Importar' : (specialTabs[id] ? 'Tienda web / ' + specialTabs[id].toLowerCase() : (hasTicket ? projName[tk.project] + ' / ' + id : (id.indexOf('proyecto/') === 0 ? 'Tienda web / ' + id : id)));
+    const pendingCount = isWork ? pending.reduce((n, sec) => n + sec.count, 0) : false;
+
+    return {
+      t: t, isWork: isWork, crumb: crumb, projects: projects, noProjects: phase === 'setup' || phase === 'start', tabs: tabs,
+      hasTicket: hasTicket, noTicket: !hasTicket, tk: tk, steps: steps,
+      vSetup: vSetup, vStart: vStart, vImport: vImport, vCreate: vCreate, vDoc: vDoc, vReview: vReview, vQa: vQa, vAgents: vAgents,
+      setupSteps: setupSteps, startOpts: startOpts, wiz: wiz, doc: docv,
+      goStart: () => set({ tabs: (this.st().tabs.indexOf('@welcome') >= 0 ? this.st().tabs : this.st().tabs.concat(['@welcome'])), active: '@welcome', phase: this.st().phase === 'setup' ? 'start' : this.st().phase }),
+      goImport: () => set({ tabs: ['@welcome', '@import'], active: '@import', phase: 'start' }),
+      goCreate: () => set({ phase: 'create', tabs: ['@new'], active: '@new', wiz: 0 }),
+      doImport: () => set({ phase: 'import', tabs: ['proyecto/project.md'], active: 'proyecto/project.md', term: 'learn', drawer: true, learnOk: false }),
+      findings: findings, sendLabel: nDev ? 'Mandar ' + nDev + ' al agente dev' : 'Mandar al agente dev', sendToDev: () => {}, showDiff: () => set({ term: 'diff', drawer: true }),
+      qaRows: qaRows, qaIsGuided: !qaAutoMode, qaIsAuto: qaAutoMode,
+      qaGuidedStyle: !qaAutoMode ? 'background:' + t.bg + ';color:' + t.text : 'color:' + t.muted, qaAutoStyle: qaAutoMode ? 'background:' + t.bg + ';color:' + t.text : 'color:' + t.muted,
+      qaGuided: () => set({ qaMode: 'guided' }), qaAuto: () => set({ qaMode: 'auto' }), qaPass: () => set({ qaManual: 'pass' }), qaFail: () => set({ qaManual: 'fail' }),
+      qaExplain: qaAutoMode ? '100% autónomo: el agente prueba lo que puede; lo que no, queda como "sin cobertura" en el PR y no te frena.' : 'Guiado: el agente prueba lo que puede solo y lo que no, te lo arma como un check manual con evidencia.',
+      qaBlocked: qaBlocked, qaPrLabel: qaBlocked ? (s.qaManual === 'fail' ? 'Volver al dev con el check fallado' : 'Pasar a PR · falta tu check') : 'Pasar a PR',
+      qaPrStyle: qaBlocked && s.qaManual !== 'fail' ? 'background:' + t.chip + ';color:' + t.muted + ';cursor:not-allowed' : 'background:' + t.accent + ';color:' + t.onAccent,
+      agents: agents, autonomy: autonomy, openAgents: () => { if (this.st().phase === 'work') open('@agents'); },
+      openMcp: () => { if (this.st().phase === 'work') open('@mcp'); },
+      vProcess: vProcess, vFlow: vFlow, vPreset: vPreset, vMcp: vMcp,
+      procSources: procSources, procMap: procMap, procLoose: procLoose, procAck: !!s.procAck, procCopied: !!s.procCopied, procBlocked: procBlocked,
+      toggleAck: () => set({ procAck: !this.st().procAck }), doCopy: () => { const c = this.st(); if (c.procAck && !c.procCopied) set({ procCopied: true }); },
+      procBtnLabel: s.procCopied ? 'Copiado' : 'Copiar a este proyecto',
+      procBtnStyle: s.procCopied ? 'background:' + t.okBg + ';color:' + t.ok : (s.procAck ? 'background:' + t.accent + ';color:' + t.onAccent : 'background:' + t.chip + ';color:' + t.muted + ';cursor:not-allowed'),
+      openFlow: () => open('proyecto/flow.md'),
+      flowIsFlow: s.flowView === 'flow', flowIsMd: s.flowView === 'md', flowFlowStyle: seg(s.flowView === 'flow'), flowMdStyle: seg(s.flowView === 'md'),
+      flowAsFlow: () => set({ flowView: 'flow' }), flowAsMd: () => set({ flowView: 'md' }),
+      flowStages: flowStages, fsel: fsel, flowMd: flowMd, proposalOpen: !!s.proposal && !s.proposalOk, proposalOk: !!s.proposalOk,
+      approveProposal: () => set({ proposalOk: true }),
+      askConfigurator: () => { const c = this.st(); const ex = (c.extra || []).indexOf('config') >= 0 ? c.extra : ['config'].concat(c.extra || []); set({ extra: ex, term: 'config', drawer: true }); },
+      presetEngines: presetEngines, presetSections: presetSections, presetLaunch: launchByEngine[s.presetEngine],
+      presetIsLayer: !s.presetIso, presetIsIso: !!s.presetIso, presetLayerStyle: seg(!s.presetIso), presetIsoStyle: seg(!!s.presetIso),
+      presetLayer: () => set({ presetIso: false }), presetIsolate: () => set({ presetIso: true }),
+      presetBaseNote: s.presetIso ? 'El CLI arranca solo con lo del proyecto: tus skills y plugins globales no se cargan. Útil para que todo el equipo tenga lo mismo.' : 'El CLI carga tu configuración de siempre y el preset suma lo del proyecto encima.',
+      showLaunch: () => { const c = this.st(); const ex = (c.extra || []).indexOf('launch') >= 0 ? c.extra : ['launch'].concat(c.extra || []); set({ extra: ex, term: 'launch', drawer: true }); },
+      mcpConnect: mcpConnect, mcpClients: mcpClients, mcpTools: mcpTools,
+      vSkLib: vSkLib, vSkProj: vSkProj, vSkImport: vSkImport,
+      skList: skList, skSel: skSel, skStarters: skStarters, skPurposes: skPurposes, skPreview: skPreview, skProject: skProject, skActive: skActive, skImportMap: skImportMap,
+      openSkLib: () => { if (this.st().phase === 'work') open('@sidekicks'); }, openSkImport: () => open('@skimport'), openSkProj: () => open('@skproj'),
+      rSidekick: s.right === 'sidekick', rSkStyle: s.right === 'sidekick' ? 'color:' + t.text + ';box-shadow:inset 0 -2px 0 ' + t.accent : 'color:' + t.muted,
+      showSidekick: () => set({ right: 'sidekick' }), skTabDot: s.skDraft && !s.skCard ? '#f0a64b' : t.muted,
+      skCardShow: !!s.skDraft && !s.skCard, skCardDone: s.skCard ? skDone[s.skCard] : false, skDraftShow: skDraftShow,
+      skUse: () => set({ skCard: 'used' }), skEdit: () => set({ skCard: 'edited' }), skAnyway: () => set({ skCard: 'anyway' }),
+      skAck: !!s.skAck, skImported: !!s.skImported, toggleSkAck: () => set({ skAck: !this.st().skAck }),
+      doSkImport: () => { const c = this.st(); if (c.skAck && !c.skImported) set({ skImported: true }); },
+      skImportBtnLabel: s.skImported ? 'Creado' : 'Crear sidekick desde el coach',
+      skImportBtnStyle: s.skImported ? 'background:' + t.okBg + ';color:' + t.ok : (s.skAck ? 'background:' + t.accent + ';color:' + t.onAccent : 'background:' + t.chip + ';color:' + t.muted + ';cursor:not-allowed'),
+      focusOn: focusOn, focusBlocks: focusBlocks, focusName: id, focusFont: 'Inter,-apple-system,BlinkMacSystemFont,sans-serif',
+      vDiff: vDiff, diff: diffv, diffIsInline: s.diffView !== 'side', diffIsSide: s.diffView === 'side', diffInlineStyle: seg(s.diffView !== 'side'), diffSideStyle: seg(s.diffView === 'side'),
+      diffInline: () => set({ diffView: 'inline' }), diffSide: () => set({ diffView: 'side' }),
+      tlShow: timeline.length > 0, tlOpen: tlOpen, tlChev: tlOpen ? 'rotate(90deg)' : 'none', tlFile: tlKey.split('/').pop(), timeline: timeline, toggleTl: () => set({ tlOpen: !(this.st().tlOpen !== false) }),
+      problemsShow: s.term === 'problems' && s.drawer, problems: problems, probErr: probErr, probWarn: probWarn,
+      probSummary: problems.length ? probErr + ' errores · ' + probWarn + ' avisos · clic para ir al archivo' : 'Sin problemas.',
+      showProblems: () => set({ term: 'problems', drawer: true }),
+      cmdOpen: !!s.cmd, cmdGroups: cmdGroups, cmdEmpty: cmdFlat.length === 0, cmdQ: s.cmdQ || '',
+      openPalette: () => set({ cmd: true, cmdQ: '', cmdSel: 0, focus: false }), closePalette: () => set(cmdClose),
+      cmdType: (e) => set({ cmdQ: (e && e.target && e.target.value) || '', cmdSel: 0 }),
+      cmdMove: (d) => set({ cmdSel: Math.max(0, Math.min((this.st().cmdSel || 0) + d, cmdFlat.length - 1)) }),
+      cmdRun: () => { const x = cmdFlat[cmdSel]; if (x) run(x.fn)(); },
+      focusHasComments: vDoc && (docv.comments || []).length > 0, focusComments: !!s.focusComments && vDoc,
+      focusCommentsLabel: (s.focusComments ? 'Ocultar comentarios' : 'Comentarios') + (nOpenComments ? ' · ' + nOpenComments + ' abiertos' : ''),
+      toggleFocusComments: () => set({ focusComments: !this.st().focusComments }),
+      focusApprove: vDoc && !!docv.approveLabel && docv.approveLabel !== 'Editar', focusApproveHint: docv.blocked ? 'Quedan comentarios abiertos: los ves en "Comentarios".' : 'Podés aprobar sin salir.',
+      focusBarOpacity: '0.75', focusWaiting: isWork ? 'cuando salgas: ' + pending.reduce((n, sec) => n + sec.count, 0) + ' cosas en Pendiente' : 'nada esperando',
+      enterFocus: () => set({ focus: true }), exitFocus: () => set({ focus: false }),
+      rPending: s.right === 'pending', rTicket: s.right === 'ticket',
+      rPendStyle: s.right === 'pending' ? 'color:' + t.text + ';box-shadow:inset 0 -2px 0 ' + t.accent : 'color:' + t.muted,
+      rTickStyle: s.right === 'ticket' ? 'color:' + t.text + ';box-shadow:inset 0 -2px 0 ' + t.accent : 'color:' + t.muted,
+      showPending: () => set({ right: 'pending' }), showTicket: () => set({ right: 'ticket' }),
+      pending: pending, noPending: !isWork, pendingCount: pendingCount, chain: chain, tkFiles: tkFiles,
+      agentsInFlight: isWork ? '3 de 4' : (phase === 'import' ? '1 de 4' : '0 de 4'),
+      sessions: sessions, panels: panels, termLines: termLines, termInput: termInput, termPlaceholder: placeholders[s.term] || '',
+      drawerOpen: s.drawer, drawerH: s.drawer ? (s.max ? '520px' : '210px') : '32px', drawerChev: s.drawer ? 'rotate(180deg)' : 'none',
+      toggleDrawer: () => set({ drawer: !this.st().drawer }), toggleMax: () => set({ max: !this.st().max, drawer: true }),
+      jiraStatus: isWork ? 'Jira hace 12 min' : (phase === 'setup' && s.setupDone <= 2 ? 'Jira ✗' : 'Jira ✓'), ghStatus: 'gh ✓',
+      otherTheme: s.theme === 'dark' ? 'claro' : 'oscuro', toggleTheme: () => set({ theme: this.st().theme === 'dark' ? 'light' : 'dark' })
+    };
+  }
+}
+
+const App = (() => {
+  const KEY = 'devharness-proto-v2';
+  const stage = document.getElementById('stage');
+  const tplRoot = document.getElementById('ide-tpl').content;
+  let comp = null, scene = 'setup', vals = null;
+  const look = (path, scope) => {
+    if (path === 'true') return true; if (path === 'false') return false;
+    if (/^-?\d+(\.\d+)?$/.test(path)) return Number(path);
+    let v = scope; for (const k of path.split('.')) { if (v == null) return undefined; v = v[k]; } return v;
+  };
+  const HOLE = /\{\{\s*([^}]+?)\s*\}\}/g;
+  const single = (s) => { const m = /^\{\{\s*([^}]+?)\s*\}\}$/.exec(s); return m ? m[1] : null; };
+  const interp = (s, scope) => s.replace(HOLE, (_, p) => { const v = look(p, scope); return v == null || v === false ? '' : String(v); });
+  const BOOL = { checked: 1, disabled: 1, hidden: 1, selected: 1, readonly: 1 };
+  function build(node, scope, out) {
+    if (node.nodeType === 3) { out.appendChild(document.createTextNode(node.data.indexOf('{{') >= 0 ? interp(node.data, scope) : node.data)); return; }
+    if (node.nodeType !== 1) return;
+    const tag = node.localName;
+    if (tag === 'sc-if') { if (look(single(node.getAttribute('value')) || '', scope)) for (const c of node.childNodes) build(c, scope, out); return; }
+    if (tag === 'sc-for') {
+      const list = look(single(node.getAttribute('list')) || '', scope) || [];
+      const as = node.getAttribute('as') || 'item';
+      list.forEach((item, i) => { const s = Object.create(scope); s[as] = item; s[as + 'Index'] = i; for (const c of node.childNodes) build(c, s, out); });
+      return;
+    }
+    const el = node.namespaceURI && node.namespaceURI !== 'http://www.w3.org/1999/xhtml' ? document.createElementNS(node.namespaceURI, tag) : document.createElement(tag);
+    for (const a of node.attributes) {
+      const n = a.name, v = a.value;
+      if (n.indexOf('hint-') === 0) continue;
+      const one = single(v);
+      if (/^on[a-z]+$/.test(n)) {
+        const fn = one && look(one, scope); if (typeof fn !== 'function') continue;
+        const textual = tag === 'input' && (node.getAttribute('type') || 'text') === 'text';
+        el.addEventListener(n === 'onchange' ? (textual ? 'input' : 'change') : n.slice(2), (e) => { fn(e); });
+        continue;
+      }
+      if (BOOL[n]) { const on = one ? !!look(one, scope) : true; if (on) { el.setAttribute(n, ''); if (n === 'checked') el.checked = true; } continue; }
+      if (one) { const val = look(one, scope); if (val == null) continue; el.setAttribute(n, String(val)); continue; }
+      el.setAttribute(n, v.indexOf('{{') >= 0 ? interp(v, scope) : v);
+    }
+    for (const c of node.childNodes) build(c, scope, el);
+    out.appendChild(el);
+  }
+  function save() { try { localStorage.setItem(KEY, JSON.stringify({ scene, state: comp.state })); } catch (e) {} }
+  function render() {
+    vals = comp.renderVals();
+    const old = stage.querySelectorAll('*'); const scrolls = [];
+    old.forEach((el, i) => { if (el.scrollTop || el.scrollLeft) scrolls.push([i, el.scrollTop, el.scrollLeft]); });
+    // Inputs are uncontrolled: keep their text, caret and focus across the full re-render.
+    const keyOf = (el) => el.getAttribute('data-cmd-input') ? 'cmd' : el.getAttribute('placeholder') || '';
+    const inputs = {}; stage.querySelectorAll('input[type="text"]').forEach((el) => { inputs[keyOf(el)] = el.value; });
+    const act = document.activeElement; const focusKey = act && act.tagName === 'INPUT' && stage.contains(act) ? keyOf(act) : null;
+    const caret = focusKey !== null ? act.selectionStart : null;
+    const frag = document.createDocumentFragment();
+    for (const c of tplRoot.childNodes) build(c, vals, frag);
+    stage.replaceChildren(frag);
+    const now = stage.querySelectorAll('*');
+    scrolls.forEach(([i, t, l]) => { if (now[i]) { now[i].scrollTop = t; now[i].scrollLeft = l; } });
+    stage.querySelectorAll('input[type="text"]').forEach((el) => {
+      const k = keyOf(el); if (inputs[k] != null) el.value = inputs[k];
+      if (k === focusKey) { el.focus(); try { el.setSelectionRange(caret, caret); } catch (e) {} }
+    });
+    const cmdIn = stage.querySelector('[data-cmd-input]');
+    if (cmdIn && document.activeElement !== cmdIn) cmdIn.focus();
+    document.documentElement.dataset.ide = comp.st().theme;
+    save(); menu.mark();
+  }
+  function go(s, state) { scene = s; comp = new Component({ scene: s, theme: comp ? comp.st().theme : 'dark' }); comp.state = state || null; render(); }
+  function fit() { const w = window.innerWidth, h = window.innerHeight; const k = Math.min(w / 1440, h / 900); stage.style.transform = 'translate(' + Math.max(0, (w - 1440 * k) / 2) + 'px,' + Math.max(0, (h - 900 * k) / 2) + 'px) scale(' + k + ')'; }
+  const menu = (() => {
+    const btn = document.getElementById('demo-btn'), pane = document.getElementById('demo-pane');
+    let html = '<div class="dm-head"><b>Demo</b><span>Saltá a cualquier pantalla. El estado sigue mientras navegás dentro del IDE.</span></div><button class="dm-reset" data-go="setup">Empezar desde cero</button>';
+    SCENES.forEach(([g, items]) => { html += '<div class="dm-group">' + g + '</div>'; items.forEach(([id, label]) => { html += '<button class="dm-item" data-go="' + id + '">' + label + '</button>'; }); });
+    html += '<div class="dm-foot">⌘K paleta · ⌘. focus mode · ⇧⌘M problemas · Esc sale · el tema se cambia desde la barra de estado</div>';
+    pane.innerHTML = html;
+    const close = () => { pane.hidden = true; btn.setAttribute('aria-expanded', 'false'); };
+    btn.addEventListener('click', (e) => { e.stopPropagation(); pane.hidden = !pane.hidden; btn.setAttribute('aria-expanded', String(!pane.hidden)); });
+    pane.addEventListener('click', (e) => { const b = e.target.closest('[data-go]'); if (b) { go(b.dataset.go); close(); } e.stopPropagation(); });
+    document.addEventListener('click', close);
+    return { close, mark: () => pane.querySelectorAll('.dm-item').forEach((b) => b.classList.toggle('on', b.dataset.go === scene)) };
+  })();
+  document.addEventListener('keydown', (e) => {
+    if (!vals) return;
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); menu.close(); if (vals.cmdOpen) vals.closePalette(); else vals.openPalette(); return; }
+    if (vals.cmdOpen) {
+      if (e.key === 'Escape') { e.preventDefault(); vals.closePalette(); }
+      else if (e.key === 'ArrowDown') { e.preventDefault(); vals.cmdMove(1); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); vals.cmdMove(-1); }
+      else if (e.key === 'Enter') { e.preventDefault(); vals.cmdRun(); }
+      return;
+    }
+    if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'm') { e.preventDefault(); vals.showProblems && vals.showProblems(); return; }
+    if ((e.metaKey || e.ctrlKey) && e.key === '.') { e.preventDefault(); if (!vals.focusOn && vals.enterFocus && (vals.vDoc || vals.vFlow)) vals.enterFocus(); return; }
+    if (e.key !== 'Escape') return;
+    if (!document.getElementById('demo-pane').hidden) { menu.close(); return; }
+    if (vals.focusOn && typeof vals.exitFocus === 'function') vals.exitFocus();
+  });
+  window.addEventListener('resize', fit);
+  let saved = null; try { saved = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) {}
+  fit();
+  if (saved && saved.scene) go(saved.scene, saved.state); else go('setup');
+  return { render, go };
+})();
+</script>

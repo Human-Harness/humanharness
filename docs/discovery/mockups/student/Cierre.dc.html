@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Cierre de sesión</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#5E4B0A}a:hover{color:#22211E}
+.th{font-family:"Geist",system-ui,sans-serif;--bd:radial-gradient(60% 50% at 0% 40%,#CFE8D2 0%,transparent 70%),radial-gradient(60% 40% at 70% 0%,#BFE0EA 0%,transparent 70%),radial-gradient(60% 50% at 100% 100%,#F8F0C8 0%,transparent 70%),#EEF3EC;--sh:#F7F6F1;--pn:#EFEEE8;--fd:#FBFAF7;--ln:#E4E2DA;--tx:#22211E;--mu:#6B6860;--ac:#F3D54E;--on:#2A2410;--so:#FBF0C0;--st:#5E4B0A;--m1:#6E9A62;--m2:#B9D3A8;--m3:#E8C04A;--m4:#9EC3D6;--m5:#E4E2DA;--shadow:0 1px 2px rgba(40,40,30,.04),0 24px 60px rgba(40,50,40,.08)}
+.th.dark{--bd:radial-gradient(60% 50% at 0% 40%,#1C3326 0%,transparent 70%),radial-gradient(60% 40% at 70% 0%,#173039 0%,transparent 70%),radial-gradient(60% 50% at 100% 100%,#3A3418 0%,transparent 70%),#121614;--sh:#1D1D1A;--pn:#252522;--fd:#2C2C28;--ln:#34332E;--tx:#ECEAE3;--mu:#A6A397;--ac:#E9C944;--on:#241E08;--so:#3A3318;--st:#F0D873;--m1:#8DBB7E;--m2:#4D6B44;--m3:#C9A43A;--m4:#5E8597;--m5:#34332E;--shadow:0 1px 2px rgba(0,0,0,.3),0 24px 60px rgba(0,0,0,.35)}
+.th a{color:var(--st)}
+.th h1,.th h2,.th h3{margin:0;letter-spacing:-.02em;font-weight:500}
+.th p,.th .me,.th .prose{font-family:"Newsreader",Georgia,serif}
+.th p{margin:0}
+.stage{width:1440px;height:900px;background:var(--bd);padding:20px;box-sizing:border-box;display:flex}
+.sheet{flex:1;min-width:0;background:var(--sh);color:var(--tx);border-radius:28px;box-shadow:var(--shadow);display:flex;gap:28px;padding:26px 32px 26px 22px;overflow:hidden}
+.rail{display:flex;flex-direction:column;gap:10px;align-items:center}
+.ib{width:44px;height:44px;border-radius:12px;border:0;background:var(--pn);color:var(--tx) !important;display:flex;align-items:center;justify-content:center;cursor:pointer;text-decoration:none}
+.ib.on{background:var(--ac);color:var(--on) !important}
+.main{flex:1;min-width:0;display:flex;flex-direction:column;gap:22px}
+.crumb{font-size:15px;color:var(--mu) !important;text-decoration:none}
+.k{font-size:13px;color:var(--mu);margin:0;font-weight:500}
+.btn{font:inherit;font-size:15px;font-weight:500;padding:11px 20px;border-radius:12px;border:0;background:var(--pn);color:var(--tx) !important;cursor:pointer;text-decoration:none;display:inline-block}
+.btn.p{background:var(--ac);color:var(--on) !important}
+.btn.s{background:var(--so);color:var(--st) !important}
+.btn.f{background:var(--fd)}
+.btn.g{background:transparent;color:var(--mu) !important;text-decoration:underline;text-underline-offset:4px}
+.pill{font-size:13px;padding:5px 12px;border-radius:999px;background:var(--pn);color:var(--mu)}
+.pill.done{background:var(--so);color:var(--st)}
+.pill.cur{background:var(--ac);color:var(--on);font-weight:500}
+.panel{background:var(--pn);border-radius:20px;padding:20px 22px;display:flex;flex-direction:column;gap:12px;color:var(--tx);text-decoration:none}
+.o{font:inherit;text-align:left;font-size:15px;padding:11px 14px;border-radius:12px;border:1.5px solid transparent;background:var(--pn);color:var(--tx);cursor:pointer}
+.o.sel{border-color:var(--ac);background:var(--so);color:var(--st)}
+.in{font:inherit;font-size:15px;padding:11px 14px;border-radius:12px;border:0;background:var(--pn);color:var(--tx);min-width:0}
+.panel .in,.panel .o{background:var(--fd)}
+.in::placeholder{color:var(--mu)}
+.in:focus{outline:2px solid var(--ac);outline-offset:1px}
+.me{align-self:flex-end;max-width:420px;background:var(--pn);border-radius:16px 16px 4px 16px;padding:11px 16px;font-size:17px;line-height:1.45}
+.prose{font-size:18px;line-height:1.55}
+.bar{display:flex;height:8px;border-radius:4px;overflow:hidden;gap:2px}
+.lg{display:flex;gap:14px;font-size:13px;color:var(--mu);flex-wrap:wrap}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:1px}
+.sr{position:absolute;left:-9999px}
+.note{display:flex;gap:10px;align-items:flex-start;font-size:14px;line-height:1.5;padding:10px 14px;border-radius:12px;background:var(--fd)}
+.mk{flex:none;width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:var(--on)}
+.fc{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.fc .in{font-family:"Newsreader",Georgia,serif;font-size:16px}
+</style>
+</helmet>
+<div class="th {{mode}}">
+<div class="stage">
+<div class="sheet" style="flex-direction:column;gap:20px;padding:24px 32px">
+  <header style="display:flex;align-items:center;gap:14px">
+    <a class="crumb" href="Tema.dc.html">‹ Fracciones</a>
+    <ol aria-label="Partes de la sesión" style="display:flex;gap:6px;margin:0 0 0 10px;padding:0;list-style:none">
+      <li class="pill done">✓ Calentamiento</li>
+      <li class="pill done">✓ Bloque principal</li>
+      <li class="pill cur">Cierre</li>
+    </ol>
+    <div style="flex:1"></div>
+    <span style="font-size:14px;color:var(--mu)">18 de 20 min</span>
+  </header>
+  <div style="flex:1;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;min-height:0">
+    <section class="panel" aria-labelledby="rs" style="padding:24px">
+      <h2 id="rs" style="font-size:22px">Tu resumen de hoy</h2>
+      <p style="font-size:16px;color:var(--mu)">Escribilo vos, con tus palabras. Yo solo marco lo que hay que corregir.</p>
+      <label for="res" class="sr">Resumen</label>
+      <textarea id="res" class="in" rows="6" style="font-family:'Newsreader',Georgia,serif;font-size:18px;line-height:1.6;padding:14px 16px;resize:none">Dos fracciones son equivalentes si valen lo mismo. Para hacer una equivalente multiplico arriba y abajo por el mismo número. Ejemplo: 2/5 = 6/15. También se puede dividir.</textarea>
+      <div class="note"><span class="mk" style="background:var(--m1);color:#fff">✓</span><span>Correcto y completo. Usaste tu propio ejemplo: bien.</span></div>
+      <div class="note"><span class="mk" style="background:var(--m3)">?</span><span>"También se puede dividir": es cierto, pero solo si los dos números se pueden dividir por el mismo. Eso es "Simplificar", que vemos después. ¿Lo aclarás o lo dejás para ese tema?</span></div>
+    </section>
+    <section class="panel" aria-labelledby="fl" style="padding:24px">
+      <h2 id="fl" style="font-size:22px">Tus flashcards</h2>
+      <p style="font-size:16px;color:var(--mu)">Una pregunta de un lado, la respuesta del otro. Van a tu repaso.</p>
+      <div class="fc"><span class="k">Pregunta</span><span class="k">Respuesta</span></div>
+      <div class="fc"><input class="in" aria-label="Pregunta 1" value="¿Qué son fracciones equivalentes?"><input class="in" aria-label="Respuesta 1" value="Las que valen lo mismo"></div>
+      <div class="note"><span class="mk" style="background:var(--m1);color:#fff">✓</span><span>Bien.</span></div>
+      <div class="fc"><input class="in" aria-label="Pregunta 2" value="Una equivalente a 1/4"><input class="in" aria-label="Respuesta 2" value="2/4"></div>
+      <div class="note"><span class="mk" style="background:var(--tx);color:var(--sh)">✗</span><span>2/4 es la mitad, no un cuarto. Probá multiplicando arriba <strong>y abajo</strong>.</span></div>
+      <div class="fc"><input class="in" aria-label="Pregunta 3" placeholder="Pregunta"><input class="in" aria-label="Respuesta 3" placeholder="Respuesta"></div>
+      <div style="flex:1"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn g">Saltear el cierre</button><a class="btn p" href="FinSesion.dc.html">Guardar y terminar</a></div>
+    </section>
+  </div>
+</div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":false},"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+renderVals() { return { mode: this.props.dark ? 'dark' : 'light' }; }
+}
+</script>
+</body>
+</html>

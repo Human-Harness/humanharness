@@ -751,6 +751,17 @@
     "chipApproved": "Approved",
     "chipStale": "Changed since approval"
   },
+  "focus": {
+    "enter": "Focus",
+    "leave": "Leave focus",
+    "label": "Focus mode",
+    "summary": "While you were reading: {{items}}.",
+    "waiting": "the task is waiting for you",
+    "quota": "your plan's limit ran out",
+    "proposal_one": "the AI proposed to move to another part",
+    "proposal_other": "the AI proposed to move to another part {{count}} times",
+    "marker": "Comment: {{text}}"
+  },
   "errors": {
     "engine-not-installed": "I can't find {{engine}} on this computer.",
     "session-expired": "Your {{engine}} session ended. Sign in again to continue.",

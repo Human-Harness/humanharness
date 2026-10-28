@@ -30,6 +30,7 @@ import { DocumentContext, type DocumentHost } from "./documents-context";
 import { DocumentReader, type ReaderTarget } from "./DocumentReader";
 import { ErrorCard, isFixable, problemError } from "./ErrorCard";
 import { FlowSide } from "./FlowSide";
+import { type Paused, NO_PAUSED, countPaused, pausedSummary } from "./focus-notices";
 import { HistoryPanel } from "./HistoryPanel";
 import { pruneDrafts } from "./InputForm";
 import { type BlockActions, type BlockProps, type InputContext, Message } from "./Message";
@@ -141,6 +142,11 @@ export function ChatView({
     setReader({ ...target, nonce: ++readerOpens.current });
   }, []);
   const [readerFull, setReaderFull] = useState(false);
+  /** Focus mode (review spec §6.2): the reader alone, in one quiet column; the turn's end and its notices wait. */
+  const [focus, setFocus] = useState(false);
+  const focusRef = useRef(false);
+  /** What focus mode held back, told in one line on leaving. */
+  const paused = useRef<Paused>(NO_PAUSED);
   const [readerPrefs, setReaderPrefs] = useState<ReaderPrefs>(state.config.reader ?? {});
   /** Card paths that are no longer there (struck through). */
   const [missingDocs, setMissingDocs] = useState<ReadonlySet<string>>(() => new Set());
@@ -306,6 +312,31 @@ export function ChatView({
     };
   }, [client]);
 
+  const setFocusMode = useCallback(
+    (on: boolean, path?: string) => {
+      const was = focusRef.current;
+      focusRef.current = on;
+      setFocus(on);
+      client.focus.set(on && path ? { on: true, path } : { on: false });
+      if (!on && was) {
+        const line = pausedSummary(t, paused.current);
+        paused.current = NO_PAUSED;
+        if (line) dispatch({ type: "notice", text: line, at: new Date().toISOString() });
+      }
+    },
+    [client, t],
+  );
+  // `client.documents.focus(path)` from a harness view: only where the review exists (D0), never on the setup screen.
+  useEffect(
+    () =>
+      client.documents.onFocus((p) => {
+        if (!state.review || slimRef.current || typeof p !== "string" || !p) return;
+        showReader({ path: p });
+        setFocusMode(true, p);
+      }),
+    [client, state.review, showReader, setFocusMode],
+  );
+
   // Flow mode, once the conversation and the tasks are known: a task still open shows its own entries.
   useEffect(() => {
     if (!flow || placed.current || !loaded || !tasksLoaded) return;
@@ -398,13 +429,27 @@ export function ChatView({
     // "Working…" is announced by the status row itself; clearing lets the final answer be announced afresh.
     if (chat.live && !wasLive.current) setAnnouncement("");
     if (!chat.live && wasLive.current) {
-      setAnnouncement(markdownToPlain(chat.entries.findLast((e) => e.role === "assistant")?.text ?? "", (id) => citationsRef.current?.known?.(id)));
-      inputRef.current?.focus();
+      if (focusRef.current) {
+        // Focus mode holds the turn's end: no composer focus, nothing read out; it is counted for the summary.
+        paused.current = countPaused(paused.current, {
+          waiting: tasks.current?.status === "waiting",
+          quota: chat.entries.at(-1)?.error?.code === "out-of-quota",
+        });
+      } else {
+        setAnnouncement(markdownToPlain(chat.entries.findLast((e) => e.role === "assistant")?.text ?? "", (id) => citationsRef.current?.known?.(id)));
+        inputRef.current?.focus();
+      }
       client.getUsage().then((u) => setEstimates(u.estimates), () => {});
       if (!chat.entries.at(-1)?.error) onTurnOk?.();
     }
     wasLive.current = Boolean(chat.live);
   }, [chat.live, chat.entries, t, client, onTurnOk]);
+
+  // A phase proposal while in focus mode waits for the summary.
+  const proposal = tasks.current?.phaseProposal;
+  useEffect(() => {
+    if (focusRef.current && proposal) paused.current = countPaused(paused.current, { proposal: true });
+  }, [proposal?.to, proposal?.reason]);
 
   /** A turn runs, is about to, or the task is saving its note (closing, or a checkpoint). */
   const blocked = (): boolean => Boolean(chat.live) || busy.current || closing || checkpoint;
@@ -898,7 +943,13 @@ export function ChatView({
   const closeReader = useCallback(() => {
     setReader(null);
     setReaderFull(false);
-  }, []);
+    if (focusRef.current) setFocusMode(false);
+  }, [setFocusMode]);
+  // A link followed in focus mode: the harness's view hears which document is read now.
+  const readerPath = reader?.path;
+  useEffect(() => {
+    if (focusRef.current && readerPath) client.focus.set({ on: true, path: readerPath });
+  }, [client, readerPath]);
   const placeholder = !flow ? t("chat.placeholder") : tasks.current ? t("flow.placeholderTask") : t("flow.placeholderStart");
 
   let preflightText = "";
@@ -995,7 +1046,9 @@ export function ChatView({
             )}
           </TopBar>
         )}
-        <div className={`hh-body${reader && !slim ? " hh-with-reader" : ""}${reader && readerFull && !slim ? " hh-reader-full" : ""}`}>
+        <div
+          className={`hh-body${reader && !slim ? " hh-with-reader" : ""}${reader && readerFull && !slim ? " hh-reader-full" : ""}${focus && reader && !slim ? " hh-focus" : ""}`}
+        >
           {flow && !slim && (
             <FlowSide
               state={state}
@@ -1301,6 +1354,8 @@ export function ChatView({
               onMissing={recheckDocs}
               review={state.review === true}
               busy={Boolean(chat.live) || closing || checkpoint}
+              focus={focus}
+              onFocus={(on) => setFocusMode(on, reader.path)}
             />
           )}
         </div>

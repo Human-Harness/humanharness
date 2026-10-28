@@ -643,6 +643,16 @@ h4.hh-md-h { font-size: 1em; font-weight: 600; color: var(--hh-slate); }
 }
 .hh-reader-full .hh-main, .hh-reader-full .hh-flow-side, .hh-reader-full .hh-side { display: none; }
 .hh-reader-full .hh-reader { flex: 1 1 auto; border-left: none; }
+/* Focus mode (review spec §6.2): focus-only classes, so a reader without review never gets them (D0). After the
+   container query: a card a margin marker opened floats over the text at any width. */
+.hh-focus > :not(.hh-reader) { display: none; }
+.hh-focus .hh-reader { flex: 1 1 auto; border-left: 0; }
+.hh-reader-focus .hh-reader-columns { position: relative; }
+.hh-reader-focus .hh-reader-doc { max-width: 68ch; }
+.hh-reader-focus .hh-review-bar { max-width: 68ch; margin: 24px auto 0; border: 1px solid var(--hh-line); border-radius: 8px; }
+.hh-reader-focus .hh-review-column { position: absolute; z-index: 3; right: 16px; top: 16px; width: 300px; max-height: 60vh; border: 1px solid var(--hh-line); border-radius: 8px; background: var(--hh-surface); }
+.hh-focus-markers { position: absolute; top: 0; right: 8px; width: 12px; }
+.hh-focus-marker { position: absolute; right: 0; width: 10px; height: 10px; padding: 0; border-radius: 50%; border: 0; background: var(--hh-review-active); }
 .hh-doc-cards { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 0; padding: 0; list-style: none; }
 .hh-doc-card { height: auto; flex-direction: column; align-items: flex-start; gap: 2px; padding: 8px 12px; text-align: left; border-radius: 8px; }
 .hh-doc-card-title { font-weight: 600; }

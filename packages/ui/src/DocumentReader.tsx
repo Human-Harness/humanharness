@@ -5,6 +5,7 @@ import { type AnswerPick, markOccurrence } from "@humanharness/harness-sdk/revie
 import type { ApproveOptions, DocumentRead, HarnessClient, ReaderPrefs, ReviewResult, ReviewSendResult, ReviewView } from "./client";
 import { ApprovedDiff } from "./ApprovedDiff";
 import { DocumentContext, type DocumentHost } from "./documents-context";
+import { FocusMarkers } from "./FocusMarkers";
 import { Markdown, documentOutline } from "./markdown";
 import { ReviewBar } from "./ReviewBar";
 import { ReviewColumn } from "./ReviewColumn";
@@ -69,6 +70,8 @@ export function DocumentReader({
   onMissing,
   review,
   busy = false,
+  focus = false,
+  onFocus,
 }: {
   client: HarnessClient;
   target: ReaderTarget;
@@ -87,6 +90,10 @@ export function DocumentReader({
   review?: boolean;
   /** A turn runs (or the task is saving its note): sending a review round waits (§5.3). */
   busy?: boolean;
+  /** Focus mode (§6.2): one quiet column, no contents list; the comment column shows only a card a margin marker picked. */
+  focus?: boolean;
+  /** Enters or leaves focus mode; absent (or without `review`): no Focus button (D0). */
+  onFocus?: (on: boolean) => void;
 }) {
   const { t, i18n } = useTranslation();
   const [doc, setDoc] = useState<DocumentRead | null>(null);
@@ -95,6 +102,8 @@ export function DocumentReader({
   const [current, setCurrent] = useState<string | null>(null);
   // The look applies at once; the caller saves it and passes it back.
   const [look, setLook] = useState<Required<ReaderPrefs>>({ font: prefs.font ?? "sans", size: prefs.size ?? "normal" });
+  // A new visit to focus mode starts with no card open.
+  useEffect(() => setPeek(null), [focus]);
   useEffect(() => setLook({ font: prefs.font ?? "sans", size: prefs.size ?? "normal" }), [prefs.font, prefs.size]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
@@ -126,6 +135,9 @@ export function DocumentReader({
   const [diffOpen, setDiffOpen] = useState(false);
   const textRef = useRef<HTMLDivElement>(null);
   const [ranges, setRanges] = useState<Map<string, Range>>(() => new Map());
+  /** In focus mode, the card a margin marker opened (the column shows only it). */
+  const [peek, setPeek] = useState<string | null>(null);
+  const inFocus = review === true && focus;
 
   useEffect(() => {
     loaded.current = null;
@@ -139,6 +151,7 @@ export function DocumentReader({
     setPick(null);
     setDraft(null);
     setDiffOpen(false);
+    setPeek(null);
     if (refused) {
       setDoc({ ok: false, reason: "outside" });
       return;
@@ -338,7 +351,9 @@ export function DocumentReader({
     else if (prefsOpen) {
       setPrefsOpen(false);
       prefsButton.current?.focus();
-    } else onClose();
+    } else if (inFocus && peek) setPeek(null);
+    else if (inFocus && onFocus) onFocus(false);
+    else onClose();
   };
 
   let body: ReactNode;
@@ -390,8 +405,37 @@ export function DocumentReader({
     );
   }
 
+  // The footer bar (§5.3, §5.4): under the columns, or in focus mode the last thing in the document column.
+  const bar = review && doc?.ok && !source && rv?.ok && (
+    <ReviewBar
+      key={path}
+      summary={rv.summary}
+      busy={busy}
+      approvedReason={rv.review?.approvals.at(-1)?.reason}
+      changesOpen={diffOpen}
+      onSend={async () => {
+        const want = path;
+        const r = await client.documents.send(want).catch((): ReviewSendResult => ({ ok: false, reason: "not-ready" }));
+        if (pathNow.current === want) loadReview();
+        return r;
+      }}
+      onApprove={async (reason, opts) => {
+        const want = path;
+        // The version shown: a document changed since is refused with "changed".
+        const o: ApproveOptions = { ...(reason !== undefined ? { reason } : {}), ...(opts?.discard ? { discard: true } : {}) };
+        const r = await client.documents.approve(want, rv.blob, o).catch((): ReviewResult => ({ ok: false, reason: "not-ready" }));
+        if (pathNow.current === want) {
+          if (r.ok) setDiffOpen(false);
+          loadReview();
+        }
+        return r;
+      }}
+      onSeeChanges={() => setDiffOpen((o) => !o)}
+    />
+  );
+
   return (
-    <aside className={`hh-reader${full ? " hh-reader-is-full" : ""}${review ? " hh-reader-reviewing" : ""}`} aria-label={t("reader.title")} onKeyDown={onKeyDown}>
+    <aside className={`hh-reader${full ? " hh-reader-is-full" : ""}${review ? " hh-reader-reviewing" : ""}${inFocus ? " hh-reader-focus" : ""}`} aria-label={t("reader.title")} onKeyDown={onKeyDown}>
       <header className="hh-reader-bar">
         <nav aria-label={t("reader.path")}>
           <ol className="hh-reader-crumbs">
@@ -415,9 +459,16 @@ export function DocumentReader({
           >
             Aa <span className="hh-sr-only">{t("reader.prefsButton")}</span>
           </button>
-          <button type="button" onClick={() => onFull(!full)}>
-            {full ? t("reader.showChat") : t("reader.fullScreen")}
-          </button>
+          {review && onFocus && (
+            <button type="button" aria-pressed={inFocus} onClick={() => onFocus(!inFocus)}>
+              {inFocus ? t("focus.leave") : t("focus.enter")}
+            </button>
+          )}
+          {!inFocus && (
+            <button type="button" onClick={() => onFull(!full)}>
+              {full ? t("reader.showChat") : t("reader.fullScreen")}
+            </button>
+          )}
           <button type="button" onClick={onClose}>
             {t("reader.close")}
           </button>
@@ -444,7 +495,7 @@ export function DocumentReader({
         )}
       </header>
       <div className="hh-reader-columns">
-        {doc?.ok && !source && (outline.length > 0 || (check && check.missing.length > 0)) && (
+        {!inFocus && doc?.ok && !source && (outline.length > 0 || (check && check.missing.length > 0)) && (
           <nav className="hh-reader-toc" aria-label={t("reader.contents")}>
             <ol>
               {outline.map((h) => (
@@ -483,6 +534,18 @@ export function DocumentReader({
           )}
           {review && diffOpen && doc?.ok && !source && <ApprovedDiff client={client} path={path} current={doc.text} />}
           <article className={`hh-reader-doc hh-reader-${look.font}${look.size === "large" ? " hh-reader-large" : ""}`}>{body}</article>
+          {inFocus && bar}
+          {inFocus && doc?.ok && !source && rv?.ok && rv.review && (
+            <FocusMarkers
+              comments={rv.review.comments}
+              ranges={ranges}
+              host={scrollRef.current}
+              onPick={(id) => {
+                setPeek(id);
+                setActive(id);
+              }}
+            />
+          )}
           {review && pick && doc?.ok && !source && (
             // The place goes through React's style (CSSOM): the CSP stays as it is.
             <div className="hh-review-pick" style={{ top: pick.top, left: pick.left }}>
@@ -504,9 +567,13 @@ export function DocumentReader({
             </div>
           )}
         </div>
-        {review && doc?.ok && !source && rv?.ok && (
+        {review && doc?.ok && !source && rv?.ok && (!inFocus || (peek !== null && rv.review)) && (
           <ReviewColumn
-            review={rv.review ?? { path, task: null, comments: [], approvals: [] }}
+            review={
+              inFocus && rv.review
+                ? { ...rv.review, comments: rv.review.comments.filter((c) => c.id === peek) }
+                : (rv.review ?? { path, task: null, comments: [], approvals: [] })
+            }
             text={doc.text}
             agent={target.agent ?? ""}
             locked={rv.summary.status === "approved"}
@@ -519,33 +586,7 @@ export function DocumentReader({
           />
         )}
       </div>
-      {review && doc?.ok && !source && rv?.ok && (
-        <ReviewBar
-          key={path}
-          summary={rv.summary}
-          busy={busy}
-          approvedReason={rv.review?.approvals.at(-1)?.reason}
-          changesOpen={diffOpen}
-          onSend={async () => {
-            const want = path;
-            const r = await client.documents.send(want).catch((): ReviewSendResult => ({ ok: false, reason: "not-ready" }));
-            if (pathNow.current === want) loadReview();
-            return r;
-          }}
-          onApprove={async (reason, opts) => {
-            const want = path;
-            // The version shown: a document changed since is refused with "changed".
-            const o: ApproveOptions = { ...(reason !== undefined ? { reason } : {}), ...(opts?.discard ? { discard: true } : {}) };
-            const r = await client.documents.approve(want, rv.blob, o).catch((): ReviewResult => ({ ok: false, reason: "not-ready" }));
-            if (pathNow.current === want) {
-              if (r.ok) setDiffOpen(false);
-              loadReview();
-            }
-            return r;
-          }}
-          onSeeChanges={() => setDiffOpen((o) => !o)}
-        />
-      )}
+      {!inFocus && bar}
     </aside>
   );
 }

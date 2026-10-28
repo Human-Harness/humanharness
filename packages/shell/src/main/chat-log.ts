@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { constants, promises as fs } from "node:fs";
 import path from "node:path";
-import { MAIN_SCOPE, chatFile, chatsDir, isScopeDir, taskChatFile } from "@humanharness/workspace";
+import { MAIN_SCOPE, chatFile, chatsDir, isScopeDir, isTaskId, taskChatFile } from "@humanharness/workspace";
 import type { BlockAnswer } from "@humanharness/harness-sdk";
 import type { Event, LimitWindow } from "@humanharness/runtime";
 import { type AnswerPart, type ChatEntry, type TurnUsage, addParagraph, addText, finishParts } from "@humanharness/ui/client";
@@ -42,6 +42,24 @@ export class ChatLog {
       .map((n) => n.slice(0, -".jsonl".length))
       .filter((s) => isScopeDir(s))
       .sort();
+  }
+
+  /**
+   * The task chats in `folder` (board mode, `chats/<scope>/<task>.jsonl`), sorted. Only real folders directly under
+   * `chats/` with a scope's name count (never `archive`, never a symlink); a folder that can't be read is skipped.
+   */
+  static async taskChatsIn(folder: string): Promise<{ scope: string; task: string }[]> {
+    const dirs = await fs.readdir(chatsDir(folder), { withFileTypes: true }).catch(() => []);
+    const out: { scope: string; task: string }[] = [];
+    for (const d of dirs) {
+      if (!d.isDirectory() || d.name === "archive" || !isScopeDir(d.name)) continue;
+      const names = await fs.readdir(path.join(chatsDir(folder), d.name)).catch(() => [] as string[]);
+      for (const n of names) {
+        const task = n.endsWith(".jsonl") ? n.slice(0, -".jsonl".length) : "";
+        if (isTaskId(task)) out.push({ scope: d.name, task });
+      }
+    }
+    return out.sort((a, b) => (a.scope === b.scope ? (a.task < b.task ? -1 : 1) : a.scope < b.scope ? -1 : 1));
   }
 
   async append(entry: ChatEntry): Promise<void> {

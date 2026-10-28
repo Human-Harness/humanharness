@@ -35,6 +35,19 @@ describe("startNewChatIfEngineChanged", () => {
     expect(fs.readdirSync(path.join(folder, ".harness", "chats", "archive"))).toHaveLength(2);
   });
 
+  it("board mode: archives every task's own chat too, and finds the previous engine in one (parallel spec §6)", async () => {
+    const folder = await folderWith(null, false);
+    await new ChatLog(folder, "claude", "main", "t1").append({ id: "2", role: "user", text: "x", blocks: [], activities: [], at: "t" });
+    await new ChatLog(folder, "claude", "fracciones", "t2").append({ id: "3", role: "user", text: "y", blocks: [], activities: [], at: "t" });
+    expect(await ChatLog.taskChatsIn(folder)).toEqual([
+      { scope: "fracciones", task: "t2" },
+      { scope: "main", task: "t1" },
+    ]);
+    expect(await startNewChatIfEngineChanged(folder, "codex")).toBe("claude");
+    expect(await ChatLog.taskChatsIn(folder)).toEqual([]);
+    expect(fs.readdirSync(path.join(folder, ".harness", "chats", "archive"))).toHaveLength(2);
+  });
+
   it("finds the previous engine in any scope's chat", async () => {
     const folder = await folderWith(null, false);
     await new ChatLog(folder, "claude", "fracciones").append({ id: "2", role: "user", text: "x", blocks: [], activities: [], at: "t" });

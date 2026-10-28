@@ -101,13 +101,17 @@ function playTurn(turn: MockTurn): Play {
   };
 }
 
-const quiet = (text: string, blocks: MockBlock[] = [], note?: MockNote): Play => ({
+/**
+ * A built-in reply. `usage`: the recorded turn the session stays at, when it has one, so the context the app sees
+ * doesn't fall to the fallback's and read as a compaction.
+ */
+const quiet = (text: string, blocks: MockBlock[] = [], note?: MockNote, usage?: MockUsage): Play => ({
   text,
   blocks,
   ...(note ? { note } : {}),
   writes: [],
   reads: [],
-  usage: FALLBACK_USAGE,
+  usage: usage ?? FALLBACK_USAGE,
   delayMs: DEFAULT_DELAY / 2,
 });
 
@@ -160,7 +164,7 @@ export function replay(recordings: Recording[], position: SessionPosition | unde
     const p = addedPath(prompt);
     const text = p ? `I read ${p} and will take it into account.` : (rec?.fallback?.text ?? DEFAULT_FALLBACK);
     const current = rec?.turns.find((t) => t.id === position.turn);
-    return { play: { ...quiet(text, choicesOf(current)), reads: p ? [p] : [] }, session: position };
+    return { play: { ...quiet(text, choicesOf(current), undefined, current?.usage), reads: p ? [p] : [] }, session: position };
   }
   // A phase change or the wrap-up is the app's prompt, not a reply: it plays the turn recorded for it (spec §6).
   if (kind === "phase" || kind === "wrap-up") {
@@ -175,5 +179,5 @@ export function replay(recordings: Recording[], position: SessionPosition | unde
   const target = answered ?? (current?.next && ((key !== undefined && Object.hasOwn(current.next, key) ? current.next[key] : undefined) ?? current.next["*"]));
   const turn = target ? rec?.turns.find((t) => t.id === target) : undefined;
   if (turn) return { play: playTurn(turn), session: { ...position, turn: turn.id } };
-  return { play: quiet(rec?.fallback?.text ?? DEFAULT_FALLBACK, choicesOf(current)), session: position };
+  return { play: quiet(rec?.fallback?.text ?? DEFAULT_FALLBACK, choicesOf(current), undefined, current?.usage), session: position };
 }

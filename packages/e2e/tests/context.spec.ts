@@ -34,6 +34,9 @@ test("the context panel: what the task loaded and read, Add now, a pin and an ex
     await expect(page.getByRole("main").getByText("Take conventions.md into account")).toBeVisible();
     await expect(page.getByRole("main").getByText("I read conventions.md and will take it into account.")).toBeVisible();
     await expect(panel.getByRole("region", { name: "During the task" }).getByText("conventions.md")).toBeVisible();
+    // The mock's reply reports the recorded turn's usage: no compaction, so nothing reads as summarized.
+    await expect(panel.getByText("may be summarized")).toHaveCount(0);
+    await expect(panel.getByText(/The conversation was summarized/)).toHaveCount(0);
 
     // Pin it: one commit, the person's file.
     await panel.getByRole("region", { name: "During the task" }).getByRole("button", { name: "Pin conventions.md" }).click();
@@ -59,6 +62,8 @@ test("the context panel: what the task loaded and read, Add now, a pin and an ex
     // tasks.json never holds an absolute path: reads are folder-relative.
     const tasks = JSON.parse(fs.readFileSync(path.join(s.folder, ".harness", "tasks.json"), "utf8"));
     expect(JSON.stringify(tasks)).not.toContain(s.folder);
+    // Nor under the folder's real path (macOS's /var → /private/var), the spelling engines report.
+    expect(JSON.stringify(tasks)).not.toContain(fs.realpathSync(s.folder));
   } finally {
     await closeAndClean(app, s);
   }
@@ -71,6 +76,11 @@ test("D0: a task without pins or exclusions writes no context file", async () =>
     await page.getByRole("button", { name: "Start Demo" }).click();
     await page.getByRole("region", { name: START }).getByRole("button", { name: /The manifest/ }).click();
     await expect(page.getByRole("main").getByText(/El manifiesto declara todo el harness/)).toBeVisible();
+    expect(fs.existsSync(path.join(s.folder, ".harness", "context"))).toBe(false);
+
+    // Finished, with its note written and committed: still no context file.
+    await page.getByRole("button", { name: "Seguir el recorrido →" }).last().click();
+    await expect(page.getByRole("list", { name: "What's clear so far" }).getByRole("button", { name: "El manifiesto" })).toBeVisible();
     expect(fs.existsSync(path.join(s.folder, ".harness", "context"))).toBe(false);
   } finally {
     await closeAndClean(app, s);

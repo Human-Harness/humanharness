@@ -5,6 +5,13 @@ import { z } from "zod";
 /** Folders the app owns in a work folder: a recording never writes there. */
 export const APP_FOLDERS = [".claude", ".harness"] as const;
 
+/** `p` without its trailing slashes: a loop, never a regex (no backtracking on a long run). */
+function trimSlashes(p: string): string {
+  let end = p.length;
+  while (end > 0 && p.charCodeAt(end - 1) === 47) end--;
+  return p.slice(0, end);
+}
+
 /** A path inside the work folder: relative, no `..` part, no drive or UNC, not the folder itself. */
 export const folderRelative = z
   .string()
@@ -16,7 +23,7 @@ export const folderRelative = z
       !/^[A-Za-z]:/.test(p) &&
       !p.startsWith("\\\\") &&
       !p.split(/[\\/]/).includes("..") &&
-      !["", "."].includes(path.posix.normalize(p.replaceAll("\\", "/")).replace(/\/+$/, "")),
+      !["", "."].includes(trimSlashes(path.posix.normalize(p.replaceAll("\\", "/")))),
     "must be a relative path to a file inside the folder",
   );
 

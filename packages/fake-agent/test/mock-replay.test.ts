@@ -234,6 +234,19 @@ describe("the Add now prompt (context-panel spec §5.2)", () => {
     expect(replay([rec], position, `The person approved specs/a.md.\n\n${ADD}`, false).play.reads).toEqual(["docs/conv.md"]);
   });
 
+  it("reports the usage of the turn the session stays at, so the app sees no compaction", () => {
+    const used = recordingSchema.parse({
+      version: 1,
+      action: "u",
+      match: "# Topic: usage",
+      turns: [{ id: "t1", text: "Uno.", usage: { input: 18400, output: 320, cacheRead: 12000 } }],
+    });
+    const { play } = replay([used], { action: "u", turn: "t1" }, ADD, false);
+    expect(play.usage).toEqual({ input: 18400, output: 320, cacheRead: 12000, cacheWrite: 0 });
+    // An off-script reply stays at the same turn too.
+    expect(replay([used], { action: "u", turn: "t1" }, "Something else", false).play.usage).toEqual(play.usage);
+  });
+
   it("a path that leaves the folder is not read", () => {
     for (const bad of ["../secret", "/etc/passwd", ""]) {
       const { play } = replay([rec], { action: "manifest", turn: "t1" }, ADD.replace("docs/conv.md", bad), false);

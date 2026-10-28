@@ -47,7 +47,7 @@ function safeTarget(cwd: string, p: string): string {
 }
 
 /** The absolute path of a recorded read; throws outside the work folder (symlinks included). The file may not exist. */
-function readTarget(cwd: string, p: string): string {
+export function readTarget(cwd: string, p: string): string {
   const target = path.resolve(cwd, p);
   const rel = path.relative(cwd, target);
   if (rel === "" || rel === ".." || rel.startsWith(".." + path.sep) || path.isAbsolute(rel)) throw new Error(`refused to read "${p}": outside the work folder`);
@@ -80,6 +80,8 @@ async function playTurn(argv: string[], prompt: string, mcpServers: McpServers, 
   const model = flag(argv, "--model");
   print({ type: "system", subtype: "init", session_id: sessionId, ...(model ? { model } : {}) });
   const cwd = process.cwd();
+  // Every path is checked before anything is written: a refused read leaves the folder as it was.
+  const reads = play.reads.map((p) => readTarget(cwd, p));
   const writes = play.writes.map((w) => ({ target: safeTarget(cwd, w.path), content: w.content }));
   for (const w of writes) {
     if (w.content === null) rmSync(w.target, { force: true });
@@ -89,7 +91,6 @@ async function playTurn(argv: string[], prompt: string, mcpServers: McpServers, 
     }
   }
   // Recorded reads (context-panel spec §7): a Read tool call and its result, as Claude prints them. Nothing is read.
-  const reads = play.reads.map((p) => readTarget(cwd, p));
   reads.forEach((file, i) => {
     const id = `mock-read-${i + 1}`;
     print({ type: "assistant", session_id: sessionId, message: { content: [{ type: "tool_use", id, name: "Read", input: { file_path: file } }] } });

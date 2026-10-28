@@ -6,6 +6,7 @@ import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { getEngine } from "@humanharness/engines";
 import { type AcpScript, type ClaudeScript, claudeResultLine, fakeAcpCommand, fakeClaudeCommand, writeScript } from "@humanharness/fake-agent";
 import { loadHarness } from "@humanharness/harness-sdk";
+import { AcpTransport } from "../src/acp";
 import type { Event } from "../src/events";
 import type { Session } from "../src/transport";
 import { TurnLedger } from "../src/turn-ledger";
@@ -100,7 +101,9 @@ describe("idle ACP slot (parallel spec §4, Decision 10)", () => {
 
   it("an edit replayed while a session loads never reaches the window or the ledger; one in the turn does", async () => {
     const noteEdits = vi.spyOn(TurnLedger.prototype, "noteEdits");
-    const { ws } = await acpWorkspace((folder) => ({
+    // onUpdate is private: spied through the prototype to prove the replay did reach the transport.
+    const onUpdate = vi.spyOn(AcpTransport.prototype as unknown as { onUpdate: (u: Record<string, unknown>) => void }, "onUpdate");
+    const { ws, log } = await acpWorkspace((folder) => ({
       loadSession: true,
       loadReplay: [editCall("old-edit", path.join(folder, "replayed.md"))],
       turns: [[{ update: editCall("new-edit", path.join(folder, "fresh.md")) }, { stop: "end_turn" }]],
@@ -109,6 +112,11 @@ describe("idle ACP slot (parallel spec §4, Decision 10)", () => {
     const events: Event[] = [];
     await slot.send("one", (e) => events.push(e)).done;
     expect(events.at(-1)).toEqual({ type: "done", ok: true });
+    // The session was loaded, and its replay delivered, before the turn's own update.
+    expect(log().find((r) => r.method === "session/load")?.params?.sessionId).toBe("old-1");
+    const updates = onUpdate.mock.calls.map(([u]) => u.toolCallId);
+    expect(updates).toContain("old-edit");
+    expect(updates.indexOf("old-edit")).toBeLessThan(updates.indexOf("new-edit"));
     const edits = events.flatMap((e) => (e.type === "activity" && e.edits ? e.edits : []));
     expect(edits.map((p) => path.basename(p))).toEqual(["fresh.md"]);
     const noted = noteEdits.mock.calls.flatMap(([, paths]) => [...paths]).map((p) => path.basename(p));
@@ -145,7 +153,8 @@ describe("job slots (Decision 11, T5)", () => {
     const base = fs.mkdtempSync(path.join(root, "t-"));
     const args = path.join(base, "args.json");
     ws = await createWorkspace({
-      harness: { ...(await loadHarness(FIXTURE)), permissions: { edit: "folder", exec: true, web: true } },
+      // Two of the harness's own MCP servers besides ui: only ui may carry the job mark.
+      harness: { ...(await loadHarness(FIXTURE)), permissions: { edit: "folder", exec: true, web: true }, mcp: ["mcp/one.js", "mcp/two.js"] },
       engine: getEngine("claude"), folder: path.join(base, "Work"), gitdir: path.join(base, "h.git"),
       language: "en", command: fakeClaudeCommand(),
       env: { HH_FAKE_SCRIPT: writeScript(base, { steps: [claudeResultLine(true)] } as ClaudeScript), HH_FAKE_ARGS: args },
@@ -176,6 +185,7 @@ describe("job slots (Decision 11, T5)", () => {
     const { ui: _jobUi, ...jobRest } = j.servers;
     const { ui: _taskUi, ...taskRest } = t.servers;
     expect(Object.keys(jobRest)).toEqual(Object.keys(taskRest));
+    expect(Object.keys(jobRest)).toHaveLength(2);
     for (const [name, spec] of Object.entries(jobRest)) expect(Object.hasOwn(spec.env, "HH_JOB"), name).toBe(false);
   });
 

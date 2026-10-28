@@ -1,6 +1,6 @@
 # Tools and recipes — design
 
-Status: draft, 2026-10-28, written after a brainstorming session with Marco, who approved every decision and section below on 2026-10-28. Not in the roadmap yet.
+Status: approved by Marco, 2026-10-28, after a brainstorming session and a section-by-section review of the written spec. Not in the roadmap yet.
 
 Inspired by ñoqui (github.com/tebys/noqui): typed code tools do the mechanical work, and the AI is called only for steps that need judgment, with the data already prepared. This spec covers tools written by the harness author ("ahead of time"). Tools learned from use ("just in time") are a later spec (§16) that builds on this one.
 
@@ -19,6 +19,24 @@ Per harness (discovery interviews for dev and student; the rest is Claude's esti
 - **Teacher, writer, cooker (estimate):** counts, indexes and searches. **Thinker:** little.
 
 The gains that are not tokens: fresh panels without a token budget, exact dates and rules, millisecond answers, and light models that stop failing because they no longer explore.
+
+### 1.1 Relation to engine plugins
+
+Engine plugins (Claude Code plugins: MCP servers, hooks, skills) already let code do repeated work. This spec reuses what they share and adds what they cannot do.
+
+| Engine plugin piece | Here | Relation |
+|---|---|---|
+| MCP server tools the AI calls | tools with `agent: "call"` | The same: served over MCP by the core `tools` server (§5). |
+| `SessionStart` hook that adds context | pre-steps (§6) | Close: code prepares data before the AI reads it. |
+| Hooks on engine events | tools in general | Same principle: code instead of AI turns. |
+
+What engine plugins cannot do, and the reason this spec exists:
+
+- **Run with no session.** Hooks and MCP tools run only inside an engine session. Tools here run from the UI, from jobs and before a session opens, with no AI at all.
+- **Let code decide whether AI runs.** In an engine the AI owns the loop. A recipe runs its AI step only when `when` holds, and only a post-step can ask for another round (§7).
+- **Work on every engine.** Human Harness runs Claude, Codex and OpenCode, and never installs anything into an engine's own config.
+- **Sandbox each tool.** An engine hook or MCP server runs as a full user process. A tool here reaches only what its `uses` declares and never sees a secret (§4).
+- **Show the work to people who are not developers:** the folded trace, Settings › Connections, the `connect` setup step.
 
 ## 2. Decisions (approved by Marco, 2026-10-28)
 

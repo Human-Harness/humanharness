@@ -58,7 +58,8 @@ const same = (a: Value, b: Value) => a.on === b.on && a.text.trim() === b.text.t
 /**
  * One sidekick's row. Its values are local from the first read; one save at a time, and a change made while one runs
  * is saved after it (only the latest value, and only when it differs), so a quick double click never writes twice nor
- * gets lost. A refusal puts the switch back and says why.
+ * gets lost. A refusal puts the switch and the text back and says why. A row gone (another scope opened) still saves
+ * its latest change, typed text included, to its own scope.
  */
 function ScopeRow({
   client,
@@ -81,12 +82,28 @@ function ScopeRow({
   const wanted = useRef<Value>(saved.current);
   const running = useRef(false);
   const live = useRef(true);
-  useEffect(
-    () => () => {
+  /** The save in flight (settled when none), and the value it sent. */
+  const inflight = useRef<Promise<unknown>>(Promise.resolve());
+  const tried = useRef<Value | null>(null);
+  /** The text as typed, blurred or not. */
+  const typed = useRef(text);
+  typed.current = text;
+  const write = (v: Value) => {
+    const purposeText = v.text.trim();
+    return client.sidekick.setScope(scope, row.id, { on: v.on, ...(purposeText ? { purposeText } : {}), ...(row.places ? { places: row.places } : {}) });
+  };
+  useEffect(() => {
+    live.current = true;
+    return () => {
       live.current = false;
-    },
-    [],
-  );
+      // Fire and forget, after the save in flight: only a change not saved nor already tried (and refused).
+      const last = { ...wanted.current, text: typed.current };
+      void inflight.current.then(() => {
+        if (same(last, saved.current) || (tried.current && same(last, tried.current))) return;
+        write(last).catch(() => undefined);
+      });
+    };
+  }, []);
   const boxId = useId();
 
   const flush = () => {
@@ -94,17 +111,17 @@ function ScopeRow({
     const next = wanted.current;
     if (same(next, saved.current)) return;
     running.current = true;
+    tried.current = next;
     setBusy(true);
     onFailed(null);
-    const purposeText = next.text.trim();
     const fail = (message: string) => {
       wanted.current = saved.current;
       if (!live.current) return;
       setOn(saved.current.on);
+      setText(saved.current.text);
       onFailed(message);
     };
-    client.sidekick
-      .setScope(scope, row.id, { on: next.on, ...(purposeText ? { purposeText } : {}), ...(row.places ? { places: row.places } : {}) })
+    inflight.current = write(next)
       .then(
         (r) => {
           if (r.ok) saved.current = next;

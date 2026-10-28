@@ -13,6 +13,7 @@ const MARK_MAX = 16;
 const PERSONALITY_MAX = 1500;
 const CUSTOM_MAX = 600;
 const PURPOSES_MAX = 6;
+const MOMENTS_MAX = 7;
 
 type Tier = "default" | NonNullable<SidekickDraftDef["tier"]>;
 
@@ -47,6 +48,8 @@ export function SidekickEditor({
   const [tier, setTier] = useState<Tier>(initial?.tier ?? "default");
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
+  /** A save running: a second press (a double click) before the first answer does nothing. */
+  const saving = useRef(false);
   const nameRef = useRef<HTMLInputElement>(null);
 
   // The editor opens with focus in its first field.
@@ -59,10 +62,15 @@ export function SidekickEditor({
     // A second custom purpose (an import's) has no fields here: it goes back unchanged.
     ...customs.slice(1),
   ];
-  const ready = name.trim().length > 0 && purposes.length > 0 && purposes.length <= PURPOSES_MAX && (!custom || (customText.trim().length > 0 && moments.length > 0));
+  // From what Save sends: a moment of a place the harness no longer has doesn't count.
+  const customOk = (p: SidekickPurposeView) => p.id !== "custom" || ((p.text ?? "").trim().length > 0 && (p.moments?.length ?? 0) >= 1 && (p.moments?.length ?? 0) <= MOMENTS_MAX);
+  const tooMany = purposes.length > PURPOSES_MAX;
+  const tooManyMoments = custom && (purposes.find((p) => p.id === "custom")?.moments?.length ?? 0) > MOMENTS_MAX;
+  const ready = name.trim().length > 0 && purposes.length > 0 && !tooMany && purposes.every(customOk);
 
   const save = async () => {
-    if (!ready || busy) return;
+    if (!ready || saving.current) return;
+    saving.current = true;
     setBusy(true);
     setFailed(null);
     const def: SidekickDraftDef & { id?: string } = {
@@ -80,10 +88,12 @@ export function SidekickEditor({
     try {
       await client.sidekick.saveSidekick(def);
     } catch (err) {
+      saving.current = false;
       setFailed(err instanceof Error ? err.message : String(err));
       setBusy(false);
       return;
     }
+    saving.current = false;
     setBusy(false);
     onDone(true);
   };
@@ -130,6 +140,11 @@ export function SidekickEditor({
       </div>
       <fieldset className="hh-sk-fieldset">
         <legend>{t("sidekick.editor.purposes")}</legend>
+        {tooMany && (
+          <p className="hh-caption" id={`${ids}-too-many`}>
+            {t("sidekick.editor.tooMany", { max: PURPOSES_MAX })}
+          </p>
+        )}
         {CORE.map((id) => (
           <label key={id} className="hh-sk-check">
             <input type="checkbox" checked={core.includes(id)} onChange={(e) => setCore(toggle(core, id, e.target.checked))} /> {t(`sidekick.purposes.${id}`)}
@@ -144,6 +159,11 @@ export function SidekickEditor({
             <textarea id={`${ids}-custom`} value={customText} maxLength={CUSTOM_MAX} rows={3} onChange={(e) => setCustomText(e.target.value)} />
             <fieldset className="hh-sk-fieldset">
               <legend>{t("sidekick.editor.moments")}</legend>
+              {tooManyMoments && (
+                <p className="hh-caption" id={`${ids}-too-many-moments`}>
+                  {t("sidekick.editor.tooManyMoments", { max: MOMENTS_MAX })}
+                </p>
+              )}
               {momentChoices.map((m) => (
                 <label key={m.id} className="hh-sk-check">
                   <input type="checkbox" checked={moments.includes(m.id)} onChange={(e) => setMoments(toggle(moments, m.id, e.target.checked))} /> {m.label}
@@ -160,7 +180,14 @@ export function SidekickEditor({
       {failed !== null && <p role="alert">{t("sidekick.settings.failed", { message: failed })}</p>}
       <div className="hh-sk-actions">
         {/* disabled until the sidekick is complete; aria-disabled while it saves, so the button keeps focus. */}
-        <button type="button" className="hh-primary" disabled={!ready} aria-disabled={busy} onClick={() => void save()}>
+        <button
+          type="button"
+          className="hh-primary"
+          disabled={!ready}
+          aria-disabled={busy}
+          {...(tooMany || tooManyMoments ? { "aria-describedby": tooMany ? `${ids}-too-many` : `${ids}-too-many-moments` } : {})}
+          onClick={() => void save()}
+        >
           {t("sidekick.editor.save")}
         </button>
         <button type="button" onClick={() => onDone(false)}>

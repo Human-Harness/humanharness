@@ -66,6 +66,49 @@ describe("Sidekicks in this scope (spec §2a.4, Decision 8)", () => {
     expect(box.checked).toBe(false);
   });
 
+  it("a refused text goes back to the saved one", async () => {
+    const c = new FakeClient({ language: "en" });
+    c.sidekickScope = [{ id: "rulo", name: "Rulo", mark: "🦊", on: true, purposeText: "No spec without AC." }];
+    c.sidekickScopeFails = 'No sidekick "rulo"';
+    await renderIn("en", <ScopeSidekicks client={c} scope={LOGIN} scopeNoun="project" />);
+    const box = (await screen.findByRole("textbox", { name: "Rulo's purpose here" })) as HTMLTextAreaElement;
+    fireEvent.change(box, { target: { value: "Something else." } });
+    fireEvent.blur(box);
+    await screen.findByRole("alert");
+    expect(box.value).toBe("No spec without AC.");
+  });
+
+  it("another scope opened during a save: the latest change, typed text included, still goes to the old scope", async () => {
+    const c = new FakeClient({ language: "en" });
+    c.sidekickScope = [{ id: "rulo", name: "Rulo", mark: "🦊", on: false }];
+    let release!: () => void;
+    c.sidekickScopeGate = new Promise<void>((r) => (release = r));
+    const { unmount } = await renderIn("en", <ScopeSidekicks client={c} scope={LOGIN} scopeNoun="project" />);
+    const box = await screen.findByRole("checkbox", { name: "Rulo" });
+    fireEvent.click(box);
+    await waitFor(() => expect(c.sidekickCalls).toHaveLength(1));
+    fireEvent.click(box);
+    fireEvent.change(screen.getByRole("textbox", { name: "Rulo's purpose here" }), { target: { value: "Keep PRs small." } });
+    unmount();
+    release();
+    await waitFor(() =>
+      expect(c.sidekickCalls).toEqual([
+        ["setScope", "login", "rulo", { on: true }],
+        ["setScope", "login", "rulo", { on: false, purposeText: "Keep PRs small." }],
+      ]),
+    );
+  });
+
+  it("gone with nothing changed: nothing is written", async () => {
+    const c = new FakeClient({ language: "en" });
+    c.sidekickScope = [{ id: "rulo", name: "Rulo", mark: "🦊", on: false }];
+    const { unmount } = await renderIn("en", <ScopeSidekicks client={c} scope={LOGIN} scopeNoun="project" />);
+    await screen.findByRole("checkbox", { name: "Rulo" });
+    unmount();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(c.sidekickCalls).toEqual([]);
+  });
+
   it("reads the list again when the sidekicks change", async () => {
     const c = new FakeClient({ language: "en" });
     c.sidekickState = SK_ON;
@@ -107,6 +150,7 @@ describe("the section in Settings › Sidekicks", () => {
     await renderIn("en", <SidekickTab client={c} onModels={() => undefined} scopes={{ label: "project" }} />);
     await screen.findByRole("checkbox", { name: "Before you send" });
     expect(screen.queryByText(/Sidekicks in this/)).toBeNull();
-    expect(c.sidekickCalls.filter((x) => x[0] === "setScope" || x[0] === "scope")).toEqual([]);
+    expect(c.sidekickScopeReads).toBe(0);
+    expect(c.sidekickCalls.filter((x) => x[0] === "setScope")).toEqual([]);
   });
 });

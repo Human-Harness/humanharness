@@ -92,7 +92,7 @@ export function SidekickPanel(p: SidekickPanelProps) {
   return (
     <aside className="hh-sk-panel" aria-label={s.info.name}>
       <header className="hh-sk-head">
-        <SidekickMark off={!s.settings.on} />
+        <SidekickMark off={!s.settings.on} mark={s.info.mark} />
         <h2 className="hh-sk-name">{s.info.name}</h2>
         <span className="hh-sk-status">{status}</span>
         <span className="hh-spacer" />

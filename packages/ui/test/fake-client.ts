@@ -606,6 +606,8 @@ export class FakeClient implements HarnessClient {
   sidekickSaveFails: string | null = null;
   /** What sidekick.scope answers (any scope); setScope changes it. */
   sidekickScope: SidekickInScope[] = [];
+  /** How many times sidekick.scope was read. */
+  sidekickScopeReads = 0;
   /** When set, sidekick.setScope answers `{ ok: false, message }`. */
   sidekickScopeFails: string | null = null;
   /** When set, sidekick.setScope waits for it before answering. */
@@ -702,7 +704,10 @@ export class FakeClient implements HarnessClient {
       this.sidekickCalls.push(["reorder", ids]);
       this.sidekickList = ids.flatMap((id, order) => this.sidekickList.filter((k) => k.id === id).map((k) => ({ ...k, order })));
     },
-    scope: async (_scope: string) => structuredClone(this.sidekickScope),
+    scope: async (_scope: string) => {
+      this.sidekickScopeReads++;
+      return structuredClone(this.sidekickScope);
+    },
     setScope: async (scope: string, sidekick: string, v: { on: boolean; purposeText?: string; places?: string[] }) => {
       this.sidekickCalls.push(["setScope", scope, sidekick, v]);
       if (this.sidekickScopeGate) await this.sidekickScopeGate;

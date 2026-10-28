@@ -747,7 +747,7 @@
       "empty": "Nothing yet.",
       "yours": "Yours"
     },
-    "presets": { "title": "Suggested by the harness", "add": "Add {{name}}", "notNow": "Not now", "failed": "Could not add {{name}}." },
+    "presets": { "title": "Suggested by the harness", "add": "Add {{name}}", "notNow": "Not now", "failed": "Could not add {{name}}.", "notNowFailed": "That didn't go through. Try again." },
     "purposes": { "prompt-coach": "Prompt coach", "focus": "Focus", "process-guard": "Process guard", "mentor": "Mentor", "daily-summary": "Daily summary", "custom": "Custom", "customText": "Custom: {{text}}" },
     "import": {
       "title": "Import",
@@ -790,6 +790,7 @@
       "confirmRemove": "Remove {{name}}? What it learned stays until you forget it.",
       "confirmYes": "Yes, remove it",
       "orderHint": "When two could speak, the higher one does.",
+      "readFailed": "Couldn't read your sidekicks. Close Settings and open it again.",
       "dailyOff": "Off by default, so it never gives the daily summary."
     },
     "scope": {
@@ -808,6 +809,8 @@
       "moments": "When it speaks",
       "tier": "Model",
       "tierDefault": "Default",
+      "tooMany": "Choose at most {{max}} purposes to save.",
+      "tooManyMoments": "Choose at most {{max}} moments to save.",
       "save": "Save",
       "cancel": "Cancel"
     },

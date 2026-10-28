@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SidekickView } from "../src/client";
 import { SettingsSheet } from "../src/SettingsSheet";
 import { SidekickList } from "../src/sidekick/SidekickList";
@@ -169,6 +169,71 @@ describe("Settings › Sidekicks (spec §8)", () => {
     c.sidekickList = [...c.sidekickList, { id: "guard", name: "Guard", mark: "🛡️", personality: "", purposes: [{ id: "process-guard" }], order: 1, preset: "Guard" }];
     c.emitSidekick(SK_ON);
     expect(await screen.findByText("Guard")).toBeTruthy();
+  });
+});
+
+describe("Settings › Sidekicks: guards", () => {
+  it("a double click on Save, Move or Yes writes once", async () => {
+    const c = new FakeClient({ language: "en" });
+    c.sidekickList = structuredClone(LIST);
+    await renderIn("en", <SidekickList client={c} />);
+    const up = await screen.findByRole("button", { name: "Move Rulo up" });
+    fireEvent.click(up);
+    fireEvent.click(up);
+    await waitFor(() => expect(screen.getAllByRole("listitem").map((r) => r.querySelector("strong")?.textContent)).toEqual(["Rulo", "Sidekick"]));
+    expect(c.sidekickCalls.filter((x) => x[0] === "reorder")).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "Remove Rulo" }));
+    const yes = screen.getByRole("button", { name: "Yes, remove it" });
+    fireEvent.click(yes);
+    fireEvent.click(yes);
+    await waitFor(() => expect(screen.getAllByRole("listitem")).toHaveLength(1));
+    expect(c.sidekickCalls.filter((x) => x[0] === "remove")).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "New sidekick" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "Docs" } });
+    fireEvent.click(screen.getByRole("checkbox", { name: "Mentor" }));
+    const save = screen.getByRole("button", { name: "Save" });
+    fireEvent.click(save);
+    fireEvent.click(save);
+    await waitFor(() => expect(screen.getAllByRole("listitem")).toHaveLength(2));
+    expect(c.sidekickCalls.filter((x) => x[0] === "saveSidekick")).toHaveLength(1);
+  });
+
+  it("a failed read of the list says so instead of an empty list", async () => {
+    const c = new FakeClient({ language: "en" });
+    vi.spyOn(c.sidekick, "list").mockRejectedValue(new Error("down"));
+    await renderIn("en", <SidekickList client={c} />);
+    expect((await screen.findByRole("alert")).textContent).toBe("Couldn't read your sidekicks. Close Settings and open it again.");
+    cleanup();
+    // Main answers an empty list when its read failed: there is always at least the default.
+    const d = new FakeClient({ language: "en" });
+    d.sidekickList = [];
+    await renderIn("en", <SidekickList client={d} />);
+    expect(await screen.findByRole("alert")).toBeTruthy();
+  });
+
+  it("Save counts what it sends: a gone place isn't a moment, more than 6 purposes says why", async () => {
+    const c = new FakeClient({ language: "en" });
+    c.sidekickList = [{ id: "docs", name: "Docs", mark: "spark", personality: "", purposes: [{ id: "custom", text: "Docs in sync.", moments: ["place:gone"] }], order: 0 }];
+    await renderIn("en", <SidekickList client={c} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Edit Docs" }));
+    const save = screen.getByRole("button", { name: "Save" }) as HTMLButtonElement;
+    expect(save.disabled).toBe(true);
+    fireEvent.click(screen.getByRole("checkbox", { name: "Daily" }));
+    expect(save.disabled).toBe(false);
+    cleanup();
+    const d = new FakeClient({ language: "en" });
+    const all = [{ id: "prompt-coach" }, { id: "focus" }, { id: "process-guard" }, { id: "mentor" }, { id: "daily-summary" }];
+    d.sidekickList = [
+      { id: "big", name: "Big", mark: "spark", personality: "", order: 0, purposes: [...all, { id: "custom", text: "A", moments: ["daily"] }, { id: "custom", text: "B", moments: ["daily"] }] },
+    ];
+    await renderIn("en", <SidekickList client={d} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Edit Big" }));
+    const big = screen.getByRole("button", { name: "Save" }) as HTMLButtonElement;
+    expect(big.disabled).toBe(true);
+    expect(screen.getByText("Choose at most 6 purposes to save.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Focus" }));
+    expect(big.disabled).toBe(false);
+    expect(screen.queryByText("Choose at most 6 purposes to save.")).toBeNull();
   });
 });
 

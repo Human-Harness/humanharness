@@ -3,6 +3,9 @@ import { useTranslation } from "react-i18next";
 import type { HarnessClient, SidekickPreset } from "../client";
 import { SidekickMark } from "./mark";
 
+/** Clients whose harness has no presets: its manifest can't change while the app runs, so it isn't asked again. */
+const noPresets = new WeakSet<HarnessClient>();
+
 /**
  * "Suggested by the harness" (spec §2a.7): the harness's presets not adopted yet, each with "Add <name>", and "Not
  * now", which marks them offered. Nothing when the harness has none or all are adopted (D0). Its place (Settings ›
@@ -12,15 +15,22 @@ export function PresetOffer({ client, onDone, onShown }: { client: HarnessClient
   const { t } = useTranslation();
   const [presets, setPresets] = useState<SidekickPreset[]>([]);
   const [busy, setBusy] = useState(false);
+  /** A second press before the first answer (a double click) does nothing. */
+  const running = useRef(false);
+  /** The preset whose Add failed, or "" for Not now. */
   const [failed, setFailed] = useState<string | null>(null);
   const head = useRef<HTMLHeadingElement>(null);
   /** After an adoption the Add button is gone: focus goes back to the offer's heading. */
   const refocus = useRef(false);
 
   useEffect(() => {
+    if (noPresets.has(client)) return;
     let live = true;
     client.sidekick.presets().then(
-      (p) => live && setPresets(p),
+      (p) => {
+        if (p.length === 0) noPresets.add(client);
+        if (live) setPresets(p);
+      },
       () => live && setPresets([]),
     );
     return () => {
@@ -46,6 +56,8 @@ export function PresetOffer({ client, onDone, onShown }: { client: HarnessClient
   if (open.length === 0) return null;
 
   const adopt = async (name: string) => {
+    if (running.current) return;
+    running.current = true;
     setBusy(true);
     setFailed(null);
     try {
@@ -56,9 +68,27 @@ export function PresetOffer({ client, onDone, onShown }: { client: HarnessClient
     } catch {
       setFailed(name);
     } finally {
+      running.current = false;
       setBusy(false);
     }
   };
+
+  const notNow = async () => {
+    if (running.current) return;
+    running.current = true;
+    setBusy(true);
+    setFailed(null);
+    const ok = await client.sidekick.set({ presetsOffered: true }).then(
+      (r) => r.ok,
+      () => false,
+    );
+    running.current = false;
+    setBusy(false);
+    if (ok) onDone?.();
+    else setFailed("");
+  };
+  // Busy buttons stay focusable (aria-disabled): the one pressed keeps focus while the answer comes.
+  const wait = busy ? { "aria-disabled": true as const } : {};
 
   return (
     <section aria-label={t("sidekick.presets.title")} className="hh-sk-presets">
@@ -73,14 +103,14 @@ export function PresetOffer({ client, onDone, onShown }: { client: HarnessClient
               <strong>{p.name}</strong>
               {p.personality && <p className="hh-caption">{p.personality}</p>}
             </div>
-            <button type="button" disabled={busy} onClick={() => void adopt(p.name)}>
+            <button type="button" {...wait} onClick={() => void adopt(p.name)}>
               {t("sidekick.presets.add", { name: p.name })}
             </button>
           </li>
         ))}
       </ul>
-      {failed !== null && <p role="alert">{t("sidekick.presets.failed", { name: failed })}</p>}
-      <button type="button" className="hh-link" disabled={busy} onClick={() => void client.sidekick.set({ presetsOffered: true }).then(() => onDone?.(), () => undefined)}>
+      {failed !== null && <p role="alert">{failed ? t("sidekick.presets.failed", { name: failed }) : t("sidekick.presets.notNowFailed")}</p>}
+      <button type="button" className="hh-link" {...wait} onClick={() => void notNow()}>
         {t("sidekick.presets.notNow")}
       </button>
     </section>

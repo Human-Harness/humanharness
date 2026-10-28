@@ -23,6 +23,10 @@ export function SidekickList({ client, places = [] }: { client: HarnessClient; p
   const [confirm, setConfirm] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
+  /** The last read failed: main answers an empty list then (it always has the implicit default), or the call threw. */
+  const [readFailed, setReadFailed] = useState(false);
+  /** A change running: a second press (a double click) before the first answer does nothing. */
+  const running = useRef(false);
   const [loads, setLoads] = useState(0);
   const reload = useCallback(() => setLoads((n) => n + 1), []);
   const ids = useId();
@@ -38,10 +42,17 @@ export function SidekickList({ client, places = [] }: { client: HarnessClient; p
 
   useEffect(() => {
     const n = ++reads.current;
-    client.sidekick.list().then(
-      (l) => n === reads.current && setList(l),
-      () => n === reads.current && setList((now) => now ?? []),
-    );
+    const fail = () => {
+      if (n !== reads.current) return;
+      setReadFailed(true);
+      setList((now) => now ?? []);
+    };
+    client.sidekick.list().then((l) => {
+      if (n !== reads.current) return;
+      if (l.length === 0) return fail();
+      setReadFailed(false);
+      setList(l);
+    }, fail);
   }, [client, loads]);
   // A preset adopted, an import saved elsewhere: main pushes its state, and the list is read again.
   useEffect(() => client.sidekick.onChange(() => reload()), [client, reload]);
@@ -70,7 +81,8 @@ export function SidekickList({ client, places = [] }: { client: HarnessClient; p
 
   /** Runs a change; the list is read again whatever happened, and a failure says why. */
   const run = async (change: () => Promise<void>) => {
-    if (busy) return;
+    if (running.current) return;
+    running.current = true;
     setBusy(true);
     setFailed(null);
     try {
@@ -78,6 +90,7 @@ export function SidekickList({ client, places = [] }: { client: HarnessClient; p
     } catch (err) {
       setFailed(err instanceof Error ? err.message : String(err));
     } finally {
+      running.current = false;
       setBusy(false);
       reload();
     }
@@ -187,6 +200,7 @@ export function SidekickList({ client, places = [] }: { client: HarnessClient; p
       </ul>
       {editing === "new" && <SidekickEditor key="new" client={client} places={places} onDone={closeEditor} />}
       {failed !== null && <p role="alert">{t("sidekick.settings.failed", { message: failed })}</p>}
+      {readFailed && <p role="alert">{t("sidekick.list.readFailed")}</p>}
       <div className="hh-sk-actions">
         <button type="button" ref={newRef} aria-disabled={busy} onClick={() => !busy && (setImporting(false), setEditing("new"))}>
           {t("sidekick.list.new")}

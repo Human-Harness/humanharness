@@ -49,6 +49,13 @@ describe("SidekickPanel", () => {
     expect(screen.getByRole("progressbar")).toBeTruthy();
   });
 
+  it("head: the default sidekick's own mark, once edited", async () => {
+    await panel({ ...SK_ON, info: { id: "sidekick", name: "Owl", mark: "🦉" } });
+    const head = screen.getByRole("heading", { name: "Owl" }).closest("header")!;
+    expect(head.querySelector(".hh-sk-mark-text")?.textContent).toBe("🦉");
+    expect(head.querySelector("svg.hh-sk-mark")).toBeNull();
+  });
+
   it("with onTier, the foot's tier is a button that opens Settings › Sidekick", async () => {
     const onTier = vi.fn();
     await panel(SK_ON, handlers(), { onTier });

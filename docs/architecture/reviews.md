@@ -177,8 +177,8 @@ With the tools, `AGENTS.md`'s "Writing for the reader" part gets three more line
 **Stale.**
 
 - A document whose bytes differ from the last approval's blob is "Changed since approval".
-- "See what changed" reads the approved text from the history (`History.readBlob`) and shows a line diff (`lineDiff`) around the changes.
-- Over 2000 lines or 1,000,000 characters, it says the text is too long to compare. When the history no longer has the blob, it says there is nothing to compare.
+- "See what changed" draws the file timeline's diff (`timeline.md`) from the newest approval entry to the current file, with `<FileDiff>`: word by word, inline or side by side. It fetches again when the file's history changes or the reader reads the document again. Without an approval entry on the timeline, it says there is nothing to compare.
+- Answers and approvals appear on the document's timeline ("Your answers", "v2 approved"): each `Answer:` and `Approved:` commit counts for the path its subject names.
 
 **The reader.**
 

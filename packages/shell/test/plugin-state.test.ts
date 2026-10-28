@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import os from "node:os";
@@ -161,6 +162,186 @@ describe("PluginStateStore", () => {
     await expect(fs.access(path.join(base, ".harness", "plugin-data", "a"))).rejects.toThrow();
     await expect(fs.access(await runFile(app, base, "a"))).rejects.toThrow();
   });
+  describe("links under the base (the agent can put one anywhere there)", () => {
+    /** A base, the app folder, and an `outside` folder a link points to. */
+    const linked = async () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+      const env = await setup();
+      const outside = path.join(path.dirname(env.base), "outside");
+      await fs.mkdir(outside);
+      return { ...env, outside, warn };
+    };
+    const writes = (s: PluginStateStore) => [
+      s.setSettings("a", { team: "web" }),
+      s.appendError("a", { at: "t", message: "m" }),
+    ];
+
+    it("a linked .harness/plugins: nothing is written outside", async () => {
+      const { base, s, outside, warn } = await linked();
+      await fs.mkdir(path.join(base, ".harness"));
+      await fs.symlink(outside, path.join(base, ".harness", "plugins"));
+      for (const w of writes(s)) await expect(w).rejects.toThrow(/link/);
+      expect(await fs.readdir(outside)).toEqual([]);
+      warn.mockRestore();
+    });
+    it("a linked .harness: nothing is written outside", async () => {
+      const { base, s, outside, warn } = await linked();
+      await fs.symlink(outside, path.join(base, ".harness"));
+      for (const w of writes(s)) await expect(w).rejects.toThrow(/link/);
+      expect(await fs.readdir(outside)).toEqual([]);
+      warn.mockRestore();
+    });
+    it("a linked <id> folder: nothing is written outside", async () => {
+      const { base, s, outside, warn } = await linked();
+      await fs.mkdir(path.join(base, ".harness", "plugins"), { recursive: true });
+      await fs.symlink(outside, dir(base, "a"));
+      for (const w of writes(s)) await expect(w).rejects.toThrow(/link/);
+      expect(await fs.readdir(outside)).toEqual([]);
+      warn.mockRestore();
+    });
+    it("a linked errors.jsonl or settings.json: the outside file is untouched", async () => {
+      const { base, s, outside, warn } = await linked();
+      await fs.mkdir(dir(base, "a"), { recursive: true });
+      const target = path.join(outside, "victim.txt");
+      await fs.writeFile(target, "keep");
+      await fs.symlink(target, path.join(dir(base, "a"), "errors.jsonl"));
+      await fs.symlink(target, path.join(dir(base, "a"), "settings.json"));
+      await expect(s.appendError("a", { at: "t", message: "m" })).rejects.toThrow();
+      expect(await s.errors("a")).toEqual([]);
+      expect(await s.settings("a")).toEqual({});
+      // Replacing the link itself (the atomic rename) is refused too: a link there is never a file of ours.
+      await expect(s.setSettings("a", { team: "web" })).rejects.toThrow(/link/);
+      expect(await fs.readFile(target, "utf8")).toBe("keep");
+      expect((await fs.lstat(path.join(dir(base, "a"), "settings.json"))).isSymbolicLink()).toBe(true);
+      warn.mockRestore();
+    });
+    it("a hard-linked errors.jsonl or settings.json is neither read nor appended to", async () => {
+      const { base, s, outside, warn } = await linked();
+      await fs.mkdir(dir(base, "a"), { recursive: true });
+      const target = path.join(outside, "victim.json");
+      await fs.writeFile(target, '{"at":"t","message":"secret"}\n');
+      await fs.link(target, path.join(dir(base, "a"), "errors.jsonl"));
+      await fs.link(target, path.join(dir(base, "a"), "settings.json"));
+      expect(await s.errors("a")).toEqual([]);
+      expect(await s.settings("a")).toEqual({});
+      await expect(s.appendError("a", { at: "t", message: "m" })).rejects.toThrow();
+      expect(await fs.readFile(target, "utf8")).toBe('{"at":"t","message":"secret"}\n');
+      warn.mockRestore();
+    });
+    it("reads through a linked folder read nothing", async () => {
+      const { base, s, outside, warn } = await linked();
+      await fs.mkdir(path.join(outside, "a"));
+      await fs.writeFile(path.join(outside, "a", "settings.json"), '{"team":"stolen"}');
+      await fs.mkdir(path.join(base, ".harness"));
+      await fs.symlink(outside, path.join(base, ".harness", "plugins"));
+      expect(await s.settings("a")).toEqual({});
+      expect(await s.errors("a")).toEqual([]);
+      warn.mockRestore();
+    });
+    it("setSettings({}) never removes through a linked folder", async () => {
+      const { base, s, outside, warn } = await linked();
+      await fs.mkdir(path.join(outside, "a"));
+      await fs.writeFile(path.join(outside, "a", "settings.json"), "{}");
+      await fs.mkdir(path.join(base, ".harness"));
+      await fs.symlink(outside, path.join(base, ".harness", "plugins"));
+      await expect(s.setSettings("a", {})).rejects.toThrow(/link/);
+      await fs.access(path.join(outside, "a", "settings.json"));
+      warn.mockRestore();
+    });
+    it.each(["plugins", "plugin-data"])("removeAll never deletes through a linked .harness/%s", async (folder) => {
+      const { base, app, s, outside, warn } = await linked();
+      await s.setState("a", { on: true });
+      await fs.mkdir(path.join(outside, "a"));
+      await fs.writeFile(path.join(outside, "a", "keep.txt"), "keep");
+      await fs.mkdir(path.join(base, ".harness"));
+      await fs.symlink(outside, path.join(base, ".harness", folder));
+      await expect(s.removeAll("a")).rejects.toThrow(/link/);
+      await fs.access(path.join(outside, "a", "keep.txt"));
+      // The run state (the app's own folder) still goes: the plugin is gone from this base.
+      await expect(fs.access(await runFile(app, base, "a"))).rejects.toThrow();
+      warn.mockRestore();
+    });
+    it("removeAll never deletes through a linked .harness", async () => {
+      const { base, s, outside, warn } = await linked();
+      await fs.mkdir(path.join(outside, "plugins", "a"), { recursive: true });
+      await fs.symlink(outside, path.join(base, ".harness"));
+      await expect(s.removeAll("a")).rejects.toThrow(/link/);
+      await fs.access(path.join(outside, "plugins", "a"));
+      warn.mockRestore();
+    });
+    it("removeAll removes a linked <id> entry itself, never what it points to", async () => {
+      const { base, s, outside, warn } = await linked();
+      await fs.writeFile(path.join(outside, "keep.txt"), "keep");
+      await fs.mkdir(path.join(base, ".harness", "plugin-data"), { recursive: true });
+      await fs.symlink(outside, path.join(base, ".harness", "plugin-data", "a"));
+      await s.removeAll("a");
+      await fs.access(path.join(outside, "keep.txt"));
+      await expect(fs.lstat(path.join(base, ".harness", "plugin-data", "a"))).rejects.toThrow();
+      warn.mockRestore();
+    });
+  });
+
+  describe("reading untrusted files never throws", () => {
+    it("a folder named settings.json or errors.jsonl reads as nothing", async () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+      const { base, s } = await setup();
+      await fs.mkdir(path.join(dir(base, "a"), "settings.json"), { recursive: true });
+      await fs.mkdir(path.join(dir(base, "a"), "errors.jsonl"));
+      expect(await s.settings("a")).toEqual({});
+      expect(await s.errors("a")).toEqual([]);
+      warn.mockRestore();
+    });
+    it("an unreadable file reads as nothing", async () => {
+      if (process.platform === "win32" || process.getuid?.() === 0) return;
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+      const { base, s } = await setup();
+      await fs.mkdir(dir(base, "a"), { recursive: true });
+      await fs.writeFile(path.join(dir(base, "a"), "settings.json"), '{"team":"web"}', { mode: 0o000 });
+      expect(await s.settings("a")).toEqual({});
+      warn.mockRestore();
+    });
+    it("a settings.json over 1 MB reads as empty", async () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+      const { base, s } = await setup();
+      await fs.mkdir(dir(base, "a"), { recursive: true });
+      await fs.writeFile(path.join(dir(base, "a"), "settings.json"), JSON.stringify({ big: "x".repeat(1024 * 1024) }));
+      expect(await s.settings("a")).toEqual({});
+      warn.mockRestore();
+    });
+    it("an error log far past its cap reads as empty and the next line starts it over", async () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+      const { base, s } = await setup();
+      await fs.mkdir(dir(base, "a"), { recursive: true });
+      await fs.writeFile(path.join(dir(base, "a"), "errors.jsonl"), `${JSON.stringify({ at: "t", message: "x" })}\n`.repeat(20_000));
+      expect(await s.errors("a")).toEqual([]);
+      await s.appendError("a", { at: "t2", message: "new" });
+      expect(await s.errors("a")).toEqual([{ at: "t2", message: "new" }]);
+      warn.mockRestore();
+    });
+    it.skipIf(process.platform === "win32")("a named pipe never blocks a read or an append", async () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+      const { base, s } = await setup();
+      await fs.mkdir(dir(base, "a"), { recursive: true });
+      execFileSync("mkfifo", [path.join(dir(base, "a"), "settings.json")]);
+      execFileSync("mkfifo", [path.join(dir(base, "a"), "errors.jsonl")]);
+      expect(await s.settings("a")).toEqual({});
+      expect(await s.errors("a")).toEqual([]);
+      await expect(s.appendError("a", { at: "t", message: "m" })).rejects.toThrow();
+      warn.mockRestore();
+    }, 5000);
+  });
+
+  it("a base whose real path can't be resolved: the state reads as none and setState refuses", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const root = await tmp();
+    const app = path.join(root, "app");
+    const s = new PluginStateStore(path.join(root, "missing"), app);
+    expect(await s.state("a")).toBeNull();
+    await expect(s.setState("a", { on: true })).rejects.toThrow();
+    await expect(fs.access(app)).rejects.toThrow();
+    warn.mockRestore();
+  });
+
   it("an id that isn't a plugin id is refused before any path is built", async () => {
     const { s } = await setup();
     await expect(s.state("../x")).rejects.toThrow(/plugin/);
@@ -190,6 +371,13 @@ describe("work hours (§4.3, Decision 4)", () => {
   });
   it("defaults to Monday–Friday 09:00–18:00 in the system zone", () => {
     expect(DEFAULT_WORK_HOURS()).toMatchObject({ days: [1, 2, 3, 4, 5], from: "09:00", to: "18:00", timezone: Intl.DateTimeFormat().resolvedOptions().timeZone });
+  });
+  it("the default zone falls back to UTC when the system has none (or one this runtime doesn't know)", () => {
+    for (const timeZone of [undefined, "Mars/Olympus"]) {
+      const spy = vi.spyOn(Intl.DateTimeFormat.prototype, "resolvedOptions").mockReturnValue({ timeZone } as Intl.ResolvedDateTimeFormatOptions);
+      expect(DEFAULT_WORK_HOURS().timezone).toBe("UTC");
+      spy.mockRestore();
+    }
   });
   it("parseWorkHours accepts only well-formed hours in a real zone", () => {
     expect(parseWorkHours(wh)).toEqual(wh);

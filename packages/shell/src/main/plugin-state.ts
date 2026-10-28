@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { promises as fs } from "node:fs";
+import { constants, promises as fs } from "node:fs";
 import path from "node:path";
 import { type AddedPermission, type PluginPermissions, permissionsAdded, pluginManifestSchema, z } from "@humanharness/harness-sdk";
 import { pluginDataDir, pluginStateDir } from "@humanharness/workspace";
@@ -13,6 +13,10 @@ import type { PluginEntry } from "./plugin-load";
  * folder (`~/.humanharness/<harness-id>/`, beside the pointers file, B13) under `plugin-state/<hash of the base's real
  * path>/<id>.json`. Reading writes nothing (D0); every file is untrusted on read (hand-edited, half-written) and reads
  * as nothing when broken.
+ *
+ * The agent can also put a link anywhere in the base. Nothing under `.harness/` is followed: every folder from the base
+ * down is checked with lstat (a link or anything but a folder is refused), files open with O_NOFOLLOW (and O_NONBLOCK,
+ * so a named pipe never hangs a read), a hard-linked file is refused, and a removal never goes through a linked parent.
  */
 
 export interface PluginApproval {
@@ -46,15 +50,20 @@ export interface WorkHours {
   timezone: string;
 }
 
-export const DEFAULT_WORK_HOURS = (): WorkHours => ({ days: [1, 2, 3, 4, 5], from: "09:00", to: "18:00", timezone: Intl.DateTimeFormat().resolvedOptions().timeZone });
-
-const validZone = (tz: string): boolean => {
+const validZone = (tz: unknown): tz is string => {
+  if (typeof tz !== "string" || tz === "") return false;
   try {
     new Intl.DateTimeFormat("en-US", { timeZone: tz });
     return true;
   } catch {
     return false;
   }
+};
+
+/** The system's zone, or UTC when it has none this runtime knows. */
+export const DEFAULT_WORK_HOURS = (): WorkHours => {
+  const tz: unknown = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  return { days: [1, 2, 3, 4, 5], from: "09:00", to: "18:00", timezone: validZone(tz) ? tz : "UTC" };
 };
 
 const clock = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
@@ -140,6 +149,9 @@ function cleanState(raw: unknown): PluginState | null {
 
 /** Decision 21: the error log keeps its newest lines within this size. */
 const ERROR_LOG_MAX_BYTES = 256 * 1024;
+/** Read caps: a file past them reads as nothing (the error log gets room for a line written past its cap). */
+const ERROR_LOG_READ_MAX = ERROR_LOG_MAX_BYTES + 64 * 1024;
+const JSON_READ_MAX = 1024 * 1024;
 /** B11: one log line's message. */
 const ERROR_MESSAGE_MAX = 2000;
 const ERROR_SOURCE_MAX = 64;
@@ -167,23 +179,38 @@ export class PluginStateStore {
     private readonly appDir: string,
   ) {}
 
-  private file(id: string, name: string): string {
-    return path.join(pluginStateDir(this.base, id), name);
+  /** The folders from the base down to the plugin's state folder (`.harness/plugins/<id>`); throws on a bad id. */
+  private parts(dir: string): string[] {
+    return path.relative(this.base, dir).split(path.sep);
   }
 
-  /** `<appDir>/plugin-state/<sha256 of the base's real path>/<id>.json`: one base's run state, outside it. */
+  /**
+   * `<appDir>/plugin-state/<sha256 of the base's real path>/<id>.json`: one base's run state, outside it. A base whose
+   * real path can't be resolved has no run state (never a guessed key another base could share).
+   */
   private async stateFile(id: string): Promise<string> {
     pluginStateDir(this.base, id);
-    this.stateFolder ??= fs
-      .realpath(this.base)
-      .catch(() => path.resolve(this.base))
-      .then((real) => path.join(this.appDir, "plugin-state", createHash("sha256").update(real).digest("hex").slice(0, 32)));
+    this.stateFolder ??= fs.realpath(this.base).then(
+      (real) => path.join(this.appDir, "plugin-state", createHash("sha256").update(real).digest("hex").slice(0, 32)),
+      (err) => {
+        this.stateFolder = null;
+        throw err;
+      },
+    );
     return path.join(await this.stateFolder, `${id}.json`);
   }
 
   /** On/off and the approval: read only from the app's folder, never from the base (B8). */
   async state(id: string): Promise<PluginState | null> {
-    const raw = await this.readJson(await this.stateFile(id));
+    pluginStateDir(this.base, id);
+    let file: string;
+    try {
+      file = await this.stateFile(id);
+    } catch (err) {
+      console.warn(`[plugins] ${id}: the base's real path can't be resolved (${(err as Error).message}); no state`);
+      return null;
+    }
+    const raw = parseJson(id, "state", await readText(file, JSON_READ_MAX));
     if (raw === undefined || raw === null) return null;
     const state = cleanState(raw);
     if (state === null) console.warn(`[plugins] ${id}: the stored state is not a state; reading it as none`);
@@ -195,15 +222,17 @@ export class PluginStateStore {
     const file = await this.stateFile(id);
     return this.queue(async () => {
       const next = { ...((await this.state(id)) ?? { on: false }), ...patch };
-      await writeAtomic(file, `${JSON.stringify(next, null, 2)}\n`, true);
+      // The app's own folder: not the agent's to link, so a plain mkdir.
+      await fs.mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
+      await writeAtomic(path.dirname(file), path.basename(file), `${JSON.stringify(next, null, 2)}\n`, { mode: 0o600 });
       return cleanState(JSON.parse(JSON.stringify(next))) as PluginState;
     });
   }
 
   /** The stored values only (work hours included when set); the caller checks them against the plugin's settings. */
   async settings(id: string): Promise<Record<string, unknown>> {
-    const raw = await this.readJson(this.file(id, "settings.json"));
-    if (raw === undefined) return {};
+    const raw = parseJson(id, "settings.json", await this.readBase(id, "settings.json", JSON_READ_MAX));
+    if (raw === undefined || raw === null) return {};
     if (!isRecord(raw)) {
       console.warn(`[plugins] ${id}: settings.json is not an object; reading it as empty`);
       return {};
@@ -213,16 +242,21 @@ export class PluginStateStore {
 
   /** Stores only the changed values; `{}` removes the file. */
   async setSettings(id: string, values: Record<string, unknown>): Promise<void> {
-    const file = this.file(id, "settings.json");
+    const parts = this.parts(pluginStateDir(this.base, id));
     return this.queue(async () => {
-      if (Object.keys(values).length === 0) await fs.rm(file, { force: true });
-      else await writeAtomic(file, `${JSON.stringify(values, null, 2)}\n`);
+      if (Object.keys(values).length === 0) {
+        const dir = await folderChain(this.base, parts, false);
+        if (dir !== null) await fs.rm(path.join(dir, "settings.json"), { force: true });
+        return;
+      }
+      const dir = (await folderChain(this.base, parts, true)) as string;
+      await writeAtomic(dir, "settings.json", `${JSON.stringify(values, null, 2)}\n`, { recheck: () => folderChain(this.base, parts, false) });
     });
   }
 
   /** Oldest first; a line that doesn't parse is skipped. */
   async errors(id: string): Promise<PluginErrorLine[]> {
-    const text = await readText(this.file(id, "errors.jsonl"));
+    const text = await this.readBase(id, "errors.jsonl", ERROR_LOG_READ_MAX);
     if (text === null) return [];
     const out: PluginErrorLine[] = [];
     for (const line of text.split("\n")) {
@@ -241,45 +275,62 @@ export class PluginStateStore {
 
   /** Appends one line (bounded, B11); past 256 KB the oldest lines go. */
   async appendError(id: string, e: PluginErrorLine): Promise<void> {
-    const file = this.file(id, "errors.jsonl");
+    const parts = this.parts(pluginStateDir(this.base, id));
     const clean: PluginErrorLine = { at: String(e.at).slice(0, 40), ...(e.source === undefined ? {} : { source: String(e.source).slice(0, ERROR_SOURCE_MAX) }), message: String(e.message).slice(0, ERROR_MESSAGE_MAX) };
     const line = `${JSON.stringify(clean)}\n`;
     return this.queue(async () => {
-      const size = await fs.stat(file).then((s) => s.size, () => null);
-      if (size === null || size + Buffer.byteLength(line) <= ERROR_LOG_MAX_BYTES) {
-        await fs.mkdir(path.dirname(file), { recursive: true });
-        await fs.appendFile(file, line);
-        return;
+      const dir = (await folderChain(this.base, parts, true)) as string;
+      const file = path.join(dir, "errors.jsonl");
+      const h = await fs.open(file, constants.O_WRONLY | constants.O_APPEND | constants.O_CREAT | NOFOLLOW | NONBLOCK, 0o644);
+      try {
+        const st = await h.stat();
+        if (!st.isFile() || st.nlink > 1) throw new Error(`errors.jsonl is not a plain file; refusing to append`);
+        if (st.size + Buffer.byteLength(line) <= ERROR_LOG_MAX_BYTES) {
+          await h.write(line);
+          return;
+        }
+      } finally {
+        await h.close();
       }
-      const lines = ((await readText(file)) ?? "").split("\n").filter((l) => l !== "");
+      const lines = ((await readText(file, ERROR_LOG_READ_MAX)) ?? "").split("\n").filter((l) => l !== "");
       lines.push(line.slice(0, -1));
       let total = 0;
       let keep = lines.length;
       while (keep > 0 && total + Buffer.byteLength(lines[keep - 1]) + 1 <= ERROR_LOG_MAX_BYTES) total += Buffer.byteLength(lines[--keep]) + 1;
-      await writeAtomic(file, lines.slice(keep).map((l) => `${l}\n`).join(""));
+      await writeAtomic(dir, "errors.jsonl", lines.slice(keep).map((l) => `${l}\n`).join(""), { recheck: () => folderChain(this.base, parts, false) });
     });
   }
 
-  /** Remove (Decision 19): the plugin's run state, its state folder and its data in this base. */
+  /**
+   * Remove (Decision 19): the plugin's run state, its state folder and its data in this base. The run state goes first
+   * (the app's folder); a folder in the base behind a linked parent is left alone and the call rejects. A linked
+   * `<id>` entry is removed itself, never what it points to.
+   */
   async removeAll(id: string): Promise<void> {
     const file = await this.stateFile(id);
-    const dirs = [pluginStateDir(this.base, id), pluginDataDir(this.base, id)];
+    const dirs = [pluginStateDir(this.base, id), pluginDataDir(this.base, id)].map((d) => this.parts(d));
     return this.queue(async () => {
       await fs.rm(file, { force: true });
-      for (const dir of dirs) await fs.rm(dir, { recursive: true, force: true });
+      for (const parts of dirs) {
+        const parent = await folderChain(this.base, parts.slice(0, -1), false);
+        if (parent === null) continue;
+        // rm on a link removes the link; inside a real folder it never follows links.
+        await fs.rm(path.join(parent, parts[parts.length - 1]), { recursive: true, force: true });
+      }
     });
   }
 
-  /** undefined: no file. A file that isn't JSON reads as `null` (logged). */
-  private async readJson(file: string): Promise<unknown> {
-    const text = await readText(file);
-    if (text === null) return undefined;
+  /** A file in the plugin's state folder in the base, or null (missing, behind a link, not a plain file, too big). */
+  private async readBase(id: string, name: string, max: number): Promise<string | null> {
+    const parts = this.parts(pluginStateDir(this.base, id));
+    let dir: string | null;
     try {
-      return JSON.parse(text);
-    } catch {
-      console.warn(`[plugins] ${path.basename(path.dirname(file))}: ${path.basename(file)} is not JSON; reading it as none`);
+      dir = await folderChain(this.base, parts, false);
+    } catch (err) {
+      console.warn(`[plugins] ${id}: ${(err as Error).message}; reading ${name} as none`);
       return null;
     }
+    return dir === null ? null : readText(path.join(dir, name), max);
   }
 
   private queue<T>(fn: () => Promise<T>): Promise<T> {
@@ -289,21 +340,90 @@ export class PluginStateStore {
   }
 }
 
-async function readText(file: string): Promise<string | null> {
+const NOFOLLOW = constants.O_NOFOLLOW ?? 0;
+const NONBLOCK = constants.O_NONBLOCK ?? 0;
+
+/** undefined: no file. A file that isn't JSON reads as `null` (logged). */
+function parseJson(id: string, name: string, text: string | null): unknown {
+  if (text === null) return undefined;
   try {
-    return await fs.readFile(file, "utf8");
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
-    throw err;
+    return JSON.parse(text);
+  } catch {
+    console.warn(`[plugins] ${id}: ${name} is not JSON; reading it as none`);
+    return null;
   }
 }
 
-/** `private`: the app's own folder (folders 0700, file 0600, like the secrets). */
-async function writeAtomic(file: string, text: string, priv = false): Promise<void> {
-  await fs.mkdir(path.dirname(file), { recursive: true, ...(priv ? { mode: 0o700 } : {}) });
-  const tmp = `${file}.${randomUUID()}.tmp`;
+/**
+ * Walks `parts` down from `base`, refusing a link or anything but a folder at each step; with `create`, makes the
+ * missing ones one at a time. The last folder, or null when one is missing and `create` is false.
+ */
+async function folderChain(base: string, parts: string[], create: boolean): Promise<string | null> {
+  let dir = base;
+  for (const part of parts) {
+    dir = path.join(dir, part);
+    let st = await fs.lstat(dir).catch((err: NodeJS.ErrnoException) => {
+      if (err.code === "ENOENT") return null;
+      throw err;
+    });
+    if (st === null) {
+      if (!create) return null;
+      await fs.mkdir(dir).catch((err: NodeJS.ErrnoException) => {
+        if (err.code !== "EEXIST") throw err;
+      });
+      st = await fs.lstat(dir);
+    }
+    if (!st.isDirectory()) throw new Error(`${path.relative(base, dir)} is ${st.isSymbolicLink() ? "a link" : "not a folder"}; refusing`);
+  }
+  return dir;
+}
+
+/**
+ * At most `max` bytes of a plain file, as text; null when missing or anything else (a link, a hard link, a folder, a
+ * pipe, too big, unreadable: logged). Never follows a link at the last step and never blocks on a pipe.
+ */
+async function readText(file: string, max: number): Promise<string | null> {
+  let h: fs.FileHandle | undefined;
   try {
-    await fs.writeFile(tmp, text, priv ? { mode: 0o600 } : undefined);
+    h = await fs.open(file, constants.O_RDONLY | NOFOLLOW | NONBLOCK);
+    const st = await h.stat();
+    if (!st.isFile()) throw new Error("not a regular file");
+    if (st.nlink > 1) throw new Error("hard-linked");
+    const buf = Buffer.alloc(max + 1);
+    let n = 0;
+    while (n < buf.length) {
+      const { bytesRead } = await h.read(buf, n, buf.length - n, n);
+      if (bytesRead === 0) break;
+      n += bytesRead;
+    }
+    if (n > max) throw new Error(`over ${max} bytes`);
+    return buf.subarray(0, n).toString("utf8");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") console.warn(`[plugins] ${path.basename(path.dirname(file))}: ${path.basename(file)} can't be read (${(err as Error).message}); reading it as none`);
+    return null;
+  } finally {
+    await h?.close();
+  }
+}
+
+/**
+ * Writes `name` in `dir` atomically: a fresh temp file (O_EXCL, O_NOFOLLOW), then a rename over the target, which must
+ * be a plain file or missing. `recheck` walks the folders again right before the rename (the base's: one may have been
+ * swapped for a link meanwhile).
+ */
+async function writeAtomic(dir: string, name: string, text: string, o: { mode?: number; recheck?: () => Promise<unknown> } = {}): Promise<void> {
+  const file = path.join(dir, name);
+  const tmp = path.join(dir, `${name}.${randomUUID()}.tmp`);
+  try {
+    const h = await fs.open(tmp, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | NOFOLLOW, o.mode ?? 0o644);
+    try {
+      await h.writeFile(text);
+    } finally {
+      await h.close();
+    }
+    if (o.recheck) await o.recheck();
+    const st = await fs.lstat(file).catch(() => null);
+    if (st !== null && !st.isFile()) throw new Error(`${name} is ${st.isSymbolicLink() ? "a link" : "not a regular file"}; refusing to replace it`);
     await fs.rename(tmp, file);
   } catch (err) {
     await fs.rm(tmp, { force: true });

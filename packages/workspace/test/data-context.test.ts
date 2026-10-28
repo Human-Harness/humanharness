@@ -117,3 +117,20 @@ describe("buildDataContext label (plugins spec §3.2)", () => {
     expect(labelled.replaceAll("oncall.", "")).toBe(plain);
   });
 });
+
+describe("buildDataContext plugin tables (label given)", () => {
+  it("strips line separators, bidi and zero-width marks from cells and headers; harness tables keep them", async () => {
+    const odd = "a\u2028b\u2029c\u0085d\u202ee\u200bf\u2066g\ufeffh";
+    const data = dataSchema.parse({
+      feed: { scoped: false, key: "id", schema: z.object({ id: z.string(), [`ti\u202etle`]: z.string() }), agent: "read", context: { fields: "all", tokens: 200 } },
+    });
+    const store = new DataStore(fs.mkdtempSync(path.join(root, "t-")), data);
+    await store.put("feed", { id: "x", [`ti\u202etle`]: odd }, { who: "person", scope: "main" });
+    const plain = await buildDataContext(store, data, "main", undefined);
+    expect(plain).toContain(odd);
+    const labelled = await buildDataContext(store, data, "main", undefined, { label: (n) => `rss.${n}` });
+    expect(labelled).toContain("| id | title |");
+    expect(labelled).toContain("| x | a b c defgh |");
+    expect(labelled).not.toMatch(/[\u0085\u2028\u2029\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/);
+  });
+});

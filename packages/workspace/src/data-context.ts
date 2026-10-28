@@ -5,14 +5,18 @@ import { estimateTokens } from "./notes-index";
 
 const CELL_CHARS = 120;
 
-function cell(value: unknown, max: number): string {
-  const text = value === undefined || value === null ? "" : typeof value === "string" ? value : JSON.stringify(value);
+/** Outside text (a plugin's table) on one plain line: no controls or line separators, no bidi or zero-width marks. */
+const plain = (text: string): string => text.replace(/[\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/g, "").replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, " ");
+
+function cell(value: unknown, max: number, outside: boolean): string {
+  const raw = value === undefined || value === null ? "" : typeof value === "string" ? value : JSON.stringify(value);
+  const text = outside ? plain(raw) : raw;
   const flat = text.replace(/\s*[\r\n]+\s*/g, " ");
   const cut = flat.length > max ? `${flat.slice(0, Math.max(max - 1, 0))}…` : flat;
   return cut.replace(/\\/g, "\\\\").replace(/\|/g, "\\|");
 }
 
-const row = (values: unknown[], max = CELL_CHARS): string => `| ${values.map((v) => cell(v, max)).join(" | ")} |`;
+const row = (values: unknown[], outside: boolean, max = CELL_CHARS): string => `| ${values.map((v) => cell(v, max, outside)).join(" | ")} |`;
 
 const footer = (left: number, name: string): string => `… ${left} more in ${name}: use data_query to read them.`;
 
@@ -48,6 +52,8 @@ export async function buildDataContext(
   const tables: string[] = [];
   for (const [name, c] of Object.entries(collections)) {
     const title = opts.label ? opts.label(name) : name;
+    // A labelled table is a plugin's: its names and values come from outside, so they get the stricter cleanup.
+    const outside = opts.label !== undefined;
     if (c.context === false || c.agent === "none") continue;
     if (c.scoped && scope === APP_SCOPE) continue;
     const folder = c.scoped ? scope : APP_SCOPE;
@@ -56,19 +62,19 @@ export async function buildDataContext(
     const budget = c.context.tokens;
     const listed = c.context.fields === "all" ? Object.keys(c.schema.shape) : c.context.fields;
     const fields = c.key ? [c.key, ...listed.filter((f) => f !== c.key)] : listed;
-    const lines = [`## Data: ${title}`, "", row(fields), `|${fields.map(() => "---").join("|")}|`];
+    const lines = [`## Data: ${title}`, "", row(fields, outside), `|${fields.map(() => "---").join("|")}|`];
     const sorted = await ordered(store, name, c, folder, records, action);
     let shown = 0;
     for (const r of sorted) {
       const left = records.length - shown - 1;
       const tail = left > 0 ? ["", footer(left, title)] : [];
       const fits = (line: string) => estimateTokens([...lines, line, ...tail].join("\n")) <= budget;
-      let line = row(fields.map((f) => r[f]));
+      let line = row(fields.map((f) => r[f]), outside);
       if (shown === 0) {
         // The first row always shows: shorten its cells until the table fits.
         for (let max = CELL_CHARS; !fits(line) && max > 1; ) {
           max = Math.floor(max / 2);
-          line = row(fields.map((f) => r[f]), max);
+          line = row(fields.map((f) => r[f]), outside, max);
         }
       } else if (!fits(line)) break;
       lines.push(line);

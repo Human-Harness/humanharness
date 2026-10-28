@@ -248,7 +248,7 @@ function LanguageRow({ state, language }: { state: AppState; language?: Language
         // One row and one live region for a run's progress and its stop, so the change from one to the other is
         // announced. While the chooser is open its own progress dialog speaks: the row has no role then.
         <div className={`hh-row ${running ? "hh-langrow-progress" : "hh-langrow-stopped"}`}>
-          <span role={open ? undefined : "status"}>{running ? t("language.progress", { done: run.done, total: run.total }) : t("language.stopped")}</span>
+          <span role={open ? undefined : "status"}>{running ? t("language.progress", { done: run.done, total: run.total }) : stopped?.reason === "quota" ? t("language.stoppedQuota") : t("language.stopped")}</span>
           {running ? (
             <button type="button" onClick={() => language.cancel()}>
               {t("language.cancel")}

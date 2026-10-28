@@ -338,7 +338,7 @@ describe("Settings › General › Language (spec §3, §5, §6)", () => {
   });
 
   it("a stopped run offers Try again; new texts offer Translate; no engine disables them with the reason", async () => {
-    await renderSettings({ language: control({ run: { tag: "es", done: 1, total: 5, status: "failed", reason: "quota" } }) });
+    await renderSettings({ language: control({ run: { tag: "es", done: 1, total: 5, status: "failed", reason: "engine" } }) });
     expect(screen.getByText("The translation stopped. What it finished is kept.")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
     expect((await screen.findByRole("alertdialog")).textContent).toContain("Español");
@@ -358,8 +358,18 @@ describe("Settings › General › Language (spec §3, §5, §6)", () => {
     expect(screen.queryByRole("alertdialog")).toBeNull();
   });
 
-  it("progress and stopped share one live region, which goes quiet while the chooser is open", async () => {
+  it("a run stopped by the plan's limit says so; other stops keep the generic line", async () => {
     await renderSettings({ language: control({ run: { tag: "es", done: 1, total: 5, status: "failed", reason: "quota" } }) });
+    expect(screen.getByText("Your plan's limit was reached. Try again later.").getAttribute("role")).toBe("status");
+    expect(screen.queryByText("The translation stopped. What it finished is kept.")).toBeNull();
+    expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
+    cleanup();
+    await renderSettings({ language: control({ run: { tag: "es", done: 1, total: 5, status: "cancelled" } }) });
+    expect(screen.getByText("The translation stopped. What it finished is kept.")).toBeTruthy();
+  });
+
+  it("progress and stopped share one live region, which goes quiet while the chooser is open", async () => {
+    await renderSettings({ language: control({ run: { tag: "es", done: 1, total: 5, status: "failed", reason: "engine" } }) });
     const stopped = screen.getByText("The translation stopped. What it finished is kept.");
     expect(stopped.getAttribute("role")).toBe("status");
     expect(document.querySelectorAll(".hh-langrow-progress, .hh-langrow-stopped")).toHaveLength(1);

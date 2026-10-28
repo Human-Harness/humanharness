@@ -74,6 +74,7 @@
     "translate": "Translate",
     "progress": "Translating… {{done}} of {{total}}",
     "stopped": "The translation stopped. What it finished is kept.",
+    "stoppedQuota": "Your plan's limit was reached. Try again later.",
     "tryAgain": "Try again",
     "newTexts": "Some texts are new. Translate them?",
     "notYet": "The app's texts aren't in {{language}} yet.",

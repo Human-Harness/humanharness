@@ -25,11 +25,13 @@ describe("Settings › Sidekicks (spec §8)", () => {
     expect(rows[0]!.textContent).toContain("Prompt coach · Focus");
     expect(screen.queryByRole("button", { name: "Move Sidekick up" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Move Rulo up" }));
-    await waitFor(() => expect(c.sidekickCalls).toContainEqual(["reorder", ["rulo", "sidekick"]]));
-    await waitFor(() => expect(screen.getAllByRole("listitem").map((r) => r.querySelector("strong")?.textContent)).toEqual(["Rulo", "Sidekick"]));
+    // Generous waits (and test timeout): under the full suite's load the reorder, the reload and the focus can each take over a second.
+    const slow = { timeout: 5_000 };
+    await waitFor(() => expect(c.sidekickCalls).toContainEqual(["reorder", ["rulo", "sidekick"]]), slow);
+    await waitFor(() => expect(screen.getAllByRole("listitem").map((r) => r.querySelector("strong")?.textContent)).toEqual(["Rulo", "Sidekick"]), slow);
     // Rulo is at the top now: its Move up is gone, so focus goes to its Move down.
-    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "Move Rulo down" })));
-  });
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "Move Rulo down" })), slow);
+  }, 20_000);
 
   it("New opens the editor; a custom purpose needs text and a moment", async () => {
     const c = new FakeClient({ language: "en" });

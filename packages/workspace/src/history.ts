@@ -2,6 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import git from "isomorphic-git";
 import { DATA_PREFIX, MATERIAL_KEEP, NOTES_PREFIX, REVIEWS_PREFIX, isScopeDir } from "./layout";
+import { FileIndex, type FileIndexData, addCommit, emptyIndex } from "./file-index";
+import { namedPath } from "./file-timeline";
 import { BEFORE_MESSAGE } from "./subjects";
 
 /**
@@ -97,6 +99,12 @@ export interface RestoreResult {
   skipped: string[];
 }
 
+/** A commit and the tracked paths it touched (plus the path an `Answer:`/`Approved:` subject names). */
+export interface CommitPaths {
+  sha: string;
+  paths: string[];
+}
+
 /** True when `dir` (or its nearest existing ancestor) resolves inside `root`, the folder's real path. */
 async function resolvesInside(root: string, dir: string): Promise<boolean> {
   let probe = dir;
@@ -125,6 +133,9 @@ async function writeNoFollow(file: string, data: Buffer, mode: number): Promise<
 
 /** How far back `tasks` follows a task past the depth to find its first commit. */
 const MAX_WALK_BACK = 1000;
+
+/** How far back a read follows commits another History made before it rebuilds the file index instead. */
+const MAX_CATCH_UP = 2000;
 
 /** Ids a trailer may carry (task UUIDs, manifest action ids): no spaces or line breaks. */
 const TRAILER_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/;
@@ -183,6 +194,25 @@ export class History {
 
   private headTime = 0;
   private queue: Promise<unknown> = Promise.resolve();
+  // Lazy: a field initializer would run before the constructor's parameter properties are set.
+  private fileIndex: FileIndex | null = null;
+  private get index(): FileIndex {
+    return (this.fileIndex ??= new FileIndex(this.gitdir));
+  }
+  private readonly commitListeners = new Set<(c: CommitPaths) => void>();
+  /** The index being brought up to date, shared by every read meanwhile. */
+  private updating: Promise<FileIndexData> | null = null;
+
+  /** Told after every commit, with the paths it touched (the window refreshes a file's timeline). */
+  onCommit(listener: (c: CommitPaths) => void): () => void {
+    this.commitListeners.add(listener);
+    return () => void this.commitListeners.delete(listener);
+  }
+
+  /** Whether the history tracks `file` (relative, forward slashes). */
+  tracks(file: string): boolean {
+    return this.tracked(file);
+  }
 
   /** Runs `fn` after every previously queued operation has settled. */
   private serialize<T>(fn: () => Promise<T>): Promise<T> {
@@ -250,19 +280,111 @@ export class History {
     return this.serialize(() => this.saveNow(withTrailer(message, trailer)));
   }
 
-  private async saveNow(message: string): Promise<string | null> {
-    const matrix = await git.statusMatrix({ ...this.repo(), filter: this.tracked });
-    let changed = false;
+  private async saveNow(message: string, only?: ReadonlySet<string>): Promise<string | null> {
+    const parent = await this.last();
+    const filter = only ? (file: string) => only.has(file) && this.tracked(file) : this.tracked;
+    const matrix = await git.statusMatrix({ ...this.repo(), filter });
+    const paths: string[] = [];
     for (const [file, head, workdir, stage] of matrix) {
       if (head === 1 && workdir === 1 && stage === 1 && !(await this.differsFromHead(file))) continue;
-      changed = true;
+      paths.push(file);
       if (workdir === 0) await git.remove({ ...this.repo(), filepath: file });
       else await git.add({ ...this.repo(), filepath: file });
     }
-    if (!changed && (await this.last()) !== null) return null;
+    if (paths.length === 0 && parent !== null) return null;
     const sha = await git.commit({ ...this.repo(), message, author: AUTHOR });
     await this.refreshHeadTime();
+    await this.committed(parent, sha, message, paths);
     return sha;
+  }
+
+  /** After a commit: the index (best effort, never failing the commit), then the listeners. */
+  private async committed(parent: string | null, sha: string, message: string, staged: string[]): Promise<void> {
+    const named = namedPath(parseCommitMessage(message).subject);
+    const paths = named !== null && !staged.includes(named) ? [...staged, named] : staged;
+    try {
+      await this.index.record(parent, sha, paths);
+    } catch (err) {
+      console.error("Could not update the file index", err);
+    }
+    for (const l of [...this.commitListeners]) {
+      try {
+        l({ sha, paths });
+      } catch (err) {
+        console.error("A commit listener failed", err);
+      }
+    }
+  }
+
+  /** The commits that touched `file`, oldest first (file-timeline spec §3.3). */
+  async fileCommits(file: string): Promise<string[]> {
+    const data = await this.currentIndex();
+    // A copy: the index's own lists grow with later commits.
+    return Object.hasOwn(data.paths, file) ? [...data.paths[file]] : [];
+  }
+
+  private currentIndex(): Promise<FileIndexData> {
+    if (!this.updating) {
+      this.updating = this.bringIndexUpToDate().finally(() => {
+        this.updating = null;
+      });
+    }
+    return this.updating;
+  }
+
+  /**
+   * The index at HEAD: as it is; caught up on the commits another History made after its head; or rebuilt from the
+   * whole log when it is missing or its head is not in this history. Reads git objects only (immutable), so it runs
+   * outside the write queue; a commit meanwhile is caught up on by the next read.
+   */
+  private async bringIndexUpToDate(): Promise<FileIndexData> {
+    const head = await this.last();
+    if (head === null) return emptyIndex(null);
+    const cache = {};
+    const data = await this.index.load();
+    if (data?.head === head) return data;
+    const known = data?.head ?? null;
+    if (data && known !== null) {
+      const newer: string[] = [];
+      let at: string | null = head;
+      for (let i = 0; at !== null && at !== known && i < MAX_CATCH_UP; i++) {
+        newer.push(at);
+        at = await this.parentOf(at, cache);
+      }
+      if (at === known) {
+        const found: [string, string[]][] = [];
+        for (const sha of newer.reverse()) found.push([sha, await this.pathsOf(sha, cache)]);
+        // `data` is shared with the index's cache: add to a copy, and only if no commit moved it meanwhile.
+        if (data.head === known) {
+          const next = structuredClone(data);
+          for (const [sha, paths] of found) addCommit(next, sha, paths);
+          await this.saveIndex(next);
+          return next;
+        }
+      }
+    }
+    const fresh = emptyIndex(null);
+    const log = await git.log({ fs, gitdir: this.gitdir, ref: head, cache });
+    for (const e of log.reverse()) addCommit(fresh, e.oid, await this.pathsOf(e.oid, cache));
+    await this.saveIndex(fresh);
+    return fresh;
+  }
+
+  private async saveIndex(data: FileIndexData): Promise<void> {
+    try {
+      await this.index.save(data);
+    } catch (err) {
+      console.error("Could not save the file index", err);
+    }
+  }
+
+  /** The tracked paths commit `sha` changed against its parent, plus the path its subject names. */
+  private async pathsOf(sha: string, cache: object): Promise<string[]> {
+    const { commit } = await git.readCommit({ fs, gitdir: this.gitdir, oid: sha, cache });
+    const paths = (await this.diff(commit.parent[0] ?? null, sha, cache)).map((c) => c.path);
+    const named = namedPath(parseCommitMessage(commit.message).subject);
+    if (named !== null && !paths.includes(named)) paths.push(named);
+    return paths;
   }
 
   /** Makes the folder look exactly like `sha` (tracked files only) and records that as a new commit, tagged with `trailer`. */

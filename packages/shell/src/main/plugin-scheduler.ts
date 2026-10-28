@@ -2,8 +2,9 @@
  * When a plugin's sources sync (plugins spec §4.3, Decisions 11 and 21; threat model B11): each source runs at start
  * and then every TTL, one run at a time, raced against the run limit. Failures back off 1, 2, 4… minutes capped at the
  * TTL, and the third in a row raises one `info` item a success resolves. A `workHoursOnly` source that comes due
- * outside the hours re-checks every minute without running; a Refresh runs anyway. `CrashPolicy` says when a crashed
- * backend restarts and when the plugin turns off. Timers only: no Electron, no I/O of its own.
+ * outside the hours re-checks every minute without running; a Refresh runs anyway. Refreshes that arrive during a run
+ * share one follow-up run. After sleep the host calls `resumed()`. `CrashPolicy` says when a crashed backend restarts and
+ * when the plugin turns off. Timers only: no Electron, no I/O of its own.
  */
 
 const MINUTE = 60_000;
@@ -44,6 +45,8 @@ export interface SchedulerDeps {
   onTimeout(source: string): void;
   /** A source's status changed. */
   changed?(): void;
+  /** The clock, in ms since the epoch (tests); `Date.now` by default. */
+  now?(): number;
 }
 
 interface SourceState {
@@ -53,6 +56,10 @@ interface SourceState {
   limit?: ReturnType<typeof setTimeout>;
   /** The run in flight; it never rejects. */
   inflight?: Promise<RefreshResult>;
+  /** The one follow-up run every refresh arriving during `inflight` shares; cleared when it begins. */
+  queued?: Promise<RefreshResult>;
+  /** When the timer is due, in ms since the epoch. */
+  dueAt?: number;
   /** An item may be open: true at start (one may survive from an earlier session) and after a raise. */
   mayBeRaised: boolean;
   raised: boolean;
@@ -63,8 +70,8 @@ export class PluginScheduler {
   /** Bumped by start and stop: what an older run finds afterwards it leaves alone. */
   private epoch = 0;
   private active = false;
-  /** Settles every run in flight when stop() is called, so nothing waits on a run that never ends. */
-  private halt = halted();
+  /** One per attempt in flight, removed when it settles: stop() settles them all, so nothing waits on a run that never ends. */
+  private readonly stoppers = new Set<() => void>();
 
   constructor(private readonly d: SchedulerDeps) {
     for (const src of d.sources) {
@@ -82,12 +89,13 @@ export class PluginScheduler {
   stop(): void {
     this.epoch += 1;
     this.active = false;
-    this.halt.stop();
-    this.halt = halted();
+    const stoppers = [...this.stoppers];
+    this.stoppers.clear();
+    for (const stop of stoppers) stop();
     for (const st of this.states.values()) {
       clearTimeout(st.timer);
       clearTimeout(st.limit);
-      st.timer = st.limit = st.inflight = undefined;
+      st.timer = st.limit = st.inflight = st.queued = st.dueAt = undefined;
       st.status.running = false;
       st.status.nextAt = undefined;
     }
@@ -100,16 +108,36 @@ export class PluginScheduler {
     return this.go(st);
   }
 
+  /**
+   * The computer woke up (powerMonitor "resume"): timers may have slept past their time, so every source whose next run
+   * has passed runs now. A source with a run in flight, or outside its work hours, behaves as when its timer fires.
+   */
+  resumed(): void {
+    if (!this.active) return;
+    const now = this.now();
+    for (const st of this.states.values()) {
+      if (st.timer !== undefined && st.dueAt !== undefined && st.dueAt <= now) this.schedule(st, 0);
+    }
+  }
+
   status(source: string): SourceStatus {
     const st = this.states.get(source);
     return st ? { ...st.status } : { running: false, failures: 0 };
   }
 
-  private async go(st: SourceState): Promise<RefreshResult> {
-    while (st.inflight) await st.inflight;
-    const p = this.attempt(st, this.epoch);
-    st.inflight = p;
-    return p;
+  private go(st: SourceState): Promise<RefreshResult> {
+    if (!st.inflight) {
+      const p = this.attempt(st, this.epoch);
+      st.inflight = p;
+      return p;
+    }
+    if (st.queued) return st.queued;
+    const queued: Promise<RefreshResult> = st.inflight.then(() => {
+      if (st.queued === queued) st.queued = undefined;
+      return this.go(st);
+    });
+    st.queued = queued;
+    return queued;
   }
 
   private async attempt(st: SourceState, epoch: number): Promise<RefreshResult> {
@@ -126,14 +154,19 @@ export class PluginScheduler {
         reject(new Error(`The sync took more than ${duration(this.d.runLimitMs)}`));
       }, this.d.runLimitMs);
     });
+    let stop!: () => void;
+    const stopped = new Promise<never>((_resolve, reject) => (stop = () => reject(new Error("Stopped"))));
+    this.stoppers.add(stop);
     let result: RefreshResult;
     try {
       const run = Promise.resolve().then(() => this.d.run(id));
       run.catch(() => {}); // a run abandoned at the limit may still reject
-      const { writes } = await Promise.race([run, limit, this.halt.promise]);
+      const { writes } = await Promise.race([run, limit, stopped]);
       result = { ok: true, writes };
     } catch (e) {
       result = { ok: false, error: errorText(e) };
+    } finally {
+      this.stoppers.delete(stop);
     }
     const current = epoch === this.epoch;
     if (current) {
@@ -154,7 +187,7 @@ export class PluginScheduler {
   }
 
   private async succeeded(st: SourceState, epoch: number): Promise<void> {
-    st.status.lastOk = new Date().toISOString();
+    st.status.lastOk = new Date(this.now()).toISOString();
     st.status.lastError = undefined;
     st.status.failures = 0;
     if (!this.active || !st.mayBeRaised) return;
@@ -182,13 +215,28 @@ export class PluginScheduler {
   private schedule(st: SourceState, delayMs: number): void {
     clearTimeout(st.timer);
     const epoch = this.epoch;
-    st.status.nextAt = new Date(Date.now() + delayMs).toISOString();
+    st.dueAt = this.now() + delayMs;
+    st.status.nextAt = new Date(st.dueAt).toISOString();
     st.timer = setTimeout(() => {
-      st.timer = undefined;
+      st.timer = st.dueAt = undefined;
       if (epoch !== this.epoch || st.inflight) return;
-      if (st.src.workHoursOnly && !this.d.inWorkHours(new Date())) return this.schedule(st, MINUTE);
+      if (st.src.workHoursOnly && !this.inWorkHours()) return this.schedule(st, MINUTE);
       void this.go(st);
     }, delayMs);
+  }
+
+  /** A broken work-hours check counts as in the hours: it never silences a source for good. */
+  private inWorkHours(): boolean {
+    try {
+      return this.d.inWorkHours(new Date(this.now()));
+    } catch (err) {
+      console.error("Could not tell the work hours; the sync runs anyway", err);
+      return true;
+    }
+  }
+
+  private now(): number {
+    return this.d.now ? this.d.now() : Date.now();
   }
 
   private notify(): void {
@@ -215,13 +263,6 @@ export class CrashPolicy {
   reset(): void {
     this.crashes = [];
   }
-}
-
-function halted(): { promise: Promise<never>; stop(): void } {
-  let stop!: () => void;
-  const promise = new Promise<never>((_resolve, reject) => (stop = () => reject(new Error("Stopped"))));
-  promise.catch(() => {});
-  return { promise, stop };
 }
 
 function failingKey(source: string): string {

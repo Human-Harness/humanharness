@@ -56,18 +56,20 @@ describe("PluginScheduler (plugins spec §4.3)", () => {
     t.s.stop();
   });
 
-  it("one run in flight per source: a refresh during a run waits for it", async () => {
+  it("one run in flight per source: refreshes during a run share one follow-up run", async () => {
     let release!: () => void;
     const t = setup({ results: [() => new Promise<void>((r) => (release = r))] });
     t.s.start();
     await vi.advanceTimersByTimeAsync(0);
     expect(t.s.status("queues").running).toBe(true);
-    const refresh = t.s.refresh("queues");
-    const second = t.s.refresh("queues");
+    const refreshes = Array.from({ length: 50 }, () => t.s.refresh("queues"));
     expect(t.runs).toHaveLength(1);
     release();
-    expect(await refresh).toEqual({ ok: true, writes: 0 });
-    await second;
+    const results = await Promise.all(refreshes);
+    expect(results).toHaveLength(50);
+    for (const r of results) expect(r).toEqual({ ok: true, writes: 0 });
+    expect(t.runs).toHaveLength(2);
+    expect(await t.s.refresh("queues")).toEqual({ ok: true, writes: 0 }); // the next one runs on its own
     expect(t.runs).toHaveLength(3);
     t.s.stop();
   });
@@ -104,6 +106,24 @@ describe("PluginScheduler (plugins spec §4.3)", () => {
     await vi.advanceTimersByTimeAsync(MIN);
     expect(t.runs).toEqual(["queues"]);
     t.s.stop();
+  });
+
+  it("an inWorkHours that throws counts as in the hours (logged); the source keeps running", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const t = setup({
+      ttl: 60,
+      workHoursOnly: true,
+      inHours: () => {
+        throw new Error("no clock");
+      },
+    });
+    t.s.start();
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(MIN);
+    expect(t.runs).toEqual(["queues", "queues"]);
+    expect(error).toHaveBeenCalled();
+    t.s.stop();
+    error.mockRestore();
   });
 
   it("a failure backs off 1, 2, 4 minutes capped at the TTL, and 3 in a row raise an info item resolved by a success", async () => {
@@ -201,6 +221,68 @@ describe("PluginScheduler (plugins spec §4.3)", () => {
     await vi.advanceTimersByTimeAsync(0);
     await expect(refresh).resolves.toMatchObject({ ok: true });
     expect(t.s.status("queues").running).toBe(false);
+  });
+
+  it("stop settles every attempt in flight, and no attempt keeps a stopper once settled", async () => {
+    const t = setup({ results: [() => new Promise<void>(() => {}), () => new Promise<void>(() => {})] });
+    const stoppers = () => (t.s as unknown as { stoppers: Set<unknown> }).stoppers.size;
+    t.s.start();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(stoppers()).toBe(1);
+    const waiting = t.s.refresh("queues"); // its follow-up run gets stuck too
+    t.s.stop();
+    expect(stoppers()).toBe(0);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(stoppers()).toBe(1);
+    t.s.stop();
+    await expect(waiting).resolves.toEqual({ ok: false, error: "Stopped" });
+    expect(stoppers()).toBe(0);
+    for (let i = 0; i < 5; i++) await t.s.refresh("queues");
+    expect(stoppers()).toBe(0);
+  });
+
+  it("resumed() runs now every source whose next run passed during sleep, one in flight at a time", async () => {
+    let clock = Date.parse("2026-10-27T10:00:00Z");
+    const runs: string[] = [];
+    let release: (() => void) | undefined;
+    const s = new PluginScheduler({
+      sources: [
+        { id: "due", ttl: 300, workHoursOnly: false },
+        { id: "later", ttl: 3600, workHoursOnly: false },
+      ],
+      inWorkHours: () => true,
+      run: async (source) => {
+        runs.push(source);
+        if (source === "due" && runs.length > 2) await new Promise<void>((r) => (release = r));
+        return { writes: 0 };
+      },
+      raise: async () => {},
+      resolve: async () => {},
+      runLimitMs: 2 * MIN,
+      onTimeout: () => {},
+      now: () => clock,
+    });
+    s.start();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(runs.sort()).toEqual(["due", "later"]);
+    clock += 10 * MIN; // asleep: the clock moved, the timers did not fire
+    s.resumed();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(runs.filter((r) => r === "due")).toHaveLength(2);
+    expect(runs.filter((r) => r === "later")).toHaveLength(1);
+    expect(s.status("due").running).toBe(true);
+    clock += 10 * MIN;
+    s.resumed(); // "due" is in flight: no second run
+    await vi.advanceTimersByTimeAsync(0);
+    expect(runs.filter((r) => r === "due")).toHaveLength(2);
+    release?.();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(s.status("due")).toMatchObject({ running: false, nextAt: new Date(clock + 300_000).toISOString() });
+    s.stop();
+    s.resumed(); // stopped: nothing runs
+    clock += 60 * MIN;
+    await vi.advanceTimersByTimeAsync(0);
+    expect(runs).toHaveLength(3);
   });
 
   it("starts again after a stop", async () => {

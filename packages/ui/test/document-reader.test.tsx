@@ -32,7 +32,7 @@ const kinds = { analysis: { when: "x", sections: ["Context", "Options", "Risks"]
 
 function setup(over: Partial<Parameters<typeof DocumentReader>[0]> = {}, docs: Record<string, string> = { "docs/cache.md": ANALYSIS }) {
   const client = new FakeClient();
-  Object.assign(client.documents, docs);
+  Object.assign(client.docTexts, docs);
   const props = {
     client,
     target: { path: "docs/cache.md", agent: "Claude" },
@@ -258,7 +258,7 @@ describe("DocumentReader: anchors, reloads, watches and focus", () => {
       offs.push(off);
       return off;
     });
-    Object.assign(client.documents, { "docs/cache.md": ANALYSIS, "docs/other.md": OTHER });
+    Object.assign(client.docTexts, { "docs/cache.md": ANALYSIS, "docs/other.md": OTHER });
     const s = setup({ client });
     await screen.findByRole("heading", { name: "Options" });
     await act(async () => swap(s, { path: "docs/other.md" }));

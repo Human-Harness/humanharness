@@ -43,6 +43,7 @@ import {
   type MoveResult,
   type ProfileResult,
   type ProfilesState,
+  type ReviewSummary,
   type RunningSetup as SetupInfo,
   type ScopesView,
   type SendOptions,
@@ -92,6 +93,7 @@ import { QUESTIONS, cleanModels, engineOffer, firstOffered, fitEffort, nearestTi
 import { chooseModeHandler } from "./mode-ipc";
 import { setPhaseHandler, timeBoxOffered } from "./phase-ipc";
 import { requireNoticeForChoice, requireNoticeForTurn } from "./notice-policy";
+import { ReviewService } from "./reviews";
 import { archiveChatsOnEngineChange, archiveStaleChat, startNewChatIfEngineChanged } from "./engine-switch";
 import { type RunningSetup, runSetupProcess, setupCommand, stopSetupProcess } from "./setup-runner";
 import { runSetupStep } from "./setup-step";
@@ -435,6 +437,8 @@ async function appState(): Promise<AppState> {
     ...materialAppState(harness),
     // The reader's template check (document-reader spec §4.3); absent without kinds (D0).
     ...(harness.documents ? { documents: { kinds: harness.documents.kinds } } : {}),
+    // Documents can be reviewed only when the agent may edit the folder (review spec D0).
+    ...(harness.permissions.edit === "folder" ? { review: true as const } : {}),
     references: (await referencesFor(saved.folder)).map((r) => ({ id: r.id, label: r.label, path: displayPath(r.path, os.homedir()) })),
     models: await modelsView(),
     backup: await backupView(saved.folder),
@@ -645,6 +649,9 @@ const runtime = memoise<HarnessRuntime>(async () => {
     // The person's material in this folder, for the running task's scope (material spec §9): the base this runtime was
     // built for, so a request never reaches another profile's material. Absent without material (D0).
     ...(harness.material ? { material: { request: (request: unknown) => materialRequest(base, request), entry: path.join(here, "material-server.js") } } : {}),
+    // The agent's review tools in this base, through the person's ReviewService so both sides share its locks. Only
+    // when the agent may edit the folder (review spec D0); the runtime checks the same.
+    ...(harness.permissions.edit === "folder" ? { review: (request: unknown) => reviews.agent(base, request) } : {}),
     command: cmd.command,
     env: cmd.env,
     references: (await workReferences(c, base, true)).map((r) => ({ label: r.label, path: r.path })),
@@ -1119,6 +1126,28 @@ const personData = personDataRequests({
 /** The same handler for the harness UI, which only reads `settings` (it changes them through `client.settings`). */
 const harnessUiData = harnessUiDataRequests(personData, () => harness.settings !== undefined);
 
+/** Document reviews (review spec): the person's side, and the agent's tools for each runtime's folder (one set of locks). */
+const reviews = new ReviewService({
+  base: async () => {
+    const c = await validConfig();
+    return c ? baseOf(c) : null;
+  },
+  history: () => currentHistory(),
+  trailer: () => tasks.trailerNow(),
+  openTask: async () => {
+    const t = await tasks.runningTask();
+    return t ? { id: t.id, scope: t.scope } : null;
+  },
+  busy: () => tasks.isBusy(),
+  whenSettled: (write) => tasks.whenSettled(write),
+  blocked: () => (quitting ? "The app is closing" : turnBlocked()),
+  // The canonical path and the record's scope; rejects with `RoundNotStarted` when no turn started.
+  round: (r) => tasks.reviewRound(r),
+  approved: (a) => void tasks.documentApproved(a).catch((err: unknown) => console.error("Could not act on the approval", err)),
+  reviewTier: (kind) => (kind !== undefined ? harness.documents?.kinds[kind]?.reviewTier : undefined) ?? "standard",
+  changed: (p) => sendToWindow("hh:reviewChanged", p),
+});
+
 function registerIpc() {
   handle("hh:getState", () => appState());
   handle("hh:pickFolder", async (defaultPath: string) => {
@@ -1395,6 +1424,22 @@ function registerIpc() {
     }
   });
   handleFrom("hh:unwatchDocument", (sender, id) => documentSessions.unwatch(sender.id, id));
+  // Reviews (review spec): every answer is data (the service checks every input); a throw would be a bug.
+  const reviewCall = <T>(fn: () => Promise<T>, fallback: T) =>
+    fn().catch((err: unknown) => {
+      console.error("A review call failed", err);
+      return fallback;
+    });
+  const notReady = { ok: false as const, reason: "not-ready" as const };
+  handle("hh:reviewView", (file: unknown) => reviewCall(() => reviews.view(file), notReady));
+  handle("hh:reviewSummaries", (paths: unknown) => reviewCall(() => reviews.summaries(paths), [] as (ReviewSummary | null)[]));
+  handle("hh:reviewAnswer", (file: unknown, id: unknown, pick: unknown) => reviewCall(() => reviews.answer(file, id, pick), notReady));
+  handle("hh:reviewComment", (file: unknown, input: unknown) => reviewCall(() => reviews.comment(file, input), notReady));
+  handle("hh:reviewEditDraft", (file: unknown, id: unknown, text: unknown) => reviewCall(() => reviews.editDraft(file, id, text), notReady));
+  handle("hh:reviewReopen", (file: unknown, id: unknown) => reviewCall(() => reviews.reopen(file, id), notReady));
+  handle("hh:reviewSend", (file: unknown) => reviewCall(() => reviews.send(file), notReady));
+  handle("hh:reviewApprove", (file: unknown, blob: unknown, opts: unknown) => reviewCall(() => reviews.approve(file, blob, opts), notReady));
+  handle("hh:reviewApprovedText", (file: unknown) => reviewCall(() => reviews.approvedText(file), notReady));
   // Cancels the turn and stops the task operation (a closing turn never goes on to the next task).
   handle("hh:cancel", () => tasks.cancel());
   // Restore commits carry no task: going back may undo several tasks, so it belongs to none of them.

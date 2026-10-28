@@ -23,7 +23,7 @@ const answer = (documents?: ChatEntry["documents"]): ChatEntry => ({
 async function chatWith(entries: ChatEntry[], docs: Record<string, string> = {}) {
   const client = new FakeClient({ language: "en", folder: "/w", engineId: "claude" });
   client.chat = entries;
-  Object.assign(client.documents, docs);
+  Object.assign(client.docTexts, docs);
   const exists = vi.spyOn(client, "documentsExist");
   await renderIn("en", <ChatView client={client} state={client.state} components={{}} stateBlocks={[]} />);
   return { client, exists };
@@ -151,12 +151,12 @@ describe("document cards (§5.1)", () => {
     const button = await screen.findByRole("button", { name: /Analysis/ });
     await vi.waitFor(() => expect(exists).toHaveBeenCalledTimes(1));
     expect(button.getAttribute("aria-disabled")).toBeNull();
-    delete client.documents[card.path];
+    delete client.docTexts[card.path];
     fireEvent.click(button);
     const reader = await screen.findByRole("complementary", { name: "Document" });
     await within(reader).findByText("This document was moved or deleted.");
     await vi.waitFor(() => expect(button.getAttribute("aria-disabled")).toBe("true"));
-    client.documents[card.path] = "# A";
+    client.docTexts[card.path] = "# A";
     act(() => void window.dispatchEvent(new Event("focus")));
     await vi.waitFor(() => expect(button.getAttribute("aria-disabled")).toBeNull());
   });
@@ -164,7 +164,7 @@ describe("document cards (§5.1)", () => {
   it("slim (the setup screen): nothing opens the reader", async () => {
     const client = new FakeClient({ language: "en", folder: "/w", engineId: "claude" });
     client.chat = [answer()];
-    client.documents["x.md"] = "# X";
+    client.docTexts["x.md"] = "# X";
     await renderIn("en", <ChatView client={client} state={client.state} components={{}} stateBlocks={[]} slim={{ action: "interview" }} />);
     act(() => client.openDocument("x.md"));
     await new Promise((r) => setTimeout(r, 20));

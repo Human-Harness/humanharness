@@ -2,11 +2,13 @@ import { contextBridge, ipcRenderer } from "electron";
 import type {
   DataChangeView,
   Event,
+  FocusState,
   HarnessClient,
   MaterialView,
   ModeResult,
   ModeSwitch,
   ProfilesState,
+  ReviewSummary,
   ScopesView,
   SettingsState,
   SetupOutput,
@@ -29,6 +31,11 @@ const modeSwitches = new Set<(s: ModeSwitch) => void>();
 
 /** Told of every `openDocument`, from the window or the harness's own UI (document-reader spec §5.1). */
 const documentOpeners = new Set<(path: string, anchor?: string) => void>();
+/** Told of every `documents.focus(path)` (review spec §6.2). */
+const focusOpeners = new Set<(path: string) => void>();
+/** Focus mode as the chat set it last, and who listens. */
+let focusState: FocusState = { on: false };
+const focusListeners = new Set<(state: FocusState) => void>();
 
 const client: HarnessClient = {
   getState: () => ipcRenderer.invoke("hh:getState"),
@@ -89,6 +96,39 @@ const client: HarnessClient = {
   onOpenDocument: (listener) => {
     documentOpeners.add(listener);
     return () => void documentOpeners.delete(listener);
+  },
+  // Reviews (review spec §5.6): main answers every call with data.
+  documents: {
+    view: (file) => ipcRenderer.invoke("hh:reviewView", file),
+    review: async (file) => ((await ipcRenderer.invoke("hh:reviewSummaries", [file])) as (ReviewSummary | null)[])[0] ?? null,
+    summaries: (paths) => ipcRenderer.invoke("hh:reviewSummaries", paths),
+    answer: (file, id, pick) => ipcRenderer.invoke("hh:reviewAnswer", file, id, pick),
+    comment: (file, input) => ipcRenderer.invoke("hh:reviewComment", file, input),
+    editDraft: (file, id, text) => ipcRenderer.invoke("hh:reviewEditDraft", file, id, text),
+    reopen: (file, id) => ipcRenderer.invoke("hh:reviewReopen", file, id),
+    send: (file) => ipcRenderer.invoke("hh:reviewSend", file),
+    approve: (file, blob, opts) =>
+      ipcRenderer.invoke("hh:reviewApprove", file, blob, { ...(opts?.reason !== undefined ? { reason: opts.reason } : {}), ...(opts?.discard ? { discard: true } : {}) }),
+    approvedText: (file) => ipcRenderer.invoke("hh:reviewApprovedText", file),
+    onChange: (listener) => subscribe<string>("hh:reviewChanged", listener),
+    focus: (file) => {
+      for (const l of [...focusOpeners]) l(file);
+    },
+    onFocus: (listener) => {
+      focusOpeners.add(listener);
+      return () => void focusOpeners.delete(listener);
+    },
+  },
+  focus: {
+    current: () => focusState,
+    onChange: (listener) => {
+      focusListeners.add(listener);
+      return () => void focusListeners.delete(listener);
+    },
+    set: (state) => {
+      focusState = { on: state.on === true, ...(typeof state.path === "string" ? { path: state.path } : {}) };
+      for (const l of [...focusListeners]) l(focusState);
+    },
   },
   scopes: {
     list: () => ipcRenderer.invoke("hh:scopes"),

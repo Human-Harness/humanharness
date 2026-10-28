@@ -172,7 +172,7 @@ describe("client.profiles (profiles spec §5)", () => {
 describe("FakeClient documents (document-reader spec §5)", () => {
   it("reads, refuses, watches and opens like main and the preload", async () => {
     const c = new FakeClient();
-    c.documents["docs/a.md"] = "# A";
+    c.docTexts["docs/a.md"] = "# A";
     expect(await c.readDocument("docs/a.md")).toEqual({ ok: true, text: "# A", mtime: c.documentMtime, size: 3 });
     expect(await c.readDocument("docs/b.md")).toEqual({ ok: false, reason: "missing" });
     expect(await c.readDocument("../x.md")).toEqual({ ok: false, reason: "outside" });
@@ -189,5 +189,35 @@ describe("FakeClient documents (document-reader spec §5)", () => {
     offOpen();
     c.openDocument("docs/b.md");
     expect(opened).toEqual(["docs/a.md"]);
+  });
+});
+
+describe("documents and focus (review spec §5.6)", () => {
+  it("the fake answers like main: a view, a summary, results as data, and change and focus listeners", async () => {
+    const c = new FakeClient();
+    c.docTexts["specs/a.md"] = "## Scope\n\nBy size.\n";
+    const view = await c.documents.view("specs/a.md");
+    expect(view).toMatchObject({ ok: true, review: null, blob: expect.stringMatching(/^[0-9a-f]{40}$/), summary: { status: "none" } });
+    expect(await c.documents.view("specs/b.md")).toEqual({ ok: false, reason: "missing" });
+    expect(await c.documents.review("specs/a.md")).toBeNull();
+    const changed: string[] = [];
+    const off = c.documents.onChange((p) => changed.push(p));
+    expect(await c.documents.comment("specs/a.md", { selected: "By size.", heading: "scope", text: "No" })).toEqual({ ok: true, id: "c1" });
+    expect(changed).toEqual(["specs/a.md"]);
+    off();
+    expect(await c.documents.review("specs/a.md")).toMatchObject({ status: "draft", unsent: 1 });
+    // The approval carries the version the view showed.
+    const blob = view.ok ? view.blob : "";
+    expect(await c.documents.approve("specs/a.md", blob, { reason: "Fine" })).toEqual({ ok: true });
+    expect(c.reviewCalls.at(-1)).toEqual({ op: "approve", args: ["specs/a.md", blob, { reason: "Fine" }] });
+    const seen: unknown[] = [];
+    c.focus.onChange((s) => seen.push(s));
+    c.focus.set({ on: true, path: "specs/a.md" });
+    expect(c.focus.current()).toEqual({ on: true, path: "specs/a.md" });
+    expect(seen).toEqual([{ on: true, path: "specs/a.md" }]);
+    const opened: string[] = [];
+    c.documents.onFocus((p) => opened.push(p));
+    c.documents.focus("specs/a.md");
+    expect(opened).toEqual(["specs/a.md"]);
   });
 });

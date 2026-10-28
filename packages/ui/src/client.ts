@@ -27,7 +27,7 @@ import type {
   SyncProvider,
   SyncStatus,
 } from "@humanharness/workspace";
-import type { Review, ReviewSummary } from "@humanharness/harness-sdk/review";
+import type { AnswerPick, Review, ReviewSummary } from "@humanharness/harness-sdk/review";
 
 export type { DataKey, DataQuery, DataQueryResult, DataRecord };
 
@@ -242,6 +242,8 @@ export interface AppState {
   material?: MaterialInfo;
   /** The harness's document kinds (manifest `documents`): the reader's template check. Absent: none (D0). */
   documents?: { kinds: Record<string, DocumentKind> };
+  /** The harness's agent may edit the folder: documents can be reviewed (review spec). Absent: no review UI (D0). */
+  review?: true;
   /** Folders the agent can read but never change. */
   references?: ReferenceView[];
   /** Settings › Modelos. */
@@ -893,6 +895,36 @@ export interface HarnessClient {
   openDocument(path: string, anchor?: string): void;
   /** Every `openDocument`, whoever called it: the chat opens the panel. */
   onOpenDocument(listener: (path: string, anchor?: string) => void): () => void;
+  /** Document reviews (review spec §5.6). Calls answer with data; only useful when `AppState.review` is set. */
+  documents: {
+    /** The record, its summary and the blob of the version read, for the reader. */
+    view(path: string): Promise<ReviewView>;
+    /** A harness view's summary of one document; null without a record or when it can't be read. */
+    review(path: string): Promise<ReviewSummary | null>;
+    summaries(paths: string[]): Promise<(ReviewSummary | null)[]>;
+    answer(path: string, id: string, pick: AnswerPick): Promise<ReviewResult>;
+    comment(path: string, input: CommentInput): Promise<ReviewResult>;
+    /** Edits a draft, or deletes it with null. */
+    editDraft(path: string, id: string, text: string | null): Promise<ReviewResult>;
+    reopen(path: string, id: string): Promise<ReviewResult>;
+    send(path: string): Promise<ReviewSendResult>;
+    /** Approves the version shown: `blob` is the view's (a document changed since is refused with "changed"). */
+    approve(path: string, blob: string, opts?: ApproveOptions): Promise<ReviewResult>;
+    approvedText(path: string): Promise<ApprovedText>;
+    /** Any review record or approval changed (`path`: its document). Returns the unsubscribe. */
+    onChange(listener: (path: string) => void): () => void;
+    /** Opens the document in the reader in focus mode (§6.2). */
+    focus(path: string): void;
+    /** Every `focus(path)`, whoever called it: the chat listens. */
+    onFocus(listener: (path: string) => void): () => void;
+  };
+  /** Focus mode (§6.2): the chat sets it; a harness view listens to pause its own interruptions. */
+  focus: {
+    current(): FocusState;
+    onChange(listener: (state: FocusState) => void): () => void;
+    /** The core's chat only. */
+    set(state: FocusState): void;
+  };
   /** Harnesses with scopes (spec §3.4). There is no delete: archive instead. */
   scopes: {
     list(): Promise<ScopeView[]>;

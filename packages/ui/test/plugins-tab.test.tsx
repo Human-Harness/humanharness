@@ -299,6 +299,46 @@ describe("Settings › Plugins", () => {
       await waitFor(() => expect(c.pluginCalls).toContainEqual(["remove", "oncall"]));
     });
 
+    it("Remove moves focus to Add from folder", async () => {
+      const c = client([row()]);
+      c.pluginDetails = { oncall: detail() };
+      c.pluginResults = [{ ok: true }];
+      const region = await openDetail(c);
+      fireEvent.click(within(region).getByRole("button", { name: "Remove…" }));
+      fireEvent.click(within(region).getByRole("button", { name: "Remove" }));
+      await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "Add from folder…" })));
+    });
+
+    it("a detail that fails to load or answers null says so instead of staying busy", async () => {
+      const c = client([row()]);
+      await draw(c);
+      fireEvent.click(await screen.findByRole("button", { name: "On-call" }));
+      const region = await screen.findByRole("region", { name: /On-call/ });
+      expect((await within(region).findByRole("alert")).textContent).toBe("Something went wrong");
+      expect(region.getAttribute("aria-busy")).toBe("false");
+      cleanup();
+
+      const c2 = client([row()]);
+      vi.spyOn(c2.plugins, "detail").mockRejectedValue(new Error("ipc"));
+      await draw(c2);
+      fireEvent.click(await screen.findByRole("button", { name: "On-call" }));
+      const r2 = await screen.findByRole("region", { name: /On-call/ });
+      expect((await within(r2).findByRole("alert")).textContent).toBe("Something went wrong");
+    });
+
+    it("B12: markup in test results and error lines renders as text", async () => {
+      const evil = "<img src=x onerror=alert(1)>";
+      const c = client([row()]);
+      c.pluginDetails = { oncall: detail({ errors: [{ at: "2026-10-28T10:00:00.000Z", source: evil, message: evil }] }) };
+      c.pluginTests = [{ source: evil, ok: false, error: evil }];
+      const region = await openDetail(c);
+      fireEvent.click(within(region).getByRole("button", { name: "Test connection" }));
+      await waitFor(() => expect(region.textContent).toContain(`${evil}: ${evil}`));
+      const errors = within(region).getByRole("list", { name: "Last errors" });
+      expect(errors.textContent).toContain(evil);
+      expect(document.querySelector("img")).toBeNull();
+    });
+
     it("a bundled plugin has no Remove", async () => {
       const c = client([row({ origin: "bundled", folder: undefined })]);
       c.pluginDetails = { oncall: detail({ row: row({ origin: "bundled", folder: undefined }) }) };
@@ -317,6 +357,100 @@ describe("Settings › Plugins", () => {
     // Plugin text is isolated for bidi.
     const name = screen.getByRole("button", { name: evil });
     expect(name.getAttribute("dir") ?? name.querySelector("[dir]")?.getAttribute("dir")).toBe("auto");
+  });
+
+  it("an approve refused because the plugin changed replaces the stale review with main's current one", async () => {
+    const c = client([row({ status: "review" })]);
+    const current = review({ distHash: "hash-2", added: [{ kind: "host", value: "evil.example.com" }] });
+    c.pluginResults = [{ ok: false, review: review() }, { ok: false, message: "This plugin changed; review it again", review: current }, { ok: true }];
+    await draw(c);
+    fireEvent.click(await screen.findByRole("switch", { name: "On-call" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Turn on" }));
+    expect((await screen.findByRole("alert")).textContent).toBe("This plugin changed; review it again");
+    const region = screen.getByRole("region", { name: /On-call/ });
+    expect(region.textContent).toContain("evil.example.com");
+    fireEvent.click(within(region).getByRole("button", { name: "Turn on" }));
+    await waitFor(() => expect(c.pluginCalls).toEqual([["rescan"], ["setOn", "oncall", true], ["approve", "oncall", "hash-1"], ["approve", "oncall", "hash-2"]]));
+  });
+
+  it("Cancel does nothing while Turn on is in flight; the plugin ends on and the review closes", async () => {
+    const c = client();
+    c.pluginPick = { ok: true, token: "tok-1", review: review() };
+    c.pluginResults = [{ ok: true }];
+    let resolve: (r: { ok: true }) => void = () => {};
+    vi.spyOn(c.plugins, "approve").mockImplementation((id, hash) => {
+      c.pluginCalls.push(["approve", id, hash]);
+      return new Promise((r) => (resolve = r));
+    });
+    await draw(c);
+    fireEvent.click(await screen.findByRole("button", { name: "Add from folder…" }));
+    const region = await screen.findByRole("region", { name: /On-call/ });
+    fireEvent.click(within(region).getByRole("button", { name: "Turn on" }));
+    await waitFor(() => expect(c.pluginCalls).toContainEqual(["approve", "oncall", "hash-1"]));
+    const cancel = within(region).getByRole("button", { name: "Cancel" });
+    expect(cancel.getAttribute("aria-disabled")).toBe("true");
+    fireEvent.click(cancel);
+    expect(screen.getByRole("region", { name: /On-call/ })).toBeTruthy();
+    await act(async () => resolve({ ok: true }));
+    await waitFor(() => expect(screen.queryByRole("region", { name: /On-call/ })).toBeNull());
+  });
+
+  it("add ok, approve refused, Turn on again: no second add, only approve", async () => {
+    const c = client();
+    c.pluginPick = { ok: true, token: "tok-1", review: review() };
+    c.pluginResults = [{ ok: true }, { ok: false, message: "Something broke" }, { ok: true }];
+    await draw(c);
+    fireEvent.click(await screen.findByRole("button", { name: "Add from folder…" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Turn on" }));
+    expect((await screen.findByRole("alert")).textContent).toBe("Something broke");
+    fireEvent.click(screen.getByRole("button", { name: "Turn on" }));
+    await waitFor(() => expect(c.pluginCalls).toEqual([["rescan"], ["pick"], ["add", "tok-1"], ["approve", "oncall", "hash-1"], ["approve", "oncall", "hash-1"]]));
+    await waitFor(() => expect(screen.queryByRole("region", { name: /On-call/ })).toBeNull());
+  });
+
+  it("focus goes back to Add from folder after a review Cancel, and to the row after a row's review turns it on", async () => {
+    const c = client([row({ status: "review" })]);
+    c.pluginPick = { ok: true, token: "t", review: review({ id: "new", name: "New" }) };
+    await draw(c);
+    fireEvent.click(await screen.findByRole("button", { name: "Add from folder…" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "Add from folder…" })));
+
+    c.pluginResults = [{ ok: false, review: review() }, { ok: true }];
+    fireEvent.click(screen.getByRole("switch", { name: "On-call" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Turn on" }));
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "On-call" })));
+  });
+
+  it("a failed rescan says so instead of staying busy; so does a null answer", async () => {
+    const c = client([row()]);
+    vi.spyOn(c.plugins, "rescan").mockRejectedValue(new Error("ipc"));
+    await draw(c);
+    expect((await screen.findByRole("alert")).textContent).toBe("Something went wrong");
+    expect(document.querySelector('[aria-busy="true"]')).toBeNull();
+    cleanup();
+
+    const c2 = client([row()]);
+    vi.spyOn(c2.plugins, "rescan").mockResolvedValue(null as never);
+    await draw(c2);
+    expect((await screen.findByRole("alert")).textContent).toBe("Something went wrong");
+  });
+
+  it("B12: markup in review hosts and key labels renders as text", async () => {
+    const evil = "<img src=x onerror=alert(1)>";
+    const c = client();
+    c.pluginPick = {
+      ok: true,
+      token: "t",
+      review: review({ lines: [{ kind: "hosts", hosts: [evil] }, { kind: "secrets", labels: [evil] }], added: [{ kind: "secret", value: evil }] }),
+    };
+    await draw(c);
+    fireEvent.click(await screen.findByRole("button", { name: "Add from folder…" }));
+    const region = await screen.findByRole("region", { name: /On-call/ });
+    expect(document.querySelector("img")).toBeNull();
+    expect(region.textContent).toContain(`Connects to: ${evil}`);
+    expect(region.textContent).toContain(evil);
+    expect(within(region).getAllByText(evil).length).toBe(3);
   });
 
   it("follows main's pushes", async () => {

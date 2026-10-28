@@ -1293,7 +1293,8 @@ export interface PluginReview {
   added?: { kind: string; value: string }[];
 }
 export type PluginPick = { ok: true; token: string; review: PluginReview } | { ok: false; message: string } | { ok: false; cancelled: true };
-export type PluginResult = { ok: true } | { ok: false; message: string } | { ok: false; review: PluginReview };
+/** With both `message` and `review`: refused because the plugin changed since the review; `review` is the current one. */
+export type PluginResult = { ok: true } | { ok: false; message: string } | { ok: false; review: PluginReview; message?: string };
 export interface PluginWorkHours {
   days: number[];
   from: string;

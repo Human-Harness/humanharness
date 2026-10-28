@@ -131,7 +131,8 @@ export function PermissionReview({
         <button type="button" className="hh-primary" aria-disabled={busy} onClick={() => !busy && onTurnOn()}>
           {t("plugins.review.turnOn")}
         </button>
-        <button type="button" onClick={onCancel}>
+        {/* Not while Turn on is in flight: it could still end with the plugin on. */}
+        <button type="button" aria-disabled={busy} onClick={() => !busy && onCancel()}>
           {t("plugins.review.cancel")}
         </button>
       </div>

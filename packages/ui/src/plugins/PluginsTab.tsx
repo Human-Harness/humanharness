@@ -6,7 +6,8 @@ import { Plain, PermissionReview } from "./PermissionReview";
 import { PluginDetail, when } from "./PluginDetail";
 import { usePluginsRescan } from "./usePlugins";
 
-type Screen = { kind: "list" } | { kind: "review"; review: PluginReview; token?: string } | { kind: "detail"; id: string };
+/** A review's `from`: the row whose switch asked for it (focus goes back there); none for Add from folder. */
+type Screen = { kind: "list" } | { kind: "review"; review: PluginReview; token?: string; from?: string } | { kind: "detail"; id: string };
 
 /**
  * Settings › Plugins (plugins spec §7): the list (opening it rescans), Add from folder (main shows the dialog and
@@ -16,22 +17,27 @@ type Screen = { kind: "list" } | { kind: "review"; review: PluginReview; token?:
 export function PluginsTab({ client }: { client: HarnessClient }) {
   const { t, i18n } = useTranslation();
   const language = shownLanguage(i18n);
-  const view = usePluginsRescan(client);
+  const { view, failed: loadFailed } = usePluginsRescan(client);
   const [screen, setScreen] = useState<Screen>({ kind: "list" });
   const [busy, setBusy] = useState(false);
   const [reviewError, setReviewError] = useState<string | null>(null);
   const [addError, setAddError] = useState<string | null>(null);
   const [rowErrors, setRowErrors] = useState<Record<string, string>>({});
-  /** The row whose name opened the detail: focus goes back to it on the way back. */
-  const back = useRef<string | null>(null);
+  /**
+   * Where focus goes on the way back to the list: the row it came from (`row`), else Add from folder. Null: nowhere
+   * (the list was not left).
+   */
+  const back = useRef<{ row?: string } | null>(null);
+  const addButton = useRef<HTMLButtonElement>(null);
   const failed = t("plugins.failed");
 
-  const showReview = (review: PluginReview, token?: string) => {
+  const showReview = (review: PluginReview, opts: { token?: string; from?: string } = {}) => {
     setReviewError(null);
-    setScreen({ kind: "review", review, ...(token ? { token } : {}) });
+    setScreen({ kind: "review", review, ...(opts.token ? { token: opts.token } : {}), ...(opts.from ? { from: opts.from } : {}) });
   };
-  const toList = () => {
+  const toList = (row?: string) => {
     setReviewError(null);
+    back.current = row ? { row } : {};
     setScreen({ kind: "list" });
   };
 
@@ -42,7 +48,7 @@ export function PluginsTab({ client }: { client: HarnessClient }) {
     client.plugins.pick().then(
       (r) => {
         setBusy(false);
-        if (r.ok) showReview(r.review, r.token);
+        if (r.ok) showReview(r.review, { token: r.token });
         else if (!("cancelled" in r)) setAddError(r.message);
       },
       () => {
@@ -56,7 +62,7 @@ export function PluginsTab({ client }: { client: HarnessClient }) {
     setRowErrors(({ [row.id]: _gone, ...rest }) => rest);
     client.plugins.setOn(row.id, on).then(
       (r) => {
-        if (!r.ok && "review" in r) showReview(r.review);
+        if (!r.ok && "review" in r) showReview(r.review, { from: row.id });
         else if (!r.ok) setRowErrors((e) => ({ ...e, [row.id]: r.message }));
       },
       () => setRowErrors((e) => ({ ...e, [row.id]: failed })),
@@ -67,19 +73,21 @@ export function PluginsTab({ client }: { client: HarnessClient }) {
   const turnOn = async (s: Extract<Screen, { kind: "review" }>) => {
     setBusy(true);
     setReviewError(null);
+    const from = s.from ? { from: s.from } : {};
     const settle = (r: PluginResult): boolean => {
       if (r.ok) return true;
-      if ("review" in r) showReview(r.review);
-      else setReviewError(r.message);
+      // A review in the answer replaces this one (the plugin changed since); its message says why.
+      if ("review" in r) showReview(r.review, from);
+      if (r.message) setReviewError(r.message);
       return false;
     };
     try {
       if (s.token) {
         if (!settle(await client.plugins.add(s.token))) return;
         // The token is spent: a second try only approves.
-        setScreen({ kind: "review", review: s.review });
+        setScreen({ kind: "review", review: s.review, ...from });
       }
-      if (settle(await client.plugins.approve(s.review.id, s.review.distHash))) toList();
+      if (settle(await client.plugins.approve(s.review.id, s.review.distHash))) toList(s.from);
     } catch {
       setReviewError(failed);
     } finally {
@@ -87,18 +95,29 @@ export function PluginsTab({ client }: { client: HarnessClient }) {
     }
   };
 
-  // Back on the list from a detail: focus the row's name again.
+  // Back on the list (from a detail, a review or a removal): focus the row it came from, else Add from folder.
   useEffect(() => {
     if (screen.kind !== "list" || back.current === null) return;
-    const id = back.current;
+    const { row } = back.current;
     back.current = null;
-    document.querySelector<HTMLElement>(`[data-plugin-open="${CSS.escape(id)}"]`)?.focus();
+    const to = row === undefined ? null : document.querySelector<HTMLElement>(`[data-plugin-open="${CSS.escape(row)}"]`);
+    (to ?? addButton.current)?.focus();
   }, [screen]);
 
-  if (!view) return <div className="hh-tab" aria-busy="true" />;
+  if (!view) {
+    return loadFailed ? (
+      <div className="hh-tab">
+        <p className="hh-field-error" role="alert">
+          {failed}
+        </p>
+      </div>
+    ) : (
+      <div className="hh-tab" aria-busy="true" />
+    );
+  }
 
   if (screen.kind === "review") {
-    return <PermissionReview review={screen.review} busy={busy} error={reviewError} onTurnOn={() => void turnOn(screen)} onCancel={toList} />;
+    return <PermissionReview review={screen.review} busy={busy} error={reviewError} onTurnOn={() => void turnOn(screen)} onCancel={() => toList(screen.from)} />;
   }
   if (screen.kind === "detail") {
     const row = view.plugins.find((p) => p.id === screen.id);
@@ -108,11 +127,8 @@ export function PluginsTab({ client }: { client: HarnessClient }) {
         <PluginDetail
           client={client}
           row={row}
-          onBack={() => {
-            back.current = row.id;
-            toList();
-          }}
-          onRemoved={toList}
+          onBack={() => toList(row.id)}
+          onRemoved={() => toList()}
         />
       );
     }
@@ -171,7 +187,7 @@ export function PluginsTab({ client }: { client: HarnessClient }) {
       )}
       {view.local && (
         <div>
-          <button type="button" aria-disabled={busy} onClick={add}>
+          <button type="button" ref={addButton} aria-disabled={busy} onClick={add}>
             {t("plugins.add")}
           </button>
           {addError && (

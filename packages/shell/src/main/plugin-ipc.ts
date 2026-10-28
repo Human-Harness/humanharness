@@ -99,7 +99,7 @@ function workHoursInput(v: unknown): { days: number[]; from: string; to: string;
 /** A result as plain data: `ok`, a message, or a review; nothing else the controller may have added crosses. */
 function result(r: PluginResult): PluginResult {
   if (r.ok) return { ok: true };
-  if ("review" in r) return { ok: false, review: r.review };
+  if ("review" in r) return { ok: false, review: r.review, ...(typeof r.message === "string" ? { message: r.message } : {}) };
   return { ok: false, message: typeof r.message === "string" ? r.message : FAILED_MESSAGE };
 }
 

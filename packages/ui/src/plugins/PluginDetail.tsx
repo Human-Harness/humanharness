@@ -6,7 +6,7 @@ import { shownLanguage } from "../language";
 import { PermissionList, Plain } from "./PermissionReview";
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
-const message = (r: PluginResult, failed: string) => (r.ok ? null : "message" in r ? r.message : failed);
+const message = (r: PluginResult, failed: string) => (r.ok ? null : "message" in r && r.message ? r.message : failed);
 
 /** "28 Oct, 10:42" in the shown language; the raw text when it doesn't parse. */
 export function when(iso: string, language: string): string {
@@ -25,6 +25,8 @@ export function PluginDetail({ client, row, onBack, onRemoved }: { client: Harne
   const id = useId();
   const head = useRef<HTMLHeadingElement>(null);
   const [detail, setDetail] = useState<Detail | null>(null);
+  /** The read was refused or answered nothing: say so instead of staying busy. */
+  const [loadFailed, setLoadFailed] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [tests, setTests] = useState<PluginTestResult[] | null>(null);
   const [testing, setTesting] = useState(false);
@@ -32,20 +34,23 @@ export function PluginDetail({ client, row, onBack, onRemoved }: { client: Harne
   const [removeError, setRemoveError] = useState<string | null>(null);
   const failed = t("plugins.failed");
 
+  const loaded = (d: Detail | null) => {
+    if (d) setDetail(d);
+    setLoadFailed(d === null);
+  };
   const load = () =>
-    client.plugins.detail(row.id).then(
-      (d) => setDetail(d),
-      () => undefined,
-    );
+    client.plugins.detail(row.id).then(loaded, () => setLoadFailed(true));
   // Read again whenever main's row for it changes (turned on/off, a sync, an error).
   const rowKey = JSON.stringify(row);
   useEffect(() => {
     let live = true;
     client.plugins.detail(row.id).then(
       (d) => {
-        if (live) setDetail(d);
+        if (live) loaded(d);
       },
-      () => undefined,
+      () => {
+        if (live) setLoadFailed(true);
+      },
     );
     return () => {
       live = false;
@@ -97,7 +102,7 @@ export function PluginDetail({ client, row, onBack, onRemoved }: { client: Harne
   const valueOf = (f: SettingFieldView) => (detail && Object.hasOwn(detail.values, f.name) ? detail.values[f.name] : f.default);
 
   return (
-    <section className="hh-tab hh-pl-detail" aria-labelledby={`${id}-name`} aria-busy={detail === null}>
+    <section className="hh-tab hh-pl-detail" aria-labelledby={`${id}-name`} aria-busy={detail === null && !loadFailed}>
       <div>
         <button type="button" className="hh-link" onClick={onBack}>
           ← {t("plugins.detail.back")}
@@ -115,6 +120,11 @@ export function PluginDetail({ client, row, onBack, onRemoved }: { client: Harne
           </>
         )}
       </p>
+      {detail === null && loadFailed && (
+        <p className="hh-field-error" role="alert">
+          {failed}
+        </p>
+      )}
       {detail && (
         <>
           <h4 id={`${id}-perms`}>{t("plugins.detail.permissions")}</h4>

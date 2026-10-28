@@ -581,7 +581,8 @@ export class PluginsController {
       folder: e.folder,
       distHash: e.distHash ?? "",
       lines: permissionLines(e.manifest.permissions),
-      ...(added && added.length > 0 ? { added } : {}),
+      // A key is shown by its label, as in the review's lines.
+      ...(added && added.length > 0 ? { added: added.map((a) => (a.kind === "secret" ? { ...a, value: e.manifest.permissions.secrets.find((x) => x.id === a.value)?.label ?? a.value } : a)) } : {}),
     };
   }
 
@@ -648,8 +649,13 @@ export class PluginsController {
     return this.serial(async () => {
       const e = this.entry(id);
       if (!e) return { ok: false, message: UNKNOWN };
-      if (typeof distHash !== "string" || distHash !== (e.distHash ?? "")) return { ok: false, message: "This plugin changed; review it again" };
       const c = await this.base();
+      if (typeof distHash !== "string" || distHash !== (e.distHash ?? "")) {
+        // The review the renderer shows is stale: answer the current one so it can replace it.
+        const approved = c ? (await c.state.state(id))?.approved : undefined;
+        const added = approved ? permissionsAdded(approved.permissions, e.manifest.permissions) : undefined;
+        return { ok: false, message: "This plugin changed; review it again", review: this.review(e, added) };
+      }
       if (!c) return { ok: false, message: NOT_SET_UP };
       this.devOff.delete(id);
       if (e.origin !== "dev") await c.state.setState(id, { on: true, offReason: undefined, approved: this.snapshot(e), seenHash: e.distHash });

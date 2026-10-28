@@ -282,7 +282,12 @@ describe("PluginsController: starting and reviews", () => {
     expect(shown.review.distHash).toMatch(/^[0-9a-f]{64}$/);
     // Between the review and the click the plugin asks for more.
     await widen(["a.example.com", "b.example.org", "evil.example.org"]);
-    expect(await t.ctl.approve("oncall", shown.review.distHash)).toEqual({ ok: false, message: "This plugin changed; review it again" });
+    // Refused with the current review (its hash and what it adds) so the renderer replaces the stale one.
+    const refused = (await t.ctl.approve("oncall", shown.review.distHash)) as { ok: false; message: string; review: PluginReview };
+    expect(refused).toMatchObject({ ok: false, message: "This plugin changed; review it again" });
+    expect(refused.review.distHash).toMatch(/^[0-9a-f]{64}$/);
+    expect(refused.review.distHash).not.toBe(shown.review.distHash);
+    expect(refused.review.added).toContainEqual({ kind: "host", value: "evil.example.org" });
     expect(await t.ctl.approve("oncall", undefined as unknown as string)).toMatchObject({ ok: false });
     expect(t.host.started).toEqual(["oncall"]);
     expect((await t.ctl.view()).plugins[0].status).toBe("review");
@@ -290,6 +295,18 @@ describe("PluginsController: starting and reviews", () => {
     expect(again.review.added).toContainEqual({ kind: "host", value: "evil.example.org" });
     expect(await t.ctl.approve("oncall", again.review.distHash)).toEqual({ ok: true });
     expect(t.host.started).toEqual(["oncall", "oncall"]);
+  });
+
+  it("a key a new version adds is shown by its label in the review's added list", async () => {
+    const t = await setup({ plugins: { bundled: ["oncall"], on: ["oncall"], local: false } });
+    const dist = await bundled(t.root, "oncall", { permissions: { secrets: [{ id: "tok", label: "Token" }] } });
+    await t.ctl.start();
+    const manifest = JSON.parse(await fs.readFile(path.join(dist, "plugin.json"), "utf8"));
+    const secrets = [{ id: "tok", label: "Token" }, { id: "jira", label: "Jira token" }];
+    await fs.writeFile(path.join(dist, "plugin.json"), JSON.stringify({ ...manifest, permissions: { ...manifest.permissions, secrets } }));
+    await t.ctl.rescan();
+    const asked = (await t.ctl.setOn("oncall", true)) as { review: PluginReview };
+    expect(asked.review.added).toEqual([{ kind: "secret", value: "Jira token" }]);
   });
 
   it("a dev plugin turned off stays off across a rescan, until turned on", async () => {

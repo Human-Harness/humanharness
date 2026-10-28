@@ -171,6 +171,12 @@ describe("plugins IPC", () => {
     expect(await w.call("hh:pluginsDetail", "jira")).toEqual({ row: { id: "x" }, secrets: [{ id: "token", label: "Token", stored: true }] });
   });
 
+  it("an approve refused with the current review passes its message and review, nothing else", async () => {
+    const review = { id: "jira", name: "Jira", version: "1.0.0", distHash: HASH, lines: [] };
+    const w = wire({ approve: async () => ({ ok: false, message: "This plugin changed; review it again", review, extra: "x" }) });
+    expect(await w.call("hh:pluginsApprove", "jira", HASH)).toEqual({ ok: false, message: "This plugin changed; review it again", review });
+  });
+
   it("a controller that rejects answers a refusal, null or an empty list, never a thrown error", async () => {
     const boom = async () => {
       throw new Error("/Users/me/secret/path exploded");

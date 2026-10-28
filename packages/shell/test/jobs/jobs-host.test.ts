@@ -473,7 +473,7 @@ describe("single mode (Decision 12)", () => {
     const fake = fakeWorkspace();
     const sessions: unknown[] = [];
     const { runtime, slot } = await openSingleRuntime(fake.ws, { onSession: (s) => void sessions.push(s) });
-    expect(Object.keys(runtime).sort()).toEqual(["close", "endSession", "history", "refreshInstructions", "send"]);
+    expect(Object.keys(runtime).sort()).toEqual(["close", "endSession", "history", "linkedHistory", "refreshInstructions", "send"]);
     expect(slot.key).toBe("main");
     expect(fake.opened).toEqual([expect.objectContaining({ key: "main" })]);
     expect(fake.opened[0].kind).toBeUndefined();

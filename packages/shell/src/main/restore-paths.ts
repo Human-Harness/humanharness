@@ -33,6 +33,8 @@ export async function restoreTaskByPaths(
     running: Running | (() => Promise<Running>);
     includeShared: boolean;
     depth?: number;
+    /** Only the checks: the answer a restore would give, with nothing restored (an undo over several histories). */
+    check?: boolean;
   },
 ): Promise<RestoreByPaths> {
   const depth = o.depth ?? DEPTH;
@@ -69,6 +71,7 @@ export async function restoreTaskByPaths(
   const dirty = new Set(await history.changedSince(null));
   const unsaved = paths.find((p) => dirty.has(p));
   if (unsaved !== undefined) return { ok: false, reason: "uncommitted", path: unsaved };
+  if (o.check) return { ok: true, paths, sharedLeft: o.includeShared ? [] : shared, skipped: [] };
   const r = await history.restorePaths(paths, group.start, RESTORE_TASK, { task });
   return { ok: true, paths, sharedLeft: o.includeShared ? [] : shared, skipped: r.skipped };
 }

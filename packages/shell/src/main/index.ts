@@ -198,6 +198,7 @@ import { restoreTaskByPaths } from "./restore-paths";
 import { type LinkedIpcDeps, hatchesState, linkedSigning, registerLinkedIpc } from "./linked-ipc";
 import { linkedHistoryDir, markRelinked, pruneUnlinked } from "./linked-history";
 import { LinkedInstructions, type ScopeAccess, createScopeAccess } from "./scope-access";
+import { type LinkedHistoryRef, linkedHistoriesFor, linkedHistoryView, openLinkedHistory, restoreLinkedTask, restoreTaskWithLinked } from "./linked-restore";
 import { restoreTaskArgs, tasksIpc, undoRefusalOf } from "./tasks-ipc";
 import { PluginsController, watchPluginFolder } from "./plugins";
 import { respondHandler } from "./respond-ipc";
@@ -1897,8 +1898,42 @@ function linkedIpcDeps(): LinkedIpcDeps {
       void linked_()?.instructions.changed();
     },
     unsupported: () => linkedUnsupported,
+    // Scope settings opening checks git again (Decision 13), as the scope's opening does.
+    checkGit: async (scope) => linked_()?.access.checkGit(scope),
+    linkedHistory: async () => {
+      const linked = linked_();
+      if (!linked) return { uncovered: [], tasks: {} };
+      const scope = await tasks.currentScope();
+      return linkedHistoryView(await linked.access.entries(scope), scope, harness.linkedFolders ?? {}, openLinked);
+    },
   };
   return linkedDeps;
+}
+
+/**
+ * A tracked linked folder's history (hatches spec §3.4): the open workspace's (board's or the runtime's) once a turn
+ * opened it, else one over its gitdir in the app's data folder when that exists. Never makes one.
+ */
+const openLinked = openLinkedHistory(
+  (real) => linkedHistoryDir(app.getPath("userData"), real),
+  async (real) => {
+    if (host) return host.linkedHistory(real);
+    const rt = await runtime.peek()?.catch(() => null);
+    return (await rt?.linkedHistory?.(real)) ?? null;
+  },
+);
+
+/**
+ * "Undo this task"'s tracked linked folders, of the task's scope (else the open one), checked as a turn's are: none
+ * without linked folders (D0). Git is looked at first: a folder that gained git is never restored (L7).
+ */
+async function linkedHistoriesOf(scopeId: string | undefined): Promise<LinkedHistoryRef[]> {
+  const linked = linked_();
+  if (!linked) return [];
+  const scope = scopeId ?? (await tasks.currentScope());
+  if (scope === null) return [];
+  await linked.access.checkGit(scope).catch((err: unknown) => console.error("Could not check the linked folders' git", err));
+  return linkedHistoriesFor(await linked.access.entries(scope), scope, harness.linkedFolders ?? {}, openLinked);
 }
 
 /**
@@ -2474,6 +2509,13 @@ function registerIpc() {
         const group = (await history.tasks()).find((g) => g.taskId === taskId);
         if (!group?.start) throw new Error("Nothing to go back to");
         await history.restore(group.start, RESTORE_TASK);
+        // Its tracked linked folders too (hatches spec §3.4); a failure there is logged and fails the undo.
+        try {
+          await restoreLinkedTask(await linkedHistoriesOf(group.scopeId), taskId, RESTORE_TASK);
+        } catch (err) {
+          console.error("Undo covered the work folder but not its linked folders", err);
+          throw err;
+        }
       }).then(afterRestore),
     file: fileTimelines,
   });
@@ -2497,7 +2539,12 @@ function registerIpc() {
     await restores.run(
       currentHistory,
       async (history: History) => {
-        result = await restoreTaskByPaths(history, id, { running: byPaths.running, includeShared: withShared });
+        // With tracked linked folders, each of them by paths too (hatches spec §3.4); without, today's (D0).
+        const linkedRefs = await linkedHistoriesOf(task.scopeId);
+        result =
+          linkedRefs.length > 0
+            ? await restoreTaskWithLinked(history, linkedRefs, id, { running: byPaths.running, includeShared: withShared })
+            : await restoreTaskByPaths(history, id, { running: byPaths.running, includeShared: withShared });
       },
       { busy: () => byPaths.busy(id) },
     );

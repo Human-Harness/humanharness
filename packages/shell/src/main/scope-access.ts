@@ -166,7 +166,9 @@ export function createScopeAccess(d: ScopeAccessDeps) {
     lines: async (scope: string | null): Promise<LinkedFolderLine[]> => linkedLines(await usable(scope), scope, decl),
     /** Board mode's first-message section for a task in `scope`; "" for none. */
     section: async (scope: string): Promise<string> => linkedSection(linkedLines(await usable(scope), scope, decl)),
-    /** Decision 13's check, when the scope opens: its signed links only. */
+    /** The registry with only `scope`'s entry, its links cut to the usable ones (undo, the History panel). */
+    entries: (scope: string | null): Promise<ScopeEntry[]> => usable(scope),
+    /** Decision 13's check, when the scope opens and when Scope settings opens: its signed links only. */
     checkGit: async (scope: string): Promise<boolean> => {
       if (!isScopeId(scope)) return false;
       const store = await d.store();

@@ -875,6 +875,13 @@ export interface LinkedView {
 export type LinkRefusalView =
   | "engine-home" | "home" | "system" | "too-broad" | "protected" | "main-folder" | "other-scope-write" | "nested"
   | "already-linked" | "not-git" | "not-folder" | "unsafe-name" | "reference" | "one-only" | "too-many";
+/** What the History panel shows of the open scope's linked folders (hatches spec §3.4). */
+export interface LinkedHistoryView {
+  /** Write folders the app's history doesn't cover (they have their own git): the panel says undo doesn't cover them. */
+  uncovered: { key: string; label: string }[];
+  /** Per task id: what it changed in each tracked folder. */
+  tasks: Record<string, { key: string; label: string; changes: HistoryFileChange[] }[]>;
+}
 /** The hatches a harness declares (hatches spec). Absent from AppState without any (D0). */
 export interface HatchesState {
   linkedFolders?: Record<string, { label: string; mode: "read" | "write"; history: "auto" | "own"; many: boolean }>;
@@ -1276,6 +1283,8 @@ export interface HarnessClient {
     unlinkFolder(scope: string, key: string, path: string): Promise<void>;
     /** After a folder gained or lost git (Decision 13): keep it tracked or leave it to its git. */
     confirmGit(scope: string, key: string, path: string, tracked: boolean): Promise<void>;
+    /** Harnesses with `linkedFolders` only: the open scope's linked folders as the History panel shows them. */
+    linkedHistory(): Promise<LinkedHistoryView>;
   };
   /** The harness's data (spec §4.5), as the person: the same checks as the agent's tools. `settings` is read-only here: use `settings`. */
   data: {

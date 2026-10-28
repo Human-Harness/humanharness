@@ -14,6 +14,7 @@ import type {
   DataRecord,
   DocumentRead,
   LinkRefusalView,
+  LinkedHistoryView,
   LinkedView,
   EngineError,
   FileDiffResult,
@@ -826,6 +827,8 @@ export class FakeClient implements HarnessClient {
   linkedSet(scope: string, folders: LinkedView[]) {
     this.linkedFolders = { ...this.linkedFolders, [scope]: folders };
   }
+  /** What `linkedHistory` answers (the History panel's linked-folder lines). */
+  linkedHistoryAnswer: LinkedHistoryView = { uncovered: [], tasks: {} };
   /** What the next `linkFolder` "picks": a folder (linked as read and write, tracked), a refusal, or null (cancelled). */
   linkPickAnswer: { path: string; label?: string; mode?: "read" | "write"; tracked?: boolean } | { refused: LinkRefusalView } | null = null;
   scopes = {
@@ -880,6 +883,7 @@ export class FakeClient implements HarnessClient {
       if (!was.some((l) => l.key === key && l.path === path)) throw new Error("Unknown linked folder");
       this.linkedSet(scope, was.map((l) => (l.key === key && l.path === path ? { key: l.key, label: l.label, path: l.path, mode: l.mode, tracked } : l)));
     }),
+    linkedHistory: vi.fn(async () => this.linkedHistoryAnswer),
   };
   /** The fake's data: records by collection, in the order they were put; `dataKey` names the key field. */
   records: Record<string, DataRecord[]> = {};

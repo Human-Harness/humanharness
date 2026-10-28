@@ -172,6 +172,7 @@ const client: HarnessClient = {
     linkFolder: (scope, key) => ipcRenderer.invoke("hh:scopeLinkFolder", scope, key),
     unlinkFolder: (scope, key, path) => ipcRenderer.invoke("hh:scopeUnlinkFolder", scope, key, path),
     confirmGit: (scope, key, path, tracked) => ipcRenderer.invoke("hh:scopeConfirmGit", scope, key, path, tracked),
+    linkedHistory: () => ipcRenderer.invoke("hh:linkedHistory"),
   },
   data: {
     get: (collection, key, options) => ipcRenderer.invoke("hh:data", { op: "get", collection, ...(key !== undefined ? { key } : {}) }, options),

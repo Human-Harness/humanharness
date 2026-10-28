@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { LinkedFolderDecl } from "@humanharness/harness-sdk";
+import type { LinkedHistoryView } from "@humanharness/ui/client";
 import { ScopeStore, scopesFile } from "@humanharness/workspace";
 import { type LinkSigning, linkTag, linkTagValid, linkedSigning, registerLinkedIpc, signedLinks } from "../src/main/linked-ipc";
 import { linkedHistoryDir } from "../src/main/linked-history";
@@ -31,7 +32,18 @@ const DECLS: Record<string, LinkedFolderDecl> = {
 let n = 0;
 type Other = { profile: string; store: ScopeStore };
 /** One base of an app; `userData` shared means the same app (another profile), `profile` its id ("" without). */
-function setup(over: { picks?: (string | null)[]; references?: string[]; unsupported?: boolean; other?: Other[]; userData?: string; profile?: string } = {}) {
+function setup(
+  over: {
+    picks?: (string | null)[];
+    references?: string[];
+    unsupported?: boolean;
+    other?: Other[];
+    userData?: string;
+    profile?: string;
+    checkGit?: (scope: string) => Promise<unknown>;
+    linkedHistory?: () => Promise<LinkedHistoryView>;
+  } = {},
+) {
   const t = mk(path.join(root, `t${n++}`));
   const home = mk(path.join(t, "home"));
   const work = mk(path.join(home, "Documents", "Work"));
@@ -60,6 +72,8 @@ function setup(over: { picks?: (string | null)[]; references?: string[]; unsuppo
     ready: Promise.resolve(),
     changed,
     unsupported: () => over.unsupported ?? false,
+    ...(over.checkGit ? { checkGit: over.checkGit } : {}),
+    ...(over.linkedHistory ? { linkedHistory: over.linkedHistory } : {}),
   });
   const call = (ch: string, ...args: unknown[]) => Promise.resolve(handlers.get(ch)!(...args));
   const raw = () => fs.readFileSync(scopesFile(work), "utf8");
@@ -74,8 +88,8 @@ describe("linked folders IPC (hatches spec §3.2)", () => {
     await s.store.create("Other");
   });
 
-  it("registers exactly the four channels and reads no key while registering", () => {
-    expect([...s.handlers.keys()].sort()).toEqual(["hh:scopeConfirmGit", "hh:scopeLinkFolder", "hh:scopeLinked", "hh:scopeUnlinkFolder"]);
+  it("registers exactly the five channels and reads no key while registering", () => {
+    expect([...s.handlers.keys()].sort()).toEqual(["hh:linkedHistory", "hh:scopeConfirmGit", "hh:scopeLinkFolder", "hh:scopeLinked", "hh:scopeUnlinkFolder"]);
     expect(s.secret).not.toHaveBeenCalled();
   });
 
@@ -259,6 +273,45 @@ describe("linked folders IPC (hatches spec §3.2)", () => {
     await s.call("hh:scopeConfirmGit", "app", "repos", real, true);
     expect((await s.call("hh:scopeLinked", "app")) as { folders: { tracked: boolean }[] }).toMatchObject({ folders: [{ tracked: true }] });
     await expect(s.call("hh:scopeConfirmGit", "app", "repos", real, "yes")).rejects.toThrow(/Invalid/);
+  });
+
+  it("Scope settings opening runs the git check before listing, so a folder that gained git shows it (Decision 13)", async () => {
+    const order: string[] = [];
+    let store: ScopeStore | null = null;
+    const t = setup({
+      checkGit: async (scope) => {
+        order.push(`check ${scope}`);
+        const l = (await store!.list()).find((e) => e.id === scope)!.linked![0];
+        await store!.markGitChanged(scope, l.key, l.path);
+      },
+    });
+    store = t.store;
+    await t.store.create("App");
+    const repo = mk(path.join(t.code, "app"));
+    t.pick.mockImplementationOnce(async () => repo);
+    await t.call("hh:scopeLinkFolder", "app", "repos");
+    expect(await t.call("hh:scopeLinked", "app")).toMatchObject({ folders: [{ key: "repos", gitChanged: true }] });
+    expect(order).toEqual(["check app"]);
+  });
+
+  it("a failing git check still lists the links; an unknown scope never reaches the check (L9)", async () => {
+    const checkGit = vi.fn(async () => {
+      throw new Error("boom");
+    });
+    const t = setup({ checkGit });
+    await t.store.create("App");
+    expect(await t.call("hh:scopeLinked", "app")).toEqual({ folders: [], unsupported: false });
+    await expect(t.call("hh:scopeLinked", "nope")).rejects.toThrow(/Unknown scope/);
+    expect(checkGit).toHaveBeenCalledTimes(1);
+  });
+
+  it("hh:linkedHistory answers the open scope's view; nothing from the window is used", async () => {
+    const view: LinkedHistoryView = { uncovered: [{ key: "repos", label: "Repositories" }], tasks: {} };
+    const linkedHistory = vi.fn(async () => view);
+    const t = setup({ linkedHistory });
+    expect(await t.call("hh:linkedHistory", "other", "/etc")).toEqual(view);
+    expect(linkedHistory).toHaveBeenCalledWith();
+    expect(await s.call("hh:linkedHistory")).toEqual({ uncovered: [], tasks: {} });
   });
 
   it("hh:scopeLinked answers the scope's links, the declaration labels and the unsupported flag", async () => {

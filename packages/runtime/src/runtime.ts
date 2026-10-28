@@ -90,6 +90,8 @@ export interface HarnessRuntime {
    */
   refreshInstructions(): Promise<boolean>;
   history: History;
+  /** A tracked linked folder's history (hatches spec §3.4) once a turn opened it; null otherwise. */
+  linkedHistory?(realPath: string): Promise<History | null>;
   close(): Promise<void>;
 }
 
@@ -121,6 +123,7 @@ export async function createRuntime(opts: RuntimeOptions): Promise<HarnessRuntim
 export function runtimeOnSlot(ws: HarnessWorkspace, slot: SessionSlot): HarnessRuntime {
   return {
     history: ws.history,
+    linkedHistory: (realPath) => ws.linkedHistory(realPath),
     send: (message, emit, options) => slot.send(message, emit, options),
     endSession: () => slot.endSession(),
     refreshInstructions: () => ws.refreshInstructions(),

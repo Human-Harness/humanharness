@@ -3,7 +3,7 @@ import { promises as fs, realpath } from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
 import { LINKED_MANY_MAX, type LinkedFolderDecl, hasLinkedFolders } from "@humanharness/harness-sdk";
-import type { HatchesState, LinkRefusalView, LinkedView } from "@humanharness/ui/client";
+import type { HatchesState, LinkRefusalView, LinkedHistoryView, LinkedView } from "@humanharness/ui/client";
 import { type LinkedFolderEntry, type ScopeEntry, type ScopeStore, isScopeId } from "@humanharness/workspace";
 import { checkLink, isGitRepo } from "./linked-folders";
 import { linkedHistoryDir, markRelinked, markUnlinked } from "./linked-history";
@@ -160,6 +160,10 @@ export interface LinkedIpcDeps {
   changed(): Promise<void>;
   /** Codex can't take linked folders (Decision 15). */
   unsupported(): boolean;
+  /** Decision 13's git check of a scope's links (`ScopeAccess.checkGit`), run as Scope settings opens. */
+  checkGit?(scope: string): Promise<unknown>;
+  /** What the History panel shows of the open scope's linked folders (linked-restore.ts). */
+  linkedHistory?(): Promise<LinkedHistoryView>;
 }
 
 // macOS file systems are usually case-insensitive: two spellings of one folder share its history (safe side).
@@ -229,11 +233,23 @@ export function registerLinkedIpc(handle: (channel: string, fn: (...args: never[
 
   handle("hh:scopeLinked", async (scope: unknown) => {
     await d.ready;
+    // Scope settings opens: a folder that gained or lost git since is marked first (Decision 13), as when the scope opens.
+    const checkGit = d.checkGit;
+    if (checkGit) {
+      const { scope: before } = await scopeOf(scope);
+      await serial(() => checkGit(before.id)).catch((err: unknown) => console.error("Could not check the linked folders' git", err));
+    }
     const { scope: s } = await scopeOf(scope);
     const signed = await linkChecker(d.signing);
     // A key the manifest no longer declares is not shown (its label is gone).
     const folders = signed(s, await d.profile()).filter((l) => Object.hasOwn(d.linkedFolders, l.key)).map(view);
     return { folders, unsupported: d.unsupported() };
+  });
+
+  // The History panel's lines (hatches spec §3.4): the open scope's, never a scope the window names.
+  handle("hh:linkedHistory", async (): Promise<LinkedHistoryView> => {
+    await d.ready;
+    return d.linkedHistory ? d.linkedHistory() : { uncovered: [], tasks: {} };
   });
 
   // Any argument after the key (a path, say) is ignored: the picker always opens (L1).

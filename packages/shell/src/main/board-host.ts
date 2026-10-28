@@ -651,6 +651,11 @@ export function createBoardHost(d: BoardHostDeps, initial: { engineId: string | 
     async history(): Promise<History | null> {
       return (await workspace.peek()?.catch(() => null))?.history ?? null;
     },
+    /** A tracked linked folder's history, once a turn of the open workspace opened it (hatches spec §3.4). */
+    async linkedHistory(realPath: string): Promise<History | null> {
+      const ws = await workspace.peek()?.catch(() => null);
+      return ws ? ws.linkedHistory(realPath) : null;
+    },
     /** Each running turn's task and the paths it touched (undo by paths, P2). */
     async runningPaths(): Promise<{ task: string; paths: ReadonlySet<string> }[]> {
       const ws = await workspace.peek()?.catch(() => null);

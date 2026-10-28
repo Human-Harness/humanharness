@@ -249,6 +249,11 @@ export function toResourceEntries(key: string, value: Translated): Record<string
   return Object.fromEntries(Object.entries(value).map(([f, v]) => [`${key}_${f}`, v as string]));
 }
 
+/** Whether `toResources` kept at least one key: an empty, legal-only or dropped set translates nothing. */
+export function hasResources(r: { core: Record<string, unknown>; harness: Record<string, unknown> }): boolean {
+  return Object.keys(r.core).length > 0 || Object.keys(r.harness).length > 0;
+}
+
 /** Flat namespaced strings as i18next resources; anything under `legal.`, outside core/harness or through a prototype is dropped. */
 export function toResources(flat: Record<string, string>): { core: Record<string, unknown>; harness: Record<string, unknown> } {
   const out = { core: {} as Record<string, unknown>, harness: {} as Record<string, unknown> };

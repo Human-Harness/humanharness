@@ -2,7 +2,7 @@
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { createI18n } from "@humanharness/i18n";
-import { useLanguage } from "../src/language-control";
+import { applyLanguage, useLanguage } from "../src/language-control";
 import { FakeClient } from "./fake-client";
 
 afterEach(cleanup);
@@ -131,6 +131,75 @@ describe("useLanguage", () => {
     await act(async () => open());
     await act(async () => {});
     expect(result.current.view?.missing).toBe(7);
+  });
+
+  it("an empty or legal-only set for a non-English tag doesn't switch (dates would change, texts stay English)", async () => {
+    const sets: Record<string, string>[] = [{}, { "core:legal.engine.accept": "Acepto" }];
+    for (const strings of sets) {
+      const client = new FakeClient();
+      client.chooseAnswer = { ok: true, language: "es", strings };
+      const i18n = await createI18n("en");
+      const changed: string[] = [];
+      const { result, unmount } = renderHook(() => useLanguage(client, i18n, {}, (tag) => changed.push(tag)));
+      await act(async () => expect(await result.current.choose("es")).toBe("failed"));
+      expect(i18n.language).toBe("en");
+      expect(i18n.hasResourceBundle("es", "core")).toBe(false);
+      expect(changed).toEqual([]);
+      unmount();
+    }
+  });
+
+  it("applyLanguage refuses an empty non-English set and still switches back to English", async () => {
+    const i18n = await createI18n("en");
+    expect(await applyLanguage(i18n, "es", {})).toBe(false);
+    expect(i18n.language).toBe("en");
+    expect(await applyLanguage(i18n, "es", { "core:chat.send": "Enviar" })).toBe(true);
+    expect(i18n.language).toBe("es");
+    expect(await applyLanguage(i18n, "en", {})).toBe(true);
+    expect(i18n.language).toBe("en");
+  });
+
+  it("a strings() rejection at a run's end switches nothing", async () => {
+    const client = new FakeClient();
+    client.language = { ...client.language, strings: () => Promise.reject(new Error("ipc")) };
+    const i18n = await createI18n("en");
+    const changed: string[] = [];
+    renderHook(() => useLanguage(client, i18n, {}, (tag) => changed.push(tag)));
+    await act(async () => client.pushLanguage({ language: "fr", run: { tag: "fr", done: 0, total: 1, status: "running" } }));
+    await act(async () => client.pushLanguage({ language: "fr", run: { tag: "fr", done: 1, total: 1, status: "done" } }));
+    await act(async () => {});
+    expect(i18n.language).toBe("en");
+    expect(changed).toEqual([]);
+  });
+
+  it("an unmount drops a pending switch", async () => {
+    const client = new FakeClient();
+    client.languageStrings.fr = { "core:chat.send": "Envoyer" };
+    let open!: () => void;
+    client.languageGate = new Promise<void>((r) => (open = r));
+    const i18n = await createI18n("en");
+    const changed: string[] = [];
+    const { unmount } = renderHook(() => useLanguage(client, i18n, {}, (tag) => changed.push(tag)));
+    await act(async () => client.pushLanguage({ language: "fr", run: { tag: "fr", done: 0, total: 1, status: "running" } }));
+    await act(async () => client.pushLanguage({ language: "fr", run: { tag: "fr", done: 1, total: 1, status: "done" } }));
+    expect(client.languageCalls.filter((c) => c.op === "strings")).toHaveLength(1);
+    unmount();
+    await act(async () => open());
+    await act(async () => {});
+    expect(i18n.language).toBe("en");
+    expect(changed).toEqual([]);
+  });
+
+  it("a resubscribe keeps the running flag, so the run's end still switches", async () => {
+    const client = new FakeClient();
+    client.languageStrings.fr = { "core:chat.send": "Envoyer" };
+    const first = await createI18n("en");
+    const second = await createI18n("en");
+    const { rerender } = renderHook(({ i18n }) => useLanguage(client, i18n, {}, () => {}), { initialProps: { i18n: first } });
+    await act(async () => client.pushLanguage({ language: "fr", run: { tag: "fr", done: 0, total: 1, status: "running" } }));
+    rerender({ i18n: second });
+    await act(async () => client.pushLanguage({ language: "fr", run: { tag: "fr", done: 1, total: 1, status: "done" } }));
+    await waitFor(() => expect(second.t("chat.send")).toBe("Envoyer"));
   });
 
   it("without client.language: no view and nothing to do (D0)", async () => {

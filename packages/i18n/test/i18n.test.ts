@@ -67,6 +67,21 @@ describe("generated strings (spec §6)", () => {
     expect(i18n.t("settings.title")).toBe("Settings");
   });
 
+  it("a set with nothing left after the checks (legal-only, dropped keys) adds no language", async () => {
+    const sets: Record<string, string>[] = [{ "core:legal.engine.accept": "Acepto" }, { "other:chat.send": "Enviar", "core:__proto__.x": "y", nokey: "z" }];
+    for (const generated of sets) {
+      const i18n = await createI18n("es", {}, generated);
+      expect(Object.keys(i18n.options.resources ?? {})).toEqual(["en"]);
+      expect(i18n.resolvedLanguage).toBe("en");
+    }
+  });
+
+  it("one harness key is enough to switch", async () => {
+    const i18n = await createI18n("es", { en: { title: "Notes" } }, { "harness:title": "Notas" });
+    expect(i18n.resolvedLanguage).toBe("es");
+    expect(i18n.t("harness:title")).toBe("Notas");
+  });
+
   it("English never takes generated strings", async () => {
     const i18n = await createI18n("en", {}, { "core:chat.send": "Enviar" });
     expect(i18n.t("chat.send")).toBe("Send");

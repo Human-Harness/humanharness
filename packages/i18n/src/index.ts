@@ -1,7 +1,7 @@
 import i18next, { type i18n } from "i18next";
 import type { Language } from "@humanharness/harness-sdk";
 import en from "./locales/en.json";
-import { toResources } from "./translate";
+import { hasResources, toResources } from "./translate";
 
 /** A harness's own strings by language. A harness ships `en` only; other languages come from the app (spec 5 D1). */
 export type Locales = Partial<Record<Language, Record<string, unknown>>>;
@@ -19,7 +19,10 @@ export type GeneratedStrings = Record<string, string>;
  */
 export async function createI18n(language: Language, harnessLocales: Locales = {}, generated: GeneratedStrings = {}): Promise<i18n> {
   const instance = i18next.createInstance();
-  const extra = language !== "en" && Object.keys(generated).length > 0 ? { [language]: toResources(generated) } : {};
+  const translated = language !== "en" ? toResources(generated) : null;
+  // Only a set that kept at least one key after toResources switches: a legal-only or dropped set adds nothing,
+  // so resolvedLanguage stays "en" and dates and numbers stay English with the texts.
+  const extra = translated && hasResources(translated) ? { [language]: translated } : {};
   await instance.init({
     lng: language,
     fallbackLng: "en",

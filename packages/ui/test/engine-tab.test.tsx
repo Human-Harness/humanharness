@@ -601,6 +601,22 @@ describe("EngineTab: legal texts in another language", () => {
     expect(container.querySelector(".hh-legal-english")).toBeNull();
   });
 
+  it("an empty or legal-only es set translates nothing, so there is no legal line on an all-English screen", async () => {
+    const sets: Record<string, string>[] = [{}, { "core:legal.engine.accept": "Acepto" }];
+    for (const generated of sets) {
+      const client = new FakeClient({ language: "es", folder: "/Users/me/Documents/Demo", engineId: "claude" });
+      const i18n = await createI18n("es", {}, generated);
+      expect(i18n.resolvedLanguage).toBe("en");
+      const { container, unmount } = render(<I18nextProvider i18n={i18n}>
+          <Tab client={client} />
+        </I18nextProvider>);
+      await screen.findByText("Claude is ready ✓");
+      expect(container.querySelector(".hh-legal-english")).toBeNull();
+      expect(screen.getByText(/this app is not responsible for what the AI writes/).hasAttribute("lang")).toBe(false);
+      unmount();
+    }
+  });
+
   it("the engine notice keeps its legal text in English, with the line right under it", async () => {
     const client = withFolder();
     client.status = { ...client.status, noticeAccepted: false };

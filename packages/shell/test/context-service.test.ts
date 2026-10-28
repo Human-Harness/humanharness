@@ -1,15 +1,27 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import type { ContextItem, ContextRead } from "@humanharness/ui/client";
-import { loadContext } from "@humanharness/workspace";
+import { PINS_MAX, loadContext, saveContext } from "@humanharness/workspace";
 import { ContextService, type ContextDeps } from "../src/main/context";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-ctxs-"));
+const AT = "2026-10-28T10:00:00.000Z";
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
 
-function setup(opts: { scoped?: boolean; files?: Record<string, string>; blocked?: string | null; picked?: string | null } = {}) {
+function setup(
+  opts: {
+    scoped?: boolean;
+    files?: Record<string, string>;
+    blocked?: string | null | (() => string | null);
+    picked?: string | null;
+    pickFile?: ContextDeps["pickFile"];
+    add?: ContextDeps["add"];
+    /** The folder the service sees, when not the test's own. */
+    folderAs?: string;
+  } = {},
+) {
   const base = fs.mkdtempSync(path.join(root, "b-"));
   for (const [rel, content] of Object.entries(opts.files ?? { "conv.md": "Use pnpm." })) {
     fs.mkdirSync(path.dirname(path.join(base, rel)), { recursive: true });
@@ -22,7 +34,7 @@ function setup(opts: { scoped?: boolean; files?: Record<string, string>; blocked
   const reads: ContextRead[] = [{ kind: "read", label: "conv.md", path: "conv.md", firstAt: "2026-10-28T10:00:00.000Z", count: 1 }];
   const scoped = opts.scoped ?? false;
   const deps: ContextDeps = {
-    base: async () => base,
+    base: async () => opts.folderAs ?? base,
     scoped: () => scoped,
     scopeExists: async (id) => id === "fracciones",
     budget: async () => 3000,
@@ -31,12 +43,14 @@ function setup(opts: { scoped?: boolean; files?: Record<string, string>; blocked
     noteTitles: async () => new Map([[".harness/notes/q-a.md", "A"]]),
     history: async () => ({ save: async (message: string, trailer?: unknown) => void commits.push({ message, trailer }) }),
     trailer: async () => ({ task: "t1" }),
-    blocked: () => opts.blocked ?? null,
-    add: async (taskId, file) => {
-      added.push([taskId, file]);
-      return { ok: true };
-    },
-    pickFile: async () => (opts.picked === undefined ? path.join(base, "conv.md") : opts.picked),
+    blocked: () => (typeof opts.blocked === "function" ? opts.blocked() : (opts.blocked ?? null)),
+    add:
+      opts.add ??
+      (async (taskId, file) => {
+        added.push([taskId, file]);
+        return { ok: true };
+      }),
+    pickFile: opts.pickFile ?? (async () => (opts.picked === undefined ? path.join(base, "conv.md") : opts.picked)),
     changed: (id) => void changed.push(id),
   };
   return { service: new ContextService(deps), base, commits, changed, added };
@@ -120,7 +134,26 @@ describe("ContextService (context-panel spec §4, §5.2)", () => {
     expect(await t.service.exclude("main", ".harness/notes/../tasks.md")).toEqual({ ok: false, reason: "not-a-note" });
     expect(await t.service.exclude("main", ".harness/notes/a.txt")).toEqual({ ok: false, reason: "not-a-note" });
     expect(await t.service.exclude("main", ".harness/notes/a\nTask: t9.md")).toEqual({ ok: false, reason: "bad-name" });
+    expect(await t.service.exclude("main", ".harness/notes/a`b.md")).toEqual({ ok: false, reason: "bad-name" });
     expect(t.commits).toEqual([]);
+  });
+
+  it("pin refuses past PINS_MAX", async () => {
+    const files: Record<string, string> = {};
+    for (let i = 0; i <= PINS_MAX; i++) files[`f${i}.md`] = `file ${i}`;
+    const t = setup({ files });
+    await saveContext(t.base, "main", { version: 1, pinned: Array.from({ length: PINS_MAX }, (_, i) => ({ path: `f${i}.md`, at: AT })), excluded: [] });
+    expect(await t.service.pin("main", `f${PINS_MAX}.md`)).toEqual({ ok: false, reason: "full" });
+    expect((await loadContext(t.base, "main")).pinned).toHaveLength(PINS_MAX);
+  });
+
+  it("unpin and include take a hand-edited odd name away, quoted in the commit", async () => {
+    const t = setup();
+    await saveContext(t.base, "main", { version: 1, pinned: [{ path: "a`b.md", at: AT }], excluded: [{ note: ".harness/notes/a`b.md", at: AT }] });
+    expect(await t.service.unpin("main", "a`b.md")).toEqual({ ok: true });
+    expect(await t.service.include("main", ".harness/notes/a`b.md")).toEqual({ ok: true });
+    expect(t.commits.map((c) => c.message)).toEqual(["Context: unpinned \"a`b.md\"", "Context: included \".harness/notes/a`b.md\""]);
+    expect(fs.existsSync(path.join(t.base, ".harness", "context", "main.json"))).toBe(false);
   });
 
   it("refuses writes while turns are held", async () => {
@@ -135,6 +168,30 @@ describe("ContextService (context-panel spec §4, §5.2)", () => {
     expect(await setup({ picked: null }).service.pick()).toEqual({ ok: false, reason: "cancelled" });
   });
 
+  it("pick: a dialog that answers with the folder's real path still gives a folder path", async () => {
+    const real = fs.mkdtempSync(path.join(root, "real-"));
+    fs.writeFileSync(path.join(real, "conv.md"), "x");
+    const link = path.join(root, `link-${path.basename(real)}`);
+    fs.symlinkSync(real, link);
+    const t = setup({ folderAs: link, pickFile: async () => path.join(fs.realpathSync(real), "conv.md") });
+    expect(await t.service.pick()).toEqual({ ok: true, path: "conv.md" });
+  });
+
+  it("pick: one dialog at a time", async () => {
+    const answers: ((v: string | null) => void)[] = [];
+    const t = setup({ pickFile: () => new Promise((resolve) => void answers.push(resolve)) });
+    const first = t.service.pick();
+    expect(await t.service.pick()).toEqual({ ok: false, reason: "busy" });
+    await vi.waitFor(() => expect(answers).toHaveLength(1));
+    answers[0](path.join(t.base, "conv.md"));
+    expect(await first).toEqual({ ok: true, path: "conv.md" });
+    // Once it closed, another may open.
+    const again = t.service.pick();
+    await vi.waitFor(() => expect(answers).toHaveLength(2));
+    answers[1](null);
+    expect(await again).toEqual({ ok: false, reason: "cancelled" });
+  });
+
   it("add: any file inside the folder goes to the task manager; outside never does", async () => {
     const t = setup({ files: { "conv.md": "x", "a`b.md": "x", ".harness/tasks.json": "{}" } });
     expect(await t.service.add("t1", "conv.md")).toEqual({ ok: true });
@@ -143,6 +200,22 @@ describe("ContextService (context-panel spec §4, §5.2)", () => {
     expect(await t.service.add("t1", ".harness/tasks.json")).toEqual({ ok: false, reason: "outside" });
     expect(await t.service.add("t1", "a`b.md")).toEqual({ ok: false, reason: "bad-name" });
     expect(t.added).toEqual([["t1", "conv.md"]]);
+  });
+
+  it("add refuses .git, and a name with a hidden character", async () => {
+    const t = setup({ files: { "conv.md": "x", ".git/config": "[core]", "a\u202eb.md": "x" } });
+    expect(await t.service.add("t1", ".git/config")).toEqual({ ok: false, reason: "outside" });
+    expect(await t.service.add("t1", "a\u202eb.md")).toEqual({ ok: false, reason: "bad-name" });
+    expect(t.added).toEqual([]);
+  });
+
+  it("add: while the app closes, the task manager's rejection is busy; otherwise it stays a failure", async () => {
+    let closing: string | null = null;
+    const t = setup({ blocked: () => closing, add: () => Promise.reject(new Error("The app is closing")) });
+    closing = "The app is closing";
+    expect(await t.service.add("t1", "conv.md")).toEqual({ ok: false, reason: "busy" });
+    closing = null;
+    await expect(t.service.add("t1", "conv.md")).rejects.toThrow("The app is closing");
   });
 
   it("personContext: the scope's and the app's pins for a scoped task; only main without scopes", async () => {

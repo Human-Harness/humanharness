@@ -61,6 +61,8 @@ type Change = { file: ContextFile; message: string } | { ok: false; reason: Cont
  */
 export class ContextService {
   private writes: Promise<unknown> = Promise.resolve();
+  /** The dialog open now: one at a time. */
+  private picking: Promise<ContextPick> | null = null;
 
   constructor(private readonly d: ContextDeps) {}
 
@@ -162,8 +164,20 @@ export class ContextService {
     });
   }
 
-  /** The system dialog at the folder; the picked file comes back as a folder path, checked like an "Add now". */
-  async pick(): Promise<ContextPick> {
+  /**
+   * The system dialog at the folder; the picked file comes back as a folder path, checked like an "Add now". One dialog
+   * at a time: a pick while one is open is refused (`busy`).
+   */
+  pick(): Promise<ContextPick> {
+    if (this.picking) return Promise.resolve(no("busy"));
+    const picking = this.pickNow().finally(() => {
+      this.picking = null;
+    });
+    this.picking = picking;
+    return picking;
+  }
+
+  private async pickNow(): Promise<ContextPick> {
     const base = await this.d.base();
     if (!base) return no("not-ready");
     const abs = await this.d.pickFile(base);
@@ -186,7 +200,12 @@ export class ContextService {
     if (!base) return no("not-ready");
     const check = await checkPinPath(base, rel, { text: false });
     if (!check.ok) return no(check.reason);
-    return this.d.add(taskId, rel as string);
+    // The task manager refuses by rejecting only when the operation can't run: while the app closes (or turns are
+    // held), that is the person's "busy", not a failure.
+    return this.d.add(taskId, rel as string).catch((err: unknown) => {
+      if (this.d.blocked()) return no("busy");
+      throw err;
+    });
   }
 
   /** A note directly in `scope`'s notes folder: `<prefix><slug>.md`, nothing deeper. */

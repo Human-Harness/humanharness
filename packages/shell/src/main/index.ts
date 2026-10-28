@@ -1218,7 +1218,10 @@ const contextSvc = new ContextService({
   blocked: () => (quitting ? "The app is closing" : turnBlocked()),
   add: (taskId, file) => {
     const { accepted, done } = tasks.addContext(taskId, file);
-    done.catch((err: unknown) => console.error("The Add now turn failed", err));
+    // Closing ends the operation before it runs: not a failure worth a log line.
+    done.catch((err: unknown) => {
+      if (!quitting) console.error("The Add now turn failed", err);
+    });
     return accepted;
   },
   pickFile: async (base) => {

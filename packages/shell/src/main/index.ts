@@ -112,7 +112,7 @@ import { type RunningSetup, runSetupProcess, setupCommand, stopSetupProcess } fr
 import { runSetupStep } from "./setup-step";
 import { type SharedEngineRecord, SharedConfigStore, sharedConfigDir } from "./shared-config";
 import { EngineUnavailable, TurnController, type TurnDeps, memoise } from "./turn-controller";
-import { type UsageRecord, UsageLog, capTokens, compactionRecord, measuredMaterialCosts, profileMeta, profilesUsage, summarizeUsage, usageRecord, withSpent } from "./usage-log";
+import { type UsageRecord, UsageLog, compactionRecord, dayTokens, measuredMaterialCosts, profileMeta, profilesUsage, summarizeUsage, usageRecord, withSpent } from "./usage-log";
 import { type ValidationContext, checkFolder, configProblem, isAppUrl } from "./validate";
 import { openIfStillSafe, openRoots, openableFile, revealIfStillSafe, revealableFile } from "./open-path";
 import { saveWithFolderChange } from "./folder-change";
@@ -2315,9 +2315,7 @@ if (loaded) {
           if (n.date && localDay(new Date(n.date)) === day) notes.push(n.title);
         }
       }
-      const ofDay = (await new UsageLog(base).load(Infinity)).filter((u) => u.usage && localDay(new Date(u.at)) === day);
-      const sum = (xs: UsageRecord[]) => xs.reduce((n, u) => n + capTokens(u.usage!), 0);
-      return { day, notes, tokens: { tasks: sum(ofDay.filter((u) => u.phase !== "sidekick")), sidekick: sum(ofDay.filter((u) => u.phase === "sidekick")) }, open: [] };
+      return { day, notes, tokens: dayTokens(await new UsageLog(base).load(Infinity), day, localDay), open: [] };
     },
     changed: (state) => sendToWindow("hh:sidekick", state),
     events: { read: readSidekickEvents, append: appendSidekickEvent },

@@ -373,3 +373,18 @@ describe("Sidekick's line (sidekick spec §8)", () => {
     expect(screen.queryByText(/^Sidekick: about/)).toBeNull();
   });
 });
+
+describe("Background jobs' line (parallel spec §10)", () => {
+  it("shows the jobs' tokens apart once one has run, and nothing without (D0)", async () => {
+    const client = claude();
+    client.usage = { limits: [], estimates: {}, tokens: { questions: 1100 }, primary: "five_hour", sidekick: 2440, jobs: 4880 };
+    const first = await renderIn("en", <Sheet client={client} />);
+    expect(await screen.findByText("Background jobs: about 4,880 tokens")).toBeTruthy();
+    expect(screen.getByText("Sidekick: about 2,440 tokens")).toBeTruthy();
+    first.unmount();
+    client.usage = { limits: [], estimates: {}, tokens: {}, primary: "five_hour" };
+    await renderIn("en", <Sheet client={client} />);
+    await screen.findByRole("tab", { name: "Usage" });
+    expect(screen.queryByText(/Background jobs/)).toBeNull();
+  });
+});

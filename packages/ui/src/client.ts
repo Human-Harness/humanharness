@@ -555,6 +555,8 @@ export interface UsageSummary {
   material?: number;
   /** Tokens of Sidekick's turns (sidekick spec §8; with profiles, the active profile's); absent when it never ran. */
   sidekick?: number;
+  /** Tokens of background job runs (parallel spec §10; with profiles, the active profile's); absent when none ran. */
+  jobs?: number;
   /** USD the engine reported over the last 30 days (OpenCode; every profile's turns). Absent when no turn reported a cost. */
   spentUsd?: number;
   /** The window kind estimates measure (the engine's `limits.primary`); absent when the engine reports no limits. */

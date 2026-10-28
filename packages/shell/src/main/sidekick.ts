@@ -917,7 +917,7 @@ export class SidekickController {
       const set = await this.d.store.set({ lastDaily: today });
       if (!set.ok || !set.settings.on || !live()) return;
       const input = await this.d.dailyInput(setup.base, localDay(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1))).catch(() => null);
-      if (!input || (input.notes.length === 0 && input.tokens.tasks === 0) || !live()) return;
+      if (!input || (input.notes.length === 0 && input.tokens.tasks === 0 && !input.tokens.jobs) || !live()) return;
       if (await this.pastCap(setup.base, null, settings)) return;
       const engine = this.d.engine(setup.engineId);
       const speaker = await this.pick(list, "daily", `Day: ${input.day}`, { base: setup.base, task: null, signal: controller.signal, live });

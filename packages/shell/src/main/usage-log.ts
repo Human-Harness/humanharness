@@ -37,6 +37,8 @@ export interface UsageMeta extends ProfileFields {
   taskPhase?: string;
   /** The turn's kind (TurnKind). */
   phase?: TurnKind;
+  /** A job run's job id (parallel spec §10, Decision 2). */
+  job?: string;
 }
 
 /** A Sidekick usage line's moment (sidekick spec §8); `place:<id>` is a harness place's turn (§2a.5). */
@@ -122,6 +124,7 @@ function metaFields(meta: UsageMeta): Partial<UsageRecord> {
     ...(meta.taskPhase ? { taskPhase: meta.taskPhase } : {}),
     ...(meta.phase ? { phase: meta.phase } : {}),
     ...(meta.phase === "checkpoint" ? { kind: "checkpoint" as const } : {}),
+    ...(meta.job ? { job: meta.job } : {}),
     ...(meta.tier ? { tier: meta.tier } : {}),
     ...(meta.model ? { model: meta.model } : {}),
     ...(meta.effort ? { effort: meta.effort } : {}),
@@ -217,6 +220,21 @@ export function sidekickWeek(records: UsageRecord[], now: Date = new Date()): nu
   return records.filter((r) => r.phase === "sidekick" && r.usage && Date.parse(r.at) >= since).reduce((n, r) => n + turnTokens(r.usage!), 0);
 }
 
+/**
+ * A local day's tokens toward the cap, for Sidekick's daily card (sidekick plan Decision 12): the tasks' turns, Sidekick's,
+ * and background jobs' apart (parallel spec §10; by `phase: "job"`). `jobs` only when a job ran that day (D0).
+ */
+export function dayTokens(records: UsageRecord[], day: string, localDay: (d: Date) => string): { tasks: number; sidekick: number; jobs?: number } {
+  const ofDay = records.filter((u) => u.usage && localDay(new Date(u.at)) === day);
+  const sum = (xs: UsageRecord[]) => xs.reduce((n, u) => n + capTokens(u.usage!), 0);
+  const jobLines = ofDay.filter((u) => u.phase === "job");
+  return {
+    tasks: sum(ofDay.filter((u) => u.phase !== "sidekick" && u.phase !== "job")),
+    sidekick: sum(ofDay.filter((u) => u.phase === "sidekick")),
+    ...(jobLines.length ? { jobs: sum(jobLines) } : {}),
+  };
+}
+
 /** The spending window of Settings › Usage (spec §4). */
 export const SPENT_DAYS = 30;
 
@@ -262,8 +280,9 @@ function recentAverages(values: Map<string, number[]>): Record<string, number> {
  * last RECENT_TASKS measured tasks. Tokens work the same way for every engine: a task counts when all
  * of its turns reported usage. Free questions count under "questions". Lines from before tasks were
  * logged count as a task each. Other use of the same account counts too, so it is a rough guide.
- * Checkpoint turns and compaction lines are left out, and so are material stages and Sidekick turns (not tasks; their windows still
- * count as the latest limits).
+ * Checkpoint turns and compaction lines are left out, and so are material stages, Sidekick turns and job runs (not tasks;
+ * their windows still count as the latest limits). Job lines are told apart by `phase: "job"`, never by their id (a job
+ * may be called "questions").
  */
 export function summarizeUsage(records: UsageRecord[], primary: string | undefined, now: Date = new Date()): UsageSummary {
   const all = records.filter((r) => r.kind !== "compaction");
@@ -272,7 +291,7 @@ export function summarizeUsage(records: UsageRecord[], primary: string | undefin
   const tasks = new Map<string, { action: string; total: number; measured: boolean; tokens: number; counted: boolean }>();
   for (let i = 0; i < all.length; i++) {
     const r = all[i];
-    if (r.phase === "close" || r.phase === "material" || r.phase === "sidekick" || r.kind) continue;
+    if (r.phase === "close" || r.phase === "material" || r.phase === "sidekick" || r.phase === "job" || r.kind) continue;
     const action = r.action ?? QUESTIONS;
     const key = r.task ? `task:${r.task}` : `line:${i}`;
     const task = tasks.get(key) ?? { action, total: 0, measured: true, tokens: 0, counted: true };
@@ -280,8 +299,8 @@ export function summarizeUsage(records: UsageRecord[], primary: string | undefin
     const before = window(r);
     const next = all[i + 1];
     const after = window(next);
-    // A material stage or a Sidekick turn right after the turn would be charged to it: the turn can't be measured.
-    if (!before || !after || before.resetsAt !== after.resetsAt || next?.phase === "material" || next?.phase === "sidekick") task.measured = false;
+    // A material stage, a Sidekick turn or a job's right after the turn would be charged to it: the turn can't be measured.
+    if (!before || !after || before.resetsAt !== after.resetsAt || next?.phase === "material" || next?.phase === "sidekick" || next?.phase === "job") task.measured = false;
     else task.total += Math.max(0, after.utilization - before.utilization);
     if (r.usage) task.tokens += turnTokens(r.usage);
     else task.counted = false;
@@ -294,11 +313,13 @@ export function summarizeUsage(records: UsageRecord[], primary: string | undefin
   }
   // Settings › Uso per scope (spec §3.3): every turn's tokens, close and checkpoint turns included.
   const perScope = new Map<string, number>();
-  for (const r of all) if (r.scope && r.phase !== "material" && r.phase !== "sidekick") perScope.set(r.scope, (perScope.get(r.scope) ?? 0) + (r.usage ? turnTokens(r.usage) : 0));
+  for (const r of all) if (r.scope && r.phase !== "material" && r.phase !== "sidekick" && r.phase !== "job") perScope.set(r.scope, (perScope.get(r.scope) ?? 0) + (r.usage ? turnTokens(r.usage) : 0));
   // Material processing's own total (material spec §11); absent when no stage ever ran, so D0 keeps its summary.
   const material = all.filter((r) => r.phase === "material" && r.usage).reduce((n, r) => n + turnTokens(r.usage!), 0);
   // Sidekick's own total (sidekick spec §8); absent when it never ran (D0).
   const sidekick = all.filter((r) => r.phase === "sidekick" && r.usage).reduce((n, r) => n + turnTokens(r.usage!), 0);
+  // Background jobs' own total (parallel spec §10); absent when none ran (D0).
+  const jobs = all.filter((r) => r.phase === "job" && r.usage).reduce((n, r) => n + turnTokens(r.usage!), 0);
   const spent = spentUsd(all, now);
   return {
     limits: last ? last.limits!.filter((w) => Date.parse(w.resetsAt) > now.getTime()) : null,
@@ -307,6 +328,7 @@ export function summarizeUsage(records: UsageRecord[], primary: string | undefin
     ...(perScope.size ? { scopes: Object.fromEntries(perScope) } : {}),
     ...(material > 0 ? { material } : {}),
     ...(sidekick > 0 ? { sidekick } : {}),
+    ...(jobs > 0 ? { jobs } : {}),
     ...(spent !== undefined ? { spentUsd: spent } : {}),
     ...(primary ? { primary } : {}),
   };
@@ -343,7 +365,7 @@ export function mergeUsage(byProfile: Record<string, UsageRecord[]>): PersonUsag
 /**
  * Settings › Usage in a harness with profiles (spec §4 "Usage"): one AI plan for the whole app, so every profile's
  * turns, in time order, measure its window and estimates. `scopes` are the active profile's only (scope ids repeat
- * across people), and so are `material` (each profile processes its own) and `sidekick`; `profiles` counts every turn's tokens per
+ * across people), and so are `material` (each profile processes its own), `sidekick` and `jobs`; `profiles` counts every turn's tokens per
  * profile, material stages included. `spentUsd` is everyone's: one provider account pays.
  */
 export function profilesUsage(
@@ -353,10 +375,10 @@ export function profilesUsage(
   now: Date = new Date(),
 ): UsageSummary {
   const merged = mergeUsage(byProfile);
-  const { scopes: _everyone, material: _all, sidekick: _allSidekick, ...summary } = summarizeUsage(merged, primary, now);
+  const { scopes: _everyone, material: _all, sidekick: _allSidekick, jobs: _allJobs, ...summary } = summarizeUsage(merged, primary, now);
   const own = summarizeUsage(Object.hasOwn(byProfile, activeProfile) ? byProfile[activeProfile] : [], primary, now);
   // Material stages count as their person's use: each profile processes its own material (material spec §4).
   const perPerson: Record<string, number> = {};
   for (const r of merged) if (r.usage) perPerson[r.person] = (perPerson[r.person] ?? 0) + turnTokens(r.usage);
-  return { ...summary, ...(own.scopes ? { scopes: own.scopes } : {}), ...(own.material !== undefined ? { material: own.material } : {}), ...(own.sidekick !== undefined ? { sidekick: own.sidekick } : {}), profiles: perPerson };
+  return { ...summary, ...(own.scopes ? { scopes: own.scopes } : {}), ...(own.material !== undefined ? { material: own.material } : {}), ...(own.sidekick !== undefined ? { sidekick: own.sidekick } : {}), ...(own.jobs !== undefined ? { jobs: own.jobs } : {}), profiles: perPerson };
 }

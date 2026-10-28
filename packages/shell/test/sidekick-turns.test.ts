@@ -364,6 +364,12 @@ describe("daily turn (spec §2a.2 daily-summary, plan Decision 12)", () => {
     expect(p).not.toContain("Scope purpose");
   });
 
+  it("a day with job runs says their tokens apart; without, the line is as before (D0)", () => {
+    const base = { harness: { name: "E" }, day: "2026-10-26", notes: ["a"], open: [], uiLanguage: "English" };
+    expect(dailyPrompt({ ...base, tokens: { tasks: 1, sidekick: 2, jobs: 3 } })).toContain("Tokens: tasks 1, Sidekick 2, background jobs 3\n");
+    expect(dailyPrompt({ ...base, tokens: { tasks: 1, sidekick: 2 } })).toContain("Tokens: tasks 1, Sidekick 2\n");
+  });
+
   it("the purpose goes in on one line; a title stays one bounded line; at most 20 notes", () => {
     const notes = ["Two\nlines", "x".repeat(500), ...Array.from({ length: 30 }, (_, i) => `n${i}`)];
     const p = dailyPrompt({ harness: { name: "E" }, day: "2026-10-26", notes, tokens: { tasks: 1, sidekick: 0 }, open: [], uiLanguage: "English", purposeText: "Short.\nKind." });

@@ -2,6 +2,7 @@ import { z } from "zod";
 import { type Block, defineBlock } from "./block";
 import { MODE_ID, hasModes } from "./modes";
 import { PHASE_ID, hasPhases } from "./phases";
+import { REVIEW_TOOLS } from "./review";
 
 /** One way to continue: `followUp` stays on the topic, `action` starts another task, `next: true` follows the guided path. */
 export const choiceOptionSchema = z.object({
@@ -137,6 +138,8 @@ export const RESERVED_BLOCK_NAMES: readonly string[] = [
   ...Object.keys(INPUT_CORE_BLOCKS),
   ...Object.keys(MODE_CORE_BLOCKS),
   ...Object.keys(PHASE_CORE_BLOCKS),
+  // The agent's review tools (review spec §4): not blocks, but no block may take their names.
+  ...REVIEW_TOOLS,
 ];
 
 export const hasInputBlocks = (blocks: Record<string, Block>): boolean => Object.values(blocks).some((b) => b.input !== undefined);

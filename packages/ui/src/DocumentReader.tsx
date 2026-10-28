@@ -1,9 +1,15 @@
-import { type KeyboardEvent, type ReactNode, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { type KeyboardEvent, type ReactNode, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { type DocumentKind, checkTemplate, readingMinutes, refusedShape, wordCount } from "@humanharness/harness-sdk/documents";
-import type { DocumentRead, HarnessClient, ReaderPrefs } from "./client";
+import { type AnswerPick, markOccurrence } from "@humanharness/harness-sdk/review";
+import type { ApproveOptions, DocumentRead, HarnessClient, ReaderPrefs, ReviewResult, ReviewSendResult, ReviewView } from "./client";
+import { ApprovedDiff } from "./ApprovedDiff";
 import { DocumentContext, type DocumentHost } from "./documents-context";
+import { FocusMarkers } from "./FocusMarkers";
 import { Markdown, documentOutline } from "./markdown";
+import { type BarDraft, NO_BAR_DRAFT, ReviewBar } from "./ReviewBar";
+import { ReviewColumn } from "./ReviewColumn";
+import { type MarkSpec, clearMarks, drawMarks, findMarks } from "./review-marks";
 
 /** What the reader shows: a document, the place to open at, and the agent of the turn that wrote it. */
 export interface ReaderTarget {
@@ -62,6 +68,10 @@ export function DocumentReader({
   onClose,
   onOpen,
   onMissing,
+  review,
+  busy = false,
+  focus = false,
+  onFocus,
 }: {
   client: HarnessClient;
   target: ReaderTarget;
@@ -76,6 +86,14 @@ export function DocumentReader({
   onOpen: (path: string, anchor?: string) => void;
   /** The document is not there (moved or deleted): the chat checks its cards again. */
   onMissing?: () => void;
+  /** The harness's agent may edit the folder: the review column and marks (review spec §6.1). Absent: none (D0). */
+  review?: boolean;
+  /** A turn runs (or the task is saving its note): sending a review round waits (§5.3). */
+  busy?: boolean;
+  /** Focus mode (§6.2): one quiet column, no contents list; the comment column shows only a card a margin marker picked. */
+  focus?: boolean;
+  /** Enters or leaves focus mode; absent (or without `review`): no Focus button (D0). */
+  onFocus?: (on: boolean) => void;
 }) {
   const { t, i18n } = useTranslation();
   const [doc, setDoc] = useState<DocumentRead | null>(null);
@@ -99,12 +117,55 @@ export function DocumentReader({
   const path = typeof target.path === "string" ? target.path : "";
   const refused = refusedShape(target.path);
   const anchor = typeof target.anchor === "string" && target.anchor ? target.anchor : undefined;
+  /** Reads the drawn document again (set by the read effect): a review change may have swapped a passage. */
+  const reread = useRef<(() => void) | null>(null);
+  /** Loads the review view again (the latest `loadReview`; set below, once it is declared). */
+  const reviewAgain = useRef<() => void>(() => {});
+  const [nonce, setNonce] = useState(0);
+  const [rv, setRv] = useState<ReviewView | null>(null);
+  const [active, setActive] = useState<string | null>(null);
+  const [waiting, setWaiting] = useState<string | null>(null);
+  /** A review action's problem, shown above the text. */
+  const [notice, setNotice] = useState<string | null>(null);
+  /** A selection in the text to comment on (§5.2), where its button goes, and the comment being written. */
+  const [pick, setPick] = useState<{ selected: string; heading: string | null; top: number; left: number } | null>(null);
+  const [draft, setDraft] = useState<string | null>(null);
+  const [diffOpen, setDiffOpen] = useState(false);
+  const textRef = useRef<HTMLDivElement>(null);
+  const [ranges, setRanges] = useState<Map<string, Range>>(() => new Map());
+  /** In focus mode, the card a margin marker opened (the column shows only it). */
+  const [peek, setPeek] = useState<string | null>(null);
+  // A new visit to focus mode starts with no card open.
+  useEffect(() => setPeek(null), [focus]);
+  const inFocus = review === true && focus;
+  // Focus can fall to the page (the Approve button goes once pressed): Esc still leaves focus mode. A key the
+  // reader already handled (its own onKeyDown prevents the default) is left alone.
+  useEffect(() => {
+    if (!inFocus || !onFocus) return;
+    const leave = (e: globalThis.KeyboardEvent) => {
+      if (e.key === "Escape" && !e.defaultPrevented) onFocus(false);
+    };
+    window.addEventListener("keydown", leave);
+    return () => window.removeEventListener("keydown", leave);
+  }, [inFocus, onFocus]);
+  /** What the footer bar is in the middle of (a reason being typed): kept here, since the bar moves on a mode switch. */
+  const barDraft = useState<BarDraft>(NO_BAR_DRAFT);
+  const setBarDraft = barDraft[1];
 
   useEffect(() => {
     loaded.current = null;
     setDoc(null);
     setSource(false);
     setCurrent(null);
+    setRv(null);
+    setActive(null);
+    setWaiting(null);
+    setNotice(null);
+    setPick(null);
+    setDraft(null);
+    setDiffOpen(false);
+    setPeek(null);
+    setBarDraft(NO_BAR_DRAFT);
     if (refused) {
       setDoc({ ok: false, reason: "outside" });
       return;
@@ -122,15 +183,53 @@ export function DocumentReader({
       client.readDocument(path).then(done, () => done({ ok: false, reason: "missing" }));
     };
     read();
-    const off = client.watchDocument(path, () => {
+    // The text changed (on disk, or by a swap): its review view too, so an approval turns stale and approve sends the new blob.
+    const again = () => {
       restore.current = headingAtTop(scrollRef.current);
       read();
-    });
+      reviewAgain.current();
+    };
+    const off = client.watchDocument(path, again);
+    reread.current = again;
     return () => {
       live = false;
+      reread.current = null;
       off();
     };
   }, [client, path, refused]);
+
+  // A review change: the record again, and the document too (an answer may have swapped a passage).
+  useEffect(() => {
+    if (nonce > 0) reread.current?.();
+  }, [nonce]);
+  // Only the latest view of the document shown now draws: a late answer for another path is dropped.
+  const pathNow = useRef(path);
+  pathNow.current = path;
+  const reviewSeq = useRef(0);
+  const loadReview = useCallback(() => {
+    if (!review || refused) return;
+    const want = path;
+    const mine = ++reviewSeq.current;
+    const done = (v: ReviewView) => {
+      if (mine !== reviewSeq.current || pathNow.current !== want) return;
+      if (v.ok && v.review && v.review.path !== want) return;
+      setRv(v);
+    };
+    client.documents.view(want).then(done, () => done({ ok: false, reason: "not-ready" }));
+  }, [client, path, review, refused]);
+  reviewAgain.current = loadReview;
+  useEffect(() => {
+    if (!review || refused) return;
+    loadReview();
+    // `reread` (through the nonce) reads the text and the view again.
+    const off = client.documents.onChange((p) => {
+      if (p === path) setNonce((n) => n + 1);
+    });
+    return () => {
+      reviewSeq.current++;
+      off();
+    };
+  }, [client, path, review, refused, loadReview]);
 
   // Declared after the read: on a path change `loaded` is already reset, so the anchor waits for the new text.
   // Also a new anchor (or the same one opened again) in the document already drawn: go there now.
@@ -166,6 +265,98 @@ export function DocumentReader({
   // The whole text, not only the part drawn: the reading time is the document's.
   const minutes = useMemo(() => readingMinutes(wordCount(text)), [text]);
   const check = checkTemplate(kinds, front, sections);
+  const record = review && rv?.ok ? rv.review : null;
+  const marks = useMemo(() => {
+    const out: MarkSpec[] = [];
+    for (const c of record?.comments ?? []) {
+      const m = markOccurrence(shown, c.anchor);
+      if (m) out.push({ id: c.id, want: m.want, nth: m.nth, tone: c.state === "resolved" ? "done" : c.kind === "question" ? "question" : "comment" });
+    }
+    return out;
+  }, [record, shown]);
+  // Marks are found in the rendered body only, once it is in the DOM; hovering a card only redraws (below).
+  useLayoutEffect(() => {
+    const box = textRef.current;
+    setRanges(box && doc?.ok && !source && marks.length > 0 ? findMarks(box, marks) : new Map());
+  }, [marks, doc, source]);
+  // The CSS Custom Highlight API: no DOM change, no CSP change.
+  useLayoutEffect(() => {
+    if (ranges.size === 0) {
+      clearMarks();
+      return;
+    }
+    drawMarks(ranges, marks, active);
+    return clearMarks;
+  }, [ranges, marks, active]);
+  const act = async (call: () => Promise<ReviewResult>, id?: string) => {
+    const want = path;
+    if (id) setWaiting(id);
+    const r = await call().catch((): ReviewResult => ({ ok: false, reason: "not-ready" }));
+    // Another document is shown now: this answer is not its.
+    if (pathNow.current !== want) return;
+    if (id) setWaiting(null);
+    setNotice(r.ok ? null : r.reason === "not-found" ? t("review.notFound") : t("review.failed"));
+    loadReview();
+  };
+  const answer = (id: string, pick: AnswerPick) => act(() => client.documents.answer(path, id, pick), id);
+  const editDraft = (id: string, value: string | null) => act(() => client.documents.editDraft(path, id, value));
+  const reopen = (id: string) => act(() => client.documents.reopen(path, id));
+  /** The id of the heading above `node`, inside the review text (the reader's slugs). */
+  const headingAbove = (node: Node): string | null => {
+    const box = textRef.current;
+    if (!box) return null;
+    let found: string | null = null;
+    for (const h of box.querySelectorAll<HTMLElement>("[data-heading]")) {
+      if (h.contains(node) || h.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING) found = h.id || found;
+      else break;
+    }
+    return found;
+  };
+  /**
+   * A selection inside the rendered text offers "Comment" below it; anything else closes the offer.
+   * Known gap: selecting needs a pointer (or the system's own text selection keys once focus is in the text); the
+   * reader has no caret mode of its own, so a keyboard-only person comments through the agent's questions only.
+   */
+  const onSelect = () => {
+    if (draft !== null) return;
+    const sel = window.getSelection();
+    const box = textRef.current;
+    const scroller = scrollRef.current;
+    if (!review || !sel || sel.isCollapsed || sel.rangeCount === 0 || !box || !scroller) return setPick(null);
+    let r = sel.getRangeAt(0);
+    if (!box.contains(r.commonAncestorContainer)) {
+      // A triple click on the last paragraph selects up to the start of what follows the text: keep the part inside it.
+      if (!box.contains(r.startContainer)) return setPick(null);
+      r = r.cloneRange();
+      r.setEnd(box, box.childNodes.length);
+      sel.removeAllRanges();
+      sel.addRange(r);
+    }
+    // The selection's text, not the range's: a range joins blocks with no space ("One.Two."), the selection puts line
+    // breaks between them, as the reader shows them.
+    const selected = sel.toString();
+    if (!selected.trim() || selected.length > 20_000) return setPick(null);
+    const rect = r.getBoundingClientRect();
+    const host = scroller.getBoundingClientRect();
+    setPick({ selected, heading: headingAbove(r.startContainer), top: rect.bottom - host.top + scroller.scrollTop, left: Math.max(0, rect.left - host.left) });
+  };
+  /** Closes the offer; focus goes back to the text, never lost to the page when its box unmounts. */
+  const closePick = () => {
+    setPick(null);
+    setDraft(null);
+    scrollRef.current?.focus({ preventScroll: true });
+  };
+  const saveDraft = () => {
+    const text = draft?.trim();
+    if (!pick || !text) return;
+    const { selected, heading } = pick;
+    closePick();
+    void act(() => client.documents.comment(path, { selected, heading, text }));
+  };
+  const pickCard = (id: string, scroll?: boolean) => {
+    setActive(id);
+    if (scroll) ranges.get(id)?.startContainer.parentElement?.scrollIntoView?.({ block: "center" });
+  };
   const host = useMemo<DocumentHost>(
     () => ({ open: onOpen, image: (p) => client.readImage(p).catch(() => null), ...(kinds ? { kinds } : {}) }),
     [client, kinds, onOpen],
@@ -179,10 +370,21 @@ export function DocumentReader({
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.key !== "Escape") return;
     e.preventDefault();
-    if (prefsOpen) {
+    if (pick) closePick();
+    else if (prefsOpen) {
       setPrefsOpen(false);
       prefsButton.current?.focus();
-    } else onClose();
+    } else if (inFocus && peek) {
+      // Focus was in the card, which goes: it moves to the card's marker (else the text), never lost to the page.
+      const inCard = document.activeElement?.closest(".hh-review-column") != null;
+      setPeek(null);
+      if (inCard) {
+        const marker = scrollRef.current?.querySelector<HTMLElement>(`.hh-focus-marker[data-comment="${CSS.escape(peek)}"]`);
+        (marker ?? scrollRef.current)?.focus({ preventScroll: true });
+      }
+    }
+    else if (inFocus && onFocus) onFocus(false);
+    else onClose();
   };
 
   let body: ReactNode;
@@ -217,7 +419,13 @@ export function DocumentReader({
           </h1>
         )}
         <DocumentContext.Provider value={host}>
-          <Markdown source={shown} document path={path} idPrefix="" />
+          {review ? (
+            <div className="hh-review-text" ref={textRef} onMouseUp={onSelect} onKeyUp={onSelect}>
+              <Markdown source={shown} document path={path} idPrefix="" />
+            </div>
+          ) : (
+            <Markdown source={shown} document path={path} idPrefix="" />
+          )}
         </DocumentContext.Provider>
         {big && (
           <p className="hh-reader-truncated" role="note">
@@ -228,8 +436,38 @@ export function DocumentReader({
     );
   }
 
+  // The footer bar (§5.3, §5.4): under the columns, or in focus mode the last thing in the document column.
+  const bar = review && doc?.ok && !source && rv?.ok && (
+    <ReviewBar
+      key={path}
+      summary={rv.summary}
+      busy={busy}
+      approvedReason={rv.review?.approvals.at(-1)?.reason}
+      changesOpen={diffOpen}
+      onSend={async () => {
+        const want = path;
+        const r = await client.documents.send(want).catch((): ReviewSendResult => ({ ok: false, reason: "not-ready" }));
+        if (pathNow.current === want) loadReview();
+        return r;
+      }}
+      onApprove={async (reason, opts) => {
+        const want = path;
+        // The version shown: a document changed since is refused with "changed".
+        const o: ApproveOptions = { ...(reason !== undefined ? { reason } : {}), ...(opts?.discard ? { discard: true } : {}) };
+        const r = await client.documents.approve(want, rv.blob, o).catch((): ReviewResult => ({ ok: false, reason: "not-ready" }));
+        if (pathNow.current === want) {
+          if (r.ok) setDiffOpen(false);
+          loadReview();
+        }
+        return r;
+      }}
+      onSeeChanges={() => setDiffOpen((o) => !o)}
+      draft={barDraft}
+    />
+  );
+
   return (
-    <aside className={`hh-reader${full ? " hh-reader-is-full" : ""}`} aria-label={t("reader.title")} onKeyDown={onKeyDown}>
+    <aside className={`hh-reader${full ? " hh-reader-is-full" : ""}${review ? " hh-reader-reviewing" : ""}${inFocus ? " hh-reader-focus" : ""}`} aria-label={t("reader.title")} onKeyDown={onKeyDown}>
       <header className="hh-reader-bar">
         <nav aria-label={t("reader.path")}>
           <ol className="hh-reader-crumbs">
@@ -253,9 +491,16 @@ export function DocumentReader({
           >
             Aa <span className="hh-sr-only">{t("reader.prefsButton")}</span>
           </button>
-          <button type="button" onClick={() => onFull(!full)}>
-            {full ? t("reader.showChat") : t("reader.fullScreen")}
-          </button>
+          {review && onFocus && (
+            <button type="button" aria-pressed={inFocus} onClick={() => onFocus(!inFocus)}>
+              {inFocus ? t("focus.leave") : t("focus.enter")}
+            </button>
+          )}
+          {!inFocus && (
+            <button type="button" onClick={() => onFull(!full)}>
+              {full ? t("reader.showChat") : t("reader.fullScreen")}
+            </button>
+          )}
           <button type="button" onClick={onClose}>
             {t("reader.close")}
           </button>
@@ -282,7 +527,7 @@ export function DocumentReader({
         )}
       </header>
       <div className="hh-reader-columns">
-        {doc?.ok && !source && (outline.length > 0 || (check && check.missing.length > 0)) && (
+        {!inFocus && doc?.ok && !source && (outline.length > 0 || (check && check.missing.length > 0)) && (
           <nav className="hh-reader-toc" aria-label={t("reader.contents")}>
             <ol>
               {outline.map((h) => (
@@ -309,9 +554,70 @@ export function DocumentReader({
           </nav>
         )}
         <div className="hh-reader-scroll" ref={scrollRef} tabIndex={-1} onScroll={() => setCurrent(headingAtTop(scrollRef.current))}>
+          {review && rv && !rv.ok && rv.reason === "broken" && (
+            <p className="hh-reader-problem hh-review-note" role="alert">
+              {t("review.broken", { file: `.harness/reviews/${path}.json` })}
+            </p>
+          )}
+          {review && notice && (
+            <p className="hh-warn hh-review-note" role="alert">
+              {notice}
+            </p>
+          )}
+          {review && diffOpen && doc?.ok && !source && <ApprovedDiff client={client} path={path} current={doc.text} />}
           <article className={`hh-reader-doc hh-reader-${look.font}${look.size === "large" ? " hh-reader-large" : ""}`}>{body}</article>
+          {inFocus && bar}
+          {inFocus && doc?.ok && !source && rv?.ok && rv.review && (
+            <FocusMarkers
+              comments={rv.review.comments}
+              ranges={ranges}
+              host={scrollRef.current}
+              look={`${look.font} ${look.size}`}
+              open={peek}
+              onPick={(id) => {
+                setPeek(id);
+                setActive(id);
+              }}
+            />
+          )}
+          {review && pick && doc?.ok && !source && (
+            // The place goes through React's style (CSSOM): the CSP stays as it is.
+            <div className="hh-review-pick" style={{ top: pick.top, left: pick.left }}>
+              {draft === null ? (
+                <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => setDraft("")}>
+                  {t("review.comment")}
+                </button>
+              ) : (
+                <>
+                  <textarea aria-label={t("review.commentLabel")} autoFocus value={draft} maxLength={4000} onChange={(e) => setDraft(e.target.value)} />
+                  <button type="button" disabled={!draft.trim()} onClick={saveDraft}>
+                    {t("review.saveDraft")}
+                  </button>
+                  <button type="button" onClick={closePick}>
+                    {t("review.cancel")}
+                  </button>
+                </>
+              )}
+            </div>
+          )}
         </div>
+        {/* No column until the first comment (§6.1). */}
+        {review && doc?.ok && !source && rv?.ok && rv.review && rv.review.comments.length > 0 && (!inFocus || peek !== null) && (
+          <ReviewColumn
+            review={inFocus ? { ...rv.review, comments: rv.review.comments.filter((c) => c.id === peek) } : rv.review}
+            text={doc.text}
+            agent={target.agent ?? ""}
+            locked={rv.summary.status === "approved"}
+            waiting={waiting}
+            active={active}
+            onActive={pickCard}
+            onAnswer={answer}
+            onEditDraft={editDraft}
+            onReopen={reopen}
+          />
+        )}
       </div>
+      {!inFocus && bar}
     </aside>
   );
 }

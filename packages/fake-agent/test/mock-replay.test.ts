@@ -29,6 +29,14 @@ describe("promptKind", () => {
     expect(promptKind('Next part of this task: "Main block" (`main`).\n\nTeach.')).toBe("phase");
     expect(promptKind("Time is almost up: finish the current point briefly, in en.")).toBe("wrap-up");
   });
+
+  it("sees a phase change after the lines the app kept for the task, but not one quoted in a reply", () => {
+    expect(promptKind('The person approved specs/a.md.\nThe person approved specs/b.md.\n\nNext part of this task: "Plan" (`plan`).')).toBe("phase");
+    expect(promptKind('Hi.\n\nMore.\n\nNext part of this task: "Plan" (`plan`).')).toBe("reply");
+    // Only kept lines come before the gap: a reply of one paragraph that quotes the prompt is still a reply.
+    expect(promptKind('Look at this.\n\nNext part of this task: "Plan" (`plan`).')).toBe("reply");
+    expect(promptKind('The person approved specs/a.md.\nAnd more.\n\nNext part of this task: "Plan" (`plan`).')).toBe("reply");
+  });
 });
 
 describe("replay", () => {
@@ -176,6 +184,12 @@ describe("replay: phases (task-phases spec §6)", () => {
     expect(r.play.text).toBe("Let's start.");
     expect(r.session).toEqual({ action: "session", turn: "t2" });
     expect(replay([tutor], r.session, 'Next part of this task: "Close" (`close`).', false).play.text).toBe("Sum it up.");
+  });
+
+  it("a phase change after the lines the app kept for the task (review spec §5.4) plays its part's turn", () => {
+    const r = replay([tutor], at, 'The person approved specs/a.md.\n\nNext part of this task: "Close" (`close`).', false);
+    expect(r.play.text).toBe("Sum it up.");
+    expect(r.session).toEqual({ action: "session", turn: "t4" });
   });
 
   it("the wrap-up plays the timeUp turn; a part or wrap-up not recorded plays the fallback and stays put", () => {

@@ -92,6 +92,8 @@ import { QUESTIONS, cleanModels, engineOffer, firstOffered, fitEffort, nearestTi
 import { chooseModeHandler } from "./mode-ipc";
 import { setPhaseHandler, timeBoxOffered } from "./phase-ipc";
 import { requireNoticeForChoice, requireNoticeForTurn } from "./notice-policy";
+import { reviewHandlers } from "./review-ipc";
+import { ReviewService } from "./reviews";
 import { archiveChatsOnEngineChange, archiveStaleChat, startNewChatIfEngineChanged } from "./engine-switch";
 import { type RunningSetup, runSetupProcess, setupCommand, stopSetupProcess } from "./setup-runner";
 import { runSetupStep } from "./setup-step";
@@ -435,6 +437,8 @@ async function appState(): Promise<AppState> {
     ...materialAppState(harness),
     // The reader's template check (document-reader spec §4.3); absent without kinds (D0).
     ...(harness.documents ? { documents: { kinds: harness.documents.kinds } } : {}),
+    // Documents can be reviewed only when the agent may edit the folder (review spec D0).
+    ...(harness.permissions.edit === "folder" ? { review: true as const } : {}),
     references: (await referencesFor(saved.folder)).map((r) => ({ id: r.id, label: r.label, path: displayPath(r.path, os.homedir()) })),
     models: await modelsView(),
     backup: await backupView(saved.folder),
@@ -645,6 +649,9 @@ const runtime = memoise<HarnessRuntime>(async () => {
     // The person's material in this folder, for the running task's scope (material spec §9): the base this runtime was
     // built for, so a request never reaches another profile's material. Absent without material (D0).
     ...(harness.material ? { material: { request: (request: unknown) => materialRequest(base, request), entry: path.join(here, "material-server.js") } } : {}),
+    // The agent's review tools in this base, through the person's ReviewService so both sides share its locks. Only
+    // when the agent may edit the folder (review spec D0); the runtime checks the same.
+    ...(harness.permissions.edit === "folder" ? { review: (request: unknown) => reviews.agent(base, request) } : {}),
     command: cmd.command,
     env: cmd.env,
     references: (await workReferences(c, base, true)).map((r) => ({ label: r.label, path: r.path })),
@@ -870,11 +877,12 @@ const tasks = new TaskManager({
   },
   changed: (view) => sendToWindow("hh:tasks", view),
   emit,
-  profileFor: async (action, floor) => {
+  profileFor: async (action, floor, tier) => {
     const c = await config.load();
     const engine = c.engineId ?? "";
     const models = cleanModels(c.models);
-    const manifestTier = action !== undefined ? harness.actions[action]?.tier : harness.questions?.tier;
+    // `tier`: a core review task's (review spec §11.3); otherwise the action's, or the free questions'.
+    const manifestTier = tier ?? (action !== undefined ? harness.actions[action]?.tier : harness.questions?.tier);
     // `floor`: the mode's minTier when a task restarts in that mode (task-modes spec §5.3); passed only when there is one.
     const profile = resolveProfile({ engine, action, manifestTier, models, ...(floor ? { floor } : {}) });
     // Codex: a model its saved list lacks falls back before the turn (spec §5.3).
@@ -1117,6 +1125,31 @@ const personData = personDataRequests({
 });
 /** The same handler for the harness UI, which only reads `settings` (it changes them through `client.settings`). */
 const harnessUiData = harnessUiDataRequests(personData, () => harness.settings !== undefined);
+
+/** Document reviews (review spec): the person's side, and the agent's tools for each runtime's folder (one set of locks). */
+const reviews = new ReviewService({
+  base: async () => {
+    const c = await validConfig();
+    return c ? baseOf(c) : null;
+  },
+  history: () => currentHistory(),
+  trailer: () => tasks.trailerNow(),
+  openTask: async () => {
+    const t = await tasks.runningTask();
+    return t ? { id: t.id, scope: t.scope } : null;
+  },
+  busy: () => tasks.isBusy(),
+  whenSettled: (write) => tasks.whenSettled(write),
+  blocked: () => (quitting ? "The app is closing" : turnBlocked()),
+  // The canonical path and the record's scope; rejects with `RoundNotStarted` when no turn started.
+  round: (r) => tasks.reviewRound(r),
+  approved: (a) => void tasks.documentApproved(a).catch((err: unknown) => console.error("Could not act on the approval", err)),
+  reviewTier: (kind) => {
+    const kinds = harness.documents?.kinds;
+    return (kind !== undefined && kinds && Object.hasOwn(kinds, kind) ? kinds[kind].reviewTier : undefined) ?? "standard";
+  },
+  changed: (p) => sendToWindow("hh:reviewChanged", p),
+});
 
 function registerIpc() {
   handle("hh:getState", () => appState());
@@ -1394,6 +1427,8 @@ function registerIpc() {
     }
   });
   handleFrom("hh:unwatchDocument", (sender, id) => documentSessions.unwatch(sender.id, id));
+  // Reviews (review spec §5.6): every answer is data; nothing reaches the service unless the agent may edit the folder (D0).
+  for (const [channel, fn] of Object.entries(reviewHandlers(reviews, () => harness.permissions.edit === "folder"))) handle(channel, fn);
   // Cancels the turn and stops the task operation (a closing turn never goes on to the next task).
   handle("hh:cancel", () => tasks.cancel());
   // Restore commits carry no task: going back may undo several tasks, so it belongs to none of them.

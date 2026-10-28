@@ -50,6 +50,19 @@ describe("createSlugger", () => {
     expect(slug("!!!")).toBe("section");
     expect(slug("!!!")).toBe("section-1");
   });
+
+  it("skips ids another heading already took", () => {
+    const slug = createSlugger();
+    expect(["a-1", "a", "a", "a-1", "a", "a-2"].map((t) => slug(t))).toEqual(["a-1", "a", "a-2", "a-1-1", "a-3", "a-2-1"]);
+  });
+
+  it("stays linear on many equal headings", () => {
+    const slug = createSlugger();
+    const t0 = performance.now();
+    for (let i = 0; i < 50_000; i++) slug("same");
+    expect(slug("same")).toBe("same-50000");
+    expect(performance.now() - t0).toBeLessThan(500);
+  });
 });
 
 describe("documentTitle", () => {

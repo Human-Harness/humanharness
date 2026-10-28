@@ -15,6 +15,8 @@ export interface DocumentKind {
   sections: string[];
   /** The values its front-matter `status` may take. */
   status?: string[];
+  /** The tier of a "Review <title>" task for this kind; absent: standard. */
+  reviewTier?: "light" | "standard" | "deep";
 }
 
 export interface FrontMatter {
@@ -90,10 +92,17 @@ export function slug(text: string): string {
 /** Slugs deduplicated in the order asked: "a", "a-1", "a-2". An empty slug is "section". */
 export function createSlugger(): (text: string) => string {
   const seen = new Set<string>();
+  // The next number to try per base: every lower one was taken when last asked, and `seen` only grows (linear).
+  const next = new Map<string, number>();
   return (text) => {
     const base = slug(text) || "section";
     let id = base;
-    for (let n = 1; seen.has(id); n++) id = `${base}-${n}`;
+    if (seen.has(id)) {
+      let n = next.get(base) ?? 1;
+      while (seen.has(`${base}-${n}`)) n++;
+      id = `${base}-${n}`;
+      next.set(base, n + 1);
+    }
     seen.add(id);
     return id;
   };

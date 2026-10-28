@@ -30,6 +30,10 @@
   --hh-callout-summary: #efedf8;
   --hh-callout-decision: #e6f2f1;
   --hh-callout-question: #fbf3dc;
+  --hh-review-question: #fbefc4;
+  --hh-review-comment: #dde8f8;
+  --hh-review-done: #e9ebe6;
+  --hh-review-active: #f6d77a;
   --hh-font: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   --hh-display: "Lexend", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   font-family: var(--hh-font);
@@ -68,6 +72,10 @@
     --hh-callout-summary: #29253a;
     --hh-callout-decision: #1c302e;
     --hh-callout-question: #3a321c;
+    --hh-review-question: #5a4a16;
+    --hh-review-comment: #243a5a;
+    --hh-review-done: #30332e;
+    --hh-review-active: #7a5f12;
     color-scheme: dark;
   }
 }
@@ -584,11 +592,73 @@ h4.hh-md-h { font-size: 1em; font-weight: 600; color: var(--hh-slate); }
 @media (max-width: 999px) { .hh-reader:not(.hh-reader-is-full) .hh-reader-toc { display: none; } }
 /* The reader beside the chat: the harness's own side panel hides (three columns don't fit 1100 px); full screen hides the chat too. */
 .hh-with-reader .hh-side { display: none; }
+/* Review marks (review spec §6.1): drawn with the CSS Custom Highlight API, so the document's DOM never changes. */
+::highlight(hh-review-question) { background-color: var(--hh-review-question); }
+::highlight(hh-review-comment) { background-color: var(--hh-review-comment); }
+::highlight(hh-review-done) { background-color: var(--hh-review-done); }
+::highlight(hh-review-active) { background-color: var(--hh-review-active); }
+/* A reviewing reader is the container (a container query can't restyle the container itself); readers without review keep their layout (D0). */
+.hh-reader-reviewing { container-type: inline-size; }
+.hh-review-note { max-width: 72ch; margin: 0 auto 12px; }
+.hh-review-column { flex: 0 0 280px; overflow-y: auto; padding: 12px; border-left: 1px solid var(--hh-line); display: flex; flex-direction: column; gap: 10px; font-size: 13px; }
+.hh-review-card { padding: 10px; border: 1px solid var(--hh-line); border-radius: 8px; background: var(--hh-sheet); }
+.hh-review-card p { margin: 6px 0 0; overflow-wrap: anywhere; }
+.hh-review-card-active { border-color: var(--hh-line-strong); box-shadow: 0 0 0 2px var(--hh-review-active); }
+.hh-review-card-head { display: flex; gap: 6px; align-items: center; color: var(--hh-muted); font-size: 12px; }
+.hh-review-state { margin-left: auto; }
+.hh-review-badge { padding: 0 6px; border-radius: 999px; border: 1px solid var(--hh-warn); color: var(--hh-warn); }
+.hh-review-quote { margin: 6px 0; padding-left: 8px; border-left: 3px solid var(--hh-line-strong); color: var(--hh-slate); overflow-wrap: anywhere; }
+.hh-review-options { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; border: 0; padding: 0; margin: 6px 0 0; }
+.hh-review-edit { display: flex; flex-direction: column; gap: 4px; align-self: stretch; }
+.hh-review-replies { margin: 6px 0 0; padding-left: 16px; overflow-wrap: anywhere; }
+.hh-review-actions { display: flex; gap: 6px; margin-top: 6px; }
+.hh-review-card:focus-visible { outline: 2px solid var(--hh-line-strong); outline-offset: 2px; }
+.hh-review-other { color: var(--hh-slate); }
+/* Commenting on a selection (§5.2): the offer sits under the selection, inside the scrolling text (review only, D0). */
+.hh-reader-reviewing .hh-reader-scroll { position: relative; }
+.hh-review-pick { position: absolute; z-index: 3; display: flex; flex-direction: column; gap: 4px; max-width: 320px; padding: 6px; border: 1px solid var(--hh-line); border-radius: 8px; background: var(--hh-surface); }
+.hh-review-pick textarea { min-width: 240px; min-height: 4em; }
+/* The footer bar (§5.3, §5.4): send the round, approve, the approval's line. */
+.hh-review-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 12px; border-top: 1px solid var(--hh-line); background: var(--hh-surface); }
+.hh-review-bar p { margin: 0; }
+.hh-review-approve { margin-left: auto; }
+.hh-review-approved { color: var(--hh-ok); }
+.hh-review-ask { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; width: 100%; }
+.hh-review-ask textarea { flex: 1 1 100%; min-height: 3em; }
+/* "See what changed" (§5.4): text only; the sign says what each line is without its colour. */
+.hh-diff { max-width: 72ch; margin: 0 auto 16px; padding: 8px; border: 1px solid var(--hh-line); border-radius: 8px; }
+.hh-diff ol { margin: 0; padding: 0; list-style: none; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.hh-diff-added { background: var(--hh-callout-tip); }
+.hh-diff-added::before { content: "+ "; }
+.hh-diff-removed { background: var(--hh-error-bg); text-decoration: line-through; }
+.hh-diff-removed::before { content: "− "; }
+.hh-diff-same::before { content: "  "; }
+.hh-diff-gap { color: var(--hh-muted); }
+/* Narrow: only the review column moves under the body; the contents list stays beside it. */
+@container (max-width: 900px) {
+  .hh-reader-reviewing .hh-reader-columns { display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
+  .hh-reader-reviewing .hh-reader-toc { grid-column: 1; grid-row: 1; }
+  .hh-reader-reviewing .hh-reader-scroll { grid-column: 2; grid-row: 1; }
+  .hh-reader-reviewing .hh-review-column { grid-column: 1 / -1; grid-row: 2; max-height: 40vh; border-left: 0; border-top: 1px solid var(--hh-line); }
+}
 .hh-reader-full .hh-main, .hh-reader-full .hh-flow-side, .hh-reader-full .hh-side { display: none; }
 .hh-reader-full .hh-reader { flex: 1 1 auto; border-left: none; }
+/* Focus mode (review spec §6.2): focus-only classes, so a reader without review never gets them (D0). After the
+   container query: a card a margin marker opened floats over the text at any width. */
+.hh-focus > :not(.hh-reader) { display: none; }
+.hh-focus .hh-reader { flex: 1 1 auto; border-left: 0; }
+.hh-reader-focus .hh-reader-columns { position: relative; }
+.hh-reader-focus .hh-reader-doc { max-width: 68ch; }
+.hh-reader-focus .hh-review-bar { max-width: 68ch; margin: 24px auto 0; border: 1px solid var(--hh-line); border-radius: 8px; }
+.hh-reader-focus .hh-review-column { position: absolute; z-index: 3; right: 16px; top: 16px; width: 300px; max-height: 60vh; border: 1px solid var(--hh-line); border-radius: 8px; background: var(--hh-surface); }
+.hh-focus-markers { position: absolute; top: 0; right: 8px; width: 12px; }
+.hh-focus-marker { position: absolute; right: 0; width: 10px; height: 10px; padding: 0; border-radius: 50%; border: 0; background: var(--hh-review-active); }
 .hh-doc-cards { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 0; padding: 0; list-style: none; }
 .hh-doc-card { height: auto; flex-direction: column; align-items: flex-start; gap: 2px; padding: 8px 12px; text-align: left; border-radius: 8px; }
 .hh-doc-card-title { font-weight: 600; }
 .hh-doc-card-meta { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--hh-muted); }
+.hh-review-chip { padding: 0 6px; border-radius: 999px; background: var(--hh-review-question); color: var(--hh-ink); font-size: 12px; }
+.hh-review-chip-ok { background: var(--hh-callout-tip); color: var(--hh-ok); }
+.hh-review-chip-warn { background: var(--hh-callout-warning); color: var(--hh-warn); }
 .hh-doc-card-missing { opacity: 0.6; cursor: default; }
 .hh-doc-card-missing .hh-doc-card-title { text-decoration: line-through; }

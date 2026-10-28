@@ -302,3 +302,26 @@ describe("TaskStore: task phases and the time box (task-phases spec §6)", () =>
     expect((await new TaskStore(folder, { phases: {} }).load()).current).toEqual({ id: "t1", action: "session", status: "waiting", startedAt: "", turns: 1 });
   });
 });
+
+describe("review fields (review spec §5.3, §5.4)", () => {
+  const load = async (current: Record<string, unknown>) => {
+    const folder = tmp();
+    fs.mkdirSync(path.join(folder, ".harness"));
+    fs.writeFileSync(path.join(folder, ".harness", "tasks.json"), JSON.stringify({ ...waiting, current: { ...waiting.current, ...current } }));
+    return (await new TaskStore(folder).load()).current;
+  };
+
+  it("keeps a review task's path and drops one that leaves the folder", async () => {
+    expect((await load({ review: "specs/a.md" }))?.review).toBe("specs/a.md");
+    expect((await load({ review: "../x.md" }))?.review).toBeUndefined();
+  });
+
+  it("keeps the notices that are strings, the last 10, each cut to 600", async () => {
+    const many = ["a", 3, "", ...Array.from({ length: 12 }, (_, i) => `n${i}`), "x".repeat(700)];
+    const notices = (await load({ notices: many }))?.notices ?? [];
+    expect(notices).toHaveLength(10);
+    expect(notices[0]).toBe("n3");
+    expect(notices.at(-1)).toBe("x".repeat(600));
+    expect((await load({ notices: "nope" }))?.notices).toBeUndefined();
+  });
+});

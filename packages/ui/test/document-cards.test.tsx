@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, screen, within } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ChatView } from "../src/ChatView";
 import type { ChatEntry } from "../src/client";
+import { DocumentCards } from "../src/DocumentCards";
 import { FakeClient } from "./fake-client";
 import { renderIn } from "./render";
 
@@ -23,7 +24,7 @@ const answer = (documents?: ChatEntry["documents"]): ChatEntry => ({
 async function chatWith(entries: ChatEntry[], docs: Record<string, string> = {}) {
   const client = new FakeClient({ language: "en", folder: "/w", engineId: "claude" });
   client.chat = entries;
-  Object.assign(client.documents, docs);
+  Object.assign(client.docTexts, docs);
   const exists = vi.spyOn(client, "documentsExist");
   await renderIn("en", <ChatView client={client} state={client.state} components={{}} stateBlocks={[]} />);
   return { client, exists };
@@ -151,12 +152,12 @@ describe("document cards (§5.1)", () => {
     const button = await screen.findByRole("button", { name: /Analysis/ });
     await vi.waitFor(() => expect(exists).toHaveBeenCalledTimes(1));
     expect(button.getAttribute("aria-disabled")).toBeNull();
-    delete client.documents[card.path];
+    delete client.docTexts[card.path];
     fireEvent.click(button);
     const reader = await screen.findByRole("complementary", { name: "Document" });
     await within(reader).findByText("This document was moved or deleted.");
     await vi.waitFor(() => expect(button.getAttribute("aria-disabled")).toBe("true"));
-    client.documents[card.path] = "# A";
+    client.docTexts[card.path] = "# A";
     act(() => void window.dispatchEvent(new Event("focus")));
     await vi.waitFor(() => expect(button.getAttribute("aria-disabled")).toBeNull());
   });
@@ -164,7 +165,7 @@ describe("document cards (§5.1)", () => {
   it("slim (the setup screen): nothing opens the reader", async () => {
     const client = new FakeClient({ language: "en", folder: "/w", engineId: "claude" });
     client.chat = [answer()];
-    client.documents["x.md"] = "# X";
+    client.docTexts["x.md"] = "# X";
     await renderIn("en", <ChatView client={client} state={client.state} components={{}} stateBlocks={[]} slim={{ action: "interview" }} />);
     act(() => client.openDocument("x.md"));
     await new Promise((r) => setTimeout(r, 20));
@@ -179,5 +180,52 @@ describe("document cards (§5.1)", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Aa reading preferences" }));
     fireEvent.click(screen.getByRole("button", { name: "Large" }));
     expect(save).toHaveBeenCalledWith({ reader: { font: "sans", size: "large" } });
+  });
+});
+
+describe("review chips (review spec §6.1)", () => {
+  const at = (path: string) => ({ ...card, path, title: path });
+  it("show open questions, blocking ones, approved and stale", async () => {
+    const reviews = new Map([
+      ["a.md", { status: "draft" as const, questions: 2, blocking: 1, unsent: 0, comments: 2 }],
+      ["b.md", { status: "approved" as const, questions: 0, blocking: 0, unsent: 0, comments: 0, approvedAt: "2026-10-28T10:00:00.000Z" }],
+      ["c.md", { status: "stale" as const, questions: 0, blocking: 0, unsent: 0, comments: 0 }],
+    ]);
+    await renderIn("en", <DocumentCards cards={[at("a.md"), at("b.md"), at("c.md"), at("d.md")]} missing={new Set()} onOpen={() => {}} reviews={reviews} />);
+    expect(screen.getByText("2 questions open")).toBeTruthy();
+    expect(screen.getByText("1 blocking")).toBeTruthy();
+    expect(screen.getByText("Approved")).toBeTruthy();
+    expect(screen.getByText("Changed since approval")).toBeTruthy();
+    expect(screen.getAllByRole("button")).toHaveLength(4);
+  });
+
+  it("a draft without open questions says it is in review; no summary, no chip", async () => {
+    const reviews = new Map([
+      ["a.md", { status: "draft" as const, questions: 0, blocking: 0, unsent: 1, comments: 1 }],
+      ["b.md", { status: "none" as const, questions: 0, blocking: 0, unsent: 0, comments: 0 }],
+    ]);
+    await renderIn("en", <DocumentCards cards={[at("a.md"), at("b.md"), at("c.md")]} missing={new Set()} onOpen={() => {}} reviews={reviews} />);
+    expect(screen.getAllByText("In review")).toHaveLength(1);
+    expect(document.querySelectorAll(".hh-review-chip")).toHaveLength(1);
+  });
+
+  it("the chat asks for summaries only when the harness can review (D0)", async () => {
+    const plain = await chatWith([answer([card])], { [card.path]: "# A" });
+    await screen.findByRole("button", { name: /Analysis/ });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(plain.client.reviewCalls).toEqual([]);
+    expect(document.querySelector(".hh-review-chip")).toBeNull();
+    cleanup();
+
+    const client = new FakeClient({ language: "en", folder: "/w", engineId: "claude" });
+    client.chat = [answer([card])];
+    client.docTexts[card.path] = "## Scope\n\nBy size.\n";
+    client.state.review = true;
+    await renderIn("en", <ChatView client={client} state={client.state} components={{}} stateBlocks={[]} />);
+    await vi.waitFor(() => expect(client.reviewCalls.filter((c) => c.op === "summaries")).toHaveLength(1));
+    expect(client.reviewCalls[0].args).toEqual([[card.path]]);
+    await act(async () => void (await client.documents.comment(card.path, { selected: "By size.", heading: "scope", text: "x" })));
+    await vi.waitFor(() => expect(client.reviewCalls.filter((c) => c.op === "summaries")).toHaveLength(2));
+    expect(await screen.findByText("In review")).toBeTruthy();
   });
 });

@@ -114,7 +114,11 @@ export function SettingsSheet({
     const onKey = (e: KeyboardEvent) => {
       const sheet = sheetRef.current;
       if (!sheet) return;
-      if (e.key === "Escape" && !runningRef.current) onCloseRef.current();
+      if (e.key === "Escape" && !runningRef.current) {
+        // Handled: focus mode's window listener leaves this Escape alone.
+        e.preventDefault();
+        onCloseRef.current();
+      }
       if (e.key === "Tab") trapTab(sheet, e);
     };
     document.addEventListener("keydown", onKey);

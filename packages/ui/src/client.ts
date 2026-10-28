@@ -27,6 +27,7 @@ import type {
   SyncProvider,
   SyncStatus,
 } from "@humanharness/workspace";
+import type { AnswerPick, Review, ReviewSummary } from "@humanharness/harness-sdk/review";
 
 export type { DataKey, DataQuery, DataQueryResult, DataRecord };
 
@@ -241,6 +242,8 @@ export interface AppState {
   material?: MaterialInfo;
   /** The harness's document kinds (manifest `documents`): the reader's template check. Absent: none (D0). */
   documents?: { kinds: Record<string, DocumentKind> };
+  /** The harness's agent may edit the folder: documents can be reviewed (review spec). Absent: no review UI (D0). */
+  review?: true;
   /** Folders the agent can read but never change. */
   references?: ReferenceView[];
   /** Settings › Modelos. */
@@ -892,6 +895,36 @@ export interface HarnessClient {
   openDocument(path: string, anchor?: string): void;
   /** Every `openDocument`, whoever called it: the chat opens the panel. */
   onOpenDocument(listener: (path: string, anchor?: string) => void): () => void;
+  /** Document reviews (review spec §5.6). Calls answer with data; only useful when `AppState.review` is set. */
+  documents: {
+    /** The record, its summary and the blob of the version read, for the reader. */
+    view(path: string): Promise<ReviewView>;
+    /** A harness view's summary of one document; null without a record or when it can't be read. */
+    review(path: string): Promise<ReviewSummary | null>;
+    summaries(paths: string[]): Promise<(ReviewSummary | null)[]>;
+    answer(path: string, id: string, pick: AnswerPick): Promise<ReviewResult>;
+    comment(path: string, input: CommentInput): Promise<ReviewResult>;
+    /** Edits a draft, or deletes it with null. */
+    editDraft(path: string, id: string, text: string | null): Promise<ReviewResult>;
+    reopen(path: string, id: string): Promise<ReviewResult>;
+    send(path: string): Promise<ReviewSendResult>;
+    /** Approves the version shown: `blob` is the view's (a document changed since is refused with "changed"). */
+    approve(path: string, blob: string, opts?: ApproveOptions): Promise<ReviewResult>;
+    approvedText(path: string): Promise<ApprovedText>;
+    /** Any review record or approval changed (`path`: its document). Returns the unsubscribe. */
+    onChange(listener: (path: string) => void): () => void;
+    /** Opens the document in the reader in focus mode (§6.2). */
+    focus(path: string): void;
+    /** Every `focus(path)`, whoever called it: the chat listens. */
+    onFocus(listener: (path: string) => void): () => void;
+  };
+  /** Focus mode (§6.2): the chat sets it; a harness view listens to pause its own interruptions. */
+  focus: {
+    current(): FocusState;
+    onChange(listener: (state: FocusState) => void): () => void;
+    /** The core's chat only. */
+    set(state: FocusState): void;
+  };
   /** Harnesses with scopes (spec §3.4). There is no delete: archive instead. */
   scopes: {
     list(): Promise<ScopeView[]>;
@@ -976,3 +1009,51 @@ export function isConfigured(config: AppConfig): config is ConfiguredApp {
 
 export type { DocumentCard } from "@humanharness/runtime";
 export type { BlockAnswer, ChoiceOption, Event, EngineError, InputField, InputIssue, InputSpec, LimitWindow, RespondResult, SettingFieldView, SettingsView };
+
+/** Why a review action did nothing (review spec; errors over IPC are data). */
+export type ReviewRefusal =
+  | "outside"
+  | "missing"
+  | "not-markdown"
+  | "too-large"
+  | "broken"
+  | "not-ready"
+  | "blocked"
+  | "busy"
+  | "unknown"
+  | "not-found"
+  | "bad-input"
+  | "full"
+  | "locked"
+  | "changed"
+  | "unsent"
+  | "reason-required"
+  | "nothing-to-send";
+/** `count`: the unsent items (`unsent`) or the open blocking questions (`reason-required`). */
+export type ReviewFailure = { ok: false; reason: ReviewRefusal; count?: number };
+/**
+ * The reader's view of a document's review. `review` null: no record yet (§6.1 "reading only"). `blob`: the version
+ * read, which an approval passes back (a document changed since is refused with "changed").
+ */
+export type ReviewView = { ok: true; review: Review | null; blob: string; summary: ReviewSummary } | ReviewFailure;
+/** "Approve" (§5.4), with the blob of the version shown: a reason when a blocking question is open; drop unsent items. */
+export interface ApproveOptions {
+  reason?: string;
+  discard?: boolean;
+}
+export type ReviewResult = { ok: true; id?: string; applied?: boolean } | ReviewFailure;
+/** `to`: the round went to the task that waits ("open") or starts a "Review <title>" task ("new"). */
+export type ReviewSendResult = { ok: true; sent: number; to: "open" | "new" } | ReviewFailure;
+export type ApprovedText = { ok: true; text: string } | ReviewFailure;
+/** A comment on a rendered selection (§5.2): the selected text, the slug of the heading above it, the comment. */
+export interface CommentInput {
+  selected: string;
+  heading: string | null;
+  text: string;
+}
+/** Focus mode (§6.2): on or off, and the document read. */
+export interface FocusState {
+  on: boolean;
+  path?: string;
+}
+export type { AnswerPick, Review, ReviewComment, ReviewSummary } from "@humanharness/harness-sdk/review";

@@ -17,7 +17,7 @@ Every text in the manifest is one English string.
 | `folder.suggested`, `folder.seed` | Where the person's work lives; the seed is copied there when the folder is empty (`prepareFolder`) |
 | `folder.references` | Folders the agent may read but never change; `"app-source"` is the repository the app runs from, in development only |
 | `instructions` | The base `AGENTS.md`; the core appends a managed section (`writeInstructions`) |
-| `permissions` | `edit` (`folder` or `none`), `exec`, `web`: turned into Claude's allowed and denied tools and into Codex's permission answers |
+| `permissions` | `edit` (`folder` or `none`), `exec`, `web`: turned into Claude's allowed and denied tools and into Codex's permission answers. `edit: "folder"` also turns on document reviews (`docs/architecture/reviews.md`) |
 | `blocks` | `defineBlock({ description, visible, schema, example })`: one MCP tool per block, served by the `ui` server |
 | `actions` | Tasks: `label`, optional `description`, `prompt` (the brief that opens the task's session), `cost` (`light`, `medium`, `heavy`), optional `modes` and `defaultMode` (`docs/architecture/modes.md`), and optional `phases` and `timeBox` (`docs/architecture/phases.md`) |
 | `path` | The optional guided order of action ids (the "Recorrido") |
@@ -29,7 +29,7 @@ Every text in the manifest is one English string.
 | `setup` | Optional. The harness's own setup steps, after the folder and the engine: a form, an interview or a component (`docs/architecture/setup.md`) |
 | `material` | Optional. The person's own files (PDF, Word, spreadsheets, slides, ebooks, web pages, text), cut into fragments a task fetches on demand: the families it `accepts`, the `sheet` sections, `fragmentKinds`, the `items` collection fragments link to, `grounding`, the index `budget` and per-stage `tiers` (`docs/architecture/material.md`) |
 | `profiles` | Optional. Several people on one install, each with a folder of their own: `label` (what to call one, "student") and `fields` (the `profile` collection's fields the add and edit form asks for, `name` first) (`docs/architecture/profiles.md`) |
-| `documents` | Optional. `kinds`: the kinds of documents the agent writes, each with its `##` sections; `AGENTS.md` lists them and the reader checks them, only warning (`docs/architecture/documents.md`) |
+| `documents` | Optional. `kinds`: the kinds of documents the agent writes, each with its `##` sections and an optional `reviewTier`; `AGENTS.md` lists them and the reader checks them, only warning (`docs/architecture/documents.md`, `reviews.md`) |
 
 ### Phases and the time box
 
@@ -51,7 +51,7 @@ session: {
 },
 ```
 
-- `phases`: 1 to 12. Each has an `id` (the action id pattern), a `label` (≤ 80), an optional `brief` file (filled with `{{language}}`, `{{phase}}`, `{{previousPhase}}`, `{{timeLeft}}`), `auto` (the agent may move on alone), `modes` (`"any"`, `"none"` or a list of the action's modes) and `close: true` (the part that ends with the core closing turn).
+- `phases`: 1 to 12. Each has an `id` (the action id pattern), a `label` (≤ 80), an optional `brief` file (filled with `{{language}}`, `{{phase}}`, `{{previousPhase}}`, `{{timeLeft}}`), `auto` (the agent may move on alone), `modes` (`"any"`, `"none"` or a list of the action's modes) `close: true` (the part that ends with the core closing turn) and `approve` (a glob of `.md` paths in the folder, such as `specs/*.md`: approving a matching document moves the waiting task to the next part; `docs/architecture/reviews.md`).
 - `timeBox`: `options` (1 to 6 whole minutes, 1–240), `default` (one of them, or `null` for no limit; absent is `null`), `wrapUpAt` (optional, `0 < x ≤ 1`). It works with or without phases.
 
 ### Document kinds
@@ -78,19 +78,20 @@ documents: {
 - `when`: one sentence, 1 to 300 characters.
 - `sections`: 1 to 20 `##` headings in order, each 1 to 120 characters (trimmed).
 - `status` (optional): 1 to 10 values a document's front-matter `status` may take, each 1 to 40 characters.
+- `reviewTier` (optional): `light`, `standard` or `deep`, the tier of a core "Review <title>" task that a review round of this kind of document starts; `standard` when absent (`docs/architecture/reviews.md`).
 
 The harness's screen is `ui/App.tsx`: the shell build (`packages/shell/electron.vite.config.ts`) bundles it from the harness folder.
 
 ## Checks
 
-- Block and action names follow fixed patterns. `choices`, `save_note`, `annotate`, `recommend_mode` and `set_phase` are reserved: every harness gets the first two as core blocks, a harness with input blocks gets `annotate`, a harness with modes gets `recommend_mode` and a harness where some action has phases gets `set_phase` (`allBlocks`).
+- Block and action names follow fixed patterns. `choices`, `save_note`, `annotate`, `recommend_mode` and `set_phase` are reserved: every harness gets the first two as core blocks, a harness with input blocks gets `annotate`, a harness with modes gets `recommend_mode` and a harness where some action has phases gets `set_phase` (`allBlocks`). `ask_in_document`, `reply_to_comment` and `read_review` are reserved too: they are the agent's review tools on the `ui` server (`docs/architecture/reviews.md`), so no block may take their names or tool names.
 - Every id in `path` must be an action, once; reference ids are unique.
 - A block's `example` must match its `schema`.
 - An action may set `scope` only when the harness declares `scopes`, and a `scope: "none"` action can't be in `path`.
 - A collection needs a key (or `single: true`); the key must be a field of the schema declared exactly as `z.string()` or `z.number()` (no enum, literal, optional, nullable or default). Its `context` fields must be fields of the schema, and a collection hidden from the agent (`agent: "none"`) can't have a `context`. `settings` is a reserved collection name.
 - Settings: at least one field, of its own or of a mode; every field has a `default` that matches its `schema` (the schema itself takes no `.default()` or `.optional()`); each control has its zod type; `options` only on segmented, select and toggle, with keys that are values of the schema; section ids are unique and every `section` is declared; agent sentences use only `{{value}}` and `{{value:label}}` (the latter on segmented, select and toggle), and a `text` field whose sentence uses the value has a `.max(n)` on its schema. `modes` is a reserved setting name.
 - Modes: ids follow the action id pattern and aren't `recommend` or `ask`; an action's `modes` name declared modes, once each; `defaultMode` is one of them, `recommend` or `ask`, and only on an action with modes; mode settings pass the settings checks (no `section`) and need the harness's `settings` (its tab draws them). `humanharness check` also reports a mode brief that is missing, unreadable or empty (`brief-missing`).
-- Phases: ids unique within the action; `close` only on the last phase; a phase's list of `modes` only on an action with modes, each one of its modes. A time box's options are each offered once and its `default` is one of them or `null`. `humanharness check` also reports a phase brief that is missing or empty (`brief-missing`).
+- Phases: ids unique within the action; `close` only on the last phase; an `approve` glob that is relative, ends in `.md`, isn't under `.harness/`, has no `..`, `[`, `]`, `{`, `}` or backslash and is at most 200 characters; a phase's list of `modes` only on an action with modes, each one of its modes. A time box's options are each offered once and its `default` is one of them or `null`. `humanharness check` also reports a phase brief that is missing or empty (`brief-missing`).
 - Setup steps: 1 to 8, ids unique. A form takes a `single`, unscoped collection and fields the core form can draw, or settings of the harness, not both. An interview's action isn't in `path`, isn't `deep`, runs app-wide and backs one interview; its `writes` collection is `single`, unscoped and `agent: "write"`. `humanharness check` also warns about a component it can't find in `ui/` (`setup-component`), an interview's action without a recording once `mock/` has recordings (`setup-mock`) and an interview's collection without `context` (`setup-context`) (`docs/architecture/setup.md`).
 - Profiles: `profiles` needs a `profile` collection with `single: true`, `scoped: false` and a `name` field that is a string (`z.string()`, with or without bounds). `fields` has 1 to 6 entries, each once, starts with `name`, and names only fields of that collection the core form can draw (`docs/architecture/profiles.md`).
 - Material: `accepts` and `fragmentKinds` list each value once; `sheet.sections` ids are unique and aren't the core's (`notation`, `not-covered`); `items.collection` is declared in `data`, has a key (not `single`) and isn't hidden from the agent (`agent: "none"`), and `items.label` is one of its fields; the action ids `material-review`, `material-repair`, `material-label`, `material-sheet` and `material-link` are reserved. `humanharness check` also warns about a `light` review tier (`material-review-tier`) and an app-wide `items` collection in a harness with scopes (`material-items-scope`) (`docs/architecture/material.md`).
@@ -109,4 +110,5 @@ The harness's screen is `ui/App.tsx`: the shell build (`packages/shell/electron.
 - `packages/harness-sdk/src/material.ts`: the `material` schema, `MATERIAL_FAMILIES`, `MATERIAL_STAGES`, `hasMaterial`, `materialStageKey`, `stageTier`.
 - `packages/harness-sdk/src/profiles.ts`: the `profiles` schema, `PROFILE_COLLECTION`, `PROFILE_COLORS`, `hasProfiles`, `profileFormSpec`.
 - `packages/harness-sdk/src/documents.ts`: `DocumentKind`, `DOCUMENT_KIND_ID`, `checkTemplate` and the document helpers.
+- `packages/harness-sdk/src/review.ts`: `REVIEW_TOOLS`, `validApproveGlob`, `matchGlob` and the review logic.
 - `harnesses/demo/harness.config.ts`: a complete manifest.

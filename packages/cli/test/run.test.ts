@@ -332,6 +332,88 @@ describe("runTask", () => {
     expect(quiet.text()).toContain(`The closing turn saved no note; the checkpoint's stands: ${path.join(root, "work-checkpoint-only", ".harness", "notes", "example.md")}`);
   });
 
+  it("an edit-folder harness's agent asks in a document and the run prints the Review line (review spec §6.3)", { timeout: 60_000 }, async () => {
+    const study = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../fake-agent/fixtures/data-harness");
+    const folder = path.join(root, "study-review");
+    const script: ClaudeScript = {
+      steps: [...claudeTextLines("Done."), result],
+      turns: [
+        { match: "save_note", steps: [ui("save_note", { title: "Plan", summary: ["x"], decisions: [], files: [], open: [] }), result] },
+        {
+          match: "# Task: study",
+          steps: [
+            { write: { path: "notes/plan.md", content: "## Scope\n\nBy size.\n" } },
+            ui("ask_in_document", {
+              path: "notes/plan.md",
+              quote: "By size.",
+              question: "Size only?",
+              options: [
+                { label: "Keep", text: "By size." },
+                { label: "Colour", text: "By size and colour." },
+              ],
+            }),
+            ...claudeTextLines("I asked in the plan."),
+            result,
+          ],
+        },
+      ],
+    };
+    const out = memoryStream();
+    await runTask({
+      harnessDir: study,
+      action: "study",
+      engine: "claude",
+      folder,
+      input: lines("q\n"),
+      output: out.stream,
+      engineCommand: { command: fakeClaudeCommand(), env: { HH_FAKE_SCRIPT: writeScript(root, script) } },
+    });
+    expect(out.text()).toContain("Documents: notes/plan.md (new)\nReview: 1 question open\n");
+    expect(fs.existsSync(path.join(folder, ".harness", "reviews", "notes", "plan.md.json"))).toBe(true);
+  });
+
+  it("an edit-none harness prints no Review line and keeps no record (D0)", { timeout: 60_000 }, async () => {
+    const material = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../fake-agent/fixtures/material-harness");
+    const folder = path.join(root, "study-no-review");
+    const script: ClaudeScript = {
+      steps: [...claudeTextLines("Done."), result],
+      turns: [
+        { match: "save_note", steps: [ui("save_note", { title: "x", summary: ["x"], decisions: [], files: [], open: [] }), result] },
+        {
+          match: "# Task: study",
+          // The agent tries to ask anyway: the ui server has no such tool, so nothing is recorded.
+          steps: [
+            { write: { path: "notes/plan.md", content: "## Scope\n\nBy size.\n" } },
+            ui("ask_in_document", {
+              path: "notes/plan.md",
+              quote: "By size.",
+              question: "Size only?",
+              options: [
+                { label: "Keep", text: "By size." },
+                { label: "Colour", text: "By size and colour." },
+              ],
+            }),
+            ...claudeTextLines("Read it."),
+            result,
+          ],
+        },
+      ],
+    };
+    const out = memoryStream();
+    await runTask({
+      harnessDir: material,
+      action: "study",
+      engine: "claude",
+      folder,
+      input: lines("q\n"),
+      output: out.stream,
+      engineCommand: { command: fakeClaudeCommand(), env: { HH_FAKE_SCRIPT: writeScript(root, script) } },
+    });
+    expect(out.text()).toContain("Read it.");
+    expect(out.text()).not.toContain("Review:");
+    expect(fs.existsSync(path.join(folder, ".harness", "reviews"))).toBe(false);
+  });
+
   it("stops before making or printing a folder when the engine isn't ready", async () => {
     const tmp = path.join(root, "tmp-not-ready");
     fs.mkdirSync(tmp);

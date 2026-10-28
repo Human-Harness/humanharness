@@ -2,9 +2,9 @@
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { I18nextProvider } from "react-i18next";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { DocumentRead } from "../src/client";
+import type { DocumentRead, ReviewView } from "../src/client";
 import { DocumentReader, cutToBytes } from "../src/DocumentReader";
-import { FakeClient } from "./fake-client";
+import { FakeClient, fakeBlob } from "./fake-client";
 import { renderIn } from "./render";
 
 afterEach(cleanup);
@@ -32,7 +32,7 @@ const kinds = { analysis: { when: "x", sections: ["Context", "Options", "Risks"]
 
 function setup(over: Partial<Parameters<typeof DocumentReader>[0]> = {}, docs: Record<string, string> = { "docs/cache.md": ANALYSIS }) {
   const client = new FakeClient();
-  Object.assign(client.documents, docs);
+  Object.assign(client.docTexts, docs);
   const props = {
     client,
     target: { path: "docs/cache.md", agent: "Claude" },
@@ -258,7 +258,7 @@ describe("DocumentReader: anchors, reloads, watches and focus", () => {
       offs.push(off);
       return off;
     });
-    Object.assign(client.documents, { "docs/cache.md": ANALYSIS, "docs/other.md": OTHER });
+    Object.assign(client.docTexts, { "docs/cache.md": ANALYSIS, "docs/other.md": OTHER });
     const s = setup({ client });
     await screen.findByRole("heading", { name: "Options" });
     await act(async () => swap(s, { path: "docs/other.md" }));
@@ -313,5 +313,241 @@ describe("cutToBytes", () => {
     const shown = cutToBytes("é".repeat(300_000), 200 * 1024);
     expect(new TextEncoder().encode(shown).length).toBeLessThanOrEqual(200 * 1024);
     expect(shown.length).toBe(100 * 1024);
+  });
+});
+
+describe("review in the reader (review spec §6.1, D0)", () => {
+  it("without `review` there is no column and no review call (D0)", async () => {
+    const { client } = setup();
+    await screen.findByRole("heading", { level: 1, name: "Search cache" });
+    expect(screen.queryByRole("region", { name: "Comments" })).toBeNull();
+    expect(client.reviewCalls).toEqual([]);
+  });
+
+  it("with `review` it shows the record's cards and draws again on a change", async () => {
+    const { client } = setup({ review: true });
+    await screen.findByRole("button", { name: "Approve" });
+    client.reviews["docs/cache.md"] = {
+      path: "docs/cache.md",
+      task: null,
+      approvals: [],
+      comments: [{ id: "c1", author: "agent", kind: "question", anchor: { quote: "Slow calls.", heading: "context", occurrence: 0 }, text: "How slow?", options: [{ label: "A", text: "Slow calls." }, { label: "B", text: "Very slow calls." }], state: "open", replies: [], at: "2026-10-28T10:00:00.000Z" }],
+    };
+    act(() => client.emitReviewChanged("docs/cache.md"));
+    expect(await screen.findByText("How slow?")).toBeTruthy();
+  });
+
+  it("an answer swaps the passage: the reader reads the document again", async () => {
+    const { client } = setup({ review: true });
+    client.reviews["docs/cache.md"] = {
+      path: "docs/cache.md",
+      task: null,
+      approvals: [],
+      comments: [{ id: "c1", author: "agent", kind: "question", anchor: { quote: "Slow calls.", heading: "context", occurrence: 0 }, text: "How slow?", options: [{ label: "A", text: "Slow calls." }, { label: "B", text: "Very slow calls." }], state: "open", replies: [], at: "2026-10-28T10:00:00.000Z" }],
+    };
+    act(() => client.emitReviewChanged("docs/cache.md"));
+    fireEvent.click(await screen.findByRole("radio", { name: "B" }));
+    const doc = document.querySelector(".hh-review-text")!;
+    await waitFor(() => expect(doc.textContent).toContain("Very slow calls."));
+    expect(client.reviewCalls.some((c) => c.op === "answer")).toBe(true);
+  });
+
+  it("the review-only layout class is on the reader only with `review` (D0)", async () => {
+    setup();
+    const plain = await screen.findByRole("complementary", { name: "Document" });
+    expect(plain.className).not.toContain("hh-reader-reviewing");
+    cleanup();
+    setup({ review: true });
+    expect((await screen.findByRole("complementary", { name: "Document" })).className).toContain("hh-reader-reviewing");
+  });
+
+  it("a review view still pending when another document opens is never drawn over it", async () => {
+    const OTHER_DOC = "## Other\n\nSlow calls.\n";
+    const s = setup({ review: true }, { "docs/cache.md": ANALYSIS, "docs/other.md": OTHER_DOC });
+    await screen.findByRole("button", { name: "Approve" });
+    const pending: ((v: ReviewView) => void)[] = [];
+    const view = s.client.documents.view;
+    // A's view hangs until the end; B's answers at once.
+    s.client.documents.view = (p) => (p === "docs/cache.md" ? new Promise<ReviewView>((resolve) => pending.push(resolve)) : view(p));
+    act(() => s.client.emitReviewChanged("docs/cache.md"));
+    const { rerender, i18n } = await s.view;
+    rerender(
+      <I18nextProvider i18n={i18n}>
+        <DocumentReader {...s.props} target={{ path: "docs/other.md" }} />
+      </I18nextProvider>,
+    );
+    await screen.findByRole("heading", { name: "Other" });
+    const summary = { status: "draft", open: 1, blocking: 0, unsent: 0, approvedAt: null } as never;
+    const forA: ReviewView = {
+      ok: true,
+      blob: "a",
+      summary,
+      review: { path: "docs/cache.md", task: null, approvals: [], comments: [{ id: "c1", author: "agent", kind: "comment", anchor: { quote: "Slow calls.", heading: "context", occurrence: 0 }, text: "From A", state: "open", replies: [], at: "2026-10-28T10:00:00.000Z" }] },
+    };
+    expect(pending).toHaveLength(1);
+    await act(async () => {
+      for (const done of pending) done(forA);
+    });
+    expect(screen.queryByText("From A")).toBeNull();
+  });
+
+  it("no column until the first comment: a draft made on a selection brings it (§6.1)", async () => {
+    setup({ review: true });
+    await screen.findByRole("button", { name: "Approve" });
+    expect(screen.queryByRole("region", { name: "Comments" })).toBeNull();
+    const para = screen.getByText("Slow calls.");
+    const range = document.createRange();
+    range.selectNodeContents(para);
+    const sel = window.getSelection()!;
+    sel.removeAllRanges();
+    sel.addRange(range);
+    fireEvent.mouseUp(para);
+    fireEvent.click(await screen.findByRole("button", { name: "Comment" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Your comment" }), { target: { value: "How slow?" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
+    const column = await screen.findByRole("region", { name: "Comments" });
+    expect(within(column).getByText("How slow?")).toBeTruthy();
+  });
+
+  it("a record that can't be read shows a note and no column", async () => {
+    const { client } = setup({ review: true });
+    client.documents.view = async () => ({ ok: false, reason: "broken" });
+    act(() => client.emitReviewChanged("docs/cache.md"));
+    expect((await screen.findByRole("alert")).textContent).toBe("The review of this document can't be read. Fix or delete .harness/reviews/docs/cache.md.json.");
+    expect(screen.queryByRole("region", { name: "Comments" })).toBeNull();
+  });
+});
+
+describe("commenting on a selection, the footer bar (review spec §5.2–§5.4)", () => {
+  const select = (node: Node) => {
+    const range = document.createRange();
+    range.selectNodeContents(node);
+    const sel = window.getSelection()!;
+    sel.removeAllRanges();
+    sel.addRange(range);
+  };
+
+  it("a selection in the text shows 'Comment'; saving makes a draft with the heading above it", async () => {
+    const { client } = setup({ review: true });
+    await screen.findByRole("button", { name: "Approve" });
+    const para = screen.getByText("Slow calls.");
+    select(para);
+    fireEvent.mouseUp(para);
+    fireEvent.click(await screen.findByRole("button", { name: "Comment" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Your comment" }), { target: { value: "How slow?" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
+    await waitFor(() => expect(client.reviewCalls.find((c) => c.op === "comment")?.args).toEqual(["docs/cache.md", { selected: "Slow calls.", heading: "context", text: "How slow?" }]));
+    expect(await screen.findByText("How slow?")).toBeTruthy();
+  });
+
+  it("a selection that runs past the end of the text (a triple click on the last paragraph) keeps the part inside it", async () => {
+    const { client } = setup({ review: true });
+    await screen.findByRole("button", { name: "Approve" });
+    const para = screen.getByText("Slow calls.");
+    const box = para.closest(".hh-review-text")!;
+    const range = document.createRange();
+    range.setStart(para.firstChild!, 0);
+    range.setEndAfter(box);
+    const sel = window.getSelection()!;
+    sel.removeAllRanges();
+    sel.addRange(range);
+    fireEvent.mouseUp(para);
+    fireEvent.click(await screen.findByRole("button", { name: "Comment" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Your comment" }), { target: { value: "How slow?" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
+    await waitFor(() => expect(client.reviewCalls.find((c) => c.op === "comment")).toBeTruthy());
+    const inside = document.createRange();
+    inside.setStart(para.firstChild!, 0);
+    inside.setEndAfter(box.lastChild!);
+    expect(client.reviewCalls.find((c) => c.op === "comment")?.args[1]).toMatchObject({ selected: inside.toString(), heading: "context" });
+  });
+
+  it("a selection the document doesn't hold says so; Escape closes the pick before the reader", async () => {
+    const { client, props } = setup({ review: true });
+    await screen.findByRole("button", { name: "Approve" });
+    client.documents.comment = async () => ({ ok: false, reason: "not-found" });
+    const para = screen.getByText("Slow calls.");
+    select(para);
+    fireEvent.mouseUp(para);
+    fireEvent.click(await screen.findByRole("button", { name: "Comment" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Your comment" }), { target: { value: "?" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
+    expect((await screen.findByRole("alert")).textContent).toBe("That text could not be found in the document. Select plain text, not a diagram.");
+    select(para);
+    fireEvent.mouseUp(para);
+    const comment = await screen.findByRole("button", { name: "Comment" });
+    fireEvent.keyDown(comment, { key: "Escape" });
+    expect(screen.queryByRole("button", { name: "Comment" })).toBeNull();
+    expect(props.onClose).not.toHaveBeenCalled();
+  });
+
+  it("without `review` a selection offers nothing and there is no footer bar (D0)", async () => {
+    setup();
+    await screen.findByRole("heading", { level: 1, name: "Search cache" });
+    const para = screen.getByText("Slow calls.");
+    select(para);
+    fireEvent.mouseUp(para);
+    expect(screen.queryByRole("button", { name: "Comment" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Approve" })).toBeNull();
+  });
+
+  it("'Approve' passes the blob of the version shown", async () => {
+    const { client } = setup({ review: true });
+    fireEvent.click(await screen.findByRole("button", { name: "Approve" }));
+    await waitFor(() => expect(client.reviewCalls.find((c) => c.op === "approve")?.args).toEqual(["docs/cache.md", fakeBlob(ANALYSIS), {}]));
+  });
+
+  it("an edit on disk turns 'Approved' into stale, and approve then sends the new version's blob", async () => {
+    const { client } = setup({ review: true });
+    client.reviews["docs/cache.md"] = { path: "docs/cache.md", task: null, comments: [], approvals: [{ blob: fakeBlob(ANALYSIS), at: "2026-10-28T10:00:00.000Z" }] };
+    client.currentBlobs["docs/cache.md"] = fakeBlob(ANALYSIS);
+    act(() => client.emitReviewChanged("docs/cache.md"));
+    expect(await screen.findByText(/^Approved · /)).toBeTruthy();
+    const edited = ANALYSIS.replace("Slow calls.", "Fast calls.");
+    client.currentBlobs["docs/cache.md"] = fakeBlob(edited);
+    // Only the file watch fires: no review change is emitted.
+    await act(async () => client.changeDocument("docs/cache.md", edited));
+    expect(await screen.findByText("Changed since approval")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    await waitFor(() => expect(client.reviewCalls.find((c) => c.op === "approve")?.args).toEqual(["docs/cache.md", fakeBlob(edited), {}]));
+  });
+
+  it("after Cancel the focus goes back to the text", async () => {
+    setup({ review: true });
+    await screen.findByRole("button", { name: "Approve" });
+    const para = screen.getByText("Slow calls.");
+    select(para);
+    fireEvent.mouseUp(para);
+    fireEvent.click(await screen.findByRole("button", { name: "Comment" }));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(document.activeElement?.className).toContain("hh-reader-scroll");
+  });
+
+  it("an approved version that can't be read says so, not 'too large'", async () => {
+    const { client } = setup({ review: true });
+    await screen.findByRole("button", { name: "Approve" });
+    client.reviews["docs/cache.md"] = { path: "docs/cache.md", task: null, comments: [], approvals: [{ blob: "0".repeat(40), at: "2026-10-28T10:00:00.000Z" }] };
+    client.currentBlobs["docs/cache.md"] = "1".repeat(40);
+    act(() => client.emitReviewChanged("docs/cache.md"));
+    fireEvent.click(await screen.findByRole("button", { name: "See what changed" }));
+    const diff = await screen.findByRole("region", { name: "Changes since the approval" });
+    expect(diff.textContent).toBe("The approved version can't be read any more, so there is nothing to compare.");
+  });
+
+  it("'See what changed' shows the lines added and removed since the approval", async () => {
+    const { client } = setup({ review: true });
+    await screen.findByRole("button", { name: "Approve" });
+    client.reviews["docs/cache.md"] = { path: "docs/cache.md", task: null, comments: [], approvals: [{ blob: "0".repeat(40), at: "2026-10-28T10:00:00.000Z" }] };
+    client.currentBlobs["docs/cache.md"] = "1".repeat(40);
+    client.approvedTexts["docs/cache.md"] = ANALYSIS.replace("Slow calls.", "Fast calls.");
+    act(() => client.emitReviewChanged("docs/cache.md"));
+    fireEvent.click(await screen.findByRole("button", { name: "See what changed" }));
+    const diff = await screen.findByRole("region", { name: "Changes since the approval" });
+    expect(within(diff).getByText("Fast calls.").closest("li")?.className).toContain("hh-diff-removed");
+    expect(within(diff).getByText("Slow calls.").closest("li")?.className).toContain("hh-diff-added");
+    // Only the change and two lines around it: the front-matter's first line is far away.
+    expect(within(diff).queryByText("---")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Hide changes" }));
+    expect(screen.queryByRole("region", { name: "Changes since the approval" })).toBeNull();
   });
 });

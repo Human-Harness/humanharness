@@ -1,5 +1,6 @@
 import type { Writable } from "node:stream";
 import { type ChoiceOption, type InputSpec, annotateSchema, choicesSchema, recommendModeSchema } from "@humanharness/harness-sdk";
+import type { ReviewSummary } from "@humanharness/harness-sdk/review";
 import { CORE_LOCALES } from "@humanharness/i18n";
 import type { Event } from "@humanharness/runtime";
 import type { TaskTurnNotice } from "@humanharness/ui/client";
@@ -21,6 +22,14 @@ export function errorMessage(code: string, engine: string): string {
  */
 const plain = (s: string) => s.replace(/[\t\n\v\f\r]/g, " ").replace(/[\x00-\x1f\x7f-\x9f]/g, "").replace(/ {2,}/g, " ").trim();
 
+/** The terminal's review line (review spec §6.3): the status when it is final, else what is still open. */
+export function reviewLine(r: ReviewSummary): string {
+  if (r.status === "approved") return "approved";
+  if (r.status === "stale") return "changed since approval";
+  if (r.questions === 0) return r.comments > 0 ? `${r.comments} comment${r.comments === 1 ? "" : "s"} open` : "in review";
+  return `${r.questions} question${r.questions === 1 ? "" : "s"} open${r.blocking > 0 ? ` (${r.blocking} blocking)` : ""}`;
+}
+
 /** `run`'s window: the events the app would show, as plain text. */
 export class TerminalView {
   /** The options of the last `choices` block shown; `run` clears it before each operation. */
@@ -37,6 +46,8 @@ export class TerminalView {
     private readonly inputs: Record<string, InputSpec> = {},
     /** The open task's action's modes (task-modes spec §4); undefined: not known, every valid id is drawn. */
     private readonly listedModes: () => readonly string[] | undefined = () => undefined,
+    /** A document's review summary (review spec §6.3); absent for a harness whose agent can't edit the folder (D0). */
+    private readonly reviewOf: (path: string) => ReviewSummary | null = () => null,
   ) {}
 
   event(e: Event): void {
@@ -48,7 +59,10 @@ export class TerminalView {
     else if (e.type === "documents")
       for (const d of e.documents) {
         const path = plain(d.path);
-        if (path) this.line(`Documents: ${path} (${d.change})`);
+        if (!path) continue;
+        this.line(`Documents: ${path} (${d.change})`);
+        const r = this.reviewOf(d.path);
+        if (r) this.line(`Review: ${reviewLine(r)}`);
       }
     else if (e.type === "done") {
       if (e.ok) this.newline();

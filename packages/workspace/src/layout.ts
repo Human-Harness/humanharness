@@ -46,6 +46,8 @@ export const chatFile = (base: string, scope: string = MAIN_SCOPE): string => pa
 
 /** Where harness data lives, relative to the base: `<scope>/<collection>.json`. Tracked by the history (spec D4). */
 export const DATA_PREFIX = ".harness/data/";
+/** Review records (review spec §3): `.harness/reviews/<document path>.json`, tracked by the history. */
+export const REVIEWS_PREFIX = ".harness/reviews/";
 /** When each record last changed (for "most recently changed", spec §4.4). Never tracked. */
 export const DATA_META_PREFIX = ".harness/data-meta/";
 

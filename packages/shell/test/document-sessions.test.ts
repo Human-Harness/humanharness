@@ -145,9 +145,16 @@ describe("DocumentSessions with DocumentWatchers", () => {
     const sessions = new DocumentSessions(watchers);
     const id = await sessions.watch(7, "a.md", [root]);
     expect(id).not.toBeNull();
-    fs.writeFileSync(path.join(root, "a.md"), "# A2\n");
-    // Under load macOS may also deliver the file's creation late: one or more reports, all to the owner.
-    await vi.waitFor(() => expect(heard).toContainEqual([7, id]), { timeout: 2000 });
+    // Under load macOS may drop a change made right after the watch starts (its event stream is not running yet), or
+    // deliver the file's creation late: write again until a report comes, which may be several, all to the owner.
+    let n = 2;
+    await vi.waitFor(
+      () => {
+        if (heard.length === 0) fs.writeFileSync(path.join(root, "a.md"), `# A${n++}\n`);
+        expect(heard).toContainEqual([7, id]);
+      },
+      { timeout: 10_000, interval: 200 },
+    );
     expect(heard.every(([owner, w]) => owner === 7 && w === id)).toBe(true);
     sessions.closeOwner(7);
     const before = heard.length;

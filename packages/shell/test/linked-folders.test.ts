@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -32,6 +33,7 @@ describe("linkRefusal (hatches spec §3.2)", () => {
     ["~/.config/opencode", path.join(home, ".config", "opencode"), "engine-home"],
     ["a dot folder in home (~/.ssh)", path.join(home, ".ssh"), "engine-home"],
     ["the home folder", home, "home"],
+    ["a protected folder that is no engine home (~/Library)", path.join(home, "Library"), "protected"],
     ["the main folder", work, "main-folder"],
     ["inside the main folder", path.join(work, "sub"), "main-folder"],
     ["a folder that contains the main folder", path.join(home, "Documents"), "too-broad"],
@@ -100,6 +102,52 @@ describe("checkLink (real paths)", () => {
     expect(await checkLink(link, ctx({ sameScope: [repo] }))).toEqual({ refused: "already-linked" });
   });
 
+  // L2: every refusal holds when the picked path is a link to the refused place.
+  let n = 0;
+  const via = (target: string) => {
+    const link = path.join(home, `via-${n++}`);
+    fs.symlinkSync(target, link);
+    return link;
+  };
+  const repo = () => mk(path.join(home, "code", "app"));
+  it.each<[string, () => [string, Partial<Parameters<typeof linkRefusal>[1]>], string]>([
+    ["the home folder", () => [home, {}], "home"],
+    ["~/Library", () => [mk(path.join(home, "Library")), {}], "protected"],
+    ["a standard home folder (~/Documents)", () => [path.join(home, "Documents"), {}], "too-broad"],
+    ["a system folder", () => ["/usr", {}], "system"],
+    ["a folder inside a same-scope link", () => [mk(path.join(repo(), "pkg")), { sameScope: [repo()] }], "nested"],
+    ["a folder containing a same-scope link", () => [path.join(home, "code"), { sameScope: [repo()] }], "nested"],
+    ["another scope's write folder", () => [repo(), { otherScopesWrite: [repo()] }], "other-scope-write"],
+    ['a plain folder under history "own"', () => [mk(path.join(home, "plain-own")), { history: "own" }], "not-git"],
+    ["a target with a comma", () => [mk(path.join(home, "code", "a,b")), {}], "comma"],
+    ["a folder inside the app root", () => [mk(path.join(home, "Apps", "ana")), { folder: path.join(home, "Apps", "bo"), root: path.join(home, "Apps") }], "main-folder"],
+  ])("refuses through a link: %s", async (_n, make, why) => {
+    const [target, over] = make();
+    expect(await checkLink(via(target), ctx(over))).toEqual({ refused: why });
+  });
+
+  describe("a context given as written (links in home, folder, root, other links)", () => {
+    it("a home reached through a link still guards its dot folders", async () => {
+      const homeLink = via(home);
+      expect(await checkLink(mk(path.join(home, ".claude")), ctx({ home: homeLink }))).toEqual({ refused: "engine-home" });
+    });
+
+    it("a main folder reached through a link is refused as itself", async () => {
+      expect(await checkLink(work, ctx({ folder: via(work) }))).toEqual({ refused: "main-folder" });
+    });
+
+    it("an app root reached through a link guards every profile folder", async () => {
+      const appRoot = mk(path.join(home, "AppRoot"));
+      const other = mk(path.join(appRoot, "ana"));
+      expect(await checkLink(other, ctx({ folder: path.join(appRoot, "bo"), root: via(appRoot) }))).toEqual({ refused: "main-folder" });
+    });
+
+    it("same-scope and other-scope links given through a link are compared where they are", async () => {
+      expect(await checkLink(repo(), ctx({ sameScope: [via(repo())] }))).toEqual({ refused: "already-linked" });
+      expect(await checkLink(repo(), ctx({ otherScopesWrite: [via(repo())] }))).toEqual({ refused: "other-scope-write" });
+    });
+  });
+
   it("accepts a plain folder, stores its real path and tracks it (write, no git)", async () => {
     const plain = mk(path.join(home, "notes"));
     const link = path.join(home, "notes-link");
@@ -146,6 +194,14 @@ describe("isGitRepo (Decision 3)", () => {
     const e = mk(path.join(root, "g5"));
     fs.writeFileSync(path.join(e, ".git"), "not a gitdir line\n");
     expect([await isGitRepo(a), await isGitRepo(b), await isGitRepo(c), await isGitRepo(d), await isGitRepo(e)]).toEqual([true, true, false, false, false]);
+  });
+
+  it("a .git file larger than 4 KB is not read as git, nor is a FIFO at .git (and nothing blocks)", async () => {
+    const big = mk(path.join(root, "g6"));
+    fs.writeFileSync(path.join(big, ".git"), `gitdir: /elsewhere\n${"x".repeat(5000)}`);
+    const fifo = mk(path.join(root, "g7"));
+    execFileSync("mkfifo", [path.join(fifo, ".git")]);
+    expect([await isGitRepo(big), await isGitRepo(fifo)]).toEqual([false, false]);
   });
 });
 

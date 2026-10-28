@@ -1,4 +1,4 @@
-import { promises as fs } from "node:fs";
+import { constants as C, promises as fs } from "node:fs";
 import path from "node:path";
 import { homeOrDotFolder } from "./references";
 import { folderProblem, realFolder } from "./validate";
@@ -44,7 +44,8 @@ export function linkRefusal(dir: string, ctx: LinkContext): LinkRefusal | null {
   // Before the main-folder rule, so ~/Documents reads as too broad rather than as "contains the main folder".
   const problem = folderProblem(dir, ctx.home);
   if (problem === "root") return "system";
-  if (problem === "protected") return isSystemPath(dir) ? "system" : "engine-home";
+  // ~/.claude and the other engine homes were caught above: what's left is a system folder or ~/Library.
+  if (problem === "protected") return isSystemPath(dir) ? "system" : "protected";
   if (problem === "too-broad") return "too-broad";
   if (problem === "not-absolute") return "not-folder";
   if (problem) return "protected";
@@ -66,10 +67,27 @@ export async function isGitRepo(dir: string): Promise<boolean> {
   const st = await fs.lstat(dot).catch(() => null);
   if (!st || st.isSymbolicLink()) return false;
   if (st.isDirectory()) return (await fs.lstat(path.join(dot, "HEAD")).catch(() => null))?.isFile() === true;
-  if (!st.isFile() || st.size > 4096) return false;
-  const first = (await fs.readFile(dot, "utf8").catch(() => "")).split("\n")[0];
-  return first.startsWith("gitdir:");
+  if (!st.isFile()) return false;
+  // Opened without following a link swapped in since the lstat, nor blocking on a FIFO; at most 4 KB read.
+  const fh = await fs.open(dot, C.O_RDONLY | C.O_NOFOLLOW | C.O_NONBLOCK).catch(() => null);
+  if (!fh) return false;
+  try {
+    const fst = await fh.stat();
+    if (!fst.isFile() || fst.size > GITDIR_FILE_MAX) return false;
+    const buf = Buffer.alloc(GITDIR_FILE_MAX);
+    const { bytesRead } = await fh.read(buf, 0, GITDIR_FILE_MAX, 0);
+    return buf.subarray(0, bytesRead).toString("utf8").split("\n")[0].startsWith("gitdir:");
+  } catch {
+    return false;
+  } finally {
+    await fh.close().catch(() => {});
+  }
 }
+
+const GITDIR_FILE_MAX = 4096;
+
+/** `p` with links resolved; as written (resolved) when it can't be, so a comparison never gets looser. */
+const realOr = (p: string) => realFolder(p).catch(() => path.resolve(p));
 
 /**
  * Checks a picked folder: as written and where it really is (links resolved), then git. Answers the real path and
@@ -91,7 +109,17 @@ export async function checkLink(
     return { refused: "not-folder" };
   }
   const isGit = await isGitRepo(real);
-  const refused = linkRefusal(real, { ...ctx, isGit });
+  // The context may hold paths as written (the configured folder, a home reached through a link): compare the real
+  // path against those and against where they really are.
+  const realCtx: Omit<LinkContext, "isGit"> = {
+    ...ctx,
+    home: await realOr(ctx.home),
+    folder: await realOr(ctx.folder),
+    root: ctx.root === undefined ? undefined : await realOr(ctx.root),
+    sameScope: await Promise.all(ctx.sameScope.map(realOr)),
+    otherScopesWrite: await Promise.all(ctx.otherScopesWrite.map(realOr)),
+  };
+  const refused = linkRefusal(real, { ...realCtx, isGit }) ?? linkRefusal(real, { ...ctx, isGit });
   if (refused) return { refused };
   return { path: real, tracked: ctx.mode === "write" && !isGit };
 }

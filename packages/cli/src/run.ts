@@ -55,7 +55,22 @@ import {
   sharedConfigDir,
   usageRecord,
 } from "@humanharness/shell/tasks";
-import { APP_SCOPE, DataError, DataStore, MAIN_SCOPE, buildDataContext, ScopeStore, generatedFiles, migrateToScopes, notesPrefix, readNotes, writeNote } from "@humanharness/workspace";
+import {
+  APP_SCOPE,
+  DataError,
+  DataStore,
+  MAIN_SCOPE,
+  ReviewLocks,
+  buildDataContext,
+  ScopeStore,
+  generatedFiles,
+  migrateToScopes,
+  notesPrefix,
+  readNotes,
+  reviewSummarySync,
+  runReviewRequest,
+  writeNote,
+} from "@humanharness/workspace";
 import { CliError, type Io, UsageError, parseCommand } from "./cli";
 import { promptAnswer } from "./input-prompt";
 import { MANIFEST } from "./paths";
@@ -233,7 +248,16 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
   const out = o.output;
   out.write(`Folder: ${folder}\n`);
 
-  const view = new TerminalView(out, engine.name, (out as { isTTY?: boolean }).isTTY === true, specs, () => modesOf(taskAction));
+  // Documents can be reviewed only when the agent may edit the folder (review spec D0): else no Review lines, no tools.
+  const canReview = harness.permissions.edit === "folder";
+  const view = new TerminalView(
+    out,
+    engine.name,
+    (out as { isTTY?: boolean }).isTTY === true,
+    specs,
+    () => modesOf(taskAction),
+    canReview ? (p) => reviewSummarySync(folder, p) : undefined,
+  );
   const tally = new UsageTally();
   // tasks.json is read knowing the manifest's modes and each action's phase ids (task-modes spec §6), as the app does.
   const store = new TaskStore(folder, {
@@ -303,6 +327,13 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
   const instructionSettings = async (settings: HarnessSettings) =>
     settingsSentences(settings, settingsValues(settings, await dataStore.get(SETTINGS_COLLECTION, undefined, person).catch(() => null)));
 
+  // The run is the folder's only review writer in this process (the window isn't there): its own locks.
+  const reviewLocks = new ReviewLocks();
+  const openTask = async () => {
+    const t = await tasks.runningTask();
+    return t ? { id: t.id, scope: t.scope } : null;
+  };
+
   // Same wiring as the app's main process (packages/shell/src/main/index.ts), with the terminal as the window.
   const runtime = memoise(() =>
     createRuntime({
@@ -316,6 +347,9 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
       references: references.map((r) => ({ label: r.label, path: r.path })),
       onSession: (s) => void tasks.sessionStarted(s).catch(() => undefined),
       data: (request) => agentDataRequest({ store: async () => dataStore, runningTask: () => tasks.runningTask() }, request),
+      // The agent's review tools (review spec §4), as the app's ReviewService.agent runs them: one set of locks for the
+      // run, keyed on the canonical path by `runReviewRequest`. Only when the agent may edit the folder (D0).
+      ...(canReview ? { review: (request: unknown) => runReviewRequest({ base: folder, locks: reviewLocks, task: openTask }, request) } : {}),
       // The harness's settings, as the app writes them (harness-settings spec §5). Absent without settings (D0).
       ...(harness.settings ? { instructionSettings: () => instructionSettings(harness.settings!) } : {}),
     }),

@@ -9,6 +9,7 @@ import { type HarnessJob, jobSchema, loadHarness } from "@humanharness/harness-s
 import { type Event, type HarnessWorkspace, type SessionSlot, type SlotOptions, type SlotSendOptions, createWorkspace } from "@humanharness/runtime";
 import { APP_SCOPE, MAIN_SCOPE, type Note } from "@humanharness/workspace";
 import { JobLog, type JobRunRecord } from "../../src/main/jobs/job-log";
+import { jobFirstMessage } from "../../src/main/jobs/job-prompt";
 import { type JobRunDeps, jobMessageFor, runJob } from "../../src/main/jobs/job-runner";
 import { TurnGate } from "../../src/main/turn-gate";
 
@@ -420,6 +421,37 @@ describe("JobRunner on a real workspace (Decision 5 addendum)", () => {
     // The slot's key is free again: it was closed.
     const again = await w.openSlot({ key: "job:r1", kind: "job" });
     await again.close();
+  }, 30_000);
+});
+
+describe("JobRunner in mock mode (part 3 Decision 10)", () => {
+  let ws: HarnessWorkspace | undefined;
+  afterEach(async () => {
+    await ws?.close();
+    ws = undefined;
+  });
+
+  it("fake-claude's mock mode answers a job's first message with job_result ok \"Mock run\" through the job's ui server", async () => {
+    const base = fs.mkdtempSync(path.join(root, "mock-"));
+    const state = path.join(base, "state", "mock.json");
+    ws = await createWorkspace({
+      harness: await loadHarness(FIXTURE),
+      engine: getEngine("claude"),
+      folder: path.join(base, "Work"),
+      gitdir: path.join(base, "h.git"),
+      language: "en",
+      command: fakeClaudeCommand(),
+      // No recordings at all: the job's answer never comes from them.
+      env: { HH_FAKE_MOCK_DIR: path.join(base, "no-recordings"), HH_FAKE_MOCK_STATE: state },
+    });
+    const w = ws;
+    const firstMessage = async () => jobFirstMessage({ brief: "Sync the tickets.", scope: "main", notesIndex: async () => "", actions: {} });
+    const s = setup(events(), { workspace: async () => w, profileFor: undefined, firstMessage });
+    const r = await runJob(s.d, "sync", job(), null, "manual");
+    expect(r).toMatchObject({ status: "ok", summary: "Mock run", tokens: expect.any(Number) });
+    expect(r!.tokens).toBeGreaterThan(0);
+    // A job's run leaves the mock's session state alone.
+    expect(fs.existsSync(state)).toBe(false);
   }, 30_000);
 });
 

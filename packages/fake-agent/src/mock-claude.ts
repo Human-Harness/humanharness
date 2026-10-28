@@ -3,7 +3,7 @@ import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSyn
 import path from "node:path";
 import { callMcpTool } from "./mcp-call";
 import { APP_FOLDERS, loadRecordings } from "./mock";
-import { type SessionPosition, replay } from "./mock-replay";
+import { type SessionPosition, isMockJobTurn, replay } from "./mock-replay";
 
 type McpServers = Record<string, { command: string; args?: string[]; env?: Record<string, string> }>;
 
@@ -178,6 +178,8 @@ async function playTurn(argv: string[], prompt: string, mcpServers: McpServers, 
     session_id: sessionId,
     usage: { input_tokens: u.input, output_tokens: u.output, cache_read_input_tokens: u.cacheRead, cache_creation_input_tokens: u.cacheWrite },
   });
+  // A job's run is one turn with no session to follow: it leaves the state alone.
+  if (isMockJobTurn(prompt)) return;
   // Saved last: a turn that failed or was cancelled does not advance the session.
   sessions[sessionId] = session;
   writeState(env.state, sessions);

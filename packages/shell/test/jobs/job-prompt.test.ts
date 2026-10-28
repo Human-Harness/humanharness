@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { MOCK_JOB_MARK, isMockJobTurn } from "@humanharness/fake-agent";
 import { APP_SCOPE, type Note, buildNotesIndex } from "@humanharness/workspace";
 import { JOB_BRIEF_CHARS, jobFirstMessage } from "../../src/main/jobs/job-prompt";
 import { notesIndexFor } from "../../src/main/notes-index";
@@ -100,5 +101,15 @@ describe("notesIndexFor (shared with a task's first message)", () => {
     expect(notes).toHaveBeenCalledWith("acme");
     expect(notes).toHaveBeenCalledWith(APP_SCOPE);
     expect(m.indexOf("own-note")).toBeLessThan(m.indexOf("## App-wide notes"));
+  });
+});
+
+describe("the job mark mock mode answers (part 3 Decision 10)", () => {
+  it("fake-agent's MOCK_JOB_MARK starts a line of every job's first message, and of no action's", async () => {
+    const m = await jobFirstMessage(base);
+    expect(m.split("\n")).toContain(`${MOCK_JOB_MARK} Don't ask anything.`);
+    expect(isMockJobTurn(m)).toBe(true);
+    expect(isMockJobTurn(await jobFirstMessage({ ...base, brief: "# Task: implement\n\nWrite it.", actions: {} }))).toBe(true);
+    expect(isMockJobTurn("# Task: implement\n\nWrite it.")).toBe(false);
   });
 });

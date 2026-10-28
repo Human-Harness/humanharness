@@ -34,6 +34,17 @@ export function promptKind(prompt: string): "close" | "checkpoint" | "phase" | "
   return "reply";
 }
 
+/**
+ * The sentence that opens the "how to end" part of a background job's first message (shell `jobFirstMessage` in
+ * jobs/job-prompt.ts; a copy: fake-agent never imports the shell; shell job-prompt.test pins it).
+ */
+export const MOCK_JOB_MARK = "This is a background job: nobody reads this conversation and nobody can answer.";
+/** What a job's turn reports in mock mode (parallel part 3 Decision 10): tests that need another result use scripts. */
+export const MOCK_JOB_RESULT = { status: "ok", summary: "Mock run" } as const;
+
+/** A background job's turn: a line of the prompt starts with the mark (the brief comes first, so not the prompt's start). */
+export const isMockJobTurn = (prompt: string): boolean => prompt.split("\n").some((line) => line.startsWith(MOCK_JOB_MARK));
+
 /** The phase id a phase change prompt names: its first line ends with (`<id>`). */
 const phaseOfPrompt = (prompt: string): string | undefined => /^Next part of this task: .*\(`([a-z][a-z0-9_-]{0,63})`\)/.exec(prompt)?.[1];
 
@@ -102,6 +113,10 @@ function answerTarget(turn: MockTurn, prompt: string): string | undefined {
  * task's first message and picks the recording; otherwise `position` says where the session is.
  */
 export function replay(recordings: Recording[], position: SessionPosition | undefined, prompt: string, newSession: boolean): { play: Play; session: SessionPosition } {
+  // A job's turn never plays a recording, whatever its brief names: it reports the canned result and ends.
+  if (isMockJobTurn(prompt)) {
+    return { play: { ...quiet(""), blocks: [{ tool: "job_result", input: { ...MOCK_JOB_RESULT } }] }, session: position ?? { action: null, turn: null } };
+  }
   if (newSession || !position) {
     // `!newSession && !position` (a lost state file) is treated as a first message too.
     // The longest match wins, so "# Topic: engines" never shadows "# Topic: engines and more".

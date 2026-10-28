@@ -3,6 +3,7 @@ import { createReadStream, promises as fs } from "node:fs";
 import path from "node:path";
 import type { FolderProblem, MoveError } from "@humanharness/ui/client";
 import { isProfileId, relativizeNoteFiles } from "@humanharness/workspace";
+import { pluginStateKey } from "./plugin-state";
 
 /** A move that failed with the reason the window shows. The old folder is untouched and still the app's folder. */
 export class MoveFailed extends Error {
@@ -73,6 +74,11 @@ export interface MoveDeps {
   subfolders?(): Promise<string[]>;
   /** The move journal in the app's data folder (`moveJournal`): `recoverMove` finishes or undoes a move cut short. */
   journal: string;
+  /**
+   * `<appDir>/plugin-state`: each base's plugin run state (approvals) is kept there under its real path's key, so it
+   * follows the folder to the new key. Absent (no plugins, D0): nothing there is touched.
+   */
+  pluginStateRoot?: string;
   ops?: Partial<MoveOps>;
   now?: () => number;
 }
@@ -286,6 +292,8 @@ export async function moveFolder(from: string, to: string, d: MoveDeps): Promise
   } catch (err) {
     throw new MoveFailed("failed", err);
   }
+  // Each base's plugin state key, taken while the old folder is still there (its real path).
+  const stateKeys = d.pluginStateRoot ? await Promise.all(rels.map((rel) => fs.realpath(path.join(source, rel)).then(pluginStateKey, () => null))) : [];
   const temp = `${target}${TEMP_MARK}${randomBytes(6).toString("hex")}`;
   const copy = copyIn(temp, target);
   // With profiles the journal names every history from the start, so a crash before "config-saved" (after the config
@@ -435,6 +443,7 @@ export async function moveFolder(from: string, to: string, d: MoveDeps): Promise
     return { oldRemoved: false, historyMoved: false };
   }
   await pruneReplaced(path.dirname(d.historyDir(target)), now());
+  if (d.pluginStateRoot) await carryPluginState(d.pluginStateRoot, rels, stateKeys, target, ops);
 
   // 6. The old folder goes to the Trash, only if nothing in it changed since the copy. The move is done either way.
   try {
@@ -449,6 +458,28 @@ export async function moveFolder(from: string, to: string, d: MoveDeps): Promise
     return { oldRemoved: false, historyMoved: true };
   } finally {
     await clearJournal(d.journal);
+  }
+}
+
+/**
+ * After the move: each base's plugin state folder is renamed to the new base's key, so approvals survive it. A state
+ * folder the new place already has is kept (the old one stays, and is logged). Never fails the move.
+ */
+async function carryPluginState(root: string, rels: string[], oldKeys: (string | null)[], target: string, ops: MoveOps): Promise<void> {
+  for (const [i, rel] of rels.entries()) {
+    const oldKey = oldKeys[i];
+    try {
+      if (!oldKey || !(await exists(path.join(root, oldKey)))) continue;
+      const newKey = pluginStateKey(await fs.realpath(path.join(target, rel)));
+      if (newKey === oldKey) continue;
+      if (await exists(path.join(root, newKey))) {
+        console.error("The new place has plugin state already; it is kept, and the old one stays", path.join(root, oldKey));
+        continue;
+      }
+      await ops.rename(path.join(root, oldKey), path.join(root, newKey));
+    } catch (err) {
+      console.error("Could not carry the plugin state to the new place", err);
+    }
   }
 }
 

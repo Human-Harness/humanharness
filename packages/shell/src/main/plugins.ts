@@ -89,12 +89,16 @@ export interface AgentCatalogueEntry {
 }
 
 type Loaded = PluginEntry & { manifest: PluginManifest };
+/** An action's vars schema (zod, from the SDK: the shell has no zod of its own). */
+type VarsSchema = ReturnType<typeof jsonSchemaToZod>;
 
 interface Running {
   entry: Loaded;
   approvedSecrets: Set<string>;
   /** The approved snapshot allows tasks too (a dev plugin: its own manifest): actions may open a prepared task. */
   approvedTasks: boolean;
+  /** Each action's vars schema, built once (a new manifest is a new Running; rescan clears it too). Null: unusable. */
+  varsSchemas: Map<string, VarsSchema | null>;
   broker: PluginBroker;
   scheduler: PluginScheduler;
   channel: PluginChannel;
@@ -271,6 +275,7 @@ export class PluginsController {
       entry: e,
       approvedSecrets,
       approvedTasks: approved.tasks && m.permissions.tasks,
+      varsSchemas: new Map(),
       data,
       workHours: parseWorkHours(stored[WORK_HOURS_KEY]) ?? DEFAULT_WORK_HOURS(),
       chips: new Map(),
@@ -587,6 +592,7 @@ export class PluginsController {
       const c = await this.base();
       if (!c) return;
       for (const [id, r] of [...this.running]) {
+        r.varsSchemas.clear();
         const e = this.entry(id);
         const rs = e ? reviewStatus(e, await c.state.state(id), this.harnessOn(id)) : null;
         // B8: a dist that adds a permission (or is gone or broken) stops until reviewed; new code restarts.
@@ -949,11 +955,22 @@ export class PluginsController {
     if ("panel" in t) return m.panels.some((p) => p.id === t.panel) ? t : null;
     const action = m.actions.find((a) => a.id === t.action);
     if (!action || !r.approvedTasks) return null;
-    try {
-      return jsonSchemaToZod(action.vars).safeParse(t.vars ?? {}).success ? t : null;
-    } catch {
-      return null;
+    const parsed = this.varsSchema(r, action)?.safeParse(t.vars ?? {});
+    // The vars as the schema parsed them: keys it doesn't declare never reach the prepared task.
+    return parsed?.success ? { action: action.id, vars: parsed.data as Record<string, unknown> } : null;
+  }
+
+  private varsSchema(r: Running, action: PluginManifest["actions"][number]): VarsSchema | null {
+    let schema = r.varsSchemas.get(action.id);
+    if (schema === undefined) {
+      try {
+        schema = jsonSchemaToZod(action.vars);
+      } catch {
+        schema = null;
+      }
+      r.varsSchemas.set(action.id, schema);
     }
+    return schema;
   }
 
   private async attentionView(): Promise<AttentionView> {

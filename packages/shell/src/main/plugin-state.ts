@@ -163,6 +163,12 @@ function cleanError(raw: unknown): PluginErrorLine | null {
   return source === undefined ? { at, message } : { at, source, message };
 }
 
+/** The folder in the app's per-harness folder that holds each base's run state (`<appDir>/plugin-state/<key>/`). */
+export const PLUGIN_STATE_DIR = "plugin-state";
+
+/** A base's run-state folder name: the SHA-256 of its real path, 32 hex chars (moving the folder carries it, move-folder). */
+export const pluginStateKey = (realBase: string): string => createHash("sha256").update(realBase).digest("hex").slice(0, 32);
+
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
 /**
@@ -191,7 +197,7 @@ export class PluginStateStore {
   private async stateFile(id: string): Promise<string> {
     pluginStateDir(this.base, id);
     this.stateFolder ??= fs.realpath(this.base).then(
-      (real) => path.join(this.appDir, "plugin-state", createHash("sha256").update(real).digest("hex").slice(0, 32)),
+      (real) => path.join(this.appDir, PLUGIN_STATE_DIR, pluginStateKey(real)),
       (err) => {
         this.stateFolder = null;
         throw err;

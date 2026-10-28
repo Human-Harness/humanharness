@@ -121,6 +121,7 @@ import { PLUGIN_SCHEME, PluginBackendHost } from "./plugin-host";
 import { registerPluginsIpc, safeStorageCrypto } from "./plugin-ipc";
 import { PluginPointers } from "./plugin-load";
 import { SecretStore } from "./plugin-secrets";
+import { PLUGIN_STATE_DIR } from "./plugin-state";
 import { PluginsController } from "./plugins";
 import { respondHandler } from "./respond-ipc";
 import { SettingsController } from "./settings";
@@ -204,6 +205,8 @@ let sidekickCtl: SidekickController | null = null;
 let pluginsCtl: PluginsController | null = null;
 /** The plugins' backend windows (Electron), with pluginsCtl. */
 let pluginHost: PluginBackendHost | null = null;
+/** `<appDir>/plugin-state`, with pluginsCtl: a folder move carries each base's approvals there to the new key. */
+let pluginStateRoot: string | null = null;
 const pluginLog = (message: string, err?: unknown) => console.error(`[plugins] ${message}`, err ?? "");
 /** The base changed (profile switch, folder change or move, set up): the old base's plugins stop, the new base's start. */
 const rebasePlugins = (): Promise<void> => pluginsCtl?.rebase().catch((err: unknown) => pluginLog("Could not move the plugins to the new folder", err)) ?? Promise.resolve();
@@ -1206,17 +1209,20 @@ function registerIpc() {
     await requireNoticeForChoice(patch.engineId, before.engineId, hasNotice);
     // A new folder: refused while a turn or a restore runs, and turns are refused until it is over; the old
     // folder's task ends and its runtime goes.
-    await saveWithFolderChange(patch.folder, before.folder, { isBusy: hold.folderBusy, guards, interrupt: () => tasks.interrupt(), dropRuntime }, () =>
-      saveConfigPatch(patch, before),
-    );
-    if (patch.folder !== undefined && patch.folder !== before.folder) {
-      if (before.folder) dropDataStoresUnder(before.folder);
-      await settleScopes()
-        .then(scopesChanged)
-        .catch((err: unknown) => console.error("Could not prepare the scopes", err));
+    try {
+      await saveWithFolderChange(patch.folder, before.folder, { isBusy: hold.folderBusy, guards, interrupt: () => tasks.interrupt(), dropRuntime }, () =>
+        saveConfigPatch(patch, before),
+      );
+      if (patch.folder !== undefined && patch.folder !== before.folder) {
+        if (before.folder) dropDataStoresUnder(before.folder);
+        await settleScopes()
+          .then(scopesChanged)
+          .catch((err: unknown) => console.error("Could not prepare the scopes", err));
+      }
+    } finally {
+      // Set up now, or another folder: the plugins follow the base, even when something above threw after the save.
+      if (pluginsCtl && (await currentBase().catch(() => null)) !== baseBefore) await rebasePlugins();
     }
-    // Set up now, or another folder: the plugins follow the base.
-    if (pluginsCtl && (await currentBase()) !== baseBefore) await rebasePlugins();
     // Set up now (or in a new folder): its setup.json is on file before the window can start a task (the interview's).
     await recordSetup(setupCtl, async () => (await validConfig()) !== null);
     if (patch.appearance) applyAppearance(patch.appearance);
@@ -1608,10 +1614,12 @@ function registerIpc() {
       saveFolder: async (folder) => void (await config.replaceFolder(folder)),
       historyDir: (folder) => historyDir(userData, folder),
       journal: moveJournal(userData),
+      ...(pluginStateRoot ? { pluginStateRoot } : {}),
       ops: { trash: (p) => shell.trashItem(p) },
     };
     // Checked and set with no await in between, so two requests can't both start a move.
     if (moving) return { ok: false, error: "busy" };
+    let pluginsStopped = false;
     const run = guardedMove({
       guards,
       isBusy: hold.folderBusy,
@@ -1620,7 +1628,12 @@ function registerIpc() {
       checkpoint: () => tasks.checkpointBeforeMove(),
       holdHistory: (held) => (historyHeld = held),
       flush: () => turns.flush(),
-      closeRuntime,
+      // The plugins work on the old folder too: stopped with the runtime, started again after (rebase, below).
+      closeRuntime: async () => {
+        await closeRuntime();
+        pluginsStopped = true;
+        await pluginsCtl?.stop().catch((err: unknown) => pluginLog("Could not stop the plugins before the move", err));
+      },
       restoresSettled: () => restores.settled(),
       resumeFromNotes: () => tasks.resumeFromNotes(),
       move: () => moveFolder(c.folder, to, deps),
@@ -1631,6 +1644,8 @@ function registerIpc() {
       result = await run;
     } finally {
       moving = null;
+      // Moved or not, the plugins start again in whichever folder is the app's now.
+      if (pluginsStopped) await rebasePlugins();
     }
     // The window always gets the state as it is now, whatever happened.
     const state = await appState().catch((err: unknown) => {
@@ -1639,7 +1654,6 @@ function registerIpc() {
     });
     if (!result.ok) return { ...result, ...(state ? { state } : {}) };
     dropDataStoresUnder(c.folder);
-    await rebasePlugins();
     if (!state) throw new Error("Could not read the app state after the move");
     const { oldRemoved, historyMoved } = result.done;
     return { ok: true, state, ...(oldRemoved ? {} : { leftBehind: c.folder }), ...(historyMoved ? {} : { historyLeftBehind: true }) };
@@ -1853,6 +1867,7 @@ if (loaded) {
     const appDir = path.join(hooks.sharedDir ?? sharedConfigDir(), harness.id);
     const host = new PluginBackendHost({ resources: path.join(here, "../../resources"), devTools: !app.isPackaged, electron: { BrowserWindow, session, ipcMain }, log: pluginLog });
     pluginHost = host;
+    pluginStateRoot = path.join(appDir, PLUGIN_STATE_DIR);
     pluginsCtl = new PluginsController({
       harness: { id: harness.id, name: harness.name, root: harness.root, ...(harness.plugins ? { plugins: harness.plugins } : {}) },
       devDirs: hooks.pluginDirs ?? [],

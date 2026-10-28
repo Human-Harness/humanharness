@@ -554,6 +554,66 @@ describe("PluginsController: attention", () => {
     await u.ctl.setOn("oncall", false);
     expect(await u.ctl.attentionTarget("oncall", "good")).toBeNull();
   });
+
+  it("a target's vars come back as the action's schema parsed them: extra keys are dropped", async () => {
+    let ctx: Ctx | undefined;
+    const u = await setup({
+      plugins: { bundled: ["oncall"], on: ["oncall"], local: false },
+      backends: { oncall: { s: (c) => ((ctx = c), new Promise(() => {})) } },
+    });
+    await bundled(u.root, "oncall", {
+      permissions: { tasks: true },
+      actions: [{ id: "ack", label: "Ack", tier: "light", vars: { type: "object", properties: { n: { type: "number" } }, required: ["n"] }, prompt: "Ack {{n}}" }],
+    });
+    await u.ctl.start();
+    await until(() => ctx !== undefined);
+    await ctx!.attention.raise({ key: "x", severity: "action", title: "Ack", target: { action: "ack", vars: { n: 2, extra: "smuggled" } } });
+    expect(await u.ctl.attentionTarget("oncall", "x")).toEqual({ action: "ack", vars: { n: 2 } });
+  });
+
+  it("an action of a plugin whose approved snapshot lacks tasks opens nothing", async () => {
+    let ctx: Ctx | undefined;
+    const u = await setup({
+      plugins: { bundled: ["oncall"], on: ["oncall"], local: false },
+      backends: { oncall: { s: (c) => ((ctx = c), new Promise(() => {})) } },
+    });
+    await bundled(u.root, "oncall", {
+      permissions: { tasks: true },
+      actions: [{ id: "ack", label: "Ack", tier: "light", vars: { type: "object", properties: {} }, prompt: "Ack" }],
+    });
+    await u.ctl.start();
+    await until(() => ctx !== undefined);
+    await ctx!.attention.raise({ key: "x", severity: "action", title: "Ack", target: { action: "ack", vars: {} } });
+    expect(await u.ctl.attentionTarget("oncall", "x")).toEqual({ action: "ack", vars: {} });
+    // A snapshot without tasks never runs beside a manifest with them (that is a review); the guard holds regardless.
+    (u.ctl as unknown as { running: Map<string, { approvedTasks: boolean }> }).running.get("oncall")!.approvedTasks = false;
+    expect(await u.ctl.attentionTarget("oncall", "x")).toBeNull();
+    expect((await u.ctl.attention.view()).items.find((i) => i.key === "x")?.hasTarget).toBe(false);
+  });
+
+  it("an action or a panel the plugin no longer declares opens nothing", async () => {
+    let ctx: Ctx | undefined;
+    const u = await setup({
+      plugins: { bundled: ["oncall"], on: ["oncall"], local: false },
+      backends: { oncall: { s: (c) => ((ctx = c), new Promise(() => {})) } },
+    });
+    const action = { id: "ack", label: "Ack", tier: "light", vars: { type: "object", properties: {} }, prompt: "Ack" };
+    await bundled(u.root, "oncall", { permissions: { tasks: true }, panels: [{ id: "queue", slot: "side", title: "Queue" }], actions: [action] });
+    await u.ctl.start();
+    await until(() => ctx !== undefined);
+    await ctx!.attention.raise({ key: "a", severity: "action", title: "Ack", target: { action: "ack", vars: {} } });
+    await ctx!.attention.raise({ key: "p", severity: "info", title: "Panel", target: { panel: "queue" } });
+    expect(await u.ctl.attentionTarget("oncall", "a")).not.toBeNull();
+    expect(await u.ctl.attentionTarget("oncall", "p")).not.toBeNull();
+    // A new version drops both (no new permission: it runs again without a review); the items stay in the inbox.
+    ctx = undefined;
+    await bundled(u.root, "oncall", { version: "1.1.0", permissions: { tasks: true }, panels: [{ id: "other", slot: "side", title: "Other" }], actions: [{ ...action, id: "other" }] });
+    await u.ctl.rescan();
+    await until(() => ctx !== undefined);
+    expect((await u.ctl.attention.view()).items.map((i) => [i.key, i.hasTarget])).toEqual(expect.arrayContaining([["a", false], ["p", false]]));
+    expect(await u.ctl.attentionTarget("oncall", "a")).toBeNull();
+    expect(await u.ctl.attentionTarget("oncall", "p")).toBeNull();
+  });
 });
 
 describe("PluginsController: agent surface", () => {

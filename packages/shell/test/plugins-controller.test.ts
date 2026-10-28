@@ -2,6 +2,7 @@ import { Buffer } from "node:buffer";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
+import { secretForms } from "@humanharness/harness-sdk/plugin-fixtures";
 import type { PluginReview } from "@humanharness/ui/client";
 import { type Ctx, HIDDEN, QUEUES, TEAM, bundled, files, setup, tmp, until, writePlugin } from "./plugins-fixtures";
 
@@ -353,6 +354,44 @@ describe("PluginsController: settings, keys, test", () => {
     expect(shown).toContain("(a line held a key; not shown)");
     for (const f of forms) expect(shown).not.toContain(f);
     expect(shown.toLowerCase()).not.toContain(Buffer.from(KEY).toString("hex"));
+  });
+
+  it("B6: a key straddling the cut (2000 for a log line, 500 for an error) is hidden before the cut, in every form", async () => {
+    const KEY = "secret/value+123";
+    const forms = [...new Set([...secretForms(KEY), Buffer.from(KEY).toString("hex"), Buffer.from(KEY).toString("hex").toUpperCase()])];
+    // Each form starts 6 characters before the cut: cutting first would keep its first 6 characters, which no longer
+    // read as the key.
+    const at = (n: number, f: string) => `${"x".repeat(n - 6)}${f} end`;
+    let calls = 0;
+    const t = await setup({
+      plugins: { bundled: ["oncall"], on: ["oncall"], local: false },
+      backends: {
+        oncall: {
+          s: async (ctx) => {
+            if (calls++ === 0) return;
+            const f = forms[calls - 2]!;
+            await ctx.call("log", "error", at(2000, f));
+            throw new Error(at(500, f));
+          },
+        },
+      },
+    });
+    await bundled(t.root, "oncall", { permissions: { secrets: [{ id: "tok", label: "Token" }] } });
+    await t.ctl.start();
+    await until(async () => (await t.ctl.detail("oncall"))!.sources[0].lastOk !== undefined);
+    expect(await t.ctl.setSecret("oncall", "tok", KEY)).toEqual({ ok: true });
+    const shown: string[] = [];
+    for (const f of forms) {
+      const [r] = await t.ctl.test("oncall");
+      expect(r).toMatchObject({ ok: false });
+      expect(r.error!.length).toBeLessThanOrEqual(500);
+      shown.push(r.error!, (await t.ctl.detail("oncall"))!.row.lastError ?? "");
+    }
+    const errors = (await t.ctl.detail("oncall"))!.errors.map((e) => e.message);
+    // Both lines of every run were kept: the log line, cut at 2000, and the error.
+    expect(errors.filter((m) => m.startsWith("xxxx") && m.length > 1900)).toHaveLength(forms.length);
+    for (const m of errors) expect(m.length).toBeLessThanOrEqual(2000);
+    for (const text of [...shown, ...errors]) for (const f of forms) expect(text, f).not.toContain(f.slice(0, 6));
   });
 
   it("refresh is refused for a plugin that is off or a source it doesn't declare", async () => {

@@ -189,7 +189,11 @@ export type PluginRpc =
   | { method: "done"; runId: string; ok: boolean; error?: string }
   | { method: "ctx"; runId: string; name: string; args: unknown[] };
 
-export const RPC_LIMITS = { sources: 100, sourceChars: 64, errorChars: 500, runIdChars: 64, nameChars: 40, args: 8 } as const;
+/**
+ * `errorChars` bounds an error's raw text, far past the 500 characters shown: main hides the plugin's keys in it and
+ * only then cuts, so a key across the cut can't leave its start behind (B6). The host script cuts at the same length.
+ */
+export const RPC_LIMITS = { sources: 100, sourceChars: 64, errorChars: 16_000, runIdChars: 64, nameChars: 40, args: 8 } as const;
 
 /**
  * The largest `rpc` payload, in UTF-8 bytes. The payload crosses IPC as one JSON string (the preload stringifies it):

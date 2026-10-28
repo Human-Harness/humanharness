@@ -3,7 +3,8 @@
 // them; every `ctx` call goes over `rpc` to the broker. It runs in the plugin's own page, beside code assumed hostile:
 // it is a convenience for backend authors, not a boundary. Main checks every call it sends (parsePluginRpc, broker).
 
-const ERROR_CHARS = 500;
+// Main's RPC_LIMITS.errorChars: main hides the plugin's keys in an error, then cuts it to the 500 characters it shows.
+const ERROR_CHARS = 16000;
 
 const errorText = (e) => String(e instanceof Error ? e.message : e).slice(0, ERROR_CHARS);
 

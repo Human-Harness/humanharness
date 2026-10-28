@@ -44,7 +44,7 @@ import type {
   PreparedTaskView,
 } from "@humanharness/ui/client";
 import { type AttentionInput, type AttentionItem, type AttentionOrigin, AttentionStore, type AttentionTarget, DataError } from "@humanharness/workspace";
-import { type BrokerDataOp, PluginBroker, type PluginAttentionInput } from "./plugin-broker";
+import { BROKER_LIMITS, type BrokerDataOp, PluginBroker, type PluginAttentionInput } from "./plugin-broker";
 import { PluginChannel } from "./plugin-channel";
 import { PluginData } from "./plugin-data";
 import type { runFile } from "./plugin-exec";
@@ -496,8 +496,10 @@ export class PluginsController {
         else r.chips.delete(chip);
         this.pushSurface();
       },
-      // The line may echo a key the service sent back: hidden before the error log (and the detail view) see it (B6).
-      log: async (level, message) => this.appendError(c, id, { message: await this.hidden(r, level === "error" ? message : `${level}: ${message}`) }),
+      // The line may echo a key the service sent back: hidden before the error log (and the detail view) see it (B6),
+      // and only then cut, so a key across the cut can't leave its start behind.
+      log: async (level, message) =>
+        this.appendError(c, id, { message: (await this.hidden(r, level === "error" ? message : `${level}: ${message}`)).slice(0, BROKER_LIMITS.logChars) }),
       fetch: this.d.fetch,
       // A host check may look names up (network): fixture mode has nothing to look up.
       ...(this.d.allowHost && !this.d.fixtures ? { allowHost: this.d.allowHost } : {}),
@@ -558,9 +560,12 @@ export class PluginsController {
         const missing = r.entry.manifest.sources.filter((s) => !sources.includes(s.id)).map((s) => s.id);
         if (missing.length > 0) void this.appendError(c, r.entry.id, { message: `backend.js defines no source ${missing.join(", ")}` });
       },
-      (err: Error) => {
+      async (err: Error) => {
         if (r.stopped || r.channel !== channel || /stopped/.test(err.message)) return;
-        r.loadError = err.message.slice(0, 500);
+        // As a run's error: the keys hidden, then cut (B6).
+        const message = await this.redacted(r, err.message);
+        if (r.stopped || r.channel !== channel) return;
+        r.loadError = message;
         void this.appendError(c, r.entry.id, { message: `The backend failed to load: ${r.loadError}` });
         void this.push();
       },

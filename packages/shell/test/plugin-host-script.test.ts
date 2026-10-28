@@ -141,7 +141,7 @@ describe("the core host script (Decision 10)", () => {
     ]);
   });
 
-  it("an error text is cut to 500 characters; an inherited name is no source", async () => {
+  it("an error text is cut to 16000 characters (main hides keys, then cuts to 500); an inherited name is no source", async () => {
     const { rpc, calls } = fakeRpc([
       { kind: "run", runId: "r1", source: "long" },
       { kind: "run", runId: "r2", source: "toString" },
@@ -150,14 +150,14 @@ describe("the core host script (Decision 10)", () => {
       default: {
         sources: {
           long: async () => {
-            throw new Error("x".repeat(2000));
+            throw new Error("x".repeat(20_000));
           },
         },
       },
     }));
     await settle();
     const done = calls.filter(([m]) => m === "done").map(([, a]) => a as { error: string });
-    expect(done[0]!.error).toHaveLength(500);
+    expect(done[0]!.error).toHaveLength(16_000);
     expect(done[1]!.error).toBe('No source "toString"');
   });
 

@@ -238,7 +238,8 @@ describe("parsePluginRpc (every rpc argument checked before anything sees it)", 
     expect(rpc("ready", { sources: ["queues"] })).toEqual({ method: "ready", sources: ["queues"] });
     expect(rpc("ready", { error: "SyntaxError: x" })).toEqual({ method: "ready", error: "SyntaxError: x" });
     expect(rpc("done", { runId: "r1", ok: true })).toEqual({ method: "done", runId: "r1", ok: true });
-    expect(rpc("done", { runId: "r1", ok: false, error: "x".repeat(900) })).toEqual({ method: "done", runId: "r1", ok: false, error: "x".repeat(500) });
+    // Raw, far past the 500 shown: main hides keys before it cuts.
+    expect(rpc("done", { runId: "r1", ok: false, error: "x".repeat(20_000) })).toEqual({ method: "done", runId: "r1", ok: false, error: "x".repeat(16_000) });
     expect(rpc("ctx", { runId: "r1", name: "settings.get", args: [] })).toEqual({ method: "ctx", runId: "r1", name: "settings.get", args: [] });
   });
 

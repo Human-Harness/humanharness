@@ -57,7 +57,11 @@ export interface BrokerDeps {
   settings(): Promise<Record<string, unknown>>;
   attention: { raise(item: PluginAttentionInput): Promise<void>; resolve(key: string): Promise<void> };
   chips(id: string, chip: { text: string; severity: PluginSeverity } | null): void;
-  /** The plugin's error log; may reject (a refused write), which the broker swallows. */
+  /**
+   * The plugin's error log; may reject (a refused write), which the broker swallows. `message` is one line but uncut
+   * (bounded by the call's `chars`): the receiver hides the keys, then cuts to `BROKER_LIMITS.logChars` — cutting
+   * first could keep the start of a key, which then no longer reads as one (B6).
+   */
   log(level: "info" | "warn" | "error", message: string): Promise<void>;
   fetch: typeof fetch;
   /** An extra check of each fetch hop's host name (e.g. public addresses only). */
@@ -494,8 +498,8 @@ function logLevel(v: unknown): (typeof LEVELS)[number] {
   return v as (typeof LEVELS)[number];
 }
 
-/** One log line: controls become spaces, at most BROKER_LIMITS.logChars characters. */
+/** One log line: controls become spaces. Not cut: the log dep hides keys first (see BrokerDeps.log). */
 function oneLine(v: unknown): string {
   if (typeof v !== "string") fail("A log message is text");
-  return (v as string).slice(0, BROKER_LIMITS.logChars * 2).replace(CONTROLS, " ").replace(/ {2,}/g, " ").trim().slice(0, BROKER_LIMITS.logChars);
+  return (v as string).replace(CONTROLS, " ").replace(/ {2,}/g, " ").trim();
 }

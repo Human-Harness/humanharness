@@ -282,11 +282,11 @@ describe("PluginBroker (plugins spec §4.2)", () => {
     expect(await b.call(run.id, "settings.get", [])).toMatchObject({ ok: true });
   });
 
-  it("log lines are capped at 2000 characters, one line, and a failing log never fails the call", async () => {
+  it("log lines are one line, uncut (the log dep hides keys, then cuts), and a failing log never fails the call", async () => {
     const { b, seen } = broker();
     const run = b.startRun("queues");
     await b.call(run.id, "log", ["info", "x".repeat(5000)]);
-    expect((seen.logs[0] as [string, string])[1].length).toBeLessThanOrEqual(2000);
+    expect((seen.logs[0] as [string, string])[1]).toHaveLength(5000);
     await b.call(run.id, "log", ["warn", "a\nb\u0000c"]);
     expect(seen.logs[1]).toEqual(["warn", "a b c"]);
     const failing = broker({ log: async () => { throw new Error("refused"); } } as never);

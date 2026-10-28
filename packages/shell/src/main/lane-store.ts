@@ -1,6 +1,6 @@
 import path from "node:path";
 import type { ActionStatus } from "@humanharness/ui/client";
-import type { TasksFile } from "./task-store";
+import type { CurrentTask, TasksFile } from "./task-store";
 
 /** What a lane reads and writes through: a `TaskStore` (or a test's memory). `file`, when given, keys the write chain. */
 export type TasksFileStore = { load(): Promise<TasksFile>; save(state: TasksFile): Promise<void>; readonly file?: string };
@@ -74,7 +74,7 @@ export class LaneStore {
       const at = all.findIndex((l) => l.id === this.id);
       const lanes = all.filter((l) => l.id !== this.id);
       const isNew = bases.every((b) => b.current === null);
-      if (state.current && (at >= 0 || isNew)) lanes.splice(at < 0 ? lanes.length : at, 0, state.current);
+      if (state.current && (at >= 0 || isNew)) lanes.splice(at < 0 ? lanes.length : at, 0, withBoardFields(state.current, all[at]));
       const { open: _open, engine: _engine, scopes: _scopes, ...rest } = fresh;
       const scopes = mergeScopes(bases.map((b) => b.scopes), state.scopes, fresh.scopes);
       const merged: TasksFile = {
@@ -91,6 +91,25 @@ export class LaneStore {
     });
   }
 
+  /**
+   * The board's own fields of this lane's task (`tokens`, `conflict`): `fn` gets them as the file has them now, and
+   * only they change. The rest of the task and the lane's merge base stay as they are. Nothing when the file no
+   * longer lists the lane.
+   */
+  amend(fn: (fields: BoardFields) => BoardFields): Promise<void> {
+    return withTasksFile(this.file, async () => {
+      const fresh = await this.file.load();
+      const lanes = fresh.lanes ?? [];
+      const at = lanes.findIndex((l) => l.id === this.id);
+      if (at < 0) return;
+      const { tokens, conflict, ...task } = lanes[at];
+      const next = fn({ ...(tokens !== undefined ? { tokens } : {}), ...(conflict !== undefined ? { conflict: [...conflict] } : {}) });
+      const out = [...lanes];
+      out[at] = { ...task, ...(next.tokens !== undefined ? { tokens: next.tokens } : {}), ...(next.conflict?.length ? { conflict: next.conflict } : {}) };
+      await this.file.save({ ...fresh, lanes: out });
+    });
+  }
+
   private remember(view: TasksFile): void {
     const text = JSON.stringify(view);
     if (this.snapshots.some((s) => JSON.stringify(s) === text)) return;
@@ -98,6 +117,18 @@ export class LaneStore {
     // The oldest stays (the state an update started from is usually the first read); the next oldest goes.
     if (this.snapshots.length > SNAPSHOTS_MAX) this.snapshots.splice(1, 1);
   }
+}
+
+/** What the board keeps on a lane's task beside the task manager's state (parallel spec §9.1). */
+export type BoardFields = Pick<CurrentTask, "tokens" | "conflict">;
+
+/**
+ * `task` as the lane saves it, with the board's fields as the file has them (`was`): only `amend` changes those, so a
+ * task manager's save of a state read before an `amend` never undoes it.
+ */
+function withBoardFields(task: CurrentTask, was: CurrentTask | undefined): CurrentTask {
+  const { tokens: _tokens, conflict: _conflict, ...own } = task;
+  return { ...own, ...(was?.tokens !== undefined ? { tokens: was.tokens } : {}), ...(was?.conflict !== undefined ? { conflict: was.conflict } : {}) };
 }
 
 /** `f` as lane `id` sees it: its task as `current`, no `lanes` and no `focus`. */

@@ -35,6 +35,27 @@ describe("LaneStore (Decision 3)", () => {
     expect(m.peek().focus).toBe("b");
   });
 
+  it("amend changes only the board's tokens and conflict of the lane's task; a lane the file dropped stays dropped", async () => {
+    const m = memory({ version: 1, current: null, actions: { intro: "done" }, lanes: [task("a", { turns: 2 }), task("b")], focus: "b" });
+    const a = new LaneStore(m, "a");
+    await a.amend((f) => ({ ...f, tokens: (f.tokens ?? 0) + 40, conflict: ["spec.md"] }));
+    expect(m.peek()).toEqual({ version: 1, current: null, actions: { intro: "done" }, lanes: [task("a", { turns: 2, tokens: 40, conflict: ["spec.md"] }), task("b")], focus: "b" });
+    await a.amend((f) => ({ ...f, conflict: [] }));
+    expect(m.peek().lanes?.[0]).toEqual(task("a", { turns: 2, tokens: 40 }));
+    const gone = new LaneStore(m, "gone");
+    await gone.amend(() => ({ tokens: 9 }));
+    expect(m.peek().lanes?.map((l) => l.id)).toEqual(["a", "b"]);
+  });
+
+  it("a save of a state read before an amend keeps the amended tokens and conflict", async () => {
+    const m = memory({ version: 1, current: null, actions: {}, lanes: [task("a", { tokens: 5 })] });
+    const a = new LaneStore(m, "a");
+    const seen = await a.load();
+    await a.amend((f) => ({ ...f, tokens: 12, conflict: ["notes.md"] }));
+    await a.save({ ...seen, current: { ...seen.current!, turns: 1, tokens: 0, conflict: ["x.md"] } });
+    expect(m.peek().lanes).toEqual([task("a", { turns: 1, tokens: 12, conflict: ["notes.md"] })]);
+  });
+
   it("a lane whose task ended is removed; a new task is added", async () => {
     const m = memory({ version: 1, current: null, actions: {}, lanes: [task("a")] });
     await new LaneStore(m, "a").save({ version: 1, current: null, actions: { intro: "done" } });

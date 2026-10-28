@@ -1,4 +1,4 @@
-import { type Event, type LimitWindow, fail } from "@humanharness/runtime";
+import { type Event, type LimitWindow, type TurnAttribution, fail } from "@humanharness/runtime";
 import { type TurnOptions, isHeld } from "./turn-controller";
 import { type Cap, Dropped, type TurnGate } from "./turn-gate";
 
@@ -32,6 +32,8 @@ export function gatedTurns(
      * its TurnController's failed start, so the chat keeps the person's line and the error. Absent: it ends unstarted.
      */
     startFailed?: (message: string, options: TurnOptions, err: unknown) => Promise<void>;
+    /** Every turn's attribution (parallel spec §5.3), after the caller's own `onAttribution`. */
+    onAttribution?: (a: TurnAttribution) => void;
   },
 ): Turns & { isQueued(): boolean } {
   const now = o.now ?? Date.now;
@@ -69,8 +71,17 @@ export function gatedTurns(
   const run = async (message: string, options: TurnOptions, release: () => void) => {
     let resetsAt: string | undefined;
     try {
+      const onAttribution = o.onAttribution;
       await inner.send(message, {
         ...options,
+        ...(onAttribution
+          ? {
+              onAttribution: (a: TurnAttribution) => {
+                options.onAttribution?.(a);
+                onAttribution(a);
+              },
+            }
+          : {}),
         onEvent: (e) => {
           if (e.type === "limits") resetsAt = resetOf(e.windows) ?? resetsAt;
           if (e.type === "done" && !e.ok && e.error.code === "out-of-quota") outOfQuota(resetsAt);

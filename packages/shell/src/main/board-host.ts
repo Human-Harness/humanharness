@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { type ParallelCaps, isConcurrent } from "@humanharness/harness-sdk";
-import type { Event, HarnessWorkspace, SessionSlot, SlotRef } from "@humanharness/runtime";
+import type { Event, HarnessWorkspace, SessionSlot, SlotRef, TurnAttribution } from "@humanharness/runtime";
 import type { AppConfig, ChatEntry, ChatLoad, TaskView, TasksState } from "@humanharness/ui/client";
-import { type History, taskChatFile } from "@humanharness/workspace";
+import { type History, MAIN_SCOPE, taskChatFile } from "@humanharness/workspace";
 import { ChatLog } from "./chat-log";
 import { migrateChats } from "./chat-migration";
 import { gatedTurns } from "./gated-turns";
@@ -12,7 +12,7 @@ import { LiveBuffer, laneEmit } from "./live-buffer";
 import { type EngineHold, effectiveCaps, engineHold } from "./parallel-config";
 import { TaskBoard, type LaneHandle } from "./task-board";
 import { type TaskDeps, TaskManager } from "./task-manager";
-import { type CurrentTask, TaskStore, emptyTasks, scopeOfTask } from "./task-store";
+import { CONFLICT_MAX, type CurrentTask, TaskStore, emptyTasks, scopeOfTask } from "./task-store";
 import { type ChatLogLike, type TurnDeps, type TurnOptions, TurnController, memoise } from "./turn-controller";
 import { TurnGate } from "./turn-gate";
 
@@ -25,6 +25,21 @@ export function hostMode(harness: { parallel?: unknown }): HostMode {
 
 /** What the person sees when a sleeping lane's engine couldn't load its earlier conversation (spec §4, PT-S4). */
 export const RESUME_FAILED = "Couldn't resume the earlier conversation; started a new one.";
+
+/**
+ * The notice both tasks get when a turn's path was also changed by another task (spec §5.3). `other`: the other task's
+ * name, or null when it has ended. The same text as the window's `parallel.conflict` and `parallel.conflictEnded`.
+ */
+export function conflictNotice(paths: readonly string[], other: string | null): string {
+  const list = paths.join(", ");
+  return other === null ? `A task that has ended also changed ${list}.` : `This task and “${other}” both changed ${list}.`;
+}
+
+/** A usage event's tokens for the task's count (spec §9.1): what the engine read and wrote, never the cache. */
+function tokensOf(e: Extract<Event, { type: "usage" }>): number {
+  const n = (v: number) => (Number.isFinite(v) && v > 0 ? Math.floor(v) : 0);
+  return n(e.inputTokens) + n(e.outputTokens);
+}
 
 /** How long a lane waits for the person before its engine process goes (spec §4; open question 7). */
 const IDLE_SLEEP_MS = 10 * 60_000;
@@ -78,7 +93,20 @@ interface Lane {
   known: string | null;
   /** Set by a gated turn whose `beforeStart` failed: its TurnController start ends with that failure. */
   startFailed: boolean;
+  /** The lane's view of tasks.json: the board's `tokens` and `conflict` are written through it. */
+  store: LaneStore;
+  /** The lane's events: the buffer, and the window when focused. */
+  emit: (e: Event) => void;
+  /** Conflict notices that came while the lane's turn ran: its chat gets them after that turn's own entries. */
+  notices: Notice[];
+  /** The conflict bookkeeping of the lane's last attribution: the turn's end waits for it. */
+  marking: Promise<void>;
+  /** The lane's task as tasks.json last had it (its name and scope never change): conflicts name it synchronously. */
+  task?: CurrentTask;
 }
+
+/** A notice for a task's chat (`scope`: the chat it is in). */
+type Notice = { scope: string; entry: ChatEntry };
 
 export type BoardHost = ReturnType<typeof createBoardHost>;
 
@@ -183,7 +211,7 @@ export function createBoardHost(d: BoardHostDeps, initial: { engineId: string | 
 
   function newLane(id: string): Lane {
     const emit = laneEmit(id, buffer, { isFocused: (x) => board.isFocused(x), toWindow: (e) => d.emit(e) });
-    const lane = { id, known: null, startFailed: false } as unknown as Lane;
+    const lane = { id, known: null, startFailed: false, store: new LaneStore(file, id), emit, notices: [], marking: Promise.resolve() } as unknown as Lane;
     lane.slot = memoise<SessionSlot>(async () => {
       const ws = await workspace.get();
       if (!ws) return null;
@@ -217,18 +245,29 @@ export function createBoardHost(d: BoardHostDeps, initial: { engineId: string | 
         lane.startFailed = true;
         return lane.controller.send(message, options);
       },
+      onAttribution: (a) => conflicted(lane, a),
     });
     const turns = {
       send(message: string, options: TurnOptions) {
         // The person's line starts the buffer of what focusing this lane replays (Decision 6).
         if (!lane.turns.isBusy() && !options.quiet && !options.skipUserEntry) buffer.user(id, { text: options.display ?? message, at: new Date().toISOString() });
-        return lane.turns.send(message, options);
+        // This send's own usage events only: a retry is another send with its own (spec §9.1).
+        let used = 0;
+        return lane.turns
+          .send(message, {
+            ...options,
+            onEvent: (e) => {
+              if (e.type === "usage") used += tokensOf(e);
+              options.onEvent?.(e);
+            },
+          })
+          .finally(() => turnEnded(lane, used));
       },
       isBusy: () => lane.turns.isBusy(),
       cancel: () => lane.turns.cancel(),
     };
     const overrides: Partial<TaskDeps> = {
-      store: new LaneStore(file, id),
+      store: lane.store,
       turns,
       newId: () => id,
       changed: (view) => laneChanged(id, view),
@@ -265,8 +304,105 @@ export function createBoardHost(d: BoardHostDeps, initial: { engineId: string | 
     return lane;
   }
 
+  /**
+   * After each send of lane `l` (a refused one too): its tokens are added once, then the notices held for its turn go
+   * to its chat. Never throws: the send's own outcome stands.
+   */
+  async function turnEnded(l: Lane, used: number): Promise<void> {
+    await l.marking;
+    if (used > 0) {
+      const tokens = (was: number | undefined) => Math.min(Number.MAX_SAFE_INTEGER, (was ?? 0) + used);
+      await l.store.amend((f) => ({ ...f, tokens: tokens(f.tokens) })).catch((err: unknown) => console.error("Could not count the task's tokens", err));
+      tasksChanged();
+    }
+    if (l.turns.isBusy() || l.notices.length === 0) return;
+    await appendNotices(l, l.notices.splice(0));
+  }
+
+  /**
+   * An overlapped turn of lane `l` ended (spec §5.3): each path another task also changed since the turn's start marks
+   * both tasks (`conflict`, newest last, at most CONFLICT_MAX) and both chats get a notice naming the other task. A task
+   * that has ended gets nothing; this one's notice says so. Called just before the turn's `done`: the notices are decided
+   * now, so a running turn's window shows them inside the turn.
+   */
+  function conflicted(l: Lane, a: TurnAttribution): void {
+    const paths: string[] = [];
+    const byTask = new Map<string, string[]>();
+    for (const c of a.conflicts) {
+      const others = c.tasks.filter((t) => t !== l.id);
+      if (others.length === 0) continue;
+      if (!paths.includes(c.path)) paths.push(c.path);
+      for (const t of others) {
+        const p = byTask.get(t) ?? [];
+        if (!p.includes(c.path)) p.push(c.path);
+        byTask.set(t, p);
+      }
+    }
+    if (paths.length === 0) return;
+    const marks: [Lane, string[]][] = [[l, paths]];
+    const now: [Lane, Notice][] = [];
+    const ended: string[] = [];
+    for (const [other, shared] of byTask) {
+      const x = lanes.get(other);
+      if (!x?.task) {
+        for (const p of shared) if (!ended.includes(p)) ended.push(p);
+        continue;
+      }
+      notify(l, conflictNotice(shared, d.label(x.task)), now);
+      notify(x, conflictNotice(shared, l.task ? d.label(l.task) : null), now);
+      marks.push([x, shared]);
+    }
+    if (ended.length > 0) notify(l, conflictNotice(ended, null), now);
+    const mark = (x: Lane, add: string[]) =>
+      x.store.amend((f) => ({ ...f, conflict: [...(f.conflict ?? []).filter((p) => !add.includes(p)), ...add].slice(-CONFLICT_MAX) }));
+    l.marking = l.marking.then(async () => {
+      for (const [x, add] of marks) await mark(x, add).catch((err: unknown) => console.error("Could not record a conflict", err));
+      for (const [x, n] of now) await appendNotices(x, [n]);
+      tasksChanged();
+    });
+  }
+
+  /**
+   * A notice for lane `x`'s chat. While its turn runs, the buffer and (when focused) the window show it now, and its
+   * chat gets it after the turn's own entries; otherwise it goes to `now`, for its chat at once (the window shows it on
+   * its next load).
+   */
+  function notify(x: Lane, text: string, now: [Lane, Notice][]): void {
+    const notice: Notice = {
+      scope: x.task ? scopeOfTask(x.task) : MAIN_SCOPE,
+      entry: { id: randomUUID(), role: "assistant", text, blocks: [], activities: [], at: new Date().toISOString(), task: x.id },
+    };
+    if (!x.turns.isBusy()) {
+      now.push([x, notice]);
+      return;
+    }
+    x.notices.push(notice);
+    const id = randomUUID();
+    x.emit({ type: "activity", id, kind: "other", detail: text, state: "start" });
+    x.emit({ type: "activity", id, kind: "other", detail: text, state: "end" });
+  }
+
+  async function appendNotices(x: Lane, notices: Notice[]): Promise<void> {
+    await migrated.catch(() => undefined);
+    for (const n of notices) {
+      try {
+        await (await d.chatLog(n.scope, x.id))?.append(n.entry);
+      } catch (err) {
+        console.error("Could not save a notice in the task's chat", err);
+      }
+    }
+  }
+
   /** A lane's TaskManager `changed`: the window's view when it is the focused one, the inbox, the idle sleep, settling. */
   function laneChanged(id: string, view: TaskView): void {
+    void file.load().then(
+      (f) => {
+        const lane = lanes.get(id);
+        const t = f.lanes?.find((x) => x.id === id);
+        if (lane && t) lane.task = t;
+      },
+      () => undefined,
+    );
     if (board.isFocused(id)) d.send("hh:tasks", view);
     if (view.current?.status === "waiting") board.laneWaiting(id);
     else board.laneActive(id);

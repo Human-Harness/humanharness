@@ -2,9 +2,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
-import type { Event, HarnessWorkspace, SessionSlot, SlotOptions, SlotRef } from "@humanharness/runtime";
+import type { Event, HarnessWorkspace, SessionSlot, SlotOptions, SlotRef, SlotSendOptions, TurnAttribution } from "@humanharness/runtime";
 import type { AppConfig, ChatEntry, TasksState } from "@humanharness/ui/client";
-import { type BoardHostDeps, RESUME_FAILED, createBoardHost, hostMode } from "../src/main/board-host";
+import { type BoardHostDeps, RESUME_FAILED, conflictNotice, createBoardHost, hostMode } from "../src/main/board-host";
 import { ChatLog } from "../src/main/chat-log";
 import type { TaskDeps } from "../src/main/task-manager";
 import { TaskStore } from "../src/main/task-store";
@@ -25,7 +25,9 @@ interface FakeTurn {
   slot: string;
   message: string;
   emit: (e: Event) => void;
-  end: (events?: Event[]) => void;
+  options: SlotSendOptions | undefined;
+  /** Emits `events`; an `attribution` reaches `onAttribution` just before the `done`, as the workspace's slot does. */
+  end: (events?: Event[], attribution?: TurnAttribution) => void;
 }
 
 /**
@@ -55,7 +57,7 @@ function host(o: { tasks?: number; engineId?: string; config?: Partial<AppConfig
         options: so,
         sleeps: 0,
         isBusy: () => busy,
-        send(message: string, emit: (e: Event) => void) {
+        send(message: string, emit: (e: Event) => void, options?: SlotSendOptions) {
           if (busy) throw new Error("A turn is already running");
           busy = true;
           running++;
@@ -65,10 +67,14 @@ function host(o: { tasks?: number; engineId?: string; config?: Partial<AppConfig
             slot: so.key,
             message,
             emit,
-            end: (events = [ok]) => {
+            options,
+            end: (events = [ok], attribution) => {
               running--;
               busy = false;
-              for (const e of events) emit(e);
+              for (const e of events) {
+                if (e.type === "done" && attribution) options?.onAttribution?.(attribution);
+                emit(e);
+              }
               end();
             },
           });
@@ -389,5 +395,150 @@ describe("the board host (parallel spec §6, §7)", () => {
     await t.h.closeAll();
     expect(t.slots.size).toBe(0);
     expect((await t.file()).lanes).toHaveLength(1);
+  });
+});
+
+describe("conflicts and tokens per task (parallel spec §5.3, §9.1)", () => {
+  const usage = (input: number, output: number): Event => ({ type: "usage", inputTokens: input, outputTokens: output, cacheReadTokens: 1000, cacheWriteTokens: 500 });
+  const attribution = (conflicts: TurnAttribution["conflicts"]): TurnAttribution => ({ owned: [], shared: conflicts.map((c) => c.path), with: [], conflicts });
+  const notices = (events: Event[]) => events.filter((e) => e.type === "activity" && e.kind === "other" && e.state === "start").map((e) => (e as { detail: string }).detail);
+
+  it("a conflict marks both tasks and adds a notice to both chats (spec §5.3)", async () => {
+    const t = host({ tasks: 2 });
+    await t.h.interrupt();
+    const a = t.h.board.start("write", "First");
+    await until(() => t.turns.length === 1);
+    const b = t.h.board.start("write", "Second");
+    await until(() => t.turns.length === 2);
+    const [ta, tb] = t.turns;
+    // B (focused) ends while A still runs: both changed spec.md, and B's turn names A.
+    tb.end([{ type: "text", delta: "Done B" }, ok], attribution([{ path: "spec.md", tasks: [ta.slot] }]));
+    await b;
+    const text = conflictNotice(["spec.md"], "write");
+    expect(text).toBe("This task and “write” both changed spec.md.");
+    // The window shows B's notice now (B is focused); A's goes only to A's buffer.
+    expect(notices(t.window)).toEqual([text]);
+    await t.h.board.focus(ta.slot);
+    expect(notices((await t.h.loadChat(t.base)).live?.events ?? [])).toEqual([text]);
+    const lanes = (await t.file()).lanes!;
+    expect(lanes.find((l) => l.id === ta.slot)?.conflict).toEqual(["spec.md"]);
+    expect(lanes.find((l) => l.id === tb.slot)?.conflict).toEqual(["spec.md"]);
+    // B's notice follows its reply in its chat.
+    expect((await t.chat("main", tb.slot)).map((e) => [e.role, e.text])).toEqual([
+      ["user", "Second"],
+      ["assistant", "Done B"],
+      ["assistant", text],
+    ]);
+    // A is mid-turn: its notice waits for its reply, so the person's line and the answer stay together.
+    expect((await t.chat("main", ta.slot)).map((e) => e.text)).toEqual(["First"]);
+    ta.end([{ type: "text", delta: "Done A" }, ok]);
+    await a;
+    const chatA = await t.chat("main", ta.slot);
+    expect(chatA.map((e) => [e.role, e.text])).toEqual([
+      ["user", "First"],
+      ["assistant", "Done A"],
+      ["assistant", text],
+    ]);
+    expect(chatA.at(-1)).toMatchObject({ blocks: [], activities: [], task: ta.slot });
+    // The summaries carry the paths on both tasks.
+    const summaries = (await t.h.tasksState()).tasks;
+    expect(summaries.map((s) => s.conflict)).toEqual([["spec.md"], ["spec.md"]]);
+    expect(t.lastState()?.tasks.map((s) => s.conflict)).toEqual([["spec.md"], ["spec.md"]]);
+  });
+
+  it("an idle task gets its notice at once; paths stay unique, newest last, at most 20; a turn without conflicts adds none", async () => {
+    const t = host({ tasks: 2 });
+    await t.h.interrupt();
+    const a = t.h.board.start("write", "First");
+    await until(() => t.turns.length === 1);
+    t.turns[0].end();
+    await a;
+    const idA = t.turns[0].slot;
+    const b = t.h.board.start("write", "Second");
+    await until(() => t.turns.length === 2);
+    const idB = t.turns[1].slot;
+    const many = Array.from({ length: 22 }, (_, i) => ({ path: `n/${i}.md`, tasks: [idA] }));
+    t.turns[1].end([ok], attribution([{ path: "spec.md", tasks: [idA] }, ...many, { path: "spec.md", tasks: [idA, idB] }]));
+    await b;
+    const lanes = (await t.file()).lanes!;
+    const expected = [...many.map((m) => m.path)].slice(-20);
+    // spec.md came first, so the newest twenty leave it out.
+    expect(lanes.find((l) => l.id === idA)?.conflict).toEqual(expected);
+    expect(lanes.find((l) => l.id === idB)?.conflict).toEqual(expected);
+    // A was idle: its notice is in its chat now, naming B and every path once.
+    const last = (await t.chat("main", idA)).at(-1)!;
+    expect(last.text).toBe(conflictNotice(["spec.md", ...many.map((m) => m.path)], "write"));
+    // Its own task in `tasks` is never a conflict with itself.
+    expect(last.text).not.toContain(idB);
+    const follow = t.h.board.ask("More");
+    await until(() => t.turns.length === 3);
+    t.turns[2].end([ok], attribution([]));
+    await follow;
+    expect((await t.file()).lanes!.find((l) => l.id === idB)?.conflict).toEqual(expected);
+    expect((await t.chat("main", idB)).filter((e) => e.text.includes("both changed"))).toHaveLength(1);
+  });
+
+  it("a conflict with a task that has ended names no task and marks only this one", async () => {
+    const t = host({ tasks: 2 });
+    await t.h.interrupt();
+    const a = t.h.board.start("write", "First");
+    await until(() => t.turns.length === 1);
+    t.turns[0].end([ok], attribution([{ path: "spec.md", tasks: ["gone"] }]));
+    await a;
+    const id = t.turns[0].slot;
+    expect((await t.file()).lanes!.map((l) => [l.id, l.conflict])).toEqual([[id, ["spec.md"]]]);
+    expect(conflictNotice(["spec.md"], null)).toBe("A task that has ended also changed spec.md.");
+    expect((await t.chat("main", id)).at(-1)?.text).toBe(conflictNotice(["spec.md"], null));
+  });
+
+  it("the notices read as the window's parallel strings", () => {
+    const en = JSON.parse(fs.readFileSync(path.resolve(__dirname, "../../i18n/src/locales/en.json"), "utf8")) as { parallel: Record<string, string> };
+    const fill = (s: string, v: Record<string, string>) => s.replace(/\{\{(\w+)\}\}/g, (_, k: string) => v[k]);
+    expect(conflictNotice(["a.md", "b.md"], "Write")).toBe(fill(en.parallel.conflict, { task: "Write", path: "a.md, b.md" }));
+    expect(conflictNotice(["a.md"], null)).toBe(fill(en.parallel.conflictEnded, { path: "a.md" }));
+  });
+
+  it("tokens: each usage event adds its total to the lane's tokens", async () => {
+    const t = host({ tasks: 2 });
+    await t.h.interrupt();
+    const a = t.h.board.start("write", "First");
+    await until(() => t.turns.length === 1);
+    const id = t.turns[0].slot;
+    // Two usage events in one turn: input + output of each, never the cache counts.
+    t.turns[0].end([usage(100, 20), usage(30, 5), ok]);
+    await a;
+    expect((await t.file()).lanes!.find((l) => l.id === id)?.tokens).toBe(155);
+    expect((await t.h.tasksState()).tasks[0].tokens).toBe(155);
+    // The next turn adds its own; the task manager's saves in between keep the count.
+    const follow = t.h.board.ask("More");
+    await until(() => t.turns.length === 2);
+    expect((await t.file()).lanes!.find((l) => l.id === id)?.tokens).toBe(155);
+    t.turns[1].end([usage(10, 2), ok]);
+    await follow;
+    expect((await t.file()).lanes!.find((l) => l.id === id)?.tokens).toBe(167);
+    // A turn with no usage (or a bad one) adds nothing.
+    const third = t.h.board.ask("Again");
+    await until(() => t.turns.length === 3);
+    t.turns[2].end([{ type: "usage", inputTokens: Number.NaN, outputTokens: -4, cacheReadTokens: 0, cacheWriteTokens: 0 }, ok]);
+    await third;
+    expect((await t.file()).lanes!.find((l) => l.id === id)?.tokens).toBe(167);
+  });
+
+  it("tokens: a turn taken out of the queue before it started counts nothing", async () => {
+    const t = host({ tasks: 1 });
+    await t.h.interrupt();
+    const a = t.h.board.start("write", "First");
+    await until(() => t.turns.length === 1);
+    const b = t.h.board.start("write", "Second");
+    await until(() => (t.lastState()?.tasks ?? []).some((s) => s.state === "queued"));
+    const queued = t.h.board.focusedId()!;
+    t.h.board.cancel();
+    await b.catch(() => undefined);
+    t.turns[0].end([usage(7, 3), ok]);
+    await a;
+    expect(t.turns).toHaveLength(1);
+    const lanes = (await t.file()).lanes ?? [];
+    expect(lanes.find((l) => l.id === t.turns[0].slot)?.tokens).toBe(10);
+    expect(lanes.find((l) => l.id === queued)?.tokens).toBeUndefined();
   });
 });

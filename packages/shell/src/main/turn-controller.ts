@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { ModelProfile } from "@humanharness/engines";
 import { blockIdOf } from "@humanharness/harness-sdk";
-import { type Event, type LimitWindow, type RunningTurn, type SessionSlot, fail } from "@humanharness/runtime";
+import { type Event, type LimitWindow, type RunningTurn, type SessionSlot, type TurnAttribution, fail } from "@humanharness/runtime";
 import type { ChatEntry, SendOptions } from "@humanharness/ui/client";
 import { TurnRecorder } from "./chat-log";
 import { type TurnKind, type UsageMeta, profileMeta } from "./usage-log";
@@ -73,6 +73,11 @@ export interface TurnOptions extends SendOptions {
   phaseChange?: string;
   /** The time box's wrap-up: the chat's user entry is a system line saying the time is almost up (spec §5). */
   wrapUp?: boolean;
+  /**
+   * Board mode: after an overlapped turn's commits, what it owned, shared and collided with (parallel spec §5.3). Passed
+   * on to the slot; the plain runtime's single slot never overlaps, so it is never called there.
+   */
+  onAttribution?: (a: TurnAttribution) => void;
 }
 
 /** What a turn needs from the engine side: today's runtime, or one session slot (parallel spec §4). */
@@ -164,7 +169,7 @@ export class TurnController {
   }
 
   private async run(message: string, options: TurnOptions): Promise<void> {
-    const { action, task, scope, chat, phase, turn, display, followUp, quiet, onEvent, profile, holdModelError, holdFailure, skipUserEntry, mode, modeSwitch, taskPhase, phaseChange, wrapUp, plugin } = options;
+    const { action, task, scope, chat, phase, turn, display, followUp, quiet, onEvent, profile, holdModelError, holdFailure, skipUserEntry, mode, modeSwitch, taskPhase, phaseChange, wrapUp, plugin, onAttribution } = options;
     const current: { cancelled: boolean; running: RunningTurn | null } = { cancelled: false, running: null };
     this.turn = current;
     try {
@@ -273,7 +278,7 @@ export class TurnController {
             this.emit(forWindow(e));
           }
         }
-      }, { ...(profile ? { profile } : {}), ...(task ? { trailer: { task, ...(action ? { action } : {}), ...(scope ? { scope } : {}), ...(taskPhase ? { phase: taskPhase } : {}), ...(plugin ? { plugin } : {}) } } : {}) });
+      }, { ...(profile ? { profile } : {}), ...(task ? { trailer: { task, ...(action ? { action } : {}), ...(scope ? { scope } : {}), ...(taskPhase ? { phase: taskPhase } : {}), ...(plugin ? { plugin } : {}) } } : {}), ...(onAttribution ? { onAttribution } : {}) });
       await current.running.done;
       await finished;
     } finally {

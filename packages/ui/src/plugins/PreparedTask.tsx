@@ -20,6 +20,7 @@ export function PreparedTask({
   blocked,
   needScope,
   closesTask,
+  onStart,
 }: {
   client: HarnessClient;
   prepared: PreparedTaskView;
@@ -29,6 +30,11 @@ export function PreparedTask({
   needScope: string | null;
   /** A task is open, and Start closes it first. */
   closesTask: boolean;
+  /**
+   * Start was clicked: the chat puts the task on screen now (main answers only once its turn ended), and gives back
+   * how to take that back if main refuses.
+   */
+  onStart?: () => (() => void) | void;
 }) {
   const { t } = useTranslation();
   const [busy, setBusy] = useState(false);
@@ -54,6 +60,7 @@ export function PreparedTask({
     setBusy(true);
     setError(null);
     let ok = false;
+    const undo = onStart?.();
     try {
       const r = await client.plugins.startPrepared(token);
       ok = r.ok;
@@ -61,6 +68,7 @@ export function PreparedTask({
     } catch {
       setError(t("plugins.failed"));
     } finally {
+      if (!ok && undo) undo();
       // Started: the token is spent and main's push takes the card away; nothing more to click.
       if (!ok) {
         starting.current = false;

@@ -118,6 +118,12 @@ export default {
       await record("navigate", "blocked");
       await record("done", "yes");
     },
+    // The panel probe's memory (Task 22): its panel refreshes this source just before it navigates away, so the frame
+    // the app remounts finds the mark and doesn't navigate again. Work hours only, and the e2e sets hours that never
+    // come, so only that refresh runs it.
+    async mark(ctx) {
+      await ctx.data.put("marks", { name: "navigated" });
+    },
     // Hangs the page once (the run limit reloads it), only while the `hang` setting is on.
     async hang(ctx) {
       const { hang } = await ctx.settings.get();

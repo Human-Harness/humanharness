@@ -1227,8 +1227,9 @@ export class PluginsController {
     if (a.limit !== undefined && (typeof a.limit !== "number" || !Number.isInteger(a.limit) || a.limit < 0)) return { ok: false, error: "Wrong arguments" };
     const limit = Math.min((a.limit as number | undefined) ?? PANEL_QUERY_MAX, PANEL_QUERY_MAX);
     try {
-      const value = await r.data.query(col, { ...(a.where ? { where: a.where as Record<string, unknown> } : {}), ...(a.fields ? { fields: a.fields as string[] } : {}), limit });
-      return { ok: true, value };
+      const out = await r.data.query(col, { ...(a.where ? { where: a.where as Record<string, unknown> } : {}), ...(a.fields ? { fields: a.fields as string[] } : {}), limit });
+      // The records only: plugin-ui's query and useQuery take a list (a backend's ctx.data.query keeps the wrapper).
+      return { ok: true, value: out.records };
     } catch (err) {
       return { ok: false, error: err instanceof DataError ? err.message.slice(0, 200) : "The query failed" };
     }

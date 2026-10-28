@@ -11,7 +11,8 @@
   },
   "sources": [
     { "id": "escape", "ttl": 600 },
-    { "id": "hang", "ttl": 600 }
+    { "id": "hang", "ttl": 600 },
+    { "id": "mark", "ttl": 600, "workHoursOnly": true }
   ],
   "data": {
     "results": {
@@ -22,12 +23,19 @@
         "properties": { "name": { "type": "string" }, "outcome": { "type": "string" } },
         "required": ["name", "outcome"]
       }
+    },
+    "marks": {
+      "key": "name",
+      "agent": "none",
+      "schema": { "type": "object", "properties": { "name": { "type": "string" } }, "required": ["name"] }
     }
   },
   "settings": {
     "fields": {
       "port": { "schema": { "type": "number", "minimum": 0, "maximum": 65535 }, "default": 0, "control": "number", "label": "Port", "agent": false },
-      "hang": { "schema": { "type": "boolean" }, "default": false, "control": "toggle", "label": "Hang once", "agent": false }
+      "hang": { "schema": { "type": "boolean" }, "default": false, "control": "toggle", "label": "Hang once", "agent": false },
+      "panelPort": { "schema": { "type": "number", "minimum": 0, "maximum": 65535 }, "default": 0, "control": "number", "label": "Panel port", "agent": false }
     }
-  }
+  },
+  "panels": [{ "id": "probe", "title": "Probe panel" }]
 }

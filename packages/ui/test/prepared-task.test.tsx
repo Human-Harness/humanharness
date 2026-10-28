@@ -132,6 +132,39 @@ describe("prepared-task card", () => {
     expect(starts(c)).toEqual([["startPrepared", TOKEN]]);
   });
 
+  it("Start puts its task on screen at once, the card's title as the person's line; a refusal takes the line back", async () => {
+    const userLines = () => [...document.querySelectorAll('[data-role="user"]')].map((e) => e.textContent ?? "");
+    const startView = () => document.querySelector(".hh-start-view");
+    // A harness with a path (flow mode): its start page shows until a task goes on screen.
+    const withPath = (x: FakeClient) => {
+      x.state.actions = { manifest: { label: "The manifest", cost: "light" } };
+      return x;
+    };
+    const c = withPath(makeClient({ view: surface({ prepared: prepared() }) }));
+    await open(c);
+    const r = await screen.findByRole("region", { name: "Prepared task" });
+    await waitFor(() => expect(startView()).not.toBeNull());
+    // main answers only once the turn ended: the line must not wait for it.
+    const spy = vi.spyOn(c.plugins, "startPrepared").mockImplementation(() => new Promise(() => {}));
+    arm();
+    fireEvent.click(startButton(r));
+    expect(spy).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(userLines()).toEqual([expect.stringContaining("On this day · Explain this event")]));
+    expect(startView()).toBeNull();
+    cleanup();
+
+    const refused = withPath(makeClient({ view: surface({ prepared: prepared() }) }));
+    refused.pluginResults = [{ ok: false, message: "This task is no longer prepared" }];
+    await open(refused);
+    const r2 = await screen.findByRole("region", { name: "Prepared task" });
+    await waitFor(() => expect(startView()).not.toBeNull());
+    arm();
+    fireEvent.click(startButton(r2));
+    await within(r2).findByRole("alert");
+    expect(userLines()).toEqual([]);
+    expect(startView()).not.toBeNull();
+  });
+
   it("Cancel calls cancelPrepared with the token", async () => {
     const c = makeClient({ view: surface({ prepared: prepared() }) });
     await open(c);

@@ -120,7 +120,7 @@ describe("PluginsController panel calls", () => {
     const t = await oncall();
     await t.ctx().data.put("queues", { key: "a", n: 1 });
     await t.ctx().data.put("queues", { key: "b", n: 2 });
-    expect(await t.ctl.panelCall("oncall", "queue", "data.query", { collection: "queues", where: { n: 2 }, limit: 50 })).toMatchObject({ ok: true, value: { records: [{ key: "b", n: 2 }] } });
+    expect(await t.ctl.panelCall("oncall", "queue", "data.query", { collection: "queues", where: { n: 2 }, limit: 50 })).toMatchObject({ ok: true, value: [{ key: "b", n: 2 }] });
     expect(await t.ctl.panelCall("oncall", "queue", "data.query", { collection: "other.results" })).toEqual({ ok: false, error: "Unknown collection" });
     expect(await t.ctl.panelCall("oncall", "queue", "data.query", { collection: "results" })).toEqual({ ok: false, error: "Unknown collection" });
     expect(await t.ctl.panelCall("oncall", "queue", "data.query", { collection: "toString" })).toEqual({ ok: false, error: "Unknown collection" });
@@ -129,7 +129,8 @@ describe("PluginsController panel calls", () => {
     expect(await t.ctl.panelCall("oncall", "queue", "data.query", { collection: "queues", limit: 10_000 })).toMatchObject({ ok: true });
     const big = { collection: "queues", where: { key: "x".repeat(5000) } };
     expect(await t.ctl.panelCall("oncall", "queue", "data.query", big)).toEqual({ ok: false, error: "Too large" });
-    expect((await t.ctl.panelCall("oncall", "queue", "data.query", { collection: "queues" })) as { value: { records: unknown[] } }).toMatchObject({ value: { records: [{}, {}] } });
+    // The records themselves, as plugin-ui's query and useQuery take them (the e2e found the store's wrapper read as []).
+    expect(await t.ctl.panelCall("oncall", "queue", "data.query", { collection: "queues" })).toEqual({ ok: true, value: [expect.objectContaining({ key: "a" }), expect.objectContaining({ key: "b" })] });
   });
 
   it("limit is capped at 500", async () => {

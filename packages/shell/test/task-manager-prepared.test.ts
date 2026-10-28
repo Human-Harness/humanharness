@@ -75,6 +75,8 @@ describe("TaskManager.startPrepared (plugins spec §5.3)", () => {
     expect(t.profileCalls).toEqual([[undefined, undefined, "light"]]);
     expect(t.state().current).toMatchObject({ id: "t1", question: PROMPT, plugin: "on-this-day", status: "waiting", profile: { tier: "light" } });
     expect(await t.manager.trailerNow()).toEqual({ task: "t1", plugin: "on-this-day" });
+    // The turn's own commits (Before message, Turn) carry it too.
+    expect(t.turns[0].options.plugin).toBe("on-this-day");
   });
 
   it("keeps the plugin through a follow-up and on every commit of the task", async () => {
@@ -82,6 +84,7 @@ describe("TaskManager.startPrepared (plugins spec §5.3)", () => {
     await t.manager.startPrepared(PREPARED);
     await t.manager.ask("And then?");
     expect(t.turns[1].options.followUp).toBe(true);
+    expect(t.turns[1].options.plugin).toBe("on-this-day");
     expect(t.state().current?.plugin).toBe("on-this-day");
     expect(await t.manager.trailerNow()).toEqual({ task: "t1", plugin: "on-this-day" });
     await t.manager.start("study");
@@ -117,6 +120,7 @@ describe("TaskManager.startPrepared (plugins spec §5.3)", () => {
     expect(t.profileCalls).toEqual([[undefined], ["study"]]);
     expect(t.trailers).toEqual([{ task: "t1" }]);
     expect(t.state().current).not.toHaveProperty("plugin");
+    expect(t.turns.every((x) => !("plugin" in x.options))).toBe(true);
   });
 
   it("is refused while a turn runs, like `ask` (same op queue)", async () => {

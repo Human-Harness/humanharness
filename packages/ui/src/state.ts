@@ -43,7 +43,9 @@ export type ChatAction =
   /** The person's answer to an input block was taken: it goes on its block (input-blocks spec §8). */
   | { type: "answered"; answer: BlockAnswer }
   /** A local assistant message that the UI shows but never saves. */
-  | { type: "notice"; text: string; at: string };
+  | { type: "notice"; text: string; at: string }
+  /** The person's line put on screen at `at` for a start main then refused (a prepared task): it goes, with its turn. */
+  | { type: "withdrawn"; at: string };
 
 export function initialChat(entries: ChatEntry[], stateBlocks: string[] = []): ChatState {
   return { entries, live: null, blockState: {}, stateBlocks: new Set(stateBlocks), limits: null };
@@ -61,6 +63,10 @@ export function reduceChat(state: ChatState, action: ChatAction): ChatState {
         entries: [...action.entries, ...state.entries.filter((e) => !action.entries.some((s) => s.id === e.id))],
         blockState: { ...restored, ...state.blockState },
       };
+    }
+    case "withdrawn": {
+      const i = state.entries.findLastIndex((e) => e.role === "user" && e.at === action.at);
+      return i < 0 ? state : { ...state, entries: state.entries.filter((_, n) => n !== i), live: null };
     }
     case "notice":
       return {

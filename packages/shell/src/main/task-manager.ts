@@ -1452,6 +1452,8 @@ export class TaskManager {
         ...(task.mode ? { mode: task.mode } : {}),
         // The task's phase (usage.jsonl, history): a change turn's is the new one, already saved. None without phases (D0).
         ...(task.phase ? { taskPhase: task.phase.id } : {}),
+        // A plugin's prepared task: its turn commits carry `Plugin: <id>` too. None otherwise (D0).
+        ...(task.plugin ? { plugin: task.plugin } : {}),
         ...options,
         ...scoped,
         ...(task.profile ? { profile: task.profile } : {}),

@@ -1387,6 +1387,21 @@ export function ChatView({
               blocked={blocked()}
               needScope={surfaceCtx.surface.prepared.scope === "open" && state.scopes && !openScope ? state.scopes.label : null}
               closesTask={tasks.current !== null}
+              onStart={() => {
+                // Like a sent question: the task goes on screen at once, the card's title as the person's line (main
+                // saves the same display); a refusal puts the screen back as it was.
+                const before = { since, placed: placed.current };
+                const at = new Date().toISOString();
+                stick.current = true;
+                pinNext.current = true;
+                if (flow) showNewTask();
+                dispatch({ type: "user", text: surfaceCtx.surface.prepared?.title ?? "", at });
+                return () => {
+                  placed.current = before.placed;
+                  setSince(before.since);
+                  dispatch({ type: "withdrawn", at });
+                };
+              }}
             />
           )}
           {composer && (

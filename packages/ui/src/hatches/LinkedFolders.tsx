@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { AppState, HarnessClient, LinkRefusalView, LinkedView } from "../client";
+import type { AppState, HarnessClient, LinkDroppedView, LinkRefusalView, LinkedView } from "../client";
 
 type Declared = NonNullable<NonNullable<AppState["hatches"]>["linkedFolders"]>;
 
@@ -19,16 +19,26 @@ export function LinkedFolders({ client, scope, declared, scopeLabel }: { client:
   const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState(false);
   const alertRef = useRef<HTMLParagraphElement>(null);
+  /** The latest request: an answer to an earlier one (another scope's, say) arriving late is dropped. */
+  const loads = useRef(0);
 
-  const load = () =>
-    client.scopes.linked(scope).then(
+  const load = () => {
+    const n = ++loads.current;
+    return client.scopes.linked(scope).then(
       (r) => {
+        if (n !== loads.current) return;
         setFolders(r.folders);
         setUnsupported(r.unsupported);
       },
-      () => setFailed(true),
+      () => {
+        if (n === loads.current) setFailed(true);
+      },
     );
+  };
   useEffect(() => {
+    setFolders(null);
+    setFailed(false);
+    setRefused(null);
     void load();
   }, [client, scope]);
   useEffect(() => {
@@ -57,6 +67,11 @@ export function LinkedFolders({ client, scope, declared, scopeLabel }: { client:
 
   const keys = Object.keys(declared);
   const refusal = (reason: LinkRefusalView) => t(`hatches.refused.${reason}`, { scope: scopeLabel });
+  /** Why the agent doesn't get a stored folder now (the checks each turn runs). */
+  const droppedText = (why: LinkDroppedView) =>
+    why === "moved" || why === "not-folder" || why === "mode-changed"
+      ? t(`hatches.dropped.${why === "mode-changed" ? "modeChanged" : "moved"}`)
+      : t("hatches.dropped.refused", { reason: refusal(why) });
   return (
     <section className="hh-linked" aria-labelledby={`${baseId}-title`}>
       <h3 id={`${baseId}-title`}>{t("hatches.linkedTitle")}</h3>
@@ -84,6 +99,7 @@ export function LinkedFolders({ client, scope, declared, scopeLabel }: { client:
                       </>
                     )}
                   </span>
+                  {f.dropped && <span className="hh-caption hh-linked-dropped">{droppedText(f.dropped)}</span>}
                 </span>
                 <button type="button" aria-describedby={rowId} disabled={busy} onClick={() => void act(() => client.scopes.unlinkFolder(scope, f.key, f.path))}>
                   {t("hatches.unlink")}
@@ -91,8 +107,9 @@ export function LinkedFolders({ client, scope, declared, scopeLabel }: { client:
                 {f.gitChanged && (
                   <div className="hh-linked-git" role="group" aria-label={t(f.tracked ? "hatches.gainedGit" : "hatches.lostGit")}>
                     <p>{t(f.tracked ? "hatches.gainedGit" : "hatches.lostGit")}</p>
-                    {/* Main never tracks a folder with git (L7): after gaining git, leaving it to its git is the answer. */}
-                    {!f.tracked && (
+                    {/* Main never tracks a folder with git (L7): after gaining git, leaving it to its git is the answer.
+                        A key whose folders keep their own git (history "own") is never tracked, even without git. */}
+                    {!f.tracked && declared[f.key]?.history !== "own" && (
                       <button type="button" disabled={busy} onClick={() => void act(() => client.scopes.confirmGit(scope, f.key, f.path, true))}>
                         {t("hatches.keepTracked")}
                       </button>

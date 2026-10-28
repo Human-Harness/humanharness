@@ -1337,6 +1337,11 @@
     "undoWorkFolder": "your work folder",
     "undoNotDone": "Not undone in {{folder}}: {{cause}}",
     "codexUnsupported": "Linked folders don't work with this version of Codex yet.",
+    "dropped": {
+      "moved": "The agent doesn't get this folder now: it moved or is gone. Unlink it, then link it again.",
+      "modeChanged": "The agent doesn't get this folder now: the app changed what it may do here. Unlink it, then link it again.",
+      "refused": "The agent doesn't get this folder now. {{reason}}"
+    },
     "contextLinked": "Folders of this scope",
     "refused": {
       "engine-home": "This folder holds an app's settings or keys, so it can't be linked.",

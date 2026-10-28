@@ -1,9 +1,11 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { I18nextProvider } from "react-i18next";
 import { afterEach, describe, expect, it } from "vitest";
 import type { AppState, HistoryTaskView } from "../src/client";
 import { HistoryPanel } from "../src/HistoryPanel";
 import { ScopePicker } from "../src/ScopePicker";
+import { LinkedFolders } from "../src/hatches/LinkedFolders";
 import { FakeClient } from "./fake-client";
 import { renderIn } from "./render";
 
@@ -152,6 +154,60 @@ describe("Scope settings › Linked folders (hatches spec §3.2)", () => {
     expect(within(dialog).queryByRole("button", { name: "Track with the app's history" })).toBeNull();
     fireEvent.click(within(dialog).getByRole("button", { name: "Leave to its own git" }));
     await waitFor(() => expect(client.scopes.confirmGit).toHaveBeenCalledWith("app", "repos", "/r", false));
+  });
+
+  it("a key whose folders keep their own git never offers to track one that lost its git", async () => {
+    const client = scoped();
+    client.state.hatches = { linkedFolders: { ...linkedFolders, vendor: { label: "Vendor", mode: "write", history: "own", many: false } } };
+    client.linkedSet("app", [{ key: "vendor", label: "Vendor", path: "/v", mode: "write", tracked: false, gitChanged: true }]);
+    const dialog = await openSettings(client);
+    expect(await within(dialog).findByText("This folder no longer has git.")).toBeTruthy();
+    expect(within(dialog).queryByRole("button", { name: "Track with the app's history" })).toBeNull();
+    expect(within(dialog).getByRole("button", { name: "Leave to its own git" })).toBeTruthy();
+  });
+
+  it("a folder the agent doesn't get now says why on its row", async () => {
+    const client = scoped();
+    client.linkedSet("app", [
+      { key: "repos", label: "Repos", path: "/gone", mode: "write", tracked: true, dropped: "moved" },
+      { key: "repos", label: "Repos", path: "/new-mode", mode: "read", tracked: false, dropped: "mode-changed" },
+      { key: "repos", label: "Repos", path: "/claude", mode: "write", tracked: false, dropped: "engine-home" },
+      { key: "repos", label: "Repos", path: "/ok", mode: "write", tracked: false },
+    ]);
+    const dialog = await openSettings(client);
+    const row = async (p: string) => (await within(dialog).findByText(p)).closest("li") as HTMLElement;
+    expect((await row("/gone")).textContent).toContain("The agent doesn't get this folder now: it moved or is gone. Unlink it, then link it again.");
+    expect((await row("/new-mode")).textContent).toContain("the app changed what it may do here.");
+    expect((await row("/claude")).textContent).toContain("The agent doesn't get this folder now. This folder holds an app's settings or keys, so it can't be linked.");
+    expect((await row("/ok")).textContent).not.toContain("doesn't get");
+    // The caption is part of what the row's Unlink button is described by.
+    const unlink = within(await row("/gone")).getByRole("button", { name: "Unlink" });
+    expect(document.getElementById(unlink.getAttribute("aria-describedby")!)?.textContent).toContain("moved or is gone");
+  });
+
+  it("an earlier scope's late answer never replaces the open scope's links", async () => {
+    const client = scoped();
+    client.linkedSet("app", [{ key: "repos", label: "Repos", path: "/app-repo", mode: "write", tracked: false }]);
+    client.linkedSet("web", [{ key: "repos", label: "Repos", path: "/web-repo", mode: "write", tracked: false }]);
+    let release!: () => void;
+    const late = new Promise<void>((r) => (release = r));
+    const answer = client.scopes.linked.getMockImplementation()!;
+    client.scopes.linked.mockImplementation(async (scope: string) => {
+      if (scope === "app") await late;
+      return answer(scope);
+    });
+    const { rerender, i18n } = await renderIn("en", <LinkedFolders client={client} scope="app" declared={linkedFolders} scopeLabel="project" />);
+    rerender(
+      <I18nextProvider i18n={i18n}>
+        <LinkedFolders client={client} scope="web" declared={linkedFolders} scopeLabel="project" />
+      </I18nextProvider>,
+    );
+    expect(await screen.findByText("/web-repo")).toBeTruthy();
+    release();
+    await late;
+    await new Promise((r) => setTimeout(r, 0));
+    expect(screen.queryByText("/app-repo")).toBeNull();
+    expect(screen.getByText("/web-repo")).toBeTruthy();
   });
 
   it("an action that fails says so", async () => {

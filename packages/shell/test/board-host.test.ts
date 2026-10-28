@@ -771,7 +771,7 @@ describe("Sidekick in board mode: only the focused task (sidekick spec §4.2, §
     ]);
   });
 
-  it("focus that moves to a task mid-turn: Sidekick never hears an end whose start it didn't hear; a background phase move stays unheard", async () => {
+  it("focus that moves to a task mid-turn: Sidekick never hears an end whose start it didn't hear; a background phase move is heard at focus", async () => {
     const s = sidekick();
     const t = host({
       tasks: 2,
@@ -802,8 +802,10 @@ describe("Sidekick in board mode: only the focused task (sidekick spec §4.2, §
     const change = t.turns[2];
     expect(change.slot).toBe(ta.slot);
     expect(s.heard.moved).toEqual([]);
-    // The person focuses A while its phase-change turn runs, and the turn ends there: its start wasn't heard.
+    // The person focuses A while its phase-change turn runs: the move it missed is heard now (its card is about the
+    // chat on screen), and the turn ends there: its start wasn't heard, so neither is its end.
     await t.h.board.focus(ta.slot);
+    expect(s.heard.moved).toEqual([[ta.slot, "main"]]);
     change.end();
     await a;
     expect(s.heard.ended).toEqual([]);
@@ -812,6 +814,10 @@ describe("Sidekick in board mode: only the focused task (sidekick spec §4.2, §
     await b;
     expect(s.heard.ended).toEqual([]);
     expect(s.heard.starting).toBe(2);
+    // Focusing B and A again replays nothing: the move was heard once.
+    await t.h.board.focus(tb.slot);
+    await t.h.board.focus(ta.slot);
+    expect(s.heard.moved).toEqual([[ta.slot, "main"]]);
     // A's next turn starts and ends focused: heard, as in the plain app.
     const more = t.h.board.ask("More");
     await until(() => t.turns.length === 4);

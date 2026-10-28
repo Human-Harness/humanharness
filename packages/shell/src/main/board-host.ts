@@ -112,6 +112,8 @@ interface Lane {
    * (`run`). Its end is heard only then, and only if the lane is still focused: never an end without its start.
    */
   heard: { send: boolean; run: boolean };
+  /** The latest phase move Sidekick didn't hear (the lane wasn't focused): it hears it when the lane is focused. */
+  unheardMove?: PhaseMoved;
 }
 
 /** A notice for a task's chat (`scope`: the chat it is in). */
@@ -169,6 +171,7 @@ export function createBoardHost(d: BoardHostDeps, initial: { engineId: string | 
     newLane: (id) => newLane(id).manager,
     newId: () => randomUUID(),
     changed: () => {
+      hearMissedMove();
       void board.view().then(
         (view) => d.send("hh:tasks", view),
         (err: unknown) => console.error("Could not read the focused task", err),
@@ -186,6 +189,19 @@ export function createBoardHost(d: BoardHostDeps, initial: { engineId: string | 
     sleep: sleepLane,
   });
   gate.onChange(() => tasksChanged());
+
+  /**
+   * The focused lane's phase move that came while another lane was focused: Sidekick's process-guard hears it now, about
+   * the chat on screen. Only the latest, once. A phase move is its own Sidekick turn: no turn start or end goes with it.
+   */
+  function hearMissedMove(): void {
+    const id = board.focusedId();
+    const l = id === null ? undefined : lanes.get(id);
+    const e = l?.unheardMove;
+    if (!l || !e) return;
+    l.unheardMove = undefined;
+    d.taskDeps.phaseMoved?.(e);
+  }
 
   function tasksChanged(): void {
     pushTasks();
@@ -380,7 +396,8 @@ export function createBoardHost(d: BoardHostDeps, initial: { engineId: string | 
           const fn = d.taskDeps.phaseMoved;
           return fn
             ? (e: PhaseMoved) => {
-                if (board.isFocused(id)) fn(e);
+                lane.unheardMove = board.isFocused(id) ? undefined : e;
+                if (!lane.unheardMove) fn(e);
               }
             : undefined;
         },

@@ -640,6 +640,12 @@ describe("Plugin trailer (plugins spec §5.3)", () => {
     expect(parseCommitMessage("m\n\nTask: t\nPlugin: Bad_Id")).toEqual({ subject: "m", task: "t", action: null });
   });
 
+  it("ignores a forged Plugin line outside the trailer block", () => {
+    expect(parseCommitMessage("m\n\nPlugin: evil\n\nTask: t")).toEqual({ subject: "m", task: "t", action: null });
+    expect(parseCommitMessage("m\n\nSome text\nTask: t\nPlugin: evil")).toEqual({ subject: "m", task: null, action: null });
+    expect(parseCommitMessage(withTrailer("m\n\nPlugin: evil", { task: "t" }))).not.toHaveProperty("plugin");
+  });
+
   it("D0: an old message parses exactly as before (no plugin key)", () => {
     expect(parseCommitMessage("m\n\nTask: t\nAction: a")).toEqual({ subject: "m", task: "t", action: "a" });
   });

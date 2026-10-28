@@ -254,6 +254,8 @@ export function createJobsHost(d: JobsHostDeps) {
     jobs: d.jobs,
     settingsOf,
     scopeExists: (scope: string) => d.scopeExists(scope),
+    /** The app is set up (a base to run in): before that a run would be dropped. */
+    ready: async (): Promise<boolean> => (await d.base()) !== null,
     /**
      * The Jobs section's rows (parallel spec §9.1): each declared job × its scopes (the active ones; one app-wide row for
      * `scope: "none"`), with its last run in the current base, whether it is queued or running, and why it is paused or
@@ -338,8 +340,37 @@ export function jobsInfo(h: { jobs?: Record<string, HarnessJob> }): JobsInfo | u
   };
 }
 
+/**
+ * A push to the window that reads its value first (`hh:jobsChange`): reads never overlap, so an earlier, slower one
+ * can't arrive after a later one, and a call during a read (to its last microtask) gets one more read after it.
+ */
+export function coalescedSender<T>(read: () => Promise<T>, send: (value: T) => void, report: (err: unknown) => void): () => void {
+  let sending = false;
+  let stale = false;
+  return function push(): void {
+    stale = true;
+    if (sending) return;
+    sending = true;
+    void (async () => {
+      try {
+        while (stale) {
+          stale = false;
+          try {
+            send(await read());
+          } catch (err) {
+            report(err);
+          }
+        }
+      } finally {
+        // In the same microtask as the last `stale` check: a call can't land between them and be lost.
+        sending = false;
+      }
+    })();
+  };
+}
+
 /** What the jobs channels need of the jobs host. */
-export type JobsIpcHost = Pick<JobsHost, "jobs" | "settingsOf" | "scopeExists" | "summaries" | "runManual">;
+export type JobsIpcHost = Pick<JobsHost, "jobs" | "settingsOf" | "scopeExists" | "ready" | "summaries" | "runManual">;
 
 /** An id or scope from the window: a string of 1..200 characters (then looked up, J4). */
 function windowString(v: unknown, what: string): string {
@@ -350,7 +381,7 @@ function windowString(v: unknown, what: string): string {
 /**
  * The window's jobs channels (parallel spec §9.1, J4): `hh:jobsList` and `hh:jobsRun`. Both refuse without jobs (plain
  * or board mode without them, D0). "Run now" starts only a declared manual job that isn't off, in an existing scope; it
- * answers false only when the job and scope are already queued or running.
+ * answers false when the job and scope are already queued or running, or the app isn't set up yet.
  */
 export function jobsIpc(host: () => JobsIpcHost | null) {
   const jobs = (): JobsIpcHost => {
@@ -371,6 +402,8 @@ export function jobsIpc(host: () => JobsIpcHost | null) {
       if (job.scope === "none" && scope !== undefined) throw new Error("This job has no scope");
       if (job.scope === "trigger" && scope === undefined) throw new Error("This job needs a scope");
       if (scope !== undefined && !(await h.scopeExists(scope))) throw new Error("Unknown scope");
+      // Before setup there is no folder: the run would be dropped, so nothing is queued.
+      if (!(await h.ready())) return false;
       return h.runManual(id, scope);
     },
   };

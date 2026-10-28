@@ -96,5 +96,8 @@ describe("the preload's jobs namespace", () => {
     expect(main).toContain('sendToWindow("hh:jobsChange"');
     expect(main).toMatch(/function jobsChanged\(\): void \{\n  const jobs = jobsHost;\n  if \(!jobs\) return;/);
     expect(main).toContain("changed: jobsChanged,");
+    // One coalesced sender (no push lost to a call landing as a read ends), and a scope change re-sends the rows.
+    expect(main).toContain("const pushJobs = coalescedSender(");
+    expect(main).toMatch(/async function scopesChanged\(\): Promise<void> \{[^}]*jobsChanged\(\);/);
   });
 });

@@ -5,7 +5,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { type HarnessJob, jobSchema } from "@humanharness/harness-sdk";
 import type { HarnessWorkspace } from "@humanharness/runtime";
 import { JobLog, type JobRunRecord } from "../../src/main/jobs/job-log";
-import { type JobsHostDeps, createJobsHost, jobsInfo, jobsIpc, singleGate } from "../../src/main/jobs/jobs-host";
+import { type JobsHostDeps, coalescedSender, createJobsHost, jobsInfo, jobsIpc, singleGate } from "../../src/main/jobs/jobs-host";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-jobs-ipc-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -145,6 +145,27 @@ describe("jobsIpc (parallel spec §9.1, J4)", () => {
     h.stopAll();
   });
 
+  it("run before setup answers false: there is no folder for the run yet, so nothing is queued", async () => {
+    const { ipc, h } = host({ jobs: { sync: job({ scope: "none" }) }, deps: { base: async () => null } });
+    expect(await ipc.run("sync", undefined)).toBe(false);
+    expect(h.scheduler.isActive("sync", null)).toBe(false);
+  });
+
+  it("next moves one interval forward after the timer fires", async () => {
+    let at = new Date("2026-10-28T10:00:00Z");
+    const fires: (() => void)[] = [];
+    const { ipc, h } = host({
+      jobs: { daily: job({ label: "Daily", scope: "none", on: { every: "1h" }, dailyTokens: 1000 }) },
+      deps: { now: () => at, timer: { set: (fn) => fires.push(fn), clear: () => {} } },
+    });
+    await h.appReady();
+    expect((await ipc.list())[0].next).toBe("2026-10-28T11:00:00.000Z");
+    at = new Date("2026-10-28T11:00:00Z");
+    fires.at(-1)!();
+    expect((await ipc.list())[0].next).toBe("2026-10-28T12:00:00.000Z");
+    h.stopAll();
+  });
+
   it("list before setup: app-wide rows only, no last run", async () => {
     const { ipc } = host({ jobs: { sync: job(), app: job({ scope: "none" }) }, deps: { base: async () => null, scopes: async () => [] } });
     expect(await ipc.list()).toEqual([{ id: "app", label: "Sync", scope: null, manual: true, running: false }]);
@@ -174,5 +195,70 @@ describe("jobsInfo (AppState.jobs)", () => {
       ],
     });
     expect(JSON.stringify(info)).not.toContain("jobs/sync.md");
+  });
+});
+
+describe("coalescedSender (hh:jobsChange)", () => {
+  const tick = () => Promise.resolve();
+
+  it("a call while a read is under way, even in its last microtasks, gets one more read: the newest value is sent last", async () => {
+    let version = 0;
+    const sent: number[] = [];
+    const push = coalescedSender(async () => ++version, (v) => void sent.push(v), () => {});
+    push();
+    await tick();
+    await tick();
+    push();
+    for (let i = 0; i < 20; i++) await tick();
+    expect(sent).toEqual([1, 2]);
+  });
+
+  it("at any point of the first push, a second call is never lost", async () => {
+    for (let gap = 0; gap < 10; gap++) {
+      let version = 0;
+      const sent: number[] = [];
+      const push = coalescedSender(async () => ++version, (v) => void sent.push(v), () => {});
+      push();
+      for (let i = 0; i < gap; i++) await tick();
+      push();
+      for (let i = 0; i < 30; i++) await tick();
+      expect(sent.at(-1)).toBe(version);
+      expect(version).toBe(2);
+    }
+  });
+
+  it("reads never overlap, and calls during one read make a single more", async () => {
+    let release!: () => void;
+    let reads = 0;
+    const sent: number[] = [];
+    const push = coalescedSender(
+      () => new Promise<number>((r) => { reads++; release = () => r(reads); }),
+      (v) => void sent.push(v),
+      () => {},
+    );
+    push();
+    push();
+    push();
+    expect(reads).toBe(1);
+    release();
+    for (let i = 0; i < 10; i++) await tick();
+    expect(reads).toBe(2);
+    release();
+    for (let i = 0; i < 10; i++) await tick();
+    expect(sent).toEqual([1, 2]);
+  });
+
+  it("a failed read is reported and the next call reads again", async () => {
+    const errors: unknown[] = [];
+    let fail = true;
+    const sent: string[] = [];
+    const push = coalescedSender(async () => { if (fail) throw new Error("boom"); return "ok"; }, (v) => void sent.push(v), (e) => void errors.push(e));
+    push();
+    for (let i = 0; i < 10; i++) await tick();
+    fail = false;
+    push();
+    for (let i = 0; i < 10; i++) await tick();
+    expect(errors).toHaveLength(1);
+    expect(sent).toEqual(["ok"]);
   });
 });

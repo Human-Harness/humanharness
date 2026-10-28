@@ -128,7 +128,7 @@ import { type BoardHost, createBoardHost, hostMode } from "./board-host";
 import { type AttentionStores, attentionStores } from "./attention-stores";
 import { keepNotification, TaskAttention } from "./task-attention";
 import { materialOwn, notePath, saveAppChange } from "./app-change";
-import { type JobsHost, createJobsHost, isJobSlot, jobOriginKnown, jobsInfo, jobsIpc, openSingleRuntime, singleBeforeStart, singleCaps, singleGate, singleTurns } from "./jobs/jobs-host";
+import { type JobsHost, createJobsHost, isJobSlot, jobOriginKnown, coalescedSender, jobsInfo, jobsIpc, openSingleRuntime, singleBeforeStart, singleCaps, singleGate, singleTurns } from "./jobs/jobs-host";
 import type { Turns } from "./gated-turns";
 import type { TurnGate } from "./turn-gate";
 import { cleanCaps, engineHold, parallelInfo } from "./parallel-config";
@@ -237,23 +237,17 @@ let jobsHost: JobsHost | null = null;
 /** Settings › Jobs as last read from the config (the scheduler reads it synchronously); refreshed on every load and save. */
 let jobSettings: AppConfig["jobs"];
 /** The Jobs section's rows again, to the window (`hh:jobsChange`); one read at a time, the latest change always sent. */
-let jobsSending: Promise<void> | null = null;
-let jobsStale = false;
+const pushJobs = coalescedSender(
+  async () => (jobsHost ? jobsHost.summaries() : null),
+  (rows) => {
+    if (rows) sendToWindow("hh:jobsChange", rows);
+  },
+  (err) => console.error("Could not read the jobs", err),
+);
 function jobsChanged(): void {
   const jobs = jobsHost;
   if (!jobs) return;
-  jobsStale = true;
-  if (jobsSending) return;
-  jobsSending = (async () => {
-    while (jobsStale) {
-      jobsStale = false;
-      try {
-        sendToWindow("hh:jobsChange", await jobs.summaries());
-      } catch (err) {
-        console.error("Could not read the jobs", err);
-      }
-    }
-  })().finally(() => (jobsSending = null));
+  pushJobs();
 }
 /**
  * `single` mode (jobs without `parallel`, Decision 12): the gate and the task's turns through its `tasks` cap; the
@@ -681,6 +675,8 @@ async function scopesView(): Promise<ScopesView> {
 }
 
 async function scopesChanged(): Promise<void> {
+  // A scope made, archived or brought back: the Jobs section's rows follow (each active scope has its own).
+  jobsChanged();
   try {
     sendToWindow("hh:scopes", await scopesView());
   } catch (err) {

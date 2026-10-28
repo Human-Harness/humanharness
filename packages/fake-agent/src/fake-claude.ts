@@ -22,7 +22,8 @@ if (process.env.HH_FAKE_MOCK_DIR && process.env.HH_FAKE_MOCK_STATE) {
 } else {
   const script = JSON.parse(readFileSync(process.env.HH_FAKE_SCRIPT!, "utf8")) as ClaudeScript;
   let input = "";
-  if (process.env.HH_FAKE_STDIN || process.env.HH_FAKE_PROMPTS || script.turns) {
+  const translates = script.steps.some((s) => "pseudoTranslate" in s);
+  if (process.env.HH_FAKE_STDIN || process.env.HH_FAKE_PROMPTS || script.turns || translates) {
     for await (const chunk of process.stdin) input += chunk;
     if (process.env.HH_FAKE_STDIN) writeFileSync(process.env.HH_FAKE_STDIN, input);
     if (process.env.HH_FAKE_PROMPTS) appendFileSync(process.env.HH_FAKE_PROMPTS, JSON.stringify({ argv, prompt: input }) + "\n");
@@ -67,7 +68,7 @@ if (process.env.HH_FAKE_MOCK_DIR && process.env.HH_FAKE_MOCK_STATE) {
       const s = mcpConfig.mcpServers[name];
       if (!s) throw new Error(`fake-claude: pseudoTranslate names unknown server "${name}"`);
       const strings = pseudoTranslate(input, step.pseudoTranslate.prefix, step.pseudoTranslate.breakKeys);
-      await callMcpTool({ command: s.command, args: s.args ?? [], env: s.env ?? {} }, "save_translation", { strings });
+      if (Object.keys(strings).length > 0) await callMcpTool({ command: s.command, args: s.args ?? [], env: s.env ?? {} }, "save_translation", { strings });
     } else if ("mcp" in step) {
       const s = mcpConfig.mcpServers[step.mcp.server];
       if (!s) throw new Error(`fake-claude: mcp step names unknown server "${step.mcp.server}" (configured: ${Object.keys(mcpConfig.mcpServers).join(", ") || "none"})`);

@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -28,6 +29,13 @@ describe("readDist (plugins spec §3.1, §7 Add from folder step 1)", () => {
     const r = await readDist(dist, "dev");
     expect(r).toMatchObject({ ok: true, manifest: { id: "oncall" } });
     expect(hashOf(r)).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it("gives the sha256 of the backend.js bytes it hashed (the backend host runs only those)", async () => {
+    const dist = await writePlugin(await tmp(), "oncall");
+    const r = await readDist(dist, "dev");
+    const bytes = await fs.readFile(path.join(dist, "backend.js"));
+    expect((r as { backendHash: string }).backendHash).toBe(createHash("sha256").update(bytes).digest("hex"));
   });
 
   it("a code change changes the hash; the same files give the same hash", async () => {

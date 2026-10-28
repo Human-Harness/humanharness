@@ -43,7 +43,7 @@ import { DEFAULT_WORK_HOURS, type PluginState, PluginStateStore, type WorkHours,
 
 export interface BackendHost {
   /** Opens the plugin's backend window on `channel`; `gone` when it crashed or was killed. */
-  start(p: { id: string; dist: string; channel: PluginChannel; gone(reason: string): void }): Promise<void>;
+  start(p: { id: string; dist: string; backendHash: string; channel: PluginChannel; gone(reason: string): void }): Promise<void>;
   stop(id: string): Promise<void>;
   /** Reloads the window (a run over the limit); the new page talks on the new `channel` (the old one is closed). */
   reload(p: { id: string; channel: PluginChannel; gone(reason: string): void }): Promise<void>;
@@ -331,7 +331,7 @@ export class PluginsController {
   private async openBackend(c: BaseCtx, r: Running): Promise<void> {
     const channel = this.newChannel(c, r);
     try {
-      await this.d.host.start({ id: r.entry.id, dist: r.entry.dist, channel, gone: (reason) => this.gone(c, r, channel, reason) });
+      await this.d.host.start({ id: r.entry.id, dist: r.entry.dist, backendHash: r.entry.backendHash ?? "", channel, gone: (reason) => this.gone(c, r, channel, reason) });
     } catch (err) {
       r.loadError = "The backend could not start";
       this.log(`${r.entry.id}: the backend could not start`, err);
@@ -672,7 +672,7 @@ export class PluginsController {
     if (!r.ok) return { ok: false, message: r.error };
     // Refused: an id the app already has (bundled, dev or added before).
     if (this.entries.some((e) => e.id === r.manifest.id)) return { ok: false, message: `A plugin with the id "${r.manifest.id}" is already here` };
-    return { ok: true, entry: { id: r.manifest.id, origin: "local", dist: r.dist, folder, manifest: r.manifest, distHash: r.distHash } };
+    return { ok: true, entry: { id: r.manifest.id, origin: "local", dist: r.dist, folder, manifest: r.manifest, distHash: r.distHash, backendHash: r.backendHash } };
   }
 
   async add(token: string): Promise<PluginResult> {

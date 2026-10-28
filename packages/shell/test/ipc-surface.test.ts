@@ -22,15 +22,14 @@ describe("the IPC surface (plugins spec B5)", () => {
         uses.push(`${f}:${m[3]}`);
       }
     }
-    // Task 15 adds 'plugin-host.ts:"hh-plugin:rpc"'.
-    expect(uses.sort()).toEqual(["index.ts:channel"]);
+    expect(uses.sort()).toEqual(["index.ts:channel", 'plugin-host.ts:"hh-plugin:rpc"']);
   });
 
   it("ipcMain is named only where those channels are registered", async () => {
     const named = (await sources()).filter(([, text]) => /\bipcMain\b/.test(text)).map(([f]) => f);
-    expect(named.sort()).toEqual(["index.ts"]);
+    expect(named.sort()).toEqual(["index.ts", "plugin-host.ts"]);
     // An alias (`const x = wc.ipc; x.on(…)`) would pass the test above: name `.ipc` only where it is allowed too.
-    // Task 15 adds "plugin-host.ts".
+    // plugin-host.ts registers on ipcMain, not on a webContents' own `.ipc`: nothing names `.ipc`.
     const ipc = (await sources()).filter(([, text]) => /\.ipc\b/.test(text)).map(([f]) => f);
     expect(ipc.sort()).toEqual([]);
   });

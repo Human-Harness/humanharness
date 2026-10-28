@@ -32,10 +32,12 @@ export interface PluginEntry {
   folder: string;
   manifest: PluginManifest | null;
   distHash?: string;
+  /** sha256 of backend.js as it was hashed into distHash: the backend host runs only those bytes (B8). */
+  backendHash?: string;
   error?: string;
 }
 
-export type DistRead = { ok: true; manifest: PluginManifest; distHash: string; dist: string } | { ok: false; error: string };
+export type DistRead = { ok: true; manifest: PluginManifest; distHash: string; backendHash: string; dist: string } | { ok: false; error: string };
 
 const BACKEND_MAX_BYTES = 5 * 1024 * 1024;
 /** Files, folders and links together (Decision 21). */
@@ -210,17 +212,20 @@ async function readDistOrThrow(dist: string, harnessId: string): Promise<DistRea
   // distHash is what the person's approval binds to, and the backend runner executes the very bytes it
   // hashed (Task 15), so each byte hashed here must come from inside dist/ at the moment it is read.
   const lines: string[] = [];
+  let backendHash = "";
   for (const f of walked.files) {
     const content = await readInside(f, f.size);
     if (typeof content === "string") return { ok: false, error: content };
     if (content.length !== f.size) return { ok: false, error: `${f.rel} changed while it was read` };
-    lines.push(`${f.rel}\0${f.size}\0${createHash("sha256").update(content).digest("hex")}\n`);
+    const sha = createHash("sha256").update(content).digest("hex");
+    if (f.rel === "backend.js") backendHash = sha;
+    lines.push(`${f.rel}\0${f.size}\0${sha}\n`);
   }
   for (const l of walked.folderLinks) lines.push(`${l.rel}\0link\0${l.target}\n`);
   lines.sort();
   const hash = createHash("sha256");
   for (const l of lines) hash.update(l);
-  return { ok: true, manifest, distHash: hash.digest("hex"), dist: root };
+  return { ok: true, manifest, distHash: hash.digest("hex"), backendHash, dist: root };
 }
 
 const exists = (p: string) =>
@@ -323,7 +328,7 @@ async function entryOf(id: string, origin: PluginOrigin, dist: string, folder: s
   const r = await readDist(dist, harnessId);
   if (!r.ok) return { id, origin, dist, folder, manifest: null, error: r.error };
   if (expectId && r.manifest.id !== id) return { id, origin, dist, folder, manifest: null, error: `plugin.json says id "${r.manifest.id}", but this plugin is "${id}"` };
-  return { id: r.manifest.id, origin, dist: r.dist, folder, manifest: r.manifest, distHash: r.distHash };
+  return { id: r.manifest.id, origin, dist: r.dist, folder, manifest: r.manifest, distHash: r.distHash, backendHash: r.backendHash };
 }
 
 /**

@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef } from "react";
+import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import type { AppState, HarnessClient } from "../client";
 import { trapTab } from "../focus";
@@ -7,6 +8,8 @@ import { LinkedFolders } from "./LinkedFolders";
 /**
  * A scope's settings (hatches spec §3.2), opened from the scope picker: its linked folders (part 3 adds the engine
  * section). A dialog like the Settings sheet: Tab stays inside, Escape closes, focus goes back to what opened it.
+ * Drawn in `document.body`, not inside the top bar that holds the picker: there it would sit under the page, in the
+ * window's drag region, and its paths couldn't be selected (the top bar's `user-select: none`).
  */
 export function ScopeSettings({
   client,
@@ -49,7 +52,7 @@ export function ScopeSettings({
     };
   }, []);
   const linked = state.hatches?.linkedFolders;
-  return (
+  return createPortal(
     <div
       className="hh-sheet-backdrop"
       onClick={(e) => {
@@ -65,6 +68,7 @@ export function ScopeSettings({
         </div>
         {linked && <LinkedFolders client={client} scope={scope} declared={linked} scopeLabel={state.scopes?.label ?? ""} />}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

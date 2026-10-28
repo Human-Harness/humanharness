@@ -226,6 +226,13 @@ describe("Scope settings › Linked folders (hatches spec §3.2)", () => {
     expect(await within(dialog).findByText("Linked folders don't work with this version of Codex yet.")).toBeTruthy();
   });
 
+  it("the sheet is drawn in the page's body, outside the picker (and the top bar that holds it)", async () => {
+    const client = scoped();
+    const dialog = await openSettings(client);
+    expect(dialog.parentElement?.parentElement).toBe(document.body);
+    expect(within(dialog).queryByRole("combobox")).toBeNull();
+  });
+
   it("Escape closes the dialog and focus returns to the button", async () => {
     const client = scoped();
     await openSettings(client);

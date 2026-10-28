@@ -95,6 +95,7 @@ export async function checkHarness(dir: string, opts: { mode?: Mode } = {}): Pro
   findings.push(...briefFindings(harness, briefs));
   findings.push(...(await modeFindings(harness)));
   findings.push(...(await phaseFindings(harness)));
+  findings.push(...(await jobFindings(harness)));
   findings.push(...(await mockFindings(harness, briefs)));
   findings.push(...(await i18nFindings(harness)));
   findings.push(...(await inputFindings(harness)));
@@ -264,6 +265,18 @@ async function phaseFindings(h: LoadedHarness): Promise<Finding[]> {
       if (text === null) out.push(error("brief-missing", `${where} does not exist.`, MANIFEST));
       else if (!text.trim()) out.push(error("brief-missing", `${where} is empty.`, path.relative(h.root, file)));
     }
+  }
+  return out;
+}
+
+/** Each job's brief (parallel spec §3): it must exist and say something. The jobs' other checks are schema errors. */
+async function jobFindings(h: LoadedHarness): Promise<Finding[]> {
+  const out: Finding[] = [];
+  for (const [id, job] of Object.entries(h.jobs ?? {})) {
+    const file = resolveInHarness(h, job.prompt);
+    const text = await read(file);
+    if (text === null) out.push(error("brief-missing", `Job "${id}": its brief ${job.prompt} does not exist.`, MANIFEST));
+    else if (!text.trim()) out.push(error("brief-missing", `Job "${id}": its brief ${job.prompt} is empty.`, path.relative(h.root, file)));
   }
   return out;
 }

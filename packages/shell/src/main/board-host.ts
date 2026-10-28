@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { type ParallelCaps, isConcurrent } from "@humanharness/harness-sdk";
+import type { ParallelCaps } from "@humanharness/harness-sdk";
 import type { Event, HarnessWorkspace, SessionSlot, SlotRef, TurnAttribution } from "@humanharness/runtime";
 import { type AppConfig, type BlockAnswer, type ChatEntry, type ChatLoad, type ChatNotice, type TaskSummary, type TaskView, type TasksState, isTurnEntry } from "@humanharness/ui/client";
 import { type History, type HistoryTrailer, MAIN_SCOPE, taskChatFile } from "@humanharness/workspace";
@@ -19,9 +19,12 @@ import { TurnGate } from "./turn-gate";
 
 export type HostMode = "plain" | "board";
 
-/** Plain: today's single runtime and task (D7). Board: the harness declares `parallel`. Part 3 adds "single" for jobs. */
+/**
+ * Plain: today's single runtime and task (D7). Board: the harness declares `parallel`. Part 3 adds "single" for jobs;
+ * until then a harness with jobs only stays plain (`isConcurrent` counts jobs, so it is not the test here).
+ */
 export function hostMode(harness: { parallel?: unknown }): HostMode {
-  return isConcurrent(harness as { parallel?: ParallelCaps }) ? "board" : "plain";
+  return harness.parallel !== undefined ? "board" : "plain";
 }
 
 /** How many paths a conflict notice names; it counts the rest. */

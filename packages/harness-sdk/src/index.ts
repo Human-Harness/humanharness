@@ -5,6 +5,7 @@ import { type Block, blockToolName } from "./block";
 import { CORE_BLOCKS, INPUT_CORE_BLOCKS, MODE_CORE_BLOCKS, PHASE_CORE_BLOCKS, RESERVED_BLOCK_NAMES } from "./core-blocks";
 import { dataSchema } from "./data";
 import { CORE_SHEET_SECTIONS, MATERIAL_STAGE_KEYS, materialSchema } from "./material";
+import { jobProblems, jobsSchema } from "./jobs";
 import { DEFAULT_MODE_WORDS, MODE_ID } from "./modes";
 import { parallelSchema } from "./parallel";
 import { PHASE_ID, TIME_BOX_MAX } from "./phases";
@@ -30,6 +31,7 @@ export * from "./plugin";
 export * from "./plugin-permissions";
 export * from "./plugin-actions";
 export * from "./parallel";
+export * from "./jobs";
 /** The zod a manifest builds its block schemas with: the same instance the SDK validates them against. */
 export { z } from "zod";
 
@@ -191,6 +193,8 @@ const manifestSchema = z.object({
   slots: harnessSlotsSchema.optional(),
   /** Suggested caps on turns running at once (parallel spec §3). Absent: one task at a time, as before (D7). */
   parallel: parallelSchema.optional(),
+  /** Background jobs, by id (parallel spec §3): no chat, no person in the loop. Absent: none, and nothing changes (D0). */
+  jobs: jobsSchema.optional(),
   /** False hides the core inbox and its button (parallel spec §9.2); `client.tasks` stays. `ui` is taken (a custom UI path). */
   inbox: z.boolean().optional(),
   /** One line under the name on the home screen. */
@@ -391,6 +395,8 @@ const manifestSchema = z.object({
       for (const f of profileFormSpec(m).fields) if (f.kind === null) issue(["profiles", "fields"], `The profile form can't draw "${f.name}"`);
     }
   }
+  // Background jobs (parallel spec §3).
+  for (const p of jobProblems(m)) ctx.addIssue({ code: "custom", path: p.path, message: p.message });
   // Material (material spec §8).
   if (m.material) {
     const issue = (p: (string | number)[], message: string) => ctx.addIssue({ code: "custom", path: ["material", ...p], message });
@@ -461,6 +467,8 @@ export async function loadHarness(configPath: string, options: { root?: string }
   for (const mode of Object.values(loaded.modes)) resolveInHarness(loaded, mode.brief);
   // And every phase's brief (task-phases spec §3).
   for (const action of Object.values(loaded.actions)) for (const p of action.phases ?? []) if (p.brief) resolveInHarness(loaded, p.brief);
+  // And every job's brief (parallel spec §3).
+  for (const job of Object.values(loaded.jobs ?? {})) resolveInHarness(loaded, job.prompt);
   return loaded;
 }
 

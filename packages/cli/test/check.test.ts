@@ -108,6 +108,43 @@ describe("check: errors", () => {
     expect(errors(r).filter((f) => f.rule !== "brief-missing")).toEqual([]);
   });
 
+  it("brief-missing: a job's brief that is missing or empty (parallel spec §3)", async () => {
+    const dir = await fixture((d) => {
+      replaceIn(
+        d,
+        "harness.config.ts",
+        'questions: { tier: "light" },',
+        'questions: { tier: "light" },\n  jobs: {\n    sync: { label: "Sync", prompt: "./agent/jobs/sync.md", on: { manual: true } },\n    tidy: { label: "Tidy", prompt: "./agent/jobs/empty.md", on: { start: true } },\n    gone: { label: "Gone", prompt: "./agent/jobs/gone.md", on: { manual: true } },\n  },',
+      );
+      fs.mkdirSync(path.join(d, "agent", "jobs"));
+      fs.writeFileSync(path.join(d, "agent", "jobs", "sync.md"), "Sync the tickets.\n");
+      fs.writeFileSync(path.join(d, "agent", "jobs", "empty.md"), " \n");
+    });
+    const r = await checkHarness(dir);
+    expect(r.findings.filter((f) => f.rule === "brief-missing").map((f) => `${f.file} ${f.message}`)).toEqual([
+      'agent/jobs/empty.md Job "tidy": its brief ./agent/jobs/empty.md is empty.',
+      'harness.config.ts Job "gone": its brief ./agent/jobs/gone.md does not exist.',
+    ]);
+    expect(errors(r).filter((f) => f.rule !== "brief-missing")).toEqual([]);
+  });
+
+  it("schema: a job that widens the harness's permissions (J2) or breaks a jobs check", async () => {
+    const dir = await fixture((d) => {
+      replaceIn(
+        d,
+        "harness.config.ts",
+        'questions: { tier: "light" },',
+        'questions: { tier: "light" },\n  jobs: {\n    wide: { label: "Wide", prompt: "./agent/tasks/example.md", on: { manual: true }, permissions: { exec: true } },\n    often: { label: "Often", prompt: "./agent/tasks/example.md", on: { every: "5m" }, dailyTokens: 1000 },\n  },',
+      );
+    });
+    const r = await checkHarness(dir);
+    expect(r.harness).toBeNull();
+    expect(r.findings.filter((f) => f.rule === "schema").map((f) => f.message)).toEqual([
+      "jobs.wide.permissions: A job's permissions can only narrow the harness's",
+      'jobs.often.on.every: every must be a duration of 15m or more ("30m", "2h")',
+    ]);
+  });
+
   it("schema: instructions or locales pointing outside the harness folder", async () => {
     const dir = await fixture((d) => {
       replaceIn(d, "harness.config.ts", 'instructions: "./agent/AGENTS.md",', 'instructions: "../x.md", locales: "../locales",');

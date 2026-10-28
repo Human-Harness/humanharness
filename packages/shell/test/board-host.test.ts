@@ -224,6 +224,10 @@ describe("hostMode (D7)", () => {
     expect(hostMode({ parallel: { tasks: 1, jobs: 1 } })).toBe("board");
   });
 
+  it("a harness with jobs but no parallel is not a board", () => {
+    expect(hostMode({ jobs: { sync: {} } } as { parallel?: unknown })).toBe("plain");
+  });
+
   it("D0: the chat move and the board host run only in board mode", () => {
     const main = path.resolve(__dirname, "../src/main");
     const files = fs.readdirSync(main).filter((f) => f.endsWith(".ts"));

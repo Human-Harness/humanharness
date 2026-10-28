@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { Permissions } from "./index";
+import { hasJobs } from "./jobs";
 
 /** The most turns of one kind the person can let run at once (Settings › General, parallel spec §7). */
 export const PARALLEL_MAX = 8;
@@ -12,11 +13,11 @@ export const parallelSchema = z.strictObject({
 export type ParallelCaps = z.output<typeof parallelSchema>;
 
 /**
- * Several turns may run at once in this harness's folder: it declares `parallel` (part 3 adds `jobs`). False keeps
- * today's single runtime, single task and whole-folder history (D7).
+ * Several turns may run at once in this harness's folder: it declares `parallel`, or at least one job (a job runs
+ * beside the person's task). False keeps today's single runtime, single task and whole-folder history (D7).
  */
-export function isConcurrent(harness: { parallel?: ParallelCaps }): boolean {
-  return harness.parallel !== undefined;
+export function isConcurrent(harness: { parallel?: ParallelCaps; jobs?: Record<string, unknown> }): boolean {
+  return harness.parallel !== undefined || hasJobs(harness);
 }
 
 /** The manifest's suggested caps; { tasks: 1, jobs: 1 } without `parallel`. */

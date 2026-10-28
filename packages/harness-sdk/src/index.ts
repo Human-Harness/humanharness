@@ -27,6 +27,7 @@ export * from "./material";
 export * from "./sidekick";
 export * from "./plugin";
 export * from "./plugin-permissions";
+export * from "./plugin-actions";
 /** The zod a manifest builds its block schemas with: the same instance the SDK validates them against. */
 export { z } from "zod";
 

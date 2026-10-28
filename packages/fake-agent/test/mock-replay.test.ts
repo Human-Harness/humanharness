@@ -33,6 +33,9 @@ describe("promptKind", () => {
   it("sees a phase change after the lines the app kept for the task, but not one quoted in a reply", () => {
     expect(promptKind('The person approved specs/a.md.\nThe person approved specs/b.md.\n\nNext part of this task: "Plan" (`plan`).')).toBe("phase");
     expect(promptKind('Hi.\n\nMore.\n\nNext part of this task: "Plan" (`plan`).')).toBe("reply");
+    // Only kept lines come before the gap: a reply of one paragraph that quotes the prompt is still a reply.
+    expect(promptKind('Look at this.\n\nNext part of this task: "Plan" (`plan`).')).toBe("reply");
+    expect(promptKind('The person approved specs/a.md.\nAnd more.\n\nNext part of this task: "Plan" (`plan`).')).toBe("reply");
   });
 });
 

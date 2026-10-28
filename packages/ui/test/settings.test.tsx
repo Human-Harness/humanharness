@@ -39,7 +39,8 @@ describe("SettingsSheet", () => {
     expect(screen.getByRole("tab", { name: "Engine" }).getAttribute("aria-selected")).toBe("true");
     await screen.findByRole("group", { name: "AI engines" });
     fireEvent.click(screen.getByRole("button", { name: "Done" }));
-    fireEvent.keyDown(document, { key: "Escape" });
+    // Handled: a listener further out (focus mode's) leaves this Escape alone.
+    expect(fireEvent.keyDown(document, { key: "Escape" })).toBe(false);
     expect(onClose).toHaveBeenCalledTimes(2);
   });
 

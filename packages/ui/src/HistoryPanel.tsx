@@ -133,8 +133,11 @@ export function HistoryPanel({
     opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     closeRef.current?.focus();
     const onKey = (e: KeyboardEvent) => {
-      // A dialog above it (the pre-flight question) handled this Escape itself.
-      if (e.key === "Escape" && !e.defaultPrevented) close();
+      // A dialog above it (the pre-flight question) handled this Escape itself. Handling it here marks it too, so
+      // focus mode's window listener does not also leave.
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      e.preventDefault();
+      close();
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);

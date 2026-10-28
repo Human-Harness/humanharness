@@ -81,7 +81,7 @@ A swap uses the strict form (only inside its section), so it never replaces the 
 2. The selection is found in that text, preferring the section of the heading above the selection.
 3. The match is mapped back to an exact source substring.
 
-A selection past the end of the text is clamped to it.
+The window sends the selection's own text (`Selection.toString()`), which puts line breaks between blocks; a range's text would join two paragraphs with no space. A selection past the end of the text is clamped to it.
 
 **Marks.**
 
@@ -207,7 +207,7 @@ The move never happens from the last phase or a `close` phase. A stale document 
 
 ## Focus mode
 
-"Focus" in the reader's header shows one document in a single quiet column (§6.2). Esc leaves focus mode from anywhere in the window, once the reader's own Esc steps are done: a prompt in the footer bar, the reading preferences, an open card. "Leave focus" does the same.
+"Focus" in the reader's header shows one document in a single quiet column (§6.2). Esc leaves focus mode from anywhere in the window, once the reader's own Esc steps are done: a prompt in the footer bar, the reading preferences, an open card. A panel open over it (History, Notes, Settings) closes first: the panel marks the Esc as handled (`preventDefault`), and the window's listener leaves it alone. "Leave focus" does the same.
 
 - **Hidden:** the chat, the side panels and the table of contents. The comments column becomes margin markers (`FocusMarkers.tsx`), and a marker opens its one card. The footer bar is the last thing in the document column. What the person was typing in the bar survives entering and leaving.
 - **Paused:** the composer taking focus and the live region reading the answer when a turn ends. Three notices are counted (`focus-notices.ts`):
@@ -266,6 +266,7 @@ The tests that hold this: `packages/blocks/test/ui-server.test.ts` (unchanged), 
 - **Comments need a pointer.** Selecting text for a comment needs a pointer, or the system's own selection keys once focus is in the text.
 - **Lost lines.** The lines kept for the task (an approval's) are lost when the turn they were put before fails to start.
 - **"Nearest to the old place"** (§7) is approximated: the last match in the section stands in for it, since no offset is stored.
+- **Raw error text from other servers.** The `data` and `material` servers still forward a handler's error message to the agent as is; the review tools send only a refusal's message (outside this plan).
 - **One lock per process.** `ReviewLocks` doesn't serialize the app and `humanharness run` working on the same folder.
 - **Switching focus mode** remounts the footer bar. Its draft lives in the reader, but other local state starts again.
 

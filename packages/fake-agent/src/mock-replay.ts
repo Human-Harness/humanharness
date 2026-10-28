@@ -35,6 +35,8 @@ export function promptKind(prompt: string): "close" | "checkpoint" | "phase" | "
 }
 
 const PHASE_START = "Next part of this task:";
+/** The only line the app keeps for a task today (task-manager.ts `documentApproved`). */
+const KEPT_LINE = "The person approved ";
 /**
  * The phase change prompt in `prompt`: at its start, or after the lines the app kept for the task (review spec
  * §5.4), which are one block of single lines followed by a blank line.
@@ -42,7 +44,13 @@ const PHASE_START = "Next part of this task:";
 function phasePrompt(prompt: string): string | undefined {
   if (prompt.startsWith(PHASE_START)) return prompt;
   const gap = prompt.indexOf("\n\n");
-  return gap !== -1 && prompt.startsWith(PHASE_START, gap + 2) ? prompt.slice(gap + 2) : undefined;
+  if (gap === -1 || !prompt.startsWith(PHASE_START, gap + 2)) return undefined;
+  return prompt
+    .slice(0, gap)
+    .split("\n")
+    .every((line) => line.startsWith(KEPT_LINE))
+    ? prompt.slice(gap + 2)
+    : undefined;
 }
 
 /** The phase id a phase change prompt names: its first line ends with (`<id>`). */

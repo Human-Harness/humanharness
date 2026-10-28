@@ -329,8 +329,12 @@ export function DocumentReader({
       if (!box.contains(r.startContainer)) return setPick(null);
       r = r.cloneRange();
       r.setEnd(box, box.childNodes.length);
+      sel.removeAllRanges();
+      sel.addRange(r);
     }
-    const selected = r.toString();
+    // The selection's text, not the range's: a range joins blocks with no space ("One.Two."), the selection puts line
+    // breaks between them, as the reader shows them.
+    const selected = sel.toString();
     if (!selected.trim() || selected.length > 20_000) return setPick(null);
     const rect = r.getBoundingClientRect();
     const host = scroller.getBoundingClientRect();

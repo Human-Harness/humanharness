@@ -54,6 +54,20 @@ describe("focus mode (review spec §6.2)", () => {
     expect(client.focus.current()).toEqual({ on: false });
   });
 
+  it("Esc with the History panel open in focus mode closes only the panel", async () => {
+    const client = await chat(true);
+    const reader = await openReader();
+    fireEvent.click(within(reader).getByRole("button", { name: "Focus" }));
+    fireEvent.click(screen.getByRole("button", { name: "History" }));
+    expect(screen.getByRole("dialog", { name: "History" })).toBeTruthy();
+    fireEvent.keyDown(document.activeElement ?? document, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "History" })).toBeNull();
+    expect(document.querySelector(".hh-focus")).not.toBeNull();
+    expect(client.focus.current()).toEqual({ on: true, path: "specs/a.md" });
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    expect(document.querySelector(".hh-focus")).toBeNull();
+  });
+
   it("hides the contents and the column; a margin marker opens only its card, and Esc closes it first", async () => {
     const client = await chat(true);
     const review: Review = {

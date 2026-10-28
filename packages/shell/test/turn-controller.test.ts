@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Event, HarnessRuntime, LimitWindow } from "@humanharness/runtime";
 import type { ChatEntry } from "@humanharness/ui";
-import { EngineUnavailable, TurnController, type TurnOptions, forWindow, memoise } from "../src/main/turn-controller";
+import { EngineUnavailable, TurnController, type TurnDeps, type TurnOptions, forWindow, memoise } from "../src/main/turn-controller";
 import type { UsageMeta } from "../src/main/usage-log";
 
 type Emit = (e: Event) => void;
@@ -42,7 +42,7 @@ function fakeRuntime() {
 
 function setup(
   opts: {
-    ensureRuntime?: () => Promise<HarnessRuntime | null>;
+    ensureRuntime?: TurnDeps["ensureRuntime"];
     append?: (e: ChatEntry) => Promise<void>;
     emit?: (e: Event) => void;
     inputBlocks?: string[];
@@ -790,5 +790,22 @@ describe("edit paths stay in main (parallel spec D7)", () => {
     expect(events.find((e) => e.type === "activity")).toEqual({ type: "activity", id: "e1", kind: "edit", detail: "a.md", state: "start" });
     expect(entries.find((e) => e.role === "assistant")?.activities).toEqual([{ kind: "edit", detail: "a.md" }]);
     expect(JSON.stringify(entries)).not.toContain("/home/me");
+  });
+});
+
+describe("TurnController on a session slot", () => {
+  it("ensureRuntime may return anything with send (a session slot, parallel spec §4)", async () => {
+    const sent: string[] = [];
+    const runner = {
+      send: (message: string, emit: (e: Event) => void) => {
+        sent.push(message);
+        const done = Promise.resolve().then(() => emit({ type: "done", ok: true }));
+        return { cancel: () => {}, done };
+      },
+    };
+    const { controller, events } = setup({ ensureRuntime: async () => runner });
+    await controller.send("hi");
+    expect(sent).toEqual(["hi"]);
+    expect(events.at(-1)).toEqual({ type: "done", ok: true });
   });
 });

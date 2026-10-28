@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { ModelProfile } from "@humanharness/engines";
 import { blockIdOf } from "@humanharness/harness-sdk";
-import { type Event, type HarnessRuntime, type LimitWindow, type RunningTurn, fail } from "@humanharness/runtime";
+import { type Event, type LimitWindow, type RunningTurn, type SessionSlot, fail } from "@humanharness/runtime";
 import type { ChatEntry, SendOptions } from "@humanharness/ui/client";
 import { TurnRecorder } from "./chat-log";
 import { type TurnKind, type UsageMeta, profileMeta } from "./usage-log";
@@ -75,9 +75,12 @@ export interface TurnOptions extends SendOptions {
   wrapUp?: boolean;
 }
 
+/** What a turn needs from the engine side: today's runtime, or one session slot (parallel spec §4). */
+export type TurnRunner = Pick<SessionSlot, "send">;
+
 export interface TurnDeps {
-  /** Starts (or returns) the runtime. Null when the engine CLI isn't installed. May throw EngineUnavailable. */
-  ensureRuntime: () => Promise<HarnessRuntime | null>;
+  /** Starts (or returns) the runtime, or the task's slot. Null when the engine CLI isn't installed. May throw EngineUnavailable. */
+  ensureRuntime: () => Promise<TurnRunner | null>;
   /** The chat log of the configured folder (`chat`: the scope whose chat it is; absent: `main`), or null when the app isn't configured yet. */
   chatLog: (chat?: string) => Promise<ChatLogLike | null>;
   stateBlocks: () => Set<string>;
@@ -240,7 +243,7 @@ export class TurnController {
       };
 
       if (current.cancelled) return await finish(fail("cancelled") as Done);
-      let rt: HarnessRuntime | null;
+      let rt: TurnRunner | null;
       try {
         rt = await this.deps.ensureRuntime();
       } catch (e) {

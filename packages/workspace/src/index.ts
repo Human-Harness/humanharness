@@ -16,3 +16,4 @@ export * from "./reviews";
 export * from "./review-requests";
 export * from "./safe-read";
 export * from "./file-timeline";
+export * from "./file-index";

@@ -147,6 +147,7 @@ test("two tasks run at once, the inbox follows them, and undoing one leaves the 
   await withApp("parallel-two", scenarios.slow, async (page, s) => {
     await topic(page, "Write A").click();
     // The first task works (5 s) when the second starts from the start view.
+    await expect.poll(() => laneOf(s.folder, "write-a")?.status).toBe("running");
     await openInbox(page);
     await expect(section(page, "Working").getByRole("button", { name: /^Write A/ })).toBeVisible();
     await page.getByRole("dialog", { name: "Inbox" }).getByRole("button", { name: "New task" }).click();
@@ -276,9 +277,15 @@ test("two tasks that change the same file are both told", async () => {
     };
     await ask("both one");
     await newTask(page);
+    // The second asks while the first still works (3 s), so the two turns overlap.
+    await expect.poll(() => lanes(s.folder).map((l) => l.status)).toEqual(["running"]);
     await ask("both two");
     await expect.poll(() => lanes(s.folder).map((l) => l.status), { timeout: 30_000 }).toEqual(["waiting", "waiting"]);
     expect(fs.readFileSync(path.join(s.folder, "spec.md"), "utf8")).toBe("spec\n");
+    // The task on screen shows its notice without a reload, whichever turn ended first: a system line, not a step.
+    const live = page.getByRole("main").getByText("This task and “both one” both changed spec.md.");
+    await expect(live).toBeVisible();
+    await expect(page.getByRole("main").getByText(/Working on/)).toHaveCount(0);
     // Both tasks are marked in the inbox, and each chat, opened again, says which other task changed the file.
     await openInbox(page);
     await expect(page.getByRole("dialog", { name: "Inbox" }).getByText("Another task changed the same files")).toHaveCount(2);

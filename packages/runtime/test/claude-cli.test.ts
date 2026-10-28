@@ -454,6 +454,10 @@ describe("activity extras (context-panel spec §3.2)", () => {
     expect(activityExtras("mcp__data__data_query", {})).toEqual({ tool: { server: "data", name: "data_query" } });
     expect(activityExtras("mcp__broken", {})).toEqual({});
     expect(activityExtras("Edit", { file_path: "/w/a.md" })).toEqual({});
+    // Bounds: a path over 4,096 characters is dropped, an MCP name is cut at 100.
+    expect(activityExtras("Read", { file_path: `/w/${"a".repeat(5000)}` })).toEqual({});
+    expect(activityExtras("Grep", { pattern: "x", path: `/w/${"a".repeat(5000)}` })).toEqual({});
+    expect(activityExtras(`mcp__${"s".repeat(150)}__${"t".repeat(150)}`, {})).toEqual({ tool: { server: "s".repeat(100), name: "t".repeat(100) } });
   });
 
   it("puts them on the start event only; the end event is as before", () => {

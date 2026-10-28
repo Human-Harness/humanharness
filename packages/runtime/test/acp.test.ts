@@ -1049,6 +1049,15 @@ describe("acpExtras (context-panel spec §3.2)", () => {
     expect(acpExtras({ kind: "execute", rawInput: { server: "notes", tool: "search" } }, undefined)).toEqual({});
   });
 
+  it("bounds: the first 20 locations only (before the filter), a path over 4,096 characters dropped, names cut at 100", () => {
+    const many = Array.from({ length: 25 }, (_, i) => ({ path: `/w/f${i}.md` }));
+    expect(acpExtras({ kind: "read", locations: many }, undefined)).toEqual({ paths: many.slice(0, 20).map((l) => l.path) });
+    // The cap applies before the filter: 20 empty locations hide the rest.
+    expect(acpExtras({ kind: "read", locations: [...Array.from({ length: 20 }, () => ({})), { path: "/w/late.md" }] }, undefined)).toEqual({});
+    expect(acpExtras({ kind: "read", locations: [{ path: `/w/${"a".repeat(5000)}` }, { path: "/w/a.md" }] }, undefined)).toEqual({ paths: ["/w/a.md"] });
+    expect(acpExtras({ kind: "execute", rawInput: { tool: "t".repeat(150) } }, "s".repeat(150))).toEqual({ tool: { server: "s".repeat(100), name: "t".repeat(100) } });
+  });
+
   it("emits them on the tool call's start event", async () => {
     const { transport } = setup({
       turns: [[

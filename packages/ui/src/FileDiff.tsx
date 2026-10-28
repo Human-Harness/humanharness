@@ -26,16 +26,19 @@ export interface FileDiffProps {
   refresh?: unknown;
 }
 
-/** The changed items and up to CONTEXT unchanged ones around each; null marks a gap ("…") between kept runs. */
+/**
+ * The changed items and up to CONTEXT unchanged ones around each; null marks a gap ("…") between kept runs. A `gap`
+ * item (lines main left out) is always a gap.
+ */
 export function aroundChanges<T extends { kind: string }>(lines: T[]): (T | null)[] {
   const keep = new Array<boolean>(lines.length).fill(false);
   for (let i = 0; i < lines.length; i++) {
-    if (lines[i].kind === "same") continue;
+    if (lines[i].kind === "same" || lines[i].kind === "gap") continue;
     for (let j = Math.max(0, i - CONTEXT); j <= Math.min(lines.length - 1, i + CONTEXT); j++) keep[j] = true;
   }
   const out: (T | null)[] = [];
   for (let i = 0; i < lines.length; i++) {
-    if (keep[i]) out.push(lines[i]);
+    if (keep[i] && lines[i].kind !== "gap") out.push(lines[i]);
     else if (out.at(-1) !== null) out.push(null);
   }
   if (out.at(-1) === null) out.pop();
@@ -47,7 +50,7 @@ export function sideRows(lines: LineChange[]): { left?: LineChange; right?: Line
   const rows: { left?: LineChange; right?: LineChange }[] = [];
   let i = 0;
   while (i < lines.length) {
-    if (lines[i].kind === "same") {
+    if (lines[i].kind === "same" || lines[i].kind === "gap") {
       rows.push({ left: lines[i], right: lines[i] });
       i++;
       continue;
@@ -85,9 +88,9 @@ const lineText = (lang: string | null, text: string) => <code>{highlightCode(lan
 const langFor = (lines: LineChange[], lang: string | null) => (lines.length > HIGHLIGHT_MAX_LINES ? null : lang);
 
 /** A changed line's sign, and its name for a screen reader: never colour alone. */
-function Mark({ kind }: { kind: "ins" | "del" | "same" }) {
+function Mark({ kind }: { kind: LineChange["kind"] }) {
   const { t } = useTranslation();
-  if (kind === "same") return null;
+  if (kind === "same" || kind === "gap") return null;
   return (
     <>
       <span className="hh-filediff-mark" aria-hidden="true">
@@ -167,7 +170,7 @@ const SideLines = memo(function SideLines({ lines, lang }: { lines: LineChange[]
   return (
     <div className="hh-filediff-grid hh-filediff-mono">
       <ColumnNames />
-      {aroundChanges(sideRows(lines).map((r) => ({ ...r, kind: r.left?.kind === "same" ? "same" : "changed" }))).map((r, i) =>
+      {aroundChanges(sideRows(lines).map((r) => ({ ...r, kind: r.left?.kind === "same" || r.left?.kind === "gap" ? r.left.kind : "changed" }))).map((r, i) =>
         r === null ? (
           <div key={i} className="hh-filediff-gaprow">
             <Gap />

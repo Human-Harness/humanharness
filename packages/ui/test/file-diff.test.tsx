@@ -285,4 +285,24 @@ describe("FileDiff (file-timeline spec §4)", () => {
       [undefined, "z"],
     ]);
   });
+
+  it("a gap main left in (unchanged lines it didn't send) draws as a gap, never as a line, in both layouts", () => {
+    const lines: LineChange[] = [
+      { kind: "gap", text: "", count: 40 },
+      { kind: "same", text: "s41", old: 41, new: 41 },
+      { kind: "del", text: "x", old: 42 },
+      { kind: "ins", text: "y", new: 42 },
+      { kind: "same", text: "s43", old: 43, new: 43 },
+      { kind: "gap", text: "", count: 7 },
+    ];
+    expect(aroundChanges(lines).map((l) => l?.text ?? null)).toEqual([null, "s41", "x", "y", "s43"]);
+    const rows = sideRows(lines);
+    expect(rows.map((r) => [r.left?.kind, r.right?.kind])).toEqual([
+      ["gap", "gap"],
+      ["same", "same"],
+      ["del", "ins"],
+      ["same", "same"],
+      ["gap", "gap"],
+    ]);
+  });
 });

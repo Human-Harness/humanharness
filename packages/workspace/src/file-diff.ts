@@ -13,6 +13,10 @@ export const DIFF_TIMEOUT_MS = 2000;
 export const MAX_DIFF_BLOCKS = 5000;
 /** About the most characters a Markdown diff's blocks may carry (text plus a little per piece); past it, text. */
 export const MAX_DIFF_OUTPUT = 2_000_000;
+/** Unchanged lines a line diff keeps on each side of a change (the window's own context is the same). */
+export const DIFF_CONTEXT_LINES = 3;
+/** The most lines a line diff answers, gaps not counted; past it the rest is cut (and the view says `truncated`). */
+export const MAX_DIFF_LINES = 10_000;
 /**
  * The pre-scan's limits on what the parser may see (it is superlinear on some inputs): container markers opening one
  * line (`> > - …`), a line's indent in columns (nested lists), `[` nesting inside one paragraph, and the sum over
@@ -38,12 +42,16 @@ const BINARY_EXTENSIONS = new Set([
 ]);
 
 export type DiffPart = { kind: "same" | "ins" | "del"; text: string };
-/** One line of a line diff; `old`/`new` are 1-based line numbers on each side. */
+/**
+ * One line of a line diff; `old`/`new` are 1-based line numbers on each side. A `gap` stands for `count` unchanged lines
+ * left out (its `text` is empty): a whole file's line diff keeps only the lines around its changes.
+ */
 export interface LineChange {
-  kind: "same" | "ins" | "del";
+  kind: "same" | "ins" | "del" | "gap";
   text: string;
   old?: number;
   new?: number;
+  count?: number;
 }
 /** One side of a diff: the file's bytes (with its full size), or no file. */
 export type DiffSide = { kind: "absent" } | { kind: "bytes"; bytes: Uint8Array; size: number };
@@ -99,16 +107,49 @@ export function cutBytes(bytes: Uint8Array, max: number): Uint8Array {
   return bytes.subarray(0, end);
 }
 
-/** Splits jsdiff's value into lines (its last line ending dropped), without a regex. */
+/** Splits jsdiff's value into lines (its last line ending dropped, a CRLF's `\r` too), without a regex. */
 function splitLines(value: string): string[] {
   const out: string[] = [];
   let start = 0;
+  const line = (end: number) => value.slice(start, end > start && value[end - 1] === "\r" ? end - 1 : end);
   for (let i = value.indexOf("\n"); i !== -1; i = value.indexOf("\n", start)) {
-    out.push(value.slice(start, i));
+    out.push(line(i));
     start = i + 1;
   }
   if (start < value.length) out.push(value.slice(start));
   return out;
+}
+
+/**
+ * A whole file's line diff as it travels to the window: the changed lines, up to `context` unchanged ones around each,
+ * and a `gap` (with its count) for every run left out; at most `max` lines, gaps not counted. `cut`: lines were dropped
+ * past `max`. Linear, so 200 KB of short lines (over 100,000 of them) answers a few lines, not megabytes.
+ */
+export function compactLines(lines: LineChange[], context = DIFF_CONTEXT_LINES, max = MAX_DIFF_LINES): { lines: LineChange[]; cut: boolean } {
+  // Each line's distance to the nearest change, before and after it.
+  const near = new Uint8Array(lines.length);
+  let since = Infinity;
+  for (let i = 0; i < lines.length; i++) {
+    since = lines[i].kind === "same" ? since + 1 : 0;
+    if (since <= context) near[i] = 1;
+  }
+  since = Infinity;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    since = lines[i].kind === "same" ? since + 1 : 0;
+    if (since <= context) near[i] = 1;
+  }
+  const out: LineChange[] = [];
+  let i = 0;
+  for (; i < lines.length && out.length < max; i++) {
+    if (near[i]) {
+      out.push(lines[i]);
+      continue;
+    }
+    const last = out.at(-1);
+    if (last?.kind === "gap") last.count = (last.count ?? 0) + 1;
+    else out.push({ kind: "gap", text: "", count: 1 });
+  }
+  return { lines: out, cut: i < lines.length };
 }
 
 /** The time a diff may still take: its deadline (a `Date.now()` value) minus now, never below 0. */
@@ -152,10 +193,12 @@ export function wordParts(before: string, after: string, deadline = deadlineIn(D
   return changes.filter((c) => c.value !== "").map((c) => ({ kind: c.added ? "ins" : c.removed ? "del" : "same", text: c.value }));
 }
 
-const textOf = (s: DiffSide): string => (s.kind === "absent" ? "" : Buffer.from(cutBytes(s.bytes, MAX_DIFF_BYTES)).toString("utf8"));
+/** A Buffer over the same memory (Buffer.from(Uint8Array) would copy it). */
+const view = (u: Uint8Array): Buffer => Buffer.from(u.buffer, u.byteOffset, u.byteLength);
+const textOf = (s: DiffSide): string => (s.kind === "absent" ? "" : view(cutBytes(s.bytes, MAX_DIFF_BYTES)).toString("utf8"));
 const sizeOf = (s: DiffSide): number | null => (s.kind === "absent" ? null : s.size);
 const sameSides = (a: DiffSide, b: DiffSide): boolean =>
-  a.kind === "absent" ? b.kind === "absent" : b.kind !== "absent" && a.size === b.size && Buffer.from(a.bytes).equals(Buffer.from(b.bytes));
+  a.kind === "absent" ? b.kind === "absent" : b.kind !== "absent" && a.size === b.size && view(a.bytes).equals(view(b.bytes));
 const cut = (a: DiffSide, b: DiffSide): boolean => (sizeOf(a) ?? 0) > MAX_DIFF_BYTES || (sizeOf(b) ?? 0) > MAX_DIFF_BYTES;
 
 /** The reader's parser (document-reader spec §3): remark-parse + remark-gfm, no raw HTML path. */
@@ -403,8 +446,8 @@ function alignMarkdown(before: string, after: string, budgetMs: number, maxOutpu
 /** The plain line diff of `file` (what a Markdown file falls back to), with its own `budgetMs`. */
 export function textDiff(file: string, before: DiffSide, after: DiffSide, budgetMs = DIFF_TIMEOUT_MS): FileDiffView {
   const ext = extensionOf(file);
-  const lines = lineChanges(textOf(before), textOf(after), deadlineIn(budgetMs));
-  return { ok: true, kind: "text", same: sameSides(before, after), truncated: cut(before, after), lines, lang: ext || null };
+  const lines = compactLines(lineChanges(textOf(before), textOf(after), deadlineIn(budgetMs)));
+  return { ok: true, kind: "text", same: sameSides(before, after), truncated: cut(before, after) || lines.cut, lines: lines.lines, lang: ext || null };
 }
 
 export const isMarkdownFile = (file: string): boolean => {
@@ -430,5 +473,6 @@ export function diffFile(file: string, before: DiffSide, after: DiffSide, budget
   const md = alignMarkdown(a, b, budgetMs);
   if (!md) return textDiff(file, before, after, budgetMs);
   // The Source toggle's line diff gets what the blocks left of the budget.
-  return { ok: true, kind: "markdown", same, truncated, blocks: md.blocks, source: lineChanges(a, b, md.deadline) };
+  const source = compactLines(lineChanges(a, b, md.deadline));
+  return { ok: true, kind: "markdown", same, truncated: truncated || source.cut, blocks: md.blocks, source: source.lines };
 }

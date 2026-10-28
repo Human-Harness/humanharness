@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MAX_DIFF_BYTES, cutBytes, diffFile, isBinary, lineChanges, wordParts } from "../src/file-diff";
+import { DIFF_CONTEXT_LINES, MAX_DIFF_BYTES, MAX_DIFF_LINES, compactLines, cutBytes, diffFile, isBinary, lineChanges, textDiff, wordParts } from "../src/file-diff";
 
 const side = (text: string) => ({ kind: "bytes" as const, bytes: Buffer.from(text), size: Buffer.byteLength(text) });
 const absent = { kind: "absent" as const };
@@ -57,6 +57,52 @@ describe("file diff basics (file-timeline spec §4)", () => {
   it("large sides are cut to 200 KB, with a notice", () => {
     const big = "x\n".repeat(MAX_DIFF_BYTES);
     expect(diffFile("big.txt", side(big), side(`${big}y\n`))).toMatchObject({ kind: "text", truncated: true, same: false });
+  });
+
+  it("CRLF line endings don't show as part of the text", () => {
+    expect(lineChanges("a\r\nb\r\n", "a\r\nc\r\n").map((l) => [l.kind, l.text])).toEqual([
+      ["same", "a"],
+      ["del", "b"],
+      ["ins", "c"],
+    ]);
+  });
+
+  it("unchanged runs far from a change collapse into one gap with their count", () => {
+    const lines = lineChanges("1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n", "1\n2\n3\n4\n5\nX\n7\n8\n9\n10\n");
+    const { lines: kept, cut } = compactLines(lines, 2);
+    expect(cut).toBe(false);
+    expect(kept.map((l) => (l.kind === "gap" ? `gap ${l.count}` : `${l.kind} ${l.text}`))).toEqual([
+      "gap 3",
+      "same 4",
+      "same 5",
+      "del 6",
+      "ins X",
+      "same 7",
+      "same 8",
+      "gap 2",
+    ]);
+    // Nothing changed: no line at all, only the gap.
+    expect(compactLines(lineChanges("a\nb\n", "a\nb\n")).lines).toEqual([{ kind: "gap", text: "", count: 2 }]);
+  });
+
+  it("a big text diff stays small: 200 KB of short lines with one change, or every line changed", () => {
+    const before = "a\n\n".repeat(68_000);
+    const after = `${before.slice(0, 100_000)}b${before.slice(100_000)}`;
+    const one = textDiff("log.txt", side(before), side(after));
+    if (one.kind !== "text") throw new Error(one.kind);
+    expect(JSON.stringify(one).length).toBeLessThan(5_000);
+    expect(one.lines.filter((l) => l.kind === "same")).toHaveLength(2 * DIFF_CONTEXT_LINES);
+    // A spent budget: every line removed, then added. Capped, and said so.
+    const all = textDiff("log.txt", side(before), side(after), 0);
+    if (all.kind !== "text") throw new Error(all.kind);
+    expect(all.lines.length).toBeLessThanOrEqual(MAX_DIFF_LINES);
+    expect(all.truncated).toBe(true);
+    expect(JSON.stringify(all).length).toBeLessThan(1_000_000);
+    // The Markdown view's source lines are compacted the same way.
+    const shorter = "a\n\n".repeat(2000);
+    const md = diffFile("notes.md", side(shorter), side(`${shorter}b\n`));
+    if (md.kind !== "markdown") throw new Error(md.kind);
+    expect(md.source.length).toBeLessThan(20);
   });
 
   it("never stalls on long runs of spaces (no backtracking on document text)", () => {

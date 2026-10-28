@@ -696,7 +696,7 @@ export class History {
     }
   }
 
-  /** `file`'s mode and blob id at commit `sha`, without reading the blob; null when it is not there. */
+  /** `file`'s mode and blob id at commit or tree `sha`, without reading the blob; null when it is not there. */
   private async entryAt(sha: string, file: string, cache: object = {}): Promise<{ mode: number; oid: string } | null> {
     const cut = file.lastIndexOf("/");
     const dir = cut < 0 ? undefined : file.slice(0, cut);
@@ -750,7 +750,8 @@ export class History {
         task,
         action,
         at: new Date(commit.author.timestamp * 1000).toISOString(),
-        blob: (await this.entryAt(id, file, cache))?.oid ?? null,
+        // The tree it already read: no second read of the commit.
+        blob: (await this.entryAt(commit.tree, file, cache))?.oid ?? null,
       });
     }
     return groupTimeline(commits, file, actionLabel);

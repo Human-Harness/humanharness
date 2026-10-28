@@ -1,6 +1,6 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { MAX_DIFF_BLOCKS, MAX_DIFF_OUTPUT, diffFile, diffMarkdown as diffMarkdownOrNull, markdownBlocks, parseableMarkdown } from "../src/file-diff";
 
 const side = (text: string) => ({ kind: "bytes" as const, bytes: Buffer.from(text), size: Buffer.byteLength(text) });
@@ -109,14 +109,21 @@ describe("diffMarkdown (file-timeline spec §4.2)", () => {
     expect(t.lines.map((l) => l.kind)).toEqual(["del", "del", "ins", "ins"]);
   });
 
-  it("many changed blocks share one budget: the whole diff ends close to it", () => {
+  it("many changed blocks share one budget: once it is spent, the rest shows as removed and added", () => {
     const words = (seed: string) => Array.from({ length: 1500 }, (_, i) => `${seed}${(i * 7919) % 1500}`).join(" ");
     const before = Array.from({ length: 30 }, (_, i) => `${words(`a${i}x`)}.`).join("\n\n");
     const after = Array.from({ length: 30 }, (_, i) => `${words(`a${i}y`)}.`).join("\n\n");
-    const start = performance.now();
-    const d = diffFile("a.md", side(before), side(after), 100);
-    expect(performance.now() - start).toBeLessThan(1000);
+    // A clock that moves 5 ms per look (jsdiff's too): the 100 ms budget runs out part way, whatever the machine's load.
+    let now = 0;
+    const clock = vi.spyOn(Date, "now").mockImplementation(() => (now += 5));
+    let d: ReturnType<typeof diffFile>;
+    try {
+      d = diffFile("a.md", side(before), side(after), 100);
+    } finally {
+      clock.mockRestore();
+    }
     if (d.kind !== "markdown") throw new Error("not markdown");
+    // Once the shared budget was spent, the blocks left show as removed, then added.
     expect(d.blocks.filter((b) => b.status === "removed")).not.toHaveLength(0);
   });
 

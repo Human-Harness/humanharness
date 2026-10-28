@@ -24,7 +24,7 @@ An engine is an official AI command-line tool the person already uses. Human Har
 - Slots never share an ACP adapter, even with the same profile. One slot's `session/cancel` or crash can't touch another.
 - Claude needs nothing new. Each turn is already its own `claude -p` process.
 - `slot.sleep()` closes an idle ACP adapter process (`AcpTransport.close()`) and keeps the session id. The next turn starts a new process and calls `session/load`. For Claude, `sleep()` does nothing.
-- When `session/load` fails, `openSession` falls back to `session/new`. Only an expired login is an error. The new session is reported through `onSession`. The earlier conversation is then lost. In board mode the task shows the activity line "Couldn't resume the earlier conversation; started a new one." (`RESUME_FAILED`); a plain harness tells nothing yet.
+- When `session/load` fails, `openSession` falls back to `session/new`. Only an expired login is an error. The new session is reported through `onSession`. The earlier conversation is then lost. In board mode the task shows the system line "Couldn't resume the earlier conversation; started a new one." (a live `task-notice` of kind `resume-failed`, not saved in the chat; `parallel.md`); a plain harness tells nothing yet.
 - `AcpTransport` sets its event sink only after `openSession`. A history that `session/load` replays never reaches the window or the turn's `edits`. Keep that order.
 
 ### Spike facts (PT-S1…S5)

@@ -91,7 +91,9 @@ Spec: `docs/superpowers/specs/2026-10-27-parallel-tasks-and-jobs-design.md` §5.
 
 **Conflicts.**
 - After its commits, `endTurn` looks at the commits since `before` (at most 200, `History.commitsSince`).
-- A path is a conflict when this turn committed it and another task's commit changed it in that span.
+- The turn's paths for the check: the ones it committed (owned and shared), plus the paths it surely wrote. An edit event names its paths at its start; `TurnLedger.noteEditEnd` moves them to the window's `wrote` set only when that edit ends without an error (`workspace.ts`, on the activity's end). A denied or failed edit only named its path, so it never makes a conflict. `wrote` catches a turn whose change another task already committed (the same text), which leaves it nothing to commit.
+- A path is a conflict when it is one of those paths and another task's commit changed it in that span.
+- Both sides are compared in one spelling (`samePath`, NFC) and deduplicated: edit paths are NFC, git keeps the file's own name (NFD on macOS).
 - The check is best effort. A failure is logged ("Conflict check failed") and reports no conflict.
 - The slot's `onAttribution` gets `{ owned, shared, with, conflicts }`. It is called only for an overlapped turn. Board mode turns the conflicts into notices in both tasks' chats (`parallel.md`, "Conflict notices and tokens").
 
@@ -129,10 +131,13 @@ Spec §5.3, Decision 12. In a harness that declares `parallel` (`parallel.md`):
 
 - **"Undo this task"** (`hh:restoreTask`) restores by paths: `restoreTaskByPaths` (`packages/shell/src/main/restore-paths.ts`) puts the task's own paths (`ownedPathsOf`; a path both owned and shared counts as owned) back to the group's `start` with `History.restorePaths(paths, start, RESTORE_TASK, { task })`, in one commit. Its shared paths go too only with `includeShared`; the window never sends it today, so they stay and come back as `sharedLeft`.
 - It is refused, with the file named, when:
-  - another running turn touched one of the paths (`runningPaths`: the ledger's edits and `changedSince`; P2): "Another task is changing <path>: undo this one once it waits";
-  - a path has changes the history hasn't saved: "<path> has changes not saved in the history yet";
-  - a later task, or a commit outside any task, changed one of the paths after this task began (`laterChangesSharing` over the same commits the window check read): "A later task also changed <path>" or "<path> was changed after this task";
-  - the task began further back than 500 commits, or, with a full window, its start is in the older half of it or isn't its own "Before message" ("This task is too far back to undo by its files").
+  - another running turn touched one of the paths (`runningPaths`: the ledger's edits and `changedSince`; P2): "Another task is changing <path>. Undo this one once that task waits.";
+  - a path has changes the history hasn't saved: "<path> has changes not saved in the history yet, so this task can't be undone now.";
+  - a later task, or a commit outside any task, changed one of the paths after this task began (`laterChangesSharing` over the same commits the window check read): "A later task also changed <path>, so this task can't be undone by itself." or "<path> was changed after this task, so it can't be undone by itself.";
+  - the task began further back than 500 commits, or, with a full window, its start is in the older half of it or isn't its own "Before message": "This task is too far back to undo by its files.";
+  - the task has no start or no paths of its own: "This task has no files of its own to take back.".
+- **What the window sees.** A refusal is an answer, not an error: `hh:restoreTask` returns `{ refused: { reason, path?, by? } }` (`UndoRefusal`, built by `undoRefusalOf` in `tasks-ipc.ts`; `by` is `"task"` or `"outside"` for a later change). The other tasks' ids never reach the window. The History panel (`undoByFiles`, set when `state.parallel`) shows the reason in the person's language (`parallel.undo*`) as an alert and stays open.
+- **The confirm is for the task alone.** In board mode the History panel never counts later tasks in "Undo this task": undo by paths never takes back another task's changes, and main refuses instead when a later change touched the task's files. Plain mode still counts the later tasks it undoes.
 - The checks run in that order: later changes first, then running turns and unsaved changes right before the restore. A turn already running can still write between those reads and the restore; new turns wait while an undo runs (`checkTurn` polls the `RestoreGuard`).
 - Only the task's own lane being busy blocks it (`RestoreGuard.run`'s `busy` option); other tasks go on.
 - **"Go back here"** (`hh:restore`) stays a whole-folder restore, so it undoes every task's later changes. It is refused while any open task runs an operation (`busy` is the board's `isBusy`, every lane): "A turn is running".
@@ -199,7 +204,6 @@ What under `.harness/` names a place: only notes' `files:` (agent-provided paths
 - A history the root kept before the harness added profiles is not moved by a folder move: no history tracks the root any more.
 - No size limit for the history yet: a folder with large media inflates it in the app's data folder.
 - Board-mode undo can't undo a task's shared paths from the window: the confirm offering them (open question 5) isn't built.
-- The History panel doesn't know board mode: its "Undo this task" confirm still counts later tasks it would undo (board mode refuses instead), and a refusal shows only the panel's generic "I couldn't go back to that point"; the reason naming the file stays in main's error.
 - Parallel turns: a turn's `edits` set has no size limit. A turn that reverts another running turn's change to HEAD drops it from that turn's `changedSince` with no conflict. `saveNow` still throws if a file vanishes between `statusMatrix` and `git.add`.
 - A restore's skipped paths (`RestoreResult.skipped`) are only logged: the History panel doesn't tell the person yet.
 - A restore checks a file's parent folder right before writing, but another process could still swap that folder for a link between the check and the write. Where the OS has no `O_NOFOLLOW` (Windows), the last path part isn't protected that way either; only the `lstat` check before the write is.

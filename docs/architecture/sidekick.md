@@ -178,6 +178,6 @@ Known gaps that stay:
 - Only the "Before you send" card has the why line and "Don't flag"; after-reply, heads-up, guard (`missing`) and daily cards have neither, so their kinds (`missing` and `daily` among them) can't be muted from the UI; muting `off-phase` on a pre-send card still mutes the drift heads-up.
 - Learned items brought by an import are saved as the person's (`source: "person"`, "Yours"), so the learn turn never changes them.
 
-With parallel tasks (`parallel.md`, "Focus and events"), Sidekick hears only the focused task: a turn that starts in the background, or starts focused and ends in the background, gets no after-reply card or note-context heads-up, and a background phase move never reaches the process guard, even once the task is focused again. Its after-reply cards of one task stay on screen after the focus moves to another.
+With parallel tasks (`parallel.md`, "Focus and events"), Sidekick hears only the focused task: a turn that starts in the background, or starts focused and ends in the background, gets no after-reply card or note-context heads-up, and a background phase move reaches the process guard only once the task is focused again (only its latest move, once). Its after-reply cards of one task stay on screen after the focus moves to another.
 
 Not built yet: the Approve button wiring for before-approve (document-review plan); `focus` heads-ups about parallel tasks (the parallel-tasks spec); in the panel, the head naming the last speaker, a row of the scope's sidekicks and turning one off from its mark (§7).

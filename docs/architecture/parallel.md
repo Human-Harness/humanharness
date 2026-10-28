@@ -50,7 +50,7 @@ A lane is today's single-task machinery, reused unchanged: a `TaskManager`, its 
 
 - a turn that starts in the background is not heard, start or end;
 - a turn that started focused and ends in the background is not heard at its end either: no after-reply card, no note-context heads-up for that turn (PR decision);
-- a phase move of a background lane (an `auto` move) never reaches the process guard, even after the focus comes back.
+- a phase move of a background lane (an `auto` move) isn't heard then; the lane keeps its latest unheard move, and the process guard hears it once when that lane is next focused (the board's change hook). Earlier unheard moves of that lane are not replayed.
 
 ## The gate and its queue
 
@@ -84,25 +84,25 @@ A "Parallel tasks" section (`SettingsSheet.tsx`, `ParallelSection`) shows only i
 
 ## Conflict notices and tokens
 
-- An overlapped turn's attribution (`onAttribution`, `history.md`) names paths another task also changed. Both tasks get a **notice** in their chat naming the other task ("This task and “{task}” both changed {path}."), at most 5 paths then "and N more"; when the other task has ended, only this one gets "A task that has ended also changed {path}.".
-- A notice is stored as a structured system line: an assistant entry with empty text and `notice: { kind: "conflict", paths, more?, other?, ended? }` (`ChatNotice`). The window draws it as a system line in the person's language (`Message.tsx`, `parallel.conflict*`); it never counts as the last answer, so a waiting task's choices stay answerable. An older app shows nothing for it.
-- While the task's turn runs, the notice shows as an English activity line and goes to the chat after that turn's entries. An idle focused task shows it on its next chat load.
+- An overlapped turn's attribution (`onAttribution`, `history.md`, "Conflicts") names paths another task also changed: paths this turn committed or surely wrote (an edit that ended without an error), compared in NFC. Both tasks get a **notice** in their chat naming the other task ("This task and “{task}” both changed {path}."), at most 5 paths then "and N more"; when the other task has ended, only this one gets "A task that has ended also changed {path}.".
+- A notice is stored as a structured system line: an assistant entry with empty text and `notice: { kind: "conflict", paths, more?, other?, ended? }` (`ChatNotice`, the runtime's `TaskNotice`). The window draws it as a system line in the person's language (`Message.tsx`, `parallel.conflict*`); it never counts as the last answer, so a waiting task's choices stay answerable. An older app shows nothing for it.
+- **Live.** Board mode also sends the notice to the window as a runtime event, `{ type: "task-notice", notice }` (only the app sends it, never a transport; plain mode never gets one). It goes through `laneEmit`, so the focused task shows it at once and the live buffer keeps it for a later focus. The window's reducer (`state.ts`) keeps a notice that comes during a turn and adds it after that turn's answer, as the saved chat has it; with no turn on screen (the focused task waits) it goes on screen at once. The chat file gets it after the running turn's entries, or at once when the task is idle.
 - Each task keeps `conflict` (the paths, newest last, at most 20); the inbox shows a chip.
 - **Tokens.** Each send adds its own usage (input + output, never cache) to the lane's `tokens` once, at its end (`LaneStore.amend`).
-- A lane whose engine couldn't `session/load` its earlier conversation (PT-S4) shows the activity line "Couldn't resume the earlier conversation; started a new one." It is not written to the chat.
+- A lane whose engine couldn't `session/load` its earlier conversation (PT-S4) gets a live `task-notice` of kind `resume-failed`, drawn as the system line "Couldn't resume the earlier conversation; started a new one." (`parallel.resumeFailed`). It is not written to the chat, so it doesn't come back on the next load.
 
 ## The inbox
 
 - **`client.tasks`** (`TasksClient`, preload channels `hh:tasksList`, `hh:tasksFocus`, `hh:tasksCancelQueued`, `hh:tasksResume`, push `hh:tasksChange`): `list()` answers `TasksState` (`tasks: TaskSummary[]`, oldest first; `paused?`; `caps`), `onChange`, `focus(id | null)`, `cancelQueued(id)`, `resumeQueues()`. A `TaskSummary` carries the id, scope, action, label (the action's label or the first 60 characters of the question, as the history names it), state (`running`, `waiting`, `queued`, `closing`, `checkpoint`), `waitingFor` (`message`, `answer`, `phase`), phase, `startedAt`, tokens, conflict and `focused`. Nothing else of the task leaves main.
-- **The core inbox** (`packages/ui/src/parallel/Inbox.tsx`, `useTasks.ts`): a button in the chat's top bar, "Inbox" with a count badge (its label for screen readers: "Inbox, N waiting"), that opens a popover with the pause line (and Resume when out of quota), then the sections Waiting for you, Working, Queued (each row with Cancel) and Jobs (empty until part 3), and "New task" (the start view). A row focuses its task. It shows on the work screen, not on Home.
+- **The core inbox** (`packages/ui/src/parallel/Inbox.tsx`, `useTasks.ts`): a button in the chat's top bar, "Inbox" with a count badge (its label for screen readers: "Inbox, N waiting"), that opens a popover with the pause line ("Out of quota until 3:00 PM", with the weekday when the reset is not today, and Resume when out of quota), then the sections Waiting for you, Working, Queued (each row with Cancel) and Jobs (empty until part 3), and "New task" (the start view). A row focuses its task; a queued row's Cancel is described by the row's label (`aria-describedby`). A polite live region announces "N waiting for you" when the count changes. It shows on the work screen, not on Home.
 - **`inbox: false`** (a top-level manifest key, since `ui` is already the custom-UI path) hides the core inbox and its button. `client.tasks` stays, for a harness that draws its own panel.
-- **Attention items** (`task-attention.ts`, Decision 10): a task entering `waiting` raises `{ kind: "task", id }` with key `waiting`, severity `action`, its label as the title and target `{ panel: "task", focus: id }`, in the base's shared `AttentionStore` (`attention-stores.ts`, the plugins' store, HMAC-tagged; `known` for a task origin = an open lane). Leaving `waiting` or the open tasks resolves it. The task inbox reads `client.tasks`, never the items' `read` flag.
+- **Attention items** (`task-attention.ts`, Decision 10): a task entering `waiting` raises `{ kind: "task", id }` with key `waiting`, severity `action`, its label as the title and target `{ panel: "task", focus: id }`, in the base's shared `AttentionStore` (`attention-stores.ts`, the plugins' store, HMAC-tagged; `known` for a task origin = an open lane). Leaving `waiting` or the open tasks resolves it. `TaskAttention` counts a task as raised only once the store took the item, so a failed raise (or a missing store) is tried again at the next update, and so is a failed resolve; a badge call that throws is logged. The task inbox reads `client.tasks`, never the items' `read` flag; in board mode the plugins inbox's "mark all read" marks only plugin origins.
 - **Dock badge**: the waiting count plus the plugins' count (`app.dock.setBadge`), set on change only. Board mode only.
-- **Notification** (`notifyWaiting`, off by default): when a task starts waiting and the window isn't focused, an OS notification with the task's label and "Waiting for you"; its click shows the window and focuses that task. Badge and notification carry a count and a label only, never chat content (P4).
+- **Notification** (`notifyWaiting`, off by default): when a task starts waiting and the window isn't focused, an OS notification with the task's label and "Waiting for you"; its click shows the window and focuses that task. Main keeps a reference to each notification until it is clicked or closed, so its click isn't lost to garbage collection. Badge and notification carry a count and a label only, never chat content (P4).
 
 ## Undo
 
-In board mode "Undo this task" restores by paths and "Go back here" is refused while any task is busy: see `history.md`, "Undo in board mode".
+In board mode "Undo this task" restores the task's own paths only, never another task's changes: its confirm is for the task alone, and a refusal shows in the History panel with the reason and the file. "Go back here" is refused while any task is busy. See `history.md`, "Undo in board mode".
 
 ## Edge cases
 
@@ -120,10 +120,9 @@ In board mode "Undo this task" restores by paths and "Go back here" is refused w
 - OpenCode is held at one session until a spike with OpenCode installed shows two `opencode acp` processes work (PT-S5; spec open question 1).
 - Archived chats have no viewer. A scope chat plain mode writes after the migration marker (drop `parallel`, then add it back) is never migrated.
 - A lane's turns write the chat of the open scope, while loading and notices use the task's own scope: they disagree for a `scope: "none"` action, or after a scope switch while the lane is open.
-- Sidekick: a background phase move is lost for the process guard; Sidekick's after-reply cards of one task stay on screen after the focus moves to another (pre-existing).
-- A successor or prepared task keeps the previous chat on screen above it; a focused task that ends leaves its chat on screen while main is at the start view.
-- An idle focused task gets no live window notice for a conflict; it shows on the next load. The live notice is English.
-- `TaskAttention` records a task as waiting before its item is raised: a store that fails then leaves that wait without an item. The plugins inbox's "mark all read" also marks task items read. The notification object isn't kept, so a garbage collection could lose its click.
+- Sidekick: of a background lane's phase moves only the latest reaches the process guard, and only once the lane is focused; Sidekick's after-reply cards of one task stay on screen after the focus moves to another (pre-existing).
+- A focused task that ends leaves its chat on screen while main is at the start view. (A successor takes the chat on screen as in the plain app: a next topic chosen from a choice replaces it, `parallel.spec.ts`.)
+- The resume-failed notice is live only: it isn't saved in the task's chat.
 
 ## Where to look
 

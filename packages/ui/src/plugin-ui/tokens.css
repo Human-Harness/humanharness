@@ -1,0 +1,114 @@
+/* The app's --hh-* tokens for plugin panels: copied from ../styles.css (:root and its dark block); a test pins every value. */
+:root {
+  --hh-paper: #f4f4f1;
+  --hh-sheet: #fbfbfa;
+  --hh-surface: #ffffff;
+  --hh-ink: #191e24;
+  --hh-on-ink: #ffffff;
+  --hh-slate: #3f4852;
+  --hh-muted: #5b636c;
+  --hh-line-strong: #cfcfcb;
+  --hh-line: #e1e1dd;
+  --hh-segment: #e7e7e3;
+  --hh-ok: #2e6b4f;
+  --hh-ok-dot: #2e8a5c;
+  --hh-warn: #9a4a12;
+  --hh-highlight: #fbefc4;
+  --hh-error-bg: #fbeaea;
+  --hh-backdrop: rgba(25, 30, 36, 0.18);
+  --hh-profile-coral: #f2b8a8;
+  --hh-profile-amber: #f3d38b;
+  --hh-profile-green: #b5dcb4;
+  --hh-profile-teal: #a6d9d3;
+  --hh-profile-blue: #b4ccef;
+  --hh-profile-violet: #cdbdf0;
+  --hh-profile-pink: #f1bcd6;
+  --hh-profile-gray: #d3d5d8;
+  --hh-font: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --hh-display: "Lexend", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --hh-paper: #161819;
+    --hh-sheet: #1d2023;
+    --hh-surface: #24282c;
+    --hh-ink: #ecedee;
+    --hh-on-ink: #191e24;
+    --hh-slate: #c2c7cd;
+    --hh-muted: #9aa1a9;
+    --hh-line-strong: #4a5057;
+    --hh-line: #33383e;
+    --hh-segment: #2c3136;
+    --hh-ok: #6cc497;
+    --hh-ok-dot: #4fb07f;
+    --hh-warn: #e39a5e;
+    --hh-highlight: #4a3f1c;
+    --hh-error-bg: #3a2222;
+    --hh-backdrop: rgba(0, 0, 0, 0.45);
+    --hh-profile-coral: #7a3d2f;
+    --hh-profile-amber: #6e5420;
+    --hh-profile-green: #2f5b37;
+    --hh-profile-teal: #255852;
+    --hh-profile-blue: #2c4670;
+    --hh-profile-violet: #4a3a74;
+    --hh-profile-pink: #6e3352;
+    --hh-profile-gray: #464b52;
+    color-scheme: dark;
+  }
+}
+/* The theme the app sends (usePlugin().theme) wins over the system's; PluginRoot sets the attribute. */
+[data-theme="light"] {
+  --hh-paper: #f4f4f1;
+  --hh-sheet: #fbfbfa;
+  --hh-surface: #ffffff;
+  --hh-ink: #191e24;
+  --hh-on-ink: #ffffff;
+  --hh-slate: #3f4852;
+  --hh-muted: #5b636c;
+  --hh-line-strong: #cfcfcb;
+  --hh-line: #e1e1dd;
+  --hh-segment: #e7e7e3;
+  --hh-ok: #2e6b4f;
+  --hh-ok-dot: #2e8a5c;
+  --hh-warn: #9a4a12;
+  --hh-highlight: #fbefc4;
+  --hh-error-bg: #fbeaea;
+  --hh-backdrop: rgba(25, 30, 36, 0.18);
+  --hh-profile-coral: #f2b8a8;
+  --hh-profile-amber: #f3d38b;
+  --hh-profile-green: #b5dcb4;
+  --hh-profile-teal: #a6d9d3;
+  --hh-profile-blue: #b4ccef;
+  --hh-profile-violet: #cdbdf0;
+  --hh-profile-pink: #f1bcd6;
+  --hh-profile-gray: #d3d5d8;
+  color-scheme: light;
+}
+[data-theme="dark"] {
+  --hh-paper: #161819;
+  --hh-sheet: #1d2023;
+  --hh-surface: #24282c;
+  --hh-ink: #ecedee;
+  --hh-on-ink: #191e24;
+  --hh-slate: #c2c7cd;
+  --hh-muted: #9aa1a9;
+  --hh-line-strong: #4a5057;
+  --hh-line: #33383e;
+  --hh-segment: #2c3136;
+  --hh-ok: #6cc497;
+  --hh-ok-dot: #4fb07f;
+  --hh-warn: #e39a5e;
+  --hh-highlight: #4a3f1c;
+  --hh-error-bg: #3a2222;
+  --hh-backdrop: rgba(0, 0, 0, 0.45);
+  --hh-profile-coral: #7a3d2f;
+  --hh-profile-amber: #6e5420;
+  --hh-profile-green: #2f5b37;
+  --hh-profile-teal: #255852;
+  --hh-profile-blue: #2c4670;
+  --hh-profile-violet: #4a3a74;
+  --hh-profile-pink: #6e3352;
+  --hh-profile-gray: #464b52;
+  color-scheme: dark;
+}

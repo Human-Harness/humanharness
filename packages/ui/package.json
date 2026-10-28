@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "type": "module",
   "license": "Apache-2.0",
-  "exports": { ".": "./src/index.ts", "./client": "./src/client.ts", "./data-change": "./src/data-change.ts", "./styles.css": "./src/styles.css" },
+  "exports": { ".": "./src/index.ts", "./client": "./src/client.ts", "./data-change": "./src/data-change.ts", "./styles.css": "./src/styles.css", "./plugin-ui": "./src/plugin-ui/index.ts", "./plugin-ui/styles.css": "./src/plugin-ui/plugin-ui.css" },
   "dependencies": {
     "@humanharness/engines": "workspace:*",
     "@humanharness/harness-sdk": "workspace:*",

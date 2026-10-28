@@ -127,8 +127,9 @@ export interface TaskDeps {
   /**
    * The model profile a new task runs on, resolved once when it starts (resources spec §5). `floor`: a mode's `minTier`
    * the new task must reach (task-modes spec §5.3), passed only when there is one. Absent: the engine's defaults.
+   * `tier`: the plugin action's tier (plugins spec §5.3), passed only for a prepared task: replaces the manifest tier.
    */
-  profileFor?(action: string | undefined, floor?: Tier): Promise<ModelProfile>;
+  profileFor?(action: string | undefined, floor?: Tier, tier?: Tier): Promise<ModelProfile>;
   /** The profile to retry a first turn with after `model-unavailable`, or null when none is left (spec §5.3). */
   fallbackFor?(profile: ModelProfile, tried: string[]): Promise<ModelProfile | null>;
   /**
@@ -365,6 +366,31 @@ export class TaskManager {
     return this.op(async () => {
       if (scope !== undefined && !(await this.switchNow(scope))) return this.stopped();
       return this.askNow(text, display);
+    });
+  }
+
+  /**
+   * A plugin's prepared task, after the person pressed Start (plugins spec §5.3): a free question with this exact text,
+   * at the action's tier, whose commits carry `Plugin: <id>`. `scope` is the action's: "none" runs in `_app`, "required"
+   * in the open scope (refused with none open, before anything closes); absent, where a free question runs. The open
+   * task closes first, as for `start`.
+   */
+  startPrepared(p: { prompt: string; display: string; tier: Tier; plugin: string; scope?: "none" | "required" }): Promise<void> {
+    return this.op(async () => {
+      const state = await this.d.store.load();
+      const where = !this.d.scoped ? MAIN_SCOPE : p.scope === "none" ? APP_SCOPE : p.scope === "required" ? state.open : this.scopeFor(state, undefined);
+      if (where === undefined) throw new ScopeRequired();
+      // A new task, like `start`: the open one closes first (its note), so Start never loses the person's work.
+      if (!(await this.closeCurrent())) return this.stopped();
+      const language = await this.d.language();
+      await this.begin(
+        { ...keptQuestion(p.prompt), plugin: p.plugin },
+        where,
+        (notesIndex) => fillPrompt(QUESTION_PROMPT, { language, notesIndex, question: p.prompt }),
+        p.display,
+        undefined,
+        p.tier,
+      );
     });
   }
 
@@ -711,6 +737,7 @@ export class TaskManager {
       ...(c.action ? { action: c.action } : {}),
       ...(c.scope ? { scope: c.scope } : {}),
       ...(c.phase ? { phase: c.phase.id } : {}),
+      ...(c.plugin ? { plugin: c.plugin } : {}),
     };
   }
 
@@ -1310,11 +1337,13 @@ export class TaskManager {
       phase?: { id: string; startedAt: string };
       phases?: { id: string; at: string; by: PhaseBy }[];
       timeBox?: TimeBoxState;
+      plugin?: string;
     },
     scope: string,
     message: (notesIndex: string) => string,
     display: string,
     floor?: Tier,
+    tier?: Tier,
   ): Promise<void> {
     // Cancelled or quitting since the operation began (e.g. right after the closing turn): start nothing.
     if (this.cancelRequested) return this.stopped();
@@ -1322,8 +1351,14 @@ export class TaskManager {
     await this.between();
     const context = await this.contextFor(scope, task.action);
     const engine = await this.d.engine();
-    // Resolved once: the task keeps its model, effort and cap to the end (spec D2). A floor only from a mode (task-modes §5.3).
-    const profile = floor !== undefined ? await this.d.profileFor?.(task.action, floor) : await this.d.profileFor?.(task.action);
+    // Resolved once: the task keeps its model, effort and cap to the end (spec D2). A floor only from a mode (task-modes §5.3),
+    // a tier only from a plugin action (plugins §5.3); neither: the action alone, as before (D0).
+    const profile =
+      floor !== undefined
+        ? await this.d.profileFor?.(task.action, floor)
+        : tier !== undefined
+          ? await this.d.profileFor?.(task.action, undefined, tier)
+          : await this.d.profileFor?.(task.action);
     // A task that starts below its mode's tier starts anyway, marked (spec §5.3: the question comes only with a switch).
     const below = task.mode !== undefined && (await this.belowMinTier(task.mode, profile));
     const current: CurrentTask = {

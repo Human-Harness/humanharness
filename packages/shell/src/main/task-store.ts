@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import type { ModelProfile } from "@humanharness/engines";
-import { BLOCK_ID, MODE_ID, PHASE_ID } from "@humanharness/harness-sdk";
+import { BLOCK_ID, MODE_ID, PHASE_ID, PLUGIN_ID } from "@humanharness/harness-sdk";
 import type { Session } from "@humanharness/runtime";
 import type { ActionStatus, TaskStatus } from "@humanharness/ui/client";
 import { MAIN_SCOPE, isScopeDir, isScopeId, tasksFile } from "@humanharness/workspace";
@@ -83,6 +83,8 @@ export interface CurrentTask {
   timeBox?: TimeBoxState;
   /** A mode the current phase doesn't allow, kept to come back (modes spec §7). Never next to `mode`. */
   suspendedMode?: string;
+  /** The plugin whose prepared task this is (plugins spec §5.3): its commits carry `Plugin: <id>`. */
+  plugin?: string;
 }
 
 /** `<folder>/.harness/tasks.json`: the current task and how each action ended. Replaces the runtime's session.json. */
@@ -215,6 +217,7 @@ function cleanCurrent(c: unknown, known: Known = {}): CurrentTask | null {
     ...(proposal ? { phaseProposal: proposal } : {}),
     ...(timeBox ? { timeBox } : {}),
     ...(!mode && isMode(c.suspendedMode) ? { suspendedMode: c.suspendedMode } : {}),
+    ...(typeof c.plugin === "string" && PLUGIN_ID.test(c.plugin) ? { plugin: c.plugin } : {}),
   };
 }
 

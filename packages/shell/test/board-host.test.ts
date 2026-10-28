@@ -578,6 +578,29 @@ describe("conflicts and tokens per task (parallel spec §5.3, §9.1)", () => {
     expect((await t.chat("main", idB)).filter((e) => e.notice)).toHaveLength(1);
   });
 
+  it("an idle task on screen gets its notice in the window at once, as well as in its chat", async () => {
+    const t = host({ tasks: 2 });
+    await t.h.interrupt();
+    const a = t.h.board.start("write", "First");
+    await until(() => t.turns.length === 1);
+    t.turns[0].end();
+    await a;
+    const idA = t.turns[0].slot;
+    const b = t.h.board.start("write", "Second");
+    await until(() => t.turns.length === 2);
+    const idB = t.turns[1].slot;
+    // A waits on screen while B runs in the background.
+    await t.h.board.focus(idA);
+    t.window.length = 0;
+    t.turns[1].end([ok], attribution([{ path: "spec.md", tasks: [idA] }]));
+    await b;
+    await until(() => t.window.some((e) => e.type === "task-notice"));
+    expect(notices(t.window)).toEqual([{ kind: "conflict", paths: ["spec.md"], other: "write" }]);
+    expect((await t.chat("main", idA)).filter((e) => e.notice)).toHaveLength(1);
+    // B is not on screen: its notice waits in its chat for its next load.
+    expect((await t.chat("main", idB)).filter((e) => e.notice)).toHaveLength(1);
+  });
+
   it("a conflict with a task that has ended names no task and marks only this one", async () => {
     const t = host({ tasks: 2 });
     await t.h.interrupt();

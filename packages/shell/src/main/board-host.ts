@@ -464,9 +464,9 @@ export function createBoardHost(d: BoardHostDeps, initial: { engineId: string | 
   }
 
   /**
-   * A notice for lane `x`'s chat. While its turn runs, the buffer and (when focused) the window get it now, and its
-   * chat gets it after the turn's own entries; otherwise it goes to `now`, for its chat at once (the window shows it on
-   * its next load).
+   * A notice for lane `x`'s chat. The window (when `x` is focused) gets it now and draws it as the same system line the
+   * saved chat shows: while `x`'s turn runs, after that turn's answer (the buffer keeps it for a later focus), and its
+   * chat gets it after the turn's own entries; otherwise at once, and it goes to `now`, for its chat at once.
    */
   function notify(x: Lane, conflict: ConflictNotice, now: [Lane, Notice][]): void {
     const notice: Notice = {
@@ -474,12 +474,8 @@ export function createBoardHost(d: BoardHostDeps, initial: { engineId: string | 
       // Empty text: an app that doesn't know notices shows nothing for it.
       entry: { id: randomUUID(), role: "assistant", text: "", blocks: [], activities: [], at: new Date().toISOString(), task: x.id, notice: conflict },
     };
-    if (!x.turns.isBusy()) {
-      now.push([x, notice]);
-      return;
-    }
-    x.notices.push(notice);
-    // The window draws it as the same system line the saved chat shows, after the turn's answer.
+    if (x.turns.isBusy()) x.notices.push(notice);
+    else now.push([x, notice]);
     x.emit({ type: "task-notice", notice: conflict });
   }
 

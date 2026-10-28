@@ -28,6 +28,9 @@ export function ImportSidekick({ client, onSaved, onCancel, original }: { client
   const [result, setResult] = useState<SidekickImportResult | null>(null);
   const [ack, setAck] = useState(false);
   const [saveFailed, setSaveFailed] = useState(false);
+  const [saving, setSaving] = useState(false);
+  /** Set from the first Save click: a second click before the answer never sends a second save (a new sidekick each). */
+  const savingNow = useRef(false);
   const [changed, setChanged] = useState(false);
   /** Bumped by every run: an older import's answer never replaces a newer one. */
   const runs = useRef(0);
@@ -60,10 +63,12 @@ export function ImportSidekick({ client, onSaved, onCancel, original }: { client
   }, [draft]);
 
   const run = async (from: Opener, input: () => Promise<SidekickImportInput | null>) => {
-    if (busy) return;
+    if (busy || savingNow.current) return;
     const n = ++runs.current;
     opener.current = from;
     setBusy(true);
+    // The old preview or alert goes now: a draft from an earlier run can't be saved while this one works.
+    setResult(null);
     setAck(false);
     setSaveFailed(false);
     try {
@@ -93,6 +98,9 @@ export function ImportSidekick({ client, onSaved, onCancel, original }: { client
   };
 
   const save = async (d: Ok) => {
+    if (savingNow.current || busy) return;
+    savingNow.current = true;
+    setSaving(true);
     setSaveFailed(false);
     const keep = original ? { id: original.id, ...(original.tier ? { tier: original.tier } : {}), ...(original.preset !== undefined ? { preset: original.preset } : {}), ...(original.defaultOn !== undefined ? { defaultOn: original.defaultOn } : {}) } : {};
     try {
@@ -100,6 +108,9 @@ export function ImportSidekick({ client, onSaved, onCancel, original }: { client
     } catch {
       setSaveFailed(true);
       return;
+    } finally {
+      savingNow.current = false;
+      setSaving(false);
     }
     onSaved();
   };
@@ -115,7 +126,7 @@ export function ImportSidekick({ client, onSaved, onCancel, original }: { client
       {original ? (
         <p>
           <span>{t("sidekick.import.changed")}</span> ·{" "}
-          <button type="button" ref={buttons.bring} className="hh-link" aria-disabled={busy} onClick={() => void bring()}>
+          <button type="button" ref={buttons.bring} className="hh-link" aria-disabled={busy || saving} onClick={() => void bring()}>
             {t("sidekick.import.bring")}
           </button>
         </p>
@@ -125,10 +136,10 @@ export function ImportSidekick({ client, onSaved, onCancel, original }: { client
           <textarea aria-label={t("sidekick.import.paste")} value={text} onChange={(e) => setText(e.target.value)} rows={6} />
           <div className="hh-sk-actions">
             {/* aria-disabled, not disabled: the pressed button keeps focus while the import runs. */}
-            <button type="button" ref={buttons.run} aria-disabled={busy || !text.trim()} onClick={() => text.trim() && void run("run", async () => ({ kind: "paste", text }))}>
+            <button type="button" ref={buttons.run} aria-disabled={busy || saving || !text.trim()} onClick={() => text.trim() && void run("run", async () => ({ kind: "paste", text }))}>
               {t("sidekick.import.run")}
             </button>
-            <button type="button" ref={buttons.choose} aria-disabled={busy} onClick={() => void choose()}>
+            <button type="button" ref={buttons.choose} aria-disabled={busy || saving} onClick={() => void choose()}>
               {t("sidekick.import.choose")}
             </button>
           </div>
@@ -177,7 +188,7 @@ export function ImportSidekick({ client, onSaved, onCancel, original }: { client
           </label>
           {saveFailed && <p role="alert">{t("sidekick.import.saveFailed", { name: draft.draft.name })}</p>}
           <div className="hh-sk-actions">
-            <button type="button" className="hh-primary" disabled={!ack} onClick={() => void save(draft)}>
+            <button type="button" className="hh-primary" disabled={!ack} aria-disabled={saving} onClick={() => void save(draft)}>
               {t("sidekick.import.save")}
             </button>
             <button type="button" onClick={close}>

@@ -2097,6 +2097,27 @@ describe("import (spec §2a.6)", () => {
     expect(h.records()).toContainEqual(expect.objectContaining({ id: "rulo", source: { kind: "paste" } }));
   });
 
+  it("saveSidekick writes the learned items first: a failed one writes no sidekick, and the retry doubles nothing", async () => {
+    const h = harness({ record: on });
+    const def = { name: "Rulo", mark: "🦊", personality: "", purposes: [{ id: "mentor" as const }], source: { kind: "paste" as const } };
+    const learned = [
+      { text: "Prefers short answers.", level: "you" as const },
+      { text: "Cites sources.", level: "harness" as const },
+    ];
+    const put = h.deps.store.put.bind(h.deps.store);
+    const spy = vi.spyOn(h.deps.store, "put").mockImplementation(async (r) => {
+      if (r.type === "learned" && r.text === "Cites sources.") throw new Error("disk full");
+      return put(r);
+    });
+    await expect(h.ctl.saveSidekick(def, learned)).rejects.toThrow();
+    expect(h.records().filter((r) => r.type === "sidekick")).toEqual([]);
+    spy.mockRestore();
+    await h.ctl.saveSidekick(def, learned);
+    // One Rulo (no `rulo-2`), beside the default sidekick a first save seeds.
+    expect(h.records().filter((r) => r.type === "sidekick" && r.name === "Rulo").map((r) => r.id)).toEqual(["rulo"]);
+    expect(h.records().filter((r) => r.type === "learned").map((r) => r.text)).toEqual(["Prefers short answers.", "Cites sources."]);
+  });
+
   it("saveSidekick keeps a stored files source on an edit of that sidekick", async () => {
     const source = { kind: "files" as const, paths: ["/n/a.md"], hash: sha256("v1") };
     const rulo = { id: "rulo", type: "sidekick" as const, name: "Rulo", mark: "🦊", personality: "", purposes: [{ id: "mentor" as const }], order: 0, source };

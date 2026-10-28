@@ -761,7 +761,7 @@
       "changed": "The original changed",
       "bring": "Bring the changes",
       "errors": {
-        "engine-settings": "These files are in an engine's own settings folder, and this app never reads those folders. Copy what you need and paste it here instead.",
+        "engine-settings": "These files belong to an engine's settings. Copy or paste their content instead.",
         "too-many": "Choose at most 4 files.",
         "too-big": "{{file}} is larger than 64 KB.",
         "too-big-paste": "The pasted text is larger than 64 KB.",

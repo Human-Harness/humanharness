@@ -460,10 +460,11 @@ export class SidekickController {
   }
 
   /**
-   * The import preview's Save (and the editor's): `def` replaces every field of the sidekick `def.id` (new without it),
-   * then each learned item not already there is written as the person's (they saved it). Works with Sidekick off. A
-   * files source is kept only when an import here read it, or the sidekick already has it: checkOriginal reads those
-   * paths later, so the renderer never chooses them. Throws when anything can't be written.
+   * The import preview's Save (and the editor's): each learned item not already there is written as the person's (they
+   * saved it), then `def` replaces every field of the sidekick `def.id` (new without it). Learned items go first: they
+   * are deduped, so a Save retried after a failed write never doubles them nor leaves a second sidekick behind. Works
+   * with Sidekick off. A files source is kept only when an import here read it, or the sidekick already has it:
+   * checkOriginal reads those paths later, so the renderer never chooses them. Throws when anything can't be written.
    */
   async saveSidekick(def: SidekickInput, learned: { text: string; level: "you" | "harness" }[] = []): Promise<SidekickInfo> {
     if (def.source?.kind === "files") {
@@ -471,7 +472,6 @@ export class SidekickController {
       const stored = def.id !== undefined ? (await this.d.store.sidekicks()).find((k) => k.id === def.id)?.source : undefined;
       if (!this.issued.includes(key) && !(stored?.kind === "files" && sourceKey(stored) === key)) throw new Error("Not a source an import read");
     }
-    const saved = await this.d.store.saveSidekick(def);
     const have = new Set((await this.learnedRecords()).map((r) => `${r.level}\n${r.text}`));
     const now = new Date().toISOString();
     for (const l of learned) {
@@ -479,6 +479,7 @@ export class SidekickController {
       have.add(`${l.level}\n${l.text}`);
       await this.d.store.put({ id: `l-${randomBytes(4).toString("hex")}`, type: "learned", text: l.text, level: l.level, source: "person", updatedAt: now });
     }
+    const saved = await this.d.store.saveSidekick(def);
     await this.push();
     return { id: saved.id, name: saved.name, mark: saved.mark };
   }

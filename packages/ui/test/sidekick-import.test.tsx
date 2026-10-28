@@ -14,7 +14,7 @@ const DRAFT = {
   skipped: ["Tool permissions"],
 };
 const FILES = { kind: "files" as const, paths: ["/n/rulo.md"], hash: "a".repeat(64) };
-const ENGINE = "These files are in an engine's own settings folder, and this app never reads those folders. Copy what you need and paste it here instead.";
+const ENGINE = "These files belong to an engine's settings. Copy or paste their content instead.";
 
 describe("Import (spec §2a.6)", () => {
   it("paste → preview with what was skipped; Save needs the copy acknowledgement and passes the source", async () => {
@@ -38,7 +38,7 @@ describe("Import (spec §2a.6)", () => {
     expect(onSaved).toHaveBeenCalled();
   });
 
-  it("an engine-settings file is refused with a message that says those folders are never read", async () => {
+  it("an engine-settings file is refused with the message to copy or paste instead", async () => {
     const c = new FakeClient({ language: "en" });
     c.sidekickPicked = ["CLAUDE.md"];
     c.sidekickImport = { ok: false, reason: "engine-settings" };
@@ -114,6 +114,46 @@ describe("Import (spec §2a.6)", () => {
     await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "Import" })));
     expect(screen.queryByText("Rulo")).toBeNull();
     expect(onCancel).toHaveBeenCalled();
+  });
+
+  it("a double click on Save saves once (a second save would make a second sidekick)", async () => {
+    const c = new FakeClient({ language: "en" });
+    c.sidekickImport = DRAFT;
+    let finish = () => {};
+    const saveSidekick = c.sidekick.saveSidekick;
+    c.sidekick.saveSidekick = async (...args) => {
+      await new Promise<void>((r) => (finish = r));
+      return saveSidekick(...args);
+    };
+    const onSaved = vi.fn();
+    await renderIn("en", <ImportSidekick client={c} onSaved={onSaved} />);
+    fireEvent.change(screen.getByRole("textbox", { name: "Paste instructions" }), { target: { value: "x" } });
+    fireEvent.click(screen.getByRole("button", { name: "Import" }));
+    fireEvent.click(await screen.findByRole("checkbox", { name: "I understand it's a copy" }));
+    const save = screen.getByRole("button", { name: "Save" });
+    save.focus();
+    fireEvent.click(save);
+    fireEvent.click(save);
+    await waitFor(() => expect(save.getAttribute("aria-disabled")).toBe("true"));
+    fireEvent.click(save);
+    expect(document.activeElement).toBe(save);
+    finish();
+    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+    expect(c.sidekickCalls.filter((call) => call[0] === "saveSidekick")).toHaveLength(1);
+  });
+
+  it("a new run clears the old preview: its draft can't be saved while the next one works", async () => {
+    const c = new FakeClient({ language: "en" });
+    c.sidekickImport = DRAFT;
+    await renderIn("en", <ImportSidekick client={c} onSaved={() => {}} />);
+    fireEvent.change(screen.getByRole("textbox", { name: "Paste instructions" }), { target: { value: "x" } });
+    fireEvent.click(screen.getByRole("button", { name: "Import" }));
+    expect(await screen.findByRole("button", { name: "Save" })).toBeTruthy();
+    c.sidekick.importDraft = () => new Promise(() => {});
+    fireEvent.click(screen.getByRole("button", { name: "Import" }));
+    expect(await screen.findByRole("status")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
+    expect(screen.queryByText("Rulo")).toBeNull();
   });
 
   it("a failed save shows an alert and keeps the preview", async () => {

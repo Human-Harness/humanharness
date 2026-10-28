@@ -28,6 +28,8 @@ import { type Event, type Session, fail } from "@humanharness/runtime";
 import {
   type ActionStatus,
   type ContextItem,
+  type ContextRead,
+  type ContextResult,
   type CurrentTaskView,
   type ModeChoice,
   type ModeResult,
@@ -60,7 +62,9 @@ import {
   type PhaseText,
   QUESTION_PROMPT,
   REVIEW_PROMPT,
+  addablePath,
   closePrompt,
+  contextAddPrompt,
   fillPrompt,
   interviewSection,
   modePrompt,
@@ -453,6 +457,37 @@ export class TaskManager {
   }
 
   /**
+   * "Add now" (context-panel spec §4.1): the open task reads `file` in one turn of kind `context-add`. Like a mode pick
+   * it waits behind a running turn (the window shows "Waiting"), never cancels it. `accepted` resolves with a refusal or
+   * `{ ok: true }` before the turn's events; `done` once the turn ended. Both reject when the operation can't run (the
+   * app is closing). `taskId`: the open task the caller saw. `file` is a folder-relative path the caller already checked
+   * against the person's folder; here it is only checked to fit the prompt.
+   */
+  addContext(taskId: string, file: string): { accepted: Promise<ContextResult>; done: Promise<void> } {
+    let settled = false;
+    let take!: (r: ContextResult) => void;
+    let refuse!: (err: unknown) => void;
+    const accepted = new Promise<ContextResult>((resolve, reject) => {
+      take = (r) => {
+        settled = true;
+        resolve(r);
+      };
+      refuse = reject;
+    });
+    const run = () => this.op(() => this.addNow(taskId, file, take));
+    const done = (this.isBusy() ? this.whenFree(run) : run()).then(
+      () => {
+        if (!settled) refuse(new Error("The file was not added"));
+      },
+      (err: unknown) => {
+        if (!settled) refuse(err);
+        throw err;
+      },
+    );
+    return { accepted, done };
+  }
+
+  /**
    * The person moves the open task to phase `to` (task-phases spec §4.2), only while it waits: unlike a mode pick, it
    * never waits for a turn. `accepted` resolves with a refusal or with how the change goes on, before any turn's events;
    * `done` once its turn ended. Both reject when the operation can't run (a turn runs, the app is closing). `task`: the
@@ -569,6 +604,13 @@ export class TaskManager {
   async runningTask(): Promise<{ id: string; action?: string; scope: string } | null> {
     const c = (await this.d.store.load()).current;
     return c ? { id: c.id, ...(c.action ? { action: c.action } : {}), scope: scopeOfTask(c) } : null;
+  }
+
+  /** The open task's context record (context-panel spec §5.1), or null when `taskId` is not the open task. */
+  async contextRecord(taskId: string): Promise<{ id: string; scope: string; start: ContextItem[]; startTokens?: number; reads: ContextRead[] } | null> {
+    const c = (await this.d.store.load()).current;
+    if (!c || c.id !== taskId) return null;
+    return { id: c.id, scope: scopeOfTask(c), start: c.start ?? [], ...(c.startTokens !== undefined ? { startTokens: c.startTokens } : {}), reads: c.reads ?? [] };
   }
 
   /** The open task's history trailer, for commits made on its behalf (the person's data writes); none without a task. */
@@ -1153,6 +1195,52 @@ export class TaskManager {
       }
       // The mode is the task's once the agent got it: a failed switch can be picked again.
       if (done.ok) await this.setMode(c.id, mode, below);
+      return this.afterRun(c.id, done, false);
+    });
+  }
+
+  /**
+   * Checks, in order: `taskId` is the open task; the path fits the prompt; the task waits. Then one visible turn of
+   * kind `context-add`, told to the window first, run like a follow-up (a due checkpoint first, kept lines with it, a
+   * lost session resumed as `askNow` does).
+   */
+  private async addNow(taskId: string, file: string, take: (r: ContextResult) => void): Promise<void> {
+    const c = await this.storedCurrent();
+    if (!c || c.id !== taskId) return take({ ok: false, reason: "no-task" });
+    if (!addablePath(file)) return take({ ok: false, reason: "outside" });
+    if (c.status !== "waiting") return take({ ok: false, reason: "busy" });
+    take({ ok: true });
+    this.tellTurn({ task: c.id, kind: "context", path: file });
+    return this.endsInWindow(async () => {
+      if (needsCheckpoint(c) && !(await this.checkpoint(c))) return this.stopped();
+      // Lines kept for the task's next message go with it (review spec §5.4); a lost session resumes as askNow does.
+      const said = await this.withNotices(c, contextAddPrompt(file));
+      const message = c.resume ? await this.resumeMessageFor(c, said) : said;
+      await this.setStatus(c.id, "running");
+      // Checked with no await before the send: a Stop while the status was saved.
+      if (this.cancelRequested) {
+        await this.setStatus(c.id, "waiting");
+        return this.stopped();
+      }
+      const options = { display: `Take ${file} into account`, ...(c.action ? { action: c.action } : {}), followUp: true, phase: "context-add" as const };
+      let done: Done;
+      try {
+        if (c.resume) this.recordStart = c.id;
+        done = c.resume ? await this.firstTurn(c, message, options) : await this.runTurn(c, message, options);
+      } catch (err) {
+        if (err instanceof TurnNotStarted) await this.setStatus(c.id, "waiting");
+        throw unwrap(err);
+      } finally {
+        // A first turn that reported no usage leaves no total: a later turn's is not the first's.
+        this.recordStart = null;
+      }
+      if (c.resume && done.ok) {
+        await this.update((s) => {
+          if (s.current?.id !== c.id) return s;
+          const { resume: _resume, ...rest } = s.current;
+          return { ...s, current: rest };
+        });
+      }
       return this.afterRun(c.id, done, false);
     });
   }

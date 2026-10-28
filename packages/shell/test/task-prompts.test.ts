@@ -3,12 +3,15 @@ import { describe, expect, it } from "vitest";
 import {
   CHECKPOINT_PROMPT,
   CLOSE_PROMPT,
+  CONTEXT_ADD_PROMPT,
   PHASES_HOW,
   PHASE_PROMPT,
   QUESTION_PROMPT,
   RESUME_PROMPT,
   WRAP_UP_PROMPT,
+  addablePath,
   closePrompt,
+  contextAddPrompt,
   fillPrompt,
   modePrompt,
   modeSection,
@@ -233,5 +236,24 @@ describe("phase prompts (task-phases spec §4.4, §5, §6)", () => {
     );
     expect(resumeMessage({ ...vars, timeLeft: "" })).toBe(resumeMessage(vars));
     expect(resumeMessage(vars)).not.toContain("Time left");
+  });
+});
+
+describe("the Add now prompt (context-panel spec §4.1)", () => {
+  it("names the path in backticks; the mock replay knows it by its start", () => {
+    expect(contextAddPrompt("docs/conventions.md")).toBe(
+      "The person wants you to take `docs/conventions.md` into account. Read it now and say in one line what changes for this task.",
+    );
+    expect(CONTEXT_ADD_PROMPT.startsWith("The person wants you to take `")).toBe(true);
+  });
+
+  it("only takes a path that can't break out of its backticks or its line", () => {
+    expect(addablePath("docs/a b.md")).toBe(true);
+    expect(addablePath("a`b.md")).toBe(false);
+    expect(addablePath("a\nb.md")).toBe(false);
+    expect(addablePath("a\u0007.md")).toBe(false);
+    expect(addablePath("a\u2028b.md")).toBe(false);
+    expect(addablePath("")).toBe(false);
+    expect(addablePath("a".repeat(1001))).toBe(false);
   });
 });

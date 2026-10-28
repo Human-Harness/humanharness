@@ -823,6 +823,9 @@
     "proposal_other": "the AI proposed to move to another part {{count}} times",
     "marker": "Comment: {{text}}"
   },
+  "context": {
+    "addLine": "Take {{path}} into account"
+  },
   "errors": {
     "engine-not-installed": "I can't find {{engine}} on this computer.",
     "session-expired": "Your {{engine}} session ended. Sign in again to continue.",

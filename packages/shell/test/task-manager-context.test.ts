@@ -190,3 +190,66 @@ describe("during the task (context-panel spec §3.2)", () => {
     expect(t.state().current?.startTokens).toBe(700);
   });
 });
+
+describe("Add now (context-panel spec §4.1)", () => {
+  it("runs one visible turn of kind context-add on the waiting task, told to the window first", async () => {
+    const t = setup({ script: [[ok], [read("r1", "docs/conv.md"), ok]], extra: { folder: async () => "/w" } });
+    await t.manager.start("quiz");
+    const { accepted, done } = t.manager.addContext("t1", "docs/conv.md");
+    expect(await accepted).toEqual({ ok: true });
+    await done;
+    expect(t.notices.at(-1)).toEqual({ task: "t1", kind: "context", path: "docs/conv.md" });
+    expect(t.turns[1].message).toContain("take `docs/conv.md` into account");
+    expect(t.turns[1].options).toMatchObject({ phase: "context-add", display: "Take docs/conv.md into account", followUp: true, task: "t1" });
+    expect(t.state().current?.status).toBe("waiting");
+    expect(t.state().current?.reads?.[0]).toMatchObject({ path: "docs/conv.md" });
+  });
+
+  it("refuses with no open task, another task's id, a path that breaks the prompt", async () => {
+    const t = setup();
+    // `done` too: the refused operation still holds the queue until it returns.
+    const answer = async (task: string, file: string) => {
+      const { accepted, done } = t.manager.addContext(task, file);
+      await done;
+      return accepted;
+    };
+    expect(await answer("t1", "a.md")).toEqual({ ok: false, reason: "no-task" });
+    await t.manager.start("quiz");
+    expect(await answer("t7", "a.md")).toEqual({ ok: false, reason: "no-task" });
+    expect(await answer("t1", "a`b.md")).toEqual({ ok: false, reason: "outside" });
+    expect(t.turns).toHaveLength(1);
+    expect(t.notices).toEqual([]);
+  });
+
+  it("waits behind a running turn instead of failing", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const t = setup({ gate });
+    const starting = t.manager.start("quiz");
+    await Promise.resolve();
+    const { accepted, done } = t.manager.addContext("t1", "a.md");
+    release();
+    await starting;
+    expect(await accepted).toEqual({ ok: true });
+    await done;
+    expect(t.turns).toHaveLength(2);
+  });
+
+  it("contextRecord gives the open task's record, and null for another id", async () => {
+    const t = setup({ script: [[usage(500), ok]] });
+    expect(await t.manager.contextRecord("t1")).toBeNull();
+    await t.manager.start("quiz");
+    const r = await t.manager.contextRecord("t1");
+    expect(r).toMatchObject({ id: "t1", scope: "main", startTokens: 500, reads: [] });
+    expect(r?.start.map((i) => i.id)).toContain("brief");
+    expect(await t.manager.contextRecord("t7")).toBeNull();
+  });
+
+  it("D0: no Add now, no context-add turn and no context notice", async () => {
+    const t = setup();
+    await t.manager.start("quiz");
+    await t.manager.ask("Go on");
+    expect(t.turns.map((x) => x.options.phase)).not.toContain("context-add");
+    expect(t.notices.filter((n) => n.kind === "context")).toEqual([]);
+  });
+});

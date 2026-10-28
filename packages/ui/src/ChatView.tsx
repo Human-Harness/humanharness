@@ -703,6 +703,11 @@ export function ChatView({
     lastMode.current = null;
     setPhaseFailed(false);
     const at = new Date().toISOString();
+    // "Add now" (context-panel spec §4.1): the person's line names the file, as the chat log keeps it.
+    if (n.kind === "context") {
+      dispatch({ type: "user", text: t("context.addLine", { path: n.path ?? "" }), at });
+      return;
+    }
     if (n.kind === "wrap-up") {
       dispatch({ type: "user", text: t("phases.wrapUpLine"), at, timeUp: true });
       return;

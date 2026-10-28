@@ -4,6 +4,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { initHarness } from "../src/init";
 import { main } from "../src/main";
 import { type PluginFinding, checkPlugin, execWrites, formatPluginFindings, wildcardOverOneLabel } from "../src/plugin-check";
+import { P12_NOTE } from "../src/plugin-test";
 import { CORE, memoryIo, replaceIn, tempRoot } from "./helpers";
 
 type Json = Record<string, any>;
@@ -425,9 +426,20 @@ export default definePlugin({
     fs.writeFileSync(path.join(dir, "plugin.config.ts"), config);
     const { io, out } = memoryIo(dir);
     expect(await main(["plugin", "check"], io)).toBe(0);
-    expect(out()).toBe("No problems found.\n");
+    // P12: the build runs plugin.config.ts in this process, so the note comes first.
+    expect(out()).toBe(`${P12_NOTE}\nNo problems found.\n`);
     expect(fs.existsSync(path.join(dir, "dist", "panel-main.js"))).toBe(true);
+    const json = memoryIo(dir);
+    expect(await main(["plugin", "check", "--json"], json.io)).toBe(0);
+    expect(json.err()).toBe(`${P12_NOTE}\n`);
+    expect(JSON.parse(json.out())).toEqual({ findings: [] });
   }, 30_000);
+
+  it("--no-build runs no plugin code and prints no P12 note", async () => {
+    const { io, out, err } = memoryIo(fixture());
+    expect(await main(["plugin", "check", "--no-build"], io)).toBe(0);
+    expect(out() + err()).not.toContain(P12_NOTE);
+  });
 
   it("a build that fails is an error finding, not a crash", async () => {
     const dir = fixture({ files: { "plugin.config.ts": "export default 1;\n" } });

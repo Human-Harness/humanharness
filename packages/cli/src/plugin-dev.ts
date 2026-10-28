@@ -6,6 +6,7 @@ import { type Io, UsageError, parseCommand } from "./cli";
 import { type DevSpawn, devCommand } from "./dev";
 import { buildPlugin } from "./plugin-build";
 import { checkPlugin, formatPluginFindings } from "./plugin-check";
+import { P12_NOTE } from "./plugin-test";
 
 export const DEV_USAGE = [
   "Usage: humanharness plugin dev --harness <dir> [--plugin <dir>] [--live] [--mock]",
@@ -74,6 +75,8 @@ export async function pluginDevCommand(o: PluginDevOptions): Promise<number> {
   const dir = path.resolve(o.pluginDir);
   // HH_PLUGIN_DIRS is a path.delimiter-separated list.
   if (dir.includes(path.delimiter)) throw new UsageError(`The plugin folder's path can't contain "${path.delimiter}": ${dir}`);
+  // P12: the first build and every rebuild run plugin.config.ts in this process.
+  o.out.write(`${P12_NOTE} Every rebuild runs plugin.config.ts in this process too.\n`);
   const { manifest, findings } = await checkPlugin(dir, { harness: o.harnessDir });
   if (findings.length > 0) o.out.write(formatPluginFindings(findings));
   if (!manifest || findings.some((f) => f.severity === "error")) {

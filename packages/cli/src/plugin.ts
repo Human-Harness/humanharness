@@ -88,6 +88,8 @@ async function checkCommand(args: string[], io: Io): Promise<number> {
     "no-build": { type: "boolean" },
   });
   if (positionals.length > 0) throw new UsageError(CHECK_USAGE.trim());
+  // P12: the build runs plugin.config.ts in this process; on stderr with --json, so stdout stays one JSON document.
+  if (!values["no-build"]) (values.json ? io.stderr : io.stdout).write(`${P12_NOTE}\n`);
   const { findings } = await checkPlugin(path.resolve(io.cwd, values.plugin ?? "."), {
     build: !values["no-build"],
     ...(values.harness ? { harness: path.resolve(io.cwd, values.harness) } : {}),

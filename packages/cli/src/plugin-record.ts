@@ -146,14 +146,16 @@ async function oldFixtures(folder: string): Promise<string[]> {
  * Keys stay in this run's memory: never in a file, a log, an error or the terminal.
  */
 export async function recordPlugin(dir: string, o: RecordOptions, d: RecordDeps, out: Writable): Promise<number> {
+  // P12, before the build (it runs plugin.config.ts) and before any key is typed.
+  out.write(`${P12_NOTE}\n`);
   if (o.build !== false) await buildPlugin(dir);
   const m = await readBuiltManifest(dir);
   if (!m.sources.some((s) => s.id === o.source)) {
     throw new CliError(`"${o.source}" is not a source of ${m.id} (${m.sources.map((s) => s.id).join(", ") || "none"}).`);
   }
   if (m.permissions.secrets.length > 0 && !d.isTTY) throw new CliError("record asks for keys in a terminal");
-  // P12, before any key is typed: the plugin's code runs in this process and could read what is typed.
-  out.write(`${P12_NOTE} While it runs, it can read the keys you type here.\n`);
+  // The plugin's code runs in this process and could read what is typed.
+  if (m.permissions.secrets.length > 0) out.write("While it runs, the plugin can read the keys you type here.\n");
 
   const keys = new Map<string, string>();
   const ask = async (s: PluginManifest["permissions"]["secrets"][number]) => {

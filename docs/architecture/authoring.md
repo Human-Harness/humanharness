@@ -106,7 +106,7 @@ A bare `humanharness plugin` prints the usage and exits with 2, as does an unkno
 
 `buildPlugin` (`plugin-build.ts`) runs esbuild, resolved through the copy `tsx` brings (no direct dependency yet: open question), in memory:
 
-- `plugin.json` from `plugin.config.ts`, bundled for Node into a temp `.mjs` (removed after) and imported: the config runs in the CLI's process (`build` only; the app never runs it).
+- `plugin.json` from `plugin.config.ts`, bundled for Node into a temp `.mjs` (removed after) and imported: the config runs in the CLI's process (every command that builds, P12 below; the app never runs it).
 - `backend.js`: ESM. Each `panels/<id>.tsx` → `panel-<id>.js`, a classic-script IIFE that mounts the default export, `panel-<id>.css` and `panel-<id>.html`. A panel imports only code and `.css`. Top-level await is refused in both ("<file>:<line>: top-level await is not allowed: do the work inside a function").
 - `assets/`: flat, `.svg` and `.png` only, names of 1–64 letters, digits, `_` or `-`; checked with `lstat`.
 - Output is location-independent and deterministic: `NODE_ENV` is `"production"`, `minifyWhitespace` drops path comments, the plugin's own files load as `hh-plugin:<path from the plugin folder>`, and an import outside both the plugin folder and the toolchain is refused, so no machine path (or user name) ends up in a bundle. Two builds give the same bytes.
@@ -133,7 +133,7 @@ A bare `humanharness plugin` prints the usage and exits with 2, as does an unkno
 
 Every command that builds runs the plugin's `plugin.config.ts` in the author's Node process: `build`, `check` (unless `--no-build`), `record` (unless `--no-build`), `dev`'s first check and every `dev` rebuild. `test` and `record` also run the bundled backend, through `esbuild.transform` into an IIFE in a `vm` context with a few host-realm globals and part 1's broker. **Node's `vm` is not a sandbox**: a host-realm value leads back to `process`, so the code can do anything the author's user can, and under `record` it can read the keys typed in the terminal.
 
-- The note ("Note: plugin code runs in this Node process, not in the app's sandbox. Run only plugins you trust.") comes from `test` before the backend runs (on stderr with `--json`), and from `record` after its build, so `plugin.config.ts` has already run, and before any key is asked. `build`, `check` and `dev` print no note.
+- The note ("Note: plugin code runs in this Node process, not in the app's sandbox. Run only plugins you trust.") comes before any plugin code runs: from `test` (on stderr with `--json`), from `record` before its build (a plugin that asks for keys then adds that it can read them, before the first prompt), from `check` when it builds (on stderr with `--json`; none with `--no-build`) and from `dev` before its first check, adding that every rebuild runs `plugin.config.ts` too. `build` prints no note: it is the command that runs the config by name.
 - A source's synchronous part runs under the run limit (2 minutes), so an endless loop before its first `await` is stopped; one that starts after an `await` can't be stopped in this process (`plugins.md`, Known gaps).
 - `test` and `record` end the process once they have printed (`exitsWhenDone` in `main.ts`), so a timer or request the plugin left behind doesn't keep the command alive.
 

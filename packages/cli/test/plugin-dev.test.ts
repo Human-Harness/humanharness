@@ -9,6 +9,7 @@ import { main } from "../src/main";
 import { PLUGIN_USAGE } from "../src/plugin";
 import { type PluginWatch, fsWatch, ignoredChange, pluginDevCommand, pluginDevCommandLine } from "../src/plugin-dev";
 import { initPlugin } from "../src/plugin-init";
+import { P12_NOTE } from "../src/plugin-test";
 import { CORE, memoryIo, memoryStream, replaceIn, tempRoot } from "./helpers";
 
 const { root, cleanup } = tempRoot("hh-plugin-dev-");
@@ -86,6 +87,8 @@ describe("humanharness plugin dev", () => {
     expect(s.calls[0].args).toEqual(["dev"]);
     expect(s.calls[0].env).toMatchObject({ HH_HARNESS_DIR: harness, HH_PLUGIN_DIRS: plugin, HH_PLUGIN_FIXTURES: "1" });
     expect(out.text()).not.toContain("Live:");
+    // P12: said before the first build, and that every rebuild runs plugin.config.ts here too.
+    expect(out.text().startsWith(`${P12_NOTE} Every rebuild runs plugin.config.ts in this process too.\n`)).toBe(true);
     expect(w.state).toMatchObject({ started: 1, closed: 0, dir: plugin });
     s.exit(0);
     expect(await done).toBe(0);

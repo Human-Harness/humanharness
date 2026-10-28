@@ -286,6 +286,9 @@ describe("humanharness plugin record", () => {
     };
     await recordPlugin(copy(), { source: "issues", yes: true, build: false }, deps({ readSecret }), out.stream);
     expect(asked).toEqual(["Jira token (from your profile): "]);
+    // The note is the first line: it comes before the build, which runs plugin.config.ts in this process.
+    expect(out.text().startsWith(`${P12_NOTE}\n`)).toBe(true);
+    expect(out.text()).toContain("While it runs, the plugin can read the keys you type here.");
   });
 
   it("--yes deletes the old fixtures without asking; without it, 'n' keeps them and writes nothing", async () => {

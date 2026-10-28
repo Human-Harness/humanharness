@@ -389,6 +389,8 @@ h4.hh-md-h { font-size: 1em; font-weight: 600; color: var(--hh-slate); }
 .hh-history-files li { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .hh-history-files .hh-change { width: 56px; }
 .hh-history-files code { font-size: 12px; color: var(--hh-slate); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* A changed file that opens its timeline (file-timeline spec §6.2): the path keeps its ellipsis. */
+.hh-history-file-link { display: flex; min-width: 0; text-align: left; cursor: pointer; }
 .hh-history-entries { border-left: 1px solid var(--hh-line-strong); }
 .hh-history-entries > li { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 30px; padding: 4px 6px 4px 14px; border-radius: 6px; }
 .hh-history-entries > li::before { content: ""; position: absolute; left: -4px; top: 50%; width: 7px; height: 7px; margin-top: -3.5px; border-radius: 50%; background: var(--hh-muted); }
@@ -448,6 +450,10 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 /* An entry's diff and the core's go-back confirmation (file-timeline spec §5, §6.1). */
 .hh-entrydiff { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .hh-entrydiff-tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+/* A file's timeline outside the reader, opened from the History panel (file-timeline spec §6.2). */
+.hh-timeline-panel { position: fixed; inset: 52px 0 0 auto; width: min(560px, 100%); box-sizing: border-box; background: var(--hh-sheet); border-left: 1px solid var(--hh-line-strong); padding: 10px 12px 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+.hh-timeline-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-left: 8px; }
+.hh-timeline-panel-head h2 { margin: 0; min-width: 0; font-family: var(--hh-display); font-size: 17px; font-weight: 600; overflow-wrap: anywhere; }
 .hh-restore-backdrop { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 16px; background: var(--hh-backdrop); }
 .hh-restore-confirm { max-width: 440px; padding: 16px; border-radius: 10px; background: var(--hh-surface); border: 1px solid var(--hh-line); }
 .hh-restore-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }

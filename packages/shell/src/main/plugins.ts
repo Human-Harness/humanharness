@@ -1,5 +1,5 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
-import { promises as fs } from "node:fs";
+import { constants as fsConstants, promises as fs } from "node:fs";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
 import {
@@ -26,6 +26,7 @@ import {
   slotFor,
   withSetting,
 } from "@humanharness/harness-sdk";
+import { type FixtureExchange, fixtureTransport, parseFixture } from "@humanharness/harness-sdk/plugin-fixtures";
 import type {
   AttentionItemView,
   AttentionView,
@@ -100,6 +101,13 @@ export interface PluginsDeps {
   surfaceChanged?(view: PluginSurfaceView): void;
   /** A run of `plugin` wrote these collections (a signal only: panels query again, Decision 8). */
   dataChanged?(plugin: string, collections: string[]): void;
+  /**
+   * Fixture mode (P10; mock mode, HH_PLUGIN_FIXTURES): runs play `<plugin folder>/fixtures/<source>/*.json`, keys are
+   * `fixture-<id>`, and neither `fetch`, the command runner, a binary lookup nor the key store is used.
+   */
+  fixtures?: boolean;
+  /** Watches a dev plugin's `dist/` (Decision 22); answers the unwatch. Absent: dev plugins aren't watched. */
+  watch?(dir: string, onChange: () => void): () => void;
   now?(): Date;
   /** A monotonic clock in ms for the crash policy (default performance.now). */
   clock?(): number;
@@ -142,10 +150,14 @@ interface Running {
   lastAction?: number;
   /** The live run id per source, so a run over the limit can be killed. */
   runs: Map<string, string>;
+  /** Fixture mode: each source's transport, read at start and again on every rescan. */
+  transports?: Map<string, Transport>;
   restartTimer?: ReturnType<typeof setTimeout>;
   stopped: boolean;
   loadError?: string;
 }
+
+type Transport = { fetch: typeof fetch; run: typeof runFile };
 
 interface BaseCtx {
   base: string;
@@ -175,6 +187,10 @@ const TIERS = ["light", "standard", "deep"] as const;
 const NOT_RUNNING = "Not running";
 const EMPTY_SURFACE: PluginSurfaceView = { panels: [], chips: [], reloads: {} };
 const WRITE_OPS = new Set<BrokerDataOp["op"]>(["put", "patch", "delete", "replaceAll"]);
+/** Fixture files per source (Task 9): at most this many, each at most this size. */
+const FIXTURE_FILES = 200;
+const FIXTURE_BYTES = 10 * 1024 * 1024;
+const WATCH_DEBOUNCE_MS = 300;
 
 interface Prepared {
   view: PreparedTaskView;
@@ -214,6 +230,9 @@ export class PluginsController {
   private prepared: Prepared | null = null;
   private readonly reloads: Record<string, number> = {};
   private lastSurface = JSON.stringify(EMPTY_SURFACE);
+  /** Dev plugins' `dist/` watches (Decision 22), by plugin id, and their debounce timers. */
+  private readonly watches = new Map<string, { dir: string; stop: () => void }>();
+  private readonly watchTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   constructor(private readonly d: PluginsDeps) {
     this.now = d.now ?? (() => new Date());
@@ -250,6 +269,7 @@ export class PluginsController {
   stop(): Promise<void> {
     return this.serial(async () => {
       this.clearPrepared();
+      this.unwatchAll();
       await this.stopAll();
       this.detached = true;
       this.ctx = null;
@@ -285,6 +305,53 @@ export class PluginsController {
 
   private async reload(): Promise<void> {
     this.entries = this.active ? await loadPlugins({ harness: this.d.harness, pointers: this.d.pointers, devDirs: this.d.devDirs }) : [];
+    this.syncWatches();
+  }
+
+  /** Every dev plugin's `dist/` is watched (only those: bundled and local plugins never are); gone ones unwatched. */
+  private syncWatches(): void {
+    if (!this.d.watch || this.detached) return;
+    const want = new Map(this.entries.filter((e) => e.origin === "dev").map((e) => [e.id, e.dist]));
+    for (const [id, w] of [...this.watches]) if (want.get(id) !== w.dir) this.unwatch(id);
+    for (const [id, dir] of want) {
+      if (this.watches.has(id)) continue;
+      try {
+        this.watches.set(id, { dir, stop: this.d.watch(dir, () => this.devChanged(id)) });
+      } catch (err) {
+        this.log(`${id}: could not watch ${dir}`, err);
+      }
+    }
+  }
+
+  /** A dev plugin's `dist/` changed: after a quiet 300 ms, rescan (new code restarts the backend) and remount its frames. */
+  private devChanged(id: string): void {
+    clearTimeout(this.watchTimers.get(id));
+    this.watchTimers.set(
+      id,
+      setTimeout(() => {
+        this.watchTimers.delete(id);
+        if (this.detached || !this.watches.has(id)) return;
+        void this.rescan()
+          .then(() => this.bumpReload(id))
+          .catch((err: unknown) => this.log(`${id}: could not reload after a change`, err));
+      }, WATCH_DEBOUNCE_MS),
+    );
+  }
+
+  private unwatch(id: string): void {
+    clearTimeout(this.watchTimers.get(id));
+    this.watchTimers.delete(id);
+    const w = this.watches.get(id);
+    this.watches.delete(id);
+    try {
+      w?.stop();
+    } catch (err) {
+      this.log(`${id}: could not stop watching`, err);
+    }
+  }
+
+  private unwatchAll(): void {
+    for (const id of [...this.watches.keys()]) this.unwatch(id);
   }
 
   /**
@@ -369,6 +436,7 @@ export class PluginsController {
       runs: new Map(),
       stopped: false,
     });
+    if (this.d.fixtures) r.transports = await this.fixtureTransports(e);
     r.broker = new PluginBroker({
       manifest: m,
       data: {
@@ -398,9 +466,13 @@ export class PluginsController {
       },
       log: (level, message) => this.appendError(c, id, { message: level === "error" ? message : `${level}: ${message}` }),
       fetch: this.d.fetch,
-      ...(this.d.allowHost ? { allowHost: this.d.allowHost } : {}),
+      // A host check may look names up (network): fixture mode has nothing to look up.
+      ...(this.d.allowHost && !this.d.fixtures ? { allowHost: this.d.allowHost } : {}),
+      // A source with no fixture gets an empty transport: every request fails with "No fixture for …".
+      ...(this.d.fixtures ? { transport: (source: string) => r.transports?.get(source) ?? fixtureTransport([]) } : {}),
       exec: {
-        resolve: this.d.exec.resolve,
+        // Fixture mode looks up no binary on this computer: the fixture transport matches by the command's name.
+        resolve: this.d.fixtures ? async (cmd) => path.resolve(path.sep, "fixture", path.basename(cmd)) : this.d.exec.resolve,
         run: this.d.exec.run,
         cwd: async () => {
           const dir = path.join(this.d.userData, "plugin-exec", id);
@@ -572,11 +644,24 @@ export class PluginsController {
     if (host) await this.d.host.stop(id).catch((err: unknown) => this.log(`${id}: could not stop the backend`, err));
   }
 
+  /** Fixture mode: one transport per declared source, from the plugin's folder (the parent of `dist/`). */
+  private async fixtureTransports(e: Loaded): Promise<Map<string, Transport>> {
+    const root = path.basename(e.folder) === "dist" ? path.dirname(e.folder) : e.folder;
+    const out = new Map<string, Transport>();
+    for (const s of e.manifest.sources) {
+      const exchanges = await readFixtures(path.join(root, "fixtures"), s.id, (message, err) => this.log(`${e.id}: ${message}`, err));
+      out.set(s.id, fixtureTransport(exchanges) as Transport);
+    }
+    return out;
+  }
+
   // ── broker dependencies ────────────────────────────────────────────────────
 
   private async secretValues(r: Running, ids: string[]): Promise<Record<string, string>> {
     const asked = ids.filter((i) => r.approvedSecrets.has(i));
     if (asked.length === 0) return {};
+    // Fixture mode never opens the key store (P10).
+    if (this.d.fixtures) return Object.fromEntries(asked.map((i) => [i, `fixture-${i}`]));
     return this.d.secrets.values(r.entry.id, asked).catch((err: unknown) => {
       this.log(`${r.entry.id}: the keys could not be read`, err);
       return {};
@@ -714,6 +799,7 @@ export class PluginsController {
         const rs = e ? reviewStatus(e, await c.state.state(id), this.harnessOn(id)) : null;
         // B8: a dist that adds a permission (or is gone or broken) stops until reviewed; new code restarts.
         if (!e || !rs?.run || e.distHash !== r.entry.distHash || e.dist !== r.entry.dist) await this.stopPlugin(id);
+        else if (this.d.fixtures) r.transports = await this.fixtureTransports(r.entry);
       }
       for (const e of this.loaded()) {
         if (this.running.has(e.id)) continue;
@@ -1480,6 +1566,38 @@ export class PluginsController {
 }
 
 /** The broker's data ops onto the plugin's own PluginData. */
+/**
+ * `<fixtures>/<source>/*.json` in file-name order (Decision 14): at most FIXTURE_FILES files of at most FIXTURE_BYTES.
+ * A plugin's folder is hostile: links (the folders or a file) are not followed, and a file that isn't a valid exchange
+ * is logged and skipped. A missing folder is no fixtures.
+ */
+async function readFixtures(dir: string, source: string, log: (message: string, err?: unknown) => void): Promise<FixtureExchange[]> {
+  const folder = path.join(dir, source);
+  const isDir = async (p: string) => (await fs.lstat(p).catch(() => null))?.isDirectory() === true;
+  if (!(await isDir(dir)) || !(await isDir(folder))) return [];
+  const names = (await fs.readdir(folder, { withFileTypes: true }).catch(() => []))
+    .filter((d) => d.isFile() && d.name.endsWith(".json"))
+    .map((d) => d.name)
+    .sort()
+    .slice(0, FIXTURE_FILES);
+  const out: FixtureExchange[] = [];
+  for (const name of names) {
+    let file: Awaited<ReturnType<typeof fs.open>> | null = null;
+    try {
+      file = await fs.open(path.join(folder, name), fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0));
+      const st = await file.stat();
+      if (!st.isFile()) throw new Error("not a file");
+      if (st.size > FIXTURE_BYTES) throw new Error("larger than 10 MB");
+      out.push(parseFixture(JSON.parse(await file.readFile("utf8"))));
+    } catch (err) {
+      log(`fixture ${source}/${name} skipped`, err);
+    } finally {
+      await file?.close().catch(() => undefined);
+    }
+  }
+  return out;
+}
+
 function runData(data: PluginData, op: BrokerDataOp): Promise<unknown> {
   switch (op.op) {
     case "get":

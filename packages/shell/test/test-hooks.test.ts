@@ -36,6 +36,12 @@ describe("readTestHooks", () => {
     expect(readTestHooks({ HH_TEST_PLUGIN_RUN_LIMIT_MS: "600000" }, false)).toEqual({ pluginRunLimitMs: 600_000 });
   });
 
+  it("HH_PLUGIN_FIXTURES=1 → plugins run on their fixtures, in development only", () => {
+    expect(readTestHooks({ HH_PLUGIN_FIXTURES: "1" }, false)).toEqual({ pluginFixtures: true });
+    expect(readTestHooks({ HH_PLUGIN_FIXTURES: "1" }, true)).toEqual({});
+    for (const v of ["0", "true", "", "yes"]) expect(readTestHooks({ HH_PLUGIN_FIXTURES: v }, false)).toEqual({});
+  });
+
   it("is empty in a packaged app", () => {
     expect(
       readTestHooks({ HH_TEST_USER_DATA: "/u", HH_TEST_ENGINES: engines, HH_TEST_MOCK: "1", HH_TEST_SUGGESTED_FOLDER: "/f", HH_TEST_SHARED_DIR: "/s" }, true),

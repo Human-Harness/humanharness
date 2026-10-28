@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { promises as fs } from "node:fs";
+import { promises as fs, watch as watchFolder } from "node:fs";
 import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
@@ -1903,6 +1903,18 @@ if (loaded) {
         return rt ? rt.refreshInstructions() : false;
       },
       runLimitMs: hooks.pluginRunLimitMs ?? 120_000,
+      // Mock mode and HH_PLUGIN_FIXTURES: plugins run on their fixtures, never the network or the key store (P10).
+      ...(hooks.mock || hooks.pluginFixtures ? { fixtures: true } : {}),
+      // `plugin dev` (Decision 22): a dev plugin's dist/ rebuilt → its backend restarts and its panels remount.
+      ...(app.isPackaged
+        ? {}
+        : {
+            watch: (dir: string, onChange: () => void) => {
+              const w = watchFolder(dir, { recursive: true }, () => onChange());
+              w.on("error", (err) => pluginLog(`Stopped watching ${dir}`, err));
+              return () => w.close();
+            },
+          }),
       changed: (view) => sendToWindow("hh:plugins", view),
       attentionChanged: (view) => sendToWindow("hh:attention", view),
       log: pluginLog,

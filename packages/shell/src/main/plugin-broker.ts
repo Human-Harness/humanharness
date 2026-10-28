@@ -63,6 +63,11 @@ export interface BrokerDeps {
   /** An extra check of each fetch hop's host name (e.g. public addresses only). */
   allowHost?: (hostname: string) => Promise<boolean>;
   exec: { resolve(cmd: string): Promise<string | null>; run: typeof runFile; cwd(): Promise<string>; env(): Promise<Record<string, string>> };
+  /**
+   * Fixture mode (P10): the fetch and command runner of a run's source, in place of `fetch` and `exec.run`. Every check
+   * above still applies first: hosts, https, exec patterns, key references and redaction.
+   */
+  transport?(source: string): { fetch: typeof fetch; run: typeof runFile };
 }
 
 export const BROKER_LIMITS = {
@@ -346,12 +351,17 @@ export class PluginBroker {
       const out = await pluginFetch(req, {
         hosts: this.d.manifest.permissions.hosts,
         secrets,
-        fetch: this.d.fetch,
+        fetch: this.transportOf(run).fetch,
         signal: run.controller.signal,
         ...(this.d.allowHost ? { allowHost: this.d.allowHost } : {}),
       });
       return out.ok ? { ok: true, value: out.response } : { ok: false, refused: out.reason };
     });
+  }
+
+  /** The live fetch and runner, or the run's source's transport in fixture mode. */
+  private transportOf(run: Run): { fetch: typeof fetch; run: typeof runFile } {
+    return this.d.transport?.(run.source) ?? { fetch: this.d.fetch, run: this.d.exec.run };
   }
 
   private async exec(run: Run, cmd: unknown, args: unknown): Promise<BrokerAnswer> {
@@ -365,7 +375,7 @@ export class PluginBroker {
       const out = await pluginExec(c, list, {
         patterns,
         resolve: this.d.exec.resolve,
-        run: this.d.exec.run,
+        run: this.transportOf(run).run,
         cwd: await this.d.exec.cwd(),
         env: await this.d.exec.env(),
         signal: run.controller.signal,

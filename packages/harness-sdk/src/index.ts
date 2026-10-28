@@ -6,7 +6,7 @@ import { CORE_BLOCKS, INPUT_CORE_BLOCKS, MODE_CORE_BLOCKS, PHASE_CORE_BLOCKS, RE
 import { dataSchema } from "./data";
 import { DOCUMENT_KIND_ID } from "./documents";
 import { CORE_SHEET_SECTIONS, MATERIAL_STAGE_KEYS, materialSchema } from "./material";
-import { hatchProblems, linkedFoldersSchema } from "./hatches";
+import { backendSchema, hatchProblems, linkedFoldersSchema } from "./hatches";
 import { JOB_RESULT_TOOL, jobProblems, jobsSchema } from "./jobs";
 import { DEFAULT_MODE_WORDS, MODE_ID } from "./modes";
 import { parallelSchema } from "./parallel";
@@ -36,6 +36,7 @@ export * from "./plugin-actions";
 export * from "./parallel";
 export * from "./jobs";
 export * from "./hatches";
+export * from "./harness-backend";
 export * from "./documents";
 export * from "./review";
 export * from "./review-schema";
@@ -236,6 +237,8 @@ const manifestSchema = z.object({
   inbox: z.boolean().optional(),
   /** Folders outside the person's folder, linked per scope (hatches spec §3). Absent: none (D0). */
   linkedFolders: linkedFoldersSchema.optional(),
+  /** The harness's own process for its UI (hatches spec §4). Absent: none (D0). */
+  backend: backendSchema.optional(),
   /** Kinds of documents with section templates; the reader checks them and only warns (document-reader spec §4). Absent: none (D0). */
   documents: documentsSchema.optional(),
   /**
@@ -538,6 +541,8 @@ export async function loadHarness(configPath: string, options: { root?: string }
   for (const action of Object.values(loaded.actions)) for (const p of action.phases ?? []) if (p.brief) resolveInHarness(loaded, p.brief);
   // And every job's brief (parallel spec §3).
   for (const job of Object.values(loaded.jobs ?? {})) resolveInHarness(loaded, job.prompt);
+  // And the backend's entry (hatches spec §4.1).
+  if (loaded.backend) resolveInHarness(loaded, loaded.backend);
   return loaded;
 }
 

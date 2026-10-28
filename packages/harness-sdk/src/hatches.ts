@@ -33,6 +33,15 @@ export const linkedFoldersSchema = z
 export const hasLinkedFolders = (h: { linkedFolders?: Record<string, unknown> }): boolean =>
   !!h.linkedFolders && Object.keys(h.linkedFolders).length > 0;
 
+/** The harness backend's entry: a relative path to a .ts, .mts, .js or .mjs file (hatches spec §4.1). */
+export const backendSchema = z
+  .string()
+  .min(1)
+  .regex(/^[^/\\][^:]*\.(ts|mts|js|mjs)$/, { message: "backend is a relative path to a .ts, .mts, .js or .mjs file" });
+
+/** The harness declares a backend. False: no part-2 code runs (D0). */
+export const hasBackend = (h: { backend?: string }): boolean => typeof h.backend === "string";
+
 /** Each problem of the hatches a manifest declares (spec §3.1 checks), for `superRefine`. */
 export function hatchProblems(h: {
   scopes?: unknown;

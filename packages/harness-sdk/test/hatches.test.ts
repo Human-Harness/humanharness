@@ -1,8 +1,12 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { defineHarness, hasJobs, hasLinkedFolders, hatchProblems, isConcurrent, loadHarness, resolveInHarness } from "../src";
+import {
+  BACKEND_CALL_TIMEOUT_MS, BACKEND_EVENTS_PER_SECOND, BACKEND_LOG_MAX_BYTES, BACKEND_RESTARTS, BACKEND_STOP_GRACE_MS,
+  defineHarness, hasBackend, hasJobs, hasLinkedFolders, hatchProblems, isConcurrent, loadHarness, resolveInHarness,
+} from "../src";
 
 const base = {
   id: "t", name: "T", core: "^0.1.0", engines: ["claude"], folder: { suggested: "Documents/T" }, instructions: "./AGENTS.md",
@@ -67,5 +71,56 @@ describe("the hatches fixture harness (hatches part 1, e2e)", () => {
     expect(fs.readFileSync(resolveInHarness(h, h.actions.implement.prompt), "utf8")).toMatch(/^# Task: implement\n/);
     expect(fs.existsSync(resolveInHarness(h, h.instructions))).toBe(true);
     expect(fs.existsSync(path.join(dir, "ui", "App.tsx"))).toBe(true);
+  });
+});
+
+describe("backend (hatches spec §4.1)", () => {
+  it("D0: no backend key without one", () => {
+    const h = defineHarness(base);
+    expect("backend" in h).toBe(false);
+    expect(hasBackend(h)).toBe(false);
+  });
+
+  it("takes a .ts, .mts, .js or .mjs path; no scopes needed", () => {
+    for (const p of ["backend/index.ts", "backend/index.mts", "b.js", "b.mjs"]) {
+      const h = defineHarness({ ...base, backend: p });
+      expect(h.backend).toBe(p);
+      expect(hasBackend(h)).toBe(true);
+    }
+  });
+
+  it.each([
+    ["", undefined],
+    ["backend/index.tsx", "backend"],
+    ["/abs/x.ts", "relative"],
+    ["C:/x.ts", "relative"],
+  ])("refuses %j", (p, message) => {
+    const run = () => defineHarness({ ...base, backend: p });
+    if (message) expect(run).toThrow(message);
+    else expect(run).toThrow();
+  });
+
+  it("loadHarness refuses a backend outside the harness folder", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "hh-backend-"));
+    const file = path.join(dir, "harness.config.mjs");
+    const manifest = { ...base, backend: "../escape.ts" };
+    fs.writeFileSync(file, `export default ${JSON.stringify(manifest)};`);
+    await expect(loadHarness(file)).rejects.toThrow("Path escapes the harness folder: ../escape.ts");
+  });
+
+  it("loadHarness keeps a backend inside the harness folder", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "hh-backend-"));
+    const file = path.join(dir, "harness.config.mjs");
+    fs.writeFileSync(file, `export default ${JSON.stringify({ ...base, backend: "backend/index.ts" })};`);
+    const h = await loadHarness(file);
+    expect(resolveInHarness(h, h.backend!)).toBe(path.join(dir, "backend", "index.ts"));
+  });
+
+  it("the limits main enforces", () => {
+    expect(BACKEND_CALL_TIMEOUT_MS).toBe(30_000);
+    expect(BACKEND_EVENTS_PER_SECOND).toBe(200);
+    expect(BACKEND_RESTARTS).toEqual({ max: 3, windowMs: 5 * 60_000 });
+    expect(BACKEND_STOP_GRACE_MS).toBe(3_000);
+    expect(BACKEND_LOG_MAX_BYTES).toBe(5 * 1024 * 1024);
   });
 });

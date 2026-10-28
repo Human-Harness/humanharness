@@ -42,8 +42,15 @@ export interface TimelineEntry {
   deleted?: true;
   /** A go-back: the approval or the time of the version it brought back, when one matches. */
   back?: { version?: number; at?: string };
-  /** An approval made with a reason (review spec §5.4); set by main from the review record. */
+  /** An approval made with a reason (review spec §5.4); set by main from the review record, paired by blob. */
   reason?: true;
+  /**
+   * The approval the review record holds last ("See what changed" starts here); set by main, paired by blob. After a
+   * whole-folder go-back it can be an older entry than the newest approval.
+   */
+  lastApproved?: true;
+  /** git's blob id of the file at `to`; absent when it is not there. */
+  blob?: string;
   /** The turns, newest first, for expanding. */
   commits: { id: string; subject: string; at: string }[];
 }
@@ -59,7 +66,11 @@ export interface TimelineCommit {
   blob: string | null;
 }
 
-/** The path an `Answer:` or `Approved:` subject names; null for any other subject or a path the reader would refuse. */
+/**
+ * The path an `Answer:` or `Approved:` subject names; null for any other subject or a path the reader would refuse. An
+ * answer's path ends at the first separator, so a name holding " · " reads short here (the index then lists a path that
+ * doesn't exist); `classifyCommit` matches the whole path instead.
+ */
 export function namedPath(subject: string): string | null {
   let rest: string;
   if (subject.startsWith(APPROVED_PREFIX)) rest = subject.slice(APPROVED_PREFIX.length);
@@ -77,10 +88,11 @@ const isGoBack = (s: string) => s.startsWith(FILE_RESTORE_PREFIX) || s === RESTO
 /** A commit's kind for `file`, subject before trailer (§3.1), and the key that merges it with its neighbour. */
 export function classifyCommit(c: TimelineCommit, file: string): { kind: TimelineKind; key: string } {
   const s = c.subject;
-  if (s.startsWith(ANSWER_PREFIX) || s.startsWith(APPROVED_PREFIX)) {
-    if (namedPath(s) !== file) return { kind: "outside", key: c.id };
-    return s.startsWith(ANSWER_PREFIX) ? { kind: "answers", key: "answers" } : { kind: "approval", key: c.id };
+  // The whole path, then the separator: a name holding " · " still matches.
+  if (s.startsWith(ANSWER_PREFIX)) {
+    return s.startsWith(`${ANSWER_PREFIX}${file}${ANSWER_SEPARATOR}`) ? { kind: "answers", key: "answers" } : { kind: "outside", key: c.id };
   }
+  if (s.startsWith(APPROVED_PREFIX)) return s === `${APPROVED_PREFIX}${file}` ? { kind: "approval", key: c.id } : { kind: "outside", key: c.id };
   if (isGoBack(s)) return { kind: "goBack", key: c.id };
   if (s === START || s === BEFORE_MESSAGE) return { kind: "outside", key: c.id };
   if (c.task !== null) return { kind: "task", key: `task:${c.task}` };
@@ -128,13 +140,16 @@ export function groupTimeline(commits: TimelineCommit[], file: string, actionLab
     };
     if (g.kind === "approval") e.version = ++version;
     if (last.blob === null) e.deleted = true;
+    else e.blob = last.blob;
     out.push(e);
   }
   // Answers stay unapproved until an approval follows; a go-back finds the newest earlier entry with its blob.
   const blobs = groups.map((g) => g.commits[g.commits.length - 1].blob);
+  let lastApproval = -1;
+  for (let i = 0; i < out.length; i++) if (out[i].kind === "approval") lastApproval = i;
   for (let i = 0; i < out.length; i++) {
     const e = out[i];
-    if (e.kind === "answers" && !out.slice(i + 1).some((x) => x.kind === "approval")) e.unapproved = true;
+    if (e.kind === "answers" && i > lastApproval) e.unapproved = true;
     if (e.kind === "goBack" && blobs[i] !== null) {
       for (let j = i - 1; j >= 0; j--) {
         if (blobs[j] !== blobs[i]) continue;

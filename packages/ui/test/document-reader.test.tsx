@@ -541,7 +541,7 @@ describe("commenting on a selection, the footer bar (review spec §5.2–§5.4)"
     client.currentBlobs["docs/cache.md"] = "1".repeat(40);
     const approved = "c".repeat(40);
     client.timelines["docs/cache.md"] = [
-      { kind: "approval", author: { kind: "person", label: "You" }, label: "v1 approved", at: "2026-10-28T10:00:00.000Z", from: "d".repeat(40), to: approved, version: 1, commits: [{ id: approved, subject: "Approved: docs/cache.md", at: "2026-10-28T10:00:00.000Z" }] },
+      { kind: "approval", author: { kind: "person", label: "You" }, label: "v1 approved", at: "2026-10-28T10:00:00.000Z", from: "d".repeat(40), to: approved, version: 1, lastApproved: true, commits: [{ id: approved, subject: "Approved: docs/cache.md", at: "2026-10-28T10:00:00.000Z" }] },
     ];
     client.diffs[`docs/cache.md|${approved}|current`] = {
       ok: true,
@@ -560,6 +560,29 @@ describe("commenting on a selection, the footer bar (review spec §5.2–§5.4)"
     expect(screen.queryByRole("region", { name: "Changes since the approval" })).toBeNull();
   });
 
+  it("'See what changed' starts from the approval the record holds last, not the newest on the timeline", async () => {
+    const { client } = setup({ review: true });
+    await screen.findByRole("button", { name: "Approve" });
+    client.reviews["docs/cache.md"] = { path: "docs/cache.md", task: null, comments: [], approvals: [{ blob: "0".repeat(40), at: "2026-10-28T10:00:00.000Z" }] };
+    client.currentBlobs["docs/cache.md"] = "1".repeat(40);
+    const v1 = "c".repeat(40);
+    const v2 = "e".repeat(40);
+    const you = { kind: "person" as const, label: "You" };
+    client.timelines["docs/cache.md"] = [
+      { kind: "goBack", author: you, label: "Went back to v1", at: "2026-10-28T10:20:00.000Z", from: v2, to: "f".repeat(40), back: { version: 1 }, commits: [{ id: "f".repeat(40), subject: "Went back to an earlier point", at: "2026-10-28T10:20:00.000Z" }] },
+      { kind: "approval", author: you, label: "v2 approved", at: "2026-10-28T10:10:00.000Z", from: v1, to: v2, version: 2, commits: [{ id: v2, subject: "Approved: docs/cache.md", at: "2026-10-28T10:10:00.000Z" }] },
+      { kind: "approval", author: you, label: "v1 approved", at: "2026-10-28T10:00:00.000Z", from: "d".repeat(40), to: v1, version: 1, lastApproved: true, commits: [{ id: v1, subject: "Approved: docs/cache.md", at: "2026-10-28T10:00:00.000Z" }] },
+    ];
+    const view = (after: string) => ({ ok: true as const, kind: "markdown" as const, same: false, truncated: false, blocks: [{ type: "paragraph" as const, status: "added" as const, after }], source: [] });
+    client.diffs[`docs/cache.md|${v1}|current`] = view("Since v1.");
+    client.diffs[`docs/cache.md|${v2}|current`] = view("Since v2.");
+    act(() => client.emitReviewChanged("docs/cache.md"));
+    fireEvent.click(await screen.findByRole("button", { name: "See what changed" }));
+    const diff = await screen.findByRole("region", { name: "Changes since the approval" });
+    await within(diff).findByText("Since v1.");
+    expect(within(diff).queryByText("Since v2.")).toBeNull();
+  });
+
   it("'See what changed' asks again when the document changes while it shows", async () => {
     const { client } = setup({ review: true });
     await screen.findByRole("button", { name: "Approve" });
@@ -567,7 +590,7 @@ describe("commenting on a selection, the footer bar (review spec §5.2–§5.4)"
     client.currentBlobs["docs/cache.md"] = "1".repeat(40);
     const approved = "c".repeat(40);
     client.timelines["docs/cache.md"] = [
-      { kind: "approval", author: { kind: "person", label: "You" }, label: "v1 approved", at: "2026-10-28T10:00:00.000Z", from: "d".repeat(40), to: approved, version: 1, commits: [{ id: approved, subject: "Approved: docs/cache.md", at: "2026-10-28T10:00:00.000Z" }] },
+      { kind: "approval", author: { kind: "person", label: "You" }, label: "v1 approved", at: "2026-10-28T10:00:00.000Z", from: "d".repeat(40), to: approved, version: 1, lastApproved: true, commits: [{ id: approved, subject: "Approved: docs/cache.md", at: "2026-10-28T10:00:00.000Z" }] },
     ];
     const key = `docs/cache.md|${approved}|current`;
     const said = (after: string) => ({

@@ -5,8 +5,9 @@ import { FileDiff } from "./FileDiff";
 
 /**
  * "See what changed" (review spec §5.4, file-timeline spec §9): the last approved version against the file now, drawn
- * with the timeline's diff. The approval is the newest `approval` entry of the file's timeline. `refresh` changes when
- * the document on disk does, so the comparison with the file now is asked again.
+ * with the timeline's diff. The approval is the entry main paired by blob with the review record's last approval
+ * (`lastApproved`), not the newest on the timeline: a whole-folder go-back takes the record back too. `refresh` changes
+ * when the document on disk does, so the comparison with the file now is asked again.
  */
 export function ApprovedDiff({ client, path, refresh }: { client: HarnessClient; path: string; refresh?: unknown }) {
   const { t } = useTranslation();
@@ -15,7 +16,7 @@ export function ApprovedDiff({ client, path, refresh }: { client: HarnessClient;
     let live = true;
     const load = () =>
       client.files.timeline(path).then(
-        (r) => live && setFrom((r.ok ? r.entries.find((e) => e.kind === "approval")?.to : undefined) ?? null),
+        (r) => live && setFrom((r.ok ? r.entries.find((e) => e.kind === "approval" && e.lastApproved)?.to : undefined) ?? null),
         () => live && setFrom(null),
       );
     setFrom("loading");

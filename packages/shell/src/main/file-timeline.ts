@@ -117,19 +117,27 @@ export class FileTimelineService {
       const r = await this.resolve(rel);
       if (!r.ok) return r;
       const entries = await this.entries(r.history, r.path);
-      if (isMarkdownPath(r.path)) await this.markReasons(r.base, r.path, entries);
+      if (isMarkdownPath(r.path)) await this.markApprovals(r.base, r.path, entries);
       return { ok: true as const, entries };
     });
   }
 
-  /** An approval made with a reason (§3.1 "con motivo"): paired with the record's approvals, newest first. */
-  private async markReasons(base: string, doc: string, entries: TimelineEntry[]): Promise<void> {
+  /**
+   * The approval entries the review record holds, paired by blob, both newest first: `reason` (§3.1 "con motivo") and
+   * `lastApproved` (the record's last one). Never by position: a whole-folder go-back takes the record back too, so
+   * the timeline can hold approvals the record no longer has.
+   */
+  private async markApprovals(base: string, doc: string, entries: TimelineEntry[]): Promise<void> {
     const record = [...(await this.d.approvals(base, doc).catch(() => []))].reverse();
     let k = 0;
     for (const e of entries) {
-      if (e.kind !== "approval") continue;
-      if (record[k]?.reason) e.reason = true;
-      k++;
+      if (e.kind !== "approval" || e.blob === undefined) continue;
+      let j = k;
+      while (j < record.length && record[j].blob !== e.blob) j++;
+      if (j === record.length) continue;
+      if (record[j].reason) e.reason = true;
+      if (j === 0) e.lastApproved = true;
+      k = j + 1;
     }
   }
 

@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { History, MAX_DIFF_BYTES, REVIEWS_PREFIX } from "@humanharness/workspace";
+import { History, MAX_DIFF_BYTES, REVIEWS_PREFIX, blobId } from "@humanharness/workspace";
 import { limitDiffs, workerDiff } from "../src/main/diff-runner";
 import { FileTimelineService } from "../src/main/file-timeline";
 
@@ -69,7 +69,7 @@ describe("FileTimelineService (file-timeline spec §3–§5)", () => {
     const { t2 } = await writeSpec();
     write(`${REVIEWS_PREFIX}${DOC}.json`, "{}");
     await history.save(`Approved: ${DOC}`, { task: "t2", action: "spec" });
-    approvals = [{ blob: "b".repeat(40), at: "2026-10-28T10:00:00.000Z", reason: "Decided on the call" }];
+    approvals = [{ blob: blobId(fs.readFileSync(path.join(folder, DOC))), at: "2026-10-28T10:00:00.000Z", reason: "Decided on the call" }];
     const r = await svc.timeline(`./specs//filter.md`);
     if (!r.ok) throw new Error(r.reason);
     expect(r.entries.map((e) => [e.kind, e.author.label])).toEqual([
@@ -78,7 +78,38 @@ describe("FileTimelineService (file-timeline spec §3–§5)", () => {
       ["task", "Spec writer"],
     ]);
     expect(r.entries[0].reason).toBe(true);
+    expect(r.entries[0].lastApproved).toBe(true);
     expect(r.entries[1].to).toBe(t2);
+  });
+
+  it("approvals pair with the record by blob: after a whole-folder go-back, the record's last approval is v1", async () => {
+    await history.save("Start");
+    const approve = async (text: string, reason?: string) => {
+      write(DOC, text);
+      await history.save("Turn: write", { task: "t1", action: "spec" });
+      const blob = blobId(fs.readFileSync(path.join(folder, DOC)));
+      approvals = [...approvals, { blob, at: "2026-10-28T10:00:00.000Z", ...(reason ? { reason } : {}) }];
+      write(`${REVIEWS_PREFIX}${DOC}.json`, JSON.stringify(approvals));
+      return (await history.save(`Approved: ${DOC}`, { task: "t1", action: "spec" }))!;
+    };
+    const v1 = await approve("## Scope\n\nFilter by size.\n", "First call");
+    const before = approvals;
+    await approve("## Scope\n\nFilter by size and colour.\n");
+    // The whole folder back to v1: the document and its review record (which then holds v1 only).
+    await history.restore(v1, "Went back to an earlier point");
+    approvals = before;
+    const r = await svc.timeline(DOC);
+    if (!r.ok) throw new Error(r.reason);
+    const marks = r.entries.filter((e) => e.kind === "approval").map((e) => [e.version, e.reason ?? false, e.lastApproved ?? false]);
+    expect(marks).toEqual([
+      [2, false, false],
+      [1, true, true],
+    ]);
+    // A record that names no version on the timeline marks nothing.
+    approvals = [{ blob: "b".repeat(40), at: "2026-10-28T10:00:00.000Z", reason: "Elsewhere" }];
+    const none = await svc.timeline(DOC);
+    if (!none.ok) throw new Error(none.reason);
+    expect(none.entries.some((e) => e.reason || e.lastApproved)).toBe(false);
   });
 
   it("a diff between two commits, and against the current file", async () => {

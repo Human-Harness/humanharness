@@ -137,6 +137,29 @@ describe("groupTimeline", () => {
     expect(before.deleted).toBeUndefined();
   });
 
+  it("each entry carries the file's blob id at its last commit; none when deleted", () => {
+    const [gone, edit] = groupTimeline([c("Turn: write", { task: "t1", blob: "A" }), c("Turn: remove", { task: "t2", blob: null })], DOC, label);
+    expect(edit.blob).toBe("A");
+    expect(gone.blob).toBeUndefined();
+  });
+
+  it("an answer to a document whose name holds the separator is still its answer", () => {
+    const odd = "notes/a · b.md";
+    expect(classifyCommit(c(`Answer: ${odd} · Size only?`, { task: "t1" }), odd).kind).toBe("answers");
+    expect(classifyCommit(c(`Answer: ${odd} · Size only?`, { task: "t1" }), "notes/a · c.md").kind).toBe("outside");
+  });
+
+  it("answers are unapproved only after the last approval, in one pass", () => {
+    const commits = [c("Turn: write", { task: "t1" })];
+    for (let i = 0; i < 5000; i++) commits.push(c(`Answer: ${DOC} · q${i}`), c("Turn: edit", { task: `t${i + 2}` }));
+    commits.push(c(`Approved: ${DOC}`), c(`Answer: ${DOC} · late`));
+    const t0 = performance.now();
+    const entries = groupTimeline(commits, DOC, label);
+    expect(performance.now() - t0).toBeLessThan(2000);
+    expect(entries[0]).toMatchObject({ kind: "answers", unapproved: true });
+    expect(entries.filter((e) => e.unapproved)).toHaveLength(1);
+  });
+
   it("the first commit of the history has no parent", () => {
     const first = { ...c("Start"), parent: null };
     expect(groupTimeline([first], DOC, label)[0].from).toBeNull();

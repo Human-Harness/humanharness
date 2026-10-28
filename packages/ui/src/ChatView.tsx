@@ -1389,14 +1389,16 @@ export function ChatView({
               closesTask={tasks.current !== null}
               onStart={() => {
                 // Like a sent question: the task goes on screen at once, the card's title as the person's line (main
-                // saves the same display); a refusal puts the screen back as it was.
+                // saves the same display); a refusal puts the screen back as it was, a failure after main took the task
+                // keeps the line and ends the turn as failed, as a failed send does.
                 const before = { since, placed: placed.current };
                 const at = new Date().toISOString();
                 stick.current = true;
                 pinNext.current = true;
                 if (flow) showNewTask();
                 dispatch({ type: "user", text: surfaceCtx.surface.prepared?.title ?? "", at });
-                return () => {
+                return (outcome, message) => {
+                  if (outcome === "failed") return failTurn(new Error(message));
                   placed.current = before.placed;
                   setSince(before.since);
                   dispatch({ type: "withdrawn", at });

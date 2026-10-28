@@ -245,9 +245,15 @@
       document.body.setAttribute("data-done", "yes");
       return;
     }
+    // Leaving the page waits for Continue, which the e2e presses once it has read this round: on a slow machine a fixed
+    // wait could let the e2e read the remounted frame instead. Then the mark, then the last step: leaving the page.
+    const next = document.createElement("button");
+    next.type = "button";
+    next.textContent = "Continue";
+    const pressed = when(next, "click", "error");
+    document.body.append(next);
     document.body.setAttribute("data-done", "yes");
-    // Long enough for the e2e to read this round; then the mark, then the last step: leaving the page.
-    await sleep(3000);
+    await pressed;
     const marked = await call("refresh", { source: "mark" }).catch((e) => `failed: ${e.message}`);
     show("mark", String(marked), "control");
     if (marked !== "refreshed") return;

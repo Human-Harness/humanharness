@@ -224,17 +224,18 @@ test("the demo's On this day: off draws nothing; on, its panel, chip and inbox i
   }
 });
 
-/** The probe panel's outcomes, by name: `data-probe` items, or the controls. */
-async function panelOutcomes(frame: FrameLocator, attr: "data-probe" | "data-control"): Promise<Record<string, string>> {
-  const items = frame.locator(`li[${attr}]`);
-  const out: Record<string, string> = {};
-  for (let i = 0; i < (await items.count()); i++) {
-    const li = items.nth(i);
-    out[(await li.getAttribute(attr))!] = (await li.getAttribute("data-outcome"))!;
-  }
-  return out;
+/** The probe panel's round and outcomes by name (`data-probe` items and the controls), read in one step from one page. */
+async function panelOutcomes(frame: FrameLocator): Promise<{ round: string | null; probes: Record<string, string>; controls: Record<string, string> }> {
+  return frame.locator("body").evaluate((body) => {
+    const read = (attr: string) => Object.fromEntries([...body.querySelectorAll(`li[${attr}]`)].map((li) => [li.getAttribute(attr), li.getAttribute("data-outcome")]));
+    return { round: body.getAttribute("data-round"), probes: read("data-probe"), controls: read("data-control") };
+  });
 }
 
+// Every attempt must come out "blocked", and the counting server must see no hit: the hit count is the proof for the
+// ones a browser refuses from an opaque origin even without the app's guards (websocket, eventsource, img, import:
+// "blocked" alone shows little). "worker" is a control of the probe itself: a Worker from an opaque-origin page to an
+// http: URL is always refused, so it shows the attempt list runs, not a guard.
 const PROBES = [
   "window.hh",
   "require",
@@ -284,15 +285,15 @@ test("panel boundaries P1–P7: a hostile panel reaches no network, no app, no o
     await expect(page.getByRole("tab", { name: "Probe panel" })).toBeVisible();
     const frame = page.frameLocator('iframe[title="Probe panel · Probe"]');
 
-    // Round 1: every attempt blocked, the controls through.
+    // Round 1: every attempt blocked, the controls through. The panel waits on Continue until this round is read.
     await expect(frame.locator('body[data-round="1"][data-done="yes"]')).toHaveCount(1, { timeout: 90_000 });
     const expected = { ...Object.fromEntries(PROBES.map((n) => [n, "blocked"])), beacon: expect.stringMatching(/^(blocked|queued)$/) };
-    expect(await panelOutcomes(frame, "data-probe")).toEqual(expected);
-    expect(await panelOutcomes(frame, "data-control")).toEqual({ settings: "reached", stylesheet: "reached" });
+    expect(await panelOutcomes(frame)).toEqual({ round: "1", probes: expected, controls: { settings: "reached", stylesheet: "reached" } });
+    await frame.getByRole("button", { name: "Continue" }).click();
 
     // The last step left the page; the app put the panel back on its own page (P3), which runs again and stays.
     await expect(frame.locator('body[data-round="2"][data-done="yes"]')).toHaveCount(1, { timeout: 90_000 });
-    expect(await panelOutcomes(frame, "data-probe")).toEqual({ ...expected, navigate: "blocked" });
+    expect(await panelOutcomes(frame)).toEqual({ round: "2", probes: { ...expected, navigate: "blocked" }, controls: { settings: "reached", stylesheet: "reached" } });
     await expect(page.locator("iframe.hh-plugin-frame")).toHaveAttribute("src", "hh-plugin://probe/panel-probe.html");
     await expect(page.getByText("This panel kept reloading itself, so it was stopped.")).toHaveCount(0);
     // No frame of the window is anywhere but the app and the probe's panel page (nested frames start blank).

@@ -32,9 +32,10 @@ export function PreparedTask({
   closesTask: boolean;
   /**
    * Start was clicked: the chat puts the task on screen now (main answers only once its turn ended), and gives back
-   * how to take that back if main refuses.
+   * what to do when Start doesn't succeed: "refused" (main refused before anything started: take the line back) or
+   * "failed" (main had taken the task, and a turn may have run: the line stays, the turn shows as failed).
    */
-  onStart?: () => (() => void) | void;
+  onStart?: () => ((outcome: "refused" | "failed", message: string) => void) | void;
 }) {
   const { t } = useTranslation();
   const [busy, setBusy] = useState(false);
@@ -60,15 +61,22 @@ export function PreparedTask({
     setBusy(true);
     setError(null);
     let ok = false;
-    const undo = onStart?.();
+    // A thrown call can't say whether main had started the task: the line stays rather than hide a turn that ran.
+    let outcome: "refused" | "failed" = "failed";
+    let message = t("plugins.failed");
+    const settle = onStart?.();
     try {
       const r = await client.plugins.startPrepared(token);
       ok = r.ok;
-      if (!r.ok) setError(r.message || t("plugins.failed"));
+      if (!r.ok) {
+        message = r.message || message;
+        outcome = "started" in r && r.started ? "failed" : "refused";
+        setError(message);
+      }
     } catch {
-      setError(t("plugins.failed"));
+      setError(message);
     } finally {
-      if (!ok && undo) undo();
+      if (!ok && settle) settle(outcome, message);
       // Started: the token is spent and main's push takes the card away; nothing more to click.
       if (!ok) {
         starting.current = false;

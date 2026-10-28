@@ -165,6 +165,36 @@ describe("prepared-task card", () => {
     expect(startView()).not.toBeNull();
   });
 
+  it("a refusal clears the turn it put on screen: the composer sends again", async () => {
+    const c = makeClient({ view: surface({ prepared: prepared() }) });
+    c.pluginResults = [{ ok: false, message: "Wait until the answer ends" }];
+    await open(c);
+    const r = await screen.findByRole("region", { name: "Prepared task" });
+    arm();
+    fireEvent.click(startButton(r));
+    await within(r).findByRole("alert");
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "Something else" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => expect(c.sent).toEqual(["Something else"]));
+  });
+
+  it("a Start that fails after main took it keeps the person's line, shows the failure, and frees the composer", async () => {
+    const userLines = () => [...document.querySelectorAll('[data-role="user"]')].map((e) => e.textContent ?? "");
+    const c = makeClient({ view: surface({ prepared: prepared() }) });
+    c.pluginResults = [{ ok: false, message: "Something went wrong", started: true }];
+    await open(c);
+    const r = await screen.findByRole("region", { name: "Prepared task" });
+    arm();
+    fireEvent.click(startButton(r));
+    await within(r).findByRole("alert");
+    // The turn may have run (main saved the line): it stays, and the chat shows the turn failed.
+    expect(userLines()).toEqual([expect.stringContaining("On this day · Explain this event")]);
+    await waitFor(() => expect(document.querySelector('[data-role="assistant"]')).not.toBeNull());
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "Try again" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => expect(c.sent).toEqual(["Try again"]));
+  });
+
   it("Cancel calls cancelPrepared with the token", async () => {
     const c = makeClient({ view: surface({ prepared: prepared() }) });
     await open(c);

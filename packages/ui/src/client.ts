@@ -1309,7 +1309,8 @@ export interface PluginReview {
 }
 export type PluginPick = { ok: true; token: string; review: PluginReview } | { ok: false; message: string } | { ok: false; cancelled: true };
 /** With both `message` and `review`: refused because the plugin changed since the review; `review` is the current one. */
-export type PluginResult = { ok: true } | { ok: false; message: string } | { ok: false; review: PluginReview; message?: string };
+/** `started`: only from Start of a prepared task, failing after the task manager took it (a turn may have run). */
+export type PluginResult = { ok: true } | { ok: false; message: string; started?: true } | { ok: false; review: PluginReview; message?: string };
 export interface PluginWorkHours {
   days: number[];
   from: string;

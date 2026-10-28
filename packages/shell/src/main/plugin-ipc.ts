@@ -274,10 +274,16 @@ export function registerPluginsIpc(handle: Handle, ctl: Ctl, o: PreparedDeps & {
       // A turn may have started during the awaits above: the card is spent either way, but the answer says why.
       const late = o.startBlocked?.() ?? null;
       if (late) return { ok: false, message: late };
-      await o.startPrepared(p);
+      try {
+        await o.startPrepared(p);
+      } catch (err) {
+        if (err instanceof ScopeRequired) return needScope;
+        // Past the refusals: the open task may have closed and the turn may have run, so the renderer keeps the line.
+        log("Starting a prepared task failed", err);
+        return { ok: false, message: FAILED_MESSAGE, started: true };
+      }
       return { ok: true };
     } catch (err) {
-      if (err instanceof ScopeRequired) return needScope;
       log("Starting a prepared task failed", err);
       return FAILED;
     }

@@ -29,7 +29,7 @@ function wire(over: Record<string, unknown> = {}, now = { t: 0 }, deps: Record<s
     test: rec("test", [{ source: "s", ok: true }]),
     refresh: rec("refresh"),
     surface: (...args: unknown[]) => (calls.push(["surface", ...args]), SURFACE),
-    panelCall: rec("panelCall", { ok: true, value: { records: [] } }),
+    panelCall: rec("panelCall", { ok: true, value: [] }),
     takePrepared: rec("takePrepared", START),
     cancelPrepared: (...args: unknown[]) => void calls.push(["cancelPrepared", ...args]),
     attention: {
@@ -261,7 +261,7 @@ describe("plugins IPC, part 2: the surface, panel calls, prepared tasks and atte
 
   it("a panel call passes plugin, panel, call and args through; anything malformed is refused before the controller", async () => {
     const w = wire();
-    expect(await w.call("hh:pluginsPanel", "jira", "queue", "data.query", { collection: "issues" })).toEqual({ ok: true, value: { records: [] } });
+    expect(await w.call("hh:pluginsPanel", "jira", "queue", "data.query", { collection: "issues" })).toEqual({ ok: true, value: [] });
     await w.call("hh:pluginsPanel", "jira", "queue", "settings.get");
     await w.call("hh:pluginsPanel", "jira", "queue", "refresh", { source: "issues" });
     await w.call("hh:pluginsPanel", "jira", "queue", "requestAction", { action: "triage", vars: { issue: "DOC-1" } });
@@ -362,7 +362,7 @@ describe("plugins IPC, part 2: the surface, panel calls, prepared tasks and atte
     expect(await u.call("hh:pluginsStartPrepared", TOKEN)).toEqual({ ok: true });
   });
 
-  it("a scope closed between the check and the start, or a start that fails, answers a refusal", async () => {
+  it("a scope closed between the check and the start answers a refusal; a start that fails once begun says it began", async () => {
     const scopeGone = async () => {
       throw new ScopeRequired();
     };
@@ -371,7 +371,8 @@ describe("plugins IPC, part 2: the surface, panel calls, prepared tasks and atte
     const failed = async () => {
       throw new Error("/Users/me/secret");
     };
-    expect(await wire({}, { t: 0 }, { startPrepared: failed }).call("hh:pluginsStartPrepared", TOKEN)).toEqual({ ok: false, message: "Something went wrong" });
+    // The task manager had the task: a turn may have run (the chat keeps the person's line), so the answer says so.
+    expect(await wire({}, { t: 0 }, { startPrepared: failed }).call("hh:pluginsStartPrepared", TOKEN)).toEqual({ ok: false, message: "Something went wrong", started: true });
     const v = wire({ takePrepared: async () => Promise.reject(new Error("boom")) });
     expect(await v.call("hh:pluginsStartPrepared", TOKEN)).toEqual({ ok: false, message: "Something went wrong" });
   });

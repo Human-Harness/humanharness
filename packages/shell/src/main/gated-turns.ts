@@ -58,15 +58,7 @@ export function gatedTurns(
     }
   };
 
-  /** Pauses the queues; a reset already past would let the next turns run into the same wall, so it waits for Resume. */
-  const outOfQuota = (resetsAt: string | undefined) => {
-    const ahead = resetsAt !== undefined && Date.parse(resetsAt) > now() ? resetsAt : undefined;
-    const current = gate.paused();
-    if (current && current.reason !== "out-of-quota") return;
-    // Another lane's pause with a reset to wait for keeps it: this end knows none.
-    if (current?.resetsAt && !ahead) return;
-    gate.pause({ reason: "out-of-quota", ...(ahead ? { resetsAt: ahead } : {}) });
-  };
+  const outOfQuota = (resetsAt: string | undefined) => pauseOutOfQuota(gate, resetsAt, now());
 
   const run = async (message: string, options: TurnOptions, release: () => void) => {
     let resetsAt: string | undefined;
@@ -128,10 +120,23 @@ export function gatedTurns(
 }
 
 /**
+ * Pauses the queues after an out-of-quota end (a task's turn or a job run's). A reset already past would let the next
+ * turns run into the same wall, so it waits for Resume. Never replaces another kind of pause (a folder move).
+ */
+export function pauseOutOfQuota(gate: TurnGate, resetsAt: string | undefined, now: number): void {
+  const ahead = resetsAt !== undefined && Date.parse(resetsAt) > now ? resetsAt : undefined;
+  const current = gate.paused();
+  if (current && current.reason !== "out-of-quota") return;
+  // Another lane's pause with a reset to wait for keeps it: this end knows none.
+  if (current?.resetsAt && !ahead) return;
+  gate.pause({ reason: "out-of-quota", ...(ahead ? { resetsAt: ahead } : {}) });
+}
+
+/**
  * The reset to wait for after an out-of-quota end: the latest among the full windows (utilization 1), else the most
  * used window's. Undefined when the engine reported no window: the queues wait for the person's Resume.
  */
-function resetOf(windows: LimitWindow[]): string | undefined {
+export function resetOf(windows: LimitWindow[]): string | undefined {
   if (windows.length === 0) return undefined;
   const full = windows.filter((w) => w.utilization >= 1);
   if (full.length > 0) return full.reduce((a, b) => (Date.parse(b.resetsAt) > Date.parse(a.resetsAt) ? b : a)).resetsAt;

@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { I18nextProvider } from "react-i18next";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { DocumentRead } from "../src/client";
+import type { DocumentRead, ReviewView } from "../src/client";
 import { DocumentReader, cutToBytes } from "../src/DocumentReader";
 import { FakeClient } from "./fake-client";
 import { renderIn } from "./render";
@@ -350,6 +350,45 @@ describe("review in the reader (review spec §6.1, D0)", () => {
     const doc = document.querySelector(".hh-review-text")!;
     await waitFor(() => expect(doc.textContent).toContain("Very slow calls."));
     expect(client.reviewCalls.some((c) => c.op === "answer")).toBe(true);
+  });
+
+  it("the review-only layout class is on the reader only with `review` (D0)", async () => {
+    setup();
+    const plain = await screen.findByRole("complementary", { name: "Document" });
+    expect(plain.className).not.toContain("hh-reader-reviewing");
+    cleanup();
+    setup({ review: true });
+    expect((await screen.findByRole("complementary", { name: "Document" })).className).toContain("hh-reader-reviewing");
+  });
+
+  it("a review view still pending when another document opens is never drawn over it", async () => {
+    const OTHER_DOC = "## Other\n\nSlow calls.\n";
+    const s = setup({ review: true }, { "docs/cache.md": ANALYSIS, "docs/other.md": OTHER_DOC });
+    await screen.findByRole("region", { name: "Comments" });
+    const pending: ((v: ReviewView) => void)[] = [];
+    const view = s.client.documents.view;
+    // A's view hangs until the end; B's answers at once.
+    s.client.documents.view = (p) => (p === "docs/cache.md" ? new Promise<ReviewView>((resolve) => pending.push(resolve)) : view(p));
+    act(() => s.client.emitReviewChanged("docs/cache.md"));
+    const { rerender, i18n } = await s.view;
+    rerender(
+      <I18nextProvider i18n={i18n}>
+        <DocumentReader {...s.props} target={{ path: "docs/other.md" }} />
+      </I18nextProvider>,
+    );
+    await screen.findByRole("heading", { name: "Other" });
+    const summary = { status: "draft", open: 1, blocking: 0, unsent: 0, approvedAt: null } as never;
+    const forA: ReviewView = {
+      ok: true,
+      blob: "a",
+      summary,
+      review: { path: "docs/cache.md", task: null, approvals: [], comments: [{ id: "c1", author: "agent", kind: "comment", anchor: { quote: "Slow calls.", heading: "context", occurrence: 0 }, text: "From A", state: "open", replies: [], at: "2026-10-28T10:00:00.000Z" }] },
+    };
+    expect(pending).toHaveLength(1);
+    await act(async () => {
+      for (const done of pending) done(forA);
+    });
+    expect(screen.queryByText("From A")).toBeNull();
   });
 
   it("a record that can't be read shows a note and no column", async () => {

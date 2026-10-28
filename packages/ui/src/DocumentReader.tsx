@@ -6,7 +6,7 @@ import type { DocumentRead, HarnessClient, ReaderPrefs, ReviewResult, ReviewView
 import { DocumentContext, type DocumentHost } from "./documents-context";
 import { Markdown, documentOutline } from "./markdown";
 import { ReviewColumn } from "./ReviewColumn";
-import { type MarkSpec, clearMarks, paintMarks } from "./review-marks";
+import { type MarkSpec, clearMarks, drawMarks, findMarks } from "./review-marks";
 
 /** What the reader shows: a document, the place to open at, and the agent of the turn that wrote it. */
 export interface ReaderTarget {
@@ -160,18 +160,33 @@ export function DocumentReader({
   useEffect(() => {
     if (nonce > 0) reread.current?.();
   }, [nonce]);
+  // Only the latest view of the document shown now draws: a late answer for another path is dropped.
+  const pathNow = useRef(path);
+  pathNow.current = path;
+  const reviewSeq = useRef(0);
   const loadReview = useCallback(() => {
     if (!review || refused) return;
-    client.documents.view(path).then(setRv, () => setRv({ ok: false, reason: "not-ready" }));
+    const want = path;
+    const mine = ++reviewSeq.current;
+    const done = (v: ReviewView) => {
+      if (mine !== reviewSeq.current || pathNow.current !== want) return;
+      if (v.ok && v.review && v.review.path !== want) return;
+      setRv(v);
+    };
+    client.documents.view(want).then(done, () => done({ ok: false, reason: "not-ready" }));
   }, [client, path, review, refused]);
   useEffect(() => {
     if (!review || refused) return;
     loadReview();
-    return client.documents.onChange((p) => {
+    const off = client.documents.onChange((p) => {
       if (p !== path) return;
       loadReview();
       setNonce((n) => n + 1);
     });
+    return () => {
+      reviewSeq.current++;
+      off();
+    };
   }, [client, path, review, refused, loadReview]);
 
   // Declared after the read: on a path change `loaded` is already reset, so the anchor waits for the new text.
@@ -209,24 +224,34 @@ export function DocumentReader({
   const minutes = useMemo(() => readingMinutes(wordCount(text)), [text]);
   const check = checkTemplate(kinds, front, sections);
   const record = review && rv?.ok ? rv.review : null;
-  // Marks are drawn on the rendered body only, once it is in the DOM (CSS Custom Highlight API: no DOM change).
+  const marks = useMemo(() => {
+    const out: MarkSpec[] = [];
+    for (const c of record?.comments ?? []) {
+      const m = markOccurrence(shown, c.anchor);
+      if (m) out.push({ id: c.id, want: m.want, nth: m.nth, tone: c.state === "resolved" ? "done" : c.kind === "question" ? "question" : "comment" });
+    }
+    return out;
+  }, [record, shown]);
+  // Marks are found in the rendered body only, once it is in the DOM; hovering a card only redraws (below).
   useLayoutEffect(() => {
     const box = textRef.current;
-    if (!box || !record || !doc?.ok || source) {
-      setRanges((r) => (r.size ? new Map() : r));
+    setRanges(box && doc?.ok && !source && marks.length > 0 ? findMarks(box, marks) : new Map());
+  }, [marks, doc, source]);
+  // The CSS Custom Highlight API: no DOM change, no CSP change.
+  useLayoutEffect(() => {
+    if (ranges.size === 0) {
+      clearMarks();
       return;
     }
-    const marks: MarkSpec[] = [];
-    for (const c of record.comments) {
-      const m = markOccurrence(shown, c.anchor);
-      if (m) marks.push({ id: c.id, want: m.want, nth: m.nth, tone: c.state === "resolved" ? "done" : c.kind === "question" ? "question" : "comment" });
-    }
-    setRanges(paintMarks(box, marks, active));
+    drawMarks(ranges, marks, active);
     return clearMarks;
-  }, [record, doc, shown, source, active]);
+  }, [ranges, marks, active]);
   const act = async (call: () => Promise<ReviewResult>, id?: string) => {
+    const want = path;
     if (id) setWaiting(id);
     const r = await call().catch((): ReviewResult => ({ ok: false, reason: "not-ready" }));
+    // Another document is shown now: this answer is not its.
+    if (pathNow.current !== want) return;
     if (id) setWaiting(null);
     setFailed(!r.ok);
     loadReview();
@@ -307,7 +332,7 @@ export function DocumentReader({
   }
 
   return (
-    <aside className={`hh-reader${full ? " hh-reader-is-full" : ""}`} aria-label={t("reader.title")} onKeyDown={onKeyDown}>
+    <aside className={`hh-reader${full ? " hh-reader-is-full" : ""}${review ? " hh-reader-reviewing" : ""}`} aria-label={t("reader.title")} onKeyDown={onKeyDown}>
       <header className="hh-reader-bar">
         <nav aria-label={t("reader.path")}>
           <ol className="hh-reader-crumbs">
@@ -387,6 +412,16 @@ export function DocumentReader({
           </nav>
         )}
         <div className="hh-reader-scroll" ref={scrollRef} tabIndex={-1} onScroll={() => setCurrent(headingAtTop(scrollRef.current))}>
+          {review && rv && !rv.ok && rv.reason === "broken" && (
+            <p className="hh-reader-problem hh-review-note" role="alert">
+              {t("review.broken", { file: `.harness/reviews/${path}.json` })}
+            </p>
+          )}
+          {review && failed && (
+            <p className="hh-warn hh-review-note" role="alert">
+              {t("review.failed")}
+            </p>
+          )}
           <article className={`hh-reader-doc hh-reader-${look.font}${look.size === "large" ? " hh-reader-large" : ""}`}>{body}</article>
         </div>
         {review && doc?.ok && !source && rv?.ok && (
@@ -402,16 +437,6 @@ export function DocumentReader({
             onEditDraft={editDraft}
             onReopen={reopen}
           />
-        )}
-        {review && rv && !rv.ok && rv.reason === "broken" && (
-          <p className="hh-reader-problem" role="alert">
-            {t("review.broken", { file: `.harness/reviews/${path}.json` })}
-          </p>
-        )}
-        {review && failed && (
-          <p className="hh-warn" role="alert">
-            {t("review.failed")}
-          </p>
         )}
       </div>
     </aside>

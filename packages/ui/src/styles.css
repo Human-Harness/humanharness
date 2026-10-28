@@ -597,8 +597,9 @@ h4.hh-md-h { font-size: 1em; font-weight: 600; color: var(--hh-slate); }
 ::highlight(hh-review-comment) { background-color: var(--hh-review-comment); }
 ::highlight(hh-review-done) { background-color: var(--hh-review-done); }
 ::highlight(hh-review-active) { background-color: var(--hh-review-active); }
-/* The reader is the container: a container query can't restyle the element that is the container. */
-.hh-reader { container-type: inline-size; }
+/* A reviewing reader is the container (a container query can't restyle the container itself); readers without review keep their layout (D0). */
+.hh-reader-reviewing { container-type: inline-size; }
+.hh-review-note { max-width: 72ch; margin: 0 auto 12px; }
 .hh-review-column { flex: 0 0 280px; overflow-y: auto; padding: 12px; border-left: 1px solid var(--hh-line); display: flex; flex-direction: column; gap: 10px; font-size: 13px; }
 .hh-review-card { padding: 10px; border: 1px solid var(--hh-line); border-radius: 8px; background: var(--hh-sheet); }
 .hh-review-card p { margin: 6px 0 0; overflow-wrap: anywhere; }
@@ -611,9 +612,14 @@ h4.hh-md-h { font-size: 1em; font-weight: 600; color: var(--hh-slate); }
 .hh-review-edit { display: flex; flex-direction: column; gap: 4px; align-self: stretch; }
 .hh-review-replies { margin: 6px 0 0; padding-left: 16px; overflow-wrap: anywhere; }
 .hh-review-actions { display: flex; gap: 6px; margin-top: 6px; }
+.hh-review-card:focus-visible { outline: 2px solid var(--hh-line-strong); outline-offset: 2px; }
+.hh-review-other { color: var(--hh-slate); }
+/* Narrow: only the review column moves under the body; the contents list stays beside it. */
 @container (max-width: 900px) {
-  .hh-reader-columns { flex-direction: column; }
-  .hh-review-column { flex: 0 1 auto; max-height: 40%; border-left: 0; border-top: 1px solid var(--hh-line); }
+  .hh-reader-reviewing .hh-reader-columns { display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
+  .hh-reader-reviewing .hh-reader-toc { grid-column: 1; grid-row: 1; }
+  .hh-reader-reviewing .hh-reader-scroll { grid-column: 2; grid-row: 1; }
+  .hh-reader-reviewing .hh-review-column { grid-column: 1 / -1; grid-row: 2; max-height: 40vh; border-left: 0; border-top: 1px solid var(--hh-line); }
 }
 .hh-reader-full .hh-main, .hh-reader-full .hh-flow-side, .hh-reader-full .hh-side { display: none; }
 .hh-reader-full .hh-reader { flex: 1 1 auto; border-left: none; }

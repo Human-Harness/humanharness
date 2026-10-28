@@ -86,6 +86,24 @@ describe("ReviewColumn (§6.1)", () => {
     expect(p.onActive).toHaveBeenLastCalledWith("c3", true);
   });
 
+  it("cards are reachable by keyboard and named by their header; focusing a card scrolls to its mark", async () => {
+    const p = await setup();
+    const card = screen.getByRole("article", { name: "You Resolved" });
+    expect(card.tabIndex).toBe(0);
+    expect(screen.getByRole("article", { name: "Question Claude Blocking Open" })).toBeTruthy();
+    fireEvent.focus(card);
+    expect(p.onActive).toHaveBeenLastCalledWith("c3", true);
+    fireEvent.focus(screen.getByRole("button", { name: "Reopen" }));
+    expect(p.onActive).toHaveBeenLastCalledWith("c3", false);
+  });
+
+  it("an 'Other' answer is shown as text", async () => {
+    const answered: Review = { ...REVIEW, comments: [{ ...REVIEW.comments[0], answer: { other: "<i>Only</i> in the session" }, state: "answered" }] };
+    await setup({ review: answered });
+    expect(screen.getByText("<i>Only</i> in the session")).toBeTruthy();
+    expect(screen.queryByRole("radio", { checked: true })).toBeNull();
+  });
+
   it("a draft can be edited and deleted; card text is never HTML", async () => {
     const draft: Review = { ...REVIEW, comments: [{ id: "c4", author: "person", kind: "comment", anchor: { quote: "Filter by size.", heading: "scope", occurrence: 0 }, text: "<b>bold</b>", state: "draft", replies: [], at: "2026-10-28T10:00:00.000Z" }] };
     const p = await setup({ review: draft });

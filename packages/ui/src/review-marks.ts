@@ -74,14 +74,12 @@ type HighlightApi = { highlights?: Map<string, unknown> };
 type HighlightCtor = new (...ranges: Range[]) => unknown;
 
 /**
- * Finds every mark in the rendered text and draws it with the CSS Custom Highlight API (no change to the DOM, no CSP
- * change). Returns the ranges it found, by comment id (the column and the focus markers place themselves from them).
- * `active` gets a stronger highlight. Without the API (tests), nothing is drawn.
+ * Finds every mark in the rendered text: the ranges by comment id (the column and the focus markers place themselves
+ * from them). The costly part (one walk of the body): run it when the text or the record changes, not on hover.
  */
-export function paintMarks(root: HTMLElement, marks: MarkSpec[], active: string | null = null): Map<string, Range> {
+export function findMarks(root: HTMLElement, marks: MarkSpec[]): Map<string, Range> {
   const runs = textRuns(root);
   const ranges = new Map<string, Range>();
-  const byTone: Record<(typeof HIGHLIGHTS)[number], Range[]> = { "hh-review-question": [], "hh-review-comment": [], "hh-review-done": [], "hh-review-active": [] };
   for (const m of marks) {
     const hit = findMark(runs.plain, m.want, m.nth);
     if (!hit) continue;
@@ -91,11 +89,38 @@ export function paintMarks(root: HTMLElement, marks: MarkSpec[], active: string 
     r.setStart(a.node, a.offset);
     r.setEnd(b.node, b.offset + 1);
     ranges.set(m.id, r);
-    byTone[m.id === active ? "hh-review-active" : (`hh-review-${m.tone}` as const)].push(r);
   }
-  const api = (globalThis as { CSS?: HighlightApi }).CSS;
-  const Highlight = (globalThis as { Highlight?: HighlightCtor }).Highlight;
-  if (api?.highlights && Highlight) for (const name of HIGHLIGHTS) api.highlights.set(name, new Highlight(...byTone[name]));
+  return ranges;
+}
+
+/**
+ * Draws found marks with the CSS Custom Highlight API (no change to the DOM, no CSP change); `active` gets a stronger
+ * highlight. Cheap: only the highlight sets are rebuilt. Without the API (tests), nothing is drawn.
+ */
+export function drawMarks(
+  ranges: Map<string, Range>,
+  marks: MarkSpec[],
+  active: string | null = null,
+  /** The highlight registry and constructor (tests pass their own); the window's by default. */
+  api: { highlights?: Map<string, unknown>; Highlight?: HighlightCtor } = {
+    highlights: (globalThis as { CSS?: HighlightApi }).CSS?.highlights,
+    Highlight: (globalThis as { Highlight?: HighlightCtor }).Highlight,
+  },
+): void {
+  const { Highlight } = api;
+  if (!api.highlights || !Highlight) return;
+  const byTone: Record<(typeof HIGHLIGHTS)[number], Range[]> = { "hh-review-question": [], "hh-review-comment": [], "hh-review-done": [], "hh-review-active": [] };
+  for (const m of marks) {
+    const r = ranges.get(m.id);
+    if (r) byTone[m.id === active ? "hh-review-active" : (`hh-review-${m.tone}` as const)].push(r);
+  }
+  for (const name of HIGHLIGHTS) api.highlights.set(name, new Highlight(...byTone[name]));
+}
+
+/** `findMarks` then `drawMarks`: the ranges it found, by comment id. */
+export function paintMarks(root: HTMLElement, marks: MarkSpec[], active: string | null = null): Map<string, Range> {
+  const ranges = findMarks(root, marks);
+  drawMarks(ranges, marks, active);
   return ranges;
 }
 

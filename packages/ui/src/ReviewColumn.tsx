@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { type AnswerPick, type Review, type ReviewComment, type Section, diagramOf, locate, sections } from "@humanharness/harness-sdk/review";
 
@@ -47,16 +47,20 @@ function ReviewCard({ c, secs, text, agent, locked, waiting, active, onActive, o
   const picked = c.answer && "option" in c.answer ? c.answer.option : c.answer ? -1 : null;
   const group = `hh-review-${c.id}`;
   const off = locked || waiting === c.id;
+  const headId = useId();
   return (
+    // Focusable, so a card with no control in it is reachable by keyboard; focusing the card itself scrolls to its mark.
     <article
       className={`hh-review-card hh-review-${c.kind}${active === c.id ? " hh-review-card-active" : ""}`}
       data-comment={c.id}
-      aria-label={c.kind === "question" ? `${t("review.question")}: ${c.text}` : c.text}
-      onFocus={() => onActive(c.id)}
+      tabIndex={0}
+      aria-labelledby={headId}
+      onFocus={(e) => onActive(c.id, e.target === e.currentTarget)}
       onMouseEnter={() => onActive(c.id)}
       onClick={() => onActive(c.id, true)}
     >
-      <header className="hh-review-card-head">
+      <header className="hh-review-card-head" id={headId}>
+        {c.kind === "question" && <span className="hh-sr-only">{t("review.question")}</span>}
         <span>{c.author === "person" ? t("review.you") : agent}</span>
         {c.blocking && c.state !== "resolved" && <span className="hh-review-badge">{t("review.blocking")}</span>}
         <span className="hh-review-state">{t(`review.${c.state === "lost" ? "open" : c.state}`)}</span>
@@ -96,6 +100,11 @@ function ReviewCard({ c, secs, text, agent, locked, waiting, active, onActive, o
             <input type="radio" name={group} checked={picked === null} disabled={off} onChange={() => onAnswer(c.id, null)} />
             {t("review.noAnswer")}
           </label>
+          {c.answer && "other" in c.answer && other === null && (
+            <p className="hh-review-other">
+              {t("review.otherLabel")}: <span>{c.answer.other}</span>
+            </p>
+          )}
           {other === null ? (
             <button type="button" disabled={off} onClick={() => setOther(c.answer && "other" in c.answer ? c.answer.other : "")}>
               {t("review.other")}

@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from "vitest";
-import { findMark, paintMarks, textRuns } from "../src/review-marks";
+import { drawMarks, findMark, findMarks, paintMarks, textRuns } from "../src/review-marks";
 
 function box(html: string) {
   const el = document.createElement("div");
@@ -47,5 +47,31 @@ describe("paintMarks", () => {
     ]);
     expect([...ranges.keys()]).toEqual(["c1"]);
     expect(ranges.get("c1")?.toString()).toBe("Filter by size.");
+  });
+});
+
+describe("findMarks and drawMarks", () => {
+  it("finds once; drawing for another active card only rebuilds the highlight sets", () => {
+    const el = box("<p>Filter by size.</p><p>Sort by date.</p>");
+    const marks = [
+      { id: "c1", want: "Filter by size.", nth: 0, tone: "question" as const },
+      { id: "c2", want: "Sort by date.", nth: 0, tone: "comment" as const },
+    ];
+    const ranges = findMarks(el, marks);
+    const sets = new Map<string, unknown>();
+    class FakeHighlight {
+      ranges: Range[];
+      constructor(...r: Range[]) {
+        this.ranges = r;
+      }
+    }
+    // happy-dom has no highlight registry: pass one.
+    const api = { highlights: sets, Highlight: FakeHighlight };
+    drawMarks(ranges, marks, "c2", api);
+    expect((sets.get("hh-review-question") as FakeHighlight).ranges).toEqual([ranges.get("c1")]);
+    expect((sets.get("hh-review-active") as FakeHighlight).ranges).toEqual([ranges.get("c2")]);
+    drawMarks(ranges, marks, null, api);
+    expect((sets.get("hh-review-comment") as FakeHighlight).ranges).toEqual([ranges.get("c2")]);
+    expect((sets.get("hh-review-active") as FakeHighlight).ranges).toEqual([]);
   });
 });

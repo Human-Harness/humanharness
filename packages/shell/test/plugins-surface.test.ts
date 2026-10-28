@@ -97,6 +97,13 @@ describe("PluginsController surface", () => {
     expect(t.ctl.panelHost("oncall")).toBeNull();
   });
 
+  it("panelHost is null once the controller is stopped (detached)", async () => {
+    const t = await oncall();
+    expect(t.ctl.panelHost("oncall")).not.toBeNull();
+    await t.ctl.stop();
+    expect(t.ctl.panelHost("oncall")).toBeNull();
+  });
+
   it("bumpReload counts per plugin and pushes", async () => {
     const t = await oncall();
     t.ctl.bumpReload("oncall");

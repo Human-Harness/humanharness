@@ -332,6 +332,13 @@ describe("plugins IPC, part 2: the surface, panel calls, prepared tasks and atte
     expect(w.calls.filter(([n]) => n === "takePrepared" || n === "startPrepared")).toEqual([]);
   });
 
+  it("a turn that starts while Start awaits: the spent card answers why, and nothing starts", async () => {
+    let busy = false;
+    const w = wire({ takePrepared: async () => ((busy = true), START) }, { t: 0 }, { startBlocked: () => (busy ? "A turn is already running" : null) });
+    expect(await w.call("hh:pluginsStartPrepared", TOKEN)).toEqual({ ok: false, message: "A turn is already running" });
+    expect(w.calls.filter(([n]) => n === "startPrepared")).toEqual([]);
+  });
+
   it("a card that needs the open scope: with none open Start answers 'Open a <scope> first' before the token is used", async () => {
     let open = false;
     const taken: unknown[] = [];

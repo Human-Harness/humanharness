@@ -271,6 +271,9 @@ export function registerPluginsIpc(handle: Handle, ctl: Ctl, o: PreparedDeps & {
       if (o.scopes && card?.token === token && card.scope === "open" && !(await o.scopes.open())) return needScope;
       const p = await ctl.takePrepared(token);
       if (!p) return NOT_PREPARED;
+      // A turn may have started during the awaits above: the card is spent either way, but the answer says why.
+      const late = o.startBlocked?.() ?? null;
+      if (late) return { ok: false, message: late };
       await o.startPrepared(p);
       return { ok: true };
     } catch (err) {

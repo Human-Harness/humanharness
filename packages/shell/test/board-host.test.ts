@@ -188,6 +188,28 @@ describe("a lane's note goes into the history alone (parallel spec §5.3)", () =
   });
 });
 
+describe("a lane's closed task reaches the jobs' afterTask (parallel spec §8, Decision 6)", () => {
+  it("the lane keeps taskDeps' taskClosed getter: read at close, so jobs set up after the lane opened still hear it", async () => {
+    const t = host({ tasks: 2 });
+    // As index.ts: a getter over the jobs host, undefined until (and unless) there is one.
+    let jobs: { taskClosed: (c: { id: string; action?: string; scope: string }) => void } | null = null;
+    Object.defineProperty(t.taskDeps, "taskClosed", { get: () => (jobs ? (c: { id: string; action?: string; scope: string }) => jobs!.taskClosed(c) : undefined) });
+    await t.h.interrupt();
+    const a = t.h.board.start("write", "First");
+    await until(() => t.turns.length === 1);
+    t.turns[0].end();
+    await a;
+    const taskClosed = vi.fn();
+    jobs = { taskClosed };
+    const closing = t.h.board.finish();
+    await until(() => t.turns.length === 2);
+    t.turns[1].end([{ type: "block", name: "save_note", data: { title: "Halves", summary: ["x"], decisions: [], files: [], open: [] } }, ok]);
+    await closing;
+    await until(() => taskClosed.mock.calls.length === 1);
+    expect(taskClosed).toHaveBeenCalledExactlyOnceWith({ id: t.turns[0].slot, action: "write", scope: "main" });
+  });
+});
+
 describe("an answer to an input block is marked in the task's own chat (input-blocks spec §8, parallel spec §6)", () => {
   it("respond: the per-task chat's block gets the answer; the old scope chat is never touched", async () => {
     const commit = defineBlock({

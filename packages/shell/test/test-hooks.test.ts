@@ -1,3 +1,4 @@
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { getEngine } from "@humanharness/engines";
 import {
@@ -23,6 +24,16 @@ describe("readTestHooks", () => {
     expect(readTestHooks({ HH_TEST_MINUTE_MS: "1000" }, false)).toEqual({ minuteMs: 1000 });
     for (const v of ["0", "9", "60001", "abc", "1.5"]) expect(readTestHooks({ HH_TEST_MINUTE_MS: v }, false)).toEqual({});
     expect(readTestHooks({ HH_TEST_MINUTE_MS: "1000" }, true)).toEqual({});
+  });
+
+  it("reads plugin folders (HH_PLUGIN_DIRS, absolute only) and a short plugin run limit, in development only", () => {
+    const env = { HH_PLUGIN_DIRS: ["/a", "rel", "", "/b"].join(path.delimiter), HH_TEST_PLUGIN_RUN_LIMIT_MS: "2000" };
+    expect(readTestHooks(env, false)).toEqual({ pluginDirs: ["/a", "/b"], pluginRunLimitMs: 2000 });
+    expect(readTestHooks(env, true)).toEqual({});
+    expect(readTestHooks({ HH_PLUGIN_DIRS: "rel" }, false)).toEqual({});
+    for (const v of ["99", "600001", "1.5", "x"]) expect(readTestHooks({ HH_TEST_PLUGIN_RUN_LIMIT_MS: v }, false)).toEqual({});
+    expect(readTestHooks({ HH_TEST_PLUGIN_RUN_LIMIT_MS: "100" }, false)).toEqual({ pluginRunLimitMs: 100 });
+    expect(readTestHooks({ HH_TEST_PLUGIN_RUN_LIMIT_MS: "600000" }, false)).toEqual({ pluginRunLimitMs: 600_000 });
   });
 
   it("is empty in a packaged app", () => {

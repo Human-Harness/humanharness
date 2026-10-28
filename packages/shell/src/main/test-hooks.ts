@@ -19,14 +19,18 @@ export interface TestHooks {
   suggestedFolder?: string;
   /** How long a time-box minute lasts (HH_TEST_MINUTE_MS, 10..60000): tests and mock mode run a time box fast. */
   minuteMs?: number;
+  /** Plugin folders loaded as `dev` plugins, on and without review (HH_PLUGIN_DIRS, plugins Decision 20). */
+  pluginDirs?: string[];
+  /** A plugin run's time limit in ms (HH_TEST_PLUGIN_RUN_LIMIT_MS, 100..600000) instead of 2 minutes. */
+  pluginRunLimitMs?: number;
 }
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
 /**
  * End-to-end test settings from the environment: HH_TEST_USER_DATA, HH_TEST_SHARED_DIR,
- * HH_TEST_SUGGESTED_FOLDER, HH_TEST_MOCK ("1"), HH_TEST_MINUTE_MS (a time-box minute in ms) and HH_TEST_ENGINES
- * (JSON: engine id → { command, env }). Development builds only: a packaged app ignores them. Engine environments keep only HH_FAKE_* variables, so no credential or auth variable
+ * HH_TEST_SUGGESTED_FOLDER, HH_TEST_MOCK ("1"), HH_TEST_MINUTE_MS (a time-box minute in ms), HH_PLUGIN_DIRS (absolute
+ * plugin folders, `path.delimiter`-separated), HH_TEST_PLUGIN_RUN_LIMIT_MS and HH_TEST_ENGINES (JSON: engine id → { command, env }). Development builds only: a packaged app ignores them. Engine environments keep only HH_FAKE_* variables, so no credential or auth variable
  * can be passed this way.
  */
 export function readTestHooks(env: Record<string, string | undefined>, packaged: boolean): TestHooks {
@@ -42,6 +46,10 @@ export function readTestHooks(env: Record<string, string | undefined>, packaged:
   if (env.HH_TEST_MOCK === "1") hooks.mock = true;
   const minute = Number(env.HH_TEST_MINUTE_MS);
   if (env.HH_TEST_MINUTE_MS && Number.isInteger(minute) && minute >= 10 && minute <= 60_000) hooks.minuteMs = minute;
+  const pluginDirs = (env.HH_PLUGIN_DIRS ?? "").split(path.delimiter).filter((d) => d && path.isAbsolute(d));
+  if (pluginDirs.length > 0) hooks.pluginDirs = pluginDirs;
+  const runLimit = Number(env.HH_TEST_PLUGIN_RUN_LIMIT_MS);
+  if (env.HH_TEST_PLUGIN_RUN_LIMIT_MS && Number.isInteger(runLimit) && runLimit >= 100 && runLimit <= 600_000) hooks.pluginRunLimitMs = runLimit;
   let raw: unknown;
   try {
     raw = env.HH_TEST_ENGINES ? JSON.parse(env.HH_TEST_ENGINES) : undefined;

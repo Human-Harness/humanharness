@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import git from "isomorphic-git";
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { FILE_INDEX_NAME, History } from "../src";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-hidx-"));
@@ -78,7 +78,88 @@ describe("History's file index (file-timeline spec §3.3)", () => {
     write("a.md", "1");
     const s1 = (await history.save("Start"))!;
     fs.writeFileSync(indexFile(), "not json");
-    expect(await history.fileCommits("a.md")).toEqual([s1]);
+    expect(await new History(folder, gitdir, [".harness/", "AGENTS.md"]).fileCommits("a.md")).toEqual([s1]);
+  });
+
+  it("a read after a commit sees it, even while a read started before the commit still runs", async () => {
+    write("a.md", "1");
+    const s1 = (await history.save("Start"))!;
+    fs.rmSync(indexFile());
+    const h = new History(folder, gitdir, [".harness/", "AGENTS.md"]);
+    await h.init();
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const real = git.readCommit;
+    const spy = vi.spyOn(git, "readCommit").mockImplementation(async (args) => {
+      if (args.oid === s1) await gate;
+      return real(args);
+    });
+    try {
+      const before = h.fileCommits("a.md");
+      await vi.waitFor(() => expect(spy.mock.calls.some(([a]) => a.oid === s1)).toBe(true));
+      write("a.md", "2");
+      const s2 = (await h.save("Turn: edit"))!;
+      const after = h.fileCommits("a.md");
+      release();
+      expect(await before).toEqual([s1]);
+      expect(await after).toEqual([s1, s2]);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("an index file that can't be written fails no commit and costs one rebuild, not one per read", async () => {
+    fs.mkdirSync(indexFile());
+    write("a.md", "1");
+    const s1 = await history.save("Start");
+    expect(s1).not.toBeNull();
+    write("a.md", "2");
+    const s2 = await history.save("Turn: edit");
+    expect(s2).not.toBeNull();
+    const h = new History(folder, gitdir, [".harness/", "AGENTS.md"]);
+    const spy = vi.spyOn(git, "readCommit");
+    try {
+      expect(await h.fileCommits("a.md")).toEqual([s1, s2]);
+      const rebuild = spy.mock.calls.length;
+      expect(rebuild).toBeGreaterThan(0);
+      expect(await h.fileCommits("a.md")).toEqual([s1, s2]);
+      // This History's own commits advance its index too.
+      write("a.md", "3");
+      const s3 = await h.save("Turn: again");
+      spy.mockClear();
+      expect(await h.fileCommits("a.md")).toEqual([s1, s2, s3]);
+      expect(spy).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("a rebuild indexes every changed path, whatever this History keeps", async () => {
+    write("a.md", "1");
+    await history.save("Start");
+    write(".harness/reviews/a.md.json", "{}");
+    const reviewing = new History(folder, gitdir, [".harness/", "AGENTS.md"], [".harness/reviews/"]);
+    const s2 = (await reviewing.save("Approved: a.md"))!;
+    fs.rmSync(indexFile());
+    expect(await new History(folder, gitdir, [".harness/", "AGENTS.md"]).fileCommits(".harness/reviews/a.md.json")).toEqual([s2]);
+  });
+
+  it("an async listener's rejection is caught; each listener gets its own paths", async () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const got: string[][] = [];
+    history.onCommit(async (c) => {
+      c.paths.push("changed.md");
+      throw new Error("boom");
+    });
+    history.onCommit((c) => got.push(c.paths));
+    write("a.md", "1");
+    try {
+      expect(await history.save("Start")).not.toBeNull();
+      await vi.waitFor(() => expect(errors).toHaveBeenCalledWith("A commit listener failed", expect.any(Error)));
+      expect(got).toEqual([["a.md"]]);
+    } finally {
+      errors.mockRestore();
+    }
   });
 
   it("catches up on commits another History made on the same git data", async () => {

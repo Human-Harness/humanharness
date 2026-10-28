@@ -134,9 +134,6 @@ async function writeNoFollow(file: string, data: Buffer, mode: number): Promise<
 /** How far back `tasks` follows a task past the depth to find its first commit. */
 const MAX_WALK_BACK = 1000;
 
-/** How far back a read follows commits another History made before it rebuilds the file index instead. */
-const MAX_CATCH_UP = 2000;
-
 /** Ids a trailer may carry (task UUIDs, manifest action ids): no spaces or line breaks. */
 const TRAILER_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/;
 
@@ -200,8 +197,15 @@ export class History {
     return (this.fileIndex ??= new FileIndex(this.gitdir));
   }
   private readonly commitListeners = new Set<(c: CommitPaths) => void>();
-  /** The index being brought up to date, shared by every read meanwhile. */
-  private updating: Promise<FileIndexData> | null = null;
+  /** Bumped by every commit of this History: a read shares an update only with reads started since the same commit. */
+  private generation = 0;
+  /** The index being brought up to date, shared by every read of the same generation meanwhile. */
+  private updating: { generation: number; run: Promise<FileIndexData> } | null = null;
+  /**
+   * The last index this History computed or advanced, never changed in place. A read at its head needs no file, so an
+   * index file that can't be written or read back (a folder in its place) costs one rebuild, not one per read.
+   */
+  private known: FileIndexData | null = null;
 
   /** Told after every commit, with the paths it touched (the window refreshes a file's timeline). */
   onCommit(listener: (c: CommitPaths) => void): () => void {
@@ -302,16 +306,26 @@ export class History {
   private async committed(parent: string | null, sha: string, message: string, staged: string[]): Promise<void> {
     const named = namedPath(parseCommitMessage(message).subject);
     const paths = named !== null && !staged.includes(named) ? [...staged, named] : staged;
+    // A read started before this commit may still run at the old head: later reads must not join it.
+    this.generation++;
+    const base = parent === null ? emptyIndex(null) : this.known?.head === parent ? structuredClone(this.known) : null;
+    if (base) {
+      addCommit(base, sha, paths);
+      this.known = base;
+    }
     try {
       await this.index.record(parent, sha, paths);
     } catch (err) {
       console.error("Could not update the file index", err);
     }
+    const failed = (err: unknown) => console.error("A commit listener failed", err);
     for (const l of [...this.commitListeners]) {
       try {
-        l({ sha, paths });
+        // Each listener its own copy; an async listener's rejection is caught too.
+        const r: unknown = l({ sha, paths: [...paths] });
+        if (r instanceof Promise) r.catch(failed);
       } catch (err) {
-        console.error("A commit listener failed", err);
+        failed(err);
       }
     }
   }
@@ -324,50 +338,49 @@ export class History {
   }
 
   private currentIndex(): Promise<FileIndexData> {
-    if (!this.updating) {
-      this.updating = this.bringIndexUpToDate().finally(() => {
-        this.updating = null;
+    const generation = this.generation;
+    if (this.updating?.generation !== generation) {
+      const run: Promise<FileIndexData> = this.bringIndexUpToDate().then((data) => {
+        // An update a commit overtook leaves `known` to the newer one.
+        if (this.generation === generation) this.known = data;
+        return data;
       });
+      const entry = { generation, run };
+      this.updating = entry;
+      void run.finally(() => {
+        if (this.updating === entry) this.updating = null;
+      }).catch(() => undefined);
     }
-    return this.updating;
+    return this.updating!.run;
   }
 
   /**
-   * The index at HEAD: as it is; caught up on the commits another History made after its head; or rebuilt from the
-   * whole log when it is missing or its head is not in this history. Reads git objects only (immutable), so it runs
-   * outside the write queue; a commit meanwhile is caught up on by the next read.
+   * The index at HEAD: this History's own when it is at HEAD; else the file's when it is; else whichever of the two is
+   * found walking back from HEAD, caught up on the commits after it (another History's); else rebuilt from that same
+   * walk, down to the first commit. Reads git objects only (immutable), so it runs outside the write queue; a commit
+   * meanwhile starts a new generation of reads. Never changes an index in place: the file's is the cache's.
    */
   private async bringIndexUpToDate(): Promise<FileIndexData> {
     const head = await this.last();
     if (head === null) return emptyIndex(null);
+    const mine = this.known;
+    if (mine?.head === head) return mine;
+    const file = await this.index.load();
+    if (file?.head === head) return file;
+    const bases = [mine, file].filter((d): d is FileIndexData => d !== null && d.head !== null);
     const cache = {};
-    const data = await this.index.load();
-    if (data?.head === head) return data;
-    const known = data?.head ?? null;
-    if (data && known !== null) {
-      const newer: string[] = [];
-      let at: string | null = head;
-      for (let i = 0; at !== null && at !== known && i < MAX_CATCH_UP; i++) {
-        newer.push(at);
-        at = await this.parentOf(at, cache);
-      }
-      if (at === known) {
-        const found: [string, string[]][] = [];
-        for (const sha of newer.reverse()) found.push([sha, await this.pathsOf(sha, cache)]);
-        // `data` is shared with the index's cache: add to a copy, and only if no commit moved it meanwhile.
-        if (data.head === known) {
-          const next = structuredClone(data);
-          for (const [sha, paths] of found) addCommit(next, sha, paths);
-          await this.saveIndex(next);
-          return next;
-        }
-      }
+    // First parents back from HEAD to a base's head; to the first commit when there is none (a rebuild).
+    const newer: string[] = [];
+    let base: FileIndexData | undefined;
+    for (let at: string | null = head; at !== null; at = await this.parentOf(at, cache)) {
+      base = bases.find((d) => d.head === at);
+      if (base) break;
+      newer.push(at);
     }
-    const fresh = emptyIndex(null);
-    const log = await git.log({ fs, gitdir: this.gitdir, ref: head, cache });
-    for (const e of log.reverse()) addCommit(fresh, e.oid, await this.pathsOf(e.oid, cache));
-    await this.saveIndex(fresh);
-    return fresh;
+    const next = base ? structuredClone(base) : emptyIndex(null);
+    for (const sha of newer.reverse()) addCommit(next, sha, await this.pathsOf(sha, cache));
+    await this.saveIndex(next);
+    return next;
   }
 
   private async saveIndex(data: FileIndexData): Promise<void> {
@@ -378,10 +391,13 @@ export class History {
     }
   }
 
-  /** The tracked paths commit `sha` changed against its parent, plus the path its subject names. */
+  /**
+   * Every path commit `sha` changed against its parent, plus the path its subject names. Not filtered by this History's
+   * rules: the index is shared by every History on the same git data, whatever each one keeps.
+   */
   private async pathsOf(sha: string, cache: object): Promise<string[]> {
     const { commit } = await git.readCommit({ fs, gitdir: this.gitdir, oid: sha, cache });
-    const paths = (await this.diff(commit.parent[0] ?? null, sha, cache)).map((c) => c.path);
+    const paths = (await this.diff(commit.parent[0] ?? null, sha, cache, true)).map((c) => c.path);
     const named = namedPath(parseCommitMessage(commit.message).subject);
     if (named !== null && !paths.includes(named)) paths.push(named);
     return paths;
@@ -628,9 +644,10 @@ export class History {
     return this.ignore.some((i) => i.endsWith("/") && prefix.startsWith(i)) && !this.keep.some(keepsInside);
   }
 
-  /** Tracked files that differ between two commits; with no `from`, every file of `to` is added. */
-  private async diff(from: string | null, to: string, cache: object = {}): Promise<FileChange[]> {
+  /** Tracked files (`all`: every file) that differ between two commits; with no `from`, every file of `to` is added. */
+  private async diff(from: string | null, to: string, cache: object = {}, all = false): Promise<FileChange[]> {
     const changes: FileChange[] = [];
+    const tracked = all ? () => true : this.tracked;
     const trees = from === null ? [git.TREE({ ref: to })] : [git.TREE({ ref: from }), git.TREE({ ref: to })];
     await git.walk({
       fs,
@@ -644,13 +661,13 @@ export class History {
         const [ta, tb] = await Promise.all([a?.type(), b?.type()]);
         const [oa, ob] = await Promise.all([a?.oid(), b?.oid()]);
         if (ta === "tree" || tb === "tree") {
-          if (oa === ob || this.skipsFolder(filepath)) return null;
+          if (oa === ob || (!all && this.skipsFolder(filepath))) return null;
           // A file replaced by a folder (or the reverse): the file side is deleted or added.
-          if (ta === "blob" && this.tracked(filepath)) changes.push({ path: filepath, kind: "deleted" });
-          if (tb === "blob" && this.tracked(filepath)) changes.push({ path: filepath, kind: "added" });
+          if (ta === "blob" && tracked(filepath)) changes.push({ path: filepath, kind: "deleted" });
+          if (tb === "blob" && tracked(filepath)) changes.push({ path: filepath, kind: "added" });
           return undefined;
         }
-        if (!this.tracked(filepath) || oa === ob) return undefined;
+        if (!tracked(filepath) || oa === ob) return undefined;
         changes.push({ path: filepath, kind: !a ? "added" : !b ? "deleted" : "modified" });
         return undefined;
       },

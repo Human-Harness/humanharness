@@ -15,6 +15,8 @@ export interface DocumentKind {
   sections: string[];
   /** The values its front-matter `status` may take. */
   status?: string[];
+  /** The tier of a "Review <title>" task for this kind; absent: standard. */
+  reviewTier?: "light" | "standard" | "deep";
 }
 
 export interface FrontMatter {

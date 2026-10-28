@@ -52,7 +52,8 @@ Spec: `docs/superpowers/specs/2026-10-27-parallel-tasks-and-jobs-design.md` §4.
 - ACP: `locations` and the `diff` content's `path` of `edit`, `delete` and `move` calls. At most 50 paths per event.
 - Both parsers drop a path longer than 4096 characters (`EDIT_PATH_MAX`).
 - The slot passes them to `TurnLedger.noteEdits`. They are a hint, not a full list.
-- `forWindow` (`packages/shell/src/main/turn-controller.ts`) strips `edits` before an event reaches the window or the chat log. Any other event passes as is. The window's events are what they were.
+- `forWindow` (`packages/shell/src/main/turn-controller.ts`) strips `edits` before an event reaches the window. Any other event passes as is. The window's events are what they were.
+- The chat log gets the raw event: the shell's `recorder.add` runs before `forWindow`. The log stays free of `edits` only because `TurnRecorder.add` (`packages/shell/src/main/chat-log.ts`) keeps just an activity's `kind` and `detail`.
 
 ## Turns the app starts
 

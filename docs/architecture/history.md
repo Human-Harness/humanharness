@@ -98,6 +98,7 @@ Spec: `docs/superpowers/specs/2026-10-27-parallel-tasks-and-jobs-design.md` §5.
 **One queue.**
 - Every new method goes through `History`'s one `serialize` queue: `commitPaths`, `restorePaths`, `dirtyState`, `changedSince`, `commitsSince`.
 - `changedSince`, the commits and `commitsSince` are separate queue entries. Another turn's commit can land between them.
+- `commitChanges` and `tasks` are not queued: they only read commits already written. A commit landing meanwhile may or may not be in what `tasks` returns.
 
 **Trailers.**
 - A job's commit adds `Job: <job id>` (part 3 writes it).

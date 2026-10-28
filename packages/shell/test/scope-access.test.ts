@@ -5,7 +5,7 @@ import { afterAll, describe, expect, it, vi } from "vitest";
 import type { LinkedFolderDecl } from "@humanharness/harness-sdk";
 import { type LinkedFolderEntry, type ScopeEntry, ScopeStore, scopesFile } from "@humanharness/workspace";
 import { type LinkSigning, linkedSigning, registerLinkedIpc } from "../src/main/linked-ipc";
-import { LinkedInstructions, checkGitChanges, createScopeAccess, linkedLines, linkedSection, scopeAccessFor } from "../src/main/scope-access";
+import { LinkedInstructions, checkGitChanges, refreshUnlessBusy, createScopeAccess, linkedLines, linkedSection, scopeAccessFor } from "../src/main/scope-access";
 import { folderProblem } from "../src/main/validate";
 
 const entries: ScopeEntry[] = [
@@ -382,10 +382,64 @@ describe("LinkedInstructions (AGENTS.md between tasks)", () => {
 
   it("a scope switch since AGENTS.md was written rewrites it between tasks", async () => {
     const m = make({ open: "a" });
-    m.li.wrote("a");
+    m.li.read("a");
     await m.li.betweenTasks();
     expect(m.refresh).not.toHaveBeenCalled();
     m.state.open = "b";
+    await m.li.betweenTasks();
+    expect(m.refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it("a scope switch whose refresh a turn refused after reading the lines is rewritten at the next gap", async () => {
+    let refuse = true;
+    const m = make({ open: "a" });
+    m.li.read("a");
+    m.refresh.mockImplementation(async () => {
+      // As the runtime: the lines are read, then a turn that started meanwhile refuses the write.
+      m.li.read(m.state.open);
+      if (refuse) throw new Error("A turn is running");
+      return true;
+    });
+    m.state.open = "b";
+    await m.li.betweenTasks();
+    expect(m.refresh).toHaveBeenCalledTimes(1);
+    refuse = false;
+    await m.li.betweenTasks();
+    expect(m.refresh).toHaveBeenCalledTimes(2);
+    await m.li.betweenTasks();
+    expect(m.refresh).toHaveBeenCalledTimes(2);
+  });
+
+  it("a scope switch whose write a running turn refused (the runtime answers false) is rewritten at the next gap", async () => {
+    let busy = true;
+    let wrote = false;
+    const m = make({ open: "a" });
+    m.li.read("a");
+    const runtime = vi.fn(async () => {
+      m.li.read(m.state.open);
+      if (busy) return false;
+      wrote = true;
+      return true;
+    });
+    m.refresh.mockImplementation(() => refreshUnlessBusy(runtime, () => busy));
+    m.state.open = "b";
+    await m.li.betweenTasks();
+    expect(wrote).toBe(false);
+    busy = false;
+    await m.li.betweenTasks();
+    expect(runtime).toHaveBeenCalledTimes(2);
+    expect(wrote).toBe(true);
+  });
+
+  it("a refresh that found the text already right counts as written", async () => {
+    const m = make({ open: "a" });
+    m.li.read("a");
+    m.refresh.mockImplementation(async () => {
+      m.li.read(m.state.open);
+      return false;
+    });
+    m.state.open = "b";
+    await m.li.betweenTasks();
     await m.li.betweenTasks();
     expect(m.refresh).toHaveBeenCalledTimes(1);
   });

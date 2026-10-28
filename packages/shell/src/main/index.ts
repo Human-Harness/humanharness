@@ -197,7 +197,7 @@ import { cleanCaps, engineHold, parallelInfo } from "./parallel-config";
 import { restoreTaskByPaths } from "./restore-paths";
 import { type LinkedIpcDeps, hatchesState, linkedSigning, registerLinkedIpc } from "./linked-ipc";
 import { linkedHistoryDir, markRelinked, pruneUnlinked } from "./linked-history";
-import { LinkedInstructions, type ScopeAccess, createScopeAccess } from "./scope-access";
+import { LinkedInstructions, type ScopeAccess, createScopeAccess, refreshUnlessBusy } from "./scope-access";
 import {
   type LinkedHistoryRef,
   linkedHistoriesFor,
@@ -1976,10 +1976,9 @@ function linked_(): typeof linkedParts {
       if (host) return false;
       const rt = await runtime.peek()?.catch(() => null);
       if (!rt) return false;
-      const wrote = await rt.refreshInstructions();
-      // `single` mode: a job's turn on the same workspace refused it; kept stale for the next gap.
-      if (!wrote && singleParts.get(rt)?.workspace.anyRunning()) throw new Error("A turn is running: AGENTS.md waits for a gap");
-      return wrote;
+      // A turn refused it (a task's that started meanwhile, or in `single` mode a job's on the same workspace): kept
+      // stale for the next gap, never taken as written.
+      return refreshUnlessBusy(() => rt.refreshInstructions(), () => turns.isBusy() || !!singleParts.get(rt)?.workspace.anyRunning());
     },
     openScope: () => tasks.currentScope(),
   });
@@ -2008,7 +2007,7 @@ function linkedRuntimeOptions(): Pick<RuntimeOptions, "instructionLinked" | "lin
       try {
         const scope = await tasks.currentScope();
         const lines = await linked.access.lines(scope);
-        linked.instructions.wrote(scope);
+        linked.instructions.read(scope);
         return lines;
       } catch (err) {
         console.error("Could not read the open scope's folders for AGENTS.md", err);

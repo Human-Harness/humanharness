@@ -182,6 +182,16 @@ export function createScopeAccess(d: ScopeAccessDeps) {
 }
 
 /**
+ * `refresh` for `LinkedInstructions`: the runtime's `refreshInstructions` answers false both when the text was already
+ * right and when a running turn refused it; `busy` tells them apart (a turn that refused the write is still running).
+ */
+export async function refreshUnlessBusy(refresh: () => Promise<boolean>, busy: () => boolean): Promise<boolean> {
+  const wrote = await refresh();
+  if (!wrote && busy()) throw new Error("A turn is running: AGENTS.md waits for a gap");
+  return wrote;
+}
+
+/**
  * AGENTS.md's "Folders of this scope" between tasks (as the settings', harness-settings D4): a link change or a scope
  * switch marks it stale, it is rewritten once no task is open, and `betweenTasks` retries whatever a running turn
  * refused. Nothing is lost while a turn runs. Never rejects.
@@ -190,11 +200,16 @@ export class LinkedInstructions {
   private stale = false;
   /** The scope the AGENTS.md now on disk lists (undefined: not written by this process yet). */
   private written: string | null | undefined = undefined;
+  /** While a refresh runs: the scope it read, written only once the refresh ended without a refusal. */
+  private reading: { scope: string | null | undefined } | null = null;
 
   constructor(
     private readonly d: {
       whenNoTask(fn: () => Promise<void>): Promise<boolean>;
-      /** The runtime's (or board's) refresh, peek only; throws when a running turn refused it. */
+      /**
+       * The runtime's (or board's) refresh, peek only: true when it wrote, false when the text was already right; throws
+       * when a running turn refused it (never false then: the change would be taken as written).
+       */
       refresh(): Promise<boolean>;
       /** The open scope now. */
       openScope(): Promise<string | null>;
@@ -202,9 +217,13 @@ export class LinkedInstructions {
     },
   ) {}
 
-  /** The runtime read the lines for `scope` (create or refresh): that is what AGENTS.md lists. */
-  wrote(scope: string | null): void {
-    this.written = scope;
+  /**
+   * The runtime read the lines for `scope`. At create that is what AGENTS.md lists; during a refresh, only once the
+   * refresh ended without a refusal (a turn that started meanwhile keeps the old text, and the switch stays to do).
+   */
+  read(scope: string | null): void {
+    if (this.reading) this.reading.scope = scope;
+    else this.written = scope;
   }
 
   /** A link changed or the scope opened: rewritten once no task is open, else between tasks. */
@@ -226,11 +245,16 @@ export class LinkedInstructions {
   private async apply(): Promise<void> {
     if (!this.stale) return;
     this.stale = false;
+    const reading: { scope: string | null | undefined } = { scope: undefined };
+    this.reading = reading;
     try {
       await this.d.refresh();
+      if (reading.scope !== undefined) this.written = reading.scope;
     } catch (err) {
       this.stale = true;
       this.log("Could not rewrite AGENTS.md's linked folders", err);
+    } finally {
+      if (this.reading === reading) this.reading = null;
     }
   }
 

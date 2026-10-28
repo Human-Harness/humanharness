@@ -4,6 +4,7 @@ import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { secretForms } from "@humanharness/harness-sdk/plugin-fixtures";
 import type { PluginReview } from "@humanharness/ui/client";
+import { attentionStores } from "../src/main/attention-stores";
 import { type Ctx, HIDDEN, QUEUES, TEAM, bundled, files, setup, tmp, until, writePlugin } from "./plugins-fixtures";
 
 
@@ -525,6 +526,31 @@ describe("PluginsController: attention", () => {
     // Off: its items hide, and with nothing on the icon goes.
     await u.ctl.setOn("oncall", false);
     expect(await u.ctl.attention.view()).toEqual({ items: [], badge: 0, show: false });
+  });
+
+  it("board mode: the shared store holds its items; the plugins inbox shows plugin items only (Decision 10)", async () => {
+    let ctx: Ctx | undefined;
+    const stores = attentionStores({ tagKey: async () => Buffer.alloc(32, 9), log: () => {} });
+    stores.registerKnown("task", (id) => id === "t1");
+    const u = await setup({
+      plugins: { bundled: ["oncall"], on: ["oncall"], local: false },
+      backends: { oncall: { s: (c) => ((ctx = c), new Promise(() => {})) } },
+      over: { attentionStoreFor: (b, create) => stores.forBase(b, create), registerKnown: (k, fn) => stores.registerKnown(k, fn) },
+    });
+    await bundled(u.root, "oncall", { name: "On-call" });
+    await u.ctl.start();
+    await until(() => ctx !== undefined);
+    await ctx!.attention.raise({ key: "a1", severity: "action", title: "Page" });
+    const shared = (await stores.forBase(u.base, false))!;
+    await shared.raise({ kind: "task", id: "t1" }, { key: "waiting", severity: "action", title: "Intro", target: { panel: "task", focus: "t1" } });
+    // One store: the plugin's item is in it, and the plugin rule it registered knows the running plugin.
+    expect((await shared.list()).map((i) => `${i.origin.kind}:${i.origin.id}/${i.key}`).sort()).toEqual(["plugin:oncall/a1", "task:t1/waiting"]);
+    expect(stores.known({ kind: "plugin", id: "oncall" })).toBe(true);
+    const v = await u.ctl.attention.view();
+    expect(v.items.map((i) => [i.plugin, i.key])).toEqual([["oncall", "a1"]]);
+    expect(v.badge).toBe(1);
+    await u.ctl.setOn("oncall", false);
+    expect(stores.known({ kind: "plugin", id: "oncall" })).toBe(false);
   });
 
   it("a target is checked again at the click: plugin on, panel or action declared, tasks approved, vars that pass the schema", async () => {

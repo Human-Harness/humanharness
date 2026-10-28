@@ -90,6 +90,13 @@ export interface PluginsDeps {
   userData: string;
   /** The Attention tag key (HMAC), kept outside the base; created only when `create`. */
   tagKey(create: boolean): Promise<Buffer | null>;
+  /**
+   * Board mode (parallel spec §9.2, Decision 10): base `base`'s Attention store, shared with the waiting tasks. Absent,
+   * the controller builds its own as before (D0).
+   */
+  attentionStoreFor?(base: string, create: boolean): Promise<AttentionStore | null>;
+  /** With `attentionStoreFor`: takes the rule for which plugin origins the shared store shows (on or crashed plugins). */
+  registerKnown?(kind: "plugin", fn: (id: string) => boolean): void;
   pickFolder(): Promise<string | null>;
   notify(title: string, body: string): void;
   whenNoTask(fn: () => Promise<void>): Promise<boolean>;
@@ -260,6 +267,7 @@ export class PluginsController {
   constructor(private readonly d: PluginsDeps) {
     this.now = d.now ?? (() => new Date());
     this.clock = d.clock ?? (() => performance.now());
+    d.registerKnown?.("plugin", (id) => this.running.has(id) || this.crashedIds.has(id));
   }
 
   private get active(): boolean {
@@ -764,6 +772,14 @@ export class PluginsController {
 
   private async attentionStore(c: BaseCtx, create: boolean): Promise<AttentionStore | null> {
     if (c.attention) return c.attention;
+    if (this.d.attentionStoreFor) {
+      const shared = await this.d.attentionStoreFor(c.base, create).catch((err: unknown) => {
+        this.log("Could not open the Attention inbox", err);
+        return null;
+      });
+      if (shared) c.attention = shared;
+      return shared;
+    }
     const key = await this.d.tagKey(create).catch((err: unknown) => {
       this.log("Could not read the Attention key", err);
       return null;

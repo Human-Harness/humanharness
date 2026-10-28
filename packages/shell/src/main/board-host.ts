@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { type ParallelCaps, isConcurrent } from "@humanharness/harness-sdk";
 import type { Event, HarnessWorkspace, SessionSlot, SlotRef, TurnAttribution } from "@humanharness/runtime";
-import { type AppConfig, type ChatEntry, type ChatLoad, type ChatNotice, type TaskView, type TasksState, isTurnEntry } from "@humanharness/ui/client";
+import { type AppConfig, type ChatEntry, type ChatLoad, type ChatNotice, type TaskSummary, type TaskView, type TasksState, isTurnEntry } from "@humanharness/ui/client";
 import { type History, MAIN_SCOPE, taskChatFile } from "@humanharness/workspace";
 import { ChatLog } from "./chat-log";
 import { migrateChats } from "./chat-migration";
@@ -92,6 +92,8 @@ export interface BoardHostDeps {
   send(channel: string, value: unknown): void;
   /** The task's name as the history shows it. */
   label(t: CurrentTask): string;
+  /** The open tasks changed (task-attention.ts: waiting tasks' items, the Dock badge, the notification). Called one at a time. */
+  attention?: { update(tasks: readonly TaskSummary[]): Promise<void> };
   /** Tests: a held clock for the idle sleep, a shorter wait. */
   idle?: { ms: number; timer: { set(fn: () => void, ms: number): unknown; clear(handle: unknown): void } };
 }
@@ -196,6 +198,28 @@ export function createBoardHost(d: BoardHostDeps, initial: { engineId: string | 
       (state) => d.send("hh:tasksChange", state),
       (err: unknown) => console.error("Could not read the open tasks", err),
     );
+    attend();
+  }
+
+  /** Changes while the attention update runs: one more after it, reading the open tasks then. */
+  let attending: Promise<void> | null = null;
+  let attendAgain = false;
+  function attend(): void {
+    const attention = d.attention;
+    if (!attention) return;
+    if (attending) {
+      attendAgain = true;
+      return;
+    }
+    attendAgain = false;
+    attending = board
+      .summaries({ label: d.label })
+      .then((tasks) => attention.update(tasks))
+      .catch((err: unknown) => console.error("Could not update the waiting tasks", err))
+      .finally(() => {
+        attending = null;
+        if (attendAgain) attend();
+      });
   }
 
   async function tasksState(): Promise<TasksState> {

@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import type { Event, HarnessWorkspace, SessionSlot, SlotOptions, SlotRef, SlotSendOptions, TurnAttribution } from "@humanharness/runtime";
-import type { AppConfig, ChatEntry, ChatNotice, TasksState } from "@humanharness/ui/client";
+import type { AppConfig, ChatEntry, ChatNotice, TaskSummary, TasksState } from "@humanharness/ui/client";
 import { type BoardHostDeps, RESUME_FAILED, conflictNotice, conflictOf, createBoardHost, hostMode } from "../src/main/board-host";
 import { ChatLog } from "../src/main/chat-log";
 import type { TaskDeps } from "../src/main/task-manager";
@@ -35,7 +35,14 @@ interface FakeTurn {
  * real TaskManagers and TurnControllers over the folder's tasks.json and per-task chats.
  */
 function host(
-  o: { tasks?: number; engineId?: string; config?: Partial<AppConfig>; onSession?: (key: string, o: SlotOptions) => void; chatLogNull?: () => boolean } = {},
+  o: {
+    tasks?: number;
+    engineId?: string;
+    config?: Partial<AppConfig>;
+    onSession?: (key: string, o: SlotOptions) => void;
+    chatLogNull?: () => boolean;
+    attention?: BoardHostDeps["attention"];
+  } = {},
 ) {
   const base = fs.mkdtempSync(path.join(root, "b-"));
   fs.mkdirSync(path.join(base, ".harness"), { recursive: true });
@@ -131,6 +138,7 @@ function host(
     emit: (e) => window.push(e),
     send: (channel, value) => sent.push({ channel, value }),
     label: (t) => t.action ?? t.question ?? "",
+    ...(o.attention ? { attention: o.attention } : {}),
   };
   const h = createBoardHost(deps, { engineId: config.engineId, parallel: config.parallel });
   const lastState = () => [...sent].reverse().find((s) => s.channel === "hh:tasksChange")?.value as TasksState | undefined;
@@ -212,6 +220,39 @@ describe("the board host (parallel spec §6, §7)", () => {
     t.turns[1].end();
     await Promise.all([a, b]);
     expect((await t.h.tasksState()).tasks.map((s) => s.state)).toEqual(["waiting", "waiting"]);
+  });
+
+  it("the attention gets the open tasks as they change, one update at a time: a lane that waits, then closes (Decision 10)", async () => {
+    const seen: TaskSummary[][] = [];
+    let inFlight = 0;
+    let overlapped = false;
+    const t = host({
+      tasks: 2,
+      attention: {
+        update: async (tasks) => {
+          inFlight++;
+          if (inFlight > 1) overlapped = true;
+          await flush();
+          seen.push([...tasks]);
+          inFlight--;
+        },
+      },
+    });
+    await t.h.interrupt();
+    const a = t.h.board.start("write", "First");
+    await until(() => t.turns.length === 1);
+    t.turns[0].end();
+    await a;
+    const id = t.turns[0].slot;
+    await until(() => seen.at(-1)?.[0]?.state === "waiting");
+    expect(seen.at(-1)!.map((x) => [x.id, x.label, x.state])).toEqual([[id, "write", "waiting"]]);
+    // The closing turn, then the lane leaves the open tasks.
+    const closing = t.h.board.finish();
+    await until(() => t.turns.length === 2);
+    t.turns[1].end();
+    await closing;
+    await until(() => seen.at(-1)?.length === 0);
+    expect(overlapped).toBe(false);
   });
 
   it("a data request on lane B's socket reports lane B's running task (P3)", async () => {

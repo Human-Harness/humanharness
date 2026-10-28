@@ -123,6 +123,8 @@ import { PluginPointers } from "./plugin-load";
 import { SecretStore } from "./plugin-secrets";
 import { PLUGIN_STATE_DIR } from "./plugin-state";
 import { type BoardHost, createBoardHost, hostMode } from "./board-host";
+import { type AttentionStores, attentionStores } from "./attention-stores";
+import { TaskAttention } from "./task-attention";
 import { engineHold, parallelInfo } from "./parallel-config";
 import { restoreTaskByPaths } from "./restore-paths";
 import { restoreTaskArgs, tasksIpc } from "./tasks-ipc";
@@ -224,6 +226,15 @@ const pluginPanels = new PluginPanelsOnDemand<BrowserWindow>(
 let host: BoardHost | null = null;
 /** `host`, where a local name shadows it (the plugins' backend host). */
 const boardHost = (): BoardHost | null => host;
+/**
+ * Board mode only (parallel spec §9.2, Decision 10): one Attention store per base, shared by the plugins and the waiting
+ * tasks. Null in plain mode (D0): the plugins build their own store, as before, and no task raises anything.
+ */
+let sharedAttention: AttentionStores | null = null;
+/** Board mode only: waiting tasks' items, the Dock badge and the optional notification. */
+let taskAttention: TaskAttention | null = null;
+/** The plugins inbox's badge as last sent: board mode's Dock badge adds it. */
+let pluginBadge = 0;
 /** `<appDir>/plugin-state`, with pluginsCtl: a folder move carries each base's approvals there to the new key. */
 let pluginStateRoot: string | null = null;
 const pluginLog = (message: string, err?: unknown) => console.error(`[plugins] ${message}`, err ?? "");
@@ -1286,9 +1297,43 @@ function buildBoardHost(c: AppConfig): BoardHost {
       emit,
       send: sendToWindow,
       label: (t) => (t.action && Object.hasOwn(harness.actions, t.action) ? harness.actions[t.action].label : (t.question ?? "").slice(0, 60)),
+      attention: buildTaskAttention(),
     },
     { engineId: c.engineId, parallel: c.parallel },
   );
+}
+
+/**
+ * Board mode's waiting tasks (parallel spec §9.2, Decisions 10–11): an item in the base's shared Attention store, the
+ * Dock badge (with the plugins' count) and, when Settings › General asks and the window isn't focused, a notification
+ * whose click shows that task. Only a count and the task's label leave the board (P4).
+ */
+function buildTaskAttention(): TaskAttention {
+  const attention = new TaskAttention({
+    store: async () => {
+      const base = await currentBase().catch(() => null);
+      return base && sharedAttention ? sharedAttention.forBase(base, true) : null;
+    },
+    badge: (n) => app.dock?.setBadge(n > 0 ? String(n) : ""),
+    notify: ({ title, body }, id) => {
+      if (!Notification.isSupported()) return;
+      const n = new Notification({ title, body });
+      n.on("click", () => {
+        if (window && !window.isDestroyed()) {
+          if (window.isMinimized()) window.restore();
+          window.show();
+          window.focus();
+        }
+        void host?.board.focus(id).catch((err: unknown) => console.error("Could not show the waiting task", err));
+      });
+      n.show();
+    },
+    notifyOn: async () => (await config.load()).notifyWaiting === true,
+    windowFocused: () => (window && !window.isDestroyed() ? window.isFocused() : false),
+    otherCount: () => pluginBadge,
+  });
+  taskAttention = attention;
+  return attention;
 }
 
 /** Registers an IPC handler that only answers the app's own page. */
@@ -2073,6 +2118,13 @@ if (loaded) {
       await (await currentHistory())?.save(`${DATA_CHANGE_PREFIX}${SIDEKICK_COLLECTION}`).catch((err: unknown) => console.error("Could not record Sidekick's learning", err));
     },
   });
+  // Board mode (parallel spec §9.2): one Attention store per base for the plugins and the waiting tasks, with the
+  // plugins' tag key (outside every base, P5). A task's items show while it is an open lane.
+  if (hostMode(harness) === "board") {
+    const stores = attentionStores({ tagKey: (create) => sourceTagKey(path.join(hooks.sharedDir ?? sharedConfigDir(), harness.id, "attention-key"), create), log: pluginLog });
+    stores.registerKnown("task", (id) => host?.board.laneIds().includes(id) ?? false);
+    sharedAttention = stores;
+  }
   // Plugins (plugins spec): only a harness that takes them, or dev folders (HH_PLUGIN_DIRS, development builds). D0:
   // otherwise no scheme, no controller, no window, no IPC handler and no file.
   if (pluginsAccepted(harness) || (hooks.pluginDirs?.length ?? 0) > 0) {
@@ -2083,6 +2135,8 @@ if (loaded) {
     const host = new PluginBackendHost({ resources: path.join(here, "../../resources"), devTools: !app.isPackaged, electron: { BrowserWindow, session, ipcMain }, log: pluginLog });
     pluginHost = host;
     pluginStateRoot = path.join(appDir, PLUGIN_STATE_DIR);
+    // Board mode: the inbox's store is shared with the waiting tasks (Decision 10). Plain mode passes nothing (D0).
+    const attentionShared = sharedAttention;
     pluginsCtl = new PluginsController({
       harness: { id: harness.id, name: harness.name, root: harness.root, ...(harness.plugins ? { plugins: harness.plugins } : {}), ...(harness.slots ? { slots: harness.slots } : {}) },
       devDirs: hooks.pluginDirs ?? [],
@@ -2102,6 +2156,12 @@ if (loaded) {
       userData: app.getPath("userData"),
       // The inbox's HMAC key (Attention review): its own file, not Sidekick's, where the agent can't reach it.
       tagKey: (create) => sourceTagKey(path.join(appDir, "attention-key"), create),
+      ...(attentionShared
+        ? {
+            attentionStoreFor: (b: string, create: boolean) => attentionShared.forBase(b, create),
+            registerKnown: (kind: "plugin", fn: (id: string) => boolean) => attentionShared.registerKnown(kind, fn),
+          }
+        : {}),
       pickFolder: async () => {
         if (!window || window.isDestroyed()) return null;
         const r = await dialog.showOpenDialog(window, { properties: ["openDirectory"] });
@@ -2126,7 +2186,11 @@ if (loaded) {
         ? {}
         : { watch: (dir: string, onChange: (name: string | null) => void) => watchPluginFolder(dir, onChange, (err) => pluginLog(`Stopped watching ${dir}`, err)) }),
       changed: (view) => sendToWindow("hh:plugins", view),
-      attentionChanged: (view) => sendToWindow("hh:attention", view),
+      attentionChanged: (view) => {
+        sendToWindow("hh:attention", view);
+        pluginBadge = view.badge;
+        taskAttention?.refreshBadge();
+      },
       surfaceChanged: (view) => sendToWindow("hh:pluginSurface", view),
       panelsNeeded: () => pluginPanels.needed(),
       dataChanged: (plugin, collections) => sendToWindow("hh:pluginData", { plugin, collections }),

@@ -67,7 +67,9 @@ import {
   ScopeStore,
   buildDataContext,
   dataDiffOf,
+  flushFileIndexes,
   isScopeId,
+  loadReview,
   migrateToScopes,
   notesPrefix,
   profileDir,
@@ -93,6 +95,9 @@ import { chooseModeHandler } from "./mode-ipc";
 import { setPhaseHandler, timeBoxOffered } from "./phase-ipc";
 import { requireNoticeForChoice, requireNoticeForTurn } from "./notice-policy";
 import { reviewHandlers } from "./review-ipc";
+import { workerDiff } from "./diff-runner";
+import { commitAnnouncer, fileHandlers } from "./file-ipc";
+import { FileTimelineService } from "./file-timeline";
 import { ReviewService } from "./reviews";
 import { archiveChatsOnEngineChange, archiveStaleChat, startNewChatIfEngineChanged } from "./engine-switch";
 import { type RunningSetup, runSetupProcess, setupCommand, stopSetupProcess } from "./setup-runner";
@@ -661,6 +666,7 @@ const runtime = memoise<HarnessRuntime>(async () => {
     onModels: (offer) =>
       void shared.update(engine.id, { models: offer.models, efforts: offer.efforts }).catch((err: unknown) => console.error("Could not save the engine's models", err)),
   });
+  announceCommits(rt.history);
   // A new runtime: the material queue, stopped by closeRuntime, goes on (in this base). Without material, nothing.
   kickMaterial();
   return rt;
@@ -676,6 +682,8 @@ async function closeRuntime() {
   const rt = await runtime.peek()?.catch(() => null);
   runtime.clear();
   await rt?.close();
+  // A closed runtime's history keeps no listener of main's.
+  if (rt) commitAnnouncements.stop(rt.history);
   // The next runtime writes AGENTS.md afresh: nothing is pending against this one's. Only once close() resolved (a
   // running refresh would set what was applied again), and not when a new runtime has already written its own.
   if (!runtime.peek()) settingsCtl?.forget();
@@ -692,6 +700,7 @@ const standaloneHistory = lastOpened(async (key) => {
   const { folder, ignore } = JSON.parse(key) as { folder: string; ignore: string[] };
   const history = new History(folder, historyDir(app.getPath("userData"), folder), ignore, historyKeep(harness));
   await history.init();
+  announceCommits(history);
   return history;
 });
 
@@ -1151,6 +1160,26 @@ const reviews = new ReviewService({
   changed: (p) => sendToWindow("hh:reviewChanged", p),
 });
 
+/** File timelines (file-timeline spec): read from the history; a one-file go-back goes through the restore guard. */
+const fileTimelines = new FileTimelineService({
+  base: async () => {
+    const c = await validConfig();
+    return c ? baseOf(c) : null;
+  },
+  history: () => currentHistory(),
+  actionLabel: (id) => (id === null ? "A question" : Object.hasOwn(harness.actions, id) ? harness.actions[id].label : id),
+  approvals: async (base, doc) => (await loadReview(base, doc).catch(() => null))?.approvals ?? [],
+  busy: () => quitting || tasks.isBusy() || turnBlocked() !== null,
+  restore: (run) => restoreWith(run),
+  restored: () => void settingsCtl?.changed(),
+  // Diffs run in a worker thread of their own: jsdiff's budget and the Markdown parse never block Electron main.
+  diff: workerDiff({ entry: path.join(here, "diff-worker.js") }),
+});
+
+/** Tells the window which paths each commit touched: an open timeline gets its new entry (§6.3 `onChange`). */
+const commitAnnouncements = commitAnnouncer((paths) => sendToWindow("hh:fileCommits", paths));
+const announceCommits = (history: History) => commitAnnouncements.watch(history);
+
 function registerIpc() {
   handle("hh:getState", () => appState());
   handle("hh:pickFolder", async (defaultPath: string) => {
@@ -1429,6 +1458,8 @@ function registerIpc() {
   handleFrom("hh:unwatchDocument", (sender, id) => documentSessions.unwatch(sender.id, id));
   // Reviews (review spec §5.6): every answer is data; nothing reaches the service unless the agent may edit the folder (D0).
   for (const [channel, fn] of Object.entries(reviewHandlers(reviews, () => harness.permissions.edit === "folder"))) handle(channel, fn);
+  // File timelines (file-timeline spec §6.3): every harness (Q1); every answer is data.
+  for (const [channel, fn] of Object.entries(fileHandlers(fileTimelines))) handle(channel, fn);
   // Cancels the turn and stops the task operation (a closing turn never goes on to the next task).
   handle("hh:cancel", () => tasks.cancel());
   // Restore commits carry no task: going back may undo several tasks, so it belongs to none of them.
@@ -1617,7 +1648,11 @@ function registerIpc() {
       quitting: () => quitting,
       checkpoint: () => tasks.checkpointBeforeMove(),
       holdHistory: (held) => (historyHeld = held),
-      flush: () => turns.flush(),
+      flush: async () => {
+        await turns.flush();
+        // The file indexes waiting to be written go with the history, not after it.
+        await flushFileIndexes();
+      },
       closeRuntime,
       restoresSettled: () => restores.settled(),
       resumeFromNotes: () => tasks.resumeFromNotes(),
@@ -1865,6 +1900,7 @@ if (primary) {
       }
       // A cancelled or closed turn still writes its reply to the chat: wait for it.
       await turns.flush();
+      await flushFileIndexes();
     })().finally(() => app.quit());
   });
 }

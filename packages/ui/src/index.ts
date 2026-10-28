@@ -5,6 +5,8 @@ export { ScopePicker } from "./ScopePicker";
 export { PhaseStepper } from "./PhaseStepper";
 export { HarnessApp, type HarnessAppProps } from "./HarnessApp";
 export { MaterialPanel, type MaterialPanelProps, useMaterial } from "./MaterialPanel";
+export { FileTimeline, type FileTimelineProps } from "./FileTimeline";
+export { FileDiff, type FileDiffProps, type DiffLayout } from "./FileDiff";
 export type { BlockActions, BlockProps, InputContext, InputProps } from "./Message";
 export { AnswerView, InputForm, type InputFormProps } from "./InputForm";
 export type { StartViewCopy } from "./StartView";

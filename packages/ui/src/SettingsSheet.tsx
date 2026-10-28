@@ -193,8 +193,8 @@ export function SettingsSheet({
 
 const FOCUSABLE = 'button:not([disabled]), a[href], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
-/** Keeps Tab and Shift+Tab cycling inside the sheet (it is modal). */
-function trapTab(sheet: HTMLElement, e: KeyboardEvent) {
+/** Keeps Tab and Shift+Tab cycling inside the sheet (it is modal); the go-back confirmation uses it too. */
+export function trapTab(sheet: HTMLElement, e: KeyboardEvent) {
   const items = [...sheet.querySelectorAll<HTMLElement>(FOCUSABLE)];
   if (items.length === 0) return;
   const first = items[0];

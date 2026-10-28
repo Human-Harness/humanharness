@@ -349,3 +349,35 @@ describe("HistoryPanel", () => {
     expect(entryLabel("Stopped: hi")).toEqual({ key: "history.entry.stopped" });
   });
 });
+
+describe("changed files open their timeline (file-timeline spec §6.2)", () => {
+  it("with onOpenFile, each changed file is a link that says which file and how it changed", async () => {
+    const client = new FakeClient();
+    client.historyGroups = groups;
+    const opened: [string, string][] = [];
+    await renderIn("en", <HistoryPanel client={client} actions={actions} onClose={() => undefined} onOpenFile={(p, k) => opened.push([p, k])} />);
+    const link = await screen.findByRole("button", { name: "History of plan.md" });
+    // The change's kind is the link's description: a screen reader hears it with the name.
+    const kind = document.getElementById(link.getAttribute("aria-describedby") ?? "");
+    expect(kind?.textContent).toBe(link.closest("li")?.querySelector(".hh-change")?.textContent);
+    expect(kind?.textContent).not.toBe("");
+    fireEvent.click(link);
+    fireEvent.click(screen.getByRole("button", { name: "History of old.md" }));
+    expect(opened).toEqual([
+      ["plan.md", "modified"],
+      ["old.md", "deleted"],
+    ]);
+  });
+
+  it("D0: without onOpenFile the paths stay plain text", async () => {
+    const client = new FakeClient();
+    client.historyGroups = groups;
+    await renderIn("en", <HistoryPanel client={client} actions={actions} onClose={() => undefined} />);
+    await screen.findAllByText("plan.md");
+    expect(screen.queryByRole("button", { name: "History of plan.md" })).toBeNull();
+  });
+
+  it("a one-file go-back reads in plain language", () => {
+    expect(entryLabel("Go back: specs/a to b.md to v2")).toEqual({ key: "history.entry.fileBack", values: { file: "specs/a to b.md" } });
+  });
+});

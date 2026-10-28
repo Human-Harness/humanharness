@@ -1,71 +1,39 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { type DiffLine, lineDiff } from "@humanharness/harness-sdk/review";
 import type { HarnessClient } from "./client";
+import { FileDiff } from "./FileDiff";
 
-/** Unchanged lines kept on each side of a change. */
-const CONTEXT = 2;
-
-/** The changed lines and up to CONTEXT unchanged ones around each; null marks a gap ("…") between kept runs. */
-export function aroundChanges(lines: DiffLine[]): (DiffLine | null)[] {
-  const keep = new Array<boolean>(lines.length).fill(false);
-  for (let i = 0; i < lines.length; i++) {
-    if (lines[i].kind === "same") continue;
-    for (let j = Math.max(0, i - CONTEXT); j <= Math.min(lines.length - 1, i + CONTEXT); j++) keep[j] = true;
-  }
-  const out: (DiffLine | null)[] = [];
-  for (let i = 0; i < lines.length; i++) {
-    if (keep[i]) out.push(lines[i]);
-    else if (out.length > 0 && out.at(-1) !== null) out.push(null);
-  }
-  if (out.at(-1) === null) out.pop();
-  return out;
-}
-
-/** "See what changed" (§5.4): the approved version against the current one, line by line. Text only, never HTML. */
-export function ApprovedDiff({ client, path, current }: { client: HarnessClient; path: string; current: string }) {
+/**
+ * "See what changed" (review spec §5.4, file-timeline spec §9): the last approved version against the file now, drawn
+ * with the timeline's diff. The approval is the entry main paired by blob with the review record's last approval
+ * (`lastApproved`), not the newest on the timeline: a whole-folder go-back takes the record back too. `refresh` changes
+ * when the document on disk does, so the comparison with the file now is asked again.
+ */
+export function ApprovedDiff({ client, path, refresh }: { client: HarnessClient; path: string; refresh?: unknown }) {
   const { t } = useTranslation();
-  const [approved, setApproved] = useState<string | null | "loading">("loading");
+  const [from, setFrom] = useState<string | null | "loading">("loading");
   useEffect(() => {
     let live = true;
-    setApproved("loading");
-    client.documents.approvedText(path).then(
-      (r) => live && setApproved(r.ok ? r.text : null),
-      () => live && setApproved(null),
-    );
+    // A reload that fails keeps the approval it had (the first load has none to keep).
+    const failed = () => live && setFrom((f) => (f === "loading" ? null : f));
+    const load = () =>
+      client.files.timeline(path).then((r) => {
+        if (!live) return;
+        if (!r.ok) return failed();
+        setFrom(r.entries.find((e) => e.kind === "approval" && e.lastApproved)?.to ?? null);
+      }, failed);
+    setFrom("loading");
+    load();
+    const off = client.files.onChange(path, load);
     return () => {
       live = false;
+      off();
     };
   }, [client, path]);
-  // null: too long to compare; "missing": the approved version can't be read (approvedText failed).
-  const lines = useMemo(() => {
-    if (approved === "loading") return approved;
-    if (approved === null) return "missing" as const;
-    const all = lineDiff(approved, current);
-    return all && aroundChanges(all);
-  }, [approved, current]);
-  if (lines === "loading") return null;
+  if (from === "loading") return null;
   return (
     <section className="hh-diff" aria-label={t("review.diff")}>
-      {lines === "missing" ? (
-        <p className="hh-caption">{t("review.noApproved")}</p>
-      ) : lines === null ? (
-        <p className="hh-caption">{t("review.noDiff")}</p>
-      ) : (
-        <ol>
-          {lines.map((l, i) =>
-            l === null ? (
-              <li key={i} className="hh-diff-gap" aria-hidden="true">
-                …
-              </li>
-            ) : (
-              <li key={i} className={`hh-diff-${l.kind}`}>
-                {l.text}
-              </li>
-            ),
-          )}
-        </ol>
-      )}
+      {from === null ? <p className="hh-caption">{t("review.noApproved")}</p> : <FileDiff client={client} path={path} from={from} to="current" refresh={refresh} />}
     </section>
   );
 }

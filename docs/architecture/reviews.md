@@ -177,8 +177,8 @@ With the tools, `AGENTS.md`'s "Writing for the reader" part gets three more line
 **Stale.**
 
 - A document whose bytes differ from the last approval's blob is "Changed since approval".
-- "See what changed" reads the approved text from the history (`History.readBlob`) and shows a line diff (`lineDiff`) around the changes.
-- Over 2000 lines or 1,000,000 characters, it says the text is too long to compare. When the history no longer has the blob, it says there is nothing to compare.
+- "See what changed" draws the file timeline's diff (`timeline.md`) from the approval the record holds last to the current file, with `<FileDiff>`: word by word, inline or side by side. Main finds that approval on the timeline by its blob (`lastApproved`), never by position: after a whole-folder go-back the record's last approval can be older than the timeline's newest. It fetches again when the file's history changes or the reader reads the document again, and keeps its approval when a reload fails. Without a paired approval entry on the timeline, it says there is nothing to compare.
+- Answers and approvals appear on the document's timeline ("Your answers", "v2 approved"): each `Answer:` and `Approved:` commit counts for the path its subject names.
 
 **The reader.**
 
@@ -223,6 +223,7 @@ The move never happens from the last phase or a `close` phase. A stale document 
 
 - **Reading:** `view(path)` (the record, the summary and the blob of the version read), `review(path)` (a `ReviewSummary` or null), `summaries(paths)` (at most 200 paths).
 - **The person's actions:** `answer`, `comment`, `editDraft`, `reopen`, `send`, `approve(path, blob, { reason?, discard? })` and `approvedText`.
+- **`approvedText(path)`** (`hh:reviewApprovedText`) answers the text of the last approved version. The core no longer uses it ("See what changed" diffs from the file's timeline, see `timeline.md`), but it stays as public harness API: a harness view may still read it.
 - **Listening:** `onChange(listener)`.
 - **Focus mode:** `focus(path)` opens the reader in focus mode, and the chat listens with `onFocus`.
 

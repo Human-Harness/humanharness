@@ -34,6 +34,10 @@
   --hh-review-comment: #dde8f8;
   --hh-review-done: #e9ebe6;
   --hh-review-active: #f6d77a;
+  --hh-diff-ins: #e3f2e6;
+  --hh-diff-del: #fbe3e3;
+  --hh-diff-bar-ins: #2e8a5c;
+  --hh-diff-bar-del: #b3402f;
   --hh-font: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   --hh-display: "Lexend", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   font-family: var(--hh-font);
@@ -76,6 +80,10 @@
     --hh-review-comment: #243a5a;
     --hh-review-done: #30332e;
     --hh-review-active: #7a5f12;
+    --hh-diff-ins: #1e3026;
+    --hh-diff-del: #3a2222;
+    --hh-diff-bar-ins: #4fb07f;
+    --hh-diff-bar-del: #e07a6a;
     color-scheme: dark;
   }
 }
@@ -381,6 +389,8 @@ h4.hh-md-h { font-size: 1em; font-weight: 600; color: var(--hh-slate); }
 .hh-history-files li { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .hh-history-files .hh-change { width: 56px; }
 .hh-history-files code { font-size: 12px; color: var(--hh-slate); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* A changed file that opens its timeline (file-timeline spec §6.2): the path keeps its ellipsis. */
+.hh-history-file-link { display: flex; min-width: 0; text-align: left; cursor: pointer; }
 .hh-history-entries { border-left: 1px solid var(--hh-line-strong); }
 .hh-history-entries > li { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 30px; padding: 4px 6px 4px 14px; border-radius: 6px; }
 .hh-history-entries > li::before { content: ""; position: absolute; left: -4px; top: 50%; width: 7px; height: 7px; margin-top: -3.5px; border-radius: 50%; background: var(--hh-muted); }
@@ -400,6 +410,53 @@ h4.hh-md-h { font-size: 1em; font-weight: 600; color: var(--hh-slate); }
 .hh-history-undone { grid-column: 1 / -1; list-style: none; margin: 0; padding: 8px 10px; display: grid; gap: 4px; border-radius: 6px; background: var(--hh-sheet); }
 .hh-history-undone li { display: flex; justify-content: space-between; gap: 8px; }
 .hh-history-confirm-buttons { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 8px; }
+
+/* File timeline (file-timeline spec §6.1). */
+.hh-timeline { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
+.hh-timeline-pick { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; width: 100%; height: auto; padding: 6px 8px; text-align: left; border-radius: 6px; background: none; border: 1px solid transparent; }
+button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-color: var(--hh-line-strong); background: var(--hh-surface); }
+.hh-timeline-author { font-weight: 600; }
+.hh-timeline-more { margin-left: 8px; font-size: 12px; }
+.hh-timeline-turns { margin: 2px 0 4px 16px; padding: 0; list-style: none; font-size: 13px; }
+.hh-timeline-chip { padding: 0 6px; border-radius: 999px; font-size: 12px; color: var(--hh-ink); }
+.hh-timeline-chip-amber { background: var(--hh-review-question); }
+.hh-timeline-chip-green { background: var(--hh-diff-ins); color: var(--hh-ok); }
+.hh-timeline-chip-grey { background: var(--hh-review-done); }
+/* File diff (file-timeline spec §4): marks carry a line or strike as well as colour. Every class is hh-filediff-*. */
+.hh-filediff { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.hh-filediff-tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.hh-filediff ins { background: var(--hh-diff-ins); text-decoration: underline; text-decoration-color: var(--hh-diff-bar-ins); }
+.hh-filediff del { background: var(--hh-diff-del); text-decoration: line-through; text-decoration-color: var(--hh-diff-bar-del); }
+.hh-filediff-block { padding-left: 10px; border-left: 3px solid transparent; }
+.hh-filediff-added { border-left: 3px solid var(--hh-diff-bar-ins); background: var(--hh-diff-ins); }
+.hh-filediff-removed { border-left: 3px solid var(--hh-diff-bar-del); background: var(--hh-diff-del); text-decoration: line-through; }
+.hh-filediff-lines { width: 100%; border-collapse: collapse; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+.hh-filediff-lines td { padding: 0 6px; vertical-align: top; white-space: pre-wrap; overflow-wrap: anywhere; }
+.hh-filediff-no { width: 1%; color: var(--hh-muted); text-align: right; user-select: none; }
+.hh-filediff-sign { width: 1%; user-select: none; }
+.hh-filediff-mark { display: inline-block; min-width: 1ch; margin-right: 4px; user-select: none; }
+.hh-filediff-ins { background: var(--hh-diff-ins); }
+.hh-filediff-del { background: var(--hh-diff-del); }
+.hh-filediff-gap td, .hh-filediff-gaprow { color: var(--hh-muted); }
+.hh-filediff-gaprow { grid-column: 1 / -1; }
+.hh-filediff-table { border-collapse: collapse; }
+.hh-filediff-table td { padding: 2px 8px; border: 1px solid var(--hh-line); }
+.hh-filediff-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0 12px; }
+.hh-filediff-mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.hh-filediff-row { display: contents; }
+.hh-filediff-before, .hh-filediff-after { min-width: 0; padding: 2px 6px; }
+.hh-filediff-diagrams figure { margin: 0 0 8px; }
+.hh-filediff-diagrams figcaption { font-size: 12px; color: var(--hh-muted); }
+/* An entry's diff and the core's go-back confirmation (file-timeline spec §5, §6.1). */
+.hh-entrydiff { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.hh-entrydiff-tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+/* A file's timeline outside the reader, opened from the History panel (file-timeline spec §6.2). */
+.hh-timeline-panel { position: fixed; inset: 52px 0 0 auto; width: min(560px, 100%); box-sizing: border-box; background: var(--hh-sheet); border-left: 1px solid var(--hh-line-strong); padding: 10px 12px 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+.hh-timeline-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-left: 8px; }
+.hh-timeline-panel-head h2 { margin: 0; min-width: 0; font-family: var(--hh-display); font-size: 17px; font-weight: 600; overflow-wrap: anywhere; }
+.hh-restore-backdrop { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 16px; background: var(--hh-backdrop); }
+.hh-restore-confirm { max-width: 440px; padding: 16px; border-radius: 10px; background: var(--hh-surface); border: 1px solid var(--hh-line); }
+.hh-restore-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 .hh-change { flex: none; font-size: 12px; color: var(--hh-muted); }
 .hh-change.added { color: var(--hh-ok); }
 .hh-change.deleted { color: var(--hh-warn); }
@@ -625,21 +682,27 @@ h4.hh-md-h { font-size: 1em; font-weight: 600; color: var(--hh-slate); }
 .hh-review-approved { color: var(--hh-ok); }
 .hh-review-ask { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; width: 100%; }
 .hh-review-ask textarea { flex: 1 1 100%; min-height: 3em; }
-/* "See what changed" (§5.4): text only; the sign says what each line is without its colour. */
+/* "See what changed" (§5.4): the box around the timeline's diff, which draws the changes. */
 .hh-diff { max-width: 72ch; margin: 0 auto 16px; padding: 8px; border: 1px solid var(--hh-line); border-radius: 8px; }
-.hh-diff ol { margin: 0; padding: 0; list-style: none; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
-.hh-diff-added { background: var(--hh-callout-tip); }
-.hh-diff-added::before { content: "+ "; }
-.hh-diff-removed { background: var(--hh-error-bg); text-decoration: line-through; }
-.hh-diff-removed::before { content: "− "; }
-.hh-diff-same::before { content: "  "; }
-.hh-diff-gap { color: var(--hh-muted); }
+.hh-reader-is-full .hh-diff { max-width: none; }
 /* Narrow: only the review column moves under the body; the contents list stays beside it. */
 @container (max-width: 900px) {
   .hh-reader-reviewing .hh-reader-columns { display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
   .hh-reader-reviewing .hh-reader-toc { grid-column: 1; grid-row: 1; }
   .hh-reader-reviewing .hh-reader-scroll { grid-column: 2; grid-row: 1; }
   .hh-reader-reviewing .hh-review-column { grid-column: 1 / -1; grid-row: 2; max-height: 40vh; border-left: 0; border-top: 1px solid var(--hh-line); }
+}
+/* The reader's "File history" drawer (file-timeline spec §6.1): a column beside the document, only once opened, so a
+   reader without it keeps its layout. An entry's diff takes the document's place in the scrolling column. */
+.hh-timeline-drawer { flex: 0 0 280px; overflow-y: auto; padding: 12px; border-left: 1px solid var(--hh-line); background: var(--hh-sheet); font-size: 13px; }
+.hh-reader-scroll > .hh-entrydiff { max-width: 72ch; margin: 0 auto; }
+.hh-reader-is-full .hh-reader-scroll > .hh-entrydiff { max-width: none; }
+@container (max-width: 900px) {
+  /* The narrow reviewing grid gets a third column for the drawer only while it is open. */
+  .hh-reader-reviewing .hh-reader-columns:has(> .hh-timeline-drawer) { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .hh-reader-reviewing .hh-timeline-drawer { grid-column: 3; grid-row: 1; width: 220px; }
+  /* A reader without review keeps its flex row: a narrower drawer. */
+  .hh-timeline-drawer { flex-basis: 220px; }
 }
 .hh-reader-full .hh-main, .hh-reader-full .hh-flow-side, .hh-reader-full .hh-side { display: none; }
 .hh-reader-full .hh-reader { flex: 1 1 auto; border-left: none; }

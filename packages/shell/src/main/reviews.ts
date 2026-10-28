@@ -17,6 +17,9 @@ import {
 } from "@humanharness/harness-sdk";
 import type { ApprovedText, CommentInput, ReviewFailure, ReviewResult, ReviewSendResult, ReviewView } from "@humanharness/ui/client";
 import {
+  ANSWER_PREFIX,
+  ANSWER_SEPARATOR,
+  APPROVED_PREFIX,
   type HistoryTrailer,
   MAX_COMMENTS,
   MAX_REVIEW_DOCUMENT_BYTES,
@@ -200,7 +203,7 @@ export class ReviewService {
         if (!w.ok) return { ok: false, reason: w.reason };
       }
       await saveReview(base, { ...review, comments: review.comments.map((x) => (x.id === c.id ? r.comment : x)) });
-      await this.commit(`Answer: ${doc} · ${cut(c.text, 60)}`);
+      await this.commit(`${ANSWER_PREFIX}${doc}${ANSWER_SEPARATOR}${cut(c.text, 60)}`);
       this.d.changed(doc);
       return { ok: true, applied: r.text !== null };
     }));
@@ -322,7 +325,7 @@ export class ReviewService {
         if (blocking > 0 && !reason) return { ok: false, reason: "reason-required", count: blocking } as ReviewFailure;
         const approval = { blob, at: this.at(), ...(reason ? { reason } : {}) };
         await saveReview(base, { ...record, comments, approvals: [...record.approvals, approval].slice(-200) });
-        await this.commit(`Approved: ${doc}`);
+        await this.commit(`${APPROVED_PREFIX}${doc}`);
         this.d.changed(doc);
         return { ok: true as const, told: { path: doc, task: record.task, ...(reason ? { reason } : {}) } };
       }),

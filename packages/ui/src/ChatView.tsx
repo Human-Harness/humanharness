@@ -1,6 +1,7 @@
 import { type ComponentType, type FormEvent, type ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Tier } from "@humanharness/harness-sdk";
+import { isMarkdownPath } from "@humanharness/harness-sdk/documents";
 import { AnnotateBlock } from "./AnnotateBlock";
 import { findAnswer } from "./annotate";
 import { cleanDocumentCards } from "./card-shape";
@@ -13,6 +14,7 @@ import {
   type ChoiceOption,
   type DocumentCard,
   type EngineProblem,
+  type FileRestorePrompt,
   type HarnessClient,
   type ModeChoice,
   type ModeSwitch,
@@ -29,6 +31,7 @@ import {
 import { DocumentContext, type DocumentHost } from "./documents-context";
 import { DocumentReader, type ReaderTarget } from "./DocumentReader";
 import { ErrorCard, isFixable, problemError } from "./ErrorCard";
+import { FileTimelinePanel } from "./FileTimelinePanel";
 import { FlowSide } from "./FlowSide";
 import { type Paused, NO_PAUSED, countPaused, pausedSummary } from "./focus-notices";
 import { HistoryPanel } from "./HistoryPanel";
@@ -37,6 +40,7 @@ import { type BlockActions, type BlockProps, type InputContext, Message } from "
 import { markdownToPlain } from "./markdown";
 import { MaterialPanel, type MaterialPanelProps } from "./MaterialPanel";
 import { ModeBar, ModeList } from "./ModeList";
+import { RestoreConfirm } from "./RestoreConfirm";
 import { actionModes, tierBelow } from "./modes";
 import { NotesPanel } from "./NotesPanel";
 import { usePacedAnswer } from "./pace";
@@ -124,6 +128,8 @@ export function ChatView({
   const [chat, dispatch] = useReducer(reduceChat, undefined, () => initialChat([], [...stateBlocks, "save_note", "set_phase"]));
   const [draft, setDraft] = useState("");
   const [showHistory, setShowHistory] = useState(false);
+  /** A file's timeline outside the reader: a non-`.md` file or a deleted `.md`, from the History panel (file-timeline spec §6.2, Q10). */
+  const [timelineFile, setTimelineFile] = useState<string | null>(null);
   const [notesPanel, setNotesPanel] = useState<{ expanded?: string } | null>(null);
   /** The document reader beside the chat (document-reader spec §5); null: closed. Kept in state: a stable target. */
   const [reader, setReader] = useState<ReaderTarget | null>(null);
@@ -139,6 +145,8 @@ export function ChatView({
     const active = document.activeElement;
     // A link inside the reader keeps the first opener.
     if (active instanceof HTMLElement && active !== document.body && !active.closest(".hh-reader")) readerOpener.current = active;
+    // A file's timeline panel would cover the reader.
+    setTimelineFile(null);
     setReader({ ...target, nonce: ++readerOpens.current });
   }, []);
   const [readerFull, setReaderFull] = useState(false);
@@ -171,6 +179,30 @@ export function ChatView({
   const [pickResets, setPickResets] = useState(0);
   /** The tier question (task-modes spec §5.3): the mode asks for more than the task's tier. */
   const [tierAsk, setTierAsk] = useState<{ mode: string; task: string; required: Tier; current: Tier } | null>(null);
+  /** The core's "go back?" for every `client.files.restore`, from the reader, a panel or a harness view (§5). */
+  const [restoreAsk, setRestoreAsk] = useState<{ prompt: FileRestorePrompt; answer: (yes: boolean) => void } | null>(null);
+  useEffect(() => {
+    let open: ((yes: boolean) => void) | null = null;
+    const off = client.files.hostConfirm(
+      (prompt) =>
+        new Promise<boolean>((resolve) => {
+          // A second request while one is open: the first is answered no.
+          open?.(false);
+          const answer = (yes: boolean) => {
+            if (open === answer) open = null;
+            resolve(yes);
+          };
+          open = answer;
+          setRestoreAsk({ prompt, answer });
+        }),
+    );
+    return () => {
+      off();
+      // The chat goes away: a question still open is answered no, so its restore never waits forever.
+      open?.(false);
+      setRestoreAsk(null);
+    };
+  }, [client]);
   /** `defaultMode: "ask"`: the start waits for the person's mode (no model call before it). */
   const [askPick, setAskPick] = useState<{ text: string; options: SendOptions } | null>(null);
   /** The last mode pick was refused or failed (shown until the next pick or message). */
@@ -1041,6 +1073,7 @@ export function ChatView({
               onClick={() => {
                 // One panel at a time: Escape closes the one on screen.
                 setNotesPanel(null);
+                setTimelineFile(null);
                 setShowHistory(true);
               }}
             >
@@ -1064,6 +1097,7 @@ export function ChatView({
               onStart={startTopic}
               onOpenNote={(slug) => {
                 setShowHistory(false);
+                setTimelineFile(null);
                 setNotesPanel({ expanded: slug });
               }}
               material={material}
@@ -1369,6 +1403,15 @@ export function ChatView({
         <div className="hh-sr-only" aria-live="polite">
           {announcement}
         </div>
+        {restoreAsk && (
+          <RestoreConfirm
+            prompt={restoreAsk.prompt}
+            onAnswer={(yes) => {
+              restoreAsk.answer(yes);
+              setRestoreAsk(null);
+            }}
+          />
+        )}
         {showHistory && (
           <HistoryPanel
             client={client}
@@ -1381,7 +1424,16 @@ export function ChatView({
               dispatch({ type: "notice", text, at: new Date().toISOString() });
               setNotice(text);
             }}
+            onOpenFile={(file, kind) => {
+              setShowHistory(false);
+              // A `.md` that is still there opens in the reader with its drawer; anything else in the timeline panel.
+              if (kind !== "deleted" && isMarkdownPath(file) && !slim) showReader({ path: file, timeline: true });
+              else setTimelineFile(file);
+            }}
           />
+        )}
+        {timelineFile !== null && (
+          <FileTimelinePanel client={client} path={timelineFile} busy={Boolean(chat.live) || closing || checkpoint} onClose={() => setTimelineFile(null)} />
         )}
         {notesPanel && (
           <NotesPanel

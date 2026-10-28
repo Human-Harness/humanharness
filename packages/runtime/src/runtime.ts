@@ -296,6 +296,8 @@ export async function createRuntime(opts: RuntimeOptions): Promise<HarnessRuntim
               }
             }
           }
+          // The file index waits for a quiet moment: write it now (it never throws).
+          await history.flush();
         }
       },
     };

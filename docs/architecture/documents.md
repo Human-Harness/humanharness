@@ -74,7 +74,8 @@ The window never trusts a saved entry: `cleanDocumentCards` (`packages/ui/src/ca
 
 `packages/ui/src/DocumentReader.tsx`, opened by `ChatView` (§5.2):
 
-- The header bar: the path as breadcrumbs, Source, the "Aa" reading preferences, "Full screen"/"Show chat" and Close.
+- The header bar: the path as breadcrumbs, Source, the "Aa" reading preferences, "File history", "Full screen"/"Show chat" and Close.
+- "File history" (every harness) toggles a drawer right of the document with the file's timeline. Picking an entry shows its diff in place of the text, with "Go back to this version" and "Back to the document"; the History panel's links open the reader with the drawer (`ReaderTarget.timeline`). In focus mode the drawer is hidden, and the button leaves focus mode. See `timeline.md`.
 - The table of contents: `##` and `###`, following the scroll, with the template note at the bottom. It shows from the default 1100 px window up, and always in full screen; below 1000 px the side reader hides it.
 - The document column: kind and status chips, when it last changed (mtime), the reading time (of the whole text), and the engine of the turn when opened from a card. The title from the front-matter is the `h1` that takes focus when a document opens.
 - Source shows the whole raw text, read-only.

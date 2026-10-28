@@ -7,6 +7,8 @@ import {
   type HistoryItem,
   type HistoryTaskView,
   DATA_CHANGE_PREFIX,
+  FILE_RESTORE_PREFIX,
+  type HistoryFileChange,
   NOTE,
   RESTORE_POINT,
   RESTORE_TASK,
@@ -28,6 +30,12 @@ export function entryLabel(message: string): { key: string; values?: Record<stri
   if (message === RESTORE_TASK) return { key: "history.entry.restoredTask" };
   if (message === RESTORE_POINT) return { key: "history.entry.restored" };
   if (message.startsWith(DATA_CHANGE_PREFIX)) return { key: "history.entry.data", values: { collection: message.slice(DATA_CHANGE_PREFIX.length) } };
+  if (message.startsWith(FILE_RESTORE_PREFIX)) {
+    // `Go back: <path> to <target>`: the target never holds " to " (v2, "the version of <ISO time>"), so the last one splits.
+    const rest = message.slice(FILE_RESTORE_PREFIX.length);
+    const cut = rest.lastIndexOf(" to ");
+    return { key: "history.entry.fileBack", values: { file: cut < 0 ? rest : rest.slice(0, cut) } };
+  }
   const note = NOTE.exec(message);
   if (note) return { key: "history.entry.note", values: { title: note[1] } };
   return null;
@@ -68,6 +76,7 @@ export function HistoryPanel({
   onRestored,
   disabled = false,
   currentTask,
+  onOpenFile,
 }: {
   client: HarnessClient;
   /** The harness's actions: a task's row shows its action's label. */
@@ -79,6 +88,8 @@ export function HistoryPanel({
   onRestored?: (kind: Restore["kind"]) => void;
   /** Going back is not allowed while a turn is live. */
   disabled?: boolean;
+  /** A changed file was picked: its timeline opens (file-timeline spec §6.2). Absent: the paths stay plain text. */
+  onOpenFile?: (path: string, kind: HistoryFileChange["kind"]) => void;
 }) {
   const { t, i18n } = useTranslation();
   const [groups, setGroups] = useState<HistoryTaskView[] | null>(null);
@@ -333,10 +344,25 @@ export function HistoryPanel({
                     <div id={bodyId} className="hh-history-body">
                       {g.changes.length > 0 && (
                         <ul className="hh-history-files" aria-label={t("history.changedFiles")}>
-                          {g.changes.map((c) => (
+                          {g.changes.map((c, i) => (
                             <li key={c.path}>
-                              <span className={`hh-change ${c.kind}`}>{t(`history.change.${c.kind}`)}</span>
-                              <code title={c.path}>{c.path}</code>
+                              <span id={`${bodyId}-k${i}`} className={`hh-change ${c.kind}`}>
+                                {t(`history.change.${c.kind}`)}
+                              </span>
+                              {onOpenFile ? (
+                                <button
+                                  type="button"
+                                  className="hh-link hh-history-file-link"
+                                  title={c.path}
+                                  aria-label={t("history.openTimeline", { file: c.path })}
+                                  aria-describedby={`${bodyId}-k${i}`}
+                                  onClick={() => onOpenFile(c.path, c.kind)}
+                                >
+                                  <code>{c.path}</code>
+                                </button>
+                              ) : (
+                                <code title={c.path}>{c.path}</code>
+                              )}
                             </li>
                           ))}
                         </ul>

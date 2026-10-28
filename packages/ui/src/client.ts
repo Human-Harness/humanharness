@@ -23,9 +23,13 @@ import type {
   DataQuery,
   DataQueryResult,
   FileChange,
+  FileDiffView,
   ScopeEntry,
   SyncProvider,
   SyncStatus,
+  TimelineAuthor,
+  TimelineEntry,
+  TimelineKind,
 } from "@humanharness/workspace";
 import type { AnswerPick, Review, ReviewSummary } from "@humanharness/harness-sdk/review";
 
@@ -359,7 +363,7 @@ export interface HistoryItem {
 export type HistoryFileChange = FileChange;
 
 // The history's commit subjects (raw git data, English; the History panel shows them through i18n keys).
-export { BEFORE_MESSAGE, DATA_CHANGE_PREFIX, NOTE, RESTORE_POINT, RESTORE_TASK, START, STOPPED_PREFIX, TURN_PREFIX, UNDO_PREFIX } from "@humanharness/workspace/subjects";
+export { BEFORE_MESSAGE, DATA_CHANGE_PREFIX, FILE_RESTORE_PREFIX, NOTE, RESTORE_POINT, RESTORE_TASK, START, STOPPED_PREFIX, TURN_PREFIX, UNDO_PREFIX } from "@humanharness/workspace/subjects";
 
 /**
  * One row of the History panel: a task's commits, or the group of commits outside any task (`taskId: null`:
@@ -925,6 +929,19 @@ export interface HarnessClient {
     /** The core's chat only. */
     set(state: FocusState): void;
   };
+  /** File timelines (file-timeline spec §6.3). Every call answers with data; the core always confirms a go-back. */
+  files: {
+    /** The file's entries, newest first. */
+    timeline(path: string): Promise<FileTimelineResult>;
+    /** What changed between two commits, or from a commit to the file now ("current"); `from` null: nothing before. */
+    diff(path: string, from: string | null, to: string | "current"): Promise<FileDiffResult>;
+    /** Brings the file back to `commit` (an entry's `to`) after the core's confirmation; nothing else changes. */
+    restore(path: string, commit: string): Promise<FileRestoreResult>;
+    /** A commit touched `path`: its timeline has a new entry. Returns the unsubscribe. */
+    onChange(path: string, listener: () => void): () => void;
+    /** The core's chat only: answers the confirmation every `restore` shows. Returns the unregister. */
+    hostConfirm(confirm: (prompt: FileRestorePrompt) => Promise<boolean>): () => void;
+  };
   /** Harnesses with scopes (spec §3.4). There is no delete: archive instead. */
   scopes: {
     list(): Promise<ScopeView[]>;
@@ -1057,3 +1074,22 @@ export interface FocusState {
   path?: string;
 }
 export type { AnswerPick, Review, ReviewComment, ReviewSummary } from "@humanharness/harness-sdk/review";
+
+export type { DiffPart, FileDiffView, LineChange, MdBlockType, MdDiffBlock, TimelineAuthor, TimelineEntry, TimelineKind } from "@humanharness/workspace";
+
+/** Why a file-timeline call did nothing (file-timeline spec; errors over IPC are data). */
+export type FileRefusal = "not-ready" | "outside" | "untracked" | "bad-input" | "not-found" | "deleted" | "busy" | "unsafe" | "failed";
+export type FileTimelineResult = { ok: true; entries: TimelineEntry[] } | { ok: false; reason: FileRefusal };
+export type FileDiffResult = FileDiffView | { ok: false; reason: FileRefusal };
+/** What the core's confirmation says before a file goes back (§5). */
+export interface FileRestorePrompt {
+  path: string;
+  author: TimelineAuthor;
+  at: string;
+  kind: TimelineKind;
+  version?: number;
+}
+export type FileRestorePromptResult = { ok: true; prompt: FileRestorePrompt } | { ok: false; reason: FileRefusal };
+export type FileRestoreAnswer = { ok: true } | { ok: false; reason: FileRefusal };
+/** `client.files.restore`'s answer: done, the person said no (or no core is there to ask), or refused. */
+export type FileRestoreResult = "restored" | "cancelled" | { refused: FileRefusal };

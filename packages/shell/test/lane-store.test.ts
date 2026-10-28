@@ -198,6 +198,28 @@ describe("LaneStore (Decision 3)", () => {
     expect(order).toEqual([1, 2]);
   });
 
+  it("withTasksFile keys a store that resolves its file by the file it resolves now, not the last one it named", async () => {
+    const load = async () => ({ version: 1, current: null, actions: {} }) as TasksFile;
+    // The board's store right after a folder switch: its last read named the old base, the next one is the new base's.
+    const board = { file: "/old/tasks.json", resolveFile: async () => "/new/tasks.json", load, save: async () => {} };
+    const other = { file: "/new/tasks.json", load, save: async () => {} };
+    const order: string[] = [];
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    const first = withTasksFile(other, async () => {
+      await held;
+      order.push("engine change");
+    });
+    const second = withTasksFile(board, async () => {
+      order.push("lane save");
+    });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(order).toEqual([]);
+    release();
+    await Promise.all([first, second]);
+    expect(order).toEqual(["engine change", "lane save"]);
+  });
+
   it("a failed save doesn't block the next one", async () => {
     let fail = true;
     const m = memory({ version: 1, current: null, actions: {}, lanes: [task("a")] });

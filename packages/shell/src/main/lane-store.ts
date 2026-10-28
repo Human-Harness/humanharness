@@ -2,8 +2,16 @@ import path from "node:path";
 import type { ActionStatus } from "@humanharness/ui/client";
 import type { CurrentTask, TasksFile } from "./task-store";
 
-/** What a lane reads and writes through: a `TaskStore` (or a test's memory). `file`, when given, keys the write chain. */
-export type TasksFileStore = { load(): Promise<TasksFile>; save(state: TasksFile): Promise<void>; readonly file?: string };
+/**
+ * What a lane reads and writes through: a `TaskStore` (or a test's memory). `file`, when given, keys the write chain;
+ * `resolveFile`, when given, names the file as it is now (a store whose folder can change) and keys it instead.
+ */
+export type TasksFileStore = {
+  load(): Promise<TasksFile>;
+  save(state: TasksFile): Promise<void>;
+  readonly file?: string;
+  resolveFile?(): Promise<string | undefined>;
+};
 
 /**
  * One write chain per tasks.json: by its resolved path when the store names one (two `TaskStore`s of one folder share
@@ -17,7 +25,12 @@ const byStore = new WeakMap<TasksFileStore, Promise<unknown>>();
  * a file lanes write (the board's `focus`) goes through here, so no read-modify-write undoes another.
  */
 export function withTasksFile<T>(store: TasksFileStore, fn: () => Promise<T>): Promise<T> {
-  const key = store.file === undefined ? undefined : path.resolve(store.file);
+  if (store.resolveFile) return store.resolveFile().then((file) => chain(store, file, fn));
+  return chain(store, store.file, fn);
+}
+
+function chain<T>(store: TasksFileStore, file: string | undefined, fn: () => Promise<T>): Promise<T> {
+  const key = file === undefined ? undefined : path.resolve(file);
   const before = (key === undefined ? byStore.get(store) : byPath.get(key)) ?? Promise.resolve();
   const run = before.then(fn, fn);
   const tail: Promise<unknown> = run.catch(() => {});

@@ -168,6 +168,8 @@ export function createBoardHost(d: BoardHostDeps, initial: { engineId: string | 
     get file() {
       return lastFile;
     },
+    // The base as it is now: right after a folder or profile switch, `lastFile` still names the old one.
+    resolveFile: async () => (await store())?.file,
     load: async () => (await store())?.load() ?? emptyTasks(),
     save: async (state) => {
       await (await store())?.save(state);

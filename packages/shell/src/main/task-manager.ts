@@ -185,6 +185,8 @@ export interface TaskDeps {
    * the phase entered, right after the state is written. Never awaited: it never delays the move. Absent: nothing (D0).
    */
   phaseMoved?(e: PhaseMoved): void;
+  /** A task ended with its note saved (parallel spec §8 `afterTask`). Never awaited. Absent: nothing (D0). */
+  taskClosed?(task: { id: string; action?: string; scope: string }): void;
 }
 
 /** What `phaseMoved` gets (sidekick spec §2a.2). */
@@ -1690,6 +1692,15 @@ export class TaskManager {
     return this.afterRun(c.id, done, false);
   }
 
+  /** Tells the jobs a task closed with its note saved (never awaited; a throwing listener never stops the end). */
+  private taskClosed(c: CurrentTask): void {
+    try {
+      this.d.taskClosed?.({ id: c.id, ...(c.action ? { action: c.action } : {}), scope: scopeOfTask(c) });
+    } catch (err) {
+      console.error("A task-closed listener failed", err);
+    }
+  }
+
   /** Tells Sidekick the phase moved (never awaited; a throwing hook never stops the move). */
   private phaseMoved(c: CurrentTask, from: string, to: string): void {
     try {
@@ -1937,13 +1948,16 @@ export class TaskManager {
 
   private async endTask(id: string, outcome: ActionStatus): Promise<void> {
     this.begun = true;
+    let closed: CurrentTask | undefined;
     await this.update((s) => {
       const c = s.current;
       if (!c || c.id !== id) return s;
+      if (outcome === "done") closed = c;
       if (outcome !== "done") return interrupted(s, outcome);
       if (!c.action) return { ...s, current: null };
       return { ...withStatus(s, scopeOfTask(c), c.action, "done"), current: null };
     });
+    if (closed) this.taskClosed(closed);
     await this.endSession();
     await this.between();
   }

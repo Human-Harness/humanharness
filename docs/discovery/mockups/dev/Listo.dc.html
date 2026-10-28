@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Todo listo</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;color:#1d1d1f}
+a{color:#0a5bc4}a:hover{color:#083f88}
+.btn{font:inherit;font-size:14px;padding:9px 18px;border-radius:8px;border:1px solid #d2d2d7;background:#fff;color:#1d1d1f;text-decoration:none;display:inline-block}
+.btn.p{background:#0a5bc4;border-color:#0a5bc4;color:#fff}
+.st{font-size:13px;padding:6px 12px;border-radius:999px;background:#ececf0;color:#5f5f66}
+.row{display:flex;gap:12px;font-size:14px;padding:10px 0;border-bottom:1px solid #eee}
+</style>
+</helmet>
+<div style="width:1440px;height:900px;display:flex;flex-direction:column;align-items:center;padding-top:90px;box-sizing:border-box;gap:26px;background:#f5f5f7">
+  <ol aria-label="Pasos" style="display:flex;gap:8px;list-style:none;margin:0;padding:0">
+    <li class="st" style="background:#d9f0dc;color:#1f5a28">✓ Motor de IA</li>
+    <li class="st" style="background:#d9f0dc;color:#1f5a28">✓ GitHub y Jira</li>
+    <li class="st" style="background:#0a5bc4;color:#fff;font-weight:600">3 · Listo</li>
+  </ol>
+  <h1 style="margin:0;font-size:28px">Todo listo</h1>
+  <div style="background:#fff;border:1px solid #e3e3e8;border-radius:14px;padding:8px 22px;width:520px">
+    <div class="row"><span style="color:#1f5a28">✓</span><span style="flex:1">Claude Code</span><span style="color:#5f5f66">sesión iniciada</span></div>
+    <div class="row"><span style="color:#1f5a28">✓</span><span style="flex:1">GitHub</span><span style="color:#5f5f66">[tu-usuario] · 2 organizaciones</span></div>
+    <div class="row" style="border:0"><span style="color:#1f5a28">✓</span><span style="flex:1">Jira</span><span style="color:#5f5f66">tuempresa.atlassian.net · 4 proyectos</span></div>
+  </div>
+  <p style="margin:0;color:#3a3a40;font-size:15px">Ahora traé tu primer proyecto.</p>
+  <a class="btn p" href="InicioVacio.dc.html">Empezar</a>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

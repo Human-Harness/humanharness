@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Ajustes, cuentas</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;color:#1d1d1f}
+a{color:#0a5bc4}a:hover{color:#083f88}
+.btn{font:inherit;font-size:13px;padding:7px 12px;border-radius:7px;border:1px solid #d2d2d7;background:#fff;color:#1d1d1f;cursor:pointer;text-decoration:none}
+.k{font-size:12px;color:#5f5f66;font-weight:600}
+.tab{font:inherit;font-size:13px;padding:7px 14px;border:0;border-radius:7px;background:transparent;cursor:pointer;color:#3a3a40}
+.row{display:flex;gap:12px;align-items:center;padding:12px 0;border-bottom:1px solid #eee;font-size:14px}
+</style>
+</helmet>
+<div style="width:1440px;height:900px;background:rgba(29,29,31,.35);display:flex;align-items:center;justify-content:center">
+  <div role="dialog" aria-labelledby="aj" style="width:820px;background:#f5f5f7;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,.25);display:flex;flex-direction:column;overflow:hidden">
+    <div style="padding:16px 22px;display:flex;align-items:center;gap:12px;border-bottom:1px solid #e3e3e8">
+      <h1 id="aj" style="margin:0;font-size:17px;flex:1">Ajustes</h1>
+      <a class="btn" href="Main.dc.html">Listo</a>
+    </div>
+    <div role="tablist" style="display:flex;gap:4px;justify-content:center;padding:12px">
+      <button class="tab" role="tab">General</button>
+      <button class="tab" role="tab">Motor</button>
+      <button class="tab" role="tab">Uso</button>
+      <button class="tab" role="tab" aria-selected="true" style="background:#dcdce2;font-weight:600">Cuentas</button>
+      <button class="tab" role="tab">Agentes</button>
+    </div>
+    <div style="padding:4px 28px 26px;display:flex;flex-direction:column;gap:18px">
+      <section style="background:#fff;border:1px solid #e3e3e8;border-radius:12px;padding:6px 18px">
+        <div class="row"><strong style="flex:1">GitHub</strong><span style="color:#1f5a28;font-size:13px">✓ [tu-usuario] por gh</span><button class="btn">Revisar</button></div>
+        <div class="row" style="border:0"><strong style="flex:1">Jira</strong><span style="color:#1f5a28;font-size:13px">✓ tuempresa.atlassian.net · por el MCP del motor</span><button class="btn">Revisar</button></div>
+      </section>
+      <section style="display:flex;flex-direction:column;gap:8px">
+        <div class="k">OTRAS HERRAMIENTAS PARA LOS AGENTES (MCP)</div>
+        <div style="background:#fff;border:1px solid #e3e3e8;border-radius:12px;padding:6px 18px">
+          <div class="row"><span style="flex:1">Atlassian (Jira, Confluence)</span><span style="font-size:13px;color:#5f5f66">encendido</span></div>
+          <div class="row" style="border:0"><span style="flex:1">Figma</span><span style="font-size:13px;color:#5f5f66">apagado</span></div>
+        </div>
+        <a href="#" style="font-size:13px">Agregar un MCP</a>
+      </section>
+      <section style="display:flex;flex-direction:column;gap:8px">
+        <div class="k">PESTAÑA AGENTES (RESUMEN)</div>
+        <div style="font-size:13px;color:#3a3a40;line-height:1.5">Cuántos agentes pueden correr a la vez, el modelo por etapa y el modo por defecto de los tickets (decisiones o consola).</div>
+      </section>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

@@ -60,6 +60,15 @@ describe("linkRefusal (hatches spec §3.2)", () => {
     expect(linkRefusal(repo, ctx())).toBeNull();
   });
 
+  it("refuses a write link inside or around another scope's write folder; a read link may overlap", () => {
+    const repo = path.join(home, "code", "app");
+    expect(linkRefusal(path.join(repo, "pkg"), ctx({ otherScopesWrite: [repo] }))).toBe("other-scope-write");
+    expect(linkRefusal(path.join(home, "code"), ctx({ otherScopesWrite: [repo] }))).toBe("other-scope-write");
+    expect(linkRefusal(path.join(repo, "pkg"), ctx({ otherScopesWrite: [repo], mode: "read" }))).toBeNull();
+    expect(linkRefusal(path.join(home, "code"), ctx({ otherScopesWrite: [repo], mode: "read" }))).toBeNull();
+    expect(linkRefusal(path.join(home, "code", "app2"), ctx({ otherScopesWrite: [repo] }))).toBeNull();
+  });
+
   it("refuses nesting with a link of the same scope, both ways", () => {
     const repo = path.join(home, "code", "app");
     expect(linkRefusal(path.join(repo, "pkg"), ctx({ sameScope: [repo] }))).toBe("nested");
@@ -120,6 +129,8 @@ describe("checkLink (real paths)", () => {
     ["a folder inside a same-scope link", () => [mk(path.join(repo(), "pkg")), { sameScope: [repo()] }], "nested"],
     ["a folder containing a same-scope link", () => [path.join(home, "code"), { sameScope: [repo()] }], "nested"],
     ["another scope's write folder", () => [repo(), { otherScopesWrite: [repo()] }], "other-scope-write"],
+    ["a folder inside another scope's write folder", () => [mk(path.join(repo(), "inner")), { otherScopesWrite: [repo()] }], "other-scope-write"],
+    ["a folder containing another scope's write folder", () => [path.join(home, "code"), { otherScopesWrite: [repo()] }], "other-scope-write"],
     ['a plain folder under history "own"', () => [mk(path.join(home, "plain-own")), { history: "own" }], "not-git"],
     ["a target with a comma", () => [mk(path.join(home, "code", "a,b")), {}], "unsafe-name"],
     ["a target named notes[1]", () => [mk(path.join(home, "code", "notes[1]")), {}], "unsafe-name"],
@@ -153,6 +164,8 @@ describe("checkLink (real paths)", () => {
     it("same-scope and other-scope links given through a link are compared where they are", async () => {
       expect(await checkLink(repo(), ctx({ sameScope: [via(repo())] }))).toEqual({ refused: "already-linked" });
       expect(await checkLink(repo(), ctx({ otherScopesWrite: [via(repo())] }))).toEqual({ refused: "other-scope-write" });
+      expect(await checkLink(mk(path.join(repo(), "deep")), ctx({ otherScopesWrite: [via(repo())] }))).toEqual({ refused: "other-scope-write" });
+      expect(await checkLink(path.join(home, "code"), ctx({ otherScopesWrite: [via(repo())] }))).toEqual({ refused: "other-scope-write" });
     });
   });
 

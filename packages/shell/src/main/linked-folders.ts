@@ -19,7 +19,7 @@ export interface LinkContext {
   root?: string;
   /** The real paths this scope already links (any key). */
   sameScope: string[];
-  /** The real paths other scopes link in `write` mode. */
+  /** The real paths other scopes (and profiles) link in `write` mode. */
   otherScopesWrite: string[];
   mode: "read" | "write";
   history: "auto" | "own";
@@ -61,6 +61,9 @@ export function linkRefusal(dir: string, ctx: LinkContext): LinkRefusal | null {
   if (ctx.sameScope.some((p) => norm(p) === norm(dir))) return "already-linked";
   if (ctx.sameScope.some((p) => inside(dir, p) || inside(p, dir))) return "nested";
   if (ctx.otherScopesWrite.some((p) => norm(p) === norm(dir))) return "other-scope-write";
+  // Two scopes' core histories over nested folders would undo each other's work (a crash restore of the outer one
+  // rewrites the inner one): a write link never contains, nor sits inside, another scope's write folder. Reads may.
+  if (ctx.mode === "write" && ctx.otherScopesWrite.some((p) => inside(dir, p) || inside(p, dir))) return "other-scope-write";
   if (ctx.history === "own" && !ctx.isGit) return "not-git";
   return null;
 }

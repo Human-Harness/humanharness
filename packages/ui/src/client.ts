@@ -27,6 +27,7 @@ import type {
   SyncProvider,
   SyncStatus,
 } from "@humanharness/workspace";
+import type { Review, ReviewSummary } from "@humanharness/harness-sdk/review";
 
 export type { DataKey, DataQuery, DataQueryResult, DataRecord };
 
@@ -976,3 +977,43 @@ export function isConfigured(config: AppConfig): config is ConfiguredApp {
 
 export type { DocumentCard } from "@humanharness/runtime";
 export type { BlockAnswer, ChoiceOption, Event, EngineError, InputField, InputIssue, InputSpec, LimitWindow, RespondResult, SettingFieldView, SettingsView };
+
+/** Why a review action did nothing (review spec; errors over IPC are data). */
+export type ReviewRefusal =
+  | "outside"
+  | "missing"
+  | "not-markdown"
+  | "too-large"
+  | "broken"
+  | "not-ready"
+  | "blocked"
+  | "busy"
+  | "unknown"
+  | "not-found"
+  | "bad-input"
+  | "full"
+  | "locked"
+  | "changed"
+  | "unsent"
+  | "reason-required"
+  | "nothing-to-send";
+/** `count`: the unsent items (`unsent`) or the open blocking questions (`reason-required`). */
+export type ReviewFailure = { ok: false; reason: ReviewRefusal; count?: number };
+/** The reader's view of a document's review. `review` null: no record yet (§6.1 "reading only"). */
+export type ReviewView = { ok: true; review: Review | null; summary: ReviewSummary } | ReviewFailure;
+export type ReviewResult = { ok: true; id?: string; applied?: boolean } | ReviewFailure;
+/** `to`: the round went to the task that waits ("open") or starts a "Review <title>" task ("new"). */
+export type ReviewSendResult = { ok: true; sent: number; to: "open" | "new" } | ReviewFailure;
+export type ApprovedText = { ok: true; text: string } | ReviewFailure;
+/** A comment on a rendered selection (§5.2): the selected text, the slug of the heading above it, the comment. */
+export interface CommentInput {
+  selected: string;
+  heading: string | null;
+  text: string;
+}
+/** Focus mode (§6.2): on or off, and the document read. */
+export interface FocusState {
+  on: boolean;
+  path?: string;
+}
+export type { AnswerPick, Review, ReviewComment, ReviewSummary } from "@humanharness/harness-sdk/review";

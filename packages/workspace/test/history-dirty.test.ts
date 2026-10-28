@@ -1,7 +1,8 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import git from "isomorphic-git";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { History } from "../src";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-hdirty-"));
@@ -104,5 +105,45 @@ describe("list carries Job: and Shared:", () => {
     expect(shared).toMatchObject({ message: "Shared: one", task: "t1", job: "sync-jira", shared: ["t2", "t3"] });
     expect(start).not.toHaveProperty("job");
     expect(start).not.toHaveProperty("shared");
+  });
+});
+
+describe("a file that vanishes mid-scan (another turn's temp file)", () => {
+  afterEach(() => vi.restoreAllMocks());
+  /** Lets statusMatrix list the folder, then deletes `rel` before History reads it. */
+  const vanishAfterListing = (rel: string) => {
+    const real = git.statusMatrix.bind(git);
+    vi.spyOn(git, "statusMatrix").mockImplementation(async (args) => {
+      const matrix = await real(args);
+      fs.rmSync(path.join(folder, rel), { force: true });
+      return matrix;
+    });
+  };
+
+  it("a new file: reported as deleted by dirtyState and changedSince, no throw", async () => {
+    write("tmp.md", "t");
+    vanishAfterListing("tmp.md");
+    expect((await history.dirtyState()).get("tmp.md")).toBeNull();
+    write("tmp.md", "t");
+    expect(await history.changedSince(null)).toEqual(["tmp.md"]);
+  });
+
+  it("a tracked file listed unchanged: reported as deleted, no throw", async () => {
+    vanishAfterListing("a.md");
+    const state = await history.dirtyState();
+    expect(state.has("a.md")).toBe(true);
+    expect(state.get("a.md")).toBeNull();
+    write("a.md", "a0");
+    expect(await history.changedSince(null)).toEqual(["a.md"]);
+  });
+
+  it("any other read error is still thrown", async () => {
+    write("tmp.md", "t");
+    const realRead = fs.promises.readFile;
+    vi.spyOn(fs.promises, "readFile").mockImplementation(((file: unknown, ...rest: unknown[]) =>
+      String(file).endsWith("tmp.md")
+        ? Promise.reject(Object.assign(new Error("denied"), { code: "EACCES" }))
+        : (realRead as (...a: unknown[]) => Promise<unknown>)(file, ...rest)) as typeof fs.promises.readFile);
+    await expect(history.dirtyState()).rejects.toThrow("denied");
   });
 });

@@ -45,6 +45,14 @@ describe("Job: and Shared: trailers (parallel spec §5.1, §5.2)", () => {
     expect(parseCommitMessage("Shared: t2")).toEqual({ subject: "Shared: t2", task: null, action: null });
   });
 
+  it("Shared: names each other task once and never the commit's own task", () => {
+    const m = withTrailer("Shared: x", { task: "t1", shared: ["t2", "t1", "t2", "t3", "t3"] });
+    expect(m).toBe("Shared: x\n\nTask: t1\nShared: t2\nShared: t3");
+    // Duplicates don't use up the cap of eight.
+    const many = withTrailer("Shared: x", { task: "t1", shared: ["t2", "t2", "t2", ...Array.from({ length: 8 }, (_, i) => `x${i}`)] });
+    expect(parseCommitMessage(many).shared).toEqual(["t2", "x0", "x1", "x2", "x3", "x4", "x5", "x6"]);
+  });
+
   it("SHARED_PREFIX is the shared commit's subject start", () => {
     expect(SHARED_PREFIX).toBe("Shared: ");
   });

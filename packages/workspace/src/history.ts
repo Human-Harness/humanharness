@@ -149,6 +149,13 @@ async function writeNoFollow(file: string, data: Buffer, mode: number): Promise<
 export const isCanonicalPath = (p: string): boolean =>
   p !== "" && !p.startsWith("/") && !p.includes("\\") && path.posix.normalize(p) === p && !p.endsWith("/") && !p.split("/").some((s) => s === "." || s === "..");
 
+/** A file that vanished (or became a folder) between listing and reading it reads as null; any other error is thrown. */
+const goneAsNull = (err: unknown): null => {
+  const code = (err as { code?: unknown } | null)?.code;
+  if (code === "ENOENT" || code === "ENOTDIR" || code === "EISDIR") return null;
+  throw err;
+};
+
 /** How far back `tasks` follows a task past the depth to find its first commit. */
 const MAX_WALK_BACK = 1000;
 
@@ -169,7 +176,8 @@ export function withTrailer(message: string, trailer?: HistoryTrailer): string {
   if (trailer.phase !== undefined && TRAILER_ID.test(trailer.phase)) lines.push(`Phase: ${trailer.phase}`);
   if (trailer.plugin !== undefined && PLUGIN_ID.test(trailer.plugin)) lines.push(`Plugin: ${trailer.plugin}`);
   if (trailer.job !== undefined && TRAILER_ID.test(trailer.job)) lines.push(`Job: ${trailer.job}`);
-  for (const other of (trailer.shared ?? []).filter((t) => TRAILER_ID.test(t)).slice(0, SHARED_MAX)) lines.push(`Shared: ${other}`);
+  const shared = new Set((trailer.shared ?? []).filter((t) => t !== trailer.task && TRAILER_ID.test(t)));
+  for (const other of [...shared].slice(0, SHARED_MAX)) lines.push(`Shared: ${other}`);
   return `${subject}\n\n${lines.join("\n")}`;
 }
 
@@ -281,15 +289,18 @@ export class History {
     const head = await this.last();
     if (head === null) return true;
     const absolute = path.join(this.folder, file);
-    const stats = await fs.promises.lstat(absolute);
+    // A file gone since statusMatrix (another turn's temp file) differs: it is deleted now.
+    const stats = await fs.promises.lstat(absolute).catch(goneAsNull);
+    if (stats === null) return true;
     // Only files modified around the HEAD commit time can be "racily clean".
     if (Math.floor(stats.mtimeMs / 1000) < this.headTime - 1) return false;
     const { blob } = await git.readBlob({ ...this.repo(), oid: head, filepath: file });
     // A link is stored as its target path: compare that, never what it points to.
-    const current = stats.isSymbolicLink()
-      ? await fs.promises.readlink(absolute, { encoding: "buffer" })
-      : await fs.promises.readFile(absolute);
-    return !Buffer.from(blob).equals(current);
+    const current = await (stats.isSymbolicLink()
+      ? fs.promises.readlink(absolute, { encoding: "buffer" })
+      : fs.promises.readFile(absolute)
+    ).catch(goneAsNull);
+    return current === null || !Buffer.from(blob).equals(current);
   }
 
   /** Commits the current state; `trailer` names the task it belongs to. Returns the new sha, or null when nothing changed. */
@@ -502,13 +513,19 @@ export class History {
     return out;
   }
 
-  /** The blob id of a file as it is in the folder (a link: of its target path, as git stores it). */
-  private async workOid(file: string): Promise<string> {
+  /**
+   * The blob id of a file as it is in the folder (a link: of its target path, as git stores it); null when it vanished
+   * since statusMatrix (another turn's temp file): it counts as deleted.
+   */
+  private async workOid(file: string): Promise<string | null> {
     const absolute = path.join(this.folder, file);
-    const stats = await fs.promises.lstat(absolute);
-    const object = stats.isSymbolicLink()
-      ? await fs.promises.readlink(absolute, { encoding: "buffer" })
-      : await fs.promises.readFile(absolute);
+    const stats = await fs.promises.lstat(absolute).catch(goneAsNull);
+    if (stats === null) return null;
+    const object = await (stats.isSymbolicLink()
+      ? fs.promises.readlink(absolute, { encoding: "buffer" })
+      : fs.promises.readFile(absolute)
+    ).catch(goneAsNull);
+    if (object === null) return null;
     return (await git.hashBlob({ object })).oid;
   }
 

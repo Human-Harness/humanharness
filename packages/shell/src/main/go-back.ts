@@ -40,12 +40,30 @@ export const CANCELLED = { ok: false, reason: "cancelled" } as const;
 
 /** Tasks listed by name in the dialog; the rest are counted only. */
 const MAX_LISTED = 10;
+/** The longest path and label a dialog shows; longer ones lose their middle. */
+const MAX_PATH = 160;
+const MAX_LABEL = 80;
+
+/** Controls (C0, C1), line and paragraph separators, and bidi marks, embeddings, overrides and isolates. */
+const UNSAFE = /[\u0000-\u001f\u007f-\u009f\u2028\u2029\u200e\u200f\u202a-\u202e\u2066-\u2069]/g;
+
+/**
+ * A file name or label as a dialog may show it: no character that could break a line or reorder the text (each
+ * becomes U+FFFD, so the person sees something was there), and at most `max` characters, the middle cut with "…".
+ */
+export function dialogSafe(s: string, max: number): string {
+  const chars = Array.from(s.replace(UNSAFE, "�"));
+  if (chars.length <= max) return chars.join("");
+  const head = Math.ceil((max - 1) / 2);
+  const tail = max - 1 - head;
+  return `${chars.slice(0, head).join("")}…${tail > 0 ? chars.slice(-tail).join("") : ""}`;
+}
 
 /** A task's name as the History panel shows its row. */
 function taskName(t: Translate, g: HistoryTaskView, actions: Record<string, { label: string }>): string {
   if (g.taskId === null) return t("history.other");
   if (g.actionId === null) return t("history.question");
-  return Object.hasOwn(actions, g.actionId) ? actions[g.actionId].label : t("history.task");
+  return dialogSafe(Object.hasOwn(actions, g.actionId) ? actions[g.actionId].label : t("history.task"), MAX_LABEL);
 }
 
 /**
@@ -57,10 +75,11 @@ export function goBackText(t: Translate, ask: GoBackAsk, actions: Record<string,
   if (ask.kind === "file") {
     const p = ask.prompt;
     const ago = timeAgo(p.at, language, now);
+    const file = dialogSafe(p.path, MAX_PATH);
     const detail =
       p.kind === "approval" && p.version
-        ? t("timeline.confirmApproval", { file: p.path, version: p.version, ago })
-        : t("timeline.confirm", { file: p.path, author: authorName(t, p.author), ago });
+        ? t("timeline.confirmApproval", { file, version: p.version, ago })
+        : t("timeline.confirm", { file, author: dialogSafe(authorName(t, p.author), MAX_LABEL), ago });
     return { message: t("timeline.confirmTitle"), detail, ...buttons };
   }
   const later = ask.later;
@@ -108,6 +127,8 @@ export async function askNatively<W>(dialog: MessageBoxDialog<W>, window: W | nu
 
 export interface GoBackDeps<S> {
   confirm: ConfirmGoBack<S>;
+  /** Going back can't run now (quitting, a turn or task operation, a hold): the folder and task go-backs ask nothing. */
+  blocked(): boolean;
   /** The History panel's groups, newest first (none when there is no history). */
   groups(): Promise<HistoryTaskView[]>;
   /** The whole folder back to `sha` (index.ts: through the restore guard). */
@@ -125,18 +146,46 @@ export const GO_BACK_CHANNELS = ["hh:restore", "hh:restoreTask", "hh:fileRestore
 export type GoBackChannel = (typeof GO_BACK_CHANNELS)[number];
 
 /**
- * The three go-back handlers, each told which window asked. Bad input is refused before any dialog. The folder and
- * task go-backs throw on failure as before (the panel says it couldn't); the file go-back answers every failure as data.
+ * The three go-back handlers, each told which window asked. Bad input, an unlisted point and a blocked go-back are
+ * refused before any dialog. One dialog at a time: a go-back asked while one is open answers cancelled. A yes is
+ * cancelled too when more later tasks appeared while the dialog was open (it would undo what the person never saw).
+ * The folder and task go-backs throw on failure as before (the panel says it couldn't); the file go-back answers every
+ * failure as data.
  */
 export function goBackHandlers<S>(d: GoBackDeps<S>): Record<GoBackChannel, (sender: S, ...args: unknown[]) => Promise<unknown>> {
+  let open = false;
+  const confirm = async (sender: S, ask: GoBackAsk): Promise<boolean> => {
+    if (open) return false;
+    open = true;
+    try {
+      return (await d.confirm(sender, ask)) === true;
+    } finally {
+      open = false;
+    }
+  };
+  /** Whether `after` names a task `before` didn't. */
+  const grew = (before: HistoryTaskView[], after: HistoryTaskView[]) => {
+    const seen = new Set(before.map((g) => g.taskId));
+    return after.some((g) => !seen.has(g.taskId));
+  };
+  const notBlocked = () => {
+    if (d.blocked()) throw new Error("Going back can't run now");
+  };
+  /** A point's own group and the later tasks going back to it undoes; null when no listed point has `sha`. */
+  const pointIn = (groups: HistoryTaskView[], sha: string): HistoryTaskView[] | null => {
+    const own = groups.find((g) => g.entries.some((e) => e.sha === sha));
+    const at = own?.entries.find((e) => e.sha === sha)?.date;
+    return own && at ? laterTasks(groups, own.taskId, at) : null;
+  };
   return {
     "hh:restore": async (sender, sha): Promise<GoBackResult> => {
       if (!isSha(sha)) throw new Error("Invalid point");
-      const groups = await d.groups();
-      const own = groups.find((g) => g.entries.some((e) => e.sha === sha));
-      const at = own?.entries.find((e) => e.sha === sha)?.date;
-      const later = own && at ? laterTasks(groups, own.taskId, at) : [];
-      if (!(await d.confirm(sender, { kind: "point", later }))) return CANCELLED;
+      const later = pointIn(await d.groups(), sha);
+      if (!later) throw new Error("Invalid point");
+      notBlocked();
+      if (!(await confirm(sender, { kind: "point", later }))) return CANCELLED;
+      const now = pointIn(await d.groups(), sha);
+      if (!now || grew(later, now)) return CANCELLED;
       await d.restorePoint(sha);
       return { ok: true };
     },
@@ -145,7 +194,12 @@ export function goBackHandlers<S>(d: GoBackDeps<S>): Record<GoBackChannel, (send
       const groups = await d.groups();
       const task = groups.find((g) => g.taskId === taskId);
       if (!task?.start) throw new Error("Nothing to go back to");
-      if (!(await d.confirm(sender, { kind: "task", task, later: laterTasks(groups, taskId, task.date) }))) return CANCELLED;
+      notBlocked();
+      const later = laterTasks(groups, taskId, task.date);
+      if (!(await confirm(sender, { kind: "task", task, later }))) return CANCELLED;
+      const now = await d.groups();
+      const again = now.find((g) => g.taskId === taskId);
+      if (!again || grew(later, laterTasks(now, taskId, again.date))) return CANCELLED;
       await d.restoreTask(taskId);
       return { ok: true };
     },
@@ -155,7 +209,7 @@ export function goBackHandlers<S>(d: GoBackDeps<S>): Record<GoBackChannel, (send
           // The service's checks first (shape, tracked, on the timeline, not busy): a refused go-back asks nothing.
           const asked = await d.file.restorePrompt(file, commit);
           if (!asked.ok) return asked;
-          if (!(await d.confirm(sender, { kind: "file", prompt: asked.prompt }))) return CANCELLED;
+          if (!(await confirm(sender, { kind: "file", prompt: asked.prompt }))) return CANCELLED;
           // The service checks everything again: the folder may have changed while the dialog was open.
           return d.file.restore(file, commit);
         })

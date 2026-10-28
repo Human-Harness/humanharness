@@ -1,3 +1,5 @@
+> **Update (2026-10-28):** the go-back confirmation moved from the window (`files.hostConfirm`, `RestoreConfirm`) to main's native dialog; see "Every go-back asks in main" in `docs/architecture/history.md`.
+
 # File Timeline Implementation Plan (plan 16)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

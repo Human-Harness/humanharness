@@ -1,7 +1,7 @@
 import { createI18n } from "@humanharness/i18n";
 import type { FileRestorePrompt, HistoryTaskView } from "@humanharness/ui/client";
 import { describe, expect, it } from "vitest";
-import { CANCELLED, GO_BACK_CHANNELS, type GoBackAsk, type GoBackDeps, askNatively, goBackHandlers, goBackText } from "../src/main/go-back";
+import { CANCELLED, GO_BACK_CHANNELS, type GoBackAsk, type GoBackDeps, askNatively, dialogSafe, goBackHandlers, goBackText } from "../src/main/go-back";
 
 const SHA = (c: string) => c.repeat(40);
 const NOW = Date.parse("2026-10-28T12:00:00.000Z");
@@ -74,6 +74,36 @@ describe("goBackText (what main's dialog says)", () => {
     ]);
   });
 
+  it("a newline or a right-to-left override in a name can't reshape the dialog's text", async () => {
+    const t = await english();
+    const file = goBackText(t, { kind: "file", prompt: { ...prompt, path: "a\nGo back? Yes.md" } }, actions, "en", NOW);
+    expect(file.detail).toContain("Go back a�Go back? Yes.md to how it was");
+    expect(file.detail.split("\n")).toHaveLength(1);
+    const author = goBackText(t, { kind: "file", prompt: { ...prompt, author: { ...prompt.author, label: "Spec‮writer " } } }, actions, "en", NOW);
+    expect(author.detail).toContain("after Spec�writer� (");
+    const named = goBackText(t, { kind: "task", task: groups[0], later: [] }, { plan: { label: "Plan⁦ the‏ week\r" } }, "en");
+    expect(named.message).toBe("Undo “Plan� the� week�”?");
+  });
+
+  it("a long name is shortened in the middle", async () => {
+    const t = await english();
+    const long = `specs/${"a".repeat(300)}/end.md`;
+    const file = goBackText(t, { kind: "file", prompt: { ...prompt, path: long } }, actions, "en", NOW);
+    const shown = /Go back (.*) to how it was/.exec(file.detail)?.[1] ?? "";
+    expect(shown.length).toBeLessThanOrEqual(160);
+    expect(shown.startsWith("specs/aaa")).toBe(true);
+    expect(shown.endsWith("a/end.md")).toBe(true);
+    expect(shown).toContain("…");
+    const named = goBackText(t, { kind: "task", task: groups[0], later: [] }, { plan: { label: "x".repeat(200) } }, "en");
+    expect(named.message.length).toBeLessThanOrEqual(80 + "Undo “”?".length);
+    expect(named.message).toContain("…");
+  });
+
+  it("dialogSafe keeps ordinary text as it is", () => {
+    expect(dialogSafe("Plan the week · ñandú 日本", 80)).toBe("Plan the week · ñandú 日本");
+    expect(dialogSafe("abcdefghij", 5)).toBe("ab…ij");
+  });
+
   it("lists at most ten tasks", async () => {
     const t = await english();
     const many = Array.from({ length: 12 }, (_, i) => group(`t${i}`, "2026-10-28T10:00:00.000Z"));
@@ -119,11 +149,12 @@ describe("askNatively (the native dialog)", () => {
 });
 
 describe("goBackHandlers (every go-back asks first)", () => {
-  function deps(answer: boolean) {
+  function deps(answer: boolean, o: Partial<GoBackDeps<string>> = {}) {
     const asks: { sender: string; ask: GoBackAsk }[] = [];
     const done: string[] = [];
     const d: GoBackDeps<string> = {
       confirm: async (sender, ask) => (asks.push({ sender, ask }), answer),
+      blocked: () => false,
       groups: async () => groups,
       restorePoint: async (sha) => void done.push(`point ${sha}`),
       restoreTask: async (id) => void done.push(`task ${id}`),
@@ -131,9 +162,59 @@ describe("goBackHandlers (every go-back asks first)", () => {
         restorePrompt: async (file) => (file === "busy.md" ? { ok: false, reason: "busy" } : { ok: true, prompt }),
         restore: async (file, commit) => (done.push(`file ${file} ${commit}`), { ok: true }),
       },
+      ...o,
     };
     return { h: goBackHandlers(d), asks, done };
   }
+
+  it("hh:restore: a valid commit id that no listed point has asks nothing", async () => {
+    const { h, asks, done } = deps(true);
+    await expect(h["hh:restore"]("win", SHA("9"))).rejects.toThrow("Invalid point");
+    expect(asks).toEqual([]);
+    expect(done).toEqual([]);
+  });
+
+  it("while a turn, a task operation or a hold blocks going back, the folder and task go-backs ask nothing", async () => {
+    const { h, asks, done } = deps(true, { blocked: () => true });
+    await expect(h["hh:restore"]("win", SHA("1"))).rejects.toThrow();
+    await expect(h["hh:restoreTask"]("win", "t2")).rejects.toThrow();
+    expect(asks).toEqual([]);
+    expect(done).toEqual([]);
+  });
+
+  it("a yes is cancelled when more later tasks appeared while the dialog was open", async () => {
+    let current = groups.slice(1);
+    const { h, done } = deps(true, {
+      groups: async () => current,
+      confirm: async () => {
+        current = groups;
+        return true;
+      },
+    });
+    expect(await h["hh:restoreTask"]("win", "t2")).toEqual(CANCELLED);
+    expect(await h["hh:restore"]("win", SHA("1"))).toEqual({ ok: true });
+    expect(done).toEqual([`point ${SHA("1")}`]);
+  });
+
+  it("one go-back dialog at a time: a second one while it is open answers cancelled", async () => {
+    let answer: (yes: boolean) => void = () => undefined;
+    const opened: GoBackAsk[] = [];
+    const { h, done } = deps(true, { confirm: (_s, ask) => (opened.push(ask), new Promise<boolean>((r) => (answer = r))) });
+    const first = h["hh:restoreTask"]("win", "t2");
+    await new Promise((r) => setTimeout(r, 0));
+    expect(await h["hh:restore"]("win", SHA("1"))).toEqual(CANCELLED);
+    expect(await h["hh:fileRestore"]("win", "specs/a.md", SHA("b"))).toEqual(CANCELLED);
+    expect(opened).toHaveLength(1);
+    answer(true);
+    expect(await first).toEqual({ ok: true });
+    expect(done).toEqual(["task t2"]);
+    // Closed: the next one asks again.
+    const next = h["hh:restore"]("win", SHA("1"));
+    await new Promise((r) => setTimeout(r, 0));
+    answer(false);
+    expect(await next).toEqual(CANCELLED);
+    expect(opened).toHaveLength(2);
+  });
 
   it("covers the three go-backs", () => {
     expect(Object.keys(deps(true).h).sort()).toEqual([...GO_BACK_CHANNELS].sort());
@@ -185,7 +266,7 @@ describe("goBackHandlers (every go-back asks first)", () => {
   it("a file go-back that throws, or a confirm that fails, answers failed as data", async () => {
     const { h } = deps(true);
     const broken = goBackHandlers<string>({
-      ...{ groups: async () => [], restorePoint: async () => undefined, restoreTask: async () => undefined },
+      ...{ blocked: () => false, groups: async () => [], restorePoint: async () => undefined, restoreTask: async () => undefined },
       confirm: async () => {
         throw new Error("gone");
       },

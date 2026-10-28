@@ -1682,6 +1682,7 @@ function registerIpc() {
   // A restore changes tracked files with no data event: the settings may have changed.
   const goBacks = goBackHandlers<WebContents>({
     confirm: confirmGoBack,
+    blocked: () => quitting || tasks.isBusy() || hold.restoreHeld() !== null,
     groups: historyGroups,
     restorePoint: (sha) => restoreWith((history) => history.restore(sha, RESTORE_POINT)).then(() => void settingsCtl?.changed()),
     restoreTask: (taskId) =>

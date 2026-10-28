@@ -5,7 +5,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { CORE_BLOCKS, INPUT_CORE_BLOCKS, defineBlock } from "@humanharness/harness-sdk";
 import { getEngine } from "@humanharness/engines";
-import { MANAGED_END, MANAGED_START, managedSection, refreshInstructions, settingsLines, writeInstructions } from "../src";
+import { MANAGED_END, MANAGED_START, managedSection, refreshInstructions, settingsLines, writeInstructions, writingLines } from "../src";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -305,5 +305,19 @@ describe("writing for the reader (document-reader spec §4)", () => {
     const kinds = s.slice(s.indexOf("### Document kinds"), s.indexOf(MANAGED_END));
     // The item's content starts at column 2; a code block inside it needs 4 more spaces.
     for (const line of ["---", "title: …", "kind: adr", "## Status"]) expect(kinds).toContain(`\n      ${line}\n`);
+  });
+});
+
+describe("writing guide: review lines (review spec §4)", () => {
+  it("only with review", () => {
+    const without = writingLines({ kinds: {} });
+    const withReview = writingLines({ kinds: {}, review: true });
+    const added = withReview.filter((l) => !without.includes(l));
+    expect(added).toEqual([
+      "- **Asking about a passage.** Use `ask_in_document`, and give for each option the full text that replaces the passage.",
+      "- **Blocking questions.** Mark a question `blocking` only when the document can't be approved without its answer.",
+      "- **Review rounds.** After a review round, answer every comment with `reply_to_comment`.",
+    ]);
+    expect(withReview.filter((l) => without.includes(l))).toEqual(without);
   });
 });

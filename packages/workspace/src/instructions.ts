@@ -64,6 +64,11 @@ const TEXT = {
       ? "**Front-matter.** Start every document with a front-matter block: `title` always, and `kind` when one of the kinds below fits."
       : "**Front-matter.** Start every document with a front-matter block holding `title` always.",
   ],
+  reviewRules: [
+    "**Asking about a passage.** Use `ask_in_document`, and give for each option the full text that replaces the passage.",
+    "**Blocking questions.** Mark a question `blocking` only when the document can't be approved without its answer.",
+    "**Review rounds.** After a review round, answer every comment with `reply_to_comment`.",
+  ],
   writingExample: [
     "Example of the start of a document:",
     "",
@@ -101,6 +106,8 @@ export function settingsLines(sentences: readonly string[] | undefined): string[
 export interface WritingGuide {
   /** The harness's document kinds; `{}` for the base guide only. */
   kinds: Record<string, DocumentKind>;
+  /** The agent has the review tools (review spec §4): three more rules. Absent: none (D0). */
+  review?: boolean;
 }
 
 /** The "Writing for the reader" part, and with kinds the "Document kinds" part. None without a guide. */
@@ -109,6 +116,7 @@ export function writingLines(writing: WritingGuide | undefined): string[] {
   const t = TEXT;
   const kinds = Object.entries(writing.kinds);
   const rules = t.writingRules(kinds.length > 0).map((r) => (r.startsWith("  ") ? r : `- ${r}`));
+  if (writing.review) rules.push(...t.reviewRules.map((r) => `- ${r}`));
   const lines = ["", t.writing, "", t.writingIntro, "", ...rules, "", ...t.writingExample];
   if (kinds.length === 0) return lines;
   lines.push("", t.kinds, "", t.kindsIntro);

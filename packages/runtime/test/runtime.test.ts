@@ -6,14 +6,14 @@ import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { OPENCODE_ENV, getEngine } from "@humanharness/engines";
 import { type ClaudeScript, claudeResultLine, claudeTextLines, fakeAcpCommand, fakeClaudeCommand, writeScript } from "@humanharness/fake-agent";
 import { allBlocks, loadHarness, resolveInHarness } from "@humanharness/harness-sdk";
-import { managedSection } from "@humanharness/workspace";
+import { ReviewRefused, managedSection } from "@humanharness/workspace";
 import { ClaudeCliTransport } from "../src/claude-cli";
 import type { Event } from "../src/events";
-import { type HarnessRuntime, type RuntimeOptions, createRuntime } from "../src/runtime";
+import { type HarnessRuntime, REVIEW_FAILED, type RuntimeOptions, createRuntime, reviewHandler } from "../src/runtime";
 import { type Session, acpFields } from "../src/transport";
 
 /** Sockets the runtime opened: a test can make the bridge's close fail and see the rpc's close. */
-const sockets = vi.hoisted(() => ({ failBridgeClose: false, failRpcClose: false, rpcClosed: 0 }));
+const sockets = vi.hoisted(() => ({ failBridgeClose: false, failRpcClose: false, rpcClosed: 0, rpcOpened: 0 }));
 vi.mock("@humanharness/blocks", async (importOriginal) => {
   const blocks = await importOriginal<typeof import("@humanharness/blocks")>();
   return {
@@ -24,6 +24,7 @@ vi.mock("@humanharness/blocks", async (importOriginal) => {
     },
     openRpc: async (...args: Parameters<typeof blocks.openRpc>) => {
       const rpc = await blocks.openRpc(...args);
+      sockets.rpcOpened++;
       return {
         ...rpc,
         close: async () => {
@@ -488,6 +489,91 @@ describe("createRuntime", () => {
     }
     // The data socket's close failed, and the material socket still closed after it.
     expect(sockets.rpcClosed).toBe(closed + 2);
+  });
+
+  const uiEnv = (argv: string[]) =>
+    (JSON.parse(argv[argv.indexOf("--mcp-config") + 1]) as { mcpServers: { ui: { env: Record<string, string> } } }).mcpServers.ui.env;
+
+  it("with a review handler and an agent that edits the folder: review tools and guide lines (review §4)", async () => {
+    const seen: unknown[] = [];
+    const { runtime, folder, args } = await setup(
+      {
+        steps: [
+          { write: { path: "spec.md", content: "## Scope\n\nBy size.\n" } },
+          {
+            mcp: {
+              server: "ui",
+              tool: "ask_in_document",
+              args: { path: "spec.md", quote: "By size.", question: "Which?", options: [{ label: "A", text: "By size." }, { label: "B", text: "By colour." }] },
+            },
+          },
+          claudeResultLine(true),
+        ],
+      },
+      undefined,
+      {
+        review: async (request) => {
+          seen.push(request);
+          return { id: "c1" };
+        },
+      },
+    );
+    await send(runtime);
+    expect(uiEnv(args()).HH_REVIEW_RPC).toBeTruthy();
+    expect(seen).toEqual([expect.objectContaining({ op: "ask", path: "spec.md" })]);
+    expect(fs.readFileSync(path.join(folder, "AGENTS.md"), "utf8")).toContain("`ask_in_document`");
+  });
+
+  it("D0: no review channel without a handler, or for an agent that can't edit the folder", async () => {
+    const plain = await setup({ steps: [claudeResultLine(true)] });
+    await send(plain.runtime);
+    expect(uiEnv(plain.args()).HH_REVIEW_RPC).toBeUndefined();
+    expect(fs.readFileSync(path.join(plain.folder, "AGENTS.md"), "utf8")).not.toContain("ask_in_document");
+    await plain.runtime.close();
+    const readOnly = await setup({ steps: [claudeResultLine(true)] }, undefined, { harness: await loadHarness(READER), review: async () => null });
+    await send(readOnly.runtime);
+    expect(uiEnv(readOnly.args()).HH_REVIEW_RPC).toBeUndefined();
+    expect(fs.readFileSync(path.join(readOnly.folder, "AGENTS.md"), "utf8")).not.toContain("ask_in_document");
+  });
+
+  it('D0: with edit "none" a review handler opens no socket and changes neither the ui env nor AGENTS.md', async () => {
+    const run = async (extra: Partial<RuntimeOptions>) => {
+      const opened = sockets.rpcOpened;
+      const r = await setup({ steps: [claudeResultLine(true)] }, undefined, { harness: await loadHarness(READER), ...extra });
+      await send(r.runtime);
+      // The bridge's socket and token are new on every run; everything else must match byte for byte.
+      const env = { ...uiEnv(r.args()), HH_BRIDGE: "<bridge>", HH_BRIDGE_TOKEN: "<token>" };
+      const agents = fs.readFileSync(path.join(r.folder, "AGENTS.md"), "utf8");
+      const servers = mcpServers(r.args());
+      await r.runtime.close();
+      runtime = undefined;
+      return { env: JSON.stringify(env), agents, servers, opened: sockets.rpcOpened - opened };
+    };
+    const without = await run({});
+    const withReview = await run({ review: async () => null });
+    expect(withReview).toEqual(without);
+    expect(withReview.opened).toBe(0);
+  });
+});
+
+describe("reviewHandler", () => {
+  it("passes the app's refusals to the agent, and a fixed line for any other error", async () => {
+    const refused = reviewHandler(async () => {
+      throw new ReviewRefused("spec.md has too many comments", "full");
+    });
+    await expect(refused({})).rejects.toThrow("spec.md has too many comments");
+    const failed = reviewHandler(async () => {
+      throw new Error("EACCES: /Users/someone/Work/.harness/reviews/spec.md.json");
+    });
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const err = await failed({}).catch((e: Error) => e);
+    expect(logged).toHaveBeenCalledOnce();
+    logged.mockRestore();
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error).message).not.toContain("/Users");
+    expect((err as Error).message).toBe(REVIEW_FAILED);
+    const ok = reviewHandler(async (r) => ({ echo: r }));
+    await expect(ok({ op: "read" })).resolves.toEqual({ echo: { op: "read" } });
   });
 });
 

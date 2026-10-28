@@ -65,9 +65,11 @@ test("the offer, the notice, the run in batches, the live switch; legal text sta
     const cache = JSON.parse(fs.readFileSync(path.join(s.userData, "locales", "es.json"), "utf8"));
     expect(cache.entries["core:chat.send"].value).toBe("[es] Send");
     expect(Object.keys(cache.entries).some((k) => k.startsWith("core:legal"))).toBe(false);
-    const usage = readJsonl<{ phase?: string; language?: string }>(usageFile(s)).filter((r) => r.phase === "translate");
+    const usage = readJsonl<{ phase?: string; language?: string; batch?: number }>(usageFile(s)).filter((r) => r.phase === "translate");
     expect(usage.length).toBe(runs.length);
     expect(usage.every((r) => r.language === "es")).toBe(true);
+    // Batches are numbered from 1.
+    expect(usage.map((r) => r.batch)).toEqual(runs.map((_, i) => i + 1));
     expect(savedConfig(s)).toMatchObject({ language: "es", languageOffered: true });
     // The answered offer doesn't come back.
     await expect(page.getByRole("region", { name: /in another language/ })).toHaveCount(0);
@@ -105,6 +107,7 @@ test("a failed run stays in the old screens, keeps the saved language, and offer
     await expect(page.getByRole("tab", { name: "General" })).toBeVisible();
     expect(savedConfig(s).language).toBe("es");
     expect(await page.evaluate(() => document.documentElement.lang)).not.toBe("es");
+    expect(fs.existsSync(path.join(s.userData, "locales", "es.json"))).toBe(false);
   } finally {
     await closeAndClean(app, s);
   }
@@ -147,7 +150,7 @@ test("changing the engine stops a translation run", async () => {
     await expect.poll(() => batchRuns(s).length, { timeout: 30_000 }).toBe(1);
     await expect(page.getByText(/^Translating… \d+ of \d+$/)).toBeVisible();
     await page.getByRole("tab", { name: "Engine" }).click();
-    await page.getByRole("button", { name: /Codex/ }).first().click();
+    await page.getByRole("group", { name: "AI engines" }).getByRole("button", { name: /Codex/ }).click();
     await page.getByRole("button", { name: "Use Codex" }).click();
     await expect.poll(() => savedConfig(s).engineId, { timeout: 30_000 }).toBe("codex");
     await page.getByRole("tab", { name: "General" }).click();

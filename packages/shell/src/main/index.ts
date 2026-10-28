@@ -1016,10 +1016,13 @@ function engineReady(engine: EngineDef, fresh = false): Promise<boolean> {
   return ready;
 }
 
-/** The set-up engine when a run could use it (the app is set up, its notice accepted), else null. */
+/**
+ * The set-up engine when a run could use it (the app is set up, its notice accepted), else null. It reads the
+ * saved config, not validConfig(): with profiles and no active profile there is no base, but the engine is ready.
+ */
 async function translateEngine(fresh = false): Promise<EngineDef | null> {
-  const c = await validConfig();
-  if (!c || !(await hasNotice(c.engineId))) return null;
+  const c = await config.load();
+  if (!isConfigured(c) || !(await hasNotice(c.engineId))) return null;
   const engine = getEngine(c.engineId);
   return (await engineReady(engine, fresh)) ? engine : null;
 }
@@ -1042,8 +1045,8 @@ function buildTranslation(): TranslationService {
       return (await translateEngine()) ? true : "no-engine";
     },
     engineName: async () => {
-      const c = await validConfig();
-      return c ? getEngine(c.engineId).name : undefined;
+      const c = await config.load();
+      return isConfigured(c) ? getEngine(c.engineId).name : undefined;
     },
     prepare: async () => {
       if (hooks.mock) return null;
@@ -1059,14 +1062,15 @@ function buildTranslation(): TranslationService {
       );
       const launcher = electronLauncher(process.execPath);
       // Each turn is logged in the current base (Decision 9), failed turns included; with profiles and none active,
-      // there is no base and nothing is logged. Translate lines never carry a scope.
+      // there is no base and nothing is logged. Translate lines never carry a scope. `turn` is 0-based; the log's
+      // batch is 1-based.
       const log = async (r: SystemTaskResult, turn: number, tag: string) => {
         const c = await validConfig();
         if (!c) return;
         const record = translateRecord({
           engine: engine.id,
           language: tag,
-          batch: turn,
+          batch: turn + 1,
           profile,
           ok: r.ok,
           ...(r.ok && r.usage ? { usage: r.usage } : {}),
@@ -1784,6 +1788,8 @@ function registerIpc() {
     await new Promise<void>((resolve, reject) => execFile(terminal.command, terminal.args, (err) => (err ? reject(err) : resolve())));
   });
   handle("hh:resetSharedConfig", async () => {
+    // A reset drops the engine set-up: a translation run must not keep using it.
+    await translation?.stop().catch((err: unknown) => console.error("Could not stop the translation", err));
     await shared.reset();
   });
   handle("hh:revealFolder", async () => {

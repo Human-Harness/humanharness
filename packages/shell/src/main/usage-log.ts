@@ -57,7 +57,7 @@ export interface UsageRecord extends ProfileFields {
   source?: string;
   /** Material lines only: the fragments the stage handled (its prompt listed). */
   fragments?: number;
-  /** Translate lines only: the target language and the batch's index. */
+  /** Translate lines only: the target language and the batch's number in its run, 1-based (the first batch is 1). */
   language?: string;
   batch?: number;
   /** `checkpoint`: the quiet turn that saves a note before the cap; `compaction`: the engine compacted (no usage). */

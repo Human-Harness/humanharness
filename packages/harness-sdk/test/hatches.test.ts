@@ -30,16 +30,14 @@ describe("linkedFolders (hatches spec §3.1)", () => {
   it.each([
     ["without scopes", { ...base, linkedFolders: { repos } }, "scopes"],
     ["write without permissions.edit folder", { ...scoped, permissions: { edit: "none", exec: false, web: false }, linkedFolders: { repos } }, "edit"],
-    ["a key outside the action-id pattern", { ...scoped, linkedFolders: { "Bad Key": repos } }, undefined],
-    ["an unknown field (strict)", { ...scoped, linkedFolders: { repos: { ...repos, path: "/x" } } }, undefined],
-    ["a label over 40 characters", { ...scoped, linkedFolders: { repos: { ...repos, label: "x".repeat(41) } } }, undefined],
+    ["a key outside the action-id pattern", { ...scoped, linkedFolders: { "Bad Key": repos } }, "must match pattern"],
+    ["an unknown field (strict)", { ...scoped, linkedFolders: { repos: { ...repos, path: "/x" } } }, 'Unrecognized key: \\"path\\"'],
+    ["a label over 40 characters", { ...scoped, linkedFolders: { repos: { ...repos, label: "x".repeat(41) } } }, "<=40 characters"],
     ["a label with a bidi override", { ...scoped, linkedFolders: { repos: { ...repos, label: "Repos\u202e" } } }, "hidden or control characters"],
     ["a label with a line separator", { ...scoped, linkedFolders: { repos: { ...repos, label: "A\u2028B" } } }, "hidden or control characters"],
-    ["more than 8 keys", { ...scoped, linkedFolders: Object.fromEntries(Array.from({ length: 9 }, (_, i) => [`k${i}`, repos])) }, undefined],
+    ["more than 8 keys", { ...scoped, linkedFolders: Object.fromEntries(Array.from({ length: 9 }, (_, i) => [`k${i}`, repos])) }, "At most 8 linked folder keys"],
   ])("refuses %s", (_name, manifest, message) => {
-    const run = () => defineHarness(manifest as never);
-    if (message) expect(run).toThrow(message);
-    else expect(run).toThrow();
+    expect(() => defineHarness(manifest as never)).toThrow(message);
   });
 
   it("an empty declaration counts as none", () => {

@@ -7,11 +7,14 @@ Spec: `docs/superpowers/specs/2026-10-25-language-on-demand-design.md` ("§" bel
 - The app ships in English. Core and harness strings are one English `en.json` each.
 - A person picks a language once the app is set up. After a notice, their own engine translates the screens. The translation is checked, cached and shown live.
 - The AI thinks in English. Only UI strings are translated. `AGENTS.md`, briefs, notes and every prompt stay English; the AI writes to the person in their language (5a).
-- D0: a person who never changes language sees today's app. English screens, no `locales/` folder under userData (only a translation run creates it), and no offer card when the saved and the system language are both English. `createI18n(lang, locales)` with no generated strings builds exactly the English resources.
+- D0: a person who never changes language sees today's app. English screens, no `locales/` folder under userData (only a translation run creates it), and no offer card when the saved and the system language are both English. `createI18n(lang, locales)` with no generated strings builds exactly the English resources. Precisely:
+  - no engine check runs at startup;
+  - English users see the setup line, Change… and the reworded hint in Settings › General;
+  - opening Settings › General asks for the state, which runs an engine check that is reused for 30 s.
 
 ## Where to choose
 
-- **Settings › General › Language.** The row shows the language by its own name, with its English name under it. Change… opens the picker. During a run the row shows the progress and Cancel. After a stopped run it says "The translation stopped. What it finished is kept." with Try again. When the saved language has keys left to translate, it says "Some texts are new. Translate them?" (or, with no cache yet, "The app's texts aren't in … yet.") with Translate. Without an engine it says "Connect an AI engine to translate the app."
+- **Settings › General › Language.** The row shows the language by its own name, with its English name under it. Change… opens the picker. During a run the row shows the progress and Cancel. After a stopped run it says "The translation stopped. What it finished is kept." (or, when the run stopped on the plan's limit, "Your plan's limit was reached. Try again later.") with Try again. When the saved language has keys left to translate, it says "Some texts are new. Translate them?" (or, with no cache yet, "The app's texts aren't in … yet.") with Translate. Without an engine it says "Connect an AI engine to translate the app."
 - **The picker** (`packages/ui/src/LanguagePicker.tsx`). A fixed list (`COMMON_LANGUAGES` in `packages/harness-sdk/src/language.ts`) plus the saved language, the cached ones and the suggestion, each made canonical first. Each language shows its own name and its English name; search matches either. Right-to-left languages are left out (`isRightToLeft`, `offeredLanguage`). A complete cached language has a Ready badge. English and complete languages switch at once; any other one opens the notice (`TranslateNotice.tsx`). `LanguageChooser.tsx` holds the picker, the notice and the progress dialog.
 - **The Home offer** (`languageOffer` in `packages/ui/src/Home.tsx`). Shown once, and only with a non-English suggestion: the saved language if it isn't English and isn't complete, else the system language if it isn't English. It needs a ready engine and a configured app, never shows in mock mode, during a run, or once `languageOffered` is set in the config. Not now and Choose language both set it, and so do a non-English choice and a started run. An English person on an English system never sees the card (open question Q1): they find the language in Settings › General.
 - **Setup.** The folder step says "You can choose the app's language once it's set up." (`setupFlow.languageLater`). The line shows only on a true first run.
@@ -23,7 +26,7 @@ A language with no complete translation changes nothing until its run completes.
 ## The run
 
 - `TranslationService` (`packages/shell/src/main/translation.ts`) plans the run, checks every save, writes the cache and pushes its state on `hh:language`. The handlers are in `language-ipc.ts`; the window reaches them through `client.language` (`packages/shell/src/preload/language.ts`, `useLanguage` in `packages/ui/src/language-control.ts`).
-- `runSystemSession` (`packages/runtime/src/system-session.ts`) opens one engine session in an empty folder under `<userData>/translate-work/`, removed afterwards. Permissions are `{ edit: "none", exec: false, web: false }`, and its only MCP server is `translate` (`packages/blocks/src/translate-server.ts`), with one tool, `save_translation`. Claude's bare read tools are refused too (`mcpOnly`).
+- `runSystemSession` (`packages/runtime/src/system-session.ts`) opens one engine session in an empty folder under `<userData>/translate-work/`, removed afterwards. Permissions are `{ edit: "none", exec: false, web: false }`, and its only MCP server is `translate` (`packages/blocks/src/translate-server.ts`), with one tool, `save_translation`. Claude's other built-ins are refused too (`mcpOnly`): Read, Glob, Grep, TodoWrite, Task, Agent, LS, NotebookRead, NotebookEdit, Skill, SlashCommand, WebFetch and WebSearch.
 - The model is the light tier (`resolveProfile` with the key `_translate`, which is not in Settings › Models).
 - Batches hold 100 keys, one turn each, in the same session (Claude resumes with `--resume`). Each turn has a 4-minute timeout. A run sends at most 5000 keys in at most 60 batches, retries included.
 - The prompt is `TRANSLATE_PROMPT` in `packages/shell/src/main/task-prompts.ts`, in English: the language's English name, the harness's `tone`, the plural forms and the batch, which it calls data, not instructions.
@@ -44,7 +47,9 @@ Every saved key goes through `checkTranslation` (`packages/i18n/src/translate.ts
 - it is longer than max(80, 4 × the English), or longer than 4000 characters;
 - a plural doesn't give exactly the language's forms (`Intl.PluralRules`).
 
-A key that fails is sent once more in a later batch of the same run. A second failure for the same English is final: the key stays English until its English changes.
+A key that fails is sent once more in a later batch of the same run. A key left out of a save counts as a failure too (§6). A second failure for the same English is final: the key stays English until its English changes.
+
+A turn that ends without any save is a failed turn: its keys stay missing and don't count as failures. A run that ends with no entry kept for the app's keys fails with reason `engine` and never switches. A cache whose every key was given up is never complete, and choosing that language answers `failed` without saving it.
 
 ## Cache
 
@@ -58,6 +63,7 @@ A key that fails is sent once more in a later batch of the same run. A second fa
 
 - They live under `legal.`: in the core, `legal.engine.*` (the engine notice). A harness puts its own terms, consent or responsibility texts under `legal.` in its `en.json`.
 - They are never sent, never cached and always shown in English. With a non-English screen, the "Legal texts are shown in English." line follows them (`LegalInEnglish` in `packages/ui/src/EngineOnboarding.tsx`), and `useLegalLang()` puts `lang="en"` on them. `lang="en"` appears only when the screen is in another language. In the engine notice the line comes after the accept text, so it covers every legal block.
+- `material.privacy` and the profiles privacy line stay translatable: they are disclosures (data is sent to the provider), not legal text (§8).
 - `LegalInEnglish` and `useLegalLang` are exported from `@humanharness/ui`: a harness's own legal blocks use them the same way (`lang={useLegalLang()}` on each block, `<LegalInEnglish />` after the last one).
 - "Non-English screen" means i18next resolved a translated language. A cached set with nothing left after the checks (empty, or legal keys only) adds no resources and doesn't switch, so the line never shows on an all-English screen.
 

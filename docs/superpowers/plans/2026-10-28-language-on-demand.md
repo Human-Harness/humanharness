@@ -54,6 +54,10 @@ The work splits into five parts:
 - **§3, "the picker is disabled" without an engine.** The picker still opens so a person can always go back to English or to a complete cached language. Every language that would need a translation is disabled, with "Connect an AI engine to translate the app." This covers mock mode too.
 - **§2, "built from `Intl.supportedValuesOf`".** Not possible (no `"language"` key): see Decision 10.
 - **§5, "the working folder is an empty folder in the app's data".** Kept (`<userData>/translate-work/<random>`). Claude's own session record lands in the engine's store because turns must resume. The app never reads it.
+- **§5, "only the translate tool".** Codex's read-only mode may read files without asking, so the app's refusal covers only the reads it asks about.
+- **§6, keys the agent leaves out.** A key left out of a save counts as a failure, like a refused one: sent once more, then final. A turn with no save at all is a failed turn instead, and a run that keeps nothing fails.
+- **§7, "the open task keeps its language".** The open task's language is kept in memory only: after a restart, the task uses the saved language again.
+- **§8, legal texts.** `material.privacy` and the profiles privacy line stay translatable: they are disclosures, not legal text.
 
 ## File Structure
 

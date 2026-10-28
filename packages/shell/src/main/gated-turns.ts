@@ -16,9 +16,16 @@ export type Turns = { send(message: string, options: TurnOptions): Promise<void>
  * caller's `onEvent` gets a cancelled `done`, as TurnController's cancel before the runtime starts does; the window gets
  * it too, unless the turn is quiet or held, so it drops the turn it shows. Nothing is written to the chat. A turn the
  * gate couldn't get ready (its `beforeStart` failed) ends the same way with an `agent-crashed` `done`.
- * A turn that ends `out-of-quota` pauses both queues until the reset the engine reported last, if any.
+ * A turn that ends `out-of-quota` pauses both queues until the reset the engine reported last, if it is still ahead;
+ * otherwise until the person's Resume. It never replaces another kind of pause (a folder move).
  */
-export function gatedTurns(lane: string, gate: TurnGate, inner: Turns, o: { cap: Cap; emit?: (e: Event) => void }): Turns & { isQueued(): boolean } {
+export function gatedTurns(
+  lane: string,
+  gate: TurnGate,
+  inner: Turns,
+  o: { cap: Cap; emit?: (e: Event) => void; now?: () => number },
+): Turns & { isQueued(): boolean } {
+  const now = o.now ?? Date.now;
   /** From the send until the turn starts: queued, in the gate's `beforeStart`, or let in and not yet started. */
   let waiting = false;
   /** A cancel that came once the gate had let the turn in, before the send saw it. */
@@ -40,6 +47,16 @@ export function gatedTurns(lane: string, gate: TurnGate, inner: Turns, o: { cap:
     }
   };
 
+  /** Pauses the queues; a reset already past would let the next turns run into the same wall, so it waits for Resume. */
+  const outOfQuota = (resetsAt: string | undefined) => {
+    const ahead = resetsAt !== undefined && Date.parse(resetsAt) > now() ? resetsAt : undefined;
+    const current = gate.paused();
+    if (current && current.reason !== "out-of-quota") return;
+    // Another lane's pause with a reset to wait for keeps it: this end knows none.
+    if (current?.resetsAt && !ahead) return;
+    gate.pause({ reason: "out-of-quota", ...(ahead ? { resetsAt: ahead } : {}) });
+  };
+
   const run = async (message: string, options: TurnOptions, release: () => void) => {
     let resetsAt: string | undefined;
     try {
@@ -47,7 +64,7 @@ export function gatedTurns(lane: string, gate: TurnGate, inner: Turns, o: { cap:
         ...options,
         onEvent: (e) => {
           if (e.type === "limits") resetsAt = resetOf(e.windows) ?? resetsAt;
-          if (e.type === "done" && !e.ok && e.error.code === "out-of-quota") gate.pause({ reason: "out-of-quota", ...(resetsAt ? { resetsAt } : {}) });
+          if (e.type === "done" && !e.ok && e.error.code === "out-of-quota") outOfQuota(resetsAt);
           options.onEvent?.(e);
         },
       });
@@ -58,7 +75,7 @@ export function gatedTurns(lane: string, gate: TurnGate, inner: Turns, o: { cap:
 
   return {
     send(message, options) {
-      if (waiting) return Promise.reject(new Error("A turn is already running"));
+      if (waiting || inner.isBusy()) return Promise.reject(new Error("A turn is already running"));
       const free = gate.tryAcquire(o.cap, { id: lane });
       if (free) return run(message, options, free);
       waiting = true;
@@ -73,7 +90,7 @@ export function gatedTurns(lane: string, gate: TurnGate, inner: Turns, o: { cap:
         (err: unknown) => {
           waiting = false;
           if (err instanceof Dropped) return endUnstarted(options, fail("cancelled") as Done);
-          // The gate's `beforeStart` failed: it already gave the slot back.
+          // The gate's `beforeStart` failed: it already gave the slot back. The chat keeps no line of it (no chat log here).
           console.error("Could not get ready for the turn", err);
           endUnstarted(options, fail("agent-crashed", "Couldn't get ready for this turn") as Done);
         },

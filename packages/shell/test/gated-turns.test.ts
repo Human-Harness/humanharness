@@ -189,7 +189,7 @@ describe("gatedTurns (parallel spec §7)", () => {
   it("an out-of-quota end pauses the queues with the reset of the window that ran out", async () => {
     const gate = new TurnGate({ tasks: 2, jobs: 1 });
     const a = fakeTurns();
-    const ga = gatedTurns("a", gate, a, { cap: "tasks" });
+    const ga = gatedTurns("a", gate, a, { cap: "tasks", now: () => Date.parse("2026-10-28T12:00:00Z") });
     const p = ga.send("one", {});
     const on = a.pending[0].options.onEvent!;
     on({
@@ -205,6 +205,66 @@ describe("gatedTurns (parallel spec §7)", () => {
     await p;
     expect(gate.paused()).toEqual({ reason: "out-of-quota", resetsAt: "2026-10-28T15:00:00Z" });
     gate.resume();
+  });
+
+  /** Runs one turn on lane `id` that reports `windows` (if any) and ends out of quota. */
+  async function outOfQuotaTurn(gate: TurnGate, id: string, now: string, windows?: { kind: string; utilization: number; resetsAt: string }[]) {
+    const t = fakeTurns();
+    const p = gatedTurns(id, gate, t, { cap: "tasks", now: () => Date.parse(now) }).send("one", {});
+    await flush();
+    const on = t.pending[0].options.onEvent!;
+    if (windows) on({ type: "limits", status: "rejected", windows });
+    on({ type: "done", ok: false, error: { code: "out-of-quota" } });
+    t.pending[0].resolve();
+    await p;
+  }
+
+  it("a reset already past is no reset: the queues wait for the person's Resume", async () => {
+    const gate = new TurnGate({ tasks: 2, jobs: 1 });
+    await outOfQuotaTurn(gate, "a", "2026-10-28T16:00:00Z", [{ kind: "five_hour", utilization: 1, resetsAt: "2026-10-28T15:00:00Z" }]);
+    expect(gate.paused()).toEqual({ reason: "out-of-quota" });
+    await flush();
+    expect(gate.paused()).toEqual({ reason: "out-of-quota" });
+  });
+
+  it("an out-of-quota end never replaces a folder-move pause", async () => {
+    const gate = new TurnGate({ tasks: 2, jobs: 1 });
+    const t = fakeTurns();
+    const p = gatedTurns("a", gate, t, { cap: "tasks", now: () => Date.parse("2026-10-28T12:00:00Z") }).send("one", {});
+    gate.pause({ reason: "folder-move" });
+    t.pending[0].options.onEvent!({ type: "limits", status: "rejected", windows: [{ kind: "five_hour", utilization: 1, resetsAt: "2026-10-28T12:00:01Z" }] });
+    t.pending[0].options.onEvent!({ type: "done", ok: false, error: { code: "out-of-quota" } });
+    t.pending[0].resolve();
+    await p;
+    expect(gate.paused()).toEqual({ reason: "folder-move" });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(gate.paused()).toEqual({ reason: "folder-move" });
+    gate.resume();
+  });
+
+  it("an out-of-quota end that knows no reset keeps another lane's pause and its reset", async () => {
+    const gate = new TurnGate({ tasks: 2, jobs: 1 });
+    const t = fakeTurns();
+    const p = gatedTurns("c", gate, t, { cap: "tasks" }).send("one", {});
+    // Another lane's turn ended out of quota while this one ran.
+    gate.pause({ reason: "out-of-quota", resetsAt: "2099-10-28T15:00:00Z" });
+    t.pending[0].options.onEvent!({ type: "done", ok: false, error: { code: "out-of-quota" } });
+    t.pending[0].resolve();
+    await p;
+    expect(gate.paused()).toEqual({ reason: "out-of-quota", resetsAt: "2099-10-28T15:00:00Z" });
+    gate.resume();
+  });
+
+  it("a second send while the lane's turn runs is refused before it reaches the gate", async () => {
+    const gate = new TurnGate({ tasks: 2, jobs: 1 });
+    const a = fakeTurns();
+    const ga = gatedTurns("a", gate, a, { cap: "tasks" });
+    void ga.send("one", {});
+    expect(gate.running("tasks")).toBe(1);
+    await expect(ga.send("two", {})).rejects.toThrow("A turn is already running");
+    expect(gate.running("tasks")).toBe(1);
+    expect(gate.queued("tasks")).toEqual([]);
+    expect(a.send).toHaveBeenCalledTimes(1);
   });
 
   it("an out-of-quota end with no limits reported pauses until the person resumes", async () => {

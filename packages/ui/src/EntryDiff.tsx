@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { FileRestoreResult, HarnessClient, TimelineEntry } from "./client";
 import { FileDiff } from "./FileDiff";
@@ -12,6 +12,7 @@ export function EntryDiff({
   backLabel,
   onBack,
   onRestored,
+  refresh,
 }: {
   client: HarnessClient;
   path: string;
@@ -22,6 +23,8 @@ export function EntryDiff({
   backLabel?: string;
   onBack: () => void;
   onRestored?: () => void;
+  /** Changes when the file on disk does (the reader passes its text): "Against the current version" is asked again. */
+  refresh?: unknown;
 }) {
   const { t } = useTranslation();
   const [mode, setMode] = useState<"here" | "current">("here");
@@ -47,6 +50,10 @@ export function EntryDiff({
   }, [working]);
   // Another entry or file: the last go-back's answer belonged to the one before.
   useEffect(() => setStatus(null), [path, entry.to]);
+  // A commit that touched the file (a go-back, the agent's edit): the comparison with the file now is stale.
+  const [commits, setCommits] = useState(0);
+  useEffect(() => client.files.onChange(path, () => setCommits((n) => n + 1)), [client, path]);
+  const now = useMemo(() => ({ refresh, commits }), [refresh, commits]);
   const from = mode === "here" ? entry.from : entry.to;
   const to = mode === "here" ? entry.to : "current";
   const goBack = async () => {
@@ -90,7 +97,7 @@ export function EntryDiff({
         {status}
       </p>
       {/* Keyed by the pair: a new entry, file or mode starts the diff afresh (its Source toggle included). */}
-      <FileDiff key={`${path}:${from}:${to}`} client={client} path={path} from={from} to={to} />
+      <FileDiff key={`${path}:${from}:${to}`} client={client} path={path} from={from} to={to} refresh={to === "current" ? now : undefined} />
     </div>
   );
 }

@@ -356,7 +356,12 @@ describe("changed files open their timeline (file-timeline spec §6.2)", () => {
     client.historyGroups = groups;
     const opened: [string, string][] = [];
     await renderIn("en", <HistoryPanel client={client} actions={actions} onClose={() => undefined} onOpenFile={(p, k) => opened.push([p, k])} />);
-    fireEvent.click(await screen.findByRole("button", { name: "History of plan.md" }));
+    const link = await screen.findByRole("button", { name: "History of plan.md" });
+    // The change's kind is the link's description: a screen reader hears it with the name.
+    const kind = document.getElementById(link.getAttribute("aria-describedby") ?? "");
+    expect(kind?.textContent).toBe(link.closest("li")?.querySelector(".hh-change")?.textContent);
+    expect(kind?.textContent).not.toBe("");
+    fireEvent.click(link);
     fireEvent.click(screen.getByRole("button", { name: "History of old.md" }));
     expect(opened).toEqual([
       ["plan.md", "modified"],

@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { useEffect, useState } from "react";
+import { I18nextProvider } from "react-i18next";
 import { afterEach, describe, expect, it } from "vitest";
 import { ChatView } from "../src/ChatView";
 import type { FileRestorePrompt, HarnessClient, TimelineEntry } from "../src/client";
@@ -45,6 +46,29 @@ describe("EntryDiff (file-timeline spec §4.1, §5, §6.1)", () => {
       [DOC, A, B],
       [DOC, B, "current"],
     ]);
+  });
+
+  it("against the current version asks again after a commit to the file, or when the reader's text changes", async () => {
+    const client = setup();
+    const view = await renderIn("en", <EntryDiff client={client} path={DOC} entry={entry} onBack={() => undefined} refresh="one" />);
+    await screen.findByText("New.");
+    const diffs = () => client.fileCalls.filter((c) => c.op === "diff" && c.args[2] === "current").length;
+    fireEvent.click(screen.getByRole("button", { name: "Against the current version" }));
+    await screen.findByText("No changes");
+    expect(diffs()).toBe(1);
+    client.diffs[`${DOC}|${B}|current`] = changed;
+    act(() => client.emitFileCommit([DOC]));
+    expect(await screen.findByText("New.")).toBeTruthy();
+    expect(diffs()).toBe(2);
+    view.rerender(
+      <I18nextProvider i18n={view.i18n}>
+        <EntryDiff client={client} path={DOC} entry={entry} onBack={() => undefined} refresh="two" />
+      </I18nextProvider>,
+    );
+    await waitFor(() => expect(diffs()).toBe(3));
+    // A commit to another file asks nothing.
+    act(() => client.emitFileCommit(["other.md"]));
+    expect(diffs()).toBe(3);
   });
 
   it("go back: the core's confirmation, then the restore; cancel keeps everything", async () => {

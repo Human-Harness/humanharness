@@ -344,15 +344,18 @@ export function HistoryPanel({
                     <div id={bodyId} className="hh-history-body">
                       {g.changes.length > 0 && (
                         <ul className="hh-history-files" aria-label={t("history.changedFiles")}>
-                          {g.changes.map((c) => (
+                          {g.changes.map((c, i) => (
                             <li key={c.path}>
-                              <span className={`hh-change ${c.kind}`}>{t(`history.change.${c.kind}`)}</span>
+                              <span id={`${bodyId}-k${i}`} className={`hh-change ${c.kind}`}>
+                                {t(`history.change.${c.kind}`)}
+                              </span>
                               {onOpenFile ? (
                                 <button
                                   type="button"
                                   className="hh-link hh-history-file-link"
                                   title={c.path}
                                   aria-label={t("history.openTimeline", { file: c.path })}
+                                  aria-describedby={`${bodyId}-k${i}`}
                                   onClick={() => onOpenFile(c.path, c.kind)}
                                 >
                                   <code>{c.path}</code>

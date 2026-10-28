@@ -14,11 +14,14 @@ export function ApprovedDiff({ client, path, refresh }: { client: HarnessClient;
   const [from, setFrom] = useState<string | null | "loading">("loading");
   useEffect(() => {
     let live = true;
+    // A reload that fails keeps the approval it had (the first load has none to keep).
+    const failed = () => live && setFrom((f) => (f === "loading" ? null : f));
     const load = () =>
-      client.files.timeline(path).then(
-        (r) => live && setFrom((r.ok ? r.entries.find((e) => e.kind === "approval" && e.lastApproved)?.to : undefined) ?? null),
-        () => live && setFrom(null),
-      );
+      client.files.timeline(path).then((r) => {
+        if (!live) return;
+        if (!r.ok) return failed();
+        setFrom(r.entries.find((e) => e.kind === "approval" && e.lastApproved)?.to ?? null);
+      }, failed);
     setFrom("loading");
     load();
     const off = client.files.onChange(path, load);

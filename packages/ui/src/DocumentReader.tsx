@@ -145,10 +145,24 @@ export function DocumentReader({
   const drawerId = useId();
   const drawerRef = useRef<HTMLElement>(null);
   const drawerButton = useRef<HTMLButtonElement>(null);
+  /** Where the document was (its heading at the top) when a diff took its place: back there on the way back. */
+  const placeBeforeDiff = useRef<string | null>(null);
+  const backFromDiff = useRef<string | null | undefined>(undefined);
+  const pickedNow = useRef(picked);
+  pickedNow.current = picked;
+  /** The History panel's link: focus goes into the drawer, so the first Esc closes it, not the reader. */
+  const focusDrawer = useRef(false);
   // The History panel's link opens the drawer, also on a document already shown.
   useEffect(() => {
-    if (target.timeline === true) setDrawer(true);
+    if (target.timeline !== true) return;
+    setDrawer(true);
+    focusDrawer.current = true;
   }, [path, target.nonce, target.timeline]);
+  useEffect(() => {
+    if (!drawer || !focusDrawer.current || !drawerRef.current) return;
+    focusDrawer.current = false;
+    drawerRef.current.focus({ preventScroll: true });
+  }, [drawer, path, target.nonce]);
   // Focus mode hides the drawer and shows the document itself.
   useEffect(() => {
     if (inFocus) setPicked(null);
@@ -205,7 +219,8 @@ export function DocumentReader({
     read();
     // The text changed (on disk, or by a swap): its review view too, so an approval turns stale and approve sends the new blob.
     const again = () => {
-      restore.current = headingAtTop(scrollRef.current);
+      // While a diff shows, the box holds the diff: the place to keep is the one saved when it opened.
+      if (!pickedNow.current) restore.current = headingAtTop(scrollRef.current);
       read();
       reviewAgain.current();
     };
@@ -264,7 +279,9 @@ export function DocumentReader({
     if (!doc?.ok) return;
     if (focused.current !== path) {
       focused.current = path;
-      (titleRef.current ?? scrollRef.current)?.focus({ preventScroll: true });
+      // Opened with the drawer (the History panel's link): focus stays in the drawer.
+      const inDrawer = target.timeline === true && drawerRef.current?.contains(document.activeElement) === true;
+      if (!inDrawer) (titleRef.current ?? scrollRef.current)?.focus({ preventScroll: true });
     }
     const id = restore.current;
     if (!id) return;
@@ -388,13 +405,33 @@ export function DocumentReader({
     onPrefs(next);
   };
   const crumbs = path.split("/").filter(Boolean);
-  /** Back from an entry's diff to the document; focus goes to the entry it came from (else the text), never lost. */
-  const leaveDiff = () => {
-    const inDrawer = drawerRef.current?.contains(document.activeElement) === true;
-    const from = drawerRef.current?.querySelector<HTMLElement>('.hh-timeline-pick[aria-current="true"]');
-    setPicked(null);
-    if (!inDrawer) (from ?? scrollRef.current)?.focus({ preventScroll: true });
+  /** Opens an entry's diff in place of the document, keeping the document's place for the way back. */
+  const pickEntry = (e: TimelineEntry) => {
+    if (!picked) placeBeforeDiff.current = headingAtTop(scrollRef.current);
+    setPick(null);
+    setDraft(null);
+    setPicked(e);
   };
+  /**
+   * Back from an entry's diff to the document, at the place it had. Focus that was in the diff (or nowhere) goes to
+   * the entry it came from (else the text); focus the person put elsewhere (a review card, the drawer) stays.
+   */
+  const leaveDiff = () => {
+    const active = document.activeElement;
+    const lost = active === null || active === document.body || scrollRef.current?.contains(active) === true;
+    const from = drawerRef.current?.querySelector<HTMLElement>('.hh-timeline-pick[aria-current="true"]');
+    backFromDiff.current = placeBeforeDiff.current;
+    setPicked(null);
+    if (lost) (from ?? scrollRef.current)?.focus({ preventScroll: true });
+  };
+  // The document drawn again after a diff: back to its place (the top when it had no heading above).
+  useLayoutEffect(() => {
+    if (picked || backFromDiff.current === undefined) return;
+    const id = backFromDiff.current;
+    backFromDiff.current = undefined;
+    if (id) scrollToId(scrollRef.current, id);
+    else scrollRef.current?.scrollTo?.({ top: 0 });
+  }, [picked]);
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.key !== "Escape") return;
     e.preventDefault();
@@ -614,9 +651,9 @@ export function DocumentReader({
               {notice}
             </p>
           )}
-          {review && diffOpen && !picked && doc?.ok && !source && <ApprovedDiff client={client} path={path} refresh={doc} />}
+          {review && diffOpen && !picked && doc?.ok && !source && <ApprovedDiff client={client} path={path} refresh={doc.text} />}
           {picked ? (
-            <EntryDiff client={client} path={path} entry={picked} busy={busy} onBack={leaveDiff} />
+            <EntryDiff client={client} path={path} entry={picked} busy={busy} onBack={leaveDiff} refresh={doc?.ok ? doc.text : undefined} />
           ) : (
             <article className={`hh-reader-doc hh-reader-${look.font}${look.size === "large" ? " hh-reader-large" : ""}`}>{body}</article>
           )}
@@ -657,17 +694,8 @@ export function DocumentReader({
         </div>
         {/* Only once opened: a reader without the drawer keeps its columns as they were. */}
         {drawer && !inFocus && !refused && (
-          <section className="hh-timeline-drawer" id={drawerId} ref={drawerRef} aria-label={t("timeline.title")}>
-            <FileTimeline
-              client={client}
-              path={path}
-              selected={picked?.to}
-              onPick={(e) => {
-                setPick(null);
-                setDraft(null);
-                setPicked(e);
-              }}
-            />
+          <section className="hh-timeline-drawer" id={drawerId} ref={drawerRef} tabIndex={-1} aria-label={t("timeline.title")}>
+            <FileTimeline client={client} path={path} selected={picked?.to} onPick={pickEntry} />
           </section>
         )}
         {/* No column until the first comment (§6.1). */}

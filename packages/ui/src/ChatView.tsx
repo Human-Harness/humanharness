@@ -145,6 +145,8 @@ export function ChatView({
     const active = document.activeElement;
     // A link inside the reader keeps the first opener.
     if (active instanceof HTMLElement && active !== document.body && !active.closest(".hh-reader")) readerOpener.current = active;
+    // A file's timeline panel would cover the reader.
+    setTimelineFile(null);
     setReader({ ...target, nonce: ++readerOpens.current });
   }, []);
   const [readerFull, setReaderFull] = useState(false);

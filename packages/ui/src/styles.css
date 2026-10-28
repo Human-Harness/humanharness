@@ -701,6 +701,8 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
   /* The narrow reviewing grid gets a third column for the drawer only while it is open. */
   .hh-reader-reviewing .hh-reader-columns:has(> .hh-timeline-drawer) { grid-template-columns: auto minmax(0, 1fr) auto; }
   .hh-reader-reviewing .hh-timeline-drawer { grid-column: 3; grid-row: 1; width: 220px; }
+  /* A reader without review keeps its flex row: a narrower drawer. */
+  .hh-timeline-drawer { flex-basis: 220px; }
 }
 .hh-reader-full .hh-main, .hh-reader-full .hh-flow-side, .hh-reader-full .hh-side { display: none; }
 .hh-reader-full .hh-reader { flex: 1 1 auto; border-left: none; }

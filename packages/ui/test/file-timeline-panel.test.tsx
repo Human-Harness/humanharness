@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { cleanup, fireEvent, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { ChatView } from "../src/ChatView";
 import type { HistoryTaskView, TimelineEntry } from "../src/client";
@@ -100,6 +100,15 @@ describe("the History panel's links in the window (file-timeline spec §6.2, Q10
     const panel = screen.getByRole("dialog", { name: `History of ${FILE}` });
     expect(await within(panel).findByRole("button", { name: /Spec writer/ })).toBeTruthy();
     fireEvent.keyDown(panel, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: `History of ${FILE}` })).toBeNull();
+  });
+
+  it("a document opened in the reader closes the timeline panel, which would cover it", async () => {
+    const client = await chat();
+    await openLink(FILE);
+    expect(screen.getByRole("dialog", { name: `History of ${FILE}` })).toBeTruthy();
+    act(() => client.openDocument("plan.md"));
+    expect(await screen.findByRole("complementary", { name: "Document" })).toBeTruthy();
     expect(screen.queryByRole("dialog", { name: `History of ${FILE}` })).toBeNull();
   });
 });

@@ -29,6 +29,7 @@ Every text in the manifest is one English string.
 | `setup` | Optional. The harness's own setup steps, after the folder and the engine: a form, an interview or a component (`docs/architecture/setup.md`) |
 | `material` | Optional. The person's own files (PDF, Word, spreadsheets, slides, ebooks, web pages, text), cut into fragments a task fetches on demand: the families it `accepts`, the `sheet` sections, `fragmentKinds`, the `items` collection fragments link to, `grounding`, the index `budget` and per-stage `tiers` (`docs/architecture/material.md`) |
 | `profiles` | Optional. Several people on one install, each with a folder of their own: `label` (what to call one, "student") and `fields` (the `profile` collection's fields the add and edit form asks for, `name` first) (`docs/architecture/profiles.md`) |
+| `sidekick` | Optional. The prompt coach: its `default` state, `tips`, the pre-send mode per action, `checks`, and the harness's `places` and `presets` (below; `docs/architecture/sidekick.md`) |
 
 ### Phases and the time box
 
@@ -53,6 +54,25 @@ session: {
 - `phases`: 1 to 12. Each has an `id` (the action id pattern), a `label` (≤ 80), an optional `brief` file (filled with `{{language}}`, `{{phase}}`, `{{previousPhase}}`, `{{timeLeft}}`), `auto` (the agent may move on alone), `modes` (`"any"`, `"none"` or a list of the action's modes) and `close: true` (the part that ends with the core closing turn).
 - `timeBox`: `options` (1 to 6 whole minutes, 1–240), `default` (one of them, or `null` for no limit; absent is `null`), `wrapUpAt` (optional, `0 < x ≤ 1`). It works with or without phases.
 
+### Sidekick places and presets
+
+Two optional lists in the `sidekick` block (`sidekickSchema` in `packages/harness-sdk/src/sidekick.ts`). From a manifest:
+
+```ts
+sidekick: {
+  default: "off",
+  places: [{ id: "summary", label: "Summary", description: "The session summary the harness shows at the end." }],
+  presets: [
+    { name: "Guard", mark: "🛡️", personality: "Calm and brief.", purposes: [{ id: "process-guard" }] },
+    { name: "Reader", mark: "📖", personality: "", purposes: [{ id: "custom", text: "Point out what the summary leaves out.", moments: ["place:summary"] }] },
+  ],
+},
+```
+
+- `places[]`: at most 12. `id` (`^[a-z][a-z0-9_-]{0,63}$`, unique), `label` (≤ 40), `description` (≤ 300): a part of the harness's screen where its UI can ask a sidekick about some content with `client.sidekick.ask(id, content)` and show the short free-text answer.
+- `presets[]`: at most 8 ready-made sidekicks the person is offered in Settings and may add. `name` (≤ 40), `mark` (≤ 16, an emoji or short text), `personality` (≤ 1,500, may be empty), `purposes` (1–6): `{ id: "prompt-coach" | "focus" | "process-guard" | "mentor" | "daily-summary" }` or `{ id: "custom", text (≤ 600), moments (1–7) }`. A moment is `pre-send`, `after-reply`, `heads-up`, `before-approve`, `phase-change`, `daily` or `place:<id>`.
+- A manifest without them parses to the same object as before (D0).
+
 The harness's screen is `ui/App.tsx`: the shell build (`packages/shell/electron.vite.config.ts`) bundles it from the harness folder.
 
 ## Checks
@@ -68,6 +88,7 @@ The harness's screen is `ui/App.tsx`: the shell build (`packages/shell/electron.
 - Setup steps: 1 to 8, ids unique. A form takes a `single`, unscoped collection and fields the core form can draw, or settings of the harness, not both. An interview's action isn't in `path`, isn't `deep`, runs app-wide and backs one interview; its `writes` collection is `single`, unscoped and `agent: "write"`. `humanharness check` also warns about a component it can't find in `ui/` (`setup-component`), an interview's action without a recording once `mock/` has recordings (`setup-mock`) and an interview's collection without `context` (`setup-context`) (`docs/architecture/setup.md`).
 - Profiles: `profiles` needs a `profile` collection with `single: true`, `scoped: false` and a `name` field that is a string (`z.string()`, with or without bounds). `fields` has 1 to 6 entries, each once, starts with `name`, and names only fields of that collection the core form can draw (`docs/architecture/profiles.md`).
 - Material: `accepts` and `fragmentKinds` list each value once; `sheet.sections` ids are unique and aren't the core's (`notation`, `not-covered`); `items.collection` is declared in `data`, has a key (not `single`) and isn't hidden from the agent (`agent: "none"`), and `items.label` is one of its fields; the action ids `material-review`, `material-repair`, `material-label`, `material-sheet` and `material-link` are reserved. `humanharness check` also warns about a `light` review tier (`material-review-tier`) and an app-wide `items` collection in a harness with scopes (`material-items-scope`) (`docs/architecture/material.md`).
+- Sidekick: `sidekick` can't be an action id or a collection name; every action in `sidekick.actions` must exist; place ids are unique; a preset's custom `place:<id>` moment must name a place declared in `sidekick.places` (a parse error). `humanharness check` warns about tips over 300 tokens (`sidekick-tips`) (`docs/architecture/sidekick.md`).
 - A harness whose id is `ui` or `data` can't have `mcp` entries (those are the built-in server names).
 - `resolveInHarness` refuses any path that leaves the harness folder: every action's prompt, every mode's brief and every phase's brief (checked by `loadHarness`), and the instructions, seed, logo and MCP servers when they are used.
 
@@ -81,4 +102,5 @@ The harness's screen is `ui/App.tsx`: the shell build (`packages/shell/electron.
 - `packages/harness-sdk/src/setup.ts`: the `setup` schema, `interviewCollections`, `setupFormSpec`.
 - `packages/harness-sdk/src/material.ts`: the `material` schema, `MATERIAL_FAMILIES`, `MATERIAL_STAGES`, `hasMaterial`, `materialStageKey`, `stageTier`.
 - `packages/harness-sdk/src/profiles.ts`: the `profiles` schema, `PROFILE_COLLECTION`, `PROFILE_COLORS`, `hasProfiles`, `profileFormSpec`.
+- `packages/harness-sdk/src/sidekick.ts`: the `sidekick` schema, moments, purposes, places, presets and the `sidekick` collection's records.
 - `harnesses/demo/harness.config.ts`: a complete manifest.

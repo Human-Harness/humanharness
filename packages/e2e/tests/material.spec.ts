@@ -148,7 +148,8 @@ test("D0: a harness without material has no panel and no material files", async 
     await expect(page.getByRole("heading", { name: "All set" })).toBeVisible();
     await page.getByRole("button", { name: "Start Family Tutor" }).click();
     await page.getByRole("button", { name: /Practice/ }).first().click();
-    await expect(page.getByText("Una pregunta corta.")).toBeVisible();
+    // Scoped to the chat entry: ChatView's hidden sidekick live region can carry the same text.
+    await expect(page.locator('[data-role="assistant"]').getByText("Una pregunta corta.")).toBeVisible();
     await expect(page.getByRole("heading", { name: "Material" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Add a file" })).toHaveCount(0);
     const sofi = path.join(s.folder, "sofi");

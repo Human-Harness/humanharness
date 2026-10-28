@@ -11,7 +11,7 @@ import { LaneStore } from "./lane-store";
 import { LiveBuffer, laneEmit } from "./live-buffer";
 import { type EngineHold, effectiveCaps, engineHold } from "./parallel-config";
 import { TaskBoard, type LaneHandle } from "./task-board";
-import { type TaskDeps, TaskManager } from "./task-manager";
+import { type PhaseMoved, type TaskDeps, TaskManager, type TurnEnd } from "./task-manager";
 import { CONFLICT_MAX, type CurrentTask, TaskStore, emptyTasks, scopeOfTask } from "./task-store";
 import { type ChatLogLike, type TurnDeps, type TurnOptions, TurnController, memoise } from "./turn-controller";
 import { TurnGate } from "./turn-gate";
@@ -118,6 +118,11 @@ interface Lane {
   marking: Promise<void>;
   /** The lane's task as tasks.json last had it (its name and scope never change): conflicts name it synchronously. */
   task?: CurrentTask;
+  /**
+   * Sidekick heard this turn start: the lane was focused at its send (`send`) and, for a run turn, at `turnStarting`
+   * (`run`). Its end is heard only then, and only if the lane is still focused: never an end without its start.
+   */
+  heard: { send: boolean; run: boolean };
 }
 
 /** A notice for a task's chat (`scope`: the chat it is in). */
@@ -269,7 +274,7 @@ export function createBoardHost(d: BoardHostDeps, initial: { engineId: string | 
 
   function newLane(id: string): Lane {
     const emit = laneEmit(id, buffer, { isFocused: (x) => board.isFocused(x), toWindow: (e) => d.emit(e) });
-    const lane = { id, known: null, startFailed: false, store: new LaneStore(file, id), emit, notices: [], marking: Promise.resolve() } as unknown as Lane;
+    const lane = { id, known: null, startFailed: false, store: new LaneStore(file, id), emit, notices: [], marking: Promise.resolve(), heard: { send: false, run: false } } as unknown as Lane;
     lane.slot = memoise<SessionSlot>(async () => {
       const ws = await workspace.get();
       if (!ws) return null;
@@ -312,6 +317,8 @@ export function createBoardHost(d: BoardHostDeps, initial: { engineId: string | 
       send(message: string, options: TurnOptions) {
         // The person's line starts the buffer of what focusing this lane replays (Decision 6).
         if (!lane.turns.isBusy() && !options.quiet && !options.skipUserEntry) buffer.user(id, { text: options.display ?? message, at: new Date().toISOString() });
+        // A send refused because a turn runs leaves that turn's mark alone.
+        if (!lane.turns.isBusy()) lane.heard.send = board.isFocused(id);
         // This send's own usage events only: a retry is another send with its own (spec §9.1).
         let used = 0;
         return lane.turns
@@ -351,6 +358,43 @@ export function createBoardHost(d: BoardHostDeps, initial: { engineId: string | 
       get: () => {
         const fn = d.taskDeps.betweenTasks;
         return fn ? () => refreshSoon(fn) : undefined;
+      },
+    });
+    // Sidekick follows only the focused task (its cards are about the chat on screen). Getters, as in the plain app:
+    // undefined until its controller exists (D0).
+    Object.defineProperties(deps, {
+      turnStarting: {
+        get: () => {
+          const fn = d.taskDeps.turnStarting;
+          return fn
+            ? () => {
+                lane.heard.run = board.isFocused(id);
+                if (lane.heard.run) fn();
+              }
+            : undefined;
+        },
+      },
+      turnEnded: {
+        get: () => {
+          const fn = d.taskDeps.turnEnded;
+          return fn
+            ? (end: TurnEnd) => {
+                const heard = lane.heard.send && (end.kind !== "run" || lane.heard.run);
+                lane.heard = { send: false, run: false };
+                if (heard && board.isFocused(id)) fn(end);
+              }
+            : undefined;
+        },
+      },
+      phaseMoved: {
+        get: () => {
+          const fn = d.taskDeps.phaseMoved;
+          return fn
+            ? (e: PhaseMoved) => {
+                if (board.isFocused(id)) fn(e);
+              }
+            : undefined;
+        },
       },
     });
     const manager = new TaskManager(deps);

@@ -42,6 +42,8 @@ function host(
     onSession?: (key: string, o: SlotOptions) => void;
     chatLogNull?: () => boolean;
     attention?: BoardHostDeps["attention"];
+    /** More task deps (Sidekick's hooks, phased actions). */
+    taskDeps?: Partial<TaskDeps>;
   } = {},
 ) {
   const base = fs.mkdtempSync(path.join(root, "b-"));
@@ -119,6 +121,7 @@ function host(
     writeNote: async () => {},
     endSession: async () => {},
     changed: () => {},
+    ...o.taskDeps,
   };
   const deps: BoardHostDeps = {
     suggested: { tasks: 1, jobs: 1 },
@@ -708,5 +711,133 @@ describe("conflicts and tokens per task (parallel spec §5.3, §9.1)", () => {
     t.turns[1].end();
     await follow;
     expect(t.turns[1].message).toContain("More");
+  });
+});
+
+describe("Sidekick in board mode: only the focused task (sidekick spec §4.2, §2a.2)", () => {
+  /** Sidekick's three hooks, recording which task each call was about. */
+  function sidekick() {
+    const heard = { starting: 0, ended: [] as [string, string][], moved: [] as [string, string][] };
+    const hooks: Partial<TaskDeps> = {
+      turnStarting: () => void heard.starting++,
+      turnEnded: (end) => void heard.ended.push([end.task.id, end.kind]),
+      phaseMoved: (e) => void heard.moved.push([e.task.id, e.to]),
+    };
+    return { heard, hooks };
+  }
+
+  it("a turn is heard only when its task is focused as it starts and as it ends", async () => {
+    const s = sidekick();
+    const t = host({ tasks: 2, taskDeps: s.hooks });
+    await t.h.interrupt();
+    const a = t.h.board.start("write", "First");
+    await until(() => t.turns.length === 1);
+    // A started focused: Sidekick hears its start.
+    expect(s.heard.starting).toBe(1);
+    const b = t.h.board.start("write", "Second");
+    await until(() => t.turns.length === 2);
+    expect(s.heard.starting).toBe(2);
+    const [ta, tb] = t.turns;
+    // A ends in the background (B is focused): no after-reply about a chat the person isn't looking at.
+    ta.end();
+    await a;
+    expect(s.heard.ended).toEqual([]);
+    // B, focused throughout, is heard as in the plain app.
+    tb.end();
+    await b;
+    expect(s.heard.ended).toEqual([[tb.slot, "run"]]);
+    // A follow-up in a task focused again is heard again, start and end.
+    await t.h.board.focus(ta.slot);
+    const more = t.h.board.ask("More");
+    await until(() => t.turns.length === 3);
+    expect(s.heard.starting).toBe(3);
+    t.turns[2].end();
+    await more;
+    expect(s.heard.ended).toEqual([
+      [tb.slot, "run"],
+      [ta.slot, "run"],
+    ]);
+  });
+
+  it("focus that moves to a task mid-turn: Sidekick never hears an end whose start it didn't hear; a background phase move stays unheard", async () => {
+    const s = sidekick();
+    const t = host({
+      tasks: 2,
+      taskDeps: {
+        ...s.hooks,
+        actions: {
+          write: { label: "Write" },
+          staged: {
+            label: "Staged",
+            phases: [
+              { id: "warmup", label: "Warm-up", brief: "w.md", auto: true },
+              { id: "main", label: "Main block", brief: "m.md" },
+            ],
+          },
+        } as TaskDeps["actions"],
+        readPhaseBrief: async (_action, phase) => `Brief of ${phase}.`,
+      },
+    });
+    await t.h.interrupt();
+    const a = t.h.board.start("staged", "First");
+    await until(() => t.turns.length === 1);
+    const b = t.h.board.start("write", "Second");
+    await until(() => t.turns.length === 2);
+    const [ta, tb] = t.turns;
+    // A's warm-up asks for the next part while B is focused: the app moves A on its own, in the background.
+    ta.end([{ type: "block", name: "set_phase", data: { to: "main", reason: "Recall done" } }, ok]);
+    await until(() => t.turns.length === 3);
+    const change = t.turns[2];
+    expect(change.slot).toBe(ta.slot);
+    expect(s.heard.moved).toEqual([]);
+    // The person focuses A while its phase-change turn runs, and the turn ends there: its start wasn't heard.
+    await t.h.board.focus(ta.slot);
+    change.end();
+    await a;
+    expect(s.heard.ended).toEqual([]);
+    // B ends while A is focused: neither heard.
+    tb.end();
+    await b;
+    expect(s.heard.ended).toEqual([]);
+    expect(s.heard.starting).toBe(2);
+    // A's next turn starts and ends focused: heard, as in the plain app.
+    const more = t.h.board.ask("More");
+    await until(() => t.turns.length === 4);
+    t.turns[3].end();
+    await more;
+    expect(s.heard.ended).toEqual([[ta.slot, "run"]]);
+    expect(s.heard.starting).toBe(3);
+  });
+
+  it("a phase move of the focused task is heard", async () => {
+    const s = sidekick();
+    const t = host({
+      tasks: 2,
+      taskDeps: {
+        ...s.hooks,
+        actions: {
+          staged: {
+            label: "Staged",
+            phases: [
+              { id: "warmup", label: "Warm-up", brief: "w.md", auto: true },
+              { id: "main", label: "Main block", brief: "m.md" },
+            ],
+          },
+        } as TaskDeps["actions"],
+        readPhaseBrief: async (_action, phase) => `Brief of ${phase}.`,
+      },
+    });
+    await t.h.interrupt();
+    const a = t.h.board.start("staged", "First");
+    await until(() => t.turns.length === 1);
+    t.turns[0].end([{ type: "block", name: "set_phase", data: { to: "main", reason: "Recall done" } }, ok]);
+    await until(() => t.turns.length === 2);
+    expect(s.heard.moved).toEqual([[t.turns[0].slot, "main"]]);
+    t.turns[1].end();
+    await a;
+    expect(s.heard.ended).toEqual([
+      [t.turns[0].slot, "run"],
+      [t.turns[0].slot, "phase-change"],
+    ]);
   });
 });

@@ -56,6 +56,12 @@ describe("plugin-ui tokens (Decision 4)", () => {
     expect([...tokens(block(panel, '[data-theme="dark"]')).keys()]).toEqual([...appDark.keys()]);
   });
 
+  it("the app's theme is set on :root only, so html/body follow it and nothing else can set it", () => {
+    expect(panel).toMatch(/^:root\[data-theme="light"\] \{/m);
+    expect(panel).toMatch(/^:root\[data-theme="dark"\] \{/m);
+    expect(panel).not.toMatch(/(^|[^t])\[data-theme/m);
+  });
+
   it("every token plugin-ui.css uses is defined", () => {
     const css = readFileSync(join(SRC, "plugin-ui/plugin-ui.css"), "utf8");
     const used = new Set([...css.matchAll(/var\((--hh-[a-z0-9-]+)\)/g)].map((m) => m[1]));

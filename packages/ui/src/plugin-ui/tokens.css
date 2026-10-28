@@ -57,8 +57,9 @@
     color-scheme: dark;
   }
 }
-/* The theme the app sends (usePlugin().theme) wins over the system's; PluginRoot sets the attribute. */
-[data-theme="light"] {
+/* The theme the app sends (usePlugin().theme) wins over the system's. PluginRoot sets the attribute on <html> only once
+   the app said which, so until then the media query above decides (and html/body's background follows either way). */
+:root[data-theme="light"] {
   --hh-paper: #f4f4f1;
   --hh-sheet: #fbfbfa;
   --hh-surface: #ffffff;
@@ -85,7 +86,7 @@
   --hh-profile-gray: #d3d5d8;
   color-scheme: light;
 }
-[data-theme="dark"] {
+:root[data-theme="dark"] {
   --hh-paper: #161819;
   --hh-sheet: #1d2023;
   --hh-surface: #24282c;

@@ -30,7 +30,7 @@ const calls = (name?: string) => parent.posted.map((p) => p.msg).filter((m) => m
 
 describe("the panel bridge (Decision 7)", () => {
   it("a call posts { hh: 1, id, call, args } to the parent with target *", () => {
-    void bridge.call("settings.get", {});
+    bridge.call("settings.get", {}).catch(() => {});
     expect(parent.posted).toEqual([{ msg: { hh: 1, id: 1, call: "settings.get", args: {} }, target: "*" }]);
   });
 
@@ -70,6 +70,16 @@ describe("the panel bridge (Decision 7)", () => {
     const p = bridge.call("refresh", { source: "x" });
     fromApp({ hh: 1, re: 1, ok: false, error: "Unknown source" });
     await expect(p).rejects.toThrow("Unknown source");
+  });
+
+  it("dispose rejects every call still waiting", async () => {
+    vi.useFakeTimers();
+    const a = bridge.call("settings.get");
+    const b = bridge.call("refresh", { source: "x" });
+    bridge.dispose();
+    await expect(a).rejects.toThrow("Closed");
+    await expect(b).rejects.toThrow("Closed");
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it("an unanswered call rejects after 15 s", async () => {
@@ -166,7 +176,24 @@ describe("usePlugin and useQuery", () => {
     await screen.findByText("1903 light");
     act(() => fromApp({ hh: 1, event: "theme", dark: true }));
     await screen.findByText("1903 dark");
-    expect(container.querySelector(".hhp-root")?.getAttribute("data-theme")).toBe("dark");
+    expect(document.documentElement.dataset.theme).toBe("dark");
+    expect(container.querySelector(".hhp-root")?.hasAttribute("data-theme")).toBe(false);
+  });
+
+  it("<html> gets data-theme only once the app sent a theme, so until then the system's applies", async () => {
+    render(
+      <PluginRoot bridge={bridge}>
+        <p>themed</p>
+      </PluginRoot>,
+    );
+    await screen.findByText("themed");
+    expect(document.documentElement.hasAttribute("data-theme")).toBe(false);
+    act(() => fromApp({ hh: 1, event: "theme", dark: false }));
+    await waitFor(() => expect(document.documentElement.dataset.theme).toBe("light"));
+    act(() => fromApp({ hh: 1, event: "theme", dark: true }));
+    await waitFor(() => expect(document.documentElement.dataset.theme).toBe("dark"));
+    cleanup();
+    expect(document.documentElement.hasAttribute("data-theme")).toBe(false);
   });
 
   it("settings, refresh and requestAction post the calls main expects", async () => {
@@ -209,6 +236,62 @@ describe("mountPanel and PluginRoot", () => {
     await screen.findByText("hello panel");
     expect(document.querySelector("#root .hhp-root")).not.toBeNull();
     act(() => root.unmount());
+  });
+
+  it("listens before React's first render: a focus posted right after mountPanel reaches usePlugin", async () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    function Panel() {
+      return <p>focus {usePlugin().focus ?? "none"}</p>;
+    }
+    // No bridge passed: the panel's shared one, which mountPanel makes before rendering.
+    const root = mountPanel(Panel);
+    fromApp({ hh: 1, event: "focus", focus: "early" });
+    await screen.findByText("focus early");
+    act(() => root.unmount());
+  });
+
+  it("coalesces resizes to one report per animation frame and drops repeated heights", async () => {
+    let observed: (() => void) | undefined;
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        constructor(cb: () => void) {
+          observed = cb;
+        }
+        observe() {}
+        disconnect() {}
+      },
+    );
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => frames.push(cb));
+    vi.stubGlobal("cancelAnimationFrame", () => {});
+    let height = 40;
+    const rect = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(() => ({ height }) as DOMRect);
+    const flush = () => frames.splice(0).forEach((cb) => cb(0));
+    const heights = () => parent.posted.filter((p) => p.msg.call === "resize").map((p) => (p.msg.args as { height: number }).height);
+    try {
+      render(
+        <PluginRoot bridge={bridge}>
+          <p>x</p>
+        </PluginRoot>,
+      );
+      await waitFor(() => expect(heights()).toEqual([40]));
+      height = 50;
+      observed!();
+      height = 60;
+      observed!();
+      observed!();
+      expect(frames).toHaveLength(1);
+      expect(heights()).toEqual([40]);
+      flush();
+      expect(heights()).toEqual([40, 60]);
+      observed!();
+      flush();
+      expect(heights()).toEqual([40, 60]);
+    } finally {
+      rect.mockRestore();
+      vi.unstubAllGlobals();
+    }
   });
 
   it("reports its height with a resize message, never waiting for an answer", async () => {

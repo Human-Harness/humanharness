@@ -102,6 +102,11 @@ export function usePlugin(): PluginApi {
     if (e.event === "focus") setFocus(e.focus);
     if (e.event === "theme") setTheme(e.dark ? "dark" : "light");
   });
+  // An event between the first render and the subscription above reached the bridge but not this hook: read it back.
+  useEffect(() => {
+    setFocus(b.focus);
+    setTheme(themeOf(b));
+  }, [b]);
   const calls = useMemo(
     () => ({
       query: async <T,>(collection: string, opts: QueryOptions = {}) => {
@@ -121,20 +126,31 @@ export function usePlugin(): PluginApi {
 }
 
 /**
- * The panel's root: sets `data-theme` (tokens.css follows it) and reports the content's height to the app, which sizes
+ * The panel's root: sets `data-theme` on `<html>` once the app sent a theme (tokens.css follows it; before that the
+ * system's, through the media query) and reports the content's height to the app, which sizes
  * the frame (clamped there). `bridge` is for tests; a panel uses the shared one.
  */
 export function PluginRoot({ children, bridge }: { children: ReactNode; bridge?: PanelBridge }) {
   const b = bridge ?? panelBridge();
-  const [theme, setTheme] = useState<Theme>(() => themeOf(b));
+  const [dark, setDark] = useState<boolean | null>(b.dark);
   const root = useRef<HTMLDivElement>(null);
   useEvents(b, (e) => {
-    if (e.event === "theme") setTheme(e.dark ? "dark" : "light");
+    if (e.event === "theme") setDark(e.dark);
   });
+  useEffect(() => setDark(b.dark), [b]);
+  useEffect(() => {
+    if (dark === null) return;
+    const html = document.documentElement;
+    html.dataset.theme = dark ? "dark" : "light";
+    return () => {
+      delete html.dataset.theme;
+    };
+  }, [dark]);
   useEffect(() => {
     const el = root.current;
     if (!el || typeof ResizeObserver !== "function") return;
     let last = -1;
+    let frame = 0;
     // The root's own height: the document's scrollHeight never drops below the frame's, so a panel could never shrink.
     const report = () => {
       const height = Math.ceil(el.getBoundingClientRect().height);
@@ -142,19 +158,34 @@ export function PluginRoot({ children, bridge }: { children: ReactNode; bridge?:
       last = height;
       b.send("resize", { height });
     };
-    const ro = new ResizeObserver(report);
+    // At most one report per frame: a layout that settles over several observer callbacks costs the app one message.
+    const raf = typeof requestAnimationFrame === "function";
+    const schedule = () => {
+      if (!raf) return report();
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        report();
+      });
+    };
+    const ro = new ResizeObserver(schedule);
     ro.observe(el);
     report();
-    return () => ro.disconnect();
+    return () => {
+      ro.disconnect();
+      if (frame) cancelAnimationFrame(frame);
+    };
   }, [b]);
-  return createElement(BridgeContext.Provider, { value: b }, createElement("div", { ref: root, className: "hhp-root", "data-theme": theme }, children));
+  return createElement(BridgeContext.Provider, { value: b }, createElement("div", { ref: root, className: "hhp-root" }, children));
 }
 
 /** Renders the panel's component into `#root` (the page `build` writes). */
 export function mountPanel(Component: ComponentType, opts: { container?: Element; bridge?: PanelBridge } = {}): Root {
   const container = opts.container ?? document.getElementById("root");
   if (!container) throw new Error("The panel page has no #root");
+  // The bridge listens before React's first render, so a theme or focus the app posts right after load isn't lost.
+  const bridge = opts.bridge ?? panelBridge();
   const root = createRoot(container);
-  root.render(createElement(PluginRoot, { bridge: opts.bridge, children: createElement(Component) }));
+  root.render(createElement(PluginRoot, { bridge, children: createElement(Component) }));
   return root;
 }

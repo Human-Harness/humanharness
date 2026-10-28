@@ -81,9 +81,13 @@ export class PanelBridge {
     };
   }
 
+  /** Stops listening; every call still waiting rejects at once, rather than hanging until its timeout. */
   dispose(): void {
     this.win.removeEventListener("message", this.onMessage);
-    for (const p of this.pending.values()) clearTimeout(p.timer);
+    for (const p of this.pending.values()) {
+      clearTimeout(p.timer);
+      p.reject(new Error("Closed"));
+    }
     this.pending.clear();
     this.listeners.clear();
   }

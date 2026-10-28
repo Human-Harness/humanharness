@@ -47,7 +47,8 @@ export async function beginTurn(history: History, ledger: TurnLedger, key: strin
 }
 
 /**
- * Commits the turn's end. A window that never overlapped: exactly today's code (Turn / Undo by whole restore / Stopped).
+ * Commits the turn's end. A window that never overlapped: exactly today's code (Turn / Undo by whole restore / Stopped),
+ * except a job run's crash (trailer `job`), which restores only the paths it named.
  * Overlapped: its own paths in one commit, the shared ones in a second (Decision 5); a crash restores only its own paths
  * from the queue head (Decision 6), never another task's.
  *
@@ -63,6 +64,19 @@ export async function endTurn(
   trailer?: HistoryTrailer,
 ): Promise<TurnAttribution | null> {
   const crashed = !done.ok && done.error.code === "agent-crashed";
+  if (!w.overlapped && crashed && trailer?.job !== undefined) {
+    // A job's crash never goes back to its `Before message`: in single mode the app commits its own changes (a data
+    // write, a note, the material) while a job runs, and the whole-folder restore would wipe them. Only the paths the
+    // run named go back, from the head as it is then (as an overlapped crash's own paths). The window stays open until
+    // then, so a turn that starts meanwhile takes no snapshot of the run's half-done paths.
+    try {
+      const restore = (await history.changedSince(null)).filter((p) => w.edits.has(samePath(p)));
+      await history.restorePaths(restore, "HEAD", `${UNDO_PREFIX}the turn did not finish`, trailer);
+    } finally {
+      ledger.close(w.key);
+    }
+    return null;
+  }
   if (!w.overlapped) {
     // Closed before the first queued call, so a turn that starts now snapshots after this turn's commit.
     ledger.close(w.key);

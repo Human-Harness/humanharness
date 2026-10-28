@@ -59,6 +59,28 @@ describe("one turn alone: today's commits (D7)", () => {
     expect(await subjects()).toEqual(["Start", "Before message\n\nTask: t1"]);
   });
 
+  it("a job's crash alone restores only the paths it named, from the head: an app commit meanwhile stays", async () => {
+    const job = { task: "j1", job: "digest" };
+    const w = await beginTurn(history, ledger, "J", job);
+    expect(w.alone).toBe(true);
+    // Single mode: the person's data write commits the folder while the job runs.
+    write("data.json", "{}");
+    await history.save("Data: save", { task: "t1" });
+    write("job.md", "half");
+    write("seed.md", "job half");
+    ledger.noteEdits("J", [abs("job.md"), abs("seed.md")]);
+    write("loose.md", "?");
+    const before = await subjects();
+    expect(await endTurn(history, ledger, w, crashed, "digest", job)).toBeNull();
+    expect(read("data.json")).toBe("{}");
+    expect(exists("job.md")).toBe(false);
+    expect(read("seed.md")).toBe("s");
+    // A path it didn't name may be someone else's: it stays for the next commit.
+    expect(read("loose.md")).toBe("?");
+    expect(await subjects()).toEqual(before);
+    expect(ledger.anyRunning()).toBe(false);
+  });
+
   it("a stopped turn commits as Stopped, as today", async () => {
     const w = await beginTurn(history, ledger, "A", { task: "t1" });
     write("a.md", "a");

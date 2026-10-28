@@ -42,6 +42,7 @@ function host(
     onSession?: (key: string, o: SlotOptions) => void;
     chatLogNull?: () => boolean;
     attention?: BoardHostDeps["attention"];
+    saveOwn?: BoardHostDeps["saveOwn"];
     /** More task deps (Sidekick's hooks, phased actions). */
     taskDeps?: Partial<TaskDeps>;
   } = {},
@@ -142,6 +143,7 @@ function host(
     send: (channel, value) => sent.push({ channel, value }),
     label: (t) => t.action ?? t.question ?? "",
     ...(o.attention ? { attention: o.attention } : {}),
+    ...(o.saveOwn ? { saveOwn: o.saveOwn } : {}),
   };
   const h = createBoardHost(deps, { engineId: config.engineId, parallel: config.parallel });
   const lastState = () => [...sent].reverse().find((s) => s.channel === "hh:tasksChange")?.value as TasksState | undefined;
@@ -162,6 +164,28 @@ function host(
     file: () => new TaskStore(base).load(),
   };
 }
+
+describe("a lane's note goes into the history alone (parallel spec §5.3)", () => {
+  it("the closing note commits the note's file only, with the task's trailer, never the whole folder", async () => {
+    const saveOwn = vi.fn<NonNullable<BoardHostDeps["saveOwn"]>>(async () => {});
+    const saveHistory = vi.fn(async () => {});
+    const writeNote = vi.fn(async () => {});
+    const t = host({ tasks: 2, saveOwn, taskDeps: { saveHistory, writeNote } });
+    await t.h.interrupt();
+    const a = t.h.board.start("write", "First");
+    await until(() => t.turns.length === 1);
+    t.turns[0].end();
+    await a;
+    const closing = t.h.board.finish();
+    await until(() => t.turns.length === 2);
+    t.turns[1].end([{ type: "block", name: "save_note", data: { title: "Halves", summary: ["x"], decisions: [], files: [], open: [] } }, ok]);
+    await closing;
+    await until(() => saveOwn.mock.calls.length === 1);
+    expect(writeNote).toHaveBeenCalledWith("write", expect.anything(), expect.anything());
+    expect(saveHistory).not.toHaveBeenCalled();
+    expect(saveOwn).toHaveBeenCalledWith([".harness/notes/write.md"], "Note: Halves", expect.objectContaining({ task: t.turns[0].slot, action: "write" }));
+  });
+});
 
 describe("hostMode (D7)", () => {
   it("plain without parallel or jobs; board with parallel", () => {

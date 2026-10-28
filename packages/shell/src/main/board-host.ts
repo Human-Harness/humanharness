@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto";
 import { type ParallelCaps, isConcurrent } from "@humanharness/harness-sdk";
 import type { Event, HarnessWorkspace, SessionSlot, SlotRef, TurnAttribution } from "@humanharness/runtime";
 import { type AppConfig, type ChatEntry, type ChatLoad, type ChatNotice, type TaskSummary, type TaskView, type TasksState, isTurnEntry } from "@humanharness/ui/client";
-import { type History, MAIN_SCOPE, taskChatFile } from "@humanharness/workspace";
+import { type History, type HistoryTrailer, MAIN_SCOPE, taskChatFile } from "@humanharness/workspace";
+import { notePath } from "./app-change";
 import { ChatLog } from "./chat-log";
 import { migrateChats } from "./chat-migration";
 import { gatedTurns } from "./gated-turns";
@@ -81,6 +82,11 @@ export interface BoardHostDeps {
   send(channel: string, value: unknown): void;
   /** The task's name as the history shows it. */
   label(t: CurrentTask): string;
+  /**
+   * Commits only `paths` (a lane's note), tagged with the task (parallel spec §5.3): a whole-folder save would file
+   * another running task's work under this one. Absent (tests): the task deps' `saveHistory`.
+   */
+  saveOwn?(paths: string[], message: string, trailer?: HistoryTrailer): Promise<void>;
   /** The open tasks changed (task-attention.ts: waiting tasks' items, the Dock badge, the notification). Called one at a time. */
   attention?: { update(tasks: readonly TaskSummary[]): Promise<void> };
   /** Tests: a held clock for the idle sleep, a shorter wait. */
@@ -112,6 +118,8 @@ interface Lane {
    * (`run`). Its end is heard only then, and only if the lane is still focused: never an end without its start.
    */
   heard: { send: boolean; run: boolean };
+  /** The note this lane's task last wrote (folder-relative), for its history commit. */
+  notePath?: string;
   /** The latest phase move Sidekick didn't hear (the lane wasn't focused): it hears it when the lane is focused. */
   unheardMove?: PhaseMoved;
 }
@@ -352,6 +360,17 @@ export function createBoardHost(d: BoardHostDeps, initial: { engineId: string | 
         await slot?.endSession();
       },
       successor: (start) => board.handOver((next) => start(lanes.get(next.id)!.manager), id),
+      // The task's note, and then its commit of that file alone: another lane's turn may be writing the folder.
+      writeNote: async (...a: Parameters<TaskDeps["writeNote"]>) => {
+        await d.taskDeps.writeNote(...a);
+        lane.notePath = notePath(d.scoped(), a[3], a[0]);
+      },
+      saveHistory: async (message, trailer) => {
+        const own = lane.notePath;
+        lane.notePath = undefined;
+        if (d.saveOwn) await d.saveOwn(own ? [own] : [], message, trailer);
+        else await d.taskDeps.saveHistory?.(message, trailer);
+      },
       // A phase separator or wrap-up line belongs in this task's chat: only the window that shows it draws one.
       taskTurn: (notice) => {
         if (board.isFocused(id)) d.taskDeps.taskTurn?.(notice);

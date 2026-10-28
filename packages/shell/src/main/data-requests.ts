@@ -1,5 +1,6 @@
 import { SETTINGS_COLLECTION, SIDEKICK_COLLECTION } from "@humanharness/harness-sdk";
-import { APP_SCOPE, DATA_CHANGE_PREFIX, DataError, type DataStore, type HistoryTrailer, isDataWrite, isScopeDir, runDataRequest } from "@humanharness/workspace";
+import { APP_SCOPE, DATA_CHANGE_PREFIX, DataError, type DataStore, type HistoryTrailer, dataPath, isDataWrite, isScopeDir, runDataRequest } from "@humanharness/workspace";
+import { saveAppChange } from "./app-change";
 
 /** The request can't run now (the app isn't set up, turns are blocked); its message is safe to show. */
 export class DataUnavailable extends Error {}
@@ -7,6 +8,8 @@ export class DataUnavailable extends Error {}
 /** Where a person's write is recorded: the folder's history. */
 export interface DataHistory {
   save(message: string, trailer?: HistoryTrailer): Promise<unknown>;
+  /** Board mode's commit of the collection's file alone. */
+  commitPaths?(paths: readonly string[], message: string, trailer?: HistoryTrailer): Promise<unknown>;
 }
 
 export interface PersonDataDeps {
@@ -18,6 +21,11 @@ export interface PersonDataDeps {
   trailer(): Promise<HistoryTrailer | undefined>;
   /** The folder's history; null when there is none. */
   history(): Promise<DataHistory | null>;
+  /**
+   * Board mode (parallel spec §5.3): each write commits only its collection's file, never another task's running work.
+   * Absent or false: the whole folder, as before (D0).
+   */
+  board?(): boolean;
   /** Why writes can't run now (a restore, a folder move, an engine change), or null. */
   blocked(): string | null;
   /** Whether `id` is a scope the person can reach: registered and not archived (`main` without scopes). `_app` is never asked. */
@@ -75,7 +83,9 @@ export function personDataRequests(d: PersonDataDeps): (request: unknown, option
       const result = await runDataRequest(store, request, { who: "person", scope });
       const collection = String((request as { collection: unknown }).collection);
       try {
-        await history?.save(`${DATA_CHANGE_PREFIX}${collection}`, trailer);
+        const board = d.board?.() === true;
+        const own = board ? [dataPath(store.scopeFor(collection, scope), collection)] : [];
+        await saveAppChange(history, board, own, `${DATA_CHANGE_PREFIX}${collection}`, trailer);
       } catch (err) {
         console.error("Could not record the data change in the history", err);
       }

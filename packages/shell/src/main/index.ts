@@ -74,6 +74,7 @@ import {
   appendSidekickEvent,
   buildDataContext,
   dataDiffOf,
+  dataPath,
   dataRequestSchema,
   isScopeId,
   migrateToScopes,
@@ -125,6 +126,7 @@ import { PLUGIN_STATE_DIR } from "./plugin-state";
 import { type BoardHost, createBoardHost, hostMode } from "./board-host";
 import { type AttentionStores, attentionStores } from "./attention-stores";
 import { keepNotification, TaskAttention } from "./task-attention";
+import { materialOwn, saveAppChange } from "./app-change";
 import { cleanCaps, engineHold, parallelInfo } from "./parallel-config";
 import { restoreTaskByPaths } from "./restore-paths";
 import { restoreTaskArgs, tasksIpc, undoRefusalOf } from "./tasks-ipc";
@@ -1170,10 +1172,13 @@ async function buildMaterial(): Promise<MaterialService | null> {
       const w = last?.limits?.find((x) => x.kind === primary) ?? last?.limits?.[0];
       return w && Date.parse(w.resetsAt) > Date.now() ? { kind: w.kind, utilization: w.utilization } : null;
     },
-    afterChange: async (_scope, what) => {
+    afterChange: async (scope, what) => {
       kickMaterial();
       const history = await currentHistory();
-      await history?.save(`Material: ${what}`, await tasks.trailerNow()).catch((err: unknown) => console.error("Could not record the material change", err));
+      // Board mode: only this scope's material, never another task's running work (parallel spec §5.3).
+      await saveAppChange(history, host !== null, materialOwn(scope), `Material: ${what}`, await tasks.trailerNow()).catch((err: unknown) =>
+        console.error("Could not record the material change", err),
+      );
     },
     // The built converter worker (its own entry beside this file), at most CONVERT_AT_ONCE at a time.
     runner: workerRunner({ entry: path.join(here, "material-worker.js") }),
@@ -1283,6 +1288,8 @@ function buildBoardHost(c: AppConfig): BoardHost {
       emit,
       send: sendToWindow,
       label: (t) => (t.action && Object.hasOwn(harness.actions, t.action) ? harness.actions[t.action].label : (t.question ?? "").slice(0, 60)),
+      // A lane's note commits its file alone (parallel spec §5.3).
+      saveOwn: async (paths, message, trailer) => saveAppChange(await currentHistory(), true, paths, message, trailer),
       attention: buildTaskAttention(),
     },
     { engineId: c.engineId, parallel: c.parallel },
@@ -1377,6 +1384,8 @@ const personData = personDataRequests({
   chatScope: () => tasks.chatScope(),
   trailer: () => tasks.trailerNow(),
   history: () => currentHistory(),
+  // Board mode: a write commits only its collection's file (parallel spec §5.3).
+  board: () => host !== null,
   blocked: () => (quitting ? "The app is closing" : turnBlocked()),
   // Without scopes the only scope is the implicit `main` (D2); with them, the registry's open (not archived) scopes.
   scopeExists: async (id) => (scoped() ? activeScope(id) : id === MAIN_SCOPE),
@@ -2094,7 +2103,7 @@ if (loaded) {
       let slug = first;
       for (let i = 2; await exists(slug); i++) slug = `${first}-${i}`;
       await writeNote(base, slug, { title, summary: [decision], decisions: [decision], files: [], open: [] }, { ...(action ? { action } : {}), date: new Date().toISOString(), engine: c.engineId }, prefix);
-      await (await currentHistory())?.save(`Note: ${title}`, await tasks.trailerNow());
+      await saveAppChange(await currentHistory(), host !== null, [`${prefix}${slug}.md`], `Note: ${title}`, await tasks.trailerNow());
     },
     // Learning (sidekick spec §6.4): Sidekick's own items, written as the app after a task closes, in one `Data: sidekick` commit.
     writeApp: async (base, requests) => {
@@ -2108,7 +2117,10 @@ if (loaded) {
       for (const r of requests) if (!dataRequestSchema.safeParse(r).success) throw new Error("Not a data request");
       const store = sidekickStoreFor(base);
       for (const r of requests) await runDataRequest(store, r, { who: "app", scope: APP_SCOPE });
-      await (await currentHistory())?.save(`${DATA_CHANGE_PREFIX}${SIDEKICK_COLLECTION}`).catch((err: unknown) => console.error("Could not record Sidekick's learning", err));
+      const own = [dataPath(store.scopeFor(SIDEKICK_COLLECTION, APP_SCOPE), SIDEKICK_COLLECTION)];
+      await saveAppChange(await currentHistory(), host !== null, own, `${DATA_CHANGE_PREFIX}${SIDEKICK_COLLECTION}`).catch((err: unknown) =>
+        console.error("Could not record Sidekick's learning", err),
+      );
     },
   });
   // Board mode (parallel spec §9.2): one Attention store per base for the plugins and the waiting tasks, with the

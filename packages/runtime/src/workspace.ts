@@ -11,7 +11,7 @@ import type { Event } from "./events";
 import type { RunningTurn, RuntimeOptions } from "./runtime";
 import { type Session, type Transport, type TransportOptions, acpFields } from "./transport";
 import { type TurnAttribution, beginTurn, endTurn } from "./turn-commit";
-import { TurnLedger } from "./turn-ledger";
+import { TurnLedger, type TurnWindow } from "./turn-ledger";
 
 /** Which slot a data or material request came from: decided by the socket it arrived on, never by the request (Decision 9). */
 export interface SlotRef {
@@ -170,8 +170,11 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
     let busy = false;
     let current: { controller: AbortController; done: Promise<void> } | null = null;
     let closed: Promise<void> | null = null;
+    // Set before closeSlot's first await: a closed slot never runs a turn again (an ACP transport would reconnect).
+    let isClosed = false;
 
     async function closeSlot(): Promise<void> {
+      isClosed = true;
       if (current) {
         current.controller.abort();
         await current.done;
@@ -196,6 +199,7 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
       key: o.key,
       isBusy: () => busy,
       send(message, emit, options = {}) {
+        if (isClosed) throw new Error("The slot is closed");
         if (busy) throw new Error("A turn is already running");
         // One slot per task: windows of the same task are left out of each other's `others`, so two at once would own
         // each other's paths. Checked against the ledger before any await, like the window it guards.
@@ -211,9 +215,11 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
           }
           emit(e);
         };
+        // The window this turn opened: only that one is closed on failure, never another live window under this key.
+        let w: TurnWindow | undefined;
         const done = (async () => {
           try {
-            const w = await beginTurn(history, ledger, o.key, options.trailer);
+            w = await beginTurn(history, ledger, o.key, options.trailer);
             let final: Event | undefined;
             emitCurrent = emitOnce;
             await transport.turn(
@@ -242,8 +248,8 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
             }
             emitOnce(f);
           } catch (err) {
-            // A no-op when beginTurn or endTurn already closed the window.
-            ledger.close(o.key);
+            // A no-op when beginTurn or endTurn already closed the window; nothing when beginTurn opened none.
+            if (w && ledger.running().includes(w)) ledger.close(o.key);
             emitOnce({ type: "done", ok: false, error: { code: "agent-crashed", detail: err instanceof Error ? err.message : String(err) } });
           } finally {
             emitCurrent = null;
@@ -254,6 +260,7 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
         return { cancel: () => controller.abort(), done };
       },
       async endSession() {
+        if (isClosed) throw new Error("The slot is closed");
         if (busy) throw new Error("A turn is already running");
         // Held while the session closes, so a turn cannot start halfway through.
         busy = true;
@@ -264,7 +271,7 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
         }
       },
       async sleep() {
-        if (busy || engine.transport.kind !== "acp") return;
+        if (isClosed || busy || engine.transport.kind !== "acp") return;
         busy = true;
         try {
           // AcpTransport.close() keeps the session ({ id, started: true }): the next turn connects and session/loads it (spike PT-S4).
@@ -292,6 +299,9 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
         // Checked again when its queue turn comes: a turn may have started meanwhile.
         if (ledger.anyRunning()) return false;
         const now = await opts.instructionSettings?.();
+        // And again after the settings arrive: a turn may have started while they were read. (A refresh under way when
+        // close begins still writes: close waits for it.)
+        if (ledger.anyRunning()) return false;
         return refreshInstructions({ folder, base, language: opts.language, blocks, references, ...(now ? { settings: now } : {}), ...withMaterial });
       };
       refreshing = refreshing.catch(() => false).then(run);

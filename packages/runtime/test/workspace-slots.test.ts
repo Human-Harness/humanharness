@@ -115,6 +115,19 @@ describe("idle ACP slot (parallel spec §4, Decision 10)", () => {
     expect(noted).toEqual(["fresh.md"]);
   });
 
+  it("a closed slot runs no turn, ends no session and never reconnects the adapter", async () => {
+    const { ws, log } = await acpWorkspace({ loadSession: true, turns: [[{ stop: "end_turn" }], [{ stop: "end_turn" }]] });
+    const slot = await ws.openSlot({ key: "t1" });
+    await slot.send("one", () => {}).done;
+    await slot.close();
+    expect(() => slot.send("two", () => {})).toThrow("The slot is closed");
+    await expect(slot.endSession()).rejects.toThrow("The slot is closed");
+    await expect(slot.sleep()).resolves.toBeUndefined();
+    const methods = log().map((r) => r.method);
+    expect(methods.filter((m) => m === "initialize")).toHaveLength(1);
+    expect(methods.filter((m) => m === "session/prompt")).toHaveLength(1);
+  });
+
   it("Claude: sleep() does nothing", async () => {
     const base = fs.mkdtempSync(path.join(root, "t-"));
     ws = await createWorkspace({

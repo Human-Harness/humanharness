@@ -2,12 +2,13 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { getEngine } from "@humanharness/engines";
 import { type ClaudeScript, claudeEditLine, claudeResultLine, claudeTextLines, fakeClaudeCommand, writeScript } from "@humanharness/fake-agent";
 import { loadHarness } from "@humanharness/harness-sdk";
 import type { Event } from "../src/events";
 import type { TurnAttribution } from "../src/turn-commit";
+import { TurnLedger } from "../src/turn-ledger";
 import { type HarnessWorkspace, type SlotRef, createWorkspace } from "../src/workspace";
 import { git, treeOf } from "./helpers/git";
 
@@ -18,11 +19,15 @@ const NOTES = path.resolve(here, "../../fake-agent/fixtures/notes-harness/harnes
 const STUDY = path.resolve(here, "../../fake-agent/fixtures/data-harness/harness.config.ts");
 let ws: HarnessWorkspace | undefined;
 afterEach(async () => {
+  vi.restoreAllMocks();
   await ws?.close();
   ws = undefined;
 });
 
-async function setup(script: ClaudeScript, extra: { fixture?: string; data?: (r: unknown, slot: SlotRef) => Promise<unknown> } = {}) {
+async function setup(
+  script: ClaudeScript,
+  extra: { fixture?: string; data?: (r: unknown, slot: SlotRef) => Promise<unknown>; instructionSettings?: () => Promise<string[]> } = {},
+) {
   const base = fs.mkdtempSync(path.join(root, "t-"));
   const folder = path.join(base, "Work");
   const gitdir = path.join(base, "history.git");
@@ -35,6 +40,7 @@ async function setup(script: ClaudeScript, extra: { fixture?: string; data?: (r:
     command: fakeClaudeCommand(),
     env: { HH_FAKE_SCRIPT: writeScript(base, script), HH_FAKE_PROMPTS: path.join(base, "prompts.jsonl") },
     ...(extra.data ? { data: extra.data } : {}),
+    ...(extra.instructionSettings ? { instructionSettings: extra.instructionSettings } : {}),
   });
   return { ws, folder, gitdir };
 }
@@ -136,6 +142,74 @@ describe("Workspace and slots (parallel spec §4)", () => {
     const s = await ws.openSlot({ key: "t9" });
     await s.send("x", () => {}).done;
     expect(seen).toEqual([{ key: "t9", request: { op: "query", collection: "concepts" } }]);
+  });
+
+  it("two slots' data requests each carry their own slot's key (Decision 9)", async () => {
+    const seen: string[] = [];
+    const { ws } = await setup(
+      { steps: [{ mcp: { server: "data", tool: "data_query", args: { collection: "concepts" } } }, claudeResultLine(true)] },
+      { fixture: STUDY, data: async (_request, slot) => (seen.push(slot.key), { records: [], total: 0 }) },
+    );
+    const a = await ws.openSlot({ key: "t1" });
+    const b = await ws.openSlot({ key: "t2" });
+    await a.send("x", () => {}).done;
+    await b.send("y", () => {}).done;
+    await a.send("z", () => {}).done;
+    expect(seen).toEqual(["t1", "t2", "t1"]);
+  });
+
+  it("onAttribution is not called for a turn that ran alone", async () => {
+    const { ws } = await setup({ steps: [claudeEditLine("e1", "a.md"), { write: { path: "a.md", content: "a" } }, claudeResultLine(true)] });
+    const a = await ws.openSlot({ key: "t1" });
+    const onAttribution = vi.fn();
+    const events: Event[] = [];
+    await a.send("one", (e) => events.push(e), { trailer: { task: "t1" }, onAttribution }).done;
+    expect(events.at(-1)).toEqual({ type: "done", ok: true });
+    expect(onAttribution).not.toHaveBeenCalled();
+  });
+
+  it("a turn whose window could not open never closes the live window under its key", async () => {
+    const { ws } = await setup({ steps: [claudeResultLine(true)] });
+    const a = await ws.openSlot({ key: "A" });
+    // The ledger already holds a live window for "A" (as when an earlier turn of that key still runs): open refuses.
+    const open = TurnLedger.prototype.open;
+    vi.spyOn(TurnLedger.prototype, "open").mockImplementationOnce(function (this: TurnLedger, key, task) {
+      open.call(this, key, task);
+      throw new Error(`A turn is already open for ${key}`);
+    });
+    const events: Event[] = [];
+    await a.send("x", (e) => events.push(e)).done;
+    expect(events.at(-1)).toMatchObject({ ok: false, error: { code: "agent-crashed", detail: "A turn is already open for A" } });
+    expect(ws.anyRunning()).toBe(true);
+  });
+
+  it("refreshInstructions refuses when a turn starts while the settings are read (Decision 12)", async () => {
+    let sentences = ["Answer briefly."];
+    let duringRead: (() => void) | undefined;
+    const { ws, folder } = await setup(
+      { steps: [{ sleep: 300 }, claudeResultLine(true)] },
+      {
+        instructionSettings: async () => {
+          duringRead?.();
+          return sentences;
+        },
+      },
+    );
+    const before = fs.readFileSync(path.join(folder, "AGENTS.md"), "utf8");
+    const a = await ws.openSlot({ key: "A" });
+    let turn: ReturnType<typeof a.send> | undefined;
+    duringRead = () => {
+      duringRead = undefined;
+      turn = a.send("x", () => {});
+    };
+    sentences = ["Answer at length."];
+    expect(await ws.refreshInstructions()).toBe(false);
+    expect(turn).toBeDefined();
+    expect(fs.readFileSync(path.join(folder, "AGENTS.md"), "utf8")).toBe(before);
+    await turn!.done;
+    // With no turn running, the same refresh writes.
+    expect(await ws.refreshInstructions()).toBe(true);
+    expect(fs.readFileSync(path.join(folder, "AGENTS.md"), "utf8")).toContain("Answer at length.");
   });
 
   it("refreshInstructions refuses while any slot runs (Decision 12)", async () => {

@@ -3,6 +3,7 @@ import path from "node:path";
 import { PLUGIN_ID } from "@humanharness/harness-sdk";
 import type { BrowserWindow as ElectronWindow, IpcMainInvokeEvent, Session } from "electron";
 import type { PluginChannel } from "./plugin-channel";
+import { PANEL_CSP, type RunningPanels, allowFrameNavigation, allowPanelRequest, frameChain, readPanelFile } from "./plugin-panels";
 import { PLUGIN_CSP, allowPluginRequest, parsePluginRpc, pluginHostUrl, pluginOfSender, readPluginFile, resolvePluginFile } from "./plugin-protocol";
 import type { BackendHost } from "./plugins";
 
@@ -13,7 +14,8 @@ import type { BackendHost } from "./plugins";
  * (pure, unit-tested); this file only plugs it into Electron. Plugin code is hostile: identity comes from the sender
  * (the window's webContents and its main frame), never from what the page says.
  *
- * D0: nothing happens until the first `start`: no partition, no scheme handler, no listener, no IPC handler.
+ * D0: nothing happens until the first `start`: no partition, no scheme handler, no listener, no IPC handler. The app
+ * window's side (panels, P2/P3/P7) waits for `installPanels`, which only a harness that takes plugins calls.
  */
 
 /** For `protocol.registerSchemesAsPrivileged` before the app is ready (spike S2): no fetch, CORS or CSP bypass. */
@@ -35,6 +37,7 @@ export const HOST_IN_FLIGHT = 24;
 export const rpcRefusal = (reason: string) => ({ ok: false, refused: reason }) as const;
 
 const HEADERS = { "content-security-policy": PLUGIN_CSP, "x-content-type-options": "nosniff", "cache-control": "no-store" } as const;
+const PANEL_HEADERS = { "content-security-policy": PANEL_CSP, "x-content-type-options": "nosniff", "cache-control": "no-store" } as const;
 
 export interface PluginHostDeps {
   /** packages/shell/resources (beside out/, like the Dock icon): the preload and the core host page and script. */
@@ -63,6 +66,9 @@ export class PluginBackendHost implements BackendHost {
   private readonly inFlight = new Map<number, number>();
   private readonly sessions = new Set<string>();
   private channelRegistered = false;
+  private panelsInstalled = false;
+  /** App windows whose webContents already carry the panel guards. */
+  private readonly guarded = new WeakSet<object>();
 
   constructor(private readonly d: PluginHostDeps) {}
 
@@ -92,6 +98,62 @@ export class PluginBackendHost implements BackendHost {
 
   async stopAll(): Promise<void> {
     for (const id of [...this.live.keys()]) await this.stop(id);
+  }
+
+  /**
+   * Plugin panels in the app window (plugins spec §5). The default session, once: a second, panel-only hh-plugin:
+   * handler (P7) and a request filter that keeps every plugin frame to its own files (P2). Each app window: a guard
+   * on subframe navigation (P3) and no webviews. Electron keeps one `onBeforeRequest` listener per session: nothing
+   * else in the app sets one on the default session; anything that later does must be composed with this one.
+   */
+  installPanels(win: ElectronWindow, running: RunningPanels): void {
+    if (!this.panelsInstalled) {
+      this.panelsInstalled = true;
+      const ses = this.d.electron.session.defaultSession;
+      ses.protocol.handle("hh-plugin", (req) => this.servePanel(req, running));
+      ses.webRequest.onBeforeRequest({ urls: ["<all_urls>"] }, (details, callback) => {
+        // details.frame may be null, and a disposed frame throws when read (spike P-S3): frameChain says null.
+        let frames: string[] | null;
+        try {
+          frames = frameChain(details.frame);
+        } catch {
+          frames = null;
+        }
+        callback({ cancel: !allowPanelRequest({ frames, resourceType: details.resourceType, url: details.url }) });
+      });
+    }
+    const wc = win.webContents;
+    if (this.guarded.has(wc)) return;
+    this.guarded.add(wc);
+    wc.on("will-frame-navigate", (event) => {
+      // The main frame is the app's own will-navigate rule.
+      if (event.isMainFrame) return;
+      let ok = false;
+      try {
+        const frame = event.frame;
+        const parent = frame?.parent ?? null;
+        // A first load counts only when the frame's parent is the window's top frame, the app's page (spike P-S4).
+        ok = allowFrameNavigation({ isMainFrame: false, parentIsMain: parent !== null && parent.parent === null, frameUrl: frame?.url ?? "", url: event.url });
+      } catch {
+        ok = false;
+      }
+      if (!ok) event.preventDefault();
+    });
+    wc.on("will-attach-webview", (event) => event.preventDefault());
+  }
+
+  /** One panel response from the app window's session; every one, a refusal included, carries the panel CSP (P2, P7). */
+  private async servePanel(req: Request, running: RunningPanels): Promise<Response> {
+    const notFound = () => new Response(null, { status: 404, headers: PANEL_HEADERS });
+    try {
+      if (req.method !== "GET") return notFound();
+      const read = await readPanelFile(req.url, running);
+      if (!read) return notFound();
+      return new Response(new Uint8Array(read.body), { headers: { ...PANEL_HEADERS, "content-type": read.type } });
+    } catch (err) {
+      this.d.log?.("A plugin panel file could not be served", err);
+      return notFound();
+    }
   }
 
   /** backend.js through the scheme's own reader, checked against the hash taken when the plugin loaded. */

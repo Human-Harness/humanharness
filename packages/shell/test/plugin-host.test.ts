@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { BrokerAnswer } from "../src/main/plugin-broker";
 import { PluginChannel } from "../src/main/plugin-channel";
 import { HOST_IN_FLIGHT, PLUGIN_SCHEME, PluginBackendHost } from "../src/main/plugin-host";
+import { PANEL_CSP } from "../src/main/plugin-panels";
 import { PLUGIN_CSP, parsePluginRpc } from "../src/main/plugin-protocol";
 
 vi.mock("../src/main/plugin-protocol", async (orig) => {
@@ -85,14 +86,16 @@ function fakeElectron() {
     }
   }
   const ipcMain = { handle: vi.fn((ch: string, fn: Listener) => handlers.set(ch, fn)) };
-  const electron = { BrowserWindow: FakeWindow, session: { fromPartition }, ipcMain };
+  /** The app window's session: touched only by installPanels. */
+  const defaultSession = newSession();
+  const electron = { BrowserWindow: FakeWindow, session: { fromPartition, defaultSession }, ipcMain };
   /** An invoke from window `w` (its main frame unless `frame` says otherwise). */
   const invoke = (w: FakeWindow, method: unknown, payload: unknown, frame?: { url: string } | null) => {
     const fn = handlers.get("hh-plugin:rpc") as unknown as (e: unknown, m: unknown, p: unknown) => Promise<unknown>;
     const senderFrame = frame === undefined ? w.webContents.mainFrame : frame;
     return fn({ sender: { id: w.webContents.id, mainFrame: w.webContents.mainFrame }, senderFrame }, method, payload);
   };
-  return { electron, sessions, windows, handlers, fromPartition, ipcMain, invoke };
+  return { electron, sessions, windows, handlers, fromPartition, ipcMain, invoke, defaultSession };
 }
 
 async function dist(files: Record<string, string> = {}) {
@@ -130,6 +133,12 @@ describe("the plugin backend host (plugins spec §4.1)", () => {
     expect(fake.fromPartition).not.toHaveBeenCalled();
     expect(fake.ipcMain.handle).not.toHaveBeenCalled();
     expect(fake.windows).toHaveLength(0);
+  });
+
+  it("D0: a running backend touches nothing of the app window's session — panels only come with installPanels", async () => {
+    const t = await started();
+    expect(t.fake.defaultSession.protocol.handle).not.toHaveBeenCalled();
+    expect(t.fake.defaultSession.webRequest.onBeforeRequest).not.toHaveBeenCalled();
   });
 
   it("the scheme is privileged as standard and secure only (spike S2)", () => {
@@ -347,5 +356,106 @@ describe("the plugin backend host (plugins spec §4.1)", () => {
     expect(t.ses.webRequest.onBeforeRequest).toHaveBeenCalledTimes(1);
     await t.host.stopAll();
     expect(t.fake.windows.every((w) => w.destroyed)).toBe(true);
+  });
+});
+
+describe("panels in the app window (plugins spec §5; P2, P3, P7)", () => {
+  async function installed() {
+    const t = setup();
+    const d = await dist({ "panel-queue.html": "<p>queue</p>", "panel-queue.js": "1", "panel-other.html": "x", "plugin.json": "{}" });
+    const running = vi.fn((id: string) => (id === "oncall" ? { dist: d.dist, panels: ["queue"] } : null));
+    const app = new t.fake.electron.BrowserWindow({ webPreferences: {} });
+    t.host.installPanels(app as never, running);
+    const ses = t.fake.defaultSession;
+    const get = (url: string, method = "GET") => ses.scheme.get("hh-plugin")!(new Request(url, { method }));
+    const filter = (details: Record<string, unknown>) => {
+      let out: { cancel: boolean } | undefined;
+      (ses.filter as unknown as (d: unknown, cb: (r: { cancel: boolean }) => void) => void)(details, (r) => (out = r));
+      return out!.cancel;
+    };
+    const navigate = (e: Record<string, unknown>) => {
+      const event = { ...e, preventDefault: vi.fn() };
+      (app.webContents.events.get("will-frame-navigate") as unknown as (ev: unknown) => void)(event);
+      return event.preventDefault.mock.calls.length === 0;
+    };
+    return { ...t, app, ses, get, filter, navigate, running };
+  }
+  const appFrame = { url: "file:///app/out/renderer/index.html", parent: null };
+  const panelFrame = { url: "hh-plugin://oncall/panel-queue.html", parent: appFrame };
+
+  it("serves a running plugin's declared panel files with the panel CSP, nosniff and no-store", async () => {
+    const t = await installed();
+    const res = await t.get("hh-plugin://oncall/panel-queue.html");
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("<p>queue</p>");
+    expect(res.headers.get("content-type")).toBe("text/html");
+    expect(res.headers.get("content-security-policy")).toBe(PANEL_CSP);
+    expect(res.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(res.headers.get("cache-control")).toBe("no-store");
+  });
+
+  it("P7: never backend.js, plugin.json, _hh/, an undeclared panel, a stopped plugin or a non-GET; a miss carries the CSP too", async () => {
+    const t = await installed();
+    for (const url of ["hh-plugin://oncall/backend.js", "hh-plugin://oncall/plugin.json", "hh-plugin://oncall/_hh/host.js", "hh-plugin://oncall/_hh/host.html", "hh-plugin://oncall/panel-other.html", "hh-plugin://stopped/panel-queue.html"]) {
+      const res = await t.get(url);
+      expect(res.status, url).toBe(404);
+      expect(res.headers.get("content-security-policy"), url).toBe(PANEL_CSP);
+    }
+    expect((await t.get("hh-plugin://oncall/panel-queue.html", "POST")).status).toBe(404);
+    t.running.mockImplementation(() => {
+      throw new Error("boom");
+    });
+    expect((await t.get("hh-plugin://oncall/panel-queue.html")).status).toBe(404);
+  });
+
+  it("P2: the request filter cancels what a panel frame loads from anywhere but its own plugin, nested frames included", async () => {
+    const t = await installed();
+    expect(t.filter({ url: "file:///app/out/renderer/assets/x.js", resourceType: "script", frame: appFrame })).toBe(false);
+    expect(t.filter({ url: "hh-plugin://oncall/panel-queue.html", resourceType: "subFrame", frame: { url: "", parent: appFrame } })).toBe(false);
+    expect(t.filter({ url: "hh-plugin://oncall/panel-queue.js", resourceType: "script", frame: panelFrame })).toBe(false);
+    expect(t.filter({ url: "http://127.0.0.1:9/x", resourceType: "xhr", frame: panelFrame })).toBe(true);
+    expect(t.filter({ url: "hh-plugin://other/panel-x.js", resourceType: "script", frame: panelFrame })).toBe(true);
+    expect(t.filter({ url: "http://127.0.0.1:9/iframe", resourceType: "subFrame", frame: { url: "", parent: panelFrame } })).toBe(true);
+    expect(t.filter({ url: "https://x/", resourceType: "xhr", frame: null })).toBe(false);
+    const disposed = {
+      get url(): string {
+        throw new Error("Render frame was disposed");
+      },
+      parent: null,
+    };
+    expect(t.filter({ url: "hh-plugin://oncall/panel-queue.js", resourceType: "script", frame: disposed })).toBe(true);
+    expect(t.filter({ url: "file:///app/out/renderer/assets/x.js", resourceType: "script", frame: disposed })).toBe(false);
+  });
+
+  it("P3: a subframe goes only to its own panel page, or to a panel on a first load framed by the app; webviews never attach", async () => {
+    const t = await installed();
+    const main = t.app.webContents.mainFrame;
+    expect(t.navigate({ isMainFrame: true, url: "file:///app/out/renderer/index.html", frame: main })).toBe(true);
+    expect(t.navigate({ isMainFrame: false, url: "hh-plugin://oncall/panel-queue.html", frame: { url: "", parent: { url: "file:///app", parent: null } } })).toBe(true);
+    expect(t.navigate({ isMainFrame: false, url: "hh-plugin://oncall/panel-queue.html", frame: { url: "", parent: panelFrame } })).toBe(false);
+    expect(t.navigate({ isMainFrame: false, url: "hh-plugin://other/panel-x.html", frame: panelFrame })).toBe(false);
+    expect(t.navigate({ isMainFrame: false, url: "hh-plugin://oncall/backend.js", frame: panelFrame })).toBe(false);
+    expect(t.navigate({ isMainFrame: false, url: "hh-plugin://oncall/panel-queue.html", frame: null })).toBe(false);
+    const disposed = {
+      get url(): string {
+        throw new Error("Render frame was disposed");
+      },
+      parent: null,
+    };
+    expect(t.navigate({ isMainFrame: false, url: "hh-plugin://oncall/panel-queue.html", frame: disposed })).toBe(false);
+    const webview = { preventDefault: vi.fn() };
+    (t.app.webContents.events.get("will-attach-webview") as unknown as (e: unknown) => void)(webview);
+    expect(webview.preventDefault).toHaveBeenCalled();
+  });
+
+  it("the session side is installed once; each new app window gets its own guards", async () => {
+    const t = await installed();
+    const again = new t.fake.electron.BrowserWindow({ webPreferences: {} });
+    t.host.installPanels(again as never, t.running);
+    t.host.installPanels(again as never, t.running);
+    expect(t.ses.protocol.handle).toHaveBeenCalledTimes(1);
+    expect(t.ses.webRequest.onBeforeRequest).toHaveBeenCalledTimes(1);
+    expect(again.webContents.events.has("will-frame-navigate")).toBe(true);
+    expect(again.webContents.events.has("will-attach-webview")).toBe(true);
   });
 });

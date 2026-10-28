@@ -1,5 +1,11 @@
 import type { FileTimelineService } from "./file-timeline";
 
+/** The most paths one `hh:fileCommits` lists; a commit that changed more (a big Start) sends null: "refresh them all". */
+export const MAX_ANNOUNCED_PATHS = 200;
+
+/** What `hh:fileCommits` sends for a commit's paths. */
+export const announcedPaths = (paths: string[]): string[] | null => (paths.length > MAX_ANNOUNCED_PATHS ? null : paths);
+
 export const FILE_CHANNELS = ["hh:fileTimeline", "hh:fileDiff", "hh:fileRestorePrompt", "hh:fileRestore"] as const;
 export type FileChannel = (typeof FILE_CHANNELS)[number];
 

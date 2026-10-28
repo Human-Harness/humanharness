@@ -14,6 +14,19 @@ function invoker(answers: Record<string, unknown>) {
 }
 
 describe("restoreFlow (file-timeline spec §6.3: the core always confirms)", () => {
+  it("an invoke that rejects answers failed, as data", async () => {
+    const broken = async () => Promise.reject(new Error("no handler"));
+    expect(await restoreFlow(broken, async () => true, "a.md", SHA)).toEqual({ refused: "failed" });
+    let n = 0;
+    const second = async (channel: string) => {
+      n++;
+      if (channel === "hh:fileRestore") throw new Error("gone");
+      return { ok: true, prompt };
+    };
+    expect(await restoreFlow(second, async () => true, "a.md", SHA)).toEqual({ refused: "failed" });
+    expect(n).toBe(2);
+  });
+
   it("prompt, the core's yes, then the go-back", async () => {
     const { invoke, calls } = invoker({ "hh:fileRestorePrompt": { ok: true, prompt }, "hh:fileRestore": { ok: true } });
     const asked: unknown[] = [];

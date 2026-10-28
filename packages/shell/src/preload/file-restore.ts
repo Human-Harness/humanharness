@@ -17,7 +17,9 @@ export async function restoreFlow(
   file: string,
   commit: string,
 ): Promise<FileRestoreResult> {
-  const asked = answer(await invoke("hh:fileRestorePrompt", file, commit));
+  // A rejected invoke (no handler, a closing window) is a failure like any other: data, never a throw.
+  const ask = (channel: string) => invoke(channel, file, commit).then(answer, () => answer(null));
+  const asked = await ask("hh:fileRestorePrompt");
   if (!asked.ok) return { refused: asked.reason };
   if (!confirm || !asked.prompt) return "cancelled";
   let yes = false;
@@ -27,6 +29,6 @@ export async function restoreFlow(
     yes = false;
   }
   if (!yes) return "cancelled";
-  const done = answer(await invoke("hh:fileRestore", file, commit));
+  const done = await ask("hh:fileRestore");
   return done.ok ? "restored" : { refused: done.reason };
 }

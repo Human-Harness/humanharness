@@ -20,6 +20,7 @@ import type {
 } from "@humanharness/ui/client";
 import { hearsDataChange } from "@humanharness/ui/data-change";
 import { documentWatcher } from "./document-watch";
+import { fileCommitListeners } from "./file-commits";
 import { restoreFlow } from "./file-restore";
 
 function subscribe<T>(channel: string, listener: (value: T) => void): () => void {
@@ -40,6 +41,9 @@ let focusState: FocusState = { on: false };
 const focusListeners = new Set<(state: FocusState) => void>();
 /** The core's chat answers "go back?" for every `files.restore` (file-timeline spec §6.3); null while none is on screen. */
 let restoreConfirm: ((prompt: FileRestorePrompt) => Promise<boolean>) | null = null;
+
+/** Every `files.onChange`, on one `hh:fileCommits` listener. */
+const fileCommits = fileCommitListeners((listener) => subscribe<unknown>("hh:fileCommits", listener));
 
 const client: HarnessClient = {
   getState: () => ipcRenderer.invoke("hh:getState"),
@@ -139,10 +143,7 @@ const client: HarnessClient = {
     timeline: (file) => ipcRenderer.invoke("hh:fileTimeline", file),
     diff: (file, from, to) => ipcRenderer.invoke("hh:fileDiff", file, from, to),
     restore: (file, commit) => restoreFlow((channel, ...args) => ipcRenderer.invoke(channel, ...args), restoreConfirm, file, commit),
-    onChange: (file, listener) =>
-      subscribe<unknown>("hh:fileCommits", (paths) => {
-        if (Array.isArray(paths) && paths.includes(file)) listener();
-      }),
+    onChange: (file, listener) => fileCommits.onChange(file, listener),
     hostConfirm: (confirm) => {
       restoreConfirm = confirm;
       return () => {

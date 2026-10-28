@@ -96,7 +96,7 @@ import { setPhaseHandler, timeBoxOffered } from "./phase-ipc";
 import { requireNoticeForChoice, requireNoticeForTurn } from "./notice-policy";
 import { reviewHandlers } from "./review-ipc";
 import { workerDiff } from "./diff-runner";
-import { fileHandlers } from "./file-ipc";
+import { announcedPaths, fileHandlers } from "./file-ipc";
 import { FileTimelineService } from "./file-timeline";
 import { ReviewService } from "./reviews";
 import { archiveChatsOnEngineChange, archiveStaleChat, startNewChatIfEngineChanged } from "./engine-switch";
@@ -1176,7 +1176,7 @@ const fileTimelines = new FileTimelineService({
 
 /** Tells the window which paths each commit touched: an open timeline gets its new entry (§6.3 `onChange`). */
 function announceCommits(history: History) {
-  history.onCommit((c) => sendToWindow("hh:fileCommits", c.paths));
+  history.onCommit((c) => sendToWindow("hh:fileCommits", announcedPaths(c.paths)));
 }
 
 function registerIpc() {

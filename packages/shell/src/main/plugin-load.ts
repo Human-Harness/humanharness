@@ -2,14 +2,13 @@ import { createHash, randomUUID } from "node:crypto";
 import { constants, promises as fs } from "node:fs";
 import path from "node:path";
 import {
+  checkPluginModels,
   type HarnessPlugins,
   PLUGIN_API,
   PLUGIN_ID,
   PLUGIN_JSON_MAX_BYTES,
   type PluginManifest,
-  pluginCollections,
   pluginManifestSchema,
-  pluginSettings,
   pluginsAccepted,
   z,
 } from "@humanharness/harness-sdk";
@@ -197,16 +196,11 @@ async function readDistOrThrow(dist: string, harnessId: string): Promise<DistRea
   if (!parsed.success) return { ok: false, error: firstIssue(parsed.error) };
   const manifest = parsed.data;
   if (manifest.harness !== "*" && manifest.harness !== harnessId) return { ok: false, error: `This plugin is for the harness "${manifest.harness}"` };
-  // Both can throw on what the manifest schema lets through (a bad key, a control the settings model refuses).
+  // What the manifest schema lets through (a bad key, a control the settings model refuses): "data: …"/"settings: …".
   try {
-    pluginCollections(manifest);
+    checkPluginModels(manifest);
   } catch (err) {
-    return { ok: false, error: `data: ${firstIssue(err)}` };
-  }
-  try {
-    pluginSettings(manifest);
-  } catch (err) {
-    return { ok: false, error: `settings: ${firstIssue(err)}` };
+    return { ok: false, error: firstIssue(err) };
   }
 
   // distHash is what the person's approval binds to, and the backend runner executes the very bytes it

@@ -68,9 +68,9 @@ describe("readDist (plugins spec §3.1, §7 Add from folder step 1)", () => {
     const root = await tmp();
     const optionalKey = { key: "k", agent: "none", schema: { type: "object", properties: { k: { type: "string" } } } };
     const d1 = await writePlugin(root, "a", { data: { q: optionalKey } });
-    expect(await readDist(d1, "dev")).toMatchObject({ ok: false, error: expect.stringMatching(/key/) });
+    expect(await readDist(d1, "dev")).toMatchObject({ ok: false, error: expect.stringMatching(/^data: .*key/) });
     const d2 = await writePlugin(root, "b", { settings: { fields: { on: { schema: { type: "boolean" }, default: false, control: "slider", label: "On" } } } });
-    expect(await readDist(d2, "dev")).toMatchObject({ ok: false, error: expect.stringMatching(/settings/) });
+    expect(await readDist(d2, "dev")).toMatchObject({ ok: false, error: expect.stringMatching(/^settings: /) });
   });
 
   it("refuses a plugin.json over 256 KB, invalid JSON, a non-object, and a missing backend.js", async () => {

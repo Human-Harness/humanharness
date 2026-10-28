@@ -313,6 +313,34 @@ export function pluginSettings(m: PluginManifest): HarnessSettings | undefined {
   return settingsSchema.parse({ tab: m.settings.tab ?? m.name, sections: m.settings.sections, fields });
 }
 
+/** A zod error's first issue as one line ("path: message"); any other error's message. */
+function issueText(err: unknown): string {
+  if (err instanceof z.ZodError) {
+    const issue = err.issues[0];
+    if (!issue) return err.message;
+    return issue.path.length > 0 ? `${issue.path.join(".")}: ${issue.message}` : issue.message;
+  }
+  return err instanceof Error ? err.message : String(err);
+}
+
+/**
+ * What the app's loader checks past the manifest schema (§3.1): the data model and the settings model take the
+ * plugin's collections and settings. Shared by the loader and `pluginJson`, so `build` never writes a plugin.json
+ * the app refuses. Throws "data: …" or "settings: …".
+ */
+export function checkPluginModels(m: PluginManifest): void {
+  try {
+    pluginCollections(m);
+  } catch (err) {
+    throw new Error(`data: ${issueText(err)}`);
+  }
+  try {
+    pluginSettings(m);
+  } catch (err) {
+    throw new Error(`settings: ${issueText(err)}`);
+  }
+}
+
 /** The harness's `plugins` (§3.4): bundled ids, the ones that start on, and whether the person may add local ones. */
 export const harnessPluginsSchema = z
   .strictObject({
@@ -345,10 +373,10 @@ export interface SlotDef {
   kind: SlotKind;
 }
 /** The core's slots (spec §3.4): a "Plugins" section in the side panel, chips next to the usage meter. Always present. */
-export const DEFAULT_SLOTS: readonly SlotDef[] = [
-  { id: "plugins", label: "Plugins", kind: "panel" },
-  { id: "chips", label: "Status", kind: "chip" },
-];
+export const DEFAULT_SLOTS: readonly Readonly<SlotDef>[] = Object.freeze([
+  Object.freeze({ id: "plugins", label: "Plugins", kind: "panel" } as const),
+  Object.freeze({ id: "chips", label: "Status", kind: "chip" } as const),
+]);
 const RESERVED_SLOTS = new Set(DEFAULT_SLOTS.map((s) => s.id));
 
 /** The harness's own slots (§3.4, Decision 1): never a core id, each id once. */
@@ -394,14 +422,21 @@ export interface PluginDefinition {
 /** Typed identity: `plugin.config.ts` exports `definePlugin({...})`; `build` turns it into plugin.json (`pluginJson`). */
 export const definePlugin = (d: PluginDefinition): PluginDefinition => d;
 
-/** Drops the bounds zod's `.int()` adds on its own (±MAX_SAFE_INTEGER): noise in plugin.json, not the author's limit. */
-function dropSafeIntBounds(v: unknown): unknown {
-  if (Array.isArray(v)) return v.map(dropSafeIntBounds);
+/**
+ * zod's JSON Schema in plugin.json's words: drops the bounds `.int()` adds on its own (±MAX_SAFE_INTEGER, noise,
+ * not the author's limit) and writes `z.looseObject`'s `additionalProperties: {}` as the `true` it means.
+ */
+function tidyJsonSchema(v: unknown): unknown {
+  if (Array.isArray(v)) return v.map(tidyJsonSchema);
   if (!isNode(v)) return v;
   const out: SchemaNode = {};
   for (const [k, x] of Object.entries(v)) {
     if (v.type === "integer" && ((k === "maximum" && x === Number.MAX_SAFE_INTEGER) || (k === "minimum" && x === Number.MIN_SAFE_INTEGER))) continue;
-    out[k] = dropSafeIntBounds(x);
+    if (k === "additionalProperties" && isNode(x) && Object.keys(x).length === 0) {
+      out[k] = true;
+      continue;
+    }
+    out[k] = tidyJsonSchema(x);
   }
   return out;
 }
@@ -412,13 +447,13 @@ function dropSafeIntBounds(v: unknown): unknown {
  */
 function toJson(s: z.ZodType): Record<string, unknown> {
   const json = z.toJSONSchema(s, { target: "draft-2020-12", unrepresentable: "throw" });
-  const { $schema: _drop, ...rest } = dropSafeIntBounds(json) as Record<string, unknown>;
+  const { $schema: _drop, ...rest } = tidyJsonSchema(json) as Record<string, unknown>;
   const why = checkSchemaSubset(rest);
   if (why) throw new Error(why);
   return rest;
 }
 
-/** plugin.json as `build` writes it (Decision 16): plain data, checked by the same parser the app uses. */
+/** plugin.json as `build` writes it (Decision 16): plain data, checked as the app's loader checks it. */
 export function pluginJson(d: PluginDefinition): ManifestInput {
   const raw = {
     ...d,
@@ -430,7 +465,10 @@ export function pluginJson(d: PluginDefinition): ManifestInput {
       : {}),
     actions: (d.actions ?? []).map((a) => ({ ...a, vars: a.vars ? toJson(a.vars) : { type: "object", properties: {} } })),
   };
-  const json = JSON.parse(JSON.stringify(raw)) as ManifestInput;
-  parsePluginManifest(json);
+  const text = JSON.stringify(raw, null, 2);
+  // Pretty-printed, the larger of the two ways `build` might write it, against the loader's file cap.
+  if (new TextEncoder().encode(text).length > PLUGIN_JSON_MAX_BYTES) throw new Error("plugin.json is over 256 KB");
+  const json = JSON.parse(text) as ManifestInput;
+  checkPluginModels(parsePluginManifest(json));
   return json;
 }

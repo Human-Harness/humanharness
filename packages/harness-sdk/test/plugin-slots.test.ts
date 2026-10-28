@@ -17,6 +17,14 @@ describe("slots (spec §3.4, Decision 1)", () => {
     expect(() => defineHarness({ ...base(), slots: [{ id: "plugins", label: "X", kind: "panel" }] })).toThrow(/reserved/);
     expect(() => defineHarness({ ...base(), slots: [{ id: "a", label: "A", kind: "panel" }, { id: "a", label: "A", kind: "chip" }] })).toThrow(/twice/);
     expect(() => defineHarness({ ...base(), slots: [{ id: "a", label: "A", kind: "dock" as never }] })).toThrow();
+    expect(() => defineHarness({ ...base(), slots: [{ id: "a", label: "Bottom\u202e", kind: "panel" }] })).toThrow();
+    const many = (n: number) => Array.from({ length: n }, (_, i) => ({ id: `s${i}`, label: `S${i}`, kind: "panel" as const }));
+    expect(() => defineHarness({ ...base(), slots: many(10) })).not.toThrow();
+    expect(() => defineHarness({ ...base(), slots: many(11) })).toThrow();
+  });
+  it("the core's default slots are frozen", () => {
+    expect(Object.isFrozen(DEFAULT_SLOTS)).toBe(true);
+    expect(DEFAULT_SLOTS.every((s) => Object.isFrozen(s))).toBe(true);
   });
   it("a panel or chip without slot, with an unknown slot or one of the other kind falls back to the default of its kind", () => {
     const h = defineHarness({ ...base(), slots: [{ id: "bottom", label: "Bottom", kind: "panel" }, { id: "status-bar", label: "Status", kind: "chip" }] });

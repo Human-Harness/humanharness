@@ -218,3 +218,72 @@ describe("sidekick IPC: presets", () => {
     expect(await presetWire({ presets: async () => Promise.reject(new Error("boom")) })("hh:sidekickPresets")).toEqual([]);
   });
 });
+
+describe("sidekick IPC: import", () => {
+  function importWire(available = true) {
+    const handlers = new Map<string, (...args: never[]) => unknown>();
+    const calls: unknown[][] = [];
+    const ctl = {
+      pickFiles: async () => (calls.push(["pickFiles"]), ["/n/a.md"]),
+      importDraft: async (input: unknown) => (calls.push(["importDraft", input]), { ok: false, reason: "empty" }),
+      checkSidekick: async (id: unknown) => (calls.push(["checkSidekick", id]), "changed"),
+    };
+    registerSidekickIpc(
+      (ch, fn) => void handlers.set(ch, fn),
+      () => (available ? (ctl as never) : null),
+    );
+    return { call: (ch: string, ...args: unknown[]) => (handlers.get(ch) as (...a: unknown[]) => unknown)(...args), calls };
+  }
+
+  it("passes valid requests through", async () => {
+    const w = importWire();
+    expect(await w.call("hh:sidekickPickFiles")).toEqual(["/n/a.md"]);
+    expect(await w.call("hh:sidekickImportDraft", { kind: "paste", text: "You are Rulo." })).toEqual({ ok: false, reason: "empty" });
+    await w.call("hh:sidekickImportDraft", { kind: "paste", text: "x".repeat(64 * 1024), extra: 1 });
+    await w.call("hh:sidekickImportDraft", { kind: "files", paths: ["/n/a.md", "/n/b.txt"] });
+    expect(await w.call("hh:sidekickCheckOriginal", "rulo")).toBe("changed");
+    expect(w.calls).toEqual([
+      ["pickFiles"],
+      ["importDraft", { kind: "paste", text: "You are Rulo." }],
+      ["importDraft", { kind: "paste", text: "x".repeat(64 * 1024) }],
+      ["importDraft", { kind: "files", paths: ["/n/a.md", "/n/b.txt"] }],
+      ["checkSidekick", "rulo"],
+    ]);
+  });
+
+  it("refuses malformed input before the controller", async () => {
+    const w = importWire();
+    const bad: unknown[] = [
+      null,
+      "text",
+      { kind: "paste" },
+      { kind: "paste", text: 7 },
+      { kind: "paste", text: "x".repeat(64 * 1024 + 1) },
+      { kind: "files", paths: [] },
+      { kind: "files", paths: "/n/a.md" },
+      { kind: "files", paths: ["/a", "/b", "/c", "/d", "/e"] },
+      { kind: "files", paths: ["relative/a.md"] },
+      { kind: "files", paths: ["/" + "x".repeat(1024)] },
+      { kind: "files", paths: ["/n/a\0.md"] },
+      { kind: "files", paths: [7] },
+      { kind: "other", text: "x" },
+    ];
+    for (const b of bad) expect(await w.call("hh:sidekickImportDraft", b)).toEqual({ ok: false, reason: "failed" });
+    for (const b of ["", 7, "x".repeat(81), null]) expect(await w.call("hh:sidekickCheckOriginal", b)).toBe("none");
+    expect(w.calls).toEqual([]);
+    const off = importWire(false);
+    expect(await off.call("hh:sidekickPickFiles")).toEqual([]);
+    expect(await off.call("hh:sidekickImportDraft", { kind: "paste", text: "x" })).toEqual({ ok: false, reason: "failed" });
+    expect(await off.call("hh:sidekickCheckOriginal", "rulo")).toBe("none");
+  });
+
+  it("a controller failure is a failed import, no files, or none", async () => {
+    const handlers = new Map<string, (...args: never[]) => unknown>();
+    const boom = async () => Promise.reject(new Error("boom"));
+    registerSidekickIpc((ch, fn) => void handlers.set(ch, fn), () => ({ pickFiles: boom, importDraft: boom, checkSidekick: boom }) as never);
+    const call = (ch: string, ...a: unknown[]) => (handlers.get(ch) as (...x: unknown[]) => unknown)(...a);
+    expect(await call("hh:sidekickPickFiles")).toEqual([]);
+    expect(await call("hh:sidekickImportDraft", { kind: "paste", text: "x" })).toEqual({ ok: false, reason: "failed" });
+    expect(await call("hh:sidekickCheckOriginal", "rulo")).toBe("none");
+  });
+});

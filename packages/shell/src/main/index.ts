@@ -118,6 +118,7 @@ import { type ResolvedReference, displayPath, resolveReferences, usableReference
 import { respondHandler } from "./respond-ipc";
 import { SettingsController } from "./settings";
 import { SidekickController, localDay } from "./sidekick";
+import { readImportFiles } from "./sidekick-import";
 import { registerSidekickIpc } from "./sidekick-ipc";
 import { SidekickStore } from "./sidekick-store";
 import { SetupSteps, recordSetup, setupStepViews } from "./setup-steps";
@@ -1743,6 +1744,13 @@ if (loaded) {
     },
     changed: (state) => sendToWindow("hh:sidekick", state),
     events: { read: readSidekickEvents, append: appendSidekickEvent },
+    // Import (sidekick spec §2a.6): a file in an engine's settings folder under home is refused, links resolved, before any read.
+    importFiles: (paths) => readImportFiles(paths, os.homedir()),
+    pickImportFiles: async () => {
+      if (!window || window.isDestroyed()) return [];
+      const r = await dialog.showOpenDialog(window, { properties: ["openFile", "multiSelections"], filters: [{ name: "Text", extensions: ["md", "txt"] }] });
+      return r.canceled ? [] : r.filePaths;
+    },
     // "Save as decision" (sidekick plan Decision 7): a note like any other, written as the person when they press the button.
     saveDecision: async ({ scope, action, title, decision }) => {
       const c = await validConfig();

@@ -934,6 +934,16 @@ export interface HarnessClient {
     presets(): Promise<SidekickPreset[]>;
     /** "Add <name>": the preset becomes one of the person's sidekicks, and the presets count as offered. */
     adoptPreset(name: string): Promise<void>;
+    /** "Choose files" for an import: the system picker's paths ([] when cancelled). Nothing is read yet. */
+    pickFiles(): Promise<string[]>;
+    /**
+     * An import (spec §2a.6): pasted text (at most 64 KB) or picked files (at most 4 plain-text files of 64 KB, never
+     * inside an engine's settings folder) turned into a draft sidekick and what it knows. Nothing is saved: the
+     * preview's Save does that. Works with Sidekick off once the engine notice was accepted.
+     */
+    importDraft(input: SidekickImportInput): Promise<SidekickImportResult>;
+    /** Whether an imported sidekick's files changed since ("The original changed"); `none` when it wasn't imported from files. */
+    checkOriginal(sidekickId: string): Promise<SidekickOriginal>;
     onChange(listener: (state: SidekickState) => void): () => void;
   };
   /** The harness's setup steps (setup-steps spec). A harness with none answers no steps and refuses every change. */
@@ -1125,4 +1135,26 @@ export interface SidekickPreset {
   adopted: boolean;
 }
 export type SidekickPlaceAnswer = { ok: true; text: string; speaker: SidekickInfo } | { ok: false };
+/** Where an imported sidekick came from: pasted text, or files with the hash of what was read. */
+export type SidekickSource = { kind: "paste" } | { kind: "files"; paths: string[]; hash: string };
+export type SidekickImportInput = { kind: "paste"; text: string } | { kind: "files"; paths: string[] };
+/** An imported sidekick before it is saved. */
+export interface SidekickDraft {
+  name: string;
+  mark: string;
+  personality: string;
+  purposes: SidekickPurposeView[];
+  source: SidekickSource;
+}
+/**
+ * Why an import gave no draft: a file in an engine's settings folder, too many files, one too big (paste too), not
+ * plain text, unreadable, nothing pasted, no engine set up (or its notice not accepted), the turn failed or gave
+ * nothing usable, or a newer import replaced it.
+ */
+export type SidekickImportFailure = "engine-settings" | "too-many" | "too-big" | "type" | "unreadable" | "empty" | "unavailable" | "failed" | "cancelled";
+export type SidekickImportResult =
+  | { ok: true; draft: SidekickDraft; learned: { text: string; level: "you" | "harness" }[]; skipped: string[] }
+  | { ok: false; reason: SidekickImportFailure; file?: string };
+/** An imported sidekick's files: as read, changed since, gone (or now refused); `none` when it wasn't imported from files. */
+export type SidekickOriginal = "unchanged" | "changed" | "gone" | "none";
 export type SidekickOutcome = "used" | "edited" | "sent-anyway" | "dismissed";

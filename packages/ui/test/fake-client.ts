@@ -40,6 +40,9 @@ import type {
   SetupStepResult,
   SetupStepsState,
   SidekickApproveCheck,
+  SidekickImportInput,
+  SidekickImportResult,
+  SidekickOriginal,
   SidekickPlaceAnswer,
   SidekickPreset,
   SidekickLearned,
@@ -584,6 +587,12 @@ export class FakeClient implements HarnessClient {
   sidekickPlace: SidekickPlaceAnswer | null = null;
   /** What sidekick.presets answers; adoptPreset marks one adopted. */
   sidekickPresets: SidekickPreset[] = [];
+  /** What sidekick.importDraft answers; null: `{ ok: false, reason: "failed" }`. */
+  sidekickImport: SidekickImportResult | null = null;
+  /** What sidekick.pickFiles answers. */
+  sidekickPicked: string[] = [];
+  /** What sidekick.checkOriginal answers. */
+  sidekickOriginal: SidekickOriginal = "none";
   /** What the sidekick namespace was asked, in order (reads are not recorded). */
   readonly sidekickCalls: unknown[][] = [];
   private sidekickListeners = new Set<(s: SidekickState) => void>();
@@ -643,6 +652,18 @@ export class FakeClient implements HarnessClient {
     adoptPreset: async (name: string) => {
       this.sidekickCalls.push(["adoptPreset", name]);
       this.sidekickPresets = this.sidekickPresets.map((p) => (p.name === name ? { ...p, adopted: true } : p));
+    },
+    pickFiles: async () => {
+      this.sidekickCalls.push(["pickFiles"]);
+      return [...this.sidekickPicked];
+    },
+    importDraft: async (input: SidekickImportInput): Promise<SidekickImportResult> => {
+      this.sidekickCalls.push(["importDraft", input]);
+      return this.sidekickImport ?? { ok: false, reason: "failed" };
+    },
+    checkOriginal: async (id: string): Promise<SidekickOriginal> => {
+      this.sidekickCalls.push(["checkOriginal", id]);
+      return this.sidekickOriginal;
     },
     onChange: (l: (s: SidekickState) => void) => {
       this.sidekickListeners.add(l);

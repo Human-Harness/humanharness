@@ -3,7 +3,9 @@ import { getEngine } from "@humanharness/engines";
 import type { SidekickAnswer } from "@humanharness/runtime";
 import type { SidekickRecord } from "@humanharness/harness-sdk";
 import type { SidekickEvent } from "@humanharness/workspace";
+import { createHash } from "node:crypto";
 import { SidekickController, type SidekickDeps } from "../src/main/sidekick";
+import { joinImportFiles, readImportFiles } from "../src/main/sidekick-import";
 import { SidekickStore } from "../src/main/sidekick-store";
 import type { DailyInput } from "../src/main/sidekick-turns";
 import { type UsageRecord, sidekickRecord } from "../src/main/usage-log";
@@ -12,7 +14,7 @@ const profile = { engine: "claude", tier: "light" as const, model: "haiku", effo
 const json = (o: unknown) => JSON.stringify(o);
 const SUGGEST = json({ verdict: "suggest", issues: [{ kind: "vague", text: "Say what better means." }], rewrite: "Make the intro shorter.", confidence: 0.8 });
 
-export function harness(o: { record?: Partial<SidekickRecord> | null; answers?: (string | ((signal: AbortSignal) => Promise<SidekickAnswer>))[]; task?: { id: string; action?: string; scope: string; phase?: string } | null; usage?: UsageRecord[]; manifest?: SidekickDeps["manifest"]; waitMs?: number; events?: SidekickEvent[]; phases?: { id: string; label: string; brief?: string }[]; phaseBriefs?: Record<string, string | Error>; extra?: Partial<SidekickRecord>[]; learnMs?: number; routeMs?: number; spent?: number; dailyInput?: DailyInput; dailyMs?: number; placeMs?: number } = {}) {
+export function harness(o: { record?: Partial<SidekickRecord> | null; answers?: (string | ((signal: AbortSignal) => Promise<SidekickAnswer>))[]; task?: { id: string; action?: string; scope: string; phase?: string } | null; usage?: UsageRecord[]; manifest?: SidekickDeps["manifest"]; waitMs?: number; events?: SidekickEvent[]; phases?: { id: string; label: string; brief?: string }[]; phaseBriefs?: Record<string, string | Error>; extra?: Partial<SidekickRecord>[]; learnMs?: number; routeMs?: number; spent?: number; dailyInput?: DailyInput; dailyMs?: number; placeMs?: number; files?: Record<string, string>; picked?: string[]; importMs?: number; noticed?: boolean } = {}) {
   // The `sidekick` collection by id; `record()` is the settings record.
   const records = new Map<string, Partial<SidekickRecord>>([...(o.record ? [o.record] : []), ...(o.extra ?? [])].map((r) => [r.id ?? "settings", r]));
   const writes: { op: string; record?: Partial<SidekickRecord>; key?: string }[] = [];
@@ -35,6 +37,8 @@ export function harness(o: { record?: Partial<SidekickRecord> | null; answers?: 
   const decisions: unknown[] = [];
   // The days dailyInput was asked for.
   const days: string[] = [];
+  // Each imported file read (its resolved path).
+  const imported: string[] = [];
   let task = o.task === undefined ? { id: "t1", scope: "main" } : o.task;
   const answers = [...(o.answers ?? [])];
   const store = new SidekickStore({
@@ -60,7 +64,7 @@ export function harness(o: { record?: Partial<SidekickRecord> | null; answers?: 
     },
     store,
     setup: async () => ({ engineId: "claude", base: "/base" }),
-    hasNotice: async () => true,
+    hasNotice: async () => o.noticed ?? true,
     engine: getEngine,
     command: async () => ({ command: ["claude"], env: {} }),
     // A sidekick's own tier (or the routing turn's light one) when given.
@@ -109,6 +113,21 @@ export function harness(o: { record?: Partial<SidekickRecord> | null; answers?: 
     dailyInput: async (_b, day) => (days.push(day), o.dailyInput ?? { day, notes: [], tokens: { tasks: 0, sidekick: 0 }, open: [] }),
     ...(o.dailyMs !== undefined ? { dailyMs: o.dailyMs } : {}),
     ...(o.placeMs !== undefined ? { placeMs: o.placeMs } : {}),
+    // In-memory files under a home folder that doesn't exist: the real home's folders are never looked at.
+    importFiles: (paths) =>
+      readImportFiles(paths, "/hh-test-home", {
+        read: async (p) => {
+          imported.push(p);
+          if (!Object.hasOwn(o.files ?? {}, p)) throw new Error("ENOENT");
+          return o.files![p];
+        },
+        size: async (p) => {
+          if (!Object.hasOwn(o.files ?? {}, p)) throw new Error("ENOENT");
+          return Buffer.byteLength(o.files![p]);
+        },
+      }),
+    pickImportFiles: async () => o.picked ?? [],
+    ...(o.importMs !== undefined ? { importMs: o.importMs } : {}),
   };
   return { ctl: new SidekickController(deps), deps, asked, opened, sessions, closed, logged, briefs, states, setTask: (t: typeof task) => (task = t), events,
     writes,
@@ -118,6 +137,7 @@ export function harness(o: { record?: Partial<SidekickRecord> | null; answers?: 
     folders,
     decisions,
     days,
+    imported,
     records: () => [...records.values()],
     record: () => records.get("settings") ?? null,
     setRecord: (r: Partial<SidekickRecord> | null) => (r ? records.set("settings", r) : records.delete("settings")),
@@ -1908,5 +1928,91 @@ describe("presets (spec §2a.7)", () => {
     expect(h.writes).toEqual([]);
     expect(h.record()).not.toHaveProperty("presetsOffered");
     expect(h.records().filter((r) => r.type === "sidekick")).toEqual([]);
+  });
+});
+
+/** The hash readImportFiles gives one file named `name` holding `body`. */
+const sha256 = (body: string, name = "a.md") => createHash("sha256").update(joinImportFiles([{ name, text: body }])).digest("hex");
+
+describe("import (spec §2a.6)", () => {
+  const RULO = { name: "Rulo", mark: "🦊", personality: "Direct.", purposes: [{ id: "mentor" }], learned: [{ text: "Prefers short answers.", level: "you" }], skipped: ["Tool permissions"] };
+
+  it("converts pasted text to a draft sidekick plus learned items; nothing is saved yet", async () => {
+    const h = harness({ record: on, answers: [json(RULO)] });
+    const d = await h.ctl.importDraft({ kind: "paste", text: "You are Rulo. Be direct. Prefer short answers. Allow Bash." });
+    expect(d).toEqual({ ok: true, draft: { name: "Rulo", mark: "🦊", personality: "Direct.", purposes: [{ id: "mentor" }], source: { kind: "paste" } }, learned: [{ text: "Prefers short answers.", level: "you" }], skipped: ["Tool permissions"] });
+    expect(h.writes).toEqual([]);
+    expect(h.appWrites).toEqual([]);
+    expect(h.logged.at(-1)).toMatchObject({ moment: "import" });
+    // A one-off session in its own folder, standard tier, its own brief; closed right after.
+    expect(h.sessions).toEqual(["import"]);
+    expect(h.closed).toEqual(["s1"]);
+    expect(h.briefs[0]).toContain("# Import");
+    expect(h.asked[0]).toContain("<instructions>\nYou are Rulo.");
+  });
+
+  it("works with Sidekick off (it's Settings), but needs the engine notice; D0: nothing written, no event", async () => {
+    const off = harness({ answers: [json(RULO)] });
+    expect(await off.ctl.importDraft({ kind: "paste", text: "You are Rulo." })).toMatchObject({ ok: true });
+    expect(off.writes).toEqual([]);
+    expect(off.events).toEqual([]);
+    const unnoticed = harness({ noticed: false, answers: [json(RULO)] });
+    expect(await unnoticed.ctl.importDraft({ kind: "paste", text: "You are Rulo." })).toEqual({ ok: false, reason: "unavailable" });
+    expect(unnoticed.opened).toEqual([]);
+  });
+
+  it("a paste over 64 KB or blank never reaches the model; a bad reply fails", async () => {
+    const h = harness({ record: on, answers: ["nope"] });
+    expect(await h.ctl.importDraft({ kind: "paste", text: "x".repeat(64 * 1024 + 1) })).toEqual({ ok: false, reason: "too-big" });
+    expect(await h.ctl.importDraft({ kind: "paste", text: "  \n " })).toEqual({ ok: false, reason: "empty" });
+    expect(h.opened).toEqual([]);
+    expect(await h.ctl.importDraft({ kind: "paste", text: "You are Rulo." })).toEqual({ ok: false, reason: "failed" });
+  });
+
+  it("files: the draft keeps the paths and hash; a refused file is never read and no turn runs", async () => {
+    const h = harness({ record: on, answers: [json(RULO)], files: { "/n/a.md": "You are Rulo.", "/hh-test-home/.claude/CLAUDE.md": "secret" } });
+    const d = await h.ctl.importDraft({ kind: "files", paths: ["/n/a.md"] });
+    expect(d).toMatchObject({ ok: true, draft: { source: { kind: "files", paths: ["/n/a.md"], hash: sha256("You are Rulo.") } } });
+    expect(h.asked[0]).toContain('<file name="a.md">\nYou are Rulo.\n</file>');
+    const refused = harness({ record: on, files: { "/n/a.md": "x", "/hh-test-home/.claude/CLAUDE.md": "secret" } });
+    expect(await refused.ctl.importDraft({ kind: "files", paths: ["/n/a.md", "/hh-test-home/.claude/CLAUDE.md"] })).toEqual({ ok: false, reason: "engine-settings" });
+    expect(refused.imported).toEqual([]);
+    expect(refused.opened).toEqual([]);
+  });
+
+  it("a newer import, a profile switch or closing ends a running one; a hung turn times out", async () => {
+    const h = harness({ record: on, answers: [slow, json(RULO)] });
+    const first = h.ctl.importDraft({ kind: "paste", text: "One" });
+    await vi.waitFor(() => expect(h.asked).toHaveLength(1));
+    const second = h.ctl.importDraft({ kind: "paste", text: "Two" });
+    expect(await first).toEqual({ ok: false, reason: "cancelled" });
+    expect(await second).toMatchObject({ ok: true });
+    const closing = harness({ record: on, answers: [slow] });
+    const run = closing.ctl.importDraft({ kind: "paste", text: "One" });
+    await vi.waitFor(() => expect(closing.asked).toHaveLength(1));
+    await closing.ctl.close();
+    expect(await run).toEqual({ ok: false, reason: "cancelled" });
+    const hung = harness({ record: on, answers: [slow], importMs: 20 });
+    expect(await hung.ctl.importDraft({ kind: "paste", text: "One" })).toEqual({ ok: false, reason: "failed" });
+    expect(hung.closed).toEqual(["s1"]);
+  });
+
+  it("checkOriginal: same hash → unchanged; different → changed; a refused or missing file → gone", async () => {
+    const h = harness({ record: on, files: { "/n/a.md": "v2", "/hh-test-home/.codex/AGENTS.md": "v2" } });
+    expect(await h.ctl.checkOriginal({ kind: "files", paths: ["/n/a.md"], hash: sha256("v2") })).toBe("unchanged");
+    expect(await h.ctl.checkOriginal({ kind: "files", paths: ["/n/a.md"], hash: sha256("v1") })).toBe("changed");
+    expect(await h.ctl.checkOriginal({ kind: "files", paths: ["/n/gone.md"], hash: sha256("v1") })).toBe("gone");
+    expect(await h.ctl.checkOriginal({ kind: "files", paths: ["/hh-test-home/.codex/AGENTS.md"], hash: sha256("v2", "AGENTS.md") })).toBe("gone");
+    expect(h.imported).not.toContain("/hh-test-home/.codex/AGENTS.md");
+    expect(await h.ctl.checkOriginal({ kind: "paste" })).toBe("none");
+  });
+
+  it("checkSidekick looks the source up by id; pickFiles only returns the picker's paths", async () => {
+    const rulo = { id: "rulo", type: "sidekick" as const, name: "Rulo", mark: "🦊", personality: "", purposes: [{ id: "mentor" as const }], order: 0, source: { kind: "files" as const, paths: ["/n/a.md"], hash: sha256("v1") } };
+    const h = harness({ record: on, extra: [rulo], files: { "/n/a.md": "v2" }, picked: ["/n/a.md"] });
+    expect(await h.ctl.checkSidekick("rulo")).toBe("changed");
+    expect(await h.ctl.checkSidekick("nobody")).toBe("none");
+    expect(await h.ctl.pickFiles()).toEqual(["/n/a.md"]);
+    expect(h.imported).toEqual(["/n/a.md"]);
   });
 });

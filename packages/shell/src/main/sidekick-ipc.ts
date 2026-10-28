@@ -1,5 +1,7 @@
-import type { SidekickApproveCheck, SidekickLearned, SidekickOutcome, SidekickPlaceAnswer, SidekickPreset, SidekickReview, SidekickSetResult, SidekickState } from "@humanharness/ui/client";
+import { isAbsolute } from "node:path";
+import type { SidekickApproveCheck, SidekickImportInput, SidekickImportResult, SidekickLearned, SidekickOriginal, SidekickOutcome, SidekickPlaceAnswer, SidekickPreset, SidekickReview, SidekickSetResult, SidekickState } from "@humanharness/ui/client";
 import type { SidekickController } from "./sidekick";
+import { IMPORT_MAX_BYTES, IMPORT_MAX_FILES } from "./sidekick-import";
 import { SIDEKICK_PLACE_INPUT_MAX } from "./sidekick-turns";
 
 const OUTCOMES: readonly SidekickOutcome[] = ["used", "edited", "sent-anyway", "dismissed"];
@@ -13,9 +15,22 @@ const PLACE = /^[a-z][a-z0-9_-]{0,63}$/;
 const NO_ANSWER: SidekickPlaceAnswer = { ok: false };
 /** A preset's name (the manifest's bound). */
 const MAX_PRESET_NAME = 40;
+/** An import's picked path (the import source schema's bound). */
+const MAX_PATH = 1024;
+const IMPORT_FAILED: SidekickImportResult = { ok: false, reason: "failed" };
+
+/** An import request: pasted text (at most IMPORT_MAX_BYTES characters; the controller counts bytes) or 1..4 absolute paths. */
+function importInput(v: unknown): SidekickImportInput | null {
+  if (typeof v !== "object" || v === null) return null;
+  const { kind, text, paths } = v as { kind?: unknown; text?: unknown; paths?: unknown };
+  if (kind === "paste") return typeof text === "string" && text.length <= IMPORT_MAX_BYTES ? { kind, text } : null;
+  if (kind !== "files" || !Array.isArray(paths) || paths.length === 0 || paths.length > IMPORT_MAX_FILES) return null;
+  const ok = paths.every((p: unknown) => typeof p === "string" && p.length > 0 && p.length <= MAX_PATH && !p.includes("\0") && isAbsolute(p));
+  return ok ? { kind, paths: [...(paths as string[])] } : null;
+}
 
 type Handle = (channel: string, fn: (...args: never[]) => unknown) => void;
-type Ctl = Pick<SidekickController, "state" | "set" | "review" | "cancel" | "resolve" | "mute" | "unmute" | "saveDecision" | "learned" | "forget" | "forgetAll" | "editLearned" | "beforeApprove" | "cancelApprove" | "ask" | "presets" | "adoptPreset">;
+type Ctl = Pick<SidekickController, "state" | "set" | "review" | "cancel" | "resolve" | "mute" | "unmute" | "saveDecision" | "learned" | "forget" | "forgetAll" | "editLearned" | "beforeApprove" | "cancelApprove" | "ask" | "presets" | "adoptPreset" | "pickFiles" | "importDraft" | "checkSidekick">;
 const MAX_ID = 80;
 const isId = (v: unknown): v is string => typeof v === "string" && v.length > 0 && v.length <= MAX_ID;
 /** Edits to the learned items: at most MAX_EDITS, each an id and a text of 1..MAX_LEARNED characters (not blank). */
@@ -96,6 +111,20 @@ export function registerSidekickIpc(handle: Handle, ctl: () => Ctl | null): void
   handle("hh:sidekickAdoptPreset", async (name: unknown) => {
     if (typeof name !== "string" || !name || name.length > MAX_PRESET_NAME) return;
     await ctl()?.adoptPreset(name);
+  });
+  // Import (spec §2a.6): the picker only returns paths; files are refused and read in main, never by the renderer.
+  handle("hh:sidekickPickFiles", async (): Promise<string[]> => (await ctl()?.pickFiles().catch(() => [])) ?? []);
+  handle("hh:sidekickImportDraft", async (input: unknown): Promise<SidekickImportResult> => {
+    const c = ctl();
+    const req = importInput(input);
+    if (!c || !req) return IMPORT_FAILED;
+    return c.importDraft(req).catch(() => IMPORT_FAILED);
+  });
+  // By the sidekick's id: the paths checked are the stored ones, never the renderer's.
+  handle("hh:sidekickCheckOriginal", async (id: unknown): Promise<SidekickOriginal> => {
+    const c = ctl();
+    if (!c || !isId(id)) return "none";
+    return c.checkSidekick(id).catch(() => "none" as const);
   });
   handle("hh:sidekickEditLearned", async (changes: unknown) => {
     if (!isEdits(changes)) return;

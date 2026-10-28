@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { LINKED_MANY_MAX } from "@humanharness/harness-sdk";
+import { LINKED_KEYS_MAX, LINKED_MANY_MAX } from "@humanharness/harness-sdk";
 import { ScopeStore, cleanTitle, scopeSlug } from "../src";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
@@ -226,5 +226,16 @@ describe("ScopeStore links (hatches spec §3.2)", () => {
     );
     const [s] = await new ScopeStore(base, at).list();
     expect(s.linked).toEqual([{ key: "repos", path: "/ok", mode: "read", tracked: false }]);
+  });
+
+  it("loads at most every key full of links from a hand-edited file", async () => {
+    const base = tmp();
+    const max = LINKED_KEYS_MAX * LINKED_MANY_MAX;
+    const linked = Array.from({ length: max + 50 }, (_, i) => ({ key: "repos", path: `/f${i}`, mode: "read", tracked: false }));
+    fs.mkdirSync(path.join(base, ".harness"), { recursive: true });
+    fs.writeFileSync(file(base), JSON.stringify([{ id: "app", title: "App", createdAt: "", archived: false, linked }]));
+    const [s] = await new ScopeStore(base, at).list();
+    expect(s.linked).toHaveLength(max);
+    expect(s.linked?.at(-1)?.path).toBe(`/f${max - 1}`);
   });
 });

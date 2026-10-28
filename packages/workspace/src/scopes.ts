@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { LINKED_MANY_MAX } from "@humanharness/harness-sdk";
+import { LINKED_KEYS_MAX, LINKED_MANY_MAX } from "@humanharness/harness-sdk";
 import { isScopeId, scopesFile } from "./layout";
 
 /** A folder linked to a scope (hatches spec §3.2). `path` is absolute and real (links resolved at link time). */
@@ -63,6 +63,8 @@ const LINK_KEY = /^[a-z][a-z0-9_-]{0,63}$/;
 const LINK_PATH_MAX = 4096;
 const LINK_TAG_MAX = 128;
 const LINK_NONCE = /^[0-9a-f]{16,64}$/;
+/** The most links one entry can hold (every key full): a longer list in a hand-edited file is cut there. */
+const LINKS_MAX = LINKED_KEYS_MAX * LINKED_MANY_MAX;
 
 function cleanLink(v: unknown): LinkedFolderEntry | null {
   if (!isObject(v) || typeof v.key !== "string" || !LINK_KEY.test(v.key)) return null;
@@ -84,9 +86,14 @@ function cleanLink(v: unknown): LinkedFolderEntry | null {
 function cleanEntry(v: unknown): ScopeEntry | null {
   if (!isObject(v) || !isScopeId(v.id) || typeof v.title !== "string" || !v.title.trim()) return null;
   const links: LinkedFolderEntry[] = [];
+  const paths = new Set<string>();
   for (const l of Array.isArray(v.linked) ? v.linked : []) {
+    if (links.length >= LINKS_MAX) break;
     const c = cleanLink(l);
-    if (c && !links.some((x) => x.path === c.path)) links.push(c);
+    if (c && !paths.has(c.path)) {
+      paths.add(c.path);
+      links.push(c);
+    }
   }
   return {
     id: v.id,

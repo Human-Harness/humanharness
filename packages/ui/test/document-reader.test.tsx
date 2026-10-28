@@ -457,6 +457,43 @@ describe("commenting on a selection, the footer bar (review spec §5.2–§5.4)"
     await waitFor(() => expect(client.reviewCalls.find((c) => c.op === "approve")?.args).toEqual(["docs/cache.md", fakeBlob(ANALYSIS), {}]));
   });
 
+  it("an edit on disk turns 'Approved' into stale, and approve then sends the new version's blob", async () => {
+    const { client } = setup({ review: true });
+    client.reviews["docs/cache.md"] = { path: "docs/cache.md", task: null, comments: [], approvals: [{ blob: fakeBlob(ANALYSIS), at: "2026-10-28T10:00:00.000Z" }] };
+    client.currentBlobs["docs/cache.md"] = fakeBlob(ANALYSIS);
+    act(() => client.emitReviewChanged("docs/cache.md"));
+    expect(await screen.findByText(/^Approved · /)).toBeTruthy();
+    const edited = ANALYSIS.replace("Slow calls.", "Fast calls.");
+    client.currentBlobs["docs/cache.md"] = fakeBlob(edited);
+    // Only the file watch fires: no review change is emitted.
+    await act(async () => client.changeDocument("docs/cache.md", edited));
+    expect(await screen.findByText("Changed since approval")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    await waitFor(() => expect(client.reviewCalls.find((c) => c.op === "approve")?.args).toEqual(["docs/cache.md", fakeBlob(edited), {}]));
+  });
+
+  it("after Cancel the focus goes back to the text", async () => {
+    setup({ review: true });
+    await screen.findByRole("region", { name: "Comments" });
+    const para = screen.getByText("Slow calls.");
+    select(para);
+    fireEvent.mouseUp(para);
+    fireEvent.click(await screen.findByRole("button", { name: "Comment" }));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(document.activeElement?.className).toContain("hh-reader-scroll");
+  });
+
+  it("an approved version that can't be read says so, not 'too large'", async () => {
+    const { client } = setup({ review: true });
+    await screen.findByRole("region", { name: "Comments" });
+    client.reviews["docs/cache.md"] = { path: "docs/cache.md", task: null, comments: [], approvals: [{ blob: "0".repeat(40), at: "2026-10-28T10:00:00.000Z" }] };
+    client.currentBlobs["docs/cache.md"] = "1".repeat(40);
+    act(() => client.emitReviewChanged("docs/cache.md"));
+    fireEvent.click(await screen.findByRole("button", { name: "See what changed" }));
+    const diff = await screen.findByRole("region", { name: "Changes since the approval" });
+    expect(diff.textContent).toBe("The approved version can't be read any more, so there is nothing to compare.");
+  });
+
   it("'See what changed' shows the lines added and removed since the approval", async () => {
     const { client } = setup({ review: true });
     await screen.findByRole("region", { name: "Comments" });

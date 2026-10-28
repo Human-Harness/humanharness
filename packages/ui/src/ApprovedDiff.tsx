@@ -37,15 +37,19 @@ export function ApprovedDiff({ client, path, current }: { client: HarnessClient;
       live = false;
     };
   }, [client, path]);
+  // null: too long to compare; "missing": the approved version can't be read (approvedText failed).
   const lines = useMemo(() => {
-    if (approved === "loading" || approved === null) return approved;
+    if (approved === "loading") return approved;
+    if (approved === null) return "missing" as const;
     const all = lineDiff(approved, current);
     return all && aroundChanges(all);
   }, [approved, current]);
   if (lines === "loading") return null;
   return (
     <section className="hh-diff" aria-label={t("review.diff")}>
-      {lines === null ? (
+      {lines === "missing" ? (
+        <p className="hh-caption">{t("review.noApproved")}</p>
+      ) : lines === null ? (
         <p className="hh-caption">{t("review.noDiff")}</p>
       ) : (
         <ol>

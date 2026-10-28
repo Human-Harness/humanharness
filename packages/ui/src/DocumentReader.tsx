@@ -112,6 +112,8 @@ export function DocumentReader({
   const anchor = typeof target.anchor === "string" && target.anchor ? target.anchor : undefined;
   /** Reads the drawn document again (set by the read effect): a review change may have swapped a passage. */
   const reread = useRef<(() => void) | null>(null);
+  /** Loads the review view again (the latest `loadReview`; set below, once it is declared). */
+  const reviewAgain = useRef<() => void>(() => {});
   const [nonce, setNonce] = useState(0);
   const [rv, setRv] = useState<ReviewView | null>(null);
   const [active, setActive] = useState<string | null>(null);
@@ -154,14 +156,14 @@ export function DocumentReader({
       client.readDocument(path).then(done, () => done({ ok: false, reason: "missing" }));
     };
     read();
-    const off = client.watchDocument(path, () => {
+    // The text changed (on disk, or by a swap): its review view too, so an approval turns stale and approve sends the new blob.
+    const again = () => {
       restore.current = headingAtTop(scrollRef.current);
       read();
-    });
-    reread.current = () => {
-      restore.current = headingAtTop(scrollRef.current);
-      read();
+      reviewAgain.current();
     };
+    const off = client.watchDocument(path, again);
+    reread.current = again;
     return () => {
       live = false;
       reread.current = null;
@@ -188,13 +190,13 @@ export function DocumentReader({
     };
     client.documents.view(want).then(done, () => done({ ok: false, reason: "not-ready" }));
   }, [client, path, review, refused]);
+  reviewAgain.current = loadReview;
   useEffect(() => {
     if (!review || refused) return;
     loadReview();
+    // `reread` (through the nonce) reads the text and the view again.
     const off = client.documents.onChange((p) => {
-      if (p !== path) return;
-      loadReview();
-      setNonce((n) => n + 1);
+      if (p === path) setNonce((n) => n + 1);
     });
     return () => {
       reviewSeq.current++;
@@ -283,7 +285,11 @@ export function DocumentReader({
     }
     return found;
   };
-  /** A selection inside the rendered text offers "Comment" below it; anything else closes the offer. */
+  /**
+   * A selection inside the rendered text offers "Comment" below it; anything else closes the offer.
+   * Known gap: selecting needs a pointer (or the system's own text selection keys once focus is in the text); the
+   * reader has no caret mode of its own, so a keyboard-only person comments through the agent's questions only.
+   */
   const onSelect = () => {
     if (draft !== null) return;
     const sel = window.getSelection();
@@ -298,9 +304,11 @@ export function DocumentReader({
     const host = scroller.getBoundingClientRect();
     setPick({ selected, heading: headingAbove(r.startContainer), top: rect.bottom - host.top + scroller.scrollTop, left: Math.max(0, rect.left - host.left) });
   };
+  /** Closes the offer; focus goes back to the text, never lost to the page when its box unmounts. */
   const closePick = () => {
     setPick(null);
     setDraft(null);
+    scrollRef.current?.focus({ preventScroll: true });
   };
   const saveDraft = () => {
     const text = draft?.trim();

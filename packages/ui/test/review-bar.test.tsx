@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { cleanup, fireEvent, screen } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ReviewResult, ReviewSummary } from "../src/client";
 import { ReviewBar } from "../src/ReviewBar";
@@ -62,6 +62,35 @@ describe("ReviewBar (§5.3, §5.4)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Approve" }));
     fireEvent.click(await screen.findByRole("button", { name: "Discard and approve" }));
     expect(q.onApprove).toHaveBeenCalledWith(undefined, { discard: true });
+  });
+
+  it("unsent items and a blocking question: 'Discard and approve' asks the reason once and sends both", async () => {
+    const p = await setup(S({ unsent: 1, questions: 1, blocking: 1 }));
+    fireEvent.click(screen.getByRole("button", { name: "Approve · 1 blocking open" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Discard and approve" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Approve anyway, with a reason" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Why approve with blocking questions open?" }), { target: { value: "Decided" } });
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    expect(p.onApprove).toHaveBeenCalledTimes(1);
+    expect(p.onApprove).toHaveBeenCalledWith("Decided", { discard: true });
+  });
+
+  it("a 'reason-required' answer to a discard keeps the discard with the reason", async () => {
+    const onApprove = vi.fn(async (_r?: string, o?: { discard?: boolean }): Promise<ReviewResult> => (o?.discard && _r === undefined ? { ok: false, reason: "reason-required" } : { ok: true }));
+    await setup(S({ unsent: 1 }), { onApprove });
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Discard and approve" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Approve anyway, with a reason" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Why approve with blocking questions open?" }), { target: { value: "Decided" } });
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    expect(onApprove).toHaveBeenLastCalledWith("Decided", { discard: true });
+  });
+
+  it("the status line is one live region, there before anything is said", async () => {
+    await setup(S({ unsent: 1 }));
+    expect(screen.getByRole("status").textContent).toBe("");
+    fireEvent.click(screen.getByRole("button", { name: "Send comment (1)" }));
+    await waitFor(() => expect(screen.getByRole("status").textContent).toBe("Sent to the task."));
   });
 
   it("a document changed since it was read is not approved, and says so", async () => {

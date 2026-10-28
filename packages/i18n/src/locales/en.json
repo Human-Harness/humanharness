@@ -741,6 +741,7 @@
     "seeChanges": "See what changed",
     "hideChanges": "Hide changes",
     "noDiff": "Too large to compare here.",
+    "noApproved": "The approved version can't be read any more, so there is nothing to compare.",
     "diff": "Changes since the approval",
     "notFound": "That text could not be found in the document. Select plain text, not a diagram.",
     "chipQuestions_one": "{{count}} question open",

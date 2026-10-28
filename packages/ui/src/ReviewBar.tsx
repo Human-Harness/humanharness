@@ -21,6 +21,8 @@ export function ReviewBar({ summary, busy, approvedReason, changesOpen, onSend, 
   const [asking, setAsking] = useState<"reason" | "unsent" | null>(null);
   const [reason, setReason] = useState("");
   const [said, setSaid] = useState<string | null>(null);
+  /** "Discard and approve" was chosen: kept for the reason asked next, so the two questions never loop. */
+  const [discard, setDiscard] = useState(false);
   const when = (iso?: string) => (iso ? new Intl.DateTimeFormat(i18n.language, { dateStyle: "medium", timeStyle: "short" }).format(new Date(iso)) : "");
 
   const send = async () => {
@@ -34,10 +36,20 @@ export function ReviewBar({ summary, busy, approvedReason, changesOpen, onSend, 
     if (r.ok) {
       setAsking(null);
       setReason("");
+      setDiscard(false);
       setSaid(null);
     } else if (r.reason === "unsent") setAsking("unsent");
     else if (r.reason === "reason-required") setAsking("reason");
     else setSaid(r.reason === "changed" ? t("review.changedWhileOpen") : t("review.failed"));
+  };
+  const cancel = () => {
+    setAsking(null);
+    setDiscard(false);
+  };
+  const discardAndApprove = () => {
+    setDiscard(true);
+    if (summary.blocking > 0) setAsking("reason");
+    else void approveNow(undefined, { discard: true });
   };
   const approve = () => {
     setSaid(null);
@@ -46,11 +58,18 @@ export function ReviewBar({ summary, busy, approvedReason, changesOpen, onSend, 
     else void approveNow();
   };
 
+  // One live region, always mounted, so a screen reader hears each new line (§5.3).
+  const status = (
+    <p className="hh-caption" role="status">
+      {said}
+    </p>
+  );
   if (summary.status === "approved")
     return (
       <footer className="hh-review-bar">
         <span className="hh-review-approved">{t("review.approved", { time: when(summary.approvedAt) })}</span>
         {approvedReason && <span className="hh-caption">{t("review.approvedReason", { reason: approvedReason })}</span>}
+        {status}
       </footer>
     );
   return (
@@ -75,7 +94,7 @@ export function ReviewBar({ summary, busy, approvedReason, changesOpen, onSend, 
       )}
       {asking === "reason" && (
         <div className="hh-review-ask" role="group">
-          <ReasonForm reason={reason} setReason={setReason} onApprove={() => approveNow(reason.trim())} onCancel={() => setAsking(null)} />
+          <ReasonForm reason={reason} setReason={setReason} onApprove={() => approveNow(reason.trim(), discard ? { discard: true } : undefined)} onCancel={cancel} />
         </div>
       )}
       {asking === "unsent" && (
@@ -84,19 +103,15 @@ export function ReviewBar({ summary, busy, approvedReason, changesOpen, onSend, 
           <button type="button" disabled={busy} onClick={send}>
             {t("review.sendFirst")}
           </button>
-          <button type="button" onClick={() => approveNow(undefined, { discard: true })}>
+          <button type="button" onClick={discardAndApprove}>
             {t("review.discardApprove")}
           </button>
-          <button type="button" onClick={() => setAsking(null)}>
+          <button type="button" onClick={cancel}>
             {t("review.cancel")}
           </button>
         </div>
       )}
-      {said && (
-        <p className="hh-caption" role="status">
-          {said}
-        </p>
-      )}
+      {status}
     </footer>
   );
 }

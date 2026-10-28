@@ -8,7 +8,7 @@ const importsOf = (text: string) => [...text.matchAll(/(?:^|\n)\s*(?:import|expo
 describe("@humanharness/shell/plugins: the CLI's entry into the broker (P12)", () => {
   it("loads without Electron and exports the broker's parts", async () => {
     const mod = await import("../src/main/plugin-cli");
-    for (const name of ["PluginBroker", "pluginFetch", "pluginExec", "runFile", "PluginData"]) expect(typeof (mod as Record<string, unknown>)[name]).toBe("function");
+    for (const name of ["PluginBroker", "pluginFetch", "pluginExec", "runFile", "PluginData", "readPluginFixtures"]) expect(typeof (mod as Record<string, unknown>)[name]).toBe("function");
   });
 
   it("no file of its import graph inside the shell imports electron", async () => {
@@ -23,7 +23,7 @@ describe("@humanharness/shell/plugins: the CLI's entry into the broker (P12)", (
       }
     };
     await walk(path.join(main, "plugin-cli.ts"));
-    for (const f of ["plugin-cli.ts", "plugin-broker.ts", "plugin-fetch.ts", "plugin-exec.ts", "plugin-data.ts"]) expect(seen.has(path.join(main, f)), f).toBe(true);
+    for (const f of ["plugin-cli.ts", "plugin-broker.ts", "plugin-fetch.ts", "plugin-exec.ts", "plugin-data.ts", "plugin-fixture-files.ts"]) expect(seen.has(path.join(main, f)), f).toBe(true);
   });
 
   it("the import scan sees each import form", () => {

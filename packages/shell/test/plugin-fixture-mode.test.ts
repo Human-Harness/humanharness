@@ -189,6 +189,44 @@ describe("PluginsController in fixture mode (P10)", () => {
     expect(got).toMatchObject({ text: "from the fixture" });
   });
 
+  it("the host check (allowHost) is skipped in fixture mode only", async () => {
+    for (const fixtures of [true, false]) {
+      const allowHost = vi.fn(async () => true);
+      let done = false;
+      const t = await setup({
+        plugins: { bundled: ["oncall"], on: ["oncall"], local: false },
+        backends: { oncall: { queues: async (ctx: Ctx) => void (await ctx.call("fetch", "https://api.example.com/q").finally(() => (done = true))) } },
+        over: { fixtures, allowHost, fetch: (async () => new Response("live")) as unknown as typeof fetch },
+      });
+      const dist = await bundled(t.root, "oncall", ONCALL);
+      await writeFixtures(path.dirname(dist), "queues", { "001.json": FIXTURE });
+      await t.ctl.start();
+      await until(() => done);
+      if (fixtures) expect(allowHost).not.toHaveBeenCalled();
+      else expect(allowHost).toHaveBeenCalledWith("api.example.com");
+    }
+  });
+
+  it("a command in fixture mode spawns nothing for its env: no login-shell env lookup, a fixed minimal env", async () => {
+    let got: unknown;
+    const env = vi.fn(async () => ({ PATH: "/bin", HOME: "/h", LANG: "C" }));
+    const run = vi.fn();
+    const resolve = vi.fn(async () => "/bin/gh");
+    const t = await setup({
+      plugins: { bundled: ["oncall"], on: ["oncall"], local: false },
+      backends: { oncall: { queues: async (ctx: Ctx) => void (got = await ctx.call("exec", "gh", ["api", "user"])) } },
+      over: { fixtures: true, exec: { resolve, run: run as never, env } },
+    });
+    const dist = await bundled(t.root, "oncall", { permissions: { exec: [{ cmd: "gh", args: ["api", "*"] }] }, sources: [{ id: "queues", ttl: 600 }] });
+    await writeFixtures(path.dirname(dist), "queues", { "001.json": { kind: "exec", request: { cmd: "gh", args: ["api", "user"] }, response: { code: 0, stdout: "me", stderr: "" } } });
+    await t.ctl.start();
+    await until(() => got !== undefined);
+    expect(got).toMatchObject({ code: 0, stdout: "me" });
+    expect(env).not.toHaveBeenCalled();
+    expect(resolve).not.toHaveBeenCalled();
+    expect(run).not.toHaveBeenCalled();
+  });
+
   it("D0: without fixtures the live fetch and the stored key are used, as before", async () => {
     for (const fixtures of [undefined, false]) {
       const t = await oncall({ fixtures, files: { "001.json": FIXTURE } });

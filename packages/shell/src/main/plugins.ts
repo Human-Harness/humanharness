@@ -25,7 +25,8 @@ import {
   slotFor,
   withSetting,
 } from "@humanharness/harness-sdk";
-import { type FixtureExchange, fixtureTransport, hideSecrets, parseFixture } from "@humanharness/harness-sdk/plugin-fixtures";
+import { fixtureTransport, hideSecrets } from "@humanharness/harness-sdk/plugin-fixtures";
+import { readPluginFixtures } from "./plugin-fixture-files";
 import type {
   AttentionItemView,
   AttentionView,
@@ -190,8 +191,6 @@ const NOT_RUNNING = "Not running";
 const EMPTY_SURFACE: PluginSurfaceView = { panels: [], chips: [], reloads: {} };
 const WRITE_OPS = new Set<BrokerDataOp["op"]>(["put", "patch", "delete", "replaceAll"]);
 /** Fixture files per source (Task 9): at most this many, each at most this size. */
-const FIXTURE_FILES = 200;
-const FIXTURE_BYTES = 10 * 1024 * 1024;
 const WATCH_DEBOUNCE_MS = 300;
 
 /**
@@ -514,7 +513,8 @@ export class PluginsController {
           await fs.mkdir(dir, { recursive: true, mode: 0o700 });
           return dir;
         },
-        env: async () => minimalEnv(await this.d.exec.env()),
+        // Fixture mode runs no command, so it asks for no env either (exec.env spawns a login shell): a fixed minimal one.
+        env: this.d.fixtures ? async () => minimalEnv({}) : async () => minimalEnv(await this.d.exec.env()),
       },
     });
     r.scheduler = new PluginScheduler({
@@ -687,7 +687,7 @@ export class PluginsController {
     const root = path.basename(e.folder) === "dist" ? path.dirname(e.folder) : e.folder;
     const out = new Map<string, Transport>();
     for (const s of e.manifest.sources) {
-      const exchanges = await readFixtures(path.join(root, "fixtures"), s.id, (message, err) => this.log(`${e.id}: ${message}`, err));
+      const exchanges = await readPluginFixtures(path.join(root, "fixtures"), s.id, (message, err) => this.log(`${e.id}: ${message}`, err));
       out.set(s.id, fixtureTransport(exchanges) as Transport);
     }
     return out;
@@ -1619,38 +1619,6 @@ export class PluginsController {
 }
 
 /** The broker's data ops onto the plugin's own PluginData. */
-/**
- * `<fixtures>/<source>/*.json` in file-name order (Decision 14): at most FIXTURE_FILES files of at most FIXTURE_BYTES.
- * A plugin's folder is hostile: links (the folders or a file) are not followed, and a file that isn't a valid exchange
- * is logged and skipped. A missing folder is no fixtures.
- */
-async function readFixtures(dir: string, source: string, log: (message: string, err?: unknown) => void): Promise<FixtureExchange[]> {
-  const folder = path.join(dir, source);
-  const isDir = async (p: string) => (await fs.lstat(p).catch(() => null))?.isDirectory() === true;
-  if (!(await isDir(dir)) || !(await isDir(folder))) return [];
-  const names = (await fs.readdir(folder, { withFileTypes: true }).catch(() => []))
-    .filter((d) => d.isFile() && d.name.endsWith(".json"))
-    .map((d) => d.name)
-    .sort()
-    .slice(0, FIXTURE_FILES);
-  const out: FixtureExchange[] = [];
-  for (const name of names) {
-    let file: Awaited<ReturnType<typeof fs.open>> | null = null;
-    try {
-      file = await fs.open(path.join(folder, name), fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0));
-      const st = await file.stat();
-      if (!st.isFile()) throw new Error("not a file");
-      if (st.size > FIXTURE_BYTES) throw new Error("larger than 10 MB");
-      out.push(parseFixture(JSON.parse(await file.readFile("utf8"))));
-    } catch (err) {
-      log(`fixture ${source}/${name} skipped`, err);
-    } finally {
-      await file?.close().catch(() => undefined);
-    }
-  }
-  return out;
-}
-
 function runData(data: PluginData, op: BrokerDataOp): Promise<unknown> {
   switch (op.op) {
     case "get":

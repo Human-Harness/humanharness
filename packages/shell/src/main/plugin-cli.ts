@@ -8,4 +8,5 @@ export { PluginData } from "./plugin-data";
 export { type ExecOutcome, type ExecResult, pluginExec, runFile } from "./plugin-exec";
 export { type FetchOutcome, type FetchRequest, type FetchedResponse, pluginFetch } from "./plugin-fetch";
 export { fixtureTransport } from "@humanharness/harness-sdk/plugin-fixtures";
+export { FIXTURE_BYTES, FIXTURE_FILES, readPluginFixtures } from "./plugin-fixture-files";
 export { isPublicHost } from "./material-fetch";

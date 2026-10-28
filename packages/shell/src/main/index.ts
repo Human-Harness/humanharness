@@ -67,6 +67,7 @@ import {
   ScopeStore,
   buildDataContext,
   dataDiffOf,
+  flushFileIndexes,
   isScopeId,
   loadReview,
   migrateToScopes,
@@ -1646,7 +1647,11 @@ function registerIpc() {
       quitting: () => quitting,
       checkpoint: () => tasks.checkpointBeforeMove(),
       holdHistory: (held) => (historyHeld = held),
-      flush: () => turns.flush(),
+      flush: async () => {
+        await turns.flush();
+        // The file indexes waiting to be written go with the history, not after it.
+        await flushFileIndexes();
+      },
       closeRuntime,
       restoresSettled: () => restores.settled(),
       resumeFromNotes: () => tasks.resumeFromNotes(),
@@ -1894,6 +1899,7 @@ if (primary) {
       }
       // A cancelled or closed turn still writes its reply to the chat: wait for it.
       await turns.flush();
+      await flushFileIndexes();
     })().finally(() => app.quit());
   });
 }

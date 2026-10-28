@@ -43,17 +43,15 @@ describe("FileIndex", () => {
     }
   });
 
-  it("record(parent, …) only adds when the parent is the head; otherwise it leaves the file for a catch-up", async () => {
+  it("save serialises the index before it returns, so the caller may change it at once", async () => {
     const dir = fs.mkdtempSync(path.join(root, "g-"));
     const index = new FileIndex(dir);
-    await index.record(null, sha(1), ["a.md"]);
-    await index.record(sha(1), sha(2), ["a.md"]);
-    await index.record(sha(9), sha(3), ["b.md"]);
-    expect(await index.load()).toEqual({ version: 1, head: sha(2), paths: { "a.md": [sha(1), sha(2)] } });
-    // A missing index is not started from a later commit: the next read rebuilds it.
-    const other = new FileIndex(fs.mkdtempSync(path.join(root, "g-")));
-    await other.record(sha(1), sha(2), ["a.md"]);
-    expect(await other.load()).toBeNull();
+    const data = emptyIndex(null);
+    addCommit(data, sha(1), ["a.md"]);
+    const saving = index.save(data);
+    addCommit(data, sha(2), ["b.md"]);
+    await saving;
+    expect(await index.load()).toEqual({ version: 1, head: sha(1), paths: { "a.md": [sha(1)] } });
   });
 
   it("a file over the size cap loads as missing without being read", async () => {
@@ -108,17 +106,21 @@ describe("FileIndex", () => {
     expect(fs.readdirSync(dir)).toEqual([]);
   });
 
-  it("a record whose save fails leaves the cached index as it was", async () => {
+  it("a save that fails leaves the file as it was", async () => {
     const dir = fs.mkdtempSync(path.join(root, "g-"));
     const index = new FileIndex(dir);
-    await index.record(null, sha(1), ["a.md"]);
+    const first = emptyIndex(null);
+    addCommit(first, sha(1), ["a.md"]);
+    await index.save(first);
     const rename = vi.spyOn(fs.promises, "rename").mockRejectedValueOnce(new Error("no"));
+    const next = structuredClone(first);
+    addCommit(next, sha(2), ["a.md"]);
     try {
-      await expect(index.record(sha(1), sha(2), ["a.md"])).rejects.toThrow("no");
+      await expect(index.save(next)).rejects.toThrow("no");
     } finally {
       rename.mockRestore();
     }
-    expect(await index.load()).toEqual({ version: 1, head: sha(1), paths: { "a.md": [sha(1)] } });
+    expect(await index.load()).toEqual(first);
     expect(fs.readdirSync(dir)).toEqual([FILE_INDEX_NAME]);
   });
 

@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import git from "isomorphic-git";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { FILE_INDEX_NAME, History } from "../src";
+import { FILE_INDEX_NAME, History, INDEX_WRITE_DELAY_MS, flushFileIndexes } from "../src";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-hidx-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -69,8 +69,11 @@ describe("History's file index (file-timeline spec §3.3)", () => {
     const s1 = (await history.save("Start"))!;
     write("a.md", "2");
     const s2 = (await history.save("Turn: edit"))!;
+    await history.flush();
     fs.rmSync(indexFile());
-    expect(await new History(folder, gitdir, [".harness/", "AGENTS.md"]).fileCommits("a.md")).toEqual([s1, s2]);
+    const fresh = new History(folder, gitdir, [".harness/", "AGENTS.md"]);
+    expect(await fresh.fileCommits("a.md")).toEqual([s1, s2]);
+    await fresh.flush();
     expect(fs.existsSync(indexFile())).toBe(true);
   });
 
@@ -84,7 +87,7 @@ describe("History's file index (file-timeline spec §3.3)", () => {
   it("a read after a commit sees it, even while a read started before the commit still runs", async () => {
     write("a.md", "1");
     const s1 = (await history.save("Start"))!;
-    fs.rmSync(indexFile());
+    fs.rmSync(indexFile(), { force: true });
     const h = new History(folder, gitdir, [".harness/", "AGENTS.md"]);
     await h.init();
     let release!: () => void;
@@ -140,7 +143,7 @@ describe("History's file index (file-timeline spec §3.3)", () => {
     write(".harness/reviews/a.md.json", "{}");
     const reviewing = new History(folder, gitdir, [".harness/", "AGENTS.md"], [".harness/reviews/"]);
     const s2 = (await reviewing.save("Approved: a.md"))!;
-    fs.rmSync(indexFile());
+    fs.rmSync(indexFile(), { force: true });
     expect(await new History(folder, gitdir, [".harness/", "AGENTS.md"]).fileCommits(".harness/reviews/a.md.json")).toEqual([s2]);
   });
 
@@ -187,8 +190,9 @@ describe("History's file index (file-timeline spec §3.3)", () => {
     expect(await history.fileCommits("a.md")).toEqual([]);
     write("a.md", "1");
     const s1 = (await history.save("Start"))!;
-    fs.rmSync(indexFile());
-    const [x, y] = await Promise.all([history.fileCommits("a.md"), history.fileCommits("a.md")]);
+    fs.rmSync(indexFile(), { force: true });
+    const fresh = new History(folder, gitdir, [".harness/", "AGENTS.md"]);
+    const [x, y] = await Promise.all([fresh.fileCommits("a.md"), fresh.fileCommits("a.md")]);
     expect(x).toEqual([s1]);
     expect(y).toEqual([s1]);
     expect(await history.fileCommits("__proto__")).toEqual([]);
@@ -203,7 +207,50 @@ describe("History's file index (file-timeline spec §3.3)", () => {
     expect(await git.listFiles({ fs, gitdir, ref: sha })).toEqual(["a.md"]);
     const { commit } = await git.readCommit({ fs, gitdir, oid: sha });
     expect(commit.message.trim()).toBe("Turn: edit\n\nTask: t1");
+    await history.flush();
     expect(fs.existsSync(indexFile())).toBe(true);
+    expect(fs.readdirSync(folder)).toEqual(["a.md"]);
+  });
+
+  it("a commit never waits for the index file: it is written later, in one go, or at once by flush", async () => {
+    write("a.md", "1");
+    const s1 = (await history.save("Start"))!;
+    write("a.md", "2");
+    const s2 = (await history.save("Turn: edit"))!;
+    expect(fs.existsSync(indexFile())).toBe(false);
+    // Reads use the index this History holds.
+    expect(await history.fileCommits("a.md")).toEqual([s1, s2]);
+    await vi.waitFor(() => expect(fs.existsSync(indexFile())).toBe(true), { timeout: INDEX_WRITE_DELAY_MS + 2000 });
+    expect(JSON.parse(fs.readFileSync(indexFile(), "utf8"))).toEqual({ version: 1, head: s2, paths: { "a.md": [s1, s2] } });
+    write("a.md", "3");
+    const s3 = (await history.save("Turn: again"))!;
+    await history.flush();
+    expect(JSON.parse(fs.readFileSync(indexFile(), "utf8")).head).toBe(s3);
+  });
+
+  it("flushFileIndexes writes every History's pending index (the app quits, a folder moves)", async () => {
+    write("a.md", "1");
+    const s1 = (await history.save("Start"))!;
+    expect(fs.existsSync(indexFile())).toBe(false);
+    await flushFileIndexes();
+    expect(JSON.parse(fs.readFileSync(indexFile(), "utf8")).head).toBe(s1);
+  });
+
+  it("an index rebuilt by a read is written off the read too, and a later History starts from it", async () => {
+    write("a.md", "1");
+    const s1 = (await history.save("Start"))!;
+    await history.flush();
+    fs.rmSync(indexFile());
+    const h = new History(folder, gitdir, [".harness/", "AGENTS.md"]);
+    expect(await h.fileCommits("a.md")).toEqual([s1]);
+    await h.flush();
+    const spy = vi.spyOn(git, "readCommit");
+    try {
+      expect(await new History(folder, gitdir, [".harness/", "AGENTS.md"]).fileCommits("a.md")).toEqual([s1]);
+      expect(spy).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("tracks() is the history's own rule", () => {

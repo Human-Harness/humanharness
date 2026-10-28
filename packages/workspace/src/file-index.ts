@@ -60,10 +60,12 @@ function valid(raw: unknown): raw is FileIndexData {
   );
 }
 
-/** The index file of one history's git data. Reads are cached while the file's inode, time and size stay the same. */
+/**
+ * The index file of one history's git data. Not cached here: the History holds the index it read, and reads the file
+ * again only when another History moved HEAD.
+ */
 export class FileIndex {
   private readonly file: string;
-  private memo: { data: FileIndexData; ino: number; mtimeMs: number; size: number } | null = null;
 
   constructor(gitdir: string) {
     this.file = path.join(gitdir, FILE_INDEX_NAME);
@@ -73,13 +75,9 @@ export class FileIndex {
   async load(): Promise<FileIndexData | null> {
     const stat = await fs.stat(this.file).catch(() => null);
     if (!stat || stat.size > MAX_INDEX_BYTES) return null;
-    const m = this.memo;
-    if (m && m.ino === stat.ino && m.mtimeMs === stat.mtimeMs && m.size === stat.size) return m.data;
     try {
       const raw: unknown = JSON.parse(await fs.readFile(this.file, "utf8"));
-      if (!valid(raw)) return null;
-      this.memo = { data: raw, ino: stat.ino, mtimeMs: stat.mtimeMs, size: stat.size };
-      return raw;
+      return valid(raw) ? raw : null;
     } catch {
       return null;
     }
@@ -87,38 +85,17 @@ export class FileIndex {
 
   /**
    * Writes `data` through a temp file and a rename (another `History` on the same git data may write too: last wins).
-   * The cache keeps `data` itself, so a caller hands over an object it no longer changes.
+   * `data` is serialised before the first await, so the caller may change it as soon as this returns its promise.
    */
   async save(data: FileIndexData): Promise<void> {
     const tmp = `${this.file}.${randomUUID()}.tmp`;
+    const json = JSON.stringify(data);
     try {
-      await fs.writeFile(tmp, JSON.stringify(data));
+      await fs.writeFile(tmp, json);
       await fs.rename(tmp, this.file);
     } catch (err) {
       await fs.rm(tmp, { force: true });
       throw err;
     }
-    const stat = await fs.stat(this.file);
-    this.memo = { data, ino: stat.ino, mtimeMs: stat.mtimeMs, size: stat.size };
-  }
-
-  /**
-   * A new commit: added when its parent is the head (or it is the history's first commit and there is no index).
-   * Anything else is left for the next read, which catches up or rebuilds.
-   */
-  async record(parent: string | null, sha: string, paths: readonly string[]): Promise<void> {
-    const data = await this.load();
-    if (data === null) {
-      if (parent !== null) return;
-      const fresh = emptyIndex(null);
-      addCommit(fresh, sha, paths);
-      await this.save(fresh);
-      return;
-    }
-    if (data.head !== parent) return;
-    // A copy: `data` is the cache's, which must keep matching the file if the save fails.
-    const next = structuredClone(data);
-    addCommit(next, sha, paths);
-    await this.save(next);
   }
 }

@@ -23,6 +23,21 @@ const keeps = (k: HistoryKeep, file: string): boolean => (typeof k === "string" 
 
 const AUTHOR = { name: "Human Harness", email: "history@humanharness.local" };
 
+/**
+ * How long after a commit the file index is written (file-timeline spec §3.3). A commit only advances the index this
+ * History holds; the file follows once things go quiet, in one write for a burst of commits, so a big index never
+ * slows a commit down. `flush` writes it at once (closing, quitting, moving the folder).
+ */
+export const INDEX_WRITE_DELAY_MS = 1000;
+
+/** The Histories whose index has changed since it was last written. */
+const pendingIndexes = new Set<History>();
+
+/** Writes every History's pending file index now (the app quits, the folder moves). */
+export async function flushFileIndexes(): Promise<void> {
+  await Promise.all([...pendingIndexes].map((h) => h.flush()));
+}
+
 /** The newest commits of a file a timeline reads (Open questions Q7). */
 export const MAX_TIMELINE_COMMITS = 1000;
 
@@ -205,10 +220,15 @@ export class History {
   /** The index being brought up to date, shared by every read of the same generation meanwhile. */
   private updating: { generation: number; run: Promise<FileIndexData> } | null = null;
   /**
-   * The last index this History computed or advanced, never changed in place. A read at its head needs no file, so an
-   * index file that can't be written or read back (a folder in its place) costs one rebuild, not one per read.
+   * The last index this History computed or advanced; only a commit adds to it, in place. A read at its head needs no
+   * file, so an index file that can't be written or read back (a folder in its place) costs one rebuild, not one per
+   * read.
    */
   private known: FileIndexData | null = null;
+  /** `known` changed since it was last written; the timer that writes it. */
+  private indexDirty = false;
+  private indexTimer: ReturnType<typeof setTimeout> | null = null;
+  private indexWrites: Promise<void> = Promise.resolve();
 
   /** Told after every commit, with the paths it touched (the window refreshes a file's timeline). */
   onCommit(listener: (c: CommitPaths) => void): () => void {
@@ -305,21 +325,20 @@ export class History {
     return sha;
   }
 
-  /** After a commit: the index (best effort, never failing the commit), then the listeners. */
+  /**
+   * After a commit: the index this History holds (in memory; the file is written later and never fails the commit),
+   * then the listeners. An index behind HEAD is left alone: the next read catches it up.
+   */
   private async committed(parent: string | null, sha: string, message: string, staged: string[]): Promise<void> {
     const named = namedPath(parseCommitMessage(message).subject);
     const paths = named !== null && !staged.includes(named) ? [...staged, named] : staged;
     // A read started before this commit may still run at the old head: later reads must not join it.
     this.generation++;
-    const base = parent === null ? emptyIndex(null) : this.known?.head === parent ? structuredClone(this.known) : null;
-    if (base) {
-      addCommit(base, sha, paths);
-      this.known = base;
-    }
-    try {
-      await this.index.record(parent, sha, paths);
-    } catch (err) {
-      console.error("Could not update the file index", err);
+    if (parent === null) this.known = emptyIndex(null);
+    if (this.known !== null && this.known.head === parent) {
+      // In place: a read that already holds it only ever copies a list out, so it sees this commit or not.
+      addCommit(this.known, sha, paths);
+      this.indexChanged();
     }
     const failed = (err: unknown) => console.error("A commit listener failed", err);
     for (const l of [...this.commitListeners]) {
@@ -340,12 +359,39 @@ export class History {
     return Object.hasOwn(data.paths, file) ? [...data.paths[file]] : [];
   }
 
+  /** The index changed: write it once things go quiet. */
+  private indexChanged(): void {
+    this.indexDirty = true;
+    pendingIndexes.add(this);
+    if (this.indexTimer) return;
+    this.indexTimer = setTimeout(() => void this.flush(), INDEX_WRITE_DELAY_MS);
+    // A pending write never keeps a process (the CLI) alive; a lost one costs a catch-up on the next read.
+    this.indexTimer.unref?.();
+  }
+
+  /** Writes the index this History holds, when it changed since the last write. Never throws. */
+  flush(): Promise<void> {
+    if (this.indexTimer) clearTimeout(this.indexTimer);
+    this.indexTimer = null;
+    pendingIndexes.delete(this);
+    this.indexWrites = this.indexWrites.then(async () => {
+      if (!this.indexDirty || this.known === null) return;
+      this.indexDirty = false;
+      // `save` serialises it before its first await: later commits wait for the next write.
+      await this.saveIndex(this.known);
+    });
+    return this.indexWrites;
+  }
+
   private currentIndex(): Promise<FileIndexData> {
     const generation = this.generation;
     if (this.updating?.generation !== generation) {
-      const run: Promise<FileIndexData> = this.bringIndexUpToDate().then((data) => {
+      const run: Promise<FileIndexData> = this.bringIndexUpToDate().then(({ data, built }) => {
         // An update a commit overtook leaves `known` to the newer one.
-        if (this.generation === generation) this.known = data;
+        if (this.generation === generation) {
+          this.known = data;
+          if (built) this.indexChanged();
+        }
         return data;
       });
       const entry = { generation, run };
@@ -361,15 +407,16 @@ export class History {
    * The index at HEAD: this History's own when it is at HEAD; else the file's when it is; else whichever of the two is
    * found walking back from HEAD, caught up on the commits after it (another History's); else rebuilt from that same
    * walk, down to the first commit. Reads git objects only (immutable), so it runs outside the write queue; a commit
-   * meanwhile starts a new generation of reads. Never changes an index in place: the file's is the cache's.
+   * meanwhile starts a new generation of reads. Never changes `known` (a commit may meanwhile). `built`: caught up or
+   * rebuilt here, so the file is behind it.
    */
-  private async bringIndexUpToDate(): Promise<FileIndexData> {
+  private async bringIndexUpToDate(): Promise<{ data: FileIndexData; built: boolean }> {
     const head = await this.last();
-    if (head === null) return emptyIndex(null);
+    if (head === null) return { data: emptyIndex(null), built: false };
     const mine = this.known;
-    if (mine?.head === head) return mine;
+    if (mine?.head === head) return { data: mine, built: false };
     const file = await this.index.load();
-    if (file?.head === head) return file;
+    if (file?.head === head) return { data: file, built: false };
     const bases = [mine, file].filter((d): d is FileIndexData => d !== null && d.head !== null);
     const cache = {};
     // First parents back from HEAD to a base's head; to the first commit when there is none (a rebuild).
@@ -382,15 +429,15 @@ export class History {
     }
     const next = base ? structuredClone(base) : emptyIndex(null);
     for (const sha of newer.reverse()) addCommit(next, sha, await this.pathsOf(sha, cache));
-    await this.saveIndex(next);
-    return next;
+    return { data: next, built: true };
   }
 
   private async saveIndex(data: FileIndexData): Promise<void> {
     try {
       await this.index.save(data);
     } catch (err) {
-      console.error("Could not save the file index", err);
+      // The git data is gone (moved, pruned): nothing to keep the index for.
+      if ((err as NodeJS.ErrnoException).code !== "ENOENT") console.error("Could not save the file index", err);
     }
   }
 

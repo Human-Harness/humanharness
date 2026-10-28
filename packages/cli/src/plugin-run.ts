@@ -22,6 +22,8 @@ export interface RunOptions {
   secrets(ids: string[]): Promise<Record<string, string>>;
   /** A command's absolute path; fixtures (the default) look up nothing and answer /fixture/<name>. */
   resolve?(cmd: string): Promise<string | null>;
+  /** A live run's check that a host resolves only to public addresses (`record`); fixtures need none. */
+  allowHost?(hostname: string): Promise<boolean>;
   /** The backend's clock, fixed for the run (`new Date()` and `Date.now()`); the real clock when absent. */
   now?: Date;
   /** Default 120_000, like the app. */
@@ -183,6 +185,7 @@ export async function runSource(o: RunOptions): Promise<RunReport> {
     return report;
   }
   const temp = await fs.mkdtemp(path.join(os.tmpdir(), "hh-plugin-run-"));
+  let clearTimers = () => {};
   try {
     const base = path.join(temp, "base");
     await fs.mkdir(base);
@@ -213,6 +216,7 @@ export async function runSource(o: RunOptions): Promise<RunReport> {
       },
       log: async (level, message) => void report.log.push(`${level}: ${message}`),
       fetch: o.transport.fetch,
+      ...(o.allowHost ? { allowHost: o.allowHost } : {}),
       exec: {
         // The fixture transport matches by the command's name: nothing on this computer is looked up.
         resolve: o.resolve ?? (async (cmd) => path.resolve(path.sep, "fixture", path.basename(cmd))),
@@ -224,9 +228,41 @@ export async function runSource(o: RunOptions): Promise<RunReport> {
         env: async () => minimalEnv(),
       },
     });
+    // The backend's timers, cleared when the run ends, so one left behind can't keep the command alive.
+    const timers = new Set<NodeJS.Timeout>();
+    clearTimers = () => {
+      for (const t of timers) clearTimeout(t);
+      timers.clear();
+    };
+    const backendSetTimeout = (fn: (...a: unknown[]) => void, ms?: number, ...args: unknown[]) => {
+      const t = setTimeout(
+        (...a: unknown[]) => {
+          timers.delete(t);
+          fn(...a);
+        },
+        ms,
+        ...args,
+      );
+      timers.add(t);
+      return t;
+    };
+    const backendClearTimeout = (t: NodeJS.Timeout | undefined) => {
+      if (t === undefined) return;
+      timers.delete(t);
+      clearTimeout(t);
+    };
     const sources = await loadSources(
       o.dir,
-      { console: consoleInto(report.log), setTimeout, clearTimeout, URL, URLSearchParams, TextEncoder, TextDecoder, structuredClone },
+      {
+        console: consoleInto(report.log),
+        setTimeout: backendSetTimeout,
+        clearTimeout: backendClearTimeout,
+        URL,
+        URLSearchParams,
+        TextEncoder,
+        TextDecoder,
+        structuredClone,
+      },
       o.now,
     );
     const fn = Object.hasOwn(sources, o.source) ? sources[o.source] : undefined;
@@ -262,6 +298,7 @@ export async function runSource(o: RunOptions): Promise<RunReport> {
     report.chips = Object.fromEntries(chips);
     return report;
   } finally {
+    clearTimers();
     await fs.rm(temp, { recursive: true, force: true });
   }
 }

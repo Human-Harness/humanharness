@@ -2,6 +2,7 @@ import path from "node:path";
 import { type Io, UsageError, parseCommand } from "./cli";
 import { buildPlugin } from "./plugin-build";
 import { checkPlugin, formatPluginFindings } from "./plugin-check";
+import { liveRecordDeps, recordPlugin } from "./plugin-record";
 import { P12_NOTE, formatTestReports, testPlugin } from "./plugin-test";
 
 type Command = (args: string[], io: Io) => Promise<number>;
@@ -13,6 +14,7 @@ export const PLUGIN_USAGE = [
   "  build [--plugin <dir>] [--out <dir>]     Build the plugin into dist/: plugin.json, backend.js and the panels",
   "  check [--json] [--harness <dir>] [--no-build]",
   "                                           Build, then check the plugin, its sources, fixtures and PLUGIN.md",
+  "  record <source> [--yes] [--no-build]     Build, run one real sync of a source and write its fixtures",
   "",
   "Each command works on the plugin in the current folder unless --plugin <dir> names another.",
   "",
@@ -38,6 +40,16 @@ export const TEST_USAGE = [
   "",
   "Runs every source of the built plugin (dist/) once on its fixtures, with no network and no keys, and prints the",
   "records written, the attention items, the chips and the log. --now fixes the backend's clock. A failed source exits with 1.",
+  "",
+].join("\n");
+
+export const RECORD_USAGE = [
+  "Usage: humanharness plugin record <source> [--plugin <dir>] [--yes] [--no-build]",
+  "",
+  "Builds the plugin, runs one real sync of <source> against the service and writes fixtures/<source>/001.json…,",
+  "with every key replaced by {{secret:<id>}}. The source's keys are asked here with the input hidden and kept only",
+  "for this run. The plugin's code runs in this process (not in the app's sandbox) and can read them: record only",
+  "plugins you trust. --yes deletes the source's old fixtures without asking.",
   "",
 ].join("\n");
 
@@ -101,10 +113,26 @@ async function testCommand(args: string[], io: Io): Promise<number> {
   return reports.every((r) => r.ok) ? 0 : 1;
 }
 
+async function recordCommand(args: string[], io: Io): Promise<number> {
+  if (wantsHelp(args)) {
+    io.stdout.write(RECORD_USAGE);
+    return 0;
+  }
+  const { values, positionals } = parseCommand(args, { plugin: { type: "string" }, yes: { type: "boolean" }, "no-build": { type: "boolean" } });
+  if (positionals.length !== 1) throw new UsageError(RECORD_USAGE.trim());
+  return recordPlugin(
+    path.resolve(io.cwd, values.plugin ?? "."),
+    { source: positionals[0], yes: values.yes === true, build: !values["no-build"] },
+    liveRecordDeps(io.stdin, io.stdout),
+    io.stdout,
+  );
+}
+
 /** The plugin commands, by name. Later tasks add theirs (init, check, record, test, dev). */
 const PLUGIN_COMMANDS: Record<string, Command> = {
   build: buildCommand,
   check: checkCommand,
+  record: recordCommand,
   test: testCommand,
 };
 

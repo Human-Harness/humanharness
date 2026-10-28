@@ -8,7 +8,7 @@ The app treats plugin code as hostile, because it is expected to be AI-written c
 
 - Ask **one question at a time**, in the developer's language, and wait for the answer. Offer a suggested answer when it helps.
 - Write every file in English: code, labels, titles, prompts and `PLUGIN.md`.
-- Read `PLUGIN.md` first: it is this plugin's living decision log. On an existing plugin, start from it and ask what the developer wants to change ("add regressions to the panel"), then go only through the phases that change touches. Never ask again what it already answers; offer to revisit it instead.
+- Read `PLUGIN.md` first: it is this plugin's living decision log. On an existing plugin, start from it and ask what the developer wants to change ("add regressions to the panel"), then go only through the phases that change touches. Never ask again what it already answers; offer to revisit it instead. Right after `humanharness plugin init`, `PLUGIN.md` holds only the template's example: treat the plugin as new and start at phase 1.
 - Each phase ends with two things done together: its `PLUGIN.md` section updated, and the code changed to match. Add a dated entry to **Decision log** for each decision: the decision, the reason, the alternatives rejected.
 - After each phase, run `humanharness plugin check` and fix every error it reports.
 - When the developer is unsure, write the question in the Decision log as open and move on.
@@ -38,7 +38,7 @@ Fills: PLUGIN.md → Purpose
 
 Ask what the person should see **without asking for it**, and in which harness. Insist on something concrete ("who is on call this week, and the tickets waiting for them", "today's events in history"). If the answer is "a way to ask about X", ask what the person sees before they ask.
 
-Write two or three sentences: who it is for, what they see, and what it saves them. Set `name` (at most 60 characters) and `harness` in `plugin.config.ts`: the id of the harness it is built for, or `"*"` for any. The `id` is the folder's name (`^[a-z0-9][a-z0-9-]{0,63}$`).
+Write two or three sentences: who it is for, what they see, and what it saves them. Set `name` (at most 60 characters), `version` (semver, required; start at `0.1.0`) and `harness` in `plugin.config.ts`: the id of the harness it is built for, or `"*"` for any. The `id` is the folder's name (`^[a-z0-9][a-z0-9-]{0,63}$`).
 
 Display text (the name, labels, titles, help) can't hold control, bidi, zero-width or other hidden characters. That includes the variation selector inside many emoji (❤️), so keep emoji out of display text.
 
@@ -82,7 +82,7 @@ Ask what each source keeps, and what the agent should know. For each collection 
 
 Collections are always app-wide (sources run outside any scope) and never `agent: "write"`. The schemas must be plain data: `.regex()` and string formats (`z.email()`, `z.url()`, `z.uuid()`, `z.iso.date()`) become `pattern` or `format`, which `plugin.json` refuses, and so do transforms and recursive schemas. Check values in the backend instead. Limits: 2,000 records and 2 MB per collection, 64 KB per record.
 
-In `backend.ts`, write with `ctx.data.put`, `patch`, `delete` or `replaceAll` (a whole sync usually replaces the collection), and read with `get` and `query`.
+In `backend.ts`, write with `ctx.data.put`, `patch`, `delete` or `replaceAll` (a whole sync usually replaces the collection), and read with `get` and `query` (it returns `{ records, total }`, at most 1,000 records).
 
 If the person should set something (how many items, a project key, a threshold), declare it in `settings.fields`: a zod `schema`, a `default`, a `control` (`segmented`, `select`, `toggle`, `number`, `text`), a `label`, and optionally an `agent` sentence in English with `{{value}}`, which the agent reads while the plugin is on. The backend reads the values with `ctx.settings.get()`. Settings never hold keys.
 
@@ -144,8 +144,8 @@ Fills: PLUGIN.md → Decision log
 
 This phase can't be skipped. Stop at the first failure, fix it, and run that step again.
 
-1. For each source, ask the developer to run `humanharness plugin record <source>` in their own terminal. It builds the plugin, runs one real sync, asks for the source's keys there with the input hidden, and writes `fixtures/<source>/`, with every key replaced by `{{secret:<id>}}`. Never run it with a key yourself and never ask for the key. If the developer can't reach the service yet, write the fixtures by hand in the same format (`{ "kind": "fetch", "request": { "method", "url" }, "response": { "status", "headers", "text" } }`; a `*` path segment matches any one segment, a `?*` query any query), mark them as made by hand in the Decision log, and record real ones later.
-2. Run `humanharness plugin check` (it builds first) and fix every error. Go through the warnings with the developer: fix each one, or record in the Decision log why it stays.
+1. For each source, ask the developer to run `humanharness plugin record <source>` in their own terminal. It builds the plugin, runs one real sync, asks for the source's keys there with the input hidden, and writes `fixtures/<source>/`, with every key replaced by `{{secret:<id>}}`. Never run it with a key yourself and never ask for the key. If the developer can't reach the service yet, write the fixtures by hand in the same format (`{ "kind": "fetch", "request": { "method", "url" }, "response": { "status", "headers", "text" } }`, where a `*` path segment matches any one segment and a `?*` query any query; for a command, `{ "kind": "exec", "request": { "cmd", "args" }, "response": { "code", "stdout", "stderr" } }`, where a `*` arg matches any one arg). Then Verify is **not finished**: write an open item in the Decision log ("fixtures made by hand; run `record` for <source>"), and at handover tell the developer the plugin hasn't touched the real service yet and that `record` must run before it is done.
+2. Run `humanharness plugin check` (it builds first; add `--harness <harness folder>` when a panel or chip names a slot, so it can check the slot exists) and fix every error. Go through the warnings with the developer: fix each one, or record in the Decision log why it stays.
 3. Run `humanharness plugin test`. It runs every source on its fixtures, with no network and no keys, and prints the records written, the attention items and the chips. Read them with the developer.
 4. Open the harness with the plugin: `humanharness plugin dev --harness <harness folder>`. It runs on the fixtures and rebuilds on every change. Check with the developer that the panel shows the data, the chip reads right, an attention item opens its target, and an action's prepared task shows the prompt they expect. Only with the developer's yes, add `--live` to use the real network and the keys stored in Settings › Plugins.
 

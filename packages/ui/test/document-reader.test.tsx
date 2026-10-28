@@ -4,7 +4,7 @@ import { I18nextProvider } from "react-i18next";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { DocumentRead, ReviewView } from "../src/client";
 import { DocumentReader, cutToBytes } from "../src/DocumentReader";
-import { FakeClient } from "./fake-client";
+import { FakeClient, fakeBlob } from "./fake-client";
 import { renderIn } from "./render";
 
 afterEach(cleanup);
@@ -397,5 +397,80 @@ describe("review in the reader (review spec §6.1, D0)", () => {
     act(() => client.emitReviewChanged("docs/cache.md"));
     expect((await screen.findByRole("alert")).textContent).toBe("The review of this document can't be read. Fix or delete .harness/reviews/docs/cache.md.json.");
     expect(screen.queryByRole("region", { name: "Comments" })).toBeNull();
+  });
+});
+
+describe("commenting on a selection, the footer bar (review spec §5.2–§5.4)", () => {
+  const select = (node: Node) => {
+    const range = document.createRange();
+    range.selectNodeContents(node);
+    const sel = window.getSelection()!;
+    sel.removeAllRanges();
+    sel.addRange(range);
+  };
+
+  it("a selection in the text shows 'Comment'; saving makes a draft with the heading above it", async () => {
+    const { client } = setup({ review: true });
+    await screen.findByRole("region", { name: "Comments" });
+    const para = screen.getByText("Slow calls.");
+    select(para);
+    fireEvent.mouseUp(para);
+    fireEvent.click(await screen.findByRole("button", { name: "Comment" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Your comment" }), { target: { value: "How slow?" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
+    await waitFor(() => expect(client.reviewCalls.find((c) => c.op === "comment")?.args).toEqual(["docs/cache.md", { selected: "Slow calls.", heading: "context", text: "How slow?" }]));
+    expect(await screen.findByText("How slow?")).toBeTruthy();
+  });
+
+  it("a selection the document doesn't hold says so; Escape closes the pick before the reader", async () => {
+    const { client, props } = setup({ review: true });
+    await screen.findByRole("region", { name: "Comments" });
+    client.documents.comment = async () => ({ ok: false, reason: "not-found" });
+    const para = screen.getByText("Slow calls.");
+    select(para);
+    fireEvent.mouseUp(para);
+    fireEvent.click(await screen.findByRole("button", { name: "Comment" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Your comment" }), { target: { value: "?" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
+    expect((await screen.findByRole("alert")).textContent).toBe("That text could not be found in the document. Select plain text, not a diagram.");
+    select(para);
+    fireEvent.mouseUp(para);
+    const comment = await screen.findByRole("button", { name: "Comment" });
+    fireEvent.keyDown(comment, { key: "Escape" });
+    expect(screen.queryByRole("button", { name: "Comment" })).toBeNull();
+    expect(props.onClose).not.toHaveBeenCalled();
+  });
+
+  it("without `review` a selection offers nothing and there is no footer bar (D0)", async () => {
+    setup();
+    await screen.findByRole("heading", { level: 1, name: "Search cache" });
+    const para = screen.getByText("Slow calls.");
+    select(para);
+    fireEvent.mouseUp(para);
+    expect(screen.queryByRole("button", { name: "Comment" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Approve" })).toBeNull();
+  });
+
+  it("'Approve' passes the blob of the version shown", async () => {
+    const { client } = setup({ review: true });
+    fireEvent.click(await screen.findByRole("button", { name: "Approve" }));
+    await waitFor(() => expect(client.reviewCalls.find((c) => c.op === "approve")?.args).toEqual(["docs/cache.md", fakeBlob(ANALYSIS), {}]));
+  });
+
+  it("'See what changed' shows the lines added and removed since the approval", async () => {
+    const { client } = setup({ review: true });
+    await screen.findByRole("region", { name: "Comments" });
+    client.reviews["docs/cache.md"] = { path: "docs/cache.md", task: null, comments: [], approvals: [{ blob: "0".repeat(40), at: "2026-10-28T10:00:00.000Z" }] };
+    client.currentBlobs["docs/cache.md"] = "1".repeat(40);
+    client.approvedTexts["docs/cache.md"] = ANALYSIS.replace("Slow calls.", "Fast calls.");
+    act(() => client.emitReviewChanged("docs/cache.md"));
+    fireEvent.click(await screen.findByRole("button", { name: "See what changed" }));
+    const diff = await screen.findByRole("region", { name: "Changes since the approval" });
+    expect(within(diff).getByText("Fast calls.").closest("li")?.className).toContain("hh-diff-removed");
+    expect(within(diff).getByText("Slow calls.").closest("li")?.className).toContain("hh-diff-added");
+    // Only the change and two lines around it: the front-matter's first line is far away.
+    expect(within(diff).queryByText("---")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Hide changes" }));
+    expect(screen.queryByRole("region", { name: "Changes since the approval" })).toBeNull();
   });
 });

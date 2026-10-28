@@ -1277,6 +1277,7 @@ export function ChatView({
               onOpen={openDoc}
               onMissing={recheckDocs}
               review={state.review === true}
+              busy={Boolean(chat.live) || closing || checkpoint}
             />
           )}
         </div>

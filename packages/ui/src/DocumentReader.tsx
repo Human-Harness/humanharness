@@ -2,9 +2,11 @@ import { type KeyboardEvent, type ReactNode, useCallback, useEffect, useId, useL
 import { useTranslation } from "react-i18next";
 import { type DocumentKind, checkTemplate, readingMinutes, refusedShape, wordCount } from "@humanharness/harness-sdk/documents";
 import { type AnswerPick, markOccurrence } from "@humanharness/harness-sdk/review";
-import type { DocumentRead, HarnessClient, ReaderPrefs, ReviewResult, ReviewView } from "./client";
+import type { ApproveOptions, DocumentRead, HarnessClient, ReaderPrefs, ReviewResult, ReviewSendResult, ReviewView } from "./client";
+import { ApprovedDiff } from "./ApprovedDiff";
 import { DocumentContext, type DocumentHost } from "./documents-context";
 import { Markdown, documentOutline } from "./markdown";
+import { ReviewBar } from "./ReviewBar";
 import { ReviewColumn } from "./ReviewColumn";
 import { type MarkSpec, clearMarks, drawMarks, findMarks } from "./review-marks";
 
@@ -66,6 +68,7 @@ export function DocumentReader({
   onOpen,
   onMissing,
   review,
+  busy = false,
 }: {
   client: HarnessClient;
   target: ReaderTarget;
@@ -82,6 +85,8 @@ export function DocumentReader({
   onMissing?: () => void;
   /** The harness's agent may edit the folder: the review column and marks (review spec §6.1). Absent: none (D0). */
   review?: boolean;
+  /** A turn runs (or the task is saving its note): sending a review round waits (§5.3). */
+  busy?: boolean;
 }) {
   const { t, i18n } = useTranslation();
   const [doc, setDoc] = useState<DocumentRead | null>(null);
@@ -111,7 +116,12 @@ export function DocumentReader({
   const [rv, setRv] = useState<ReviewView | null>(null);
   const [active, setActive] = useState<string | null>(null);
   const [waiting, setWaiting] = useState<string | null>(null);
-  const [failed, setFailed] = useState(false);
+  /** A review action's problem, shown above the text. */
+  const [notice, setNotice] = useState<string | null>(null);
+  /** A selection in the text to comment on (§5.2), where its button goes, and the comment being written. */
+  const [pick, setPick] = useState<{ selected: string; heading: string | null; top: number; left: number } | null>(null);
+  const [draft, setDraft] = useState<string | null>(null);
+  const [diffOpen, setDiffOpen] = useState(false);
   const textRef = useRef<HTMLDivElement>(null);
   const [ranges, setRanges] = useState<Map<string, Range>>(() => new Map());
 
@@ -123,7 +133,10 @@ export function DocumentReader({
     setRv(null);
     setActive(null);
     setWaiting(null);
-    setFailed(false);
+    setNotice(null);
+    setPick(null);
+    setDraft(null);
+    setDiffOpen(false);
     if (refused) {
       setDoc({ ok: false, reason: "outside" });
       return;
@@ -253,12 +266,49 @@ export function DocumentReader({
     // Another document is shown now: this answer is not its.
     if (pathNow.current !== want) return;
     if (id) setWaiting(null);
-    setFailed(!r.ok);
+    setNotice(r.ok ? null : r.reason === "not-found" ? t("review.notFound") : t("review.failed"));
     loadReview();
   };
   const answer = (id: string, pick: AnswerPick) => act(() => client.documents.answer(path, id, pick), id);
   const editDraft = (id: string, value: string | null) => act(() => client.documents.editDraft(path, id, value));
   const reopen = (id: string) => act(() => client.documents.reopen(path, id));
+  /** The id of the heading above `node`, inside the review text (the reader's slugs). */
+  const headingAbove = (node: Node): string | null => {
+    const box = textRef.current;
+    if (!box) return null;
+    let found: string | null = null;
+    for (const h of box.querySelectorAll<HTMLElement>("[data-heading]")) {
+      if (h.contains(node) || h.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING) found = h.id || found;
+      else break;
+    }
+    return found;
+  };
+  /** A selection inside the rendered text offers "Comment" below it; anything else closes the offer. */
+  const onSelect = () => {
+    if (draft !== null) return;
+    const sel = window.getSelection();
+    const box = textRef.current;
+    const scroller = scrollRef.current;
+    if (!review || !sel || sel.isCollapsed || sel.rangeCount === 0 || !box || !scroller) return setPick(null);
+    const r = sel.getRangeAt(0);
+    if (!box.contains(r.commonAncestorContainer)) return setPick(null);
+    const selected = sel.toString();
+    if (!selected.trim() || selected.length > 20_000) return setPick(null);
+    const rect = r.getBoundingClientRect();
+    const host = scroller.getBoundingClientRect();
+    setPick({ selected, heading: headingAbove(r.startContainer), top: rect.bottom - host.top + scroller.scrollTop, left: Math.max(0, rect.left - host.left) });
+  };
+  const closePick = () => {
+    setPick(null);
+    setDraft(null);
+  };
+  const saveDraft = () => {
+    const text = draft?.trim();
+    if (!pick || !text) return;
+    const { selected, heading } = pick;
+    closePick();
+    void act(() => client.documents.comment(path, { selected, heading, text }));
+  };
   const pickCard = (id: string, scroll?: boolean) => {
     setActive(id);
     if (scroll) ranges.get(id)?.startContainer.parentElement?.scrollIntoView?.({ block: "center" });
@@ -276,7 +326,8 @@ export function DocumentReader({
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.key !== "Escape") return;
     e.preventDefault();
-    if (prefsOpen) {
+    if (pick) closePick();
+    else if (prefsOpen) {
       setPrefsOpen(false);
       prefsButton.current?.focus();
     } else onClose();
@@ -315,7 +366,7 @@ export function DocumentReader({
         )}
         <DocumentContext.Provider value={host}>
           {review ? (
-            <div className="hh-review-text" ref={textRef}>
+            <div className="hh-review-text" ref={textRef} onMouseUp={onSelect} onKeyUp={onSelect}>
               <Markdown source={shown} document path={path} idPrefix="" />
             </div>
           ) : (
@@ -417,12 +468,33 @@ export function DocumentReader({
               {t("review.broken", { file: `.harness/reviews/${path}.json` })}
             </p>
           )}
-          {review && failed && (
+          {review && notice && (
             <p className="hh-warn hh-review-note" role="alert">
-              {t("review.failed")}
+              {notice}
             </p>
           )}
+          {review && diffOpen && doc?.ok && !source && <ApprovedDiff client={client} path={path} current={doc.text} />}
           <article className={`hh-reader-doc hh-reader-${look.font}${look.size === "large" ? " hh-reader-large" : ""}`}>{body}</article>
+          {review && pick && doc?.ok && !source && (
+            // The place goes through React's style (CSSOM): the CSP stays as it is.
+            <div className="hh-review-pick" style={{ top: pick.top, left: pick.left }}>
+              {draft === null ? (
+                <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => setDraft("")}>
+                  {t("review.comment")}
+                </button>
+              ) : (
+                <>
+                  <textarea aria-label={t("review.commentLabel")} autoFocus value={draft} maxLength={4000} onChange={(e) => setDraft(e.target.value)} />
+                  <button type="button" disabled={!draft.trim()} onClick={saveDraft}>
+                    {t("review.saveDraft")}
+                  </button>
+                  <button type="button" onClick={closePick}>
+                    {t("review.cancel")}
+                  </button>
+                </>
+              )}
+            </div>
+          )}
         </div>
         {review && doc?.ok && !source && rv?.ok && (
           <ReviewColumn
@@ -439,6 +511,33 @@ export function DocumentReader({
           />
         )}
       </div>
+      {review && doc?.ok && !source && rv?.ok && (
+        <ReviewBar
+          key={path}
+          summary={rv.summary}
+          busy={busy}
+          approvedReason={rv.review?.approvals.at(-1)?.reason}
+          changesOpen={diffOpen}
+          onSend={async () => {
+            const want = path;
+            const r = await client.documents.send(want).catch((): ReviewSendResult => ({ ok: false, reason: "not-ready" }));
+            if (pathNow.current === want) loadReview();
+            return r;
+          }}
+          onApprove={async (reason, opts) => {
+            const want = path;
+            // The version shown: a document changed since is refused with "changed".
+            const o: ApproveOptions = { ...(reason !== undefined ? { reason } : {}), ...(opts?.discard ? { discard: true } : {}) };
+            const r = await client.documents.approve(want, rv.blob, o).catch((): ReviewResult => ({ ok: false, reason: "not-ready" }));
+            if (pathNow.current === want) {
+              if (r.ok) setDiffOpen(false);
+              loadReview();
+            }
+            return r;
+          }}
+          onSeeChanges={() => setDiffOpen((o) => !o)}
+        />
+      )}
     </aside>
   );
 }

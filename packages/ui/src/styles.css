@@ -614,6 +614,26 @@ h4.hh-md-h { font-size: 1em; font-weight: 600; color: var(--hh-slate); }
 .hh-review-actions { display: flex; gap: 6px; margin-top: 6px; }
 .hh-review-card:focus-visible { outline: 2px solid var(--hh-line-strong); outline-offset: 2px; }
 .hh-review-other { color: var(--hh-slate); }
+/* Commenting on a selection (§5.2): the offer sits under the selection, inside the scrolling text (review only, D0). */
+.hh-reader-reviewing .hh-reader-scroll { position: relative; }
+.hh-review-pick { position: absolute; z-index: 3; display: flex; flex-direction: column; gap: 4px; max-width: 320px; padding: 6px; border: 1px solid var(--hh-line); border-radius: 8px; background: var(--hh-surface); }
+.hh-review-pick textarea { min-width: 240px; min-height: 4em; }
+/* The footer bar (§5.3, §5.4): send the round, approve, the approval's line. */
+.hh-review-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 12px; border-top: 1px solid var(--hh-line); background: var(--hh-surface); }
+.hh-review-bar p { margin: 0; }
+.hh-review-approve { margin-left: auto; }
+.hh-review-approved { color: var(--hh-ok); }
+.hh-review-ask { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; width: 100%; }
+.hh-review-ask textarea { flex: 1 1 100%; min-height: 3em; }
+/* "See what changed" (§5.4): text only; the sign says what each line is without its colour. */
+.hh-diff { max-width: 72ch; margin: 0 auto 16px; padding: 8px; border: 1px solid var(--hh-line); border-radius: 8px; }
+.hh-diff ol { margin: 0; padding: 0; list-style: none; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.hh-diff-added { background: var(--hh-callout-tip); }
+.hh-diff-added::before { content: "+ "; }
+.hh-diff-removed { background: var(--hh-error-bg); text-decoration: line-through; }
+.hh-diff-removed::before { content: "− "; }
+.hh-diff-same::before { content: "  "; }
+.hh-diff-gap { color: var(--hh-muted); }
 /* Narrow: only the review column moves under the body; the contents list stays beside it. */
 @container (max-width: 900px) {
   .hh-reader-reviewing .hh-reader-columns { display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }

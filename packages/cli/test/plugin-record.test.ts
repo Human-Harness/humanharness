@@ -25,6 +25,28 @@ const FORMS = [
   KEY.replace(/\//g, "\\/"),
   Buffer.from(`me:${KEY}`).toString("base64"),
 ];
+const u = (c: string, upper = false) => {
+  const h = c.charCodeAt(0).toString(16).padStart(4, "0");
+  return `\\u${upper ? h.toUpperCase() : h}`;
+};
+/** Forms a service may echo and a plugin may log or throw: none of them may reach the terminal. */
+const ECHOED = [
+  KEY,
+  KEY.replace(/\//g, "\\/"),
+  [...KEY].map((c) => u(c)).join(""),
+  [...KEY].map((c) => u(c, true)).join(""),
+  encodeURIComponent(KEY),
+  Buffer.from(KEY).toString("base64"),
+  Buffer.from(`x${KEY}`).toString("base64"),
+  Buffer.from(`xy${KEY}`).toString("base64"),
+  Buffer.from(KEY).toString("hex"),
+  Buffer.from(KEY).toString("hex").toUpperCase(),
+  Buffer.from(`a:${KEY}`).toString("base64"),
+  Buffer.from(`ab:${KEY}`).toString("base64"),
+  Buffer.from(`abc:${KEY}`).toString("base64"),
+];
+/** A request URL holding the key base64-encoded at an odd offset: stripping can't remove it. */
+const URL_LEAK = Buffer.from(`xy${KEY}`).toString("base64url");
 
 const config = (hosts: string[]) => `import { definePlugin, z } from "@humanharness/harness-sdk";
 
@@ -34,7 +56,7 @@ export default definePlugin({
   version: "0.1.0",
   harness: "*",
   permissions: { hosts: ${JSON.stringify(hosts)}, exec: [{ cmd: "gh", args: ["api", "*"] }], secrets: [{ id: "jira", label: "Jira token", help: "from your profile" }] },
-  sources: [{ id: "issues", ttl: 900 }, { id: "evil", ttl: 900 }, { id: "nokey", ttl: 900 }, { id: "sleepy", ttl: 900 }],
+  sources: [{ id: "issues", ttl: 900 }, { id: "evil", ttl: 900 }, { id: "nokey", ttl: 900 }, { id: "sleepy", ttl: 900 }, { id: "leaky", ttl: 900 }, { id: "urlleak", ttl: 900 }],
   data: { issues: { key: "id", agent: "read", schema: z.object({ id: z.string() }) } },
 });
 `;
@@ -54,6 +76,17 @@ export default definePluginBackend({
     },
     async nokey(ctx) {
       await ctx.fetch("https://api.example.com/plain");
+    },
+    async leaky(ctx) {
+      const res = await ctx.fetch("https://api.example.com/leak", { headers: { Authorization: "Bearer {{secret:jira}}" } });
+      for (const line of res.text().split("\\n")) {
+        await ctx.log("error", line);
+        console.error(line);
+      }
+      throw new Error(res.text().split("\\n").join(" "));
+    },
+    async urlleak(ctx) {
+      await ctx.fetch("https://api.example.com/x?b=${URL_LEAK}", { headers: { Authorization: "Bearer {{secret:jira}}" } });
     },
     async sleepy(ctx) {
       setTimeout(() => {}, 3_600_000);
@@ -172,6 +205,69 @@ describe("humanharness plugin record", () => {
     expect(out).toContain("A key could not be removed from the recording of GET https://api.example.com/issues?mode=echo; nothing was written.");
     expect(fixtureFiles(dir, "issues")).toEqual([]);
     for (const form of FORMS) expect(out).not.toContain(form);
+  });
+
+  it("a failing source that logs and throws the echoed key, in any form, prints none of them", async () => {
+    const dir = copy();
+    const { code, out } = await record(dir, "leaky", deps({ fetch: echoFetch(() => ECHOED.join("\n")) }));
+    expect(code).toBe(1);
+    expect(out).toContain("leaky: FAILED");
+    expect(out).toContain("(a line held a key; not shown)");
+    for (const form of ECHOED) expect(out).not.toContain(form);
+    expect(out.toLowerCase()).not.toContain(Buffer.from(KEY).toString("hex"));
+    expect(fixtureFiles(dir, "leaky")).toEqual([]);
+  });
+
+  it("each echoed form alone, logged and thrown, never reaches the terminal (and nothing is thrown with it)", async () => {
+    for (const form of ECHOED) {
+      // record returns 1 here: a throw would carry its message to stderr, so resolving is part of the check.
+      const { code, out } = await record(copy(), "leaky", deps({ fetch: echoFetch(() => form) }));
+      expect(code, form).toBe(1);
+      expect(out, form).not.toContain(form);
+      expect(out.toLowerCase(), form).not.toContain(Buffer.from(KEY).toString("hex"));
+    }
+  });
+
+  it("the leak message never prints a URL that holds a key", async () => {
+    const dir = copy();
+    const { code, out } = await record(dir, "urlleak", deps());
+    expect(code).toBe(1);
+    expect(out).toContain("(a line held a key; not shown)");
+    expect(out).not.toContain(URL_LEAK);
+    expect(fixtureFiles(dir, "urlleak")).toEqual([]);
+  });
+
+  it("with --yes, a leak keeps the old fixtures untouched and writes nothing", async () => {
+    const dir = copy();
+    writeFiles(dir, { "fixtures/issues/001.json": "old-1", "fixtures/issues/009.json": "old-9" });
+    const odd = () => `{"n":1,"blob":"${Buffer.from(`xy${KEY}`).toString("base64")}"}`;
+    const { code } = await record(dir, "issues", deps({ fetch: echoFetch(odd) }), true);
+    expect(code).toBe(1);
+    expect(fixtureFiles(dir, "issues")).toEqual(["001.json", "009.json"]);
+    expect(fixtureText(dir, "issues")).toEqual(["old-1", "old-9"]);
+  });
+
+  it("a response over 10 MB stops being read and fails the run; nothing is written", async () => {
+    const dir = copy();
+    let pulls = 0;
+    const chunk = new Uint8Array(1024 * 1024).fill(97);
+    const fetch = vi.fn(
+      async () =>
+        new Response(
+          new ReadableStream<Uint8Array>({
+            pull(c) {
+              pulls += 1;
+              c.enqueue(chunk);
+            },
+          }),
+          { status: 200 },
+        ),
+    );
+    const { code, out } = await record(dir, "nokey", deps({ fetch }));
+    expect(code).toBe(1);
+    expect(out).toContain("nokey: FAILED");
+    expect(pulls).toBeLessThanOrEqual(13);
+    expect(fixtureFiles(dir, "nokey")).toEqual([]);
   });
 
   it("refuses to ask for keys when stdin is not a terminal", async () => {
@@ -299,6 +395,17 @@ describe("stripExchange", () => {
   it("leaves an exchange with no key as it is", () => {
     const e = { kind: "fetch" as const, request: { method: "GET", url: "https://a.example.com/x" }, response: { status: 200, headers: {}, text: "hi" } };
     expect(stripExchange(e, new Map([["k", KEY]]))).toEqual({ exchange: e, leaked: false });
+  });
+
+  it("an exchange that no longer parses once stripped fails closed: nothing is written", async () => {
+    // A key that is also the exchange's own field name: stripping renames the field, so the fixture no longer parses.
+    const e = { kind: "fetch" as const, request: { method: "GET", url: "https://a.example.com/x" }, response: { status: 200, headers: {}, text: "hi" } };
+    expect(() => stripExchange(e, new Map([["k", "status"]]))).toThrow();
+    const dir = copy();
+    const { code, out } = await record(dir, "nokey", deps({ readSecret: async () => "status" }));
+    expect(code).toBe(1);
+    expect(out).toContain("could not be removed");
+    expect(fixtureFiles(dir, "nokey")).toEqual([]);
   });
 });
 

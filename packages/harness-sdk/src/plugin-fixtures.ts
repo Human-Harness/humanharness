@@ -2,6 +2,7 @@
 // SDK's main entry stays free of it, since screens and plugin bundles import that one.
 import { Buffer } from "node:buffer";
 import { z } from "zod";
+import { REDACTED, redact } from "./plugin-permissions";
 
 const MAX_TEXT = 10 * 1024 * 1024;
 const headers = z.record(z.string().max(200), z.string().max(8192));
@@ -109,7 +110,7 @@ const hex4 = (c: string) => c.charCodeAt(0).toString(16).padStart(4, "0");
  * The ways a key shows up in a request or a response: raw, URL-encoded (both hex cases, and as a form), base64, and as
  * a JSON body escapes it (`/` as `\/`, every UTF-16 unit as `\uXXXX` in either case, non-ASCII ones only as `\uXXXX`).
  */
-function forms(s: string): string[] {
+export function secretForms(s: string): string[] {
   const b64 = bytesOf(s).toString("base64");
   const url = encodeURIComponent(s);
   const units = s.split("");
@@ -155,7 +156,7 @@ const jsonUnescaped = (s: string) =>
   );
 
 /** Does `s` still hold `secret`, in any form we can decode, its JSON-unescaped view included? */
-function holds(s: string, secret: string): boolean {
+export function holdsSecret(s: string, secret: string): boolean {
   const plain = jsonUnescaped(s);
   return holdsDecoded(s, secret) || (plain !== s && holdsDecoded(plain, secret));
 }
@@ -167,6 +168,29 @@ function holdsDecoded(s: string, secret: string): boolean {
   for (const m of s.matchAll(B64_TOKEN))
     for (let shift = 0; shift < 4; shift++) if (Buffer.from(m[0].slice(shift), "base64").includes(raw)) return true;
   return false;
+}
+
+/** What a line that still held a key, once every known form was replaced, is shown as. */
+export const SECRET_LINE = "(a line held a key; not shown)";
+
+const hexOf = (s: string) => bytesOf(s).toString("hex");
+
+/**
+ * A line of plugin output (a log line, an error, a URL) safe to show or keep: each key's forms that `stripSecrets`
+ * knows, the broker's `redact` forms and hex (either case) replaced by `[redacted]`. A line that still holds a key in a
+ * form `holdsSecret` decodes (base64 at any offset, a Basic credential, mixed escapes) or as hex in any case is
+ * `SECRET_LINE` as a whole. A key split across lines, cut off, or with its case changed is not seen.
+ */
+export function hideSecrets(text: string, keys: readonly string[]): string {
+  const values = [...new Set(keys.filter((k) => k !== ""))];
+  if (values.length === 0) return text;
+  const hex = values.flatMap((k) => [hexOf(k), hexOf(k).toUpperCase()]);
+  const all = [...new Set([...values.flatMap(secretForms), ...hex])].sort((a, b) => b.length - a.length);
+  let out = text;
+  for (const f of all) out = out.split(f).join(REDACTED);
+  out = redact(out, values);
+  const lower = out.toLowerCase();
+  return values.some((k) => holdsSecret(out, k) || lower.includes(hexOf(k))) ? SECRET_LINE : out;
 }
 
 /**
@@ -183,9 +207,9 @@ export function stripSecrets(exchange: FixtureExchange, secrets: Record<string, 
   const entries = Object.entries(secrets)
     .filter(([, v]) => v.length > 0)
     .sort((a, b) => b[1].length - a[1].length);
-  for (const [id, value] of entries) for (const f of forms(value)) text = text.split(inJson(f)).join(`{{secret:${id}}}`);
+  for (const [id, value] of entries) for (const f of secretForms(value)) text = text.split(inJson(f)).join(`{{secret:${id}}}`);
   const out = parseFixture(JSON.parse(text));
   const all = strings(out);
-  const leaked = entries.filter(([, v]) => all.some((s) => holds(s, v))).map(([id]) => id);
+  const leaked = entries.filter(([, v]) => all.some((s) => holdsSecret(s, v))).map(([id]) => id);
   return { exchange: out, leaked };
 }

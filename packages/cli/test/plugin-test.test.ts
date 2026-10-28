@@ -1,3 +1,4 @@
+import { Buffer } from "node:buffer";
 import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -176,6 +177,21 @@ describe("humanharness plugin test", () => {
     const [r] = await testPlugin(dir, { source: "queues" });
     expect(r.ok).toBe(false);
     expect(r.error).toMatch(/evil\.example\.org/);
+  });
+
+  it("a log line or error holding the key in a form the fixtures echo is hidden in the printed report", async () => {
+    const key = "fixture-tok";
+    const forms = [Buffer.from(key).toString("hex"), [...key].map((c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`).join(""), Buffer.from(`x${key}`).toString("base64")];
+    const dir = withFixtures("echo", { "queues/001.json": { ...QUEUES, response: { ...QUEUES.response, text: forms.join(" ") } } });
+    const backend = path.join(dir, "dist", "backend.js");
+    const code = fs.readFileSync(backend, "utf8");
+    const patched = code.replace(/await ctx\.fetch\([^;]*;/, (call) => `${call} await ctx.log("info", res.text()); console.log(res.text()); throw new Error(res.text());`);
+    expect(patched).not.toBe(code);
+    fs.writeFileSync(backend, patched);
+    const { code: exit, out } = await cli(dir, "--source", "queues");
+    expect(exit).toBe(1);
+    expect(out).toContain("(a line held a key; not shown)");
+    for (const form of forms) expect(out).not.toContain(form);
   });
 });
 

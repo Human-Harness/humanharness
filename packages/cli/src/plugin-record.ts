@@ -3,8 +3,8 @@ import { constants as fsConstants, promises as fs } from "node:fs";
 import path from "node:path";
 import { createInterface } from "node:readline";
 import type { Readable, Writable } from "node:stream";
-import { type PluginManifest, redact } from "@humanharness/harness-sdk";
-import { type FixtureExchange, stripSecrets } from "@humanharness/harness-sdk/plugin-fixtures";
+import type { PluginManifest } from "@humanharness/harness-sdk";
+import { type FixtureExchange, hideSecrets, stripSecrets } from "@humanharness/harness-sdk/plugin-fixtures";
 import { isPublicHost, runFile } from "@humanharness/shell/plugins";
 import { CliError } from "./cli";
 import { buildPlugin } from "./plugin-build";
@@ -41,6 +41,8 @@ export interface RecordOptions {
 
 /** The app's cap on fixture files per source (Decision 14). */
 const MAX_EXCHANGES = 200;
+/** The broker's cap on a response body (FETCH_LIMITS.maxBytes). */
+const MAX_BODY = 10 * 1024 * 1024;
 const YES = /^y(es)?$/i;
 const SECRET_REF = /\{\{secret:([a-z][a-z0-9_-]{0,39})\}\}/g;
 /** A base64 run long enough to hold a credential, e.g. Basic auth's `user:key`. */
@@ -56,6 +58,25 @@ async function referencedSecrets(dir: string, m: PluginManifest): Promise<Plugin
 /** A plain-text line for the terminal: no control characters a plugin could use to redraw it. */
 const plain = (s: string) => s.replace(/[\x00-\x1f\x7f-\x9f]/g, " ");
 
+/** The body as text, read up to the broker's own cap (10 MB): past it the read stops and the request fails. */
+async function cappedText(res: Response): Promise<string> {
+  if (!res.body) return "";
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > MAX_BODY) {
+      await reader.cancel().catch(() => undefined);
+      throw new Error("The response is larger than 10 MB");
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks).toString("utf8");
+}
+
 /**
  * A live transport that keeps every exchange, as the broker made it (keys already filled in) and as the service
  * answered: what `stripSecrets` then cleans. The broker's checks run before it is called.
@@ -68,7 +89,7 @@ function recordingTransport(d: RecordDeps, exchanges: FixtureExchange[]) {
       const headers = Object.fromEntries(new Headers(init.headers));
       const body = typeof init.body === "string" ? init.body : undefined;
       const res = await d.fetch(url, init);
-      const text = res.body ? await res.text() : "";
+      const text = await cappedText(res);
       // A session cookie isn't one of the plugin's keys, but it is a credential: it never goes into a fixture.
       const outHeaders = Object.fromEntries([...res.headers].filter(([k, v]) => k !== "set-cookie" && k.length <= 200 && v.length <= 8192));
       exchanges.push({
@@ -151,7 +172,7 @@ export async function recordPlugin(dir: string, o: RecordOptions, d: RecordDeps,
     }
     return Object.fromEntries(ids.filter((id) => keys.has(id)).map((id) => [id, keys.get(id) as string]));
   };
-  const hide = (text: string) => redact(text, [...keys.values()]);
+  const hide = (text: string) => hideSecrets(text, [...keys.values()]);
 
   const exchanges: FixtureExchange[] = [];
   const report = await runSource({ dir, source: o.source, transport: recordingTransport(d, exchanges), secrets, resolve: d.resolve, allowHost: d.allowHost });
@@ -213,7 +234,9 @@ export async function recordPlugin(dir: string, o: RecordOptions, d: RecordDeps,
   }
   out.write(`Recorded ${o.source}: ${written.length} exchange${written.length === 1 ? "" : "s"}, every key replaced by {{secret:<id>}}.\n`);
   for (const f of written) out.write(`  ${f}\n`);
-  out.write("Read them before you commit them: a key the service sends back hex-encoded, double-encoded or compressed isn't seen.\n");
+  out.write(
+    "Read them before you commit them: a key the service sends back hex-encoded, double-encoded or compressed, split across fields, or with its case changed isn't seen.\n",
+  );
   return 0;
 }
 

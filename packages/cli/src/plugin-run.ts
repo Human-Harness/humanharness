@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import vm from "node:vm";
 import { PLUGIN_API, type PluginManifest, checkPluginModels, parsePluginManifest, pluginCollections, pluginSettings, settingsValues } from "@humanharness/harness-sdk";
+import { hideSecrets } from "@humanharness/harness-sdk/plugin-fixtures";
 import { type BrokerAnswer, type BrokerDataOp, PluginBroker, PluginData, type runFile } from "@humanharness/shell/plugins";
 import { CliError } from "./cli";
 
@@ -42,6 +43,9 @@ export interface RunReport {
 
 const DIST = "dist";
 const ERROR_CHARS = 500;
+const LOG_CHARS = 2000;
+/** A run's raw error or console line is kept up to this many characters, then cut to size once its keys are hidden. */
+const RAW_CHARS = 64 * 1024;
 const SHOWN_KEYS = 3;
 const WRITE_OPS = new Set(["put", "patch", "delete", "replaceAll"]);
 
@@ -67,9 +71,9 @@ export async function readBuiltManifest(dir: string): Promise<PluginManifest> {
 }
 
 /** An error's message from any realm (the backend's errors aren't this realm's Error). */
-function errorText(e: unknown): string {
+function errorText(e: unknown, max: number = ERROR_CHARS): string {
   const message = e !== null && typeof e === "object" && typeof (e as { message?: unknown }).message === "string" ? (e as { message: string }).message : String(e);
-  return message.slice(0, ERROR_CHARS);
+  return message.slice(0, max);
 }
 
 function pluginRefused(answer: unknown): Error {
@@ -164,7 +168,7 @@ function consoleInto(log: string[]) {
   const line =
     (level: string) =>
     (...args: unknown[]) =>
-      log.push(`console.${level}: ${args.map((a) => (typeof a === "string" ? a : safeJson(a))).join(" ")}`.slice(0, 2000));
+      log.push(`console.${level}: ${args.map((a) => (typeof a === "string" ? a : safeJson(a))).join(" ")}`.slice(0, RAW_CHARS));
   return { log: line("log"), info: line("info"), warn: line("warn"), error: line("error"), debug: line("debug") };
 }
 
@@ -184,6 +188,13 @@ export async function runSource(o: RunOptions): Promise<RunReport> {
     report.error = `The source ${o.source} is not declared in plugin.json`;
     return report;
   }
+  // Every key handed to the broker: no line of the report holds one, in any form we can see.
+  const handed = new Set<string>();
+  const secrets = async (ids: string[]) => {
+    const values = await o.secrets(ids);
+    for (const v of Object.values(values)) handed.add(v);
+    return values;
+  };
   const temp = await fs.mkdtemp(path.join(os.tmpdir(), "hh-plugin-run-"));
   let clearTimers = () => {};
   try {
@@ -204,7 +215,7 @@ export async function runSource(o: RunOptions): Promise<RunReport> {
           return value;
         },
       },
-      secrets: o.secrets,
+      secrets,
       settings: async () => (settings ? settingsValues(settings, {}) : {}),
       attention: {
         raise: async (item) => void attention.set(item.key, { key: item.key, severity: item.severity, title: item.title }),
@@ -283,7 +294,7 @@ export async function runSource(o: RunOptions): Promise<RunReport> {
       ]);
       report.ok = true;
     } catch (e) {
-      report.error = errorText(e);
+      report.error = errorText(e, RAW_CHARS);
     } finally {
       clearTimeout(timer);
       broker.endRun(run.id);
@@ -299,6 +310,9 @@ export async function runSource(o: RunOptions): Promise<RunReport> {
     return report;
   } finally {
     clearTimers();
+    // Cut to size only once the keys are hidden, so no cut-off part of one is left.
+    report.log = report.log.map((line) => hideSecrets(line, [...handed]).slice(0, LOG_CHARS));
+    if (report.error !== undefined) report.error = hideSecrets(report.error, [...handed]).slice(0, ERROR_CHARS);
     await fs.rm(temp, { recursive: true, force: true });
   }
 }

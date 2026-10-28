@@ -1,6 +1,6 @@
 import { Buffer } from "node:buffer";
 import { describe, expect, it } from "vitest";
-import { type FixtureExchange, fixtureTransport, matchFixture, parseFixture, stripSecrets } from "../src/plugin-fixtures";
+import { type FixtureExchange, SECRET_LINE, fixtureTransport, hideSecrets, matchFixture, parseFixture, stripSecrets } from "../src/plugin-fixtures";
 
 const fx = (url: string, text = "{}", method = "GET"): FixtureExchange => ({ kind: "fetch", request: { method, url }, response: { status: 200, headers: { "content-type": "application/json" }, text } });
 const runOpts = { cwd: "/x", env: {}, timeoutMs: 1000, maxBytes: 1000 };
@@ -127,5 +127,45 @@ describe("stripSecrets (P11)", () => {
     const out = stripSecrets(fx("https://a.example/", "pin=4x2 ok"), { pin: "4x2" });
     expect(JSON.stringify(out.exchange)).not.toContain("4x2");
     expect(out.leaked).toEqual([]);
+  });
+});
+
+describe("hideSecrets", () => {
+  const KEY = "tok-123+/=";
+  const hex = Buffer.from(KEY).toString("hex");
+  const uEsc = (upper: boolean) => [...KEY].map((c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")[upper ? "toUpperCase" : "toLowerCase"]()}`).join("");
+
+  it.each([
+    ["raw", KEY],
+    ["JSON \\/", KEY.replace(/\//g, "\\/")],
+    ["\\u lower", uEsc(false)],
+    ["\\u upper", uEsc(true)],
+    ["URL-encoded", encodeURIComponent(KEY)],
+    ["URL-encoded lower", encodeURIComponent(KEY).toLowerCase()],
+    ["base64", Buffer.from(KEY).toString("base64")],
+    ["base64url", Buffer.from(KEY).toString("base64url")],
+    ["base64 at offset 1", Buffer.from(`x${KEY}`).toString("base64")],
+    ["base64 at offset 2", Buffer.from(`xy${KEY}`).toString("base64")],
+    ["hex", hex],
+    ["HEX", hex.toUpperCase()],
+    ["mixed-case hex", hex.slice(0, 4).toUpperCase() + hex.slice(4)],
+    ["Basic, user of 1", Buffer.from(`a:${KEY}`).toString("base64")],
+    ["Basic, user of 2", Buffer.from(`ab:${KEY}`).toString("base64")],
+    ["Basic, user of 3", Buffer.from(`abc:${KEY}`).toString("base64")],
+  ])("%s: the form never survives", (_name, form) => {
+    const out = hideSecrets(`got ${form} back`, [KEY]);
+    expect(out).not.toContain(form);
+    // A Basic credential whose user is 3 bytes long carries the key's own base64: that part is replaced in place.
+    expect(out === SECRET_LINE || /^got (\w*)\[redacted\] back$/.test(out)).toBe(true);
+  });
+
+  it("leaves a line with no key, or no keys at all, as it is", () => {
+    expect(hideSecrets("all fine", [KEY])).toBe("all fine");
+    expect(hideSecrets(`x ${KEY}`, [])).toBe(`x ${KEY}`);
+    expect(hideSecrets(`x ${KEY}`, [""])).toBe(`x ${KEY}`);
+  });
+
+  it("a form it can only detect withholds the whole line", () => {
+    expect(hideSecrets(`blob ${Buffer.from(`xy${KEY}`).toString("base64")} end`, [KEY])).toBe(SECRET_LINE);
   });
 });

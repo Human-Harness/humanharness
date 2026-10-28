@@ -432,6 +432,7 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 .hh-filediff-lines td { padding: 0 6px; vertical-align: top; white-space: pre-wrap; overflow-wrap: anywhere; }
 .hh-filediff-no { width: 1%; color: var(--hh-muted); text-align: right; user-select: none; }
 .hh-filediff-sign { width: 1%; user-select: none; }
+.hh-filediff-mark { display: inline-block; min-width: 1ch; margin-right: 4px; user-select: none; }
 .hh-filediff-ins { background: var(--hh-diff-ins); }
 .hh-filediff-del { background: var(--hh-diff-del); }
 .hh-filediff-gap td, .hh-filediff-gaprow { color: var(--hh-muted); }

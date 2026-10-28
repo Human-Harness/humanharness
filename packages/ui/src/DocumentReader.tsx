@@ -25,9 +25,6 @@ export interface ReaderTarget {
 const BIG_BYTES = 1024 * 1024;
 const SHOWN_BYTES = 200 * 1024;
 
-// Kept here too: callers imported it from the reader before it moved (the file diff needs it without the reader).
-export { formatSize };
-
 /** The id of the last heading at or above the top of `box` (the place to keep across a reload). */
 function headingAtTop(box: HTMLElement | null): string | null {
   if (!box) return null;

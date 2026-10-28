@@ -789,6 +789,7 @@
     "added": "Added",
     "removed": "Removed",
     "noChanges": "No changes",
+    "gap": "Unchanged lines hidden",
     "binary": "Binary file, no preview ({{before}} → {{after}})",
     "noFile": "none",
     "truncated": "Only the first 200 KB of each version is compared.",

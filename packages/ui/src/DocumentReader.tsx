@@ -7,7 +7,7 @@ import { ApprovedDiff } from "./ApprovedDiff";
 import { DocumentContext, type DocumentHost } from "./documents-context";
 import { FocusMarkers } from "./FocusMarkers";
 import { Markdown, documentOutline } from "./markdown";
-import { ReviewBar } from "./ReviewBar";
+import { type BarDraft, NO_BAR_DRAFT, ReviewBar } from "./ReviewBar";
 import { ReviewColumn } from "./ReviewColumn";
 import { type MarkSpec, clearMarks, drawMarks, findMarks } from "./review-marks";
 
@@ -102,8 +102,6 @@ export function DocumentReader({
   const [current, setCurrent] = useState<string | null>(null);
   // The look applies at once; the caller saves it and passes it back.
   const [look, setLook] = useState<Required<ReaderPrefs>>({ font: prefs.font ?? "sans", size: prefs.size ?? "normal" });
-  // A new visit to focus mode starts with no card open.
-  useEffect(() => setPeek(null), [focus]);
   useEffect(() => setLook({ font: prefs.font ?? "sans", size: prefs.size ?? "normal" }), [prefs.font, prefs.size]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
@@ -137,7 +135,12 @@ export function DocumentReader({
   const [ranges, setRanges] = useState<Map<string, Range>>(() => new Map());
   /** In focus mode, the card a margin marker opened (the column shows only it). */
   const [peek, setPeek] = useState<string | null>(null);
+  // A new visit to focus mode starts with no card open.
+  useEffect(() => setPeek(null), [focus]);
   const inFocus = review === true && focus;
+  /** What the footer bar is in the middle of (a reason being typed): kept here, since the bar moves on a mode switch. */
+  const barDraft = useState<BarDraft>(NO_BAR_DRAFT);
+  const setBarDraft = barDraft[1];
 
   useEffect(() => {
     loaded.current = null;
@@ -152,6 +155,7 @@ export function DocumentReader({
     setDraft(null);
     setDiffOpen(false);
     setPeek(null);
+    setBarDraft(NO_BAR_DRAFT);
     if (refused) {
       setDoc({ ok: false, reason: "outside" });
       return;
@@ -351,7 +355,15 @@ export function DocumentReader({
     else if (prefsOpen) {
       setPrefsOpen(false);
       prefsButton.current?.focus();
-    } else if (inFocus && peek) setPeek(null);
+    } else if (inFocus && peek) {
+      // Focus was in the card, which goes: it moves to the card's marker (else the text), never lost to the page.
+      const inCard = document.activeElement?.closest(".hh-review-column") != null;
+      setPeek(null);
+      if (inCard) {
+        const marker = scrollRef.current?.querySelector<HTMLElement>(`.hh-focus-marker[data-comment="${CSS.escape(peek)}"]`);
+        (marker ?? scrollRef.current)?.focus({ preventScroll: true });
+      }
+    }
     else if (inFocus && onFocus) onFocus(false);
     else onClose();
   };
@@ -431,6 +443,7 @@ export function DocumentReader({
         return r;
       }}
       onSeeChanges={() => setDiffOpen((o) => !o)}
+      draft={barDraft}
     />
   );
 
@@ -540,6 +553,8 @@ export function DocumentReader({
               comments={rv.review.comments}
               ranges={ranges}
               host={scrollRef.current}
+              look={`${look.font} ${look.size}`}
+              open={peek}
               onPick={(id) => {
                 setPeek(id);
                 setActive(id);

@@ -321,7 +321,11 @@ export function ChatView({
       if (!on && was) {
         const line = pausedSummary(t, paused.current);
         paused.current = NO_PAUSED;
-        if (line) dispatch({ type: "notice", text: line, at: new Date().toISOString() });
+        if (line) {
+          dispatch({ type: "notice", text: line, at: new Date().toISOString() });
+          setNotice(line);
+          setAnnouncement(line);
+        }
       }
     },
     [client, t],
@@ -431,10 +435,8 @@ export function ChatView({
     if (!chat.live && wasLive.current) {
       if (focusRef.current) {
         // Focus mode holds the turn's end: no composer focus, nothing read out; it is counted for the summary.
-        paused.current = countPaused(paused.current, {
-          waiting: tasks.current?.status === "waiting",
-          quota: chat.entries.at(-1)?.error?.code === "out-of-quota",
-        });
+        // The task's "waiting" comes after `done` (the note is saved first): it is counted below, on its own.
+        paused.current = countPaused(paused.current, { quota: chat.entries.at(-1)?.error?.code === "out-of-quota" });
       } else {
         setAnnouncement(markdownToPlain(chat.entries.findLast((e) => e.role === "assistant")?.text ?? "", (id) => citationsRef.current?.known?.(id)));
         inputRef.current?.focus();
@@ -445,6 +447,11 @@ export function ChatView({
     wasLive.current = Boolean(chat.live);
   }, [chat.live, chat.entries, t, client, onTurnOk]);
 
+  // The task waiting for the person while in focus mode waits for the summary too.
+  const taskStatus = tasks.current?.status;
+  useEffect(() => {
+    if (focusRef.current && taskStatus === "waiting") paused.current = countPaused(paused.current, { waiting: true });
+  }, [taskStatus]);
   // A phase proposal while in focus mode waits for the summary.
   const proposal = tasks.current?.phaseProposal;
   useEffect(() => {

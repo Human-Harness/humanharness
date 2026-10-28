@@ -86,6 +86,25 @@ describe("ReviewBar (§5.3, §5.4)", () => {
     expect(onApprove).toHaveBeenLastCalledWith("Decided", { discard: true });
   });
 
+  it("Esc closes its own prompt, not what holds the bar, and focus goes back to Approve", async () => {
+    const outer = vi.fn();
+    const p = { summary: S({ unsent: 1 }), busy: false, onSend: vi.fn(), onApprove: vi.fn(), onSeeChanges: vi.fn() };
+    await renderIn(
+      "en",
+      <div onKeyDown={outer}>
+        <ReviewBar {...p} />
+      </div>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    fireEvent.keyDown(screen.getByRole("button", { name: "Send first" }), { key: "Escape" });
+    expect(screen.queryByRole("button", { name: "Send first" })).toBeNull();
+    expect(outer).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Approve" }));
+    // Nothing open: Esc goes on to the reader (it closes the reader, or leaves focus mode).
+    fireEvent.keyDown(screen.getByRole("button", { name: "Approve" }), { key: "Escape" });
+    expect(outer).toHaveBeenCalledTimes(1);
+  });
+
   it("the status line is one live region, there before anything is said", async () => {
     await setup(S({ unsent: 1 }));
     expect(screen.getByRole("status").textContent).toBe("");

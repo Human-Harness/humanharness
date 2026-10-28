@@ -1,7 +1,11 @@
+import type { ParallelCaps } from "@humanharness/harness-sdk";
 import type { TaskView } from "@humanharness/ui/client";
+import { APP_SCOPE, isScopeId } from "@humanharness/workspace";
 import { type TasksFileStore, withTasksFile } from "./lane-store";
+import type { EngineHold } from "./parallel-config";
 import type { TaskManager } from "./task-manager";
-import { LANES_MAX, type TasksFile, interrupted, interruptedLanes, isLaneId } from "./task-store";
+import { LANES_MAX, type TasksFile, interrupted, interruptedLanes, isLaneId, scopeOfTask } from "./task-store";
+import type { TurnGate } from "./turn-gate";
 
 /** TaskManager methods a lane forwards as they are; the board's tests leave out the ones they don't use. */
 type Forwarded =
@@ -46,6 +50,20 @@ export interface BoardDeps {
   newId(): string;
   /** The open tasks or the focus changed: the window's view and the inbox read again. */
   changed(): void;
+  /** The caps and queues every lane's turns go through. Absent (tests): no queue to pause, drop or hook. */
+  gate?: Pick<TurnGate, "pause" | "resume" | "paused" | "dropAll" | "dispose" | "setCaps" | "setBeforeStart">;
+  /** The engine's hold when the board is made; `engineChanged` gives the next one. */
+  hold?: EngineHold;
+  /** The harness's scopes: `scoped` false refuses `switchScope`; `exists` checks an id. Absent: any valid id is taken. */
+  scopes?: { scoped: boolean; exists?(id: string): Promise<boolean> };
+}
+
+/** The idle sleep (spec §4): after `ms` waiting, a lane's engine process goes; its next turn starts one again. */
+export interface IdleSleep {
+  ms: number;
+  timer: { set(fn: () => void, ms: number): unknown; clear(handle: unknown): void };
+  /** Puts lane `id`'s ACP adapter to sleep (its session stays, on disk); a no-op for an engine without one (Claude). */
+  sleep(id: string): Promise<void>;
 }
 
 /**
@@ -60,8 +78,15 @@ export class TaskBoard {
   private focusId: string | null = null;
   /** Lane creation, restore and `whenNoTask`, one after another. Never a lane's turn. */
   private ops: Promise<unknown> = Promise.resolve();
+  private hold: EngineHold;
+  private sleepCfg: IdleSleep | null = null;
+  private readonly sleepTimers = new Map<string, unknown>();
+  /** The board paused the queues for a folder move (and so lifts that pause, never another). */
+  private movePaused = false;
 
-  constructor(private readonly d: BoardDeps) {}
+  constructor(private readonly d: BoardDeps) {
+    this.hold = { ...d.hold };
+  }
 
   /**
    * Reopens the lanes tasks.json lists (after a restart, before `interrupt` ends them). A `current` left by plain mode
@@ -123,7 +148,7 @@ export class TaskBoard {
   /** In an open task's chat, a follow-up of that task; at the start view, a new task (as today). */
   ask(text: string, display?: string, scope?: string): Promise<void> {
     const open = this.focusId === null ? undefined : this.lanes.get(this.focusId);
-    if (open) return open.ask(text, display, scope);
+    if (open) return this.settleAfter(open, open.ask(text, display, scope));
     return this.begin((l) => l.ask(text, display, scope));
   }
 
@@ -135,28 +160,65 @@ export class TaskBoard {
     this.d.changed();
   }
 
+  /** The guided path's next or another action closes this task; the next starts in a new lane (`handOver`). */
   choose(...a: Parameters<TaskManager["choose"]>): ReturnType<TaskManager["choose"]> {
-    return need(this.focused(), "choose")(...a);
+    const l = this.focused();
+    return this.settleAfter(l, need(l, "choose")(...a));
   }
 
   respond(...a: Parameters<TaskManager["respond"]>): ReturnType<TaskManager["respond"]> {
-    return need(this.focused(), "respond")(...a);
+    const l = this.focused();
+    const r = need(l, "respond")(...a);
+    return { ...r, done: this.settleAfter(l, r.done) };
   }
 
   chooseMode(...a: Parameters<TaskManager["chooseMode"]>): ReturnType<TaskManager["chooseMode"]> {
-    return need(this.focused(), "chooseMode")(...a);
+    const l = this.focused();
+    const r = need(l, "chooseMode")(...a);
+    return { ...r, done: this.settleAfter(l, r.done) };
   }
 
   setPhase(...a: Parameters<TaskManager["setPhase"]>): ReturnType<TaskManager["setPhase"]> {
-    return need(this.focused(), "setPhase")(...a);
+    const l = this.focused();
+    const r = need(l, "setPhase")(...a);
+    return { ...r, done: this.settleAfter(l, r.done) };
   }
 
+  /** The open scope (null: none), as the focused lane reads tasks.json; every lane shares it. */
   currentScope(): ReturnType<TaskManager["currentScope"]> {
     return need(this.focused(), "currentScope")();
   }
 
-  chatScope(): ReturnType<TaskManager["chatScope"]> {
+  /** The focused task's own scope, wherever the open scope is now; at the start view, the open scope's chat. */
+  async chatScope(): ReturnType<TaskManager["chatScope"]> {
+    const id = this.focusId;
+    if (id !== null) {
+      const t = (await this.d.file.load()).lanes?.find((l) => l.id === id);
+      if (t) return scopeOfTask(t);
+    }
     return need(this.focused(), "chatScope")();
+  }
+
+  /**
+   * Opens scope `id` (null: none) without closing a lane (Decision 5): the focus goes to that scope's newest open task,
+   * or the start view. True, as today's switch that wasn't stopped.
+   */
+  async switchScope(id: string | null): Promise<boolean> {
+    if (this.d.scopes?.scoped === false) throw new Error("This harness has no scopes");
+    if (id !== null && (!isScopeId(id) || !((await this.d.scopes?.exists?.(id)) ?? true))) throw new Error("Unknown scope");
+    await withTasksFile(this.d.file, async () => {
+      const f = await this.d.file.load();
+      // With none open, a new task runs in `_app`: that is the "scope" whose tasks show.
+      const want = id ?? APP_SCOPE;
+      const newest = (f.lanes ?? [])
+        .filter((t) => this.lanes.has(t.id) && scopeOfTask(t) === want)
+        .sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt))[0];
+      this.focusId = newest?.id ?? null;
+      const { open: _open, ...rest } = f;
+      await this.d.file.save({ ...rest, ...(id === null ? {} : { open: id }), focus: this.focusId });
+    });
+    this.d.changed();
+    return true;
   }
 
   runningTask(): ReturnType<TaskManager["runningTask"]> {
@@ -239,8 +301,12 @@ export class TaskBoard {
     await this.interruptAll();
   }
 
-  /** Every lane ends unfinished (engine switch, spec §10; Decision 14), then leaves the board. */
+  /**
+   * Every lane ends unfinished (engine switch, spec §10; Decision 14), then leaves the board. The queued turns go
+   * first: a running turn's slot, freed as its lane ends, must not start one.
+   */
   async interruptAll(): Promise<void> {
+    this.d.gate?.dropAll();
     for (const l of [...this.lanes.values()]) {
       await l.interrupt().catch((err: unknown) => console.error("Could not end a task", err));
       await this.laneEnded(l.id);
@@ -256,6 +322,7 @@ export class TaskBoard {
   async laneEnded(id: string): Promise<void> {
     const l = this.lanes.get(id);
     if (!l) return;
+    this.laneActive(id);
     this.lanes.delete(id);
     await l.close().catch((err: unknown) => console.error("Could not close a lane", err));
     if (this.focusId === id) {
@@ -263,6 +330,110 @@ export class TaskBoard {
       await this.writeFocus();
     }
     this.d.changed();
+  }
+
+  /**
+   * The lane-ended hook (the board host calls it on each lane's change): once lane `id` runs nothing and has no task
+   * (a close phase, the end of the path, a task handed to another lane), it leaves the board.
+   */
+  async laneSettled(id: string): Promise<void> {
+    const l = this.lanes.get(id);
+    if (!l) return;
+    if (l.isBusy()) await l.idle?.().catch(() => undefined);
+    if (this.lanes.get(id) !== l || l.isBusy()) return;
+    if ((await l.view().catch(() => null))?.current == null) await this.laneEnded(id);
+  }
+
+  /**
+   * A lane's `TaskDeps.successor`: the task that follows one a lane closed starts in a fresh lane, focused, as a new
+   * task does (LaneStore never lets a lane save a second task). `start` runs it on that lane.
+   */
+  handOver(start: (next: LaneHandle) => Promise<void>): Promise<void> {
+    return this.begin(start);
+  }
+
+  /**
+   * Folder move (spec §10, Decision 15): each lane's checkpoint, one at a time; then the queues pause until
+   * `moveEnded`. The checkpoints are turns through the gate, so they run before the pause, never under it. An earlier
+   * pause (out of quota) stays as it is. The lanes then resume from the notes (`resumeFromNotes`), as today's task does.
+   */
+  async checkpointAllBeforeMove(): Promise<void> {
+    for (const l of [...this.lanes.values()]) {
+      await Promise.resolve()
+        .then(() => need(l, "checkpointBeforeMove")())
+        .catch((err: unknown) => console.error("Could not checkpoint a task before the move", err));
+    }
+    const gate = this.d.gate;
+    if (gate && !gate.paused()) {
+      gate.pause({ reason: "folder-move" });
+      this.movePaused = true;
+    }
+  }
+
+  /** The move ended (done, refused or failed): the queues go on, unless something else paused them. */
+  moveEnded(): void {
+    const gate = this.d.gate;
+    if (this.movePaused && gate?.paused()?.reason === "folder-move") gate.resume();
+    this.movePaused = false;
+  }
+
+  /**
+   * After an engine switch's `interruptAll`: the old engine's pause goes (its quota isn't the new one's), the caps and
+   * hold become the new engine's, and the sleep hook follows the hold.
+   */
+  engineChanged(caps: ParallelCaps, hold: EngineHold): void {
+    this.hold = { ...hold };
+    this.d.gate?.resume();
+    this.d.gate?.setCaps(caps, this.hold);
+    this.syncSleepHook();
+  }
+
+  /** Quit (Decision 16): every lane's turn stops and its slot closes; tasks.json stays, the next start ends them. */
+  async closeAll(): Promise<void> {
+    this.d.gate?.dropAll();
+    // No pause or hold timer fires once the app goes.
+    this.d.gate?.dispose();
+    for (const id of [...this.sleepTimers.keys()]) this.laneActive(id);
+    const all = [...this.lanes.values(), ...(this.spare ? [this.spare] : [])];
+    this.lanes.clear();
+    this.spare = null;
+    this.focusId = null;
+    for (const l of all) l.cancel();
+    for (const l of all) await l.close().catch((err: unknown) => console.error("Could not close a lane", err));
+  }
+
+  /**
+   * The board host's idle sleep (spec §4). Each Codex lane costs about 0.3 GB while its process lives (spike PT-S3),
+   * so a waiting lane's goes after `ms`. On an engine held at one session, every other idle lane's goes before a turn
+   * starts (the gate's `beforeStart`).
+   */
+  setIdleSleep(cfg: IdleSleep): void {
+    this.sleepCfg = cfg;
+    this.syncSleepHook();
+  }
+
+  /** A lane started waiting for the person: arm its sleep timer. */
+  laneWaiting(id: string): void {
+    const cfg = this.sleepCfg;
+    if (!cfg || !this.lanes.has(id)) return;
+    this.laneActive(id);
+    this.sleepTimers.set(
+      id,
+      cfg.timer.set(() => {
+        this.sleepTimers.delete(id);
+        // sleep() holds the lane busy: never one that runs (or is about to).
+        const l = this.lanes.get(id);
+        if (!l || l.isBusy()) return;
+        void cfg.sleep(id).catch((err: unknown) => console.error("Could not put an idle session to sleep", err));
+      }, cfg.ms),
+    );
+  }
+
+  /** A lane runs a turn again (or ended): no sleep pending. */
+  laneActive(id: string): void {
+    const h = this.sleepTimers.get(id);
+    if (h !== undefined) this.sleepCfg?.timer.clear(h);
+    this.sleepTimers.delete(id);
   }
 
   /** The open tasks' ids, oldest first. Task 8 gives the full summaries. */
@@ -298,6 +469,33 @@ export class TaskBoard {
       await fn(l);
     } finally {
       if (this.lanes.get(l.id) === l && !l.isBusy() && (await l.view().catch(() => null))?.current == null) await this.laneEnded(l.id);
+    }
+  }
+
+  /** On an engine held at one session, a turn first puts every other idle lane's process to sleep; otherwise no hook. */
+  private syncSleepHook(): void {
+    const cfg = this.sleepCfg;
+    if (!this.d.gate) return;
+    this.d.gate.setBeforeStart(
+      cfg && this.hold.singleSession
+        ? async ({ id }) => {
+            // One at a time; a failure fails the turn: two engine processes must never run at once.
+            for (const l of [...this.lanes.values()]) {
+              if (l.id === id || l.isBusy()) continue;
+              this.laneActive(l.id);
+              await cfg.sleep(l.id);
+            }
+          }
+        : null,
+    );
+  }
+
+  /** `p`, then lane `l` leaves the board if its task ended meanwhile. */
+  private async settleAfter<T>(l: LaneHandle, p: Promise<T>): Promise<T> {
+    try {
+      return await p;
+    } finally {
+      await this.laneSettled(l.id);
     }
   }
 

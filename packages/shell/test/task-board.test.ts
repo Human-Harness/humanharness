@@ -1,10 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import { LaneStore } from "../src/main/lane-store";
-import { TaskBoard, type LaneHandle } from "../src/main/task-board";
+import { type BoardDeps, TaskBoard, type LaneHandle } from "../src/main/task-board";
+import { TurnGate } from "../src/main/turn-gate";
 import type { CurrentTask, TasksFile } from "../src/main/task-store";
 
 /** A lane double with the TaskManager surface the board uses; state lives in the shared memory file through `file`. */
-function harness(init: Partial<TasksFile> = {}) {
+function harness(init: Partial<TasksFile> = {}, deps: Partial<BoardDeps> = {}) {
   let file: TasksFile = { version: 1, current: null, actions: {}, lanes: [], ...init };
   const made: FakeLane[] = [];
   const holds = new Map<string, Promise<void>>();
@@ -15,14 +16,14 @@ function harness(init: Partial<TasksFile> = {}) {
     closed = false;
     interrupted = false;
     constructor(readonly id: string) {}
-    async start(action: string) {
+    async start(action: string, _display?: string, scope?: string) {
       if (action === "refused") throw new Error("That mode isn't offered");
       this.started.push(action);
       this.status = "running";
       // A test holds this action's first turn open.
       await holds.get(action);
       this.status = "waiting";
-      file = { ...file, lanes: [...(file.lanes ?? []), { id: this.id, action, status: "waiting", startedAt: "2026-10-28T10:00:00Z", turns: 1 }] };
+      file = { ...file, lanes: [...(file.lanes ?? []), { id: this.id, action, status: "waiting", startedAt: `2026-10-28T10:00:${String(made.indexOf(this)).padStart(2, "0")}Z`, turns: 1, ...(scope ? { scope } : {}) }] };
     }
     async ask(text: string) {
       this.asked.push(text);
@@ -58,6 +59,7 @@ function harness(init: Partial<TasksFile> = {}) {
     },
     newId: () => `t${++n}`,
     changed,
+    ...deps,
   });
   return { board, made, file: () => file, store, changed, holds };
 }
@@ -280,3 +282,231 @@ describe("TaskBoard start and recovery (Decisions 8, 16)", () => {
     expect(await board.whenNoTask(async () => {})).toBe(false);
   });
 });
+
+type Timer = { set(fn: () => void, ms: number): unknown; clear(h: unknown): void };
+/** A held clock: timers fire only when the test calls them. */
+function heldTimers() {
+  const armed = new Map<number, { fn: () => void; ms: number }>();
+  let n = 0;
+  const timer: Timer = {
+    set: (fn, ms) => (armed.set(++n, { fn, ms }), n),
+    clear: (h) => void armed.delete(h as number),
+  };
+  return { timer, armed, fireAll: () => [...armed.entries()].forEach(([h, t]) => (armed.delete(h), t.fn())) };
+}
+const setOn = (l: object, name: string, fn: unknown) => ((l as Record<string, unknown>)[name] = fn);
+
+describe("board edge cases (parallel spec §10)", () => {
+  it("switchScope never closes a lane; focus goes to that scope's newest lane or the start view (Decision 5)", async () => {
+    const { board, made, file } = harness();
+    await board.start("intro", undefined, "s1");
+    await board.start("plan", undefined, "s2");
+    await board.start("more", undefined, "s1");
+    expect(await board.switchScope("s1")).toBe(true);
+    expect(file().focus).toBe("t3");
+    expect(file().open).toBe("s1");
+    expect(made.some((l) => l.closed)).toBe(false);
+    await board.switchScope("s3");
+    expect(file().focus).toBeNull();
+    expect(file().open).toBe("s3");
+    await board.switchScope(null);
+    expect("open" in file()).toBe(false);
+    expect(board.laneIds()).toEqual(["t1", "t2", "t3"]);
+  });
+  it("switchScope(null) focuses the newest task that runs outside any scope", async () => {
+    const { board, file } = harness();
+    await board.start("intro", undefined, "_app");
+    await board.start("plan", undefined, "s1");
+    await board.switchScope(null);
+    expect(file().focus).toBe("t1");
+  });
+  it("switchScope refuses a bad or unknown scope, and any scope in a harness without scopes", async () => {
+    const { board } = harness({}, { scopes: { scoped: true, exists: async (id) => id === "s1" } });
+    await expect(board.switchScope("../x")).rejects.toThrow("Unknown scope");
+    await expect(board.switchScope("s2")).rejects.toThrow("Unknown scope");
+    expect(await board.switchScope("s1")).toBe(true);
+    const plain = harness({}, { scopes: { scoped: false } });
+    await expect(plain.board.switchScope("s1")).rejects.toThrow("This harness has no scopes");
+  });
+  it("chatScope is the focused task's own scope, wherever the open scope is", async () => {
+    const { board } = harness();
+    await board.start("intro", undefined, "s1");
+    await board.switchScope("s2");
+    await board.focus("t1");
+    expect(await board.chatScope()).toBe("s1");
+  });
+
+  it("checkpointAllBeforeMove runs each lane's checkpoint one at a time; a failed one is logged and the rest go on", async () => {
+    const { board, made } = harness();
+    await board.start("a");
+    await board.start("b");
+    await board.start("c");
+    const order: string[] = [];
+    let inFlight = 0;
+    for (const l of made)
+      setOn(l, "checkpointBeforeMove", async () => {
+        inFlight++;
+        expect(inFlight).toBe(1);
+        await Promise.resolve();
+        order.push(l.id);
+        inFlight--;
+        if (l.id === "t2") throw new Error("engine gone");
+      });
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    await board.checkpointAllBeforeMove();
+    expect(error).toHaveBeenCalledTimes(1);
+    error.mockRestore();
+    expect(order).toEqual(["t1", "t2", "t3"]);
+  });
+  it("a move with two lanes completes: their checkpoint turns run through the gate before it pauses the queues", async () => {
+    const gate = new TurnGate({ tasks: 1, jobs: 1 });
+    const { board, made } = harness({}, { gate });
+    await board.start("a");
+    await board.start("b");
+    const ran: string[] = [];
+    // As gatedTurns does: each checkpoint is a turn that waits for a slot.
+    for (const l of made)
+      setOn(l, "checkpointBeforeMove", async () => {
+        const release = await gate.acquire("tasks", { id: l.id });
+        ran.push(l.id);
+        release();
+      });
+    await board.checkpointAllBeforeMove();
+    expect(ran).toEqual(["t1", "t2"]);
+    // The queues wait while the folder moves; a new turn queues.
+    expect(gate.paused()).toEqual({ reason: "folder-move" });
+    let started = false;
+    const later = gate.acquire("tasks", { id: "t1" }).then((r) => ((started = true), r()));
+    await Promise.resolve();
+    expect(started).toBe(false);
+    board.moveEnded();
+    await later;
+    expect(gate.paused()).toBeNull();
+  });
+  it("a move never replaces or lifts an out-of-quota pause", async () => {
+    const gate = new TurnGate({ tasks: 2, jobs: 1 });
+    const { board } = harness({}, { gate });
+    gate.pause({ reason: "out-of-quota" });
+    await board.checkpointAllBeforeMove();
+    board.moveEnded();
+    expect(gate.paused()).toEqual({ reason: "out-of-quota" });
+  });
+
+  it("interruptAll ends every lane (engine switch) and drops the queued turns first", async () => {
+    const gate = new TurnGate({ tasks: 1, jobs: 1 });
+    const { board, made } = harness({}, { gate });
+    await board.start("a");
+    await board.start("b");
+    const order: string[] = [];
+    const running = await gate.acquire("tasks", { id: "t1" });
+    const queued = gate.acquire("tasks", { id: "t2" }).then(
+      () => order.push("started"),
+      (err: Error) => order.push(err.message),
+    );
+    for (const l of made) {
+      const end = l.interrupt.bind(l);
+      l.interrupt = async () => {
+        order.push(`interrupt ${l.id}`);
+        // The running turn's slot frees as its lane ends: the queued one must already be gone.
+        if (l.id === "t1") running();
+        await end();
+      };
+    }
+    await board.interruptAll();
+    await queued;
+    // Dropped before any lane ended: the slot t1's end freed never started it.
+    expect(order).toEqual(["interrupt t1", "The queued turn was cancelled", "interrupt t2"]);
+    expect(gate.running("tasks")).toBe(0);
+    expect(made.filter((l) => l.started.length > 0).every((l) => l.closed)).toBe(true);
+    expect(board.laneIds()).toEqual([]);
+  });
+  it("engineChanged lifts the old engine's pause and takes the new caps and hold", async () => {
+    const gate = new TurnGate({ tasks: 2, jobs: 1 });
+    const setCaps = vi.spyOn(gate, "setCaps");
+    const { board } = harness({}, { gate });
+    gate.pause({ reason: "out-of-quota", resetsAt: "2099-01-01T00:00:00Z" });
+    board.engineChanged({ tasks: 3, jobs: 1 }, { singleSession: true });
+    expect(gate.paused()).toBeNull();
+    expect(setCaps).toHaveBeenCalledWith({ tasks: 3, jobs: 1 }, { singleSession: true });
+    gate.dispose();
+  });
+
+  it("closeAll (quit) cancels and closes every lane, drops the queues, disarms the timers, and leaves tasks.json as is", async () => {
+    const gate = new TurnGate({ tasks: 1, jobs: 1 });
+    const dispose = vi.spyOn(gate, "dispose");
+    const { board, made, file } = harness({}, { gate });
+    const clock = heldTimers();
+    const sleep = vi.fn(async () => {});
+    board.setIdleSleep({ ms: 600_000, timer: clock.timer, sleep });
+    await board.start("a");
+    await board.start("b");
+    board.laneWaiting("t1");
+    const calls: string[] = [];
+    for (const l of made) {
+      l.cancel = () => calls.push(`cancel ${l.id}`);
+      l.close = async () => void calls.push(`close ${l.id}`);
+    }
+    const running = await gate.acquire("tasks", { id: "t1" });
+    const queued = gate.acquire("tasks", { id: "t2" }).catch((err: Error) => err.message);
+    const before = structuredClone(file());
+    await board.closeAll();
+    expect(await queued).toBe("The queued turn was cancelled");
+    expect(calls).toEqual(["cancel t1", "cancel t2", "close t1", "close t2"]);
+    expect(dispose).toHaveBeenCalled();
+    expect(clock.armed.size).toBe(0);
+    expect(file()).toEqual(before);
+    running();
+  });
+
+  it("a waiting ACP lane sleeps after 10 minutes; a new turn disarms it (spec §4, open question 7)", async () => {
+    const timers: { fn: () => void; ms: number }[] = [];
+    const sleep = vi.fn(async () => {});
+    const { board } = harness();
+    board.setIdleSleep({ ms: 600_000, timer: { set: (fn, ms) => (timers.push({ fn, ms }), timers.length), clear: () => {} }, sleep });
+    await board.start("a");
+    board.laneWaiting("t1");
+    expect(timers.at(-1)?.ms).toBe(600_000);
+    timers.at(-1)!.fn();
+    expect(sleep).toHaveBeenCalledWith("t1");
+  });
+  it("laneActive and laneEnded disarm a lane's sleep; a lane busy when its timer fires is left awake", async () => {
+    const clock = heldTimers();
+    const sleep = vi.fn(async () => {});
+    const { board, made } = harness();
+    board.setIdleSleep({ ms: 600_000, timer: clock.timer, sleep });
+    await board.start("a");
+    await board.start("b");
+    await board.start("c");
+    board.laneWaiting("t1");
+    board.laneActive("t1");
+    board.laneWaiting("t2");
+    await board.laneEnded("t2");
+    expect(clock.armed.size).toBe(0);
+    board.laneWaiting("t3");
+    made[2].status = "running";
+    clock.fireAll();
+    expect(sleep).not.toHaveBeenCalled();
+    board.laneWaiting("nope");
+    expect(clock.armed.size).toBe(0);
+  });
+  it("on an engine held at one session, a turn first puts every other idle lane to sleep, never a busy one", async () => {
+    const gate = new TurnGate({ tasks: 2, jobs: 1 }, { hold: { singleSession: true } });
+    const { board, made } = harness({}, { gate, hold: { singleSession: true } });
+    const slept: string[] = [];
+    board.setIdleSleep({ ms: 600_000, timer: heldTimers().timer, sleep: async (id) => void slept.push(id) });
+    await board.start("a");
+    await board.start("b");
+    await board.start("c");
+    made[2].status = "running";
+    const release = await gate.acquire("tasks", { id: "t1" });
+    expect(slept).toEqual(["t2"]);
+    release();
+    // A sleep that fails fails the turn: two engine processes must never run at once.
+    board.setIdleSleep({ ms: 600_000, timer: heldTimers().timer, sleep: async () => Promise.reject(new Error("still running")) });
+    await expect(gate.acquire("tasks", { id: "t1" })).rejects.toThrow("still running");
+    // Another engine: no hook.
+    board.engineChanged({ tasks: 2, jobs: 1 }, {});
+    expect(gate.tryAcquire("tasks", { id: "t1" })).not.toBeNull();
+  });
+});
+

@@ -170,6 +170,12 @@ export interface TaskDeps {
   timer?: { set(fn: () => void, ms: number): unknown; clear(handle: unknown): void };
   now?: () => Date;
   newId?: () => string;
+  /**
+   * Board mode (parallel spec §6): a task that starts after one this manager already ran (the guided path's next, a
+   * mode's new task, a question once the task stopped waiting, another scope) starts in a lane of its own; `start` runs
+   * it on that lane's manager. Absent: in this one, as today (D0).
+   */
+  successor?(start: (next: TaskManager) => Promise<void>): Promise<void>;
   /** A task's run turn is about to start (Sidekick drops its after-reply turn, sidekick spec §5 "Sending cancels"). Absent: nothing (D0). */
   turnStarting?(): void;
   /** A task turn ended (sidekick spec §4.2). Never awaited: it never delays the task. Absent: nothing (D0). */
@@ -294,6 +300,8 @@ export class TaskManager {
   private closed = false;
   /** A `done` of the running operation reached the window: the turn it showed has ended there. */
   private windowDone = false;
+  /** A task began or ended here: with `successor`, the next one starts in another lane. */
+  private begun = false;
   /** The task whose turn runs now: a session reported outside it is ignored. */
   private turnTask: string | null = null;
   /** Counts the turns that started (a `done` came or the send returned): `respond` knows whether its turn ran. */
@@ -1347,6 +1355,7 @@ export class TaskManager {
   ): Promise<void> {
     // Cancelled or quitting since the operation began (e.g. right after the closing turn): start nothing.
     if (this.cancelRequested) return this.stopped();
+    if (this.d.successor && this.begun) return this.d.successor((next) => next.op(() => next.begin(task, scope, message, display, floor, tier)));
     await this.endSession();
     await this.between();
     const context = await this.contextFor(scope, task.action);
@@ -1371,6 +1380,7 @@ export class TaskManager {
       ...(this.d.scoped ? { scope } : {}),
       ...(below ? { belowMinTier: true as const } : {}),
     };
+    this.begun = true;
     await this.update((s) => ({ ...s, engine, current }));
     // Checked again with no await before the send: a Stop while the session ended or the notes were read.
     if (this.cancelRequested) {
@@ -1921,6 +1931,7 @@ export class TaskManager {
   }
 
   private async endTask(id: string, outcome: ActionStatus): Promise<void> {
+    this.begun = true;
     await this.update((s) => {
       const c = s.current;
       if (!c || c.id !== id) return s;

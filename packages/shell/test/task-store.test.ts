@@ -449,3 +449,14 @@ describe("lanes (parallel spec §6)", () => {
     expect(interruptedLanes(waiting)).toBe(waiting);
   });
 });
+
+describe("forgetEngine in board mode (parallel spec §10)", () => {
+  it("ends every lane left open too, in the lanes' write chain", async () => {
+    const folder = tmp();
+    const store = new TaskStore(folder);
+    const lane = { id: "a", action: "turn", status: "waiting" as const, startedAt: "", turns: 1 };
+    await store.save({ version: 1, current: null, actions: {}, engine: "codex", lanes: [lane], focus: "a" });
+    await store.forgetEngine();
+    expect(await store.load()).toEqual({ version: 1, current: null, actions: { turn: "unfinished" }, lanes: [], focus: null });
+  });
+});

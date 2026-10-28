@@ -6,6 +6,7 @@ import { BLOCK_ID, MODE_ID, PHASE_ID, PLUGIN_ID } from "@humanharness/harness-sd
 import type { Session } from "@humanharness/runtime";
 import type { ActionStatus, TaskStatus } from "@humanharness/ui/client";
 import { MAIN_SCOPE, isCanonicalPath, isScopeDir, isScopeId, tasksFile } from "@humanharness/workspace";
+import { withTasksFile } from "./lane-store";
 import { cleanProfile } from "./models";
 
 /** The input block the task waits an answer for (input-blocks spec §4): its id, its block's name, when it was shown. */
@@ -387,9 +388,14 @@ export class TaskStore {
     }
   }
 
-  /** After an engine change: the open task ends (its session belongs to the old engine) and the file no longer names that engine. */
-  async forgetEngine(): Promise<void> {
-    const { engine: _old, ...rest } = interrupted(await this.load());
-    await this.save(rest);
+  /**
+   * After an engine change: the open task ends (its session belongs to the old engine) and the file no longer names that
+   * engine. In board mode every lane left open ends too, in the lanes' write chain (a file without lanes: as before).
+   */
+  forgetEngine(): Promise<void> {
+    return withTasksFile(this, async () => {
+      const { engine: _old, ...rest } = interruptedLanes(interrupted(await this.load()));
+      await this.save(rest);
+    });
   }
 }

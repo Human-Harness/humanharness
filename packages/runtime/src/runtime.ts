@@ -1,27 +1,10 @@
-import { randomUUID } from "node:crypto";
-import { promises as fs } from "node:fs";
-import { type Bridge, type Launcher, type McpServerSpec, type Rpc, dataServerSpec, devLauncher, hasAgentData, openBridge, openRpc, uiServerSpec } from "@humanharness/blocks";
-import type { Effort, EngineDef, ModelChoice, ModelProfile } from "@humanharness/engines";
-import { type Language, type LoadedHarness, allBlocks, hasMaterial, resolveInHarness } from "@humanharness/harness-sdk";
-import { materialServerSpec } from "@humanharness/material/light";
-import {
-  BEFORE_MESSAGE,
-  History,
-  type HistoryTrailer,
-  type ReferenceFolder,
-  START,
-  STOPPED_PREFIX,
-  TURN_PREFIX,
-  UNDO_PREFIX,
-  appHistoryKeep,
-  prepareFolder,
-  refreshInstructions,
-  writeInstructions,
-} from "@humanharness/workspace";
-import { AcpTransport } from "./acp";
-import { ClaudeCliTransport } from "./claude-cli";
+import type { Launcher } from "@humanharness/blocks";
+import type { Effort, EngineDef, ModelChoice } from "@humanharness/engines";
+import type { Language, LoadedHarness } from "@humanharness/harness-sdk";
+import type { History, ReferenceFolder } from "@humanharness/workspace";
 import type { Event } from "./events";
-import { type Session, type Transport, type TransportOptions, acpFields } from "./transport";
+import type { Session } from "./transport";
+import { type SessionSlot, type SlotSendOptions, createWorkspace } from "./workspace";
 
 export interface RuntimeOptions {
   /** Built `ui` MCP server entry (app). Defaults to the TS source (dev). */
@@ -82,12 +65,12 @@ export interface HarnessRuntime {
    * Runs one turn; `options.profile` is the task's model profile (every turn of a task gets the same one) and
    * `options.trailer` the task its history commits belong to.
    */
-  send(message: string, emit: (e: Event) => void, options?: { profile?: ModelProfile; trailer?: HistoryTrailer }): RunningTurn;
+  send(message: string, emit: (e: Event) => void, options?: SlotSendOptions): RunningTurn;
   /** Ends the engine session (Codex: `session/close`); the next turn starts a new one. Not while a turn runs. */
   endSession(): Promise<void>;
   /**
    * Rewrites AGENTS.md with the settings as they are now, when its text changed (spec §5). Only between tasks: the
-   * next session reads it, a running one keeps what it started with (D4). True when it wrote; false once closing.
+   * next session reads it, a running one keeps what it started with (D4). True when it wrote; false while a turn runs or once closing.
    * The caller must not run it while another runtime is being created on the same folder.
    */
   refreshInstructions(): Promise<boolean>;
@@ -95,168 +78,26 @@ export interface HarnessRuntime {
   close(): Promise<void>;
 }
 
-function harnessMcpServers(harness: LoadedHarness, launcher: Launcher): McpServerSpec[] {
-  return harness.mcp.map((rel, i) => ({
-    name: i === 0 ? harness.id : `${harness.id}-${i + 1}`,
-    command: launcher.command,
-    args: [...launcher.args, resolveInHarness(harness, rel)],
-    env: { ...launcher.env },
-  }));
-}
-
+/** A workspace with exactly one slot, `"main"` (parallel spec §4): the CLI's `humanharness run` and the shell's runtime. */
 export async function createRuntime(opts: RuntimeOptions): Promise<HarnessRuntime> {
-  const { harness, engine, folder } = opts;
-  const launcher = opts.launcher ?? devLauncher();
-  const references = opts.references ?? [];
-
-  await prepareFolder(folder, harness.folder.seed ? resolveInHarness(harness, harness.folder.seed) : undefined);
-  const base = await fs.readFile(resolveInHarness(harness, harness.instructions), "utf8");
-  const blocks = allBlocks(harness);
-  const settings = await opts.instructionSettings?.();
-  const material = opts.material && hasMaterial(harness) ? opts.material : undefined;
-  const withMaterial = material ? { material: true } : {};
-  const generated = await writeInstructions({ folder, base, language: opts.language, blocks, references, engine, ...(settings ? { settings } : {}), ...withMaterial });
-
-  // The history skips the app's files under .harness/ (except the notes, the data and, with material, its registry
-  // and decisions) and the generated instructions.
-  const history = new History(folder, opts.gitdir, [".harness/", ...generated], appHistoryKeep(material !== undefined));
-  await history.init();
-  await history.save(START);
-
-  let emitCurrent: ((e: Event) => void) | null = null;
-  const session: Session = opts.session ?? { id: randomUUID(), started: false };
-  const bridge: Bridge = await openBridge((m) => emitCurrent?.({ type: "block", name: m.name, data: m.data }));
-  let rpc: Rpc | null = null;
-  let materialRpc: Rpc | null = null;
+  const { data, material, session, onSession, ...rest } = opts;
+  const ws = await createWorkspace({
+    ...rest,
+    ...(data ? { data: (request: unknown) => data(request) } : {}),
+    ...(material ? { material: { request: (request: unknown) => material.request(request), ...(material.entry !== undefined ? { entry: material.entry } : {}) } } : {}),
+  });
+  let slot: SessionSlot;
   try {
-    if (opts.data && (hasAgentData(harness) || opts.extraData)) rpc = await openRpc(opts.data);
-    if (material) materialRpc = await openRpc(material.request);
-    return await buildRuntime(bridge, rpc, materialRpc);
+    slot = await ws.openSlot({ key: "main", ...(session ? { session } : {}), ...(onSession ? { onSession } : {}) });
   } catch (err) {
-    await materialRpc?.close().catch(() => {});
-    await rpc?.close().catch(() => {});
-    await bridge.close().catch(() => {});
+    await ws.close().catch(() => {});
     throw err;
   }
-
-  async function buildRuntime(bridge: Bridge, rpc: Rpc | null, materialRpc: Rpc | null): Promise<HarnessRuntime> {
-    const transportOptions: TransportOptions = {
-      folder,
-      session,
-      mcp: [
-        uiServerSpec({ harnessConfig: harness.configPath, bridge, launcher, entry: opts.uiServerEntry }),
-        ...(rpc ? [dataServerSpec({ harnessConfig: harness.configPath, rpc, launcher, entry: opts.dataServerEntry, ...(opts.extraData ? { extra: opts.extraData.catalogue } : {}) })] : []),
-        ...(materialRpc ? [materialServerSpec({ rpc: materialRpc, launcher, mode: "person", entry: material?.entry })] : []),
-        ...harnessMcpServers(harness, launcher),
-      ],
-      permissions: harness.permissions,
-      references: references.map((r) => r.path),
-      ...acpFields(engine, harness.permissions.edit),
-      command: opts.command ?? (engine.transport.kind === "claude-cli" ? [engine.transport.binary] : engine.transport.command),
-      env: opts.env,
-      onModels: opts.onModels,
-      onSessionStarted: (s) => {
-        try {
-          opts.onSession?.(s);
-        } catch (err) {
-          console.error("Could not record the engine session", err);
-        }
-      },
-    };
-    const transport: Transport =
-      engine.transport.kind === "claude-cli" ? new ClaudeCliTransport(transportOptions) : new AcpTransport(transportOptions);
-
-    let busy = false;
-    let current: { controller: AbortController; done: Promise<void> } | null = null;
-    // Refreshes run one at a time, and close waits for the last one: once closed, this runtime never writes AGENTS.md.
-    let closing = false;
-    let refreshing: Promise<boolean> = Promise.resolve(false);
-
-    return {
-      history,
-      send(message, emit, options = {}) {
-        if (busy) throw new Error("A turn is already running");
-        busy = true;
-        const controller = new AbortController();
-        let doneEmitted = false;
-        const emitOnce = (e: Event) => {
-          if (e.type === "done") {
-            if (doneEmitted) return;
-            doneEmitted = true;
-          }
-          emit(e);
-        };
-        const done = (async () => {
-          try {
-            const before = (await history.save(BEFORE_MESSAGE, options.trailer)) ?? (await history.last())!;
-            let final: Event | undefined;
-            emitCurrent = emitOnce;
-            await transport.turn(
-              message,
-              (e) => {
-                if (final) return;
-                if (e.type === "done") final = e;
-                else emitOnce(e);
-              },
-              controller.signal,
-              options.profile,
-            );
-            emitCurrent = null;
-            const f: Event = final ?? { type: "done", ok: false, error: { code: "agent-crashed" } };
-            if (f.type === "done" && f.ok) await history.save(`${TURN_PREFIX}${message.slice(0, 60)}`, options.trailer);
-            else if (f.type === "done" && f.error.code === "agent-crashed") await history.restore(before, `${UNDO_PREFIX}the turn did not finish`, options.trailer);
-            else await history.save(`${STOPPED_PREFIX}${message.slice(0, 60)}`, options.trailer);
-            emitOnce(f);
-          } catch (err) {
-            emitOnce({ type: "done", ok: false, error: { code: "agent-crashed", detail: err instanceof Error ? err.message : String(err) } });
-          } finally {
-            emitCurrent = null;
-            busy = false;
-          }
-        })();
-        current = { controller, done };
-        return { cancel: () => controller.abort(), done };
-      },
-      async endSession() {
-        if (busy) throw new Error("A turn is already running");
-        // Held while the session closes, so a turn cannot start halfway through.
-        busy = true;
-        try {
-          await transport.endSession();
-        } finally {
-          busy = false;
-        }
-      },
-      refreshInstructions() {
-        if (closing) return Promise.resolve(false);
-        const run = async () => {
-          const now = await opts.instructionSettings?.();
-          return refreshInstructions({ folder, base, language: opts.language, blocks, references, ...(now ? { settings: now } : {}), ...withMaterial });
-        };
-        refreshing = refreshing.catch(() => false).then(run);
-        return refreshing;
-      },
-      async close() {
-        closing = true;
-        await refreshing.catch(() => {});
-        if (current) {
-          current.controller.abort();
-          await current.done;
-        }
-        try {
-          await transport.close();
-        } finally {
-          try {
-            await bridge.close();
-          } finally {
-            try {
-              await rpc?.close();
-            } finally {
-              await materialRpc?.close();
-            }
-          }
-        }
-      },
-    };
-  }
+  return {
+    history: ws.history,
+    send: (message, emit, options) => slot.send(message, emit, options),
+    endSession: () => slot.endSession(),
+    refreshInstructions: () => ws.refreshInstructions(),
+    close: () => ws.close(),
+  };
 }

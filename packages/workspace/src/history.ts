@@ -3,7 +3,7 @@ import path from "node:path";
 import git from "isomorphic-git";
 import { DATA_PREFIX, MATERIAL_KEEP, NOTES_PREFIX, REVIEWS_PREFIX, isScopeDir } from "./layout";
 import { FileIndex, type FileIndexData, addCommit, emptyIndex } from "./file-index";
-import { namedPath } from "./file-timeline";
+import { type TimelineCommit, type TimelineEntry, groupTimeline, namedPath } from "./file-timeline";
 import { BEFORE_MESSAGE } from "./subjects";
 
 /**
@@ -22,6 +22,9 @@ export const appHistoryKeep = (material: boolean): HistoryKeep[] => [NOTES_PREFI
 const keeps = (k: HistoryKeep, file: string): boolean => (typeof k === "string" ? file.startsWith(k) : k.match.test(file));
 
 const AUTHOR = { name: "Human Harness", email: "history@humanharness.local" };
+
+/** The newest commits of a file a timeline reads (Open questions Q7). */
+export const MAX_TIMELINE_COMMITS = 1000;
 
 /**
  * The temp files `writeNote`, the data store and the review records rename into place (`<file>.md.<uuid>.tmp`,
@@ -602,6 +605,58 @@ export class History {
       if (code === "NotFoundError" || code === "ObjectTypeError") return null;
       throw err;
     }
+  }
+
+  /** `file`'s mode and blob id at commit `sha`, without reading the blob; null when it is not there. */
+  private async entryAt(sha: string, file: string, cache: object = {}): Promise<{ mode: number; oid: string } | null> {
+    const cut = file.lastIndexOf("/");
+    const dir = cut < 0 ? undefined : file.slice(0, cut);
+    const name = file.slice(cut + 1);
+    try {
+      const { tree } = await git.readTree({ fs, gitdir: this.gitdir, oid: sha, ...(dir ? { filepath: dir } : {}), cache });
+      const e = tree.find((t) => t.path === name && t.type === "blob");
+      return e ? { mode: parseInt(e.mode, 8), oid: e.oid } : null;
+    } catch (err) {
+      const code = (err as { code?: string }).code;
+      if (code === "NotFoundError" || code === "ObjectTypeError") return null;
+      throw err;
+    }
+  }
+
+  /** `file`'s bytes at commit `sha`; null when the commit or the file isn't there. */
+  async readBytesAt(sha: string, file: string): Promise<Buffer | null> {
+    try {
+      const { blob } = await git.readBlob({ fs, gitdir: this.gitdir, oid: sha, filepath: file });
+      return Buffer.from(blob);
+    } catch (err) {
+      const code = (err as { code?: string }).code;
+      if (code === "NotFoundError" || code === "ObjectTypeError") return null;
+      throw err;
+    }
+  }
+
+  /**
+   * `file`'s timeline, newest first (file-timeline spec §3), from at most its `max` newest commits. Approvals are
+   * numbered within that window, so once an older approval falls out of it the later ones renumber.
+   */
+  async fileTimeline(file: string, actionLabel: (id: string | null) => string, max = MAX_TIMELINE_COMMITS): Promise<TimelineEntry[]> {
+    const ids = (await this.fileCommits(file)).slice(-max);
+    const cache = {};
+    const commits: TimelineCommit[] = [];
+    for (const id of ids) {
+      const { commit } = await git.readCommit({ fs, gitdir: this.gitdir, oid: id, cache });
+      const { subject, task, action } = parseCommitMessage(commit.message);
+      commits.push({
+        id,
+        parent: commit.parent[0] ?? null,
+        subject,
+        task,
+        action,
+        at: new Date(commit.author.timestamp * 1000).toISOString(),
+        blob: (await this.entryAt(id, file, cache))?.oid ?? null,
+      });
+    }
+    return groupTimeline(commits, file, actionLabel);
   }
 
   /** What changed between two commits (tracked files only); `from` null: everything in `to` counts as added. */

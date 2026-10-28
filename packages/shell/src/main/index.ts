@@ -101,7 +101,7 @@ import { cliCommand, engineCommand, loginShellPath, resolveBinary } from "./engi
 import { EngineGuards } from "./engine-guards";
 import { copySetupStep, engineOptionExtras, installCommandOf, runsInTerminal, terminalCommand } from "./install-help";
 import { detectEngine, hasAcceptedNotice } from "./engine-status";
-import { QUESTIONS, cleanModels, engineOffer, firstOffered, fitEffort, nearestTier, nextFallback, resolveProfile, tierSpec } from "./models";
+import { QUESTIONS, cleanModels, engineOffer, firstOffered, fitEffort, manifestTier, nearestTier, nextFallback, resolveProfile, tierSpec } from "./models";
 import { chooseModeHandler } from "./mode-ipc";
 import { setPhaseHandler, timeBoxOffered } from "./phase-ipc";
 import { requireNoticeForChoice, requireNoticeForTurn } from "./notice-policy";
@@ -118,7 +118,7 @@ import { type MoveDeps, guardedMove, moveFolder, moveJournal, precheckMove, reco
 import { type ResolvedReference, displayPath, resolveReferences, usableReferences } from "./references";
 import { runFile } from "./plugin-exec";
 import { PLUGIN_SCHEME, PluginBackendHost } from "./plugin-host";
-import { registerPluginsIpc, safeStorageCrypto } from "./plugin-ipc";
+import { installPluginPanels, registerPluginsIpc, safeStorageCrypto } from "./plugin-ipc";
 import { PluginPointers } from "./plugin-load";
 import { SecretStore } from "./plugin-secrets";
 import { PLUGIN_STATE_DIR } from "./plugin-state";
@@ -946,9 +946,8 @@ const tasks = new TaskManager({
     const engine = c.engineId ?? "";
     const models = cleanModels(c.models);
     // `tier`: a plugin action's (plugins spec §5.3), for its prepared task only.
-    const manifestTier = tier ?? (action !== undefined ? harness.actions[action]?.tier : harness.questions?.tier);
     // `floor`: the mode's minTier when a task restarts in that mode (task-modes spec §5.3); passed only when there is one.
-    const profile = resolveProfile({ engine, action, manifestTier, models, ...(floor ? { floor } : {}) });
+    const profile = resolveProfile({ engine, action, manifestTier: manifestTier(harness, action, tier), models, ...(floor ? { floor } : {}) });
     // Codex: a model its saved list lacks falls back before the turn (spec §5.3).
     const saved = await savedOffer(engine);
     return supportedEffort(firstOffered(profile, models, saved.models), saved);
@@ -1321,7 +1320,14 @@ function registerIpc() {
   // Sidekick (sidekick spec §7): malformed requests are refused before the controller; a bad review sends as typed.
   registerSidekickIpc(handle, () => sidekickCtl);
   // Plugins and the Attention inbox (plugins spec §6, §7): only with the controller (D0: no handler at all).
-  if (pluginsCtl) registerPluginsIpc(handle, pluginsCtl);
+  // A prepared task starts only here, from the person's Start (P6): nothing but the token comes from the window.
+  if (pluginsCtl) {
+    registerPluginsIpc(handle, pluginsCtl, {
+      startPrepared: (p) => tasks.startPrepared(p),
+      startBlocked: () => (quitting ? "The app is closing" : (turnBlocked() ?? (tasks.isBusy() ? "A turn is already running" : null))),
+      ...(harness.scopes ? { scopes: { label: harness.scopes.label, open: async () => (await tasks.currentScope()) !== null } } : {}),
+    });
+  }
   // The harness's setup steps (setup-steps spec §4, §5). Without any, nothing to read and every change refused (D0).
   // A call that fails (a setup.json that can't be saved, a settings write that throws) is a refusal, or the state as
   // it stands, never a thrown error.
@@ -1680,6 +1686,8 @@ async function createWindow() {
   // The agent may have edited attention.json (no listener fires for it): the inbox is read again when the window comes back.
   const plugins = pluginsCtl;
   if (plugins) {
+    // Every app window: the panel-only handler, the request filter and the frame guard (D0: none without plugins).
+    installPluginPanels(win, pluginHost, plugins);
     win.on("focus", () => {
       void plugins.attention.view().then(
         (view) => sendToWindow("hh:attention", view),
@@ -1870,7 +1878,7 @@ if (loaded) {
     pluginHost = host;
     pluginStateRoot = path.join(appDir, PLUGIN_STATE_DIR);
     pluginsCtl = new PluginsController({
-      harness: { id: harness.id, name: harness.name, root: harness.root, ...(harness.plugins ? { plugins: harness.plugins } : {}) },
+      harness: { id: harness.id, name: harness.name, root: harness.root, ...(harness.plugins ? { plugins: harness.plugins } : {}), ...(harness.slots ? { slots: harness.slots } : {}) },
       devDirs: hooks.pluginDirs ?? [],
       pointers: new PluginPointers(path.join(appDir, "plugins.json")),
       // Keys only where the OS encrypts them (Decision 17): never in the clear on a Linux without a keyring.
@@ -1917,6 +1925,8 @@ if (loaded) {
           }),
       changed: (view) => sendToWindow("hh:plugins", view),
       attentionChanged: (view) => sendToWindow("hh:attention", view),
+      surfaceChanged: (view) => sendToWindow("hh:pluginSurface", view),
+      dataChanged: (plugin, collections) => sendToWindow("hh:pluginData", { plugin, collections }),
       log: pluginLog,
     });
   }

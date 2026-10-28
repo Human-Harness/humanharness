@@ -1,7 +1,20 @@
 import { PLUGIN_ID, PLUGIN_LOCAL_ID, SETTING_NAME } from "@humanharness/harness-sdk";
-import type { AttentionView, PluginDetail, PluginPick, PluginResult, PluginsView, PluginTestResult } from "@humanharness/ui/client";
-import type { PluginsController } from "./plugins";
+import type {
+  AttentionTarget,
+  AttentionView,
+  PanelAnswer,
+  PanelCall,
+  PluginDetail,
+  PluginPick,
+  PluginResult,
+  PluginSurfaceView,
+  PluginsView,
+  PluginTestResult,
+} from "@humanharness/ui/client";
+import type { PluginBackendHost } from "./plugin-host";
+import type { PluginsController, PreparedStart } from "./plugins";
 import type { SecretCrypto } from "./plugin-secrets";
+import { ScopeRequired } from "./task-manager";
 
 /**
  * Settings › Plugins and the Attention inbox over IPC (plugins spec §6, §7). Registered only when the harness takes
@@ -33,6 +46,11 @@ export const PLUGIN_IPC_CHANNELS = [
   "hh:attentionGet",
   "hh:attentionDismiss",
   "hh:attentionRead",
+  "hh:pluginsSurface",
+  "hh:pluginsPanel",
+  "hh:pluginsStartPrepared",
+  "hh:pluginsCancelPrepared",
+  "hh:attentionOpen",
 ] as const;
 
 type Handle = (channel: string, fn: (...args: never[]) => unknown) => void;
@@ -54,7 +72,21 @@ type Ctl = Pick<
   | "setNotify"
   | "test"
   | "refresh"
-> & { attention: Pick<PluginsController["attention"], "view" | "dismiss" | "read"> };
+  | "surface"
+  | "panelCall"
+  | "takePrepared"
+  | "cancelPrepared"
+> & { attention: Pick<PluginsController["attention"], "view" | "dismiss" | "read" | "open"> };
+
+/** What a prepared task's Start needs from the app (plugins spec §5.3, P6). */
+export interface PreparedDeps {
+  /** TaskManager.startPrepared, given exactly what the controller's token held. */
+  startPrepared: (p: PreparedStart) => Promise<void>;
+  /** Why no task may start now (the app closing, a turn running or held), or null. Asked before the token is used. */
+  startBlocked?(): string | null;
+  /** A harness with scopes: its label and whether one is open. Absent: no scopes, so no card waits for one. */
+  scopes?: { label: string; open(): Promise<boolean> };
+}
 
 const INVALID: PluginResult = { ok: false, message: "Invalid request" };
 const FAILED_MESSAGE = "Something went wrong";
@@ -65,6 +97,13 @@ const TOKEN = /^[0-9a-f]{32}$/;
 const HASH = /^[0-9a-f]{64}$/;
 /** An attention item's key (the broker's and the scheduler's keys, e.g. `sync-failing:<source>`). */
 const ATTENTION_KEY = /^[A-Za-z0-9:._-]{1,80}$/;
+/** The calls a panel makes through main (Decision 7); `resize` stays in the window. */
+const PANEL_CALLS: readonly PanelCall[] = ["data.query", "settings.get", "refresh", "requestAction"];
+/** A panel call's args as JSON; the controller bounds each call's own args again (4 KB). */
+const PANEL_ARGS_MAX = 16 * 1024;
+const PANEL_INVALID: PanelAnswer = { ok: false, error: "Invalid request" };
+const EMPTY_SURFACE: PluginSurfaceView = { panels: [], chips: [], reloads: {} };
+const NOT_PREPARED: PluginResult = { ok: false, message: "This task is no longer prepared" };
 /** A setting value's JSON and a key's value (Decision 17). */
 const SETTING_JSON_MAX = 8 * 1024;
 const SECRET_CHARS_MAX = 8192;
@@ -88,6 +127,17 @@ function smallValue(v: unknown): boolean {
   }
 }
 
+/** A panel call's args: absent, or JSON of at most PANEL_ARGS_MAX characters (no cycles, no BigInt). */
+function panelArgs(v: unknown): boolean {
+  if (v === undefined) return true;
+  try {
+    const json = JSON.stringify(v);
+    return json !== undefined && json.length <= PANEL_ARGS_MAX;
+  } catch {
+    return false;
+  }
+}
+
 /** The work hours' own fields, bounded; the controller checks what they mean (days, HH:MM, a known time zone). */
 function workHoursInput(v: unknown): { days: number[]; from: string; to: string; timezone: string } | null {
   if (typeof v !== "object" || v === null || Array.isArray(v)) return null;
@@ -105,7 +155,7 @@ function result(r: PluginResult): PluginResult {
   return { ok: false, message: typeof r.message === "string" ? r.message : FAILED_MESSAGE };
 }
 
-export function registerPluginsIpc(handle: Handle, ctl: Ctl, o: { now?: () => number; log?: (message: string, err?: unknown) => void } = {}): void {
+export function registerPluginsIpc(handle: Handle, ctl: Ctl, o: PreparedDeps & { now?: () => number; log?: (message: string, err?: unknown) => void }): void {
   const now = o.now ?? Date.now;
   const log = o.log ?? ((m: string, err?: unknown) => console.error(`[plugins] ${m}`, err ?? ""));
   const refused = (what: string) => (err: unknown) => {
@@ -187,6 +237,66 @@ export function registerPluginsIpc(handle: Handle, ctl: Ctl, o: { now?: () => nu
     if (key !== undefined && (plugin === undefined || typeof key !== "string" || !ATTENTION_KEY.test(key))) return;
     await read("Marking attention items read", () => ctl.attention.read(plugin, key), undefined);
   });
+
+  // ── part 2: the surface, panel calls, prepared tasks, attention targets ────
+
+  handle("hh:pluginsSurface", (): PluginSurfaceView => {
+    try {
+      return ctl.surface();
+    } catch (err) {
+      log("Reading the plugin surface failed", err);
+      return EMPTY_SURFACE;
+    }
+  });
+  // P4: the window's PanelFrame names the plugin and panel of the frame it created; the controller checks them again
+  // (running, declared) and each call's own arguments. A prepared task comes only through `requestAction` here.
+  handle("hh:pluginsPanel", async (plugin: unknown, panel: unknown, call: unknown, args: unknown): Promise<PanelAnswer> => {
+    if (!isId(plugin) || !isLocalId(panel) || typeof call !== "string" || !(PANEL_CALLS as readonly string[]).includes(call) || !panelArgs(args)) return PANEL_INVALID;
+    try {
+      return await ctl.panelCall(plugin, panel, call, args);
+    } catch (err) {
+      log("A panel call failed", err);
+      return { ok: false, error: FAILED_MESSAGE };
+    }
+  });
+  // P6, P13: Start sends only the card's token. What starts is what the controller kept for it, unchanged; the scope
+  // and the app's holds are checked before the single-use token is spent.
+  handle("hh:pluginsStartPrepared", async (token: unknown): Promise<PluginResult> => {
+    if (typeof token !== "string" || !TOKEN.test(token)) return INVALID;
+    const needScope: PluginResult = { ok: false, message: o.scopes ? `Open a ${o.scopes.label} first` : "Open a scope first" };
+    try {
+      const blocked = o.startBlocked?.() ?? null;
+      if (blocked) return { ok: false, message: blocked };
+      const card = ctl.surface().prepared;
+      if (o.scopes && card?.token === token && card.scope === "open" && !(await o.scopes.open())) return needScope;
+      const p = await ctl.takePrepared(token);
+      if (!p) return NOT_PREPARED;
+      await o.startPrepared(p);
+      return { ok: true };
+    } catch (err) {
+      if (err instanceof ScopeRequired) return needScope;
+      log("Starting a prepared task failed", err);
+      return FAILED;
+    }
+  });
+  handle("hh:pluginsCancelPrepared", (token: unknown): void => {
+    if (typeof token === "string" && TOKEN.test(token)) ctl.cancelPrepared(token);
+  });
+  // Only the core's inbox calls this: the target is the stored item's, checked again now (Decision 12).
+  handle("hh:attentionOpen", async (plugin: unknown, key: unknown): Promise<AttentionTarget> => {
+    if (!isId(plugin) || typeof key !== "string" || !ATTENTION_KEY.test(key)) return { kind: "none" };
+    return read("Opening an attention item", () => ctl.attention.open(plugin, key), { kind: "none" } as AttentionTarget);
+  });
+}
+
+/**
+ * Panels in an app window (plugins spec §5; P1–P3, P7): the default session's panel-only handler and request filter,
+ * and the window's frame guard. Only with the controller (D0: a harness without plugins installs none of them). The
+ * host asks `panelHost` at every request, so a plugin that stops serves nothing from then on.
+ */
+export function installPluginPanels(win: Parameters<PluginBackendHost["installPanels"]>[0], host: Pick<PluginBackendHost, "installPanels"> | null, ctl: Pick<PluginsController, "panelHost"> | null): void {
+  if (!host || !ctl) return;
+  host.installPanels(win, (id) => ctl.panelHost(id));
 }
 
 /**

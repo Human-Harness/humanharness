@@ -1163,6 +1163,15 @@ export class PluginsController {
     }
   }
 
+  /**
+   * What the app window's panel handler may serve of `id` (P7): its dist and declared panel ids while it runs, null
+   * from the moment it stops (or the base moved under it), so a stopped plugin's frames load nothing.
+   */
+  panelHost(id: string): { dist: string; panels: string[] } | null {
+    const r = typeof id === "string" && !this.detached ? this.running.get(id) : undefined;
+    return r && !r.stopped ? { dist: r.entry.dist, panels: r.panels.map((p) => p.id) } : null;
+  }
+
   /** The dev watcher's (Task 9): the plugin's frames remount. */
   bumpReload(id: string): void {
     if (typeof id !== "string" || !this.entry(id)) return;

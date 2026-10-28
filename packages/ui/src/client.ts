@@ -998,6 +998,19 @@ export interface HarnessClient {
     /** Runs a source now; one at a time per source and a few per minute. */
     refresh(id: string, source: string): Promise<PluginResult>;
     onChange(listener: (view: PluginsView) => void): () => void;
+    /** What the window draws for the running plugins: panels, chips, the prepared task (plugins part 2). */
+    surface(): Promise<PluginSurfaceView>;
+    /**
+     * A panel's call (Decision 7), sent by the PanelFrame that made the frame: `plugin` and `panel` are the frame's,
+     * never the message's. Main checks both again. A prepared task comes only from `requestAction` here.
+     */
+    panel(plugin: string, panel: string, call: PanelCall, args?: unknown): Promise<PanelAnswer>;
+    /** The person's Start on the prepared card: only its token goes; main starts what the card showed. */
+    startPrepared(token: string): Promise<PluginResult>;
+    cancelPrepared(token: string): Promise<void>;
+    onSurface(listener: (view: PluginSurfaceView) => void): () => void;
+    /** A run wrote these collections: a signal only, panels query again (Decision 8). */
+    onPluginData(listener: (change: PluginDataChange) => void): () => void;
   };
   /** The Attention inbox (plugins spec §6). Only with `state.plugins` (D0). */
   attention: {
@@ -1005,6 +1018,8 @@ export interface HarnessClient {
     dismiss(plugin: string, key: string): Promise<void>;
     /** No arguments: every item; a plugin: its items; both: that one. */
     read(plugin?: string, key?: string): Promise<void>;
+    /** A click on an item in the core's inbox: marks it read and answers what to open (Decision 12). */
+    open(plugin: string, key: string): Promise<AttentionTarget>;
     onChange(listener: (view: AttentionView) => void): () => void;
   };
   /** The harness's setup steps (setup-steps spec). A harness with none answers no steps and refuses every change. */
@@ -1376,3 +1391,8 @@ export interface PluginSurfaceView {
 export type PanelCall = "data.query" | "settings.get" | "refresh" | "requestAction";
 export type PanelAnswer = { ok: true; value: unknown } | { ok: false; error: string };
 export type AttentionTarget = { kind: "panel"; plugin: string; panel: string; focus?: string } | { kind: "prepared" } | { kind: "none" };
+/** A run of `plugin` wrote `collections` (plugins part 2, Decision 8). */
+export interface PluginDataChange {
+  plugin: string;
+  collections: string[];
+}

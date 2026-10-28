@@ -1,6 +1,7 @@
 import type {
   AppConfig,
   AppState,
+  AttentionTarget,
   AttentionView,
   ChatEntry,
   ChoiceOption,
@@ -24,10 +25,14 @@ import type {
   ModeResult,
   ModeSwitch,
   MoveResult,
+  PanelAnswer,
+  PanelCall,
   PhaseResult,
+  PluginDataChange,
   PluginDetail,
   PluginPick,
   PluginResult,
+  PluginSurfaceView,
   PluginsView,
   PluginTestResult,
   PluginWorkHours,
@@ -959,8 +964,23 @@ export class FakeClient implements HarnessClient {
   pluginTests: PluginTestResult[] = [];
   /** What the plugins and attention namespaces were asked, in order (reads are not recorded). */
   readonly pluginCalls: unknown[][] = [];
+  /** What plugins.surface answers (part 2); emitSurface sets it and tells the listeners. */
+  surfaceView: PluginSurfaceView = { panels: [], chips: [], reloads: {} };
+  /** How plugins.panel answers; a test sets it. Every call is recorded in pluginCalls either way. */
+  panelAnswers: (plugin: string, panel: string, call: PanelCall, args: unknown) => PanelAnswer | Promise<PanelAnswer> = () => ({ ok: false, error: "Not running" });
+  /** What attention.open answers. */
+  attentionTarget: AttentionTarget = { kind: "none" };
   private pluginsListeners = new Set<(v: PluginsView) => void>();
   private attentionListeners = new Set<(v: AttentionView) => void>();
+  private surfaceListeners = new Set<(v: PluginSurfaceView) => void>();
+  private pluginDataListeners = new Set<(v: PluginDataChange) => void>();
+  emitSurface(view: PluginSurfaceView) {
+    this.surfaceView = view;
+    for (const l of this.surfaceListeners) l(view);
+  }
+  emitPluginData(change: PluginDataChange) {
+    for (const l of this.pluginDataListeners) l(change);
+  }
   emitPlugins(view: PluginsView) {
     this.pluginsView = view;
     for (const l of this.pluginsListeners) l(view);
@@ -1005,6 +1025,27 @@ export class FakeClient implements HarnessClient {
         this.pluginsListeners.delete(l);
       };
     },
+    surface: async () => this.surfaceView,
+    panel: async (plugin: string, panel: string, call: PanelCall, args?: unknown) => {
+      this.pluginCalls.push(["panel", plugin, panel, call, args]);
+      return this.panelAnswers(plugin, panel, call, args);
+    },
+    startPrepared: (token: string) => this.pluginChange("startPrepared", token),
+    cancelPrepared: async (token: string) => {
+      this.pluginCalls.push(["cancelPrepared", token]);
+    },
+    onSurface: (l: (v: PluginSurfaceView) => void) => {
+      this.surfaceListeners.add(l);
+      return () => {
+        this.surfaceListeners.delete(l);
+      };
+    },
+    onPluginData: (l: (v: PluginDataChange) => void) => {
+      this.pluginDataListeners.add(l);
+      return () => {
+        this.pluginDataListeners.delete(l);
+      };
+    },
   };
   attention = {
     get: async () => this.attentionView,
@@ -1013,6 +1054,10 @@ export class FakeClient implements HarnessClient {
     },
     read: async (plugin?: string, key?: string) => {
       this.pluginCalls.push(["attention.read", plugin, key]);
+    },
+    open: async (plugin: string, key: string) => {
+      this.pluginCalls.push(["attention.open", plugin, key]);
+      return this.attentionTarget;
     },
     onChange: (l: (v: AttentionView) => void) => {
       this.attentionListeners.add(l);

@@ -34,3 +34,56 @@ describe("the IPC surface (plugins spec B5)", () => {
     expect(ipc.sort()).toEqual([]);
   });
 });
+
+/** The text from `start` to the end of the first balanced group `opener` finds: the block a call or a function opens. */
+function group(text: string, start: number, opener = /[({]/): string {
+  if (start < 0) throw new Error("not found");
+  const open = text.slice(start).search(opener) + start;
+  const close = text[open] === "(" ? ")" : "}";
+  let depth = 0;
+  for (let i = open; i < text.length; i++) {
+    if (text[i] === text[open]) depth++;
+    else if (text[i] === close && --depth === 0) return text.slice(start, i + 1);
+  }
+  throw new Error("unbalanced");
+}
+
+/** B9/P6: a prepared task starts only from the person's Start, through one channel that carries only a token. */
+describe("the prepared task's one way in (plugins spec P6)", () => {
+  it("startPrepared is called only in the hh:pluginsStartPrepared handler and the deps index.ts gives registerPluginsIpc", async () => {
+    const all = await sources();
+    const calling = all.filter(([, text]) => /\bstartPrepared\s*\(/.test(text)).map(([f]) => f);
+    expect(calling.sort()).toEqual(["index.ts", "plugin-ipc.ts", "task-manager.ts"]);
+    const text = (f: string) => all.find(([n]) => n === f)![1];
+    const count = (t: string) => [...t.matchAll(/\bstartPrepared\s*\(/g)].length;
+
+    const ipc = text("plugin-ipc.ts");
+    const handler = group(ipc, ipc.indexOf('handle("hh:pluginsStartPrepared"'));
+    expect(count(handler)).toBeGreaterThan(0);
+    expect(count(ipc)).toBe(count(handler));
+
+    const index = text("index.ts");
+    const register = group(index, index.indexOf("registerPluginsIpc(handle, pluginsCtl"));
+    expect(count(register)).toBe(1);
+    expect(count(index)).toBe(1);
+    // task-manager.ts only declares it.
+    expect([...text("task-manager.ts").matchAll(/\bstartPrepared\s*\(/g)].length).toBe(1);
+  });
+
+  it("D0: index.ts installs panels only in createWindow's plugins block, through installPluginPanels", async () => {
+    const index = (await sources()).find(([n]) => n === "index.ts")![1];
+    expect(index).not.toMatch(/\.installPanels\s*\(/);
+    expect([...index.matchAll(/\binstallPluginPanels\s*\(/g)].length).toBe(1);
+    const create = group(index, index.indexOf("async function createWindow()"), /\{/);
+    const at = create.indexOf("if (plugins) {");
+    expect(at).toBeGreaterThan(0);
+    expect(create.slice(0, create.indexOf("if (plugins) {"))).toMatch(/const plugins = pluginsCtl;\s*$/);
+    expect(group(create, at, /\{/)).toMatch(/installPluginPanels\(win, pluginHost, plugins\)/);
+  });
+
+  it("profileFor passes a prepared task's tier on as the manifest tier", async () => {
+    const index = (await sources()).find(([n]) => n === "index.ts")![1];
+    const profileFor = group(index, index.indexOf("profileFor: async (action, floor, tier)"), /\{/);
+    expect(profileFor).toMatch(/manifestTier: manifestTier\(harness, action, tier\)/);
+  });
+});

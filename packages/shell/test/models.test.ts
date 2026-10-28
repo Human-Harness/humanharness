@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { type Effort, getEngine } from "@humanharness/engines";
-import { cleanModels, cleanProfile, engineOffer, firstOffered, fitEffort, nearestTier, nextFallback, resolveProfile, taskKey } from "../src/main/models";
+import { cleanModels, cleanProfile, engineOffer, firstOffered, fitEffort, manifestTier, nearestTier, nextFallback, resolveProfile, taskKey } from "../src/main/models";
 
 describe("cleanModels", () => {
   it("keeps valid task choices and tier overrides, field by field", () => {
@@ -159,5 +159,30 @@ describe("tiers for modes (task-modes spec §5.3)", () => {
     expect(resolveProfile({ engine: "claude", action: "study", models: own, floor: "deep" })).toMatchObject({ tier: "custom", model: "haiku" });
     // No floor: exactly as before.
     expect(resolveProfile({ engine: "claude", action: "study", models: {} })).toMatchObject({ tier: "standard", model: "sonnet" });
+  });
+});
+
+describe("manifestTier (plugins spec §5.3: a prepared task's tier)", () => {
+  const harness = { actions: { study: { tier: "deep" as const }, plain: {} }, questions: { tier: "light" as const } };
+
+  it("an action's tier, else the questions' tier; a prepared task's own tier wins over both", () => {
+    expect(manifestTier(harness, "study")).toBe("deep");
+    expect(manifestTier(harness, "plain")).toBeUndefined();
+    expect(manifestTier(harness, undefined)).toBe("light");
+    expect(manifestTier({ actions: {} }, undefined)).toBeUndefined();
+    expect(manifestTier(harness, undefined, "standard")).toBe("standard");
+    expect(manifestTier(harness, "study", "light")).toBe("light");
+  });
+
+  it("an action id that names something inherited is no action", () => {
+    expect(manifestTier(harness, "toString")).toBeUndefined();
+    expect(manifestTier(harness, "__proto__")).toBeUndefined();
+  });
+
+  it("feeds resolveProfile: the person's choice for questions still wins over the prepared tier", () => {
+    const models = cleanModels({});
+    expect(resolveProfile({ engine: "claude", manifestTier: manifestTier(harness, undefined, "deep"), models }).tier).toBe("deep");
+    const chosen = cleanModels({ tasks: { questions: "standard" } });
+    expect(resolveProfile({ engine: "claude", manifestTier: manifestTier(harness, undefined, "deep"), models: chosen }).tier).toBe("standard");
   });
 });

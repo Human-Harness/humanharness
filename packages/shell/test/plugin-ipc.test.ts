@@ -1,10 +1,11 @@
-import { describe, expect, it } from "vitest";
-import { PLUGIN_IPC_CHANNELS, registerPluginsIpc, safeStorageCrypto } from "../src/main/plugin-ipc";
+import { describe, expect, it, vi } from "vitest";
+import { PLUGIN_IPC_CHANNELS, installPluginPanels, registerPluginsIpc, safeStorageCrypto } from "../src/main/plugin-ipc";
+import { ScopeRequired } from "../src/main/task-manager";
 
 const HASH = "a".repeat(64);
 const TOKEN = "0123456789abcdef0123456789abcdef";
 
-function wire(over: Record<string, unknown> = {}, now = { t: 0 }) {
+function wire(over: Record<string, unknown> = {}, now = { t: 0 }, deps: Record<string, unknown> = {}) {
   const handlers = new Map<string, (...args: never[]) => unknown>();
   const calls: unknown[][] = [];
   const rec =
@@ -27,19 +28,32 @@ function wire(over: Record<string, unknown> = {}, now = { t: 0 }) {
     setNotify: rec("setNotify"),
     test: rec("test", [{ source: "s", ok: true }]),
     refresh: rec("refresh"),
+    surface: (...args: unknown[]) => (calls.push(["surface", ...args]), SURFACE),
+    panelCall: rec("panelCall", { ok: true, value: { records: [] } }),
+    takePrepared: rec("takePrepared", START),
+    cancelPrepared: (...args: unknown[]) => void calls.push(["cancelPrepared", ...args]),
     attention: {
       view: rec("attention.view", { items: [], badge: 0, show: false }),
       dismiss: rec("attention.dismiss", undefined),
       read: rec("attention.read", undefined),
+      open: rec("attention.open", { kind: "panel", plugin: "jira", panel: "queue", focus: "k" }),
     },
     ...over,
   };
-  registerPluginsIpc((ch, fn) => void handlers.set(ch, fn), ctl as never, { now: () => now.t });
+  registerPluginsIpc((ch, fn) => void handlers.set(ch, fn), ctl as never, {
+    now: () => now.t,
+    log: () => {},
+    startPrepared: async (p: unknown) => void calls.push(["startPrepared", p]),
+    ...deps,
+  });
   const call = (ch: string, ...args: unknown[]) => (handlers.get(ch) as (...a: unknown[]) => unknown)(...args);
   return { handlers, call, calls };
 }
 
 const INVALID = { ok: false, message: "Invalid request" };
+const START = { prompt: "Triage DOC-1 now.", display: "On-call · Triage DOC-1", tier: "light", plugin: "jira", scope: "none" };
+const CARD = { token: TOKEN, plugin: "jira", pluginName: "Jira", title: "On-call · Triage DOC-1", prompt: "Triage DOC-1 now.", tier: "light", scope: "app", expiresAt: "2026-10-28T10:10:00.000Z" };
+const SURFACE = { panels: [], chips: [], prepared: CARD, reloads: {} };
 
 describe("plugins IPC", () => {
   it("registers exactly the plugins and attention channels", () => {
@@ -65,6 +79,11 @@ describe("plugins IPC", () => {
         "hh:attentionGet",
         "hh:attentionDismiss",
         "hh:attentionRead",
+        "hh:pluginsSurface",
+        "hh:pluginsPanel",
+        "hh:pluginsStartPrepared",
+        "hh:pluginsCancelPrepared",
+        "hh:attentionOpen",
       ].sort(),
     );
     expect([...PLUGIN_IPC_CHANNELS].sort()).toEqual([...w.handlers.keys()].sort());
@@ -226,6 +245,172 @@ describe("plugins IPC", () => {
     expect(tests).toBe(2);
     now.t += 60_001;
     expect(await w.call("hh:pluginsTest", "jira")).toEqual([{ source: "s", ok: true }]);
+  });
+});
+
+describe("plugins IPC, part 2: the surface, panel calls, prepared tasks and attention targets", () => {
+  const BAD = { ok: false, error: "Invalid request" };
+
+  it("the surface is the controller's; a controller that throws answers an empty one", async () => {
+    expect(await wire().call("hh:pluginsSurface")).toEqual(SURFACE);
+    const boom = () => {
+      throw new Error("/Users/me/x");
+    };
+    expect(await wire({ surface: boom }).call("hh:pluginsSurface")).toEqual({ panels: [], chips: [], reloads: {} });
+  });
+
+  it("a panel call passes plugin, panel, call and args through; anything malformed is refused before the controller", async () => {
+    const w = wire();
+    expect(await w.call("hh:pluginsPanel", "jira", "queue", "data.query", { collection: "issues" })).toEqual({ ok: true, value: { records: [] } });
+    await w.call("hh:pluginsPanel", "jira", "queue", "settings.get");
+    await w.call("hh:pluginsPanel", "jira", "queue", "refresh", { source: "issues" });
+    await w.call("hh:pluginsPanel", "jira", "queue", "requestAction", { action: "triage", vars: { issue: "DOC-1" } });
+    expect(w.calls).toEqual([
+      ["panelCall", "jira", "queue", "data.query", { collection: "issues" }],
+      ["panelCall", "jira", "queue", "settings.get", undefined],
+      ["panelCall", "jira", "queue", "refresh", { source: "issues" }],
+      ["panelCall", "jira", "queue", "requestAction", { action: "triage", vars: { issue: "DOC-1" } }],
+    ]);
+    const cyclic: Record<string, unknown> = {};
+    cyclic.self = cyclic;
+    const bad: unknown[][] = [
+      ["JIRA", "queue", "data.query", {}],
+      ["../x", "queue", "data.query", {}],
+      ["jira", "Queue", "data.query", {}],
+      ["jira", "queue/../x", "data.query", {}],
+      ["jira", 1, "data.query", {}],
+      ["jira", "queue", "resize", { height: 100 }],
+      ["jira", "queue", "data.put", {}],
+      ["jira", "queue", "attention.open", {}],
+      ["jira", "queue", "startPrepared", {}],
+      ["jira", "queue", "__proto__", {}],
+      ["jira", "queue", "data.query", { where: "x".repeat(16 * 1024) }],
+      ["jira", "queue", "data.query", cyclic],
+      ["jira", "queue", "data.query", { n: 10n }],
+    ];
+    for (const args of bad) expect(await w.call("hh:pluginsPanel", ...args), String(args.slice(0, 3))).toEqual(BAD);
+    expect(w.calls).toHaveLength(4);
+  });
+
+  it("a panel call whose controller throws answers a refusal, never the thrown error", async () => {
+    const w = wire({
+      panelCall: async () => {
+        throw new Error("/Users/me/secret/path");
+      },
+    });
+    expect(await w.call("hh:pluginsPanel", "jira", "queue", "settings.get", {})).toEqual({ ok: false, error: "Something went wrong" });
+  });
+
+  it("Start takes the token once and hands exactly what takePrepared gave to startPrepared (P6, P13)", async () => {
+    const w = wire();
+    expect(await w.call("hh:pluginsStartPrepared", TOKEN)).toEqual({ ok: true });
+    expect(w.calls).toEqual([["surface"], ["takePrepared", TOKEN], ["startPrepared", START]]);
+  });
+
+  it("a dead token starts nothing", async () => {
+    const w = wire({ takePrepared: async () => null });
+    expect(await w.call("hh:pluginsStartPrepared", TOKEN)).toEqual({ ok: false, message: "This task is no longer prepared" });
+    expect(w.calls.filter(([n]) => n === "startPrepared")).toEqual([]);
+  });
+
+  it("Start takes only a token: anything else is refused before the token is touched", async () => {
+    const w = wire();
+    for (const bad of [undefined, "", TOKEN.toUpperCase(), `${TOKEN}0`, { token: TOKEN }, { prompt: "rm -rf" }, 42]) {
+      expect(await w.call("hh:pluginsStartPrepared", bad)).toEqual(INVALID);
+    }
+    // Extra arguments (a prompt, a tier, a scope) are never read.
+    expect(await w.call("hh:pluginsStartPrepared", TOKEN, { prompt: "other", tier: "deep", scope: "required", plugin: "x" })).toEqual({ ok: true });
+    expect(w.calls.filter(([n]) => n !== "surface")).toEqual([
+      ["takePrepared", TOKEN],
+      ["startPrepared", START],
+    ]);
+  });
+
+  it("a blocked start (the app closing, a turn running) answers why and leaves the token alone", async () => {
+    const w = wire({}, { t: 0 }, { startBlocked: () => "A turn is already running" });
+    expect(await w.call("hh:pluginsStartPrepared", TOKEN)).toEqual({ ok: false, message: "A turn is already running" });
+    expect(w.calls.filter(([n]) => n === "takePrepared" || n === "startPrepared")).toEqual([]);
+  });
+
+  it("a card that needs the open scope: with none open Start answers 'Open a <scope> first' before the token is used", async () => {
+    let open = false;
+    const taken: unknown[] = [];
+    const surface = () => ({ ...SURFACE, prepared: { ...CARD, scope: "open" } });
+    const w = wire({ surface, takePrepared: async (token: unknown) => (taken.push(token), { ...START, scope: "required" }) }, { t: 0 }, { scopes: { label: "topic", open: async () => open } });
+    expect(await w.call("hh:pluginsStartPrepared", TOKEN)).toEqual({ ok: false, message: "Open a topic first" });
+    expect(taken).toEqual([]);
+    expect(w.calls).toEqual([]);
+    open = true;
+    expect(await w.call("hh:pluginsStartPrepared", TOKEN)).toEqual({ ok: true });
+    expect(taken).toEqual([TOKEN]);
+    expect(w.calls).toEqual([["startPrepared", { ...START, scope: "required" }]]);
+  });
+
+  it("an app-wide card starts with no scope open; a harness without scopes never asks", async () => {
+    const asked: string[] = [];
+    const w = wire({}, { t: 0 }, { scopes: { label: "topic", open: async () => (asked.push("open"), false) } });
+    expect(await w.call("hh:pluginsStartPrepared", TOKEN)).toEqual({ ok: true });
+    expect(asked).toEqual([]);
+    const u = wire({ surface: () => ({ ...SURFACE, prepared: { ...CARD, scope: "open" } }) });
+    expect(await u.call("hh:pluginsStartPrepared", TOKEN)).toEqual({ ok: true });
+  });
+
+  it("a scope closed between the check and the start, or a start that fails, answers a refusal", async () => {
+    const scopeGone = async () => {
+      throw new ScopeRequired();
+    };
+    const w = wire({}, { t: 0 }, { scopes: { label: "topic", open: async () => true }, startPrepared: scopeGone });
+    expect(await w.call("hh:pluginsStartPrepared", TOKEN)).toEqual({ ok: false, message: "Open a topic first" });
+    const failed = async () => {
+      throw new Error("/Users/me/secret");
+    };
+    expect(await wire({}, { t: 0 }, { startPrepared: failed }).call("hh:pluginsStartPrepared", TOKEN)).toEqual({ ok: false, message: "Something went wrong" });
+    const v = wire({ takePrepared: async () => Promise.reject(new Error("boom")) });
+    expect(await v.call("hh:pluginsStartPrepared", TOKEN)).toEqual({ ok: false, message: "Something went wrong" });
+  });
+
+  it("Cancel drops the token; a malformed one is ignored", async () => {
+    const w = wire();
+    await w.call("hh:pluginsCancelPrepared", TOKEN);
+    await w.call("hh:pluginsCancelPrepared", "nope");
+    await w.call("hh:pluginsCancelPrepared", { token: TOKEN });
+    expect(w.calls).toEqual([["cancelPrepared", TOKEN]]);
+  });
+
+  it("an attention item opens its target; a malformed request or a failure opens nothing", async () => {
+    const w = wire();
+    expect(await w.call("hh:attentionOpen", "jira", "round-1925")).toEqual({ kind: "panel", plugin: "jira", panel: "queue", focus: "k" });
+    expect(await w.call("hh:attentionOpen", "JIRA", "k")).toEqual({ kind: "none" });
+    expect(await w.call("hh:attentionOpen", "jira", "bad key")).toEqual({ kind: "none" });
+    expect(await w.call("hh:attentionOpen", "jira")).toEqual({ kind: "none" });
+    expect(w.calls).toEqual([["attention.open", "jira", "round-1925"]]);
+    const u = wire({ attention: { open: async () => Promise.reject(new Error("x")) } });
+    expect(await u.call("hh:attentionOpen", "jira", "k")).toEqual({ kind: "none" });
+  });
+});
+
+describe("installPluginPanels (P1–P3, P7)", () => {
+  const win = { id: 1 };
+
+  it("D0: without a controller nothing is installed — no handler, request filter or navigation guard", () => {
+    const host = { installPanels: vi.fn() };
+    installPluginPanels(win as never, host as never, null);
+    installPluginPanels(win as never, null, null);
+    expect(host.installPanels).not.toHaveBeenCalled();
+  });
+
+  it("with a controller, the window's panels are served for what the controller says runs, asked at each request", () => {
+    const host = { installPanels: vi.fn() };
+    let running: { dist: string; panels: string[] } | null = { dist: "/d", panels: ["queue"] };
+    const ctl = { panelHost: vi.fn((id: string) => (id === "jira" ? running : null)) };
+    installPluginPanels(win as never, host as never, ctl as never);
+    expect(host.installPanels).toHaveBeenCalledTimes(1);
+    const [w, lookup] = host.installPanels.mock.calls[0] as [unknown, (id: string) => unknown];
+    expect(w).toBe(win);
+    expect(lookup("jira")).toEqual({ dist: "/d", panels: ["queue"] });
+    expect(lookup("other")).toBeNull();
+    running = null;
+    expect(lookup("jira")).toBeNull();
   });
 });
 

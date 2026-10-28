@@ -86,6 +86,17 @@ describe("PluginsController surface", () => {
     expect(t.ctl.surface().chips.map((c) => c.slot)).toEqual(["chips"]);
   });
 
+  it("panelHost: a running plugin's dist and panel ids; null for another, an inherited name, or once it stops (P7)", async () => {
+    const t = await oncall();
+    const host = t.ctl.panelHost("oncall");
+    expect(host?.panels).toEqual(["queue", "side"]);
+    expect(host?.dist).toMatch(/oncall[\\/]dist$/);
+    expect(t.ctl.panelHost("other")).toBeNull();
+    expect(t.ctl.panelHost("constructor")).toBeNull();
+    await t.ctl.setOn("oncall", false);
+    expect(t.ctl.panelHost("oncall")).toBeNull();
+  });
+
   it("bumpReload counts per plugin and pushes", async () => {
     const t = await oncall();
     t.ctl.bumpReload("oncall");

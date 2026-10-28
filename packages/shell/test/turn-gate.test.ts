@@ -190,7 +190,53 @@ describe("TurnGate (parallel spec §7)", () => {
     err.mockRestore();
   });
 
+  it("a reset too far for a timer leaves the pause manual (no setTimeout overflow)", async () => {
+    vi.useFakeTimers();
+    try {
+      const gate = new TurnGate({ tasks: 1, jobs: 1 }, { now: () => 0 });
+      gate.pause({ reason: "out-of-quota", resetsAt: new Date(30 * 864e5).toISOString() });
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(gate.paused()).not.toBeNull();
+      expect(vi.getTimerCount()).toBe(0);
+      gate.resume();
+      expect(gate.paused()).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("dispose() clears the pause and hold timers and the listeners", async () => {
+    vi.useFakeTimers();
+    try {
+      const gate = new TurnGate({ tasks: 1, jobs: 1 }, { now: () => 0 });
+      const changes = vi.fn();
+      gate.onChange(changes);
+      gate.pause({ reason: "out-of-quota", resetsAt: new Date(60_000).toISOString() });
+      gate.hold(10_000);
+      expect(vi.getTimerCount()).toBe(2);
+      changes.mockClear();
+      gate.dispose();
+      expect(vi.getTimerCount()).toBe(0);
+      await vi.advanceTimersByTimeAsync(120_000);
+      gate.resume();
+      expect(changes).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   describe("tryAcquire (cap 1, nothing waiting: no await, as today)", () => {
+    it("only this cap's queue keeps it back (without singleSession)", async () => {
+      const gate = new TurnGate({ tasks: 1, jobs: 1 });
+      await gate.acquire("jobs", { id: "j" });
+      const pk = gate.acquire("jobs", { id: "k" });
+      const release = gate.tryAcquire("tasks", { id: "t" });
+      expect(release).toBeTypeOf("function");
+      release!();
+      gate.dropAll();
+      await expect(pk).rejects.toBeInstanceOf(Dropped);
+    });
+
     it("takes a free slot synchronously", () => {
       const gate = new TurnGate({ tasks: 1, jobs: 1 });
       const release = gate.tryAcquire("tasks", { id: "a" });
@@ -260,19 +306,23 @@ describe("TurnGate (parallel spec §7)", () => {
       expect(beforeStart).toHaveBeenLastCalledWith({ cap: "jobs", id: "j" });
     });
 
-    it("a failing beforeStart is logged and the turn still runs", async () => {
+    it("a failing beforeStart frees the slot and rejects the turn with its error (never two processes)", async () => {
       const err = vi.spyOn(console, "error").mockImplementation(() => {});
       const gate = new TurnGate({ tasks: 1, jobs: 1 }, { hold: { singleSession: true } });
-      gate.setBeforeStart(async () => {
-        throw new Error("no sleep");
+      const boom = new Error("no sleep");
+      gate.setBeforeStart(async ({ id }) => {
+        if (id === "a") throw boom;
       });
-      const r = await gate.acquire("tasks", { id: "a" });
+      const pa = gate.acquire("tasks", { id: "a" });
+      const pb = gate.acquire("tasks", { id: "b" });
+      await expect(pa).rejects.toBe(boom);
       expect(err).toHaveBeenCalled();
-      r();
+      (await pb)();
+      expect(gate.running("tasks")).toBe(0);
       err.mockRestore();
     });
 
-    it("drop() during beforeStart frees the slot once and rejects with Dropped", async () => {
+    it("drop() during beforeStart rejects at once with Dropped; the slot frees once, when the hook settles", async () => {
       const gate = new TurnGate({ tasks: 1, jobs: 1 }, { hold: { singleSession: true } });
       let finishSleep!: () => void;
       gate.setBeforeStart(() => new Promise<void>((r) => (finishSleep = r)));
@@ -280,7 +330,8 @@ describe("TurnGate (parallel spec §7)", () => {
       await flush();
       expect(gate.drop("a")).toBe("hi");
       await expect(pa).rejects.toBeInstanceOf(Dropped);
-      expect(gate.running("tasks")).toBe(0);
+      expect(gate.drop("a")).toBeNull();
+      expect(gate.running("tasks")).toBe(1);
       finishSleep();
       await flush();
       expect(gate.running("tasks")).toBe(0);
@@ -288,13 +339,39 @@ describe("TurnGate (parallel spec §7)", () => {
       (await gate.acquire("tasks", { id: "b" }))();
     });
 
-    it("dropAll during beforeStart drops the admitting turn too", async () => {
+    it("dropAll during beforeStart drops the admitting turn too; its slot frees when the hook settles", async () => {
       const gate = new TurnGate({ tasks: 1, jobs: 1 }, { hold: { singleSession: true } });
-      gate.setBeforeStart(() => new Promise<void>(() => {}));
+      let finishSleep!: () => void;
+      gate.setBeforeStart(() => new Promise<void>((r) => (finishSleep = r)));
       const pa = gate.acquire("tasks", { id: "a" });
       await flush();
       gate.dropAll();
       await expect(pa).rejects.toBeInstanceOf(Dropped);
+      expect(gate.running("tasks")).toBe(1);
+      finishSleep();
+      await flush();
+      expect(gate.running("tasks")).toBe(0);
+    });
+
+    it("a drop during a's hook never starts b's hook before a's settles (two hooks never run at once)", async () => {
+      const gate = new TurnGate({ tasks: 2, jobs: 1 }, { hold: { singleSession: true } });
+      const finish: (() => void)[] = [];
+      const beforeStart = vi.fn(() => new Promise<void>((r) => finish.push(r)));
+      gate.setBeforeStart(beforeStart);
+      const pa = gate.acquire("tasks", { id: "a" });
+      pa.catch(() => {});
+      const pb = gate.acquire("tasks", { id: "b" });
+      await flush();
+      expect(beforeStart).toHaveBeenCalledTimes(1);
+      gate.drop("a");
+      await flush();
+      expect(beforeStart).toHaveBeenCalledTimes(1);
+      finish[0]();
+      await flush();
+      expect(beforeStart).toHaveBeenCalledTimes(2);
+      expect(beforeStart).toHaveBeenLastCalledWith({ cap: "tasks", id: "b" });
+      finish[1]();
+      (await pb)();
       expect(gate.running("tasks")).toBe(0);
     });
 

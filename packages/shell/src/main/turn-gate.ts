@@ -32,6 +32,9 @@ interface Waiter {
   fail: (err: Error) => void;
 }
 
+/** setTimeout's longest delay; a longer one fires at once. */
+const MAX_DELAY = 2 ** 31 - 1;
+
 /**
  * The caps on running turns and their FIFO queues (parallel spec §7). `acquire` resolves with a release function when
  * the turn may run; `tryAcquire` takes a free slot without an await when nothing waits. Every change is synchronous,
@@ -39,16 +42,19 @@ interface Waiter {
  *
  * An engine held at one session (`EngineHold.singleSession`) runs one turn in all, tasks and jobs counted together and
  * taken in arrival order. Before each such turn starts, `beforeStart` runs with the slot already taken, so another
- * lane's process can be put to sleep before this one's starts.
+ * lane's process can be put to sleep before this one's starts. The slot stays taken until the hook settles, even when
+ * the turn is dropped meanwhile, so two hooks never run at once. A hook that fails frees the slot and rejects the turn
+ * with its error.
  */
 export class TurnGate {
   private readonly runningCount: Record<Cap, number> = { tasks: 0, jobs: 0 };
   private readonly queues: Record<Cap, Waiter[]> = { tasks: [], jobs: [] };
-  /** Turns that hold a slot while `beforeStart` runs. */
+  /** Turns that hold a slot while `beforeStart` runs (and haven't been dropped). */
   private readonly admitting = new Set<Waiter>();
   private pauseState: Pause | null = null;
   private pauseTimer: ReturnType<typeof setTimeout> | null = null;
   private holds = 0;
+  private readonly holdTimers = new Set<ReturnType<typeof setTimeout>>();
   private seq = 0;
   private engine: EngineHold;
   private beforeStart: BeforeStart | null = null;
@@ -74,8 +80,9 @@ export class TurnGate {
    * passes a waiting turn, a pause or a hold; null too when `beforeStart` must run first.
    */
   tryAcquire(cap: Cap, _w: { id: string }): (() => void) | null {
-    if (!this.canStart(cap) || this.queues.tasks.length + this.queues.jobs.length > 0) return null;
-    if (this.engine.singleSession && this.beforeStart) return null;
+    if (!this.canStart(cap)) return null;
+    if (this.engine.singleSession ? this.queues.tasks.length + this.queues.jobs.length > 0 || this.beforeStart : this.queues[cap].length > 0)
+      return null;
     this.runningCount[cap]++;
     const release = this.releaser(cap);
     this.changed();
@@ -94,8 +101,8 @@ export class TurnGate {
     }
     for (const w of this.admitting) {
       if (w.id !== id) continue;
-      this.abandon(w);
-      this.pump();
+      this.admitting.delete(w);
+      w.fail(new Dropped());
       this.changed();
       return w.text ?? "";
     }
@@ -104,8 +111,8 @@ export class TurnGate {
 
   dropAll(): void {
     for (const cap of CAPS) for (const w of this.queues[cap].splice(0)) w.fail(new Dropped());
-    for (const w of [...this.admitting]) this.abandon(w);
-    this.pump();
+    for (const w of this.admitting) w.fail(new Dropped());
+    this.admitting.clear();
     this.changed();
   }
 
@@ -142,7 +149,8 @@ export class TurnGate {
     if (this.pauseTimer) clearTimeout(this.pauseTimer);
     this.pauseTimer = null;
     const at = p.resetsAt ? Date.parse(p.resetsAt) : Number.NaN;
-    if (Number.isFinite(at)) this.pauseTimer = setTimeout(() => this.resume(), Math.max(0, at - this.now()));
+    // A reset too far ahead for a timer stays manual: the person's Resume.
+    if (Number.isFinite(at) && at - this.now() <= MAX_DELAY) this.pauseTimer = setTimeout(() => this.resume(), Math.max(0, at - this.now()));
     this.changed();
   }
 
@@ -166,12 +174,23 @@ export class TurnGate {
       if (done) return;
       done = true;
       clearTimeout(timer);
+      this.holdTimers.delete(timer);
       this.holds--;
       this.pump();
       this.changed();
     };
     const timer = setTimeout(release, ms);
+    this.holdTimers.add(timer);
     return release;
+  }
+
+  /** Quit or engine switch: clears the pause and hold timers and the listeners, so nothing fires afterwards. */
+  dispose(): void {
+    if (this.pauseTimer) clearTimeout(this.pauseTimer);
+    this.pauseTimer = null;
+    for (const t of this.holdTimers) clearTimeout(t);
+    this.holdTimers.clear();
+    this.listeners.clear();
   }
 
   onChange(fn: () => void): () => void {
@@ -201,13 +220,6 @@ export class TurnGate {
     };
   }
 
-  /** Takes a turn that holds a slot during `beforeStart` out: frees the slot and rejects it. */
-  private abandon(w: Waiter): void {
-    this.admitting.delete(w);
-    this.runningCount[w.cap]--;
-    w.fail(new Dropped());
-  }
-
   private pump(): void {
     for (;;) {
       const w = this.next();
@@ -220,13 +232,21 @@ export class TurnGate {
         continue;
       }
       this.admitting.add(w);
+      const release = this.releaser(w.cap);
       void Promise.resolve()
         .then(() => hook({ cap: w.cap, id: w.id }))
-        .catch((err: unknown) => console.error("Could not get ready for the next turn", err))
-        .then(() => {
-          if (!this.admitting.delete(w)) return; // dropped meanwhile: its slot is already free
-          w.start(this.releaser(w.cap));
-        });
+        .then(
+          () => {
+            // Dropped meanwhile: already rejected; its slot frees only now that the hook has settled.
+            if (this.admitting.delete(w)) w.start(release);
+            else release();
+          },
+          (err: unknown) => {
+            console.error("Could not get ready for the next turn", err);
+            if (this.admitting.delete(w)) w.fail(err instanceof Error ? err : new Error(String(err)));
+            release();
+          },
+        );
     }
   }
 

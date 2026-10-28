@@ -148,6 +148,32 @@ export function activityDetail(call: { kind?: unknown; title?: unknown; location
   return rest && !/\s/.test(rest) ? baseName(rest) : rest || title;
 }
 
+/** Longest server or tool name kept. */
+const NAME_MAX = 100;
+/** Longest engine path kept; a longer one is dropped. */
+const PATH_MAX = 4096;
+/** How many locations of one call are kept. */
+const LOCATIONS_MAX = 20;
+
+/**
+ * What an ACP tool call adds to its start event (context-panel spec §3.2): a read or search call's `locations`, or the
+ * trusted MCP server (only from Codex's own marker, as `server` is passed) with `rawInput.tool`.
+ */
+export function acpExtras(call: { kind?: unknown; locations?: unknown; rawInput?: unknown }, server: string | undefined): { paths?: string[]; tool?: { server: string; name: string } } {
+  if (server !== undefined) {
+    const name = (call.rawInput as { tool?: unknown } | null | undefined)?.tool;
+    return { tool: { server: server.slice(0, NAME_MAX), name: typeof name === "string" ? name.slice(0, NAME_MAX) : "" } };
+  }
+  if (call.kind !== "read" && call.kind !== "search") return {};
+  const paths = Array.isArray(call.locations)
+    ? call.locations
+        .slice(0, LOCATIONS_MAX)
+        .map((l) => (l as { path?: unknown } | null)?.path)
+        .filter((p): p is string => typeof p === "string" && p.length > 0 && p.length <= PATH_MAX)
+    : [];
+  return paths.length > 0 ? { paths } : {};
+}
+
 /**
  * The adapter's `CODEX_CONFIG` for a task's profile (resources spec §5.2): only these keys are ever
  * written; `model` is left out for the engine's default model. Checked again here before it is used.
@@ -576,7 +602,7 @@ export class AcpTransport implements Transport {
         const activity = { kind: KINDS[u.kind] ?? ("other" as const), detail: activityDetail(u) };
         this.activities.set(u.toolCallId, activity);
         this.afterTool = true;
-        emit({ type: "activity", id: u.toolCallId, ...activity, state: "start" });
+        emit({ type: "activity", id: u.toolCallId, ...activity, ...acpExtras(u, server), state: "start" });
         return;
       }
       case "tool_call_update": {

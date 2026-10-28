@@ -71,6 +71,31 @@ export function fillPrompt(
 export const CHECKPOINT_PROMPT =
   "Checkpoint: this conversation is getting long. Call the `save_note` tool once with what is clear so far: a short title, at most 5 summary points, the decisions taken, the files that back them and the questions still open. Write the note in English. Do not write any file yourself and do not call `show_choices`. Then reply with one short sentence; the conversation goes on after this.";
 
+/** The "Add now" turn (context-panel spec §4.1). The mock replay knows it by its start. */
+export const CONTEXT_ADD_PROMPT = "The person wants you to take `{{path}}` into account. Read it now and say in one line what changes for this task.";
+
+/** The prompt for `file` (a folder-relative path the shell already checked with `addablePath`). */
+export const contextAddPrompt = (file: string): string => CONTEXT_ADD_PROMPT.replace("{{path}}", () => file);
+
+/** Characters that are not seen but change how a line reads: bidi embeddings, overrides and isolates, zero widths. */
+const hiddenChar = (code: number): boolean =>
+  (code >= 0x202a && code <= 0x202e) || (code >= 0x2066 && code <= 0x2069) || (code >= 0x200b && code <= 0x200d) || code === 0xfeff;
+
+/**
+ * A path that can sit inside the prompt's backticks: no backtick, no control character (C0, DEL, C1), no line or
+ * paragraph separator, no bidi control or zero-width character (the person would not see what the agent reads), at
+ * most 1,000 characters.
+ */
+export function addablePath(file: string): boolean {
+  if (file.length === 0 || file.length > 1000) return false;
+  for (let i = 0; i < file.length; i++) if (refusedChar(file.charCodeAt(i))) return false;
+  return true;
+}
+
+/** A character `addablePath` refuses: a backtick, a control character (C0, DEL, C1), a line or paragraph separator, a hidden one. */
+export const refusedChar = (code: number): boolean =>
+  code === 96 || code < 0x20 || (code >= 0x7f && code <= 0x9f) || code === 0x2028 || code === 0x2029 || hiddenChar(code);
+
 /** Said after a free question that tasks.json kept cut (it was longer than QUESTION_MAX). */
 export const QUESTION_CUT = "(The question was longer; it was cut here.)";
 

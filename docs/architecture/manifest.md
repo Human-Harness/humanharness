@@ -29,6 +29,7 @@ Every text in the manifest is one English string.
 | `setup` | Optional. The harness's own setup steps, after the folder and the engine: a form, an interview or a component (`docs/architecture/setup.md`) |
 | `material` | Optional. The person's own files (PDF, Word, spreadsheets, slides, ebooks, web pages, text), cut into fragments a task fetches on demand: the families it `accepts`, the `sheet` sections, `fragmentKinds`, the `items` collection fragments link to, `grounding`, the index `budget` and per-stage `tiers` (`docs/architecture/material.md`) |
 | `profiles` | Optional. Several people on one install, each with a folder of their own: `label` (what to call one, "student") and `fields` (the `profile` collection's fields the add and edit form asks for, `name` first) (`docs/architecture/profiles.md`) |
+| `context` | Optional. `pinnedTokens` (an integer from 0 to 50,000, 3,000 when `context` is given without it): the harness's suggestion for the pinned files budget, the tokens of pinned text a new task gets whole. The person's Settings › Models value wins; without either, 3,000 (`docs/architecture/context.md`, `settings.md`). Absent, nothing changes |
 | `documents` | Optional. `kinds`: the kinds of documents the agent writes, each with its `##` sections and an optional `reviewTier`; `AGENTS.md` lists them and the reader checks them, only warning (`docs/architecture/documents.md`, `reviews.md`) |
 
 ### Phases and the time box

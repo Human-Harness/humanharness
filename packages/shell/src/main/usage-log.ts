@@ -20,9 +20,10 @@ interface ProfileFields {
  * What kind of turn it was: `run` (the task's own turns), `close` (the turn that asks for its note), `checkpoint` (the
  * quiet note before the cap), `phase-change` (the brief of the phase the task enters) and `wrap-up` (the time box's
  * last turn before the close phase). Not the task's phase: that is `taskPhase`. `material`: an AI stage of material
- * processing, not a task's turn (material spec §11).
+ * processing, not a task's turn (material spec §11). `context-add`: the "Add now" turn of the context panel
+ * (context-panel spec §4.1).
  */
-export type TurnKind = "run" | "close" | "checkpoint" | "phase-change" | "wrap-up" | "material";
+export type TurnKind = "run" | "close" | "checkpoint" | "phase-change" | "wrap-up" | "material" | "context-add";
 
 /** Which task (and which kind of turn) a turn belongs to. */
 export interface UsageMeta extends ProfileFields {

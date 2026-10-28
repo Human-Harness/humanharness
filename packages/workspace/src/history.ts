@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import git from "isomorphic-git";
-import { DATA_PREFIX, MATERIAL_KEEP, NOTES_PREFIX, REVIEWS_PREFIX, isScopeDir } from "./layout";
+import { CONTEXT_PREFIX, DATA_PREFIX, MATERIAL_KEEP, NOTES_PREFIX, REVIEWS_PREFIX, isScopeDir } from "./layout";
 import { FileIndex, type FileIndexData, addCommit, emptyIndex } from "./file-index";
 import { type TimelineCommit, type TimelineEntry, groupTimeline, namedPath } from "./file-timeline";
 import { BEFORE_MESSAGE } from "./subjects";
@@ -13,11 +13,18 @@ import { BEFORE_MESSAGE } from "./subjects";
 export type HistoryKeep = string | { readonly prefix: string; readonly match: RegExp; readonly depth: number };
 
 /**
- * What the app's history keeps under `.harness/`: the notes, the data and the review records; with material, its
- * registry and decisions (`MATERIAL_KEEP`). The one rule for the shell's history and the runtime's, so both agree (D0
- * without material). A harness that never reviews has no file under `REVIEWS_PREFIX`, so its commits don't change.
+ * What the app's history keeps under `.harness/`: the notes, the data, the review records and the context pins; with
+ * material, its registry and decisions (`MATERIAL_KEEP`). The one rule for the shell's history and the runtime's, so
+ * both agree (D0 without material). A harness that never reviews has no file under `REVIEWS_PREFIX`, and one whose
+ * person never pins has no file under `CONTEXT_PREFIX`, so its commits don't change.
  */
-export const appHistoryKeep = (material: boolean): HistoryKeep[] => [NOTES_PREFIX, DATA_PREFIX, REVIEWS_PREFIX, ...(material ? [MATERIAL_KEEP] : [])];
+export const appHistoryKeep = (material: boolean): HistoryKeep[] => [
+  NOTES_PREFIX,
+  DATA_PREFIX,
+  REVIEWS_PREFIX,
+  CONTEXT_PREFIX,
+  ...(material ? [MATERIAL_KEEP] : []),
+];
 
 const keeps = (k: HistoryKeep, file: string): boolean => (typeof k === "string" ? file.startsWith(k) : k.match.test(file));
 
@@ -42,7 +49,7 @@ export async function flushFileIndexes(): Promise<void> {
 export const MAX_TIMELINE_COMMITS = 1000;
 
 /**
- * The temp files `writeNote`, the data store and the review records rename into place (`<file>.md.<uuid>.tmp`,
+ * The temp files `writeNote`, the data store, the review records and the context pins rename into place (`<file>.md.<uuid>.tmp`,
  * `<file>.json.<uuid>.tmp`), and the hidden `.<name>.md.<uuid>.tmp` a review's answer renames over a document (left
  * behind only by a crash); the person's own `.tmp` files stay tracked.
  */
@@ -50,7 +57,8 @@ const isAppTempFile = (file: string): boolean =>
   /(^|\/)\.[^/]+\.md\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.tmp$/i.test(file) ||
   (file.startsWith(NOTES_PREFIX) && /\.md\.[0-9a-f-]+\.tmp$/.test(file.slice(NOTES_PREFIX.length))) ||
   (file.startsWith(DATA_PREFIX) && /\.json\.[0-9a-f-]+\.tmp$/.test(file.slice(DATA_PREFIX.length))) ||
-  (file.startsWith(REVIEWS_PREFIX) && /\.json\.[0-9a-f-]+\.tmp$/.test(file.slice(REVIEWS_PREFIX.length)));
+  (file.startsWith(REVIEWS_PREFIX) && /\.json\.[0-9a-f-]+\.tmp$/.test(file.slice(REVIEWS_PREFIX.length))) ||
+  (file.startsWith(CONTEXT_PREFIX) && /\.json\.[0-9a-f-]+\.tmp$/.test(file.slice(CONTEXT_PREFIX.length)));
 
 export interface HistoryEntry {
   sha: string;

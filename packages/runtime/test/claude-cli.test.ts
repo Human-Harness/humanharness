@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { type ClaudeScript, claudeResultLine, claudeTextLines, fakeClaudeCommand, writeScript } from "@humanharness/fake-agent";
-import { ClaudeCliTransport, allowedTools, claudeArgs, disallowedTools, profileArgs, referenceRulePath } from "../src/claude-cli";
+import { ClaudeCliTransport, StreamJsonReader, activityExtras, allowedTools, claudeArgs, disallowedTools, profileArgs, referenceRulePath } from "../src/claude-cli";
 import type { Event } from "../src/events";
 import type { Session, TransportOptions } from "../src/transport";
 
@@ -219,7 +219,7 @@ describe("ClaudeCliTransport", () => {
     });
     const events = await run(transport);
     expect(events).toEqual([
-      { type: "activity", id: "t1", kind: "read", detail: "a.md", state: "start" },
+      { type: "activity", id: "t1", kind: "read", detail: "a.md", paths: ["/x/notes/a.md"], state: "start" },
       { type: "activity", id: "t1", kind: "read", detail: "a.md", state: "end", error: false },
       { type: "text", delta: "Done" },
       { type: "done", ok: true },
@@ -442,5 +442,44 @@ describe("reference folders", () => {
   it("keeps the read tools allowed", () => {
     expect(allowedTools({ edit: "none", exec: false, web: false }, [])).toEqual(["Read", "Glob", "Grep", "TodoWrite"]);
     expect(disallowedTools({ edit: "none", exec: false, web: false }, ["/r"])).toContain("Write(//r/**)");
+  });
+});
+
+describe("activity extras (context-panel spec §3.2)", () => {
+  it("reads: Read's file_path, Grep's and Glob's path; MCP tools by server and name", () => {
+    expect(activityExtras("Read", { file_path: "/w/a.md" })).toEqual({ paths: ["/w/a.md"] });
+    expect(activityExtras("Grep", { pattern: "x", path: "/w/src" })).toEqual({ paths: ["/w/src"] });
+    expect(activityExtras("Glob", { pattern: "*.md" })).toEqual({});
+    expect(activityExtras("mcp__atlassian__getJiraIssue", {})).toEqual({ tool: { server: "atlassian", name: "getJiraIssue" } });
+    expect(activityExtras("mcp__data__data_query", {})).toEqual({ tool: { server: "data", name: "data_query" } });
+    expect(activityExtras("mcp__broken", {})).toEqual({});
+    expect(activityExtras("Edit", { file_path: "/w/a.md" })).toEqual({});
+    // Bounds: a path over 4,096 characters is dropped, an MCP name is cut at 100.
+    expect(activityExtras("Read", { file_path: `/w/${"a".repeat(5000)}` })).toEqual({});
+    expect(activityExtras("Grep", { pattern: "x", path: `/w/${"a".repeat(5000)}` })).toEqual({});
+    expect(activityExtras(`mcp__${"s".repeat(150)}__${"t".repeat(150)}`, {})).toEqual({ tool: { server: "s".repeat(100), name: "t".repeat(100) } });
+  });
+
+  it("puts them on the start event only; the end event is as before", () => {
+    const events: Event[] = [];
+    const reader = new StreamJsonReader((e) => events.push(e), () => {});
+    reader.feed(JSON.stringify({ type: "assistant", message: { content: [{ type: "tool_use", id: "r1", name: "Read", input: { file_path: "/w/notes/a.md" } }] } }));
+    reader.feed(JSON.stringify({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "r1" }] } }));
+    expect(events).toEqual([
+      { type: "activity", id: "r1", kind: "read", detail: "a.md", paths: ["/w/notes/a.md"], state: "start" },
+      { type: "activity", id: "r1", kind: "read", detail: "a.md", state: "end", error: false },
+    ]);
+  });
+
+  it("D0: a Bash or Write activity carries nothing new", () => {
+    const events: Event[] = [];
+    const reader = new StreamJsonReader((e) => events.push(e), () => {});
+    reader.feed(JSON.stringify({ type: "assistant", message: { content: [{ type: "tool_use", id: "w1", name: "Write", input: { file_path: "/w/a.md" } }] } }));
+    reader.feed(JSON.stringify({ type: "assistant", message: { content: [{ type: "tool_use", id: "b1", name: "Bash", input: { command: "ls /w" } }] } }));
+    expect(events.map((e) => Object.keys(e).sort())).toEqual([
+      ["detail", "id", "kind", "state", "type"],
+      ["detail", "id", "kind", "state", "type"],
+    ]);
+    expect(events[0]).toEqual({ type: "activity", id: "w1", kind: "edit", detail: "a.md", state: "start" });
   });
 });

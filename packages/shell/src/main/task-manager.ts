@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { promises as fs } from "node:fs";
 import type { ModelProfile } from "@humanharness/engines";
 import {
   type BlockAnswer,
@@ -27,6 +28,9 @@ import {
 import { type Event, type Session, fail } from "@humanharness/runtime";
 import {
   type ActionStatus,
+  type ContextItem,
+  type ContextRead,
+  type ContextResult,
   type CurrentTaskView,
   type ModeChoice,
   type ModeResult,
@@ -38,7 +42,20 @@ import {
   type TimeBoxView,
   nextInPath,
 } from "@humanharness/ui/client";
-import { APP_SCOPE, type HistoryTrailer, MAIN_SCOPE, NOTE_PREFIX, type Note, type NoteMeta, buildNotesIndex, isScopeDir, isScopeId, noteSlug } from "@humanharness/workspace";
+import {
+  APP_SCOPE,
+  type DataContextPart,
+  type HistoryTrailer,
+  MAIN_SCOPE,
+  NOTE_PREFIX,
+  type Note,
+  type NoteMeta,
+  buildNotesIndex,
+  isScopeDir,
+  isScopeId,
+  noteSlug,
+} from "@humanharness/workspace";
+import { INDEX_NOTES_MAX, READS_MAX, START_ITEMS_MAX, type SeenRead, approxTokens, markCompacted, mergeReads, readsOf } from "./context-record";
 import { RoundNotStarted } from "./reviews";
 import {
   CHECKPOINT_PROMPT,
@@ -46,7 +63,9 @@ import {
   type PhaseText,
   QUESTION_PROMPT,
   REVIEW_PROMPT,
+  addablePath,
   closePrompt,
+  contextAddPrompt,
   fillPrompt,
   interviewSection,
   modePrompt,
@@ -112,8 +131,19 @@ export interface TaskDeps {
   writeNote(slug: string, note: SavedNote, meta: NoteMeta, scope?: string): Promise<void>;
   /** Whether the note `<slug>.md` exists in `scope`'s notes (readable or not). Defaults to the slugs of `notes(scope)`. */
   noteExists?(slug: string, scope?: string): Promise<boolean>;
-  /** The data tables a new session's first message carries after the notes (spec §4.4); "" for none. */
-  dataContext?(scope: string, action: string | undefined): Promise<string>;
+  /**
+   * The data tables a new session's first message carries after the notes (spec §4.4): "" for none, or one part per
+   * collection (context-panel spec §3.1: one item each). The text is the same either way.
+   */
+  dataContext?(scope: string, action: string | undefined): Promise<string | DataContextPart[]>;
+  /** AGENTS.md's size in bytes in the agent's working folder (context-panel spec §3.1); null when missing. Absent: no item. */
+  instructionsSize?(): Promise<number | null>;
+  /** Pins and exclusions for a new task in `scope` (context-panel spec §4). Absent: none (D0). */
+  personContext?(scope: string): Promise<PersonContext>;
+  /** The open task's context record changed (its start, reads or compaction): the panel refreshes. */
+  contextChanged?(taskId: string): void;
+  /** The folder the agent works in, to turn read paths into folder paths (context-panel spec §3.2). Absent: file names only. */
+  folder?(): Promise<string | null>;
   /** The scope's material section, after the data (material spec §9 Load); "" for none. Absent without material (D0). */
   materialContext?(scope: string): Promise<string>;
   /** Ends the engine session (Codex: `session/close`); the next turn starts a new one. */
@@ -183,6 +213,15 @@ export class ScopeRequired extends Error {
   }
 }
 
+/** The person's pins and exclusions for a new task (context-panel spec §4): what the first message gets from them. */
+export interface PersonContext {
+  /** The pinned section ("" for none) and one item per pin it names. */
+  pinned: string;
+  items: ContextItem[];
+  /** Note paths left out of both notes indexes. */
+  excluded: ReadonlySet<string>;
+}
+
 /** How much the app-wide notes index may take in a scope's session (spec §3.3 "trimmed"). */
 export const APP_INDEX_TOKENS = 500;
 
@@ -198,6 +237,19 @@ const noteView = (n: Note): NoteView => ({
   decisions: n.decisions,
   path: n.path,
 });
+
+/** A notes index as an item: how many notes it covers and, newest first, the ones "Exclude" can act on. */
+function indexItem(id: string, kind: "notes-index" | "app-notes-index", label: string, text: string, notes: Note[], excluded: ReadonlySet<string> | undefined): ContextItem {
+  const listed = (excluded ? notes.filter((n) => !excluded.has(n.path)) : notes).slice().sort((a, b) => b.date.localeCompare(a.date));
+  return {
+    id,
+    kind,
+    label: `${label} (${listed.length})`,
+    tokens: approxTokens(text.length),
+    count: listed.length,
+    notes: listed.slice(0, INDEX_NOTES_MAX).map((n) => ({ path: n.path, title: n.title })),
+  };
+}
 
 /** Share of the task's cap at which the checkpoint runs (spec D4). */
 export const CHECKPOINT_AT = 0.8;
@@ -266,6 +318,8 @@ export class TaskManager {
   private windowDone = false;
   /** The task whose turn runs now: a session reported outside it is ignored. */
   private turnTask: string | null = null;
+  /** The task whose next turn's `usage` is its first-turn total (a first turn, or a resumed one): context-panel spec §3.1. */
+  private recordStart: string | null = null;
   /** Counts the turns that started (a `done` came or the send returned): `respond` knows whether its turn ran. */
   private turnsStarted = 0;
   /** How the last turn that started ended: `respond` reopens its question when the answer's turn failed. */
@@ -404,6 +458,37 @@ export class TaskManager {
   }
 
   /**
+   * "Add now" (context-panel spec §4.1): the open task reads `file` in one turn of kind `context-add`. Like a mode pick
+   * it waits behind a running turn (the window shows "Waiting"), never cancels it. `accepted` resolves with a refusal or
+   * `{ ok: true }` before the turn's events; `done` once the turn ended. Both reject when the operation can't run (the
+   * app is closing). `taskId`: the open task the caller saw. `file` is a folder-relative path the caller already checked
+   * against the person's folder; here it is only checked to fit the prompt.
+   */
+  addContext(taskId: string, file: string): { accepted: Promise<ContextResult>; done: Promise<void> } {
+    let settled = false;
+    let take!: (r: ContextResult) => void;
+    let refuse!: (err: unknown) => void;
+    const accepted = new Promise<ContextResult>((resolve, reject) => {
+      take = (r) => {
+        settled = true;
+        resolve(r);
+      };
+      refuse = reject;
+    });
+    const run = () => this.op(() => this.addNow(taskId, file, take));
+    const done = (this.isBusy() ? this.whenFree(run) : run()).then(
+      () => {
+        if (!settled) refuse(new Error("The file was not added"));
+      },
+      (err: unknown) => {
+        if (!settled) refuse(err);
+        throw err;
+      },
+    );
+    return { accepted, done };
+  }
+
+  /**
    * The person moves the open task to phase `to` (task-phases spec §4.2), only while it waits: unlike a mode pick, it
    * never waits for a turn. `accepted` resolves with a refusal or with how the change goes on, before any turn's events;
    * `done` once its turn ended. Both reject when the operation can't run (a turn runs, the app is closing). `task`: the
@@ -520,6 +605,13 @@ export class TaskManager {
   async runningTask(): Promise<{ id: string; action?: string; scope: string } | null> {
     const c = (await this.d.store.load()).current;
     return c ? { id: c.id, ...(c.action ? { action: c.action } : {}), scope: scopeOfTask(c) } : null;
+  }
+
+  /** The open task's context record (context-panel spec §5.1), or null when `taskId` is not the open task. */
+  async contextRecord(taskId: string): Promise<{ id: string; scope: string; start: ContextItem[]; startTokens?: number; reads: ContextRead[] } | null> {
+    const c = (await this.d.store.load()).current;
+    if (!c || c.id !== taskId) return null;
+    return { id: c.id, scope: scopeOfTask(c), start: c.start ?? [], ...(c.startTokens !== undefined ? { startTokens: c.startTokens } : {}), reads: c.reads ?? [] };
   }
 
   /** The open task's history trailer, for commits made on its behalf (the person's data writes); none without a task. */
@@ -753,41 +845,74 @@ export class TaskManager {
   }
 
   /**
-   * A new session's context (spec §3.3, §4.4): the scope's notes index; in a scope, the app-wide one, trimmed;
-   * then the data tables. Without scopes or data, exactly the notes index as before (D2).
+   * A new session's context (spec §3.3, §4.4): the scope's notes index; in a scope, the app-wide one, trimmed; the data
+   * tables; the person's pins (context-panel spec §4.2); the material. Without scopes, data, pins or material, exactly
+   * the notes index as before (D2, D0). `items` say what each part is (context-panel spec §3.1).
    */
-  private async contextFor(scope: string, action: string | undefined): Promise<string> {
-    const own = buildNotesIndex(await this.d.notes(this.d.scoped ? scope : undefined).catch(() => [] as Note[]));
+  private async contextFor(scope: string, action: string | undefined): Promise<{ text: string; items: ContextItem[] }> {
+    const person = this.d.personContext
+      ? await this.d.personContext(scope).catch((err: unknown) => {
+          console.error("Could not load the pins and exclusions for the task", err);
+          return null;
+        })
+      : null;
+    // Both indexes leave the excluded notes out (context-panel spec §4.3); nothing excluded: the options as before (D0).
+    const exclude = person && person.excluded.size > 0 ? { exclude: person.excluded } : {};
+    const items: ContextItem[] = [];
+    const ownNotes = await this.d.notes(this.d.scoped ? scope : undefined).catch(() => [] as Note[]);
+    const own = buildNotesIndex(ownNotes, exclude);
     const parts = [own];
+    if (own) items.push(indexItem("notes", "notes-index", "Notes", own, ownNotes, person?.excluded));
     if (this.d.scoped && scope !== APP_SCOPE) {
       const app = await this.d.notes(APP_SCOPE).catch(() => [] as Note[]);
       // The own index ends with the "open a note" line; the app-wide one says it only when it stands alone.
-      parts.push(
-        buildNotesIndex(app, {
-          budgetTokens: APP_INDEX_TOKENS,
-          heading: "## App-wide notes",
-          decisionsHeading: "## App-wide decisions",
-          ...(own ? { footer: null } : {}),
-        }),
-      );
+      const appIndex = buildNotesIndex(app, {
+        budgetTokens: APP_INDEX_TOKENS,
+        heading: "## App-wide notes",
+        decisionsHeading: "## App-wide decisions",
+        ...(own ? { footer: null } : {}),
+        ...exclude,
+      });
+      parts.push(appIndex);
+      if (appIndex) items.push(indexItem("app-notes", "app-notes-index", "App-wide notes", appIndex, app, person?.excluded));
     }
     if (this.d.dataContext) {
-      parts.push(
-        await this.d.dataContext(scope, action).catch((err: unknown) => {
-          console.error("Could not load the data for the task", err);
-          return "";
-        }),
-      );
+      const data = await this.d.dataContext(scope, action).catch((err: unknown) => {
+        console.error("Could not load the data for the task", err);
+        return "";
+      });
+      if (typeof data === "string") {
+        parts.push(data);
+        if (data) items.push({ id: "data", kind: "data", label: "Data", tokens: approxTokens(data.length) });
+      } else {
+        for (const p of data) {
+          parts.push(p.text);
+          items.push({ id: `data:${p.collection}`, kind: "data", label: `Data · ${p.collection} (${p.rows} rows)`, tokens: approxTokens(p.text.length), count: p.rows });
+        }
+      }
+    }
+    if (person?.pinned) {
+      parts.push(person.pinned);
+      items.push(...person.items);
     }
     if (this.d.materialContext) {
-      parts.push(
-        await this.d.materialContext(scope).catch((err: unknown) => {
-          console.error("Could not load the material for the task", err);
-          return "";
-        }),
-      );
+      const material = await this.d.materialContext(scope).catch((err: unknown) => {
+        console.error("Could not load the material for the task", err);
+        return "";
+      });
+      parts.push(material);
+      if (material) items.push({ id: "material", kind: "material", label: "Material", tokens: approxTokens(material.length) });
     }
-    return parts.filter(Boolean).join("\n\n");
+    return { text: parts.filter(Boolean).join("\n\n"), items };
+  }
+
+  /** The whole start (context-panel spec §3.1): the instructions, the brief (what the message holds beyond the other items), the items. */
+  private async startItems(message: string, items: ContextItem[], briefLabel: string): Promise<ContextItem[]> {
+    const size = this.d.instructionsSize ? await this.d.instructionsSize().catch(() => null) : null;
+    const others = items.reduce((n, i) => n + i.tokens, 0);
+    const brief: ContextItem = { id: "brief", kind: "brief", label: briefLabel, tokens: Math.max(0, approxTokens(message.length) - others) };
+    const instructions: ContextItem[] = size ? [{ id: "instructions", kind: "instructions", label: "Harness instructions", path: "AGENTS.md", tokens: approxTokens(size) }] : [];
+    return [...instructions, brief, ...items].slice(0, START_ITEMS_MAX);
   }
 
   private async switchNow(id: string | null): Promise<boolean> {
@@ -1047,9 +1172,12 @@ export class TaskManager {
       const after = (await this.d.store.load()).current;
       const soFar = (after?.id === c.id ? after : c).checkpointNote ? await this.checkpointSummary(c) : undefined;
       const message = modePrompt(text, { language, ...(soFar ? { soFar } : {}) });
+      // Recorded before the status, so no await falls between the Stop check and the send.
+      const brief = await this.addBrief(c.id, `Mode brief · ${oneLine(text.label)}`, message);
       await this.setStatus(c.id, "running");
-      // Checked with no await before the send: a Stop while the status was saved.
+      // Checked with no await before the send: a Stop while the status was saved. The brief never reached the session.
       if (this.cancelRequested) {
+        await this.dropBrief(c.id, brief);
         await this.setStatus(c.id, "waiting");
         return this.stopped();
       }
@@ -1069,6 +1197,54 @@ export class TaskManager {
       }
       // The mode is the task's once the agent got it: a failed switch can be picked again.
       if (done.ok) await this.setMode(c.id, mode, below);
+      return this.afterRun(c.id, done, false);
+    });
+  }
+
+  /**
+   * Checks, in order: `taskId` is the open task; the path fits the prompt; the task waits. Then one visible turn of
+   * kind `context-add`, told to the window first, run like a follow-up (a due checkpoint first, kept lines with it, a
+   * lost session resumed as `askNow` does).
+   */
+  private async addNow(taskId: string, file: string, take: (r: ContextResult) => void): Promise<void> {
+    const c = await this.storedCurrent();
+    if (!c || c.id !== taskId) return take({ ok: false, reason: "no-task" });
+    if (!addablePath(file)) return take({ ok: false, reason: "bad-name" });
+    if (c.status !== "waiting") return take({ ok: false, reason: "busy" });
+    // The person asked for this turn: a paused time box runs again, as for a mode pick.
+    await this.personWorks(c);
+    take({ ok: true });
+    this.tellTurn({ task: c.id, kind: "context", path: file });
+    return this.endsInWindow(async () => {
+      if (needsCheckpoint(c) && !(await this.checkpoint(c))) return this.stopped();
+      // Lines kept for the task's next message go with it (review spec §5.4); a lost session resumes as askNow does.
+      const said = await this.withNotices(c, contextAddPrompt(file));
+      const message = c.resume ? await this.resumeMessageFor(c, said) : said;
+      await this.setStatus(c.id, "running");
+      // Checked with no await before the send: a Stop while the status was saved.
+      if (this.cancelRequested) {
+        await this.setStatus(c.id, "waiting");
+        return this.stopped();
+      }
+      const options = { display: `Take ${file} into account`, ...(c.action ? { action: c.action } : {}), followUp: true, phase: "context-add" as const };
+      let done: Done;
+      try {
+        if (c.resume) this.recordStart = c.id;
+        done = c.resume ? await this.firstTurn(c, message, options) : await this.runTurn(c, message, options);
+      } catch (err) {
+        if (err instanceof TurnNotStarted) await this.setStatus(c.id, "waiting");
+        throw unwrap(err);
+      } finally {
+        // A first turn that reported no usage leaves no total: a later turn's is not the first's.
+        this.recordStart = null;
+      }
+      if (c.resume && done.ok) {
+        await this.update((s) => {
+          if (s.current?.id !== c.id) return s;
+          const { resume: _resume, ...rest } = s.current;
+          return { ...s, current: rest };
+        });
+      }
       return this.afterRun(c.id, done, false);
     });
   }
@@ -1173,10 +1349,14 @@ export class TaskManager {
           followUp: true,
         };
         // A resumed turn opens a new session, like a first turn: a model the plan lacks falls back the same way.
+        if (c.resume) this.recordStart = c.id;
         done = c.resume ? await this.firstTurn(c, message, options) : await this.runTurn(c, message, options);
       } catch (err) {
         if (err instanceof TurnNotStarted) await this.setStatus(c.id, "waiting");
         throw unwrap(err);
+      } finally {
+        // A first turn that reported no usage leaves no total: a later turn's is not the first's.
+        this.recordStart = null;
       }
       if (c.resume && done.ok) {
         await this.update((s) => {
@@ -1316,9 +1496,10 @@ export class TaskManager {
         console.error("Could not read the phase's brief; the task resumes without it", err);
       }
     }
-    return resumeMessage({
+    const { text: notesIndex, items } = await this.contextFor(scopeOfTask(c), c.action);
+    const message = resumeMessage({
       language,
-      notesIndex: await this.contextFor(scopeOfTask(c), c.action),
+      notesIndex,
       ...(brief !== undefined ? { brief } : {}),
       ...(mode ? { mode } : {}),
       ...(phase ? { phase } : {}),
@@ -1326,6 +1507,18 @@ export class TaskManager {
       ...(c.question ? { question: c.question, ...(c.questionCut ? { questionCut: true } : {}) } : {}),
       message: text,
     });
+    // A resumed task starts a new session (context-panel spec §3.1): its record is this message's, and the first-turn
+    // tokens are the resumed turn's.
+    // An action task whose brief could not be read is still an action's task, not a question.
+    const start = await this.startItems(message, items, brief !== undefined || c.action !== undefined ? "Task brief" : "Question");
+    await this.update((s) => {
+      if (s.current?.id !== c.id) return s;
+      const { startTokens: _old, ...rest } = s.current;
+      // What the old session read is not in the new one's context: it shows as possibly summarized (§3.2).
+      return { ...s, current: { ...rest, start, ...(rest.reads ? { reads: markCompacted(rest.reads) } : {}) } };
+    });
+    this.changedContext(c.id);
+    return message;
   }
 
   /**
@@ -1371,7 +1564,10 @@ export class TaskManager {
     if (this.cancelRequested) return this.stopped();
     await this.endSession();
     await this.between();
-    const context = await this.contextFor(scope, task.action);
+    const { text: context, items } = await this.contextFor(scope, task.action);
+    const first = message(context);
+    const briefLabel = task.review !== undefined ? "Review round" : task.action !== undefined ? "Task brief" : "Question";
+    const start = await this.startItems(first, items, briefLabel);
     const engine = await this.d.engine();
     // Resolved once: the task keeps its model, effort and cap to the end (spec D2). A floor only from a mode (task-modes §5.3).
     // Only the defined arguments are passed: callers compare the call's arguments.
@@ -1392,8 +1588,10 @@ export class TaskManager {
       ...(profile ? { profile } : {}),
       ...(this.d.scoped ? { scope } : {}),
       ...(below ? { belowMinTier: true as const } : {}),
+      start,
     };
     await this.update((s) => ({ ...s, engine, current }));
+    this.changedContext(current.id);
     // Checked again with no await before the send: a Stop while the session ended or the notes were read.
     if (this.cancelRequested) {
       await this.update((s) => (s.current?.id === current.id ? { ...s, current: null } : s));
@@ -1401,11 +1599,14 @@ export class TaskManager {
     }
     let done: Done;
     try {
-      done = await this.firstTurn(current, message(context), { display, ...(task.action ? { action: task.action } : {}) });
+      this.recordStart = current.id;
+      done = await this.firstTurn(current, first, { display, ...(task.action ? { action: task.action } : {}) });
     } catch (err) {
       // Nothing ran: the task goes away without marking its topic.
       if (err instanceof TurnNotStarted) await this.update((s) => (s.current?.id === current.id ? { ...s, current: null } : s));
       throw unwrap(err);
+    } finally {
+      this.recordStart = null;
     }
     await this.afterRun(current.id, done, true);
   }
@@ -1448,7 +1649,11 @@ export class TaskManager {
    * the turn was refused before it began (no `done` came).
    */
   private async runTurn(task: CurrentTask, message: string, options: Omit<TurnOptions, "task" | "onEvent" | "profile">): Promise<Done> {
-    const seen: { done?: Done; note?: SavedNote; used?: number; size?: number; compacted?: boolean; phaseAsk?: PhaseRequest } = {};
+    const seen: { done?: Done; note?: SavedNote; used?: number; size?: number; compacted?: boolean; phaseAsk?: PhaseRequest; reads: SeenRead[]; input?: number; compactedAt?: number } = { reads: [] };
+    // Read paths become folder paths; without the folder, file names only (nothing is read from them).
+    const given = this.d.folder ? await this.d.folder().catch(() => null) : null;
+    const real = given ? await fs.realpath(given).catch(() => given) : null;
+    const base = given && real && real !== given ? [given, real] : given;
     const shownInputs: Promise<void>[] = [];
     this.lastPhaseAsk = null;
     const kind = options.phase ?? "run";
@@ -1482,10 +1687,18 @@ export class TaskManager {
             if (parsed.success) seen.phaseAsk = parsed.data;
           } else if (e.type === "block" && e.id !== undefined && this.d.inputBlocks && Object.hasOwn(this.d.inputBlocks, e.name)) {
             shownInputs.push(this.showInput(task.id, e.name, e.id));
+          } else if (e.type === "activity") {
+            if (seen.reads.length < READS_MAX) seen.reads.push(...readsOf(e, base));
+          } else if (e.type === "usage") {
+            seen.input = e.inputTokens + e.cacheReadTokens + e.cacheWriteTokens;
           } else if (e.type === "context") {
             seen.used = e.used;
             if (e.size !== undefined) seen.size = e.size;
-          } else if (e.type === "compaction") seen.compacted = true;
+          } else if (e.type === "compaction") {
+            seen.compacted = true;
+            // Reads before this point may be summarized too (§3.2): the last compaction of the turn counts.
+            seen.compactedAt = seen.reads.length;
+          }
         },
       });
     } catch (err) {
@@ -1506,6 +1719,9 @@ export class TaskManager {
     if (d && !isHeld(d, options) && (!options.quiet || (!d.ok && d.error.code !== "cancelled"))) this.windowDone = true;
     if (seen.note) await this.saveNote(task, seen.note, options.phase !== "checkpoint");
     if (seen.used !== undefined || seen.compacted) await this.track(task.id, seen);
+    const startTokens = this.recordStart === task.id && seen.input !== undefined ? seen.input : undefined;
+    if (startTokens !== undefined) this.recordStart = null;
+    if (seen.reads.length > 0 || startTokens !== undefined) await this.recordTurn(task.id, seen.reads, startTokens, seen.compactedAt);
     return result;
   }
 
@@ -1636,9 +1852,12 @@ export class TaskManager {
     if (!plan.message) return;
     const now = (await this.d.store.load()).current;
     if (now?.id !== c.id) return this.stopped();
+    // Recorded before the status, so no await falls between the Stop check and the send.
+    const brief = await this.addBrief(c.id, `Phase brief · ${oneLine(to.label)}`, plan.message);
     await this.setStatus(c.id, "running");
-    // Checked with no await before the send: a Stop while the status was saved.
+    // Checked with no await before the send: a Stop while the status was saved. The brief never reached the session.
     if (this.cancelRequested) {
+      await this.dropBrief(c.id, brief);
       await this.setStatus(c.id, "waiting");
       return this.stopped();
     }
@@ -1657,6 +1876,69 @@ export class TaskManager {
       throw unwrap(err);
     }
     return this.afterRun(c.id, done, false);
+  }
+
+  /**
+   * One turn's reads and tools, merged once it ended (context-panel spec §3.2), and the first-turn total. `compactedAt`:
+   * how many of `reads` came before the turn's last reported compaction; those are marked with everything earlier.
+   */
+  private async recordTurn(id: string, reads: SeenRead[], startTokens: number | undefined, compactedAt?: number): Promise<void> {
+    const at = this.now().toISOString();
+    const merged = (old: ContextRead[]): ContextRead[] => {
+      if (compactedAt === undefined) return mergeReads(old, reads, at);
+      return mergeReads(markCompacted(mergeReads(old, reads.slice(0, compactedAt), at)), reads.slice(compactedAt), at);
+    };
+    await this.update((s) => {
+      if (s.current?.id !== id) return s;
+      return {
+        ...s,
+        current: {
+          ...s.current,
+          ...(reads.length > 0 ? { reads: merged(s.current.reads ?? []) } : {}),
+          ...(startTokens !== undefined ? { startTokens } : {}),
+        },
+      };
+    });
+    this.changedContext(id);
+  }
+
+  /**
+   * A brief that reaches the session after its start (a mode switch, a phase change): one more `brief` item (§3.1).
+   * Returns the item's id, or null when none was added.
+   */
+  private async addBrief(id: string, label: string, message: string): Promise<string | null> {
+    const at = this.now().toISOString();
+    let added: string | null = null;
+    await this.update((s) => {
+      if (s.current?.id !== id) return s;
+      const start = s.current.start ?? [];
+      const n = start.filter((i) => i.kind === "brief").length;
+      const item: ContextItem = { id: `brief:${n}`, kind: "brief", label, tokens: approxTokens(message.length), at };
+      const next = [...start, item].slice(0, START_ITEMS_MAX);
+      if (next.includes(item)) added = item.id;
+      return { ...s, current: { ...s.current, start: next } };
+    });
+    this.changedContext(id);
+    return added;
+  }
+
+  /** A brief recorded for a turn that a Stop cancelled before the send: it never reached the session. */
+  private async dropBrief(id: string, item: string | null): Promise<void> {
+    if (item === null) return;
+    await this.update((s) => {
+      if (s.current?.id !== id || !s.current.start) return s;
+      return { ...s, current: { ...s.current, start: s.current.start.filter((i) => i.id !== item) } };
+    });
+    this.changedContext(id);
+  }
+
+  /** The panel refreshes (context-panel spec §5.2). A failing listener never breaks the task. */
+  private changedContext(id: string): void {
+    try {
+      this.d.contextChanged?.(id);
+    } catch (err) {
+      console.error("Could not tell the window about the task's context", err);
+    }
   }
 
   /** Tells the window a turn the app starts on its own is coming; that turn's `done` is the window's to see again. */
@@ -1870,10 +2152,16 @@ export class TaskManager {
     const prev = before.context?.used;
     const compacted = seen.compacted === true || (prev !== undefined && seen.used !== undefined && seen.used < prev * COMPACTED_DROP);
     const context = seen.used !== undefined ? { used: seen.used, ...(seen.size !== undefined ? { size: seen.size } : {}) } : undefined;
-    await this.update((s) =>
-      s.current?.id === id ? { ...s, current: { ...s.current, ...(context ? { context } : {}), ...(compacted ? { checkpointed: false } : {}) } } : s,
-    );
+    await this.update((s) => {
+      if (s.current?.id !== id) return s;
+      // Everything recorded so far may now be summarized (context-panel spec §3.2), in the same write.
+      const marks = compacted
+        ? { ...(s.current.start ? { start: markCompacted(s.current.start) } : {}), ...(s.current.reads ? { reads: markCompacted(s.current.reads) } : {}) }
+        : {};
+      return { ...s, current: { ...s.current, ...(context ? { context } : {}), ...(compacted ? { checkpointed: false } : {}), ...marks } };
+    });
     if (!compacted) return;
+    this.changedContext(id);
     try {
       await this.d.recordCompaction?.(before);
     } catch (err) {

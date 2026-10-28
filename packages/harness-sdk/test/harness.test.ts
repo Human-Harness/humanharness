@@ -337,3 +337,17 @@ describe("manifest texts", () => {
     expect(() => defineHarness({ ...minimal, name: { es: "Notas", en: "Notes" } as never })).toThrow();
   });
 });
+
+describe("context.pinnedTokens (context-panel spec §4.2)", () => {
+  it("suggests the pinned budget; absent, there is no key (D0)", () => {
+    expect(defineHarness({ ...minimal, context: { pinnedTokens: 6000 } }).context).toEqual({ pinnedTokens: 6000 });
+    expect(defineHarness({ ...minimal, context: {} }).context).toEqual({ pinnedTokens: 3000 });
+    expect(defineHarness(minimal).context).toBeUndefined();
+  });
+
+  it("refuses a budget that is not a whole number from 0 to 50,000", () => {
+    expect(() => defineHarness({ ...minimal, context: { pinnedTokens: -1 } })).toThrow();
+    expect(() => defineHarness({ ...minimal, context: { pinnedTokens: 60_000 } })).toThrow();
+    expect(() => defineHarness({ ...minimal, context: { pinnedTokens: 1.5 } })).toThrow();
+  });
+});

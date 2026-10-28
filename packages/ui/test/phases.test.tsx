@@ -95,6 +95,14 @@ describe("task phases in the chat", () => {
     expect(await screen.findByText("Time is almost up")).toBeTruthy();
   });
 
+  it("an Add now turn draws the person's line naming the file, not a phase line (context-panel spec §4.1)", async () => {
+    const client = tutorClient();
+    await open(client);
+    act(() => client.emitTaskTurn({ task: "t1", kind: "context", path: "docs/plan.md" }));
+    expect(await screen.findByText("Take docs/plan.md into account")).toBeTruthy();
+    expect(screen.queryByText("—  —")).toBeNull();
+  });
+
   it("Finish closes the task and reads the tasks again: the stepper goes once the task is gone", async () => {
     const client = tutorClient({ current: { phase: "close" } });
     await open(client);

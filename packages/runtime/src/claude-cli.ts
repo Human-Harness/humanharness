@@ -114,6 +114,36 @@ function detailOf(tool: string, input: Record<string, unknown>): string {
   }
 }
 
+/** Longest server or tool name kept. */
+const NAME_MAX = 100;
+/** Longest engine path kept; a longer one is dropped. */
+const PATH_MAX = 4096;
+
+/**
+ * What a tool call adds to its start event for the context panel (spec §3.2): the path a Read, Grep or Glob names,
+ * or an MCP tool's server and name (`mcp__<server>__<tool>`, split with indexOf).
+ */
+export function activityExtras(tool: string, input: Record<string, unknown>): { paths?: string[]; tool?: { server: string; name: string } } {
+  const str = (key: string) => {
+    const v = input[key];
+    return typeof v === "string" && v && v.length <= PATH_MAX ? v : undefined;
+  };
+  if (tool === "Read") {
+    const p = str("file_path");
+    return p ? { paths: [p] } : {};
+  }
+  if (tool === "Grep" || tool === "Glob") {
+    const p = str("path");
+    return p ? { paths: [p] } : {};
+  }
+  if (tool.startsWith("mcp__")) {
+    const rest = tool.slice("mcp__".length);
+    const cut = rest.indexOf("__");
+    if (cut > 0 && cut + 2 < rest.length) return { tool: { server: rest.slice(0, cut).slice(0, NAME_MAX), name: rest.slice(cut + 2).slice(0, NAME_MAX) } };
+  }
+  return {};
+}
+
 /** Turns Claude Code's stream-json lines into normalized events. */
 export class StreamJsonReader {
   private textOpen = false;
@@ -184,7 +214,7 @@ export class StreamJsonReader {
         if (this.tools.has(b.id)) continue;
         const activity = { kind: KINDS[b.name] ?? ("other" as const), detail: detailOf(b.name, b.input ?? {}) };
         this.tools.set(b.id, activity);
-        this.emit({ type: "activity", id: b.id, ...activity, state: "start" });
+        this.emit({ type: "activity", id: b.id, ...activity, ...activityExtras(String(b.name), b.input ?? {}), state: "start" });
       }
       return;
     }

@@ -204,3 +204,53 @@ describe("replay: phases (task-phases spec §6)", () => {
     expect(r.play.text).toBe(DEFAULT_FALLBACK);
   });
 });
+
+describe("recorded reads (context-panel spec §7)", () => {
+  it("a recorded turn's reads reach the play; a turn without them reads nothing", () => {
+    const reading = recordingSchema.parse({ version: 1, action: "r", match: "# Topic: reads", turns: [{ id: "t1", text: "Leo.", reads: ["README.md"] }] });
+    expect(replay([reading], undefined, "# Topic: reads", true).play.reads).toEqual(["README.md"]);
+    expect(replay(all, undefined, "# Topic: the manifest", true).play.reads).toEqual([]);
+  });
+});
+
+describe("the Add now prompt (context-panel spec §5.2)", () => {
+  const ADD = "The person wants you to take `docs/conv.md` into account. Read it now and say in one line what changes for this task.";
+
+  it("is known by its start, also after the lines the app kept for the task", () => {
+    expect(promptKind(ADD)).toBe("context-add");
+    expect(promptKind(`The person approved specs/a.md.\n\n${ADD}`)).toBe("context-add");
+    expect(promptKind("Please take `x` into account")).toBe("reply");
+  });
+
+  it("plays a built-in reply that reads the named file and keeps the session where it was", () => {
+    const position = { action: "manifest", turn: "t1" };
+    const { play, session } = replay([rec], position, ADD, false);
+    expect(play.reads).toEqual(["docs/conv.md"]);
+    expect(play.text).toBe("I read docs/conv.md and will take it into account.");
+    // The turn's choices come back, as after an off-script reply, so the walk goes on.
+    expect(play.blocks).toEqual([choices]);
+    expect(replay([rec], { action: "manifest", turn: "t3" }, ADD, false).play.blocks).toEqual([]);
+    expect(session).toEqual(position);
+    expect(replay([rec], position, `The person approved specs/a.md.\n\n${ADD}`, false).play.reads).toEqual(["docs/conv.md"]);
+  });
+
+  it("reports the usage of the turn the session stays at, so the app sees no compaction", () => {
+    const used = recordingSchema.parse({
+      version: 1,
+      action: "u",
+      match: "# Topic: usage",
+      turns: [{ id: "t1", text: "Uno.", usage: { input: 18400, output: 320, cacheRead: 12000 } }],
+    });
+    const { play } = replay([used], { action: "u", turn: "t1" }, ADD, false);
+    expect(play.usage).toEqual({ input: 18400, output: 320, cacheRead: 12000, cacheWrite: 0 });
+    // An off-script reply stays at the same turn too.
+    expect(replay([used], { action: "u", turn: "t1" }, "Something else", false).play.usage).toEqual(play.usage);
+  });
+
+  it("a path that leaves the folder is not read", () => {
+    for (const bad of ["../secret", "/etc/passwd", ""]) {
+      const { play } = replay([rec], { action: "manifest", turn: "t1" }, ADD.replace("docs/conv.md", bad), false);
+      expect(play.reads, bad).toEqual([]);
+    }
+  });
+});

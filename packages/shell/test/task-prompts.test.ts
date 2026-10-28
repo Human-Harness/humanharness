@@ -3,12 +3,15 @@ import { describe, expect, it } from "vitest";
 import {
   CHECKPOINT_PROMPT,
   CLOSE_PROMPT,
+  CONTEXT_ADD_PROMPT,
   PHASES_HOW,
   PHASE_PROMPT,
   QUESTION_PROMPT,
   RESUME_PROMPT,
   WRAP_UP_PROMPT,
+  addablePath,
   closePrompt,
+  contextAddPrompt,
   fillPrompt,
   modePrompt,
   modeSection,
@@ -119,6 +122,7 @@ describe("mock mode markers", () => {
     expect(promptKind(WRAP_UP_PROMPT)).toBe("wrap-up");
     expect(promptKind(phasePrompt({ id: "main", label: "Main block", brief: "Teach." }, { language: "en" }))).toBe("phase");
     expect(promptKind(wrapUpPrompt("en"))).toBe("wrap-up");
+    expect(promptKind(contextAddPrompt("docs/conv.md"))).toBe("context-add");
   });
 });
 
@@ -233,5 +237,27 @@ describe("phase prompts (task-phases spec §4.4, §5, §6)", () => {
     );
     expect(resumeMessage({ ...vars, timeLeft: "" })).toBe(resumeMessage(vars));
     expect(resumeMessage(vars)).not.toContain("Time left");
+  });
+});
+
+describe("the Add now prompt (context-panel spec §4.1)", () => {
+  it("names the path in backticks; the mock replay knows it by its start", () => {
+    expect(contextAddPrompt("docs/conventions.md")).toBe(
+      "The person wants you to take `docs/conventions.md` into account. Read it now and say in one line what changes for this task.",
+    );
+    expect(CONTEXT_ADD_PROMPT.startsWith("The person wants you to take `")).toBe(true);
+  });
+
+  it("only takes a path that can't break out of its backticks or its line", () => {
+    expect(addablePath("docs/a b.md")).toBe(true);
+    expect(addablePath("a`b.md")).toBe(false);
+    expect(addablePath("a\nb.md")).toBe(false);
+    expect(addablePath("a\u0007.md")).toBe(false);
+    expect(addablePath("a\u2028b.md")).toBe(false);
+    // Bidi controls and zero-width characters: the person would not see what the agent reads.
+    for (const c of ["\u202a", "\u202e", "\u2066", "\u2069", "\u200b", "\u200d", "\ufeff"]) expect(addablePath(`a${c}b.md`)).toBe(false);
+    expect(addablePath("a\u2010b.md")).toBe(true);
+    expect(addablePath("")).toBe(false);
+    expect(addablePath("a".repeat(1001))).toBe(false);
   });
 });

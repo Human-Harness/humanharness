@@ -3,6 +3,8 @@ import type {
   AppState,
   ChatEntry,
   ChoiceOption,
+  ContextPick,
+  ContextResult,
   DataChangeView,
   DataDiffView,
   DataKey,
@@ -48,6 +50,7 @@ import type {
   SetupStep,
   SetupStepResult,
   SetupStepsState,
+  TaskContext,
   TaskTurnNotice,
   TaskView,
   TestResult,
@@ -621,6 +624,42 @@ export class FakeClient implements HarnessClient {
         if (this.confirmer === confirm) this.confirmer = null;
       };
     },
+  };
+  /** What `context.get` answers, by task. */
+  contexts: Record<string, TaskContext> = {};
+  contextCalls: { op: "add" | "pick" | "pin" | "unpin" | "exclude" | "include"; args: unknown[] }[] = [];
+  /** What every context write answers; `contextGate` holds `add` until it resolves (the panel's "Waiting"). */
+  contextAnswer: ContextResult = { ok: true };
+  contextGate: Promise<void> | null = null;
+  pickAnswer: ContextPick = { ok: false, reason: "cancelled" };
+  private contextListeners = new Set<{ task: string; listener: (c: TaskContext) => void }>();
+
+  /** As main's `hh:context`: the task's panel gets `c`. */
+  emitContext(task: string, c: TaskContext): void {
+    this.contexts[task] = c;
+    for (const l of [...this.contextListeners]) if (l.task === task) l.listener(c);
+  }
+
+  context: HarnessClient["context"] = {
+    get: async (taskId) => (Object.hasOwn(this.contexts, taskId) ? { ok: true, context: this.contexts[taskId] } : { ok: false, reason: "no-task" }),
+    onChange: (task, listener) => {
+      const entry = { task, listener };
+      this.contextListeners.add(entry);
+      return () => void this.contextListeners.delete(entry);
+    },
+    add: async (...args) => {
+      this.contextCalls.push({ op: "add", args });
+      if (this.contextGate) await this.contextGate;
+      return this.contextAnswer;
+    },
+    pick: async () => {
+      this.contextCalls.push({ op: "pick", args: [] });
+      return this.pickAnswer;
+    },
+    pin: async (...args) => (this.contextCalls.push({ op: "pin", args }), this.contextAnswer),
+    unpin: async (...args) => (this.contextCalls.push({ op: "unpin", args }), this.contextAnswer),
+    exclude: async (...args) => (this.contextCalls.push({ op: "exclude", args }), this.contextAnswer),
+    include: async (...args) => (this.contextCalls.push({ op: "include", args }), this.contextAnswer),
   };
   async openPath(file: string) {
     this.opened.push(file);

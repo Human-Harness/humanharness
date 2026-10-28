@@ -4,10 +4,13 @@ import type { Tier } from "@humanharness/harness-sdk";
 import type { Effort, ModelSpec, ModelsConfig, TaskModelChoice } from "@humanharness/engines";
 import { Segmented } from "./chrome";
 import type { AppState, HarnessClient, ModelsView } from "./client";
+import { shownLanguage } from "./language";
 
 // Local copies: the UI only imports types from the core packages.
 const TIERS: readonly Tier[] = ["light", "standard", "deep"];
 const CAPS: readonly number[] = [100_000, 200_000, 400_000, 1_000_000];
+/** The engines package's `PINNED_OPTIONS`. */
+const PINNED: readonly number[] = [1000, 3000, 6000, 12_000];
 export const QUESTIONS = "questions";
 const FALLBACK_SPEC: ModelSpec = { effort: "medium", cap: 200_000 };
 
@@ -158,6 +161,13 @@ export function ModelsTab({ client, state, onChange }: { client: HarnessClient; 
           </h3>
           <p className="hh-caption">{t("models.tasksIntro")}</p>
           <TaskList rows={rows} view={view} models={models} engine={engine} tierSpec={tierSpec} offer={offer} update={update} />
+          <PinnedBudget
+            value={models.pinnedTokens ?? view.pinnedTokens}
+            suggested={view.pinnedTokens}
+            onChange={(n) =>
+              update(({ pinnedTokens: _, ...rest }) => (n === view.pinnedTokens ? rest : { ...rest, pinnedTokens: n }))
+            }
+          />
         </section>
       )}
     </div>
@@ -384,6 +394,34 @@ export function SpecFields({ spec, offer, onChange }: { spec: ModelSpec; offer: 
           </option>
         ))}
       </select>
+    </div>
+  );
+}
+
+/**
+ * How much pinned text a new task gets whole (context-panel spec §4.2). The harness's suggestion is always offered;
+ * picking it drops the saved value, so the harness's own number applies again.
+ */
+function PinnedBudget({ value, suggested, onChange }: { value: number; suggested: number; onChange: (n: number) => void }) {
+  const { t, i18n } = useTranslation();
+  const id = useId();
+  const options = [...new Set([...PINNED, suggested, value])].sort((a, b) => a - b);
+  return (
+    <div className="hh-model-fields">
+      <label htmlFor={id}>{t("models.pinned")}</label>
+      <select id={id} value={String(value)} aria-describedby={`${id}-hint`} onChange={(e) => onChange(Number(e.target.value))}>
+        {options.map((n) => {
+          const tokens = n.toLocaleString(shownLanguage(i18n));
+          return (
+            <option key={n} value={String(n)}>
+              {t(n === suggested ? "models.pinnedSuggested" : "models.pinnedOption", { tokens })}
+            </option>
+          );
+        })}
+      </select>
+      <p id={`${id}-hint`} className="hh-caption hh-ctxp-budget-hint">
+        {t("models.pinnedHint")}
+      </p>
     </div>
   );
 }

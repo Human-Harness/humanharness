@@ -28,11 +28,12 @@ import {
   nextInPath,
   partsOf,
 } from "./client";
+import { ContextPanel } from "./ContextPanel";
 import { DocumentContext, type DocumentHost } from "./documents-context";
 import { DocumentReader, type ReaderTarget } from "./DocumentReader";
 import { ErrorCard, isFixable, problemError } from "./ErrorCard";
 import { FileTimelinePanel } from "./FileTimelinePanel";
-import { FlowSide } from "./FlowSide";
+import { ContextMeter, FlowSide } from "./FlowSide";
 import { type Paused, NO_PAUSED, countPaused, pausedSummary } from "./focus-notices";
 import { HistoryPanel } from "./HistoryPanel";
 import { pruneDrafts } from "./InputForm";
@@ -131,6 +132,10 @@ export function ChatView({
   /** A file's timeline outside the reader: a non-`.md` file or a deleted `.md`, from the History panel (file-timeline spec §6.2, Q10). */
   const [timelineFile, setTimelineFile] = useState<string | null>(null);
   const [notesPanel, setNotesPanel] = useState<{ expanded?: string } | null>(null);
+  /** The context panel is open (context-panel spec §5.1); it shares the reader's slot. */
+  const [contextOpen, setContextOpen] = useState(false);
+  /** The meter that opened the context panel: it gets focus back when the panel closes. */
+  const contextOpener = useRef<HTMLElement | null>(null);
   /** The document reader beside the chat (document-reader spec §5); null: closed. Kept in state: a stable target. */
   const [reader, setReader] = useState<ReaderTarget | null>(null);
   /** Every open gets a new nonce: the same document at the same anchor opened again goes there again. */
@@ -145,8 +150,9 @@ export function ChatView({
     const active = document.activeElement;
     // A link inside the reader keeps the first opener.
     if (active instanceof HTMLElement && active !== document.body && !active.closest(".hh-reader")) readerOpener.current = active;
-    // A file's timeline panel would cover the reader.
+    // A file's timeline panel would cover the reader; the context panel holds its slot.
     setTimelineFile(null);
+    setContextOpen(false);
     setReader({ ...target, nonce: ++readerOpens.current });
   }, []);
   const [readerFull, setReaderFull] = useState(false);
@@ -703,6 +709,11 @@ export function ChatView({
     lastMode.current = null;
     setPhaseFailed(false);
     const at = new Date().toISOString();
+    // "Add now" (context-panel spec §4.1): the person's line names the file, as the chat log keeps it.
+    if (n.kind === "context") {
+      dispatch({ type: "user", text: t("context.addLine", { path: n.path ?? "" }), at });
+      return;
+    }
     if (n.kind === "wrap-up") {
       dispatch({ type: "user", text: t("phases.wrapUpLine"), at, timeUp: true });
       return;
@@ -984,6 +995,47 @@ export function ChatView({
     setReaderFull(false);
     if (focusRef.current) setFocusMode(false);
   }, [setFocusMode]);
+  /** One side panel at a time: the reader, the timeline, the History and notes panels close. */
+  const openContext = () => {
+    const active = document.activeElement;
+    contextOpener.current = active instanceof HTMLElement && active !== document.body ? active : null;
+    closeReader();
+    setTimelineFile(null);
+    setShowHistory(false);
+    setNotesPanel(null);
+    setContextOpen(true);
+  };
+  /** Close or Escape: focus goes back to the meter that opened the panel (or the meter on screen now). */
+  const closeContext = () => {
+    setContextOpen(false);
+    focusContextOpener();
+  };
+  /** Focus back on the opener, else the meter on screen, else (the task ended: no meter) the composer. */
+  const focusContextOpener = () => {
+    const opener = contextOpener.current;
+    contextOpener.current = null;
+    const target = opener?.isConnected
+      ? opener
+      : (document.querySelector<HTMLElement>(".hh-ctxp-meter") ?? document.querySelector<HTMLElement>(".hh-composer textarea"));
+    target?.focus();
+  };
+  /** An item of the panel opens like a History link: a `.md` in the reader, anything else in the timeline panel. */
+  const openFromContext = (file: string) => {
+    setContextOpen(false);
+    contextOpener.current = null;
+    if (isMarkdownPath(file) && !slim) showReader({ path: file });
+    else setTimelineFile(file);
+  };
+  // The panel belongs to the open task: it closes when the task ends. Ending, or another task's panel taking its
+  // place (its key), unmounts what had focus: focus goes back to the meter rather than dropping to the page.
+  const contextTask = tasks.current?.id;
+  const contextShown = useRef(false);
+  contextShown.current = contextOpen;
+  useEffect(() => {
+    if (!contextTask) setContextOpen(false);
+    const active = document.activeElement;
+    if (contextShown.current && (!active || active === document.body)) focusContextOpener();
+  }, [contextTask]);
   // A link followed in focus mode: the harness's view hears which document is read now.
   const readerPath = reader?.path;
   useEffect(() => {
@@ -1067,6 +1119,8 @@ export function ChatView({
           <TopBar title={state.harness.name} mock={state.mock}>
             {profileBar?.(blocked())}
             {scopeBar?.(blocked())}
+            {/* Without actions there is no flow side: the meter, and so the context panel's button, sits here. */}
+            {!flow && tasks.current?.context && <ContextMeter {...tasks.current.context} onOpen={openContext} />}
             <UsageMeter engine={engineOption} limits={chat.limits} lastTokens={lastTurnTokens(chat.entries)} />
             {onHome && <button onClick={onHome}>{t("chat.home")}</button>}
             <button
@@ -1074,6 +1128,7 @@ export function ChatView({
                 // One panel at a time: Escape closes the one on screen.
                 setNotesPanel(null);
                 setTimelineFile(null);
+                setContextOpen(false);
                 setShowHistory(true);
               }}
             >
@@ -1087,7 +1142,7 @@ export function ChatView({
           </TopBar>
         )}
         <div
-          className={`hh-body${reader && !slim ? " hh-with-reader" : ""}${reader && readerFull && !slim ? " hh-reader-full" : ""}${focus && reader && !slim ? " hh-focus" : ""}`}
+          className={`hh-body${(reader || contextOpen) && !slim ? " hh-with-reader" : ""}${reader && readerFull && !slim ? " hh-reader-full" : ""}${focus && reader && !slim ? " hh-focus" : ""}`}
         >
           {flow && !slim && (
             <FlowSide
@@ -1098,9 +1153,11 @@ export function ChatView({
               onOpenNote={(slug) => {
                 setShowHistory(false);
                 setTimelineFile(null);
+                setContextOpen(false);
                 setNotesPanel({ expanded: slug });
               }}
               material={material}
+              {...(tasks.current ? { onContext: openContext } : {})}
             />
           )}
           {/* Without actions there is no flow side panel: the material panel gets one of its own. */}
@@ -1397,6 +1454,17 @@ export function ChatView({
               busy={Boolean(chat.live) || closing || checkpoint}
               focus={focus}
               onFocus={(on) => setFocusMode(on, reader.path)}
+            />
+          )}
+          {contextOpen && tasks.current && !slim && (
+            <ContextPanel
+              key={tasks.current.id}
+              client={client}
+              taskId={tasks.current.id}
+              {...(tasks.current.context ? { usage: tasks.current.context } : {})}
+              notes={tasks.notes}
+              onOpen={openFromContext}
+              onClose={closeContext}
             />
           )}
         </div>

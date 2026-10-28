@@ -14,6 +14,7 @@ import {
   STOPPED_PREFIX,
   TURN_PREFIX,
   UNDO_PREFIX,
+  type UndoRefusal,
 } from "./client";
 import { ChevronIcon, ClockIcon, CloseIcon, UndoIcon, WarnIcon } from "./chrome";
 import { shownLanguage } from "./language";
@@ -37,15 +38,6 @@ export function entryLabel(message: string): { key: string; values?: Record<stri
 export function laterTasks(groups: HistoryTaskView[], own: string | null, after: string): HistoryTaskView[] {
   const t = Date.parse(after);
   return groups.filter((g) => g.taskId !== null && g.taskId !== own && Date.parse(g.date) > t);
-}
-
-/**
- * Undo by files (parallel spec §5.3): only the task's own files go back, so of the later tasks only those that changed
- * one of them count.
- */
-export function laterOnFiles(later: HistoryTaskView[], task: HistoryTaskView): HistoryTaskView[] {
-  const mine = new Set(task.changes.map((c) => c.path));
-  return later.filter((g) => g.changes.some((c) => mine.has(c.path)));
 }
 
 const keyOf = (g: HistoryTaskView) => g.taskId ?? "other";
@@ -89,7 +81,10 @@ export function HistoryPanel({
   onRestored?: (kind: Restore["kind"]) => void;
   /** Going back is not allowed while a turn is live. */
   disabled?: boolean;
-  /** Board mode (parallel spec §5.3): "Undo this task" takes back only the task's own files. */
+  /**
+   * Board mode (parallel spec §5.3): "Undo this task" takes back only the task's own files and never another task's.
+   * Main refuses when a later change touched them; the panel then says why instead of counting later tasks.
+   */
   undoByFiles?: boolean;
 }) {
   const { t, i18n } = useTranslation();
@@ -97,6 +92,8 @@ export function HistoryPanel({
   const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
   const [confirming, setConfirming] = useState<Restore | null>(null);
   const [failed, setFailed] = useState(false);
+  /** Board mode: why main refused the last "Undo this task". */
+  const [refused, setRefused] = useState<UndoRefusal | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
   /** A restore was sent and hasn't answered: no other way back can be taken meanwhile. */
   const [restoring, setRestoring] = useState(false);
@@ -170,9 +167,16 @@ export function HistoryPanel({
   const restore = (r: Restore) => {
     if (restoring) return;
     setFailed(false);
+    setRefused(null);
     setRestoring(true);
     (r.kind === "task" ? client.restoreTask(r.id) : client.restore(r.id)).then(
-      () => {
+      (result) => {
+        if (result && "refused" in result) {
+          setRestoring(false);
+          setConfirming(null);
+          setRefused(result.refused);
+          return;
+        }
         setRestoring(false);
         onRestored?.(r.kind);
         close();
@@ -251,6 +255,12 @@ export function HistoryPanel({
     const label = entryLabel(e.message);
     return label ? t(label.key, label.values ?? {}) : e.message;
   };
+  const refusalText = (r: UndoRefusal): string => {
+    if (r.reason === "running") return t("parallel.undoRunning", { path: r.path });
+    if (r.reason === "uncommitted") return t("parallel.undoUnsaved", { path: r.path });
+    if (r.reason === "later") return t(r.by === "task" ? "parallel.undoLaterTask" : "parallel.undoLaterOutside", { path: r.path });
+    return t(r.reason === "too-far" ? "parallel.undoTooFar" : "parallel.undoNothing");
+  };
   const language = shownLanguage(i18n);
   /** The time alone; the day is its section's heading, and the full date shows on hover. */
   const when = (iso: string) => {
@@ -290,6 +300,7 @@ export function HistoryPanel({
         </p>
       )}
       {failed && <p role="alert">{t("history.restoreFailed")}</p>}
+      {refused && <p role="alert">{refusalText(refused)}</p>}
       {loadFailed && <p role="alert">{t("history.loadFailed")}</p>}
       {groups?.length === 0 && (
         <div className="hh-history-empty">
@@ -367,11 +378,7 @@ export function HistoryPanel({
                       </ol>
                       {g.taskId !== null &&
                         g.start !== null &&
-                        goBack(
-                          { kind: "task", id: g.taskId },
-                          undoByFiles ? laterOnFiles(laterTasks(groups ?? [], g.taskId, g.date), g) : laterTasks(groups ?? [], g.taskId, g.date),
-                          g,
-                        )}
+                        goBack({ kind: "task", id: g.taskId }, undoByFiles ? [] : laterTasks(groups ?? [], g.taskId, g.date), g)}
                     </div>
                   )}
                 </li>

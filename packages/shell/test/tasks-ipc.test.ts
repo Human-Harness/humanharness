@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { type TasksIpcHost, restoreTaskArgs, tasksIpc, validTaskId } from "../src/main/tasks-ipc";
+import { type TasksIpcHost, restoreTaskArgs, tasksIpc, undoRefusalOf, validTaskId } from "../src/main/tasks-ipc";
 
 function fakeHost(paused: { reason: string } | null = null) {
   const h = {
@@ -52,5 +52,14 @@ describe("the task inbox channels (parallel spec §9.1, P1)", () => {
     expect(() => restoreTaskArgs("t1", 1)).toThrow("Invalid choice");
     expect(() => restoreTaskArgs("", false)).toThrow("Invalid task");
     expect(() => restoreTaskArgs("x".repeat(201), false)).toThrow("Invalid task");
+  });
+
+  it("a refused undo tells the window its reason and file, never the other tasks' ids", () => {
+    expect(undoRefusalOf({ ok: false, reason: "running", path: "a.md" })).toEqual({ reason: "running", path: "a.md" });
+    expect(undoRefusalOf({ ok: false, reason: "uncommitted", path: "a.md" })).toEqual({ reason: "uncommitted", path: "a.md" });
+    expect(undoRefusalOf({ ok: false, reason: "later", path: "a.md", tasks: ["t2"], outside: 1 })).toEqual({ reason: "later", path: "a.md", by: "task" });
+    expect(undoRefusalOf({ ok: false, reason: "later", path: "a.md", tasks: [], outside: 2 })).toEqual({ reason: "later", path: "a.md", by: "outside" });
+    expect(undoRefusalOf({ ok: false, reason: "too-far" })).toEqual({ reason: "too-far" });
+    expect(undoRefusalOf({ ok: false, reason: "nothing" })).toEqual({ reason: "nothing" });
   });
 });

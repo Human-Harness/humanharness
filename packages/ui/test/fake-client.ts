@@ -73,6 +73,7 @@ import type {
   TaskView,
   TestResult,
   TextSize,
+  UndoRefusal,
   UsageSummary,
 } from "../src/client";
 import { type Mock, vi } from "vitest";
@@ -116,6 +117,8 @@ export class FakeClient implements HarnessClient {
   restoreError: Error | null = null;
   /** What historyTasks throws, if anything. */
   historyError: Error | null = null;
+  /** Board mode: restoreTask answers with this refusal instead of going back. */
+  restoreTaskRefusal: UndoRefusal | null = null;
   /** While set, restore and restoreTask wait for it. */
   restoreGate: Promise<void> | null = null;
   pickResult: FolderPick | null = { folder: "/Users/me/Elsewhere", problem: null };
@@ -317,6 +320,7 @@ export class FakeClient implements HarnessClient {
   async restoreTask(taskId: string) {
     await this.restoreGate;
     if (this.restoreError) throw this.restoreError;
+    if (this.restoreTaskRefusal) return { refused: this.restoreTaskRefusal };
     this.restoredTasks.push(taskId);
   }
   async engineStatus(engineId: string) {

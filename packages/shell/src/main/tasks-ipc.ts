@@ -1,4 +1,5 @@
-import type { TasksState } from "@humanharness/ui/client";
+import type { TasksState, UndoRefusal } from "@humanharness/ui/client";
+import type { RestoreByPaths } from "./restore-paths";
 
 /** A task id from the window: a string of 1..200 characters (the board then looks it up among its lanes, P1). */
 export function validTaskId(v: unknown): string {
@@ -11,6 +12,19 @@ export function restoreTaskArgs(taskId: unknown, includeShared: unknown): { id: 
   const id = validTaskId(taskId);
   if (includeShared !== undefined && typeof includeShared !== "boolean") throw new Error("Invalid choice");
   return { id, includeShared: includeShared === true };
+}
+
+/** What the window is told of a refused undo by paths: the reason and the file, never the other tasks' ids. */
+export function undoRefusalOf(r: Exclude<RestoreByPaths, { ok: true }>): UndoRefusal {
+  switch (r.reason) {
+    case "running":
+    case "uncommitted":
+      return { reason: r.reason, path: r.path };
+    case "later":
+      return { reason: "later", path: r.path, by: r.tasks.length > 0 ? "task" : "outside" };
+    default:
+      return { reason: r.reason };
+  }
 }
 
 /** What the inbox channels need of the board host. */

@@ -127,7 +127,7 @@ import { type AttentionStores, attentionStores } from "./attention-stores";
 import { TaskAttention } from "./task-attention";
 import { cleanCaps, engineHold, parallelInfo } from "./parallel-config";
 import { restoreTaskByPaths } from "./restore-paths";
-import { restoreTaskArgs, tasksIpc } from "./tasks-ipc";
+import { restoreTaskArgs, tasksIpc, undoRefusalOf } from "./tasks-ipc";
 import { PluginsController, watchPluginFolder } from "./plugins";
 import { respondHandler } from "./respond-ipc";
 import { SettingsController } from "./settings";
@@ -1249,22 +1249,6 @@ async function saveConfigPatch(patch: AppConfig, before: AppConfig): Promise<voi
   }
 }
 
-/** Why "Undo this task" was refused in board mode, for the window. */
-function undoRefusal(r: Exclude<Awaited<ReturnType<typeof restoreTaskByPaths>>, { ok: true }>): string {
-  switch (r.reason) {
-    case "running":
-      return `Another task is changing ${r.path}: undo this one once it waits`;
-    case "uncommitted":
-      return `${r.path} has changes not saved in the history yet`;
-    case "later":
-      return r.tasks.length > 0 ? `A later task also changed ${r.path}` : `${r.path} was changed after this task`;
-    case "too-far":
-      return "This task is too far back to undo by its files";
-    case "nothing":
-      return "Nothing to go back to";
-  }
-}
-
 /**
  * Board mode's host (parallel spec §6) over the app's own wiring: the plain runtime's checks and options for its
  * workspace, today's turn and task deps for its lanes.
@@ -1693,10 +1677,11 @@ function registerIpc() {
         )
         .then(() => {
           const r = result!;
-          if (!r.ok) throw new Error(undoRefusal(r));
+          // A refusal is an answer, not an error: the window says why, naming the file (spec §5.3).
+          if (!r.ok) return { refused: undoRefusalOf(r) };
           void settingsCtl?.changed();
           void sidekickCtl?.refresh().catch((err: unknown) => console.error("Could not refresh Sidekick", err));
-          return r;
+          return undefined;
         });
     }
     return restoreWith(async (history) => {

@@ -986,6 +986,12 @@
     "tasksAtOnce": "Tasks at once",
     "jobsAtOnce": "Jobs at once",
     "notifyWaiting": "Notify me when a task waits",
-    "engineHeld": "One at a time: running more at once is not yet checked with {{engine}}."
+    "engineHeld": "One at a time: running more at once is not yet checked with {{engine}}.",
+    "undoRunning": "Another task is changing {{path}}. Undo this one once that task waits.",
+    "undoUnsaved": "{{path}} has changes not saved in the history yet, so this task can't be undone now.",
+    "undoLaterTask": "A later task also changed {{path}}, so this task can't be undone by itself.",
+    "undoLaterOutside": "{{path}} was changed after this task, so it can't be undone by itself.",
+    "undoTooFar": "This task is too far back to undo by its files.",
+    "undoNothing": "This task has no files of its own to take back."
   }
 }

@@ -349,6 +349,16 @@ export interface ChatEntry {
  * Another task also changed these paths (parallel spec §5.3): `other` names it (absent when it has ended, `ended`).
  * `paths` holds the first few; `more` counts the rest.
  */
+/**
+ * Why board mode refused "Undo this task" (parallel spec §5.3): a running task is changing `path`, `path` has changes
+ * the history hasn't saved, a later task (`by: "task"`) or a change outside any task (`by: "outside"`) also changed
+ * `path`, the task is too far back, or there is nothing to take back.
+ */
+export type UndoRefusal =
+  | { reason: "running" | "uncommitted"; path: string }
+  | { reason: "later"; path: string; by: "task" | "outside" }
+  | { reason: "too-far" | "nothing" };
+
 export type ChatNotice = { kind: "conflict"; paths: string[]; more?: number; other?: string; ended?: true };
 
 /** The entry is the person's line or the agent's reply, not a notice the app added. */
@@ -854,8 +864,11 @@ export interface HarnessClient {
   restore(sha: string): Promise<void>;
   /** The history grouped by task, newest first; the group of commits outside any task last. */
   historyTasks(): Promise<HistoryTaskView[]>;
-  /** Makes the folder look as it did before the task started (later tasks are undone too); recorded outside any task. */
-  restoreTask(taskId: string): Promise<void>;
+  /**
+   * Makes the folder look as it did before the task started (later tasks are undone too); recorded outside any task.
+   * Board mode (parallel spec §5.3) takes back only the task's own files, and says why when it can't.
+   */
+  restoreTask(taskId: string): Promise<void | { refused: UndoRefusal }>;
   engineStatus(engineId: string): Promise<EngineStatus>;
   acceptNotice(engineId: string): Promise<void>;
   /** Runs the official install, update, login or logout; resolves when it exits. */

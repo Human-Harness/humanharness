@@ -40,6 +40,18 @@ describe("RestoreGuard", () => {
     await expect(guard.run(history, async () => undefined)).rejects.toThrow("The app is closing");
   });
 
+  it("a run may name its own busy check (board mode's undo by paths: only that task's lane), held and quit as before", async () => {
+    const { flags, guard } = setup();
+    flags.busy = true;
+    let ran = false;
+    await guard.run(async () => "h", async () => void (ran = true), { busy: () => false });
+    expect(ran).toBe(true);
+    flags.busy = false;
+    await expect(guard.run(async () => "h", async () => {}, { busy: () => true })).rejects.toThrow("A turn is running");
+    flags.blocked = "Changing the engine";
+    await expect(guard.run(async () => "h", async () => {}, { busy: () => false })).rejects.toThrow("A turn is running");
+  });
+
   it("checks again once the history is found: an engine or folder change that began meanwhile wins", async () => {
     const { flags, guard, history, open } = setup();
     const ran: string[] = [];

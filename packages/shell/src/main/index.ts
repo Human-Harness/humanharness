@@ -36,7 +36,7 @@ import {
   stageTier,
 } from "@humanharness/harness-sdk";
 import { type Job, MaterialStore, groundingMode, materialSection, workerRunner } from "@humanharness/material/light";
-import { type Event, type HarnessRuntime, SidekickSession, createRuntime, runSystemTask } from "@humanharness/runtime";
+import { type Event, type HarnessRuntime, type RuntimeOptions, SidekickSession, type SlotRef, createRuntime, createWorkspace, runSystemTask } from "@humanharness/runtime";
 import {
   type AppConfig,
   type AppState,
@@ -109,7 +109,7 @@ import { archiveChatsOnEngineChange, archiveStaleChat, startNewChatIfEngineChang
 import { type RunningSetup, runSetupProcess, setupCommand, stopSetupProcess } from "./setup-runner";
 import { runSetupStep } from "./setup-step";
 import { type SharedEngineRecord, SharedConfigStore, sharedConfigDir } from "./shared-config";
-import { EngineUnavailable, TurnController, memoise } from "./turn-controller";
+import { EngineUnavailable, TurnController, type TurnDeps, memoise } from "./turn-controller";
 import { type UsageRecord, UsageLog, capTokens, compactionRecord, measuredMaterialCosts, profileMeta, profilesUsage, summarizeUsage, usageRecord, withSpent } from "./usage-log";
 import { type ValidationContext, checkFolder, configProblem, isAppUrl } from "./validate";
 import { openIfStillSafe, openRoots, openableFile, revealIfStillSafe, revealableFile } from "./open-path";
@@ -122,7 +122,9 @@ import { PluginPanelsOnDemand, installPluginPanels, registerPluginsIpc, safeStor
 import { PluginPointers } from "./plugin-load";
 import { SecretStore } from "./plugin-secrets";
 import { PLUGIN_STATE_DIR } from "./plugin-state";
+import { type BoardHost, createBoardHost, hostMode } from "./board-host";
 import { engineHold, parallelInfo } from "./parallel-config";
+import { restoreTaskByPaths } from "./restore-paths";
 import { PluginsController, watchPluginFolder } from "./plugins";
 import { respondHandler } from "./respond-ipc";
 import { SettingsController } from "./settings";
@@ -131,7 +133,7 @@ import { readImportFiles, sourceTagKey } from "./sidekick-import";
 import { registerSidekickIpc } from "./sidekick-ipc";
 import { SidekickStore } from "./sidekick-store";
 import { SetupSteps, recordSetup, setupStepViews } from "./setup-steps";
-import { type PhaseMoved, TaskManager, type TurnEnd } from "./task-manager";
+import { type PhaseMoved, type TaskDeps, TaskManager, type TurnEnd } from "./task-manager";
 import type { MaterialService } from "./material";
 import { historyKeep, materialAppState, materialItems, materialRecommended, openMaterial } from "./material-ipc";
 import { MaterialJobs } from "./material-jobs";
@@ -214,6 +216,13 @@ const pluginPanels = new PluginPanelsOnDemand<BrowserWindow>(
   (win) => installPluginPanels(win, pluginHost, pluginsCtl),
   () => (window && !window.isDestroyed() ? window : null),
 );
+/**
+ * Board mode's host (parallel spec §6): a harness that declares `parallel` keeps one lane per open task; null for any
+ * other (D7), which runs today's single runtime and TaskManager. Built once the config store exists.
+ */
+let host: BoardHost | null = null;
+/** `host`, where a local name shadows it (the plugins' backend host). */
+const boardHost = (): BoardHost | null => host;
 /** `<appDir>/plugin-state`, with pluginsCtl: a folder move carries each base's approvals there to the new key. */
 let pluginStateRoot: string | null = null;
 const pluginLog = (message: string, err?: unknown) => console.error(`[plugins] ${message}`, err ?? "");
@@ -597,7 +606,7 @@ async function scopesChanged(): Promise<void> {
 async function arrivedInProfile(): Promise<void> {
   // Before anything reads the new base: the old profile's plugins stop, and nothing of theirs reaches the new one.
   await rebasePlugins();
-  await tasks.interrupt();
+  await interruptTasks();
   settingsCtl?.forget();
   await settingsCtl?.changed();
   await settleScopes();
@@ -651,7 +660,11 @@ function applyTextSize(size: TextSize | undefined) {
   if (process.platform === "darwin") window.setWindowButtonPosition({ x: 20, y: trafficLightY(factor) });
 }
 
-const runtime = memoise<HarnessRuntime>(async () => {
+/**
+ * What a runtime (or board mode's workspace) starts with: the config's checks, the engine's command and the plugin
+ * catalogue. Null when the engine CLI isn't installed.
+ */
+async function prepareEngine() {
   const c = await config.load();
   if (!isConfigured(c)) throw new Error("The app is not set up yet");
   const problem = await configProblem(c, validation());
@@ -673,12 +686,24 @@ const runtime = memoise<HarnessRuntime>(async () => {
     cmd = await engineCommand(engine, commandDeps);
   }
   if (!cmd) return null;
-  const settings = settingsCtl;
   const plugins = pluginsCtl;
   // The running plugins' collections the agent reads (plugins spec §3.2), written for this base; none: no file (D0).
   const extra = plugins ? await plugins.catalogueFile(base).catch((err: unknown) => (pluginLog("Could not write the plugin data catalogue", err), null)) : null;
   plugins?.markRuntimeBuilt(extra !== null);
-  const rt = await createRuntime({
+  return { c, base, engine, cmd, extra };
+}
+
+/**
+ * The runtime's options (and board mode's workspace's), its session aside. `runningTask` names the task a data or
+ * material request is for: the open task's, or in board mode the asking slot's (P3).
+ */
+async function runtimeOptions(
+  { c, base, engine, cmd, extra }: NonNullable<Awaited<ReturnType<typeof prepareEngine>>>,
+  runningTask: (slot?: SlotRef) => Promise<{ id: string; action?: string; scope: string } | null>,
+) {
+  const settings = settingsCtl;
+  const plugins = pluginsCtl;
+  return {
     harness,
     engine,
     folder: base,
@@ -689,12 +714,14 @@ const runtime = memoise<HarnessRuntime>(async () => {
     dataServerEntry: path.join(here, "data-server.js"),
     // The person's store (one write queue per base), for the folder this runtime runs in.
     // A dotted collection name is a running plugin's (read only); absent without plugins (D0).
-    data: (request) =>
-      agentDataRequest({ store: async () => dataStoreFor(base), runningTask: () => tasks.runningTask(), ...(plugins ? { plugin: (r: unknown) => plugins.agentData(r) } : {}) }, request),
+    data: (request: unknown, slot?: SlotRef) =>
+      agentDataRequest({ store: async () => dataStoreFor(base), runningTask: () => runningTask(slot), ...(plugins ? { plugin: (r: unknown) => plugins.agentData(r) } : {}) }, request),
     ...(extra ? { extraData: { catalogue: extra } } : {}),
     // The person's material in this folder, for the running task's scope (material spec §9): the base this runtime was
     // built for, so a request never reaches another profile's material. Absent without material (D0).
-    ...(harness.material ? { material: { request: (request: unknown) => materialRequest(base, request), entry: path.join(here, "material-server.js") } } : {}),
+    ...(harness.material
+      ? { material: { request: (request: unknown, slot?: SlotRef) => materialRequest(base, request, () => runningTask(slot)), entry: path.join(here, "material-server.js") } }
+      : {}),
     command: cmd.command,
     env: cmd.env,
     references: (await workReferences(c, base, true)).map((r) => ({ label: r.label, path: r.path })),
@@ -703,9 +730,17 @@ const runtime = memoise<HarnessRuntime>(async () => {
     ...(settings || plugins
       ? { instructionSettings: async () => [...(settings ? await settings.sentences() : []), ...(plugins ? await plugins.sentences() : [])] }
       : {}),
-    onSession: (s) => void tasks.sessionStarted(s).catch((err: unknown) => console.error("Could not record the session", err)),
-    onModels: (offer) =>
+    onModels: (offer: Parameters<NonNullable<RuntimeOptions["onModels"]>>[0]) =>
       void shared.update(engine.id, { models: offer.models, efforts: offer.efforts }).catch((err: unknown) => console.error("Could not save the engine's models", err)),
+  };
+}
+
+const runtime = memoise<HarnessRuntime>(async () => {
+  const p = await prepareEngine();
+  if (!p) return null;
+  const rt = await createRuntime({
+    ...(await runtimeOptions(p, () => tasks.runningTask())),
+    onSession: (s) => void plainTasks.sessionStarted(s).catch((err: unknown) => console.error("Could not record the session", err)),
   });
   // A new runtime: the material queue, stopped by closeRuntime, goes on (in this base). Without material, nothing.
   kickMaterial();
@@ -719,6 +754,12 @@ const runtime = memoise<HarnessRuntime>(async () => {
 async function closeRuntime() {
   await materialJobs?.stop();
   await materialSvc?.stop();
+  // Board mode: the shared workspace (every lane's slot) closes; the open tasks stay, as today's task does.
+  if (host) {
+    await host.closeWorkspace();
+    settingsCtl?.forget();
+    return;
+  }
   const rt = await runtime.peek()?.catch(() => null);
   runtime.clear();
   await rt?.close();
@@ -729,6 +770,11 @@ async function closeRuntime() {
 
 /** Ends the open task, then closes the running runtime (e.g. the engine changed); the next turn starts a new one. */
 async function dropRuntime() {
+  // Board mode: every lane ends, the queues empty, the workspace closes; a new engine brings its caps (spec §10).
+  if (host) {
+    await host.dropAll();
+    return closeRuntime();
+  }
   await tasks.interrupt().catch((err: unknown) => console.error("Could not end the task", err));
   await closeRuntime();
 }
@@ -750,8 +796,11 @@ async function currentHistory(): Promise<History | null> {
 }
 
 async function openHistory(): Promise<History | null> {
-  const rt = await runtime.peek()?.catch(() => null);
+  const rt = host ? null : await runtime.peek()?.catch(() => null);
   if (rt) return rt.history;
+  // Board mode: the shared workspace's history while it is open.
+  const open = await host?.history();
+  if (open) return open;
   const c = await validConfig();
   if (!c) return null;
   const extra = getEngine(c.engineId).instructionsFile?.path;
@@ -770,22 +819,31 @@ const emit = (event: Event) => sendToWindow("hh:event", event);
 // Mock mode: the test engine has no provider to disclose and nothing leaves the computer, so its notice counts as accepted.
 const hasNotice = async (engineId: string) => isMockEngine(hooks, engineId) || hasAcceptedNotice(shared, engineId);
 
-const turns = new TurnController({
+/** Throws why a turn can't start now: an engine change or update, or the engine's notice not accepted. */
+async function checkTurn(): Promise<void> {
+  const blocked = guards.turnBlocked();
+  if (blocked) throw new Error(blocked);
+  // Checked on every turn: the notice may have been reset (Start over) while a runtime runs.
+  await requireNoticeForTurn((await config.load()).engineId, hasNotice);
+}
+
+/** The chat a turn writes: the scope's (`chat`), or in board mode task `task`'s own. Null before the app is set up. */
+async function turnChatLog(chat: string | undefined, task?: string) {
+  const c = await config.load();
+  if (!isConfigured(c)) return null;
+  // An invalid saved config still runs the turn, so the runtime start fails with the reason; nothing is written into
+  // a folder that didn't pass validation, nor into the root of a profiles app.
+  const base = baseFor(c, profilesOn());
+  return (await configProblem(c, validation())) === null && base !== null ? new ChatLog(base, c.engineId, chat, task) : { append: async () => {} };
+}
+
+/** The TurnController's deps; board mode's lanes reuse them with their own slot, chat and window routing. */
+const turnDeps: TurnDeps = {
   ensureRuntime: async () => {
-    const blocked = guards.turnBlocked();
-    if (blocked) throw new Error(blocked);
-    // Checked on every turn: the notice may have been reset (Start over) while a runtime runs.
-    await requireNoticeForTurn((await config.load()).engineId, hasNotice);
+    await checkTurn();
     return runtime.get();
   },
-  chatLog: async (chat) => {
-    const c = await config.load();
-    if (!isConfigured(c)) return null;
-    // An invalid saved config still runs the turn, so the runtime start fails with the reason; nothing is written into
-    // a folder that didn't pass validation, nor into the root of a profiles app.
-    const base = baseFor(c, profilesOn());
-    return (await configProblem(c, validation())) === null && base !== null ? new ChatLog(base, c.engineId, chat) : { append: async () => {} };
-  },
+  chatLog: (chat) => turnChatLog(chat),
   stateBlocks,
   inputBlocks: () => new Set(Object.keys(inputBlocks(harness.blocks))),
   emit,
@@ -798,7 +856,10 @@ const turns = new TurnController({
   sessionExpired: async (engineId) => {
     await shared.update(engineId, { verifiedAt: null });
   },
-});
+};
+const turns = new TurnController(turnDeps);
+/** Every turn ended and its chat writes settled: today's one, or in board mode each lane's. */
+const flushTurns = (): Promise<void> => (host ? host.flush() : turns.flush());
 
 /** A phase's brief text: its `brief` is a file inside the harness folder (the task's phase turn and Sidekick read it). */
 const readPhaseBrief = (action: string, phase: string): Promise<string> => {
@@ -806,7 +867,8 @@ const readPhaseBrief = (action: string, phase: string): Promise<string> => {
   if (!p?.brief) return Promise.reject(new Error("Unknown phase"));
   return fs.readFile(resolveInHarness(harness, p.brief), "utf8");
 };
-const tasks = new TaskManager({
+/** The TaskManager's deps; board mode's lanes reuse them (getters kept), each with its own store, turns and routing. */
+const taskDeps: TaskDeps = {
   store: {
     load: async () => {
       const c = await validConfig();
@@ -890,7 +952,8 @@ const tasks = new TaskManager({
       await sidekick?.betweenTasks();
       // Plugin settings reach AGENTS.md; plugin collections coming or going need a runtime with (or without) them.
       await plugins?.betweenTasks();
-      if (plugins?.takeRuntimeStale()) await closeRuntime();
+      // Board mode closes the workspace only once no task is open (Decision 13).
+      if (plugins?.takeRuntimeStale()) await (host ? host.runtimeStale() : closeRuntime());
     };
   },
   // Sidekick's after-reply moment (sidekick spec §4.2). Getters: undefined until the controller exists (D0).
@@ -982,7 +1045,41 @@ const tasks = new TaskManager({
       }),
     );
   },
-});
+};
+const plainTasks = new TaskManager(taskDeps);
+
+/** What the window, the controllers and the guards ask of the open task(s): a TaskManager, or board mode's TaskBoard. */
+type TaskApi = Pick<
+  TaskManager,
+  | "currentScope"
+  | "switchScope"
+  | "interrupt"
+  | "view"
+  | "start"
+  | "ask"
+  | "chatScope"
+  | "runningTask"
+  | "trailerNow"
+  | "whenNoTask"
+  | "openPhase"
+  | "choose"
+  | "respond"
+  | "chooseMode"
+  | "setPhase"
+  | "finish"
+  | "pauseTimeBox"
+  | "resumeTimeBox"
+  | "extendTimeBox"
+  | "cancel"
+  | "resumeFromNotes"
+  | "isBusy"
+  | "idle"
+  | "startPrepared"
+>;
+/** Today's single TaskManager; in board mode, the board (set once the host is built). */
+let tasks: TaskApi = plainTasks;
+/** A task an earlier run, a profile or a folder left open ends; board mode first moves the chats to per-task files. */
+const interruptTasks = (): Promise<void> => (host ? host.interrupt() : tasks.interrupt());
 
 /** The person's material (material spec); null without `material` (D0). Built once the harness is loaded. */
 let materialSvc: MaterialService | null = null;
@@ -999,9 +1096,12 @@ function kickMaterial(): void {
   materialJobs?.kick();
 }
 
-/** The agent's material tools in `base` (the runtime's), in the running task's scope (material spec §9 Fetch). */
-const materialRequest = (base: string, request: unknown) =>
-  personMaterialRequest({ base: async () => base, runningTask: () => tasks.runningTask(), store: materialStore, flagged: kickMaterial }, request);
+/**
+ * The agent's material tools in `base` (the runtime's), in the running task's scope (material spec §9 Fetch); board
+ * mode passes the asking slot's task.
+ */
+const materialRequest = (base: string, request: unknown, runningTask: () => Promise<{ id: string; scope: string } | null> = () => tasks.runningTask()) =>
+  personMaterialRequest({ base: async () => base, runningTask, store: materialStore, flagged: kickMaterial }, request);
 
 /** What one AI stage's session needs from the app (material spec §10; `runMaterialStage`). */
 const materialStageDeps: MaterialStageDeps = {
@@ -1108,7 +1208,7 @@ async function saveConfigPatch(patch: AppConfig, before: AppConfig): Promise<voi
         isBusy: hold.engineBusy,
         idle: async () => {
           await tasks.idle();
-          await turns.flush();
+          await flushTurns();
         },
         save: () => config.save(patch).then(() => undefined),
         dropRuntime,
@@ -1132,6 +1232,65 @@ async function saveConfigPatch(patch: AppConfig, before: AppConfig): Promise<voi
   } else {
     await config.save(patch);
   }
+}
+
+/** A task id from the window: a string of 1..200 characters (the board then looks it up among its lanes, P1). */
+function validTaskId(v: unknown): string {
+  if (typeof v !== "string" || v.length === 0 || v.length > 200) throw new Error("Invalid task");
+  return v;
+}
+
+/** Why "Undo this task" was refused in board mode, for the window. */
+function undoRefusal(r: Exclude<Awaited<ReturnType<typeof restoreTaskByPaths>>, { ok: true }>): string {
+  switch (r.reason) {
+    case "running":
+      return `Another task is changing ${r.path}: undo this one once it waits`;
+    case "uncommitted":
+      return `${r.path} has changes not saved in the history yet`;
+    case "later":
+      return r.tasks.length > 0 ? `A later task also changed ${r.path}` : `${r.path} was changed after this task`;
+    case "too-far":
+      return "This task is too far back to undo by its files";
+    case "nothing":
+      return "Nothing to go back to";
+  }
+}
+
+/**
+ * Board mode's host (parallel spec §6) over the app's own wiring: the plain runtime's checks and options for its
+ * workspace, today's turn and task deps for its lanes.
+ */
+function buildBoardHost(c: AppConfig): BoardHost {
+  return createBoardHost(
+    {
+      suggested: harness.parallel ?? { tasks: 1, jobs: 1 },
+      config: () => config.load(),
+      base: currentBase,
+      taskStoreOptions,
+      openWorkspace: async (runningTask) => {
+        const p = await prepareEngine();
+        if (!p) return null;
+        const ws = await createWorkspace(await runtimeOptions(p, (slot) => (slot ? runningTask(slot) : Promise.resolve(null))));
+        // A new workspace: the material queue goes on (in this base), as with a new runtime.
+        kickMaterial();
+        return ws;
+      },
+      turnDeps,
+      checkTurn: async () => {
+        await checkTurn();
+        // A lane let in while an undo runs waits for it: it never edits a file being put back.
+        while (restores.turnBlocked()) await new Promise((r) => setTimeout(r, 50));
+      },
+      chatLog: (chat, task) => turnChatLog(chat, task),
+      taskDeps,
+      scoped,
+      scopeExists: activeScope,
+      emit,
+      send: sendToWindow,
+      label: (t) => (t.action && Object.hasOwn(harness.actions, t.action) ? harness.actions[t.action].label : (t.question ?? "").slice(0, 60)),
+    },
+    { engineId: c.engineId, parallel: c.parallel },
+  );
 }
 
 /** Registers an IPC handler that only answers the app's own page. */
@@ -1222,7 +1381,7 @@ function registerIpc() {
     // A new folder: refused while a turn or a restore runs, and turns are refused until it is over; the old
     // folder's task ends and its runtime goes.
     try {
-      await saveWithFolderChange(patch.folder, before.folder, { isBusy: hold.folderBusy, guards, interrupt: () => tasks.interrupt(), dropRuntime }, () =>
+      await saveWithFolderChange(patch.folder, before.folder, { isBusy: hold.folderBusy, guards, interrupt: interruptTasks, dropRuntime }, () =>
         saveConfigPatch(patch, before),
       );
       if (patch.folder !== undefined && patch.folder !== before.folder) {
@@ -1249,6 +1408,8 @@ function registerIpc() {
     // The engine change archives the chat; the check here only catches a change made while the app was closed.
     const switchedFrom =
       guards.takeSwitchedFrom() ?? (hold.engineBusy() || guards.turnBlocked() ? null : await archiveStaleChat(baseOf(c), c.engineId, dropRuntime));
+    // Board mode: the focused task's own chat, and its turn still running to replay (read last).
+    if (host) return { ...(switchedFrom ? { switchedFrom } : {}), ...(await host.loadChat(baseOf(c))) };
     return { entries: await new ChatLog(baseOf(c), undefined, await tasks.chatScope()).load(), ...(switchedFrom ? { switchedFrom } : {}) };
   });
   handle("hh:send", (message: string, options?: SendOptions) => {
@@ -1336,7 +1497,8 @@ function registerIpc() {
   if (pluginsCtl) {
     registerPluginsIpc(handle, pluginsCtl, {
       startPrepared: (p) => tasks.startPrepared(p),
-      startBlocked: () => (quitting ? "The app is closing" : (turnBlocked() ?? (tasks.isBusy() ? "A turn is already running" : null))),
+      // Board mode: a prepared task starts in a lane of its own, whatever another lane runs.
+      startBlocked: () => (quitting ? "The app is closing" : (turnBlocked() ?? (!host && tasks.isBusy() ? "A turn is already running" : null))),
       ...(harness.scopes ? { scopes: { label: harness.scopes.label, open: async () => (await tasks.currentScope()) !== null } } : {}),
     });
   }
@@ -1465,8 +1627,31 @@ function registerIpc() {
     const history = await currentHistory();
     return history ? historyView(await history.tasks()) : [];
   });
-  handle("hh:restoreTask", (taskId: unknown) =>
-    restoreWith(async (history) => {
+  handle("hh:restoreTask", (taskId: unknown, includeShared?: unknown) => {
+    // Board mode (Decision 12): only the task's own paths (its shared ones after the person's confirm), refused while
+    // its own lane runs, or a running turn touched one of them (P2). Other lanes go on meanwhile.
+    const board = host;
+    if (board) {
+      const id = validTaskId(taskId);
+      if (includeShared !== undefined && typeof includeShared !== "boolean") throw new Error("Invalid choice");
+      let result: Awaited<ReturnType<typeof restoreTaskByPaths>> | null = null;
+      return restores
+        .run(
+          currentHistory,
+          async (history: History) => {
+            result = await restoreTaskByPaths(history, id, { running: await board.runningPaths(), includeShared: includeShared === true });
+          },
+          { busy: () => board.lane(id)?.manager.isBusy() ?? false },
+        )
+        .then(() => {
+          const r = result!;
+          if (!r.ok) throw new Error(undoRefusal(r));
+          void settingsCtl?.changed();
+          void sidekickCtl?.refresh().catch((err: unknown) => console.error("Could not refresh Sidekick", err));
+          return r;
+        });
+    }
+    return restoreWith(async (history) => {
       if (typeof taskId !== "string" || !taskId || taskId.length > 200) throw new Error("Invalid task");
       const group = (await history.tasks()).find((g) => g.taskId === taskId);
       if (!group?.start) throw new Error("Nothing to go back to");
@@ -1474,8 +1659,17 @@ function registerIpc() {
     }).then(() => {
       void settingsCtl?.changed();
       void sidekickCtl?.refresh().catch((err: unknown) => console.error("Could not refresh Sidekick", err));
-    }),
-  );
+    });
+  });
+  // Board mode's task inbox (parallel spec §9.1). Ids are looked up in the board's lanes (P1); plain mode refuses.
+  const requireBoard = (): BoardHost => {
+    if (!host) throw new Error("No parallel tasks");
+    return host;
+  };
+  handle("hh:tasksList", () => requireBoard().tasksState());
+  handle("hh:tasksFocus", (id: unknown) => requireBoard().board.focus(id === null ? null : validTaskId(id)));
+  handle("hh:tasksCancelQueued", (id: unknown) => requireBoard().gate.drop(validTaskId(id)));
+  handle("hh:tasksResume", () => requireBoard().gate.resume());
   handle("hh:engineStatus", async (engineId: string) => {
     const engine = engineFor(engineId);
     if (hooks.engines?.[engine.id]) return testEngineStatus(engine, await hasNotice(engine.id));
@@ -1644,9 +1838,10 @@ function registerIpc() {
       isBusy: hold.folderBusy,
       precheck: () => precheckMove(c.folder, to, deps),
       quitting: () => quitting,
-      checkpoint: () => tasks.checkpointBeforeMove(),
+      // Board mode: each open task's checkpoint, one at a time, then the queues pause until the move ends (Decision 15).
+      checkpoint: () => (host ? host.board.checkpointAllBeforeMove() : plainTasks.checkpointBeforeMove()),
       holdHistory: (held) => (historyHeld = held),
-      flush: () => turns.flush(),
+      flush: flushTurns,
       // The plugins work on the old folder too: stopped with the runtime, started again after (rebase, below).
       closeRuntime: async () => {
         await closeRuntime();
@@ -1663,6 +1858,8 @@ function registerIpc() {
       result = await run;
     } finally {
       moving = null;
+      // Done, refused or failed (guardedMove may return before its checkpoint): the queues go on.
+      host?.board.moveEnded();
       // Moved or not, the plugins start again in whichever folder is the app's now.
       if (pluginsStopped) await rebasePlugins();
     }
@@ -1767,6 +1964,8 @@ if (loaded) {
       whenNoTask: (fn) => tasks.whenNoTask(fn),
       // Only from betweenTasks or a whenNoTask callback (the task queue, which also creates runtimes); peek, never get.
       refresh: async () => {
+        // Board mode: a refusal (a lane runs a turn) throws, so the change stays stale for the next gap.
+        if (host) return host.refreshInstructions();
         const rt = await runtime.peek()?.catch(() => null);
         return rt ? rt.refreshInstructions() : false;
       },
@@ -1920,6 +2119,8 @@ if (loaded) {
       whenNoTask: (fn) => tasks.whenNoTask(fn),
       // As the settings' (harness-settings D4): only from betweenTasks or a whenNoTask callback; peek, never get.
       refreshInstructions: async () => {
+        const board = boardHost();
+        if (board) return board.refreshInstructions();
         const rt = await runtime.peek()?.catch(() => null);
         return rt ? rt.refreshInstructions() : false;
       },
@@ -2021,6 +2222,12 @@ if (primary) {
     });
     if (recovered?.leftBehind) console.error(`An interrupted folder move kept the old folder at ${recovered.leftBehind}`);
     shared = new SharedConfigStore(hooks.sharedDir ?? sharedConfigDir());
+    // A harness that declares `parallel` runs the board (D7); any other keeps today's single task.
+    if (hostMode(harness) === "board") {
+      const board = buildBoardHost(await config.load());
+      host = board;
+      tasks = board.board;
+    }
     // `humanharness dev --engine <id>`: a fresh app starts with that engine chosen (development builds only).
     const preselect = devEngine(process.env, app.isPackaged, offered().map((e) => e.id));
     if (preselect && !(await config.load()).engineId) await config.save({ engineId: preselect });
@@ -2037,7 +2244,7 @@ if (primary) {
     await recordSetup(setupCtl, async () => (await validConfig()) !== null);
     registerIpc();
     // A task left open by an earlier run can't continue: its session is gone.
-    void tasks.interrupt().catch((err: unknown) => console.error("Could not settle the last task", err));
+    void interruptTasks().catch((err: unknown) => console.error("Could not settle the last task", err));
     // After the interrupt (queued behind it): a scoped harness's earlier work moves into `main`.
     void settleScopes()
       .then(scopesChanged)
@@ -2064,8 +2271,12 @@ if (primary) {
     if (quitting) return;
     quitting = true;
     event.preventDefault();
-    tasks.close();
-    turns.close();
+    // Board mode: every lane's turn stops now and its slot closes (Decision 16); never an interrupt, which would reopen them.
+    const boardClosed = host?.closeAll().catch((err: unknown) => console.error("Could not close the open tasks", err));
+    if (!host) {
+      plainTasks.close();
+      turns.close();
+    }
     void sidekickCtl?.close();
     // The test prompt cleans up (its CLI, its temporary folder) before the app goes; bounded wait.
     const testStopped = Promise.race([guards.close(), new Promise<void>((r) => setTimeout(r, QUIT_TEST_WAIT_MS))]);
@@ -2078,12 +2289,13 @@ if (primary) {
       await pluginsCtl?.stop().catch((err: unknown) => pluginLog("Could not stop the plugins", err));
       await pluginHost?.stopAll().catch((err: unknown) => pluginLog("Could not close the plugin windows", err));
       try {
-        await dropRuntime();
+        await boardClosed;
+        await (host ? closeRuntime() : dropRuntime());
       } catch (err) {
         console.error("Could not close the agent cleanly", err);
       }
       // A cancelled or closed turn still writes its reply to the chat: wait for it.
-      await turns.flush();
+      await flushTurns();
     })().finally(() => app.quit());
   });
 }

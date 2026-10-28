@@ -622,6 +622,16 @@ export class FakeClient implements HarnessClient {
       };
     },
   };
+  context: HarnessClient["context"] = {
+    get: async () => ({ ok: false, reason: "not-ready" }),
+    onChange: () => () => {},
+    add: async () => ({ ok: false, reason: "not-ready" }),
+    pick: async () => ({ ok: false, reason: "not-ready" }),
+    pin: async () => ({ ok: false, reason: "not-ready" }),
+    unpin: async () => ({ ok: false, reason: "not-ready" }),
+    exclude: async () => ({ ok: false, reason: "not-ready" }),
+    include: async () => ({ ok: false, reason: "not-ready" }),
+  };
   async openPath(file: string) {
     this.opened.push(file);
     return this.openResult;

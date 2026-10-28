@@ -194,10 +194,114 @@ export interface PhaseView {
  */
 export interface TaskTurnNotice {
   task: string;
-  kind: "phase" | "wrap-up";
+  /** `context`: an "Add now" turn (context-panel spec §4.1), with the path it asks the agent to read. */
+  kind: "phase" | "wrap-up" | "context";
   phase?: string;
   by?: "agent" | "person" | "app";
   back?: true;
+  /** `kind: "context"` only: the folder-relative path. */
+  path?: string;
+}
+
+/** What one part of a task's first message is (context-panel spec §3.1). `scope-instructions` waits for the hatches spec. */
+export type ContextItemKind =
+  | "instructions"
+  | "scope-instructions"
+  | "brief"
+  | "notes-index"
+  | "app-notes-index"
+  | "data"
+  | "material"
+  | "pinned"
+  | "pinned-title";
+
+/** One part of what the app loaded into a task, with its approximate size. */
+export interface ContextItem {
+  /** `instructions`, `brief`, `brief:<n>`, `notes`, `app-notes`, `data:<collection>`, `material`, `pin:<scope>:<path>`. */
+  id: string;
+  kind: ContextItemKind;
+  /** English, for harness views and logs; the core's panel draws its own text from the other fields. */
+  label: string;
+  /** Relative to the folder, forward slashes, when the item is a file. */
+  path?: string;
+  /** Estimate: characters / 4, rounded to 100. */
+  tokens: number;
+  /** A brief that arrived after the start (a mode switch, a phase change). */
+  at?: string;
+  /** Notes in an index; rows of a collection. */
+  count?: number;
+  /** The notes an index lists, newest first (at most 50): what "Exclude" acts on. */
+  notes?: { path: string; title: string }[];
+  /** A pin's scope (`_app` for the whole app). */
+  scope?: string;
+  /** Before a compaction: the engine may have summarized it. */
+  compacted?: true;
+}
+
+/** A file, note or tool the agent used during the task (§3.2): one entry per path or tool. */
+export interface ContextRead {
+  kind: "read" | "tool";
+  /** The relative path, a file name (outside the folder) or "<server> · <tool>". */
+  label: string;
+  /** Relative to the folder; absent for tools and for files outside it. */
+  path?: string;
+  firstAt: string;
+  count: number;
+  compacted?: true;
+}
+
+/** A pinned file as the panel shows it (§4.2). */
+export interface PinView {
+  scope: string;
+  path: string;
+  at: string;
+  /** Enters whole, as title only (over the budget or over 1 MB), or is skipped. */
+  state: "full" | "title" | "missing" | "binary";
+  tokens: number;
+}
+
+/** An excluded note (§4.3). `title` when the note is still there. */
+export interface ExcludedView {
+  scope: string;
+  note: string;
+  at: string;
+  title?: string;
+}
+
+/** What the panel shows for the open task (§5.1). */
+export interface TaskContext {
+  task: string;
+  /** The task's scope: `main` without scopes. */
+  scope: string;
+  scoped: boolean;
+  start: ContextItem[];
+  /** The first turn's real input tokens, once it ended. */
+  startTokens?: number;
+  reads: ContextRead[];
+  compacted: boolean;
+  pins: PinView[];
+  excluded: ExcludedView[];
+  /** Tokens of pinned text a new task gets whole. */
+  budget: number;
+}
+
+export type ContextRefusal = "no-task" | "busy" | "outside" | "binary" | "missing" | "unknown-scope" | "not-a-note" | "full" | "not-ready" | "failed";
+export type ContextResult = { ok: true } | { ok: false; reason: ContextRefusal };
+export type ContextGetResult = { ok: true; context: TaskContext } | { ok: false; reason: ContextRefusal };
+export type ContextPick = { ok: true; path: string } | { ok: false; reason: "cancelled" | ContextRefusal };
+
+/** `client.context` (§5.2). Every answer is data. */
+export interface ContextClient {
+  get(taskId: string): Promise<ContextGetResult>;
+  onChange(taskId: string, listener: (context: TaskContext) => void): () => void;
+  /** §4.1: the open task reads `path` now. */
+  add(taskId: string, path: string): Promise<ContextResult>;
+  /** The system file dialog at the folder; the path comes back checked like a pin's. */
+  pick(): Promise<ContextPick>;
+  pin(scope: string, path: string): Promise<ContextResult>;
+  unpin(scope: string, path: string): Promise<ContextResult>;
+  exclude(scope: string, notePath: string): Promise<ContextResult>;
+  include(scope: string, notePath: string): Promise<ContextResult>;
 }
 
 /**
@@ -1013,6 +1117,8 @@ export interface HarnessClient {
   };
   /** The person's material (material spec §10). A harness without material answers null and "not-ready". */
   material: MaterialClient;
+  /** What the agent takes into account (context-panel spec §5.2). */
+  context: ContextClient;
   /** The text size changed from the keyboard (⌘+, ⌘−, ⌘0), already saved. */
   onTextSize(listener: (size: TextSize) => void): () => void;
 }

@@ -215,6 +215,17 @@ const client: HarnessClient = {
     cite: (scope, id) => ipcRenderer.invoke("hh:materialCite", scope, id),
     onChange: (listener) => subscribe<MaterialView>("hh:materialStatus", listener),
   },
+  // A stub until the hh:context* handlers exist (plan 17, Task 12).
+  context: {
+    get: async () => ({ ok: false, reason: "not-ready" }),
+    onChange: () => () => {},
+    add: async () => ({ ok: false, reason: "not-ready" }),
+    pick: async () => ({ ok: false, reason: "not-ready" }),
+    pin: async () => ({ ok: false, reason: "not-ready" }),
+    unpin: async () => ({ ok: false, reason: "not-ready" }),
+    exclude: async () => ({ ok: false, reason: "not-ready" }),
+    include: async () => ({ ok: false, reason: "not-ready" }),
+  },
   onTextSize: (listener) => subscribe<TextSize>("hh:textSize", listener),
 };
 

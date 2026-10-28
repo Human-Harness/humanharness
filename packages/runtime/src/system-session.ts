@@ -39,7 +39,16 @@ export interface SystemSessionResult {
 }
 
 const TURN_TIMEOUT_MS = 4 * 60_000;
+/** A given turn time is kept within these; anything not a positive number takes the default. */
+const TURN_TIMEOUT_MIN_MS = 100;
+const TURN_TIMEOUT_MAX_MS = 30 * 60_000;
 const MAX_TURNS = 60;
+
+/** The turn time to use: 0, a negative number or NaN must never stop a turn at once. */
+export function turnTimeout(ms: number | undefined): number {
+  if (ms === undefined || !Number.isFinite(ms) || ms <= 0) return TURN_TIMEOUT_MS;
+  return Math.min(TURN_TIMEOUT_MAX_MS, Math.max(TURN_TIMEOUT_MIN_MS, ms));
+}
 
 const crashed = (err: unknown): EngineError => ({ code: "agent-crashed", detail: err instanceof Error ? err.message : String(err) });
 
@@ -72,6 +81,8 @@ export async function runSystemSession(o: SystemSessionOptions): Promise<SystemS
       session: { id: randomUUID(), started: false },
       mcp: [o.server({ path: rpc.path, token: rpc.token })],
       permissions: { edit: "none", exec: false, web: false },
+      // Its only tool is the server's: nothing is read, not even the (empty) folder.
+      mcpOnly: true,
       ...acpFields(o.engine, "none"),
       // Turns resume the same session (Claude needs it on disk); the app never reads the engine's own store.
       persistSession: true,
@@ -111,7 +122,7 @@ async function oneTurn(transport: Transport, prompt: string, o: SystemSessionOpt
   const onAbort = () => controller.abort();
   if (o.signal?.aborted) controller.abort();
   o.signal?.addEventListener("abort", onAbort, { once: true });
-  const timer = setTimeout(() => controller.abort(), o.turnTimeoutMs ?? TURN_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), turnTimeout(o.turnTimeoutMs));
   const result: SystemTaskResult = { ok: false };
   try {
     await transport.turn(

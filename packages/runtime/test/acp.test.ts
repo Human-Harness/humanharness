@@ -131,6 +131,18 @@ describe("decidePermission", () => {
     expect(chosen(ask({ toolCallId: "unknown", kind: "execute" }, meta))).toBe("cancel");
   });
 
+  it("an MCP-only session reads nothing, not even inside its folder; others still read there (D0)", () => {
+    const only = (toolCall: Record<string, unknown>) =>
+      decidePermission({ sessionId: "s", toolCall: { toolCallId: "t", ...toolCall }, options } as never, { ...policy(), mcpOnly: true });
+    for (const kind of ["read", "search", "think"]) {
+      expect(chosen(only({ kind, locations: [{ path: "/work/a.md" }] }))).toBe("cancel");
+      expect(chosen(only({ kind }))).toBe("cancel");
+      expect(chosen(ask({ kind, locations: [{ path: "/work/a.md" }] }))).toBe("allow");
+    }
+    const meta = { _meta: { is_mcp_tool_approval: true } };
+    expect(chosen(decidePermission({ sessionId: "s", toolCall: { toolCallId: "ui-1", kind: "execute" }, options, ...meta } as never, { ...policy(), mcpOnly: true }))).toBe("allow");
+  });
+
   it("allows edits inside the folder only", () => {
     expect(chosen(ask({ kind: "edit", locations: [{ path: "/work/a.md" }] }))).toBe("allow");
     expect(chosen(ask({ kind: "edit", locations: [{ path: "/etc/passwd" }] }))).toBe("cancel");

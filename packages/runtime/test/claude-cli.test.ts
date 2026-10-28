@@ -443,6 +443,20 @@ describe("reference folders", () => {
     expect(allowedTools({ edit: "none", exec: false, web: false }, [])).toEqual(["Read", "Glob", "Grep", "TodoWrite"]);
     expect(disallowedTools({ edit: "none", exec: false, web: false }, ["/r"])).toContain("Write(//r/**)");
   });
+
+  it("an MCP-only session gets only its servers and denies the read tools; it is opt-in (D0)", () => {
+    const none = { edit: "none", exec: false, web: false } as const;
+    const server = { name: "translate", command: "node", args: [], env: {} };
+    expect(allowedTools(none, [server], true)).toEqual(["mcp__translate"]);
+    expect(disallowedTools(none, [], true)).toEqual(expect.arrayContaining(["Read", "Glob", "Grep", "TodoWrite"]));
+    const session = { id: "s", started: false };
+    const off = claudeArgs({ session, mcp: [server], permissions: none });
+    expect(off[off.indexOf("--allowedTools") + 1]).toBe("Read,Glob,Grep,TodoWrite,mcp__translate");
+    expect(off[off.indexOf("--disallowedTools") + 1]).toBe(disallowedTools(none).join(","));
+    const on = claudeArgs({ session, mcp: [server], permissions: none, mcpOnly: true });
+    expect(on[on.indexOf("--allowedTools") + 1]).toBe("mcp__translate");
+    expect(on[on.indexOf("--disallowedTools") + 1].split(",")).toEqual(expect.arrayContaining(["Read", "Glob", "Grep", "TodoWrite"]));
+  });
 });
 
 describe("activity extras (context-panel spec §3.2)", () => {

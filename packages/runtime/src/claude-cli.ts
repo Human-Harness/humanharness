@@ -17,8 +17,11 @@ const HIDDEN_TOOLS = new Set(["ToolSearch", "TodoWrite"]);
 const contextOf = (u: Record<string, unknown>): number =>
   (Number(u.input_tokens) || 0) + (Number(u.cache_read_input_tokens) || 0) + (Number(u.cache_creation_input_tokens) || 0);
 
-export function allowedTools(permissions: Permissions, mcp: McpServerSpec[]): string[] {
-  const tools = ["Read", "Glob", "Grep", "TodoWrite"];
+/** Claude's built-in reading tools; an MCP-only session gets none of them. */
+const READ_TOOLS = ["Read", "Glob", "Grep", "TodoWrite"];
+
+export function allowedTools(permissions: Permissions, mcp: McpServerSpec[], mcpOnly = false): string[] {
+  const tools = mcpOnly ? [] : [...READ_TOOLS];
   if (permissions.edit === "folder") tools.push("Edit(./**)", "Write(./**)", "MultiEdit(./**)");
   if (permissions.web) tools.push("WebSearch", "WebFetch");
   if (permissions.exec) tools.push("Bash");
@@ -27,8 +30,8 @@ export function allowedTools(permissions: Permissions, mcp: McpServerSpec[]): st
 }
 
 /** Deny rules beat allow rules, so project settings or hooks cannot re-enable what the manifest excludes. */
-export function disallowedTools(permissions: Permissions, references: string[] = []): string[] {
-  const tools = ["AskUserQuestion"];
+export function disallowedTools(permissions: Permissions, references: string[] = [], mcpOnly = false): string[] {
+  const tools = ["AskUserQuestion", ...(mcpOnly ? READ_TOOLS : [])];
   if (permissions.edit === "none") tools.push("Edit", "Write", "MultiEdit", "NotebookEdit");
   if (!permissions.exec) tools.push("Bash");
   if (!permissions.web) tools.push("WebSearch", "WebFetch");
@@ -72,7 +75,7 @@ export function profileArgs(profile: ModelProfile | undefined): string[] {
 
 /** Arguments for the unmodified official `claude` binary; the prompt goes in via stdin. Never touches credentials or auth settings. */
 export function claudeArgs(
-  o: Pick<TransportOptions, "session" | "mcp" | "permissions" | "persistSession" | "references"> & { profile?: ModelProfile },
+  o: Pick<TransportOptions, "session" | "mcp" | "permissions" | "persistSession" | "references" | "mcpOnly"> & { profile?: ModelProfile },
 ): string[] {
   if (o.session.id.startsWith("-")) throw new Error(`Refusing a session id that reads as a flag: ${JSON.stringify(o.session.id)}`);
   const mcpServers = Object.fromEntries(
@@ -85,8 +88,8 @@ export function claudeArgs(
     "--include-partial-messages",
     "--setting-sources", "project",
     "--permission-mode", o.permissions.edit === "folder" ? "acceptEdits" : "default",
-    "--allowedTools", allowedTools(o.permissions, o.mcp).join(","),
-    "--disallowedTools", disallowedTools(o.permissions, o.references ?? []).join(","),
+    "--allowedTools", allowedTools(o.permissions, o.mcp, o.mcpOnly).join(","),
+    "--disallowedTools", disallowedTools(o.permissions, o.references ?? [], o.mcpOnly).join(","),
     "--strict-mcp-config",
     "--mcp-config", JSON.stringify({ mcpServers }),
     ...(o.references ?? []).flatMap((dir) => ["--add-dir", dir]),

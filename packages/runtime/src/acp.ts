@@ -28,6 +28,8 @@ export interface PermissionPolicy {
   /** Reference folders: reads and searches there are allowed, never edits. */
   readRoots?: string[];
   permissions: Permissions;
+  /** No reading or searching at all, even inside the folder (see `TransportOptions.mcpOnly`). */
+  mcpOnly?: boolean;
   /** MCP servers the harness configured (always includes "ui"). */
   mcpServers: string[];
   /** Earlier tool_call info by id (Codex permission requests carry only the id). */
@@ -87,7 +89,7 @@ export function decidePermission(params: PermissionRequest, policy: PermissionPo
       case "read":
       case "search":
       case "think":
-        allow = (locations ?? []).every((l) => [policy.folder, ...(policy.readRoots ?? [])].some((root) => inside(root, l.path)));
+        allow = !policy.mcpOnly && (locations ?? []).every((l) => [policy.folder, ...(policy.readRoots ?? [])].some((root) => inside(root, l.path)));
         break;
       case "edit":
       case "delete":
@@ -347,6 +349,7 @@ export class AcpTransport implements Transport {
       folder: this.o.folder,
       permissions: this.o.permissions,
       readRoots: this.o.references ?? [],
+      ...(this.o.mcpOnly ? { mcpOnly: true } : {}),
       mcpServers: this.o.mcp.map((s) => s.name),
       lookup: (id) => this.calls.get(id),
     };

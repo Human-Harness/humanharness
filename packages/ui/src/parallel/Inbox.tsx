@@ -1,7 +1,8 @@
 import { type FocusEvent, type KeyboardEvent, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { AppState, HarnessClient, TaskSummary, TasksState } from "../client";
+import type { AppState, HarnessClient, JobSummary, TaskSummary, TasksState } from "../client";
 import { shownLanguage } from "../language";
+import { useJobs } from "./useJobs";
 
 const WORKING: TaskSummary["state"][] = ["running", "closing", "checkpoint"];
 
@@ -9,7 +10,8 @@ const WORKING: TaskSummary["state"][] = ["running", "closing", "checkpoint"];
  * The core inbox of open tasks (parallel spec §9.2): a top-bar button with the waiting count, opening four sections.
  * It reads only `client.tasks` (never the attention items' `read` flag, which the plugins inbox shares). A row asks
  * main to focus its task and closes the list; the chat follows main's tasks change, never the click ("New task" excepted:
- * the start view is no task, so `onStartView` tells the app once main took it).
+ * the start view is no task, so `onStartView` tells the app once main took it). Its Jobs section lists `client.jobs`
+ * (part 3): each job × scope's last result, "Run now" for manual jobs and "Start" for a needs-you result's action.
  */
 export function Inbox({
   client,
@@ -17,6 +19,7 @@ export function Inbox({
   tasks,
   onRefill,
   onStartView,
+  onStartAction,
 }: {
   client: HarnessClient;
   state: AppState;
@@ -25,6 +28,8 @@ export function Inbox({
   onRefill?: (text: string) => void;
   /** "New task" went through: main shows the start view, and the chat on screen must follow (it has no task change to see). */
   onStartView?: () => void;
+  /** "Start" on a needs-you job row: the action starts through the chat's own start path, in the row's scope. */
+  onStartAction?: (action: string, scope: string | null) => void;
 }) {
   const { t, i18n } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -42,7 +47,9 @@ export function Inbox({
   const waiting = all.filter((s) => s.state === "waiting").reverse();
   const working = all.filter((s) => WORKING.includes(s.state));
   const queued = all.filter((s) => s.state === "queued");
-  const count = waiting.length;
+  const jobs = useJobs(client, Boolean(state.jobs));
+  const needsYou = jobs.filter((j) => j.last?.status === "needs-you");
+  const count = waiting.length + needsYou.length;
 
   const hasScopes = Boolean(state.scopes);
   useEffect(() => {
@@ -60,7 +67,7 @@ export function Inbox({
   }, [client, open, hasScopes]);
 
   useLayoutEffect(() => {
-    if (open) (dialog.current?.querySelector<HTMLButtonElement>(".hh-tk-row") ?? dialog.current)?.focus();
+    if (open) (dialog.current?.querySelector<HTMLButtonElement>("button.hh-tk-row") ?? dialog.current)?.focus();
   }, [open]);
   useEffect(() => {
     if (!open) return;
@@ -150,6 +157,65 @@ export function Inbox({
       </li>
     );
   };
+  /** A time today alone; another day with its weekday. */
+  const when = (iso: string): string => {
+    const at = new Date(iso);
+    const time = at.toLocaleTimeString(language, { hour: "numeric", minute: "2-digit" });
+    return at.toDateString() === new Date().toDateString() ? time : `${at.toLocaleDateString(language, { weekday: "long" })} ${time}`;
+  };
+  const STATUS = { ok: "parallel.statusOk", "needs-you": "parallel.statusNeedsYou", failed: "parallel.statusFailed" } as const;
+  /** A needs-you result's action, when the harness declares it (the summary is the agent's; its action is checked here too). */
+  const startable = (j: JobSummary): string | null => {
+    const action = j.last?.status === "needs-you" ? j.last.action : undefined;
+    return action !== undefined && Object.hasOwn(state.actions, action) ? action : null;
+  };
+  const runNow = (j: JobSummary) => {
+    void client.jobs.run(j.id, ...(j.scope !== null ? [j.scope] : [])).catch(() => undefined);
+  };
+  const jobRow = (j: JobSummary, index: number) => {
+    const labelId = `${id}-job-${index}`;
+    const scope = j.scope !== null && hasScopes && Object.hasOwn(scopeTitles, j.scope) ? scopeTitles[j.scope] : null;
+    const action = startable(j);
+    return (
+      <li key={`${j.id}:${j.scope ?? "-"}`} className="hh-tk-item">
+        <div className="hh-tk-row">
+          <span id={labelId} className="hh-tk-label" dir="auto">
+            {j.label}
+          </span>
+          <span className="hh-tk-meta">
+            {scope && <span dir="auto">{scope}</span>}
+            {j.running ? <span>{t("parallel.jobRunning")}</span> : j.last && <span>{t(STATUS[j.last.status])}</span>}
+            {j.last && <span>{t("parallel.lastRun", { time: when(j.last.at) })}</span>}
+            {j.paused === "daily-cap" && <span>{t("parallel.pausedTomorrow")}</span>}
+            {j.paused === "off" && <span>{t("parallel.jobOff")}</span>}
+            {!j.paused && j.next && <span>{t("parallel.nextRun", { time: when(j.next) })}</span>}
+          </span>
+          {j.last && (
+            <span className="hh-tk-summary" dir="auto">
+              {j.last.summary}
+            </span>
+          )}
+        </div>
+        {action && (
+          <button
+            className="hh-tk-cancel"
+            aria-describedby={labelId}
+            onClick={() => {
+              onStartAction?.(action, j.scope);
+              close();
+            }}
+          >
+            {t("parallel.start")}
+          </button>
+        )}
+        {j.manual && !j.running && j.paused !== "off" && (
+          <button className="hh-tk-cancel" aria-describedby={labelId} onClick={() => runNow(j)}>
+            {t("parallel.runNow")}
+          </button>
+        )}
+      </li>
+    );
+  };
   const section = (key: string, title: string, list: TaskSummary[], empty: string) => (
     <section className="hh-tk-section" aria-labelledby={`${id}-${key}`}>
       <h3 id={`${id}-${key}`}>{title}</h3>
@@ -208,7 +274,10 @@ export function Inbox({
           {section("waiting", t("parallel.waitingTitle"), waiting, t("parallel.none"))}
           {section("working", t("parallel.workingTitle"), working, t("parallel.none"))}
           {section("queued", t("parallel.queuedTitle"), queued, t("parallel.none"))}
-          {section("jobs", t("parallel.jobsTitle"), [], t("parallel.noJobs"))}
+          <section className="hh-tk-section" aria-labelledby={`${id}-jobs`}>
+            <h3 id={`${id}-jobs`}>{t("parallel.jobsTitle")}</h3>
+            {jobs.length === 0 ? <p className="hh-tk-empty">{t("parallel.noJobs")}</p> : <ul className="hh-tk-list">{jobs.map(jobRow)}</ul>}
+          </section>
           <button className="hh-tk-new" onClick={() => void focus(null)}>
             {t("parallel.newTask")}
           </button>

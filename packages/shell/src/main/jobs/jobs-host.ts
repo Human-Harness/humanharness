@@ -2,13 +2,13 @@ import { randomUUID } from "node:crypto";
 import type { HarnessJob } from "@humanharness/harness-sdk";
 import { type Event, type HarnessRuntime, type HarnessWorkspace, type Session, type SessionSlot, runtimeOnSlot } from "@humanharness/runtime";
 import type { AppConfig } from "@humanharness/ui/client";
-import { APP_SCOPE, MAIN_SCOPE } from "@humanharness/workspace";
+import { APP_SCOPE, ATTENTION_LIMITS, type AttentionStore, MAIN_SCOPE } from "@humanharness/workspace";
 import { type Turns, gatedTurns } from "../gated-turns";
 import { effectiveCaps, engineHold } from "../parallel-config";
 import type { TaskDeps } from "../task-manager";
 import { type BeforeStart, TurnGate } from "../turn-gate";
 import { UsageLog, type UsageRecord, jobRecord } from "../usage-log";
-import { JobLog, type JobRunRecord, type JobTrigger } from "./job-log";
+import { JobLog, type JobRunRecord, type JobTrigger, dedupeKey } from "./job-log";
 import { jobMessageFor, runJob } from "./job-runner";
 import { JobScheduler, type SchedulerTimer } from "./job-scheduler";
 
@@ -16,6 +16,27 @@ type Usage = Extract<Event, { type: "usage" }>;
 
 /** A job run's slot key (`job:<run>`): a data or material request on it is the run's, never the open task's. */
 export const isJobSlot = (key: string): boolean => key.startsWith("job:");
+
+/** A job result's item key: one per job and scope, the last run's (parallel part 3 Task 8). */
+export const JOB_RESULT_KEY = "result";
+
+/**
+ * Which job origins the shared Attention store shows: `<job>:<scope>` of a declared job (`-`: an app-wide run). The
+ * agent can write attention.json; an origin it made up for an undeclared job never shows.
+ */
+export function jobOriginKnown(jobs: Record<string, HarnessJob>): (id: string) => boolean {
+  return (id) => {
+    const at = id.indexOf(":");
+    return at > 0 && at < id.length - 1 && Object.hasOwn(jobs, id.slice(0, at));
+  };
+}
+
+/** A needs-you summary as an item's title: cut by code points to the inbox's limit, the whole one in the body when cut. */
+function resultText(summary: string, label: string): { title: string; body?: string } {
+  const points = [...summary];
+  const title = points.slice(0, ATTENTION_LIMITS.titleChars).join("").trim() || label.slice(0, ATTENTION_LIMITS.titleChars).trim() || "Job";
+  return points.length > ATTENTION_LIMITS.titleChars ? { title, body: summary.slice(0, ATTENTION_LIMITS.bodyChars) } : { title };
+}
 
 /**
  * The base's one shared log of runs (Task 3), reading jobs.jsonl once until the next append: the daily cap and the
@@ -73,6 +94,13 @@ export interface JobsHostDeps {
   usage?(base: string, record: UsageRecord): Promise<void>;
   /** A run was queued or ended (the Jobs section, Task 9). */
   changed?(): void;
+  /**
+   * Base `base`'s shared Attention store (attention-stores.ts): a needs-you result raises an item there, the next run of
+   * that job and scope resolves it. Absent or null: no item.
+   */
+  attention?(base: string): Promise<Pick<AttentionStore, "raise" | "resolve"> | null>;
+  /** A run ended and its item was settled: the Dock badge counts `needsYou()` again. */
+  needsYouChanged?(): void;
   report?(message: string): void;
   timer?: SchedulerTimer;
   now?: () => Date;
@@ -112,6 +140,35 @@ export function createJobsHost(d: JobsHostDeps) {
       actions: d.actions,
     })(id, scope);
 
+  /**
+   * A run's item follows its last result: needs-you raises (or updates) `{ kind: "job", id: <job>:<scope> }`, an action
+   * leading to the declared action it names; any other result resolves it. Never throws: the run is logged either way.
+   */
+  const settle = async (base: string, r: JobRunRecord): Promise<void> => {
+    const origin = { kind: "job" as const, id: dedupeKey(r.job, r.scope) };
+    try {
+      const store = (await d.attention?.(base)) ?? null;
+      if (store && r.status === "needs-you") {
+        const label = Object.hasOwn(d.jobs, r.job) ? d.jobs[r.job].label : r.job;
+        // J3 again here: the action is the runner's checked one, and still only a declared action becomes a target.
+        const action = r.action !== undefined && Object.hasOwn(d.actions, r.action) ? r.action : undefined;
+        await store.raise(origin, {
+          key: JOB_RESULT_KEY,
+          severity: "action",
+          ...resultText(r.summary, label),
+          ...(action ? { target: { action, vars: r.scope ? { scope: r.scope } : {} } } : {}),
+        });
+      } else if (store) await store.resolve(origin, JOB_RESULT_KEY);
+    } catch (err) {
+      (d.report ?? console.log)(`Job ${r.job}: could not update the Attention inbox: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    try {
+      d.needsYouChanged?.();
+    } catch (err) {
+      (d.report ?? console.log)(`Job ${r.job}: could not update the badge: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
   // Async: a throw is a rejected run, so the scheduler's dedupe key is always freed.
   const run = async (id: string, job: HarnessJob, scope: string | null, trigger: JobTrigger, signal: AbortSignal): Promise<JobRunRecord | null> => {
     // The base when the run is taken: its log and usage lines stay there even if the folder or profile changes meanwhile.
@@ -124,7 +181,7 @@ export function createJobsHost(d: JobsHostDeps) {
     const key = `job:${runId}`;
     runs.set(key, { id: runId, scope: scope ?? (d.scoped() ? APP_SCOPE : MAIN_SCOPE) });
     try {
-      return await runJob(
+      const record = await runJob(
         {
           workspace: () => d.workspace(),
           gate: d.gate,
@@ -146,6 +203,8 @@ export function createJobsHost(d: JobsHostDeps) {
         trigger,
         signal,
       );
+      if (record) await settle(base, record);
+      return record;
     } finally {
       runs.delete(key);
     }
@@ -187,6 +246,12 @@ export function createJobsHost(d: JobsHostDeps) {
     running: (): boolean => runs.size > 0,
     /** The base's shared log (the Jobs section, Task 9). */
     log: logFor,
+    /** The declared jobs' scopes whose last run needs the person, in the current base (the Dock badge); 0 before setup. */
+    needsYou: async (): Promise<number> => {
+      const base = await d.base();
+      if (!base) return 0;
+      return [...(await logFor(base).lastRuns()).values()].filter((r) => r.status === "needs-you" && Object.hasOwn(d.jobs, r.job)).length;
+    },
   };
 }
 

@@ -115,8 +115,11 @@ export function ChatView({
   scopeBar?: (disabled: boolean) => ReactNode;
   /** Harnesses with profiles: the switcher in the top bar, disabled while a turn runs. */
   profileBar?: (disabled: boolean) => ReactNode;
-  /** A harness with `parallel` and its inbox (spec §9.2): the inbox button; `refill` puts text back in the box. */
-  inboxBar?: (refill: (text: string) => void) => ReactNode;
+  /**
+   * A harness with `parallel` and its inbox (spec §9.2): the inbox button; `refill` puts text back in the box; `start`
+   * starts a declared action as the start view does (a needs-you job's "Start", part 3).
+   */
+  inboxBar?: (refill: (text: string) => void, start: (action: string, scope: string | null) => void) => ReactNode;
   /** Board mode: the bar naming the task on screen, over the chat (parallel spec §9.1). */
   taskStrip?: ReactNode;
   /**
@@ -833,6 +836,10 @@ export function ChatView({
   };
 
   const startTopic = (id: string) => void send(labelOf(id), { action: id });
+  /** A needs-you job's action (part 3): only a declared one, in the job's scope when it has one. */
+  const startFromInbox = (id: string, scope: string | null) => {
+    if (Object.hasOwn(state.actions, id)) void send(labelOf(id), { action: id, ...(scope !== null ? { scope } : {}) });
+  };
   const resume = (note: NoteView) => {
     setNotesPanel(null);
     if (note.action && state.actions[note.action]) startTopic(note.action);
@@ -1130,7 +1137,7 @@ export function ChatView({
               }}
             />
           )}
-          {inboxBar?.(refillDraft)}
+          {inboxBar?.(refillDraft, startFromInbox)}
           {attention?.show && <AttentionInbox client={client} view={attention} onOpenPanel={openPanel} />}
           <button
             onClick={() => {

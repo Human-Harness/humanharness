@@ -11,9 +11,12 @@ import { checkFolders, LinkRefused, readNoLinks, TooLarge, writeNoLinks } from "
 // store trusts its callers, not the file.
 
 export type AttentionSeverity = "info" | "warn" | "action";
-/** Who raised an item: a plugin now; a task once parallel tasks exist (C7 "waiting for you", plugins spec §6). */
+/**
+ * Who raised an item: a plugin; a task that waits for the person (C7 "waiting for you", plugins spec §6); a job whose
+ * last run needs the person (parallel part 3, `<job>:<scope>`).
+ */
 export interface AttentionOrigin {
-  kind: "plugin" | "task";
+  kind: "plugin" | "task" | "job";
   id: string;
 }
 export type AttentionTarget = { panel: string; focus?: string } | { action: string; vars?: Record<string, unknown> };
@@ -106,7 +109,7 @@ function cleanTarget(v: unknown): AttentionTarget | null {
 function cleanItem(v: unknown): { item: AttentionItem; tag: unknown } | null {
   if (!isObject(v) || !isObject(v.origin)) return null;
   const { origin } = v;
-  if ((origin.kind !== "plugin" && origin.kind !== "task") || !text(origin.id, ATTENTION_LIMITS.idChars)) return null;
+  if ((origin.kind !== "plugin" && origin.kind !== "task" && origin.kind !== "job") || !text(origin.id, ATTENTION_LIMITS.idChars)) return null;
   if (!text(v.key, ATTENTION_LIMITS.keyChars) || !isSeverity(v.severity) || !text(v.title, ATTENTION_LIMITS.titleChars)) return null;
   if (typeof v.at !== "string" || Number.isNaN(Date.parse(v.at)) || typeof v.read !== "boolean") return null;
   const item: AttentionItem = { origin: { kind: origin.kind, id: origin.id }, key: v.key, severity: v.severity, title: v.title, at: v.at, read: v.read };

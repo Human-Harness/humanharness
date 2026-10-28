@@ -258,7 +258,9 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
               state.profiles ? (disabled) => <ProfileSwitcher client={client} state={state} onSwitched={switched} onAdd={addProfile} disabled={disabled} /> : undefined
             }
             inboxBar={
-              state.parallel?.inbox ? (refill) => <Inbox client={client} state={state} tasks={tasksState} onRefill={refill} onStartView={toStart} /> : undefined
+              state.parallel?.inbox
+                ? (refill, start) => <Inbox client={client} state={state} tasks={tasksState} onRefill={refill} onStartView={toStart} onStartAction={start} />
+                : undefined
             }
             {...(state.parallel ? { taskStrip: <TaskStrip state={state} tasks={tasksState} onNewTask={newTask} />, draftKeep } : {})}
             scopeBar={state.scopes ? (disabled) => <ScopePicker client={client} state={state} open={openScope} disabled={disabled} /> : undefined}

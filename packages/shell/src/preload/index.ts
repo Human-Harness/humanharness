@@ -4,6 +4,7 @@ import type {
   DataChangeView,
   Event,
   HarnessClient,
+  JobSummary,
   MaterialView,
   ModeResult,
   ModeSwitch,
@@ -177,6 +178,12 @@ const client: HarnessClient = {
     focus: (id) => ipcRenderer.invoke("hh:tasksFocus", id),
     cancelQueued: (id) => ipcRenderer.invoke("hh:tasksCancelQueued", id),
     resumeQueues: () => ipcRenderer.invoke("hh:tasksResume"),
+  },
+  // Main's jobs channels (part 3); without jobs main refuses every call and never sends hh:jobsChange (D0).
+  jobs: {
+    list: () => ipcRenderer.invoke("hh:jobsList"),
+    run: (id, scope) => ipcRenderer.invoke("hh:jobsRun", id, scope),
+    onChange: (listener) => subscribe<JobSummary[]>("hh:jobsChange", listener),
   },
   setupSteps: {
     get: () => ipcRenderer.invoke("hh:setupStepsGet"),

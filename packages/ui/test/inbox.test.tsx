@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { HarnessApp } from "../src";
-import type { ParallelInfo, TaskSummary, TasksState } from "../src/client";
+import type { JobSummary, ParallelInfo, TaskSummary, TasksState } from "../src/client";
 import { FakeClient } from "./fake-client";
 
 afterEach(cleanup);
@@ -221,5 +221,106 @@ describe("Inbox (parallel spec §9.2)", () => {
     fireEvent.keyDown(screen.getByRole("dialog", { name: "Inbox" }), { key: "Escape" });
     expect(screen.queryByRole("dialog", { name: "Inbox" })).toBeNull();
     expect(document.activeElement).toBe(button);
+  });
+});
+
+describe("Inbox › Jobs (parallel part 3 Task 8)", () => {
+  const jobsInfo = { jobs: [{ id: "sync", label: "Sync inbox", manual: true }, { id: "digest", label: "Digest", every: "1h", dailyTokens: 50_000, manual: false }] };
+  const at = "2026-10-28T09:00:00Z";
+  const rows = (): JobSummary[] => [
+    { id: "sync", label: "Sync inbox", scope: null, last: { status: "needs-you", summary: "Two conflicts need you", at, action: "implement" }, manual: true, running: false },
+    { id: "digest", label: "Digest", scope: null, last: { status: "ok", summary: "Digest written", at }, next: "2026-10-28T10:00:00Z", paused: "daily-cap", manual: false, running: false },
+  ];
+  function jobsClient(list = rows()) {
+    const c = client(parallel(), { tasks: [summary("a", "waiting")], caps: { tasks: 2, jobs: 1 } });
+    c.state.jobs = jobsInfo;
+    c.state.actions = { intro: { label: "Intro", cost: "light" }, implement: { label: "Implement", cost: "light" } };
+    c.jobsList = list;
+    return c;
+  }
+  const jobsSection = () => screen.getByRole("heading", { name: "Jobs" }).closest("section")!;
+
+  it("D0: without state.jobs the section says No jobs and no jobs call is made", async () => {
+    const c = client(parallel(), { tasks: [], caps: { tasks: 2, jobs: 1 } });
+    const list = vi.spyOn(c.jobs, "list");
+    const sub = vi.spyOn(c.jobs, "onChange");
+    await open(c);
+    fireEvent.click(await inbox());
+    expect(within(jobsSection()).getByText("No jobs")).toBeTruthy();
+    expect(list).not.toHaveBeenCalled();
+    expect(sub).not.toHaveBeenCalled();
+  });
+
+  it("each job × scope shows its label, last status and summary; the button counts needs-you rows with the waiting tasks", async () => {
+    const c = jobsClient();
+    await open(c);
+    // One waiting task and one job that needs the person.
+    fireEvent.click(await screen.findByRole("button", { name: "Inbox, 2 waiting" }));
+    const section = jobsSection();
+    const items = within(section).getAllByRole("listitem");
+    expect(items).toHaveLength(2);
+    expect(items[0].textContent).toContain("Sync inbox");
+    expect(items[0].textContent).toContain("Needs you");
+    expect(items[0].textContent).toContain("Two conflicts need you");
+    expect(items[0].textContent).toContain("Last run");
+    expect(items[1].textContent).toContain("Digest");
+    expect(items[1].textContent).toContain("OK");
+    expect(items[1].textContent).toContain("Digest written");
+    expect(items[1].textContent).toContain("Paused until tomorrow");
+    // Paused by its daily cap: its armed timer runs nothing today, so no "Next run".
+    expect(items[1].textContent).not.toContain("Next run");
+    expect(within(section).queryByText("No jobs")).toBeNull();
+  });
+
+  it("Run now only on manual jobs, and it calls client.jobs.run(id, scope)", async () => {
+    const c = jobsClient([
+      { id: "sync", label: "Sync inbox", scope: "physics", manual: true, running: false },
+      { id: "digest", label: "Digest", scope: null, next: "2026-10-28T10:00:00Z", manual: false, running: false },
+    ]);
+    await open(c);
+    fireEvent.click(await inbox());
+    const section = jobsSection();
+    expect(within(section).getAllByRole("listitem")[1].textContent).toContain("Next run");
+    const runs = within(section).getAllByRole("button", { name: /Run now/ });
+    expect(runs).toHaveLength(1);
+    fireEvent.click(runs[0]);
+    await waitFor(() => expect(c.jobs.run).toHaveBeenCalledWith("sync", "physics"));
+  });
+
+  it("a running job offers no Run now", async () => {
+    const c = jobsClient([{ id: "sync", label: "Sync inbox", scope: null, manual: true, running: true }]);
+    await open(c);
+    fireEvent.click(await inbox());
+    expect(within(jobsSection()).queryByRole("button", { name: /Run now/ })).toBeNull();
+  });
+
+  it("Start on a needs-you row starts its action through the start path (client.send with the action) and closes the list", async () => {
+    const c = jobsClient([
+      { id: "sync", label: "Sync inbox", scope: "physics", last: { status: "needs-you", summary: "Look", at, action: "implement" }, manual: false, running: false },
+    ]);
+    await open(c);
+    fireEvent.click(await inbox());
+    fireEvent.click(within(jobsSection()).getByRole("button", { name: /Start/ }));
+    await waitFor(() => expect(c.sentOptions.at(-1)).toEqual({ action: "implement", scope: "physics" }));
+    expect(c.sent.at(-1)).toBe("Implement");
+    expect(screen.queryByRole("dialog", { name: "Inbox" })).toBeNull();
+  });
+
+  it("no Start for an action the harness doesn't declare, nor without a needs-you result", async () => {
+    const c = jobsClient([
+      { id: "sync", label: "Sync inbox", scope: null, last: { status: "needs-you", summary: "Look", at, action: "ghost" }, manual: false, running: false },
+      { id: "digest", label: "Digest", scope: null, last: { status: "ok", summary: "Fine", at, action: "implement" }, manual: false, running: false },
+    ]);
+    await open(c);
+    fireEvent.click(await inbox());
+    expect(within(jobsSection()).queryByRole("button", { name: /Start/ })).toBeNull();
+  });
+
+  it("a pushed change updates the rows and the count", async () => {
+    const c = jobsClient([]);
+    await open(c);
+    await screen.findByRole("button", { name: "Inbox, 1 waiting" });
+    act(() => c.jobs.set(rows()));
+    await screen.findByRole("button", { name: "Inbox, 2 waiting" });
   });
 });

@@ -235,9 +235,9 @@ describe("D0: plain mode never sets the Dock badge, raises a task item or shares
     expect(index).toMatch(/\n\s*attention: buildTaskAttention\(\),\n\s*\},\n\s*\{ engineId: c\.engineId, parallel: c\.parallel \},/);
   });
 
-  it("the shared stores exist only in board mode; plain mode's plugins build their own", () => {
+  it("the shared stores exist only in board (and, part 3, single) mode; plain mode's plugins build their own", () => {
     expect([...index.matchAll(/\bsharedAttention = /g)]).toHaveLength(1);
-    expect(index).toMatch(/if \(hostMode\(harness\) === "board"\) \{\n\s*const stores = attentionStores\(/);
+    expect(index).toMatch(/if \(hostMode\(harness\) !== "plain"\) \{\n\s*const stores = attentionStores\(/);
     expect(index).toMatch(/\.\.\.\(attentionShared\n\s*\? \{\n\s*attentionStoreFor:/);
   });
 });

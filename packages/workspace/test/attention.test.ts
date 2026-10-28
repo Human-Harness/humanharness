@@ -259,6 +259,17 @@ describe("AttentionStore (plugins spec §6)", () => {
     expect((await store(base).list()).map((i) => i.key)).toEqual(["c", "b", "a"]);
   });
 
+  it("a job's items (parallel part 3) are written, read back and resolved like any origin's", async () => {
+    const base = await tmp();
+    const job = { kind: "job" as const, id: "sync:main" };
+    await store(base).raise(job, { key: "result", severity: "action", title: "Two need you", target: { action: "implement", vars: { scope: "main" } } });
+    expect(await store(base).list()).toMatchObject([{ origin: job, key: "result", target: { action: "implement", vars: { scope: "main" } } }]);
+    // A rule per kind: a store that knows only plugins never shows it.
+    expect(await store(base, { known: (o) => o.kind === "plugin" }).list()).toEqual([]);
+    await store(base).resolve(job, "result");
+    expect(await store(base).list()).toEqual([]);
+  });
+
   it("markRead with a key but no origin is refused", async () => {
     const s = store(await tmp());
     await s.raise(oncall, { key: "k", severity: "action", title: "A" });

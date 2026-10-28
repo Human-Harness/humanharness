@@ -112,6 +112,33 @@ export interface TasksState {
   caps: ParallelCaps;
 }
 
+/** One job × scope (parallel spec §9.1 `JobSummary`). No chat content: its last result's one-line summary only. */
+export interface JobSummary {
+  id: string;
+  label: string;
+  /** null: an app-wide job. */
+  scope: string | null;
+  last?: { status: "ok" | "needs-you" | "failed"; summary: string; at: string; action?: string };
+  /** The next `every` run, when one is armed. */
+  next?: string;
+  paused?: "daily-cap" | "off";
+  manual: boolean;
+  running: boolean;
+}
+
+/** The harness declares jobs (spec §3). Absent: no Jobs tab, an empty Jobs section (D0). */
+export interface JobsInfo {
+  jobs: { id: string; label: string; every?: string; dailyTokens?: number; manual: boolean }[];
+}
+
+/** `client.jobs`: a harness's background jobs (spec §9.1). Only with `state.jobs`: otherwise main refuses every call (D0). */
+export interface JobsClient {
+  list(): Promise<JobSummary[]>;
+  /** "Run now": a declared manual job, in an existing scope (J4). False when it can't start (already queued, off). */
+  run(id: string, scope?: string): Promise<boolean>;
+  onChange(listener: (jobs: JobSummary[]) => void): () => void;
+}
+
 export interface EngineOption {
   id: string;
   name: string;
@@ -274,6 +301,8 @@ export interface AppState {
   plugins?: PluginsInfo;
   /** Parallel tasks (parallel spec). Absent: one task at a time, no task inbox (D7). */
   parallel?: ParallelInfo;
+  /** Background jobs (parallel spec §3, part 3). Absent: none (D0). */
+  jobs?: JobsInfo;
   /** Folders the agent can read but never change. */
   references?: ReferenceView[];
   /** Settings › Modelos. */
@@ -1140,6 +1169,8 @@ export interface HarnessClient {
   onTextSize(listener: (size: TextSize) => void): () => void;
   /** Open tasks (parallel spec §9.1). Only with `state.parallel`: in plain mode main refuses every call and sends no change (D0). */
   tasks: TasksClient;
+  /** Background jobs (parallel spec §9.1). Only with `state.jobs` (D0). */
+  jobs: JobsClient;
 }
 
 /** `client.tasks`: the open tasks of a harness that declares `parallel` (spec §9.1). */

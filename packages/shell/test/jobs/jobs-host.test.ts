@@ -13,6 +13,7 @@ import {
   cleanJobSettings,
   createJobsHost,
   isJobSlot,
+  jobOriginKnown,
   openSingleRuntime,
   singleBeforeStart,
   singleCaps,
@@ -20,6 +21,7 @@ import {
   singleTurns,
 } from "../../src/main/jobs/jobs-host";
 import type { UsageRecord } from "../../src/main/usage-log";
+import { attentionStores } from "../../src/main/attention-stores";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-jobs-host-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -237,6 +239,111 @@ describe("createJobsHost (part 3 Task 7)", () => {
     // A job turned off in settings is refused by every trigger.
     const t = host({ deps: { settings: (id) => (id === "sync" ? { off: true } : undefined) } });
     expect(await t.h.runManual("sync")).toBe(false);
+  });
+});
+
+describe("job results in the Attention inbox (part 3 Task 8)", () => {
+  /** A host whose base's shared store is real (attention-stores.ts, a test key), job origins known as index.ts registers them. */
+  function attended(jobs: Record<string, HarnessJob> = { sync: job({ scope: "trigger" }) }, store?: JobsHostDeps["attention"]) {
+    const stores = attentionStores({ tagKey: async () => Buffer.from("test key"), log: () => {} });
+    stores.registerKnown("job", jobOriginKnown(jobs));
+    let changes = 0;
+    const t = host({
+      jobs,
+      deps: { scoped: () => true, scopeExists: async () => true, attention: store ?? ((b) => stores.forBase(b, true)), needsYouChanged: () => void changes++ },
+    });
+    const items = async () => (await stores.forBase(t.base, false))?.list() ?? [];
+    return { ...t, stores, items, changes: () => changes };
+  }
+  /** Runs `sync` in `scope` once, its turn answering `data`. */
+  async function runOnce(t: ReturnType<typeof attended>, data: unknown, scope = "main") {
+    const before = t.fake.turns.length;
+    expect(await t.h.runManual("sync", scope)).toBe(true);
+    await until(() => t.fake.turns.length === before + 1);
+    t.fake.turns[before].end([result(data), { type: "done", ok: true }]);
+    await until(() => !t.h.running());
+  }
+
+  it("needs-you raises { kind: job, id: <job>:<scope> }, an action leading to the declared action; the next ok run resolves it", async () => {
+    const t = attended();
+    await runOnce(t, { status: "needs-you", summary: "Two conflicts need you", action: "implement" });
+    expect(await t.items()).toMatchObject([
+      {
+        origin: { kind: "job", id: "sync:main" },
+        key: "result",
+        severity: "action",
+        title: "Two conflicts need you",
+        target: { action: "implement", vars: { scope: "main" } },
+        read: false,
+      },
+    ]);
+    expect(await t.h.needsYou()).toBe(1);
+    expect(t.changes()).toBe(1);
+    // Another scope's run leaves it alone.
+    await runOnce(t, { status: "ok", summary: "Fine" }, "physics");
+    expect((await t.items()).map((i) => i.origin.id)).toEqual(["sync:main"]);
+    await runOnce(t, { status: "ok", summary: "Synced" });
+    expect(await t.items()).toEqual([]);
+    expect(await t.h.needsYou()).toBe(0);
+  });
+
+  it("a needs-you without an action has no target; a long summary is cut for the title and kept whole in the body", async () => {
+    const t = attended();
+    const long = `${"word ".repeat(40)}end`;
+    await runOnce(t, { status: "needs-you", summary: long });
+    const [item] = await t.items();
+    expect(item.target).toBeUndefined();
+    expect(item.title.length).toBeLessThanOrEqual(120);
+    expect(long.startsWith(item.title)).toBe(true);
+    expect(item.body).toBe(long);
+  });
+
+  it("an undeclared action never becomes a target (J3), even if the runner let one through", async () => {
+    const t = attended();
+    // `ghost` isn't an action: the runner drops it, and the host checks again before it leads anywhere.
+    await runOnce(t, { status: "needs-you", summary: "Look", action: "ghost" });
+    await runOnce(t, { status: "needs-you", summary: "Look again", action: "constructor" });
+    expect((await t.items())[0].target).toBeUndefined();
+  });
+
+  it("a store that fails is logged; the run is still recorded", async () => {
+    const t = attended(undefined, async () => ({
+      raise: async () => {
+        throw new Error("disk full");
+      },
+      resolve: async () => {},
+    }));
+    await runOnce(t, { status: "needs-you", summary: "Look" });
+    expect((await t.runs())[0]).toMatchObject({ status: "needs-you" });
+    expect(t.reports.some((r) => r.includes("Attention"))).toBe(true);
+  });
+
+  it("known: only `<declared job>:<scope>` origins show", () => {
+    const known = jobOriginKnown({ sync: job() });
+    expect(known("sync:main")).toBe(true);
+    expect(known("sync:-")).toBe(true);
+    expect(known("ghost:main")).toBe(false);
+    expect(known("sync")).toBe(false);
+    expect(known("sync:")).toBe(false);
+    expect(known("constructor:main")).toBe(false);
+    const t = attended();
+    expect(t.stores.known({ kind: "job", id: "sync:main" })).toBe(true);
+    expect(t.stores.known({ kind: "job", id: "toString:main" })).toBe(false);
+  });
+
+  it("needsYou counts the declared jobs' scopes whose last run needs the person", async () => {
+    const t = attended();
+    await runOnce(t, { status: "needs-you", summary: "A" });
+    await runOnce(t, { status: "needs-you", summary: "B" }, "physics");
+    expect(await t.h.needsYou()).toBe(2);
+    await runOnce(t, { status: "failed", summary: "x" }, "physics");
+    expect(await t.h.needsYou()).toBe(1);
+  });
+
+  it("an app-wide job's id is `<job>:-`, its target has no scope", async () => {
+    const t = attended({ sync: job() });
+    await runOnce(t, { status: "needs-you", summary: "Look", action: "implement" });
+    expect(await t.items()).toMatchObject([{ origin: { kind: "job", id: "sync:-" }, target: { action: "implement", vars: {} } }]);
   });
 });
 

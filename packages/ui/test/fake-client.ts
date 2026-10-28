@@ -70,6 +70,8 @@ import type {
   TaskTurnNotice,
   TasksClient,
   TasksState,
+  JobsClient,
+  JobSummary,
   TaskView,
   TestResult,
   TextSize,
@@ -88,6 +90,12 @@ export interface FakeTasks extends TasksClient {
   cancelQueued: Mock<TasksClient["cancelQueued"]>;
   resumeQueues: Mock<TasksClient["resumeQueues"]>;
   set(state: TasksState): void;
+}
+
+/** `client.jobs` with a spy on "Run now", and `set` to change what `list` answers and tell `onChange`. */
+export interface FakeJobs extends JobsClient {
+  run: Mock<JobsClient["run"]>;
+  set(jobs: JobSummary[]): void;
 }
 
 export class FakeClient implements HarnessClient {
@@ -212,6 +220,31 @@ export class FakeClient implements HarnessClient {
    * The task view tests set and read (`getTasks`, `emitTasks`), which is also `client.tasks` (parallel spec §9.1): its
    * methods sit on the prototype, so spreading it copies only the view.
    */
+  /** What `jobs.list` answers (parallel spec §9.1); `jobs.set` changes it. */
+  jobsList: JobSummary[] = [];
+  private jobsListeners = new Set<(jobs: JobSummary[]) => void>();
+  /** Like main: without `state.jobs` every jobs call is refused (D0). */
+  private needJobs() {
+    if (!this.state.jobs) throw new Error("No jobs");
+  }
+  readonly jobs: FakeJobs = {
+    list: async () => {
+      this.needJobs();
+      return this.jobsList;
+    },
+    run: vi.fn(async (_id: string, _scope?: string) => {
+      this.needJobs();
+      return true;
+    }),
+    onChange: (listener) => {
+      this.jobsListeners.add(listener);
+      return () => void this.jobsListeners.delete(listener);
+    },
+    set: (jobs) => {
+      this.jobsList = jobs;
+      for (const l of this.jobsListeners) l(jobs);
+    },
+  };
   get tasks(): TaskView & FakeTasks {
     return Object.assign(Object.create(this.tasksApi) as FakeTasks, this.taskView);
   }

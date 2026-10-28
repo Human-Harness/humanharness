@@ -128,7 +128,7 @@ import { type BoardHost, createBoardHost, hostMode } from "./board-host";
 import { type AttentionStores, attentionStores } from "./attention-stores";
 import { keepNotification, TaskAttention } from "./task-attention";
 import { materialOwn, notePath, saveAppChange } from "./app-change";
-import { type JobsHost, createJobsHost, isJobSlot, openSingleRuntime, singleBeforeStart, singleCaps, singleGate, singleTurns } from "./jobs/jobs-host";
+import { type JobsHost, createJobsHost, isJobSlot, jobOriginKnown, openSingleRuntime, singleBeforeStart, singleCaps, singleGate, singleTurns } from "./jobs/jobs-host";
 import type { Turns } from "./gated-turns";
 import type { TurnGate } from "./turn-gate";
 import { cleanCaps, engineHold, parallelInfo } from "./parallel-config";
@@ -249,8 +249,9 @@ let singleNote: string | undefined;
  */
 const ownCommits = (): boolean => host !== null || (jobsHost?.running() ?? false);
 /**
- * Board mode only (parallel spec §9.2, Decision 10): one Attention store per base, shared by the plugins and the waiting
- * tasks. Null in plain mode (D0): the plugins build their own store, as before, and no task raises anything.
+ * Board and single mode (parallel spec §9.2, Decision 10): one Attention store per base, shared by the plugins, the
+ * waiting tasks (board) and the jobs' needs-you results (part 3). Null in plain mode (D0): the plugins build their own
+ * store, as before, and no task or job raises anything.
  */
 let sharedAttention: AttentionStores | null = null;
 /** Board mode only: waiting tasks' items, the Dock badge and the optional notification. */
@@ -259,6 +260,33 @@ let taskAttention: TaskAttention | null = null;
 const notifications = new Set<Notification>();
 /** The plugins inbox's badge as last sent: board mode's Dock badge adds it. */
 let pluginBadge = 0;
+/** The job × scopes whose last run needs the person (part 3): the Dock badge adds them. 0 without jobs (D0). */
+let jobBadge = 0;
+/**
+ * The Dock badge again: board mode's waiting tasks with the plugins' and jobs' counts; `single` mode the plugins' and
+ * jobs' counts. Plain mode sets none (D0).
+ */
+function refreshDockBadge(): void {
+  if (taskAttention) return taskAttention.refreshBadge();
+  if (!jobsHost || host) return;
+  try {
+    setDockBadge(pluginBadge + jobBadge);
+  } catch (err) {
+    console.error("Could not set the Dock badge", err);
+  }
+}
+/** The one place the Dock badge is set: a count only (0 clears it). Board and single mode only (D0). */
+const setDockBadge = (n: number): void => app.dock?.setBadge(n > 0 ? String(n) : "");
+/** The jobs' count for the current base, then the Dock badge (a run ended, the base changed). */
+async function refreshJobBadge(): Promise<void> {
+  const jobs = jobsHost;
+  if (!jobs) return;
+  jobBadge = await jobs.needsYou().catch((err: unknown) => {
+    console.error("Could not count the jobs that need you", err);
+    return jobBadge;
+  });
+  refreshDockBadge();
+}
 /** `<appDir>/plugin-state`, with pluginsCtl: a folder move carries each base's approvals there to the new key. */
 let pluginStateRoot: string | null = null;
 const pluginLog = (message: string, err?: unknown) => console.error(`[plugins] ${message}`, err ?? "");
@@ -1403,6 +1431,9 @@ function buildJobsHost(gate: TurnGate, workspace: () => Promise<HarnessWorkspace
     },
     scopeExists: async (id) => (scoped() ? activeScope(id) : id === MAIN_SCOPE),
     engine: async () => (await config.load()).engineId ?? "",
+    // Needs-you results in the base's shared store (Task 8), and the Dock badge.
+    attention: async (b) => sharedAttention?.forBase(b, true) ?? null,
+    needsYouChanged: () => void refreshJobBadge(),
   });
 }
 
@@ -1425,7 +1456,10 @@ function buildSingleJobs(c: AppConfig): JobsHost {
 /** Jobs (Decision 7): once the app is set up in this process, the `start` runs and the `every` timers; once only. */
 async function jobsReady(): Promise<void> {
   const jobs = jobsHost;
-  if (!jobs || quitting || !(await validConfig())) return;
+  if (!jobs || quitting) return;
+  // This base's needs-you results (from an earlier start, or another profile's) on the Dock badge.
+  void refreshJobBadge();
+  if (!(await validConfig())) return;
   // A scoped harness's earlier work is in `main` first: "each" runs in the scopes as they are.
   await scopesSettled();
   await jobs.appReady();
@@ -1442,7 +1476,7 @@ function buildTaskAttention(): TaskAttention {
       const base = await currentBase().catch(() => null);
       return base && sharedAttention ? sharedAttention.forBase(base, true) : null;
     },
-    badge: (n) => app.dock?.setBadge(n > 0 ? String(n) : ""),
+    badge: setDockBadge,
     notify: ({ title, body }, id) => {
       if (!Notification.isSupported()) return;
       const n = keepNotification(new Notification({ title, body }), notifications);
@@ -1458,7 +1492,7 @@ function buildTaskAttention(): TaskAttention {
     },
     notifyOn: async () => (await config.load()).notifyWaiting === true,
     windowFocused: () => (window && !window.isDestroyed() ? window.isFocused() : false),
-    otherCount: () => pluginBadge,
+    otherCount: () => pluginBadge + jobBadge,
   });
   taskAttention = attention;
   return attention;
@@ -2260,11 +2294,13 @@ if (loaded) {
       );
     },
   });
-  // Board mode (parallel spec §9.2): one Attention store per base for the plugins and the waiting tasks, with the
-  // plugins' tag key (outside every base, P5). A task's items show while it is an open lane.
-  if (hostMode(harness) === "board") {
+  // Board and single mode (parallel spec §9.2): one Attention store per base for the plugins, the waiting tasks and
+  // the jobs, with the plugins' tag key (outside every base, P5). A task's items show while it is an open lane; a job's
+  // while the harness declares it. Plain mode: none (D0).
+  if (hostMode(harness) !== "plain") {
     const stores = attentionStores({ tagKey: (create) => sourceTagKey(path.join(hooks.sharedDir ?? sharedConfigDir(), harness.id, "attention-key"), create), log: pluginLog });
     stores.registerKnown("task", (id) => host?.board.laneIds().includes(id) ?? false);
+    if (harness.jobs) stores.registerKnown("job", jobOriginKnown(harness.jobs));
     sharedAttention = stores;
   }
   // Plugins (plugins spec): only a harness that takes them, or dev folders (HH_PLUGIN_DIRS, development builds). D0:
@@ -2331,7 +2367,7 @@ if (loaded) {
       attentionChanged: (view) => {
         sendToWindow("hh:attention", view);
         pluginBadge = view.badge;
-        taskAttention?.refreshBadge();
+        refreshDockBadge();
       },
       surfaceChanged: (view) => sendToWindow("hh:pluginSurface", view),
       panelsNeeded: () => pluginPanels.needed(),

@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { dataSchema, z } from "@humanharness/harness-sdk";
 import { LINK_MAX_ITEMS } from "@humanharness/material/light";
-import { DATA_PREFIX, DataStore, MATERIAL_KEEP, NOTES_PREFIX } from "@humanharness/workspace";
+import { DATA_PREFIX, DataStore, MATERIAL_KEEP, NOTES_PREFIX, REVIEWS_PREFIX } from "@humanharness/workspace";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { historyKeep, materialAppState, materialItems, materialRecommended, openMaterial } from "../src/main/material-ipc";
 
@@ -11,8 +11,8 @@ const material = { accepts: ["text", "pdf"] as ("text" | "pdf")[], grounding: { 
 
 describe("D0: a harness without material", () => {
   it("keeps today's history keep list; with material the registry is kept too", () => {
-    expect(historyKeep({})).toEqual([NOTES_PREFIX, DATA_PREFIX]);
-    expect(historyKeep({ material })).toEqual([NOTES_PREFIX, DATA_PREFIX, MATERIAL_KEEP]);
+    expect(historyKeep({})).toEqual([NOTES_PREFIX, DATA_PREFIX, REVIEWS_PREFIX]);
+    expect(historyKeep({ material })).toEqual([NOTES_PREFIX, DATA_PREFIX, REVIEWS_PREFIX, MATERIAL_KEEP]);
   });
   it("adds no `material` key to AppState", () => {
     const state = { name: "x", ...materialAppState({}) };

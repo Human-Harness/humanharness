@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import git from "isomorphic-git";
-import { DATA_PREFIX, History, MATERIAL_KEEP, NOTES_PREFIX, parseCommitMessage, withTrailer } from "../src";
+import { DATA_PREFIX, History, MATERIAL_KEEP, NOTES_PREFIX, appHistoryKeep, blobId, parseCommitMessage, withTrailer } from "../src";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -660,5 +660,34 @@ describe("History keep patterns (material spec §4)", () => {
     write("a.md", "1");
     const sha = await history.save("first");
     expect(await git.listFiles({ fs, gitdir, ref: sha! })).toEqual(["a.md"]);
+  });
+});
+
+describe("review records (review spec §3, §7 undo)", () => {
+  it("are tracked under .harness/, without their temp files, and a restore brings them back", async () => {
+    const folder = fs.mkdtempSync(path.join(os.tmpdir(), "hh-hist-rev-"));
+    const history = new History(folder, `${folder}.git`, [".harness/"], appHistoryKeep(false));
+    await history.init();
+    const rec = path.join(folder, ".harness", "reviews", "specs", "a.md.json");
+    fs.mkdirSync(path.dirname(rec), { recursive: true });
+    fs.writeFileSync(rec, "{}");
+    fs.writeFileSync(`${rec}.0b1c2d3e-aaaa-bbbb-cccc-123456789abc.tmp`, "{}");
+    const first = (await history.save("one"))!;
+    expect((await history.changes(null, first)).map((c) => c.path)).toEqual([".harness/reviews/specs/a.md.json"]);
+    fs.writeFileSync(rec, '{"changed":true}');
+    await history.save("two");
+    await history.restore(first, "Undo");
+    expect(fs.readFileSync(rec, "utf8")).toBe("{}");
+  });
+
+  it("readBlob reads an approved version by its blob id", async () => {
+    const folder = fs.mkdtempSync(path.join(os.tmpdir(), "hh-hist-blob-"));
+    const history = new History(folder, `${folder}.git`);
+    await history.init();
+    fs.writeFileSync(path.join(folder, "a.md"), "approved\n");
+    await history.save("Approved: a.md");
+    expect(await history.readBlob(blobId(Buffer.from("approved\n")))).toBe("approved\n");
+    expect(await history.readBlob("f".repeat(40))).toBeNull();
+    expect(await history.readBlob("nope")).toBeNull();
   });
 });

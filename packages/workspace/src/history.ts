@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import git from "isomorphic-git";
-import { DATA_PREFIX, MATERIAL_KEEP, NOTES_PREFIX, isScopeDir } from "./layout";
+import { DATA_PREFIX, MATERIAL_KEEP, NOTES_PREFIX, REVIEWS_PREFIX, isScopeDir } from "./layout";
 import { BEFORE_MESSAGE } from "./subjects";
 
 /**
@@ -11,22 +11,24 @@ import { BEFORE_MESSAGE } from "./subjects";
 export type HistoryKeep = string | { readonly prefix: string; readonly match: RegExp; readonly depth: number };
 
 /**
- * What the app's history keeps under `.harness/`: the notes and the data; with material, its registry and decisions
- * (`MATERIAL_KEEP`). The one rule for the shell's history and the runtime's, so both agree (D0 without material).
+ * What the app's history keeps under `.harness/`: the notes, the data and the review records; with material, its
+ * registry and decisions (`MATERIAL_KEEP`). The one rule for the shell's history and the runtime's, so both agree (D0
+ * without material). A harness that never reviews has no file under `REVIEWS_PREFIX`, so its commits don't change.
  */
-export const appHistoryKeep = (material: boolean): HistoryKeep[] => [NOTES_PREFIX, DATA_PREFIX, ...(material ? [MATERIAL_KEEP] : [])];
+export const appHistoryKeep = (material: boolean): HistoryKeep[] => [NOTES_PREFIX, DATA_PREFIX, REVIEWS_PREFIX, ...(material ? [MATERIAL_KEEP] : [])];
 
 const keeps = (k: HistoryKeep, file: string): boolean => (typeof k === "string" ? file.startsWith(k) : k.match.test(file));
 
 const AUTHOR = { name: "Human Harness", email: "history@humanharness.local" };
 
 /**
- * The temp files `writeNote` and the data store rename into place (`<file>.md.<uuid>.tmp`, `<file>.json.<uuid>.tmp`);
- * the person's own `.tmp` files stay tracked.
+ * The temp files `writeNote`, the data store and the review records rename into place (`<file>.md.<uuid>.tmp`,
+ * `<file>.json.<uuid>.tmp`); the person's own `.tmp` files stay tracked.
  */
 const isAppTempFile = (file: string): boolean =>
   (file.startsWith(NOTES_PREFIX) && /\.md\.[0-9a-f-]+\.tmp$/.test(file.slice(NOTES_PREFIX.length))) ||
-  (file.startsWith(DATA_PREFIX) && /\.json\.[0-9a-f-]+\.tmp$/.test(file.slice(DATA_PREFIX.length)));
+  (file.startsWith(DATA_PREFIX) && /\.json\.[0-9a-f-]+\.tmp$/.test(file.slice(DATA_PREFIX.length))) ||
+  (file.startsWith(REVIEWS_PREFIX) && /\.json\.[0-9a-f-]+\.tmp$/.test(file.slice(REVIEWS_PREFIX.length)));
 
 export interface HistoryEntry {
   sha: string;
@@ -437,6 +439,18 @@ export class History {
     if (sha === null) return null;
     try {
       const { blob } = await git.readBlob({ fs, gitdir: this.gitdir, oid: sha, filepath: file });
+      return Buffer.from(blob).toString("utf8");
+    } catch (err) {
+      if ((err as { code?: string }).code === "NotFoundError") return null;
+      throw err;
+    }
+  }
+
+  /** The text of blob `oid` (an approved version, review spec §5.4); null when the history doesn't have it. */
+  async readBlob(oid: string): Promise<string | null> {
+    if (!/^[0-9a-f]{40}$/.test(oid)) return null;
+    try {
+      const { blob } = await git.readBlob({ fs, gitdir: this.gitdir, oid });
       return Buffer.from(blob).toString("utf8");
     } catch (err) {
       if ((err as { code?: string }).code === "NotFoundError") return null;

@@ -12,3 +12,4 @@ export * from "./migrate";
 export * from "./data";
 export * from "./data-context";
 export * from "./data-diff";
+export * from "./reviews";

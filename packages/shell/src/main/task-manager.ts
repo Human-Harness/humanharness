@@ -288,6 +288,24 @@ interface PhasePlan {
  * whose first message carries the notes index. Cancel, a failed first turn and interruptions end the
  * task as unfinished.
  */
+/**
+ * The notes part of a new session's first message (spec §3.3): the scope's notes index; in a scope, the app-wide one,
+ * trimmed, after it. Without scopes, the index of the flat notes folder (D2). Shared with a job run's first message.
+ */
+export async function notesIndexFor(notes: TaskDeps["notes"], scoped: boolean, scope: string): Promise<string> {
+  const own = buildNotesIndex(await notes(scoped ? scope : undefined).catch(() => [] as Note[]));
+  if (!scoped || scope === APP_SCOPE) return own;
+  const app = await notes(APP_SCOPE).catch(() => [] as Note[]);
+  // The own index ends with the "open a note" line; the app-wide one says it only when it stands alone.
+  const appIndex = buildNotesIndex(app, {
+    budgetTokens: APP_INDEX_TOKENS,
+    heading: "## App-wide notes",
+    decisionsHeading: "## App-wide decisions",
+    ...(own ? { footer: null } : {}),
+  });
+  return [own, appIndex].filter(Boolean).join("\n\n");
+}
+
 export class TaskManager {
   /** Task operations (each may run several turns), one after another. */
   private ops: Promise<unknown> = Promise.resolve();
@@ -760,20 +778,7 @@ export class TaskManager {
    * then the data tables. Without scopes or data, exactly the notes index as before (D2).
    */
   private async contextFor(scope: string, action: string | undefined): Promise<string> {
-    const own = buildNotesIndex(await this.d.notes(this.d.scoped ? scope : undefined).catch(() => [] as Note[]));
-    const parts = [own];
-    if (this.d.scoped && scope !== APP_SCOPE) {
-      const app = await this.d.notes(APP_SCOPE).catch(() => [] as Note[]);
-      // The own index ends with the "open a note" line; the app-wide one says it only when it stands alone.
-      parts.push(
-        buildNotesIndex(app, {
-          budgetTokens: APP_INDEX_TOKENS,
-          heading: "## App-wide notes",
-          decisionsHeading: "## App-wide decisions",
-          ...(own ? { footer: null } : {}),
-        }),
-      );
-    }
+    const parts = [await notesIndexFor((s) => this.d.notes(s), !!this.d.scoped, scope)];
     if (this.d.dataContext) {
       parts.push(
         await this.d.dataContext(scope, action).catch((err: unknown) => {

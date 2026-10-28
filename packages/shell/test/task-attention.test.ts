@@ -140,6 +140,57 @@ describe("TaskAttention (parallel spec §9.2, Decision 10, P4)", () => {
     expect(failing.badge).toHaveBeenLastCalledWith(0);
   });
 
+  it("a raise that failed (no store yet, or the store refused) is tried again on the next update", async () => {
+    const store = fakeStore();
+    let ready = false;
+    const { a, badge } = attention({ store: async () => (ready ? (store as never) : null) });
+    await a.update([task("t1", "waiting")]);
+    expect(badge).toHaveBeenLastCalledWith(1);
+    expect(store.items.size).toBe(0);
+    ready = true;
+    await a.update([task("t1", "waiting")]);
+    expect([...store.items.keys()]).toEqual(["t1/waiting"]);
+    // Raised once it worked, not again after.
+    await a.update([task("t1", "waiting")]);
+    expect(store.raise).toHaveBeenCalledTimes(1);
+
+    let fail = true;
+    const flaky = fakeStore();
+    const raise = flaky.raise;
+    flaky.raise = vi.fn((o: { kind: string; id: string }, i: { key: string; title: string }) => (fail ? Promise.reject(new Error("disk")) : raise(o, i)));
+    const second = attention({ store: async () => flaky as never });
+    await second.a.update([task("t2", "waiting")]);
+    expect(flaky.items.size).toBe(0);
+    fail = false;
+    await second.a.update([task("t2", "waiting")]);
+    expect([...flaky.items.keys()]).toEqual(["t2/waiting"]);
+  });
+
+  it("a resolve that failed is tried again on the next update; the notification still comes once per wait", async () => {
+    const store = fakeStore();
+    let fail = true;
+    const resolve = store.resolve;
+    store.resolve = vi.fn((o: { kind: string; id: string }, key: string) => (fail ? Promise.reject(new Error("disk")) : resolve(o, key)));
+    const { a, notify } = attention({ store: async () => store as never, notifyOn: () => true, windowFocused: () => false });
+    await a.update([task("t1", "waiting")]);
+    await a.update([]);
+    expect(store.items.size).toBe(1);
+    fail = false;
+    await a.update([]);
+    expect(store.items.size).toBe(0);
+    expect(notify).toHaveBeenCalledTimes(1);
+  });
+
+  it("a badge that throws is logged and never reaches the caller (plugins' attentionChanged)", async () => {
+    const log = vi.fn();
+    let other = 0;
+    const { a } = attention({ badge: () => { throw new Error("no dock"); }, otherCount: () => other, log });
+    other = 1;
+    expect(() => a.refreshBadge()).not.toThrow();
+    expect(log).toHaveBeenCalledWith("Could not set the Dock badge", expect.any(Error));
+    await expect(a.update([task("t1", "waiting")])).resolves.toBeUndefined();
+  });
+
   it("the notification body is the window's parallel.waitingBody in English", () => {
     const en = JSON.parse(fs.readFileSync(path.resolve(__dirname, "../../i18n/src/locales/en.json"), "utf8")) as { parallel: Record<string, string> };
     expect(en.parallel.waitingBody).toBe(WAITING_BODY);

@@ -29,6 +29,8 @@ export interface TaskAttentionDeps {
  */
 export class TaskAttention {
   private waiting = new Set<string>();
+  /** Tasks whose item the store holds (the raise succeeded and no resolve has yet). */
+  private raised = new Set<string>();
   private shown = 0;
   private chain: Promise<void> = Promise.resolve();
 
@@ -41,45 +43,68 @@ export class TaskAttention {
     return run;
   }
 
-  /** The badge again (another source's count changed). */
+  /** The badge again (another source's count changed). A badge that fails is logged, never thrown at the caller. */
   refreshBadge(): void {
     const n = this.waiting.size + (this.d.otherCount?.() ?? 0);
     if (n === this.shown) return;
-    this.shown = n;
-    this.d.badge(n);
+    try {
+      this.d.badge(n);
+      this.shown = n;
+    } catch (err) {
+      this.log("Could not set the Dock badge", err);
+    }
   }
 
   private async apply(tasks: readonly TaskSummary[]): Promise<void> {
     const now = new Map(tasks.filter((t) => t.state === "waiting").map((t) => [t.id, t]));
     const entered = [...now.values()].filter((t) => !this.waiting.has(t.id));
-    const left = [...this.waiting].filter((id) => !now.has(id));
     this.waiting = new Set(now.keys());
     this.refreshBadge();
-    if (entered.length === 0 && left.length === 0) return;
+    // The store's items follow `raised`, which changes only when a call succeeded: a failed one is tried again next time.
+    const raise = [...now.values()].filter((t) => !this.raised.has(t.id));
+    const resolve = [...this.raised].filter((id) => !now.has(id));
+    if (raise.length === 0 && resolve.length === 0 && entered.length === 0) return;
     const store = await this.d.store().catch((err: unknown) => {
       this.log("Could not open the Attention inbox", err);
       return null;
     });
+    for (const t of raise) {
+      if (!store) break;
+      try {
+        await store.raise({ kind: "task", id: t.id }, { key: WAITING_KEY, severity: "action", title: titleOf(t), target: { panel: "task", focus: t.id } });
+        this.raised.add(t.id);
+      } catch (err) {
+        this.log("Could not raise a waiting task", err);
+      }
+    }
     for (const t of entered) {
-      const title = t.label.slice(0, ATTENTION_LIMITS.titleChars).trim() || "Task";
-      await store
-        ?.raise({ kind: "task", id: t.id }, { key: WAITING_KEY, severity: "action", title, target: { panel: "task", focus: t.id } })
-        .catch((err: unknown) => this.log("Could not raise a waiting task", err));
       if (this.d.windowFocused()) continue;
       const on = await Promise.resolve()
         .then(() => this.d.notifyOn())
         .catch(() => false);
       if (on !== true) continue;
       try {
-        this.d.notify({ title, body: WAITING_BODY }, t.id);
+        this.d.notify({ title: titleOf(t), body: WAITING_BODY }, t.id);
       } catch (err) {
         this.log("Could not show a notification", err);
       }
     }
-    for (const id of left) await store?.resolve({ kind: "task", id }, WAITING_KEY).catch((err: unknown) => this.log("Could not resolve a waiting task", err));
+    for (const id of resolve) {
+      if (!store) break;
+      try {
+        await store.resolve({ kind: "task", id }, WAITING_KEY);
+        this.raised.delete(id);
+      } catch (err) {
+        this.log("Could not resolve a waiting task", err);
+      }
+    }
   }
 
   private log(message: string, err?: unknown): void {
     (this.d.log ?? console.error)(message, err);
   }
+}
+
+function titleOf(t: TaskSummary): string {
+  return t.label.slice(0, ATTENTION_LIMITS.titleChars).trim() || "Task";
 }

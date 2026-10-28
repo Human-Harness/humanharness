@@ -20,6 +20,8 @@ describe("engineHold (spike PT-S5)", () => {
     expect(engineHold("claude")).toEqual({});
     expect(engineHold("codex")).toEqual({});
     expect(engineHold(undefined)).toEqual({});
+    // An engine no spike checked is held too (Kimi, a future ACP engine).
+    expect(engineHold("kimi")).toEqual({ singleSession: true });
   });
 });
 

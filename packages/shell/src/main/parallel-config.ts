@@ -8,12 +8,15 @@ export interface EngineHold {
 
 const clamp = (n: unknown, fallback: number) => (typeof n === "number" && Number.isInteger(n) ? Math.min(PARALLEL_MAX, Math.max(1, n)) : fallback);
 
+/** The engines a spike ran two at once: Claude (PT-S1) and Codex (PT-S3). */
+const CHECKED_PARALLEL = new Set(["claude", "codex"]);
+
 /**
- * OpenCode is held at one session: spike PT-S5 couldn't check two `opencode acp` processes at once (OpenCode wasn't
- * installed), so it stays unverified, not refused. Claude and Codex ran two at once (PT-S1, PT-S3).
+ * Every other engine is held at one session until a spike checks two of its processes at once. OpenCode is one:
+ * spike PT-S5 couldn't run (OpenCode wasn't installed), so it stays unverified, not refused.
  */
 export function engineHold(engineId: string | undefined): EngineHold {
-  return engineId === "opencode" ? { singleSession: true } : {};
+  return engineId === undefined || CHECKED_PARALLEL.has(engineId) ? {} : { singleSession: true };
 }
 
 /**

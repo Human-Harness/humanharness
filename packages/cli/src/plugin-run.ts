@@ -10,9 +10,11 @@ import { CliError } from "./cli";
 
 /**
  * One source of a built plugin, run in this Node process against part 1's very broker (plugins Decisions 20–21), for
- * `humanharness plugin test` and `record`. The backend runs in a fresh `vm` context that holds only the globals below:
- * the same view of the world it gets in the app (no `fetch`, `process`, `require` or `Buffer`; everything goes through
- * `ctx`). It is not a sandbox (P12): run only plugins you trust.
+ * `humanharness plugin test` and `record`. The backend runs in a fresh `vm` context that holds only the globals below
+ * (no `fetch`, `process`, `require` or `Buffer`), so a well-behaved plugin goes through `ctx` as in the app. It is not
+ * a sandbox (P12): the globals and `ctx` are this realm's values, and any of them hands the plugin this realm's
+ * `Function` (`setTimeout.constructor("return process")()`), so plugin code has full Node access here. Run only
+ * plugins you trust.
  */
 
 export interface RunOptions {

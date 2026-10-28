@@ -5,7 +5,7 @@ import { type Block, blockToolName } from "./block";
 import { CORE_BLOCKS, INPUT_CORE_BLOCKS, MODE_CORE_BLOCKS, PHASE_CORE_BLOCKS, RESERVED_BLOCK_NAMES } from "./core-blocks";
 import { dataSchema } from "./data";
 import { CORE_SHEET_SECTIONS, MATERIAL_STAGE_KEYS, materialSchema } from "./material";
-import { jobProblems, jobsSchema } from "./jobs";
+import { JOB_RESULT_TOOL, jobProblems, jobsSchema } from "./jobs";
 import { DEFAULT_MODE_WORDS, MODE_ID } from "./modes";
 import { parallelSchema } from "./parallel";
 import { PHASE_ID, TIME_BOX_MAX } from "./phases";
@@ -213,10 +213,11 @@ const manifestSchema = z.object({
   for (const name of Object.keys(m.blocks)) {
     if (RESERVED_BLOCK_NAMES.includes(name)) ctx.addIssue({ code: "custom", path: ["blocks", name], message: `"${name}" is a core block name` });
   }
-  // Every block becomes an MCP tool: two blocks (core ones included) cannot share a tool name.
+  // Every block becomes an MCP tool: two blocks (core ones included, and a job slot's job_result) cannot share a tool name.
   const tools = new Map<string, string>(
     Object.entries({ ...CORE_BLOCKS, ...INPUT_CORE_BLOCKS, ...MODE_CORE_BLOCKS, ...PHASE_CORE_BLOCKS }).map(([name, b]) => [blockToolName(name, b), name]),
   );
+  tools.set(JOB_RESULT_TOOL, JOB_RESULT_TOOL);
   for (const [name, b] of Object.entries(m.blocks)) {
     const tool = blockToolName(name, b);
     const other = tools.get(tool);

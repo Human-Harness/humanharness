@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { allBlocks, defineHarness, hasJobs, isConcurrent, jobProblems, jobResultSchema, loadHarness, parseEvery } from "../src";
+import { JOB_RESULT_TOOL, RESERVED_BLOCK_NAMES, allBlocks, defineBlock, defineHarness, hasJobs, isConcurrent, jobProblems, jobResultSchema, loadHarness, parseEvery, z } from "../src";
 
 const base = {
   id: "t",
@@ -131,5 +131,25 @@ describe("jobResultSchema (spec §8)", () => {
     expect(() => jobResultSchema.parse({ status: "maybe", summary: "x" })).toThrow();
     expect(() => jobResultSchema.parse({ status: "ok", summary: "" })).toThrow();
     expect(() => jobResultSchema.parse({ status: "ok", summary: "x".repeat(301) })).toThrow();
+  });
+});
+
+describe("job_result is reserved (a block could break a job slot's ui server)", () => {
+  const block = (tool?: string) =>
+    defineBlock({ description: "A note", visible: true, ...(tool ? { tool } : {}), schema: z.object({ text: z.string() }), example: { text: "x" } });
+  const issues = (blocks: Record<string, ReturnType<typeof block>>): string[] => {
+    try {
+      defineHarness({ ...base, blocks });
+      return [];
+    } catch (err) {
+      return (err as { issues: { path: PropertyKey[]; message: string }[] }).issues.map((i) => `${i.path.map(String).join(".")}: ${i.message}`);
+    }
+  };
+  it("a block named job_result is refused", () => {
+    expect(RESERVED_BLOCK_NAMES).toContain(JOB_RESULT_TOOL);
+    expect(issues({ job_result: block() })).toContain('blocks.job_result: "job_result" is a core block name');
+  });
+  it("a block whose tool is job_result is refused, with or without jobs", () => {
+    expect(issues({ note: block("job_result") })).toEqual(['blocks.note: Tool "job_result" is already used by block "job_result"']);
   });
 });

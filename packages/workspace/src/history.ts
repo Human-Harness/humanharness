@@ -146,8 +146,8 @@ async function writeNoFollow(file: string, data: Buffer, mode: number): Promise<
  * A path written exactly as git names it: relative, `/`-separated, no `.` or `..` segment, no trailing `/`, no `\\`.
  * Anything else could name a tracked file by another spelling (`./a.md`, `sub/../a.md`) and slip past `tracked`.
  */
-const isCanonicalPath = (p: string): boolean =>
-  p !== "" && !p.startsWith("/") && !p.includes("\\") && path.posix.normalize(p) === p && !p.endsWith("/") && !p.split("/").includes("..");
+export const isCanonicalPath = (p: string): boolean =>
+  p !== "" && !p.startsWith("/") && !p.includes("\\") && path.posix.normalize(p) === p && !p.endsWith("/") && !p.split("/").some((s) => s === "." || s === "..");
 
 /** How far back `tasks` follows a task past the depth to find its first commit. */
 const MAX_WALK_BACK = 1000;

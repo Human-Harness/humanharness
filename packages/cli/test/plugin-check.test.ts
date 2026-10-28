@@ -178,6 +178,14 @@ describe("plugin check: errors", () => {
     expect(rules(r.findings)).toEqual(["error:api-version"]);
   });
 
+  it("brand: a plugin name that names a provider or model, as a whole word", async () => {
+    const r = await check(fixture({ manifest: (m) => (m.name = "Claude queue") }));
+    expect(rules(r.findings)).toEqual(["error:brand"]);
+    expect(r.findings[0]).toMatchObject({ file: "dist/plugin.json" });
+    expect(r.findings[0].message).toContain('"Claude"');
+    expect((await check(fixture({ manifest: (m) => (m.name = "Claudette's queue") }))).findings).toEqual([]);
+  });
+
   it("host-undeclared: a literal URL to a host plugin.json doesn't declare, with its file and line", async () => {
     const dir = fixture({ files: { "backend.ts": `${BACKEND}\nconst other = "https://Other.example.net/x";\n` } });
     const r = await check(dir);

@@ -13,6 +13,7 @@ import {
   promptPlaceholders,
   slotFor,
 } from "@humanharness/harness-sdk";
+import { findBrand } from "./check";
 import { CliError } from "./cli";
 import { MANIFEST } from "./paths";
 import { buildPlugin } from "./plugin-build";
@@ -33,7 +34,8 @@ export type PluginRule =
   | "hosts-wildcard"
   | "sync-heavy"
   | "host-local"
-  | "http-url";
+  | "http-url"
+  | "brand";
 
 export interface PluginFinding {
   rule: PluginRule;
@@ -118,6 +120,9 @@ async function readManifest(dir: string, findings: PluginFinding[]): Promise<Plu
 
 function manifestFindings(m: PluginManifest): PluginFinding[] {
   const out: PluginFinding[] = [];
+  // As the harness check's brand rule: a plugin named after a provider would look made or endorsed by it.
+  const brand = findBrand(m.name);
+  if (brand) out.push(error("brand", `The plugin's name "${m.name}" uses the word "${brand}", a provider or model brand: the plugin would look made or endorsed by that provider. Use no provider or model brands in its name.`, PLUGIN_JSON));
   for (const host of m.permissions.hosts) {
     if (isLocal(host)) out.push(warning("host-local", `"${host}": the broker refuses localhost and IP addresses even when declared.`, PLUGIN_JSON));
     else if (wildcardOverOneLabel(host)) out.push(warning("hosts-wildcard", `"${host}" allows every host under a top-level name: name the service's own domain.`, PLUGIN_JSON));

@@ -23,7 +23,7 @@ describe("migrateChats (Decision 8, P6)", () => {
   it("the scope's chat becomes its open task's chat; the old file is archived", async () => {
     const { base, chats } = baseWith({ "main.jsonl": line("a") + line("b"), "s1.jsonl": line("c") });
     const moved = await migrateChats(base, [{ scope: "main", task: "t1" }]);
-    expect(moved).toEqual({ copied: ["main"], archived: ["main", "s1"] });
+    expect(moved).toEqual({ copied: ["main"], archived: ["main", "s1"], kept: [] });
     expect(fs.readFileSync(path.join(chats, "main", "t1.jsonl"), "utf8")).toBe(line("a") + line("b"));
     expect(fs.existsSync(path.join(chats, "main.jsonl"))).toBe(false);
     expect(fs.existsSync(path.join(chats, "s1.jsonl"))).toBe(false);
@@ -33,26 +33,26 @@ describe("migrateChats (Decision 8, P6)", () => {
 
   it("runs once: a second call does nothing, even to a scope file written since", async () => {
     const { base, chats } = baseWith({});
-    expect(await migrateChats(base, [])).toEqual({ copied: [], archived: [] });
+    expect(await migrateChats(base, [])).toEqual({ copied: [], archived: [], kept: [] });
     fs.writeFileSync(path.join(chats, "main.jsonl"), line("later"));
-    expect(await migrateChats(base, [{ scope: "main", task: "t1" }])).toEqual({ copied: [], archived: [] });
+    expect(await migrateChats(base, [{ scope: "main", task: "t1" }])).toEqual({ copied: [], archived: [], kept: [] });
     expect(fs.readFileSync(path.join(chats, "main.jsonl"), "utf8")).toBe(line("later"));
     expect(fs.existsSync(path.join(chats, "main"))).toBe(false);
   });
 
   it("works without a chats folder", async () => {
     const base = fs.mkdtempSync(path.join(root, "b-"));
-    expect(await migrateChats(base, [{ scope: "main", task: "t1" }])).toEqual({ copied: [], archived: [] });
-    expect(await migrateChats(base, [{ scope: "main", task: "t1" }])).toEqual({ copied: [], archived: [] });
+    expect(await migrateChats(base, [{ scope: "main", task: "t1" }])).toEqual({ copied: [], archived: [], kept: [] });
+    expect(await migrateChats(base, [{ scope: "main", task: "t1" }])).toEqual({ copied: [], archived: [], kept: [] });
   });
 
   it("a failed copy leaves the old file where it was, and the next start finishes", async () => {
     const { base, chats } = baseWith({ "main.jsonl": line("a"), main: "a file where the folder should be" });
     await expect(migrateChats(base, [{ scope: "main", task: "t1" }])).rejects.toThrow();
     expect(fs.readFileSync(path.join(chats, "main.jsonl"), "utf8")).toBe(line("a"));
-    expect(fs.existsSync(path.join(chats, "archive"))).toBe(false);
+    expect(fs.readdirSync(path.join(chats, "archive"))).toEqual([]);
     fs.rmSync(path.join(chats, "main"));
-    expect(await migrateChats(base, [{ scope: "main", task: "t1" }])).toEqual({ copied: ["main"], archived: ["main"] });
+    expect(await migrateChats(base, [{ scope: "main", task: "t1" }])).toEqual({ copied: ["main"], archived: ["main"], kept: [] });
     expect(fs.readFileSync(path.join(chats, "main", "t1.jsonl"), "utf8")).toBe(line("a"));
   });
 
@@ -61,7 +61,7 @@ describe("migrateChats (Decision 8, P6)", () => {
     fs.mkdirSync(path.join(chats, "main"));
     fs.writeFileSync(path.join(chats, "main", "t1.jsonl"), line("a") + line("b"));
     fs.writeFileSync(path.join(chats, "main", "t1.jsonl.0123.tmp"), line("a"));
-    expect(await migrateChats(base, [{ scope: "main", task: "t1" }])).toEqual({ copied: ["main"], archived: ["main"] });
+    expect(await migrateChats(base, [{ scope: "main", task: "t1" }])).toEqual({ copied: ["main"], archived: ["main"], kept: [] });
     expect(fs.readFileSync(path.join(chats, "main", "t1.jsonl"), "utf8")).toBe(line("a") + line("b"));
     expect(archived(chats)).toEqual([line("a") + line("b")]);
   });
@@ -72,7 +72,7 @@ describe("migrateChats (Decision 8, P6)", () => {
     fs.writeFileSync(path.join(chats, "archive", "2026-10-28T10-00-00-000Z-parallel.jsonl"), line("a"));
     fs.mkdirSync(path.join(chats, "main"));
     fs.writeFileSync(path.join(chats, "main", "t1.jsonl"), line("a"));
-    expect(await migrateChats(base, [{ scope: "main", task: "t1" }, { scope: "s1", task: "t2" }])).toEqual({ copied: ["s1"], archived: ["s1"] });
+    expect(await migrateChats(base, [{ scope: "main", task: "t1" }, { scope: "s1", task: "t2" }])).toEqual({ copied: ["s1"], archived: ["s1"], kept: [] });
     expect(fs.readFileSync(path.join(chats, "main", "t1.jsonl"), "utf8")).toBe(line("a"));
     expect(fs.readFileSync(path.join(chats, "s1", "t2.jsonl"), "utf8")).toBe(line("c"));
     expect(archived(chats).sort()).toEqual([line("a"), line("c")].sort());
@@ -82,7 +82,7 @@ describe("migrateChats (Decision 8, P6)", () => {
     const { base, chats } = baseWith({ "main.jsonl": line("a") + line("b") });
     fs.mkdirSync(path.join(chats, "main"));
     fs.writeFileSync(path.join(chats, "main", "t1.jsonl"), line("a"));
-    expect(await migrateChats(base, [{ scope: "main", task: "t1" }])).toEqual({ copied: ["main"], archived: ["main"] });
+    expect(await migrateChats(base, [{ scope: "main", task: "t1" }])).toEqual({ copied: ["main"], archived: ["main"], kept: [] });
     expect(fs.readFileSync(path.join(chats, "main", "t1.jsonl"), "utf8")).toBe(line("a") + line("b"));
   });
 
@@ -90,7 +90,9 @@ describe("migrateChats (Decision 8, P6)", () => {
     const { base, chats } = baseWith({ "main.jsonl": line("a") });
     fs.mkdirSync(path.join(chats, "main"));
     fs.writeFileSync(path.join(chats, "main", "t1.jsonl"), line("z"));
-    expect(await migrateChats(base, [{ scope: "main", task: "t1" }])).toEqual({ copied: [], archived: ["main"] });
+    const logged: string[] = [];
+    expect(await migrateChats(base, [{ scope: "main", task: "t1" }], (m) => logged.push(m))).toEqual({ copied: [], archived: ["main"], kept: ["main"] });
+    expect(logged).toEqual([expect.stringMatching(/t1 already had lines of its own/)]);
     expect(fs.readFileSync(path.join(chats, "main", "t1.jsonl"), "utf8")).toBe(line("z"));
     expect(archived(chats)).toEqual([line("a")]);
   });
@@ -110,9 +112,34 @@ describe("migrateChats (Decision 8, P6)", () => {
     expect(fs.readFileSync(path.join(chats, "main.jsonl"), "utf8")).toBe(line("a"));
   });
 
+  it("never reads a symlinked or hard-linked scope chat: it is only archived, the outside file untouched", async () => {
+    const outside = path.join(fs.mkdtempSync(path.join(root, "out-")), "secret.txt");
+    fs.writeFileSync(outside, "SECRET\n");
+    const { base, chats } = baseWith({});
+    fs.symlinkSync(outside, path.join(chats, "main.jsonl"));
+    fs.linkSync(outside, path.join(chats, "s1.jsonl"));
+    const logged: string[] = [];
+    const moved = await migrateChats(base, [{ scope: "main", task: "t1" }, { scope: "s1", task: "t2" }], (m) => logged.push(m));
+    expect(moved).toEqual({ copied: [], archived: ["main", "s1"], kept: [] });
+    expect(logged).toHaveLength(2);
+    expect(fs.existsSync(path.join(chats, "main", "t1.jsonl"))).toBe(false);
+    expect(fs.existsSync(path.join(chats, "s1", "t2.jsonl"))).toBe(false);
+    expect(fs.readFileSync(outside, "utf8")).toBe("SECRET\n");
+  });
+
+  it("refuses a symlinked archive folder before moving anything", async () => {
+    const { base, chats } = baseWith({ "main.jsonl": line("a") });
+    const outside = fs.mkdtempSync(path.join(root, "out-"));
+    fs.symlinkSync(outside, path.join(chats, "archive"));
+    await expect(migrateChats(base, [{ scope: "main", task: "t1" }])).rejects.toThrow(/outside/);
+    expect(fs.readdirSync(outside)).toEqual([]);
+    expect(fs.readFileSync(path.join(chats, "main.jsonl"), "utf8")).toBe(line("a"));
+    expect(fs.existsSync(path.join(chats, "main"))).toBe(false);
+  });
+
   it("leaves files that are not a scope's chat alone", async () => {
     const { base, chats } = baseWith({ "notes.txt": "x", "Bad Name.jsonl": line("x") });
-    expect(await migrateChats(base, [])).toEqual({ copied: [], archived: [] });
+    expect(await migrateChats(base, [])).toEqual({ copied: [], archived: [], kept: [] });
     expect(fs.readdirSync(chats).sort()).toEqual([".per-task", "Bad Name.jsonl", "notes.txt"]);
   });
 });

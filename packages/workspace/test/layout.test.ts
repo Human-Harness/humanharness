@@ -97,11 +97,12 @@ describe("per-task chats (parallel spec §6)", () => {
   });
 
   it("refuses a task id that could leave the scope's folder, and a bad scope", () => {
-    for (const bad of ["../x", "..", ".", "a/b", "a\\b", "", "_x", "-x", "__proto__", "a.b", "t1\0", "x".repeat(201)]) {
+    for (const bad of ["../x", "..", ".", "a/b", "a\\b", "", "_x", "-x", "__proto__", "a.b", "t1\0", "T1", "x".repeat(201)]) {
       expect(() => taskChatFile("/b", "main", bad), bad).toThrow(/task/);
       expect(isTaskId(bad)).toBe(false);
     }
     expect(isTaskId("x".repeat(200))).toBe(true);
     expect(() => taskChatFile("/b", "../x", "t1")).toThrow(/scope/);
+    expect(() => taskChatFile("/b", "archive", "t1")).toThrow(/archive/);
   });
 });

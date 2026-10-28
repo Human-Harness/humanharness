@@ -136,10 +136,11 @@ export const CONFLICT_MAX = 20;
 export const LANE_ID_MAX = 200;
 const CONFLICT_PATH_MAX = 1024;
 /**
- * A lane id also names its chat file (`chats/<scope>/<id>.jsonl`): a UUID, or a test's `t1`. Never a dot, a slash,
- * a leading `_` (`__proto__`) or `-`.
+ * A lane id also names its chat file (`chats/<scope>/<id>.jsonl`): a UUID, or a test's `t1`. Lowercase (macOS folds
+ * case: `T1` and `t1` would share a chat), never a dot, a slash, a leading `_` (`__proto__`) or `-`. The same shape
+ * as the workspace's `isTaskId`.
  */
-const LANE_ID = new RegExp(`^[A-Za-z0-9][A-Za-z0-9_-]{0,${LANE_ID_MAX - 1}}$`);
+const LANE_ID = new RegExp(`^[a-z0-9][a-z0-9_-]{0,${LANE_ID_MAX - 1}}$`);
 
 /** What the manifest declares, when known: mode ids, and each action's phase ids. */
 export interface Known {

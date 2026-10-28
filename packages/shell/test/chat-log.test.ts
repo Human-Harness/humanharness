@@ -189,7 +189,7 @@ describe("per-task chats (parallel spec §6)", () => {
     expect(await ChatLog.scopesIn(base)).toEqual([]);
   });
 
-  it("a task chat answers blocks and archives to chats/archive/<stamp>-<scope>-<task>-<label>.jsonl", async () => {
+  it("a task chat answers blocks and archives to chats/archive/<stamp>-<scope>.<task>.<label>.jsonl", async () => {
     const base = fs.mkdtempSync(path.join(root, "f-"));
     const log = new ChatLog(base, undefined, "main", "t1");
     await log.append({ ...entry("q"), role: "assistant", blocks: [{ name: "choice", id: "b1", data: {} }] });
@@ -197,17 +197,17 @@ describe("per-task chats (parallel spec §6)", () => {
     expect((await log.load())[0].blocks[0]).toMatchObject({ input: { blockId: "b1" } });
     const target = await log.archive("done");
     expect(path.dirname(target!)).toBe(path.join(base, ".harness", "chats", "archive"));
-    expect(path.basename(target!)).toMatch(/^.+-main-t1-done\.jsonl$/);
+    expect(path.basename(target!)).toMatch(/^[0-9TZ-]+-main\.t1\.done\.jsonl$/);
     expect(await log.load()).toEqual([]);
   });
 
   it("refuses a task id that is not a lane id, and accepts every lane id", () => {
     const base = fs.mkdtempSync(path.join(root, "f-"));
-    for (const bad of ["../x", "a/b", "..", "", "_p", "x".repeat(201)]) {
+    for (const bad of ["../x", "a/b", "..", "", "_p", "T1", "A_b-9", "x".repeat(201)]) {
       expect(isLaneId(bad)).toBe(false);
       expect(() => new ChatLog(base, undefined, "main", bad), bad).toThrow(/task/);
     }
-    for (const good of ["t1", "0b6c2d1e-8f3a-4c5d-9e7f-1a2b3c4d5e6f", "A_b-9", "x".repeat(200)]) {
+    for (const good of ["t1", "0b6c2d1e-8f3a-4c5d-9e7f-1a2b3c4d5e6f", "a_b-9", "x".repeat(200)]) {
       expect(isLaneId(good)).toBe(true);
       expect(() => new ChatLog(base, undefined, "main", good)).not.toThrow();
     }
@@ -229,5 +229,74 @@ describe("per-task chats (parallel spec §6)", () => {
     await expect(new ChatLog(base, undefined, "s1", "t1").append(entry("x"))).rejects.toThrow(/outside/);
     expect(await new ChatLog(base, undefined, "s1", "t1").load()).toEqual([]);
     expect(fs.readFileSync(path.join(outside, "secret.jsonl"), "utf8")).toBe(JSON.stringify(entry("secret")) + "\n");
+  });
+
+  it("never overwrites an archive, keeps scope and task chats' names apart, and shortens long ids", async () => {
+    const base = fs.mkdtempSync(path.join(root, "f-"));
+    const real = Date.prototype.toISOString;
+    Date.prototype.toISOString = () => "2026-10-28T10:00:00.000Z";
+    const targets: (string | null)[] = [];
+    try {
+      const log = new ChatLog(base, undefined, "main", "t1");
+      await log.append(entry("first"));
+      targets.push(await log.archive("done"));
+      await log.append(entry("second"));
+      targets.push(await log.archive("done"));
+      await new ChatLog(base, undefined, "a-b").append(entry("scope"));
+      targets.push(await new ChatLog(base, undefined, "a-b").archive("x"));
+      await new ChatLog(base, undefined, "a", "b").append(entry("task"));
+      targets.push(await new ChatLog(base, undefined, "a", "b").archive("x"));
+      const long = new ChatLog(base, undefined, "s" + "x".repeat(63), "t".repeat(200));
+      await long.append(entry("long"));
+      targets.push(await long.archive("parallel"));
+    } finally {
+      Date.prototype.toISOString = real;
+    }
+    expect(targets.map((t) => path.basename(t!))).toEqual([
+      "2026-10-28T10-00-00-000Z-main.t1.done.jsonl",
+      "2026-10-28T10-00-00-000Z-main.t1.done-2.jsonl",
+      "2026-10-28T10-00-00-000Z-a-b-x.jsonl",
+      "2026-10-28T10-00-00-000Z-a.b.x.jsonl",
+      expect.stringMatching(new RegExp(`^2026-10-28T10-00-00-000Z-s${"x".repeat(63)}\\.${"t".repeat(40)}-[0-9a-f]{16}\\.parallel\\.jsonl$`)),
+    ]);
+    expect(targets.map((t) => (fs.readFileSync(t!, "utf8").match(/"text":"(\w+)"/) ?? [])[1])).toEqual(["first", "second", "scope", "task", "long"]);
+  });
+
+  it("D0: a scope chat archived twice in one millisecond keeps today's name, then a suffix", async () => {
+    const base = fs.mkdtempSync(path.join(root, "f-"));
+    const real = Date.prototype.toISOString;
+    Date.prototype.toISOString = () => "2026-10-28T10:00:00.000Z";
+    const names: string[] = [];
+    try {
+      for (const text of ["one", "two"]) {
+        await new ChatLog(base).append(entry(text));
+        names.push(path.basename((await new ChatLog(base).archive("claude"))!));
+      }
+    } finally {
+      Date.prototype.toISOString = real;
+    }
+    expect(names).toEqual(["2026-10-28T10-00-00-000Z-claude.jsonl", "2026-10-28T10-00-00-000Z-claude-2.jsonl"]);
+  });
+
+  it("refuses to archive a task chat into a symlinked archive folder", async () => {
+    const base = fs.mkdtempSync(path.join(root, "f-"));
+    const outside = fs.mkdtempSync(path.join(root, "out-"));
+    const log = new ChatLog(base, undefined, "main", "t1");
+    await log.append(entry("a"));
+    fs.symlinkSync(outside, path.join(base, ".harness", "chats", "archive"));
+    await expect(log.archive("done")).rejects.toThrow(/outside/);
+    expect(fs.readdirSync(outside)).toEqual([]);
+    expect((await log.load()).map((e) => e.text)).toEqual(["a"]);
+  });
+
+  it("refuses a hard-linked task chat, and the scope named archive", async () => {
+    const base = fs.mkdtempSync(path.join(root, "f-"));
+    const outside = path.join(fs.mkdtempSync(path.join(root, "out-")), "hl.txt");
+    fs.writeFileSync(outside, "");
+    fs.mkdirSync(path.join(base, ".harness", "chats", "main"), { recursive: true });
+    fs.linkSync(outside, path.join(base, ".harness", "chats", "main", "t1.jsonl"));
+    await expect(new ChatLog(base, undefined, "main", "t1").append(entry("a"))).rejects.toThrow(/outside/);
+    expect(fs.readFileSync(outside, "utf8")).toBe("");
+    expect(() => new ChatLog(base, undefined, "archive", "t1")).toThrow(/archive/);
   });
 });

@@ -238,6 +238,30 @@ describe("the board host (parallel spec §6, §7)", () => {
     await Promise.all([a, b]);
   });
 
+  it("the window's open tasks are read one at a time: a slow earlier read never lands after a later one", async () => {
+    const t = host();
+    let release!: () => void;
+    const slow = new Promise<void>((r) => (release = r));
+    const stale = { id: "old", scope: "main", action: null, label: "Old", state: "waiting", startedAt: "2026-10-28T10:00:00Z", tokens: 0 } as TaskSummary;
+    let calls = 0;
+    vi.spyOn(t.h.board, "summaries").mockImplementation(async () => {
+      calls++;
+      if (calls === 1) {
+        await slow;
+        return [stale];
+      }
+      return [];
+    });
+    t.h.capsChanged({ tasks: 2, jobs: 1 });
+    t.h.capsChanged({ tasks: 3, jobs: 1 });
+    await flush();
+    release();
+    await until(() => t.lastState()?.caps.tasks === 3 && t.lastState()?.tasks.length === 0);
+    await flush();
+    await flush();
+    expect(t.lastState()?.tasks).toEqual([]);
+  });
+
   it("an engine held at one session keeps the caps at 1 whatever Settings › General asks", async () => {
     const t = host({ engineId: "opencode" });
     t.h.capsChanged({ tasks: 4, jobs: 3 });

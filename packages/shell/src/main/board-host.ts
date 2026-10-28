@@ -194,11 +194,30 @@ export function createBoardHost(d: BoardHostDeps, initial: { engineId: string | 
   gate.onChange(() => tasksChanged());
 
   function tasksChanged(): void {
-    void tasksState().then(
-      (state) => d.send("hh:tasksChange", state),
-      (err: unknown) => console.error("Could not read the open tasks", err),
-    );
+    pushTasks();
     attend();
+  }
+
+  /**
+   * Changes while the open tasks are read for the window: one more read after it. Reads never overlap, so an earlier,
+   * slower one can't reach the window after a later one (the window keys its chat on the focus it shows).
+   */
+  let pushing = false;
+  let pushAgain = false;
+  function pushTasks(): void {
+    if (pushing) {
+      pushAgain = true;
+      return;
+    }
+    pushing = true;
+    pushAgain = false;
+    void tasksState()
+      .then((state) => d.send("hh:tasksChange", state))
+      .catch((err: unknown) => console.error("Could not read the open tasks", err))
+      .finally(() => {
+        pushing = false;
+        if (pushAgain) pushTasks();
+      });
   }
 
   /** Changes while the attention update runs: one more after it, reading the open tasks then. */

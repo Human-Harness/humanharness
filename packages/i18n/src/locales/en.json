@@ -636,7 +636,7 @@
     "toggleOff": "Sidekick is off. Turn it on",
     "open": "Open Sidekick",
     "collapse": "Collapse Sidekick",
-    "waiting": "Sidekick has a suggestion",
+    "rail": { "waiting": "Sidekick · {{count}} waiting" },
     "status": {
       "off": "Off",
       "watching": "Watching",
@@ -660,7 +660,8 @@
       "sendAnyway": "Send anyway",
       "putInComposer": "Put in composer",
       "drop": "Drop",
-      "announce": "Sidekick has a suggestion for your prompt."
+      "announce": "Sidekick has a suggestion for your prompt.",
+      "announceFrom": "{{name}} has a new card."
     },
     "headsUpCount_one": "{{count}} heads-up",
     "headsUpCount_other": "{{count}} heads-ups",
@@ -674,7 +675,9 @@
       "saveFailed": "Could not save the decision: {{message}}",
       "saveFailedPlain": "Could not save the decision."
     },
-    "after": { "title": "After the reply", "next": "Next prompt", "dismiss": "Dismiss" },
+    "after": { "title": "After the reply", "next": "Next prompt", "lesson": "Worth knowing", "dismiss": "Dismiss" },
+    "guard": { "title": "Before moving on", "approveTitle": "Before approving" },
+    "daily": { "title": "Yesterday" },
     "notice": {
       "failed": "Sidekick couldn't review this one. Your prompt went as typed.",
       "timeout": "Sidekick took too long. Your prompt went as typed."

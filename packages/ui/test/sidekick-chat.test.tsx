@@ -410,7 +410,7 @@ describe("Sidekick when a send can't go out, or the panel can't show", () => {
     const box = await openWithPreflight(c);
     type(box, "make it better");
     act(() => c.emitSidekick({ ...SK_ON, status: "suggestion", card: CARD }));
-    fireEvent.click(await screen.findByRole("button", { name: "Sidekick has a suggestion" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Sidekick · 1 waiting" }));
     fireEvent.click(await screen.findByRole("button", { name }));
     await act(async () => undefined);
     expect(c.sent).toEqual([]);
@@ -524,5 +524,54 @@ describe("after the reply and queued prompts in the chat (spec §4.2)", () => {
     fireEvent.click(finish);
     await waitFor(() => expect(c.taskCalls).toEqual(["finish"]));
     expect(c.sidekickCalls.filter((x) => x[0] === "resolve")).toEqual([["resolve", "h1", "used"]]);
+  });
+});
+
+describe("several sidekicks in the chat (spec §7, §2a.7)", () => {
+  const RULO = { id: "rulo", name: "Rulo", mark: "🦊" };
+  const HEADS_UP: SidekickCard = { id: "h1", moment: "heads-up", kind: "context", speaker: RULO, prompt: "", flags: [], issues: [], confidence: 1, at: "2026-10-27T10:00:00Z", headsUp: { kind: "context", share: 0.8 } };
+  const GUARD = { name: "Guard", mark: "🛡️", personality: "Calm.", purposes: [{ id: "process-guard" }], adopted: false };
+  const live = () => document.querySelector('[aria-live="polite"]')?.textContent;
+
+  it("a heads-up is announced once, by who speaks; the rail counts it", async () => {
+    const c = client();
+    await open(c);
+    act(() => c.emitSidekick({ ...SK_ON, cards: [HEADS_UP] }));
+    await waitFor(() => expect(live()).toBe("Rulo has a new card."));
+    act(() => c.emitSidekick({ ...SK_ON, cards: [HEADS_UP], spent: 1300 }));
+    await act(async () => undefined);
+    expect(live()).toBe("Rulo has a new card.");
+    fireEvent.click(await screen.findByRole("button", { name: "Collapse Sidekick" }));
+    expect(screen.getByRole("button", { name: "Sidekick · 1 waiting" }).textContent).toContain("🦊");
+  });
+
+  it("the panel's first open offers the presets once and marks them offered", async () => {
+    const c = client();
+    c.sidekickPresets = [GUARD];
+    await open(c);
+    expect(await screen.findByRole("region", { name: "Suggested by the harness" })).toBeTruthy();
+    await waitFor(() => expect(c.sidekickCalls).toContainEqual(["set", { presetsOffered: true }]));
+    // Still there while the panel stays open; gone once collapsed and opened again.
+    expect(screen.getByRole("button", { name: "Add Guard" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Collapse Sidekick" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Open Sidekick" }));
+    await screen.findByRole("button", { name: "Collapse Sidekick" });
+    await act(async () => undefined);
+    expect(screen.queryByRole("region", { name: "Suggested by the harness" })).toBeNull();
+  });
+
+  it("already offered (Settings answered it), or nothing to offer: no offer and nothing written", async () => {
+    const c = client();
+    c.sidekickPresets = [GUARD];
+    c.sidekickState = { ...SK_ON, settings: { ...SK_ON.settings, presetsOffered: true } };
+    await open(c);
+    await act(async () => undefined);
+    expect(screen.queryByRole("region", { name: "Suggested by the harness" })).toBeNull();
+    cleanup();
+    const d = client();
+    await open(d);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(screen.queryByRole("region", { name: "Suggested by the harness" })).toBeNull();
+    expect(d.sidekickCalls.filter(([k]) => k === "set")).toEqual([]);
   });
 });

@@ -2,7 +2,8 @@
 import { cleanup, fireEvent, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SidekickCard, SidekickState } from "../src/client";
-import { SidekickPanel } from "../src/sidekick/SidekickPanel";
+import { SidekickPanel, SidekickRail } from "../src/sidekick/SidekickPanel";
+import { SidekickMark } from "../src/sidekick/mark";
 import { wordDiff } from "../src/sidekick/word-diff";
 import { renderIn } from "./render";
 import { SK_ON } from "./sidekick-fixtures";
@@ -136,8 +137,9 @@ describe("SidekickPanel", () => {
 describe("learning in the panel (spec §4.1, §7)", () => {
   it("why and Don't flag", async () => {
     const h = await panel({ ...SK_ON, status: "suggestion", card: { ...CARD, why: { used: 4, of: 5 } } });
-    expect(screen.getByText("You took 4 of your last 5 “vague” suggestions")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Don't flag “vague”" }));
+    // The kind reads as its label, never the raw id.
+    expect(screen.getByText("You took 4 of your last 5 “Vague words” suggestions")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Don't flag “Vague words”" }));
     expect(h.onMute).toHaveBeenCalledWith("c1");
   });
 
@@ -232,5 +234,125 @@ describe("heads-ups (spec §4.3, §7)", () => {
     await panel({ ...SK_ON, cards: [empty] });
     expect(screen.queryByRole("heading", { name: "After the reply" })).toBeNull();
     expect(screen.getByText("Watching")).toBeTruthy();
+  });
+});
+
+describe("several sidekicks in the panel (spec §7)", () => {
+  const RULO = { id: "rulo", name: "Rulo", mark: "🦊" };
+  const base = { prompt: "", flags: [], issues: [], confidence: 1, at: "2026-10-27T10:00:00Z" };
+  const rail = (state: SidekickState, onOpen = vi.fn()) => renderIn("en", <SidekickRail state={state} onOpen={onOpen} />).then(() => onOpen);
+
+  it("every card names who speaks", async () => {
+    await panel({ ...SK_ON, cards: [{ ...base, id: "a", moment: "after", kind: "next", speaker: RULO, after: { next: "Ask for sources", lesson: "Sources first." } }] });
+    expect(screen.getByText("Rulo")).toBeTruthy();
+    expect(screen.getByText("🦊")).toBeTruthy();
+    expect(screen.getByText("Worth knowing")).toBeTruthy();
+    expect(screen.getByText("Sources first.")).toBeTruthy();
+  });
+
+  it("with two or more sidekicks even the default one's cards name it; heads-ups too", async () => {
+    await panel({ ...SK_ON, sidekicks: [SK_ON.info, RULO], status: "suggestion", card: CARD, cards: [{ ...base, id: "h", moment: "heads-up", kind: "context", speaker: RULO, headsUp: { kind: "context", share: 0.8 } }] });
+    const speakers = [...document.querySelectorAll(".hh-sk-speaker")].map((e) => e.textContent?.trim());
+    expect(speakers).toEqual(["Sidekick", "🦊 Rulo"]);
+  });
+
+  it("a lesson alone shows (counted as a gap), with Dismiss and no Put in composer", async () => {
+    const h = await panel({ ...SK_ON, cards: [{ ...base, id: "l", moment: "after", kind: "gap", speaker: RULO, after: { lesson: "Cite before you claim." } }] });
+    expect(screen.getByRole("heading", { name: "After the reply" })).toBeTruthy();
+    expect(screen.getByText("Cite before you claim.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Put in composer" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(h.onDismiss).toHaveBeenCalledWith("l", "dismissed");
+  });
+
+  it("phase-change and daily cards", async () => {
+    const h = await panel({ ...SK_ON, cards: [
+      { ...base, id: "p", moment: "phase-change", kind: "missing", speaker: RULO, guard: { missing: ["No agreed section list"] } },
+      { ...base, id: "d", moment: "daily", kind: "daily", speaker: RULO, text: "Yesterday you outlined chapter 2." },
+    ] });
+    expect(screen.getByRole("heading", { name: "Before moving on" })).toBeTruthy();
+    expect(screen.getByText("No agreed section list")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Yesterday" })).toBeTruthy();
+    expect(screen.getByText("Yesterday you outlined chapter 2.")).toBeTruthy();
+    // Newest first: the daily card, then the guard's.
+    const dismiss = screen.getAllByRole("button", { name: "Dismiss" });
+    expect(dismiss).toHaveLength(2);
+    fireEvent.click(dismiss[0]!);
+    expect(h.onDismiss).toHaveBeenCalledWith("d", "dismissed");
+    fireEvent.click(dismiss[1]!);
+    expect(h.onDismiss).toHaveBeenLastCalledWith("p", "dismissed");
+  });
+
+  it("before approving: its own title", async () => {
+    await panel({ ...SK_ON, cards: [{ ...base, id: "b", moment: "before-approve", kind: "missing", speaker: RULO, guard: { missing: ["No sources section"] } }] });
+    expect(screen.getByRole("heading", { name: "Before approving" })).toBeTruthy();
+    expect(screen.getByText("No sources section")).toBeTruthy();
+  });
+
+  it("model text is plain text, never markup", async () => {
+    await panel({ ...SK_ON, cards: [{ ...base, id: "d", moment: "daily", kind: "daily", speaker: RULO, text: "<b>bold</b> **x**" }] });
+    expect(screen.getByText("<b>bold</b> **x**")).toBeTruthy();
+    expect(document.querySelector(".hh-sk-panel b")).toBeNull();
+  });
+
+  it("the rail shows the waiting speakers' marks and the count", async () => {
+    const onOpen = await rail({ ...SK_ON, cards: [{ ...base, id: "d", moment: "daily", kind: "daily", speaker: RULO, text: "y" }] });
+    const button = screen.getByRole("button", { name: "Sidekick · 1 waiting" });
+    expect(button.textContent).toContain("🦊");
+    expect(button.querySelector(".hh-sk-dot")).toBeTruthy();
+    fireEvent.click(button);
+    expect(onOpen).toHaveBeenCalled();
+  });
+
+  it("the rail lights for any waiting card; at most three distinct marks", async () => {
+    const who = (id: string, mark: string) => ({ id, name: id, mark });
+    const cards: SidekickCard[] = [
+      { ...base, id: "1", moment: "heads-up", kind: "context", speaker: who("a", "🅰️"), headsUp: { kind: "context", share: 0.9 } },
+      { ...base, id: "2", moment: "phase-change", kind: "missing", speaker: who("b", "🅱️"), guard: { missing: ["x"] } },
+      { ...base, id: "3", moment: "after", kind: "gap", speaker: who("a", "🅰️"), after: { gap: { title: "t", text: "x" } } },
+      { ...base, id: "4", moment: "after", kind: "gap", speaker: who("c", "©️"), after: { lesson: "x" } },
+      { ...base, id: "5", moment: "daily", kind: "daily", speaker: who("d", "🇩"), text: "x" },
+      // Never shown: neither counted nor marked.
+      { ...base, id: "6", moment: "after", kind: "gap", speaker: who("e", "🇪"), after: {} },
+    ];
+    await rail({ ...SK_ON, status: "suggestion", card: CARD, cards });
+    const button = screen.getByRole("button", { name: "Sidekick · 6 waiting" });
+    expect(button.querySelectorAll(".hh-sk-mark")).toHaveLength(3);
+    expect(button.textContent).not.toContain("🇪");
+  });
+
+  it("the rail with nothing waiting: the plain mark, Open Sidekick, no dot; off → grey", async () => {
+    await rail(SK_ON);
+    const button = screen.getByRole("button", { name: "Open Sidekick" });
+    expect(button.querySelector(".hh-sk-dot")).toBeNull();
+    expect(button.querySelector("svg.hh-sk-mark")).toBeTruthy();
+    cleanup();
+    await rail({ ...SK_ON, settings: { ...SK_ON.settings, on: false }, cards: [{ ...base, id: "d", moment: "daily", kind: "daily", speaker: RULO, text: "y" }] });
+    expect(screen.getByRole("button", { name: "Open Sidekick" }).querySelector("svg.hh-sk-mark-off")).toBeTruthy();
+  });
+
+  it("D0: one sidekick → no speaker line on its cards", async () => {
+    await panel({ ...SK_ON, status: "suggestion", card: { ...CARD, moment: "pre", kind: "vague", speaker: SK_ON.info } });
+    expect(screen.queryByText("Sidekick", { selector: ".hh-sk-speaker" })).toBeNull();
+    expect(document.querySelector(".hh-sk-speaker")).toBeNull();
+  });
+});
+
+describe("SidekickMark", () => {
+  it("spark → the SVG; a --hh-* token → a dot in that colour; else the text", async () => {
+    const { container } = await renderIn("en", <>
+      <SidekickMark />
+      <SidekickMark mark="--hh-accent" />
+      <SidekickMark mark="🦊" />
+      <SidekickMark mark="--hh-x;background:url(x)" />
+    </>);
+    expect(container.querySelectorAll("svg.hh-sk-mark")).toHaveLength(1);
+    const dot = container.querySelector<HTMLElement>(".hh-sk-mark-dot");
+    expect(dot?.style.background).toBe("var(--hh-accent)");
+    expect(dot?.getAttribute("aria-hidden")).toBe("true");
+    expect(container.querySelectorAll(".hh-sk-mark-dot")).toHaveLength(1);
+    expect(container.textContent).toContain("🦊");
+    // Not a token name: shown as text, never put in a style.
+    expect(container.textContent).toContain("--hh-x;background:url(x)");
   });
 });

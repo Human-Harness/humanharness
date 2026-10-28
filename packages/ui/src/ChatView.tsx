@@ -39,8 +39,8 @@ import { PhaseStepper } from "./PhaseStepper";
 import { actionPhases, phaseModesOf } from "./phases";
 import { RecommendModeBlock } from "./RecommendModeBlock";
 import { FlaggedText } from "./sidekick/FlaggedText";
-import { SidekickMark } from "./sidekick/mark";
-import { SidekickPanel } from "./sidekick/SidekickPanel";
+import { FirstOpenOffer } from "./sidekick/PresetOffer";
+import { SidekickPanel, SidekickRail, waitingCards } from "./sidekick/SidekickPanel";
 import { useNarrow } from "./sidekick/useNarrow";
 import { useSidekick } from "./sidekick/useSidekick";
 import { type StartViewCopy, StartView } from "./StartView";
@@ -206,17 +206,29 @@ export function ChatView({
     laterTask.current = tasks.current?.id;
     if (was !== undefined && was !== tasks.current?.id) setLater([]);
   }, [tasks.current?.id]);
-  const skAnnounced = useRef<string | undefined>(undefined);
-  // Each new card is announced once (spec §7 accessibility); the panel itself never takes focus.
+  // The live card's dropped asks belong to it: another card starts with none dropped.
+  useEffect(() => setDroppedLive((d) => (d.length ? [] : d)), [skCard]);
+  const skAnnounced = useRef(new Set<string>());
+  const skFrame = useRef(0);
+  const skWaiting = sidekick ? waitingCards(sidekick) : [];
+  const skWaitingIds = skWaiting.map((c) => c.id).join(" ");
+  const skWaitingRef = useRef(skWaiting);
+  skWaitingRef.current = skWaiting;
+  // Each new card is announced once (spec §7 accessibility), heads-ups and other moments too; the panel never takes focus.
   // Cleared, then set on the next frame: two cards in a row put the same words, which a screen reader would skip.
   useEffect(() => {
-    const isNew = skCard && skCard !== skAnnounced.current;
-    skAnnounced.current = skCard;
-    if (!isNew) return;
+    const fresh = skWaitingRef.current.filter((c) => !skAnnounced.current.has(c.id));
+    for (const c of fresh) skAnnounced.current.add(c.id);
+    // The live pre-send card says the most; else the newest other card, by who speaks.
+    const card = fresh.find((c) => c.id === skCard) ?? fresh.at(-1);
+    if (!card) return;
+    const text = card.id === skCard ? t("sidekick.card.announce") : t("sidekick.card.announceFrom", { name: card.speaker.name });
     setAnnouncement("");
-    const frame = requestAnimationFrame(() => setAnnouncement(t("sidekick.card.announce")));
-    return () => cancelAnimationFrame(frame);
-  }, [skCard, t]);
+    // Only a newer announcement cancels a pending one: a card leaving in between must not swallow it.
+    cancelAnimationFrame(skFrame.current);
+    skFrame.current = requestAnimationFrame(() => setAnnouncement(text));
+  }, [skWaitingIds, skCard, t]);
+  useEffect(() => () => cancelAnimationFrame(skFrame.current), []);
   /** Collapse ↔ open unmounts the focused button: focus moves to its counterpart (rail ↔ collapse). */
   const skFocus = useRef(false);
   const railRef = useRef<HTMLButtonElement>(null);
@@ -1337,17 +1349,7 @@ export function ChatView({
             return (
               <>
                 {harnessSide !== undefined && <aside className="hh-side">{harnessSide}</aside>}
-                <div className="hh-sk-rail">
-                  <button
-                    ref={railRef}
-                    type="button"
-                    aria-label={sidekick.card ? t("sidekick.waiting") : t("sidekick.open")}
-                    onClick={() => toggleSk(true)}
-                  >
-                    <SidekickMark off={!sidekick.settings.on} />
-                    {sidekick.card && <span className="hh-sk-dot" aria-hidden="true" />}
-                  </button>
-                </div>
+                <SidekickRail state={sidekick} buttonRef={railRef} onOpen={() => toggleSk(true)} />
               </>
             );
           }
@@ -1359,6 +1361,7 @@ export function ChatView({
               {...(harnessSide !== undefined ? { harnessSide } : {})}
               sendKey={SEND_KEY}
               onCollapse={() => toggleSk(false)}
+              offer={<FirstOpenOffer client={client} offered={sidekick.settings.presetsOffered} />}
               onMute={(id) => void client.sidekick.mute(id).catch(() => undefined)}
               onDismiss={(id, outcome) => void client.sidekick.resolve(id, outcome).catch(() => undefined)}
               onSaveDecision={(id) => client.sidekick.saveDecision(id)}

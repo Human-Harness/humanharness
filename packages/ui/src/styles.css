@@ -511,6 +511,9 @@ select:focus-visible { outline: 2px solid var(--hh-ink); outline-offset: 2px; }
 .hh-sk-mark { color: var(--hh-ink); flex: none; }
 .hh-sk-mark-off { color: var(--hh-muted); }
 .hh-sk-mark-text { line-height: 1; }
+.hh-sk-mark-dot { display: inline-block; border-radius: 50%; }
+.hh-sk-speaker { display: flex; align-items: center; gap: 6px; font-size: 0.8rem; color: var(--hh-muted); margin-bottom: 6px; overflow-wrap: anywhere; }
+.hh-sk-daily { white-space: pre-wrap; }
 .hh-sk-presets { margin-bottom: 20px; }
 .hh-sk-presets h3 { margin: 0 0 8px; font-size: 0.95rem; }
 .hh-sk-presets-list { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-direction: column; gap: 8px; }
@@ -533,7 +536,7 @@ select:focus-visible { outline: 2px solid var(--hh-ink); outline-offset: 2px; }
 .hh-sk-check { display: block; margin: 4px 0; }
 .hh-sk-custom { margin: 8px 0 0 22px; }
 .hh-sk-rail { width: 52px; flex: none; display: flex; flex-direction: column; align-items: center; padding-top: 12px; border-left: 1px solid var(--hh-line); background: var(--hh-paper); }
-.hh-sk-rail button { position: relative; }
+.hh-sk-rail button { position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; }
 .hh-sk-rail .hh-sk-dot { position: absolute; top: 2px; right: 2px; width: 8px; height: 8px; border-radius: 50%; background: var(--hh-ink); }
 .hh-sk-toggle .hh-sk-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--hh-ink); margin-right: 6px; }
 .hh-sk-toggle[data-on="true"] .hh-sk-dot { background: var(--hh-ink); }

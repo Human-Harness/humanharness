@@ -28,6 +28,30 @@ describe("attribute (parallel spec §5.2, Decision 4, T2)", () => {
     const r = attribute({ changed: ["a"], overlapped: true, ownEdits: set("a"), others: [{ task: "t2", edits: set("a") }] });
     expect(r).toEqual({ owned: ["a"], shared: [], with: [], left: [] });
   });
+  it("two other running turns name a path the own turn didn't: it is left for them", () => {
+    const r = attribute({
+      changed: ["p"],
+      overlapped: true,
+      ownEdits: set(),
+      others: [
+        { task: "t2", edits: set("p") },
+        { task: "t3", edits: set("p") },
+      ],
+    });
+    expect(r).toEqual({ owned: [], shared: [], with: [], left: ["p"] });
+  });
+  it("the own turn and two other turns all name a path: it is owned", () => {
+    const r = attribute({
+      changed: ["p"],
+      overlapped: true,
+      ownEdits: set("p"),
+      others: [
+        { task: "t2", edits: set("p") },
+        { task: "t3", edits: set("p") },
+      ],
+    });
+    expect(r).toEqual({ owned: ["p"], shared: [], with: [], left: [] });
+  });
   it("overlapped but every other turn already ended: nothing left to share with, all owned", () => {
     expect(attribute({ changed: ["a", "c"], overlapped: true, ownEdits: set("a"), others: [] })).toEqual({
       owned: ["a", "c"],

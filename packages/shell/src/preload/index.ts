@@ -28,6 +28,7 @@ import { askContext, contextListener } from "./context";
 import { documentWatcher } from "./document-watch";
 import { fileCommitListeners } from "./file-commits";
 import { askFile, restoreFlow } from "./file-restore";
+import { languageClient } from "./language";
 
 function subscribe<T>(channel: string, listener: (value: T) => void): () => void {
   const handler = (_e: unknown, value: T) => listener(value);
@@ -231,6 +232,8 @@ const client: HarnessClient = {
     include: (scope, note) => askContext<ContextResult>(fileInvoke, "hh:contextInclude", scope, note),
   },
   onTextSize: (listener) => subscribe<TextSize>("hh:textSize", listener),
+  // Language on demand (language spec): every answer is data, a rejected invoke included.
+  language: languageClient(fileInvoke, (channel, listener) => subscribe<unknown>(channel, listener)),
 };
 
 contextBridge.exposeInMainWorld("hh", client);

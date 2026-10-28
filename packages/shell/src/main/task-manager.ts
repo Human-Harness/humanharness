@@ -1173,10 +1173,11 @@ export class TaskManager {
       const soFar = (after?.id === c.id ? after : c).checkpointNote ? await this.checkpointSummary(c) : undefined;
       const message = modePrompt(text, { language, ...(soFar ? { soFar } : {}) });
       // Recorded before the status, so no await falls between the Stop check and the send.
-      await this.addBrief(c.id, `Mode brief · ${oneLine(text.label)}`, message);
+      const brief = await this.addBrief(c.id, `Mode brief · ${oneLine(text.label)}`, message);
       await this.setStatus(c.id, "running");
-      // Checked with no await before the send: a Stop while the status was saved.
+      // Checked with no await before the send: a Stop while the status was saved. The brief never reached the session.
       if (this.cancelRequested) {
+        await this.dropBrief(c.id, brief);
         await this.setStatus(c.id, "waiting");
         return this.stopped();
       }
@@ -1210,6 +1211,8 @@ export class TaskManager {
     if (!c || c.id !== taskId) return take({ ok: false, reason: "no-task" });
     if (!addablePath(file)) return take({ ok: false, reason: "bad-name" });
     if (c.status !== "waiting") return take({ ok: false, reason: "busy" });
+    // The person asked for this turn: a paused time box runs again, as for a mode pick.
+    await this.personWorks(c);
     take({ ok: true });
     this.tellTurn({ task: c.id, kind: "context", path: file });
     return this.endsInWindow(async () => {
@@ -1506,11 +1509,13 @@ export class TaskManager {
     });
     // A resumed task starts a new session (context-panel spec §3.1): its record is this message's, and the first-turn
     // tokens are the resumed turn's.
-    const start = await this.startItems(message, items, brief !== undefined ? "Task brief" : "Question");
+    // An action task whose brief could not be read is still an action's task, not a question.
+    const start = await this.startItems(message, items, brief !== undefined || c.action !== undefined ? "Task brief" : "Question");
     await this.update((s) => {
       if (s.current?.id !== c.id) return s;
       const { startTokens: _old, ...rest } = s.current;
-      return { ...s, current: { ...rest, start } };
+      // What the old session read is not in the new one's context: it shows as possibly summarized (§3.2).
+      return { ...s, current: { ...rest, start, ...(rest.reads ? { reads: markCompacted(rest.reads) } : {}) } };
     });
     this.changedContext(c.id);
     return message;
@@ -1644,7 +1649,7 @@ export class TaskManager {
    * the turn was refused before it began (no `done` came).
    */
   private async runTurn(task: CurrentTask, message: string, options: Omit<TurnOptions, "task" | "onEvent" | "profile">): Promise<Done> {
-    const seen: { done?: Done; note?: SavedNote; used?: number; size?: number; compacted?: boolean; phaseAsk?: PhaseRequest; reads: SeenRead[]; input?: number } = { reads: [] };
+    const seen: { done?: Done; note?: SavedNote; used?: number; size?: number; compacted?: boolean; phaseAsk?: PhaseRequest; reads: SeenRead[]; input?: number; compactedAt?: number } = { reads: [] };
     // Read paths become folder paths; without the folder, file names only (nothing is read from them).
     const given = this.d.folder ? await this.d.folder().catch(() => null) : null;
     const real = given ? await fs.realpath(given).catch(() => given) : null;
@@ -1689,7 +1694,11 @@ export class TaskManager {
           } else if (e.type === "context") {
             seen.used = e.used;
             if (e.size !== undefined) seen.size = e.size;
-          } else if (e.type === "compaction") seen.compacted = true;
+          } else if (e.type === "compaction") {
+            seen.compacted = true;
+            // Reads before this point may be summarized too (§3.2): the last compaction of the turn counts.
+            seen.compactedAt = seen.reads.length;
+          }
         },
       });
     } catch (err) {
@@ -1712,7 +1721,7 @@ export class TaskManager {
     if (seen.used !== undefined || seen.compacted) await this.track(task.id, seen);
     const startTokens = this.recordStart === task.id && seen.input !== undefined ? seen.input : undefined;
     if (startTokens !== undefined) this.recordStart = null;
-    if (seen.reads.length > 0 || startTokens !== undefined) await this.recordTurn(task.id, seen.reads, startTokens);
+    if (seen.reads.length > 0 || startTokens !== undefined) await this.recordTurn(task.id, seen.reads, startTokens, seen.compactedAt);
     return result;
   }
 
@@ -1844,10 +1853,11 @@ export class TaskManager {
     const now = (await this.d.store.load()).current;
     if (now?.id !== c.id) return this.stopped();
     // Recorded before the status, so no await falls between the Stop check and the send.
-    await this.addBrief(c.id, `Phase brief · ${oneLine(to.label)}`, plan.message);
+    const brief = await this.addBrief(c.id, `Phase brief · ${oneLine(to.label)}`, plan.message);
     await this.setStatus(c.id, "running");
-    // Checked with no await before the send: a Stop while the status was saved.
+    // Checked with no await before the send: a Stop while the status was saved. The brief never reached the session.
     if (this.cancelRequested) {
+      await this.dropBrief(c.id, brief);
       await this.setStatus(c.id, "waiting");
       return this.stopped();
     }
@@ -1868,16 +1878,23 @@ export class TaskManager {
     return this.afterRun(c.id, done, false);
   }
 
-  /** One turn's reads and tools, merged once it ended (context-panel spec §3.2), and the first-turn total. */
-  private async recordTurn(id: string, reads: SeenRead[], startTokens: number | undefined): Promise<void> {
+  /**
+   * One turn's reads and tools, merged once it ended (context-panel spec §3.2), and the first-turn total. `compactedAt`:
+   * how many of `reads` came before the turn's last reported compaction; those are marked with everything earlier.
+   */
+  private async recordTurn(id: string, reads: SeenRead[], startTokens: number | undefined, compactedAt?: number): Promise<void> {
     const at = this.now().toISOString();
+    const merged = (old: ContextRead[]): ContextRead[] => {
+      if (compactedAt === undefined) return mergeReads(old, reads, at);
+      return mergeReads(markCompacted(mergeReads(old, reads.slice(0, compactedAt), at)), reads.slice(compactedAt), at);
+    };
     await this.update((s) => {
       if (s.current?.id !== id) return s;
       return {
         ...s,
         current: {
           ...s.current,
-          ...(reads.length > 0 ? { reads: mergeReads(s.current.reads ?? [], reads, at) } : {}),
+          ...(reads.length > 0 ? { reads: merged(s.current.reads ?? []) } : {}),
           ...(startTokens !== undefined ? { startTokens } : {}),
         },
       };
@@ -1885,15 +1902,32 @@ export class TaskManager {
     this.changedContext(id);
   }
 
-  /** A brief that reached the session after its start (a mode switch, a phase change): one more `brief` item (§3.1). */
-  private async addBrief(id: string, label: string, message: string): Promise<void> {
+  /**
+   * A brief that reaches the session after its start (a mode switch, a phase change): one more `brief` item (§3.1).
+   * Returns the item's id, or null when none was added.
+   */
+  private async addBrief(id: string, label: string, message: string): Promise<string | null> {
     const at = this.now().toISOString();
+    let added: string | null = null;
     await this.update((s) => {
       if (s.current?.id !== id) return s;
       const start = s.current.start ?? [];
       const n = start.filter((i) => i.kind === "brief").length;
       const item: ContextItem = { id: `brief:${n}`, kind: "brief", label, tokens: approxTokens(message.length), at };
-      return { ...s, current: { ...s.current, start: [...start, item].slice(0, START_ITEMS_MAX) } };
+      const next = [...start, item].slice(0, START_ITEMS_MAX);
+      if (next.includes(item)) added = item.id;
+      return { ...s, current: { ...s.current, start: next } };
+    });
+    this.changedContext(id);
+    return added;
+  }
+
+  /** A brief recorded for a turn that a Stop cancelled before the send: it never reached the session. */
+  private async dropBrief(id: string, item: string | null): Promise<void> {
+    if (item === null) return;
+    await this.update((s) => {
+      if (s.current?.id !== id || !s.current.start) return s;
+      return { ...s, current: { ...s.current, start: s.current.start.filter((i) => i.id !== item) } };
     });
     this.changedContext(id);
   }

@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
+import type { HarnessTimeBox } from "@humanharness/harness-sdk";
 import type { Event } from "@humanharness/runtime";
 import type { ContextItem } from "@humanharness/ui/client";
 import type { Note } from "@humanharness/workspace";
-import { approxTokens } from "../src/main/context-record";
-import { emptyTasks } from "../src/main/task-store";
-import { setup } from "./task-manager-fixture";
+import { READS_MAX, approxTokens } from "../src/main/context-record";
+import { type TasksFile, emptyTasks } from "../src/main/task-store";
+import { profile, setup } from "./task-manager-fixture";
 
 const note = (slug: string, date: string): Note => ({
   slug,
@@ -158,6 +159,64 @@ describe("during the task (context-panel spec §3.2)", () => {
     expect(t.state().current?.reads?.[0]).not.toHaveProperty("compacted");
   });
 
+  it("reads before a compaction in the same turn are marked; reads after it are fresh", async () => {
+    const t = setup({
+      script: [[read("r1", "a.md"), read("r2", "b.md"), { type: "compaction" }, read("r3", "c.md"), read("r4", "a.md"), ok]],
+      extra: { folder: async () => "/w" },
+    });
+    await t.manager.start("quiz");
+    const reads = t.state().current?.reads ?? [];
+    expect(reads.map((r) => [r.path, r.compacted === true])).toEqual([
+      ["a.md", false],
+      ["b.md", true],
+      ["c.md", false],
+    ]);
+  });
+
+  it("without the folder, reads keep the file name only", async () => {
+    const t = setup({ script: [[read("r1", "docs/a.md"), ok]] });
+    await t.manager.start("quiz");
+    expect(t.state().current?.reads?.map((r) => [r.label, r.path])).toEqual([["a.md", undefined]]);
+  });
+
+  it("a first turn without usage leaves no first-turn total, and a later turn's usage is not taken for it", async () => {
+    const t = setup({ script: [[ok], [usage(900), ok]] });
+    await t.manager.start("quiz");
+    await t.manager.ask("more");
+    expect(t.state().current).not.toHaveProperty("startTokens");
+  });
+
+  it("one turn records at most READS_MAX reads", async () => {
+    const many = Array.from({ length: READS_MAX + 30 }, (_, i) => read(`r${i}`, `f${i}.md`));
+    const t = setup({ script: [[...many, ok]], extra: { folder: async () => "/w" } });
+    await t.manager.start("quiz");
+    expect(t.state().current?.reads).toHaveLength(READS_MAX);
+  });
+
+  it("a resume marks what the old session read as possibly summarized", async () => {
+    const state = emptyTasks();
+    state.current = {
+      id: "t9",
+      action: "quiz",
+      status: "waiting",
+      startedAt: "2026-10-26T09:00:00.000Z",
+      turns: 2,
+      resume: true,
+      reads: [{ kind: "read", label: "a.md", path: "a.md", firstAt: "2026-10-26T09:00:00.000Z", count: 1 }],
+    };
+    const t = setup({ state });
+    await t.manager.ask("Go on");
+    expect(t.state().current?.reads?.[0]).toMatchObject({ path: "a.md", compacted: true });
+  });
+
+  it("an action task whose brief can't be read resumes as a 'Task brief', not a 'Question'", async () => {
+    const state = emptyTasks();
+    state.current = { id: "t9", action: "quiz", status: "waiting", startedAt: "2026-10-26T09:00:00.000Z", turns: 2, resume: true };
+    const t = setup({ state, extra: { readPrompt: async () => Promise.reject(new Error("gone")) } });
+    await t.manager.ask("Go on");
+    expect(t.state().current?.start?.find((i) => i.kind === "brief")).toMatchObject({ id: "brief", label: "Task brief" });
+  });
+
   it("a mode switch and a phase change add their brief with the time it arrived", async () => {
     // No phases, so the switch is a plain mode turn; the task starts in its default mode.
     const t = setup({ phases: [], modes: { modes: ["socratic", "feynman"], defaultMode: "socratic" } });
@@ -166,6 +225,56 @@ describe("during the task (context-panel spec §3.2)", () => {
     const briefs = (t.state().current?.start ?? []).filter((i) => i.kind === "brief");
     expect(briefs.length).toBeGreaterThanOrEqual(2);
     expect(briefs.at(-1)).toMatchObject({ id: expect.stringMatching(/^brief:\d+$/), label: "Mode brief · Feynman", at: expect.any(String) });
+  });
+
+  it("a Stop before the send takes back the brief it recorded (mode switch, phase change)", async () => {
+    const stopAtBrief = (id: string) => {
+      let state = emptyTasks();
+      let stopped = false;
+      const t = setup({
+        phases: [],
+        modes: { modes: ["socratic", "feynman"], defaultMode: "socratic" },
+        extra: {
+          store: {
+            load: async () => structuredClone(state),
+            save: async (s: TasksFile) => {
+              state = structuredClone(s);
+              if (!stopped && s.current?.start?.some((i) => i.id === id)) {
+                stopped = true;
+                t.manager.cancel();
+              }
+            },
+          },
+        },
+      });
+      return { t, state: () => state };
+    };
+    const m = stopAtBrief("brief:1");
+    await m.t.manager.start("session");
+    await m.t.manager.chooseMode("feynman").done.catch(() => {});
+    expect(m.state().current?.start?.map((i) => i.id)).not.toContain("brief:1");
+    expect(m.t.turns).toHaveLength(1);
+
+    let state = emptyTasks();
+    let stopped = false;
+    const p = setup({
+      extra: {
+        store: {
+          load: async () => structuredClone(state),
+          save: async (s: TasksFile) => {
+            state = structuredClone(s);
+            if (!stopped && s.current?.start?.some((i) => i.id === "brief:1")) {
+              stopped = true;
+              p.manager.cancel();
+            }
+          },
+        },
+      },
+    });
+    await p.manager.start("session");
+    await p.manager.setPhase("main").done.catch(() => {});
+    expect(state.current?.start?.map((i) => i.id)).not.toContain("brief:1");
+    expect(p.turns).toHaveLength(1);
   });
 
   it("a phase change adds its brief too", async () => {
@@ -233,6 +342,63 @@ describe("Add now (context-panel spec §4.1)", () => {
     expect(await accepted).toEqual({ ok: true });
     await done;
     expect(t.turns).toHaveLength(2);
+  });
+
+  it("refuses a task that isn't waiting with busy", async () => {
+    const state = emptyTasks();
+    state.current = { id: "t1", action: "quiz", status: "running", startedAt: "", turns: 1 };
+    const t = setup({ state });
+    const { accepted, done } = t.manager.addContext("t1", "a.md");
+    await done;
+    expect(await accepted).toEqual({ ok: false, reason: "busy" });
+    expect(t.turns).toEqual([]);
+  });
+
+  it("resumes a paused time box: the person asked for this turn", async () => {
+    const box: HarnessTimeBox = { options: [10, 20], default: null, wrapUpAt: 0.5 };
+    const t = setup({ timeBox: box });
+    await t.manager.start("session", undefined, undefined, undefined, { timeBox: 10 });
+    await t.manager.pauseTimeBox();
+    expect(t.state().current?.timeBox).not.toHaveProperty("runningSince");
+    const { accepted, done } = t.manager.addContext("t1", "a.md");
+    expect(await accepted).toEqual({ ok: true });
+    await done;
+    expect(t.state().current?.timeBox?.runningSince).toBeDefined();
+  });
+
+  it("a lost session resumes with it: the resume message carries the prompt, and the turn's usage is the new first-turn total", async () => {
+    const state = emptyTasks();
+    state.current = { id: "t9", action: "quiz", status: "waiting", startedAt: "2026-10-26T09:00:00.000Z", turns: 2, resume: true, startTokens: 5000 };
+    const t = setup({ state, script: [[usage(700), ok]] });
+    const { accepted, done } = t.manager.addContext("t9", "a.md");
+    expect(await accepted).toEqual({ ok: true });
+    await done;
+    expect(t.turns[0].message).toContain("# Task: quiz");
+    expect(t.turns[0].message).toContain("take `a.md` into account");
+    expect(t.turns[0].options).toMatchObject({ phase: "context-add" });
+    expect(t.state().current).not.toHaveProperty("resume");
+    expect(t.state().current?.startTokens).toBe(700);
+  });
+
+  it("a due checkpoint runs first; lines kept for the next message go with it", async () => {
+    const state = emptyTasks();
+    state.current = {
+      id: "t1",
+      action: "quiz",
+      status: "waiting",
+      startedAt: "",
+      turns: 3,
+      profile: { ...profile, cap: 1000 },
+      context: { used: 900 },
+      notices: ["The person approved specs/a.md."],
+    };
+    const t = setup({ state });
+    const { accepted, done } = t.manager.addContext("t1", "a.md");
+    expect(await accepted).toEqual({ ok: true });
+    await done;
+    expect(t.turns.map((x) => x.options.phase)).toEqual(["checkpoint", "context-add"]);
+    expect(t.turns[1].message.startsWith("The person approved specs/a.md.\n\n")).toBe(true);
+    expect(t.state().current).not.toHaveProperty("notices");
   });
 
   it("contextRecord gives the open task's record, and null for another id", async () => {

@@ -179,6 +179,91 @@ test.describe("the review fixture", () => {
       else fs.rmSync(s.root, { recursive: true, force: true });
     }
   });
+
+  test("file timeline: what the agent changed, the person's answer, go back and undo it, from the reader and the History panel", async () => {
+    test.setTimeout(120_000);
+    const s = makeSandbox("timeline");
+    let app: ElectronApplication | undefined;
+    try {
+      const launched = await launchMock(s, path.join(fixture, "mock"), mainJs);
+      app = launched.app;
+      const page = launched.page;
+      const csp: string[] = [];
+      page.on("console", (m) => {
+        if (/Content Security Policy|Refused to/i.test(m.text())) csp.push(m.text());
+      });
+      // Every worker thread main starts, and whether it answered a view: the diffs below must run in the built worker.
+      expect(fs.existsSync(path.join(outDir, "main", "diff-worker.js"))).toBe(true);
+      await app.evaluate(() => {
+        const seen: boolean[] = [];
+        (globalThis as { hhWorkers?: boolean[] }).hhWorkers = seen;
+        process.on("worker", (w) => w.once("message", (m: { ok?: unknown } | null) => seen.push(m?.ok === true)));
+      });
+      const workers = () => launched.app.evaluate(() => (globalThis as { hhWorkers?: boolean[] }).hhWorkers ?? []);
+      const doc = path.join(s.folder, "specs", "filter.md");
+      await startTicket(page);
+      const written = fs.readFileSync(doc, "utf8");
+
+      // The reader's File history: one entry by the ticket's agent; its diff shows the text it wrote.
+      await page.getByRole("button", { name: /Filter/ }).first().click();
+      const reader = page.getByRole("complementary", { name: "Document" });
+      await reader.getByRole("button", { name: "File history" }).click();
+      const drawer = reader.getByRole("region", { name: "File history" });
+      await expect(drawer.getByRole("button", { name: /Ticket/ })).toContainText("1 change");
+
+      // An answer swaps the passage: a "Your answers (1)" entry, not approved yet.
+      await reader.getByRole("region", { name: "Comments" }).getByRole("radio", { name: "Size and colour" }).click();
+      await expect.poll(() => fs.readFileSync(doc, "utf8")).toContain("Filter by size and colour.");
+      const answers = drawer.getByRole("button", { name: /Your answers \(1\)/ });
+      await expect(answers).toContainText("not approved");
+
+      // The agent's entry: what changed here, then against the current version.
+      await drawer.getByRole("button", { name: /Ticket/ }).click();
+      const diff = reader.getByRole("region", { name: "Changes" });
+      await expect(diff).toContainText("Filter by size.");
+      await reader.getByRole("button", { name: "Against the current version" }).click();
+      await expect(diff.locator("ins")).toContainText(["and colour"]);
+      // Both diffs came from the built worker thread, not from Electron main.
+      await expect.poll(async () => (await workers()).filter(Boolean).length).toBeGreaterThanOrEqual(2);
+      expect(await workers()).not.toContain(false);
+
+      // Go back to the agent's version: the core asks first; only this file changes.
+      await reader.getByRole("button", { name: "Go back to this version" }).click();
+      const confirm = page.getByRole("alertdialog");
+      await expect(confirm).toContainText("Go back specs/filter.md to how it was after Ticket");
+      await confirm.getByRole("button", { name: "Yes, go back" }).click();
+      await expect.poll(() => fs.readFileSync(doc, "utf8")).toBe(written);
+      await expect(drawer.getByRole("button", { name: /You went back to the version of/ })).toBeVisible();
+
+      // Undo the go-back the same way: back to the answers entry.
+      await drawer.getByRole("button", { name: /Your answers \(1\)/ }).click();
+      await reader.getByRole("button", { name: "Go back to this version" }).click();
+      await page.getByRole("alertdialog").getByRole("button", { name: "Yes, go back" }).click();
+      await expect.poll(() => fs.readFileSync(doc, "utf8")).toContain("Filter by size and colour.");
+      await reader.getByRole("button", { name: "Back to the document" }).click();
+      await reader.getByRole("button", { name: "Close" }).click();
+
+      // The History panel: the task's changed files are links; the .md opens in the reader with the drawer…
+      await page.getByRole("button", { name: "History", exact: true }).click();
+      const panel = page.getByRole("dialog", { name: "History" });
+      await panel.getByRole("button", { name: "History of specs/filter.md" }).click();
+      await expect(page.getByRole("complementary", { name: "Document" }).getByRole("region", { name: "File history" })).toBeVisible();
+      await page.getByRole("complementary", { name: "Document" }).getByRole("button", { name: "Close" }).click();
+
+      // …and the review record, not a document, in the timeline panel.
+      await page.getByRole("button", { name: "History", exact: true }).click();
+      await page.getByRole("dialog", { name: "History" }).getByRole("button", { name: "History of .harness/reviews/specs/filter.md.json" }).click();
+      const files = page.getByRole("dialog", { name: "History of .harness/reviews/specs/filter.md.json" });
+      await expect(files.getByRole("list", { name: "Versions and changes" })).toBeVisible();
+
+      expect(csp).toEqual([]);
+      // The history's file index lives in its git data, never in the person's folder (D0).
+      expect(fs.readdirSync(s.folder, { recursive: true }).map(String).filter((f) => path.basename(f) === "hh-file-index.json")).toEqual([]);
+    } finally {
+      if (app) await closeAndClean(app, s);
+      else fs.rmSync(s.root, { recursive: true, force: true });
+    }
+  });
 });
 
 test("a harness whose agent can't edit the folder (D0): no review in the reader, no review tools for the agent", async () => {
@@ -207,6 +292,10 @@ test("a harness whose agent can't edit the folder (D0): no review in the reader,
     await page.getByRole("button", { name: "Send" }).click();
     await expect(page.getByRole("main").getByText("Something failed and I didn't change anything.")).toBeVisible({ timeout: 30_000 });
     expect(fs.existsSync(path.join(s.folder, ".harness", "reviews"))).toBe(false);
+    // The file timeline's index (core, every harness) sits in the history's data, never in the person's folder.
+    const named = (dir: string) => fs.readdirSync(dir, { recursive: true }).map(String).filter((f) => path.basename(f) === "hh-file-index.json");
+    expect(named(s.folder)).toEqual([]);
+    expect(named(s.userData)).toHaveLength(1);
   } finally {
     await closeAndClean(app, s);
   }

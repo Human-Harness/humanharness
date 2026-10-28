@@ -69,10 +69,41 @@ function overridesPin(token: string, pinned: ReadonlySet<string>): boolean {
   return [...pinned].some((f) => f.startsWith("--") && f.startsWith(name));
 }
 
-/** `cmd args` matches one approved pattern (§4.2, Decision 9): literal tokens, a final `*` for one or more. */
+/** The ways a gh pattern pins GET; read-only is claimed only for `gh api <one of these> *`, nothing else. */
+const GH_GET_PINS: readonly (readonly string[])[] = [["--method", "GET"], ["-X", "GET"], ["--method=GET"], ["-XGET"]];
+
+/** Long options of `gh api` that send a body, a file or the token elsewhere: refused after a read-only pattern's `*`. */
+const READ_ONLY_REFUSED = ["--input", "--field", "--raw-field", "--hostname", "--header"];
+
+/**
+ * The pattern is `gh api` with GET pinned and a final `*`: the one shape the review calls read-only. Any other pattern
+ * (curl included: `--next`, `--output`, `--upload-file` make a GET pin meaningless) is shown without that claim.
+ */
+function readOnlyShape(p: { cmd: string; args: readonly string[] }): boolean {
+  if (p.cmd !== "gh" || p.args[0] !== "api" || p.args.at(-1) !== "*") return false;
+  const pin = p.args.slice(1, -1);
+  return GH_GET_PINS.some((g) => g.length === pin.length && g.every((t, i) => pin[i] === t));
+}
+
+/**
+ * A token after a read-only pattern's `*` that could write, read a local file or leave github.com: any short option, a
+ * long one naming or abbreviating READ_ONLY_REFUSED (`--` too), an absolute URL anywhere, an `@file` argument.
+ */
+function breaksReadOnly(token: string): boolean {
+  if (token.includes("://") || token.startsWith("@")) return true;
+  if (!token.startsWith("-") || token === "-") return false;
+  if (!token.startsWith("--")) return true;
+  const name = token.split("=")[0];
+  return READ_ONLY_REFUSED.some((f) => f.startsWith(name));
+}
+
+/**
+ * `cmd args` matches one approved pattern (§4.2, Decision 9): literal tokens, a final `*` for one or more. A read-only
+ * pattern (readOnlyShape) also refuses, after its `*`, whatever breaksReadOnly names.
+ */
 export function execAllowed(cmd: string, args: readonly string[], patterns: PluginPermissions["exec"]): boolean {
   if (!EXEC_CMD.test(cmd) || args.length > ARGS_MAX) return false;
-  if (args.some((a) => typeof a !== "string" || a.length > ARG_MAX || a.includes("\0") || a.includes("{{secret:"))) return false;
+  if (args.some((a) => typeof a !== "string" || a.length > ARG_MAX || a.includes("\0") || SECRET_LIKE.test(a))) return false;
   return patterns.some((p) => {
     if (p.cmd !== cmd) return false;
     const wild = p.args.at(-1) === "*";
@@ -81,7 +112,9 @@ export function execAllowed(cmd: string, args: readonly string[], patterns: Plug
     if (wild ? args.length <= prefix.length : args.length !== prefix.length) return false;
     if (!prefix.every((t, i) => args[i] === t)) return false;
     const pinned = pinnedFlags(prefix);
-    return args.slice(prefix.length).every((a) => !overridesPin(a, pinned));
+    const tail = args.slice(prefix.length);
+    if (readOnlyShape(p) && tail.some(breaksReadOnly)) return false;
+    return tail.every((a) => !overridesPin(a, pinned));
   });
 }
 
@@ -113,12 +146,19 @@ function base64(value: string): string {
   return btoa(bin);
 }
 
-/** The forms a value may come back in: raw, URL-encoded (either hex case), base64 and base64url, padded or not. */
+const lowerHex = (s: string) => s.replace(/%[0-9A-F]{2}/g, (m) => m.toLowerCase());
+
+/**
+ * The forms a value may come back in: raw, JSON-escaped, URL-encoded and form-encoded (either hex case), base64 and
+ * base64url, padded or not.
+ */
 function redactForms(value: string): string[] {
   const encoded = encodeURIComponent(value);
+  const form = new URLSearchParams({ x: value }).toString().slice(2);
   const b64 = base64(value);
   const url = b64.replaceAll("+", "-").replaceAll("/", "_");
-  return [value, encoded, encoded.replace(/%[0-9A-F]{2}/g, (m) => m.toLowerCase()), b64, b64.replace(/=+$/, ""), url, url.replace(/=+$/, "")];
+  const json = JSON.stringify(value).slice(1, -1);
+  return [value, json, encoded, lowerHex(encoded), form, lowerHex(form), b64, b64.replace(/=+$/, ""), url, url.replace(/=+$/, "")];
 }
 
 /** Every value, in every form, replaced by `[redacted]` (B6); the longest first, so no part of a value is left. */
@@ -131,12 +171,17 @@ export function redact(text: string, values: readonly string[]): string {
 
 export type AddedPermission = { kind: "host" | "exec" | "secret" | "tasks"; value: string };
 
-/** An approved host pattern covers `next`: the same, or a `*.` pattern over a host or narrower wildcard, same port. */
+/**
+ * An approved host pattern covers `next`: the same once normalized (`x.com` is `x.com:443`), or a `*.` pattern over a
+ * host or narrower wildcard, same port.
+ */
 function hostCovered(approved: string, next: string): boolean {
   if (approved === next) return true;
   const a = splitPattern(approved);
   const n = splitPattern(next);
-  if (a === null || n === null || a.port !== n.port || !a.name.startsWith("*.")) return false;
+  if (a === null || n === null || a.port !== n.port) return false;
+  if (a.name === n.name) return true;
+  if (!a.name.startsWith("*.")) return false;
   const suffix = a.name.slice(1);
   const base = n.name.startsWith("*.") ? n.name.slice(1) : n.name;
   return base.endsWith(suffix) && base.length > suffix.length;
@@ -161,24 +206,20 @@ export type PermissionLine =
   | { kind: "secrets"; labels: string[] }
   | { kind: "tasks" };
 
-const METHOD_FLAGS = new Set(FLAG_ALIASES[0]);
-
-/** The pattern pins the HTTP method to GET (`--method GET`, `-X GET`, `--method=GET`, `-XGET`). */
-function pinsGet(args: readonly string[]): boolean {
-  return args.some((a, i) => (METHOD_FLAGS.has(a) && args[i + 1] === "GET") || a === "--method=GET" || a === "--request=GET" || a === "-XGET");
-}
-
 /**
- * The permission review in plain data (§7); the UI words it. `command` is the command and its leading literal tokens
- * (up to the first option or `*`). `readOnly` only when GET is pinned (execAllowed refuses re-setting it after `*`).
+ * The permission review in plain data (§7); the UI words it. `command` is the whole pattern, except for a read-only or a
+ * wide one: then the command and its leading literal tokens (up to the first option or `*`). `readOnly` only for
+ * `gh api` with GET pinned and a final `*` (readOnlyShape), whose tail execAllowed restricts.
  */
 export function permissionLines(p: PluginPermissions): PermissionLine[] {
   const lines: PermissionLine[] = [];
   if (p.hosts.length > 0) lines.push({ kind: "hosts", hosts: [...p.hosts] });
   for (const e of p.exec) {
+    const readOnly = readOnlyShape(e);
+    const wide = e.args.length === 1 && e.args[0] === "*";
     const stop = e.args.findIndex((a) => a === "*" || a.startsWith("-"));
-    const literal = stop === -1 ? e.args : e.args.slice(0, stop);
-    lines.push({ kind: "exec", command: [e.cmd, ...literal].join(" "), readOnly: pinsGet(e.args), wide: e.args.length === 1 && e.args[0] === "*" });
+    const literal = readOnly || wide ? e.args.slice(0, stop) : e.args;
+    lines.push({ kind: "exec", command: [e.cmd, ...literal].join(" "), readOnly, wide });
   }
   if (p.secrets.length > 0) lines.push({ kind: "secrets", labels: p.secrets.map((s) => s.label) });
   if (p.tasks) lines.push({ kind: "tasks" });

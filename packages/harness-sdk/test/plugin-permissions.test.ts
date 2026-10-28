@@ -104,6 +104,34 @@ describe("execAllowed (§4.2, Decision 9)", () => {
     expect(execAllowed("gh", ["api", "-X", "GET", "/x", "-q", ".x"], curlish)).toBe(false);
   });
 
+  it("a secret reference in any spelling is refused in an arg", () => {
+    expect(execAllowed("gh", ["api", "--method", "GET", "{{ Secret:jira}}"], gh)).toBe(false);
+    expect(execAllowed("gh", ["api", "--method", "GET", "{{SECRET:jira}}"], gh)).toBe(false);
+  });
+
+  it.each([
+    ["--input", "/etc/passwd"],
+    ["--input=/etc/passwd"],
+    ["--inp=/etc/passwd"],
+    ["--field", "k=@/etc/passwd"],
+    ["--field=k=v"],
+    ["-F", "k=@/etc/passwd"],
+    ["--raw-field", "k=v"],
+    ["-f", "k=v"],
+    ["--hostname", "evil.com"],
+    ["--header", "X-HTTP-Method-Override: POST"],
+    ["https://evil.com/x"],
+    ["/x", "--jq", "https://evil.com"],
+    ["@/etc/passwd"],
+  ])("a read-only gh api GET pattern refuses %j after *", (...tail) => {
+    expect(execAllowed("gh", ["api", "--method", "GET", "/x", ...tail], gh)).toBe(false);
+    expect(execAllowed("gh", ["api", "--method", "GET", ...tail], gh)).toBe(false);
+  });
+
+  it("a read-only gh api GET pattern still allows --paginate and --jq", () => {
+    expect(execAllowed("gh", ["api", "--method", "GET", "/x", "--paginate", "--jq", ".[].name"], gh)).toBe(true);
+  });
+
   it("a pattern that pins no flag lets option-like tokens through after *", () => {
     expect(execAllowed("gh", ["--version"], [{ cmd: "gh", args: ["*"] }])).toBe(true);
   });
@@ -157,6 +185,15 @@ describe("secrets (§4.2, D5)", () => {
     expect(redact("x abcdef y", ["abc", "abcdef"])).toBe(`x ${REDACTED} y`);
   });
 
+  it("redacts JSON-escaped and form-encoded forms", () => {
+    const v = 'a"b\\c d&e';
+    const json = JSON.stringify(v).slice(1, -1);
+    const form = new URLSearchParams({ x: v }).toString().slice(2);
+    expect(json).not.toBe(v);
+    expect(form).not.toBe(encodeURIComponent(v));
+    expect(redact(`1 ${json} 2 ${form} 3 ${form.toLowerCase()} 4 ${encodeURIComponent(v)}`, [v])).toBe(`1 ${REDACTED} 2 ${REDACTED} 3 ${REDACTED} 4 ${REDACTED}`);
+  });
+
   it("never redacts empty values", () => {
     expect(redact("abc", [""])).toBe("abc");
   });
@@ -208,8 +245,27 @@ describe("permissionsAdded and permissionLines (§7, Decision 6)", () => {
     expect(permissionLines(p({ exec: [{ cmd: "gh", args: ["*"] }] }))[1]).toEqual({ kind: "exec", command: "gh", readOnly: false, wide: true });
     expect(permissionLines(p({ exec: [{ cmd: "gh", args: ["api", "-X", "GET", "*"] }] }))[1]).toMatchObject({ readOnly: true });
     expect(permissionLines(p({ exec: [{ cmd: "gh", args: ["api", "--method=GET", "*"] }] }))[1]).toMatchObject({ command: "gh api", readOnly: true });
-    expect(permissionLines(p({ exec: [{ cmd: "gh", args: ["api", "*"] }] }))[1]).toMatchObject({ readOnly: false, wide: false });
+    expect(permissionLines(p({ exec: [{ cmd: "gh", args: ["api", "*"] }] }))[1]).toMatchObject({ command: "gh api *", readOnly: false, wide: false });
     expect(permissionLines(p({ exec: [{ cmd: "gh", args: ["api", "--method", "POST", "*"] }] }))[1]).toMatchObject({ readOnly: false });
     expect(permissionLines({ hosts: [], exec: [], secrets: [], tasks: false })).toEqual([]);
+  });
+  it("read-only only for gh api with GET pinned and nothing else before *: never curl", () => {
+    const ro = (cmd: string, args: string[]) => permissionLines(p({ exec: [{ cmd, args }] }))[1];
+    expect(ro("gh", ["api", "-XGET", "*"])).toMatchObject({ readOnly: true });
+    expect(ro("curl", ["-X", "GET", "*"])).toEqual({ kind: "exec", command: "curl -X GET *", readOnly: false, wide: false });
+    expect(ro("curl", ["--request", "GET", "*"])).toMatchObject({ readOnly: false });
+    expect(ro("gh", ["api", "--method", "GET", "--input", "f", "*"])).toMatchObject({ readOnly: false });
+    expect(ro("gh", ["api", "--method", "GET", "/x"])).toMatchObject({ readOnly: false });
+    expect(ro("gh", ["repo", "--method", "GET", "*"])).toMatchObject({ readOnly: false });
+    expect(ro("ghx", ["api", "--method", "GET", "*"])).toMatchObject({ readOnly: false });
+  });
+  it("curl -X GET * keeps the plain exec rule (no read-only claim, so no extra refusals)", () => {
+    const curl = [{ cmd: "curl", args: ["-X", "GET", "*"] }];
+    expect(execAllowed("curl", ["-X", "GET", "https://example.com/x"], curl)).toBe(true);
+    expect(execAllowed("curl", ["-X", "GET", "https://example.com/x", "-XPOST"], curl)).toBe(false);
+  });
+  it("an exact host with and without :443 is the same host", () => {
+    expect(permissionsAdded(p({ hosts: ["x.com"] }), p({ hosts: ["x.com:443"] }))).toEqual([]);
+    expect(permissionsAdded(p({ hosts: ["X.com:443"] }), p({ hosts: ["x.com"] }))).toEqual([]);
   });
 });

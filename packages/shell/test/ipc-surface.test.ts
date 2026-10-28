@@ -53,7 +53,7 @@ describe("the prepared task's one way in (plugins spec P6)", () => {
   it("startPrepared is called only in the hh:pluginsStartPrepared handler and the deps index.ts gives registerPluginsIpc", async () => {
     const all = await sources();
     const calling = all.filter(([, text]) => /\bstartPrepared\s*\(/.test(text)).map(([f]) => f);
-    expect(calling.sort()).toEqual(["index.ts", "plugin-ipc.ts", "task-manager.ts"]);
+    expect(calling.sort()).toEqual(["index.ts", "plugin-ipc.ts", "task-board.ts", "task-manager.ts"]);
     const text = (f: string) => all.find(([n]) => n === f)![1];
     const count = (t: string) => [...t.matchAll(/\bstartPrepared\s*\(/g)].length;
 
@@ -68,6 +68,8 @@ describe("the prepared task's one way in (plugins spec P6)", () => {
     expect(count(index)).toBe(1);
     // task-manager.ts only declares it.
     expect([...text("task-manager.ts").matchAll(/\bstartPrepared\s*\(/g)].length).toBe(1);
+    // task-board.ts declares it too (board mode, parallel spec §6) and passes it on to a lane by name, never calling it.
+    expect(count(text("task-board.ts"))).toBe(1);
   });
 
   it("D0: index.ts installs panels only through PluginPanelsOnDemand, needed by the controller, per window in createWindow's plugins block", async () => {

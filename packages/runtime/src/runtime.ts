@@ -57,6 +57,11 @@ export interface RuntimeOptions {
    * `refreshInstructions`. Absent: none (D0).
    */
   instructionLinked?: () => Promise<LinkedFolderLine[]>;
+  /**
+   * The gitdir of a tracked linked folder's history (hatches spec §3.4), from its real path (`fs.realpath.native`);
+   * asked when a turn first opens that folder's history in this runtime. Absent: linked folders are never tracked (D0).
+   */
+  linkedGitdir?: (realPath: string) => string | Promise<string>;
   /** The engine session to continue (the dev CLI). Default: a new one. */
   session?: Session;
   /** Called when the engine starts a session. */

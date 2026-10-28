@@ -57,6 +57,7 @@ function host(
   let asked: ((slot: SlotRef) => Promise<{ id: string } | null>) | null = null;
   const workspace: HarnessWorkspace = {
     history: null as never,
+    linkedHistory: async () => null,
     anyRunning: () => running > 0,
     runningPaths: async () => [],
     refreshInstructions: () => refresh(),

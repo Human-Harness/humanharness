@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { promises as fs } from "node:fs";
+import { promises as fs, realpath as realpathCb } from "node:fs";
+import path from "node:path";
+import { promisify } from "node:util";
 import { type Bridge, type Launcher, type McpServerSpec, type Rpc, dataServerSpec, devLauncher, hasAgentData, openBridge, openRpc, uiServerSpec } from "@humanharness/blocks";
 import type { ModelProfile } from "@humanharness/engines";
 import { type LoadedHarness, type Permissions, type PermissionsOverride, allBlocks, hasJobs, hasMaterial, narrowPermissions, resolveInHarness } from "@humanharness/harness-sdk";
@@ -71,6 +73,11 @@ export interface HarnessWorkspace {
   history: History;
   /** Opens a slot; its bridge and sockets open before its transport, as `createRuntime` always did. */
   openSlot(o: SlotOptions): Promise<SessionSlot>;
+  /**
+   * The history of a tracked linked folder (hatches spec §3.4) by its path, once a turn opened it in this workspace;
+   * null otherwise.
+   */
+  linkedHistory(realPath: string): Promise<History | null>;
   /** A turn runs in some slot. */
   anyRunning(): boolean;
   /**
@@ -117,6 +124,14 @@ function harnessMcpServers(harness: LoadedHarness, launcher: Launcher): McpServe
   }));
 }
 
+/** The one stable spelling of a folder's real path: links resolved, the on-disk case (macOS). */
+const realNative = promisify(realpathCb.native);
+
+interface LinkedRepo {
+  history: History;
+  ledger: TurnLedger;
+}
+
 export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWorkspace> {
   const { harness, engine, folder } = opts;
   const launcher = opts.launcher ?? devLauncher();
@@ -149,6 +164,28 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
   // The AGENTS.md write under way (after a refresh's last anyRunning check): a turn sent meanwhile waits for it, so it
   // never opens with the file replaced right after.
   let writing: Promise<boolean> | null = null;
+
+  /** One history and ledger per tracked linked folder, by its real path, opened on the first turn that names it (hatches spec §3.4). */
+  const linkedRepos = new Map<string, Promise<LinkedRepo>>();
+  async function linkedRepo(dir: string, gitdirOf: NonNullable<WorkspaceOptions["linkedGitdir"]>): Promise<LinkedRepo> {
+    const real = await realNative(dir);
+    // Checked and set with no await between: two slots opening the same folder share one repo.
+    let repo = linkedRepos.get(real);
+    if (!repo) {
+      repo = (async () => {
+        const h = new History(real, await gitdirOf(real), [], []);
+        await h.init();
+        await h.save(START);
+        // An engine may name the folder as given or by its real path (TurnLedger.forFolder).
+        const given = path.resolve(dir);
+        return { history: h, ledger: new TurnLedger(given === real ? [real] : [real, given]) };
+      })();
+      linkedRepos.set(real, repo);
+      // A failed open is retried by the next turn.
+      repo.catch(() => linkedRepos.delete(real));
+    }
+    return repo;
+  }
 
   // Opens under way: close waits for each, so none still holds a socket once close resolves.
   const opening = new Set<Promise<unknown>>();
@@ -266,6 +303,9 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
         // each other's paths. Checked against the ledger before any await, like the window it guards.
         const task = options.trailer?.task;
         if (task !== undefined && ledger.running().some((w) => w.task === task)) throw new Error(`A turn of task ${task} is already running`);
+        // Tracked linked folders (hatches spec §3.4): write folders with no git of their own. None without linkedGitdir (D0).
+        const gitdirOf = opts.linkedGitdir;
+        const tracked = gitdirOf ? (options.scope?.linked ?? []).filter((l) => l.tracked && l.mode === "write") : [];
         busy = true;
         const controller = new AbortController();
         let doneEmitted = false;
@@ -278,6 +318,7 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
         };
         // The window this turn opened: only that one is closed on failure, never another live window under this key.
         let w: TurnWindow | undefined;
+        const linkedWindows: { repo: LinkedRepo; w: TurnWindow }[] = [];
         const done = (async () => {
           try {
             // Only when a write is under way: otherwise the window opens before send returns, as always.
@@ -287,6 +328,12 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
               return;
             }
             w = await beginTurn(history, ledger, o.key, options.trailer);
+            // The same windows and trailer in each tracked linked folder, after the main folder's and before the engine
+            // runs. A folder that can't be opened fails the turn: its changes could never be undone.
+            for (const l of tracked) {
+              const repo = await linkedRepo(l.path, gitdirOf!);
+              linkedWindows.push({ repo, w: await beginTurn(repo.history, repo.ledger, o.key, options.trailer) });
+            }
             let final: Event | undefined;
             emitCurrent = emitOnce;
             await transport.turn(
@@ -297,8 +344,15 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
                 else {
                   // `edits` is a hint for attribution (spec §5.2); a path no turn named counts as shared.
                   // An edit that ended without an error surely wrote its paths (conflicts, spec §5.3).
-                  if (e.type === "activity" && e.edits) ledger.noteEdits(o.key, e.edits, e.id);
-                  if (e.type === "activity" && e.state === "end") ledger.noteEditEnd(o.key, e.id, e.error === true);
+                  // Each ledger keeps only the paths inside its own folder.
+                  if (e.type === "activity" && e.edits) {
+                    ledger.noteEdits(o.key, e.edits, e.id);
+                    for (const { repo } of linkedWindows) repo.ledger.noteEdits(o.key, e.edits, e.id);
+                  }
+                  if (e.type === "activity" && e.state === "end") {
+                    ledger.noteEditEnd(o.key, e.id, e.error === true);
+                    for (const { repo } of linkedWindows) repo.ledger.noteEditEnd(o.key, e.id, e.error === true);
+                  }
                   emitOnce(e);
                 }
               },
@@ -309,6 +363,16 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
             emitCurrent = null;
             const f = (final ?? { type: "done", ok: false, error: { code: "agent-crashed" } }) as Extract<Event, { type: "done" }>;
             const a = await endTurn(history, ledger, w, f, message, options.trailer);
+            // Only the main folder's attribution reaches onAttribution; a linked folder's conflicts are logged (Decision 11).
+            for (const { repo, w: lw } of linkedWindows) {
+              try {
+                const la = await endTurn(repo.history, repo.ledger, lw, f, message, options.trailer);
+                if (la?.conflicts.length) console.error("Conflicting changes in a linked folder", la.conflicts.length);
+              } catch (err) {
+                if (repo.ledger.running().includes(lw)) repo.ledger.close(o.key);
+                console.error("Could not record a linked folder's turn", err);
+              }
+            }
             // A card for each .md a turn that ran alone added or changed (document-reader spec §5.1), between its
             // "Before message" and "Turn: …" commits; none: no event at all. An overlapped turn's commits sit on other
             // tasks' changes, so it shows none.
@@ -330,6 +394,7 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
           } catch (err) {
             // A no-op when beginTurn or endTurn already closed the window; nothing when beginTurn opened none.
             if (w && ledger.running().includes(w)) ledger.close(o.key);
+            for (const { repo, w: lw } of linkedWindows) if (repo.ledger.running().includes(lw)) repo.ledger.close(o.key);
             emitOnce({ type: "done", ok: false, error: { code: "agent-crashed", detail: err instanceof Error ? err.message : String(err) } });
           } finally {
             emitCurrent = null;
@@ -372,6 +437,11 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
   return {
     history,
     openSlot,
+    async linkedHistory(dir) {
+      const real = await realNative(dir).catch(() => null);
+      const repo = real === null ? undefined : linkedRepos.get(real);
+      return repo ? (await repo.catch(() => null))?.history ?? null : null;
+    },
     anyRunning: () => ledger.anyRunning(),
     async runningPaths() {
       const out: { task: string; paths: ReadonlySet<string> }[] = [];
@@ -410,6 +480,7 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
       const results = await Promise.allSettled([...slots.values()].map((s) => s.close()));
       // The file index waits for a quiet moment: write it now (it never throws).
       await history.flush();
+      for (const repo of linkedRepos.values()) await (await repo.catch(() => null))?.history.flush();
       const failed = results.find((r): r is PromiseRejectedResult => r.status === "rejected");
       if (failed) throw failed.reason;
     },

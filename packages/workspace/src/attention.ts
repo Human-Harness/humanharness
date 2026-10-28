@@ -1,11 +1,14 @@
 import { promises as fs } from "node:fs";
+import { stable } from "./data-diff";
 import { attentionFile } from "./layout";
 import { checkFolders, LinkRefused, readNoLinks, TooLarge, writeNoLinks } from "./no-links";
 
 // The Attention inbox (plugins spec §6): one JSON array at `.harness/attention.json`, never tracked. The agent can
 // write the base, so the file is read and written only through no-links.ts and every item is checked on read; an
-// item that doesn't fit is dropped. What callers raise is theirs to check (the broker does, Task 9): the store
-// trusts its callers, not the file.
+// item that doesn't fit is dropped. Each item carries a tag (an HMAC from the shell, its key kept outside the base)
+// over what it says and where it leads, so an item the agent forged or edited is dropped too; `read` and `dismissed`
+// are the person's marks and stay unsigned. What callers raise is theirs to check (the broker does, Task 9): the
+// store trusts its callers, not the file.
 
 export type AttentionSeverity = "info" | "warn" | "action";
 /** Who raised an item: a plugin now; a task once parallel tasks exist (C7 "waiting for you", plugins spec §6). */
@@ -29,6 +32,17 @@ export interface AttentionItem extends AttentionInput {
   dismissed?: { severity: AttentionSeverity; title: string };
 }
 
+export interface AttentionOptions {
+  /** A tag for `text` (the shell: HMAC-SHA256 with a key kept outside the base). */
+  sign: (text: string) => string;
+  /** Whether `tag` is `sign(text)`, in constant time. */
+  verify: (text: string, tag: string) => boolean;
+  /** When given, list and badge show only items whose origin it knows (an on plugin); the others stay in the file. */
+  known?: (origin: AttentionOrigin) => boolean;
+  now?: () => Date;
+  log?: (m: string) => void;
+}
+
 export const ATTENTION_LIMITS = {
   /** Items kept per origin (dismissed ones count): over it, dismissed go first, then the oldest info, warn, action. */
   perOrigin: 100,
@@ -40,15 +54,40 @@ export const ATTENTION_LIMITS = {
   idChars: 200,
   varsBytes: 4096,
   fileBytes: 4 * 1024 * 1024,
+  tagChars: 256,
 } as const;
 
 const SEVERITIES: readonly AttentionSeverity[] = ["info", "warn", "action"];
 const DAY_MS = 24 * 60 * 60 * 1000;
+/** C0 controls, DEL, C1 controls and the bidirectional overrides, as the broker strips them on raise. */
+const CONTROLS = /[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g;
+const CONTROLS_BUT_NEWLINE = /[\u0000-\u0009\u000b-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g;
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 const text = (v: unknown, max: number): v is string => typeof v === "string" && v.length > 0 && v.length <= max;
 const isSeverity = (v: unknown): v is AttentionSeverity => SEVERITIES.includes(v as AttentionSeverity);
 const sameOrigin = (a: AttentionOrigin, b: AttentionOrigin): boolean => a.kind === b.kind && a.id === b.id;
+const visible = (v: string, newlines = false): string => v.replace(newlines ? CONTROLS_BUT_NEWLINE : CONTROLS, "").trim();
+
+/** What an item's tag covers, as canonical JSON: who raised it, what it says, where it leads and when. */
+function signed(i: AttentionItem): string {
+  const fields: Record<string, unknown> = { origin: { kind: i.origin.kind, id: i.origin.id }, key: i.key, severity: i.severity, title: i.title, at: i.at };
+  if (i.body !== undefined) fields.body = i.body;
+  if (i.target !== undefined) fields.target = i.target;
+  return stable(fields);
+}
+
+/** What the person sees: controls and bidi overrides gone; null when nothing is left of the title. */
+function shown(i: AttentionItem): AttentionItem | null {
+  const out: AttentionItem = { ...i, title: visible(i.title) };
+  if (out.title === "") return null;
+  if (i.body !== undefined) {
+    const body = visible(i.body, true);
+    if (body === "") delete out.body;
+    else out.body = body;
+  }
+  return out;
+}
 
 function cleanTarget(v: unknown): AttentionTarget | null {
   if (!isObject(v)) return null;
@@ -63,8 +102,8 @@ function cleanTarget(v: unknown): AttentionTarget | null {
   return { action: v.action, vars: v.vars };
 }
 
-/** One item read back from the file, rebuilt field by field; null when anything doesn't fit. */
-function cleanItem(v: unknown): AttentionItem | null {
+/** One item read back from the file, rebuilt field by field (its tag apart); null when anything doesn't fit. */
+function cleanItem(v: unknown): { item: AttentionItem; tag: unknown } | null {
   if (!isObject(v) || !isObject(v.origin)) return null;
   const { origin } = v;
   if ((origin.kind !== "plugin" && origin.kind !== "task") || !text(origin.id, ATTENTION_LIMITS.idChars)) return null;
@@ -85,7 +124,7 @@ function cleanItem(v: unknown): AttentionItem | null {
     if (!isObject(d) || !isSeverity(d.severity) || !text(d.title, ATTENTION_LIMITS.titleChars)) return null;
     item.dismissed = { severity: d.severity, title: d.title };
   }
-  return item;
+  return { item, tag: v.tag };
 }
 
 const EVICT_ORDER = (i: AttentionItem): number => (i.dismissed ? 0 : SEVERITIES.indexOf(i.severity) + 1);
@@ -109,13 +148,16 @@ interface Loaded {
 export class AttentionStore {
   private readonly file: string;
   private readonly now: () => Date;
+  private readonly opts: AttentionOptions;
   private readonly listeners = new Set<() => void>();
   private writes: Promise<unknown> = Promise.resolve();
 
   constructor(
     private readonly base: string,
-    private readonly opts: { now?: () => Date; log?: (m: string) => void } = {},
+    opts: AttentionOptions,
   ) {
+    if (typeof opts?.sign !== "function" || typeof opts.verify !== "function") throw new Error("AttentionStore needs sign and verify");
+    this.opts = opts;
     this.file = attentionFile(base);
     this.now = opts.now ?? (() => new Date());
   }
@@ -126,9 +168,15 @@ export class AttentionStore {
       this.log(`Attention: can't read ${this.file}: ${(err as Error).message}`);
       return { items: [] as AttentionItem[], broken: false };
     });
+    const known = this.opts.known;
+    const out: AttentionItem[] = [];
+    for (const i of items) {
+      if (i.dismissed || (known && !known(i.origin))) continue;
+      const item = shown(i);
+      if (item) out.push(item);
+    }
     // Later in the array is newer; among equal times, the one raised last comes first.
-    return items
-      .filter((i) => !i.dismissed)
+    return out
       .reverse()
       .sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
   }
@@ -176,10 +224,12 @@ export class AttentionStore {
     ]);
   }
 
-  /** No arguments: every item; an origin alone: all of its items; both: that one. */
-  async markRead(origin?: AttentionOrigin, key?: string): Promise<void> {
+  /** No arguments: every item; an origin alone: all of its items; both: that one. A key without an origin is refused: false. */
+  async markRead(origin?: AttentionOrigin, key?: string): Promise<boolean> {
+    if (!origin && key !== undefined) return false;
     const hit = (i: AttentionItem) => !origin || (sameOrigin(i.origin, origin) && (key === undefined || i.key === key));
     await this.change((items) => [items.map((i) => (!i.read && hit(i) ? { ...i, read: true } : i)), undefined]);
+    return true;
   }
 
   /** Every item of `origin` (a removed plugin). */
@@ -217,15 +267,26 @@ export class AttentionStore {
       this.log(`Attention: ${this.file} is not a list; it will be set aside`);
       return { items: [], broken: true };
     }
-    const oldest = this.now().getTime() - ATTENTION_LIMITS.days * DAY_MS;
-    const items: AttentionItem[] = [];
+    const now = this.now().getTime();
+    const oldest = now - ATTENTION_LIMITS.days * DAY_MS;
+    let items: AttentionItem[] = [];
     let dropped = 0;
+    let forged = 0;
     for (const v of parsed) {
-      const item = cleanItem(v);
-      if (!item || items.some((i) => sameOrigin(i.origin, item.origin) && i.key === item.key)) dropped++;
-      else if (Date.parse(item.at) >= oldest) items.push(item);
+      const read = cleanItem(v);
+      if (!read || items.some((i) => sameOrigin(i.origin, read.item.origin) && i.key === read.item.key)) dropped++;
+      else if (!this.genuine(read.item, read.tag)) forged++;
+      else if (Date.parse(read.item.at) > now + DAY_MS) dropped++;
+      else if (Date.parse(read.item.at) >= oldest) items.push(read.item);
+    }
+    for (const origin of new Set(items.map((i) => `${i.origin.kind}\0${i.origin.id}`))) {
+      const [kind, id] = origin.split("\0") as [AttentionOrigin["kind"], string];
+      const before = items.length;
+      items = capOrigin(items, { kind, id });
+      dropped += before - items.length;
     }
     if (dropped > 0) this.log(`Attention: dropped ${dropped} item(s) that don't fit in ${this.file}`);
+    if (forged > 0) this.log(`Attention: dropped ${forged} item(s) without a valid tag in ${this.file}`);
     return { items, broken: false };
   }
 
@@ -236,7 +297,8 @@ export class AttentionStore {
       const [next, out] = fn(items);
       if (JSON.stringify(next) === JSON.stringify(items)) return out;
       if (broken) await this.setAside();
-      await writeNoLinks(this.base, this.file, `${JSON.stringify(next, null, 2)}\n`, ATTENTION_LIMITS.fileBytes);
+      const tagged = next.map((i) => ({ ...i, tag: this.opts.sign(signed(i)) }));
+      await writeNoLinks(this.base, this.file, `${JSON.stringify(tagged, null, 2)}\n`, ATTENTION_LIMITS.fileBytes);
       for (const l of this.listeners) {
         try {
           l();
@@ -248,6 +310,15 @@ export class AttentionStore {
     });
     this.writes = run.catch(() => undefined);
     return run;
+  }
+
+  private genuine(item: AttentionItem, tag: unknown): boolean {
+    if (typeof tag !== "string" || tag.length === 0 || tag.length > ATTENTION_LIMITS.tagChars) return false;
+    try {
+      return this.opts.verify(signed(item), tag) === true;
+    } catch {
+      return false;
+    }
   }
 
   /** Renames the unusable file to `attention.json.corrupt-<time>`; rename moves a link itself, never what it points to. */

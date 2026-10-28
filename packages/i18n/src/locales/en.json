@@ -1321,7 +1321,9 @@
     "scopeSettings": "{{scope}} settings",
     "linkedTitle": "Linked folders",
     "link": "Link a folder…",
+    "linkKey": "Link a folder… ({{label}})",
     "unlink": "Unlink",
+    "failed": "That didn't work. Try again.",
     "modeRead": "Read only",
     "modeWrite": "Read and write",
     "tracked": "Tracked by the app's history",
@@ -1331,6 +1333,7 @@
     "keepTracked": "Track with the app's history",
     "leaveToGit": "Leave to its own git",
     "notCovered": "Undo doesn't cover this folder: it has its own git.",
+    "notCoveredFolder": "{{label}}: Undo doesn't cover this folder: it has its own git.",
     "codexUnsupported": "Linked folders don't work with this version of Codex yet.",
     "contextLinked": "Folders of this scope",
     "refused": {

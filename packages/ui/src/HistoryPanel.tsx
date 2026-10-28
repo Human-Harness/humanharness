@@ -10,6 +10,7 @@ import {
   DATA_CHANGE_PREFIX,
   FILE_RESTORE_PREFIX,
   type HistoryFileChange,
+  type LinkedHistoryView,
   NOTE,
   RESTORE_POINT,
   RESTORE_TASK,
@@ -75,6 +76,7 @@ export function HistoryPanel({
   currentTask,
   jobs = [],
   onOpenFile,
+  linkedFolders = false,
 }: {
   client: HarnessClient;
   /** The harness's actions: a task's row shows its action's label. */
@@ -96,6 +98,8 @@ export function HistoryPanel({
   jobs?: { id: string; label: string }[];
   /** A changed file was picked: its timeline opens (file-timeline spec §6.2). Absent: the paths stay plain text. */
   onOpenFile?: (path: string, kind: HistoryFileChange["kind"]) => void;
+  /** The harness declares linked folders (hatches spec §3.4): what undo covers in them shows too. Absent: none (D0). */
+  linkedFolders?: boolean;
 }) {
   const { t, i18n } = useTranslation();
   const [groups, setGroups] = useState<HistoryTaskView[] | null>(null);
@@ -104,6 +108,12 @@ export function HistoryPanel({
   /** Board mode: why main refused the last "Undo this task". */
   const [refused, setRefused] = useState<UndoRefusal | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
+  /** Hatches only: the open scope's linked folders; a failure shows nothing extra. */
+  const [linked, setLinked] = useState<LinkedHistoryView | null>(null);
+  useEffect(() => {
+    if (!linkedFolders) return;
+    client.scopes.linkedHistory().then(setLinked, () => undefined);
+  }, [client, linkedFolders]);
   /** A restore was sent and hasn't answered: no other way back can be taken meanwhile. */
   const [restoring, setRestoring] = useState(false);
   /** Harnesses with scopes: the scope whose tasks show ("" for all), and the scopes' titles. */
@@ -282,6 +292,11 @@ export function HistoryPanel({
       {failed && <p role="alert">{t("history.restoreFailed")}</p>}
       {refused && <p role="alert">{refusalText(refused)}</p>}
       {loadFailed && <p role="alert">{t("history.loadFailed")}</p>}
+      {linked?.uncovered.map((u) => (
+        <p key={u.key} className="hh-caption hh-history-uncovered">
+          {t("hatches.notCoveredFolder", { label: u.label })}
+        </p>
+      ))}
       {groups?.length === 0 && (
         <div className="hh-history-empty">
           <ClockIcon size={28} />
@@ -356,6 +371,25 @@ export function HistoryPanel({
                           ))}
                         </ul>
                       )}
+                      {/* A linked folder's files are plain text: the file timeline reads only the main folder's history. */}
+                      {g.taskId !== null &&
+                        linked &&
+                        Object.hasOwn(linked.tasks, g.taskId) &&
+                        linked.tasks[g.taskId].map((f, j) => (
+                          <div key={`${f.key}-${j}`} className="hh-history-linked">
+                            <span id={`${bodyId}-l${j}`} className="hh-caption">
+                              {f.label}
+                            </span>
+                            <ul className="hh-history-files" aria-labelledby={`${bodyId}-l${j}`}>
+                              {f.changes.map((c) => (
+                                <li key={c.path}>
+                                  <span className={`hh-change ${c.kind}`}>{t(`history.change.${c.kind}`)}</span>
+                                  <code title={c.path}>{c.path}</code>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        ))}
                       <ol className="hh-history-entries" aria-label={t("history.points")}>
                         {g.entries.map((e) => (
                           <li key={e.sha}>

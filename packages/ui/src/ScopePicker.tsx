@@ -1,6 +1,7 @@
 import { type FormEvent, type KeyboardEvent, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { AppState, HarnessClient, ScopeView } from "./client";
+import { ScopeSettings } from "./hatches/ScopeSettings";
 
 /**
  * The top bar's scope picker (spec §3.4): the active scopes, "none", and a new one. The minimum a harness with
@@ -23,7 +24,10 @@ export function ScopePicker({
   const [adding, setAdding] = useState(false);
   const [title, setTitle] = useState("");
   const [failed, setFailed] = useState(false);
+  /** Hatches only: the open scope's settings dialog is showing. */
+  const [settings, setSettings] = useState(false);
   const addButton = useRef<HTMLButtonElement>(null);
+  const settingsButton = useRef<HTMLButtonElement>(null);
   /** Focus goes back to the Add button once the form is gone. */
   const refocus = useRef(false);
   useEffect(() => {
@@ -54,6 +58,13 @@ export function ScopePicker({
   const name = state.scopes?.label ?? "";
   // An archived scope still shows while it is the open one, so the select never lies.
   const shown = list.filter((s) => !s.archived || s.id === open);
+  // Hatches only (D0: no button without them): the open scope's settings.
+  const openTitle = open === null ? null : (list.find((s) => s.id === open)?.title ?? open);
+  const withSettings = state.hatches !== undefined && open !== null && openTitle !== null;
+  const closeSettings = () => {
+    setSettings(false);
+    settingsButton.current?.focus();
+  };
   const pick = (id: string | null) => {
     setFailed(false);
     client.scopes.open(id).catch(() => setFailed(true));
@@ -94,6 +105,12 @@ export function ScopePicker({
           </option>
         ))}
       </select>
+      {withSettings && (
+        <button ref={settingsButton} type="button" aria-label={t("hatches.scopeSettings", { scope: openTitle })} onClick={() => setSettings(true)}>
+          {t("settings.title")}
+        </button>
+      )}
+      {withSettings && settings && <ScopeSettings client={client} state={state} scope={open} title={openTitle} onClose={closeSettings} />}
       {adding ? (
         <form onSubmit={(e) => void create(e)} onKeyDown={onKey}>
           <input aria-label={t("scopes.titleLabel")} value={title} maxLength={120} autoFocus onChange={(e) => setTitle(e.target.value)} />

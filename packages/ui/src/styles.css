@@ -554,6 +554,20 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
   gap: 6px;
 }
 
+/* Scope settings (hatches spec §3.2): linked folders, one row each. */
+.hh-scope-settings h2 { margin: 0; font-size: 15px; }
+.hh-linked { display: grid; gap: 10px; }
+.hh-linked h3 { margin: 0; font-size: 13px; }
+.hh-linked-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.hh-linked-row { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 12px; }
+.hh-linked-text { display: grid; gap: 2px; min-width: 0; }
+.hh-linked-text code { font-size: 12px; overflow-wrap: anywhere; }
+.hh-linked-git { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.hh-linked-git p { margin: 0; }
+.hh-linked-add { display: grid; gap: 4px; justify-items: start; }
+.hh-history-uncovered { padding: 0 8px 6px; }
+.hh-history-linked { display: grid; gap: 4px; }
+
 /* Profiles (profiles spec §5): the switcher and the avatar. A stored title can be long: it never widens the bar. */
 .hh-profile-switcher { display: flex; align-items: center; gap: 8px; }
 .hh-profile-name { font-weight: 600; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

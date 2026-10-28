@@ -2,6 +2,7 @@ export * from "./client";
 export * from "./state";
 export * from "./usage";
 export { ScopePicker } from "./ScopePicker";
+export { ScopeSettings } from "./hatches/ScopeSettings";
 export { PhaseStepper } from "./PhaseStepper";
 export { HarnessApp, type HarnessAppProps } from "./HarnessApp";
 export { LanguagePicker } from "./LanguagePicker";

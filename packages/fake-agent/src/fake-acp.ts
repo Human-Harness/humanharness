@@ -84,9 +84,12 @@ acp
       ...(script.currentModelId ? { models: { currentModelId: script.currentModelId, availableModels: [] } } : {}),
     } as never;
   })
-  .onRequest("session/load", (ctx) => {
+  .onRequest("session/load", async (ctx) => {
     log("session/load", ctx.params);
     if (script.failLoad) throw new acp.RequestError(-32603, "Session not found");
+    for (const update of script.loadReplay ?? []) {
+      await ctx.client.notify("session/update", { sessionId: ctx.params.sessionId, update: update as never });
+    }
     mcpServers = (ctx.params.mcpServers ?? []) as StdioMcp[];
     cwd = ctx.params.cwd;
     // Like OpenCode: a loaded session answers with its config options too.

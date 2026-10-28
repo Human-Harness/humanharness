@@ -64,6 +64,8 @@ export interface AcpScript {
   agentVersion?: string;
   /** Make `session/load` fail with a generic (non-login) error. */
   failLoad?: boolean;
+  /** session/update payloads sent before `session/load` answers, as an agent replays a loaded session's history. */
+  loadReplay?: Record<string, unknown>[];
   /** Advertise `sessionCapabilities.close` and answer `session/close`. */
   closeSession?: boolean;
   /** Never answer `session/close` (an agent stuck on it). */

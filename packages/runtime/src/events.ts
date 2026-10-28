@@ -26,10 +26,10 @@ export interface LimitWindow {
   resetsAt: string;
 }
 
-/** Normalized events every transport emits. Each turn ends with exactly one `done`. */
 /** The longest edit path kept from an engine: longer names no real file, only a big string held in main. */
 export const EDIT_PATH_MAX = 4096;
 
+/** Normalized events every transport emits. Each turn ends with exactly one `done`. */
 export type Event =
   | { type: "text"; delta: string }
   | { type: "paragraph" }

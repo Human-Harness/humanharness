@@ -172,3 +172,52 @@ describe("a dirty file's blob id", () => {
     expect(state.get("l.md")).toBe((await git.hashBlob({ object: "a.md" })).oid);
   });
 });
+
+describe("save when a file vanishes between listing and staging", () => {
+  afterEach(() => vi.restoreAllMocks());
+  /** Lets statusMatrix list the folder, then runs `change` before History stages anything. */
+  const afterListing = (change: () => void) => {
+    const real = git.statusMatrix.bind(git);
+    vi.spyOn(git, "statusMatrix").mockImplementationOnce(async (args) => {
+      const matrix = await real(args);
+      change();
+      return matrix;
+    });
+  };
+
+  it("a tracked file listed as modified: committed as deleted, no throw", async () => {
+    write("a.md", "a1");
+    write("b.md", "b1");
+    afterListing(() => fs.rmSync(path.join(folder, "a.md")));
+    const sha = await history.save("Turn");
+    expect(sha).not.toBeNull();
+    expect(await history.readFileAt(sha, "a.md")).toBeNull();
+    expect(await history.readFileAt(sha, "b.md")).toBe("b1");
+  });
+
+  it("a new file: never committed; nothing else changed means no commit", async () => {
+    const head = await history.last();
+    write("tmp.md", "t");
+    afterListing(() => fs.rmSync(path.join(folder, "tmp.md")));
+    expect(await history.save("Turn")).toBeNull();
+    expect(await history.last()).toBe(head);
+  });
+
+  it("a folder in its place: the file is committed as deleted, nothing under the folder is staged", async () => {
+    write("a.md", "a1");
+    afterListing(() => {
+      fs.rmSync(path.join(folder, "a.md"));
+      write("a.md/x.md", "x");
+    });
+    const sha = await history.save("Turn");
+    expect(await history.readFileAt(sha, "a.md")).toBeNull();
+    expect(await history.readFileAt(sha, "a.md/x.md")).toBeNull();
+  });
+
+  it("commitPaths too", async () => {
+    write("a.md", "a1");
+    afterListing(() => fs.rmSync(path.join(folder, "a.md")));
+    const sha = await history.commitPaths(["a.md"], "Turn: own", { task: "t1" });
+    expect(await history.readFileAt(sha, "a.md")).toBeNull();
+  });
+});

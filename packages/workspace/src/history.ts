@@ -307,6 +307,27 @@ export class History {
     return current === null || !Buffer.from(blob).equals(current);
   }
 
+  /**
+   * Stages `file` as it is in the folder; false when it is gone (or a folder sits in its place: `git.add` would stage
+   * what is under it). `git.add` reads through isomorphic-git's FileSystem, which reports any read error as not found:
+   * only a file truly gone afterwards counts as gone; anything else is thrown.
+   */
+  private async addUnlessGone(file: string): Promise<boolean> {
+    const absolute = path.join(this.folder, file);
+    const gone = async () => {
+      const stats = await fs.promises.lstat(absolute).catch(goneAsNull);
+      return stats === null || stats.isDirectory();
+    };
+    if (await gone()) return false;
+    try {
+      await git.add({ ...this.repo(), filepath: file });
+      return true;
+    } catch (err) {
+      if (await gone()) return false;
+      throw err;
+    }
+  }
+
   /** Commits the current state; `trailer` names the task it belongs to. Returns the new sha, or null when nothing changed. */
   save(message: string, trailer?: HistoryTrailer): Promise<string | null> {
     return this.serialize(() => this.saveNow(withTrailer(message, trailer)));
@@ -318,9 +339,12 @@ export class History {
     let changed = false;
     for (const [file, head, workdir, stage] of matrix) {
       if (head === 1 && workdir === 1 && stage === 1 && !(await this.differsFromHead(file))) continue;
+      // A file gone since statusMatrix (another turn's temp file), or a folder in its place, is deleted now.
+      if (workdir === 0 || !(await this.addUnlessGone(file))) {
+        await git.remove({ ...this.repo(), filepath: file });
+        if (head === 0) continue;
+      }
       changed = true;
-      if (workdir === 0) await git.remove({ ...this.repo(), filepath: file });
-      else await git.add({ ...this.repo(), filepath: file });
     }
     if (!changed && (await this.last()) !== null) return null;
     const sha = await git.commit({ ...this.repo(), message, author: AUTHOR });

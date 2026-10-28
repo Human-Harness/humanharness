@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { type ClaudeScript, claudeResultLine, claudeTextLines, fakeClaudeCommand, writeScript } from "@humanharness/fake-agent";
-import { ClaudeCliTransport, allowedTools, claudeArgs, disallowedTools, profileArgs, referenceRulePath } from "../src/claude-cli";
+import { ClaudeCliTransport, StreamJsonReader, activityExtras, allowedTools, claudeArgs, disallowedTools, profileArgs, referenceRulePath, referenceSettingsArgs } from "../src/claude-cli";
 import type { Event } from "../src/events";
 import type { Session, TransportOptions } from "../src/transport";
 
@@ -219,7 +219,7 @@ describe("ClaudeCliTransport", () => {
     });
     const events = await run(transport);
     expect(events).toEqual([
-      { type: "activity", id: "t1", kind: "read", detail: "a.md", state: "start" },
+      { type: "activity", id: "t1", kind: "read", detail: "a.md", paths: ["/x/notes/a.md"], state: "start" },
       { type: "activity", id: "t1", kind: "read", detail: "a.md", state: "end", error: false },
       { type: "text", delta: "Done" },
       { type: "done", ok: true },
@@ -420,15 +420,35 @@ describe("ClaudeCliTransport hardening", () => {
 });
 
 describe("reference folders", () => {
-  it("adds each reference folder with --add-dir and denies edits there", () => {
+  it("gives reference folders file access through --settings additionalDirectories, never --add-dir, and denies edits there", () => {
     const args = claudeArgs({ session: { id: "a", started: false }, mcp: [], permissions, references: ["/Users/me/code/hh", "/opt/docs"] });
-    const at = args.indexOf("--add-dir");
-    expect(args.slice(at, at + 4)).toEqual(["--add-dir", "/Users/me/code/hh", "--add-dir", "/opt/docs"]);
+    // --add-dir would also load each folder's .claude/skills, commands and agents (spike S2).
+    expect(args).not.toContain("--add-dir");
+    expect(args.filter((a) => a === "--settings")).toHaveLength(1);
+    const settings = JSON.parse(args[args.indexOf("--settings") + 1]);
+    expect(settings).toEqual({ permissions: { additionalDirectories: ["/Users/me/code/hh", "/opt/docs"] } });
     const denied = args[args.indexOf("--disallowedTools") + 1].split(",");
     expect(denied).toEqual(
       expect.arrayContaining(["Edit(//Users/me/code/hh/**)", "Write(//Users/me/code/hh/**)", "MultiEdit(//Users/me/code/hh/**)", "Edit(//opt/docs/**)"]),
     );
-    expect(claudeArgs({ session: { id: "a", started: false }, mcp: [], permissions })).not.toContain("--add-dir");
+    // Reading keeps working as before: the bare Read, Glob and Grep allow rules cover any path.
+    expect(args[args.indexOf("--allowedTools") + 1].split(",")).toEqual(expect.arrayContaining(["Read", "Glob", "Grep"]));
+    expect(args[args.indexOf("--setting-sources") + 1]).toBe("project");
+  });
+
+  it("passes no --settings and no --add-dir without reference folders (D0)", () => {
+    const base = { session: { id: "a", started: false }, mcp: [], permissions };
+    for (const args of [claudeArgs(base), claudeArgs({ ...base, references: [] })]) {
+      expect(args).not.toContain("--add-dir");
+      expect(args).not.toContain("--settings");
+    }
+    expect(referenceSettingsArgs([])).toEqual([]);
+  });
+
+  it("keeps Windows paths intact in the settings JSON", () => {
+    const [flag, json] = referenceSettingsArgs(["C:\\Users\\me\\code"]);
+    expect(flag).toBe("--settings");
+    expect(JSON.parse(json).permissions.additionalDirectories).toEqual(["C:\\Users\\me\\code"]);
   });
 
   it("normalizes reference paths before building the deny rules", () => {
@@ -443,11 +463,79 @@ describe("reference folders", () => {
     expect(allowedTools({ edit: "none", exec: false, web: false }, [])).toEqual(["Read", "Glob", "Grep", "TodoWrite"]);
     expect(disallowedTools({ edit: "none", exec: false, web: false }, ["/r"])).toContain("Write(//r/**)");
   });
+
+  it("an MCP-only session gets only its servers and denies the read tools; it is opt-in (D0)", () => {
+    const none = { edit: "none", exec: false, web: false } as const;
+    const server = { name: "translate", command: "node", args: [], env: {} };
+    expect(allowedTools(none, [server], true)).toEqual(["mcp__translate"]);
+    expect(disallowedTools(none, [], true)).toEqual(expect.arrayContaining(["Read", "Glob", "Grep", "TodoWrite"]));
+    const session = { id: "s", started: false };
+    const off = claudeArgs({ session, mcp: [server], permissions: none });
+    expect(off[off.indexOf("--allowedTools") + 1]).toBe("Read,Glob,Grep,TodoWrite,mcp__translate");
+    expect(off[off.indexOf("--disallowedTools") + 1]).toBe(disallowedTools(none).join(","));
+    const on = claudeArgs({ session, mcp: [server], permissions: none, mcpOnly: true });
+    expect(on[on.indexOf("--allowedTools") + 1]).toBe("mcp__translate");
+    expect(on[on.indexOf("--disallowedTools") + 1].split(",")).toEqual(expect.arrayContaining(["Read", "Glob", "Grep", "TodoWrite"]));
+  });
+
+  it("an MCP-only session also denies subagents, listing, notebooks, skills, slash commands and the web; each once", () => {
+    const extra = ["Task", "Agent", "LS", "NotebookRead", "NotebookEdit", "Skill", "SlashCommand", "WebFetch", "WebSearch"];
+    // Even with permissions that would allow edits and the web, an MCP-only session gets none of them.
+    for (const permissions of [{ edit: "none", exec: false, web: false }, { edit: "folder", exec: false, web: true }] as const) {
+      const denied = disallowedTools(permissions, [], true);
+      expect(denied).toEqual(expect.arrayContaining(extra));
+      expect(new Set(denied).size).toBe(denied.length);
+    }
+    // D0: material and task turns (no mcpOnly) deny exactly what they did.
+    const none = { edit: "none", exec: false, web: false } as const;
+    expect(disallowedTools(none)).toEqual(["AskUserQuestion", "Edit", "Write", "MultiEdit", "NotebookEdit", "Bash", "WebSearch", "WebFetch", "Edit(.claude/**)", "Write(.claude/**)", "MultiEdit(.claude/**)"]);
+    expect(disallowedTools({ edit: "folder", exec: true, web: true })).not.toEqual(expect.arrayContaining(["Task", "Agent", "LS", "Skill"]));
+  });
+});
+
+describe("activity extras (context-panel spec §3.2)", () => {
+  it("reads: Read's file_path, Grep's and Glob's path; MCP tools by server and name", () => {
+    expect(activityExtras("Read", { file_path: "/w/a.md" })).toEqual({ paths: ["/w/a.md"] });
+    expect(activityExtras("Grep", { pattern: "x", path: "/w/src" })).toEqual({ paths: ["/w/src"] });
+    expect(activityExtras("Glob", { pattern: "*.md" })).toEqual({});
+    expect(activityExtras("mcp__atlassian__getJiraIssue", {})).toEqual({ tool: { server: "atlassian", name: "getJiraIssue" } });
+    expect(activityExtras("mcp__data__data_query", {})).toEqual({ tool: { server: "data", name: "data_query" } });
+    expect(activityExtras("mcp__broken", {})).toEqual({});
+    expect(activityExtras("Edit", { file_path: "/w/a.md" })).toEqual({});
+    // Bounds: a path over 4,096 characters is dropped, an MCP name is cut at 100.
+    expect(activityExtras("Read", { file_path: `/w/${"a".repeat(5000)}` })).toEqual({});
+    expect(activityExtras("Grep", { pattern: "x", path: `/w/${"a".repeat(5000)}` })).toEqual({});
+    expect(activityExtras(`mcp__${"s".repeat(150)}__${"t".repeat(150)}`, {})).toEqual({ tool: { server: "s".repeat(100), name: "t".repeat(100) } });
+  });
+
+  it("puts them on the start event only; the end event is as before", () => {
+    const events: Event[] = [];
+    const reader = new StreamJsonReader((e) => events.push(e), () => {});
+    reader.feed(JSON.stringify({ type: "assistant", message: { content: [{ type: "tool_use", id: "r1", name: "Read", input: { file_path: "/w/notes/a.md" } }] } }));
+    reader.feed(JSON.stringify({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "r1" }] } }));
+    expect(events).toEqual([
+      { type: "activity", id: "r1", kind: "read", detail: "a.md", paths: ["/w/notes/a.md"], state: "start" },
+      { type: "activity", id: "r1", kind: "read", detail: "a.md", state: "end", error: false },
+    ]);
+  });
+
+  it("D0: a Bash or Write activity carries nothing new", () => {
+    const events: Event[] = [];
+    const reader = new StreamJsonReader((e) => events.push(e), () => {});
+    reader.feed(JSON.stringify({ type: "assistant", message: { content: [{ type: "tool_use", id: "w1", name: "Write", input: { file_path: "/w/a.md" } }] } }));
+    reader.feed(JSON.stringify({ type: "assistant", message: { content: [{ type: "tool_use", id: "b1", name: "Bash", input: { command: "ls /w" } }] } }));
+    expect(events.map((e) => Object.keys(e).sort())).toEqual([
+      ["detail", "id", "kind", "state", "type"],
+      ["detail", "id", "kind", "state", "type"],
+    ]);
+    expect(events[0]).toEqual({ type: "activity", id: "w1", kind: "edit", detail: "a.md", state: "start" });
+  });
 });
 
 describe("claudeArgs noTools (sidekick spec §5)", () => {
   it("D0: without noTools the argv is exactly the old one", () => {
-    // Literal argv from claudeArgs before noTools existed (eb3ec21~1).
+    // Literal argv from claudeArgs before noTools existed (eb3ec21~1), with master's reference folders through
+    // --settings additionalDirectories instead of --add-dir (f2363fe).
     const mcpConfig = JSON.stringify({ mcpServers: { ui: { type: "stdio", command: "node", args: ["ui.js"], env: { HH_BRIDGE: "/tmp/x.sock" } } } });
     const head = [
       "-p", "--output-format", "stream-json", "--verbose", "--include-partial-messages",
@@ -460,7 +548,8 @@ describe("claudeArgs noTools (sidekick spec §5)", () => {
     ]);
     expect(claudeArgs({ session: { id: "abc", started: true }, mcp: [uiServer], permissions, references: ["/r"] })).toEqual([
       ...head, "--disallowedTools", `${denied},Edit(//r/**),Write(//r/**),MultiEdit(//r/**)`,
-      "--strict-mcp-config", "--mcp-config", mcpConfig, "--add-dir", "/r", "--resume", "abc",
+      "--strict-mcp-config", "--mcp-config", mcpConfig,
+      "--settings", JSON.stringify({ permissions: { additionalDirectories: ["/r"] } }), "--resume", "abc",
     ]);
   });
 

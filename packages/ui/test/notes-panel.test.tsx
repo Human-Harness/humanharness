@@ -40,7 +40,8 @@ describe("NotesPanel", () => {
     expect(within(panel).getByText("Five pieces")).toBeTruthy();
     fireEvent.click(within(panel).getByRole("button", { name: "Open the file" }));
     expect((await within(panel).findByRole("alert")).textContent).toBe("I couldn't open that file.");
-    fireEvent.keyDown(document, { key: "Escape" });
+    // Handled: a listener further out (focus mode's) leaves this Escape alone.
+    expect(fireEvent.keyDown(document, { key: "Escape" })).toBe(false);
     expect(onClose).toHaveBeenCalled();
   });
 

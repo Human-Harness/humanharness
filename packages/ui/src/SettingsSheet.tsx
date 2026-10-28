@@ -4,8 +4,12 @@ import { BackupNotice, type FolderMove, MovePlaces, needsBackupNotice, useFolder
 import { EngineIcon, Segmented } from "./chrome";
 import { type AppConfig, type AppState, type Appearance, type HarnessClient, type RunningSetup, TEXT_SIZES, type TextSize, isConfigured } from "./client";
 import { EngineTab } from "./EngineTab";
+import { trapTab } from "./focus";
 import { HarnessSettingsTab } from "./HarnessSettingsTab";
+import { type Language, languageName } from "@humanharness/harness-sdk/language";
 import { ownName, systemLanguage } from "./language";
+import type { LanguageControl } from "./language-control";
+import { LanguageChooser } from "./LanguageChooser";
 import { ModelsTab } from "./ModelsTab";
 import { ProfilesSection } from "./ProfilesSection";
 import { SetupStepsList } from "./SetupStepsList";
@@ -33,6 +37,7 @@ export function SettingsSheet({
   onClose,
   onSetup,
   move: shared,
+  language,
 }: {
   client: HarnessClient;
   state: AppState;
@@ -47,6 +52,8 @@ export function SettingsSheet({
   onSetup: (step?: string) => void;
   /** The app's folder move (HarnessApp), so a move outlives the sheet; without it the sheet keeps its own. */
   move?: FolderMove;
+  /** Language on demand (plan 5b); absent (no `client.language`): the read-only Language row (D0). */
+  language?: LanguageControl;
 }) {
   const { t } = useTranslation();
   const own = useFolderMove(client, onChange);
@@ -125,7 +132,11 @@ export function SettingsSheet({
     const onKey = (e: KeyboardEvent) => {
       const sheet = sheetRef.current;
       if (!sheet) return;
-      if (e.key === "Escape" && !runningRef.current) onCloseRef.current();
+      if (e.key === "Escape" && !runningRef.current) {
+        // Handled: focus mode's window listener leaves this Escape alone.
+        e.preventDefault();
+        onCloseRef.current();
+      }
       if (e.key === "Tab") trapTab(sheet, e);
     };
     document.addEventListener("keydown", onKey);
@@ -181,7 +192,7 @@ export function SettingsSheet({
           </div>
         )}
         <div id={panelId} role="tabpanel" aria-labelledby={tabId(tab)}>
-          {tab === "general" && <GeneralTab client={client} state={state} onChange={onChange} move={move} />}
+          {tab === "general" && <GeneralTab client={client} state={state} onChange={onChange} move={move} language={language} />}
           {tab !== "general" && !configured && <NotConfigured state={state} onSetup={onSetup} />}
           {tab === "engine" && configured && <EngineTab client={client} state={state} onChange={onChange} setupEngine={running?.engineId} />}
           {tab === "models" && configured && <ModelsTab client={client} state={state} onChange={onChange} />}
@@ -199,28 +210,101 @@ export function SettingsSheet({
   );
 }
 
-const FOCUSABLE = 'button:not([disabled]), a[href], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+/** English and its variants (en-GB) show the bundled English: nothing to translate. */
+const isEnglish = (tag: string): boolean => tag === "en" || tag.startsWith("en-");
 
-/** Keeps Tab and Shift+Tab cycling inside the sheet (it is modal). */
-function trapTab(sheet: HTMLElement, e: KeyboardEvent) {
-  const items = [...sheet.querySelectorAll<HTMLElement>(FOCUSABLE)];
-  if (items.length === 0) return;
-  const first = items[0];
-  const last = items[items.length - 1];
-  const active = document.activeElement;
-  if (!sheet.contains(active)) {
-    e.preventDefault();
-    first.focus();
-  } else if (e.shiftKey && active === first) {
-    e.preventDefault();
-    last.focus();
-  } else if (!e.shiftKey && active === last) {
-    e.preventDefault();
-    first.focus();
-  }
+/**
+ * Settings › General › Language (spec §3, §5, §6): the language by its own name and its English name, Change…, a run's
+ * progress and Cancel, Try again after a stopped run (it resumes, Q6), and Translate when texts are missing (new texts,
+ * or a saved language with no translation yet). Without a language control (D0): the read-only row of plan 5a.
+ */
+function LanguageRow({ state, language }: { state: AppState; language?: LanguageControl }) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState<null | { pick?: Language } | { notice: Language }>(null);
+  const reasonId = useId();
+  const view = language?.view ?? null;
+  const lang = view?.language ?? state.config.language ?? systemLanguage();
+  const run = view?.run ?? null;
+  const running = run?.status === "running";
+  const can = view?.canTranslate === true;
+  const stopped = run && (run.status === "failed" || run.status === "cancelled") ? run : null;
+  const untranslated = view !== null && !isEnglish(lang) && !running && view.missing > 0;
+  const none = untranslated && !view.cached.some((c) => c.tag === lang);
+  // Asking for the state runs an engine check, so only a shown row asks. `language` is new on every render; `load` is stable.
+  const load = language?.load;
+  useEffect(() => load?.(), [load]);
+  // The notice opens only when an engine can translate; a stopped run resumes from it (Q6).
+  const notice = (tag: Language) => {
+    if (can) setOpen({ notice: tag });
+  };
+  return (
+    <>
+      <div className="hh-row hh-row-wrap">
+        <span className="hh-row-label">{t("settings.language")}</span>
+        <span className="hh-langrow-name">
+          <span lang={lang}>{ownName(lang)}</span>
+          {!isEnglish(lang) && (
+            <span className="hh-caption" lang="en">
+              {languageName(lang)}
+            </span>
+          )}
+        </span>
+        {language && view && (
+          <button type="button" onClick={() => setOpen({})} disabled={running}>
+            {t("language.change")}
+          </button>
+        )}
+        <p className="hh-caption hh-row-note">{t("settings.languageHint")}</p>
+      </div>
+      {language && (running || stopped) && (
+        // One row and one live region for a run's progress and its stop, so the change from one to the other is
+        // announced. While the chooser is open its own progress dialog speaks: the row has no role then.
+        <div className={`hh-row ${running ? "hh-langrow-progress" : "hh-langrow-stopped"}`}>
+          <span role={open ? undefined : "status"}>{running ? t("language.progress", { done: run.done, total: run.total }) : stopped?.reason === "quota" ? t("language.stoppedQuota") : t("language.stopped")}</span>
+          {running ? (
+            <button type="button" onClick={() => language.cancel()}>
+              {t("language.cancel")}
+            </button>
+          ) : (
+            stopped && (
+              <button type="button" disabled={!can} aria-describedby={!can ? reasonId : undefined} onClick={() => notice(stopped.tag)}>
+                {t("language.tryAgain")}
+              </button>
+            )
+          )}
+        </div>
+      )}
+      {language && !stopped && untranslated && (
+        <div className="hh-row hh-langrow-new">
+          <span>{none ? t("language.notYet", { language: ownName(lang) }) : t("language.newTexts")}</span>
+          <button type="button" disabled={!can} aria-describedby={!can ? reasonId : undefined} onClick={() => notice(lang)}>
+            {t("language.translate")}
+          </button>
+        </div>
+      )}
+      {language && view && !can && (stopped || untranslated) && (
+        <p id={reasonId} className="hh-caption hh-langrow-reason">
+          {t("language.needsEngine")}
+        </p>
+      )}
+      {language && open && <LanguageChooser control={language} start={open} harnessName={state.harness.name} onClose={() => setOpen(null)} />}
+    </>
+  );
 }
 
-function GeneralTab({ client, state, onChange, move }: { client: HarnessClient; state: AppState; onChange: (s: AppState) => void; move: FolderMove }) {
+function GeneralTab({
+  client,
+  state,
+  onChange,
+  move,
+  language,
+}: {
+  client: HarnessClient;
+  state: AppState;
+  onChange: (s: AppState) => void;
+  move: FolderMove;
+  language?: LanguageControl;
+}) {
   const { t } = useTranslation();
   const placesId = useId();
   const sizeId = useId();
@@ -236,7 +320,6 @@ function GeneralTab({ client, state, onChange, move }: { client: HarnessClient; 
     const lost = active === null || active === document.body || document.getElementById(placesId)?.contains(active) === true;
     if (lost && toggleRef.current?.isConnected) toggleRef.current.focus();
   }, [move.moved]);
-  const lang = state.config.language ?? systemLanguage();
   const save = (patch: AppConfig) => client.saveConfig(patch).then(onChange, () => {});
   const appearances: { value: Appearance; label: string }[] = [
     { value: "system", label: t("settings.appearanceSystem") },
@@ -256,11 +339,7 @@ function GeneralTab({ client, state, onChange, move }: { client: HarnessClient; 
   return (
     <div className="hh-tab">
       <div className="hh-rows">
-        <div className="hh-row hh-row-wrap">
-          <span className="hh-row-label">{t("settings.language")}</span>
-          <span>{ownName(lang)}</span>
-          <p className="hh-caption hh-row-note">{t("settings.languageHint")}</p>
-        </div>
+        <LanguageRow state={state} language={language} />
         <div className="hh-row">
           <span className="hh-row-label">{t("settings.appearance")}</span>
           <Segmented label={t("settings.appearance")} value={state.config.appearance ?? "system"} onChange={(appearance) => void save({ appearance })} options={appearances} />

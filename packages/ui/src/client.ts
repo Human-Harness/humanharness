@@ -5,6 +5,7 @@ import type {
   ChoiceOption,
   DataKey,
   DataRecord,
+  DocumentKind,
   InputField,
   InputIssue,
   InputSpec,
@@ -15,17 +16,23 @@ import type {
   SettingsView,
   Tier,
 } from "@humanharness/harness-sdk";
-import type { ActivityKind, EngineError, Event, LimitWindow } from "@humanharness/runtime";
+import type { ActivityKind, DocumentCard, EngineError, Event, LimitWindow } from "@humanharness/runtime";
 import type {
   CollectionDiff,
   DataChange,
   DataQuery,
   DataQueryResult,
   FileChange,
+  FileDiffView,
   ScopeEntry,
   SyncProvider,
   SyncStatus,
+  TimelineAuthor,
+  TimelineEntry,
+  TimelineKind,
 } from "@humanharness/workspace";
+import type { AnswerPick, Review, ReviewSummary } from "@humanharness/harness-sdk/review";
+import type { GeneratedStrings } from "@humanharness/i18n";
 
 export type { DataKey, DataQuery, DataQueryResult, DataRecord };
 
@@ -47,6 +54,23 @@ export function stepTextSize(current: TextSize | undefined, step: "in" | "out" |
   return TEXT_SIZE_ORDER[Math.min(Math.max(i + (step === "in" ? 1 : -1), 0), TEXT_SIZE_ORDER.length - 1)];
 }
 
+/** The reader's look (document-reader spec §5.2): global app preferences. */
+export interface ReaderPrefs {
+  font?: "sans" | "serif";
+  size?: "normal" | "large";
+}
+
+/** The valid part of saved reading preferences; null when nothing is valid. */
+export function cleanReaderPrefs(value: unknown): ReaderPrefs | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const v = value as Record<string, unknown>;
+  const out: ReaderPrefs = {
+    ...(v.font === "sans" || v.font === "serif" ? { font: v.font } : {}),
+    ...(v.size === "normal" || v.size === "large" ? { size: v.size } : {}),
+  };
+  return Object.keys(out).length > 0 ? out : null;
+}
+
 export interface AppConfig {
   language?: Language;
   folder?: string;
@@ -55,10 +79,14 @@ export interface AppConfig {
   appearance?: Appearance;
   /** Settings → General → Text size. Absent means normal. */
   textSize?: TextSize;
+  /** The reader's font and text size. Absent until the person changes one (D0). */
+  reader?: ReaderPrefs;
   /** Settings › Modelos: each task's tier or custom model, and the tier tables per engine. Cleaned when read. */
   models?: ModelsConfig;
   /** The person said they keep their own copy of the folder: the backup notice stays hidden (Settings › General undoes it). */
   backupDismissed?: boolean;
+  /** The person answered the language offer on Home (spec §3): it never shows again. */
+  languageOffered?: boolean;
   /** Harnesses with profiles: the active profile's id (profiles spec §4). Only the main process changes it. */
   profile?: string;
 }
@@ -169,10 +197,126 @@ export interface PhaseView {
  */
 export interface TaskTurnNotice {
   task: string;
-  kind: "phase" | "wrap-up";
+  /** `context`: an "Add now" turn (context-panel spec §4.1), with the path it asks the agent to read. */
+  kind: "phase" | "wrap-up" | "context";
   phase?: string;
   by?: "agent" | "person" | "app";
   back?: true;
+  /** `kind: "context"` only: the folder-relative path. */
+  path?: string;
+}
+
+/** What one part of a task's first message is (context-panel spec §3.1). `scope-instructions` waits for the hatches spec. */
+export type ContextItemKind =
+  | "instructions"
+  | "scope-instructions"
+  | "brief"
+  | "notes-index"
+  | "app-notes-index"
+  | "data"
+  | "material"
+  | "pinned"
+  | "pinned-title";
+
+/** One part of what the app loaded into a task, with its approximate size. */
+export interface ContextItem {
+  /** `instructions`, `brief`, `brief:<n>`, `notes`, `app-notes`, `data:<collection>`, `material`, `pin:<scope>:<path>`. */
+  id: string;
+  kind: ContextItemKind;
+  /** English, for harness views and logs; the core's panel draws its own text from the other fields. */
+  label: string;
+  /** Relative to the folder, forward slashes, when the item is a file. */
+  path?: string;
+  /** Estimate: characters / 4, rounded to 100. */
+  tokens: number;
+  /** A brief that arrived after the start (a mode switch, a phase change). */
+  at?: string;
+  /** Notes in an index; rows of a collection. */
+  count?: number;
+  /** The notes an index lists, newest first (at most 50): what "Exclude" acts on. */
+  notes?: { path: string; title: string }[];
+  /** A pin's scope (`_app` for the whole app). */
+  scope?: string;
+  /** Before a compaction: the engine may have summarized it. */
+  compacted?: true;
+}
+
+/** A file, note or tool the agent used during the task (§3.2): one entry per path or tool. */
+export interface ContextRead {
+  kind: "read" | "tool";
+  /** The relative path, a file name (outside the folder) or "<server> · <tool>". */
+  label: string;
+  /** Relative to the folder; absent for tools and for files outside it. */
+  path?: string;
+  firstAt: string;
+  count: number;
+  compacted?: true;
+}
+
+/** A pinned file as the panel shows it (§4.2). */
+export interface PinView {
+  scope: string;
+  path: string;
+  at: string;
+  /** Enters whole, as title only (over the budget or over 1 MB), or is skipped. */
+  state: "full" | "title" | "missing" | "binary";
+  tokens: number;
+}
+
+/** An excluded note (§4.3). `title` when the note is still there. */
+export interface ExcludedView {
+  scope: string;
+  note: string;
+  at: string;
+  title?: string;
+}
+
+/** What the panel shows for the open task (§5.1). */
+export interface TaskContext {
+  task: string;
+  /** The task's scope: `main` without scopes. */
+  scope: string;
+  scoped: boolean;
+  start: ContextItem[];
+  /** The first turn's real input tokens, once it ended. */
+  startTokens?: number;
+  reads: ContextRead[];
+  compacted: boolean;
+  pins: PinView[];
+  excluded: ExcludedView[];
+  /** Tokens of pinned text a new task gets whole. */
+  budget: number;
+}
+
+/** `bad-name`: the path has a backtick, a line break or another control character, so it can't sit in a prompt or a commit. */
+export type ContextRefusal =
+  | "no-task"
+  | "busy"
+  | "outside"
+  | "bad-name"
+  | "binary"
+  | "missing"
+  | "unknown-scope"
+  | "not-a-note"
+  | "full"
+  | "not-ready"
+  | "failed";
+export type ContextResult = { ok: true } | { ok: false; reason: ContextRefusal };
+export type ContextGetResult = { ok: true; context: TaskContext } | { ok: false; reason: ContextRefusal };
+export type ContextPick = { ok: true; path: string } | { ok: false; reason: "cancelled" | ContextRefusal };
+
+/** `client.context` (§5.2). Every answer is data. */
+export interface ContextClient {
+  get(taskId: string): Promise<ContextGetResult>;
+  onChange(taskId: string, listener: (context: TaskContext) => void): () => void;
+  /** §4.1: the open task reads `path` now. */
+  add(taskId: string, path: string): Promise<ContextResult>;
+  /** The system file dialog at the folder; the path comes back checked like a pin's. */
+  pick(): Promise<ContextPick>;
+  pin(scope: string, path: string): Promise<ContextResult>;
+  unpin(scope: string, path: string): Promise<ContextResult>;
+  exclude(scope: string, notePath: string): Promise<ContextResult>;
+  include(scope: string, notePath: string): Promise<ContextResult>;
 }
 
 /**
@@ -221,6 +365,10 @@ export interface AppState {
   profiles?: ProfilesInfo;
   /** The harness takes the person's material (manifest `material`). Absent: none (D0). */
   material?: MaterialInfo;
+  /** The harness's document kinds (manifest `documents`): the reader's template check. Absent: none (D0). */
+  documents?: { kinds: Record<string, DocumentKind> };
+  /** The harness's agent may edit the folder: documents can be reviewed (review spec). Absent: no review UI (D0). */
+  review?: true;
   /** Folders the agent can read but never change. */
   references?: ReferenceView[];
   /** Settings › Modelos. */
@@ -237,6 +385,8 @@ export interface ModelsView {
   defaults: Record<string, Record<Tier, ModelSpec>>;
   /** What each engine offers: model ids (empty: only the engine's default) and efforts. */
   offered: Record<string, { models: ModelChoice[]; efforts: Effort[] }>;
+  /** The pinned-files budget the harness suggests (context-panel spec §4.2); Settings › Models offers it. */
+  pinnedTokens: number;
 }
 
 export interface TurnUsage {
@@ -284,6 +434,8 @@ export interface ChatEntry {
   timeUp?: true;
   /** Assistant entries: text runs and blocks in the order they arrived. Older entries lack it: text, then blocks. */
   parts?: AnswerPart[];
+  /** The `.md` files this turn added or changed (document-reader spec §5.1). Absent: none. */
+  documents?: DocumentCard[];
 }
 
 /** A piece of an answer: a run of text, or one of the entry's `blocks` (by index). */
@@ -334,7 +486,7 @@ export interface HistoryItem {
 export type HistoryFileChange = FileChange;
 
 // The history's commit subjects (raw git data, English; the History panel shows them through i18n keys).
-export { BEFORE_MESSAGE, DATA_CHANGE_PREFIX, NOTE, RESTORE_POINT, RESTORE_TASK, START, STOPPED_PREFIX, TURN_PREFIX, UNDO_PREFIX } from "@humanharness/workspace/subjects";
+export { BEFORE_MESSAGE, CONTEXT_CHANGE_PREFIX, DATA_CHANGE_PREFIX, FILE_RESTORE_PREFIX, NOTE, RESTORE_POINT, RESTORE_TASK, START, STOPPED_PREFIX, TURN_PREFIX, UNDO_PREFIX } from "@humanharness/workspace/subjects";
 
 /**
  * One row of the History panel: a task's commits, or the group of commits outside any task (`taskId: null`:
@@ -365,6 +517,11 @@ export interface FolderPick {
   folder: string;
   problem: FolderProblem | null;
 }
+
+/** `hh:readDocument` (document-reader spec §5.3). Main never writes; a refusal is data. */
+export type DocumentRead =
+  | { ok: true; text: string; mtime: string; size: number }
+  | { ok: false; reason: "outside" | "missing" | "not-markdown" | "too-large" | "not-ready"; size?: number };
 
 export interface EngineStatus {
   engineId: string;
@@ -740,6 +897,49 @@ export interface MaterialInfo {
   maxPages: number;
 }
 
+/** A translation run (language spec §5): its language, batches done of all, and how it stands. */
+export interface LanguageRun {
+  tag: Language;
+  done: number;
+  total: number;
+  status: "running" | "done" | "failed" | "cancelled";
+  /** `failed` only: the engine's quota, or anything else. */
+  reason?: "quota" | "engine";
+}
+
+/** What Settings › General, the offer card and the picker need (spec §3, §6). */
+export interface LanguageState {
+  /** The saved language: the AI writes in it, the screens show its cached translation. */
+  language: Language;
+  /** Languages with a cache; `complete`: every key translated (or given up) for this app's English. */
+  cached: { tag: Language; complete: boolean }[];
+  /** Keys of the saved language still in English that a run would send; 0 for English. */
+  missing: number;
+  /** Whether a translation can run now, else why not (spec §3: no ready engine, mock mode). */
+  canTranslate: true | "no-engine" | "mock";
+  /** The engine that would translate (the notice names it). */
+  engineName?: string;
+  run: LanguageRun | null;
+}
+
+export type { GeneratedStrings };
+export type LanguageChoose =
+  | { ok: true; language: Language; strings: GeneratedStrings }
+  | { ok: false; reason: "needs-translation" | "invalid" | "busy" | "failed" };
+export type LanguageStart = { ok: true } | { ok: false; reason: "invalid" | "busy" | "no-engine" | "mock" | "failed" };
+
+/** `client.language` (language spec). Every answer is data; `harness` is the harness's English map (`locales.en`). */
+export interface LanguageClient {
+  state(harness: Record<string, unknown>): Promise<LanguageState | null>;
+  /** English, or a language with a complete translation: saved and switched at once. */
+  choose(tag: Language, harness: Record<string, unknown>): Promise<LanguageChoose>;
+  /** Starts the run (after the notice); its progress comes through `onChange`. */
+  translate(tag: Language, harness: Record<string, unknown>): Promise<LanguageStart>;
+  cancel(): Promise<{ ok: boolean }>;
+  strings(tag: Language, harness: Record<string, unknown>): Promise<GeneratedStrings>;
+  onChange(listener: (state: LanguageState) => void): () => void;
+}
+
 export type MaterialResult = { ok: true } | { ok: false; reason: "not-ready" | "unknown-scope" | "unknown-source" | "invalid" | "fetch" };
 export type MaterialAddResult =
   | { ok: true; added: string[]; refused: { name: string; message: string }[] }
@@ -781,11 +981,18 @@ export interface HarnessClient {
   send(message: string, options?: SendOptions): Promise<void>;
   cancel(): Promise<void>;
   onEvent(listener: (event: Event) => void): () => void;
-  restore(sha: string): Promise<void>;
+  /**
+   * Makes the whole folder look as it did at `sha`, after main's native confirmation; recorded outside any task.
+   * `cancelled`: the person said no, nothing changed.
+   */
+  restore(sha: string): Promise<GoBackResult>;
   /** The history grouped by task, newest first; the group of commits outside any task last. */
   historyTasks(): Promise<HistoryTaskView[]>;
-  /** Makes the folder look as it did before the task started (later tasks are undone too); recorded outside any task. */
-  restoreTask(taskId: string): Promise<void>;
+  /**
+   * Makes the folder look as it did before the task started (later tasks are undone too), after main's native
+   * confirmation; recorded outside any task. `cancelled`: the person said no, nothing changed.
+   */
+  restoreTask(taskId: string): Promise<GoBackResult>;
   engineStatus(engineId: string): Promise<EngineStatus>;
   acceptNotice(engineId: string): Promise<void>;
   /** Runs the official install, update, login or logout; resolves when it exits. */
@@ -855,6 +1062,59 @@ export interface HarnessClient {
   openPath(path: string): Promise<boolean>;
   /** Shows a file inside the reference folders or the user's folder in Finder (any kind of file). False when refused or missing. */
   revealPath(path: string): Promise<boolean>;
+  /** A Markdown document inside the folder or a reference folder (document-reader spec §5.3). Never writes. */
+  readDocument(path: string): Promise<DocumentRead>;
+  /** A local image (png, jpeg, gif, webp) inside the folder or a reference folder, as a data: URL; null when refused. */
+  readImage(path: string): Promise<string | null>;
+  /** Whether each path is still there (a card of a moved or deleted file is struck through). */
+  documentsExist(paths: string[]): Promise<boolean[]>;
+  /** Calls `listener` after each change to the document; returns the unsubscribe. */
+  watchDocument(path: string, listener: () => void): () => void;
+  /** Opens a document in the reader panel, at the heading `anchor` when given (the harness's own UI may call it). */
+  openDocument(path: string, anchor?: string): void;
+  /** Every `openDocument`, whoever called it: the chat opens the panel. */
+  onOpenDocument(listener: (path: string, anchor?: string) => void): () => void;
+  /** Document reviews (review spec §5.6). Calls answer with data; only useful when `AppState.review` is set. */
+  documents: {
+    /** The record, its summary and the blob of the version read, for the reader. */
+    view(path: string): Promise<ReviewView>;
+    /** A harness view's summary of one document; null without a record or when it can't be read. */
+    review(path: string): Promise<ReviewSummary | null>;
+    summaries(paths: string[]): Promise<(ReviewSummary | null)[]>;
+    answer(path: string, id: string, pick: AnswerPick): Promise<ReviewResult>;
+    comment(path: string, input: CommentInput): Promise<ReviewResult>;
+    /** Edits a draft, or deletes it with null. */
+    editDraft(path: string, id: string, text: string | null): Promise<ReviewResult>;
+    reopen(path: string, id: string): Promise<ReviewResult>;
+    send(path: string): Promise<ReviewSendResult>;
+    /** Approves the version shown: `blob` is the view's (a document changed since is refused with "changed"). */
+    approve(path: string, blob: string, opts?: ApproveOptions): Promise<ReviewResult>;
+    approvedText(path: string): Promise<ApprovedText>;
+    /** Any review record or approval changed (`path`: its document). Returns the unsubscribe. */
+    onChange(listener: (path: string) => void): () => void;
+    /** Opens the document in the reader in focus mode (§6.2). */
+    focus(path: string): void;
+    /** Every `focus(path)`, whoever called it: the chat listens. */
+    onFocus(listener: (path: string) => void): () => void;
+  };
+  /** Focus mode (§6.2): the chat sets it; a harness view listens to pause its own interruptions. */
+  focus: {
+    current(): FocusState;
+    onChange(listener: (state: FocusState) => void): () => void;
+    /** The core's chat only. */
+    set(state: FocusState): void;
+  };
+  /** File timelines (file-timeline spec §6.3). Every call answers with data; main always confirms a go-back natively. */
+  files: {
+    /** The file's entries, newest first. */
+    timeline(path: string): Promise<FileTimelineResult>;
+    /** What changed between two commits, or from a commit to the file now ("current"); `from` null: nothing before. */
+    diff(path: string, from: string | null, to: string | "current"): Promise<FileDiffResult>;
+    /** Brings the file back to `commit` (an entry's `to`) after main's native confirmation; nothing else changes. */
+    restore(path: string, commit: string): Promise<FileRestoreResult>;
+    /** A commit touched `path`: its timeline has a new entry. Returns the unsubscribe. */
+    onChange(path: string, listener: () => void): () => void;
+  };
   /** Harnesses with scopes (spec §3.4). There is no delete: archive instead. */
   scopes: {
     list(): Promise<ScopeView[]>;
@@ -1006,6 +1266,10 @@ export interface HarnessClient {
   };
   /** The person's material (material spec §10). A harness without material answers null and "not-ready". */
   material: MaterialClient;
+  /** What the agent takes into account (context-panel spec §5.2). */
+  context: ContextClient;
+  /** Language on demand (plan 5b). Absent in a client that predates it: the Language row stays read-only (D0). */
+  language?: LanguageClient;
   /** The text size changed from the keyboard (⌘+, ⌘−, ⌘0), already saved. */
   onTextSize(listener: (size: TextSize) => void): () => void;
 }
@@ -1017,6 +1281,7 @@ export function isConfigured(config: AppConfig): config is ConfiguredApp {
   return Boolean(config.language && config.folder && config.engineId);
 }
 
+export type { DocumentCard } from "@humanharness/runtime";
 export type { BlockAnswer, ChoiceOption, Event, EngineError, InputField, InputIssue, InputSpec, LimitWindow, RespondResult, SettingFieldView, SettingsView };
 
 // ── Sidekick (sidekick spec; plan 2026-10-27 part 1) ──
@@ -1218,3 +1483,99 @@ export type SidekickImportResult =
 /** An imported sidekick's files: as read, changed since, gone (or now refused); `none` when it wasn't imported from files. */
 export type SidekickOriginal = "unchanged" | "changed" | "gone" | "none";
 export type SidekickOutcome = "used" | "edited" | "sent-anyway" | "dismissed";
+
+/** Why a review action did nothing (review spec; errors over IPC are data). */
+export type ReviewRefusal =
+  | "outside"
+  | "missing"
+  | "not-markdown"
+  | "too-large"
+  | "broken"
+  | "not-ready"
+  | "blocked"
+  | "busy"
+  | "unknown"
+  | "not-found"
+  | "bad-input"
+  | "full"
+  | "locked"
+  | "changed"
+  | "unsent"
+  | "reason-required"
+  | "nothing-to-send";
+/** `count`: the unsent items (`unsent`) or the open blocking questions (`reason-required`). */
+export type ReviewFailure = { ok: false; reason: ReviewRefusal; count?: number };
+/**
+ * The reader's view of a document's review. `review` null: no record yet (§6.1 "reading only"). `blob`: the version
+ * read, which an approval passes back (a document changed since is refused with "changed").
+ */
+export type ReviewView = { ok: true; review: Review | null; blob: string; summary: ReviewSummary } | ReviewFailure;
+/** "Approve" (§5.4), with the blob of the version shown: a reason when a blocking question is open; drop unsent items. */
+export interface ApproveOptions {
+  reason?: string;
+  discard?: boolean;
+}
+export type ReviewResult = { ok: true; id?: string; applied?: boolean } | ReviewFailure;
+/** `to`: the round went to the task that waits ("open") or starts a "Review <title>" task ("new"). */
+export type ReviewSendResult = { ok: true; sent: number; to: "open" | "new" } | ReviewFailure;
+export type ApprovedText = { ok: true; text: string } | ReviewFailure;
+/** A comment on a rendered selection (§5.2): the selected text, the slug of the heading above it, the comment. */
+export interface CommentInput {
+  selected: string;
+  heading: string | null;
+  text: string;
+}
+/** Focus mode (§6.2): on or off, and the document read. */
+export interface FocusState {
+  on: boolean;
+  path?: string;
+}
+export type { AnswerPick, Review, ReviewComment, ReviewSummary } from "@humanharness/harness-sdk/review";
+
+export type { DiffPart, FileDiffView, LineChange, MdBlockType, MdDiffBlock, TimelineAuthor, TimelineEntry, TimelineKind } from "@humanharness/workspace";
+
+/** Why a file-timeline call did nothing (file-timeline spec; errors over IPC are data). */
+export type FileRefusal = "not-ready" | "outside" | "untracked" | "bad-input" | "not-found" | "deleted" | "busy" | "unsafe" | "failed";
+export type FileTimelineResult = { ok: true; entries: TimelineEntry[] } | { ok: false; reason: FileRefusal };
+export type FileDiffResult = FileDiffView | { ok: false; reason: FileRefusal };
+/** What main's native confirmation says before a file goes back (§5). */
+export interface FileRestorePrompt {
+  path: string;
+  author: TimelineAuthor;
+  at: string;
+  kind: TimelineKind;
+  version?: number;
+}
+export type FileRestorePromptResult = { ok: true; prompt: FileRestorePrompt } | { ok: false; reason: FileRefusal };
+/** `hh:fileRestore`'s answer; `cancelled`: the person said no to main's confirmation. */
+export type FileRestoreAnswer = { ok: true } | { ok: false; reason: FileRefusal | "cancelled" };
+/** `client.files.restore`'s answer: done, the person said no, or refused. */
+export type FileRestoreResult = "restored" | "cancelled" | { refused: FileRefusal };
+/** A whole-folder or task go-back (`restore`, `restoreTask`): done, or the person said no to main's confirmation. */
+export type GoBackResult = { ok: true } | { ok: false; reason: "cancelled" };
+
+/** Who made a timeline entry, as the go-back confirmation and the timeline say it. */
+export function authorName(t: (key: string) => string, a: TimelineAuthor): string {
+  if (a.kind === "person") return t("timeline.you");
+  if (a.kind === "outside") return t("timeline.outsideAuthor");
+  return a.action ? a.label : t("history.question");
+}
+
+/** "20 minutes ago", "now", "3 days ago"; "" for a date that doesn't parse. */
+export function timeAgo(iso: string, language: string, now = Date.now()): string {
+  const ms = Date.parse(iso);
+  if (!Number.isFinite(ms) || !Number.isFinite(now)) return "";
+  const seconds = Math.round((ms - now) / 1000);
+  const f = new Intl.RelativeTimeFormat(language, { numeric: "auto" });
+  const abs = Math.abs(seconds);
+  if (abs < 60) return f.format(0, "second");
+  if (abs < 3600) return f.format(Math.round(seconds / 60), "minute");
+  if (abs < 86_400) return f.format(Math.round(seconds / 3600), "hour");
+  return f.format(Math.round(seconds / 86_400), "day");
+}
+
+/** The tasks other than `own` that changed something after `after` (an ISO date), newest first: going back undoes them too. */
+export function laterTasks(groups: HistoryTaskView[], own: string | null, after: string): HistoryTaskView[] {
+  const t = Date.parse(after);
+  return groups.filter((g) => g.taskId !== null && g.taskId !== own && Date.parse(g.date) > t);
+}

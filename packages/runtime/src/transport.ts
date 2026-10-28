@@ -27,6 +27,11 @@ export interface TransportOptions {
   profileMethod?: "codex-config" | "config-option";
   /** ACP only: the engine's fixed environment (registry `transport.env`, OpenCode only), set over the inherited one and `env`. */
   engineEnv?: Record<string, string>;
+  /**
+   * Only the MCP servers, no file reading at all (language spec §5): Claude gets no Read, Glob, Grep or TodoWrite,
+   * and ACP read and search requests are refused. Off for tasks and material (D0).
+   */
+  mcpOnly?: boolean;
   /** Claude only: false runs the CLI with `--no-session-persistence` (one-off turns such as the setup test). */
   persistSession?: boolean;
   /**

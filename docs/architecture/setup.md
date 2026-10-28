@@ -31,6 +31,7 @@ A required step that is missing blocks Start on Home ("One step left: <label>"),
 
 ## The screens
 
+- The folder step says "You can choose the app's language once it's set up." (`setupFlow.languageLater`, spec `2026-10-25-language-on-demand-design.md` D2). The line shows only on a true first run, since a later opening starts at a missing step. The language itself is chosen in Settings › General or from the Home offer (`docs/architecture/language.md`).
 - The setup screen goes folder, engine, then each step not done or skipped, then "All set". In a harness with profiles a core step comes after the engine, "Who's using it" (below). Opened from Home ("Set up" with a missing step), it starts at that step: earlier missing steps are left out of that run. A skippable step has Skip; a required one doesn't.
 - A form's Next saves through the same checks as any write (`hh:data` as the person, app-wide, with a `Data: <collection>` commit; settings through the settings controller, one field at a time, so a failure can leave the earlier fields saved). A form over a collection may ask for only some of its fields; the record's other fields stay, and a field the form asks for but sends no value for (an optional field cleared) is cleared. When the merged record fails the schema, nothing is saved and Next says so.
 - An interview's body shows its cost when the action isn't `light`, then a slim chat: no side panel, no topics, no composer until the interview's task runs. Start (or "Continue the interview" when the action has run before) starts a new task of the action. The slim chat shows only that task: another open task is not shown, and a choice or input that would start another action is refused.
@@ -55,4 +56,4 @@ An interview's first message is the action's brief, then a core section (`interv
 ## Known gaps
 
 - `humanharness run` doesn't run the setup screen. An interview's action runs like any action, with the same interview section as in the app.
-- Labels are English only, like every manifest string; the app translates them on demand.
+- Labels are English only, like every manifest string; the app translates them on demand (`docs/architecture/language.md`).

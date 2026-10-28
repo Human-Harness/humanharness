@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "action": "ticket",
+  "match": "# Task: ticket",
+  "recordedWith": "hand-written",
+  "turns": [
+    {
+      "id": "t1",
+      "text": "I wrote the spec in specs/filter.md and left two questions in it.",
+      "writes": [
+        {
+          "path": "specs/filter.md",
+          "content": "---\ntitle: Filter\nkind: spec\n---\n## Scope\n\nFilter by size.\n\nResults keep their order.\n\nThe list loads at once.\n"
+        }
+      ],
+      "blocks": [
+        {
+          "tool": "ask_in_document",
+          "input": {
+            "path": "specs/filter.md",
+            "quote": "Filter by size.",
+            "question": "Size only, or colour too?",
+            "options": [
+              { "label": "Size only", "text": "Filter by size." },
+              { "label": "Size and colour", "text": "Filter by size and colour." }
+            ],
+            "blocking": true
+          }
+        },
+        {
+          "tool": "ask_in_document",
+          "input": {
+            "path": "specs/filter.md",
+            "quote": "Results keep their order.",
+            "question": "Keep the order?",
+            "options": [
+              { "label": "Keep", "text": "Results keep their order." },
+              { "label": "Sort by name", "text": "Results are sorted by name." }
+            ]
+          }
+        }
+      ],
+      "next": { "*": "t2" }
+    },
+    {
+      "id": "t2",
+      "text": "Done: the list now loads in pages.",
+      "writes": [
+        {
+          "path": "specs/filter.md",
+          "content": "---\ntitle: Filter\nkind: spec\n---\n## Scope\n\nFilter by size and colour.\n\nResults keep their order.\n\nThe list loads in pages of 50.\n"
+        }
+      ],
+      "blocks": [{ "tool": "reply_to_comment", "input": { "path": "specs/filter.md", "id": "c3", "reply": "Pages of 50.", "resolve": true } }]
+    },
+    { "id": "t3", "text": "Plan: one step per filter.", "setPhase": "plan" },
+    { "id": "close", "note": { "title": "Filter", "summary": ["Spec approved"], "decisions": [], "files": ["specs/filter.md"], "open": [] } }
+  ]
+}

@@ -1,6 +1,6 @@
 # File timeline — design
 
-Status: approved by Marco on 2026-10-27, with four fixes from his review (§3.1 subject before trailer, §3.4 linked folders, §5 history queue and core-owned confirmation) and the open questions decided (§11). Not in the roadmap yet.
+Status: implemented (plan docs/superpowers/plans/2026-10-28-file-timeline.md). Approved by Marco on 2026-10-27, with four fixes from his review (§3.1 subject before trailer, §3.4 linked folders, §5 history queue and core-owned confirmation) and the open questions decided (§11).
 
 This is spec C from the dev-vs-core gap analysis (`docs/discovery/2026-10-26-dev-vs-core.md`, candidate C4). It builds on the history (`docs/architecture/history.md`) and the document reader (`2026-10-27-document-reader-design.md`). It refers to document review (`2026-10-27-document-review-and-focus-design.md`) for answers and approvals, and to parallel tasks (`2026-10-27-parallel-tasks-and-jobs-design.md`) for partial commits. Neither is required: without them, those entry kinds never appear.
 

@@ -7,13 +7,17 @@ import {
   type ChatBlock,
   type ChatEntry,
   type ChoiceOption,
+  type DocumentCard,
   type InputIssue,
   type InputSpec,
   type ModeView,
   type RespondResult,
+  type ReviewSummary,
   type SendOptions,
   partsOf,
 } from "./client";
+import { cleanDocumentCards } from "./card-shape";
+import { DocumentCards } from "./DocumentCards";
 import { InputHost } from "./InputBlock";
 import type { InputFormProps } from "./InputForm";
 import { Markdown } from "./markdown";
@@ -114,7 +118,7 @@ function Answer({
           const text = reveal && i === reveal.part ? wordsOf(p.text).slice(0, reveal.words).join("") : p.text;
           return (
             <Fragment key={i}>
-              <Markdown text={text} fade={fade} />
+              <Markdown source={text} fade={fade} />
             </Fragment>
           );
         }
@@ -141,17 +145,22 @@ export function Message({
   actions,
   live,
   reveal,
+  documents,
 }: {
-  entry: Pick<ChatEntry, "role" | "text" | "blocks" | "activities" | "parts" | "mode" | "phase" | "timeUp">;
+  entry: Pick<ChatEntry, "role" | "text" | "blocks" | "activities" | "parts" | "mode" | "phase" | "timeUp" | "documents">;
   components: Record<string, ComponentType<BlockProps>>;
   actions: BlockActions;
   /** The turn is running: its status row instead of what it did, shown even before anything arrives. */
   live?: { activities: LiveActivity[]; label?: string };
   /** The answer is arriving: how much of it shows (see usePacedAnswer). */
   reveal?: Reveal;
+  /** The chat's handling of document cards (document-reader spec §5.1); absent: cards are not drawn. */
+  documents?: { missing: ReadonlySet<string>; open(card: DocumentCard): void; reviews?: ReadonlyMap<string, ReviewSummary | null> };
 }) {
   const { t } = useTranslation();
-  if (!live && entry.role === "assistant" && !entry.text && entry.blocks.length === 0 && entry.activities.length === 0) return null;
+  // The chat log is read from disk unchecked: only well-formed cards are drawn.
+  const cards = entry.role === "assistant" && documents && entry.documents !== undefined ? cleanDocumentCards(entry.documents) : [];
+  if (!live && entry.role === "assistant" && !entry.text && entry.blocks.length === 0 && entry.activities.length === 0 && cards.length === 0) return null;
   // A mode switch (task-modes spec §5.4), a phase change or the wrap-up (task-phases spec §4.4, §5): a system line,
   // not the person's message.
   if (entry.role === "user" && (entry.mode || entry.phase || entry.timeUp)) {
@@ -167,7 +176,10 @@ export function Message({
       {entry.role === "assistant" &&
         (live ? <WorkingStatus items={live.activities} label={live.label} /> : <FinishedActivity items={entry.activities.map((a) => ({ ...a, done: true }))} />)}
       {entry.role === "assistant" ? (
-        <Answer parts={partsOf(entry)} blocks={entry.blocks} reveal={reveal} components={components} actions={actions} />
+        <>
+          <Answer parts={partsOf(entry)} blocks={entry.blocks} reveal={reveal} components={components} actions={actions} />
+          {documents && cards.length > 0 && <DocumentCards cards={cards} missing={documents.missing} onOpen={documents.open} reviews={documents.reviews} />}
+        </>
       ) : (
         entry.text.split("\n\n").map((p, i) => <p key={i}>{p}</p>)
       )}

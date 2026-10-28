@@ -104,6 +104,16 @@ export function isHeld(done: Done, options: Pick<TurnOptions, "holdModelError" |
   return (options.holdModelError === true && done.error.code === "model-unavailable") || options.holdFailure === true;
 }
 
+/**
+ * An event as the window gets it: an activity's `paths` and `tool` stay in main (context-panel spec §3.2), so engine
+ * paths never reach the renderer and the window's events are what they were (D0). Any other event is returned as is.
+ */
+export function forWindow(e: Event): Event {
+  if (e.type !== "activity" || (e.paths === undefined && e.tool === undefined)) return e;
+  const { paths: _paths, tool: _tool, ...rest } = e;
+  return rest;
+}
+
 /** One message's lifecycle: log, start the runtime, run the turn, log the reply and its usage, then tell the window. */
 export class TurnController {
   private turn: { cancelled: boolean; running: RunningTurn | null } | null = null;
@@ -255,7 +265,7 @@ export class TurnController {
           if (pending && (e.type === "limits" || e.type === "usage")) pending.push(e);
           else {
             release();
-            this.emit(e);
+            this.emit(forWindow(e));
           }
         }
       }, { ...(profile ? { profile } : {}), ...(task ? { trailer: { task, ...(action ? { action } : {}), ...(scope ? { scope } : {}), ...(taskPhase ? { phase: taskPhase } : {}) } } : {}) });

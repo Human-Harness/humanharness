@@ -12,6 +12,10 @@ An action declares `phases` (1 to 12), in order. Each one has:
 - `auto` (optional): the agent may move on from this part on its own (below).
 - `modes` (optional): the modes allowed in this part: absent or `"any"` (all the action's), `"none"`, or a list of the action's mode ids (see "Modes by part").
 - `close` (optional, `true` only): the part that ends with the core closing turn.
+- `approve` (optional): a glob of documents relative to the folder, such as `specs/*.md`. When the person approves a matching document while the task waits in this part, the task moves to the next part (below).
+  - `*` and `?` match within one path part, and `**` across parts. Case is ignored.
+  - No `[`, `]`, `{` or `}`, no backslash, not absolute, no `..`, not under `.harness/`, ends in `.md`, at most 200 characters.
+  - It does nothing on the last part or a `close` part. See `reviews.md`.
 
 The checks are in the manifest schema (`defineHarness` and `loadHarness` refuse them, `check` lists them as `schema` with their paths): unique ids, `close` only on the last part, a list of `modes` only on an action with modes and each of them one of its modes. `auto` is allowed on any part, the last one included: on the close part it means the agent's "done" closes the task at once. `check` adds `brief-missing` for a phase brief that is missing or empty.
 
@@ -27,6 +31,8 @@ The checks are in the manifest schema (`defineHarness` and `loadHarness` refuse 
 - The current part's own id in any other part does nothing; an id this action doesn't have is ignored (logged). The `ui` server refuses an id no action of the harness declares (see `blocks.md`).
 
 **The person** moves with the stepper, the proposal's button or, from a harness's own UI, `client.setPhase(taskId, phaseId)` → `hh:setPhase` (`phase-ipc.ts`) → `TaskManager.setPhase(to, task)`. It returns `{ accepted, done }` like `chooseMode`; `accepted` is a `PhaseResult` (data, not a thrown error): `{ ok: true, changed: "turn" | "quiet" | "same" | "closing" }` or `{ ok: false, reason: "no-task" | "unknown" }`. Only while the task waits: unlike a mode pick it never waits for a turn, and a call while a turn runs rejects ("A turn is already running"), so the stepper is disabled meanwhile. Any part, forward or back. The current part answers `same`, except the current close part, which is its Finish (`closing`). In `humanharness run`, `>phase <id>` does the same (see `authoring.md`).
+
+**An approval** can move the task too (`TaskManager.documentApproved`). The person approves a document in the reader, and the open task's current part has an `approve` glob that matches the document's path. If the task waits and the part is neither the last nor a `close` part, the task moves to the next part through `setPhase`, as if the person had picked it (`by: "person"`). A document that later turns stale never moves the task back.
 
 **The app** puts a new task in its first part (`by: "app"`), and moves to the close part after the time box's wrap-up or at its end.
 

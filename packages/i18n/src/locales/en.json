@@ -741,6 +741,7 @@
       "empty": "Nothing yet.",
       "yours": "Yours"
     },
+    "presets": { "title": "Suggested by the harness", "add": "Add {{name}}", "notNow": "Not now", "failed": "Could not add {{name}}." },
     "models": { "label": "Sidekick", "hint": "Reviews your prompts before they go out" },
     "usage": "Sidekick: about {{tokens}} tokens"
   },

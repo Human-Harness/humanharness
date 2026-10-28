@@ -13,7 +13,7 @@ import {
   sidekickTips,
 } from "@humanharness/harness-sdk";
 import type { SidekickAnswer, SidekickSessionOptions } from "@humanharness/runtime";
-import type { SidekickApproveCheck, SidekickCard, SidekickHeadsUp, SidekickInfo, SidekickLearned, SidekickOutcome, SidekickPlaceAnswer, SidekickReview, SidekickSetResult, SidekickSettings, SidekickSettingsPatch, SidekickState } from "@humanharness/ui/client";
+import type { SidekickApproveCheck, SidekickCard, SidekickHeadsUp, SidekickInfo, SidekickLearned, SidekickOutcome, SidekickPlaceAnswer, SidekickPreset, SidekickReview, SidekickSetResult, SidekickSettings, SidekickSettingsPatch, SidekickState } from "@humanharness/ui/client";
 import {
   APP_SCOPE,
   MAIN_SCOPE,
@@ -242,6 +242,8 @@ export class SidekickController {
   private readonly eventLines = new Map<string, Promise<SidekickEvent[]>>();
   private notice: SidekickState["notice"];
   private closed = false;
+  /** Preset adoptions, one at a time. */
+  private adopting: Promise<unknown> = Promise.resolve();
   /** The base the last review or refresh saw: a refresh with another one is a profile switch. */
   private base: string | undefined;
   /**
@@ -395,6 +397,33 @@ export class SidekickController {
       if (!old || old.text === text) continue;
       await this.d.store.put({ ...old, text, source: "person", updatedAt: now });
     }
+  }
+
+  /** "Suggested by the harness" (spec §2a.7): the manifest's presets (bounded by its schema), each with whether it was adopted. */
+  async presets(): Promise<SidekickPreset[]> {
+    const presets = this.d.manifest?.presets ?? [];
+    if (presets.length === 0) return [];
+    const sidekicks = await this.d.store.sidekicks();
+    return presets.map((p) => ({ name: p.name, mark: p.mark, personality: p.personality, purposes: p.purposes.map((x) => ({ ...x })), adopted: sidekicks.some((s) => s.preset === p.name) }));
+  }
+
+  /**
+   * "Add <name>": the preset becomes the person's sidekick (last in order, on in every scope by default), and the
+   * presets count as offered. One adoption at a time, so a double click writes it once; an unknown preset throws.
+   */
+  adoptPreset(name: string): Promise<void> {
+    const run = this.adopting.then(async () => {
+      const p = this.d.manifest?.presets?.find((x) => x.name === name);
+      if (!p) throw new Error(`No preset "${name}"`);
+      if ((await this.d.store.sidekicks()).some((s) => s.preset === p.name)) return;
+      // The full definition: saveSidekick writes every field it is given and nothing else.
+      await this.d.store.saveSidekick({ name: p.name, mark: p.mark, personality: p.personality, purposes: p.purposes, preset: p.name });
+      const r = await this.d.store.set({ presetsOffered: true });
+      if (!r.ok) throw new Error(r.message);
+      await this.push();
+    });
+    this.adopting = run.catch(() => undefined);
+    return run;
   }
 
   private async learnedRecords() {

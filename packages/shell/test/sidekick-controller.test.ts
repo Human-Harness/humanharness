@@ -1862,3 +1862,51 @@ describe("places (spec §2a.5, Decision 13)", () => {
     }
   });
 });
+
+describe("presets (spec §2a.7)", () => {
+  const manifest = { default: "off" as const, presets: [{ name: "Guard", mark: "🛡️", personality: "Calm.", purposes: [{ id: "process-guard" as const }] }] };
+
+  it("lists the harness's presets with whether each is adopted", async () => {
+    const h = harness({ record: on, manifest });
+    expect(await h.ctl.presets()).toEqual([{ name: "Guard", mark: "🛡️", personality: "Calm.", purposes: [{ id: "process-guard" }], adopted: false }]);
+  });
+
+  it("adopting writes a sidekick with `preset`, and marks presets offered", async () => {
+    const h = harness({ record: on, manifest });
+    await h.ctl.adoptPreset("Guard");
+    expect(h.records()).toContainEqual(expect.objectContaining({ type: "sidekick", name: "Guard", preset: "Guard", mark: "🛡️", personality: "Calm.", purposes: [{ id: "process-guard" }] }));
+    // The implicit default is written first (Decision 2): the person keeps part 1's Sidekick next to the preset.
+    expect(h.records()).toContainEqual(expect.objectContaining({ type: "sidekick", id: "sidekick" }));
+    expect(h.record()).toMatchObject({ presetsOffered: true });
+    expect((await h.ctl.presets())[0]?.adopted).toBe(true);
+    expect(h.states.length).toBeGreaterThan(0);
+  });
+
+  it("an unknown preset is refused; adopting one twice (a double click) writes it once", async () => {
+    const h = harness({ record: on, manifest });
+    await expect(h.ctl.adoptPreset("Nope")).rejects.toThrow();
+    expect(h.writes).toEqual([]);
+    await Promise.all([h.ctl.adoptPreset("Guard"), h.ctl.adoptPreset("Guard")]);
+    expect(h.records().filter((r) => r.type === "sidekick" && r.preset === "Guard")).toHaveLength(1);
+  });
+
+  it("works with Sidekick off (the sidekicks are the person's settings)", async () => {
+    const h = harness({ manifest });
+    await h.ctl.adoptPreset("Guard");
+    expect(h.records()).toContainEqual(expect.objectContaining({ type: "sidekick", preset: "Guard" }));
+    expect(h.asked).toEqual([]);
+  });
+
+  it("D0: a harness without presets → []", async () => {
+    expect(await harness({ record: on }).ctl.presets()).toEqual([]);
+  });
+
+  it("D0: listing presets with no sidekick records and presetsOffered false writes nothing", async () => {
+    const h = harness({ record: on, manifest });
+    await h.ctl.presets();
+    await h.ctl.state();
+    expect(h.writes).toEqual([]);
+    expect(h.record()).not.toHaveProperty("presetsOffered");
+    expect(h.records().filter((r) => r.type === "sidekick")).toEqual([]);
+  });
+});

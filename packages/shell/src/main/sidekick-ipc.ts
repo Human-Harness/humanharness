@@ -1,4 +1,4 @@
-import type { SidekickApproveCheck, SidekickLearned, SidekickOutcome, SidekickPlaceAnswer, SidekickReview, SidekickSetResult, SidekickState } from "@humanharness/ui/client";
+import type { SidekickApproveCheck, SidekickLearned, SidekickOutcome, SidekickPlaceAnswer, SidekickPreset, SidekickReview, SidekickSetResult, SidekickState } from "@humanharness/ui/client";
 import type { SidekickController } from "./sidekick";
 import { SIDEKICK_PLACE_INPUT_MAX } from "./sidekick-turns";
 
@@ -11,9 +11,11 @@ const APPROVE: SidekickApproveCheck = { kind: "approve" };
 /** A harness place's id (the manifest's place-id pattern) and the answer to anything malformed. */
 const PLACE = /^[a-z][a-z0-9_-]{0,63}$/;
 const NO_ANSWER: SidekickPlaceAnswer = { ok: false };
+/** A preset's name (the manifest's bound). */
+const MAX_PRESET_NAME = 40;
 
 type Handle = (channel: string, fn: (...args: never[]) => unknown) => void;
-type Ctl = Pick<SidekickController, "state" | "set" | "review" | "cancel" | "resolve" | "mute" | "unmute" | "saveDecision" | "learned" | "forget" | "forgetAll" | "editLearned" | "beforeApprove" | "cancelApprove" | "ask">;
+type Ctl = Pick<SidekickController, "state" | "set" | "review" | "cancel" | "resolve" | "mute" | "unmute" | "saveDecision" | "learned" | "forget" | "forgetAll" | "editLearned" | "beforeApprove" | "cancelApprove" | "ask" | "presets" | "adoptPreset">;
 const MAX_ID = 80;
 const isId = (v: unknown): v is string => typeof v === "string" && v.length > 0 && v.length <= MAX_ID;
 /** Edits to the learned items: at most MAX_EDITS, each an id and a text of 1..MAX_LEARNED characters (not blank). */
@@ -88,6 +90,12 @@ export function registerSidekickIpc(handle: Handle, ctl: () => Ctl | null): void
     if (!c || typeof place !== "string" || !PLACE.test(place)) return NO_ANSWER;
     if (typeof content !== "string" || !content.trim() || content.length > SIDEKICK_PLACE_INPUT_MAX) return NO_ANSWER;
     return c.ask(place, content).catch(() => NO_ANSWER);
+  });
+  // Presets (spec §2a.7): listed even with Sidekick off; adopting writes as the person.
+  handle("hh:sidekickPresets", async (): Promise<SidekickPreset[]> => (await ctl()?.presets().catch(() => [])) ?? []);
+  handle("hh:sidekickAdoptPreset", async (name: unknown) => {
+    if (typeof name !== "string" || !name || name.length > MAX_PRESET_NAME) return;
+    await ctl()?.adoptPreset(name);
   });
   handle("hh:sidekickEditLearned", async (changes: unknown) => {
     if (!isEdits(changes)) return;

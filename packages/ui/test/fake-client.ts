@@ -41,6 +41,7 @@ import type {
   SetupStepsState,
   SidekickApproveCheck,
   SidekickPlaceAnswer,
+  SidekickPreset,
   SidekickLearned,
   SidekickOutcome,
   SidekickReview,
@@ -581,6 +582,8 @@ export class FakeClient implements HarnessClient {
   sidekickApprove: SidekickApproveCheck | null = null;
   /** What sidekick.ask answers; null: `{ ok: false }`. */
   sidekickPlace: SidekickPlaceAnswer | null = null;
+  /** What sidekick.presets answers; adoptPreset marks one adopted. */
+  sidekickPresets: SidekickPreset[] = [];
   /** What the sidekick namespace was asked, in order (reads are not recorded). */
   readonly sidekickCalls: unknown[][] = [];
   private sidekickListeners = new Set<(s: SidekickState) => void>();
@@ -635,6 +638,11 @@ export class FakeClient implements HarnessClient {
     ask: async (place: string, content: string): Promise<SidekickPlaceAnswer> => {
       this.sidekickCalls.push(["ask", place, content]);
       return this.sidekickPlace ?? { ok: false };
+    },
+    presets: async () => this.sidekickPresets.map((p) => ({ ...p })),
+    adoptPreset: async (name: string) => {
+      this.sidekickCalls.push(["adoptPreset", name]);
+      this.sidekickPresets = this.sidekickPresets.map((p) => (p.name === name ? { ...p, adopted: true } : p));
     },
     onChange: (l: (s: SidekickState) => void) => {
       this.sidekickListeners.add(l);

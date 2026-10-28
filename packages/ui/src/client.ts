@@ -930,6 +930,10 @@ export interface HarnessClient {
      * is off, no sidekick answers there, or anything fails. The harness shows the answer in its place.
      */
     ask(place: string, content: string): Promise<SidekickPlaceAnswer>;
+    /** "Suggested by the harness" (spec §2a.7): the manifest's presets, each with whether the person adopted it. */
+    presets(): Promise<SidekickPreset[]>;
+    /** "Add <name>": the preset becomes one of the person's sidekicks, and the presets count as offered. */
+    adoptPreset(name: string): Promise<void>;
     onChange(listener: (state: SidekickState) => void): () => void;
   };
   /** The harness's setup steps (setup-steps spec). A harness with none answers no steps and refuses every change. */
@@ -1106,5 +1110,19 @@ export type SidekickReview = { kind: "send" } | { kind: "card"; card: SidekickCa
 /** What the document-review flow does before approving (spec §2a.2): approve, or show the card next to Approve. */
 export type SidekickApproveCheck = { kind: "approve" } | { kind: "card"; card: SidekickCard };
 /** A harness place's answer (spec §2a.5, plan Decision 13): free text, at most 600 characters. */
+/** A sidekick's purpose as the UI shows it: a core purpose id, or `custom` with its text and moments. */
+export interface SidekickPurposeView {
+  id: string;
+  text?: string;
+  moments?: string[];
+}
+/** A ready-made sidekick the harness offers (spec §2a.7); `adopted` once the person added it. */
+export interface SidekickPreset {
+  name: string;
+  mark: string;
+  personality: string;
+  purposes: SidekickPurposeView[];
+  adopted: boolean;
+}
 export type SidekickPlaceAnswer = { ok: true; text: string; speaker: SidekickInfo } | { ok: false };
 export type SidekickOutcome = "used" | "edited" | "sent-anyway" | "dismissed";

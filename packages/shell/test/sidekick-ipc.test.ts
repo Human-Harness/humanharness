@@ -195,3 +195,26 @@ describe("sidekick IPC: places", () => {
     expect(await (handlers.get("hh:sidekickAsk") as (...a: unknown[]) => unknown)("terminal", "x")).toEqual({ ok: false });
   });
 });
+
+describe("sidekick IPC: presets", () => {
+  function presetWire(ctl: object | null) {
+    const handlers = new Map<string, (...args: never[]) => unknown>();
+    registerSidekickIpc(
+      (ch, fn) => void handlers.set(ch, fn),
+      () => ctl as never,
+    );
+    return (ch: string, ...args: unknown[]) => (handlers.get(ch) as (...a: unknown[]) => unknown)(...args);
+  }
+  const GUARD = { name: "Guard", mark: "🛡️", personality: "", purposes: [{ id: "process-guard" }], adopted: false };
+
+  it("lists the presets ([] without a controller or on a failure); adopts a bounded name only", async () => {
+    const calls: unknown[] = [];
+    const call = presetWire({ presets: async () => [GUARD], adoptPreset: async (n: unknown) => void calls.push(n) });
+    expect(await call("hh:sidekickPresets")).toEqual([GUARD]);
+    await call("hh:sidekickAdoptPreset", "Guard");
+    for (const bad of ["", "x".repeat(41), 7, null, { name: "Guard" }]) await call("hh:sidekickAdoptPreset", bad);
+    expect(calls).toEqual(["Guard"]);
+    expect(await presetWire(null)("hh:sidekickPresets")).toEqual([]);
+    expect(await presetWire({ presets: async () => Promise.reject(new Error("boom")) })("hh:sidekickPresets")).toEqual([]);
+  });
+});

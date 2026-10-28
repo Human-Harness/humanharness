@@ -120,6 +120,8 @@ const client: HarnessClient = {
     beforeApprove: (doc) => ipcRenderer.invoke("hh:sidekickBeforeApprove", doc),
     cancelApprove: () => ipcRenderer.invoke("hh:sidekickApproveCancel"),
     ask: (place, content) => ipcRenderer.invoke("hh:sidekickAsk", place, content),
+    presets: () => ipcRenderer.invoke("hh:sidekickPresets"),
+    adoptPreset: (name) => ipcRenderer.invoke("hh:sidekickAdoptPreset", name),
     onChange: (listener) => subscribe<SidekickState>("hh:sidekick", listener),
   },
   setupSteps: {

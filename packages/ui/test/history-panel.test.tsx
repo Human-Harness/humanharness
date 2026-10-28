@@ -53,7 +53,9 @@ const groups: HistoryTaskView[] = [
   },
 ];
 
-async function open(opts: { disabled?: boolean; client?: FakeClient; actions?: Record<string, ActionOption>; currentTask?: string } = {}) {
+async function open(
+  opts: { disabled?: boolean; client?: FakeClient; actions?: Record<string, ActionOption>; currentTask?: string; undoByFiles?: boolean } = {},
+) {
   const client = opts.client ?? new FakeClient();
   if (!opts.client) client.historyGroups = groups;
   const onRestored = vi.fn();
@@ -65,6 +67,7 @@ async function open(opts: { disabled?: boolean; client?: FakeClient; actions?: R
       actions={opts.actions ?? actions}
       disabled={opts.disabled}
       currentTask={opts.currentTask}
+      {...(opts.undoByFiles ? { undoByFiles: true } : {})}
       onClose={onClose}
       onRestored={onRestored}
     />,
@@ -269,6 +272,49 @@ describe("HistoryPanel", () => {
     // The oldest point, under both tasks.
     fireEvent.click(points[points.length - 1]);
     expect(screen.getByText(/This also undoes 2 later tasks\./)).toBeTruthy();
+  });
+
+  it("undoing a task by its files (parallel spec §5.3) counts only the later tasks that changed the same files", async () => {
+    const client = new FakeClient();
+    const later = (taskId: string, changed: string, hour: number): HistoryTaskView => ({
+      taskId,
+      actionId: "plan",
+      start: `s-${taskId}`,
+      end: `e-${taskId}`,
+      date: `2026-10-13T${hour}:00:00.000Z`,
+      changes: [{ path: changed, kind: "modified" }],
+      entries: [{ sha: `e-${taskId}`, message: "Turn: plan it", date: `2026-10-13T${hour}:00:00.000Z` }],
+    });
+    client.historyGroups = [later("t3", "q.md", 12), later("t2", "b.md", 11), groups[1]];
+    await open({ client, undoByFiles: true });
+    fireEvent.click(await screen.findByRole("button", { name: /A question/ }));
+    const undo = screen.getAllByRole("button", { name: "Undo this task" });
+    fireEvent.click(undo[undo.length - 1]);
+    // t2 changed another file: not counted; t3 changed q.md too.
+    expect(screen.getByText(/This also undoes 1 later task\./)).toBeTruthy();
+    const undone = screen.getByRole("list", { name: "What will be undone" });
+    expect(within(undone).getAllByRole("listitem")).toHaveLength(2);
+    expect(screen.getByRole("button", { name: "Undo 2 tasks" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    // "Go back here" still takes the whole folder back: every later task counts.
+    const points = screen.getAllByRole("button", { name: "Go back here" });
+    fireEvent.click(points[points.length - 1]);
+    expect(screen.getByText(/This also undoes 2 later tasks\./)).toBeTruthy();
+  });
+
+  it("undoing a task by its files with no later task on them asks for this task alone", async () => {
+    const client = new FakeClient();
+    client.historyGroups = [
+      { ...groups[0], changes: [{ path: "plan.md", kind: "modified" }] },
+      groups[1],
+    ];
+    await open({ client, undoByFiles: true });
+    fireEvent.click(await screen.findByRole("button", { name: /A question/ }));
+    fireEvent.click(screen.getAllByRole("button", { name: "Undo this task" })[1]);
+    expect(screen.queryByText(/later task/)).toBeNull();
+    expect(screen.queryByRole("list", { name: "What will be undone" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Undo task" }));
+    await waitFor(() => expect(client.restoredTasks).toEqual(["t1"]));
   });
 
   it("focuses the yes when a confirmation opens, and gives focus back on Cancel", async () => {

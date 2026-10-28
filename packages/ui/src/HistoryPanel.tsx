@@ -39,6 +39,15 @@ export function laterTasks(groups: HistoryTaskView[], own: string | null, after:
   return groups.filter((g) => g.taskId !== null && g.taskId !== own && Date.parse(g.date) > t);
 }
 
+/**
+ * Undo by files (parallel spec §5.3): only the task's own files go back, so of the later tasks only those that changed
+ * one of them count.
+ */
+export function laterOnFiles(later: HistoryTaskView[], task: HistoryTaskView): HistoryTaskView[] {
+  const mine = new Set(task.changes.map((c) => c.path));
+  return later.filter((g) => g.changes.some((c) => mine.has(c.path)));
+}
+
 const keyOf = (g: HistoryTaskView) => g.taskId ?? "other";
 
 const sameDay = (a: Date, b: Date) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
@@ -68,6 +77,7 @@ export function HistoryPanel({
   onRestored,
   disabled = false,
   currentTask,
+  undoByFiles = false,
 }: {
   client: HarnessClient;
   /** The harness's actions: a task's row shows its action's label. */
@@ -79,6 +89,8 @@ export function HistoryPanel({
   onRestored?: (kind: Restore["kind"]) => void;
   /** Going back is not allowed while a turn is live. */
   disabled?: boolean;
+  /** Board mode (parallel spec §5.3): "Undo this task" takes back only the task's own files. */
+  undoByFiles?: boolean;
 }) {
   const { t, i18n } = useTranslation();
   const [groups, setGroups] = useState<HistoryTaskView[] | null>(null);
@@ -355,7 +367,11 @@ export function HistoryPanel({
                       </ol>
                       {g.taskId !== null &&
                         g.start !== null &&
-                        goBack({ kind: "task", id: g.taskId }, laterTasks(groups ?? [], g.taskId, g.date), g)}
+                        goBack(
+                          { kind: "task", id: g.taskId },
+                          undoByFiles ? laterOnFiles(laterTasks(groups ?? [], g.taskId, g.date), g) : laterTasks(groups ?? [], g.taskId, g.date),
+                          g,
+                        )}
                     </div>
                   )}
                 </li>

@@ -2,7 +2,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { ReviewLocks, loadReview, runReviewRequest } from "../src";
+import type { Review } from "@humanharness/harness-sdk";
+import { MAX_RECORD_BYTES, ReviewLocks, loadReview, runReviewRequest, saveReview } from "../src";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-revreq-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -97,7 +98,7 @@ describe("guards", () => {
   it("never saves a record the next load would call broken", async () => {
     const { base, ctx } = setup();
     fs.writeFileSync(path.join(base, "specs", "spec.md"), `## ${"long ".repeat(60)}\n\nFilter by size.\n`);
-    await expect(runReviewRequest(ctx, ask())).rejects.toThrow("the review of spec.md can't hold that");
+    await expect(runReviewRequest(ctx, ask())).rejects.toThrow("the heading above that passage in spec.md is too long to anchor on");
     expect(await loadReview(base, "specs/spec.md")).toBeNull();
   });
 });
@@ -111,5 +112,69 @@ describe("one key per document", () => {
     expect((await loadReview(base, "specs/spec.md"))?.path).toBe("specs/spec.md");
     expect(changed).toEqual(["specs/spec.md", "specs/spec.md", "specs/spec.md"]);
     expect(await runReviewRequest(ctx, { op: "read", path: "./specs/./spec.md" })).toMatchObject({ path: "specs/spec.md" });
+  });
+
+  it("refuses a question that would make the record too large, and the record still loads", async () => {
+    const { base, ctx } = setup();
+    const big = Array.from({ length: 5 }, (_, i) => ({ label: `${i}`, text: `${i}`.repeat(20_000) }));
+    const seeded: Review = {
+      path: "specs/spec.md",
+      task: null,
+      approvals: [],
+      comments: Array.from({ length: 52 }, (_, i) => ({
+        id: `c${i + 1}`,
+        author: "agent" as const,
+        kind: "question" as const,
+        anchor: { quote: "Filter by size.", heading: "scope", occurrence: 0 },
+        text: "Which?",
+        options: big,
+        state: "open" as const,
+        replies: [],
+        at: "2026-10-28T10:00:00.000Z",
+      })),
+    };
+    await saveReview(base, seeded);
+    await expect(runReviewRequest(ctx, ask({ options: big }))).rejects.toThrow("spec.md has too many comments");
+    expect((await loadReview(base, "specs/spec.md"))?.comments).toHaveLength(52);
+    // The person's side saves through the same function.
+    const more = { ...seeded, comments: [...seeded.comments, { ...seeded.comments[0], id: "c53" }] };
+    expect(JSON.stringify(more).length).toBeGreaterThan(MAX_RECORD_BYTES);
+    await expect(saveReview(base, more)).rejects.toThrow("spec.md has too many comments");
+  });
+
+  it("takes a heading with its link's #", async () => {
+    const { base, ctx } = setup();
+    expect(await runReviewRequest(ctx, ask({ quote: "None.", heading: "#risks" }))).toEqual({ id: "c1" });
+    expect((await loadReview(base, "specs/spec.md"))?.comments[0].anchor.heading).toBe("risks");
+  });
+
+  it("cuts an unknown id it echoes", async () => {
+    const { ctx } = setup();
+    const err = (await runReviewRequest(ctx, { op: "reply", path: "specs/spec.md", id: "x".repeat(5000), reply: "x", resolve: true }).catch((e: Error) => e)) as Error;
+    expect(err.message.length).toBeLessThan(40);
+    expect(err.message).toContain("unknown comment");
+  });
+});
+
+describe("the person's drafts", () => {
+  async function withDraft() {
+    const s = setup();
+    await runReviewRequest(s.ctx, ask());
+    const r = (await loadReview(s.base, "specs/spec.md")) as Review;
+    const draft = { id: "c2", author: "person" as const, kind: "comment" as const, anchor: { quote: "None.", heading: "risks", occurrence: 0 }, text: "Why none?", state: "draft" as const, replies: [], at: "2026-10-28T10:00:00.000Z" };
+    await saveReview(s.base, { ...r, comments: [...r.comments, draft] });
+    return s;
+  }
+
+  it("are left out of read", async () => {
+    const { ctx } = await withDraft();
+    const r = (await runReviewRequest(ctx, { op: "read", path: "specs/spec.md" })) as { comments: { id: string }[] };
+    expect(r.comments.map((c) => c.id)).toEqual(["c1"]);
+  });
+
+  it("can't be answered: reply treats them as unknown", async () => {
+    const { base, ctx } = await withDraft();
+    await expect(runReviewRequest(ctx, { op: "reply", path: "specs/spec.md", id: "c2", reply: "x", resolve: true })).rejects.toThrow("unknown comment c2");
+    expect((await loadReview(base, "specs/spec.md"))?.comments[1].state).toBe("draft");
   });
 });

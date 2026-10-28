@@ -3,7 +3,9 @@ import {
   type Review,
   type ReviewComment,
   type ReviewOption,
+  COMMENT_ID,
   anchorAt,
+  cut,
   locate,
   nextCommentId,
   refusedShape,
@@ -78,16 +80,20 @@ async function ask(ctx: ReviewContext, doc: string, r: Record<string, unknown>, 
   });
   if (!text(r.question, 500)) throw new ReviewRefused("question: 1 to 500 characters");
   if (typeof r.quote !== "string" || r.quote.length === 0 || r.quote.length > 20_000) throw new ReviewRefused(`quote not found in ${name(doc)}`, "not-found");
-  if (r.heading !== undefined && !text(r.heading, 200)) throw new ReviewRefused("heading: a heading's slug, as in its link (#scope)");
+  // A slug as in its link: one leading "#" is the link's, not the slug's.
+  const heading = typeof r.heading === "string" && r.heading.startsWith("#") ? r.heading.slice(1) : r.heading;
+  if (heading !== undefined && !text(heading, 200)) throw new ReviewRefused("heading: a heading's slug, as in its link (#scope)");
   if (r.blocking !== undefined && typeof r.blocking !== "boolean") throw new ReviewRefused("blocking: true or false");
   const quote = r.quote;
-  const heading = r.heading as string | undefined;
   const question = (r.question as string).trim();
   return ctx.locks.run(doc, async () => {
     const d = await readOwnDocument(ctx.base, doc);
     if (!d.ok) throw documentProblem(doc, d.reason);
-    const found = anchorAt(d.text, quote, heading);
+    const found = anchorAt(d.text, quote, heading as string | undefined);
     if (!found.ok) throw new ReviewRefused(found.reason === "no-heading" ? `no heading #${heading} in ${name(doc)}` : `quote not found in ${name(doc)}`, "not-found");
+    // The record keeps slugs up to 200 characters (the schema's limit).
+    if ((found.anchor.heading?.length ?? 0) > 200)
+      throw new ReviewRefused(`the heading above that passage in ${name(doc)} is too long to anchor on: ask about a passage under a shorter heading`, "bad-input");
     const review = (await loadReview(ctx.base, doc)) ?? newReview(doc, await ctx.task());
     if (review.comments.length >= MAX_COMMENTS) throw new ReviewRefused(`${name(doc)} has too many comments`, "full");
     const id = nextCommentId(review);
@@ -110,6 +116,8 @@ async function ask(ctx: ReviewContext, doc: string, r: Record<string, unknown>, 
 
 async function reply(ctx: ReviewContext, doc: string, r: Record<string, unknown>, at: () => string): Promise<{ id: string; state: string }> {
   const id = typeof r.id === "string" ? r.id : "";
+  // Only a well-formed id is looked up or echoed back.
+  if (!COMMENT_ID.test(id)) throw new ReviewRefused(`unknown comment ${id ? cut(id, 20) : "(no id)"}`, "unknown");
   if (!text(r.reply, 4000)) throw new ReviewRefused("reply: 1 to 4000 characters");
   if (typeof r.resolve !== "boolean") throw new ReviewRefused("resolve: true when it is done, false when you ask something back");
   const words = (r.reply as string).trim();
@@ -119,8 +127,9 @@ async function reply(ctx: ReviewContext, doc: string, r: Record<string, unknown>
     const d = await readOwnDocument(ctx.base, doc);
     if (!d.ok && d.reason !== "missing") throw documentProblem(doc, d.reason);
     const review = await loadReview(ctx.base, doc);
-    const c = review?.comments.find((x) => x.id === id);
-    if (!review || !c) throw new ReviewRefused(`unknown comment ${id || "(no id)"}`, "unknown");
+    // The person's drafts are not sent yet: the agent neither sees nor answers them.
+    const c = review?.comments.find((x) => x.id === id && x.state !== "draft");
+    if (!review || !c) throw new ReviewRefused(`unknown comment ${id}`, "unknown");
     if (c.replies.length >= MAX_REPLIES) throw new ReviewRefused(`${id} has too many replies`, "full");
     // §4: resolve marks it resolved; a reply that asks something back keeps it open.
     const state = resolve ? ("resolved" as const) : ("open" as const);
@@ -136,7 +145,7 @@ async function read(ctx: ReviewContext, doc: string): Promise<unknown> {
   const review = await loadReview(ctx.base, doc);
   const secs = sections(d.text);
   const comments = (review?.comments ?? [])
-    .filter((c) => c.state !== "resolved")
+    .filter((c) => c.state !== "resolved" && c.state !== "draft")
     .map((c) => ({
       id: c.id,
       author: c.author,

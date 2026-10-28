@@ -6,8 +6,8 @@ import { readCapped } from "./safe-read";
 
 /** Over this a document is not reviewed (the reader's own limit). */
 export const MAX_REVIEW_DOCUMENT_BYTES = 10 * 1024 * 1024;
-/** Over this a record is "broken". */
-const MAX_RECORD_BYTES = 5 * 1024 * 1024;
+/** Over this a record is "broken", so no save makes one larger. */
+export const MAX_RECORD_BYTES = 5 * 1024 * 1024;
 
 export type ReviewReason = "outside" | "missing" | "not-markdown" | "too-large" | "broken" | "unknown" | "not-found" | "bad-input" | "full";
 
@@ -163,6 +163,9 @@ export async function loadReview(base: string, doc: string): Promise<Review | nu
 
 /** Writes the record atomically (a temp file the history skips, then a rename). Never through a linked folder. */
 export async function saveReview(base: string, review: Review): Promise<void> {
+  const json = `${JSON.stringify(review, null, 2)}\n`;
+  // The agent's tools and the person's actions alike: past the cap the next load would call the record broken.
+  if (Buffer.byteLength(json) > MAX_RECORD_BYTES) throw new ReviewRefused(`${path.posix.basename(review.path)} has too many comments`, "full");
   const { file, top } = await recordPath(base, review.path);
   const dir = path.dirname(file);
   // Folder by folder from `.harness` down, each checked before the next is made: a link (or a file) on the way is
@@ -179,7 +182,7 @@ export async function saveReview(base: string, review: Review): Promise<void> {
   // still lands only a record file.
   if ((await fs.realpath(dir)) !== dir) throw new ReviewRefused("the review folder is a link", "outside");
   const tmp = `${file}.${randomUUID()}.tmp`;
-  await fs.writeFile(tmp, `${JSON.stringify(review, null, 2)}\n`, { flag: "wx" });
+  await fs.writeFile(tmp, json, { flag: "wx" });
   try {
     await fs.rename(tmp, file);
   } catch (err) {

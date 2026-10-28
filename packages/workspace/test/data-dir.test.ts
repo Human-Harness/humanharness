@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { collectionSchema, z } from "@humanharness/harness-sdk";
-import { APP_SCOPE, DataStore } from "../src/index";
+import { APP_SCOPE, DataStore, isDataWrite } from "../src/index";
 
 const items = { items: collectionSchema.parse({ scoped: false, key: "id", agent: "read", schema: z.object({ id: z.string(), n: z.number() }) }) };
 const tmp = () => fs.mkdtemp(path.join(os.tmpdir(), "hh-data-dir-"));
@@ -225,5 +225,12 @@ describe("a store with its own folder never goes through a link (the agent can p
     await fs.symlink(outside, path.join(base, "own", "_app"));
     await expect(new DataStore(base, one, { dir: path.join(base, "own") }).delete("one", undefined, app)).rejects.toThrow(/not a plain folder/);
     expect(await fs.readFile(path.join(outside, "one.json"), "utf8")).toBe('{"n":1}');
+  });
+});
+
+describe("isDataWrite", () => {
+  it("counts replaceAll as a write (plugins spec §4.2)", () => {
+    for (const op of ["put", "patch", "delete", "replaceAll"]) expect(isDataWrite({ op, collection: "c" })).toBe(true);
+    for (const op of ["get", "query"]) expect(isDataWrite({ op, collection: "c" })).toBe(false);
   });
 });

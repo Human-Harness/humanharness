@@ -11,6 +11,7 @@ export * from "./profiles";
 export * from "./migrate";
 export * from "./data";
 export * from "./no-links";
+export * from "./attention";
 export * from "./data-context";
 export * from "./data-diff";
 export * from "./sidekick-checks";

@@ -620,8 +620,9 @@ export const dataRequestSchema = z.discriminatedUnion("op", [
 ]);
 export type DataRequest = z.output<typeof dataRequestSchema>;
 
+/** A request that would change data: the agent's and UI's ops, plus a plugin's `replaceAll` (its own data only). */
 export const isDataWrite = (request: unknown): boolean =>
-  isObject(request) && (request.op === "put" || request.op === "patch" || request.op === "delete");
+  isObject(request) && (request.op === "put" || request.op === "patch" || request.op === "delete" || request.op === "replaceAll");
 
 /** Runs one request against the store, as `ctx` (who asks, in which scope). */
 export async function runDataRequest(store: DataStore, request: unknown, ctx: DataContext): Promise<unknown> {

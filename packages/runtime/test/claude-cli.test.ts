@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { type ClaudeScript, claudeResultLine, claudeTextLines, fakeClaudeCommand, writeScript } from "@humanharness/fake-agent";
-import { ClaudeCliTransport, StreamJsonReader, activityExtras, allowedTools, claudeArgs, disallowedTools, editPaths, profileArgs, referenceRulePath, referenceSettingsArgs } from "../src/claude-cli";
+import { ClaudeCliTransport, StreamJsonReader, activityExtras, allowedTools, claudeArgs, disallowedTools, editPaths, profileArgs, referenceRulePath, referenceSettingsArgs, ruleUnsafePath } from "../src/claude-cli";
 import type { Event } from "../src/events";
 import type { Session, TransportOptions } from "../src/transport";
 
@@ -679,6 +679,28 @@ describe("linked folders (hatches spec §3.3, §3.5)", () => {
     const args = claudeArgs({ ...base, permissions: { edit: "none", exec: false, web: false }, scope });
     expect(allowed(args).some((t) => t.includes("/Users/me/code/app"))).toBe(false);
     expect(denied(args)).toContain("Edit");
+  });
+
+  const UNSAFE = [",", "(", ")", "*", "?", "[", "]", "{", "}", "\\", "\n", "\t", "\x00", "\x7f"];
+  for (const mode of ["read", "write"] as const) {
+    it.each(UNSAFE)(`refuses a ${mode} folder whose name has %j: no rule could spell it`, (ch) => {
+      const linked = [{ path: `/Users/me/a${ch}b`, mode, tracked: false }];
+      expect(() => claudeArgs({ ...base, scope: { linked } })).toThrow(/linked folder/);
+    });
+  }
+
+  it("refuses a relative linked folder, and takes names with spaces, quotes and non-ASCII letters", () => {
+    expect(() => claudeArgs({ ...base, scope: { linked: [{ path: "rel/dir", mode: "read", tracked: false }] } })).toThrow(/linked folder/);
+    const fine = ["/Users/me/My Docs", "/Users/me/Ñandú 📚", "/Users/me/a\"b'c", "/Users/me/x/"];
+    for (const p of fine) expect(ruleUnsafePath(p, "darwin"), p).toBe(false);
+    const args = claudeArgs({ ...base, scope: { linked: [{ path: "/Users/me/My Docs", mode: "read", tracked: false }] } });
+    expect(denied(args)).toContain("Edit(//Users/me/My Docs/**)");
+  });
+
+  it("ruleUnsafePath: a Windows path's backslashes are separators, not syntax", () => {
+    expect(ruleUnsafePath("C:\\Users\\me\\notes", "win32")).toBe(false);
+    expect(ruleUnsafePath("C:\\Users\\me\\notes[1]", "win32")).toBe(true);
+    expect(ruleUnsafePath("/Users/me/a\\b", "darwin")).toBe(true);
   });
 
   it("a no-tools or MCP-only session refuses linked folders", () => {

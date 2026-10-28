@@ -1,12 +1,13 @@
 import { constants as C, promises as fs } from "node:fs";
 import path from "node:path";
+import { ruleUnsafePath } from "@humanharness/runtime";
 import { homeOrDotFolder } from "./references";
 import { folderProblem, realFolder } from "./validate";
 
 /** Why a folder can't be linked (hatches spec §3.2). Each has a sentence in en.json `hatches.refused.<reason>`. */
 export type LinkRefusal =
   | "engine-home" | "home" | "system" | "too-broad" | "protected" | "main-folder" | "other-scope-write"
-  | "nested" | "already-linked" | "not-git" | "not-folder" | "comma";
+  | "nested" | "already-linked" | "not-git" | "not-folder" | "unsafe-name";
 
 export interface LinkContext {
   /** The home folder, real. */
@@ -37,7 +38,9 @@ const isSystemPath = (dir: string) => SYSTEM_ROOTS.some((s) => inside(dir, s) ||
 
 /** The first refusal for the real path `dir`, or null. Pure: path comparisons only, never a read (L8). */
 export function linkRefusal(dir: string, ctx: LinkContext): LinkRefusal | null {
-  if (dir.includes(",")) return "comma";
+  // A comma, glob or rule character, or a control character: Claude's permission rules couldn't spell the folder
+  // (claudeArgs throws on one), so it is refused here rather than failing every turn. Relative paths: below.
+  if (path.isAbsolute(dir) && ruleUnsafePath(dir)) return "unsafe-name";
   if (norm(dir) === norm(ctx.home)) return "home";
   // ~/.claude, ~/.codex, every other dot folder in home (credentials, engine config) and what's inside them.
   if (homeOrDotFolder(dir, ctx.home)) return "engine-home";

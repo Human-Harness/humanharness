@@ -78,6 +78,19 @@ export function referenceRulePath(dir: string, platform: NodeJS.Platform = proce
   return path.posix.resolve(dir).replace(/\/+$/, "");
 }
 
+/** Characters a permission rule list or its glob would read as syntax: the comma joins rules, the rest are glob or rule syntax. */
+const RULE_UNSAFE = /[,()*?[\]{}\x00-\x1f\x7f]/;
+
+/**
+ * Whether a folder can't be spelled safely in a permission rule (hatches spec §3.3): not absolute, or a name with a
+ * comma, `( ) * ? [ ] { }`, a control character, or (outside Windows) a backslash. Such a rule would split, match
+ * other folders or miss its own `.git`, so the picker refuses these folders and `claudeArgs` throws on one.
+ */
+export function ruleUnsafePath(p: string, platform: NodeJS.Platform = process.platform): boolean {
+  const abs = platform === "win32" ? path.win32.isAbsolute(p) : path.posix.isAbsolute(p);
+  return !abs || RULE_UNSAFE.test(p) || (platform !== "win32" && p.includes("\\"));
+}
+
 /**
  * `--model`, `--effort` and `--autocompact` for the task's profile (resources spec §5.2), on the first turn
  * and every `--resume`. Checked again here: nothing that reads as a flag reaches the CLI.
@@ -130,6 +143,9 @@ export function claudeArgs(
     throw new Error("A no-tools session takes no MCP servers, reference or linked folders");
   }
   if (o.mcpOnly && linked.length > 0) throw new Error("An MCP-only session takes no linked folders");
+  // The last boundary: the picker refuses these names, but a hand-edited scopes.json could still bring one here.
+  const unsafe = linked.find((l) => ruleUnsafePath(l.path));
+  if (unsafe) throw new Error(`Refusing a linked folder no permission rule can spell: ${JSON.stringify(unsafe.path)}`);
   const mcpServers = Object.fromEntries(
     o.mcp.map((s) => [s.name, { type: "stdio", command: s.command, args: s.args, env: s.env }]),
   );

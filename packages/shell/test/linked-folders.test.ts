@@ -42,7 +42,9 @@ describe("linkRefusal (hatches spec §3.2)", () => {
     ["/usr", "/usr/local/x", "system"],
     ["/System", "/System/Library", "system"],
     ["/Applications", "/Applications/X.app", "system"],
-    ["a comma in the path", path.join(home, "code", "a,b"), "comma"],
+    ...[",", "(", ")", "*", "?", "[", "]", "{", "}", "\\", "\n", "\x7f"].map(
+      (ch) => [`a ${JSON.stringify(ch)} in the name`, path.join(home, "code", `a${ch}b`), "unsafe-name"] as [string, string, string],
+    ),
   ])("refuses %s", (_n, p, why) => {
     expect(linkRefusal(p, ctx())).toBe(why);
   });
@@ -119,7 +121,9 @@ describe("checkLink (real paths)", () => {
     ["a folder containing a same-scope link", () => [path.join(home, "code"), { sameScope: [repo()] }], "nested"],
     ["another scope's write folder", () => [repo(), { otherScopesWrite: [repo()] }], "other-scope-write"],
     ['a plain folder under history "own"', () => [mk(path.join(home, "plain-own")), { history: "own" }], "not-git"],
-    ["a target with a comma", () => [mk(path.join(home, "code", "a,b")), {}], "comma"],
+    ["a target with a comma", () => [mk(path.join(home, "code", "a,b")), {}], "unsafe-name"],
+    ["a target named notes[1]", () => [mk(path.join(home, "code", "notes[1]")), {}], "unsafe-name"],
+    ["a target with a star", () => [mk(path.join(home, "code", "a*b")), {}], "unsafe-name"],
     ["a folder inside the app root", () => [mk(path.join(home, "Apps", "ana")), { folder: path.join(home, "Apps", "bo"), root: path.join(home, "Apps") }], "main-folder"],
   ])("refuses through a link: %s", async (_n, make, why) => {
     const [target, over] = make();

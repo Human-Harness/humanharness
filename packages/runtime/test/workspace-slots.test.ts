@@ -149,6 +149,26 @@ describe("idle ACP slot (parallel spec §4, Decision 10)", () => {
   });
 });
 
+describe("a turn's scope (hatches spec §3.3)", () => {
+  it("send's scope reaches the transport each turn; a send without one passes none", async () => {
+    const base = fs.mkdtempSync(path.join(root, "t-"));
+    const args = path.join(base, "args.json");
+    ws = await createWorkspace({
+      harness: await loadHarness(FIXTURE), engine: getEngine("claude"), folder: path.join(base, "Work"), gitdir: path.join(base, "h.git"),
+      language: "en", command: fakeClaudeCommand(),
+      env: { HH_FAKE_SCRIPT: writeScript(base, { steps: [claudeResultLine(true)] } as ClaudeScript), HH_FAKE_ARGS: args },
+    });
+    // HH_FAKE_ARGS keeps the last run's argv only.
+    const argv = () => JSON.parse(fs.readFileSync(args, "utf8")) as string[];
+    const slot = await ws.openSlot({ key: "t1" });
+    await slot.send("one", () => {}, { scope: { linked: [{ path: "/Users/me/manuscript", mode: "read", tracked: false }] } }).done;
+    const first = argv();
+    expect(JSON.parse(first[first.indexOf("--settings") + 1])).toEqual({ permissions: { additionalDirectories: ["/Users/me/manuscript"] } });
+    await slot.send("two", () => {}).done;
+    expect(argv()).not.toContain("--settings");
+  });
+});
+
 describe("job slots (Decision 11, T5)", () => {
   it("a job slot's ui server gets HH_JOB=1 and narrowed permissions; a task slot's specs are today's", async () => {
     const base = fs.mkdtempSync(path.join(root, "t-"));

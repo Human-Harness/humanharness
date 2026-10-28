@@ -14,12 +14,32 @@ const uiServer = { name: "ui", command: "node", args: ["ui.js"], env: { HH_BRIDG
 
 describe("D0 (hatches): no linked folders, no change", () => {
   it("claudeArgs without a scope, or with an empty one, is the golden argv", () => {
+    const head = [
+      "-p", "--output-format", "stream-json", "--verbose", "--include-partial-messages", "--setting-sources", "project",
+      "--permission-mode", "acceptEdits",
+      "--allowedTools", "Read,Glob,Grep,TodoWrite,Edit(./**),Write(./**),MultiEdit(./**),mcp__ui",
+    ];
+    const mcpConfig = ["--strict-mcp-config", "--mcp-config", JSON.stringify({
+      mcpServers: { ui: { type: "stdio", command: "node", args: ["ui.js"], env: { HH_BRIDGE: "/tmp/x.sock" } } },
+    })];
+    const deny = "AskUserQuestion,Bash,WebSearch,WebFetch,Edit(.claude/**),Write(.claude/**),MultiEdit(.claude/**)";
+    // With a reference folder: its one --settings and its edit deny rules, nothing more.
+    const withRef = [
+      ...head,
+      "--disallowedTools", `${deny},Edit(//r/**),Write(//r/**),MultiEdit(//r/**)`,
+      ...mcpConfig,
+      "--settings", JSON.stringify({ permissions: { additionalDirectories: ["/r"] } }),
+      "--session-id", "abc",
+    ];
+    // Without references: no --settings at all.
+    const plain = [...head, "--disallowedTools", deny, ...mcpConfig, "--session-id", "abc"];
     const o = { session: { id: "abc", started: false }, mcp: [uiServer], permissions, references: ["/r"] };
-    const golden = claudeArgs(o);
-    expect(claudeArgs({ ...o, scope: undefined })).toEqual(golden);
-    expect(claudeArgs({ ...o, scope: { linked: [] } })).toEqual(golden);
-    expect(claudeArgs({ ...o, references: [], scope: { linked: [] } })).not.toContain("--settings");
+    for (const scope of [undefined, { linked: [] }]) {
+      expect(claudeArgs({ ...o, scope })).toEqual(withRef);
+      expect(claudeArgs({ ...o, references: [], scope })).toEqual(plain);
+    }
   });
+
   it("session/new and session/load carry exactly cwd and mcpServers without linked folders", async () => {
     const folder = fs.mkdtempSync(path.join(root, "t-"));
     const logFile = path.join(root, `log-${path.basename(folder)}.jsonl`);

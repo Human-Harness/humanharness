@@ -24,6 +24,20 @@
   --hh-profile-violet: #cdbdf0;
   --hh-profile-pink: #f1bcd6;
   --hh-profile-gray: #d3d5d8;
+  --hh-callout-note: #e8eef8;
+  --hh-callout-tip: #e7f3ec;
+  --hh-callout-warning: #fbefe3;
+  --hh-callout-summary: #efedf8;
+  --hh-callout-decision: #e6f2f1;
+  --hh-callout-question: #fbf3dc;
+  --hh-review-question: #fbefc4;
+  --hh-review-comment: #dde8f8;
+  --hh-review-done: #e9ebe6;
+  --hh-review-active: #f6d77a;
+  --hh-diff-ins: #e3f2e6;
+  --hh-diff-del: #fbe3e3;
+  --hh-diff-bar-ins: #2e8a5c;
+  --hh-diff-bar-del: #b3402f;
   --hh-font: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   --hh-display: "Lexend", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   color-scheme: light;
@@ -54,6 +68,20 @@
     --hh-profile-violet: #4a3a74;
     --hh-profile-pink: #6e3352;
     --hh-profile-gray: #464b52;
+    --hh-callout-note: #1f2a3a;
+    --hh-callout-tip: #1e3026;
+    --hh-callout-warning: #3a2a1c;
+    --hh-callout-summary: #29253a;
+    --hh-callout-decision: #1c302e;
+    --hh-callout-question: #3a321c;
+    --hh-review-question: #5a4a16;
+    --hh-review-comment: #243a5a;
+    --hh-review-done: #30332e;
+    --hh-review-active: #7a5f12;
+    --hh-diff-ins: #1e3026;
+    --hh-diff-del: #3a2222;
+    --hh-diff-bar-ins: #4fb07f;
+    --hh-diff-bar-del: #e07a6a;
     color-scheme: dark;
   }
 }
@@ -84,6 +112,20 @@
   --hh-profile-violet: #cdbdf0;
   --hh-profile-pink: #f1bcd6;
   --hh-profile-gray: #d3d5d8;
+  --hh-callout-note: #e8eef8;
+  --hh-callout-tip: #e7f3ec;
+  --hh-callout-warning: #fbefe3;
+  --hh-callout-summary: #efedf8;
+  --hh-callout-decision: #e6f2f1;
+  --hh-callout-question: #fbf3dc;
+  --hh-review-question: #fbefc4;
+  --hh-review-comment: #dde8f8;
+  --hh-review-done: #e9ebe6;
+  --hh-review-active: #f6d77a;
+  --hh-diff-ins: #e3f2e6;
+  --hh-diff-del: #fbe3e3;
+  --hh-diff-bar-ins: #2e8a5c;
+  --hh-diff-bar-del: #b3402f;
   color-scheme: light;
 }
 :root[data-theme="dark"] {
@@ -111,5 +153,19 @@
   --hh-profile-violet: #4a3a74;
   --hh-profile-pink: #6e3352;
   --hh-profile-gray: #464b52;
+  --hh-callout-note: #1f2a3a;
+  --hh-callout-tip: #1e3026;
+  --hh-callout-warning: #3a2a1c;
+  --hh-callout-summary: #29253a;
+  --hh-callout-decision: #1c302e;
+  --hh-callout-question: #3a321c;
+  --hh-review-question: #5a4a16;
+  --hh-review-comment: #243a5a;
+  --hh-review-done: #30332e;
+  --hh-review-active: #7a5f12;
+  --hh-diff-ins: #1e3026;
+  --hh-diff-del: #3a2222;
+  --hh-diff-bar-ins: #4fb07f;
+  --hh-diff-bar-del: #e07a6a;
   color-scheme: dark;
 }

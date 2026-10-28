@@ -448,6 +448,7 @@ export class TaskManager {
       await this.begin(
         { ...keptQuestion(p.prompt), plugin: p.plugin },
         where,
+        language,
         (notesIndex) => fillPrompt(QUESTION_PROMPT, { language, notesIndex, question: p.prompt }),
         p.display,
         undefined,

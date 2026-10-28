@@ -198,7 +198,16 @@ import { restoreTaskByPaths } from "./restore-paths";
 import { type LinkedIpcDeps, hatchesState, linkedSigning, registerLinkedIpc } from "./linked-ipc";
 import { linkedHistoryDir, markRelinked, pruneUnlinked } from "./linked-history";
 import { LinkedInstructions, type ScopeAccess, createScopeAccess } from "./scope-access";
-import { type LinkedHistoryRef, linkedHistoriesFor, linkedHistoryView, openLinkedHistory, restoreLinkedTask, restoreTaskWithLinked } from "./linked-restore";
+import {
+  type LinkedHistoryRef,
+  linkedHistoriesFor,
+  linkedHistoryView,
+  mergeTaskGroups,
+  openLinkedHistory,
+  restoreLinkedTask,
+  restoreTaskWithLinked,
+} from "./linked-restore";
+import { isGitRepo } from "./linked-folders";
 import { restoreTaskArgs, tasksIpc, undoRefusalOf } from "./tasks-ipc";
 import { PluginsController, watchPluginFolder } from "./plugins";
 import { respondHandler } from "./respond-ipc";
@@ -1032,16 +1041,31 @@ async function dropRuntime() {
  * the task. Null in plain mode: the whole folder back to the task's start, as always (D0). `busy`: the task's own lane
  * (single mode: the task) or the job run being undone is still running.
  */
-function undoByPaths(): { running: () => Promise<{ task: string; paths: ReadonlySet<string> }[]>; busy: (id: string) => boolean } | null {
+function undoByPaths(): {
+  running: () => Promise<{ task: string; paths: ReadonlySet<string> }[]>;
+  /** The same in a tracked linked folder (hatches spec §3.4), relative to it. */
+  linkedRunning: (realPath: string) => Promise<{ task: string; paths: ReadonlySet<string> }[]>;
+  busy: (id: string) => boolean;
+} | null {
   const jobRunning = (id: string) => (jobsHost?.runningOf(`job:${id}`) ?? null) !== null;
   const board = host;
-  if (board) return { running: () => board.runningPaths(), busy: (id) => (board.lane(id)?.manager.isBusy() ?? false) || jobRunning(id) };
+  if (board)
+    return {
+      running: () => board.runningPaths(),
+      linkedRunning: (p) => board.linkedRunningPaths(p),
+      busy: (id) => (board.lane(id)?.manager.isBusy() ?? false) || jobRunning(id),
+    };
   if (!single) return null;
   return {
     running: async () => {
       const rt = await runtime.peek()?.catch(() => null);
       const ws = rt ? singleParts.get(rt)?.workspace : undefined;
       return ws ? ws.runningPaths() : [];
+    },
+    linkedRunning: async (p) => {
+      const rt = await runtime.peek()?.catch(() => null);
+      const ws = rt ? singleParts.get(rt)?.workspace : undefined;
+      return ws ? ws.linkedRunningPaths(p) : [];
     },
     busy: (id) => tasks.isBusy() || jobRunning(id),
   };
@@ -1904,7 +1928,7 @@ function linkedIpcDeps(): LinkedIpcDeps {
       const linked = linked_();
       if (!linked) return { uncovered: [], tasks: {} };
       const scope = await tasks.currentScope();
-      return linkedHistoryView(await linked.access.entries(scope), scope, harness.linkedFolders ?? {}, openLinked);
+      return linkedHistoryView(await linked.access.entries(scope), scope, harness.linkedFolders ?? {}, openLinked, isGitRepo);
     },
   };
   return linkedDeps;
@@ -1933,7 +1957,8 @@ async function linkedHistoriesOf(scopeId: string | undefined): Promise<LinkedHis
   const scope = scopeId ?? (await tasks.currentScope());
   if (scope === null) return [];
   await linked.access.checkGit(scope).catch((err: unknown) => console.error("Could not check the linked folders' git", err));
-  return linkedHistoriesFor(await linked.access.entries(scope), scope, harness.linkedFolders ?? {}, openLinked);
+  // Fails closed on its own: a folder whose git can't be told now is left out (L7).
+  return linkedHistoriesFor(await linked.access.entries(scope), scope, harness.linkedFolders ?? {}, openLinked, isGitRepo);
 }
 
 /**
@@ -2496,6 +2521,17 @@ function registerIpc() {
     const history = await currentHistory();
     return history ? historyView(await history.tasks()) : [];
   };
+  /**
+   * The groups "Undo this task" acts on: the panel's, and with tracked linked folders theirs too (a task or a later
+   * task that changed only a linked folder, hatches spec §3.4). Without linked folders, exactly the panel's (D0).
+   */
+  const undoGroups = async (taskId: string) => {
+    const main = await historyGroups();
+    if (!linked_()) return main;
+    const refs = await linkedHistoriesOf(main.find((g) => g.taskId === taskId)?.scopeId);
+    if (refs.length === 0) return main;
+    return mergeTaskGroups(main, await Promise.all(refs.map(async (r) => ({ key: r.key, groups: historyView(await r.history.tasks()) }))));
+  };
   // Every go-back (one file, the whole folder, one task) asks first with main's native dialog (go-back.ts).
   // Restore commits carry no task: going back may undo several tasks, so it belongs to none of them.
   // A restore changes tracked files with no data event: the settings may have changed.
@@ -2504,19 +2540,35 @@ function registerIpc() {
     blocked: () => quitting || tasks.isBusy() || hold.restoreHeld() !== null,
     groups: historyGroups,
     restorePoint: (sha) => restoreWith((history) => history.restore(sha, RESTORE_POINT)).then(afterRestore),
-    restoreTask: (taskId) =>
-      restoreWith(async (history) => {
+    taskGroups: undoGroups,
+    restoreTask: (taskId) => {
+      // Something was restored: the settings may have changed, even when a linked folder then failed.
+      let touched = false;
+      return restoreWith(async (history) => {
         const group = (await history.tasks()).find((g) => g.taskId === taskId);
-        if (!group?.start) throw new Error("Nothing to go back to");
-        await history.restore(group.start, RESTORE_TASK);
-        // Its tracked linked folders too (hatches spec §3.4); a failure there is logged and fails the undo.
+        // Its tracked linked folders too (hatches spec §3.4); none without linked folders (D0).
+        const linkedRefs = await linkedHistoriesOf(group?.scopeId);
+        if (!group?.start && linkedRefs.length === 0) throw new Error("Nothing to go back to");
+        if (group?.start) {
+          await history.restore(group.start, RESTORE_TASK);
+          touched = true;
+        }
+        if (linkedRefs.length === 0) return;
+        touched = true;
+        let restored: number;
         try {
-          await restoreLinkedTask(await linkedHistoriesOf(group.scopeId), taskId, RESTORE_TASK);
+          restored = await restoreLinkedTask(linkedRefs, taskId, RESTORE_TASK);
         } catch (err) {
+          // A failure there is logged and fails the undo (the window's generic failure).
           console.error("Undo covered the work folder but not its linked folders", err);
           throw err;
         }
-      }).then(afterRestore),
+        if (!group?.start && restored === 0) throw new Error("Nothing to go back to");
+      }).then(afterRestore, (err: unknown) => {
+        if (touched) afterRestore();
+        throw err;
+      });
+    },
     file: fileTimelines,
   });
   // Every go-back but "Undo this task" as master registers it; that one also undoes by paths below.
@@ -2530,12 +2582,12 @@ function registerIpc() {
     // Plain mode: the whole folder back to the task's start, after main's native confirmation (go-back.ts).
     if (!byPaths) return goBacks["hh:restoreTask"](sender, taskId);
     const { id, includeShared: withShared } = restoreTaskArgs(taskId, includeShared);
-    const task = (await historyGroups()).find((g) => g.taskId === id);
+    const task = (await undoGroups(id)).find((g) => g.taskId === id);
     if (!task) return { refused: { reason: "nothing" as const } };
     if (quitting || hold.restoreHeld() !== null) throw new Error("Going back can't run now");
     // Main's native dialog too; by paths no later task is undone, so none is listed.
     if (!(await confirmGoBack(sender, { kind: "task", task, later: [] }))) return CANCELLED;
-    let result: Awaited<ReturnType<typeof restoreTaskByPaths>> | null = null;
+    let result: Awaited<ReturnType<typeof restoreTaskWithLinked>> | null = null;
     await restores.run(
       currentHistory,
       async (history: History) => {
@@ -2543,14 +2595,18 @@ function registerIpc() {
         const linkedRefs = await linkedHistoriesOf(task.scopeId);
         result =
           linkedRefs.length > 0
-            ? await restoreTaskWithLinked(history, linkedRefs, id, { running: byPaths.running, includeShared: withShared })
+            ? await restoreTaskWithLinked(history, linkedRefs, id, { running: byPaths.running, linkedRunning: byPaths.linkedRunning, includeShared: withShared })
             : await restoreTaskByPaths(history, id, { running: byPaths.running, includeShared: withShared });
       },
       { busy: () => byPaths.busy(id) },
     );
     const r = result!;
-    // A refusal is an answer, not an error: the window says why, naming the file (spec §5.3).
-    if (!r.ok) return { refused: undoRefusalOf(r) };
+    // A refusal is an answer, not an error: the window says why, naming the file (spec §5.3). A partial undo (linked
+    // folders) restored some folders: the settings may have changed.
+    if (!r.ok) {
+      if (r.reason === "partial") afterRestore();
+      return { refused: undoRefusalOf(r) };
+    }
     afterRestore();
     return { ok: true };
   });

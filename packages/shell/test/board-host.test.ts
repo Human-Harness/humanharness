@@ -58,6 +58,7 @@ function host(
   const workspace: HarnessWorkspace = {
     history: null as never,
     linkedHistory: async () => null,
+    linkedRunningPaths: async () => [],
     anyRunning: () => running > 0,
     runningPaths: async () => [],
     refreshInstructions: () => refresh(),

@@ -549,7 +549,13 @@ export type ChatNotice = TaskNotice;
 export type UndoRefusal =
   | { reason: "running" | "uncommitted"; path: string }
   | { reason: "later"; path: string; by: "task" | "outside" }
-  | { reason: "too-far" | "nothing" };
+  | { reason: "too-far" | "nothing" }
+  /**
+   * Linked folders (hatches spec §3.4): some folders were restored, then another refused (a running turn wrote there
+   * meanwhile). `workFolder`: the work folder was restored; `restored`/`notRestored`: linked folders' keys; `cause`:
+   * why the first of `notRestored` refused (its path `<key>/…`).
+   */
+  | { reason: "partial"; workFolder: boolean; restored: string[]; notRestored: string[]; cause: Exclude<UndoRefusal, { reason: "partial" }> };
 
 /** The entry is the person's line or the agent's reply, not a notice the app added. */
 export const isTurnEntry = (e: Pick<ChatEntry, "notice">): boolean => e.notice === undefined;

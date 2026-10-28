@@ -1,6 +1,7 @@
 import { promises as fs } from "node:fs";
+import path from "node:path";
 import type { LinkedFolderDecl } from "@humanharness/harness-sdk";
-import type { LinkedHistoryView } from "@humanharness/ui/client";
+import type { HistoryTaskView, LinkedHistoryView } from "@humanharness/ui/client";
 import { History, type LinkedFolderEntry, type ScopeEntry, isScopeId } from "@humanharness/workspace";
 import { type RestoreByPaths, restoreTaskByPaths } from "./restore-paths";
 
@@ -34,16 +35,19 @@ function writeLinks(entries: ScopeEntry[], scope: string | null, decl: Record<st
 
 /**
  * The histories of `scope`'s tracked linked folders (L7: only those; an untracked folder, a read one or one that
- * gained git is never given to `History`). A folder whose history can't be opened (none yet) is left out.
+ * gained git is never given to `History`). Git is looked at again here, failing closed: a folder that has git now, or
+ * whose git can't be told, is left out, as is one whose history can't be opened (none yet).
  */
 export async function linkedHistoriesFor(
   entries: ScopeEntry[],
   scope: string | null,
   decl: Record<string, LinkedFolderDecl>,
   open: Open,
+  isGit: (dir: string) => Promise<boolean>,
 ): Promise<LinkedHistoryRef[]> {
   const out: LinkedHistoryRef[] = [];
   for (const l of writeLinks(entries, scope, decl).covered) {
+    if (await isGit(l.path).catch(() => true)) continue;
     const history = await open(l.path);
     if (history) out.push({ key: l.key, label: l.label, path: l.path, history });
   }
@@ -61,6 +65,9 @@ export function openLinkedHistory(gitdirOf: (path: string) => string, opened: Op
     const gitdir = gitdirOf(dir);
     const st = await fs.lstat(gitdir).catch(() => null);
     if (!st?.isDirectory()) return null;
+    // A history the workspace made has a HEAD: without one, `init` would make a repository here.
+    const head = await fs.lstat(path.join(gitdir, "HEAD")).catch(() => null);
+    if (!head?.isFile()) return null;
     // The workspace's own options (linked folders ignore nothing).
     const h = new History(dir, gitdir, [], []);
     await h.init();
@@ -70,13 +77,18 @@ export function openLinkedHistory(gitdirOf: (path: string) => string, opened: Op
 
 /**
  * Plain mode's "Undo this task" in each tracked linked folder: the whole folder back to the task's start there, as the
- * work folder (one untagged commit each). A history where the task made no commits is left alone.
+ * work folder (one untagged commit each). A history where the task made no commits is left alone. Returns how many
+ * were restored.
  */
-export async function restoreLinkedTask(histories: LinkedHistoryRef[], taskId: string, message: string): Promise<void> {
+export async function restoreLinkedTask(histories: LinkedHistoryRef[], taskId: string, message: string): Promise<number> {
+  let restored = 0;
   for (const { history } of histories) {
     const group = (await history.tasks()).find((g) => g.taskId === taskId);
-    if (group?.start) await history.restore(group.start, message);
+    if (!group?.start) continue;
+    await history.restore(group.start, message);
+    restored++;
   }
+  return restored;
 }
 
 const prefixed = (key: string, r: RestoreByPaths): RestoreByPaths => {
@@ -84,48 +96,94 @@ const prefixed = (key: string, r: RestoreByPaths): RestoreByPaths => {
   return "path" in r ? { ...r, path: `${key}/${r.path}` } : r;
 };
 
+type Running = Parameters<typeof restoreTaskByPaths>[2]["running"];
+
+/**
+ * An undo over several histories that restored some and then was refused in another (a turn already under way wrote
+ * there between the checks and the restores). `workFolder`: the work folder was restored; `restored`: the linked
+ * folders' keys restored; `notRestored`: the one that refused first, then the ones never reached; `refusal`: why.
+ */
+export interface PartialRestore {
+  ok: false;
+  reason: "partial";
+  workFolder: boolean;
+  restored: string[];
+  notRestored: string[];
+  refusal: Exclude<RestoreByPaths, { ok: true }>;
+}
+
 /**
  * Board and `single` mode's "Undo this task" (parallel spec §5.3) over the work folder and each tracked linked folder.
  * Every history is checked first and nothing is restored while any refuses (a linked folder's path named `<key>/…`);
- * a history the task never changed is skipped, and only when none has anything is the answer "nothing". The running
- * turns' paths are the work folder's: in a linked folder only its unsaved changes refuse (a running turn's edits stay
- * unsaved until its end). A refusal between the checks and the restores (a turn already under way) can still leave
- * one history restored and another not: logged, and the refusal returned.
+ * a history the task never changed is skipped, and only when none has anything is the answer "nothing". Each linked
+ * folder's running turns are its own (`linkedRunning`, the paths relative to it). A refusal between the checks and the
+ * restores (a turn already under way) leaves some histories restored: a `PartialRestore`, logged.
  */
 export async function restoreTaskWithLinked(
   main: History,
   linked: LinkedHistoryRef[],
   task: string,
-  o: { running: Parameters<typeof restoreTaskByPaths>[2]["running"]; includeShared: boolean; log?: (message: string) => void },
-): Promise<RestoreByPaths> {
-  const all = [{ key: null as string | null, history: main }, ...linked];
-  const run = async (check: boolean) => {
-    const out: { key: string | null; history: History; r: RestoreByPaths }[] = [];
-    for (const h of all) {
-      const r = await restoreTaskByPaths(h.history, task, { running: h.key === null ? o.running : [], includeShared: o.includeShared, check });
-      const shown = h.key === null ? r : prefixed(h.key, r);
-      if (!shown.ok && shown.reason !== "nothing") return { refused: shown, done: out };
-      out.push({ key: h.key, history: h.history, r: shown });
-    }
-    return { refused: null, done: out };
+  o: { running: Running; linkedRunning: (path: string) => Promise<{ task: string; paths: ReadonlySet<string> }[]>; includeShared: boolean; log?: (message: string) => void },
+): Promise<RestoreByPaths | PartialRestore> {
+  const all = [{ key: null as string | null, path: "", history: main }, ...linked];
+  const one = async (h: (typeof all)[number], check: boolean): Promise<RestoreByPaths> => {
+    const running: Running = h.key === null ? o.running : () => o.linkedRunning(h.path);
+    const r = await restoreTaskByPaths(h.history, task, { running, includeShared: o.includeShared, check });
+    return h.key === null ? r : prefixed(h.key, r);
   };
-  const checked = await run(true);
-  if (checked.refused) return checked.refused;
-  const todo = checked.done.filter((d) => d.r.ok);
+  const todo: (typeof all)[number][] = [];
+  for (const h of all) {
+    const r = await one(h, true);
+    if (r.ok) todo.push(h);
+    else if (r.reason !== "nothing") return r;
+  }
   if (todo.length === 0) return { ok: false, reason: "nothing" };
   const result = { ok: true as const, paths: [] as string[], sharedLeft: [] as string[], skipped: [] as string[] };
-  for (const d of todo) {
-    const r = await restoreTaskByPaths(d.history, task, { running: d.key === null ? o.running : [], includeShared: o.includeShared });
-    const shown = d.key === null ? r : prefixed(d.key, r);
-    if (!shown.ok) {
-      if (result.paths.length > 0) (o.log ?? console.error)(`Undo covered ${result.paths.join(", ")} but not ${d.key ?? "the work folder"}`);
-      return shown;
+  for (const [i, h] of todo.entries()) {
+    const r = await one(h, false);
+    if (!r.ok) {
+      const done = todo.slice(0, i);
+      // Nothing restored yet: a plain refusal, as without linked folders.
+      if (done.length === 0) return r;
+      const partial: PartialRestore = {
+        ok: false,
+        reason: "partial",
+        workFolder: done.some((d) => d.key === null),
+        restored: done.flatMap((d) => (d.key === null ? [] : [d.key])),
+        notRestored: todo.slice(i).flatMap((d) => (d.key === null ? [] : [d.key])),
+        refusal: r,
+      };
+      (o.log ?? console.error)(`Undo restored ${partial.workFolder ? "the work folder" : ""}${partial.restored.length ? ` ${partial.restored.join(", ")}` : ""} but not ${partial.notRestored.join(", ")}`);
+      return partial;
     }
-    result.paths.push(...shown.paths);
-    result.sharedLeft.push(...shown.sharedLeft);
-    result.skipped.push(...shown.skipped);
+    result.paths.push(...r.paths);
+    result.sharedLeft.push(...r.sharedLeft);
+    result.skipped.push(...r.skipped);
   }
   return result;
+}
+
+/**
+ * Plain mode's "Undo this task" groups: the work folder's, plus the tracked linked folders' (`linked`, newest first
+ * each), so the confirm lists a later task that changed only a linked folder, and a task that changed only one can be
+ * undone. A task in several histories keeps the work folder's group (else the first linked one's) with its newest
+ * date anywhere; a linked folder's changes are named `<key>/…`.
+ */
+export function mergeTaskGroups(main: HistoryTaskView[], linked: { key: string; groups: HistoryTaskView[] }[]): HistoryTaskView[] {
+  const out = main.map((g) => ({ ...g }));
+  for (const { key, groups } of linked) {
+    for (const g of groups) {
+      if (g.taskId === null) continue;
+      const have = out.find((x) => x.taskId === g.taskId);
+      if (have) {
+        if (Date.parse(g.date) > Date.parse(have.date)) have.date = g.date;
+        continue;
+      }
+      out.push({ ...g, changes: g.changes.map((c) => ({ ...c, path: `${key}/${c.path}` })) });
+    }
+  }
+  // Newest first, the "Outside a task" group last, as `History.tasks` orders them.
+  return [...out.filter((g) => g.taskId !== null).sort((x, y) => Date.parse(y.date) - Date.parse(x.date)), ...out.filter((g) => g.taskId === null)];
 }
 
 /**
@@ -137,10 +195,11 @@ export async function linkedHistoryView(
   scope: string | null,
   decl: Record<string, LinkedFolderDecl>,
   open: Open,
+  isGit: (dir: string) => Promise<boolean>,
 ): Promise<LinkedHistoryView> {
   const { uncovered } = writeLinks(entries, scope, decl);
   const tasks: LinkedHistoryView["tasks"] = {};
-  for (const { key, label, history } of await linkedHistoriesFor(entries, scope, decl, open)) {
+  for (const { key, label, history } of await linkedHistoriesFor(entries, scope, decl, open, isGit)) {
     for (const g of await history.tasks()) {
       if (g.taskId === null || g.changes.length === 0) continue;
       // An own-property map: a task id like "__proto__" stays a plain key.

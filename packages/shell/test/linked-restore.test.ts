@@ -9,9 +9,12 @@ import {
   linkedHistoriesFor,
   linkedHistoryView,
   openLinkedHistory,
+  mergeTaskGroups,
   restoreLinkedTask,
   restoreTaskWithLinked,
 } from "../src/main/linked-restore";
+import { undoRefusalOf } from "../src/main/tasks-ipc";
+import type { HistoryTaskView } from "@humanharness/ui/client";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-lrestore-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -61,6 +64,7 @@ async function turn(task: string, mainContent: string | null, notesContent: stri
   }
 }
 
+const noGit = async () => false;
 const refs = (): LinkedHistoryRef[] => [{ key: "notes", label: "Notes", path: notesDir, history: notes }];
 
 const entry = (l: Partial<LinkedFolderEntry> & { key: string; path: string }): LinkedFolderEntry => ({ mode: "write", tracked: true, ...l });
@@ -73,7 +77,7 @@ describe("Undo this task over linked folders (hatches spec §3.4)", () => {
   it("restores each tracked linked folder to the task's start there", async () => {
     await turn("t1", "a1", "x1");
     const before = await commits(notes);
-    await restoreLinkedTask(refs(), "t1", RESTORE_TASK);
+    expect(await restoreLinkedTask(refs(), "t1", RESTORE_TASK)).toBe(1);
     expect(read(notesDir, "x.md")).toBe("x0");
     expect(await commits(notes)).toBe(before + 1);
     const [last] = await notes.list(1);
@@ -87,14 +91,14 @@ describe("Undo this task over linked folders (hatches spec §3.4)", () => {
     await main.commitPaths(["a.md"], "Turn: A", { task: "t1" });
     write(notesDir, "x.md", "mine");
     const before = await commits(notes);
-    await restoreLinkedTask(refs(), "t1", RESTORE_TASK);
+    expect(await restoreLinkedTask(refs(), "t1", RESTORE_TASK)).toBe(0);
     expect(await commits(notes)).toBe(before);
     expect(read(notesDir, "x.md")).toBe("mine");
   });
 
   it("board mode: by paths in the work folder and each linked history", async () => {
     await turn("t1", "a1", "x1");
-    const r = await restoreTaskWithLinked(main, refs(), "t1", { running: async () => [], includeShared: false });
+    const r = await restoreTaskWithLinked(main, refs(), "t1", { running: async () => [], linkedRunning: async () => [], includeShared: false });
     expect(r).toMatchObject({ ok: true, paths: ["a.md", "notes/x.md"] });
     expect(read(mainDir, "a.md")).toBe("a0");
     expect(read(notesDir, "x.md")).toBe("x0");
@@ -102,7 +106,7 @@ describe("Undo this task over linked folders (hatches spec §3.4)", () => {
 
   it("board mode: a task that changed only a linked folder is undone there", async () => {
     await turn("t1", null, "x1");
-    const r = await restoreTaskWithLinked(main, refs(), "t1", { running: async () => [], includeShared: false });
+    const r = await restoreTaskWithLinked(main, refs(), "t1", { running: async () => [], linkedRunning: async () => [], includeShared: false });
     expect(r).toMatchObject({ ok: true, paths: ["notes/x.md"] });
     expect(read(notesDir, "x.md")).toBe("x0");
   });
@@ -112,7 +116,7 @@ describe("Undo this task over linked folders (hatches spec §3.4)", () => {
     await notes.save(BEFORE_MESSAGE, { task: "t2" });
     write(notesDir, "x.md", "x2");
     await notes.commitPaths(["x.md"], "Turn: B", { task: "t2" });
-    const r = await restoreTaskWithLinked(main, refs(), "t1", { running: async () => [], includeShared: false });
+    const r = await restoreTaskWithLinked(main, refs(), "t1", { running: async () => [], linkedRunning: async () => [], includeShared: false });
     expect(r).toEqual({ ok: false, reason: "later", path: "notes/x.md", tasks: ["t2"], outside: 0 });
     expect(read(mainDir, "a.md")).toBe("a1");
     expect(read(notesDir, "x.md")).toBe("x2");
@@ -121,14 +125,63 @@ describe("Undo this task over linked folders (hatches spec §3.4)", () => {
   it("board mode: unsaved changes in a linked folder refuse the undo, named by key", async () => {
     await turn("t1", "a1", "x1");
     write(notesDir, "x.md", "unsaved");
-    const r = await restoreTaskWithLinked(main, refs(), "t1", { running: async () => [], includeShared: false });
+    const r = await restoreTaskWithLinked(main, refs(), "t1", { running: async () => [], linkedRunning: async () => [], includeShared: false });
     expect(r).toEqual({ ok: false, reason: "uncommitted", path: "notes/x.md" });
     expect(read(mainDir, "a.md")).toBe("a1");
   });
 
   it("board mode: nothing in any history is 'nothing'", async () => {
-    const r = await restoreTaskWithLinked(main, refs(), "t9", { running: async () => [], includeShared: false });
+    const r = await restoreTaskWithLinked(main, refs(), "t9", { running: async () => [], linkedRunning: async () => [], includeShared: false });
     expect(r).toEqual({ ok: false, reason: "nothing" });
+  });
+
+  it("board mode: a running lane's edit in the linked folder refuses the undo, named by key (P2)", async () => {
+    await turn("t1", "a1", "x1");
+    const linkedRunning = vi.fn(async (_p: string) => [{ task: "t2", paths: new Set(["x.md"]) as ReadonlySet<string> }]);
+    const r = await restoreTaskWithLinked(main, refs(), "t1", { running: async () => [], linkedRunning, includeShared: false });
+    expect(r).toEqual({ ok: false, reason: "running", path: "notes/x.md" });
+    expect(linkedRunning).toHaveBeenCalledWith(notesDir);
+    expect(read(mainDir, "a.md")).toBe("a1");
+    expect(read(notesDir, "x.md")).toBe("x1");
+  });
+
+  it("board mode: a refusal after the work folder was restored is a partial undo, naming what was and wasn't", async () => {
+    await turn("t1", "a1", "x1");
+    // Another lane writes the linked file once the work folder's restore commit lands (between checks and restores).
+    const off = main.onCommit(() => write(notesDir, "x.md", "lane-B"));
+    const logged: string[] = [];
+    const r = await restoreTaskWithLinked(main, refs(), "t1", { running: async () => [], linkedRunning: async () => [], includeShared: false, log: (m) => logged.push(m) });
+    off();
+    expect(r).toEqual({
+      ok: false,
+      reason: "partial",
+      workFolder: true,
+      restored: [],
+      notRestored: ["notes"],
+      refusal: { ok: false, reason: "uncommitted", path: "notes/x.md" },
+    });
+    expect(read(mainDir, "a.md")).toBe("a0");
+    expect(read(notesDir, "x.md")).toBe("lane-B");
+    expect(logged).toHaveLength(1);
+    expect(undoRefusalOf(r as Exclude<typeof r, { ok: true }>)).toEqual({
+      reason: "partial",
+      workFolder: true,
+      restored: [],
+      notRestored: ["notes"],
+      cause: { reason: "uncommitted", path: "notes/x.md" },
+    });
+  });
+
+  it("a folder that has git now, or whose git can't be told, is never given to History (L7, fails closed)", async () => {
+    const open = vi.fn(async (_p: string) => notes);
+    const links = scopes([entry({ key: "notes", path: notesDir })]);
+    expect(await linkedHistoriesFor(links, "app", DECLS, open, async () => true)).toEqual([]);
+    expect(
+      await linkedHistoriesFor(links, "app", DECLS, open, async () => {
+        throw new Error("EACCES");
+      }),
+    ).toEqual([]);
+    expect(open).not.toHaveBeenCalled();
   });
 
   it("an untracked folder is never given to History (L7)", async () => {
@@ -144,13 +197,14 @@ describe("Undo this task over linked folders (hatches spec §3.4)", () => {
       "app",
       DECLS,
       open,
+      noGit,
     );
     expect(open.mock.calls.map((c) => c[0])).toEqual([notesDir]);
     expect(got).toEqual([{ key: "notes", label: "Notes", path: notesDir, history: notes }]);
   });
 
   it("a linked folder whose history can't be opened is left out", async () => {
-    const got = await linkedHistoriesFor(scopes([entry({ key: "notes", path: notesDir })]), "app", DECLS, async () => null);
+    const got = await linkedHistoriesFor(scopes([entry({ key: "notes", path: notesDir })]), "app", DECLS, async () => null, noGit);
     expect(got).toEqual([]);
   });
 });
@@ -176,6 +230,39 @@ describe("openLinkedHistory", () => {
     fs.symlinkSync(path.join(base, "notes.git"), link);
     expect(await openLinkedHistory(() => link, async () => null)(notesDir)).toBeNull();
   });
+
+  it("a gitdir without HEAD is not opened (init would make a repository there)", async () => {
+    const empty = path.join(base, "empty.git");
+    fs.mkdirSync(empty);
+    expect(await openLinkedHistory(() => empty, async () => null)(notesDir)).toBeNull();
+    expect(fs.readdirSync(empty)).toEqual([]);
+  });
+});
+
+describe("mergeTaskGroups (plain mode's undo over linked folders)", () => {
+  const g = (taskId: string | null, date: string, path = "a.md"): HistoryTaskView => ({
+    taskId,
+    actionId: null,
+    start: "s",
+    end: "e",
+    date,
+    changes: [{ path, kind: "modified" }],
+    entries: [],
+  });
+  it("adds a task only a linked folder has, its paths named by key, and keeps the newest date of a shared task", () => {
+    const merged = mergeTaskGroups(
+      [g("t2", "2026-10-28T10:00:00.000Z"), g("t1", "2026-10-28T09:00:00.000Z"), g(null, "2026-10-28T08:00:00.000Z")],
+      [{ key: "notes", groups: [g("t3", "2026-10-28T11:00:00.000Z", "x.md"), g("t1", "2026-10-28T10:30:00.000Z", "x.md"), g(null, "2026-10-28T07:00:00.000Z")] }],
+    );
+    expect(merged.map((m) => [m.taskId, m.date])).toEqual([
+      ["t3", "2026-10-28T11:00:00.000Z"],
+      ["t1", "2026-10-28T10:30:00.000Z"],
+      ["t2", "2026-10-28T10:00:00.000Z"],
+      [null, "2026-10-28T08:00:00.000Z"],
+    ]);
+    expect(merged[0].changes).toEqual([{ path: "notes/x.md", kind: "modified" }]);
+    expect(merged[1].changes).toEqual([{ path: "a.md", kind: "modified" }]);
+  });
 });
 
 describe("linkedHistoryView", () => {
@@ -186,6 +273,7 @@ describe("linkedHistoryView", () => {
       "app",
       DECLS,
       async () => notes,
+      noGit,
     );
     expect(view).toEqual({
       uncovered: [{ key: "repos", label: "Repos" }],
@@ -194,12 +282,12 @@ describe("linkedHistoryView", () => {
   });
 
   it("a folder that gained git since it was linked is not covered", async () => {
-    const view = await linkedHistoryView(scopes([entry({ key: "notes", path: notesDir, gitChanged: true })]), "app", DECLS, async () => notes);
+    const view = await linkedHistoryView(scopes([entry({ key: "notes", path: notesDir, gitChanged: true })]), "app", DECLS, async () => notes, noGit);
     expect(view).toEqual({ uncovered: [{ key: "notes", label: "Notes" }], tasks: {} });
   });
 
   it("no scope or no links: empty", async () => {
-    expect(await linkedHistoryView(scopes([]), null, DECLS, async () => notes)).toEqual({ uncovered: [], tasks: {} });
-    expect(await linkedHistoryView(scopes([]), "app", DECLS, async () => notes)).toEqual({ uncovered: [], tasks: {} });
+    expect(await linkedHistoryView(scopes([]), null, DECLS, async () => notes, noGit)).toEqual({ uncovered: [], tasks: {} });
+    expect(await linkedHistoryView(scopes([]), "app", DECLS, async () => notes, noGit)).toEqual({ uncovered: [], tasks: {} });
   });
 });

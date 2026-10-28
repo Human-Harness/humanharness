@@ -68,6 +68,16 @@ export interface SessionSlot {
   close(): Promise<void>;
 }
 
+/** Each running turn of `ledger`'s folder: its task (its slot key when it has none) and the paths it named or changed. */
+async function runningIn(history: History, ledger: TurnLedger): Promise<{ task: string; paths: ReadonlySet<string> }[]> {
+  const out: { task: string; paths: ReadonlySet<string> }[] = [];
+  for (const w of ledger.running()) {
+    const changed = await history.changedSince(w.startDirty);
+    out.push({ task: w.task ?? w.key, paths: new Set([...w.edits, ...changed]) });
+  }
+  return out;
+}
+
 /** The folder shared by every slot: prepared once, one history and one ledger (spec §4 table). */
 export interface HarnessWorkspace {
   history: History;
@@ -78,6 +88,8 @@ export interface HarnessWorkspace {
    * null otherwise.
    */
   linkedHistory(realPath: string): Promise<History | null>;
+  /** `runningPaths` in a tracked linked folder (relative to it), once a turn opened its history here; [] otherwise. */
+  linkedRunningPaths(realPath: string): Promise<{ task: string; paths: ReadonlySet<string> }[]>;
   /** A turn runs in some slot. */
   anyRunning(): boolean;
   /**
@@ -465,15 +477,14 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
       const repo = real === null ? undefined : linkedRepos.get(real);
       return repo ? (await repo.catch(() => null))?.history ?? null : null;
     },
-    anyRunning: () => ledger.anyRunning(),
-    async runningPaths() {
-      const out: { task: string; paths: ReadonlySet<string> }[] = [];
-      for (const w of ledger.running()) {
-        const changed = await history.changedSince(w.startDirty);
-        out.push({ task: w.task ?? w.key, paths: new Set([...w.edits, ...changed]) });
-      }
-      return out;
+    async linkedRunningPaths(dir) {
+      const real = await realNative(dir).catch(() => null);
+      const repo = real === null ? undefined : linkedRepos.get(real);
+      const open = repo ? await repo.catch(() => null) : null;
+      return open ? runningIn(open.history, open.ledger) : [];
     },
+    anyRunning: () => ledger.anyRunning(),
+    runningPaths: () => runningIn(history, ledger),
     refreshInstructions() {
       if (closing || ledger.anyRunning()) return Promise.resolve(false);
       const run = async () => {

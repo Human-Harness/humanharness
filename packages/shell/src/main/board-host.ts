@@ -656,6 +656,11 @@ export function createBoardHost(d: BoardHostDeps, initial: { engineId: string | 
       const ws = await workspace.peek()?.catch(() => null);
       return ws ? ws.linkedHistory(realPath) : null;
     },
+    /** `runningPaths` in a tracked linked folder, relative to it (undo by paths over linked folders). */
+    async linkedRunningPaths(realPath: string): Promise<{ task: string; paths: ReadonlySet<string> }[]> {
+      const ws = await workspace.peek()?.catch(() => null);
+      return ws ? ws.linkedRunningPaths(realPath) : [];
+    },
     /** Each running turn's task and the paths it touched (undo by paths, P2). */
     async runningPaths(): Promise<{ task: string; paths: ReadonlySet<string> }[]> {
       const ws = await workspace.peek()?.catch(() => null);

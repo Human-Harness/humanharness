@@ -300,4 +300,21 @@ describe("tracked linked folders (hatches spec §3.4)", () => {
     // No change lost: the head holds both.
     expect(await treeOf(linkedDir, log.at(-1)!.oid)).toEqual({ "a.md": "a", "b.md": "b" });
   });
+
+  it("linkedRunningPaths: a running turn's named and changed paths in the linked folder, relative to it (undo, P2)", async () => {
+    const { ws, L } = await setup(({ L }) => ({
+      steps: [claudeResultLine(true)],
+      turns: [{ match: "^one", steps: [claudeEditLine("e1", path.join(L, "x.md")), { write: { path: path.join(L, "y.md"), content: "y" } }, { sleep: 600 }, claudeResultLine(true)] }],
+    }));
+    expect(await ws.linkedRunningPaths(L)).toEqual([]);
+    const slot = await ws.openSlot({ key: "lane" });
+    const t = slot.send("one", () => {}, { trailer, scope: { linked: [tracked(L)] } });
+    await until(() => fs.existsSync(path.join(L, "y.md")));
+    const running = await ws.linkedRunningPaths(L);
+    expect(running).toHaveLength(1);
+    expect(running[0].task).toBe("t1");
+    expect([...running[0].paths].sort()).toEqual(["x.md", "y.md"]);
+    await t.done;
+    expect(await ws.linkedRunningPaths(L)).toEqual([]);
+  });
 });

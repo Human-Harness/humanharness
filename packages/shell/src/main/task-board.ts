@@ -83,6 +83,8 @@ export class TaskBoard {
   private readonly sleepTimers = new Map<string, unknown>();
   /** The board paused the queues for a folder move (and so lifts that pause, never another). */
   private movePaused = false;
+  /** interrupt/interruptAll calls under way. */
+  private interrupting = 0;
   /** Whether a lane's turn waits in the gate's queue (the host sets it to `gate.isQueued`). */
   private queued: (id: string) => boolean = () => false;
 
@@ -159,11 +161,20 @@ export class TaskBoard {
     return this.begin((l) => need(l, "startPrepared")(p));
   }
 
-  /** In an open task's chat, a follow-up of that task; at the start view, a new task (as today). */
-  ask(text: string, display?: string, scope?: string): Promise<void> {
+  /**
+   * In an open task's chat, a follow-up of that task; at the start view, a new task (as today). A question for another
+   * scope than the focused task's starts a new task in a lane of its own: changing scope never closes a lane (Decision 5).
+   */
+  async ask(text: string, display?: string, scope?: string): Promise<void> {
     const open = this.focusId === null ? undefined : this.lanes.get(this.focusId);
-    if (open) return this.settleAfter(open, open.ask(text, display, scope));
+    if (open && (scope === undefined || scope === (await this.taskScope(open.id)))) return this.settleAfter(open, open.ask(text, display, scope));
     return this.begin((l) => l.ask(text, display, scope));
+  }
+
+  /** Lane `id`'s task scope as tasks.json has it; undefined while it has none there. */
+  private async taskScope(id: string): Promise<string | undefined> {
+    const t = (await this.d.file.load()).lanes?.find((l) => l.id === id);
+    return t ? scopeOfTask(t) : undefined;
   }
 
   /** Shows task `id` (null: the start view). Only an open task's id is taken (threat model P1). */
@@ -311,10 +322,12 @@ export class TaskBoard {
    * The lanes tasks.json lists are reopened first; any its lanes failed to end are ended in the file.
    */
   interrupt(): Promise<void> {
-    return this.serial(async () => {
-      await this.restoreNow();
-      await this.interruptAllNow();
-    });
+    return this.ending(() =>
+      this.serial(async () => {
+        await this.restoreNow();
+        await this.interruptAllNow();
+      }),
+    );
   }
 
   /**
@@ -324,7 +337,17 @@ export class TaskBoard {
    */
   interruptAll(): Promise<void> {
     this.d.gate?.dropAll();
-    return this.serial(() => this.interruptAllNow());
+    return this.ending(() => this.serial(() => this.interruptAllNow()));
+  }
+
+  /** While every lane ends: a hand-over then is refused, never queued behind the lane that hands it over. */
+  private async ending(fn: () => Promise<void>): Promise<void> {
+    this.interrupting++;
+    try {
+      await fn();
+    } finally {
+      this.interrupting--;
+    }
   }
 
   private async interruptAllNow(): Promise<void> {
@@ -381,19 +404,26 @@ export class TaskBoard {
    * task closed, which leaves the board right after and so doesn't count against LANES_MAX.
    */
   handOver(start: (next: LaneHandle) => Promise<void>, from?: string): Promise<void> {
+    // interruptAll waits for the handing lane to end, and that lane waits for this: the next task never starts.
+    if (this.interrupting > 0) return Promise.reject(new Error("Every task is ending"));
     return this.begin(start, from);
   }
 
   /**
    * Folder move (spec §10, Decision 15): each lane's checkpoint, one at a time; then the queues pause until
    * `moveEnded`. The checkpoints are turns through the gate, so they run before the pause, never under it. An earlier
-   * pause (out of quota) stays as it is. The lanes then resume from the notes (`resumeFromNotes`), as today's task does.
+   * pause (out of quota) stays as it is, and no checkpoint runs under it. The lanes then resume from the notes (`resumeFromNotes`), as today's task does.
    */
   async checkpointAllBeforeMove(): Promise<void> {
-    for (const l of [...this.lanes.values()]) {
-      await Promise.resolve()
-        .then(() => need(l, "checkpointBeforeMove")())
-        .catch((err: unknown) => console.error("Could not checkpoint a task before the move", err));
+    // Paused queues (out of quota, maybe with no reset known) would hold each checkpoint turn, and the move, for good.
+    if (this.d.gate?.paused()) {
+      console.error("The queues are paused: no checkpoint before the move; the tasks resume from the notes there are");
+    } else {
+      for (const l of [...this.lanes.values()]) {
+        await Promise.resolve()
+          .then(() => need(l, "checkpointBeforeMove")())
+          .catch((err: unknown) => console.error("Could not checkpoint a task before the move", err));
+      }
     }
     const gate = this.d.gate;
     if (gate && !gate.paused()) {

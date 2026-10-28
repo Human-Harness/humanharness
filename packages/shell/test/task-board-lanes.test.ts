@@ -109,13 +109,18 @@ describe("a task that follows another starts in a lane of its own (parallel spec
     expect(t.file().actions.quiz).toBe("unfinished");
     expect(t.file().focus).toBe("t1");
   });
-  it("a question for another scope closes the task in its scope and starts the new one in a new lane", async () => {
-    const t = lanes({ scoped: true, script: [[ok], [saveNote, ok], [ok]], init: { open: "s1" } });
+  it("a question for another scope starts a new task in a new lane; the focused task stays open (Decision 5)", async () => {
+    const t = lanes({ scoped: true, init: { open: "s1" } });
     await t.board.start("quiz");
     await t.board.ask("Something else", undefined, "s2");
-    expect(t.board.laneIds()).toEqual(["t2"]);
-    expect(t.file().lanes).toEqual([expect.objectContaining({ id: "t2", scope: "s2" })]);
-    expect(t.file().open).toBe("s2");
+    expect(t.board.laneIds()).toEqual(["t1", "t2"]);
+    expect(t.file().lanes).toEqual([expect.objectContaining({ id: "t1", scope: "s1", status: "waiting" }), expect.objectContaining({ id: "t2", scope: "s2" })]);
+    expect(t.file().focus).toBe("t2");
+    expect(t.sent.map((s) => s.lane)).toEqual(["t1", "t2"]);
+    // Same scope: a follow-up of the focused task.
+    await t.board.ask("More", undefined, "s2");
+    expect(t.board.laneIds()).toEqual(["t1", "t2"]);
+    expect(t.sent.at(-1)).toEqual({ lane: "t2", message: "More" });
   });
   it("D0: without `successor` a manager starts the next task itself, as today", async () => {
     let file: TasksFile = { version: 1, current: null, actions: {} };

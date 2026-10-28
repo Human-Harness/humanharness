@@ -179,8 +179,9 @@ describe("TaskBoard (parallel spec §6)", () => {
     expect(file().lanes).toHaveLength(32);
     expect(made).toHaveLength(32);
     // A task handed over by a lane that is closing takes that lane's place.
-    await expect(board.handOver((l) => l.start("next"), "t1")).resolves.toBeUndefined();
-    expect(file().lanes).toHaveLength(33);
+    await expect(board.handOver(async (l) => (await made[0].finish(), await l.start("next")), "t1")).resolves.toBeUndefined();
+    expect(file().lanes?.length).toBeLessThanOrEqual(32);
+    expect(file().lanes?.some((l) => l.id === "t1")).toBe(false);
   });
   it("a start asked for during interruptAll runs after it: its lane stays open, on the board and in the file", async () => {
     const { board, made, file } = harness();
@@ -201,6 +202,24 @@ describe("TaskBoard (parallel spec §6)", () => {
     expect(file().lanes?.map((l) => l.id)).toEqual(["t2"]);
     expect(file().actions).toEqual({});
     expect(file().focus).toBe("t2");
+  });
+  it("a hand-over while every lane ends is refused at once, so interruptAll never waits on it", async () => {
+    const { board, made } = harness();
+    await board.start("a");
+    const refused: string[] = [];
+    const end = made[0].interrupt.bind(made[0]);
+    // The lane's operation hands its next task over while it is being ended.
+    made[0].interrupt = async () => {
+      await board.handOver((l) => l.start("next"), "t1").catch((err: Error) => refused.push(err.message));
+      await end();
+    };
+    await board.interruptAll();
+    expect(refused).toEqual(["Every task is ending"]);
+    expect(board.laneIds()).toEqual([]);
+    expect(made).toHaveLength(1);
+    // Afterwards a hand-over works again.
+    await board.handOver((l) => l.start("later"));
+    expect(board.laneIds()).toEqual(["t2"]);
   });
   it("interruptAll closes the idle lane too: the next start gets a new one, made for the new engine", async () => {
     const { board, made } = harness();
@@ -433,6 +452,28 @@ describe("board edge cases (parallel spec §10)", () => {
     board.moveEnded();
     await later;
     expect(gate.paused()).toBeNull();
+  });
+  it("a move while the queues are paused out of quota completes: no checkpoint turn waits on the pause", async () => {
+    const gate = new TurnGate({ tasks: 2, jobs: 1 });
+    const { board, made } = harness({}, { gate });
+    await board.start("a");
+    await board.start("b");
+    const ran: string[] = [];
+    for (const l of made)
+      setOn(l, "checkpointBeforeMove", async () => {
+        const release = await gate.acquire("tasks", { id: l.id });
+        ran.push(l.id);
+        release();
+      });
+    // Codex and OpenCode report no reset: this pause waits for the person's Resume.
+    gate.pause({ reason: "out-of-quota" });
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    await board.checkpointAllBeforeMove();
+    expect(error).toHaveBeenCalledWith(expect.stringContaining("no checkpoint before the move"));
+    error.mockRestore();
+    expect(ran).toEqual([]);
+    board.moveEnded();
+    expect(gate.paused()).toEqual({ reason: "out-of-quota" });
   });
   it("a move never replaces or lifts an out-of-quota pause", async () => {
     const gate = new TurnGate({ tasks: 2, jobs: 1 });

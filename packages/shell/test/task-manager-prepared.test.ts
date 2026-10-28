@@ -124,8 +124,8 @@ describe("TaskManager.startPrepared (plugins spec §5.3)", () => {
     const t = setup({ gate: new Promise<void>((r) => (release = r)) });
     const first = t.manager.ask("What is a half?");
     await new Promise((r) => setTimeout(r, 0));
-    await expect(t.manager.startPrepared(PREPARED)).rejects.toThrow();
-    await expect(t.manager.ask("again")).rejects.toThrow();
+    await expect(t.manager.startPrepared(PREPARED)).rejects.toThrow(/A turn is already running/);
+    await expect(t.manager.ask("again")).rejects.toThrow(/A turn is already running/);
     release();
     await first;
     expect(t.turns).toHaveLength(1);

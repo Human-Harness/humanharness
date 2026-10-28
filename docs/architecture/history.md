@@ -164,7 +164,7 @@ Spec §5.3, Decision 12. In a harness that declares `parallel` (`parallel.md`):
 In a harness with `linkedFolders` (`docs/architecture/hatches.md`), a scope may link folders outside the work folder:
 
 - A **tracked** one (write, no git) has a history of its own in the app's data folder (`<userData>/linked-history/<hash>`). Each turn of that scope commits both histories with the same trailer, and the crash undo restores both.
-- An **untracked** one (it has git, or it is read only) is never committed or restored: its own git is its history. The History panel says "Undo doesn't cover this folder: it has its own git." for each such write folder.
+- An **untracked** one (it has git, or it is read only) is never committed or restored: its own git is its history. The History panel says "Undo doesn't cover this folder: it has its own git." for each such write folder (or that it has no git and isn't tracked, once it lost its git). A task that changed only tracked linked folders gets a row of its own, so it can be undone.
 - **"Undo this task"** covers the work folder and every tracked linked folder. Board and single mode check every history before restoring any; a refusal between the checks and the restores is reported as a partial undo ("Undone in … Not undone in …"). A task that changed only a linked folder can be undone too.
 - **"Go back here"** stays main-folder only.
 - An unlinked folder's history is kept 30 days, so a relink continues it.

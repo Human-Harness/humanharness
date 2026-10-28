@@ -59,6 +59,8 @@ describe("runSystemTask (material spec §10)", () => {
       expect(denied).toContain(tool);
     }
     expect(allowed).toContain("mcp__material");
+    // Not MCP-only: material keeps its read tools (D0; whether it should is a separate question).
+    expect(allowed).toContain("Read");
     // The empty working folder is gone afterwards.
     expect(tempFolders().filter((n) => !before.has(n))).toEqual([]);
   });

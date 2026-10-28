@@ -4,10 +4,12 @@ import { z } from "zod";
 import { type Block, blockToolName } from "./block";
 import { CORE_BLOCKS, INPUT_CORE_BLOCKS, MODE_CORE_BLOCKS, PHASE_CORE_BLOCKS, RESERVED_BLOCK_NAMES } from "./core-blocks";
 import { dataSchema } from "./data";
+import { DOCUMENT_KIND_ID } from "./documents";
 import { CORE_SHEET_SECTIONS, MATERIAL_STAGE_KEYS, materialSchema } from "./material";
 import { DEFAULT_MODE_WORDS, MODE_ID } from "./modes";
 import { PHASE_ID, TIME_BOX_MAX } from "./phases";
 import { harnessPluginsSchema, harnessSlotsSchema } from "./plugin";
+import { REVIEW_TOOLS, validApproveGlob } from "./review";
 import { PROFILE_COLLECTION, profileFormSpec, profilesSchema } from "./profiles";
 import { SETTING_NAME, checkSettingFields, settingFieldSchema, settingsSchema } from "./settings";
 import { type HarnessSetupStep, setupFormSpec, setupStepsSchema } from "./setup";
@@ -28,6 +30,9 @@ export * from "./sidekick";
 export * from "./plugin";
 export * from "./plugin-permissions";
 export * from "./plugin-actions";
+export * from "./documents";
+export * from "./review";
+export * from "./review-schema";
 /** The zod a manifest builds its block schemas with: the same instance the SDK validates them against. */
 export { z } from "zod";
 
@@ -63,6 +68,8 @@ const phaseSchema = z.object({
   modes: z.union([z.enum(["any", "none"]), z.array(z.string().regex(MODE_ID)).min(1)]).optional(),
   /** The last phase only: its end is the core closing turn (D5). */
   close: z.literal(true).optional(),
+  /** A glob of documents (relative to the folder): approving one in this phase moves the task to the next (review spec §5.5). */
+  approve: z.string().refine(validApproveGlob, "A relative glob of .md files: * and ? within a part, ** across parts").optional(),
 });
 export type HarnessPhase = z.output<typeof phaseSchema>;
 /** A time box the person may choose at the start (spec §5). */
@@ -152,6 +159,34 @@ const blockSchema = z.custom<Block>(
 /** The core's MCP servers (packages/blocks): a harness's own servers can't take these names. */
 const RESERVED_MCP_NAMES = ["ui", "data"];
 
+/** One line of kind text: a line break would turn the rest into live Markdown in `AGENTS.md`. */
+const oneLine = (max: number) =>
+  z
+    .string()
+    .trim()
+    .min(1)
+    .max(max)
+    .regex(/^[^\r\n]*$/, "Use one line, without line breaks");
+/** One kind of document the harness's agent writes (document-reader spec §4.2). */
+const documentKindSchema = z.object({
+  when: oneLine(300),
+  sections: z.array(oneLine(120)).min(1).max(20),
+  status: z.array(oneLine(40)).min(1).max(10).optional(),
+  /** The tier of a "Review <title>" task for this kind (review spec §11.3). Absent: standard. */
+  reviewTier: z.enum(TIERS).optional(),
+});
+/** At most this many kinds: each one adds its template to the agent's `AGENTS.md`. */
+const MAX_DOCUMENT_KINDS = 20;
+/** Document kinds with a template of required `##` sections. Absent: only the base writing guide (D0). */
+const documentsSchema = z.object({
+  kinds: z
+    .record(
+      z.string().max(64, "A kind id has at most 64 characters").regex(DOCUMENT_KIND_ID, "A kind id is lowercase letters, digits and -"),
+      documentKindSchema,
+    )
+    .refine((k) => Object.keys(k).length <= MAX_DOCUMENT_KINDS, { message: `At most ${MAX_DOCUMENT_KINDS} document kinds` }),
+});
+
 const manifestSchema = z.object({
   id: z.string().regex(HARNESS_ID),
   name: text,
@@ -187,6 +222,14 @@ const manifestSchema = z.object({
   plugins: harnessPluginsSchema.optional(),
   /** The harness's own plugin slots (plugins spec §3.4). Absent: only the core's (D0). */
   slots: harnessSlotsSchema.optional(),
+  /** Kinds of documents with section templates; the reader checks them and only warns (document-reader spec §4). Absent: none (D0). */
+  documents: documentsSchema.optional(),
+  /**
+   * How much pinned text a new task gets whole, suggested to the person (context-panel spec §4.2). Absent: the core's
+   * 3,000 (D0). The literals 3000 and 50_000 must stay in step with DEFAULT_PINNED_TOKENS (workspace context.ts) and
+   * PINNED_MAX (engines models.ts): this package can't import them (a cycle).
+   */
+  context: z.object({ pinnedTokens: z.number().int().min(0).max(50_000).default(3000) }).optional(),
   /** One line under the name on the home screen. */
   tagline: text.optional(),
   /** How translations of this harness's screens should sound, in English ("warm and informal, short sentences"). */
@@ -205,7 +248,11 @@ const manifestSchema = z.object({
   }
   // Every block becomes an MCP tool: two blocks (core ones included) cannot share a tool name.
   const tools = new Map<string, string>(
-    Object.entries({ ...CORE_BLOCKS, ...INPUT_CORE_BLOCKS, ...MODE_CORE_BLOCKS, ...PHASE_CORE_BLOCKS }).map(([name, b]) => [blockToolName(name, b), name]),
+    [
+      ...Object.entries({ ...CORE_BLOCKS, ...INPUT_CORE_BLOCKS, ...MODE_CORE_BLOCKS, ...PHASE_CORE_BLOCKS }).map(([name, b]) => [blockToolName(name, b), name] as const),
+      // The agent's review tools share the `ui` server with the blocks.
+      ...REVIEW_TOOLS.map((t) => [t, t] as const),
+    ],
   );
   for (const [name, b] of Object.entries(m.blocks)) {
     const tool = blockToolName(name, b);
@@ -418,6 +465,21 @@ const manifestSchema = z.object({
     for (const key of MATERIAL_STAGE_KEYS) {
       if (Object.hasOwn(m.actions, key)) ctx.addIssue({ code: "custom", path: ["actions", key], message: `"${key}" is reserved for a material stage: use another action id` });
     }
+  }
+  // Document kinds (document-reader spec §4.2): a section named twice could never be told apart by the check.
+  for (const [id, kind] of Object.entries(m.documents?.kinds ?? {})) {
+    const seen = new Set<string>();
+    kind.sections.forEach((s, i) => {
+      const key = s.trim().toLowerCase();
+      if (seen.has(key)) ctx.addIssue({ code: "custom", path: ["documents", "kinds", id, "sections", i], message: `"${s}" is listed twice` });
+      seen.add(key);
+    });
+    const statuses = new Set<string>();
+    kind.status?.forEach((s, i) => {
+      const key = s.toLowerCase();
+      if (statuses.has(key)) ctx.addIssue({ code: "custom", path: ["documents", "kinds", id, "status", i], message: `"${s}" is listed twice` });
+      statuses.add(key);
+    });
   }
 });
 

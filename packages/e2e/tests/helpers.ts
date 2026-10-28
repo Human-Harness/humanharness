@@ -44,11 +44,17 @@ export function makeFreshSandbox(name: string): Sandbox {
   return s;
 }
 
-/** A configured app (saved language "es", Claude, plus `config`) with every engine's notice accepted, in packages/e2e/.tmp/. */
+/**
+ * A configured app (saved language "es", Claude, plus `config`) with every engine's notice accepted and the
+ * language offer already answered (plan 5b), in packages/e2e/.tmp/.
+ */
 export function makeSandbox(name: string, config: Record<string, unknown> = {}): Sandbox {
   const s = makeFreshSandbox(name);
   fs.mkdirSync(s.folder, { recursive: true });
-  fs.writeFileSync(path.join(s.userData, "config.json"), JSON.stringify({ language: "es", folder: s.folder, engineId: "claude", ...config }));
+  fs.writeFileSync(
+    path.join(s.userData, "config.json"),
+    JSON.stringify({ language: "es", folder: s.folder, engineId: "claude", languageOffered: true, ...config }),
+  );
   const now = new Date().toISOString();
   const ready = { notice: { version: NOTICE_VERSION, acceptedAt: now }, verifiedAt: now };
   fs.writeFileSync(path.join(s.sharedDir, "engines.json"), JSON.stringify({ version: 1, engines: { claude: ready, codex: ready, opencode: ready } }));
@@ -74,6 +80,8 @@ export async function launch(
   app: string = shellDir,
   /** More test hooks (HH_TEST_* only; the shell ignores the rest). */
   extraEnv: Record<string, string> = {},
+  /** More Electron switches, e.g. `--lang=en` for an English system language. */
+  extraArgs: string[] = [],
 ): Promise<{ app: ElectronApplication; page: Page }> {
   const engines = {
     claude: { command: fakeClaudeCommand(), env: { HH_FAKE_SCRIPT: writeScript(s.root, scripts.claude), HH_FAKE_PROMPTS: s.claudePrompts } },
@@ -82,7 +90,7 @@ export async function launch(
   };
   const electronApp = await electron.launch({
     executablePath: electronBinary,
-    args: [app],
+    args: [app, ...extraArgs],
     env: { ...baseEnv(s), HH_TEST_ENGINES: JSON.stringify(engines), ...extraEnv },
   });
   return { app: electronApp, page: await electronApp.firstWindow() };
@@ -91,13 +99,13 @@ export async function launch(
 /** The demo's recordings (harnesses/demo/mock). */
 export const demoMockDir = path.resolve(here, "../../../harnesses/demo/mock");
 
-/** Launches the built shell in mock mode (spec 3e): fake-claude replays `mockDir`; Codex isn't offered. */
-export async function launchMock(s: Sandbox, mockDir: string = demoMockDir): Promise<{ app: ElectronApplication; page: Page }> {
+/** Launches the built shell (or the build at `app`, a main/index.js) in mock mode (spec 3e): fake-claude replays `mockDir`; Codex isn't offered. */
+export async function launchMock(s: Sandbox, mockDir: string = demoMockDir, app: string = shellDir): Promise<{ app: ElectronApplication; page: Page }> {
   const engines = { claude: { command: fakeClaudeCommand(), env: { HH_FAKE_MOCK_DIR: mockDir, HH_FAKE_MOCK_STATE: path.join(s.root, "mock-state.json") } } };
   const electronApp = await electron.launch({
     executablePath: electronBinary,
     // English as the system language: the screens are English (plan 5a); a fresh app saves the system's tag.
-    args: [shellDir, "--lang=en"],
+    args: [app, "--lang=en"],
     env: { ...baseEnv(s), HH_TEST_ENGINES: JSON.stringify(engines), HH_TEST_MOCK: "1" },
   });
   return { app: electronApp, page: await electronApp.firstWindow() };
@@ -110,6 +118,39 @@ export async function closeAndClean(app: ElectronApplication, s: Sandbox): Promi
   } finally {
     fs.rmSync(s.root, { recursive: true, force: true });
   }
+}
+
+/** What main's native go-back dialog was asked, as `answerGoBack` saw it. */
+export interface GoBackAsked {
+  message: string;
+  detail: string;
+  buttons: string[];
+  /** Shown as a sheet on a window (not app-modal). */
+  attached: boolean;
+}
+
+/**
+ * Every go-back asks with main's native dialog (go-back.ts), which a test can't click: this replaces
+ * `dialog.showMessageBox` in main (as context.spec does for the open dialog) with one that answers `answer`, the
+ * button's label, and records what it was asked (read it with `goBackAsks`).
+ */
+export async function answerGoBack(app: ElectronApplication, answer: "Go back" | "Cancel"): Promise<void> {
+  await app.evaluate(({ dialog }, label) => {
+    const g = globalThis as { hhGoBackAsks?: unknown[] };
+    g.hhGoBackAsks ??= [];
+    const asked = g.hhGoBackAsks;
+    dialog.showMessageBox = (async (...args: unknown[]) => {
+      const o = args[args.length - 1] as { message: string; detail?: string; buttons?: string[]; cancelId?: number };
+      const buttons = o.buttons ?? [];
+      asked.push({ message: o.message, detail: o.detail ?? "", buttons, attached: args.length === 2 });
+      const i = buttons.indexOf(label);
+      return { response: i >= 0 ? i : (o.cancelId ?? 0), checkboxChecked: false };
+    }) as unknown as typeof dialog.showMessageBox;
+  }, answer);
+}
+
+export function goBackAsks(app: ElectronApplication): Promise<GoBackAsked[]> {
+  return app.evaluate(() => ((globalThis as { hhGoBackAsks?: unknown[] }).hhGoBackAsks ?? []) as GoBackAsked[]);
 }
 
 export function readJsonl<T>(file: string): T[] {

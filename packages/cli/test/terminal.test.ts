@@ -1,4 +1,5 @@
 import type { InputSpec } from "@humanharness/harness-sdk";
+import type { ReviewSummary } from "@humanharness/harness-sdk/review";
 import { describe, expect, it } from "vitest";
 import { UsageTally, formatReport } from "../src/report";
 import { TerminalView, errorMessage } from "../src/terminal";
@@ -22,6 +23,34 @@ describe("TerminalView", () => {
       ["Hello", "  · read: README.md", "  [example_card]", "    {", '      "title": "One idea"', "    }", "", "  1. Go deeper", "  2. Next", "✗ Your Claude session ended. Sign in again to continue.", ""].join("\n"),
     );
     expect(view.choices.map((o) => o.label)).toEqual(["Go deeper", "Next"]);
+  });
+
+  it("prints one Documents line per card at the end of the turn (document-reader §5.3)", () => {
+    const out = memoryStream();
+    const view = new TerminalView(out.stream, "Claude");
+    view.event({ type: "text", delta: "Wrote it." });
+    view.event({
+      type: "documents",
+      documents: [
+        { path: "tickets/MUS-412/analysis.md", title: "Analysis", change: "new", words: 300 },
+        { path: "README.md", title: "Read me", change: "updated", words: 3 },
+      ],
+    });
+    view.event({ type: "done", ok: true });
+    expect(out.text()).toBe(["Wrote it.", "Documents: tickets/MUS-412/analysis.md (new)", "Documents: README.md (updated)", ""].join("\n"));
+  });
+
+  it("skips a card whose path is nothing once control characters are removed", () => {
+    const out = memoryStream();
+    const view = new TerminalView(out.stream, "Claude");
+    view.event({
+      type: "documents",
+      documents: [
+        { path: "\x1b\x07", title: "Bad", change: "new", words: 1 },
+        { path: "a.md", title: "A", change: "new", words: 1 },
+      ],
+    });
+    expect(out.text()).toBe("Documents: a.md (new)\n");
   });
 
   it("dims activities on a terminal", () => {
@@ -166,5 +195,43 @@ describe("UsageTally and formatReport", () => {
     expect(report.phases).toEqual({ run: { turns: 2, input: 5, output: 5, cacheRead: 0, cacheWrite: 0 } });
     expect(report.model).toBe("sonnet");
     expect(formatReport(report)).toContain("  model         sonnet\n");
+  });
+});
+
+describe("the Review line (review spec §6.3)", () => {
+  it("follows a document's line with its review, when it has one", () => {
+    const out = memoryStream();
+    const summaries: Record<string, ReviewSummary> = {
+      "specs/a.md": { status: "draft", questions: 2, blocking: 1, unsent: 0, comments: 2 },
+      "specs/b.md": { status: "approved", questions: 0, blocking: 0, unsent: 0, comments: 0, approvedAt: "2026-10-28T10:00:00.000Z" },
+      "specs/c.md": { status: "stale", questions: 0, blocking: 0, unsent: 0, comments: 0 },
+      "specs/e.md": { status: "draft", questions: 0, blocking: 0, unsent: 0, comments: 1 },
+      "specs/f.md": { status: "draft", questions: 1, blocking: 0, unsent: 0, comments: 1 },
+    };
+    const view = new TerminalView(out.stream, "Claude", false, {}, () => undefined, (p) => summaries[p] ?? null);
+    view.event({ type: "documents", documents: ["a", "b", "c", "d", "e", "f"].map((n) => ({ path: `specs/${n}.md`, title: n, change: "updated" as const, words: 10 })) });
+    expect(out.text()).toBe(
+      [
+        "Documents: specs/a.md (updated)",
+        "Review: 2 questions open (1 blocking)",
+        "Documents: specs/b.md (updated)",
+        "Review: approved",
+        "Documents: specs/c.md (updated)",
+        "Review: changed since approval",
+        "Documents: specs/d.md (updated)",
+        "Documents: specs/e.md (updated)",
+        "Review: 1 comment open",
+        "Documents: specs/f.md (updated)",
+        "Review: 1 question open",
+        "",
+      ].join("\n"),
+    );
+  });
+
+  it("without a review function nothing changes (D0)", () => {
+    const out = memoryStream();
+    const view = new TerminalView(out.stream, "Claude");
+    view.event({ type: "documents", documents: [{ path: "a.md", title: "a", change: "new", words: 1 }] });
+    expect(out.text()).toBe("Documents: a.md (new)\n");
   });
 });

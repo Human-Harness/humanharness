@@ -31,6 +31,7 @@ The template (`packages/cli/template/`) runs as is: one action (`example`, stand
   - one per pillar plus resources: `pillar-decisions`, `pillar-flow`, `pillar-context`, `tier-cost`, `permissions-wide`, `open-questions`;
   - for input blocks: `input-hidden` (an input block that isn't visible), `input-form` (a field the core form can't draw, with no component in `ui/`) and `input-choice`. `input-choice` is a choice whose options can't come from the shown data (`inputUi.<field>.optionsFrom` names no list of strings or string enums, or `kind: "choice"` has no options, and the form draws it as text), or `inputUi.<field>.kind` on a field that isn't a string, where it is ignored;
   - for settings: `settings-tokens` (the settings' sentences, at their defaults, would take more than 400 tokens of `AGENTS.md`);
+  - for document kinds: `documents-tokens` (the "Document kinds" part would add more than 400 tokens to `AGENTS.md`);
   - for setup steps: `setup-component` (a component step not found in `ui/`), `setup-mock` (an interview's action without a recording, once `mock/` has any) and `setup-context` (an interview's collection without `context`).
 
 ## run

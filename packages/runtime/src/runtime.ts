@@ -9,6 +9,7 @@ import {
   History,
   type HistoryTrailer,
   type ReferenceFolder,
+  ReviewRefused,
   START,
   STOPPED_PREFIX,
   TURN_PREFIX,
@@ -20,6 +21,7 @@ import {
 } from "@humanharness/workspace";
 import { AcpTransport } from "./acp";
 import { ClaudeCliTransport } from "./claude-cli";
+import { turnDocuments } from "./documents";
 import type { Event } from "./events";
 import { type Session, type Transport, type TransportOptions, acpFields } from "./transport";
 
@@ -44,6 +46,11 @@ export interface RuntimeOptions {
    * part in AGENTS.md, the same history keep list (D0).
    */
   material?: { request: (request: unknown) => Promise<unknown>; entry?: string };
+  /**
+   * Answers the agent's review tools (review spec §4) in the person's folder. Used only when the harness's agent may edit
+   * the folder; absent, or `permissions.edit: "none"`: no tools and no review lines in AGENTS.md (D0).
+   */
+  review?: (request: unknown) => Promise<unknown>;
   harness: LoadedHarness;
   engine: EngineDef;
   /** The user's visible folder. */
@@ -95,6 +102,25 @@ export interface HarnessRuntime {
   close(): Promise<void>;
 }
 
+/** What the agent reads when a review request fails for a reason other than the app's own refusal. */
+export const REVIEW_FAILED = "The app could not do that. Nothing was saved; do not retry in a loop.";
+
+/**
+ * The review channel's handler: the rpc sends any thrown message to the agent, so only a `ReviewRefused` keeps its
+ * text (written for the agent); any other error (a file system error naming paths) becomes `REVIEW_FAILED`.
+ */
+export function reviewHandler(handle: (request: unknown) => Promise<unknown>): (request: unknown) => Promise<unknown> {
+  return async (request) => {
+    try {
+      return await handle(request);
+    } catch (err) {
+      if (err instanceof ReviewRefused) throw new Error(err.message);
+      console.error("A review request failed", err);
+      throw new Error(REVIEW_FAILED);
+    }
+  };
+}
+
 function harnessMcpServers(harness: LoadedHarness, launcher: Launcher): McpServerSpec[] {
   return harness.mcp.map((rel, i) => ({
     name: i === 0 ? harness.id : `${harness.id}-${i + 1}`,
@@ -115,7 +141,11 @@ export async function createRuntime(opts: RuntimeOptions): Promise<HarnessRuntim
   const settings = await opts.instructionSettings?.();
   const material = opts.material && hasMaterial(harness) ? opts.material : undefined;
   const withMaterial = material ? { material: true } : {};
-  const generated = await writeInstructions({ folder, base, language: opts.language, blocks, references, engine, ...(settings ? { settings } : {}), ...withMaterial });
+  const review = opts.review && harness.permissions.edit === "folder" ? reviewHandler(opts.review) : undefined;
+  // Every harness gets the writing guide; its kinds only when it declares them (document-reader spec D4); the review
+  // lines only with the review tools (review spec §4).
+  const writing = { kinds: harness.documents?.kinds ?? {}, ...(review ? { review: true } : {}) };
+  const generated = await writeInstructions({ folder, base, language: opts.language, blocks, references, engine, writing, ...(settings ? { settings } : {}), ...withMaterial });
 
   // The history skips the app's files under .harness/ (except the notes, the data and, with material, its registry
   // and decisions) and the generated instructions.
@@ -128,23 +158,26 @@ export async function createRuntime(opts: RuntimeOptions): Promise<HarnessRuntim
   const bridge: Bridge = await openBridge((m) => emitCurrent?.({ type: "block", name: m.name, data: m.data }));
   let rpc: Rpc | null = null;
   let materialRpc: Rpc | null = null;
+  let reviewRpc: Rpc | null = null;
   try {
     if (opts.data && (hasAgentData(harness) || opts.extraData)) rpc = await openRpc(opts.data);
     if (material) materialRpc = await openRpc(material.request);
-    return await buildRuntime(bridge, rpc, materialRpc);
+    if (review) reviewRpc = await openRpc(review);
+    return await buildRuntime(bridge, rpc, materialRpc, reviewRpc);
   } catch (err) {
+    await reviewRpc?.close().catch(() => {});
     await materialRpc?.close().catch(() => {});
     await rpc?.close().catch(() => {});
     await bridge.close().catch(() => {});
     throw err;
   }
 
-  async function buildRuntime(bridge: Bridge, rpc: Rpc | null, materialRpc: Rpc | null): Promise<HarnessRuntime> {
+  async function buildRuntime(bridge: Bridge, rpc: Rpc | null, materialRpc: Rpc | null, reviewRpc: Rpc | null): Promise<HarnessRuntime> {
     const transportOptions: TransportOptions = {
       folder,
       session,
       mcp: [
-        uiServerSpec({ harnessConfig: harness.configPath, bridge, launcher, entry: opts.uiServerEntry }),
+        uiServerSpec({ harnessConfig: harness.configPath, bridge, launcher, entry: opts.uiServerEntry, ...(reviewRpc ? { review: reviewRpc } : {}) }),
         ...(rpc ? [dataServerSpec({ harnessConfig: harness.configPath, rpc, launcher, entry: opts.dataServerEntry, ...(opts.extraData ? { extra: opts.extraData.catalogue } : {}) })] : []),
         ...(materialRpc ? [materialServerSpec({ rpc: materialRpc, launcher, mode: "person", entry: material?.entry })] : []),
         ...harnessMcpServers(harness, launcher),
@@ -203,8 +236,17 @@ export async function createRuntime(opts: RuntimeOptions): Promise<HarnessRuntim
             );
             emitCurrent = null;
             const f: Event = final ?? { type: "done", ok: false, error: { code: "agent-crashed" } };
-            if (f.type === "done" && f.ok) await history.save(`${TURN_PREFIX}${message.slice(0, 60)}`, options.trailer);
-            else if (f.type === "done" && f.error.code === "agent-crashed") await history.restore(before, `${UNDO_PREFIX}the turn did not finish`, options.trailer);
+            if (f.type === "done" && f.ok) {
+              const after = await history.save(`${TURN_PREFIX}${message.slice(0, 60)}`, options.trailer);
+              // A card for each .md the turn added or changed (document-reader spec §5.1); none: no event at all.
+              if (after) {
+                const documents = await turnDocuments(history, before, after).catch((err: unknown) => {
+                  console.error("Could not list the turn's documents", err);
+                  return [];
+                });
+                if (documents.length > 0) emitOnce({ type: "documents", documents });
+              }
+            } else if (f.type === "done" && f.error.code === "agent-crashed") await history.restore(before, `${UNDO_PREFIX}the turn did not finish`, options.trailer);
             else await history.save(`${STOPPED_PREFIX}${message.slice(0, 60)}`, options.trailer);
             emitOnce(f);
           } catch (err) {
@@ -231,7 +273,7 @@ export async function createRuntime(opts: RuntimeOptions): Promise<HarnessRuntim
         if (closing) return Promise.resolve(false);
         const run = async () => {
           const now = await opts.instructionSettings?.();
-          return refreshInstructions({ folder, base, language: opts.language, blocks, references, ...(now ? { settings: now } : {}), ...withMaterial });
+          return refreshInstructions({ folder, base, language: opts.language, blocks, references, writing, ...(now ? { settings: now } : {}), ...withMaterial });
         };
         refreshing = refreshing.catch(() => false).then(run);
         return refreshing;
@@ -252,9 +294,15 @@ export async function createRuntime(opts: RuntimeOptions): Promise<HarnessRuntim
             try {
               await rpc?.close();
             } finally {
-              await materialRpc?.close();
+              try {
+                await materialRpc?.close();
+              } finally {
+                await reviewRpc?.close();
+              }
             }
           }
+          // The file index waits for a quiet moment: write it now (it never throws).
+          await history.flush();
         }
       },
     };

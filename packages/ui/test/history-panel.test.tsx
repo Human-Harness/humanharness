@@ -111,7 +111,7 @@ describe("HistoryPanel", () => {
     return client;
   };
 
-  it("counts the later tasks the scope filter hides when going back", async () => {
+  it("goes back from a filtered list (main counts the later tasks the filter hides)", async () => {
     const client = scoped(["t2", "_app", "2026-10-11T12:00:00.000Z"], ["t1", "fracciones", "2026-10-10T12:00:00.000Z"]);
     await renderIn("en", <HistoryPanel client={client} actions={{}} onClose={() => {}} />);
     const filter = await screen.findByRole("combobox", { name: "Show" });
@@ -119,7 +119,7 @@ describe("HistoryPanel", () => {
     fireEvent.change(filter, { target: { value: "fracciones" } });
     fireEvent.click(screen.getByRole("button", { name: /A question/ }));
     fireEvent.click(screen.getByRole("button", { name: "Undo this task" }));
-    expect(screen.getByText(/This also undoes 1 later task\./)).toBeTruthy();
+    await waitFor(() => expect(client.restoredTasks).toEqual(["t1"]));
   });
 
   it("goes back to all when the selected scope is gone after a reload", async () => {
@@ -241,43 +241,31 @@ describe("HistoryPanel", () => {
     expect(within(items[2]).queryByText("Main block")).toBeNull();
   });
 
-  it("goes back to before a task after a confirmation", async () => {
+  it("goes back to before a task once main confirms; the window draws no confirmation", async () => {
     const { client, onRestored, onClose } = await open();
     fireEvent.click(await screen.findByRole("button", { name: "Undo this task" }));
-    expect(screen.getByText("Undo “Plan the week”?")).toBeTruthy();
-    expect(screen.queryByText(/later task/)).toBeNull();
-    // Nothing later: no list, the title says what goes.
-    expect(screen.queryByRole("list", { name: "What will be undone" })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Undo task" }));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
     await waitFor(() => expect(client.restoredTasks).toEqual(["t2"]));
+    expect(client.goBackAsks).toEqual([{ kind: "task", taskId: "t2" }]);
     expect(onRestored).toHaveBeenCalledWith("task");
     expect(onClose).toHaveBeenCalled();
   });
 
-  it("says when going back also undoes later tasks", async () => {
-    await open();
-    fireEvent.click(await screen.findByRole("button", { name: /A question/ }));
-    fireEvent.click(screen.getAllByRole("button", { name: "Undo this task" })[1]);
-    expect(screen.getByText(/This also undoes 1 later task\./)).toBeTruthy();
-    // The button counts the task itself and the later one, and the list names both, the task first.
-    expect(screen.getByRole("button", { name: "Undo 2 tasks" })).toBeTruthy();
-    const undone = screen.getByRole("list", { name: "What will be undone" });
-    expect(within(undone).getAllByRole("listitem").map((li) => li.textContent)).toEqual(["A question1 file changed", "Plan the week2 files changed"]);
-    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-    fireEvent.click(screen.getByRole("button", { name: /Outside a task/ }));
-    const points = screen.getAllByRole("button", { name: "Go back here" });
-    // The oldest point, under both tasks.
-    fireEvent.click(points[points.length - 1]);
-    expect(screen.getByText(/This also undoes 2 later tasks\./)).toBeTruthy();
-  });
-
-  it("focuses the yes when a confirmation opens, and gives focus back on Cancel", async () => {
-    await open();
+  it("a Cancel in main's dialog is quiet: nothing changes, the panel stays, focus goes back to the button", async () => {
+    const client = new FakeClient();
+    client.historyGroups = groups;
+    client.confirmGoBack = async () => false;
+    const { onRestored, onClose } = await open({ client });
     const trigger = await screen.findByRole("button", { name: "Undo this task" });
+    trigger.focus();
     fireEvent.click(trigger);
-    expect(document.activeElement?.textContent).toBe("Undo task");
-    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Undo this task" }));
+    await waitFor(() => expect(client.goBackAsks).toHaveLength(1));
+    await waitFor(() => expect((trigger as HTMLButtonElement).disabled).toBe(false));
+    await waitFor(() => expect(document.activeElement).toBe(trigger));
+    expect(client.restoredTasks).toEqual([]);
+    expect(onRestored).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("disables every way back while a restore is on its way", async () => {
@@ -286,12 +274,11 @@ describe("HistoryPanel", () => {
     let release!: () => void;
     client.restoreGate = new Promise((r) => (release = r));
     await open({ client });
-    fireEvent.click(await screen.findByRole("button", { name: "Undo this task" }));
-    const yes = screen.getByRole("button", { name: "Undo task" }) as HTMLButtonElement;
-    fireEvent.click(yes);
-    expect(yes.disabled).toBe(true);
+    const trigger = (await screen.findByRole("button", { name: "Undo this task" })) as HTMLButtonElement;
+    fireEvent.click(trigger);
+    expect(trigger.disabled).toBe(true);
     for (const b of screen.getAllByRole("button", { name: "Go back here" })) expect((b as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.click(yes);
+    fireEvent.click(trigger);
     release();
     await waitFor(() => expect(client.restoredTasks).toEqual(["t2"]));
   });
@@ -317,14 +304,13 @@ describe("HistoryPanel", () => {
   it("goes back to one point", async () => {
     const { client } = await open();
     fireEvent.click((await screen.findAllByRole("button", { name: "Go back here" }))[1]);
-    fireEvent.click(screen.getByRole("button", { name: "Yes, go back" }));
     await waitFor(() => expect(client.restored).toEqual(["m2"]));
+    expect(client.goBackAsks).toEqual([{ kind: "point", sha: "m2" }]);
   });
 
   it("tells the window a point was restored", async () => {
     const { onRestored } = await open();
     fireEvent.click((await screen.findAllByRole("button", { name: "Go back here" }))[0]);
-    fireEvent.click(screen.getByRole("button", { name: "Yes, go back" }));
     await waitFor(() => expect(onRestored).toHaveBeenCalledWith("point"));
   });
 
@@ -347,5 +333,43 @@ describe("HistoryPanel", () => {
     expect(entryLabel("Data: concepts")).toEqual({ key: "history.entry.data", values: { collection: "concepts" } });
     expect(entryLabel("Note: A title")).toEqual({ key: "history.entry.note", values: { title: "A title" } });
     expect(entryLabel("Stopped: hi")).toEqual({ key: "history.entry.stopped" });
+  });
+});
+
+describe("changed files open their timeline (file-timeline spec §6.2)", () => {
+  it("with onOpenFile, each changed file is a link that says which file and how it changed", async () => {
+    const client = new FakeClient();
+    client.historyGroups = groups;
+    const opened: [string, string][] = [];
+    await renderIn("en", <HistoryPanel client={client} actions={actions} onClose={() => undefined} onOpenFile={(p, k) => opened.push([p, k])} />);
+    const link = await screen.findByRole("button", { name: "History of plan.md" });
+    // The change's kind is the link's description: a screen reader hears it with the name.
+    const kind = document.getElementById(link.getAttribute("aria-describedby") ?? "");
+    expect(kind?.textContent).toBe(link.closest("li")?.querySelector(".hh-change")?.textContent);
+    expect(kind?.textContent).not.toBe("");
+    fireEvent.click(link);
+    fireEvent.click(screen.getByRole("button", { name: "History of old.md" }));
+    expect(opened).toEqual([
+      ["plan.md", "modified"],
+      ["old.md", "deleted"],
+    ]);
+  });
+
+  it("D0: without onOpenFile the paths stay plain text", async () => {
+    const client = new FakeClient();
+    client.historyGroups = groups;
+    await renderIn("en", <HistoryPanel client={client} actions={actions} onClose={() => undefined} />);
+    await screen.findAllByText("plan.md");
+    expect(screen.queryByRole("button", { name: "History of plan.md" })).toBeNull();
+  });
+
+  it("a one-file go-back reads in plain language", () => {
+    expect(entryLabel("Go back: specs/a to b.md to v2")).toEqual({ key: "history.entry.fileBack", values: { file: "specs/a to b.md" } });
+  });
+});
+
+describe("context changes in the history (context-panel spec §4.2)", () => {
+  it("a Context: commit reads as one", () => {
+    expect(entryLabel("Context: pinned docs/conv.md")).toEqual({ key: "history.entry.context", values: { change: "pinned docs/conv.md" } });
   });
 });

@@ -1,4 +1,4 @@
-import { type AnswerPart, type BlockAnswer, type ChatBlock, type ChatEntry, type Event, type LimitWindow, type TurnUsage, addParagraph, addText, finishParts } from "./client";
+import { type AnswerPart, type BlockAnswer, type ChatBlock, type ChatEntry, type DocumentCard, type Event, type LimitWindow, type TurnUsage, addParagraph, addText, finishParts } from "./client";
 
 export interface LiveActivity {
   id: string;
@@ -20,6 +20,8 @@ export interface LiveTurn {
   limits?: LimitWindow[];
   /** State-only blocks emitted during this turn (saved on the entry). */
   state?: Record<string, unknown>;
+  /** The `.md` files the turn added or changed (document-reader spec §5.1), saved on the entry. */
+  documents?: DocumentCard[];
 }
 
 export interface ChatState {
@@ -124,6 +126,8 @@ export function reduceChat(state: ChatState, action: ChatAction): ChatState {
             },
           }
         : state;
+    case "documents":
+      return live ? { ...state, live: { ...live, documents: action.documents } } : state;
     case "context":
     case "compaction":
       // The task view carries them (the side panel's meter); the conversation doesn't change.
@@ -183,6 +187,7 @@ export function reduceChat(state: ChatState, action: ChatAction): ChatState {
         ...(live.usage ? { usage: live.usage } : {}),
         ...(live.limits ? { limits: live.limits } : {}),
         ...(live.state ? { state: live.state } : {}),
+        ...(live.documents ? { documents: live.documents } : {}),
         ...(action.ok ? {} : { error: action.error }),
         ...(action.task ? { task: action.task } : {}),
       };

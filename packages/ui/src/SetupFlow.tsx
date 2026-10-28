@@ -326,6 +326,7 @@ export function SetupFlow({ client, state, onChange, onCancel, onStart, startAt,
               {t("setupFlow.folderHeading")}
             </h2>
             <p className="hh-setup-intro">{t("setupFlow.folderIntro", { name })}</p>
+            <p className="hh-caption hh-setup-language">{t("setupFlow.languageLater")}</p>
             <FolderStep
               client={client}
               state={state}

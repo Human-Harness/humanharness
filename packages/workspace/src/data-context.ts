@@ -38,19 +38,26 @@ async function ordered(store: DataStore, name: string, c: Collection, folder: st
   return [...records].sort((a, b) => (when(a) < when(b) ? 1 : when(a) > when(b) ? -1 : 0));
 }
 
+/** One collection's table in a first message (context-panel spec §3.1 `data`): its name (the label, when given), the rows it shows, its text. */
+export interface DataContextPart {
+  collection: string;
+  rows: number;
+  text: string;
+}
+
 /**
  * The data part of a new session's first message (spec §4.4): one Markdown table per collection with `context`,
  * cut at its `tokens` (the "more" line included), saying how many rows were left out. Empty when no collection has `context` (D2).
  * `opts.label` names each collection as the agent knows it (a plugin's `<id>.<collection>`); absent: its own name.
  */
-export async function buildDataContext(
+export async function buildDataContextParts(
   store: DataStore,
   collections: Record<string, Collection>,
   scope: string,
   action: string | undefined,
   opts: { label?: (name: string) => string } = {},
-): Promise<string> {
-  const tables: string[] = [];
+): Promise<DataContextPart[]> {
+  const parts: DataContextPart[] = [];
   for (const [name, c] of Object.entries(collections)) {
     const title = opts.label ? opts.label(name) : name;
     // A labelled table is a plugin's: its names and values come from outside, so they get the stricter cleanup.
@@ -82,7 +89,18 @@ export async function buildDataContext(
       shown++;
     }
     if (shown < records.length) lines.push("", footer(records.length - shown, title));
-    tables.push(lines.join("\n"));
+    parts.push({ collection: title, rows: shown, text: lines.join("\n") });
   }
-  return tables.join("\n\n");
+  return parts;
+}
+
+/** The tables joined: exactly the text the first message carried before (D0). */
+export async function buildDataContext(
+  store: DataStore,
+  collections: Record<string, Collection>,
+  scope: string,
+  action: string | undefined,
+  opts: { label?: (name: string) => string } = {},
+): Promise<string> {
+  return (await buildDataContextParts(store, collections, scope, action, opts)).map((p) => p.text).join("\n\n");
 }

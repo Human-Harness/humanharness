@@ -21,3 +21,15 @@ export const NOTE_PREFIX = "Note: ";
 export const NOTE = new RegExp(`^${NOTE_PREFIX}(.+)$`);
 /** A change the person made to the harness's data; the collection's name follows. */
 export const DATA_CHANGE_PREFIX = "Data: ";
+
+/** A person's answer in a document review (reviews.md): `Answer: <path> · <question>`. */
+export const ANSWER_PREFIX = "Answer: ";
+/** Between an answer's path and its question. */
+export const ANSWER_SEPARATOR = " · ";
+/** A person's approval of a document (reviews.md): `Approved: <path>`. */
+export const APPROVED_PREFIX = "Approved: ";
+/** One file brought back to a version (file-timeline spec §5): `Go back: <path> to <target>`. */
+export const FILE_RESTORE_PREFIX = "Go back: ";
+
+/** The person pinned, unpinned, excluded or included something (context-panel spec §4): `Context: pinned <path>`. */
+export const CONTEXT_CHANGE_PREFIX = "Context: ";

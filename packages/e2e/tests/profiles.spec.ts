@@ -70,6 +70,7 @@ test("profiles: add two students, each with their own folder and setup, switch, 
     // Sofi practises once: her usage.
     await page.getByRole("button", { name: "Start Family Tutor" }).click();
     await page.getByRole("button", { name: /Practice/ }).first().click();
+    // In the chat: the screen reader's live region repeats the answer for a moment.
     await expect(page.getByRole("main").getByText("Una pregunta corta.")).toBeVisible();
     await expect.poll(() => fs.existsSync(path.join(s.folder, "sofi", ".harness", "usage.jsonl"))).toBe(true);
 

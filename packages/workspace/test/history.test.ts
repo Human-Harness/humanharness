@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import git from "isomorphic-git";
-import { DATA_PREFIX, History, MATERIAL_KEEP, NOTES_PREFIX, appHistoryKeep, parseCommitMessage, withTrailer } from "../src";
+import { CONTEXT_PREFIX, DATA_PREFIX, History, MATERIAL_KEEP, NOTES_PREFIX, appHistoryKeep, blobId, parseCommitMessage, withTrailer } from "../src";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -196,6 +196,22 @@ describe("History", () => {
     const files = await git.listFiles({ fs, gitdir, ref: "HEAD" });
     expect(files).toContain("draft.tmp");
     expect(files.some((f) => f.startsWith(".harness/notes/") && f.endsWith(".tmp"))).toBe(false);
+  });
+});
+
+describe("History.changes", () => {
+  it("lists what changed between two commits; null from: all added (document-reader §5.1)", async () => {
+    write("a.md", "a");
+    const first = (await history.save("one"))!;
+    write("a.md", "a2");
+    write("b.md", "b");
+    write(".harness/notes/x.md", "ignored");
+    const second = (await history.save("two"))!;
+    expect(await history.changes(first, second)).toEqual([
+      { path: "a.md", kind: "modified" },
+      { path: "b.md", kind: "added" },
+    ]);
+    expect(await history.changes(null, first)).toEqual([{ path: "a.md", kind: "added" }]);
   });
 });
 
@@ -709,5 +725,65 @@ describe("History keep patterns (material spec §4)", () => {
     write("a.md", "1");
     const sha = await history.save("first");
     expect(await git.listFiles({ fs, gitdir, ref: sha! })).toEqual(["a.md"]);
+  });
+});
+
+describe("review records (review spec §3, §7 undo)", () => {
+  it("are tracked under .harness/, without their temp files, and a restore brings them back", async () => {
+    const folder = fs.mkdtempSync(path.join(os.tmpdir(), "hh-hist-rev-"));
+    const history = new History(folder, `${folder}.git`, [".harness/"], appHistoryKeep(false));
+    await history.init();
+    const rec = path.join(folder, ".harness", "reviews", "specs", "a.md.json");
+    fs.mkdirSync(path.dirname(rec), { recursive: true });
+    fs.writeFileSync(rec, "{}");
+    fs.writeFileSync(`${rec}.0b1c2d3e-aaaa-bbbb-cccc-123456789abc.tmp`, "{}");
+    const first = (await history.save("one"))!;
+    expect((await history.changes(null, first)).map((c) => c.path)).toEqual([".harness/reviews/specs/a.md.json"]);
+    fs.writeFileSync(rec, '{"changed":true}');
+    await history.save("two");
+    await history.restore(first, "Undo");
+    expect(fs.readFileSync(rec, "utf8")).toBe("{}");
+  });
+
+  it("readBlob reads an approved version by its blob id", async () => {
+    const folder = fs.mkdtempSync(path.join(os.tmpdir(), "hh-hist-blob-"));
+    const history = new History(folder, `${folder}.git`);
+    await history.init();
+    fs.writeFileSync(path.join(folder, "a.md"), "approved\n");
+    const sha = (await history.save("Approved: a.md"))!;
+    expect(await history.readBlob(blobId(Buffer.from("approved\n")))).toBe("approved\n");
+    expect(await history.readBlob("f".repeat(40))).toBeNull();
+    expect(await history.readBlob("nope")).toBeNull();
+    // Over the cap: not read out.
+    expect(await history.readBlob(blobId(Buffer.from("approved\n")), 9)).toBe("approved\n");
+    expect(await history.readBlob(blobId(Buffer.from("approved\n")), 8)).toBeNull();
+    // A commit's or a tree's id is not a blob's.
+    const { commit } = await git.readCommit({ fs, gitdir: `${folder}.git`, oid: sha });
+    expect(await history.readBlob(sha)).toBeNull();
+    expect(await history.readBlob(commit.tree)).toBeNull();
+  });
+
+  it("skips the temp file an answer's swap leaves by a crash, not the person's own .tmp files", async () => {
+    const folder = fs.mkdtempSync(path.join(os.tmpdir(), "hh-hist-swap-"));
+    const history = new History(folder, `${folder}.git`, [".harness/"], appHistoryKeep(false));
+    await history.init();
+    fs.mkdirSync(path.join(folder, "specs"));
+    fs.writeFileSync(path.join(folder, "specs", "a.md"), "a");
+    fs.writeFileSync(path.join(folder, "specs", ".a.md.0b1c2d3e-aaaa-bbbb-cccc-123456789abc.tmp"), "half");
+    fs.writeFileSync(path.join(folder, "specs", "draft.md.tmp"), "mine");
+    const first = (await history.save("one"))!;
+    expect((await history.changes(null, first)).map((c) => c.path).sort()).toEqual(["specs/a.md", "specs/draft.md.tmp"]);
+  });
+});
+
+describe("appHistoryKeep and the context folder (context-panel spec §4.2)", () => {
+  it("tracks .harness/context/, still not tasks.json; D0: nothing else changes", () => {
+    expect(appHistoryKeep(false)).toEqual([NOTES_PREFIX, DATA_PREFIX, ".harness/reviews/", CONTEXT_PREFIX]);
+    const folder = fs.mkdtempSync(path.join(os.tmpdir(), "hh-keep-"));
+    const history = new History(folder, `${folder}.git`, [".harness/"], appHistoryKeep(false));
+    expect(history.tracks(".harness/context/main.json")).toBe(true);
+    // The temp file saveContext renames into place is never tracked.
+    expect(history.tracks(".harness/context/main.json.0b1c2d3e-aaaa-bbbb-cccc-123456789abc.tmp")).toBe(false);
+    expect(history.tracks(".harness/tasks.json")).toBe(false);
   });
 });

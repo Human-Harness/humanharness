@@ -4,7 +4,7 @@ import type { Writable } from "node:stream";
 import { availableEngines } from "@humanharness/engines";
 import { checkHarness, formatFindings } from "./check";
 import { CliError, type Io, UsageError, parseCommand } from "./cli";
-import { mockEnv } from "./mock-session";
+import { actionMatches, mockEnv } from "./mock-session";
 import { shellDir } from "./paths";
 
 /** The part of child_process.spawn `dev` uses (tests replace it). */
@@ -56,7 +56,8 @@ export async function devCommand(o: DevOptions): Promise<number> {
   for (const k of Object.keys(env)) if (k.startsWith("HH_TEST_") || k.startsWith("HH_FAKE_") || k === "HH_DEV_ENGINE") delete env[k];
   if (o.mock) {
     try {
-      Object.assign(env, await mockEnv({ harnessId: harness.id, harnessDir: root, suggested: harness.folder.suggested, keep: o.keep === true, tmpRoot: o.tmpRoot, out: o.out }));
+      const actions = await actionMatches(harness);
+      Object.assign(env, await mockEnv({ harnessId: harness.id, harnessDir: root, suggested: harness.folder.suggested, keep: o.keep === true, tmpRoot: o.tmpRoot, actions, out: o.out }));
     } catch (err) {
       if (!(err instanceof CliError)) throw err;
       o.out.write(`${err.message}\n`);

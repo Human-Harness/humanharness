@@ -8,7 +8,8 @@ import {
   DataStore,
   isDataWrite,
   pluginDataDir,
-  buildDataContext,
+  type DataContextPart,
+  buildDataContextParts,
   runDataRequest,
 } from "@humanharness/workspace";
 
@@ -99,9 +100,14 @@ export class PluginData {
    * each titled `<id>.<collection>`, the name the agent's data tools take.
    */
   agentContext(action: string | undefined): Promise<string> {
+    return this.agentContextParts(action).then((parts) => parts.map((p) => p.text).join("\n\n"));
+  }
+
+  /** `agentContext` one table per collection, for the context panel (context-panel spec §3.1); none: []. */
+  agentContextParts(action: string | undefined): Promise<DataContextPart[]> {
     const visible = Object.fromEntries(Object.entries(this.collections).filter(([, c]) => c.agent === "read"));
     const label = (name: string) => `${this.id}.${name}`;
-    return Object.keys(visible).length === 0 ? Promise.resolve("") : buildDataContext(this.store, visible, APP_SCOPE, action, { label });
+    return Object.keys(visible).length === 0 ? Promise.resolve([]) : buildDataContextParts(this.store, visible, APP_SCOPE, action, { label });
   }
 
   onChange(listener: (change: DataChange) => void): () => void {

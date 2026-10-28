@@ -28,6 +28,8 @@ export interface PermissionPolicy {
   /** Reference folders: reads and searches there are allowed, never edits. */
   readRoots?: string[];
   permissions: Permissions;
+  /** No reading or searching at all, even inside the folder (see `TransportOptions.mcpOnly`). */
+  mcpOnly?: boolean;
   /** MCP servers the harness configured (always includes "ui"). */
   mcpServers: string[];
   /** Earlier tool_call info by id (Codex permission requests carry only the id). */
@@ -87,7 +89,7 @@ export function decidePermission(params: PermissionRequest, policy: PermissionPo
       case "read":
       case "search":
       case "think":
-        allow = (locations ?? []).every((l) => [policy.folder, ...(policy.readRoots ?? [])].some((root) => inside(root, l.path)));
+        allow = !policy.mcpOnly && (locations ?? []).every((l) => [policy.folder, ...(policy.readRoots ?? [])].some((root) => inside(root, l.path)));
         break;
       case "edit":
       case "delete":
@@ -146,6 +148,32 @@ export function activityDetail(call: { kind?: unknown; title?: unknown; location
   if (!fileKind) return title;
   const rest = title.replace(LEADING_VERB, "").replace(/^['"`](.*)['"`]$/, "$1");
   return rest && !/\s/.test(rest) ? baseName(rest) : rest || title;
+}
+
+/** Longest server or tool name kept. */
+const NAME_MAX = 100;
+/** Longest engine path kept; a longer one is dropped. */
+const PATH_MAX = 4096;
+/** How many locations of one call are kept. */
+const LOCATIONS_MAX = 20;
+
+/**
+ * What an ACP tool call adds to its start event (context-panel spec §3.2): a read or search call's `locations`, or the
+ * trusted MCP server (only from Codex's own marker, as `server` is passed) with `rawInput.tool`.
+ */
+export function acpExtras(call: { kind?: unknown; locations?: unknown; rawInput?: unknown }, server: string | undefined): { paths?: string[]; tool?: { server: string; name: string } } {
+  if (server !== undefined) {
+    const name = (call.rawInput as { tool?: unknown } | null | undefined)?.tool;
+    return { tool: { server: server.slice(0, NAME_MAX), name: typeof name === "string" ? name.slice(0, NAME_MAX) : "" } };
+  }
+  if (call.kind !== "read" && call.kind !== "search") return {};
+  const paths = Array.isArray(call.locations)
+    ? call.locations
+        .slice(0, LOCATIONS_MAX)
+        .map((l) => (l as { path?: unknown } | null)?.path)
+        .filter((p): p is string => typeof p === "string" && p.length > 0 && p.length <= PATH_MAX)
+    : [];
+  return paths.length > 0 ? { paths } : {};
 }
 
 /**
@@ -321,6 +349,7 @@ export class AcpTransport implements Transport {
       folder: this.o.folder,
       permissions: this.o.permissions,
       readRoots: this.o.references ?? [],
+      ...(this.o.mcpOnly ? { mcpOnly: true } : {}),
       mcpServers: this.o.mcp.map((s) => s.name),
       lookup: (id) => this.calls.get(id),
     };
@@ -576,7 +605,7 @@ export class AcpTransport implements Transport {
         const activity = { kind: KINDS[u.kind] ?? ("other" as const), detail: activityDetail(u) };
         this.activities.set(u.toolCallId, activity);
         this.afterTool = true;
-        emit({ type: "activity", id: u.toolCallId, ...activity, state: "start" });
+        emit({ type: "activity", id: u.toolCallId, ...activity, ...acpExtras(u, server), state: "start" });
         return;
       }
       case "tool_call_update": {

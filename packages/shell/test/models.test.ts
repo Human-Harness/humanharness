@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { type Effort, getEngine } from "@humanharness/engines";
-import { cleanModels, cleanProfile, engineOffer, firstOffered, fitEffort, manifestTier, nearestTier, nextFallback, resolveProfile, taskKey } from "../src/main/models";
+import { cleanModels, cleanProfile, engineOffer, firstOffered, fitEffort, manifestTier, nearestTier, nextFallback, pinnedBudget, resolveProfile, taskKey } from "../src/main/models";
 
 describe("cleanModels", () => {
   it("keeps valid task choices and tier overrides, field by field", () => {
@@ -184,5 +184,23 @@ describe("manifestTier (plugins spec §5.3: a prepared task's tier)", () => {
     expect(resolveProfile({ engine: "claude", manifestTier: manifestTier(harness, undefined, "deep"), models }).tier).toBe("deep");
     const chosen = cleanModels({ tasks: { questions: "standard" } });
     expect(resolveProfile({ engine: "claude", manifestTier: manifestTier(harness, undefined, "deep"), models: chosen }).tier).toBe("standard");
+  });
+});
+
+describe("the pinned budget (context-panel spec §4.2)", () => {
+  it("cleanModels keeps a whole pinnedTokens from 0 to 50,000 and drops anything else", () => {
+    expect(cleanModels({ pinnedTokens: 6000 })).toEqual({ pinnedTokens: 6000 });
+    expect(cleanModels({ pinnedTokens: 0 })).toEqual({ pinnedTokens: 0 });
+    expect(cleanModels({ pinnedTokens: "6000" })).toEqual({});
+    expect(cleanModels({ pinnedTokens: 70_000 })).toEqual({});
+    expect(cleanModels({ pinnedTokens: 1.5 })).toEqual({});
+    expect(cleanModels({})).toEqual({});
+  });
+
+  it("the person's value, else the manifest's, else 3,000", () => {
+    expect(pinnedBudget({ pinnedTokens: 1000 }, { pinnedTokens: 6000 })).toBe(1000);
+    expect(pinnedBudget({ pinnedTokens: 0 }, { pinnedTokens: 6000 })).toBe(0);
+    expect(pinnedBudget({}, { pinnedTokens: 6000 })).toBe(6000);
+    expect(pinnedBudget({}, undefined)).toBe(3000);
   });
 });

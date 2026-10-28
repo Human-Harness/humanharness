@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { dataSchema, z } from "@humanharness/harness-sdk";
-import { DataStore, buildDataContext, estimateTokens } from "../src";
+import { DataStore, buildDataContext, buildDataContextParts, estimateTokens } from "../src";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -142,5 +142,25 @@ describe("buildDataContext plugin tables (label given)", () => {
     const labelled = await buildDataContext(store, data, "main", undefined, { label: (n) => `rss.${n}` });
     expect(labelled).toContain("| x | abcdefgh |");
     expect(labelled).not.toMatch(/[\u{e0000}-\u{e007f}]/u);
+  });
+});
+
+describe("buildDataContextParts (context-panel spec §3.1)", () => {
+  it("one part per collection with the rows it loaded; joined, they are buildDataContext", async () => {
+    const { store, data } = setup();
+    await store.put("concepts", { id: "c1", name: "Halves", state: "new", notes: "" }, person);
+    await store.put("concepts", { id: "c2", name: "Thirds", state: "new", notes: "" }, person);
+    await store.put("profile", { name: "Ana", level: "6" }, person);
+    const parts = await buildDataContextParts(store, data, "fracciones", "study");
+    expect(parts.map((p) => [p.collection, p.rows])).toEqual([
+      ["concepts", 2],
+      ["profile", 1],
+    ]);
+    expect(parts.map((p) => p.text).join("\n\n")).toBe(await buildDataContext(store, data, "fracciones", "study"));
+  });
+
+  it("D0: no part without data", async () => {
+    const { store, data } = setup();
+    expect(await buildDataContextParts(store, data, "fracciones", "study")).toEqual([]);
   });
 });

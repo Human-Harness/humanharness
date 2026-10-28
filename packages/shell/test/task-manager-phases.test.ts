@@ -1,131 +1,20 @@
 import { describe, expect, it, vi } from "vitest";
-import type { ModelProfile } from "@humanharness/engines";
 import { type HarnessPhase, type HarnessTimeBox, type InputBlock, type SavedNote, defineBlock, z } from "@humanharness/harness-sdk";
 import type { Event } from "@humanharness/runtime";
-import type { TaskTurnNotice, TaskView } from "@humanharness/ui/client";
-import type { NoteMeta } from "@humanharness/workspace";
-import { type TaskDeps, TaskManager } from "../src/main/task-manager";
+import type { TaskDeps } from "../src/main/task-manager";
 import { CHECKPOINT_PROMPT, CLOSE_PROMPT, PHASE_BACK, modeSection, phasePrompt, phaseSection, phasesSection, recommendSection, resumeMessage, wrapUpPrompt } from "../src/main/task-prompts";
 import { type TasksFile, emptyTasks } from "../src/main/task-store";
-import type { TurnOptions } from "../src/main/turn-controller";
+import { NOW, PHASES, brief, ok, profile, setup } from "./task-manager-fixture";
 
-const ok: Event = { type: "done", ok: true };
-const NOW = "2026-10-26T10:00:00.000Z";
 const NOTE: SavedNote = { title: "Fractions", summary: ["Two halves make a whole."], decisions: [], files: [], open: [] };
 const saveNote: Event = { type: "block", name: "save_note", data: NOTE };
 const ask = (to: string, reason = "Done here"): Event => ({ type: "block", name: "set_phase", data: { to, reason } });
-const PHASES: HarnessPhase[] = [
-  { id: "warmup", label: "Warm-up", brief: "phases/warmup.md", auto: true },
-  { id: "main", label: "Main block", brief: "phases/main.md" },
-  { id: "close", label: "Close", brief: "phases/close.md", close: true },
-];
 const LIST = [
   { id: "warmup", label: "Warm-up" },
   { id: "main", label: "Main block" },
   { id: "close", label: "Close" },
 ];
-const brief = (phase: string) => `Brief of ${phase} in {{language}}.`;
 const text = (id: string, label: string) => ({ id, label, brief: brief(id) });
-const profile: ModelProfile = { engine: "claude", tier: "standard", model: "sonnet", effort: "medium", cap: 200_000 };
-
-/** A task manager over memory: `session` has phases (and, when asked, modes and a time box); `quiz` has none. */
-export function setup(
-  opts: { script?: Event[][]; state?: TasksFile; phases?: HarnessPhase[]; modes?: { modes: string[]; defaultMode?: string }; timeBox?: HarnessTimeBox; gate?: Promise<void>; extra?: Partial<TaskDeps> } = {},
-) {
-  let state = opts.state ?? emptyTasks();
-  const script = [...(opts.script ?? [])];
-  const turns: { message: string; options: TurnOptions }[] = [];
-  const views: TaskView[] = [];
-  const notices: TaskTurnNotice[] = [];
-  const written: { slug: string; note: SavedNote; meta: NoteMeta }[] = [];
-  const emitted: Event[] = [];
-  let clock = Date.parse(NOW);
-  let busy = false;
-  let gate = opts.gate;
-  let n = 0;
-  const timers: { fn: () => void; ms: number }[] = [];
-  const manager = new TaskManager({
-    store: {
-      load: async () => structuredClone(state),
-      save: async (s) => {
-        state = structuredClone(s);
-      },
-    },
-    turns: {
-      isBusy: () => busy,
-      cancel: () => {},
-      send: async (message, options) => {
-        busy = true;
-        turns.push({ message, options });
-        // `gate` holds the first turn only.
-        const g = gate;
-        gate = undefined;
-        await g;
-        for (const e of script.shift() ?? [ok]) options.onEvent?.(e);
-        busy = false;
-      },
-    },
-    actions: {
-      session: { label: "Session", phases: opts.phases ?? PHASES, ...(opts.modes ?? {}), ...(opts.timeBox ? { timeBox: opts.timeBox } : {}) },
-      quiz: { label: "Quiz" },
-    },
-    path: ["session", "quiz"],
-    readPrompt: async (action) => `# Task: ${action}\n\n{{notesIndex}}`,
-    readPhaseBrief: async (_action, phase) => brief(phase),
-    taskTurn: (notice) => void notices.push(notice),
-    language: async () => "en",
-    engine: async () => "claude",
-    notes: async () => [],
-    writeNote: async (slug, note, meta) => void written.push({ slug, note, meta }),
-    endSession: async () => {},
-    changed: (v) => views.push(v),
-    emit: (e) => void emitted.push(e),
-    profileFor: async () => profile,
-    ...(opts.modes
-      ? {
-          modes: { socratic: { label: "Socratic" }, feynman: { label: "Feynman" } },
-          readModeBrief: async (mode: string) => `Brief of ${mode}.`,
-          modeSettings: async () => [],
-          tierOf: async () => "standard" as const,
-        }
-      : {}),
-    minuteMs: 1000,
-    timer: {
-      set: (fn, ms) => {
-        const handle = { fn, ms };
-        timers.push(handle);
-        return handle;
-      },
-      clear: (handle) => {
-        const i = timers.indexOf(handle as (typeof timers)[number]);
-        if (i >= 0) timers.splice(i, 1);
-      },
-    },
-    ...opts.extra,
-    now: () => new Date(clock),
-    newId: () => `t${++n}`,
-  });
-  return {
-    manager,
-    turns,
-    views,
-    notices,
-    written,
-    emitted,
-    timers,
-    state: () => state,
-    advance: (ms: number) => {
-      clock += ms;
-    },
-    /** Moves the clock to the armed timer's moment and fires it. */
-    fire: () => {
-      const handle = timers.at(-1);
-      if (!handle) throw new Error("No timer is armed");
-      clock += handle.ms;
-      handle.fn();
-    },
-  };
-}
 
 describe("TaskManager: phases (task-phases spec §4)", () => {
   it("D0: an action without phases starts and runs exactly as before", async () => {
@@ -426,6 +315,48 @@ describe("TaskManager: modes by phase (task-modes spec §7)", () => {
     await t.manager.start("session", undefined, undefined, "feynman");
     expect(t.state().current).toMatchObject({ suspendedMode: "feynman" });
     expect(t.state().current).not.toHaveProperty("mode");
+  });
+});
+
+describe("TaskManager: the open task keeps its language (language spec §7)", () => {
+  it("changing the language with an open task leaves that task in its language", async () => {
+    let lang = "es";
+    const t = setup({ extra: { language: async () => lang } });
+    await t.manager.start("session");
+    expect(t.turns[0].message).toContain("Brief of warmup in Spanish.");
+    lang = "fr";
+    const r = t.manager.setPhase("main", "t1");
+    await r.accepted;
+    await r.done;
+    expect(t.turns.at(-1)!.message).toContain("Brief of main in Spanish.");
+    // The next task starts in the new language.
+    await t.manager.finish();
+    await t.manager.start("quiz");
+    expect(t.turns.at(-1)!.message).not.toContain("Spanish");
+  });
+
+  it("a mode switch after the setting changed keeps the task's language", async () => {
+    let lang = "es";
+    const t = setup({
+      modes: { modes: ["socratic", "feynman"], defaultMode: "socratic" },
+      phases: [{ id: "main", label: "Main block", brief: "m.md" }],
+      extra: { language: async () => lang, readModeBrief: async (mode: string) => `Brief of ${mode} in {{language}}.` },
+    });
+    await t.manager.start("session");
+    expect(t.turns[0].message).toContain("Brief of socratic in Spanish.");
+    lang = "fr";
+    const pick = t.manager.chooseMode("feynman");
+    expect(await pick.accepted).toMatchObject({ ok: true });
+    await pick.done;
+    expect(t.turns.at(-1)!.message).toContain("Brief of feynman in Spanish.");
+    expect(t.turns.at(-1)!.message).not.toContain("French");
+  });
+
+  it("a resumed task from before a restart reads the saved language, as before", async () => {
+    const current = { id: "t1", action: "session", status: "waiting" as const, startedAt: "", turns: 2, phase: { id: "main", startedAt: NOW }, resume: true as const };
+    const t = setup({ state: { version: 1, actions: {}, current }, extra: { language: async () => "fr" } });
+    await t.manager.ask("Hi");
+    expect(t.turns[0].message).toContain("Brief of main in French.");
   });
 });
 

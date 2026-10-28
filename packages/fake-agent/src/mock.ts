@@ -5,8 +5,15 @@ import { z } from "zod";
 /** Folders the app owns in a work folder: a recording never writes there. */
 export const APP_FOLDERS = [".claude", ".harness"] as const;
 
-/** A path inside the work folder: relative, with no `..` part, and not in an app-owned folder. */
-const folderPath = z
+/** `p` without its trailing slashes: a loop, never a regex (no backtracking on a long run). */
+function trimSlashes(p: string): string {
+  let end = p.length;
+  while (end > 0 && p.charCodeAt(end - 1) === 47) end--;
+  return p.slice(0, end);
+}
+
+/** A path inside the work folder: relative, no `..` part, no drive or UNC, not the folder itself. */
+export const folderRelative = z
   .string()
   .min(1)
   .refine(
@@ -16,10 +23,15 @@ const folderPath = z
       !/^[A-Za-z]:/.test(p) &&
       !p.startsWith("\\\\") &&
       !p.split(/[\\/]/).includes("..") &&
-      !(APP_FOLDERS as readonly string[]).includes(p.split(/[\\/]/).filter((x) => x && x !== ".")[0] ?? "") &&
-      !["", "."].includes(path.posix.normalize(p.replaceAll("\\", "/")).replace(/\/+$/, "")),
-    "must be a relative path to a file inside the folder, outside .claude/ and .harness/",
+      !["", "."].includes(trimSlashes(path.posix.normalize(p.replaceAll("\\", "/")))),
+    "must be a relative path to a file inside the folder",
   );
+
+/** A path a recording may write: inside the work folder and not in an app-owned folder. */
+const folderPath = folderRelative.refine(
+  (p) => !(APP_FOLDERS as readonly string[]).includes(p.split(/[\\/]/).filter((x) => x && x !== ".")[0] ?? ""),
+  "must be a relative path to a file inside the folder, outside .claude/ and .harness/",
+);
 
 const blockSchema = z.strictObject({ tool: z.string().min(1), input: z.record(z.string(), z.unknown()) });
 const writeSchema = z.strictObject({ path: folderPath, content: z.string().nullable() });
@@ -45,6 +57,11 @@ export const mockTurnSchema = z.strictObject({
   blocks: z.array(blockSchema).default([]),
   note: noteSchema.optional(),
   writes: z.array(writeSchema).default([]),
+  /**
+   * Files the turn reads (context-panel spec §7): printed as Read tool calls, so the app records them. Optional, not
+   * defaulted: a recording without reads parses (and is written by `--record`) exactly as before.
+   */
+  reads: z.array(folderRelative).max(20).optional(),
   usage: usageSchema.optional(),
   delayMs: z.number().int().min(0).max(60_000).optional(),
   /**

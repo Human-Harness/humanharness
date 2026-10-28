@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Event, HarnessRuntime, LimitWindow } from "@humanharness/runtime";
 import type { ChatEntry } from "@humanharness/ui";
-import { EngineUnavailable, TurnController, type TurnOptions, memoise } from "../src/main/turn-controller";
+import { EngineUnavailable, TurnController, type TurnOptions, forWindow, memoise } from "../src/main/turn-controller";
 import type { UsageMeta } from "../src/main/usage-log";
 
 type Emit = (e: Event) => void;
@@ -765,5 +765,38 @@ describe("TurnController: phases (task-phases spec §4.4, §5, §6)", () => {
     for (const key of ["phase", "timeUp"]) expect(t.entries[0]).not.toHaveProperty(key);
     expect(t.metas[0]).not.toHaveProperty("taskPhase");
     expect(t.rt.send.mock.calls[0][2]).toEqual({ trailer: { task: "t1", action: "quiz" } });
+  });
+});
+
+describe("context record fields stay in main (context-panel spec, D0)", () => {
+  it("forWindow strips paths and tool, and leaves every other event as it is", () => {
+    const start: Event = { type: "activity", id: "r1", kind: "read", detail: "a.md", state: "start", paths: ["/home/me/w/a.md"], tool: { server: "x", name: "y" } };
+    expect(forWindow(start)).toEqual({ type: "activity", id: "r1", kind: "read", detail: "a.md", state: "start" });
+    const plain: Event = { type: "activity", id: "e1", kind: "edit", detail: "a.md", state: "start" };
+    expect(forWindow(plain)).toBe(plain);
+    const text: Event = { type: "text", delta: "hi" };
+    expect(forWindow(text)).toBe(text);
+  });
+
+  it("the turn's listener gets the paths; the window and the chat log don't", async () => {
+    const fake = fakeRuntime();
+    const { controller, entries, events } = setup({ ensureRuntime: async () => fake.runtime });
+    const heard: Event[] = [];
+    const sent = controller.send("hi", { onEvent: (e) => heard.push(e) } as TurnOptions);
+    await vi.waitFor(() => expect(fake.send).toHaveBeenCalled());
+    fake.finish([
+      { type: "activity", id: "r1", kind: "read", detail: "a.md", state: "start", paths: ["/home/me/w/a.md"] },
+      { type: "activity", id: "m1", kind: "exec", detail: "mcp.x.y", state: "start", tool: { server: "secretserver", name: "y" } },
+      { type: "done", ok: true },
+    ]);
+    await sent;
+    expect(heard[0]).toMatchObject({ paths: ["/home/me/w/a.md"] });
+    expect(heard[1]).toMatchObject({ tool: { server: "secretserver", name: "y" } });
+    expect(events.filter((e) => e.type === "activity")).toEqual([
+      { type: "activity", id: "r1", kind: "read", detail: "a.md", state: "start" },
+      { type: "activity", id: "m1", kind: "exec", detail: "mcp.x.y", state: "start" },
+    ]);
+    expect(JSON.stringify(entries)).not.toContain("/home/me");
+    expect(JSON.stringify(entries)).not.toContain("secretserver");
   });
 });

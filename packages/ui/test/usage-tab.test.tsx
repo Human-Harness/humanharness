@@ -105,6 +105,8 @@ describe("Settings › Uso with an engine that reports limits", () => {
     client.usage = { limits: null, estimates: {}, tokens: {}, primary: "five_hour" };
     await renderIn("en", <Sheet client={client} />);
     expect(await screen.findByText("I don't know how much you've used yet: Claude reports it with your first reply.")).toBeTruthy();
+    // That line shows before the usage arrives too: the table comes with it.
+    await screen.findByRole("table");
     expect(rows()).toEqual([
       ["Tidy up", "Medium use · I'll tell you how much once you use it"],
       ["Research", "High use · I'll tell you how much once you use it"],

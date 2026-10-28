@@ -142,6 +142,8 @@ export class PluginsController {
   private detached = false;
   /** Dev plugins the person turned off (no state file for them): kept off across rescans until turned on. */
   private readonly devOff = new Set<string>();
+  /** Dev plugins the core turned off after crashes (in devOff too): their row says so until turned on. */
+  private readonly devCrashed = new Set<string>();
   private readonly now: () => Date;
   private readonly clock: () => number;
 
@@ -426,7 +428,11 @@ export class PluginsController {
       void this.serial(async () => {
         if (r.stopped) return;
         await this.stopPlugin(id);
-        await this.safe(() => c.state.setState(id, { on: false, offReason: "crashed" }));
+        // A dev plugin has no state file: kept off in memory, or the next rescan would start it again.
+        if (r.entry.origin === "dev") {
+          this.devOff.add(id);
+          this.devCrashed.add(id);
+        } else await this.safe(() => c.state.setState(id, { on: false, offReason: "crashed" }));
         await this.raise(c, r, { key: "crashed", severity: "action", title: `${r.entry.manifest.name} was turned off`, body: CRASHED_BODY }).catch(() => undefined);
         await this.afterRunningChanged();
         await this.push();
@@ -557,7 +563,7 @@ export class PluginsController {
     const state = c ? await c.state.state(e.id) : null;
     const rs = reviewStatus(e, state, this.harnessOn(e.id));
     const r = this.running.get(e.id);
-    const row: PluginRow = { ...base, status: r ? "on" : rs.status === "on" ? "off" : rs.status };
+    const row: PluginRow = { ...base, status: r ? "on" : this.devCrashed.has(e.id) ? "crashed" : rs.status === "on" ? "off" : rs.status };
     if (r && rs.updated) row.updated = true;
     if (r?.loadError) {
       row.status = "error";
@@ -619,6 +625,7 @@ export class PluginsController {
       if (!c) return { ok: false, message: NOT_SET_UP };
       if (!on) {
         await this.stopPlugin(id);
+        this.devCrashed.delete(id);
         if (e.origin === "dev") this.devOff.add(id);
         else await c.state.setState(id, { on: false, offReason: undefined });
         await this.afterRunningChanged();
@@ -635,6 +642,7 @@ export class PluginsController {
         await c.state.setState(id, { on: true, offReason: undefined, approved });
       }
       this.devOff.delete(id);
+      this.devCrashed.delete(id);
       this.crashes.get(id)?.reset();
       await this.startPlugin(c, e);
       await this.afterRunningChanged();
@@ -658,6 +666,7 @@ export class PluginsController {
       }
       if (!c) return { ok: false, message: NOT_SET_UP };
       this.devOff.delete(id);
+      this.devCrashed.delete(id);
       if (e.origin !== "dev") await c.state.setState(id, { on: true, offReason: undefined, approved: this.snapshot(e), seenHash: e.distHash });
       this.crashes.get(id)?.reset();
       if (!this.running.has(id)) await this.startPlugin(c, e);

@@ -478,6 +478,35 @@ describe("PluginsController: crashes and the run limit", () => {
     expect(await t.ctl.setOn("oncall", true)).toEqual({ ok: true });
   });
 
+  it("a dev plugin turned off after crashes stays off across a rescan and says why, until turned on", async () => {
+    const dev = path.dirname(await writePlugin(await tmp(), "devp", { name: "Dev" }));
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    let now = 0;
+    const t = await setup({ over: { devDirs: [dev], clock: () => now } });
+    await t.ctl.start();
+    for (let i = 0; i < 4; i++) {
+      const starts = t.host.started.length;
+      t.gone("devp");
+      await vi.advanceTimersByTimeAsync(1000 * 2 ** i);
+      await vi.waitFor(() => expect(t.host.started.length).toBe(starts + 1));
+      now += 1000;
+    }
+    t.gone("devp");
+    vi.useRealTimers();
+    await until(async () => (await t.ctl.view()).plugins[0].status === "crashed");
+    // Opening Settings › Plugins rescans: the plugin must not start again.
+    const starts = t.host.started.length;
+    await t.ctl.rescan();
+    expect(t.host.started.length).toBe(starts);
+    expect((await t.ctl.view()).plugins[0].status).toBe("crashed");
+    expect((await t.ctl.attention.view()).items).toMatchObject([{ plugin: "devp", key: "crashed", title: "Dev was turned off" }]);
+    // No state file for a dev plugin (its approval is its own manifest).
+    await expect(fs.readdir(path.join(t.appDir, "plugin-state"))).rejects.toThrow();
+    expect(await t.ctl.setOn("devp", true)).toEqual({ ok: true });
+    expect(t.host.started.length).toBe(starts + 1);
+    expect((await t.ctl.view()).plugins[0].status).toBe("on");
+  });
+
   it("a run over the limit fails, the window reloads, and its run id is dead", async () => {
     let late: Ctx | undefined;
     const t = await setup({

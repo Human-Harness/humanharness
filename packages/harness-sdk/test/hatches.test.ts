@@ -1,5 +1,8 @@
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { defineHarness, hasLinkedFolders, hatchProblems } from "../src";
+import { defineHarness, hasJobs, hasLinkedFolders, hatchProblems, isConcurrent, loadHarness, resolveInHarness } from "../src";
 
 const base = {
   id: "t", name: "T", core: "^0.1.0", engines: ["claude"], folder: { suggested: "Documents/T" }, instructions: "./AGENTS.md",
@@ -41,5 +44,30 @@ describe("linkedFolders (hatches spec §3.1)", () => {
 
   it("an empty declaration counts as none", () => {
     expect(hasLinkedFolders(defineHarness({ ...scoped, linkedFolders: {} }))).toBe(false);
+  });
+});
+
+describe("the hatches fixture harness (hatches part 1, e2e)", () => {
+  const dir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../fake-agent/fixtures/hatches-harness");
+
+  it("loads as a plain scoped harness with one write key of many folders", async () => {
+    const h = await loadHarness(path.join(dir, "harness.config.ts"));
+    expect(h.id).toBe("hatches");
+    expect(h.scopes).toEqual({ label: "Project", plural: "Projects" });
+    expect(h.permissions).toEqual({ edit: "folder", exec: false, web: false });
+    expect(h.linkedFolders).toEqual({ repos });
+    expect(hasLinkedFolders(h)).toBe(true);
+    expect(hatchProblems(h)).toEqual([]);
+    // Plain mode: no `parallel`, no jobs.
+    expect(isConcurrent(h)).toBe(false);
+    expect(hasJobs(h)).toBe(false);
+    expect(Object.keys(h.actions)).toEqual(["implement"]);
+  });
+
+  it("has every file the app build needs", async () => {
+    const h = await loadHarness(path.join(dir, "harness.config.ts"));
+    expect(fs.readFileSync(resolveInHarness(h, h.actions.implement.prompt), "utf8")).toMatch(/^# Task: implement\n/);
+    expect(fs.existsSync(resolveInHarness(h, h.instructions))).toBe(true);
+    expect(fs.existsSync(path.join(dir, "ui", "App.tsx"))).toBe(true);
   });
 });

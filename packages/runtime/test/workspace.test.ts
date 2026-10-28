@@ -212,6 +212,32 @@ describe("Workspace and slots (parallel spec §4)", () => {
     expect(fs.readFileSync(path.join(folder, "AGENTS.md"), "utf8")).toContain("Answer at length.");
   });
 
+  it("a turn sent while AGENTS.md is being written waits for the write (Decision 12)", async () => {
+    let sentences = ["Answer briefly."];
+    const { ws, folder } = await setup({ steps: [claudeResultLine(true)] }, { instructionSettings: async () => sentences });
+    const a = await ws.openSlot({ key: "A" });
+    const order: string[] = [];
+    const realOpen = TurnLedger.prototype.open;
+    vi.spyOn(TurnLedger.prototype, "open").mockImplementation(function (this: TurnLedger, ...args) {
+      order.push("open");
+      return realOpen.apply(this, args);
+    });
+    const realRename = fs.promises.rename;
+    let turn: ReturnType<typeof a.send> | undefined;
+    vi.spyOn(fs.promises, "rename").mockImplementation(async (from, to) => {
+      // The send lands after the last anyRunning check, while the file is being replaced.
+      if (String(to).endsWith("AGENTS.md")) turn ??= a.send("x", () => {});
+      await realRename(from, to);
+      if (String(to).endsWith("AGENTS.md")) order.push("written");
+    });
+    sentences = ["Answer at length."];
+    expect(await ws.refreshInstructions()).toBe(true);
+    expect(turn).toBeDefined();
+    await turn!.done;
+    expect(order).toEqual(["written", "open"]);
+    expect(fs.readFileSync(path.join(folder, "AGENTS.md"), "utf8")).toContain("Answer at length.");
+  });
+
   it("refreshInstructions refuses while any slot runs (Decision 12)", async () => {
     const { ws } = await setup({ steps: [{ sleep: 500 }, claudeResultLine(true)] });
     const a = await ws.openSlot({ key: "A" });

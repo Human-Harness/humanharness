@@ -7,7 +7,7 @@ import { materialServerSpec } from "@humanharness/material/light";
 import { History, type HistoryTrailer, START, appHistoryKeep, prepareFolder, refreshInstructions, writeInstructions } from "@humanharness/workspace";
 import { AcpTransport } from "./acp";
 import { ClaudeCliTransport } from "./claude-cli";
-import type { Event } from "./events";
+import { type Event, fail } from "./events";
 import type { RunningTurn, RuntimeOptions } from "./runtime";
 import { type Session, type Transport, type TransportOptions, acpFields } from "./transport";
 import { type TurnAttribution, beginTurn, endTurn } from "./turn-commit";
@@ -111,6 +111,9 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
   // Refreshes run one at a time, and close waits for the last one: once closed, this workspace never writes AGENTS.md.
   let closing = false;
   let refreshing: Promise<boolean> = Promise.resolve(false);
+  // The AGENTS.md write under way (after a refresh's last anyRunning check): a turn sent meanwhile waits for it, so it
+  // never opens with the file replaced right after.
+  let writing: Promise<boolean> | null = null;
 
   async function openSlot(o: SlotOptions): Promise<SessionSlot> {
     if (closing) throw new Error("The workspace is closing");
@@ -219,6 +222,12 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
         let w: TurnWindow | undefined;
         const done = (async () => {
           try {
+            // Only when a write is under way: otherwise the window opens before send returns, as always.
+            while (writing) await writing.catch(() => false);
+            if (controller.signal.aborted || isClosed) {
+              emitOnce(fail("cancelled"));
+              return;
+            }
             w = await beginTurn(history, ledger, o.key, options.trailer);
             let final: Event | undefined;
             emitCurrent = emitOnce;
@@ -302,7 +311,13 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
         // And again after the settings arrive: a turn may have started while they were read. (A refresh under way when
         // close begins still writes: close waits for it.)
         if (ledger.anyRunning()) return false;
-        return refreshInstructions({ folder, base, language: opts.language, blocks, references, ...(now ? { settings: now } : {}), ...withMaterial });
+        const write = refreshInstructions({ folder, base, language: opts.language, blocks, references, ...(now ? { settings: now } : {}), ...withMaterial });
+        writing = write;
+        try {
+          return await write;
+        } finally {
+          writing = null;
+        }
       };
       refreshing = refreshing.catch(() => false).then(run);
       return refreshing;

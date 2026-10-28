@@ -1,10 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import { PluginChannel } from "../src/main/plugin-channel";
 
+const ready = (ch: PluginChannel) => ch.handle("ready", { sources: [] });
+
 describe("PluginChannel (Decision 10)", () => {
   it("hands queued runs to `next` and resolves the run on `done`", async () => {
     const ctx = vi.fn(async () => ({ ok: true as const, value: 1 }));
     const ch = new PluginChannel({ ctx, idleMs: 25_000 });
+    await ready(ch);
     const run = ch.run("r1", "queues");
     expect(await ch.handle("next", undefined)).toEqual({ kind: "run", runId: "r1", source: "queues" });
     await ch.handle("done", { runId: "r1", ok: false, error: "HTTP 500" });
@@ -17,6 +20,7 @@ describe("PluginChannel (Decision 10)", () => {
 
   it("a waiting `next` gets a run queued after it", async () => {
     const ch = new PluginChannel({ ctx: async () => ({ ok: true, value: null }), idleMs: 25_000 });
+    await ready(ch);
     const next = ch.handle("next", null);
     void ch.run("r1", "s").catch(() => {});
     expect(await next).toEqual({ kind: "run", runId: "r1", source: "s" });
@@ -26,6 +30,7 @@ describe("PluginChannel (Decision 10)", () => {
     vi.useFakeTimers();
     try {
       const ch = new PluginChannel({ ctx: async () => ({ ok: true, value: null }), idleMs: 25_000 });
+      await ready(ch);
       const next = ch.handle("next", undefined);
       await vi.advanceTimersByTimeAsync(25_000);
       expect(await next).toEqual({ kind: "idle" });
@@ -67,6 +72,7 @@ describe("PluginChannel (Decision 10)", () => {
 
   it("fail() rejects one run and drops it from the queue; a late done is ignored", async () => {
     const ch = new PluginChannel({ ctx: async () => ({ ok: true, value: null }), idleMs: 25_000 });
+    await ready(ch);
     const run = ch.run("r1", "s");
     ch.fail("r1", "The sync took too long");
     await expect(run).rejects.toThrow("too long");
@@ -74,5 +80,17 @@ describe("PluginChannel (Decision 10)", () => {
     const next = ch.handle("next", null);
     void ch.run("r2", "s").catch(() => {});
     expect(await next).toMatchObject({ runId: "r2" });
+  });
+
+  it("hands runs only to a page that sent `ready`: a `next` before it, or after a failed load, is refused", async () => {
+    const ch = new PluginChannel({ ctx: async () => ({ ok: true, value: null }), idleMs: 25_000 });
+    const run = ch.run("r1", "s");
+    await expect(ch.handle("next", null)).rejects.toThrow(/not ready/);
+    await ready(ch);
+    expect(await ch.handle("next", null)).toMatchObject({ kind: "run", runId: "r1" });
+    void run.catch(() => {});
+    const bad = new PluginChannel({ ctx: async () => ({ ok: true, value: null }), idleMs: 25_000 });
+    await bad.handle("ready", { error: "SyntaxError: x" });
+    await expect(bad.handle("next", null)).rejects.toThrow(/not ready/);
   });
 });

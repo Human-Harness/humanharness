@@ -45,8 +45,8 @@ export interface BackendHost {
   /** Opens the plugin's backend window on `channel`; `gone` when it crashed or was killed. */
   start(p: { id: string; dist: string; channel: PluginChannel; gone(reason: string): void }): Promise<void>;
   stop(id: string): Promise<void>;
-  /** Reloads the window (a run over the limit); the new page talks on the same channel. */
-  reload(id: string): Promise<void>;
+  /** Reloads the window (a run over the limit); the new page talks on the new `channel` (the old one is closed). */
+  reload(p: { id: string; channel: PluginChannel; gone(reason: string): void }): Promise<void>;
   stopAll(): Promise<void>;
 }
 
@@ -131,6 +131,10 @@ export class PluginsController {
   private instructionsStale = false;
   private applied: string | null = null;
   private runtimeHasExtra = false;
+  /** The base changed under the running plugins without rebase(): nothing answers until rebase() runs. */
+  private detached = false;
+  /** Dev plugins the person turned off (no state file for them): kept off across rescans until turned on. */
+  private readonly devOff = new Set<string>();
   private readonly now: () => Date;
   private readonly clock: () => number;
 
@@ -155,6 +159,7 @@ export class PluginsController {
     return this.serial(async () => {
       await this.stopAll();
       this.ctx = null;
+      this.detached = false;
       await this.startAll();
     });
   }
@@ -176,7 +181,7 @@ export class PluginsController {
     if (c) {
       for (const e of this.loaded()) {
         const rs = reviewStatus(e, await c.state.state(e.id), this.harnessOn(e.id));
-        if (!rs.run) continue;
+        if (!rs.run || this.devOff.has(e.id)) continue;
         if (rs.approve) await this.safe(() => c.state.setState(e.id, { on: true, approved: this.snapshot(e), seenHash: e.distHash }));
         await this.startPlugin(c, e);
       }
@@ -195,11 +200,29 @@ export class PluginsController {
     this.entries = this.active ? await loadPlugins({ harness: this.d.harness, pointers: this.d.pointers, devDirs: this.d.devDirs }) : [];
   }
 
+  /**
+   * The current base's context. The base changing under running plugins without rebase() (the caller's job) must not
+   * leak the old base's data into the new one: everything of the old base stops, and nothing answers until rebase().
+   */
   private async base(): Promise<BaseCtx | null> {
     const base = await this.d.base().catch(() => null);
-    if (base === null) return null;
-    if (this.ctx?.base !== base) this.ctx = { base, state: new PluginStateStore(base, this.d.appDir), data: new Map(), attention: null };
+    if (this.detached) return null;
+    if (this.ctx === null) {
+      if (base === null) return null;
+      this.ctx = { base, state: new PluginStateStore(base, this.d.appDir), data: new Map(), attention: null };
+    }
+    if (this.ctx.base !== base) {
+      this.detach();
+      return null;
+    }
     return this.ctx;
+  }
+
+  /** Stops every plugin of the old base at once (no awaiting: a caller may be outside the serial queue). */
+  private detach(): void {
+    this.detached = true;
+    this.ctx = null;
+    for (const id of [...this.running.keys()]) void this.stopPlugin(id);
   }
 
   private loaded(): Loaded[] {
@@ -306,6 +329,17 @@ export class PluginsController {
 
   /** A new channel and window for `r` (at start and after a crash). */
   private async openBackend(c: BaseCtx, r: Running): Promise<void> {
+    const channel = this.newChannel(c, r);
+    try {
+      await this.d.host.start({ id: r.entry.id, dist: r.entry.dist, channel, gone: (reason) => this.gone(c, r, channel, reason) });
+    } catch (err) {
+      r.loadError = "The backend could not start";
+      this.log(`${r.entry.id}: the backend could not start`, err);
+    }
+  }
+
+  /** A fresh channel for each page load (start, restart, reload), now `r`'s: a dead page's waiting `next` gets nothing. */
+  private newChannel(c: BaseCtx, r: Running): PluginChannel {
     const channel = new PluginChannel({ ctx: (runId, name, args) => r.broker.call(runId, name, args), idleMs: this.d.idleMs ?? IDLE_MS });
     r.channel = channel;
     r.loadError = undefined;
@@ -321,12 +355,7 @@ export class PluginsController {
         void this.push();
       },
     );
-    try {
-      await this.d.host.start({ id: r.entry.id, dist: r.entry.dist, channel, gone: (reason) => this.gone(c, r, channel, reason) });
-    } catch (err) {
-      r.loadError = "The backend could not start";
-      this.log(`${r.entry.id}: the backend could not start`, err);
-    }
+    return channel;
   }
 
   private async runSource(c: BaseCtx, r: Running, source: string): Promise<{ writes: number }> {
@@ -337,6 +366,8 @@ export class PluginsController {
       return r.broker.endRun(runId);
     } catch (err) {
       r.broker.endRun(runId);
+      // Turned off or removed meanwhile: nothing to log (a late write could recreate a removed plugin's error log).
+      if (r.stopped) throw new Error("The plugin was turned off");
       // The backend's text may echo a key: redacted before the scheduler, the log or the inbox see it (B6).
       const message = await this.redacted(r, err instanceof Error ? err.message : String(err));
       await this.appendError(c, r.entry.id, { source, message });
@@ -355,7 +386,12 @@ export class PluginsController {
     }
     void this.serial(async () => {
       if (r.stopped) return;
-      await this.d.host.reload(r.entry.id).catch((err: unknown) => this.log(`${r.entry.id}: reload failed`, err));
+      // The old page dies with every run it had: its channel closes, and the new page gets a new one.
+      const old = r.channel;
+      r.broker.killAll();
+      const channel = this.newChannel(c, r);
+      old.close();
+      await this.d.host.reload({ id: r.entry.id, channel, gone: (reason) => this.gone(c, r, channel, reason) }).catch((err: unknown) => this.log(`${r.entry.id}: reload failed`, err));
       this.crashed(c, r, `A sync of ${source} took too long; the backend was reloaded`);
     });
   }
@@ -534,6 +570,7 @@ export class PluginsController {
       name: e.manifest.name,
       version: e.manifest.version,
       folder: e.folder,
+      distHash: e.distHash ?? "",
       lines: permissionLines(e.manifest.permissions),
       ...(added && added.length > 0 ? { added } : {}),
     };
@@ -554,7 +591,7 @@ export class PluginsController {
       for (const e of this.loaded()) {
         if (this.running.has(e.id)) continue;
         const rs = reviewStatus(e, await c.state.state(e.id), this.harnessOn(e.id));
-        if (!rs.run) continue;
+        if (!rs.run || this.devOff.has(e.id)) continue;
         if (rs.approve) await this.safe(() => c.state.setState(e.id, { on: true, approved: this.snapshot(e), seenHash: e.distHash }));
         await this.startPlugin(c, e);
       }
@@ -571,7 +608,8 @@ export class PluginsController {
       if (!c) return { ok: false, message: NOT_SET_UP };
       if (!on) {
         await this.stopPlugin(id);
-        if (e.origin !== "dev") await c.state.setState(id, { on: false, offReason: undefined });
+        if (e.origin === "dev") this.devOff.add(id);
+        else await c.state.setState(id, { on: false, offReason: undefined });
         await this.afterRunningChanged();
         await this.push();
         await this.pushAttention();
@@ -585,6 +623,7 @@ export class PluginsController {
         if (added === null || added.length > 0) return { ok: false, review: this.review(e, added ?? undefined) };
         await c.state.setState(id, { on: true, offReason: undefined, approved });
       }
+      this.devOff.delete(id);
       this.crashes.get(id)?.reset();
       await this.startPlugin(c, e);
       await this.afterRunningChanged();
@@ -594,12 +633,15 @@ export class PluginsController {
     });
   }
 
-  async approve(id: string): Promise<PluginResult> {
+  /** Approves what the review showed: `distHash` is the review's; a plugin that changed since is refused (B8). */
+  async approve(id: string, distHash: string): Promise<PluginResult> {
     return this.serial(async () => {
       const e = this.entry(id);
       if (!e) return { ok: false, message: UNKNOWN };
+      if (typeof distHash !== "string" || distHash !== (e.distHash ?? "")) return { ok: false, message: "This plugin changed; review it again" };
       const c = await this.base();
       if (!c) return { ok: false, message: NOT_SET_UP };
+      this.devOff.delete(id);
       if (e.origin !== "dev") await c.state.setState(id, { on: true, offReason: undefined, approved: this.snapshot(e), seenHash: e.distHash });
       this.crashes.get(id)?.reset();
       if (!this.running.has(id)) await this.startPlugin(c, e);
@@ -910,6 +952,7 @@ export class PluginsController {
 
   /** The settings sentences of running plugins, each as `<Plugin name>: <sentence>` (Decision 16). */
   async sentences(): Promise<string[]> {
+    await this.base(); // a base that changed without rebase(): the old base's plugins stop first
     const out: string[] = [];
     const c = this.ctx;
     for (const r of this.running.values()) {
@@ -936,6 +979,7 @@ export class PluginsController {
 
   /** The agent's `data_get`/`data_query` on `<id>.<collection>`: only a running plugin's `agent: "read"` collection, never a write. */
   async agentData(request: unknown): Promise<unknown> {
+    await this.base(); // a base that changed without rebase(): the old base's plugins stop first
     const name = isRecord(request) ? request.collection : undefined;
     const dot = typeof name === "string" ? name.indexOf(".") : -1;
     if (typeof name !== "string" || dot <= 0) throw new DataError("refused", "Unknown collection");
@@ -947,6 +991,7 @@ export class PluginsController {
 
   /** The plugin tables for a new session's first message, after one header line (Decision 16); "" when none. */
   async contextTables(action: string | undefined): Promise<string> {
+    await this.base(); // a base that changed without rebase(): the old base's plugins stop first
     const tables: string[] = [];
     for (const r of this.running.values()) {
       const text = await r.data.agentContext(action).catch(() => "");

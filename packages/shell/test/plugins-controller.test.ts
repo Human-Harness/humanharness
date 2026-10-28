@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { HarnessPlugins } from "@humanharness/harness-sdk";
+import type { PluginReview } from "@humanharness/ui/client";
 import type { PluginChannel } from "../src/main/plugin-channel";
 import { PluginPointers } from "../src/main/plugin-load";
 import { SecretStore } from "../src/main/plugin-secrets";
@@ -56,7 +57,18 @@ type Source = (ctx: Ctx) => Promise<void>;
 function fakeHost(backends: Record<string, Record<string, Source>>) {
   const channels = new Map<string, PluginChannel>();
   const gones = new Map<string, (reason: string) => void>();
-  const loop = async (id: string, channel: PluginChannel) => {
+  /** One page per window load: a reload kills the old page, which then drops whatever it is handed. */
+  const pages = new Map<string, { alive: boolean }>();
+  const open = (p: { id: string; channel: PluginChannel; gone(reason: string): void }) => {
+    const old = pages.get(p.id);
+    if (old) old.alive = false;
+    const page = { alive: true };
+    pages.set(p.id, page);
+    channels.set(p.id, p.channel);
+    gones.set(p.id, p.gone);
+    void loop(p.id, p.channel, page);
+  };
+  const loop = async (id: string, channel: PluginChannel, page: { alive: boolean }) => {
     const sources = backends[id] ?? {};
     await channel.handle("ready", { sources: Object.keys(sources) });
     while (!channel.isClosed) {
@@ -66,7 +78,7 @@ function fakeHost(backends: Record<string, Record<string, Source>>) {
       } catch {
         return;
       }
-      if (cmd.kind !== "run") continue;
+      if (cmd.kind !== "run" || !page.alive) continue;
       const runId = cmd.runId!;
       const call = async (name: string, ...args: unknown[]) => {
         const a = (await channel.handle("ctx", { runId, name, args })) as { ok: boolean; value?: unknown; refused?: string };
@@ -91,14 +103,12 @@ function fakeHost(backends: Record<string, Record<string, Source>>) {
     stopped: [],
     start: vi.fn(async (p) => {
       host.started.push(p.id);
-      channels.set(p.id, p.channel);
-      gones.set(p.id, p.gone);
-      void loop(p.id, p.channel);
+      open(p);
     }),
     stop: vi.fn(async (id: string) => {
       host.stopped.push(id);
     }),
-    reload: vi.fn(async () => {}),
+    reload: vi.fn(async (p: { id: string; channel: PluginChannel; gone(reason: string): void }) => open(p)),
     stopAll: vi.fn(async () => {}),
   };
   return { host, channels, gone: (id: string, reason = "crashed") => gones.get(id)!(reason) };
@@ -223,7 +233,7 @@ describe("PluginsController: starting and reviews", () => {
     expect((await t.ctl.view()).plugins).toMatchObject([{ id: "mine", status: "off", origin: "local", folder }]);
     expect(t.host.start).not.toHaveBeenCalled();
     expect(await t.ctl.pick()).toMatchObject({ ok: false, message: expect.stringMatching(/already/) });
-    expect(await t.ctl.approve("mine")).toEqual({ ok: true });
+    expect(await t.ctl.approve("mine", (pick as { review: PluginReview }).review.distHash)).toEqual({ ok: true });
     expect(t.host.started).toEqual(["mine"]);
     expect((await t.ctl.view()).plugins[0].status).toBe("on");
   });
@@ -247,14 +257,72 @@ describe("PluginsController: starting and reviews", () => {
     const v = await t.ctl.rescan();
     expect(v.plugins[0]).toMatchObject({ status: "review" });
     expect(t.host.stopped).toEqual(["oncall"]);
-    expect(await t.ctl.setOn("oncall", true)).toMatchObject({ ok: false, review: { added: [{ kind: "host", value: "evil.example.org" }] } });
-    expect(await t.ctl.approve("oncall")).toEqual({ ok: true });
+    const asked = await t.ctl.setOn("oncall", true);
+    expect(asked).toMatchObject({ ok: false, review: { added: [{ kind: "host", value: "evil.example.org" }] } });
+    expect(await t.ctl.approve("oncall", (asked as { review: PluginReview }).review.distHash)).toEqual({ ok: true });
     expect((await t.ctl.view()).plugins[0].status).toBe("on");
     await fs.writeFile(path.join(dist, "backend.js"), "export default { sources: { s: async () => { /* v2 */ } } };\n");
     const v2 = await t.ctl.rescan();
     expect(v2.plugins[0]).toMatchObject({ status: "on", updated: true });
     await t.ctl.detail("oncall");
     expect((await t.ctl.view()).plugins[0].updated).toBeUndefined();
+  });
+
+  it("B8: approve carries the hash the review showed; a plugin.json widened after the review is refused", async () => {
+    const t = await setup({ plugins: { bundled: ["oncall"], on: ["oncall"], local: false } });
+    const dist = await bundled(t.root, "oncall", { permissions: { hosts: ["a.example.com"] } });
+    await t.ctl.start();
+    const manifest = JSON.parse(await fs.readFile(path.join(dist, "plugin.json"), "utf8"));
+    const widen = async (hosts: string[]) => {
+      await fs.writeFile(path.join(dist, "plugin.json"), JSON.stringify({ ...manifest, permissions: { hosts } }));
+      await t.ctl.rescan();
+    };
+    await widen(["a.example.com", "b.example.org"]);
+    const shown = (await t.ctl.setOn("oncall", true)) as { review: PluginReview };
+    expect(shown.review.distHash).toMatch(/^[0-9a-f]{64}$/);
+    // Between the review and the click the plugin asks for more.
+    await widen(["a.example.com", "b.example.org", "evil.example.org"]);
+    expect(await t.ctl.approve("oncall", shown.review.distHash)).toEqual({ ok: false, message: "This plugin changed; review it again" });
+    expect(await t.ctl.approve("oncall", undefined as unknown as string)).toMatchObject({ ok: false });
+    expect(t.host.started).toEqual(["oncall"]);
+    expect((await t.ctl.view()).plugins[0].status).toBe("review");
+    const again = (await t.ctl.setOn("oncall", true)) as { review: PluginReview };
+    expect(again.review.added).toContainEqual({ kind: "host", value: "evil.example.org" });
+    expect(await t.ctl.approve("oncall", again.review.distHash)).toEqual({ ok: true });
+    expect(t.host.started).toEqual(["oncall", "oncall"]);
+  });
+
+  it("a dev plugin turned off stays off across a rescan, until turned on", async () => {
+    const dev = path.dirname(await writePlugin(await tmp(), "devp"));
+    const t = await setup({ over: { devDirs: [dev] } });
+    await t.ctl.start();
+    expect(t.host.started).toEqual(["devp"]);
+    expect(await t.ctl.setOn("devp", false)).toEqual({ ok: true });
+    await t.ctl.rescan();
+    expect(t.host.started).toEqual(["devp"]);
+    expect((await t.ctl.view()).plugins[0].status).toBe("off");
+    expect(await t.ctl.setOn("devp", true)).toEqual({ ok: true });
+    expect(t.host.started).toEqual(["devp", "devp"]);
+  });
+
+  it("turning off or removing during a run logs nothing and leaves no error log behind", async () => {
+    const t = await setup({ plugins: { bundled: [], on: [], local: true }, backends: { mine: { s: () => new Promise(() => {}) } } });
+    const folder = path.dirname(await writePlugin(await tmp(), "mine", { permissions: { secrets: [{ id: "tok", label: "Token" }] } }));
+    t.deps.pickFolder.mockResolvedValue(folder);
+    await t.ctl.start();
+    const pick = (await t.ctl.pick()) as { token: string; review: PluginReview };
+    await t.ctl.add(pick.token);
+    await t.ctl.setSecret("mine", "tok", "secret-value-123");
+    await t.ctl.approve("mine", pick.review.distHash);
+    await until(async () => (await t.ctl.detail("mine"))!.sources[0].running);
+    await t.ctl.setOn("mine", false);
+    await new Promise((r) => setTimeout(r, 50));
+    expect((await t.ctl.detail("mine"))?.errors).toEqual([]);
+    await t.ctl.setOn("mine", true);
+    await until(async () => (await t.ctl.detail("mine"))!.sources[0].running);
+    expect(await t.ctl.remove("mine")).toEqual({ ok: true });
+    await new Promise((r) => setTimeout(r, 100));
+    expect((await files(t.base)).filter((f) => f.includes("mine"))).toEqual([]);
   });
 
   it("setOn false stops the backend; setOn true without an approval returns the review and starts nothing", async () => {
@@ -280,8 +348,9 @@ describe("PluginsController: starting and reviews", () => {
     const folder = path.dirname(await writePlugin(await tmp(), "mine", { data: { queues: QUEUES }, permissions: { secrets: [{ id: "tok", label: "Token" }] } }));
     t.deps.pickFolder.mockResolvedValue(folder);
     await t.ctl.start();
-    await t.ctl.add(((await t.ctl.pick()) as { token: string }).token);
-    await t.ctl.approve("mine");
+    const pick = (await t.ctl.pick()) as { token: string; review: PluginReview };
+    await t.ctl.add(pick.token);
+    await t.ctl.approve("mine", pick.review.distHash);
     expect(await t.ctl.setSecret("mine", "tok", "secret-value-123")).toEqual({ ok: true });
     await until(async () => (await t.ctl.attention.view()).items.length === 1);
     expect(await t.ctl.remove("bun")).toMatchObject({ ok: false });
@@ -402,9 +471,24 @@ describe("PluginsController: crashes and the run limit", () => {
     await bundled(t.root, "oncall", { data: { queues: QUEUES } });
     await t.ctl.start();
     await until(() => (t.host.reload as ReturnType<typeof vi.fn>).mock.calls.length === 1);
-    await expect(late!.data.put("queues", { key: "x" })).rejects.toThrow(/ended/);
+    // The old page's channel is closed and its run ids are dead.
+    await expect(late!.data.put("queues", { key: "x" })).rejects.toThrow(/ended|stopped/);
     // The log lines are written after the reload.
     await until(async () => /took too long/.test(((await t.ctl.detail("oncall"))?.errors ?? []).map((e) => e.message).join("\n")));
+  });
+  it("after a reload a queued run reaches the new page, not the old page's waiting next", async () => {
+    let calls = 0;
+    const t = await setup({
+      plugins: { bundled: ["oncall"], on: ["oncall"], local: false },
+      // The first run hangs past the limit; later ones finish.
+      backends: { oncall: { s: () => (calls++ === 0 ? new Promise<void>(() => {}) : Promise.resolve()) } },
+      over: { runLimitMs: 100, idleMs: 60_000 },
+    });
+    await bundled(t.root, "oncall");
+    await t.ctl.start();
+    await until(() => (t.host.reload as ReturnType<typeof vi.fn>).mock.calls.length === 1);
+    expect(await t.ctl.refresh("oncall", "s")).toEqual({ ok: true });
+    expect(t.host.reload).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -494,6 +578,30 @@ describe("PluginsController: agent surface", () => {
 });
 
 describe("PluginsController: base changes", () => {
+  it("a base switch without rebase stops the old base's plugins and shows nothing of it until rebase", async () => {
+    const t = await setup({ plugins: { bundled: ["oncall"], on: ["oncall"], local: false }, backends: { oncall: { s: async (ctx) => void (await ctx.data.put("queues", { key: "a", n: 1 })) } } });
+    await bundled(t.root, "oncall", { data: { queues: QUEUES } });
+    await t.ctl.start();
+    await until(async () => (await t.ctl.detail("oncall"))!.sources[0].lastOk !== undefined);
+    expect(await t.ctl.agentData({ op: "query", collection: "oncall.queues" })).toMatchObject({ records: [{ key: "a" }] });
+    const other = await tmp("hh-pl-base2-");
+    t.setBase(other);
+    await expect(t.ctl.agentData({ op: "query", collection: "oncall.queues" })).rejects.toMatchObject({ code: "refused" });
+    await until(() => t.host.stopped.includes("oncall"));
+    expect(t.ctl.channelOf("oncall")).toBeNull();
+    expect(t.ctl.agentCatalogue()).toEqual([]);
+    expect(await t.ctl.contextTables(undefined)).toBe("");
+    expect(await t.ctl.sentences()).toEqual([]);
+    const row = (await t.ctl.view()).plugins[0];
+    expect(row.status).not.toBe("on");
+    expect(row.lastSync).toBeUndefined();
+    expect(await t.ctl.setOn("oncall", true)).toMatchObject({ ok: false });
+    expect(t.host.started).toEqual(["oncall"]);
+    expect(await files(other)).toEqual([]);
+    await t.ctl.rebase();
+    expect(t.host.started).toEqual(["oncall", "oncall"]);
+  });
+
   it("rebase stops the old base's backends and starts the new base's; before setup nothing starts", async () => {
     const t = await setup({ plugins: { bundled: ["oncall"], on: ["oncall"], local: false } });
     await bundled(t.root, "oncall");

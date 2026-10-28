@@ -1249,6 +1249,8 @@ export interface PluginReview {
   name: string;
   version: string;
   folder: string;
+  /** The dist this review shows; Approve sends it back, and a plugin that changed since is refused. */
+  distHash: string;
   lines: PluginLine[];
   /** What this version adds to the approved permissions. */
   added?: { kind: string; value: string }[];

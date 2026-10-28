@@ -13,8 +13,9 @@ const STOPPED = "The plugin's backend stopped";
 /**
  * Main's end of one backend window's `rpc` (Decision 10): the core host script pulls commands with `next`, reports
  * runs with `done`, and makes `ctx` calls that go to the broker. One channel per backend window: a restarted window
- * gets a new one, and a closed channel answers nothing. Every argument is checked (parsePluginRpc's shapes); an
- * unknown method or a malformed argument throws.
+ * gets a new one (so does a reloaded page: the old page's waiting `next` must not swallow a run), and a closed channel
+ * answers nothing. Runs go only to a `next` after a successful `ready`. Every argument is checked (parsePluginRpc's
+ * shapes); an unknown method or a malformed argument throws.
  */
 export class PluginChannel {
   private readonly queue: BackendCommand[] = [];
@@ -24,6 +25,8 @@ export class PluginChannel {
   private readonly readyPromise: Promise<{ sources: string[] }>;
   private settleReady!: { resolve(v: { sources: string[] }): void; reject(e: Error): void };
   private closed = false;
+  /** Set by a successful `ready`: only a page that loaded its backend pulls runs. */
+  private loaded = false;
 
   constructor(private readonly d: { ctx(runId: string, name: string, args: unknown[]): Promise<BrokerAnswer>; idleMs: number }) {
     this.readyPromise = new Promise((resolve, reject) => (this.settleReady = { resolve, reject }));
@@ -73,9 +76,13 @@ export class PluginChannel {
     switch (rpc.method) {
       case "ready":
         if ("error" in rpc) this.settleReady.reject(new Error(rpc.error));
-        else this.settleReady.resolve({ sources: rpc.sources });
+        else {
+          this.loaded = true;
+          this.settleReady.resolve({ sources: rpc.sources });
+        }
         return null;
       case "next":
+        if (!this.loaded) throw new Error("The backend is not ready");
         return this.next();
       case "done": {
         const p = this.runs.get(rpc.runId);

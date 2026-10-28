@@ -212,6 +212,8 @@ const manifestSchema = z.object({
   material: materialSchema.optional(),
   /** Kinds of documents with section templates; the reader checks them and only warns (document-reader spec §4). Absent: none (D0). */
   documents: documentsSchema.optional(),
+  /** How much pinned text a new task gets whole, suggested to the person (context-panel spec §4.2). Absent: the core's 3,000 (D0). */
+  context: z.object({ pinnedTokens: z.number().int().min(0).max(50_000).default(3000) }).optional(),
   /** One line under the name on the home screen. */
   tagline: text.optional(),
   /** How translations of this harness's screens should sound, in English ("warm and informal, short sentences"). */

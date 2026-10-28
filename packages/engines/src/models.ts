@@ -34,6 +34,8 @@ export interface ModelsConfig {
   tasks?: Record<string, TaskModelChoice>;
   /** By engine id, then tier: overrides of DEFAULT_TIERS. */
   tiers?: Record<string, Partial<Record<Tier, ModelSpec>>>;
+  /** The person's pinned-files budget in tokens (context-panel spec §4.2, Settings › Models). Absent: the manifest's. */
+  pinnedTokens?: number;
 }
 
 /** A model an engine offers (Codex: from `session/new` `configOptions`). */
@@ -54,6 +56,9 @@ export const MIN_CAP = 100_000;
 export const MAX_CAP = 1_000_000;
 /** The context caps Settings offers (spec §5.1). */
 export const CAP_OPTIONS = [100_000, 200_000, 400_000, 1_000_000] as const;
+/** The pinned-files budgets Settings offers (context-panel spec §4.2); the manifest's own value is offered too. */
+export const PINNED_OPTIONS = [1000, 3000, 6000, 12_000] as const;
+export const PINNED_MAX = 50_000;
 /** Claude's aliases always point at the latest model of each family. */
 export const CLAUDE_MODELS = ["haiku", "sonnet", "opus"] as const;
 

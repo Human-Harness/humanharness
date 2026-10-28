@@ -12,7 +12,9 @@ import {
   isCap,
   isEffort,
   isModelId,
+  PINNED_MAX,
 } from "@humanharness/engines";
+import { DEFAULT_PINNED_TOKENS } from "@humanharness/workspace";
 
 /** The key free questions' setting lives under. */
 export const QUESTIONS = "questions";
@@ -65,7 +67,18 @@ export function cleanModels(raw: unknown): ModelsConfig {
       if (Object.keys(clean).length > 0) tiers[engine] = clean;
     }
   }
-  return { ...(Object.keys(tasks).length > 0 ? { tasks } : {}), ...(Object.keys(tiers).length > 0 ? { tiers } : {}) };
+  const pinned = raw.pinnedTokens;
+  const pinnedTokens = typeof pinned === "number" && Number.isInteger(pinned) && pinned >= 0 && pinned <= PINNED_MAX ? pinned : undefined;
+  return {
+    ...(Object.keys(tasks).length > 0 ? { tasks } : {}),
+    ...(Object.keys(tiers).length > 0 ? { tiers } : {}),
+    ...(pinnedTokens !== undefined ? { pinnedTokens } : {}),
+  };
+}
+
+/** Tokens of pinned text a new task gets whole: the person's, else the manifest's, else the core's (context-panel spec §4.2). */
+export function pinnedBudget(models: ModelsConfig, manifest: { pinnedTokens: number } | undefined): number {
+  return models.pinnedTokens ?? manifest?.pinnedTokens ?? DEFAULT_PINNED_TOKENS;
 }
 
 /** A profile stored in tasks.json, checked again before it can reach the engine. */

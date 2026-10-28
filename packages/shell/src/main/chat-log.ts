@@ -4,7 +4,7 @@ import path from "node:path";
 import { MAIN_SCOPE, chatFile, chatsDir, isScopeDir, isTaskId, taskChatFile } from "@humanharness/workspace";
 import type { BlockAnswer } from "@humanharness/harness-sdk";
 import type { Event, LimitWindow } from "@humanharness/runtime";
-import { type AnswerPart, type ChatEntry, type TurnUsage, addParagraph, addText, finishParts } from "@humanharness/ui/client";
+import { type AnswerPart, type ChatEntry, type DocumentCard, type TurnUsage, addParagraph, addText, finishParts } from "@humanharness/ui/client";
 
 export class ChatLog {
   private readonly file: string;
@@ -182,6 +182,8 @@ export class TurnRecorder {
   private parts: AnswerPart[] = [];
   private activities: ChatEntry["activities"] = [];
   private usage: TurnUsage | undefined;
+  /** The cards for the `.md` files the turn added or changed (none: the entry has no field). */
+  private documents: DocumentCard[] | undefined;
   private limits: LimitWindow[] | undefined;
   /** The turn's first limits snapshot (the reply keeps the last): usage estimates measure from it. */
   firstLimits: LimitWindow[] | undefined;
@@ -215,7 +217,7 @@ export class TurnRecorder {
         cacheWriteTokens: e.cacheWriteTokens,
         ...(e.costUsd !== undefined ? { costUsd: e.costUsd } : {}),
       };
-    }
+    } else if (e.type === "documents") this.documents = e.documents;
   }
 
   finish(done: Extract<Event, { type: "done" }>): ChatEntry {
@@ -225,6 +227,7 @@ export class TurnRecorder {
       text: this.text.trim(),
       blocks: this.blocks,
       parts: finishParts(this.parts),
+      ...(this.documents ? { documents: this.documents } : {}),
       activities: this.activities,
       at: new Date().toISOString(),
       ...(this.usage ? { usage: this.usage } : {}),

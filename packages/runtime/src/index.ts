@@ -9,3 +9,4 @@ export { TurnLedger, samePath, type TurnWindow } from "./turn-ledger";
 export { beginTurn, endTurn, type TurnAttribution } from "./turn-commit";
 export { runSystemTask, type SystemTaskOptions, type SystemTaskResult } from "./system";
 export { SidekickSession, type SidekickAnswer, type SidekickSessionOptions } from "./sidekick";
+export { runSystemSession, type SystemSessionOptions, type SystemSessionResult } from "./system-session";

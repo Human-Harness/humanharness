@@ -5,18 +5,30 @@ import type {
   AttentionView,
   ChatEntry,
   ChoiceOption,
+  ContextPick,
+  ContextResult,
   DataChangeView,
   DataDiffView,
   DataKey,
   DataQuery,
   DataRecord,
+  DocumentRead,
   EngineError,
+  FileDiffResult,
+  FileRestoreAnswer,
+  FileRestorePrompt,
+  FocusState,
   EngineStatus,
   Event,
   FolderPick,
+  GeneratedStrings,
   HarnessClient,
   HistoryItem,
   HistoryTaskView,
+  LanguageChoose,
+  LanguageClient,
+  LanguageStart,
+  LanguageState,
   MaterialAddResult,
   MaterialChoice,
   MaterialResult,
@@ -40,6 +52,10 @@ import type {
   ProfilesState,
   ProfileView,
   RespondResult,
+  Review,
+  ReviewResult,
+  ReviewSendResult,
+  ReviewSummary,
   RunningSetup,
   ScopeView,
   ScopesView,
@@ -67,6 +83,7 @@ import type {
   SidekickSettingsPatch,
   SidekickState,
   SidekickView,
+  TaskContext,
   TaskTurnNotice,
   TasksClient,
   TasksState,
@@ -76,10 +93,19 @@ import type {
   TestResult,
   TextSize,
   UndoRefusal,
+  TimelineEntry,
   UsageSummary,
 } from "../src/client";
 import { type Mock, vi } from "vitest";
 import { hearsDataChange } from "../src/client";
+import { anchorForSelection, answerQuestion, nextCommentId, summarizeReview } from "@humanharness/harness-sdk/review";
+
+/** A stand-in blob id (40 hex characters) that changes with the text, like a real one. */
+export function fakeBlob(text: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 0x01000193) >>> 0;
+  return h.toString(16).padStart(8, "0").repeat(5);
+}
 
 /** The token FakeClient's sidekick.pickFiles answers. */
 export const FAKE_PICK_TOKEN = "0".repeat(32);
@@ -342,19 +368,23 @@ export class FakeClient implements HarnessClient {
     return () => this.listeners.delete(listener);
   }
   async restore(sha: string) {
+    if (!(await this.askGoBack({ kind: "point", sha }))) return { ok: false as const, reason: "cancelled" as const };
     await this.restoreGate;
     if (this.restoreError) throw this.restoreError;
     this.restored.push(sha);
+    return { ok: true as const };
   }
   async historyTasks() {
     if (this.historyError) throw this.historyError;
     return this.historyGroups;
   }
   async restoreTask(taskId: string) {
+    if (!(await this.askGoBack({ kind: "task", taskId }))) return { ok: false as const, reason: "cancelled" as const };
     await this.restoreGate;
     if (this.restoreError) throw this.restoreError;
     if (this.restoreTaskRefusal) return { refused: this.restoreTaskRefusal };
     this.restoredTasks.push(taskId);
+    return { ok: true as const };
   }
   async engineStatus(engineId: string) {
     await this.statusGates[engineId];
@@ -534,6 +564,228 @@ export class FakeClient implements HarnessClient {
     this.revealedFiles.push(file);
     return this.openResult;
   }
+  /** Documents by path (relative to the folder); readDocument answers from here. */
+  docTexts: Record<string, string> = {};
+  documentMtime = "2026-10-27T10:00:00.000Z";
+  /** Images by path, as data: URLs. */
+  images: Record<string, string> = {};
+  private documentWatchers = new Map<string, Set<() => void>>();
+  private documentOpeners = new Set<(path: string, anchor?: string) => void>();
+  async readDocument(file: string): Promise<DocumentRead> {
+    if (file.startsWith("../") || file.startsWith("/")) return { ok: false, reason: "outside" };
+    if (!Object.hasOwn(this.docTexts, file)) return { ok: false, reason: "missing" };
+    const text = this.docTexts[file];
+    return { ok: true, text, mtime: this.documentMtime, size: new TextEncoder().encode(text).length };
+  }
+  async readImage(file: string) {
+    return Object.hasOwn(this.images, file) ? this.images[file] : null;
+  }
+  async documentsExist(paths: string[]) {
+    return paths.map((p) => Object.hasOwn(this.docTexts, p));
+  }
+  watchDocument(file: string, listener: () => void) {
+    const set = this.documentWatchers.get(file) ?? new Set();
+    set.add(listener);
+    this.documentWatchers.set(file, set);
+    return () => void set.delete(listener);
+  }
+  /** Rewrites (or with null deletes) a document and tells its watchers, as main does after a change. */
+  changeDocument(file: string, text: string | null) {
+    if (text === null) delete this.docTexts[file];
+    else this.docTexts[file] = text;
+    for (const l of [...(this.documentWatchers.get(file) ?? [])]) l();
+  }
+  openDocument(file: string, anchor?: string) {
+    for (const l of [...this.documentOpeners]) l(file, anchor);
+  }
+  onOpenDocument(listener: (path: string, anchor?: string) => void) {
+    this.documentOpeners.add(listener);
+    return () => void this.documentOpeners.delete(listener);
+  }
+  /** Review records by document path; the fake's `documents` answers from here like main. */
+  reviews: Record<string, Review> = {};
+  /** Every review call, in order. */
+  reviewCalls: { op: string; args: unknown[] }[] = [];
+  /** What `send` and `approve` answer when set (else they succeed). */
+  sendResult: ReviewSendResult | null = null;
+  approveResult: ReviewResult | null = null;
+  approvedTexts: Record<string, string> = {};
+  /** The current blob id by path; absent: the last approval's (an approved record reads as approved), else the text's. */
+  currentBlobs: Record<string, string> = {};
+  private reviewListeners = new Set<(path: string) => void>();
+  private focusOpeners = new Set<(path: string) => void>();
+  private focusListeners = new Set<(s: FocusState) => void>();
+  private focusState: FocusState = { on: false };
+  /** Tells every `documents.onChange` listener, as main does after a change. */
+  emitReviewChanged(path: string) {
+    for (const l of [...this.reviewListeners]) l(path);
+  }
+  private blobOf(path: string): string {
+    return this.currentBlobs[path] ?? this.reviews[path]?.approvals.at(-1)?.blob ?? fakeBlob(this.docTexts[path] ?? "");
+  }
+  private summaryOf(path: string): ReviewSummary {
+    return summarizeReview(this.reviews[path] ?? null, this.blobOf(path));
+  }
+  documents: HarnessClient["documents"] = {
+    view: async (path) => {
+      this.reviewCalls.push({ op: "view", args: [path] });
+      if (!Object.hasOwn(this.docTexts, path)) return { ok: false, reason: "missing" };
+      return { ok: true, review: this.reviews[path] ?? null, blob: this.blobOf(path), summary: this.summaryOf(path) };
+    },
+    review: async (path) => (this.reviews[path] ? this.summaryOf(path) : null),
+    summaries: async (paths) => {
+      this.reviewCalls.push({ op: "summaries", args: [paths] });
+      return paths.map((p) => (this.reviews[p] ? this.summaryOf(p) : null));
+    },
+    answer: async (path, id, pick) => {
+      this.reviewCalls.push({ op: "answer", args: [path, id, pick] });
+      const r = this.reviews[path];
+      const c = r?.comments.find((x) => x.id === id);
+      if (!r || !c || !Object.hasOwn(this.docTexts, path)) return { ok: false, reason: "unknown" };
+      const a = answerQuestion(this.docTexts[path], c, pick);
+      if (!a.ok) return { ok: false, reason: "bad-input" };
+      if (a.text !== null) this.docTexts[path] = a.text;
+      this.reviews[path] = { ...r, comments: r.comments.map((x) => (x.id === id ? a.comment : x)) };
+      this.emitReviewChanged(path);
+      return { ok: true, applied: a.text !== null };
+    },
+    comment: async (path, input) => {
+      this.reviewCalls.push({ op: "comment", args: [path, input] });
+      const anchor = anchorForSelection(this.docTexts[path] ?? "", input.selected, input.heading);
+      if (!anchor) return { ok: false, reason: "not-found" };
+      const r = this.reviews[path] ?? { path, task: null, comments: [], approvals: [] };
+      const id = nextCommentId(r);
+      this.reviews[path] = {
+        ...r,
+        comments: [...r.comments, { id, author: "person", kind: "comment", anchor, text: input.text, state: "draft", replies: [], at: "2026-10-28T10:00:00.000Z" }],
+      };
+      this.emitReviewChanged(path);
+      return { ok: true, id };
+    },
+    editDraft: async (path, id, text) => {
+      this.reviewCalls.push({ op: "editDraft", args: [path, id, text] });
+      const r = this.reviews[path];
+      if (!r) return { ok: false, reason: "unknown" };
+      this.reviews[path] = { ...r, comments: text === null ? r.comments.filter((c) => c.id !== id) : r.comments.map((c) => (c.id === id ? { ...c, text } : c)) };
+      this.emitReviewChanged(path);
+      return { ok: true };
+    },
+    reopen: async (path, id) => {
+      this.reviewCalls.push({ op: "reopen", args: [path, id] });
+      return { ok: true };
+    },
+    send: async (path) => {
+      this.reviewCalls.push({ op: "send", args: [path] });
+      return this.sendResult ?? { ok: true, sent: 1, to: "open" };
+    },
+    approve: async (path, blob, opts) => {
+      this.reviewCalls.push({ op: "approve", args: [path, blob, opts] });
+      return this.approveResult ?? { ok: true };
+    },
+    approvedText: async (path) => (Object.hasOwn(this.approvedTexts, path) ? { ok: true, text: this.approvedTexts[path] } : { ok: false, reason: "missing" }),
+    onChange: (listener) => {
+      this.reviewListeners.add(listener);
+      return () => void this.reviewListeners.delete(listener);
+    },
+    focus: (path) => {
+      for (const l of [...this.focusOpeners]) l(path);
+    },
+    onFocus: (listener) => {
+      this.focusOpeners.add(listener);
+      return () => void this.focusOpeners.delete(listener);
+    },
+  };
+  focus: HarnessClient["focus"] = {
+    current: () => this.focusState,
+    onChange: (listener) => {
+      this.focusListeners.add(listener);
+      return () => void this.focusListeners.delete(listener);
+    },
+    set: (s) => {
+      this.focusState = s;
+      for (const l of [...this.focusListeners]) l(s);
+    },
+  };
+  /** Timelines by path, and diffs by `${path}|${from}|${to}`; the fake's `files` answers from here like main. */
+  timelines: Record<string, TimelineEntry[]> = {};
+  diffs: Record<string, FileDiffResult> = {};
+  /** Every files call, in order. */
+  fileCalls: { op: string; args: unknown[] }[] = [];
+  /** What a confirmed restore answers. */
+  restoreAnswer: FileRestoreAnswer = { ok: true };
+  private fileListeners = new Map<string, Set<() => void>>();
+  /** Main's native go-back dialog, for all three go-backs: true is "Go back". Every prompt it was asked, in order. */
+  confirmGoBack: (ask: FileRestorePrompt | { kind: "point"; sha: string } | { kind: "task"; taskId: string }) => Promise<boolean> = async () => true;
+  goBackAsks: unknown[] = [];
+  private async askGoBack(ask: Parameters<FakeClient["confirmGoBack"]>[0]): Promise<boolean> {
+    this.goBackAsks.push(ask);
+    return (await this.confirmGoBack(ask)) === true;
+  }
+  /** As main does after a commit. */
+  emitFileCommit(paths: string[]) {
+    for (const p of paths) for (const l of [...(this.fileListeners.get(p) ?? [])]) l();
+  }
+  files: HarnessClient["files"] = {
+    timeline: async (path) => {
+      this.fileCalls.push({ op: "timeline", args: [path] });
+      return Object.hasOwn(this.timelines, path) ? { ok: true, entries: this.timelines[path] } : { ok: false, reason: "untracked" };
+    },
+    diff: async (path, from, to) => {
+      this.fileCalls.push({ op: "diff", args: [path, from, to] });
+      return this.diffs[`${path}|${from}|${to}`] ?? { ok: false, reason: "not-found" };
+    },
+    restore: async (path, commit) => {
+      this.fileCalls.push({ op: "restore", args: [path, commit] });
+      const e = (this.timelines[path] ?? []).find((x) => x.to === commit);
+      if (!e) return { refused: "not-found" };
+      const yes = await this.askGoBack({ path, author: e.author, at: e.at, kind: e.kind, ...(e.version ? { version: e.version } : {}) });
+      if (!yes) return "cancelled";
+      if (this.restoreAnswer.ok) return "restored";
+      return this.restoreAnswer.reason === "cancelled" ? "cancelled" : { refused: this.restoreAnswer.reason };
+    },
+    onChange: (path, listener) => {
+      const set = this.fileListeners.get(path) ?? new Set();
+      set.add(listener);
+      this.fileListeners.set(path, set);
+      return () => void set.delete(listener);
+    },
+  };
+  /** What `context.get` answers, by task. */
+  contexts: Record<string, TaskContext> = {};
+  contextCalls: { op: "add" | "pick" | "pin" | "unpin" | "exclude" | "include"; args: unknown[] }[] = [];
+  /** What every context write answers; `contextGate` holds `add` until it resolves (the panel's "Waiting"). */
+  contextAnswer: ContextResult = { ok: true };
+  contextGate: Promise<void> | null = null;
+  pickAnswer: ContextPick = { ok: false, reason: "cancelled" };
+  private contextListeners = new Set<{ task: string; listener: (c: TaskContext) => void }>();
+
+  /** As main's `hh:context`: the task's panel gets `c`. */
+  emitContext(task: string, c: TaskContext): void {
+    this.contexts[task] = c;
+    for (const l of [...this.contextListeners]) if (l.task === task) l.listener(c);
+  }
+
+  context: HarnessClient["context"] = {
+    get: async (taskId) => (Object.hasOwn(this.contexts, taskId) ? { ok: true, context: this.contexts[taskId] } : { ok: false, reason: "no-task" }),
+    onChange: (task, listener) => {
+      const entry = { task, listener };
+      this.contextListeners.add(entry);
+      return () => void this.contextListeners.delete(entry);
+    },
+    add: async (...args) => {
+      this.contextCalls.push({ op: "add", args });
+      if (this.contextGate) await this.contextGate;
+      return this.contextAnswer;
+    },
+    pick: async () => {
+      this.contextCalls.push({ op: "pick", args: [] });
+      return this.pickAnswer;
+    },
+    pin: async (...args) => (this.contextCalls.push({ op: "pin", args }), this.contextAnswer),
+    unpin: async (...args) => (this.contextCalls.push({ op: "unpin", args }), this.contextAnswer),
+    exclude: async (...args) => (this.contextCalls.push({ op: "exclude", args }), this.contextAnswer),
+    include: async (...args) => (this.contextCalls.push({ op: "include", args }), this.contextAnswer),
+  };
   async openPath(file: string) {
     this.opened.push(file);
     return this.openResult;
@@ -1152,6 +1404,56 @@ export class FakeClient implements HarnessClient {
       this.attentionListeners.add(l);
       return () => {
         this.attentionListeners.delete(l);
+      };
+    },
+  };
+
+  /** client.language (plan 5b): what state() answers, calls made, and listeners. Every answer is data. */
+  languageState: LanguageState = { language: "en", cached: [], missing: 0, canTranslate: true, engineName: "Claude Code", run: null };
+  languageStrings: Record<string, GeneratedStrings> = {};
+  languageCalls: { op: string; args: unknown[] }[] = [];
+  chooseAnswer: LanguageChoose | null = null;
+  translateAnswer: LanguageStart = { ok: true };
+  /** Holds state() and strings() answers until it resolves (to test late answers). */
+  languageGate: Promise<void> | null = null;
+  languageListeners = new Set<(s: LanguageState) => void>();
+  pushLanguage(s: Partial<LanguageState>) {
+    this.languageState = { ...this.languageState, ...s };
+    for (const l of this.languageListeners) l(this.languageState);
+  }
+  language: LanguageClient = {
+    state: async (harness) => {
+      this.languageCalls.push({ op: "state", args: [harness] });
+      const answer = this.languageState;
+      if (this.languageGate) await this.languageGate;
+      return answer;
+    },
+    choose: async (tag, harness) => {
+      this.languageCalls.push({ op: "choose", args: [tag, harness] });
+      if (this.chooseAnswer) return this.chooseAnswer;
+      const complete = tag === "en" || this.languageState.cached.some((c) => c.tag === tag && c.complete);
+      if (!complete) return { ok: false, reason: "needs-translation" };
+      this.languageState = { ...this.languageState, language: tag };
+      return { ok: true, language: tag, strings: this.languageStrings[tag] ?? {} };
+    },
+    translate: async (tag, harness) => {
+      this.languageCalls.push({ op: "translate", args: [tag, harness] });
+      return this.translateAnswer;
+    },
+    cancel: async () => {
+      this.languageCalls.push({ op: "cancel", args: [] });
+      return { ok: true };
+    },
+    strings: async (tag, harness) => {
+      this.languageCalls.push({ op: "strings", args: [tag, harness] });
+      const answer = this.languageStrings[tag] ?? {};
+      if (this.languageGate) await this.languageGate;
+      return answer;
+    },
+    onChange: (l) => {
+      this.languageListeners.add(l);
+      return () => {
+        this.languageListeners.delete(l);
       };
     },
   };

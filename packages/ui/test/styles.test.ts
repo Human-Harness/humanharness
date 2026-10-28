@@ -32,9 +32,31 @@ describe("design tokens", () => {
       expect(ratio(token(block, "on-ink"), token(block, "ink"))).toBeGreaterThanOrEqual(7);
     }
   });
+
+  it("defines the diff tokens in light and dark, and keeps the timeline's chips readable (file-timeline spec §6.1)", () => {
+    for (const block of [light, dark]) {
+      for (const n of ["diff-ins", "diff-del", "diff-bar-ins", "diff-bar-del"]) expect(token(block, n)).toMatch(/^#/);
+      expect(ratio(token(block, "ok"), token(block, "diff-ins"))).toBeGreaterThanOrEqual(4.5);
+      for (const bg of ["review-question", "review-done"]) expect(ratio(token(block, "ink"), token(block, bg))).toBeGreaterThanOrEqual(4.5);
+    }
+  });
 });
 
 describe("styles", () => {
+  it("gives the timeline's chips their own classes: the start view's .hh-chip rule is the only one (D0)", () => {
+    expect(css.match(/^\.hh-chip[\s,{-]/gm)).toEqual([".hh-chip "]);
+    expect(css).toMatch(/^\.hh-chip\s*{\s*height:\s*30px;/m);
+    for (const c of ["", "-amber", "-green", "-grey"]) expect(css).toMatch(new RegExp(`^\\.hh-timeline-chip${c}\\s*{`, "m"));
+  });
+
+  it("keeps the file diff's rules in one block of its own classes, so they restyle nothing else (D0)", () => {
+    const lines = css.split("\n");
+    const at = lines.flatMap((l, i) => (l.includes("hh-filediff") ? [i] : []));
+    expect(at.length).toBeGreaterThan(10);
+    expect(at.at(-1)! - at[0]).toBe(at.length - 1);
+    for (const i of at.slice(1)) expect(lines[i].startsWith(".hh-filediff")).toBe(true);
+  });
+
   it("makes the top bar the window's drag region, except its controls", () => {
     expect(css).toMatch(/\.hh-topbar\s*{[^}]*-webkit-app-region:\s*drag/);
     expect(css).toMatch(/\.hh-topbar button,[^{]*{[^}]*-webkit-app-region:\s*no-drag/);

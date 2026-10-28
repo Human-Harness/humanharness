@@ -3,8 +3,25 @@ import { promises as fs } from "node:fs";
 import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
-import { BrowserWindow, type IpcMainInvokeEvent, Notification, app, clipboard, dialog, ipcMain, nativeImage, nativeTheme, powerMonitor, protocol, safeStorage, session, shell } from "electron";
-import { electronLauncher } from "@humanharness/blocks";
+import {
+  BrowserWindow,
+  type IpcMainInvokeEvent,
+  Notification,
+  type WebContents,
+  app,
+  clipboard,
+  dialog,
+  ipcMain,
+  nativeImage,
+  nativeTheme,
+  powerMonitor,
+  protocol,
+  safeStorage,
+  session,
+  shell,
+  webContents,
+} from "electron";
+import { electronLauncher, translateServerSpec } from "@humanharness/blocks";
 import { type EngineDef, type ModelProfile, type ModelSpec, NOTICE_VERSION, availableEngines, defaultTier, getEngine } from "@humanharness/engines";
 import {
   DEFAULT_LANGUAGE,
@@ -36,11 +53,27 @@ import {
   sidekickCollection,
   stageTier,
 } from "@humanharness/harness-sdk";
+import { createI18n } from "@humanharness/i18n";
+import { CORE_EN } from "@humanharness/i18n/translate";
 import { type Job, MaterialStore, groundingMode, materialSection, workerRunner } from "@humanharness/material/light";
-import { type Event, type HarnessRuntime, type HarnessWorkspace, type RuntimeOptions, type SessionSlot, SidekickSession, type SlotRef, createRuntime, createWorkspace, runSystemTask } from "@humanharness/runtime";
+import {
+  type Event,
+  type HarnessRuntime,
+  type HarnessWorkspace,
+  type RuntimeOptions,
+  type SessionSlot,
+  SidekickSession,
+  type SlotRef,
+  type SystemTaskResult,
+  createRuntime,
+  createWorkspace,
+  runSystemSession,
+  runSystemTask,
+} from "@humanharness/runtime";
 import {
   type AppConfig,
   type AppState,
+  type DocumentRead,
   type ChatLoad,
   type ConfiguredApp,
   type FolderPick,
@@ -73,11 +106,14 @@ import {
   MAIN_SCOPE,
   ScopeStore,
   appendSidekickEvent,
-  buildDataContext,
+  DEFAULT_PINNED_TOKENS,
+  buildDataContextParts,
   dataDiffOf,
   dataPath,
   dataRequestSchema,
+  flushFileIndexes,
   isScopeId,
+  loadReview,
   migrateToScopes,
   notesPrefix,
   noteSlug,
@@ -103,18 +139,43 @@ import { cliCommand, engineCommand, loginShellPath, resolveBinary } from "./engi
 import { EngineGuards } from "./engine-guards";
 import { copySetupStep, engineOptionExtras, installCommandOf, runsInTerminal, terminalCommand } from "./install-help";
 import { detectEngine, hasAcceptedNotice } from "./engine-status";
-import { QUESTIONS, cleanModels, engineOffer, firstOffered, fitEffort, manifestTier, nearestTier, nextFallback, resolveProfile, tierSpec } from "./models";
+import { QUESTIONS, cleanModels, engineOffer, firstOffered, fitEffort, manifestTier, nearestTier, nextFallback, pinnedBudget, resolveProfile, tierSpec } from "./models";
+import { ContextService } from "./context";
+import { contextHandlers } from "./context-ipc";
+import { languageHandlers } from "./language-ipc";
 import { chooseModeHandler } from "./mode-ipc";
 import { setPhaseHandler, timeBoxOffered } from "./phase-ipc";
 import { requireNoticeForChoice, requireNoticeForTurn } from "./notice-policy";
+import { reviewHandlers } from "./review-ipc";
+import { workerDiff } from "./diff-runner";
+import { commitAnnouncer, fileHandlers } from "./file-ipc";
+import { FileTimelineService } from "./file-timeline";
+import { CANCELLED, type GoBackAsk, askNatively, goBackHandlers, goBackText } from "./go-back";
+import { ReviewService } from "./reviews";
 import { archiveChatsOnEngineChange, archiveStaleChat, startNewChatIfEngineChanged } from "./engine-switch";
 import { type RunningSetup, runSetupProcess, setupCommand, stopSetupProcess } from "./setup-runner";
 import { runSetupStep } from "./setup-step";
 import { type SharedEngineRecord, SharedConfigStore, sharedConfigDir } from "./shared-config";
 import { EngineUnavailable, TurnController, type TurnDeps, memoise } from "./turn-controller";
-import { type UsageRecord, UsageLog, compactionRecord, dayTokens, measuredMaterialCosts, profileMeta, profilesUsage, recentUsage, summarizeUsage, usageRecord, withSpent } from "./usage-log";
+import {
+  type UsageRecord,
+  UsageLog,
+  capTokens,
+  compactionRecord,
+  dayTokens,
+  measuredMaterialCosts,
+  profileMeta,
+  profilesUsage,
+  recentUsage,
+  summarizeUsage,
+  translateRecord,
+  usageRecord,
+  withSpent,
+} from "./usage-log";
 import { type ValidationContext, checkFolder, configProblem, isAppUrl } from "./validate";
 import { openIfStillSafe, openRoots, openableFile, revealIfStillSafe, revealableFile } from "./open-path";
+import { DocumentSessions } from "./document-sessions";
+import { DocumentWatchers, MAX_EXIST_PATHS, documentsExist, readDocument, readImage } from "./documents";
 import { saveWithFolderChange } from "./folder-change";
 import { type MoveDeps, guardedMove, moveFolder, moveJournal, precheckMove, recoverMove } from "./move-folder";
 import { type ResolvedReference, displayPath, resolveReferences, usableReferences } from "./references";
@@ -143,6 +204,8 @@ import { registerSidekickIpc } from "./sidekick-ipc";
 import { SidekickStore } from "./sidekick-store";
 import { SetupSteps, recordSetup, setupStepViews } from "./setup-steps";
 import { type PhaseMoved, type TaskDeps, TaskManager, type TurnEnd } from "./task-manager";
+import { TranslationCache } from "./translation-cache";
+import { type Runner, TranslationService } from "./translation";
 import type { MaterialService } from "./material";
 import { historyKeep, materialAppState, materialItems, materialRecommended, openMaterial } from "./material-ipc";
 import { MaterialJobs } from "./material-jobs";
@@ -152,7 +215,7 @@ import { baseFor, isInsideFolder } from "./profile-base";
 import { type ProfileOutcome, Profiles, profileResult } from "./profiles";
 import { ProfileSwitch } from "./profile-switch";
 import { holds } from "./holds";
-import { historyView, isSha } from "./history-view";
+import { historyView } from "./history-view";
 import { RestoreGuard, lastOpened } from "./restore-guard";
 import { TaskStore, emptyTasks } from "./task-store";
 import { textSizeShortcut, trafficLightY } from "./text-size";
@@ -402,6 +465,7 @@ async function modelsView(): Promise<ModelsView> {
       engines.map((e) => [e.id, Object.fromEntries(TIERS.map((t) => [t, tierSpec(e.id, t)])) as Record<Tier, ModelSpec>]),
     ),
     offered: Object.fromEntries(engines.map((e) => [e.id, offer(e)])),
+    pinnedTokens: harness.context?.pinnedTokens ?? DEFAULT_PINNED_TOKENS,
   };
 }
 
@@ -429,6 +493,38 @@ async function backupView(folder: string | undefined): Promise<NonNullable<AppSt
 
 /** The last app state read: it stands in when the state can't be read after a profile change that went through. */
 let lastAppState: AppState | null = null;
+
+/**
+ * The reader's open documents (document-reader spec §5.3), by window: main tells the window that asked for a watch
+ * when its document changes, and only that window; and when a watch ends without the window asking, so it watches again.
+ */
+const documentSessions: DocumentSessions = new DocumentSessions(
+  new DocumentWatchers((id) => {
+    const owner = documentSessions.ownerOf(id);
+    if (owner !== null) sendToContents(owner, "hh:documentChanged", id);
+  }),
+  (owner, id) => sendToContents(owner, "hh:documentWatchEnded", id),
+);
+
+/** Sends to one window by its webContents id, when it is still there. */
+function sendToContents(id: number, channel: string, value: unknown) {
+  try {
+    const to = webContents.fromId(id);
+    if (to && !to.isDestroyed()) to.send(channel, value);
+  } catch (err) {
+    console.error("Could not send to the window", err);
+  }
+}
+
+/**
+ * Where documents and images may be read, from the config only: the person's folder (checked by `validConfig`), then
+ * the reference folders that resolved (protected folders already refused) and are usable with it; null before setup.
+ */
+async function documentRoots(): Promise<string[] | null> {
+  const c = await validConfig();
+  if (!c) return null;
+  return openRoots(baseOf(c), (await workReferences(c, baseOf(c))).map((r) => r.path));
+}
 
 async function appState(): Promise<AppState> {
   const harnessImage = await harnessLogo();
@@ -547,6 +643,10 @@ async function appState(): Promise<AppState> {
     ...(parallel ? { parallel } : {}),
     // Only a harness that declares jobs sends them: the Jobs tab and the inbox's Jobs section (part 3 D0).
     ...(jobs ? { jobs } : {}),
+    // The reader's template check (document-reader spec §4.3); absent without kinds (D0).
+    ...(harness.documents ? { documents: { kinds: harness.documents.kinds } } : {}),
+    // Documents can be reviewed only when the agent may edit the folder (review spec D0).
+    ...(harness.permissions.edit === "folder" ? { review: true as const } : {}),
     references: (await referencesFor(saved.folder)).map((r) => ({ id: r.id, label: r.label, path: displayPath(r.path, os.homedir()) })),
     models: await modelsView(),
     backup: await backupView(saved.folder),
@@ -691,6 +791,8 @@ async function scopesChanged(): Promise<void> {
 async function arrivedInProfile(): Promise<void> {
   // Before anything reads the new base: the old profile's plugins stop, and nothing of theirs reaches the new one.
   await rebasePlugins();
+  // Another profile is another folder: the reader's watches were checked against the old one.
+  documentSessions.closeAll();
   await interruptTasks();
   settingsCtl?.forget();
   await settingsCtl?.changed();
@@ -809,6 +911,9 @@ async function runtimeOptions(
     ...(harness.material
       ? { material: { request: (request: unknown, slot?: SlotRef) => materialRequest(base, request, () => runningTask(slot)), entry: path.join(here, "material-server.js") } }
       : {}),
+    // The agent's review tools in this base, through the person's ReviewService so both sides share its locks. Only
+    // when the agent may edit the folder (review spec D0); the runtime checks the same.
+    ...(harness.permissions.edit === "folder" ? { review: (request: unknown) => reviews.agent(base, request) } : {}),
     command: cmd.command,
     env: cmd.env,
     references: (await workReferences(c, base, true)).map((r) => ({ label: r.label, path: r.path })),
@@ -831,6 +936,7 @@ const runtime = memoise<HarnessRuntime>(async () => {
         ...(await runtimeOptions(p, () => tasks.runningTask())),
         onSession: (s) => void plainTasks.sessionStarted(s).catch((err: unknown) => console.error("Could not record the session", err)),
       });
+  announceCommits(rt.history);
   // A new runtime: the material queue, stopped by closeRuntime, goes on (in this base). Without material, nothing.
   kickMaterial();
   return rt;
@@ -874,6 +980,8 @@ async function closeRuntime() {
   const rt = await runtime.peek()?.catch(() => null);
   runtime.clear();
   await rt?.close();
+  // A closed runtime's history keeps no listener of main's.
+  if (rt) commitAnnouncements.stop(rt.history);
   // The next runtime writes AGENTS.md afresh: nothing is pending against this one's. Only once close() resolved (a
   // running refresh would set what was applied again), and not when a new runtime has already written its own.
   if (!runtime.peek()) settingsCtl?.forget();
@@ -930,6 +1038,7 @@ const standaloneHistory = lastOpened(async (key) => {
   const { folder, ignore } = JSON.parse(key) as { folder: string; ignore: string[] };
   const history = new History(folder, historyDir(app.getPath("userData"), folder), ignore, historyKeep(harness));
   await history.init();
+  announceCommits(history);
   return history;
 });
 
@@ -1075,10 +1184,26 @@ const taskDeps: TaskDeps = {
     if (!own && !plugins) return undefined;
     return async (scope: string, action: string | undefined) => {
       const c = await validConfig();
-      const tables = c && own ? await buildDataContext(dataStoreFor(baseOf(c)), harness.data, scope, action) : "";
-      const extra = plugins ? await plugins.contextTables(action) : "";
-      return [tables, extra].filter(Boolean).join("\n\n");
+      // One part per collection: the context panel lists each (context-panel spec §3.1); the agent gets them joined.
+      const tables = c && own ? await buildDataContextParts(dataStoreFor(baseOf(c)), harness.data, scope, action) : [];
+      const extra = plugins ? await plugins.contextParts(action) : [];
+      return [...tables, ...extra];
     };
+  },
+  // Context panel (context-panel spec §3.1): the size of AGENTS.md in the agent's working folder.
+  instructionsSize: async () => {
+    const c = await validConfig();
+    if (!c) return null;
+    const stat = await fs.stat(path.join(baseOf(c), "AGENTS.md")).catch(() => null);
+    return stat?.isFile() ? stat.size : null;
+  },
+  // Pins and exclusions for a new task (spec §4); `contextSvc` is built below, before any task can start.
+  personContext: (scope) => contextSvc.personContext(scope),
+  contextChanged: (id) => void sendContext(id),
+  // The agent's working folder: the engine's read paths become folder paths (spec §3.2).
+  folder: async () => {
+    const c = await validConfig();
+    return c ? baseOf(c) : null;
   },
   // Material spec §9 Load: only a harness with material gets the hook (D0). A getter: the harness loads later.
   // Only usable sources' fragments make rows (`indexRows`); none: no section.
@@ -1181,7 +1306,8 @@ const taskDeps: TaskDeps = {
     const c = await config.load();
     const engine = c.engineId ?? "";
     const models = cleanModels(c.models);
-    // `tier`: a plugin action's (plugins spec §5.3), for its prepared task only.
+    // `tier`: a plugin action's prepared task (plugins spec §5.3) or a core review task (review spec §11.3); otherwise
+    // the action's, or the free questions'.
     // `floor`: the mode's minTier when a task restarts in that mode (task-modes spec §5.3); passed only when there is one.
     const profile = resolveProfile({ engine, action, manifestTier: manifestTier(harness, action, tier), models, ...(floor ? { floor } : {}) });
     // Codex: a model its saved list lacks falls back before the turn (spec §5.3).
@@ -1283,6 +1409,133 @@ const materialStageDeps: MaterialStageDeps = {
   log: (base, record) => new UsageLog(base).append(record),
 };
 
+/** The model key of a translation run (language spec §5): not listed in Settings › Models, so always the light tier. */
+const TRANSLATE_KEY = "_translate";
+/** How long an engine check is reused: the language state is read on every push, and a run pushes every turn. */
+const ENGINE_CHECK_MS = 30_000;
+
+/** Language on demand (plan 5b); built once the harness is loaded. Nothing is written until a run saves (D0). */
+let translation: TranslationService | null = null;
+let engineCheck: { id: string; at: number; ready: Promise<boolean> } | null = null;
+
+/**
+ * Asks before a go-back, with a native dialog on the window that asked (go-back.ts). The words are the core's, in the
+ * person's language: the cached translation when there is one, else English. Any failure to ask is a no.
+ */
+async function confirmGoBack(sender: WebContents, ask: GoBackAsk): Promise<boolean> {
+  try {
+    const language = (await config.load()).language ?? DEFAULT_LANGUAGE;
+    const generated = translation ? await translation.strings(language, {}).catch(() => ({})) : {};
+    const i18n = await createI18n(language, {}, generated);
+    const t = (key: string, values?: Record<string, unknown>) => String(i18n.t(key, values ?? {}));
+    const text = goBackText(t, ask, harness.actions, i18n.resolvedLanguage ?? "en");
+    return await askNatively(dialog, BrowserWindow.fromWebContents(sender), text);
+  } catch (err) {
+    console.error("Could not ask before going back", err);
+    return false;
+  }
+}
+
+/**
+ * Whether the engine could run a translation now: installed, not outdated, not signed out (the runtime's own start
+ * checks). A fake engine (tests, mock mode) always can. Reused for ENGINE_CHECK_MS unless `fresh`.
+ */
+function engineReady(engine: EngineDef, fresh = false): Promise<boolean> {
+  if (hooks.engines?.[engine.id]) return Promise.resolve(true);
+  const now = Date.now();
+  if (!fresh && engineCheck?.id === engine.id && now - engineCheck.at < ENGINE_CHECK_MS) return engineCheck.ready;
+  const ready = detectEngine(engine, commandDeps, shared).then(
+    (s) => s.installed && !s.outdated && s.loggedIn !== false,
+    () => false,
+  );
+  engineCheck = { id: engine.id, at: now, ready };
+  return ready;
+}
+
+/**
+ * The set-up engine when a run could use it (the app is set up, its notice accepted), else null. It reads the
+ * saved config, not validConfig(): with profiles and no active profile there is no base, but the engine is ready.
+ */
+async function translateEngine(fresh = false): Promise<EngineDef | null> {
+  const c = await config.load();
+  if (!isConfigured(c) || !(await hasNotice(c.engineId))) return null;
+  const engine = getEngine(c.engineId);
+  return (await engineReady(engine, fresh)) ? engine : null;
+}
+
+function buildTranslation(): TranslationService {
+  return new TranslationService({
+    cache: new TranslationCache(app.getPath("userData")),
+    core: CORE_EN,
+    ...(harness.tone ? { tone: harness.tone } : {}),
+    language: async () => (await config.load()).language ?? DEFAULT_LANGUAGE,
+    saveLanguage: async (tag) => {
+      await config.save({ language: tag });
+    },
+    answerOffer: async () => {
+      await config.save({ languageOffered: true });
+    },
+    // Spec §3: "no-engine" also covers an engine with a problem; mock mode never translates.
+    available: async () => {
+      if (hooks.mock) return "mock";
+      return (await translateEngine()) ? true : "no-engine";
+    },
+    engineName: async () => {
+      const c = await config.load();
+      return isConfigured(c) ? getEngine(c.engineId).name : undefined;
+    },
+    prepare: async () => {
+      if (hooks.mock) return null;
+      const engine = await translateEngine(true);
+      if (!engine) return null;
+      const cmd = hooks.engines?.[engine.id] ?? (await engineCommand(engine, commandDeps).catch(() => null));
+      if (!cmd) return null;
+      const models = cleanModels((await config.load()).models);
+      const saved = await savedOffer(engine.id);
+      const profile = await supportedEffort(
+        firstOffered(resolveProfile({ engine: engine.id, action: TRANSLATE_KEY, manifestTier: "light", models }), models, saved.models),
+        saved,
+      );
+      const launcher = electronLauncher(process.execPath);
+      // Each turn is logged in the current base (Decision 9), failed turns included; with profiles and none active,
+      // there is no base and nothing is logged. Translate lines never carry a scope. `turn` is 0-based; the log's
+      // batch is 1-based.
+      const log = async (r: SystemTaskResult, turn: number, tag: string) => {
+        const c = await validConfig();
+        if (!c) return;
+        const record = translateRecord({
+          engine: engine.id,
+          language: tag,
+          batch: turn + 1,
+          profile,
+          ok: r.ok,
+          ...(r.ok && r.usage ? { usage: r.usage } : {}),
+          ...(r.limits ? { limits: r.limits } : {}),
+        });
+        await new UsageLog(baseOf(c)).append(record);
+      };
+      const run: Runner = (o) =>
+        runSystemSession({
+          engine,
+          command: cmd.command,
+          env: cmd.env,
+          server: (rpc) => translateServerSpec({ rpc, launcher, entry: path.join(here, "translate-server.js") }),
+          parent: path.join(app.getPath("userData"), "translate-work"),
+          handle: o.handle,
+          next: o.next,
+          signal: o.signal,
+          profile,
+          onTurn: async (r, turn) => {
+            await log(r, turn, o.tag).catch((err: unknown) => console.error("Could not record the translation turn", err));
+            await o.onTurn(r, turn);
+          },
+        });
+      return { engineName: engine.name, run };
+    },
+    send: (state) => sendToWindow("hh:language", state),
+  });
+}
+
 /** Loaded only for a harness with material: the service and the converters' runner stay out of every other app (D0). */
 async function buildMaterial(): Promise<MaterialService | null> {
   const m = harness.material;
@@ -1366,6 +1619,8 @@ function buildMaterialJobs(svc: MaterialService): MaterialJobs<Job> {
 async function saveConfigPatch(patch: AppConfig, before: AppConfig): Promise<void> {
   if (patch.engineId && before.engineId && patch.engineId !== before.engineId) {
     const engineId = patch.engineId;
+    // A translation run belongs to the old engine: it stops, what it saved stays (plan Decision 12).
+    await translation?.stop().catch((err: unknown) => console.error("Could not stop the translation", err));
     await guards.switchEngine(
       {
         // A profile switch counts too: once its task has closed nothing runs, yet its runtime and profile are pending.
@@ -1420,7 +1675,9 @@ function buildBoardHost(c: AppConfig): BoardHost {
             return slot ? runningTask(slot) : Promise.resolve(null);
           }),
         );
-        // A new workspace: the material queue goes on (in this base), as with a new runtime.
+        // A new workspace: the material queue goes on (in this base), and its commits reach the file timelines, as with
+        // a new runtime.
+        announceCommits(ws.history);
         kickMaterial();
         return ws;
       },
@@ -1547,9 +1804,14 @@ function buildTaskAttention(): TaskAttention {
 
 /** Registers an IPC handler that only answers the app's own page. */
 function handle(channel: string, fn: (...args: never[]) => unknown) {
+  handleFrom(channel, (_sender, ...args) => fn(...(args as never[])));
+}
+
+/** `handle`, also told which window asked (whatever is kept per window, such as the reader's watches). */
+function handleFrom(channel: string, fn: (sender: WebContents, ...args: unknown[]) => unknown) {
   ipcMain.handle(channel, (event: IpcMainInvokeEvent, ...args: unknown[]) => {
     if (!event.senderFrame || !appUrl(event.senderFrame.url)) throw new Error("Unexpected sender");
-    return fn(...(args as never[]));
+    return fn(event.sender, ...args);
   });
 }
 
@@ -1573,6 +1835,11 @@ const hold = holds({
  */
 const restores = new RestoreGuard({ quitting: () => quitting, busy: () => tasks.isBusy() || (jobsHost?.running() ?? false), turnBlocked: hold.restoreHeld });
 const restoreWith = (run: (history: History) => Promise<unknown>) => restores.run(currentHistory, run);
+/** A restore changes tracked files with no data event: the settings and Sidekick's settings may have changed. */
+function afterRestore(): void {
+  void settingsCtl?.changed();
+  void sidekickCtl?.refresh().catch((err: unknown) => console.error("Could not refresh Sidekick", err));
+}
 
 /**
  * Profile switches (profiles spec §5): one at a time, refused while a turn, a restore, a move, an engine change, an
@@ -1612,6 +1879,93 @@ const personData = personDataRequests({
 /** The same handler for the harness UI, which only reads `settings` (it changes them through `client.settings`). */
 const harnessUiData = harnessUiDataRequests(personData, () => harness.settings !== undefined);
 
+/** Document reviews (review spec): the person's side, and the agent's tools for each runtime's folder (one set of locks). */
+const reviews = new ReviewService({
+  base: async () => {
+    const c = await validConfig();
+    return c ? baseOf(c) : null;
+  },
+  history: () => currentHistory(),
+  trailer: () => tasks.trailerNow(),
+  openTask: async () => {
+    const t = await tasks.runningTask();
+    return t ? { id: t.id, scope: t.scope } : null;
+  },
+  busy: () => tasks.isBusy(),
+  whenSettled: (write) => tasks.whenSettled(write),
+  blocked: () => (quitting ? "The app is closing" : turnBlocked()),
+  // The canonical path and the record's scope; rejects with `RoundNotStarted` when no turn started.
+  round: (r) => tasks.reviewRound(r),
+  approved: (a) => void tasks.documentApproved(a).catch((err: unknown) => console.error("Could not act on the approval", err)),
+  reviewTier: (kind) => {
+    const kinds = harness.documents?.kinds;
+    return (kind !== undefined && kinds && Object.hasOwn(kinds, kind) ? kinds[kind].reviewTier : undefined) ?? "standard";
+  },
+  changed: (p) => sendToWindow("hh:reviewChanged", p),
+});
+
+/** File timelines (file-timeline spec): read from the history; a one-file go-back goes through the restore guard. */
+const fileTimelines = new FileTimelineService({
+  base: async () => {
+    const c = await validConfig();
+    return c ? baseOf(c) : null;
+  },
+  history: () => currentHistory(),
+  actionLabel: (id) => (id === null ? "A question" : Object.hasOwn(harness.actions, id) ? harness.actions[id].label : id),
+  approvals: async (base, doc) => (await loadReview(base, doc).catch(() => null))?.approvals ?? [],
+  busy: () => quitting || tasks.isBusy() || turnBlocked() !== null,
+  restore: (run) => restoreWith(run),
+  restored: () => afterRestore(),
+  // Diffs run in a worker thread of their own: jsdiff's budget and the Markdown parse never block Electron main.
+  diff: workerDiff({ entry: path.join(here, "diff-worker.js") }),
+});
+
+/** The context panel (context-panel spec): the person's pins and exclusions and the open task's record. */
+const contextSvc = new ContextService({
+  base: async () => {
+    const c = await validConfig();
+    return c ? baseOf(c) : null;
+  },
+  scoped,
+  scopeExists: (id) => activeScope(id),
+  budget: async () => pinnedBudget(cleanModels((await config.load()).models), harness.context),
+  record: (id) => tasks.contextRecord(id),
+  openTask: async () => (await tasks.runningTask())?.id ?? null,
+  noteTitles: async (scope) => {
+    const c = await validConfig();
+    if (!c) return new Map<string, string>();
+    const notes = await readNotes(baseOf(c), notesPrefix(scoped(), scope)).catch(() => []);
+    return new Map(notes.map((n) => [n.path, n.title]));
+  },
+  history: () => currentHistory(),
+  trailer: () => tasks.trailerNow(),
+  blocked: () => (quitting ? "The app is closing" : turnBlocked()),
+  add: (taskId, file) => {
+    const { accepted, done } = tasks.addContext(taskId, file);
+    // Closing ends the operation before it runs: not a failure worth a log line.
+    done.catch((err: unknown) => {
+      if (!quitting) console.error("The Add now turn failed", err);
+    });
+    return accepted;
+  },
+  pickFile: async (base) => {
+    if (!window || window.isDestroyed()) return null;
+    const result = await dialog.showOpenDialog(window, { defaultPath: base, properties: ["openFile"] });
+    return result.canceled ? null : (result.filePaths[0] ?? null);
+  },
+  changed: (task) => void sendContext(task),
+});
+
+/** The task's panel refreshes (`hh:context`); a task that is no longer open sends nothing. */
+async function sendContext(task: string): Promise<void> {
+  const got = await contextSvc.get(task).catch(() => null);
+  if (got?.ok) sendToWindow("hh:context", { task, context: got.context });
+}
+
+/** Tells the window which paths each commit touched: an open timeline gets its new entry (§6.3 `onChange`). */
+const commitAnnouncements = commitAnnouncer((paths) => sendToWindow("hh:fileCommits", paths));
+const announceCommits = (history: History) => commitAnnouncements.watch(history);
+
 function registerIpc() {
   handle("hh:getState", () => appState());
   handle("hh:pickFolder", async (defaultPath: string) => {
@@ -1649,6 +2003,8 @@ function registerIpc() {
         saveConfigPatch(patch, before),
       );
       if (patch.folder !== undefined && patch.folder !== before.folder) {
+        // The reader's watches were checked against the old folder.
+        documentSessions.closeAll();
         if (before.folder) dropDataStoresUnder(before.folder);
         await settleScopes()
           .then(scopesChanged)
@@ -1886,55 +2242,104 @@ function registerIpc() {
     if (!target) return false;
     return revealIfStillSafe(target, roots, (p) => shell.showItemInFolder(p));
   });
+  // The reader (document-reader spec §5.3): it only ever reads, inside the folder or a reference folder. Every input
+  // is untrusted (documents.ts checks its shape first) and every failure is an answer, never a thrown error.
+  handle("hh:readDocument", async (rel: unknown): Promise<DocumentRead> => {
+    try {
+      const roots = await documentRoots();
+      if (!roots) return { ok: false, reason: "not-ready" };
+      return await readDocument(rel, roots);
+    } catch (err) {
+      console.error("Could not read the document", err);
+      return { ok: false, reason: "missing" };
+    }
+  });
+  handle("hh:readImage", async (rel: unknown): Promise<string | null> => {
+    try {
+      const roots = await documentRoots();
+      return roots ? await readImage(rel, roots) : null;
+    } catch {
+      return null;
+    }
+  });
+  handle("hh:documentsExist", async (paths: unknown): Promise<boolean[]> => {
+    if (!Array.isArray(paths)) return [];
+    // Too many to check: none counts as there (one answer per path, as the window expects).
+    if (paths.length > MAX_EXIST_PATHS) return paths.map(() => false);
+    try {
+      const roots = await documentRoots();
+      return roots ? await documentsExist(paths, roots) : paths.map(() => false);
+    } catch {
+      return paths.map(() => false);
+    }
+  });
+  handleFrom("hh:watchDocument", async (sender, rel): Promise<number | null> => {
+    try {
+      const roots = await documentRoots();
+      return roots ? await documentSessions.watch(sender.id, rel, roots) : null;
+    } catch {
+      return null;
+    }
+  });
+  handleFrom("hh:unwatchDocument", (sender, id) => documentSessions.unwatch(sender.id, id));
+  // Reviews (review spec §5.6): every answer is data; nothing reaches the service unless the agent may edit the folder (D0).
+  for (const [channel, fn] of Object.entries(reviewHandlers(reviews, () => harness.permissions.edit === "folder"))) handle(channel, fn);
+  // File timelines (file-timeline spec §6.3): every harness (Q1); every answer is data.
+  for (const [channel, fn] of Object.entries(fileHandlers(fileTimelines))) handle(channel, fn);
+  for (const [channel, fn] of Object.entries(contextHandlers(contextSvc))) handle(channel, fn);
+  // Language on demand (plan 5b): every answer is data; the state is pushed on hh:language.
+  if (translation) for (const [channel, fn] of Object.entries(languageHandlers(translation))) handle(channel, fn);
   // Cancels the turn and stops the task operation (a closing turn never goes on to the next task).
   handle("hh:cancel", () => tasks.cancel());
-  // Restore commits carry no task: going back may undo several tasks, so it belongs to none of them.
-  handle("hh:restore", (sha: unknown) => {
-    if (!isSha(sha)) throw new Error("Invalid point");
-    // A restore changes tracked files with no data event: the settings may have changed.
-    return restoreWith((history) => history.restore(sha, RESTORE_POINT)).then(() => {
-      void settingsCtl?.changed();
-      void sidekickCtl?.refresh().catch((err: unknown) => console.error("Could not refresh Sidekick", err));
-    });
-  });
-  handle("hh:historyTasks", async () => {
+  const historyGroups = async () => {
     const history = await currentHistory();
     return history ? historyView(await history.tasks()) : [];
+  };
+  // Every go-back (one file, the whole folder, one task) asks first with main's native dialog (go-back.ts).
+  // Restore commits carry no task: going back may undo several tasks, so it belongs to none of them.
+  // A restore changes tracked files with no data event: the settings may have changed.
+  const goBacks = goBackHandlers<WebContents>({
+    confirm: confirmGoBack,
+    blocked: () => quitting || tasks.isBusy() || hold.restoreHeld() !== null,
+    groups: historyGroups,
+    restorePoint: (sha) => restoreWith((history) => history.restore(sha, RESTORE_POINT)).then(afterRestore),
+    restoreTask: (taskId) =>
+      restoreWith(async (history) => {
+        const group = (await history.tasks()).find((g) => g.taskId === taskId);
+        if (!group?.start) throw new Error("Nothing to go back to");
+        await history.restore(group.start, RESTORE_TASK);
+      }).then(afterRestore),
+    file: fileTimelines,
   });
-  handle("hh:restoreTask", (taskId: unknown, includeShared?: unknown) => {
+  // Every go-back but "Undo this task" as master registers it; that one also undoes by paths below.
+  for (const [channel, fn] of Object.entries(goBacks)) if (channel !== "hh:restoreTask") handleFrom(channel, fn);
+  handle("hh:historyTasks", historyGroups);
+  handleFrom("hh:restoreTask", async (sender, taskId: unknown, includeShared?: unknown) => {
     // Board mode (Decision 12): only the task's own paths (its shared ones after the person's confirm), refused while
     // its own lane runs, or a running turn touched one of them (P2). Other lanes go on meanwhile.
     // `single` mode the same (part 3 Decision 12): a job's commits sit between the task's, and a job run is undone alone.
     const byPaths = undoByPaths();
-    if (byPaths) {
-      const { id, includeShared: withShared } = restoreTaskArgs(taskId, includeShared);
-      let result: Awaited<ReturnType<typeof restoreTaskByPaths>> | null = null;
-      return restores
-        .run(
-          currentHistory,
-          async (history: History) => {
-            result = await restoreTaskByPaths(history, id, { running: byPaths.running, includeShared: withShared });
-          },
-          { busy: () => byPaths.busy(id) },
-        )
-        .then(() => {
-          const r = result!;
-          // A refusal is an answer, not an error: the window says why, naming the file (spec §5.3).
-          if (!r.ok) return { refused: undoRefusalOf(r) };
-          void settingsCtl?.changed();
-          void sidekickCtl?.refresh().catch((err: unknown) => console.error("Could not refresh Sidekick", err));
-          return undefined;
-        });
-    }
-    return restoreWith(async (history) => {
-      if (typeof taskId !== "string" || !taskId || taskId.length > 200) throw new Error("Invalid task");
-      const group = (await history.tasks()).find((g) => g.taskId === taskId);
-      if (!group?.start) throw new Error("Nothing to go back to");
-      await history.restore(group.start, RESTORE_TASK);
-    }).then(() => {
-      void settingsCtl?.changed();
-      void sidekickCtl?.refresh().catch((err: unknown) => console.error("Could not refresh Sidekick", err));
-    });
+    // Plain mode: the whole folder back to the task's start, after main's native confirmation (go-back.ts).
+    if (!byPaths) return goBacks["hh:restoreTask"](sender, taskId);
+    const { id, includeShared: withShared } = restoreTaskArgs(taskId, includeShared);
+    const task = (await historyGroups()).find((g) => g.taskId === id);
+    if (!task) return { refused: { reason: "nothing" as const } };
+    if (quitting || hold.restoreHeld() !== null) throw new Error("Going back can't run now");
+    // Main's native dialog too; by paths no later task is undone, so none is listed.
+    if (!(await confirmGoBack(sender, { kind: "task", task, later: [] }))) return CANCELLED;
+    let result: Awaited<ReturnType<typeof restoreTaskByPaths>> | null = null;
+    await restores.run(
+      currentHistory,
+      async (history: History) => {
+        result = await restoreTaskByPaths(history, id, { running: byPaths.running, includeShared: withShared });
+      },
+      { busy: () => byPaths.busy(id) },
+    );
+    const r = result!;
+    // A refusal is an answer, not an error: the window says why, naming the file (spec §5.3).
+    if (!r.ok) return { refused: undoRefusalOf(r) };
+    afterRestore();
+    return { ok: true };
   });
   // Board mode's task inbox (parallel spec §9.1). Ids are looked up in the board's lanes (P1); plain mode refuses.
   const inbox = tasksIpc(() => host);
@@ -2063,6 +2468,8 @@ function registerIpc() {
     await new Promise<void>((resolve, reject) => execFile(terminal.command, terminal.args, (err) => (err ? reject(err) : resolve())));
   });
   handle("hh:resetSharedConfig", async () => {
+    // A reset drops the engine set-up: a translation run must not keep using it.
+    await translation?.stop().catch((err: unknown) => console.error("Could not stop the translation", err));
     await shared.reset();
   });
   handle("hh:revealFolder", async () => {
@@ -2117,7 +2524,11 @@ function registerIpc() {
       // Board mode: each open task's checkpoint, one at a time, then the queues pause until the move ends (Decision 15).
       checkpoint: () => (host ? host.board.checkpointAllBeforeMove() : plainTasks.checkpointBeforeMove()),
       holdHistory: (held) => (historyHeld = held),
-      flush: flushTurns,
+      flush: async () => {
+        await flushTurns();
+        // The file indexes waiting to be written go with the history, not after it.
+        await flushFileIndexes();
+      },
       // The plugins work on the old folder too: stopped with the runtime, started again after (rebase, below).
       closeRuntime: async () => {
         await closeRuntime();
@@ -2138,6 +2549,8 @@ function registerIpc() {
       host?.board.moveEnded();
       // Moved or not, the plugins start again in whichever folder is the app's now.
       if (pluginsStopped) await rebasePlugins();
+      // The reader's watches were checked against the folder as it was.
+      documentSessions.closeAll();
     }
     // The window always gets the state as it is now, whatever happened.
     const state = await appState().catch((err: unknown) => {
@@ -2165,8 +2578,11 @@ async function createWindow() {
     webPreferences: { preload: path.join(here, "../preload/index.mjs"), contextIsolation: true, sandbox: false },
   });
   window = win;
+  // Read now: once closed, the window's webContents can no longer be asked.
+  const contentsId = win.webContents.id;
   win.on("closed", () => {
     if (window === win) window = null;
+    documentSessions.closeOwner(contentsId);
   });
   // The agent may have edited attention.json (no listener fires for it): the inbox is read again when the window comes back.
   const plugins = pluginsCtl;
@@ -2181,6 +2597,8 @@ async function createWindow() {
       );
     });
   }
+  // A reload starts a new page with no watches of its own: the old page's go.
+  win.webContents.on("did-navigate", () => documentSessions.closeOwner(contentsId));
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:\/\//i.test(url)) void shell.openExternal(url);
     return { action: "deny" };
@@ -2484,6 +2902,7 @@ if (loaded) {
   }
   materialSvc = await buildMaterial();
   materialJobs = materialSvc ? buildMaterialJobs(materialSvc) : null;
+  translation = buildTranslation();
 }
 
 // One app per data folder (the lock is tied to userData, so it is taken after it is set): a second one would
@@ -2603,6 +3022,8 @@ if (primary) {
       // Every plugin backend stops (and its window closes) before the agent goes.
       await pluginsCtl?.stop().catch((err: unknown) => pluginLog("Could not stop the plugins", err));
       await pluginHost?.stopAll().catch((err: unknown) => pluginLog("Could not close the plugin windows", err));
+      // A translation run stops; the batches it saved stay.
+      await translation?.stop().catch((err: unknown) => console.error("Could not stop the translation", err));
       try {
         if (boardClosed) await boardClosed;
         await (host ? closeRuntime() : dropRuntime());
@@ -2611,6 +3032,7 @@ if (primary) {
       }
       // A cancelled or closed turn still writes its reply to the chat: wait for it.
       await flushTurns();
+      await flushFileIndexes();
     })().finally(() => app.quit());
   });
 }

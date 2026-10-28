@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import type { ChatEntry } from "@humanharness/ui/client";
-import { type UsageMeta, type UsageRecord, UsageLog, compactionRecord, dayTokens, jobRecord, materialRecord, measuredMaterialCosts, mergeUsage, profileMeta, profilesUsage, recentUsage, sidekickRecord, sidekickSpent, sidekickWeek, summarizeUsage, usageRecord, withSpent } from "../src/main/usage-log";
+import { type UsageMeta, type UsageRecord, UsageLog, compactionRecord, dayTokens, jobRecord, materialRecord, measuredMaterialCosts, mergeUsage, profileMeta, profilesUsage, recentUsage, sidekickRecord, sidekickSpent, sidekickWeek, summarizeUsage, translateRecord, usageRecord, withSpent } from "../src/main/usage-log";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -632,5 +632,40 @@ describe("recentUsage: job lines don't push tasks out of the latest lines", () =
     const withWindow: UsageRecord = { ...task("x"), limits: rec(0.3, R1).limits };
     const lines = [withWindow, ...Array.from({ length: 60 }, (_, i) => job(i))];
     expect(recentUsage(lines, 50).filter((r) => r.limits?.length).at(-1)).toBe(withWindow);
+  });
+});
+
+describe("translate turns (language spec §5 Measuring)", () => {
+  const profile = { engine: "claude", tier: "light" as const, model: "haiku", effort: "low" as const, cap: 3 };
+  it("records phase translate with the language and batch", () => {
+    const r = translateRecord({ engine: "claude", language: "es", batch: 2, profile, ok: true, usage: { inputTokens: 5, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 } }, "2026-10-28T10:00:00.000Z");
+    expect(r).toMatchObject({ at: "2026-10-28T10:00:00.000Z", engine: "claude", phase: "translate", language: "es", batch: 2, ok: true, tier: "light", model: "haiku" });
+    expect(r.usage?.inputTokens).toBe(5);
+    expect(translateRecord({ engine: "claude", language: "es", batch: 1, profile, ok: false })).not.toHaveProperty("usage");
+  });
+
+  it("are not a task's turn, and a turn right before one can't be measured", () => {
+    const w = (u: number) => [{ kind: "five_hour", utilization: u, resetsAt: "2099-01-01T00:00:00.000Z" }];
+    const usage = { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 };
+    const records = [
+      { at: "1", engine: "claude", action: "a", task: "t1", ok: true, limits: w(10), usage },
+      { at: "2", engine: "claude", phase: "translate" as const, language: "es", batch: 1, ok: true, limits: w(20), usage },
+    ];
+    const s = summarizeUsage(records as never, "five_hour", new Date("2026-10-28T00:00:00Z"));
+    expect(s.estimates.a).toBeUndefined();
+    expect(s.estimates.questions).toBeUndefined();
+    expect(s.tokens.questions).toBeUndefined();
+    expect(s.material).toBeUndefined();
+    // Their windows still count as the latest limits.
+    expect(s.limits?.[0].utilization).toBe(20);
+  });
+
+  it("are left out of the per-scope totals", () => {
+    const usage = { inputTokens: 3, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 };
+    const records = [
+      { at: "1", engine: "claude", action: "a", task: "t1", scope: "s", ok: true, usage },
+      { at: "2", engine: "claude", phase: "translate" as const, scope: "s", language: "es", batch: 1, ok: true, usage },
+    ];
+    expect(summarizeUsage(records as never, undefined).scopes).toEqual({ s: 3 });
   });
 });

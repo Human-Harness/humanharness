@@ -9,7 +9,10 @@ try {
     console.error("HH_HARNESS, HH_BRIDGE and HH_BRIDGE_TOKEN are required");
     process.exit(2);
   }
-  const server = await createUiServer(harnessConfig, { path: bridgePath, token }, { job: process.env.HH_JOB === "1" });
+  const reviewPath = process.env.HH_REVIEW_RPC;
+  const reviewToken = process.env.HH_REVIEW_RPC_TOKEN;
+  const review = reviewPath && reviewToken ? { path: reviewPath, token: reviewToken } : undefined;
+  const server = await createUiServer(harnessConfig, { path: bridgePath, token }, { job: process.env.HH_JOB === "1", ...(review ? { review } : {}) });
   await server.connect(new StdioServerTransport());
 } catch (e) {
   console.error(e instanceof Error ? e.message : String(e));

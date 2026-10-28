@@ -460,3 +460,98 @@ describe("forgetEngine in board mode (parallel spec §10)", () => {
     expect(await store.load()).toEqual({ version: 1, current: null, actions: { turn: "unfinished" }, lanes: [], focus: null });
   });
 });
+
+describe("review fields (review spec §5.3, §5.4)", () => {
+  const load = async (current: Record<string, unknown>) => {
+    const folder = tmp();
+    fs.mkdirSync(path.join(folder, ".harness"));
+    fs.writeFileSync(path.join(folder, ".harness", "tasks.json"), JSON.stringify({ ...waiting, current: { ...waiting.current, ...current } }));
+    return (await new TaskStore(folder).load()).current;
+  };
+
+  it("keeps a review task's path and drops one that leaves the folder", async () => {
+    expect((await load({ review: "specs/a.md" }))?.review).toBe("specs/a.md");
+    expect((await load({ review: "../x.md" }))?.review).toBeUndefined();
+  });
+
+  it("keeps the notices that are strings, the last 10, each cut to 600", async () => {
+    const many = ["a", 3, "", ...Array.from({ length: 12 }, (_, i) => `n${i}`), "x".repeat(700)];
+    const notices = (await load({ notices: many }))?.notices ?? [];
+    expect(notices).toHaveLength(10);
+    expect(notices[0]).toBe("n3");
+    expect(notices.at(-1)).toBe("x".repeat(600));
+    expect((await load({ notices: "nope" }))?.notices).toBeUndefined();
+  });
+});
+
+describe("the context record (context-panel spec §3)", () => {
+  const current = (extra: Record<string, unknown>) => ({
+    version: 1,
+    actions: {},
+    current: { id: "t1", status: "waiting", startedAt: "2026-10-28T10:00:00.000Z", turns: 1, ...extra },
+  });
+  const roundTrip = async (raw: unknown) => {
+    const folder = tmp();
+    fs.mkdirSync(path.join(folder, ".harness"));
+    fs.writeFileSync(path.join(folder, ".harness", "tasks.json"), JSON.stringify(raw));
+    return new TaskStore(folder).load();
+  };
+
+  it("keeps well-formed start items, the first-turn tokens and the reads", async () => {
+    const start = [
+      { id: "instructions", kind: "instructions", label: "Harness instructions", path: "AGENTS.md", tokens: 1200 },
+      { id: "notes", kind: "notes-index", label: "Notes (2)", tokens: 300, count: 2, notes: [{ path: ".harness/notes/a.md", title: "A" }], compacted: true },
+      { id: "brief:1", kind: "brief", label: "Mode brief", tokens: 200, at: "2026-10-28T10:05:00.000Z" },
+      { id: "pin:_app:a.md", kind: "pinned", label: "Pinned · a.md", path: "a.md", tokens: 100, scope: "_app" },
+    ];
+    const reads = [
+      { kind: "read", label: "a.md", path: "a.md", firstAt: "2026-10-28T10:01:00.000Z", count: 2 },
+      { kind: "tool", label: "data · data_query", firstAt: "2026-10-28T10:02:00.000Z", count: 1, compacted: true },
+    ];
+    const loaded = await roundTrip(current({ start, startTokens: 6312, reads }));
+    expect(loaded.current).toMatchObject({ start, startTokens: 6312, reads });
+  });
+
+  it("drops what has the wrong shape and bounds the lists", async () => {
+    const loaded = await roundTrip(
+      current({
+        start: [
+          { id: "x", kind: "nope", label: "x", tokens: 1 },
+          { id: "y", kind: "brief", label: "y", tokens: -1 },
+          { id: "z", kind: "data", label: "z", tokens: 5, path: "../out" },
+          { id: "empty", kind: "brief", label: "", tokens: 5 },
+          { id: "pin:main:a.md", kind: "pinned", label: "Pinned · a.md", tokens: 5, scope: "main" },
+          { id: "pin:main:b.md", kind: "pinned-title", label: "Pinned · b.md", path: "b.md", tokens: 5 },
+          "junk",
+        ],
+        startTokens: "many",
+        reads: [
+          { kind: "read", label: "a", firstAt: "T", count: 0 },
+          { kind: "read", label: "long time", firstAt: `2026-10-28T10:00:00.000Z${" ".repeat(40)}`, count: 1 },
+          ...Array.from({ length: 600 }, (_, i) => ({ kind: "read", label: `f${i}`, path: `f${i}`, firstAt: "2026-10-28T10:00:00.000Z", count: 1 })),
+        ],
+      }),
+    );
+    expect(loaded.current?.start).toEqual([]);
+    expect(loaded.current?.startTokens).toBeUndefined();
+    expect(loaded.current?.reads).toHaveLength(500);
+  });
+
+  it("drops bad optional fields of an item and cuts long labels", async () => {
+    const loaded = await roundTrip(
+      current({
+        start: [
+          { id: "notes", kind: "notes-index", label: "n".repeat(500), tokens: 100, at: "nope", count: 1.5, notes: [{ path: "../x.md", title: "X" }, "y"], scope: "../s", compacted: "yes" },
+        ],
+      }),
+    );
+    expect(loaded.current?.start).toEqual([{ id: "notes", kind: "notes-index", label: "n".repeat(200), tokens: 100, notes: [] }]);
+  });
+
+  it("D0: a task without them has none", async () => {
+    const loaded = await roundTrip(current({}));
+    expect(loaded.current).not.toHaveProperty("start");
+    expect(loaded.current).not.toHaveProperty("reads");
+    expect(loaded.current).not.toHaveProperty("startTokens");
+  });
+});

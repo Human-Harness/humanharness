@@ -27,6 +27,11 @@ export interface RuntimeOptions {
    * part in AGENTS.md, the same history keep list (D0).
    */
   material?: { request: (request: unknown) => Promise<unknown>; entry?: string };
+  /**
+   * Answers the agent's review tools (review spec §4) in the person's folder. Used only when the harness's agent may edit
+   * the folder; absent, or `permissions.edit: "none"`: no tools and no review lines in AGENTS.md (D0).
+   */
+  review?: (request: unknown) => Promise<unknown>;
   harness: LoadedHarness;
   engine: EngineDef;
   /** The user's visible folder. */
@@ -77,6 +82,8 @@ export interface HarnessRuntime {
   history: History;
   close(): Promise<void>;
 }
+
+export { REVIEW_FAILED, reviewHandler } from "./workspace";
 
 /** A workspace with exactly one slot, `"main"` (parallel spec §4): the CLI's `humanharness run` and the shell's runtime. */
 export async function createRuntime(opts: RuntimeOptions): Promise<HarnessRuntime> {

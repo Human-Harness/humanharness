@@ -8,6 +8,10 @@ Blocks let the agent show structured pieces of interface instead of loose text.
 - The managed section of `AGENTS.md` lists every tool with its description, an example and its JSON schema (`packages/workspace/src/instructions.ts`).
 - The runtime turns each forwarded call into a `block` event. The screen draws it with the registered component (`Blocks` in `packages/ui/src/Message.tsx`); `choices` is drawn by the core (`packages/ui/src/ChoicesBlock.tsx`), and a pick goes back to the main process through `client.choose`.
 - A harness with `material` also gets the `material` MCP server next to `ui` and `data` (`docs/architecture/material.md`). It is not a block server: its tools (`material_read`, `material_search`, `material_flag`, `material_conflict`) are not blocks, never reach `allBlocks` or the bridge, and ask the app over their own RPC socket, like the `data` server. The AI stages' answers (`material_review`, `material_label`…) are tools of the same server in system mode, which only those stage sessions get.
+- A harness whose agent may edit the folder also gets three review tools on the `ui` server: `ask_in_document`, `reply_to_comment` and `read_review` (`docs/architecture/reviews.md`).
+  - They are not blocks: they never reach `allBlocks` or the bridge, and they ask the app over their own RPC socket (`HH_REVIEW_RPC`), like the `data` server.
+  - Their names are reserved for every harness.
+  - A harness with `edit: "none"` has the same tool list as before.
 - Calls to our own tools never show as activity: Claude's `mcp__ui__*` and Codex's `ui` server calls are hidden.
 
 ## Input blocks

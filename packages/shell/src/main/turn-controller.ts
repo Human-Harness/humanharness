@@ -115,12 +115,13 @@ export function isHeld(done: Done, options: Pick<TurnOptions, "holdModelError" |
 }
 
 /**
- * An event as the window gets it: an activity's `edits` stay in main (parallel spec §5.2), so engine paths never reach
- * the renderer and the window's events are what they were (D0). Any other event is returned as is.
+ * An event as the window gets it: an activity's `paths` and `tool` (context-panel spec §3.2) and its `edits` (parallel
+ * spec §5.2) stay in main, so engine paths never reach the renderer and the window's events are what they were (D0).
+ * Any other event is returned as is.
  */
 export function forWindow(e: Event): Event {
-  if (e.type !== "activity" || e.edits === undefined) return e;
-  const { edits: _edits, ...rest } = e;
+  if (e.type !== "activity" || (e.paths === undefined && e.tool === undefined && e.edits === undefined)) return e;
+  const { paths: _paths, tool: _tool, edits: _edits, ...rest } = e;
   return rest;
 }
 

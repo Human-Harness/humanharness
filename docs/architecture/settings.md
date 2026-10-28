@@ -47,6 +47,14 @@ The structural rules are manifest schema errors: `defineHarness` and `loadHarnes
 
 In a harness with profiles (`docs/architecture/profiles.md`) the settings are per profile: they are a collection, so they live in the active profile's folder, and a new profile starts with the defaults. Settings › Modelos (`config.json` → `models`), the language and the appearance stay app-wide. Settings › General has a People section (the active profile's Edit; Archive or Bring back, and Delete… for the others), and Settings › Usage adds up every profile and adds "Usage by person".
 
+## Pinned files budget
+
+Settings › Models › Tasks ends with "Pinned files budget" (`PinnedBudget` in `packages/ui/src/ModelsTab.tsx`): how many tokens of the files the person pins (`docs/architecture/context.md`) every new task gets whole; the rest go in as their title. It is app-wide, stored in `config.json` → `models.pinnedTokens` (`cleanModels` keeps a valid value; 0 is a real value).
+
+- The options are 1,000 / 3,000 / 6,000 / 12,000 tokens (`PINNED_OPTIONS` in `packages/engines/src/models.ts`), plus the harness's suggestion and the saved value when they are other values. The harness's suggestion (`ModelsView.pinnedTokens`: the manifest's `context.pinnedTokens`, else 3,000) is marked "(suggested)".
+- Picking the suggestion drops the key, so the person's choice follows the harness again. The save updates only that key of `models` (`hh:saveConfig` replaces the whole object).
+- A new task uses `pinnedBudget`: the person's value, else the manifest's, else 3,000. The budget hint under the select is linked to it with `aria-describedby`.
+
 ## The window
 
 - The tab comes right after General and is labelled with `settings.tab`; a harness without `settings` has no such tab. Before the app is set up it shows the "set up first" card, like Engine, Models and Usage.

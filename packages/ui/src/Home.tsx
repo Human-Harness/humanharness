@@ -1,11 +1,65 @@
-import { useId } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { type Language, canonicalLanguage, offeredLanguage } from "@humanharness/harness-sdk/language";
 import { BackupNotice, type FolderMove } from "./BackupNotice";
 import { CheckIcon, EngineIcon, GearIcon, HHLogo, TopBar } from "./chrome";
-import { type AppState, type EngineStatus, type HarnessClient, type LimitWindow, type SetupStepsState, engineProblem, isConfigured } from "./client";
+import {
+  type AppConfig,
+  type AppState,
+  type EngineStatus,
+  type HarnessClient,
+  type LanguageState,
+  type LimitWindow,
+  type SetupStepsState,
+  engineProblem,
+  isConfigured,
+} from "./client";
+import { LanguageChooser } from "./LanguageChooser";
+import type { LanguageControl } from "./language-control";
+import { ownName, systemLanguage } from "./language";
 import { WARN_AT, fiveHour, percent } from "./usage";
 import { ProfileSwitcher } from "./ProfileSwitcher";
 import { useCurrentWindows } from "./UsageMeter";
+
+/** English and its variants (en-GB) show the bundled English: nothing to offer (D0). */
+const isEnglish = (tag: string): boolean => tag === "en" || tag.startsWith("en-");
+
+/** Stands for the language's name in a translated sentence, so the name can be wrapped in its own element. */
+const NAME_MARK = "\u0000";
+
+/** A tag worth offering: canonical, left to right, not English; else null. */
+function suggestion(tag: string | undefined): Language | null {
+  const canonical = tag ? canonicalLanguage(tag) : null;
+  return canonical && !isEnglish(canonical) && offeredLanguage(canonical) ? canonical : null;
+}
+
+/**
+ * The language Home would offer before the state is known, or null: only then does Home ask for it (asking runs an
+ * engine check). Only on a ready Home (set up, engine connected, Start offered), outside mock mode, not yet answered;
+ * the saved language if it isn't English, else the system language if it isn't. An English person on an English system gets null (D0).
+ */
+function offerCandidate(state: { config: AppConfig; mock?: boolean }, ready: boolean | null, system: Language): Language | null {
+  if (ready !== true || state.mock || state.config.languageOffered === true || !isConfigured(state.config)) return null;
+  const saved = canonicalLanguage(state.config.language);
+  if (saved && !isEnglish(saved)) return suggestion(saved);
+  return suggestion(system);
+}
+
+/**
+ * The language to offer on Home once (spec §3, §10), or null. Only on a ready Home, outside mock mode, never once
+ * answered, and only with a non-English suggestion (D0: an English person and an English system see nothing new):
+ * the saved language when it has no translation at all (a started one is Settings' "finish translating"), else the
+ * system language. Never during a run.
+ */
+export function languageOffer(state: { config: AppConfig; mock?: boolean }, view: LanguageState | null, ready: boolean | null, system: Language): Language | null {
+  if (!view || view.run?.status === "running" || offerCandidate(state, ready, system) === null) return null;
+  const saved = canonicalLanguage(view.language);
+  if (saved && !isEnglish(saved)) {
+    const started = view.cached.some((c) => canonicalLanguage(c.tag) === saved);
+    return view.missing > 0 && !started ? suggestion(saved) : null;
+  }
+  return suggestion(system);
+}
 
 /** The first screen of every launch (spec 2026-10-11 "Home"). */
 export function Home({
@@ -22,6 +76,7 @@ export function Home({
   onEngine,
   move,
   onAddProfile,
+  language,
 }: {
   state: AppState;
   client: HarnessClient;
@@ -44,6 +99,8 @@ export function Home({
   move?: FolderMove;
   /** Harnesses with profiles: "Add <label>" (the setup screen at its profile step). */
   onAddProfile?: () => void;
+  /** Language on demand (plan 5b): the offer card. Absent without `client.language` (D0: no card). */
+  language?: LanguageControl;
 }) {
   const { t } = useTranslation();
   const missingId = useId();
@@ -65,6 +122,35 @@ export function Home({
   const stepLabel = (id: string) => state.setup?.find((s) => s.id === id)?.label ?? id;
   const engineName = engine?.name ?? state.config.engineId ?? "";
   const missingStep = checkFailed ? "check-failed" : status ? engineProblem(status) : null;
+
+  // The language offer (spec §3, §10): asked for only when there is a non-English suggestion (an engine check runs).
+  const offerId = useId();
+  const startRef = useRef<HTMLButtonElement>(null);
+  const [choosing, setChoosing] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
+  const system = systemLanguage();
+  const wantsOffer = language !== undefined && !dismissed && offerCandidate(state, ready, system) !== null;
+  const offer = language && !dismissed ? languageOffer(state, language.view, ready, system) : null;
+  // The chooser keeps the suggestion after the card goes (the answer is saved as soon as the card is acted on).
+  const offered = useRef<Language | null>(null);
+  if (offer) offered.current = offer;
+  // `language` is a new object on every render; `load` is stable.
+  const load = language?.load;
+  useEffect(() => {
+    if (wantsOffer) load?.();
+  }, [wantsOffer, load]);
+  // The card's buttons are gone once it is answered (and the chooser's opener with them): focus lands on Start, not on
+  // nothing. Runs after the closed chooser's own focus return, so a focus it put back is kept.
+  const [refocus, setRefocus] = useState(0);
+  useEffect(() => {
+    if (refocus === 0) return;
+    const active = document.activeElement;
+    if (!active || active === document.body) startRef.current?.focus();
+  }, [refocus]);
+  const answerOffer = () => {
+    setDismissed(true);
+    void client.saveConfig({ languageOffered: true }).then(onChange, () => undefined);
+  };
 
   return (
     <div className="hh-home">
@@ -108,8 +194,40 @@ export function Home({
             <p>{t("home.missing.one", { step: stepLabel(blocking[0]) })}</p>
           </section>
         )}
+        {offer && (
+          <section className="hh-langoffer" aria-labelledby={offerId}>
+            <h2 id={offerId}>{t("language.offerTitle", { name })}</h2>
+            <p className="hh-caption">
+              {/* The language's own name is marked with its tag so a screen reader says it in that language. */}
+              {t("language.offerSuggested", { language: NAME_MARK })
+                .split(NAME_MARK)
+                .flatMap((part, i) => (i === 0 ? [part] : [<span key={i} lang={offer}>{ownName(offer)}</span>, part]))}
+            </p>
+            <div className="hh-langoffer-actions">
+              <button
+                type="button"
+                onClick={() => {
+                  answerOffer();
+                  setRefocus((n) => n + 1);
+                }}
+              >
+                {t("language.offerLater")}
+              </button>
+              <button
+                type="button"
+                className="hh-primary"
+                onClick={() => {
+                  setChoosing(true);
+                  answerOffer();
+                }}
+              >
+                {t("language.offerChoose")}
+              </button>
+            </div>
+          </section>
+        )}
         {ready || checking ? (
-          <button className="hh-primary hh-start" disabled={checking} onClick={onStart}>
+          <button ref={startRef} className="hh-primary hh-start" disabled={checking} onClick={onStart}>
             {t("home.start", { name })}
           </button>
         ) : (
@@ -137,6 +255,17 @@ export function Home({
         )}
         <BackupNotice client={client} state={state} onChange={onChange} move={move} />
       </main>
+      {language && choosing && (
+        <LanguageChooser
+          control={language}
+          start={offered.current ? { pick: offered.current } : {}}
+          harnessName={name}
+          onClose={() => {
+            setChoosing(false);
+            setRefocus((n) => n + 1);
+          }}
+        />
+      )}
       <footer className="hh-footer">
         <span className="hh-wordmark">Human Harness</span>
         {state.config.folder && (

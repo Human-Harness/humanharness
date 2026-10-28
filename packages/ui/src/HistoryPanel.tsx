@@ -3,10 +3,13 @@ import { useTranslation } from "react-i18next";
 import {
   type ActionOption,
   BEFORE_MESSAGE,
+  CONTEXT_CHANGE_PREFIX,
   type HarnessClient,
   type HistoryItem,
   type HistoryTaskView,
   DATA_CHANGE_PREFIX,
+  FILE_RESTORE_PREFIX,
+  type HistoryFileChange,
   NOTE,
   RESTORE_POINT,
   RESTORE_TASK,
@@ -16,7 +19,7 @@ import {
   UNDO_PREFIX,
   type UndoRefusal,
 } from "./client";
-import { ChevronIcon, ClockIcon, CloseIcon, UndoIcon, WarnIcon } from "./chrome";
+import { ChevronIcon, ClockIcon, CloseIcon, UndoIcon } from "./chrome";
 import { shownLanguage } from "./language";
 
 /** The i18n key (and its values) that tells a history entry in plain language; null keeps the commit subject. */
@@ -29,15 +32,16 @@ export function entryLabel(message: string): { key: string; values?: Record<stri
   if (message === RESTORE_TASK) return { key: "history.entry.restoredTask" };
   if (message === RESTORE_POINT) return { key: "history.entry.restored" };
   if (message.startsWith(DATA_CHANGE_PREFIX)) return { key: "history.entry.data", values: { collection: message.slice(DATA_CHANGE_PREFIX.length) } };
+  if (message.startsWith(CONTEXT_CHANGE_PREFIX)) return { key: "history.entry.context", values: { change: message.slice(CONTEXT_CHANGE_PREFIX.length) } };
+  if (message.startsWith(FILE_RESTORE_PREFIX)) {
+    // `Go back: <path> to <target>`: the target never holds " to " (v2, "the version of <ISO time>"), so the last one splits.
+    const rest = message.slice(FILE_RESTORE_PREFIX.length);
+    const cut = rest.lastIndexOf(" to ");
+    return { key: "history.entry.fileBack", values: { file: cut < 0 ? rest : rest.slice(0, cut) } };
+  }
   const note = NOTE.exec(message);
   if (note) return { key: "history.entry.note", values: { title: note[1] } };
   return null;
-}
-
-/** The tasks other than `own` that changed something after `after` (an ISO date), newest first: going back undoes them too. */
-export function laterTasks(groups: HistoryTaskView[], own: string | null, after: string): HistoryTaskView[] {
-  const t = Date.parse(after);
-  return groups.filter((g) => g.taskId !== null && g.taskId !== own && Date.parse(g.date) > t);
 }
 
 const keyOf = (g: HistoryTaskView) => g.taskId ?? "other";
@@ -69,8 +73,8 @@ export function HistoryPanel({
   onRestored,
   disabled = false,
   currentTask,
-  undoByFiles = false,
   jobs = [],
+  onOpenFile,
 }: {
   client: HarnessClient;
   /** The harness's actions: a task's row shows its action's label. */
@@ -84,16 +88,18 @@ export function HistoryPanel({
   disabled?: boolean;
   /**
    * Board mode (parallel spec §5.3): "Undo this task" takes back only the task's own files and never another task's.
-   * Main refuses when a later change touched them; the panel then says why instead of counting later tasks.
+   * Main refuses when a later change touched them, and the panel then says why; main's dialog lists no later tasks.
+   * Only main acts on it now (the dialog is main's); the panel takes it so callers can say which mode they are in.
    */
   undoByFiles?: boolean;
   /** The harness's jobs (part 3): a job run's row shows its job's label. */
   jobs?: { id: string; label: string }[];
+  /** A changed file was picked: its timeline opens (file-timeline spec §6.2). Absent: the paths stay plain text. */
+  onOpenFile?: (path: string, kind: HistoryFileChange["kind"]) => void;
 }) {
   const { t, i18n } = useTranslation();
   const [groups, setGroups] = useState<HistoryTaskView[] | null>(null);
   const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
-  const [confirming, setConfirming] = useState<Restore | null>(null);
   const [failed, setFailed] = useState(false);
   /** Board mode: why main refused the last "Undo this task". */
   const [refused, setRefused] = useState<UndoRefusal | null>(null);
@@ -118,8 +124,7 @@ export function HistoryPanel({
   });
   const shown = filter ? (groups ?? []).filter((g) => g.scopeId === filter) : groups;
   const closeRef = useRef<HTMLButtonElement>(null);
-  const yesRef = useRef<HTMLButtonElement>(null);
-  /** The button whose confirmation was cancelled: it gets focus back once it is shown again. */
+  /** The button whose go-back was cancelled or failed: it gets focus back once it is enabled again. */
   const refocus = useRef<string | null>(null);
   /** What had focus when the panel opened: it gets focus back when the panel closes. */
   const opener = useRef<HTMLElement | null>(null);
@@ -145,19 +150,20 @@ export function HistoryPanel({
     opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     closeRef.current?.focus();
     const onKey = (e: KeyboardEvent) => {
-      // A dialog above it (the pre-flight question) handled this Escape itself.
-      if (e.key === "Escape" && !e.defaultPrevented) close();
+      // A dialog above it (the pre-flight question) handled this Escape itself. Handling it here marks it too, so
+      // focus mode's window listener does not also leave.
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      e.preventDefault();
+      close();
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, []);
   useEffect(() => {
-    if (confirming) yesRef.current?.focus();
-    else if (refocus.current) {
-      document.getElementById(refocus.current)?.focus();
-      refocus.current = null;
-    }
-  }, [confirming]);
+    if (restoring || !refocus.current) return;
+    document.getElementById(refocus.current)?.focus();
+    refocus.current = null;
+  }, [restoring]);
 
   const toggle = (key: string) =>
     setOpen((current) => {
@@ -167,17 +173,27 @@ export function HistoryPanel({
       return next;
     });
 
+  /**
+   * Goes back; main asks first with a native dialog (what goes back, what later tasks are undone too). The person's
+   * "Cancel" answers `cancelled`: nothing changed, so the panel stays as it was and the button gets focus back.
+   */
   const restore = (r: Restore) => {
     if (restoring) return;
     setFailed(false);
     setRefused(null);
     setRestoring(true);
     (r.kind === "task" ? client.restoreTask(r.id) : client.restore(r.id)).then(
-      (result) => {
-        if (result && "refused" in result) {
+      (answer) => {
+        // Board mode: main refused, naming why (spec §5.3); nothing changed.
+        if (answer && "refused" in answer) {
+          refocus.current = triggerId(r);
           setRestoring(false);
-          setConfirming(null);
-          setRefused(result.refused);
+          setRefused(answer.refused);
+          return;
+        }
+        if (answer && answer.ok === false) {
+          refocus.current = triggerId(r);
+          setRestoring(false);
           return;
         }
         setRestoring(false);
@@ -185,65 +201,21 @@ export function HistoryPanel({
         close();
       },
       () => {
+        refocus.current = triggerId(r);
         setRestoring(false);
-        setConfirming(null);
         setFailed(true);
       },
     );
   };
 
-  const cancel = (r: Restore) => {
-    refocus.current = triggerId(r);
-    setConfirming(null);
-  };
-
-  /**
-   * The button, or its confirmation while it waits for a yes. `later` tasks are undone too; with any, the
-   * confirmation lists what goes, `task` (the group being undone, for "Undo this task") first.
-   */
-  const goBack = (r: Restore, later: HistoryTaskView[], task?: HistoryTaskView) => {
-    if (!(confirming?.kind === r.kind && confirming.id === r.id && !disabled)) return trigger(r);
-    const undone = later.length > 0 ? [...(task ? [task] : []), ...later] : [];
-    return (
-      <div className="hh-confirm hh-history-confirm">
-        <WarnIcon />
-        <div>
-          {task && <strong>{t("history.confirmTaskTitle", { name: rowLabel(task) })}</strong>}
-          <p>
-            {t(task ? "history.confirmTask" : "history.confirm")}
-            {later.length > 0 && ` ${t("history.laterTasks", { count: later.length })}`}
-          </p>
-        </div>
-        {undone.length > 0 && (
-          <ul className="hh-history-undone" aria-label={t("history.undone")}>
-            {undone.map((g) => (
-              <li key={keyOf(g)}>
-                <span>{rowLabel(g)}</span>
-                <span className="hh-caption">{t("history.filesChanged", { count: g.changes.length })}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-        <div className="hh-history-confirm-buttons">
-          <button disabled={restoring} onClick={() => cancel(r)}>
-            {t("history.cancel")}
-          </button>
-          <button ref={yesRef} className="hh-primary" disabled={restoring} onClick={() => restore(r)}>
-            {task ? t("history.undoTasks", { count: later.length + 1 }) : t("history.confirmYes")}
-          </button>
-        </div>
-      </div>
-    );
-  };
-
-  const trigger = (r: Restore) =>
+  const goBack = (r: Restore) =>
     r.kind === "task" ? (
-      <button id={triggerId(r)} className="hh-history-undo" disabled={disabled || restoring} onClick={() => setConfirming(r)}>
+      <button id={triggerId(r)} className="hh-history-undo" disabled={disabled || restoring} onClick={() => restore(r)}>
         <UndoIcon />
         {t("history.restoreTask")}
       </button>
     ) : (
-      <button id={triggerId(r)} className="hh-history-point-back" disabled={disabled || restoring} onClick={() => setConfirming(r)}>
+      <button id={triggerId(r)} className="hh-history-point-back" disabled={disabled || restoring} onClick={() => restore(r)}>
         {t("history.restore")}
       </button>
     );
@@ -361,10 +333,25 @@ export function HistoryPanel({
                     <div id={bodyId} className="hh-history-body">
                       {g.changes.length > 0 && (
                         <ul className="hh-history-files" aria-label={t("history.changedFiles")}>
-                          {g.changes.map((c) => (
+                          {g.changes.map((c, i) => (
                             <li key={c.path}>
-                              <span className={`hh-change ${c.kind}`}>{t(`history.change.${c.kind}`)}</span>
-                              <code title={c.path}>{c.path}</code>
+                              <span id={`${bodyId}-k${i}`} className={`hh-change ${c.kind}`}>
+                                {t(`history.change.${c.kind}`)}
+                              </span>
+                              {onOpenFile ? (
+                                <button
+                                  type="button"
+                                  className="hh-link hh-history-file-link"
+                                  title={c.path}
+                                  aria-label={t("history.openTimeline", { file: c.path })}
+                                  aria-describedby={`${bodyId}-k${i}`}
+                                  onClick={() => onOpenFile(c.path, c.kind)}
+                                >
+                                  <code>{c.path}</code>
+                                </button>
+                              ) : (
+                                <code title={c.path}>{c.path}</code>
+                              )}
                             </li>
                           ))}
                         </ul>
@@ -380,13 +367,13 @@ export function HistoryPanel({
                               )}
                               {when(e.date)}
                             </span>
-                            {goBack({ kind: "point", id: e.sha }, laterTasks(groups ?? [], g.taskId, e.date))}
+                            {goBack({ kind: "point", id: e.sha })}
                           </li>
                         ))}
                       </ol>
                       {g.taskId !== null &&
                         g.start !== null &&
-                        goBack({ kind: "task", id: g.taskId }, undoByFiles ? [] : laterTasks(groups ?? [], g.taskId, g.date), g)}
+                        goBack({ kind: "task", id: g.taskId })}
                     </div>
                   )}
                 </li>

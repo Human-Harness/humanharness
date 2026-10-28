@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import { afterEach, describe, expect, it } from "vitest";
-import { type Rpc, RpcRefused, callRpc, openRpc } from "../src";
+import { type Rpc, RpcRefused, RpcTimeout, callRpc, openRpc } from "../src";
 
 let rpc: Rpc | undefined;
 afterEach(async () => {
@@ -51,5 +51,11 @@ describe("rpc", () => {
     rpc = undefined;
     if (process.platform !== "win32") expect(fs.existsSync(where)).toBe(false);
     await expect(callRpc({ path: where, token: "x" }, {}, 500)).rejects.toThrow();
+  });
+
+  it("a handler that never answers is RpcTimeout", async () => {
+    rpc = await openRpc(() => new Promise(() => {}));
+    const err = await callRpc(rpc, {}, 200).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(RpcTimeout);
   });
 });

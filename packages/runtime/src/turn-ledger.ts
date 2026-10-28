@@ -13,6 +13,8 @@ export interface TurnWindow {
   overlapped: boolean;
   /** The snapshot it starts from: its `Before message` commit, or the queue head. */
   before: string | null;
+  /** A window that never overlapped and ended ok: its "Turn: …" commit (null when nothing changed), for the turn's document cards. */
+  after?: string | null;
   /** Opened beside another turn: the dirty paths then. Null for a window that was alone (its snapshot covers them). */
   startDirty: DirtyState | null;
   /** Folder-relative paths its edit events named, in Unicode NFC (`samePath`). */

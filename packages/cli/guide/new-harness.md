@@ -21,7 +21,7 @@ Resources are part of the third pillar. A harness never names a model: each task
 
 - The core checkout is the folder `package.json` links to: `"@humanharness/cli": "link:<core>/packages/cli"`. Below, `<core>` is that folder.
 - `<core>/harnesses/demo` is a complete example (custom blocks, a guided path, briefs, references). Read it for ideas; never copy it as a starting point.
-- `<core>/docs/architecture/` explains how the core works: `manifest.md`, `blocks.md`, `context.md`, `modes.md`, `phases.md`, `parallel.md`, `jobs.md`, `setup.md`, `profiles.md`, `turn.md`, `engines.md`, `authoring.md`.
+- `<core>/docs/architecture/` explains how the core works: `manifest.md`, `blocks.md`, `context.md`, `modes.md`, `phases.md`, `parallel.md`, `jobs.md`, `setup.md`, `profiles.md`, `turn.md`, `engines.md`, `language.md`, `authoring.md`.
 - In this repository: `harness.config.ts` (the manifest), `agent/AGENTS.md` (the instructions to the AI), `agent/tasks/*.md` (one brief per action), `agent/phases/*.md` (one brief per part, when an action has parts), `ui/` (the screen and the block components), `locales/en.json` (the UI strings).
 - Import the SDK from `@humanharness/cli/sdk` (`defineHarness`, `defineBlock`, `z`) and the UI kit from `@humanharness/cli/ui` (`HarnessApp`, `BlockProps`, `useTranslation`).
 
@@ -130,7 +130,9 @@ Ask for the name, a one-line tagline, the author and, optionally, a logo file (S
 ### Language
 
 - Write everything in English: the manifest's texts, `locales/en.json`, the instructions and every brief. The app ships in English and translates the screens into the person's language on their own engine; the AI reads English and answers in the person's language. English is what the models reason best in.
-- Don't add other `locales/*.json` files: the app doesn't read them.
+- Write one `locales/en.json`, in English. Don't add other `locales/*.json` files: the app doesn't read them. When the person picks another language, the app translates the core's and this file's strings on demand, on the person's engine, with the manifest's `tone`, and caches them.
+- Keep every `{{placeholder}}` as it is, and use as little markup as you can: a translation must keep the same placeholders and tags, or that string stays English.
+- Put any terms, consent or responsibility text under `legal.` in `locales/en.json` (`"legal": { "consent": "…" }`). Those strings are never translated and always show in English.
 - Give the manifest a `tone`: one English line on how the translated screens should sound ("warm and informal, short sentences"). Record it in `HARNESS.md`.
 - In a brief, `{{language}}` is the person's language by its English name ("Brazilian Portuguese").
 

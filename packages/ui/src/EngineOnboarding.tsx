@@ -8,6 +8,21 @@ type Busy = null | "notice" | "test" | SetupStep;
 const stepFailure = (r: SetupResult): false | "step" | "timeout" => (r.ok || r.cancelled ? false : r.timedOut ? "timeout" : "step");
 
 /**
+ * Under a legal block when the screen isn't English (spec §8): the line is in the app's language, the block in English.
+ * Nothing in English, nor in a language with no translation (it resolves to "en"), so D0 screens are unchanged.
+ */
+export function LegalInEnglish() {
+  const { t } = useTranslation();
+  return useLegalLang() ? <p className="hh-caption hh-legal-english">{t("language.legalEnglish")}</p> : null;
+}
+
+/** `lang` for a legal block: "en" when the screen is in another language, so screen readers read it as English; unset in English (D0). */
+export function useLegalLang(): "en" | undefined {
+  const { i18n } = useTranslation();
+  return i18n.resolvedLanguage && i18n.resolvedLanguage !== "en" ? "en" : undefined;
+}
+
+/**
  * The step an engine still needs (spec §9): legal notice, install, update, sign in, test prompt.
  * Each step ends with `refresh()`, which re-reads the real status; nothing is trusted from a local flag.
  * Renders nothing once the engine is ready.
@@ -24,6 +39,7 @@ export function EngineOnboarding({
   refresh: () => Promise<void>;
 }) {
   const { t } = useTranslation();
+  const legalLang = useLegalLang();
   const [busy, setBusy] = useState<Busy>(null);
   /**
    * "step": the last step failed; "timeout": it ran too long and was stopped; "shared":
@@ -265,18 +281,20 @@ export function EngineOnboarding({
   if (problem === "notice") {
     body = (
       <>
-        <h3>{t("engine.noticeTitle", v)}</h3>
-        <p>{t("engine.noticeProvider", { ...v, where: engine.dataLocation })}</p>
-        <p>{t("engine.noticeTraining", { trains: engine.trainsOnData })}</p>
-        <p>{t("engine.noticeAccount", { ...v, plan: engine.requires })}</p>
-        {engine.userProvider && <p>{t("engine.noticeUserProvider", v)}</p>}
-        <p>{t("engine.noticeContent", v)}</p>
+        <h3 lang={legalLang}>{t("legal.engine.noticeTitle", v)}</h3>
+        <p lang={legalLang}>{t("legal.engine.noticeProvider", { ...v, where: engine.dataLocation })}</p>
+        <p lang={legalLang}>{t("legal.engine.noticeTraining", { trains: engine.trainsOnData })}</p>
+        <p lang={legalLang}>{t("legal.engine.noticeAccount", { ...v, plan: engine.requires })}</p>
+        {engine.userProvider && <p lang={legalLang}>{t("legal.engine.noticeUserProvider", v)}</p>}
+        <p lang={legalLang}>{t("legal.engine.noticeContent", v)}</p>
         <p>
           {link(engine.termsUrl, t("engine.terms", v))} · {link(engine.privacyUrl, t("engine.privacy", v))}
         </p>
         <label>
-          <input type="checkbox" checked={accepted} onChange={(e) => setAccepted(e.target.checked)} /> {t("engine.accept")}
+          <input type="checkbox" checked={accepted} onChange={(e) => setAccepted(e.target.checked)} /> <span lang={legalLang}>{t("legal.engine.accept")}</span>
         </label>
+        {/* After the accept text, so the line covers every legal block of the notice. */}
+        <LegalInEnglish />
         <button className="hh-primary" disabled={!accepted || busy !== null} onClick={() => void accept()}>
           {t("engine.continue")}
         </button>

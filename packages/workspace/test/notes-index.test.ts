@@ -95,3 +95,17 @@ describe("buildNotesIndex", () => {
     );
   });
 });
+
+describe("buildNotesIndex exclude (context-panel spec §4.3)", () => {
+  it("skips excluded notes before anything else; the rest is the same index", () => {
+    const notes = [note(1), note(2), note(3)];
+    const without = buildNotesIndex([note(1), note(3)]);
+    expect(buildNotesIndex(notes, { exclude: new Set([".harness/notes/n2.md"]) })).toBe(without);
+  });
+
+  it("D0: an empty or absent set changes nothing; excluding every note gives an empty index", () => {
+    const notes = [note(1), note(2)];
+    expect(buildNotesIndex(notes, { exclude: new Set() })).toBe(buildNotesIndex(notes));
+    expect(buildNotesIndex(notes, { exclude: new Set(notes.map((n) => n.path)) })).toBe("");
+  });
+});

@@ -17,8 +17,13 @@ const HIDDEN_TOOLS = new Set(["ToolSearch", "TodoWrite"]);
 const contextOf = (u: Record<string, unknown>): number =>
   (Number(u.input_tokens) || 0) + (Number(u.cache_read_input_tokens) || 0) + (Number(u.cache_creation_input_tokens) || 0);
 
-export function allowedTools(permissions: Permissions, mcp: McpServerSpec[]): string[] {
-  const tools = ["Read", "Glob", "Grep", "TodoWrite"];
+/** Claude's built-in reading tools; an MCP-only session gets none of them. */
+const READ_TOOLS = ["Read", "Glob", "Grep", "TodoWrite"];
+/** Further built-in tools an MCP-only session never needs: subagents, listing, notebooks, skills, slash commands, web. */
+const MCP_ONLY_DENIED = [...READ_TOOLS, "Task", "Agent", "LS", "NotebookRead", "NotebookEdit", "Skill", "SlashCommand", "WebFetch", "WebSearch"];
+
+export function allowedTools(permissions: Permissions, mcp: McpServerSpec[], mcpOnly = false): string[] {
+  const tools = mcpOnly ? [] : [...READ_TOOLS];
   if (permissions.edit === "folder") tools.push("Edit(./**)", "Write(./**)", "MultiEdit(./**)");
   if (permissions.web) tools.push("WebSearch", "WebFetch");
   if (permissions.exec) tools.push("Bash");
@@ -27,14 +32,15 @@ export function allowedTools(permissions: Permissions, mcp: McpServerSpec[]): st
 }
 
 /** Deny rules beat allow rules, so project settings or hooks cannot re-enable what the manifest excludes. */
-export function disallowedTools(permissions: Permissions, references: string[] = []): string[] {
-  const tools = ["AskUserQuestion"];
-  if (permissions.edit === "none") tools.push("Edit", "Write", "MultiEdit", "NotebookEdit");
-  if (!permissions.exec) tools.push("Bash");
-  if (!permissions.web) tools.push("WebSearch", "WebFetch");
+export function disallowedTools(permissions: Permissions, references: string[] = [], mcpOnly = false): string[] {
+  const tools = ["AskUserQuestion", ...(mcpOnly ? MCP_ONLY_DENIED : [])];
+  const deny = (...names: string[]) => tools.push(...names.filter((n) => !tools.includes(n)));
+  if (permissions.edit === "none") deny("Edit", "Write", "MultiEdit", "NotebookEdit");
+  if (!permissions.exec) deny("Bash");
+  if (!permissions.web) deny("WebSearch", "WebFetch");
   tools.push("Edit(.claude/**)", "Write(.claude/**)", "MultiEdit(.claude/**)");
-  // `--add-dir` makes a reference folder a working directory, where acceptEdits would accept edits:
-  // deny them by absolute path (`//` starts an absolute path in permission rules).
+  // `permissions.additionalDirectories` makes a reference folder a working directory, where acceptEdits would
+  // accept edits: deny them by absolute path (`//` starts an absolute path in permission rules).
   for (const ref of references) {
     const dir = referenceRulePath(ref);
     tools.push(`Edit(/${dir}/**)`, `Write(/${dir}/**)`, `MultiEdit(/${dir}/**)`);
@@ -76,9 +82,21 @@ export const ALL_BUILTIN_TOOLS = [
   "AskUserQuestion", "ToolSearch",
 ] as const;
 
+/**
+ * `--settings` for the reference folders, or nothing without any (D0). They go in as
+ * `permissions.additionalDirectories`, not `--add-dir`: an `--add-dir` folder also loads its `.claude/skills`,
+ * `.claude/commands` and `.claude/agents` under the project source, code nobody approved. The settings key
+ * "grants file access only and loads none of these" (code.claude.com/docs/en/permissions, "Additional
+ * directories grant file access, not configuration").
+ */
+export function referenceSettingsArgs(references: string[]): string[] {
+  if (references.length === 0) return [];
+  return ["--settings", JSON.stringify({ permissions: { additionalDirectories: references } })];
+}
+
 /** Arguments for the unmodified official `claude` binary; the prompt goes in via stdin. Never touches credentials or auth settings. */
 export function claudeArgs(
-  o: Pick<TransportOptions, "session" | "mcp" | "permissions" | "persistSession" | "references" | "noTools"> & { profile?: ModelProfile },
+  o: Pick<TransportOptions, "session" | "mcp" | "permissions" | "persistSession" | "references" | "noTools" | "mcpOnly"> & { profile?: ModelProfile },
 ): string[] {
   if (o.session.id.startsWith("-")) throw new Error(`Refusing a session id that reads as a flag: ${JSON.stringify(o.session.id)}`);
   if (o.noTools && (o.mcp.length > 0 || (o.references ?? []).length > 0)) {
@@ -91,8 +109,8 @@ export function claudeArgs(
   const tools = o.noTools
     ? ["--tools", "", "--disallowedTools", ALL_BUILTIN_TOOLS.join(",")]
     : [
-        "--allowedTools", allowedTools(o.permissions, o.mcp).join(","),
-        "--disallowedTools", disallowedTools(o.permissions, o.references ?? []).join(","),
+        "--allowedTools", allowedTools(o.permissions, o.mcp, o.mcpOnly).join(","),
+        "--disallowedTools", disallowedTools(o.permissions, o.references ?? [], o.mcpOnly).join(","),
       ];
   return [
     "-p",
@@ -104,7 +122,7 @@ export function claudeArgs(
     ...tools,
     "--strict-mcp-config",
     "--mcp-config", JSON.stringify({ mcpServers }),
-    ...(o.references ?? []).flatMap((dir) => ["--add-dir", dir]),
+    ...referenceSettingsArgs(o.references ?? []),
     ...(o.session.started ? ["--resume", o.session.id] : ["--session-id", o.session.id]),
     ...(o.persistSession === false ? ["--no-session-persistence"] : []),
     ...profileArgs(o.profile),
@@ -140,6 +158,36 @@ export function editPaths(tool: string, input: Record<string, unknown>): string[
   const field = Object.hasOwn(EDIT_FIELDS, tool) ? EDIT_FIELDS[tool] : undefined;
   const value = field ? input[field] : undefined;
   return typeof value === "string" && value && value.length <= EDIT_PATH_MAX ? [value] : [];
+}
+
+/** Longest server or tool name kept. */
+const NAME_MAX = 100;
+/** Longest engine path kept; a longer one is dropped. */
+const PATH_MAX = 4096;
+
+/**
+ * What a tool call adds to its start event for the context panel (spec §3.2): the path a Read, Grep or Glob names,
+ * or an MCP tool's server and name (`mcp__<server>__<tool>`, split with indexOf).
+ */
+export function activityExtras(tool: string, input: Record<string, unknown>): { paths?: string[]; tool?: { server: string; name: string } } {
+  const str = (key: string) => {
+    const v = input[key];
+    return typeof v === "string" && v && v.length <= PATH_MAX ? v : undefined;
+  };
+  if (tool === "Read") {
+    const p = str("file_path");
+    return p ? { paths: [p] } : {};
+  }
+  if (tool === "Grep" || tool === "Glob") {
+    const p = str("path");
+    return p ? { paths: [p] } : {};
+  }
+  if (tool.startsWith("mcp__")) {
+    const rest = tool.slice("mcp__".length);
+    const cut = rest.indexOf("__");
+    if (cut > 0 && cut + 2 < rest.length) return { tool: { server: rest.slice(0, cut).slice(0, NAME_MAX), name: rest.slice(cut + 2).slice(0, NAME_MAX) } };
+  }
+  return {};
 }
 
 /** Turns Claude Code's stream-json lines into normalized events. */
@@ -213,7 +261,7 @@ export class StreamJsonReader {
         const activity = { kind: Object.hasOwn(KINDS, b.name) ? KINDS[b.name] : ("other" as const), detail: detailOf(b.name, b.input ?? {}) };
         this.tools.set(b.id, activity);
         const edits = editPaths(String(b.name), b.input ?? {});
-        this.emit({ type: "activity", id: b.id, ...activity, ...(edits.length > 0 ? { edits } : {}), state: "start" });
+        this.emit({ type: "activity", id: b.id, ...activity, ...activityExtras(String(b.name), b.input ?? {}), ...(edits.length > 0 ? { edits } : {}), state: "start" });
       }
       return;
     }

@@ -80,7 +80,7 @@ export async function endTurn(
   if (!w.overlapped) {
     // Closed before the first queued call, so a turn that starts now snapshots after this turn's commit.
     ledger.close(w.key);
-    if (done.ok) await history.save(`${TURN_PREFIX}${message.slice(0, 60)}`, trailer);
+    if (done.ok) w.after = await history.save(`${TURN_PREFIX}${message.slice(0, 60)}`, trailer);
     else if (crashed && w.before) await history.restore(w.before, `${UNDO_PREFIX}the turn did not finish`, trailer);
     else await history.save(`${STOPPED_PREFIX}${message.slice(0, 60)}`, trailer);
     return null;

@@ -4,13 +4,17 @@ import { CheckIcon, LockIcon, NoteIcon } from "./chrome";
 import { type AppState, type TaskView, nextInPath } from "./client";
 import { shownLanguage } from "./language";
 
-/** A small ring: the context the task's session uses against its cap, the exact tokens on hover (spec §6). */
-export function ContextMeter({ used, cap }: { used: number; cap: number }) {
+/**
+ * A small ring: the context the task's session uses against its cap, the exact tokens on hover (spec §6). With
+ * `onOpen`, a button that opens the context panel (context-panel spec §5.1).
+ */
+export function ContextMeter({ used, cap, onOpen }: { used: number; cap: number; onOpen?: () => void }) {
   const { t, i18n } = useTranslation();
+  const readoutId = useId();
   if (!(cap > 0)) return null;
   const pct = Math.max(0, Math.min(100, Math.round((used / cap) * 100)));
   const fmt = (n: number) => n.toLocaleString(shownLanguage(i18n));
-  return (
+  const ring = (
     <span
       className={pct >= 80 ? "hh-context-meter warn" : "hh-context-meter"}
       role="meter"
@@ -27,6 +31,16 @@ export function ContextMeter({ used, cap }: { used: number; cap: number }) {
       </svg>
     </span>
   );
+  if (!onOpen) return ring;
+  // A button's content is presentational: the meter's readout reaches screen readers as the button's description.
+  return (
+    <button type="button" className="hh-ctxp-meter" aria-label={t("context.open")} aria-describedby={readoutId} onClick={onOpen}>
+      {ring}
+      <span id={readoutId} className="hh-sr-only">
+        {t("models.contextReadout", { pct, used: fmt(used), cap: fmt(cap) })}
+      </span>
+    </button>
+  );
 }
 
 /** Flow mode's left panel: the guided path, the notes so far and the read-only reference folders. */
@@ -38,6 +52,7 @@ export function FlowSide({
   onOpenNote,
   material,
   plugins,
+  onContext,
 }: {
   state: AppState;
   tasks: TaskView;
@@ -48,6 +63,8 @@ export function FlowSide({
   material?: ReactNode;
   /** The Plugins section, after the material (only with running plugins that have panels there). */
   plugins?: ReactNode;
+  /** Opens the context panel from the meter. */
+  onContext?: () => void;
 }) {
   const { t } = useTranslation();
   const pathId = useId();
@@ -60,7 +77,7 @@ export function FlowSide({
       {tasks.current && !tasks.current.action && tasks.current.context && (
         <p className="hh-flow-question">
           {t("models.questions")}
-          <ContextMeter {...tasks.current.context} />
+          <ContextMeter {...tasks.current.context} onOpen={onContext} />
         </p>
       )}
       {path.length > 0 && (
@@ -86,7 +103,7 @@ export function FlowSide({
                     {state.actions[id].label}
                     {done && <span className="hh-sr-only"> {t("flow.seen")}</span>}
                   </button>
-                  {here && tasks.current?.action === id && tasks.current.context && <ContextMeter {...tasks.current.context} />}
+                  {here && tasks.current?.action === id && tasks.current.context && <ContextMeter {...tasks.current.context} onOpen={onContext} />}
                 </li>
               );
             })}

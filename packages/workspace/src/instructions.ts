@@ -3,7 +3,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 import type { EngineDef } from "@humanharness/engines";
-import { type Block, type Language, answerHeader, blockToolName, languageName } from "@humanharness/harness-sdk";
+import { type Block, type DocumentKind, type Language, answerHeader, blockToolName, languageName } from "@humanharness/harness-sdk";
 import { harnessDir } from "./layout";
 
 export const MANAGED_START = "<!-- humanharness:start -->";
@@ -44,6 +44,46 @@ const TEXT = {
     "The person may write in the chat instead of answering. The question stays open and may still be answered later: answer what they wrote, or remind them of the question.",
   ],
   annotateRule: 'To mark parts of an answer, call `show_annotate` with `ref` (the answer\'s `blockId`, or "last") and quote the person\'s exact words in each mark.',
+  writing: "### Writing for the reader",
+  writingIntro: "The person reads the `.md` files you write in a reader with rich Markdown. Write them for that reader:",
+  writingRules: (withKinds: boolean) => [
+    "**Structure.** One idea per section. Use `##` for sections and `###` for subsections, and never skip a level. Keep paragraphs to two to four sentences.",
+    "**Summary first.** A document longer than about 300 words starts with a `> [!SUMMARY]` callout that holds the conclusion.",
+    "**Pick the element by the content:**",
+    "  - two or more options compared on two or more criteria: a table;",
+    "  - a flow, a sequence, states or components: a Mermaid diagram (a ```mermaid fence), followed by a one-line caption in italics;",
+    "  - a decision: `> [!DECISION]`, with the reason;",
+    "  - a question for the person: `> [!QUESTION]`;",
+    "  - a risk: `> [!WARNING]`;",
+    "  - pending steps: a task list (`- [ ]`).",
+    "**Callouts.** Use only these six: `> [!NOTE]`, `> [!TIP]`, `> [!WARNING]`, `> [!SUMMARY]`, `> [!DECISION]`, `> [!QUESTION]`. The first line is the marker alone; the text follows on the next lines of the quote.",
+    "**Limits.** Tables up to about six columns: split them, or use a list, beyond that. Diagrams up to about 15 nodes: split them beyond that.",
+    "**No raw HTML.** It shows as text. Use Markdown only.",
+    "**Links.** Link between documents with relative paths (`adr-007.md`, `../notes/x.md#context`). Links to the web use `https://`.",
+    withKinds
+      ? "**Front-matter.** Start every document with a front-matter block: `title` always, and `kind` when one of the kinds below fits."
+      : "**Front-matter.** Start every document with a front-matter block holding `title` always.",
+  ],
+  reviewRules: [
+    "**Asking about a passage.** Use `ask_in_document`, and give for each option the full text that replaces the passage.",
+    "**Blocking questions.** Mark a question `blocking` only when the document can't be approved without its answer.",
+    "**Review rounds.** After a review round, answer every comment with `reply_to_comment`.",
+  ],
+  writingExample: [
+    "Example of the start of a document:",
+    "",
+    "    ---",
+    "    title: Caching the search results",
+    "    ---",
+    "    > [!SUMMARY]",
+    "    > Cache in memory for ten minutes; it removes most of the slow calls.",
+    "",
+    "    ## Context",
+  ],
+  kinds: "### Document kinds",
+  kindsIntro:
+    "When a document fits one of these kinds, put its id in the front-matter `kind` and use its `##` sections, in this order. Extra sections are fine. The reader warns the person when a section is missing.",
+  kindTemplate: "Template:",
 };
 
 /** A folder the agent may read but never change, with the label the instructions show. */
@@ -62,12 +102,42 @@ export function settingsLines(sentences: readonly string[] | undefined): string[
   return sentences && sentences.length > 0 ? ["", TEXT.settings, "", ...sentences.map((s) => `- ${s}`)] : [];
 }
 
+/** What `AGENTS.md` says about writing documents (document-reader spec §4.1, §4.2). */
+export interface WritingGuide {
+  /** The harness's document kinds; `{}` for the base guide only. */
+  kinds: Record<string, DocumentKind>;
+  /** The agent has the review tools (review spec §4): three more rules. Absent: none (D0). */
+  review?: boolean;
+}
+
+/** The "Writing for the reader" part, and with kinds the "Document kinds" part. None without a guide. */
+export function writingLines(writing: WritingGuide | undefined): string[] {
+  if (!writing) return [];
+  const t = TEXT;
+  const kinds = Object.entries(writing.kinds);
+  const rules = t.writingRules(kinds.length > 0).map((r) => (r.startsWith("  ") ? r : `- ${r}`));
+  if (writing.review) rules.push(...t.reviewRules.map((r) => `- ${r}`));
+  const lines = ["", t.writing, "", t.writingIntro, "", ...rules, "", ...t.writingExample];
+  if (kinds.length === 0) return lines;
+  lines.push("", t.kinds, "", t.kindsIntro);
+  for (const [id, k] of kinds) {
+    // Six spaces: a code block inside the list item (content at column 2), so `## …` stays text.
+    const code = "      ";
+    lines.push("", `- \`${id}\`: ${k.when}`, `  ${t.kindTemplate}`, "", `${code}---`, `${code}title: …`, `${code}kind: ${id}`);
+    if (k.status) lines.push(`${code}status: ${k.status.join(" | ")}`);
+    lines.push(`${code}---`, ...k.sections.map((s) => `${code}## ${s}`));
+  }
+  return lines;
+}
+
 export function managedSection(opts: {
   language: Language;
   blocks: Record<string, Block>;
   references?: ReferenceFolder[];
   settings?: readonly string[];
   material?: boolean;
+  /** The writing guide (document-reader spec D4). Absent: no such part (callers that predate it). */
+  writing?: WritingGuide;
 }): string {
   const t = TEXT;
   const lines = [MANAGED_START, t.title, "", ...t.rules(opts.language).map((r) => `- ${r}`), ...settingsLines(opts.settings)];
@@ -96,6 +166,7 @@ export function managedSection(opts: {
   }
   // Only a harness with material gets this part (material spec D0).
   if (opts.material) lines.push("", t.material, "", ...t.materialRules.map((r) => `- ${r}`));
+  lines.push(...writingLines(opts.writing));
   lines.push(MANAGED_END, "");
   return lines.join("\n");
 }
@@ -115,10 +186,19 @@ export interface InstructionsText {
   settings?: readonly string[];
   /** The harness takes material: the Material part. Absent: none (D0). */
   material?: boolean;
+  /** The writing guide; the runtime always passes it (document-reader spec D4). */
+  writing?: WritingGuide;
 }
 
 function agentsText(opts: InstructionsText): string {
-  const section = managedSection({ language: opts.language, blocks: opts.blocks, references: opts.references, settings: opts.settings, material: opts.material });
+  const section = managedSection({
+    language: opts.language,
+    blocks: opts.blocks,
+    references: opts.references,
+    settings: opts.settings,
+    material: opts.material,
+    writing: opts.writing,
+  });
   return `${opts.base.trimEnd()}\n\n${section}`;
 }
 

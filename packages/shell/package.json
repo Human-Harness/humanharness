@@ -15,6 +15,7 @@
     "@humanharness/blocks": "workspace:*",
     "@humanharness/engines": "workspace:*",
     "@humanharness/harness-sdk": "workspace:*",
+    "@humanharness/i18n": "workspace:*",
     "@humanharness/material": "workspace:*",
     "@humanharness/runtime": "workspace:*",
     "@humanharness/ui": "workspace:*",

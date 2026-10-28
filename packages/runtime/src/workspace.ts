@@ -4,9 +4,10 @@ import { type Bridge, type Launcher, type McpServerSpec, type Rpc, dataServerSpe
 import type { ModelProfile } from "@humanharness/engines";
 import { type LoadedHarness, type Permissions, type PermissionsOverride, allBlocks, hasJobs, hasMaterial, narrowPermissions, resolveInHarness } from "@humanharness/harness-sdk";
 import { materialServerSpec } from "@humanharness/material/light";
-import { History, type HistoryTrailer, START, appHistoryKeep, prepareFolder, refreshInstructions, writeInstructions } from "@humanharness/workspace";
+import { History, type HistoryTrailer, ReviewRefused, START, appHistoryKeep, prepareFolder, refreshInstructions, writeInstructions } from "@humanharness/workspace";
 import { AcpTransport } from "./acp";
 import { ClaudeCliTransport } from "./claude-cli";
+import { turnDocuments } from "./documents";
 import { type Event, fail } from "./events";
 import type { RunningTurn, RuntimeOptions } from "./runtime";
 import { type Session, type Transport, type TransportOptions, acpFields } from "./transport";
@@ -84,6 +85,25 @@ export interface HarnessWorkspace {
   close(): Promise<void>;
 }
 
+/** What the agent reads when a review request fails for a reason other than the app's own refusal. */
+export const REVIEW_FAILED = "The app could not do that. Nothing was saved; do not retry in a loop.";
+
+/**
+ * The review channel's handler: the rpc sends any thrown message to the agent, so only a `ReviewRefused` keeps its
+ * text (written for the agent); any other error (a file system error naming paths) becomes `REVIEW_FAILED`.
+ */
+export function reviewHandler(handle: (request: unknown) => Promise<unknown>): (request: unknown) => Promise<unknown> {
+  return async (request) => {
+    try {
+      return await handle(request);
+    } catch (err) {
+      if (err instanceof ReviewRefused) throw new Error(err.message);
+      console.error("A review request failed", err);
+      throw new Error(REVIEW_FAILED);
+    }
+  };
+}
+
 function harnessMcpServers(harness: LoadedHarness, launcher: Launcher): McpServerSpec[] {
   return harness.mcp.map((rel, i) => ({
     name: i === 0 ? harness.id : `${harness.id}-${i + 1}`,
@@ -104,7 +124,11 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
   const settings = await opts.instructionSettings?.();
   const material = opts.material && hasMaterial(harness) ? opts.material : undefined;
   const withMaterial = material ? { material: true } : {};
-  const generated = await writeInstructions({ folder, base, language: opts.language, blocks, references, engine, ...(settings ? { settings } : {}), ...withMaterial });
+  const review = opts.review && harness.permissions.edit === "folder" ? reviewHandler(opts.review) : undefined;
+  // Every harness gets the writing guide; its kinds only when it declares them (document-reader spec D4); the review
+  // lines only with the review tools (review spec §4).
+  const guide = { kinds: harness.documents?.kinds ?? {}, ...(review ? { review: true } : {}) };
+  const generated = await writeInstructions({ folder, base, language: opts.language, blocks, references, engine, writing: guide, ...(settings ? { settings } : {}), ...withMaterial });
 
   // The history skips the app's files under .harness/ (except the notes, the data and, with material, its registry
   // and decisions) and the generated instructions.
@@ -141,11 +165,15 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
     const bridge: Bridge = await openBridge((m) => emitCurrent?.({ type: "block", name: m.name, data: m.data }));
     let rpc: Rpc | null = null;
     let materialRpc: Rpc | null = null;
+    let reviewRpc: Rpc | null = null;
     try {
       const data = opts.data;
       if (data && (hasAgentData(harness) || opts.extraData)) rpc = await openRpc((r) => data(r, ref));
       if (material) materialRpc = await openRpc((r) => material.request(r, ref));
+      // The review tools ask the person (review spec §4): a task's slot only, never a job's (it can't ask, J1).
+      if (review && o.kind !== "job") reviewRpc = await openRpc(review);
     } catch (err) {
+      await reviewRpc?.close().catch(() => {});
       await materialRpc?.close().catch(() => {});
       await rpc?.close().catch(() => {});
       await bridge.close().catch(() => {});
@@ -153,6 +181,7 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
     }
     // Checked again after the awaits: a second openSlot for the same key may have won meanwhile.
     if (closing || slots.has(o.key)) {
+      await reviewRpc?.close().catch(() => {});
       await materialRpc?.close().catch(() => {});
       await rpc?.close().catch(() => {});
       await bridge.close().catch(() => {});
@@ -160,7 +189,7 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
     }
 
     const permissions: Permissions = o.kind === "job" ? narrowPermissions(harness.permissions, o.permissions) : harness.permissions;
-    const ui = uiServerSpec({ harnessConfig: harness.configPath, bridge, launcher, entry: opts.uiServerEntry });
+    const ui = uiServerSpec({ harnessConfig: harness.configPath, bridge, launcher, entry: opts.uiServerEntry, ...(reviewRpc ? { review: reviewRpc } : {}) });
     const transportOptions: TransportOptions = {
       folder,
       session,
@@ -211,7 +240,11 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
           try {
             await rpc?.close();
           } finally {
-            await materialRpc?.close();
+            try {
+              await materialRpc?.close();
+            } finally {
+              await reviewRpc?.close();
+            }
           }
         }
       }
@@ -269,6 +302,16 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
             emitCurrent = null;
             const f = (final ?? { type: "done", ok: false, error: { code: "agent-crashed" } }) as Extract<Event, { type: "done" }>;
             const a = await endTurn(history, ledger, w, f, message, options.trailer);
+            // A card for each .md a turn that ran alone added or changed (document-reader spec §5.1), between its
+            // "Before message" and "Turn: …" commits; none: no event at all. An overlapped turn's commits sit on other
+            // tasks' changes, so it shows none.
+            if (f.ok && !w.overlapped && w.before && w.after) {
+              const documents = await turnDocuments(history, w.before, w.after).catch((err: unknown) => {
+                console.error("Could not list the turn's documents", err);
+                return [];
+              });
+              if (documents.length > 0) emitOnce({ type: "documents", documents });
+            }
             if (a && options.onAttribution) {
               try {
                 options.onAttribution(a);
@@ -340,7 +383,7 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
         // And again after the settings arrive: a turn may have started while they were read. (A refresh under way when
         // close begins still writes: close waits for it.)
         if (ledger.anyRunning()) return false;
-        const write = refreshInstructions({ folder, base, language: opts.language, blocks, references, ...(now ? { settings: now } : {}), ...withMaterial });
+        const write = refreshInstructions({ folder, base, language: opts.language, blocks, references, writing: guide, ...(now ? { settings: now } : {}), ...withMaterial });
         writing = write;
         try {
           return await write;
@@ -357,6 +400,8 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
       // An open past its last `closing` check registers its slot before it settles; any other one closes its sockets.
       await Promise.all(opening);
       const results = await Promise.allSettled([...slots.values()].map((s) => s.close()));
+      // The file index waits for a quiet moment: write it now (it never throws).
+      await history.flush();
       const failed = results.find((r): r is PromiseRejectedResult => r.status === "rejected");
       if (failed) throw failed.reason;
     },

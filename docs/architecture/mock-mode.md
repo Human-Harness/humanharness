@@ -29,6 +29,7 @@ Plan 3f (spec `2026-10-14-setup-flow-design.md` §4) shows the faked engine as w
 - **Its details.** Engine (and the setup step) show "Test model", answers recorded in the harness's `mock/`, data that stays on this computer and a plan that is not spent. There is no sign out, plan, version or legal line. The usage line on the work screen and Settings › Usage say "Test mode: uses none of your plan." instead of "doesn't report the limits" (the last reply's tokens still show).
 - **No notice.** The engine is ready at once: there is no notice to accept, nothing to install and no sign-in.
 - **The test model.** `ModelsView` offers one model, `{ id: "mock", name: "Test model" }`, and every tier defaults to it (effort and cap as they are). Settings › Models shows "Test model" for each level. `fake-claude` ignores `--model`.
+- **Language.** Mock mode never translates (the language state answers `mock`): the picker opens, says "Connect an AI engine to translate the app." and offers only English and complete cached languages; every other language is disabled. The Home offer doesn't show. The e2e runs that translate use `fake-claude`'s `pseudoTranslate` step outside mock mode (`docs/architecture/language.md`).
 
 ## The format
 
@@ -69,8 +70,9 @@ One file per action, `mock/<action>.json`, meant to be edited by hand. The schem
 - `text`: streamed in about eight chunks over `delayMs` (default 600 ms, up to 60 s).
 - `blocks`: MCP calls on the app's `ui` server by tool name (`show_choices`, `show_<block>`). The app validates them as it does for a real engine.
 - `note`: a `save_note` call (`title` required, the rest as the app's note fields).
-- `writes`: file writes in the work folder. `content: null` deletes the file. Paths are relative, with no `..`.
-- `usage`: feeds the usage and context meters (400 in, 20 out when missing).
+- `writes`: file writes in the work folder. `content: null` deletes the file. Paths are relative, with no `..`. A written `.md` becomes a document card, as in a real turn (`docs/architecture/documents.md`); `packages/e2e/fixtures/reader-mock` records one.
+- `reads`: files the turn reads, at most 20, each relative to the work folder (no `..`, nothing absolute). The fake prints each as a `Read` tool call and its result, as Claude does, before the text, so the app records them in the context panel's "During the task" (`docs/architecture/context.md`). Nothing is actually read; a read that leaves the work folder, or goes through a symlink that resolves outside it, fails the turn before any of its writes runs. Optional and not defaulted, so a recording without it parses and is written exactly as before. The demo's `t1` reads `README.md`.
+- `usage`: feeds the usage and context meters (400 in, 20 out when missing). A built-in reply that keeps the session at a turn (an off-script reply, Add now) reports that turn's usage.
 - `next`: reply to next turn id. A key is the label of a choice the turn offers, or `*` for anything else. A turn with no `next` ends the script.
 - `respond`: recorded answers to an input block the turn shows, each `{ "block", "value", "next" }`. An answer whose JSON equals `value` (key order aside) plays `next`; any other answer follows the turn's `next["*"]`, then the fallback.
 - `setPhase`: a phase id. This turn is the recorded answer to the app's move into that part (its phase change turn, `docs/architecture/phases.md`), never a first message or a reply.
@@ -78,16 +80,19 @@ One file per action, `mock/<action>.json`, meant to be edited by hand. The schem
 
 The agent's own request to move stays a recorded `set_phase` call in `blocks` (`{ "tool": "set_phase", "input": { "to": "main", "reason": "…" } }`).
 
+The agent's review tools are recorded the same way. In a harness whose agent may edit the folder, `blocks` can call `ask_in_document` and `reply_to_comment` (and `read_review`) like any `ui` tool, with the tool's own input. The app answers them as it would a real engine's, and a refusal fails the turn (`docs/architecture/reviews.md`). Write the document in an earlier `writes` entry of the same turn: the writes land before the blocks run.
+
 ## How replay walks it
 
 `fake-claude` runs once per engine turn, so `HH_FAKE_MOCK_STATE` is a JSON file holding each session's action and current turn. It is written atomically (temp file, then rename) and only after a turn succeeded: a failed or cancelled turn does not advance the session. A lost state file is treated as a first message. The code is in `mock-replay.ts` (the walk) and `mock-claude.ts` (the output), both in `packages/fake-agent/src`.
 
-- **First message.** A new engine session picks the recording whose `match` appears in the prompt; the longest `match` wins. The first turn that is not `close` plays. No match: the default fallback, and the session has no action.
+- **First message.** A new engine session picks the recording whose `match` appears in the prompt; the longest `match` wins. The first turn that is not `close` plays. No match: the default fallback. The session still gets its action when the prompt holds one of the briefs' matches that `dev --mock` passes in `HH_FAKE_MOCK_ACTIONS` (JSON `[{action, match}]`, each match as `--record` writes it), so the default closing note is titled after the action; a free question matches none and its note is titled "question".
 - **A reply.** The prompt is turned into a choice label: the option whose `followUp` (or its `label`, when it has none) equals the reply. Then `next[label]`, else `next["*"]`. If neither leads to a turn, the fallback plays and the turn's `show_choices` blocks are offered again, so the tester can get back on the path.
 - **An answer.** A prompt that ends with an answer's ```json fence (`readAnswer` in `packages/harness-sdk/src/answer.ts`) is matched against the turn's `respond` first.
 - **Closing.** The app's closing prompt plays the `close` turn (its blocks dropped; a default note titled after the action when it has none). Without a `close` turn, a default note is saved.
 - **Checkpoint.** A checkpoint prompt saves the closing note and changes nothing else.
-- **Phase change and wrap-up.** `promptKind` knows the app's own prompts by their start: `Next part of this task:` (`PHASE_PROMPT`, whose first line names the part's id) and `Time is almost up:` (`WRAP_UP_PROMPT`). A phase change plays the turn whose `setPhase` is that id, the wrap-up the turn with `timeUp`, and the session continues from it. An unrecorded one plays the fallback and stays where it was. The first message never plays a `setPhase` or `timeUp` turn.
+- **Phase change and wrap-up.** `promptKind` knows the app's own prompts by their start: `Next part of this task:` (`PHASE_PROMPT`, whose first line names the part's id) and `Time is almost up:` (`WRAP_UP_PROMPT`). The phase change prompt may also come after a block of lines the app kept for the task (an approval's "The person approved …", `reviews.md`) and a blank line; `promptKind` finds it there too, only when every line of that block starts with "The person approved ". A phase change plays the turn whose `setPhase` is that id, the wrap-up the turn with `timeUp`, and the session continues from it. An unrecorded one plays the fallback and stays where it was. The first message never plays a `setPhase` or `timeUp` turn.
+- **Add now.** The context panel's prompt (`CONTEXT_ADD_PROMPT`, possibly after kept lines, like the phase change) gets a built-in reply: it reads the path the prompt names (one recorded read) and answers "I read <path> and will take it into account." The session keeps its turn, and that turn's choices and usage come back, as after an off-script reply, so the walk goes on and the app sees no compaction.
 - **Time.** `dev --mock` sets `HH_TEST_MINUTE_MS=1000`: a time-box minute lasts one second, so a 15-minute box wraps up in about 13 seconds of test.
 - **Free questions.** They match no recording and always get the default fallback.
 - **Errors.** Any failure inside a turn (a write refused, a `ui` call rejected) becomes an error result `mock: <reason>` and exit code 1. The app shows it as an engine error.
@@ -130,6 +135,8 @@ The agent's own request to move stays a recorded `set_phase` call in `blocks` (`
 - `packages/fake-agent/test/mock.test.ts` and `mock-replay.test.ts`: the schema and the walk (branch, `*`, fallback, close, missing close, state, phase changes and the wrap-up). `packages/fake-agent/fixtures/phases-harness/mock/session.json` is a recording with them.
 - `packages/cli/test/record.test.ts`, `run.test.ts`, `dev.test.ts` and `check.test.ts`: the recorder, `run --record`, `dev --mock` and each `check` rule.
 - `packages/e2e/tests/mock.spec.ts`: `launchMock` opens the demo with its recordings and walks a topic end to end, including one off-script reply, the note and the engine list (only the test engine). A second test starts from a fresh app (`makeFreshSandbox`) and walks the setup flow to the demo, then checks Settings › Models shows the test model.
+- `packages/e2e/tests/review.spec.ts`: the review fixture `packages/fake-agent/fixtures/review-harness` (id `reviewer`, edit "folder", a spec part with `approve: "specs/*.md"`) and its hand-written `mock/ticket.json` walk a review from the agent's questions to the approval that moves the part, including focus mode. Its build is the fixture's own (`launchMock`'s third argument). A D0 test replays `packages/e2e/fixtures/review-d0-mock` on the demo (edit "none"): its call to `ask_in_document` finds no such tool, and no review UI or record appears.
+- `packages/e2e/tests/context.spec.ts`: the demo's recordings walk the context panel (the meter, the start items and totals, the `README.md` read, Add now through a stubbed file dialog, a pin written to `.harness/context/main.json` and shown in the next task, nothing marked as summarized after Add now, an exclusion, no absolute path in `tasks.json` under either spelling of the folder), and a D0 test that leaves no `.harness/context/`, before and after the task ends.
 - `packages/e2e/tests/scripts.ts` keeps the hand-written scripts for what a recording can't express: crashes, resume failures, model fallback.
 
 ## Plugins
@@ -145,4 +152,6 @@ In mock mode a harness's plugins run on their **fixtures**, never on the network
 - Recording is `run --record` only, not from the desktop app.
 - A recording keeps only the first visit of an action in a run.
 - Harness settings work in mock mode (the tab saves, `AGENTS.md` follows), but a recording plays the same whatever the settings.
+- `run --record` does not capture reads: a recording from a real engine has no `reads`; add them by hand.
+- Mock mode can't run a translation, so a tester sees the screens in English.
 - Task modes: `m <id>` under `run --record` is recorded like a typed follow-up (the `*` link), even when nothing switched. Replay plays a switch as any other reply, so a recording can't branch by mode.

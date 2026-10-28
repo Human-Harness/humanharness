@@ -1,6 +1,6 @@
 # Document reader — design
 
-Status: approved by Marco on 2026-10-27, section by section. 10th in the core-spec order, after the OpenCode engine. Comes from the dev harness: its user works mostly by reading `.md` files (context, decisions, analyses). Mockup, approved as the look: https://claude.ai/artifact/L1DxW1KuL6LbCy4i93z3zp.
+Status: approved by Marco on 2026-10-27, section by section; implemented by plan 10 (`docs/superpowers/plans/2026-10-27-document-reader.md`) on `feat/document-reader`. 10th in the core-spec order, after the OpenCode engine. Comes from the dev harness: its user works mostly by reading `.md` files (context, decisions, analyses). Mockup, approved as the look: https://claude.ai/artifact/L1DxW1KuL6LbCy4i93z3zp.
 
 It is the base layer under three core features from the dev gap analysis (`docs/discovery/2026-10-26-dev-vs-core.md`, on the discovery branch): C2 (reviewable document), C3 (focus mode) and C4 (timeline per file). Those get their own specs and build on this one. This spec only covers reading well.
 

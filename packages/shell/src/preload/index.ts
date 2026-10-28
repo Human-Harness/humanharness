@@ -1,8 +1,14 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type {
   AttentionView,
+  ContextGetResult,
+  ContextPick,
+  ContextResult,
   DataChangeView,
   Event,
+  FileDiffResult,
+  FileTimelineResult,
+  FocusState,
   HarnessClient,
   JobSummary,
   MaterialView,
@@ -12,6 +18,7 @@ import type {
   PluginSurfaceView,
   PluginsView,
   ProfilesState,
+  ReviewSummary,
   ScopesView,
   SettingsState,
   SetupOutput,
@@ -23,6 +30,11 @@ import type {
   TextSize,
 } from "@humanharness/ui/client";
 import { hearsDataChange } from "@humanharness/ui/data-change";
+import { askContext, contextListener } from "./context";
+import { documentWatcher } from "./document-watch";
+import { fileCommitListeners } from "./file-commits";
+import { askFile, restoreFlow } from "./file-restore";
+import { languageClient } from "./language";
 
 function subscribe<T>(channel: string, listener: (value: T) => void): () => void {
   const handler = (_e: unknown, value: T) => listener(value);
@@ -32,6 +44,18 @@ function subscribe<T>(channel: string, listener: (value: T) => void): () => void
 
 /** Told of every mode switch, whoever called `chooseMode` (the window or the harness's own UI). */
 const modeSwitches = new Set<(s: ModeSwitch) => void>();
+
+/** Told of every `openDocument`, from the window or the harness's own UI (document-reader spec §5.1). */
+const documentOpeners = new Set<(path: string, anchor?: string) => void>();
+/** Told of every `documents.focus(path)` (review spec §6.2). */
+const focusOpeners = new Set<(path: string) => void>();
+/** Focus mode as the chat set it last, and who listens. */
+let focusState: FocusState = { on: false };
+const focusListeners = new Set<(state: FocusState) => void>();
+const fileInvoke = (channel: string, ...args: unknown[]): Promise<unknown> => ipcRenderer.invoke(channel, ...args);
+
+/** Every `files.onChange`, on one `hh:fileCommits` listener. */
+const fileCommits = fileCommitListeners((listener) => subscribe<unknown>("hh:fileCommits", listener));
 
 const client: HarnessClient = {
   getState: () => ipcRenderer.invoke("hh:getState"),
@@ -82,6 +106,58 @@ const client: HarnessClient = {
   onTaskTurn: (listener) => subscribe<TaskTurnNotice>("hh:taskTurn", listener),
   openPath: (file) => ipcRenderer.invoke("hh:openPath", file),
   revealPath: (file) => ipcRenderer.invoke("hh:revealPath", file),
+  readDocument: (file) => ipcRenderer.invoke("hh:readDocument", file),
+  readImage: (file) => ipcRenderer.invoke("hh:readImage", file),
+  documentsExist: (paths) => ipcRenderer.invoke("hh:documentsExist", paths),
+  watchDocument: documentWatcher(ipcRenderer),
+  openDocument: (file, anchor) => {
+    for (const l of [...documentOpeners]) l(file, anchor);
+  },
+  onOpenDocument: (listener) => {
+    documentOpeners.add(listener);
+    return () => void documentOpeners.delete(listener);
+  },
+  // Reviews (review spec §5.6): main answers every call with data.
+  documents: {
+    view: (file) => ipcRenderer.invoke("hh:reviewView", file),
+    review: async (file) => ((await ipcRenderer.invoke("hh:reviewSummaries", [file])) as (ReviewSummary | null)[])[0] ?? null,
+    summaries: (paths) => ipcRenderer.invoke("hh:reviewSummaries", paths),
+    answer: (file, id, pick) => ipcRenderer.invoke("hh:reviewAnswer", file, id, pick),
+    comment: (file, input) => ipcRenderer.invoke("hh:reviewComment", file, input),
+    editDraft: (file, id, text) => ipcRenderer.invoke("hh:reviewEditDraft", file, id, text),
+    reopen: (file, id) => ipcRenderer.invoke("hh:reviewReopen", file, id),
+    send: (file) => ipcRenderer.invoke("hh:reviewSend", file),
+    approve: (file, blob, opts) =>
+      ipcRenderer.invoke("hh:reviewApprove", file, blob, { ...(opts?.reason !== undefined ? { reason: opts.reason } : {}), ...(opts?.discard ? { discard: true } : {}) }),
+    approvedText: (file) => ipcRenderer.invoke("hh:reviewApprovedText", file),
+    onChange: (listener) => subscribe<string>("hh:reviewChanged", listener),
+    focus: (file) => {
+      for (const l of [...focusOpeners]) l(file);
+    },
+    onFocus: (listener) => {
+      focusOpeners.add(listener);
+      return () => void focusOpeners.delete(listener);
+    },
+  },
+  focus: {
+    current: () => focusState,
+    onChange: (listener) => {
+      focusListeners.add(listener);
+      return () => void focusListeners.delete(listener);
+    },
+    /** The core's chat only. Any value it is given (even null from a harness view) becomes a well-formed state. */
+    set: (state) => {
+      focusState = { on: state?.on === true, ...(typeof state?.path === "string" ? { path: state.path } : {}) };
+      for (const l of [...focusListeners]) l(focusState);
+    },
+  },
+  files: {
+    timeline: (file) => askFile<FileTimelineResult>(fileInvoke, "hh:fileTimeline", file),
+    diff: (file, from, to) => askFile<FileDiffResult>(fileInvoke, "hh:fileDiff", file, from, to),
+    // Main asks with its native dialog before the file goes back; no code in the window can answer for the person.
+    restore: (file, commit) => restoreFlow(fileInvoke, file, commit),
+    onChange: (file, listener) => fileCommits.onChange(file, listener),
+  },
   scopes: {
     list: () => ipcRenderer.invoke("hh:scopes"),
     create: (title) => ipcRenderer.invoke("hh:scopeCreate", title),
@@ -218,7 +294,20 @@ const client: HarnessClient = {
     cite: (scope, id) => ipcRenderer.invoke("hh:materialCite", scope, id),
     onChange: (listener) => subscribe<MaterialView>("hh:materialStatus", listener),
   },
+  // The context panel (context-panel spec §5.2): every answer is data, a rejected invoke included.
+  context: {
+    get: (taskId) => askContext<ContextGetResult>(fileInvoke, "hh:contextGet", taskId),
+    onChange: (taskId, listener) => subscribe<unknown>("hh:context", contextListener(taskId, listener)),
+    add: (taskId, file) => askContext<ContextResult>(fileInvoke, "hh:contextAdd", taskId, file),
+    pick: () => askContext<ContextPick>(fileInvoke, "hh:contextPick"),
+    pin: (scope, file) => askContext<ContextResult>(fileInvoke, "hh:contextPin", scope, file),
+    unpin: (scope, file) => askContext<ContextResult>(fileInvoke, "hh:contextUnpin", scope, file),
+    exclude: (scope, note) => askContext<ContextResult>(fileInvoke, "hh:contextExclude", scope, note),
+    include: (scope, note) => askContext<ContextResult>(fileInvoke, "hh:contextInclude", scope, note),
+  },
   onTextSize: (listener) => subscribe<TextSize>("hh:textSize", listener),
+  // Language on demand (language spec): every answer is data, a rejected invoke included.
+  language: languageClient(fileInvoke, (channel, listener) => subscribe<unknown>(channel, listener)),
 };
 
 contextBridge.exposeInMainWorld("hh", client);

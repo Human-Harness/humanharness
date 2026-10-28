@@ -4,6 +4,14 @@ import { type ChatState, initialChat, reduceChat } from "../src/state";
 const run = (events: Parameters<typeof reduceChat>[1][], from: ChatState = initialChat([])) => events.reduce(reduceChat, from);
 
 describe("reduceChat", () => {
+  it("keeps a turn's document cards on its entry, and adds none without them (document-reader spec §5.1)", () => {
+    const card = { path: "docs/a.md", title: "A", change: "new" as const, words: 3 };
+    expect(reduceChat(initialChat([]), { type: "documents", documents: [card] }).live).toBeNull();
+    const withCards = run([{ type: "user", text: "hi", at: "t" }, { type: "documents", documents: [card] }, { type: "done", ok: true }]);
+    expect(withCards.entries.at(-1)?.documents).toEqual([card]);
+    const without = run([{ type: "user", text: "hi", at: "t" }, { type: "done", ok: true }]);
+    expect(without.entries.at(-1)).not.toHaveProperty("documents");
+  });
   it("ignores context and compaction events: they reach the screen through the task view", () => {
     const s = initialChat([]);
     expect(reduceChat(s, { type: "context", used: 5 })).toBe(s);

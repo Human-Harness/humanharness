@@ -1,5 +1,5 @@
 import { readAnswer } from "@humanharness/harness-sdk";
-import type { MockBlock, MockNote, MockTurn, MockUsage, MockWrite, Recording } from "./mock";
+import { type MockBlock, type MockNote, type MockTurn, type MockUsage, type MockWrite, type Recording, folderRelative } from "./mock";
 
 /** Played when a reply isn't recorded and the recording has no `fallback` (spec 3e §2). */
 export const DEFAULT_FALLBACK = "Not recorded in this test.";
@@ -18,19 +18,22 @@ export interface Play {
   blocks: MockBlock[];
   note?: MockNote;
   writes: MockWrite[];
+  /** Folder-relative paths the turn reads (context-panel spec §7). */
+  reads: string[];
   usage: MockUsage;
   delayMs: number;
 }
 
 /**
- * The app's fixed prompts start with these (CLOSE_PROMPT, CHECKPOINT_PROMPT, PHASE_PROMPT and WRAP_UP_PROMPT in the
- * shell's task-prompts.ts; a shell test pins them).
+ * The app's fixed prompts start with these (CLOSE_PROMPT, CHECKPOINT_PROMPT, PHASE_PROMPT, WRAP_UP_PROMPT and
+ * CONTEXT_ADD_PROMPT in the shell's task-prompts.ts; a shell test pins them).
  */
-export function promptKind(prompt: string): "close" | "checkpoint" | "phase" | "wrap-up" | "reply" {
+export function promptKind(prompt: string): "close" | "checkpoint" | "phase" | "wrap-up" | "context-add" | "reply" {
   if (prompt.startsWith("We are closing this topic.")) return "close";
   if (prompt.startsWith("Checkpoint:")) return "checkpoint";
-  if (prompt.startsWith("Next part of this task:")) return "phase";
+  if (phasePrompt(prompt) !== undefined) return "phase";
   if (prompt.startsWith("Time is almost up:")) return "wrap-up";
+  if (afterKept(prompt, CONTEXT_ADD_START) !== undefined) return "context-add";
   return "reply";
 }
 
@@ -45,8 +48,39 @@ export const MOCK_JOB_RESULT = { status: "ok", summary: "Mock run" } as const;
 /** A background job's turn: a line of the prompt starts with the mark (the brief comes first, so not the prompt's start). */
 export const isMockJobTurn = (prompt: string): boolean => prompt.split("\n").some((line) => line.startsWith(MOCK_JOB_MARK));
 
+const PHASE_START = "Next part of this task:";
+const CONTEXT_ADD_START = "The person wants you to take `";
+/** The only line the app keeps for a task today (task-manager.ts `documentApproved`). */
+const KEPT_LINE = "The person approved ";
+/**
+ * The app's prompt that starts with `start` in `prompt`: at its start, or after the lines the app kept for the task
+ * (review spec §5.4), which are one block of single lines followed by a blank line.
+ */
+function afterKept(prompt: string, start: string): string | undefined {
+  if (prompt.startsWith(start)) return prompt;
+  const gap = prompt.indexOf("\n\n");
+  if (gap === -1 || !prompt.startsWith(start, gap + 2)) return undefined;
+  return prompt
+    .slice(0, gap)
+    .split("\n")
+    .every((line) => line.startsWith(KEPT_LINE))
+    ? prompt.slice(gap + 2)
+    : undefined;
+}
+
+/** The phase change prompt in `prompt`, after any kept lines. */
+const phasePrompt = (prompt: string): string | undefined => afterKept(prompt, PHASE_START);
+
+/** The path the Add now prompt names: up to the next backtick, on one line, inside the folder. */
+function addedPath(prompt: string): string | undefined {
+  const rest = (afterKept(prompt, CONTEXT_ADD_START) ?? "").slice(CONTEXT_ADD_START.length);
+  const end = rest.indexOf("`");
+  const p = end > 0 ? rest.slice(0, end) : "";
+  return p && !p.includes("\n") && folderRelative.safeParse(p).success ? p : undefined;
+}
+
 /** The phase id a phase change prompt names: its first line ends with (`<id>`). */
-const phaseOfPrompt = (prompt: string): string | undefined => /^Next part of this task: .*\(`([a-z][a-z0-9_-]{0,63})`\)/.exec(prompt)?.[1];
+const phaseOfPrompt = (prompt: string): string | undefined => /^Next part of this task: .*\(`([a-z][a-z0-9_-]{0,63})`\)/.exec(phasePrompt(prompt) ?? "")?.[1];
 
 const defaultNote = (action: string): MockNote => ({ title: action, summary: ["Recorded test run"], decisions: [], files: [], open: [] });
 /** A setPhase or timeUp turn answers the app's own prompt, never a first message or a reply. */
@@ -72,17 +106,23 @@ function playTurn(turn: MockTurn): Play {
     blocks: turn.blocks,
     ...(turn.note ? { note: turn.note } : {}),
     writes: turn.writes,
+    reads: turn.reads ?? [],
     usage: turn.usage ?? FALLBACK_USAGE,
     delayMs: turn.delayMs ?? DEFAULT_DELAY,
   };
 }
 
-const quiet = (text: string, blocks: MockBlock[] = [], note?: MockNote): Play => ({
+/**
+ * A built-in reply. `usage`: the recorded turn the session stays at, when it has one, so the context the app sees
+ * doesn't fall to the fallback's and read as a compaction.
+ */
+const quiet = (text: string, blocks: MockBlock[] = [], note?: MockNote, usage?: MockUsage): Play => ({
   text,
   blocks,
   ...(note ? { note } : {}),
   writes: [],
-  usage: FALLBACK_USAGE,
+  reads: [],
+  usage: usage ?? FALLBACK_USAGE,
   delayMs: DEFAULT_DELAY / 2,
 });
 
@@ -108,16 +148,29 @@ function answerTarget(turn: MockTurn, prompt: string): string | undefined {
   return answer ? turn.respond?.find((r) => r.block === answer.block && sameJson(r.value, answer.value))?.next : undefined;
 }
 
+/** A harness action and the line its brief always puts in the task's first message (`briefMatch`, as `--record` writes). */
+export interface ActionMatch {
+  action: string;
+  match: string;
+}
+
+/** The longest `match` in `prompt`, so "# Topic: engines" never shadows "# Topic: engines and more". */
+const longestMatch = <T extends { match: string }>(items: readonly T[], prompt: string): T | undefined =>
+  [...items].filter((i) => i.match.trim()).sort((a, b) => b.match.length - a.match.length).find((i) => prompt.includes(i.match));
+
 /**
  * One engine turn of mock mode. `newSession`: the run opened a session (`--session-id`), so the prompt is a
- * task's first message and picks the recording; otherwise `position` says where the session is. `jobSlot`: the
- * slot's ui server runs in job mode (`HH_JOB=1`); only then can the prompt's mark make the turn a job's.
+ * task's first message and picks the recording; otherwise `position` says where the session is. `actions`: the
+ * harness's actions by their brief's match, so a task of an action with no recording still knows its action
+ * (its closing note is titled after it); a free question matches none. `jobSlot`: the slot's ui server runs in job
+ * mode (`HH_JOB=1`); only then can the prompt's mark make the turn a job's.
  */
 export function replay(
   recordings: Recording[],
   position: SessionPosition | undefined,
   prompt: string,
   newSession: boolean,
+  actions: readonly ActionMatch[] = [],
   jobSlot = false,
 ): { play: Play; session: SessionPosition } {
   // A job's turn never plays a recording, whatever its brief names: it reports the canned result and ends.
@@ -126,10 +179,10 @@ export function replay(
   }
   if (newSession || !position) {
     // `!newSession && !position` (a lost state file) is treated as a first message too.
-    // The longest match wins, so "# Topic: engines" never shadows "# Topic: engines and more".
-    const rec = [...recordings].sort((a, b) => b.match.length - a.match.length).find((r) => prompt.includes(r.match));
+    const rec = longestMatch(recordings, prompt);
     const turn = rec && firstTurn(rec);
-    if (!rec || !turn) return { play: quiet(rec?.fallback?.text ?? DEFAULT_FALLBACK), session: { action: rec?.action ?? null, turn: null } };
+    const action = rec?.action ?? longestMatch(actions, prompt)?.action ?? null;
+    if (!rec || !turn) return { play: quiet(rec?.fallback?.text ?? DEFAULT_FALLBACK), session: { action, turn: null } };
     return { play: playTurn(turn), session: { action: rec.action, turn: turn.id } };
   }
   const rec = recordings.find((r) => r.action === position.action);
@@ -140,6 +193,14 @@ export function replay(
     return { play: quiet("", [], defaultNote(position.action ?? "question")), session: position };
   }
   if (kind === "checkpoint") return { play: quiet("", [], rec ? closeNote(rec) : defaultNote(position.action ?? "question")), session: position };
+  // "Add now" (context-panel spec §5.2) is the app's prompt: a built-in reply that reads the file; the session stays,
+  // and the turn's choices come back, as after an off-script reply, so the walk goes on.
+  if (kind === "context-add") {
+    const p = addedPath(prompt);
+    const text = p ? `I read ${p} and will take it into account.` : (rec?.fallback?.text ?? DEFAULT_FALLBACK);
+    const current = rec?.turns.find((t) => t.id === position.turn);
+    return { play: { ...quiet(text, choicesOf(current), undefined, current?.usage), reads: p ? [p] : [] }, session: position };
+  }
   // A phase change or the wrap-up is the app's prompt, not a reply: it plays the turn recorded for it (spec §6).
   if (kind === "phase" || kind === "wrap-up") {
     const id = kind === "phase" ? phaseOfPrompt(prompt) : undefined;
@@ -153,5 +214,5 @@ export function replay(
   const target = answered ?? (current?.next && ((key !== undefined && Object.hasOwn(current.next, key) ? current.next[key] : undefined) ?? current.next["*"]));
   const turn = target ? rec?.turns.find((t) => t.id === target) : undefined;
   if (turn) return { play: playTurn(turn), session: { ...position, turn: turn.id } };
-  return { play: quiet(rec?.fallback?.text ?? DEFAULT_FALLBACK, choicesOf(current)), session: position };
+  return { play: quiet(rec?.fallback?.text ?? DEFAULT_FALLBACK, choicesOf(current), undefined, current?.usage), session: position };
 }

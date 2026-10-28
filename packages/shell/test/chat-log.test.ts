@@ -8,6 +8,19 @@ import { isLaneId } from "../src/main/task-store";
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
 
+describe("TurnRecorder documents (document-reader §5.1)", () => {
+  it("saves the turn's cards on its entry; none: no field (D0)", () => {
+    const card = { path: "docs/a.md", title: "A", change: "new" as const, words: 10 };
+    const r = new TurnRecorder(new Set());
+    r.add({ type: "text", delta: "Done." });
+    r.add({ type: "documents", documents: [card] });
+    expect(r.finish({ type: "done", ok: true }).documents).toEqual([card]);
+    const plain = new TurnRecorder(new Set());
+    plain.add({ type: "text", delta: "Hi" });
+    expect("documents" in plain.finish({ type: "done", ok: true })).toBe(false);
+  });
+});
+
 describe("TurnRecorder", () => {
   it("builds the assistant entry from runtime events", () => {
     const r = new TurnRecorder(new Set(["progress"]));

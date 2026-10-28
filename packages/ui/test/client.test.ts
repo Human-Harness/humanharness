@@ -255,3 +255,84 @@ describe("client.jobs (parallel spec §9.1, part 3)", () => {
     expect(client.jobs.run).toHaveBeenCalledWith("sync", "physics");
   });
 });
+
+describe("FakeClient documents (document-reader spec §5)", () => {
+  it("reads, refuses, watches and opens like main and the preload", async () => {
+    const c = new FakeClient();
+    c.docTexts["docs/a.md"] = "# A";
+    expect(await c.readDocument("docs/a.md")).toEqual({ ok: true, text: "# A", mtime: c.documentMtime, size: 3 });
+    expect(await c.readDocument("docs/b.md")).toEqual({ ok: false, reason: "missing" });
+    expect(await c.readDocument("../x.md")).toEqual({ ok: false, reason: "outside" });
+    expect(await c.documentsExist(["docs/a.md", "docs/b.md"])).toEqual([true, false]);
+    let heard = 0;
+    const off = c.watchDocument("docs/a.md", () => heard++);
+    c.changeDocument("docs/a.md", "# A2");
+    off();
+    c.changeDocument("docs/a.md", "# A3");
+    expect(heard).toBe(1);
+    const opened: string[] = [];
+    const offOpen = c.onOpenDocument((p) => opened.push(p));
+    c.openDocument("docs/a.md");
+    offOpen();
+    c.openDocument("docs/b.md");
+    expect(opened).toEqual(["docs/a.md"]);
+  });
+});
+
+describe("documents and focus (review spec §5.6)", () => {
+  it("the fake answers like main: a view, a summary, results as data, and change and focus listeners", async () => {
+    const c = new FakeClient();
+    c.docTexts["specs/a.md"] = "## Scope\n\nBy size.\n";
+    const view = await c.documents.view("specs/a.md");
+    expect(view).toMatchObject({ ok: true, review: null, blob: expect.stringMatching(/^[0-9a-f]{40}$/), summary: { status: "none" } });
+    expect(await c.documents.view("specs/b.md")).toEqual({ ok: false, reason: "missing" });
+    expect(await c.documents.review("specs/a.md")).toBeNull();
+    const changed: string[] = [];
+    const off = c.documents.onChange((p) => changed.push(p));
+    expect(await c.documents.comment("specs/a.md", { selected: "By size.", heading: "scope", text: "No" })).toEqual({ ok: true, id: "c1" });
+    expect(changed).toEqual(["specs/a.md"]);
+    off();
+    expect(await c.documents.review("specs/a.md")).toMatchObject({ status: "draft", unsent: 1 });
+    // The approval carries the version the view showed.
+    const blob = view.ok ? view.blob : "";
+    expect(await c.documents.approve("specs/a.md", blob, { reason: "Fine" })).toEqual({ ok: true });
+    expect(c.reviewCalls.at(-1)).toEqual({ op: "approve", args: ["specs/a.md", blob, { reason: "Fine" }] });
+    const seen: unknown[] = [];
+    c.focus.onChange((s) => seen.push(s));
+    c.focus.set({ on: true, path: "specs/a.md" });
+    expect(c.focus.current()).toEqual({ on: true, path: "specs/a.md" });
+    expect(seen).toEqual([{ on: true, path: "specs/a.md" }]);
+    const opened: string[] = [];
+    c.documents.onFocus((p) => opened.push(p));
+    c.documents.focus("specs/a.md");
+    expect(opened).toEqual(["specs/a.md"]);
+  });
+});
+
+describe("files (file-timeline spec §6.3)", () => {
+  it("the fake answers like main and confirms through main's dialog", async () => {
+    const c = new FakeClient();
+    const entry = {
+      kind: "task" as const,
+      author: { kind: "agent" as const, label: "Spec writer", task: "t1", action: "spec" },
+      label: "1 change",
+      at: "2026-10-28T10:00:00.000Z",
+      from: "a".repeat(40),
+      to: "b".repeat(40),
+      commits: [{ id: "b".repeat(40), subject: "Turn: write", at: "2026-10-28T10:00:00.000Z" }],
+    };
+    c.timelines["specs/a.md"] = [entry];
+    expect(await c.files.timeline("specs/a.md")).toEqual({ ok: true, entries: [entry] });
+    expect(await c.files.timeline("other.md")).toEqual({ ok: false, reason: "untracked" });
+    c.confirmGoBack = async () => false;
+    expect(await c.files.restore("specs/a.md", entry.to)).toBe("cancelled");
+    c.confirmGoBack = async () => true;
+    expect(await c.files.restore("specs/a.md", entry.to)).toBe("restored");
+    expect(c.goBackAsks).toHaveLength(2);
+    const seen: string[] = [];
+    c.files.onChange("specs/a.md", () => seen.push("a"));
+    c.emitFileCommit(["specs/a.md", "b.md"]);
+    c.emitFileCommit(["b.md"]);
+    expect(seen).toEqual(["a"]);
+  });
+});

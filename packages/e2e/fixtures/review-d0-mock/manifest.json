@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "action": "manifest",
+  "match": "# Topic: the manifest",
+  "recordedWith": "hand-written",
+  "fallback": { "text": "Not recorded." },
+  "turns": [
+    {
+      "id": "t1",
+      "text": "I wrote an overview of the manifest.",
+      "writes": [{ "path": "docs/overview.md", "content": "---\ntitle: Manifest overview\n---\n## Context\n\nThe manifest declares the whole harness.\n" }],
+      "next": { "*": "t2" }
+    },
+    {
+      "id": "t2",
+      "text": "I left a question in the overview.",
+      "blocks": [
+        {
+          "tool": "ask_in_document",
+          "input": {
+            "path": "docs/overview.md",
+            "quote": "The manifest declares the whole harness.",
+            "question": "Keep it?",
+            "options": [{ "label": "Keep", "text": "The manifest declares the whole harness." }]
+          }
+        }
+      ]
+    },
+    { "id": "close", "note": { "title": "Manifest overview", "summary": ["Wrote the overview"], "decisions": [], "files": ["docs/overview.md"], "open": [] } }
+  ]
+}

@@ -63,6 +63,11 @@ export function taskChatFile(base: string, scope: string, task: string): string 
 
 /** Where harness data lives, relative to the base: `<scope>/<collection>.json`. Tracked by the history (spec D4). */
 export const DATA_PREFIX = ".harness/data/";
+/** Review records (review spec §3): `.harness/reviews/<document path>.json`, tracked by the history. */
+export const REVIEWS_PREFIX = ".harness/reviews/";
+/** Pins and exclusions per scope (context-panel spec §4.2): `.harness/context/<scope>.json`, tracked by the history. */
+export const CONTEXT_PREFIX = ".harness/context/";
+export const contextFile = (base: string, scope: string): string => path.join(base, ".harness", "context", `${scopeDir(scope)}.json`);
 /** When each record last changed (for "most recently changed", spec §4.4). Never tracked. */
 export const DATA_META_PREFIX = ".harness/data-meta/";
 

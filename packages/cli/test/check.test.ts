@@ -639,6 +639,29 @@ describe("check: settings", () => {
   });
 });
 
+describe("check: document kinds (document-reader spec §4.2)", () => {
+  const AFTER = '  questions: { tier: "light" },';
+  const withKinds = (kinds: string) => (d: string) => replaceIn(d, "harness.config.ts", AFTER, `${AFTER}\n  documents: { kinds: { ${kinds} } },`);
+  const tokenRules = (r: CheckResult) => r.findings.filter((f) => f.rule === "documents-tokens");
+
+  it("a few short kinds give no finding", async () => {
+    const r = await checkHarness(await fixture(withKinds('adr: { when: "A decision with real alternatives.", sections: ["Status", "Context", "Decision"] }')));
+    expect(errors(r)).toEqual([]);
+    expect(tokenRules(r)).toEqual([]);
+  });
+
+  it("documents-tokens: warns when the kinds make a long part of AGENTS.md", async () => {
+    const when = "Use it when the person asks to compare several options with their costs, risks and the people they touch.";
+    const sections = JSON.stringify(["Context", "Options", "Costs", "Risks", "People", "Decision", "Follow-up", "Open questions"]);
+    const kinds = Array.from({ length: 10 }, (_, i) => `k${i}: { when: ${JSON.stringify(when)}, sections: ${sections} }`).join(", ");
+    const r = await checkHarness(await fixture(withKinds(kinds)));
+    expect(errors(r)).toEqual([]);
+    const found = tokenRules(r);
+    expect(found.map((f) => f.severity)).toEqual(["warning"]);
+    expect(found[0].message).toMatch(/^The document kinds take about \d+ tokens of AGENTS\.md \(more than 400\)/);
+  });
+});
+
 describe("check: setup steps (setup-steps spec §6)", () => {
   const setupRules = (r: CheckResult) => r.findings.filter((f) => f.rule.startsWith("setup-")).map((f) => `${f.severity}:${f.rule}`);
   const withSetup = (context: string) => (d: string) =>

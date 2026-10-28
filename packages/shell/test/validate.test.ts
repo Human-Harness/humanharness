@@ -188,4 +188,11 @@ describe("isAppUrl", () => {
     expect(isAppUrl("file:///etc/passwd", where)).toBe(false);
     expect(isAppUrl("not a url", where)).toBe(false);
   });
+
+  it("an hh-plugin: page is never the app's page (plugins spec B5)", () => {
+    for (const url of ["hh-plugin://oncall/_hh/host.html", "hh-plugin://oncall/panel-queue.html"]) {
+      expect(isAppUrl(url, { rendererFile: "/app/out/renderer/index.html" })).toBe(false);
+      expect(isAppUrl(url, { devUrl: "http://localhost:5173", rendererFile: "/x" })).toBe(false);
+    }
+  });
 });

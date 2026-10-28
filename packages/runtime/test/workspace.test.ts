@@ -118,15 +118,23 @@ describe("Workspace and slots (parallel spec §4)", () => {
   });
 
   it("cancelling one slot's turn never touches the other's (T6)", async () => {
-    const script: ClaudeScript = { steps: [claudeResultLine(true)], turns: [{ match: "^slow", steps: [{ sleep: 3000 }, claudeResultLine(true)] }] };
+    const script: ClaudeScript = {
+      steps: [claudeResultLine(true)],
+      turns: [
+        { match: "^slow", steps: [{ sleep: 3000 }, claudeResultLine(true)] },
+        // Still running when A is cancelled: a shared AbortController would cancel it too.
+        { match: "^other", steps: [{ sleep: 800 }, claudeResultLine(true)] },
+      ],
+    };
     const { ws } = await setup(script);
     const a = await ws.openSlot({ key: "A" });
     const b = await ws.openSlot({ key: "B" });
     const ea: Event[] = [];
     const eb: Event[] = [];
     const ta = a.send("slow", (e) => ea.push(e));
-    const tb = b.send("quick", (e) => eb.push(e));
+    const tb = b.send("other", (e) => eb.push(e));
     await new Promise((r) => setTimeout(r, 200));
+    expect(b.isBusy()).toBe(true);
     ta.cancel();
     await Promise.all([ta.done, tb.done]);
     expect(ea.at(-1)).toMatchObject({ ok: false, error: { code: "cancelled" } });

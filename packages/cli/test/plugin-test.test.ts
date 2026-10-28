@@ -7,7 +7,8 @@ import { main } from "../src/main";
 import { shellDir } from "../src/paths";
 import { buildPlugin } from "../src/plugin-build";
 import { pluginContext, runSource } from "../src/plugin-run";
-import { P12_NOTE, readFixtures, testPlugin } from "../src/plugin-test";
+import { fixtureTransport, parseFixture } from "@humanharness/harness-sdk/plugin-fixtures";
+import { P12_NOTE, fixtureSecrets, readFixtures, testPlugin } from "../src/plugin-test";
 import { memoryIo, tempRoot } from "./helpers";
 
 const CONFIG = `import { definePlugin, z } from "@humanharness/harness-sdk";
@@ -196,6 +197,49 @@ describe("humanharness plugin test", () => {
 });
 
 describe("runSource", () => {
+  it("a key reaches the request as fixture-<id> in a fixture run", async () => {
+    const dir = good();
+    const sent: (string | null)[] = [];
+    const fixtures = fixtureTransport([parseFixture({ ...QUEUES, request: { ...QUEUES.request, headers: { Authorization: "Bearer fixture-tok" } } }), parseFixture(GH)]);
+    const r = await runSource({
+      dir,
+      source: "queues",
+      transport: {
+        fetch: (async (url: string, init?: RequestInit) => {
+          sent.push(new Headers(init?.headers).get("authorization"));
+          return fixtures.fetch(url, init);
+        }) as typeof fetch,
+        run: fixtures.run as never,
+      },
+      secrets: fixtureSecrets,
+    });
+    expect(r.ok).toBe(true);
+    expect(sent).toEqual(["Bearer fixture-tok"]);
+  });
+
+  it("the run's temp data folder is gone after a failed run", async () => {
+    const dir = good();
+    const fixtures = fixtureTransport([parseFixture(QUEUES)]);
+    let cwd = "";
+    const r = await runSource({
+      dir,
+      source: "queues",
+      transport: {
+        fetch: fixtures.fetch as typeof fetch,
+        run: (async (_file: string, _args: string[], o: { cwd: string }) => {
+          cwd = o.cwd;
+          fs.writeFileSync(path.join(cwd, "left.txt"), "x");
+          throw new Error("gh failed");
+        }) as never,
+      },
+      secrets: fixtureSecrets,
+    });
+    expect(r.ok).toBe(false);
+    // exec's cwd is <temp>/exec, beside the data in <temp>/base.
+    expect(path.basename(path.dirname(cwd))).toMatch(/^hh-plugin-run-/);
+    expect(fs.existsSync(path.dirname(cwd))).toBe(false);
+  });
+
   it("stops a run over its time limit", async () => {
     const dir = withFixtures("slow", {});
     const backend = path.join(dir, "dist", "backend.js");

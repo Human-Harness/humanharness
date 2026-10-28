@@ -44,6 +44,11 @@ export async function readFixtures(dir: string, source: string, skipped: string[
   return out;
 }
 
+/** A fixture run's keys: each one is `fixture-<id>`, so no real key is ever asked for or sent. */
+export async function fixtureSecrets(ids: string[]): Promise<Record<string, string>> {
+  return Object.fromEntries(ids.map((id) => [id, `fixture-${id}`]));
+}
+
 /**
  * `humanharness plugin test` (spec §9, Decision 21): every source (or `source`) of the built plugin once, on its
  * fixtures, with settings at their defaults and each key as `fixture-<id>`. Nothing reaches the network or a process.
@@ -60,7 +65,7 @@ export async function testPlugin(dir: string, o: { source?: string; now?: Date }
       dir,
       source,
       transport,
-      secrets: async (keys) => Object.fromEntries(keys.map((k) => [k, `fixture-${k}`])),
+      secrets: fixtureSecrets,
       ...(o.now ? { now: o.now } : {}),
     });
     report.log.unshift(...skipped.map((s) => `warn: ${s}`));

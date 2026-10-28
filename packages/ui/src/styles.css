@@ -747,3 +747,15 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 /* Settings › Models' budget hint spans the label and select columns. */
 .hh-ctxp-budget-hint { grid-column: 1 / -1; margin: 0; }
 @media (max-width: 899px) { .hh-ctxp { position: fixed; inset: 52px 0 0 0; z-index: 5; border-left: 0; } }
+/* Language on demand (plan 5b): picker, notice, offer card, Settings row, legal line. Own classes only (D0). */
+.hh-langpick-backdrop, .hh-langnotice-backdrop { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; padding: 16px; background: var(--hh-backdrop); }
+.hh-langpick { display: flex; flex-direction: column; gap: 10px; width: min(440px, 100%); max-height: min(560px, 90vh); padding: 16px; border-radius: 10px; background: var(--hh-surface); border: 1px solid var(--hh-line); }
+.hh-langpick h2 { margin: 0; font-size: 17px; }
+.hh-langpick-list { overflow: auto; display: flex; flex-direction: column; gap: 2px; min-height: 120px; }
+.hh-langpick-option { display: grid; grid-template-columns: auto 1fr auto; column-gap: 8px; align-items: center; padding: 6px 8px; border-radius: 6px; }
+.hh-langpick-option:has(input:checked) { background: var(--hh-segment); }
+.hh-langpick-option:has(input:disabled) { opacity: 0.55; }
+.hh-langpick-english { grid-column: 2; }
+.hh-langpick-ready { grid-row: 1 / span 2; grid-column: 3; font-size: 12px; color: var(--hh-ok); }
+.hh-langpick-reason { margin: 0; }
+.hh-langpick-actions, .hh-langnotice-actions, .hh-langoffer-actions { display: flex; justify-content: flex-end; gap: 8px; }

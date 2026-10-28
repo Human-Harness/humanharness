@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { type Collection, type LoadedHarness, loadHarness, z } from "@humanharness/harness-sdk";
+import { type Collection, HIDDEN_CHARS, type LoadedHarness, loadHarness, z } from "@humanharness/harness-sdk";
 import { RpcRefused, callRpc } from "./bridge";
 
 /** The collections the agent may see (spec §4.1: everything but `agent: "none"`), in manifest order. */
@@ -60,11 +60,13 @@ const EXTRA_MAX_ENTRIES = 200;
 /** What a plugin named reaches the agent's tool description as one plain line, at most this long. */
 const EXTRA_LINE_CHARS = 1000;
 
-/** Plugin-chosen text on one line: no controls, no bidi or zero-width marks, whitespace collapsed. */
+const HIDDEN = new RegExp(HIDDEN_CHARS.source, "gu");
+/** Plugin-chosen text on one line: controls and line separators become spaces, the rest of HIDDEN_CHARS goes, whitespace collapsed. */
 const plain = (text: string): string =>
   text
-    .replace(/[\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/g, "")
-    .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029\s]+/g, " ")
+    .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, " ")
+    .replace(HIDDEN, "")
+    .replace(/\s+/g, " ")
     .trim();
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);

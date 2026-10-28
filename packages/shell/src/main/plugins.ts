@@ -5,6 +5,7 @@ import { performance } from "node:perf_hooks";
 import {
   type HarnessPlugins,
   type HarnessSettings,
+  HIDDEN_CHARS,
   type PluginManifest,
   type SettingRef,
   agentText,
@@ -1211,16 +1212,18 @@ function minimalEnv(env: Record<string, string>): Record<string, string> {
 /** The longest plugin settings sentence AGENTS.md takes (a 300-char template filled with the person's value). */
 export const PLUGIN_SENTENCE_CHARS = 500;
 
+const HIDDEN = new RegExp(HIDDEN_CHARS.source, "gu");
 /**
- * One plugin settings sentence as one plain AGENTS.md line (B10): `<Plugin name>: <sentence>`, with no controls,
- * bidi or zero-width marks and whitespace collapsed (the name and template are the plugin's text), cut to
- * PLUGIN_SENTENCE_CHARS.
+ * One plugin settings sentence as one plain AGENTS.md line (B10): `<Plugin name>: <sentence>`, controls and line
+ * separators as spaces, the rest of HIDDEN_CHARS gone and whitespace collapsed (the name and template are the
+ * plugin's text), cut to PLUGIN_SENTENCE_CHARS.
  */
 export function pluginSentence(name: string, sentence: string): string {
   const plain = (t: string) =>
     t
-      .replace(/[\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/g, "")
-      .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029\s]+/g, " ")
+      .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, " ")
+      .replace(HIDDEN, "")
+      .replace(/\s+/g, " ")
       .trim();
   const line = `${plain(name)}: ${plain(sentence)}`;
   return line.length > PLUGIN_SENTENCE_CHARS ? `${line.slice(0, PLUGIN_SENTENCE_CHARS - 1)}…` : line;

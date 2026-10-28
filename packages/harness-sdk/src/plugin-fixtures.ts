@@ -48,6 +48,18 @@ export interface FixtureExecResult {
   stdout: string;
   stderr: string;
 }
+/**
+ * A signal aborted before the call or while it starts (the same tick) rejects it with AbortError before it plays
+ * anything, as `fetch` and the shell's `runFile` do.
+ */
+async function abortIfAborted(signal: AbortSignal | null | undefined): Promise<void> {
+  const check = () => {
+    if (signal?.aborted) throw new DOMException("This operation was aborted", "AbortError");
+  };
+  check();
+  await null;
+  check();
+}
 /** Statuses a Response must have no body for. */
 const NULL_BODY = new Set([204, 205, 304]);
 
@@ -74,13 +86,15 @@ export function fixtureTransport(exchanges: FixtureExchange[]): {
   };
   return {
     async fetch(input, init = {}) {
+      await abortIfAborted(init.signal ?? (input instanceof Request ? input.signal : undefined));
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
       const method = (init.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase();
       const f = take({ kind: "fetch", method, url });
       if (!f || f.kind !== "fetch") throw new Error(`No fixture for ${method} ${url}`);
       return new Response(NULL_BODY.has(f.response.status) ? null : f.response.text, { status: f.response.status, headers: f.response.headers });
     },
-    async run(file, args) {
+    async run(file, args, o) {
+      await abortIfAborted(o?.signal);
       const cmd = file.split(/[\\/]/).pop() ?? file;
       const f = take({ kind: "exec", cmd, args });
       if (!f || f.kind !== "exec") throw new Error(`No fixture for ${cmd} ${args.join(" ")}`);
@@ -90,11 +104,28 @@ export function fixtureTransport(exchanges: FixtureExchange[]): {
 }
 
 const bytesOf = (s: string) => Buffer.from(s, "utf8");
-/** The ways a key shows up in a request or a response: raw, URL-encoded (both hex cases, and as a form) and base64. */
+const hex4 = (c: string) => c.charCodeAt(0).toString(16).padStart(4, "0");
+/**
+ * The ways a key shows up in a request or a response: raw, URL-encoded (both hex cases, and as a form), base64, and as
+ * a JSON body escapes it (`/` as `\/`, every UTF-16 unit as `\uXXXX` in either case, non-ASCII ones only as `\uXXXX`).
+ */
 function forms(s: string): string[] {
   const b64 = bytesOf(s).toString("base64");
   const url = encodeURIComponent(s);
-  const all = [s, url, url.replace(/%[0-9A-F]{2}/g, (h) => h.toLowerCase()), new URLSearchParams([["k", s]]).toString().slice(2), b64, b64.replace(/=+$/, ""), bytesOf(s).toString("base64url")];
+  const units = s.split("");
+  const all = [
+    s,
+    url,
+    url.replace(/%[0-9A-F]{2}/g, (h) => h.toLowerCase()),
+    new URLSearchParams([["k", s]]).toString().slice(2),
+    b64,
+    b64.replace(/=+$/, ""),
+    bytesOf(s).toString("base64url"),
+    s.replace(/\//g, "\\/"),
+    units.map((c) => `\\u${hex4(c)}`).join(""),
+    units.map((c) => `\\u${hex4(c).toUpperCase()}`).join(""),
+    s.replace(/[^\x00-\x7f]/g, (c) => `\\u${hex4(c)}`),
+  ];
   return [...new Set(all)].filter((f) => f.length > 0).sort((a, b) => b.length - a.length);
 }
 /** Inside JSON text: what a string holding `s` looks like once stringified. */
@@ -116,8 +147,21 @@ function strings(v: unknown, out: string[] = []): string[] {
 /** `s` with %XX escapes (either case) and `+` decoded, leniently: a broken escape stays as it is. */
 const percentDecoded = (s: string) => Buffer.from(s.replace(/\+/g, " ").replace(/%([0-9A-Fa-f]{2})/g, (_m, h: string) => String.fromCharCode(parseInt(h, 16))), "latin1");
 
-/** Does `s` still hold `secret`, in any form we can decode (base64 at any offset, inside a longer token too)? */
+/** `s` with JSON string escapes (`\uXXXX`, `\/`, `\"`, `\n`…) decoded, leniently: a broken escape stays as it is. */
+const JSON_ESCAPES: Record<string, string> = { b: "\b", f: "\f", n: "\n", r: "\r", t: "\t" };
+const jsonUnescaped = (s: string) =>
+  s.replace(/\\(?:u([0-9A-Fa-f]{4})|(["\\/bfnrt]))/g, (_m, h: string | undefined, c: string | undefined) =>
+    h !== undefined ? String.fromCharCode(parseInt(h, 16)) : (JSON_ESCAPES[c as string] ?? (c as string)),
+  );
+
+/** Does `s` still hold `secret`, in any form we can decode, its JSON-unescaped view included? */
 function holds(s: string, secret: string): boolean {
+  const plain = jsonUnescaped(s);
+  return holdsDecoded(s, secret) || (plain !== s && holdsDecoded(plain, secret));
+}
+
+/** Raw, %-decoded, or base64 at any offset (inside a longer token too). */
+function holdsDecoded(s: string, secret: string): boolean {
   const raw = bytesOf(secret);
   if (s.includes(secret) || percentDecoded(s).includes(raw)) return true;
   for (const m of s.matchAll(B64_TOKEN))
@@ -126,8 +170,13 @@ function holds(s: string, secret: string): boolean {
 }
 
 /**
- * Every key's raw, URL-encoded and base64 forms replaced by `{{secret:<id>}}` (P11). `leaked` lists the ids still found
- * in any form we can decode — base64 at an offset the substring pass can't see, say; the caller then writes nothing.
+ * Every key's raw, URL-encoded, base64 and JSON-escaped forms replaced by `{{secret:<id>}}` (P11). `leaked` lists the
+ * ids still found in any form we can decode — base64 at an offset the substring pass can't see, a partly `\u`-escaped
+ * key, mixed-case %XX; the caller then writes nothing.
+ *
+ * Forms neither stripped nor detected, so a recording that echoes a key this way passes: hex, double URL-encoding,
+ * HTML entities (`&#x61;`), gzip or other compressed bodies, any other encoding or encryption, and a key split across
+ * fields or headers. Review a fixture before sharing it.
  */
 export function stripSecrets(exchange: FixtureExchange, secrets: Record<string, string>): { exchange: FixtureExchange; leaked: string[] } {
   let text = JSON.stringify(exchange);

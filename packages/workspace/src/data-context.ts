@@ -1,12 +1,13 @@
-import type { Collection, DataRecord } from "@humanharness/harness-sdk";
+import { type Collection, type DataRecord, HIDDEN_CHARS } from "@humanharness/harness-sdk";
 import type { DataStore } from "./data";
 import { APP_SCOPE } from "./layout";
 import { estimateTokens } from "./notes-index";
 
 const CELL_CHARS = 120;
 
-/** Outside text (a plugin's table) on one plain line: no controls or line separators, no bidi or zero-width marks. */
-const plain = (text: string): string => text.replace(/[\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/g, "").replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, " ");
+const HIDDEN = new RegExp(HIDDEN_CHARS.source, "gu");
+/** Outside text (a plugin's table) on one plain line: controls and line separators become spaces, the rest of HIDDEN_CHARS goes. */
+const plain = (text: string): string => text.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, " ").replace(HIDDEN, "");
 
 function cell(value: unknown, max: number, outside: boolean): string {
   const raw = value === undefined || value === null ? "" : typeof value === "string" ? value : JSON.stringify(value);

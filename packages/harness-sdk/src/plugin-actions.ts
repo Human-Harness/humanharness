@@ -1,14 +1,15 @@
-import { jsonSchemaToZod, type PluginManifest } from "./plugin";
+import { HIDDEN_CHARS, jsonSchemaToZod, type PluginManifest } from "./plugin";
 
 type Action = PluginManifest["actions"][number];
 export const ACTION_STRING_MAX = 200;
 export const ACTION_VARS_MAX_BYTES = 4096;
 const VAR = /\{\{([A-Za-z_][A-Za-z0-9_]{0,39})\}\}/g;
 /**
- * What a filled value loses: controls (tab and newline stay), bidi marks, overrides and isolates, zero-width characters
- * and line separators, so the prompt the prepared card shows is the prompt the agent reads (P6, B12).
+ * What a filled value or a title loses: HIDDEN_CHARS, except that a filled value keeps tab and newline, so the prompt
+ * the prepared card shows is the prompt the agent reads (P6, B12).
  */
-const HIDDEN = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u061c\u200b-\u200f\u2028\u2029\u202a-\u202e\u2066-\u2069\ufeff]/g;
+const HIDDEN = new RegExp(HIDDEN_CHARS.source, "gu");
+const visible = (s: string, keepLines: boolean) => s.replace(HIDDEN, (c) => (keepLines && (c === "\t" || c === "\n") ? c : ""));
 
 const longString = (v: unknown): boolean =>
   typeof v === "string" ? v.length > ACTION_STRING_MAX : Array.isArray(v) ? v.some(longString) : typeof v === "object" && v !== null ? Object.values(v).some(longString) : false;
@@ -47,7 +48,7 @@ export function fillActionPrompt(prompt: string, vars: Record<string, unknown>):
   if (missing) return { ok: false, message: `No value for "${missing}"` };
   const text = prompt.replace(VAR, (_m, n: string) => {
     const v = vars[n];
-    return (typeof v === "string" ? v : JSON.stringify(v)).replace(HIDDEN, "");
+    return visible(typeof v === "string" ? v : JSON.stringify(v), true);
   });
   return { ok: true, text };
 }
@@ -59,6 +60,6 @@ export function preparedTitle(pluginName: string, action: Pick<Action, "label" |
   const props = (typeof action.vars.properties === "object" && action.vars.properties !== null ? action.vars.properties : {}) as Record<string, { type?: unknown }>;
   const required = Array.isArray(action.vars.required) ? (action.vars.required as string[]) : [];
   const name = Object.keys(props).find((k) => required.includes(k) && props[k].type === "string" && Object.hasOwn(vars, k) && typeof vars[k] === "string" && (vars[k] as string).length <= TITLE_VAR_MAX);
-  const value = name ? (vars[name] as string).replace(HIDDEN, "").trim() : "";
+  const value = name ? visible(vars[name] as string, false).trim() : "";
   return `${pluginName} · ${action.label}${value ? ` ${value}` : ""}`;
 }

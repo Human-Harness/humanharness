@@ -77,8 +77,10 @@ describe("plugin.json (plugins spec §3.2)", () => {
     expect(() => parsePluginManifest(manifest({ actions: [action] }))).toThrow(/tasks/);
   });
 
-  it("display text refuses controls, bidi overrides, zero-width chars and line separators", () => {
-    const bad = ["\u0007", "\n", "\u007f", "\u0085", "\u009b", "\u200b", "\u200c", "\u200d", "\ufeff", "\u200e", "\u200f", "\u202a", "\u202e", "\u2066", "\u2069", "\u061c", "\u2028", "\u2029"];
+  it("display text refuses controls, bidi overrides, zero-width chars, line separators and the rest of HIDDEN_CHARS", () => {
+    const bad = ["\u0007", "\n", "\u007f", "\u0085", "\u009b", "\u200b", "\u200c", "\u200d", "\ufeff", "\u200e", "\u200f", "\u202a", "\u202e", "\u2066", "\u2069", "\u061c", "\u2028", "\u2029",
+      // Soft hyphen, CGJ, Mongolian FVS, word joiner and invisible operators, variation selectors, interlinear marks, tags.
+      "\u00ad", "\u034f", "\u180b", "\u180e", "\u180f", "\u2060", "\u2062", "\u2064", "\ufe00", "\ufe0f", "\ufff9", "\ufffb", "\u{e0001}", "\u{e0041}", "\u{e007f}", "\u{e0100}", "\u{e01ef}"];
     const settings = (f: object) => ({ tab: "On-call", fields: { team: { schema: { type: "string" }, control: "text", label: "Team", ...f } } });
     const action = (a: object) => ({ actions: [{ id: "a", label: "A", tier: "light", prompt: "Go.", ...a }], permissions: { tasks: true } });
     const places = (x: string) => [

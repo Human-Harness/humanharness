@@ -190,12 +190,19 @@ const jsonSchema = z.custom<Record<string, unknown>>((v) => checkSchemaSubset(v)
 const objectSchema = jsonSchema.refine((s) => s.type === "object", { message: 'A collection\'s schema is { "type": "object", … }' });
 const text = z.string().min(1);
 /**
- * What a plugin's display text may not hold: C0/C1 controls, bidi marks, overrides and isolates, zero-width
- * characters and line separators. Shown as plain text, they could still hide words or reorder them (B12).
+ * Characters a reader can't see in plugin text: C0/C1 controls, soft hyphen, the combining grapheme joiner, Arabic
+ * letter mark, Mongolian free variation selectors and vowel separator, zero-width characters and directional marks,
+ * line and paragraph separators, bidi overrides and isolates, word joiners and invisible operators (U+2060–2069),
+ * variation selectors (both blocks), the BOM, interlinear annotation marks and Unicode tag characters ("ASCII
+ * smuggling"). Shown as plain text or handed to the agent, they could hide words, reorder them or carry text the
+ * person never sees (B12). One set for every check: display text refuses it, filled prompts and titles drop it
+ * (plugin-actions), and plugin text bound for the agent drops it (the data server, data context, AGENTS.md). Build a
+ * `gu` copy to strip: `new RegExp(HIDDEN_CHARS.source, "gu")`.
  */
-const HIDDEN = /[\u0000-\u001f\u007f-\u009f\u061c\u200b-\u200f\u2028\u2029\u202a-\u202e\u2066-\u2069\ufeff]/;
-/** Text the person reads (names, labels, titles, help): refuses what HIDDEN names. */
-const shown = (s: z.ZodString) => s.refine((v) => !HIDDEN.test(v), { message: "Display text can't hold hidden or control characters" });
+export const HIDDEN_CHARS =
+  /[\u0000-\u001f\u007f-\u009f\u00ad\u034f\u061c\u180b-\u180f\u200b-\u200f\u2028-\u202e\u2060-\u2069\ufe00-\ufe0f\ufeff\ufff9-\ufffb\u{e0000}-\u{e007f}\u{e0100}-\u{e01ef}]/u;
+/** Text the person reads (names, labels, titles, help): refuses what HIDDEN_CHARS names. */
+const shown = (s: z.ZodString) => s.refine((v) => !HIDDEN_CHARS.test(v), { message: "Display text can't hold hidden or control characters" });
 
 const pluginCollectionSchema = z.strictObject({
   /** Always app-wide: sources run outside any scope (Decision 2). */

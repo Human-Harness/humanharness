@@ -41,6 +41,20 @@ describe("fixtureTransport (P10)", () => {
     expect(res.status).toBe(204);
     await expect(t.fetch("https://a.example/x")).rejects.toThrow("No fixture for GET");
   });
+  it("an aborted or aborting signal rejects fetch and run with AbortError, before any exchange is used", async () => {
+    const t = fixtureTransport([fx("https://a.example/x", "one")]);
+    const gone = AbortSignal.abort();
+    await expect(t.fetch("https://a.example/x", { signal: gone })).rejects.toMatchObject({ name: "AbortError" });
+    await expect(t.fetch(new Request("https://a.example/x", { signal: gone }))).rejects.toMatchObject({ name: "AbortError" });
+    const ctl = new AbortController();
+    const pending = t.fetch("https://a.example/x", { signal: ctl.signal });
+    ctl.abort();
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    expect(await (await t.fetch("https://a.example/x")).text()).toBe("one");
+    const ex = fixtureTransport([{ kind: "exec", request: { cmd: "gh", args: [] }, response: { code: 0, stdout: "", stderr: "" } }]);
+    await expect(ex.run("gh", [], { cwd: "/", env: {}, signal: gone })).rejects.toMatchObject({ name: "AbortError" });
+    expect(await ex.run("gh", [], { cwd: "/", env: {} })).toMatchObject({ code: 0 });
+  });
   it("exec returns the recorded result; an unknown command is refused", async () => {
     const t = fixtureTransport([{ kind: "exec", request: { cmd: "date", args: [] }, response: { code: 0, stdout: "Mon\n", stderr: "" } }]);
     expect(await t.run("/bin/date", [], runOpts)).toMatchObject({ code: 0, stdout: "Mon\n" });
@@ -90,6 +104,24 @@ describe("stripSecrets (P11)", () => {
     const out = stripSecrets(fx("https://a.example/", 'tok "q\\uote" end'), { k: 'tok "q\\uote"' });
     expect(out.exchange).toMatchObject({ response: { text: "{{secret:k}} end" } });
     expect(out.leaked).toEqual([]);
+  });
+  it("strips a key echoed JSON-escaped: `\\/`, every character as \\uXXXX in either case, non-ASCII ones only", () => {
+    const body = (s: unknown) => JSON.stringify({ token: s });
+    const u = (k: string, upper = false) => [...k].map((c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")[upper ? "toUpperCase" : "toLowerCase"]()}`).join("");
+    for (const text of [body("s3cr3t+/=x").replace("/", "\\/"), `{"token":"${u("s3cr3t+/=x")}"}`, `{"token":"${u("s3cr3t+/=x", true)}"}`]) {
+      const out = stripSecrets(fx("https://a.example/", text), secrets);
+      expect(out.exchange, text).toMatchObject({ response: { text: '{"token":"{{secret:jira}}"}' } });
+      expect(out.leaked, text).toEqual([]);
+    }
+    const out = stripSecrets(fx("https://a.example/", '{"t":"cl\\u00e9-9"}'), { k: "clé-9" });
+    expect(out.exchange).toMatchObject({ response: { text: '{"t":"{{secret:k}}"}' } });
+    expect(out.leaked).toEqual([]);
+  });
+  it("reports a key it can only find JSON-unescaped (partly \\u-escaped, \\/ inside a longer escape mix)", () => {
+    const partly = '{"token":"s3cr3t+\\/\\u003dx"}';
+    expect(stripSecrets(fx("https://a.example/", partly), secrets).leaked).toEqual(["jira"]);
+    const header: FixtureExchange = { kind: "fetch", request: { method: "GET", url: "https://a.example/", headers: { "x-echo": "s3\\u0063r3t+/=x" } }, response: { status: 200, headers: {}, text: "" } };
+    expect(stripSecrets(header, secrets).leaked).toEqual(["jira"]);
   });
   it("a short key is stripped as well, never skipped", () => {
     const out = stripSecrets(fx("https://a.example/", "pin=4x2 ok"), { pin: "4x2" });

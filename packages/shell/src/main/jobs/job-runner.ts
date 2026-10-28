@@ -31,6 +31,11 @@ export interface JobRunDeps {
   recordUsage(e: Usage, meta: { job: string; task: string; scope?: string }): Promise<void>;
   /** The harness's actions: a needs-you result may name only these (J3). */
   actions: Record<string, unknown>;
+  /**
+   * Asked once the gate lets the run in: false gives the slot back and drops the run (null, nothing logged). The host's
+   * check that the folder (or profile) the run was queued for is still the app's.
+   */
+  stillValid?(): Promise<boolean>;
   now?: () => Date;
   newId?: () => string;
   maxMs?: number;
@@ -84,6 +89,10 @@ export async function runJob(
     outcome = "error";
   } finally {
     signal?.removeEventListener("abort", unqueue);
+  }
+  if (release && d.stillValid && !(await d.stillValid().catch(() => false))) {
+    release();
+    return null;
   }
   // The run's start, though its line is written at its end (Decision 9: the daily cap's day).
   const startedAt = now().toISOString();

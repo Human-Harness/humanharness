@@ -127,6 +127,8 @@ export function createJobsHost(d: JobsHostDeps) {
   };
   /** The runs queued or running, by slot key: a request from that slot is the run's, in its scope. */
   const runs = new Map<string, { id: string; scope: string }>();
+  /** Every run under way (from its trigger on, before it knows its base): a stop waits for them. */
+  const inFlight = new Set<Promise<unknown>>();
   const appendUsage = d.usage ?? ((base: string, record: UsageRecord) => new UsageLog(base).append(record));
 
   const firstMessage = (id: string, scope: string | null): Promise<string> =>
@@ -170,7 +172,15 @@ export function createJobsHost(d: JobsHostDeps) {
   };
 
   // Async: a throw is a rejected run, so the scheduler's dedupe key is always freed.
-  const run = async (id: string, job: HarnessJob, scope: string | null, trigger: JobTrigger, signal: AbortSignal): Promise<JobRunRecord | null> => {
+  const run = (id: string, job: HarnessJob, scope: string | null, trigger: JobTrigger, signal: AbortSignal): Promise<JobRunRecord | null> => {
+    const p = runOnce(id, job, scope, trigger, signal);
+    const settled = p.catch(() => undefined);
+    inFlight.add(settled);
+    void settled.finally(() => inFlight.delete(settled));
+    return p;
+  };
+
+  const runOnce = async (id: string, job: HarnessJob, scope: string | null, trigger: JobTrigger, signal: AbortSignal): Promise<JobRunRecord | null> => {
     // The base when the run is taken: its log and usage lines stay there even if the folder or profile changes meanwhile.
     const base = await d.base();
     if (!base) {
@@ -195,6 +205,8 @@ export function createJobsHost(d: JobsHostDeps) {
           actions: d.actions,
           now,
           newId: () => runId,
+          // Queued for one folder or profile, let in after a switch: dropped, never run against the new one.
+          stillValid: async () => (await d.base()) === base,
           ...(d.maxMs !== undefined ? { maxMs: d.maxMs } : {}),
         },
         id,
@@ -238,6 +250,14 @@ export function createJobsHost(d: JobsHostDeps) {
     taskClosed: (t: { id: string; action?: string; scope: string }) => scheduler.taskClosed(t),
     /** Engine switch, folder change (Decision 11): runs cancelled, timers kept. */
     cancelRuns: () => scheduler.cancelRuns(),
+    /**
+     * Cancels the runs and resolves once each has ended and logged ("Cancelled"), before their workspace closes (a
+     * profile switch, a folder move, a plugin change): none is cut off by its slot closing, none writes after.
+     */
+    async cancelAndSettle(): Promise<void> {
+      scheduler.cancelRuns();
+      await Promise.all([...inFlight]);
+    },
     /** Quit (Decision 11): runs cancelled, timers cleared, nothing starts again. */
     stopAll: () => scheduler.stopAll(),
     /** The run whose slot is `key` (a data or material request's task, P3); null for any other slot. */
@@ -284,12 +304,15 @@ export function singleBeforeStart(engineId: string | undefined, main: () => Prom
 
 /**
  * `single` mode's task turns through the gate's `tasks` cap: a task turn and job turns are counted apart. The plain
- * task view has no Resume, so the person's own send lifts an out-of-quota pause (it is their retry).
+ * task view has no Resume, so a task turn lifts an out-of-quota pause (as today, the task runs and meets the engine's
+ * answer itself); the jobs wait for it.
  */
 export function singleTurns(gate: TurnGate, inner: Turns, emit: (e: Event) => void): Turns {
   const gated = gatedTurns("main", gate, inner, { cap: "tasks", emit });
   return {
     send(message, options) {
+      // Every task turn, not only the person's message: the closing note, a checkpoint or the wrap-up held here would
+      // leave the task waiting for a Resume the plain view doesn't have. At worst it runs into the same wall, as today.
       if (gate.paused()?.reason === "out-of-quota") gate.resume();
       return gated.send(message, options);
     },

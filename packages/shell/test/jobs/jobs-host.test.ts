@@ -231,6 +231,57 @@ describe("createJobsHost (part 3 Task 7)", () => {
     expect(t.reports.some((r) => r.includes("not set up"))).toBe(true);
   });
 
+  it("a run queued for one folder or profile, let in after a switch, never runs nor logs", async () => {
+    let base = freshBase();
+    const first = base;
+    let asked = 0;
+    let ws: HarnessWorkspace | null = null;
+    const t = host({
+      jobs: { sync: job(), tidy: job() },
+      deps: {
+        base: async () => base,
+        workspace: async () => {
+          asked++;
+          return ws!;
+        },
+      },
+    });
+    ws = t.fake.ws;
+    const h = t.h;
+    await h.runManual("sync");
+    await until(() => t.fake.turns.length === 1);
+    // Queued behind it (jobs cap 1), for the same base.
+    await h.runManual("tidy");
+    await until(() => t.gate.queued("jobs").length === 1);
+    // A profile switch: the base changes while "tidy" waits.
+    base = freshBase();
+    t.fake.turns[0].end();
+    await until(() => !h.running());
+    expect(asked).toBe(1);
+    expect(t.fake.turns).toHaveLength(1);
+    expect((await new JobLog(first).all()).map((r) => r.job)).toEqual(["sync"]);
+    expect(await new JobLog(base).all()).toEqual([]);
+    expect(t.gate.running("jobs")).toBe(0);
+  });
+
+  it("cancelAndSettle (a profile switch, a folder move, a plugin change) resolves once every run has ended and logged", async () => {
+    const t = host({ gate: singleGate("claude", { jobs: 1 }), jobs: { sync: job(), tidy: job() } });
+    await t.h.runManual("sync");
+    await until(() => t.fake.turns.length === 1);
+    await t.h.runManual("tidy");
+    await until(() => t.gate.queued("jobs").length === 1);
+    await t.h.cancelAndSettle();
+    // The running one is logged "Cancelled" before the workspace closes; the queued one never started, logs nothing.
+    expect(t.h.running()).toBe(false);
+    expect((await t.runs()).map((r) => [r.job, r.summary])).toEqual([["sync", "Cancelled"]]);
+    expect(t.gate.queued("jobs")).toEqual([]);
+  });
+
+  it("index.ts: closing the runtime (a profile switch, a folder move, a plugin change) settles the job runs first", () => {
+    const index = fs.readFileSync(path.resolve(__dirname, "../../src/main/index.ts"), "utf8");
+    expect(index).toMatch(/async function closeRuntime\(\) \{\n(\s*\/\/.*\n)*\s*await jobsHost\?\.cancelAndSettle\(\);\n\s*await materialJobs\?\.stop\(\);/);
+  });
+
   it("Settings › Jobs: off only when true, a cap only as a whole number ≥ 1", async () => {
     expect(cleanJobSettings({ off: true, dailyTokens: 5000 })).toEqual({ off: true, dailyTokens: 5000 });
     for (const bad of [0, -1, 1.5, "5000", Number.NaN, Number.POSITIVE_INFINITY]) expect(cleanJobSettings({ dailyTokens: bad })).toEqual({});

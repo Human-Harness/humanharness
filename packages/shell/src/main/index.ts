@@ -838,6 +838,9 @@ async function openSingle(p: NonNullable<Awaited<ReturnType<typeof prepareEngine
  * the person's material stops (material spec §10): its AI stage and its conversions, which belong to this base.
  */
 async function closeRuntime() {
+  // Job runs on this workspace end first and are logged "Cancelled" (Decision 11): none is cut off by its slot
+  // closing, none queued for this folder or profile runs after. Without jobs, nothing (D0).
+  await jobsHost?.cancelAndSettle();
   await materialJobs?.stop();
   await materialSvc?.stop();
   // Board mode: the shared workspace (every lane's slot) closes; the open tasks stay, as today's task does.

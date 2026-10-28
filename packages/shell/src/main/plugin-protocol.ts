@@ -198,6 +198,29 @@ export const RPC_LIMITS = { sources: 100, sourceChars: 64, errorChars: 500, runI
  */
 export const RPC_MAX_BYTES = 12 * 1024 * 1024;
 
+/** The deepest nesting an `rpc` payload may have: the broker's 32 for a call's arguments, plus the envelope. */
+export const RPC_MAX_DEPTH = 40;
+
+/**
+ * Whether `json` nests deeper than `max`, counted in one pass over the text (brackets inside strings skipped), so a
+ * deeply nested payload is refused before JSON.parse spends time on it or a recursive reader overflows on its result.
+ */
+function tooDeep(json: string, max: number): boolean {
+  let depth = 0;
+  let inString = false;
+  for (let i = 0; i < json.length; i++) {
+    const c = json.charCodeAt(i);
+    if (inString) {
+      if (c === 0x5c) i++; // backslash: skip the escaped character
+      else if (c === 0x22) inString = false;
+    } else if (c === 0x22) inString = true;
+    else if (c === 0x5b || c === 0x7b) {
+      if (++depth > max) return true;
+    } else if (c === 0x5d || c === 0x7d) depth--;
+  }
+  return false;
+}
+
 const plain = (v: unknown): v is Record<string, unknown> => {
   if (typeof v !== "object" || v === null || Array.isArray(v)) return false;
   const proto = Object.getPrototypeOf(v);
@@ -216,6 +239,7 @@ export function parsePluginRpc(method: unknown, payload: unknown): PluginRpc | n
   if (typeof method !== "string" || typeof payload !== "string") return null;
   // A UTF-16 unit is at least one UTF-8 byte: the cheap length check first, the exact count after.
   if (payload.length > RPC_MAX_BYTES || Buffer.byteLength(payload, "utf8") > RPC_MAX_BYTES) return null;
+  if (tooDeep(payload, RPC_MAX_DEPTH)) return null;
   let args: unknown;
   try {
     args = JSON.parse(payload);

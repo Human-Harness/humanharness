@@ -6,6 +6,7 @@ import {
   PLUGIN_CSP,
   PLUGIN_FILE_MAX_BYTES,
   RPC_MAX_BYTES,
+  RPC_MAX_DEPTH,
   allowPluginRequest,
   isPluginFrame,
   parsePluginRpc,
@@ -219,6 +220,18 @@ describe("isPluginFrame and pluginOfSender (the plugin channel's sender check, B
 
 describe("parsePluginRpc (every rpc argument checked before anything sees it)", () => {
   const rpc = (method: unknown, args: unknown) => parsePluginRpc(method, JSON.stringify(args ?? null));
+
+  it("refuses a payload nested deeper than RPC_MAX_DEPTH before parsing it; brackets inside strings don't count", () => {
+    const nest = (n: number) => `${"[".repeat(n)}${"]".repeat(n)}`;
+    const ctx = (inner: string) => `{"runId":"r","name":"log","args":${inner}}`;
+    expect(parsePluginRpc("ctx", ctx(nest(RPC_MAX_DEPTH + 5)))).toBeNull();
+    const deep = "[".repeat(5_000_000) + "]".repeat(5_000_000);
+    const t0 = Date.now();
+    expect(parsePluginRpc("ctx", deep)).toBeNull();
+    expect(Date.now() - t0).toBeLessThan(500);
+    expect(parsePluginRpc("ctx", ctx(nest(10)))).not.toBeNull();
+    expect(parsePluginRpc("ctx", ctx(JSON.stringify(["[".repeat(100)])))).not.toBeNull();
+  });
 
   it("accepts the host script's calls, each payload one JSON string", () => {
     expect(parsePluginRpc("next", "null")).toEqual({ method: "next" });

@@ -48,6 +48,21 @@ describe("undo a task by its paths (parallel spec §5.3, Decision 12, P2)", () =
     expect(read("a.md")).toBe("a1");
   });
 
+  it("the running paths can be read last, right before the restore; a path a turn touched then still refuses it", async () => {
+    await t1Changes();
+    const order: string[] = [];
+    const r = await restoreTaskByPaths(history, "t1", {
+      running: async () => {
+        order.push("running read");
+        return [{ task: "t2", paths: new Set(["a.md"]) }];
+      },
+      includeShared: false,
+    });
+    expect(r).toEqual({ ok: false, reason: "running", path: "a.md" });
+    expect(order).toEqual(["running read"]);
+    expect(read("a.md")).toBe("a1");
+  });
+
   it("shared paths only after confirm", async () => {
     await t1Changes();
     write("b.md", "b1");
@@ -109,6 +124,21 @@ describe("undo a task by its paths (parallel spec §5.3, Decision 12, P2)", () =
     expect(await restoreTaskByPaths(history, "t1", { running: [], includeShared: false, depth: 3 })).toEqual({ ok: false, reason: "too-far" });
     expect(read("a.md")).toBe("a2");
   });
+
+  it("a later change more than 200 commits back still refuses it (the whole window is read)", async () => {
+    await t1Changes();
+    write("a.md", "a-by-hand");
+    await history.save("Data: notes");
+    for (let i = 0; i < 210; i++) {
+      write("b.md", `b${i + 1}`);
+      await history.commitPaths(["b.md"], `Turn: B${i}`, { task: "t2" });
+    }
+    // A later turn of t1 keeps it in view; its start is still in the newer half of the 500-commit window.
+    write("c.md", "c");
+    await history.commitPaths(["c.md"], "Turn: A again", { task: "t1" });
+    expect(await restoreTaskByPaths(history, "t1", { running: [], includeShared: false })).toMatchObject({ ok: false, reason: "later", path: "a.md", outside: 1 });
+    expect(read("a.md")).toBe("a-by-hand");
+  }, 60_000);
 
   it("nothing to undo for a task the history doesn't know", async () => {
     expect(await restoreTaskByPaths(history, "nope", { running: [], includeShared: false })).toEqual({ ok: false, reason: "nothing" });

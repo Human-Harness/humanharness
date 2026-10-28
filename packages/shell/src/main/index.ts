@@ -1639,7 +1639,7 @@ function registerIpc() {
         .run(
           currentHistory,
           async (history: History) => {
-            result = await restoreTaskByPaths(history, id, { running: await board.runningPaths(), includeShared: includeShared === true });
+            result = await restoreTaskByPaths(history, id, { running: () => board.runningPaths(), includeShared: includeShared === true });
           },
           { busy: () => board.lane(id)?.manager.isBusy() ?? false },
         )

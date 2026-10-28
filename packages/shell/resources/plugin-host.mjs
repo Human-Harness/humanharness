@@ -7,17 +7,28 @@ const ERROR_CHARS = 500;
 
 const errorText = (e) => String(e instanceof Error ? e.message : e).slice(0, ERROR_CHARS);
 
+function pluginRefused(answer) {
+  const err = new Error(typeof answer?.refused === "string" ? answer.refused : "Refused");
+  err.name = "PluginRefused";
+  return err;
+}
+
+/** `rpc` with main's refusals (`{ ok: false, refused }`, answered rather than thrown) thrown as "PluginRefused". */
+function refusing(rpc) {
+  return async (method, args) => {
+    const answer = await rpc(method, args);
+    if (answer !== null && typeof answer === "object" && answer.ok === false && typeof answer.refused === "string") throw pluginRefused(answer);
+    return answer;
+  };
+}
+
 /** The `ctx` of one run: each call carries the run's id, and a refusal throws an Error named "PluginRefused". */
 function contextOf(rpc, runId) {
   const call = async (name, ...args) => {
     // JSON turns a trailing undefined into null; the broker counts arguments.
     while (args.length > 0 && args[args.length - 1] === undefined) args.pop();
     const answer = await rpc("ctx", { runId, name, args });
-    if (!answer || answer.ok !== true) {
-      const err = new Error(typeof answer?.refused === "string" ? answer.refused : "Refused");
-      err.name = "PluginRefused";
-      throw err;
-    }
+    if (!answer || answer.ok !== true) throw pluginRefused(answer);
     return answer.value;
   };
   return {
@@ -57,10 +68,11 @@ async function runOne(rpc, sources, cmd) {
 }
 
 /**
- * Loads the backend and serves main's commands until main stops answering. `rpc(method, args)` is the preload's
- * `hh.rpc`; `importBackend()` imports ../backend.js.
+ * Loads the backend and serves main's commands until main stops answering or refuses. `rpc(method, args)` is the
+ * preload's `hh.rpc`; `importBackend()` imports ../backend.js.
  */
-export async function runHost(rpc, importBackend) {
+export async function runHost(rawRpc, importBackend) {
+  const rpc = refusing(rawRpc);
   let sources;
   try {
     const backend = await importBackend();
@@ -81,7 +93,7 @@ export async function runHost(rpc, importBackend) {
     try {
       cmd = await rpc("next");
     } catch {
-      // The channel closed (the plugin stopped, or this page was replaced): nothing more will come.
+      // The channel closed or refused (the plugin stopped, or this page was replaced): nothing more will come.
       return;
     }
     if (cmd?.kind !== "run") continue;

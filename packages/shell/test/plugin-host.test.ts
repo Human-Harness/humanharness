@@ -13,6 +13,8 @@ vi.mock("../src/main/plugin-protocol", async (orig) => {
   return { ...real, parsePluginRpc: vi.fn(real.parsePluginRpc) };
 });
 const parsed = vi.mocked(parsePluginRpc);
+/** A refusal as the channel answers it (never a throw: Electron would print a stack per call). */
+const refused = (reason: string) => ({ ok: false, refused: expect.stringContaining(reason) });
 
 const resources = path.resolve(__dirname, "../resources");
 
@@ -217,22 +219,39 @@ describe("the plugin backend host (plugins spec §4.1)", () => {
     // An app page (unknown webContents), a subframe, an error page after a navigation (S9), no frame at all:
     const appPage = new t.fake.electron.BrowserWindow({ webPreferences: {} });
     appPage.webContents.mainFrame.url = "hh-plugin://oncall/_hh/host.html";
-    await expect(t.fake.invoke(appPage, "next", "null")).rejects.toThrow("Unexpected sender");
-    await expect(t.fake.invoke(t.win, "next", "null", { url: "hh-plugin://oncall/_hh/host.html" })).rejects.toThrow("Unexpected sender");
+    expect(await t.fake.invoke(appPage, "next", "null")).toEqual(refused("Unexpected sender"));
+    expect(await t.fake.invoke(t.win, "next", "null", { url: "hh-plugin://oncall/_hh/host.html" })).toEqual(refused("Unexpected sender"));
     t.win.webContents.mainFrame.url = "http://127.0.0.1:1/nav";
-    await expect(t.fake.invoke(t.win, "next", "null")).rejects.toThrow("Unexpected sender");
+    expect(await t.fake.invoke(t.win, "next", "null")).toEqual(refused("Unexpected sender"));
     t.win.webContents.mainFrame.url = "hh-plugin://oncall/_hh/host.html";
-    await expect(t.fake.invoke(t.win, "next", "null", null)).rejects.toThrow("Unexpected sender");
+    expect(await t.fake.invoke(t.win, "next", "null", null)).toEqual(refused("Unexpected sender"));
   });
 
   it("B5, B11: the sender is checked before the payload is read; a malformed payload is refused", async () => {
     const t = await started();
     const appPage = new t.fake.electron.BrowserWindow({ webPreferences: {} });
     parsed.mockClear();
-    await expect(t.fake.invoke(appPage, "next", "null")).rejects.toThrow("Unexpected sender");
+    expect(await t.fake.invoke(appPage, "next", "null")).toEqual(refused("Unexpected sender"));
     expect(parsed).not.toHaveBeenCalled();
-    await expect(t.fake.invoke(t.win, "next", { not: "a string" })).rejects.toThrow("malformed");
-    await expect(t.fake.invoke(t.win, "next", "[[[[")).rejects.toThrow("malformed");
+    expect(await t.fake.invoke(t.win, "next", { not: "a string" })).toEqual(refused("malformed"));
+    expect(await t.fake.invoke(t.win, "next", "[[[[")).toEqual(refused("malformed"));
+  });
+
+  it("a refused call is an answer, never a throw: the handler doesn't reject, so Electron logs nothing per call", async () => {
+    const t = await started();
+    const appPage = new t.fake.electron.BrowserWindow({ webPreferences: {} });
+    // Before `ready`, the channel itself refuses `next`; a closed channel refuses everything.
+    expect(await t.fake.invoke(t.win, "next", "null")).toEqual(refused("not ready"));
+    const answers = await Promise.allSettled([
+      t.fake.invoke(appPage, "next", "null"),
+      t.fake.invoke(t.win, "bogus", "null"),
+      t.fake.invoke(t.win, "ctx", "{"),
+    ]);
+    expect(answers.every((a) => a.status === "fulfilled")).toBe(true);
+    t.ch.close();
+    expect(await t.fake.invoke(t.win, "ready", JSON.stringify({ sources: [] }))).toEqual(refused("stopped"));
+    // The in-flight count still comes back down after each refusal.
+    for (let i = 0; i < HOST_IN_FLIGHT + 2; i++) expect(await t.fake.invoke(t.win, "next", "null")).toEqual(refused("stopped"));
   });
 
   it("dispatches a checked rpc to the plugin's channel; ctx calls reach the broker", async () => {
@@ -265,7 +284,7 @@ describe("the plugin backend host (plugins spec §4.1)", () => {
     const call = JSON.stringify({ runId: "r", name: "log", args: [] });
     const pending = Array.from({ length: HOST_IN_FLIGHT }, () => t.fake.invoke(win, "ctx", call));
     parsed.mockClear();
-    await expect(t.fake.invoke(win, "ctx", call)).rejects.toThrow("Too many calls");
+    expect(await t.fake.invoke(win, "ctx", call)).toEqual(refused("Too many calls"));
     expect(parsed).not.toHaveBeenCalled();
     release();
     await Promise.all(pending);
@@ -280,7 +299,7 @@ describe("the plugin backend host (plugins spec §4.1)", () => {
     const win2 = t.fake.windows.at(-1)!;
     expect(win2).not.toBe(t.win);
     expect(t.win.destroyed).toBe(true);
-    await expect(t.fake.invoke(t.win, "ready", JSON.stringify({ sources: [] }))).rejects.toThrow("Unexpected sender");
+    expect(await t.fake.invoke(t.win, "ready", JSON.stringify({ sources: [] }))).toEqual(refused("Unexpected sender"));
     await t.fake.invoke(win2, "ready", JSON.stringify({ sources: ["s"] }));
     expect(await fresh.ready()).toEqual({ sources: ["s"] });
     (t.win.webContents.events.get("render-process-gone") as unknown as (e: unknown, d: unknown) => void)({}, { reason: "killed" });
@@ -320,7 +339,7 @@ describe("the plugin backend host (plugins spec §4.1)", () => {
     const t = await started();
     await t.host.stop("oncall");
     expect(t.win.destroyed).toBe(true);
-    await expect(t.fake.invoke(t.win, "next", "null")).rejects.toThrow("Unexpected sender");
+    expect(await t.fake.invoke(t.win, "next", "null")).toEqual(refused("Unexpected sender"));
     expect((await t.get("hh-plugin://oncall/_hh/host.html")).status).toBe(404);
     // A restart reuses the session without registering its handlers twice.
     await t.host.start({ id: "oncall", dist: t.dist, backendHash: t.backendHash, channel: t.channel(), gone: vi.fn() });

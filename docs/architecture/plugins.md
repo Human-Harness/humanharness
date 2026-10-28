@@ -74,7 +74,7 @@ A plugin is a `dist/` folder: `plugin.json` (plain data) and `backend.js` (an ES
 - **Every response**, a 404 included, carries `content-security-policy: default-src 'none'; script-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'` (`PLUGIN_CSP`), `x-content-type-options: nosniff` and `cache-control: no-store`.
 - **The request filter**: `webRequest.onBeforeRequest(<all_urls>)` on the plugin's session cancels every URL that is not one of its own `hh-plugin://<id>/` URLs (`allowPluginRequest`). It covers workers, pings, sockets and new windows (spike S4).
 - **Navigation guards**: `setWindowOpenHandler` denies; `will-navigate`, `will-frame-navigate`, `will-redirect` and `will-attach-webview` are prevented.
-- **The host page** loads `_hh/host.js`, which imports `../backend.js`, reports `ready` with the source ids it defines (or the load error), then loops on `rpc("next")`. Main answers each `next` with `{ kind: "run", runId, source }` or `{ kind: "idle" }` after 25 s. A run's `ctx` calls carry its `runId`; a refusal comes back as an answer and the host script throws an `Error` named `PluginRefused`. The host script is a convenience for authors, not a boundary: it runs beside the plugin's code, and main checks everything it sends.
+- **The host page** loads `_hh/host.js`, which imports `../backend.js`, reports `ready` with the source ids it defines (or the load error), then loops on `rpc("next")`. Main answers each `next` with `{ kind: "run", runId, source }` or `{ kind: "idle" }` after 25 s. A run's `ctx` calls carry its `runId`; a refusal, the broker's or the channel's own (unexpected sender, too many calls, malformed rpc, stopped), comes back as an answer `{ ok: false, refused }` and the host script throws an `Error` named `PluginRefused`. Nothing on the channel throws in the IPC handler, so a hostile backend can't fill the log with Electron's per-call stacks. The host script is a convenience for authors, not a boundary: it runs beside the plugin's code, and main checks everything it sends.
 
 ### Who is calling
 
@@ -208,7 +208,6 @@ Product and packaging:
 - **The inbox is only in the chat's top bar**: it is not on the start screen.
 - **Full absolute folder paths** of local and dev plugins are sent to the renderer and shown in Settings (the spec shows `~/…`; shortening in main is an open question).
 - **`recoverMove` after a crash mid-move doesn't carry plugin state**: a folder move finished or undone at the next start leaves the approvals under the old base's hash, so the plugins read as off in the new folder until turned on again.
-- **Refusal stacks in the log**: a refusal at the channel level (unexpected sender, too many calls, malformed rpc) throws in the IPC handler, and Electron prints a stack per refused call; a hostile backend can fill the console. Broker refusals are answers and don't.
 - **No per-source Refresh button** in the detail in part 1 (the IPC exists); Test connection runs every source.
 - **Tests**: there is no e2e window count for a harness without `plugins`; that D0 case is covered by unit tests and the absence of the controller.
 

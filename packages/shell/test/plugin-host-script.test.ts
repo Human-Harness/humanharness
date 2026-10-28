@@ -49,6 +49,44 @@ describe("the core host script (Decision 10)", () => {
     expect(calls.find(([m]) => m === "done")).toEqual(["done", { runId: "r1", ok: true }]);
   });
 
+  it("main's refusals are answers: a refused `next` stops the loop, a refused `done` or `ready` doesn't escape", async () => {
+    const calls: string[] = [];
+    const rpc = async (method: string) => {
+      calls.push(method);
+      return { ok: false, refused: "Too many calls at once" };
+    };
+    await runHost(rpc, async () => ({ default: { sources: {} } }));
+    // `ready` refused: the host stops before pulling anything.
+    expect(calls).toEqual(["ready"]);
+    const seen: string[] = [];
+    const calls2: string[] = [];
+    let nexts = 0;
+    const rpc2 = async (method: string) => {
+      calls2.push(method);
+      if (method === "next") return nexts++ === 0 ? { kind: "run", runId: "r1", source: "s" } : { ok: false, refused: "The plugin's backend stopped" };
+      if (method === "ctx" || method === "done") return { ok: false, refused: "Unknown or malformed rpc" };
+      return null;
+    };
+    const backend = {
+      default: {
+        sources: {
+          s: async (ctx: Any) => {
+            try {
+              await ctx.log("info", "x");
+            } catch (e: Any) {
+              seen.push(`${e.name}: ${e.message}`);
+            }
+          },
+        },
+      },
+    };
+    await runHost(rpc2, async () => backend);
+    await settle();
+    expect(seen).toEqual(["PluginRefused: Unknown or malformed rpc"]);
+    expect(calls2.filter((m) => m === "next")).toHaveLength(2);
+    expect(calls2).toContain("done");
+  });
+
   it("every ctx call carries the run id and its arguments, trailing undefined ones dropped (JSON makes a middle one null)", async () => {
     const backend = {
       default: {

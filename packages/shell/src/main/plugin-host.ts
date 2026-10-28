@@ -28,6 +28,12 @@ export const PLUGIN_RPC_CHANNEL = "hh-plugin:rpc";
  */
 export const HOST_IN_FLIGHT = 24;
 
+/**
+ * A call the channel refuses, as an answer rather than a throw: a throw in an `ipcMain.handle` makes Electron print a
+ * stack per call, which a hostile backend could repeat to fill the log. The host script throws it as `PluginRefused`.
+ */
+export const rpcRefusal = (reason: string) => ({ ok: false, refused: reason }) as const;
+
 const HEADERS = { "content-security-policy": PLUGIN_CSP, "x-content-type-options": "nosniff", "cache-control": "no-store" } as const;
 
 export interface PluginHostDeps {
@@ -205,20 +211,24 @@ export class PluginBackendHost implements BackendHost {
   /**
    * One call from a page (B5, B11): the sender first (a registered window's main frame at its own host page; spike
    * S9), then the window's in-flight cap, and only then is the payload parsed. Nothing in it is read before that.
+   * Every refusal along the way, the channel's own included, is answered with `rpcRefusal`, never thrown.
    */
   private async rpc(event: IpcMainInvokeEvent, method: unknown, payload: unknown): Promise<unknown> {
     const wcId = event.sender.id;
     const frame = event.senderFrame;
     const id = pluginOfSender({ webContentsId: wcId, frame: frame ? { url: frame.url, isMain: frame === event.sender.mainFrame } : null }, this.senders);
     const live = id === null ? undefined : this.live.get(id);
-    if (id === null || !live) throw new Error("Unexpected sender");
+    if (id === null || !live) return rpcRefusal("Unexpected sender");
     const n = this.inFlight.get(wcId) ?? 0;
-    if (n >= HOST_IN_FLIGHT) throw new Error("Too many calls at once");
+    if (n >= HOST_IN_FLIGHT) return rpcRefusal("Too many calls at once");
     this.inFlight.set(wcId, n + 1);
     try {
       const rpc = parsePluginRpc(method, payload);
-      if (rpc === null) throw new Error("Unknown or malformed rpc");
+      if (rpc === null) return rpcRefusal("Unknown or malformed rpc");
       return await live.channel.dispatch(rpc);
+    } catch (err) {
+      // The channel's refusals (stopped, not ready): answers too.
+      return rpcRefusal(err instanceof Error ? err.message : "Refused");
     } finally {
       // A window closed meanwhile has no count left to lower.
       const now = this.inFlight.get(wcId);

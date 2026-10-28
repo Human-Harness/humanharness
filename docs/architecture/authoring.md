@@ -10,6 +10,7 @@ A harness lives in its own repository and depends on `@humanharness/cli` only: u
 | `check [--json]` | Loads the manifest with the SDK and reads `HARNESS.md` (`packages/cli/src/check.ts`). Errors exit with 1. |
 | `run <action> … [--mode <id>] [--time <minutes>] [--record [--force]]` | One task against a real engine, with the app's own `TaskManager` and `TurnController` (`packages/cli/src/run.ts`), the terminal as the window, and a usage report at the end. `--record` saves the run as `mock/<action>.json` (`--force` overwrites it). |
 | `dev [--engine <id>] [--mock [--keep]] [--build <dir>]` | `check`, then the shell's `electron-vite dev` with `HH_HARNESS_DIR` (and `HH_DEV_ENGINE`; `--build` builds into `<dir>` through `HH_OUT_DIR`). When electron-vite can't start, it prints why and exits with 1. `--mock` opens the app with a fake engine replaying `mock/` (see `mock-mode.md`); `--keep` reuses the previous mock session's folders. |
+| `plugin <command>` | The plugin authoring tools: `init`, `build`, `check`, `record`, `test`, `dev` (see Plugins below). |
 
 `check`, `run` and `dev` work on the current folder, or on `--harness <dir>`. From the core repository: `corepack pnpm humanharness run manifest --harness harnesses/demo`.
 
@@ -76,6 +77,67 @@ Declare `profiles: { label, fields }` when several people use one install on one
 ## run's report
 
 Per phase (`run`, `follow-up`, `checkpoint`, `close`; a phase change turn and the wrap-up count as follow-ups here, while `usage.jsonl` keeps their own kinds): turns, input, output, cache read and cache write tokens; the tier, model (asked and reported), effort and cap; the peak context against the cap; and the verdict, "used about N tokens (input+output, uncached)" with the total cache reads and writes printed next to it (not added), then the action's cost hint. The same lines go to `<folder>/.harness/usage.jsonl`, as in the app.
+
+## Plugins
+
+A plugin (`docs/architecture/plugins.md`) is authored in a folder of its own, inside a harness (`<harness>/plugins/<id>/`) or anywhere else, with `humanharness plugin <command>` (`packages/cli/src/plugin*.ts`). Every command but `init` works on the plugin in the current folder, or on `--plugin <dir>`. A plugin folder needs no `node_modules`: `build` resolves `@humanharness/plugin-ui`, `@humanharness/harness-sdk` (and its `/plugin-backend` sub-path), React and zod to the CLI's own copies.
+
+The folder:
+
+- `plugin.config.ts`: `export default definePlugin({ … })`, with `import { definePlugin, z } from "@humanharness/harness-sdk"`. It is `plugin.json` with zod where `plugin.json` has JSON Schemas (`data[].schema`, `settings.fields[].schema`, `actions[].vars`); `pluginJson` turns them into allowlisted JSON Schema (`z.toJSONSchema`, draft 2020-12) and checks the result as the app's loader does, so a `.regex()` or a transform fails the build. A field with a default is listed as required in the JSON Schema.
+- `backend.ts`: `definePluginBackend({ sources })` from `@humanharness/harness-sdk/plugin-backend` only.
+- `panels/<id>.tsx`, one per declared panel, default-exporting a React component built with `@humanharness/plugin-ui`, plus any `.css` it imports; `src/` for shared code; `assets/` for `.svg` and `.png` files.
+- `fixtures/<source>/001.json…`: one recorded exchange per file (the format is in `plugins.md`, "Fixture mode").
+- `PLUGIN.md`: the plugin's living doc. Sections `## Purpose`, `## Sources` (a table `| Source | Brings | TTL |`, TTL as `300`, `300 s`, `5 min`, `6 h` or `1 d`), `## Rules`, `## Panels`, `## Actions`, `## Permissions` and `## Decision log`. Permission bullets read `- Host: <pattern> — <reason>`, `- Runs: <cmd> <args…> — <reason>`, `- Key: <id> — <reason>` and `- Tasks — <reason>` (`plugin-md.ts`, on `harness-md.ts`'s section and table helpers).
+- `dist/`: what the app loads. `build` writes it; commit it with the sources (the root `.gitignore` keeps `harnesses/*/plugins/*/dist/`).
+
+| Command | What it does |
+|---|---|
+| `init <dir> [--harness <id>] [--name <name>]` | Creates the plugin in a new or empty folder from `packages/cli/plugin-template/` (one source `items` on `api.example.com` with one fixture, a collection, a panel `main`, a chip `count`, an action `summarize`, `PLUGIN.md`, `tsconfig.json`, `README.md`, `.gitignore`). The folder's name is the id; `--harness` defaults to `"*"`, `--name` to one made from the id and refuses brand names. `__ID__`, `__NAME__` and `__HARNESS__` are filled in one pass. A bad `--harness` or `--name` is refused before anything is written; files are written with `wx` and nothing is ever deleted. It appends the first Decision log entry and installs the guide. It doesn't build. A fresh `init` passes `build`, `check` and `test`. |
+| `build [--out <dir>]` | `dist/` from the sources (below). Prints the files written. |
+| `check [--json] [--harness <dir>] [--no-build]` | Builds (unless `--no-build`), then checks the built `dist/`, the sources and `PLUGIN.md` (below). Exit 1 on any error. `--harness` adds the slot check against that harness's manifest. |
+| `record <source> [--yes] [--no-build]` | One real sync of `<source>`, written as its fixtures (below). |
+| `test [--source <id>] [--now <iso>] [--json]` | Runs every source (or one) of the built plugin once on its fixtures, with settings at their defaults and each key as `fixture-<id>`. `--now` fixes the date the backend sees. Prints per source the records written by collection (count and the first 3 keys), the attention items, the chips and the log lines. It reads `dist/` and doesn't build. Exit 1 when a source fails. |
+| `dev --harness <dir> [--live] [--mock]` | Checks (and so builds) the plugin against the harness, then opens it with the harness's `dev`, with the plugin as a dev plugin (`HH_PLUGIN_DIRS`, on, no review) and, unless `--live`, `HH_PLUGIN_FIXTURES=1`. It replaces every inherited `HH_PLUGIN_*`. A check error opens nothing (exit 1). It watches the plugin folder (recursive, ignoring `dist/`, its swap folders, `fixtures/`, `node_modules` and dot-folders) and rebuilds 300 ms after the last change, one build at a time with at most one queued; a failed build keeps the last good `dist/`, and the app reloads the plugin when `dist/` changes. `--live` uses the network and the keys stored in Settings › Plugins and says which hosts it will reach; `--mock` opens the harness in mock mode; the two don't go together. `--harness` is required, and a plugin path holding the path delimiter is refused. |
+
+A bare `humanharness plugin` prints the usage and exits with 2, as does an unknown command.
+
+### build
+
+`buildPlugin` (`plugin-build.ts`) runs esbuild, resolved through the copy `tsx` brings (no direct dependency yet: open question), in memory:
+
+- `plugin.json` from `plugin.config.ts`, bundled for Node into a temp `.mjs` (removed after) and imported: the config runs in the CLI's process (`build` only; the app never runs it).
+- `backend.js`: ESM. Each `panels/<id>.tsx` → `panel-<id>.js`, a classic-script IIFE that mounts the default export, `panel-<id>.css` and `panel-<id>.html`. A panel imports only code and `.css`. Top-level await is refused in both ("<file>:<line>: top-level await is not allowed: do the work inside a function").
+- `assets/`: flat, `.svg` and `.png` only, names of 1–64 letters, digits, `_` or `-`; checked with `lstat`.
+- Output is location-independent and deterministic: `NODE_ENV` is `"production"`, `minifyWhitespace` drops path comments, the plugin's own files load as `hh-plugin:<path from the plugin folder>`, and an import outside both the plugin folder and the toolchain is refused, so no machine path (or user name) ends up in a bundle. Two builds give the same bytes.
+- The result is written to `<out>.tmp-<hex>` and swapped in through `<out>.old-<hex>`, so a failed build leaves the old `dist/` as it was. `--out` may not be the plugin folder or a folder holding it, and a non-empty folder without a `plugin.json` (not a previous build) is refused.
+
+### check
+
+`checkPlugin` (`plugin-check.ts`) reports findings as `severity rule file:line message`, or as JSON with `--json`. The source scans read `backend.ts`, `panels/**` and `src/**` (`.ts`, `.tsx`, `.js`) with fixed regexes; a URL built from parts isn't seen, and the broker stays the real enforcement.
+
+- Errors: `schema` (`dist/plugin.json` missing, not JSON or refused by the loader's checks; a failed build), `api-version`, `host-undeclared` (a literal `https?://host[:port]` the declared hosts don't cover; `www.w3.org`, the SVG namespace, is skipped), `exec-undeclared` (`exec("cmd")`), `secret-undeclared` (`{{secret:<id>}}`), `slot-unknown` (with `--harness`: a panel or chip naming a slot the harness doesn't have with that kind; the message says where it will go instead), `fixtures-missing` (a source with no fixture), `plugin-md-mismatch` (`PLUGIN.md` missing, no Sources table, Sources ids or TTLs that differ from the manifest, or permission bullets that aren't exactly the declared hosts, commands, keys and tasks), `prompt-placeholder` (a `{{name}}` that isn't a declared var, or a required var without a default that the prompt never uses).
+- Warnings: `exec-wide` (`args: ["*"]`), `exec-writes` (a method other than GET or HEAD, or a writing verb such as `post`, `delete`, `merge`), `hosts-wildcard`, `sync-heavy` (a TTL under 60 s), `host-local` (`localhost`, a name under it, or an IP literal, declared or in a URL, IPv6 included: the broker refuses them), `http-url` (an `http://` URL: the broker fetches https only).
+- `hosts-wildcard` can't fire today: the schema already refuses `*.<one label>`, so `check` reports that as `schema` (see `plugins.md`, Known gaps).
+
+### record
+
+`record <source>` builds (unless `--no-build`), then runs one real sync of that source with the live network (global `fetch`, commands found on `PATH` only, never a path), the shell's own broker (`@humanharness/shell/plugins`, with its public-address host check) and a temp data folder.
+
+- With declared keys it refuses to run outside a terminal. It asks each key the backend names, and any other the broker asks for during the run, with the input hidden, and holds them for that run only.
+- Before writing, every exchange goes through `stripSecrets`: each key's raw, URL-encoded, form, base64 and JSON-escaped forms become `{{secret:<id>}}`; a Basic `user:key` credential is stripped whole; `set-cookie` is never recorded and oversized headers are dropped. An exchange that still holds a key in a form `holdsSecret` decodes means nothing is written and exit 1. Responses are capped at 10 MB.
+- No requests: nothing written, exit 0. More than 200 exchanges (the app's per-source cap): nothing written, exit 1. Old fixtures of that source are deleted first, after asking (`--yes` doesn't ask; "n" writes nothing, exit 1). Files are `fixtures/<source>/001.json`…, created exclusively.
+- What it prints (failures, log lines, a leaking URL) passes `hideSecrets` first. It ends by asking to read the fixtures before committing them: hex, double-encoded, compressed, split or case-changed keys aren't seen.
+
+### Plugin code on the author's machine (P12)
+
+`record` and `test` (and so `check`'s build and `dev`'s first check, for `plugin.config.ts`) run plugin code in the author's Node process. `test` and `record` run the bundled backend through `esbuild.transform` into an IIFE in a `vm` context with a few host-realm globals and part 1's broker. **Node's `vm` is not a sandbox**: a host-realm value leads back to `process`, so the code can do anything the author's user can, and under `record` it can read the keys typed in the terminal. Both commands say so before any plugin code runs ("Note: plugin code runs in this Node process, not in the app's sandbox. Run only plugins you trust."; on stderr with `test --json`). In the app, plugin code only ever runs in the sandboxed backend window and panel frames.
+
+### The guide
+
+`packages/cli/guide/new-plugin.md` is the `/new-plugin` playbook in the spec's 7 phases, one question at a time, each ending with its `PLUGIN.md` section and the code updated together. `init` installs it in the plugin folder, unchanged, as `.claude/skills/new-plugin/SKILL.md` (Claude Code) and between `<!-- humanharness:plugin-guide:start -->` and `<!-- humanharness:plugin-guide:end -->` in `AGENTS.md` (Codex) (`pluginSkillFile`, `pluginAgentsFile`, `pluginGuideSection` in `guide.ts`); the harness guide's functions are unchanged. Its Verify phase runs `record`, then `check` and `test`. The agent never runs `record` with a key and never asks for one: the developer runs it in their own terminal. Fixtures written by hand, when the service isn't reachable yet, leave Verify open with a Decision log item until `record` runs.
+
+The demo's `harnesses/demo/plugins/on-this-day/` is a complete example: one source with a hand-made fixture of 25 synthetic events, a panel, a chip, round-anniversary attention items that open the panel on the event, and an "Explain this event" action (light tier, app-wide).
 
 ## Compliance
 

@@ -31,6 +31,7 @@ Every text in the manifest is one English string.
 | `profiles` | Optional. Several people on one install, each with a folder of their own: `label` (what to call one, "student") and `fields` (the `profile` collection's fields the add and edit form asks for, `name` first) (`docs/architecture/profiles.md`) |
 | `sidekick` | Optional. The prompt coach: its `default` state, `tips`, the pre-send mode per action, `checks`, and the harness's `places` and `presets` (below; `docs/architecture/sidekick.md`) |
 | `plugins` | Optional. Whether the harness takes plugins: `bundled` (ids under `<harness>/plugins/<id>/dist/`), `on` (bundled ones that start on, without a review) and `local` (the person may add plugins from a folder; default `false`). Absent, or with no bundled plugin and `local: false`, nothing of plugins runs (`docs/architecture/plugins.md`) |
+| `slots` | Optional. Places of the harness's own screen where plugin panels or chips go, next to the core's `plugins` and `chips` slots (below; `docs/architecture/plugins.md`) |
 
 ### Phases and the time box
 
@@ -74,6 +75,24 @@ sidekick: {
 - `presets[]`: at most 8 ready-made sidekicks the person is offered in Settings and may add. `name` (≤ 40, unique: adopting one finds it by name), `mark` (≤ 16, an emoji or short text), `personality` (≤ 1,500, may be empty), `purposes` (1–6): `{ id: "prompt-coach" | "focus" | "process-guard" | "mentor" | "daily-summary" }` or `{ id: "custom", text (≤ 600), moments (1–7) }`. A moment is `pre-send`, `after-reply`, `heads-up`, `before-approve`, `phase-change`, `daily` or `place:<id>`.
 - A manifest without them parses to the same object as before (D0).
 
+### Plugins and slots
+
+`plugins` says whether the harness takes plugins; `slots` adds places for them on the harness's own screen. From a manifest:
+
+```ts
+plugins: { bundled: ["on-this-day"], on: [], local: true },
+slots: [
+  { id: "status-bar", label: "Status bar", kind: "chip" },
+  { id: "board", label: "Board", kind: "panel" },
+],
+```
+
+- `plugins.bundled`: plugin ids under `<harness>/plugins/<id>/dist/`. `plugins.on`: bundled ones that start on without a review (the demo leaves it empty, so `on-this-day` starts off). `plugins.local`: the person may add plugins from a folder (default `false`).
+- `slots[]`: at most 10. `id` (`^[a-z][a-z0-9-]{0,39}$`, unique, never the core's `plugins` or `chips`), `label` (≤ 40, no hidden characters), `kind` (`panel` or `chip`).
+- The core's two slots always exist: `plugins` is the Plugins section of the side panel, `chips` sits in the top bar after the usage meter. A plugin's panel or chip that names no slot, an undeclared one or one of the other kind goes to the core's slot of its kind.
+- The harness draws its own slots with `<PluginSlot id="board" />` from `@humanharness/ui`, in the UI it passes as `renderSide`. A slot it declares but never mounts shows nothing, and `humanharness plugin check` can't tell.
+- A manifest without `slots` parses to the same object as before (D0).
+
 The harness's screen is `ui/App.tsx`: the shell build (`packages/shell/electron.vite.config.ts`) bundles it from the harness folder.
 
 ## Checks
@@ -90,7 +109,7 @@ The harness's screen is `ui/App.tsx`: the shell build (`packages/shell/electron.
 - Profiles: `profiles` needs a `profile` collection with `single: true`, `scoped: false` and a `name` field that is a string (`z.string()`, with or without bounds). `fields` has 1 to 6 entries, each once, starts with `name`, and names only fields of that collection the core form can draw (`docs/architecture/profiles.md`).
 - Material: `accepts` and `fragmentKinds` list each value once; `sheet.sections` ids are unique and aren't the core's (`notation`, `not-covered`); `items.collection` is declared in `data`, has a key (not `single`) and isn't hidden from the agent (`agent: "none"`), and `items.label` is one of its fields; the action ids `material-review`, `material-repair`, `material-label`, `material-sheet` and `material-link` are reserved. `humanharness check` also warns about a `light` review tier (`material-review-tier`) and an app-wide `items` collection in a harness with scopes (`material-items-scope`) (`docs/architecture/material.md`).
 - Sidekick: `sidekick` can't be an action id or a collection name; every action in `sidekick.actions` must exist; place ids and preset names are unique; a preset's custom `place:<id>` moment must name a place declared in `sidekick.places` (a parse error). `humanharness check` warns about tips over 300 tokens (`sidekick-tips`) (`docs/architecture/sidekick.md`).
-- Plugins: `plugins.bundled` holds at most 20 plugin ids (`^[a-z0-9][a-z0-9-]{0,63}$`), each once; every id in `plugins.on` is bundled, once; unknown keys are refused (`harnessPluginsSchema`). A bundled plugin's own `plugin.json` is checked when the app loads it, not by `defineHarness`: a broken one shows as an error in Settings › Plugins (`docs/architecture/plugins.md`).
+- Plugins: `plugins.bundled` holds at most 20 plugin ids (`^[a-z0-9][a-z0-9-]{0,63}$`), each once; every id in `plugins.on` is bundled, once; unknown keys are refused (`harnessPluginsSchema`). A bundled plugin's own `plugin.json` is checked when the app loads it, not by `defineHarness`: a broken one shows as an error in Settings › Plugins (`docs/architecture/plugins.md`). `slots`: at most 10, ids unique and not `plugins` or `chips` (`harnessSlotsSchema`); `humanharness plugin check --harness <dir>` reports a plugin's panel or chip naming a slot the harness doesn't have with that kind (`slot-unknown`).
 - A harness whose id is `ui` or `data` can't have `mcp` entries (those are the built-in server names).
 - `resolveInHarness` refuses any path that leaves the harness folder: every action's prompt, every mode's brief and every phase's brief (checked by `loadHarness`), and the instructions, seed, logo and MCP servers when they are used.
 
@@ -105,5 +124,5 @@ The harness's screen is `ui/App.tsx`: the shell build (`packages/shell/electron.
 - `packages/harness-sdk/src/material.ts`: the `material` schema, `MATERIAL_FAMILIES`, `MATERIAL_STAGES`, `hasMaterial`, `materialStageKey`, `stageTier`.
 - `packages/harness-sdk/src/profiles.ts`: the `profiles` schema, `PROFILE_COLLECTION`, `PROFILE_COLORS`, `hasProfiles`, `profileFormSpec`.
 - `packages/harness-sdk/src/sidekick.ts`: the `sidekick` schema, moments, purposes, places, presets and the `sidekick` collection's records.
-- `packages/harness-sdk/src/plugin.ts`: the `plugins` schema (`harnessPluginsSchema`, `pluginsAccepted`) and `plugin.json`'s.
+- `packages/harness-sdk/src/plugin.ts`: the `plugins` schema (`harnessPluginsSchema`, `pluginsAccepted`), the `slots` schema (`harnessSlotsSchema`, `DEFAULT_SLOTS`, `slotFor`) and `plugin.json`'s.
 - `harnesses/demo/harness.config.ts`: a complete manifest.

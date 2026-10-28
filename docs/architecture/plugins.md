@@ -1,13 +1,13 @@
 # Plugins
 
-Spec: `docs/superpowers/specs/2026-10-27-plugins-design.md` ("§" below). Plan: `docs/superpowers/plans/2026-10-27-plugins-part1.md` (the runtime, "Decision N" and "B1"–"B13" below); part 2 (`2026-10-27-plugins-part2.md`) adds panels, chips on screen, actions and the prepared task, the `humanharness plugin` CLI, the `/new-plugin` guide and the demo plugin. Spike: `docs/spikes/2026-10-27-plugins.md` (S1–S9).
+Spec: `docs/superpowers/specs/2026-10-27-plugins-design.md` ("§" below). Plan: `docs/superpowers/plans/2026-10-27-plugins-part1.md` (the runtime, "Decision N" and "B1"–"B13" below); part 2 (`2026-10-27-plugins-part2.md`) adds panels, chips on screen, actions and the prepared task, the `humanharness plugin` CLI, the `/new-plugin` guide and the demo plugin. Spikes: `docs/spikes/2026-10-27-plugins.md` (S1–S9) and `docs/spikes/2026-10-27-plugins-panels.md` (P-S1–P-S10). Part 2's threat model rows are "P1"–"P13".
 
 ## What it is
 
 - A plugin is a feature a harness author ships with a harness, or a person adds from a folder: **sources** that fetch outside data on a TTL, data the plugin keeps, items it raises in the **Attention inbox**, and its own settings and keys. Its code runs in a hidden, sandboxed Chromium window with no Node; everything it does goes through a **broker** in main that allows only what was approved (by the person, or by the harness author for a bundled plugin in `plugins.on`; dev plugins from `HH_PLUGIN_DIRS` run without a review).
 - Plugin code is treated as hostile (spec D4: it is expected to be AI-written code nobody read). Everything in a plugin's `dist/` (`plugin.json` included), everything its sources fetch and everything it writes (data, attention texts, chip texts, log lines) is untrusted. Trusted: the core, the harness author's manifest and bundled code, the person's choices in Settings.
 - It is core (D1), and a harness opts in with `plugins` in its manifest. Without it (and without `HH_PLUGIN_DIRS`), nothing of this page exists at run time (D0, below).
-- Part 1 is the runtime only: sources, broker, scheduler, data, Attention inbox, Settings › Plugins, and the agent surface. Panels, chips on screen and actions are part 2.
+- Part 1 is the runtime: sources, broker, scheduler, data, Attention inbox, Settings › Plugins, and the agent surface. Part 2 is the surface and the authoring side: slots, panels, chips on screen, actions and the prepared task, attention targets that open, fixture mode, the `humanharness plugin` commands (`docs/architecture/authoring.md`) and the demo's `on-this-day`.
 
 ## The package and `plugin.json`
 
@@ -18,7 +18,7 @@ A plugin is a `dist/` folder: `plugin.json` (plain data) and `backend.js` (an ES
 - `id` (`PLUGIN_ID`, `^[a-z0-9][a-z0-9-]{0,63}$`: it names folders and the `hh-plugin://<id>/` host), `name` (≤ 60), `version` (semver), `api` (must be `PLUGIN_API`, 1; checked before the schema so a newer plugin gets a clear message), `harness` (this harness's id or `"*"`).
 - `permissions`: `hosts` (≤ 20 `HOST_PATTERN`s: `host`, `*.host`, optional `:port`, lower case), `exec` (≤ 10 `{ cmd, args }`; `cmd` a bare name, `*` only as the last arg token, no `{{secret:` in args), `secrets` (≤ 10 `{ id, label, help? }`), `tasks` (boolean; needed by `actions`).
 - `sources` (≤ 10 `{ id, ttl: 10 s–7 days, workHoursOnly }`), `data` (≤ 10 collections), `settings`, and part 2's `panels`, `chips` and `actions`.
-- Every display string (name, labels, titles, help, option labels) refuses C0/C1 controls, bidi marks and isolates, zero-width characters and line separators (`HIDDEN`, B12).
+- Every display string (name, labels, titles, help, option labels) refuses the characters of `HIDDEN_CHARS` (B12): C0/C1 controls, the soft hyphen (U+00AD), U+034F, U+061C, the Mongolian variation selectors (U+180B–180F), zero-width characters and bidi marks (U+200B–200F), line and paragraph separators and bidi embeddings (U+2028–202E), word joiner, invisible operators and bidi isolates (U+2060–2069), variation selectors (U+FE00–FE0F and U+E0100–E01EF), the BOM (U+FEFF), interlinear annotations (U+FFF9–FFFB) and tag characters (U+E0000–E007F). An emoji written with its variation selector (`❤️` is U+2764 U+FE0F) is refused too. The same set is stripped from text bound for the agent: an action's filled values (which keep tab and newline), the prepared title, the plugin catalogue text in the `data` server, data-context cells and `AGENTS.md` sentences. Chip, attention and log text, which only the window shows, keep part 1's narrower stripping (C0/C1 controls, bidi overrides and isolates).
 - Ids are unique per list; unknown keys are refused (strict objects).
 
 **Collections** (Decision 2) take the harness's data model minus what plain data can't carry: no `rules`, no `context.order`; `scoped` must be `false` (sources run outside any scope); `agent` is `"read"` or `"none"`. Each `schema` is a JSON Schema object.
@@ -99,9 +99,9 @@ Every existing `hh:*` channel goes through `handle()` in `index.ts`, which answe
 | `settings.get()` | The plugin's settings values (stored ones over defaults), plus `workHours` for a plugin with a `workHoursOnly` source. Read only. |
 | `attention.raise(item)` / `resolve(key)` | `key` `^[A-Za-z0-9:._-]{1,80}$`; `severity` `info`, `warn` or `action`; title ≤ 120 and body ≤ 500 with C0/C1 controls and bidi overrides and isolates (U+202A–202E, U+2066–2069) stripped; a `target` (`{ panel, focus? }` or `{ action, vars }`, vars ≤ 4 KB) must name one of the plugin's own panels or actions. |
 | `chip.set(id, { text, severity })` / `clear(id)` | A declared chip; text ≤ 40. Kept in memory in part 1; shown on screen in part 2. |
-| `log(level, message)` | One line (controls become spaces, ≤ 2,000 chars) in the plugin's error log. |
+| `log(level, message)` | One line (controls become spaces, ≤ 2,000 chars) in the plugin's error log; the app hides the plugin's keys in it (`hideSecrets`, below) before it is written. |
 
-**Keys** (`plugin-secrets.ts`, Decision 17) are the person's own, pasted in Settings: 8 to 8,192 characters, trimmed; each encrypted with Electron `safeStorage` in its own file (temp `O_EXCL | O_NOFOLLOW` + rename; no links, no hard links, ≤ 64 KB). Encryption counts as unavailable when the OS has none, or on Linux with the `basic_text` backend (a hard-coded key): storing is then refused, never done in the clear. A key's value never crosses IPC to any renderer (Settings sees only "stored") and is never logged. The broker gets only the ids of the approved snapshot that the current manifest still declares. A run's error text is redacted with the plugin's key values before the scheduler, the log or the inbox see it.
+**Keys** (`plugin-secrets.ts`, Decision 17) are the person's own, pasted in Settings: 8 to 8,192 characters, trimmed; each encrypted with Electron `safeStorage` in its own file (temp `O_EXCL | O_NOFOLLOW` + rename; no links, no hard links, ≤ 64 KB). Encryption counts as unavailable when the OS has none, or on Linux with the `basic_text` backend (a hard-coded key): storing is then refused, never done in the clear. A key's value never crosses IPC to any renderer (Settings sees only "stored") and is never logged. The broker gets only the ids of the approved snapshot that the current manifest still declares. A run's error text and every log line pass `hideSecrets` (`@humanharness/harness-sdk/plugin-fixtures`) with the plugin's key values before `errors.jsonl`, the scheduler, the inbox or the renderer (the detail, `lastError`) see them: the broker's `redact` forms and hex (either case) become `[redacted]`, and a line that still holds a key in a form it can decode (base64 at any offset, a Basic credential, mixed escapes) is shown as "(a line held a key; not shown)". Before part 2 log lines weren't redacted at all. A key split across lines, cut off or with its case changed isn't seen.
 
 ## The scheduler and crashes
 
@@ -148,6 +148,94 @@ Only while the plugin is **on**, and only between tasks (Decision 15):
 
 Plugins never reach the engine, a task or tokens without a click (B9): `permissions.tasks` and actions go through part 2's prepared task.
 
+## Slots (part 2)
+
+A harness may declare where plugins draw, with `slots` in its manifest (`docs/architecture/manifest.md`). The core always has two slots of its own (`DEFAULT_SLOTS` in `packages/harness-sdk/src/plugin.ts`): `plugins` (kind `panel`, label "Plugins") and `chips` (kind `chip`, label "Status").
+
+- A plugin's `panels[].slot` and `chips[].slot` are optional. `slotFor(harness, kind, slot)` gives the slot it names when the harness has a slot with that id **and that kind**, else the core's slot of that kind: a missing slot, an unknown one and one of the other kind all fall back (spec §3.4). Main resolves the slot when the plugin starts; the window gets each panel and chip with its final slot.
+- **`plugins`** is a "Plugins" section in the left side panel: inside `FlowSide` after the material when the harness has actions, else its own `<nav className="hh-flow-side">` like the material's. It holds one tab per panel (`role="tablist"`, arrow keys, Home and End), each named with the panel's title and the plugin's name, and shows only while a running plugin has a panel there (`PluginsSection.tsx`).
+- **`chips`** sit in the chat's top bar right after the usage meter (`PluginChips.tsx`). Slim mode draws no top bar, so no chips.
+- **A harness's own slots** are drawn by the harness's UI with `<PluginSlot id="…" />` from `@humanharness/ui` (`PluginSlot.tsx`). A panel slot stacks its panels, each headed "<title> · <plugin>"; a chip slot shows its chips (a slot id has one kind, so a slot that holds panels draws them, else its chips). It draws only inside the harness's `renderSide` (the only place the surface context is provided), and nothing for the core's ids (`plugins`, `chips`: the core draws those, and a second copy would mount a second frame per panel). A declared slot the harness never mounts shows nothing, and a panel target there opens nothing visible; `plugin check` can't know.
+
+## Panels (part 2)
+
+A panel is plugin code, as hostile as a backend. `build` writes three files per panel into `dist/` (Decision 6, `packages/cli/src/plugin-build.ts`):
+
+```html
+<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="./panel-<id>.css"><div id="root"></div><script src="./panel-<id>.js"></script>
+```
+
+- `panel-<id>.js` is a **classic-script IIFE** that holds React, `@humanharness/plugin-ui` and the panel, and mounts the panel's default export with `mountPanel`. A module script is refused by CORS from the panel's `null` origin (spike P-S2), so panels are never ESM; `backend.js` stays ESM. So no top-level await in a panel (`build` refuses it, in the backend too).
+- `panel-<id>.css` holds plugin-ui's styles and any CSS the panel imports. Static files go in `dist/assets/` (`.svg`, `.png`).
+- **No inline styles.** The panel CSP has no `'unsafe-inline'`: a `<style>` element, a `style="…"` attribute or a CSS-in-JS library that injects either is blocked. React's `style={{…}}` props go through the CSSOM and work (spike P-S7), and so do the built CSS files.
+
+### Hosting
+
+`PanelFrame.tsx` draws each panel as `<iframe sandbox="allow-scripts">`, never with `allow-same-origin`, titled "<title> · <plugin>", with `referrerPolicy="no-referrer"`, `allow=""` and `loading="lazy"`. The frame's origin is opaque: no storage, no access to the parent, no popups, no forms, no top navigation. Its `src` is `hh-plugin://<id>/panel-<panel>.html`.
+
+`installPluginPanels(win, host, controller)` (`plugin-ipc.ts`) calls `PluginBackendHost.installPanels` for every app window, and only in the plugins block of `index.ts` (D0; a source scan in `ipc-surface.test.ts` pins it). The first call sets up the app's default session; every window gets its own guards.
+
+- **A second, panel-only `hh-plugin` handler** on `session.defaultSession` (the backends' handlers stay on their own partitions). It serves `GET` only, through `readPanelFile` (`plugin-panels.ts`): the host must be a plugin that runs **now** (`PluginsController.panelHost(id)`, null from the moment the plugin stops or the base moves), and the path must be `panel-<declared id>.{html,js,css}` or `assets/<1–64 of A–Z a–z 0–9 _ ->.{svg,png}`. Part 1's `resolvePluginFile` then applies every path rule (B3), with the core folder pointing nowhere, so `_hh/`, `backend.js` and `plugin.json` are never served from here (P7).
+- **Every response**, a 404 included, carries `content-security-policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; base-uri 'none'; form-action 'none'` (`PANEL_CSP`), `x-content-type-options: nosniff` and `cache-control: no-store`. Part 1's `PLUGIN_CSP` has `frame-ancestors 'none'`, so panels need this one.
+- **The request filter**: `defaultSession.webRequest.onBeforeRequest(<all_urls>)`. `frameChain(details.frame)` lists the frame's URL and each ancestor's (a frame a panel nests reads `""` on its first load, spike P-S3, so the ancestors count); a chain deeper than 32 ends in a marker that refuses everything, and a frame that can't be read gives null. `allowPanelRequest` then: a request whose chain holds an `hh-plugin:` frame may load only that plugin's own `hh-plugin:` files, a `subFrame` only its panel page, and a chain with two plugins nothing; a request with no frame, or an unreadable one, may load anything but an `hh-plugin:` URL; any other request is the app's own and left to its CSP. This covers a panel CSP that is wrong. Electron keeps one `onBeforeRequest` listener per session: a later registration on the default session would replace this one, so any future listener there must be merged with it.
+- **The frame guard**, per app window: `will-frame-navigate` for a non-main frame is refused unless `allowFrameNavigation` says yes: the target is a panel page (`hh-plugin://<id>/panel-<panel>.html`) and either the frame is on that same plugin's same panel page (any query), or it is the frame's first load (`""` or `about:blank`) **and its parent is the window's main frame**, never a panel. `will-attach-webview` is prevented. The app's `setWindowOpenHandler` already denies.
+- **The app's CSP** (`packages/shell/src/renderer/index.html`) gains exactly `frame-src hh-plugin:`, for every harness: the meta is static (open question 1). Without a registered handler an `hh-plugin:` frame loads nothing. `renderer-csp.test.ts` compares the directive list.
+- **A frame that loads twice is remounted.** When a panel navigates somewhere refused, the frame lands on an error page and fires a second `load`; the guard then refuses a `src` reset as well. `PanelFrame` replaces the iframe with a new element (a React `key` bump), ignores the old frame's messages and stops after 3 remounts in a minute with an `ErrorBar` (`role="alert"`, "This panel kept reloading itself, so it was stopped."). A reload from `plugin dev` (below) starts a fresh count.
+- **Size and theme**: plugin-ui reports the height of its `.hhp-root` (at most once per animation frame); `PanelFrame` clamps it to 120–800 px, 240 px before the first report, and keeps it in the renderer (never sent to main). The width is the slot's. `tokens.css` carries the app's `--hh-*` values, light and dark under `prefers-color-scheme` (`plugin-ui-tokens.test.ts` pins them), so panels follow the system by themselves; the bridge also gets a `theme` event on load and on every change, and sets `data-theme` on the panel's root element only once one arrived.
+
+### The panel protocol
+
+plugin-ui (`packages/ui/src/plugin-ui/bridge.ts`) and `PanelFrame` speak `postMessage`:
+
+- A request is `{ hh: 1, id, call, args }`; the answer `{ hh: 1, re: id, ok: true, value }` or `{ hh: 1, re: id, ok: false, error }`. Events are `{ hh: 1, event: "data", collections: string[] }`, `{ hh: 1, event: "theme", dark }` and `{ hh: 1, event: "focus", focus: string | null }`.
+- **The panel side** posts to its parent with target `"*"` (the parent's origin can't be named from an opaque frame) and accepts only messages whose `source` is `window.parent`, with `hh: 1` and a `re` it is waiting for. A call times out after 15 s; a call over 64 KB is refused before it is sent; disposing the bridge rejects what is pending ("Closed").
+- **The app side** (`PanelFrame`) accepts a message only when `event.source` is its own iframe's `contentWindow`, `event.origin` is `"null"`, `hh` is 1 and the message is at most 64 KB once stringified; the message is stringified, capped and parsed back, so only plain JSON goes on (an `ArrayBuffer`, `Blob` or `Map` never reaches main). Messages from before the first `load` are accepted (the first query). The plugin and panel come from the frame's own props, never from the message (P4). Per frame, at most 20 calls a second ("Too many calls") and 8 in flight ("Too many calls at once"); an unknown call is answered "Unknown call" without reaching main; `resize` stays local. These limits are the renderer's only: main enforces its own caps.
+- **Main** (`hh:pluginsPanel(plugin, panel, call, args)`, `plugin-ipc.ts`) checks the ids' shapes, that `call` is one of `data.query`, `settings.get`, `refresh`, `requestAction`, and that `args` is at most 16 KB as JSON (measured with `JSON.stringify`; the renderer has already reduced it to plain JSON). `PluginsController.panelCall` then checks that the plugin runs and declares that panel (else "Not running"), and that `args` is at most 4 KB as JSON:
+  - `data.query`: only `collection`, `where`, `fields`, `limit`; the collection must be the plugin's own (`Object.hasOwn(manifest.data, …)`); read-only; at most 500 records. The answer is the store's `{ records, total, invalid }`.
+  - `settings.get`: the settings values (stored over defaults, plus `workHours` for a plugin with a `workHoursOnly` source), never a key.
+  - `refresh`: `{ source }`, a declared source. Answers `"skipped"` when that source is running or its last start was less than 10 s ago, else runs it (`"refreshed"`, or the run's error).
+  - `requestAction`: `{ action, vars }` (below).
+- **Data events**: the controller collects the collections a run wrote and, at the end of the run, sends `hh:pluginData { plugin, collections }`. The window passes it only to that plugin's frames. It is a signal: plugin-ui's `useQuery` queries again (the spec's `data.subscribe`).
+
+`@humanharness/plugin-ui` is `packages/ui/src/plugin-ui/`, exported as `@humanharness/ui/plugin-ui` (and `/plugin-ui/styles.css`); `build` aliases `@humanharness/plugin-ui` to it. It imports React, its own bridge, components and CSS, nothing else of `@humanharness/ui`, so a panel bundle holds no app code (a source scan also refuses `<style>`, a `style` attribute and `innerHTML` in it). It offers `mountPanel`, `PluginRoot`, `usePlugin()` (`query`, `useQuery`, `settings`, `refresh`, `requestAction`, `focus`, `theme`) and the components `Table`, `Chip`, `Clock`, `Stat`, `Empty`, `ErrorBar`.
+
+## Chips (part 2)
+
+A chip is text the core draws; the plugin sets it with `chip.set` (≤ 40 characters, part 1). The surface lists the running plugins' chips that are set, in the manifest's order, with severity `info`, `warn` or `action`. `PluginChips` draws each as React text (`dir="auto"`, title "<plugin>: <text>"): a button that opens the plugin's **first** panel, wherever its slot is (with "Open <name>" for screen readers), or plain text when the plugin has no panel.
+
+## Actions and the prepared task (part 2)
+
+A plugin never starts a task. An action (`actions[]`: `id`, `label` ≤ 60, `tier`, `scope` `"required"` (default) or `"none"`, `vars` an allowlisted JSON Schema object, `prompt` ≤ 4,000; `permissions.tasks` required) only **prepares** one, which the person starts with a click.
+
+- **`requestAction(plugin, action, vars)`** (`PluginsController`), from a panel or an attention target: the plugin runs, declares `permissions.tasks` and was approved for tasks; the action is declared. At most one card per 2 s per plugin ("Too soon"), counting only requests that made a card, checked again after the last await so concurrent calls make one card.
+- **The vars** (`checkActionVars`, `packages/harness-sdk/src/plugin-actions.ts`): an object, at most 4 KB as JSON, every string at most 200 characters at any depth, then the action's schema through `jsonSchemaToZod` (a `z.object` from `definePlugin` writes `additionalProperties: false`, so an undeclared var is refused). Only the vars it returns are used.
+- **The fill** (`fillActionPrompt`): placeholders are `{{name}}` (`[A-Za-z_][A-Za-z0-9_]{0,39}`); one literal pass, so a value holding `{{x}}` stays as it is; a placeholder without a value is refused; a non-string value is written as JSON; each value loses the `HIDDEN_CHARS` characters except tab and newline. A filled prompt over 8,000 characters is refused, never cut.
+- **The title** (`preparedTitle`): "<plugin name> · <action label>", plus " <value>" for the first required string var (in `properties` order) whose value is at most 40 characters, with hidden characters (tab and newline included) removed; cut to 120.
+- **One card**: a 16-byte random token (hex) and the exact prompt, title, tier, scope and plugin, kept in main. A newer request replaces a waiting card. The card dies at Start, Cancel, a base change, its plugin stopping or after 10 minutes, and doesn't survive a restart. It reaches the window in the surface view.
+- **The card** (`PreparedTask.tsx`, above the composer): a region "Prepared task" with the title, "Proposed by <name>", "Model tier: <tier>", the full prompt in a scrollable `<pre dir="auto">`, Start and Cancel, and "Starting it closes the open task." when one is open. A polite status line announces it ("Prepared task from <name>") without taking focus. **Start arms after 800 ms** (`PREPARED_ARM_MS`, again for every new token), so a plugin can't swap a card in under the pointer and have it clicked at once. Start is also disabled while the app is busy, and for a `"required"` action while no scope is open ("Open a <scope> first"). It sends the token once; a refusal shows inline and the card stays.
+- **Start** (`hh:pluginsStartPrepared(token)`, a 32-hex token only): main checks the app's holds and, for a card that needs an open scope, that one is open, **before** spending the token. `takePrepared(token)` gives the stored card once; a dead, expired, other-base or stopped-plugin token answers "This task is no longer prepared". The holds are checked again, then `TaskManager.startPrepared({ prompt, display, tier, plugin, scope })` gets exactly the stored text: the prompt the card showed is the task's question (P13), so the agent reads it inside the usual question prompt. It closes the open task first (a waiting task gets its note). `"none"` runs in `_app` in a harness with scopes, `"required"` in the open scope (else "Open a <scope> first"), and in a harness without scopes both run in `main`. The action's tier is the task's manifest tier. `hh:pluginsCancelPrepared(token)` drops the card.
+- **The history**: the task's commits carry a `Plugin: <id>` line, last in the trailer, and `CurrentTask.plugin` keeps it for follow-up turns. The id is checked with `PLUGIN_ID` on write and on read (a forged or invalid line is dropped); `HistoryEntry.plugin` has it, the grouped `HistoryTask` doesn't.
+
+## Attention targets (part 2)
+
+An inbox row whose item has a target shows Open. The click calls `hh:attentionOpen(plugin, key)` (only the core's inbox does), and `attention.open` marks the item read and opens what `attentionTarget` allows **now** (part 1's click-time check):
+
+- a panel target answers `{ kind: "panel", plugin, panel, focus? }`: the window selects that panel's tab (or scrolls to it in a harness slot) and sends it a `focus` event, again after a tab switch or a remount; a target is forgotten once its plugin reloads;
+- an action target goes through `requestAction` with the vars as the schema parsed them, so every rule above holds, and answers `{ kind: "prepared" }`; a refusal (for example "Too soon" within 2 s of a panel's card) is written to the plugin's error log;
+- anything else answers `{ kind: "none" }`, and the row says "This item can't be opened any more".
+
+## Fixture mode (part 2)
+
+The app runs plugins on recorded exchanges instead of the network in mock mode (`hooks.mock`) and under `HH_PLUGIN_FIXTURES=1`, a test hook that `plugin dev` sets unless `--live` and that e2e sets (a packaged app ignores it) (P10).
+
+- Each source gets a **fixture transport** (`fixtureTransport`, `@humanharness/harness-sdk/plugin-fixtures`) over `<plugin folder>/fixtures/<source>/*.json`, the plugin folder being the parent of its `dist/`: `<harness>/plugins/<id>/fixtures/` for a bundled plugin, the folder itself for a dev or local one. At most 200 files per source of at most 10 MB each, read in file-name order with `lstat` and `O_NOFOLLOW`; a file that fails the schema is logged and skipped. They are read again at a rescan, not watched.
+- The broker takes the transport in place of `fetch` and the command runner, after every permission check. Keys are `fixture-<id>` and the key store is never opened; commands aren't looked up on this computer; the host lookup hook isn't used. A request with no fixture fails the run with "No fixture for GET https://host/path". A plugin with no fixtures fails every run and is never live.
+- An exchange is `{ "kind": "fetch", "request": { method, url, headers?, body? }, "response": { status (200–599), headers, text } }` or `{ "kind": "exec", "request": { cmd, args }, "response": { code, stdout, stderr } }`. A request takes the first unused exchange of the same kind; for fetch the same method and origin, the same path segment by segment (a fixture segment `*` matches any one) and the same raw query, unless the fixture's query is `?*`; for exec the same `cmd` and the args token by token (`*` for one). Request headers and bodies aren't compared. When every match is used, they start over (a TTL loop replays). No regex is built from fixture text. A 204, 205 or 304 has no body; an aborted signal rejects as `fetch` does.
+
+## Dev reload (part 2)
+
+In a development build the controller watches each **dev** plugin's `dist/` (`fs.watch`, recursive; bundled and local plugins never are). 300 ms after the last change it rescans, which restarts the backend when the `dist/` changed, and bumps `reloads[plugin]` in the surface, so every `PanelFrame` of that plugin remounts with a fresh frame.
+
 ## D0
 
 - A manifest without `plugins` parses to the same object as before.
@@ -156,7 +244,16 @@ Plugins never reach the engine, a task or tokens without a click (B9): `permissi
 - `DataStore` without the `dir` option writes where it always did; `dataCollections(h)` returns the harness's collections and `settings` only; `instructionSettings` returning `[]` writes the same `AGENTS.md` as none.
 - The history never tracks `.harness/plugins/`, `.harness/plugin-data/` or `.harness/attention.json`.
 
-The e2e test "D0: the demo with no plugin added runs nothing, writes nothing and tells the agent nothing" (`packages/e2e/tests/plugins.spec.ts`) checks the declared-but-none case in the real app.
+Part 2:
+
+- A manifest without `slots` parses to the same object as before; the core's default slots exist only in the plugin surface, and `defineHarness`'s output is unchanged.
+- A harness without `plugins` (and no `HH_PLUGIN_DIRS`) also gets no panel handler and no `webRequest` listener on the default session, no `will-frame-navigate` guard and none of the part 2 IPC channels (`installPluginPanels` and the channels exist only with the controller), and the window asks for no surface (`usePluginSurface` makes no call). The one change every harness gets is the renderer CSP's `frame-src hh-plugin:`, which loads nothing without a handler.
+- With plugins accepted but none running the surface is empty: no Plugins section, no chip, no prepared card; the top bar, `FlowSide`, the side panel and the composer render as before.
+- `withTrailer` without `plugin` writes what it wrote before, and `parseCommitMessage` reads old messages the same. `TaskManager` without `startPrepared` and `profileFor` without a tier behave as before.
+- Mock mode without plugins is unchanged; with plugins it runs them on their fixtures.
+- `humanharness check`, `init` and `dev` for harnesses are unchanged; `USAGE` gains the one `plugin` line. Plain `dev` still passes an inherited `HH_PLUGIN_DIRS` through (see Known gaps).
+
+The e2e test "D0: the demo with its bundled plugin off and none added runs nothing, writes nothing and tells the agent nothing" (`packages/e2e/tests/plugins.spec.ts`) checks the declared-but-none case in the real app: the demo's `on-this-day` is listed in Settings › Plugins, off, and nothing else of it exists.
 
 ## Threat model
 
@@ -178,6 +275,24 @@ The e2e test "D0: the demo with no plugin added runs nothing, writes nothing and
 
 Task 19's e2e ran a hostile probe backend in real Electron 44.7: 25 of 26 escape attempts asserted blocked and `sendBeacon` (which reports `true`) shown not to leave by the local server's 0 hits, exactly two hidden windows for two plugins, and a control `import()` of the plugin's own module succeeded.
 
+Part 2 adds **panel code**, which runs inside the app window's process tree, **action requests**, which put text in front of the agent, and **authoring tools**, which run plugin code on the author's machine. All three are hostile by default. Assets as above, plus the app window itself (its DOM, preload and IPC) and the person's attention: a prepared task never starts without their click.
+
+| # | Boundary | What enforces it | Test |
+|---|---|---|---|
+| P1 | No Node, preload or app IPC in a panel | the app window leaves `nodeIntegrationInSubFrames` unset (false), so the app's preload runs only in the main frame; `sandbox="allow-scripts"` without `allow-same-origin` (opaque origin, cross-origin parent); every `hh:*` channel refuses a non-app frame (`handle()`/`isAppUrl`, B5) | unit: `isAppUrl` refuses `hh-plugin://x/panel-y.html` (`validate.test.ts`); spike P-S1; the part 2 e2e panel probe |
+| P2 | No network from a panel | `PANEL_CSP` on every default-session `hh-plugin:` response; the default session's request filter over the frame and its ancestors (`frameChain`, `allowPanelRequest`); the app's `connect-src` stays `'self'` | unit: `allowPanelRequest` and `frameChain` tables (`plugin-panels.test.ts`), the handler and filter (`plugin-host.test.ts`); the part 2 e2e probe against a local server |
+| P3 | A panel can't leave its frame | no `allow-top-navigation`, `allow-popups` or `allow-forms`; `allowFrameNavigation` (own panel page, or a first load whose parent is the app's main frame); remount on a second load, at most 3 a minute; `setWindowOpenHandler` denies | unit: `allowFrameNavigation` table (`plugin-panels.test.ts`); remount and cap (`panel-frame.test.tsx`) |
+| P4 | A panel speaks only for itself | plugin and panel from `PanelFrame`'s props; `event.source` must be its own frame, origin `"null"`; main checks again that the plugin runs and declares the panel | unit: other source, forged ids, old frame after a remount (`panel-frame.test.tsx`); another plugin's collection refused (`plugins-surface.test.ts`) |
+| P5 | A panel reads only its own data, never a key | `data.query` only on `Object.hasOwn(manifest.data, …)` of its plugin, read-only, ≤ 500 records, args ≤ 4 KB; `settings.get` values only; no fetch, exec, attention or chip calls from a panel | unit (`plugins-surface.test.ts`, `plugin-ipc.test.ts`) |
+| P6 | No task without a click; no free text into the agent | `permissions.tasks`, approval and a declared action; vars by the action's schema, strings ≤ 200, ≤ 4 KB; literal single-pass fill; ≤ 1 card / 2 s per plugin, one card at a time; single-use 10-minute token; Start a separate IPC, armed after 800 ms; nothing in part 2 starts a task by itself | unit: `plugin-actions.test.ts`, `plugins-surface.test.ts`, `task-manager-prepared.test.ts`, `plugin-ipc.test.ts`, `prepared-task.test.tsx` |
+| P7 | The default-session handler serves only panels | `resolvePanelFile`: `panel-<declared>.{html,js,css}` and `assets/*.{svg,png}` of a running plugin, then part 1's rules; never `backend.js`, `plugin.json`, `_hh/` or a stopped plugin's files | unit table (`plugin-panels.test.ts`) |
+| P8 | The app's page is loosened by one directive only | the meta CSP is the old one plus `frame-src hh-plugin:` | unit (`renderer-csp.test.ts`) |
+| P9 | Plugin text never becomes markup | chip texts, panel titles, prepared titles and prompts and attention texts are React text, never `markdown.tsx` or `dangerouslySetInnerHTML`; caps in main (chip ≤ 40, panel title ≤ 40, prepared title ≤ 120, filled prompt ≤ 8,000) | unit: `<b>`/`<img onerror>` text (`plugin-slots.test.tsx`, `prepared-task.test.tsx`) |
+| P10 | Mock mode, e2e and `dev` don't touch the network or real keys | the fixture transport in place of `fetch` and the command runner; keys `fixture-<id>` without the key store; "No fixture for …" instead of a fallback | unit (`plugin-fixtures.test.ts`, `plugin-fixture-mode.test.ts`) |
+| P11 | `record` never stores a key | keys typed with echo off, held for one run; `stripSecrets` before writing; a file still holding a key in any form `holdsSecret` decodes is not written and the command fails | unit (`plugin-fixtures.test.ts`, `plugin-record.test.ts`) |
+| P12 | Authoring tools run plugin code only on the author's machine, and say so | `record` and `test` run the backend in Node's `vm`, which is **not** a sandbox (below), and print a note first; `plugin.config.ts` runs only in `build`; the app never imports it or `vm` | unit: source scan (`plugin-cli-entry.test.ts`); the note (`plugin-test.test.ts`, `plugin-record.test.ts`) |
+| P13 | What the agent gets from an action is what the person saw | Start passes the stored card's text unchanged (no fill at Start); the history trailer names the plugin | unit (`plugins-surface.test.ts`, `task-manager-prepared.test.ts`, `history.test.ts`) |
+
 ## Known gaps and residual risks
 
 Security:
@@ -192,7 +307,7 @@ Security:
 - **Plugin data is a prompt-injection channel.** Anything a source fetches can reach the agent through `agent: "read"` collections and context tables. The outside-data header and the marker on every result are a mitigation, not a guarantee. Open question 9: an opt-in "Let the AI read it" per collection.
 - **Bundled plugins in `plugins.on` start without a review** (Decision 5): a bundled plugin is as trusted as the harness author. A hostile harness author is out of scope. Part 2 decides whether they show their permissions at first start.
 - **In-memory partition across restarts**: a plugin's session (`hh-plugin-<id>`, not persisted) keeps its storage (localStorage, IndexedDB, caches) across stop/start and crash restarts within one app session; it is gone only when the app quits.
-- **Harness UIs share the app's renderer.** A harness's own `ui/App.tsx` runs in the app's page with the app's IPC; only plugins are sandboxed. Part 2's plugin panels must not run there.
+- **Harness UIs share the app's renderer.** A harness's own `ui/App.tsx` runs in the app's page with the app's IPC; only plugins are sandboxed. Plugin panels never run there: they are sandboxed frames, and `<PluginSlot>` only places a frame.
 
 Behaviour authors should know:
 
@@ -200,7 +315,7 @@ Behaviour authors should know:
 - **https only**: no `http:`, IP literals or `localhost`, even if declared (open question 5). A plugin for a local service can't be written yet.
 - **`default-src 'none'` blocks a plugin's own files over fetch/XHR** (`connect-src`): a backend can `import()` its own `.js` modules but can't `fetch("./data.json")`. Bundle data into the code. `eval` and `new Function` are refused too (no `unsafe-eval`). `sendBeacon` returns `true` but sends nothing.
 - **Changing the page's URL breaks the plugin's own channel.** `history.pushState` or a `location.hash` change moves the main frame off `_hh/host.html` exactly, so every later `rpc` is refused as an unexpected sender. A self-inflicted denial of service, not an escape.
-- **Panels need their own CSP** (part 2): `PLUGIN_CSP` has `frame-ancestors 'none'`, so a plugin page can't be framed by the app as is.
+- **Panels**: no `<style>`, no `style` attribute, no CSS-in-JS that injects either, no ES modules and no top-level await (see Panels). A panel's height follows its root element (120–800 px).
 
 Product and packaging:
 
@@ -211,7 +326,29 @@ Product and packaging:
 - **No per-source Refresh button** in the detail in part 1 (the IPC exists); Test connection runs every source.
 - **Tests**: there is no e2e window count for a harness without `plugins`; that D0 case is covered by unit tests and the absence of the controller.
 
-Not built yet (part 2): panels and their slots, chips on screen, actions and the prepared task, opening attention targets, the `humanharness plugin` CLI and `check`, the `/new-plugin` guide, the demo's bundled plugin, mock-mode fixtures for plugins (part 1 runs them live in mock mode; they spend no tokens).
+Part 2, security:
+
+- **A panel can draw misleading UI inside its own frame** (phishing-style text). The frame sits in a core-drawn section or slot headed with the plugin's name; that is the mitigation.
+- **Persuasive vars.** A plugin can put persuasive text into a prepared task's vars, within 200 characters each. The person reads the full prompt before Start, and Start arms only after 800 ms.
+- **`record` and `test` give plugin code the author's Node process.** They run the bundled backend in Node's `vm` with host-realm globals (timers, `URL`, `TextEncoder`, `structuredClone`, a console recorder). That is not a sandbox: any host-realm value reaches Node (`setTimeout.constructor.constructor("return process")()`), so the code can read files, spawn processes and, under `record`, read the keys typed in the terminal. Both commands print a note first. Run them only on plugins you trust.
+- **The app's log cuts before it hides.** The broker cuts a log line to 2,000 characters before the controller hides the plugin's keys in it, so a key cut at the boundary leaves a prefix that `hideSecrets` doesn't recognise. The fix is to hide before cutting (the broker knows the keys).
+- **Fixtures and terminal output** hide or strip only the key forms listed in `hideSecrets` and `stripSecrets`: hex, double URL-encoding, HTML entities, compressed bodies and a key split across fields, lines or headers, or with its case changed, pass. Read a fixture before committing it.
+- **`hosts-wildcard` never fires.** `HOST_PATTERN` already refuses `*.<one label>` (`*.com`) as a schema error, so the warning can't be reached; public-suffix wildcards such as `*.co.uk` or `*.github.io` pass the schema and get no warning. Open question: what should trigger it.
+- **The renderer's panel limits** (20 calls a second, 8 in flight) are the renderer's only; main enforces the controller's caps and the 16 KB argument limit, not a rate.
+
+Part 2, behaviour authors should know:
+
+- **A panel's query reads no records.** `data.query` answers the store's `{ records, total, invalid }`, while plugin-ui's `query` and `useQuery` expect an array and turn anything else into `[]`. Until one side changes, a panel built with plugin-ui gets an empty list.
+- **The dev watcher on a renamed `dist/`.** The app watches each dev plugin's `dist/` with one `fs.watch`, but every `build` swaps `dist/` by renaming it away and a new one in. On macOS the watch kept firing after two swaps; on Linux it likely watches the old, renamed folder and stops reloading after the first rebuild. The fix is to watch again after each rescan, or to watch the plugin folder and filter to `dist/`.
+- **Plain `humanharness dev` passes an inherited `HH_PLUGIN_DIRS` through** (and `HH_PLUGIN_FIXTURES`), as before part 2. Only `plugin dev` replaces every inherited `HH_PLUGIN_*`.
+- **The plugin template and the demo plugin aren't type-checked** by the repo's `typecheck`: the root config skips `harnesses/*/plugins`, and a plugin's own `tsconfig.json` can't resolve `@humanharness/plugin-ui` or `*.css` imports. `build` (esbuild) doesn't type-check either.
+- **One prepared task at a time**: a newer `requestAction` from any plugin replaces the waiting card. An attention item's action is refused "Too soon" within 2 s of the same plugin's last card (logged against the plugin).
+- **A harness slot nobody mounts** shows nothing, and a panel target there opens nothing visible. `plugin check` can't see it.
+- **Hand-made fixtures** are allowed (the guide's Verify phase stays open until `record` runs): the demo's are synthetic.
+- **`build`'s `plugin.config.ts` runs in the CLI's process**: a config that calls `process.exit` leaves the temp `.mjs` it was bundled to.
+- **Display text refuses emoji with a variation selector** (`❤️`); open question for Marco.
+
+Packaging: packaged apps don't ship bundled plugins yet (plan 4b); `HH_PLUGIN_DIRS` and `HH_PLUGIN_FIXTURES` are ignored there.
 
 ## Where to look
 
@@ -228,3 +365,17 @@ Not built yet (part 2): panels and their slots, chips on screen, actions and the
 - `packages/blocks/src/data-server.ts`: the plugin catalogue in the `data` server.
 - `packages/ui/src/plugins/`: the inbox, the tab, the review and the detail.
 - `packages/e2e/tests/plugins.spec.ts` and `packages/e2e/fixtures/plugins/` (`hello`, `probe`, `other`): the real-Electron tests.
+
+Part 2:
+
+- `packages/harness-sdk/src/plugin.ts`: `DEFAULT_SLOTS`, `harnessSlotsSchema`, `harnessSlots`, `slotFor`, `HIDDEN_CHARS`, `definePlugin`, `pluginJson`.
+- `packages/harness-sdk/src/plugin-actions.ts`: `checkActionVars`, `promptPlaceholders`, `fillActionPrompt`, `preparedTitle`.
+- `packages/harness-sdk/src/plugin-fixtures.ts` (the `./plugin-fixtures` sub-path): the fixture schema, `matchFixture`, `fixtureTransport`, `stripSecrets`, `hideSecrets`.
+- `packages/shell/src/main/plugin-panels.ts`: `PANEL_CSP`, `resolvePanelFile`, `readPanelFile`, `frameChain`, `allowPanelRequest`, `allowFrameNavigation`; `plugin-host.ts` `installPanels` plugs them into Electron.
+- `packages/shell/src/main/plugins.ts`: `surface`, `panelHost`, `panelCall`, `requestAction`, `takePrepared`, `cancelPrepared`, `attention.open`, fixture mode and the dev watch.
+- `packages/shell/src/main/plugin-ipc.ts`: `hh:pluginsSurface`, `hh:pluginsPanel`, `hh:pluginsStartPrepared`, `hh:pluginsCancelPrepared`, `hh:attentionOpen`, `installPluginPanels`.
+- `packages/shell/src/main/task-manager.ts`: `startPrepared`; `packages/workspace/src/history.ts`: the `Plugin:` trailer.
+- `packages/shell/src/main/plugin-cli.ts` (`@humanharness/shell/plugins`): the broker and transports for the CLI, with no Electron in its import graph.
+- `packages/ui/src/plugins/`: `PanelFrame`, `PluginsSection`, `PluginSlot`, `PluginChips`, `PreparedTask`, `surface.ts`; `packages/ui/src/plugin-ui/`: `@humanharness/plugin-ui`.
+- `packages/cli/src/plugin*.ts`, `packages/cli/plugin-template/`, `packages/cli/guide/new-plugin.md`: the authoring side (`docs/architecture/authoring.md`).
+- `harnesses/demo/plugins/on-this-day/`: the demo plugin, with its committed `dist/` and hand-made fixtures.

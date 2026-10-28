@@ -32,7 +32,8 @@ export type PluginRule =
   | "exec-writes"
   | "hosts-wildcard"
   | "sync-heavy"
-  | "host-local";
+  | "host-local"
+  | "http-url";
 
 export interface PluginFinding {
   rule: PluginRule;
@@ -51,7 +52,9 @@ const warning = finding("warning");
 
 const PLUGIN_JSON = "dist/plugin.json";
 /** The fixed scans of Decision 18: never a regex built from plugin input. */
-const URL_HOST = /https?:\/\/([a-z0-9.-]+)/gi;
+const URL_HOST = /(https?):\/\/([a-z0-9.-]+(?::\d{1,5})?)/gi;
+/** An IPv6 literal URL (`https://[::1]/`): URL_HOST never sees one. */
+const URL_IPV6 = /https?:\/\/\[[0-9a-f:.]*\]/gi;
 const EXEC_CALL = /exec\(\s*["']([A-Za-z0-9._-]+)["']/g;
 const SECRET_REF = /\{\{secret:([a-z][a-z0-9_-]*)\}\}/g;
 const SCANNED = /\.(ts|tsx|js)$/;
@@ -61,10 +64,15 @@ const WRITE_ARGS = new Set(["post", "put", "patch", "delete", "rm", "create", "e
 const METHOD_FLAGS = new Set(["-X", "--method", "--request"]);
 const READ_METHODS = new Set(["GET", "HEAD"]);
 
-/** `localhost`, a name under it, or an IP literal: the broker refuses them even when declared (part 1 Decision 8). */
+/**
+ * `localhost`, a name under it, or an IP literal: the broker refuses them even when declared (part 1 Decision 8). A
+ * trailing `:port` is not part of the name; an IPv6 literal is bracketed or has two colons or more.
+ */
 function isLocal(host: string): boolean {
-  const h = host.toLowerCase().replace(/^\*\./, "").replace(/\.$/, "");
-  return h === "localhost" || h.endsWith(".localhost") || IPV4.test(h) || h.includes(":") || h.startsWith("[");
+  const lower = host.toLowerCase();
+  if (lower.startsWith("[") || lower.split(":").length > 2) return true;
+  const h = lower.replace(/:\d+$/, "").replace(/^\*\./, "").replace(/\.$/, "");
+  return h === "localhost" || h.endsWith(".localhost") || IPV4.test(h);
 }
 
 /**
@@ -167,11 +175,19 @@ async function sourceFindings(dir: string, m: PluginManifest): Promise<PluginFin
     const seen = new Set<string>();
     const once = (key: string) => !seen.has(key) && !!seen.add(key);
     for (const hit of text.matchAll(URL_HOST)) {
-      const host = hit[1].toLowerCase().replace(/\.+$/, "");
-      if (!host || !once(`host:${host}`)) continue;
+      // host[:port], dots before the port or at the end dropped: the broker matches the port too.
+      const host = hit[2].toLowerCase().replace(/\.+(?=:|$)/, "");
+      if (host === "" || host.startsWith(":")) continue;
       const line = lineOf(text, hit.index);
-      if (isLocal(host)) out.push(warning("host-local", `${host}: the broker refuses localhost and IP addresses, even when declared.`, file, line));
-      else if (!hostAllowed(`https://${host}/`, m.permissions.hosts)) out.push(error("host-undeclared", `${host} is not in permissions.hosts.`, file, line));
+      if (isLocal(host)) {
+        if (once(`host:${host}`)) out.push(warning("host-local", `${host}: the broker refuses localhost and IP addresses, even when declared.`, file, line));
+        continue;
+      }
+      if (hit[1].toLowerCase() === "http" && once(`http:${host}`)) out.push(warning("http-url", `http://${host}: the broker only fetches https, even from a declared host.`, file, line));
+      if (once(`host:${host}`) && !hostAllowed(`https://${host}/`, m.permissions.hosts)) out.push(error("host-undeclared", `${host} is not in permissions.hosts.`, file, line));
+    }
+    for (const hit of text.matchAll(URL_IPV6)) {
+      if (once(`host:${hit[0].toLowerCase()}`)) out.push(warning("host-local", `${hit[0]}: the broker refuses localhost and IP addresses, even when declared.`, file, lineOf(text, hit.index)));
     }
     for (const hit of text.matchAll(EXEC_CALL)) {
       if (once(`exec:${hit[1]}`) && !cmds.has(hit[1])) out.push(error("exec-undeclared", `exec("${hit[1]}") is not in permissions.exec.`, file, lineOf(text, hit.index)));

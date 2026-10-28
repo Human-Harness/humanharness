@@ -346,6 +346,32 @@ describe("plugin check: warnings", () => {
     const src = await check(fixture({ files: { "backend.ts": `${BACKEND}const dev = "https://127.0.0.1:8080/x";\n` } }));
     expect(rules(src.findings)).toEqual(["warning:host-local"]);
   });
+
+  it("host-local: an IPv6 literal URL in the sources", async () => {
+    for (const url of ["https://[::1]/x", "http://[fe80::1]:8080/"]) {
+      const r = await check(fixture({ files: { "backend.ts": `${BACKEND}const dev = "${url}";\n` } }));
+      expect(rules(r.findings), url).toEqual(["warning:host-local"]);
+      expect(r.findings[0].line, url).toBe(12);
+    }
+  });
+
+  it("a declared host with a port is neither local nor undeclared, in the manifest or in a URL", async () => {
+    const r = await check(fixture({ manifest: (m) => m.permissions.hosts.push("api.example.com:8443") }));
+    expect(r.findings).toEqual([]);
+    const src = await check(
+      fixture({ manifest: (m) => m.permissions.hosts.push("api.example.com:8443"), files: { "backend.ts": `${BACKEND}const u = "https://api.example.com:8443/x";\n` } }),
+    );
+    expect(src.findings).toEqual([]);
+    const other = await check(fixture({ files: { "backend.ts": `${BACKEND}const u = "https://api.example.com:8443/x";\n` } }));
+    expect(rules(other.findings)).toEqual(["error:host-undeclared"]);
+    expect(other.findings[0].message).toContain("api.example.com:8443");
+  });
+
+  it("http-url: a literal http:// URL, which the broker refuses even to a declared host", async () => {
+    const r = await check(fixture({ files: { "backend.ts": `${BACKEND}const u = "http://api.example.com/x";\n` } }));
+    expect(rules(r.findings)).toEqual(["warning:http-url"]);
+    expect(r.findings[0]).toMatchObject({ file: "backend.ts", line: 12 });
+  });
 });
 
 describe("humanharness plugin check", () => {

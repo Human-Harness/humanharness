@@ -381,3 +381,9 @@ describe("changed files open their timeline (file-timeline spec §6.2)", () => {
     expect(entryLabel("Go back: specs/a to b.md to v2")).toEqual({ key: "history.entry.fileBack", values: { file: "specs/a to b.md" } });
   });
 });
+
+describe("context changes in the history (context-panel spec §4.2)", () => {
+  it("a Context: commit reads as one", () => {
+    expect(entryLabel("Context: pinned docs/conv.md")).toEqual({ key: "history.entry.context", values: { change: "pinned docs/conv.md" } });
+  });
+});

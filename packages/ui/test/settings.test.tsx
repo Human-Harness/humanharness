@@ -50,6 +50,7 @@ describe("SettingsSheet", () => {
       recommended: { questions: "standard" },
       defaults: { claude: { light: { model: "haiku", effort: "low", cap: 100_000 }, standard: { model: "sonnet", effort: "medium", cap: 200_000 }, deep: { model: "opus", effort: "high", cap: 400_000 } } },
       offered: { claude: { models: [{ id: "haiku" }, { id: "sonnet" }, { id: "opus" }], efforts: ["low", "medium", "high", "xhigh", "max"] } },
+      pinnedTokens: 3000,
     };
     await renderIn("en", <Sheet client={client} />);
     expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["General", "Engine", "Models", "Usage"]);
@@ -223,6 +224,7 @@ describe("SettingsSheet", () => {
       recommended: {},
       defaults: { claude: { light: { model: "haiku", effort: "low", cap: 100_000 }, standard: { model: "sonnet", effort: "medium", cap: 200_000 }, deep: { model: "opus", effort: "high", cap: 400_000 } } },
       offered: { claude: { models: [{ id: "haiku" }, { id: "sonnet" }, { id: "opus" }], efforts: ["low"] } },
+      pinnedTokens: 3000,
     };
     const onSetup = vi.fn();
     await renderIn("en", <Sheet client={client} initialTab={tab} onSetup={onSetup} />);

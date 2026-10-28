@@ -499,7 +499,8 @@
       "restoredTask": "You went back to before this task",
       "note": "Note saved: {{title}}",
       "data": "Changed {{collection}}",
-      "fileBack": "You went back to an earlier version of {{file}}"
+      "fileBack": "You went back to an earlier version of {{file}}",
+      "context": "Context: {{change}}"
     }
   },
   "backup": {

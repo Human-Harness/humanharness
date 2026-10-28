@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import {
   type ActionOption,
   BEFORE_MESSAGE,
+  CONTEXT_CHANGE_PREFIX,
   type HarnessClient,
   type HistoryItem,
   type HistoryTaskView,
@@ -30,6 +31,7 @@ export function entryLabel(message: string): { key: string; values?: Record<stri
   if (message === RESTORE_TASK) return { key: "history.entry.restoredTask" };
   if (message === RESTORE_POINT) return { key: "history.entry.restored" };
   if (message.startsWith(DATA_CHANGE_PREFIX)) return { key: "history.entry.data", values: { collection: message.slice(DATA_CHANGE_PREFIX.length) } };
+  if (message.startsWith(CONTEXT_CHANGE_PREFIX)) return { key: "history.entry.context", values: { change: message.slice(CONTEXT_CHANGE_PREFIX.length) } };
   if (message.startsWith(FILE_RESTORE_PREFIX)) {
     // `Go back: <path> to <target>`: the target never holds " to " (v2, "the version of <ISO time>"), so the last one splits.
     const rest = message.slice(FILE_RESTORE_PREFIX.length);

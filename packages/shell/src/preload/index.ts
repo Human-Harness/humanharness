@@ -1,5 +1,8 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type {
+  ContextGetResult,
+  ContextPick,
+  ContextResult,
   DataChangeView,
   Event,
   FileDiffResult,
@@ -21,6 +24,7 @@ import type {
   TextSize,
 } from "@humanharness/ui/client";
 import { hearsDataChange } from "@humanharness/ui/data-change";
+import { askContext, contextListener } from "./context";
 import { documentWatcher } from "./document-watch";
 import { fileCommitListeners } from "./file-commits";
 import { askFile, restoreFlow } from "./file-restore";
@@ -215,16 +219,16 @@ const client: HarnessClient = {
     cite: (scope, id) => ipcRenderer.invoke("hh:materialCite", scope, id),
     onChange: (listener) => subscribe<MaterialView>("hh:materialStatus", listener),
   },
-  // A stub until the hh:context* handlers exist (plan 17, Task 12).
+  // The context panel (context-panel spec §5.2): every answer is data, a rejected invoke included.
   context: {
-    get: async () => ({ ok: false, reason: "not-ready" }),
-    onChange: () => () => {},
-    add: async () => ({ ok: false, reason: "not-ready" }),
-    pick: async () => ({ ok: false, reason: "not-ready" }),
-    pin: async () => ({ ok: false, reason: "not-ready" }),
-    unpin: async () => ({ ok: false, reason: "not-ready" }),
-    exclude: async () => ({ ok: false, reason: "not-ready" }),
-    include: async () => ({ ok: false, reason: "not-ready" }),
+    get: (taskId) => askContext<ContextGetResult>(fileInvoke, "hh:contextGet", taskId),
+    onChange: (taskId, listener) => subscribe<unknown>("hh:context", contextListener(taskId, listener)),
+    add: (taskId, file) => askContext<ContextResult>(fileInvoke, "hh:contextAdd", taskId, file),
+    pick: () => askContext<ContextPick>(fileInvoke, "hh:contextPick"),
+    pin: (scope, file) => askContext<ContextResult>(fileInvoke, "hh:contextPin", scope, file),
+    unpin: (scope, file) => askContext<ContextResult>(fileInvoke, "hh:contextUnpin", scope, file),
+    exclude: (scope, note) => askContext<ContextResult>(fileInvoke, "hh:contextExclude", scope, note),
+    include: (scope, note) => askContext<ContextResult>(fileInvoke, "hh:contextInclude", scope, note),
   },
   onTextSize: (listener) => subscribe<TextSize>("hh:textSize", listener),
 };

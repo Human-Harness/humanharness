@@ -65,7 +65,8 @@ import {
   History,
   MAIN_SCOPE,
   ScopeStore,
-  buildDataContext,
+  DEFAULT_PINNED_TOKENS,
+  buildDataContextParts,
   dataDiffOf,
   flushFileIndexes,
   isScopeId,
@@ -90,7 +91,9 @@ import { cliCommand, engineCommand, loginShellPath } from "./engine-command";
 import { EngineGuards } from "./engine-guards";
 import { copySetupStep, engineOptionExtras, installCommandOf, runsInTerminal, terminalCommand } from "./install-help";
 import { detectEngine, hasAcceptedNotice } from "./engine-status";
-import { QUESTIONS, cleanModels, engineOffer, firstOffered, fitEffort, nearestTier, nextFallback, resolveProfile } from "./models";
+import { QUESTIONS, cleanModels, engineOffer, firstOffered, fitEffort, nearestTier, nextFallback, pinnedBudget, resolveProfile } from "./models";
+import { ContextService } from "./context";
+import { contextHandlers } from "./context-ipc";
 import { chooseModeHandler } from "./mode-ipc";
 import { setPhaseHandler, timeBoxOffered } from "./phase-ipc";
 import { requireNoticeForChoice, requireNoticeForTurn } from "./notice-policy";
@@ -274,6 +277,7 @@ async function modelsView(): Promise<ModelsView> {
       engines.map((e) => [e.id, Object.fromEntries(TIERS.map((t) => [t, tierSpec(e.id, t)])) as Record<Tier, ModelSpec>]),
     ),
     offered: Object.fromEntries(engines.map((e) => [e.id, offer(e)])),
+    pinnedTokens: harness.context?.pinnedTokens ?? DEFAULT_PINNED_TOKENS,
   };
 }
 
@@ -811,8 +815,24 @@ const tasks = new TaskManager({
     if (!Object.values(harness.data).some((c) => c.context !== false)) return undefined;
     return async (scope: string, action: string | undefined) => {
       const c = await validConfig();
-      return c ? buildDataContext(dataStoreFor(baseOf(c)), harness.data, scope, action) : "";
+      // One part per collection: the context panel lists each (context-panel spec §3.1); the agent gets them joined.
+      return c ? buildDataContextParts(dataStoreFor(baseOf(c)), harness.data, scope, action) : [];
     };
+  },
+  // Context panel (context-panel spec §3.1): the size of AGENTS.md in the agent's working folder.
+  instructionsSize: async () => {
+    const c = await validConfig();
+    if (!c) return null;
+    const stat = await fs.stat(path.join(baseOf(c), "AGENTS.md")).catch(() => null);
+    return stat?.isFile() ? stat.size : null;
+  },
+  // Pins and exclusions for a new task (spec §4); `contextSvc` is built below, before any task can start.
+  personContext: (scope) => contextSvc.personContext(scope),
+  contextChanged: (id) => void sendContext(id),
+  // The agent's working folder: the engine's read paths become folder paths (spec §3.2).
+  folder: async () => {
+    const c = await validConfig();
+    return c ? baseOf(c) : null;
   },
   // Material spec §9 Load: only a harness with material gets the hook (D0). A getter: the harness loads later.
   // Only usable sources' fragments make rows (`indexRows`); none: no section.
@@ -1176,6 +1196,45 @@ const fileTimelines = new FileTimelineService({
   diff: workerDiff({ entry: path.join(here, "diff-worker.js") }),
 });
 
+/** The context panel (context-panel spec): the person's pins and exclusions and the open task's record. */
+const contextSvc = new ContextService({
+  base: async () => {
+    const c = await validConfig();
+    return c ? baseOf(c) : null;
+  },
+  scoped,
+  scopeExists: (id) => activeScope(id),
+  budget: async () => pinnedBudget(cleanModels((await config.load()).models), harness.context),
+  record: (id) => tasks.contextRecord(id),
+  openTask: async () => (await tasks.runningTask())?.id ?? null,
+  noteTitles: async (scope) => {
+    const c = await validConfig();
+    if (!c) return new Map<string, string>();
+    const notes = await readNotes(baseOf(c), notesPrefix(scoped(), scope)).catch(() => []);
+    return new Map(notes.map((n) => [n.path, n.title]));
+  },
+  history: () => currentHistory(),
+  trailer: () => tasks.trailerNow(),
+  blocked: () => (quitting ? "The app is closing" : turnBlocked()),
+  add: (taskId, file) => {
+    const { accepted, done } = tasks.addContext(taskId, file);
+    done.catch((err: unknown) => console.error("The Add now turn failed", err));
+    return accepted;
+  },
+  pickFile: async (base) => {
+    if (!window || window.isDestroyed()) return null;
+    const result = await dialog.showOpenDialog(window, { defaultPath: base, properties: ["openFile"] });
+    return result.canceled ? null : (result.filePaths[0] ?? null);
+  },
+  changed: (task) => void sendContext(task),
+});
+
+/** The task's panel refreshes (`hh:context`); a task that is no longer open sends nothing. */
+async function sendContext(task: string): Promise<void> {
+  const got = await contextSvc.get(task).catch(() => null);
+  if (got?.ok) sendToWindow("hh:context", { task, context: got.context });
+}
+
 /** Tells the window which paths each commit touched: an open timeline gets its new entry (§6.3 `onChange`). */
 const commitAnnouncements = commitAnnouncer((paths) => sendToWindow("hh:fileCommits", paths));
 const announceCommits = (history: History) => commitAnnouncements.watch(history);
@@ -1460,6 +1519,7 @@ function registerIpc() {
   for (const [channel, fn] of Object.entries(reviewHandlers(reviews, () => harness.permissions.edit === "folder"))) handle(channel, fn);
   // File timelines (file-timeline spec §6.3): every harness (Q1); every answer is data.
   for (const [channel, fn] of Object.entries(fileHandlers(fileTimelines))) handle(channel, fn);
+  for (const [channel, fn] of Object.entries(contextHandlers(contextSvc))) handle(channel, fn);
   // Cancels the turn and stops the task operation (a closing turn never goes on to the next task).
   handle("hh:cancel", () => tasks.cancel());
   // Restore commits carry no task: going back may undo several tasks, so it belongs to none of them.

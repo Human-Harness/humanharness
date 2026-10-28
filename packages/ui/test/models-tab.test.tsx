@@ -30,6 +30,7 @@ function modelsClient(models?: AppConfig["models"]) {
       claude: { models: [{ id: "haiku" }, { id: "sonnet" }, { id: "opus" }], efforts: ["low", "medium", "high", "xhigh", "max"] },
       codex: { models: [], efforts: ["low", "medium", "high"] },
     },
+    pinnedTokens: 3000,
   };
   return c;
 }

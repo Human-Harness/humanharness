@@ -876,7 +876,11 @@ export interface LinkedView {
   mode: "read" | "write";
   tracked: boolean;
   gitChanged?: true;
+  /** The agent doesn't get this folder now, and why (the checks a turn runs): the person unlinks and links it again. */
+  dropped?: LinkDroppedView;
 }
+/** Why a stored link is left out of turns: a refusal of today's picker, or a folder moved, under a reference, or of a new mode. */
+export type LinkDroppedView = Exclude<LinkRefusalView, "one-only" | "too-many"> | "moved" | "mode-changed";
 /** Why a link was refused: a key of en.json `hatches.refused`. */
 export type LinkRefusalView =
   | "engine-home" | "home" | "system" | "too-broad" | "protected" | "main-folder" | "other-scope-write" | "nested"

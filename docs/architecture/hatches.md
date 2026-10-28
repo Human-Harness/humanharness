@@ -69,12 +69,12 @@ linkedFolders: {
 
 `createScopeAccess` (`packages/shell/src/main/scope-access.ts`) reads the links afresh for every turn, every `AGENTS.md` write, every first message and every undo. A link counts only when:
 - it is signed for this profile and scope and its nonce is live;
-- the manifest still declares its key; the mode is the manifest's **now**, not the stored one;
+- the manifest still declares its key, with the mode the link was made for: a harness update that changes a key's mode (say `read` to `write`) drops its stored links as `mode-changed`, and the person links them again (what they agreed to, and whether the folder is tracked, was decided for the old mode);
 - `checkLink` still passes it with today's context (home, the folder, the app's folder, this scope's other links, the other scopes' and profiles' write folders);
 - its real path still equals the stored path (a folder swapped for a link, moved or gone is dropped as `moved`);
 - a write link isn't inside a reference folder added since.
 
-A dropped link is logged once per folder and reason, and the turn runs without it: a missing folder never fails every turn. A scope with no stored link reads no key, no other profile and no folder.
+A dropped link is logged once per folder and reason, and the turn runs without it: a missing folder never fails every turn. Scope settings runs the same checks (`ScopeAccess.dropped`, passed to `hh:scopeLinked`): each dropped link carries `dropped: <reason>` and its row says the agent doesn't get the folder now, and why; the person unlinks it and links it again. A scope with no stored link reads no key, no other profile and no folder.
 
 ### To the agent
 
@@ -98,11 +98,11 @@ A **tracked** linked folder (write, no git) has a core history of its own: an is
 - An **untracked** folder (git, or a read folder) is never committed or restored: its own git is its history (L7). The History panel says, per such write folder, "Undo doesn't cover this folder: it has its own git." (only with no scope filter or the open scope's), and lists a tracked folder's changes under the task rows (`hh:linkedHistory`, `linkedHistoryView`).
 - **Unlink** writes `<dir>/unlinked-at` (ISO time) only when no other tracked link to that folder remains in any scope of any profile; a relink, and every open of the history, removes it. At start, before the link channels answer, `pruneUnlinked` puts histories unlinked more than 30 days ago in the system Trash; a failure is logged and the history kept. The prune never follows a link.
 
-**Gaining or losing git** (Decision 13). Checked when the scope opens and when Scope settings opens (`checkGitChanges`, signed write links only). The entry gets `gitChanged: true` and keeps its `tracked` until the person answers in Scope settings: "This folder now has its own git." offers "Leave to its own git"; "This folder no longer has git." offers "Track with the app's history" or "Leave to its own git" (`hh:scopeConfirmGit`, which refuses tracking a git or read folder). While marked, undo leaves the folder out. The old core history stays either way.
+**Gaining or losing git** (Decision 13). Checked when the scope opens and when Scope settings opens (`checkGitChanges`, signed write links only). The entry gets `gitChanged: true` and keeps its `tracked` until the person answers in Scope settings: "This folder now has its own git." offers "Leave to its own git"; "This folder no longer has git." offers "Track with the app's history" or "Leave to its own git", the first never for a `history: "own"` key (`hh:scopeConfirmGit`, which refuses tracking a git or read folder, or one of a `history: "own"` key). While marked, undo leaves the folder out. The old core history stays either way.
 
 ### IPC and state
 
-Registered only under `hasLinkedFolders` (`registerLinkedIpc`, `linked-ipc.ts`): `hh:scopeLinked` (the scope's signed links, after the git check), `hh:scopeLinkFolder`, `hh:scopeUnlinkFolder`, `hh:scopeConfirmGit`, `hh:linkedHistory`. Every handler waits for the start's prune. Window input is untrusted (L9): the scope must pass `isScopeId` and be registered and unarchived, the key `Object.hasOwn` of the manifest and at most 64 characters, an unlink's path equal to a stored entry. `hh:scopes` no longer sends `linked`. `AppState.hatches` (`hatchesState`) carries the keys with label, mode, history and `many`; `hh:scopeLinked` answers `{ folders, unsupported }`, the second being main's flag for an engine without the capability. `client.scopes.linked/linkFolder/unlinkFolder/confirmGit/linkedHistory` in `packages/ui/src/client.ts`.
+Registered only under `hasLinkedFolders` (`registerLinkedIpc`, `linked-ipc.ts`): `hh:scopeLinked` (the scope's signed links, after the git check), `hh:scopeLinkFolder`, `hh:scopeUnlinkFolder`, `hh:scopeConfirmGit`, `hh:linkedHistory`. Every handler waits for the start's prune. Window input is untrusted (L9): the scope must pass `isScopeId` and be registered and unarchived, the key `Object.hasOwn` of the manifest and at most 64 characters, an unlink's path equal to a stored entry. `hh:scopes` no longer sends `linked`. `AppState.hatches` (`hatchesState`) carries the keys with label, mode, history and `many`; `hh:scopeLinked` answers `{ folders, unsupported }` (a folder the per-use checks drop carries `dropped`), the second being main's flag for an engine without the capability. `client.scopes.linked/linkFolder/unlinkFolder/confirmGit/linkedHistory` in `packages/ui/src/client.ts`.
 
 ## D0
 
@@ -168,14 +168,7 @@ PR decision reversed during review: a write link inside or around another scope'
 - **A linked folder's history has no size limit**, as the main one's.
 - **An undo over several folders can stop half way.** Board and single mode check every history before restoring any, but a turn already under way can write between the checks and the restores: the work folder may be restored and a linked one refused. In board and single mode the History panel reports the partial undo ("Undone in … Not undone in …"). Plain mode restores the work folder, then each tracked folder, with no check across them; a failure in a linked folder shows only the generic failure, though the work folder was restored. Nothing is rolled back.
 - **The file timeline** (plan 16, `timeline.md`) covers only the main folder: a tracked linked folder's files have no timeline, and the "not covered" line shows only in the History panel (spec §3.4 names both).
-- **Dropped links still show in Scope settings.** A link the per-use checks drop (moved, refused again, inside a reference) is only logged; Scope settings lists it as linked until a follow-up shows why.
-- **A mode change in a harness update applies to stored links.** The mode comes from the manifest now: a stored `read` link becomes `write` when the key's mode changes from `read` to `write` (the write checks then apply at the next use; a write link inside a reference is dropped). Such a link keeps its stored `tracked: false`, so:
-  - no core history covers it, and "Undo this task" can't take back what the agent changes there;
-  - `checkGitChanges` skips it (it checks the stored mode), so the person is never asked to track it;
-  - the History panel lists it as uncovered and says "it has its own git." even when it has no git.
-
-  A fix is planned in the part-1 follow-ups.
-- **A write link inside a reference folder** is refused at the picker; one that a reference added later now covers is dropped at use, with only a log line.
+- **A write link inside a reference folder** is refused at the picker; one that a reference added later now covers is dropped at use (logged, and shown on its row in Scope settings).
 - **OpenCode's cost after a reload.** A changed list reopens the session, and a reopen resets OpenCode's cost baseline: the turn after records no cost (`engines.md`, "Cost").
 - **Synced drives**: no extra warning for a linked folder in a synced drive (spec §10 Q1).
 

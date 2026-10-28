@@ -3,7 +3,7 @@ import { promises as fs, realpath } from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
 import { LINKED_MANY_MAX, type LinkedFolderDecl, hasLinkedFolders } from "@humanharness/harness-sdk";
-import type { HatchesState, LinkRefusalView, LinkedHistoryView, LinkedView } from "@humanharness/ui/client";
+import type { HatchesState, LinkDroppedView, LinkRefusalView, LinkedHistoryView, LinkedView } from "@humanharness/ui/client";
 import { type LinkedFolderEntry, type ScopeEntry, type ScopeStore, isScopeId } from "@humanharness/workspace";
 import { checkLink, isGitRepo } from "./linked-folders";
 import { linkedHistoryDir, markRelinked, markUnlinked } from "./linked-history";
@@ -23,6 +23,9 @@ export const linkedSecret =
   (userData: string) =>
   (create: boolean): Promise<Buffer | null> =>
     sourceTagKey(path.join(userData, "linked-key"), create);
+
+/** A link's id in a scope's left-out links (`ScopeAccess.dropped`): its key and path. */
+export const dropKey = (l: { key: string; path: string }): string => JSON.stringify([l.key, l.path]);
 
 /** One live link's id in the live set: its profile ("" without profiles), scope and nonce. */
 const liveId = (profile: string, scope: string, nonce: string) => JSON.stringify([profile, scope, nonce]);
@@ -164,6 +167,8 @@ export interface LinkedIpcDeps {
   checkGit?(scope: string): Promise<unknown>;
   /** What the History panel shows of the open scope's linked folders (linked-restore.ts). */
   linkedHistory?(): Promise<LinkedHistoryView>;
+  /** Why each of a scope's links is left out of turns now, by `dropKey` (`ScopeAccess.dropped`): Scope settings says so. */
+  dropped?(scope: string): Promise<ReadonlyMap<string, LinkDroppedView>>;
 }
 
 // macOS file systems are usually case-insensitive: two spellings of one folder share its history (safe side).
@@ -242,7 +247,19 @@ export function registerLinkedIpc(handle: (channel: string, fn: (...args: never[
     const { scope: s } = await scopeOf(scope);
     const signed = await linkChecker(d.signing);
     // A key the manifest no longer declares is not shown (its label is gone).
-    const folders = signed(s, await d.profile()).filter((l) => Object.hasOwn(d.linkedFolders, l.key)).map(view);
+    const listed = signed(s, await d.profile()).filter((l) => Object.hasOwn(d.linkedFolders, l.key));
+    // The same checks a turn runs: a link left out of turns is shown with why, never as if the agent had it.
+    const dropped =
+      listed.length > 0 && d.dropped
+        ? await d.dropped(s.id).catch((err: unknown) => {
+            console.error("Could not check the linked folders", err);
+            return new Map<string, LinkDroppedView>();
+          })
+        : new Map<string, LinkDroppedView>();
+    const folders = listed.map((l) => {
+      const why = dropped.get(dropKey(l));
+      return why ? { ...view(l), dropped: why } : view(l);
+    });
     return { folders, unsupported: d.unsupported() };
   });
 
@@ -332,8 +349,10 @@ export function registerLinkedIpc(handle: (channel: string, fn: (...args: never[
   // Decision 13: the person keeps the folder tracked or leaves it to its git. Never tracked while it has git (L7).
   handle("hh:scopeConfirmGit", async (scope: unknown, key: unknown, folder: unknown, tracked: unknown) => {
     await d.ready;
-    decl(key);
+    const k = decl(key);
     if (typeof tracked !== "boolean") throw new Error("Invalid linked folder change");
+    // A key whose folders keep their own git (`history: "own"`) is never tracked by the app's, git or not.
+    if (tracked && k.history === "own") throw new Error("This folder can't be tracked by the app's history");
     await serial(async () => {
       const { store, scope: s } = await scopeOf(scope);
       const profile = await d.profile();

@@ -4,8 +4,8 @@ import { promisify } from "node:util";
 import type { LinkedFolderDecl } from "@humanharness/harness-sdk";
 import type { TurnScope } from "@humanharness/runtime";
 import { type LinkedFolderEntry, type LinkedFolderLine, type ScopeEntry, type ScopeStore, isScopeId, linkedFolderLines } from "@humanharness/workspace";
-import { checkLink, isGitRepo } from "./linked-folders";
-import { type LinkSigning, linkChecker } from "./linked-ipc";
+import { type LinkRefusal, checkLink, isGitRepo } from "./linked-folders";
+import { type LinkSigning, dropKey, linkChecker } from "./linked-ipc";
 
 /** realpath(3): the case on disk on macOS, the spelling a link is stored with. */
 const realpathNative = promisify(realpath.native);
@@ -62,6 +62,9 @@ export async function checkGitChanges(
   return marked;
 }
 
+/** Why a stored link is left out of turns now: a picker refusal today, a moved folder, a reference, a new mode. */
+export type LinkDropReason = LinkRefusal | "moved" | "reference" | "mode-changed";
+
 export interface ScopeAccessDeps {
   /** The manifest's declarations (keys looked up with Object.hasOwn only). */
   linkedFolders: Record<string, LinkedFolderDecl>;
@@ -95,30 +98,34 @@ export type ScopeAccess = ReturnType<typeof createScopeAccess>;
  * counts only when the app signed it for this profile and scope and its nonce is live (L1), it still resolves to the
  * very path stored (a folder later swapped for a link, or gone, is dropped), and the picker's refusals still pass it
  * with today's context (L2: home, the folder, the app's folder, references, the other scopes' and profiles' write
- * folders). A dropped link is said once in the log and never fails the turn: the turn runs without it.
+ * folders), and its stored mode is still the manifest's (a key changed from read to write is linked again). A dropped
+ * link is said once in the log, shown in Scope settings, and never fails the turn: the turn runs without it.
  */
 export function createScopeAccess(d: ScopeAccessDeps) {
   const decl = d.linkedFolders;
   const told = new Set<string>();
-  const drop = (profile: string, scope: string, l: LinkedFolderEntry, why: string) => {
+  const drop = (profile: string, scope: string, l: LinkedFolderEntry, why: LinkDropReason) => {
     const id = JSON.stringify([profile, scope, l.key, l.path, why]);
     if (told.has(id)) return;
     told.add(id);
     (d.log ?? console.error)(`A linked folder of scope ${scope} is left out (${why}): ${l.path}`);
   };
 
-  /** The registry with only `scope`'s entry, its links cut to the usable ones. [] when it has none. */
-  async function usable(scope: string | null): Promise<ScopeEntry[]> {
-    if (scope === null || !isScopeId(scope)) return [];
+  /**
+   * Each signed link of `scope` whose key the manifest declares, with why it is left out now (undefined: it is used).
+   * Null when the scope has none: nothing else is read, not even the key.
+   */
+  async function verdicts(scope: string | null): Promise<{ entry: ScopeEntry; links: { link: LinkedFolderEntry; dropped?: LinkDropReason }[] } | null> {
+    if (scope === null || !isScopeId(scope)) return null;
     const store = await d.store();
     const all = await store.list();
     const s = all.find((e) => e.id === scope && !e.archived);
     // No link stored: nothing else is read, not even the key (a harness's scope without links runs as today).
-    if (!s?.linked?.length) return [];
+    if (!s?.linked?.length) return null;
     const profile = await d.profile();
     const signed = await linkChecker(d.signing);
     const mine = signed(s, profile).filter((l) => Object.hasOwn(decl, l.key));
-    if (mine.length === 0) return [];
+    if (mine.length === 0) return null;
     const others = await Promise.all((await d.otherStores()).map(async (o) => ({ profile: o.profile, list: await o.store.list().catch(() => [] as ScopeEntry[]) })));
     const otherScopesWrite = [
       ...all.filter((e) => e.id !== s.id).flatMap((e) => signed(e, profile)),
@@ -128,9 +135,19 @@ export function createScopeAccess(d: ScopeAccessDeps) {
       .map((l) => l.path);
     const ctx = await d.context();
     const refs = await Promise.all((await d.references()).map((r) => realpathNative(r).catch(() => r)));
-    const kept: LinkedFolderEntry[] = [];
+    const out: { link: LinkedFolderEntry; dropped?: LinkDropReason }[] = [];
     for (const [i, l] of mine.entries()) {
+      const why = await dropReason(l, i);
+      if (why) drop(profile, scope, l, why);
+      out.push(why ? { link: l, dropped: why } : { link: l });
+    }
+    return { entry: s, links: out };
+
+    async function dropReason(l: LinkedFolderEntry, i: number): Promise<LinkDropReason | null> {
       const mode = decl[l.key].mode;
+      // The manifest changed the key's mode since the link was made: what the person agreed to (and whether it is
+      // tracked) was for the old mode. They link it again.
+      if (l.mode !== mode) return "mode-changed";
       const checked = await checkLink(l.path, {
         ...ctx,
         sameScope: mine.filter((_, j) => j !== i).map((x) => x.path),
@@ -139,24 +156,21 @@ export function createScopeAccess(d: ScopeAccessDeps) {
         // A folder that gained or lost git waits for the person (Decision 13): not a reason to drop it here.
         history: "auto",
       }).catch(() => ({ refused: "not-folder" as const }));
-      if ("refused" in checked) {
-        drop(profile, scope, l, checked.refused);
-        continue;
-      }
+      if ("refused" in checked) return checked.refused;
       // Still the very folder linked: the real path (the case on disk) equals the stored one.
       const real = await realpathNative(l.path).catch(() => null);
-      if (real !== l.path) {
-        drop(profile, scope, l, "moved");
-        continue;
-      }
+      if (real !== l.path) return "moved";
       // A reference's read-only rules would win over a write link's (a reference added since).
-      if (mode === "write" && refs.some((r) => insideOf(real, r))) {
-        drop(profile, scope, l, "reference");
-        continue;
-      }
-      kept.push(l);
+      if (mode === "write" && refs.some((r) => insideOf(real, r))) return "reference";
+      return null;
     }
-    return kept.length > 0 ? [{ ...s, linked: kept }] : [];
+  }
+
+  /** The registry with only `scope`'s entry, its links cut to the usable ones. [] when it has none. */
+  async function usable(scope: string | null): Promise<ScopeEntry[]> {
+    const v = await verdicts(scope);
+    const kept = (v?.links ?? []).filter((x) => !x.dropped).map((x) => x.link);
+    return v && kept.length > 0 ? [{ ...v.entry, linked: kept }] : [];
   }
 
   return {
@@ -168,6 +182,11 @@ export function createScopeAccess(d: ScopeAccessDeps) {
     section: async (scope: string): Promise<string> => linkedSection(linkedLines(await usable(scope), scope, decl)),
     /** The registry with only `scope`'s entry, its links cut to the usable ones (undo, the History panel). */
     entries: (scope: string | null): Promise<ScopeEntry[]> => usable(scope),
+    /** Why each left-out link of `scope` is left out, by key and path (Scope settings shows it on the row). */
+    dropped: async (scope: string): Promise<Map<string, LinkDropReason>> => {
+      const v = await verdicts(scope);
+      return new Map((v?.links ?? []).flatMap((x) => (x.dropped ? [[dropKey(x.link), x.dropped] as const] : [])));
+    },
     /** Decision 13's check, when the scope opens and when Scope settings opens: its signed links only. */
     checkGit: async (scope: string): Promise<boolean> => {
       if (!isScopeId(scope)) return false;

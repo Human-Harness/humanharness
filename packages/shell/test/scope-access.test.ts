@@ -130,7 +130,7 @@ const DECLS: Record<string, LinkedFolderDecl> = {
 
 let n = 0;
 /** One app: links made through the real IPC (picker answers `picks`), read back through `createScopeAccess`. */
-function setup(over: { references?: string[]; other?: { profile: string; store: ScopeStore }[] } = {}) {
+function setup(over: { references?: string[]; other?: { profile: string; store: ScopeStore }[]; decls?: Record<string, LinkedFolderDecl> } = {}) {
   const t = mk(path.join(root, `t${n++}`));
   const home = mk(path.join(t, "home"));
   const work = mk(path.join(home, "Documents", "Work"));
@@ -143,8 +143,12 @@ function setup(over: { references?: string[]; other?: { profile: string; store: 
   const picks: string[] = [];
   const handlers = new Map<string, (...args: unknown[]) => unknown>();
   const references = { list: over.references ?? [] };
+  // The manifest as the app runs it now (a test changes it after linking, as an update of the harness would).
+  const decls = { now: over.decls ?? DECLS };
   const base = {
-    linkedFolders: DECLS,
+    get linkedFolders() {
+      return decls.now;
+    },
     store: async () => store,
     profile: async () => "",
     otherStores: vi.fn(async () => over.other ?? []),
@@ -154,15 +158,19 @@ function setup(over: { references?: string[]; other?: { profile: string; store: 
   };
   registerLinkedIpc((ch, fn) => void handlers.set(ch, fn as (...args: unknown[]) => unknown), {
     ...base,
+    get linkedFolders() {
+      return decls.now;
+    },
     pick: async () => picks.shift() ?? null,
     userData,
     now: () => new Date("2026-10-28T10:00:00.000Z"),
     ready: Promise.resolve(),
     changed: async () => {},
     unsupported: () => false,
+    dropped: (scope) => access.dropped(scope),
   });
   const log = vi.fn();
-  const access = createScopeAccess({ ...base, log });
+  let access = createScopeAccess({ ...base, linkedFolders: decls.now, log });
   const link = async (scope: string, key: string, folder: string) => {
     picks.push(folder);
     return handlers.get("hh:scopeLinkFolder")!(scope, key);
@@ -170,7 +178,14 @@ function setup(over: { references?: string[]; other?: { profile: string; store: 
   const unlink = (scope: string, key: string, folder: string) => handlers.get("hh:scopeUnlinkFolder")!(scope, key, folder);
   const readFile = () => ({ scopes: JSON.parse(fs.readFileSync(scopesFile(work), "utf8")) as ScopeEntry[] });
   const writeFile = (v: { scopes: ScopeEntry[] }) => fs.writeFileSync(scopesFile(work), JSON.stringify(v.scopes));
-  return { t, home, work, code, store, secret, access, log, link, unlink, readFile, writeFile, references, otherStores: base.otherStores };
+  const listed = (scope: string) => handlers.get("hh:scopeLinked")!(scope) as Promise<{ folders: { path: string; dropped?: string }[] }>;
+  /** A new manifest: the scope access is made again from it, as the app does at its next start. */
+  const update = (next: Record<string, LinkedFolderDecl>) => {
+    decls.now = next;
+    access = createScopeAccess({ ...base, linkedFolders: next, log });
+    return access;
+  };
+  return { t, home, work, code, store, secret, get access() { return access; }, log, link, unlink, listed, update, readFile, writeFile, references, otherStores: base.otherStores };
 }
 
 describe("createScopeAccess: only signed, live, still valid links (L1, L2, L5)", () => {
@@ -313,6 +328,40 @@ describe("createScopeAccess: only signed, live, still valid links (L1, L2, L5)",
     await s.access.access("app");
     await s.access.lines("app");
     expect(s.log).toHaveBeenCalledTimes(1);
+  });
+
+  it("a link whose key the manifest changed from read to write is dropped as mode-changed (the person links it again)", async () => {
+    const s = setup();
+    await s.store.create("App");
+    const docs = fs.realpathSync.native(mk(path.join(s.code, "docs")));
+    await s.link("app", "docs", docs);
+    expect((await s.access.access("app"))?.linked).toEqual([{ path: docs, mode: "read", tracked: false }]);
+    s.update({ ...DECLS, docs: { ...DECLS.docs, mode: "write" } });
+    expect(await s.access.access("app")).toBeUndefined();
+    expect(await s.access.lines("app")).toEqual([]);
+    expect(await s.access.entries("app")).toEqual([]);
+    expect(s.log.mock.calls[0][0]).toMatch(/mode-changed/);
+    expect([...(await s.access.dropped("app"))]).toEqual([[JSON.stringify(["docs", docs]), "mode-changed"]]);
+    // Linked again under the new mode: a write link, tracked (no git), reaching the turn.
+    await s.unlink("app", "docs", docs);
+    await s.link("app", "docs", docs);
+    expect((await s.access.access("app"))?.linked).toEqual([{ path: docs, mode: "write", tracked: true }]);
+  });
+
+  it("Scope settings lists a dropped link with why; a usable one without", async () => {
+    const s = setup();
+    await s.store.create("App");
+    const gone = fs.realpathSync.native(mk(path.join(s.code, "gone")));
+    const kept = fs.realpathSync.native(mk(path.join(s.code, "kept")));
+    await s.link("app", "repos", gone);
+    await s.link("app", "repos", kept);
+    fs.rmSync(gone, { recursive: true });
+    const { folders } = await s.listed("app");
+    expect(folders.map((f) => [f.path, f.dropped])).toEqual([
+      [gone, "not-folder"],
+      [kept, undefined],
+    ]);
+    expect("dropped" in folders[1]).toBe(false);
   });
 
   it("checkGit marks a tracked signed folder that gained git", async () => {

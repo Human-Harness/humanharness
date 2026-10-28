@@ -27,6 +27,7 @@ const DECLS: Record<string, LinkedFolderDecl> = {
   docs: { label: "Docs", mode: "read", history: "auto", many: false },
   site: { label: "Site", mode: "write", history: "auto", many: false },
   mirror: { label: "Mirror", mode: "read", history: "own", many: false },
+  vendor: { label: "Vendor", mode: "write", history: "own", many: false },
 };
 
 let n = 0;
@@ -273,6 +274,19 @@ describe("linked folders IPC (hatches spec §3.2)", () => {
     await s.call("hh:scopeConfirmGit", "app", "repos", real, true);
     expect((await s.call("hh:scopeLinked", "app")) as { folders: { tracked: boolean }[] }).toMatchObject({ folders: [{ tracked: true }] });
     await expect(s.call("hh:scopeConfirmGit", "app", "repos", real, "yes")).rejects.toThrow(/Invalid/);
+  });
+
+  it("confirmGit never tracks a folder of a history 'own' key, even once it lost its git", async () => {
+    const repo = mk(path.join(s.code, "vendored"));
+    execFileSync("git", ["init", "-q", repo]);
+    const real = fs.realpathSync.native(repo);
+    s.pick.mockImplementationOnce(async () => repo);
+    expect(await s.call("hh:scopeLinkFolder", "app", "vendor")).toMatchObject({ linked: { tracked: false } });
+    fs.rmSync(path.join(repo, ".git"), { recursive: true });
+    await s.store.markGitChanged("app", "vendor", real);
+    await expect(s.call("hh:scopeConfirmGit", "app", "vendor", real, true)).rejects.toThrow(/can't be tracked/);
+    await s.call("hh:scopeConfirmGit", "app", "vendor", real, false);
+    expect((await s.call("hh:scopeLinked", "app")) as { folders: unknown[] }).toMatchObject({ folders: [{ key: "vendor", tracked: false }] });
   });
 
   it("Scope settings opening runs the git check before listing, so a folder that gained git shows it (Decision 13)", async () => {

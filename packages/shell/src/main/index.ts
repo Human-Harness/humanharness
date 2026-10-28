@@ -1924,6 +1924,7 @@ function linkedIpcDeps(): LinkedIpcDeps {
     unsupported: () => linkedUnsupported,
     // Scope settings opening checks git again (Decision 13), as the scope's opening does.
     checkGit: async (scope) => linked_()?.access.checkGit(scope),
+    dropped: async (scope) => (await linked_()?.access.dropped(scope)) ?? new Map(),
     linkedHistory: async () => {
       const linked = linked_();
       if (!linked) return { uncovered: [], tasks: {} };

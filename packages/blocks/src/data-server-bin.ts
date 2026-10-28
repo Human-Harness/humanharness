@@ -9,7 +9,7 @@ try {
     console.error("HH_HARNESS, HH_RPC and HH_RPC_TOKEN are required");
     process.exit(2);
   }
-  const server = await createDataServer(harnessConfig, { path: rpcPath, token });
+  const server = await createDataServer(harnessConfig, { path: rpcPath, token }, process.env.HH_DATA_EXTRA || undefined);
   await server.connect(new StdioServerTransport());
 } catch (e) {
   console.error(e instanceof Error ? e.message : String(e));

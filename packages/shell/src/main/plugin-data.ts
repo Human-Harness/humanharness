@@ -26,10 +26,12 @@ const APP = { who: "app" as const, scope: APP_SCOPE };
 export class PluginData {
   private readonly store: DataStore;
   private readonly collections: Record<string, Collection>;
+  private readonly id: string;
   /** Writes one at a time, so the caps hold between the check and the write. */
   private writes: Promise<unknown> = Promise.resolve();
 
   constructor(base: string, manifest: PluginManifest, opts: { log?: (message: string) => void } = {}) {
+    this.id = manifest.id;
     this.collections = pluginCollections(manifest);
     this.store = new DataStore(base, this.collections, {
       dir: pluginDataDir(base, manifest.id),
@@ -93,12 +95,13 @@ export class PluginData {
   }
 
   /**
-   * The tables of the `agent: "read"` collections with `context` for a new session's first message ("" when none).
-   * TODO(Task 14): titles say `<id>.<collection>` once buildDataContext takes a label.
+   * The tables of the `agent: "read"` collections with `context` for a new session's first message ("" when none),
+   * each titled `<id>.<collection>`, the name the agent's data tools take.
    */
   agentContext(action: string | undefined): Promise<string> {
     const visible = Object.fromEntries(Object.entries(this.collections).filter(([, c]) => c.agent === "read"));
-    return Object.keys(visible).length === 0 ? Promise.resolve("") : buildDataContext(this.store, visible, APP_SCOPE, action);
+    const label = (name: string) => `${this.id}.${name}`;
+    return Object.keys(visible).length === 0 ? Promise.resolve("") : buildDataContext(this.store, visible, APP_SCOPE, action, { label });
   }
 
   onChange(listener: (change: DataChange) => void): () => void {

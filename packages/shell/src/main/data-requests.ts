@@ -127,6 +127,12 @@ export interface AgentDataDeps {
   store(): Promise<DataStore | null>;
   /** The open task and the scope it runs in. */
   runningTask(): Promise<{ id: string; action?: string; scope: string } | null>;
+  /**
+   * The plugin collections' route (plugins spec §3.2): a request naming `<plugin id>.<collection>` goes here, never
+   * to the store. It reads only and refuses what isn't a running plugin's `agent: "read"` collection. Absent: a
+   * dotted name is an unknown collection, as before (D0).
+   */
+  plugin?(request: unknown): Promise<unknown>;
 }
 
 /**
@@ -140,6 +146,9 @@ export async function agentDataRequest(d: AgentDataDeps, request: unknown): Prom
   try {
     const task = await d.runningTask();
     if (!task) throw new DataUnavailable("No task is running");
+    // Harness collection names never hold a dot: a dotted one is a plugin's.
+    const name = typeof request === "object" && request !== null ? (request as { collection?: unknown }).collection : undefined;
+    if (d.plugin && typeof name === "string" && name.includes(".")) return await d.plugin(request);
     const store = await d.store();
     if (!store) throw new DataUnavailable("The app is not set up yet");
     return await runDataRequest(store, request, { who: "agent", scope: task.scope, ...(task.action ? { action: task.action } : {}) });

@@ -1,3 +1,4 @@
+import fs from "node:fs/promises";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { type Collection, type LoadedHarness, loadHarness, z } from "@humanharness/harness-sdk";
 import { RpcRefused, callRpc } from "./bridge";
@@ -9,7 +10,7 @@ export const agentCollections = (harness: Pick<LoadedHarness, "data">): [string,
 /** The `data` MCP server starts only when there is something for the agent to see (D2). */
 export const hasAgentData = (harness: Pick<LoadedHarness, "data">): boolean => agentCollections(harness).length > 0;
 
-type JsonSchema = {
+export type JsonSchema = {
   type?: string;
   enum?: unknown[];
   const?: unknown;
@@ -46,28 +47,104 @@ function fieldsOf(c: Collection): string {
   }
 }
 
-/** One line per collection: name, key, where it lives, what the agent may do, and its fields. */
-function catalogue(collections: [string, Collection][]): string {
-  return collections
-    .map(
-      ([name, c]) =>
-        `- ${name} (${c.single ? "one record" : `key ${c.key}`}, ${c.scoped ? "scoped" : "app-wide"}, ${c.agent === "write" ? "read+write" : "read"}): ${fieldsOf(c)}`,
-    )
-    .join("\n");
+/**
+ * A read-only collection of a plugin the agent may read (plugins spec §3.2, B10): `<plugin id>.<collection>`, its
+ * key, and its fields as the plugin's JSON Schema. The app writes the list to a file between tasks (`HH_DATA_EXTRA`).
+ */
+export type CatalogueEntry = { name: string; key?: string; single: boolean; fields: JsonSchema };
+
+const EXTRA_NAME = /^[a-z0-9][a-z0-9-]{0,63}\.[a-z][a-z0-9_]{0,39}$/;
+const EXTRA_KEY = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
+const EXTRA_MAX_BYTES = 256 * 1024;
+const EXTRA_MAX_ENTRIES = 200;
+/** What a plugin named reaches the agent's tool description as one plain line, at most this long. */
+const EXTRA_LINE_CHARS = 1000;
+
+/** Plugin-chosen text on one line: no controls, no bidi or zero-width marks, whitespace collapsed. */
+const plain = (text: string): string =>
+  text
+    .replace(/[\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/g, "")
+    .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029\s]+/g, " ")
+    .trim();
+
+const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+
+/**
+ * The plugin collections in `file` (≤ 256 KB, a JSON list). An entry that doesn't fit is dropped, a duplicate name
+ * keeps the first, and a missing or broken file gives none: each case is logged on stderr, never fatal.
+ */
+export async function readExtraCatalogue(file: string): Promise<CatalogueEntry[]> {
+  let list: unknown;
+  try {
+    const handle = await fs.open(file, fs.constants.O_RDONLY | fs.constants.O_NONBLOCK);
+    try {
+      const st = await handle.stat();
+      if (!st.isFile() || st.size > EXTRA_MAX_BYTES) throw new Error("not a file of at most 256 KB");
+      list = JSON.parse(await handle.readFile("utf8"));
+    } finally {
+      await handle.close();
+    }
+  } catch (e) {
+    console.error(`The plugin catalogue was ignored: ${e instanceof Error ? e.message : String(e)}`);
+    return [];
+  }
+  if (!Array.isArray(list)) {
+    console.error("The plugin catalogue was ignored: it is not a list");
+    return [];
+  }
+  const out: CatalogueEntry[] = [];
+  for (const e of list.slice(0, EXTRA_MAX_ENTRIES)) {
+    const ok =
+      isObject(e) &&
+      typeof e.name === "string" &&
+      EXTRA_NAME.test(e.name) &&
+      typeof e.single === "boolean" &&
+      (e.key === undefined || (typeof e.key === "string" && EXTRA_KEY.test(e.key))) &&
+      isObject(e.fields) &&
+      !out.some((o) => o.name === e.name);
+    if (!ok) {
+      console.error("A plugin catalogue entry was dropped");
+      continue;
+    }
+    out.push({ name: e.name as string, ...(e.key !== undefined ? { key: e.key as string } : {}), single: e.single as boolean, fields: e.fields as JsonSchema });
+  }
+  return out;
 }
 
-const names = (list: [string, Collection][]) => list.map(([n]) => n) as [string, ...string[]];
+function extraFields(e: CatalogueEntry): string {
+  try {
+    const text = plain(objectFields(e.fields));
+    return text.length > EXTRA_LINE_CHARS ? `${text.slice(0, EXTRA_LINE_CHARS - 1)}…` : text;
+  } catch {
+    return "any";
+  }
+}
+
+/** One line per collection: name, key, where it lives, what the agent may do, and its fields. Plugin ones are read-only and app-wide. */
+function catalogue(collections: [string, Collection][], extra: CatalogueEntry[] = []): string {
+  return [
+    ...collections.map(
+      ([name, c]) =>
+        `- ${name} (${c.single ? "one record" : `key ${c.key}`}, ${c.scoped ? "scoped" : "app-wide"}, ${c.agent === "write" ? "read+write" : "read"}): ${fieldsOf(c)}`,
+    ),
+    ...extra.map((e) => `- ${e.name} (${e.single ? "one record" : `key ${e.key}`}, app-wide, read): ${extraFields(e)}`),
+  ].join("\n");
+}
+
+const names = (list: [string, Collection][], extra: CatalogueEntry[] = []) => [...list.map(([n]) => n), ...extra.map((e) => e.name)] as [string, ...string[]];
 const key = z.union([z.string(), z.number()]);
 const fields = z.record(z.string(), z.unknown());
 
 /**
  * The agent's data tools (spec §4.4). Each call goes to the app over `rpc`, which runs it as the agent in the
- * running task's scope, with every check; a refusal comes back as a tool error.
+ * running task's scope, with every check; a refusal comes back as a tool error. `extraFile` lists plugin collections
+ * the agent may read (plugins spec §3.2): only `data_get`/`data_query` take them. Absent: today's tools (D0).
  */
-export async function createDataServer(harnessConfig: string, rpc: { path: string; token: string }): Promise<McpServer> {
+export async function createDataServer(harnessConfig: string, rpc: { path: string; token: string }, extraFile?: string): Promise<McpServer> {
   const harness = await loadHarness(harnessConfig);
   const visible = agentCollections(harness);
-  if (visible.length === 0) throw new Error("No collection is available to the agent");
+  const extra = extraFile ? await readExtraCatalogue(extraFile) : [];
+  if (visible.length === 0 && extra.length === 0) throw new Error("No collection is available to the agent");
   const writable = visible.filter(([, c]) => c.agent === "write");
   const server = new McpServer({ name: "data", version: "0.1.0" });
 
@@ -85,14 +162,14 @@ export async function createDataServer(harnessConfig: string, rpc: { path: strin
   const see = "Collections and fields: see data_query.";
   server.registerTool(
     "data_get",
-    { description: `Reads one record by its key (no key for a one-record collection). ${see}`, inputSchema: { collection: z.enum(names(visible)), key: key.optional() } },
+    { description: `Reads one record by its key (no key for a one-record collection). ${see}`, inputSchema: { collection: z.enum(names(visible, extra)), key: key.optional() } },
     call("get"),
   );
   server.registerTool(
     "data_query",
     {
-      description: `Lists records. \`where\` takes equality ({"state":"seen"}) or membership ({"id":{"in":["a","b"]}}) only; \`fields\` picks fields (the key always comes); \`limit\` defaults to 50, at most 200. The answer says the total. Collections:\n${catalogue(visible)}`,
-      inputSchema: { collection: z.enum(names(visible)), where: fields.optional(), fields: z.array(z.string()).optional(), limit: z.number().int().min(1).max(200).optional() },
+      description: `Lists records. \`where\` takes equality ({"state":"seen"}) or membership ({"id":{"in":["a","b"]}}) only; \`fields\` picks fields (the key always comes); \`limit\` defaults to 50, at most 200. The answer says the total. Collections:\n${catalogue(visible, extra)}`,
+      inputSchema: { collection: z.enum(names(visible, extra)), where: fields.optional(), fields: z.array(z.string()).optional(), limit: z.number().int().min(1).max(200).optional() },
     },
     call("query"),
   );

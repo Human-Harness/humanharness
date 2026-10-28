@@ -1,4 +1,4 @@
 export * from "./bridge";
 export * from "./launch";
 export { createUiServer } from "./ui-server";
-export { agentCollections, createDataServer, hasAgentData } from "./data-server";
+export { type CatalogueEntry, agentCollections, createDataServer, hasAgentData, readExtraCatalogue } from "./data-server";

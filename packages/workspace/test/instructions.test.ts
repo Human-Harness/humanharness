@@ -261,3 +261,13 @@ describe("refreshInstructions", () => {
     expect(fs.readFileSync(path.join(b, "AGENTS.md"), "utf8")).toBe(fs.readFileSync(path.join(a, "AGENTS.md"), "utf8"));
   });
 });
+
+describe("writeInstructions: plugin sentences (plugins spec §8, Decision 16)", () => {
+  it("writes the plugins' sentences after the harness's under the one heading", async () => {
+    const folder = tmp();
+    await writeInstructions({ folder, base: "x", language: "en", blocks, settings: ["Use a Patient tone.", "On-call: Our team is docs."], engine: getEngine("codex") });
+    const agents = fs.readFileSync(path.join(folder, "AGENTS.md"), "utf8");
+    expect(agents).toContain("### How to work with this person\n\n- Use a Patient tone.\n- On-call: Our team is docs.\n");
+    expect(agents.split("### How to work with this person")).toHaveLength(2);
+  });
+});

@@ -916,7 +916,7 @@ export class PluginsController {
       const settings = this.settingsOf(r.entry);
       if (!settings || !c) continue;
       const values = settingsValues(settings, await c.state.settings(r.entry.id).catch(() => ({})));
-      for (const s of settingsSentences(settings, values)) out.push(`${r.entry.manifest.name}: ${s}`);
+      for (const s of settingsSentences(settings, values)) out.push(pluginSentence(r.entry.manifest.name, s));
     }
     this.applied = out.join("\n");
     return out;
@@ -1080,4 +1080,22 @@ function minimalEnv(env: Record<string, string>): Record<string, string> {
   const out: Record<string, string> = { TERM: "dumb" };
   for (const k of EXEC_ENV_KEYS) if (Object.hasOwn(env, k) && typeof env[k] === "string") out[k] = env[k];
   return out;
+}
+
+/** The longest plugin settings sentence AGENTS.md takes (a 300-char template filled with the person's value). */
+export const PLUGIN_SENTENCE_CHARS = 500;
+
+/**
+ * One plugin settings sentence as one plain AGENTS.md line (B10): `<Plugin name>: <sentence>`, with no controls,
+ * bidi or zero-width marks and whitespace collapsed (the name and template are the plugin's text), cut to
+ * PLUGIN_SENTENCE_CHARS.
+ */
+export function pluginSentence(name: string, sentence: string): string {
+  const plain = (t: string) =>
+    t
+      .replace(/[\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/g, "")
+      .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029\s]+/g, " ")
+      .trim();
+  const line = `${plain(name)}: ${plain(sentence)}`;
+  return line.length > PLUGIN_SENTENCE_CHARS ? `${line.slice(0, PLUGIN_SENTENCE_CHARS - 1)}…` : line;
 }

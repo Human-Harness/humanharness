@@ -362,6 +362,29 @@ describe("createRuntime", () => {
     expect(seen).toEqual([{ op: "put", collection: "concepts", record: { id: "halves", name: "Halves", state: "seen", evidence: [] } }]);
   });
 
+  it("starts the data server for plugin collections alone, with HH_DATA_EXTRA (plugins spec §3.2)", async () => {
+    const { runtime, args } = await setup({ steps: [claudeResultLine(true)] }, undefined, { data: async () => null, extraData: { catalogue: "/x/catalogue.json" } });
+    await send(runtime);
+    const servers = JSON.parse(args()[args().indexOf("--mcp-config") + 1]) as { mcpServers: Record<string, { env: Record<string, string> }> };
+    expect(Object.keys(servers.mcpServers)).toEqual(["ui", "data"]);
+    expect(servers.mcpServers.data.env.HH_DATA_EXTRA).toBe("/x/catalogue.json");
+  });
+
+  it("D0: without extraData the data server has no HH_DATA_EXTRA; instructionSettings giving [] writes today's AGENTS.md", async () => {
+    const study = await setup({ steps: [claudeResultLine(true)] }, undefined, { harness: await loadHarness(STUDY), data: async () => null });
+    await send(study.runtime);
+    const servers = JSON.parse(study.args()[study.args().indexOf("--mcp-config") + 1]) as { mcpServers: Record<string, { env: Record<string, string> }> };
+    expect(Object.keys(servers.mcpServers)).toEqual(["ui", "data"]);
+    expect(Object.keys(servers.mcpServers.data.env)).not.toContain("HH_DATA_EXTRA");
+    await study.runtime.close();
+    const plain = await setup({ steps: [] });
+    const agents = fs.readFileSync(path.join(plain.folder, "AGENTS.md"), "utf8");
+    await plain.runtime.close();
+    const empty = await setup({ steps: [] }, undefined, { instructionSettings: async () => [] });
+    expect(fs.readFileSync(path.join(empty.folder, "AGENTS.md"), "utf8")).toBe(agents);
+    expect(await empty.runtime.refreshInstructions()).toBe(false);
+  });
+
   it("starts no material server without material in the manifest, and AGENTS.md has no Material part (material D0)", async () => {
     const { runtime, args, folder } = await setup({ steps: [claudeResultLine(true)] }, undefined, { material: { request: async () => "x" } });
     // Files where material would live are not tracked either: the keep list is today's.

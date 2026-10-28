@@ -120,6 +120,21 @@ describe("PluginData (plugins spec §4.2 ctx.data, D10, B4, B11)", () => {
     expect(await d.readAll("queues")).toEqual([{ key: "DOC-1", n: 1 }]);
   });
 
+  it("titles the agent's context tables `<id>.<collection>`, only for collections with context", async () => {
+    const withContext = parsePluginManifest({
+      ...base,
+      data: {
+        queues: { ...manifest.data.queues, context: { fields: "all", tokens: 200 } },
+        hidden: manifest.data.hidden,
+      },
+    });
+    expect(await new PluginData(await tmp(), manifest).agentContext(undefined)).toBe("");
+    const d = new PluginData(await tmp(), withContext);
+    await d.put("queues", { key: "DOC-1", n: 1 });
+    await d.put("hidden", { key: "h" });
+    expect(await d.agentContext(undefined)).toBe(["## Data: oncall.queues", "", "| key | n |", "|---|---|", "| DOC-1 | 1 |"].join("\n"));
+  });
+
   it("never writes through a link the agent planted in the base", async () => {
     const base = await tmp();
     const outside = await tmp();

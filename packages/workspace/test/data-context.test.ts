@@ -103,3 +103,17 @@ describe("buildDataContext", () => {
     expect(await buildDataContext(store, data, "fracciones", "study")).toContain("| a | x y z a\\\\b\\\\\\|c |");
   });
 });
+
+describe("buildDataContext label (plugins spec §3.2)", () => {
+  it("titles each table and its footer with the label; without it the output is unchanged", async () => {
+    const { store, data } = setup();
+    for (let i = 0; i < 40; i++) await store.put("concepts", { id: `c${String(i).padStart(2, "0")}`, name: `Concept number ${i}`, state: "seen", notes: "" }, person);
+    const plain = await buildDataContext(store, data, "fracciones", "study");
+    const labelled = await buildDataContext(store, data, "fracciones", "study", { label: (n) => `oncall.${n}` });
+    expect(await buildDataContext(store, data, "fracciones", "study", {})).toBe(plain);
+    expect(labelled).toContain("## Data: oncall.concepts");
+    expect(labelled).toMatch(/… \d+ more in oncall\.concepts: use data_query to read them\./);
+    expect(labelled).not.toMatch(/Data: concepts|more in concepts/);
+    expect(labelled.replaceAll("oncall.", "")).toBe(plain);
+  });
+});

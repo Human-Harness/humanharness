@@ -36,10 +36,18 @@ async function ordered(store: DataStore, name: string, c: Collection, folder: st
 /**
  * The data part of a new session's first message (spec §4.4): one Markdown table per collection with `context`,
  * cut at its `tokens` (the "more" line included), saying how many rows were left out. Empty when no collection has `context` (D2).
+ * `opts.label` names each collection as the agent knows it (a plugin's `<id>.<collection>`); absent: its own name.
  */
-export async function buildDataContext(store: DataStore, collections: Record<string, Collection>, scope: string, action: string | undefined): Promise<string> {
+export async function buildDataContext(
+  store: DataStore,
+  collections: Record<string, Collection>,
+  scope: string,
+  action: string | undefined,
+  opts: { label?: (name: string) => string } = {},
+): Promise<string> {
   const tables: string[] = [];
   for (const [name, c] of Object.entries(collections)) {
+    const title = opts.label ? opts.label(name) : name;
     if (c.context === false || c.agent === "none") continue;
     if (c.scoped && scope === APP_SCOPE) continue;
     const folder = c.scoped ? scope : APP_SCOPE;
@@ -48,12 +56,12 @@ export async function buildDataContext(store: DataStore, collections: Record<str
     const budget = c.context.tokens;
     const listed = c.context.fields === "all" ? Object.keys(c.schema.shape) : c.context.fields;
     const fields = c.key ? [c.key, ...listed.filter((f) => f !== c.key)] : listed;
-    const lines = [`## Data: ${name}`, "", row(fields), `|${fields.map(() => "---").join("|")}|`];
+    const lines = [`## Data: ${title}`, "", row(fields), `|${fields.map(() => "---").join("|")}|`];
     const sorted = await ordered(store, name, c, folder, records, action);
     let shown = 0;
     for (const r of sorted) {
       const left = records.length - shown - 1;
-      const tail = left > 0 ? ["", footer(left, name)] : [];
+      const tail = left > 0 ? ["", footer(left, title)] : [];
       const fits = (line: string) => estimateTokens([...lines, line, ...tail].join("\n")) <= budget;
       let line = row(fields.map((f) => r[f]));
       if (shown === 0) {
@@ -66,7 +74,7 @@ export async function buildDataContext(store: DataStore, collections: Record<str
       lines.push(line);
       shown++;
     }
-    if (shown < records.length) lines.push("", footer(records.length - shown, name));
+    if (shown < records.length) lines.push("", footer(records.length - shown, title));
     tables.push(lines.join("\n"));
   }
   return tables.join("\n\n");

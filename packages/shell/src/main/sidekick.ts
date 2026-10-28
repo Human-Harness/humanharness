@@ -13,7 +13,7 @@ import {
   sidekickTips,
 } from "@humanharness/harness-sdk";
 import type { SidekickAnswer, SidekickSessionOptions } from "@humanharness/runtime";
-import type { SidekickApproveCheck, SidekickCard, SidekickHeadsUp, SidekickInfo, SidekickLearned, SidekickOutcome, SidekickReview, SidekickSetResult, SidekickSettings, SidekickSettingsPatch, SidekickState } from "@humanharness/ui/client";
+import type { SidekickApproveCheck, SidekickCard, SidekickHeadsUp, SidekickInfo, SidekickLearned, SidekickOutcome, SidekickPlaceAnswer, SidekickReview, SidekickSetResult, SidekickSettings, SidekickSettingsPatch, SidekickState } from "@humanharness/ui/client";
 import {
   APP_SCOPE,
   MAIN_SCOPE,
@@ -29,9 +29,9 @@ import {
 } from "@humanharness/workspace";
 import { candidates, pickSpeaker } from "./sidekick-route";
 import type { SidekickStore } from "./sidekick-store";
-import { type DailyInput, SIDEKICK_DAILY_TEXT_MAX, SIDEKICK_LEARN_MIN, afterParts, afterReplyPrompt, approvePrompt, dailyPrompt, learnPrompt, parseAfter, parseGuard, parseLearn, parseReview, parseRoute, phaseChangePrompt, preSendPrompt, routePrompt } from "./sidekick-turns";
+import { type DailyInput, SIDEKICK_DAILY_TEXT_MAX, SIDEKICK_LEARN_MIN, SIDEKICK_PLACE_ANSWER_MAX, afterParts, afterReplyPrompt, approvePrompt, dailyPrompt, learnPrompt, parseAfter, parseGuard, parseLearn, parseReview, parseRoute, phaseChangePrompt, placePrompt, preSendPrompt, routePrompt } from "./sidekick-turns";
 import type { PhaseMoved, TurnEnd } from "./task-manager";
-import { type UsageRecord, capTokens, sidekickRecord, sidekickSpent, sidekickWeek } from "./usage-log";
+import { type SidekickUsageMoment, type UsageRecord, capTokens, sidekickRecord, sidekickSpent, sidekickWeek } from "./usage-log";
 
 /** Part 1's one sidekick (plan Decision 9). */
 export const SIDEKICK_ID = DEFAULT_SIDEKICK.id;
@@ -60,6 +60,11 @@ const DAILY_MS = 60_000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** What a before-approve check answers whenever Sidekick has nothing to show: the approval goes ahead. */
 const APPROVE: SidekickApproveCheck = { kind: "approve" };
+/** A harness place's turns (spec §2a.5): their folder (a reserved sidekick id), and how long one may run. */
+const PLACE_ID = "place";
+const PLACE_MS = 30_000;
+/** What a place ask answers whenever Sidekick has nothing to say. */
+const NO_ANSWER: SidekickPlaceAnswer = { ok: false };
 
 /** A date's local calendar day (YYYY-MM-DD): the daily card runs once per one (plan Decision 12). */
 export const localDay = (d: Date): string => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -151,6 +156,8 @@ export interface SidekickDeps {
   dailyInput(base: string, day: string): Promise<DailyInput>;
   /** How long a daily turn may run, in ms (tests shorten it). */
   dailyMs?: number;
+  /** How long a harness place's turn may run, in ms (tests shorten it). */
+  placeMs?: number;
 }
 
 export const defaultWaitMs = (wait: SidekickSettings["wait"]): number => (wait === "always" ? SIDEKICK_ALWAYS_MAX_MS : wait * 1000);
@@ -213,6 +220,10 @@ export class SidekickController {
   private dailyRun: AbortController | null = null;
   /** The running before-approve check (spec §2a.2); a newer one, the approval answered, turning off, a profile switch or closing drops it. */
   private approving: AbortController | null = null;
+  /** The running place turns (spec §2a.5), one per place; a newer ask there, turning off, a profile switch or closing drops it. */
+  private readonly asking = new Map<string, AbortController>();
+  /** The last place turn's end: the next one waits for it (one at a time in the shared `place` folder). */
+  private placeTurns: Promise<void> = Promise.resolve();
   /** The running learning turn's promise (never rejects), for `learned`. */
   private learnRun: Promise<void> | null = null;
   /** The task open at the last betweenTasks (or seen open since): learning runs only when it closes (spec §6.4). */
@@ -296,6 +307,7 @@ export class SidekickController {
       this.learning?.abort();
       this.dailyRun?.abort();
       this.approving?.abort();
+      this.abortAsking();
       this.guard?.abort();
       this.abortRouting();
       this.card = null;
@@ -463,6 +475,7 @@ export class SidekickController {
       this.learning?.abort();
       this.dailyRun?.abort();
       this.approving?.abort();
+      this.abortAsking();
       this.guard?.abort();
       this.abortRouting();
       this.card = null;
@@ -642,6 +655,7 @@ export class SidekickController {
     this.learning?.abort();
     this.dailyRun?.abort();
     this.approving?.abort();
+    this.abortAsking();
     this.guard?.abort();
     this.abortRouting();
     await this.closeSessions(() => true);
@@ -987,6 +1001,81 @@ export class SidekickController {
     this.approving?.abort();
   }
 
+  /**
+   * A harness place's question (spec §2a.5, plan Decision 13): among the sidekicks on in the open task's scope (else
+   * the app's) with a purpose for `place:<id>` (and, when their scope record lists places, that one), one speaker
+   * answers in free text, at most SIDEKICK_PLACE_ANSWER_MAX characters, never a card. The harness UI sends `content`:
+   * the turn runs in a one-off session whose brief carries no learned items, so its answer can't hand them over.
+   * Sidekick off (D0: nothing runs, nothing written), a place the manifest doesn't name, no such sidekick, past the
+   * cap, without a CLI, PLACE_MS, a failure, a newer ask in the same place, turning off, a profile switch or closing:
+   * `{ ok: false }`.
+   */
+  async ask(place: string, content: string): Promise<SidekickPlaceAnswer> {
+    const settings = await this.d.store.settings().catch(() => null);
+    if (this.closed || !settings?.on) return NO_ANSWER;
+    const def = this.d.manifest?.places?.find((p) => p.id === place);
+    if (!def) return NO_ANSWER;
+    this.asking.get(place)?.abort();
+    const controller = new AbortController();
+    this.asking.set(place, controller);
+    const live = () => !controller.signal.aborted && !this.closed;
+    let session: SidekickLike | null = null;
+    let release: (() => void) | undefined;
+    try {
+      const task = await this.d.task().catch(() => null);
+      const scope = task?.scope ?? APP_SCOPE;
+      const moment: SidekickMoment = `place:${place}`;
+      const list: SidekickDef[] = [];
+      for (const s of await this.candidatesFor(moment, scope)) {
+        const places = (await this.d.store.scopeFor(scope, s.id).catch(() => null))?.places;
+        if (!places || places.includes(place)) list.push(s);
+      }
+      if (list.length === 0 || !live()) return NO_ANSWER;
+      const setup = await this.d.setup().catch(() => null);
+      if (!setup || !(await this.d.hasNotice(setup.engineId).catch(() => false))) return NO_ANSWER;
+      if ((await this.pastCap(setup.base, task, settings)) || !live()) return NO_ANSWER;
+      const engine = this.d.engine(setup.engineId);
+      const speaker = await this.pick(list, moment, `Place: ${def.label}\n\n${content}`, { base: setup.base, task, signal: controller.signal, live });
+      if (!live()) return NO_ANSWER;
+      // One place turn at a time: they share the `place` folder, and each writes its speaker's brief there.
+      const before = this.placeTurns;
+      this.placeTurns = new Promise<void>((r) => (release = r));
+      await before;
+      if (!live()) return NO_ANSWER;
+      session = await this.oneOff(setup.base, engine, PLACE_ID, live, { ...(speaker.tier ? { tier: speaker.tier } : {}), brief: await this.briefFor(speaker, { learned: false }) });
+      if (!session || !live()) return NO_ANSWER;
+      const open = this.d.phases(task?.action).find((p) => p.id === task?.phase);
+      const prompt = placePrompt({
+        harness: { name: this.d.harness.name },
+        place: { label: def.label, description: def.description },
+        content,
+        ...(open ? { phase: { label: open.label, ...(await this.briefOf(task, open)) } } : {}),
+        uiLanguage: await this.d.uiLanguage().catch(() => "English"),
+        ...(await this.purposeText(scope, speaker.id)),
+      });
+      if (!live()) return NO_ANSWER;
+      // A hung CLI must not keep the harness waiting (or the session open) forever.
+      const answer = await session.ask(prompt, AbortSignal.any([controller.signal, AbortSignal.timeout(this.d.placeMs ?? PLACE_MS)]));
+      await this.logTurn(setup.base, engine, session, task, moment, answer, speaker.id);
+      const text = answer.ok ? answer.text.trim().slice(0, SIDEKICK_PLACE_ANSWER_MAX) : "";
+      if (!text || !live()) return NO_ANSWER;
+      // Settings may have changed while the turn ran.
+      if (!(await this.d.store.settings()).on || !live()) return NO_ANSWER;
+      return { ok: true, text, speaker: infoOf(speaker) };
+    } catch (err) {
+      if (!controller.signal.aborted) console.error("Sidekick's place turn failed", err);
+      return NO_ANSWER;
+    } finally {
+      if (this.asking.get(place) === controller) this.asking.delete(place);
+      await session?.close().catch(() => undefined);
+      release?.();
+    }
+  }
+
+  private abortAsking(): void {
+    for (const c of this.asking.values()) c.abort();
+  }
+
   private async approveCheck(
     doc: { title: string; text: string },
     settings: SidekickSettings,
@@ -1126,7 +1215,7 @@ export class SidekickController {
     engine: EngineDef,
     session: SidekickLike,
     task: OpenTask | null,
-    moment: "pre" | "after" | "learn" | "route" | "phase-change" | "daily" | "before-approve",
+    moment: SidekickUsageMoment,
     answer: SidekickAnswer,
     sidekick: string = SIDEKICK_ID,
   ): Promise<void> {
@@ -1207,11 +1296,11 @@ export class SidekickController {
   /**
    * `speaker`'s brief. What Sidekick learned (spec §6.4) is read when a session opens, so the brief changes only
    * between tasks. Part 1's Sidekick keeps part 1's brief (D0); any other gets its name, personality and purposes
-   * (spec §2a.1).
+   * (spec §2a.1). `learned: false` leaves the learned items out (a place turn, whose answer the harness UI reads).
    */
-  private async briefFor(speaker: SidekickDef): Promise<string> {
+  private async briefFor(speaker: SidekickDef, o: { learned?: false } = {}): Promise<string> {
     const tips = sidekickTips(this.d.manifest);
-    const learned = (await this.d.store.all()).filter((r) => r.type === "learned" && r.text).map((r) => r.text as string);
+    const learned = o.learned === false ? [] : (await this.d.store.all()).filter((r) => r.type === "learned" && r.text).map((r) => r.text as string);
     const own = plainDefault(speaker) ? {} : { sidekick: { name: speaker.name, personality: speaker.personality, purposes: speaker.purposes } };
     return sidekickBrief({ name: SIDEKICK_NAME, harness: this.d.harness.name, ...(tips ? { tips } : {}), ...(learned.length ? { learned } : {}), ...own });
   }
@@ -1220,7 +1309,7 @@ export class SidekickController {
    * A one-off session in its own folder (`id`), never kept in `sessions`: the caller closes it. Null without a CLI or
    * once `live` says no. `tier` and `brief` replace the `sidekick` process's tier and part 1's brief.
    */
-  private async oneOff(base: string, engine: EngineDef, id: string, live: () => boolean, o: { tier?: "light"; brief?: string } = {}): Promise<SidekickLike | null> {
+  private async oneOff(base: string, engine: EngineDef, id: string, live: () => boolean, o: { tier?: SidekickDef["tier"]; brief?: string } = {}): Promise<SidekickLike | null> {
     const cmd = await this.d.command(engine).catch(() => null);
     if (!cmd) return null;
     const profile = await (o.tier ? this.d.profile(engine, o.tier) : this.d.profile(engine));

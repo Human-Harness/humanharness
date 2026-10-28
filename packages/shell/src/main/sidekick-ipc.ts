@@ -1,5 +1,6 @@
-import type { SidekickApproveCheck, SidekickLearned, SidekickOutcome, SidekickReview, SidekickSetResult, SidekickState } from "@humanharness/ui/client";
+import type { SidekickApproveCheck, SidekickLearned, SidekickOutcome, SidekickPlaceAnswer, SidekickReview, SidekickSetResult, SidekickState } from "@humanharness/ui/client";
 import type { SidekickController } from "./sidekick";
+import { SIDEKICK_PLACE_INPUT_MAX } from "./sidekick-turns";
 
 const OUTCOMES: readonly SidekickOutcome[] = ["used", "edited", "sent-anyway", "dismissed"];
 const MAX_PROMPT = 20_000;
@@ -7,9 +8,12 @@ const MAX_PROMPT = 20_000;
 const MAX_TITLE = 200;
 const MAX_DOC = 200_000;
 const APPROVE: SidekickApproveCheck = { kind: "approve" };
+/** A harness place's id (the manifest's place-id pattern) and the answer to anything malformed. */
+const PLACE = /^[a-z][a-z0-9_-]{0,63}$/;
+const NO_ANSWER: SidekickPlaceAnswer = { ok: false };
 
 type Handle = (channel: string, fn: (...args: never[]) => unknown) => void;
-type Ctl = Pick<SidekickController, "state" | "set" | "review" | "cancel" | "resolve" | "mute" | "unmute" | "saveDecision" | "learned" | "forget" | "forgetAll" | "editLearned" | "beforeApprove" | "cancelApprove">;
+type Ctl = Pick<SidekickController, "state" | "set" | "review" | "cancel" | "resolve" | "mute" | "unmute" | "saveDecision" | "learned" | "forget" | "forgetAll" | "editLearned" | "beforeApprove" | "cancelApprove" | "ask">;
 const MAX_ID = 80;
 const isId = (v: unknown): v is string => typeof v === "string" && v.length > 0 && v.length <= MAX_ID;
 /** Edits to the learned items: at most MAX_EDITS, each an id and a text of 1..MAX_LEARNED characters (not blank). */
@@ -78,6 +82,13 @@ export function registerSidekickIpc(handle: Handle, ctl: () => Ctl | null): void
     return c.beforeApprove({ title, text }).catch(() => APPROVE);
   });
   handle("hh:sidekickApproveCancel", () => ctl()?.cancelApprove());
+  // A harness place (spec §2a.5): the harness UI's input is bounded here; anything malformed never reaches the controller.
+  handle("hh:sidekickAsk", async (place: unknown, content: unknown): Promise<SidekickPlaceAnswer> => {
+    const c = ctl();
+    if (!c || typeof place !== "string" || !PLACE.test(place)) return NO_ANSWER;
+    if (typeof content !== "string" || !content.trim() || content.length > SIDEKICK_PLACE_INPUT_MAX) return NO_ANSWER;
+    return c.ask(place, content).catch(() => NO_ANSWER);
+  });
   handle("hh:sidekickEditLearned", async (changes: unknown) => {
     if (!isEdits(changes)) return;
     await ctl()?.editLearned(changes.map(({ id, text }) => ({ id, text: text.trim() })));

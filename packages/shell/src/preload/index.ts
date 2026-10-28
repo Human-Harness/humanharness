@@ -119,6 +119,7 @@ const client: HarnessClient = {
     editLearned: (changes) => ipcRenderer.invoke("hh:sidekickEditLearned", changes),
     beforeApprove: (doc) => ipcRenderer.invoke("hh:sidekickBeforeApprove", doc),
     cancelApprove: () => ipcRenderer.invoke("hh:sidekickApproveCancel"),
+    ask: (place, content) => ipcRenderer.invoke("hh:sidekickAsk", place, content),
     onChange: (listener) => subscribe<SidekickState>("hh:sidekick", listener),
   },
   setupSteps: {

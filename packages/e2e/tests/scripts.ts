@@ -136,6 +136,8 @@ const phaseTurn = { match: `^${MOCK_SIDEKICK_MARKS.phase}`, steps: sidekickReply
 const approveTurn = { match: `^${MOCK_SIDEKICK_MARKS.approve}`, steps: sidekickReply({ missing: [] }) };
 /** Sidekick's daily turn (sidekick spec §2a.2 daily-summary): an empty answer, so no card. */
 const dailyTurn = { match: `^${MOCK_SIDEKICK_MARKS.daily}`, steps: [...claudeTextLines(""), result] };
+/** Sidekick's place turn (sidekick spec §2a.5): a short plain-text answer. */
+const placeTurn = { match: `^${MOCK_SIDEKICK_MARKS.place}`, steps: [...claudeTextLines("Nothing needs your attention."), result] };
 
 /** Claude where Sidekick's pre-send turn suggests a rewrite; every other turn answers "Listo." (sidekick spec §4.1). */
 export const sidekickScript: ClaudeScript = {
@@ -156,11 +158,12 @@ export const sidekickScript: ClaudeScript = {
     phaseTurn,
     dailyTurn,
     approveTurn,
+    placeTurn,
   ],
 };
 
 /** Sidekick's turn never answers in time: the prompt goes as typed after the wait. */
 export const slowSidekickScript: ClaudeScript = {
   steps: [...claudeTextLines("Listo."), result],
-  turns: [{ match: `^${MOCK_SIDEKICK_MARKS.pre}`, steps: [{ sleep: 15_000 }] }, afterReplyTurn, learnTurn, routeTurn, phaseTurn, dailyTurn, approveTurn],
+  turns: [{ match: `^${MOCK_SIDEKICK_MARKS.pre}`, steps: [{ sleep: 15_000 }] }, afterReplyTurn, learnTurn, routeTurn, phaseTurn, dailyTurn, approveTurn, placeTurn],
 };

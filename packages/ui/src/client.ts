@@ -924,6 +924,12 @@ export interface HarnessClient {
     beforeApprove(doc: { title: string; text: string }): Promise<SidekickApproveCheck>;
     /** The approval was answered or withdrawn: a running before-approve check stops (its answer is `approve`). */
     cancelApprove(): Promise<void>;
+    /**
+     * For a harness UI with places (spec §2a.5): asks the sidekick on for `place` (a manifest place id) about `content`
+     * (at most 4,000 characters). A short plain-text answer and who gave it, never a card; `{ ok: false }` when Sidekick
+     * is off, no sidekick answers there, or anything fails. The harness shows the answer in its place.
+     */
+    ask(place: string, content: string): Promise<SidekickPlaceAnswer>;
     onChange(listener: (state: SidekickState) => void): () => void;
   };
   /** The harness's setup steps (setup-steps spec). A harness with none answers no steps and refuses every change. */
@@ -1099,4 +1105,6 @@ export interface SidekickState {
 export type SidekickReview = { kind: "send" } | { kind: "card"; card: SidekickCard } | { kind: "timeout" } | { kind: "error" } | { kind: "cancelled" };
 /** What the document-review flow does before approving (spec §2a.2): approve, or show the card next to Approve. */
 export type SidekickApproveCheck = { kind: "approve" } | { kind: "card"; card: SidekickCard };
+/** A harness place's answer (spec §2a.5, plan Decision 13): free text, at most 600 characters. */
+export type SidekickPlaceAnswer = { ok: true; text: string; speaker: SidekickInfo } | { ok: false };
 export type SidekickOutcome = "used" | "edited" | "sent-anyway" | "dismissed";

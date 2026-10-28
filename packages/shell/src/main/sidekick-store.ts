@@ -46,7 +46,7 @@ export interface SidekickScope {
  * the default one's, whose folder, muted kinds and scope records a new sidekick must not inherit, and `settings` is
  * the settings record's (all record types share one id space, and a put replaces by id).
  */
-const RESERVED_IDS: ReadonlySet<string> = new Set(["learn", "route", "daily", DEFAULT_SIDEKICK.id, SIDEKICK_SETTINGS_ID]);
+const RESERVED_IDS: ReadonlySet<string> = new Set(["learn", "route", "daily", "place", DEFAULT_SIDEKICK.id, SIDEKICK_SETTINGS_ID]);
 
 /** A name's id: accents dropped, `-` between words; `k-` before it when it would look like a scope (`s-`) or learned (`l-`) id. */
 const slug = (name: string) => {

@@ -12,7 +12,7 @@ const profile = { engine: "claude", tier: "light" as const, model: "haiku", effo
 const json = (o: unknown) => JSON.stringify(o);
 const SUGGEST = json({ verdict: "suggest", issues: [{ kind: "vague", text: "Say what better means." }], rewrite: "Make the intro shorter.", confidence: 0.8 });
 
-export function harness(o: { record?: Partial<SidekickRecord> | null; answers?: (string | ((signal: AbortSignal) => Promise<SidekickAnswer>))[]; task?: { id: string; action?: string; scope: string; phase?: string } | null; usage?: UsageRecord[]; manifest?: SidekickDeps["manifest"]; waitMs?: number; events?: SidekickEvent[]; phases?: { id: string; label: string; brief?: string }[]; phaseBriefs?: Record<string, string | Error>; extra?: Partial<SidekickRecord>[]; learnMs?: number; routeMs?: number; spent?: number; dailyInput?: DailyInput; dailyMs?: number } = {}) {
+export function harness(o: { record?: Partial<SidekickRecord> | null; answers?: (string | ((signal: AbortSignal) => Promise<SidekickAnswer>))[]; task?: { id: string; action?: string; scope: string; phase?: string } | null; usage?: UsageRecord[]; manifest?: SidekickDeps["manifest"]; waitMs?: number; events?: SidekickEvent[]; phases?: { id: string; label: string; brief?: string }[]; phaseBriefs?: Record<string, string | Error>; extra?: Partial<SidekickRecord>[]; learnMs?: number; routeMs?: number; spent?: number; dailyInput?: DailyInput; dailyMs?: number; placeMs?: number } = {}) {
   // The `sidekick` collection by id; `record()` is the settings record.
   const records = new Map<string, Partial<SidekickRecord>>([...(o.record ? [o.record] : []), ...(o.extra ?? [])].map((r) => [r.id ?? "settings", r]));
   const writes: { op: string; record?: Partial<SidekickRecord>; key?: string }[] = [];
@@ -108,6 +108,7 @@ export function harness(o: { record?: Partial<SidekickRecord> | null; answers?: 
     ...(o.routeMs !== undefined ? { routeMs: o.routeMs } : {}),
     dailyInput: async (_b, day) => (days.push(day), o.dailyInput ?? { day, notes: [], tokens: { tasks: 0, sidekick: 0 }, open: [] }),
     ...(o.dailyMs !== undefined ? { dailyMs: o.dailyMs } : {}),
+    ...(o.placeMs !== undefined ? { placeMs: o.placeMs } : {}),
   };
   return { ctl: new SidekickController(deps), deps, asked, opened, sessions, closed, logged, briefs, states, setTask: (t: typeof task) => (task = t), events,
     writes,
@@ -1739,5 +1740,125 @@ describe("before approve (spec §2a.2, Decision 10)", () => {
     first({ ok: true, text: json({ missing: ["Old"] }) });
     expect(await now).toMatchObject({ kind: "card", card: { guard: { missing: ["Risks"] } } });
     expect((await h.ctl.state()).cards).toHaveLength(1);
+  });
+});
+
+describe("places (spec §2a.5, Decision 13)", () => {
+  const WATCH = { id: "watch", type: "sidekick" as const, name: "Watch", mark: "👀", personality: "", purposes: [{ id: "custom" as const, text: "Explain terminal output.", moments: ["place:terminal" as const] }], order: 1 };
+  const manifest = { default: "off" as const, places: [{ id: "terminal", label: "Terminal", description: "Agent output." }] };
+  const NO = { ok: false };
+
+  it("a sidekick with that place answers in free text, in a one-off session closed right after", async () => {
+    const h = harness({ record: on, extra: [WATCH], manifest, answers: ["That error means the port is busy."] });
+    expect(await h.ctl.ask("terminal", "EADDRINUSE :3000")).toEqual({ ok: true, text: "That error means the port is busy.", speaker: { id: "watch", name: "Watch", mark: "👀" } });
+    expect(h.logged.at(-1)).toMatchObject({ moment: "place:terminal", sidekick: "watch", task: "t1" });
+    expect(h.sessions).toEqual(["place"]);
+    expect(h.closed).toEqual(h.opened);
+    expect(h.asked[0]?.startsWith("Sidekick: place")).toBe(true);
+    expect(h.asked[0]).toContain("<content>\nEADDRINUSE :3000\n</content>");
+    // Never a card: the harness shows the answer in its place.
+    expect((await h.ctl.state()).cards).toEqual([]);
+    expect(h.events).toEqual([]);
+  });
+
+  it("unknown place, no sidekick there, off in the scope, not in the scope's places, Sidekick off: not ok, no turn", async () => {
+    const hs = [
+      harness({ record: on, extra: [WATCH], manifest }),
+      harness({ record: on, manifest }),
+      harness({ record: on, extra: [WATCH, { id: "s-main-watch", type: "scope", scope: "main", sidekick: "watch", on: false }], manifest }),
+      harness({ record: on, extra: [WATCH, { id: "s-main-watch", type: "scope", scope: "main", sidekick: "watch", on: true, places: ["browser"] }], manifest }),
+      harness({ extra: [WATCH], manifest }),
+    ];
+    const rs = await Promise.all([hs[0]!.ctl.ask("nope", "x"), ...hs.slice(1).map((h) => h.ctl.ask("terminal", "x"))]);
+    for (const r of rs) expect(r).toEqual(NO);
+    for (const h of hs) expect(h.asked).toEqual([]);
+  });
+
+  it("a scope record whose places name it keeps it", async () => {
+    const h = harness({ record: on, extra: [WATCH, { id: "s-main-watch", type: "scope", scope: "main", sidekick: "watch", on: true, places: ["terminal"] }], manifest, answers: ["Fine."] });
+    expect(await h.ctl.ask("terminal", "x")).toMatchObject({ ok: true, text: "Fine." });
+  });
+
+  it("D0: a manifest without places, or Sidekick off: not ok at once, no turn, no event, no write", async () => {
+    for (const h of [harness({ record: on, extra: [WATCH] }), harness({ extra: [WATCH], manifest })]) {
+      expect(await h.ctl.ask("terminal", "x")).toEqual(NO);
+      expect(h.asked).toEqual([]);
+      expect(h.opened).toEqual([]);
+      expect(h.briefs).toEqual([]);
+      expect(h.logged).toEqual([]);
+      expect(h.events).toEqual([]);
+      expect(h.writes).toEqual([]);
+      expect(h.states).toEqual([]);
+    }
+  });
+
+  it("answers are cut to 600 characters; an empty or failed one is not ok", async () => {
+    const h = harness({ record: on, extra: [WATCH], manifest, answers: ["x".repeat(900), "   ", async () => ({ ok: false, text: "" })] });
+    const r = await h.ctl.ask("terminal", "y");
+    expect(r.ok && r.text.length).toBe(600);
+    expect(await h.ctl.ask("terminal", "y")).toEqual(NO);
+    expect(await h.ctl.ask("terminal", "y")).toEqual(NO);
+  });
+
+  it("past the cap: not ok, no turn", async () => {
+    const h = harness({ record: { ...on, cap: 20_000 as const }, spent: 20_000, extra: [WATCH], manifest });
+    expect(await h.ctl.ask("terminal", "x")).toEqual(NO);
+    expect(h.asked).toEqual([]);
+  });
+
+  it("the prompt carries the open phase's brief text (never its path) and the scope purpose", async () => {
+    const h = harness({
+      record: on,
+      extra: [WATCH, { id: "s-main-watch", type: "scope", scope: "main", sidekick: "watch", on: true, purposeText: "Mind the\nports." }],
+      task: { id: "t1", action: "feature", scope: "main", phase: "build" },
+      phases: [{ id: "build", label: "Build", brief: "phases/build.md" }],
+      phaseBriefs: { build: "Make it run." },
+      manifest,
+      answers: ["Ok."],
+    });
+    await h.ctl.ask("terminal", "x");
+    expect(h.asked[0]).toContain("Place: Terminal — Agent output.");
+    expect(h.asked[0]).toContain("Open phase: Build — Make it run.");
+    expect(h.asked[0]).not.toContain("phases/build.md");
+    expect(h.asked[0]).toContain("Scope purpose: Mind the ports.");
+  });
+
+  it("the place session's brief never carries what Sidekick learned (the harness reads the answer)", async () => {
+    const h = harness({ record: on, extra: [WATCH, { id: "l-1", type: "learned", level: "you", text: "Prefers Rust", source: "learned", updatedAt: "2026-10-01T00:00:00.000Z" }], manifest, answers: ["Ok."] });
+    await h.ctl.ask("terminal", "x");
+    expect(h.briefs).toHaveLength(1);
+    expect(h.briefs[0]).not.toContain("Prefers Rust");
+    expect(h.briefs[0]).toContain("Watch");
+  });
+
+  it("no task open: the app scope, no task on the usage line", async () => {
+    const h = harness({ record: on, extra: [WATCH], manifest, task: null, answers: ["Ok."] });
+    expect(await h.ctl.ask("terminal", "x")).toMatchObject({ ok: true });
+    expect(h.logged.at(-1)).toMatchObject({ moment: "place:terminal" });
+    expect(h.logged.at(-1)?.task).toBeUndefined();
+  });
+
+  it("a hung turn ends at placeMs: not ok", async () => {
+    const h = harness({ record: on, extra: [WATCH], manifest, placeMs: 30, answers: [(signal) => new Promise<SidekickAnswer>((r) => signal.addEventListener("abort", () => r({ ok: false, text: "" })))] });
+    expect(await h.ctl.ask("terminal", "x")).toEqual(NO);
+    expect(h.closed).toEqual(h.opened);
+  });
+
+  it("turning off, a refresh with Sidekick off, closing, or a newer ask in the same place: not ok, the answer dropped", async () => {
+    const stops = [
+      (h: ReturnType<typeof harness>) => h.ctl.set({ on: false }),
+      (h: ReturnType<typeof harness>) => (h.setRecord({ ...on, on: false }), h.ctl.refresh()),
+      (h: ReturnType<typeof harness>) => h.ctl.close(),
+      (h: ReturnType<typeof harness>) => void h.ctl.ask("terminal", "newer"),
+    ];
+    for (const stop of stops) {
+      let answer!: (a: SidekickAnswer) => void;
+      const h = harness({ record: on, extra: [WATCH], manifest, answers: [() => new Promise<SidekickAnswer>((r) => (answer = r)), "Newer."] });
+      const run = h.ctl.ask("terminal", "x");
+      await vi.waitFor(() => expect(h.asked).toHaveLength(1));
+      await stop(h);
+      answer({ ok: true, text: "Late." });
+      expect(await run).toEqual(NO);
+    }
   });
 });

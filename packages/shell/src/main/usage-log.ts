@@ -39,6 +39,9 @@ export interface UsageMeta extends ProfileFields {
 }
 
 /** One turn in `<folder>/.harness/usage.jsonl`. Only what the engine reported; never leaves the machine. */
+/** A Sidekick usage line's moment (sidekick spec §8); `place:<id>` is a harness place's turn (§2a.5). */
+export type SidekickUsageMoment = "pre" | "after" | "learn" | "route" | "phase-change" | "daily" | "before-approve" | `place:${string}`;
+
 export interface UsageRecord extends ProfileFields {
   at: string;
   engine: string;
@@ -58,7 +61,7 @@ export interface UsageRecord extends ProfileFields {
   fragments?: number;
   /** Sidekick lines only (sidekick spec §8): the process, the moment and which sidekick spoke. */
   process?: "sidekick";
-  moment?: "pre" | "after" | "learn" | "route" | "phase-change" | "daily" | "before-approve";
+  moment?: SidekickUsageMoment;
   sidekick?: string;
   /** `checkpoint`: the quiet turn that saves a note before the cap; `compaction`: the engine compacted (no usage). */
   kind?: "checkpoint" | "compaction";
@@ -165,7 +168,7 @@ export function materialRecord(
 
 /** One Sidekick turn (sidekick spec §8): `phase: "sidekick"` (a turn kind), `process`, `moment` and `sidekick`. */
 export function sidekickRecord(
-  o: { engine: string; task?: string; scope?: string; action?: string; sidekick: string; moment: "pre" | "after" | "learn" | "route" | "phase-change" | "daily" | "before-approve"; profile: ModelProfile; ok: boolean; usage?: TurnUsage; limits?: LimitWindow[] },
+  o: { engine: string; task?: string; scope?: string; action?: string; sidekick: string; moment: SidekickUsageMoment; profile: ModelProfile; ok: boolean; usage?: TurnUsage; limits?: LimitWindow[] },
   at: string = new Date().toISOString(),
 ): UsageRecord {
   return {

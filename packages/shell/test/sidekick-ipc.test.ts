@@ -149,3 +149,49 @@ describe("sidekick IPC: before approve", () => {
     await approveWire(false).call("hh:sidekickApproveCancel");
   });
 });
+
+describe("sidekick IPC: places", () => {
+  function askWire(available = true) {
+    const handlers = new Map<string, (...args: never[]) => unknown>();
+    const calls: unknown[][] = [];
+    const ctl = { ask: async (place: unknown, content: unknown) => (calls.push([place, content]), { ok: true, text: "Busy port.", speaker: { id: "watch", name: "Watch", mark: "👀" } }) };
+    registerSidekickIpc(
+      (ch, fn) => void handlers.set(ch, fn),
+      () => (available ? (ctl as never) : null),
+    );
+    const call = (ch: string, ...args: unknown[]) => (handlers.get(ch) as (...a: unknown[]) => unknown)(...args);
+    return { call, calls };
+  }
+
+  it("hh:sidekickAsk passes a valid place and text through", async () => {
+    const w = askWire();
+    expect(await w.call("hh:sidekickAsk", "terminal", "EADDRINUSE")).toEqual({ ok: true, text: "Busy port.", speaker: { id: "watch", name: "Watch", mark: "👀" } });
+    expect(await w.call("hh:sidekickAsk", "t", "x".repeat(4000))).toMatchObject({ ok: true });
+    expect(w.calls).toEqual([["terminal", "EADDRINUSE"], ["t", "x".repeat(4000)]]);
+  });
+
+  it("hh:sidekickAsk answers not ok to bad input, without reaching the controller", async () => {
+    const w = askWire();
+    const bad: unknown[][] = [
+      ["Terminal", "x"],
+      ["1term", "x"],
+      ["t".repeat(65), "x"],
+      ["__proto__", "x"],
+      [7, "x"],
+      ["terminal", ""],
+      ["terminal", "   "],
+      ["terminal", "x".repeat(4001)],
+      ["terminal", { text: "x" }],
+      ["terminal"],
+    ];
+    for (const args of bad) expect(await w.call("hh:sidekickAsk", ...args)).toEqual({ ok: false });
+    expect(w.calls).toEqual([]);
+    expect(await askWire(false).call("hh:sidekickAsk", "terminal", "x")).toEqual({ ok: false });
+  });
+
+  it("a controller failure is not ok", async () => {
+    const handlers = new Map<string, (...args: never[]) => unknown>();
+    registerSidekickIpc((ch, fn) => void handlers.set(ch, fn), () => ({ ask: async () => Promise.reject(new Error("boom")) }) as never);
+    expect(await (handlers.get("hh:sidekickAsk") as (...a: unknown[]) => unknown)("terminal", "x")).toEqual({ ok: false });
+  });
+});

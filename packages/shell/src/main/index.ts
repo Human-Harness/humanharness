@@ -124,7 +124,7 @@ import { SecretStore } from "./plugin-secrets";
 import { PLUGIN_STATE_DIR } from "./plugin-state";
 import { type BoardHost, createBoardHost, hostMode } from "./board-host";
 import { type AttentionStores, attentionStores } from "./attention-stores";
-import { TaskAttention } from "./task-attention";
+import { keepNotification, TaskAttention } from "./task-attention";
 import { cleanCaps, engineHold, parallelInfo } from "./parallel-config";
 import { restoreTaskByPaths } from "./restore-paths";
 import { restoreTaskArgs, tasksIpc, undoRefusalOf } from "./tasks-ipc";
@@ -233,6 +233,8 @@ const boardHost = (): BoardHost | null => host;
 let sharedAttention: AttentionStores | null = null;
 /** Board mode only: waiting tasks' items, the Dock badge and the optional notification. */
 let taskAttention: TaskAttention | null = null;
+/** Waiting-task notifications on screen: held so their click isn't collected with them. */
+const notifications = new Set<Notification>();
 /** The plugins inbox's badge as last sent: board mode's Dock badge adds it. */
 let pluginBadge = 0;
 /** `<appDir>/plugin-state`, with pluginsCtl: a folder move carries each base's approvals there to the new key. */
@@ -1301,7 +1303,7 @@ function buildTaskAttention(): TaskAttention {
     badge: (n) => app.dock?.setBadge(n > 0 ? String(n) : ""),
     notify: ({ title, body }, id) => {
       if (!Notification.isSupported()) return;
-      const n = new Notification({ title, body });
+      const n = keepNotification(new Notification({ title, body }), notifications);
       n.on("click", () => {
         if (window && !window.isDestroyed()) {
           if (window.isMinimized()) window.restore();

@@ -2,7 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type { TaskSummary } from "@humanharness/ui/client";
-import { TaskAttention, type TaskAttentionDeps, WAITING_BODY } from "../src/main/task-attention";
+import { EventEmitter } from "node:events";
+import { keepNotification, TaskAttention, type TaskAttentionDeps, WAITING_BODY } from "../src/main/task-attention";
 
 function fakeStore() {
   const items = new Map<string, { title: string }>();
@@ -194,6 +195,27 @@ describe("TaskAttention (parallel spec §9.2, Decision 10, P4)", () => {
   it("the notification body is the window's parallel.waitingBody in English", () => {
     const en = JSON.parse(fs.readFileSync(path.resolve(__dirname, "../../i18n/src/locales/en.json"), "utf8")) as { parallel: Record<string, string> };
     expect(en.parallel.waitingBody).toBe(WAITING_BODY);
+  });
+});
+
+describe("keepNotification: a shown notification stays referenced until clicked or closed", () => {
+  it("is held until its click, close or failure, and at most `max` are held (oldest let go)", () => {
+    const kept = new Set<EventEmitter>();
+    const a = keepNotification(new EventEmitter(), kept);
+    const b = keepNotification(new EventEmitter(), kept);
+    const c = keepNotification(new EventEmitter(), kept);
+    expect(kept.size).toBe(3);
+    a.emit("click");
+    b.emit("close");
+    c.emit("failed", "no permission");
+    expect(kept.size).toBe(0);
+    const many = Array.from({ length: 5 }, () => keepNotification(new EventEmitter(), kept, 3));
+    expect([...kept]).toEqual(many.slice(2));
+  });
+
+  it("index.ts holds the waiting task's notification through it", () => {
+    const index = fs.readFileSync(path.resolve(__dirname, "../src/main/index.ts"), "utf8");
+    expect(index).toMatch(/const n = keepNotification\(new Notification\(\{ title, body \}\), notifications\);/);
   });
 });
 

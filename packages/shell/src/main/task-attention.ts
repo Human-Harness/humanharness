@@ -108,3 +108,20 @@ export class TaskAttention {
 function titleOf(t: TaskSummary): string {
   return t.label.slice(0, ATTENTION_LIMITS.titleChars).trim() || "Task";
 }
+
+/**
+ * Electron can collect a Notification nothing references, and its click goes with it: each one stays in `kept` until
+ * it is clicked, closed or failed. At most `max` are held; the oldest is let go first.
+ */
+export function keepNotification<N extends { once(event: "click" | "close" | "failed", fn: () => void): unknown }>(n: N, kept: Set<N>, max = 20): N {
+  kept.add(n);
+  const done = () => void kept.delete(n);
+  n.once("click", done);
+  n.once("close", done);
+  n.once("failed", done);
+  for (const old of kept) {
+    if (kept.size <= max) break;
+    kept.delete(old);
+  }
+  return n;
+}

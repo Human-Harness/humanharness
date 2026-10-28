@@ -213,7 +213,7 @@ describe("Sidekick on free-text answers (sidekick spec §4.1)", () => {
   const TEXT: InputSpec = { fields: [{ name: "why", kind: "longText", label: "Why?", optional: false }] };
   const CHOICE: InputSpec = { fields: [{ name: "pick", kind: "choice", label: "Pick", optional: false, options: ["a", "b"] }] };
   type Review = NonNullable<Parameters<typeof InputForm>[0]["review"]>;
-  function textForm(over: { spec?: InputSpec; review?: Review; cancelReview?: () => void; skip?: () => void } = {}) {
+  function textForm(over: { spec?: InputSpec; review?: Review; cancelReview?: () => void; skip?: () => void; reviewWait?: number | "always" } = {}) {
     const submit = vi.fn();
     const el = (
       <InputForm
@@ -226,6 +226,7 @@ describe("Sidekick on free-text answers (sidekick spec §4.1)", () => {
         {...(over.skip ? { skip: over.skip } : {})}
         {...(over.review ? { review: over.review } : {})}
         {...(over.cancelReview ? { cancelReview: over.cancelReview } : {})}
+        {...(over.reviewWait !== undefined ? { reviewWait: over.reviewWait } : {})}
       />
     );
     return { submit, el };
@@ -267,9 +268,134 @@ describe("Sidekick on free-text answers (sidekick spec §4.1)", () => {
     answer("make it better");
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
     await waitFor(() => expect(hold).toBeDefined());
-    act(() => hold!.anyway());
+    let went = false;
+    act(() => void (went = hold!.anyway()));
+    expect(went).toBe(true);
     expect(submit).toHaveBeenCalledWith({ why: "make it better" });
     expect(review).toHaveBeenCalledTimes(1);
+  });
+
+  it("a hold outlives no form: once the form is gone, Send anyway sends nothing and says so", async () => {
+    let hold: Parameters<Review>[1] | undefined;
+    const review = vi.fn<Review>(async (_text, h) => {
+      hold = h;
+      return { kind: "card" };
+    });
+    const { submit, el } = textForm({ review });
+    const { unmount } = await renderIn("en", el);
+    answer("make it better");
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => expect(hold).toBeDefined());
+    unmount();
+    expect(hold!.anyway()).toBe(false);
+    expect(submit).not.toHaveBeenCalled();
+  });
+
+  it("gone mid-review: the review stops and nothing is submitted, even when its answer comes later", async () => {
+    let answerReview: (v: { kind: "send" }) => void = () => undefined;
+    const review = vi.fn<Review>(() => new Promise((r) => (answerReview = r)));
+    const cancelReview = vi.fn();
+    const { submit, el } = textForm({ review, cancelReview });
+    const { unmount } = await renderIn("en", el);
+    answer("ok");
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await screen.findByRole("button", { name: "Reviewing…" });
+    unmount();
+    expect(cancelReview).toHaveBeenCalledTimes(1);
+    await act(async () => answerReview({ kind: "send" }));
+    expect(submit).not.toHaveBeenCalled();
+  });
+
+  it("Skip mid-review stops the review and skips; the answer isn't sent", async () => {
+    let answerReview: (v: { kind: "send" }) => void = () => undefined;
+    const review = vi.fn<Review>(() => new Promise((r) => (answerReview = r)));
+    const cancelReview = vi.fn();
+    const skip = vi.fn();
+    const { submit, el } = textForm({ review, cancelReview, skip });
+    await renderIn("en", el);
+    answer("ok");
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await screen.findByRole("button", { name: "Reviewing…" });
+    fireEvent.click(screen.getByRole("button", { name: "Skip this question" }));
+    expect(cancelReview).toHaveBeenCalledTimes(1);
+    expect(skip).toHaveBeenCalledTimes(1);
+    await act(async () => answerReview({ kind: "send" }));
+    expect(submit).not.toHaveBeenCalled();
+  });
+
+  it("Skip on a held answer drops its card, and the hold sends nothing after", async () => {
+    let hold: Parameters<Review>[1] | undefined;
+    const drop = vi.fn();
+    const review = vi.fn<Review>(async (_text, h) => {
+      hold = h;
+      return { kind: "card", drop };
+    });
+    const cancelReview = vi.fn();
+    const skip = vi.fn();
+    const { submit, el } = textForm({ review, cancelReview, skip });
+    await renderIn("en", el);
+    answer("make it better");
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => expect(hold).toBeDefined());
+    await waitFor(() => expect(screen.getByRole("button", { name: "Send" }).getAttribute("aria-disabled")).toBeNull());
+    fireEvent.click(screen.getByRole("button", { name: "Skip this question" }));
+    expect(drop).toHaveBeenCalledTimes(1);
+    expect(skip).toHaveBeenCalledTimes(1);
+    // No review of its own ran: a composer review in main is left alone.
+    expect(cancelReview).not.toHaveBeenCalled();
+    expect(hold!.anyway()).toBe(false);
+    expect(submit).not.toHaveBeenCalled();
+  });
+
+  it("without a review of its own, going and Skip leave a composer review alone", async () => {
+    const review = vi.fn<Review>(async () => ({ kind: "card" }));
+    const cancelReview = vi.fn();
+    const skip = vi.fn();
+    const { el } = textForm({ review, cancelReview, skip });
+    const { unmount } = await renderIn("en", el);
+    answer("ok");
+    fireEvent.click(screen.getByRole("button", { name: "Skip this question" }));
+    unmount();
+    expect(skip).toHaveBeenCalledTimes(1);
+    expect(cancelReview).not.toHaveBeenCalled();
+    expect(review).not.toHaveBeenCalled();
+  });
+
+  it("the hold's focus goes to the first text field, never a pairs cell before it", async () => {
+    const spec: InputSpec = {
+      fields: [
+        { name: "pairs", kind: "pairs", label: "Pairs", optional: true, columns: [{ name: "a", label: "A" }, { name: "b", label: "B" }] },
+        { name: "why", kind: "longText", label: "Why?", optional: false },
+      ],
+    };
+    let hold: Parameters<Review>[1] | undefined;
+    const review = vi.fn<Review>(async (_text, h) => {
+      hold = h;
+      return { kind: "card" };
+    });
+    const { el } = textForm({ spec, review });
+    await renderIn("en", el);
+    answer("make it better");
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => expect(hold).toBeDefined());
+    act(() => hold!.focus());
+    expect(document.activeElement).toBe(screen.getByLabelText("Why?"));
+  });
+
+  it("while it reviews, the form shows the countdown (or the long wait)", async () => {
+    for (const [reviewWait, text] of [
+      [10, /Sends anyway in (10|9) s/],
+      ["always", /Waiting for Sidekick/],
+    ] as const) {
+      const review = vi.fn<Review>(() => new Promise(() => undefined));
+      const { el } = textForm({ review, reviewWait });
+      await renderIn("en", el);
+      answer("ok");
+      fireEvent.click(screen.getByRole("button", { name: "Send" }));
+      expect(await screen.findByText(text)).toBeTruthy();
+      expect(screen.queryByText(/sends now/)).toBeNull();
+      cleanup();
+    }
   });
 
   it("while it reviews: one review only, and Send now stops it and submits", async () => {

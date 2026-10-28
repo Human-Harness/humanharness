@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { HarnessApp } from "../src";
-import type { InputSpec, SidekickCard } from "../src/client";
+import type { InputSpec, SidekickCard, SidekickReview } from "../src/client";
 import { pruneDrafts } from "../src/InputForm";
 import { FakeClient } from "./fake-client";
 import { SK_ON } from "./sidekick-fixtures";
@@ -143,5 +143,52 @@ describe("Sidekick on a block answer (sidekick spec §4.1)", () => {
     expect(composer.value).toBe("I had two halves, so more.");
     expect(c.sent).toEqual([]);
     expect(c.responded).toEqual([]);
+  });
+  it("a card that comes after Send now is about an answer that went: it leaves as sent anyway", async () => {
+    const c = quizClient(true);
+    let answerReview: (r: SidekickReview) => void = () => undefined;
+    c.sidekick.review = async (req) => {
+      c.sidekickCalls.push(["review", req]);
+      return new Promise<SidekickReview>((r) => (answerReview = r));
+    };
+    await open(c);
+    answer("make it better");
+    fireEvent.click(await screen.findByRole("button", { name: "Send now" }));
+    await waitFor(() => expect(c.responded).toHaveLength(1));
+    await act(async () => answerReview({ kind: "card", card: CARD }));
+    await waitFor(() => expect(c.sidekickCalls).toContainEqual(["resolve", "c1", "sent-anyway"]));
+  });
+
+  it("Skip on a held answer: the card leaves as dismissed", async () => {
+    const c = quizClient(true);
+    c.state.inputs = { commit_answer: { ...SPEC, skippable: true } };
+    c.sidekickReviews = [{ kind: "card", card: CARD }];
+    await open(c);
+    answer("make it better");
+    act(() => c.emitSidekick({ ...SK_ON, status: "suggestion", card: CARD }));
+    await screen.findByRole("button", { name: "Send anyway" });
+    await waitFor(() => expect(screen.getByRole("button", { name: "I commit" }).getAttribute("aria-disabled")).toBeNull());
+    fireEvent.click(screen.getByRole("button", { name: "Skip this question" }));
+    await waitFor(() => expect(c.responded).toEqual([{ blockId: "t1:0:0", value: { skipped: true } }]));
+    expect(c.sidekickCalls).toContainEqual(["resolve", "c1", "dismissed"]);
+    expect(c.sidekickCalls).not.toContainEqual(["cancel"]);
+  });
+
+  it("Send now on the answer leaves alone a composer review that started since", async () => {
+    const c = quizClient(true);
+    c.sidekick.review = async (req) => {
+      c.sidekickCalls.push(["review", req]);
+      return new Promise<SidekickReview>(() => undefined);
+    };
+    await open(c);
+    answer("make it better");
+    const sendNow = await screen.findByRole("button", { name: "Send now" });
+    const composer = screen.getAllByRole("textbox").find((el) => el.tagName === "TEXTAREA" && !el.closest("form.hh-input-form")) as HTMLTextAreaElement;
+    fireEvent.change(composer, { target: { value: "and another thing" } });
+    fireEvent.click(screen.getByRole("button", { name: "Review" }));
+    await waitFor(() => expect(c.sidekickCalls.filter((x) => x[0] === "review")).toHaveLength(2));
+    fireEvent.click(sendNow);
+    await waitFor(() => expect(c.responded).toHaveLength(1));
+    expect(c.sidekickCalls).not.toContainEqual(["cancel"]);
   });
 });

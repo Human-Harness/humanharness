@@ -2,6 +2,7 @@ import { type ChangeEvent, type FormEvent, type ReactNode, useEffect, useId, use
 import { useTranslation } from "react-i18next";
 import type { BlockAnswer, InputField, InputIssue, InputSpec } from "./client";
 import { type Draft, answerRows, draftOf, draftValue, emptyDraft, isSkipped, optionLabel, optionsOf } from "./input";
+import { ReviewHint } from "./sidekick/ReviewHint";
 
 /** Drafts by block id: they survive the chat being drawn again (Home, Settings), not a restart (spec §11.2). */
 const drafts = new Map<string, Draft>();
@@ -35,17 +36,23 @@ export interface InputFormProps {
   skip?: () => void;
   /**
    * Sidekick's pre-send review of the answer's free text (sidekick spec §4.1), absent with Sidekick off (D0). A card
-   * holds the answer: the form stays as it is and `hold.anyway` (the card's "Send anyway") sends it unreviewed.
+   * holds the answer: the form stays as it is and `hold.anyway` (the card's "Send anyway") sends it unreviewed. Skip
+   * calls the card's `drop`: the card leaves with the answer.
    */
-  review?: (text: string, hold: AnswerHold) => Promise<{ kind: "send" } | { kind: "card" }>;
+  review?: (text: string, hold: AnswerHold) => Promise<{ kind: "send" } | { kind: "card"; drop?: () => void }>;
   /** "Send now" while the review runs: stops the review this form started. */
   cancelReview?: () => void;
+  /** The person's longest wait for a review (Sidekick settings): the form shows its countdown. */
+  reviewWait?: number | "always";
 }
 
 /** What a held answer's card can do with the form. */
 export interface AnswerHold {
-  /** Sends the form as it is now, without another review. */
-  anyway(): void;
+  /**
+   * Sends the form as it is now, without another review. False when nothing went: the form is gone (another task,
+   * a skip) or can't send now; the card then stays.
+   */
+  anyway(): boolean;
   /** Moves focus to the answer's first text field. */
   focus(): void;
 }
@@ -62,14 +69,18 @@ function freeText(spec: InputSpec, value: Record<string, unknown>): string {
 const ofField = (e: InputIssue, name: string) => e.path === name || e.path.startsWith(`${name}.`);
 
 /** The core form of an input block (input-blocks spec §5): a labelled control per field, errors next to each. */
-export function InputForm({ spec, data, blockId, initial, formId, disabled, sending, errors, submit, skip, review, cancelReview }: InputFormProps) {
+export function InputForm({ spec, data, blockId, initial, formId, disabled, sending, errors, submit, skip, review, cancelReview, reviewWait }: InputFormProps) {
   const { t } = useTranslation();
   const base = useId();
   const box = useRef<HTMLFormElement>(null);
   /** A review in flight: a second Send starts no second one, and a late answer (after Send now) is dropped. */
-  const [reviewing, setReviewing] = useState(false);
+  const [reviewing, setReviewing] = useState<{ until: number | null } | null>(null);
   const reviewSeq = useRef(0);
   const running = useRef(false);
+  /** False once the form is gone: a hold it gave out sends nothing (a remounted form has a draft of its own). */
+  const alive = useRef(true);
+  /** The hold a card has now: Skip closes it and drops its card. */
+  const held = useRef<{ close(): void; drop?: () => void } | null>(null);
   const [draft, setDraft] = useState<Draft>(() => (blockId ? drafts.get(blockId) : undefined) ?? (initial ? draftOf(spec, initial) : emptyDraft(spec)));
   const change = (name: string, v: unknown) =>
     setDraft((d) => {
@@ -80,8 +91,10 @@ export function InputForm({ spec, data, blockId, initial, formId, disabled, send
   const general = errors.filter((e) => !spec.fields.some((f) => ofField(e, f.name)) && e.message);
   const hasFieldErrors = errors.some((e) => spec.fields.some((f) => ofField(e, f.name)));
   const unsupported = spec.fields.some((f) => f.kind === null);
-  const send = () => {
-    if (!disabled && !sending && !unsupported) submit(draftValue(spec, draft));
+  const send = (): boolean => {
+    if (disabled || sending || unsupported) return false;
+    submit(draftValue(spec, draft));
+    return true;
   };
   // The hold outlives this render: it sends whatever the form holds when the card's button is pressed.
   const latest = useRef(send);
@@ -91,19 +104,24 @@ export function InputForm({ spec, data, blockId, initial, formId, disabled, send
   const stopReview = () => {
     reviewSeq.current++;
     running.current = false;
-    setReviewing(false);
+    setReviewing(null);
     latestCancel.current?.();
   };
   // A form gone while its review runs (the question closed, the task changed) stops that review.
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
       if (running.current) {
+        running.current = false;
         reviewSeq.current++;
         latestCancel.current?.();
       }
-    },
-    [],
-  );
+    };
+  }, []);
+  /** The first text or long-text field: Edit on the card moves focus there (never a pairs cell). */
+  const textField = spec.fields.find((f) => f.kind === "text" || f.kind === "longText");
+  const textId = textField ? `${base}-${textField.name}` : null;
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (running.current || disabled || sending || unsupported) return;
@@ -116,17 +134,28 @@ export function InputForm({ spec, data, blockId, initial, formId, disabled, send
     }
     const seq = ++reviewSeq.current;
     running.current = true;
-    setReviewing(true);
+    setReviewing({ until: reviewWait === undefined || reviewWait === "always" ? null : Date.now() + reviewWait * 1000 });
+    let open = true;
     const hold: AnswerHold = {
-      anyway: () => latest.current(),
-      focus: () => box.current?.querySelector<HTMLElement>("input[type=text], textarea")?.focus(),
+      anyway: () => {
+        if (!open || !alive.current || !latest.current()) return false;
+        open = false;
+        return true;
+      },
+      focus: () => {
+        if (alive.current && textId) document.getElementById(textId)?.focus();
+      },
     };
     // Any failure sends the answer: Sidekick never stands in its way beyond the person's wait.
     const r = await review(text, hold).catch(() => ({ kind: "send" }) as const);
     if (seq !== reviewSeq.current) return;
     running.current = false;
-    setReviewing(false);
-    if (r.kind !== "card") latest.current();
+    setReviewing(null);
+    if (r.kind !== "card") {
+      latest.current();
+      return;
+    }
+    held.current = { close: () => (open = false), ...(r.drop ? { drop: r.drop } : {}) };
   };
   const sendNow = () => {
     if (!running.current) return;
@@ -166,6 +195,7 @@ export function InputForm({ spec, data, blockId, initial, formId, disabled, send
               {t("sidekick.answer.sendNow")}
             </button>
           )}
+          {reviewing && reviewWait !== undefined && <ReviewHint until={reviewing.until} />}
           {skip && (
             <button
               type="button"
@@ -173,6 +203,11 @@ export function InputForm({ spec, data, blockId, initial, formId, disabled, send
               disabled={disabled || sending}
               onClick={() => {
                 if (running.current) stopReview();
+                // A held answer's card leaves with it: nothing it says is about an answer that goes now.
+                const h = held.current;
+                held.current = null;
+                h?.close();
+                h?.drop?.();
                 skip();
               }}
             >

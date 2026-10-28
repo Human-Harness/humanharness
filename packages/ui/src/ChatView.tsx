@@ -40,6 +40,7 @@ import { actionPhases, phaseModesOf } from "./phases";
 import { RecommendModeBlock } from "./RecommendModeBlock";
 import { FlaggedText } from "./sidekick/FlaggedText";
 import { FirstOpenOffer } from "./sidekick/PresetOffer";
+import { ReviewHint } from "./sidekick/ReviewHint";
 import { SidekickPanel, SidekickRail, waitingCards } from "./sidekick/SidekickPanel";
 import { useNarrow } from "./sidekick/useNarrow";
 import { useSidekick } from "./sidekick/useSidekick";
@@ -792,7 +793,7 @@ export function ChatView({
    * text sent again while its card waits goes as is (the card leaves as sent anyway); a composer review in flight
    * goes first, so the answer is never held behind it.
    */
-  const reviewAnswer = async (text: string, hold: AnswerHold): Promise<{ kind: "send" } | { kind: "card" }> => {
+  const reviewAnswer = async (text: string, hold: AnswerHold): Promise<{ kind: "send" } | { kind: "card"; drop: () => void }> => {
     const held = answerHold.current;
     const card = sidekick?.card;
     if (held && card?.id === held.cardId && card.prompt === text) {
@@ -806,12 +807,23 @@ export function ChatView({
     answerRun.current = { seq, composerSeq };
     const r: SidekickReview = await client.sidekick.review({ text, block: true }).catch(() => ({ kind: "error" }) as const);
     if (answerRun.current?.seq === seq) answerRun.current = null;
-    // Stopped by Send now (the form already sent), or replaced by a composer review in main.
-    if (seq !== answerSeq.current || composerSeq !== reviewSeq.current || r.kind !== "card") return { kind: "send" };
-    answerHold.current = { cardId: r.card.id, hold };
+    // Stopped by Send now (the form already sent), or replaced by a composer review in main: a card that came anyway
+    // is about an answer that went, and leaves as sent anyway.
+    if (seq !== answerSeq.current || composerSeq !== reviewSeq.current || r.kind !== "card") {
+      if (r.kind === "card") void client.sidekick.resolve(r.card.id, "sent-anyway").catch(() => undefined);
+      return { kind: "send" };
+    }
+    const cardId = r.card.id;
+    answerHold.current = { cardId, hold };
     setSkOpen(true);
     setSkView("sidekick");
-    return { kind: "card" };
+    // Skip on the held answer: the card leaves with it.
+    const drop = () => {
+      if (answerHold.current?.cardId !== cardId) return;
+      answerHold.current = null;
+      void client.sidekick.resolve(cardId, "dismissed").catch(() => undefined);
+    };
+    return { kind: "card", drop };
   };
   /** Send now on the answer form: stops its review in main, never a composer review that started since. */
   const cancelAnswerReview = () => {
@@ -835,7 +847,7 @@ export function ChatView({
         ready: tasks.current?.status === "waiting" && !blocked() && !pending,
         respond: respondTo,
         // D0: without Sidekick (or with the review off) the form sends as before.
-        ...(reviewOn ? { review: reviewAnswer, cancelReview: cancelAnswerReview } : {}),
+        ...(reviewOn && sidekick ? { review: reviewAnswer, cancelReview: cancelAnswerReview, reviewWait: sidekick.settings.wait } : {}),
       }
     : undefined;
   const blockActions = (active: boolean, task?: string, entryId: string | null = null): BlockActions => ({
@@ -1455,7 +1467,12 @@ export function ChatView({
               onSendAnyway={(card) => {
                 // A block answer's card sends its form as it is, unreviewed.
                 if (card.block) {
-                  heldBy(card)?.anyway();
+                  const held = answerHold.current;
+                  if (held?.cardId === card.id) {
+                    // The form it held is gone (another task) or can't send now: nothing went, the card stays.
+                    if (!held.hold.anyway()) return;
+                    answerHold.current = null;
+                  }
                   resolveCard(card, "sent-anyway");
                   return;
                 }
@@ -1511,18 +1528,3 @@ function cardSpans(card: SidekickCard): [number, number][] {
 /** "⌘" on macOS, "Ctrl" elsewhere: the key that sends at once. */
 const SEND_KEY = typeof navigator !== "undefined" && /Mac/.test(navigator.userAgent) ? "⌘" : "Ctrl";
 
-/** "Sends anyway in N s · ⌘⏎ sends now": the countdown's text equivalent (sidekick spec §7 accessibility). */
-function ReviewHint({ until, sendKey }: { until: number | null; sendKey: string }) {
-  const { t } = useTranslation();
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 250);
-    return () => clearInterval(id);
-  }, []);
-  const left = until === null ? null : Math.max(0, Math.ceil((until - now) / 1000));
-  return (
-    <p className="hh-sk-composer-hint">
-      {left === null ? t("sidekick.composer.waitingLong") : t("sidekick.composer.countdown", { seconds: left })} · {t("sidekick.sendNow", { key: sendKey })}
-    </p>
-  );
-}

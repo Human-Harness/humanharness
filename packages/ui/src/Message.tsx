@@ -50,6 +50,7 @@ export interface InputContext {
   /** Sidekick's review of a free-text answer in the core form (sidekick spec §4.1); absent with Sidekick off (D0). */
   review?: InputFormProps["review"];
   cancelReview?: () => void;
+  reviewWait?: InputFormProps["reviewWait"];
 }
 
 export interface BlockProps {

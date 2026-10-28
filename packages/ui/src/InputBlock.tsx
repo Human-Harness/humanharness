@@ -71,6 +71,7 @@ export function InputHost({
           input={input}
           {...(inputs.review ? { review: inputs.review } : {})}
           {...(inputs.cancelReview ? { cancelReview: inputs.cancelReview } : {})}
+          {...(inputs.reviewWait !== undefined ? { reviewWait: inputs.reviewWait } : {})}
         />
       )}
     </div>
@@ -78,7 +79,13 @@ export function InputHost({
 }
 
 /** The core view of an input block: its question, then the form, the answer, or "closed". */
-export function CoreInputBlock({ data, input, review, cancelReview }: { data: unknown; input: InputProps } & Pick<InputFormProps, "review" | "cancelReview">) {
+export function CoreInputBlock({
+  data,
+  input,
+  review,
+  cancelReview,
+  reviewWait,
+}: { data: unknown; input: InputProps } & Pick<InputFormProps, "review" | "cancelReview" | "reviewWait">) {
   const { t } = useTranslation();
   const heading = headingOf(data);
   return (
@@ -98,6 +105,7 @@ export function CoreInputBlock({ data, input, review, cancelReview }: { data: un
           {...(input.skip ? { skip: input.skip } : {})}
           {...(review ? { review } : {})}
           {...(cancelReview ? { cancelReview } : {})}
+          {...(reviewWait !== undefined ? { reviewWait } : {})}
         />
       ) : (
         <p className="hh-caption">{t("input.closed")}</p>

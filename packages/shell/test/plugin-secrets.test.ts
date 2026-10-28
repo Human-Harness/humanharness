@@ -58,13 +58,17 @@ describe("SecretStore (plugins spec §7 keys, D5, B6)", () => {
     expect(await s.values("oncall", ["../../x"])).toEqual({});
   });
 
-  it("refuses to store when the computer can't encrypt", async () => {
-    const s = new SecretStore(path.join(await tmp(), "s"), { ...crypto, available: () => false });
+  it("refuses to store when the computer can't encrypt, and creates nothing", async () => {
+    const root = await tmp();
+    const s = new SecretStore(path.join(root, "s"), { ...crypto, available: () => false });
     expect(await s.set("oncall", "jira", "tok-123456789")).toEqual({ ok: false, message: "This computer can't encrypt keys for this app" });
+    await expect(fs.access(path.join(root, "s"))).rejects.toThrow();
+    expect(await fs.readdir(root)).toEqual([]);
   });
 
-  it("an encryption failure is a refusal that never carries the value", async () => {
-    const s = new SecretStore(path.join(await tmp(), "s"), {
+  it("an encryption failure is a refusal that never carries the value, and creates nothing", async () => {
+    const root = await tmp();
+    const s = new SecretStore(path.join(root, "s"), {
       ...crypto,
       encrypt: (t: string) => {
         throw new Error(`boom ${t}`);
@@ -74,6 +78,7 @@ describe("SecretStore (plugins spec §7 keys, D5, B6)", () => {
     const r = await s.set("oncall", "jira", "tok-123456789");
     expect(r).toEqual({ ok: false, message: "This computer can't encrypt keys for this app" });
     expect(JSON.stringify(warn.mock.calls)).not.toContain("tok-123456789");
+    await expect(fs.access(path.join(root, "s"))).rejects.toThrow();
     warn.mockRestore();
   });
 
@@ -96,6 +101,73 @@ describe("SecretStore (plugins spec §7 keys, D5, B6)", () => {
     expect(await s.stored("a")).toEqual([]);
     await expect(fs.access(path.join(dir, "a"))).rejects.toThrow();
     expect(await s.stored("b")).toEqual(["x"]);
+  });
+
+  it("deleteAll also removes the temp files a crashed write left", async () => {
+    const dir = path.join(await tmp(), "s");
+    const s = new SecretStore(dir, crypto);
+    await s.set("a", "x", "tok-123456789");
+    await fs.writeFile(path.join(dir, "a", ".x.bin.0b9a3f4e-6c1d-4e2a-9f8b-7a6c5d4e3f21.tmp"), "half");
+    await fs.writeFile(path.join(dir, "a", ".gone.bin.1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f.tmp"), "half");
+    expect(await s.stored("a")).toEqual(["x"]);
+    await s.deleteAll("a");
+    await expect(fs.access(path.join(dir, "a"))).rejects.toThrow();
+  });
+
+  it("a key folder that can't be looked at reads as no keys (logged), and nothing rejects", async () => {
+    if (process.getuid?.() === 0) return; // root reads through 0000
+    const dir = path.join(await tmp(), "s");
+    const s = new SecretStore(dir, crypto);
+    await s.set("a", "x", "tok-123456789");
+    await fs.chmod(dir, 0o000);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      expect(await s.stored("a")).toEqual([]);
+      expect(await s.values("a", ["x"])).toEqual({});
+      await s.delete("a", "x");
+      await s.deleteAll("a");
+      expect(warn).toHaveBeenCalled();
+      expect(JSON.stringify(warn.mock.calls)).not.toContain("tok-123456789");
+    } finally {
+      await fs.chmod(dir, 0o700);
+      warn.mockRestore();
+    }
+    expect(await s.values("a", ["x"])).toEqual({ x: "tok-123456789" });
+  });
+
+  it("refuses a hard-linked key file", async () => {
+    const root = await tmp();
+    const dir = path.join(root, "s");
+    const s = new SecretStore(dir, crypto);
+    await s.set("a", "x", "tok-123456789");
+    await fs.link(path.join(dir, "a", "x.bin"), path.join(root, "copy.bin"));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    expect(await s.values("a", ["x"])).toEqual({});
+    expect(JSON.stringify(warn.mock.calls)).toContain("hard-linked");
+    warn.mockRestore();
+    await fs.rm(path.join(root, "copy.bin"));
+    expect(await s.values("a", ["x"])).toEqual({ x: "tok-123456789" });
+  });
+
+  it("refuses a key file over 64 KB", async () => {
+    const dir = path.join(await tmp(), "s");
+    const s = new SecretStore(dir, crypto);
+    await s.set("a", "x", "tok-123456789");
+    await s.set("a", "y", "tok-987654321");
+    // A valid encryption padded past the cap: the size alone refuses it, before decrypting.
+    const big = Buffer.concat([crypto.encrypt("tok-123456789"), Buffer.alloc(64 * 1024 + 1 - crypto.encrypt("tok-123456789").length, 0x30)]);
+    await fs.writeFile(path.join(dir, "a", "x.bin"), big);
+    const exact = Buffer.alloc(64 * 1024, 0x30);
+    await fs.writeFile(path.join(dir, "a", "y.bin"), exact);
+    const decrypt = vi.fn(crypto.decrypt);
+    const watched = new SecretStore(dir, { ...crypto, decrypt });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    expect(await watched.values("a", ["x", "y"])).toEqual({});
+    expect(JSON.stringify(warn.mock.calls)).toContain("too large");
+    // Only the file at the cap reached decrypt.
+    expect(decrypt).toHaveBeenCalledTimes(1);
+    expect(decrypt.mock.calls[0][0].length).toBe(64 * 1024);
+    warn.mockRestore();
   });
 
   it("values returns only the ids asked for, of that plugin only", async () => {

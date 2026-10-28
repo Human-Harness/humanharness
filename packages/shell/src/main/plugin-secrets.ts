@@ -20,6 +20,8 @@ const CANT_ENCRYPT = "This computer can't encrypt keys for this app";
 const CONTROL = /[\u0000-\u001f\u007f]/;
 const NOFOLLOW = constants.O_NOFOLLOW ?? 0;
 const NONBLOCK = constants.O_NONBLOCK ?? 0;
+/** A temp file `writeAtomic` left behind (a crash between open and rename): `.<id>.bin.<uuid>.tmp`. */
+const LEFTOVER = /^\.([a-z0-9_-]+)\.bin\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.tmp$/;
 
 /**
  * The plugins' keys (plugins spec §7, D5), per harness: `<dir>/<plugin>/<secret>.bin`, each encrypted with Electron
@@ -78,11 +80,19 @@ export class SecretStore {
     await removePlain(path.join(folder, `${id}.bin`));
   }
 
-  /** Every key of `plugin` and its folder (Remove). A link in its place is left alone (logged), never followed. */
+  /**
+   * Every key of `plugin`, any temp file a crashed write left, and its folder (Remove). A link in its place is left
+   * alone (logged), never followed.
+   */
   async deleteAll(plugin: string): Promise<void> {
     const folder = await this.folder(plugin, false);
     if (folder === null) return;
     for (const id of await this.stored(plugin)) await removePlain(path.join(folder, `${id}.bin`));
+    const entries = await fs.readdir(folder).catch(() => [] as string[]);
+    for (const name of entries) {
+      const m = LEFTOVER.exec(name);
+      if (m !== null && PLUGIN_LOCAL_ID.test(m[1])) await removePlain(path.join(folder, name));
+    }
     await fs.rmdir(folder).catch((err: NodeJS.ErrnoException) => {
       if (err.code !== "ENOENT") console.warn(`[plugins] ${plugin}: key folder not removed (${err.code ?? err.message})`);
     });
@@ -113,7 +123,8 @@ export class SecretStore {
 
   /**
    * `<dir>/<plugin>`, each level a real folder (not a link) with mode 0700; with `create`, made when missing. Null when
-   * missing (and not created), when the id is bad, or when a level is a link or not a folder (logged).
+   * missing (and not created), when the id is bad, when a level is a link or not a folder, or when it can't be looked
+   * at (EACCES and the like; logged): reads see no keys rather than reject. With `create` those last cases throw.
    */
   private async folder(plugin: string, create: boolean): Promise<string | null> {
     if (typeof plugin !== "string" || !PLUGIN_ID.test(plugin)) return null;
@@ -121,8 +132,11 @@ export class SecretStore {
     for (const at of [this.dir, folder]) {
       let st = await fs.lstat(at).catch((err: NodeJS.ErrnoException) => {
         if (err.code === "ENOENT") return null;
-        throw err;
+        if (create) throw err;
+        console.warn(`[plugins] ${plugin}: ${at} can't be read (${err.code ?? err.message}); no keys`);
+        return "unreadable" as const;
       });
+      if (st === "unreadable") return null;
       if (st === null) {
         if (!create) return null;
         await fs.mkdir(at, { recursive: at === this.dir, mode: 0o700 }).catch((err: NodeJS.ErrnoException) => {

@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, linkSync, mkdirSync, mkdtempSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, linkSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { IMPORT_MAX_BYTES, IMPORT_MAX_FILES, type ImportIo, ImportTooBig, importFileIo, importHash, joinImportFiles, readImportFiles, refusedPath, sourceTagKey } from "../src/main/sidekick-import";
 
@@ -294,9 +294,16 @@ describe("sourceTagKey", () => {
       if (process.platform !== "win32") expect(statSync(file).mode & 0o777).toBe(0o600);
       expect(await sourceTagKey(file, false)).toEqual(made);
       expect(await sourceTagKey(file, true)).toEqual(made);
-      // A file of another size is no key, and never overwritten.
+      if (process.platform !== "win32") expect(statSync(dirname(file)).mode & 0o777).toBe(0o700);
+      expect(readdirSync(dirname(file))).toEqual(["source-key"]);
+      // A file of another size (a crash mid-write before this fix) is no key; `create` replaces it whole.
       writeFileSync(file, "short");
-      expect(await sourceTagKey(file, true)).toBeNull();
+      expect(await sourceTagKey(file, false)).toBeNull();
+      const again = await sourceTagKey(file, true);
+      expect(again).toHaveLength(32);
+      expect(again).not.toEqual(made);
+      expect(await sourceTagKey(file, false)).toEqual(again);
+      expect(readdirSync(dirname(file))).toEqual(["source-key"]);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

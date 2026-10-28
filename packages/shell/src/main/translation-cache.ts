@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { promises as fs } from "node:fs";
+import { constants, promises as fs } from "node:fs";
 import path from "node:path";
 import { type Language, offeredLanguage } from "@humanharness/harness-sdk/language";
 import { type TranslateItem, type Translated, checkTranslation, isLegalKey, pluralForms } from "@humanharness/i18n/translate";
@@ -60,50 +60,68 @@ export class TranslationCache {
       .slice(0, 50);
   }
 
-  /**
-   * The cache of `tag`, shape-checked; anything missing, too big, malformed or written for another tag reads as empty.
-   * With `english` (the current items), an entry is kept only when its hash matches that English and the
-   * translation passes `checkTranslation` again: callers that show or reuse entries must pass it.
-   */
-  async load(tag: Language, english?: readonly TranslateItem[]): Promise<CacheFile> {
-    const out = emptyCache(tag);
-    let text: string;
+  /** The file's text: a regular file only (never through a symlink), at most MAX_BYTES read; else undefined. */
+  private async read(tag: Language): Promise<string | undefined> {
+    let handle: fs.FileHandle | undefined;
     try {
-      const file = this.file(tag);
-      const stat = await fs.stat(file);
-      if (!stat.isFile() || stat.size > MAX_BYTES) return out;
-      text = await fs.readFile(file, "utf8");
+      handle = await fs.open(this.file(tag), constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+      if (!(await handle.stat()).isFile()) return undefined;
+      const buf = Buffer.alloc(MAX_BYTES + 1);
+      let size = 0;
+      for (;;) {
+        const { bytesRead } = await handle.read(buf, size, buf.length - size, null);
+        if (bytesRead === 0) break;
+        size += bytesRead;
+        if (size > MAX_BYTES) return undefined;
+      }
+      return buf.subarray(0, size).toString("utf8");
     } catch {
-      return out;
+      return undefined;
+    } finally {
+      await handle?.close().catch(() => undefined);
     }
-    if (text.length > MAX_BYTES) return out;
+  }
+
+  /**
+   * The cache of `tag`, checked against `english` (the current items) on every load (spec §6): an entry is kept
+   * only when its key is safe, its hash matches that English and the translation passes `checkTranslation` again;
+   * a failure counts only for the English it failed on. Anything missing, too big, malformed, of another version
+   * or written for another tag reads as empty. A save after a load therefore drops keys the current English no
+   * longer has; that is fine, since one userData belongs to one harness.
+   */
+  async load(tag: Language, english: readonly TranslateItem[]): Promise<CacheFile> {
+    const out = emptyCache(tag);
+    const text = await this.read(tag);
+    if (text === undefined) return out;
     let raw: unknown;
     try {
       raw = JSON.parse(text);
     } catch {
       return out;
     }
-    if (!isRecord(raw) || raw.tag !== tag) return out;
-    const items = english ? new Map(english.map((i) => [i.key, i])) : undefined;
+    if (!isRecord(raw) || raw.version !== 1 || raw.tag !== tag) return out;
+    const items = new Map(english.map((i) => [i.key, i]));
     const forms = pluralForms(tag);
     for (const [k, v] of ownEntries(raw.entries)) {
       if (!safeKey(k) || !isRecord(v) || !isHash(v.en)) continue;
       const value = v.value;
       if (!((typeof value === "string" && value.length <= 4000) || isForms(value))) continue;
-      if (items) {
-        const item = items.get(k);
-        if (!item || item.hash !== v.en) continue;
-        const checked = checkTranslation(item, value, forms);
-        if (checked.ok) out.entries[k] = { en: v.en, value: checked.value };
-      } else out.entries[k] = { en: v.en, value: typeof value === "string" ? value : { ...value } };
+      const item = items.get(k);
+      if (!item || item.hash !== v.en) continue;
+      const checked = checkTranslation(item, value, forms);
+      if (checked.ok) out.entries[k] = { en: v.en, value: checked.value };
     }
     for (const [k, v] of ownEntries(raw.failed)) {
-      if (safeKey(k) && isRecord(v) && isHash(v.en) && Number.isInteger(v.count) && (v.count as number) > 0) out.failed[k] = { en: v.en, count: Math.min(2, v.count as number) };
+      if (!safeKey(k) || !isRecord(v) || !isHash(v.en) || items.get(k)?.hash !== v.en) continue;
+      if (Number.isInteger(v.count) && (v.count as number) > 0) out.failed[k] = { en: v.en, count: Math.min(2, v.count as number) };
     }
     return out;
   }
 
-  /** Writes the whole file (temp + rename), one save after another. A file `load` would refuse is never written. */
+  /**
+   * Writes the whole file (temp + rename), one save after another. Only the size and tag are checked here: the
+   * caller saves keys it has already checked, and `load` checks everything again anyway.
+   */
   save(file: CacheFile): Promise<void> {
     const run = this.queue.then(async () => {
       const target = this.file(file.tag);

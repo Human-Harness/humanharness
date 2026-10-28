@@ -263,4 +263,22 @@ describe("Settings › General's parallel caps (part 2), saved twice before a re
     release();
     await waitFor(() => expect(c.state.config.parallel).toEqual({ tasks: 3, jobs: 2 }));
   });
+
+  it("a failed cap save says so, and its value is not carried into the next change", async () => {
+    const c = new FakeClient(ready);
+    c.state.parallel = { caps: { tasks: 2, jobs: 1 }, suggested: { tasks: 2, jobs: 1 }, inbox: true, notifyWaiting: false };
+    const save = c.saveConfig.bind(c);
+    let fail = true;
+    vi.spyOn(c, "saveConfig").mockImplementation(async (patch) => {
+      if (fail) throw new Error("disk full");
+      return save(patch);
+    });
+    await renderIn("en", <Sheet c={c} tab="general" />);
+    fireEvent.change(screen.getByLabelText("Tasks at once"), { target: { value: "3" } });
+    expect(await screen.findByRole("alert")).toHaveProperty("textContent", "Couldn't save the change.");
+    fail = false;
+    fireEvent.change(screen.getByLabelText("Jobs at once"), { target: { value: "2" } });
+    await waitFor(() => expect(c.state.config.parallel).toEqual({ jobs: 2 }));
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+  });
 });

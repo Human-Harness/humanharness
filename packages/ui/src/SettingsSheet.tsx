@@ -249,7 +249,9 @@ function GeneralTab({ client, state, onChange, move }: { client: HarnessClient; 
     if (lost && toggleRef.current?.isConnected) toggleRef.current.focus();
   }, [move.moved]);
   const lang = state.config.language ?? systemLanguage();
-  const save = (patch: AppConfig) => client.saveConfig(patch).then(onChange, () => {});
+  /** Rejects when the save fails (ParallelSection says so); `save` swallows it. */
+  const saveOrFail = (patch: AppConfig) => client.saveConfig(patch).then(onChange);
+  const save = (patch: AppConfig) => saveOrFail(patch).catch(() => {});
   const appearances: { value: Appearance; label: string }[] = [
     { value: "system", label: t("settings.appearanceSystem") },
     { value: "light", label: t("settings.appearanceLight") },
@@ -321,7 +323,7 @@ function GeneralTab({ client, state, onChange, move }: { client: HarnessClient; 
         )}
       </div>
       {state.config.folder && <p className="hh-caption">{t("settings.folderFixed")}</p>}
-      {state.parallel && <ParallelSection state={state} save={save} />}
+      {state.parallel && <ParallelSection state={state} save={saveOrFail} />}
       {state.profiles && <ProfilesSection client={client} state={state} onChange={onChange} />}
       <BackupNotice client={client} state={state} onChange={onChange} move={move} />
 
@@ -355,6 +357,13 @@ const CAP_CHOICES = Array.from({ length: PARALLEL_MAX }, (_, i) => i + 1);
 function ParallelSection({ state, save }: { state: AppState; save: (patch: AppConfig) => Promise<unknown> }) {
   const { t } = useTranslation();
   const id = useId();
+  // A failed save says so (as Settings › Jobs does) and rejects inside `latest.save`, so its value is dropped.
+  const [saveFailed, setSaveFailed] = useState(false);
+  const said = (saving: Promise<unknown>) =>
+    void saving.then(
+      () => setSaveFailed(false),
+      () => setSaveFailed(true),
+    );
   const info = state.parallel!;
   const held = info.heldReason === "engine";
   const engine = state.engines.find((e) => e.id === state.config.engineId)?.name ?? state.config.engineId ?? "";
@@ -370,7 +379,7 @@ function ParallelSection({ state, save }: { state: AppState; save: (patch: AppCo
         value={info.caps[key]}
         disabled={held}
         aria-describedby={held ? `${id}-held` : undefined}
-        onChange={(e) => void latest.save({ ...latest.get(), [key]: Number(e.target.value) }, (parallel) => save({ parallel }))}
+        onChange={(e) => said(latest.save({ ...latest.get(), [key]: Number(e.target.value) }, (parallel) => save({ parallel })))}
       >
         {CAP_CHOICES.map((n) => (
           <option key={n} value={n}>
@@ -393,10 +402,11 @@ function ParallelSection({ state, save }: { state: AppState; save: (patch: AppCo
         )}
         <div className="hh-row">
           <label>
-            <input type="checkbox" checked={info.notifyWaiting} onChange={(e) => void save({ notifyWaiting: e.target.checked })} /> {t("parallel.notifyWaiting")}
+            <input type="checkbox" checked={info.notifyWaiting} onChange={(e) => said(save({ notifyWaiting: e.target.checked }))} /> {t("parallel.notifyWaiting")}
           </label>
         </div>
       </div>
+      {saveFailed && <p role="alert">{t("parallel.saveFailed")}</p>}
     </>
   );
 }

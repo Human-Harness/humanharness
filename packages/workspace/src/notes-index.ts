@@ -16,6 +16,8 @@ export interface IndexOptions {
   decisionsHeading?: string;
   /** The closing line; null leaves it out. Default "Open a note with your read tool when you need its details." */
   footer?: string | null;
+  /** Note paths the person excluded (context-panel spec §4.3): left out before anything else. Absent or empty: none (D0). */
+  exclude?: ReadonlySet<string>;
 }
 
 const FOOTER = "Open a note with your read tool when you need its details.";
@@ -61,7 +63,9 @@ function renderIndex(sorted: Note[], shape: Shape, o: IndexOptions): string {
  * then their decisions; if that is still too long the oldest are left out, and as a last resort the
  * newest note's title is cut. Empty when there are no notes.
  */
-export function buildNotesIndex(notes: Note[], opts: IndexOptions = {}): string {
+export function buildNotesIndex(all: Note[], opts: IndexOptions = {}): string {
+  const exclude = opts.exclude;
+  const notes = exclude && exclude.size > 0 ? all.filter((n) => !exclude.has(n.path)) : all;
   if (notes.length === 0) return "";
   const budget = opts.budgetTokens ?? INDEX_BUDGET_TOKENS;
   const sorted = [...notes].sort((a, b) => b.date.localeCompare(a.date));

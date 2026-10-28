@@ -1,4 +1,6 @@
-# Document Review and Focus Mode Implementation Plan
+# Document Review and Focus Mode Implementation Plan (plan 15)
+
+Plan 15 on the roadmap (plan 11 is the Sidekick). The Task 0 commit on `feat/doc-review` calls it "plan 11"; that commit stays as it is.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -182,7 +184,7 @@ Copy this file to `<worktree>/docs/superpowers/plans/2026-10-28-document-review-
 
 ```bash
 git -C <worktree> add docs/superpowers/specs/2026-10-27-document-review-and-focus-design.md docs/superpowers/plans/2026-10-28-document-review-and-focus.md
-git -C <worktree> commit -m "docs(plan): document review and focus mode (plan 11)"
+git -C <worktree> commit -m "docs(plan): document review and focus mode (plan 15)"
 ```
 
 ---

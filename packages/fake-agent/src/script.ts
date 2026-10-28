@@ -24,7 +24,9 @@ export type ClaudeStep =
   /** Writes `raw` to stdout verbatim (no newline added). */
   | { raw: string }
   /** Kills the fake-claude process with this signal. */
-  | { signal: NodeJS.Signals };
+  | { signal: NodeJS.Signals }
+  /** Answers a translation turn (spec §9): reads the prompt's `<batch>` and calls `save_translation` with a pseudo-translation. */
+  | { pseudoTranslate: { prefix?: string; server?: string; breakKeys?: string[] } };
 
 /** Script for fake-claude: printed lines, side effects, then exit. */
 export interface ClaudeScript {

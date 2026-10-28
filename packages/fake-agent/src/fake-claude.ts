@@ -6,6 +6,7 @@ import { spawn } from "node:child_process";
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { callMcpTool } from "./mcp-call";
+import { pseudoTranslate } from "./pseudo";
 import type { ClaudeScript } from "./script";
 
 const argv = process.argv.slice(2);
@@ -61,6 +62,12 @@ if (process.env.HH_FAKE_MOCK_DIR && process.env.HH_FAKE_MOCK_STATE) {
     } else if ("write" in step) {
       mkdirSync(path.dirname(path.resolve(step.write.path)), { recursive: true });
       writeFileSync(path.resolve(step.write.path), step.write.content);
+    } else if ("pseudoTranslate" in step) {
+      const name = step.pseudoTranslate.server ?? "translate";
+      const s = mcpConfig.mcpServers[name];
+      if (!s) throw new Error(`fake-claude: pseudoTranslate names unknown server "${name}"`);
+      const strings = pseudoTranslate(input, step.pseudoTranslate.prefix, step.pseudoTranslate.breakKeys);
+      await callMcpTool({ command: s.command, args: s.args ?? [], env: s.env ?? {} }, "save_translation", { strings });
     } else if ("mcp" in step) {
       const s = mcpConfig.mcpServers[step.mcp.server];
       if (!s) throw new Error(`fake-claude: mcp step names unknown server "${step.mcp.server}" (configured: ${Object.keys(mcpConfig.mcpServers).join(", ") || "none"})`);

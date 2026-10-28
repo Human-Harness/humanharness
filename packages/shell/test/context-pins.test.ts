@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { PIN_INLINE_MAX_BYTES, saveContext } from "@humanharness/workspace";
-import { checkPinPath, pinShapeOk, pinnedContext } from "../src/main/context-pins";
+import { checkPinPath, pinShapeOk, pinnedContext, pinnedText, pinsOf } from "../src/main/context-pins";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-pins-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -100,6 +100,28 @@ describe("pinnedContext (§4.2, §6)", () => {
     const ctx = await pinnedContext(base, ["main"], 1_000_000);
     expect(ctx.items[0].kind).toBe("pinned-title");
     expect(ctx.pinned).toContain("- Big → big.log");
+  });
+
+  it("a pin that grew after the layout measured it enters as its title: the budget is never overrun", async () => {
+    const base = folder({ "conv.md": "# Conventions\nUse pnpm." });
+    await saveContext(base, "main", { version: 1, pinned: [{ path: "conv.md", at: AT }], excluded: [] });
+    const layout = await pinsOf(base, ["main"], 3000);
+    expect(layout[0].state).toBe("full");
+    fs.appendFileSync(path.join(base, "conv.md"), "z".repeat(100_000));
+    const got = await pinnedText(base, layout);
+    expect(got.items.map((i) => i.kind)).toEqual(["pinned-title"]);
+    expect(got.pinned).toContain("- Conventions → conv.md");
+    expect(got.pinned).not.toContain("zzz");
+  });
+
+  it("a pin read whole is never longer than the size the layout measured", async () => {
+    const base = folder({ "conv.md": "Use pnpm." });
+    await saveContext(base, "main", { version: 1, pinned: [{ path: "conv.md", at: AT }], excluded: [] });
+    const layout = await pinsOf(base, ["main"], 3000);
+    fs.writeFileSync(path.join(base, "conv.md"), "Use npm!!");
+    const got = await pinnedText(base, layout);
+    expect(got.items.map((i) => i.kind)).toEqual(["pinned"]);
+    expect(got.pinned).toContain("Use npm!!");
   });
 
   it("D0: no file, nothing at all", async () => {

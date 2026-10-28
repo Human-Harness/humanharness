@@ -184,13 +184,18 @@ const ITEM_ID_MAX = 1100;
 const isCount = (v: unknown): v is number => typeof v === "number" && Number.isInteger(v) && v >= 0;
 const isTokens = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v) && v >= 0;
 const isRel = (v: unknown): v is string => typeof v === "string" && !refusedShape(v);
-const isTime = (v: unknown): v is string => typeof v === "string" && Number.isFinite(Date.parse(v));
+/** An ISO time; bounded, as anything else read from the hand-editable file. */
+const isTime = (v: unknown): v is string => typeof v === "string" && v.length <= 40 && Number.isFinite(Date.parse(v));
 
-/** One start item (context-panel spec §3.1); a wrong kind, size or path drops it, a wrong optional field drops that field. */
+/**
+ * One start item (context-panel spec §3.1); a wrong kind, size, label or path drops it, a wrong optional field drops
+ * that field. A pin without its path or scope is dropped too: its actions need both.
+ */
 function cleanItem(raw: unknown): ContextItem | null {
   if (!isObject(raw) || typeof raw.id !== "string" || !raw.id || raw.id.length > ITEM_ID_MAX || !ITEM_KINDS.includes(raw.kind as string)) return null;
-  if (typeof raw.label !== "string" || !isTokens(raw.tokens)) return null;
+  if (typeof raw.label !== "string" || !raw.label || !isTokens(raw.tokens)) return null;
   if (raw.path !== undefined && !isRel(raw.path)) return null;
+  if ((raw.kind === "pinned" || raw.kind === "pinned-title") && (raw.path === undefined || !isScopeDir(raw.scope))) return null;
   const notes = Array.isArray(raw.notes)
     ? raw.notes
         .filter((n): n is { path: string; title: string } => isObject(n) && isRel(n.path) && typeof n.title === "string")

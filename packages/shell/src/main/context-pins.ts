@@ -81,12 +81,16 @@ export async function pinsOf(base: string, scopes: readonly string[], budget: nu
   return pinsLayout(facts, budget);
 }
 
-/** A whole pin's text, checked and read again right before it enters (no links, at most 1 MB); null when it can't be now. */
-async function wholeText(base: string, rel: string): Promise<string | null> {
+/**
+ * A whole pin's text, checked and read again right before it enters (no links), at most the `max` bytes the layout
+ * measured. `"grew"` when the file is bigger now (it would overrun the budget); null when it can't be read now.
+ */
+async function wholeText(base: string, rel: string, max: number): Promise<string | "grew" | null> {
   const check = await checkPinPath(base, rel, { text: true });
   if (!check.ok) return null;
-  const got = await readCapped(check.file, PIN_INLINE_MAX_BYTES, () => stillSafe(check.file, [base]));
-  return got && "bytes" in got ? got.bytes.toString("utf8") : null;
+  const got = await readCapped(check.file, Math.min(max, PIN_INLINE_MAX_BYTES), () => stillSafe(check.file, [base]));
+  if (!got) return null;
+  return "bytes" in got ? got.bytes.toString("utf8") : "grew";
 }
 
 async function titleText(base: string, rel: string): Promise<string | null> {
@@ -104,18 +108,32 @@ async function titleText(base: string, rel: string): Promise<string | null> {
 export async function pinnedContext(base: string, scopes: readonly string[], budget: number): Promise<PersonContext> {
   const excluded = new Set<string>();
   for (const scope of scopes) for (const e of (await loadContext(base, scope)).excluded) excluded.add(e.note);
+  return { ...(await pinnedText(base, await pinsOf(base, scopes, budget))), excluded };
+}
+
+/**
+ * The pinned section and its items for a layout `pinsOf` gave. A whole pin is read up to the size the layout measured
+ * (its `tokens` × 4 bytes): a file that grew since enters as title only, so the budget is never overrun.
+ */
+export async function pinnedText(base: string, layout: readonly PinLayout[]): Promise<Omit<PersonContext, "excluded">> {
   const blocks: string[] = [];
   const titles: string[] = [];
   const items: ContextItem[] = [];
-  for (const pin of await pinsOf(base, scopes, budget)) {
+  for (const pin of layout) {
     const id = `pin:${pin.scope}:${pin.path}`;
-    if (pin.state === "full") {
-      const text = await wholeText(base, pin.path);
+    let state = pin.state;
+    if (state === "full") {
+      const text = await wholeText(base, pin.path, pin.tokens * 4);
       if (text === null) continue;
-      const block = pinBlock(pin.path, text);
-      blocks.push(block);
-      items.push({ id, kind: "pinned", label: `Pinned · ${pin.path}`, path: pin.path, tokens: approxTokens(block.length), scope: pin.scope });
-    } else if (pin.state === "title") {
+      if (text === "grew") state = "title";
+      else {
+        const block = pinBlock(pin.path, text);
+        blocks.push(block);
+        items.push({ id, kind: "pinned", label: `Pinned · ${pin.path}`, path: pin.path, tokens: approxTokens(block.length), scope: pin.scope });
+        continue;
+      }
+    }
+    if (state === "title") {
       const head = await titleText(base, pin.path);
       if (head === null) continue;
       const line = pinTitleLine(titleOf(head, pin.path), pin.path);
@@ -123,5 +141,5 @@ export async function pinnedContext(base: string, scopes: readonly string[], bud
       items.push({ id, kind: "pinned-title", label: `Pinned · ${pin.path}`, path: pin.path, tokens: approxTokens(line.length), scope: pin.scope });
     }
   }
-  return { pinned: pinnedSection(blocks, titles), items, excluded };
+  return { pinned: pinnedSection(blocks, titles), items };
 }

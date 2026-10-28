@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { refusedShape } from "@humanharness/harness-sdk/documents";
-import { contextFile } from "./layout";
+import { NOTES_PREFIX, contextFile } from "./layout";
 
 /** Most pins and exclusions one scope keeps (a bound on a hand-edited file; `full` past it). */
 export const PINS_MAX = 50;
@@ -49,7 +49,8 @@ export function cleanContext(raw: unknown): ContextFile {
   const excluded: Exclusion[] = [];
   const notes = new Set<string>();
   for (const e of Array.isArray(raw.excluded) ? raw.excluded : []) {
-    if (!isObject(e) || refusedShape(e.note) || !isTime(e.at) || notes.has(e.note as string)) continue;
+    // Only a note can be excluded: a path outside the notes folder is dropped.
+    if (!isObject(e) || refusedShape(e.note) || !(e.note as string).startsWith(NOTES_PREFIX) || !isTime(e.at) || notes.has(e.note as string)) continue;
     notes.add(e.note as string);
     excluded.push({ note: e.note as string, at: e.at });
     if (excluded.length === EXCLUDED_MAX) break;
@@ -57,11 +58,15 @@ export function cleanContext(raw: unknown): ContextFile {
   return { version: 1, pinned, excluded };
 }
 
-/** A scope's pins and exclusions; a missing, unreadable or broken file reads as empty (the next write replaces it). */
+/**
+ * A scope's pins and exclusions; a missing, unreadable or broken file reads as empty (the next write replaces it). A
+ * bad scope throws, as `saveContext` does: it never reads as an empty file.
+ */
 export async function loadContext(base: string, scope: string): Promise<ContextFile> {
+  const file = contextFile(base, scope);
   let text: string;
   try {
-    text = await fs.readFile(contextFile(base, scope), "utf8");
+    text = await fs.readFile(file, "utf8");
   } catch {
     return emptyContext();
   }

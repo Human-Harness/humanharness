@@ -254,6 +254,9 @@ describe("the Add now prompt (context-panel spec §4.1)", () => {
     expect(addablePath("a\nb.md")).toBe(false);
     expect(addablePath("a\u0007.md")).toBe(false);
     expect(addablePath("a\u2028b.md")).toBe(false);
+    // Bidi controls and zero-width characters: the person would not see what the agent reads.
+    for (const c of ["\u202a", "\u202e", "\u2066", "\u2069", "\u200b", "\u200d", "\ufeff"]) expect(addablePath(`a${c}b.md`)).toBe(false);
+    expect(addablePath("a\u2010b.md")).toBe(true);
     expect(addablePath("")).toBe(false);
     expect(addablePath("a".repeat(1001))).toBe(false);
   });

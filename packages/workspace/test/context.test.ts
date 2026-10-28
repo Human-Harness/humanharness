@@ -34,7 +34,8 @@ describe("the context file", () => {
     const raw = {
       version: 1,
       pinned: [{ path: "a.md", at: AT }, { path: "a.md", at: AT }, { path: "../out.md", at: AT }, { path: "b.md", at: "never" }, { path: 3 }, "x"],
-      excluded: [{ note: ".harness/notes/q-x.md", at: AT }, { note: "/abs.md", at: AT }],
+      // Only notes can be excluded: a folder file is dropped.
+      excluded: [{ note: ".harness/notes/q-x.md", at: AT }, { note: "/abs.md", at: AT }, { note: "docs/a.md", at: AT }],
     };
     expect(cleanContext(raw)).toEqual({ version: 1, pinned: [{ path: "a.md", at: AT }], excluded: [{ note: ".harness/notes/q-x.md", at: AT }] });
     expect(cleanContext({ version: 2 })).toEqual({ version: 1, pinned: [], excluded: [] });
@@ -53,6 +54,12 @@ describe("the context file", () => {
     expect(fs.readdirSync(path.join(base, ".harness", "context"))).toEqual(["main.json"]);
     await saveContext(base, "main", { version: 1, pinned: [], excluded: [] });
     expect(fs.existsSync(contextFile(base, "main"))).toBe(false);
+  });
+
+  it("a bad scope throws on load as it does on save (never read as an empty file)", async () => {
+    const base = fs.mkdtempSync(path.join(root, "b-"));
+    await expect(loadContext(base, "../x")).rejects.toThrow();
+    await expect(saveContext(base, "../x", { version: 1, pinned: [{ path: "a.md", at: AT }], excluded: [] })).rejects.toThrow();
   });
 });
 

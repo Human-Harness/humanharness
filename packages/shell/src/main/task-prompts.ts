@@ -77,15 +77,20 @@ export const CONTEXT_ADD_PROMPT = "The person wants you to take `{{path}}` into 
 /** The prompt for `file` (a folder-relative path the shell already checked with `addablePath`). */
 export const contextAddPrompt = (file: string): string => CONTEXT_ADD_PROMPT.replace("{{path}}", () => file);
 
+/** Characters that are not seen but change how a line reads: bidi embeddings, overrides and isolates, zero widths. */
+const hiddenChar = (code: number): boolean =>
+  (code >= 0x202a && code <= 0x202e) || (code >= 0x2066 && code <= 0x2069) || (code >= 0x200b && code <= 0x200d) || code === 0xfeff;
+
 /**
  * A path that can sit inside the prompt's backticks: no backtick, no control character (C0, DEL, C1), no line or
- * paragraph separator, at most 1,000 characters.
+ * paragraph separator, no bidi control or zero-width character (the person would not see what the agent reads), at
+ * most 1,000 characters.
  */
 export function addablePath(file: string): boolean {
   if (file.length === 0 || file.length > 1000) return false;
   for (let i = 0; i < file.length; i++) {
     const code = file.charCodeAt(i);
-    if (code === 96 || code < 0x20 || (code >= 0x7f && code <= 0x9f) || code === 0x2028 || code === 0x2029) return false;
+    if (code === 96 || code < 0x20 || (code >= 0x7f && code <= 0x9f) || code === 0x2028 || code === 0x2029 || hiddenChar(code)) return false;
   }
   return true;
 }

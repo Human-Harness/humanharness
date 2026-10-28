@@ -154,10 +154,13 @@ export function replay(recordings: Recording[], position: SessionPosition | unde
     return { play: quiet("", [], defaultNote(position.action ?? "question")), session: position };
   }
   if (kind === "checkpoint") return { play: quiet("", [], rec ? closeNote(rec) : defaultNote(position.action ?? "question")), session: position };
-  // "Add now" (context-panel spec §5.2) is the app's prompt: a built-in reply that reads the file; the session stays.
+  // "Add now" (context-panel spec §5.2) is the app's prompt: a built-in reply that reads the file; the session stays,
+  // and the turn's choices come back, as after an off-script reply, so the walk goes on.
   if (kind === "context-add") {
     const p = addedPath(prompt);
-    return { play: { ...quiet(p ? `I read ${p} and will take it into account.` : (rec?.fallback?.text ?? DEFAULT_FALLBACK)), reads: p ? [p] : [] }, session: position };
+    const text = p ? `I read ${p} and will take it into account.` : (rec?.fallback?.text ?? DEFAULT_FALLBACK);
+    const current = rec?.turns.find((t) => t.id === position.turn);
+    return { play: { ...quiet(text, choicesOf(current)), reads: p ? [p] : [] }, session: position };
   }
   // A phase change or the wrap-up is the app's prompt, not a reply: it plays the turn recorded for it (spec §6).
   if (kind === "phase" || kind === "wrap-up") {

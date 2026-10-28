@@ -227,7 +227,9 @@ describe("the Add now prompt (context-panel spec §5.2)", () => {
     const { play, session } = replay([rec], position, ADD, false);
     expect(play.reads).toEqual(["docs/conv.md"]);
     expect(play.text).toBe("I read docs/conv.md and will take it into account.");
-    expect(play.blocks).toEqual([]);
+    // The turn's choices come back, as after an off-script reply, so the walk goes on.
+    expect(play.blocks).toEqual([choices]);
+    expect(replay([rec], { action: "manifest", turn: "t3" }, ADD, false).play.blocks).toEqual([]);
     expect(session).toEqual(position);
     expect(replay([rec], position, `The person approved specs/a.md.\n\n${ADD}`, false).play.reads).toEqual(["docs/conv.md"]);
   });

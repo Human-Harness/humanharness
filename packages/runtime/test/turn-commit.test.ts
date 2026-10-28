@@ -309,6 +309,33 @@ describe("two turns at once (parallel spec §5.2, T1, T2)", () => {
     expect(read("spec.md")).toBe("from B");
   });
 
+  it("the same file written alike: the second turn, with nothing left to commit, still reports the conflict", async () => {
+    const a = await beginTurn(history, ledger, "A", { task: "t1" });
+    const b = await beginTurn(history, ledger, "B", { task: "t2" });
+    write("spec.md", "spec");
+    ledger.noteEdits("A", [abs("spec.md")]);
+    expect((await endTurn(history, ledger, a, ok, "A", { task: "t1" }))?.conflicts).toEqual([]);
+    write("spec.md", "spec");
+    ledger.noteEdits("B", [abs("spec.md")]);
+    const rb = await endTurn(history, ledger, b, ok, "B", { task: "t2" });
+    expect(rb).toEqual({ owned: [], shared: [], with: [], conflicts: [{ path: "spec.md", tasks: ["t1"] }] });
+  });
+
+  it("both named the file before the first ended: the first commits it, the second still reports the conflict", async () => {
+    write("spec.md", "0");
+    await history.save("seed spec");
+    const a = await beginTurn(history, ledger, "A", { task: "t1" });
+    const b = await beginTurn(history, ledger, "B", { task: "t2" });
+    write("spec.md", "from A");
+    ledger.noteEdits("A", [abs("spec.md")]);
+    write("spec.md", "from B");
+    ledger.noteEdits("B", [abs("spec.md")]);
+    expect(await endTurn(history, ledger, a, ok, "A", { task: "t1" })).toEqual({ owned: ["spec.md"], shared: [], with: [], conflicts: [] });
+    const rb = await endTurn(history, ledger, b, ok, "B", { task: "t2" });
+    expect(rb?.owned).toEqual([]);
+    expect(rb?.conflicts).toEqual([{ path: "spec.md", tasks: ["t1"] }]);
+  });
+
   it("another task's commit after this turn's own commit is no conflict", async () => {
     const a = await beginTurn(history, ledger, "A", { task: "t1" });
     const b = await beginTurn(history, ledger, "B", { task: "t2" });

@@ -114,8 +114,12 @@ export async function endTurn(
         first ??= s;
       }
     }
+    // The paths it named count too: another task's commit may already hold this turn's change (that turn ended first
+    // with the path its own, or both wrote the same text), leaving nothing here to commit, and both still changed it.
+    const paths = [...owned, ...shared];
+    for (const e of w.edits) if (!paths.some((p) => samePath(p) === e)) paths.push(e);
     // Best effort: the commits have landed; a failed look back must not turn the turn's end into an error.
-    const conflicts = await conflictsSince(history, w.before, first, [...owned, ...shared], trailer?.task).catch((err: unknown) => {
+    const conflicts = await conflictsSince(history, w.before, first, paths, trailer?.task).catch((err: unknown) => {
       console.error("Conflict check failed", err);
       return [];
     });

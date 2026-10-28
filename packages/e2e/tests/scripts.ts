@@ -173,3 +173,35 @@ export const slowSidekickScript: ClaudeScript = {
   steps: [...claudeTextLines("Listo."), result],
   turns: [{ match: `^${MOCK_SIDEKICK_MARKS.pre}`, steps: [{ sleep: 15_000 }] }, afterReplyTurn, learnTurn, routeTurn, phaseTurn, dailyTurn, approveTurn, placeTurn, importTurn],
 };
+
+/**
+ * Two sidekicks (sidekick spec §2a): the default Sidekick's pre-send review flags a vague prompt, or two asks with an
+ * ask kept for later; Guard's phase-change turn finds something missing. First match wins: the two-asks review names
+ * its local flag, so it comes before the vague one.
+ */
+export const twoSidekicksScript: ClaudeScript = {
+  steps: [...claudeTextLines("Listo."), result],
+  turns: [
+    {
+      match: `^${MOCK_SIDEKICK_MARKS.pre}[\\s\\S]*\\n- two-asks:`,
+      steps: sidekickReply({
+        verdict: "suggest",
+        issues: [{ kind: "two-asks", text: "Ask one thing at a time." }],
+        queued: ["Ask for the sources of claim 2"],
+        confidence: 0.9,
+      }),
+    },
+    {
+      match: `^${MOCK_SIDEKICK_MARKS.pre}`,
+      steps: sidekickReply({ verdict: "suggest", issues: [{ kind: "vague", text: "Say which part should be better." }], confidence: 0.8 }),
+    },
+    { match: `^${MOCK_SIDEKICK_MARKS.phase}`, steps: sidekickReply({ missing: ["No agreed section list"] }) },
+    afterReplyTurn,
+    learnTurn,
+    routeTurn,
+    dailyTurn,
+    approveTurn,
+    placeTurn,
+    importTurn,
+  ],
+};

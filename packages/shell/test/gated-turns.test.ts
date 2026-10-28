@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import type { Event, SessionSlot } from "@humanharness/runtime";
+import type { Event, SessionSlot, TurnAttribution } from "@humanharness/runtime";
 import { gatedTurns } from "../src/main/gated-turns";
-import { TurnController } from "../src/main/turn-controller";
+import { TurnController, type TurnOptions } from "../src/main/turn-controller";
 import { TurnGate } from "../src/main/turn-gate";
 
 type Options = { onEvent?: (e: Event) => void };
@@ -331,6 +331,24 @@ describe("gatedTurns (parallel spec §7)", () => {
     a.pending[0].resolve();
     await p;
     expect(seen).toEqual([{ type: "text", delta: "hi" }]);
+  });
+
+  it("an attribution reaches the caller's onAttribution, then the lane's own; without its own, the caller's as is", async () => {
+    const gate = new TurnGate({ tasks: 1, jobs: 1 });
+    const a = fakeTurns();
+    const calls: string[] = [];
+    const attribution: TurnAttribution = { owned: [], shared: ["spec.md"], with: [], conflicts: [{ path: "spec.md", tasks: ["b"] }] };
+    const mine = (x: TurnAttribution) => calls.push(`caller ${x.conflicts[0].path}`);
+    const p = gatedTurns("a", gate, a, { cap: "tasks", onAttribution: (x) => calls.push(`lane ${x.conflicts[0].tasks[0]}`) }).send("x", { onAttribution: mine });
+    (a.pending[0].options as TurnOptions).onAttribution!(attribution);
+    a.pending[0].resolve();
+    await p;
+    expect(calls).toEqual(["caller spec.md", "lane b"]);
+    const b = fakeTurns();
+    const q = gatedTurns("b", gate, b, { cap: "tasks" }).send("y", { onAttribution: mine });
+    expect((b.pending[0].options as TurnOptions).onAttribution).toBe(mine);
+    b.pending[0].resolve();
+    await q;
   });
 
   it("runs a lane's TurnController on its session slot (ensureRuntime: async () => slot)", async () => {

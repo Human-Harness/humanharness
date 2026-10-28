@@ -958,6 +958,7 @@
   },
   "parallel": {
     "conflict": "This task and “{{task}}” both changed {{path}}.",
-    "conflictEnded": "A task that has ended also changed {{path}}."
+    "conflictEnded": "A task that has ended also changed {{path}}.",
+    "pathsMore": "{{paths}} and {{count}} more"
   }
 }

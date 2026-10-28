@@ -6,6 +6,7 @@ import {
   type BlockAnswer,
   type ChatBlock,
   type ChatEntry,
+  type ChatNotice,
   type ChoiceOption,
   type InputIssue,
   type InputSpec,
@@ -142,7 +143,7 @@ export function Message({
   live,
   reveal,
 }: {
-  entry: Pick<ChatEntry, "role" | "text" | "blocks" | "activities" | "parts" | "mode" | "phase" | "timeUp">;
+  entry: Pick<ChatEntry, "role" | "text" | "blocks" | "activities" | "parts" | "mode" | "phase" | "timeUp" | "notice">;
   components: Record<string, ComponentType<BlockProps>>;
   actions: BlockActions;
   /** The turn is running: its status row instead of what it did, shown even before anything arrives. */
@@ -151,6 +152,14 @@ export function Message({
   reveal?: Reveal;
 }) {
   const { t } = useTranslation();
+  // A line the app added (another task changed the same files, parallel spec §5.3): a system line, never a reply.
+  if (entry.notice) {
+    return (
+      <article className="hh-message system">
+        <p className="hh-mode-line">{noticeText(t, entry.notice)}</p>
+      </article>
+    );
+  }
   if (!live && entry.role === "assistant" && !entry.text && entry.blocks.length === 0 && entry.activities.length === 0) return null;
   // A mode switch (task-modes spec §5.4), a phase change or the wrap-up (task-phases spec §4.4, §5): a system line,
   // not the person's message.
@@ -173,4 +182,11 @@ export function Message({
       )}
     </article>
   );
+}
+
+/** A notice's line in the person's language: the paths it names, then how many more there are. */
+function noticeText(t: (key: string, values?: Record<string, unknown>) => string, n: ChatNotice): string {
+  const list = n.paths.join(", ");
+  const path = n.more ? t("parallel.pathsMore", { paths: list, count: n.more }) : list;
+  return n.other !== undefined ? t("parallel.conflict", { task: n.other, path }) : t("parallel.conflictEnded", { path });
 }

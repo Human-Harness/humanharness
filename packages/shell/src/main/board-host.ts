@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { type ParallelCaps, isConcurrent } from "@humanharness/harness-sdk";
 import type { Event, HarnessWorkspace, SessionSlot, SlotRef, TurnAttribution } from "@humanharness/runtime";
-import type { AppConfig, ChatEntry, ChatLoad, TaskView, TasksState } from "@humanharness/ui/client";
+import { type AppConfig, type ChatEntry, type ChatLoad, type ChatNotice, type TaskView, type TasksState, isTurnEntry } from "@humanharness/ui/client";
 import { type History, MAIN_SCOPE, taskChatFile } from "@humanharness/workspace";
 import { ChatLog } from "./chat-log";
 import { migrateChats } from "./chat-migration";
@@ -26,13 +26,26 @@ export function hostMode(harness: { parallel?: unknown }): HostMode {
 /** What the person sees when a sleeping lane's engine couldn't load its earlier conversation (spec §4, PT-S4). */
 export const RESUME_FAILED = "Couldn't resume the earlier conversation; started a new one.";
 
+/** How many paths a conflict notice names; it counts the rest. */
+export const NOTICE_PATHS = 5;
+
 /**
  * The notice both tasks get when a turn's path was also changed by another task (spec §5.3). `other`: the other task's
- * name, or null when it has ended. The same text as the window's `parallel.conflict` and `parallel.conflictEnded`.
+ * name, or null when it has ended.
  */
-export function conflictNotice(paths: readonly string[], other: string | null): string {
-  const list = paths.join(", ");
-  return other === null ? `A task that has ended also changed ${list}.` : `This task and “${other}” both changed ${list}.`;
+export function conflictOf(paths: readonly string[], other: string | null): ChatNotice {
+  const more = paths.length - NOTICE_PATHS;
+  return { kind: "conflict", paths: paths.slice(0, NOTICE_PATHS), ...(more > 0 ? { more } : {}), ...(other === null ? { ended: true as const } : { other }) };
+}
+
+/**
+ * A notice's line while its task's turn runs (an activity line; the chat draws the saved notice in the person's
+ * language). The same text as the window's `parallel.*` strings in English.
+ */
+export function conflictNotice(n: ChatNotice): string {
+  const list = n.paths.join(", ");
+  const path = n.more ? `${list} and ${n.more} more` : list;
+  return n.other === undefined ? `A task that has ended also changed ${path}.` : `This task and “${n.other}” both changed ${path}.`;
 }
 
 /** A usage event's tokens for the task's count (spec §9.1): what the engine read and wrote, never the cache. */
@@ -360,11 +373,11 @@ export function createBoardHost(d: BoardHostDeps, initial: { engineId: string | 
         for (const p of shared) if (!ended.includes(p)) ended.push(p);
         continue;
       }
-      notify(l, conflictNotice(shared, d.label(x.task)), now);
-      notify(x, conflictNotice(shared, l.task ? d.label(l.task) : null), now);
+      notify(l, conflictOf(shared, d.label(x.task)), now);
+      notify(x, conflictOf(shared, l.task ? d.label(l.task) : null), now);
       marks.push([x, shared]);
     }
-    if (ended.length > 0) notify(l, conflictNotice(ended, null), now);
+    if (ended.length > 0) notify(l, conflictOf(ended, null), now);
     const mark = (x: Lane, add: string[]) =>
       x.store.amend((f) => ({ ...f, conflict: [...(f.conflict ?? []).filter((p) => !add.includes(p)), ...add].slice(-CONFLICT_MAX) }));
     l.marking = l.marking.then(async () => {
@@ -379,10 +392,11 @@ export function createBoardHost(d: BoardHostDeps, initial: { engineId: string | 
    * chat gets it after the turn's own entries; otherwise it goes to `now`, for its chat at once (the window shows it on
    * its next load).
    */
-  function notify(x: Lane, text: string, now: [Lane, Notice][]): void {
+  function notify(x: Lane, conflict: ChatNotice, now: [Lane, Notice][]): void {
     const notice: Notice = {
       scope: x.task ? scopeOfTask(x.task) : MAIN_SCOPE,
-      entry: { id: randomUUID(), role: "assistant", text, blocks: [], activities: [], at: new Date().toISOString(), task: x.id },
+      // Empty text: an app that doesn't know notices shows nothing for it.
+      entry: { id: randomUUID(), role: "assistant", text: "", blocks: [], activities: [], at: new Date().toISOString(), task: x.id, notice: conflict },
     };
     if (!x.turns.isBusy()) {
       now.push([x, notice]);
@@ -390,8 +404,9 @@ export function createBoardHost(d: BoardHostDeps, initial: { engineId: string | 
     }
     x.notices.push(notice);
     const id = randomUUID();
-    x.emit({ type: "activity", id, kind: "other", detail: text, state: "start" });
-    x.emit({ type: "activity", id, kind: "other", detail: text, state: "end" });
+    const detail = conflictNotice(conflict);
+    x.emit({ type: "activity", id, kind: "other", detail, state: "start" });
+    x.emit({ type: "activity", id, kind: "other", detail, state: "end" });
   }
 
   async function appendNotices(x: Lane, notices: Notice[]): Promise<void> {
@@ -412,6 +427,7 @@ export function createBoardHost(d: BoardHostDeps, initial: { engineId: string | 
         const lane = lanes.get(id);
         const t = f.lanes?.find((x) => x.id === id);
         if (lane && t) lane.task = t;
+        else if (lane) lane.task = undefined;
       },
       () => undefined,
     );
@@ -593,7 +609,7 @@ export function createBoardHost(d: BoardHostDeps, initial: { engineId: string | 
       const live = lane && board.focusedId() === id && lane.turns.isBusy() ? buffer.live(id) : undefined;
       if (!live) return { entries };
       // The turn's user line is written without waiting: until it is in the file, it comes from the buffer.
-      const last = entries.at(-1);
+      const last = entries.findLast(isTurnEntry);
       if (!(last?.role === "user" && last.text === live.user.text)) {
         entries.push({ id: `live-${id}`, role: "user", text: live.user.text, blocks: [], activities: [], at: live.user.at });
       }

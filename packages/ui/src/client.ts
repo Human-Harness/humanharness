@@ -337,7 +337,22 @@ export interface ChatEntry {
   timeUp?: true;
   /** Assistant entries: text runs and blocks in the order they arrived. Older entries lack it: text, then blocks. */
   parts?: AnswerPart[];
+  /**
+   * A line the app added to a task's chat, never the agent's reply (board mode only, parallel spec §5.3): drawn as a
+   * system line, and skipped wherever the chat looks for the latest reply. Saved with empty `text`, so an app that
+   * doesn't know it shows nothing.
+   */
+  notice?: ChatNotice;
 }
+
+/**
+ * Another task also changed these paths (parallel spec §5.3): `other` names it (absent when it has ended, `ended`).
+ * `paths` holds the first few; `more` counts the rest.
+ */
+export type ChatNotice = { kind: "conflict"; paths: string[]; more?: number; other?: string; ended?: true };
+
+/** The entry is the person's line or the agent's reply, not a notice the app added. */
+export const isTurnEntry = (e: Pick<ChatEntry, "notice">): boolean => e.notice === undefined;
 
 /** A piece of an answer: a run of text, or one of the entry's `blocks` (by index). */
 export type AnswerPart = { text: string } | { block: number };

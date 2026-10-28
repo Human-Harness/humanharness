@@ -21,6 +21,7 @@ import {
   type SidekickReview,
   type TaskTurnNotice,
   type TaskView,
+  isTurnEntry,
   nextInPath,
   partsOf,
 } from "./client";
@@ -465,10 +466,10 @@ export function ChatView({
     // "Working…" is announced by the status row itself; clearing lets the final answer be announced afresh.
     if (chat.live && !wasLive.current) setAnnouncement("");
     if (!chat.live && wasLive.current) {
-      setAnnouncement(markdownToPlain(chat.entries.findLast((e) => e.role === "assistant")?.text ?? "", (id) => citationsRef.current?.known?.(id)));
+      setAnnouncement(markdownToPlain(chat.entries.findLast((e) => e.role === "assistant" && isTurnEntry(e))?.text ?? "", (id) => citationsRef.current?.known?.(id)));
       inputRef.current?.focus();
       client.getUsage().then((u) => setEstimates(u.estimates), () => {});
-      if (!chat.entries.at(-1)?.error) onTurnOk?.();
+      if (!chat.entries.findLast(isTurnEntry)?.error) onTurnOk?.();
     }
     wasLive.current = Boolean(chat.live);
   }, [chat.live, chat.entries, t, client, onTurnOk]);
@@ -817,7 +818,8 @@ export function ChatView({
   };
   /** What harness UI gets: it can't skip the pre-flight check. */
   const sendFromHarness: SendFn = (text, options) => send(text, options);
-  const lastAssistant = chat.entries.findLast((e) => e.role === "assistant");
+  // A notice the app added after a reply (a conflict) never takes the reply's place: its blocks stay answerable.
+  const lastAssistant = chat.entries.findLast((e) => e.role === "assistant" && isTurnEntry(e));
   /**
    * A block answer's free text before it goes (spec §4.1): `card` holds the form, anything else sends it. The same
    * text sent again while its card waits goes as is (the card leaves as sent anyway); a composer review in flight
@@ -995,7 +997,7 @@ export function ChatView({
     const el = chatRef.current;
     if (el) stick.current = el.scrollHeight - el.scrollTop - el.clientHeight <= STICK_THRESHOLD;
   };
-  const last = chat.entries.at(-1);
+  const last = chat.entries.findLast(isTurnEntry);
   const lastUser = chat.entries.findLast((e) => e.role === "user");
   const backgroundError = engineProblem ? problemError(engineProblem) : null;
   const shown = !flow ? chat.entries : since === null ? [] : chat.entries.slice(since);

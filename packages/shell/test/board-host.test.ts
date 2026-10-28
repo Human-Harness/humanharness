@@ -3,8 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import type { Event, HarnessWorkspace, SessionSlot, SlotOptions, SlotRef, SlotSendOptions, TurnAttribution } from "@humanharness/runtime";
-import type { AppConfig, ChatEntry, TasksState } from "@humanharness/ui/client";
-import { type BoardHostDeps, RESUME_FAILED, conflictNotice, createBoardHost, hostMode } from "../src/main/board-host";
+import type { AppConfig, ChatEntry, ChatNotice, TasksState } from "@humanharness/ui/client";
+import { type BoardHostDeps, RESUME_FAILED, conflictNotice, conflictOf, createBoardHost, hostMode } from "../src/main/board-host";
 import { ChatLog } from "../src/main/chat-log";
 import type { TaskDeps } from "../src/main/task-manager";
 import { TaskStore } from "../src/main/task-store";
@@ -416,7 +416,8 @@ describe("conflicts and tokens per task (parallel spec §5.3, §9.1)", () => {
     // B (focused) ends while A still runs: both changed spec.md, and B's turn names A.
     tb.end([{ type: "text", delta: "Done B" }, ok], attribution([{ path: "spec.md", tasks: [ta.slot] }]));
     await b;
-    const text = conflictNotice(["spec.md"], "write");
+    const notice: ChatNotice = { kind: "conflict", paths: ["spec.md"], other: "write" };
+    const text = conflictNotice(notice);
     expect(text).toBe("This task and “write” both changed spec.md.");
     // The window shows B's notice now (B is focused); A's goes only to A's buffer.
     expect(notices(t.window)).toEqual([text]);
@@ -425,23 +426,30 @@ describe("conflicts and tokens per task (parallel spec §5.3, §9.1)", () => {
     const lanes = (await t.file()).lanes!;
     expect(lanes.find((l) => l.id === ta.slot)?.conflict).toEqual(["spec.md"]);
     expect(lanes.find((l) => l.id === tb.slot)?.conflict).toEqual(["spec.md"]);
-    // B's notice follows its reply in its chat.
-    expect((await t.chat("main", tb.slot)).map((e) => [e.role, e.text])).toEqual([
-      ["user", "Second"],
-      ["assistant", "Done B"],
-      ["assistant", text],
+    // B's notice follows its reply in its chat: a structured notice with no text of its own (never a reply).
+    expect((await t.chat("main", tb.slot)).map((e) => [e.role, e.text, e.notice])).toEqual([
+      ["user", "Second", undefined],
+      ["assistant", "Done B", undefined],
+      ["assistant", "", notice],
     ]);
     // A is mid-turn: its notice waits for its reply, so the person's line and the answer stay together.
     expect((await t.chat("main", ta.slot)).map((e) => e.text)).toEqual(["First"]);
     ta.end([{ type: "text", delta: "Done A" }, ok]);
     await a;
     const chatA = await t.chat("main", ta.slot);
-    expect(chatA.map((e) => [e.role, e.text])).toEqual([
-      ["user", "First"],
-      ["assistant", "Done A"],
-      ["assistant", text],
+    expect(chatA.map((e) => [e.role, e.text, e.notice])).toEqual([
+      ["user", "First", undefined],
+      ["assistant", "Done A", undefined],
+      ["assistant", "", notice],
     ]);
     expect(chatA.at(-1)).toMatchObject({ blocks: [], activities: [], task: ta.slot });
+    // Focusing A while its next turn runs: the person's line still comes from the buffer, past the notice.
+    const follow = t.h.board.ask("Then?");
+    await until(() => t.turns.length === 3);
+    const load = await t.h.loadChat(t.base);
+    expect(load.entries.filter((e) => e.role === "user").map((e) => e.text)).toEqual(["First", "Then?"]);
+    t.turns[2].end();
+    await follow;
     // The summaries carry the paths on both tasks.
     const summaries = (await t.h.tasksState()).tasks;
     expect(summaries.map((s) => s.conflict)).toEqual([["spec.md"], ["spec.md"]]);
@@ -467,17 +475,18 @@ describe("conflicts and tokens per task (parallel spec §5.3, §9.1)", () => {
     // spec.md came first, so the newest twenty leave it out.
     expect(lanes.find((l) => l.id === idA)?.conflict).toEqual(expected);
     expect(lanes.find((l) => l.id === idB)?.conflict).toEqual(expected);
-    // A was idle: its notice is in its chat now, naming B and every path once.
+    // A was idle: its notice is in its chat now, naming B and the first five paths, then how many more.
     const last = (await t.chat("main", idA)).at(-1)!;
-    expect(last.text).toBe(conflictNotice(["spec.md", ...many.map((m) => m.path)], "write"));
-    // Its own task in `tasks` is never a conflict with itself.
-    expect(last.text).not.toContain(idB);
+    expect(last.notice).toEqual({ kind: "conflict", paths: ["spec.md", "n/0.md", "n/1.md", "n/2.md", "n/3.md"], more: 18, other: "write" });
+    expect(conflictNotice(last.notice!)).toBe("This task and “write” both changed spec.md, n/0.md, n/1.md, n/2.md, n/3.md and 18 more.");
+    // B's own notice: its task in `tasks` is never a conflict with itself, so it names A once.
+    expect((await t.chat("main", idB)).filter((e) => e.notice)).toHaveLength(1);
     const follow = t.h.board.ask("More");
     await until(() => t.turns.length === 3);
     t.turns[2].end([ok], attribution([]));
     await follow;
     expect((await t.file()).lanes!.find((l) => l.id === idB)?.conflict).toEqual(expected);
-    expect((await t.chat("main", idB)).filter((e) => e.text.includes("both changed"))).toHaveLength(1);
+    expect((await t.chat("main", idB)).filter((e) => e.notice)).toHaveLength(1);
   });
 
   it("a conflict with a task that has ended names no task and marks only this one", async () => {
@@ -489,15 +498,18 @@ describe("conflicts and tokens per task (parallel spec §5.3, §9.1)", () => {
     await a;
     const id = t.turns[0].slot;
     expect((await t.file()).lanes!.map((l) => [l.id, l.conflict])).toEqual([[id, ["spec.md"]]]);
-    expect(conflictNotice(["spec.md"], null)).toBe("A task that has ended also changed spec.md.");
-    expect((await t.chat("main", id)).at(-1)?.text).toBe(conflictNotice(["spec.md"], null));
+    expect((await t.chat("main", id)).at(-1)?.notice).toEqual({ kind: "conflict", paths: ["spec.md"], ended: true });
+    expect(conflictNotice(conflictOf(["spec.md"], null))).toBe("A task that has ended also changed spec.md.");
   });
 
   it("the notices read as the window's parallel strings", () => {
     const en = JSON.parse(fs.readFileSync(path.resolve(__dirname, "../../i18n/src/locales/en.json"), "utf8")) as { parallel: Record<string, string> };
     const fill = (s: string, v: Record<string, string>) => s.replace(/\{\{(\w+)\}\}/g, (_, k: string) => v[k]);
-    expect(conflictNotice(["a.md", "b.md"], "Write")).toBe(fill(en.parallel.conflict, { task: "Write", path: "a.md, b.md" }));
-    expect(conflictNotice(["a.md"], null)).toBe(fill(en.parallel.conflictEnded, { path: "a.md" }));
+    expect(conflictNotice(conflictOf(["a.md", "b.md"], "Write"))).toBe(fill(en.parallel.conflict, { task: "Write", path: "a.md, b.md" }));
+    expect(conflictNotice(conflictOf(["a.md"], null))).toBe(fill(en.parallel.conflictEnded, { path: "a.md" }));
+    const six = ["1", "2", "3", "4", "5", "6"];
+    const path6 = fill(en.parallel.pathsMore, { paths: "1, 2, 3, 4, 5", count: "1" });
+    expect(conflictNotice(conflictOf(six, null))).toBe(fill(en.parallel.conflictEnded, { path: path6 }));
   });
 
   it("tokens: each usage event adds its total to the lane's tokens", async () => {

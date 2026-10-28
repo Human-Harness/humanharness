@@ -267,8 +267,11 @@ describe("prepared-task card", () => {
   it("P6/P13: Start arms only a moment after a card appears, and a replacing card arms afresh", async () => {
     const c = makeClient();
     await open(c);
+    // From here the clock moves only when told (a slow run must not arm the card early); the card renders within act.
+    vi.useFakeTimers();
     act(() => c.emitSurface(surface({ prepared: prepared() })));
-    const r = await screen.findByRole("region", { name: "Prepared task" });
+    const r = card() as HTMLElement;
+    expect(r).not.toBeNull();
     expect(startButton(r).disabled).toBe(true);
     fireEvent.click(startButton(r));
     act(() => vi.advanceTimersByTime(PREPARED_ARM_MS - 50));
@@ -278,7 +281,7 @@ describe("prepared-task card", () => {
     // The plugin swaps in another prompt: Start is off again under the pointer, and arms after the same delay.
     const other = "fedcba9876543210fedcba9876543210";
     act(() => c.emitSurface(surface({ prepared: prepared({ token: other, prompt: "Another" }) })));
-    await waitFor(() => expect(card()?.querySelector("pre")?.textContent).toBe("Another"));
+    expect(card()?.querySelector("pre")?.textContent).toBe("Another");
     const r2 = card() as HTMLElement;
     expect(startButton(r2).disabled).toBe(true);
     fireEvent.click(startButton(r2));

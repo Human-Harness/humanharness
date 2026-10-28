@@ -65,6 +65,14 @@ export interface AppConfig {
   parallel?: { tasks?: number; jobs?: number };
   /** Settings › General: an OS notification when a task waits for the person. Absent: off. */
   notifyWaiting?: boolean;
+  /** Settings › Jobs, by job id: turned off, and the person's daily token cap (over the manifest's). Cleaned when read. */
+  jobs?: Record<string, JobSettings>;
+}
+
+/** One job's Settings › Jobs entry (parallel spec §8). Absent fields: on, the manifest's cap. */
+export interface JobSettings {
+  off?: boolean;
+  dailyTokens?: number;
 }
 
 /** Caps on turns running at once (parallel spec §7). */

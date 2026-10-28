@@ -55,6 +55,8 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
     setSetupAt(at);
     setScreen("setup");
   };
+  /** Harnesses with jobs: the chat's start of a declared action, for Settings › Jobs' Start (null off the work screen). */
+  const chatStart = useRef<((action: string, scope: string | null) => boolean) | null>(null);
   /** Harnesses with scopes: the open scope; the work screen's chat is that scope's. */
   const [openScope, setOpenScope] = useState<string | null>(null);
   const hasScopes = Boolean(state?.scopes);
@@ -262,6 +264,7 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
                 ? (refill, start) => <Inbox client={client} state={state} tasks={tasksState} onRefill={refill} onStartView={toStart} onStartAction={start} />
                 : undefined
             }
+            {...(state.jobs ? { startRef: chatStart } : {})}
             {...(state.parallel ? { taskStrip: <TaskStrip state={state} tasks={tasksState} onNewTask={newTask} />, draftKeep } : {})}
             scopeBar={state.scopes ? (disabled) => <ScopePicker client={client} state={state} open={openScope} disabled={disabled} /> : undefined}
             engineProblem={status ? engineProblem(status) : null}
@@ -322,6 +325,15 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
             openSetup(step ? { step, only: true, back } : {});
           }}
           move={move}
+          {...(state.jobs && screen === "work"
+            ? {
+                onStartAction: (action: string, scope: string | null) => {
+                  const started = chatStart.current?.(action, scope) ?? false;
+                  if (started) closeSettings();
+                  return started;
+                },
+              }
+            : {})}
         />
       )}
     </I18nextProvider>

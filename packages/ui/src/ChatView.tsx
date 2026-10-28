@@ -91,6 +91,7 @@ export function ChatView({
   scopeBar,
   profileBar,
   inboxBar,
+  startRef,
   taskStrip,
   draftKeep,
   openScope = null,
@@ -120,6 +121,8 @@ export function ChatView({
    * starts a declared action as the start view does (a needs-you job's "Start", part 3).
    */
   inboxBar?: (refill: (text: string) => void, start: (action: string, scope: string | null) => boolean) => ReactNode;
+  /** A harness with jobs: gets the same `start`, for Settings › Jobs' Start (part 3); null once this view is gone. */
+  startRef?: { current: ((action: string, scope: string | null) => boolean) | null };
   /** Board mode: the bar naming the task on screen, over the chat (parallel spec §9.1). */
   taskStrip?: ReactNode;
   /**
@@ -840,6 +843,13 @@ export function ChatView({
   /** A needs-you job's action (part 3): only a declared one, in the job's scope when it has one. */
   const startFromInbox = (id: string, scope: string | null): boolean =>
     Object.hasOwn(state.actions, id) ? send(labelOf(id), { action: id, ...(scope !== null ? { scope } : {}) }) : false;
+  if (startRef) startRef.current = startFromInbox;
+  useEffect(
+    () => () => {
+      if (startRef) startRef.current = null;
+    },
+    [startRef],
+  );
   const resume = (note: NoteView) => {
     setNotesPanel(null);
     if (note.action && state.actions[note.action]) startTopic(note.action);

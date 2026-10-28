@@ -177,7 +177,7 @@ With the tools, `AGENTS.md`'s "Writing for the reader" part gets three more line
 **Stale.**
 
 - A document whose bytes differ from the last approval's blob is "Changed since approval".
-- "See what changed" draws the file timeline's diff (`timeline.md`) from the newest approval entry to the current file, with `<FileDiff>`: word by word, inline or side by side. It fetches again when the file's history changes or the reader reads the document again. Without an approval entry on the timeline, it says there is nothing to compare.
+- "See what changed" draws the file timeline's diff (`timeline.md`) from the approval the record holds last to the current file, with `<FileDiff>`: word by word, inline or side by side. Main finds that approval on the timeline by its blob (`lastApproved`), never by position: after a whole-folder go-back the record's last approval can be older than the timeline's newest. It fetches again when the file's history changes or the reader reads the document again, and keeps its approval when a reload fails. Without a paired approval entry on the timeline, it says there is nothing to compare.
 - Answers and approvals appear on the document's timeline ("Your answers", "v2 approved"): each `Answer:` and `Approved:` commit counts for the path its subject names.
 
 **The reader.**

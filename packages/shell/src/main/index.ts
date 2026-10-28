@@ -95,7 +95,7 @@ import {
 import { imageDataUrl } from "./assets";
 import { devDockIcon } from "./dock-icon";
 import { ChatLog } from "./chat-log";
-import { ConfigStore, historyDir } from "./config";
+import { ConfigStore, cleanJobs, historyDir } from "./config";
 import { agentDataRequest, harnessUiDataRequests, personDataRequests, saveAnswerRecords } from "./data-requests";
 import { testPrompt } from "./engine-check";
 import { createCommandDeps } from "./command-deps";
@@ -128,7 +128,7 @@ import { type BoardHost, createBoardHost, hostMode } from "./board-host";
 import { type AttentionStores, attentionStores } from "./attention-stores";
 import { keepNotification, TaskAttention } from "./task-attention";
 import { materialOwn, notePath, saveAppChange } from "./app-change";
-import { type JobsHost, createJobsHost, isJobSlot, jobOriginKnown, openSingleRuntime, singleBeforeStart, singleCaps, singleGate, singleTurns } from "./jobs/jobs-host";
+import { type JobsHost, createJobsHost, isJobSlot, jobOriginKnown, jobsInfo, jobsIpc, openSingleRuntime, singleBeforeStart, singleCaps, singleGate, singleTurns } from "./jobs/jobs-host";
 import type { Turns } from "./gated-turns";
 import type { TurnGate } from "./turn-gate";
 import { cleanCaps, engineHold, parallelInfo } from "./parallel-config";
@@ -234,6 +234,27 @@ let host: BoardHost | null = null;
 const boardHost = (): BoardHost | null => host;
 /** The jobs' wiring (part 3), in `single` or board mode; null without jobs (D0). Built once the app is ready. */
 let jobsHost: JobsHost | null = null;
+/** Settings › Jobs as last read from the config (the scheduler reads it synchronously); refreshed on every load and save. */
+let jobSettings: AppConfig["jobs"];
+/** The Jobs section's rows again, to the window (`hh:jobsChange`); one read at a time, the latest change always sent. */
+let jobsSending: Promise<void> | null = null;
+let jobsStale = false;
+function jobsChanged(): void {
+  const jobs = jobsHost;
+  if (!jobs) return;
+  jobsStale = true;
+  if (jobsSending) return;
+  jobsSending = (async () => {
+    while (jobsStale) {
+      jobsStale = false;
+      try {
+        sendToWindow("hh:jobsChange", await jobs.summaries());
+      } catch (err) {
+        console.error("Could not read the jobs", err);
+      }
+    }
+  })().finally(() => (jobsSending = null));
+}
 /**
  * `single` mode (jobs without `parallel`, Decision 12): the gate and the task's turns through its `tasks` cap; the
  * runtime is a workspace's `"main"` slot with the job slots beside it. Null in plain and board mode.
@@ -418,6 +439,8 @@ let lastAppState: AppState | null = null;
 async function appState(): Promise<AppState> {
   const harnessImage = await harnessLogo();
   const saved = await config.load();
+  jobSettings = saved.jobs;
+  const jobs = jobsInfo(harness);
   const inputs = inputSpecs(harness.blocks);
   const interviews = interviewCollections(harness);
   const parallel = parallelInfo(harness, saved, engineHold(saved.engineId));
@@ -528,6 +551,8 @@ async function appState(): Promise<AppState> {
     ...(pluginsCtl ? { plugins: { local: pluginsAccepted(harness) && (harness.plugins?.local ?? false) } } : {}),
     // Only a harness that declares `parallel` sends this: caps, the task inbox (parallel D7).
     ...(parallel ? { parallel } : {}),
+    // Only a harness that declares jobs sends them: the Jobs tab and the inbox's Jobs section (part 3 D0).
+    ...(jobs ? { jobs } : {}),
     references: (await referencesFor(saved.folder)).map((r) => ({ id: r.id, label: r.label, path: displayPath(r.path, os.homedir()) })),
     models: await modelsView(),
     backup: await backupView(saved.folder),
@@ -1454,6 +1479,9 @@ function buildJobsHost(gate: TurnGate, workspace: () => Promise<HarnessWorkspace
     },
     scopeExists: async (id) => (scoped() ? activeScope(id) : id === MAIN_SCOPE),
     engine: async () => (await config.load()).engineId ?? "",
+    // Settings › Jobs, read at each trigger: a change applies from the next one, without a restart.
+    settings: (id) => jobSettings?.[id],
+    changed: jobsChanged,
     // Needs-you results in the base's shared store (Task 8), and the Dock badge.
     attention: async (b) => sharedAttention?.forBase(b, true) ?? null,
     needsYouChanged: () => void refreshJobBadge(),
@@ -1607,7 +1635,13 @@ function registerIpc() {
     // Parallel spec §7: the same for the caps; with none valid the key goes (the saved caps stay).
     const { parallel: caps, ...rest } = cleaned;
     const kept = caps !== undefined ? cleanCaps(caps) : undefined;
-    const patch: AppConfig = caps === undefined ? cleaned : { ...rest, ...(kept ? { parallel: kept } : {}) };
+    const capped: AppConfig = caps === undefined ? cleaned : { ...rest, ...(kept ? { parallel: kept } : {}) };
+    // Part 3: Settings › Jobs keeps only the harness's own jobs, each cleaned ({} turns every one back on); without
+    // jobs the key goes (D0).
+    const { jobs: jobChoices, ...noJobs } = capped;
+    const declared = harness.jobs;
+    const keptJobs = jobChoices !== undefined && declared && hasJobs(harness) ? cleanJobs(jobChoices, (id) => Object.hasOwn(declared, id)) : undefined;
+    const patch: AppConfig = jobChoices === undefined ? capped : { ...noJobs, ...(keptJobs ? { jobs: keptJobs } : {}) };
     const before = await config.load();
     const baseBefore = pluginsCtl ? await currentBase() : null;
     // Spec §9: an engine is only used once its notice is accepted.
@@ -1636,6 +1670,12 @@ function registerIpc() {
     if (patch.textSize) applyTextSize(patch.textSize);
     // Board mode: the person's caps reach the running gate at once (parallel spec §7), under the engine's hold.
     if (host && patch.parallel !== undefined) host.capsChanged((await config.load()).parallel);
+    // Settings › Jobs reach the scheduler at once (its next trigger reads them), and the Jobs section and badge follow.
+    jobSettings = (await config.load()).jobs;
+    if (patch.jobs !== undefined) {
+      jobsChanged();
+      void refreshJobBadge();
+    }
     return appState();
   });
   handle("hh:loadChat", async (): Promise<ChatLoad> => {
@@ -1906,6 +1946,10 @@ function registerIpc() {
   handle("hh:tasksFocus", (id: unknown) => inbox.focus(id));
   handle("hh:tasksCancelQueued", (id: unknown) => inbox.cancelQueued(id));
   handle("hh:tasksResume", () => inbox.resume());
+  // The jobs channels (parallel spec §9.1, J4): a declared manual job in an existing scope; without jobs, refused (D0).
+  const jobsChannels = jobsIpc(() => jobsHost);
+  handle("hh:jobsList", () => jobsChannels.list());
+  handle("hh:jobsRun", (id: unknown, scope: unknown) => jobsChannels.run(id, scope));
   handle("hh:engineStatus", async (engineId: string) => {
     const engine = engineFor(engineId);
     if (hooks.engines?.[engine.id]) return testEngineStatus(engine, await hasNotice(engine.id));
@@ -2470,6 +2514,7 @@ if (primary) {
       if (icon) app.dock?.setIcon(icon);
     }
     config = new ConfigStore(app.getPath("userData"));
+    jobSettings = (await config.load()).jobs;
     // A folder move cut short by a quit or crash: finish or undo it before anything opens the folder or its history.
     const userData = app.getPath("userData");
     const recovered = await recoverMove({

@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { canonicalLanguage } from "@humanharness/harness-sdk";
+import { JOB_ID, canonicalLanguage } from "@humanharness/harness-sdk";
 import { type AppConfig, isTextSize } from "@humanharness/ui/client";
 import { isProfileId } from "@humanharness/workspace";
 
@@ -20,6 +20,30 @@ function cleanParallel(v: unknown): AppConfig["parallel"] | undefined {
   return Object.keys(out).length > 0 ? out : undefined;
 }
 
+/** Settings › Jobs for one job, as the scheduler takes them: `off` only when true, a cap only as a whole number ≥ 1. */
+export function cleanJobSettings(v: unknown): { off?: boolean; dailyTokens?: number } {
+  if (typeof v !== "object" || v === null || Array.isArray(v)) return {};
+  const o = v as Record<string, unknown>;
+  const cap = o.dailyTokens;
+  // 0 or a fraction would pause an `every` job for good, or count against a cap no run can meet.
+  return { ...(o.off === true ? { off: true } : {}), ...(typeof cap === "number" && Number.isSafeInteger(cap) && cap >= 1 ? { dailyTokens: cap } : {}) };
+}
+
+/**
+ * Settings › Jobs (parallel part 3): each job id's entry cleaned, an empty one left out; undefined when `v` is no
+ * object. `declared` (the save's check) keeps only the harness's own jobs.
+ */
+export function cleanJobs(v: unknown, declared?: (id: string) => boolean): AppConfig["jobs"] | undefined {
+  if (typeof v !== "object" || v === null || Array.isArray(v)) return undefined;
+  const out: NonNullable<AppConfig["jobs"]> = {};
+  for (const [id, entry] of Object.entries(v)) {
+    if (!JOB_ID.test(id) || (declared && !declared(id))) continue;
+    const kept = cleanJobSettings(entry);
+    if (Object.keys(kept).length > 0) out[id] = kept;
+  }
+  return out;
+}
+
 /** Per-app settings in Electron's userData folder. The folder is fixed once chosen (spec §7). */
 export class ConfigStore {
   private readonly file: string;
@@ -35,8 +59,9 @@ export class ConfigStore {
       if (!saved || typeof saved !== "object") return saved;
       // Like a bad entry under models: a hand-edited backupDismissed, textSize or language of the wrong kind is dropped,
       // never a reason to treat the whole config as invalid.
-      const { backupDismissed, textSize, language, profile, parallel, notifyWaiting, ...rest } = saved;
+      const { backupDismissed, textSize, language, profile, parallel, notifyWaiting, jobs, ...rest } = saved;
       const caps = cleanParallel(parallel);
+      const jobSettings = cleanJobs(jobs);
       return {
         ...rest,
         ...(typeof backupDismissed === "boolean" ? { backupDismissed } : {}),
@@ -45,6 +70,7 @@ export class ConfigStore {
         ...(isProfileId(profile) ? { profile } : {}),
         ...(caps ? { parallel: caps } : {}),
         ...(typeof notifyWaiting === "boolean" ? { notifyWaiting } : {}),
+        ...(jobSettings && Object.keys(jobSettings).length > 0 ? { jobs: jobSettings } : {}),
       };
     } catch {
       return {};

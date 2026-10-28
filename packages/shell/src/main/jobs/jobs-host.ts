@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
-import type { HarnessJob } from "@humanharness/harness-sdk";
+import { type HarnessJob, hasJobs } from "@humanharness/harness-sdk";
 import { type Event, type HarnessRuntime, type HarnessWorkspace, type Session, type SessionSlot, runtimeOnSlot } from "@humanharness/runtime";
-import type { AppConfig } from "@humanharness/ui/client";
+import type { AppConfig, JobSummary, JobsInfo } from "@humanharness/ui/client";
 import { APP_SCOPE, ATTENTION_LIMITS, type AttentionStore, MAIN_SCOPE } from "@humanharness/workspace";
 import { type Turns, gatedTurns } from "../gated-turns";
+import { cleanJobSettings } from "../config";
 import { effectiveCaps, engineHold } from "../parallel-config";
 import type { TaskDeps } from "../task-manager";
 import { type BeforeStart, TurnGate } from "../turn-gate";
@@ -69,14 +70,8 @@ export class CachedJobLog extends JobLog {
   }
 }
 
-/** Settings › Jobs for one job, as the scheduler takes them: `off` only when true, a cap only as a whole number ≥ 1. */
-export function cleanJobSettings(v: unknown): { off?: boolean; dailyTokens?: number } {
-  if (typeof v !== "object" || v === null || Array.isArray(v)) return {};
-  const o = v as Record<string, unknown>;
-  const cap = o.dailyTokens;
-  // 0 or a fraction would pause an `every` job for good, or count against a cap no run can meet.
-  return { ...(o.off === true ? { off: true } : {}), ...(typeof cap === "number" && Number.isSafeInteger(cap) && cap >= 1 ? { dailyTokens: cap } : {}) };
-}
+/** Settings › Jobs for one job (config.ts cleans the saved config with it too). */
+export { cleanJobSettings };
 
 export interface JobsHostDeps {
   jobs: Record<string, HarnessJob>;
@@ -250,8 +245,45 @@ export function createJobsHost(d: JobsHostDeps) {
     changed: () => d.changed?.(),
   });
 
+  /** A job's Settings › Jobs entry, cleaned. */
+  const settingsOf = (id: string) => cleanJobSettings(d.settings?.(id));
+
   return {
     scheduler,
+    /** The declared jobs (the IPC checks an id against them, J4). */
+    jobs: d.jobs,
+    settingsOf,
+    scopeExists: (scope: string) => d.scopeExists(scope),
+    /**
+     * The Jobs section's rows (parallel spec §9.1): each declared job × its scopes (the active ones; one app-wide row for
+     * `scope: "none"`), with its last run in the current base, whether it is queued or running, and why it is paused or
+     * when its next `every` run is due. The last run is read as `needsYou()` reads it: archived scopes don't show.
+     */
+    async summaries(): Promise<JobSummary[]> {
+      const base = await d.base();
+      const last = base ? await logFor(base).lastRuns() : new Map<string, JobRunRecord>();
+      const scopes = base ? await d.scopes() : [];
+      const rows: JobSummary[] = [];
+      for (const [id, job] of Object.entries(d.jobs)) {
+        const settings = settingsOf(id);
+        const paused = settings.off ? ("off" as const) : (await scheduler.pausedToday(id)) ? ("daily-cap" as const) : undefined;
+        const next = paused ? null : scheduler.nextRun(id);
+        for (const scope of job.scope === "none" ? [null] : scopes) {
+          const r = last.get(dedupeKey(id, scope));
+          rows.push({
+            id,
+            label: job.label,
+            scope,
+            ...(r ? { last: { status: r.status, summary: r.summary, at: r.endedAt, ...(r.action !== undefined ? { action: r.action } : {}) } } : {}),
+            ...(next ? { next: next.toISOString() } : {}),
+            ...(paused ? { paused } : {}),
+            manual: job.on.manual === true,
+            running: scheduler.isActive(id, scope),
+          });
+        }
+      }
+      return rows;
+    },
     /** After setup, once per app start (Decision 7): `start` runs and the `every` timers. Later calls do nothing. */
     appReady: () => scheduler.appReady(),
     /** "Run now" (J4; the window's IPC in Task 9). */
@@ -284,10 +316,62 @@ export function createJobsHost(d: JobsHostDeps) {
       const base = await d.base();
       if (!base) return 0;
       const waiting = [...(await logFor(base).lastRuns()).values()].filter(
-        (r) => r.status === "needs-you" && Object.hasOwn(d.jobs, r.job) && !cleanJobSettings(d.settings?.(r.job)).off,
+        (r) => r.status === "needs-you" && Object.hasOwn(d.jobs, r.job) && !settingsOf(r.job).off,
       );
       const open = await Promise.all(waiting.map((r) => (r.scope === null ? true : d.scopeExists(r.scope).catch(() => false))));
       return open.filter(Boolean).length;
+    },
+  };
+}
+
+/** `AppState.jobs`: what the window shows of each declared job (never its brief); undefined without jobs (D0). */
+export function jobsInfo(h: { jobs?: Record<string, HarnessJob> }): JobsInfo | undefined {
+  if (!h.jobs || !hasJobs(h)) return undefined;
+  return {
+    jobs: Object.entries(h.jobs).map(([id, j]) => ({
+      id,
+      label: j.label,
+      ...(j.on.every !== undefined ? { every: j.on.every } : {}),
+      ...(j.dailyTokens !== undefined ? { dailyTokens: j.dailyTokens } : {}),
+      manual: j.on.manual === true,
+    })),
+  };
+}
+
+/** What the jobs channels need of the jobs host. */
+export type JobsIpcHost = Pick<JobsHost, "jobs" | "settingsOf" | "scopeExists" | "summaries" | "runManual">;
+
+/** An id or scope from the window: a string of 1..200 characters (then looked up, J4). */
+function windowString(v: unknown, what: string): string {
+  if (typeof v !== "string" || v.length === 0 || v.length > 200) throw new Error(`Invalid ${what}`);
+  return v;
+}
+
+/**
+ * The window's jobs channels (parallel spec §9.1, J4): `hh:jobsList` and `hh:jobsRun`. Both refuse without jobs (plain
+ * or board mode without them, D0). "Run now" starts only a declared manual job that isn't off, in an existing scope; it
+ * answers false only when the job and scope are already queued or running.
+ */
+export function jobsIpc(host: () => JobsIpcHost | null) {
+  const jobs = (): JobsIpcHost => {
+    const h = host();
+    if (!h) throw new Error("No jobs");
+    return h;
+  };
+  return {
+    list: async (): Promise<JobSummary[]> => jobs().summaries(),
+    run: async (rawId: unknown, rawScope: unknown): Promise<boolean> => {
+      const h = jobs();
+      const id = windowString(rawId, "job");
+      if (!Object.hasOwn(h.jobs, id)) throw new Error("Unknown job");
+      const job = h.jobs[id];
+      if (job.on.manual !== true) throw new Error("This job is not run by hand");
+      if (h.settingsOf(id).off) throw new Error("The job is off");
+      const scope = rawScope === undefined || rawScope === null ? undefined : windowString(rawScope, "scope");
+      if (job.scope === "none" && scope !== undefined) throw new Error("This job has no scope");
+      if (job.scope === "trigger" && scope === undefined) throw new Error("This job needs a scope");
+      if (scope !== undefined && !(await h.scopeExists(scope))) throw new Error("Unknown scope");
+      return h.runManual(id, scope);
     },
   };
 }

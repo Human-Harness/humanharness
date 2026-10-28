@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { ConfigStore, historyDir } from "../src/main/config";
+import { ConfigStore, cleanJobs, historyDir } from "../src/main/config";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -118,6 +118,43 @@ describe("ConfigStore", () => {
     const loaded = await store.load();
     expect("parallel" in loaded).toBe(false);
     expect("notifyWaiting" in loaded).toBe(false);
+  });
+
+  it("keeps each job's valid Settings › Jobs entry; drops bad ids, bad values and empty entries (part 3)", async () => {
+    const dir = fs.mkdtempSync(path.join(root, "c-"));
+    const store = new ConfigStore(dir);
+    const jobs = { sync: { off: true, dailyTokens: 5000 }, tidy: { off: "yes", dailyTokens: 0 }, digest: { dailyTokens: 2.5 }, "Bad Id": { off: true }, nightly: { dailyTokens: 100, extra: 1 } };
+    fs.writeFileSync(path.join(dir, "config.json"), JSON.stringify({ folder: "/x", jobs }));
+    expect(await store.load()).toEqual({ folder: "/x", jobs: { sync: { off: true, dailyTokens: 5000 }, nightly: { dailyTokens: 100 } } });
+    fs.writeFileSync(path.join(dir, "config.json"), JSON.stringify({ folder: "/x", jobs: ["sync"] }));
+    expect(await store.load()).toEqual({ folder: "/x" });
+    fs.writeFileSync(path.join(dir, "config.json"), JSON.stringify({ folder: "/x", jobs: { sync: {} } }));
+    expect(await store.load()).toEqual({ folder: "/x" });
+  });
+
+  it("a saved jobs object replaces the whole entry: turning the last job back on clears it", async () => {
+    const store = new ConfigStore(fs.mkdtempSync(path.join(root, "c-")));
+    await store.save({ jobs: { sync: { off: true }, tidy: { dailyTokens: 10 } } });
+    await store.save({ jobs: { tidy: { dailyTokens: 10 } } });
+    expect((await store.load()).jobs).toEqual({ tidy: { dailyTokens: 10 } });
+    await store.save({ jobs: {} });
+    expect("jobs" in (await store.load())).toBe(false);
+  });
+
+  it("D0: a config without jobs never gets them", async () => {
+    const store = new ConfigStore(fs.mkdtempSync(path.join(root, "c-")));
+    await store.save({ language: "es" });
+    expect("jobs" in (await store.load())).toBe(false);
+  });
+
+  it("cleanJobs (the save's check): only declared ids, each cleaned; not an object is no change", () => {
+    const declared = (id: string) => id === "sync" || id === "tidy";
+    expect(cleanJobs({ sync: { off: true, dailyTokens: -1 }, tidy: { off: false }, other: { off: true }, toString: { off: true } }, declared)).toEqual({ sync: { off: true } });
+    expect(cleanJobs({}, declared)).toEqual({});
+    expect(cleanJobs("x", declared)).toBeUndefined();
+    expect(cleanJobs(null, declared)).toBeUndefined();
+    expect(cleanJobs([{ off: true }], declared)).toBeUndefined();
+    expect(Object.getPrototypeOf(cleanJobs(JSON.parse('{"__proto__":{"off":true}}'), () => true))).toBe(Object.prototype);
   });
 
   it("setProfile refuses anything that isn't an id", async () => {

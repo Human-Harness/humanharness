@@ -45,6 +45,8 @@ export class JobScheduler {
   private readonly active = new Map<string, AbortController>();
   /** Each `every` job's armed timer. */
   private readonly timers = new Map<string, unknown>();
+  /** Each `every` job's next run time (ms), while its timer is armed. */
+  private readonly dues = new Map<string, number>();
   private started = false;
   private stopped = false;
 
@@ -107,6 +109,12 @@ export class JobScheduler {
     return this.overCap(id, job);
   }
 
+  /** When `id`'s next `every` run is due; null when no timer is armed (not `every`, before setup, after quit). */
+  nextRun(id: string): Date | null {
+    const due = this.dues.get(id);
+    return due === undefined ? null : new Date(due);
+  }
+
   isActive(id: string, scope: string | null): boolean {
     return this.active.has(dedupeKey(id, scope));
   }
@@ -121,6 +129,7 @@ export class JobScheduler {
     this.stopped = true;
     for (const h of this.timers.values()) this.timer.clear(h);
     this.timers.clear();
+    this.dues.clear();
     this.cancelRuns();
   }
 
@@ -143,6 +152,7 @@ export class JobScheduler {
       Math.min(wait, TIMER_MAX_MS),
     );
     this.timers.set(id, handle);
+    this.dues.set(id, due);
   }
 
   /** Queues the trigger's runs, one per scope it covers; resolves with how many were queued (not when they end). */

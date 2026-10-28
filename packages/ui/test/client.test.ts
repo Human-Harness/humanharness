@@ -226,3 +226,32 @@ describe("client.tasks (parallel spec §9.1)", () => {
     expect(b.tasks.focus).not.toHaveBeenCalled();
   });
 });
+
+describe("client.jobs (parallel spec §9.1, part 3)", () => {
+  const info = { jobs: [{ id: "sync", label: "Sync", manual: true }] };
+  const row = { id: "sync", label: "Sync", scope: null, manual: true, running: false };
+
+  it("D0: the namespace is there, and without state.jobs every call is refused, as main does", async () => {
+    const client = new FakeClient();
+    expect(typeof client.jobs.list).toBe("function");
+    expect(typeof client.jobs.run).toBe("function");
+    expect(typeof client.jobs.onChange).toBe("function");
+    await expect(client.jobs.list()).rejects.toThrow("No jobs");
+    await expect(client.jobs.run("sync")).rejects.toThrow("No jobs");
+  });
+
+  it("with state.jobs: list answers what set() gave, onChange hears it until it unsubscribes, run is a spy", async () => {
+    const client = new FakeClient();
+    client.state.jobs = info;
+    expect(await client.jobs.list()).toEqual([]);
+    const heard: string[][] = [];
+    const off = client.jobs.onChange((rows) => heard.push(rows.map((r) => r.id)));
+    client.jobs.set([row]);
+    expect(await client.jobs.list()).toEqual([row]);
+    off();
+    client.jobs.set([]);
+    expect(heard).toEqual([["sync"]]);
+    expect(await client.jobs.run("sync", "physics")).toBe(true);
+    expect(client.jobs.run).toHaveBeenCalledWith("sync", "physics");
+  });
+});

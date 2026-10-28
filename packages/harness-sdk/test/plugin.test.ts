@@ -101,6 +101,74 @@ describe("JSON Schema allowlist (Decision 3, B11)", () => {
     expect(() => jsonSchemaToZod(schema)).toThrow();
   });
 
+  // A node with no type would go to z.fromJSONSchema as "any value", nested objects and their keys included.
+  const untyped: [string, unknown][] = [
+    ["an empty node", {}],
+    ["an array with no items", { type: "array" }],
+    ["a list of types with array and no items", { type: ["array", "null"] }],
+    ["an untyped anyOf branch", { anyOf: [{}] }],
+    ["annotations only", { title: "x", default: 1 }],
+  ];
+  const nested = (node: unknown): [string, unknown][] => [
+    ["at the top", node],
+    ["in properties", { type: "object", properties: { a: node } }],
+    ["in items", { type: "array", items: node }],
+    ["in anyOf", { anyOf: [{ type: "string" }, node] }],
+  ];
+  it.each(untyped.flatMap(([what, node]) => nested(node).map(([where, s]) => [`${what} ${where}`, s] as const)))("refuses %s", (_, schema) => {
+    expect(checkSchemaSubset(schema)).toMatch(/type|items/);
+    expect(() => jsonSchemaToZod(schema)).toThrow();
+  });
+
+  it("a node typed by enum, const or anyOf alone is accepted", () => {
+    expect(jsonSchemaToZod({ enum: ["a", 1, null] }).safeParse(1).success).toBe(true);
+    expect(jsonSchemaToZod({ const: "x" }).safeParse("y").success).toBe(false);
+    expect(jsonSchemaToZod({ anyOf: [{ type: "string" }, { const: 1 }] }).safeParse(1).success).toBe(true);
+  });
+
+  it.each([
+    [{ type: "string", maxLength: "3" }, "maxLength"],
+    [{ type: "string", minLength: -1 }, "minLength"],
+    [{ type: "string", minLength: 1.5 }, "minLength"],
+    [{ type: "array", items: { type: "string" }, maxItems: "1" }, "maxItems"],
+    [{ type: "array", items: { type: "string" }, minItems: -2 }, "minItems"],
+    [{ type: "number", minimum: "0" }, "minimum"],
+    [{ type: "number", maximum: null }, "maximum"],
+    [{ type: "number", exclusiveMinimum: true }, "exclusiveMinimum"],
+    [{ type: "number", exclusiveMaximum: "1" }, "exclusiveMaximum"],
+    [{ type: "number", multipleOf: 0 }, "multipleOf"],
+    [{ type: "number", multipleOf: -2 }, "multipleOf"],
+    [{ type: "string", enum: "abc" }, "enum"],
+    [{ type: "string", enum: [] }, "enum"],
+    [{ enum: [{ a: 1 }] }, "enum"],
+    [{ const: { a: 1 } }, "const"],
+    [{ type: "array", items: { type: "string" }, uniqueItems: "yes" }, "uniqueItems"],
+    [{ type: "string", title: 3 }, "title"],
+    [{ type: "string", description: [] }, "description"],
+    [{ $schema: "http://json-schema.org/draft-04/schema#", type: "number", exclusiveMinimum: true }, "\\$schema"],
+    [{ $schema: 1, type: "string" }, "\\$schema"],
+    [{ type: "object", properties: { a: { $schema: "https://json-schema.org/draft/2020-12/schema", type: "string" } } }, "\\$schema"],
+    [{ type: "array", items: { $schema: "http://json-schema.org/draft-07/schema#", type: "string" } }, "\\$schema"],
+  ])("refuses a bad keyword value in %j", (schema, word) => {
+    expect(checkSchemaSubset(schema)).toMatch(new RegExp(word));
+    expect(() => jsonSchemaToZod(schema)).toThrow(new RegExp(word));
+    expect(() => parsePluginManifest(manifest({ settings: { fields: { f: { schema, control: "text", label: "F" } } } }))).toThrow(z.ZodError);
+  });
+
+  it("takes $schema at the top for draft 2020-12 and draft-07", () => {
+    for (const uri of ["https://json-schema.org/draft/2020-12/schema", "http://json-schema.org/draft-07/schema#", "http://json-schema.org/draft-07/schema"]) {
+      expect(checkSchemaSubset({ $schema: uri, type: "number", exclusiveMinimum: 0 })).toBeNull();
+      expect(jsonSchemaToZod({ $schema: uri, type: "number", exclusiveMinimum: 0 }).safeParse(0).success).toBe(false);
+    }
+  });
+
+  it.each(["__proto__", "constructor", "prototype"])("refuses %s as a property name, and in required", (name) => {
+    const props = JSON.parse(`{"${name}": {"type": "string"}}`);
+    expect(checkSchemaSubset({ type: "object", properties: props })).toMatch(new RegExp(name));
+    expect(checkSchemaSubset({ type: "object", properties: { a: { type: "object", properties: props } } })).toMatch(new RegExp(name));
+    expect(checkSchemaSubset({ type: "object", properties: props, required: [name] })).toMatch(new RegExp(name));
+  });
+
   it("refuses depth over 8 and more than 200 nodes", () => {
     let deep: object = { type: "string" };
     for (let i = 0; i < 9; i++) deep = { type: "array", items: deep };
@@ -197,6 +265,14 @@ describe("collections and settings from plugin.json", () => {
     expect(() => pluginSettings(parsePluginManifest(bad))).toThrow();
     const control = manifest({ settings: { fields: { on: { schema: { type: "boolean" }, default: false, control: "slider", label: "On" } } } });
     expect(() => pluginSettings(parsePluginManifest(control))).toThrow();
+  });
+
+  it("a settings section's id is a local id and its label is short text", () => {
+    const fields = { on: { schema: { type: "boolean" }, default: false, control: "toggle", label: "On" } };
+    expect(() => parsePluginManifest(manifest({ settings: { sections: [{ id: "main", label: "Main" }], fields } }))).not.toThrow();
+    for (const section of [{ id: "Bad Id", label: "Main" }, { id: "", label: "Main" }, { id: "main", label: "" }, { id: "main", label: "x".repeat(61) }]) {
+      expect(() => parsePluginManifest(manifest({ settings: { sections: [section], fields } }))).toThrow();
+    }
   });
 
   it("a settings tab defaults to the plugin's name", () => {

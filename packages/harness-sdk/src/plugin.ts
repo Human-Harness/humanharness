@@ -34,6 +34,13 @@ const WORDS_OF: Record<string, readonly string[]> = {
 };
 /** What may sit next to `anyOf`: annotations only, so a union never mixes with constraints. */
 const ANNOTATIONS = new Set(["anyOf", "default", "title", "description", "$schema"]);
+/** The `$schema` URIs taken, at the top only: both read exclusiveMinimum/Maximum as numbers (draft-04 does not). */
+const SCHEMA_URIS = new Set(["https://json-schema.org/draft/2020-12/schema", "http://json-schema.org/draft-07/schema#", "http://json-schema.org/draft-07/schema"]);
+/** Property names that would reach an object's prototype once the zod shape is built. */
+const UNSAFE_NAMES = new Set(["__proto__", "constructor", "prototype"]);
+const COUNTS = ["minLength", "maxLength", "minItems", "maxItems"];
+const BOUNDS = ["minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum"];
+const isPlain = (v: unknown) => v === null || ["string", "boolean"].includes(typeof v) || (typeof v === "number" && Number.isFinite(v));
 const MAX_DEPTH = 8;
 const MAX_NODES = 200;
 
@@ -55,6 +62,8 @@ export function checkSchemaSubset(schema: unknown): string | null {
     if (depth > MAX_DEPTH) return `the schema is too deep (more than ${MAX_DEPTH} levels)`;
     if (++nodes > MAX_NODES) return `the schema is too large (more than ${MAX_NODES} parts)`;
     for (const word of Object.keys(node)) if (!SCHEMA_WORDS.has(word)) return `"${word}" is not supported in plugin schemas`;
+    const why = checkValues(node, depth);
+    if (why) return why;
     if (Object.hasOwn(node, "type")) {
       const t = node.type;
       const list = typeof t === "string" ? [t] : Array.isArray(t) ? t : null;
@@ -63,6 +72,9 @@ export function checkSchemaSubset(schema: unknown): string | null {
       }
     }
     const types = typesOf(node);
+    // A node with nothing that types it would go to z.fromJSONSchema as "any value", object keys never stripped.
+    if (types.length === 0 && !["enum", "const", "anyOf"].some((w) => Object.hasOwn(node, w))) return 'every schema part needs "type", "enum", "const" or "anyOf"';
+    if (types.includes("array") && !Object.hasOwn(node, "items")) return '"type": "array" needs "items"';
     const object = types.includes("object");
     if (!object && WORDS_OF.object.some((w) => Object.hasOwn(node, w))) return 'properties, required and additionalProperties need "type": "object"';
     if (object && (Object.hasOwn(node, "enum") || Object.hasOwn(node, "const"))) return "enum and const take plain values, not objects";
@@ -71,6 +83,7 @@ export function checkSchemaSubset(schema: unknown): string | null {
     const properties = node.properties;
     if (properties !== undefined) {
       if (!isNode(properties)) return `"properties" is an object`;
+      for (const name of Object.keys(properties)) if (UNSAFE_NAMES.has(name)) return `"${name}" can't be a property name`;
       for (const child of Object.values(properties)) {
         const why = walk(child, depth + 1);
         if (why) return why;
@@ -79,6 +92,7 @@ export function checkSchemaSubset(schema: unknown): string | null {
     if (Object.hasOwn(node, "required")) {
       const req = node.required;
       if (!Array.isArray(req) || req.some((r) => typeof r !== "string")) return `"required" is a list of property names`;
+      for (const r of req as string[]) if (UNSAFE_NAMES.has(r)) return `"${r}" can't be a property name`;
       for (const r of req as string[]) if (!isNode(properties) || !Object.hasOwn(properties, r)) return `"required" names "${r}", which is not in properties`;
     }
     if (Object.hasOwn(node, "items")) {
@@ -95,6 +109,22 @@ export function checkSchemaSubset(schema: unknown): string | null {
     return null;
   };
   return walk(schema, 0);
+}
+
+/** Why a keyword of `node` holds a value of the wrong kind, else null: none is dropped or thrown on later. */
+function checkValues(node: SchemaNode, depth: number): string | null {
+  const has = (w: string) => Object.hasOwn(node, w);
+  if (has("$schema") && (depth > 0 || typeof node.$schema !== "string" || !SCHEMA_URIS.has(node.$schema))) {
+    return `"$schema" goes at the top only, as draft 2020-12 or draft-07`;
+  }
+  for (const w of COUNTS) if (has(w) && !(Number.isInteger(node[w]) && (node[w] as number) >= 0)) return `"${w}" is a whole number, 0 or more`;
+  for (const w of BOUNDS) if (has(w) && !(typeof node[w] === "number" && Number.isFinite(node[w]))) return `"${w}" is a number`;
+  if (has("multipleOf") && !(typeof node.multipleOf === "number" && Number.isFinite(node.multipleOf) && node.multipleOf > 0)) return `"multipleOf" is a number over 0`;
+  if (has("enum") && (!Array.isArray(node.enum) || node.enum.length === 0 || !node.enum.every(isPlain))) return `"enum" is a non-empty list of plain values`;
+  if (has("const") && !isPlain(node.const)) return `"const" is a plain value`;
+  if (has("uniqueItems") && typeof node.uniqueItems !== "boolean") return `"uniqueItems" takes true or false only`;
+  for (const w of ["title", "description"]) if (has(w) && typeof node[w] !== "string") return `"${w}" is text`;
+  return null;
 }
 
 /** An object node sits at or below `node`: it needs our own builder (spike S8). */
@@ -227,7 +257,7 @@ export const pluginManifestSchema = z
     settings: z
       .strictObject({
         tab: text.max(40).optional(),
-        sections: z.array(z.strictObject({ id: z.string(), label: z.string() })).default([]),
+        sections: z.array(z.strictObject({ id: z.string().regex(PLUGIN_LOCAL_ID), label: text.max(60) })).default([]),
         fields: z.record(z.string().regex(SETTING_NAME), settingFieldJson),
       })
       .optional(),

@@ -1,0 +1,27 @@
+{
+  "id": "hello",
+  "name": "Hello",
+  "version": "1.0.0",
+  "api": 1,
+  "harness": "*",
+  "permissions": {},
+  "sources": [{ "id": "tick", "ttl": 60 }],
+  "data": {
+    "greetings": {
+      "key": "id",
+      "agent": "read",
+      "context": { "fields": "all", "tokens": 100 },
+      "schema": {
+        "type": "object",
+        "properties": { "id": { "type": "string" }, "text": { "type": "string" } },
+        "required": ["id", "text"]
+      }
+    }
+  },
+  "chips": [{ "id": "who", "slot": "top-bar" }],
+  "settings": {
+    "fields": {
+      "name": { "schema": { "type": "string", "minLength": 1, "maxLength": 40 }, "default": "friend", "control": "text", "label": "Name", "agent": "Greet the person as {{value}}." }
+    }
+  }
+}

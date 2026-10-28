@@ -66,6 +66,8 @@ export default defineHarness({
     // A ready-made second sidekick the person may add (sidekick spec §2a.7); nothing changes until they do.
     presets: [{ name: "Guard", mark: "🛡️", personality: "Calm and brief.", purposes: [{ id: "process-guard" }] }],
   },
+  // The demo accepts plugins added from a folder (plugins spec §3.4); part 2 adds its own bundled plugin.
+  plugins: { local: true },
   tagline: "How Human Harness works",
   tone: "clear and friendly, for developers; short sentences",
   author: "Marco Zanger",

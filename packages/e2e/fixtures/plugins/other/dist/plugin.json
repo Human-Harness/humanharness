@@ -1,0 +1,16 @@
+{
+  "id": "other",
+  "name": "Other",
+  "version": "1.0.0",
+  "api": 1,
+  "harness": "*",
+  "permissions": {},
+  "sources": [],
+  "data": {
+    "results": {
+      "key": "name",
+      "agent": "none",
+      "schema": { "type": "object", "properties": { "name": { "type": "string" }, "outcome": { "type": "string" } }, "required": ["name", "outcome"] }
+    }
+  }
+}

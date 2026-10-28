@@ -1,5 +1,7 @@
 node_modules/
 dist/
+# The e2e test plugins are hand-written dist/ folders (no build step).
+!packages/e2e/fixtures/plugins/*/dist/
 tmp-spike/
 .DS_Store
 *.log

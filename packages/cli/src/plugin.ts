@@ -2,6 +2,7 @@ import path from "node:path";
 import { type Io, UsageError, parseCommand } from "./cli";
 import { buildPlugin } from "./plugin-build";
 import { checkPlugin, formatPluginFindings } from "./plugin-check";
+import { P12_NOTE, formatTestReports, testPlugin } from "./plugin-test";
 
 type Command = (args: string[], io: Io) => Promise<number>;
 
@@ -29,6 +30,14 @@ export const CHECK_USAGE = [
   "",
   "Builds the plugin, then checks dist/plugin.json, the sources, the fixtures and PLUGIN.md. Errors exit with 1.",
   "--harness <dir> also checks that the slots the panels and chips name exist in that harness.",
+  "",
+].join("\n");
+
+export const TEST_USAGE = [
+  "Usage: humanharness plugin test [--plugin <dir>] [--source <id>] [--now <iso>] [--json]",
+  "",
+  "Runs every source of the built plugin (dist/) once on its fixtures, with no network and no keys, and prints the",
+  "records written, the attention items, the chips and the log. --now fixes the backend's clock. A failed source exits with 1.",
   "",
 ].join("\n");
 
@@ -68,10 +77,35 @@ async function checkCommand(args: string[], io: Io): Promise<number> {
   return findings.some((f) => f.severity === "error") ? 1 : 0;
 }
 
+async function testCommand(args: string[], io: Io): Promise<number> {
+  if (wantsHelp(args)) {
+    io.stdout.write(TEST_USAGE);
+    return 0;
+  }
+  const { values, positionals } = parseCommand(args, {
+    plugin: { type: "string" },
+    source: { type: "string" },
+    now: { type: "string" },
+    json: { type: "boolean" },
+  });
+  if (positionals.length > 0) throw new UsageError(TEST_USAGE.trim());
+  const now = values.now === undefined ? undefined : new Date(values.now);
+  if (now && Number.isNaN(now.getTime())) throw new UsageError(`--now: "${values.now}" is not a date (use an ISO date, e.g. 2026-10-28T09:00:00Z).`);
+  // P12: said before any plugin code runs; on stderr with --json, so stdout stays one JSON document.
+  (values.json ? io.stderr : io.stdout).write(`${P12_NOTE}\n`);
+  const reports = await testPlugin(path.resolve(io.cwd, values.plugin ?? "."), {
+    ...(values.source !== undefined ? { source: values.source } : {}),
+    ...(now ? { now } : {}),
+  });
+  io.stdout.write(values.json ? `${JSON.stringify({ reports }, null, 2)}\n` : formatTestReports(reports));
+  return reports.every((r) => r.ok) ? 0 : 1;
+}
+
 /** The plugin commands, by name. Later tasks add theirs (init, check, record, test, dev). */
 const PLUGIN_COMMANDS: Record<string, Command> = {
   build: buildCommand,
   check: checkCommand,
+  test: testCommand,
 };
 
 /** `humanharness plugin <command>` (plugins spec §9): the authoring tools. */

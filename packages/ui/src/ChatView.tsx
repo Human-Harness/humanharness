@@ -1606,7 +1606,7 @@ export function ChatView({
           client={client}
           actions={state.actions}
           currentTask={tasks.current?.id}
-          {...(state.parallel ? { undoByFiles: true } : {})}
+          {...(state.parallel || state.jobs ? { undoByFiles: true } : {})}
           disabled={Boolean(chat.live) || closing || checkpoint}
           onClose={() => setShowHistory(false)}
           onRestored={(kind) => {

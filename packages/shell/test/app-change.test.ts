@@ -83,6 +83,33 @@ describe("saveAppChange: a change of the app's own files (parallel spec §5.3)",
   });
 });
 
+describe("single mode's undo (part 3 Decision 12)", () => {
+  it("undoing a task keeps a job run's file committed in between; undoing the run keeps the task's", async () => {
+    await history.save("Before message", { task: "ta" });
+    write("a.md", "a");
+    await history.commitPaths(["a.md"], "Turn: A", { task: "ta" });
+    // A job run beside the task commits b.md under its own run id and Job: trailer.
+    write("b.md", "b");
+    await history.commitPaths(["b.md"], "Turn: job", { task: "r1", job: "sync" });
+    const undo = await restoreTaskByPaths(history, "ta", { running: [], includeShared: false });
+    expect(undo).toMatchObject({ ok: true, paths: ["a.md"] });
+    expect(exists("b.md")).toBe(true);
+    expect(exists("a.md")).toBe(false);
+  });
+
+  it("index.ts: single mode undoes by paths too, and a restore waits for the job runs", () => {
+    const index = fs.readFileSync(path.resolve(__dirname, "../src/main/index.ts"), "utf8");
+    // The by-paths branch serves the board and single mode; plain mode keeps the whole-folder restore (D0).
+    expect(index).toMatch(/const byPaths = undoByPaths\(\);\n\s*if \(byPaths\) \{/);
+    expect(index).toMatch(/if \(!single\) return null;/);
+    expect(index).toMatch(/running: async \(\) => \{\n\s*const rt = await runtime\.peek\(\)\?\.catch\(\(\) => null\);\n\s*const ws = rt \? singleParts\.get\(rt\)\?\.workspace : undefined;/);
+    // The run being undone, still running, refuses its own undo (its paths are its own, so P2 doesn't catch it).
+    expect(index).toMatch(/const jobRunning = \(id: string\) => \(jobsHost\?\.runningOf\(`job:\$\{id\}`\) \?\? null\) !== null;/);
+    // "Go back here" is refused while a job runs.
+    expect(index).toMatch(/new RestoreGuard\(\{ quitting: \(\) => quitting, busy: \(\) => tasks\.isBusy\(\) \|\| \(jobsHost\?\.running\(\) \?\? false\)/);
+  });
+});
+
 describe("index.ts: the app's own changes go through saveAppChange, board mode decided by the host", () => {
   const index = fs.readFileSync(path.resolve(__dirname, "../src/main/index.ts"), "utf8");
   it("material, Sidekick's decision note and learning, and a lane's note", () => {

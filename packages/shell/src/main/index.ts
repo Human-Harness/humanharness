@@ -875,6 +875,26 @@ async function dropRuntime() {
   }
 }
 
+/**
+ * "Undo this task" by its own paths (parallel spec §5.3): board mode, and `single` mode, where job runs commit beside
+ * the task. Null in plain mode: the whole folder back to the task's start, as always (D0). `busy`: the task's own lane
+ * (single mode: the task) or the job run being undone is still running.
+ */
+function undoByPaths(): { running: () => Promise<{ task: string; paths: ReadonlySet<string> }[]>; busy: (id: string) => boolean } | null {
+  const jobRunning = (id: string) => (jobsHost?.runningOf(`job:${id}`) ?? null) !== null;
+  const board = host;
+  if (board) return { running: () => board.runningPaths(), busy: (id) => (board.lane(id)?.manager.isBusy() ?? false) || jobRunning(id) };
+  if (!single) return null;
+  return {
+    running: async () => {
+      const rt = await runtime.peek()?.catch(() => null);
+      const ws = rt ? singleParts.get(rt)?.workspace : undefined;
+      return ws ? ws.runningPaths() : [];
+    },
+    busy: (id) => tasks.isBusy() || jobRunning(id),
+  };
+}
+
 /** `single` mode: the running runtime's `"main"` slot, if one is open (never opens one). */
 async function singleMainSlot(): Promise<SessionSlot | null> {
   const rt = await runtime.peek()?.catch(() => null);
@@ -1524,7 +1544,7 @@ const hold = holds({
  * Restores: refused while quitting, while a task operation runs or turns are held (engine change, folder
  * move, a profile switch); one at a time; new turns are refused and a runtime starting waits until it ends.
  */
-const restores = new RestoreGuard({ quitting: () => quitting, busy: () => tasks.isBusy(), turnBlocked: hold.restoreHeld });
+const restores = new RestoreGuard({ quitting: () => quitting, busy: () => tasks.isBusy() || (jobsHost?.running() ?? false), turnBlocked: hold.restoreHeld });
 const restoreWith = (run: (history: History) => Promise<unknown>) => restores.run(currentHistory, run);
 
 /**
@@ -1845,17 +1865,18 @@ function registerIpc() {
   handle("hh:restoreTask", (taskId: unknown, includeShared?: unknown) => {
     // Board mode (Decision 12): only the task's own paths (its shared ones after the person's confirm), refused while
     // its own lane runs, or a running turn touched one of them (P2). Other lanes go on meanwhile.
-    const board = host;
-    if (board) {
+    // `single` mode the same (part 3 Decision 12): a job's commits sit between the task's, and a job run is undone alone.
+    const byPaths = undoByPaths();
+    if (byPaths) {
       const { id, includeShared: withShared } = restoreTaskArgs(taskId, includeShared);
       let result: Awaited<ReturnType<typeof restoreTaskByPaths>> | null = null;
       return restores
         .run(
           currentHistory,
           async (history: History) => {
-            result = await restoreTaskByPaths(history, id, { running: () => board.runningPaths(), includeShared: withShared });
+            result = await restoreTaskByPaths(history, id, { running: byPaths.running, includeShared: withShared });
           },
-          { busy: () => board.lane(id)?.manager.isBusy() ?? false },
+          { busy: () => byPaths.busy(id) },
         )
         .then(() => {
           const r = result!;

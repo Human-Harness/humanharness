@@ -3,6 +3,7 @@ import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { parsePluginManifest } from "@humanharness/harness-sdk";
 import { PluginBroker } from "../src/main/plugin-broker";
+import { watchPluginFolder } from "../src/main/plugins";
 import { type Ctx, bundled, setup, tmp, until, writePlugin } from "./plugins-fixtures";
 
 const FIXTURE = {
@@ -202,9 +203,9 @@ describe("PluginsController in fixture mode (P10)", () => {
 
 describe("PluginsController dev watcher (Decision 22)", () => {
   function watcher() {
-    const watched = new Map<string, () => void>();
+    const watched = new Map<string, (name: string | null) => void>();
     const unwatched: string[] = [];
-    const watch = vi.fn((dir: string, onChange: () => void) => {
+    const watch = vi.fn((dir: string, onChange: (name: string | null) => void) => {
       watched.set(dir, onChange);
       return () => void unwatched.push(dir);
     });
@@ -217,15 +218,16 @@ describe("PluginsController dev watcher (Decision 22)", () => {
     const surfaceChanged = vi.fn();
     const t = await setup({ over: { devDirs: [path.dirname(dist)], watch: w.watch, surfaceChanged } });
     await t.ctl.start();
-    const real = await fs.realpath(dist);
+    // The plugin folder is watched, not dist/: every `plugin build` renames dist/ away and a new one in.
+    const real = path.dirname(await fs.realpath(dist));
     expect([...w.watched.keys()]).toEqual([real]);
     expect(t.host.started).toEqual(["devp"]);
     await fs.writeFile(path.join(dist, "backend.js"), "export default { sources: { s: async () => { /* v2 */ } } };\n");
     const fire = w.watched.get(real)!;
-    fire();
-    fire();
+    fire("dist");
+    fire(path.join("dist", "backend.js"));
     await new Promise((r) => setTimeout(r, 150));
-    fire();
+    fire(null);
     expect(t.host.started).toEqual(["devp"]);
     await until(() => t.ctl.surface().reloads.devp === 1, 2000);
     expect(t.host.started).toEqual(["devp", "devp"]);
@@ -233,6 +235,47 @@ describe("PluginsController dev watcher (Decision 22)", () => {
     expect(t.ctl.surface().reloads.devp).toBe(1);
     await t.ctl.stop();
     expect(w.unwatched).toEqual([real]);
+  });
+
+  it("only dist/ counts: a build's dist.tmp-*/dist.old-* folders, sources and fixtures don't reload", async () => {
+    const dist = await writePlugin(await tmp(), "devp", { panels: [{ id: "main", title: "Main" }] });
+    const w = watcher();
+    const t = await setup({ over: { devDirs: [path.dirname(dist)], watch: w.watch } });
+    await t.ctl.start();
+    const fire = w.watched.get(path.dirname(await fs.realpath(dist)))!;
+    for (const name of ["dist.tmp-1a2b", path.join("dist.tmp-1a2b", "backend.js"), "dist.old-3c4d", path.join("dist.old-3c4d", "plugin.json"), "backend.ts", path.join("fixtures", "s", "001.json"), "distx"]) fire(name);
+    await new Promise((r) => setTimeout(r, 450));
+    expect(t.ctl.surface().reloads.devp ?? 0).toBe(0);
+    expect(t.host.started).toEqual(["devp"]);
+    // The swap landing: the rename into dist/ is the change.
+    fire("dist");
+    await until(() => t.ctl.surface().reloads.devp === 1, 2000);
+  });
+
+  it("reload survives repeated build swaps (out.tmp → out, old → out.old) with the app's real watcher", async () => {
+    const dist = await writePlugin(await tmp(), "devp", { panels: [{ id: "main", title: "Main" }] });
+    const folder = path.dirname(dist);
+    const log = vi.fn();
+    const t = await setup({ over: { devDirs: [folder], watch: watchPluginFolder, log } });
+    await t.ctl.start();
+    // As `plugin build` does: build into dist.tmp-<hex>, move dist/ away, move the new one in, delete the old.
+    // Counted from before each swap: the OS may still deliver events from writing the plugin in the first place.
+    for (let i = 1; i <= 3; i++) {
+      await new Promise((r) => setTimeout(r, 400));
+      const reloads = t.ctl.surface().reloads.devp ?? 0;
+      const started = t.host.started.length;
+      const tmpDir = path.join(folder, `dist.tmp-${i}abc`);
+      const oldDir = path.join(folder, `dist.old-${i}def`);
+      await fs.mkdir(tmpDir);
+      await fs.copyFile(path.join(dist, "plugin.json"), path.join(tmpDir, "plugin.json"));
+      await fs.writeFile(path.join(tmpDir, "backend.js"), `export default { sources: { s: async () => { /* v${i + 1} */ } } };\n`);
+      await fs.rename(dist, oldDir);
+      await fs.rename(tmpDir, dist);
+      await fs.rm(oldDir, { recursive: true });
+      await until(() => (t.ctl.surface().reloads.devp ?? 0) > reloads && t.host.started.length > started, 4000);
+    }
+    await t.ctl.stop();
+    expect(log.mock.calls.map((c) => String(c[0]))).toEqual([]);
   });
 
   it("bundled and local plugins are never watched; no dev plugins → watch is never called", async () => {

@@ -1,5 +1,5 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
-import { constants as fsConstants, promises as fs } from "node:fs";
+import { constants as fsConstants, promises as fs, watch as fsWatch } from "node:fs";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
 import {
@@ -105,8 +105,11 @@ export interface PluginsDeps {
    * `fixture-<id>`, and neither `fetch`, the command runner, a binary lookup nor the key store is used.
    */
   fixtures?: boolean;
-  /** Watches a dev plugin's `dist/` (Decision 22); answers the unwatch. Absent: dev plugins aren't watched. */
-  watch?(dir: string, onChange: () => void): () => void;
+  /**
+   * Watches a dev plugin's folder, recursively (Decision 22): `onChange` gets the changed path relative to `dir`, or
+   * null when the platform doesn't say. Answers the unwatch. Absent: dev plugins aren't watched. See watchPluginFolder.
+   */
+  watch?(dir: string, onChange: (name: string | null) => void): () => void;
   now?(): Date;
   /** A monotonic clock in ms for the crash policy (default performance.now). */
   clock?(): number;
@@ -191,6 +194,23 @@ const FIXTURE_FILES = 200;
 const FIXTURE_BYTES = 10 * 1024 * 1024;
 const WATCH_DEBOUNCE_MS = 300;
 
+/**
+ * The app's dev watcher (Decision 22): a recursive fs.watch on a dev plugin's folder. The folder, not `dist/`: every
+ * `plugin build` builds into `dist.tmp-<hex>`, renames `dist/` to `dist.old-<hex>` and the new one to `dist/`, and a
+ * watch on `dist/` itself follows the old folder away (or dies) on the first swap. The controller filters to `dist/`.
+ */
+export function watchPluginFolder(dir: string, onChange: (name: string | null) => void, onError?: (err: unknown) => void): () => void {
+  const w = fsWatch(dir, { recursive: true }, (_event, name) => onChange(name === null ? null : String(name)));
+  w.on("error", (err) => onError?.(err));
+  return () => w.close();
+}
+
+/** A watched change concerns `dist` (that folder or anything in it; null = unknown, so yes) — not `dist.tmp-*`, `dist.old-*`, sources or fixtures. */
+function inDist(name: string | null, dist: string): boolean {
+  if (name === null) return true;
+  return name.split(/[\\/]/)[0] === dist;
+}
+
 interface Prepared {
   view: PreparedTaskView;
   /** The action's own scope, handed to TaskManager.startPrepared as is. */
@@ -229,8 +249,8 @@ export class PluginsController {
   private prepared: Prepared | null = null;
   private readonly reloads: Record<string, number> = {};
   private lastSurface = JSON.stringify(EMPTY_SURFACE);
-  /** Dev plugins' `dist/` watches (Decision 22), by plugin id, and their debounce timers. */
-  private readonly watches = new Map<string, { dir: string; stop: () => void }>();
+  /** Dev plugins' watches (Decision 22), by plugin id (`key`: the folder and filter watched), and their debounce timers. */
+  private readonly watches = new Map<string, { key: string; stop: () => void }>();
   private readonly watchTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   constructor(private readonly d: PluginsDeps) {
@@ -307,22 +327,35 @@ export class PluginsController {
     this.syncWatches();
   }
 
-  /** Every dev plugin's `dist/` is watched (only those: bundled and local plugins never are); gone ones unwatched. */
+  /**
+   * Every dev plugin is watched (only those: bundled and local plugins never are); gone ones unwatched. A built plugin
+   * (`<folder>/dist/`) is watched through its folder, counting only changes to `dist` — a build swaps that folder, see
+   * watchPluginFolder. A folder that is itself the plugin (or has none yet) is watched whole.
+   */
   private syncWatches(): void {
     if (!this.d.watch || this.detached) return;
-    const want = new Map(this.entries.filter((e) => e.origin === "dev").map((e) => [e.id, e.dist]));
-    for (const [id, w] of [...this.watches]) if (want.get(id) !== w.dir) this.unwatch(id);
-    for (const [id, dir] of want) {
+    const want = new Map<string, { dir: string; only: string | null; key: string }>();
+    for (const e of this.entries) {
+      if (e.origin !== "dev") continue;
+      const built = path.basename(e.dist) === "dist" && path.basename(e.folder) !== "dist";
+      const [dir, only] = built ? [path.dirname(e.dist), "dist"] : [e.dist, null];
+      want.set(e.id, { dir, only, key: `${dir}\0${only ?? ""}` });
+    }
+    for (const [id, w] of [...this.watches]) if (want.get(id)?.key !== w.key) this.unwatch(id);
+    for (const [id, { dir, only, key }] of want) {
       if (this.watches.has(id)) continue;
+      const onChange = (name: string | null) => {
+        if (only === null || inDist(name, only)) this.devChanged(id);
+      };
       try {
-        this.watches.set(id, { dir, stop: this.d.watch(dir, () => this.devChanged(id)) });
+        this.watches.set(id, { key, stop: this.d.watch(dir, onChange) });
       } catch (err) {
         this.log(`${id}: could not watch ${dir}`, err);
       }
     }
   }
 
-  /** A dev plugin's `dist/` changed: after a quiet 300 ms, rescan (new code restarts the backend) and remount its frames. */
+  /** A dev plugin's `dist/` changed (or was swapped by a build): after a quiet 300 ms, rescan (new code restarts the backend) and remount its frames. */
   private devChanged(id: string): void {
     clearTimeout(this.watchTimers.get(id));
     this.watchTimers.set(

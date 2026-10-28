@@ -234,7 +234,7 @@ The app runs plugins on recorded exchanges instead of the network in mock mode (
 
 ## Dev reload (part 2)
 
-In a development build the controller watches each **dev** plugin's `dist/` (`fs.watch`, recursive; bundled and local plugins never are). 300 ms after the last change it rescans, which restarts the backend when the `dist/` changed, and bumps `reloads[plugin]` in the surface, so every `PanelFrame` of that plugin remounts with a fresh frame.
+In a development build the controller watches each **dev** plugin's folder (`fs.watch`, recursive; bundled and local plugins never are) and counts only changes to `dist/`: every `build` swaps `dist/` (builds into `dist.tmp-<hex>`, renames the old one to `dist.old-<hex>` and the new one in), so a watch on `dist/` itself would follow the old folder away. Changes in `dist.tmp-*`, `dist.old-*`, sources and fixtures are ignored. 300 ms after the last change it rescans, which restarts the backend when the `dist/` changed, and bumps `reloads[plugin]` in the surface, so every `PanelFrame` of that plugin remounts with a fresh frame.
 
 ## D0
 
@@ -338,7 +338,6 @@ Part 2, security:
 
 Part 2, behaviour authors should know:
 
-- **The dev watcher on a renamed `dist/`.** The app watches each dev plugin's `dist/` with one `fs.watch`, but every `build` swaps `dist/` by renaming it away and a new one in. On macOS the watch kept firing after two swaps; on Linux it likely watches the old, renamed folder and stops reloading after the first rebuild. The fix is to watch again after each rescan, or to watch the plugin folder and filter to `dist/`.
 - **Plain `humanharness dev` passes an inherited `HH_PLUGIN_DIRS` through** (and `HH_PLUGIN_FIXTURES`), as before part 2. Only `plugin dev` replaces every inherited `HH_PLUGIN_*`.
 - **The plugin template and the demo plugin aren't type-checked** by the repo's `typecheck`: the root config skips `harnesses/*/plugins`, and a plugin's own `tsconfig.json` can't resolve `@humanharness/plugin-ui` or `*.css` imports. `build` (esbuild) doesn't type-check either.
 - **One prepared task at a time**: a newer `requestAction` from any plugin replaces the waiting card. An attention item's action is refused "Too soon" within 2 s of the same plugin's last card (logged against the plugin).

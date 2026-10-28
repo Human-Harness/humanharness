@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { promises as fs, watch as watchFolder } from "node:fs";
+import { promises as fs } from "node:fs";
 import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
@@ -122,7 +122,7 @@ import { installPluginPanels, registerPluginsIpc, safeStorageCrypto } from "./pl
 import { PluginPointers } from "./plugin-load";
 import { SecretStore } from "./plugin-secrets";
 import { PLUGIN_STATE_DIR } from "./plugin-state";
-import { PluginsController } from "./plugins";
+import { PluginsController, watchPluginFolder } from "./plugins";
 import { respondHandler } from "./respond-ipc";
 import { SettingsController } from "./settings";
 import { SidekickController, localDay } from "./sidekick";
@@ -1916,13 +1916,7 @@ if (loaded) {
       // `plugin dev` (Decision 22): a dev plugin's dist/ rebuilt → its backend restarts and its panels remount.
       ...(app.isPackaged
         ? {}
-        : {
-            watch: (dir: string, onChange: () => void) => {
-              const w = watchFolder(dir, { recursive: true }, () => onChange());
-              w.on("error", (err) => pluginLog(`Stopped watching ${dir}`, err));
-              return () => w.close();
-            },
-          }),
+        : { watch: (dir: string, onChange: (name: string | null) => void) => watchPluginFolder(dir, onChange, (err) => pluginLog(`Stopped watching ${dir}`, err)) }),
       changed: (view) => sendToWindow("hh:plugins", view),
       attentionChanged: (view) => sendToWindow("hh:attention", view),
       surfaceChanged: (view) => sendToWindow("hh:pluginSurface", view),

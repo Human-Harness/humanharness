@@ -235,6 +235,19 @@ describe("D0: plain mode never sets the Dock badge, raises a task item or shares
     expect(index).toMatch(/\n\s*attention: buildTaskAttention\(\),\n\s*\},\n\s*\{ engineId: c\.engineId, parallel: c\.parallel \},/);
   });
 
+  it("part 3: the badge outside the task attention is set only with jobs, and never in board mode", () => {
+    // The one setDockBadge caller outside TaskAttention: refreshDockBadge, which plain-mode plugins reach too
+    // (attentionChanged). Its guard keeps plain mode (no jobs host) from ever setting a badge (D0).
+    expect([...index.matchAll(/\bsetDockBadge\(/g)]).toHaveLength(1);
+    expect(index).toMatch(
+      /function refreshDockBadge\(\): void \{\n\s*if \(taskAttention\) return taskAttention\.refreshBadge\(\);\n\s*if \(!jobsHost \|\| host\) return;\n\s*try \{\n\s*setDockBadge\(pluginBadge \+ jobBadge\);/,
+    );
+    expect(index).toMatch(/const setDockBadge = \(n: number\): void => app\.dock\?\.setBadge\(/);
+    // jobsHost is assigned only where the harness has jobs.
+    expect([...index.matchAll(/\bjobsHost = /g)]).toHaveLength(1);
+    expect(index).toMatch(/if \(hasJobs\(harness\)\) \{\n\s*const board = host;\n\s*jobsHost = board/);
+  });
+
   it("the shared stores exist only in board (and, part 3, single) mode; plain mode's plugins build their own", () => {
     expect([...index.matchAll(/\bsharedAttention = /g)]).toHaveLength(1);
     expect(index).toMatch(/if \(hostMode\(harness\) !== "plain"\) \{\n\s*const stores = attentionStores\(/);

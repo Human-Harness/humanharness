@@ -137,17 +137,35 @@ function answerTarget(turn: MockTurn, prompt: string): string | undefined {
   return answer ? turn.respond?.find((r) => r.block === answer.block && sameJson(r.value, answer.value))?.next : undefined;
 }
 
+/** A harness action and the line its brief always puts in the task's first message (`briefMatch`, as `--record` writes). */
+export interface ActionMatch {
+  action: string;
+  match: string;
+}
+
+/** The longest `match` in `prompt`, so "# Topic: engines" never shadows "# Topic: engines and more". */
+const longestMatch = <T extends { match: string }>(items: readonly T[], prompt: string): T | undefined =>
+  [...items].filter((i) => i.match.trim()).sort((a, b) => b.match.length - a.match.length).find((i) => prompt.includes(i.match));
+
 /**
  * One engine turn of mock mode. `newSession`: the run opened a session (`--session-id`), so the prompt is a
- * task's first message and picks the recording; otherwise `position` says where the session is.
+ * task's first message and picks the recording; otherwise `position` says where the session is. `actions`: the
+ * harness's actions by their brief's match, so a task of an action with no recording still knows its action
+ * (its closing note is titled after it); a free question matches none.
  */
-export function replay(recordings: Recording[], position: SessionPosition | undefined, prompt: string, newSession: boolean): { play: Play; session: SessionPosition } {
+export function replay(
+  recordings: Recording[],
+  position: SessionPosition | undefined,
+  prompt: string,
+  newSession: boolean,
+  actions: readonly ActionMatch[] = [],
+): { play: Play; session: SessionPosition } {
   if (newSession || !position) {
     // `!newSession && !position` (a lost state file) is treated as a first message too.
-    // The longest match wins, so "# Topic: engines" never shadows "# Topic: engines and more".
-    const rec = [...recordings].sort((a, b) => b.match.length - a.match.length).find((r) => prompt.includes(r.match));
+    const rec = longestMatch(recordings, prompt);
     const turn = rec && firstTurn(rec);
-    if (!rec || !turn) return { play: quiet(rec?.fallback?.text ?? DEFAULT_FALLBACK), session: { action: rec?.action ?? null, turn: null } };
+    const action = rec?.action ?? longestMatch(actions, prompt)?.action ?? null;
+    if (!rec || !turn) return { play: quiet(rec?.fallback?.text ?? DEFAULT_FALLBACK), session: { action, turn: null } };
     return { play: playTurn(turn), session: { action: rec.action, turn: turn.id } };
   }
   const rec = recordings.find((r) => r.action === position.action);

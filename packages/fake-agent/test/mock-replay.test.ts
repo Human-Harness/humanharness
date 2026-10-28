@@ -82,6 +82,24 @@ describe("replay", () => {
     });
   });
 
+  it("an action with no recording is known by its brief's match, so its closing note is titled after the action", () => {
+    const actions = [{ action: "plan", match: "# Task: plan the week" }];
+    const started = replay(all, undefined, "# Task: plan the week\n\nList what matters.", true, actions);
+    expect(started.play.text).toBe(DEFAULT_FALLBACK);
+    expect(started.session).toEqual({ action: "plan", turn: null });
+    expect(replay(all, started.session, "We are closing this topic.", false, actions).play.note).toMatchObject({ title: "plan", summary: ["Recorded test run"] });
+    expect(replay(all, started.session, "Checkpoint: …", false, actions).play.note).toMatchObject({ title: "plan" });
+    // A free question matches no brief: its note keeps the "question" title.
+    const asked = replay(all, undefined, "The person asked a question that is not one of the guided topics.\n\n## Question\nWhy?", true, actions);
+    expect(asked.session).toEqual({ action: null, turn: null });
+    expect(replay(all, asked.session, "We are closing this topic.", false, actions).play.note).toMatchObject({ title: "question" });
+  });
+
+  it("a recording wins over an action's brief match", () => {
+    const actions = [{ action: "other", match: "# Topic: the manifest" }];
+    expect(replay(all, undefined, "# Topic: the manifest\n\nExplain…", true, actions).session).toEqual({ action: "manifest", turn: "t1" });
+  });
+
   it("a checkpoint saves the closing note and keeps the position", () => {
     const r = replay(all, { action: "manifest", turn: "t2" }, "Checkpoint: …", false);
     expect(r.play.note).toEqual({ title: "El manifiesto", summary: ["uno"] });

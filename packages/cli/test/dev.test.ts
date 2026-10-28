@@ -111,6 +111,10 @@ describe("dev --mock", () => {
     const engines = JSON.parse(env.HH_TEST_ENGINES!);
     expect(Object.keys(engines)).toEqual(["claude"]);
     expect(engines.claude.env.HH_FAKE_MOCK_DIR).toBe(path.join(dir, "mock"));
+    // Every action by its brief's first line, so a task with no recording still knows its action.
+    const actions = JSON.parse(engines.claude.env.HH_FAKE_MOCK_ACTIONS) as { action: string; match: string }[];
+    expect(actions.map((a) => a.action)).toContain("example");
+    expect(actions.every((a) => a.match.trim().length > 0)).toBe(true);
     expect(Object.keys(engines.claude.env).every((k) => k.startsWith("HH_FAKE_"))).toBe(true);
     for (const k of ["HH_TEST_USER_DATA", "HH_TEST_SHARED_DIR", "HH_TEST_SUGGESTED_FOLDER"]) expect(path.isAbsolute(env[k]!)).toBe(true);
     expect(env.HH_TEST_USER_DATA!.startsWith(root)).toBe(true);

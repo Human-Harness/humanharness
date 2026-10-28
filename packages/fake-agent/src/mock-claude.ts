@@ -1,11 +1,32 @@
 // fake-claude's mock mode (spec 3e): replays <harness>/mock/*.json instead of a test script.
 import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { z } from "zod";
 import { callMcpTool } from "./mcp-call";
 import { APP_FOLDERS, loadRecordings } from "./mock";
-import { type SessionPosition, replay } from "./mock-replay";
+import { type ActionMatch, type SessionPosition, replay } from "./mock-replay";
 
 type McpServers = Record<string, { command: string; args?: string[]; env?: Record<string, string> }>;
+
+/** HH_FAKE_MOCK_DIR, HH_FAKE_MOCK_STATE and the optional HH_FAKE_MOCK_ACTIONS (JSON `[{action, match}]`). */
+export interface MockEnv {
+  dir: string;
+  state: string;
+  actions?: string;
+}
+
+const actionsSchema = z.array(z.object({ action: z.string().min(1), match: z.string() }));
+
+/** The harness's actions by their brief's match; none when absent or not valid. */
+function readActions(raw: string | undefined): ActionMatch[] {
+  if (!raw) return [];
+  try {
+    const parsed = actionsSchema.safeParse(JSON.parse(raw));
+    return parsed.success ? parsed.data : [];
+  } catch {
+    return [];
+  }
+}
 
 function readState(file: string): Record<string, SessionPosition> {
   try {
@@ -59,7 +80,7 @@ export function readTarget(cwd: string, p: string): string {
 }
 
 /** One engine turn in mock mode: prints Claude's stream-json, calls the ui tools and writes the files. Returns the exit code. */
-export async function runMockTurn(argv: string[], prompt: string, mcpServers: McpServers, env: { dir: string; state: string }): Promise<number> {
+export async function runMockTurn(argv: string[], prompt: string, mcpServers: McpServers, env: MockEnv): Promise<number> {
   const resumed = flag(argv, "--resume");
   const sessionId = resumed ?? flag(argv, "--session-id") ?? "mock-session";
   try {
@@ -71,11 +92,11 @@ export async function runMockTurn(argv: string[], prompt: string, mcpServers: Mc
   }
 }
 
-async function playTurn(argv: string[], prompt: string, mcpServers: McpServers, env: { dir: string; state: string }, sessionId: string, newSession: boolean): Promise<void> {
+async function playTurn(argv: string[], prompt: string, mcpServers: McpServers, env: MockEnv, sessionId: string, newSession: boolean): Promise<void> {
   const { recordings, problems } = loadRecordings(env.dir);
   for (const p of problems) process.stderr.write(`mock: skipped ${p}\n`);
   const sessions = readState(env.state);
-  const { play, session } = replay(recordings, sessions[sessionId], prompt, newSession);
+  const { play, session } = replay(recordings, sessions[sessionId], prompt, newSession, readActions(env.actions));
 
   const model = flag(argv, "--model");
   print({ type: "system", subtype: "init", session_id: sessionId, ...(model ? { model } : {}) });

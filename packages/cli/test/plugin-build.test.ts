@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { parsePluginManifest } from "@humanharness/harness-sdk";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CliError } from "../src/cli";
 import { buildPlugin, panelHtml } from "../src/plugin-build";
 import { tempRoot } from "./helpers";
@@ -129,6 +129,35 @@ describe("buildPlugin", () => {
     }
   });
 
+  it("keeps machine paths out of CommonJS module keys: same output from two folders outside the repo", async () => {
+    const cjs = {
+      "src/helper.cjs": "module.exports = { twice: (n) => n * 2 };\n",
+      "backend.ts": `import helper from "./src/helper.cjs";\nexport const twice = helper.twice;\n${BACKEND}`,
+      "panels/main.tsx": `import helper from "../src/helper.cjs";\nexport const twice = helper.twice;\n${PANEL}`,
+    };
+    writePlugin(dir, cjs);
+    const other = tempRoot("hh-plugin-build-other-");
+    try {
+      const dir2 = path.join(other.root, "deeper", "mini");
+      writePlugin(dir2, cjs);
+      await buildPlugin(dir);
+      await buildPlugin(dir2);
+      const out = readAll(dir);
+      expect(out["backend.js"].toString("utf8")).toContain("__commonJS");
+      expect(out["panel-main.js"].toString("utf8")).toContain("__commonJS");
+      expect(readAll(dir2)).toEqual(out);
+      const user = os.userInfo().username;
+      const needles = [os.homedir(), os.tmpdir(), fs.realpathSync(os.tmpdir()), root, fs.realpathSync(root), ...(user.length >= 3 ? [user] : [])];
+      for (const name of ["backend.js", "panel-main.js"]) {
+        const text = out[name].toString("utf8");
+        for (const n of needles) expect(text.includes(n), `${name} holds ${n}`).toBe(false);
+        expect(text, name).not.toMatch(/\/Users\/|\/home\/|\/private\/|\/var\/folders\/|\.\.\/\.\.\//);
+      }
+    } finally {
+      other.cleanup();
+    }
+  });
+
   it("builds a plugin folder with no node_modules (P-S9)", async () => {
     expect(fs.existsSync(path.join(dir, "node_modules"))).toBe(false);
     expect(fs.existsSync(path.join(root, "node_modules"))).toBe(false);
@@ -137,18 +166,21 @@ describe("buildPlugin", () => {
 
   it("writes dist/ fresh: a stale file is gone", async () => {
     fs.mkdirSync(path.join(dir, "dist"), { recursive: true });
+    fs.writeFileSync(path.join(dir, "dist", "plugin.json"), "{}");
     fs.writeFileSync(path.join(dir, "dist", "stale.js"), "old");
     await buildPlugin(dir);
     expect(fs.existsSync(path.join(dir, "dist", "stale.js"))).toBe(false);
   });
 
   it("removes its temporary config file, on success and on failure", async () => {
+    // Other test files build too, sharing the temp folder: theirs come and go, a leaked one would stay.
+    const settled = (before: string[]) => vi.waitFor(() => expect(configTemps().filter((f) => !before.includes(f))).toEqual([]), { timeout: 10_000 });
     const before = configTemps();
     await buildPlugin(dir);
-    expect(configTemps()).toEqual(before);
+    await settled(before);
     fs.writeFileSync(path.join(dir, "plugin.config.ts"), CONFIG.replace("z.string().max(200)", 'z.string().regex(/^a/)'));
     await expect(buildPlugin(dir)).rejects.toThrow();
-    expect(configTemps()).toEqual(before);
+    await settled(before);
   });
 
   it("fails on a zod regex with the allowlist message and leaves dist/ untouched", async () => {
@@ -205,6 +237,65 @@ describe("buildPlugin", () => {
     fs.rmSync(path.join(dir, "assets", "sub"), { recursive: true });
     fs.symlinkSync(path.join(dir, "backend.ts"), path.join(dir, "assets", "link.svg"));
     await expect(buildPlugin(dir)).rejects.toThrow(/assets\/link\.svg/);
+  });
+
+  it("refuses a symlinked assets/ folder and asset names the panel handler would not serve", async () => {
+    const elsewhere = path.join(root, "pics");
+    fs.mkdirSync(elsewhere);
+    fs.writeFileSync(path.join(elsewhere, "logo.svg"), "<svg/>");
+    fs.symlinkSync(elsewhere, path.join(dir, "assets"));
+    await expect(buildPlugin(dir)).rejects.toThrow(CliError);
+    await expect(buildPlugin(dir)).rejects.toThrow(/assets\/.*link/);
+    fs.rmSync(path.join(dir, "assets"));
+    fs.mkdirSync(path.join(dir, "assets"));
+    for (const bad of ["my logo.svg", "a.b.png", `${"x".repeat(65)}.svg`, "LOGO.SVG"]) {
+      fs.writeFileSync(path.join(dir, "assets", bad), "<svg/>");
+      await expect(buildPlugin(dir), bad).rejects.toThrow(CliError);
+      fs.rmSync(path.join(dir, "assets", bad));
+    }
+    fs.writeFileSync(path.join(dir, "assets", "Ok_logo-2.svg"), "<svg/>");
+    await expect(buildPlugin(dir)).resolves.toBeTruthy();
+  });
+
+  it("refuses an --out that is or holds the plugin folder, leaving the sources alone", async () => {
+    fs.symlinkSync(dir, path.join(root, "alias"));
+    for (const out of [dir, root, path.join(dir, "."), path.join(root, "alias"), path.dirname(root)]) {
+      const err = await buildPlugin(dir, { out }).catch((e: unknown) => e);
+      expect(err, out).toBeInstanceOf(CliError);
+      expect((err as Error).message).toMatch(/--out/);
+      expect(fs.readFileSync(path.join(dir, "backend.ts"), "utf8")).toBe(BACKEND);
+    }
+  });
+
+  it("refuses a non-empty --out that is not a previous build", async () => {
+    const out = path.join(root, "notes");
+    fs.mkdirSync(out);
+    fs.writeFileSync(path.join(out, "todo.md"), "keep me");
+    const err = await buildPlugin(dir, { out }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(CliError);
+    expect((err as Error).message).toMatch(/--out/);
+    expect(fs.readFileSync(path.join(out, "todo.md"), "utf8")).toBe("keep me");
+    fs.writeFileSync(path.join(root, "file.txt"), "a file");
+    await expect(buildPlugin(dir, { out: path.join(root, "file.txt") })).rejects.toThrow(CliError);
+    const empty = path.join(root, "empty");
+    fs.mkdirSync(empty);
+    await expect(buildPlugin(dir, { out: empty })).resolves.toBeTruthy();
+  });
+
+  it("leaves the previous dist/ whole when writing the new one fails, and no temp folder behind", async () => {
+    await buildPlugin(dir);
+    const before = readAll(dir);
+    fs.writeFileSync(path.join(dir, "backend.ts"), `export const changed = 1;\n${BACKEND}`);
+    const real = fs.promises.writeFile;
+    const spy = vi.spyOn(fs.promises, "writeFile").mockImplementation(((file: fs.PathLike, ...rest: unknown[]) =>
+      String(file).endsWith("panel-main.js") ? Promise.reject(new Error("disk full")) : (real as (...a: unknown[]) => Promise<void>)(file, ...rest)) as typeof real);
+    try {
+      await expect(buildPlugin(dir)).rejects.toThrow("disk full");
+    } finally {
+      spy.mockRestore();
+    }
+    expect(readAll(dir)).toEqual(before);
+    expect(fs.readdirSync(dir).filter((f) => f.startsWith("dist") && f !== "dist")).toEqual([]);
   });
 
   it("writes to --out when given", async () => {

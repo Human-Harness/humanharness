@@ -63,12 +63,35 @@ function commonAncestor(paths: string[]): string {
 
 type Toolchain = ReturnType<typeof toolchain>;
 
+interface ResolveArgs {
+  path: string;
+  importer: string;
+  namespace: string;
+  resolveDir: string;
+  kind: string;
+  pluginData?: unknown;
+}
+interface ResolveResult {
+  path: string;
+  namespace: string;
+  external?: boolean;
+  errors: unknown[];
+  warnings: unknown[];
+  sideEffects?: boolean;
+  suffix?: string;
+}
+interface PluginBuild {
+  onResolve(o: { filter: RegExp; namespace?: string }, f: (a: ResolveArgs) => unknown): void;
+  onLoad(o: { filter: RegExp; namespace: string }, f: (a: { path: string }) => unknown): void;
+  resolve(path: string, o: { importer: string; namespace: string; resolveDir: string; kind: string; pluginData: unknown }): Promise<ResolveResult>;
+}
+
 /** Resolves the plugin's `@humanharness/…` imports to the CLI's files, by exact name (no regex from plugin input). */
 function aliasPlugin(files: Record<string, string>) {
   const names = new Map(Object.entries(files));
   return {
     name: "hh-plugin-aliases",
-    setup(b: { onResolve(o: { filter: RegExp }, f: (a: { path: string }) => { path: string } | undefined): void }) {
+    setup(b: PluginBuild) {
       b.onResolve({ filter: /^@humanharness\// }, (a) => {
         const hit = names.get(a.path);
         return hit ? { path: hit } : undefined;
@@ -77,12 +100,52 @@ function aliasPlugin(files: Record<string, string>) {
   };
 }
 
+/** The namespace the plugin's own files load under, by their path relative to the plugin folder. */
+const LOCAL = "hh-plugin";
+const LOADERS: Record<string, string> = { ".ts": "ts", ".mts": "ts", ".cts": "ts", ".tsx": "tsx", ".js": "js", ".mjs": "js", ".cjs": "js", ".jsx": "jsx", ".css": "css", ".json": "json" };
+const isInside = (folder: string, p: string) => {
+  const rel = path.relative(folder, p);
+  return rel !== "" && !rel.startsWith("..") && !path.isAbsolute(rel);
+};
+
+/**
+ * Every file of the plugin's own loads as `hh-plugin:<path from the plugin folder>`, so whatever esbuild prints of
+ * a module's name (a CommonJS wrapper's key, an error's file) is the same wherever the plugin folder sits. esbuild
+ * resolves as usual; only the result is renamed. A file outside both the plugin folder and the toolchain is refused:
+ * its name could only be a machine path.
+ */
+function localPlugin(dir: string, root: string) {
+  const realDir = realpathSync(dir);
+  const skip = { hhLocal: true };
+  return {
+    name: "hh-plugin-local",
+    setup(b: PluginBuild) {
+      b.onResolve({ filter: /.*/ }, async (a) => {
+        if (a.pluginData === skip) return undefined;
+        const r = await b.resolve(a.path, { importer: a.importer, namespace: a.namespace === LOCAL ? "file" : a.namespace, resolveDir: a.resolveDir, kind: a.kind, pluginData: skip });
+        if (r.errors.length > 0) return { errors: r.errors };
+        if (r.external || r.namespace !== "file") return r;
+        const real = realpathSync(r.path);
+        if (isInside(realDir, real)) return { path: path.relative(realDir, real).split(path.sep).join("/"), namespace: LOCAL, sideEffects: r.sideEffects, suffix: r.suffix };
+        if (isInside(root, real)) return r;
+        return { errors: [{ text: `${a.path}: a plugin imports only its own files and the toolchain's packages` }] };
+      });
+      b.onLoad({ filter: /.*/, namespace: LOCAL }, async (a) => {
+        const abs = path.join(realDir, ...a.path.split("/"));
+        const loader = LOADERS[path.extname(abs)];
+        if (!loader) return { errors: [{ text: `${a.path}: a plugin imports only code, .css and .json` }] };
+        return { contents: await fs.readFile(abs), loader, resolveDir: path.dirname(abs) };
+      });
+    },
+  };
+}
+
 /**
  * The options every bundle shares (Decision 17, spike P-S9). `absWorkingDir` is the folder the aliases point into
- * and `minifyWhitespace` drops the path comments, so the output names no machine path and doesn't depend on where
- * the plugin sits. Top-level await is refused: panels are classic scripts and Task 17 runs backend.js as an IIFE.
+ * and `minifyWhitespace` drops the path comments; the plugin's own files load under `hh-plugin:` (localPlugin), so the
+ * output names no machine path and doesn't depend on where the plugin sits. Top-level await is refused: panels are classic scripts and Task 17 runs backend.js as an IIFE.
  */
-function common(t: Toolchain, files: Record<string, string>) {
+function common(t: Toolchain, dir: string, files: Record<string, string>) {
   return {
     bundle: true,
     write: false,
@@ -94,7 +157,7 @@ function common(t: Toolchain, files: Record<string, string>) {
     metafile: false,
     absWorkingDir: t.root,
     alias: t.folders,
-    plugins: [aliasPlugin(files)],
+    plugins: [aliasPlugin(files), localPlugin(dir, t.root)],
     define: { "process.env.NODE_ENV": '"production"' },
     supported: { "top-level-await": false },
     jsx: "automatic",
@@ -108,6 +171,7 @@ function bundleError(err: unknown, t: Toolchain, dir: string): unknown {
   const lines = errors.map((e) => {
     const text = /top-level await/i.test(e.text) ? "top-level await is not allowed: do the work inside a function" : e.text;
     if (!e.location?.file) return text;
+    if (e.location.file.startsWith(`${LOCAL}:`)) return `${e.location.file.slice(LOCAL.length + 1)}:${e.location.line}: ${text}`;
     const file = path.relative(realpathSync(dir), path.resolve(t.root, e.location.file)).split(path.sep).join("/");
     return `${file}:${e.location.line}: ${text}`;
   });
@@ -148,7 +212,7 @@ async function configJson(t: Toolchain, dir: string): Promise<Record<string, unk
   let out;
   try {
     out = await t.esbuild.build({
-      ...common(t, { "@humanharness/harness-sdk": t.sdk }),
+      ...common(t, dir, { "@humanharness/harness-sdk": t.sdk }),
       alias: { ...t.folders, zod: t.zod },
       stdin: { contents: entry, resolveDir: dir, sourcefile: "hh-plugin-config.ts", loader: "ts" },
       platform: "node",
@@ -179,18 +243,84 @@ function configError(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-/** assets/ as the panel handler serves it (P7): flat, `.svg` and `.png` only, no links. */
+/** The names the panel handler serves (plugin-panels.ts ASSET), without the `assets/` prefix. */
+const ASSET_NAME = /^[A-Za-z0-9_-]{1,64}\.(svg|png)$/;
+
+/** assets/ as the panel handler serves it (P7): a real folder, flat, `.svg` and `.png` only, no links. */
 async function readAssets(dir: string): Promise<Map<string, Buffer>> {
   const files = new Map<string, Buffer>();
   const folder = path.join(dir, "assets");
-  const entries = await fs.readdir(folder, { withFileTypes: true }).catch(() => null);
-  if (!entries) return files;
+  const stat = await fs.lstat(folder).catch(() => null);
+  if (!stat) return files;
+  if (!stat.isDirectory()) throw new CliError("assets/ must be a plain folder, not a link or a file");
+  const entries = await fs.readdir(folder, { withFileTypes: true });
   for (const e of entries.sort((a, b) => (a.name < b.name ? -1 : 1))) {
     if (!e.isFile()) throw new CliError(`assets/${e.name}: only plain .svg and .png files go in assets/ (no folders or links)`);
     if (!/\.(svg|png)$/.test(e.name)) throw new CliError(`assets/${e.name}: only .svg and .png files go in assets/`);
+    if (!ASSET_NAME.test(e.name)) throw new CliError(`assets/${e.name}: an asset name is 1-64 letters, digits, _ or - before .svg or .png`);
     files.set(`assets/${e.name}`, await fs.readFile(path.join(folder, e.name)));
   }
   return files;
+}
+
+/** `p` with its deepest existing ancestor's links resolved: where a folder about to be made would really be. */
+async function realish(p: string): Promise<string> {
+  const rest: string[] = [];
+  let cur = p;
+  for (;;) {
+    try {
+      return path.join(await fs.realpath(cur), ...rest.reverse());
+    } catch {
+      const up = path.dirname(cur);
+      if (up === cur) return p;
+      rest.push(path.basename(cur));
+      cur = up;
+    }
+  }
+}
+
+/**
+ * `out` is removed and replaced, so it must not be (or hold) the plugin's sources, and when it exists it is empty
+ * or a previous build (has a plugin.json).
+ */
+async function checkOut(dir: string, out: string): Promise<void> {
+  const [realDir, realOut] = await Promise.all([realish(path.resolve(dir)), realish(out)]);
+  if (realOut === realDir || isInside(realOut, realDir)) throw new CliError(`--out ${out}: that folder holds the plugin itself; pick a folder of its own`);
+  const stat = await fs.lstat(out).catch(() => null);
+  if (!stat) return;
+  if (!stat.isDirectory()) throw new CliError(`--out ${out}: not a folder`);
+  const entries = await fs.readdir(out);
+  if (entries.length > 0 && !(await exists(path.join(out, "plugin.json")))) throw new CliError(`--out ${out}: the folder has files and is not a previous build (no plugin.json); pick an empty or new folder`);
+}
+
+/** Writes `files` to a temp folder beside `out`, then swaps it in: a failed write leaves the previous build whole. */
+async function writeDist(out: string, files: Map<string, Uint8Array | string>): Promise<void> {
+  const tag = randomBytes(6).toString("hex");
+  const temp = `${out}.tmp-${tag}`;
+  const old = `${out}.old-${tag}`;
+  try {
+    await fs.mkdir(temp, { recursive: true });
+    for (const [name, contents] of files) {
+      await fs.mkdir(path.dirname(path.join(temp, name)), { recursive: true });
+      await fs.writeFile(path.join(temp, name), contents);
+    }
+  } catch (err) {
+    await fs.rm(temp, { recursive: true, force: true });
+    throw err;
+  }
+  const had = await fs.lstat(out).then(
+    () => true,
+    () => false,
+  );
+  if (had) await fs.rename(out, old);
+  try {
+    await fs.rename(temp, out);
+  } catch (err) {
+    if (had) await fs.rename(old, out).catch(() => undefined);
+    await fs.rm(temp, { recursive: true, force: true });
+    throw err;
+  }
+  if (had) await fs.rm(old, { recursive: true, force: true });
 }
 
 /**
@@ -198,7 +328,8 @@ async function readAssets(dir: string): Promise<Map<string, Buffer>> {
  * panels → html/js/css, assets/ copied. Everything is built in memory first; dist/ is replaced only on success.
  */
 export async function buildPlugin(dir: string, o: { out?: string } = {}): Promise<BuildResult> {
-  const out = o.out ?? path.join(dir, "dist");
+  const out = path.resolve(o.out ?? path.join(dir, "dist"));
+  await checkOut(dir, out);
   const t = toolchain();
   const json = await configJson(t, dir);
   const manifest = parsePluginManifest(json);
@@ -207,7 +338,8 @@ export async function buildPlugin(dir: string, o: { out?: string } = {}): Promis
   for (const p of manifest.panels) if (!(await exists(path.join(dir, "panels", `${p.id}.tsx`)))) throw new CliError(`panels/${p.id}.tsx is missing`);
 
   const files = new Map<string, Uint8Array | string>([["plugin.json", orderedJson(json)]]);
-  const browser = { ...common(t, t.files), platform: "browser", target: "chrome130" };
+  const assets = await readAssets(dir);
+  const browser = { ...common(t, dir, t.files), platform: "browser", target: "chrome130" };
   try {
     const backend = await t.esbuild.build({ ...browser, entryPoints: [path.join(dir, "backend.ts")], format: "esm", outfile: "backend.js" });
     files.set("backend.js", backend.outputFiles[0].contents);
@@ -236,14 +368,8 @@ export async function buildPlugin(dir: string, o: { out?: string } = {}): Promis
   } catch (err) {
     throw bundleError(err, t, dir);
   }
-  for (const [name, bytes] of await readAssets(dir)) files.set(name, bytes);
-
-  await fs.rm(out, { recursive: true, force: true });
-  await fs.mkdir(out, { recursive: true });
-  for (const [name, contents] of files) {
-    await fs.mkdir(path.dirname(path.join(out, name)), { recursive: true });
-    await fs.writeFile(path.join(out, name), contents);
-  }
+  for (const [name, bytes] of assets) files.set(name, bytes);
+  await writeDist(out, files);
   const list = [...files.keys()].map((f) => f.split("/").join(path.sep)).sort();
   return { dist: out, files: list, manifest };
 }

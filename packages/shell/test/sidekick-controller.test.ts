@@ -114,18 +114,23 @@ export function harness(o: { record?: Partial<SidekickRecord> | null; answers?: 
     ...(o.dailyMs !== undefined ? { dailyMs: o.dailyMs } : {}),
     ...(o.placeMs !== undefined ? { placeMs: o.placeMs } : {}),
     // In-memory files under a home folder that doesn't exist: the real home's folders are never looked at.
-    importFiles: (paths) =>
-      readImportFiles(paths, "/hh-test-home", {
-        read: async (p) => {
-          imported.push(p);
-          if (!Object.hasOwn(o.files ?? {}, p)) throw new Error("ENOENT");
-          return o.files![p];
+    importFiles: (paths, signal) =>
+      readImportFiles(
+        paths,
+        { home: "/hh-test-home", env: {} },
+        {
+          read: async (p) => {
+            imported.push(p);
+            if (!Object.hasOwn(o.files ?? {}, p)) throw new Error("ENOENT");
+            return o.files![p];
+          },
+          stat: async (p) => {
+            if (!Object.hasOwn(o.files ?? {}, p)) throw new Error("ENOENT");
+            return { id: p, size: Buffer.byteLength(o.files![p]), file: true };
+          },
         },
-        size: async (p) => {
-          if (!Object.hasOwn(o.files ?? {}, p)) throw new Error("ENOENT");
-          return Buffer.byteLength(o.files![p]);
-        },
-      }),
+        signal,
+      ),
     pickImportFiles: async () => o.picked ?? [],
     ...(o.importMs !== undefined ? { importMs: o.importMs } : {}),
   };
@@ -1970,14 +1975,63 @@ describe("import (spec §2a.6)", () => {
   });
 
   it("files: the draft keeps the paths and hash; a refused file is never read and no turn runs", async () => {
-    const h = harness({ record: on, answers: [json(RULO)], files: { "/n/a.md": "You are Rulo.", "/hh-test-home/.claude/CLAUDE.md": "secret" } });
-    const d = await h.ctl.importDraft({ kind: "files", paths: ["/n/a.md"] });
+    const h = harness({ record: on, answers: [json(RULO)], files: { "/n/a.md": "You are Rulo.", "/hh-test-home/.claude/CLAUDE.md": "secret" }, picked: ["/n/a.md"] });
+    const pick = await h.ctl.pickFiles();
+    expect(pick).toEqual({ token: expect.stringMatching(/^[0-9a-f]{32}$/), files: ["a.md"] });
+    const d = await h.ctl.importDraft({ kind: "files", token: pick!.token });
     expect(d).toMatchObject({ ok: true, draft: { source: { kind: "files", paths: ["/n/a.md"], hash: sha256("You are Rulo.") } } });
     expect(h.asked[0]).toContain('<file name="a.md">\nYou are Rulo.\n</file>');
-    const refused = harness({ record: on, files: { "/n/a.md": "x", "/hh-test-home/.claude/CLAUDE.md": "secret" } });
-    expect(await refused.ctl.importDraft({ kind: "files", paths: ["/n/a.md", "/hh-test-home/.claude/CLAUDE.md"] })).toEqual({ ok: false, reason: "engine-settings" });
+    const refused = harness({ record: on, files: { "/n/a.md": "x", "/hh-test-home/.claude/CLAUDE.md": "secret" }, picked: ["/n/a.md", "/hh-test-home/.claude/CLAUDE.md"] });
+    expect(await refused.ctl.importDraft({ kind: "files", token: (await refused.ctl.pickFiles())!.token })).toEqual({ ok: false, reason: "engine-settings" });
     expect(refused.imported).toEqual([]);
     expect(refused.opened).toEqual([]);
+  });
+
+  it("files only through a pick's token: unknown, reused, expired or another base's token reads nothing", async () => {
+    const h = harness({ record: on, answers: [json(RULO), json(RULO)], files: { "/n/a.md": "You are Rulo." }, picked: ["/n/a.md"] });
+    // Raw paths are not an input (the IPC drops them; the controller has no path to read).
+    expect(await h.ctl.importDraft({ kind: "files", paths: ["/n/a.md"] } as never)).toEqual({ ok: false, reason: "expired" });
+    expect(await h.ctl.importDraft({ kind: "files", token: "f".repeat(32) })).toEqual({ ok: false, reason: "expired" });
+    const pick = (await h.ctl.pickFiles())!;
+    expect(await h.ctl.importDraft({ kind: "files", token: pick.token })).toMatchObject({ ok: true });
+    expect(await h.ctl.importDraft({ kind: "files", token: pick.token })).toEqual({ ok: false, reason: "expired" });
+    expect(h.imported).toEqual(["/n/a.md"]);
+    // A newer pick replaces the older one; a cancelled one drops it.
+    const older = (await h.ctl.pickFiles())!;
+    const newer = (await h.ctl.pickFiles())!;
+    expect(await h.ctl.importDraft({ kind: "files", token: older.token })).toEqual({ ok: false, reason: "expired" });
+    expect(newer.token).not.toBe(older.token);
+    // Too old.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const stale = (await h.ctl.pickFiles())!;
+      vi.setSystemTime(Date.now() + 10 * 60_000 + 1);
+      expect(await h.ctl.importDraft({ kind: "files", token: stale.token })).toEqual({ ok: false, reason: "expired" });
+    } finally {
+      vi.useRealTimers();
+    }
+    // Another profile's base: a profile switch drops the pick.
+    const moved = (await h.ctl.pickFiles())!;
+    h.deps.setup = async () => ({ engineId: "claude", base: "/other-base" });
+    expect(await h.ctl.importDraft({ kind: "files", token: moved.token })).toEqual({ ok: false, reason: "expired" });
+    expect(h.imported).toEqual(["/n/a.md"]);
+    const cancelled = harness({ record: on, picked: [] });
+    expect(await cancelled.ctl.pickFiles()).toBeNull();
+  });
+
+  it("original: a stored sidekick's own files read again, never paths the renderer names", async () => {
+    const rulo = { id: "rulo", type: "sidekick" as const, name: "Rulo", mark: "🦊", personality: "", purposes: [{ id: "mentor" as const }], order: 0, source: { kind: "files" as const, paths: ["/n/a.md"], hash: sha256("v1") } };
+    const h = harness({ record: on, extra: [rulo], answers: [json(RULO)], files: { "/n/a.md": "v2" } });
+    expect(await h.ctl.importDraft({ kind: "original", sidekickId: "rulo" })).toMatchObject({ ok: true, draft: { source: { kind: "files", paths: ["/n/a.md"] } } });
+    expect(await h.ctl.importDraft({ kind: "original", sidekickId: "nobody" })).toEqual({ ok: false, reason: "failed" });
+    expect(h.imported).toEqual(["/n/a.md"]);
+  });
+
+  it("a hung file read ends with the import's timeout", async () => {
+    const h = harness({ record: on, picked: ["/n/a.md"], importMs: 20 });
+    (h.deps as { importFiles: SidekickDeps["importFiles"] }).importFiles = (_paths, signal) => new Promise((ok) => signal.addEventListener("abort", () => ok({ ok: false, reason: "unreadable", file: "a.md" })));
+    expect(await h.ctl.importDraft({ kind: "files", token: (await h.ctl.pickFiles())!.token })).toEqual({ ok: false, reason: "unreadable", file: "a.md" });
+    expect(h.opened).toEqual([]);
   });
 
   it("a newer import, a profile switch or closing ends a running one; a hung turn times out", async () => {
@@ -2007,12 +2061,12 @@ describe("import (spec §2a.6)", () => {
     expect(await h.ctl.checkOriginal({ kind: "paste" })).toBe("none");
   });
 
-  it("checkSidekick looks the source up by id; pickFiles only returns the picker's paths", async () => {
+  it("checkSidekick looks the source up by id; pickFiles reads nothing", async () => {
     const rulo = { id: "rulo", type: "sidekick" as const, name: "Rulo", mark: "🦊", personality: "", purposes: [{ id: "mentor" as const }], order: 0, source: { kind: "files" as const, paths: ["/n/a.md"], hash: sha256("v1") } };
     const h = harness({ record: on, extra: [rulo], files: { "/n/a.md": "v2" }, picked: ["/n/a.md"] });
     expect(await h.ctl.checkSidekick("rulo")).toBe("changed");
     expect(await h.ctl.checkSidekick("nobody")).toBe("none");
-    expect(await h.ctl.pickFiles()).toEqual(["/n/a.md"]);
+    expect(await h.ctl.pickFiles()).toEqual({ token: expect.any(String), files: ["a.md"] });
     expect(h.imported).toEqual(["/n/a.md"]);
   });
 });

@@ -59,6 +59,9 @@ import type {
 } from "../src/client";
 import { hearsDataChange } from "../src/client";
 
+/** The token FakeClient's sidekick.pickFiles answers. */
+export const FAKE_PICK_TOKEN = "0".repeat(32);
+
 export class FakeClient implements HarnessClient {
   state: AppState;
   sent: string[] = [];
@@ -589,7 +592,7 @@ export class FakeClient implements HarnessClient {
   sidekickPresets: SidekickPreset[] = [];
   /** What sidekick.importDraft answers; null: `{ ok: false, reason: "failed" }`. */
   sidekickImport: SidekickImportResult | null = null;
-  /** What sidekick.pickFiles answers. */
+  /** The file names sidekick.pickFiles answers (with token FAKE_PICK_TOKEN); [] answers null (cancelled). */
   sidekickPicked: string[] = [];
   /** What sidekick.checkOriginal answers. */
   sidekickOriginal: SidekickOriginal = "none";
@@ -655,7 +658,7 @@ export class FakeClient implements HarnessClient {
     },
     pickFiles: async () => {
       this.sidekickCalls.push(["pickFiles"]);
-      return [...this.sidekickPicked];
+      return this.sidekickPicked.length ? { token: FAKE_PICK_TOKEN, files: [...this.sidekickPicked] } : null;
     },
     importDraft: async (input: SidekickImportInput): Promise<SidekickImportResult> => {
       this.sidekickCalls.push(["importDraft", input]);

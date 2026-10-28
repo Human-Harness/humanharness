@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { constants } from "node:fs";
-import { open, readlink, realpath, stat } from "node:fs/promises";
-import { basename, dirname, extname, isAbsolute, join, resolve, sep } from "node:path";
+import { lstat, open, readlink, realpath, stat } from "node:fs/promises";
+import { basename, dirname, extname, isAbsolute, join, parse, resolve, sep } from "node:path";
 
 /** Import limits (sidekick plan Decision 14): at most this many files, each at most this many bytes; paste the same. */
 export const IMPORT_MAX_FILES = 4;
@@ -14,6 +14,14 @@ const EXTS = new Set([".md", ".txt", ""]);
  * or opened.
  */
 export const ENGINE_DIRS: readonly string[] = [".claude", ".codex", ".gemini", join(".config", "opencode"), join(".local", "share", "opencode")];
+/**
+ * Where the engines' settings folders are: under `home`, plus where the environment moved them (CLAUDE_CONFIG_DIR,
+ * CODEX_HOME, $XDG_CONFIG_HOME/opencode, $XDG_DATA_HOME/opencode). Tests pass a fake home and env.
+ */
+export interface ImportPlace {
+  home: string;
+  env: Readonly<Record<string, string | undefined>>;
+}
 /** How many links one path may go through before it counts as unresolvable. */
 const MAX_LINKS = 40;
 
@@ -46,25 +54,59 @@ export async function resolvedPath(p: string, depth = 0): Promise<string> {
   }
 }
 
-/** The engine folders under `home`, both as written and resolved (a linked folder counts as where it points). */
-async function engineDirs(home: string): Promise<string[]> {
-  const dirs: string[] = [];
-  for (const d of ENGINE_DIRS) {
-    const literal = resolve(home, d);
-    dirs.push(literal, await resolvedPath(literal));
+/** The engine folders as written: under home, and where the environment moved them. */
+function engineFolders(where: ImportPlace): string[] {
+  const dirs = ENGINE_DIRS.map((d) => resolve(where.home, d));
+  const env = (k: string) => (where.env[k] ? resolve(where.env[k]!) : null);
+  for (const d of [env("CLAUDE_CONFIG_DIR"), env("CODEX_HOME")]) if (d) dirs.push(d);
+  for (const [k, rel] of [["XDG_CONFIG_HOME", "opencode"], ["XDG_DATA_HOME", "opencode"]] as const) {
+    const base = env(k);
+    if (base) dirs.push(join(base, rel));
   }
   return dirs;
 }
 
+/** A folder's identity (device and inode), or null when it can't be looked up. Only the folder itself: nothing in it is listed. */
+async function identity(p: string): Promise<string | null> {
+  try {
+    const s = await stat(p, { bigint: true });
+    return `${s.dev}:${s.ino}`;
+  } catch {
+    return null;
+  }
+}
+
+/** The folders from the root down to `p`'s own folder (`/`, `/a`, `/a/b` for `/a/b/c.md`). */
+function ancestors(p: string): string[] {
+  const out: string[] = [];
+  for (let d = dirname(p); ; d = dirname(d)) {
+    out.unshift(d);
+    if (d === parse(d).root) return out;
+  }
+}
+
 /**
- * Whether a picked path is refused: it is, or resolves into, an engine's settings folder under `home`. The path as
- * written is checked first, so a path inside one is refused before anything there is even looked up.
+ * Whether a picked path is refused: it is, or resolves into, an engine's settings folder. First by path: as written
+ * (refused before anything there is even looked up), then resolved. Then by identity, for another name of the same
+ * folder that no path comparison sees (macOS's `/System/Volumes/Data` firmlinks, hard-to-spot mounts): each engine
+ * folder is looked up (missing ones skipped), then the resolved file's folders from the root down; any one that is
+ * an engine folder refuses it, before a folder inside it is ever looked up.
  */
-export async function refusedPath(p: string, home: string): Promise<boolean> {
+export async function refusedPath(p: string, where: ImportPlace): Promise<boolean> {
   const literal = resolve(p);
-  if (ENGINE_DIRS.some((d) => inside(literal, resolve(home, d)))) return true;
+  const folders = engineFolders(where);
+  if (folders.some((d) => inside(literal, d))) return true;
   const real = await resolvedPath(literal);
-  return (await engineDirs(home)).some((d) => inside(real, d));
+  const resolved = await Promise.all(folders.map((d) => resolvedPath(d)));
+  if ([...folders, ...resolved].some((d) => inside(real, d))) return true;
+  const ids = new Set((await Promise.all(folders.map(identity))).filter((id): id is string => id !== null));
+  if (ids.size === 0) return false;
+  for (const d of ancestors(real)) {
+    const id = await identity(d);
+    if (id === null) return false; // Missing: so is everything under it.
+    if (ids.has(id)) return true;
+  }
+  return false;
 }
 
 export type ImportReadFailure = "engine-settings" | "too-many" | "too-big" | "type" | "unreadable";
@@ -83,23 +125,43 @@ export function joinImportFiles(files: readonly { name: string; text: string }[]
 
 export const importHash = (text: string): string => createHash("sha256").update(text).digest("hex");
 
+/** A file's identity and size as looked up before it is opened. */
+export interface ImportStat {
+  /** Device and inode: the opened file must be this same one. */
+  id: string;
+  size: number;
+  /** A regular file (a link, folder, FIFO or device is not). */
+  file: boolean;
+}
+
 export interface ImportIo {
-  /** The file's text; rejects with ImportTooBig past IMPORT_MAX_BYTES (it never reads much more). */
-  read(p: string): Promise<string>;
-  /** The file's size in bytes; throws when it isn't a regular file. */
-  size(p: string): Promise<number>;
+  /** The file's identity and size, the path's last step not followed (it is already resolved). */
+  stat(p: string): Promise<ImportStat>;
+  /**
+   * The file's text, opened without following a link or blocking, and checked before any byte is read: a regular
+   * file, at most IMPORT_MAX_BYTES (else ImportTooBig), and the same file `expected` described (else it throws).
+   */
+  read(p: string, expected: ImportStat, signal: AbortSignal): Promise<string>;
 }
 
 /** A file that grew past IMPORT_MAX_BYTES after its size was read. */
 export class ImportTooBig extends Error {}
 
-/** Reads at most IMPORT_MAX_BYTES bytes (more throws ImportTooBig), never following a link at the last step (the path is already resolved). */
-async function boundedRead(p: string): Promise<string> {
-  const fh = await open(p, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+const statId = (s: { dev: bigint; ino: bigint }) => `${s.dev}:${s.ino}`;
+
+/** Reads at most IMPORT_MAX_BYTES bytes (more throws ImportTooBig) of the file `expected` described, and only that one. */
+async function boundedRead(p: string, expected: ImportStat, signal: AbortSignal): Promise<string> {
+  // O_NONBLOCK: a FIFO swapped in opens without waiting for a writer, and is refused below.
+  const fh = await open(p, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0));
   try {
+    const s = await fh.stat({ bigint: true });
+    if (!s.isFile()) throw new Error("Not a file");
+    if (statId(s) !== expected.id) throw new Error("Not the file that was checked");
+    if (s.size > BigInt(IMPORT_MAX_BYTES)) throw new ImportTooBig();
     const buf = Buffer.alloc(IMPORT_MAX_BYTES + 1);
     let n = 0;
     while (n < buf.length) {
+      signal.throwIfAborted();
       const { bytesRead } = await fh.read(buf, n, buf.length - n, n);
       if (bytesRead === 0) break;
       n += bytesRead;
@@ -111,27 +173,42 @@ async function boundedRead(p: string): Promise<string> {
   }
 }
 
-const fileIo: ImportIo = {
-  read: boundedRead,
-  size: async (p) => {
-    const s = await stat(p);
-    if (!s.isFile()) throw new Error("Not a file");
-    return s.size;
+/** The real file system's ImportIo. */
+export const importFileIo: ImportIo = {
+  stat: async (p) => {
+    const s = await lstat(p, { bigint: true });
+    return { id: statId(s), size: Number(s.size), file: s.isFile() };
   },
+  read: boundedRead,
 };
 
+/** `work`, or a rejection as soon as `signal` aborts (a read that hangs never holds the import). */
+function abortable<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) return Promise.reject(signal.reason);
+  return new Promise<T>((ok, fail) => {
+    const onAbort = () => fail(signal.reason);
+    signal.addEventListener("abort", onAbort, { once: true });
+    work.then(
+      (v) => (signal.removeEventListener("abort", onAbort), ok(v)),
+      (e) => (signal.removeEventListener("abort", onAbort), fail(e)),
+    );
+  });
+}
+
 /**
- * The picked files for an import (spec §2a.6): refused when one is in an engine's settings folder (by resolved path,
- * every file checked before any is read), when there are too many, one isn't plain text or one is too big. Each file
- * is read from its resolved path, size-checked before and after reading. `hash` lets the import notice a changed original.
+ * The picked files for an import (spec §2a.6): refused when one is in an engine's settings folder (by path and by
+ * identity, every file checked before any is looked at further), when there are too many, one isn't plain text or one
+ * is too big. Then each file, in turn: refusal checked again first, then its size and identity looked up, then opened
+ * and checked to be that same regular file before any byte is read. An abort (the import's timeout or cancel) ends it
+ * as unreadable. `hash` lets the import notice a changed original.
  */
-export async function readImportFiles(paths: readonly string[], home: string, io: ImportIo = fileIo): Promise<ImportRead> {
+export async function readImportFiles(paths: readonly string[], where: ImportPlace, io: ImportIo = importFileIo, signal: AbortSignal = new AbortController().signal): Promise<ImportRead> {
   if (paths.length === 0) return { ok: false, reason: "unreadable" };
   if (paths.length > IMPORT_MAX_FILES) return { ok: false, reason: "too-many" };
-  // Every refusal check runs before any file is opened.
+  // Every refusal check runs before any file is looked up.
   const real: string[] = [];
   for (const p of paths) {
-    if (await refusedPath(p, home)) return { ok: false, reason: "engine-settings" };
+    if (await refusedPath(p, where)) return { ok: false, reason: "engine-settings" };
     real.push(await resolvedPath(p));
   }
   for (const [i, p] of paths.entries()) {
@@ -140,14 +217,15 @@ export async function readImportFiles(paths: readonly string[], home: string, io
   }
   const files: { name: string; text: string }[] = [];
   for (const [i, p] of paths.entries()) {
-    const size = await io.size(real[i]).catch(() => -1);
-    if (size < 0) return { ok: false, reason: "unreadable", file: basename(p) };
-    if (size > IMPORT_MAX_BYTES) return { ok: false, reason: "too-big", file: basename(p) };
-    // Checked again just before reading: a link swapped in after the first check is still refused.
-    if (await refusedPath(real[i], home)) return { ok: false, reason: "engine-settings" };
+    // Checked again first: a link swapped in after the first check is still refused, before it is even looked up.
+    if (await refusedPath(real[i], where)) return { ok: false, reason: "engine-settings" };
+    if (signal.aborted) return { ok: false, reason: "unreadable", file: basename(p) };
+    const info = await io.stat(real[i]).catch(() => null);
+    if (!info?.file) return { ok: false, reason: "unreadable", file: basename(p) };
+    if (info.size > IMPORT_MAX_BYTES) return { ok: false, reason: "too-big", file: basename(p) };
     let text: string;
     try {
-      text = await io.read(real[i]);
+      text = await abortable(io.read(real[i], info, signal), signal);
     } catch (err) {
       // It may have grown since its size was read.
       return { ok: false, reason: err instanceof ImportTooBig ? "too-big" : "unreadable", file: basename(p) };

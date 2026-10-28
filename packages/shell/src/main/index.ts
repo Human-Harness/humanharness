@@ -1744,8 +1744,8 @@ if (loaded) {
     },
     changed: (state) => sendToWindow("hh:sidekick", state),
     events: { read: readSidekickEvents, append: appendSidekickEvent },
-    // Import (sidekick spec §2a.6): a file in an engine's settings folder under home is refused, links resolved, before any read.
-    importFiles: (paths) => readImportFiles(paths, os.homedir()),
+    // Import (sidekick spec §2a.6): a file in an engine's settings folder (under home or moved by env) is refused, links resolved, before any read.
+    importFiles: (paths, signal) => readImportFiles(paths, { home: os.homedir(), env: process.env }, undefined, signal),
     pickImportFiles: async () => {
       if (!window || window.isDestroyed()) return [];
       const r = await dialog.showOpenDialog(window, { properties: ["openFile", "multiSelections"], filters: [{ name: "Text", extensions: ["md", "txt"] }] });

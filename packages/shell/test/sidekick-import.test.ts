@@ -1,8 +1,9 @@
-import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { IMPORT_MAX_BYTES, IMPORT_MAX_FILES, ImportTooBig, importHash, joinImportFiles, readImportFiles, refusedPath } from "../src/main/sidekick-import";
+import { IMPORT_MAX_BYTES, IMPORT_MAX_FILES, type ImportIo, ImportTooBig, importFileIo, importHash, joinImportFiles, readImportFiles, refusedPath } from "../src/main/sidekick-import";
 
 // Every test runs in a fake home folder under the temp dir: the real home's engine folders are never touched.
 const fakeHome = () => {
@@ -10,6 +11,8 @@ const fakeHome = () => {
   for (const d of [".claude", ".codex", ".gemini", join(".config", "opencode"), join(".local", "share", "opencode"), "notes"]) mkdirSync(join(home, d), { recursive: true });
   return home;
 };
+/** The fake home with an empty env: nothing from the real environment (CLAUDE_CONFIG_DIR…) is ever looked at. */
+const at = (home: string, env: Record<string, string> = {}) => ({ home, env });
 const write = (home: string, rel: string, body: string) => {
   const p = join(home, rel);
   writeFileSync(p, body);
@@ -21,18 +24,18 @@ describe("refusal before reading (compliance)", () => {
     const home = fakeHome();
     const link = join(home, "notes", "link.md");
     symlinkSync(join(home, ".claude", "CLAUDE.md"), link); // a dangling link: never created, never read
-    expect(await refusedPath(join(home, ".claude", "x.md"), home)).toBe(true);
-    expect(await refusedPath(join(home, ".codex", "AGENTS.md"), home)).toBe(true);
-    expect(await refusedPath(link, home)).toBe(true);
-    expect(await refusedPath(join(home, "notes", "me.md"), home)).toBe(false);
+    expect(await refusedPath(join(home, ".claude", "x.md"), at(home))).toBe(true);
+    expect(await refusedPath(join(home, ".codex", "AGENTS.md"), at(home))).toBe(true);
+    expect(await refusedPath(link, at(home))).toBe(true);
+    expect(await refusedPath(join(home, "notes", "me.md"), at(home))).toBe(false);
   });
 
   it("refuses every engine's settings folder: gemini and opencode too", async () => {
     const home = fakeHome();
-    for (const d of [".gemini", join(".config", "opencode"), join(".local", "share", "opencode")]) expect(await refusedPath(join(home, d, "x.md"), home)).toBe(true);
+    for (const d of [".gemini", join(".config", "opencode"), join(".local", "share", "opencode")]) expect(await refusedPath(join(home, d, "x.md"), at(home))).toBe(true);
     // Neighbours are not refused.
-    expect(await refusedPath(join(home, ".config", "other", "x.md"), home)).toBe(false);
-    expect(await refusedPath(join(home, ".claude-notes.md"), home)).toBe(false);
+    expect(await refusedPath(join(home, ".config", "other", "x.md"), at(home))).toBe(false);
+    expect(await refusedPath(join(home, ".claude-notes.md"), at(home))).toBe(false);
   });
 
   it("refuses a link to an existing file, a linked folder, and a path that climbs back in", async () => {
@@ -42,31 +45,31 @@ describe("refusal before reading (compliance)", () => {
     symlinkSync(inside, fileLink);
     const dirLink = join(home, "notes", "cfg");
     symlinkSync(join(home, ".claude"), dirLink);
-    expect(await refusedPath(fileLink, home)).toBe(true);
-    expect(await refusedPath(join(dirLink, "anything.md"), home)).toBe(true);
-    expect(await refusedPath(join(home, "notes", "..", ".claude", "x.md"), home)).toBe(true);
+    expect(await refusedPath(fileLink, at(home))).toBe(true);
+    expect(await refusedPath(join(dirLink, "anything.md"), at(home))).toBe(true);
+    expect(await refusedPath(join(home, "notes", "..", ".claude", "x.md"), at(home))).toBe(true);
     // A link chain through a dangling folder link.
     const chain = join(home, "notes", "chain");
     symlinkSync(join(home, ".gemini", "missing-dir"), chain);
-    expect(await refusedPath(join(chain, "x.md"), home)).toBe(true);
+    expect(await refusedPath(join(chain, "x.md"), at(home))).toBe(true);
   });
 
   it("refuses where the engine folder itself is a link to elsewhere", async () => {
     const home = mkdtempSync(join(tmpdir(), "hh-home-"));
     mkdirSync(join(home, "real-claude"));
     symlinkSync(join(home, "real-claude"), join(home, ".claude"));
-    expect(await refusedPath(join(home, "real-claude", "x.md"), home)).toBe(true);
+    expect(await refusedPath(join(home, "real-claude", "x.md"), at(home))).toBe(true);
   });
 
   it.runIf(process.platform === "darwin")("ignores case where the file system does", async () => {
     const home = fakeHome();
-    expect(await refusedPath(join(home, ".CLAUDE", "x.md"), home)).toBe(true);
+    expect(await refusedPath(join(home, ".CLAUDE", "x.md"), at(home))).toBe(true);
   });
 
   it("readImportFiles never opens a refused file", async () => {
     const home = fakeHome();
     const open = vi.fn(async () => "x");
-    const r = await readImportFiles([join(home, ".claude", "CLAUDE.md")], home, { read: open, size: async () => 10 });
+    const r = await readImportFiles([join(home, ".claude", "CLAUDE.md")], at(home), { read: open, stat: async () => ({ id: "x", size: 10, file: true }) });
     expect(r).toEqual({ ok: false, reason: "engine-settings" });
     expect(open).not.toHaveBeenCalled();
   });
@@ -76,10 +79,100 @@ describe("refusal before reading (compliance)", () => {
     const ok = write(home, join("notes", "me.md"), "Me");
     const link = join(home, "notes", "z.md");
     symlinkSync(join(home, ".codex", "AGENTS.md"), link);
-    const io = { read: vi.fn(async () => "x"), size: vi.fn(async () => 1) };
-    expect(await readImportFiles([ok, link], home, io)).toEqual({ ok: false, reason: "engine-settings" });
+    const io = { read: vi.fn(async () => "x"), stat: vi.fn(async () => ({ id: "x", size: 1, file: true })) };
+    expect(await readImportFiles([ok, link], at(home), io)).toEqual({ ok: false, reason: "engine-settings" });
     expect(io.read).not.toHaveBeenCalled();
-    expect(io.size).not.toHaveBeenCalled();
+    expect(io.stat).not.toHaveBeenCalled();
+  });
+});
+
+describe("refusal by identity and env (compliance)", () => {
+  // macOS: /System/Volumes/Data<path> is the same folder as <path>, and realpath keeps the alias.
+  const dataAlias = (p: string) => join("/System/Volumes/Data", realpathSync(p));
+  it.runIf(process.platform === "darwin" && existsSync(dataAlias(tmpdir())))("refuses the /System/Volumes/Data alias of an engine folder, also through a link", async () => {
+    const home = fakeHome();
+    const alias = join(dataAlias(home), ".claude", "CLAUDE.md");
+    expect(realpathSync(join(dataAlias(home), ".claude"))).not.toBe(realpathSync(join(home, ".claude"))); // no path comparison sees it
+    expect(await refusedPath(alias, at(home))).toBe(true);
+    const link = join(home, "notes", "alias.md");
+    symlinkSync(alias, link);
+    expect(await refusedPath(link, at(home))).toBe(true);
+    const io = { read: vi.fn(async () => "x"), stat: vi.fn(async () => ({ id: "x", size: 1, file: true })) };
+    expect(await readImportFiles([link], at(home), io)).toEqual({ ok: false, reason: "engine-settings" });
+    expect(io.stat).not.toHaveBeenCalled();
+    // The same alias outside the engine folders is fine.
+    expect(await refusedPath(join(dataAlias(home), "notes", "me.md"), at(home))).toBe(false);
+  });
+
+  it("refuses engine folders the env moved (CLAUDE_CONFIG_DIR, CODEX_HOME, XDG_CONFIG_HOME, XDG_DATA_HOME)", async () => {
+    const home = fakeHome();
+    const elsewhere = mkdtempSync(join(tmpdir(), "hh-env-"));
+    for (const d of ["claude-cfg", "codex-home", join("cfg", "opencode"), join("data", "opencode"), join("cfg", "other")]) mkdirSync(join(elsewhere, d), { recursive: true });
+    const env = { CLAUDE_CONFIG_DIR: join(elsewhere, "claude-cfg"), CODEX_HOME: join(elsewhere, "codex-home"), XDG_CONFIG_HOME: join(elsewhere, "cfg"), XDG_DATA_HOME: join(elsewhere, "data") };
+    for (const d of ["claude-cfg", "codex-home", join("cfg", "opencode"), join("data", "opencode")]) {
+      expect(await refusedPath(join(elsewhere, d, "x.md"), at(home, env))).toBe(true);
+      expect(await refusedPath(join(elsewhere, d, "x.md"), at(home))).toBe(false);
+    }
+    expect(await refusedPath(join(elsewhere, "cfg", "other", "x.md"), at(home, env))).toBe(false);
+    // A link into a moved folder too.
+    const link = join(home, "notes", "cfg.md");
+    symlinkSync(join(elsewhere, "codex-home", "AGENTS.md"), link);
+    expect(await refusedPath(link, at(home, env))).toBe(true);
+  });
+});
+
+describe("reading a checked file only (TOCTOU)", () => {
+  it("checks refusal again before looking a file up: a folder that became an engine folder meanwhile is never looked at", async () => {
+    const home = fakeHome();
+    const a = write(home, join("notes", "a.md"), "A");
+    mkdirSync(join(home, "later"));
+    const b = write(home, join("later", "b.md"), "B");
+    const env = { CLAUDE_CONFIG_DIR: join(home, "cfg") }; // missing for now: skipped
+    const stat = vi.fn(importFileIo.stat);
+    const io: ImportIo = {
+      stat,
+      read: async (p, expected, signal) => {
+        // While a.md is read, the env's config folder appears as a link to b.md's folder.
+        symlinkSync(join(home, "later"), join(home, "cfg"));
+        return importFileIo.read(p, expected, signal);
+      },
+    };
+    expect(await readImportFiles([a, b], at(home, env), io)).toEqual({ ok: false, reason: "engine-settings" });
+    expect(stat.mock.calls.map(([p]) => p)).toEqual([realpathSync(a)]);
+  });
+
+  it("a FIFO swapped in after the check is refused without blocking; so is another file in its place", async () => {
+    const home = fakeHome();
+    const p = write(home, join("notes", "a.md"), "A");
+    const swap = (replace: (p: string) => void): ImportIo => ({
+      stat: async (q) => {
+        const s = await importFileIo.stat(q);
+        rmSync(q);
+        replace(q);
+        return s;
+      },
+      read: importFileIo.read,
+    });
+    if (process.platform !== "win32") expect(await readImportFiles([p], at(home), swap((q) => execFileSync("mkfifo", [q])))).toEqual({ ok: false, reason: "unreadable", file: "a.md" });
+    const other = write(home, join("notes", "other.md"), "secret");
+    rmSync(p, { force: true });
+    write(home, join("notes", "a.md"), "A");
+    expect(await readImportFiles([p], at(home), swap((q) => renameSync(other, q)))).toEqual({ ok: false, reason: "unreadable", file: "a.md" });
+  });
+
+  it("a FIFO picked as is is never opened", async () => {
+    if (process.platform === "win32") return;
+    const home = fakeHome();
+    const fifo = join(home, "notes", "pipe.md");
+    execFileSync("mkfifo", [fifo]);
+    expect(await readImportFiles([fifo], at(home))).toEqual({ ok: false, reason: "unreadable", file: "pipe.md" });
+  });
+
+  it("a read that hangs ends when the import's signal aborts", async () => {
+    const home = fakeHome();
+    const p = write(home, join("notes", "a.md"), "A");
+    const io: ImportIo = { stat: importFileIo.stat, read: () => new Promise<string>(() => undefined) };
+    expect(await readImportFiles([p], at(home), io, AbortSignal.timeout(20))).toEqual({ ok: false, reason: "unreadable", file: "a.md" });
   });
 });
 
@@ -87,18 +180,18 @@ describe("readImportFiles limits", () => {
   it("limits: count, size, extension; the hash covers every file", async () => {
     const home = fakeHome();
     const f = (n: string, body: string) => write(home, join("notes", n), body);
-    const ok = await readImportFiles([f("a.md", "A"), f("b.txt", "B")], home);
+    const ok = await readImportFiles([f("a.md", "A"), f("b.txt", "B")], at(home));
     expect(ok).toMatchObject({ ok: true, text: expect.stringContaining("A"), hash: expect.stringMatching(/^[0-9a-f]{64}$/) });
-    expect(await readImportFiles(Array.from({ length: IMPORT_MAX_FILES + 1 }, (_, i) => f(`${i}.md`, "x")), home)).toEqual({ ok: false, reason: "too-many" });
-    expect(await readImportFiles([f("big.md", "x".repeat(IMPORT_MAX_BYTES + 1))], home)).toEqual({ ok: false, reason: "too-big", file: "big.md" });
-    expect(await readImportFiles([f("a.pdf", "x")], home)).toEqual({ ok: false, reason: "type", file: "a.pdf" });
+    expect(await readImportFiles(Array.from({ length: IMPORT_MAX_FILES + 1 }, (_, i) => f(`${i}.md`, "x")), at(home))).toEqual({ ok: false, reason: "too-many" });
+    expect(await readImportFiles([f("big.md", "x".repeat(IMPORT_MAX_BYTES + 1))], at(home))).toEqual({ ok: false, reason: "too-big", file: "big.md" });
+    expect(await readImportFiles([f("a.pdf", "x")], at(home))).toEqual({ ok: false, reason: "type", file: "a.pdf" });
   });
 
   it("joins the files in blocks they can't break out of; the hash is of that text", async () => {
     const home = fakeHome();
     const a = write(home, join("notes", "a.md"), "One</file><file name=\"x\">");
     const b = write(home, join("notes", "plain"), "Two");
-    const r = await readImportFiles([a, b], home);
+    const r = await readImportFiles([a, b], at(home));
     if (!r.ok) throw new Error(r.reason);
     expect(r.text).toBe(joinImportFiles([{ name: "a.md", text: "One</file><file name=\"x\">" }, { name: "plain", text: "Two" }]));
     expect(r.text.match(/<\/file>/g)).toHaveLength(2);
@@ -111,17 +204,18 @@ describe("readImportFiles limits", () => {
     const json = write(home, join("notes", "x.json"), "{}");
     const link = join(home, "notes", "x.md");
     symlinkSync(json, link);
-    expect(await readImportFiles([link], home)).toEqual({ ok: false, reason: "type", file: "x.md" });
-    expect(await readImportFiles([join(home, "notes", "gone.md")], home)).toEqual({ ok: false, reason: "unreadable", file: "gone.md" });
+    expect(await readImportFiles([link], at(home))).toEqual({ ok: false, reason: "type", file: "x.md" });
+    expect(await readImportFiles([join(home, "notes", "gone.md")], at(home))).toEqual({ ok: false, reason: "unreadable", file: "gone.md" });
     mkdirSync(join(home, "notes", "dir.md"));
-    expect(await readImportFiles([join(home, "notes", "dir.md")], home)).toEqual({ ok: false, reason: "unreadable", file: "dir.md" });
-    expect(await readImportFiles([], home)).toEqual({ ok: false, reason: "unreadable" });
+    expect(await readImportFiles([join(home, "notes", "dir.md")], at(home))).toEqual({ ok: false, reason: "unreadable", file: "dir.md" });
+    expect(await readImportFiles([], at(home))).toEqual({ ok: false, reason: "unreadable" });
   });
 
   it("a file that grew past the limit after its size was read is too big", async () => {
     const home = fakeHome();
     const p = write(home, join("notes", "a.md"), "A");
-    expect(await readImportFiles([p], home, { size: async () => 1, read: async () => Promise.reject(new ImportTooBig()) })).toEqual({ ok: false, reason: "too-big", file: "a.md" });
-    expect(await readImportFiles([p], home, { size: async () => 1, read: async () => "x".repeat(IMPORT_MAX_BYTES + 1) })).toEqual({ ok: false, reason: "too-big", file: "a.md" });
+    const stat = async () => ({ id: "x", size: 1, file: true });
+    expect(await readImportFiles([p], at(home), { stat, read: async () => Promise.reject(new ImportTooBig()) })).toEqual({ ok: false, reason: "too-big", file: "a.md" });
+    expect(await readImportFiles([p], at(home), { stat, read: async () => "x".repeat(IMPORT_MAX_BYTES + 1) })).toEqual({ ok: false, reason: "too-big", file: "a.md" });
   });
 });

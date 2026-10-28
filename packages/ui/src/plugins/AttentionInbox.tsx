@@ -35,7 +35,10 @@ export function AttentionInbox({
 }: {
   client: HarnessClient;
   view: AttentionView;
-  /** Opens a plugin's panel and passes `focus` to it; absent while no surface is on screen. */
+  /**
+   * Opens a plugin's panel and passes `focus` to it (ChatView always passes it: a surface still on its way opens the
+   * panel when it arrives). Absent, a panel target only closes the list: main said the panel exists, so it isn't gone.
+   */
   onOpenPanel?: (plugin: string, panel: string, focus?: string) => void;
 }) {
   const { t, i18n } = useTranslation();
@@ -104,8 +107,8 @@ export function AttentionInbox({
     } finally {
       opening.current = false;
     }
-    if (target.kind === "panel" && onOpenPanel) {
-      onOpenPanel(target.plugin, target.panel, target.focus);
+    if (target.kind === "panel") {
+      onOpenPanel?.(target.plugin, target.panel, target.focus);
       setOpen(false);
     } else if (target.kind === "prepared") {
       // The card comes with main's surface push.

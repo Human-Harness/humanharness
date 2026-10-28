@@ -1096,7 +1096,7 @@ export function ChatView({
               }}
             />
           )}
-          {attention?.show && <AttentionInbox client={client} view={attention} {...(surfaceCtx ? { onOpenPanel: openPanel } : {})} />}
+          {attention?.show && <AttentionInbox client={client} view={attention} onOpenPanel={openPanel} />}
           <button
             onClick={() => {
               // One panel at a time: Escape closes the one on screen.

@@ -323,14 +323,18 @@ describe("Attention inbox", () => {
       expect(c.pluginCalls).toEqual([["attention.open", "oncall", "k1"]]);
     });
 
-    it("a panel target with no surface on screen is treated as gone", async () => {
-      // state.plugins but the surface never arrives (a main that sends none): the panel can't be shown.
+    it("a panel target before the surface arrives is not 'gone': the list closes and the panel opens once it does", async () => {
+      // state.plugins, the surface still on its way: main said the panel exists, so it is not reported gone.
       const c = client(view([targetItem()]));
-      vi.spyOn(c.plugins, "surface").mockImplementation(() => new Promise(() => {}));
+      let arrive!: (v: PluginSurfaceView) => void;
+      vi.spyOn(c.plugins, "surface").mockImplementation(() => new Promise((r) => (arrive = r)));
       c.attentionTarget = { kind: "panel", plugin: "oncall", panel: "queue" };
       await open(c);
       const dialog = await openItem();
-      expect(await within(dialog).findByText("This item can't be opened any more")).toBeTruthy();
+      await waitFor(() => expect(screen.queryByRole("dialog", { name: "Attention" })).toBeNull());
+      expect(within(dialog).queryByText("This item can't be opened any more")).toBeNull();
+      await act(async () => arrive(surface({ panels: [DIGEST, QUEUE] })));
+      await waitFor(() => expect(screen.getByRole("tab", { name: "Queue" }).getAttribute("aria-selected")).toBe("true"));
     });
   });
 });

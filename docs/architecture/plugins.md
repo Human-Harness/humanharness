@@ -221,7 +221,7 @@ A plugin never starts a task. An action (`actions[]`: `id`, `label` ≤ 60, `tie
 
 An inbox row whose item has a target shows Open. The click calls `hh:attentionOpen(plugin, key)` (only the core's inbox does), and `attention.open` marks the item read and opens what `attentionTarget` allows **now** (part 1's click-time check):
 
-- a panel target answers `{ kind: "panel", plugin, panel, focus? }`: the window selects that panel's tab (or scrolls to it in a harness slot) and sends it a `focus` event, again after a tab switch or a remount; a target is forgotten once its plugin reloads;
+- a panel target answers `{ kind: "panel", plugin, panel, focus? }`: the window selects that panel's tab (or scrolls to it in a harness slot) and sends it a `focus` event, again after a tab switch or a remount; a target is forgotten once its plugin reloads; clicked before the window has the surface, the list closes and the panel opens when the surface arrives;
 - an action target goes through `requestAction` with the vars as the schema parsed them, so every rule above holds, and answers `{ kind: "prepared" }`; a refusal (for example "Too soon" within 2 s of a panel's card) is written to the plugin's error log;
 - anything else answers `{ kind: "none" }`, and the row says "This item can't be opened any more".
 

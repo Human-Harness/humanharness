@@ -4,8 +4,9 @@ import path from "node:path";
 import type { ModelProfile } from "@humanharness/engines";
 import { BLOCK_ID, MODE_ID, PHASE_ID, refusedShape } from "@humanharness/harness-sdk";
 import type { Session } from "@humanharness/runtime";
-import type { ActionStatus, TaskStatus } from "@humanharness/ui/client";
+import type { ActionStatus, ContextItem, ContextItemKind, ContextRead, TaskStatus } from "@humanharness/ui/client";
 import { MAIN_SCOPE, isScopeDir, isScopeId, tasksFile } from "@humanharness/workspace";
+import { INDEX_NOTES_MAX, LABEL_MAX, READS_MAX, START_ITEMS_MAX } from "./context-record";
 import { cleanProfile } from "./models";
 
 /** The input block the task waits an answer for (input-blocks spec §4): its id, its block's name, when it was shown. */
@@ -87,6 +88,12 @@ export interface CurrentTask {
   review?: string;
   /** Lines the app puts before the task's next message (review spec §5.4 "the document's task is told"). */
   notices?: string[];
+  /** What the app loaded into the task's first message (context-panel spec §3.1), plus briefs that came later. */
+  start?: ContextItem[];
+  /** The first turn's real input tokens (its `usage`), once it ended. */
+  startTokens?: number;
+  /** Files, notes and tools the agent used (spec §3.2). */
+  reads?: ContextRead[];
 }
 
 /** `<folder>/.harness/tasks.json`: the current task and how each action ended. Replaces the runtime's session.json. */
@@ -171,6 +178,58 @@ function cleanPending(p: unknown, taskId: string): PendingInput | undefined {
   return { blockId: p.blockId, block: p.block, shownAt: p.shownAt };
 }
 
+const ITEM_KINDS: readonly string[] = ["instructions", "scope-instructions", "brief", "notes-index", "app-notes-index", "data", "material", "pinned", "pinned-title"];
+/** Longest item id kept: `pin:<scope>:<path>` with a long path. */
+const ITEM_ID_MAX = 1100;
+const isCount = (v: unknown): v is number => typeof v === "number" && Number.isInteger(v) && v >= 0;
+const isTokens = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v) && v >= 0;
+const isRel = (v: unknown): v is string => typeof v === "string" && !refusedShape(v);
+const isTime = (v: unknown): v is string => typeof v === "string" && Number.isFinite(Date.parse(v));
+
+/** One start item (context-panel spec §3.1); a wrong kind, size or path drops it, a wrong optional field drops that field. */
+function cleanItem(raw: unknown): ContextItem | null {
+  if (!isObject(raw) || typeof raw.id !== "string" || !raw.id || raw.id.length > ITEM_ID_MAX || !ITEM_KINDS.includes(raw.kind as string)) return null;
+  if (typeof raw.label !== "string" || !isTokens(raw.tokens)) return null;
+  if (raw.path !== undefined && !isRel(raw.path)) return null;
+  const notes = Array.isArray(raw.notes)
+    ? raw.notes
+        .filter((n): n is { path: string; title: string } => isObject(n) && isRel(n.path) && typeof n.title === "string")
+        .slice(0, INDEX_NOTES_MAX)
+        .map((n) => ({ path: n.path, title: n.title.slice(0, LABEL_MAX) }))
+    : undefined;
+  return {
+    id: raw.id,
+    kind: raw.kind as ContextItemKind,
+    label: raw.label.slice(0, LABEL_MAX),
+    ...(raw.path !== undefined ? { path: raw.path as string } : {}),
+    tokens: raw.tokens,
+    ...(isTime(raw.at) ? { at: raw.at } : {}),
+    ...(isCount(raw.count) ? { count: raw.count } : {}),
+    ...(notes ? { notes } : {}),
+    ...(isScopeDir(raw.scope) ? { scope: raw.scope } : {}),
+    ...(raw.compacted === true ? { compacted: true as const } : {}),
+  };
+}
+
+/** One read or tool (spec §3.2): a label, a valid time and a count of at least 1. */
+function cleanRead(raw: unknown): ContextRead | null {
+  if (!isObject(raw) || (raw.kind !== "read" && raw.kind !== "tool") || typeof raw.label !== "string" || !raw.label) return null;
+  if (!isTime(raw.firstAt) || !isCount(raw.count) || raw.count < 1) return null;
+  if (raw.path !== undefined && !isRel(raw.path)) return null;
+  return {
+    kind: raw.kind,
+    label: raw.label.slice(0, LABEL_MAX),
+    ...(raw.path !== undefined ? { path: raw.path as string } : {}),
+    firstAt: raw.firstAt,
+    count: raw.count,
+    ...(raw.compacted === true ? { compacted: true as const } : {}),
+  };
+}
+
+/** The entries of `raw` that clean, at most `max`; undefined when `raw` is not a list. */
+const cleanList = <T>(raw: unknown, clean: (v: unknown) => T | null, max: number): T[] | undefined =>
+  Array.isArray(raw) ? raw.map(clean).filter((v): v is T => v !== null).slice(0, max) : undefined;
+
 /** Built field by field: nothing from the file reaches the engine unchecked. */
 function cleanCurrent(c: unknown, known: Known = {}): CurrentTask | null {
   if (!isObject(c) || typeof c.id !== "string" || !TASK_STATUSES.includes(c.status as string)) return null;
@@ -203,6 +262,9 @@ function cleanCurrent(c: unknown, known: Known = {}): CurrentTask | null {
         .map((n) => n.slice(0, NOTICE_MAX))
         .slice(-NOTICES_MAX)
     : [];
+  // An empty list that was stored stays empty: `start: []` means "recorded, nothing loaded".
+  const start = cleanList(c.start, cleanItem, START_ITEMS_MAX);
+  const reads = cleanList(c.reads, cleanRead, READS_MAX);
   return {
     id: c.id,
     ...(typeof c.action === "string" ? { action: c.action } : {}),
@@ -231,6 +293,9 @@ function cleanCurrent(c: unknown, known: Known = {}): CurrentTask | null {
     ...(!mode && isMode(c.suspendedMode) ? { suspendedMode: c.suspendedMode } : {}),
     ...(typeof c.review === "string" && !refusedShape(c.review) ? { review: c.review } : {}),
     ...(notices.length > 0 ? { notices } : {}),
+    ...(start ? { start } : {}),
+    ...(isCount(c.startTokens) ? { startTokens: c.startTokens } : {}),
+    ...(reads ? { reads } : {}),
   };
 }
 

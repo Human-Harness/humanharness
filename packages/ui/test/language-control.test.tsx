@@ -1,0 +1,128 @@
+// @vitest-environment happy-dom
+import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
+import { afterEach, describe, expect, it } from "vitest";
+import { createI18n } from "@humanharness/i18n";
+import { useLanguage } from "../src/language-control";
+import { FakeClient } from "./fake-client";
+
+afterEach(cleanup);
+
+describe("useLanguage", () => {
+  it("asks for nothing until a screen needs the state (no engine check at start)", async () => {
+    const client = new FakeClient();
+    const i18n = await createI18n("en");
+    const { result } = renderHook(() => useLanguage(client, i18n, {}, () => {}));
+    await act(async () => {});
+    expect(client.languageCalls).toEqual([]);
+    expect(result.current.view).toBeNull();
+    act(() => result.current.load());
+    await waitFor(() => expect(result.current.view).not.toBeNull());
+    expect(client.languageCalls.map((c) => c.op)).toEqual(["state"]);
+  });
+
+  it("chooses a complete language: loads its strings and switches live", async () => {
+    const client = new FakeClient();
+    client.languageState = { ...client.languageState, cached: [{ tag: "es", complete: true }] };
+    client.languageStrings.es = { "core:chat.send": "Enviar" };
+    const i18n = await createI18n("en");
+    const changed: string[] = [];
+    const { result } = renderHook(() => useLanguage(client, i18n, { title: "Notes" }, (tag) => changed.push(tag)));
+    act(() => result.current.load());
+    await waitFor(() => expect(result.current.view).not.toBeNull());
+    await act(async () => expect(await result.current.choose("es")).toBe("switched"));
+    expect(i18n.language).toBe("es");
+    expect(i18n.t("chat.send")).toBe("Enviar");
+    expect(changed).toEqual(["es"]);
+    expect(result.current.view?.language).toBe("es");
+    expect(client.languageCalls.find((c) => c.op === "choose")!.args).toEqual(["es", { title: "Notes" }]);
+  });
+
+  it("an incomplete language needs the notice; a run's end switches", async () => {
+    const client = new FakeClient();
+    client.languageStrings.fr = { "core:chat.send": "Envoyer" };
+    const i18n = await createI18n("en");
+    const changed: string[] = [];
+    const { result } = renderHook(() => useLanguage(client, i18n, {}, (tag) => changed.push(tag)));
+    await act(async () => expect(await result.current.choose("fr")).toBe("needs-translation"));
+    await act(async () => expect(await result.current.translate("fr")).toBe(true));
+    await act(async () => client.pushLanguage({ language: "fr", run: { tag: "fr", done: 1, total: 1, status: "done" } }));
+    await waitFor(() => expect(i18n.t("chat.send")).toBe("Envoyer"));
+    expect(result.current.view?.language).toBe("fr");
+    expect(changed).toEqual(["fr"]);
+  });
+
+  it("a translate answered failed (e.g. cancelled while preparing) means nothing started", async () => {
+    const client = new FakeClient();
+    client.translateAnswer = { ok: false, reason: "failed" };
+    const i18n = await createI18n("en");
+    const { result } = renderHook(() => useLanguage(client, i18n, {}, () => {}));
+    await act(async () => expect(await result.current.translate("fr")).toBe(false));
+  });
+
+  it("re-choosing a language replaces its old strings, it doesn't merge them", async () => {
+    const client = new FakeClient();
+    client.languageState = { ...client.languageState, cached: [{ tag: "es", complete: true }] };
+    client.languageStrings.es = { "core:chat.send": "Enviar", "core:chat.stop": "Parar" };
+    const i18n = await createI18n("en");
+    const english = i18n.t("chat.stop");
+    const { result } = renderHook(() => useLanguage(client, i18n, {}, () => {}));
+    await act(async () => void (await result.current.choose("es")));
+    client.languageStrings.es = { "core:chat.send": "Mandar" };
+    await act(async () => void (await result.current.choose("es")));
+    expect(i18n.t("chat.send")).toBe("Mandar");
+    expect(i18n.t("chat.stop")).toBe(english);
+  });
+
+  it("an English variant never takes generated strings", async () => {
+    const client = new FakeClient();
+    client.chooseAnswer = { ok: true, language: "en-GB", strings: { "core:chat.send": "Hacked" } };
+    const i18n = await createI18n("en");
+    const { result } = renderHook(() => useLanguage(client, i18n, {}, () => {}));
+    await act(async () => expect(await result.current.choose("en-GB")).toBe("switched"));
+    expect(i18n.language).toBe("en-GB");
+    expect(i18n.t("chat.send")).toBe("Send");
+    expect(i18n.hasResourceBundle("en-GB", "core")).toBe(false);
+  });
+
+  it("drops a run's late strings once the language changed again", async () => {
+    const client = new FakeClient();
+    client.languageStrings.fr = { "core:chat.send": "Envoyer" };
+    let open!: () => void;
+    client.languageGate = new Promise<void>((r) => (open = r));
+    const i18n = await createI18n("en");
+    const changed: string[] = [];
+    const { result } = renderHook(() => useLanguage(client, i18n, {}, (tag) => changed.push(tag)));
+    await act(async () => client.pushLanguage({ language: "fr", run: { tag: "fr", done: 1, total: 1, status: "done" } }));
+    await act(async () => expect(await result.current.choose("en")).toBe("switched"));
+    await act(async () => open());
+    await act(async () => {});
+    expect(i18n.language).toBe("en");
+    expect(i18n.t("chat.send")).toBe("Send");
+    expect(changed).toEqual(["en"]);
+  });
+
+  it("drops a late state answer when a push came after it was asked", async () => {
+    const client = new FakeClient();
+    let open!: () => void;
+    client.languageGate = new Promise<void>((r) => (open = r));
+    const i18n = await createI18n("en");
+    const { result } = renderHook(() => useLanguage(client, i18n, {}, () => {}));
+    act(() => result.current.load());
+    await act(async () => client.pushLanguage({ missing: 7 }));
+    await act(async () => open());
+    await act(async () => {});
+    expect(result.current.view?.missing).toBe(7);
+  });
+
+  it("without client.language: no view and nothing to do (D0)", async () => {
+    const client = new FakeClient();
+    (client as { language?: unknown }).language = undefined;
+    const i18n = await createI18n("en");
+    const { result } = renderHook(() => useLanguage(client, i18n, {}, () => {}));
+    act(() => result.current.load());
+    expect(result.current.view).toBeNull();
+    expect(await result.current.choose("es")).toBe("failed");
+    expect(await result.current.translate("es")).toBe(false);
+    expect(i18n.language).toBe("en");
+  });
+});

@@ -9,6 +9,7 @@ import {
   UNDO_PREFIX,
   attribute,
   conflictsOf,
+  isTrailerId,
 } from "@humanharness/workspace";
 import type { Event } from "./events";
 import { type TurnLedger, type TurnWindow, samePath } from "./turn-ledger";
@@ -103,7 +104,12 @@ export async function endTurn(
     } else {
       const subject = (done.ok ? TURN_PREFIX : STOPPED_PREFIX) + message.slice(0, 60);
       first = await history.commitPaths(owned, subject, trailer);
-      if (shared.length > 0) {
+      // A Shared commit with a Task: line but no Shared: one would read as this task's own (undo-paths): when no
+      // other task's id can be written (windows with no valid one), the shared paths stay for a later commit.
+      const named = a.with.filter((t) => t !== trailer?.task && isTrailerId(t));
+      if (shared.length > 0 && trailer && isTrailerId(trailer.task) && named.length === 0) {
+        console.error("Shared paths left uncommitted: no other task to name", shared);
+      } else if (shared.length > 0) {
         const s = await history.commitPaths(shared, `${SHARED_PREFIX}${message.slice(0, 60)}`, trailer && { ...trailer, shared: a.with });
         first ??= s;
       }

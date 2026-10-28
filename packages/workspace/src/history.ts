@@ -166,6 +166,9 @@ const MAX_WALK_BACK = 1000;
 /** Ids a trailer may carry (task UUIDs, manifest action ids): no spaces or line breaks. */
 const TRAILER_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/;
 
+/** An id `withTrailer` writes as a `Task:` or `Shared:` line; any other is left out. */
+export const isTrailerId = (id: string): boolean => TRAILER_ID.test(id);
+
 /** At most this many `Shared:` lines on one commit, written or read. */
 const SHARED_MAX = 8;
 

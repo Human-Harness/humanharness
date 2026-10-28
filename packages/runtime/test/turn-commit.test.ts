@@ -236,6 +236,22 @@ describe("two turns at once (parallel spec §5.2, T1, T2)", () => {
     await endTurn(history, ledger, x, ok, "X", { task: "t0" });
   });
 
+  it("no valid task id to share with: no Shared commit (its paths would read as owned), logged", async () => {
+    const a = await beginTurn(history, ledger, "A", { task: "t1" });
+    // A window with no task, under a key no trailer can carry.
+    const b = await beginTurn(history, ledger, "slot b");
+    write("a.md", "a");
+    ledger.noteEdits("A", [abs("a.md")]);
+    write("loose.md", "?");
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    expect(await endTurn(history, ledger, a, ok, "A", { task: "t1" })).toMatchObject({ owned: ["a.md"], shared: ["loose.md"] });
+    expect(err).toHaveBeenCalledWith("Shared paths left uncommitted: no other task to name", ["loose.md"]);
+    err.mockRestore();
+    expect((await subjects()).at(-1)).toBe("Turn: A\n\nTask: t1");
+    expect(await treeOf(gitdir, await head())).toEqual({ "a.md": "a", "seed.md": "s" });
+    await endTurn(history, ledger, b, ok, "B");
+  });
+
   it("with no trailer, the Shared commit carries none either, like the owned one", async () => {
     const a = await beginTurn(history, ledger, "A");
     const b = await beginTurn(history, ledger, "B", { task: "t2" });

@@ -261,6 +261,8 @@ export function HistoryPanel({
     const label = entryLabel(e.message);
     return label ? t(label.key, label.values ?? {}) : e.message;
   };
+  /** A task's changes in the tracked linked folders (hatches): listed under each folder's label, counted on its row. */
+  const linkedOf = (g: HistoryTaskView) => (g.taskId !== null && linked && Object.hasOwn(linked.tasks, g.taskId) ? linked.tasks[g.taskId] : []);
   const folderLabel = (key: string) => (linkedFolders && Object.hasOwn(linkedFolders, key) ? linkedFolders[key].label : key);
   const refusalText = (r: UndoRefusal): string => {
     if (r.reason === "partial") {
@@ -319,7 +321,7 @@ export function HistoryPanel({
       {(!filter || filter === linkedScope) &&
         linked?.uncovered.map((u) => (
           <p key={u.key} className="hh-caption hh-history-uncovered">
-            {t("hatches.notCoveredFolder", { label: u.label })}
+            {t(u.noGit ? "hatches.notCoveredNoGit" : "hatches.notCoveredFolder", { label: u.label })}
           </p>
         ))}
       {groups?.length === 0 && (
@@ -359,7 +361,7 @@ export function HistoryPanel({
                     <span className="hh-history-row-text">
                       <span className="hh-history-label">{rowLabel(g)}</span>
                       <span className="hh-caption">
-                        {when(g.date)} · {t("history.filesChanged", { count: g.changes.length })}
+                        {when(g.date)} · {t("history.filesChanged", { count: g.changes.length + linkedOf(g).reduce((n, f) => n + f.changes.length, 0) })}
                       </span>
                     </span>
                     {currentTask !== undefined && g.taskId === currentTask && <span className="hh-history-chip open">{t("history.inProgress")}</span>}
@@ -397,39 +399,39 @@ export function HistoryPanel({
                         </ul>
                       )}
                       {/* A linked folder's files are plain text: the file timeline reads only the main folder's history. */}
-                      {g.taskId !== null &&
-                        linked &&
-                        Object.hasOwn(linked.tasks, g.taskId) &&
-                        linked.tasks[g.taskId].map((f, j) => (
-                          <div key={`${f.key}-${j}`} className="hh-history-linked">
-                            <span id={`${bodyId}-l${j}`} className="hh-caption">
-                              {f.label}
-                            </span>
-                            <ul className="hh-history-files" aria-labelledby={`${bodyId}-l${j}`}>
-                              {f.changes.map((c) => (
-                                <li key={c.path}>
-                                  <span className={`hh-change ${c.kind}`}>{t(`history.change.${c.kind}`)}</span>
-                                  <code title={c.path}>{c.path}</code>
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        ))}
-                      <ol className="hh-history-entries" aria-label={t("history.points")}>
-                        {g.entries.map((e) => (
-                          <li key={e.sha}>
-                            <span className="hh-history-entry-text">
-                              <span>{entryText(e)}</span>
-                              {/* The part the task was in (task-phases spec §6); none for a part the manifest no longer has. */}
-                              {e.phase && g.actionId && Object.hasOwn(actions, g.actionId) && (
-                                <span className="hh-caption">{actions[g.actionId].phases?.find((p) => p.id === e.phase)?.label}</span>
-                              )}
-                              {when(e.date)}
-                            </span>
-                            {goBack({ kind: "point", id: e.sha })}
-                          </li>
-                        ))}
-                      </ol>
+                      {linkedOf(g).map((f, j) => (
+                        <div key={`${f.key}-${j}`} className="hh-history-linked">
+                          <span id={`${bodyId}-l${j}`} className="hh-caption">
+                            {f.label}
+                          </span>
+                          <ul className="hh-history-files" aria-labelledby={`${bodyId}-l${j}`}>
+                            {f.changes.map((c) => (
+                              <li key={c.path}>
+                                <span className={`hh-change ${c.kind}`}>{t(`history.change.${c.kind}`)}</span>
+                                <code title={c.path}>{c.path}</code>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      ))}
+                      {/* A task that changed only linked folders has no entry in the work folder's history. */}
+                      {g.entries.length > 0 && (
+                        <ol className="hh-history-entries" aria-label={t("history.points")}>
+                          {g.entries.map((e) => (
+                            <li key={e.sha}>
+                              <span className="hh-history-entry-text">
+                                <span>{entryText(e)}</span>
+                                {/* The part the task was in (task-phases spec §6); none for a part the manifest no longer has. */}
+                                {e.phase && g.actionId && Object.hasOwn(actions, g.actionId) && (
+                                  <span className="hh-caption">{actions[g.actionId].phases?.find((p) => p.id === e.phase)?.label}</span>
+                                )}
+                                {when(e.date)}
+                              </span>
+                              {goBack({ kind: "point", id: e.sha })}
+                            </li>
+                          ))}
+                        </ol>
+                      )}
                       {g.taskId !== null &&
                         g.start !== null &&
                         goBack({ kind: "task", id: g.taskId })}

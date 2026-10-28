@@ -1333,6 +1333,7 @@
     "keepTracked": "Track with the app's history",
     "leaveToGit": "Leave to its own git",
     "notCoveredFolder": "{{label}}: Undo doesn't cover this folder: it has its own git.",
+    "notCoveredNoGit": "{{label}}: Undo doesn't cover this folder: it has no git, and the app's history doesn't track it.",
     "undoDone": "Undone in {{folders}}.",
     "undoWorkFolder": "your work folder",
     "undoNotDone": "Not undone in {{folder}}: {{cause}}",

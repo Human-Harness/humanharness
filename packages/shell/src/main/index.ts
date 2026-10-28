@@ -202,6 +202,7 @@ import {
   type LinkedHistoryRef,
   linkedHistoriesFor,
   linkedHistoryView,
+  linkedOnlyRows,
   mergeTaskGroups,
   openLinkedHistory,
   restoreLinkedTask,
@@ -2573,7 +2574,20 @@ function registerIpc() {
   });
   // Every go-back but "Undo this task" as master registers it; that one also undoes by paths below.
   for (const [channel, fn] of Object.entries(goBacks)) if (channel !== "hh:restoreTask") handleFrom(channel, fn);
-  handle("hh:historyTasks", historyGroups);
+  // The panel's rows; with tracked linked folders, a task that changed only one of them too (hatches spec §3.4), so it
+  // can be undone. Without linked folders, exactly the work folder's (D0); a linked folder that can't be read adds none.
+  handle("hh:historyTasks", async () => {
+    const main = await historyGroups();
+    if (!linked_()) return main;
+    try {
+      const refs = await linkedHistoriesOf(undefined);
+      if (refs.length === 0) return main;
+      return linkedOnlyRows(main, await Promise.all(refs.map(async (r) => ({ key: r.key, groups: historyView(await r.history.tasks()) }))));
+    } catch (err) {
+      console.error("Could not read the linked folders' history", err);
+      return main;
+    }
+  });
   handleFrom("hh:restoreTask", async (sender, taskId: unknown, includeShared?: unknown) => {
     // Board mode (Decision 12): only the task's own paths (its shared ones after the person's confirm), refused while
     // its own lane runs, or a running turn touched one of them (P2). Other lanes go on meanwhile.

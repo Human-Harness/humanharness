@@ -9,6 +9,7 @@ import {
   linkedHistoriesFor,
   linkedHistoryView,
   openLinkedHistory,
+  linkedOnlyRows,
   mergeTaskGroups,
   restoreLinkedTask,
   restoreTaskWithLinked,
@@ -265,6 +266,42 @@ describe("mergeTaskGroups (plain mode's undo over linked folders)", () => {
   });
 });
 
+describe("linkedOnlyRows (the History panel's rows)", () => {
+  const g = (taskId: string | null, date: string, path = "a.md"): HistoryTaskView => ({
+    taskId,
+    actionId: "implement",
+    start: "s",
+    end: "e",
+    date,
+    changes: [{ path, kind: "modified" }],
+    entries: [{ sha: `sha-${taskId}-${date}`, message: "Turn: go", date }],
+  });
+
+  it("adds a row for a task only linked folders changed, with no files or entries of its own, in date order", () => {
+    const rows = linkedOnlyRows(
+      [g("t2", "2026-10-28T10:00:00.000Z"), g(null, "2026-10-28T08:00:00.000Z")],
+      [
+        { key: "notes", groups: [g("t3", "2026-10-28T11:00:00.000Z", "x.md"), g("t2", "2026-10-28T12:00:00.000Z", "x.md"), g(null, "2026-10-28T07:00:00.000Z")] },
+        { key: "site", groups: [g("t3", "2026-10-28T11:30:00.000Z", "y.md")] },
+      ],
+    );
+    expect(rows.map((r) => [r.taskId, r.date])).toEqual([
+      ["t3", "2026-10-28T11:30:00.000Z"],
+      ["t2", "2026-10-28T10:00:00.000Z"],
+      [null, "2026-10-28T08:00:00.000Z"],
+    ]);
+    expect(rows[0]).toMatchObject({ taskId: "t3", actionId: "implement", changes: [], entries: [] });
+    // A task the work folder has keeps its row as it is (its linked changes show under the folders' labels).
+    expect(rows[1].changes).toEqual([{ path: "a.md", kind: "modified" }]);
+  });
+
+  it("no linked-only task: the work folder's rows, untouched; a linked group with no change left adds none", () => {
+    const main = [g("t1", "2026-10-28T10:00:00.000Z")];
+    expect(linkedOnlyRows(main, [])).toBe(main);
+    expect(linkedOnlyRows(main, [{ key: "notes", groups: [{ ...g("t9", "2026-10-28T11:00:00.000Z"), changes: [] }] }])).toBe(main);
+  });
+});
+
 describe("linkedHistoryView", () => {
   it("lists each task's changes per tracked folder, and the untracked folders for the 'not covered' line", async () => {
     await turn("t1", "a1", "x1");
@@ -273,7 +310,7 @@ describe("linkedHistoryView", () => {
       "app",
       DECLS,
       async () => notes,
-      noGit,
+      async (dir) => dir === "/code/repo",
     );
     expect(view).toEqual({
       uncovered: [{ key: "repos", label: "Repos" }],
@@ -282,8 +319,22 @@ describe("linkedHistoryView", () => {
   });
 
   it("a folder that gained git since it was linked is not covered", async () => {
-    const view = await linkedHistoryView(scopes([entry({ key: "notes", path: notesDir, gitChanged: true })]), "app", DECLS, async () => notes, noGit);
+    const view = await linkedHistoryView(scopes([entry({ key: "notes", path: notesDir, gitChanged: true })]), "app", DECLS, async () => notes, async () => true);
     expect(view).toEqual({ uncovered: [{ key: "notes", label: "Notes" }], tasks: {} });
+  });
+
+  it("an untracked folder with no git now (it lost its git) is not covered and says it has none", async () => {
+    const lost = scopes([entry({ key: "repos", path: "/code/repo", tracked: false, gitChanged: true }), entry({ key: "notes", path: "/code/left", tracked: false })]);
+    expect((await linkedHistoryView(lost, "app", DECLS, async () => null, noGit)).uncovered).toEqual([
+      { key: "repos", label: "Repos", noGit: true },
+      { key: "notes", label: "Notes", noGit: true },
+    ]);
+    // Git that can't be told: the line it had (its own git), never a claim that it has none.
+    const unknown = await linkedHistoryView(lost, "app", DECLS, async () => null, async () => Promise.reject(new Error("EACCES")));
+    expect(unknown.uncovered).toEqual([
+      { key: "repos", label: "Repos" },
+      { key: "notes", label: "Notes" },
+    ]);
   });
 
   it("no scope or no links: empty", async () => {

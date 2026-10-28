@@ -187,8 +187,33 @@ export function mergeTaskGroups(main: HistoryTaskView[], linked: { key: string; 
 }
 
 /**
+ * The History panel's rows: the work folder's groups, plus one for each task that changed only tracked linked folders
+ * (`linked`, as `mergeTaskGroups` takes them), so "Undo this task" shows for it. Such a row has no files and no entries
+ * of its own: its changes show under each folder's label (`linkedHistoryView`), and "Go back here" is the work
+ * folder's only (Decision 12). No such task: `main` as it is.
+ */
+export function linkedOnlyRows(main: HistoryTaskView[], linked: { key: string; groups: HistoryTaskView[] }[]): HistoryTaskView[] {
+  const known = new Set(main.map((g) => g.taskId));
+  const extra = new Map<string, HistoryTaskView>();
+  for (const { groups } of linked) {
+    for (const g of groups) {
+      // As the panel's linked view: a task with no change left in a folder shows nothing there.
+      if (g.taskId === null || known.has(g.taskId) || g.changes.length === 0) continue;
+      const have = extra.get(g.taskId);
+      if (!have) extra.set(g.taskId, { ...g, changes: [], entries: [] });
+      else if (Date.parse(g.date) > Date.parse(have.date)) have.date = g.date;
+    }
+  }
+  if (extra.size === 0) return main;
+  const all = [...main, ...extra.values()];
+  // Newest first, the "Outside a task" group last, as `History.tasks` orders them.
+  return [...all.filter((g) => g.taskId !== null).sort((x, y) => Date.parse(y.date) - Date.parse(x.date)), ...all.filter((g) => g.taskId === null)];
+}
+
+/**
  * The History panel's view of `scope`'s linked folders: each task's changes in every tracked folder, and the write
- * folders undo doesn't cover (their own git) for the "not covered" line.
+ * folders undo doesn't cover for the "not covered" line, each with whether it has git now (`noGit`: it has none, and
+ * the app's history doesn't track it, as after losing its git).
  */
 export async function linkedHistoryView(
   entries: ScopeEntry[],
@@ -207,5 +232,8 @@ export async function linkedHistoryView(
       tasks[g.taskId].push({ key, label, changes: g.changes });
     }
   }
-  return { uncovered: uncovered.map((l) => ({ key: l.key, label: l.label })), tasks };
+  const shown: LinkedHistoryView["uncovered"] = [];
+  // Unknown counts as git: the line it had before (its own git), never a claim that it has none.
+  for (const l of uncovered) shown.push((await isGit(l.path).catch(() => true)) ? { key: l.key, label: l.label } : { key: l.key, label: l.label, noGit: true });
+  return { uncovered: shown, tasks };
 }

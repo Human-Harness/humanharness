@@ -252,6 +252,32 @@ describe("History panel with linked folders", () => {
     expect(within(files).queryByRole("button")).toBeNull();
   });
 
+  it("a task that changed only a linked folder has its row: its files under the folder, counted, and Undo this task", async () => {
+    const client = scoped();
+    client.historyGroups = [{ ...task("t1"), changes: [], entries: [] }];
+    client.linkedHistoryAnswer = {
+      uncovered: [],
+      tasks: { t1: [{ key: "notes", label: "Notes", changes: [{ path: "b.txt", kind: "added" }, { path: "c.txt", kind: "modified" }] }] },
+    };
+    await renderIn("en", <HistoryPanel client={client} actions={{}} linkedFolders={linkedFolders} onClose={() => undefined} onOpenFile={() => undefined} />);
+    const files = await screen.findByRole("list", { name: "Notes" });
+    expect(within(files).getByText("b.txt")).toBeTruthy();
+    expect(await screen.findByText(/2 files changed/)).toBeTruthy();
+    // No entry of the work folder's: no "Go back here", and no empty list of points.
+    expect(screen.queryByRole("list", { name: /points/i })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Undo this task" }));
+    await waitFor(() => expect(client.restoredTasks).toEqual(["t1"]));
+  });
+
+  it("a folder that has no git and isn't tracked says so, not that it has its own git", async () => {
+    const client = scoped();
+    client.historyGroups = [task("t1")];
+    client.linkedHistoryAnswer = { uncovered: [{ key: "repos", label: "Repos", noGit: true }, { key: "notes", label: "Notes" }], tasks: {} };
+    await renderIn("en", <HistoryPanel client={client} actions={{}} linkedFolders={linkedFolders} onClose={() => undefined} />);
+    expect(await screen.findByText("Repos: Undo doesn't cover this folder: it has no git, and the app's history doesn't track it.")).toBeTruthy();
+    expect(screen.getByText("Notes: Undo doesn't cover this folder: it has its own git.")).toBeTruthy();
+  });
+
   it("a failed linked history shows nothing extra", async () => {
     const client = scoped();
     client.historyGroups = [task("t1")];

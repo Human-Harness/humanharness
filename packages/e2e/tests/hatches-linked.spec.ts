@@ -15,10 +15,10 @@ const fixture = path.resolve(here, "../../fake-agent/fixtures/hatches-harness");
 const out = path.join(shellDir, "out", "hatches");
 
 /**
- * The fake-claude script: the implement task writes one file in each linked folder and one in the work folder (the
- * History panel lists a task by its work-folder changes).
+ * The fake-claude script: the implement task writes one file in each linked folder and none in the work folder (the
+ * History panel lists a task that changed only linked folders too).
  */
-const script = (folder: string, repo: string, notes: string): ClaudeScript => ({
+const script = (repo: string, notes: string): ClaudeScript => ({
   steps: [...claudeTextLines("Listo."), claudeResultLine(true)],
   turns: [
     {
@@ -26,7 +26,6 @@ const script = (folder: string, repo: string, notes: string): ClaudeScript => ({
       steps: [
         { write: { path: path.join(repo, "a.txt"), content: "a\n" } },
         { write: { path: path.join(notes, "b.txt"), content: "b\n" } },
-        { write: { path: path.join(folder, "log.md"), content: "log\n" } },
         ...claudeTextLines("Cambié las dos carpetas."),
         claudeResultLine(true),
       ],
@@ -89,7 +88,7 @@ test("link a git folder and a plain one; a turn edits both; undo restores only t
   const realNotes = fs.realpathSync.native(notes);
   let app: ElectronApplication | undefined;
   try {
-    const launched = await launch(s, { claude: script(s.folder, realRepo, realNotes) }, path.join(out, "main", "index.js"));
+    const launched = await launch(s, { claude: script(realRepo, realNotes) }, path.join(out, "main", "index.js"));
     app = launched.app;
     const page = launched.page;
     await page.getByRole("button", { name: "Start Hatches" }).click();
@@ -146,16 +145,16 @@ test("link a git folder and a plain one; a turn edits both; undo restores only t
     await expect.poll(() => fs.existsSync(gitdir(realNotes))).toBe(true);
     expect(fs.existsSync(gitdir(realRepo))).toBe(false);
 
-    // History: the git folder is named as not covered; undoing the task takes back the work folder's and the plain
-    // folder's changes, never the repo's.
+    // History: the git folder is named as not covered; the task changed only linked folders, and its row lists the
+    // plain folder's file. Undoing it takes back the plain folder's changes, never the repo's.
     await page.getByRole("button", { name: "History", exact: true }).click();
     const panel = page.getByRole("dialog", { name: "History" });
     await expect(panel.getByText("Repos: Undo doesn't cover this folder: it has its own git.")).toBeVisible();
+    await expect(panel.getByRole("list", { name: "Repos" }).getByText("b.txt")).toBeVisible();
     await answerGoBack(app, "Go back");
     await panel.getByRole("button", { name: "Undo this task" }).click();
     await expect(panel).toBeHidden();
     await expect.poll(() => fs.existsSync(path.join(realNotes, "b.txt"))).toBe(false);
-    expect(fs.existsSync(path.join(s.folder, "log.md"))).toBe(false);
     expect(fs.readFileSync(path.join(realNotes, "keep.md"), "utf8")).toBe("notes\n");
     expect(fs.readFileSync(path.join(realRepo, "a.txt"), "utf8")).toBe("a\n");
     // The repo's own git was never touched.

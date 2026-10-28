@@ -887,8 +887,11 @@ export type LinkRefusalView =
   | "already-linked" | "not-git" | "not-folder" | "unsafe-name" | "reference" | "one-only" | "too-many";
 /** What the History panel shows of the open scope's linked folders (hatches spec §3.4). */
 export interface LinkedHistoryView {
-  /** Write folders the app's history doesn't cover (they have their own git): the panel says undo doesn't cover them. */
-  uncovered: { key: string; label: string }[];
+  /**
+   * Write folders the app's history doesn't cover: the panel says undo doesn't cover them, because they have their own
+   * git, or (`noGit`) they have none and the app's history doesn't track them (they lost it).
+   */
+  uncovered: { key: string; label: string; noGit?: true }[];
   /** Per task id: what it changed in each tracked folder. */
   tasks: Record<string, { key: string; label: string; changes: HistoryFileChange[] }[]>;
 }

@@ -13,8 +13,13 @@ export interface TranslateItem {
   hash: string;
 }
 
-/** Keys under this prefix are never sent and always render in English (spec §8). */
+/**
+ * Keys under this prefix are never sent and always render in English (spec §8). The match is case-sensitive:
+ * legal texts live under lowercase `legal` (`Legal.x` is an ordinary key).
+ */
 export const LEGAL_PREFIX = "legal.";
+/** Whether a key is a legal text: `legal` itself or anything under `legal.`. */
+export const isLegalKey = (key: string): boolean => key === "legal" || key.startsWith(LEGAL_PREFIX);
 export const STRING_LIMITS = { keys: 5000, keyLength: 200, text: 4000, depth: 8 } as const;
 const KEY = /^[A-Za-z0-9_.-]+$/;
 /** Key segments that would reach an object's prototype; never read or written. */
@@ -91,7 +96,7 @@ export function englishItems(core: Record<string, string>, harness: Record<strin
     }
     const seen = new Set<string>();
     for (const [k, v] of Object.entries(map)) {
-      if (typeof v !== "string" || k.startsWith(LEGAL_PREFIX)) continue;
+      if (typeof v !== "string" || isLegalKey(k)) continue;
       const p = pluralSplit(k);
       if (p && plurals.has(p[0])) {
         if (seen.has(p[0])) continue;
@@ -132,11 +137,22 @@ function placeholderAt(s: string, i: number): { name: string; end: number } | un
   return name ? { name, end: j + 2 } : undefined;
 }
 
-/** One left-to-right pass: the placeholders, the tags, and how many `<`/`>` are left outside them. */
-function scan(s: string): { placeholders: string[]; tags: string[]; angles: number } {
+interface Scanned {
+  placeholders: string[];
+  /** Tags in the order they appear. */
+  tags: string[];
+  /** `<`, `>`, `{` and `}` left outside tags and placeholders. */
+  stray: { lt: number; gt: number; open: number; close: number };
+}
+
+/**
+ * One left-to-right pass. A placeholder only counts when its `{{` is exactly two braces: i18next reads
+ * `{{{name}}}` or `{{a{{name}}` as one odd variable and shows it literally, so those braces stay stray.
+ */
+function scan(s: string): Scanned {
   const ph: string[] = [];
   const tg: string[] = [];
-  let angles = 0;
+  const stray = { lt: 0, gt: 0, open: 0, close: 0 };
   let i = 0;
   while (i < s.length) {
     const c = s[i];
@@ -147,27 +163,47 @@ function scan(s: string): { placeholders: string[]; tags: string[]; angles: numb
         i = t.end;
         continue;
       }
-      angles++;
-    } else if (c === ">") angles++;
-    else if (c === "{" && s[i + 1] === "{") {
-      const p = placeholderAt(s, i);
+      stray.lt++;
+    } else if (c === ">") stray.gt++;
+    else if (c === "}") stray.close++;
+    else if (c === "{") {
+      let run = i;
+      while (run < s.length && s[run] === "{") run++;
+      const p = run - i === 2 ? placeholderAt(s, i) : undefined;
       if (p) {
         ph.push(p.name);
         i = p.end;
         continue;
       }
+      stray.open += run - i;
+      i = run;
+      continue;
     }
     i++;
   }
-  return { placeholders: ph.sort(), tags: tg.sort(), angles };
+  return { placeholders: ph.sort(), tags: tg, stray };
 }
 
 export const placeholders = (s: string): string[] => scan(s).placeholders;
-export const tags = (s: string): string[] => scan(s).tags;
+export const tags = (s: string): string[] => scan(s).tags.sort();
 const same = (a: string[], b: string[]) => a.length === b.length && a.every((x, i) => x === b[i]);
-// C0 controls but newline, DEL, and the bidi embeddings, overrides and isolates (U+202A–202E, U+2066–2069).
+
+/** Every closing tag closes the latest open tag of its name, and every open tag is closed (`<br/>` stands alone). */
+function balanced(tagList: string[]): boolean {
+  const open: string[] = [];
+  for (const t of tagList) {
+    if (t.endsWith("/>")) continue;
+    if (t.startsWith("</")) {
+      if (open.pop() !== t.slice(2, -1)) return false;
+    } else open.push(t.slice(1, -1));
+  }
+  return open.length === 0;
+}
+
+// C0 controls but newline, DEL, C1 controls (NEL is U+0085), the line and paragraph separators (U+2028, U+2029),
+// the direction marks (LRM U+200E, RLM U+200F, ALM U+061C), and the bidi embeddings, overrides and isolates.
 // eslint-disable-next-line no-control-regex
-const CONTROL = /[\u0000-\u0009\u000B-\u001F\u007F‪-‮⁦-⁩]/;
+const CONTROL = /[\u0000-\u0009\u000B-\u001F\u007F-\u009F\u061C\u200E\u200F\u2028\u2029\u202A-\u202E\u2066-\u2069]/;
 
 export type CheckReason = "empty" | "too-long" | "placeholders" | "markup" | "control" | "forms";
 export type Checked = { ok: true; value: Translated } | { ok: false; reason: CheckReason };
@@ -181,8 +217,10 @@ function checkText(en: string, text: unknown): Checked {
   if (CONTROL.test(text) || (text.includes("\n") && !en.includes("\n"))) return { ok: false, reason: "control" };
   const t = scan(text);
   const e = scan(en);
-  if (!same(t.placeholders, e.placeholders)) return { ok: false, reason: "placeholders" };
-  if (!same(t.tags, e.tags) || t.angles > e.angles || (text.includes("$t(") && !en.includes("$t("))) return { ok: false, reason: "markup" };
+  // Stray braces could hide a placeholder from i18next, so they count as placeholders.
+  if (!same(t.placeholders, e.placeholders) || t.stray.open > e.stray.open || t.stray.close > e.stray.close) return { ok: false, reason: "placeholders" };
+  if (!same([...t.tags].sort(), [...e.tags].sort()) || (!balanced(t.tags) && balanced(e.tags))) return { ok: false, reason: "markup" };
+  if (t.stray.lt > e.stray.lt || t.stray.gt > e.stray.gt || (text.includes("$t(") && !en.includes("$t("))) return { ok: false, reason: "markup" };
   return { ok: true, value: text };
 }
 
@@ -219,7 +257,7 @@ export function toResources(flat: Record<string, string>): { core: Record<string
     if (i < 0) continue;
     const ns = full.slice(0, i);
     const key = full.slice(i + 1);
-    if ((ns !== "core" && ns !== "harness") || key.startsWith(LEGAL_PREFIX) || typeof text !== "string" || !safeKey(key)) continue;
+    if ((ns !== "core" && ns !== "harness") || isLegalKey(key) || typeof text !== "string" || !safeKey(key)) continue;
     const parts = key.split(".");
     let node = out[ns];
     for (const p of parts.slice(0, -1)) {

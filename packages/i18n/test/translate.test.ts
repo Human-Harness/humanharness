@@ -22,6 +22,11 @@ describe("englishItems (spec §5, §8)", () => {
     expect(items[0].hash).toBe(textHash("Send"));
   });
 
+  it("a key that is exactly legal is legal too; the match is case-sensitive", () => {
+    expect(englishItems({ legal: "Terms", legalese: "Words", "Legal.x": "X" }, {}).map((i) => i.key)).toEqual(["core:legalese", "core:Legal.x"]);
+    expect(toResources({ "core:legal": "Términos", "harness:legal": "Términos" })).toEqual({ core: {}, harness: {} });
+  });
+
   it("a plural suffix with no _other stays a key of its own", () => {
     expect(englishItems({ "a.x_one": "One" }, {}).map((i) => i.key)).toEqual(["core:a.x_one"]);
   });
@@ -61,12 +66,31 @@ describe("checkTranslation (spec §6)", () => {
       ["Enviar <i>{{name}}</i>", "markup"],
       ["Enviar < {{name}}", "markup"],
       ["$t(legal.engine.accept) {{name}}", "markup"],
-      ["Enviar‮ {{name}}", "control"],
-      ["Enviar⁦ {{name}}", "control"],
+      [`Enviar${String.fromCharCode(0x202e)} {{name}}`, "control"],
+      [`Enviar${String.fromCharCode(0x2066)} {{name}}`, "control"],
       ["Enviar\n{{name}}", "control"],
       ["x".repeat(90) + "{{name}}", "too-long"],
     ] as const) expect(checkTranslation(send, bad, ["other"])).toEqual({ ok: false, reason });
     expect(checkTranslation(send, 42, ["other"])).toEqual({ ok: false, reason: "empty" });
+  });
+  it("refuses stray braces that would hide a placeholder from i18next", () => {
+    expect(checkTranslation(send, "Hola {{a{{name}} ahí", ["other"])).toEqual({ ok: false, reason: "placeholders" });
+    expect(checkTranslation(send, "Enviar {{{name}}}", ["other"])).toEqual({ ok: false, reason: "placeholders" });
+    expect(checkTranslation(send, "Enviar {{name}}}", ["other"])).toEqual({ ok: false, reason: "placeholders" });
+    const braces = { key: "core:x", en: "Use {curly} for {{name}}", hash: "h" };
+    expect(checkTranslation(braces, "Usa {llaves} para {{name}}", ["other"]).ok).toBe(true);
+  });
+  it("refuses C1 controls, line separators and direction marks", () => {
+    for (const code of [0x80, 0x85, 0x9f, 0x2028, 0x2029, 0x200e, 0x200f, 0x061c]) {
+      expect(checkTranslation(send, `Enviar${String.fromCharCode(code)} {{name}}`, ["other"])).toEqual({ ok: false, reason: "control" });
+    }
+  });
+  it("wants tags in order, and counts < and > apart", () => {
+    const notice = { key: "core:language.notice", en: "In <b>{{language}}</b>.", hash: "h" };
+    expect(checkTranslation(notice, "En </b>{{language}}<b>.", ["other"])).toEqual({ ok: false, reason: "markup" });
+    const arrows = { key: "core:x", en: "a -> b -> c", hash: "h" };
+    expect(checkTranslation(arrows, "a -> b -> c", ["other"]).ok).toBe(true);
+    expect(checkTranslation(arrows, "a <i x> b", ["other"])).toEqual({ ok: false, reason: "markup" });
   });
   it("keeps the English tags", () => {
     const notice = { key: "core:language.notice", en: "In <b>{{language}}</b>.", hash: "h" };
@@ -87,7 +111,8 @@ describe("checkTranslation (spec §6)", () => {
 
 describe("placeholders and tags read long agent output in linear time", () => {
   it("finds placeholders and tags like i18next writes them", () => {
-    expect(placeholders("{{ b }} and {{a}} and {{{c}}} and {{}} and {{d")).toEqual(["a", "b", "c"]);
+    // i18next reads `{{{c}}}` as one variable named `{c` and shows it literally, so it is not `c`.
+    expect(placeholders("{{ b }} and {{a}} and {{{c}}} and {{}} and {{d")).toEqual(["a", "b"]);
     expect(tags("<b>x</b> <br/> <br /> < b> <1>")).toEqual(["</b>", "<1>", "<b>", "<br/>", "<br/>"]);
   });
 

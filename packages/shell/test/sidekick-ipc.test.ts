@@ -307,20 +307,6 @@ describe("sidekick IPC: the list, remove and reorder (Settings › Sidekicks)", 
     expect(await listWire(null)("hh:sidekickList")).toEqual([]);
     expect(await listWire(null)("hh:sidekickRemove", "rulo")).toMatchObject({ ok: false });
   });
-
-  it("a new sidekick past SIDEKICK_MAX is refused; editing one at the cap still saves", async () => {
-    const handlers = new Map<string, (...args: never[]) => unknown>();
-    const calls: unknown[] = [];
-    registerSidekickIpc(
-      (ch, fn) => void handlers.set(ch, fn),
-      () => ({ saveSidekick: async (def: unknown) => (calls.push(def), { id: "rulo", name: "Rulo", mark: "🦊" }), list: async () => Array.from({ length: SIDEKICK_MAX }, (_, i) => ({ id: `k${i}` })) }) as never,
-    );
-    const call = (ch: string, ...args: unknown[]) => (handlers.get(ch) as (...a: unknown[]) => unknown)(...args);
-    const def = { name: "Rulo", mark: "🦊", personality: "", purposes: [{ id: "mentor" }] };
-    await expect(call("hh:sidekickSave", def)).rejects.toThrow(/At most/);
-    await call("hh:sidekickSave", { ...def, id: "k1" });
-    expect(calls).toEqual([{ ...def, id: "k1" }]);
-  });
 });
 
 describe("sidekick IPC: sidekicks in a scope (spec §2a.4)", () => {

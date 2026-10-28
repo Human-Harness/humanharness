@@ -4,7 +4,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { DEFAULT_SIDEKICK, SIDEKICK_COLLECTION, type SidekickRecord, sidekickCollection } from "@humanharness/harness-sdk";
 import { APP_SCOPE, DataStore, runDataRequest } from "@humanharness/workspace";
-import { SidekickStore } from "../src/main/sidekick-store";
+import { SIDEKICK_MAX, SidekickStore } from "../src/main/sidekick-store";
 
 async function store(manifest?: { default: "on" | "off" }) {
   const base = await fs.mkdtemp(path.join(os.tmpdir(), "hh-sks-"));
@@ -298,6 +298,16 @@ describe("sidekick records (spec §2a.1, Decisions 1–2)", () => {
     expect([a.id, b.id]).toEqual(["rulo", "rulo-2"]);
     expect((await s.store.sidekicks()).map((k) => [k.id, k.order])).toEqual([["sidekick", 0], ["rulo", 1], ["rulo-2", 2]]);
     expect(s.writes).toHaveLength(3);
+  });
+
+  it("SIDEKICK_MAX: quick saves at the cap pass it once at most; an edit at the cap still saves", async () => {
+    const s = mem([{ ...DEFAULT_SIDEKICK, type: "sidekick" }, ...Array.from({ length: SIDEKICK_MAX - 2 }, (_, i) => ({ ...RULO, id: `k${i}`, order: i + 1 }))]);
+    const def = { name: "New", mark: "x", personality: "", purposes: [{ id: "mentor" as const }] };
+    const r = await Promise.allSettled([s.store.saveSidekick(def), s.store.saveSidekick(def), s.store.saveSidekick(def)]);
+    expect(r.map((x) => x.status)).toEqual(["fulfilled", "rejected", "rejected"]);
+    expect((r[1] as PromiseRejectedResult).reason).toEqual(new Error(`At most ${SIDEKICK_MAX} sidekicks`));
+    expect(await s.store.sidekicks()).toHaveLength(SIDEKICK_MAX);
+    expect((await s.store.saveSidekick({ ...def, id: "k0", name: "Edited" })).name).toBe("Edited");
   });
 
   it("a scope id another pair already holds gets a hashed one", async () => {

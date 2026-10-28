@@ -29,9 +29,9 @@ import {
   whyShown,
 } from "@humanharness/workspace";
 import { IMPORT_MAX_BYTES, IMPORT_MAX_FILES, type ImportRead } from "./sidekick-import";
-import { candidates, pickSpeaker } from "./sidekick-route";
+import { candidates, pickSpeaker, preferredSpeaker } from "./sidekick-route";
 import type { SidekickInput, SidekickScope, SidekickStore } from "./sidekick-store";
-import { type DailyInput, SIDEKICK_DAILY_TEXT_MAX, SIDEKICK_LEARN_MIN, SIDEKICK_PLACE_ANSWER_MAX, afterParts, afterReplyPrompt, approvePrompt, dailyPrompt, importPrompt, learnPrompt, parseAfter, parseGuard, parseImport, parseLearn, parseReview, parseRoute, phaseChangePrompt, placePrompt, preSendPrompt, routePrompt } from "./sidekick-turns";
+import { type DailyInput, SIDEKICK_DAILY_TEXT_MAX, SIDEKICK_LEARN_MIN, SIDEKICK_PLACE_ANSWER_MAX, afterParts, afterReplyPrompt, approvePrompt, dailyPrompt, importPrompt, learnPrompt, parseAfter, parseGuard, parseImport, parseLearn, parseReview, parseRoute, phaseChangePrompt, placePrompt, placeRouteContext, preSendPrompt, routePrompt } from "./sidekick-turns";
 import type { PhaseMoved, TurnEnd } from "./task-manager";
 import { type SidekickUsageMoment, type UsageRecord, capTokens, sidekickRecord, sidekickSpent, sidekickWeek } from "./usage-log";
 
@@ -51,6 +51,8 @@ const NOT_OFF_PHASE = SIDEKICK_FLAG_KINDS.filter((k) => k !== "off-phase");
 /** Learning (spec §6.4): the newest events its prompt names, and how long its turn may run. */
 const LEARN_EVENTS = 50;
 const LEARN_MS = 60_000;
+/** How long an after-reply or phase-change turn may run: a hung CLI never keeps the turn (no card then). */
+const TURN_MS = 60_000;
 /** How long a routing turn (spec §2a.3) may run before the person's order decides. */
 const ROUTE_MS = 15_000;
 /** The routing session's folder (a reserved sidekick id) and its brief: it only names who speaks. */
@@ -59,7 +61,6 @@ const ROUTE_BRIEF = "# Route\n\nYou pick which sidekick of the app should speak.
 /** The daily turn's folder (a reserved sidekick id), and how long it may run. */
 const DAILY_ID = "daily";
 const DAILY_MS = 60_000;
-const DAY_MS = 24 * 60 * 60 * 1000;
 /** What a before-approve check answers whenever Sidekick has nothing to show: the approval goes ahead. */
 const APPROVE: SidekickApproveCheck = { kind: "approve" };
 /** A harness place's turns (spec §2a.5): their folder (a reserved sidekick id), and how long one may run. */
@@ -168,6 +169,8 @@ export interface SidekickDeps {
   learnMs?: number;
   /** How long a routing turn may run, in ms (tests shorten it). */
   routeMs?: number;
+  /** How long an after-reply or phase-change turn may run, in ms (tests shorten it). */
+  turnMs?: number;
   /** What the daily turn reads about `day` (YYYY-MM-DD, local) in `base`: note titles, tokens, what's open (plan Decision 12). */
   dailyInput(base: string, day: string): Promise<DailyInput>;
   /** How long a daily turn may run, in ms (tests shorten it). */
@@ -298,7 +301,8 @@ export class SidekickController {
     // A task restored at launch is seen here first: its close is a close too.
     if (task) this.lastOpen = task.id;
     const records = setup ? await this.usage(setup.base) : [];
-    const events = setup ? await this.events(setup.base) : [];
+    // Off: no events read (D0: nothing new runs); the share shows {0, 0}.
+    const events = setup && settings.on ? await this.events(setup.base) : [];
     const since = Date.now() - WEEK_MS;
     const spent = (task ? sidekickSpent(records, task.id) : 0) + (this.pending.get(task?.id ?? NO_TASK) ?? 0);
     const cap = settings.cap === "none" ? null : settings.cap;
@@ -451,7 +455,9 @@ export class SidekickController {
 
   /**
    * "Add <name>": the preset becomes the person's sidekick (last in order, on in every scope by default), and the
-   * presets count as offered. One adoption at a time, so a double click writes it once; an unknown preset throws.
+   * presets count as offered. One adoption at a time, so a double click writes it once; an unknown preset or one past
+   * SIDEKICK_MAX (the store's) throws. Once the sidekick is written the adoption stands: a failed `presetsOffered`
+   * write is only logged.
    */
   adoptPreset(name: string): Promise<void> {
     const run = this.adopting.then(async () => {
@@ -461,7 +467,7 @@ export class SidekickController {
       // The full definition: saveSidekick writes every field it is given and nothing else.
       await this.d.store.saveSidekick({ name: p.name, mark: p.mark, personality: p.personality, purposes: p.purposes, preset: p.name });
       const r = await this.d.store.set({ presetsOffered: true });
-      if (!r.ok) throw new Error(r.message);
+      if (!r.ok) console.error("Could not mark the Sidekick presets offered", r.message);
       await this.push();
     });
     this.adopting = run.catch(() => undefined);
@@ -873,7 +879,7 @@ export class SidekickController {
       // Before the turn: a crash or a failed turn never repeats today's.
       const set = await this.d.store.set({ lastDaily: today });
       if (!set.ok || !set.settings.on || !live()) return;
-      const input = await this.d.dailyInput(setup.base, localDay(new Date(now.getTime() - DAY_MS))).catch(() => null);
+      const input = await this.d.dailyInput(setup.base, localDay(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1))).catch(() => null);
       if (!input || (input.notes.length === 0 && input.tokens.tasks === 0) || !live()) return;
       if (await this.pastCap(setup.base, null, settings)) return;
       const engine = this.d.engine(setup.engineId);
@@ -972,8 +978,10 @@ export class SidekickController {
     const controller = new AbortController();
     this.running = controller;
     let timedOut = false;
-    // The first in the person's order until the speaker is picked (a timeout's event names it).
-    let speaker = list[0]!;
+    // A local-check flag goes to a prompt-coach sidekick (spec §2a.3), else a routing turn may pick within the wait.
+    const prefer = flags.length ? ("prompt-coach" as const) : undefined;
+    // The preferred one, else the first in the person's order, until the speaker is picked (a timeout's event names it).
+    let speaker = preferredSpeaker(list, prefer) ?? list[0]!;
     // A timeout is a learning signal too (spec §6.1); it doesn't count as a card.
     const timeout = async (): Promise<SidekickReview> => {
       await this.event(setup.base, { at: new Date().toISOString(), ...taskFields(task), sidekick: speaker.id, moment: eventMoment("pre-send"), kind: flags[0]?.kind ?? "other", outcome: "timeout" });
@@ -989,8 +997,7 @@ export class SidekickController {
     try {
       await this.push();
       const engine = this.d.engine(setup.engineId);
-      // A local-check flag goes to a prompt-coach sidekick (spec §2a.3); a routing turn runs within the wait.
-      speaker = await this.pick(list, "pre-send", req.text, { base: setup.base, task, signal: controller.signal, live, ...(flags.length ? { prefer: "prompt-coach" as const } : {}) });
+      speaker = await this.pick(list, "pre-send", req.text, { base: setup.base, task, signal: controller.signal, live, ...(prefer ? { prefer } : {}) });
       if (timedOut) return await timeout();
       if (controller.signal.aborted || !live()) return this.finish("cancelled");
       const mutedKinds = mutedOf(settings, speaker.id);
@@ -1121,7 +1128,8 @@ export class SidekickController {
         purposes,
       });
       if (!live()) return;
-      const answer = await session.ask(prompt, controller.signal);
+      // A hung CLI must not keep the turn: TURN_MS, then no card.
+      const answer = await session.ask(prompt, AbortSignal.any([controller.signal, AbortSignal.timeout(this.d.turnMs ?? TURN_MS)]));
       await this.logTurn(setup.base, engine, session, task, "after", answer, speaker.id);
       if (!live() || !answer.ok) return;
       const parsed = parseAfter(answer.text);
@@ -1195,7 +1203,8 @@ export class SidekickController {
         ...(await this.purposeText(task.scope, speaker.id)),
       });
       if (!live()) return;
-      const answer = await session.ask(prompt, controller.signal);
+      // A hung CLI must not keep the turn: TURN_MS, then no card.
+      const answer = await session.ask(prompt, AbortSignal.any([controller.signal, AbortSignal.timeout(this.d.turnMs ?? TURN_MS)]));
       await this.logTurn(setup.base, engine, session, task, "phase-change", answer, speaker.id);
       if (!live() || !answer.ok) return;
       const guard = parseGuard(answer.text);
@@ -1296,13 +1305,15 @@ export class SidekickController {
       if (!setup || !(await this.d.hasNotice(setup.engineId).catch(() => false))) return NO_ANSWER;
       if ((await this.pastCap(setup.base, task, settings)) || !live()) return NO_ANSWER;
       const engine = this.d.engine(setup.engineId);
-      const speaker = await this.pick(list, moment, `Place: ${def.label}\n\n${content}`, { base: setup.base, task, signal: controller.signal, live });
+      // The harness's text goes to the routing turn as data too, like the place turn's own prompt.
+      const speaker = await this.pick(list, moment, placeRouteContext(def.label, content), { base: setup.base, task, signal: controller.signal, live });
       if (!live()) return NO_ANSWER;
       // One place turn at a time: they share the `place` folder, and each writes its speaker's brief there.
       const before = this.placeTurns;
       this.placeTurns = new Promise<void>((r) => (release = r));
       await before;
-      if (!live()) return NO_ANSWER;
+      // The turn waited for another place's: that one's spend may have reached the cap.
+      if (!live() || (await this.pastCap(setup.base, task, settings)) || !live()) return NO_ANSWER;
       session = await this.oneOff(setup.base, engine, PLACE_ID, live, { ...(speaker.tier ? { tier: speaker.tier } : {}), brief: await this.briefFor(speaker, { learned: false }) });
       if (!session || !live()) return NO_ANSWER;
       const open = this.d.phases(task?.action).find((p) => p.id === task?.phase);
@@ -1682,10 +1693,9 @@ export class SidekickController {
 
   private async closeSessions(which: (s: Held) => boolean): Promise<void> {
     const gone = [...this.sessions].filter(([, s]) => which(s));
-    for (const [key, s] of gone) {
-      this.sessions.delete(key);
-      this.pending.delete(s.task);
-    }
+    for (const [key] of gone) this.sessions.delete(key);
+    // The loose spend is every NO_TASK session's: it goes only with the last one held for that task.
+    for (const [, s] of gone) if (![...this.sessions.values()].some((h) => h.task === s.task)) this.pending.delete(s.task);
     await Promise.all(gone.map(([, s]) => s.session.close().catch(() => undefined)));
   }
 

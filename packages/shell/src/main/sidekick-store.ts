@@ -32,6 +32,12 @@ const patchSchema = z.strictObject({
   lastDaily: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
 });
 
+/**
+ * How many sidekicks a person may have: a new one past this is refused (checked in the record queue, so quick saves
+ * and adoptions never pass it together), and a reorder names at most this many ids (every order stays below 999).
+ */
+export const SIDEKICK_MAX = 20;
+
 /** A sidekick to save: new without `id`, else an edit of that one (its order kept unless given). */
 export type SidekickInput = Omit<SidekickDef, "id" | "order"> & { id?: string; order?: number };
 /** A sidekick in a scope (spec §2a.4). */
@@ -144,9 +150,14 @@ export class SidekickStore {
     return sidekicksOf(await this.all());
   }
 
-  /** New when `s.id` is absent (a slug of its name, `-2`, `-3` on clashes, last in order); else replaces that one's fields. */
+  /**
+   * New when `s.id` is absent (a slug of its name, `-2`, `-3` on clashes, last in order; refused past SIDEKICK_MAX);
+   * else replaces that one's fields.
+   */
   saveSidekick(s: SidekickInput): Promise<SidekickDef> {
     return this.serialRecords(async () => {
+      // Checked before anything is written: a refused one doesn't write the implicit default either.
+      if (s.id === undefined && sidekicksOf(await this.d.readAll()).length >= SIDEKICK_MAX) throw new Error(`At most ${SIDEKICK_MAX} sidekicks`);
       const all = await this.materialize();
       const old = s.id !== undefined ? all.find((k) => k.id === s.id) : undefined;
       if (s.id !== undefined && !old) throw new Error(`No sidekick "${s.id}"`);

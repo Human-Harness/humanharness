@@ -2,7 +2,7 @@ import { sidekickRecordSchema } from "@humanharness/harness-sdk";
 import { isScopeId } from "@humanharness/workspace";
 import type { SidekickApproveCheck, SidekickInfo, SidekickImportInput, SidekickImportResult, SidekickInScope, SidekickLearned, SidekickOriginal, SidekickOutcome, SidekickPick, SidekickPlaceAnswer, SidekickPreset, SidekickReview, SidekickSetResult, SidekickState, SidekickView } from "@humanharness/ui/client";
 import type { SidekickController } from "./sidekick";
-import type { SidekickInput, SidekickScope } from "./sidekick-store";
+import { SIDEKICK_MAX, type SidekickInput, type SidekickScope } from "./sidekick-store";
 import { IMPORT_MAX_BYTES } from "./sidekick-import";
 import { SIDEKICK_PLACE_INPUT_MAX } from "./sidekick-turns";
 
@@ -20,11 +20,7 @@ const MAX_PRESET_NAME = 40;
 /** A pick's token (pickFiles: 16 random bytes in hex). */
 const TOKEN = /^[0-9a-f]{32}$/;
 const IMPORT_FAILED: SidekickImportResult = { ok: false, reason: "failed" };
-/**
- * How many sidekicks a person may have: a new one past this is refused, and a reorder names at most this many ids
- * (so every order stays far below the record's 999).
- */
-export const SIDEKICK_MAX = 20;
+export { SIDEKICK_MAX };
 
 /**
  * An import request: pasted text (at most IMPORT_MAX_BYTES characters; the controller counts bytes), a pick's token,
@@ -181,7 +177,7 @@ export function registerSidekickIpc(handle: Handle, ctl: () => Ctl | null): void
     const d = sidekickInput(def);
     const l = learnedInput(learned);
     if (!d || !l) throw new Error("Not a sidekick to save");
-    if (d.id === undefined && (await c.list()).length >= SIDEKICK_MAX) throw new Error(`At most ${SIDEKICK_MAX} sidekicks`);
+    // SIDEKICK_MAX is the store's: checked in its record queue, so quick saves never pass it together.
     return c.saveSidekick(d, l);
   });
   // Settings › Sidekicks (spec §8): the list, removing one and the order, as the person.

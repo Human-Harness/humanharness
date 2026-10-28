@@ -26,6 +26,11 @@ function customTexts(s: SidekickDef, moment: SidekickMoment): string[] {
   return at.every((p) => p.id === "custom") ? at.map((p) => (p.id === "custom" ? p.text : "")) : [];
 }
 
+/** The first candidate of `list` with the `prefer` purpose (pickSpeaker's first rule); undefined without one. */
+export function preferredSpeaker(list: readonly SidekickDef[], prefer: "prompt-coach" | "focus" | undefined): SidekickDef | undefined {
+  return prefer ? list.find((s) => s.purposes.some((p) => p.id === prefer)) : undefined;
+}
+
 /**
  * One speaker per moment (D11). A local-check flag goes to a `prompt-coach` candidate and a free heads-up to a `focus`
  * one, whatever the order (`prefer`: the first such candidate in the person's order). Then free routing: when every
@@ -39,7 +44,7 @@ export async function pickSpeaker(
   route: (choices: { id: string; text: string }[]) => Promise<string>,
   prefer?: "prompt-coach" | "focus",
 ): Promise<SidekickDef> {
-  const preferred = prefer && list.find((s) => s.purposes.some((p) => p.id === prefer));
+  const preferred = preferredSpeaker(list, prefer);
   if (preferred) return preferred;
   if (list.length <= 1) return list[0]!;
   const choices = list.map((s) => ({ id: s.id, text: customTexts(s, moment).join(" ") }));

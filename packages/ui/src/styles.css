@@ -555,6 +555,8 @@ button.hh-timeline-pick:hover, .hh-timeline-selected .hh-timeline-pick { border-
 }
 
 /* Scope settings (hatches spec §3.2): linked folders, one row each. */
+/* Its sheet sits inside the top bar (the scope picker opens it): above the page, as the Settings sheet is by coming later. */
+.hh-sheet-backdrop:has(> .hh-scope-settings) { z-index: 20; }
 .hh-scope-settings h2 { margin: 0; font-size: 15px; }
 .hh-linked { display: grid; gap: 10px; }
 .hh-linked h3 { margin: 0; font-size: 13px; }

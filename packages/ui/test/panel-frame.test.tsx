@@ -266,6 +266,41 @@ describe("PanelFrame", () => {
     expect(frameEl()).not.toBe(frame);
   });
 
+  it("a dev reload resets the remount count: a stopped panel comes back, with 3 remounts again", async () => {
+    const { rerender } = await mount();
+    const selfRemount = async () => {
+      const frame = frameEl();
+      act(() => {
+        fireEvent.load(frame);
+      });
+      const next = watch(frameEl());
+      expect(frameEl()).not.toBe(frame);
+      await loaded(next.posts);
+    };
+    for (let i = 0; i < 3; i++) await selfRemount();
+    act(() => {
+      fireEvent.load(frameEl());
+    });
+    expect(document.querySelector("iframe")).toBeNull();
+    rerender({ reload: 1 });
+    expect(document.querySelector("iframe")).not.toBeNull();
+    await loaded(watch(frameEl()).posts);
+    for (let i = 0; i < 3; i++) await selfRemount();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("unsubscribes from plugin data on unmount, and a remount keeps one subscription", async () => {
+    const { client, frame, rerender } = await mount();
+    expect(client.pluginDataListenerCount).toBe(1);
+    act(() => {
+      fireEvent.load(frame);
+    });
+    rerender({ reload: 1 });
+    expect(client.pluginDataListenerCount).toBe(1);
+    cleanup();
+    expect(client.pluginDataListenerCount).toBe(0);
+  });
+
   it("drops an answer that arrives after unmount", async () => {
     const { client, win, posts } = await mount();
     let answer: (a: PanelAnswer) => void = () => {};

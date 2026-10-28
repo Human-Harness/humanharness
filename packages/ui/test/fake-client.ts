@@ -981,6 +981,10 @@ export class FakeClient implements HarnessClient {
   emitPluginData(change: PluginDataChange) {
     for (const l of this.pluginDataListeners) l(change);
   }
+  /** How many onPluginData listeners are subscribed (a frame unsubscribes on unmount). */
+  get pluginDataListenerCount(): number {
+    return this.pluginDataListeners.size;
+  }
   emitPlugins(view: PluginsView) {
     this.pluginsView = view;
     for (const l of this.pluginsListeners) l(view);

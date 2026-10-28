@@ -44,6 +44,10 @@ export interface HistoryEntry {
   phase?: string;
   /** The plugin whose prepared task this is (its `Plugin:` trailer), only for such tasks. */
   plugin?: string;
+  /** The job this run is (its `Job:` trailer), only for job runs. */
+  job?: string;
+  /** The other running tasks this commit's paths are shared with (its `Shared:` trailers), only on a shared commit. */
+  shared?: string[];
 }
 
 /** The task a history commit belongs to, written as git trailers under its subject. */
@@ -56,6 +60,20 @@ export interface HistoryTrailer {
   phase?: string;
   /** The plugin whose prepared task this is, plugins spec §5.3; only for such tasks. */
   plugin?: string;
+  /** The job this run is (parallel spec §8); only for job runs. */
+  job?: string;
+  /** Other running tasks that may also have changed this commit's paths (spec §5.2); only on a shared commit. */
+  shared?: string[];
+}
+
+/** The tracked paths that differ from HEAD, each with its working blob id (null: deleted). */
+export type DirtyState = ReadonlyMap<string, string | null>;
+
+/** A commit after a given point, with the paths it changed (`History.commitsSince`). */
+export interface CommitSince {
+  sha: string;
+  task: string | null;
+  paths: string[];
 }
 
 /** A file a task added, changed or deleted (tracked files only). */
@@ -130,6 +148,9 @@ const MAX_WALK_BACK = 1000;
 /** Ids a trailer may carry (task UUIDs, manifest action ids): no spaces or line breaks. */
 const TRAILER_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/;
 
+/** At most this many `Shared:` lines on one commit, written or read. */
+const SHARED_MAX = 8;
+
 /** `message` folded to one line, plus `Task:` and `Action:` trailers when `trailer` holds valid ids. */
 export function withTrailer(message: string, trailer?: HistoryTrailer): string {
   const subject = message.replace(/\s*\n\s*/g, " ").trim();
@@ -140,15 +161,17 @@ export function withTrailer(message: string, trailer?: HistoryTrailer): string {
   if (trailer.scope !== undefined && isScopeDir(trailer.scope)) lines.push(`Scope: ${trailer.scope}`);
   if (trailer.phase !== undefined && TRAILER_ID.test(trailer.phase)) lines.push(`Phase: ${trailer.phase}`);
   if (trailer.plugin !== undefined && PLUGIN_ID.test(trailer.plugin)) lines.push(`Plugin: ${trailer.plugin}`);
+  if (trailer.job !== undefined && TRAILER_ID.test(trailer.job)) lines.push(`Job: ${trailer.job}`);
+  for (const other of (trailer.shared ?? []).filter((t) => TRAILER_ID.test(t)).slice(0, SHARED_MAX)) lines.push(`Shared: ${other}`);
   return `${subject}\n\n${lines.join("\n")}`;
 }
 
 /** A trailer line as `withTrailer` writes it. */
-const TRAILER_LINE = /^(Task|Action|Scope|Phase|Plugin): \S+$/;
+const TRAILER_LINE = /^(Task|Action|Scope|Phase|Plugin|Job|Shared): \S+$/;
 
 /**
- * A commit message's subject and its trailers (null when absent or not a valid id; `scope`, `phase` and `plugin` only
- * when present). Only a last paragraph made entirely of trailer lines counts.
+ * A commit message's subject and its trailers (null when absent or not a valid id; `scope`, `phase`, `plugin`, `job` and
+ * `shared` only when present). Only a last paragraph made entirely of trailer lines counts.
  */
 export function parseCommitMessage(raw: string): {
   subject: string;
@@ -157,6 +180,8 @@ export function parseCommitMessage(raw: string): {
   scope?: string;
   phase?: string;
   plugin?: string;
+  job?: string;
+  shared?: string[];
 } {
   const text = raw.replace(/\r\n/g, "\n").trim();
   const paragraphs = text.split(/\n{2,}/);
@@ -169,6 +194,8 @@ export function parseCommitMessage(raw: string): {
   const scope = /^Scope: (.+)$/m.exec(trailers)?.[1];
   const phase = value("Phase");
   const plugin = /^Plugin: (.+)$/m.exec(trailers)?.[1];
+  const job = value("Job");
+  const shared = [...trailers.matchAll(/^Shared: (.+)$/gm)].map((m) => m[1]).filter((t) => TRAILER_ID.test(t)).slice(0, SHARED_MAX);
   return {
     subject: text.split("\n")[0],
     task: value("Task"),
@@ -176,6 +203,8 @@ export function parseCommitMessage(raw: string): {
     ...(isScopeDir(scope) ? { scope } : {}),
     ...(phase ? { phase } : {}),
     ...(plugin !== undefined && PLUGIN_ID.test(plugin) ? { plugin } : {}),
+    ...(job ? { job } : {}),
+    ...(shared.length > 0 ? { shared } : {}),
   };
 }
 
@@ -424,6 +453,47 @@ export class History {
     });
   }
 
+  /** The folder's dirty tracked paths now (parallel spec Decision 2: a turn that starts while another runs). */
+  dirtyState(): Promise<DirtyState> {
+    return this.serialize(() => this.dirtyNow());
+  }
+
+  /**
+   * The tracked paths whose content moved since `start` (null: every dirty path), sorted. A path committed by another
+   * turn meanwhile is clean against HEAD and drops out, unless it changed again (spec §5.2 step 1).
+   */
+  changedSince(start: DirtyState | null): Promise<string[]> {
+    return this.serialize(async () => {
+      const now = await this.dirtyNow();
+      return [...now]
+        .filter(([file, oid]) => !start || !start.has(file) || start.get(file) !== oid)
+        .map(([file]) => file)
+        .sort();
+    });
+  }
+
+  /** The dirty tracked paths against HEAD, by the same test `saveNow` stages with. */
+  private async dirtyNow(): Promise<Map<string, string | null>> {
+    const out = new Map<string, string | null>();
+    const matrix = await git.statusMatrix({ ...this.repo(), filter: this.tracked });
+    for (const [file, head, workdir, stage] of matrix) {
+      if (head === 1 && workdir === 1 && stage === 1 && !(await this.differsFromHead(file))) continue;
+      if (head === 0 && workdir === 0) continue;
+      out.set(file, workdir === 0 ? null : await this.workOid(file));
+    }
+    return out;
+  }
+
+  /** The blob id of a file as it is in the folder (a link: of its target path, as git stores it). */
+  private async workOid(file: string): Promise<string> {
+    const absolute = path.join(this.folder, file);
+    const stats = await fs.promises.lstat(absolute);
+    const object = stats.isSymbolicLink()
+      ? await fs.promises.readlink(absolute, { encoding: "buffer" })
+      : await fs.promises.readFile(absolute);
+    return (await git.hashBlob({ object })).oid;
+  }
+
   /** The tracked files of `sha` with their mode and blob id. */
   private async entriesAt(sha: string): Promise<Map<string, { mode: number; oid: string }>> {
     const out = new Map<string, { mode: number; oid: string }>();
@@ -462,7 +532,7 @@ export class History {
     if ((await this.last()) === null) return [];
     const log = await git.log({ ...this.repo(), depth, cache });
     return log.map((e) => {
-      const { subject, task, action, scope, phase, plugin } = parseCommitMessage(e.commit.message);
+      const { subject, task, action, scope, phase, plugin, job, shared } = parseCommitMessage(e.commit.message);
       return {
         sha: e.oid,
         message: subject,
@@ -472,7 +542,26 @@ export class History {
         ...(scope ? { scope } : {}),
         ...(phase ? { phase } : {}),
         ...(plugin ? { plugin } : {}),
+        ...(job ? { job } : {}),
+        ...(shared ? { shared } : {}),
       };
+    });
+  }
+
+  /**
+   * The commits after `sha` (exclusive; null: every commit) within the last `depth`, newest first, each with its task
+   * and the paths it changed (parallel spec §5.3 conflicts).
+   */
+  commitsSince(sha: string | null, depth = 200): Promise<CommitSince[]> {
+    return this.serialize(async () => {
+      const cache = {};
+      const out: CommitSince[] = [];
+      for (const e of await this.listWith(depth, cache)) {
+        if (e.sha === sha) break;
+        const changes = await this.diff(await this.parentOf(e.sha, cache), e.sha, cache);
+        out.push({ sha: e.sha, task: e.task, paths: changes.map((c) => c.path) });
+      }
+      return out;
     });
   }
 

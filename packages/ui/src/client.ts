@@ -459,6 +459,8 @@ export interface HistoryTaskView {
   actionId: string | null;
   /** The scope the task ran in (harnesses with scopes). */
   scopeId?: string;
+  /** The job this row is a run of (its commits' `Job:` trailer), only for job runs. */
+  jobId?: string;
   /** What "Undo this task" restores; null when there is nothing before it. */
   start: string | null;
   end: string;

@@ -70,6 +70,7 @@ export function HistoryPanel({
   disabled = false,
   currentTask,
   undoByFiles = false,
+  jobs = [],
 }: {
   client: HarnessClient;
   /** The harness's actions: a task's row shows its action's label. */
@@ -86,6 +87,8 @@ export function HistoryPanel({
    * Main refuses when a later change touched them; the panel then says why instead of counting later tasks.
    */
   undoByFiles?: boolean;
+  /** The harness's jobs (part 3): a job run's row shows its job's label. */
+  jobs?: { id: string; label: string }[];
 }) {
   const { t, i18n } = useTranslation();
   const [groups, setGroups] = useState<HistoryTaskView[] | null>(null);
@@ -247,6 +250,11 @@ export function HistoryPanel({
 
   const rowLabel = (g: HistoryTaskView) => {
     if (g.taskId === null) return t("history.other");
+    if (g.jobId !== undefined) {
+      // A job the harness no longer has is just "a background job".
+      const job = jobs.find((j) => j.id === g.jobId);
+      return job ? t("parallel.historyJob", { label: job.label }) : t("parallel.historyJobUnknown");
+    }
     if (g.actionId === null) return t("history.question");
     // An action the harness no longer has (or a trailer such as "toString") is just "a task".
     return Object.hasOwn(actions, g.actionId) ? actions[g.actionId].label : t("history.task");

@@ -1618,6 +1618,7 @@ export function ChatView({
           actions={state.actions}
           currentTask={tasks.current?.id}
           {...(state.parallel || state.jobs ? { undoByFiles: true } : {})}
+          {...(state.jobs ? { jobs: state.jobs.jobs } : {})}
           disabled={Boolean(chat.live) || closing || checkpoint}
           onClose={() => setShowHistory(false)}
           onRestored={(kind) => {

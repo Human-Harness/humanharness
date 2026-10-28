@@ -1016,6 +1016,8 @@
     "dailyCapMin": "The daily cap is at least {{min}} tokens.",
     "notRunYet": "Not run yet",
     "saveFailed": "Couldn't save the change.",
-    "jobsUsage": "Background jobs: about {{tokens}} tokens"
+    "jobsUsage": "Background jobs: about {{tokens}} tokens",
+    "historyJob": "Job · {{label}}",
+    "historyJobUnknown": "A background job"
   }
 }

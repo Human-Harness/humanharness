@@ -22,6 +22,21 @@ describe("historyView", () => {
     expect(historyView([g()])[0]).not.toHaveProperty("scopeId");
   });
 
+  it("names the job a job run's commits are (their Job: trailer); D0 without one", () => {
+    const g = (job?: string, taskId: string | null = "r1"): HistoryTask => ({
+      taskId,
+      actionId: null,
+      start: null,
+      end: "b".repeat(40),
+      date: at("2026-10-13T10:00:00.000Z"),
+      changes: [],
+      entries: [entry("b".repeat(40), "Turn: x", taskId), { ...entry("c".repeat(40), "Turn: y", taskId), ...(job ? { job } : {}) }],
+    });
+    expect(historyView([g("sync")])[0].jobId).toBe("sync");
+    expect(historyView([g()])[0]).not.toHaveProperty("jobId");
+    expect(historyView([g("sync", null)])[0]).not.toHaveProperty("jobId");
+  });
+
   it("sends dates as ISO strings and the title of the note the task saved", () => {
     const groups: HistoryTask[] = [
       {

@@ -54,7 +54,14 @@ const groups: HistoryTaskView[] = [
 ];
 
 async function open(
-  opts: { disabled?: boolean; client?: FakeClient; actions?: Record<string, ActionOption>; currentTask?: string; undoByFiles?: boolean } = {},
+  opts: {
+    disabled?: boolean;
+    client?: FakeClient;
+    actions?: Record<string, ActionOption>;
+    currentTask?: string;
+    undoByFiles?: boolean;
+    jobs?: { id: string; label: string }[];
+  } = {},
 ) {
   const client = opts.client ?? new FakeClient();
   if (!opts.client) client.historyGroups = groups;
@@ -68,6 +75,7 @@ async function open(
       disabled={opts.disabled}
       currentTask={opts.currentTask}
       {...(opts.undoByFiles ? { undoByFiles: true } : {})}
+      {...(opts.jobs ? { jobs: opts.jobs } : {})}
       onClose={onClose}
       onRestored={onRestored}
     />,
@@ -76,6 +84,26 @@ async function open(
 }
 
 describe("HistoryPanel", () => {
+  it("labels a job run's row with its job (Job: trailer); an unknown job is just a background job", async () => {
+    const client = new FakeClient();
+    const run = (taskId: string, jobId?: string): HistoryTaskView => ({
+      taskId,
+      actionId: null,
+      ...(jobId ? { jobId } : {}),
+      start: "s0",
+      end: `e-${taskId}`,
+      date,
+      changes: [],
+      entries: [{ sha: `e-${taskId}`, message: "Turn: sync", date }],
+    });
+    client.historyGroups = [run("r1", "sync"), run("r2", "gone"), run("r3", "toString"), run("t1")];
+    await open({ client, jobs: [{ id: "sync", label: "Sync tickets" }] });
+    expect(await screen.findByRole("button", { name: /Job · Sync tickets/ })).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: /A background job/ })).toHaveLength(2);
+    // D0: a row without a Job: trailer is unchanged.
+    expect(screen.getAllByRole("button", { name: /A question/ })).toHaveLength(1);
+  });
+
   it("filters the tasks by scope when the history has scopes", async () => {
     const client = new FakeClient();
     client.scopeList = [{ id: "fracciones", title: "Fractions", createdAt: "c", archived: false }];

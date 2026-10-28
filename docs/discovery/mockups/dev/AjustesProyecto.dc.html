@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Ajustes del proyecto</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;color:#1d1d1f}
+a{color:#0a5bc4}a:hover{color:#083f88}
+.btn{font:inherit;font-size:13px;padding:7px 12px;border-radius:7px;border:1px solid #d2d2d7;background:#fff;color:#1d1d1f;cursor:pointer;text-decoration:none}
+.k{font-size:12px;color:#5f5f66;font-weight:600}
+.box{background:#fff;border:1px solid #e3e3e8;border-radius:12px;padding:16px 18px;display:flex;flex-direction:column;gap:2px}
+.row{display:flex;gap:12px;align-items:center;padding:9px 0;border-bottom:1px solid #f0f0f2;font-size:13px}
+.mono{font-family:"SF Mono",Menlo,monospace;font-size:12px;background:#f5f5f7;padding:3px 7px;border-radius:5px}
+select{font:inherit;font-size:13px;padding:4px 8px;border:1px solid #d2d2d7;border-radius:7px;background:#fff}
+</style>
+</helmet>
+<div style="width:1440px;height:900px;display:flex;flex-direction:column;background:#f5f5f7;padding:28px 40px;box-sizing:border-box;gap:18px">
+  <div style="display:flex;align-items:center;gap:14px">
+    <a href="Proyecto.dc.html" style="font-size:13px">‹ Tienda web</a>
+    <h1 style="margin:0;font-size:24px">Ajustes del proyecto</h1>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;align-content:start">
+    <section class="box" aria-labelledby="r">
+      <h2 id="r" class="k" style="margin:0 0 6px">REPOS</h2>
+      <div class="row"><strong style="flex:1">empresa/shop-api</strong><span class="mono">~/code/shop-api</span><span style="color:#5f5f66">main</span></div>
+      <div class="row"><strong style="flex:1">empresa/shop-web</strong><span class="mono">~/code/shop-web</span><span style="color:#5f5f66">main</span></div>
+      <div class="row" style="border:0"><a href="#">Agregar repo</a></div>
+    </section>
+    <section class="box" aria-labelledby="j">
+      <h2 id="j" class="k" style="margin:0 0 6px">ETAPAS ↔ ESTADOS DE JIRA (SHOP)</h2>
+      <div class="row"><span style="flex:1">Al empezar</span><select aria-label="Estado al empezar"><option>En progreso</option></select></div>
+      <div class="row"><span style="flex:1">Al abrir el PR</span><select aria-label="Estado al abrir PR"><option>En review</option></select></div>
+      <div class="row" style="border:0"><span style="flex:1">Al mergear</span><select aria-label="Estado al mergear"><option>Hecho</option></select></div>
+    </section>
+    <section class="box" aria-labelledby="c">
+      <h2 id="c" class="k" style="margin:0 0 6px">CÓMO SE PRUEBA (DETECTADO, EDITABLE)</h2>
+      <div class="row"><span style="flex:1">shop-api · tests</span><span class="mono">pnpm test</span></div>
+      <div class="row"><span style="flex:1">shop-web · tests</span><span class="mono">pnpm test</span></div>
+      <div class="row"><span style="flex:1">shop-web · e2e</span><span class="mono">pnpm e2e</span></div>
+      <div class="row" style="border:0"><span style="flex:1">Correr la app</span><span class="mono">pnpm dev</span></div>
+    </section>
+    <section class="box" aria-labelledby="p">
+      <h2 id="p" class="k" style="margin:0 0 6px">PULL REQUESTS</h2>
+      <div class="row"><span style="flex:1">Template</span><span style="color:#5f5f66">.github/pull_request_template.md</span></div>
+      <div class="row"><span style="flex:1">Reviewers por defecto</span><span style="color:#5f5f66">ana-dev</span></div>
+      <div class="row" style="border:0"><span style="flex:1">Nombre de branch</span><span class="mono">feat/KEY-descripcion</span></div>
+    </section>
+    <section class="box" aria-labelledby="n" style="grid-column:span 2">
+      <h2 id="n" class="k" style="margin:0 0 6px">NOTAS Y DECISIONES DEL PROYECTO (LO QUE LA IA SIEMPRE TIENE EN CUENTA)</h2>
+      <div class="row"><span style="flex:1">Stack y arquitectura</span><span style="color:#5f5f66">confirmada al importar</span><button class="btn">Editar</button></div>
+      <div class="row"><span style="flex:1">Auth: sesiones con cookie, nunca JWT en localStorage</span><span style="color:#5f5f66">de SHOP-101</span><button class="btn">Editar</button></div>
+      <div class="row" style="border:0"><span style="flex:1">Emails: siempre con la plantilla base</span><span style="color:#5f5f66">de SHOP-142</span><button class="btn">Editar</button></div>
+    </section>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

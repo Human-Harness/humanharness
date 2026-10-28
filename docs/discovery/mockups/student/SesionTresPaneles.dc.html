@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Sesión propuesta: tres paneles</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#5E4B0A}a:hover{color:#22211E}
+.th{font-family:"Geist",system-ui,sans-serif;--bd:radial-gradient(60% 50% at 0% 40%,#CFE8D2 0%,transparent 70%),radial-gradient(60% 40% at 70% 0%,#BFE0EA 0%,transparent 70%),radial-gradient(60% 50% at 100% 100%,#F8F0C8 0%,transparent 70%),#EEF3EC;--sh:#F7F6F1;--pn:#EFEEE8;--fd:#FBFAF7;--ln:#E4E2DA;--tx:#22211E;--mu:#6B6860;--ac:#F3D54E;--on:#2A2410;--so:#FBF0C0;--st:#5E4B0A;--m1:#6E9A62;--m2:#B9D3A8;--m3:#E8C04A;--m4:#9EC3D6;--m5:#E4E2DA;--shadow:0 1px 2px rgba(40,40,30,.04),0 24px 60px rgba(40,50,40,.08)}
+.th.dark{--bd:radial-gradient(60% 50% at 0% 40%,#1C3326 0%,transparent 70%),radial-gradient(60% 40% at 70% 0%,#173039 0%,transparent 70%),radial-gradient(60% 50% at 100% 100%,#3A3418 0%,transparent 70%),#121614;--sh:#1D1D1A;--pn:#252522;--fd:#2C2C28;--ln:#34332E;--tx:#ECEAE3;--mu:#A6A397;--ac:#E9C944;--on:#241E08;--so:#3A3318;--st:#F0D873;--m1:#8DBB7E;--m2:#4D6B44;--m3:#C9A43A;--m4:#5E8597;--m5:#34332E;--shadow:0 1px 2px rgba(0,0,0,.3),0 24px 60px rgba(0,0,0,.35)}
+.th a{color:var(--st)}
+.th h1,.th h2,.th h3{margin:0;letter-spacing:-.02em;font-weight:500}
+.th p,.th .prose,.th blockquote{font-family:"Newsreader",Georgia,serif}
+.th p{margin:0}
+.stage{width:1440px;height:900px;background:var(--bd);padding:20px;box-sizing:border-box;display:flex}
+.sheet{flex:1;min-width:0;background:var(--sh);color:var(--tx);border-radius:28px;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:16px;padding:20px 24px 14px;overflow:hidden}
+.crumb{font-size:15px;color:var(--mu) !important;text-decoration:none}
+.k{font-size:13px;color:var(--mu);margin:0;font-weight:500}
+.btn{font:inherit;font-size:15px;font-weight:500;padding:11px 20px;border-radius:12px;border:0;background:var(--pn);color:var(--tx) !important;cursor:pointer;text-decoration:none;display:inline-block}
+.btn.p{background:var(--ac);color:var(--on) !important}
+.btn.s{background:var(--so);color:var(--st) !important}
+.btn.sm{font-size:14px;padding:8px 14px;border-radius:10px}
+.ib{width:44px;height:44px;border-radius:12px;border:0;background:var(--pn);color:var(--tx);display:flex;align-items:center;justify-content:center;cursor:pointer;flex:none}
+.pill{font-size:13px;padding:5px 12px;border-radius:999px;background:var(--pn);color:var(--mu)}
+.pill.done{background:var(--so);color:var(--st)}
+.pill.cur{background:var(--ac);color:var(--on);font-weight:500}
+.col{background:var(--pn);border-radius:20px;padding:16px 16px;display:flex;flex-direction:column;gap:12px;min-height:0;min-width:0;overflow:hidden}
+.src{font:inherit;text-align:left;background:var(--fd);border:1.5px solid transparent;border-radius:12px;padding:10px 12px;display:flex;gap:10px;align-items:center;color:var(--tx);cursor:pointer}
+.src.on{border-color:var(--ac)}
+.thumb{width:36px;height:44px;border-radius:6px;background:repeating-linear-gradient(0deg,var(--ln) 0 1px,transparent 1px 7px),var(--sh);flex:none}
+.cite{font-family:"Geist",system-ui,sans-serif;font-size:12px;font-weight:600;padding:2px 7px;border-radius:6px;background:var(--so);color:var(--st);vertical-align:2px}
+mark{background:var(--so);color:inherit;padding:0 2px;border-radius:3px}
+.o{font:inherit;text-align:left;font-size:15px;padding:11px 14px;border-radius:12px;border:1.5px solid transparent;background:var(--fd);color:var(--tx);cursor:pointer}
+.o.sel{border-color:var(--ac);background:var(--so);color:var(--st)}
+.in{font:inherit;font-size:15px;padding:11px 14px;border-radius:12px;border:0;background:var(--fd);color:var(--tx);min-width:0}
+.in::placeholder{color:var(--mu)}
+.in:focus{outline:2px solid var(--ac);outline-offset:1px}
+.prose{font-size:18px;line-height:1.55}
+.sr{position:absolute;left:-9999px}
+.sub{font-size:13px;padding:4px 10px;border-radius:999px;color:var(--mu)}
+.sub.on{background:var(--pn);color:var(--tx);font-weight:500}
+.piz{display:flex;gap:3px;height:34px;width:220px}
+.piz span{flex:1;border-radius:6px;background:var(--fd);box-shadow:inset 0 0 0 1.5px var(--ln)}
+.piz span.f{background:var(--m3);box-shadow:none}
+.node{display:flex;gap:12px;align-items:flex-start;position:relative;padding-bottom:16px}
+.dotn{width:14px;height:14px;border-radius:50%;flex:none;margin-top:3px;position:relative;z-index:1}
+.line{position:absolute;left:6px;top:18px;bottom:0;width:2px;background:var(--ln)}
+.sbar{display:flex;align-items:center;gap:18px;font-size:13px;color:var(--mu);padding:8px 6px 0;border-top:1px solid var(--ln)}
+.kbd{font-size:12px;padding:2px 6px;border-radius:5px;background:var(--pn);color:var(--tx);font-weight:500}
+</style>
+</helmet>
+<div class="th {{mode}}">
+<div class="stage">
+<div class="sheet">
+  <header style="display:flex;align-items:center;gap:12px">
+    <a class="crumb" href="InicioCamino.dc.html">‹ Fracciones</a>
+    <ol aria-label="Partes de la sesión" style="display:flex;gap:6px;margin:0 0 0 12px;padding:0;list-style:none">
+      <li class="pill done">✓ Calentamiento</li>
+      <li class="pill cur">Bloque principal</li>
+      <li class="pill">Cierre</li>
+    </ol>
+    <div style="flex:1"></div>
+    <button class="btn sm" aria-label="Cambiar método (atajo Comando K)">Socrático <span class="kbd" style="margin-left:6px">⌘K</span></button>
+    <a class="btn sm" href="#">Ir al cierre</a>
+  </header>
+
+  <div style="flex:1;display:grid;grid-template-columns:{{cols}};gap:18px;min-height:0">
+
+    <sc-if value="{{srcOpen}}" hint-placeholder-val="{{ true }}">
+    <aside aria-labelledby="fu" class="col">
+      <div style="display:flex;align-items:center;gap:8px">
+        <h2 id="fu" style="font-size:16px;flex:1">Fuentes</h2>
+        <button class="ib" style="width:36px;height:36px;background:var(--fd)" aria-label="Ocultar fuentes" onClick="{{toggleSrc}}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"></path></svg></button>
+      </div>
+      <button class="src on"><span class="thumb" aria-hidden="true"></span><span style="display:flex;flex-direction:column;gap:2px"><span style="font-size:14px;font-weight:500">Cuaderno, foto 1</span><span style="font-size:12px;color:var(--mu)">p. 12 · equivalentes</span></span></button>
+      <button class="src"><span class="thumb" aria-hidden="true"></span><span style="display:flex;flex-direction:column;gap:2px"><span style="font-size:14px;font-weight:500">Cuaderno, foto 2</span><span style="font-size:12px;color:var(--mu)">p. 13 · ejercicios</span></span></button>
+      <div class="k" style="margin-top:6px">Fragmento citado <span class="cite">1</span></div>
+      <blockquote style="margin:0;background:var(--fd);border-radius:12px;padding:12px 14px;font-size:16px;line-height:1.5">“Dos fracciones son <mark>equivalentes</mark> cuando representan la misma parte del entero, aunque tengan distinto denominador.”</blockquote>
+      <div style="flex:1"></div>
+      <div style="font-size:13px;color:var(--mu);line-height:1.45">Modo mixto: primero tu material, después lo que sabe la IA (avisa cuando sale del cuaderno).</div>
+      <button class="btn sm" style="background:var(--fd)">+ Agregar material</button>
+    </aside>
+    </sc-if>
+    <sc-if value="{{srcClosed}}" hint-placeholder-val="{{ false }}">
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <button class="ib" aria-label="Mostrar fuentes" onClick="{{toggleSrc}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><path d="M4 19V5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2 2 2 0 0 0 2 2h13"></path></svg></button>
+      <span style="font-size:12px;color:var(--mu);text-align:center">2</span>
+    </div>
+    </sc-if>
+
+    <main style="display:flex;flex-direction:column;gap:16px;min-width:0;min-height:0;padding:4px 8px 0">
+      <div style="display:flex;gap:4px;align-items:center"><span class="k" style="margin-right:6px">Socrático</span><span class="sub on">Ejercicio previo</span><span class="sub">Preguntas</span><span class="sub">Concepto</span><span class="sub">Verificación</span></div>
+      <p class="prose" style="font-size:20px">Antes de explicarte nada, probá con esto. Es el ejemplo de tu cuaderno <span class="cite">1</span>.</p>
+      <section aria-labelledby="ej" style="background:var(--pn);border-radius:20px;padding:22px 24px;display:flex;flex-direction:column;gap:16px">
+        <h2 id="ej" class="k">Ejercicio previo · 1 de 2</h2>
+        <div style="display:flex;gap:40px">
+          <div style="display:flex;flex-direction:column;gap:6px"><span style="font-size:14px">Tu pizza: 2 partes, comés 1</span><div class="piz" role="img" aria-label="Pizza en 2 partes, 1 comida"><span class="f"></span><span></span></div></div>
+          <div style="display:flex;flex-direction:column;gap:6px"><span style="font-size:14px">La de tu amiga: 4 partes, come 2</span><div class="piz" role="img" aria-label="Pizza en 4 partes, 2 comidas"><span class="f"></span><span class="f"></span><span></span><span></span></div></div>
+        </div>
+        <p class="prose">¿Quién comió más?</p>
+        <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px">
+          <sc-for list="{{choices}}" as="c" hint-placeholder-count="3">
+            <button class="{{c.cls}}" aria-pressed="{{c.on}}" onClick="{{c.pick}}">{{c.label}}</button>
+          </sc-for>
+        </div>
+        <label for="why" class="k">¿Por qué? Con tus palabras</label>
+        <textarea id="why" class="in" rows="2" style="resize:none;font-family:Newsreader,Georgia,serif;font-size:17px">Porque 2 pedazos chiquitos son como uno grande</textarea>
+        <div style="display:flex;gap:8px;align-items:center"><button class="btn p">Me comprometo</button><button class="btn s">Necesito una pista</button><span style="font-size:14px;color:var(--mu);margin-left:8px">La respuesta llega cuando te comprometés.</span></div>
+      </section>
+      <div style="flex:1"></div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="btn sm" style="background:transparent;color:var(--mu) !important">Conversación (4)</button>
+        <label for="msg" class="sr">Preguntale algo al tutor</label>
+        <input id="msg" class="in" placeholder="¿Una duda que no es el ejercicio? Preguntá acá…" style="flex:1;background:var(--pn)">
+        <button class="btn sm">Enviar</button>
+      </div>
+    </main>
+
+    <aside aria-labelledby="mp" class="col" style="gap:14px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline"><h2 id="mp" style="font-size:16px">Mapa · Fracciones</h2><a href="#" style="font-size:13px">ver todo</a></div>
+      <ol style="list-style:none;margin:0;padding:0">
+        <li class="node"><span class="line" aria-hidden="true"></span><span class="dotn" style="background:var(--m1)"></span><span style="display:flex;flex-direction:column;gap:2px"><span style="font-size:14px">Leer y escribir</span><span style="font-size:12px;color:var(--mu)">Dominado · hoy 3 de 3</span></span></li>
+        <li class="node"><span class="line" aria-hidden="true"></span><span class="dotn" style="background:var(--m3);box-shadow:0 0 0 4px var(--so)"></span><span style="display:flex;flex-direction:column;gap:2px"><span style="font-size:14px;font-weight:600">Fracciones equivalentes</span><span style="font-size:12px;color:var(--st)">Practicando · ahora</span></span></li>
+        <li class="node"><span class="line" aria-hidden="true"></span><span class="dotn" style="background:var(--m5);box-shadow:inset 0 0 0 1.5px var(--mu)"></span><span style="display:flex;flex-direction:column;gap:2px"><span style="font-size:14px">Simplificar</span><span style="font-size:12px;color:var(--mu)">Sin ver · necesita equivalentes</span></span></li>
+        <li class="node"><span class="line" aria-hidden="true"></span><span class="dotn" style="background:var(--m4)"></span><span style="display:flex;flex-direction:column;gap:2px"><span style="font-size:14px">Comparar fracciones</span><span style="font-size:12px;color:var(--mu)">Visto</span></span></li>
+        <li class="node" style="padding-bottom:0"><span class="dotn" style="background:var(--m5);box-shadow:inset 0 0 0 1.5px var(--mu)"></span><span style="display:flex;flex-direction:column;gap:2px"><span style="font-size:14px">Sumar, igual denominador</span><span style="font-size:12px;color:var(--mu)">Sin ver</span></span></li>
+      </ol>
+      <div style="background:var(--fd);border-radius:14px;padding:12px 14px;display:flex;flex-direction:column;gap:8px">
+        <div class="k">Para pasar a Dominado</div>
+        <div style="font-size:14px;line-height:1.6"><span style="color:var(--m1);font-weight:600">✓</span> Explicarlo con tus palabras<br><span style="color:var(--mu)">○</span> 2 ejercicios sin pista · 0 de 2<br><span style="color:var(--mu)">○</span> Recordarlo en otra sesión</div>
+      </div>
+      <div class="k">Términos nuevos</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap"><span class="pill" style="background:var(--fd)">numerador</span><span class="pill" style="background:var(--fd)">denominador</span><span class="pill" style="background:var(--fd)">equivalente</span></div>
+    </aside>
+  </div>
+
+  <footer class="sbar" aria-label="Estado de la sesión">
+    <span style="display:flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:50%;background:var(--m1)"></span>Socrático</span>
+    <span>Bloque principal · 2 de 3</span>
+    <span style="display:flex;align-items:center;gap:8px">8 de 20 min <span style="width:80px;height:4px;border-radius:2px;background:var(--ln);display:inline-flex"><span style="width:40%;background:var(--m3);border-radius:2px"></span></span></span>
+    <span>Fuentes: 2 · mixto</span>
+    <span style="flex:1"></span>
+    <span>Contexto 34%</span>
+    <span><span class="kbd">⌘K</span> métodos y acciones</span>
+  </footer>
+</div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":false},"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+constructor(props) { super(props); this.state = { srcOpen: true, picked: 'igual' }; }
+renderVals() {
+  const open = this.state.srcOpen;
+  const opts = [['yo', 'Yo'], ['igual', 'Las dos igual'], ['amiga', 'Mi amiga']];
+  return {
+    mode: this.props.dark ? 'dark' : 'light',
+    srcOpen: open,
+    srcClosed: !open,
+    cols: open ? '270px minmax(0,1fr) 300px' : '44px minmax(0,1fr) 300px',
+    toggleSrc: () => this.setState({ srcOpen: !open }),
+    choices: opts.map(([id, label]) => ({
+      label,
+      on: this.state.picked === id ? 'true' : 'false',
+      cls: this.state.picked === id ? 'o sel' : 'o',
+      pick: () => this.setState({ picked: id })
+    }))
+  };
+}
+}
+</script>
+</body>
+</html>

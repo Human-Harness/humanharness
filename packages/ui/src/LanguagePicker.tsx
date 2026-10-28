@@ -28,12 +28,15 @@ export function LanguagePicker({
   view,
   onPick,
   onClose,
+  error = null,
 }: {
   current: Language;
   suggested?: Language;
   view: LanguageState;
   onPick: (tag: Language) => void | Promise<unknown>;
   onClose: () => void;
+  /** Why the last pick didn't work, shown inside the dialog. */
+  error?: string | null;
 }) {
   const { t } = useTranslation();
   const id = useId();
@@ -85,7 +88,7 @@ export function LanguagePicker({
   };
 
   return (
-    <div className="hh-langpick-backdrop">
+    <div className="hh-langpick-backdrop" onMouseDown={(e) => e.target === e.currentTarget && e.preventDefault()}>
       <div
         ref={dialog}
         className="hh-langpick"
@@ -120,6 +123,11 @@ export function LanguagePicker({
             </label>
           ))}
         </div>
+        {error && (
+          <p className="hh-save-error" role="alert">
+            {error}
+          </p>
+        )}
         <div className="hh-langpick-actions">
           <button type="button" onClick={onClose}>
             {t("language.cancel")}

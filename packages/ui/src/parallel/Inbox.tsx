@@ -29,11 +29,14 @@ export function Inbox({
   /** "New task" went through: main shows the start view, and the chat on screen must follow (it has no task change to see). */
   onStartView?: () => void;
   /** "Start" on a needs-you job row: the action starts through the chat's own start path, in the row's scope. */
-  onStartAction?: (action: string, scope: string | null) => void;
+  /** Starts a needs-you job's action; false when it couldn't start (the list stays open and says so). */
+  onStartAction?: (action: string, scope: string | null) => boolean;
 }) {
   const { t, i18n } = useTranslation();
   const [open, setOpen] = useState(false);
   const [scopeTitles, setScopeTitles] = useState<Record<string, string>>({});
+  /** Why the last Start or Run now in the Jobs section didn't go through. */
+  const [jobProblem, setJobProblem] = useState<string | null>(null);
   const wrap = useRef<HTMLDivElement>(null);
   const button = useRef<HTMLButtonElement>(null);
   const dialog = useRef<HTMLDivElement>(null);
@@ -170,7 +173,13 @@ export function Inbox({
     return action !== undefined && Object.hasOwn(state.actions, action) ? action : null;
   };
   const runNow = (j: JobSummary) => {
-    void client.jobs.run(j.id, ...(j.scope !== null ? [j.scope] : [])).catch(() => undefined);
+    setJobProblem(null);
+    void client.jobs.run(j.id, ...(j.scope !== null ? [j.scope] : [])).then(
+      (queued) => {
+        if (!queued) setJobProblem(t("parallel.runFailed"));
+      },
+      () => setJobProblem(t("parallel.runFailed")),
+    );
   };
   const jobRow = (j: JobSummary, index: number) => {
     const labelId = `${id}-job-${index}`;
@@ -201,8 +210,9 @@ export function Inbox({
             className="hh-tk-cancel"
             aria-describedby={labelId}
             onClick={() => {
-              onStartAction?.(action, j.scope);
-              close();
+              setJobProblem(null);
+              if (onStartAction?.(action, j.scope) === false) setJobProblem(t("parallel.startFailed"));
+              else close();
             }}
           >
             {t("parallel.start")}
@@ -277,6 +287,7 @@ export function Inbox({
           <section className="hh-tk-section" aria-labelledby={`${id}-jobs`}>
             <h3 id={`${id}-jobs`}>{t("parallel.jobsTitle")}</h3>
             {jobs.length === 0 ? <p className="hh-tk-empty">{t("parallel.noJobs")}</p> : <ul className="hh-tk-list">{jobs.map(jobRow)}</ul>}
+            {jobProblem && <p role="alert">{jobProblem}</p>}
           </section>
           <button className="hh-tk-new" onClick={() => void focus(null)}>
             {t("parallel.newTask")}

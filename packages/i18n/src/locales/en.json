@@ -1005,6 +1005,8 @@
     "statusFailed": "Failed",
     "start": "Start",
     "jobRunning": "Running",
-    "jobOff": "Turned off"
+    "jobOff": "Turned off",
+    "startFailed": "Couldn't start it now.",
+    "runFailed": "Couldn't run it now."
   }
 }

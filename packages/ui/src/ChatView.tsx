@@ -119,7 +119,7 @@ export function ChatView({
    * A harness with `parallel` and its inbox (spec §9.2): the inbox button; `refill` puts text back in the box; `start`
    * starts a declared action as the start view does (a needs-you job's "Start", part 3).
    */
-  inboxBar?: (refill: (text: string) => void, start: (action: string, scope: string | null) => void) => ReactNode;
+  inboxBar?: (refill: (text: string) => void, start: (action: string, scope: string | null) => boolean) => ReactNode;
   /** Board mode: the bar naming the task on screen, over the chat (parallel spec §9.1). */
   taskStrip?: ReactNode;
   /**
@@ -535,8 +535,9 @@ export function ChatView({
     if (!message || !canSend(options, confirmed)) return false;
     // Slim: only the interview runs here, never a free question or another action's task.
     if (slim && (options.action ? options.action !== slim.action : tasks.current?.action !== slim.action)) return false;
-    // A `required` action needs an open scope (spec §3.3); the main process would refuse it.
-    if (options.action && state.scopes && state.actions[options.action]?.scope !== "none" && !openScope) {
+    // A `required` action needs an open scope (spec §3.3); the main process would refuse it. One that names its scope (a
+    // job's needs-you Start) has one.
+    if (options.action && state.scopes && state.actions[options.action]?.scope !== "none" && !openScope && options.scope === undefined) {
       const text = t("scopes.pickFirst", { label: state.scopes.label });
       dispatch({ type: "notice", text, at: new Date().toISOString() });
       setNotice(text);
@@ -837,9 +838,8 @@ export function ChatView({
 
   const startTopic = (id: string) => void send(labelOf(id), { action: id });
   /** A needs-you job's action (part 3): only a declared one, in the job's scope when it has one. */
-  const startFromInbox = (id: string, scope: string | null) => {
-    if (Object.hasOwn(state.actions, id)) void send(labelOf(id), { action: id, ...(scope !== null ? { scope } : {}) });
-  };
+  const startFromInbox = (id: string, scope: string | null): boolean =>
+    Object.hasOwn(state.actions, id) ? send(labelOf(id), { action: id, ...(scope !== null ? { scope } : {}) }) : false;
   const resume = (note: NoteView) => {
     setNotesPanel(null);
     if (note.action && state.actions[note.action]) startTopic(note.action);

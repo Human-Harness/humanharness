@@ -306,6 +306,45 @@ describe("Inbox › Jobs (parallel part 3 Task 8)", () => {
     expect(screen.queryByRole("dialog", { name: "Inbox" })).toBeNull();
   });
 
+  it("Start in a scoped harness with no scope open uses the row's scope instead of asking for one", async () => {
+    const c = jobsClient([
+      { id: "sync", label: "Sync inbox", scope: "physics", last: { status: "needs-you", summary: "Look", at, action: "implement" }, manual: false, running: false },
+    ]);
+    c.state.scopes = { label: "topic", plural: "topics" };
+    await open(c);
+    fireEvent.click(await inbox());
+    fireEvent.click(within(jobsSection()).getByRole("button", { name: /Start/ }));
+    await waitFor(() => expect(c.sentOptions.at(-1)).toEqual({ action: "implement", scope: "physics" }));
+  });
+
+  it("a Start that can't go through keeps the list open and says so", async () => {
+    // An app-wide row in a scoped harness with no scope open: the start path refuses it.
+    const c = jobsClient([
+      { id: "sync", label: "Sync inbox", scope: null, last: { status: "needs-you", summary: "Look", at, action: "implement" }, manual: false, running: false },
+    ]);
+    c.state.scopes = { label: "topic", plural: "topics" };
+    await open(c);
+    fireEvent.click(await inbox());
+    const sent = c.sent.length;
+    fireEvent.click(within(jobsSection()).getByRole("button", { name: /Start/ }));
+    expect(await within(jobsSection()).findByRole("alert")).toHaveProperty("textContent", "Couldn't start it now.");
+    expect(screen.getByRole("dialog", { name: "Inbox" })).toBeTruthy();
+    expect(c.sent.length).toBe(sent);
+  });
+
+  it("Run now that is refused or fails says so", async () => {
+    const c = jobsClient([{ id: "sync", label: "Sync inbox", scope: null, manual: true, running: false }]);
+    c.jobs.run.mockResolvedValueOnce(false);
+    await open(c);
+    fireEvent.click(await inbox());
+    fireEvent.click(within(jobsSection()).getByRole("button", { name: /Run now/ }));
+    expect(await within(jobsSection()).findByRole("alert")).toHaveProperty("textContent", "Couldn't run it now.");
+    c.jobs.run.mockRejectedValueOnce(new Error("No jobs"));
+    fireEvent.click(within(jobsSection()).getByRole("button", { name: /Run now/ }));
+    await waitFor(() => expect(c.jobs.run).toHaveBeenCalledTimes(2));
+    expect(within(jobsSection()).getByRole("alert").textContent).toBe("Couldn't run it now.");
+  });
+
   it("no Start for an action the harness doesn't declare, nor without a needs-you result", async () => {
     const c = jobsClient([
       { id: "sync", label: "Sync inbox", scope: null, last: { status: "needs-you", summary: "Look", at, action: "ghost" }, manual: false, running: false },

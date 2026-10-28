@@ -82,14 +82,17 @@ export async function endTurn(
       ownEdits: w.edits,
       others: others.map((o) => ({ task: o.task ?? o.key, edits: o.edits })),
     });
+    // A path left for the turns that named it holds this turn's change too: their crash must not restore it.
+    for (const p of a.left) for (const o of others) if (o.edits.has(p)) o.held.add(p);
     const owned = a.owned.flatMap((p) => names.get(p) ?? []);
     const shared = a.shared.flatMap((p) => names.get(p) ?? []);
     let first: string | null;
     if (crashed) {
       // Only what is this turn's alone goes back: a path another running turn also named holds that turn's in-flight
-      // work too, and a path already dirty when this turn opened (no snapshot then, Decision 2) holds earlier edits
-      // HEAD doesn't have. Both stay as they are, like the shared paths.
-      const othersNamed = (p: string) => others.some((o) => o.edits.has(samePath(p)));
+      // work too, a path an ended turn left for this one holds that turn's change (`held`), and a path already dirty
+      // when this turn opened (no snapshot then, Decision 2) holds earlier edits HEAD doesn't have. All stay as they
+      // are, like the shared paths.
+      const othersNamed = (p: string) => others.some((o) => o.edits.has(samePath(p))) || w.held.has(samePath(p));
       const restore = owned.filter((p) => !othersNamed(p) && !(w.startDirty?.has(p) ?? false));
       const kept = owned.filter((p) => !restore.includes(p));
       // "HEAD" resolves inside restorePaths' own queue entry: the head as it is then, not as it was a step ago, so a

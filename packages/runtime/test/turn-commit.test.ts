@@ -200,6 +200,23 @@ describe("two turns at once (parallel spec §5.2, T1, T2)", () => {
     expect(await treeOf(gitdir, await head())).toEqual({ "seed.md": "s", "spec.md": "A+B work" });
   });
 
+  it("a path left for a turn that then crashes keeps the ended turn's change (held)", async () => {
+    write("spec.md", "0");
+    await history.save("seed spec");
+    const a = await beginTurn(history, ledger, "A", { task: "t1" });
+    const b = await beginTurn(history, ledger, "B", { task: "t2" });
+    // A changes spec.md without naming it (through the shell); only B named it.
+    write("spec.md", "A's change");
+    ledger.noteEdits("B", [abs("spec.md")]);
+    expect(await endTurn(history, ledger, a, ok, "A", { task: "t1" })).toMatchObject({ owned: [], shared: [] });
+    expect(b.held.has("spec.md")).toBe(true);
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    await endTurn(history, ledger, b, crashed, "B", { task: "t2" });
+    expect(err).toHaveBeenCalledWith("Crash restore left paths others also hold", ["spec.md"]);
+    err.mockRestore();
+    expect(read("spec.md")).toBe("A's change");
+  });
+
   it("a crash leaves a path already dirty when the turn opened beside another: earlier edits survive (P2)", async () => {
     write("spec.md", "0");
     await history.save("seed spec");

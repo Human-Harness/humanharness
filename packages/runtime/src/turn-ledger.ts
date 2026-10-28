@@ -17,6 +17,11 @@ export interface TurnWindow {
   startDirty: DirtyState | null;
   /** Folder-relative paths its edit events named, in Unicode NFC (`samePath`). */
   readonly edits: Set<string>;
+  /**
+   * Paths a turn that ended meanwhile changed but left for this one (only this one named them): they hold that turn's
+   * work, so a crash of this one never restores them. In NFC, like `edits`.
+   */
+  readonly held: Set<string>;
 }
 
 /**
@@ -53,7 +58,7 @@ export class TurnLedger {
     if (this.open_.has(key)) throw new Error(`A turn is already open for ${key}`);
     const alone = this.open_.size === 0;
     for (const w of this.open_.values()) w.overlapped = true;
-    const w: TurnWindow = { key, task, alone, overlapped: !alone, before: null, startDirty: null, edits: new Set() };
+    const w: TurnWindow = { key, task, alone, overlapped: !alone, before: null, startDirty: null, edits: new Set(), held: new Set() };
     this.open_.set(key, w);
     return w;
   }

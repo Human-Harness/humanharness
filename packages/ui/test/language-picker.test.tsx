@@ -48,6 +48,16 @@ describe("LanguagePicker (spec §2, §3)", () => {
     }
   });
 
+  it("the needs-engine reason describes the language list; with an engine nothing does", async () => {
+    const { unmount } = await renderIn("en", <LanguagePicker current="en" view={{ ...view, canTranslate: "no-engine" }} onPick={() => {}} onClose={() => {}} />);
+    const reason = screen.getByText("Connect an AI engine to translate the app.");
+    expect(reason.id).not.toBe("");
+    expect(screen.getByRole("radiogroup").getAttribute("aria-describedby")).toBe(reason.id);
+    unmount();
+    await renderIn("en", <LanguagePicker current="en" view={view} onPick={() => {}} onClose={() => {}} />);
+    expect(screen.getByRole("radiogroup").hasAttribute("aria-describedby")).toBe(false);
+  });
+
   it("canonicalizes the saved, cached and suggested tags (pt-br is pt-BR)", async () => {
     await renderIn("en", <LanguagePicker current="en" suggested="pt-br" view={{ ...view, cached: [{ tag: "PT-br", complete: true }] }} onPick={() => {}} onClose={() => {}} />);
     const pt = screen.getAllByRole("radio").filter((r) => (r as HTMLInputElement).value.toLowerCase() === "pt-br");

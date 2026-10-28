@@ -100,9 +100,18 @@ export function LanguagePicker({
       >
         <h2 id={`${id}-title`}>{t("language.pickTitle")}</h2>
         <input ref={search} type="search" aria-label={t("language.search")} placeholder={t("language.search")} value={query} onChange={(e) => setQuery(e.target.value)} />
-        {view.canTranslate !== true && <p className="hh-caption hh-langpick-reason">{t("language.needsEngine")}</p>}
+        {view.canTranslate !== true && (
+          <p id={`${id}-reason`} className="hh-caption hh-langpick-reason">
+            {t("language.needsEngine")}
+          </p>
+        )}
         {shown.length === 0 && <p className="hh-caption hh-langpick-none">{t("language.noMatch")}</p>}
-        <div className="hh-langpick-list" role="radiogroup" aria-labelledby={`${id}-title`}>
+        <div
+          className="hh-langpick-list"
+          role="radiogroup"
+          aria-labelledby={`${id}-title`}
+          aria-describedby={view.canTranslate !== true ? `${id}-reason` : undefined}
+        >
           {shown.map((tag) => (
             <label key={tag} className="hh-langpick-option">
               <input type="radio" name={`${id}-lang`} value={tag} checked={picked === tag} disabled={pending || !usable(tag)} onChange={() => setPicked(tag)} />

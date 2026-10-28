@@ -1339,7 +1339,7 @@
       "too-broad": "This folder is too broad to link. Choose a folder inside it.",
       "protected": "This folder can't be linked.",
       "main-folder": "This is your work folder, or inside or around it. Link a folder outside it.",
-      "other-scope-write": "Another {{scope}} already changes this folder.",
+      "other-scope-write": "Another {{scope}} already changes this folder, or a folder inside or around it.",
       "nested": "This folder is inside, or contains, another folder linked here.",
       "already-linked": "This folder is already linked here.",
       "not-git": "This needs a git repository.",

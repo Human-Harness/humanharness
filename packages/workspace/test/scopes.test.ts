@@ -165,14 +165,34 @@ describe("ScopeStore links (hatches spec §3.2)", () => {
     ]);
   });
 
-  it("setTracked takes the new tag, or leaves the link untagged", async () => {
+  it("setTracked signs inside the write from the entry as it is then, keeps the nonce, or leaves the link untagged", async () => {
+    const base = tmp();
+    const store = new ScopeStore(base, at);
+    await store.create("App");
+    const nonce = "ab".repeat(16);
+    await store.link("app", { key: "repos", path: "/a", mode: "read", tracked: false, tag: "old", nonce });
+    // Changed on disk after the caller read it: the signer sees the entry as written now.
+    const raw = JSON.parse(fs.readFileSync(file(base), "utf8"));
+    raw[0].linked[0].mode = "write";
+    fs.writeFileSync(file(base), JSON.stringify(raw));
+    const seen: unknown[] = [];
+    await store.setTracked("app", "repos", "/a", true, (next, current) => (seen.push(next, current), `${next.mode}-${next.tracked}`));
+    expect(seen).toEqual([
+      { key: "repos", path: "/a", mode: "write", tracked: true, nonce },
+      { key: "repos", path: "/a", mode: "write", tracked: false, tag: "old", nonce },
+    ]);
+    expect((await store.list())[0].linked?.[0]).toEqual({ key: "repos", path: "/a", mode: "write", tracked: true, tag: "write-true", nonce });
+    await expect(store.setTracked("app", "repos", "/a", false, () => { throw new Error("refused"); })).rejects.toThrow("refused");
+    await store.setTracked("app", "repos", "/a", false);
+    expect((await store.list())[0].linked?.[0]).toEqual({ key: "repos", path: "/a", mode: "write", tracked: false, nonce });
+  });
+
+  it("keeps a hex nonce, drops any other", async () => {
     const store = new ScopeStore(tmp(), at);
     await store.create("App");
-    await store.link("app", { key: "repos", path: "/a", mode: "write", tracked: true, tag: "old" });
-    await store.setTracked("app", "repos", "/a", false, "new");
-    expect((await store.list())[0].linked?.[0]).toEqual({ key: "repos", path: "/a", mode: "write", tracked: false, tag: "new" });
-    await store.setTracked("app", "repos", "/a", true);
-    expect((await store.list())[0].linked?.[0]).toEqual({ key: "repos", path: "/a", mode: "write", tracked: true });
+    await store.link("app", { key: "repos", path: "/a", mode: "read", tracked: false, nonce: "f".repeat(32) });
+    await store.link("app", { key: "docs", path: "/b", mode: "read", tracked: false, nonce: "not hex" }, { many: true });
+    expect((await store.list())[0].linked?.map((l) => l.nonce)).toEqual(["f".repeat(32), undefined]);
   });
 
   it("link with valid drops the scope's links it rejects before counting, in the same write", async () => {

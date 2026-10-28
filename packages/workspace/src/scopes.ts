@@ -18,6 +18,8 @@ export interface LinkedFolderEntry {
    * write, so a link without a valid tag is ignored by the app. The store keeps it; the shell makes and checks it.
    */
   tag?: string;
+  /** A random id of this link, signed with it: the app keeps the live ones outside the folder (no replay). */
+  nonce?: string;
 }
 
 /** One entry of `.harness/scopes.json` (spec §3.2). The id never changes; renaming changes only the title. */
@@ -60,6 +62,7 @@ const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "obj
 const LINK_KEY = /^[a-z][a-z0-9_-]{0,63}$/;
 const LINK_PATH_MAX = 4096;
 const LINK_TAG_MAX = 128;
+const LINK_NONCE = /^[0-9a-f]{16,64}$/;
 
 function cleanLink(v: unknown): LinkedFolderEntry | null {
   if (!isObject(v) || typeof v.key !== "string" || !LINK_KEY.test(v.key)) return null;
@@ -74,6 +77,7 @@ function cleanLink(v: unknown): LinkedFolderEntry | null {
     ...(v.gitChanged === true ? { gitChanged: true as const } : {}),
     // A tag that isn't a short string is dropped: the link stays, untagged (so the app ignores it).
     ...(typeof v.tag === "string" && v.tag.length > 0 && v.tag.length <= LINK_TAG_MAX ? { tag: v.tag } : {}),
+    ...(typeof v.nonce === "string" && LINK_NONCE.test(v.nonce) ? { nonce: v.nonce } : {}),
   };
 }
 
@@ -196,11 +200,19 @@ export class ScopeStore {
 
   /**
    * Sets whether the core history tracks the folder; confirms a git change (drops `gitChanged`). `tracked` is signed,
-   * so the old tag no longer holds: `tag` is the new one (without it the link is left untagged).
+   * so the old tag no longer holds: `sign` makes the new one inside the write, from the entry as it is then (`current`;
+   * it may throw to refuse). Without it the link is left untagged. The nonce is kept.
    */
-  setTracked(id: string, key: string, folder: string, tracked: boolean, tag?: string): Promise<ScopeEntry> {
+  setTracked(
+    id: string,
+    key: string,
+    folder: string,
+    tracked: boolean,
+    sign?: (next: LinkedFolderEntry, current: LinkedFolderEntry) => string,
+  ): Promise<ScopeEntry> {
     return this.updateLink(id, key, folder, (l) => {
-      const next = cleanLink({ key: l.key, path: l.path, mode: l.mode, tracked, ...(tag !== undefined ? { tag } : {}) });
+      const plain: LinkedFolderEntry = { key: l.key, path: l.path, mode: l.mode, tracked, ...(l.nonce !== undefined ? { nonce: l.nonce } : {}) };
+      const next = cleanLink(sign ? { ...plain, tag: sign(plain, l) } : plain);
       if (!next) throw new Error("Invalid linked folder");
       return next;
     });

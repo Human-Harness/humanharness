@@ -195,7 +195,7 @@ import type { Turns } from "./gated-turns";
 import type { TurnGate } from "./turn-gate";
 import { cleanCaps, engineHold, parallelInfo } from "./parallel-config";
 import { restoreTaskByPaths } from "./restore-paths";
-import { type LinkedIpcDeps, hatchesState, linkedSecret, registerLinkedIpc } from "./linked-ipc";
+import { type LinkedIpcDeps, hatchesState, linkedSigning, registerLinkedIpc } from "./linked-ipc";
 import { pruneUnlinked } from "./linked-history";
 import { restoreTaskArgs, tasksIpc, undoRefusalOf } from "./tasks-ipc";
 import { PluginsController, watchPluginFolder } from "./plugins";
@@ -1827,13 +1827,22 @@ function linkedIpcDeps(): LinkedIpcDeps {
   return {
     linkedFolders: harness.linkedFolders ?? {},
     store: scopeStore,
+    // Links are signed per profile id (never its folder's path, so a move keeps them); "" without profiles.
+    profile: async () => {
+      const c = await validConfig();
+      if (!c) throw new Error("The app is not set up yet");
+      return profilesOn() ? (c.profile ?? "") : "";
+    },
     // With profiles, every other profile's registry: a folder another profile changes or tracks counts.
     otherStores: async () => {
       const c = await validConfig();
       if (!c || !profilesCtl) return [];
-      const here = path.resolve(baseOf(c));
-      const bases = (await profilesCtl.state()).list.map((p) => baseFor({ folder: c.folder, profile: p.id }, true));
-      return bases.filter((b): b is string => b !== null && path.resolve(b) !== here).map(scopeStoreFor);
+      const out: { profile: string; store: ScopeStore }[] = [];
+      for (const p of (await profilesCtl.state()).list) {
+        const b = baseFor({ folder: c.folder, profile: p.id }, true);
+        if (b !== null && p.id !== c.profile) out.push({ profile: p.id, store: scopeStoreFor(b) });
+      }
+      return out;
     },
     context: async () => {
       const c = await validConfig();
@@ -1850,7 +1859,7 @@ function linkedIpcDeps(): LinkedIpcDeps {
       return r.canceled ? null : (r.filePaths[0] ?? null);
     },
     userData,
-    secret: linkedSecret(userData),
+    signing: linkedSigning(userData),
     now: () => new Date(),
     ready,
     changed: async () => {

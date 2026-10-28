@@ -44,15 +44,21 @@ describe("hatches IPC surface (hatches D0)", () => {
     }
   });
 
-  it("D0: the links' key and the histories' prune are reached only from the hasLinkedFolders deps", async () => {
+  it("D0: the links' key, live set and the histories' prune are reached only from the hasLinkedFolders deps", async () => {
     const index = await read("index.ts");
     const deps = group(index, index.indexOf("function linkedIpcDeps(): LinkedIpcDeps"), /\{/);
-    for (const name of [/\blinkedSecret\(/, /\bpruneUnlinked\(/, /"linked-key"/]) expect(count(index, name), String(name)).toBe(count(deps, name));
-    expect(count(deps, /\blinkedSecret\(/)).toBe(1);
+    for (const name of [/\blinkedSigning\(/, /\blinkedSecret\(/, /\bpruneUnlinked\(/, /"linked-key"/, /"linked-live\.json"/]) {
+      expect(count(index, name), String(name)).toBe(count(deps, name));
+    }
+    expect(count(deps, /\blinkedSigning\(/)).toBe(1);
     expect(count(deps, /\bpruneUnlinked\(/)).toBe(1);
-    // The key file is named only in linked-ipc.ts, made by the same function as the other app keys.
+    // The key and live-set files are named only in linked-ipc.ts, the key made by the same function as the other app keys.
     const ipc = await read("linked-ipc.ts");
     expect(ipc).toContain('sourceTagKey(path.join(userData, "linked-key"), create)');
+    expect(ipc).toContain('new LiveLinks(path.join(userData, "linked-live.json"))');
+    for (const f of (await fs.readdir(main, { recursive: true })).filter((f) => f.endsWith(".ts") && f !== "linked-ipc.ts")) {
+      expect(await read(f), f).not.toMatch(/linked-key|linked-live/);
+    }
   });
 
   it("appState carries hatches only when a hatch is declared (D0)", async () => {

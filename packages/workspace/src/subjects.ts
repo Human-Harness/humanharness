@@ -30,3 +30,6 @@ export const ANSWER_SEPARATOR = " · ";
 export const APPROVED_PREFIX = "Approved: ";
 /** One file brought back to a version (file-timeline spec §5): `Go back: <path> to <target>`. */
 export const FILE_RESTORE_PREFIX = "Go back: ";
+
+/** The person pinned, unpinned, excluded or included something (context-panel spec §4): `Context: pinned <path>`. */
+export const CONTEXT_CHANGE_PREFIX = "Context: ";

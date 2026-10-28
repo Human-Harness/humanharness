@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import git from "isomorphic-git";
-import { DATA_PREFIX, History, MATERIAL_KEEP, NOTES_PREFIX, appHistoryKeep, blobId, parseCommitMessage, withTrailer } from "../src";
+import { CONTEXT_PREFIX, DATA_PREFIX, History, MATERIAL_KEEP, NOTES_PREFIX, appHistoryKeep, blobId, parseCommitMessage, withTrailer } from "../src";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -708,5 +708,17 @@ describe("review records (review spec §3, §7 undo)", () => {
     fs.writeFileSync(path.join(folder, "specs", "draft.md.tmp"), "mine");
     const first = (await history.save("one"))!;
     expect((await history.changes(null, first)).map((c) => c.path).sort()).toEqual(["specs/a.md", "specs/draft.md.tmp"]);
+  });
+});
+
+describe("appHistoryKeep and the context folder (context-panel spec §4.2)", () => {
+  it("tracks .harness/context/, still not tasks.json; D0: nothing else changes", () => {
+    expect(appHistoryKeep(false)).toEqual([NOTES_PREFIX, DATA_PREFIX, ".harness/reviews/", CONTEXT_PREFIX]);
+    const folder = fs.mkdtempSync(path.join(os.tmpdir(), "hh-keep-"));
+    const history = new History(folder, `${folder}.git`, [".harness/"], appHistoryKeep(false));
+    expect(history.tracks(".harness/context/main.json")).toBe(true);
+    // The temp file saveContext renames into place is never tracked.
+    expect(history.tracks(".harness/context/main.json.0b1c2d3e-aaaa-bbbb-cccc-123456789abc.tmp")).toBe(false);
+    expect(history.tracks(".harness/tasks.json")).toBe(false);
   });
 });

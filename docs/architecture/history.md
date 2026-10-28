@@ -142,6 +142,7 @@ Spec §5.3, Decision 12. In a harness that declares `parallel` (`parallel.md`):
 - Only the task's own lane being busy blocks it (`RestoreGuard.run`'s `busy` option); other tasks go on.
 - **"Go back here"** (`hh:restore`) stays a whole-folder restore, so it undoes every task's later changes. It is refused while any open task runs an operation (`busy` is the board's `isBusy`, every lane): "A turn is running".
 - Edits a task swept into its "Before message" mid-task count as its own and are undone with it (PR decision).
+- **The app's own commits hold their own files only.** A task's note (`Note: …`), the person's data write (`Data: <collection>`), Sidekick's learning and decision note, and a material change (`Material: …`) commit just the files that change wrote (`saveAppChange`, `packages/shell/src/main/app-change.ts`; `History.commitPaths`). Plain mode keeps the whole-folder `save` (D0). So another running task's work never gets this task's trailer, and undoing this task never takes it back (`packages/shell/test/app-change.test.ts`).
 
 **D0.**
 - A harness without `parallel` or `jobs` writes the same commits as before: subjects, trailers, trees and order.

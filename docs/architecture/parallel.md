@@ -7,7 +7,13 @@ A harness that declares `parallel` lets the person keep several tasks open at on
 The shell picks a mode once, when it loads the harness: `hostMode(harness)` (`packages/shell/src/main/board-host.ts`) is `"board"` when the manifest declares `parallel` (`isConcurrent`), otherwise `"plain"`.
 
 - **Plain** is the app as it was: `createRuntime`, one `TaskManager`, one `TurnController`. No part-2 code runs.
-- **Board** builds one `HarnessWorkspace`, a `TaskBoard` (`task-board.ts`), a `TurnGate` (`turn-gate.ts`) and one lane per open task. `index.ts` branches on `host` (null in plain mode) where it builds the runtime, the turns and the tasks, and in the few handlers whose board behaviour differs: `hh:restoreTask`, the move's checkpoint, the caps save (`capsChanged`), `dropRuntime` and `interruptTasks`.
+- **Board** builds one `HarnessWorkspace`, a `TaskBoard` (`task-board.ts`), a `TurnGate` (`turn-gate.ts`) and one lane per open task. `index.ts` branches on `host` (null in plain mode) where it builds the runtime, the turns and the tasks, and in the handlers whose board behaviour differs:
+  - the runtime's life: `closeRuntime`, `dropRuntime`, `openHistory` (the shared workspace's history), `flushTurns`, `interruptTasks`, and the host built at startup (`buildBoardHost`, only when `hostMode(harness) === "board"`) and closed at quit (`closeAll`);
+  - between tasks: `betweenTasks` and the plugins' `takeRuntimeStale` (Decision 13), and `refreshInstructions` for the settings and the plugins (held for a gap, spec §10);
+  - IPC: `hh:saveConfig` (the caps, `capsChanged`), `hh:loadChat` (the focused task's chat and live turn), `startBlocked`, `hh:restoreTask` (undo by paths) and the `hh:tasks*` channels (refused in plain mode);
+  - the folder move: the checkpoint (`checkpointAllBeforeMove`), the turns' flush and `moveEnded`;
+  - attention: `sharedAttention` and the plugins' `attentionStoreFor`/`registerKnown`, the task attention (`buildTaskAttention`);
+  - the history of the app's own changes: a note, a person's data write, Sidekick's learning and decision note, and a material change go through `saveAppChange` (`app-change.ts`), which in board mode commits only their own files (see Undo).
 - `parallel: { tasks: 1 }` still uses the board: several tasks stay open, one turn runs at a time, so turns never overlap and every commit equals the plain app's (spec §5.4). A harness that wants today's app declares nothing.
 
 **D0.** A harness without `parallel` is byte for byte today's app:
@@ -103,6 +109,16 @@ A "Parallel tasks" section (`SettingsSheet.tsx`, `ParallelSection`) shows only i
 ## Undo
 
 In board mode "Undo this task" restores the task's own paths only, never another task's changes: its confirm is for the task alone, and a refusal shows in the History panel with the reason and the file. "Go back here" is refused while any task is busy. See `history.md`, "Undo in board mode".
+
+The commits that aren't a turn's never take another task's work either. In plain mode a note, a data write or a material change commits the whole folder, as it always did (D0). In board mode another task's turn may be writing the folder at that moment, and a whole-folder commit under this task's trailer would make that work this task's, so undoing this task would delete it. So board mode commits only the change's own files (`saveAppChange`, `packages/shell/src/main/app-change.ts`):
+- a task's checkpoint or closing note: the note file (the lane's `writeNote`/`saveHistory`, `BoardHostDeps.saveOwn`);
+- the person's data write (`Data: <collection>`) and Sidekick's learning: the collection's file (`dataPath`);
+- Sidekick's "Save as decision": its note file;
+- a material change: that scope's originals (`material/<scope>/`) and records (`.harness/material/<scope>/`).
+
+The person's own edits made between turns are no longer swept into these commits; the next turn's "Before message" takes them, as for any edit outside a turn.
+
+An answer to an input block is marked in the task's own chat file (`chats/<scope>/<task>.jsonl`). That rewrite runs one at a time with the conflict notices appended to the same file.
 
 ## Edge cases
 

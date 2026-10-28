@@ -6,13 +6,15 @@ export const JOB_BRIEF_CHARS = 20_000;
 const LABEL_CHARS = 80;
 
 const HIDDEN = new RegExp(HIDDEN_CHARS.source, "gu");
-/** The brief as prose: tab and newline kept, the rest of HIDDEN_CHARS gone (B12), cut to JOB_BRIEF_CHARS. */
+/** The first `n` code points of `t`: a cut never splits a surrogate pair. */
+const cut = (t: string, n: number) => Array.from(t).slice(0, n).join("");
+/** The brief as prose: tab and newline kept, the rest of HIDDEN_CHARS gone (B12); `briefOf` cuts it to JOB_BRIEF_CHARS. */
 const prose = (t: string) =>
   t
     .replace(/\r\n?|[\u2028\u2029]/g, "\n")
     .replace(/[^\t\n]+/g, (run) => run.replace(HIDDEN, ""))
-    .trim()
-    .slice(0, JOB_BRIEF_CHARS);
+    .trim();
+const briefOf = (t: string) => cut(prose(t), JOB_BRIEF_CHARS);
 /** A label on one plain line: controls and separators as spaces, hidden characters gone, cut to LABEL_CHARS. */
 const plain = (t: string) => {
   const line = t
@@ -20,7 +22,8 @@ const plain = (t: string) => {
     .replace(HIDDEN, "")
     .replace(/\s+/g, " ")
     .trim();
-  return line.length > LABEL_CHARS ? `${line.slice(0, LABEL_CHARS - 1)}…` : line;
+  const points = Array.from(line);
+  return points.length > LABEL_CHARS ? `${points.slice(0, LABEL_CHARS - 1).join("")}…` : line;
 };
 
 /**
@@ -54,6 +57,6 @@ export async function jobFirstMessage(o: {
       ? `With needs-you, name the action the person should start, one of: ${named.join(", ")}.`
       : "With needs-you, leave action out: this harness has no action to name.",
   ].join("\n");
-  const parts = [prose(o.brief), await load("notes", o.notesIndex), await load("data", o.dataContext), await load("material", o.materialContext), end];
+  const parts = [briefOf(o.brief), await load("notes", o.notesIndex), await load("data", o.dataContext), await load("material", o.materialContext), end];
   return parts.filter((p) => p.trim()).join("\n\n");
 }

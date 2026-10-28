@@ -76,6 +76,14 @@ describe("jobFirstMessage (parallel spec §8)", () => {
     expect(m).not.toContain("Evil");
     expect(m).toContain(`review (${"r".repeat(79)}…)`);
   });
+
+  it("cuts the brief and a label by code points, never splitting a surrogate pair", async () => {
+    const brief = await jobFirstMessage({ ...base, brief: `${"x".repeat(JOB_BRIEF_CHARS - 1)}😀😀` });
+    expect(brief.split("\n\n")[0]).toBe(`${"x".repeat(JOB_BRIEF_CHARS - 1)}😀`);
+    const m = await jobFirstMessage({ ...base, actions: { review: `${"r".repeat(78)}😀😀😀` } });
+    expect(m).toContain(`review (${"r".repeat(78)}😀…)`);
+    expect(m).not.toMatch(/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/u);
+  });
 });
 
 describe("notesIndexFor (shared with a task's first message)", () => {
@@ -101,6 +109,18 @@ describe("notesIndexFor (shared with a task's first message)", () => {
     expect(notes).toHaveBeenCalledWith("acme");
     expect(notes).toHaveBeenCalledWith(APP_SCOPE);
     expect(m.indexOf("own-note")).toBeLessThan(m.indexOf("## App-wide notes"));
+    expect(m).toBe(
+      [
+        buildNotesIndex([note("own-note")]),
+        buildNotesIndex([note("app-note")], { budgetTokens: 500, heading: "## App-wide notes", decisionsHeading: "## App-wide decisions", footer: null }),
+      ].join("\n\n"),
+    );
+  });
+  it("in a scope without notes of its own, the app-wide index alone, with its footer", async () => {
+    const notes = vi.fn(async (s?: string) => (s === APP_SCOPE ? [note("app-note")] : []));
+    expect(await notesIndexFor(notes, true, "acme")).toBe(
+      buildNotesIndex([note("app-note")], { budgetTokens: 500, heading: "## App-wide notes", decisionsHeading: "## App-wide decisions" }),
+    );
   });
 });
 

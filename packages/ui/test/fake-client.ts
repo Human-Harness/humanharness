@@ -53,6 +53,7 @@ import type {
   SidekickSetResult,
   SidekickSettingsPatch,
   SidekickState,
+  SidekickView,
   TaskTurnNotice,
   TaskView,
   TestResult,
@@ -598,6 +599,8 @@ export class FakeClient implements HarnessClient {
   sidekickPicked: string[] = [];
   /** What sidekick.checkOriginal answers. */
   sidekickOriginal: SidekickOriginal = "none";
+  /** What sidekick.list answers (the implicit default by default); saveSidekick, remove and reorder change it. */
+  sidekickList: SidekickView[] = [{ id: "sidekick", name: "Sidekick", mark: "spark", personality: "", purposes: [{ id: "prompt-coach" }, { id: "focus" }], order: 0 }];
   /** When set, sidekick.saveSidekick rejects with this message. */
   sidekickSaveFails: string | null = null;
   /** What the sidekick namespace was asked, in order (reads are not recorded). */
@@ -675,7 +678,22 @@ export class FakeClient implements HarnessClient {
     saveSidekick: async (def: SidekickDraftDef & { id?: string }, learned?: { text: string; level: "you" | "harness" }[]): Promise<SidekickInfo> => {
       this.sidekickCalls.push(["saveSidekick", def, learned]);
       if (this.sidekickSaveFails) throw new Error(this.sidekickSaveFails);
-      return { id: def.id ?? def.name.toLowerCase(), name: def.name, mark: def.mark };
+      const id = def.id ?? def.name.toLowerCase();
+      const old = this.sidekickList.find((k) => k.id === id);
+      const saved: SidekickView = { ...def, id, order: old?.order ?? this.sidekickList.length };
+      this.sidekickList = old ? this.sidekickList.map((k) => (k.id === id ? saved : k)) : [...this.sidekickList, saved];
+      return { id, name: def.name, mark: def.mark };
+    },
+    list: async () => structuredClone(this.sidekickList),
+    remove: async (id: string) => {
+      this.sidekickCalls.push(["remove", id]);
+      if (this.sidekickList.length <= 1) return { ok: false, message: "Keep at least one sidekick" };
+      this.sidekickList = this.sidekickList.filter((k) => k.id !== id);
+      return { ok: true };
+    },
+    reorder: async (ids: string[]) => {
+      this.sidekickCalls.push(["reorder", ids]);
+      this.sidekickList = ids.flatMap((id, order) => this.sidekickList.filter((k) => k.id === id).map((k) => ({ ...k, order })));
     },
     onChange: (l: (s: SidekickState) => void) => {
       this.sidekickListeners.add(l);

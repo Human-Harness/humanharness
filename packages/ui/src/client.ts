@@ -954,6 +954,12 @@ export interface HarnessClient {
      * import (or be the one it already has). Rejects when it can't be written.
      */
     saveSidekick(def: SidekickDraftDef & { id?: string }, learned?: { text: string; level: "you" | "harness" }[]): Promise<SidekickInfo>;
+    /** The person's sidekicks by order (Settings › Sidekicks); the implicit default alone when none was written. */
+    list(): Promise<SidekickView[]>;
+    /** Removes a sidekick, as the person; the last one stays (`ok: false` with why). */
+    remove(id: string): Promise<{ ok: boolean; message?: string }>;
+    /** Orders the sidekicks as `ids` (the higher one speaks when two could). */
+    reorder(ids: string[]): Promise<void>;
     onChange(listener: (state: SidekickState) => void): () => void;
   };
   /** The harness's setup steps (setup-steps spec). A harness with none answers no steps and refuses every change. */
@@ -1119,6 +1125,10 @@ export interface SidekickState {
   past: { id: string; kind: string; outcome: SidekickOutcome | "muted" | "timeout"; speaker: string }[];
   /** "N of M suggestions used" over the last 7 days (spec §8). */
   used: { used: number; of: number };
+  /** The person's sidekicks by order (Settings names the tab "Sidekicks" with two or more); absent from older mains. */
+  sidekicks?: SidekickInfo[];
+  /** The harness's places (spec §2a.5), for a custom purpose's moments; absent when it has none. */
+  places?: { id: string; label: string }[];
 }
 
 /**
@@ -1171,6 +1181,11 @@ export interface SidekickDraftDef {
   tier?: "light" | "standard" | "deep";
   preset?: string;
   defaultOn?: boolean;
+}
+/** A stored sidekick as Settings shows and edits it: its full definition and its place in the order. */
+export interface SidekickView extends SidekickDraftDef {
+  id: string;
+  order: number;
 }
 /**
  * Why an import gave no draft: a file in an engine's settings folder, too many files, one too big (paste too), not

@@ -126,6 +126,9 @@ const client: HarnessClient = {
     importDraft: (input) => ipcRenderer.invoke("hh:sidekickImportDraft", input),
     checkOriginal: (id) => ipcRenderer.invoke("hh:sidekickCheckOriginal", id),
     saveSidekick: (def, learned) => ipcRenderer.invoke("hh:sidekickSave", def, learned),
+    list: () => ipcRenderer.invoke("hh:sidekickList"),
+    remove: (id) => ipcRenderer.invoke("hh:sidekickRemove", id),
+    reorder: (ids) => ipcRenderer.invoke("hh:sidekickReorder", ids),
     onChange: (listener) => subscribe<SidekickState>("hh:sidekick", listener),
   },
   setupSteps: {

@@ -774,6 +774,47 @@
         "expired": "That choice of files is too old. Choose the files again."
       }
     },
+    "list": {
+      "title": "Sidekicks",
+      "new": "New sidekick",
+      "edit": "Edit {{name}}",
+      "up": "Move {{name}} up",
+      "down": "Move {{name}} down",
+      "remove": "Remove {{name}}",
+      "confirmRemove": "Remove {{name}}? What it learned stays until you forget it.",
+      "confirmYes": "Yes, remove it",
+      "orderHint": "When two could speak, the higher one does.",
+      "dailyOff": "Off by default, so it never gives the daily summary."
+    },
+    "editor": {
+      "name": "Name",
+      "mark": "Mark",
+      "personality": "Personality",
+      "personalityHint": "How it talks. Up to 1,500 characters.",
+      "count": "{{count}} / {{max}}",
+      "purposes": "Purposes",
+      "customText": "What it watches for",
+      "moments": "When it speaks",
+      "tier": "Model",
+      "tierDefault": "Default",
+      "save": "Save",
+      "cancel": "Cancel"
+    },
+    "moments": { "pre-send": "Before sending", "after-reply": "After the reply", "heads-up": "Heads-ups", "before-approve": "Before approving", "phase-change": "Phase change", "daily": "Daily" },
+    "kinds": {
+      "vague": "Vague words",
+      "missing-context": "Missing context",
+      "two-asks": "Two asks in one prompt",
+      "off-phase": "Off the phase",
+      "other": "Other suggestions",
+      "gap": "Gaps in the reply",
+      "next": "Next prompt",
+      "missing": "Missing before moving on",
+      "context": "Context near full",
+      "repeated": "Repeated asks",
+      "daily": "Daily summary"
+    },
+    "mutedRow": "{{name}} · {{kind}}",
     "models": { "label": "Sidekick", "hint": "Reviews your prompts before they go out" },
     "usage": "Sidekick: about {{tokens}} tokens"
   },

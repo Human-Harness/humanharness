@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { getEngine } from "@humanharness/engines";
 import type { SidekickAnswer } from "@humanharness/runtime";
 import type { SidekickRecord } from "@humanharness/harness-sdk";
+import type { SidekickState } from "@humanharness/ui/client";
 import type { SidekickEvent } from "@humanharness/workspace";
 import { createHash } from "node:crypto";
 import { SidekickController, type SidekickDeps } from "../src/main/sidekick";
@@ -1933,6 +1934,40 @@ describe("presets (spec §2a.7)", () => {
     expect(h.writes).toEqual([]);
     expect(h.record()).not.toHaveProperty("presetsOffered");
     expect(h.records().filter((r) => r.type === "sidekick")).toEqual([]);
+  });
+});
+
+describe("Settings › Sidekicks: list, remove, reorder (spec §8)", () => {
+  const RULO = { id: "rulo", type: "sidekick" as const, name: "Rulo", mark: "🦊", personality: "Direct.", purposes: [{ id: "mentor" as const }], order: 1, tier: "deep" as const };
+  const DEF = { id: "sidekick", type: "sidekick" as const, name: "Sidekick", mark: "spark", personality: "", purposes: [{ id: "prompt-coach" as const }, { id: "focus" as const }], order: 0 };
+
+  it("D0: no sidekick records → the implicit default alone, nothing written; state names it", async () => {
+    const h = harness({ record: on });
+    expect(await h.ctl.list()).toEqual([{ id: "sidekick", name: "Sidekick", mark: "spark", personality: "", purposes: [{ id: "prompt-coach" }, { id: "focus" }], order: 0 }]);
+    expect((await h.ctl.state()).sidekicks).toEqual([{ id: "sidekick", name: "Sidekick", mark: "spark" }]);
+    expect((await h.ctl.state()).places).toBeUndefined();
+    expect(h.writes).toEqual([]);
+  });
+
+  it("lists full definitions by order; state carries the infos and the harness's places", async () => {
+    const h = harness({ record: on, extra: [RULO, DEF], manifest: { default: "off", places: [{ id: "terminal", label: "Terminal", description: "CLI output." }] } });
+    const list = await h.ctl.list();
+    expect(list.map((k) => k.id)).toEqual(["sidekick", "rulo"]);
+    expect(list[1]).toEqual({ id: "rulo", name: "Rulo", mark: "🦊", personality: "Direct.", purposes: [{ id: "mentor" }], order: 1, tier: "deep" });
+    const st = await h.ctl.state();
+    expect(st.sidekicks?.map((k) => k.id)).toEqual(["sidekick", "rulo"]);
+    expect(st.places).toEqual([{ id: "terminal", label: "Terminal" }]);
+  });
+
+  it("reorder and remove write as the person and push the new state; the last one stays", async () => {
+    const h = harness({ record: on, extra: [DEF, RULO] });
+    await h.ctl.reorder(["rulo", "sidekick"]);
+    expect((await h.ctl.list()).map((k) => k.id)).toEqual(["rulo", "sidekick"]);
+    expect((h.states.at(-1) as SidekickState).sidekicks?.map((k) => k.id)).toEqual(["rulo", "sidekick"]);
+    await h.ctl.removeSidekick("rulo");
+    expect((h.states.at(-1) as SidekickState).sidekicks?.map((k) => k.id)).toEqual(["sidekick"]);
+    await expect(h.ctl.removeSidekick("sidekick")).rejects.toThrow("Keep at least one sidekick");
+    expect((await h.ctl.list()).map((k) => k.id)).toEqual(["sidekick"]);
   });
 });
 

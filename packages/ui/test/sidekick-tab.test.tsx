@@ -71,7 +71,8 @@ describe("Settings › Sidekick, learning (spec §6.3, §8)", () => {
     await renderIn("en", <SidekickTab client={c} onModels={() => {}} />);
     expect(await screen.findByText("3 of 8 suggestions used this week")).toBeTruthy();
     expect(screen.getByText("Not flagged")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Flag “vague” again" }));
+    expect(screen.getByText("Sidekick · Vague words")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Flag “Vague words” again" }));
     await waitFor(() => expect(c.sidekickCalls).toContainEqual(["unmute", "sidekick", "vague"]));
   });
 

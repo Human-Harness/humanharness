@@ -1,5 +1,5 @@
 import { sidekickRecordSchema } from "@humanharness/harness-sdk";
-import type { SidekickApproveCheck, SidekickInfo, SidekickImportInput, SidekickImportResult, SidekickLearned, SidekickOriginal, SidekickOutcome, SidekickPick, SidekickPlaceAnswer, SidekickPreset, SidekickReview, SidekickSetResult, SidekickState } from "@humanharness/ui/client";
+import type { SidekickApproveCheck, SidekickInfo, SidekickImportInput, SidekickImportResult, SidekickLearned, SidekickOriginal, SidekickOutcome, SidekickPick, SidekickPlaceAnswer, SidekickPreset, SidekickReview, SidekickSetResult, SidekickState, SidekickView } from "@humanharness/ui/client";
 import type { SidekickController } from "./sidekick";
 import type { SidekickInput } from "./sidekick-store";
 import { IMPORT_MAX_BYTES } from "./sidekick-import";
@@ -19,6 +19,11 @@ const MAX_PRESET_NAME = 40;
 /** A pick's token (pickFiles: 16 random bytes in hex). */
 const TOKEN = /^[0-9a-f]{32}$/;
 const IMPORT_FAILED: SidekickImportResult = { ok: false, reason: "failed" };
+/**
+ * How many sidekicks a person may have: a new one past this is refused, and a reorder names at most this many ids
+ * (so every order stays far below the record's 999).
+ */
+export const SIDEKICK_MAX = 20;
 
 /**
  * An import request: pasted text (at most IMPORT_MAX_BYTES characters; the controller counts bytes), a pick's token,
@@ -34,7 +39,7 @@ function importInput(v: unknown): SidekickImportInput | null {
 }
 
 type Handle = (channel: string, fn: (...args: never[]) => unknown) => void;
-type Ctl = Pick<SidekickController, "state" | "set" | "review" | "cancel" | "resolve" | "mute" | "unmute" | "saveDecision" | "learned" | "forget" | "forgetAll" | "editLearned" | "beforeApprove" | "cancelApprove" | "ask" | "presets" | "adoptPreset" | "pickFiles" | "importDraft" | "checkSidekick" | "saveSidekick">;
+type Ctl = Pick<SidekickController, "state" | "set" | "review" | "cancel" | "resolve" | "mute" | "unmute" | "saveDecision" | "learned" | "forget" | "forgetAll" | "editLearned" | "beforeApprove" | "cancelApprove" | "ask" | "presets" | "adoptPreset" | "pickFiles" | "importDraft" | "checkSidekick" | "saveSidekick" | "list" | "removeSidekick" | "reorder">;
 const MAX_ID = 80;
 const isId = (v: unknown): v is string => typeof v === "string" && v.length > 0 && v.length <= MAX_ID;
 /** Edits to the learned items: at most MAX_EDITS, each an id and a text of 1..MAX_LEARNED characters (not blank). */
@@ -163,7 +168,24 @@ export function registerSidekickIpc(handle: Handle, ctl: () => Ctl | null): void
     const d = sidekickInput(def);
     const l = learnedInput(learned);
     if (!d || !l) throw new Error("Not a sidekick to save");
+    if (d.id === undefined && (await c.list()).length >= SIDEKICK_MAX) throw new Error(`At most ${SIDEKICK_MAX} sidekicks`);
     return c.saveSidekick(d, l);
+  });
+  // Settings › Sidekicks (spec §8): the list, removing one and the order, as the person.
+  handle("hh:sidekickList", async (): Promise<SidekickView[]> => (await ctl()?.list().catch(() => [])) ?? []);
+  handle("hh:sidekickRemove", async (id: unknown): Promise<{ ok: boolean; message?: string }> => {
+    const c = ctl();
+    if (!c) return { ok: false, message: "Sidekick is not available" };
+    if (!isId(id)) return { ok: false, message: "Not a sidekick" };
+    // The store's refusal (the last one stays) reaches the person as its message.
+    return c.removeSidekick(id).then(
+      () => ({ ok: true }),
+      (err: unknown) => ({ ok: false, message: err instanceof Error ? err.message : String(err) }),
+    );
+  });
+  handle("hh:sidekickReorder", async (ids: unknown) => {
+    if (!Array.isArray(ids) || ids.length === 0 || ids.length > SIDEKICK_MAX || !ids.every(isId)) return;
+    await ctl()?.reorder(ids);
   });
   handle("hh:sidekickEditLearned", async (changes: unknown) => {
     if (!isEdits(changes)) return;

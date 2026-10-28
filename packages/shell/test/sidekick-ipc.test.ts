@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { registerSidekickIpc } from "../src/main/sidekick-ipc";
+import { SIDEKICK_MAX, registerSidekickIpc } from "../src/main/sidekick-ipc";
 
 function wire(available = true) {
   const handlers = new Map<string, (...args: never[]) => unknown>();
@@ -220,10 +220,13 @@ describe("sidekick IPC: presets", () => {
 });
 
 describe("sidekick IPC: saveSidekick", () => {
-  function saveWire() {
+  function saveWire(count = 1) {
     const handlers = new Map<string, (...args: never[]) => unknown>();
     const calls: unknown[][] = [];
-    const ctl = { saveSidekick: async (def: unknown, learned: unknown) => (calls.push([def, learned]), { id: "rulo", name: "Rulo", mark: "🦊" }) };
+    const ctl = {
+      saveSidekick: async (def: unknown, learned: unknown) => (calls.push([def, learned]), { id: "rulo", name: "Rulo", mark: "🦊" }),
+      list: async () => Array.from({ length: count }, (_, i) => ({ id: `k${i}` })),
+    };
     registerSidekickIpc(
       (ch, fn) => void handlers.set(ch, fn),
       () => ctl as never,
@@ -259,6 +262,60 @@ describe("sidekick IPC: saveSidekick", () => {
     ];
     for (const args of bad) await expect(w.call("hh:sidekickSave", ...args)).rejects.toThrow();
     expect(w.calls).toEqual([]);
+  });
+});
+
+describe("sidekick IPC: the list, remove and reorder (Settings › Sidekicks)", () => {
+  function listWire(ctl: Record<string, unknown> | null) {
+    const handlers = new Map<string, (...args: never[]) => unknown>();
+    registerSidekickIpc(
+      (ch, fn) => void handlers.set(ch, fn),
+      () => ctl as never,
+    );
+    return (ch: string, ...args: unknown[]) => (handlers.get(ch) as (...a: unknown[]) => unknown)(...args);
+  }
+
+  it("passes valid requests through; the store's refusal comes back as its message", async () => {
+    const calls: unknown[][] = [];
+    const call = listWire({
+      list: async () => [{ id: "sidekick", name: "Sidekick", mark: "spark", personality: "", purposes: [{ id: "prompt-coach" }], order: 0 }],
+      removeSidekick: async (id: string) => {
+        calls.push(["remove", id]);
+        if (id === "sidekick") throw new Error("Keep at least one sidekick");
+      },
+      reorder: async (ids: unknown) => void calls.push(["reorder", ids]),
+    });
+    expect(await call("hh:sidekickList")).toHaveLength(1);
+    expect(await call("hh:sidekickRemove", "rulo")).toEqual({ ok: true });
+    expect(await call("hh:sidekickRemove", "sidekick")).toEqual({ ok: false, message: "Keep at least one sidekick" });
+    await call("hh:sidekickReorder", ["rulo", "sidekick"]);
+    expect(calls).toEqual([["remove", "rulo"], ["remove", "sidekick"], ["reorder", ["rulo", "sidekick"]]]);
+  });
+
+  it("refuses malformed requests; a reorder names at most SIDEKICK_MAX ids", async () => {
+    const calls: unknown[][] = [];
+    const call = listWire({ removeSidekick: async (id: unknown) => void calls.push(["remove", id]), reorder: async (ids: unknown) => void calls.push(["reorder", ids]), list: async () => Promise.reject(new Error("boom")) });
+    expect(await call("hh:sidekickRemove", 7)).toMatchObject({ ok: false });
+    expect(await call("hh:sidekickRemove", "x".repeat(81))).toMatchObject({ ok: false });
+    for (const bad of [null, "rulo", [], [7], ["x".repeat(81)], Array.from({ length: SIDEKICK_MAX + 1 }, (_, i) => `k${i}`)]) await call("hh:sidekickReorder", bad);
+    expect(calls).toEqual([]);
+    expect(await call("hh:sidekickList")).toEqual([]);
+    expect(await listWire(null)("hh:sidekickList")).toEqual([]);
+    expect(await listWire(null)("hh:sidekickRemove", "rulo")).toMatchObject({ ok: false });
+  });
+
+  it("a new sidekick past SIDEKICK_MAX is refused; editing one at the cap still saves", async () => {
+    const handlers = new Map<string, (...args: never[]) => unknown>();
+    const calls: unknown[] = [];
+    registerSidekickIpc(
+      (ch, fn) => void handlers.set(ch, fn),
+      () => ({ saveSidekick: async (def: unknown) => (calls.push(def), { id: "rulo", name: "Rulo", mark: "🦊" }), list: async () => Array.from({ length: SIDEKICK_MAX }, (_, i) => ({ id: `k${i}` })) }) as never,
+    );
+    const call = (ch: string, ...args: unknown[]) => (handlers.get(ch) as (...a: unknown[]) => unknown)(...args);
+    const def = { name: "Rulo", mark: "🦊", personality: "", purposes: [{ id: "mentor" }] };
+    await expect(call("hh:sidekickSave", def)).rejects.toThrow(/At most/);
+    await call("hh:sidekickSave", { ...def, id: "k1" });
+    expect(calls).toEqual([{ ...def, id: "k1" }]);
   });
 });
 

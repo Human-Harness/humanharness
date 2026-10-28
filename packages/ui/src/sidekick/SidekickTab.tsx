@@ -4,16 +4,23 @@ import { Segmented } from "../chrome";
 import type { HarnessClient, SidekickSettings, SidekickSettingsPatch } from "../client";
 import { shownLanguage } from "../language";
 import { LearnedList } from "./LearnedList";
+import { PresetOffer } from "./PresetOffer";
+import { SidekickList } from "./SidekickList";
 import { useSidekick } from "./useSidekick";
 
 type Wait = "6" | "10" | "always";
 type Cap = "20000" | "50000" | "none";
 
-/** Settings › Sidekick (spec §8, mockup board 6), the share used, the muted kinds and what Sidekick learned. Each change saves at once. */
+/**
+ * Settings › Sidekick(s) (spec §8, mockup board 6): on/off and the moments, the share used, the muted kinds, the
+ * harness's presets (while any is not adopted, spec §2a.7), the sidekicks, and what they learned. Each change saves at once.
+ */
 export function SidekickTab({ client, onModels }: { client: HarnessClient; onModels: () => void }) {
   const { t, i18n } = useTranslation();
   const state = useSidekick(client, true);
   const [failed, setFailed] = useState<string | null>(null);
+  /** "Not now" hides the presets until Settings opens again (it stays here while one is not adopted). */
+  const [presetsHidden, setPresetsHidden] = useState(false);
   const onHint = useId();
   const preSendHint = useId();
   const afterHint = useId();
@@ -23,6 +30,9 @@ export function SidekickTab({ client, onModels }: { client: HarnessClient; onMod
   const s = state.settings;
   // One row per muted kind; with several sidekicks the same kind can show twice (part 1 has only one).
   const muted = Object.entries(s.muted).flatMap(([sidekick, kinds]) => kinds.map((kind) => [sidekick, kind] as const));
+  // A kind's label where one exists (else the kind itself); a row names its sidekick (several may mute the same kind).
+  const kindLabel = (kind: string) => t(`sidekick.kinds.${kind}`, { defaultValue: kind });
+  const nameOf = (id: string) => state.sidekicks?.find((k) => k.id === id)?.name ?? (id === state.info.id ? state.info.name : id);
   const save = (patch: SidekickSettingsPatch) => {
     setFailed(null);
     client.sidekick.set(patch).then(
@@ -130,13 +140,13 @@ export function SidekickTab({ client, onModels }: { client: HarnessClient; onMod
           <ul className="hh-rows hh-sk-muted">
             {muted.map(([sidekick, kind]) => (
               <li key={`${sidekick}/${kind}`} className="hh-row">
-                <span className="hh-row-label">{kind}</span>
+                <span className="hh-row-label">{t("sidekick.mutedRow", { name: nameOf(sidekick), kind: kindLabel(kind) })}</span>
                 <button
                   type="button"
                   className="hh-link"
                   onClick={() => void client.sidekick.unmute(sidekick, kind).catch((err: unknown) => setFailed(err instanceof Error ? err.message : String(err)))}
                 >
-                  {t("sidekick.settings.unmute", { kind })}
+                  {t("sidekick.settings.unmute", { kind: kindLabel(kind) })}
                 </button>
               </li>
             ))}
@@ -144,6 +154,9 @@ export function SidekickTab({ client, onModels }: { client: HarnessClient; onMod
         </section>
       )}
       {failed !== null && <p role="alert">{t("sidekick.settings.failed", { message: failed })}</p>}
+      {/* Always offered here while one is not adopted; `presetsOffered` only gates the panel's one-time offer. */}
+      {!presetsHidden && <PresetOffer client={client} onDone={() => setPresetsHidden(true)} />}
+      <SidekickList client={client} places={state.places} />
       <LearnedList client={client} />
     </div>
   );

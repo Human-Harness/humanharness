@@ -14,7 +14,7 @@ import {
   sidekickTips,
 } from "@humanharness/harness-sdk";
 import type { SidekickAnswer, SidekickSessionOptions } from "@humanharness/runtime";
-import type { SidekickApproveCheck, SidekickCard, SidekickHeadsUp, SidekickImportInput, SidekickImportResult, SidekickInfo, SidekickLearned, SidekickOriginal, SidekickOutcome, SidekickPick, SidekickPlaceAnswer, SidekickPreset, SidekickReview, SidekickSetResult, SidekickSettings, SidekickSettingsPatch, SidekickSource, SidekickState } from "@humanharness/ui/client";
+import type { SidekickApproveCheck, SidekickCard, SidekickHeadsUp, SidekickImportInput, SidekickImportResult, SidekickInfo, SidekickLearned, SidekickOriginal, SidekickOutcome, SidekickPick, SidekickPlaceAnswer, SidekickPreset, SidekickReview, SidekickSetResult, SidekickSettings, SidekickSettingsPatch, SidekickSource, SidekickState, SidekickView } from "@humanharness/ui/client";
 import {
   APP_SCOPE,
   MAIN_SCOPE,
@@ -311,6 +311,9 @@ export class SidekickController {
         .catch(() => null);
       if (p) tier = p.tier;
     }
+    // A read failure leaves the list out: the state still loads.
+    const sidekicks = await this.d.store.sidekicks().catch(() => null);
+    const places = this.d.manifest?.places ?? [];
     const status: SidekickState["status"] = !settings.on
       ? "off"
       : this.running
@@ -333,6 +336,8 @@ export class SidekickController {
       past: this.past.key === (task?.id ?? NO_TASK) ? [...this.past.items] : [],
       used: usedShare(events.filter((e) => Date.parse(e.at) >= since)),
       ...(this.notice ? { notice: this.notice } : {}),
+      ...(sidekicks ? { sidekicks: sidekicks.map(infoOf) } : {}),
+      ...(places.length ? { places: places.map((p) => ({ id: p.id, label: p.label })) } : {}),
     };
   }
 
@@ -486,6 +491,23 @@ export class SidekickController {
     const saved = await this.d.store.saveSidekick(def);
     await this.push();
     return { id: saved.id, name: saved.name, mark: saved.mark };
+  }
+
+  /** Settings › Sidekicks: every sidekick's full definition, by order (the implicit default alone when none is written). */
+  async list(): Promise<SidekickView[]> {
+    return (await this.d.store.sidekicks()).map((k) => structuredClone(k));
+  }
+
+  /** Removes a sidekick as the person (its scope records and muted kinds go too); the store refuses the last one. */
+  async removeSidekick(id: string): Promise<void> {
+    await this.d.store.removeSidekick(id);
+    await this.push();
+  }
+
+  /** The person's order (spec §2a.3: the higher one speaks when two could). Ids it doesn't know are ignored. */
+  async reorder(ids: readonly string[]): Promise<void> {
+    await this.d.store.reorder(ids);
+    await this.push();
   }
 
   /**

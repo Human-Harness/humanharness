@@ -1,48 +1,11 @@
-import { constants as fsConstants, promises as fs } from "node:fs";
 import path from "node:path";
-import { type FixtureExchange, fixtureTransport, parseFixture } from "@humanharness/harness-sdk/plugin-fixtures";
-import type { runFile } from "@humanharness/shell/plugins";
+import { fixtureTransport } from "@humanharness/harness-sdk/plugin-fixtures";
+import { readPluginFixtures, type runFile } from "@humanharness/shell/plugins";
 import { CliError } from "./cli";
 import { type RunReport, readBuiltManifest, runSource } from "./plugin-run";
 
 /** P12, printed once per run before any plugin code runs. */
 export const P12_NOTE = "Note: plugin code runs in this Node process, not in the app's sandbox. Run only plugins you trust.";
-
-/** The app's fixture caps (Decision 14): at most this many files of at most this size per source. */
-const FIXTURE_FILES = 200;
-const FIXTURE_BYTES = 10 * 1024 * 1024;
-
-/**
- * `fixtures/<source>/*.json` in file-name order, as the app's fixture mode reads them: links aren't followed, and a
- * file that isn't a valid exchange is skipped with a line in `skipped`. A missing folder is no fixtures.
- */
-export async function readFixtures(dir: string, source: string, skipped: string[] = []): Promise<FixtureExchange[]> {
-  const root = path.join(dir, "fixtures");
-  const folder = path.join(root, source);
-  const isDir = async (p: string) => (await fs.lstat(p).catch(() => null))?.isDirectory() === true;
-  if (!(await isDir(root)) || !(await isDir(folder))) return [];
-  const names = (await fs.readdir(folder, { withFileTypes: true }).catch(() => []))
-    .filter((d) => d.isFile() && d.name.endsWith(".json"))
-    .map((d) => d.name)
-    .sort()
-    .slice(0, FIXTURE_FILES);
-  const out: FixtureExchange[] = [];
-  for (const name of names) {
-    let file: Awaited<ReturnType<typeof fs.open>> | null = null;
-    try {
-      file = await fs.open(path.join(folder, name), fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0));
-      const st = await file.stat();
-      if (!st.isFile()) throw new Error("not a file");
-      if (st.size > FIXTURE_BYTES) throw new Error("larger than 10 MB");
-      out.push(parseFixture(JSON.parse(await file.readFile("utf8"))));
-    } catch (err) {
-      skipped.push(`fixtures/${source}/${name} skipped: ${err instanceof Error ? err.message.split("\n")[0] : String(err)}`);
-    } finally {
-      await file?.close().catch(() => undefined);
-    }
-  }
-  return out;
-}
 
 /** A fixture run's keys: each one is `fixture-<id>`, so no real key is ever asked for or sent. */
 export async function fixtureSecrets(ids: string[]): Promise<Record<string, string>> {
@@ -59,8 +22,10 @@ export async function testPlugin(dir: string, o: { source?: string; now?: Date }
   if (o.source !== undefined && !ids.includes(o.source)) throw new CliError(`--source: "${o.source}" is not a source of ${m.id} (${ids.join(", ") || "none"}).`);
   const reports: RunReport[] = [];
   for (const source of o.source !== undefined ? [o.source] : ids) {
+    // The app's fixture reader (one copy, same caps and link rules); a skipped file is a warn line in the report.
     const skipped: string[] = [];
-    const transport = fixtureTransport(await readFixtures(dir, source, skipped)) as unknown as { fetch: typeof fetch; run: typeof runFile };
+    const note = (message: string, err?: unknown) => skipped.push(err === undefined ? message : `${message}: ${err instanceof Error ? err.message.split("\n")[0] : String(err)}`);
+    const transport = fixtureTransport(await readPluginFixtures(path.join(dir, "fixtures"), source, note)) as unknown as { fetch: typeof fetch; run: typeof runFile };
     const report = await runSource({
       dir,
       source,

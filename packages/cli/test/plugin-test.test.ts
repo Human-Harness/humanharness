@@ -9,7 +9,7 @@ import { CLI_DIR, shellDir } from "../src/paths";
 import { buildPlugin } from "../src/plugin-build";
 import { pluginContext, runSource } from "../src/plugin-run";
 import { fixtureTransport, parseFixture } from "@humanharness/harness-sdk/plugin-fixtures";
-import { P12_NOTE, fixtureSecrets, readFixtures, testPlugin } from "../src/plugin-test";
+import { P12_NOTE, fixtureSecrets, testPlugin } from "../src/plugin-test";
 import { memoryIo, tempRoot } from "./helpers";
 
 const CONFIG = `import { definePlugin, z } from "@humanharness/harness-sdk";
@@ -167,12 +167,10 @@ describe("humanharness plugin test", () => {
 
   it("skips a fixture that isn't a valid exchange, with a warning in the log", async () => {
     const dir = withFixtures("bad", { "queues/001.json": QUEUES, "queues/002.json": GH, "queues/003.json": "{not json" });
-    const skipped: string[] = [];
-    expect(await readFixtures(dir, "queues", skipped)).toHaveLength(2);
-    expect(skipped[0]).toMatch(/^fixtures\/queues\/003\.json skipped/);
     const [r] = await testPlugin(dir, { source: "queues" });
     expect(r.ok).toBe(true);
-    expect(r.log[0]).toMatch(/^warn: fixtures\/queues\/003\.json skipped/);
+    expect(r.log[0]).toMatch(/^warn: fixtures\/queues\/003\.json skipped: /);
+    expect(r.log.filter((l) => l.startsWith("warn: fixtures/"))).toHaveLength(1);
   });
 
   it("an undeclared host is refused by the broker, as in the app", async () => {

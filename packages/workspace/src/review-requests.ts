@@ -11,7 +11,7 @@ import {
   reviewStatus,
   sections,
 } from "@humanharness/harness-sdk";
-import { type OwnReason, type ReviewLocks, ReviewRefused, blobId, loadReview, newReview, readOwnDocument, saveReview } from "./reviews";
+import { type OwnReason, type ReviewLocks, ReviewRefused, blobId, canonicalDocumentPath, loadReview, newReview, readOwnDocument, saveReview } from "./reviews";
 
 /** At most this many comments in one record. */
 export const MAX_COMMENTS = 500;
@@ -58,7 +58,9 @@ export async function runReviewRequest(ctx: ReviewContext, request: unknown): Pr
   if (!request || typeof request !== "object") throw new ReviewRefused("Bad request");
   const r = request as Record<string, unknown>;
   if (typeof r.path !== "string" || refusedShape(r.path)) throw documentProblem(typeof r.path === "string" ? r.path : "document", "outside");
-  const doc = path.posix.normalize(r.path);
+  // One key for the record, the lock and `path`, whatever spelling the agent used.
+  const doc = await canonicalDocumentPath(ctx.base, r.path);
+  if (doc === null) throw documentProblem(r.path, "outside");
   const at = () => (ctx.now?.() ?? new Date()).toISOString();
   if (r.op === "ask") return ask(ctx, doc, r, at);
   if (r.op === "reply") return reply(ctx, doc, r, at);

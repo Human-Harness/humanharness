@@ -1,7 +1,8 @@
-import nodeFs, { type FSWatcher, constants, promises as fs } from "node:fs";
+import nodeFs, { type FSWatcher, promises as fs } from "node:fs";
 import path from "node:path";
 import { refusedShape } from "@humanharness/harness-sdk/documents";
 import type { DocumentRead } from "@humanharness/ui/client";
+import { type CappedRead, readCapped } from "@humanharness/workspace";
 import { stillSafe } from "./open-path";
 
 /** Over this the reader refuses a document (Open questions Q6). */
@@ -38,34 +39,8 @@ export async function locate(rel: unknown, roots: string[]): Promise<Located> {
   return { ok: false, reason: inside ? "missing" : "outside" };
 }
 
-/**
- * The bytes of `file` (from `locate`), re-checked right before it is opened, opened without following a link and
- * without blocking (a FIFO swapped in can't hang main), checked again once open (the handle is still the file at that
- * path, which is still inside a root), and read only up to `max` bytes. Null when it is no longer safe, not a regular
- * file, or a hard link (`nlink > 1`: its other names may be outside every root); the size when it is too big.
- */
-async function readCapped(file: string, roots: string[], max: number): Promise<{ bytes: Buffer; mtime: Date } | { size: number } | null> {
-  if (!(await stillSafe(file, roots))) return null;
-  const handle = await fs.open(file, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK).catch(() => null);
-  if (!handle) return null;
-  try {
-    const stat = await handle.stat();
-    if (!stat.isFile() || stat.nlink > 1) return null;
-    const there = await fs.stat(file).catch(() => null);
-    if (!there || there.dev !== stat.dev || there.ino !== stat.ino || !(await stillSafe(file, roots))) return null;
-    if (stat.size > max) return { size: stat.size };
-    const bytes = Buffer.alloc(stat.size);
-    let read = 0;
-    while (read < bytes.length) {
-      const { bytesRead } = await handle.read(bytes, read, bytes.length - read, read);
-      if (bytesRead === 0) break;
-      read += bytesRead;
-    }
-    return { bytes: bytes.subarray(0, read), mtime: stat.mtime };
-  } finally {
-    await handle.close();
-  }
-}
+/** The bytes of `file` (from `locate`), read by the workspace's `readCapped` while it stays inside a root. */
+const readCappedIn = (file: string, roots: string[], max: number): Promise<CappedRead> => readCapped(file, max, () => stillSafe(file, roots));
 
 /** A Markdown document's text (§5.3). Only `.md`/`.markdown`; checked again right before it is read. Never writes. */
 export async function readDocument(rel: unknown, roots: string[]): Promise<DocumentRead> {
@@ -74,7 +49,7 @@ export async function readDocument(rel: unknown, roots: string[]): Promise<Docum
   const at = await locate(rel, roots);
   if (!at.ok) return at;
   if (!MARKDOWN.test(at.file)) return { ok: false, reason: "not-markdown" };
-  const got = await readCapped(at.file, roots, MAX_DOCUMENT_BYTES);
+  const got = await readCappedIn(at.file, roots, MAX_DOCUMENT_BYTES);
   if (!got) return { ok: false, reason: "outside" };
   if (!("bytes" in got)) return { ok: false, reason: "too-large", size: got.size };
   return { ok: true, text: got.bytes.toString("utf8"), mtime: got.mtime.toISOString(), size: got.bytes.length };
@@ -87,7 +62,7 @@ export async function readImage(rel: unknown, roots: string[]): Promise<string |
   if (!type) return null;
   const at = await locate(rel, roots);
   if (!at.ok || IMAGE_TYPES[path.extname(at.file).toLowerCase()] !== type) return null;
-  const got = await readCapped(at.file, roots, MAX_IMAGE_BYTES);
+  const got = await readCappedIn(at.file, roots, MAX_IMAGE_BYTES);
   if (!got || !("bytes" in got)) return null;
   return `data:${type};base64,${got.bytes.toString("base64")}`;
 }

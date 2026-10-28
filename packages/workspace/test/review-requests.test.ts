@@ -101,3 +101,15 @@ describe("guards", () => {
     expect(await loadReview(base, "specs/spec.md")).toBeNull();
   });
 });
+
+describe("one key per document", () => {
+  it("every spelling of the path shares one record, one lock and one `path`", async () => {
+    const { base, ctx, changed } = setup();
+    expect(await runReviewRequest(ctx, ask({ path: "./specs/spec.md" }))).toEqual({ id: "c1" });
+    expect(await runReviewRequest(ctx, ask({ path: "specs//spec.md" }))).toEqual({ id: "c2" });
+    expect(await runReviewRequest(ctx, ask({ path: "x/../specs/spec.md" }))).toEqual({ id: "c3" });
+    expect((await loadReview(base, "specs/spec.md"))?.path).toBe("specs/spec.md");
+    expect(changed).toEqual(["specs/spec.md", "specs/spec.md", "specs/spec.md"]);
+    expect(await runReviewRequest(ctx, { op: "read", path: "./specs/./spec.md" })).toMatchObject({ path: "specs/spec.md" });
+  });
+});

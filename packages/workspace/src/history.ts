@@ -23,9 +23,11 @@ const AUTHOR = { name: "Human Harness", email: "history@humanharness.local" };
 
 /**
  * The temp files `writeNote`, the data store and the review records rename into place (`<file>.md.<uuid>.tmp`,
- * `<file>.json.<uuid>.tmp`); the person's own `.tmp` files stay tracked.
+ * `<file>.json.<uuid>.tmp`), and the hidden `.<name>.md.<uuid>.tmp` a review's answer renames over a document (left
+ * behind only by a crash); the person's own `.tmp` files stay tracked.
  */
 const isAppTempFile = (file: string): boolean =>
+  /(^|\/)\.[^/]+\.md\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.tmp$/i.test(file) ||
   (file.startsWith(NOTES_PREFIX) && /\.md\.[0-9a-f-]+\.tmp$/.test(file.slice(NOTES_PREFIX.length))) ||
   (file.startsWith(DATA_PREFIX) && /\.json\.[0-9a-f-]+\.tmp$/.test(file.slice(DATA_PREFIX.length))) ||
   (file.startsWith(REVIEWS_PREFIX) && /\.json\.[0-9a-f-]+\.tmp$/.test(file.slice(REVIEWS_PREFIX.length)));
@@ -453,7 +455,9 @@ export class History {
       const { blob } = await git.readBlob({ fs, gitdir: this.gitdir, oid });
       return Buffer.from(blob).toString("utf8");
     } catch (err) {
-      if ((err as { code?: string }).code === "NotFoundError") return null;
+      // Not there, or a commit or tree id rather than a blob's.
+      const code = (err as { code?: string }).code;
+      if (code === "NotFoundError" || code === "ObjectTypeError") return null;
       throw err;
     }
   }

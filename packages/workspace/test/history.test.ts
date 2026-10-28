@@ -685,9 +685,25 @@ describe("review records (review spec §3, §7 undo)", () => {
     const history = new History(folder, `${folder}.git`);
     await history.init();
     fs.writeFileSync(path.join(folder, "a.md"), "approved\n");
-    await history.save("Approved: a.md");
+    const sha = (await history.save("Approved: a.md"))!;
     expect(await history.readBlob(blobId(Buffer.from("approved\n")))).toBe("approved\n");
     expect(await history.readBlob("f".repeat(40))).toBeNull();
     expect(await history.readBlob("nope")).toBeNull();
+    // A commit's or a tree's id is not a blob's.
+    const { commit } = await git.readCommit({ fs, gitdir: `${folder}.git`, oid: sha });
+    expect(await history.readBlob(sha)).toBeNull();
+    expect(await history.readBlob(commit.tree)).toBeNull();
+  });
+
+  it("skips the temp file an answer's swap leaves by a crash, not the person's own .tmp files", async () => {
+    const folder = fs.mkdtempSync(path.join(os.tmpdir(), "hh-hist-swap-"));
+    const history = new History(folder, `${folder}.git`, [".harness/"], appHistoryKeep(false));
+    await history.init();
+    fs.mkdirSync(path.join(folder, "specs"));
+    fs.writeFileSync(path.join(folder, "specs", "a.md"), "a");
+    fs.writeFileSync(path.join(folder, "specs", ".a.md.0b1c2d3e-aaaa-bbbb-cccc-123456789abc.tmp"), "half");
+    fs.writeFileSync(path.join(folder, "specs", "draft.md.tmp"), "mine");
+    const first = (await history.save("one"))!;
+    expect((await history.changes(null, first)).map((c) => c.path).sort()).toEqual(["specs/a.md", "specs/draft.md.tmp"]);
   });
 });

@@ -10,7 +10,7 @@ import { historyKeep, materialAppState, materialItems, materialRecommended, open
 const material = { accepts: ["text", "pdf"] as ("text" | "pdf")[], grounding: { default: "mixed" as const, personCanChange: true } };
 
 describe("D0: a harness without material", () => {
-  it("keeps today's history keep list; with material the registry is kept too", () => {
+  it("keeps the notes, the data and the review records (none without reviews, D0); with material the registry too", () => {
     expect(historyKeep({})).toEqual([NOTES_PREFIX, DATA_PREFIX, REVIEWS_PREFIX]);
     expect(historyKeep({ material })).toEqual([NOTES_PREFIX, DATA_PREFIX, REVIEWS_PREFIX, MATERIAL_KEEP]);
   });

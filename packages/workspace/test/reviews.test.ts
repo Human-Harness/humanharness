@@ -4,7 +4,7 @@ import path from "node:path";
 import git from "isomorphic-git";
 import { afterAll, describe, expect, it } from "vitest";
 import type { Review } from "@humanharness/harness-sdk";
-import { ReviewLocks, ReviewRefused, blobId, loadReview, newReview, readOwnDocument, reviewSummarySync, saveReview, writeOwnDocument } from "../src";
+import { MAX_REVIEW_DOCUMENT_BYTES, ReviewLocks, ReviewRefused, blobId, canonicalDocumentPath, loadReview, newReview, readOwnDocument, reviewSummarySync, saveReview, writeOwnDocument } from "../src";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-reviews-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -38,6 +38,43 @@ describe("readOwnDocument", () => {
     expect(await readOwnDocument(f, "hard.md")).toEqual({ ok: false, reason: "outside" });
     expect(await readOwnDocument(f, "specs/a.txt")).toEqual({ ok: false, reason: "not-markdown" });
     expect(await readOwnDocument(f, "specs/b.md")).toEqual({ ok: false, reason: "missing" });
+    // `.HARNESS` names the same folder on a disk that ignores case, and is refused on any disk.
+    expect(await readOwnDocument(f, ".HARNESS/n.md")).toEqual({ ok: false, reason: "outside" });
+  });
+
+  it("refuses a document over the size a review takes", async () => {
+    const f = folder();
+    fs.writeFileSync(path.join(f, "big.md"), Buffer.alloc(MAX_REVIEW_DOCUMENT_BYTES + 1, 0x61));
+    expect(await readOwnDocument(f, "big.md")).toEqual({ ok: false, reason: "too-large" });
+  });
+});
+
+describe("canonicalDocumentPath", () => {
+  it("gives one key for every spelling of a document", async () => {
+    const f = folder();
+    for (const p of ["specs/a.md", "./specs/a.md", "specs//a.md", "x/../specs/a.md", "specs/./a.md"]) {
+      expect(await canonicalDocumentPath(f, p)).toBe("specs/a.md");
+      expect(await readOwnDocument(f, p)).toMatchObject({ ok: true, path: "specs/a.md" });
+    }
+    // A missing document keeps the name asked, without the extra parts.
+    expect(await canonicalDocumentPath(f, "./specs/new.md")).toBe("specs/new.md");
+    expect(await canonicalDocumentPath(f, "../a.md")).toBeNull();
+  });
+
+  it("gives the name as stored on a disk that ignores case", async () => {
+    const f = folder();
+    if (!fs.existsSync(path.join(f, "SPECS", "A.MD"))) return; // a case-sensitive disk: nothing to fold
+    expect(await canonicalDocumentPath(f, "SPECS/A.MD")).toBe("specs/a.md");
+    expect(await readOwnDocument(f, "SPECS/A.MD")).toMatchObject({ ok: true, path: "specs/a.md" });
+  });
+
+  it("the record refuses any other spelling, so it never splits", async () => {
+    const f = folder();
+    for (const p of ["./specs/a.md", "specs//a.md", "x/../specs/a.md"]) {
+      await expect(saveReview(f, newReview(p, null))).rejects.toBeInstanceOf(ReviewRefused);
+      await expect(loadReview(f, p)).rejects.toBeInstanceOf(ReviewRefused);
+    }
+    expect(fs.existsSync(path.join(f, ".harness"))).toBe(false);
   });
 });
 
@@ -50,6 +87,31 @@ describe("writeOwnDocument", () => {
     expect(fs.readFileSync(path.join(f, "specs", "a.md"), "utf8")).toBe("## Scope\n\nBy colour.\n");
     expect(await writeOwnDocument(f, "specs/a.md", first.bytes, "again")).toEqual({ ok: false, reason: "changed" });
     expect(fs.readdirSync(path.join(f, "specs"))).toEqual(["a.md"]);
+  });
+
+  it("keeps the file's mode, past the umask", async () => {
+    const f = folder();
+    const file = path.join(f, "specs", "a.md");
+    fs.chmodSync(file, 0o666);
+    const first = await readOwnDocument(f, "specs/a.md");
+    if (!first.ok) throw new Error();
+    expect(await writeOwnDocument(f, "specs/a.md", first.bytes, "x\n")).toMatchObject({ ok: true });
+    expect(fs.statSync(file).mode & 0o777).toBe(0o666);
+  });
+
+  it("refuses a link, a hard link and a text over the size a review takes", async () => {
+    const f = folder();
+    const outside = fs.mkdtempSync(path.join(root, "out-"));
+    fs.writeFileSync(path.join(outside, "x.md"), "x");
+    fs.symlinkSync(path.join(outside, "x.md"), path.join(f, "link.md"));
+    fs.linkSync(path.join(outside, "x.md"), path.join(f, "hard.md"));
+    const x = Buffer.from("x");
+    expect(await writeOwnDocument(f, "link.md", x, "y")).toEqual({ ok: false, reason: "outside" });
+    expect(await writeOwnDocument(f, "hard.md", x, "y")).toEqual({ ok: false, reason: "outside" });
+    expect(fs.readFileSync(path.join(outside, "x.md"), "utf8")).toBe("x");
+    const first = await readOwnDocument(f, "specs/a.md");
+    if (!first.ok) throw new Error();
+    expect(await writeOwnDocument(f, "specs/a.md", first.bytes, "a".repeat(MAX_REVIEW_DOCUMENT_BYTES + 1))).toEqual({ ok: false, reason: "too-large" });
   });
 });
 

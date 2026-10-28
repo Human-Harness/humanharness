@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { COMMON_LANGUAGES, isRightToLeft, offeredLanguage, pickerLanguages } from "../src/language";
+import { COMMON_LANGUAGES, isRightToLeft, languageName, offeredLanguage, pickerLanguages } from "../src/language";
 
 describe("picker languages (spec §2, D9)", () => {
   it("knows right-to-left languages from ICU or the fixed list", () => {
@@ -15,12 +15,19 @@ describe("picker languages (spec §2, D9)", () => {
     expect(offeredLanguage("x".repeat(40))).toBe(false);
   });
 
-  it("lists English first, then by English name, with extras added once and RTL dropped", () => {
+  it("lists English first, with extras added once and RTL dropped", () => {
     const list = pickerLanguages(["es", "gl", "ar", "gl", "bad tag"]);
     expect(list[0]).toBe("en");
     expect(list).toContain("gl");
     expect(list).not.toContain("ar");
     expect(list.filter((t) => t === "gl")).toHaveLength(1);
     expect(COMMON_LANGUAGES.every((t) => !isRightToLeft(t))).toBe(true);
+  });
+
+  it("after English, the order is by English name", () => {
+    const rest = pickerLanguages(["gl", "eu"]).slice(1);
+    const names = rest.map((t) => languageName(t));
+    expect(names).toEqual([...names].sort((a, b) => a.localeCompare(b, "en")));
+    expect(rest.indexOf("eu")).toBeLessThan(rest.indexOf("gl"));
   });
 });

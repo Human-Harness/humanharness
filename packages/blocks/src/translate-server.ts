@@ -1,6 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "@humanharness/harness-sdk";
-import { RpcRefused, callRpc } from "./bridge";
+import { RpcRefused, RpcTimeout, callRpc } from "./bridge";
 
 /**
  * Bounds of one save (spec §5: batches of about 100 keys); the app checks every key again. `total` caps all the texts
@@ -15,6 +15,16 @@ const strings = z
   .record(z.string().min(1).max(SAVE_LIMITS.key), z.union([text, forms]))
   .refine((o) => Object.keys(o).length <= SAVE_LIMITS.keys, `At most ${SAVE_LIMITS.keys} keys per call`)
   .refine((o) => Object.values(o).reduce((n, v) => n + textLength(v), 0) <= SAVE_LIMITS.total, `At most ${SAVE_LIMITS.total} characters per call`);
+
+/**
+ * What the agent reads when a save didn't go through. A timeout gets its own text: the app may have saved the batch
+ * after all, so calling again could only be refused as already answered.
+ */
+export function saveErrorText(e: unknown): string {
+  if (e instanceof RpcTimeout) return "The app did not answer in time; it may have saved this batch. Do not call again.";
+  const message = e instanceof Error ? e.message : String(e);
+  return e instanceof RpcRefused ? `Refused: ${message}` : `Could not reach the app (${message}). Do not retry in a loop.`;
+}
 
 /**
  * The `translate` MCP server (language spec §5): one tool, `save_translation`, that hands the batch's map to the app over
@@ -34,9 +44,7 @@ export function createTranslateServer(rpc: { path: string; token: string }): Mcp
         const result = await callRpc(rpc, { op: "save", strings: args.strings }, 30_000);
         return { content: [{ type: "text" as const, text: typeof result === "string" ? result : JSON.stringify(result) }] };
       } catch (e) {
-        const message = e instanceof Error ? e.message : String(e);
-        const t = e instanceof RpcRefused ? `Refused: ${message}` : `Could not reach the app (${message}). Do not retry in a loop.`;
-        return { isError: true, content: [{ type: "text" as const, text: t }] };
+        return { isError: true, content: [{ type: "text" as const, text: saveErrorText(e) }] };
       }
     },
   );

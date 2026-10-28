@@ -328,6 +328,23 @@ describe("TaskManager: the open task keeps its language (language spec §7)", ()
     expect(t.turns.at(-1)!.message).not.toContain("Spanish");
   });
 
+  it("a mode switch after the setting changed keeps the task's language", async () => {
+    let lang = "es";
+    const t = setup({
+      modes: { modes: ["socratic", "feynman"], defaultMode: "socratic" },
+      phases: [{ id: "main", label: "Main block", brief: "m.md" }],
+      extra: { language: async () => lang, readModeBrief: async (mode: string) => `Brief of ${mode} in {{language}}.` },
+    });
+    await t.manager.start("session");
+    expect(t.turns[0].message).toContain("Brief of socratic in Spanish.");
+    lang = "fr";
+    const pick = t.manager.chooseMode("feynman");
+    expect(await pick.accepted).toMatchObject({ ok: true });
+    await pick.done;
+    expect(t.turns.at(-1)!.message).toContain("Brief of feynman in Spanish.");
+    expect(t.turns.at(-1)!.message).not.toContain("French");
+  });
+
   it("a resumed task from before a restart reads the saved language, as before", async () => {
     const current = { id: "t1", action: "session", status: "waiting" as const, startedAt: "", turns: 2, phase: { id: "main", startedAt: NOW }, resume: true as const };
     const t = setup({ state: { version: 1, actions: {}, current }, extra: { language: async () => "fr" } });

@@ -1,7 +1,8 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { afterEach, describe, expect, it } from "vitest";
-import { type Rpc, devLauncher, openRpc, translateServerSpec } from "../src";
+import { type Rpc, RpcRefused, RpcTimeout, devLauncher, openRpc, translateServerSpec } from "../src";
+import { saveErrorText } from "../src/translate-server";
 
 let rpc: Rpc | undefined;
 let client: Client | undefined;
@@ -51,6 +52,25 @@ describe("translate server (spec §5)", () => {
     const plural = { zero: "x".repeat(4000), one: "x".repeat(4000), two: "x".repeat(4000), few: "x".repeat(4000), many: "x".repeat(4000), other: "x".repeat(4000) };
     expect(await save(Object.fromEntries(Array.from({ length: 30 }, (_, i) => [`core:k${i}`, plural])))).toBe(true);
     expect(seen).toEqual([]);
+  });
+
+  it("accepts a key of exactly 200 characters", async () => {
+    const seen: unknown[] = [];
+    const c = await connect(async (r) => {
+      seen.push(r);
+      return "Saved 1.";
+    });
+    const key = `core:${"k".repeat(195)}`;
+    expect(key).toHaveLength(200);
+    const res = await c.callTool({ name: "save_translation", arguments: { strings: { [key]: "x" } } });
+    expect(res.isError).toBeFalsy();
+    expect(seen).toEqual([{ op: "save", strings: { [key]: "x" } }]);
+  });
+
+  it("a timeout has its own text: the batch may be saved, so don't call again", () => {
+    expect(saveErrorText(new RpcTimeout())).toBe("The app did not answer in time; it may have saved this batch. Do not call again.");
+    expect(saveErrorText(new RpcRefused("No batch is open"))).toBe("Refused: No batch is open");
+    expect(saveErrorText(new Error("ECONNREFUSED"))).toBe("Could not reach the app (ECONNREFUSED). Do not retry in a loop.");
   });
 
   it("an app refusal comes back as a tool error the agent reads", async () => {

@@ -1,5 +1,7 @@
 # Context panel — design
 
+Status: implemented in plan 17 (docs/superpowers/plans/2026-10-28-context-panel.md); see its "Conflicts with the spec".
+
 Status: approved by Marco on 2026-10-27, with three fixes from his review (§3.1 `scope-instructions` item, §4.2 pins in linked folders and no binary pins) and the open questions decided (§10). Not in the roadmap yet.
 
 This is spec D from the dev-vs-core gap analysis (`docs/discovery/2026-10-26-dev-vs-core.md`, candidate C5). It builds on context and memory (`docs/architecture/context.md`) and on scopes and data (`docs/architecture/data.md`). It shares the `activity` paths of parallel tasks (`2026-10-27-parallel-tasks-and-jobs-design.md` §5.2) and respects its cap and queue. It does not need that spec to land first.

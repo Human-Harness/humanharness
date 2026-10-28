@@ -65,8 +65,76 @@ Each topic also runs on the model it needs: a small one for simple work, a big o
 
 ## Measuring
 
-`.harness/usage.jsonl` records each turn's tokens with its `task`, `phase` (the turn kind: `run`, `close`, `checkpoint`, and `phase-change` or `wrap-up` for a task with phases or a time box), `mode` (for a task in a mode), `taskPhase` (the part a phased task is in, on its compaction lines too), level, model, effort and cap, and the model the engine said it ran (`reportedModel`). Compactions are lines of `kind: "compaction"`.
+`.harness/usage.jsonl` records each turn's tokens with its `task`, `phase` (the turn kind: `run`, `close`, `checkpoint`, `phase-change` or `wrap-up` for a task with phases or a time box, and `context-add` for an "Add now" turn), `mode` (for a task in a mode), `taskPhase` (the part a phased task is in, on its compaction lines too), level, model, effort and cap, and the model the engine said it ran (`reportedModel`). Compactions are lines of `kind: "compaction"`.
 
 ## Engine switch
 
 The chat is archived, the open task ends unfinished, the notes stay: the next task on the new engine gets the same index (`packages/shell/src/main/engine-switch.ts`). In a harness with profiles every profile's chat is archived at once (`archiveChatsOnEngineChange`).
+
+## What the person sees and steers (context panel)
+
+The context panel (spec `docs/superpowers/specs/2026-10-27-context-panel-design.md`, plan 17) shows what the agent takes into account in the open task and lets the person change it. It opens from the context meter, which is a button ("What the AI takes into account") in the flow side, or in the top bar for a harness without actions while a task with a context reading is open; the button keeps the meter's reading for screen readers (`aria-describedby`). The panel takes the reader's slot: opening it closes the reader, the file timeline panel, History and notes, and they close it in turn. An item opens in the reader (a `.md`, a note) or the file timeline panel (any other file), closing the panel. Close and Esc return focus to the meter (or, if it is gone, to the meter on screen, then the composer). The panel closes when the task ends. Harness views get `client.context` and `<ContextPanel client taskId />` from `@humanharness/ui`.
+
+The panel has four sections: "At the start" (each item with its estimate, the total and the real first-turn tokens), "During the task" (reads and tools newest first, with "×N"), "Pinned" (with "title only", "not found" or "not a text file") and "Excluded" (with "Include again"). "Exclude" sits next to each note an index item lists, "Pin" next to each read with a path, "Remove" next to each pin. An exclusion of a note the open task's index listed says "Applies from the next task". Focus: the "Add…" menu's first item gets focus when it opens; Esc closes only the menu and returns to "Add…"; after a pick, focus goes to "For this task"; after an add or a pin, back to "Add…". It is not a modal, so Tab is not trapped. A late answer for another task is dropped.
+
+### What the app records
+
+All of it lives on the open task in `.harness/tasks.json` (`CurrentTask`, app-private, never tracked by the history), cleaned field by field on read (`task-store.ts`). A task without these fields gets none back.
+
+- **`start`**: what the first message held, as `ContextItem`s (`contextFor` and `startItems` in `task-manager.ts`): `instructions` (`AGENTS.md`, only when it exists), `brief`, `notes` and `app-notes` (with the notes each lists, at most 50, for the "Exclude" buttons), one `data:<collection>` item per table (`buildDataContextParts`), `pin:<scope>:<path>` items and `material`. At most 100 items. Sizes are estimates: `approxTokens` is characters ÷ 4 (for `AGENTS.md`, its bytes ÷ 4) rounded to the nearest 100, at least 100 for any text, 0 for none. The brief is the whole message's estimate minus the other items' (never below 0), so the items add up to the message. A resumed task (after "Move folder") replaces `start` with its resume message's items. A mode switch adds `brief:<n>` "Mode brief · <label>" and a phase change "Phase brief · <label>", each with the time it arrived (`at`); the first phase's brief and a starting mode's section are inside the first `brief`.
+- **`startTokens`**: the first turn's `usage` (input + cache read + cache write), the engine's own report. The panel shows it as "First turn: N tokens (real)" next to "Total: approx. N tokens". A resume clears it and the resumed turn's usage sets it again; a first turn that reports no usage leaves it unset.
+- **`reads`**: what the agent read or used during the task, from the runtime's `activity` events (`paths` and `tool`, `docs/architecture/turn.md`): Claude's `Read`, `Grep` and `Glob`; Codex's read and search `locations`; MCP tools of every server but `ui` (the core's `data` and `material` included, "data · data_query"). Paths are made folder-relative (`folderPath` in `context-record.ts`; the folder as given and its real path both count, since engines report `/private/var/…` for a folder under `/var/…`). A path outside the folder (a reference folder) keeps only its file name and never opens. At most 20 paths per event, merged into the task once per turn when it ends (one `tasks.json` write), at most 500 entries per task, each with `firstAt` and a `count`. Nothing is ever read from an engine path: it is only turned into a string for display.
+- **`compacted`**: a compaction (reported by Codex, or Claude's context falling by more than half, as `track` already detects) marks every `start` item and every read `compacted: true` in the same write; a file read again loses the mark. The panel draws marked items faint with "may be summarized".
+
+Engine paths never reach the window: `TurnController` strips `paths` and `tool` before an event reaches it (`forWindow`), and the chat log keeps `{ kind, detail }` only. `start` and `reads` reach the window only through `hh:contextGet`. Main sends `hh:context` (`{ task, context }`) when the open task's record, its pins or its exclusions change; `client.context.onChange(taskId, cb)` passes only the matching task.
+
+### Pins and exclusions
+
+The person's choices live in `.harness/context/<scope>.json` (`packages/workspace/src/context.ts`): `{ "version": 1, "pinned": [{ "path", "at" }], "excluded": [{ "note", "at" }] }`. The scope is `main` without scopes, an open scope, or `_app` for the whole app ("Pin for the whole app", offered only with scopes). At most 50 pins and 200 exclusions per scope (`full` past that). A file that is not JSON or has the wrong shape reads as empty; the next write replaces it. The file is written atomically and removed when it becomes empty, so a folder that pinned and unpinned looks like one that never did. `CONTEXT_PREFIX` is in `appHistoryKeep`, so the file is tracked.
+
+- **Written only by the panel** (`ContextService` in `packages/shell/src/main/context.ts`). Each pin, unpin, exclusion and inclusion is one commit, `Context: pinned <path>`, `Context: unpinned <path>`, `Context: excluded <note>` or `Context: included <note>`, with the open task's trailer, so undoing the task undoes it; the History panel shows them as `Context:` entries. Writes run through one queue across all scopes (the file is load, change, save with no lock), and are refused with `busy` while the app's history is busy (a restore, a folder move, an engine change).
+- **What a pin may be** (`checkPinPath` in `context-pins.ts`), checked when the action runs, whatever the window sent (a start item's path comes from the hand-editable `tasks.json`): a plain relative path with no empty, `.` or `..` part; never a `.git` part at any depth, nothing under `.claude/`, and under `.harness/` only inside `.harness/notes/` (compared without case). Its name must fit a prompt: no backtick, control character, or line or paragraph separator, at most 1,000 characters (`bad-name`, "File names with a backtick or a line break can't be used."). `locate` then requires the real path to be inside the folder, and that real path must pass the same shape rule, so a link into `.git` or `.harness` is `outside`. Reference folders are never tried. Reads go through `readPrefix` and `readCapped`, which refuse links and hard links. A binary file (the file timeline's `isBinary`: a known extension or a NUL in the first 8 KB) is `binary`. Refusals: `outside` ("Only files in your folder"), `bad-name`, `binary` ("Text files only"), `missing`.
+- **Unpin and include** accept any stored name (nothing is read), so a hand-edited entry with an odd name can still be removed; its commit subject quotes it.
+- **What an exclusion may be**: a note directly in that scope's notes folder (`notesPrefix` + `<slug>.md`, nothing deeper), else `not-a-note`.
+- **Answers are data.** Every `hh:context*` handler (`context-ipc.ts`: `hh:contextGet`, `hh:contextAdd`, `hh:contextPick`, `hh:contextPin`, `hh:contextUnpin`, `hh:contextExclude`, `hh:contextInclude`) answers `{ ok: true, … }` or `{ ok: false, reason }` (`ContextRefusal`: `no-task`, `busy`, `outside`, `bad-name`, `binary`, `missing`, `unknown-scope`, `not-a-note`, `full`, `not-ready`, `failed`). A throw or a rejection inside is a bug, logged and answered `failed`; the preload (`preload/context.ts`) turns a rejection or a non-data answer into `failed` too. `pick` opens the system dialog at the folder and checks the file like an "Add now"; the dialog may answer with the folder's real path, and both spellings count.
+
+### A new task's first message
+
+With pins or exclusions, a new task's first message is, in order: the scope's notes index and the app-wide one (each without its excluded notes, `buildNotesIndex`'s `exclude`), the data tables, **the pinned section**, then the material, which stays last. A scoped task gets its scope's pins, then `_app`'s, under one shared budget.
+
+- **The budget**: `config.json` → `models.pinnedTokens` (Settings › Models, `docs/architecture/settings.md`), else the manifest's `context.pinnedTokens`, else 3,000 (`pinnedBudget` in `packages/shell/src/main/models.ts`). A pin's size is its bytes ÷ 4 rounded up, the same number for the panel and the message.
+- **Strict order** (`pinsLayout`): pins enter whole in order while they fit; the first that does not fit, and every pin after it, enters as title only (no skipping ahead to smaller ones). A file over 1 MB is always title only. A missing or binary pin, or one whose link now leads out, is skipped, and the panel shows why.
+- **The section** (`pinnedSection`): `## Pinned by the person`, each whole pin as `### <path>` and its text in a backtick fence one longer than its longest backtick run (at least 3), then `### Also pinned` with one `- <title> → <path>` line per title-only pin (the title is the first `# ` heading in the first 2 KB, else the file name) and "Open these with your read tool when you need them." Each pin is checked and read again right before it enters.
+
+### Add now
+
+"Add…" offers "Choose a file…" (`hh:contextPick`) and the open scope's notes; the picked path then offers "For this task" or "Pin in <scope>". "For this task" is one turn of the open task (`TaskManager.addContext`), sent with `CONTEXT_ADD_PROMPT` (`task-prompts.ts`): ``The person wants you to take `<path>` into account. Read it now and say in one line what changes for this task.``
+
+- `ContextService.add` checks the path like a pin, except that a binary file is allowed (the agent decides what it can read). The task manager then checks only that the name fits the prompt (`addablePath`).
+- The turn goes through the task manager's operation queue: behind a running turn it waits (`whenFree`) and never cancels it; the panel shows "Waiting for the current turn to end…" until it is accepted. It is refused with `no-task` (no task open, or another task's id), `busy` (the task is not waiting: closing, saving a checkpoint) or `bad-name`.
+- It runs like a follow-up: a due checkpoint first, the lines kept for the task's next message with it, a lost session resumed as a question would be. Its kind in `usage.jsonl` is `context-add`. The window gets `hh:taskTurn` with `kind: "context"` and the path, and the chat's line is "Take <path> into account", stored in English as the app's own line.
+
+### D0
+
+A harness that never pins, never excludes and never uses "Add now" behaves exactly as before: no `.harness/context/` file, no pinned section, no `exclude` filter, so every first message is byte for byte the same; `AGENTS.md` and the MCP tool lists gain nothing; the chat log and the window's event stream are unchanged; `context-add` never appears in `usage.jsonl`; `humanharness run` wires the same hooks (`pinnedBudget({}, harness.context)`, no `contextChanged`) and prints the same messages; a manifest without `context` validates as before. What changes for every harness, on purpose: `tasks.json`'s open task gains `start`, `startTokens` and `reads`, `ModelsView` gains `pinnedTokens`, and the context meter becomes a button.
+
+### Never read
+
+The panel never reads `~/.claude`, `~/.codex`, `~/.gemini`, `~/.config/opencode`, `~/.local/share/opencode` or any engine account file. Usage, context and read paths come only from the engine's protocol output (stream-json and ACP), which the transports already parse.
+
+### Known gaps
+
+- First-turn tokens sum every API call of the first turn (Claude's usage covers the whole turn, tool calls included), so with tools they overstate the first message. The panel says "First turn", not "first message".
+- Reads are recorded when the turn ends, not as each tool call happens, so the panel updates then. Reads made before a compaction in the same turn show as fresh.
+- After a resume, the old session's reads stay and are not marked compacted.
+- "Add now" checks the file when the action runs; the agent reads it later. Accepted, since the agent can already reach the folder.
+- "Add now" does not count as the person working: a paused time box stays paused.
+- A path with a backtick is refused as `bad-name`, and bidi controls and zero-width characters in a name are not refused.
+- "App-wide notes (N)" counts every note not excluded, though the app index is trimmed to 500 tokens.
+- A mode switch or phase change records its brief before the Stop check, so a stopped switch can leave its brief item.
+- A whole pin's text is read up to 1 MB even when the layout measured it smaller: a file that grew between the layout and the read can overrun the budget.
+- `pick` has no busy check, and two quick calls open two dialogs.
+- When the app is closing, an "Add now" that can no longer run is logged as an error instead of answered `busy`.
+- Grep and Glob without a `path`, and a Codex search without `locations`, record nothing.
+- Only reads are filled on `activity`: edit paths (the parallel tasks spec) are not.
+- Not built (the plan's conflicts with the spec): scope-instructions items, pins in linked folders, jobs and the task cap, the agent proposing pins.

@@ -206,6 +206,27 @@ describe("plugins IPC", () => {
     now.t += 60_001;
     expect(await w.call("hh:pluginsRefresh", "jira", "other")).toEqual({ ok: true });
   });
+
+  it("Test goes through the same limiter: one at a time per plugin, and the same per-minute budget as Refresh", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const now = { t: 0 };
+    let tests = 0;
+    const w = wire({ test: async () => (tests++, await gate, [{ source: "s", ok: true }]) }, now);
+    const first = w.call("hh:pluginsTest", "jira");
+    expect(await w.call("hh:pluginsTest", "jira")).toEqual([{ source: "jira", ok: false, error: "A test of this plugin is already running" }]);
+    release();
+    expect(await first).toEqual([{ source: "s", ok: true }]);
+    expect(tests).toBe(1);
+    // Tests and refreshes share the budget: 1 test + 3 refreshes + 1 test = 5.
+    for (let i = 0; i < 3; i++) expect(await w.call("hh:pluginsRefresh", "jira", `s${i}`)).toEqual({ ok: true });
+    expect(await w.call("hh:pluginsTest", "other")).toEqual([{ source: "s", ok: true }]);
+    expect(await w.call("hh:pluginsTest", "jira")).toEqual([{ source: "jira", ok: false, error: "Too many tests; try again in a minute" }]);
+    expect(await w.call("hh:pluginsRefresh", "jira", "s9")).toEqual({ ok: false, message: "Too many refreshes; try again in a minute" });
+    expect(tests).toBe(2);
+    now.t += 60_001;
+    expect(await w.call("hh:pluginsTest", "jira")).toEqual([{ source: "s", ok: true }]);
+  });
 });
 
 describe("safeStorageCrypto", () => {

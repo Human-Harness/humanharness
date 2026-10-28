@@ -382,6 +382,38 @@ describe("PluginsController: starting and reviews", () => {
   });
 });
 
+describe("PluginsController: remove in every profile", () => {
+  it("remove clears the run state of every base: a same-id plugin added again starts off everywhere", async () => {
+    const t = await setup({ plugins: { bundled: [], on: [], local: true } });
+    const folder = path.dirname(await writePlugin(await tmp(), "mine"));
+    t.deps.pickFolder.mockResolvedValue(folder);
+    await t.ctl.start();
+    const pick = (await t.ctl.pick()) as { token: string; review: PluginReview };
+    await t.ctl.add(pick.token);
+    // Approved and on in two profiles (two bases, two keys).
+    const other = await tmp("hh-pl-base2-");
+    t.setBase(other);
+    await t.ctl.rebase();
+    expect(await t.ctl.approve("mine", pick.review.distHash)).toEqual({ ok: true });
+    t.setBase(t.base);
+    await t.ctl.rebase();
+    expect(await t.ctl.approve("mine", pick.review.distHash)).toEqual({ ok: true });
+    expect((await files(path.join(t.appDir, "plugin-state"))).filter((f) => f.endsWith("mine.json"))).toHaveLength(2);
+    expect(await t.ctl.remove("mine")).toEqual({ ok: true });
+    expect((await files(path.join(t.appDir, "plugin-state"))).filter((f) => f.endsWith("mine.json"))).toEqual([]);
+    // The same id from another folder, no new permissions: off in the other profile, nothing starts.
+    const again = path.dirname(await writePlugin(await tmp(), "mine"));
+    t.deps.pickFolder.mockResolvedValue(again);
+    const pick2 = (await t.ctl.pick()) as { token: string };
+    expect(await t.ctl.add(pick2.token)).toEqual({ ok: true });
+    const started = t.host.started.length;
+    t.setBase(other);
+    await t.ctl.rebase();
+    expect(t.host.started).toHaveLength(started);
+    expect((await t.ctl.view()).plugins).toMatchObject([{ id: "mine", status: "off" }]);
+  });
+});
+
 describe("PluginsController: settings, keys, test", () => {
   it("validates settings, stores only changes, and the backend sees them with its work hours", async () => {
     let seen: Record<string, unknown> | undefined;
@@ -733,6 +765,27 @@ describe("PluginsController: base changes", () => {
     expect(await t.ctl.setOn("oncall", true)).toMatchObject({ ok: false });
     expect(t.host.started).toEqual(["oncall"]);
     expect(await files(other)).toEqual([]);
+    await t.ctl.rebase();
+    expect(t.host.started).toEqual(["oncall", "oncall"]);
+  });
+
+  it("after stop() (a folder move, quit) a rescan, a turn-on or an approval starts nothing and writes nothing until rebase()", async () => {
+    const t = await setup({ plugins: { bundled: ["oncall", "other"], on: ["oncall"], local: false }, backends: { oncall: { s: async () => {} } } });
+    await bundled(t.root, "oncall");
+    await bundled(t.root, "other");
+    await t.ctl.start();
+    expect(t.host.started).toEqual(["oncall"]);
+    await t.ctl.stop();
+    expect(t.host.stopAll).toHaveBeenCalled();
+    const before = { base: await files(t.base), app: await files(t.appDir) };
+    await t.ctl.rescan();
+    expect(await t.ctl.setOn("oncall", true)).toMatchObject({ ok: false, message: "The app is not set up yet" });
+    const hash = (await t.ctl.detail("other"))!.review.distHash;
+    expect(await t.ctl.approve("other", hash)).toMatchObject({ ok: false, message: "The app is not set up yet" });
+    expect(t.host.started).toEqual(["oncall"]);
+    expect(t.ctl.channelOf("oncall")).toBeNull();
+    expect(await files(t.base)).toEqual(before.base);
+    expect(await files(t.appDir)).toEqual(before.app);
     await t.ctl.rebase();
     expect(t.host.started).toEqual(["oncall", "oncall"]);
   });

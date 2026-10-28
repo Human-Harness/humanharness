@@ -29,7 +29,7 @@ import type { runFile } from "./plugin-exec";
 import { type PluginEntry, type PluginPointers, distFolderOf, loadPlugins, readDist } from "./plugin-load";
 import { CrashPolicy, PluginScheduler } from "./plugin-scheduler";
 import type { SecretStore } from "./plugin-secrets";
-import { DEFAULT_WORK_HOURS, type PluginState, PluginStateStore, type WorkHours, inWorkHours, parseWorkHours, reviewStatus } from "./plugin-state";
+import { DEFAULT_WORK_HOURS, type PluginState, PluginStateStore, type WorkHours, inWorkHours, parseWorkHours, removeRunStateEverywhere, reviewStatus } from "./plugin-state";
 
 /**
  * Plugins in the main process (plugins spec §4, §6, §7; Decisions 5–22): for the current base folder, the loaded
@@ -173,9 +173,17 @@ export class PluginsController {
     });
   }
 
-  /** Quit: every backend stops. */
+  /**
+   * Quit, or a folder move: every backend stops and the controller detaches from the base, so nothing (a rescan, a
+   * turn-on, an approval) starts a plugin or writes in the old folder while it is copied or the app quits. Only rebase()
+   * starts them again.
+   */
   stop(): Promise<void> {
-    return this.serial(() => this.stopAll());
+    return this.serial(async () => {
+      await this.stopAll();
+      this.detached = true;
+      this.ctx = null;
+    });
   }
 
   /** The computer woke up: sources whose next run passed during sleep run now (Task 16 wires powerMonitor). */
@@ -356,6 +364,8 @@ export class PluginsController {
     r.loadError = undefined;
     channel.ready().then(
       ({ sources }) => {
+        // A page that answers after its plugin stopped (a folder move, quit) writes nothing in the old base.
+        if (r.stopped || r.channel !== channel) return;
         const missing = r.entry.manifest.sources.filter((s) => !sources.includes(s.id)).map((s) => s.id);
         if (missing.length > 0) void this.appendError(c, r.entry.id, { message: `backend.js defines no source ${missing.join(", ")}` });
       },
@@ -716,7 +726,7 @@ export class PluginsController {
     });
   }
 
-  /** Local plugins only (Decision 19): the pointer, this base's state, data and attention items, every key. Never its folder. */
+  /** Local plugins only (Decision 19): the pointer, every base's run state, this base's settings, data and attention items, every key. Never its folder. */
   async remove(id: string): Promise<PluginResult> {
     return this.serial(async () => {
       const e = typeof id === "string" ? this.entries.find((x) => x.id === id) : undefined;
@@ -736,6 +746,11 @@ export class PluginsController {
         const store = await this.attentionStore(c, false);
         await store?.removeOrigin({ kind: "plugin", id }).catch((err: unknown) => this.log(`${id}: could not remove its attention items`, err));
       }
+      // Every base's run state, not only this one's: a later plugin with this id starts off everywhere (B8).
+      await removeRunStateEverywhere(this.d.appDir, id).catch((err: unknown) => {
+        failed = true;
+        this.log(`${id}: could not remove its run state in every folder`, err);
+      });
       await this.d.secrets.deleteAll(id).catch((err: unknown) => {
         failed = true;
         this.log(`${id}: could not remove its keys`, err);

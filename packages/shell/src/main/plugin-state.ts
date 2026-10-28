@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { constants, promises as fs } from "node:fs";
 import path from "node:path";
-import { type AddedPermission, type PluginPermissions, permissionsAdded, pluginManifestSchema, z } from "@humanharness/harness-sdk";
+import { type AddedPermission, PLUGIN_ID, type PluginPermissions, permissionsAdded, pluginManifestSchema, z } from "@humanharness/harness-sdk";
 import { pluginDataDir, pluginStateDir } from "@humanharness/workspace";
 import type { PluginEntry } from "./plugin-load";
 
@@ -170,6 +170,30 @@ export const PLUGIN_STATE_DIR = "plugin-state";
 export const pluginStateKey = (realBase: string): string => createHash("sha256").update(realBase).digest("hex").slice(0, 32);
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+
+/**
+ * Remove (Decision 19): the plugin's run state in every base (`<appDir>/plugin-state/<key>/<id>.json` for every key), not only the
+ * current one, so a later plugin with the same id never starts on in another profile on an old approval (B8). The app's
+ * own folder, still checked: a linked `plugin-state` or base folder is skipped (never followed), and a linked `<id>.json`
+ * is removed itself. Every folder is tried; the call rejects after if one could not be cleared.
+ */
+export async function removeRunStateEverywhere(appDir: string, id: string): Promise<void> {
+  if (typeof id !== "string" || !PLUGIN_ID.test(id)) throw new Error(`Invalid plugin id`);
+  const root = path.join(appDir, PLUGIN_STATE_DIR);
+  const st = await fs.lstat(root).catch((err: NodeJS.ErrnoException) => {
+    if (err.code === "ENOENT") return null;
+    throw err;
+  });
+  if (st === null) return;
+  if (!st.isDirectory()) throw new Error(`${PLUGIN_STATE_DIR} is ${st.isSymbolicLink() ? "a link" : "not a folder"}; refusing`);
+  let failed: unknown = null;
+  // withFileTypes reports what lstat would: a link to a folder is not a folder here.
+  for (const e of await fs.readdir(root, { withFileTypes: true })) {
+    if (!e.isDirectory()) continue;
+    await fs.rm(path.join(root, e.name, `${id}.json`), { force: true }).catch((err: unknown) => (failed ??= err));
+  }
+  if (failed !== null) throw failed;
+}
 
 /**
  * One base's plugin state files. `appDir` is the app's per-harness folder (`~/.humanharness/<harness-id>/`), where

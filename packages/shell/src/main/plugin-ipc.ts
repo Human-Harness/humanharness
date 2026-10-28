@@ -68,9 +68,11 @@ const ATTENTION_KEY = /^[A-Za-z0-9:._-]{1,80}$/;
 /** A setting value's JSON and a key's value (Decision 17). */
 const SETTING_JSON_MAX = 8 * 1024;
 const SECRET_CHARS_MAX = 8192;
-/** Refresh (B11): one at a time per source, at most REFRESH_PER_MINUTE from the window. */
+/** Refresh and Test (B11): one at a time per source (per plugin for a Test), at most REFRESH_PER_MINUTE together from the window. */
 const REFRESH_PER_MINUTE = 5;
 const MINUTE = 60_000;
+const REFRESH_SAID = { busy: "A refresh of this source is already running", tooMany: "Too many refreshes; try again in a minute" };
+const TEST_SAID = { busy: "A test of this plugin is already running", tooMany: "Too many tests; try again in a minute" };
 
 const isId = (v: unknown): v is string => typeof v === "string" && PLUGIN_ID.test(v);
 const isLocalId = (v: unknown): v is string => typeof v === "string" && PLUGIN_LOCAL_ID.test(v);
@@ -148,26 +150,31 @@ export function registerPluginsIpc(handle: Handle, ctl: Ctl, o: { now?: () => nu
   );
   handle("hh:pluginsDeleteSecret", (id: unknown, secret: unknown) => (isId(id) && isLocalId(secret) ? act("Deleting a plugin key", () => ctl.deleteSecret(id, secret)) : INVALID));
   handle("hh:pluginsSetNotify", (id: unknown, on: unknown) => (isId(id) && typeof on === "boolean" ? act("Saving a plugin's notifications", () => ctl.setNotify(id, on)) : INVALID));
-  handle("hh:pluginsTest", async (id: unknown): Promise<PluginTestResult[]> => (isId(id) ? read("Testing a plugin", () => ctl.test(id), []) : []));
 
-  // Refresh runs a source now (network, a command): a page can't make it run in a loop (B11).
-  const refreshing = new Set<string>();
+  // Refresh and Test run sources now (network, a command): a page can't make them run in a loop (B11). They share one
+  // budget of REFRESH_PER_MINUTE; a Refresh runs one at a time per source, a Test one at a time per plugin.
+  const busy = new Set<string>();
   let recent: number[] = [];
-  handle("hh:pluginsRefresh", async (id: unknown, source: unknown): Promise<PluginResult> => {
-    if (!isId(id) || !isLocalId(source)) return INVALID;
-    const key = `${id}\0${source}`;
-    if (refreshing.has(key)) return { ok: false, message: "A refresh of this source is already running" };
+  const limited = async <T>(key: string, said: { busy: string; tooMany: string }, refuse: (message: string) => T, run: () => Promise<T>): Promise<T> => {
+    if (busy.has(key)) return refuse(said.busy);
     const t = now();
     recent = recent.filter((at) => t - at < MINUTE);
-    if (recent.length >= REFRESH_PER_MINUTE) return { ok: false, message: "Too many refreshes; try again in a minute" };
+    if (recent.length >= REFRESH_PER_MINUTE) return refuse(said.tooMany);
     recent.push(t);
-    refreshing.add(key);
+    busy.add(key);
     try {
-      return await act("Refreshing a plugin source", () => ctl.refresh(id, source));
+      return await run();
     } finally {
-      refreshing.delete(key);
+      busy.delete(key);
     }
-  });
+  };
+  // A refused Test answers one line named after the plugin (the window doesn't know its sources here).
+  handle("hh:pluginsTest", async (id: unknown): Promise<PluginTestResult[]> =>
+    isId(id) ? limited(`test\0${id}`, TEST_SAID, (error) => [{ source: id, ok: false, error }], () => read("Testing a plugin", () => ctl.test(id), [])) : [],
+  );
+  handle("hh:pluginsRefresh", async (id: unknown, source: unknown): Promise<PluginResult> =>
+    isId(id) && isLocalId(source) ? limited(`refresh\0${id}\0${source}`, REFRESH_SAID, (message): PluginResult => ({ ok: false, message }), () => act("Refreshing a plugin source", () => ctl.refresh(id, source))) : INVALID,
+  );
 
   handle("hh:attentionGet", (): Promise<AttentionView | null> => read("Reading the Attention inbox", () => ctl.attention.view(), null));
   handle("hh:attentionDismiss", async (plugin: unknown, key: unknown): Promise<void> => {

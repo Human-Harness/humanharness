@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { type PluginManifest, parsePluginManifest } from "@humanharness/harness-sdk";
-import { DEFAULT_WORK_HOURS, PluginStateStore, inWorkHours, parseWorkHours, reviewStatus } from "../src/main/plugin-state";
+import { DEFAULT_WORK_HOURS, PluginStateStore, inWorkHours, parseWorkHours, removeRunStateEverywhere, reviewStatus } from "../src/main/plugin-state";
 
 const m = (permissions: object = {}): PluginManifest =>
   parsePluginManifest({ id: "oncall", name: "On-call", version: "1.0.0", api: 1, harness: "*", permissions: { hosts: ["*.atlassian.net"], ...permissions } });
@@ -162,6 +162,40 @@ describe("PluginStateStore", () => {
     await expect(fs.access(path.join(base, ".harness", "plugin-data", "a"))).rejects.toThrow();
     await expect(fs.access(await runFile(app, base, "a"))).rejects.toThrow();
   });
+  it("removeRunStateEverywhere deletes <id>.json under every base's key, only that id, and never through a link", async () => {
+    const { base, app, s } = await setup();
+    const other = path.join(path.dirname(base), "work2");
+    await fs.mkdir(other);
+    const s2 = new PluginStateStore(other, app);
+    await s.setState("a", { on: true, approved: approved() });
+    await s2.setState("a", { on: true, approved: approved() });
+    await s2.setState("b", { on: true });
+    expect(path.dirname(await runFile(app, base, "a"))).not.toBe(path.dirname(await runFile(app, other, "a")));
+    // A linked key folder in plugin-state: skipped, its target untouched.
+    const outside = await tmp();
+    await fs.writeFile(path.join(outside, "a.json"), "{}");
+    await fs.symlink(outside, path.join(app, "plugin-state", "linked"));
+    await removeRunStateEverywhere(app, "a");
+    expect(await s.state("a")).toBeNull();
+    expect(await s2.state("a")).toBeNull();
+    expect(await s2.state("b")).toMatchObject({ on: true });
+    await fs.access(path.join(outside, "a.json"));
+    await expect(removeRunStateEverywhere(app, "../a")).rejects.toThrow(/id/);
+  });
+
+  it("removeRunStateEverywhere: no plugin-state folder is nothing to do; a linked one is refused", async () => {
+    const { app } = await setup();
+    await removeRunStateEverywhere(app, "a");
+    const outside = await tmp();
+    const key = path.join(outside, "k");
+    await fs.mkdir(key);
+    await fs.writeFile(path.join(key, "a.json"), "{}");
+    await fs.mkdir(app);
+    await fs.symlink(outside, path.join(app, "plugin-state"));
+    await expect(removeRunStateEverywhere(app, "a")).rejects.toThrow(/link/);
+    await fs.access(path.join(key, "a.json"));
+  });
+
   describe("links under the base (the agent can put one anywhere there)", () => {
     /** A base, the app folder, and an `outside` folder a link points to. */
     const linked = async () => {

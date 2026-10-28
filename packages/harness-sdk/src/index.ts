@@ -6,6 +6,7 @@ import { CORE_BLOCKS, INPUT_CORE_BLOCKS, MODE_CORE_BLOCKS, PHASE_CORE_BLOCKS, RE
 import { dataSchema } from "./data";
 import { CORE_SHEET_SECTIONS, MATERIAL_STAGE_KEYS, materialSchema } from "./material";
 import { DEFAULT_MODE_WORDS, MODE_ID } from "./modes";
+import { parallelSchema } from "./parallel";
 import { PHASE_ID, TIME_BOX_MAX } from "./phases";
 import { harnessPluginsSchema, harnessSlotsSchema } from "./plugin";
 import { PROFILE_COLLECTION, profileFormSpec, profilesSchema } from "./profiles";
@@ -28,6 +29,7 @@ export * from "./sidekick";
 export * from "./plugin";
 export * from "./plugin-permissions";
 export * from "./plugin-actions";
+export * from "./parallel";
 /** The zod a manifest builds its block schemas with: the same instance the SDK validates them against. */
 export { z } from "zod";
 
@@ -187,6 +189,8 @@ const manifestSchema = z.object({
   plugins: harnessPluginsSchema.optional(),
   /** The harness's own plugin slots (plugins spec §3.4). Absent: only the core's (D0). */
   slots: harnessSlotsSchema.optional(),
+  /** Suggested caps on turns running at once (parallel spec §3). Absent: one task at a time, as before (D7). */
+  parallel: parallelSchema.optional(),
   /** One line under the name on the home screen. */
   tagline: text.optional(),
   /** How translations of this harness's screens should sound, in English ("warm and informal, short sentences"). */

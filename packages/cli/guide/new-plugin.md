@@ -15,7 +15,7 @@ The app treats plugin code as hostile, because it is expected to be AI-written c
 
 ## Where things are
 
-- `plugin.config.ts`: the manifest, `definePlugin({...})` with zod schemas. `humanharness plugin build` turns it into `dist/plugin.json` (plain data; zod becomes JSON Schema). The app never runs `plugin.config.ts`.
+- `plugin.config.ts`: the manifest, `definePlugin({...})` with zod schemas, both imported as `import { definePlugin, z } from "@humanharness/harness-sdk";`. `humanharness plugin build` turns it into `dist/plugin.json` (plain data; zod becomes JSON Schema). The app never runs `plugin.config.ts`.
 - `backend.ts`: the sources, `export default definePluginBackend({ sources: { <id>: async (ctx) => { … } } })`, imported from `@humanharness/harness-sdk/plugin-backend`. Built to `dist/backend.js`.
 - `panels/<id>.tsx`: one React component per panel (its default export), built with `@humanharness/plugin-ui` to `dist/panel-<id>.html`, `.js` and `.css`. Optional images go in `assets/` (`.svg` and `.png` only).
 - `fixtures/<source>/001.json`, `002.json`…: recorded exchanges, one request and its response per file, played in file-name order.

@@ -31,6 +31,8 @@ Every text in the manifest is one English string.
 | `profiles` | Optional. Several people on one install, each with a folder of their own: `label` (what to call one, "student") and `fields` (the `profile` collection's fields the add and edit form asks for, `name` first) (`docs/architecture/profiles.md`) |
 | `sidekick` | Optional. The prompt coach: its `default` state, `tips`, the pre-send mode per action, `checks`, and the harness's `places` and `presets` (below; `docs/architecture/sidekick.md`) |
 | `plugins` | Optional. Whether the harness takes plugins: `bundled` (ids under `<harness>/plugins/<id>/dist/`), `on` (bundled ones that start on, without a review) and `local` (the person may add plugins from a folder; default `false`). Absent, or with no bundled plugin and `local: false`, nothing of plugins runs (`docs/architecture/plugins.md`) |
+| `parallel` | Optional. Suggested caps on turns running at once, `{ tasks, jobs }`, each an integer 1–8, default 1 (strict: a typo is refused). Declared, the app keeps several tasks open, each with its own chat and session, and queues turns past the cap; absent, the app runs one task at a time as before. The person can change the caps in Settings › General (`docs/architecture/parallel.md`) |
+| `inbox` | Optional; matters only with `parallel`. `false` hides the core inbox and its button; `client.tasks` stays for the harness's own panel. Top level, since `ui` is the custom UI path (`docs/architecture/parallel.md`) |
 | `slots` | Optional. Places of the harness's own screen where plugin panels or chips go, next to the core's `plugins` and `chips` slots (below; `docs/architecture/plugins.md`) |
 
 ### Phases and the time box

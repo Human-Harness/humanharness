@@ -10,12 +10,12 @@ A turn is one message from the person and the agent's complete answer. It crosse
 
 ## The workspace and its slots
 
-Spec: `docs/superpowers/specs/2026-10-27-parallel-tasks-and-jobs-design.md` §4. Part 1 builds the split. The app still opens one slot.
+Spec: `docs/superpowers/specs/2026-10-27-parallel-tasks-and-jobs-design.md` §4. Part 1 builds the split. A plain harness opens one slot; a harness that declares `parallel` opens one per open task (`parallel.md`).
 
 - `createWorkspace` (`packages/runtime/src/workspace.ts`) sets up the folder once. It runs `prepareFolder`, writes the instructions, opens the `History`, commits "Start" and opens the folder's `TurnLedger`.
 - `workspace.openSlot({ key, session, onSession, kind, permissions })` opens a `SessionSlot`. One slot runs one task's engine connection.
 - `createRuntime` keeps its signature and its `HarnessRuntime` shape. It is a workspace with one slot, keyed `"main"`. The CLI's `humanharness run` and the shell use it unchanged.
-- Slot keys are opaque to the runtime. Part 2 keys task slots by task id. Part 3 keys job slots `job:<run id>`.
+- Slot keys are opaque to the runtime. Board mode keys task slots by task id. Part 3 will key job slots `job:<run id>`.
 - One slot per task. Two windows of the same task would own each other's paths. A second turn of a task that already runs a turn throws "A turn of task X is already running".
 
 | Shared, one per folder | Per slot |
@@ -37,14 +37,14 @@ Spec: `docs/superpowers/specs/2026-10-27-parallel-tasks-and-jobs-design.md` §4.
 - `send` wraps the turn in `beginTurn` and `endTurn` (see `history.md`, "Parallel turns").
 - `onAttribution` gets what an overlapped turn owned, shared and collided with. It is never called for a turn that ran alone.
 - `endSession` ends the engine session. It refuses while a turn runs.
-- `sleep()` closes an idle ACP adapter process and keeps the session id. The next turn reconnects and `session/load`s it. For Claude it does nothing. Part 2 calls it after a task has waited 10 minutes.
+- `sleep()` closes an idle ACP adapter process and keeps the session id. The next turn reconnects and `session/load`s it. For Claude it does nothing. Board mode calls it after a task has waited 10 minutes, and before each turn on an engine held at one session.
 - `close()` cancels a running turn, waits for it, and closes the transport and the sockets. It frees the slot's key.
 - After `close()`, `send` and `endSession` throw "The slot is closed" and `sleep` does nothing. A closed ACP slot never reconnects.
 - One slot's cancel or crash never touches another slot.
 
 **Job slots.** `kind: "job"` sets `HH_JOB=1` on that slot's `ui` server. Its `permissions` go through `narrowPermissions`, so they only ever narrow the harness's. A task slot's specs are exactly today's.
 
-**Instructions refresh.** `workspace.refreshInstructions()` returns false while any slot runs a turn. It checks again after reading the settings. Part 2 schedules the retry.
+**Instructions refresh.** `workspace.refreshInstructions()` returns false while any slot runs a turn. It checks again after reading the settings. Board mode then holds new turns for up to 10 s while it waits for a gap (`parallel.md`, "The gate and its queue").
 
 **Edits on activity events.**
 - An `activity` start event can carry `edits`: the paths the turn's edit tools named.

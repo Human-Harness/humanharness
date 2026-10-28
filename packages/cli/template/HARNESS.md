@@ -14,6 +14,8 @@ The living decision log of this harness. The `/new-harness` guide fills each sec
 
 <!-- One row per action, plus (questions) for free questions. `check` compares this table with harness.config.ts. -->
 
+<!-- Parallel tasks: declare `parallel` only when the person runs independent tasks side by side, not for one guided flow. Note the suggested cap and why (the person can change it), and whether the core inbox shows or the harness draws its own from `client.tasks` (`inbox: false`). -->
+
 | Action | Tier | Cost | Purpose |
 |---|---|---|---|
 | example | standard | light | Shows how an action works |

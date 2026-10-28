@@ -24,7 +24,7 @@ An engine is an official AI command-line tool the person already uses. Human Har
 - Slots never share an ACP adapter, even with the same profile. One slot's `session/cancel` or crash can't touch another.
 - Claude needs nothing new. Each turn is already its own `claude -p` process.
 - `slot.sleep()` closes an idle ACP adapter process (`AcpTransport.close()`) and keeps the session id. The next turn starts a new process and calls `session/load`. For Claude, `sleep()` does nothing.
-- When `session/load` fails, `openSession` falls back to `session/new`. Only an expired login is an error. The new session is reported through `onSession`. The earlier conversation is then lost, and nothing tells the person yet (part 2).
+- When `session/load` fails, `openSession` falls back to `session/new`. Only an expired login is an error. The new session is reported through `onSession`. The earlier conversation is then lost. In board mode the task shows the activity line "Couldn't resume the earlier conversation; started a new one." (`RESUME_FAILED`); a plain harness tells nothing yet.
 - `AcpTransport` sets its event sink only after `openSession`. A history that `session/load` replays never reaches the window or the turn's `edits`. Keep that order.
 
 ### Spike facts (PT-S1…S5)
@@ -43,7 +43,7 @@ Source: `docs/spikes/2026-10-28-parallel-tasks.md`.
 ### Spike limits
 
 - **PT-S4** was tested on the happy path only: three short runs. A long idle, a large session and a failed load were not tested.
-- **PT-S5** did not run: OpenCode was not installed. Two OpenCode processes at once are unverified. Part 2 caps OpenCode at one open slot until a spike shows it works.
+- **PT-S5** did not run: OpenCode was not installed. Two OpenCode processes at once are unverified. Until a spike shows it works, `engineHold` holds every engine but Claude and Codex, OpenCode included, at one session: one turn at a time, other lanes' processes put to sleep first (`parallel.md`).
 - **Codex edit paths** come only from `content[].diff.path`. Shell writes are unnamed, so with Codex `edits` misses many changes.
 - The spike ran the adapter through `npx`, not the copy the app bundles. Its timings and memory figures were read from stdout and not saved.
 

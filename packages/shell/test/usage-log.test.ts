@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import type { ChatEntry } from "@humanharness/ui/client";
-import { type UsageMeta, type UsageRecord, UsageLog, compactionRecord, dayTokens, jobRecord, materialRecord, measuredMaterialCosts, mergeUsage, profileMeta, profilesUsage, sidekickRecord, sidekickSpent, sidekickWeek, summarizeUsage, usageRecord, withSpent } from "../src/main/usage-log";
+import { type UsageMeta, type UsageRecord, UsageLog, compactionRecord, dayTokens, jobRecord, materialRecord, measuredMaterialCosts, mergeUsage, profileMeta, profilesUsage, recentUsage, sidekickRecord, sidekickSpent, sidekickWeek, summarizeUsage, usageRecord, withSpent } from "../src/main/usage-log";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -601,5 +601,36 @@ describe("job lines (parallel spec §10, part 3 Decision 2)", () => {
     const lines = [turn("t1", "2026-10-27T10:00:00Z"), sk, job("sync", "r1", "2026-10-27T11:00:00Z"), job("sync", "r0", "2026-10-26T11:00:00Z")];
     expect(dayTokens(lines, "2026-10-27", (d) => day(d.toISOString()))).toEqual({ tasks: 1100, sidekick: 440, jobs: 440 });
     expect(dayTokens([turn("t1", "2026-10-27T10:00:00Z"), sk], "2026-10-27", (d) => day(d.toISOString()))).toEqual({ tasks: 1100, sidekick: 440 });
+  });
+});
+
+describe("recentUsage: job lines don't push tasks out of the latest lines", () => {
+  const usage = { inputTokens: 1000, outputTokens: 100, cacheReadTokens: 0, cacheWriteTokens: 0 };
+  const task = (at: string): UsageRecord => ({ at, engine: "claude", action: "tidy", task: "t1", ok: true, usage });
+  const job = (i: number) => jobRecord({ engine: "claude", job: "sync", task: `r${i}`, usage }, "2026-10-27T11:00:00Z");
+
+  it("keeps the last n non-job lines and every job line among or after them", () => {
+    const lines = [task("a"), job(0), task("b"), job(1), task("c"), job(2)];
+    expect(recentUsage(lines, 2).map((r) => r.task)).toEqual(["t1", "r1", "t1", "r2"]);
+    expect(recentUsage(lines, 2)[0].at).toBe("b");
+    expect(recentUsage(lines, 10)).toEqual(lines);
+  });
+
+  it("D0: without job lines it is the last n lines, as load(n) gave", () => {
+    const lines = [task("a"), task("b"), task("c")];
+    expect(recentUsage(lines, 2)).toEqual(lines.slice(-2));
+  });
+
+  it("a task line followed by 500 job lines still summarises", () => {
+    const lines = [task("2026-10-27T10:00:00Z"), ...Array.from({ length: 500 }, (_, i) => job(i))];
+    expect(summarizeUsage(recentUsage(lines, 500), undefined).tokens).toEqual({ tidy: 1100 });
+    // What load(500) gave before: the task line pushed out.
+    expect(summarizeUsage(lines.slice(-500), undefined).tokens).toEqual({});
+  });
+
+  it("the latest window is found past job lines (they carry no limits)", () => {
+    const withWindow: UsageRecord = { ...task("x"), limits: rec(0.3, R1).limits };
+    const lines = [withWindow, ...Array.from({ length: 60 }, (_, i) => job(i))];
+    expect(recentUsage(lines, 50).filter((r) => r.limits?.length).at(-1)).toBe(withWindow);
   });
 });

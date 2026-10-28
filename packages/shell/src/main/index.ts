@@ -112,7 +112,7 @@ import { type RunningSetup, runSetupProcess, setupCommand, stopSetupProcess } fr
 import { runSetupStep } from "./setup-step";
 import { type SharedEngineRecord, SharedConfigStore, sharedConfigDir } from "./shared-config";
 import { EngineUnavailable, TurnController, type TurnDeps, memoise } from "./turn-controller";
-import { type UsageRecord, UsageLog, compactionRecord, dayTokens, measuredMaterialCosts, profileMeta, profilesUsage, summarizeUsage, usageRecord, withSpent } from "./usage-log";
+import { type UsageRecord, UsageLog, compactionRecord, dayTokens, measuredMaterialCosts, profileMeta, profilesUsage, recentUsage, summarizeUsage, usageRecord, withSpent } from "./usage-log";
 import { type ValidationContext, checkFolder, configProblem, isAppUrl } from "./validate";
 import { openIfStillSafe, openRoots, openableFile, revealIfStillSafe, revealableFile } from "./open-path";
 import { saveWithFolderChange } from "./folder-change";
@@ -1310,7 +1310,7 @@ async function buildMaterial(): Promise<MaterialService | null> {
       const c = await validConfig();
       if (!c) return null;
       const primary = getEngine(c.engineId).limits?.primary;
-      const last = (await new UsageLog(baseOf(c)).load(50)).filter((r) => r.limits?.length).at(-1);
+      const last = recentUsage(await new UsageLog(baseOf(c)).load(Infinity), 50).filter((r) => r.limits?.length).at(-1);
       const w = last?.limits?.find((x) => x.kind === primary) ?? last?.limits?.[0];
       return w && Date.parse(w.resetsAt) > Date.now() ? { kind: w.kind, utilization: w.utilization } : null;
     },
@@ -1328,7 +1328,7 @@ async function buildMaterial(): Promise<MaterialService | null> {
     // The stages' costs measured in this base's log (§7): each profile's own.
     measured: async () => {
       const c = await validConfig();
-      return c ? measuredMaterialCosts(await new UsageLog(baseOf(c)).load()) : undefined;
+      return c ? measuredMaterialCosts(recentUsage(await new UsageLog(baseOf(c)).load(Infinity), 500)) : undefined;
     },
     kick: kickMaterial,
     trash: (file) => shell.trashItem(file),
@@ -2038,11 +2038,11 @@ function registerIpc() {
     // The 30-day spend reads every line, not only the latest 500 (OpenCode; spec §4).
     const reportsCost = !isMockEngine(hooks, c.engineId) && getEngine(c.engineId).reportsCost === true;
     if (ids && c.profile) {
-      const logs = await Promise.all(ids.map(async (id) => [id, engineOnly(await new UsageLog(profileDir(c.folder, id)).load())] as const));
+      const logs = await Promise.all(ids.map(async (id) => [id, engineOnly(recentUsage(await new UsageLog(profileDir(c.folder, id)).load(Infinity), 500))] as const));
       const folders = ids.map((id) => profileDir(c.folder, id));
       return withSpent(profilesUsage(Object.fromEntries(logs), c.profile, primary), folders, c.engineId, reportsCost);
     }
-    return withSpent(summarizeUsage(engineOnly(await new UsageLog(baseOf(c)).load()), primary), [baseOf(c)], c.engineId, reportsCost);
+    return withSpent(summarizeUsage(engineOnly(recentUsage(await new UsageLog(baseOf(c)).load(Infinity), 500)), primary), [baseOf(c)], c.engineId, reportsCost);
   });
   handle("hh:revealSharedConfig", () => shell.showItemInFolder(shared.path));
   // Installing by hand: copy the official command (chosen here by engine id) and open Terminal,
@@ -2299,7 +2299,7 @@ if (loaded) {
       return { notes: notes.slice(0, 20).map((n) => n.title), data };
     },
     uiLanguage: async () => languageName((await config.load()).language ?? DEFAULT_LANGUAGE),
-    usage: (base) => new UsageLog(base).load(2000),
+    usage: async (base) => recentUsage(await new UsageLog(base).load(Infinity), 2000),
     log: (base, record) => new UsageLog(base).append(record),
     // The daily card (sidekick plan Decision 12): the day's note titles in every scope and its tokens, titles only.
     // The task manager can't list open tasks (Open question 7): nothing is open.

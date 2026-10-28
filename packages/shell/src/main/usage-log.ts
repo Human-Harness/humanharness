@@ -110,6 +110,21 @@ export class UsageLog {
   }
 }
 
+/**
+ * The latest `n` lines that aren't a job's, with the job lines among and after them (parallel spec §10): a job on a
+ * timer can write hundreds of lines a day, and they mustn't push the tasks' turns, material stages or the latest
+ * window out of what the app reads. Without job lines, the last `n` lines (D0: what `load(n)` gives).
+ */
+export function recentUsage(records: UsageRecord[], n: number): UsageRecord[] {
+  let kept = 0;
+  let from = records.length;
+  while (from > 0 && kept < n) {
+    from--;
+    if (records[from].phase !== "job") kept++;
+  }
+  return records.slice(from);
+}
+
 /** A profile as usage.jsonl records it. */
 export function profileMeta(p: ModelProfile): Pick<UsageMeta, "tier" | "model" | "effort" | "cap"> {
   return { tier: p.tier, ...(p.model !== undefined ? { model: p.model } : {}), effort: p.effort, cap: p.cap };
